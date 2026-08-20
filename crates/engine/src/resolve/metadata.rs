@@ -5,11 +5,12 @@
 
 use std::path::{Path, PathBuf};
 
-use emery_error::Error;
+use omnia_guest::Error;
 use serde::{Deserialize, Serialize};
 
 use super::core::{AdapterLocation, Axis};
 use super::routed::RoutedId;
+use crate::handler::diag;
 
 /// A source adapter's metadata answer.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -50,13 +51,13 @@ pub fn deployed(request: &Request<'_>) -> Result<Metadata, Error> {
                 emery_floor: record.emery_floor,
             })
         }
-        Axis::Target => Err(Error::Diag {
-            code: "adapter-axis-removed",
-            detail: format!(
+        Axis::Target => Err(diag(
+            "adapter-axis-removed",
+            format!(
                 "the target adapter axis is deleted (ADR-0008); `{}` cannot be resolved",
                 request.adapter_id
             ),
-        }),
+        )),
     }
 }
 
@@ -69,14 +70,14 @@ pub fn deployed(request: &Request<'_>) -> Result<Metadata, Error> {
 /// Always `adapter-metadata-unsupported`.
 #[cfg(not(target_arch = "wasm32"))]
 pub fn deployed(request: &Request<'_>) -> Result<Metadata, Error> {
-    Err(Error::Diag {
-        code: "adapter-metadata-unsupported",
-        detail: format!(
+    Err(diag(
+        "adapter-metadata-unsupported",
+        format!(
             "adapter `{}`: metadata dispatches over the component seam; the native path is \
              deleted (ADR-0002)",
             request.adapter_id
         ),
-    })
+    ))
 }
 
 #[derive(Debug, Serialize, Deserialize)]

@@ -5,10 +5,11 @@
 
 use std::str::FromStr;
 
-use emery_error::Error;
+use omnia_guest::Error;
 
 use super::core::Axis;
 use super::selector::AdapterSelector;
+use crate::handler::diag;
 
 /// One routed adapter identity: axis, kebab-case name, and the exact
 /// SemVer pin a package-resolved identity carries (`None` for a
@@ -59,10 +60,7 @@ impl RoutedId {
     /// `adapter-routed-id-malformed` when the axis prefix, name, or
     /// version pin does not fit the grammar.
     pub fn parse(value: &str) -> Result<Self, Error> {
-        let malformed = |detail: String| Error::Diag {
-            code: "adapter-routed-id-malformed",
-            detail,
-        };
+        let malformed = |detail: String| diag("adapter-routed-id-malformed", detail);
         let (axis, rest) = value.split_once(':').ok_or_else(|| {
             malformed(format!(
                 "routed adapter id `{value}` is missing its `<axis>:` prefix (`source:` or \

@@ -12,21 +12,17 @@ use std::process::Command;
 const ALLOWED: &[(&str, &str)] = &[
     ("emery", "emery-adapter"),
     ("emery", "emery-engine"),
-    ("emery", "emery-error"),
     ("emery", "emery-transport"),
     ("emery-artifacts", "emery-diagnostics"),
-    ("emery-artifacts", "emery-error"),
     ("emery-engine", "emery-adapter"),
     ("emery-engine", "emery-artifacts"),
     ("emery-engine", "emery-diagnostics"),
-    ("emery-engine", "emery-error"),
     // Build dependency: the embed-time synthesis-prose walk.
     ("emery-engine", "emery-prose"),
     ("emery-transport", "emery-adapter"),
     ("emery-transport", "emery-artifacts"),
     ("emery-transport", "emery-diagnostics"),
     ("emery-transport", "emery-engine"),
-    ("emery-transport", "emery-error"),
 ];
 
 #[test]

@@ -4,8 +4,10 @@
 
 use std::path::{Path, PathBuf};
 
-use emery_error::Error;
+use omnia_guest::{Error, ErrorKind};
 use serde::{Deserialize, Serialize};
+
+use crate::handler::{io, yaml};
 
 /// In-memory representation of the spec generator's `project.yaml`.
 ///
@@ -69,28 +71,35 @@ impl Project {
     ///
     /// # Errors
     ///
-    /// [`Error::NotInitialized`] when the file is absent; YAML errors
-    /// when it does not parse as this shape (a v1-shaped file
-    /// included); [`Error::CliTooOld`] when the pin outruns this
-    /// binary.
+    /// `not-initialized` when the file is absent; YAML errors when it
+    /// does not parse as this shape (a v1-shaped file included);
+    /// `emery-version-too-old` when the pin outruns this binary.
     pub fn load(project_dir: &Path) -> Result<Self, Error> {
         let path = Self::path(project_dir);
         let text = match std::fs::read_to_string(&path) {
             Ok(text) => text,
             Err(err) if err.kind() == std::io::ErrorKind::NotFound => {
-                return Err(Error::NotInitialized);
+                return Err(Error::new(
+                    ErrorKind::NotFound,
+                    "not-initialized",
+                    "not-initialized: .emery/project.yaml not found",
+                ));
             }
-            Err(err) => return Err(Error::Io(err)),
+            Err(err) => return Err(io(err)),
         };
-        let project: Self = serde_saphyr::from_str(&text)?;
+        let project: Self = serde_saphyr::from_str(&text).map_err(yaml)?;
         let current = env!("CARGO_PKG_VERSION");
         if let Some(required) = &project.emery_version
             && version_is_older(current, required)
         {
-            return Err(Error::CliTooOld {
-                required: required.clone(),
-                found: current.to_string(),
-            });
+            return Err(Error::new(
+                ErrorKind::ServerError,
+                "emery-version-too-old",
+                format!(
+                    "emery version {current} is older than the project floor {required}; upgrade \
+                     the CLI"
+                ),
+            ));
         }
         Ok(project)
     }

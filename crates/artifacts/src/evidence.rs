@@ -46,9 +46,9 @@ impl Document {
     ///
     /// # Errors
     ///
-    /// Returns [`emery_error::Error::Validation`] keyed on `evidence-schema`
-    /// (exit code 2) carrying one line per violation.
-    pub fn validate(&self) -> Result<(), emery_error::Error> {
+    /// Returns a `evidence-schema` bad-request keyed on the kebab
+    /// discriminant (exit code 2) carrying one line per violation.
+    pub fn validate(&self) -> Result<(), omnia_guest::Error> {
         let mut findings = Vec::new();
         if !is_kebab(&self.lead) {
             findings.push(format!("lead `{}` is not a kebab slug", self.lead));
@@ -57,10 +57,7 @@ impl Document {
         if findings.is_empty() {
             Ok(())
         } else {
-            Err(emery_error::Error::Validation {
-                code: "evidence-schema".into(),
-                detail: findings.join("; "),
-            })
+            Err(crate::validation("evidence-schema", "", findings.join("; ")))
         }
     }
 }

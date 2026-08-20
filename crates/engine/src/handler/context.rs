@@ -3,7 +3,7 @@
 //! Assembled once where a project-scoped operation enters, so paths,
 //! the loaded project, and the version floor are derived exactly once.
 
-use emery_error::Error;
+use omnia_guest::Error;
 
 use super::paths::ExecutionPaths;
 use crate::project::Project;
@@ -27,8 +27,8 @@ impl RequestContext {
     ///
     /// # Errors
     ///
-    /// [`Error::NotInitialized`] when the project is absent, plus the
-    /// load and floor failures of [`Project::load`].
+    /// `not-initialized` when the project is absent, plus the load
+    /// and floor failures of [`Project::load`].
     pub fn load() -> Result<Self, Error> {
         let paths = ExecutionPaths::deployed();
         let project = Project::load(paths.project_root())?;

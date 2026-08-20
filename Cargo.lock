@@ -973,7 +973,6 @@ dependencies = [
  "emery-adapter",
  "emery-diagnostics",
  "emery-engine",
- "emery-error",
  "emery-transport",
  "jiff",
  "omnia",
@@ -1009,7 +1008,7 @@ name = "emery-artifacts"
 version = "0.38.0"
 dependencies = [
  "emery-diagnostics",
- "emery-error",
+ "omnia-guest",
  "schemars",
  "serde",
  "serde-saphyr",
@@ -1039,7 +1038,6 @@ dependencies = [
  "emery-adapter",
  "emery-artifacts",
  "emery-diagnostics",
- "emery-error",
  "emery-prose",
  "jiff",
  "omnia-guest",
@@ -1050,16 +1048,7 @@ dependencies = [
  "serde_json",
  "strum",
  "tempfile",
- "thiserror 2.0.20",
  "tokio",
-]
-
-[[package]]
-name = "emery-error"
-version = "0.38.0"
-dependencies = [
- "serde-saphyr",
- "thiserror 2.0.20",
 ]
 
 [[package]]
@@ -1078,7 +1067,6 @@ dependencies = [
  "emery-artifacts",
  "emery-diagnostics",
  "emery-engine",
- "emery-error",
  "omnia-guest",
  "serde",
  "serde_json",

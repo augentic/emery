@@ -4,10 +4,10 @@
 
 use emery_adapter::seam::{self, SourceContent, SourceInput, SourceWorkspace};
 use emery_artifacts::evidence::{AuthorityClass, Claim, ClaimKind, validate_claims};
-use emery_error::Error;
+use omnia_guest::Error;
 use serde::Serialize;
 
-use crate::handler::ExecutionPaths;
+use crate::handler::{ExecutionPaths, diag, validation};
 use crate::project::{BindingContent, Project, SourceBinding};
 use crate::resolve::{AdapterSelector, Axis, RoutedId, metadata, resolver};
 
@@ -18,14 +18,12 @@ use crate::resolve::{AdapterSelector, Axis, RoutedId, metadata, resolver};
 async fn dispatch(id: &str, input: &SourceInput) -> Result<seam::Evidence, Error> {
     use emery_adapter::source::import;
     import::extract(id, input).await.map_err(|err| match err {
-        import::Error::Seam(seam) => Error::Diag {
-            code: "source-extract-failed",
-            detail: format!("source `{id}`: {seam}"),
-        },
-        extras @ import::Error::Extras { .. } => Error::Diag {
-            code: "claim-extras-malformed",
-            detail: format!("source `{id}` {extras}"),
-        },
+        import::Error::Seam(seam) => {
+            diag("source-extract-failed", format!("source `{id}`: {seam}"))
+        }
+        extras @ import::Error::Extras { .. } => {
+            diag("claim-extras-malformed", format!("source `{id}` {extras}"))
+        }
     })
 }
 
@@ -36,12 +34,12 @@ async fn dispatch(id: &str, input: &SourceInput) -> Result<seam::Evidence, Error
     reason = "signature parity with the wasm32 dispatch the call site awaits"
 )]
 async fn dispatch(id: &str, _input: &SourceInput) -> Result<seam::Evidence, Error> {
-    Err(Error::Diag {
-        code: "source-extract-unsupported",
-        detail: format!(
+    Err(diag(
+        "source-extract-unsupported",
+        format!(
             "source `{id}`: extract dispatches over the component seam; the native path is deleted (ADR-0002)"
         ),
-    })
+    ))
 }
 
 /// One extracted source: the binding key, the routed adapter identity
@@ -182,7 +180,7 @@ pub const fn required_extras(kind: ClaimKind) -> &'static [&'static str] {
 pub fn validate_set(set: &SourceSet) -> Result<(), Error> {
     let findings = validate_claims(&set.claims);
     if !findings.is_empty() {
-        return Err(Error::validation_failed(
+        return Err(validation(
             "claim-invalid",
             format!("source `{}` returned an invalid claim set", set.key),
             findings.join("; "),
@@ -192,7 +190,7 @@ pub fn validate_set(set: &SourceSet) -> Result<(), Error> {
         for key in required_extras(claim.kind) {
             if !claim.extras.contains_key(*key) {
                 let label = claim.id.clone().unwrap_or_else(|| claim.kind.to_string());
-                return Err(Error::validation_failed(
+                return Err(validation(
                     "claim-extras-missing",
                     "required per-kind extras are absent (A8 fail-closed)",
                     format!("source `{}` claim `{label}` is missing `{key}`", set.key),

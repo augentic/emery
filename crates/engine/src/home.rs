@@ -7,8 +7,10 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use emery_artifacts::spec::ast;
-use emery_error::Error;
+use omnia_guest::Error;
 use serde::Serialize;
+
+use crate::handler::{diag, io};
 
 // The output-home directory under `.emery/`.
 const SPEC_DIR: &str = "spec";
@@ -224,21 +226,21 @@ impl Home {
         let raw = match fs::read_to_string(&path) {
             Ok(raw) => raw,
             Err(err) if err.kind() == std::io::ErrorKind::NotFound => return Ok(None),
-            Err(err) => return Err(Error::Io(err)),
+            Err(err) => return Err(io(err)),
         };
         let id = raw.trim().to_string();
         let dir = self.root.join(GENERATIONS_DIR).join(&id);
         for name in FILES {
             let document = dir.join(name);
             if !document.is_file() {
-                return Err(Error::Diag {
-                    code: "spec-home-corrupt",
-                    detail: format!(
+                return Err(diag(
+                    "spec-home-corrupt",
+                    format!(
                         "the generation pointer names `{id}` but `{}` is missing; re-run `emery \
                          specify` to commit a fresh generation",
                         document.display()
                     ),
-                });
+                ));
             }
         }
         Ok(Some(Committed { id, dir }))
@@ -269,22 +271,26 @@ impl Home {
     // superseded generations and any temp-file or partial-directory
     // litter a crash left behind are removed.
     fn prune(&self, keep: &str) -> Result<(), Error> {
-        for entry in fs::read_dir(&self.root)? {
-            let path = entry?.path();
+        for entry in fs::read_dir(&self.root).map_err(io)? {
+            let path = entry.map_err(io)?.path();
             let name = path.file_name().and_then(|name| name.to_str()).unwrap_or_default();
             if path.is_dir() {
                 if name != GENERATIONS_DIR {
-                    fs::remove_dir_all(&path)?;
+                    fs::remove_dir_all(&path).map_err(io)?;
                 }
             } else if name != CURRENT_FILE {
-                fs::remove_file(&path)?;
+                fs::remove_file(&path).map_err(io)?;
             }
         }
-        for entry in fs::read_dir(self.root.join(GENERATIONS_DIR))? {
-            let path = entry?.path();
+        for entry in fs::read_dir(self.root.join(GENERATIONS_DIR)).map_err(io)? {
+            let path = entry.map_err(io)?.path();
             let name = path.file_name().and_then(|name| name.to_str()).unwrap_or_default();
             if name != keep {
-                if path.is_dir() { fs::remove_dir_all(&path)? } else { fs::remove_file(&path)? }
+                if path.is_dir() {
+                    fs::remove_dir_all(&path).map_err(io)?;
+                } else {
+                    fs::remove_file(&path).map_err(io)?;
+                }
             }
         }
         Ok(())

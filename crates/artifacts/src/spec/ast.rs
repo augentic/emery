@@ -1,7 +1,7 @@
 //! The one fail-closed spec AST: the engine's load gate over
 //! `spec.md`. Unparseable is a typed error, never a lenient pass.
 
-use emery_error::Error;
+use omnia_guest::Error;
 use serde::{Deserialize, Serialize};
 
 /// Markdown heading prefix opening a requirement block.
@@ -137,7 +137,7 @@ pub fn parse(text: &str) -> Result<Spec, Error> {
             requirements,
         })
     } else {
-        Err(Error::validation_failed(
+        Err(crate::validation(
             "spec-invalid",
             "`spec.md` must parse under the fail-closed spec AST",
             findings.join("; "),

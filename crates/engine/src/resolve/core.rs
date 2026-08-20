@@ -5,7 +5,7 @@
 
 use std::path::PathBuf;
 
-use emery_error::Error;
+use omnia_guest::{Error, ErrorKind};
 use serde::{Deserialize, Serialize};
 
 /// Axis discriminator for an adapter component.
@@ -120,7 +120,7 @@ pub struct SourceAdapter {
     /// Optional host-CLI compatibility floor from the metadata
     /// answer's `emery-floor`. The resolver compares it against the
     /// running binary (`check_requires_emery`) and aborts with
-    /// `adapter-cli-too-old` (exit 3) when the binary is older.
+    /// `adapter-cli-too-old` (exit 1) when the binary is older.
     pub requires_emery: Option<semver::Version>,
 }
 
@@ -139,8 +139,8 @@ pub struct ResolvedSource {
 ///
 /// # Errors
 ///
-/// Returns [`Error::Validation`] with the kebab discriminant
-/// `adapter-floor-malformed` when the floor is not exact semver.
+/// Returns `adapter-floor-malformed` (bad-request) when the floor is
+/// not exact semver.
 pub(super) fn parse_floor(
     floor: Option<&str>, name: &str, origin: &Origin,
 ) -> Result<Option<semver::Version>, Error> {
@@ -148,7 +148,7 @@ pub(super) fn parse_floor(
         return Ok(None);
     };
     semver::Version::parse(floor).map(Some).map_err(|err| {
-        Error::validation_failed(
+        crate::handler::validation(
             "adapter-floor-malformed",
             "an adapter's metadata answer declares a semver `emery-floor`",
             format!(
@@ -162,15 +162,14 @@ pub(super) fn parse_floor(
 /// Enforce an adapter's host-CLI compatibility floor.
 ///
 /// When the running binary is older than the adapter's declared
-/// `emery` floor, resolution aborts with [`Error::AdapterCliTooOld`]
-/// on the exit-3 `EXIT_VERSION_TOO_OLD` path. `current` is parsed
-/// permissively — an unparseable running version is treated as "not
-/// older" rather than bricking resolution; an absent floor passes.
+/// `emery` floor, resolution aborts with `adapter-cli-too-old` on
+/// exit 1. `current` is parsed permissively — an unparseable running
+/// version is treated as "not older" rather than bricking resolution;
+/// an absent floor passes.
 ///
 /// # Errors
 ///
-/// Returns [`Error::AdapterCliTooOld`] when `current` parses below
-/// `floor`.
+/// Returns `adapter-cli-too-old` when `current` parses below `floor`.
 pub(super) fn check_requires_emery(
     floor: Option<&semver::Version>, current: &str, name: &str, origin: &Origin,
 ) -> Result<(), Error> {
@@ -181,11 +180,15 @@ pub(super) fn check_requires_emery(
         return Ok(());
     };
     if current_version < *floor {
-        return Err(Error::AdapterCliTooOld {
-            adapter: format!("{name} ({})", origin.reference),
-            required: floor.to_string(),
-            found: current.to_string(),
-        });
+        return Err(Error::new(
+            ErrorKind::ServerError,
+            "adapter-cli-too-old",
+            format!(
+                "emery version {current} is older than the floor {floor} required by adapter \
+                 {name} ({}); upgrade the CLI",
+                origin.reference
+            ),
+        ));
     }
     Ok(())
 }

@@ -6,14 +6,14 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use emery_error::Error;
+use omnia_guest::Error;
 use serde::{Deserialize, Serialize};
 
 use super::core::ResolvedSource;
 use super::resolver::{Component, component_cache_entry};
 use super::selector::canonicalize_component;
 use super::{AdapterSelector, metadata, selector};
-use crate::handler::ExecutionPaths;
+use crate::handler::{ExecutionPaths, diag, io, yaml};
 
 /// Ensure a source selector for the component deployment: provision
 /// (mirror), then resolve through the component resolver.
@@ -95,16 +95,16 @@ pub fn seed(path: &Path, paths: &ExecutionPaths, now: jiff::Timestamp) -> Result
 
     let entry = component_cache_entry(paths, &name);
     if let Some(parent) = entry.parent() {
-        fs::create_dir_all(parent)?;
+        fs::create_dir_all(parent).map_err(io)?;
     }
-    fs::copy(&canonical, &entry)?;
+    fs::copy(&canonical, &entry).map_err(io)?;
 
     let meta = ComponentMeta {
         source: format!("file://{}", canonical.display()),
         fetched_at: now.strftime("%Y-%m-%dT%H:%M:%SZ").to_string(),
     };
-    let serialised = serde_saphyr::to_string(&meta)?;
-    fs::write(ComponentMeta::path(paths, &name), serialised)?;
+    let serialised = serde_saphyr::to_string(&meta).map_err(yaml)?;
+    fs::write(ComponentMeta::path(paths, &name), serialised).map_err(io)?;
     Ok(Seeded {
         name,
         entry,
@@ -116,14 +116,14 @@ fn ensure_component_file(path: &Path, original: &str) -> Result<(), Error> {
     if path.is_file() && path.extension().is_some_and(|ext| ext == "wasm") {
         return Ok(());
     }
-    Err(Error::Diag {
-        code: "adapter-component-missing",
-        detail: format!(
+    Err(diag(
+        "adapter-component-missing",
+        format!(
             "adapter `{original}` did not resolve to a `.wasm` component file at {} (an \
              adapter is a single WebAssembly component)",
             path.display()
         ),
-    })
+    ))
 }
 
 /// Per-component provenance for a mirrored entry under

@@ -38,7 +38,7 @@ pub(super) struct InitArgs {
 pub(super) struct SpecifyArgs;
 
 impl TryFrom<SpecifyArgs> for emery_engine::specify::SpecifyInput {
-    type Error = emery_error::Error;
+    type Error = omnia_guest::Error;
 
     fn try_from(args: SpecifyArgs) -> Result<Self, Self::Error> {
         let SpecifyArgs = args;
@@ -97,7 +97,7 @@ macro_rules! convert {
     // flag missing from the field list is a compile error.
     ($args:path => $input:path { $($field:ident),* $(,)? }) => {
         impl TryFrom<$args> for $input {
-            type Error = emery_error::Error;
+            type Error = omnia_guest::Error;
 
             fn try_from(args: $args) -> Result<Self, Self::Error> {
                 let $args { $($field),* } = args;

@@ -7,7 +7,7 @@ use std::process::ExitCode;
 
 use clap::ValueEnum;
 use emery_engine::handler::Render;
-use emery_error::Error;
+use omnia_guest::{Error, ErrorKind};
 use serde::Serialize;
 
 /// Structured (`json`) or human (`text`) CLI output.
@@ -18,6 +18,10 @@ pub enum Format {
     Text,
     /// Pretty-printed JSON envelopes for skill/CI consumption.
     Json,
+}
+
+fn io(err: std::io::Error) -> Error {
+    Error::new(ErrorKind::ServerError, "io", err.to_string())
 }
 
 /// Emit `payload` through `writer` in the requested format.
@@ -38,35 +42,33 @@ pub fn emit<T: Serialize>(
 ) -> Result<(), Error> {
     match format {
         Format::Json => {
-            serde_json::to_writer_pretty(&mut *writer, payload).map_err(|err| Error::Diag {
-                code: "json-serialize-failed",
-                detail: format!("failed to serialize JSON response: {err}"),
+            serde_json::to_writer_pretty(&mut *writer, payload).map_err(|err| {
+                Error::new(
+                    ErrorKind::ServerError,
+                    "json-serialize-failed",
+                    format!("json-serialize-failed: failed to serialize JSON response: {err}"),
+                )
             })?;
-            writeln!(writer).map_err(Error::Io)
+            writeln!(writer).map_err(io)
         }
-        Format::Text => render_text(writer, payload).map_err(Error::Io),
+        Format::Text => render_text(writer, payload).map_err(io),
     }
 }
 
 /// Process exit code the CLI returns, mapped from a handler result.
 ///
 /// [`Exit::from`] (`&Error`) is the single source of truth for the
-/// failure mapping.
+/// failure mapping: `BadRequest` is exit 2; every other kind is exit 1.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[must_use]
 pub enum Exit {
     /// Command succeeded (exit 0).
     Success,
-    /// Any error without a more specific code (exit 1).
+    /// Any error that is not a bad request (exit 1).
     GenericFailure,
-    /// Validation findings or `Error::Validation` (exit 2).
+    /// `ErrorKind::BadRequest` (exit 2). Clap usage failures also land
+    /// here from the router, outside this mapping.
     ValidationFailed,
-    /// `Error::CliTooOld` — the binary is older than the project floor (exit 3).
-    VersionTooOld,
-    /// Argument-shape failure: `clap` exits 2 for unknown flags / missing
-    /// arguments; we mirror that for argument errors discovered after
-    /// parsing (kebab-case checks, mutually exclusive payloads, etc.).
-    ArgumentError,
 }
 
 impl Exit {
@@ -76,8 +78,7 @@ impl Exit {
         match self {
             Self::Success => 0,
             Self::GenericFailure => 1,
-            Self::ArgumentError | Self::ValidationFailed => 2,
-            Self::VersionTooOld => 3,
+            Self::ValidationFailed => 2,
         }
     }
 }
@@ -90,10 +91,8 @@ impl From<Exit> for ExitCode {
 
 impl From<&Error> for Exit {
     fn from(err: &Error) -> Self {
-        match err {
-            Error::CliTooOld { .. } | Error::AdapterCliTooOld { .. } => Self::VersionTooOld,
-            Error::Validation { .. } => Self::ValidationFailed,
-            Error::Argument { .. } => Self::ArgumentError,
+        match err.kind() {
+            ErrorKind::BadRequest => Self::ValidationFailed,
             _ => Self::GenericFailure,
         }
     }
@@ -102,15 +101,14 @@ impl From<&Error> for Exit {
 /// Failure envelope used by the transport projectors for every error
 /// variant.
 ///
-/// Payload-free: `error` carries the variant discriminant, `message`
-/// the rendered detail, `exit-code` the numeric exit, and `hint` the
-/// optional recovery guidance (present in text and JSON alike). No
-/// per-finding rows — handlers render `emery_diagnostics::DiagnosticReport`
-/// on stdout before returning this. Construct via `ErrorBody::from`.
+/// Payload-free: `error` carries the kebab discriminant, `message`
+/// the description, `exit-code` the numeric exit, and `hint` the
+/// optional recovery guidance (present in text and JSON alike).
+/// Construct via `ErrorBody::from`.
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "kebab-case")]
 pub struct ErrorBody {
-    pub(crate) error: std::borrow::Cow<'static, str>,
+    pub(crate) error: String,
     pub(crate) message: String,
     pub(crate) exit_code: u8,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -119,12 +117,31 @@ pub struct ErrorBody {
 
 impl From<&Error> for ErrorBody {
     fn from(err: &Error) -> Self {
+        let error = err.code();
         Self {
-            error: err.variant_str(),
-            message: err.to_string(),
+            hint: hint(&error),
+            error,
+            message: err.description(),
             exit_code: Exit::from(err).code(),
-            hint: err.hint(),
         }
+    }
+}
+
+fn hint(code: &str) -> Option<&'static str> {
+    match code {
+        "not-initialized" => Some(
+            "run `emery init <adapter>` to scaffold .emery/ first, or pass `--change-dir <dir>` to select a detached change home explicitly",
+        ),
+        "emery-version-too-old" => Some(
+            "update the installed binary through its install channel: `brew upgrade emery` (or `cargo install --git https://github.com/augentic/emery --locked`), then rerun the command",
+        ),
+        "adapter-cli-too-old" => Some(
+            "update the installed binary through its install channel: `brew upgrade emery` (or `cargo install --git https://github.com/augentic/emery --locked`)",
+        ),
+        "init-source-required" => Some(
+            "`emery init <adapter>...` scaffolds the project over its source bindings.\nsee: docs/init.md",
+        ),
+        _ => None,
     }
 }
 

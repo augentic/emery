@@ -5,13 +5,13 @@
 use std::io::Write;
 use std::path::{Path, PathBuf};
 
-use emery_error::Error;
 use omnia_guest::api::Provider;
 use omnia_guest::api::invoke::CallContext;
 use omnia_guest::api::operation::Operation;
+use omnia_guest::{Error, ErrorKind};
 use serde::{Deserialize, Serialize};
 
-use crate::handler::{ExecutionPaths, Render};
+use crate::handler::{ExecutionPaths, Render, io, validation};
 use crate::project::{BindingContent, Project, SourceBinding};
 use crate::resolve::{AdapterSelector, ComponentMeta, ensure, metadata};
 
@@ -42,7 +42,7 @@ pub struct InitInput {
 pub struct Init;
 
 impl<P: Provider> Operation<P> for Init {
-    type Error = crate::handler::Error;
+    type Error = Error;
     type Input = InitInput;
     type Output = InitBody;
 
@@ -71,13 +71,12 @@ impl<P: Provider> Operation<P> for Init {
         }
 
         if adapters.is_empty() && values.is_empty() {
-            return Err(Error::validation_failed(
+            return Err(validation(
                 "init-source-required",
                 "emery init requires at least one source adapter",
                 "pass `<adapter>` (package reference or local component path) and/or `--value \
                  <adapter>=<text>` for an inline source",
-            )
-            .into());
+            ));
         }
 
         let mut sources = Vec::new();
@@ -97,7 +96,7 @@ impl<P: Provider> Operation<P> for Init {
             emery_version: Some(env!("CARGO_PKG_VERSION").to_string()),
             sources,
         };
-        std::fs::create_dir_all(project_dir.join(".emery")).map_err(Error::Io)?;
+        std::fs::create_dir_all(project_dir.join(".emery")).map_err(io)?;
         project.store(project_dir)?;
         Ok(InitBody::from_project(InitMode::Scaffolded, &project, project_dir))
     }
@@ -140,7 +139,7 @@ fn bind(
 // Append `binding` unless its key is already bound.
 fn push_unique(sources: &mut Vec<SourceBinding>, binding: SourceBinding) -> Result<(), Error> {
     if sources.iter().any(|existing| existing.key == binding.key) {
-        return Err(Error::validation_failed(
+        return Err(validation(
             "init-source-duplicate",
             "each source binds once",
             format!("source `{}` is bound twice", binding.key),
@@ -153,10 +152,11 @@ fn push_unique(sources: &mut Vec<SourceBinding>, binding: SourceBinding) -> Resu
 // Split one `--value <adapter>=<text>` entry at the first `=`.
 fn split_value(entry: &str) -> Result<(&str, &str), Error> {
     entry.split_once('=').filter(|(adapter, _)| !adapter.is_empty()).ok_or_else(|| {
-        Error::Argument {
-            flag: "--value",
-            detail: format!("expected `<adapter>=<text>`, got `{entry}`"),
-        }
+        Error::new(
+            ErrorKind::BadRequest,
+            "argument",
+            format!("invalid argument --value: expected `<adapter>=<text>`, got `{entry}`"),
+        )
     })
 }
 

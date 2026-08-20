@@ -7,11 +7,11 @@ use std::fmt::Write as _;
 
 use emery_artifacts::evidence::{AuthorityClass, Claim, ClaimKind};
 use emery_artifacts::spec::ast::{self, Status, Tag};
-use emery_error::Error;
-use omnia_guest::Model;
 use omnia_guest::model::{Message, Request, Role};
+use omnia_guest::{Error, Model};
 
 use crate::extract::SourceSet;
+use crate::handler::{diag, validation};
 
 /// The two synthesised documents, AST-validated and row-checked.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -164,7 +164,7 @@ pub async fn synthesise<M: Model>(
     check_rows(&parsed, rows)?;
     let design = dispatch(model, DESIGN_PROSE, &design_prompt(sets, &spec)).await?;
     if design.trim().is_empty() {
-        return Err(Error::validation_failed(
+        return Err(validation(
             "design-empty",
             "`design.md` must carry the rebuild design",
             "the model answered an empty document",
@@ -196,10 +196,10 @@ async fn dispatch<M: Model>(model: &M, prose: &[&str], user: &str) -> Result<Str
             content: user.to_string(),
         }])
         .build();
-    let reply = model.create(request).await.map_err(|err| Error::Diag {
-        code: "synthesis-model-failed",
-        detail: err.to_string(),
-    })?;
+    let reply = model
+        .create(request)
+        .await
+        .map_err(|err| diag("synthesis-model-failed", err.to_string()))?;
     Ok(reply.answer)
 }
 
@@ -300,7 +300,7 @@ fn check_rows(parsed: &ast::Spec, rows: &[Row]) -> Result<(), Error> {
 }
 
 fn mismatch(detail: String) -> Error {
-    Error::validation_failed(
+    validation(
         "spec-provenance-mismatch",
         "the model answer must render every reconciliation row verbatim",
         detail,

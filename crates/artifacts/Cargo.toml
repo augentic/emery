@@ -15,7 +15,7 @@ workspace = true
 
 [dependencies]
 emery-diagnostics.workspace = true
-emery-error.workspace = true
+omnia-guest = { version = "0.35.0", default-features = false }
 schemars.workspace = true
 serde.workspace = true
 serde-saphyr.workspace = true

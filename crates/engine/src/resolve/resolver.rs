@@ -3,14 +3,14 @@
 
 use std::path::PathBuf;
 
-use emery_error::Error;
+use omnia_guest::Error;
 
 use super::core::{
     AdapterLocation, Axis, Origin, ResolvedSource, SourceAdapter, check_requires_emery, parse_floor,
 };
 use super::metadata::{self, Metadata};
 use super::selector::AdapterSelector;
-use crate::handler::ExecutionPaths;
+use crate::handler::{ExecutionPaths, diag};
 
 /// Component-backed resolver: read-only re-resolution of an
 /// already-provisioned selector over an injected metadata dispatch
@@ -130,39 +130,39 @@ pub fn locate(
         let version = version.to_string();
         let entry = paths.locations().store_entry(name, &version);
         if !entry.is_file() {
-            return Err(Error::Diag {
-                code: "adapter-not-found",
-                detail: format!(
+            return Err(diag(
+                "adapter-not-found",
+                format!(
                     "adapter `{name}@{version}` (axis `{axis}`) is not installed in the global \
                      store at {}; seed a local component with `emery init \
                      <path/to/{name}.wasm>` (the explicit install verb arrives with the \
                      distribution surface)",
                     entry.display(),
                 ),
-            });
+            ));
         }
         let meta = paths.locations().store_meta(name, &version);
         match emery_diagnostics::cache::verify_store_entry(&entry, &meta) {
             Ok(()) => {}
             Err(emery_diagnostics::cache::StoreVerifyError::MissingSidecar) => {
-                return Err(Error::Diag {
-                    code: "adapter-sidecar-missing",
-                    detail: format!(
+                return Err(diag(
+                    "adapter-sidecar-missing",
+                    format!(
                         "store entry {} has no digest sidecar; unverifiable components are \
                          refused — remove the entry and install `emery:{name}@{version}` again",
                         entry.display(),
                     ),
-                });
+                ));
             }
             Err(emery_diagnostics::cache::StoreVerifyError::Unreadable(io)) => {
-                return Err(Error::Diag {
-                    code: "adapter-store-unreadable",
-                    detail: format!(
+                return Err(diag(
+                    "adapter-store-unreadable",
+                    format!(
                         "adapter `{name}@{version}` (axis `{axis}`) store entry at {} cannot be \
                          read for verification: {io}",
                         entry.display(),
                     ),
-                });
+                ));
             }
             Err(emery_diagnostics::cache::StoreVerifyError::Mismatch(mismatch)) => {
                 return Err(digest_mismatch(
@@ -185,15 +185,15 @@ pub fn locate(
     if entry.is_file() {
         return Ok(AdapterLocation::Cache(entry));
     }
-    Err(Error::Diag {
-        code: "adapter-not-found",
-        detail: format!(
+    Err(diag(
+        "adapter-not-found",
+        format!(
             "adapter `{name}` (axis `{axis}`) is not in the project component cache at {}; seed \
              it with `emery init <path/to/{name}.wasm>` or pin a published version \
              (`emery:{name}@<semver>`)",
             entry.display(),
         ),
-    })
+    ))
 }
 
 /// The locked `adapter-digest-mismatch` envelope for a store entry
@@ -207,11 +207,11 @@ pub fn locate(
 pub fn digest_mismatch(
     subject: &str, phase: &str, mismatch: &emery_diagnostics::cache::DigestMismatch,
 ) -> Error {
-    Error::Diag {
-        code: "adapter-digest-mismatch",
-        detail: format!(
+    diag(
+        "adapter-digest-mismatch",
+        format!(
             "{subject} failed {phase}: recorded digest {} but recomputed {}",
             mismatch.recorded, mismatch.actual,
         ),
-    }
+    )
 }

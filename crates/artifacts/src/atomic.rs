@@ -4,8 +4,10 @@
 
 use std::path::Path;
 
-use emery_error::Error;
+use omnia_guest::Error;
 use serde::Serialize;
+
+use crate::{io, yaml};
 
 /// Serialise `value` as YAML (with a guaranteed trailing newline) and
 /// atomically persist it at `path`. See module-level docs for the
@@ -25,7 +27,7 @@ pub fn yaml_write<T: Serialize>(path: &Path, value: &T) -> Result<(), Error> {
 ///
 /// Returns an error when YAML serialization fails.
 pub fn serialise_yaml<T: Serialize>(value: &T) -> Result<String, Error> {
-    let mut content = serde_saphyr::to_string(value)?;
+    let mut content = serde_saphyr::to_string(value).map_err(yaml)?;
     if !content.ends_with('\n') {
         content.push('\n');
     }
@@ -41,11 +43,11 @@ pub fn serialise_yaml<T: Serialize>(value: &T) -> Result<String, Error> {
 /// Propagates directory, temporary-file, write, sync, and persist failures.
 pub fn bytes_write(path: &Path, bytes: &[u8]) -> Result<(), Error> {
     let parent = path.parent().unwrap_or_else(|| Path::new("."));
-    std::fs::create_dir_all(parent)?;
-    let mut tmp = tempfile::NamedTempFile::new_in(parent)?;
-    std::io::Write::write_all(tmp.as_file_mut(), bytes)?;
-    tmp.as_file_mut().sync_all()?;
-    tmp.persist(path).map_err(|e| Error::Io(e.error))?;
+    std::fs::create_dir_all(parent).map_err(io)?;
+    let mut tmp = tempfile::NamedTempFile::new_in(parent).map_err(io)?;
+    std::io::Write::write_all(tmp.as_file_mut(), bytes).map_err(io)?;
+    tmp.as_file_mut().sync_all().map_err(io)?;
+    tmp.persist(path).map_err(|err| io(err.error))?;
     Ok(())
 }
 
@@ -57,11 +59,11 @@ pub fn bytes_write(path: &Path, bytes: &[u8]) -> Result<(), Error> {
 /// Propagates directory, temporary-file, read, write, sync, and persist failures.
 pub fn copy_write(path: &Path, src: &Path) -> Result<(), Error> {
     let parent = path.parent().unwrap_or_else(|| Path::new("."));
-    std::fs::create_dir_all(parent)?;
-    let mut tmp = tempfile::NamedTempFile::new_in(parent)?;
-    let mut from = std::fs::File::open(src)?;
-    std::io::copy(&mut from, tmp.as_file_mut())?;
-    tmp.as_file_mut().sync_all()?;
-    tmp.persist(path).map_err(|e| Error::Io(e.error))?;
+    std::fs::create_dir_all(parent).map_err(io)?;
+    let mut tmp = tempfile::NamedTempFile::new_in(parent).map_err(io)?;
+    let mut from = std::fs::File::open(src).map_err(io)?;
+    std::io::copy(&mut from, tmp.as_file_mut()).map_err(io)?;
+    tmp.as_file_mut().sync_all().map_err(io)?;
+    tmp.persist(path).map_err(|err| io(err.error))?;
     Ok(())
 }
