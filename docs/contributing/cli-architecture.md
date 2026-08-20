@@ -14,7 +14,7 @@ The engine is versioned by the binary — the binary *contains* its engine, so n
 
 ## Core crate dependency graph
 
-The authoritative crate graph (leaf → root, with per-crate roles) lives in [AGENTS.md](../../AGENTS.md). The headline shape: `error` is the leaf; `engine` owns the domain and the `init` / `specify` operations (shared plumbing in `emery_engine::handler`, resolution in `emery_engine::resolve`); `transport` owns the typed command/HTTP route inventories, clap args, explicit conversions, projectors, and exit contract; the root package's `src/main.rs` owns the native deployment policy inline and its wasm32 lib declares the bare model provider (superseding ADR-0013's WIT-backed `Provider` — paths and adapter dispatch are structural, not provider capabilities); the root binary is one `omnia::runtime!` invocation embedding the engine bytes. Architecture standards beyond the graph (the `.emery/` layout boundary, WASI carve-outs, atomic writes) live in [architecture.md](../standards/architecture.md).
+The authoritative crate graph (leaf → root, with per-crate roles) lives in [AGENTS.md](../../AGENTS.md). The headline shape: `diagnostics` and `artifacts` sit at the bottom; `engine` owns the domain and the `init` / `specify` operations (shared plumbing in `emery_engine::handler`, resolution in `emery_engine::resolve`); `transport` owns the typed command/HTTP route inventories, clap args, explicit conversions, projectors, and exit contract; the root package's `src/main.rs` owns the native deployment policy inline and its wasm32 lib declares the bare model provider (superseding ADR-0013's WIT-backed `Provider` — paths and adapter dispatch are structural, not provider capabilities); the root binary is one `omnia::runtime!` invocation embedding the engine bytes. Architecture standards beyond the graph (the `.emery/` layout boundary, WASI carve-outs, atomic writes) live in [architecture.md](../standards/architecture.md).
 
 ## Dispatch pattern
 
@@ -46,22 +46,21 @@ The exit-code contract is part of the public interface for operators and skill w
 | Code | Constant                 | Meaning                                                                                                                        |
 | ---- | ------------------------ | ------------------------------------------------------------------------------------------------------------------------------ |
 | `0`  | `EXIT_SUCCESS`           | Operation completed successfully                                                                                               |
-| `1`  | `EXIT_GENERIC_FAILURE`   | I/O error, parse error, or any unclassified failure                                                                            |
-| `2`  | `EXIT_VALIDATION_FAILED` | Validation findings, `Error::Validation`, `Error::Argument`, or clap usage errors                                              |
-| `3`  | `EXIT_VERSION_TOO_OLD`   | Binary version is below the `emery` floor in `.emery/project.yaml`, or below an adapter's declared `emery` compatibility floor |
+| `1`  | `EXIT_GENERIC_FAILURE`   | I/O, YAML, `not-initialized`, floor failures (`emery-version-too-old` / `adapter-cli-too-old`), or any other non-`BadRequest` failure |
+| `2`  | `EXIT_VALIDATION_FAILED` | `ErrorKind::BadRequest` (validation, argument) or clap usage errors                                                              |
 
 Guest commands inherit the same contract: `omnia_guest::api::command` projects parser, conversion, and operation outcomes into a buffered command response; the WASI seam forwards its exit and the binary passes it through verbatim.
 
 ## Error handling
 
-Most commands use `emery_error::Error`, a unified error enum with structured variants covering I/O, YAML parsing, validation, permission failures, runtime failures, and more.
+Most commands return `omnia_guest::Error`, constructed with `Error::new(ErrorKind, code, description)`. The kebab `code` is the wire discriminant; `ErrorKind::BadRequest` exits 2 and every other kind exits 1.
 
 The pattern for a command operation:
 
-1. Call into a library crate function that returns `Result<T, emery_error::Error>`
+1. Call into a library crate function that returns `Result<T, omnia_guest::Error>`
 2. Return a typed body implementing `Serialize + Render`
 3. Let the command or HTTP projector render success or apply the shared error contract
 
 ## Public Rust API
 
-The root `emery` package is the Omnia deployment unit. It does not expose a public Rust library surface for consumers. Code that needs Rust APIs imports the member crates directly, for example `emery_engine::project::Project` or `emery_error::Error`.
+The root `emery` package is the Omnia deployment unit. It does not expose a public Rust library surface for consumers. Code that needs Rust APIs imports the member crates directly, for example `emery_engine::project::Project` or `omnia_guest::Error`.

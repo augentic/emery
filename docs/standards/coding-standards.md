@@ -126,7 +126,7 @@ Text mode renders through the body's `emery_engine::handler::Render` impl (`fn r
 
 ## One emit path
 
-Success bodies and failures leave operations as typed values. The projectors in `crates/transport` render those values at the command or HTTP boundary; no handler writes stdout or stderr. If you need a bespoke failure shape, add an `Error` variant with a kebab-case discriminant; do not hand-roll a `*ErrBody` DTO. `emit` stays internal to `crates/transport/src/command/output.rs`.
+Success bodies and failures leave operations as typed values. The projectors in `crates/transport` render those values at the command or HTTP boundary; no handler writes stdout or stderr. If you need a bespoke failure shape, construct `omnia_guest::Error::new` with a kebab `code`; do not hand-roll a `*ErrBody` DTO. `emit` stays internal to `crates/transport/src/command/output.rs`.
 
 ## DTOs
 
@@ -190,21 +190,17 @@ impl From<&Outcome> for HandleBody {
 
 ## Errors
 
-`emery_error::Error` variants are **structured**, not `Variant(String)` catch-alls. The kebab-case identifier in `#[error("…")]` (and in `Error::Diag.code`) is part of the public contract that skills and tests grep for; treat any rename as a breaking change.
+Failures are `omnia_guest::Error`, constructed with `Error::new(ErrorKind, code, description)`. The kebab `code` is the public wire discriminant that skills and tests grep for; treat any rename as a breaking change. Do not use Omnia's `bad_request!` / `not_found!` / `server_error!` macros — they hard-code generic codes.
 
-**Diag-first error policy.** New diagnostic sites use `Error::Diag { code: "<kebab>", detail: format!(…) }`. Promote to a typed `Error::*` variant **only** when:
+- `ErrorKind::BadRequest` — operator/input refusals (exit 2).
+- `ErrorKind::NotFound` — `not-initialized` (exit 1).
+- `ErrorKind::ServerError` — everything else, including I/O, YAML, and floor failures (exit 1).
 
-1. A test or skill destructures the variant's payload, **or**
-2. The variant routes to a non-default `Exit` slot (validation / argument / version-too-old — see [handler-shape.md §"Exit codes"](./handler-shape.md#exit-codes)), **or**
-3. Three or more call sites share the variant's exact shape.
+There is no workspace error enum and no `From<io::Error>` / `From<serde_saphyr::Error>` (orphan rule). Crates that need `?` on those types keep a private two-liner `fn io` / `fn yaml`. Do not bridge through `anyhow`.
 
-The kebab `code` is the wire contract; the Rust variant is for callers that pattern-match. Adding a typed variant for a one-site diagnostic doubles the `variant_str` table for no functional gain. When in doubt, stay on `Diag`.
+**Hints live on the projector.** Long-form recovery guidance is the transport hint table in `crates/transport/src/command/output.rs`, keyed by kebab `code`. Adding a new hint means extending that table, not the error type.
 
-A dedicated typed variant remains correct for entries that already meet the criteria above (`Error::Argument`, `Error::Validation`, `Error::Filesystem`, …). Typed variants must carry data the *wire* exposes; payloads that only round-trip into `detail` belong on `Error::Diag`.
-
-**Hint colocation.** Long-form recovery hints live on the error, not on the renderer. `Error::hint(&self) -> Option<&'static str>` is the single hint surface; `ErrorBody::render_text` calls it. Adding a new hint means extending `Error::hint`, not the renderer.
-
-`unwrap()` and `expect()` are reserved for invariants the type system can't express (e.g. "this enum variant covers `Status::value_variants()`"). Always include a justification string in `expect`. User-facing errors must surface as `Error::*` variants, not panics.
+`unwrap()` and `expect()` are reserved for invariants the type system can't express (e.g. "this enum variant covers `Status::value_variants()`"). Always include a justification string in `expect`. User-facing errors must surface as `omnia_guest::Error`, not panics.
 
 ## `#[non_exhaustive]`
 
@@ -212,7 +208,7 @@ A dedicated typed variant remains correct for entries that already meet the crit
 
 ## YAML, JSON, and atomic writes
 
-YAML (de)serialization goes through `serde-saphyr`, not `serde_yaml_ng` or the deprecated `serde_yaml`. `serde-saphyr` has no `Value` type; for dynamic YAML access deserialize into `serde_json::Value`. Deser and ser errors ride directly on `emery_error::Error::YamlDe(serde_saphyr::Error)` and `Error::YamlSer(serde_saphyr::ser::Error)` — both `#[error(transparent)]` `#[from]` variants — so `?` on a raw `serde_saphyr` result still propagates, the kebab discriminant on the wire stays `yaml` for either side, and call sites that don't care which API tripped match on either variant. Library crates return `Result<…, emery_error::Error>` rather than re-exposing `serde_saphyr::*::Error` types in their own public signatures.
+YAML (de)serialization goes through `serde-saphyr`, not `serde_yaml_ng` or the deprecated `serde_yaml`. `serde-saphyr` has no `Value` type; for dynamic YAML access deserialize into `serde_json::Value`. Deser and ser errors map through the crate's private `fn yaml` onto `omnia_guest::Error` with kebab `yaml` and `ErrorKind::ServerError`. Library crates return `Result<…, omnia_guest::Error>` rather than re-exposing `serde_saphyr::*::Error` types in their own public signatures.
 
 Writes that must not be observed mid-update use the shared atomic helpers in `emery_artifacts::atomic` (`yaml_write` / `bytes_write`). `fs::write` is fine for single-shot scratch files but never for files that other live processes read (e.g. `project.yaml`). See [architecture.md §"Atomic writes"](./architecture.md#atomic-writes) for the rationale.
 

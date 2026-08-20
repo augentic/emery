@@ -20,7 +20,7 @@ pub enum Format {
     Json,
 }
 
-fn io(err: std::io::Error) -> Error {
+fn io(err: impl std::fmt::Display) -> Error {
     Error::new(ErrorKind::ServerError, "io", err.to_string())
 }
 

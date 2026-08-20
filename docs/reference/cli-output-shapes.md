@@ -82,4 +82,4 @@ Every failing verb emits the same flat `ErrorBody` on stderr:
 }
 ```
 
-An optional `hint` key carries a static recovery hint when the error defines one.
+An optional `hint` key carries a static recovery hint when the projector table keys that discriminant.

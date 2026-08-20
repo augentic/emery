@@ -40,8 +40,9 @@ where
             Outcome::Output(output) => {
                 Ok(CommandResponse::success(encode(globals.format, &output, |w, v| v.render(w))?))
             }
-            Outcome::Operation(error) => error_response(globals.format, &error),
-            Outcome::Decode(error) => error_response(globals.format, &error),
+            Outcome::Operation(error) | Outcome::Decode(error) => {
+                error_response(globals.format, &error)
+            }
         }
     }
 

@@ -8,14 +8,14 @@ Every command is implemented by one stateless type implementing `omnia_guest::ap
 
 - **`Input`** is a flat, transport-neutral serde DTO (`#[serde(rename_all = "kebab-case")]`, `#[serde(default)]` on optional fields). HTTP deserializes it from path/query/body; command routing reaches it through an exhaustive `TryFrom<Args>`.
 - **`call(input, context)`** assembles `RequestContext` over the deployed layout, delegates to the deterministic kernel, and returns the typed body.
-- **`type Error = emery_engine::handler::Error`** — the workspace taxonomy plus the report-carrying `Error::Report` shape (below).
+- **`type Error = omnia_guest::Error`** — constructed with `Error::new(ErrorKind, code, description)`; the kebab `code` is the wire discriminant.
 
 Deterministic operations bind `P: Provider` only unless their kernel issues model judgments, in which case they additionally bind `Model` — the one capability the provider still carries. Paths and adapter dispatch are not provider capabilities: paths are fixed constants relative to named preopens, and adapter operations ride the `emery:adapter/source` WIT imports directly.
 
 ```rust
 // GOOD — default shape
 impl<P: Provider> Operation<P> for Frob {
-    type Error = crate::handler::Error;
+    type Error = omnia_guest::Error;
     type Input = FrobInput;
     type Output = FrobBody;
 
@@ -39,24 +39,19 @@ Project-scoped operations assemble the one `emery_engine::handler::RequestContex
 
 Operations never write to stdout. Each returns a typed body implementing `Serialize` for JSON and `Render` for command text output. The HTTP projector always serializes JSON.
 
-### Gate operations ride the error
-
-Check surfaces return `ReportBody` on success and `Error::Report { body, source }` on failure. The command projector renders the report on stdout and the payload-free source error on stderr; the HTTP projector embeds the report under `report`.
-
 ## Errors and their projections
 
-`emery_engine::handler::Error` wraps the workspace `emery_error::Error` taxonomy (`Error::Core`) and adds `Error::Report`. The command `EmeryProjector` in `crates/transport/src/command.rs` owns the taxonomy → exit projection and builds the JSON error body from the underlying taxonomy. `Exit` stays in `crates/transport` — there is no second exit table.
+Operations return `omnia_guest::Error`. The command `EmeryProjector` in `crates/transport/src/command.rs` maps `ErrorKind::BadRequest` to exit 2 and every other kind to exit 1, and builds the JSON `ErrorBody` from `code()` + `description()`. Hints live on the projector, keyed by kebab `code`. `Exit` stays in `crates/transport` — there is no second exit table.
 
 ## Exit codes
 
-The four-slot CLI exit-code table is fixed:
+The three-slot CLI exit-code table is fixed:
 
 | Code | Name | When |
 |---|---|---|
 | 0 | `EXIT_SUCCESS` | Command succeeded |
-| 1 | `EXIT_GENERIC_FAILURE` | Default `Error` → exit 1 |
-| 2 | `EXIT_VALIDATION_FAILED` | `Error::Validation`, undeclared/over-permissioned tool, `Error::Argument` |
-| 3 | `EXIT_VERSION_TOO_OLD` | `Error::CliTooOld` (`emery-version-too-old` in JSON) |
+| 1 | `EXIT_GENERIC_FAILURE` | Any error that is not `ErrorKind::BadRequest` (I/O, YAML, `not-initialized`, floor failures `emery-version-too-old` / `adapter-cli-too-old`) |
+| 2 | `EXIT_VALIDATION_FAILED` | `ErrorKind::BadRequest` (validation, argument); clap usage also lands here from the router |
 
 `Exit::from(&Error)` in [`crates/transport/src/command/output.rs`](../../crates/transport/src/command/output.rs) is the single source of truth. `EmeryProjector` uses it for every terminal operation or conversion error. Do not invent new exit codes.
 

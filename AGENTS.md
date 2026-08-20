@@ -24,14 +24,13 @@ Artifact authority is unchanged in spirit: when authoritative inputs are incompl
 
 ## The Rust workspace
 
-Leaf → root. Each publishing package is `emery-<crate>` on crates.io; Rust `use` paths follow the package name (`emery_error::`, `emery_engine::`, …). The root package stays `publish = false`.
+Leaf → root. Each publishing package is `emery-<crate>` on crates.io; Rust `use` paths follow the package name (`emery_engine::`, `emery_artifacts::`, …). Failures are `omnia_guest::Error`. The root package stays `publish = false`.
 
 ```text
-error        # leaf — thiserror + serde-saphyr only
-diagnostics  # neutral Diagnostic substrate + emery_diagnostics::digest (SHA-256)
+diagnostics  # leaf — Diagnostic substrate + emery_diagnostics::digest (SHA-256)
 artifacts    # artifact types + parsers (evidence, atomic writer, validate registry); no engine deps
 adapter      # the adapter SDK — the Source operations trait (extract + metadata), the WIT package + source! export macro, the engine guest's source::import seam wrappers, seam DTOs, embedded prose registry
-engine       # the spec generator — project model + source bindings, init + specify operations, extract leg (required-extras gate) over the WIT source imports, reconcile/synthesise (embedded synthesis prose), the generation-pointer output home; plus the ported kernels: emery_engine::resolve (resolver::Component, ensure, metadata::deployed) and emery_engine::handler (RequestContext, preopen-relative ExecutionPaths/Locations, Render, Error)
+engine       # the spec generator — project model + source bindings, init + specify operations, extract leg (required-extras gate) over the WIT source imports, reconcile/synthesise (embedded synthesis prose), the generation-pointer output home; plus the ported kernels: emery_engine::resolve (resolver::Component, ensure, metadata::deployed) and emery_engine::handler (RequestContext, preopen-relative ExecutionPaths/Locations, Render)
 transport    # typed command router over Invoker: init + specify + completions, exhaustive TryFrom conversions, projectors, exit contract, HTTP refusal (C3)
 prose        # build-dependency crate — embed-time prompt-corpus walk + link check
 emery (root) # Omnia deployment unit under src/: wasm32 engine guest cdylib (src/lib.rs — bare model provider, wasi:cli/run, HTTP refusal) + shipped runtime (src/main.rs, one omnia::runtime! embedding $OUT_DIR/emery.cwasm; static, CWD-rooted deployment policy inline — the invocation directory mounts as `.`, the CWD-relative .emery-cache backs the cache preopen; adapter guests are declared in the runtime invocation; dynamic resolution is deferred)
@@ -55,9 +54,8 @@ docs/              Developer Guide (mdBook; reference + contributing + standards
 | Code | Name | When |
 | ---- | ------------------------ | ------------------------------------------------------------------ |
 | 0 | `EXIT_SUCCESS` | Command succeeded. |
-| 1 | `EXIT_GENERIC_FAILURE` | Any `Error` variant not listed below (I/O, YAML, `not-initialized`, …). |
-| 2 | `EXIT_VALIDATION_FAILED` | Validation findings, `Error::Validation`, `Error::Argument`. |
-| 3 | `EXIT_VERSION_TOO_OLD` | `Error::CliTooOld` — `project.yaml.emery` is newer than the binary — or `Error::AdapterCliTooOld`. |
+| 1 | `EXIT_GENERIC_FAILURE` | Any error that is not `ErrorKind::BadRequest` (I/O, YAML, `not-initialized`, floor failures `emery-version-too-old` / `adapter-cli-too-old`, …). |
+| 2 | `EXIT_VALIDATION_FAILED` | `ErrorKind::BadRequest` (validation, argument) and clap usage. |
 
 ## Testing philosophy
 

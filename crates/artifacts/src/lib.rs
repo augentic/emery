@@ -7,7 +7,7 @@ pub mod evidence;
 pub mod spec;
 
 /// Map an I/O failure onto the `io` server-error discriminant.
-pub(crate) fn io(err: std::io::Error) -> omnia_guest::Error {
+pub(crate) fn io(err: impl std::fmt::Display) -> omnia_guest::Error {
     omnia_guest::Error::new(omnia_guest::ErrorKind::ServerError, "io", err.to_string())
 }
 

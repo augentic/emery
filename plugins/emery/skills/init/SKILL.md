@@ -10,7 +10,7 @@ argument-hint: <adapter>
 
 ## Invocation
 
-1. **Install or refresh the CLI** — on a machine with no `emery` binary, invoking this skill is consent to install. When `emery` is already on `PATH`, confirm with the operator before reinstalling. Install the latest prebuilt release via Homebrew, or from source; a project whose floor outruns the installed binary fails typed later (`emery-version-too-old`, exit 3) with the same reinstall command as its hint:
+1. **Install or refresh the CLI** — on a machine with no `emery` binary, invoking this skill is consent to install. When `emery` is already on `PATH`, confirm with the operator before reinstalling. Install the latest prebuilt release via Homebrew, or from source; a project whose floor outruns the installed binary fails typed later (`emery-version-too-old`, exit 1) with the same reinstall command as its hint:
 
 ```bash
 brew tap augentic/tap

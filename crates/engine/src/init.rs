@@ -60,7 +60,7 @@ impl<P: Provider> Operation<P> for Init {
         let project_dir = paths.project_root();
 
         if upgrade {
-            return Ok(run_upgrade(project_dir, &paths)?);
+            return run_upgrade(project_dir, &paths);
         }
 
         // Re-entry: an already-initialized project is a no-op that
