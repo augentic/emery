@@ -2,6 +2,7 @@
 //! axis, record the authored bindings on `project.yaml`, and scaffold
 //! `.emery/`.
 
+use std::future::Future;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 
@@ -46,60 +47,65 @@ impl<P: Provider> Operation<P> for Init {
     type Input = InitInput;
     type Output = InitBody;
 
-    async fn call(
+    fn call(
         input: Self::Input, _context: CallContext<'_, P>,
-    ) -> Result<Self::Output, Self::Error> {
-        let InitInput {
-            adapters,
-            values,
-            name,
-            description,
-            upgrade,
-        } = input;
-        let paths = ExecutionPaths::deployed();
-        let project_dir = paths.project_root();
-
-        if upgrade {
-            return run_upgrade(project_dir, &paths);
-        }
-
-        // Re-entry: an already-initialized project is a no-op that
-        // routes the operator to `--upgrade`.
-        if Project::path(project_dir).exists() {
-            let project = Project::load(project_dir)?;
-            return Ok(InitBody::from_project(InitMode::AlreadyInitialized, &project, project_dir));
-        }
-
-        if adapters.is_empty() && values.is_empty() {
-            return Err(validation(
-                "init-source-required",
-                "emery init requires at least one source adapter",
-                "pass `<adapter>` (package reference or local component path) and/or `--value \
-                 <adapter>=<text>` for an inline source",
-            ));
-        }
-
-        let mut sources = Vec::new();
-        for value in &adapters {
-            let bound = bind(value, &paths, BindingContent::Workspace(".".to_string()))?;
-            push_unique(&mut sources, bound)?;
-        }
-        for entry in &values {
-            let (adapter, text) = split_value(entry)?;
-            let bound = bind(adapter, &paths, BindingContent::Value(text.to_string()))?;
-            push_unique(&mut sources, bound)?;
-        }
-
-        let project = Project {
-            name: resolved_name(project_dir, name.as_deref()),
-            description,
-            emery_version: Some(env!("CARGO_PKG_VERSION").to_string()),
-            sources,
-        };
-        std::fs::create_dir_all(project_dir.join(".emery")).map_err(io)?;
-        project.store(project_dir)?;
-        Ok(InitBody::from_project(InitMode::Scaffolded, &project, project_dir))
+    ) -> impl Future<Output = Result<Self::Output, Self::Error>> {
+        std::future::ready(run(input))
     }
+}
+
+// Sync kernel of `Init::call` — `?` cannot live in a `ready`-returning wrapper.
+fn run(input: InitInput) -> Result<InitBody, Error> {
+    let InitInput {
+        adapters,
+        values,
+        name,
+        description,
+        upgrade,
+    } = input;
+    let paths = ExecutionPaths::deployed();
+    let project_dir = paths.project_root();
+
+    if upgrade {
+        return run_upgrade(project_dir, &paths);
+    }
+
+    // Re-entry: an already-initialized project is a no-op that
+    // routes the operator to `--upgrade`.
+    if Project::path(project_dir).exists() {
+        let project = Project::load(project_dir)?;
+        return Ok(InitBody::from_project(InitMode::AlreadyInitialized, &project, project_dir));
+    }
+
+    if adapters.is_empty() && values.is_empty() {
+        return Err(validation(
+            "init-source-required",
+            "emery init requires at least one source adapter",
+            "pass `<adapter>` (package reference or local component path) and/or `--value \
+             <adapter>=<text>` for an inline source",
+        ));
+    }
+
+    let mut sources = Vec::new();
+    for value in &adapters {
+        let bound = bind(value, &paths, BindingContent::Workspace(".".to_string()))?;
+        push_unique(&mut sources, bound)?;
+    }
+    for entry in &values {
+        let (adapter, text) = split_value(entry)?;
+        let bound = bind(adapter, &paths, BindingContent::Value(text.to_string()))?;
+        push_unique(&mut sources, bound)?;
+    }
+
+    let project = Project {
+        name: resolved_name(project_dir, name.as_deref()),
+        description,
+        emery_version: Some(env!("CARGO_PKG_VERSION").to_string()),
+        sources,
+    };
+    std::fs::create_dir_all(project_dir.join(".emery")).map_err(io)?;
+    project.store(project_dir)?;
+    Ok(InitBody::from_project(InitMode::Scaffolded, &project, project_dir))
 }
 
 // The `--upgrade` re-entry: re-ensure every recorded binding and bump

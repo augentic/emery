@@ -4,6 +4,7 @@
 
 cfg_if::cfg_if! {
     if #[cfg(not(target_arch = "wasm32"))] {
+        use std::future::Future;
         use std::sync::Arc;
 
         use anyhow::Context as _;
@@ -61,28 +62,36 @@ cfg_if::cfg_if! {
         impl omnia::Backend for ScriptedModel {
             type ConnectOptions = omnia::NoOptions;
 
-            async fn connect_with(_options: omnia::NoOptions) -> anyhow::Result<Self> {
-                let dir = std::env::var(SCRIPT_ENV)
-                    .with_context(|| format!("{SCRIPT_ENV} must name the model script directory"))?;
-                let mut files: Vec<_> = std::fs::read_dir(&dir)
-                    .with_context(|| format!("reading the model script directory `{dir}`"))?
-                    .collect::<Result<Vec<_>, _>>()?
-                    .into_iter()
-                    .map(|entry| entry.path())
-                    .filter(|path| path.is_file())
-                    .collect();
-                files.sort();
-                let answers: Vec<String> = files
-                    .iter()
-                    .map(std::fs::read_to_string)
-                    .collect::<Result<_, _>>()
-                    .context("reading a script answer")?;
-                anyhow::ensure!(
-                    !answers.is_empty(),
-                    "the script directory `{dir}` carries no answers"
-                );
-                Ok(Self(Scripted::answers(answers)))
+            fn connect_with(
+                _options: omnia::NoOptions,
+            ) -> impl Future<Output = anyhow::Result<Self>> {
+                std::future::ready(connect())
             }
+        }
+
+        // Sync kernel of `ScriptedModel::connect_with` — `?` cannot live in a
+        // `ready`-returning wrapper.
+        fn connect() -> anyhow::Result<ScriptedModel> {
+            let dir = std::env::var(SCRIPT_ENV)
+                .with_context(|| format!("{SCRIPT_ENV} must name the model script directory"))?;
+            let mut files: Vec<_> = std::fs::read_dir(&dir)
+                .with_context(|| format!("reading the model script directory `{dir}`"))?
+                .collect::<Result<Vec<_>, _>>()?
+                .into_iter()
+                .map(|entry| entry.path())
+                .filter(|path| path.is_file())
+                .collect();
+            files.sort();
+            let answers: Vec<String> = files
+                .iter()
+                .map(std::fs::read_to_string)
+                .collect::<Result<_, _>>()
+                .context("reading a script answer")?;
+            anyhow::ensure!(
+                !answers.is_empty(),
+                "the script directory `{dir}` carries no answers"
+            );
+            Ok(ScriptedModel(Scripted::answers(answers)))
         }
 
         impl WasiModelCtx for ScriptedModel {
