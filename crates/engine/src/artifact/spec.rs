@@ -103,11 +103,11 @@ impl Requirement {
             while rest.get(cursor).is_some_and(|line| line.is_blank()) {
                 cursor += 1;
             }
-            let value = rest
-                .get(cursor)
-                .and_then(|line| line.0.strip_prefix(key))
-                .map(str::trim)
-                .ok_or_else(|| format!("`{subject}`: no `{key}` line where one is expected"))?;
+            let value =
+                rest.get(cursor)
+                    .and_then(|line| line.0.strip_prefix(key))
+                    .map(str::trim)
+                    .ok_or_else(|| format!("`{subject}`: no `{key}` line where one is expected"))?;
             cursor += 1;
             Ok(value)
         };

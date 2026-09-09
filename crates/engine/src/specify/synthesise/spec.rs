@@ -275,7 +275,7 @@ fn note(class: &[Contributor]) -> String {
     let lead = &class[0];
 
     format!(
-        "Note: {sources} ({authority}, {id}): {statement}",
+        "{NOTE} {sources} ({authority}, {id}): {statement}",
         authority = lead.authority,
         id = lead.id,
         statement = normalise(&lead.statement),
