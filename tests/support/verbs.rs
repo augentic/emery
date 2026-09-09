@@ -4,7 +4,8 @@
 //! which commands exist learns it from the shipped surface rather than from a
 //! list that would have to be kept in step by hand.
 
-/// Sorted live verb names from the `Commands:` section of `emery --help`.
+/// Extracts the sorted verb names from the `Commands:` section of
+/// `emery --help`.
 pub fn verbs(help: &str) -> Vec<String> {
     let mut names: Vec<String> = help
         .lines()

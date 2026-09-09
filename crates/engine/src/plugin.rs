@@ -22,10 +22,10 @@ use serde::{Deserialize, Serialize};
 
 use crate::preopen_path;
 
-/// One run's adapter loads over a provider: loads memoize by identity
-/// for the run, so a second source on the same adapter reuses the held
-/// guest and a disagreeing pin refuses `already-active` from the memo
-/// rather than the host.
+/// Loads adapters for one run over a provider. Loads are memoized by
+/// identity, so a second source on the same adapter reuses the held guest,
+/// and a disagreeing pin is refused as `already-active` by the memo rather
+/// than by the host.
 pub struct Loader<'a, P: Source + Plugins> {
     provider: &'a P,
     // The memo wraps the same provider; `PluginCache` exposes no accessor
@@ -34,7 +34,7 @@ pub struct Loader<'a, P: Source + Plugins> {
 }
 
 impl<'a, P: Source + Plugins> Loader<'a, P> {
-    /// An empty memo over `provider`.
+    /// Creates a loader with an empty memo over `provider`.
     pub const fn new(provider: &'a P) -> Self {
         Self {
             provider,
@@ -63,14 +63,15 @@ impl<'a, P: Source + Plugins> Loader<'a, P> {
     }
 }
 
-// The id a bare or local adapter dispatches under: the `source:` role
+// Builds the id a bare or local adapter dispatches under: the `source:` role
 // prefix over its name. Registry packages dispatch under the package
 // reference itself.
 fn dispatch_id(name: &str) -> String {
     format!("source:{name}")
 }
 
-// Refuse when the running emery is older than the adapter's minimum.
+// Refuses the adapter when the running emery is older than the minimum its
+// `emery-version` metadata declares.
 fn check_version<P: Source>(provider: &P, name: &str, id: &str) -> Result<(), Error> {
     let Some(declared) = provider.metadata(id).emery_version else {
         return Ok(());
@@ -163,7 +164,8 @@ impl FromStr for AdapterRef {
 }
 
 impl fmt::Display for AdapterRef {
-    // The selector as an operator writes it; a component renders its path.
+    // Writes the selector as an operator would type it; a component renders
+    // as its path.
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Package {
@@ -205,8 +207,8 @@ impl AdapterRef {
         }
     }
 
-    // The adapter name is the file stem, minus an `emery` crate prefix,
-    // in kebab case.
+    // Builds a component reference from `path`, naming the adapter after the
+    // file stem minus any `emery_` / `emery-` crate prefix, in kebab case.
     fn component(path: &str) -> Result<Self, Error> {
         let stem = Path::new(path)
             .file_stem()
@@ -221,7 +223,7 @@ impl AdapterRef {
         })
     }
 
-    // The `omnia:plugins/loader` request this selector names, or `None`
+    // Builds the `omnia:plugins/loader` request this selector names — `None`
     // for a bare name, which dispatches a statically declared guest.
     fn request(
         &self, pin: Option<&Digest>, registry: Option<&str>,

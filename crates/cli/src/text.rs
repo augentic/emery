@@ -14,7 +14,8 @@ use std::fmt;
 use emery_engine::show::{Document, ShowBody};
 use emery_engine::specify::{Changes, SpecifyBody};
 
-/// The `specify` result line and its indented detail.
+/// Writes the `specify` result: the committed-revision line and its indented
+/// detail.
 pub fn specify(body: &SpecifyBody, out: &mut dyn fmt::Write) -> fmt::Result {
     writeln!(out, "committed revision {}", body.revision)?;
     writeln!(out, "  requirements: {}", body.requirements)?;
@@ -31,7 +32,7 @@ pub fn specify(body: &SpecifyBody, out: &mut dyn fmt::Write) -> fmt::Result {
     Ok(())
 }
 
-// One line per changed section, prefixed by its document.
+// Writes one line per changed section, prefixed by its document.
 fn changes(out: &mut dyn fmt::Write, document: Document, changes: &Changes) -> fmt::Result {
     let document = document.file();
     for heading in &changes.added {
@@ -46,9 +47,9 @@ fn changes(out: &mut dyn fmt::Write, document: Document, changes: &Changes) -> f
     Ok(())
 }
 
-/// The document alone — a deliberate exception to the result-line
-/// convention so `emery show spec` pipes cleanly; the revision id rides
-/// the JSON envelope.
+/// Writes the document body alone — a deliberate exception to the
+/// result-line convention so `emery show spec` pipes cleanly; the revision id
+/// rides the JSON envelope.
 pub fn show(body: &ShowBody, out: &mut dyn fmt::Write) -> fmt::Result {
     out.write_str(&body.body)
 }

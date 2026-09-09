@@ -17,7 +17,6 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 
 use emery_source::types::{Authority, ClaimKind};
-use omnia_guest::model::Findings;
 use omnia_guest::{Error, Model};
 use schemars::JsonSchema;
 use serde::Deserialize;
@@ -25,14 +24,15 @@ use serde_json::{Value, json};
 
 use crate::artifact::Status;
 use crate::specify::SourceEvidence;
-use crate::specify::brief::Brief;
+use crate::specify::brief::{Brief, Review};
 
 /// Derives the provenance of every requirement in `sources`, asking the
 /// model to group the claims on any run over two or more sources.
 ///
 /// # Errors
 ///
-/// Returns the model failure or the exhausted grouping findings.
+/// A model failure is `bad_gateway`; an answer outside the schema, or a
+/// grouping the backend could not repair within its rounds, is `bad_request`.
 pub async fn derive<M: Model>(
     model: &M, sources: &[SourceEvidence],
 ) -> Result<Vec<Provenance>, Error> {
@@ -43,9 +43,9 @@ pub async fn derive<M: Model>(
     Claims::collect(sources).judge(model).await
 }
 
-// The provenance the floor alone derives: byte-equal ids are one
-// requirement, whitespace-equal statements one class. What a run over one
-// source gets.
+// Derives provenance from the deterministic floor alone — byte-equal ids are
+// one requirement, whitespace-equal statements one class — which is all a run
+// over one source gets.
 fn floor(sources: &[SourceEvidence]) -> Vec<Provenance> {
     let claims = Claims::collect(sources);
     claims.rows(&claims.floor())
@@ -85,9 +85,9 @@ pub struct Provenance {
 }
 
 impl Provenance {
-    // Highest authority first, source order within a class; one class
-    // agrees, a unique top authority wins divergence, top-authority peers
-    // in different classes conflict; an uncovered agreed row is unknown.
+    // Builds a row from its classes, sorted by authority then source order. One
+    // class is agreed (unknown when no criterion covers it); several are a
+    // divergence when one class holds the top authority alone, else a conflict.
     fn of(mut classes: Vec<Vec<Contributor>>, criteria: &[&str]) -> Self {
         for class in &mut classes {
             class.sort_by_key(|member| (member.authority.rank(), member.index));
@@ -138,8 +138,8 @@ impl Provenance {
         &self.classes
     }
 
-    /// Every contributing source key, highest authority first and source
-    /// order within an authority.
+    /// Lists every contributing source key, highest authority first and
+    /// source order within an authority.
     pub fn sources(&self) -> impl Iterator<Item = &str> {
         let mut members: Vec<&Contributor> = self.classes.iter().flatten().collect();
         members.sort_by_key(|member| (member.authority.rank(), member.index));
@@ -198,8 +198,8 @@ impl<'a> Claims<'a> {
         }
     }
 
-    // The deterministic floor: byte-equal ids are one group, and within a
-    // group whitespace-equal statements are one class.
+    // Computes the deterministic floor grouping: byte-equal ids are one group,
+    // and within a group whitespace-equal statements are one class.
     fn floor(&self) -> Grouping {
         let mut groups: Vec<(&str, Group)> = Vec::new();
         for (index, claim) in self.requirements.iter().enumerate() {
@@ -226,7 +226,7 @@ impl<'a> Claims<'a> {
         }
     }
 
-    // Rows in first-seen order of each group's earliest claim.
+    // Turns a grouping into rows, ordered by each group's earliest claim.
     fn rows(&self, grouping: &Grouping) -> Vec<Provenance> {
         let mut groups: Vec<(usize, Vec<Vec<Contributor>>)> = grouping
             .groups
@@ -255,8 +255,8 @@ impl Brief for Claims<'_> {
     const NAME: &'static str = "grouping";
     const PROSE: &'static [&'static str] = &["synthesis/grouping.md"];
 
-    // Every index is below the claim count and at least one group is
-    // answered.
+    // Tightens the derived schema to this run: every index at most the last
+    // claim's, and at least one group.
     fn hints(&self, schema: &mut Value) {
         let last = self.requirements.len().saturating_sub(1);
         for pointer in ["/properties/claims/items", "/properties/classes/items/items"] {
@@ -267,22 +267,23 @@ impl Brief for Claims<'_> {
         schema["properties"]["groups"]["minItems"] = json!(1);
     }
 
-    // Both levels are partitions, and no byte-equal-id pair is split.
-    fn verify(&self, answer: &Grouping) -> Result<(), Findings> {
-        let mut findings = Vec::new();
+    // Verifies a candidate grouping: every claim in exactly one group, every
+    // group's claims in exactly one class, and no byte-equal ids split across
+    // groups.
+    fn verify(&self, answer: &Grouping, review: &mut Review) {
         let count = self.requirements.len();
         let mut placed: BTreeMap<usize, usize> = BTreeMap::new();
 
         for (position, group) in answer.groups.iter().enumerate() {
             if group.claims.is_empty() {
-                findings.push(format!("- group {position} has no claims"));
+                review.note(format_args!("group {position} has no claims"));
             }
 
             for &index in &group.claims {
                 if index >= count {
-                    findings.push(format!("- group {position}: claim {index} does not exist"));
+                    review.note(format_args!("group {position}: claim {index} does not exist"));
                 } else if placed.insert(index, position).is_some() {
-                    findings.push(format!("- claim {index} appears in more than one group"));
+                    review.note(format_args!("claim {index} appears in more than one group"));
                 }
             }
 
@@ -290,29 +291,29 @@ impl Brief for Claims<'_> {
             let mut classed = BTreeSet::new();
             for class in &group.classes {
                 if class.is_empty() {
-                    findings.push(format!("- group {position} has an empty class"));
+                    review.note(format_args!("group {position} has an empty class"));
                 }
 
                 for &index in class {
                     if !members.contains(&index) {
-                        findings.push(format!(
-                            "- group {position}: class member {index} is not one of its claims"
+                        review.note(format_args!(
+                            "group {position}: class member {index} is not one of its claims"
                         ));
                     } else if !classed.insert(index) {
-                        findings.push(format!(
-                            "- group {position}: claim {index} appears in more than one class"
+                        review.note(format_args!(
+                            "group {position}: claim {index} appears in more than one class"
                         ));
                     }
                 }
             }
 
             for index in members.difference(&classed) {
-                findings.push(format!("- group {position}: claim {index} is in no class"));
+                review.note(format_args!("group {position}: claim {index} is in no class"));
             }
         }
 
         for index in (0..count).filter(|index| !placed.contains_key(index)) {
-            findings.push(format!("- claim {index} is in no group"));
+            review.note(format_args!("claim {index} is in no group"));
         }
 
         // The floor: byte-equal ids may not be split across groups.
@@ -325,24 +326,20 @@ impl Brief for Claims<'_> {
 
         for (id, positions) in by_id {
             if positions.len() > 1 {
-                findings.push(format!("- claims sharing the id `{id}` are split across groups"));
+                review.note(format_args!("claims sharing the id `{id}` are split across groups"));
             }
         }
-
-        if !findings.is_empty() {
-            return Err(findings);
-        }
-
-        Ok(())
     }
 
-    // The rows the accepted grouping yields.
+    // Turns the accepted grouping into requirement rows.
     fn into_output(self, answer: Grouping) -> Self::Output {
         self.rows(&answer)
     }
 }
 
-// The turn: every claim indexed, authority withheld, the floor stated.
+// Renders the user turn of the prompt: every requirement claim with its index
+// (authority withheld), then the floor's pre-merged groups the answer may not
+// split.
 impl fmt::Display for Claims<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str(
@@ -387,13 +384,14 @@ impl fmt::Display for Claims<'_> {
     }
 }
 
-// A criterion covers a requirement when it is that claim id or a dotted
-// child of it: `session.timeout.idle` covers `session.timeout`.
+// Tells whether `criterion` covers `requirement`: it must be that claim id or
+// a dotted child of it (`session.timeout.idle` covers `session.timeout`).
 fn covers(criterion: &str, requirement: &str) -> bool {
     criterion.strip_prefix(requirement).is_some_and(|rest| rest.is_empty() || rest.starts_with('.'))
 }
 
-// Whitespace-collapsed text, so a reflowed statement still matches.
+// Collapses every run of whitespace to one space, so a reflowed statement
+// still matches.
 pub fn normalise(text: &str) -> String {
     text.split_whitespace().collect::<Vec<_>>().join(" ")
 }

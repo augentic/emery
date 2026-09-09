@@ -178,7 +178,9 @@ fn plugin_dir() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("plugins/emery")
 }
 
-// Require a standalone `emery`, excluding `.emery/` and `emery-adapters`.
+// Collects every standalone `emery` mention in `text` — a `/emery:<skill>`
+// reference or a CLI invocation — skipping `.emery/` paths and
+// `emery-adapters`.
 fn mentions_in(text: &str, out: &mut Vec<Mention>) {
     let bytes = text.as_bytes();
     let mut i = 0;
@@ -236,7 +238,8 @@ fn is_kebab(token: &str) -> bool {
         && !token.starts_with('-')
 }
 
-// Return the first live verb and the first unconsumed token.
+// Returns the first live verb among `tokens` and the first token it could
+// not consume.
 fn walk_verb<'a>(
     tokens: &[&'a str], verbs: &BTreeSet<String>,
 ) -> (Option<String>, Option<&'a str>) {

@@ -119,8 +119,8 @@ async fn route_budget() {
 }
 
 // A run naming no sources discovers the project-root `emery.toml`; with no
-// file to discover it refuses typed and writes nothing. The CWD move
-// is safe under nextest's process-per-test isolation.
+// file to discover it fails with a typed error and writes nothing. The CWD
+// move is safe under nextest's process-per-test isolation.
 #[tokio::test]
 async fn no_sources() {
     let dir = tempfile::TempDir::new().expect("tempdir");
@@ -152,7 +152,8 @@ async fn default_config() {
     assert!(provider.storage.is_empty(), "a refused run writes nothing");
 }
 
-// `--config` carries the whole source list; mixing refuses typed.
+// `--config` carries the whole source list; mixing it with argv sources is
+// refused with a typed error.
 #[tokio::test]
 async fn mixed_sources() {
     let provider = Provider::idle();
@@ -167,8 +168,8 @@ async fn mixed_sources() {
     assert!(provider.storage.is_empty(), "a refused run writes nothing");
 }
 
-// Each source binds once; a repeated key refuses typed whichever
-// carrier repeats it.
+// Each source binds once; a repeated key is refused with a typed error
+// whichever carrier repeats it.
 #[tokio::test]
 async fn duplicate() {
     let provider = Provider::idle();
@@ -201,7 +202,8 @@ async fn old_flags() {
     }
 }
 
-// The read verb fails typed before any revision is committed.
+// `show` fails with a typed `spec-not-generated` error before any revision
+// is committed.
 #[tokio::test]
 async fn no_revision() {
     let provider = Provider::idle();

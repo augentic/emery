@@ -42,7 +42,8 @@ fn main() {
     }
 }
 
-// Runtime options and Cargo's target triple must match the consuming binary.
+// Precompiles the component ahead of time for the consuming binary; the
+// runtime options and Cargo's target triple must match it.
 fn precompile(raw: &std::path::Path, out: &std::path::Path) {
     let options = omnia::RuntimeOptions::load_env().expect("runtime options from the build env");
     let mut config = omnia::wasmtime::Config::from(&options);
@@ -98,12 +99,9 @@ fn build_engine() -> PathBuf {
     target_dir.join(WASM_TARGET).join(if release { "release" } else { "debug" }).join("emery.wasm")
 }
 
-// `OUT_DIR` is `<target>/<profile>/build/emery-<hash>/out`, and the hash
-// moves with every feature set, profile, or lock change; nesting the child
-// target directory under it left a full wasm32 build tree behind each time.
-// A sibling of the profile directory is reused across those configurations
-// and still holds its own lock, so the child never waits on the parent's.
-// An unexpected layout falls back to the isolated per-hash directory.
+// Picks the child build's target directory: a sibling of the outer profile
+// directory, shared across feature sets, profiles, and lock changes but with
+// its own lock, so the child never waits on the parent; else under `OUT_DIR`.
 fn nested_target_dir(out_dir: &Path) -> PathBuf {
     out_dir
         .ancestors()
@@ -113,8 +111,9 @@ fn nested_target_dir(out_dir: &Path) -> PathBuf {
         .map_or_else(|| out_dir.join("engine"), |target| target.join(NESTED_TARGET))
 }
 
-// Prevent host flags from leaking into wasm; preserve Cargo settings and the
-// inherited toolchain to avoid mixed-compiler E0514 failures.
+// Strips Cargo and rustc variables from the child's environment so host
+// flags cannot leak into the wasm build and the child uses the inherited
+// toolchain (a mixed compiler fails with E0514); `CARGO_HOME`/offline stay.
 fn sanitize(child: &mut Command) {
     for (key, _) in std::env::vars_os() {
         let Some(key) = key.to_str() else { continue };
@@ -128,8 +127,8 @@ fn sanitize(child: &mut Command) {
     }
 }
 
-// A successful probe fails fast on a missing stdlib; probe failures defer to
-// the child build, which reports the same installation hint.
+// Probes for the wasm32 stdlib so a missing target fails fast; when the probe
+// itself cannot run, the child build reports the same installation hint.
 fn check_wasm_target() {
     let rustc = std::env::var_os("RUSTC").unwrap_or_else(|| "rustc".into());
     let Ok(output) =

@@ -11,16 +11,15 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::{self, Write as _};
 
 use emery_source::claims::DOTTED_KEBAB_PATTERN;
-use omnia_guest::model::Findings;
 use schemars::JsonSchema;
 use serde::Deserialize;
 use serde_json::{Value, json};
 
-use crate::artifact::{HEADING, ReqId, SCENARIO, Status};
+use crate::artifact::{HEADING, ID, NOTE, ReqId, SCENARIO, SOURCES, STATUS, Status};
 use crate::specify::SourceEvidence;
-use crate::specify::brief::Brief;
+use crate::specify::brief::{Brief, Review};
 use crate::specify::provenance::{Contributor, Provenance, normalise};
-use crate::specify::synthesise::{document, line, paragraphs, render_claims};
+use crate::specify::synthesise::{document, render_claims};
 
 /// What the engine needs to ask the model for `spec.md` and to verify its
 /// draft: the extracted evidence and the requirement rows.
@@ -68,9 +67,8 @@ impl Brief for SpecBrief<'_> {
     // Verifies a candidate draft against the rows: every row drafted exactly
     // once and nothing else, at least one scenario per entry with one-line
     // fields, a body on every row except a conflict row, no reserved opener.
-    fn verify(&self, answer: &SpecAnswer) -> Result<(), Findings> {
-        let mut findings = Vec::new();
-        paragraphs(&answer.preamble, "preamble", &mut findings);
+    fn verify(&self, answer: &SpecAnswer, review: &mut Review) {
+        review.paragraphs(&answer.preamble, "preamble");
 
         let by_subject: BTreeMap<&str, &Provenance> =
             self.rows.iter().map(|row| (row.subject(), row)).collect();
@@ -78,52 +76,46 @@ impl Brief for SpecBrief<'_> {
         for requirement in &answer.requirements {
             let subject = requirement.subject.as_str();
             if !seen.insert(subject) {
-                findings.push(format!("- `{subject}` is drafted more than once"));
+                review.note(format_args!("`{subject}` is drafted more than once"));
                 continue;
             }
 
             let Some(row) = by_subject.get(subject) else {
-                findings.push(format!("- `{subject}` is not a requirement row"));
+                review.note(format_args!("`{subject}` is not a requirement row"));
                 continue;
             };
 
             let label = format!("`{subject}`");
-            paragraphs(&requirement.body, &label, &mut findings);
+            review.paragraphs(&requirement.body, &label);
 
             // A conflict row's statements are the renderer's notes, so its
             // body would assert what the operator has yet to reconcile.
             let conflict = row.status() == Status::Conflict;
             if conflict && !requirement.body.is_empty() {
-                findings.push(format!("- {label} is a conflict row and carries a body"));
+                review.note(format_args!("{label} is a conflict row and carries a body"));
             } else if !conflict && requirement.body.is_empty() {
-                findings.push(format!("- {label} has no body paragraph"));
+                review.note(format_args!("{label} has no body paragraph"));
             }
 
             if requirement.scenarios.is_empty() {
-                findings.push(format!("- {label} has no scenario"));
+                review.note(format_args!("{label} has no scenario"));
             }
 
             for scenario in &requirement.scenarios {
                 for (field, text) in
                     [("name", &scenario.name), ("when", &scenario.when), ("then", &scenario.then)]
                 {
-                    line(text, format_args!("{label} scenario `{field}`"), &mut findings);
+                    review.line(text, format_args!("{label} scenario `{field}`"));
                 }
                 for given in &scenario.given {
-                    line(given, format_args!("{label} scenario `given`"), &mut findings);
+                    review.line(given, format_args!("{label} scenario `given`"));
                 }
             }
         }
 
         for subject in by_subject.keys().filter(|subject| !seen.contains(*subject)) {
-            findings.push(format!("- requirement row `{subject}` is not drafted"));
+            review.note(format_args!("requirement row `{subject}` is not drafted"));
         }
-
-        if !findings.is_empty() {
-            return Err(findings);
-        }
-
-        Ok(())
     }
 
     // Renders `spec.md`: the rows in order, each with its drafted content.
@@ -140,7 +132,7 @@ impl Brief for SpecBrief<'_> {
             let tag = row.status().tag().map(|tag| format!(" [{tag}]")).unwrap_or_default();
             blocks.push(format!("{HEADING} {}{tag}", row.subject()));
             blocks.push(format!(
-                "ID: {id}\nSources: [{sources}]\nStatus: {status}",
+                "{ID} {id}\n{SOURCES} [{sources}]\n{STATUS} {status}",
                 id = ReqId::nth(index),
                 sources = row.sources().collect::<Vec<_>>().join(", "),
                 status = row.status(),
@@ -264,13 +256,13 @@ fn notes(row: &Provenance) -> Option<String> {
         Status::Divergence => lines.extend(row.classes().iter().skip(1).map(|class| note(class))),
         Status::Conflict => {
             lines.extend(row.classes().iter().map(|class| note(class)));
-            lines.push("Note: Operator reconciliation required.".to_string());
+            lines.push(format!("{NOTE} Operator reconciliation required."));
         }
         Status::Agreed | Status::Unknown => {}
     }
 
     if !row.covered() {
-        lines.push("Note: acceptance criteria not evidenced.".to_string());
+        lines.push(format!("{NOTE} acceptance criteria not evidenced."));
     }
 
     (!lines.is_empty()).then(|| lines.join("\n"))

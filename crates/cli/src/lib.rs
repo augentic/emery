@@ -48,7 +48,8 @@ const NAME: &str = "emery";
 // (`EMERY_REQUEST_ID`, `EMERY_CORRELATION_ID`, `EMERY_CAUSATION_ID`).
 const ENV_PREFIX: &str = "EMERY";
 
-/// Parse and execute one argument vector over `provider`, buffering both channels.
+/// Parses and executes one argument vector over `provider`, buffering both
+/// output channels.
 ///
 /// Clap's own outcomes — help and version on stdout at exit 0, a usage
 /// error on stderr at `USAGE_EXIT` — are complete responses before any
@@ -178,8 +179,8 @@ impl From<DocumentArg> for Document {
     }
 }
 
-// The remedy hints the failure envelope carries, keyed by the `error`
-// discriminant: flag and verb vocabulary lives here, never in engine
+// Looks up the remedy hint the failure envelope carries for an `error`
+// discriminant; flag and verb vocabulary lives here, never in engine
 // descriptions.
 fn hint(code: &str) -> Option<Cow<'static, str>> {
     let hint = match code {

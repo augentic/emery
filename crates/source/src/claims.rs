@@ -16,7 +16,7 @@ use crate::types::{Claim, ClaimKind, Evidence};
 /// `pattern` and is enforced again in code.
 pub const DOTTED_KEBAB_PATTERN: &str = "^[a-z0-9]+(-[a-z0-9]+)*(\\.[a-z0-9]+(-[a-z0-9]+)*)*$";
 
-/// Every id and extras finding over `claims`.
+/// Collects every id and extras finding over `claims`.
 #[must_use]
 pub fn findings(claims: &[Claim]) -> Vec<String> {
     let mut findings = id_findings(claims);
@@ -24,7 +24,8 @@ pub fn findings(claims: &[Claim]) -> Vec<String> {
     findings
 }
 
-/// Findings for dotted-kebab claim ids and required-id kinds.
+/// Reports every claim whose id breaks the dotted-kebab grammar, and every
+/// requirement, criterion, or example claim that carries no id at all.
 #[must_use]
 pub fn id_findings(claims: &[Claim]) -> Vec<String> {
     let mut findings = Vec::new();
@@ -49,7 +50,7 @@ pub fn id_findings(claims: &[Claim]) -> Vec<String> {
     findings
 }
 
-/// Findings for absent required per-kind extras.
+/// Reports every claim that is missing an extra its kind requires.
 #[must_use]
 pub fn extras_findings(claims: &[Claim]) -> Vec<String> {
     let mut findings = Vec::new();
@@ -67,13 +68,13 @@ pub fn extras_findings(claims: &[Claim]) -> Vec<String> {
 }
 
 impl Evidence {
-    /// Every `type` claim.
+    /// Yields every `type` claim.
     pub fn types(&self) -> impl Iterator<Item = &Claim> {
         self.claims.iter().filter(|claim| claim.kind == ClaimKind::Type)
     }
 
-    /// Every id and extras finding over the document's claims; empty when
-    /// the document passes the gate.
+    /// Collects every id and extras finding over the document's claims; empty
+    /// when the document passes the gate.
     #[must_use]
     pub fn findings(&self) -> Vec<String> {
         findings(&self.claims)
@@ -128,8 +129,8 @@ fn is_dotted_kebab(value: &str) -> bool {
     !value.is_empty() && value.split('.').all(is_kebab)
 }
 
-/// The kebab grammar shared by claim-id segments, source keys, and
-/// adapter names: `[a-z0-9]+(-[a-z0-9]+)*`.
+/// Tells whether `value` follows the kebab grammar shared by claim-id
+/// segments, source keys, and adapter names: `[a-z0-9]+(-[a-z0-9]+)*`.
 #[must_use]
 pub fn is_kebab(value: &str) -> bool {
     !value.is_empty()

@@ -37,7 +37,9 @@ use crate::preopen_path;
 use crate::store::Store;
 pub use crate::store::{Changes, Diff};
 
-/// Run one `specify` over the context's provider.
+/// Runs one `specify` over the context's provider: checks the source list,
+/// extracts every source, derives the requirement rows, synthesises the two
+/// documents, and commits them as a new revision.
 ///
 /// # Errors
 ///
@@ -121,9 +123,9 @@ impl SourceConfig {
         })
     }
 
-    // `registry` steers only registry acquisition and `digest` pins only
-    // loader-acquired bytes; the root rule is the one `input` applies, so
-    // the whole list is refused before any adapter loads.
+    // Checks one source's rules: `registry` only means anything for a package
+    // adapter, `digest` only for a loader-acquired one, and the root must pass
+    // the rule `input` applies — so a bad list is refused before any load.
     fn validate(&self) -> Result<(), Error> {
         let key = &self.key;
         if self.registry.is_some() && !matches!(self.adapter, AdapterRef::Package { .. }) {
@@ -185,10 +187,9 @@ fn validate(sources: &[SourceConfig]) -> Result<(), Error> {
     Ok(())
 }
 
-// Loads, extracts, and validates every source. Adapters are guests the
-// engine did not write, so the contract's claim gate is re-run fail-closed
-// (A8) before anything downstream trusts their claims; an adapter's own
-// failure arrives already classified by the `Source` capability.
+// Loads, extracts, and validates every source. Adapters are guests the engine
+// did not write, so the contract's claim gate is re-run here (A8) before
+// anything downstream trusts their claims; adapter failures arrive classified.
 async fn evidence<P: Source + Plugins>(
     provider: &P, sources: &[SourceConfig],
 ) -> Result<Vec<SourceEvidence>, Error> {

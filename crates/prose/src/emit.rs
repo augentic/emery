@@ -19,9 +19,8 @@ struct File {
     file: PathBuf,
 }
 
-/// Embed and link-check `tree` relative to the crate manifest.
-///
-/// Writes `prose_docs.rs` into `OUT_DIR`.
+/// Embeds and link-checks the Markdown `tree` relative to the crate manifest,
+/// writing `prose_docs.rs` into `OUT_DIR`.
 ///
 /// # Panics
 ///
@@ -38,7 +37,7 @@ pub fn emit(tree: &str) {
     }
 }
 
-// Walk `root` and write a sorted `DOCS` table to `out_dir/prose_docs.rs`.
+// Walks `root` and writes a sorted `DOCS` table to `out_dir/prose_docs.rs`.
 fn emit_from(root: &Path, out_dir: &Path) -> Result<()> {
     let mut files = Vec::new();
     if root.is_dir() {
@@ -74,7 +73,8 @@ fn emit_from(root: &Path, out_dir: &Path) -> Result<()> {
     Ok(())
 }
 
-// Symlinks are followed, so the canonical-path stack is the cycle guard.
+// Recurses into `dir`, collecting Markdown files. Symlinks are followed, so
+// the canonical-path stack is the cycle guard.
 fn walk(dir: &Path, path: &str, files: &mut Vec<File>, stack: &mut Vec<PathBuf>) -> Result<()> {
     println!("cargo:rerun-if-changed={}", dir.display());
 
@@ -113,7 +113,8 @@ fn walk_entries(
     Ok(())
 }
 
-// Fenced code is skipped so a `](` inside a snippet is not a link.
+// Fails on any relative link in `file` whose target does not exist. Fenced
+// code is skipped so a `](` inside a snippet is not a link.
 fn check_links(file: &Path) -> Result<()> {
     let body = fs::read_to_string(file)?;
     let dir = file.parent().expect("file");
@@ -168,7 +169,8 @@ mod tests {
 
     use super::*;
 
-    // directory symlink and fenced `](` — live engine tree has neither.
+    // A directory symlink is followed and a `](` inside fenced code is not a
+    // link; the live engine tree has neither, so this is the only coverage.
     #[test]
     fn embeds() {
         let tmp = tempfile::tempdir().expect("tempdir");
@@ -188,7 +190,8 @@ mod tests {
         assert!(generated.contains("path: \"runtime/rule.md\""), "{generated}");
     }
 
-    // fail-closed refusals no live corpus can arrange.
+    // A dangling link and a symlink cycle each fail the build; no live corpus
+    // can arrange either.
     #[test]
     fn refuses() {
         let tmp = tempfile::tempdir().expect("tempdir");

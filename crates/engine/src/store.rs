@@ -27,7 +27,8 @@ pub const CURRENT: &str = "current-revision";
 /// Blobstore container holding every revision's documents under `<id>/`.
 pub const CONTAINER: &str = "revisions";
 
-/// Revisions over a deployment's storage capabilities.
+/// The revision store, over a deployment's keyvalue and blobstore
+/// capabilities.
 #[derive(Clone, Copy, Debug)]
 pub struct Store<'a, S> {
     store: &'a S,
@@ -71,7 +72,7 @@ impl<'a, S: StateStore + BlobStore> Store<'a, S> {
             .await
             .context("swapping current revision")?;
 
-        // the swap landed, prune the previous revision
+        // The swap landed; prune the previous revision.
         if let Some(previous) = observed.previous().filter(|previous| *previous != id) {
             for (name, _) in revision.files() {
                 let _ =
@@ -98,8 +99,9 @@ impl<'a, S: StateStore + BlobStore> Store<'a, S> {
         Ok(Some(revision))
     }
 
-    // Observes the CAS token and outgoing revision without failing; bad
-    // state suppresses only the advisory diff, never the fail-closed CAS.
+    // Observes the CAS token and outgoing revision without failing; bad state
+    // suppresses only the advisory diff, never the CAS, which still refuses a
+    // stale token.
     async fn observe(&self) -> Observation {
         let token = StateStore::get(self.store, CURRENT).await.ok().flatten();
 
@@ -112,8 +114,9 @@ impl<'a, S: StateStore + BlobStore> Store<'a, S> {
         Observation { token, outgoing }
     }
 
-    // The store is content-addressed: documents that no longer hash to
-    // the id they sit under are corruption, not a revision.
+    // Loads revision `id` and checks that it still hashes to that id: the
+    // store is content-addressed, so documents that no longer match the id
+    // they sit under are corruption, not a revision.
     async fn load(&self, id: &str) -> Result<Revision, Error> {
         let spec = self.read(id, Document::Spec.file()).await?;
         let design = self.read(id, Document::Design.file()).await?;
@@ -126,7 +129,8 @@ impl<'a, S: StateStore + BlobStore> Store<'a, S> {
         Ok(revision)
     }
 
-    // A named revision whose document is absent or malformed is corruption.
+    // Reads one document of revision `id`; a document that is absent or not
+    // UTF-8 under a named revision is corruption.
     async fn read(&self, id: &str, name: &str) -> Result<String, Error> {
         let bytes = BlobStore::get(self.store, CONTAINER, &format!("{id}/{name}"))
             .await
@@ -152,8 +156,8 @@ pub struct Revision {
 }
 
 impl Revision {
-    /// The content-addressed revision id: SHA-256 over the length-prefixed
-    /// document names and bodies, in digest order.
+    /// Computes the content-addressed revision id: SHA-256 over the
+    /// length-prefixed document names and bodies, in digest order.
     #[must_use]
     pub fn id(&self) -> String {
         let mut hasher = Sha256::new();
@@ -175,7 +179,7 @@ impl Revision {
         }
     }
 
-    // The one place a document meets its field.
+    // Selects the field that holds `document`'s body.
     fn body(&self, document: Document) -> &str {
         match document {
             Document::Spec => &self.spec,
@@ -183,7 +187,7 @@ impl Revision {
         }
     }
 
-    // File name and body per document, in digest order.
+    // Pairs each document's file name with its body, in digest order.
     fn files(&self) -> impl Iterator<Item = (&'static str, &str)> {
         Document::VARIANTS.iter().map(|document| (document.file(), self.body(*document)))
     }
@@ -212,7 +216,8 @@ struct Observation {
 }
 
 impl Observation {
-    // The predecessor the token names; a non-UTF-8 token names no blobs.
+    // Reads the predecessor's id from the token; a non-UTF-8 token names no
+    // blobs.
     fn previous(&self) -> Option<&str> {
         self.token.as_deref().and_then(|raw| str::from_utf8(raw).ok())
     }
@@ -233,9 +238,9 @@ pub struct Diff {
 }
 
 impl Diff {
-    // Sections key on heading names, not positions. The diff is advisory:
-    // an outgoing document that fails its grammar leaves the lists empty,
-    // and the incoming documents were already parsed by synthesis.
+    // Diffs `incoming` against `outgoing`: the changed files, then requirement
+    // subjects and section headings, never positions. The diff is advisory: an
+    // outgoing document that fails its grammar leaves its list empty.
     fn between(outgoing: &Revision, incoming: &Revision) -> Self {
         let artifacts = outgoing
             .files()
@@ -283,7 +288,8 @@ pub struct Changes {
 }
 
 impl Changes {
-    // A section that only moved is not a change.
+    // Buckets the headings of `new` against `old` into added, changed, and
+    // removed; a section that only moved is not a change.
     fn between<K: Display + Ord, S: PartialEq>(
         old: &BTreeMap<K, &S>, new: &BTreeMap<K, &S>,
     ) -> Self {

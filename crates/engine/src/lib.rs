@@ -51,8 +51,8 @@ pub fn preopen_path(path: &Path) -> Result<PathBuf, Error> {
     Ok(if normalized.as_os_str().is_empty() { PathBuf::from(".") } else { normalized })
 }
 
-/// The capability set every operation can be dispatched over, as one
-/// bound for the transports that bind a provider.
+/// Every capability an operation may need, gathered into one bound so a
+/// transport can name the provider it binds with a single trait.
 pub trait Provider:
     Model + Source + StateStore + BlobStore + Plugins + Send + Sync + 'static
 {

@@ -60,7 +60,9 @@ impl SourceAdapter for Adapter {
     }
 }
 
-// The shared note, plus the greeting fallback and the empty-brief refusal.
+// Builds the prompt's content note: refuses an empty inline brief, passes an
+// inline value through, and points a workspace at `references/greeting.md`
+// as the fallback when the tree states no greeting.
 fn greeting_note(input: &SourceInput) -> Result<String, Error> {
     match &input.content {
         SourceContent::Value(value) if value.trim().is_empty() => {

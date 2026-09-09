@@ -35,7 +35,8 @@ pub struct ShowBody {
     pub body: String,
 }
 
-/// Read one document of the current revision over the context's provider.
+/// Reads one document of the current revision over the context's provider,
+/// returning it with the revision id it belongs to.
 ///
 /// # Errors
 ///

@@ -8,7 +8,7 @@
 # Live journey: local mock component + its fixture tree.
 [[source]]
 name = "docs"
-adapter = "../target/wasm32-wasip2/release/adapter.wasm"
+adapter = "../target/wasm32-wasip2/release/examples/adapter.wasm"
 path = "docs/"
 
 # # Workspace lend of the invocation directory (the default: path = ".").

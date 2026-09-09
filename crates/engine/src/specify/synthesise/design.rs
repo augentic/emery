@@ -11,7 +11,6 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::{self, Display};
 
 use emery_source::types::{Claim, ClaimKind};
-use omnia_guest::model::Findings;
 use schemars::JsonSchema;
 use serde::Deserialize;
 use serde_json::{Value, json};
@@ -19,8 +18,8 @@ use strum::VariantArray as _;
 
 use crate::artifact::{SectionKind, citations};
 use crate::specify::SourceEvidence;
-use crate::specify::brief::Brief;
-use crate::specify::synthesise::{document, paragraph, paragraphs, render_claims};
+use crate::specify::brief::{Brief, Review};
+use crate::specify::synthesise::{document, render_claims};
 
 /// What the engine needs to ask the model for `design.md` and to verify its
 /// draft: the rendered `spec.md` and the section plan.
@@ -81,9 +80,8 @@ impl Brief for DesignBrief<'_> {
     // Verifies a candidate draft against the plan: every required section
     // present, none forbidden, duplicated, or empty; each `type` claim placed
     // once, only under `## Domain model`; citations bound; no reserved opener.
-    fn verify(&self, answer: &DesignAnswer) -> Result<(), Findings> {
-        let mut findings = Vec::new();
-        paragraphs(&answer.preamble, "preamble", &mut findings);
+    fn verify(&self, answer: &DesignAnswer, review: &mut Review) {
+        review.paragraphs(&answer.preamble, "preamble");
 
         let bound: BTreeSet<&str> =
             self.plan.sources.iter().map(|source| source.key.as_str()).collect();
@@ -93,29 +91,29 @@ impl Brief for DesignBrief<'_> {
             let kind = section.kind;
             let label = format!("`## {kind}`");
             if !seen.insert(kind) {
-                findings.push(format!("- {label} is drafted more than once"));
+                review.note(format_args!("{label} is drafted more than once"));
             }
             if self.plan.presence(kind) == Presence::Forbidden {
-                findings.push(format!("- {label} is present but no claim informs it"));
+                review.note(format_args!("{label} is present but no claim informs it"));
             }
             if section.blocks.is_empty() {
-                findings.push(format!("- {label} has no block"));
+                review.note(format_args!("{label} has no block"));
             }
 
             for block in &section.blocks {
                 match block {
                     Block::Text(text) => {
-                        paragraph(text, &label, &mut findings);
+                        review.paragraph(text, &label);
                         for key in citations(text).filter(|key| !bound.contains(key)) {
-                            findings.push(format!(
-                                "- {label} cites source `{key}`, which is not bound"
+                            review.note(format_args!(
+                                "{label} cites source `{key}`, which is not bound"
                             ));
                         }
                     }
                     Block::Type(key) => {
                         if kind != SectionKind::DomainModel {
-                            findings.push(format!(
-                                "- {label} references type `{key}`; type blocks belong under \
+                            review.note(format_args!(
+                                "{label} references type `{key}`; type blocks belong under \
                                  `## Domain model`"
                             ));
                         }
@@ -126,27 +124,21 @@ impl Brief for DesignBrief<'_> {
         }
 
         for kind in self.plan.required().filter(|kind| !seen.contains(kind)) {
-            findings.push(format!("- `## {kind}` is required but absent"));
+            review.note(format_args!("`## {kind}` is required but absent"));
         }
 
         let keys = &self.plan.keys;
         for key in keys {
             match references.get(key).copied().unwrap_or_default() {
                 1 => {}
-                0 => findings.push(format!("- type `{key}` is never referenced")),
-                n => findings.push(format!("- type `{key}` is referenced {n} times")),
+                0 => review.note(format_args!("type `{key}` is never referenced")),
+                n => review.note(format_args!("type `{key}` is referenced {n} times")),
             }
         }
 
         for key in references.keys().filter(|key| !keys.contains(*key)) {
-            findings.push(format!("- type `{key}` is not a type claim"));
+            review.note(format_args!("type `{key}` is not a type claim"));
         }
-
-        if !findings.is_empty() {
-            return Err(findings);
-        }
-
-        Ok(())
     }
 
     // Renders `design.md`: the drafted sections in vocabulary order, each

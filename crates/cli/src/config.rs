@@ -49,8 +49,9 @@ pub fn decode(
     }
 }
 
-// A missing project-root file yields the empty list the engine refuses
-// typed; a parse failure still refuses typed.
+// Reads the project-root `emery.toml` for a run that names no sources. A
+// missing file yields the empty list, which the engine refuses as
+// `specify-source-required`; a file that fails to parse is refused here.
 fn discover() -> Result<Vec<SourceConfig>, Error> {
     let path = Path::new(CONFIG_FILE);
     if !path.try_exists().map_err(|e| server_error!("reading {CONFIG_FILE}: {e}"))? {
@@ -59,8 +60,9 @@ fn discover() -> Result<Vec<SourceConfig>, Error> {
     from_file(path)
 }
 
-// Each positional adapter lends the workspace at `.`; each
-// `--description` entry is inline. The key is the adapter name.
+// Builds the sources named on the command line: each positional adapter
+// lends the workspace at `.`, each `--description` entry is an inline value,
+// and the key is the adapter name.
 fn from_argv(adapters: &[String], descriptions: &[String]) -> Result<Vec<SourceConfig>, Error> {
     let mut sources = Vec::new();
     for value in adapters {
@@ -95,7 +97,8 @@ fn from_argv(adapters: &[String], descriptions: &[String]) -> Result<Vec<SourceC
     Ok(sources)
 }
 
-// The operator-owned file: parsed fail-closed, never written by the engine.
+// Reads and decodes an operator-owned config file; any parse failure is
+// refused, and the engine never writes the file.
 fn from_file(path: &Path) -> Result<Vec<SourceConfig>, Error> {
     let raw = std::fs::read_to_string(path).map_err(|source| {
         let path = path.display();

@@ -5,8 +5,9 @@
 //! canonical output. This module reads it back — for the re-mine diff, which
 //! compares two revisions by requirement subject and section heading — and
 //! carries the vocabulary the renderer and the reader share: the heading
-//! markers, the positional requirement id, the closed status and tag sets,
-//! and the closed section vocabulary.
+//! markers, the provenance and note keys, the positional requirement id, the
+//! closed status and tag sets, and the closed section vocabulary — and, drawn
+//! from it, the line openers a drafted paragraph may not use.
 //!
 //! A stored document that does not fit its grammar was not rendered by this
 //! engine; the reader reports it as corruption, not as a grammar finding.
@@ -19,7 +20,13 @@ use std::ops::Deref;
 use serde::{Deserialize, Serialize};
 
 pub use self::design::{Design, SectionKind, citations};
-pub use self::spec::{HEADING, ReqId, SCENARIO, Spec, Status};
+pub use self::spec::{HEADING, ID, NOTE, ReqId, SCENARIO, SOURCES, STATUS, Spec, Status};
+
+/// Line openers a drafted paragraph may not use: `#`, so no draft line reads
+/// as a heading (a `## ` section, `HEADING`, `SCENARIO`) and splits a block on
+/// read; and the engine's own line keys, so no draft line passes as
+/// provenance or a note.
+pub const RESERVED: &[&str] = &["#", ID, SOURCES, STATUS, NOTE];
 
 /// The reviewable documents of one revision, in digest order.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, strum::VariantArray)]
@@ -56,9 +63,9 @@ impl<'a> From<&'a str> for Text<'a> {
 }
 
 impl<'a> Text<'a> {
-    /// Every run of lines led by a `marker` heading: the heading line with
-    /// its marker stripped, then the body. The preamble before the first
-    /// heading is skipped.
+    /// Splits the text into blocks, one per `marker` heading, yielding the
+    /// heading line with its marker stripped and then the body lines. The
+    /// preamble before the first heading is skipped.
     pub fn blocks(&'a self, marker: &'a str) -> impl Iterator<Item = (Line<'a>, Lines<'a>)> {
         self.lines.chunk_by(move |_, next| next.heading(marker).is_none()).filter_map(move |run| {
             let [first, body @ ..] = run else { return None };
@@ -78,7 +85,8 @@ impl Line<'_> {
         self.0.is_empty()
     }
 
-    // The heading text after `marker`; `None` for any other line.
+    // Strips `marker` from a heading line and returns the trimmed heading
+    // text; `None` for any other line.
     fn heading(self, marker: &str) -> Option<Self> {
         Some(Self(self.0.strip_prefix(marker)?.trim()))
     }
@@ -97,7 +105,7 @@ impl<'a> Deref for Lines<'a> {
 }
 
 impl Lines<'_> {
-    /// The joined text with blank edges trimmed.
+    /// Joins the lines into one text with its blank edges trimmed.
     #[must_use]
     pub fn text(self) -> String {
         let text: Vec<&str> = self.iter().map(|line| line.0).collect();

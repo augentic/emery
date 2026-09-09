@@ -14,7 +14,8 @@ use emery_prose::registry::{self, Doc};
 use omnia_guest::model::{Function, Tool, ToolCall, ToolFuture, Tools};
 use serde_json::{Value, json};
 
-/// The reference tools declared for a docs-carrying judgment.
+/// Declares the `list_docs` and `read_doc` tools for a judgment that carries
+/// reference documents.
 #[must_use]
 pub fn tools() -> Vec<Tool> {
     vec![
@@ -48,8 +49,8 @@ pub fn tools() -> Vec<Tool> {
     ]
 }
 
-/// The tool handler a question passes to `ask`: [`answer`] over `docs`, or
-/// `None` when the adapter embeds nothing to consult.
+/// Builds the tool handler a question passes to `ask`: [`answer`] over
+/// `docs`, or `None` when the adapter embeds nothing to consult.
 #[must_use]
 pub fn answering(docs: &'static [Doc]) -> Option<Tools> {
     (!docs.is_empty()).then(|| {

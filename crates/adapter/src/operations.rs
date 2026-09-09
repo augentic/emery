@@ -23,7 +23,7 @@ pub trait SourceAdapter {
     /// Compile-time `name@version` identity.
     const IDENTITY: &str;
 
-    /// Resolve-time metadata; by default the SDK's own version is the
+    /// Reports resolve-time metadata; by default the SDK's own version is the
     /// exact `emery` pin.
     #[must_use]
     fn metadata() -> SourceMetadata {
@@ -32,13 +32,13 @@ pub trait SourceAdapter {
         }
     }
 
-    /// Embedded prose registry.
+    /// Returns the adapter's embedded reference documents.
     fn docs() -> &'static [Doc];
 
-    /// Extract the source's claim set.
+    /// Extracts the source's claim set.
     ///
-    /// Refuse unusable input with `BadRequest`; the engine reports any other
-    /// class as an adapter failure.
+    /// An implementation refuses unusable input with `BadRequest`; the engine
+    /// reports any other class as an adapter failure.
     fn extract<P: Model>(
         model: &P, ctx: &Context<'_>, input: &SourceInput,
     ) -> impl Future<Output = Result<Evidence, Error>> + Send;

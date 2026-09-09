@@ -40,7 +40,7 @@ const PRECEDENCE_ANSWER: &str = include_str!("specify/precedence-draft.json");
 const PRECEDENCE_RENDERED: &str = include_str!("specify/3-precedence.md");
 const SOURCES: &str = include_str!("specify/emery.toml");
 
-// The grouping answer that merges `count` claims into one agreeing
+// Builds the grouping answer that merges `count` claims into one agreeing
 // requirement — what a run over one id appearing several times expects.
 fn floor_grouping(count: usize) -> String {
     let indices = (0..count).map(|index| index.to_string()).collect::<Vec<_>>().join(", ");
@@ -359,8 +359,8 @@ async fn authority_precedence() {
 
 // A grouping the partition rules refuse — a floor pair split, a claim
 // in no group, a claim in two classes — is sent back as the correction
-// and the next candidate checked; a backend out of rounds refuses typed
-// with the last correction and commits nothing.
+// and the next candidate checked; a backend out of rounds fails with a
+// typed error carrying the last correction and commits nothing.
 #[tokio::test]
 async fn grouping_refused() {
     let bind = |provider: &mut Provider| {
@@ -512,8 +512,8 @@ async fn diff_envelope() {
     provider.model.assert_exhausted();
 }
 
-// Docs evidence over `(subject, statement)` requirements in row order,
-// each covered by its own criterion.
+// Builds documentation evidence over `(subject, statement)` requirements in
+// row order, each covered by its own criterion.
 fn docs_evidence(requirements: &[(&str, &str)]) -> Evidence {
     let claims = requirements
         .iter()
@@ -575,8 +575,8 @@ const REMINE_SECOND: &str = r#"{
   ]
 }"#;
 
-// A requirement claim missing its `statement` extra fails the whole
-// run typed (A8 fail-closed) before anything commits.
+// A requirement claim missing its `statement` extra fails the whole run
+// with a typed error (the A8 claim gate) before anything commits.
 #[tokio::test]
 async fn extras_missing() {
     let mut provider = Provider::idle();
@@ -723,7 +723,7 @@ async fn repaired_draft() {
     provider.model.assert_exhausted();
 }
 
-// The design leg is fail-closed too: a draft outside its schema or plan
+// The design leg is gated the same way: a draft outside its schema or plan
 // is refused once the backend's rounds are spent, one finding per case —
 // not JSON, the required overview absent, a section outside the closed
 // vocabulary, a requirement heading smuggled into a paragraph, and a
@@ -874,8 +874,8 @@ async fn model_fails() {
     provider.model.assert_exhausted();
 }
 
-// The operator-owned `emery.toml` parses fail-closed: every malformed
-// carrier refuses typed before anything commits.
+// Every malformed operator-owned `emery.toml` is refused with a typed error
+// before anything commits.
 #[tokio::test]
 async fn config_file() {
     let cases: &[(&str, u8, &str, &str)] = &[
@@ -1067,8 +1067,8 @@ async fn source_paths() {
     provider.model.assert_exhausted();
 }
 
-// Local components are read fresh on every run — nothing mirrors, so
-// a re-run after the operator deletes the source file refuses typed.
+// Local components are read fresh on every run — nothing mirrors, so a
+// re-run after the operator deletes the source file fails with a typed error.
 #[tokio::test]
 async fn deleted_wasm() {
     let workspace = project_tempdir();
@@ -1084,7 +1084,7 @@ async fn deleted_wasm() {
     provider.model.assert_exhausted();
 }
 
-// A path that is not a `.wasm` component file refuses typed.
+// A path that is not a `.wasm` component file is refused with a typed error.
 #[tokio::test]
 async fn component_missing() {
     let provider = Provider::idle();
@@ -1213,8 +1213,8 @@ async fn registry_override() {
 }
 
 // A registry package pin verifies like a local component pin: the pin
-// rides the load request, and a mismatch refuses typed before
-// anything extracts or commits.
+// rides the load request, and a mismatch is refused with a typed error
+// before anything extracts or commits.
 #[tokio::test]
 async fn pinned_package() {
     let pinned = |pin: &Digest| {
@@ -1243,8 +1243,8 @@ async fn pinned_package() {
     assert!(provider.storage.is_empty(), "a refused run writes nothing");
 }
 
-// A second source that re-pins an already-loaded adapter refuses
-// already-active: the loader cannot re-bind the identity.
+// A second source that re-pins an already-loaded adapter is refused as
+// `already-active`: the loader cannot re-bind the identity.
 #[tokio::test]
 async fn conflicting_pin() {
     let dir = project_tempdir();

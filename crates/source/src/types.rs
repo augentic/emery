@@ -80,7 +80,8 @@ pub enum Authority {
 }
 
 impl Authority {
-    /// Lower ranks outrank higher ranks (`intent` = 0).
+    /// Returns the authority's rank; a lower rank outranks a higher one
+    /// (`intent` = 0).
     #[must_use]
     pub const fn rank(self) -> u8 {
         match self {
@@ -173,7 +174,8 @@ pub struct Evidence {
     pub claims: Vec<Claim>,
 }
 
-// Treat a malformed open field as absent.
+// Deserializes an open field leniently: a malformed value becomes `None`
+// instead of failing the whole document.
 fn lenient<'de, D, T>(deserializer: D) -> Result<Option<T>, D::Error>
 where
     D: serde::Deserializer<'de>,

@@ -16,6 +16,15 @@ use crate::artifact::{Document, Line, Lines, Text};
 pub const HEADING: &str = "### Requirement:";
 /// The scenario heading marker.
 pub const SCENARIO: &str = "#### Scenario:";
+/// The `ID:` provenance key; the three keys follow the heading in this order.
+pub const ID: &str = "ID:";
+/// The `Sources:` provenance key.
+pub const SOURCES: &str = "Sources:";
+/// The `Status:` provenance key.
+pub const STATUS: &str = "Status:";
+/// The `Note:` key: the engine's own lines below the provenance, which the
+/// reader keeps as body.
+pub const NOTE: &str = "Note:";
 
 /// A canonical `spec.md`, read back.
 #[derive(Debug)]
@@ -27,7 +36,8 @@ pub struct Spec {
 impl Spec {
     const NAME: &str = Document::Spec.file();
 
-    /// Requirement blocks keyed by their subject.
+    /// Indexes the requirement blocks by subject — the heading is the identity
+    /// the re-mine diff keys on.
     #[must_use]
     pub fn by_subject(&self) -> BTreeMap<&str, &Requirement> {
         self.requirements
@@ -40,7 +50,8 @@ impl Spec {
 impl FromStr for Spec {
     type Err = Error;
 
-    // A document the renderer did not write is corruption.
+    // Parses a stored `spec.md`. A document the renderer did not write is
+    // corruption, so every failure is `server_error`.
     fn from_str(text: &str) -> Result<Self, Error> {
         let requirements = Text::from(text)
             .blocks(HEADING)
@@ -73,8 +84,9 @@ pub struct Requirement {
 }
 
 impl Requirement {
-    // Heading, then `ID:` / `Sources:` / `Status:` in that order, then the
-    // body; anything else is not this engine's rendering.
+    // Parses one requirement block: the heading, then the `ID:` / `Sources:` /
+    // `Status:` lines in that order, then the body; anything else is not this
+    // engine's rendering.
     fn read((heading, rest): (Line<'_>, Lines<'_>)) -> Result<Self, String> {
         let (subject, tag) = heading
             .0
@@ -93,29 +105,29 @@ impl Requirement {
             }
             let value = rest
                 .get(cursor)
-                .and_then(|line| line.0.strip_prefix(key)?.strip_prefix(':'))
+                .and_then(|line| line.0.strip_prefix(key))
                 .map(str::trim)
-                .ok_or_else(|| format!("`{subject}`: no `{key}:` line where one is expected"))?;
+                .ok_or_else(|| format!("`{subject}`: no `{key}` line where one is expected"))?;
             cursor += 1;
             Ok(value)
         };
-        field("ID")?.parse::<ReqId>()?;
-        let sources = field("Sources")?;
+        field(ID)?.parse::<ReqId>()?;
+        let sources = field(SOURCES)?;
         let sources = sources
             .strip_prefix('[')
             .and_then(|inner| inner.strip_suffix(']'))
-            .ok_or_else(|| format!("`{subject}`: malformed `Sources: {sources}`"))?
+            .ok_or_else(|| format!("`{subject}`: malformed `{SOURCES} {sources}`"))?
             .split(',')
             .map(str::trim)
             .filter(|key| !key.is_empty())
             .map(str::to_string)
             .collect();
-        let status = field("Status")?;
+        let status = field(STATUS)?;
         let status = status
             .parse::<Status>()
-            .map_err(|_unknown| format!("`{subject}`: unknown `Status: {status}`"))?;
+            .map_err(|_unknown| format!("`{subject}`: unknown `{STATUS} {status}`"))?;
         if tag != status.tag().map(|tag| tag.to_string()).as_deref() {
-            return Err(format!("`{subject}`: heading tag does not mirror `Status: {status}`"));
+            return Err(format!("`{subject}`: heading tag does not mirror `{STATUS} {status}`"));
         }
 
         Ok(Self {
@@ -144,7 +156,7 @@ pub struct ReqId(String);
 impl ReqId {
     const PREFIX: &str = "REQ-";
 
-    /// The id minted for the row at zero-based `index`.
+    /// Mints the id for the row at zero-based `index`.
     #[must_use]
     pub fn nth(index: usize) -> Self {
         Self(format!("{}{:03}", Self::PREFIX, index + 1))

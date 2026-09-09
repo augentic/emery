@@ -25,7 +25,8 @@ mod generated {
     wit_bindgen::generate!({
         world: "source-adapter",
         path: "../../wit",
-        // Only judgment operations are async.
+        // The WIT marks `extract` alone as `async func`, so the bindings need
+        // no `async:` list here.
         generate_all,
         pub_export_macro: true,
     });
@@ -144,9 +145,9 @@ impl From<crate::types::Evidence> for Evidence {
     }
 }
 
-// The wire carries the description alone: a refusal of the input lowers to
-// `invalid-request`, every other class to `internal`, and the lift restores
-// the class. `io` is accepted on lift but never produced.
+// Lowers an adapter failure onto the wire, which carries the description
+// alone: a refusal of the input becomes `invalid-request`, every other class
+// `internal`; the lift restores the class. `io` is lifted but never produced.
 impl From<omnia_guest::Error> for Error {
     fn from(error: omnia_guest::Error) -> Self {
         let description = error.description();
@@ -179,8 +180,8 @@ pub mod import {
 
     /// Dispatches `extract` to `id`.
     ///
-    /// Open extras parse from canonical JSON fail-closed (A8); invalid
-    /// values return a typed error rather than dropping the key.
+    /// Open extras are parsed from their canonical JSON (A8); an extra that
+    /// fails to parse is a typed error rather than a dropped key.
     ///
     /// # Errors
     ///

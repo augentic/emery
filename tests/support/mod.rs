@@ -59,19 +59,19 @@ pub struct Provider<S = Memory> {
 }
 
 impl Provider<Memory> {
-    /// A provider answering `answers` over fresh in-memory storage.
+    /// Creates a provider answering `answers` over fresh in-memory storage.
     pub fn answering<T: Into<String>>(answers: impl IntoIterator<Item = T>) -> Self {
         Self::over(Arc::new(Memory::default()), answers)
     }
 
-    /// A provider whose model is never dispatched.
+    /// Creates a provider whose model is never dispatched.
     pub fn idle() -> Self {
         Self::answering(Vec::<String>::new())
     }
 }
 
 impl<S> Provider<S> {
-    /// A provider answering `answers` over `storage`.
+    /// Creates a provider answering `answers` over `storage`.
     pub fn over<T: Into<String>>(storage: Arc<S>, answers: impl IntoIterator<Item = T>) -> Self {
         Self {
             model: Scripted::answering(answers),
@@ -157,12 +157,12 @@ where
     envelope
 }
 
-/// A full-length `sha256:` digest from one repeated hex pair.
+/// Builds a full-length `sha256:` digest from one repeated hex pair.
 pub fn digest(pair: &str) -> Digest {
     format!("sha256:{}", pair.repeat(32)).parse().expect("a valid digest")
 }
 
-/// A claim of `kind` carrying one required extra.
+/// Builds a claim of `kind` carrying one required extra.
 pub fn claim(kind: ClaimKind, id: &str, extra: (&str, &str)) -> Claim {
     let mut extras = serde_json::Map::new();
     extras.insert(extra.0.to_string(), Value::String(extra.1.to_string()));
@@ -176,12 +176,12 @@ pub fn claim(kind: ClaimKind, id: &str, extra: (&str, &str)) -> Claim {
     }
 }
 
-/// A requirement claim carrying its required `statement` extra.
+/// Builds a requirement claim carrying its required `statement` extra.
 pub fn requirement(id: &str, statement: &str) -> Claim {
     claim(ClaimKind::Requirement, id, ("statement", statement))
 }
 
-/// An evidence document over `claims`.
+/// Builds an evidence document over `claims`.
 pub const fn evidence(authority: Authority, claims: Vec<Claim>) -> Evidence {
     Evidence { authority, claims }
 }

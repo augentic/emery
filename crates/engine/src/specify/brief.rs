@@ -37,12 +37,9 @@ pub trait Brief: Display + Sync + Sized {
     /// provider; [`Self::verify`] is the gate.
     fn hints(&self, schema: &mut Value);
 
-    /// Verifies a candidate answer against the run's facts.
-    ///
-    /// # Errors
-    ///
-    /// Returns every finding, for repair.
-    fn verify(&self, answer: &Self::Answer) -> Result<(), Findings>;
+    /// Verifies a candidate answer against the run's facts, recording every
+    /// finding on `review` for repair.
+    fn verify(&self, answer: &Self::Answer, review: &mut Review);
 
     /// Transforms the answer into output specific to the brief.
     fn into_output(self, answer: Self::Answer) -> Self::Output;
@@ -64,9 +61,32 @@ pub trait Brief: Display + Sync + Sized {
         let answer = Question::<Self::Answer>::new(Self::NAME)
             .system(system)
             .schema(|schema| self.hints(schema))
-            .ask(model, self.to_string(), None, |answer| self.verify(answer))
+            .ask(model, self.to_string(), None, |answer| {
+                let mut review = Review::default();
+                self.verify(answer, &mut review);
+                review.finish()
+            })
             .await?;
 
         Ok(self.into_output(answer))
+    }
+}
+
+// What a brief records against one candidate. One type, so the bullet every
+// finding carries and the accept-or-reject verdict are decided here rather
+// than by each brief.
+#[derive(Default)]
+pub struct Review(Findings);
+
+impl Review {
+    // Records one finding as a bullet: omnia joins the findings with newlines
+    // under `## Findings`, so the list markup is the engine's.
+    pub fn note(&mut self, finding: impl Display) {
+        self.0.push(format!("- {finding}"));
+    }
+
+    // Accepts a candidate with no finding; rejects one with any, for repair.
+    fn finish(self) -> Result<(), Findings> {
+        if self.0.is_empty() { Ok(()) } else { Err(self.0) }
     }
 }

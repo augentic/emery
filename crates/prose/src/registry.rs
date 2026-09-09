@@ -17,7 +17,8 @@ pub struct Doc {
     pub body: &'static str,
 }
 
-/// Finds `path`; `docs` must be sorted by path.
+/// Finds the document at `path` by binary search; `docs` must be sorted by
+/// path.
 #[must_use]
 pub fn find<'d>(docs: &'d [Doc], path: &str) -> Option<&'d Doc> {
     docs.binary_search_by(|doc| doc.path.cmp(path)).ok().map(|idx| &docs[idx])
@@ -54,19 +55,19 @@ macro_rules! registry {
 
         include!(concat!(env!("OUT_DIR"), "/prose_docs.rs"));
 
-        /// Every embedded document, sorted by tree-relative path.
+        /// Returns every embedded document, sorted by tree-relative path.
         #[must_use]
         pub fn docs() -> &'static [Doc] {
             DOCS
         }
 
-        /// Look up one document by its tree-relative path.
+        /// Looks up one document by its tree-relative path.
         #[must_use]
         pub fn doc(path: &str) -> Option<&'static Doc> {
             $crate::registry::find(DOCS, path)
         }
 
-        /// Body the registry is guaranteed to embed.
+        /// Returns the body of a document the registry is guaranteed to embed.
         ///
         /// # Panics
         ///

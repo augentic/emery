@@ -28,7 +28,8 @@ pub struct Design {
 impl Design {
     const NAME: &str = Document::Design.file();
 
-    /// Sections keyed by their heading, the stable diff identity.
+    /// Indexes the sections by kind — the heading is the identity the re-mine
+    /// diff keys on.
     #[must_use]
     pub fn by_kind(&self) -> BTreeMap<SectionKind, &Section> {
         self.sections.iter().map(|section| (section.kind, section)).collect()
@@ -38,7 +39,8 @@ impl Design {
 impl FromStr for Design {
     type Err = Error;
 
-    // A document the renderer did not write is corruption.
+    // Parses a stored `design.md`. A document the renderer did not write is
+    // corruption, so every failure is `server_error`.
     fn from_str(text: &str) -> Result<Self, Error> {
         let sections = Text::from(text)
             .blocks(MARKER)
@@ -76,7 +78,8 @@ impl Section {
     }
 }
 
-// The same section in two revisions differs in nothing but its position.
+// Two readings of one section are equal when kind and body match; where the
+// section sits in the document is not part of its identity.
 impl PartialEq for Section {
     fn eq(&self, other: &Self) -> bool {
         self.kind == other.kind && self.body == other.body
@@ -116,7 +119,7 @@ pub enum SectionKind {
     Observability,
 }
 
-// The document spelling: the section title.
+// Writes the section title as the document spells it.
 impl Display for SectionKind {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str(match self {
@@ -142,8 +145,9 @@ impl FromStr for SectionKind {
     }
 }
 
-/// Every `(from <key>)` key in `text`. The parenthesised text must be one
-/// token: a phrase such as `(from the browser)` is prose, not a citation.
+/// Yields every source key cited as `(from <key>)` in `text`. The
+/// parenthesised text must be one token: a phrase such as `(from the
+/// browser)` is prose, not a citation.
 pub fn citations(text: &str) -> impl Iterator<Item = &str> {
     text.match_indices(CITATION).filter_map(|(at, _)| {
         let (key, _) = text[at + CITATION.len()..].split_once(')')?;

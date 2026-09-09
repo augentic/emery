@@ -19,20 +19,16 @@ mod spec;
 
 use std::fmt::{self, Display, Formatter};
 
-use omnia_guest::model::Findings;
 use omnia_guest::{Error, Model};
 use serde_json::Value;
 
 use self::design::DesignBrief;
 use self::spec::SpecBrief;
+use crate::artifact::RESERVED;
 use crate::specify::SourceEvidence;
-use crate::specify::brief::Brief as _;
+use crate::specify::brief::{Brief as _, Review};
 use crate::specify::provenance::Provenance;
 use crate::store::Revision;
-
-// Line openers the renderer reserves for its own markup; no drafted paragraph
-// may start a line with one of them.
-const RESERVED: &[&str] = &["#", "ID:", "Sources:", "Status:", "Note:"];
 
 /// Takes evidence from all queried sources, with the requirement rows derived
 /// from it, and asks the model to synthesise them into a single specification
@@ -91,36 +87,39 @@ fn render_claims(f: &mut Formatter<'_>, sources: &[SourceEvidence]) -> fmt::Resu
     Ok(())
 }
 
-fn paragraphs(texts: &[String], label: impl Display, findings: &mut Findings) {
-    for text in texts {
-        paragraph(text, &label, findings);
-    }
-}
-
-// Checks one drafted paragraph, recording a finding when it is blank or
-// when any of its lines opens with a marker the renderer reserves.
-fn paragraph(text: &str, label: impl Display, findings: &mut Findings) {
-    if text.trim().is_empty() {
-        findings.push(format!("- {label} has a blank paragraph"));
-        return;
-    }
-
-    for line in text.lines() {
-        let line = line.trim_start();
-        if let Some(marker) = RESERVED.iter().copied().find(|marker| line.starts_with(marker)) {
-            findings.push(format!(
-                "- {label}: a paragraph line opens with the reserved marker `{marker}`"
-            ));
+// The prose checks both document briefs run: synthesis is where a draft is
+// placed into a document, so a draft may not carry the document's own markup.
+impl Review {
+    fn paragraphs(&mut self, texts: &[String], label: impl Display) {
+        for text in texts {
+            self.paragraph(text, &label);
         }
     }
-}
 
-// Checks one scenario field, recording a finding when it is blank or spans
-// more than one line.
-fn line(text: &str, label: impl Display, findings: &mut Findings) {
-    if text.trim().is_empty() {
-        findings.push(format!("- {label} is blank"));
-    } else if text.contains('\n') {
-        findings.push(format!("- {label} spans more than one line"));
+    // A drafted paragraph may not be blank or open a line with a reserved
+    // marker.
+    fn paragraph(&mut self, text: &str, label: impl Display) {
+        if text.trim().is_empty() {
+            self.note(format_args!("{label} has a blank paragraph"));
+            return;
+        }
+
+        for line in text.lines() {
+            let line = line.trim_start();
+            if let Some(marker) = RESERVED.iter().copied().find(|marker| line.starts_with(marker)) {
+                self.note(format_args!(
+                    "{label}: a paragraph line opens with the reserved marker `{marker}`"
+                ));
+            }
+        }
+    }
+
+    // A scenario field is one non-blank line.
+    fn line(&mut self, text: &str, label: impl Display) {
+        if text.trim().is_empty() {
+            self.note(format_args!("{label} is blank"));
+        } else if text.contains('\n') {
+            self.note(format_args!("{label} spans more than one line"));
+        }
     }
 }

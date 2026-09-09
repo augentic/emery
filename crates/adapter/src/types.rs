@@ -30,7 +30,8 @@ pub struct Context<'a> {
 }
 
 impl<'a> Context<'a> {
-    /// Creates `"."` guest context.
+    /// Creates the context a guest export runs in: project root `.`, a `.`
+    /// workspace lend, and no reference documents yet.
     #[must_use]
     pub fn guest(adapter_id: &'a str) -> Self {
         Self {
