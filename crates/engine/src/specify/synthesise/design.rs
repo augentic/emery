@@ -19,7 +19,7 @@ use strum::VariantArray as _;
 use crate::artifact::{SectionKind, citations};
 use crate::specify::SourceEvidence;
 use crate::specify::brief::{Brief, Review};
-use crate::specify::synthesise::{document, render_claims};
+use crate::specify::synthesise::{ClaimsSection, Rendering};
 
 /// What the engine needs to ask the model for `design.md` and to verify its
 /// draft: the rendered `spec.md` and the section plan.
@@ -152,29 +152,29 @@ impl Brief for DesignBrief<'_> {
             .filter_map(|claim| Some((claim.type_key()?, claim.signature()?)))
             .collect();
 
-        let mut blocks: Vec<String> = vec!["# Design".to_string()];
-        blocks.extend(answer.preamble.iter().map(|paragraph| paragraph.trim().to_string()));
+        let mut document = Rendering::new("Design");
+        document.paragraphs(&answer.preamble);
 
         for &kind in SectionKind::VARIANTS {
             let Some(section) = answer.sections.iter().find(|section| section.kind == kind) else {
                 continue;
             };
 
-            blocks.push(format!("## {kind}"));
+            document.push(format!("## {kind}"));
             for block in &section.blocks {
                 match block {
-                    Block::Text(text) => blocks.push(text.trim().to_string()),
+                    Block::Text(text) => document.paragraph(text),
                     Block::Type(key) => {
                         let signature = signatures
                             .get(key.as_str())
                             .expect("the check held the draft to the type claims");
-                        blocks.push(format!("```\n{}\n```", signature.trim_end()));
+                        document.push(format!("```\n{}\n```", signature.trim_end()));
                     }
                 }
             }
         }
 
-        document(&blocks)
+        document.finish()
     }
 }
 
@@ -183,8 +183,7 @@ impl Brief for DesignBrief<'_> {
 // place, and the rendered `spec.md` the design must follow.
 impl Display for DesignBrief<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str("Draft `design.md`.\n\n")?;
-        render_claims(f, self.plan.sources)?;
+        write!(f, "Draft `design.md`.\n\n{claims}", claims = ClaimsSection(self.plan.sources))?;
 
         f.write_str("\n## Sections\n\n")?;
         for &kind in SectionKind::VARIANTS {

@@ -1099,9 +1099,9 @@ dependencies = [
 
 [[package]]
 name = "encoding_rs"
-version = "0.8.40"
+version = "0.8.41"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2a7a45518d2863d18aa47f4a0cf9faec2aa4304cc09df5e41299f276b3ad135e"
+checksum = "7b5ef0006ac9ab233c38522f5ae99cae3625151de8f706cacee1cba4b8e2832a"
 dependencies = [
  "cfg-if",
  "core_detect",
@@ -2104,24 +2104,23 @@ dependencies = [
 
 [[package]]
 name = "multiversion"
-version = "0.8.0"
+version = "0.9.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7edb7f0ff51249dfda9ab96b5823695e15a052dc15074c9dbf3d118afaf2c201"
+checksum = "b4ca4bea16ffc3f443cf7d866912118196bfef4c6a1556ca00f9f9b00bb43f7c"
 dependencies = [
  "multiversion-macros",
- "target-features",
 ]
 
 [[package]]
 name = "multiversion-macros"
-version = "0.8.0"
+version = "0.9.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b093064383341eb3271f42e381cb8f10a01459478446953953c75d24bd339fc0"
+checksum = "0d416831a7317ef4b08bee00b69cbbb9c8763da7959a7026244d6266869f9c83"
 dependencies = [
  "proc-macro2",
  "quote",
- "syn 2.0.119",
- "target-features",
+ "rustversion",
+ "syn 3.0.5",
 ]
 
 [[package]]
@@ -2312,7 +2311,7 @@ dependencies = [
 [[package]]
 name = "omnia-cursor"
 version = "0.29.0"
-source = "git+https://github.com/augentic/omnia-backends#3cd99d9e1ba8cfcbed29552194406615cb82a6ff"
+source = "git+https://github.com/augentic/omnia-backends#3b4577ee6696da1038ae15d83896724238f830c6"
 dependencies = [
  "anyhow",
  "bytes",
@@ -2337,7 +2336,7 @@ dependencies = [
 [[package]]
 name = "omnia-filesystem"
 version = "0.29.0"
-source = "git+https://github.com/augentic/omnia-backends#3cd99d9e1ba8cfcbed29552194406615cb82a6ff"
+source = "git+https://github.com/augentic/omnia-backends#3b4577ee6696da1038ae15d83896724238f830c6"
 dependencies = [
  "anyhow",
  "fromenv",
@@ -3933,12 +3932,6 @@ name = "tagptr"
 version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7b2093cf4c8eb1e67749a6762251bc9cd836b6fc171623bd0a9d324d37af2417"
-
-[[package]]
-name = "target-features"
-version = "0.1.6"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c1bbb9f3c5c463a01705937a24fdabc5047929ac764b2d5b9cf681c1f5041ed5"
 
 [[package]]
 name = "target-lexicon"
@@ -5649,7 +5642,7 @@ checksum = "3ad82d2a33cdc9674dc7465672f271e096168fcdbe0f799d9e6db8c5892679dc"
 [[package]]
 name = "wrpc-introspect"
 version = "0.7.0"
-source = "git+https://github.com/bytecodealliance/wrpc#e787b4890360ab87c839a0fd1869e67df411a54e"
+source = "git+https://github.com/bytecodealliance/wrpc#7c8bdcd8c840a2eb8471847a79efb1b416e6b59c"
 dependencies = [
  "wit-parser 0.251.0",
 ]
@@ -5657,7 +5650,7 @@ dependencies = [
 [[package]]
 name = "wrpc-transport"
 version = "0.29.0"
-source = "git+https://github.com/bytecodealliance/wrpc#e787b4890360ab87c839a0fd1869e67df411a54e"
+source = "git+https://github.com/bytecodealliance/wrpc#7c8bdcd8c840a2eb8471847a79efb1b416e6b59c"
 dependencies = [
  "anyhow",
  "bytes",
@@ -5674,7 +5667,7 @@ dependencies = [
 [[package]]
 name = "wrpc-wasmtime"
 version = "0.1.0"
-source = "git+https://github.com/bytecodealliance/wrpc#e787b4890360ab87c839a0fd1869e67df411a54e"
+source = "git+https://github.com/bytecodealliance/wrpc#7c8bdcd8c840a2eb8471847a79efb1b416e6b59c"
 dependencies = [
  "anyhow",
  "bytes",

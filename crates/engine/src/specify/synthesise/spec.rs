@@ -19,7 +19,7 @@ use crate::artifact::{HEADING, ID, NOTE, ReqId, SCENARIO, SOURCES, STATUS, Statu
 use crate::specify::SourceEvidence;
 use crate::specify::brief::{Brief, Review};
 use crate::specify::provenance::{Contributor, Provenance, normalise};
-use crate::specify::synthesise::{document, render_claims};
+use crate::specify::synthesise::{ClaimsSection, Rendering};
 
 /// What the engine needs to ask the model for `spec.md` and to verify its
 /// draft: the extracted evidence and the requirement rows.
@@ -124,14 +124,14 @@ impl Brief for SpecBrief<'_> {
         let entries: BTreeMap<&str, &Requirement> =
             answer.requirements.iter().map(|entry| (entry.subject.as_str(), entry)).collect();
 
-        let mut blocks: Vec<String> = vec!["# Specification".to_string()];
-        blocks.extend(answer.preamble.iter().map(|paragraph| paragraph.trim().to_string()));
+        let mut document = Rendering::new("Specification");
+        document.paragraphs(&answer.preamble);
 
         for (index, row) in rows.iter().enumerate() {
             let drafted = entries.get(row.subject()).expect("the check held the draft to the rows");
             let tag = row.status().tag().map(|tag| format!(" [{tag}]")).unwrap_or_default();
-            blocks.push(format!("{HEADING} {}{tag}", row.subject()));
-            blocks.push(format!(
+            document.push(format!("{HEADING} {}{tag}", row.subject()));
+            document.push(format!(
                 "{ID} {id}\n{SOURCES} [{sources}]\n{STATUS} {status}",
                 id = ReqId::nth(index),
                 sources = row.sources().collect::<Vec<_>>().join(", "),
@@ -139,25 +139,25 @@ impl Brief for SpecBrief<'_> {
             ));
 
             if row.status() != Status::Conflict {
-                blocks.extend(drafted.body.iter().map(|paragraph| paragraph.trim().to_string()));
+                document.paragraphs(&drafted.body);
             }
             if let Some(notes) = notes(row) {
-                blocks.push(notes);
+                document.push(notes);
             }
 
             for scenario in &drafted.scenarios {
-                blocks.push(format!("{SCENARIO} {}", scenario.name.trim()));
+                document.push(format!("{SCENARIO} {}", scenario.name.trim()));
                 let mut bullets = String::new();
                 for given in &scenario.given {
                     let _ = writeln!(bullets, "- **GIVEN** {}", given.trim());
                 }
                 let _ = writeln!(bullets, "- **WHEN** {}", scenario.when.trim());
                 let _ = write!(bullets, "- **THEN** {}", scenario.then.trim());
-                blocks.push(bullets);
+                document.push(bullets);
             }
         }
 
-        document(&blocks)
+        document.finish()
     }
 }
 
@@ -166,8 +166,7 @@ impl Brief for SpecBrief<'_> {
 // contributing claim labelled winner / loser / contributor.
 impl fmt::Display for SpecBrief<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str("Draft `spec.md`.\n\n")?;
-        render_claims(f, self.sources)?;
+        write!(f, "Draft `spec.md`.\n\n{claims}", claims = ClaimsSection(self.sources))?;
 
         f.write_str("\n## Requirement rows (draft one entry per subject)\n\n")?;
         for (index, row) in self.rows.iter().enumerate() {

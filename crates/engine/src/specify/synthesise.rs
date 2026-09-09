@@ -46,45 +46,75 @@ pub async fn synthesise<M: Model>(
     Ok(Revision { spec, design })
 }
 
-// Joins rendered blocks into the document text: one blank line between
-// blocks, trailing spaces stripped from every line, one trailing newline.
-fn document(blocks: &[String]) -> String {
-    let mut text = blocks
-        .iter()
-        .map(|b| b.lines().map(str::trim_end).collect::<Vec<_>>().join("\n"))
-        .collect::<Vec<_>>()
-        .join("\n\n");
-    text.push('\n');
-    text
-}
+// A document under construction: the blocks the renderer emits in order,
+// joined by one blank line, every line right-trimmed, one trailing newline —
+// the shape `artifact::Text` reads back.
+struct Rendering(Vec<String>);
 
-// Writes the `## Claims` section of a brief's prompt: every claim of every
-// source, grouped under the source's key and authority, so the model sees
-// the whole body of evidence it must draft from.
-fn render_claims(f: &mut Formatter<'_>, sources: &[SourceEvidence]) -> fmt::Result {
-    f.write_str("## Claims\n")?;
+impl Rendering {
+    fn new(title: &str) -> Self {
+        Self(vec![format!("# {title}")])
+    }
 
-    for source in sources {
-        write!(
-            f,
-            "\n### source `{key}` ({authority})\n\n",
-            key = source.key,
-            authority = source.evidence.authority
-        )?;
+    // An engine block: a heading, a provenance run, a note, a fence.
+    fn push(&mut self, block: String) {
+        self.0.push(block);
+    }
 
-        for claim in &source.evidence.claims {
-            let id = claim.id.as_deref().unwrap_or("-");
-            let synopsis = claim.synopsis.as_deref().unwrap_or("");
-            writeln!(
-                f,
-                "- {kind} `{id}` — {synopsis} — {extras}",
-                kind = claim.kind,
-                extras = Value::Object(claim.extras.clone()),
-            )?;
+    // A drafted paragraph, placed as the model wrote it but for blank edges.
+    fn paragraph(&mut self, text: &str) {
+        self.0.push(text.trim().to_string());
+    }
+
+    fn paragraphs(&mut self, texts: &[String]) {
+        for text in texts {
+            self.paragraph(text);
         }
     }
 
-    Ok(())
+    fn finish(self) -> String {
+        let mut text = self
+            .0
+            .iter()
+            .map(|block| block.lines().map(str::trim_end).collect::<Vec<_>>().join("\n"))
+            .collect::<Vec<_>>()
+            .join("\n\n");
+        text.push('\n');
+        text
+    }
+}
+
+// The `## Claims` section of a brief's prompt: every claim of every source
+// under the source's key and authority, so the model sees the whole body of
+// evidence it must draft from.
+struct ClaimsSection<'a>(&'a [SourceEvidence]);
+
+impl Display for ClaimsSection<'_> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        f.write_str("## Claims\n")?;
+
+        for source in self.0 {
+            write!(
+                f,
+                "\n### source `{key}` ({authority})\n\n",
+                key = source.key,
+                authority = source.evidence.authority
+            )?;
+
+            for claim in &source.evidence.claims {
+                let id = claim.id.as_deref().unwrap_or("-");
+                let synopsis = claim.synopsis.as_deref().unwrap_or("");
+                writeln!(
+                    f,
+                    "- {kind} `{id}` — {synopsis} — {extras}",
+                    kind = claim.kind,
+                    extras = Value::Object(claim.extras.clone()),
+                )?;
+            }
+        }
+
+        Ok(())
+    }
 }
 
 // The prose checks both document briefs run: synthesis is where a draft is
