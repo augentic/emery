@@ -1,10 +1,8 @@
 # Emery - Agent Instructions
 
-> **Remediation programme in flight.** This file maps the reduced Phase 0 tree — what exists after the freeze, never a spec of what to build. Feature work is frozen until the spec walking skeleton is green.
->
-> The v1 implementation (survey + extract, plan/refine/execute, target adapters, the definition loop) is archived at git tag `v1`; retrieve it with `git worktree add ../emery-v1 v1`. First-party adapters live in [`augentic/emery-adapters`](https://github.com/augentic/emery-adapters) — cut to extract-only in Phase 4 (its `v1` tag keeps the survey-era tree).
+> The v1 implementation (survey + extract, plan/refine/execute, target adapters, the definition loop) is archived at git tag `v1`; retrieve it with `git worktree add ../emery-v1 v1`. First-party adapters live in [`augentic/emery-adapters`](https://github.com/augentic/emery-adapters) (its `v1` tag keeps the survey-era tree).
 
-## What this repository is now
+## What this repository is
 
 A Rust workspace at the repository root producing the `emery` runtime binary, plus one Cursor plugin (`plugins/emery/` carrying the `/emery:specify` skill wrapper). The live CLI grammar is three verbs:
 

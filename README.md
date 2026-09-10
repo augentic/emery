@@ -6,7 +6,7 @@
 
 Emery reconciles intent, documentation, existing code, and captured behaviour into reviewable specifications — durable artifacts, not chat history.
 
-> **Remediation programme in flight.** The v1 delivery workflow (survey/extract, plan/refine/execute/finalize, target adapters) is archived at git tag `v1`. This tree carries the spec generator: `emery specify` synthesises the reviewable set from the sources named on the invocation, `emery show` renders it. Retrieve the archived implementation with `git worktree add ../emery-v1 v1`.
+> The v1 delivery workflow (survey/extract, plan/refine/execute/finalize, target adapters) is archived at git tag `v1`; retrieve it with `git worktree add ../emery-v1 v1`. This tree carries the spec generator: `emery specify` synthesises the reviewable set from the sources named on the invocation, `emery show` renders it.
 
 ## The live surface
 
