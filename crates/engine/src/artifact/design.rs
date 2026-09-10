@@ -73,7 +73,7 @@ impl Section {
         let kind = heading.0.parse::<SectionKind>()?;
         Ok(Self {
             kind,
-            body: body.text(),
+            body: body.into_body(),
         })
     }
 }

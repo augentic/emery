@@ -134,7 +134,7 @@ impl Requirement {
             subject: subject.to_string(),
             sources,
             status,
-            body: Lines(&rest[cursor..]).text(),
+            body: Lines(&rest[cursor..]).into_body(),
         })
     }
 }

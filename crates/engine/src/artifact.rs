@@ -162,7 +162,7 @@ impl<'a> Deref for Lines<'a> {
 impl Lines<'_> {
     /// Joins the lines into one text with its blank edges trimmed.
     #[must_use]
-    pub fn text(self) -> String {
+    pub fn into_body(self) -> String {
         let text: Vec<&str> = self.iter().map(|line| line.0).collect();
         text.join("\n").trim_matches('\n').to_string()
     }
