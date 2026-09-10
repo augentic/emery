@@ -18,7 +18,7 @@ use crate::store::Store;
 /// Read one document of the current revision.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
-pub struct Show {
+pub struct ShowInput {
     /// Which document to read.
     pub document: Document,
 }
@@ -26,7 +26,7 @@ pub struct Show {
 /// Successful review result.
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "kebab-case")]
-pub struct ShowBody {
+pub struct ShowOutput {
     /// Current revision id.
     pub revision: String,
     /// The document body.
@@ -41,9 +41,9 @@ pub struct ShowBody {
 /// Returns `NotFound` (`spec-not-generated`) when no revision has been
 /// committed, and passes through the store's failures.
 pub async fn show<P: StateStore + BlobStore>(
-    input: Show, context: Context<P>,
-) -> Result<ShowBody, Error> {
-    let Show { document } = input;
+    input: ShowInput, context: Context<P>,
+) -> Result<ShowOutput, Error> {
+    let ShowInput { document } = input;
 
     let Some(revision) = Store::new(context.provider()).current().await? else {
         return Err(Error::NotFound {
@@ -52,7 +52,7 @@ pub async fn show<P: StateStore + BlobStore>(
         });
     };
 
-    Ok(ShowBody {
+    Ok(ShowOutput {
         revision: revision.id(),
         body: revision.into_body(document),
     })

@@ -16,8 +16,8 @@
 //! changed without reading the documents.
 
 mod brief;
-mod provenance;
 mod compose;
+mod provenance;
 
 use std::collections::BTreeSet;
 use std::path::Path;
@@ -45,20 +45,20 @@ pub use crate::store::{Changes, Diff};
 /// Returns `BadRequest` for a source the rules refuse or a claim the gate
 /// rejects, and passes through the extract, synthesis, and store failures.
 pub async fn specify<P: Model + Source + StateStore + BlobStore + Plugins>(
-    specify: Specify, context: Context<P>,
-) -> Result<SpecifyBody, Error> {
-    specify.validate()?;
+    input: SpecifyInput, context: Context<P>,
+) -> Result<SpecifyOutput, Error> {
+    input.validate()?;
 
     let provider = context.provider();
 
     // extract each source's evidence and synthesise into a specification set
-    let evidence = specify.extract(provider).await?;
-    let revision = compose::compose(provider, &evidence).await?;
+    let extracts = input.extract(provider).await?;
+    let revision = compose::compose(provider, &extracts).await?;
 
     // save the specification set
     let committed = Store::new(provider).commit(&revision).await?;
 
-    Ok(SpecifyBody {
+    Ok(SpecifyOutput {
         revision: committed.id,
         diff: committed.diff,
     })
@@ -66,13 +66,12 @@ pub async fn specify<P: Model + Source + StateStore + BlobStore + Plugins>(
 
 /// Generate a specification revision from sources.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "kebab-case")]
-pub struct Specify {
+pub struct SpecifyInput {
     /// The run's source configurations, in extraction order.
     pub sources: Vec<SourceConfig>,
 }
 
-impl Specify {
+impl SpecifyInput {
     // Refuses an empty list (`specify-source-required`), a malformed or repeated
     // key, a `digest` on a bare name the loader never acquires, a `registry` on
     // a selector the registry never serves, or a root outside the preopen.
@@ -102,10 +101,8 @@ impl Specify {
     // Loads, extracts, and validates every source. Adapters are guests the engine
     // did not write, so the contract's claim gate is re-run here (A8) before
     // anything downstream trusts their claims; adapter failures arrive classified.
-    async fn extract<P: Source + Plugins>(
-        &self, provider: &P,
-    ) -> Result<Vec<SourceEvidence>, Error> {
-        let mut extracted = Vec::with_capacity(self.sources.len());
+    async fn extract<P: Source + Plugins>(&self, provider: &P) -> Result<Vec<Extract>, Error> {
+        let mut extracts = Vec::with_capacity(self.sources.len());
         let loader = Loader::new(provider);
 
         for source in &self.sources {
@@ -122,27 +119,25 @@ impl Specify {
                 return Err(bad_request!("source `{key}` returned invalid claims:\n{findings}"));
             }
 
-            extracted.push(SourceEvidence {
+            extracts.push(Extract {
                 key: key.clone(),
                 evidence,
             });
         }
 
-        Ok(extracted)
+        Ok(extracts)
     }
 }
 
 // One source's validated evidence, under the key the documents cite it by.
 #[derive(Debug)]
-struct SourceEvidence {
+struct Extract {
     key: String,
     evidence: Evidence,
 }
 
-
 /// A source for one run.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "kebab-case")]
 pub struct SourceConfig {
     /// Stable kebab-case source key.
     pub key: String,
@@ -214,8 +209,7 @@ impl SourceConfig {
 
 /// Successful specification result.
 #[derive(Debug, Serialize)]
-#[serde(rename_all = "kebab-case")]
-pub struct SpecifyBody {
+pub struct SpecifyOutput {
     /// Committed revision id.
     pub revision: String,
     /// Diff from the predecessor; absent on the first run and when the

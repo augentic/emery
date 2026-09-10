@@ -107,7 +107,7 @@ Test function names are identifiers, not sentences — the same brevity rules as
 - Group a cluster that shares a subject under a nested `mod <subject>` rather than repeating the subject as a prefix.
 - Push the full narrative into the `//` requirement comment above the `fn`, not the identifier.
 
-`module_name_repetitions` does not fire on `#[test]` fns; keep identifiers short anyway. The 25-char cap is review-only ([coding-standards.md §"Naming"](./coding-standards.md#naming)).
+`module_name_repetitions` is off workspace-wide, so nothing fires on a long `#[test]` fn; keep identifiers short anyway. The 25-char cap is review-only ([coding-standards.md §"Naming"](./coding-standards.md#naming)).
 
 ## Patterns to follow
 

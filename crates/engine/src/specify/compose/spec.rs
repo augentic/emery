@@ -16,15 +16,15 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 
 use crate::artifact::{HEADING, ID, NOTE, ReqId, SCENARIO, SOURCES, STATUS, Status};
-use crate::specify::SourceEvidence;
+use crate::specify::Extract;
 use crate::specify::brief::{Brief, Review};
-use crate::specify::provenance::{Contributor, Provenance, normalise};
 use crate::specify::compose::{ClaimsSection, Markdown};
+use crate::specify::provenance::{Contributor, Provenance, normalise};
 
 /// What the engine needs to ask the model for `spec.md` and to verify its
 /// draft: the extracted evidence and the requirement rows.
 pub struct SpecBrief<'a> {
-    evidence: &'a [SourceEvidence],
+    evidence: &'a [Extract],
     rows: &'a [Provenance],
 }
 
@@ -32,7 +32,7 @@ impl<'a> SpecBrief<'a> {
     /// Creates the brief for `spec.md` from the extracted `evidence` and the
     /// requirement `rows` derived from them.
     #[must_use]
-    pub const fn new(evidence: &'a [SourceEvidence], rows: &'a [Provenance]) -> Self {
+    pub const fn new(evidence: &'a [Extract], rows: &'a [Provenance]) -> Self {
         Self { evidence, rows }
     }
 }

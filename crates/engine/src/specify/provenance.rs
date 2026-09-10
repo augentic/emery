@@ -23,7 +23,7 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 
 use crate::artifact::Status;
-use crate::specify::SourceEvidence;
+use crate::specify::Extract;
 use crate::specify::brief::{Brief, Review};
 
 /// Derives the provenance of every requirement in `evidence`, asking the
@@ -33,9 +33,7 @@ use crate::specify::brief::{Brief, Review};
 ///
 /// A model failure is `bad_gateway`; an answer outside the schema, or a
 /// grouping the backend could not repair within its rounds, is `bad_request`.
-pub async fn derive<M: Model>(
-    model: &M, evidence: &[SourceEvidence],
-) -> Result<Vec<Provenance>, Error> {
+pub async fn derive<M: Model>(model: &M, evidence: &[Extract]) -> Result<Vec<Provenance>, Error> {
     if evidence.len() < 2 {
         return Ok(floor(evidence));
     }
@@ -46,7 +44,7 @@ pub async fn derive<M: Model>(
 // Derives provenance from the deterministic floor alone — byte-equal ids are
 // one requirement, whitespace-equal statements one class — which is all a run
 // over one source gets.
-fn floor(evidence: &[SourceEvidence]) -> Vec<Provenance> {
+fn floor(evidence: &[Extract]) -> Vec<Provenance> {
     let claims = Claims::collect(evidence);
     claims.rows(&claims.floor())
 }
@@ -171,7 +169,7 @@ struct Claims<'a> {
 }
 
 impl<'a> Claims<'a> {
-    fn collect(evidence: &'a [SourceEvidence]) -> Self {
+    fn collect(evidence: &'a [Extract]) -> Self {
         let mut requirements: Vec<Contributor> = Vec::new();
         let mut criteria = Vec::new();
         for source in evidence {

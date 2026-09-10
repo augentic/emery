@@ -4,10 +4,10 @@ The contract every operation obeys: how an operation becomes an `omnia_guest::ap
 
 ## Operations (`emery_engine::specify`, `emery_engine::show`)
 
-Every operation is one `pub async fn <verb>(input: I, context: Context<P>) -> Result<Body, omnia_guest::Error>`, a `Handler<P, I>` through omnia's blanket impl over every fn of that shape (there is no proc-macro; a mis-shaped fn is reported by rustc at the route or `Client::call` site). The fn is bound at the call site — `client.call(specify, input, &metadata)`, `http::post(specify)` — never named by a type parameter:
+Every operation is one `pub async fn <verb>(input: I, context: Context<P>) -> Result<Output, omnia_guest::Error>`, a `Handler<P, I>` through omnia's blanket impl over every fn of that shape (there is no proc-macro; a mis-shaped fn is reported by rustc at the route or `Client::call` site). The fn is bound at the call site — `client.call(specify, input, &metadata)`, `http::post(specify)` — never named by a type parameter:
 
-- **`I`** is a flat, transport-neutral serde DTO (`Serialize`/`Deserialize`, `#[serde(rename_all = "kebab-case")]`): `Specify { sources: Vec<SourceConfig> }`, `Show { document: Document }`. It carries no clap derives, no flag names, and no carrier knowledge — the same type deserializes from an HTTP body (`omnia_guest::api::http::post(specify)`) as is built by the CLI façade.
-- **The fn body** validates its input against the rules every transport must get (the private `validate` in `emery_engine::specify`: a non-empty list, kebab-case unique keys, `digest`/`registry` gating, preopen-relative roots; the `adapter` field is the typed `AdapterRef`, so a malformed selector refuses at the DTO boundary), anchors at the deployed layout, delegates to the deterministic kernel over `context.provider()`, and returns the typed body.
+- **`I`** is a flat, transport-neutral serde DTO, `<Verb>Input` (`Serialize`/`Deserialize`, `#[serde(rename_all = "kebab-case")]`): `SpecifyInput { sources: Vec<SourceConfig> }`, `ShowInput { document: Document }`. It carries no clap derives, no flag names, and no carrier knowledge — the same type deserializes from an HTTP body (`omnia_guest::api::http::post(specify)`) as is built by the CLI façade.
+- **The fn body** validates its input against the rules every transport must get (the private `validate` in `emery_engine::specify`: a non-empty list, kebab-case unique keys, `digest`/`registry` gating, preopen-relative roots; the `adapter` field is the typed `AdapterRef`, so a malformed selector refuses at the DTO boundary), anchors at the deployed layout, delegates to the deterministic kernel over `context.provider()`, and returns the typed output (`<Verb>Output`, the fn's `Handler::Output`).
 - **`Result<_, omnia_guest::Error>`** — handlers return Omnia's protocol error; do not introduce a house error type.
 
 `Context<P>` is owned by the call: `owner()` and `provider()` are accessors, `metadata` is the public transport-neutral field, and `Context::new(owner, provider, metadata)` builds one without a `Client` when a handler is exercised directly.
@@ -16,13 +16,13 @@ Deterministic handlers bind only the capabilities they use unless their kernel i
 
 ```rust
 // GOOD — deterministic kernel behind the handler fn.
-pub async fn frob<P>(input: FrobInput, _context: Context<P>) -> Result<FrobBody, omnia_guest::Error> {
+pub async fn frob<P>(input: FrobInput, _context: Context<P>) -> Result<FrobOutput, omnia_guest::Error> {
     kernel(input)
 }
 
-fn kernel(input: FrobInput) -> Result<FrobBody, omnia_guest::Error> {
+fn kernel(input: FrobInput) -> Result<FrobOutput, omnia_guest::Error> {
     let outcome = some_crate::do_work(&input)?;
-    Ok(FrobBody::from(&outcome))
+    Ok(FrobOutput::from(&outcome))
 }
 ```
 
@@ -32,9 +32,9 @@ Handler fns live beside their domain kernels, in the module named for the verb (
 
 Handlers anchor at the `.` preopen inside the handler fn: paths are constants relative to the project-root mount (the invocation directory natively; `emery_engine::preopen_path` normalizes operator paths inside it and speaks paths, never flag names), and engine storage is named by fixed key/container formulas over the provider's storage capabilities. There is no project record and no project-level version requirement — a run's inputs arrive on the invocation, and there is nothing to be "inside". Handlers never derive paths any other way — no environment reads, no ancestor walks, no CWD dependence; native tests script the storage capabilities in memory instead of chdir-ing into a tempdir.
 
-## Output: `Serialize`-only bodies
+## Output: `Serialize`-only DTOs
 
-Handlers never write to stdout. Each returns a typed body (`SpecifyBody`, `ShowBody`) implementing `Serialize` and nothing presentational: no `Display`, no terminal style. Text-mode rendering is the CLI's concern — one render fn per body in `crates/cli/src/text.rs` (`Fn(&Body, &mut dyn fmt::Write) -> fmt::Result`), handed to omnia's `Command::call` as the verb's text form; `omnia_guest::api::Format::encode` encodes either mode into memory infallibly (text through the render fn, JSON through `Serialize`). The style those render fns follow is [CLI output shapes](../reference/cli-output-shapes.md).
+Handlers never write to stdout. Each returns a typed output (`SpecifyOutput`, `ShowOutput`) — omnia's `Handler::Output` — implementing `Serialize` and nothing presentational: no `Display`, no terminal style. Text-mode rendering is the CLI's concern — one render fn per output in `crates/cli/src/text.rs` (`Fn(&Output, &mut dyn fmt::Write) -> fmt::Result`), handed to omnia's `Command::call` as the verb's text form; `omnia_guest::api::Format::encode` encodes the output into the wire body in either mode infallibly (text through the render fn, JSON through `Serialize`). "Body" is that encoded form, never the engine type. The style those render fns follow is [CLI output shapes](../reference/cli-output-shapes.md).
 
 ## Errors and their projections
 
@@ -48,9 +48,9 @@ The Omnia 1:1 exit map is fixed; the one table lives in [AGENTS.md § Exit codes
 
 ## The command grammar (`emery-cli`)
 
-`crates/cli` is what is Emery's about the CLI surface: the clap `App` type and per-verb `*Args` types, the source carriers, the per-body render fns, and the hint table. The projection itself is omnia's command façade — `omnia_guest::api::command::{parse, Command, Response, Failure, completions}` — which is a transport over the engine in exactly the sense omnia's `api::http` overlay is: decode → `Client::call(handler, input, &Metadata)` → encode. There is no HTTP surface shipped: the engine binds no listener, so C3 (no unauthenticated HTTP ingress) is satisfied by absence rather than a refusal router — but the engine permits the overlay unchanged, and that is the litmus for the boundary.
+`crates/cli` is what is Emery's about the CLI surface: the clap `App` type and per-verb `*Args` types, the source carriers, the per-output render fns, and the hint table. The projection itself is omnia's command façade — `omnia_guest::api::command::{parse, Command, Response, Failure, completions}` — which is a transport over the engine in exactly the sense omnia's `api::http` overlay is: decode → `Client::call(handler, input, &Metadata)` → encode. There is no HTTP surface shipped: the engine binds no listener, so C3 (no unauthenticated HTTP ingress) is satisfied by absence rather than a refusal router — but the engine permits the overlay unchanged, and that is the litmus for the boundary.
 
-The grammar lives on façade-side `SpecifyArgs` / `ShowArgs` (`clap::Args`, `#[arg]` parsers, `--help` prose) and the closed `DocumentArg` (`clap::ValueEnum`). Each decodes into its engine input by **exhaustive struct literal** (`Specify { sources }`, `Show { document }`) and an exhaustive `From<DocumentArg> for Document`, so a new engine field or variant is a façade compile error — the same drift guarantee the old fused design had, with one direction of dependency. Global flags (`--format`) stay on `App`. Layering rule: `cli` imports engine inputs, bodies, the source DTO, `AdapterRef`, `preopen_path`, and `omnia_guest::Error` — never domain kernels.
+The grammar lives on façade-side `SpecifyArgs` / `ShowArgs` (`clap::Args`, `#[arg]` parsers, `--help` prose) and the closed `DocumentArg` (`clap::ValueEnum`). Each decodes into its engine input by **exhaustive struct literal** (`SpecifyInput { sources }`, `ShowInput { document }`) and an exhaustive `From<DocumentArg> for Document`, so a new engine field or variant is a façade compile error — the same drift guarantee the old fused design had, with one direction of dependency. Global flags (`--format`) stay on `App`. Layering rule: `cli` imports engine inputs, outputs, the source DTO, `AdapterRef`, `preopen_path`, and `omnia_guest::Error` — never domain kernels.
 
 Decoders (`crates/cli/src/config.rs`: argv positionals + `--description`, the `--config` `emery.toml` carrier, project-root discovery) return `omnia_guest::Error`, not clap errors, so their refusals ride the same envelope and exit map as handler failures (`--config` mixed with argv sources is `bad_request` → 1; an unreadable explicit `--config` is `server_error` → 3). Do not express those rules as clap `conflicts_with` / `value_parser` — that would move them to the usage exit (64) and out of the envelope.
 

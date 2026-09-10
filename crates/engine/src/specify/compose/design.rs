@@ -17,7 +17,7 @@ use serde_json::{Value, json};
 use strum::VariantArray as _;
 
 use crate::artifact::{SectionKind, citations};
-use crate::specify::SourceEvidence;
+use crate::specify::Extract;
 use crate::specify::brief::{Brief, Review};
 use crate::specify::compose::{ClaimsSection, Markdown};
 
@@ -32,7 +32,7 @@ impl<'a> DesignBrief<'a> {
     /// Creates the brief for `design.md` from the rendered `spec` and a
     /// section plan derived from the claim kinds in `evidence`.
     #[must_use]
-    pub fn new(evidence: &'a [SourceEvidence], spec: &'a str) -> Self {
+    pub fn new(evidence: &'a [Extract], spec: &'a str) -> Self {
         Self {
             spec,
             plan: Plan::collect(evidence),
@@ -254,12 +254,12 @@ pub enum Block {
 // the bound sources it may cite, and the `type` claim keys it must reference.
 struct Plan<'a> {
     kinds: Vec<ClaimKind>,
-    evidence: &'a [SourceEvidence],
+    evidence: &'a [Extract],
     keys: BTreeSet<&'a str>,
 }
 
 impl<'a> Plan<'a> {
-    fn collect(evidence: &'a [SourceEvidence]) -> Self {
+    fn collect(evidence: &'a [Extract]) -> Self {
         let kinds =
             evidence.iter().flat_map(|source| &source.evidence.claims).map(|claim| claim.kind);
         let keys = evidence

@@ -26,16 +26,16 @@ let path = path.display();
 omnia_guest::server_error!("{path} ({source})")
 ```
 
-## One body per command, no wrapper newtype
+## One output per command, no wrapper newtype
 
-Don't introduce a wrapper newtype to hang a rendering off a body. Write the body's render fn in the CLI (`crates/cli/src/text.rs`, `fn(&Body, &mut dyn fmt::Write) -> fmt::Result`, handed to omnia's `Command::call`) and keep `std::fmt::Display` off engine bodies altogether: their terminal shape is the CLI's contract, not the engine's. If the same rendering appears in three command files, it's one body — promote it.
+Don't introduce a wrapper newtype to hang a rendering off an output. Write the output's render fn in the CLI (`crates/cli/src/text.rs`, `fn(&Output, &mut dyn fmt::Write) -> fmt::Result`, handed to omnia's `Command::call`) and keep `std::fmt::Display` off engine outputs altogether: their terminal shape is the CLI's contract, not the engine's. If the same rendering appears in three command files, it's one output — promote it.
 
 ```rust
 // BAD — wrapper newtype existing only to carry a rendering.
-struct SpecifyText<'a>(&'a SpecifyBody);
+struct SpecifyText<'a>(&'a SpecifyOutput);
 impl Text for SpecifyText<'_> { /* ... */ }
-// GOOD — Text on the body, in the façade.
-impl Text for SpecifyBody { /* ... */ }
+// GOOD — Text on the output, in the façade.
+impl Text for SpecifyOutput { /* ... */ }
 ```
 
 ## No traits for testability alone

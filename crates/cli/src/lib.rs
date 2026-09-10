@@ -19,8 +19,8 @@ use std::ffi::OsString;
 
 use clap::{Parser, Subcommand};
 use emery_engine::Provider;
-use emery_engine::show::{Document, Show, show};
-use emery_engine::specify::{Specify, specify};
+use emery_engine::show::{Document, ShowInput, show};
+use emery_engine::specify::{SpecifyInput, specify};
 use omnia_guest::Error;
 use omnia_guest::api::command::{Command, Parsed, Response, Shell, completions, parse};
 use omnia_guest::api::{Client, Format, Metadata};
@@ -132,14 +132,14 @@ struct SpecifyArgs {
 }
 
 impl SpecifyArgs {
-    fn decode(self) -> Result<Specify, Error> {
+    fn decode(self) -> Result<SpecifyInput, Error> {
         let Self {
             adapters,
             descriptions,
             config,
         } = self;
         let sources = config::decode(&adapters, &descriptions, config.as_deref())?;
-        Ok(Specify { sources })
+        Ok(SpecifyInput { sources })
     }
 }
 
@@ -152,9 +152,9 @@ struct ShowArgs {
 }
 
 impl ShowArgs {
-    fn decode(self) -> Show {
+    fn decode(self) -> ShowInput {
         let Self { document } = self;
-        Show {
+        ShowInput {
             document: document.into(),
         }
     }

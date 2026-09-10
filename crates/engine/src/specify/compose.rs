@@ -25,9 +25,8 @@ use serde_json::Value;
 use self::design::DesignBrief;
 use self::spec::SpecBrief;
 use crate::artifact::RESERVED;
-use crate::specify::SourceEvidence;
 use crate::specify::brief::{Brief as _, Review};
-use crate::specify::provenance;
+use crate::specify::{Extract, provenance};
 use crate::store::Revision;
 
 /// Takes evidence from all queried sources, with the requirement rows derived
@@ -38,13 +37,11 @@ use crate::store::Revision;
 ///
 /// A model failure is `bad_gateway`; an answer outside the schema, or a draft
 /// the backend could not repair within its rounds, is `bad_request`.
-pub async fn compose<M: Model>(
-    model: &M, evidence: &[SourceEvidence],
-) -> Result<Revision, Error> {
-    let rows = provenance::derive(model, evidence).await?;
+pub async fn compose<M: Model>(model: &M, extracts: &[Extract]) -> Result<Revision, Error> {
+    let rows = provenance::derive(model, extracts).await?;
 
-    let spec = SpecBrief::new(evidence, &rows).judge(model).await?;
-    let design = DesignBrief::new(evidence, &spec).judge(model).await?;
+    let spec = SpecBrief::new(extracts, &rows).judge(model).await?;
+    let design = DesignBrief::new(extracts, &spec).judge(model).await?;
 
     Ok(Revision { spec, design })
 }
@@ -80,7 +77,7 @@ impl Markdown {
 // The `## Claims` section of a brief's prompt: every claim in the evidence,
 // under its source key and authority, so the model sees the whole body it
 // must draft from.
-struct ClaimsSection<'a>(&'a [SourceEvidence]);
+struct ClaimsSection<'a>(&'a [Extract]);
 
 impl Display for ClaimsSection<'_> {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
