@@ -49,36 +49,26 @@ pub async fn synthesise<M: Model>(
 // A document under construction: the blocks the renderer emits in order,
 // joined by one blank line, every line right-trimmed, one trailing newline —
 // the shape `artifact::Text` reads back.
-struct Rendering(Vec<String>);
+struct Markdown(Vec<String>);
 
-impl Rendering {
+impl Markdown {
     fn new(title: &str) -> Self {
         Self(vec![format!("# {title}")])
     }
 
-    // An engine block: a heading, a provenance run, a note, a fence.
-    fn push(&mut self, block: String) {
-        self.0.push(block);
+    fn append(&mut self, text: impl Into<String>) {
+        // add `\n` between lines
+        self.0.push(text.into().lines().map(str::trim_end).collect::<Vec<_>>().join("\n"))
     }
 
-    // A drafted paragraph, placed as the model wrote it but for blank edges.
-    fn paragraph(&mut self, text: &str) {
-        self.0.push(text.trim().to_string());
-    }
-
-    fn paragraphs(&mut self, texts: &[String]) {
+    fn extend(&mut self, texts: &[String]) {
         for text in texts {
-            self.paragraph(text);
+            self.append(text);
         }
     }
 
     fn finish(self) -> String {
-        let mut text = self
-            .0
-            .iter()
-            .map(|block| block.lines().map(str::trim_end).collect::<Vec<_>>().join("\n"))
-            .collect::<Vec<_>>()
-            .join("\n\n");
+        let mut text = self.0.join("\n\n");
         text.push('\n');
         text
     }
@@ -120,12 +110,6 @@ impl Display for ClaimsSection<'_> {
 // The prose checks both document briefs run: synthesis is where a draft is
 // placed into a document, so a draft may not carry the document's own markup.
 impl Review {
-    fn paragraphs(&mut self, texts: &[String], label: impl Display) {
-        for text in texts {
-            self.paragraph(text, &label);
-        }
-    }
-
     // A drafted paragraph may not be blank or open a line with a reserved
     // marker.
     fn paragraph(&mut self, text: &str, label: impl Display) {
@@ -141,6 +125,12 @@ impl Review {
                     "{label}: a paragraph line opens with the reserved marker `{marker}`"
                 ));
             }
+        }
+    }
+
+    fn paragraphs(&mut self, texts: &[String], label: impl Display) {
+        for text in texts {
+            self.paragraph(text, &label);
         }
     }
 

@@ -19,7 +19,7 @@ use strum::VariantArray as _;
 use crate::artifact::{SectionKind, citations};
 use crate::specify::SourceEvidence;
 use crate::specify::brief::{Brief, Review};
-use crate::specify::synthesise::{ClaimsSection, Rendering};
+use crate::specify::synthesise::{ClaimsSection, Markdown};
 
 /// What the engine needs to ask the model for `design.md` and to verify its
 /// draft: the rendered `spec.md` and the section plan.
@@ -152,23 +152,23 @@ impl Brief for DesignBrief<'_> {
             .filter_map(|claim| Some((claim.type_key()?, claim.signature()?)))
             .collect();
 
-        let mut document = Rendering::new("Design");
-        document.paragraphs(&answer.preamble);
+        let mut document = Markdown::new("Design");
+        document.extend(&answer.preamble);
 
         for &kind in SectionKind::VARIANTS {
             let Some(section) = answer.sections.iter().find(|section| section.kind == kind) else {
                 continue;
             };
 
-            document.push(format!("## {kind}"));
+            document.append(format!("## {kind}"));
             for block in &section.blocks {
                 match block {
-                    Block::Text(text) => document.paragraph(text),
+                    Block::Text(text) => document.append(text),
                     Block::Type(key) => {
                         let signature = signatures
                             .get(key.as_str())
                             .expect("the check held the draft to the type claims");
-                        document.push(format!("```\n{}\n```", signature.trim_end()));
+                        document.append(format!("```\n{}\n```", signature.trim_end()));
                     }
                 }
             }

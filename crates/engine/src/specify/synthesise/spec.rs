@@ -19,7 +19,7 @@ use crate::artifact::{HEADING, ID, NOTE, ReqId, SCENARIO, SOURCES, STATUS, Statu
 use crate::specify::SourceEvidence;
 use crate::specify::brief::{Brief, Review};
 use crate::specify::provenance::{Contributor, Provenance, normalise};
-use crate::specify::synthesise::{ClaimsSection, Rendering};
+use crate::specify::synthesise::{ClaimsSection, Markdown};
 
 /// What the engine needs to ask the model for `spec.md` and to verify its
 /// draft: the extracted evidence and the requirement rows.
@@ -124,36 +124,37 @@ impl Brief for SpecBrief<'_> {
         let entries: BTreeMap<&str, &Requirement> =
             answer.requirements.iter().map(|entry| (entry.subject.as_str(), entry)).collect();
 
-        let mut document = Rendering::new("Specification");
-        document.paragraphs(&answer.preamble);
+        let mut document = Markdown::new("Specification");
+        document.extend(&answer.preamble);
 
         for (index, row) in rows.iter().enumerate() {
-            let drafted = entries.get(row.subject()).expect("the check held the draft to the rows");
             let tag = row.status().tag().map(|tag| format!(" [{tag}]")).unwrap_or_default();
-            document.push(format!("{HEADING} {}{tag}", row.subject()));
-            document.push(format!(
+            document.append(format!("{HEADING} {}{tag}", row.subject()));
+            document.append(format!(
                 "{ID} {id}\n{SOURCES} [{sources}]\n{STATUS} {status}",
                 id = ReqId::nth(index),
                 sources = row.sources().collect::<Vec<_>>().join(", "),
                 status = row.status(),
             ));
 
-            if row.status() != Status::Conflict {
-                document.paragraphs(&drafted.body);
-            }
-            if let Some(notes) = notes(row) {
-                document.push(notes);
-            }
-
-            for scenario in &drafted.scenarios {
-                document.push(format!("{SCENARIO} {}", scenario.name.trim()));
-                let mut bullets = String::new();
-                for given in &scenario.given {
-                    let _ = writeln!(bullets, "- **GIVEN** {}", given.trim());
+            if let Some(requirements) = entries.get(row.subject()) {
+                if row.status() != Status::Conflict {
+                    document.extend(&requirements.body);
                 }
-                let _ = writeln!(bullets, "- **WHEN** {}", scenario.when.trim());
-                let _ = write!(bullets, "- **THEN** {}", scenario.then.trim());
-                document.push(bullets);
+                if let Some(notes) = notes(row) {
+                    document.append(notes);
+                }
+
+                for scenario in &requirements.scenarios {
+                    document.append(format!("{SCENARIO} {}", scenario.name.trim()));
+                    let mut bullets = String::new();
+                    for given in &scenario.given {
+                        let _ = writeln!(bullets, "- **GIVEN** {}", given.trim());
+                    }
+                    let _ = writeln!(bullets, "- **WHEN** {}", scenario.when.trim());
+                    let _ = write!(bullets, "- **THEN** {}", scenario.then.trim());
+                    document.append(bullets);
+                }
             }
         }
 
