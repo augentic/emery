@@ -16,7 +16,7 @@
 //! changed without reading the documents.
 
 mod brief;
-mod compose;
+mod dossier;
 mod provenance;
 
 use std::collections::BTreeSet;
@@ -51,12 +51,12 @@ pub async fn specify<P: Model + Source + StateStore + BlobStore + Plugins>(
 
     let provider = context.provider();
 
-    // extract each source's evidence and synthesise into a specification set
+    // extract each source's evidence and synthesise the dossier
     let extracts = input.extract(provider).await?;
-    let revision = compose::compose(provider, &extracts).await?;
+    let dossier = dossier::compose(provider, &extracts).await?;
 
-    // save the specification set
-    let committed = Store::new(provider).commit(&revision).await?;
+    // commit the dossier as the new revision
+    let committed = Store::new(provider).commit(&dossier).await?;
 
     Ok(SpecifyOutput {
         revision: committed.id,
@@ -72,9 +72,6 @@ pub struct SpecifyInput {
 }
 
 impl SpecifyInput {
-    // Refuses an empty list (`specify-source-required`), a malformed or repeated
-    // key, a `digest` on a bare name the loader never acquires, a `registry` on
-    // a selector the registry never serves, or a root outside the preopen.
     fn validate(&self) -> Result<(), Error> {
         if self.sources.is_empty() {
             return Err(Error::BadRequest {
@@ -98,9 +95,7 @@ impl SpecifyInput {
         Ok(())
     }
 
-    // Loads, extracts, and validates every source. Adapters are guests the engine
-    // did not write, so the contract's claim gate is re-run here (A8) before
-    // anything downstream trusts their claims; adapter failures arrive classified.
+    // Extracts each source's evidence.
     async fn extract<P: Source + Plugins>(&self, provider: &P) -> Result<Vec<Extract>, Error> {
         let mut extracts = Vec::with_capacity(self.sources.len());
         let loader = Loader::new(provider);

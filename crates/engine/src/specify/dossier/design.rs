@@ -19,7 +19,7 @@ use strum::VariantArray as _;
 use crate::artifact::{SectionKind, citations};
 use crate::specify::Extract;
 use crate::specify::brief::{Brief, Review};
-use crate::specify::compose::{ClaimsSection, Markdown};
+use crate::specify::dossier::{ClaimsSection, Markdown};
 
 /// What the engine needs to ask the model for `design.md` and to verify its
 /// draft: the rendered `spec.md` and the section plan.

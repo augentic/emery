@@ -45,7 +45,7 @@ pub async fn show<P: StateStore + BlobStore>(
 ) -> Result<ShowOutput, Error> {
     let ShowInput { document } = input;
 
-    let Some(revision) = Store::new(context.provider()).current().await? else {
+    let Some(dossier) = Store::new(context.provider()).current().await? else {
         return Err(Error::NotFound {
             code: "spec-not-generated".into(),
             description: "no specification revision has been committed".into(),
@@ -53,7 +53,7 @@ pub async fn show<P: StateStore + BlobStore>(
     };
 
     Ok(ShowOutput {
-        revision: revision.id(),
-        body: revision.into_body(document),
+        revision: dossier.revision(),
+        body: dossier.into_body(document),
     })
 }

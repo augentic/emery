@@ -1,7 +1,7 @@
-//! Synthesis
+//! The dossier
 //!
-//! Turns the requirement rows and the extracted claims into the two
-//! specification documents. The model is asked two typed questions in turn —
+//! Turns the requirement rows and the extracted claims into the dossier: the
+//! two specification documents. The model is asked two typed questions in turn —
 //! the content of `spec.md`, then the content of `design.md` — each put as a
 //! brief that verifies every candidate answer against the rows, the section
 //! plan, and the evidence before the engine renders the accepted answer into
@@ -24,26 +24,25 @@ use serde_json::Value;
 
 use self::design::DesignBrief;
 use self::spec::SpecBrief;
-use crate::artifact::RESERVED;
+use crate::artifact::{Dossier, RESERVED};
 use crate::specify::brief::{Brief as _, Review};
 use crate::specify::{Extract, provenance};
-use crate::store::Revision;
 
 /// Takes evidence from all queried sources, with the requirement rows derived
-/// from it, and asks the model to synthesise them into a single specification
-/// set containing both the specification and design documents.
+/// from it, and asks the model to synthesise them into the dossier: the
+/// specification and design documents.
 ///
 /// # Errors
 ///
 /// A model failure is `bad_gateway`; an answer outside the schema, or a draft
 /// the backend could not repair within its rounds, is `bad_request`.
-pub async fn compose<M: Model>(model: &M, extracts: &[Extract]) -> Result<Revision, Error> {
+pub async fn compose<M: Model>(model: &M, extracts: &[Extract]) -> Result<Dossier, Error> {
     let rows = provenance::derive(model, extracts).await?;
 
     let spec = SpecBrief::new(extracts, &rows).judge(model).await?;
     let design = DesignBrief::new(extracts, &spec).judge(model).await?;
 
-    Ok(Revision { spec, design })
+    Ok(Dossier { spec, design })
 }
 
 // A document under construction: the blocks the renderer emits in order,

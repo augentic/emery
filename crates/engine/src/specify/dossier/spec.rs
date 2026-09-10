@@ -18,7 +18,7 @@ use serde_json::{Value, json};
 use crate::artifact::{HEADING, ID, NOTE, ReqId, SCENARIO, SOURCES, STATUS, Status};
 use crate::specify::Extract;
 use crate::specify::brief::{Brief, Review};
-use crate::specify::compose::{ClaimsSection, Markdown};
+use crate::specify::dossier::{ClaimsSection, Markdown};
 use crate::specify::provenance::{Contributor, Provenance, normalise};
 
 /// What the engine needs to ask the model for `spec.md` and to verify its
