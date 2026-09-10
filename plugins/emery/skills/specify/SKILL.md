@@ -33,5 +33,5 @@ Specify dispatches model judgment and can take a while on large workspaces; it r
 ## Relay
 
 - Surface the CLI output verbatim — the success envelope names the committed revision and the re-mine diff against the superseded one.
-- Review is `emery show spec` / `emery show design` — never read or edit `.emery/` state by hand.
+- Review is `emery show spec` / `emery show design` — never read or edit `.omnia/storage` state by hand.
 - On non-zero exit, surface the structured error and stop — never hand-roll spec documents. A `refused` failure means the loader rejected the request (a pin that no longer matches, a malformed pin, an invalid artifact, or an unserved location); relay the hint and let the operator decide.

@@ -13,7 +13,7 @@ use std::future::Future;
 
 use omnia_guest::Error;
 
-use crate::types::{Evidence, SourceInput, SourceMetadata};
+use crate::types::{AdapterMetadata, Evidence, SourceInput};
 
 /// Import-side source dispatch over the `emery:adapter/source` contract.
 ///
@@ -37,11 +37,11 @@ pub trait Source: Send + Sync {
 
     /// Returns resolve-time metadata for `id`.
     #[cfg(not(target_arch = "wasm32"))]
-    fn metadata(&self, id: &str) -> SourceMetadata;
+    fn metadata(&self, id: &str) -> AdapterMetadata;
 
     /// Returns resolve-time metadata for `id`.
     #[cfg(target_arch = "wasm32")]
-    fn metadata(&self, id: &str) -> SourceMetadata {
+    fn metadata(&self, id: &str) -> AdapterMetadata {
         crate::wire::import::metadata(id)
     }
 }

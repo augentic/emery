@@ -10,7 +10,7 @@ Skills are ultrathin invoke-and-relay wrappers: they elicit missing arguments, i
 
 When a skill currently does something deterministic in prose (parsing YAML, validating shape, transitioning state), the right fix is to add a CLI verb and have the skill call it. The wrong fix is to make the skill smarter. See [AGENTS.md](../../AGENTS.md).
 
-Never hand-edit `.emery/` state (the revision store); never `mkdir -p .emery/...`. Route through the CLI — it enforces the legal set of states and validates inputs in one place for humans, agents, and CI alike.
+Never hand-edit `.omnia/storage` state (the revision store); never `mkdir -p .omnia/...`. Route through the CLI — it enforces the legal set of states and validates inputs in one place for humans, agents, and CI alike.
 
 ## Verb tree
 

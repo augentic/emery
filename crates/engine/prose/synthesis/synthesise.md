@@ -13,7 +13,7 @@ The request carries:
 
 1. **Claims** — every source's Evidence: its key, authority class (`intent` / `documentation` / `behaviour`), and typed claims. This is the complete evidence; nothing else exists.
 2. **Requirements** — for `spec.md`: one per requirement, in final order, with the minted `REQ-NNN` id, the subject, `Status:`, the `Sources:` list, whether acceptance criteria are evidenced, and every contributing claim with its role (winner, loser, or contributor). These requirements are engine-owned facts, not suggestions; you draft content for each subject and nothing else.
-3. **Sections** — for `design.md`: every section of the closed vocabulary with its presence (`required`, `permitted`, or `omit`) and the `type` claims to reference, computed from the claim kinds present. The plan is an engine-owned fact, not a suggestion.
+3. **Sections** — for `design.md`: every section of the closed vocabulary with its presence (`required`, `permitted`, or `omitted`) and the `type` claims to reference, computed from the claim kinds present. The plan is an engine-owned fact, not a suggestion.
 
 ## Contract
 

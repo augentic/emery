@@ -53,7 +53,7 @@ Density caps are **review only** — clippy and rustfmt cannot express them. The
 //! revision.
 //!
 //! The result reports what was committed — the revision id and the
-//! diff against the superseded revision — so a caller can see what
+//! diff against the outgoing revision — so a caller can see what
 //! changed without reading the documents.
 ```
 

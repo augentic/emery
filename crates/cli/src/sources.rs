@@ -77,14 +77,14 @@ fn from_argv(adapters: &[String], descriptions: &[String]) -> Result<Vec<SourceC
     }
 
     for entry in descriptions {
-        let Some((selector, text)) =
-            entry.split_once('=').filter(|(selector, _)| !selector.is_empty())
+        let Some((reference, text)) =
+            entry.split_once('=').filter(|(reference, _)| !reference.is_empty())
         else {
             return Err(bad_request!(
                 "invalid argument --description: expected `<adapter>=<text>`, got `{entry}`"
             ));
         };
-        let adapter: AdapterRef = selector.parse()?;
+        let adapter: AdapterRef = reference.parse()?;
         sources.push(SourceConfig {
             key: adapter.name().to_owned(),
             adapter,
@@ -113,7 +113,7 @@ fn from_file(path: &Path) -> Result<Vec<SourceConfig>, Error> {
         .parent()
         .filter(|parent| !parent.as_os_str().is_empty())
         .unwrap_or_else(|| Path::new("."));
-    file.source.iter().map(|entry| source(entry, base)).collect()
+    file.source.iter().map(|entry| entry.decode(base)).collect()
 }
 
 // The operator-authored schema: ordered `[[source]]` entries whose
@@ -145,61 +145,65 @@ struct SourceEntry {
     digest: Option<String>,
 }
 
-fn source(entry: &SourceEntry, base: &Path) -> Result<SourceConfig, Error> {
-    let name = &entry.name;
-    // A local component path resolves relative to the file, like Cargo
-    // `path` dependencies; other selector kinds pass through unchanged.
-    let adapter = match entry.adapter.parse::<AdapterRef>()? {
-        AdapterRef::Component { name, path } => AdapterRef::Component {
-            name,
-            path: resolved(base, &path)?,
-        },
-        other => other,
-    };
-    let digest = entry
-        .digest
-        .as_deref()
-        .map(|pin| pin.parse().map_err(|err| bad_request!("source `{name}`: {err}")))
-        .transpose()?;
+impl SourceEntry {
+    // Decodes the entry into the engine's source, anchoring its relative
+    // paths at `base`, the config file's directory.
+    fn decode(&self, base: &Path) -> Result<SourceConfig, Error> {
+        let name = &self.name;
+        // A local component path resolves relative to the file, like Cargo
+        // `path` dependencies; other reference kinds pass through unchanged.
+        let adapter = match self.adapter.parse::<AdapterRef>()? {
+            AdapterRef::Component { name, path } => AdapterRef::Component {
+                name,
+                path: resolved(base, &path)?,
+            },
+            other => other,
+        };
+        let digest = self
+            .digest
+            .as_deref()
+            .map(|pin| pin.parse().map_err(|err| bad_request!("source `{name}`: {err}")))
+            .transpose()?;
 
-    let locations = [
-        entry.path.is_some(),
-        entry.git.is_some(),
-        entry.url.is_some(),
-        entry.description.is_some(),
-    ];
-    if locations.iter().filter(|present| **present).count() > 1 {
-        return Err(bad_request!(
-            "source `{name}` sets more than one of `path`, `git`, `url`, `description`"
-        ));
-    }
-    if let Some(remote) = entry.git.as_deref().or(entry.url.as_deref()) {
-        if remote.starts_with("git+") {
+        let locations = [
+            self.path.is_some(),
+            self.git.is_some(),
+            self.url.is_some(),
+            self.description.is_some(),
+        ];
+        if locations.iter().filter(|present| **present).count() > 1 {
             return Err(bad_request!(
-                "source `{name}`: drop the `git+` prefix and write the plain URL"
+                "source `{name}` sets more than one of `path`, `git`, `url`, `description`"
             ));
         }
-        return Err(bad_request!(
-            "source `{name}`: `git` and `url` are not supported; use `path` or `description`"
-        ));
-    }
-
-    let content = match (&entry.path, &entry.description) {
-        (Some(relative), None) => {
-            SourceContent::Workspace(resolved(base, Path::new(relative))?.display().to_string())
+        if let Some(remote) = self.git.as_deref().or(self.url.as_deref()) {
+            if remote.starts_with("git+") {
+                return Err(bad_request!(
+                    "source `{name}`: drop the `git+` prefix and write the plain URL"
+                ));
+            }
+            return Err(bad_request!(
+                "source `{name}`: `git` and `url` are not supported; use `path` or `description`"
+            ));
         }
-        (None, Some(text)) => SourceContent::Value(text.clone()),
-        (None, None) => SourceContent::Workspace(".".to_string()),
-        (Some(_), Some(_)) => unreachable!("two content keys refused above"),
-    };
 
-    Ok(SourceConfig {
-        key: name.clone(),
-        adapter,
-        content,
-        digest,
-        registry: entry.registry.clone(),
-    })
+        let content = match (&self.path, &self.description) {
+            (Some(relative), None) => {
+                SourceContent::Workspace(resolved(base, Path::new(relative))?.display().to_string())
+            }
+            (None, Some(text)) => SourceContent::Value(text.clone()),
+            (None, None) => SourceContent::Workspace(".".to_string()),
+            (Some(_), Some(_)) => unreachable!("two content keys refused above"),
+        };
+
+        Ok(SourceConfig {
+            key: name.clone(),
+            adapter,
+            content,
+            digest,
+            registry: self.registry.clone(),
+        })
+    }
 }
 
 // Anchors `relative` at the file's directory, refusing any path outside

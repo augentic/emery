@@ -24,12 +24,6 @@ pub fn find<'d>(docs: &'d [Doc], path: &str) -> Option<&'d Doc> {
     docs.binary_search_by(|doc| doc.path.cmp(path)).ok().map(|idx| &docs[idx])
 }
 
-/// Returns the body for `path`.
-#[must_use]
-pub fn resolve(docs: &[Doc], path: &str) -> Option<&'static str> {
-    find(docs, path).map(|doc| doc.body)
-}
-
 /// Returns the body for an embedded `path`.
 ///
 /// # Panics
@@ -37,8 +31,8 @@ pub fn resolve(docs: &[Doc], path: &str) -> Option<&'static str> {
 /// Panics if `path` is absent, indicating a registry/tree mismatch.
 #[must_use]
 pub fn body(docs: &[Doc], path: &str) -> &'static str {
-    resolve(docs, path)
-        .unwrap_or_else(|| panic!("document `{path}` is not embedded in the registry"))
+    find(docs, path)
+        .map_or_else(|| panic!("document `{path}` is not embedded in the registry"), |doc| doc.body)
 }
 
 /// Generates registry accessors for the build-time `DOCS` table.

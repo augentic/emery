@@ -39,14 +39,14 @@ The success body names the committed revision and its reviewable set:
   "revision": "9f8e7d6c…",
   "diff": {
     "from": "1a2b3c4d…",
-    "artifacts": ["spec.md", "design.md"],
+    "documents": ["spec.md", "design.md"],
     "spec": { "added": [], "removed": [], "changed": ["session.timeout"] },
     "design": { "added": [], "removed": [], "changed": ["Domain model"] }
   }
 }
 ```
 
-`diff` is the re-mine diff against the superseded revision: the changed artifacts, then one `{ added, removed, changed }` object per document — `spec` lists requirement subjects (heading names, so a block that only moved is not a change), `design` lists `## ` section titles. It is absent on a first run and empty (`artifacts: []`) on a byte-stable re-run; nothing is persisted for it. Text mode prints one line per changed section prefixed by its document: `    spec.md ~ session.timeout`, `    design.md ~ Domain model`.
+`diff` is the re-mine diff against the outgoing revision: the changed documents, then one `{ added, removed, changed }` object per document — `spec` lists requirement subjects (heading names, so a block that only moved is not a change), `design` lists `## ` section titles. It is absent on a first run and empty (`documents: []`) on a byte-stable re-run; nothing is persisted for it. Text mode prints one line per changed section prefixed by its document: `    spec.md ~ session.timeout`, `    design.md ~ Domain model`.
 
 A pin that no longer matches the resolved bytes fails with `error: "refused"` (exit 1).
 

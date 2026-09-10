@@ -14,7 +14,9 @@ use std::path::{Path, PathBuf};
 
 use anyhow::{Result, bail};
 
-struct File {
+// One Markdown document found in the tree: its tree-relative path and the
+// canonical file the generated table `include_str!`s.
+struct Markdown {
     path: String,
     file: PathBuf,
 }
@@ -57,7 +59,7 @@ fn emit_from(root: &Path, out_dir: &Path) -> Result<()> {
          pub static DOCS: &[Doc] = &[\n",
     );
 
-    for File { path, file } in &files {
+    for Markdown { path, file } in &files {
         check_links(file)?;
 
         writeln!(
@@ -75,7 +77,7 @@ fn emit_from(root: &Path, out_dir: &Path) -> Result<()> {
 
 // Recurses into `dir`, collecting Markdown files. Symlinks are followed, so
 // the canonical-path stack is the cycle guard.
-fn walk(dir: &Path, path: &str, files: &mut Vec<File>, stack: &mut Vec<PathBuf>) -> Result<()> {
+fn walk(dir: &Path, path: &str, files: &mut Vec<Markdown>, stack: &mut Vec<PathBuf>) -> Result<()> {
     println!("cargo:rerun-if-changed={}", dir.display());
 
     let canonical = fs::canonicalize(dir)?;
@@ -90,7 +92,7 @@ fn walk(dir: &Path, path: &str, files: &mut Vec<File>, stack: &mut Vec<PathBuf>)
 }
 
 fn walk_entries(
-    dir: &Path, path: &str, files: &mut Vec<File>, stack: &mut Vec<PathBuf>,
+    dir: &Path, path: &str, files: &mut Vec<Markdown>, stack: &mut Vec<PathBuf>,
 ) -> Result<()> {
     for entry in fs::read_dir(dir)? {
         let entry = entry?;
@@ -103,7 +105,7 @@ fn walk_entries(
             walk(&entry_path, &path, files, stack)?;
         } else if metadata.is_file() && entry_path.extension().is_some_and(|ext| ext == "md") {
             println!("cargo:rerun-if-changed={}", entry_path.display());
-            files.push(File {
+            files.push(Markdown {
                 path,
                 file: fs::canonicalize(&entry_path)?,
             });

@@ -15,7 +15,7 @@ use std::sync::{Arc, Mutex};
 
 use emery_source::Source;
 use emery_source::types::{
-    Authority, Backing, Claim, ClaimKind, Evidence, SourceInput, SourceMetadata,
+    AdapterMetadata, Authority, Backing, Claim, ClaimKind, Evidence, SourceInput,
 };
 use omnia_guest::api::command::Response;
 use omnia_guest::plugins::Digest;
@@ -25,7 +25,7 @@ use serde_json::Value;
 
 const GREETING: &str = "GET /greeting returns the static string 'hello'.";
 
-/// Dispatched `(routed id, input)` pairs, in call order.
+/// Dispatched `(adapter id, input)` pairs, in call order.
 type Recorded = Vec<(String, SourceInput)>;
 
 /// Scripted `Source`: per-key evidence, per-adapter minimum `emery`
@@ -113,12 +113,12 @@ impl<S: Send + Sync + 'static> Source for Provider<S> {
         std::future::ready(outcome)
     }
 
-    fn metadata(&self, id: &str) -> SourceMetadata {
+    fn metadata(&self, id: &str) -> AdapterMetadata {
         // Routed ids are `source:<name>` or a package reference
         // (`<namespace>:<name>@<version>`); versions key on the name.
         let name = id.split_once('@').map_or(id, |(stem, _)| stem);
         let name = name.rsplit_once(':').map_or(name, |(_, stem)| stem);
-        SourceMetadata {
+        AdapterMetadata {
             emery_version: self.source.versions.get(name).cloned(),
         }
     }

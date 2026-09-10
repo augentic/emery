@@ -2,7 +2,7 @@
 //!
 //! The Rust forms of the records in the `emery:adapter` WIT package: what an
 //! adapter is given ([`SourceInput`] over a workspace or an inline value),
-//! what it reports about itself ([`SourceMetadata`]), and what it returns —
+//! what it reports about itself ([`AdapterMetadata`]), and what it returns —
 //! an [`Evidence`] document of typed [`Claim`]s with an [`Authority`] class.
 //! Engine and adapter code work with these; the generated wire bindings stay
 //! behind them, and operations fail with `omnia_guest::Error`.
@@ -21,7 +21,7 @@ use crate::claims::DOTTED_KEBAB_PATTERN;
 
 /// Resolve-time source adapter metadata.
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct SourceMetadata {
+pub struct AdapterMetadata {
     /// Exact minimum Emery version, if any.
     pub emery_version: Option<String>,
 }

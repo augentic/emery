@@ -78,10 +78,8 @@ pub fn answer(docs: &[Doc], call: &ToolCall) -> Result<String, String> {
                 .get("path")
                 .and_then(Value::as_str)
                 .ok_or_else(|| "read_doc requires a string `path` argument".to_string())?;
-            registry::resolve(docs, path).map_or_else(
-                || Err(format!("no document `{path}`")),
-                |body| Ok(json!({ "path": path, "body": body }).to_string()),
-            )
+            let doc = registry::find(docs, path).ok_or_else(|| format!("no document `{path}`"))?;
+            Ok(json!({ "path": path, "body": doc.body }).to_string())
         }
         other => Err(format!("unknown tool `{other}`")),
     }

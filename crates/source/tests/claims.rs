@@ -5,7 +5,7 @@
 //! claim missing an extra its kind requires is refused. Pinning these here
 //! keeps the two enforcement points from disagreeing.
 
-use emery_source::claims::{extras_findings, id_findings};
+use emery_source::claims::findings;
 use emery_source::types::{ClaimKind, Evidence};
 
 #[test]
@@ -18,8 +18,7 @@ fn clean_evidence() {
             {"kind":"decision"}
         ]}"#,
     );
-    assert!(id_findings(&clean.claims).is_empty());
-    assert!(extras_findings(&clean.claims).is_empty());
+    assert!(findings(&clean.claims).is_empty());
     assert!(clean.findings().is_empty(), "clean evidence passes the gate");
 }
 
@@ -32,10 +31,9 @@ fn malformed_ids() {
             {"kind":"section"}
         ]}"#,
     );
-    assert_eq!(id_findings(&malformed.claims).len(), 2, "optional-id kinds pass unset");
-    assert!(extras_findings(&malformed.claims).is_empty(), "extras are present");
-    let detail = malformed.findings().join("\n");
-    assert!(!detail.is_empty(), "malformed evidence must fail the gate");
+    let findings = malformed.findings();
+    assert_eq!(findings.len(), 2, "optional-id kinds pass unset; extras are present: {findings:?}");
+    let detail = findings.join("\n");
     assert!(detail.contains("claims require an id"), "finding names the missing id: {detail}");
     assert!(detail.contains("`Not.Valid`"), "finding names the malformed id: {detail}");
 }
@@ -55,12 +53,15 @@ fn missing_extras() {
             {"kind":"section","synopsis":"no extras required"}
         ]}"#,
     );
-    assert!(id_findings(&bare.claims).is_empty(), "ids are well-formed");
-    let findings = extras_findings(&bare.claims);
-    assert_eq!(findings.len(), 2, "one finding per absent extra: {findings:?}");
+    let findings = findings(&bare.claims);
+    assert_eq!(
+        findings.len(),
+        2,
+        "ids are well-formed; one finding per absent extra: {findings:?}"
+    );
     assert!(findings[0].contains("`password-reset.request` is missing extra `statement`"));
     assert!(findings[1].contains("`password-reset.stale` is missing extra `replay-digest`"));
-    assert_eq!(bare.findings(), findings, "the document gate is the two rule sets joined");
+    assert_eq!(bare.findings(), findings, "the document gate is the claim gate over its claims");
 }
 
 fn evidence(json: &str) -> Evidence {

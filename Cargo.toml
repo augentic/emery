@@ -38,6 +38,7 @@ omnia-guest.workspace = true
 wasip3.workspace = true
 
 [build-dependencies]
+emery-prose = { workspace = true, features = ["emit"] }
 omnia.workspace = true
 
 [dev-dependencies]

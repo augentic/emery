@@ -17,7 +17,7 @@ The v1 delivery workflow (plan / refine / execute / status / finalize and the `s
 /emery:specify <adapter>           (every revision)
 ```
 
-That is the whole shipped surface. The source list never persists — repeat the adapters on every run, or keep them in an operator-owned `emery.toml` selected with `--config [<path>]` (`--config` alone means the project-relative `emery.toml`; a run naming no sources at all discovers the project-root file as a fallback). Never hand-edit `.emery/` state (the revision store); route through the CLI.
+That is the whole shipped surface. The source list never persists — repeat the adapters on every run, or keep them in an operator-owned `emery.toml` selected with `--config [<path>]` (`--config` alone means the project-relative `emery.toml`; a run naming no sources at all discovers the project-root file as a fallback). Never hand-edit `.omnia/storage` state (the revision store); route through the CLI.
 
 ## Tracing and output
 

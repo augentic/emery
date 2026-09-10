@@ -13,7 +13,7 @@ Hard-coded conventions of the rendered `design.md`. These are not configurable.
 
 ## Section plan
 
-The request lists every section with its presence — `required`, `permitted`, or `omit` — computed by the engine from the claim kinds present. Draft every `required` section, never an `omit` section, and a `permitted` section only when claims inform it. Each drafted section carries at least one block.
+The request lists every section with its presence — `required`, `permitted`, or `omitted` — computed by the engine from the claim kinds present. Draft every `required` section, never an `omitted` section, and a `permitted` section only when claims inform it. Each drafted section carries at least one block.
 
 ## Blocks
 

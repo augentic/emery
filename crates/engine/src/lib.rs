@@ -9,17 +9,17 @@
 //! results over a [`Provider`] of capabilities, and leaves argument parsing,
 //! terminal text, and exit codes to whichever front end drives it.
 
+mod adapter;
 mod artifact;
-mod plugin;
 pub mod show;
 pub mod specify;
 mod store;
 
 use std::path::{Component, Path, PathBuf};
 
+pub use adapter::AdapterRef;
 use emery_source::Source;
 use omnia_guest::{BlobStore, Error, Model, Plugins, StateStore, bad_request};
-pub use plugin::AdapterRef;
 pub use store::{CONTAINER, CURRENT};
 
 /// Normalizes an operator path inside the `.` project preopen.

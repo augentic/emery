@@ -1,4 +1,4 @@
-//! Evidence answers
+//! The evidence call
 //!
 //! The one model call an adapter makes: [`evidence`] asks the extract
 //! question as an [`Evidence`]-typed [`Question`] and returns the accepted

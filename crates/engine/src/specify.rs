@@ -12,7 +12,7 @@
 //! and it is checked whole before a single adapter loads.
 //!
 //! The result reports what was committed — the revision id and the
-//! diff against the superseded revision — so a caller can see what
+//! diff against the outgoing revision — so a caller can see what
 //! changed without reading the documents.
 
 mod basis;
@@ -31,7 +31,7 @@ use omnia_guest::plugins::Digest;
 use omnia_guest::{BlobStore, Error, Model, Plugins, StateStore, bad_request};
 use serde::{Deserialize, Serialize};
 
-use crate::plugin::{AdapterRef, Loader};
+use crate::adapter::{AdapterRef, Loader};
 pub use crate::store::{Changes, Diff};
 use crate::{preopen_path, store};
 
@@ -130,7 +130,7 @@ struct Extract {
 pub struct SourceConfig {
     /// Stable kebab-case source key.
     pub key: String,
-    /// The adapter selector.
+    /// Which adapter extracts this source.
     pub adapter: AdapterRef,
     /// What the adapter extracts: a project-relative read-only root
     /// (`.` binds the project) or an inline value.
@@ -155,7 +155,7 @@ impl SourceConfig {
     // operator root meets the guest preopen.
     fn input(&self) -> Result<SourceInput, Error> {
         let content = match &self.content {
-            // `.` spans the project preopen, including `.emery/`, until
+            // `.` spans the project preopen, including `.omnia/`, until
             // guest capability profiles can exclude the revision store.
             SourceContent::Workspace(relative) => {
                 let relative = preopen_path(Path::new(relative))?;
@@ -204,8 +204,8 @@ impl SourceConfig {
 pub struct SpecifyOutput {
     /// Committed revision id.
     pub revision: String,
-    /// Diff from the predecessor; absent on the first run and when the
-    /// superseded revision was unreadable.
+    /// Diff from the outgoing revision; absent on the first run and when
+    /// the outgoing revision was unreadable.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub diff: Option<Diff>,
 }

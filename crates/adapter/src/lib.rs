@@ -10,7 +10,7 @@
 //! Failures are omnia's [`Error`]: an adapter refuses its input with
 //! [`bad_request!`] and reports anything else with the sibling macros.
 
-mod answers;
+mod evidence;
 mod operations;
 pub mod references;
 pub mod types;
@@ -18,8 +18,8 @@ pub mod types;
 #[cfg(target_arch = "wasm32")]
 pub mod source;
 
-pub use answers::{content_note, evidence};
 pub use emery_source::Source;
+pub use evidence::{content_note, evidence};
 #[cfg(target_arch = "wasm32")]
 pub use omnia_guest::model::WasiModel;
 pub use omnia_guest::model::{

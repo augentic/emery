@@ -26,7 +26,7 @@ This is the CLI command invoked by [`/emery:specify`](../../../plugins/emery/ski
 
 `emery.toml` is operator-authored and operator-owned: the engine never writes it, and reads it when the `--config` flag names it or when a run naming no sources discovers it at the project root. `--config` without a value names the project-relative `emery.toml`; an explicit value names another project-relative file (a missing explicit file is a read error, exit `3`, never a discovery miss). Each `[[source]]` entry names one source, in declaration order; its `name` is the source key, so one adapter may name several roots (the shared adapter loads once; each source still extracts over its own root). Exactly one content key per entry — `path` or `description`; omitted means the workspace lend at `.`. `path` (and a local component `adapter`) resolves relative to the file containing it, as Cargo resolves `path` dependencies. Duplicate names fail as `bad_request` (exit `1`), the same typed error argv raises.
 
-Every filesystem input is normalized within the project preopen `.`. Absolute paths and relative paths that escape above it fail as `bad_request` (exit `1`); the engine never tries to infer a host path from the guest's ambient working directory. The `git` and `url` content keys are reserved: they parse but refuse typed (`bad_request`) until the remote read-view grant exists. The per-source `digest` key pins a loader-loaded adapter's exact bytes (`sha256:<hex>`) — a local component's or a registry package's — verified host-side before validation; a mismatch refuses `refused` (exit `1`), and a pin on a bare name refuses `bad_request`. The per-source `registry` key overrides the acquirer's default endpoint for one package-shaped adapter; on any other selector it refuses `bad_request`.
+Every filesystem input is normalized within the project preopen `.`. Absolute paths and relative paths that escape above it fail as `bad_request` (exit `1`); the engine never tries to infer a host path from the guest's ambient working directory. The `git` and `url` content keys are reserved: they parse but refuse typed (`bad_request`) until the remote read-view grant exists. The per-source `digest` key pins a loader-loaded adapter's exact bytes (`sha256:<hex>`) — a local component's or a registry package's — verified host-side before validation; a mismatch refuses `refused` (exit `1`), and a pin on a bare name refuses `bad_request`. The per-source `registry` key overrides the acquirer's default endpoint for one package-shaped adapter; on any other reference it refuses `bad_request`.
 
 ```toml
 # Workspace lend of the invocation directory (the default: path = ".").
@@ -78,7 +78,7 @@ digest = "sha256:55c29a…"
 When `--format json` is provided, returns:
 
 - `revision` — the committed revision id, now current
-- `diff` — the re-mine diff against the superseded revision: `from`, the changed `artifacts`, and a `{ added, removed, changed }` object each for `spec` (requirement subjects) and `design` (section titles); absent on a first run, empty on a byte-stable re-run
+- `diff` — the re-mine diff against the outgoing revision: `from`, the changed `documents`, and a `{ added, removed, changed }` object each for `spec` (requirement subjects) and `design` (section titles); absent on a first run, empty on a byte-stable re-run
 
 ## See also
 

@@ -22,16 +22,16 @@ pub fn specify(output: &SpecifyOutput, w: &mut dyn fmt::Write) -> fmt::Result {
         if diff.is_empty() {
             writeln!(w, "  diff vs {}: none (byte-stable)", diff.from)?;
         } else {
-            writeln!(w, "  diff vs {}: {}", diff.from, diff.artifacts.join(", "))?;
-            changes(w, Document::Spec, &diff.spec)?;
-            changes(w, Document::Design, &diff.design)?;
+            writeln!(w, "  diff vs {}: {}", diff.from, diff.documents.join(", "))?;
+            changes(Document::Spec, &diff.spec, w)?;
+            changes(Document::Design, &diff.design, w)?;
         }
     }
     Ok(())
 }
 
 // Writes one line per changed section, prefixed by its document.
-fn changes(w: &mut dyn fmt::Write, document: Document, changes: &Changes) -> fmt::Result {
+fn changes(document: Document, changes: &Changes, w: &mut dyn fmt::Write) -> fmt::Result {
     let document = document.file();
     for heading in &changes.added {
         writeln!(w, "    {document} + {heading}")?;

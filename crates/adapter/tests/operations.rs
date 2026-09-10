@@ -5,7 +5,7 @@
 //! exercise without a wasm build, which is the promise adapter authors' own
 //! test suites depend on.
 
-use emery_adapter::types::{Context, Evidence, SourceInput, SourceMetadata};
+use emery_adapter::types::{AdapterMetadata, Context, Evidence, SourceInput};
 use emery_adapter::{Error, Model, SourceAdapter, evidence};
 use emery_prose::registry::Doc;
 use omnia_test::guest::Scripted;
@@ -21,8 +21,6 @@ const PIN: Option<&str> = Some(env!("CARGO_PKG_VERSION"));
 struct Probe;
 
 impl SourceAdapter for Probe {
-    const IDENTITY: &str = "probe@0.0.0";
-
     fn docs() -> &'static [Doc] {
         DOCS
     }
@@ -34,8 +32,8 @@ impl SourceAdapter for Probe {
     }
 }
 
-fn pinned() -> SourceMetadata {
-    SourceMetadata {
+fn pinned() -> AdapterMetadata {
+    AdapterMetadata {
         emery_version: PIN.map(str::to_string),
     }
 }
@@ -47,7 +45,6 @@ async fn source_dispatch() {
     ]);
     let ctx = Context {
         adapter_id: "source:probe",
-        project_root: std::path::Path::new("."),
         docs: DOCS,
         lend: Some(".".to_string()),
     };
@@ -58,7 +55,6 @@ async fn source_dispatch() {
     assert_eq!(evidence.claims.len(), 1);
     assert_eq!(evidence.claims[0].id.as_deref(), Some("one.claim"));
 
-    assert_eq!(<Probe as SourceAdapter>::IDENTITY, "probe@0.0.0");
     assert_eq!(<Probe as SourceAdapter>::metadata(), pinned());
     assert_eq!(<Probe as SourceAdapter>::docs()[0].path, "prompts/extract.md");
 }

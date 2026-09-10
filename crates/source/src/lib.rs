@@ -9,11 +9,11 @@
 //! consumes it directly; adapters receive it re-exported through the
 //! `emery-adapter` SDK.
 
+mod capability;
 pub mod claims;
-mod dispatch;
 pub mod types;
 
 #[cfg(target_arch = "wasm32")]
 pub mod wire;
 
-pub use dispatch::Source;
+pub use capability::Source;

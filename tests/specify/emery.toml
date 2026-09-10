@@ -27,7 +27,7 @@ adapter = "./source.wasm"
 # adapter = "intent@1.0.0"
 # description = "Ship a location-independent spec generator."
 
-# # Local component path as the adapter selector, loaded through the
+# # Local component path as the adapter reference, loaded through the
 # # deployment loader and read fresh on every run. Adapter location and
 # # source location are separate axes.
 # [[source]]

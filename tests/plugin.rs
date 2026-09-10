@@ -18,7 +18,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use emery_source::Source;
-use emery_source::types::{Evidence, SourceInput, SourceMetadata};
+use emery_source::types::{AdapterMetadata, Evidence, SourceInput};
 use omnia_guest::Error;
 use omnia_test::guest::Memory;
 
@@ -57,7 +57,7 @@ impl Source for Inert {
         std::future::ready(never_extracted())
     }
 
-    fn metadata(&self, _id: &str) -> SourceMetadata {
+    fn metadata(&self, _id: &str) -> AdapterMetadata {
         unreachable!("the plugin suite never dispatches Source")
     }
 }
@@ -179,7 +179,7 @@ fn plugin_dir() -> PathBuf {
 }
 
 // Collects every standalone `emery` mention in `text` — a `/emery:<skill>`
-// reference or a CLI invocation — skipping `.emery/` paths and
+// reference or a CLI invocation — skipping dotted or slashed paths and
 // `emery-adapters`.
 fn mentions_in(text: &str, out: &mut Vec<Mention>) {
     let bytes = text.as_bytes();

@@ -11,7 +11,7 @@
 //! failure envelope, and the exit map — is omnia's command façade
 //! (`omnia_guest::api::command`), so this crate owns only what is Emery's.
 
-mod config;
+mod sources;
 mod text;
 
 use std::borrow::Cow;
@@ -74,13 +74,15 @@ where
     let command = Command::new(&client, &metadata, app.format).hints(|error| hint(&error.code()));
     match app.verb {
         Verb::Completions { shell } => completions::<App>(shell, NAME),
-        Verb::Specify(grammar) => command.call(specify, || grammar.decode(), text::specify).await,
-        Verb::Show(grammar) => command.call(show, || Ok(grammar.decode()), text::show).await,
+        Verb::Specify(arguments) => {
+            command.call(specify, || arguments.decode(), text::specify).await
+        }
+        Verb::Show(arguments) => command.call(show, || Ok(arguments.decode()), text::show).await,
     }
 }
 
-// `bin_name` pins usage text to `emery`: Omnia forwards the routed id as
-// argv[0], and clap only reads argv[0] when `bin_name` is unset.
+// `bin_name` pins usage text to `emery`: Omnia forwards the engine guest's
+// own id as argv[0], and clap only reads argv[0] when `bin_name` is unset.
 #[derive(Debug, Parser)]
 #[command(
     name = NAME,
@@ -127,7 +129,7 @@ struct SpecifyArgs {
     #[arg(long = "description", short = 'd')]
     descriptions: Vec<String>,
     /// Operator-owned config; the omitted value selects emery.toml.
-    #[arg(long, short = 'c', num_args = 0..=1, default_missing_value = config::CONFIG_FILE)]
+    #[arg(long, short = 'c', num_args = 0..=1, default_missing_value = sources::CONFIG_FILE)]
     config: Option<String>,
 }
 
@@ -138,7 +140,7 @@ impl SpecifyArgs {
             descriptions,
             config,
         } = self;
-        let sources = config::decode(&adapters, &descriptions, config.as_deref())?;
+        let sources = sources::decode(&adapters, &descriptions, config.as_deref())?;
         Ok(SpecifyInput { sources })
     }
 }

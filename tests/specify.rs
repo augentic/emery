@@ -84,7 +84,7 @@ async fn gen_spec() {
     // Observe: the load, the current id, and the revision.
     // --------------------------------------------------
     let request = provider.plugins.loads().first().cloned().expect("one load request");
-    assert_eq!(request.package, "source:source", "the routed id is the loaded package identity");
+    assert_eq!(request.package, "source:source", "the adapter id is the loaded package identity");
     let Location::Path(path) = &request.location else {
         panic!("a local component loads by path");
     };
@@ -140,7 +140,7 @@ async fn from_file() {
     };
     assert!(
         path.ends_with("source.wasm") && !path.starts_with("./"),
-        "the file-relative selector resolves against the config directory: {path}"
+        "the file-relative reference resolves against the config directory: {path}"
     );
 
     let id = current(&provider.storage);
@@ -485,7 +485,7 @@ async fn remine_supersedes() {
 }
 
 // The JSON envelope carries the re-mine diff per document: the changed
-// artifacts, then `spec` and `design` section lists keyed by heading.
+// documents, then `spec` and `design` section lists keyed by heading.
 #[tokio::test]
 async fn diff_envelope() {
     let second_design = DESIGN_ANSWER.replace("hello", "howdy");
@@ -499,7 +499,7 @@ async fn diff_envelope() {
     let envelope: Value = serde_json::from_slice(&resp.stdout).expect("one JSON envelope");
     let diff = &envelope["diff"];
     assert_eq!(diff["from"], first, "{envelope}");
-    assert_eq!(diff["artifacts"], serde_json::json!(["design.md"]), "{envelope}");
+    assert_eq!(diff["documents"], serde_json::json!(["design.md"]), "{envelope}");
     assert_eq!(diff["spec"]["changed"], serde_json::json!([]), "{envelope}");
     assert_eq!(diff["design"]["changed"], serde_json::json!(["Overview"]), "{envelope}");
     assert_eq!(diff["design"]["added"], serde_json::json!([]), "{envelope}");
@@ -976,8 +976,8 @@ async fn config_file() {
     }
 }
 
-// The loader keys are gated by selector kind: `registry` only steers
-// registry acquisition, so it rides only a package-shaped selector,
+// The loader keys are gated by reference kind: `registry` only steers
+// registry acquisition, so it rides only a package-shaped reference,
 // and a `digest` pin binds exact bytes the loader acquires, so a bare
 // name — which never loads — cannot carry one.
 #[tokio::test]
@@ -1151,7 +1151,7 @@ async fn github_refused() {
 // An exact package reference (`emery:<name>@<semver>`, or the
 // first-party shorthand as sugar for the `emery` namespace) loads
 // through the deployment loader from the acquirer's default registry
-// and dispatches by its own package identity — no parallel routed id.
+// and is addressed by its own package identity — no parallel adapter id.
 #[tokio::test]
 async fn package_loads() {
     for reference in ["emery:demo@1.2.0", "demo@1.2.0"] {
@@ -1173,7 +1173,7 @@ async fn package_loads() {
         assert!(request.digest.is_none(), "an unpinned source requests no digest");
         let calls = provider.source.calls.lock().expect("calls");
         let (id, input) = calls.first().expect("one extract dispatch");
-        assert_eq!(id, "emery:demo@1.2.0", "the routed id is the loaded package identity");
+        assert_eq!(id, "emery:demo@1.2.0", "the adapter id is the loaded package identity");
         assert_eq!(input.key, "demo", "the source key is the adapter name");
         drop(calls);
         provider.model.assert_exhausted();
@@ -1329,8 +1329,8 @@ async fn tampered_revision() {
 }
 
 // Regeneration is the recovery path: a `specify` over a tampered
-// predecessor commits, prunes the tampered blobs, and suppresses only
-// the advisory diff.
+// outgoing revision commits, prunes the tampered blobs, and suppresses
+// only the advisory diff.
 #[tokio::test]
 async fn repair_tampered() {
     let second_spec = SPEC_ANSWER.replace("hello", "howdy");
@@ -1349,7 +1349,10 @@ async fn repair_tampered() {
     let resp = cli_ok(&provider, &["emery", "specify", "docs"]).await;
 
     let stdout = String::from_utf8_lossy(&resp.stdout);
-    assert!(!stdout.contains("diff vs"), "an unreadable predecessor yields no diff: {stdout}");
+    assert!(
+        !stdout.contains("diff vs"),
+        "an unreadable outgoing revision yields no diff: {stdout}"
+    );
 
     let second = current(&provider.storage);
     assert_ne!(first, second, "the repaired store names the new revision");
@@ -1357,7 +1360,7 @@ async fn repair_tampered() {
     for name in ["spec.md", "design.md"] {
         assert!(
             provider.storage.object(CONTAINER, &format!("{first}/{name}")).is_none(),
-            "the tampered predecessor is pruned: {name}"
+            "the tampered outgoing revision is pruned: {name}"
         );
     }
 

@@ -8,27 +8,33 @@
 //! This is the only wasm-specific code an adapter carries, which keeps the
 //! rest of its logic portable and testable natively.
 
-pub use emery_source::wire::*;
+pub use emery_source::wire::export::*;
 
-/// Maps adapter metadata to its WIT record.
+/// Answers `metadata` for adapter `A`: its record, lowered onto the wire.
 #[must_use]
-pub fn dispatch_metadata<A: crate::SourceAdapter>() -> AdapterMetadata {
+pub fn metadata<A: crate::SourceAdapter>() -> AdapterMetadata {
     A::metadata().into()
 }
 
-/// Dispatches extract through adapter `A`.
+/// Answers `extract` for adapter `A`: its evidence, or its failure lowered
+/// onto the wire variant.
 ///
 /// # Errors
 ///
 /// Returns the adapter's failure lowered onto the wire variant.
-pub async fn dispatch_extract<A: crate::SourceAdapter>(
+pub async fn extract<A: crate::SourceAdapter>(
     id: AdapterId, input: Input,
 ) -> Result<Evidence, Error> {
     let input = crate::types::SourceInput::from(input);
-    let ctx = crate::types::Context::guest(&id).with_docs(A::docs());
-    let ctx = match &input.content {
-        crate::types::SourceContent::Workspace(root) => ctx.lending(root.clone()),
-        crate::types::SourceContent::Value(_) => ctx.without_lend(),
+    // A bound tree is lent to the model; an inline value rides the prompt.
+    let lend = match &input.content {
+        crate::types::SourceContent::Workspace(root) => Some(root.clone()),
+        crate::types::SourceContent::Value(_) => None,
+    };
+    let ctx = crate::types::Context {
+        adapter_id: &id,
+        docs: A::docs(),
+        lend,
     };
 
     A::extract(&crate::WasiModel, &ctx, &input).await.map(Into::into).map_err(Into::into)
@@ -49,14 +55,14 @@ macro_rules! source {
             fn metadata(
                 _id: $crate::source::AdapterId,
             ) -> $crate::source::AdapterMetadata {
-                $crate::source::dispatch_metadata::<$adapter>()
+                $crate::source::metadata::<$adapter>()
             }
 
             async fn extract(
                 id: $crate::source::AdapterId,
                 input: $crate::source::Input,
             ) -> Result<$crate::source::Evidence, $crate::source::Error> {
-                $crate::source::dispatch_extract::<$adapter>(id, input).await
+                $crate::source::extract::<$adapter>(id, input).await
             }
         }
     };

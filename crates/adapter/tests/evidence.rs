@@ -7,8 +7,6 @@
 //! place, the backend's spent rounds surfacing as `bad_request` with the last
 //! findings, and a host refusal passing through as `bad_request`.
 
-use std::path::Path;
-
 use emery_adapter::types::{Authority, Backing, ClaimKind, Context, Evidence, SourceInput};
 use emery_adapter::{Error, ToolCall, content_note, evidence};
 use emery_prose::registry::Doc;
@@ -29,7 +27,6 @@ const VALID: &str = r#"{"authority":"documentation","claims":[
 fn context(docs: &'static [Doc], lend: Option<&str>) -> Context<'static> {
     Context {
         adapter_id: "source:probe",
-        project_root: Path::new("."),
         docs,
         lend: lend.map(str::to_string),
     }

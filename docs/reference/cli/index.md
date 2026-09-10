@@ -14,8 +14,8 @@ brew install emery
 ## Conventions
 
 - All commands return structured output on stdout and use exit codes for success/failure; `--format json` selects the JSON envelope (see [CLI output shapes](../cli-output-shapes.md)).
-- Commands that modify `.emery/` state are idempotent where possible.
-- Skills delegate to the CLI for all structural operations — they never hand-edit `.emery/` state directly.
+- Commands that modify `.omnia/storage` state are idempotent where possible.
+- Skills delegate to the CLI for all structural operations — they never hand-edit `.omnia/storage` state directly.
 
 ## Commands
 

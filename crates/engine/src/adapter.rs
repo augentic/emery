@@ -42,20 +42,20 @@ impl<'a, P: Source + Plugins> Loader<'a, P> {
         }
     }
 
-    /// Loads the adapter a selector names — a local component or registry
-    /// package — enforcing its minimum `emery-version`, and returns its
-    /// routed dispatch id.
+    /// Loads the adapter a reference names — a local component or registry
+    /// package — enforcing its minimum `emery-version`, and returns the
+    /// adapter id the `Source` capability addresses it by.
     ///
     /// # Errors
     ///
-    /// Returns selector, load, or version failures.
+    /// Returns reference, load, or version failures.
     pub async fn load(
-        &self, selector: &AdapterRef, pin: Option<&Digest>, registry: Option<&str>,
+        &self, adapter: &AdapterRef, pin: Option<&Digest>, registry: Option<&str>,
     ) -> Result<String, Error> {
-        let name = selector.name();
-        let id = match selector.request(pin, registry)? {
+        let name = adapter.name();
+        let id = match adapter.request(pin, registry)? {
             Some(request) => self.cache.ensure(&request).await?.id().to_owned(),
-            None => dispatch_id(name),
+            None => adapter_id(name),
         };
         check_version(self.provider, name, &id)?;
 
@@ -63,10 +63,10 @@ impl<'a, P: Source + Plugins> Loader<'a, P> {
     }
 }
 
-// Builds the id a bare or local adapter dispatches under: the `source:` role
-// prefix over its name. Registry packages dispatch under the package
+// Builds the id a bare or local adapter is addressed by: the `source:` role
+// prefix over its name. A registry package is addressed by the package
 // reference itself.
-fn dispatch_id(name: &str) -> String {
+fn adapter_id(name: &str) -> String {
     format!("source:{name}")
 }
 
@@ -164,7 +164,7 @@ impl FromStr for AdapterRef {
 }
 
 impl Display for AdapterRef {
-    // Writes the selector as an operator would type it; a component renders
+    // Writes the reference as an operator would type it; a component renders
     // as its path.
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         match self {
@@ -223,8 +223,8 @@ impl AdapterRef {
         })
     }
 
-    // Builds the `omnia:plugins/loader` request this selector names — `None`
-    // for a bare name, which dispatches a statically declared guest.
+    // Builds the `omnia:plugins/loader` request this reference names — `None`
+    // for a bare name, which addresses a statically declared guest.
     fn request(
         &self, pin: Option<&Digest>, registry: Option<&str>,
     ) -> Result<Option<PluginRef>, Error> {
@@ -245,7 +245,7 @@ impl AdapterRef {
                         "adapter `{path}` did not resolve to a `.wasm` component at {relative}"
                     ));
                 }
-                (dispatch_id(name), Location::Path(relative.display().to_string()))
+                (adapter_id(name), Location::Path(relative.display().to_string()))
             }
         };
 
@@ -268,7 +268,7 @@ impl TryFrom<String> for AdapterRef {
 }
 
 impl From<AdapterRef> for String {
-    fn from(selector: AdapterRef) -> Self {
-        selector.to_string()
+    fn from(adapter: AdapterRef) -> Self {
+        adapter.to_string()
     }
 }

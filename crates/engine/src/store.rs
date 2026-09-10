@@ -26,8 +26,8 @@ pub const CURRENT: &str = "current-revision";
 pub const CONTAINER: &str = "revisions";
 
 /// Commits `dossier` to `store` as a new revision — diff against the readable
-/// predecessor, write, swap the current id, prune — returning the id with the
-/// diff.
+/// outgoing revision, write, swap the current id, prune — returning the id
+/// with the diff.
 ///
 /// # Errors
 ///
@@ -63,10 +63,10 @@ async fn swap<S: StateStore + BlobStore>(
         .await
         .context("swapping current revision")?;
 
-    // The swap landed; prune the previous revision.
-    if let Some(previous) = observed.previous().filter(|previous| *previous != id) {
+    // The swap landed; prune the outgoing revision.
+    if let Some(outgoing) = observed.outgoing_id().filter(|outgoing| *outgoing != id) {
         for (name, _) in dossier.files() {
-            let _ = BlobStore::delete(store, CONTAINER, &format!("{previous}/{name}")).await;
+            let _ = BlobStore::delete(store, CONTAINER, &format!("{outgoing}/{name}")).await;
         }
     }
 
@@ -134,12 +134,13 @@ async fn read<S: BlobStore>(store: &S, id: &str, name: &str) -> Result<String, E
 }
 
 /// A committed revision: its id and the advisory re-mine diff against
-/// the revision it superseded, when one was readable.
+/// the outgoing revision, when one was readable.
 #[derive(Debug)]
 pub struct Committed {
     /// The committed revision id.
     pub id: String,
-    /// Absent on the first commit and when the predecessor was unreadable.
+    /// Absent on the first commit and when the outgoing revision was
+    /// unreadable.
     pub diff: Option<Diff>,
 }
 
@@ -156,21 +157,21 @@ struct Observation {
 }
 
 impl Observation {
-    // Reads the predecessor's id from the token; a non-UTF-8 token names no
-    // blobs.
-    fn previous(&self) -> Option<&str> {
+    // Reads the outgoing revision's id from the token; a non-UTF-8 token
+    // names no blobs.
+    fn outgoing_id(&self) -> Option<&str> {
         self.token.as_deref().and_then(|raw| str::from_utf8(raw).ok())
     }
 }
 
-/// An ephemeral re-mine diff against the superseded revision.
+/// An ephemeral re-mine diff against the outgoing revision.
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "kebab-case")]
 pub struct Diff {
     /// The outgoing revision id this run superseded.
     pub from: String,
-    /// Changed file names in digest order.
-    pub artifacts: Vec<String>,
+    /// Changed document file names in digest order.
+    pub documents: Vec<String>,
     /// Requirement subjects that changed in `spec.md`.
     pub spec: Changes,
     /// Section headings that changed in `design.md`.
@@ -178,29 +179,34 @@ pub struct Diff {
 }
 
 impl Diff {
-    // Diffs `incoming` against `outgoing`: the changed files, then requirement
-    // subjects and section headings, never positions. The diff is advisory: an
-    // outgoing document that fails its grammar leaves its list empty.
+    // Diffs `incoming` against `outgoing`: the changed documents, then
+    // requirement subjects and section headings, never positions. The diff is
+    // advisory: an outgoing document that fails its grammar leaves its list
+    // empty.
     fn between(outgoing: &Dossier, incoming: &Dossier) -> Self {
-        let artifacts = outgoing
+        let documents = outgoing
             .files()
             .zip(incoming.files())
-            .filter(|((_, old), (_, new))| old != new)
+            .filter(|((_, outgoing), (_, incoming))| outgoing != incoming)
             .map(|((name, _), _)| name.to_string())
             .collect();
 
         let spec = match (outgoing.spec.parse::<Spec>(), incoming.spec.parse::<Spec>()) {
-            (Ok(old), Ok(new)) => Changes::between(&old.by_subject(), &new.by_subject()),
+            (Ok(outgoing), Ok(incoming)) => {
+                Changes::between(&outgoing.by_subject(), &incoming.by_subject())
+            }
             _ => Changes::default(),
         };
         let design = match (outgoing.design.parse::<Design>(), incoming.design.parse::<Design>()) {
-            (Ok(old), Ok(new)) => Changes::between(&old.by_kind(), &new.by_kind()),
+            (Ok(outgoing), Ok(incoming)) => {
+                Changes::between(&outgoing.by_kind(), &incoming.by_kind())
+            }
             _ => Changes::default(),
         };
 
         Self {
             from: outgoing.revision(),
-            artifacts,
+            documents,
             spec,
             design,
         }
@@ -210,7 +216,7 @@ impl Diff {
     /// cannot yield section differences.
     #[must_use]
     pub const fn is_empty(&self) -> bool {
-        self.artifacts.is_empty()
+        self.documents.is_empty()
     }
 }
 
@@ -228,22 +234,25 @@ pub struct Changes {
 }
 
 impl Changes {
-    // Buckets the headings of `new` against `old` into added, changed, and
-    // removed; a section that only moved is not a change.
+    // Buckets the headings of `incoming` against `outgoing` into added,
+    // changed, and removed; a section that only moved is not a change.
     fn between<K: Display + Ord, S: PartialEq>(
-        old: &BTreeMap<K, &S>, new: &BTreeMap<K, &S>,
+        outgoing: &BTreeMap<K, &S>, incoming: &BTreeMap<K, &S>,
     ) -> Self {
         let mut changes = Self::default();
-        for (heading, section) in new {
-            let bucket = match old.get(heading) {
+        for (heading, section) in incoming {
+            let bucket = match outgoing.get(heading) {
                 None => &mut changes.added,
-                Some(previous) if *previous != *section => &mut changes.changed,
+                Some(outgoing) if *outgoing != *section => &mut changes.changed,
                 Some(_) => continue,
             };
             bucket.push(heading.to_string());
         }
         changes.removed.extend(
-            old.keys().filter(|heading| !new.contains_key(*heading)).map(ToString::to_string),
+            outgoing
+                .keys()
+                .filter(|heading| !incoming.contains_key(*heading))
+                .map(ToString::to_string),
         );
         changes
     }

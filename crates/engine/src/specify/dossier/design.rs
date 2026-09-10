@@ -60,7 +60,7 @@ impl Brief for DesignBrief<'_> {
         // subset replaces the reference in place.
         let kinds = SectionKind::VARIANTS
             .iter()
-            .filter(|kind| self.plan.presence(**kind) != Presence::Forbidden)
+            .filter(|kind| self.plan.presence(**kind) != Presence::Omitted)
             .map(AsRef::as_ref)
             .collect::<Vec<_>>();
         if let Some(kind) = schema["$defs"]["Section"]["properties"]["kind"].as_object_mut() {
@@ -94,7 +94,7 @@ impl Brief for DesignBrief<'_> {
             if !seen.insert(kind) {
                 review.note(format_args!("{label} is drafted more than once"));
             }
-            if self.plan.presence(kind) == Presence::Forbidden {
+            if self.plan.presence(kind) == Presence::Omitted {
                 review.note(format_args!("{label} is present but no claim informs it"));
             }
             if section.blocks.is_empty() {
@@ -193,7 +193,7 @@ impl Display for DesignBrief<'_> {
                 (Presence::Required, false) => {
                     format!(": {} claims are present", kinds.join(" / "))
                 }
-                (Presence::Forbidden, false) => format!(": no {} claim", kinds.join(" / ")),
+                (Presence::Omitted, false) => format!(": no {} claim", kinds.join(" / ")),
                 (Presence::Permitted, _) => " where claims inform it".to_string(),
                 _ => String::new(),
             };
@@ -286,7 +286,7 @@ impl<'a> Plan<'a> {
             (SectionKind::Observability | SectionKind::TechnicalLogic, false) => {
                 Presence::Permitted
             }
-            (_, false) => Presence::Forbidden,
+            (_, false) => Presence::Omitted,
         }
     }
 
@@ -299,14 +299,14 @@ impl<'a> Plan<'a> {
     }
 }
 
-// Whether the evidence calls for a section, tolerates it, or rules it out.
+// Whether the evidence calls for a section, tolerates it, or leaves it out;
+// the lowercase name is the presence the prompt states.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, strum::Display)]
 #[strum(serialize_all = "lowercase")]
 enum Presence {
     Required,
     Permitted,
-    #[strum(to_string = "omit")]
-    Forbidden,
+    Omitted,
 }
 
 // Maps a section kind to the claim kinds whose presence requires it.

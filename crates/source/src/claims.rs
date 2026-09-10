@@ -24,10 +24,9 @@ pub fn findings(claims: &[Claim]) -> Vec<String> {
     findings
 }
 
-/// Reports every claim whose id breaks the dotted-kebab grammar, and every
-/// requirement, criterion, or example claim that carries no id at all.
-#[must_use]
-pub fn id_findings(claims: &[Claim]) -> Vec<String> {
+// Reports every claim whose id breaks the dotted-kebab grammar, and every
+// requirement, criterion, or example claim that carries no id at all.
+fn id_findings(claims: &[Claim]) -> Vec<String> {
     let mut findings = Vec::new();
     for (index, claim) in claims.iter().enumerate() {
         match &claim.id {
@@ -50,9 +49,8 @@ pub fn id_findings(claims: &[Claim]) -> Vec<String> {
     findings
 }
 
-/// Reports every claim that is missing an extra its kind requires.
-#[must_use]
-pub fn extras_findings(claims: &[Claim]) -> Vec<String> {
+// Reports every claim that is missing an extra its kind requires.
+fn extras_findings(claims: &[Claim]) -> Vec<String> {
     let mut findings = Vec::new();
     for (index, claim) in claims.iter().enumerate() {
         for key in claim.kind.required_extras() {
@@ -97,9 +95,12 @@ impl ClaimKind {
 }
 
 impl Claim {
-    /// The `statement` extra; empty when absent.
+    /// The `statement` extra as text; empty when absent.
     ///
-    /// The extract gate guarantees a requirement carries this extra.
+    /// The claim gate guarantees a requirement carries this extra but not
+    /// that it is a string, so a non-string value is rendered rather than
+    /// dropped — unlike [`Self::signature`], which is optional by contract
+    /// and only ever placed verbatim.
     #[must_use]
     pub fn statement(&self) -> String {
         match self.extras.get("statement") {
