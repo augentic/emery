@@ -34,9 +34,6 @@ static DOCS: &[Doc] = &[
 pub struct Adapter;
 
 impl SourceAdapter for Adapter {
-    // Development-only: must never match a release pin.
-    const IDENTITY: &str = concat!("greeting@", env!("CARGO_PKG_VERSION"));
-
     fn docs() -> &'static [Doc] {
         DOCS
     }
