@@ -54,8 +54,6 @@ pub async fn specify<P: Model + Source + StateStore + BlobStore + Plugins>(
     // extract each source's evidence and synthesise the dossier
     let extracts = input.extract(provider).await?;
     let dossier = dossier::compose(provider, &extracts).await?;
-
-    // commit the dossier as the new revision
     let committed = Store::new(provider).commit(&dossier).await?;
 
     Ok(SpecifyOutput {
