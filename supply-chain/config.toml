@@ -130,10 +130,6 @@ criteria = "safe-to-deploy"
 version = "4.0.3"
 criteria = "safe-to-deploy"
 
-[[exemptions.cc]]
-version = "1.4.5"
-criteria = "safe-to-deploy"
-
 [[exemptions.chacha20]]
 version = "0.10.2"
 criteria = "safe-to-deploy"
@@ -282,20 +278,12 @@ criteria = "safe-to-deploy"
 version = "1.18.0"
 criteria = "safe-to-deploy"
 
-[[exemptions.encoding_rs]]
-version = "0.8.40"
-criteria = "safe-to-deploy"
-
 [[exemptions.etcetera]]
 version = "0.11.0"
 criteria = "safe-to-deploy"
 
 [[exemptions.fastrand]]
 version = "2.5.0"
-criteria = "safe-to-deploy"
-
-[[exemptions.find-msvc-tools]]
-version = "0.1.12"
 criteria = "safe-to-deploy"
 
 [[exemptions.fixedbitset]]
@@ -580,6 +568,14 @@ criteria = "safe-to-deploy"
 
 [[exemptions.moka]]
 version = "0.12.16"
+criteria = "safe-to-deploy"
+
+[[exemptions.multiversion]]
+version = "0.9.0"
+criteria = "safe-to-deploy"
+
+[[exemptions.multiversion-macros]]
+version = "0.9.0"
 criteria = "safe-to-deploy"
 
 [[exemptions.oauth2]]
