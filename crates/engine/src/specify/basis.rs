@@ -1,13 +1,13 @@
-//! Requirements
+//! Requirement bases
 //!
-//! Derives each requirement `spec.md` is built on from the requirement claims
-//! in the extracts. Which claims across sources describe one requirement, and
-//! which of them agree, is a judgement: the model answers it as one partition —
-//! claims into requirements, each requirement's claims into agreeing classes —
-//! over a baseline that pre-merges byte-equal ids. The engine validates the
-//! partition, then derives everything else from it and the closed authority
-//! ranking: the subject, the status, the winner and losers, and whether any
-//! acceptance criterion covers the requirement.
+//! Derives the basis each requirement in `spec.md` is built on from the
+//! requirement claims in the extracts. Which claims across sources describe
+//! one requirement, and which of them agree, is a judgement: the model answers
+//! it as one partition — claims into requirements, each requirement's claims
+//! into agreeing classes — over a baseline that pre-merges byte-equal ids. The
+//! engine validates the partition, then derives everything else from it and the
+//! closed authority ranking: the subject, the status, the winner and losers,
+//! and whether any acceptance criterion covers the requirement.
 //!
 //! Authority is withheld from the request, so the answer cannot be steered
 //! toward a winner; a run over one source never asks at all.
@@ -25,17 +25,17 @@ use crate::artifact::Status;
 use crate::specify::Extract;
 use crate::specify::brief::{Brief, Review};
 
-/// Derives every requirement in `extracts`, asking the model to group the
-/// claims on any run over two or more sources.
+/// Derives every requirement basis in `extracts`, asking the model to group
+/// the claims on any run over two or more sources.
 ///
 /// # Errors
 ///
 /// A model failure is `bad_gateway`; an answer outside the schema, or a
 /// grouping the backend could not repair within its rounds, is `bad_request`.
-pub async fn derive<M: Model>(model: &M, extracts: &[Extract]) -> Result<Vec<Requirement>, Error> {
+pub async fn derive<M: Model>(model: &M, extracts: &[Extract]) -> Result<Vec<Basis>, Error> {
     let brief = GroupingBrief::collect(extracts);
     if extracts.len() < 2 {
-        return Ok(brief.requirements(&brief.baseline()));
+        return Ok(brief.bases(&brief.baseline()));
     }
 
     brief.judge(model).await
@@ -62,19 +62,18 @@ pub struct Group {
     pub classes: Vec<Vec<usize>>,
 }
 
-/// One requirement as the engine established it, before any prose: the
-/// subject it is headed with, its status, whether an acceptance criterion
-/// covers it, and its contributors in agreeing classes, the winning class
-/// first.
+/// The basis for one requirement before any prose: its subject, status,
+/// acceptance-criterion coverage, and contributors in agreeing classes, the
+/// winning class first.
 #[derive(Debug, Clone)]
-pub struct Requirement {
+pub struct Basis {
     subject: String,
     status: Status,
     covered: bool,
     classes: Vec<Vec<Contributor>>,
 }
 
-impl Requirement {
+impl Basis {
     // Builds a requirement from its classes, sorted by authority then source
     // order. One class is agreed (unknown when no criterion covers it); several
     // are a divergence when one holds the top authority alone, else a conflict.
@@ -217,9 +216,8 @@ impl<'a> GroupingBrief<'a> {
         }
     }
 
-    // Turns a grouping into requirements, ordered by each group's earliest
-    // claim.
-    fn requirements(&self, grouping: &Grouping) -> Vec<Requirement> {
+    // Turns a grouping into bases, ordered by each group's earliest claim.
+    fn bases(&self, grouping: &Grouping) -> Vec<Basis> {
         let mut groups: Vec<(usize, Vec<Vec<Contributor>>)> = grouping
             .groups
             .iter()
@@ -236,13 +234,13 @@ impl<'a> GroupingBrief<'a> {
             })
             .collect();
         groups.sort_by_key(|(first, _)| *first);
-        groups.into_iter().map(|(_, classes)| Requirement::of(classes, &self.criteria)).collect()
+        groups.into_iter().map(|(_, classes)| Basis::of(classes, &self.criteria)).collect()
     }
 }
 
 impl Brief for GroupingBrief<'_> {
     type Answer = Grouping;
-    type Output = Vec<Requirement>;
+    type Output = Vec<Basis>;
 
     const NAME: &'static str = "grouping";
     const PROSE: &'static [&'static str] = &["synthesis/grouping.md"];
@@ -325,7 +323,7 @@ impl Brief for GroupingBrief<'_> {
 
     // Turns the accepted grouping into requirements.
     fn into_output(self, answer: Grouping) -> Self::Output {
-        self.requirements(&answer)
+        self.bases(&answer)
     }
 }
 

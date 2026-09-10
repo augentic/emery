@@ -26,21 +26,21 @@ use self::design::DesignBrief;
 use self::spec::SpecBrief;
 use crate::artifact::{Dossier, RESERVED};
 use crate::specify::Extract;
+use crate::specify::basis::Basis;
 use crate::specify::brief::{Brief as _, Review};
-use crate::specify::requirement::Requirement;
 
-/// Takes the extracts of every source and the requirements derived from them,
-/// and asks the model to synthesise them into the dossier: the specification
-/// and design documents.
+/// Takes the extracts of every source and the requirement bases derived from
+/// them, then asks the model to synthesise the dossier's specification and
+/// design documents.
 ///
 /// # Errors
 ///
 /// A model failure is `bad_gateway`; an answer outside the schema, or a draft
 /// the backend could not repair within its rounds, is `bad_request`.
 pub async fn synthesise<M: Model>(
-    model: &M, extracts: &[Extract], requirements: &[Requirement],
+    model: &M, extracts: &[Extract], bases: &[Basis],
 ) -> Result<Dossier, Error> {
-    let spec = SpecBrief::new(extracts, requirements).judge(model).await?;
+    let spec = SpecBrief::new(extracts, bases).judge(model).await?;
     let design = DesignBrief::new(extracts, &spec).judge(model).await?;
 
     Ok(Dossier { spec, design })

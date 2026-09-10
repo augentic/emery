@@ -15,9 +15,9 @@
 //! diff against the superseded revision — so a caller can see what
 //! changed without reading the documents.
 
+mod basis;
 mod brief;
 mod dossier;
-mod requirement;
 
 use std::collections::BTreeSet;
 use std::path::Path;
@@ -51,8 +51,8 @@ pub async fn specify<P: Model + Source + StateStore + BlobStore + Plugins>(
     let provider = context.provider();
 
     let extracts = input.extract(provider).await?;
-    let requirements = requirement::derive(provider, &extracts).await?;
-    let dossier = dossier::synthesise(provider, &extracts, &requirements).await?;
+    let bases = basis::derive(provider, &extracts).await?;
+    let dossier = dossier::synthesise(provider, &extracts, &bases).await?;
     let committed = store::commit(provider, &dossier).await?;
 
     Ok(SpecifyOutput {

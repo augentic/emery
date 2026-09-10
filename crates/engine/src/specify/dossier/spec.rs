@@ -17,26 +17,23 @@ use serde_json::{Value, json};
 
 use crate::artifact::{HEADING, ID, NOTE, ReqId, SCENARIO, SOURCES, STATUS, Status};
 use crate::specify::Extract;
+use crate::specify::basis::{Basis, Contributor, normalise};
 use crate::specify::brief::{Brief, Review};
 use crate::specify::dossier::{ClaimsSection, Markdown};
-use crate::specify::requirement::{Contributor, Requirement, normalise};
 
 /// What the engine needs to ask the model for `spec.md` and to verify its
-/// draft: the extracts and the requirements derived from them.
+/// draft: the extracts and the requirement bases derived from them.
 pub struct SpecBrief<'a> {
     extracts: &'a [Extract],
-    requirements: &'a [Requirement],
+    bases: &'a [Basis],
 }
 
 impl<'a> SpecBrief<'a> {
     /// Creates the brief for `spec.md` from the `extracts` and the
-    /// `requirements` derived from them.
+    /// requirement `bases` derived from them.
     #[must_use]
-    pub const fn new(extracts: &'a [Extract], requirements: &'a [Requirement]) -> Self {
-        Self {
-            extracts,
-            requirements,
-        }
+    pub const fn new(extracts: &'a [Extract], bases: &'a [Basis]) -> Self {
+        Self { extracts, bases }
     }
 }
 
@@ -59,11 +56,11 @@ impl Brief for SpecBrief<'_> {
     // requirement, each `subject` drawn from the requirement subjects, and at
     // least one scenario per entry.
     fn tighten(&self, schema: &mut Value) {
-        let count = self.requirements.len();
+        let count = self.bases.len();
         schema["properties"]["requirements"]["minItems"] = json!(count);
         schema["properties"]["requirements"]["maxItems"] = json!(count);
         schema["$defs"]["Entry"]["properties"]["subject"]["enum"] =
-            json!(self.requirements.iter().map(Requirement::subject).collect::<Vec<_>>());
+            json!(self.bases.iter().map(Basis::subject).collect::<Vec<_>>());
         schema["$defs"]["Entry"]["properties"]["scenarios"]["minItems"] = json!(1);
     }
 
@@ -73,11 +70,8 @@ impl Brief for SpecBrief<'_> {
     fn verify(&self, answer: &SpecAnswer, review: &mut Review) {
         review.paragraphs(&answer.preamble, "preamble");
 
-        let by_subject: BTreeMap<&str, &Requirement> = self
-            .requirements
-            .iter()
-            .map(|requirement| (requirement.subject(), requirement))
-            .collect();
+        let by_subject: BTreeMap<&str, &Basis> =
+            self.bases.iter().map(|basis| (basis.subject(), basis)).collect();
         let mut seen = BTreeSet::new();
         for entry in &answer.requirements {
             let subject = entry.subject.as_str();
@@ -86,7 +80,7 @@ impl Brief for SpecBrief<'_> {
                 continue;
             }
 
-            let Some(requirement) = by_subject.get(subject) else {
+            let Some(basis) = by_subject.get(subject) else {
                 review.note(format_args!("`{subject}` is not a requirement"));
                 continue;
             };
@@ -96,7 +90,7 @@ impl Brief for SpecBrief<'_> {
 
             // A conflict's statements are the renderer's notes, so a body
             // would assert what the operator has yet to reconcile.
-            let conflict = requirement.status() == Status::Conflict;
+            let conflict = basis.status() == Status::Conflict;
             if conflict && !entry.body.is_empty() {
                 review.note(format_args!("{label} is in conflict and carries a body"));
             } else if !conflict && entry.body.is_empty() {
@@ -133,23 +127,22 @@ impl Brief for SpecBrief<'_> {
         let mut document = Markdown::new("Specification");
         document.extend(&answer.preamble);
 
-        for (index, requirement) in self.requirements.iter().enumerate() {
-            let status = requirement.status();
+        for (index, basis) in self.bases.iter().enumerate() {
+            let status = basis.status();
             let tag = status.tag().map(|tag| format!(" [{tag}]")).unwrap_or_default();
-            document.push(format!("{HEADING} {}{tag}", requirement.subject()));
+            document.push(format!("{HEADING} {}{tag}", basis.subject()));
             document.push(format!(
                 "{ID} {id}\n{SOURCES} [{sources}]\n{STATUS} {status}",
                 id = ReqId::nth(index),
-                sources = requirement.sources().collect::<Vec<_>>().join(", "),
+                sources = basis.sources().collect::<Vec<_>>().join(", "),
             ));
 
-            let draft = entries
-                .get(requirement.subject())
-                .expect("verify held the draft to the requirements");
+            let draft =
+                entries.get(basis.subject()).expect("verify held the draft to the requirements");
             if status != Status::Conflict {
                 document.extend(&draft.body);
             }
-            if let Some(notes) = notes(requirement) {
+            if let Some(notes) = notes(basis) {
                 document.push(notes);
             }
 
@@ -177,19 +170,19 @@ impl Display for SpecBrief<'_> {
         write!(f, "Draft `spec.md`.\n\n{claims}", claims = ClaimsSection(self.extracts))?;
 
         f.write_str("\n## Requirements (draft one entry per subject)\n\n")?;
-        for (index, requirement) in self.requirements.iter().enumerate() {
-            let sources = requirement.sources().collect::<Vec<_>>().join(", ");
-            let coverage = if requirement.covered() { "evidenced" } else { "not evidenced" };
+        for (index, basis) in self.bases.iter().enumerate() {
+            let sources = basis.sources().collect::<Vec<_>>().join(", ");
+            let coverage = if basis.covered() { "evidenced" } else { "not evidenced" };
             writeln!(
                 f,
                 "- {id} `{subject}` — Status: {status} — Sources: [{sources}] — acceptance criteria {coverage}",
                 id = ReqId::nth(index),
-                subject = requirement.subject(),
-                status = requirement.status(),
+                subject = basis.subject(),
+                status = basis.status(),
             )?;
 
-            for (position, class) in requirement.classes().iter().enumerate() {
-                let role = match (requirement.status(), position) {
+            for (position, class) in basis.classes().iter().enumerate() {
+                let role = match (basis.status(), position) {
                     (Status::Divergence, 0) => "winner",
                     (Status::Divergence, _) => "loser",
                     _ => "contributor",
@@ -256,11 +249,11 @@ pub struct Scenario {
 // Builds the `Note:` lines appended to a requirement: one per losing class of
 // a divergence, one per class plus the reconciliation line for a conflict,
 // then one when the acceptance criteria are not evidenced. `None` if none.
-fn notes(requirement: &Requirement) -> Option<String> {
+fn notes(basis: &Basis) -> Option<String> {
     let mut lines = Vec::new();
 
-    let classes = requirement.classes();
-    match requirement.status() {
+    let classes = basis.classes();
+    match basis.status() {
         Status::Divergence => lines.extend(classes.iter().skip(1).map(|class| note(class))),
         Status::Conflict => {
             lines.extend(classes.iter().map(|class| note(class)));
@@ -269,7 +262,7 @@ fn notes(requirement: &Requirement) -> Option<String> {
         Status::Agreed | Status::Unknown => {}
     }
 
-    if !requirement.covered() {
+    if !basis.covered() {
         lines.push(format!("{NOTE} acceptance criteria not evidenced."));
     }
 
