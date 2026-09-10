@@ -29,8 +29,6 @@ pub struct Show {
 pub struct ShowBody {
     /// Current revision id.
     pub revision: String,
-    /// Which document `body` carries.
-    pub document: Document,
     /// The document body.
     pub body: String,
 }
@@ -56,7 +54,6 @@ pub async fn show<P: StateStore + BlobStore>(
 
     Ok(ShowBody {
         revision: revision.id(),
-        document,
         body: revision.into_body(document),
     })
 }

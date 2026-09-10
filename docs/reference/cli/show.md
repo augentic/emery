@@ -31,7 +31,6 @@ Before any revision is committed the verb fails typed with `spec-not-generated` 
 When `--format json` is provided, returns:
 
 - `revision` — the current revision id
-- `document` — which document `body` carries: `spec` or `design`
 - `body` — the document bytes
 
 ## See also

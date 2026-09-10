@@ -27,7 +27,7 @@ use self::spec::SpecBrief;
 use crate::artifact::RESERVED;
 use crate::specify::SourceEvidence;
 use crate::specify::brief::{Brief as _, Review};
-use crate::specify::provenance::Provenance;
+use crate::specify::provenance;
 use crate::store::Revision;
 
 /// Takes evidence from all queried sources, with the requirement rows derived
@@ -39,10 +39,12 @@ use crate::store::Revision;
 /// A model failure is `bad_gateway`; an answer outside the schema, or a draft
 /// the backend could not repair within its rounds, is `bad_request`.
 pub async fn synthesise<M: Model>(
-    model: &M, sources: &[SourceEvidence], rows: &[Provenance],
+    model: &M, sources: &[SourceEvidence],
 ) -> Result<Revision, Error> {
-    let spec = SpecBrief::new(sources, rows).judge(model).await?;
+    let rows = provenance::derive(model, sources).await?;
+    let spec = SpecBrief::new(sources, &rows).judge(model).await?;
     let design = DesignBrief::new(&spec, sources).judge(model).await?;
+
     Ok(Revision { spec, design })
 }
 

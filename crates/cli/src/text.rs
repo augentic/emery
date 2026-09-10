@@ -18,8 +18,6 @@ use emery_engine::specify::{Changes, SpecifyBody};
 /// detail.
 pub fn specify(body: &SpecifyBody, out: &mut dyn fmt::Write) -> fmt::Result {
     writeln!(out, "committed revision {}", body.revision)?;
-    writeln!(out, "  requirements: {}", body.requirements)?;
-    writeln!(out, "  sources: {}", body.sources)?;
     if let Some(diff) = &body.diff {
         if diff.is_empty() {
             writeln!(out, "  diff vs {}: none (byte-stable)", diff.from)?;

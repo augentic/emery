@@ -78,8 +78,6 @@ digest = "sha256:55c29a…"
 When `--format json` is provided, returns:
 
 - `revision` — the committed revision id, now current
-- `requirements` — requirement rows in the committed `spec.md`, one per grouped requirement (an acceptance gap is a note on its row, never a row of its own)
-- `sources` — number of sources extracted this run
 - `diff` — the re-mine diff against the superseded revision: `from`, the changed `artifacts`, and a `{ added, removed, changed }` object each for `spec` (requirement subjects) and `design` (section titles); absent on a first run, empty on a byte-stable re-run
 
 ## See also

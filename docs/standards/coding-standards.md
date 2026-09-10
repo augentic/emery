@@ -52,8 +52,8 @@ Density caps are **review only** — clippy and rustfmt cannot express them. The
 //! synthesise `spec.md` and `design.md`, and commit the pair as one new
 //! revision.
 //!
-//! The result reports what was committed — the revision id, the counts, and
-//! the diff against the superseded revision — so a caller can see what
+//! The result reports what was committed — the revision id and the
+//! diff against the superseded revision — so a caller can see what
 //! changed without reading the documents.
 ```
 

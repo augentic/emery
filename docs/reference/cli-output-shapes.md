@@ -18,7 +18,7 @@ Canonical JSON envelope shapes for the `emery *` commands that skills shell out 
 Every body's render fn (its text mode, in `crates/cli/src/text.rs`) follows one convention so operators can scan any command's output the same way:
 
 - **Result line first, lowercase, verb-first**: `committed revision 9f8e7d6c…`.
-- **Detail lines are indented `label: value` pairs** with kebab-case labels: `  sources: 3`.
+- **Detail lines are indented `label: value` pairs** with kebab-case labels: `  diff vs 1a2b3c4d: spec.md`.
 - **Names in backticks**, paths bare.
 - **No trailing periods** on result or detail lines.
 - **`hint:` is recovery guidance** (what to fix); **`resume:` is the literal next command** (what to run). A line is one or the other, never both.
@@ -37,8 +37,6 @@ The success body names the committed revision and its reviewable set:
 ```json
 {
   "revision": "9f8e7d6c…",
-  "requirements": 3,
-  "sources": 3,
   "diff": {
     "from": "1a2b3c4d…",
     "artifacts": ["spec.md", "design.md"],
@@ -52,8 +50,6 @@ The success body names the committed revision and its reviewable set:
 
 A pin that no longer matches the resolved bytes fails with `error: "refused"` (exit 1).
 
-`requirements` counts the requirement rows of the committed `spec.md` — one per grouped requirement; an acceptance gap is a `Note:` on its row, not a row of its own.
-
 `emery specify` with no source — and no project-root `emery.toml` to discover — fails with `error: "specify-source-required"` (exit 1); mixing `--config` with positional adapters or `--description`, or naming an absolute or project-escaping local path, fails with `error: "bad_request"` (exit 1). `--config` without a value explicitly selects the project-relative `emery.toml`. A GitHub URL source fails with `error: "bad_request"`. Validation refusals from the extract gate, an adapter refusing its input (an empty brief, a tree it cannot read as one source), or a model draft (grouping, spec, or design) that still fails its check once the backend's rounds are spent, exit 1 with `error: "bad_request"` carrying the last correction and its findings; a model failure, or any other adapter failure, exits 4 with `error: "bad_gateway"` naming the source.
 
 ### `emery show <spec|design>`
@@ -63,7 +59,6 @@ The success body wraps the document with its revision id; text mode is the docum
 ```json
 {
   "revision": "9f8e7d6c…",
-  "document": "spec",
   "body": "# Specification\n…"
 }
 ```

@@ -1,4 +1,4 @@
-# Mock Source Example
+# Source Adapter Example
 
 Live `specify` journey via [omnia-cursor](https://github.com/augentic/omnia-backends/tree/main/crates/cursor): the mock adapter extracts greeting claims from `[docs/](docs/)` through the host model, the engine synthesises `spec.md` / `design.md`, and the revision commits.
 

@@ -11,8 +11,8 @@
 //! shape serves the command line, a config file, and any other transport,
 //! and it is checked whole before a single adapter loads.
 //!
-//! The result reports what was committed — the revision id, the counts, and
-//! the diff against the superseded revision — so a caller can see what
+//! The result reports what was committed — the revision id and the
+//! diff against the superseded revision — so a caller can see what
 //! changed without reading the documents.
 
 mod brief;
@@ -31,7 +31,6 @@ use omnia_guest::plugins::Digest;
 use omnia_guest::{BlobStore, Error, Model, Plugins, StateStore, bad_request};
 use serde::{Deserialize, Serialize};
 
-use self::synthesise::synthesise;
 use crate::plugin::{AdapterRef, Loader};
 use crate::preopen_path;
 use crate::store::Store;
@@ -48,19 +47,22 @@ pub use crate::store::{Changes, Diff};
 pub async fn specify<P: Model + Source + StateStore + BlobStore + Plugins>(
     input: Specify, context: Context<P>,
 ) -> Result<SpecifyBody, Error> {
-    let Specify { sources } = input;
-    validate(&sources)?;
-
     let provider = context.provider();
-    let extracted = evidence(provider, &sources).await?;
-    let rows = provenance::derive(provider, &extracted).await?;
-    let revision = synthesise(provider, &extracted, &rows).await?;
+
+    // validate the source list
+    validate(&input.sources)?;
+
+    // call extract() for every source
+    let extracted = extract(provider, &input.sources).await?;
+
+    // synthesise extracted evidence into a single specification set
+    let revision = synthesise::synthesise(provider, &extracted).await?;
+
+    // save the specification set as a new revision
     let committed = Store::new(provider).commit(&revision).await?;
 
     Ok(SpecifyBody {
         revision: committed.id,
-        requirements: rows.len(),
-        sources: extracted.len(),
         diff: committed.diff,
     })
 }
@@ -151,10 +153,6 @@ impl SourceConfig {
 pub struct SpecifyBody {
     /// Committed revision id.
     pub revision: String,
-    /// Number of committed requirements.
-    pub requirements: usize,
-    /// Number of extracted sources.
-    pub sources: usize,
     /// Diff from the predecessor; absent on the first run and when the
     /// superseded revision was unreadable.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -190,7 +188,7 @@ fn validate(sources: &[SourceConfig]) -> Result<(), Error> {
 // Loads, extracts, and validates every source. Adapters are guests the engine
 // did not write, so the contract's claim gate is re-run here (A8) before
 // anything downstream trusts their claims; adapter failures arrive classified.
-async fn evidence<P: Source + Plugins>(
+async fn extract<P: Source + Plugins>(
     provider: &P, sources: &[SourceConfig],
 ) -> Result<Vec<SourceEvidence>, Error> {
     let mut extracted = Vec::with_capacity(sources.len());

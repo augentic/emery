@@ -133,9 +133,7 @@ async fn from_file() {
 
     let provider = Provider::answering([SPEC_ANSWER, DESIGN_ANSWER]);
 
-    let resp = cli_ok(&provider, &["emery", "specify", "--config", &config]).await;
-    let stdout = String::from_utf8_lossy(&resp.stdout);
-    assert!(stdout.contains("sources: 1"), "{stdout}");
+    cli_ok(&provider, &["emery", "specify", "--config", &config]).await;
     let request = provider.plugins.loads().first().cloned().expect("one load request");
     let Location::Path(path) = &request.location else {
         panic!("a local component loads by path");
@@ -185,10 +183,7 @@ async fn shared_roots() {
         let grouping = floor_grouping(2);
         let provider = Provider::answering([grouping.as_str(), SPEC_ANSWER, DESIGN_ANSWER]);
 
-        let resp = cli_ok(&provider, &["emery", "specify", "--config", &config]).await;
-        let stdout = String::from_utf8_lossy(&resp.stdout);
-        assert!(stdout.contains("sources: 2"), "{adapter}: {stdout}");
-        assert!(stdout.contains("requirements: 1"), "{adapter}: {stdout}");
+        cli_ok(&provider, &["emery", "specify", "--config", &config]).await;
         let id = current(&provider.storage);
         let spec = document(&provider.storage, &id, "spec.md");
         assert!(
@@ -263,7 +258,7 @@ async fn description_source() {
 // the intent directive outranks it as [divergence] with one templated
 // loser note; tied documentation peers surface as [conflict] with no
 // body; and the uncovered timeout keeps its tag and gains the gap note
-// — no synthetic gap row, so the envelope counts two requirements.
+// — no synthetic gap row, so the rendered spec has two requirement blocks.
 #[tokio::test]
 async fn authority_precedence() {
     let mut provider = Provider::answering([GROUPING_ANSWER, PRECEDENCE_ANSWER, DESIGN_ANSWER]);
@@ -314,7 +309,7 @@ async fn authority_precedence() {
         )),
     );
 
-    let resp = cli_ok(
+    cli_ok(
         &provider,
         &[
             "emery",
@@ -327,9 +322,6 @@ async fn authority_precedence() {
         ],
     )
     .await;
-    let stdout = String::from_utf8_lossy(&resp.stdout);
-    assert!(stdout.contains("requirements: 2"), "{stdout}");
-    assert!(stdout.contains("sources: 4"), "{stdout}");
 
     // The grouping request indexes every claim and withholds authority.
     // The schema bounds those indexes; a derive reshape that no-ops the
