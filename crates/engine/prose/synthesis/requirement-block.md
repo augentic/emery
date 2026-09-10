@@ -1,6 +1,6 @@
 # Requirement block
 
-Every requirement in `spec.md` is one block the engine renders from its row and your draft: heading, three provenance lines, body, templated notes, and at least one scenario. You draft the body paragraphs and the scenarios for each subject; everything else is rendered.
+Every requirement in `spec.md` is one block the engine renders from the requirement and your draft: heading, three provenance lines, body, templated notes, and at least one scenario. You draft the body paragraphs and the scenarios for each subject; everything else is rendered.
 
 ## What the engine renders
 
@@ -13,7 +13,7 @@ Status: <agreed|unknown|conflict|divergence>
 
 <your body paragraphs>
 
-Note: <templated loser and gap lines, where the row has them>
+Note: <templated loser and gap lines, where the requirement has them>
 
 #### Scenario: <your scenario name>
 
@@ -24,12 +24,12 @@ Note: <templated loser and gap lines, where the row has them>
 
 ## What you draft
 
-One entry per row, keyed by the row's `subject` exactly as listed:
+One entry per requirement, keyed by its `subject` exactly as listed:
 
-- **`body`** — one or more Markdown paragraphs, each a string. One requirement, one behavioural assertion. Empty for a `conflict` row (see [authority.md](authority.md)); at least one paragraph otherwise.
-- **`scenarios`** — at least one, each with a `name`, optional `given` lines, a `when`, and a `then`, all single lines. Draft from the `criterion` claims covering the row; for an uncovered row, a scenario that states what is checked without inventing the outcome.
+- **`body`** — one or more Markdown paragraphs, each a string. One requirement, one behavioural assertion. Empty for a requirement in `conflict` (see [authority.md](authority.md)); at least one paragraph otherwise.
+- **`scenarios`** — at least one, each with a `name`, optional `given` lines, a `when`, and a `then`, all single lines. Draft from the `criterion` claims covering the requirement; for an uncovered requirement, a scenario that states what is checked without inventing the outcome.
 
-The engine refuses a draft that omits a row, drafts a subject that is not a row, drafts a subject twice, gives a conflict row a body, gives any other row none, omits a scenario, or opens a paragraph line with `#`, `ID:`, `Sources:`, `Status:`, or `Note:`.
+The engine refuses a draft that omits a requirement, drafts a subject that is not a requirement, drafts a subject twice, gives a requirement in conflict a body, gives any other requirement none, omits a scenario, or opens a paragraph line with `#`, `ID:`, `Sources:`, `Status:`, or `Note:`.
 
 ## Body conventions
 

@@ -6,7 +6,7 @@ argument-hint: <adapter>
 
 # Specify Skill
 
-`emery specify` is the one generate verb: it resolves the named source adapters (a local component loads through the deployment loader, read fresh each run; an exact package reference fetches from its registry; either load's optional `digest` pin is verified host-side), extracts, derives the requirement rows, synthesises, and commits one revision, swapping the current revision id. Nothing about the source list persists between runs — repeat the sources on every invocation, or keep them in an operator-owned `emery.toml`. This skill installs or refreshes the CLI, elicits arguments, invokes the verb, and relays its output.
+`emery specify` is the one generate verb: it resolves the named source adapters (a local component loads through the deployment loader, read fresh each run; an exact package reference fetches from its registry; either load's optional `digest` pin is verified host-side), extracts, derives the requirements, synthesises, and commits one revision, swapping the current revision id. Nothing about the source list persists between runs — repeat the sources on every invocation, or keep them in an operator-owned `emery.toml`. This skill installs or refreshes the CLI, elicits arguments, invokes the verb, and relays its output.
 
 ## Invocation
 

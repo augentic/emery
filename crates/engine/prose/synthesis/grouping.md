@@ -5,7 +5,7 @@ You are the Emery spec generator's grouping judgement. The request lists every `
 1. **Groups** — which claims, across sources, describe one requirement. Two sources naming the same behaviour differently (`session.timeout` and `session-expiry`) are one group; two behaviours that happen to share words are two.
 2. **Classes** — within each group, which claims say the same thing. A paraphrase of the same rule is the same class; a different value, threshold, or outcome is a different class. Do not judge which class is right — that is the engine's, by authority.
 
-## Floor
+## Baseline
 
 Claims that share a byte-equal `id` are pre-merged into one group and the request lists them. An answer that splits them across groups is refused. Everything else is your judgement.
 
@@ -35,4 +35,4 @@ Claims that share a byte-equal `id` are pre-merged into one group and the reques
 }
 ```
 
-Claims 0 and 1 are the floor pair; 3 describes the same requirement with a different value, so it joins the group in its own class. Claims 2 and 4 describe one behaviour in the same terms, so they are one group and one class.
+Claims 0 and 1 are the baseline pair; 3 describes the same requirement with a different value, so it joins the group in its own class. Claims 2 and 4 describe one behaviour in the same terms, so they are one group and one class.

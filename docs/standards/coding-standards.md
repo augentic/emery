@@ -48,7 +48,7 @@ Density caps are **review only** — clippy and rustfmt cannot express them. The
 //! The `specify` operation
 //!
 //! Emery's central operation: given a list of sources, extract each
-//! source's claims, derive the requirement rows under authority precedence,
+//! source's claims, derive the requirements under authority precedence,
 //! synthesise `spec.md` and `design.md`, and commit the pair as one new
 //! revision.
 //!

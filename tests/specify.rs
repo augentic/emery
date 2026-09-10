@@ -3,8 +3,8 @@
 //! The scenarios an operator lives through: naming sources, generating a
 //! specification, reviewing it, regenerating it, and hitting every refusal
 //! along the way — an invalid source, an untrusted adapter, a model draft
-//! that still does not fit the rows or the plan once the backend's rounds
-//! are spent.
+//! that still does not fit the requirements or the plan once the backend's
+//! rounds are spent.
 //!
 //! Each scenario drives the real command façade over scripted capabilities,
 //! so it reads as usage documentation while still asserting the exact
@@ -42,7 +42,7 @@ const SOURCES: &str = include_str!("specify/emery.toml");
 
 // Builds the grouping answer that merges `count` claims into one agreeing
 // requirement — what a run over one id appearing several times expects.
-fn floor_grouping(count: usize) -> String {
+fn baseline_grouping(count: usize) -> String {
     let indices = (0..count).map(|index| index.to_string()).collect::<Vec<_>>().join(", ");
     format!("{{\"groups\": [{{\"claims\": [{indices}], \"classes\": [[{indices}]]}}]}}")
 }
@@ -180,7 +180,7 @@ async fn shared_roots() {
         .expect("write emery.toml");
         let config = project_arg(&config);
 
-        let grouping = floor_grouping(2);
+        let grouping = baseline_grouping(2);
         let provider = Provider::answering([grouping.as_str(), SPEC_ANSWER, DESIGN_ANSWER]);
 
         cli_ok(&provider, &["emery", "specify", "--config", &config]).await;
@@ -253,12 +253,12 @@ async fn description_source() {
 }
 
 // Requirement identity and agreement are one model partition over the
-// byte-equal-id floor, and authority derives the rest: the grouping
+// byte-equal-id baseline, and authority derives the rest: the grouping
 // binds `code`'s `session-expiry` into the timeout requirement, where
 // the intent directive outranks it as [divergence] with one templated
 // loser note; tied documentation peers surface as [conflict] with no
 // body; and the uncovered timeout keeps its tag and gains the gap note
-// — no synthetic gap row, so the rendered spec has two requirement blocks.
+// — no synthetic gap requirement, so the rendered spec has two blocks.
 #[tokio::test]
 async fn authority_precedence() {
     let mut provider = Provider::answering([GROUPING_ANSWER, PRECEDENCE_ANSWER, DESIGN_ANSWER]);
@@ -329,7 +329,10 @@ async fn authority_precedence() {
     let grouping = &provider.model.seen()[0];
     let request = grouping.messages.join("\n");
     assert!(request.contains("- 4 `code` `session-expiry`"), "{request}");
-    assert!(request.contains("share the id `session.timeout`"), "the floor is stated: {request}");
+    assert!(
+        request.contains("share the id `session.timeout`"),
+        "the baseline is stated: {request}"
+    );
     assert!(!request.contains("documentation"), "authority is withheld: {request}");
     assert!(!request.contains("behaviour"), "authority is withheld: {request}");
     let SeenFormat::Schema { name, schema } = &grouping.format else {
@@ -349,7 +352,7 @@ async fn authority_precedence() {
     provider.model.assert_exhausted();
 }
 
-// A grouping the partition rules refuse — a floor pair split, a claim
+// A grouping the partition rules refuse — a baseline pair split, a claim
 // in no group, a claim in two classes — is sent back as the correction
 // and the next candidate checked; a backend out of rounds fails with a
 // typed error carrying the last correction and commits nothing.
@@ -505,7 +508,7 @@ async fn diff_envelope() {
 }
 
 // Builds documentation evidence over `(subject, statement)` requirements in
-// row order, each covered by its own criterion.
+// document order, each covered by its own criterion.
 fn docs_evidence(requirements: &[(&str, &str)]) -> Evidence {
     let claims = requirements
         .iter()
@@ -524,7 +527,7 @@ fn docs_evidence(requirements: &[(&str, &str)]) -> Evidence {
 }
 
 // The drafts are keyed by subject, so their order is immaterial; the
-// renderer places each under its row.
+// renderer places each under its requirement.
 const REMINE_FIRST: &str = r#"{
   "preamble": ["The docs describe a greeting, a legacy export, and a session timeout."],
   "requirements": [
@@ -622,11 +625,12 @@ async fn version_too_new() {
     fail(&provider, &["emery", "specify", "docs"], 1, "unsupported-version").await;
 }
 
-// A spec draft outside its schema or its rows is refused once the
-// backend's rounds are spent, one finding per case: not JSON, a row left
-// undrafted, a subject that is not a row, a subject drafted twice, no
-// scenario, no body on a non-conflict row, and a paragraph opening with a
-// reserved marker. The operator never sees a half-committed run.
+// A spec draft outside its schema or its requirements is refused once the
+// backend's rounds are spent, one finding per case: not JSON, a requirement
+// left undrafted, a subject that is not a requirement, a subject drafted
+// twice, no scenario, no body on a requirement not in conflict, and a
+// paragraph opening with a reserved marker. The operator never sees a
+// half-committed run.
 #[tokio::test]
 async fn invalid_draft() {
     let one = |subject: &str, body: &str, scenarios: &str| {
@@ -639,11 +643,11 @@ async fn invalid_draft() {
         ("Not a spec at all.".to_string(), "schema and answer type disagree"),
         (
             r#"{"preamble": [], "requirements": []}"#.to_string(),
-            "row `greeting.behaviour` is not drafted",
+            "requirement `greeting.behaviour` is not drafted",
         ),
         (
             one("greeting.renamed", r#""Hello.""#, scenario),
-            "`greeting.renamed` is not a requirement row",
+            "`greeting.renamed` is not a requirement",
         ),
         (
             format!(
@@ -672,8 +676,8 @@ async fn invalid_draft() {
     }
 }
 
-// The schema steers the draft toward this run's rows; the check is the
-// gate. A finding is fed back as the correction with the previous answer,
+// The schema steers the draft toward this run's requirements; the check is
+// the gate. A finding is fed back as the correction with the previous answer,
 // and the corrected draft commits: the operator sees one committed
 // revision, not the intermediate miss.
 #[tokio::test]
@@ -694,14 +698,14 @@ async fn repaired_draft() {
     let schema: Value = serde_json::from_str(schema).expect("the steering schema is JSON");
     assert_eq!(schema["properties"]["requirements"]["minItems"], 1);
     assert_eq!(schema["properties"]["requirements"]["maxItems"], 1);
-    let requirement = &schema["$defs"]["Requirement"]["properties"];
+    let entry = &schema["$defs"]["Entry"]["properties"];
     assert_eq!(
-        requirement["subject"]["enum"],
+        entry["subject"]["enum"],
         serde_json::json!(["greeting.behaviour"]),
-        "the row subjects ride the schema as a hint"
+        "the requirement subjects ride the schema as a hint"
     );
-    assert_eq!(requirement["subject"]["type"], "string", "the derive is intact");
-    assert_eq!(requirement["scenarios"]["minItems"], 1);
+    assert_eq!(entry["subject"]["type"], "string", "the derive is intact");
+    assert_eq!(entry["scenarios"]["minItems"], 1);
 
     let check = &provider.model.exchanges()[0];
     assert_eq!(check.tool, "check");
@@ -1027,7 +1031,7 @@ async fn source_paths() {
     .expect("write emery.toml");
 
     // Three sources contribute one id: the grouping turn merges them.
-    let grouping = floor_grouping(3);
+    let grouping = baseline_grouping(3);
     let provider = Provider::answering([grouping.as_str(), SPEC_ANSWER, DESIGN_ANSWER]);
     let path = project_arg(&path);
     cli_ok(&provider, &["emery", "specify", "--config", &path]).await;

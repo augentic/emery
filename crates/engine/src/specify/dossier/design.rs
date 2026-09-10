@@ -8,7 +8,7 @@
 //! the engine renders the accepted draft into the canonical document.
 
 use std::collections::{BTreeMap, BTreeSet};
-use std::fmt::{self, Display};
+use std::fmt::{self, Display, Formatter};
 
 use emery_source::types::{Claim, ClaimKind};
 use schemars::JsonSchema;
@@ -22,20 +22,22 @@ use crate::specify::brief::{Brief, Review};
 use crate::specify::dossier::{ClaimsSection, Markdown};
 
 /// What the engine needs to ask the model for `design.md` and to verify its
-/// draft: the rendered `spec.md` and the section plan.
+/// draft: the extracts, the rendered `spec.md`, and the section plan.
 pub struct DesignBrief<'a> {
+    extracts: &'a [Extract],
     spec: &'a str,
     plan: Plan<'a>,
 }
 
 impl<'a> DesignBrief<'a> {
-    /// Creates the brief for `design.md` from the rendered `spec` and a
-    /// section plan derived from the claim kinds in `evidence`.
+    /// Creates the brief for `design.md` from the `extracts`, the rendered
+    /// `spec`, and a section plan derived from the claims in the extracts.
     #[must_use]
-    pub fn new(evidence: &'a [Extract], spec: &'a str) -> Self {
+    pub fn new(extracts: &'a [Extract], spec: &'a str) -> Self {
         Self {
+            extracts,
             spec,
-            plan: Plan::collect(evidence),
+            plan: Plan::collect(extracts),
         }
     }
 }
@@ -51,7 +53,7 @@ impl Brief for DesignBrief<'_> {
     // Tightens the derived schema to this run's plan: at least as many
     // sections as the plan requires, `kind` limited to the kinds the plan does
     // not forbid, and `type` blocks limited to this run's `type` claim keys.
-    fn hints(&self, schema: &mut Value) {
+    fn tighten(&self, schema: &mut Value) {
         schema["properties"]["sections"]["minItems"] = json!(self.plan.required().count());
 
         // The derived `kind` refers to the whole vocabulary; the run's
@@ -83,8 +85,7 @@ impl Brief for DesignBrief<'_> {
     fn verify(&self, answer: &DesignAnswer, review: &mut Review) {
         review.paragraphs(&answer.preamble, "preamble");
 
-        let bound: BTreeSet<&str> =
-            self.plan.evidence.iter().map(|source| source.key.as_str()).collect();
+        let bound = &self.plan.bound;
         let mut seen = BTreeSet::new();
         let mut references: BTreeMap<&str, usize> = BTreeMap::new();
         for section in &answer.sections {
@@ -145,10 +146,9 @@ impl Brief for DesignBrief<'_> {
     // `type` block replaced by the claim's signature.
     fn into_output(self, answer: DesignAnswer) -> Self::Output {
         let signatures: BTreeMap<&str, &str> = self
-            .plan
-            .evidence
+            .extracts
             .iter()
-            .flat_map(|source| source.evidence.types())
+            .flat_map(|extract| extract.evidence.types())
             .filter_map(|claim| Some((claim.type_key()?, claim.signature()?)))
             .collect();
 
@@ -160,15 +160,15 @@ impl Brief for DesignBrief<'_> {
                 continue;
             };
 
-            document.append(format!("## {kind}"));
+            document.push(format!("## {kind}"));
             for block in &section.blocks {
                 match block {
-                    Block::Text(text) => document.append(text),
+                    Block::Text(text) => document.push(text),
                     Block::Type(key) => {
                         let signature = signatures
                             .get(key.as_str())
-                            .expect("the check held the draft to the type claims");
-                        document.append(format!("```\n{}\n```", signature.trim_end()));
+                            .expect("verify held the draft to the type claims");
+                        document.push(format!("```\n{}\n```", signature.trim_end()));
                     }
                 }
             }
@@ -178,12 +178,12 @@ impl Brief for DesignBrief<'_> {
     }
 }
 
-// Renders the user turn of the prompt: every claim in the evidence, the
+// Renders the user turn of the prompt: every claim in every extract, the
 // plan's verdict on each section kind with its reason, the `type` claims to
 // place, and the rendered `spec.md` the design must follow.
 impl Display for DesignBrief<'_> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "Draft `design.md`.\n\n{claims}", claims = ClaimsSection(self.plan.evidence))?;
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        write!(f, "Draft `design.md`.\n\n{claims}", claims = ClaimsSection(self.extracts))?;
 
         f.write_str("\n## Sections\n\n")?;
         for &kind in SectionKind::VARIANTS {
@@ -254,23 +254,24 @@ pub enum Block {
 // the bound sources it may cite, and the `type` claim keys it must reference.
 struct Plan<'a> {
     kinds: Vec<ClaimKind>,
-    evidence: &'a [Extract],
+    bound: BTreeSet<&'a str>,
     keys: BTreeSet<&'a str>,
 }
 
 impl<'a> Plan<'a> {
-    fn collect(evidence: &'a [Extract]) -> Self {
+    fn collect(extracts: &'a [Extract]) -> Self {
         let kinds =
-            evidence.iter().flat_map(|source| &source.evidence.claims).map(|claim| claim.kind);
-        let keys = evidence
+            extracts.iter().flat_map(|extract| &extract.evidence.claims).map(|claim| claim.kind);
+        let bound = extracts.iter().map(|extract| extract.key.as_str()).collect();
+        let keys = extracts
             .iter()
-            .flat_map(|source| source.evidence.types())
+            .flat_map(|extract| extract.evidence.types())
             .filter_map(Claim::type_key)
             .collect();
 
         Self {
             kinds: kinds.collect(),
-            evidence,
+            bound,
             keys,
         }
     }
@@ -322,7 +323,7 @@ const fn informants(kind: SectionKind) -> &'static [ClaimKind] {
 }
 
 // Finds the `{"type": …}` variant of the `oneOf` schemars derives for `Block`,
-// so `hints` can restrict its `enum` to this run's type keys.
+// so `tighten` can restrict its `enum` to this run's type keys.
 fn type_block(schema: &mut Value) -> Option<&mut Value> {
     schema
         .pointer_mut("/$defs/Block/oneOf")?

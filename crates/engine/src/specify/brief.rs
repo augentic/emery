@@ -4,8 +4,8 @@
 //! answer, and what it accepts. A brief carries a run's facts, names the
 //! prose that instructs the model, renders the turn, tightens the answer's
 //! derived schema to the run, and verifies every candidate against the facts;
-//! only an answer it accepts becomes output — rows or a document — and the
-//! brief alone produces that output.
+//! only an answer it accepts becomes output — requirements or a document — and
+//! the brief alone produces that output.
 //!
 //! The model is never asked for anything the engine can decide itself, and
 //! nothing the engine renders comes from an unchecked answer.
@@ -18,13 +18,13 @@ use schemars::JsonSchema;
 use serde::de::DeserializeOwned;
 use serde_json::Value;
 
-// `Sync`: the check closure `Question::ask` takes is `Send`, and it
+// `Sync`: the verify closure `Question::ask` takes is `Send`, and it
 // borrows the brief.
 pub trait Brief: Display + Sync + Sized {
     /// The typed answer the brief asks for.
     type Answer: JsonSchema + DeserializeOwned + Send;
 
-    /// What the judgment yields: rows, a document.
+    /// What the judgment yields: requirements, a document.
     type Output;
 
     /// The question's name.
@@ -33,9 +33,9 @@ pub trait Brief: Display + Sync + Sized {
     /// The synthesis prose, in prompt order.
     const PROSE: &'static [&'static str];
 
-    /// Tightens the derived `schema` toward this run. Hints for the
+    /// Tightens the derived `schema` toward this run. Steering for the
     /// provider; [`Self::verify`] is the gate.
-    fn hints(&self, schema: &mut Value);
+    fn tighten(&self, schema: &mut Value);
 
     /// Verifies a candidate answer against the run's facts, recording every
     /// finding on `review` for repair.
@@ -60,11 +60,11 @@ pub trait Brief: Display + Sync + Sized {
             .join("\n\n---\n\n");
         let answer = Question::<Self::Answer>::new(Self::NAME)
             .system(system)
-            .schema(|schema| self.hints(schema))
+            .schema(|schema| self.tighten(schema))
             .ask(model, self.to_string(), None, |answer| {
                 let mut review = Review::default();
                 self.verify(answer, &mut review);
-                review.finish()
+                review.verdict()
             })
             .await?;
 
@@ -86,7 +86,7 @@ impl Review {
     }
 
     // Accepts a candidate with no finding; rejects one with any, for repair.
-    fn finish(self) -> Result<(), Findings> {
+    fn verdict(self) -> Result<(), Findings> {
         if self.0.is_empty() { Ok(()) } else { Err(self.0) }
     }
 }

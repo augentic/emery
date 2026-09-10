@@ -5,7 +5,7 @@
 //! what the re-mine diff keys on, and the body is what it compares.
 
 use std::collections::BTreeMap;
-use std::fmt::{self, Display};
+use std::fmt::{self, Display, Formatter};
 use std::str::FromStr;
 
 use omnia_guest::{Error, server_error};
@@ -121,7 +121,7 @@ pub enum SectionKind {
 
 // Writes the section title as the document spells it.
 impl Display for SectionKind {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         f.write_str(match self {
             Self::Overview => "Overview",
             Self::DomainModel => "Domain model",

@@ -6,7 +6,7 @@ Every Evidence document carries one closed `authority` class. Highest wins:
 2. **`documentation`** — operator-provided written product or technical intent (internal docs, RFCs, product notes). Emitted by the `documentation` source adapter.
 3. **`behaviour`** — what legacy code actually does. Emitted by behaviour sources such as `typescript` and future code or observation adapters.
 
-The **engine** resolves authority before you are called; the requirement rows carry the outcome. You never pick winners, derive `Status:`, or order `Sources:` — you draft honest content for the rows as they stand.
+The **engine** resolves authority before you are called; the requirements carry the outcome. You never pick winners, derive `Status:`, or order `Sources:` — you draft honest content for the requirements as they stand.
 
 ## Status derivation (engine-computed)
 
@@ -19,7 +19,7 @@ A requirement's contributing claims were grouped into agreeing classes. The engi
 | ≥2, unique top authority | `divergence` | `[divergence]` |
 | ≥2 at the same top authority | `conflict` | `[conflict]` |
 
-An uncovered `divergence` or `conflict` row keeps its tag; the engine adds the gap note beneath its loser notes.
+An uncovered `divergence` or `conflict` requirement keeps its tag; the engine adds the gap note beneath its loser notes.
 
 ## What you draft per resolution
 

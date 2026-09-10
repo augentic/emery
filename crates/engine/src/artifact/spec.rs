@@ -5,7 +5,7 @@
 //! re-mine diff keys on, and the provenance and body are what it compares.
 
 use std::collections::BTreeMap;
-use std::fmt::{self, Display};
+use std::fmt::{self, Display, Formatter};
 use std::str::FromStr;
 
 use omnia_guest::{Error, server_error};
@@ -70,10 +70,10 @@ impl FromStr for Spec {
 }
 
 /// One requirement block. The heading tag mirrors `status`, and the
-/// positional id shifts with the rows above it, so neither is kept.
+/// positional id shifts with the requirements above it, so neither is kept.
 #[derive(Debug)]
 pub struct Requirement {
-    /// The heading name: the row's subject.
+    /// The heading name: the requirement's subject.
     pub subject: String,
     /// The cited source keys, in order.
     pub sources: Vec<String>,
@@ -149,14 +149,15 @@ impl PartialEq for Requirement {
     }
 }
 
-/// A requirement id, `REQ-NNN`. Ids are positional: the first row is `REQ-001`.
+/// A requirement id, `REQ-NNN`. Ids are positional: the first requirement is
+/// `REQ-001`.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct ReqId(String);
 
 impl ReqId {
     const PREFIX: &str = "REQ-";
 
-    /// Mints the id for the row at zero-based `index`.
+    /// Mints the id for the requirement at zero-based `index`.
     #[must_use]
     pub fn nth(index: usize) -> Self {
         Self(format!("{}{:03}", Self::PREFIX, index + 1))
@@ -177,7 +178,7 @@ impl FromStr for ReqId {
 }
 
 impl Display for ReqId {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         f.write_str(&self.0)
     }
 }

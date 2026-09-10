@@ -7,4 +7,4 @@ Hard-coded conventions of the rendered `spec.md`. These are not configurable and
 - **Provenance lines**: `ID: REQ-NNN`, `Sources: [<source>, …]`, `Status: <status>`
 - **Scenario heading**: `#### Scenario: <name>`, then `- **GIVEN**` / `- **WHEN**` / `- **THEN**` bullets
 
-Your `preamble` opens the document: a short overview of what was bound and what the rows say, as paragraphs. One flat document: no delta sections, no per-domain splits — `spec.md` is the whole reviewable set.
+Your `preamble` opens the document: a short overview of what was bound and what the requirements say, as paragraphs. One flat document: no delta sections, no per-domain splits — `spec.md` is the whole reviewable set.

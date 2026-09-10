@@ -25,120 +25,112 @@ pub const CURRENT: &str = "current-revision";
 /// Blobstore container holding every revision's documents under `<id>/`.
 pub const CONTAINER: &str = "revisions";
 
-/// The revision store, over a deployment's keyvalue and blobstore
-/// capabilities.
-#[derive(Clone, Copy, Debug)]
-pub struct Store<'a, S> {
-    store: &'a S,
+/// Commits `dossier` to `store` as a new revision — diff against the readable
+/// predecessor, write, swap the current id, prune — returning the id with the
+/// diff.
+///
+/// # Errors
+///
+/// Fails if another run swapped the id first or storage refuses the write.
+pub async fn commit<S: StateStore + BlobStore>(
+    store: &S, dossier: &Dossier,
+) -> Result<Committed, Error> {
+    // One observation feeds both the advisory diff and the CAS.
+    let observed = observe(store).await;
+    let diff = observed.outgoing.as_ref().map(|outgoing| Diff::between(outgoing, dossier));
+    let id = swap(store, dossier, observed).await?;
+
+    Ok(Committed { id, diff })
 }
 
-impl<'a, S: StateStore + BlobStore> Store<'a, S> {
-    /// Creates a revision store over `store`.
-    #[must_use]
-    pub const fn new(store: &'a S) -> Self {
-        Self { store }
+// Writes the documents and swaps the current id against `observed`;
+// a lost swap leaves the documents as an inert, unreferenced orphan.
+async fn swap<S: StateStore + BlobStore>(
+    store: &S, dossier: &Dossier, observed: Observation,
+) -> Result<String, Error> {
+    if !BlobStore::container_exists(store, CONTAINER).await? {
+        BlobStore::create_container(store, CONTAINER).await?;
     }
 
-    /// Commits `dossier` as a new revision — diff against the readable
-    /// predecessor, write, swap the current id, prune — returning the id with
-    /// the diff.
-    ///
-    /// Fails if another run swapped the id first or storage refuses the write.
-    pub async fn commit(&self, dossier: &Dossier) -> Result<Committed, Error> {
-        // One observation feeds both the advisory diff and the CAS.
-        let observed = self.observe().await;
-        let diff = observed.outgoing.as_ref().map(|outgoing| Diff::between(outgoing, dossier));
-        let id = self.swap(dossier, observed).await?;
-
-        Ok(Committed { id, diff })
-    }
-
-    // Writes the documents and swaps the current id against `observed`;
-    // a lost swap leaves the documents as an inert, unreferenced orphan.
-    async fn swap(&self, dossier: &Dossier, observed: Observation) -> Result<String, Error> {
-        if !BlobStore::container_exists(self.store, CONTAINER).await? {
-            BlobStore::create_container(self.store, CONTAINER).await?;
-        }
-
-        let id = dossier.revision();
-        for (name, body) in dossier.files() {
-            BlobStore::put(self.store, CONTAINER, &format!("{id}/{name}"), body.as_bytes())
-                .await
-                .context("writing revision document")?;
-        }
-
-        StateStore::cas(self.store, CURRENT, observed.token.as_deref(), id.as_bytes())
+    let id = dossier.revision();
+    for (name, body) in dossier.files() {
+        BlobStore::put(store, CONTAINER, &format!("{id}/{name}"), body.as_bytes())
             .await
-            .context("swapping current revision")?;
+            .context("writing revision document")?;
+    }
 
-        // The swap landed; prune the previous revision.
-        if let Some(previous) = observed.previous().filter(|previous| *previous != id) {
-            for (name, _) in dossier.files() {
-                let _ =
-                    BlobStore::delete(self.store, CONTAINER, &format!("{previous}/{name}")).await;
-            }
+    StateStore::cas(store, CURRENT, observed.token.as_deref(), id.as_bytes())
+        .await
+        .context("swapping current revision")?;
+
+    // The swap landed; prune the previous revision.
+    if let Some(previous) = observed.previous().filter(|previous| *previous != id) {
+        for (name, _) in dossier.files() {
+            let _ = BlobStore::delete(store, CONTAINER, &format!("{previous}/{name}")).await;
         }
-
-        Ok(id)
     }
 
-    /// Returns the current revision's dossier, or `None` before the first
-    /// commit. Fails closed for a dangling, incomplete, unreadable, or
-    /// tampered revision.
-    pub async fn current(&self) -> Result<Option<Dossier>, Error> {
-        let Some(raw) =
-            StateStore::get(self.store, CURRENT).await.context("getting current revision id")?
-        else {
-            return Ok(None);
-        };
+    Ok(id)
+}
 
-        let id = String::from_utf8(raw).context("decoding current revision id")?;
-        let dossier = self.load(&id).await?;
+/// Returns the current revision's dossier in `store`, or `None` before the
+/// first commit.
+///
+/// # Errors
+///
+/// Fails closed for a dangling, incomplete, unreadable, or tampered revision.
+pub async fn current<S: StateStore + BlobStore>(store: &S) -> Result<Option<Dossier>, Error> {
+    let Some(raw) = StateStore::get(store, CURRENT).await.context("getting current revision id")?
+    else {
+        return Ok(None);
+    };
 
-        Ok(Some(dossier))
+    let id = String::from_utf8(raw).context("decoding current revision id")?;
+    let dossier = load(store, &id).await?;
+
+    Ok(Some(dossier))
+}
+
+// Observes the CAS token and outgoing revision without failing; bad state
+// suppresses only the advisory diff, never the CAS, which still refuses a
+// stale token.
+async fn observe<S: StateStore + BlobStore>(store: &S) -> Observation {
+    let token = StateStore::get(store, CURRENT).await.ok().flatten();
+
+    let outgoing = if let Some(id) = token.as_deref().and_then(|raw| str::from_utf8(raw).ok()) {
+        load(store, id).await.ok()
+    } else {
+        None
+    };
+
+    Observation { token, outgoing }
+}
+
+// Loads revision `id` and checks that it still hashes to that id: the
+// store is content-addressed, so documents that no longer match the id
+// they sit under are corruption, not a revision.
+async fn load<S: BlobStore>(store: &S, id: &str) -> Result<Dossier, Error> {
+    let spec = read(store, id, Document::Spec.file()).await?;
+    let design = read(store, id, Document::Design.file()).await?;
+    let dossier = Dossier { spec, design };
+
+    if dossier.revision() != id {
+        return Err(server_error!("revision `{id}` does not match its content"));
     }
 
-    // Observes the CAS token and outgoing revision without failing; bad state
-    // suppresses only the advisory diff, never the CAS, which still refuses a
-    // stale token.
-    async fn observe(&self) -> Observation {
-        let token = StateStore::get(self.store, CURRENT).await.ok().flatten();
+    Ok(dossier)
+}
 
-        let outgoing = if let Some(id) = token.as_deref().and_then(|raw| str::from_utf8(raw).ok()) {
-            self.load(id).await.ok()
-        } else {
-            None
-        };
-
-        Observation { token, outgoing }
-    }
-
-    // Loads revision `id` and checks that it still hashes to that id: the
-    // store is content-addressed, so documents that no longer match the id
-    // they sit under are corruption, not a revision.
-    async fn load(&self, id: &str) -> Result<Dossier, Error> {
-        let spec = self.read(id, Document::Spec.file()).await?;
-        let design = self.read(id, Document::Design.file()).await?;
-        let dossier = Dossier { spec, design };
-
-        if dossier.revision() != id {
-            return Err(server_error!("revision `{id}` does not match its content"));
-        }
-
-        Ok(dossier)
-    }
-
-    // Reads one document of revision `id`; a document that is absent or not
-    // UTF-8 under a named revision is corruption.
-    async fn read(&self, id: &str, name: &str) -> Result<String, Error> {
-        let bytes = BlobStore::get(self.store, CONTAINER, &format!("{id}/{name}"))
-            .await
-            .context("reading revision document")?
-            .ok_or_else(|| server_error!("revision `{id}` does not contain `{name}`"))?;
-        let body = String::from_utf8(bytes)
-            .with_context(|| format!("revision `{id}`: `{name}` is not UTF-8"))?;
-        Ok(body)
-    }
+// Reads one document of revision `id`; a document that is absent or not
+// UTF-8 under a named revision is corruption.
+async fn read<S: BlobStore>(store: &S, id: &str, name: &str) -> Result<String, Error> {
+    let bytes = BlobStore::get(store, CONTAINER, &format!("{id}/{name}"))
+        .await
+        .context("reading revision document")?
+        .ok_or_else(|| server_error!("revision `{id}` does not contain `{name}`"))?;
+    let body = String::from_utf8(bytes)
+        .with_context(|| format!("revision `{id}`: `{name}` is not UTF-8"))?;
+    Ok(body)
 }
 
 /// A committed revision: its id and the advisory re-mine diff against
@@ -264,21 +256,18 @@ impl Changes {
 mod tests {
     use omnia_test::guest::Memory;
 
-    use crate::artifact::Dossier;
-    use crate::store::{CONTAINER, Store};
+    use super::*;
 
     #[tokio::test]
     async fn commit_conflict() {
         let memory = Memory::default();
-        let store = Store::new(&memory);
 
         // Both runs observe the empty store; the winner swaps first.
-        let stale = store.observe().await;
-        let observed = store.observe().await;
-        let winner = store.swap(&dossier("# Spec winner\n"), observed).await.expect("commit");
+        let stale = observe(&memory).await;
+        let observed = observe(&memory).await;
+        let winner = swap(&memory, &dossier("# Spec winner\n"), observed).await.expect("commit");
 
-        let err = store
-            .swap(&dossier("# Spec loser\n"), stale)
+        let err = swap(&memory, &dossier("# Spec loser\n"), stale)
             .await
             .expect_err("a stale observation must never last-write-wins over the swapped id");
         assert_eq!(err.code(), "server_error", "typed failure");
@@ -287,8 +276,8 @@ mod tests {
             "typed failure: {}",
             err.description()
         );
-        let current = store.current().await.expect("current").expect("committed");
-        assert_eq!(current.revision(), winner, "the current id still names the winner");
+        let committed = current(&memory).await.expect("current").expect("committed");
+        assert_eq!(committed.revision(), winner, "the current id still names the winner");
         let spec = memory.object(CONTAINER, &format!("{winner}/spec.md")).expect("winning spec");
         assert_eq!(spec, b"# Spec winner\n", "the winning revision is intact");
     }

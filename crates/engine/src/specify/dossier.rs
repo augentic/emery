@@ -1,11 +1,11 @@
 //! The dossier
 //!
-//! Turns the requirement rows and the extracted claims into the dossier: the
+//! Synthesises the requirements and the extracted claims into the dossier: the
 //! two specification documents. The model is asked two typed questions in turn —
 //! the content of `spec.md`, then the content of `design.md` — each put as a
-//! brief that verifies every candidate answer against the rows, the section
-//! plan, and the evidence before the engine renders the accepted answer into
-//! the canonical document. Every heading, provenance line, tag, note, and
+//! brief that verifies every candidate answer against the requirements, the
+//! section plan, and the evidence before the engine renders the accepted answer
+//! into the canonical document. Every heading, provenance line, tag, note, and
 //! signature is the engine's, so the stored bytes are a function of the facts
 //! and the draft alone, and a changed byte re-ids every revision.
 //!
@@ -25,21 +25,22 @@ use serde_json::Value;
 use self::design::DesignBrief;
 use self::spec::SpecBrief;
 use crate::artifact::{Dossier, RESERVED};
+use crate::specify::Extract;
 use crate::specify::brief::{Brief as _, Review};
-use crate::specify::{Extract, provenance};
+use crate::specify::requirement::Requirement;
 
-/// Takes evidence from all queried sources, with the requirement rows derived
-/// from it, and asks the model to synthesise them into the dossier: the
-/// specification and design documents.
+/// Takes the extracts of every source and the requirements derived from them,
+/// and asks the model to synthesise them into the dossier: the specification
+/// and design documents.
 ///
 /// # Errors
 ///
 /// A model failure is `bad_gateway`; an answer outside the schema, or a draft
 /// the backend could not repair within its rounds, is `bad_request`.
-pub async fn compose<M: Model>(model: &M, extracts: &[Extract]) -> Result<Dossier, Error> {
-    let rows = provenance::derive(model, extracts).await?;
-
-    let spec = SpecBrief::new(extracts, &rows).judge(model).await?;
+pub async fn synthesise<M: Model>(
+    model: &M, extracts: &[Extract], requirements: &[Requirement],
+) -> Result<Dossier, Error> {
+    let spec = SpecBrief::new(extracts, requirements).judge(model).await?;
     let design = DesignBrief::new(extracts, &spec).judge(model).await?;
 
     Ok(Dossier { spec, design })
@@ -55,14 +56,14 @@ impl Markdown {
         Self(vec![format!("# {title}")])
     }
 
-    fn append(&mut self, text: impl Into<String>) {
-        // add `\n` between lines
-        self.0.push(text.into().lines().map(str::trim_end).collect::<Vec<_>>().join("\n"))
+    // Adds one block, every line right-trimmed; `finish` joins the blocks.
+    fn push(&mut self, text: impl Into<String>) {
+        self.0.push(text.into().lines().map(str::trim_end).collect::<Vec<_>>().join("\n"));
     }
 
     fn extend(&mut self, texts: &[String]) {
         for text in texts {
-            self.append(text);
+            self.push(text);
         }
     }
 
@@ -73,7 +74,7 @@ impl Markdown {
     }
 }
 
-// The `## Claims` section of a brief's prompt: every claim in the evidence,
+// The `## Claims` section of a brief's prompt: every claim in every extract,
 // under its source key and authority, so the model sees the whole body it
 // must draft from.
 struct ClaimsSection<'a>(&'a [Extract]);
@@ -82,15 +83,15 @@ impl Display for ClaimsSection<'_> {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         f.write_str("## Claims\n")?;
 
-        for source in self.0 {
+        for extract in self.0 {
             write!(
                 f,
                 "\n### source `{key}` ({authority})\n\n",
-                key = source.key,
-                authority = source.evidence.authority
+                key = extract.key,
+                authority = extract.evidence.authority
             )?;
 
-            for claim in &source.evidence.claims {
+            for claim in &extract.evidence.claims {
                 let id = claim.id.as_deref().unwrap_or("-");
                 let synopsis = claim.synopsis.as_deref().unwrap_or("");
                 writeln!(

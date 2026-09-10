@@ -10,7 +10,7 @@
 //! share one guest, and a conflicting pin on the second source is caught
 //! here rather than surfacing as a confusing host error.
 
-use std::fmt;
+use std::fmt::{self, Display, Formatter};
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
 
@@ -163,10 +163,10 @@ impl FromStr for AdapterRef {
     }
 }
 
-impl fmt::Display for AdapterRef {
+impl Display for AdapterRef {
     // Writes the selector as an operator would type it; a component renders
     // as its path.
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         match self {
             Self::Package {
                 namespace,

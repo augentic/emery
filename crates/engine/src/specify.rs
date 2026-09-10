@@ -1,7 +1,7 @@
 //! The `specify` operation
 //!
 //! Emery's central operation: given a list of sources, extract each
-//! source's claims, derive the requirement rows under authority precedence,
+//! source's claims, derive the requirements under authority precedence,
 //! synthesise `spec.md` and `design.md`, and commit the pair as one new
 //! revision.
 //!
@@ -17,7 +17,7 @@
 
 mod brief;
 mod dossier;
-mod provenance;
+mod requirement;
 
 use std::collections::BTreeSet;
 use std::path::Path;
@@ -32,13 +32,12 @@ use omnia_guest::{BlobStore, Error, Model, Plugins, StateStore, bad_request};
 use serde::{Deserialize, Serialize};
 
 use crate::plugin::{AdapterRef, Loader};
-use crate::preopen_path;
-use crate::store::Store;
 pub use crate::store::{Changes, Diff};
+use crate::{preopen_path, store};
 
-/// Runs `specify` over the context's provider: checks the source list,
-/// extracts each source's evidence, derives the requirement rows, synthesises
-/// the two specification documents, and commits them as a new revision.
+/// Runs `specify` over the context's provider: checks the source list, then
+/// extracts each source's evidence, derives the requirements, synthesises the
+/// dossier, and commits it as a new revision.
 ///
 /// # Errors
 ///
@@ -51,10 +50,10 @@ pub async fn specify<P: Model + Source + StateStore + BlobStore + Plugins>(
 
     let provider = context.provider();
 
-    // extract each source's evidence and synthesise the dossier
     let extracts = input.extract(provider).await?;
-    let dossier = dossier::compose(provider, &extracts).await?;
-    let committed = Store::new(provider).commit(&dossier).await?;
+    let requirements = requirement::derive(provider, &extracts).await?;
+    let dossier = dossier::synthesise(provider, &extracts, &requirements).await?;
+    let committed = store::commit(provider, &dossier).await?;
 
     Ok(SpecifyOutput {
         revision: committed.id,
@@ -80,20 +79,15 @@ impl SpecifyInput {
 
         let mut keys = BTreeSet::new();
         for source in &self.sources {
-            let key = source.key.as_str();
-            if !is_kebab(key) {
-                return Err(bad_request!("source `{key}` is not a kebab-case key"));
-            }
-            if !keys.insert(key) {
-                return Err(bad_request!("source `{key}` appears twice"));
-            }
             source.validate()?;
+            if !keys.insert(source.key.as_str()) {
+                return Err(bad_request!("source `{}` appears twice", source.key));
+            }
         }
 
         Ok(())
     }
 
-    // Extracts each source's evidence.
     async fn extract<P: Source + Plugins>(&self, provider: &P) -> Result<Vec<Extract>, Error> {
         let mut extracts = Vec::with_capacity(self.sources.len());
         let loader = Loader::new(provider);
@@ -106,6 +100,8 @@ impl SpecifyInput {
             tracing::debug!(source = %key, "extracting");
             let evidence = Source::extract(provider, &id, &input).await?;
 
+            // The adapter is a guest the engine did not write, so the
+            // contract's claim gate is re-run here, fail-closed.
             let findings = evidence.findings();
             if !findings.is_empty() {
                 let findings = findings.join("\n");
@@ -178,11 +174,14 @@ impl SourceConfig {
         })
     }
 
-    // Checks one source's rules: `registry` only means anything for a package
-    // adapter, `digest` only for a loader-acquired one, and the root must pass
-    // the rule `input` applies — so a bad list is refused before any load.
+    // Checks one source's rules: the key is kebab-case, `registry` only means
+    // anything for a package adapter, `digest` only for a loader-acquired one,
+    // and the root must pass the rule `input` applies — before any load.
     fn validate(&self) -> Result<(), Error> {
         let key = &self.key;
+        if !is_kebab(key) {
+            return Err(bad_request!("source `{key}` is not a kebab-case key"));
+        }
         if self.registry.is_some() && !matches!(self.adapter, AdapterRef::Package { .. }) {
             return Err(bad_request!(
                 "source `{key}`: `registry` requires a package adapter \

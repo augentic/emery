@@ -1,6 +1,6 @@
 # Tag grammar
 
-Three review-signal tags render into `spec.md` from each requirement's row, after the heading name. The engine writes them; they document uncertainty inline so the operator can resolve it at the source and re-run `emery specify`.
+Three review-signal tags render into `spec.md` from each requirement's status, after the heading name. The engine writes them; they document uncertainty inline so the operator can resolve it at the source and re-run `emery specify`.
 
 ## Closed tag set
 
@@ -20,4 +20,4 @@ One tag per heading, mirroring `Status:`; `conflict` outranks `divergence`, whic
 
 ## Anti-patterns
 
-Restating a tag, status, or note in a paragraph; auto-resolving a `[conflict]`; guessing acceptance behaviour for an `[unknown]` row.
+Restating a tag, status, or note in a paragraph; auto-resolving a `[conflict]`; guessing acceptance behaviour for an `[unknown]` requirement.
