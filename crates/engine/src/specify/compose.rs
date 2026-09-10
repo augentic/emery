@@ -38,12 +38,13 @@ use crate::store::Revision;
 ///
 /// A model failure is `bad_gateway`; an answer outside the schema, or a draft
 /// the backend could not repair within its rounds, is `bad_request`.
-pub async fn synthesise<M: Model>(
-    model: &M, sources: &[SourceEvidence],
+pub async fn compose<M: Model>(
+    model: &M, evidence: &[SourceEvidence],
 ) -> Result<Revision, Error> {
-    let rows = provenance::derive(model, sources).await?;
-    let spec = SpecBrief::new(sources, &rows).judge(model).await?;
-    let design = DesignBrief::new(&spec, sources).judge(model).await?;
+    let rows = provenance::derive(model, evidence).await?;
+
+    let spec = SpecBrief::new(evidence, &rows).judge(model).await?;
+    let design = DesignBrief::new(evidence, &spec).judge(model).await?;
 
     Ok(Revision { spec, design })
 }
@@ -76,9 +77,9 @@ impl Markdown {
     }
 }
 
-// The `## Claims` section of a brief's prompt: every claim of every source
-// under the source's key and authority, so the model sees the whole body of
-// evidence it must draft from.
+// The `## Claims` section of a brief's prompt: every claim in the evidence,
+// under its source key and authority, so the model sees the whole body it
+// must draft from.
 struct ClaimsSection<'a>(&'a [SourceEvidence]);
 
 impl Display for ClaimsSection<'_> {

@@ -19,7 +19,7 @@ use strum::VariantArray as _;
 use crate::artifact::{SectionKind, citations};
 use crate::specify::SourceEvidence;
 use crate::specify::brief::{Brief, Review};
-use crate::specify::synthesise::{ClaimsSection, Markdown};
+use crate::specify::compose::{ClaimsSection, Markdown};
 
 /// What the engine needs to ask the model for `design.md` and to verify its
 /// draft: the rendered `spec.md` and the section plan.
@@ -30,12 +30,12 @@ pub struct DesignBrief<'a> {
 
 impl<'a> DesignBrief<'a> {
     /// Creates the brief for `design.md` from the rendered `spec` and a
-    /// section plan derived from the claim kinds in `sources`.
+    /// section plan derived from the claim kinds in `evidence`.
     #[must_use]
-    pub fn new(spec: &'a str, sources: &'a [SourceEvidence]) -> Self {
+    pub fn new(evidence: &'a [SourceEvidence], spec: &'a str) -> Self {
         Self {
             spec,
-            plan: Plan::collect(sources),
+            plan: Plan::collect(evidence),
         }
     }
 }
@@ -84,7 +84,7 @@ impl Brief for DesignBrief<'_> {
         review.paragraphs(&answer.preamble, "preamble");
 
         let bound: BTreeSet<&str> =
-            self.plan.sources.iter().map(|source| source.key.as_str()).collect();
+            self.plan.evidence.iter().map(|source| source.key.as_str()).collect();
         let mut seen = BTreeSet::new();
         let mut references: BTreeMap<&str, usize> = BTreeMap::new();
         for section in &answer.sections {
@@ -146,7 +146,7 @@ impl Brief for DesignBrief<'_> {
     fn into_output(self, answer: DesignAnswer) -> Self::Output {
         let signatures: BTreeMap<&str, &str> = self
             .plan
-            .sources
+            .evidence
             .iter()
             .flat_map(|source| source.evidence.types())
             .filter_map(|claim| Some((claim.type_key()?, claim.signature()?)))
@@ -178,12 +178,12 @@ impl Brief for DesignBrief<'_> {
     }
 }
 
-// Renders the user turn of the prompt: every claim of every source, the
+// Renders the user turn of the prompt: every claim in the evidence, the
 // plan's verdict on each section kind with its reason, the `type` claims to
 // place, and the rendered `spec.md` the design must follow.
 impl Display for DesignBrief<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "Draft `design.md`.\n\n{claims}", claims = ClaimsSection(self.plan.sources))?;
+        write!(f, "Draft `design.md`.\n\n{claims}", claims = ClaimsSection(self.plan.evidence))?;
 
         f.write_str("\n## Sections\n\n")?;
         for &kind in SectionKind::VARIANTS {
@@ -254,15 +254,15 @@ pub enum Block {
 // the bound sources it may cite, and the `type` claim keys it must reference.
 struct Plan<'a> {
     kinds: Vec<ClaimKind>,
-    sources: &'a [SourceEvidence],
+    evidence: &'a [SourceEvidence],
     keys: BTreeSet<&'a str>,
 }
 
 impl<'a> Plan<'a> {
-    fn collect(sources: &'a [SourceEvidence]) -> Self {
+    fn collect(evidence: &'a [SourceEvidence]) -> Self {
         let kinds =
-            sources.iter().flat_map(|source| &source.evidence.claims).map(|claim| claim.kind);
-        let keys = sources
+            evidence.iter().flat_map(|source| &source.evidence.claims).map(|claim| claim.kind);
+        let keys = evidence
             .iter()
             .flat_map(|source| source.evidence.types())
             .filter_map(Claim::type_key)
@@ -270,7 +270,7 @@ impl<'a> Plan<'a> {
 
         Self {
             kinds: kinds.collect(),
-            sources,
+            evidence,
             keys,
         }
     }

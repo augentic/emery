@@ -17,7 +17,7 @@
 
 mod brief;
 mod provenance;
-mod synthesise;
+mod compose;
 
 use std::collections::BTreeSet;
 use std::path::Path;
@@ -36,29 +36,26 @@ use crate::preopen_path;
 use crate::store::Store;
 pub use crate::store::{Changes, Diff};
 
-/// Runs one `specify` over the context's provider: checks the source list,
-/// extracts every source, derives the requirement rows, synthesises the two
-/// documents, and commits them as a new revision.
+/// Runs `specify` over the context's provider: checks the source list,
+/// extracts each source's evidence, derives the requirement rows, synthesises
+/// the two specification documents, and commits them as a new revision.
 ///
 /// # Errors
 ///
 /// Returns `BadRequest` for a source the rules refuse or a claim the gate
 /// rejects, and passes through the extract, synthesis, and store failures.
 pub async fn specify<P: Model + Source + StateStore + BlobStore + Plugins>(
-    input: Specify, context: Context<P>,
+    specify: Specify, context: Context<P>,
 ) -> Result<SpecifyBody, Error> {
+    specify.validate()?;
+
     let provider = context.provider();
 
-    // validate the source list
-    validate(&input.sources)?;
+    // extract each source's evidence and synthesise into a specification set
+    let evidence = specify.extract(provider).await?;
+    let revision = compose::compose(provider, &evidence).await?;
 
-    // call extract() for every source
-    let extracted = extract(provider, &input.sources).await?;
-
-    // synthesise extracted evidence into a single specification set
-    let revision = synthesise::synthesise(provider, &extracted).await?;
-
-    // save the specification set as a new revision
+    // save the specification set
     let committed = Store::new(provider).commit(&revision).await?;
 
     Ok(SpecifyBody {
@@ -74,6 +71,74 @@ pub struct Specify {
     /// The run's source configurations, in extraction order.
     pub sources: Vec<SourceConfig>,
 }
+
+impl Specify {
+    // Refuses an empty list (`specify-source-required`), a malformed or repeated
+    // key, a `digest` on a bare name the loader never acquires, a `registry` on
+    // a selector the registry never serves, or a root outside the preopen.
+    fn validate(&self) -> Result<(), Error> {
+        if self.sources.is_empty() {
+            return Err(Error::BadRequest {
+                code: "specify-source-required".into(),
+                description: "no sources".into(),
+            });
+        }
+
+        let mut keys = BTreeSet::new();
+        for source in &self.sources {
+            let key = source.key.as_str();
+            if !is_kebab(key) {
+                return Err(bad_request!("source `{key}` is not a kebab-case key"));
+            }
+            if !keys.insert(key) {
+                return Err(bad_request!("source `{key}` appears twice"));
+            }
+            source.validate()?;
+        }
+
+        Ok(())
+    }
+
+    // Loads, extracts, and validates every source. Adapters are guests the engine
+    // did not write, so the contract's claim gate is re-run here (A8) before
+    // anything downstream trusts their claims; adapter failures arrive classified.
+    async fn extract<P: Source + Plugins>(
+        &self, provider: &P,
+    ) -> Result<Vec<SourceEvidence>, Error> {
+        let mut extracted = Vec::with_capacity(self.sources.len());
+        let loader = Loader::new(provider);
+
+        for source in &self.sources {
+            let input = source.input()?;
+            let id = source.load(&loader).await?;
+
+            let key = &source.key;
+            tracing::debug!(source = %key, "extracting");
+            let evidence = Source::extract(provider, &id, &input).await?;
+
+            let findings = evidence.findings();
+            if !findings.is_empty() {
+                let findings = findings.join("\n");
+                return Err(bad_request!("source `{key}` returned invalid claims:\n{findings}"));
+            }
+
+            extracted.push(SourceEvidence {
+                key: key.clone(),
+                evidence,
+            });
+        }
+
+        Ok(extracted)
+    }
+}
+
+// One source's validated evidence, under the key the documents cite it by.
+#[derive(Debug)]
+struct SourceEvidence {
+    key: String,
+    evidence: Evidence,
+}
+
 
 /// A source for one run.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -157,69 +222,4 @@ pub struct SpecifyBody {
     /// superseded revision was unreadable.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub diff: Option<Diff>,
-}
-
-// Refuses an empty list (`specify-source-required`), a malformed or repeated
-// key, a `digest` on a bare name the loader never acquires, a `registry` on
-// a selector the registry never serves, or a root outside the preopen.
-fn validate(sources: &[SourceConfig]) -> Result<(), Error> {
-    if sources.is_empty() {
-        return Err(Error::BadRequest {
-            code: "specify-source-required".into(),
-            description: "no sources".into(),
-        });
-    }
-
-    let mut keys = BTreeSet::new();
-    for source in sources {
-        let key = source.key.as_str();
-        if !is_kebab(key) {
-            return Err(bad_request!("source `{key}` is not a kebab-case key"));
-        }
-        if !keys.insert(key) {
-            return Err(bad_request!("source `{key}` appears twice"));
-        }
-        source.validate()?;
-    }
-
-    Ok(())
-}
-
-// Loads, extracts, and validates every source. Adapters are guests the engine
-// did not write, so the contract's claim gate is re-run here (A8) before
-// anything downstream trusts their claims; adapter failures arrive classified.
-async fn extract<P: Source + Plugins>(
-    provider: &P, sources: &[SourceConfig],
-) -> Result<Vec<SourceEvidence>, Error> {
-    let mut extracted = Vec::with_capacity(sources.len());
-    let loader = Loader::new(provider);
-
-    for source in sources {
-        let input = source.input()?;
-        let id = source.load(&loader).await?;
-
-        let key = &source.key;
-        tracing::debug!(source = %key, "extracting");
-        let evidence = Source::extract(provider, &id, &input).await?;
-
-        let findings = evidence.findings();
-        if !findings.is_empty() {
-            let findings = findings.join("\n");
-            return Err(bad_request!("source `{key}` returned invalid claims:\n{findings}"));
-        }
-
-        extracted.push(SourceEvidence {
-            key: key.clone(),
-            evidence,
-        });
-    }
-
-    Ok(extracted)
-}
-
-// One source's validated evidence, under the key the documents cite it by.
-#[derive(Debug)]
-struct SourceEvidence {
-    key: String,
-    evidence: Evidence,
 }

@@ -1,6 +1,6 @@
 //! Requirement provenance
 //!
-//! Turns every source's requirement claims into the provenance of each
+//! Turns the requirement claims in the evidence into the provenance of each
 //! requirement — the rows `spec.md` is built on. Which claims across sources
 //! describe one requirement, and which of them agree, is a judgement: the
 //! model answers it as one partition — claims into requirements, each
@@ -26,7 +26,7 @@ use crate::artifact::Status;
 use crate::specify::SourceEvidence;
 use crate::specify::brief::{Brief, Review};
 
-/// Derives the provenance of every requirement in `sources`, asking the
+/// Derives the provenance of every requirement in `evidence`, asking the
 /// model to group the claims on any run over two or more sources.
 ///
 /// # Errors
@@ -34,20 +34,20 @@ use crate::specify::brief::{Brief, Review};
 /// A model failure is `bad_gateway`; an answer outside the schema, or a
 /// grouping the backend could not repair within its rounds, is `bad_request`.
 pub async fn derive<M: Model>(
-    model: &M, sources: &[SourceEvidence],
+    model: &M, evidence: &[SourceEvidence],
 ) -> Result<Vec<Provenance>, Error> {
-    if sources.len() < 2 {
-        return Ok(floor(sources));
+    if evidence.len() < 2 {
+        return Ok(floor(evidence));
     }
 
-    Claims::collect(sources).judge(model).await
+    Claims::collect(evidence).judge(model).await
 }
 
 // Derives provenance from the deterministic floor alone — byte-equal ids are
 // one requirement, whitespace-equal statements one class — which is all a run
 // over one source gets.
-fn floor(sources: &[SourceEvidence]) -> Vec<Provenance> {
-    let claims = Claims::collect(sources);
+fn floor(evidence: &[SourceEvidence]) -> Vec<Provenance> {
+    let claims = Claims::collect(evidence);
     claims.rows(&claims.floor())
 }
 
@@ -171,10 +171,10 @@ struct Claims<'a> {
 }
 
 impl<'a> Claims<'a> {
-    fn collect(sources: &'a [SourceEvidence]) -> Self {
+    fn collect(evidence: &'a [SourceEvidence]) -> Self {
         let mut requirements: Vec<Contributor> = Vec::new();
         let mut criteria = Vec::new();
-        for source in sources {
+        for source in evidence {
             for claim in &source.evidence.claims {
                 let Some(id) = claim.id.as_deref() else { continue };
                 match claim.kind {

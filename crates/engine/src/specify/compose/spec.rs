@@ -19,21 +19,21 @@ use crate::artifact::{HEADING, ID, NOTE, ReqId, SCENARIO, SOURCES, STATUS, Statu
 use crate::specify::SourceEvidence;
 use crate::specify::brief::{Brief, Review};
 use crate::specify::provenance::{Contributor, Provenance, normalise};
-use crate::specify::synthesise::{ClaimsSection, Markdown};
+use crate::specify::compose::{ClaimsSection, Markdown};
 
 /// What the engine needs to ask the model for `spec.md` and to verify its
 /// draft: the extracted evidence and the requirement rows.
 pub struct SpecBrief<'a> {
-    sources: &'a [SourceEvidence],
+    evidence: &'a [SourceEvidence],
     rows: &'a [Provenance],
 }
 
 impl<'a> SpecBrief<'a> {
-    /// Creates the brief for `spec.md` from the extracted `sources` and the
+    /// Creates the brief for `spec.md` from the extracted `evidence` and the
     /// requirement `rows` derived from them.
     #[must_use]
-    pub const fn new(sources: &'a [SourceEvidence], rows: &'a [Provenance]) -> Self {
-        Self { sources, rows }
+    pub const fn new(evidence: &'a [SourceEvidence], rows: &'a [Provenance]) -> Self {
+        Self { evidence, rows }
     }
 }
 
@@ -162,12 +162,12 @@ impl Brief for SpecBrief<'_> {
     }
 }
 
-// Renders the user turn of the prompt: every claim of every source, then
+// Renders the user turn of the prompt: every claim in the evidence, then
 // every requirement row with its id, status, sources, and coverage, each
 // contributing claim labelled winner / loser / contributor.
 impl fmt::Display for SpecBrief<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "Draft `spec.md`.\n\n{claims}", claims = ClaimsSection(self.sources))?;
+        write!(f, "Draft `spec.md`.\n\n{claims}", claims = ClaimsSection(self.evidence))?;
 
         f.write_str("\n## Requirement rows (draft one entry per subject)\n\n")?;
         for (index, row) in self.rows.iter().enumerate() {
