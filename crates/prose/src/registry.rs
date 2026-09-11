@@ -31,7 +31,9 @@ pub fn find<'d>(docs: &'d [Doc], path: &str) -> Option<&'d Doc> {
 /// Panics if `path` is absent, indicating a registry/tree mismatch.
 #[must_use]
 pub fn body(docs: &[Doc], path: &str) -> &'static str {
-    find(docs, path).unwrap_or_else(|| panic!("document `{path}` is not embedded in the registry")).body
+    find(docs, path)
+        .unwrap_or_else(|| panic!("document `{path}` is not embedded in the registry"))
+        .body
 }
 
 /// Generates registry accessors for the build-time `DOCS` table.

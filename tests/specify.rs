@@ -518,8 +518,7 @@ async fn remine_supersedes() {
     let spec = shown(&provider, "spec").await;
     assert!(spec.contains("howdy"), "{spec}");
     assert!(spec.contains("ID: REQ-003\n") && spec.contains("it times out"), "{spec}");
-    let spec =
-        String::from_utf8(document(&provider.storage, &second, "spec.json")).expect("utf-8");
+    let spec = String::from_utf8(document(&provider.storage, &second, "spec.json")).expect("utf-8");
     assert!(spec.contains("\"next_id\": 5"), "ids are never reused: {spec}");
     provider.model.assert_exhausted();
 }

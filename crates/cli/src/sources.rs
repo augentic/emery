@@ -66,8 +66,9 @@ fn discover() -> Result<Vec<SourceConfig>, Error> {
 // lends the workspace at `.`, each `--description` entry is an inline value,
 // and the key is the adapter name.
 fn from_argv(adapters: &[String], descriptions: &[String]) -> Result<Vec<SourceConfig>, Error> {
-    let workspaces =
-        adapters.iter().map(|reference| source(reference, SourceContent::Workspace(".".to_string())));
+    let workspaces = adapters
+        .iter()
+        .map(|reference| source(reference, SourceContent::Workspace(".".to_string())));
     let values = descriptions.iter().map(|entry| {
         let (reference, text) = entry
             .split_once('=')
@@ -172,9 +173,9 @@ impl SourceEntry {
                      content key"
                 ));
             }
-            (Some(relative), None) => {
-                SourceContent::Workspace(resolved(base, Path::new(&relative))?.display().to_string())
-            }
+            (Some(relative), None) => SourceContent::Workspace(
+                resolved(base, Path::new(&relative))?.display().to_string(),
+            ),
             (None, Some(text)) => SourceContent::Value(text),
             (None, None) => SourceContent::Workspace(".".to_string()),
         };

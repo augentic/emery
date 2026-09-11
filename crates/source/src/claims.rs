@@ -136,6 +136,7 @@ fn is_dotted_kebab(value: &str) -> bool {
 pub fn is_kebab(value: &str) -> bool {
     !value.is_empty()
         && value.split('-').all(|segment| {
-            !segment.is_empty() && segment.bytes().all(|byte| matches!(byte, b'a'..=b'z' | b'0'..=b'9'))
+            !segment.is_empty()
+                && segment.bytes().all(|byte| matches!(byte, b'a'..=b'z' | b'0'..=b'9'))
         })
 }

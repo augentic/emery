@@ -38,9 +38,7 @@ impl<'a> SpecBrief<'a> {
     /// `bases` derived from them, and the `prior` specification they were
     /// numbered from.
     #[must_use]
-    pub const fn new(
-        extracts: &'a [Extract], bases: &'a [Basis], prior: Option<&'a Spec>,
-    ) -> Self {
+    pub const fn new(extracts: &'a [Extract], bases: &'a [Basis], prior: Option<&'a Spec>) -> Self {
         Self {
             extracts,
             bases,
