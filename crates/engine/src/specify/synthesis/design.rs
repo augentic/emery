@@ -5,23 +5,23 @@
 //! calls for is decided by the claim kinds it extracted: the schema names that
 //! subset, every candidate draft is verified against the plan, the bound
 //! sources it may cite, and the `type` claims whose signatures the engine
-//! inserts, and the engine places the accepted draft in the design master. A
-//! master design that still passes the same verification over this run's
+//! inserts, and the engine places the accepted draft in the design. A
+//! design that still passes the same verification over this run's
 //! evidence is accepted as it stands.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::{self, Display, Formatter};
 
-use emery_source::types::{Claim, ClaimKind};
+use emery_source::types::ClaimKind;
 use schemars::JsonSchema;
 use serde::Deserialize;
 use serde_json::{Value, json};
 use strum::VariantArray as _;
 
-use crate::artifact::{self, Design, EMERY, SectionKind, Spec, citations};
+use crate::artifact::{self, Design, EMERY, Section, SectionKind, Spec, citations};
 use crate::specify::Extract;
 use crate::specify::brief::{Brief, Review};
-use crate::specify::dossier::ClaimsSection;
+use crate::specify::synthesis::ClaimsSection;
 
 /// What the engine needs to ask the model for `design.md` and to verify its
 /// draft: the extracts, the specification, and the section plan.
@@ -44,49 +44,21 @@ impl<'a> DesignBrief<'a> {
         }
     }
 
-    /// Tells whether a master `design` still passes this run's verification
+    /// Tells whether a `design` still passes this run's verification
     /// — the plan, the bound sources, the `type` claims and their signatures —
     /// so it can be kept without a turn.
     #[must_use]
     pub fn accepts(&self, design: &Design) -> bool {
-        let answer = DesignAnswer {
-            preamble: design.preamble.clone(),
-            sections: design
-                .sections
-                .iter()
-                .map(|section| Section {
-                    kind: section.kind,
-                    blocks: section
-                        .blocks
-                        .iter()
-                        .map(|block| match block {
-                            artifact::Block::Text { text, .. } => Block::Text(text.clone()),
-                            artifact::Block::Type { key, .. } => Block::Type(key.clone()),
-                        })
-                        .collect(),
-                })
-                .collect(),
-        };
         let mut review = Review::default();
-        self.verify(&answer, &mut review);
+        self.verify(&DesignAnswer::from(design), &mut review);
 
-        let signatures = self.signatures();
         review.is_clean()
             && design.sections.iter().flat_map(|section| &section.blocks).all(|block| match block {
                 artifact::Block::Type { key, signature } => {
-                    signatures.get(key.as_str()).copied() == Some(signature.as_str())
+                    self.plan.signatures.get(key.as_str()).copied() == Some(signature.as_str())
                 }
-                artifact::Block::Text { .. } => true,
+                artifact::Block::Text(_) => true,
             })
-    }
-
-    // The trimmed signature of every `type` claim, by key.
-    fn signatures(&self) -> BTreeMap<&str, &str> {
-        self.extracts
-            .iter()
-            .flat_map(|extract| extract.evidence.types())
-            .filter_map(|claim| Some((claim.type_key()?, claim.signature()?.trim_end())))
-            .collect()
     }
 }
 
@@ -120,10 +92,17 @@ impl Brief for DesignBrief<'_> {
             defs.remove("SectionKind");
         }
 
-        if !self.plan.keys.is_empty()
-            && let Some(block) = type_block(schema)
+        // The derived `Block` oneOf includes every variant; restrict the
+        // `{"type": …}` arm to this run's type keys.
+        if !self.plan.signatures.is_empty()
+            && let Some(block) = schema
+                .pointer_mut("/$defs/Block/oneOf")
+                .and_then(Value::as_array_mut)
+                .and_then(|variants| {
+                    variants.iter_mut().find(|variant| variant["required"] == json!(["type"]))
+                })
         {
-            block["properties"]["type"]["enum"] = json!(self.plan.keys);
+            block["properties"]["type"]["enum"] = json!(self.plan.keys().collect::<Vec<_>>());
         }
     }
 
@@ -176,8 +155,7 @@ impl Brief for DesignBrief<'_> {
             review.note(format_args!("`## {kind}` is required but absent"));
         }
 
-        let keys = &self.plan.keys;
-        for key in keys {
+        for key in self.plan.keys() {
             match references.get(key).copied().unwrap_or_default() {
                 1 => {}
                 0 => review.note(format_args!("type `{key}` is never referenced")),
@@ -185,29 +163,29 @@ impl Brief for DesignBrief<'_> {
             }
         }
 
-        for key in references.keys().filter(|key| !keys.contains(*key)) {
+        for key in references.keys().filter(|key| !self.plan.signatures.contains_key(*key)) {
             review.note(format_args!("type `{key}` is not a type claim"));
         }
     }
 
-    // Places the draft in the master: the drafted sections in vocabulary
+    // Places the draft in the design: the drafted sections in vocabulary
     // order, each `type` block carrying the claim's signature.
     fn into_output(self, answer: DesignAnswer) -> Self::Output {
-        let signatures = self.signatures();
-
         let mut sections = answer.sections;
         sections.sort_by_key(|section| section.kind);
         let sections = sections
             .into_iter()
-            .map(|section| artifact::Section {
+            .map(|section| Section {
                 kind: section.kind,
                 blocks: section
                     .blocks
                     .into_iter()
                     .map(|block| match block {
-                        Block::Text(text) => artifact::Block::Text { text, pinned: false },
+                        Block::Text(text) => artifact::Block::Text(text),
                         Block::Type(key) => {
-                            let signature = signatures
+                            let signature = self
+                                .plan
+                                .signatures
                                 .get(key.as_str())
                                 .expect("verify held the draft to the type claims");
                             artifact::Block::Type {
@@ -250,13 +228,13 @@ impl Display for DesignBrief<'_> {
             writeln!(f, "- `{key}` (`## {kind}`) — {presence}{reason}", key = kind.as_ref())?;
         }
 
-        if !self.plan.keys.is_empty() {
+        if !self.plan.signatures.is_empty() {
             f.write_str(
                 "\n## Type blocks\n\nReference each `type` claim exactly once under \
                  `domain-model` as a `{\"type\": \"<key>\"}` block; the engine inserts its \
                  signature verbatim.\n\n",
             )?;
-            for key in &self.plan.keys {
+            for key in self.plan.keys() {
                 writeln!(f, "- `{key}`")?;
             }
         }
@@ -275,17 +253,25 @@ pub struct DesignAnswer {
     /// Markdown paragraphs before the first section.
     pub preamble: Vec<String>,
     /// One entry per rendered section; any order.
-    pub sections: Vec<Section>,
+    pub sections: Vec<Section<Block>>,
 }
 
-/// The drafted content of one section.
-#[derive(Debug, Clone, Deserialize, JsonSchema)]
-#[serde(deny_unknown_fields)]
-pub struct Section {
-    /// The section, from the closed vocabulary.
-    pub kind: SectionKind,
-    /// At least one block, in reading order.
-    pub blocks: Vec<Block>,
+// A committed design as the draft it was placed from: the blocks without
+// their signatures, so it can be verified like a candidate.
+impl From<&Design> for DesignAnswer {
+    fn from(design: &Design) -> Self {
+        Self {
+            preamble: design.preamble.clone(),
+            sections: design
+                .sections
+                .iter()
+                .map(|section| Section {
+                    kind: section.kind,
+                    blocks: section.blocks.iter().map(Block::from).collect(),
+                })
+                .collect(),
+        }
+    }
 }
 
 /// One design block: a paragraph, or a reference to a `type` claim whose
@@ -299,13 +285,24 @@ pub enum Block {
     Type(String),
 }
 
+impl From<&artifact::Block> for Block {
+    fn from(block: &artifact::Block) -> Self {
+        match block {
+            artifact::Block::Text(text) => Self::Text(text.clone()),
+            artifact::Block::Type { key, .. } => Self::Type(key.clone()),
+        }
+    }
+}
+
 // The facts a design draft is verified against: the kinds of every extracted
 // claim (which decide the sections this run requires, permits, or forbids),
-// the bound sources it may cite, and the `type` claim keys it must reference.
+// the bound sources it may cite, and the `type` claims it must reference —
+// each by key, with the trimmed signature the engine places. A `type` claim
+// without a string `signature` has nothing to place and is not planned.
 struct Plan<'a> {
-    kinds: Vec<ClaimKind>,
+    kinds: BTreeSet<ClaimKind>,
     bound: BTreeSet<&'a str>,
-    keys: BTreeSet<&'a str>,
+    signatures: BTreeMap<&'a str, &'a str>,
 }
 
 impl<'a> Plan<'a> {
@@ -313,17 +310,22 @@ impl<'a> Plan<'a> {
         let kinds =
             extracts.iter().flat_map(|extract| &extract.evidence.claims).map(|claim| claim.kind);
         let bound = extracts.iter().map(|extract| extract.key.as_str()).collect();
-        let keys = extracts
+        let signatures = extracts
             .iter()
             .flat_map(|extract| extract.evidence.types())
-            .filter_map(Claim::type_key)
+            .filter_map(|claim| Some((claim.type_key()?, claim.signature()?.trim_end())))
             .collect();
 
         Self {
             kinds: kinds.collect(),
             bound,
-            keys,
+            signatures,
         }
+    }
+
+    // Lists every `type` claim key the draft must reference, in key order.
+    fn keys(&self) -> impl Iterator<Item = &str> {
+        self.signatures.keys().copied()
     }
 
     // Decides whether section `kind` is required, permitted, or forbidden:
@@ -370,14 +372,4 @@ const fn informants(kind: SectionKind) -> &'static [ClaimKind] {
         SectionKind::TechnicalLogic => &[ClaimKind::Excerpt],
         SectionKind::UiLayout => &[ClaimKind::Region, ClaimKind::Container, ClaimKind::Leaf],
     }
-}
-
-// Finds the `{"type": …}` variant of the `oneOf` schemars derives for `Block`,
-// so `tighten` can restrict its `enum` to this run's type keys.
-fn type_block(schema: &mut Value) -> Option<&mut Value> {
-    schema
-        .pointer_mut("/$defs/Block/oneOf")?
-        .as_array_mut()?
-        .iter_mut()
-        .find(|variant| variant["required"] == json!(["type"]))
 }

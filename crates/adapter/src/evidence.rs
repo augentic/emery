@@ -27,7 +27,7 @@ use crate::types::{Context, Evidence, SourceContent, SourceInput};
 /// rounds are spent, is `BadRequest`; a tool or transport failure is
 /// `BadGateway`.
 pub async fn evidence<P: Model>(
-    model: &P, ctx: &Context<'_>, system: String, user: String,
+    model: &P, ctx: &Context<'_>, system: impl Into<String>, user: impl Into<String>,
 ) -> Result<Evidence, Error> {
     let mut question = Question::<Evidence>::new("evidence").system(system);
     if !ctx.docs.is_empty() {

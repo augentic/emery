@@ -21,6 +21,6 @@ brew install emery
 
 | Verb | Purpose |
 |------|---------|
-| [emery specify](specify.md) | Generate the specification and design masters from the sources named on the invocation, continuing the revision the project carries, and commit them as the current revision |
-| [emery show](show.md) | Print a reviewable document of the current revision to stdout; `--format json` carries the typed master |
+| [emery specify](specify.md) | Generate the specification and design from the sources named on the invocation, continuing the revision the project carries, and commit them as the current revision |
+| [emery show](show.md) | Print a reviewable document of the current revision to stdout; `--format json` carries the typed document |
 | `emery completions <shell>` | Print a shell-completion script; auto-derived from the live clap surface |

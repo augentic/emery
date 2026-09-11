@@ -138,11 +138,11 @@ sha2 = "0.11"
 strum = { version = "0.28", features = ["derive"] }
 tempfile = "3.27.0"
 tokio = { version = "1.53.1", features = ["fs", "io-util", "rt"] }
-toml = "1.1.5"
+toml = "1.1.6"
 tracing = "0.1.44"
-wasip3 = "0.8.0"
-wasmtime = { version = "48.0.1", default-features = false, features = ["anyhow", "component-model-bytes"] }
-wit-bindgen = { version = "0.61.1", features = ["async-spawn"] }
+wasip3 = "0.9.0"
+wasmtime = { version = "48.0.2", default-features = false, features = ["anyhow", "component-model-bytes"] }
+wit-bindgen = { version = "0.62.0", features = ["async-spawn"] }
 
 emery-adapter = { path = "crates/adapter" }
 emery-cli = { path = "crates/cli" }

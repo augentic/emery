@@ -11,8 +11,8 @@
 //! shape serves the command line, a config file, and any other transport,
 //! and it is checked whole before a single adapter loads.
 //!
-//! A run may also carry a master — the documents of an earlier revision that
-//! travel beside the code they specify. The carried master anchors the run:
+//! A run may also carry a revision — the documents of an earlier revision that
+//! travel beside the code they specify. The carried revision anchors the run:
 //! it becomes the current revision, its requirements lend their ids to the
 //! requirements that continue them, and only what the evidence changed is
 //! drafted again. With nothing carried, the store's current revision anchors
@@ -24,8 +24,7 @@
 
 mod basis;
 mod brief;
-mod dossier;
-mod master;
+mod synthesis;
 
 use std::collections::BTreeSet;
 use std::path::Path;
@@ -41,39 +40,36 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use crate::adapter::{AdapterRef, Loader};
+use crate::artifact::Revision;
 pub use crate::artifact::{ReqId, SectionKind};
 pub use crate::store::{Changed, DesignDiff, Diff, Entry, SpecDiff};
 use crate::{preopen_path, store};
 
 /// Runs `specify` over the context's provider.
 ///
-/// Checks the source list, anchors the run on the carried or current master,
+/// Checks the source list, anchors the run on the carried or current revision,
 /// then extracts each source's evidence, derives the requirements,
-/// synthesises the dossier, and commits it as a new revision.
+/// synthesises the revision, and commits it.
 ///
 /// # Errors
 ///
 /// Returns `BadRequest` for a source the rules refuse, a claim the gate
-/// rejects, or a carried master that is outdated (`spec-outdated`) or not a
-/// master (`master-invalid`), and passes through the extract, synthesis, and
-/// store failures.
+/// rejects, or a carried revision that is outdated (`spec-outdated`) or not a
+/// revision (`revision-invalid`), and passes through the extract, synthesis,
+/// and store failures.
 pub async fn specify<P: Model + Source + StateStore + BlobStore + Plugins>(
-    mut input: SpecifyInput, context: Context<P>,
+    input: SpecifyInput, context: Context<P>,
 ) -> Result<SpecifyOutput, Error> {
-    input.validate()?;
-
     let provider = context.provider();
 
-    let master = master::anchor(provider, input.master.take()).await?;
-    let extracts = input.extract(provider).await?;
-    let bases = basis::derive(provider, &extracts, master.as_ref().map(|m| &m.spec)).await?;
-    let dossier = dossier::synthesise(provider, &extracts, &bases, master.as_ref()).await?;
-    let committed = store::commit(provider, &dossier).await?;
+    input.validate()?;
 
-    Ok(SpecifyOutput {
-        revision: committed.id,
-        diff: committed.diff,
-    })
+    let prior = input.revision(provider).await?;
+    let extracts = input.extract(provider).await?;
+    let revision = synthesis::synthesise(provider, &extracts, prior.as_ref()).await?;
+    let (id, diff) = store::commit(provider, &revision).await?;
+
+    Ok(SpecifyOutput { revision: id, diff })
 }
 
 /// Generate a specification revision from sources.
@@ -81,18 +77,18 @@ pub async fn specify<P: Model + Source + StateStore + BlobStore + Plugins>(
 pub struct SpecifyInput {
     /// The run's source configurations, in extraction order.
     pub sources: Vec<SourceConfig>,
-    /// The master carried beside the code, when the project has one.
+    /// The revision carried beside the code, when the project has one.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub master: Option<Carried>,
+    pub carried: Option<Carried>,
 }
 
-/// The master documents an earlier revision left beside the code: the
+/// The documents of an earlier revision left beside the code: the
 /// `document` of each `show --format json` envelope, still unread.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Carried {
-    /// The specification master.
+    /// The specification document.
     pub spec: Value,
-    /// The design master.
+    /// The design document.
     pub design: Value,
 }
 
@@ -116,13 +112,27 @@ impl SpecifyInput {
         Ok(())
     }
 
+    async fn revision<P: StateStore + BlobStore>(
+        &self, provider: &P,
+    ) -> Result<Option<Revision>, Error> {
+        if let Some(Carried { spec, design }) = &self.carried {
+            let revision = Revision::read(spec.clone(), design.clone())?;
+            store::adopt(provider, &revision).await?;
+            Ok(Some(revision))
+        } else {
+            Ok(store::current(provider).await.ok().flatten())
+        }
+    }
+
     async fn extract<P: Source + Plugins>(&self, provider: &P) -> Result<Vec<Extract>, Error> {
         let mut extracts = Vec::with_capacity(self.sources.len());
         let loader = Loader::new(provider);
 
         for source in &self.sources {
             let input = source.input()?;
-            let id = source.load(&loader).await?;
+            let id = loader
+                .load(&source.adapter, source.digest.as_ref(), source.registry.as_deref())
+                .await?;
 
             let key = &source.key;
             tracing::debug!(source = %key, "extracting");
@@ -165,20 +175,15 @@ pub struct SourceConfig {
     pub content: SourceContent,
     /// Optional sha256 content pin for a loader-loaded adapter,
     /// verified host-side before validation.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub digest: Option<Digest>,
     /// Optional registry endpoint override for a package adapter;
     /// `None` selects the acquirer's default.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub registry: Option<String>,
 }
 
 impl SourceConfig {
-    // Loads this source's adapter under its pin and registry override.
-    async fn load<P: Source + Plugins>(&self, loader: &Loader<'_, P>) -> Result<String, Error> {
-        loader.load(&self.adapter, self.digest.as_ref(), self.registry.as_deref()).await
-    }
-
     // Maps this source to the adapter `extract` input; the one place an
     // operator root meets the guest preopen.
     fn input(&self) -> Result<SourceInput, Error> {
@@ -194,7 +199,7 @@ impl SourceConfig {
                 };
                 SourceContent::Workspace(root.display().to_string())
             }
-            SourceContent::Value(text) => SourceContent::Value(text.clone()),
+            value @ SourceContent::Value(_) => value.clone(),
         };
         Ok(SourceInput {
             key: self.key.clone(),
@@ -223,11 +228,12 @@ impl SourceConfig {
             ));
         }
 
-        self.input().map(drop)
+        self.input()?;
+        Ok(())
     }
 }
 
-/// Successful specification result.
+/// Successful specification result: the revision the store committed.
 #[derive(Debug, Serialize)]
 pub struct SpecifyOutput {
     /// Committed revision id.

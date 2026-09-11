@@ -38,6 +38,8 @@ pub fn preopen_path(path: &Path) -> Result<PathBuf, Error> {
         match component {
             Component::CurDir => {}
             Component::Normal(part) => normalized.push(part),
+            // `..` steps back over the segment it follows; with nothing to
+            // pop it would escape the root and falls through to the refusal.
             Component::ParentDir if normalized.pop() => {}
             Component::ParentDir | Component::RootDir | Component::Prefix(_) => {
                 return Err(bad_request!(

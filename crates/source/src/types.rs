@@ -66,8 +66,22 @@ impl SourceInput {
     }
 }
 
-/// Claim-set authority, ordered `intent` > `documentation` > `behaviour`.
-#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq, JsonSchema, strum::Display)]
+/// Claim-set authority. The variants are declared in rank order, so the
+/// derived `Ord` is the authority hierarchy: `Intent` outranks
+/// `Documentation`, which outranks `Behaviour`.
+#[derive(
+    Clone,
+    Copy,
+    Debug,
+    Serialize,
+    Deserialize,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    JsonSchema,
+    strum::Display,
+)]
 #[serde(rename_all = "kebab-case")]
 #[strum(serialize_all = "kebab-case")]
 pub enum Authority {
@@ -79,21 +93,10 @@ pub enum Authority {
     Behaviour,
 }
 
-impl Authority {
-    /// Returns the authority's rank; a lower rank outranks a higher one
-    /// (`intent` = 0).
-    #[must_use]
-    pub const fn rank(self) -> u8 {
-        match self {
-            Self::Intent => 0,
-            Self::Documentation => 1,
-            Self::Behaviour => 2,
-        }
-    }
-}
-
 /// Closed claim taxonomy; update the workflow contract and schema together.
-#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq, JsonSchema, strum::Display)]
+#[derive(
+    Clone, Copy, Debug, Deserialize, PartialEq, Eq, PartialOrd, Ord, JsonSchema, strum::Display,
+)]
 #[serde(rename_all = "kebab-case")]
 #[strum(serialize_all = "kebab-case")]
 pub enum ClaimKind {
@@ -147,11 +150,9 @@ pub struct Claim {
     /// Kind from the closed taxonomy.
     pub kind: ClaimKind,
     /// Stable dotted-kebab ID; required for requirements, criteria, and examples.
-    #[serde(default)]
     #[schemars(regex(pattern = DOTTED_KEBAB_PATTERN))]
     pub id: Option<String>,
     /// Source anchor: `<path>`, `<path>#L<n>`, or `<path>#L<n>-L<n>`.
-    #[serde(default)]
     pub path: Option<String>,
     /// Semantic headline.
     #[serde(default, deserialize_with = "lenient")]

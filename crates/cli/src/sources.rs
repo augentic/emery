@@ -14,6 +14,7 @@ use std::path::{Path, PathBuf};
 
 use emery_engine::specify::{SourceConfig, SourceContent};
 use emery_engine::{AdapterRef, preopen_path};
+use omnia_guest::plugins::Digest;
 use omnia_guest::{Error, bad_request, server_error};
 
 /// The project-root config discovered by a run naming no sources.
@@ -54,47 +55,45 @@ pub fn decode(
 // `specify-source-required`; a file that fails to parse is refused here.
 fn discover() -> Result<Vec<SourceConfig>, Error> {
     let path = Path::new(CONFIG_FILE);
-    if !path.try_exists().map_err(|e| server_error!("reading {CONFIG_FILE}: {e}"))? {
-        return Ok(Vec::new());
+    match path.try_exists() {
+        Ok(true) => from_file(path),
+        Ok(false) => Ok(Vec::new()),
+        Err(err) => Err(server_error!("reading {CONFIG_FILE}: {err}")),
     }
-    from_file(path)
 }
 
 // Builds the sources named on the command line: each positional adapter
 // lends the workspace at `.`, each `--description` entry is an inline value,
 // and the key is the adapter name.
 fn from_argv(adapters: &[String], descriptions: &[String]) -> Result<Vec<SourceConfig>, Error> {
-    let mut sources = Vec::new();
-    for value in adapters {
-        let adapter: AdapterRef = value.parse()?;
-        sources.push(SourceConfig {
-            key: adapter.name().to_owned(),
-            adapter,
-            content: SourceContent::Workspace(".".to_string()),
-            digest: None,
-            registry: None,
-        });
-    }
+    let workspaces =
+        adapters.iter().map(|reference| source(reference, SourceContent::Workspace(".".to_string())));
+    let values = descriptions.iter().map(|entry| {
+        let (reference, text) = entry
+            .split_once('=')
+            .filter(|(reference, _)| !reference.is_empty())
+            .ok_or_else(|| {
+                bad_request!(
+                    "invalid argument --description: expected `<adapter>=<text>`, got `{entry}`"
+                )
+            })?;
+        source(reference, SourceContent::Value(text.to_string()))
+    });
 
-    for entry in descriptions {
-        let Some((reference, text)) =
-            entry.split_once('=').filter(|(reference, _)| !reference.is_empty())
-        else {
-            return Err(bad_request!(
-                "invalid argument --description: expected `<adapter>=<text>`, got `{entry}`"
-            ));
-        };
-        let adapter: AdapterRef = reference.parse()?;
-        sources.push(SourceConfig {
-            key: adapter.name().to_owned(),
-            adapter,
-            content: SourceContent::Value(text.to_string()),
-            digest: None,
-            registry: None,
-        });
-    }
+    workspaces.chain(values).collect()
+}
 
-    Ok(sources)
+// Builds the source a command-line reference names: the adapter, unpinned
+// and keyed by its name, over `content`.
+fn source(reference: &str, content: SourceContent) -> Result<SourceConfig, Error> {
+    let adapter: AdapterRef = reference.parse()?;
+    Ok(SourceConfig {
+        key: adapter.name().to_string(),
+        adapter,
+        content,
+        digest: None,
+        registry: None,
+    })
 }
 
 // Reads and decodes an operator-owned config file; any parse failure is
@@ -113,7 +112,7 @@ fn from_file(path: &Path) -> Result<Vec<SourceConfig>, Error> {
         .parent()
         .filter(|parent| !parent.as_os_str().is_empty())
         .unwrap_or_else(|| Path::new("."));
-    file.source.iter().map(|entry| entry.decode(base)).collect()
+    file.source.into_iter().map(|entry| entry.decode(base)).collect()
 }
 
 // The operator-authored schema: ordered `[[source]]` entries whose
@@ -125,57 +124,27 @@ struct ConfigFile {
     source: Vec<SourceEntry>,
 }
 
-// `name` and `adapter` are required; every other key is optional.
+// `name` and `adapter` are required; every other key is optional. The
+// adapter reference and the digest pin are parsed by the decoder, so a
+// malformed one is refused with its line.
 #[derive(Debug, serde::Deserialize)]
 #[serde(deny_unknown_fields, rename_all = "kebab-case")]
 struct SourceEntry {
     name: String,
-    adapter: String,
-    #[serde(default)]
+    adapter: AdapterRef,
     path: Option<String>,
-    #[serde(default)]
     git: Option<String>,
-    #[serde(default)]
     url: Option<String>,
-    #[serde(default)]
     description: Option<String>,
-    #[serde(default)]
     registry: Option<String>,
-    #[serde(default)]
-    digest: Option<String>,
+    digest: Option<Digest>,
 }
 
 impl SourceEntry {
     // Decodes the entry into the engine's source, anchoring its relative
     // paths at `base`, the config file's directory.
-    fn decode(&self, base: &Path) -> Result<SourceConfig, Error> {
-        let name = &self.name;
-        // A local component path resolves relative to the file, like Cargo
-        // `path` dependencies; other reference kinds pass through unchanged.
-        let adapter = match self.adapter.parse::<AdapterRef>()? {
-            AdapterRef::Component { name, path } => AdapterRef::Component {
-                name,
-                path: resolved(base, &path)?,
-            },
-            other => other,
-        };
-        let digest = self
-            .digest
-            .as_deref()
-            .map(|pin| pin.parse().map_err(|err| bad_request!("source `{name}`: {err}")))
-            .transpose()?;
-
-        let locations = [
-            self.path.is_some(),
-            self.git.is_some(),
-            self.url.is_some(),
-            self.description.is_some(),
-        ];
-        if locations.iter().filter(|present| **present).count() > 1 {
-            return Err(bad_request!(
-                "source `{name}` sets more than one of `path`, `git`, `url`, `description`"
-            ));
-        }
+    fn decode(self, base: &Path) -> Result<SourceConfig, Error> {
+        let name = self.name;
         if let Some(remote) = self.git.as_deref().or(self.url.as_deref()) {
             if remote.starts_with("git+") {
                 return Err(bad_request!(
@@ -187,21 +156,35 @@ impl SourceEntry {
             ));
         }
 
-        let content = match (&self.path, &self.description) {
-            (Some(relative), None) => {
-                SourceContent::Workspace(resolved(base, Path::new(relative))?.display().to_string())
+        // A local component path resolves relative to the file, like Cargo
+        // `path` dependencies; other reference kinds pass through unchanged.
+        let adapter = match self.adapter {
+            AdapterRef::Component { name, path } => AdapterRef::Component {
+                name,
+                path: resolved(base, &path)?,
+            },
+            other => other,
+        };
+        let content = match (self.path, self.description) {
+            (Some(_), Some(_)) => {
+                return Err(bad_request!(
+                    "source `{name}` sets both `path` and `description`; a source has one \
+                     content key"
+                ));
             }
-            (None, Some(text)) => SourceContent::Value(text.clone()),
+            (Some(relative), None) => {
+                SourceContent::Workspace(resolved(base, Path::new(&relative))?.display().to_string())
+            }
+            (None, Some(text)) => SourceContent::Value(text),
             (None, None) => SourceContent::Workspace(".".to_string()),
-            (Some(_), Some(_)) => unreachable!("two content keys refused above"),
         };
 
         Ok(SourceConfig {
-            key: name.clone(),
+            key: name,
             adapter,
             content,
-            digest,
-            registry: self.registry.clone(),
+            digest: self.digest,
+            registry: self.registry,
         })
     }
 }

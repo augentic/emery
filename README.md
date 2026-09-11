@@ -11,8 +11,8 @@ Emery reconciles intent, documentation, existing code, and captured behaviour in
 ## The live surface
 
 ```bash
-emery specify <adapter>...  # extract, group, synthesise the spec + design masters
-emery show spec             # render spec.md from the current revision (--format json: the master)
+emery specify <adapter>...  # extract, group, synthesise the spec + design
+emery show spec             # render spec.md from the current revision (--format json: the revision)
 emery completions <sh>      # shell completions
 ```
 

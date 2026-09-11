@@ -1,6 +1,6 @@
 //! # The design
 //!
-//! The typed master of `design.md`: a preamble and the sections of a closed
+//! The typed form of `design.md`: a preamble and the sections of a closed
 //! vocabulary in a fixed order, each a run of drafted paragraphs and the type
 //! signatures the engine placed verbatim. `Display` renders the Markdown
 //! projection an operator reads.
@@ -10,18 +10,18 @@ use std::fmt::{self, Display, Formatter};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-use crate::artifact::Markdown;
+use crate::artifact::markdown;
 
 const CITATION: &str = "(from ";
 
 /// The `Type:` key: the engine's own line labelling a signature fence.
 pub const TYPE: &str = "Type:";
 
-/// The design master.
+/// The design.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Design {
-    /// The master grammar the document was written under.
+    /// The grammar the document was written under.
     pub emery: u32,
     /// Markdown paragraphs before the first section.
     pub preamble: Vec<String>,
@@ -40,31 +40,33 @@ impl Design {
 // Renders `design.md`: the preamble, then every section under its heading.
 impl Display for Design {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        let mut document = Markdown::new("Design");
-        document.extend(&self.preamble);
-        for section in &self.sections {
-            document.push(format!("## {}", section.kind));
-            for block in &section.blocks {
-                match block {
-                    Block::Text { text, .. } => document.push(text),
-                    Block::Type { key, signature } => {
-                        document.push(format!("{TYPE} {key}\n```\n{}\n```", signature.trim_end()));
-                    }
-                }
-            }
-        }
-        f.write_str(&document.finish())
+        let blocks =
+            self.preamble.iter().cloned().chain(self.sections.iter().map(ToString::to_string));
+        f.write_str(&markdown("Design", blocks))
     }
 }
 
-/// One `## ` section.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+/// One `## ` section: the revision's, over its placed [`Block`]s, or a
+/// draft's, over the blocks a draft answers in.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
-pub struct Section {
+#[schemars(rename = "Section")]
+pub struct Section<B = Block> {
     /// The heading, from the closed vocabulary.
     pub kind: SectionKind,
     /// The blocks, in reading order.
-    pub blocks: Vec<Block>,
+    pub blocks: Vec<B>,
+}
+
+// Renders the heading, then each block.
+impl Display for Section {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        write!(f, "## {}", self.kind)?;
+        for block in &self.blocks {
+            write!(f, "\n\n{block}")?;
+        }
+        Ok(())
+    }
 }
 
 /// One design block: a drafted paragraph, or a `type` claim's signature.
@@ -72,12 +74,7 @@ pub struct Section {
 #[serde(rename_all = "kebab-case")]
 pub enum Block {
     /// One Markdown paragraph.
-    Text {
-        /// The paragraph.
-        text: String,
-        /// Whether the paragraph is held verbatim across runs.
-        pinned: bool,
-    },
+    Text(String),
     /// A `type` claim's signature, placed verbatim.
     Type {
         /// The claim's key.
@@ -85,6 +82,18 @@ pub enum Block {
         /// The claim's signature.
         signature: String,
     },
+}
+
+// Writes a drafted paragraph, or a `Type:` fence with the claim's signature.
+impl Display for Block {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Text(text) => f.write_str(text),
+            Self::Type { key, signature } => {
+                write!(f, "{TYPE} {key}\n```\n{}\n```", signature.trim_end())
+            }
+        }
+    }
 }
 
 /// The closed `## ` vocabulary, in document order. A draft names a section

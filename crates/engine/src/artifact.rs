@@ -1,13 +1,13 @@
 //! # The revision artifacts
 //!
-//! The master of one revision: the typed specification and design a `specify`
-//! run commits, serialised as canonical JSON and identified by the digest of
-//! those bytes. The two Markdown documents an operator reads, `spec.md` and
-//! `design.md`, are projections rendered from the master on demand, so a
-//! stored revision is never parsed back from prose.
+//! The typed specification and design a `specify` run commits, serialised as
+//! canonical JSON and identified by the digest of those bytes. The two
+//! Markdown documents an operator reads, `spec.md` and `design.md`, are
+//! projections rendered from the revision on demand, so a stored revision is
+//! never parsed back from prose.
 //!
-//! This module carries the model both documents share — the dossier, its
-//! revision id, and the projection renderer — together with the vocabulary the
+//! This module carries the model both documents share — the revision, its
+//! id, and the projection renderer — together with the vocabulary the
 //! renderer and the drafting checks agree on: the heading markers, the
 //! provenance and note keys, and the line openers a drafted paragraph may not
 //! use because the renderer owns them.
@@ -27,8 +27,8 @@ pub use self::spec::{
     Cited, ID, Loser, NOTE, ReqId, Requirement, SOURCES, STATUS, Scenario, Spec, Status,
 };
 
-/// The master grammar this engine writes and reads; a stored or carried
-/// master stamped with another is outdated.
+/// The grammar this engine writes and reads; a stored or carried revision
+/// stamped with another is outdated.
 pub const EMERY: u32 = 2;
 
 /// Line openers a drafted paragraph may not use: `#`, so no draft line reads
@@ -36,9 +36,23 @@ pub const EMERY: u32 = 2;
 /// line keys, so no draft line passes as provenance, a note, or a type label.
 pub const RESERVED: &[&str] = &["#", ID, SOURCES, STATUS, NOTE, TYPE];
 
-/// The two documents of one revision, in digest order.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, strum::VariantArray)]
+/// The two documents of one revision, in digest order. A caller names one by
+/// its kebab-case key (`as_ref()` / `parse()`, `spec`), the same spelling
+/// serde uses.
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    Serialize,
+    Deserialize,
+    strum::AsRefStr,
+    strum::EnumString,
+    strum::VariantArray,
+)]
 #[serde(rename_all = "kebab-case")]
+#[strum(serialize_all = "kebab-case")]
 pub enum Document {
     /// The behavioural specification.
     Spec,
@@ -47,7 +61,7 @@ pub enum Document {
 }
 
 impl Document {
-    /// The master's file name in the revision store.
+    /// The revision document's file name in the store.
     #[must_use]
     pub const fn file(self) -> &'static str {
         match self {
@@ -66,30 +80,30 @@ impl Document {
     }
 }
 
-/// The master one `specify` run produces, which a revision commits under the
-/// id of its canonical bytes.
+/// The specification and design one `specify` run produces, committed under
+/// the id of their canonical bytes.
 ///
 /// The id is a function of the content alone, so identical runs are
-/// byte-stable and a dossier read back from storage is verified against the
+/// byte-stable and a revision read back from storage is verified against the
 /// id it was stored under.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub struct Dossier {
+pub struct Revision {
     /// The behavioural specification.
     pub spec: Spec,
     /// The rebuild design.
     pub design: Design,
 }
 
-impl Dossier {
-    /// Reads a dossier from its two JSON documents, refusing another
+impl Revision {
+    /// Reads a revision from its two JSON documents, refusing another
     /// grammar's before the shape is checked.
     ///
     /// # Errors
     ///
     /// `spec-outdated` when either document's `emery` stamp is missing or
-    /// another grammar's; `master-invalid` when a document does not fit the
-    /// master.
+    /// another grammar's; `revision-invalid` when a document does not fit
+    /// the revision.
     pub fn read(spec: Value, design: Value) -> Result<Self, Error> {
         Ok(Self {
             spec: stamped(spec, Document::Spec)?,
@@ -97,49 +111,46 @@ impl Dossier {
         })
     }
 
-    /// Computes the revision id this dossier commits as: the digest of its
-    /// canonical files.
+    /// Computes the id this revision commits as: the digest of its canonical
+    /// files.
     #[must_use]
-    pub fn revision(&self) -> String {
-        digest(self.files().iter().map(|(name, body)| (*name, body.as_bytes())))
+    pub fn id(&self) -> String {
+        digest(self.files().iter().map(|(document, body)| (document.file(), body.as_bytes())))
     }
 
-    /// Serialises each document as canonical JSON under its file name, in
-    /// digest order.
+    /// Serialises each document as canonical JSON, in digest order: pretty,
+    /// declaration order, one trailing newline.
     #[must_use]
-    pub fn files(&self) -> Vec<(&'static str, String)> {
+    pub fn files(&self) -> Vec<(Document, String)> {
         Document::VARIANTS
             .iter()
-            .map(|document| (document.file(), self.canonical(*document)))
+            .map(|document| {
+                let mut text = match document {
+                    Document::Spec => serde_json::to_string_pretty(&self.spec),
+                    Document::Design => serde_json::to_string_pretty(&self.design),
+                }
+                .expect("the revision serialises: no maps with non-string keys, no floats");
+                text.push('\n');
+                (*document, text)
+            })
             .collect()
     }
 
     /// Renders `document`'s Markdown projection: the front matter stamping
-    /// the grammar and the revision id, then the document body.
+    /// the grammar and `revision` — this revision's id, which the caller has
+    /// already computed — then the document body.
     #[must_use]
-    pub fn render(&self, document: Document) -> String {
+    pub fn render(&self, document: Document, id: &str) -> String {
         let body = match document {
             Document::Spec => self.spec.to_string(),
             Document::Design => self.design.to_string(),
         };
-        format!("---\nemery: {EMERY}\nrevision: {}\n---\n\n{body}", self.revision())
-    }
-
-    // The one canonical form: pretty JSON in declaration order, one trailing
-    // newline. Both the hash and the store write read it from here.
-    fn canonical(&self, document: Document) -> String {
-        let mut text = match document {
-            Document::Spec => serde_json::to_string_pretty(&self.spec),
-            Document::Design => serde_json::to_string_pretty(&self.design),
-        }
-        .expect("the master serialises: no maps with non-string keys, no floats");
-        text.push('\n');
-        text
+        format!("---\nemery: {EMERY}\nrevision: {id}\n---\n\n{body}")
     }
 }
 
-// Deserialises one master after checking its grammar stamp: the stamp is
-// the one field every grammar shares, so it is read before the shape.
+// Deserialises one revision document after checking its grammar stamp: the
+// stamp is the one field every grammar shares, so it is read before the shape.
 fn stamped<T: DeserializeOwned>(value: Value, document: Document) -> Result<T, Error> {
     let name = document.file();
     let stamp = &value["emery"];
@@ -153,13 +164,13 @@ fn stamped<T: DeserializeOwned>(value: Value, document: Document) -> Result<T, E
     }
 
     serde_json::from_value(value).map_err(|err| Error::BadRequest {
-        code: "master-invalid".into(),
-        description: format!("`{name}` is not a master: {err}"),
+        code: "revision-invalid".into(),
+        description: format!("`{name}` is not a revision: {err}"),
     })
 }
 
 /// Hashes stored files as SHA-256 over the length-prefixed names and bodies,
-/// in the order given; the revision id of the dossier whose files they are.
+/// in the order given; the id of the revision whose files they are.
 pub fn digest<'a>(files: impl Iterator<Item = (&'a str, &'a [u8])>) -> String {
     let mut hasher = Sha256::new();
     for (name, body) in files {
@@ -171,29 +182,17 @@ pub fn digest<'a>(files: impl Iterator<Item = (&'a str, &'a [u8])>) -> String {
     hex::encode(hasher.finalize())
 }
 
-// A projection under construction: the blocks the renderer emits in order,
-// joined by one blank line, every line right-trimmed, one trailing newline.
-struct Markdown(Vec<String>);
-
-impl Markdown {
-    fn new(title: &str) -> Self {
-        Self(vec![format!("# {title}")])
-    }
-
-    // Adds one block, every line right-trimmed; `finish` joins the blocks.
-    fn push(&mut self, text: impl Into<String>) {
-        self.0.push(text.into().lines().map(str::trim_end).collect::<Vec<_>>().join("\n"));
-    }
-
-    fn extend(&mut self, texts: &[String]) {
-        for text in texts {
-            self.push(text);
+// Renders a projection body: the `# <title>` heading, then every block in
+// order, joined by one blank line, every line right-trimmed, one trailing
+// newline.
+fn markdown(title: &str, blocks: impl Iterator<Item = String>) -> String {
+    let mut text = format!("# {title}");
+    for block in blocks {
+        for (position, line) in block.lines().enumerate() {
+            text.push_str(if position == 0 { "\n\n" } else { "\n" });
+            text.push_str(line.trim_end());
         }
     }
-
-    fn finish(self) -> String {
-        let mut text = self.0.join("\n\n");
-        text.push('\n');
-        text
-    }
+    text.push('\n');
+    text
 }

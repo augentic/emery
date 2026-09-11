@@ -54,7 +54,7 @@ impl<'a, P: Source + Plugins> Loader<'a, P> {
     ) -> Result<String, Error> {
         let name = adapter.name();
         let id = match adapter.request(pin, registry)? {
-            Some(request) => self.cache.ensure(&request).await?.id().to_owned(),
+            Some(request) => self.cache.ensure(&request).await?.id().to_string(),
             None => adapter_id(name),
         };
         check_version(self.provider, name, &id)?;
@@ -155,7 +155,7 @@ impl FromStr for AdapterRef {
                     return Ok(package);
                 }
             }
-            None if is_kebab(value) => return Ok(Self::Bare(value.to_owned())),
+            None if is_kebab(value) => return Ok(Self::Bare(value.to_string())),
             _ => {}
         }
 
@@ -193,8 +193,8 @@ impl AdapterRef {
         })?;
 
         Ok(Self::Package {
-            namespace: namespace.to_owned(),
-            name: name.to_owned(),
+            namespace: namespace.to_string(),
+            name: name.to_string(),
             version,
         })
     }
@@ -231,7 +231,7 @@ impl AdapterRef {
         let (package, location) = match self {
             Self::Bare(_) => return Ok(None),
             Self::Package { .. } => {
-                (self.to_string(), Location::Registry(registry.map(ToOwned::to_owned)))
+                (self.to_string(), Location::Registry(registry.map(ToString::to_string)))
             }
             // The loader reads the file fresh and refuses a missing path
             // itself; this typo gate only lands it on `not_found` instead.
@@ -259,11 +259,13 @@ impl AdapterRef {
     }
 }
 
+// The serde side of the parse: a decoder reports the refusal's description
+// at the offending field, so the message carries no error code of its own.
 impl TryFrom<String> for AdapterRef {
-    type Error = Error;
+    type Error = String;
 
-    fn try_from(value: String) -> Result<Self, Error> {
-        value.parse()
+    fn try_from(value: String) -> Result<Self, String> {
+        value.parse().map_err(|err: Error| err.description())
     }
 }
 

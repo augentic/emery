@@ -6,11 +6,11 @@ Canonical JSON envelope shapes for the `emery *` commands that skills shell out 
 
 - `--format json` responses are a **flat body**: every successful body is a single JSON object carrying the command-specific fields **at the top level** — there is no `ok` discriminant, no `data` wrapper, and no top-level envelope-version stamp.
 - Failures keep the same flat shape with three extra top-level keys:
-  - `error` — a discriminant string: kebab-case for the five recovery codes (`specify-source-required`, `unsupported-version`, `spec-not-generated`, `spec-outdated`, `master-invalid`), snake_case for the Omnia defaults (`bad_request`, `not_found`, `server_error`, `bad_gateway`). The discriminant is grep-stable and forms part of the public contract; see [`AGENTS.md`](../../AGENTS.md#exit-codes) for the exit-code table.
+  - `error` — a discriminant string: kebab-case for the five recovery codes (`specify-source-required`, `unsupported-version`, `spec-not-generated`, `spec-outdated`, `revision-invalid`), snake_case for the Omnia defaults (`bad_request`, `not_found`, `server_error`, `bad_gateway`). The discriminant is grep-stable and forms part of the public contract; see [`AGENTS.md`](../../AGENTS.md#exit-codes) for the exit-code table.
   - `message` — humanised one-liner suitable for direct rendering.
   - `exit-code` — the integer the binary returns.
 - Paths are emitted as plain strings relative to the repo root unless the field name says otherwise.
-- All keys are `kebab-case`. Body shapes are pinned by the typed `*Output` DTOs in `emery-engine` (`Serialize` only) and change only with the CLI's own versioning; the failure envelope is `emery-cli`'s.
+- All keys are `kebab-case`. Body shapes are pinned by the typed `*Output` DTOs in `emery-engine` (`Serialize`; `ShowOutput` also `Deserialize`s as the carried `.emery/` envelope) and change only with the CLI's own versioning; the failure envelope is `emery-cli`'s.
 - Stream roles: the semantic result body (text or JSON) is **stdout**; the failure envelope and live host tracing are **stderr**. Tracing verbosity is selected by the reserved host log flags (`--debug` / `--quiet`, peeled before the guest sees argv; see [cli-contract.md](../standards/cli-contract.md)).
 
 ## Text-mode style
@@ -49,15 +49,15 @@ The success body names the committed revision and its reviewable set:
 }
 ```
 
-`diff` is the re-mine diff against the revision the run continued — the `.emery/` master it adopted, else the outgoing current — computed by typed equality over the two masters: `spec` lists requirements matched by `id` as `{ id, subject }` entries (a requirement keeps its id across runs, so one that only moved is not a change), each `changed` entry naming the master fields that differ (`subject`, `status`, `covered`, `sources`, `body`, `losers`, `scenarios`); `design` lists sections by their kebab-case key. It is absent on a first run; on a byte-stable re-run `from` equals `revision` and every list is empty; nothing is persisted for it. Text mode prints one line per entry prefixed by the projection it appears in: `    spec.md + REQ-004 access.audit`, `    spec.md ~ REQ-002 session.timeout: body, scenarios`, `    design.md ~ domain-model`.
+`diff` is the re-mine diff against the revision the run continued — the `.emery/` revision it adopted, else the outgoing current — computed by typed equality over the two revisions: `spec` lists requirements matched by `id` as `{ id, subject }` entries (a requirement keeps its id across runs, so one that only moved is not a change), each `changed` entry naming the fields that differ (`subject`, `status`, `covered`, `sources`, `body`, `losers`, `scenarios`); `design` lists sections by their kebab-case key. It is absent on a first run; on a byte-stable re-run `from` equals `revision` and every list is empty; nothing is persisted for it. Text mode prints one line per entry prefixed by the projection it appears in: `    spec.md + REQ-004 access.audit`, `    spec.md ~ REQ-002 session.timeout: body, scenarios`, `    design.md ~ domain-model`.
 
-A pin that no longer matches the resolved bytes fails with `error: "refused"` (exit 1). A carried `.emery/` pair that is incomplete, not `show --format json` envelopes, or not a master fails with `error: "master-invalid"` (exit 1); one stamped with an older grammar fails with `error: "spec-outdated"` (exit 1) — both before any adapter loads.
+A pin that no longer matches the resolved bytes fails with `error: "refused"` (exit 1). A carried `.emery/` pair that is incomplete, not `show --format json` envelopes, or not a revision fails with `error: "revision-invalid"` (exit 1); one stamped with an older grammar fails with `error: "spec-outdated"` (exit 1) — both before any adapter loads.
 
 `emery specify` with no source — and no project-root `emery.toml` to discover — fails with `error: "specify-source-required"` (exit 1); mixing `--config` with positional adapters or `--description`, or naming an absolute or project-escaping local path, fails with `error: "bad_request"` (exit 1). `--config` without a value explicitly selects the project-relative `emery.toml`. A GitHub URL source fails with `error: "bad_request"`. Validation refusals from the extract gate, an adapter refusing its input (an empty brief, a tree it cannot read as one source), or a model draft (grouping, spec, or design) that still fails its check once the backend's rounds are spent, exit 1 with `error: "bad_request"` carrying the last correction and its findings; a model failure, or any other adapter failure, exits 4 with `error: "bad_gateway"` naming the source.
 
 ### `emery show <spec|design>`
 
-The success body carries the revision id, the Markdown projection, and the typed master it was rendered from; text mode is the projection alone (see the exception above). Written verbatim to `.emery/spec.json` / `.emery/design.json`, the two envelopes are the master the next `emery specify` continues.
+The success body carries the revision id, the Markdown projection, and the typed revision it was rendered from; text mode is the projection alone (see the exception above). Written verbatim to `.emery/spec.json` / `.emery/design.json`, the two envelopes are the revision the next `emery specify` continues.
 
 ```json
 {
@@ -83,9 +83,9 @@ The success body carries the revision id, the Markdown projection, and the typed
 }
 ```
 
-`document` is the master exactly as stored: for `spec`, `emery` (the grammar stamp), `next_id`, `preamble`, and `requirements`; for `design`, `emery`, `preamble`, and `sections` (each a `kind` and its `blocks`, `{ "text": { "text", "pinned" } }` or `{ "type": { "key", "signature" } }`). The master's serde shape is pinned by `emery-engine`'s `artifact` types; its canonical bytes hash to `revision`.
+`document` is the revision document exactly as stored: for `spec`, `emery` (the grammar stamp), `next_id`, `preamble`, and `requirements`; for `design`, `emery`, `preamble`, and `sections` (each a `kind` and its `blocks`, `{ "text": "<paragraph>" }` or `{ "type": { "key", "signature" } }`). The revision's serde shape is pinned by `emery-engine`'s `artifact` types; its canonical bytes hash to `revision`.
 
-Before any revision is committed the verb fails with `error: "spec-not-generated"` (exit 2); a current revision id naming missing documents fails with `error: "server_error"` (exit 3); a stored master under an older grammar fails with `error: "spec-outdated"` (exit 1).
+Before any revision is committed the verb fails with `error: "spec-not-generated"` (exit 2); a current revision id naming missing documents fails with `error: "server_error"` (exit 3); a stored revision under an older grammar fails with `error: "spec-outdated"` (exit 1).
 
 ### `emery completions <shell>`
 

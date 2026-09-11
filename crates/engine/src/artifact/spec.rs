@@ -1,21 +1,18 @@
 //! # The specification
 //!
-//! The typed master of `spec.md`: a preamble and one requirement per subject,
+//! The typed form of `spec.md`: a preamble and one requirement per subject,
 //! each carrying the facts the engine derived — id, status, coverage, cited
 //! claims, the statements that lost — and the drafted body and scenarios.
 //! `Display` renders the Markdown projection an operator reads.
 
-use std::fmt::{self, Display, Formatter, Write as _};
+use std::fmt::{self, Display, Formatter};
 
 use emery_source::types::Authority;
+use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-use crate::artifact::Markdown;
+use crate::artifact::markdown;
 
-/// The requirement heading marker.
-pub const HEADING: &str = "### Requirement:";
-/// The scenario heading marker.
-pub const SCENARIO: &str = "#### Scenario:";
 /// The `ID:` provenance key; the three keys follow the heading in this order.
 pub const ID: &str = "ID:";
 /// The `Sources:` provenance key.
@@ -25,11 +22,14 @@ pub const STATUS: &str = "Status:";
 /// The `Note:` key: the engine's own lines below the provenance.
 pub const NOTE: &str = "Note:";
 
-/// The specification master.
+const HEADING: &str = "### Requirement:";
+const SCENARIO: &str = "#### Scenario:";
+
+/// The specification.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Spec {
-    /// The master grammar the document was written under.
+    /// The grammar the document was written under.
     pub emery: u32,
     /// The next requirement id to allocate; ids are never reused.
     pub next_id: u32,
@@ -50,12 +50,9 @@ impl Spec {
 // Renders `spec.md`: the preamble, then every requirement block.
 impl Display for Spec {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        let mut document = Markdown::new("Specification");
-        document.extend(&self.preamble);
-        for requirement in &self.requirements {
-            requirement.render(&mut document);
-        }
-        f.write_str(&document.finish())
+        let blocks =
+            self.preamble.iter().cloned().chain(self.requirements.iter().map(ToString::to_string));
+        f.write_str(&markdown("Specification", blocks))
     }
 }
 
@@ -86,8 +83,7 @@ impl Requirement {
     /// Names the fields, other than `id`, on which `self` and `other` differ.
     #[must_use]
     pub fn differences(&self, other: &Self) -> Vec<&'static str> {
-        let mut fields = Vec::new();
-        for (name, differs) in [
+        [
             ("subject", self.subject != other.subject),
             ("status", self.status != other.status),
             ("covered", self.covered != other.covered),
@@ -95,51 +91,52 @@ impl Requirement {
             ("body", self.body != other.body),
             ("losers", self.losers != other.losers),
             ("scenarios", self.scenarios != other.scenarios),
-        ] {
-            if differs {
-                fields.push(name);
-            }
-        }
-        fields
+        ]
+        .into_iter()
+        .filter_map(|(name, differs)| differs.then_some(name))
+        .collect()
     }
+}
 
-    // Renders the block: the tagged heading, the provenance lines, the body,
-    // the notes, then each scenario.
-    fn render(&self, document: &mut Markdown) {
-        let tag = self.status.tag().map(|tag| format!(" [{tag}]")).unwrap_or_default();
-        document.push(format!("{HEADING} {}{tag}", self.subject));
+// Renders the tagged heading, provenance, body, notes, and scenarios.
+impl Display for Requirement {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        write!(f, "{HEADING} {}", self.subject)?;
+        if self.status != Status::Agreed {
+            write!(f, " [{}]", self.status)?;
+        }
 
         let sources: Vec<String> = self.sources.iter().map(ToString::to_string).collect();
-        document.push(format!(
-            "{ID} {id}\n{SOURCES} [{sources}]\n{STATUS} {status}",
+        write!(
+            f,
+            "\n\n{ID} {id}\n{SOURCES} [{sources}]\n{STATUS} {status}",
             id = self.id,
             sources = sources.join(", "),
             status = self.status,
-        ));
+        )?;
 
-        document.extend(&self.body);
-        if let Some(notes) = self.notes() {
-            document.push(notes);
+        // body
+        for paragraph in &self.body {
+            write!(f, "\n\n{paragraph}")?;
         }
 
-        for scenario in &self.scenarios {
-            document.push(format!("{SCENARIO} {}", scenario.name.trim()));
-            document.push(scenario.bullets());
-        }
-    }
-
-    // Builds the `Note:` lines: one per loser, the reconciliation line for a
-    // conflict, then one when the acceptance criteria are not evidenced.
-    fn notes(&self) -> Option<String> {
-        let mut lines: Vec<String> = self.losers.iter().map(ToString::to_string).collect();
+        // notes
+        let mut notes: Vec<String> = self.losers.iter().map(ToString::to_string).collect();
         if self.status == Status::Conflict {
-            lines.push(format!("{NOTE} Operator reconciliation required."));
+            notes.push(format!("{NOTE} Operator reconciliation required."));
         }
         if !self.covered {
-            lines.push(format!("{NOTE} acceptance criteria not evidenced."));
+            notes.push(format!("{NOTE} acceptance criteria not evidenced."));
+        }
+        if !notes.is_empty() {
+            write!(f, "\n\n{}", notes.join("\n"))?;
         }
 
-        (!lines.is_empty()).then(|| lines.join("\n"))
+        // scenarios
+        for scenario in &self.scenarios {
+            write!(f, "\n\n{scenario}")?;
+        }
+        Ok(())
     }
 }
 
@@ -188,35 +185,46 @@ impl Display for Loser {
     }
 }
 
-/// One acceptance scenario.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+/// One acceptance scenario: the shape the specification stores and the shape a
+/// draft answers in — the same fields, so the draft is placed as it stands.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct Scenario {
     /// The scenario heading name.
     pub name: String,
-    /// GIVEN context, one line each.
+    /// Optional GIVEN context, one line each.
+    #[serde(default)]
     pub given: Vec<String>,
     /// The WHEN trigger, one line.
     pub when: String,
     /// The THEN outcome, one line.
     pub then: String,
-    /// Further AND outcomes, one line each.
+    /// Optional further AND outcomes, one line each.
+    #[serde(default)]
     pub and: Vec<String>,
 }
 
 impl Scenario {
-    // Renders the bullet list under the scenario heading.
-    fn bullets(&self) -> String {
-        let mut bullets = String::new();
-        for given in &self.given {
-            let _ = writeln!(bullets, "- **GIVEN** {}", given.trim());
+    /// Yields the scenario's lines in document order — every `given`, the
+    /// `when`, the `then`, every `and` — each with its field name.
+    pub fn lines(&self) -> impl Iterator<Item = (&'static str, &str)> {
+        self.given
+            .iter()
+            .map(|text| ("given", text.as_str()))
+            .chain([("when", self.when.as_str()), ("then", self.then.as_str())])
+            .chain(self.and.iter().map(|text| ("and", text.as_str())))
+    }
+}
+
+// Writes `#### Scenario: <name>`, then one `- **GIVEN**` / `**WHEN**` /
+// `**THEN**` / `**AND**` bullet per line.
+impl Display for Scenario {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        writeln!(f, "{SCENARIO} {}", self.name.trim())?;
+        for (field, text) in self.lines() {
+            write!(f, "\n- **{}** {}", field.to_ascii_uppercase(), text.trim())?;
         }
-        let _ = writeln!(bullets, "- **WHEN** {}", self.when.trim());
-        let _ = write!(bullets, "- **THEN** {}", self.then.trim());
-        for and in &self.and {
-            let _ = write!(bullets, "\n- **AND** {}", and.trim());
-        }
-        bullets
+        Ok(())
     }
 }
 
@@ -283,12 +291,4 @@ pub enum Status {
     Conflict,
     /// Authority-resolved disagreement; the losers are notes.
     Divergence,
-}
-
-impl Status {
-    /// The heading tag this status pairs with; `agreed` carries none.
-    #[must_use]
-    pub fn tag(self) -> Option<Self> {
-        (self != Self::Agreed).then_some(self)
-    }
 }

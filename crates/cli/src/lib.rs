@@ -11,13 +11,14 @@
 //! failure envelope, and the exit map — is omnia's command façade
 //! (`omnia_guest::api::command`), so this crate owns only what is Emery's.
 
-mod master;
+mod carried;
 mod sources;
 mod text;
 
 use std::borrow::Cow;
 use std::ffi::OsString;
 
+use clap::builder::{PossibleValue, PossibleValuesParser, TypedValueParser};
 use clap::{Parser, Subcommand};
 use emery_engine::Provider;
 use emery_engine::show::{Document, ShowInput, show};
@@ -25,6 +26,7 @@ use emery_engine::specify::{SpecifyInput, specify};
 use omnia_guest::Error;
 use omnia_guest::api::command::{Command, Parsed, Response, Shell, completions, parse};
 use omnia_guest::api::{Client, Format, Metadata};
+use strum::VariantArray as _;
 
 const ABOUT: &str = "Deterministic primitives for spec-driven development";
 const SPECIFY_DESC: &str = "Generate spec.md and design.md from source adapters.\n\n\
@@ -81,7 +83,9 @@ where
         Verb::Specify(arguments) => {
             command.call(specify, || arguments.decode(), text::specify).await
         }
-        Verb::Show(arguments) => command.call(show, || Ok(arguments.decode()), text::show).await,
+        Verb::Show(ShowArgs { document }) => {
+            command.call(show, || Ok(ShowInput { document }), text::show).await
+        }
     }
 }
 
@@ -145,8 +149,8 @@ impl SpecifyArgs {
             config,
         } = self;
         let sources = sources::decode(&adapters, &descriptions, config.as_deref())?;
-        let master = master::discover()?;
-        Ok(SpecifyInput { sources, master })
+        let carried = carried::discover()?;
+        Ok(SpecifyInput { sources, carried })
     }
 }
 
@@ -154,36 +158,21 @@ impl SpecifyArgs {
 #[derive(Debug, clap::Args)]
 struct ShowArgs {
     /// Reviewable document of the current revision.
-    #[arg(value_enum)]
-    document: DocumentArg,
+    #[arg(value_parser = documents())]
+    document: Document,
 }
 
-impl ShowArgs {
-    fn decode(self) -> ShowInput {
-        let Self { document } = self;
-        ShowInput {
-            document: document.into(),
-        }
-    }
-}
-
-// The closed document vocabulary as clap values; the exhaustive
-// conversion pins it to the engine's `Document`.
-#[derive(Debug, Clone, Copy, clap::ValueEnum)]
-enum DocumentArg {
-    /// The behavioural specification document.
-    Spec,
-    /// The rebuild design document.
-    Design,
-}
-
-impl From<DocumentArg> for Document {
-    fn from(document: DocumentArg) -> Self {
-        match document {
-            DocumentArg::Spec => Self::Spec,
-            DocumentArg::Design => Self::Design,
-        }
-    }
+// The engine's closed document vocabulary as clap values, each with its help
+// line; the exhaustive match makes a new variant a façade compile error.
+fn documents() -> impl TypedValueParser<Value = Document> {
+    PossibleValuesParser::new(Document::VARIANTS.iter().map(|document| {
+        let help = match document {
+            Document::Spec => "The behavioural specification document.",
+            Document::Design => "The rebuild design document.",
+        };
+        PossibleValue::new(document.as_ref()).help(help)
+    }))
+    .try_map(|value: String| value.parse::<Document>())
 }
 
 // Looks up the remedy hint the failure envelope carries for an `error`
@@ -201,9 +190,9 @@ fn hint(code: &str) -> Option<Cow<'static, str>> {
             "run `emery specify <adapter>...` to commit a revision, then re-run show"
         }
         "spec-outdated" => {
-            "the master predates this emery's grammar: remove `.emery/` if present, then re-run `emery specify <adapter>...` to regenerate it"
+            "the revision predates this emery's grammar: remove `.emery/` if present, then re-run `emery specify <adapter>...` to regenerate it"
         }
-        "master-invalid" => {
+        "revision-invalid" => {
             "`.emery/spec.json` and `.emery/design.json` are the `emery show <spec|design> --format json` envelopes of one revision: restore both from the same revision, or remove `.emery/` to regenerate"
         }
         "refused" => {

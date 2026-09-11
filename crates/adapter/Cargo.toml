@@ -17,6 +17,8 @@ workspace = true
 emery-prose.workspace = true
 emery-source.workspace = true
 omnia-guest.workspace = true
+schemars.workspace = true
+serde.workspace = true
 serde_json.workspace = true
 
 [dev-dependencies]

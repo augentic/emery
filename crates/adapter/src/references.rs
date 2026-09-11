@@ -12,40 +12,34 @@ use std::future::ready;
 
 use emery_prose::registry::{self, Doc};
 use omnia_guest::model::{Function, Tool, ToolCall, ToolFuture, Tools};
-use serde_json::{Value, json};
+use schemars::JsonSchema;
+use serde::Deserialize;
+use serde_json::json;
+
+/// The `list_docs` arguments: none.
+#[derive(Debug, Deserialize, JsonSchema)]
+struct ListDocs {}
+
+/// The `read_doc` arguments.
+#[derive(Debug, Deserialize, JsonSchema)]
+struct ReadDoc {
+    /// Adapter-relative document path, e.g. `prompts/build.md`.
+    path: String,
+}
 
 /// Declares the `list_docs` and `read_doc` tools for a judgment that carries
 /// reference documents.
 #[must_use]
 pub fn tools() -> Vec<Tool> {
     vec![
-        Tool::Function(
-            Function::builder()
-                .name("list_docs")
-                .description("List every reference document path this adapter embeds.")
-                .parameters(json!({ "type": "object", "properties": {} }).to_string())
-                .build(),
-        ),
-        Tool::Function(
-            Function::builder()
-                .name("read_doc")
-                .description("Read one embedded reference document in full by its path.")
-                .parameters(
-                    json!({
-                        "type": "object",
-                        "properties": {
-                            "path": {
-                                "type": "string",
-                                "description": "Adapter-relative document path, \
-                                                e.g. `prompts/build.md`."
-                            }
-                        },
-                        "required": ["path"]
-                    })
-                    .to_string(),
-                )
-                .build(),
-        ),
+        Tool::Function(Function::of::<ListDocs>(
+            "list_docs",
+            "List every reference document path this adapter embeds.",
+        )),
+        Tool::Function(Function::of::<ReadDoc>(
+            "read_doc",
+            "Read one embedded reference document in full by its path.",
+        )),
     ]
 }
 
@@ -72,13 +66,8 @@ pub fn answer(docs: &[Doc], call: &ToolCall) -> Result<String, String> {
             Ok(json!({ "paths": paths }).to_string())
         }
         "read_doc" => {
-            let arguments: Value = serde_json::from_str(&call.arguments)
-                .map_err(|err| format!("read_doc: invalid arguments: {err}"))?;
-            let path = arguments
-                .get("path")
-                .and_then(Value::as_str)
-                .ok_or_else(|| "read_doc requires a string `path` argument".to_string())?;
-            let doc = registry::find(docs, path).ok_or_else(|| format!("no document `{path}`"))?;
+            let ReadDoc { path } = call.arguments().map_err(|err| format!("read_doc: {err}"))?;
+            let doc = registry::find(docs, &path).ok_or_else(|| format!("no document `{path}`"))?;
             Ok(json!({ "path": path, "body": doc.body }).to_string())
         }
         other => Err(format!("unknown tool `{other}`")),

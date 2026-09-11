@@ -10,7 +10,7 @@
 //! so it reads as usage documentation while still asserting the exact
 //! envelope, exit code, and stored revision the operator would see. The
 //! model answers are typed drafts, so the scripted turns are JSON; the
-//! stored masters are the engine's canonical JSON, and the documents `show`
+//! stored documents are the engine's canonical JSON, and the documents `show`
 //! renders from them are the engine's canonical Markdown.
 
 #![cfg(not(target_arch = "wasm32"))]
@@ -32,8 +32,8 @@ use serde_json::Value;
 use sha2::{Digest as _, Sha256};
 use support::{Provider, claim, cli, cli_ok, digest, evidence, fail, requirement};
 
-// Scripted drafts, the canonical masters the engine commits from them, and
-// the documents it renders from those masters.
+// Scripted drafts, the canonical documents the engine commits from them, and
+// the documents it renders from those documents.
 const SPEC_ANSWER: &str = include_str!("specify/spec-draft.json");
 const SPEC_MASTER: &str = include_str!("specify/1-spec.json");
 const SPEC_RENDERED: &str = include_str!("specify/1-spec.md");
@@ -65,9 +65,9 @@ fn project_arg(path: &Path) -> String {
         .to_string()
 }
 
-// One `specify` loads, extracts, and commits the typed master — no prior
-// verb; `show` renders each document from the committed master; an
-// identical re-run continues the stored master without a model turn, is
+// One `specify` loads, extracts, and commits the typed revision — no prior
+// verb; `show` renders each document from the committed revision; an
+// identical re-run continues the stored revision without a model turn, is
 // byte-stable, and says so.
 #[tokio::test]
 async fn gen_spec() {
@@ -103,20 +103,20 @@ async fn gen_spec() {
     );
     assert!(provider.storage.state("project.yaml").is_none(), "no project record exists");
     let id = current(&provider.storage);
-    // The stored masters are the engine's facts beside the drafts, as
+    // The stored documents are the engine's facts beside the drafts, as
     // canonical JSON: the id, status, coverage, and cited claims are all the
     // engine's.
     let spec = document(&provider.storage, &id, "spec.json");
-    assert_eq!(String::from_utf8_lossy(&spec), SPEC_MASTER, "spec.json is the canonical master");
+    assert_eq!(String::from_utf8_lossy(&spec), SPEC_MASTER, "spec.json is the canonical revision");
     let design = document(&provider.storage, &id, "design.json");
     assert_eq!(
         String::from_utf8_lossy(&design),
         DESIGN_MASTER,
-        "design.json is the canonical master"
+        "design.json is the canonical revision"
     );
 
     // Review is `show`: text stdout is the document rendered from the
-    // master — headings, provenance, the gap tag and note are all rendered.
+    // revision — headings, provenance, the gap tag and note are all rendered.
     assert_eq!(
         shown(&provider, "spec").await,
         projection(SPEC_RENDERED, &id),
@@ -127,21 +127,21 @@ async fn gen_spec() {
         projection(DESIGN_RENDERED, &id),
         "show renders design.md"
     );
-    // The JSON envelope carries the revision, the projection, and the master
-    // itself — the shape a project keeps beside its code as `.emery/spec.json`.
+    // The JSON envelope carries the revision, the projection, and the typed
+    // document itself — the shape a project keeps beside its code as `.emery/spec.json`.
     let resp = cli_ok(&provider, &["emery", "--format", "json", "show", "spec"]).await;
     let envelope: Value = serde_json::from_slice(&resp.stdout).expect("one JSON envelope");
     assert_eq!(envelope["revision"], id, "{envelope}");
     assert_eq!(envelope["body"], projection(SPEC_RENDERED, &id), "{envelope}");
-    let master: Value = serde_json::from_str(SPEC_MASTER).expect("the master fixture is JSON");
-    assert_eq!(envelope["document"], master, "the envelope carries the typed master");
+    let document: Value = serde_json::from_str(SPEC_MASTER).expect("the revision fixture is JSON");
+    assert_eq!(envelope["document"], document, "the envelope carries the typed document");
 
     // An identical re-run finds every requirement standing and the design
     // still verified: nothing is asked, and the empty diff is reported.
     let resp = cli_ok(&provider, &["emery", "specify", &component]).await;
     let stdout = String::from_utf8_lossy(&resp.stdout);
     assert!(stdout.contains("none (byte-stable)"), "{stdout}");
-    assert_eq!(current(&provider.storage), id, "the same master keeps its id");
+    assert_eq!(current(&provider.storage), id, "the same revision keeps its id");
 
     provider.model.assert_exhausted();
 }
@@ -368,7 +368,7 @@ async fn authority_precedence() {
     assert_eq!(
         String::from_utf8_lossy(&spec),
         PRECEDENCE_MASTER,
-        "every resolution is a fact in the master"
+        "every resolution is a fact in the revision"
     );
     assert_eq!(
         shown(&provider, "spec").await,
@@ -518,9 +518,9 @@ async fn remine_supersedes() {
     let spec = shown(&provider, "spec").await;
     assert!(spec.contains("howdy"), "{spec}");
     assert!(spec.contains("ID: REQ-003\n") && spec.contains("it times out"), "{spec}");
-    let master =
+    let spec =
         String::from_utf8(document(&provider.storage, &second, "spec.json")).expect("utf-8");
-    assert!(master.contains("\"next_id\": 5"), "ids are never reused: {master}");
+    assert!(spec.contains("\"next_id\": 5"), "ids are never reused: {spec}");
     provider.model.assert_exhausted();
 }
 
@@ -529,7 +529,7 @@ async fn remine_supersedes() {
 // `design` lists sections by kind. The second run's evidence changes the
 // greeting's statement and adds a `type` claim, so both documents are
 // drafted again: the spec turn for the one changed subject, the design turn
-// because the master design no longer meets the plan.
+// because the prior design no longer meets the plan.
 #[tokio::test]
 async fn diff_envelope() {
     let second_spec = SPEC_ANSWER.replace("the response is `hello`", "the response is `howdy`");
@@ -759,7 +759,7 @@ async fn repaired_draft() {
     let schema: Value = serde_json::from_str(schema).expect("the steering schema is JSON");
     assert_eq!(schema["properties"]["requirements"]["minItems"], 1);
     assert_eq!(schema["properties"]["requirements"]["maxItems"], 1);
-    let entry = &schema["$defs"]["Entry"]["properties"];
+    let entry = &schema["$defs"]["Draft"]["properties"];
     assert_eq!(
         entry["subject"]["enum"],
         serde_json::json!(["greeting.behaviour"]),
@@ -1391,7 +1391,7 @@ async fn tampered_revision() {
     fail(&provider, &["emery", "show", "spec"], 3, "server_error").await;
 }
 
-// A stored master written under another grammar is outdated, not corrupt:
+// A stored revision written under another grammar is outdated, not corrupt:
 // `show` refuses typed with `spec-outdated`, and the next `specify`
 // regenerates over it — no diff, the outdated blobs pruned.
 #[tokio::test]
@@ -1415,7 +1415,7 @@ async fn spec_outdated() {
     let stdout = String::from_utf8_lossy(&resp.stdout);
     assert!(!stdout.contains("diff vs"), "an outdated outgoing revision yields no diff: {stdout}");
     let id = current(&provider.storage);
-    assert_ne!(id, outdated, "the regenerated master is current");
+    assert_ne!(id, outdated, "the regenerated revision is current");
     assert!(
         provider.storage.object(CONTAINER, &format!("{outdated}/spec.json")).is_none(),
         "the outdated revision is pruned"
@@ -1425,7 +1425,7 @@ async fn spec_outdated() {
 }
 
 // A project carrying `.emery/spec.json` and `.emery/design.json` continues
-// that revision: the carried master is adopted as current — displacing
+// that revision: the carried revision is adopted as current — displacing
 // whatever the store held — its requirement keeps its id, and a run whose
 // evidence changed nothing asks the model for nothing.
 #[tokio::test]
@@ -1436,7 +1436,7 @@ async fn adopted() {
     cli_ok(&provider, &["emery", "specify", "source"]).await;
     let stored = current(&provider.storage);
 
-    // The carried master is the same specification numbered from 7.
+    // The carried revision is the same specification numbered from 7.
     let spec =
         SPEC_MASTER.replace("REQ-001", "REQ-007").replace("\"next_id\": 2", "\"next_id\": 8");
     carry(project.path(), &spec, DESIGN_MASTER);
@@ -1447,7 +1447,7 @@ async fn adopted() {
     let stdout = String::from_utf8_lossy(&resp.stdout);
     assert!(
         stdout.contains("none (byte-stable)"),
-        "the run continues the carried master: {stdout}"
+        "the run continues the carried revision: {stdout}"
     );
     assert_eq!(current(&provider.storage), carried, "the carried revision is current");
     assert!(
@@ -1457,7 +1457,7 @@ async fn adopted() {
     assert_eq!(
         String::from_utf8_lossy(&document(&provider.storage, &carried, "spec.json")),
         spec,
-        "the adopted master is stored byte-for-byte"
+        "the adopted revision is stored byte-for-byte"
     );
     let shown = shown(&provider, "spec").await;
     assert!(shown.contains("ID: REQ-007\n"), "the requirement keeps its carried id: {shown}");
@@ -1465,7 +1465,7 @@ async fn adopted() {
 }
 
 // The hand-off is the `show --format json` envelope verbatim: written to
-// `.emery/` beside the code, it is the master the next `specify` continues
+// `.emery/` beside the code, it is the revision the next `specify` continues
 // — every requirement stands, the design still verifies, and the model is
 // never asked — and a store that already holds the revision is left as is.
 #[tokio::test]
@@ -1587,10 +1587,10 @@ async fn inherited() {
     );
     assert!(spec.contains("Sources: [docs:greeting.behaviour, docs:greeting.text]"), "{spec}");
     assert!(!spec.contains("REQ-004"), "{spec}");
-    let master =
+    let spec =
         String::from_utf8(document(&provider.storage, &current(&provider.storage), "spec.json"))
             .expect("utf-8");
-    assert!(master.contains("\"next_id\": 5"), "ids are never reused: {master}");
+    assert!(spec.contains("\"next_id\": 5"), "ids are never reused: {spec}");
     provider.model.assert_exhausted();
 }
 
@@ -1620,28 +1620,28 @@ const INHERIT_DRAFT_SECOND: &str = r#"{"preamble": ["Two requirements."], "requi
 
 // The carried pair is read whole or not at all: one envelope without the
 // other, a file that is not a `show` envelope, and an envelope whose
-// document is not a master are each refused `master-invalid` before any
-// adapter loads or anything is adopted; a carried master under another
+// document is not a revision are each refused `revision-invalid` before any
+// adapter loads or anything is adopted; a carried revision under another
 // grammar is `spec-outdated`.
 #[tokio::test]
-async fn master_invalid() {
+async fn revision_invalid() {
     let project = tempfile::TempDir::new().expect("project dir");
     std::env::set_current_dir(project.path()).expect("enter project");
     let dir = project.path().join(".emery");
     let cases: &[(Option<&str>, Option<&str>, &str, &str)] = &[
-        (Some(SPEC_MASTER), None, "master-invalid", "`.emery/design.json` is not"),
-        (None, Some(DESIGN_MASTER), "master-invalid", "`.emery/spec.json` is not"),
+        (Some(SPEC_MASTER), None, "revision-invalid", "`.emery/design.json` is not"),
+        (None, Some(DESIGN_MASTER), "revision-invalid", "`.emery/spec.json` is not"),
         (
             Some("{}"),
             Some(DESIGN_MASTER),
-            "master-invalid",
+            "revision-invalid",
             "not an `emery show --format json` envelope",
         ),
         (
             Some(r#"{"emery": 2, "bogus": true}"#),
             Some(DESIGN_MASTER),
-            "master-invalid",
-            "`spec.json` is not a master",
+            "revision-invalid",
+            "`spec.json` is not a revision",
         ),
         (Some(r#"{"emery": 1}"#), Some(DESIGN_MASTER), "spec-outdated", "grammar 1"),
     ];
@@ -1760,14 +1760,14 @@ async fn multi_project() {
     let id_beta = project_current(&shared, "beta");
     assert_ne!(id_alpha, id_beta, "distinct documents commit distinct revisions");
 
-    // Each project's `show` renders its own committed master alone.
+    // Each project's `show` renders its own committed revision alone.
     let spec_alpha = shared
         .object(&format!("alpha/{CONTAINER}"), &format!("{id_alpha}/spec.json"))
         .expect("spec.json");
     let spec_beta = shared
         .object(&format!("beta/{CONTAINER}"), &format!("{id_beta}/spec.json"))
         .expect("spec.json");
-    assert_eq!(String::from_utf8_lossy(&spec_alpha), SPEC_MASTER, "alpha committed the master");
+    assert_eq!(String::from_utf8_lossy(&spec_alpha), SPEC_MASTER, "alpha committed the revision");
     assert!(String::from_utf8_lossy(&spec_beta).contains("howdy"));
     assert_eq!(
         shown(&alpha, "spec").await,
@@ -1806,7 +1806,7 @@ fn revision(spec: &[u8], design: &[u8]) -> String {
 }
 
 // Seeds `storage` with a current revision holding `spec` and `design` as its
-// stored masters, returning the content id it sits under.
+// stored documents, returning the content id it sits under.
 fn seed(storage: &Memory, spec: &[u8], design: &[u8]) -> String {
     let id = revision(spec, design);
     storage.insert_object(CONTAINER, &format!("{id}/spec.json"), spec);

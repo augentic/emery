@@ -10,9 +10,12 @@
 
 pub use emery_source::wire::export::*;
 
+use crate::types::{Context, SourceContent, SourceInput};
+use crate::{SourceAdapter, WasiModel};
+
 /// Answers `metadata` for adapter `A`: its record, lowered onto the wire.
 #[must_use]
-pub fn metadata<A: crate::SourceAdapter>() -> AdapterMetadata {
+pub fn metadata<A: SourceAdapter>() -> AdapterMetadata {
     A::metadata().into()
 }
 
@@ -22,22 +25,20 @@ pub fn metadata<A: crate::SourceAdapter>() -> AdapterMetadata {
 /// # Errors
 ///
 /// Returns the adapter's failure lowered onto the wire variant.
-pub async fn extract<A: crate::SourceAdapter>(
-    id: AdapterId, input: Input,
-) -> Result<Evidence, Error> {
-    let input = crate::types::SourceInput::from(input);
+pub async fn extract<A: SourceAdapter>(id: AdapterId, input: Input) -> Result<Evidence, Error> {
+    let input = SourceInput::from(input);
     // A bound tree is lent to the model; an inline value rides the prompt.
     let lend = match &input.content {
-        crate::types::SourceContent::Workspace(root) => Some(root.clone()),
-        crate::types::SourceContent::Value(_) => None,
+        SourceContent::Workspace(root) => Some(root.clone()),
+        SourceContent::Value(_) => None,
     };
-    let ctx = crate::types::Context {
+    let ctx = Context {
         adapter_id: &id,
         docs: A::docs(),
         lend,
     };
 
-    A::extract(&crate::WasiModel, &ctx, &input).await.map(Into::into).map_err(Into::into)
+    A::extract(&WasiModel, &ctx, &input).await.map(Into::into).map_err(Into::into)
 }
 
 /// Wires a [`crate::SourceAdapter`] into component exports.

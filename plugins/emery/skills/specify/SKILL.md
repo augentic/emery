@@ -32,7 +32,7 @@ Specify dispatches model judgment and can take a while on large workspaces; it r
 
 ## Re-project
 
-After every successful run, write the committed revision beside the code — the Markdown projections for review and the JSON envelopes as the master the next run continues:
+After every successful run, write the committed revision beside the code — the Markdown projections for review and the JSON envelopes as the revision the next run continues:
 
 ```bash
 emery show spec --quiet > spec.md
@@ -48,4 +48,4 @@ Track all four files in version control. Never edit them by hand: `spec.md` and 
 
 - Surface the CLI output verbatim — the success envelope names the committed revision and the re-mine diff against the one it continued.
 - Review is `spec.md` / `design.md` as re-projected, or `emery show spec` / `emery show design` directly — never read or edit `.omnia/storage` state by hand.
-- On non-zero exit, surface the structured error and stop — never hand-roll spec documents. A `refused` failure means the loader rejected the request (a pin that no longer matches, a malformed pin, an invalid artifact, or an unserved location); relay the hint and let the operator decide. A `master-invalid` or `spec-outdated` failure names the carried `.emery/` pair: relay the hint (restore the pair from one revision, or remove `.emery/` to regenerate) and let the operator decide.
+- On non-zero exit, surface the structured error and stop — never hand-roll spec documents. A `refused` failure means the loader rejected the request (a pin that no longer matches, a malformed pin, an invalid artifact, or an unserved location); relay the hint and let the operator decide. A `revision-invalid` or `spec-outdated` failure names the carried `.emery/` pair: relay the hint (restore the pair from one revision, or remove `.emery/` to regenerate) and let the operator decide.

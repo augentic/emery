@@ -2,8 +2,8 @@
 //!
 //! The runtime view of an embedded corpus: a [`Doc`] is one document with
 //! its tree-relative path and body, and the lookup functions find a document
-//! by that path. [`crate::registry!`] gives a crate its own `docs`, `doc`,
-//! and `body` accessors over the table the build step generated.
+//! by that path. [`crate::registry!`] gives a crate its own `docs` and `body`
+//! accessors over the table the build step generated.
 //!
 //! Paths are the stable names prompts and reference tools use to address
 //! documents, so a lookup by path is the only interface the registry needs.
@@ -31,8 +31,7 @@ pub fn find<'d>(docs: &'d [Doc], path: &str) -> Option<&'d Doc> {
 /// Panics if `path` is absent, indicating a registry/tree mismatch.
 #[must_use]
 pub fn body(docs: &[Doc], path: &str) -> &'static str {
-    find(docs, path)
-        .map_or_else(|| panic!("document `{path}` is not embedded in the registry"), |doc| doc.body)
+    find(docs, path).unwrap_or_else(|| panic!("document `{path}` is not embedded in the registry")).body
 }
 
 /// Generates registry accessors for the build-time `DOCS` table.
@@ -53,12 +52,6 @@ macro_rules! registry {
         #[must_use]
         pub fn docs() -> &'static [Doc] {
             DOCS
-        }
-
-        /// Looks up one document by its tree-relative path.
-        #[must_use]
-        pub fn doc(path: &str) -> Option<&'static Doc> {
-            $crate::registry::find(DOCS, path)
         }
 
         /// Returns the body of a document the registry is guaranteed to embed.

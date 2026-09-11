@@ -44,7 +44,7 @@ fn main() {
 
 // Precompiles the component ahead of time for the consuming binary; the
 // runtime options and Cargo's target triple must match it.
-fn precompile(raw: &std::path::Path, out: &std::path::Path) {
+fn precompile(raw: &Path, out: &Path) {
     let options = omnia::RuntimeOptions::load_env().expect("runtime options from the build env");
     let mut config = omnia::wasmtime::Config::from(&options);
     let triple = std::env::var("TARGET").expect("cargo env");

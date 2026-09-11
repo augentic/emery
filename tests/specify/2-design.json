@@ -8,10 +8,7 @@
       "kind": "overview",
       "blocks": [
         {
-          "text": {
-            "text": "One static `GET /greeting` endpoint returning `'hello'` (`REQ-001`); no state or configuration is involved. Its acceptance criteria are an open gap and must be authored before implementation.",
-            "pinned": false
-          }
+          "text": "One static `GET /greeting` endpoint returning `'hello'` (`REQ-001`); no state or configuration is involved. Its acceptance criteria are an open gap and must be authored before implementation."
         }
       ]
     }

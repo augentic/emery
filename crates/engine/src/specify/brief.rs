@@ -18,6 +18,8 @@ use schemars::JsonSchema;
 use serde::de::DeserializeOwned;
 use serde_json::Value;
 
+use crate::artifact::RESERVED;
+
 // `Sync`: the verify closure `Question::ask` takes is `Send`, and it
 // borrows the brief.
 pub trait Brief: Display + Sync + Sized {
@@ -64,7 +66,7 @@ pub trait Brief: Display + Sync + Sized {
             .ask(model, self.to_string(), None, |answer| {
                 let mut review = Review::default();
                 self.verify(answer, &mut review);
-                review.verdict()
+                if review.is_clean() { Ok(()) } else { Err(review.0) }
             })
             .await?;
 
@@ -90,8 +92,38 @@ impl Review {
         self.0.is_empty()
     }
 
-    // Accepts a candidate with no finding; rejects one with any, for repair.
-    fn verdict(self) -> Result<(), Findings> {
-        if self.is_clean() { Ok(()) } else { Err(self.0) }
+    // The prose checks the document briefs share. A draft is placed into a
+    // document the engine renders, so it may not carry the document's own
+    // markup: a paragraph may not be blank or open a line with a reserved
+    // marker.
+    pub fn paragraph(&mut self, text: &str, label: impl Display) {
+        if text.trim().is_empty() {
+            self.note(format_args!("{label} has a blank paragraph"));
+            return;
+        }
+
+        for line in text.lines() {
+            let line = line.trim_start();
+            if let Some(marker) = RESERVED.iter().copied().find(|marker| line.starts_with(marker)) {
+                self.note(format_args!(
+                    "{label}: a paragraph line opens with the reserved marker `{marker}`"
+                ));
+            }
+        }
+    }
+
+    pub fn paragraphs(&mut self, texts: &[String], label: impl Display) {
+        for text in texts {
+            self.paragraph(text, &label);
+        }
+    }
+
+    // A scenario field is one non-blank line.
+    pub fn line(&mut self, text: &str, label: impl Display) {
+        if text.trim().is_empty() {
+            self.note(format_args!("{label} is blank"));
+        } else if text.contains('\n') {
+            self.note(format_args!("{label} spans more than one line"));
+        }
     }
 }

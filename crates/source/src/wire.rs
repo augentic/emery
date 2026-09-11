@@ -6,12 +6,13 @@
 //!
 //! Both directions come from one generation: adapters export through it via
 //! the SDK's `source!` macro over [`export`], and the engine guest calls into
-//! it through [`import`]. A single generation guarantees the two sides agree
-//! on the wire shape by construction.
+//! it through [`import`]. The records live in the WIT `types` interface, so
+//! the export side and the caller side bind the same Rust types and each
+//! conversion is written once, here at the module root.
 //!
 //! The WIT `error` variant lives here alone: an adapter's `omnia_guest::Error`
-//! is lowered onto it in [`export`], and [`import::extract`] lifts it back into
-//! the same classes, so neither side of the seam names the wire variant.
+//! is lowered onto it for [`export`], and [`import::extract`] lifts it back
+//! into the same classes, so neither side of the seam names the wire variant.
 
 mod generated {
     #![allow(
@@ -32,159 +33,205 @@ mod generated {
     });
 }
 
-/// The export side: the bindings an adapter's `source!` macro wires into,
-/// and the lowering of contract types onto its records.
-pub mod export {
-    // The root glob carries the bindgen support items the `export!` macro
-    // expands against; the second names the world's records and `Guest`.
-    pub use super::generated::exports::emery::adapter::source::*;
-    pub use super::generated::*;
-    use crate::types;
+use self::generated::emery::adapter::types as wit;
+use crate::types;
 
-    impl From<types::AdapterMetadata> for AdapterMetadata {
-        fn from(metadata: types::AdapterMetadata) -> Self {
-            Self {
-                emery_version: metadata.emery_version,
-            }
+impl From<types::AdapterMetadata> for wit::AdapterMetadata {
+    fn from(metadata: types::AdapterMetadata) -> Self {
+        Self {
+            emery_version: metadata.emery_version,
         }
     }
+}
 
-    impl From<types::SourceContent> for Content {
-        fn from(content: types::SourceContent) -> Self {
-            match content {
-                types::SourceContent::Workspace(root) => Self::Workspace(root),
-                types::SourceContent::Value(value) => Self::Value(value),
-            }
+impl From<wit::AdapterMetadata> for types::AdapterMetadata {
+    fn from(metadata: wit::AdapterMetadata) -> Self {
+        Self {
+            emery_version: metadata.emery_version,
         }
     }
+}
 
-    impl From<Content> for types::SourceContent {
-        fn from(content: Content) -> Self {
-            match content {
-                Content::Workspace(root) => Self::Workspace(root),
-                Content::Value(value) => Self::Value(value),
-            }
+impl From<types::SourceContent> for wit::Content {
+    fn from(content: types::SourceContent) -> Self {
+        match content {
+            types::SourceContent::Workspace(root) => Self::Workspace(root),
+            types::SourceContent::Value(value) => Self::Value(value),
         }
     }
+}
 
-    impl From<types::SourceInput> for Input {
-        fn from(input: types::SourceInput) -> Self {
-            Self {
-                key: input.key,
-                content: input.content.into(),
-            }
+impl From<wit::Content> for types::SourceContent {
+    fn from(content: wit::Content) -> Self {
+        match content {
+            wit::Content::Workspace(root) => Self::Workspace(root),
+            wit::Content::Value(value) => Self::Value(value),
         }
     }
+}
 
-    impl From<Input> for types::SourceInput {
-        fn from(input: Input) -> Self {
-            Self {
-                key: input.key,
-                content: input.content.into(),
-            }
+impl From<types::SourceInput> for wit::Input {
+    fn from(input: types::SourceInput) -> Self {
+        Self {
+            key: input.key,
+            content: input.content.into(),
         }
     }
+}
 
-    impl From<types::Authority> for Authority {
-        fn from(authority: types::Authority) -> Self {
-            match authority {
-                types::Authority::Intent => Self::Intent,
-                types::Authority::Documentation => Self::Documentation,
-                types::Authority::Behaviour => Self::Behaviour,
-            }
+impl From<wit::Input> for types::SourceInput {
+    fn from(input: wit::Input) -> Self {
+        Self {
+            key: input.key,
+            content: input.content.into(),
         }
     }
+}
 
-    impl From<types::ClaimKind> for ClaimKind {
-        fn from(kind: types::ClaimKind) -> Self {
-            match kind {
-                types::ClaimKind::Intent => Self::Intent,
-                types::ClaimKind::Requirement => Self::Requirement,
-                types::ClaimKind::Criterion => Self::Criterion,
-                types::ClaimKind::Decision => Self::Decision,
-                types::ClaimKind::Section => Self::Section,
-                types::ClaimKind::Diagram => Self::Diagram,
-                types::ClaimKind::Contract => Self::Contract,
-                types::ClaimKind::Example => Self::Example,
-                types::ClaimKind::Excerpt => Self::Excerpt,
-                types::ClaimKind::Type => Self::Type,
-                types::ClaimKind::Call => Self::Call,
-                types::ClaimKind::Region => Self::Region,
-                types::ClaimKind::Container => Self::Container,
-                types::ClaimKind::Leaf => Self::Leaf,
-            }
+impl From<types::Authority> for wit::Authority {
+    fn from(authority: types::Authority) -> Self {
+        match authority {
+            types::Authority::Intent => Self::Intent,
+            types::Authority::Documentation => Self::Documentation,
+            types::Authority::Behaviour => Self::Behaviour,
         }
     }
+}
 
-    impl From<types::Backing> for Backing {
-        fn from(backing: types::Backing) -> Self {
-            match backing {
-                types::Backing::Payload(payload) => Self::Payload(payload),
-                types::Backing::Path(path) => Self::Path(path),
-            }
+impl From<wit::Authority> for types::Authority {
+    fn from(authority: wit::Authority) -> Self {
+        match authority {
+            wit::Authority::Intent => Self::Intent,
+            wit::Authority::Documentation => Self::Documentation,
+            wit::Authority::Behaviour => Self::Behaviour,
         }
     }
+}
 
-    impl From<types::Claim> for Claim {
-        fn from(claim: types::Claim) -> Self {
-            // Open body fields ride the wire as canonical JSON text (A8);
-            // `serde_json::Value` always encodes.
-            let extras =
-                claim.extras.into_iter().map(|(key, value)| (key, value.to_string())).collect();
-            Self {
-                kind: claim.kind.into(),
-                id: claim.id,
-                path: claim.path,
-                synopsis: claim.synopsis,
-                backing: claim.backing.map(Into::into),
-                extras,
-            }
+impl From<types::ClaimKind> for wit::ClaimKind {
+    fn from(kind: types::ClaimKind) -> Self {
+        match kind {
+            types::ClaimKind::Intent => Self::Intent,
+            types::ClaimKind::Requirement => Self::Requirement,
+            types::ClaimKind::Criterion => Self::Criterion,
+            types::ClaimKind::Decision => Self::Decision,
+            types::ClaimKind::Section => Self::Section,
+            types::ClaimKind::Diagram => Self::Diagram,
+            types::ClaimKind::Contract => Self::Contract,
+            types::ClaimKind::Example => Self::Example,
+            types::ClaimKind::Excerpt => Self::Excerpt,
+            types::ClaimKind::Type => Self::Type,
+            types::ClaimKind::Call => Self::Call,
+            types::ClaimKind::Region => Self::Region,
+            types::ClaimKind::Container => Self::Container,
+            types::ClaimKind::Leaf => Self::Leaf,
         }
     }
+}
 
-    impl From<types::Evidence> for Evidence {
-        fn from(evidence: types::Evidence) -> Self {
-            Self {
-                authority: evidence.authority.into(),
-                claims: evidence.claims.into_iter().map(Into::into).collect(),
-            }
+impl From<wit::ClaimKind> for types::ClaimKind {
+    fn from(kind: wit::ClaimKind) -> Self {
+        match kind {
+            wit::ClaimKind::Intent => Self::Intent,
+            wit::ClaimKind::Requirement => Self::Requirement,
+            wit::ClaimKind::Criterion => Self::Criterion,
+            wit::ClaimKind::Decision => Self::Decision,
+            wit::ClaimKind::Section => Self::Section,
+            wit::ClaimKind::Diagram => Self::Diagram,
+            wit::ClaimKind::Contract => Self::Contract,
+            wit::ClaimKind::Example => Self::Example,
+            wit::ClaimKind::Excerpt => Self::Excerpt,
+            wit::ClaimKind::Type => Self::Type,
+            wit::ClaimKind::Call => Self::Call,
+            wit::ClaimKind::Region => Self::Region,
+            wit::ClaimKind::Container => Self::Container,
+            wit::ClaimKind::Leaf => Self::Leaf,
         }
     }
+}
 
-    // Lowers an adapter failure onto the wire, which carries the description
-    // alone: a refusal of the input becomes `invalid-request`, every other
-    // class `internal`; the lift restores the class. `io` is lifted but never
-    // produced.
-    impl From<omnia_guest::Error> for Error {
-        fn from(error: omnia_guest::Error) -> Self {
-            let description = error.description();
-            match error {
-                omnia_guest::Error::BadRequest { .. } | omnia_guest::Error::NotFound { .. } => {
-                    Self::InvalidRequest(description)
-                }
-                omnia_guest::Error::ServerError { .. } | omnia_guest::Error::BadGateway { .. } => {
-                    Self::Internal(description)
-                }
+impl From<types::Backing> for wit::Backing {
+    fn from(backing: types::Backing) -> Self {
+        match backing {
+            types::Backing::Payload(payload) => Self::Payload(payload),
+            types::Backing::Path(path) => Self::Path(path),
+        }
+    }
+}
+
+impl From<wit::Backing> for types::Backing {
+    fn from(backing: wit::Backing) -> Self {
+        match backing {
+            wit::Backing::Payload(payload) => Self::Payload(payload),
+            wit::Backing::Path(path) => Self::Path(path),
+        }
+    }
+}
+
+impl From<types::Claim> for wit::Claim {
+    fn from(claim: types::Claim) -> Self {
+        // Open body fields ride the wire as canonical JSON text (A8);
+        // `serde_json::Value` always encodes.
+        let extras =
+            claim.extras.into_iter().map(|(key, value)| (key, value.to_string())).collect();
+        Self {
+            kind: claim.kind.into(),
+            id: claim.id,
+            path: claim.path,
+            synopsis: claim.synopsis,
+            backing: claim.backing.map(Into::into),
+            extras,
+        }
+    }
+}
+
+impl From<types::Evidence> for wit::Evidence {
+    fn from(evidence: types::Evidence) -> Self {
+        Self {
+            authority: evidence.authority.into(),
+            claims: evidence.claims.into_iter().map(Into::into).collect(),
+        }
+    }
+}
+
+// Lowers an adapter failure onto the wire, which carries the description
+// alone: a refusal of the input becomes `invalid-request`, every other
+// class `internal`; the lift restores the class. `io` is lifted but never
+// produced.
+impl From<omnia_guest::Error> for wit::Error {
+    fn from(error: omnia_guest::Error) -> Self {
+        let description = error.description();
+        match error {
+            omnia_guest::Error::BadRequest { .. } | omnia_guest::Error::NotFound { .. } => {
+                Self::InvalidRequest(description)
+            }
+            omnia_guest::Error::ServerError { .. } | omnia_guest::Error::BadGateway { .. } => {
+                Self::Internal(description)
             }
         }
     }
 }
 
-/// The import side: the engine guest's caller, and the lifting of its records
-/// into contract types.
+/// The export side: the bindings an adapter's `source!` macro wires into.
+pub mod export {
+    // The root glob carries the bindgen support items the `export!` macro
+    // expands against; the second names the world's records and `Guest`.
+    pub use super::generated::exports::emery::adapter::source::*;
+    pub use super::generated::*;
+}
+
+/// The import side: the engine guest's caller over the wire.
 pub mod import {
     use omnia_guest::{Error, bad_gateway, bad_request};
 
     use super::generated::emery::adapter::source as imported;
+    use super::wit;
     use crate::types;
 
     /// Returns resolve-time metadata for `id`.
     #[must_use]
     pub fn metadata(id: &str) -> types::AdapterMetadata {
-        let record = imported::metadata(id);
-        types::AdapterMetadata {
-            emery_version: record.emery_version,
-        }
+        imported::metadata(id).into()
     }
 
     /// Dispatches `extract` to `id`.
@@ -199,8 +246,8 @@ pub mod import {
     pub async fn extract(id: &str, input: &types::SourceInput) -> Result<types::Evidence, Error> {
         let answer = imported::extract(id.to_string(), input.clone().into()).await.map_err(
             |err| match err {
-                imported::Error::InvalidRequest(detail) => bad_request!("source `{id}`: {detail}"),
-                imported::Error::Io(detail) | imported::Error::Internal(detail) => {
+                wit::Error::InvalidRequest(detail) => bad_request!("source `{id}`: {detail}"),
+                wit::Error::Io(detail) | wit::Error::Internal(detail) => {
                     bad_gateway!("source `{id}`: {detail}")
                 }
             },
@@ -208,72 +255,14 @@ pub mod import {
         evidence(answer).map_err(|detail| bad_gateway!("source `{id}`: {detail}"))
     }
 
-    impl From<types::SourceContent> for imported::Content {
-        fn from(content: types::SourceContent) -> Self {
-            match content {
-                types::SourceContent::Workspace(root) => Self::Workspace(root),
-                types::SourceContent::Value(value) => Self::Value(value),
-            }
-        }
-    }
-
-    impl From<types::SourceInput> for imported::Input {
-        fn from(input: types::SourceInput) -> Self {
-            Self {
-                key: input.key,
-                content: input.content.into(),
-            }
-        }
-    }
-
-    impl From<imported::Authority> for types::Authority {
-        fn from(authority: imported::Authority) -> Self {
-            match authority {
-                imported::Authority::Intent => Self::Intent,
-                imported::Authority::Documentation => Self::Documentation,
-                imported::Authority::Behaviour => Self::Behaviour,
-            }
-        }
-    }
-
-    impl From<imported::ClaimKind> for types::ClaimKind {
-        fn from(kind: imported::ClaimKind) -> Self {
-            match kind {
-                imported::ClaimKind::Intent => Self::Intent,
-                imported::ClaimKind::Requirement => Self::Requirement,
-                imported::ClaimKind::Criterion => Self::Criterion,
-                imported::ClaimKind::Decision => Self::Decision,
-                imported::ClaimKind::Section => Self::Section,
-                imported::ClaimKind::Diagram => Self::Diagram,
-                imported::ClaimKind::Contract => Self::Contract,
-                imported::ClaimKind::Example => Self::Example,
-                imported::ClaimKind::Excerpt => Self::Excerpt,
-                imported::ClaimKind::Type => Self::Type,
-                imported::ClaimKind::Call => Self::Call,
-                imported::ClaimKind::Region => Self::Region,
-                imported::ClaimKind::Container => Self::Container,
-                imported::ClaimKind::Leaf => Self::Leaf,
-            }
-        }
-    }
-
-    impl From<imported::Backing> for types::Backing {
-        fn from(backing: imported::Backing) -> Self {
-            match backing {
-                imported::Backing::Payload(payload) => Self::Payload(payload),
-                imported::Backing::Path(path) => Self::Path(path),
-            }
-        }
-    }
-
-    fn evidence(evidence: imported::Evidence) -> Result<types::Evidence, String> {
+    fn evidence(evidence: wit::Evidence) -> Result<types::Evidence, String> {
         Ok(types::Evidence {
             authority: evidence.authority.into(),
             claims: evidence.claims.into_iter().map(claim).collect::<Result<_, _>>()?,
         })
     }
 
-    fn claim(claim: imported::Claim) -> Result<types::Claim, String> {
+    fn claim(claim: wit::Claim) -> Result<types::Claim, String> {
         let mut extras = serde_json::Map::new();
         for (key, encoded) in claim.extras {
             let value = serde_json::from_str(&encoded)

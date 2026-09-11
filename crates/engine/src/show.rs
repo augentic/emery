@@ -6,13 +6,13 @@
 //!
 //! Review goes through this operation rather than the filesystem so the
 //! revision store stays the engine's own: callers see a document rendered
-//! from the stored master, paired with the revision id it belongs to and the
-//! master itself, and never the storage layout beneath it. The JSON envelope
+//! from the stored revision, paired with the revision id it belongs to and the
+//! typed document itself, and never the storage layout beneath it. The JSON envelope
 //! is what a project carries beside its code as `.emery/<document>.json`, so
 //! the next `specify` can continue the revision.
 
 use omnia_guest::api::Context;
-use omnia_guest::{BlobStore, Error, StateStore};
+use omnia_guest::{BlobStore, Error, StateStore, server_error};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
@@ -27,15 +27,16 @@ pub struct ShowInput {
     pub document: Document,
 }
 
-/// Successful review result.
-#[derive(Debug, Serialize)]
+/// Successful review result — and, read back, the `.emery/<document>.json`
+/// envelope a project carries.
+#[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub struct ShowOutput {
     /// Current revision id.
     pub revision: String,
     /// The rendered Markdown projection.
     pub body: String,
-    /// The stored master the projection was rendered from.
+    /// The stored document the projection was rendered from.
     pub document: Value,
 }
 
@@ -51,22 +52,23 @@ pub async fn show<P: StateStore + BlobStore>(
 ) -> Result<ShowOutput, Error> {
     let ShowInput { document } = input;
 
-    let Some(dossier) = store::current(context.provider()).await? else {
+    let Some(revision) = store::current(context.provider()).await? else {
         return Err(Error::NotFound {
             code: "spec-not-generated".into(),
             description: "no specification revision has been committed".into(),
         });
     };
 
-    let master = match document {
-        Document::Spec => serde_json::to_value(&dossier.spec),
-        Document::Design => serde_json::to_value(&dossier.design),
+    let value = match document {
+        Document::Spec => serde_json::to_value(&revision.spec),
+        Document::Design => serde_json::to_value(&revision.design),
     }
-    .expect("the master serialises: no maps with non-string keys, no floats");
+    .map_err(|err| server_error!("`{}` did not serialise: {err}", document.file()))?;
 
+    let id = revision.id();
     Ok(ShowOutput {
-        revision: dossier.revision(),
-        body: dossier.render(document),
-        document: master,
+        body: revision.render(document, &id),
+        revision: id,
+        document: value,
     })
 }

@@ -39,8 +39,9 @@ fn changes(diff: &Diff, w: &mut dyn fmt::Write) -> fmt::Result {
     for entry in &diff.spec.removed {
         writeln!(w, "    {spec} - {} {}", entry.id, entry.subject)?;
     }
-    for entry in &diff.spec.changed {
-        let fields = entry.fields.join(", ");
+    for changed in &diff.spec.changed {
+        let entry = &changed.requirement;
+        let fields = changed.fields.join(", ");
         writeln!(w, "    {spec} ~ {} {}: {fields}", entry.id, entry.subject)?;
     }
 
