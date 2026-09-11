@@ -11,8 +11,8 @@
 //! kind's required extras are declared next to it so the contract states in
 //! one place what a complete claim of that kind looks like. Serde derives sit
 //! only on the types that cross a JSON boundary: the [`Evidence`] a model
-//! answer is parsed into, and the [`SourceInput`] the engine's `specify`
-//! request carries.
+//! answer is parsed into, the [`SourceInput`] the engine's `specify` request
+//! carries, and the [`Authority`] a committed requirement records.
 
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -67,7 +67,7 @@ impl SourceInput {
 }
 
 /// Claim-set authority, ordered `intent` > `documentation` > `behaviour`.
-#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq, JsonSchema, strum::Display)]
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq, JsonSchema, strum::Display)]
 #[serde(rename_all = "kebab-case")]
 #[strum(serialize_all = "kebab-case")]
 pub enum Authority {

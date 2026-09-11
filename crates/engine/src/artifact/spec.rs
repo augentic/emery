@@ -1,16 +1,16 @@
-//! # Read `spec.md`
+//! # The specification
 //!
-//! A spec is a preamble followed by `### Requirement:` blocks — a heading,
-//! three provenance lines, and a body. The heading subject is what the
-//! re-mine diff keys on, and the provenance and body are what it compares.
+//! The typed master of `spec.md`: a preamble and one requirement per subject,
+//! each carrying the facts the engine derived — id, status, coverage, cited
+//! claims, the statements that lost — and the drafted body and scenarios.
+//! `Display` renders the Markdown projection an operator reads.
 
-use std::collections::BTreeMap;
-use std::fmt::{self, Display, Formatter};
-use std::str::FromStr;
+use std::fmt::{self, Display, Formatter, Write as _};
 
-use omnia_guest::{Error, server_error};
+use emery_source::types::Authority;
+use serde::{Deserialize, Serialize};
 
-use crate::artifact::{Document, Line, Lines, Text};
+use crate::artifact::Markdown;
 
 /// The requirement heading marker.
 pub const HEADING: &str = "### Requirement:";
@@ -22,170 +22,257 @@ pub const ID: &str = "ID:";
 pub const SOURCES: &str = "Sources:";
 /// The `Status:` provenance key.
 pub const STATUS: &str = "Status:";
-/// The `Note:` key: the engine's own lines below the provenance, which the
-/// reader keeps as body.
+/// The `Note:` key: the engine's own lines below the provenance.
 pub const NOTE: &str = "Note:";
 
-/// A canonical `spec.md`, read back.
-#[derive(Debug)]
+/// The specification master.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct Spec {
-    /// Requirement blocks in document order.
+    /// The master grammar the document was written under.
+    pub emery: u32,
+    /// The next requirement id to allocate; ids are never reused.
+    pub next_id: u32,
+    /// Markdown paragraphs before the first requirement.
+    pub preamble: Vec<String>,
+    /// The requirements, in id order.
     pub requirements: Vec<Requirement>,
 }
 
 impl Spec {
-    const NAME: &str = Document::Spec.file();
-
-    /// Indexes the requirement blocks by subject — the heading is the identity
-    /// the re-mine diff keys on.
+    /// Finds the requirement `id` names.
     #[must_use]
-    pub fn by_subject(&self) -> BTreeMap<&str, &Requirement> {
-        self.requirements
-            .iter()
-            .map(|requirement| (requirement.subject.as_str(), requirement))
-            .collect()
+    pub fn requirement(&self, id: ReqId) -> Option<&Requirement> {
+        self.requirements.iter().find(|requirement| requirement.id == id)
     }
 }
 
-impl FromStr for Spec {
-    type Err = Error;
-
-    // Parses a stored `spec.md`. A document the renderer did not write is
-    // corruption, so every failure is `server_error`.
-    fn from_str(text: &str) -> Result<Self, Error> {
-        let requirements = Text::from(text)
-            .blocks(HEADING)
-            .map(Requirement::read)
-            .collect::<Result<Vec<_>, _>>()
-            .map_err(|detail| server_error!("`{}` is not canonical: {detail}", Self::NAME))?;
-        if requirements.is_empty() {
-            return Err(server_error!("`{}` is not canonical: no `{HEADING}` block", Self::NAME));
+// Renders `spec.md`: the preamble, then every requirement block.
+impl Display for Spec {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        let mut document = Markdown::new("Specification");
+        document.extend(&self.preamble);
+        for requirement in &self.requirements {
+            requirement.render(&mut document);
         }
-        let spec = Self { requirements };
-        if spec.by_subject().len() != spec.requirements.len() {
-            return Err(server_error!("`{}` is not canonical: repeated subject", Self::NAME));
-        }
-        Ok(spec)
+        f.write_str(&document.finish())
     }
 }
 
-/// One requirement block. The heading tag mirrors `status`, and the
-/// positional id shifts with the requirements above it, so neither is kept.
-#[derive(Debug)]
+/// One requirement: the engine's facts and the drafted prose.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct Requirement {
-    /// The heading name: the requirement's subject.
+    /// The stable id.
+    pub id: ReqId,
+    /// The heading name: the top contributor's claim id.
     pub subject: String,
-    /// The cited source keys, in order.
-    pub sources: Vec<String>,
-    /// The `Status:` value.
+    /// How the contributors agree.
     pub status: Status,
-    // The text below the provenance lines, blank edges trimmed.
-    body: String,
+    /// Whether an acceptance criterion covers the requirement.
+    pub covered: bool,
+    /// Every cited claim, highest authority first.
+    pub sources: Vec<Cited>,
+    /// Markdown paragraphs; empty for a requirement in conflict.
+    pub body: Vec<String>,
+    /// The classes whose statements are notes: the losing classes of a
+    /// divergence, every class of a conflict.
+    pub losers: Vec<Loser>,
+    /// The acceptance scenarios.
+    pub scenarios: Vec<Scenario>,
 }
 
 impl Requirement {
-    // Parses one requirement block: the heading, then the `ID:` / `Sources:` /
-    // `Status:` lines in that order, then the body; anything else is not this
-    // engine's rendering.
-    fn read((heading, rest): (Line<'_>, Lines<'_>)) -> Result<Self, String> {
-        let (subject, tag) = heading
-            .0
-            .strip_suffix(']')
-            .and_then(|inner| inner.rsplit_once(" ["))
-            .map_or((heading.0, None), |(subject, tag)| (subject.trim_end(), Some(tag)));
-        if subject.is_empty() {
-            return Err("a requirement heading has no subject".to_string());
-        }
-
-        // The three provenance lines are the first non-blank lines.
-        let mut cursor = 0;
-        let mut field = |key: &str| -> Result<&str, String> {
-            while rest.get(cursor).is_some_and(|line| line.is_blank()) {
-                cursor += 1;
+    /// Names the fields, other than `id`, on which `self` and `other` differ.
+    #[must_use]
+    pub fn differences(&self, other: &Self) -> Vec<&'static str> {
+        let mut fields = Vec::new();
+        for (name, differs) in [
+            ("subject", self.subject != other.subject),
+            ("status", self.status != other.status),
+            ("covered", self.covered != other.covered),
+            ("sources", self.sources != other.sources),
+            ("body", self.body != other.body),
+            ("losers", self.losers != other.losers),
+            ("scenarios", self.scenarios != other.scenarios),
+        ] {
+            if differs {
+                fields.push(name);
             }
-            let value =
-                rest.get(cursor)
-                    .and_then(|line| line.0.strip_prefix(key))
-                    .map(str::trim)
-                    .ok_or_else(|| format!("`{subject}`: no `{key}` line where one is expected"))?;
-            cursor += 1;
-            Ok(value)
-        };
-        field(ID)?.parse::<ReqId>()?;
-        let sources = field(SOURCES)?;
-        let sources = sources
-            .strip_prefix('[')
-            .and_then(|inner| inner.strip_suffix(']'))
-            .ok_or_else(|| format!("`{subject}`: malformed `{SOURCES} {sources}`"))?
-            .split(',')
-            .map(str::trim)
-            .filter(|key| !key.is_empty())
-            .map(str::to_string)
-            .collect();
-        let status = field(STATUS)?;
-        let status = status
-            .parse::<Status>()
-            .map_err(|_unknown| format!("`{subject}`: unknown `{STATUS} {status}`"))?;
-        if tag != status.tag().map(|tag| tag.to_string()).as_deref() {
-            return Err(format!("`{subject}`: heading tag does not mirror `{STATUS} {status}`"));
+        }
+        fields
+    }
+
+    // Renders the block: the tagged heading, the provenance lines, the body,
+    // the notes, then each scenario.
+    fn render(&self, document: &mut Markdown) {
+        let tag = self.status.tag().map(|tag| format!(" [{tag}]")).unwrap_or_default();
+        document.push(format!("{HEADING} {}{tag}", self.subject));
+
+        let sources: Vec<String> = self.sources.iter().map(ToString::to_string).collect();
+        document.push(format!(
+            "{ID} {id}\n{SOURCES} [{sources}]\n{STATUS} {status}",
+            id = self.id,
+            sources = sources.join(", "),
+            status = self.status,
+        ));
+
+        document.extend(&self.body);
+        if let Some(notes) = self.notes() {
+            document.push(notes);
         }
 
-        Ok(Self {
-            subject: subject.to_string(),
-            sources,
-            status,
-            body: Lines(&rest[cursor..]).into_body(),
-        })
+        for scenario in &self.scenarios {
+            document.push(format!("{SCENARIO} {}", scenario.name.trim()));
+            document.push(scenario.bullets());
+        }
+    }
+
+    // Builds the `Note:` lines: one per loser, the reconciliation line for a
+    // conflict, then one when the acceptance criteria are not evidenced.
+    fn notes(&self) -> Option<String> {
+        let mut lines: Vec<String> = self.losers.iter().map(ToString::to_string).collect();
+        if self.status == Status::Conflict {
+            lines.push(format!("{NOTE} Operator reconciliation required."));
+        }
+        if !self.covered {
+            lines.push(format!("{NOTE} acceptance criteria not evidenced."));
+        }
+
+        (!lines.is_empty()).then(|| lines.join("\n"))
     }
 }
 
-// Two readings of one requirement compare by everything the reader keeps.
-impl PartialEq for Requirement {
-    fn eq(&self, other: &Self) -> bool {
-        self.subject == other.subject
-            && self.status == other.status
-            && self.sources == other.sources
-            && self.body == other.body
+/// One cited claim: the source key and the claim id it contributed.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Cited {
+    /// The source key.
+    pub source: String,
+    /// The claim id within that source.
+    pub claim: String,
+}
+
+// Writes the citation as the `Sources:` line spells it, `<source>:<claim>`.
+impl Display for Cited {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        write!(f, "{}:{}", self.source, self.claim)
     }
 }
 
-/// A requirement id, `REQ-NNN`. Ids are positional: the first requirement is
-/// `REQ-001`.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
-pub struct ReqId(String);
+/// One class whose statement the requirement records as a note.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Loser {
+    /// Every member's source key, in authority order.
+    pub sources: Vec<String>,
+    /// The lead member's authority.
+    pub authority: Authority,
+    /// The lead member's claim id.
+    pub claim: String,
+    /// The lead member's statement, whitespace-normalised.
+    pub statement: String,
+}
+
+// Writes `Note: <sources> (<authority>, <claim>): <statement>`.
+impl Display for Loser {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "{NOTE} {sources} ({authority}, {claim}): {statement}",
+            sources = self.sources.join(", "),
+            authority = self.authority,
+            claim = self.claim,
+            statement = self.statement,
+        )
+    }
+}
+
+/// One acceptance scenario.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Scenario {
+    /// The scenario heading name.
+    pub name: String,
+    /// GIVEN context, one line each.
+    pub given: Vec<String>,
+    /// The WHEN trigger, one line.
+    pub when: String,
+    /// The THEN outcome, one line.
+    pub then: String,
+    /// Further AND outcomes, one line each.
+    pub and: Vec<String>,
+}
+
+impl Scenario {
+    // Renders the bullet list under the scenario heading.
+    fn bullets(&self) -> String {
+        let mut bullets = String::new();
+        for given in &self.given {
+            let _ = writeln!(bullets, "- **GIVEN** {}", given.trim());
+        }
+        let _ = writeln!(bullets, "- **WHEN** {}", self.when.trim());
+        let _ = write!(bullets, "- **THEN** {}", self.then.trim());
+        for and in &self.and {
+            let _ = write!(bullets, "\n- **AND** {}", and.trim());
+        }
+        bullets
+    }
+}
+
+/// A requirement id, `REQ-NNN`: a positive number, zero-padded to at least
+/// three digits, allocated once and never reused.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[serde(try_from = "String", into = "String")]
+pub struct ReqId(u32);
 
 impl ReqId {
     const PREFIX: &str = "REQ-";
 
-    /// Mints the id for the requirement at zero-based `index`.
+    /// The id numbered `number`.
     #[must_use]
-    pub fn nth(index: usize) -> Self {
-        Self(format!("{}{:03}", Self::PREFIX, index + 1))
+    pub const fn new(number: u32) -> Self {
+        Self(number)
+    }
+
+    /// The id's number.
+    #[must_use]
+    pub const fn number(self) -> u32 {
+        self.0
     }
 }
 
-impl FromStr for ReqId {
-    type Err = String;
+impl TryFrom<String> for ReqId {
+    type Error = String;
 
-    fn from_str(text: &str) -> Result<Self, String> {
+    fn try_from(text: String) -> Result<Self, String> {
         let digits = text.strip_prefix(Self::PREFIX).unwrap_or_default();
-        if digits.len() == 3 && digits.bytes().all(|byte| byte.is_ascii_digit()) {
-            Ok(Self(text.to_string()))
-        } else {
-            Err(format!("malformed id `{text}`"))
+        let number = digits.parse::<u32>().ok();
+        match number {
+            Some(number) if digits.len() >= 3 && number > 0 && text == Self(number).to_string() => {
+                Ok(Self(number))
+            }
+            _ => Err(format!("malformed id `{text}`")),
         }
+    }
+}
+
+impl From<ReqId> for String {
+    fn from(id: ReqId) -> Self {
+        id.to_string()
     }
 }
 
 impl Display for ReqId {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        f.write_str(&self.0)
+        write!(f, "{}{:03}", Self::PREFIX, self.0)
     }
 }
 
 /// The closed `Status:` vocabulary; every status but `agreed` doubles as
 /// the heading `[tag]`.
-#[derive(Debug, Copy, Clone, PartialEq, Eq, strum::Display, strum::EnumString)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Serialize, Deserialize, strum::Display)]
+#[serde(rename_all = "kebab-case")]
 #[strum(serialize_all = "kebab-case")]
 pub enum Status {
     /// One class of contributors, covered by a criterion.

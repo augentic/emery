@@ -5,9 +5,6 @@
   "requirements": [
     {
       "subject": "greeting.behaviour",
-      "body": [
-        "GET /greeting returns the static string 'hello'."
-      ],
       "scenarios": [
         {
           "name": "Greeting requested",

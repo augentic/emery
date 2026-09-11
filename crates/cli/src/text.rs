@@ -12,35 +12,47 @@
 use std::fmt;
 
 use emery_engine::show::{Document, ShowOutput};
-use emery_engine::specify::{Changes, SpecifyOutput};
+use emery_engine::specify::{Diff, SpecifyOutput};
 
 /// Writes the `specify` result: the committed-revision line and its indented
 /// detail.
 pub fn specify(output: &SpecifyOutput, w: &mut dyn fmt::Write) -> fmt::Result {
     writeln!(w, "committed revision {}", output.revision)?;
     if let Some(diff) = &output.diff {
-        if diff.is_empty() {
+        if diff.from == output.revision {
             writeln!(w, "  diff vs {}: none (byte-stable)", diff.from)?;
         } else {
-            writeln!(w, "  diff vs {}: {}", diff.from, diff.documents.join(", "))?;
-            changes(Document::Spec, &diff.spec, w)?;
-            changes(Document::Design, &diff.design, w)?;
+            writeln!(w, "  diff vs {}:", diff.from)?;
+            changes(diff, w)?;
         }
     }
     Ok(())
 }
 
-// Writes one line per changed section, prefixed by its document.
-fn changes(document: Document, changes: &Changes, w: &mut dyn fmt::Write) -> fmt::Result {
-    let document = document.file();
-    for heading in &changes.added {
-        writeln!(w, "    {document} + {heading}")?;
+// Writes one line per changed requirement and section, prefixed by the
+// projection it appears in.
+fn changes(diff: &Diff, w: &mut dyn fmt::Write) -> fmt::Result {
+    let spec = Document::Spec.projection();
+    for entry in &diff.spec.added {
+        writeln!(w, "    {spec} + {} {}", entry.id, entry.subject)?;
     }
-    for heading in &changes.removed {
-        writeln!(w, "    {document} - {heading}")?;
+    for entry in &diff.spec.removed {
+        writeln!(w, "    {spec} - {} {}", entry.id, entry.subject)?;
     }
-    for heading in &changes.changed {
-        writeln!(w, "    {document} ~ {heading}")?;
+    for entry in &diff.spec.changed {
+        let fields = entry.fields.join(", ");
+        writeln!(w, "    {spec} ~ {} {}: {fields}", entry.id, entry.subject)?;
+    }
+
+    let design = Document::Design.projection();
+    for kind in &diff.design.added {
+        writeln!(w, "    {design} + {}", kind.as_ref())?;
+    }
+    for kind in &diff.design.removed {
+        writeln!(w, "    {design} - {}", kind.as_ref())?;
+    }
+    for kind in &diff.design.changed {
+        writeln!(w, "    {design} ~ {}", kind.as_ref())?;
     }
     Ok(())
 }

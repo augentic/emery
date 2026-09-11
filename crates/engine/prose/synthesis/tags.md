@@ -12,11 +12,11 @@ Three review-signal tags render into `spec.md` from each requirement's status, a
 
 One tag per heading, mirroring `Status:`; `conflict` outranks `divergence`, which outranks `unknown`, so an uncovered divergence keeps `[divergence]` and gains the gap note. `Status: agreed` carries no tag.
 
-## What the tag asks of your draft
+## What the tag asks of your scenarios
 
-- **`[unknown]`** — a body stating what is evidenced, and a scenario that does not invent the acceptance behaviour.
-- **`[conflict]`** — no body; a scenario that names what must be decided without picking a side.
-- **`[divergence]`** — the winning value as the body; no mention of the loser.
+- **`[unknown]`** — a scenario that states what is checked and does not invent the acceptance behaviour.
+- **`[conflict]`** — a scenario that names what must be decided without picking a side.
+- **`[divergence]`** — scenarios that follow the winning value, with no mention of the loser.
 
 ## Anti-patterns
 

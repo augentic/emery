@@ -11,13 +11,21 @@
 //! shape serves the command line, a config file, and any other transport,
 //! and it is checked whole before a single adapter loads.
 //!
+//! A run may also carry a master — the documents of an earlier revision that
+//! travel beside the code they specify. The carried master anchors the run:
+//! it becomes the current revision, its requirements lend their ids to the
+//! requirements that continue them, and only what the evidence changed is
+//! drafted again. With nothing carried, the store's current revision anchors
+//! the run the same way.
+//!
 //! The result reports what was committed — the revision id and the
-//! diff against the outgoing revision — so a caller can see what
+//! diff against the anchoring revision — so a caller can see what
 //! changed without reading the documents.
 
 mod basis;
 mod brief;
 mod dossier;
+mod master;
 
 use std::collections::BTreeSet;
 use std::path::Path;
@@ -30,29 +38,36 @@ use omnia_guest::api::Context;
 use omnia_guest::plugins::Digest;
 use omnia_guest::{BlobStore, Error, Model, Plugins, StateStore, bad_request};
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 
 use crate::adapter::{AdapterRef, Loader};
-pub use crate::store::{Changes, Diff};
+pub use crate::artifact::{ReqId, SectionKind};
+pub use crate::store::{Changed, DesignDiff, Diff, Entry, SpecDiff};
 use crate::{preopen_path, store};
 
-/// Runs `specify` over the context's provider: checks the source list, then
-/// extracts each source's evidence, derives the requirements, synthesises the
-/// dossier, and commits it as a new revision.
+/// Runs `specify` over the context's provider.
+///
+/// Checks the source list, anchors the run on the carried or current master,
+/// then extracts each source's evidence, derives the requirements,
+/// synthesises the dossier, and commits it as a new revision.
 ///
 /// # Errors
 ///
-/// Returns `BadRequest` for a source the rules refuse or a claim the gate
-/// rejects, and passes through the extract, synthesis, and store failures.
+/// Returns `BadRequest` for a source the rules refuse, a claim the gate
+/// rejects, or a carried master that is outdated (`spec-outdated`) or not a
+/// master (`master-invalid`), and passes through the extract, synthesis, and
+/// store failures.
 pub async fn specify<P: Model + Source + StateStore + BlobStore + Plugins>(
-    input: SpecifyInput, context: Context<P>,
+    mut input: SpecifyInput, context: Context<P>,
 ) -> Result<SpecifyOutput, Error> {
     input.validate()?;
 
     let provider = context.provider();
 
+    let master = master::anchor(provider, input.master.take()).await?;
     let extracts = input.extract(provider).await?;
-    let bases = basis::derive(provider, &extracts).await?;
-    let dossier = dossier::synthesise(provider, &extracts, &bases).await?;
+    let bases = basis::derive(provider, &extracts, master.as_ref().map(|m| &m.spec)).await?;
+    let dossier = dossier::synthesise(provider, &extracts, &bases, master.as_ref()).await?;
     let committed = store::commit(provider, &dossier).await?;
 
     Ok(SpecifyOutput {
@@ -66,6 +81,19 @@ pub async fn specify<P: Model + Source + StateStore + BlobStore + Plugins>(
 pub struct SpecifyInput {
     /// The run's source configurations, in extraction order.
     pub sources: Vec<SourceConfig>,
+    /// The master carried beside the code, when the project has one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub master: Option<Carried>,
+}
+
+/// The master documents an earlier revision left beside the code: the
+/// `document` of each `show --format json` envelope, still unread.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Carried {
+    /// The specification master.
+    pub spec: Value,
+    /// The design master.
+    pub design: Value,
 }
 
 impl SpecifyInput {
@@ -204,7 +232,7 @@ impl SourceConfig {
 pub struct SpecifyOutput {
     /// Committed revision id.
     pub revision: String,
-    /// Diff from the outgoing revision; absent on the first run and when
+    /// Diff from the anchoring revision; absent on the first run and when
     /// the outgoing revision was unreadable.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub diff: Option<Diff>,

@@ -11,6 +11,13 @@
 //!
 //! Authority is withheld from the request, so the answer cannot be steered
 //! toward a winner; a run over one source never asks at all.
+//!
+//! Each basis then takes its id from the master the run continues: the
+//! requirement it shares a cited `(source, claim)` with, else the one on the
+//! same subject, and a fresh id from the master's `next_id` otherwise. A basis
+//! whose facts still match the requirement it continues names it as its
+//! incumbent, and the incumbent's drafted content is kept rather than asked
+//! for again.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::{self, Display, Formatter};
@@ -21,24 +28,87 @@ use schemars::JsonSchema;
 use serde::Deserialize;
 use serde_json::{Value, json};
 
-use crate::artifact::Status;
+use crate::artifact::{Cited, Loser, ReqId, Requirement, Scenario, Spec, Status};
 use crate::specify::Extract;
 use crate::specify::brief::{Brief, Review};
 
 /// Derives every requirement basis in `extracts`, asking the model to group
-/// the claims on any run over two or more sources.
+/// the claims on any run over two or more sources, then numbers the bases
+/// from the `master` they continue.
 ///
 /// # Errors
 ///
 /// A model failure is `bad_gateway`; an answer outside the schema, or a
 /// grouping the backend could not repair within its rounds, is `bad_request`.
-pub async fn derive<M: Model>(model: &M, extracts: &[Extract]) -> Result<Vec<Basis>, Error> {
+pub async fn derive<M: Model>(
+    model: &M, extracts: &[Extract], master: Option<&Spec>,
+) -> Result<Vec<Basis>, Error> {
     let brief = GroupingBrief::collect(extracts);
-    if extracts.len() < 2 {
-        return Ok(brief.bases(&brief.baseline()));
+    let mut bases = if extracts.len() < 2 {
+        brief.bases(&brief.baseline())
+    } else {
+        brief.judge(model).await?
+    };
+
+    inherit(&mut bases, master);
+    Ok(bases)
+}
+
+/// The id the next new requirement takes after `bases`: past every id in use
+/// and never below the `master`'s own allocation, so an id is never reused.
+#[must_use]
+pub fn next_id(bases: &[Basis], master: Option<&Spec>) -> u32 {
+    bases
+        .iter()
+        .map(|basis| basis.id.number() + 1)
+        .chain(master.map(|master| master.next_id))
+        .max()
+        .unwrap_or(1)
+}
+
+// Numbers the bases from the master: each master requirement, lowest id
+// first, lends its id to one unnumbered basis continuing it — the one holding
+// its subject claim when several do — so a merge keeps the lowest id and a
+// split keeps the id with the subject; the rest allocate from `next_id`.
+// A basis whose facts still match the requirement it continues keeps it as
+// the incumbent. Without a master, the bases number from 1 in order.
+fn inherit(bases: &mut [Basis], master: Option<&Spec>) {
+    let Some(master) = master else {
+        for (basis, id) in bases.iter_mut().zip(1..) {
+            basis.id = ReqId::new(id);
+        }
+        return;
+    };
+
+    let mut ordered: Vec<&Requirement> = master.requirements.iter().collect();
+    ordered.sort_by_key(|requirement| requirement.id);
+    let continued: Vec<Vec<usize>> = bases.iter().map(|basis| basis.continued(&ordered)).collect();
+
+    let mut numbered = vec![false; bases.len()];
+    for (position, requirement) in ordered.iter().enumerate() {
+        let claimants: Vec<usize> = (0..bases.len())
+            .filter(|&index| !numbered[index] && continued[index].contains(&position))
+            .collect();
+        let owner = claimants
+            .iter()
+            .copied()
+            .find(|&index| bases[index].holds(&requirement.subject))
+            .or_else(|| claimants.first().copied());
+
+        if let Some(index) = owner {
+            let heir = &mut bases[index];
+            heir.id = requirement.id;
+            if heir.requirement(requirement.scenarios.clone()) == **requirement {
+                heir.incumbent = Some((*requirement).clone());
+            }
+            numbered[index] = true;
+        }
     }
 
-    brief.judge(model).await
+    let fresh = bases.iter_mut().zip(numbered).filter(|(_, numbered)| !numbered);
+    for (next, (heir, _)) in (master.next_id..).zip(fresh) {
+        heir.id = ReqId::new(next);
+    }
 }
 
 /// A partition of every requirement claim into requirements, each carrying a
@@ -62,21 +132,25 @@ pub struct Group {
     pub classes: Vec<Vec<usize>>,
 }
 
-/// The basis for one requirement before any prose: its subject, status,
+/// The basis for one requirement before any prose: its id, subject, status,
 /// acceptance-criterion coverage, and contributors in agreeing classes, the
-/// winning class first.
+/// winning class first — and the master requirement it continues unchanged,
+/// when there is one.
 #[derive(Debug, Clone)]
 pub struct Basis {
+    id: ReqId,
     subject: String,
     status: Status,
     covered: bool,
     classes: Vec<Vec<Contributor>>,
+    incumbent: Option<Requirement>,
 }
 
 impl Basis {
     // Builds a requirement from its classes, sorted by authority then source
     // order. One class is agreed (unknown when no criterion covers it); several
     // are a divergence when one holds the top authority alone, else a conflict.
+    // The id is `inherit`'s to set; until then it is the unallocated 0.
     fn of(mut classes: Vec<Vec<Contributor>>, criteria: &[&str]) -> Self {
         for class in &mut classes {
             class.sort_by_key(|member| (member.authority.rank(), member.index));
@@ -96,17 +170,32 @@ impl Basis {
         };
 
         Self {
+            id: ReqId::new(0),
             subject: classes[0][0].id.clone(),
             status,
             covered,
             classes,
+            incumbent: None,
         }
+    }
+
+    /// The requirement id: inherited from the master, or newly allocated.
+    #[must_use]
+    pub const fn id(&self) -> ReqId {
+        self.id
     }
 
     /// The heading name: the top contributor's claim id.
     #[must_use]
     pub fn subject(&self) -> &str {
         &self.subject
+    }
+
+    /// The master requirement this basis continues with every fact
+    /// unchanged, whose drafted content is kept without a turn.
+    #[must_use]
+    pub const fn incumbent(&self) -> Option<&Requirement> {
+        self.incumbent.as_ref()
     }
 
     /// The `Status:` value.
@@ -127,12 +216,87 @@ impl Basis {
         &self.classes
     }
 
-    /// Lists every contributing source key, highest authority first and
-    /// source order within an authority.
-    pub fn sources(&self) -> impl Iterator<Item = &str> {
+    /// Lists every contributor, highest authority first and source order
+    /// within an authority.
+    pub fn contributors(&self) -> impl Iterator<Item = &Contributor> {
         let mut members: Vec<&Contributor> = self.classes.iter().flatten().collect();
         members.sort_by_key(|member| (member.authority.rank(), member.index));
-        members.into_iter().map(|member| member.source.as_str())
+        members.into_iter()
+    }
+
+    /// Places `scenarios` beside the engine's facts as the requirement this
+    /// basis commits: the body is the winning statement, none for a conflict;
+    /// the notes are the losing classes.
+    #[must_use]
+    pub fn requirement(&self, scenarios: Vec<Scenario>) -> Requirement {
+        let body = match self.status {
+            Status::Conflict => Vec::new(),
+            _ => vec![normalise(&self.classes[0][0].statement)],
+        };
+
+        Requirement {
+            id: self.id,
+            subject: self.subject.clone(),
+            status: self.status,
+            covered: self.covered,
+            sources: self.contributors().map(Cited::from).collect(),
+            body,
+            losers: self.losers(),
+            scenarios,
+        }
+    }
+
+    // Collects the classes the master records as notes: the losing classes of
+    // a divergence, every class of a conflict, none otherwise.
+    fn losers(&self) -> Vec<Loser> {
+        let noted = match self.status {
+            Status::Divergence => &self.classes[1..],
+            Status::Conflict => &*self.classes,
+            Status::Agreed | Status::Unknown => &[],
+        };
+        noted.iter().map(|class| loser(class)).collect()
+    }
+
+    // Finds the master requirements (positions in `ordered`) this basis
+    // continues: any that cites one of its `(source, claim)` pairs, else the
+    // one on its subject.
+    fn continued(&self, ordered: &[&Requirement]) -> Vec<usize> {
+        let cited: Vec<usize> = ordered
+            .iter()
+            .enumerate()
+            .filter(|(_, requirement)| {
+                requirement
+                    .sources
+                    .iter()
+                    .any(|cited| self.classes.iter().flatten().any(|member| member.cites(cited)))
+            })
+            .map(|(position, _)| position)
+            .collect();
+        if !cited.is_empty() {
+            return cited;
+        }
+
+        ordered
+            .iter()
+            .position(|requirement| requirement.subject == self.subject)
+            .into_iter()
+            .collect()
+    }
+
+    // Tells whether any contributor's claim is `subject`.
+    fn holds(&self, subject: &str) -> bool {
+        self.classes.iter().flatten().any(|member| member.id == subject)
+    }
+}
+
+// Records one class: every member's source, the rest from the lead member.
+fn loser(class: &[Contributor]) -> Loser {
+    let lead = &class[0];
+    Loser {
+        sources: class.iter().map(|member| member.source.clone()).collect(),
+        authority: lead.authority,
+        claim: lead.id.clone(),
+        statement: normalise(&lead.statement),
     }
 }
 
@@ -151,6 +315,22 @@ pub struct Contributor {
     synopsis: Option<String>,
     // Position in source order, the tie-break within an authority.
     index: usize,
+}
+
+impl Contributor {
+    // Tells whether this contributor is the `(source, claim)` pair `cited`.
+    fn cites(&self, cited: &Cited) -> bool {
+        (&self.source, &self.id) == (&cited.source, &cited.claim)
+    }
+}
+
+impl From<&Contributor> for Cited {
+    fn from(member: &Contributor) -> Self {
+        Self {
+            source: member.source.clone(),
+            claim: member.id.clone(),
+        }
+    }
 }
 
 // The grouping brief: every requirement claim in source order, and every

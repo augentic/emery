@@ -1,11 +1,13 @@
 //! The `design.md` brief
 //!
-//! Asks the model for the content of `design.md`: the preamble and the blocks
-//! of each section. Which sections of the closed vocabulary a run calls for
-//! is decided by the claim kinds it extracted: the schema names that subset,
-//! every candidate draft is verified against the plan, the bound sources it
-//! may cite, and the `type` claims whose signatures the engine inserts, and
-//! the engine renders the accepted draft into the canonical document.
+//! Asks the model for the drafted content of `design.md`: the preamble and
+//! the blocks of each section. Which sections of the closed vocabulary a run
+//! calls for is decided by the claim kinds it extracted: the schema names that
+//! subset, every candidate draft is verified against the plan, the bound
+//! sources it may cite, and the `type` claims whose signatures the engine
+//! inserts, and the engine places the accepted draft in the design master. A
+//! master design that still passes the same verification over this run's
+//! evidence is accepted as it stands.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::{self, Display, Formatter};
@@ -16,35 +18,81 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 use strum::VariantArray as _;
 
-use crate::artifact::{SectionKind, citations};
+use crate::artifact::{self, Design, EMERY, SectionKind, Spec, citations};
 use crate::specify::Extract;
 use crate::specify::brief::{Brief, Review};
-use crate::specify::dossier::{ClaimsSection, Markdown};
+use crate::specify::dossier::ClaimsSection;
 
 /// What the engine needs to ask the model for `design.md` and to verify its
-/// draft: the extracts, the rendered `spec.md`, and the section plan.
+/// draft: the extracts, the specification, and the section plan.
 pub struct DesignBrief<'a> {
     extracts: &'a [Extract],
-    spec: &'a str,
+    spec: &'a Spec,
     plan: Plan<'a>,
 }
 
 impl<'a> DesignBrief<'a> {
-    /// Creates the brief for `design.md` from the `extracts`, the rendered
-    /// `spec`, and a section plan derived from the claims in the extracts.
+    /// Creates the brief for `design.md` from the `extracts`, the
+    /// specification `spec` the design follows, and a section plan derived
+    /// from the claims in the extracts.
     #[must_use]
-    pub fn new(extracts: &'a [Extract], spec: &'a str) -> Self {
+    pub fn new(extracts: &'a [Extract], spec: &'a Spec) -> Self {
         Self {
             extracts,
             spec,
             plan: Plan::collect(extracts),
         }
     }
+
+    /// Tells whether a master `design` still passes this run's verification
+    /// — the plan, the bound sources, the `type` claims and their signatures —
+    /// so it can be kept without a turn.
+    #[must_use]
+    pub fn accepts(&self, design: &Design) -> bool {
+        let answer = DesignAnswer {
+            preamble: design.preamble.clone(),
+            sections: design
+                .sections
+                .iter()
+                .map(|section| Section {
+                    kind: section.kind,
+                    blocks: section
+                        .blocks
+                        .iter()
+                        .map(|block| match block {
+                            artifact::Block::Text { text, .. } => Block::Text(text.clone()),
+                            artifact::Block::Type { key, .. } => Block::Type(key.clone()),
+                        })
+                        .collect(),
+                })
+                .collect(),
+        };
+        let mut review = Review::default();
+        self.verify(&answer, &mut review);
+
+        let signatures = self.signatures();
+        review.is_clean()
+            && design.sections.iter().flat_map(|section| &section.blocks).all(|block| match block {
+                artifact::Block::Type { key, signature } => {
+                    signatures.get(key.as_str()).copied() == Some(signature.as_str())
+                }
+                artifact::Block::Text { .. } => true,
+            })
+    }
+
+    // The trimmed signature of every `type` claim, by key.
+    fn signatures(&self) -> BTreeMap<&str, &str> {
+        self.extracts
+            .iter()
+            .flat_map(|extract| extract.evidence.types())
+            .filter_map(|claim| Some((claim.type_key()?, claim.signature()?.trim_end())))
+            .collect()
+    }
 }
 
 impl Brief for DesignBrief<'_> {
     type Answer = DesignAnswer;
-    type Output = String;
+    type Output = Design;
 
     const NAME: &'static str = "design-draft";
     const PROSE: &'static [&'static str] =
@@ -142,39 +190,41 @@ impl Brief for DesignBrief<'_> {
         }
     }
 
-    // Renders `design.md`: the drafted sections in vocabulary order, each
-    // `type` block replaced by the claim's signature.
+    // Places the draft in the master: the drafted sections in vocabulary
+    // order, each `type` block carrying the claim's signature.
     fn into_output(self, answer: DesignAnswer) -> Self::Output {
-        let signatures: BTreeMap<&str, &str> = self
-            .extracts
-            .iter()
-            .flat_map(|extract| extract.evidence.types())
-            .filter_map(|claim| Some((claim.type_key()?, claim.signature()?)))
+        let signatures = self.signatures();
+
+        let mut sections = answer.sections;
+        sections.sort_by_key(|section| section.kind);
+        let sections = sections
+            .into_iter()
+            .map(|section| artifact::Section {
+                kind: section.kind,
+                blocks: section
+                    .blocks
+                    .into_iter()
+                    .map(|block| match block {
+                        Block::Text(text) => artifact::Block::Text { text, pinned: false },
+                        Block::Type(key) => {
+                            let signature = signatures
+                                .get(key.as_str())
+                                .expect("verify held the draft to the type claims");
+                            artifact::Block::Type {
+                                key,
+                                signature: (*signature).to_string(),
+                            }
+                        }
+                    })
+                    .collect(),
+            })
             .collect();
 
-        let mut document = Markdown::new("Design");
-        document.extend(&answer.preamble);
-
-        for &kind in SectionKind::VARIANTS {
-            let Some(section) = answer.sections.iter().find(|section| section.kind == kind) else {
-                continue;
-            };
-
-            document.push(format!("## {kind}"));
-            for block in &section.blocks {
-                match block {
-                    Block::Text(text) => document.push(text),
-                    Block::Type(key) => {
-                        let signature = signatures
-                            .get(key.as_str())
-                            .expect("verify held the draft to the type claims");
-                        document.push(format!("```\n{}\n```", signature.trim_end()));
-                    }
-                }
-            }
+        Design {
+            emery: EMERY,
+            preamble: answer.preamble,
+            sections,
         }
-
-        document.finish()
     }
 }
 

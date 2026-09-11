@@ -44,7 +44,9 @@ omnia.workspace = true
 [dev-dependencies]
 emery-adapter.workspace = true
 emery-prose.workspace = true
+hex.workspace = true
 serde_json.workspace = true
+sha2.workspace = true
 tempfile.workspace = true
 
 [target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]

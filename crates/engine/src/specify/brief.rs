@@ -85,8 +85,13 @@ impl Review {
         self.0.push(format!("- {finding}"));
     }
 
+    // Tells whether nothing was found against the candidate.
+    pub const fn is_clean(&self) -> bool {
+        self.0.is_empty()
+    }
+
     // Accepts a candidate with no finding; rejects one with any, for repair.
     fn verdict(self) -> Result<(), Findings> {
-        if self.0.is_empty() { Ok(()) } else { Err(self.0) }
+        if self.is_clean() { Ok(()) } else { Err(self.0) }
     }
 }

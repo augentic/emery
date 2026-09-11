@@ -9,8 +9,9 @@
 //! Each scenario drives the real command façade over scripted capabilities,
 //! so it reads as usage documentation while still asserting the exact
 //! envelope, exit code, and stored revision the operator would see. The
-//! model answers are typed drafts, so the scripted turns are JSON and the
-//! stored documents are the engine's canonical renderings.
+//! model answers are typed drafts, so the scripted turns are JSON; the
+//! stored masters are the engine's canonical JSON, and the documents `show`
+//! renders from them are the engine's canonical Markdown.
 
 #![cfg(not(target_arch = "wasm32"))]
 
@@ -24,19 +25,24 @@ use emery_engine::{CONTAINER, CURRENT};
 use emery_source::types::{Authority, ClaimKind, Evidence, SourceContent};
 use omnia_guest::model::Error as ModelError;
 use omnia_guest::plugins::{Digest, Error as LoadError, Location};
-use omnia_guest::{bad_gateway, bad_request};
+use omnia_guest::{BlobStore, StateStore, bad_gateway, bad_request};
 use omnia_test::SeenFormat;
 use omnia_test::guest::{Memory, Namespaced, Scripted};
 use serde_json::Value;
+use sha2::{Digest as _, Sha256};
 use support::{Provider, claim, cli, cli_ok, digest, evidence, fail, requirement};
 
-// Scripted drafts and the canonical documents the engine renders from them.
+// Scripted drafts, the canonical masters the engine commits from them, and
+// the documents it renders from those masters.
 const SPEC_ANSWER: &str = include_str!("specify/spec-draft.json");
+const SPEC_MASTER: &str = include_str!("specify/1-spec.json");
 const SPEC_RENDERED: &str = include_str!("specify/1-spec.md");
 const DESIGN_ANSWER: &str = include_str!("specify/design-draft.json");
+const DESIGN_MASTER: &str = include_str!("specify/2-design.json");
 const DESIGN_RENDERED: &str = include_str!("specify/2-design.md");
 const GROUPING_ANSWER: &str = include_str!("specify/grouping.json");
 const PRECEDENCE_ANSWER: &str = include_str!("specify/precedence-draft.json");
+const PRECEDENCE_MASTER: &str = include_str!("specify/3-precedence.json");
 const PRECEDENCE_RENDERED: &str = include_str!("specify/3-precedence.md");
 const SOURCES: &str = include_str!("specify/emery.toml");
 
@@ -59,9 +65,10 @@ fn project_arg(path: &Path) -> String {
         .to_string()
 }
 
-// One `specify` loads, extracts, and commits — no prior verb; `show`
-// renders the committed bytes alone; an identical re-run is
-// byte-stable and says so.
+// One `specify` loads, extracts, and commits the typed master — no prior
+// verb; `show` renders each document from the committed master; an
+// identical re-run continues the stored master without a model turn, is
+// byte-stable, and says so.
 #[tokio::test]
 async fn gen_spec() {
     // --------------------------------------------------
@@ -73,7 +80,7 @@ async fn gen_spec() {
     fs::write(&component, b"\0asm-stub").expect("stub wasm");
     let component = project_arg(&component);
 
-    let provider = Provider::answering([SPEC_ANSWER, DESIGN_ANSWER, SPEC_ANSWER, DESIGN_ANSWER]);
+    let provider = Provider::answering([SPEC_ANSWER, DESIGN_ANSWER]);
 
     // --------------------------------------------------
     // Act: the first specify.
@@ -96,27 +103,45 @@ async fn gen_spec() {
     );
     assert!(provider.storage.state("project.yaml").is_none(), "no project record exists");
     let id = current(&provider.storage);
-    // The stored documents are the engine's canonical renderings of the
-    // drafts: headings, provenance, the gap tag and note are all rendered.
-    let spec = document(&provider.storage, &id, "spec.md");
-    assert_eq!(String::from_utf8_lossy(&spec), SPEC_RENDERED, "spec.md is rendered canonically");
-    let design = document(&provider.storage, &id, "design.md");
+    // The stored masters are the engine's facts beside the drafts, as
+    // canonical JSON: the id, status, coverage, and cited claims are all the
+    // engine's.
+    let spec = document(&provider.storage, &id, "spec.json");
+    assert_eq!(String::from_utf8_lossy(&spec), SPEC_MASTER, "spec.json is the canonical master");
+    let design = document(&provider.storage, &id, "design.json");
     assert_eq!(
         String::from_utf8_lossy(&design),
-        DESIGN_RENDERED,
-        "design.md is rendered canonically"
+        DESIGN_MASTER,
+        "design.json is the canonical master"
     );
 
-    // Review is `show`: text stdout is the stored document, byte for byte.
-    let shown = cli_ok(&provider, &["emery", "show", "spec"]).await;
-    assert_eq!(shown.stdout, spec, "show renders the committed spec.md alone");
-    let shown = cli_ok(&provider, &["emery", "show", "design"]).await;
-    assert_eq!(shown.stdout, design, "show renders the committed design.md alone");
+    // Review is `show`: text stdout is the document rendered from the
+    // master — headings, provenance, the gap tag and note are all rendered.
+    assert_eq!(
+        shown(&provider, "spec").await,
+        projection(SPEC_RENDERED, &id),
+        "show renders spec.md"
+    );
+    assert_eq!(
+        shown(&provider, "design").await,
+        projection(DESIGN_RENDERED, &id),
+        "show renders design.md"
+    );
+    // The JSON envelope carries the revision, the projection, and the master
+    // itself — the shape a project keeps beside its code as `.emery/spec.json`.
+    let resp = cli_ok(&provider, &["emery", "--format", "json", "show", "spec"]).await;
+    let envelope: Value = serde_json::from_slice(&resp.stdout).expect("one JSON envelope");
+    assert_eq!(envelope["revision"], id, "{envelope}");
+    assert_eq!(envelope["body"], projection(SPEC_RENDERED, &id), "{envelope}");
+    let master: Value = serde_json::from_str(SPEC_MASTER).expect("the master fixture is JSON");
+    assert_eq!(envelope["document"], master, "the envelope carries the typed master");
 
-    // An identical re-run reports the empty diff.
+    // An identical re-run finds every requirement standing and the design
+    // still verified: nothing is asked, and the empty diff is reported.
     let resp = cli_ok(&provider, &["emery", "specify", &component]).await;
     let stdout = String::from_utf8_lossy(&resp.stdout);
     assert!(stdout.contains("none (byte-stable)"), "{stdout}");
+    assert_eq!(current(&provider.storage), id, "the same master keeps its id");
 
     provider.model.assert_exhausted();
 }
@@ -143,14 +168,10 @@ async fn from_file() {
         "the file-relative reference resolves against the config directory: {path}"
     );
 
-    let id = current(&provider.storage);
-    let spec = document(&provider.storage, &id, "spec.md");
     assert!(
-        String::from_utf8_lossy(&spec).contains("Sources: [greeting]"),
+        shown(&provider, "spec").await.contains("Sources: [greeting:greeting.behaviour]"),
         "the entry name is the source key the renderer cites"
     );
-    let shown = cli_ok(&provider, &["emery", "show", "spec"]).await;
-    assert_eq!(shown.stdout, spec, "show renders the committed spec.md alone");
 
     provider.model.assert_exhausted();
 }
@@ -184,10 +205,10 @@ async fn shared_roots() {
         let provider = Provider::answering([grouping.as_str(), SPEC_ANSWER, DESIGN_ANSWER]);
 
         cli_ok(&provider, &["emery", "specify", "--config", &config]).await;
-        let id = current(&provider.storage);
-        let spec = document(&provider.storage, &id, "spec.md");
         assert!(
-            String::from_utf8_lossy(&spec).contains("Sources: [docs, api]"),
+            shown(&provider, "spec")
+                .await
+                .contains("Sources: [docs:greeting.behaviour, api:greeting.behaviour]"),
             "{adapter}: both sources contribute to the one requirement"
         );
 
@@ -224,9 +245,7 @@ async fn discovery() {
 
     cli_ok(&provider, &["emery", "specify"]).await;
 
-    let id = current(&provider.storage);
-    let spec = document(&provider.storage, &id, "spec.md");
-    assert!(String::from_utf8_lossy(&spec).contains("Sources: [docs]"));
+    assert!(shown(&provider, "spec").await.contains("Sources: [docs:greeting.behaviour]"));
     provider.model.assert_exhausted();
 }
 
@@ -239,16 +258,14 @@ async fn description_source() {
 
     cli_ok(&provider, &["emery", "specify", "--description", "intent=Ship it."]).await;
 
+    let spec = shown(&provider, "spec").await;
+    assert!(spec.contains("Sources: [intent:greeting.behaviour]"));
     let calls = provider.source.calls.lock().expect("calls");
     let (id, input) = calls.first().expect("one extract dispatch");
     assert_eq!(id, "source:intent", "a bare adapter dispatches by routed name");
     assert_eq!(input.key, "intent");
     assert_eq!(input.content, SourceContent::Value("Ship it.".to_string()));
     drop(calls);
-
-    let id = current(&provider.storage);
-    let spec = document(&provider.storage, &id, "spec.md");
-    assert!(String::from_utf8_lossy(&spec).contains("Sources: [intent]"));
     provider.model.assert_exhausted();
 }
 
@@ -347,8 +364,17 @@ async fn authority_precedence() {
     assert_eq!(group["classes"]["items"]["items"]["maximum"], 5);
 
     let id = current(&provider.storage);
-    let spec = String::from_utf8(document(&provider.storage, &id, "spec.md")).expect("utf-8");
-    assert_eq!(spec, PRECEDENCE_RENDERED, "every resolution is rendered inline");
+    let spec = document(&provider.storage, &id, "spec.json");
+    assert_eq!(
+        String::from_utf8_lossy(&spec),
+        PRECEDENCE_MASTER,
+        "every resolution is a fact in the master"
+    );
+    assert_eq!(
+        shown(&provider, "spec").await,
+        projection(PRECEDENCE_RENDERED, &id),
+        "every resolution is rendered inline"
+    );
     provider.model.assert_exhausted();
 }
 
@@ -411,8 +437,7 @@ async fn grouping_refused() {
     let correction = check.outcome.as_ref().expect_err("the first grouping is rejected");
     assert!(correction.contains("## Findings"), "the findings ride the correction: {correction}");
     assert!(correction.contains("claim 1 is in no group"), "{correction}");
-    let id = current(&provider.storage);
-    let spec = String::from_utf8(document(&provider.storage, &id, "spec.md")).expect("utf-8");
+    let spec = shown(&provider, "spec").await;
     assert!(spec.contains("### Requirement: session.timeout [divergence]"), "{spec}");
     assert!(
         spec.contains("Note: code (behaviour, session.timeout): Sessions expire after 15 minutes."),
@@ -423,9 +448,10 @@ async fn grouping_refused() {
 
 // A re-run over changed evidence supersedes the revision: the old
 // blobs are pruned, the current id swaps, and the success envelope
-// reports the re-mine diff by heading subject — added, removed, and
-// changed sections alike — while a block that only moved, taking a new
-// positional id, is not a change.
+// reports the re-mine diff by requirement — added, removed, and
+// changed, naming the fields that differ — while a requirement that
+// only moved keeps its id and is not a change. Only the changed and new
+// subjects are drafted; the unchanged one keeps its scenarios unasked.
 #[tokio::test]
 async fn remine_supersedes() {
     // --------------------------------------------------
@@ -447,7 +473,8 @@ async fn remine_supersedes() {
     // --------------------------------------------------
     // Second run: the timeout now leads, the greeting changed, the
     // export is gone, an audit requirement appeared, and the design
-    // overview follows the greeting.
+    // overview follows the greeting. The draft covers the greeting and
+    // the audit alone.
     // --------------------------------------------------
     let second_design = DESIGN_ANSWER.replace("hello", "howdy");
     let mut provider =
@@ -466,43 +493,91 @@ async fn remine_supersedes() {
     // Observe: the diff, the swap, and the prune.
     // --------------------------------------------------
     let stdout = String::from_utf8_lossy(&resp.stdout);
-    assert!(stdout.contains(&format!("diff vs {first}: spec.md, design.md")), "{stdout}");
-    assert!(stdout.contains("spec.md + access.audit"), "{stdout}");
-    assert!(stdout.contains("spec.md - legacy.export"), "{stdout}");
-    assert!(stdout.contains("spec.md ~ greeting.behaviour"), "{stdout}");
-    assert!(stdout.contains("design.md ~ Overview"), "{stdout}");
-    assert!(!stdout.contains("session.timeout"), "a renumbered block is not a change: {stdout}");
+    assert!(stdout.contains(&format!("diff vs {first}:\n")), "{stdout}");
+    assert!(stdout.contains("spec.md + REQ-004 access.audit"), "{stdout}");
+    assert!(stdout.contains("spec.md - REQ-002 legacy.export"), "{stdout}");
+    assert!(stdout.contains("spec.md ~ REQ-001 greeting.behaviour: body, scenarios"), "{stdout}");
+    assert!(stdout.contains("design.md ~ overview"), "{stdout}");
+    assert!(!stdout.contains("session.timeout"), "a moved block keeps its id: {stdout}");
+
+    let request = provider.model.seen()[0].messages.join("\n");
+    assert!(request.contains("- REQ-001 `greeting.behaviour`"), "{request}");
+    assert!(request.contains("- REQ-004 `access.audit`"), "{request}");
+    assert!(
+        request.contains("## Unchanged requirements")
+            && request.contains("- REQ-003 `session.timeout`"),
+        "the standing requirement is context, not a subject to draft: {request}"
+    );
 
     let second = current(&provider.storage);
     assert_ne!(first, second, "changed documents commit a new revision");
     assert!(
-        provider.storage.object(CONTAINER, &format!("{first}/spec.md")).is_none(),
+        provider.storage.object(CONTAINER, &format!("{first}/spec.json")).is_none(),
         "the superseded revision is pruned"
     );
-    let spec = document(&provider.storage, &second, "spec.md");
-    assert!(String::from_utf8_lossy(&spec).contains("howdy"));
+    let spec = shown(&provider, "spec").await;
+    assert!(spec.contains("howdy"), "{spec}");
+    assert!(spec.contains("ID: REQ-003\n") && spec.contains("it times out"), "{spec}");
+    let master =
+        String::from_utf8(document(&provider.storage, &second, "spec.json")).expect("utf-8");
+    assert!(master.contains("\"next_id\": 5"), "ids are never reused: {master}");
     provider.model.assert_exhausted();
 }
 
-// The JSON envelope carries the re-mine diff per document: the changed
-// documents, then `spec` and `design` section lists keyed by heading.
+// The JSON envelope carries the re-mine diff per document: `spec` lists
+// requirements by id and subject, `changed` naming the differing fields;
+// `design` lists sections by kind. The second run's evidence changes the
+// greeting's statement and adds a `type` claim, so both documents are
+// drafted again: the spec turn for the one changed subject, the design turn
+// because the master design no longer meets the plan.
 #[tokio::test]
 async fn diff_envelope() {
-    let second_design = DESIGN_ANSWER.replace("hello", "howdy");
-    let provider =
-        Provider::answering([SPEC_ANSWER, DESIGN_ANSWER, SPEC_ANSWER, second_design.as_str()]);
+    let second_spec = SPEC_ANSWER.replace("the response is `hello`", "the response is `howdy`");
+    let second_design = r#"{"preamble": [], "sections": [
+        {"kind": "overview", "blocks": [{"text": "One static `GET /greeting` endpoint returning `'howdy'`."}]},
+        {"kind": "domain-model", "blocks": [{"type": "greeting.type"}]}
+    ]}"#;
+    let mut provider =
+        Provider::answering([SPEC_ANSWER, DESIGN_ANSWER, second_spec.as_str(), second_design]);
     cli_ok(&provider, &["emery", "specify", "docs"]).await;
     let first = current(&provider.storage);
 
+    provider.source.evidence.insert(
+        "docs".to_string(),
+        Ok(evidence(
+            Authority::Documentation,
+            vec![
+                requirement(
+                    "greeting.behaviour",
+                    "GET /greeting returns the static string 'howdy'.",
+                ),
+                claim(
+                    ClaimKind::Type,
+                    "greeting.type",
+                    ("signature", "interface Greeting { text: string }"),
+                ),
+            ],
+        )),
+    );
     let resp = cli(&provider, &["emery", "--format", "json", "specify", "docs"]).await;
     assert_eq!(resp.exit, 0, "{}", String::from_utf8_lossy(&resp.stderr));
     let envelope: Value = serde_json::from_slice(&resp.stdout).expect("one JSON envelope");
     let diff = &envelope["diff"];
     assert_eq!(diff["from"], first, "{envelope}");
-    assert_eq!(diff["documents"], serde_json::json!(["design.md"]), "{envelope}");
-    assert_eq!(diff["spec"]["changed"], serde_json::json!([]), "{envelope}");
-    assert_eq!(diff["design"]["changed"], serde_json::json!(["Overview"]), "{envelope}");
-    assert_eq!(diff["design"]["added"], serde_json::json!([]), "{envelope}");
+    assert!(diff.get("documents").is_none(), "the diff is typed, not by file: {envelope}");
+    assert_eq!(diff["spec"]["added"], serde_json::json!([]), "{envelope}");
+    assert_eq!(diff["spec"]["removed"], serde_json::json!([]), "{envelope}");
+    assert_eq!(
+        diff["spec"]["changed"],
+        serde_json::json!([{
+            "id": "REQ-001",
+            "subject": "greeting.behaviour",
+            "fields": ["body", "scenarios"],
+        }]),
+        "{envelope}"
+    );
+    assert_eq!(diff["design"]["changed"], serde_json::json!(["overview"]), "{envelope}");
+    assert_eq!(diff["design"]["added"], serde_json::json!(["domain-model"]), "{envelope}");
     assert_eq!(diff["design"]["removed"], serde_json::json!([]), "{envelope}");
     provider.model.assert_exhausted();
 }
@@ -533,38 +608,29 @@ const REMINE_FIRST: &str = r#"{
   "requirements": [
     {
       "subject": "greeting.behaviour",
-      "body": ["GET /greeting returns the static string 'hello'."],
       "scenarios": [{"name": "Greeting", "when": "the greeting is requested", "then": "the response is hello"}]
     },
     {
       "subject": "legacy.export",
-      "body": ["Exports ship nightly."],
       "scenarios": [{"name": "Export", "when": "exports are produced", "then": "they ship nightly"}]
     },
     {
       "subject": "session.timeout",
-      "body": ["Sessions time out after an hour."],
       "scenarios": [{"name": "Timeout", "when": "a session is idle for an hour", "then": "it times out"}]
     }
   ]
 }"#;
 
+// The second draft answers for the changed and the new subject alone.
 const REMINE_SECOND: &str = r#"{
-  "preamble": ["The docs describe a greeting, a legacy export, and a session timeout."],
+  "preamble": ["The docs describe a greeting, a session timeout, and an audit."],
   "requirements": [
     {
-      "subject": "session.timeout",
-      "body": ["Sessions time out after an hour."],
-      "scenarios": [{"name": "Timeout", "when": "a session is idle for an hour", "then": "it times out"}]
-    },
-    {
       "subject": "greeting.behaviour",
-      "body": ["GET /greeting returns the static string 'howdy'."],
       "scenarios": [{"name": "Greeting", "when": "the greeting is requested", "then": "the response is howdy"}]
     },
     {
       "subject": "access.audit",
-      "body": ["Access is audited."],
       "scenarios": [{"name": "Audit", "when": "access occurs", "then": "it is audited"}]
     }
   ]
@@ -628,14 +694,13 @@ async fn version_too_new() {
 // A spec draft outside its schema or its requirements is refused once the
 // backend's rounds are spent, one finding per case: not JSON, a requirement
 // left undrafted, a subject that is not a requirement, a subject drafted
-// twice, no scenario, no body on a requirement not in conflict, and a
-// paragraph opening with a reserved marker. The operator never sees a
-// half-committed run.
+// twice, no scenario, and a preamble paragraph opening with a reserved
+// marker. The operator never sees a half-committed run.
 #[tokio::test]
 async fn invalid_draft() {
-    let one = |subject: &str, body: &str, scenarios: &str| {
+    let one = |preamble: &str, subject: &str, scenarios: &str| {
         format!(
-            r#"{{"preamble": [], "requirements": [{{"subject": "{subject}", "body": [{body}], "scenarios": [{scenarios}]}}]}}"#
+            r#"{{"preamble": [{preamble}], "requirements": [{{"subject": "{subject}", "scenarios": [{scenarios}]}}]}}"#
         )
     };
     let scenario = r#"{"name": "Greeting", "when": "greeted", "then": "hello"}"#;
@@ -645,24 +710,20 @@ async fn invalid_draft() {
             r#"{"preamble": [], "requirements": []}"#.to_string(),
             "requirement `greeting.behaviour` is not drafted",
         ),
-        (
-            one("greeting.renamed", r#""Hello.""#, scenario),
-            "`greeting.renamed` is not a requirement",
-        ),
+        (one("", "greeting.renamed", scenario), "`greeting.renamed` is not a requirement"),
         (
             format!(
-                r#"{{"preamble": [], "requirements": [{{"subject": "greeting.behaviour", "body": ["Hello."], "scenarios": [{scenario}]}}, {{"subject": "greeting.behaviour", "body": ["Again."], "scenarios": [{scenario}]}}]}}"#
+                r#"{{"preamble": [], "requirements": [{{"subject": "greeting.behaviour", "scenarios": [{scenario}]}}, {{"subject": "greeting.behaviour", "scenarios": [{scenario}]}}]}}"#
             ),
             "drafted more than once",
         ),
-        (one("greeting.behaviour", r#""Hello.""#, ""), "has no scenario"),
-        (one("greeting.behaviour", "", scenario), "has no body paragraph"),
+        (one("", "greeting.behaviour", ""), "has no scenario"),
         (
-            one("greeting.behaviour", "\"### Requirement: smuggled\"", scenario),
+            one("\"### Requirement: smuggled\"", "greeting.behaviour", scenario),
             "opens with the reserved marker `#`",
         ),
         (
-            one("greeting.behaviour", r#""Hello.\nSources: [other]""#, scenario),
+            one(r#""Hello.\nSources: [other]""#, "greeting.behaviour", scenario),
             "opens with the reserved marker `Sources:`",
         ),
     ];
@@ -714,8 +775,8 @@ async fn repaired_draft() {
     assert!(correction.contains("## Findings"), "{correction}");
     assert!(correction.contains("scenario `then` is blank"), "{correction}");
     let id = current(&provider.storage);
-    let spec = document(&provider.storage, &id, "spec.md");
-    assert_eq!(String::from_utf8_lossy(&spec), SPEC_RENDERED, "the repaired draft is committed");
+    let spec = document(&provider.storage, &id, "spec.json");
+    assert_eq!(String::from_utf8_lossy(&spec), SPEC_MASTER, "the repaired draft is committed");
     provider.model.assert_exhausted();
 }
 
@@ -846,15 +907,17 @@ async fn dishonest_design() {
         .expect("the type block variant");
     assert_eq!(block["properties"]["type"]["enum"], serde_json::json!(["greeting.type"]));
 
-    let shown = cli_ok(&provider, &["emery", "show", "design"]).await;
+    let id = current(&provider.storage);
     let rendered = format!(
-        "# Design\n\n## Overview\n\nRequests arrive (from the browser) and (from docs) they route.\n\n\
-         ## Domain model\n\nThe greeting payload is one string field.\n\n```\n{signature}\n```\n"
+        "---\nemery: 2\nrevision: {id}\n---\n\n# Design\n\n## Overview\n\n\
+         Requests arrive (from the browser) and (from docs) they route.\n\n\
+         ## Domain model\n\nThe greeting payload is one string field.\n\n\
+         Type: greeting.type\n```\n{signature}\n```\n"
     );
     assert_eq!(
-        String::from_utf8_lossy(&shown.stdout),
+        shown(&provider, "design").await,
         rendered,
-        "the signature is rendered verbatim where the draft placed it"
+        "the signature is rendered verbatim, labelled by its key, where the draft placed it"
     );
     provider.model.assert_exhausted();
 }
@@ -1323,9 +1386,288 @@ async fn tampered_revision() {
     cli_ok(&provider, &["emery", "specify", "docs"]).await;
     let id = current(&provider.storage);
 
-    provider.storage.insert_object(CONTAINER, &format!("{id}/spec.md"), b"# Rewritten\n");
+    provider.storage.insert_object(CONTAINER, &format!("{id}/spec.json"), b"{}\n");
 
     fail(&provider, &["emery", "show", "spec"], 3, "server_error").await;
+}
+
+// A stored master written under another grammar is outdated, not corrupt:
+// `show` refuses typed with `spec-outdated`, and the next `specify`
+// regenerates over it — no diff, the outdated blobs pruned.
+#[tokio::test]
+async fn spec_outdated() {
+    let provider = Provider::answering([SPEC_ANSWER, DESIGN_ANSWER]);
+    let outdated = seed(
+        &provider.storage,
+        br#"{"emery": 1, "requirements": []}"#,
+        br#"{"emery": 1, "sections": []}"#,
+    );
+
+    let envelope = fail(&provider, &["emery", "show", "spec"], 1, "spec-outdated").await;
+    let message = envelope["message"].as_str().unwrap_or("");
+    assert!(message.contains("grammar 1"), "{envelope}");
+    assert!(
+        envelope["hint"].as_str().unwrap_or("").contains("emery specify"),
+        "the hint names the way out: {envelope}"
+    );
+
+    let resp = cli_ok(&provider, &["emery", "specify", "docs"]).await;
+    let stdout = String::from_utf8_lossy(&resp.stdout);
+    assert!(!stdout.contains("diff vs"), "an outdated outgoing revision yields no diff: {stdout}");
+    let id = current(&provider.storage);
+    assert_ne!(id, outdated, "the regenerated master is current");
+    assert!(
+        provider.storage.object(CONTAINER, &format!("{outdated}/spec.json")).is_none(),
+        "the outdated revision is pruned"
+    );
+    cli_ok(&provider, &["emery", "show", "spec"]).await;
+    provider.model.assert_exhausted();
+}
+
+// A project carrying `.emery/spec.json` and `.emery/design.json` continues
+// that revision: the carried master is adopted as current — displacing
+// whatever the store held — its requirement keeps its id, and a run whose
+// evidence changed nothing asks the model for nothing.
+#[tokio::test]
+async fn adopted() {
+    let project = tempfile::TempDir::new().expect("project dir");
+    std::env::set_current_dir(project.path()).expect("enter project");
+    let provider = Provider::answering([SPEC_ANSWER, DESIGN_ANSWER]);
+    cli_ok(&provider, &["emery", "specify", "source"]).await;
+    let stored = current(&provider.storage);
+
+    // The carried master is the same specification numbered from 7.
+    let spec =
+        SPEC_MASTER.replace("REQ-001", "REQ-007").replace("\"next_id\": 2", "\"next_id\": 8");
+    carry(project.path(), &spec, DESIGN_MASTER);
+    let carried = revision(spec.as_bytes(), DESIGN_MASTER.as_bytes());
+
+    let resp = cli_ok(&provider, &["emery", "specify", "source"]).await;
+
+    let stdout = String::from_utf8_lossy(&resp.stdout);
+    assert!(
+        stdout.contains("none (byte-stable)"),
+        "the run continues the carried master: {stdout}"
+    );
+    assert_eq!(current(&provider.storage), carried, "the carried revision is current");
+    assert!(
+        provider.storage.object(CONTAINER, &format!("{stored}/spec.json")).is_none(),
+        "the displaced revision is pruned"
+    );
+    assert_eq!(
+        String::from_utf8_lossy(&document(&provider.storage, &carried, "spec.json")),
+        spec,
+        "the adopted master is stored byte-for-byte"
+    );
+    let shown = shown(&provider, "spec").await;
+    assert!(shown.contains("ID: REQ-007\n"), "the requirement keeps its carried id: {shown}");
+    provider.model.assert_exhausted();
+}
+
+// The hand-off is the `show --format json` envelope verbatim: written to
+// `.emery/` beside the code, it is the master the next `specify` continues
+// — every requirement stands, the design still verifies, and the model is
+// never asked — and a store that already holds the revision is left as is.
+#[tokio::test]
+async fn copied() {
+    let project = tempfile::TempDir::new().expect("project dir");
+    std::env::set_current_dir(project.path()).expect("enter project");
+    let provider = Provider::answering([SPEC_ANSWER, DESIGN_ANSWER]);
+    cli_ok(&provider, &["emery", "specify", "docs"]).await;
+    let first = current(&provider.storage);
+
+    let dir = project.path().join(".emery");
+    fs::create_dir_all(&dir).expect(".emery");
+    for document in ["spec", "design"] {
+        let resp = cli_ok(&provider, &["emery", "--format", "json", "show", document]).await;
+        fs::write(dir.join(format!("{document}.json")), &resp.stdout).expect("write envelope");
+    }
+
+    let idle = Provider::over(Arc::clone(&provider.storage), Vec::<String>::new());
+    let resp = cli_ok(&idle, &["emery", "specify", "docs"]).await;
+
+    let stdout = String::from_utf8_lossy(&resp.stdout);
+    assert!(stdout.contains("none (byte-stable)"), "{stdout}");
+    assert_eq!(current(&idle.storage), first, "the carried revision is the stored one");
+    idle.model.assert_exhausted();
+    provider.model.assert_exhausted();
+}
+
+// Requirement ids are inherited through the cited `(source, claim)` pairs:
+// a requirement removed above leaves the ids below in place, a requirement
+// whose winner flipped keeps its id and is drafted again, and two
+// requirements the grouping merged keep the lowest id — with `next_id`
+// never falling back, so no id is reused.
+#[tokio::test]
+async fn inherited() {
+    let hello = "GET /greeting returns the static string 'hello'.";
+    let mut provider =
+        Provider::answering([INHERIT_GROUPING_FIRST, INHERIT_DRAFT_FIRST, DESIGN_ANSWER]);
+    provider.source.evidence.insert(
+        "docs".to_string(),
+        Ok(evidence(
+            Authority::Documentation,
+            vec![
+                requirement("legacy.export", "Exports ship nightly."),
+                requirement("session.timeout", "Sessions expire after 30 minutes."),
+                requirement("greeting.behaviour", hello),
+                requirement("greeting.text", hello),
+            ],
+        )),
+    );
+    let code = Ok(evidence(
+        Authority::Behaviour,
+        vec![requirement("session.timeout", "Sessions expire after 15 minutes.")],
+    ));
+    provider.source.evidence.insert("code".to_string(), code.clone());
+    cli_ok(&provider, &["emery", "specify", "docs", "code"]).await;
+    let first = current(&provider.storage);
+
+    // --------------------------------------------------
+    // Second run: the export is gone, an intent directive sides with the
+    // code on the timeout, and the grouping merges the two greeting claims.
+    // --------------------------------------------------
+    let mut provider = Provider::over(
+        Arc::clone(&provider.storage),
+        [INHERIT_GROUPING_SECOND, INHERIT_DRAFT_SECOND, DESIGN_ANSWER],
+    );
+    provider.source.evidence.insert(
+        "docs".to_string(),
+        Ok(evidence(
+            Authority::Documentation,
+            vec![
+                requirement("session.timeout", "Sessions expire after 30 minutes."),
+                requirement("greeting.behaviour", hello),
+                requirement("greeting.text", hello),
+            ],
+        )),
+    );
+    provider.source.evidence.insert("code".to_string(), code);
+    provider.source.evidence.insert(
+        "intent".to_string(),
+        Ok(evidence(
+            Authority::Intent,
+            vec![requirement("session.timeout", "Sessions expire after 15 minutes.")],
+        )),
+    );
+    let resp = cli_ok(
+        &provider,
+        &["emery", "specify", "docs", "code", "--description", "intent=Fifteen minutes."],
+    )
+    .await;
+
+    let stdout = String::from_utf8_lossy(&resp.stdout);
+    assert!(stdout.contains(&format!("diff vs {first}:\n")), "{stdout}");
+    assert!(stdout.contains("spec.md - REQ-001 legacy.export"), "{stdout}");
+    assert!(stdout.contains("spec.md - REQ-004 greeting.text"), "merged away: {stdout}");
+    assert!(
+        stdout.contains("spec.md ~ REQ-002 session.timeout: sources, body, losers"),
+        "the flipped winner keeps its id: {stdout}"
+    );
+    assert!(
+        stdout.contains("spec.md ~ REQ-003 greeting.behaviour: sources"),
+        "the merge keeps the lowest id: {stdout}"
+    );
+    assert!(!stdout.contains("spec.md +"), "no requirement is new: {stdout}");
+
+    let spec = shown(&provider, "spec").await;
+    assert!(
+        spec.contains("### Requirement: session.timeout [divergence]\n\nID: REQ-002\n"),
+        "{spec}"
+    );
+    assert!(
+        spec.contains("\nSessions expire after 15 minutes.\n"),
+        "the body is the winner: {spec}"
+    );
+    assert!(
+        spec.contains(
+            "Note: docs (documentation, session.timeout): Sessions expire after 30 minutes."
+        ),
+        "{spec}"
+    );
+    assert!(spec.contains("Sources: [docs:greeting.behaviour, docs:greeting.text]"), "{spec}");
+    assert!(!spec.contains("REQ-004"), "{spec}");
+    let master =
+        String::from_utf8(document(&provider.storage, &current(&provider.storage), "spec.json"))
+            .expect("utf-8");
+    assert!(master.contains("\"next_id\": 5"), "ids are never reused: {master}");
+    provider.model.assert_exhausted();
+}
+
+// The first run's grouping — the timeout claims joined across sources —
+// and its draft over four subjects; the second run's grouping merges the
+// two greeting claims, and its draft answers for the two changed subjects.
+const INHERIT_GROUPING_FIRST: &str = r#"{"groups": [
+        {"claims": [0], "classes": [[0]]},
+        {"claims": [1, 4], "classes": [[1], [4]]},
+        {"claims": [2], "classes": [[2]]},
+        {"claims": [3], "classes": [[3]]}
+    ]}"#;
+const INHERIT_DRAFT_FIRST: &str = r#"{"preamble": ["Four requirements."], "requirements": [
+        {"subject": "legacy.export", "scenarios": [{"name": "Export", "when": "exports run", "then": "they ship"}]},
+        {"subject": "session.timeout", "scenarios": [{"name": "Timeout", "when": "a session idles", "then": "it expires"}]},
+        {"subject": "greeting.behaviour", "scenarios": [{"name": "Greeting", "when": "greeted", "then": "hello"}]},
+        {"subject": "greeting.text", "scenarios": [{"name": "Text", "when": "greeted", "then": "the text is hello"}]}
+    ]}"#;
+const INHERIT_GROUPING_SECOND: &str = r#"{"groups": [
+        {"claims": [0, 3, 4], "classes": [[0], [3, 4]]},
+        {"claims": [1, 2], "classes": [[1, 2]]}
+    ]}"#;
+const INHERIT_DRAFT_SECOND: &str = r#"{"preamble": ["Two requirements."], "requirements": [
+        {"subject": "session.timeout", "scenarios": [{"name": "Timeout", "when": "a session idles", "then": "it expires"}]},
+        {"subject": "greeting.behaviour", "scenarios": [{"name": "Greeting", "when": "greeted", "then": "hello"}]}
+    ]}"#;
+
+// The carried pair is read whole or not at all: one envelope without the
+// other, a file that is not a `show` envelope, and an envelope whose
+// document is not a master are each refused `master-invalid` before any
+// adapter loads or anything is adopted; a carried master under another
+// grammar is `spec-outdated`.
+#[tokio::test]
+async fn master_invalid() {
+    let project = tempfile::TempDir::new().expect("project dir");
+    std::env::set_current_dir(project.path()).expect("enter project");
+    let dir = project.path().join(".emery");
+    let cases: &[(Option<&str>, Option<&str>, &str, &str)] = &[
+        (Some(SPEC_MASTER), None, "master-invalid", "`.emery/design.json` is not"),
+        (None, Some(DESIGN_MASTER), "master-invalid", "`.emery/spec.json` is not"),
+        (
+            Some("{}"),
+            Some(DESIGN_MASTER),
+            "master-invalid",
+            "not an `emery show --format json` envelope",
+        ),
+        (
+            Some(r#"{"emery": 2, "bogus": true}"#),
+            Some(DESIGN_MASTER),
+            "master-invalid",
+            "`spec.json` is not a master",
+        ),
+        (Some(r#"{"emery": 1}"#), Some(DESIGN_MASTER), "spec-outdated", "grammar 1"),
+    ];
+    for (spec, design, code, fragment) in cases {
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).expect(".emery");
+        for (name, document) in [("spec.json", spec), ("design.json", design)] {
+            let Some(document) = document else { continue };
+            let raw = if *document == "{}" {
+                "{}".to_string()
+            } else {
+                let document: Value = serde_json::from_str(document).expect("JSON");
+                serde_json::json!({"revision": "carried", "body": "", "document": document})
+                    .to_string()
+            };
+            fs::write(dir.join(name), raw).expect("write envelope");
+        }
+
+        let provider = Provider::idle();
+        let envelope = fail(&provider, &["emery", "specify", "docs"], 1, code).await;
+        let message = envelope["message"].as_str().unwrap_or("");
+        assert!(message.contains(fragment), "expected `{fragment}` in: {envelope}");
+        assert!(envelope["hint"].as_str().unwrap_or("").contains(".emery/"), "{envelope}");
+        assert!(provider.storage.is_empty(), "nothing is adopted or committed: {code}");
+        assert!(provider.plugins.loads().is_empty(), "no adapter loads: {code}");
+    }
 }
 
 // Regeneration is the recovery path: a `specify` over a tampered
@@ -1344,7 +1686,7 @@ async fn repair_tampered() {
 
     cli_ok(&provider, &["emery", "specify", "docs"]).await;
     let first = current(&provider.storage);
-    provider.storage.insert_object(CONTAINER, &format!("{first}/spec.md"), b"# Rewritten\n");
+    provider.storage.insert_object(CONTAINER, &format!("{first}/spec.json"), b"{}\n");
 
     let resp = cli_ok(&provider, &["emery", "specify", "docs"]).await;
 
@@ -1357,15 +1699,14 @@ async fn repair_tampered() {
     let second = current(&provider.storage);
     assert_ne!(first, second, "the repaired store names the new revision");
 
-    for name in ["spec.md", "design.md"] {
+    for name in ["spec.json", "design.json"] {
         assert!(
             provider.storage.object(CONTAINER, &format!("{first}/{name}")).is_none(),
             "the tampered outgoing revision is pruned: {name}"
         );
     }
 
-    let shown = cli_ok(&provider, &["emery", "show", "spec"]).await;
-    assert!(String::from_utf8_lossy(&shown.stdout).contains("howdy"), "show renders the repair");
+    assert!(shown(&provider, "spec").await.contains("howdy"), "show renders the repair");
 
     provider.model.assert_exhausted();
 }
@@ -1382,7 +1723,7 @@ async fn repair_current() {
     cli_ok(&provider, &["emery", "specify", "docs"]).await;
 
     let id = current(&provider.storage);
-    assert!(provider.storage.object(CONTAINER, &format!("{id}/spec.md")).is_some());
+    assert!(provider.storage.object(CONTAINER, &format!("{id}/spec.json")).is_some());
     cli_ok(&provider, &["emery", "show", "spec"]).await;
     provider.model.assert_exhausted();
 }
@@ -1419,19 +1760,21 @@ async fn multi_project() {
     let id_beta = project_current(&shared, "beta");
     assert_ne!(id_alpha, id_beta, "distinct documents commit distinct revisions");
 
-    // Each project's `show` renders its own committed bytes alone.
+    // Each project's `show` renders its own committed master alone.
     let spec_alpha = shared
-        .object(&format!("alpha/{CONTAINER}"), &format!("{id_alpha}/spec.md"))
-        .expect("spec.md");
+        .object(&format!("alpha/{CONTAINER}"), &format!("{id_alpha}/spec.json"))
+        .expect("spec.json");
     let spec_beta = shared
-        .object(&format!("beta/{CONTAINER}"), &format!("{id_beta}/spec.md"))
-        .expect("spec.md");
-    let shown = cli_ok(&alpha, &["emery", "show", "spec"]).await;
-    assert_eq!(shown.stdout, spec_alpha, "alpha shows its own revision");
-    let shown = cli_ok(&beta, &["emery", "show", "spec"]).await;
-    assert_eq!(shown.stdout, spec_beta, "beta shows its own revision");
+        .object(&format!("beta/{CONTAINER}"), &format!("{id_beta}/spec.json"))
+        .expect("spec.json");
+    assert_eq!(String::from_utf8_lossy(&spec_alpha), SPEC_MASTER, "alpha committed the master");
     assert!(String::from_utf8_lossy(&spec_beta).contains("howdy"));
-    assert!(!String::from_utf8_lossy(&spec_alpha).contains("howdy"));
+    assert_eq!(
+        shown(&alpha, "spec").await,
+        projection(SPEC_RENDERED, &id_alpha),
+        "alpha shows its own revision"
+    );
+    assert!(shown(&beta, "spec").await.contains("howdy"), "beta shows its own revision");
 
     alpha.model.assert_exhausted();
     beta.model.assert_exhausted();
@@ -1446,6 +1789,57 @@ fn current(storage: &Memory) -> String {
 // Reads a committed revision document from the store.
 fn document(storage: &Memory, id: &str, name: &str) -> Vec<u8> {
     storage.object(CONTAINER, &format!("{id}/{name}")).unwrap_or_else(|| panic!("{name}"))
+}
+
+// The content id a revision holding `spec` and `design` sits under —
+// SHA-256 over the length-prefixed file names and bodies, `spec.json` then
+// `design.json`.
+fn revision(spec: &[u8], design: &[u8]) -> String {
+    let mut hasher = Sha256::new();
+    for (name, body) in [("spec.json", spec), ("design.json", design)] {
+        hasher.update((name.len() as u64).to_be_bytes());
+        hasher.update(name.as_bytes());
+        hasher.update((body.len() as u64).to_be_bytes());
+        hasher.update(body);
+    }
+    hex::encode(hasher.finalize())
+}
+
+// Seeds `storage` with a current revision holding `spec` and `design` as its
+// stored masters, returning the content id it sits under.
+fn seed(storage: &Memory, spec: &[u8], design: &[u8]) -> String {
+    let id = revision(spec, design);
+    storage.insert_object(CONTAINER, &format!("{id}/spec.json"), spec);
+    storage.insert_object(CONTAINER, &format!("{id}/design.json"), design);
+    storage.insert_state(CURRENT, id.as_bytes());
+    id
+}
+
+// Writes the `.emery/` pair under `project` as `show --format json`
+// envelopes carrying `spec` and `design` as their `document`.
+fn carry(project: &Path, spec: &str, design: &str) {
+    let dir = project.join(".emery");
+    fs::create_dir_all(&dir).expect(".emery");
+    for (name, document) in [("spec.json", spec), ("design.json", design)] {
+        let document: Value = serde_json::from_str(document).expect("a JSON document");
+        let envelope = serde_json::json!({"revision": "carried", "body": "", "document": document});
+        fs::write(dir.join(name), envelope.to_string()).expect("write envelope");
+    }
+}
+
+// Fills a Markdown fixture's `<revision>` placeholder with the id `show`
+// stamps in the front matter.
+fn projection(fixture: &str, id: &str) -> String {
+    fixture.replace("<revision>", id)
+}
+
+// Renders `document` of the current revision through `show`.
+async fn shown<S>(provider: &Provider<S>, document: &str) -> String
+where
+    S: StateStore + BlobStore + Send + Sync + 'static,
+{
+    let resp = cli_ok(provider, &["emery", "show", document]).await;
+    String::from_utf8(resp.stdout).expect("utf-8 document")
 }
 
 // Reads a namespaced project's current revision id from the shared store.

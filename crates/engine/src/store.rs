@@ -1,23 +1,21 @@
 //! The revision store
 //!
-//! Where committed dossiers live. A revision is a dossier — the `spec.md` and
-//! `design.md` one `specify` run produced — committed under the id of its
-//! content; the store commits a new revision, reads the current one, and
-//! reports how it differs from the one it replaced.
+//! Where committed dossiers live. A revision is a dossier — the specification
+//! and design master one `specify` run produced — committed as canonical JSON
+//! under the id of its content; the store commits a new revision, reads the
+//! current one, and reports how it differs from the one it replaced.
 //!
 //! A revision is identified by the digest of its content, never a sequence
-//! number, so the same documents always have the same id and a document that
-//! no longer matches its id is recognised as corruption. Only the current
+//! number, so the same master always has the same id and a document that no
+//! longer matches its id is recognised as corruption. Only the current
 //! revision is kept, which keeps the store small and its meaning simple.
-
-use std::collections::BTreeMap;
-use std::fmt::Display;
 
 use anyhow::Context;
 use omnia_guest::{BlobStore, Error, StateStore, server_error};
 use serde::Serialize;
+use strum::VariantArray as _;
 
-use crate::artifact::{Design, Document, Dossier, Spec};
+use crate::artifact::{Design, Document, Dossier, ReqId, Requirement, SectionKind, Spec, digest};
 
 /// Keyvalue key holding the current revision id.
 pub const CURRENT: &str = "current-revision";
@@ -43,6 +41,22 @@ pub async fn commit<S: StateStore + BlobStore>(
     Ok(Committed { id, diff })
 }
 
+/// Makes `dossier` the current revision unless it already is — no diff, no
+/// prune of anything but the revision it displaces: the anchor a carried
+/// master gives the run that follows.
+///
+/// # Errors
+///
+/// Fails if another run swapped the id first or storage refuses the write.
+pub async fn adopt<S: StateStore + BlobStore>(store: &S, dossier: &Dossier) -> Result<(), Error> {
+    let observed = observe(store).await;
+    if observed.outgoing_id() == Some(dossier.revision().as_str()) {
+        return Ok(());
+    }
+
+    swap(store, dossier, observed).await.map(drop)
+}
+
 // Writes the documents and swaps the current id against `observed`;
 // a lost swap leaves the documents as an inert, unreferenced orphan.
 async fn swap<S: StateStore + BlobStore>(
@@ -65,8 +79,9 @@ async fn swap<S: StateStore + BlobStore>(
 
     // The swap landed; prune the outgoing revision.
     if let Some(outgoing) = observed.outgoing_id().filter(|outgoing| *outgoing != id) {
-        for (name, _) in dossier.files() {
-            let _ = BlobStore::delete(store, CONTAINER, &format!("{outgoing}/{name}")).await;
+        for document in Document::VARIANTS {
+            let key = format!("{outgoing}/{}", document.file());
+            let _ = BlobStore::delete(store, CONTAINER, &key).await;
         }
     }
 
@@ -106,31 +121,38 @@ async fn observe<S: StateStore + BlobStore>(store: &S) -> Observation {
     Observation { token, outgoing }
 }
 
-// Loads revision `id` and checks that it still hashes to that id: the
-// store is content-addressed, so documents that no longer match the id
-// they sit under are corruption, not a revision.
+// Loads revision `id` and checks that its bytes still hash to that id: the
+// store is content-addressed, so documents that no longer match the id they
+// sit under are corruption, not a revision.
 async fn load<S: BlobStore>(store: &S, id: &str) -> Result<Dossier, Error> {
-    let spec = read(store, id, Document::Spec.file()).await?;
-    let design = read(store, id, Document::Design.file()).await?;
-    let dossier = Dossier { spec, design };
+    let spec = read(store, id, Document::Spec).await?;
+    let design = read(store, id, Document::Design).await?;
 
-    if dossier.revision() != id {
+    let files =
+        [(Document::Spec.file(), spec.as_slice()), (Document::Design.file(), design.as_slice())];
+    if digest(files.into_iter()) != id {
         return Err(server_error!("revision `{id}` does not match its content"));
     }
 
-    Ok(dossier)
+    // The bytes are the ones committed: a master under another grammar is
+    // outdated, and one this grammar cannot read was not written by this
+    // engine.
+    let spec = serde_json::from_slice(&spec)
+        .with_context(|| format!("revision `{id}`: `{}` is not JSON", Document::Spec.file()))?;
+    let design = serde_json::from_slice(&design)
+        .with_context(|| format!("revision `{id}`: `{}` is not JSON", Document::Design.file()))?;
+
+    Dossier::read(spec, design)
 }
 
-// Reads one document of revision `id`; a document that is absent or not
-// UTF-8 under a named revision is corruption.
-async fn read<S: BlobStore>(store: &S, id: &str, name: &str) -> Result<String, Error> {
-    let bytes = BlobStore::get(store, CONTAINER, &format!("{id}/{name}"))
+// Reads one document of revision `id`; a document absent under a named
+// revision is corruption.
+async fn read<S: BlobStore>(store: &S, id: &str, document: Document) -> Result<Vec<u8>, Error> {
+    let name = document.file();
+    BlobStore::get(store, CONTAINER, &format!("{id}/{name}"))
         .await
         .context("reading revision document")?
-        .ok_or_else(|| server_error!("revision `{id}` does not contain `{name}`"))?;
-    let body = String::from_utf8(bytes)
-        .with_context(|| format!("revision `{id}`: `{name}` is not UTF-8"))?;
-    Ok(body)
+        .ok_or_else(|| server_error!("revision `{id}` does not contain `{name}`"))
 }
 
 /// A committed revision: its id and the advisory re-mine diff against
@@ -170,91 +192,128 @@ impl Observation {
 pub struct Diff {
     /// The outgoing revision id this run superseded.
     pub from: String,
-    /// Changed document file names in digest order.
-    pub documents: Vec<String>,
-    /// Requirement subjects that changed in `spec.md`.
-    pub spec: Changes,
-    /// Section headings that changed in `design.md`.
-    pub design: Changes,
+    /// The requirements that changed.
+    pub spec: SpecDiff,
+    /// The sections that changed.
+    pub design: DesignDiff,
 }
 
 impl Diff {
-    // Diffs `incoming` against `outgoing`: the changed documents, then
-    // requirement subjects and section headings, never positions. The diff is
-    // advisory: an outgoing document that fails its grammar leaves its list
-    // empty.
+    // Diffs `incoming` against `outgoing` by typed equality: requirements by
+    // id, sections by kind, never by position.
     fn between(outgoing: &Dossier, incoming: &Dossier) -> Self {
-        let documents = outgoing
-            .files()
-            .zip(incoming.files())
-            .filter(|((_, outgoing), (_, incoming))| outgoing != incoming)
-            .map(|((name, _), _)| name.to_string())
-            .collect();
-
-        let spec = match (outgoing.spec.parse::<Spec>(), incoming.spec.parse::<Spec>()) {
-            (Ok(outgoing), Ok(incoming)) => {
-                Changes::between(&outgoing.by_subject(), &incoming.by_subject())
-            }
-            _ => Changes::default(),
-        };
-        let design = match (outgoing.design.parse::<Design>(), incoming.design.parse::<Design>()) {
-            (Ok(outgoing), Ok(incoming)) => {
-                Changes::between(&outgoing.by_kind(), &incoming.by_kind())
-            }
-            _ => Changes::default(),
-        };
-
         Self {
             from: outgoing.revision(),
-            documents,
-            spec,
-            design,
+            spec: SpecDiff::between(&outgoing.spec, &incoming.spec),
+            design: DesignDiff::between(&outgoing.design, &incoming.design),
         }
-    }
-
-    /// Returns whether the revisions are byte-identical; identical bytes
-    /// cannot yield section differences.
-    #[must_use]
-    pub const fn is_empty(&self) -> bool {
-        self.documents.is_empty()
     }
 }
 
-/// The sections of one document that differ between two revisions, keyed
-/// by heading name.
+/// The requirements that differ between two revisions.
 #[derive(Debug, Clone, Default, Serialize)]
 #[serde(rename_all = "kebab-case")]
-pub struct Changes {
-    /// Headings present only in the incoming document.
-    pub added: Vec<String>,
-    /// Headings present only in the outgoing document.
-    pub removed: Vec<String>,
-    /// Headings whose sections changed.
-    pub changed: Vec<String>,
+pub struct SpecDiff {
+    /// Requirements present only in the incoming revision.
+    pub added: Vec<Entry>,
+    /// Requirements present only in the outgoing revision.
+    pub removed: Vec<Entry>,
+    /// Requirements present in both whose content changed.
+    pub changed: Vec<Changed>,
 }
 
-impl Changes {
-    // Buckets the headings of `incoming` against `outgoing` into added,
-    // changed, and removed; a section that only moved is not a change.
-    fn between<K: Display + Ord, S: PartialEq>(
-        outgoing: &BTreeMap<K, &S>, incoming: &BTreeMap<K, &S>,
-    ) -> Self {
-        let mut changes = Self::default();
-        for (heading, section) in incoming {
-            let bucket = match outgoing.get(heading) {
-                None => &mut changes.added,
-                Some(outgoing) if *outgoing != *section => &mut changes.changed,
-                Some(_) => continue,
-            };
-            bucket.push(heading.to_string());
+impl SpecDiff {
+    // Matches requirements by id: a requirement keeps its id across runs, so
+    // one that only moved is not a change.
+    fn between(outgoing: &Spec, incoming: &Spec) -> Self {
+        let mut diff = Self::default();
+        for requirement in &incoming.requirements {
+            match outgoing.requirement(requirement.id) {
+                None => diff.added.push(Entry::from(requirement)),
+                Some(before) => {
+                    let fields = before.differences(requirement);
+                    if !fields.is_empty() {
+                        diff.changed.push(Changed {
+                            id: requirement.id,
+                            subject: requirement.subject.clone(),
+                            fields,
+                        });
+                    }
+                }
+            }
         }
-        changes.removed.extend(
+        diff.removed.extend(
             outgoing
-                .keys()
-                .filter(|heading| !incoming.contains_key(*heading))
-                .map(ToString::to_string),
+                .requirements
+                .iter()
+                .filter(|requirement| incoming.requirement(requirement.id).is_none())
+                .map(Entry::from),
         );
-        changes
+        diff
+    }
+}
+
+/// One requirement named by a diff.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub struct Entry {
+    /// The requirement id.
+    pub id: ReqId,
+    /// The requirement subject.
+    pub subject: String,
+}
+
+impl From<&Requirement> for Entry {
+    fn from(requirement: &Requirement) -> Self {
+        Self {
+            id: requirement.id,
+            subject: requirement.subject.clone(),
+        }
+    }
+}
+
+/// One requirement whose content changed, and the fields that differ.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub struct Changed {
+    /// The requirement id.
+    pub id: ReqId,
+    /// The requirement subject.
+    pub subject: String,
+    /// The differing fields, in declaration order.
+    pub fields: Vec<&'static str>,
+}
+
+/// The design sections that differ between two revisions, by kind.
+#[derive(Debug, Clone, Default, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub struct DesignDiff {
+    /// Sections present only in the incoming revision.
+    pub added: Vec<SectionKind>,
+    /// Sections present only in the outgoing revision.
+    pub removed: Vec<SectionKind>,
+    /// Sections present in both whose blocks changed.
+    pub changed: Vec<SectionKind>,
+}
+
+impl DesignDiff {
+    fn between(outgoing: &Design, incoming: &Design) -> Self {
+        let mut diff = Self::default();
+        for section in &incoming.sections {
+            match outgoing.section(section.kind) {
+                None => diff.added.push(section.kind),
+                Some(before) if before.blocks != section.blocks => diff.changed.push(section.kind),
+                Some(_) => {}
+            }
+        }
+        diff.removed.extend(
+            outgoing
+                .sections
+                .iter()
+                .filter(|section| incoming.section(section.kind).is_none())
+                .map(|section| section.kind),
+        );
+        diff
     }
 }
 
@@ -266,6 +325,7 @@ mod tests {
     use omnia_test::guest::Memory;
 
     use super::*;
+    use crate::artifact::EMERY;
 
     #[tokio::test]
     async fn commit_conflict() {
@@ -274,9 +334,10 @@ mod tests {
         // Both runs observe the empty store; the winner swaps first.
         let stale = observe(&memory).await;
         let observed = observe(&memory).await;
-        let winner = swap(&memory, &dossier("# Spec winner\n"), observed).await.expect("commit");
+        let winning = dossier("winner");
+        let winner = swap(&memory, &winning, observed).await.expect("commit");
 
-        let err = swap(&memory, &dossier("# Spec loser\n"), stale)
+        let err = swap(&memory, &dossier("loser"), stale)
             .await
             .expect_err("a stale observation must never last-write-wins over the swapped id");
         assert_eq!(err.code(), "server_error", "typed failure");
@@ -287,14 +348,24 @@ mod tests {
         );
         let committed = current(&memory).await.expect("current").expect("committed");
         assert_eq!(committed.revision(), winner, "the current id still names the winner");
-        let spec = memory.object(CONTAINER, &format!("{winner}/spec.md")).expect("winning spec");
-        assert_eq!(spec, b"# Spec winner\n", "the winning revision is intact");
+        let spec = memory.object(CONTAINER, &format!("{winner}/spec.json")).expect("winning spec");
+        let (_, canonical) = winning.files().swap_remove(0);
+        assert_eq!(spec, canonical.as_bytes(), "the winning revision is intact");
     }
 
-    fn dossier(spec: &str) -> Dossier {
+    fn dossier(preamble: &str) -> Dossier {
         Dossier {
-            spec: spec.to_string(),
-            design: "# Design\n\n## Overview\n\nOne endpoint.\n".to_string(),
+            spec: Spec {
+                emery: EMERY,
+                next_id: 1,
+                preamble: vec![preamble.to_string()],
+                requirements: vec![],
+            },
+            design: Design {
+                emery: EMERY,
+                preamble: vec![],
+                sections: vec![],
+            },
         }
     }
 }

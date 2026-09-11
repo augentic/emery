@@ -1,13 +1,19 @@
 //! The dossier
 //!
 //! Synthesises the requirements and the extracted claims into the dossier: the
-//! two specification documents. The model is asked two typed questions in turn —
-//! the content of `spec.md`, then the content of `design.md` — each put as a
-//! brief that verifies every candidate answer against the requirements, the
-//! section plan, and the evidence before the engine renders the accepted answer
-//! into the canonical document. Every heading, provenance line, tag, note, and
-//! signature is the engine's, so the stored bytes are a function of the facts
-//! and the draft alone, and a changed byte re-ids every revision.
+//! typed specification and design masters. The model is asked up to two typed
+//! questions in turn — the drafted content of `spec.md`, then of `design.md`
+//! — each put as a brief that verifies every candidate answer against the
+//! requirements, the section plan, and the evidence before the engine places
+//! the accepted answer beside its own facts in the master. Every heading,
+//! provenance line, body, tag, note, and signature is the engine's, so the
+//! stored master is a function of the facts and the draft alone, and a
+//! changed value re-ids every revision.
+//!
+//! What the master the run continues already settled is not asked again: a
+//! requirement whose facts stand keeps its scenarios, a specification in
+//! which every requirement stands is placed without a turn, and a design that
+//! still verifies over an unchanged specification is kept whole.
 //!
 //! Nothing the engine already knows is asked of the model: it never writes a
 //! heading, an id, a `Sources:` list, a status, a note, or a type signature,
@@ -29,49 +35,31 @@ use crate::specify::Extract;
 use crate::specify::basis::Basis;
 use crate::specify::brief::{Brief as _, Review};
 
-/// Takes the extracts of every source and the requirement bases derived from
-/// them, then asks the model to synthesise the dossier's specification and
-/// design documents.
+/// Takes the extracts of every source, the requirement bases derived from
+/// them, and the `master` the run continues, then synthesises the dossier's
+/// specification and design masters, asking the model only for what the
+/// master did not settle.
 ///
 /// # Errors
 ///
 /// A model failure is `bad_gateway`; an answer outside the schema, or a draft
 /// the backend could not repair within its rounds, is `bad_request`.
 pub async fn synthesise<M: Model>(
-    model: &M, extracts: &[Extract], bases: &[Basis],
+    model: &M, extracts: &[Extract], bases: &[Basis], master: Option<&Dossier>,
 ) -> Result<Dossier, Error> {
-    let spec = SpecBrief::new(extracts, bases).judge(model).await?;
-    let design = DesignBrief::new(extracts, &spec).judge(model).await?;
+    let spec =
+        SpecBrief::new(extracts, bases, master.map(|master| &master.spec)).resolve(model).await?;
+
+    let brief = DesignBrief::new(extracts, &spec);
+    let design = match master {
+        Some(master) if master.spec == spec && brief.accepts(&master.design) => {
+            tracing::info!("the specification stands; the design is carried");
+            master.design.clone()
+        }
+        _ => brief.judge(model).await?,
+    };
 
     Ok(Dossier { spec, design })
-}
-
-// A document under construction: the blocks the renderer emits in order,
-// joined by one blank line, every line right-trimmed, one trailing newline —
-// the shape `artifact::Text` reads back.
-struct Markdown(Vec<String>);
-
-impl Markdown {
-    fn new(title: &str) -> Self {
-        Self(vec![format!("# {title}")])
-    }
-
-    // Adds one block, every line right-trimmed; `finish` joins the blocks.
-    fn push(&mut self, text: impl Into<String>) {
-        self.0.push(text.into().lines().map(str::trim_end).collect::<Vec<_>>().join("\n"));
-    }
-
-    fn extend(&mut self, texts: &[String]) {
-        for text in texts {
-            self.push(text);
-        }
-    }
-
-    fn finish(self) -> String {
-        let mut text = self.0.join("\n\n");
-        text.push('\n');
-        text
-    }
 }
 
 // The `## Claims` section of a brief's prompt: every claim in every extract,

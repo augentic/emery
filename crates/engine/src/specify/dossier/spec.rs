@@ -1,45 +1,112 @@
 //! The `spec.md` brief
 //!
-//! Asks the model for the content of `spec.md`: the preamble and, for every
-//! requirement, a body and its acceptance scenarios. The requirements, their
-//! headings, and their provenance lines are the engine's: the schema names
-//! the subjects, every candidate draft is verified to carry exactly one entry
-//! per requirement in the shape its status allows, and the engine renders the
-//! accepted draft into the canonical document.
+//! Asks the model for the drafted content of `spec.md`: the preamble and, for
+//! every requirement the evidence changed, its acceptance scenarios. The
+//! requirements, their ids, their provenance, and their bodies are the
+//! engine's: the schema names the subjects to draft, every candidate draft is
+//! verified to carry exactly one entry per listed subject, and the engine
+//! places the accepted draft beside its facts in the specification master. A
+//! requirement whose incumbent still stands keeps the incumbent's scenarios,
+//! and a run in which every requirement does is placed without a turn.
 
 use std::collections::{BTreeMap, BTreeSet};
-use std::fmt::{self, Display, Formatter, Write as _};
+use std::fmt::{self, Display, Formatter};
 
 use emery_source::claims::DOTTED_KEBAB_PATTERN;
+use omnia_guest::{Error, Model};
 use schemars::JsonSchema;
 use serde::Deserialize;
 use serde_json::{Value, json};
 
-use crate::artifact::{HEADING, ID, NOTE, ReqId, SCENARIO, SOURCES, STATUS, Status};
+use crate::artifact::{self, Cited, EMERY, Spec, Status};
 use crate::specify::Extract;
-use crate::specify::basis::{Basis, Contributor, normalise};
+use crate::specify::basis::{self, Basis};
 use crate::specify::brief::{Brief, Review};
-use crate::specify::dossier::{ClaimsSection, Markdown};
+use crate::specify::dossier::ClaimsSection;
 
 /// What the engine needs to ask the model for `spec.md` and to verify its
-/// draft: the extracts and the requirement bases derived from them.
+/// draft: the extracts, the requirement bases derived from them, and the
+/// master specification the run continues.
 pub struct SpecBrief<'a> {
     extracts: &'a [Extract],
     bases: &'a [Basis],
+    master: Option<&'a Spec>,
 }
 
 impl<'a> SpecBrief<'a> {
-    /// Creates the brief for `spec.md` from the `extracts` and the
-    /// requirement `bases` derived from them.
+    /// Creates the brief for `spec.md` from the `extracts`, the requirement
+    /// `bases` derived from them, and the `master` they were numbered from.
     #[must_use]
-    pub const fn new(extracts: &'a [Extract], bases: &'a [Basis]) -> Self {
-        Self { extracts, bases }
+    pub const fn new(
+        extracts: &'a [Extract], bases: &'a [Basis], master: Option<&'a Spec>,
+    ) -> Self {
+        Self {
+            extracts,
+            bases,
+            master,
+        }
+    }
+
+    /// Resolves the specification: asks the model for the drafted content
+    /// of every requirement without an incumbent, or — when every requirement
+    /// has one — keeps the master's preamble and places the incumbents
+    /// without a turn.
+    ///
+    /// # Errors
+    ///
+    /// A model failure is `bad_gateway`; an answer outside the schema, or a
+    /// draft the backend could not repair within its rounds, is `bad_request`.
+    pub async fn resolve<M: Model>(self, model: &M) -> Result<Spec, Error> {
+        if let Some(master) = self.master
+            && self.drafted().next().is_none()
+        {
+            tracing::info!("every requirement stands; the specification is carried");
+            return Ok(self.place(master.preamble.clone(), BTreeMap::new()));
+        }
+
+        self.judge(model).await
+    }
+
+    // The bases the model drafts: those without an incumbent.
+    fn drafted(&self) -> impl Iterator<Item = &Basis> {
+        self.bases.iter().filter(|basis| basis.incumbent().is_none())
+    }
+
+    // Places the specification: every requirement in id order, each the
+    // engine's facts beside its scenarios — drafted, or the incumbent's.
+    fn place(&self, preamble: Vec<String>, mut drafts: BTreeMap<String, Vec<Scenario>>) -> Spec {
+        let mut requirements: Vec<artifact::Requirement> = self
+            .bases
+            .iter()
+            .map(|basis| {
+                let scenarios = basis.incumbent().map_or_else(
+                    || {
+                        drafts
+                            .remove(basis.subject())
+                            .expect("verify held the draft to the requirements")
+                            .into_iter()
+                            .map(artifact::Scenario::from)
+                            .collect()
+                    },
+                    |incumbent| incumbent.scenarios.clone(),
+                );
+                basis.requirement(scenarios)
+            })
+            .collect();
+        requirements.sort_by_key(|requirement| requirement.id);
+
+        Spec {
+            emery: EMERY,
+            next_id: basis::next_id(self.bases, self.master),
+            preamble,
+            requirements,
+        }
     }
 }
 
 impl Brief for SpecBrief<'_> {
     type Answer = SpecAnswer;
-    type Output = String;
+    type Output = Spec;
 
     const NAME: &'static str = "spec-draft";
     // Prompt order is significant.
@@ -52,21 +119,21 @@ impl Brief for SpecBrief<'_> {
         "synthesis/tags.md",
     ];
 
-    // Tightens the derived schema to this run: exactly one entry per
-    // requirement, each `subject` drawn from the requirement subjects, and at
-    // least one scenario per entry.
+    // Tightens the derived schema to this run: exactly one entry per drafted
+    // requirement, each `subject` drawn from their subjects, and at least one
+    // scenario per entry.
     fn tighten(&self, schema: &mut Value) {
-        let count = self.bases.len();
+        let count = self.drafted().count();
         schema["properties"]["requirements"]["minItems"] = json!(count);
         schema["properties"]["requirements"]["maxItems"] = json!(count);
         schema["$defs"]["Entry"]["properties"]["subject"]["enum"] =
-            json!(self.bases.iter().map(Basis::subject).collect::<Vec<_>>());
+            json!(self.drafted().map(Basis::subject).collect::<Vec<_>>());
         schema["$defs"]["Entry"]["properties"]["scenarios"]["minItems"] = json!(1);
     }
 
-    // Verifies a candidate draft against the requirements: every requirement
-    // drafted exactly once and nothing else, at least one scenario per entry
-    // with one-line fields, a body unless in conflict, no reserved opener.
+    // Verifies a candidate draft against the requirements: every drafted
+    // requirement exactly once and nothing else, at least one scenario per
+    // entry with one-line fields, no reserved opener in the preamble.
     fn verify(&self, answer: &SpecAnswer, review: &mut Review) {
         review.paragraphs(&answer.preamble, "preamble");
 
@@ -80,23 +147,19 @@ impl Brief for SpecBrief<'_> {
                 continue;
             }
 
-            let Some(basis) = by_subject.get(subject) else {
-                review.note(format_args!("`{subject}` is not a requirement"));
-                continue;
-            };
-
-            let label = format!("`{subject}`");
-            review.paragraphs(&entry.body, &label);
-
-            // A conflict's statements are the renderer's notes, so a body
-            // would assert what the operator has yet to reconcile.
-            let conflict = basis.status() == Status::Conflict;
-            if conflict && !entry.body.is_empty() {
-                review.note(format_args!("{label} is in conflict and carries a body"));
-            } else if !conflict && entry.body.is_empty() {
-                review.note(format_args!("{label} has no body paragraph"));
+            match by_subject.get(subject) {
+                None => {
+                    review.note(format_args!("`{subject}` is not a requirement"));
+                    continue;
+                }
+                Some(basis) if basis.incumbent().is_some() => {
+                    review.note(format_args!("`{subject}` is unchanged and not to be drafted"));
+                    continue;
+                }
+                Some(_) => {}
             }
 
+            let label = format!("`{subject}`");
             if entry.scenarios.is_empty() {
                 review.note(format_args!("{label} has no scenario"));
             }
@@ -110,75 +173,44 @@ impl Brief for SpecBrief<'_> {
                 for given in &scenario.given {
                     review.line(given, format_args!("{label} scenario `given`"));
                 }
+                for and in &scenario.and {
+                    review.line(and, format_args!("{label} scenario `and`"));
+                }
             }
         }
 
-        for subject in by_subject.keys().filter(|subject| !seen.contains(*subject)) {
-            review.note(format_args!("requirement `{subject}` is not drafted"));
+        for basis in self.drafted().filter(|basis| !seen.contains(basis.subject())) {
+            review.note(format_args!("requirement `{}` is not drafted", basis.subject()));
         }
     }
 
-    // Renders `spec.md`: the requirements in order, each with its drafted
-    // content.
+    // Places the accepted draft in the master beside the incumbents.
     fn into_output(self, answer: SpecAnswer) -> Self::Output {
-        let entries: BTreeMap<&str, &Entry> =
-            answer.requirements.iter().map(|entry| (entry.subject.as_str(), entry)).collect();
-
-        let mut document = Markdown::new("Specification");
-        document.extend(&answer.preamble);
-
-        for (index, basis) in self.bases.iter().enumerate() {
-            let status = basis.status();
-            let tag = status.tag().map(|tag| format!(" [{tag}]")).unwrap_or_default();
-            document.push(format!("{HEADING} {}{tag}", basis.subject()));
-            document.push(format!(
-                "{ID} {id}\n{SOURCES} [{sources}]\n{STATUS} {status}",
-                id = ReqId::nth(index),
-                sources = basis.sources().collect::<Vec<_>>().join(", "),
-            ));
-
-            let draft =
-                entries.get(basis.subject()).expect("verify held the draft to the requirements");
-            if status != Status::Conflict {
-                document.extend(&draft.body);
-            }
-            if let Some(notes) = notes(basis) {
-                document.push(notes);
-            }
-
-            for scenario in &draft.scenarios {
-                document.push(format!("{SCENARIO} {}", scenario.name.trim()));
-                let mut bullets = String::new();
-                for given in &scenario.given {
-                    let _ = writeln!(bullets, "- **GIVEN** {}", given.trim());
-                }
-                let _ = writeln!(bullets, "- **WHEN** {}", scenario.when.trim());
-                let _ = write!(bullets, "- **THEN** {}", scenario.then.trim());
-                document.push(bullets);
-            }
-        }
-
-        document.finish()
+        let drafts =
+            answer.requirements.into_iter().map(|entry| (entry.subject, entry.scenarios)).collect();
+        self.place(answer.preamble, drafts)
     }
 }
 
 // Renders the user turn of the prompt: every claim in every extract, then
-// every requirement with its id, status, sources, and coverage, each
-// contributing claim labelled winner / loser / contributor.
+// every requirement to draft with its id, status, sources, and coverage, each
+// contributing claim labelled winner / loser / contributor, then the
+// requirements that stand unchanged, for the preamble's sake.
 impl Display for SpecBrief<'_> {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         write!(f, "Draft `spec.md`.\n\n{claims}", claims = ClaimsSection(self.extracts))?;
 
         f.write_str("\n## Requirements (draft one entry per subject)\n\n")?;
-        for (index, basis) in self.bases.iter().enumerate() {
-            let sources = basis.sources().collect::<Vec<_>>().join(", ");
+        for basis in self.drafted() {
+            let sources = basis.contributors().map(Cited::from).map(|cited| cited.to_string());
             let coverage = if basis.covered() { "evidenced" } else { "not evidenced" };
             writeln!(
                 f,
                 "- {id} `{subject}` — Status: {status} — Sources: [{sources}] — acceptance criteria {coverage}",
-                id = ReqId::nth(index),
+                id = basis.id(),
                 subject = basis.subject(),
                 status = basis.status(),
+                sources = sources.collect::<Vec<_>>().join(", "),
             )?;
 
             for (position, class) in basis.classes().iter().enumerate() {
@@ -201,20 +233,31 @@ impl Display for SpecBrief<'_> {
             }
         }
 
+        let standing: Vec<&Basis> =
+            self.bases.iter().filter(|basis| basis.incumbent().is_some()).collect();
+        if !standing.is_empty() {
+            f.write_str(
+                "\n## Unchanged requirements (already drafted; do not answer for these)\n\n",
+            )?;
+            for basis in standing {
+                writeln!(f, "- {id} `{subject}`", id = basis.id(), subject = basis.subject())?;
+            }
+        }
+
         Ok(())
     }
 }
 
-/// The `spec.md` draft: preamble paragraphs and one entry per requirement.
-/// Only what needs synthesis is asked for; every heading, provenance line, and
-/// note is the renderer's.
+/// The `spec.md` draft: preamble paragraphs and one entry per requirement to
+/// draft. Only what needs synthesis is asked for; every heading, provenance
+/// line, body, and note is the renderer's.
 #[derive(Debug, Clone, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 #[schemars(title = "Emery spec draft")]
 pub struct SpecAnswer {
     /// Markdown paragraphs before the first requirement.
     pub preamble: Vec<String>,
-    /// One entry per requirement, keyed by subject; any order.
+    /// One entry per listed requirement, keyed by subject; any order.
     pub requirements: Vec<Entry>,
 }
 
@@ -225,8 +268,6 @@ pub struct Entry {
     /// The requirement's subject, exactly as listed.
     #[schemars(regex(pattern = DOTTED_KEBAB_PATTERN))]
     pub subject: String,
-    /// Markdown paragraphs; empty for a requirement in conflict.
-    pub body: Vec<String>,
     /// At least one scenario.
     pub scenarios: Vec<Scenario>,
 }
@@ -244,41 +285,19 @@ pub struct Scenario {
     pub when: String,
     /// The THEN outcome, one line.
     pub then: String,
+    /// Optional further AND outcomes, one line each.
+    #[serde(default)]
+    pub and: Vec<String>,
 }
 
-// Builds the `Note:` lines appended to a requirement: one per losing class of
-// a divergence, one per class plus the reconciliation line for a conflict,
-// then one when the acceptance criteria are not evidenced. `None` if none.
-fn notes(basis: &Basis) -> Option<String> {
-    let mut lines = Vec::new();
-
-    let classes = basis.classes();
-    match basis.status() {
-        Status::Divergence => lines.extend(classes.iter().skip(1).map(|class| note(class))),
-        Status::Conflict => {
-            lines.extend(classes.iter().map(|class| note(class)));
-            lines.push(format!("{NOTE} Operator reconciliation required."));
+impl From<Scenario> for artifact::Scenario {
+    fn from(scenario: Scenario) -> Self {
+        Self {
+            name: scenario.name,
+            given: scenario.given,
+            when: scenario.when,
+            then: scenario.then,
+            and: scenario.and,
         }
-        Status::Agreed | Status::Unknown => {}
     }
-
-    if !basis.covered() {
-        lines.push(format!("{NOTE} acceptance criteria not evidenced."));
-    }
-
-    (!lines.is_empty()).then(|| lines.join("\n"))
-}
-
-// Formats one class as `Note: <sources> (<authority>, <id>): <statement>`,
-// listing every member's source but taking the rest from the lead member.
-fn note(class: &[Contributor]) -> String {
-    let sources = class.iter().map(|member| member.source.as_str()).collect::<Vec<_>>().join(", ");
-    let lead = &class[0];
-
-    format!(
-        "{NOTE} {sources} ({authority}, {id}): {statement}",
-        authority = lead.authority,
-        id = lead.id,
-        statement = normalise(&lead.statement),
-    )
 }

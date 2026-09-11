@@ -1,0 +1,36 @@
+{
+  "emery": 2,
+  "next_id": 2,
+  "preamble": [
+    "One bound source: the mock component's minimal greeting profile, reconciled with no disagreement and one acceptance gap."
+  ],
+  "requirements": [
+    {
+      "id": "REQ-001",
+      "subject": "greeting.behaviour",
+      "status": "unknown",
+      "covered": false,
+      "sources": [
+        {
+          "source": "source",
+          "claim": "greeting.behaviour"
+        }
+      ],
+      "body": [
+        "GET /greeting returns the static string 'hello'."
+      ],
+      "losers": [],
+      "scenarios": [
+        {
+          "name": "Greeting requested",
+          "given": [
+            "the greeting surface is bound"
+          ],
+          "when": "`/greeting` is requested",
+          "then": "the response is `hello`",
+          "and": []
+        }
+      ]
+    }
+  ]
+}

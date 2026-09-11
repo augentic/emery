@@ -192,7 +192,7 @@ Text mode renders through the output's render fn in `crates/cli/src/text.rs` (`f
 
 ## One emit path
 
-Outputs and failures leave operations as typed values. Omnia's command projector encodes those values at the command boundary — the output as the success body in the selected format on stdout, the `Failure` envelope on stderr; no handler writes stdout or stderr. If you need a bespoke failure shape, construct an Omnia `Error` (macros for defaults; explicit variants only for the three recovery codes); do not hand-roll a `*ErrBody` DTO or a second envelope. `emery_cli` contributes only the render fns and the hint table; it never encodes.
+Outputs and failures leave operations as typed values. Omnia's command projector encodes those values at the command boundary — the output as the success body in the selected format on stdout, the `Failure` envelope on stderr; no handler writes stdout or stderr. If you need a bespoke failure shape, construct an Omnia `Error` (macros for defaults; explicit variants only for the five recovery codes); do not hand-roll a `*ErrBody` DTO or a second envelope. `emery_cli` contributes only the render fns and the hint table; it never encodes.
 
 ## DTOs
 
@@ -254,11 +254,11 @@ pub fn handle(output: &HandleOutput, w: &mut dyn fmt::Write) -> fmt::Result {
 
 ## Errors
 
-Engine operations, the adapter SDK, and adapters return `omnia_guest::Error` (`BadRequest`, `NotFound`, `ServerError`, `BadGateway`). Construct Omnia defaults with the crate-root macros (`bad_request!`, `not_found!`, `server_error!`, `bad_gateway!`); those emit snake_case codes (`bad_request`, …). Keep explicit variant construction only for the three recovery discriminants (`specify-source-required`, `unsupported-version`, `spec-not-generated`). Do not introduce a house error type or constructor wrappers; the adapter WIT `error` variant is lowered and lifted inside `emery_source::wire` alone (see [style.md](./style.md#failures-are-omnia-errors)).
+Engine operations, the adapter SDK, and adapters return `omnia_guest::Error` (`BadRequest`, `NotFound`, `ServerError`, `BadGateway`). Construct Omnia defaults with the crate-root macros (`bad_request!`, `not_found!`, `server_error!`, `bad_gateway!`); those emit snake_case codes (`bad_request`, …). Keep explicit variant construction only for the five recovery discriminants (`specify-source-required`, `unsupported-version`, `spec-not-generated`, `spec-outdated`, `master-invalid`). Do not introduce a house error type or constructor wrappers; the adapter WIT `error` variant is lowered and lifted inside `emery_source::wire` alone (see [style.md](./style.md#failures-are-omnia-errors)).
 
 **Class on a direct match.** Pick the Omnia variant that matches the failure: operator or input refusals are `BadRequest` (exit 1), missing resources are `NotFound` (exit 2), upstream or model failures are `BadGateway` (exit 4). Anything else — I/O, storage, leftover conversions — is `ServerError` (exit 3). An adapter's `BadRequest` keeps its class through the `Source` capability, so an adapter refusing its input exits 1 like any other input refusal; every other adapter failure reaches the engine as `BadGateway`. Do not invent new codes or new exit slots. See [handler-shape.md §"Exit codes"](./handler-shape.md#exit-codes).
 
-**Hint lookup.** Long-form recovery hints live in `crates/cli/src/lib.rs` (`hint` on `unsupported-version` / `specify-source-required` / `spec-not-generated` and the loader discriminants, attached through `Command::hints`). Adding a new hint extends that lookup, not the error type. Engine descriptions stay transport-neutral — they name the path, adapter, or rule, never a flag, a verb, or "the CLI"; flag-vocabulary recovery text belongs in the hint table.
+**Hint lookup.** Long-form recovery hints live in `crates/cli/src/lib.rs` (`hint` on `unsupported-version` / `specify-source-required` / `spec-not-generated` / `spec-outdated` / `master-invalid` and the loader discriminants, attached through `Command::hints`). Adding a new hint extends that lookup, not the error type. Engine descriptions stay transport-neutral — they name the path, adapter, or rule, never a flag, a verb, or "the CLI"; flag-vocabulary recovery text belongs in the hint table.
 
 `unwrap()` and `expect()` are reserved for invariants the type system can't express (e.g. "this enum variant covers `Status::value_variants()`"). Always include a justification string in `expect`. User-facing errors must surface as an Omnia `Error`, not panics.
 

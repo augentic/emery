@@ -6,14 +6,14 @@ How the `emery` runtime binds engine storage, and how deployments other than the
 
 Engine state — the revision store and its current revision id — is reachable only through the storage capabilities (`omnia_guest::StateStore` / `BlobStore` on the guest side). The names the engine uses are flat, deployment-neutral formulas:
 
-| Surface             | Kind                            | Name                |
-| ------------------- | ------------------------------- | ------------------- |
-| Current revision id | keyvalue key                    | `current-revision`  |
-| Revision documents  | blobstore container `revisions` | `<id>/<doc>.md`     |
+| Surface             | Kind                            | Name                                    |
+| ------------------- | ------------------------------- | --------------------------------------- |
+| Current revision id | keyvalue key                    | `current-revision`                      |
+| Revision masters    | blobstore container `revisions` | `<id>/spec.json`, `<id>/design.json`    |
 
 The host side of the boundary is a backend type implementing `omnia::Backend` (connection options compiled into the `hosts:` row, or loaded from the environment when the row carries none) plus the host context traits `WasiKeyValueCtx` and `WasiBlobstoreCtx`. Bucket and container identifiers cross the boundary exactly once — on `open_bucket` and the container methods — which is where a profile may rewrite them.
 
-Loaded components are not engine state: a path- or package-shaped adapter loads through the deployment's `omnia:plugins/loader` capability, whose acquisition policy is the shipped profile's declarative `locations:` list — the `.` path root first, reading a local component fresh on every run, then the `omnia.host` registry endpoint, whose fetches are likewise read fresh on every run — the shipped profile declares no project cache, so no fetched component persists between runs and resolution is always fresh-release-preferred. Earlier cache trees (`.omnia/cache/wasm-pkg`, `.omnia/storage/plugins/`) are orphaned — nothing reads them; delete them freely. Integrity binds the resolved sha256 digest to the exact bytes the host executes, verified against the source's optional pin, never an engine-owned mutable sidecar. Bare names dispatch to statically admitted guests and do not imply a stored component.
+The `.emery/spec.json` / `.emery/design.json` pair a project keeps beside its code is not engine state either: it is `emery show --format json` output the skill writes into the working tree and the CLI reads back on the next `specify`, adopted into the store through the same capabilities. Loaded components are not engine state: a path- or package-shaped adapter loads through the deployment's `omnia:plugins/loader` capability, whose acquisition policy is the shipped profile's declarative `locations:` list — the `.` path root first, reading a local component fresh on every run, then the `omnia.host` registry endpoint, whose fetches are likewise read fresh on every run — the shipped profile declares no project cache, so no fetched component persists between runs and resolution is always fresh-release-preferred. Earlier cache trees (`.omnia/cache/wasm-pkg`, `.omnia/storage/plugins/`) are orphaned — nothing reads them; delete them freely. Integrity binds the resolved sha256 digest to the exact bytes the host executes, verified against the source's optional pin, never an engine-owned mutable sidecar. Bare names dispatch to statically admitted guests and do not imply a stored component.
 
 ## The shipped profile: local filesystem
 
@@ -23,7 +23,7 @@ The `hosts:` block of the `omnia::runtime!` invocation in [`src/main.rs`](../../
 
 A multi-project deployment can scope every bucket and container under a project id. This requires a genuinely shared backing: a command-mode process over in-memory defaults creates one fresh store and one project id, so it cannot demonstrate cross-project isolation or persistence.
 
-The `multi_project_isolation` scenario in [`tests/specify.rs`](../../tests/specify.rs) exercises the invariant directly: two project-scoped views over one shared scripted store commit and show independent revisions, and no unprefixed key is written. A concrete deployment supplies its shared backend clients and rewrites identifiers at the `WasiKeyValueCtx` and `WasiBlobstoreCtx` boundary; that host-specific configuration does not belong in the engine.
+The `multi_project` scenario in [`tests/specify.rs`](../../tests/specify.rs) exercises the invariant directly: two project-scoped views over one shared scripted store commit and show independent revisions, and no unprefixed key is written. A concrete deployment supplies its shared backend clients and rewrites identifiers at the `WasiKeyValueCtx` and `WasiBlobstoreCtx` boundary; that host-specific configuration does not belong in the engine.
 
 ## Remote backings
 

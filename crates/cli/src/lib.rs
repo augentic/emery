@@ -11,6 +11,7 @@
 //! failure envelope, and the exit map — is omnia's command façade
 //! (`omnia_guest::api::command`), so this crate owns only what is Emery's.
 
+mod master;
 mod sources;
 mod text;
 
@@ -32,7 +33,10 @@ const SPECIFY_DESC: &str = "Generate spec.md and design.md from source adapters.
     for `emery.toml` in the project root. Config and command-line sources cannot be \
     combined.\n\n\
     Adapter paths are project-relative. Each run reloads adapters, verifies optional \
-    digest pins, reconciles their claims, and atomically commits a new revision.";
+    digest pins, reconciles their claims, and atomically commits a new revision. A \
+    project carrying `.emery/spec.json` and `.emery/design.json` (the `show --format \
+    json` envelopes) continues that revision: requirements keep their ids, and only \
+    what the evidence changed is drafted again.";
 const SHOW_DESC: &str = "Print a document from the current revision.\n\n\
     Text output contains only the document body. `--format json` also includes the \
     revision id.";
@@ -141,7 +145,8 @@ impl SpecifyArgs {
             config,
         } = self;
         let sources = sources::decode(&adapters, &descriptions, config.as_deref())?;
-        Ok(SpecifyInput { sources })
+        let master = master::discover()?;
+        Ok(SpecifyInput { sources, master })
     }
 }
 
@@ -194,6 +199,12 @@ fn hint(code: &str) -> Option<Cow<'static, str>> {
         }
         "spec-not-generated" => {
             "run `emery specify <adapter>...` to commit a revision, then re-run show"
+        }
+        "spec-outdated" => {
+            "the master predates this emery's grammar: remove `.emery/` if present, then re-run `emery specify <adapter>...` to regenerate it"
+        }
+        "master-invalid" => {
+            "`.emery/spec.json` and `.emery/design.json` are the `emery show <spec|design> --format json` envelopes of one revision: restore both from the same revision, or remove `.emery/` to regenerate"
         }
         "refused" => {
             "the loader refused the component; the message above names why (digest, export, or location)"

@@ -1,89 +1,90 @@
-//! # Read `design.md`
+//! # The design
 //!
-//! A design is a preamble followed by `## ` sections drawn from a closed
-//! vocabulary in a fixed order, each with a body. The section heading is
-//! what the re-mine diff keys on, and the body is what it compares.
+//! The typed master of `design.md`: a preamble and the sections of a closed
+//! vocabulary in a fixed order, each a run of drafted paragraphs and the type
+//! signatures the engine placed verbatim. `Display` renders the Markdown
+//! projection an operator reads.
 
-use std::collections::BTreeMap;
 use std::fmt::{self, Display, Formatter};
-use std::str::FromStr;
 
-use omnia_guest::{Error, server_error};
 use schemars::JsonSchema;
-use serde::Deserialize;
-use strum::VariantArray as _;
+use serde::{Deserialize, Serialize};
 
-use crate::artifact::{Document, Line, Lines, Text};
+use crate::artifact::Markdown;
 
-const MARKER: &str = "## ";
 const CITATION: &str = "(from ";
 
-/// A canonical `design.md`, read back.
-#[derive(Debug)]
+/// The `Type:` key: the engine's own line labelling a signature fence.
+pub const TYPE: &str = "Type:";
+
+/// The design master.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct Design {
-    /// Sections in document order.
+    /// The master grammar the document was written under.
+    pub emery: u32,
+    /// Markdown paragraphs before the first section.
+    pub preamble: Vec<String>,
+    /// The sections, in vocabulary order.
     pub sections: Vec<Section>,
 }
 
 impl Design {
-    const NAME: &str = Document::Design.file();
-
-    /// Indexes the sections by kind — the heading is the identity the re-mine
-    /// diff keys on.
+    /// Finds the section of `kind`.
     #[must_use]
-    pub fn by_kind(&self) -> BTreeMap<SectionKind, &Section> {
-        self.sections.iter().map(|section| (section.kind, section)).collect()
+    pub fn section(&self, kind: SectionKind) -> Option<&Section> {
+        self.sections.iter().find(|section| section.kind == kind)
     }
 }
 
-impl FromStr for Design {
-    type Err = Error;
-
-    // Parses a stored `design.md`. A document the renderer did not write is
-    // corruption, so every failure is `server_error`.
-    fn from_str(text: &str) -> Result<Self, Error> {
-        let sections = Text::from(text)
-            .blocks(MARKER)
-            .map(Section::read)
-            .collect::<Result<Vec<_>, _>>()
-            .map_err(|detail| server_error!("`{}` is not canonical: {detail}", Self::NAME))?;
-        if sections.is_empty() {
-            return Err(server_error!("`{}` is not canonical: no `##` section", Self::NAME));
+// Renders `design.md`: the preamble, then every section under its heading.
+impl Display for Design {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        let mut document = Markdown::new("Design");
+        document.extend(&self.preamble);
+        for section in &self.sections {
+            document.push(format!("## {}", section.kind));
+            for block in &section.blocks {
+                match block {
+                    Block::Text { text, .. } => document.push(text),
+                    Block::Type { key, signature } => {
+                        document.push(format!("{TYPE} {key}\n```\n{}\n```", signature.trim_end()));
+                    }
+                }
+            }
         }
-        // Each section appears once, in the vocabulary's order.
-        let ordered = sections.windows(2).all(|pair| pair[0].kind < pair[1].kind);
-        if !ordered {
-            return Err(server_error!("`{}` is not canonical: sections out of order", Self::NAME));
-        }
-        Ok(Self { sections })
+        f.write_str(&document.finish())
     }
 }
 
 /// One `## ` section.
-#[derive(Debug)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct Section {
     /// The heading, from the closed vocabulary.
     pub kind: SectionKind,
-    // The text below the heading, blank edges trimmed.
-    body: String,
+    /// The blocks, in reading order.
+    pub blocks: Vec<Block>,
 }
 
-impl Section {
-    fn read((heading, body): (Line<'_>, Lines<'_>)) -> Result<Self, String> {
-        let kind = heading.0.parse::<SectionKind>()?;
-        Ok(Self {
-            kind,
-            body: body.into_body(),
-        })
-    }
-}
-
-// Two readings of one section are equal when kind and body match; where the
-// section sits in the document is not part of its identity.
-impl PartialEq for Section {
-    fn eq(&self, other: &Self) -> bool {
-        self.kind == other.kind && self.body == other.body
-    }
+/// One design block: a drafted paragraph, or a `type` claim's signature.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum Block {
+    /// One Markdown paragraph.
+    Text {
+        /// The paragraph.
+        text: String,
+        /// Whether the paragraph is held verbatim across runs.
+        pinned: bool,
+    },
+    /// A `type` claim's signature, placed verbatim.
+    Type {
+        /// The claim's key.
+        key: String,
+        /// The claim's signature.
+        signature: String,
+    },
 }
 
 /// The closed `## ` vocabulary, in document order. A draft names a section
@@ -97,6 +98,7 @@ impl PartialEq for Section {
     Eq,
     PartialOrd,
     Ord,
+    Serialize,
     Deserialize,
     JsonSchema,
     strum::AsRefStr,
@@ -130,18 +132,6 @@ impl Display for SectionKind {
             Self::UiLayout => "UI / layout",
             Self::Observability => "Observability",
         })
-    }
-}
-
-impl FromStr for SectionKind {
-    type Err = String;
-
-    fn from_str(text: &str) -> Result<Self, String> {
-        Self::VARIANTS
-            .iter()
-            .copied()
-            .find(|kind| kind.to_string() == text)
-            .ok_or_else(|| format!("unknown section `## {text}`"))
     }
 }
 
