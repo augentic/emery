@@ -16,66 +16,41 @@ use crate::types::{Claim, ClaimKind, Evidence};
 /// `pattern` and is enforced again in code.
 pub const DOTTED_KEBAB_PATTERN: &str = "^[a-z0-9]+(-[a-z0-9]+)*(\\.[a-z0-9]+(-[a-z0-9]+)*)*$";
 
-/// Collects every id and extras finding over `claims`.
-#[must_use]
-pub fn findings(claims: &[Claim]) -> Vec<String> {
-    let mut findings = id_findings(claims);
-    findings.extend(extras_findings(claims));
-    findings
-}
-
-// Reports every claim whose id breaks the dotted-kebab grammar, and every
-// requirement, criterion, or example claim that carries no id at all.
-fn id_findings(claims: &[Claim]) -> Vec<String> {
-    let mut findings = Vec::new();
-    for (index, claim) in claims.iter().enumerate() {
-        match &claim.id {
-            Some(id) if !is_dotted_kebab(id) => {
-                findings.push(format!(
-                    "- claim {index}: id `{id}` does not match `{DOTTED_KEBAB_PATTERN}`"
-                ));
-            }
-            None if matches!(
-                claim.kind,
-                ClaimKind::Requirement | ClaimKind::Criterion | ClaimKind::Example
-            ) =>
-            {
-                let kind = claim.kind;
-                findings.push(format!("- claim {index}: `{kind}` claims require an id"));
-            }
-            _ => {}
-        }
-    }
-    findings
-}
-
-// Reports every claim that is missing an extra its kind requires.
-fn extras_findings(claims: &[Claim]) -> Vec<String> {
-    let mut findings = Vec::new();
-    for (index, claim) in claims.iter().enumerate() {
-        for key in claim.kind.required_extras() {
-            if !claim.extras.contains_key(*key) {
-                let label = claim.id.as_deref().unwrap_or("<unnamed>");
-                let kind = claim.kind;
-                findings
-                    .push(format!("- claim {index}: `{kind}` `{label}` is missing extra `{key}`"));
-            }
-        }
-    }
-    findings
-}
-
 impl Evidence {
-    /// Yields every `type` claim.
-    pub fn types(&self) -> impl Iterator<Item = &Claim> {
-        self.claims.iter().filter(|claim| claim.kind == ClaimKind::Type)
-    }
-
-    /// Collects every id and extras finding over the document's claims; empty
-    /// when the document passes the gate.
+    /// Collects every finding over the document's claims, one line each, in
+    /// claim order; empty when the document passes the gate.
     #[must_use]
     pub fn findings(&self) -> Vec<String> {
-        findings(&self.claims)
+        self.claims.iter().enumerate().flat_map(|(index, claim)| claim.findings(index)).collect()
+    }
+}
+
+impl Claim {
+    // The claim's findings as `claim {index}`: an id outside the dotted-kebab
+    // grammar, or none on a kind that requires one; then every extra its kind
+    // requires that it lacks.
+    fn findings(&self, index: usize) -> impl Iterator<Item = String> + '_ {
+        let kind = self.kind;
+        let id = match self.id.as_deref() {
+            Some(id) if !is_dotted_kebab(id) => {
+                Some(format!("- claim {index}: id `{id}` does not match `{DOTTED_KEBAB_PATTERN}`"))
+            }
+            None if !kind.required_extras().is_empty() => {
+                Some(format!("- claim {index}: `{kind}` claims require an id"))
+            }
+            _ => None,
+        };
+
+        let extras = kind.required_extras().iter().filter_map(move |key| {
+            (!self.extras.contains_key(*key)).then(|| {
+                format!(
+                    "- claim {index}: `{kind}` `{label}` is missing extra `{key}`",
+                    label = self.id.as_deref().unwrap_or("<unnamed>"),
+                )
+            })
+        });
+
+        id.into_iter().chain(extras)
     }
 }
 
@@ -94,40 +69,10 @@ impl ClaimKind {
     }
 }
 
-impl Claim {
-    /// The `statement` extra as text; empty when absent.
-    ///
-    /// The claim gate guarantees a requirement carries this extra but not
-    /// that it is a string, so a non-string value is rendered rather than
-    /// dropped — unlike [`Self::signature`], which is optional by contract
-    /// and only ever placed verbatim.
-    #[must_use]
-    pub fn statement(&self) -> String {
-        match self.extras.get("statement") {
-            Some(serde_json::Value::String(text)) => text.clone(),
-            Some(other) => other.to_string(),
-            None => String::new(),
-        }
-    }
-
-    /// The claim's id, or its path when it has no id.
-    #[must_use]
-    pub fn type_key(&self) -> Option<&str> {
-        self.id.as_deref().or(self.path.as_deref())
-    }
-
-    /// The `signature` extra, when it is a string.
-    #[must_use]
-    pub fn signature(&self) -> Option<&str> {
-        match self.extras.get("signature") {
-            Some(serde_json::Value::String(signature)) => Some(signature),
-            _ => None,
-        }
-    }
-}
-
+// Tells whether `value` is kebab segments joined by `.`; `is_kebab` refuses
+// the empty segment an empty value or a doubled dot leaves.
 fn is_dotted_kebab(value: &str) -> bool {
-    !value.is_empty() && value.split('.').all(is_kebab)
+    value.split('.').all(is_kebab)
 }
 
 /// Tells whether `value` follows the kebab grammar shared by claim-id

@@ -29,10 +29,6 @@ pub use store::{CONTAINER, CURRENT};
 /// Returns a `BadRequest` for an absolute path or a relative path that
 /// escapes above the project root.
 pub fn preopen_path(path: &Path) -> Result<PathBuf, Error> {
-    if path.is_absolute() {
-        return Err(bad_request!("path `{}` must be relative to the project root", path.display()));
-    }
-
     let mut normalized = PathBuf::new();
     for component in path.components() {
         match component {
@@ -40,6 +36,7 @@ pub fn preopen_path(path: &Path) -> Result<PathBuf, Error> {
             Component::Normal(part) => normalized.push(part),
             // `..` steps back over the segment it follows; with nothing to
             // pop it would escape the root and falls through to the refusal.
+            // A root or prefix component is an absolute path.
             Component::ParentDir if normalized.pop() => {}
             Component::ParentDir | Component::RootDir | Component::Prefix(_) => {
                 return Err(bad_request!(

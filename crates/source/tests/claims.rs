@@ -5,7 +5,6 @@
 //! claim missing an extra its kind requires is refused. Pinning these here
 //! keeps the two enforcement points from disagreeing.
 
-use emery_source::claims::findings;
 use emery_source::types::{ClaimKind, Evidence};
 
 #[test]
@@ -18,7 +17,6 @@ fn clean_evidence() {
             {"kind":"decision"}
         ]}"#,
     );
-    assert!(findings(&clean.claims).is_empty());
     assert!(clean.findings().is_empty(), "clean evidence passes the gate");
 }
 
@@ -53,7 +51,7 @@ fn missing_extras() {
             {"kind":"section","synopsis":"no extras required"}
         ]}"#,
     );
-    let findings = findings(&bare.claims);
+    let findings = bare.findings();
     assert_eq!(
         findings.len(),
         2,
@@ -61,7 +59,6 @@ fn missing_extras() {
     );
     assert!(findings[0].contains("`password-reset.request` is missing extra `statement`"));
     assert!(findings[1].contains("`password-reset.stale` is missing extra `replay-digest`"));
-    assert_eq!(bare.findings(), findings, "the document gate is the claim gate over its claims");
 }
 
 fn evidence(json: &str) -> Evidence {

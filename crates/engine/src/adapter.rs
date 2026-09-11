@@ -80,9 +80,9 @@ fn check_version<P: Source>(provider: &P, name: &str, id: &str) -> Result<(), Er
         bad_request!("adapter `{name}` ({id}) has an invalid `emery-version` `{declared}`: {err}")
     })?;
 
-    // The running version is this crate's own, so it always parses.
-    let running = semver::Version::parse(env!("CARGO_PKG_VERSION"));
-    if running.is_ok_and(|running| running < minimum) {
+    let running = semver::Version::parse(env!("CARGO_PKG_VERSION"))
+        .expect("the running version is this crate's own, which Cargo checked is SemVer");
+    if running < minimum {
         return Err(Error::BadRequest {
             code: "unsupported-version".into(),
             description: format!("adapter {name} ({id}) requires emery {minimum} or newer"),

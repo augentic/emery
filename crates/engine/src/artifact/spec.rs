@@ -6,12 +6,11 @@
 //! `Display` renders the Markdown projection an operator reads.
 
 use std::fmt::{self, Display, Formatter};
+use std::str::FromStr;
 
 use emery_source::types::Authority;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
-
-use crate::artifact::markdown;
 
 /// The `ID:` provenance key; the three keys follow the heading in this order.
 pub const ID: &str = "ID:";
@@ -48,9 +47,16 @@ impl Spec {
 // Renders `spec.md`: the preamble, then every requirement block.
 impl Display for Spec {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        let blocks =
-            self.preamble.iter().cloned().chain(self.requirements.iter().map(ToString::to_string));
-        f.write_str(&markdown("Specification", blocks))
+        write!(f, "# Specification")?;
+
+        let blocks = self.requirements.iter().map(ToString::to_string);
+        for block in self.preamble.iter().cloned().chain(blocks) {
+            for (position, line) in block.lines().enumerate() {
+                f.write_str(if position == 0 { "\n\n" } else { "\n" })?;
+                f.write_str(line.trim_end())?;
+            }
+        }
+        f.write_str("\n")
     }
 }
 
@@ -242,18 +248,24 @@ impl ReqId {
     }
 }
 
+impl FromStr for ReqId {
+    type Err = String;
+
+    // An id is well formed exactly when it renders back to itself.
+    fn from_str(text: &str) -> Result<Self, String> {
+        text.strip_prefix(Self::PREFIX)
+            .and_then(|digits| digits.parse().ok())
+            .map(Self)
+            .filter(|id| id.0 > 0 && id.to_string() == text)
+            .ok_or_else(|| format!("malformed id `{text}`"))
+    }
+}
+
 impl TryFrom<String> for ReqId {
     type Error = String;
 
     fn try_from(text: String) -> Result<Self, String> {
-        let digits = text.strip_prefix(Self::PREFIX).unwrap_or_default();
-        let number = digits.parse::<u32>().ok();
-        match number {
-            Some(number) if digits.len() >= 3 && number > 0 && text == Self(number).to_string() => {
-                Ok(Self(number))
-            }
-            _ => Err(format!("malformed id `{text}`")),
-        }
+        text.parse()
     }
 }
 

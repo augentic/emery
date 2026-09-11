@@ -124,6 +124,7 @@ impl Revision {
     pub fn files(&self) -> Vec<(Document, String)> {
         Document::VARIANTS
             .iter()
+            .copied()
             .map(|document| {
                 let mut text = match document {
                     Document::Spec => serde_json::to_string_pretty(&self.spec),
@@ -131,7 +132,7 @@ impl Revision {
                 }
                 .expect("the revision serialises: no maps with non-string keys, no floats");
                 text.push('\n');
-                (*document, text)
+                (document, text)
             })
             .collect()
     }
@@ -177,19 +178,4 @@ pub fn digest<'a>(files: impl Iterator<Item = (&'a str, &'a [u8])>) -> String {
         hasher.update(body);
     }
     hex::encode(hasher.finalize())
-}
-
-// Renders a projection body: the `# <title>` heading, then every block in
-// order, joined by one blank line, every line right-trimmed, one trailing
-// newline.
-fn markdown(title: &str, blocks: impl Iterator<Item = String>) -> String {
-    let mut text = format!("# {title}");
-    for block in blocks {
-        for (position, line) in block.lines().enumerate() {
-            text.push_str(if position == 0 { "\n\n" } else { "\n" });
-            text.push_str(line.trim_end());
-        }
-    }
-    text.push('\n');
-    text
 }

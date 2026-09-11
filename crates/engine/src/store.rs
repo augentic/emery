@@ -13,6 +13,7 @@
 use anyhow::Context;
 use omnia_guest::{BlobStore, Error, StateStore, server_error};
 use serde::Serialize;
+use serde_json::Value;
 use strum::VariantArray as _;
 
 use crate::artifact::{Design, Document, ReqId, Requirement, Revision, SectionKind, Spec, digest};
@@ -97,15 +98,12 @@ pub async fn current<S: StateStore + BlobStore>(store: &S) -> Result<Option<Revi
 // suppresses only the advisory diff, never the CAS, which still refuses a
 // stale token.
 async fn observe<S: StateStore + BlobStore>(store: &S) -> Observation {
-    let mut observed = Observation {
-        token: StateStore::get(store, CURRENT).await.ok().flatten(),
-        outgoing: None,
-    };
-    observed.outgoing = match observed.outgoing_id() {
+    let token = StateStore::get(store, CURRENT).await.ok().flatten();
+    let outgoing = match token.as_deref().and_then(id_of) {
         Some(id) => load(store, id).await.ok(),
         None => None,
     };
-    observed
+    Observation { token, outgoing }
 }
 
 // Loads revision `id` and checks that its bytes still hash to that id: the
@@ -124,12 +122,7 @@ async fn load<S: BlobStore>(store: &S, id: &str) -> Result<Revision, Error> {
     // The bytes are the ones committed: a revision under another grammar is
     // outdated, and one this grammar cannot read was not written by this
     // engine.
-    let spec = serde_json::from_slice(&spec)
-        .with_context(|| format!("revision `{id}`: `{}` is not JSON", Document::Spec.file()))?;
-    let design = serde_json::from_slice(&design)
-        .with_context(|| format!("revision `{id}`: `{}` is not JSON", Document::Design.file()))?;
-
-    Revision::read(spec, design)
+    Revision::read(parse(id, Document::Spec, &spec)?, parse(id, Document::Design, &design)?)
 }
 
 // Reads one document of revision `id`; a document absent under a named
@@ -139,6 +132,18 @@ async fn read<S: BlobStore>(store: &S, id: &str, document: Document) -> Result<V
         .await
         .context("reading revision document")?
         .ok_or_else(|| server_error!("revision `{id}` does not contain `{}`", document.file()))
+}
+
+// Parses one committed document of revision `id` as JSON.
+fn parse(id: &str, document: Document, bytes: &[u8]) -> Result<Value, Error> {
+    let value = serde_json::from_slice(bytes)
+        .with_context(|| format!("revision `{id}`: `{}` is not JSON", document.file()))?;
+    Ok(value)
+}
+
+// Reads the revision id a CAS token holds; a non-UTF-8 token names none.
+fn id_of(token: &[u8]) -> Option<&str> {
+    str::from_utf8(token).ok()
 }
 
 // The current revision observed before a compare-and-swap; one
@@ -154,10 +159,9 @@ struct Observation {
 }
 
 impl Observation {
-    // Reads the outgoing revision's id from the token; a non-UTF-8 token
-    // names no blobs.
+    // The outgoing revision's id, the blobs a landed swap prunes.
     fn outgoing_id(&self) -> Option<&str> {
-        self.token.as_deref().and_then(|raw| str::from_utf8(raw).ok())
+        self.token.as_deref().and_then(id_of)
     }
 }
 

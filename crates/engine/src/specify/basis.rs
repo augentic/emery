@@ -128,15 +128,11 @@ impl Basis {
     /// the notes are the losing classes.
     #[must_use]
     pub fn requirement(&self, scenarios: Vec<Scenario>) -> Requirement {
-        let body = match self.status {
-            Status::Conflict => Vec::new(),
-            _ => vec![normalise(&self.classes[0][0].statement)],
-        };
-
-        let noted = match self.status {
-            Status::Divergence => &self.classes[1..],
-            Status::Conflict => &*self.classes,
-            Status::Agreed | Status::Unknown => &[],
+        let winner = &self.classes[0][0].statement;
+        let (body, noted): (Vec<String>, &[Vec<Contributor>]) = match self.status {
+            Status::Agreed | Status::Unknown => (vec![winner.clone()], &[]),
+            Status::Divergence => (vec![winner.clone()], &self.classes[1..]),
+            Status::Conflict => (Vec::new(), &self.classes),
         };
         let losers = noted
             .iter()
@@ -146,7 +142,7 @@ impl Basis {
                     sources: class.iter().map(|member| member.source.clone()).collect(),
                     authority: lead.authority,
                     claim: lead.id.clone(),
-                    statement: normalise(&lead.statement),
+                    statement: lead.statement.clone(),
                 }
             })
             .collect();
@@ -173,12 +169,12 @@ pub struct Contributor {
     pub authority: Authority,
     /// The claim id, which may differ from the requirement's subject.
     pub id: String,
-    /// The claim's `statement` extra.
+    /// The claim's `statement` extra, whitespace-normalised.
     pub statement: String,
-    // The claim's synopsis, shown to the grouping judgment alone.
-    synopsis: Option<String>,
-    // Position in source order, the tie-break within an authority.
-    index: usize,
+    /// The claim's synopsis, shown to the grouping judgment alone.
+    pub synopsis: Option<String>,
+    /// Position in source order, the tie-break within an authority.
+    pub index: usize,
 }
 
 impl From<&Contributor> for Cited {
@@ -236,11 +232,10 @@ impl<'a> GroupingBrief<'a> {
             });
             let group = &mut groups[position].1;
             group.claims.push(index);
-            let statement = normalise(&claim.statement);
             let class = group
                 .classes
                 .iter_mut()
-                .find(|class| normalise(&self.contributors[class[0]].statement) == statement);
+                .find(|class| self.contributors[class[0]].statement == claim.statement);
 
             match class {
                 Some(class) => class.push(index),
@@ -414,10 +409,4 @@ impl Display for GroupingBrief<'_> {
              one agreeing class.\n",
         )
     }
-}
-
-// Collapses every run of whitespace to one space, so a reflowed statement
-// still matches.
-pub fn normalise(text: &str) -> String {
-    text.split_whitespace().collect::<Vec<_>>().join(" ")
 }

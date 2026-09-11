@@ -8,7 +8,9 @@
 //! the SDK's `source!` macro over [`export`], and the engine guest calls into
 //! it through [`import`]. The records live in the WIT `types` interface, so
 //! the export side and the caller side bind the same Rust types and each
-//! conversion is written once, here at the module root.
+//! conversion is written once, here at the module root — `From` where the
+//! wire form always lifts, `TryFrom` where an extra's canonical JSON must
+//! parse.
 //!
 //! The WIT `error` variant lives here alone: an adapter's `omnia_guest::Error`
 //! is lowered onto it for [`export`], and [`import::extract`] lifts it back
@@ -185,12 +187,49 @@ impl From<types::Claim> for wit::Claim {
     }
 }
 
+// Lifts a claim off the wire, parsing each extra back from its canonical
+// JSON (A8); an extra that fails to parse is a typed error rather than a
+// dropped key.
+impl TryFrom<wit::Claim> for types::Claim {
+    type Error = String;
+
+    fn try_from(claim: wit::Claim) -> Result<Self, String> {
+        let extras = claim
+            .extras
+            .into_iter()
+            .map(|(key, encoded)| match serde_json::from_str(&encoded) {
+                Ok(value) => Ok((key, value)),
+                Err(err) => Err(format!("extra `{key}` is not canonical JSON ({err}): {encoded}")),
+            })
+            .collect::<Result<_, _>>()?;
+        Ok(Self {
+            kind: claim.kind.into(),
+            id: claim.id,
+            path: claim.path,
+            synopsis: claim.synopsis,
+            backing: claim.backing.map(Into::into),
+            extras,
+        })
+    }
+}
+
 impl From<types::Evidence> for wit::Evidence {
     fn from(evidence: types::Evidence) -> Self {
         Self {
             authority: evidence.authority.into(),
             claims: evidence.claims.into_iter().map(Into::into).collect(),
         }
+    }
+}
+
+impl TryFrom<wit::Evidence> for types::Evidence {
+    type Error = String;
+
+    fn try_from(evidence: wit::Evidence) -> Result<Self, String> {
+        Ok(Self {
+            authority: evidence.authority.into(),
+            claims: evidence.claims.into_iter().map(TryInto::try_into).collect::<Result<_, _>>()?,
+        })
     }
 }
 
@@ -236,9 +275,6 @@ pub mod import {
 
     /// Dispatches `extract` to `id`.
     ///
-    /// Open extras are parsed from their canonical JSON (A8); an extra that
-    /// fails to parse is a typed error rather than a dropped key.
-    ///
     /// # Errors
     ///
     /// An adapter refusing its input is `BadRequest`; any other adapter
@@ -252,30 +288,6 @@ pub mod import {
                 }
             },
         )?;
-        evidence(answer).map_err(|detail| bad_gateway!("source `{id}`: {detail}"))
-    }
-
-    fn evidence(evidence: wit::Evidence) -> Result<types::Evidence, String> {
-        Ok(types::Evidence {
-            authority: evidence.authority.into(),
-            claims: evidence.claims.into_iter().map(claim).collect::<Result<_, _>>()?,
-        })
-    }
-
-    fn claim(claim: wit::Claim) -> Result<types::Claim, String> {
-        let mut extras = serde_json::Map::new();
-        for (key, encoded) in claim.extras {
-            let value = serde_json::from_str(&encoded)
-                .map_err(|err| format!("extra `{key}` is not canonical JSON ({err}): {encoded}"))?;
-            extras.insert(key, value);
-        }
-        Ok(types::Claim {
-            kind: claim.kind.into(),
-            id: claim.id,
-            path: claim.path,
-            synopsis: claim.synopsis,
-            backing: claim.backing.map(Into::into),
-            extras,
-        })
+        types::Evidence::try_from(answer).map_err(|detail| bad_gateway!("source `{id}`: {detail}"))
     }
 }

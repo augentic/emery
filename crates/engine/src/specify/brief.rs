@@ -66,7 +66,7 @@ pub trait Brief: Display + Sync + Sized {
             .ask(model, self.to_string(), None, |answer| {
                 let mut review = Review::default();
                 self.verify(answer, &mut review);
-                if review.is_clean() { Ok(()) } else { Err(review.0) }
+                review.verdict()
             })
             .await?;
 
@@ -87,9 +87,10 @@ impl Review {
         self.0.push(format!("- {finding}"));
     }
 
-    // Tells whether nothing was found against the candidate.
-    pub const fn is_clean(&self) -> bool {
-        self.0.is_empty()
+    // Accepts a candidate nothing was found against; rejects one with the
+    // findings the backend feeds back as the correction.
+    pub fn verdict(self) -> Result<(), Findings> {
+        if self.0.is_empty() { Ok(()) } else { Err(self.0) }
     }
 
     // The prose checks the document briefs share. A draft is placed into a

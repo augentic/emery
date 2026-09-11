@@ -165,6 +165,22 @@ pub struct Claim {
     pub extras: serde_json::Map<String, serde_json::Value>,
 }
 
+impl Claim {
+    /// The `statement` extra as text, every run of whitespace collapsed to
+    /// one space so a reflowed statement still matches. A non-string value
+    /// is rendered rather than dropped: the claim gate requires the extra,
+    /// not that it is a string.
+    #[must_use]
+    pub fn statement(&self) -> String {
+        let normalise = |text: &str| text.split_whitespace().collect::<Vec<_>>().join(" ");
+        match self.extras.get("statement") {
+            Some(serde_json::Value::String(text)) => normalise(text),
+            Some(other) => normalise(&other.to_string()),
+            None => String::new(),
+        }
+    }
+}
+
 /// Extracted claims and their document-level authority.
 #[derive(Clone, Debug, Deserialize, JsonSchema)]
 #[serde(rename_all = "kebab-case")]

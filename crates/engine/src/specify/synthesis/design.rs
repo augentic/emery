@@ -38,7 +38,7 @@ impl<'a> DesignBrief<'a> {
         Self {
             extracts,
             spec,
-            plan: Plan::collect(extracts),
+            plan: Plan::new(extracts),
         }
     }
 }
@@ -168,10 +168,11 @@ impl Brief for DesignBrief<'_> {
                                 .plan
                                 .signatures
                                 .get(key.as_str())
+                                .copied()
                                 .expect("verify held the draft to the type claims");
                             artifact::Block::Type {
                                 key,
-                                signature: (*signature).to_string(),
+                                signature: signature.to_string(),
                             }
                         }
                     })
@@ -251,8 +252,9 @@ pub enum Block {
 // The facts a design draft is verified against: the kinds of every extracted
 // claim (which decide the sections this run requires, permits, or forbids),
 // the bound sources it may cite, and the `type` claims it must reference —
-// each by key, with the trimmed signature the engine places. A `type` claim
-// without a string `signature` has nothing to place and is not planned.
+// each by key (its id, or its path when it has none), with the trimmed
+// signature the engine places. A `type` claim without a string `signature`
+// has nothing to place and is not planned.
 struct Plan<'a> {
     kinds: BTreeSet<ClaimKind>,
     bound: BTreeSet<&'a str>,
@@ -260,19 +262,22 @@ struct Plan<'a> {
 }
 
 impl<'a> Plan<'a> {
-    fn collect(extracts: &'a [Extract]) -> Self {
-        let kinds =
-            extracts.iter().flat_map(|extract| &extract.evidence.claims).map(|claim| claim.kind);
-        let bound = extracts.iter().map(|extract| extract.key.as_str()).collect();
-        let signatures = extracts
-            .iter()
-            .flat_map(|extract| extract.evidence.types())
-            .filter_map(|claim| Some((claim.type_key()?, claim.signature()?.trim_end())))
+    fn new(extracts: &'a [Extract]) -> Self {
+        let claims = || extracts.iter().flat_map(|extract| &extract.evidence.claims);
+        let signatures = claims()
+            .filter(|claim| claim.kind == ClaimKind::Type)
+            .filter_map(|claim| {
+                let key = claim.id.as_deref().or(claim.path.as_deref())?;
+                let Some(Value::String(signature)) = claim.extras.get("signature") else {
+                    return None;
+                };
+                Some((key, signature.trim_end()))
+            })
             .collect();
 
         Self {
-            kinds: kinds.collect(),
-            bound,
+            kinds: claims().map(|claim| claim.kind).collect(),
+            bound: extracts.iter().map(|extract| extract.key.as_str()).collect(),
             signatures,
         }
     }
