@@ -15,7 +15,7 @@ use schemars::JsonSchema;
 use serde::Deserialize;
 use serde_json::{Value, json};
 
-use crate::artifact::{Cited, EMERY, Scenario, Spec, Status};
+use crate::artifact::{EMERY, Scenario, Spec, Status};
 use crate::specify::Extract;
 use crate::specify::basis::Basis;
 use crate::specify::brief::{Brief, Review};
@@ -135,16 +135,21 @@ impl Display for SpecBrief<'_> {
 
         f.write_str("\n## Requirements (draft one entry per subject)\n\n")?;
         for basis in self.bases {
-            let sources = basis.contributors().map(Cited::from).map(|cited| cited.to_string());
             let coverage = if basis.covered { "evidenced" } else { "not evidenced" };
-            writeln!(
+            write!(
                 f,
-                "- {id} `{subject}` — Status: {status} — Sources: [{sources}] — acceptance criteria {coverage}",
+                "- {id} `{subject}` — Status: {status} — Sources: [",
                 id = basis.id,
                 subject = basis.subject,
                 status = basis.status,
-                sources = sources.collect::<Vec<_>>().join(", "),
             )?;
+            for (position, member) in basis.contributors().enumerate() {
+                if position > 0 {
+                    f.write_str(", ")?;
+                }
+                write!(f, "{}:{}", member.source, member.id)?;
+            }
+            writeln!(f, "] — acceptance criteria {coverage}")?;
 
             for (position, class) in basis.classes.iter().enumerate() {
                 let role = match (basis.status, position) {
@@ -173,7 +178,7 @@ impl Display for SpecBrief<'_> {
 /// The `spec.md` draft: preamble paragraphs and one entry per requirement to
 /// draft. Only what needs synthesis is asked for; every heading, provenance
 /// line, body, and note is the renderer's.
-#[derive(Debug, Clone, Deserialize, JsonSchema)]
+#[derive(Debug, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 #[schemars(title = "Emery spec draft")]
 pub struct SpecAnswer {
@@ -184,7 +189,7 @@ pub struct SpecAnswer {
 }
 
 /// The drafted content of one requirement.
-#[derive(Debug, Clone, Deserialize, JsonSchema)]
+#[derive(Debug, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct Draft {
     /// The requirement's subject, exactly as listed.

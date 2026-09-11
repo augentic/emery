@@ -41,14 +41,15 @@ impl Claim {
             _ => None,
         };
 
-        let extras = kind.required_extras().iter().filter_map(move |key| {
-            (!self.extras.contains_key(*key)).then(|| {
-                format!(
-                    "- claim {index}: `{kind}` `{label}` is missing extra `{key}`",
-                    label = self.id.as_deref().unwrap_or("<unnamed>"),
-                )
-            })
-        });
+        let extras =
+            kind.required_extras().iter().filter(|&key| !self.extras.contains_key(*key)).map(
+                move |key| {
+                    format!(
+                        "- claim {index}: `{kind}` `{label}` is missing extra `{key}`",
+                        label = self.id.as_deref().unwrap_or("<unnamed>"),
+                    )
+                },
+            );
 
         id.into_iter().chain(extras)
     }

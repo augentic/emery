@@ -22,9 +22,9 @@ use omnia_guest::api::command::Response;
 use provider::Provider;
 
 #[derive(Debug)]
-enum Mention {
-    Cli(String),
-    Skill { name: String, rest: String },
+enum Mention<'a> {
+    Cli(&'a str),
+    Skill { name: &'a str, rest: &'a str },
 }
 
 // Global flags do not appear in verb-specific help.
@@ -47,8 +47,8 @@ async fn rule_matches() {
         .unwrap_or_else(|err| panic!("reading {}: {err}", rule.display()));
     let help = grammar(&["emery", "--help"]).await;
     assert_eq!(help.exit, 0, "`emery --help` must succeed");
-    let verbs: BTreeSet<String> =
-        verbs::verbs(&String::from_utf8_lossy(&help.stdout)).into_iter().collect();
+    let help_text = String::from_utf8_lossy(&help.stdout);
+    let verbs: BTreeSet<&str> = verbs::verbs(&help_text).into_iter().collect();
 
     let mentions = mentions(&doc);
     assert!(
@@ -61,8 +61,7 @@ async fn rule_matches() {
             Mention::Cli(text) => {
                 let mut segments = text.split('|');
                 let first = segments.next().expect("split yields at least one segment");
-                let tokens: Vec<&str> = first.split_whitespace().skip(1).collect();
-                let (verb, rest) = walk_verb(&tokens, &verbs);
+                let (verb, rest) = walk_verb(first.split_whitespace().skip(1), &verbs);
                 if verb.is_none() {
                     assert!(
                         rest.is_none_or(|token| !is_kebab(token)),
@@ -70,10 +69,9 @@ async fn rule_matches() {
                         rest.unwrap_or_default(),
                     );
                 }
-                assert_flags(verb.as_deref().unwrap_or(""), first).await;
+                assert_flags(verb.unwrap_or(""), first).await;
                 for segment in segments {
-                    let tokens: Vec<&str> = segment.split_whitespace().collect();
-                    let (alt, _rest) = walk_verb(&tokens, &verbs);
+                    let (alt, _rest) = walk_verb(segment.split_whitespace(), &verbs);
                     assert!(
                         alt.is_some(),
                         "rule alternative `{segment}` does not resolve to a verb (in `{text}`)",
@@ -81,7 +79,7 @@ async fn rule_matches() {
                 }
             }
             Mention::Skill { name, rest } => {
-                let skill = plugin_dir().join("skills").join(&name).join("SKILL.md");
+                let skill = plugin_dir().join("skills").join(name).join("SKILL.md");
                 assert!(skill.is_file(), "rule names `/emery:{name}`, but {skill:?} is missing");
                 let verb = SKILL_VERBS
                     .iter()
@@ -89,7 +87,7 @@ async fn rule_matches() {
                     .unwrap_or_else(|| {
                         panic!("skill `{name}` has no CLI verb mapping in this test — add it")
                     });
-                assert_flags(verb, &rest).await;
+                assert_flags(verb, rest).await;
             }
         }
     }
@@ -120,7 +118,7 @@ fn plugin_dir() -> PathBuf {
 // Collects every standalone `emery` mention in `text` — a `/emery:<skill>`
 // reference or a CLI invocation — skipping dotted or slashed paths and
 // `emery-adapters`.
-fn mentions_in(text: &str) -> Vec<Mention> {
+fn mentions_in(text: &str) -> Vec<Mention<'_>> {
     let bytes = text.as_bytes();
     let mut mentions = Vec::new();
     let mut i = 0;
@@ -132,9 +130,10 @@ fn mentions_in(text: &str) -> Vec<Mention> {
         i = end;
         if before == Some('/') && after == Some(':') {
             let rest = &text[end + 1..];
-            let name: String =
-                rest.chars().take_while(|ch| ch.is_ascii_lowercase() || *ch == '-').collect();
-            let tail = rest[name.len()..].to_string();
+            let name_end =
+                rest.find(|ch: char| !(ch.is_ascii_lowercase() || ch == '-')).unwrap_or(rest.len());
+            let name = &rest[..name_end];
+            let tail = &rest[name_end..];
             if !name.is_empty() {
                 mentions.push(Mention::Skill { name, rest: tail });
             }
@@ -144,13 +143,13 @@ fn mentions_in(text: &str) -> Vec<Mention> {
             before.is_none_or(|ch| !(ch.is_ascii_alphanumeric() || matches!(ch, '.' | '/' | '-')));
         let boundary_after = after.is_none_or(char::is_whitespace);
         if boundary_before && boundary_after {
-            mentions.push(Mention::Cli(text[start..].to_string()));
+            mentions.push(Mention::Cli(&text[start..]));
         }
     }
     mentions
 }
 
-fn mentions(doc: &str) -> Vec<Mention> {
+fn mentions(doc: &str) -> Vec<Mention<'_>> {
     let mut in_fence = false;
     let mut mentions = Vec::new();
     for line in doc.lines() {
@@ -175,46 +174,45 @@ fn mentions(doc: &str) -> Vec<Mention> {
 // Returns the first live verb among `tokens` and the first token it could
 // not consume.
 fn walk_verb<'a>(
-    tokens: &[&'a str], verbs: &BTreeSet<String>,
-) -> (Option<String>, Option<&'a str>) {
+    tokens: impl IntoIterator<Item = &'a str>, verbs: &BTreeSet<&str>,
+) -> (Option<&'a str>, Option<&'a str>) {
     let mut rest = None;
     let mut verb = None;
     for token in tokens {
         if !is_kebab(token) {
-            rest = Some(*token);
+            rest = Some(token);
             break;
         }
-        if verb.is_none() && verbs.contains(*token) {
-            verb = Some((*token).to_string());
+        if verb.is_none() && verbs.contains(token) {
+            verb = Some(token);
             continue;
         }
-        rest = Some(*token);
+        rest = Some(token);
         break;
     }
     (verb, rest)
 }
 
-fn flags_of(text: &str) -> Vec<String> {
+fn flags_of(text: &str) -> impl Iterator<Item = &str> {
     text.split_whitespace()
-        .filter_map(|token| {
-            let token = token.trim_matches(|ch: char| {
+        .map(|token| {
+            token.trim_matches(|ch: char| {
                 matches!(ch, '[' | ']' | '(' | ')' | '"' | '\'' | ',' | ';' | '.')
-            });
-            token.starts_with("--").then(|| {
-                token
-                    .split_once('=')
-                    .map_or(token, |(flag, _value)| flag)
-                    .trim_end_matches(|ch: char| !(ch.is_ascii_alphanumeric()))
-                    .to_string()
             })
         })
-        .collect()
+        .filter(|token| token.starts_with("--"))
+        .map(|token| {
+            token
+                .split_once('=')
+                .map_or(token, |(flag, _value)| flag)
+                .trim_end_matches(|ch: char| !(ch.is_ascii_alphanumeric()))
+        })
 }
 
 async fn assert_flags(verb: &str, text: &str) {
     let mut help: Option<String> = None;
     for flag in flags_of(text) {
-        if GLOBAL_FLAGS.contains(&flag.as_str()) {
+        if GLOBAL_FLAGS.contains(&flag) {
             continue;
         }
         assert!(
@@ -228,7 +226,7 @@ async fn assert_flags(verb: &str, text: &str) {
         }
         let help = help.as_deref().expect("help rendered above");
         assert!(
-            help.contains(&flag),
+            help.contains(flag),
             "rule names `{flag}` on `emery {verb}`, but the grammar has no such flag"
         );
     }

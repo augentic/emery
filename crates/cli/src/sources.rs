@@ -28,7 +28,7 @@ pub const CONFIG_FILE: &str = "emery.toml";
 /// adapters or `--description` sources, and propagates the argv,
 /// file, and discovery decoder failures.
 pub fn decode(
-    adapters: &[String], descriptions: &[String], config: Option<&str>,
+    adapters: &[String], descriptions: &[String], config: Option<&Path>,
 ) -> Result<Vec<SourceConfig>, Error> {
     match config {
         Some(path) => {
@@ -38,7 +38,7 @@ pub fn decode(
                 ));
             }
 
-            let path = preopen_path(Path::new(path)).map_err(|err| {
+            let path = preopen_path(path).map_err(|err| {
                 let description = err.description();
                 bad_request!("invalid argument --config: {description}")
             })?;
@@ -133,7 +133,7 @@ struct ConfigFile {
 struct SourceEntry {
     name: String,
     adapter: AdapterRef,
-    path: Option<String>,
+    path: Option<PathBuf>,
     git: Option<String>,
     url: Option<String>,
     description: Option<String>,
@@ -173,9 +173,9 @@ impl SourceEntry {
                      content key"
                 ));
             }
-            (Some(relative), None) => SourceContent::Workspace(
-                resolved(base, Path::new(&relative))?.display().to_string(),
-            ),
+            (Some(relative), None) => {
+                SourceContent::Workspace(resolved(base, &relative)?.display().to_string())
+            }
             (None, Some(text)) => SourceContent::Value(text),
             (None, None) => SourceContent::Workspace(".".to_string()),
         };

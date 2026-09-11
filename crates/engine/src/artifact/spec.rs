@@ -12,6 +12,8 @@ use emery_source::types::Authority;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
+use crate::artifact;
+
 /// The `ID:` provenance key; the three keys follow the heading in this order.
 pub const ID: &str = "ID:";
 /// The `Sources:` provenance key.
@@ -47,16 +49,7 @@ impl Spec {
 // Renders `spec.md`: the preamble, then every requirement block.
 impl Display for Spec {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        write!(f, "# Specification")?;
-
-        let blocks = self.requirements.iter().map(ToString::to_string);
-        for block in self.preamble.iter().cloned().chain(blocks) {
-            for (position, line) in block.lines().enumerate() {
-                f.write_str(if position == 0 { "\n\n" } else { "\n" })?;
-                f.write_str(line.trim_end())?;
-            }
-        }
-        f.write_str("\n")
+        artifact::write(f, "Specification", &self.preamble, &self.requirements)
     }
 }
 
@@ -110,14 +103,14 @@ impl Display for Requirement {
             write!(f, " [{}]", self.status)?;
         }
 
-        let sources: Vec<String> = self.sources.iter().map(ToString::to_string).collect();
-        write!(
-            f,
-            "\n\n{ID} {id}\n{SOURCES} [{sources}]\n{STATUS} {status}",
-            id = self.id,
-            sources = sources.join(", "),
-            status = self.status,
-        )?;
+        write!(f, "\n\n{ID} {}\n{SOURCES} [", self.id)?;
+        for (position, source) in self.sources.iter().enumerate() {
+            if position > 0 {
+                f.write_str(", ")?;
+            }
+            write!(f, "{source}")?;
+        }
+        write!(f, "]\n{STATUS} {}", self.status)?;
 
         // body
         for paragraph in &self.body {
@@ -125,15 +118,17 @@ impl Display for Requirement {
         }
 
         // notes
-        let mut notes: Vec<String> = self.losers.iter().map(ToString::to_string).collect();
+        let mut separator = "\n\n";
+        for loser in &self.losers {
+            write!(f, "{separator}{loser}")?;
+            separator = "\n";
+        }
         if self.status == Status::Conflict {
-            notes.push(format!("{NOTE} Operator reconciliation required."));
+            write!(f, "{separator}{NOTE} Operator reconciliation required.")?;
+            separator = "\n";
         }
         if !self.covered {
-            notes.push(format!("{NOTE} acceptance criteria not evidenced."));
-        }
-        if !notes.is_empty() {
-            write!(f, "\n\n{}", notes.join("\n"))?;
+            write!(f, "{separator}{NOTE} acceptance criteria not evidenced.")?;
         }
 
         // scenarios

@@ -33,12 +33,6 @@ impl SourceAdapter for Probe {
     }
 }
 
-fn pinned() -> AdapterMetadata {
-    AdapterMetadata {
-        emery_version: PIN.map(str::to_string),
-    }
-}
-
 #[tokio::test]
 async fn source_dispatch() {
     let model = Scripted::answering([
@@ -56,6 +50,11 @@ async fn source_dispatch() {
     assert_eq!(evidence.claims.len(), 1);
     assert_eq!(evidence.claims[0].id.as_deref(), Some("one.claim"));
 
-    assert_eq!(<Probe as SourceAdapter>::metadata(), pinned());
+    assert_eq!(
+        <Probe as SourceAdapter>::metadata(),
+        AdapterMetadata {
+            emery_version: PIN.map(str::to_string),
+        }
+    );
     assert_eq!(<Probe as SourceAdapter>::docs()[0].path, "prompts/extract.md");
 }

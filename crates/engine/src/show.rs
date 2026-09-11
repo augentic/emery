@@ -14,15 +14,15 @@ use omnia_guest::{BlobStore, Error, StateStore, server_error};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-pub use crate::artifact::Document;
+pub use crate::artifact::Artifact;
 use crate::store;
 
-/// Read one document of the current revision.
+/// Read one artifact of the current revision.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub struct ShowInput {
-    /// Which document to read.
-    pub document: Document,
+    /// Which artifact to read.
+    pub artifact: Artifact,
 }
 
 /// Successful review result.
@@ -47,24 +47,23 @@ pub struct ShowOutput {
 pub async fn show<P: StateStore + BlobStore>(
     input: ShowInput, context: Context<P>,
 ) -> Result<ShowOutput, Error> {
-    let ShowInput { document } = input;
+    let ShowInput { artifact } = input;
 
-    let Some(revision) = store::current(context.provider()).await? else {
+    let Some((id, revision)) = store::current(context.provider()).await? else {
         return Err(Error::NotFound {
             code: "spec-not-generated".into(),
             description: "no specification revision has been committed".into(),
         });
     };
 
-    let value = match document {
-        Document::Spec => serde_json::to_value(&revision.spec),
-        Document::Design => serde_json::to_value(&revision.design),
+    let value = match artifact {
+        Artifact::Spec => serde_json::to_value(&revision.spec),
+        Artifact::Design => serde_json::to_value(&revision.design),
     }
-    .map_err(|err| server_error!("`{}` did not serialise: {err}", document.file()))?;
+    .map_err(|err| server_error!("`{}` did not serialise: {err}", artifact.file()))?;
 
-    let id = revision.id();
     Ok(ShowOutput {
-        body: revision.render(document, &id),
+        body: revision.render(artifact, &id),
         revision: id,
         document: value,
     })

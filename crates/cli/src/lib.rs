@@ -16,11 +16,12 @@ mod text;
 
 use std::borrow::Cow;
 use std::ffi::OsString;
+use std::path::PathBuf;
 
 use clap::builder::{PossibleValue, PossibleValuesParser, TypedValueParser};
 use clap::{Parser, Subcommand};
 use emery_engine::Provider;
-use emery_engine::show::{Document, ShowInput, show};
+use emery_engine::show::{Artifact, ShowInput, show};
 use emery_engine::specify::{SpecifyInput, specify};
 use omnia_guest::Error;
 use omnia_guest::api::command::{Command, Parsed, Response, Shell, completions, parse};
@@ -35,8 +36,8 @@ const SPECIFY_DESC: &str = "Generate spec.md and design.md from source adapters.
     combined.\n\n\
     Adapter paths are project-relative. Each run reloads adapters, verifies optional \
     digest pins, reconciles their claims, and atomically commits a new revision.";
-const SHOW_DESC: &str = "Print a document from the current revision.\n\n\
-    Text output contains only the document body. `--format json` also includes the \
+const SHOW_DESC: &str = "Print an artifact from the current revision.\n\n\
+    Text output contains only the artifact body. `--format json` also includes the \
     revision id.";
 const COMPLETIONS_DESC: &str = "Generate shell completions.\n\n\
     Pipe into your shell's completion directory. Example: \
@@ -79,8 +80,8 @@ where
         Verb::Specify(arguments) => {
             command.call(specify, || arguments.decode(), text::specify).await
         }
-        Verb::Show(ShowArgs { document }) => {
-            command.call(show, || Ok(ShowInput { document }), text::show).await
+        Verb::Show(ShowArgs { artifact }) => {
+            command.call(show, || Ok(ShowInput { artifact }), text::show).await
         }
     }
 }
@@ -111,7 +112,7 @@ enum Verb {
     /// Generate spec.md and design.md from the named sources
     #[command(long_about = SPECIFY_DESC)]
     Specify(SpecifyArgs),
-    /// Print a reviewable document of the current revision to stdout
+    /// Print a reviewable artifact of the current revision to stdout
     #[command(long_about = SHOW_DESC)]
     Show(ShowArgs),
     /// Print a shell-completion script for `<shell>` to stdout
@@ -134,7 +135,7 @@ struct SpecifyArgs {
     descriptions: Vec<String>,
     /// Operator-owned config; the omitted value selects emery.toml.
     #[arg(long, short = 'c', num_args = 0..=1, default_missing_value = sources::CONFIG_FILE)]
-    config: Option<String>,
+    config: Option<PathBuf>,
 }
 
 impl SpecifyArgs {
@@ -152,22 +153,22 @@ impl SpecifyArgs {
 // The `show` grammar; field docs are its `--help` text.
 #[derive(Debug, clap::Args)]
 struct ShowArgs {
-    /// Reviewable document of the current revision.
-    #[arg(value_parser = documents())]
-    document: Document,
+    /// Reviewable artifact of the current revision.
+    #[arg(value_parser = artifacts())]
+    artifact: Artifact,
 }
 
-// The engine's closed document vocabulary as clap values, each with its help
+// The engine's closed artifact vocabulary as clap values, each with its help
 // line; the exhaustive match makes a new variant a façade compile error.
-fn documents() -> impl TypedValueParser<Value = Document> {
-    PossibleValuesParser::new(Document::VARIANTS.iter().map(|document| {
-        let help = match document {
-            Document::Spec => "The behavioural specification document.",
-            Document::Design => "The rebuild design document.",
+fn artifacts() -> impl TypedValueParser<Value = Artifact> {
+    PossibleValuesParser::new(Artifact::VARIANTS.iter().map(|artifact| {
+        let help = match artifact {
+            Artifact::Spec => "The behavioural specification artifact.",
+            Artifact::Design => "The rebuild design artifact.",
         };
-        PossibleValue::new(document.as_ref()).help(help)
+        PossibleValue::new(artifact.as_ref()).help(help)
     }))
-    .try_map(|value: String| value.parse::<Document>())
+    .try_map(|value: String| value.parse::<Artifact>())
 }
 
 // Looks up the remedy hint the failure envelope carries for an `error`

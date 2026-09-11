@@ -11,7 +11,7 @@
 
 use std::fmt;
 
-use emery_engine::show::{Document, ShowOutput};
+use emery_engine::show::{Artifact, ShowOutput};
 use emery_engine::specify::{Diff, SpecifyOutput};
 
 /// Writes the `specify` result: the committed-revision line and its indented
@@ -32,7 +32,7 @@ pub fn specify(output: &SpecifyOutput, w: &mut dyn fmt::Write) -> fmt::Result {
 // Writes one line per changed requirement and section, prefixed by the
 // projection it appears in.
 fn changes(diff: &Diff, w: &mut dyn fmt::Write) -> fmt::Result {
-    let spec = Document::Spec.projection();
+    let spec = Artifact::Spec.projection();
     for entry in &diff.spec.added {
         writeln!(w, "    {spec} + {} {}", entry.id, entry.subject)?;
     }
@@ -45,7 +45,7 @@ fn changes(diff: &Diff, w: &mut dyn fmt::Write) -> fmt::Result {
         writeln!(w, "    {spec} ~ {} {}: {fields}", entry.id, entry.subject)?;
     }
 
-    let design = Document::Design.projection();
+    let design = Artifact::Design.projection();
     for kind in &diff.design.added {
         writeln!(w, "    {design} + {}", kind.as_ref())?;
     }

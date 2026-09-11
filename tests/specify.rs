@@ -30,7 +30,7 @@ use omnia_test::SeenFormat;
 use omnia_test::guest::{Memory, Namespaced, Scripted};
 use serde_json::Value;
 use sha2::{Digest as _, Sha256};
-use support::{Provider, claim, cli, cli_ok, digest, evidence, fail, requirement};
+use support::{Provider, claim, cli_ok, digest, evidence, fail, requirement};
 
 // Scripted drafts, the canonical documents the engine commits from them, and
 // the documents it renders from those documents.
@@ -49,8 +49,11 @@ const SOURCES: &str = include_str!("specify/emery.toml");
 // Builds the grouping answer that merges `count` claims into one agreeing
 // requirement — what a run over one id appearing several times expects.
 fn baseline_grouping(count: usize) -> String {
-    let indices = (0..count).map(|index| index.to_string()).collect::<Vec<_>>().join(", ");
-    format!("{{\"groups\": [{{\"claims\": [{indices}], \"classes\": [[{indices}]]}}]}}")
+    let indices = (0..count).collect::<Vec<_>>();
+    serde_json::json!({
+        "groups": [{"claims": &indices, "classes": [&indices]}],
+    })
+    .to_string()
 }
 
 // A scratch directory inside the project where one scenario's operator files
@@ -571,8 +574,7 @@ async fn diff_envelope() {
             ],
         )),
     );
-    let resp = cli(&provider, &["emery", "--format", "json", "specify", "docs"]).await;
-    assert_eq!(resp.exit, 0, "{}", String::from_utf8_lossy(&resp.stderr));
+    let resp = cli_ok(&provider, &["emery", "--format", "json", "specify", "docs"]).await;
     let envelope: Value = serde_json::from_slice(&resp.stdout).expect("one JSON envelope");
     let diff = &envelope["diff"];
     assert_eq!(diff["from"], first, "{envelope}");

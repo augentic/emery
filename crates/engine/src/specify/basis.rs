@@ -42,7 +42,7 @@ pub async fn derive<M: Model>(model: &M, extracts: &[Extract]) -> Result<Vec<Bas
 
 /// A partition of every requirement claim into requirements, each carrying a
 /// partition of its claims into agreeing classes.
-#[derive(Debug, Clone, Deserialize, JsonSchema)]
+#[derive(Debug, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 #[schemars(title = "Emery grouping answer")]
 pub struct Grouping {
@@ -51,7 +51,7 @@ pub struct Grouping {
 }
 
 /// The claims of one requirement and how they agree.
-#[derive(Debug, Clone, Default, Deserialize, JsonSchema)]
+#[derive(Debug, Default, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct Group {
     /// Indices of every claim describing this requirement.
@@ -64,7 +64,7 @@ pub struct Group {
 /// The basis for one requirement before any prose: its id, subject, status,
 /// acceptance-criterion coverage, and contributors in agreeing classes, the
 /// winning class first.
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct Basis {
     /// The requirement id: its position in the run, from `REQ-001`.
     pub id: ReqId,

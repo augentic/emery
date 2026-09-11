@@ -51,9 +51,8 @@ pub async fn specify<P: Model + Source + StateStore + BlobStore + Plugins>(
 ) -> Result<SpecifyOutput, Error> {
     let provider = context.provider();
 
-    input.validate()?;
-
-    let extracts = input.extract(provider).await?;
+    let prepared = input.prepare()?;
+    let extracts = input.extract(provider, prepared).await?;
     let revision = synthesis::synthesise(provider, &extracts).await?;
     let (id, diff) = store::commit(provider, &revision).await?;
 
@@ -68,7 +67,7 @@ pub struct SpecifyInput {
 }
 
 impl SpecifyInput {
-    fn validate(&self) -> Result<(), Error> {
+    fn prepare(&self) -> Result<Vec<SourceInput>, Error> {
         if self.sources.is_empty() {
             return Err(Error::BadRequest {
                 code: "specify-source-required".into(),
@@ -77,27 +76,30 @@ impl SpecifyInput {
         }
 
         let mut keys = BTreeSet::new();
+        let mut inputs = Vec::with_capacity(self.sources.len());
         for source in &self.sources {
-            source.validate()?;
+            let input = source.prepare()?;
             if !keys.insert(source.key.as_str()) {
                 return Err(bad_request!("source `{}` appears twice", source.key));
             }
+            inputs.push(input);
         }
 
-        Ok(())
+        Ok(inputs)
     }
 
-    async fn extract<P: Source + Plugins>(&self, provider: &P) -> Result<Vec<Extract>, Error> {
+    async fn extract<P: Source + Plugins>(
+        &self, provider: &P, inputs: Vec<SourceInput>,
+    ) -> Result<Vec<Extract>, Error> {
         let mut extracts = Vec::with_capacity(self.sources.len());
         let loader = Loader::new(provider);
 
-        for source in &self.sources {
-            let input = source.input()?;
+        for (source, input) in self.sources.iter().zip(inputs) {
             let id = loader
                 .load(&source.adapter, source.digest.as_ref(), source.registry.as_deref())
                 .await?;
 
-            let key = &source.key;
+            let key = input.key.as_str();
             tracing::debug!(source = %key, "extracting");
             let evidence = Source::extract(provider, &id, &input).await?;
 
@@ -110,7 +112,7 @@ impl SpecifyInput {
             }
 
             extracts.push(Extract {
-                key: key.clone(),
+                key: input.key,
                 evidence,
             });
         }
@@ -170,10 +172,8 @@ impl SourceConfig {
         })
     }
 
-    // Checks one source's rules: the key is kebab-case, `registry` only means
-    // anything for a package adapter, `digest` only for a loader-acquired one,
-    // and the root must pass the rule `input` applies — before any load.
-    fn validate(&self) -> Result<(), Error> {
+    // Checks one source's rules and prepares the guest input before any load.
+    fn prepare(&self) -> Result<SourceInput, Error> {
         let key = &self.key;
         if !is_kebab(key) {
             return Err(bad_request!("source `{key}` is not a kebab-case key"));
@@ -191,8 +191,7 @@ impl SourceConfig {
             ));
         }
 
-        self.input()?;
-        Ok(())
+        self.input()
     }
 }
 

@@ -228,7 +228,7 @@ impl Display for DesignBrief<'_> {
 /// The `design.md` draft: preamble paragraphs and one entry per section.
 /// Only what needs synthesis is asked for; every heading and signature is
 /// the renderer's.
-#[derive(Debug, Clone, Deserialize, JsonSchema)]
+#[derive(Debug, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 #[schemars(title = "Emery design draft")]
 pub struct DesignAnswer {
@@ -240,7 +240,7 @@ pub struct DesignAnswer {
 
 /// One design block: a paragraph, or a reference to a `type` claim whose
 /// signature the renderer inserts verbatim.
-#[derive(Debug, Clone, Deserialize, JsonSchema)]
+#[derive(Debug, Deserialize, JsonSchema)]
 #[serde(rename_all = "lowercase")]
 pub enum Block {
     /// One Markdown paragraph; inline `(from <source>)` citations allowed.

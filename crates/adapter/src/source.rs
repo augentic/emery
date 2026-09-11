@@ -39,5 +39,5 @@ pub async fn extract<A: SourceAdapter>(id: AdapterId, input: Input) -> Result<Ev
         lend,
     };
 
-    A::extract(&WasiModel, &ctx, &input).await.map(Into::into).map_err(Into::into)
+    Ok(A::extract(&WasiModel, &ctx, &input).await?.into())
 }

@@ -1,6 +1,6 @@
 # emery show
 
-Print a reviewable document of the current revision to stdout.
+Print a reviewable artifact of the current revision to stdout.
 
 ## Synopsis
 
@@ -11,7 +11,7 @@ emery show design
 
 ## Description
 
-The one read verb: renders the named document of the current revision — a verifiable, non-authoritative projection of the store, never a second authority. `spec` and `design` are the whole revision; there is no `show sources` or `show receipts`.
+The one read verb: renders the named artifact of the current revision — a verifiable, non-authoritative projection of the store, never a second authority. `spec` and `design` are the whole revision; there is no `show sources` or `show receipts`.
 
 Text output is the Markdown projection alone — a deliberate exception to the result-line convention so `emery show spec > spec.md` is the document byte for byte. The projection opens with two lines of front matter, `emery: <grammar>` and `revision: <id>`, then the body rendered from the stored revision. The JSON envelope carries the revision id, the projection, and the typed revision itself (`document`).
 
@@ -23,7 +23,7 @@ Before any revision is committed the verb fails typed with `spec-not-generated` 
 
 | Option | Description |
 |--------|-------------|
-| `spec` \| `design` (positional) | Which reviewable document to print. |
+| `spec` \| `design` (positional) | Which reviewable artifact to print. |
 | `--format` | Global output format: `json` wraps the projection with its revision id and the typed revision. |
 
 ## JSON output

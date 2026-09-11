@@ -10,6 +10,8 @@ use std::fmt::{self, Display, Formatter};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
+use crate::artifact;
+
 const CITATION: &str = "(from ";
 
 /// The `Type:` key: the engine's own line labelling a signature fence.
@@ -38,16 +40,7 @@ impl Design {
 // Renders `design.md`: the preamble, then every section under its heading.
 impl Display for Design {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        write!(f, "# Design")?;
-
-        let blocks = self.sections.iter().map(ToString::to_string);
-        for block in self.preamble.iter().cloned().chain(blocks) {
-            for (position, line) in block.lines().enumerate() {
-                f.write_str(if position == 0 { "\n\n" } else { "\n" })?;
-                f.write_str(line.trim_end())?;
-            }
-        }
-        f.write_str("\n")
+        artifact::write(f, "Design", &self.preamble, &self.sections)
     }
 }
 

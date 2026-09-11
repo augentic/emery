@@ -15,6 +15,8 @@
 mod design;
 mod spec;
 
+use std::fmt::{self, Display, Formatter};
+
 use omnia_guest::{Error, server_error};
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
@@ -36,7 +38,7 @@ pub const EMERY: u32 = 2;
 /// line keys, so no draft line passes as provenance, a note, or a type label.
 pub const RESERVED: &[&str] = &["#", ID, SOURCES, STATUS, NOTE, TYPE];
 
-/// The two documents of one revision, in digest order. A caller names one by
+/// The two artifacts of one revision, in digest order. A caller names one by
 /// its kebab-case key (`as_ref()` / `parse()`, `spec`), the same spelling
 /// serde uses.
 #[derive(
@@ -53,14 +55,14 @@ pub const RESERVED: &[&str] = &["#", ID, SOURCES, STATUS, NOTE, TYPE];
 )]
 #[serde(rename_all = "kebab-case")]
 #[strum(serialize_all = "kebab-case")]
-pub enum Document {
+pub enum Artifact {
     /// The behavioural specification.
     Spec,
     /// The rebuild design.
     Design,
 }
 
-impl Document {
+impl Artifact {
     /// The revision document's file name in the store.
     #[must_use]
     pub const fn file(self) -> &'static str {
@@ -106,54 +108,70 @@ impl Revision {
     /// does not fit the revision, since this engine did not write it.
     pub fn read(spec: Value, design: Value) -> Result<Self, Error> {
         Ok(Self {
-            spec: stamped(spec, Document::Spec)?,
-            design: stamped(design, Document::Design)?,
+            spec: stamped(spec, Artifact::Spec)?,
+            design: stamped(design, Artifact::Design)?,
         })
-    }
-
-    /// Computes the id this revision commits as: the digest of its canonical
-    /// files.
-    #[must_use]
-    pub fn id(&self) -> String {
-        digest(self.files().iter().map(|(document, body)| (document.file(), body.as_bytes())))
     }
 
     /// Serialises each document as canonical JSON, in digest order: pretty,
     /// declaration order, one trailing newline.
     #[must_use]
-    pub fn files(&self) -> Vec<(Document, String)> {
-        Document::VARIANTS
+    pub fn files(&self) -> Vec<(Artifact, String)> {
+        Artifact::VARIANTS
             .iter()
             .copied()
-            .map(|document| {
-                let mut text = match document {
-                    Document::Spec => serde_json::to_string_pretty(&self.spec),
-                    Document::Design => serde_json::to_string_pretty(&self.design),
+            .map(|artifact| {
+                let mut text = match artifact {
+                    Artifact::Spec => serde_json::to_string_pretty(&self.spec),
+                    Artifact::Design => serde_json::to_string_pretty(&self.design),
                 }
                 .expect("the revision serialises: no maps with non-string keys, no floats");
                 text.push('\n');
-                (document, text)
+                (artifact, text)
             })
             .collect()
     }
 
-    /// Renders `document`'s Markdown projection: the front matter stamping
+    /// Renders `artifact`'s Markdown projection: the front matter stamping
     /// the grammar and `revision` — this revision's id, which the caller has
     /// already computed — then the document body.
     #[must_use]
-    pub fn render(&self, document: Document, id: &str) -> String {
-        let body = match document {
-            Document::Spec => self.spec.to_string(),
-            Document::Design => self.design.to_string(),
+    pub fn render(&self, artifact: Artifact, id: &str) -> String {
+        let body: &dyn Display = match artifact {
+            Artifact::Spec => &self.spec,
+            Artifact::Design => &self.design,
         };
         format!("---\nemery: {EMERY}\nrevision: {id}\n---\n\n{body}")
     }
 }
 
+// Writes one document body: the title, each preamble paragraph, and each
+// typed block, with every line right-trimmed.
+fn write<T: Display>(
+    f: &mut Formatter<'_>, title: &str, preamble: &[String], blocks: &[T],
+) -> fmt::Result {
+    write!(f, "# {title}")?;
+    for block in preamble {
+        write_block(f, block)?;
+    }
+    for block in blocks {
+        write_block(f, &block.to_string())?;
+    }
+    f.write_str("\n")
+}
+
+fn write_block(f: &mut Formatter<'_>, block: &str) -> fmt::Result {
+    for (position, line) in block.lines().enumerate() {
+        f.write_str(if position == 0 { "\n\n" } else { "\n" })?;
+        f.write_str(line.trim_end())?;
+    }
+    Ok(())
+}
+
 // Deserialises one revision document after checking its grammar stamp: the
 // stamp is the one field every grammar shares, so it is read before the shape.
-fn stamped<T: DeserializeOwned>(value: Value, document: Document) -> Result<T, Error> {
-    let name = document.file();
+fn stamped<T: DeserializeOwned>(value: Value, artifact: Artifact) -> Result<T, Error> {
+    let name = artifact.file();
     let stamp = &value["emery"];
     if *stamp != EMERY {
         return Err(Error::BadRequest {

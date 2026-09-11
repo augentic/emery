@@ -151,18 +151,15 @@ fn check_links(file: &Path) -> Result<()> {
     Ok(())
 }
 
-fn link_targets(body: &str) -> Vec<&str> {
-    let mut targets = Vec::new();
-    let mut rest = body;
-    while let Some(open) = rest.find("](") {
-        rest = &rest[open + 2..];
-        let Some(close) = rest.find(')') else {
-            break;
-        };
-        targets.push(rest[..close].trim());
-        rest = &rest[close + 1..];
-    }
-    targets
+fn link_targets(mut body: &str) -> impl Iterator<Item = &str> {
+    std::iter::from_fn(move || {
+        let open = body.find("](")?;
+        body = &body[open + 2..];
+        let close = body.find(')')?;
+        let target = body[..close].trim();
+        body = &body[close + 1..];
+        Some(target)
+    })
 }
 
 #[cfg(test)]
