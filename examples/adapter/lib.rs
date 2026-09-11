@@ -9,13 +9,12 @@
 //! It is also the reference shape for adapter authors: one `SourceAdapter`
 //! implementation, an embedded prose tree, and a single `source!` export.
 
-#[cfg(target_arch = "wasm32")]
-mod guest {
-    emery_adapter::source!(crate::Adapter);
-}
+emery_adapter::source!(crate::Adapter);
 
 use emery_adapter::types::{Context, Evidence, SourceContent, SourceInput};
-use emery_adapter::{Error, Model, SourceAdapter, bad_request, content_note, evidence};
+use emery_adapter::{
+    Error, EvidenceTurn, Model, SourceAdapter, bad_request, content_note, evidence,
+};
 use emery_prose::registry::{self, Doc};
 
 static DOCS: &[Doc] = &[
@@ -41,19 +40,9 @@ impl SourceAdapter for Adapter {
     async fn extract<P: Model>(
         model: &P, ctx: &Context<'_>, input: &SourceInput,
     ) -> Result<Evidence, Error> {
-        let system = registry::body(DOCS, "prompts/extract.md").to_string();
-        let user = format!(
-            "Extract the claim set of the greeting source bound to adapter `{id}` \
-             (source key `{key}`).\n\n\
-             {content}\n\n\
-             Answer with one JSON object matching the gated schema: the Evidence body \
-             (`authority`, `claims`) the prompt describes. The caller persists the \
-             document; do not write it yourself.",
-            id = ctx.adapter_id,
-            key = input.key,
-            content = greeting_note(input)?,
-        );
-        evidence(model, ctx, system, user).await
+        let system = registry::body(DOCS, "prompts/extract.md");
+        let turn = EvidenceTurn::prepared("greeting", greeting_note(input)?);
+        evidence(model, ctx, input, system, turn).await
     }
 }
 

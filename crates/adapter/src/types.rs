@@ -21,5 +21,5 @@ pub struct Context<'a> {
     /// Embedded reference documents served by the judgment's tool closure.
     pub docs: &'static [Doc],
     /// Workspace lend, absent for inline values.
-    pub lend: Option<String>,
+    pub lend: Option<&'a str>,
 }

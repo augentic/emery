@@ -35,14 +35,14 @@ use support::{Provider, claim, cli, cli_ok, digest, evidence, fail, requirement}
 // Scripted drafts, the canonical documents the engine commits from them, and
 // the documents it renders from those documents.
 const SPEC_ANSWER: &str = include_str!("specify/spec-draft.json");
-const SPEC_MASTER: &str = include_str!("specify/1-spec.json");
+const SPEC_REVISION: &str = include_str!("specify/1-spec.json");
 const SPEC_RENDERED: &str = include_str!("specify/1-spec.md");
 const DESIGN_ANSWER: &str = include_str!("specify/design-draft.json");
-const DESIGN_MASTER: &str = include_str!("specify/2-design.json");
+const DESIGN_REVISION: &str = include_str!("specify/2-design.json");
 const DESIGN_RENDERED: &str = include_str!("specify/2-design.md");
 const GROUPING_ANSWER: &str = include_str!("specify/grouping.json");
 const PRECEDENCE_ANSWER: &str = include_str!("specify/precedence-draft.json");
-const PRECEDENCE_MASTER: &str = include_str!("specify/3-precedence.json");
+const PRECEDENCE_REVISION: &str = include_str!("specify/3-precedence.json");
 const PRECEDENCE_RENDERED: &str = include_str!("specify/3-precedence.md");
 const SOURCES: &str = include_str!("specify/emery.toml");
 
@@ -53,16 +53,37 @@ fn baseline_grouping(count: usize) -> String {
     format!("{{\"groups\": [{{\"claims\": [{indices}], \"classes\": [[{indices}]]}}]}}")
 }
 
-fn project_tempdir() -> tempfile::TempDir {
-    tempfile::TempDir::new_in(env!("CARGO_MANIFEST_DIR")).expect("project tempdir")
-}
+// A scratch directory inside the project where one scenario's operator files
+// live. Every path handed to the CLI must stay project-relative for the
+// guest preopen, so each write answers with that relative path.
+struct Scratch(tempfile::TempDir);
 
-fn project_arg(path: &Path) -> String {
-    path.strip_prefix(env!("CARGO_MANIFEST_DIR"))
-        .expect("path under project")
-        .to_str()
-        .expect("utf-8 path")
-        .to_string()
+impl Scratch {
+    fn new() -> Self {
+        Self(tempfile::TempDir::new_in(env!("CARGO_MANIFEST_DIR")).expect("project tempdir"))
+    }
+
+    // Writes `body` under `name`, returning the project-relative path.
+    fn write(&self, name: &str, body: impl AsRef<[u8]>) -> String {
+        let path = self.0.path().join(name);
+        fs::write(&path, body).unwrap_or_else(|err| panic!("write {name}: {err}"));
+        path.strip_prefix(env!("CARGO_MANIFEST_DIR"))
+            .expect("path under project")
+            .to_str()
+            .expect("utf-8 path")
+            .to_string()
+    }
+
+    // Writes the operator's `emery.toml`.
+    fn config(&self, body: &str) -> String {
+        self.write("emery.toml", body)
+    }
+
+    // Writes a stub `source.wasm`: the loader is scripted, so the component
+    // only has to exist as a `.wasm` file.
+    fn component(&self) -> String {
+        self.write("source.wasm", b"\0asm-stub")
+    }
 }
 
 // One `specify` loads, extracts, and commits the typed revision — no prior
@@ -75,10 +96,8 @@ async fn gen_spec() {
     // Arrange: only the operator-supplied component touches the
     // filesystem; engine state stays in scripted storage.
     // --------------------------------------------------
-    let workspace = project_tempdir();
-    let component = workspace.path().join("source.wasm");
-    fs::write(&component, b"\0asm-stub").expect("stub wasm");
-    let component = project_arg(&component);
+    let scratch = Scratch::new();
+    let component = scratch.component();
 
     let provider = Provider::answering([SPEC_ANSWER, DESIGN_ANSWER, SPEC_ANSWER, DESIGN_ANSWER]);
 
@@ -107,11 +126,15 @@ async fn gen_spec() {
     // canonical JSON: the id, status, coverage, and cited claims are all the
     // engine's.
     let spec = document(&provider.storage, &id, "spec.json");
-    assert_eq!(String::from_utf8_lossy(&spec), SPEC_MASTER, "spec.json is the canonical revision");
+    assert_eq!(
+        String::from_utf8_lossy(&spec),
+        SPEC_REVISION,
+        "spec.json is the canonical revision"
+    );
     let design = document(&provider.storage, &id, "design.json");
     assert_eq!(
         String::from_utf8_lossy(&design),
-        DESIGN_MASTER,
+        DESIGN_REVISION,
         "design.json is the canonical revision"
     );
 
@@ -133,7 +156,8 @@ async fn gen_spec() {
     let envelope: Value = serde_json::from_slice(&resp.stdout).expect("one JSON envelope");
     assert_eq!(envelope["revision"], id, "{envelope}");
     assert_eq!(envelope["body"], projection(SPEC_RENDERED, &id), "{envelope}");
-    let document: Value = serde_json::from_str(SPEC_MASTER).expect("the revision fixture is JSON");
+    let document: Value =
+        serde_json::from_str(SPEC_REVISION).expect("the revision fixture is JSON");
     assert_eq!(envelope["document"], document, "the envelope carries the typed document");
 
     // An identical re-run reads nothing of the stored revision: both drafts
@@ -151,11 +175,9 @@ async fn gen_spec() {
 // source keys, and a local adapter resolves relative to the file.
 #[tokio::test]
 async fn from_file() {
-    let workspace = project_tempdir();
-    fs::write(workspace.path().join("source.wasm"), b"\0asm-stub").expect("stub wasm");
-    let config = workspace.path().join("emery.toml");
-    fs::write(&config, SOURCES).expect("write emery.toml");
-    let config = project_arg(&config);
+    let scratch = Scratch::new();
+    scratch.component();
+    let config = scratch.config(SOURCES);
 
     let provider = Provider::answering([SPEC_ANSWER, DESIGN_ANSWER]);
 
@@ -187,20 +209,14 @@ async fn shared_roots() {
         ("./source.wasm", "source:source", true),
     ];
     for (adapter, package, wasm) in cases {
-        let dir = project_tempdir();
+        let scratch = Scratch::new();
         if *wasm {
-            fs::write(dir.path().join("source.wasm"), b"\0asm-stub").expect("stub wasm");
+            scratch.component();
         }
-        let config = dir.path().join("emery.toml");
-        fs::write(
-            &config,
-            format!(
-                "[[source]]\nname = \"docs\"\nadapter = \"{adapter}\"\npath = \"docs\"\n\n\
-                 [[source]]\nname = \"api\"\nadapter = \"{adapter}\"\npath = \"api\"\n"
-            ),
-        )
-        .expect("write emery.toml");
-        let config = project_arg(&config);
+        let config = scratch.config(&format!(
+            "[[source]]\nname = \"docs\"\nadapter = \"{adapter}\"\npath = \"docs\"\n\n\
+             [[source]]\nname = \"api\"\nadapter = \"{adapter}\"\npath = \"api\"\n"
+        ));
 
         let grouping = baseline_grouping(2);
         let provider = Provider::answering([grouping.as_str(), SPEC_ANSWER, DESIGN_ANSWER]);
@@ -368,7 +384,7 @@ async fn authority_precedence() {
     let spec = document(&provider.storage, &id, "spec.json");
     assert_eq!(
         String::from_utf8_lossy(&spec),
-        PRECEDENCE_MASTER,
+        PRECEDENCE_REVISION,
         "every resolution is a fact in the revision"
     );
     assert_eq!(
@@ -420,7 +436,6 @@ async fn grouping_refused() {
         let envelope =
             fail(&provider, &["emery", "specify", "docs", "code"], 1, "bad_request").await;
         assert_message(&envelope, fragment);
-        assert!(provider.storage.state(CURRENT).is_none(), "a refused run commits nothing");
         provider.model.assert_exhausted();
     }
 
@@ -651,7 +666,6 @@ async fn extras_missing() {
         .insert("docs".to_string(), Ok(evidence(Authority::Documentation, vec![bare])));
 
     fail(&provider, &["emery", "specify", "docs"], 1, "bad_request").await;
-    assert!(provider.storage.state(CURRENT).is_none(), "a refused run commits nothing");
 }
 
 // An adapter failure surfaces as the upstream error it is.
@@ -665,7 +679,6 @@ async fn extract_fails() {
 
     let envelope = fail(&provider, &["emery", "specify", "docs"], 4, "bad_gateway").await;
     assert_eq!(envelope["message"], "source `docs`: the adapter exploded");
-    assert!(provider.storage.state(CURRENT).is_none(), "a refused run commits nothing");
 }
 
 // An adapter refusing its input is the operator's error, not the
@@ -680,7 +693,6 @@ async fn extract_refuses() {
 
     let envelope = fail(&provider, &["emery", "specify", "docs"], 1, "bad_request").await;
     assert_eq!(envelope["message"], "source `docs`: the brief is empty");
-    assert!(provider.storage.state(CURRENT).is_none(), "a refused run commits nothing");
 }
 
 // An adapter declaring a newer minimum `emery-version` than the binary
@@ -733,7 +745,6 @@ async fn invalid_draft() {
         let provider = Provider::answering([answer.as_str(), answer.as_str(), answer.as_str()]);
         let envelope = fail(&provider, &["emery", "specify", "docs"], 1, "bad_request").await;
         assert_message(&envelope, fragment);
-        assert!(provider.storage.state(CURRENT).is_none(), "a refused run commits nothing");
         provider.model.assert_exhausted();
     }
 }
@@ -777,7 +788,7 @@ async fn repaired_draft() {
     assert!(correction.contains("scenario `then` is blank"), "{correction}");
     let id = current(&provider.storage);
     let spec = document(&provider.storage, &id, "spec.json");
-    assert_eq!(String::from_utf8_lossy(&spec), SPEC_MASTER, "the repaired draft is committed");
+    assert_eq!(String::from_utf8_lossy(&spec), SPEC_REVISION, "the repaired draft is committed");
     provider.model.assert_exhausted();
 }
 
@@ -809,7 +820,6 @@ async fn invalid_design() {
             Provider::answering([SPEC_ANSWER, answer.as_str(), answer.as_str(), answer.as_str()]);
         let envelope = fail(&provider, &["emery", "specify", "docs"], 1, "bad_request").await;
         assert_message(&envelope, fragment);
-        assert!(provider.storage.state(CURRENT).is_none(), "a refused run commits nothing");
         provider.model.assert_exhausted();
     }
 }
@@ -877,7 +887,6 @@ async fn dishonest_design() {
         provider.source.evidence.insert("docs".to_string(), evidence());
         let envelope = fail(&provider, &["emery", "specify", "docs"], 1, "bad_request").await;
         assert_message(&envelope, fragment);
-        assert!(provider.storage.state(CURRENT).is_none(), "a refused run commits nothing");
         provider.model.assert_exhausted();
     }
 
@@ -1014,16 +1023,14 @@ async fn config_file() {
         ),
     ];
     for (body, exit, code, fragment) in cases {
-        let dir = project_tempdir();
-        let path = dir.path().join("emery.toml");
-        fs::write(&path, body).expect("write emery.toml");
-        let path = project_arg(&path);
+        let scratch = Scratch::new();
+        let config = scratch.config(body);
         let provider = Provider::idle();
-        let envelope = fail(&provider, &["emery", "specify", "--config", &path], *exit, code).await;
+        let envelope =
+            fail(&provider, &["emery", "specify", "--config", &config], *exit, code).await;
         if !fragment.is_empty() {
             assert_message(&envelope, fragment);
         }
-        assert!(provider.storage.is_empty(), "a refused run writes nothing: {code}");
     }
 
     // An unreadable file is a typed filesystem error.
@@ -1061,15 +1068,12 @@ async fn loader_keys_gated() {
         (pinned_bare.as_str(), "not a bare name"),
     ];
     for (body, fragment) in cases {
-        let dir = project_tempdir();
-        let path = dir.path().join("emery.toml");
-        fs::write(&path, body).expect("write emery.toml");
-        let path = project_arg(&path);
+        let scratch = Scratch::new();
+        let config = scratch.config(body);
         let provider = Provider::idle();
         let envelope =
-            fail(&provider, &["emery", "specify", "--config", &path], 1, "bad_request").await;
+            fail(&provider, &["emery", "specify", "--config", &config], 1, "bad_request").await;
         assert_message(&envelope, fragment);
-        assert!(provider.storage.is_empty(), "a refused run writes nothing: {fragment}");
     }
 }
 
@@ -1080,21 +1084,17 @@ async fn loader_keys_gated() {
 // the `SourceInput` the adapter receives.
 #[tokio::test]
 async fn source_paths() {
-    let dir = project_tempdir();
-    let path = dir.path().join("emery.toml");
-    fs::write(
-        &path,
+    let scratch = Scratch::new();
+    let config = scratch.config(
         "[[source]]\nname = \"zulu\"\nadapter = \"documentation\"\npath = \"nested/../docs\"\n\n\
          [[source]]\nname = \"intent\"\nadapter = \"intent\"\ndescription = \"Ship it.\"\n\n\
          [[source]]\nname = \"alpha\"\nadapter = \"local\"\npath = \"./docs\"\n",
-    )
-    .expect("write emery.toml");
+    );
 
     // Three sources contribute one id: the grouping turn merges them.
     let grouping = baseline_grouping(3);
     let provider = Provider::answering([grouping.as_str(), SPEC_ANSWER, DESIGN_ANSWER]);
-    let path = project_arg(&path);
-    cli_ok(&provider, &["emery", "specify", "--config", &path]).await;
+    cli_ok(&provider, &["emery", "specify", "--config", &config]).await;
 
     let calls = provider.source.calls.lock().expect("calls");
     let order: Vec<&str> = calls.iter().map(|(_, input)| input.key.as_str()).collect();
@@ -1127,10 +1127,8 @@ async fn source_paths() {
 // re-run after the operator deletes the source file fails with a typed error.
 #[tokio::test]
 async fn deleted_wasm() {
-    let workspace = project_tempdir();
-    let component = workspace.path().join("source.wasm");
-    fs::write(&component, b"\0asm-stub").expect("stub wasm");
-    let component = project_arg(&component);
+    let scratch = Scratch::new();
+    let component = scratch.component();
 
     let provider = Provider::answering([SPEC_ANSWER, DESIGN_ANSWER]);
     cli_ok(&provider, &["emery", "specify", &component]).await;
@@ -1154,18 +1152,12 @@ async fn component_missing() {
 // rides the load request.
 #[tokio::test]
 async fn pinned_component() {
-    let dir = project_tempdir();
-    fs::write(dir.path().join("source.wasm"), b"\0asm-stub").expect("stub wasm");
-    let config = dir.path().join("emery.toml");
-    fs::write(
-        &config,
-        format!(
-            "[[source]]\nname = \"local\"\nadapter = \"./source.wasm\"\ndigest = \"{}\"\n",
-            digest("ab")
-        ),
-    )
-    .expect("write emery.toml");
-    let config = project_arg(&config);
+    let scratch = Scratch::new();
+    scratch.component();
+    let config = scratch.config(&format!(
+        "[[source]]\nname = \"local\"\nadapter = \"./source.wasm\"\ndigest = \"{}\"\n",
+        digest("ab")
+    ));
 
     let provider = Provider::answering([SPEC_ANSWER, DESIGN_ANSWER]);
     cli_ok(&provider, &["emery", "specify", "--config", &config]).await;
@@ -1181,24 +1173,17 @@ async fn pinned_component() {
 // anything extracts or commits.
 #[tokio::test]
 async fn digest_mismatch() {
-    let dir = project_tempdir();
-    fs::write(dir.path().join("source.wasm"), b"\0asm-stub").expect("stub wasm");
-    let config = dir.path().join("emery.toml");
-    fs::write(
-        &config,
-        format!(
-            "[[source]]\nname = \"local\"\nadapter = \"./source.wasm\"\ndigest = \"{}\"\n",
-            digest("11")
-        ),
-    )
-    .expect("write emery.toml");
-    let config = project_arg(&config);
+    let scratch = Scratch::new();
+    scratch.component();
+    let config = scratch.config(&format!(
+        "[[source]]\nname = \"local\"\nadapter = \"./source.wasm\"\ndigest = \"{}\"\n",
+        digest("11")
+    ));
 
     let mut provider = Provider::idle();
     provider.plugins = provider.plugins.clone().digest("source:source", digest("ab"));
 
     fail(&provider, &["emery", "specify", "--config", &config], 1, "refused").await;
-    assert!(provider.storage.is_empty(), "a refused run writes nothing");
 }
 
 // GitHub URLs are refused: a source checkout is not an adapter.
@@ -1244,15 +1229,11 @@ async fn package_loads() {
 // endpoint per source.
 #[tokio::test]
 async fn registry_override() {
-    let dir = project_tempdir();
-    let config = dir.path().join("emery.toml");
-    fs::write(
-        &config,
+    let scratch = Scratch::new();
+    let config = scratch.config(
         "[[source]]\nname = \"ledger\"\nadapter = \"acme:ledger@2.1.0\"\n\
          registry = \"registry.acme.example\"\n",
-    )
-    .expect("write emery.toml");
-    let config = project_arg(&config);
+    );
 
     let provider = Provider::answering([SPEC_ANSWER, DESIGN_ANSWER]);
     cli_ok(&provider, &["emery", "specify", "--config", &config]).await;
@@ -1277,10 +1258,8 @@ async fn pinned_package() {
         format!("[[source]]\nname = \"demo\"\nadapter = \"emery:demo@1.2.0\"\ndigest = \"{pin}\"\n")
     };
 
-    let dir = project_tempdir();
-    let config = dir.path().join("emery.toml");
-    fs::write(&config, pinned(&digest("ab"))).expect("write emery.toml");
-    let config = project_arg(&config);
+    let scratch = Scratch::new();
+    let config = scratch.config(&pinned(&digest("ab")));
 
     let provider = Provider::answering([SPEC_ANSWER, DESIGN_ANSWER]);
     cli_ok(&provider, &["emery", "specify", "--config", &config]).await;
@@ -1288,38 +1267,28 @@ async fn pinned_package() {
     assert_eq!(request.digest, Some(digest("ab")), "the source's pin rides the load request");
     provider.model.assert_exhausted();
 
-    let mismatched = project_tempdir();
-    let config = mismatched.path().join("emery.toml");
-    fs::write(&config, pinned(&digest("11"))).expect("write emery.toml");
-    let config = project_arg(&config);
+    let mismatched = Scratch::new();
+    let config = mismatched.config(&pinned(&digest("11")));
 
     let mut provider = Provider::idle();
     provider.plugins = provider.plugins.clone().digest("emery:demo@1.2.0", digest("ab"));
     fail(&provider, &["emery", "specify", "--config", &config], 1, "refused").await;
-    assert!(provider.storage.is_empty(), "a refused run writes nothing");
 }
 
 // A second source that re-pins an already-loaded adapter is refused as
 // `already-active`: the loader cannot re-bind the identity.
 #[tokio::test]
 async fn conflicting_pin() {
-    let dir = project_tempdir();
-    let config = dir.path().join("emery.toml");
-    fs::write(
-        &config,
-        format!(
-            "[[source]]\nname = \"a\"\nadapter = \"emery:demo@1.2.0\"\ndigest = \"{}\"\n\n\
-             [[source]]\nname = \"b\"\nadapter = \"emery:demo@1.2.0\"\ndigest = \"{}\"\n",
-            digest("ab"),
-            digest("cd"),
-        ),
-    )
-    .expect("write emery.toml");
-    let config = project_arg(&config);
+    let scratch = Scratch::new();
+    let config = scratch.config(&format!(
+        "[[source]]\nname = \"a\"\nadapter = \"emery:demo@1.2.0\"\ndigest = \"{}\"\n\n\
+         [[source]]\nname = \"b\"\nadapter = \"emery:demo@1.2.0\"\ndigest = \"{}\"\n",
+        digest("ab"),
+        digest("cd"),
+    ));
 
     let provider = Provider::idle();
     fail(&provider, &["emery", "specify", "--config", &config], 1, "already-active").await;
-    assert!(provider.storage.is_empty(), "a refused run writes nothing");
     let loads = provider.plugins.loads();
     assert_eq!(loads.len(), 1, "the conflicting pin never reaches the loader");
 }
@@ -1336,7 +1305,6 @@ async fn load_failures() {
         LoadError::Unavailable("resolving `emery:demo@1.2.0`: endpoint unreachable".to_string()),
     );
     fail(&provider, &["emery", "specify", "emery:demo@1.2.0"], 4, "unavailable").await;
-    assert!(provider.storage.is_empty(), "a refused run writes nothing");
 
     let mut provider = Provider::idle();
     provider.plugins = provider
@@ -1344,7 +1312,6 @@ async fn load_failures() {
         .clone()
         .refuse("emery:demo@1.2.0", LoadError::Refused("not a raw wasm component".to_string()));
     fail(&provider, &["emery", "specify", "emery:demo@1.2.0"], 1, "refused").await;
-    assert!(provider.storage.is_empty(), "a refused run writes nothing");
 }
 
 // Package references pin an exact SemVer — no branches, tags, or
@@ -1360,7 +1327,6 @@ async fn package_ref() {
         let provider = Provider::idle();
         let envelope = fail(&provider, &["emery", "specify", reference], 1, "bad_request").await;
         assert_message(&envelope, fragment);
-        assert!(provider.storage.is_empty(), "a refused run writes nothing: {reference}");
     }
 }
 
@@ -1482,10 +1448,8 @@ async fn repair_current() {
 // (portable-storage step 8).
 #[tokio::test]
 async fn multi_project() {
-    let workspace = project_tempdir();
-    let component = workspace.path().join("source.wasm");
-    fs::write(&component, b"\0asm-stub").expect("stub wasm");
-    let component = project_arg(&component);
+    let scratch = Scratch::new();
+    let component = scratch.component();
 
     // `Memory` is a shared handle: every clone reads the same store.
     let shared = Memory::default();
@@ -1516,7 +1480,7 @@ async fn multi_project() {
     let spec_beta = shared
         .object(&format!("beta/{CONTAINER}"), &format!("{id_beta}/spec.json"))
         .expect("spec.json");
-    assert_eq!(String::from_utf8_lossy(&spec_alpha), SPEC_MASTER, "alpha committed the revision");
+    assert_eq!(String::from_utf8_lossy(&spec_alpha), SPEC_REVISION, "alpha committed the revision");
     assert!(String::from_utf8_lossy(&spec_beta).contains("howdy"));
     assert_eq!(
         shown(&alpha, "spec").await,

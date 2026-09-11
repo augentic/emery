@@ -21,11 +21,11 @@ where
     resp
 }
 
-/// Runs `argv` in JSON mode and asserts the typed failure envelope.
-pub async fn fail<S>(provider: &Provider<S>, argv: &[&str], exit: u8, code: &str) -> Value
-where
-    S: StateStore + BlobStore + Send + Sync + 'static,
-{
+/// Runs `argv` in JSON mode and asserts the typed failure envelope, and that
+/// the refused run left storage exactly as it found it: a refusal never
+/// commits, prunes, or writes.
+pub async fn fail(provider: &Provider, argv: &[&str], exit: u8, code: &str) -> Value {
+    let before = provider.storage.snapshot();
     let mut json = vec!["emery", "--format", "json"];
     json.extend(argv.iter().skip(1).copied());
     let resp = cli(provider, &json).await;
@@ -33,5 +33,6 @@ where
     let envelope: Value = serde_json::from_slice(&resp.stderr).expect("one JSON envelope");
     assert_eq!(envelope["error"], code, "{envelope}");
     assert_eq!(envelope["exit-code"], exit, "{envelope}");
+    assert_eq!(provider.storage.snapshot(), before, "{code}: a refused run writes nothing");
     envelope
 }

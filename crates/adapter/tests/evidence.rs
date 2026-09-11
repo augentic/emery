@@ -8,7 +8,7 @@
 //! findings, and a host refusal passing through as `bad_request`.
 
 use emery_adapter::types::{Authority, Backing, ClaimKind, Context, Evidence, SourceInput};
-use emery_adapter::{Error, ToolCall, content_note, evidence};
+use emery_adapter::{Error, EvidenceTurn, ToolCall, content_note, evidence};
 use emery_prose::registry::Doc;
 use omnia_guest::model::Error as ModelError;
 use omnia_test::SeenFormat;
@@ -24,16 +24,18 @@ const VALID: &str = r#"{"authority":"documentation","claims":[
     {"kind":"decision"}
 ]}"#;
 
-fn context(docs: &'static [Doc], lend: Option<&str>) -> Context<'static> {
+const fn context(docs: &'static [Doc], lend: Option<&'static str>) -> Context<'static> {
     Context {
         adapter_id: "source:probe",
         docs,
-        lend: lend.map(str::to_string),
+        lend,
     }
 }
 
 async fn ask(model: &Scripted, ctx: &Context<'_>) -> Result<Evidence, Error> {
-    evidence(model, ctx, "SYSTEM".to_string(), "USER".to_string()).await
+    let input = SourceInput::value("brief", "Ship it.");
+    let turn = EvidenceTurn::bound("probe", "unused");
+    evidence(model, ctx, &input, "SYSTEM", turn).await
 }
 
 // The request carries the system prose, the user turn, the derived
@@ -51,7 +53,20 @@ async fn request_shape() {
     assert_eq!(seen.len(), 1);
     let request = &seen[0];
     assert_eq!(request.system.as_deref(), Some("SYSTEM"));
-    assert_eq!(request.messages, ["USER"]);
+    assert_eq!(
+        request.messages,
+        [concat!(
+            "Extract the claim set of the probe source bound to adapter `source:probe` (source ",
+            "key `brief`).\n\n",
+            "The bound material is this inline value; no `$SOURCE_DIR` is lent:\n\n",
+            "Ship it.\n\n",
+            "Nothing else is reachable; extract mines only this source.\n\n",
+            "The prompt's references are available through this call's `read_doc` tool ",
+            "(`list_docs` enumerates them); load referenced bodies on demand.\n\n",
+            "Answer with one JSON object matching the gated Evidence schema. The caller persists ",
+            "the document; do not write it yourself."
+        )]
+    );
     assert!(request.check, "acceptance is the check, not the reply text");
     assert_eq!(request.tools, ["list_docs", "read_doc"], "a docs-carrying call offers the tools");
     assert_eq!(request.workspace.as_deref(), Some("/lend/docs"), "the lend follows the context");
@@ -85,6 +100,21 @@ async fn bare_context() {
     let request = &model.seen()[0];
     assert!(request.tools.is_empty(), "no docs, no tools");
     assert!(request.workspace.is_none(), "no lend for an inline value");
+    assert!(!request.messages[0].contains("read_doc"), "no corpus affordance is advertised");
+}
+
+#[tokio::test]
+async fn prepared_turn() {
+    let model = Scripted::answering([VALID]);
+    let ctx = context(&[], None);
+    let input = SourceInput::value("intent", "ignored");
+    let turn = EvidenceTurn::prepared("intent", "PREPARED MATERIAL");
+
+    evidence(&model, &ctx, &input, "SYSTEM", turn).await.expect("accepted");
+
+    let user = &model.seen()[0].messages[0];
+    assert!(user.contains("\n\nPREPARED MATERIAL\n\n"), "{user}");
+    assert!(!user.contains("ignored"), "the prepared note replaces input rendering");
 }
 
 // Reference calls are answered in-process from the corpus before the

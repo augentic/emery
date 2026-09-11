@@ -47,4 +47,4 @@ Do not invent a `criterion`. A `requirement` without `statement` fails the run c
 }
 ```
 
-Claims from an inline value omit `path`. The caller persists the document; do not write it yourself.
+Claims from an inline value omit `path`.

@@ -6,7 +6,7 @@
 //! test suites depend on.
 
 use emery_adapter::types::{AdapterMetadata, Context, Evidence, SourceInput};
-use emery_adapter::{Error, Model, SourceAdapter, evidence};
+use emery_adapter::{Error, EvidenceTurn, Model, SourceAdapter, evidence};
 use emery_prose::registry::Doc;
 use omnia_test::guest::Scripted;
 
@@ -28,7 +28,8 @@ impl SourceAdapter for Probe {
     async fn extract<P: Model>(
         model: &P, ctx: &Context<'_>, input: &SourceInput,
     ) -> Result<Evidence, Error> {
-        evidence(model, ctx, "SYSTEM".to_string(), input.key.clone()).await
+        let turn = EvidenceTurn::prepared("probe", input.key.clone());
+        evidence(model, ctx, input, "SYSTEM", turn).await
     }
 }
 
@@ -46,7 +47,7 @@ async fn source_dispatch() {
     let ctx = Context {
         adapter_id: "source:probe",
         docs: DOCS,
-        lend: Some(".".to_string()),
+        lend: Some("."),
     };
 
     let evidence = Probe::extract(&model, &ctx, &SourceInput::value("main", ""))

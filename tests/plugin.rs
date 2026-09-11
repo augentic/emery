@@ -120,8 +120,9 @@ fn plugin_dir() -> PathBuf {
 // Collects every standalone `emery` mention in `text` — a `/emery:<skill>`
 // reference or a CLI invocation — skipping dotted or slashed paths and
 // `emery-adapters`.
-fn mentions_in(text: &str, out: &mut Vec<Mention>) {
+fn mentions_in(text: &str) -> Vec<Mention> {
     let bytes = text.as_bytes();
+    let mut mentions = Vec::new();
     let mut i = 0;
     while let Some(found) = text[i..].find("emery") {
         let start = i + found;
@@ -135,7 +136,7 @@ fn mentions_in(text: &str, out: &mut Vec<Mention>) {
                 rest.chars().take_while(|ch| ch.is_ascii_lowercase() || *ch == '-').collect();
             let tail = rest[name.len()..].to_string();
             if !name.is_empty() {
-                out.push(Mention::Skill { name, rest: tail });
+                mentions.push(Mention::Skill { name, rest: tail });
             }
             continue;
         }
@@ -143,32 +144,32 @@ fn mentions_in(text: &str, out: &mut Vec<Mention>) {
             before.is_none_or(|ch| !(ch.is_ascii_alphanumeric() || matches!(ch, '.' | '/' | '-')));
         let boundary_after = after.is_none_or(char::is_whitespace);
         if boundary_before && boundary_after {
-            out.push(Mention::Cli(text[start..].to_string()));
+            mentions.push(Mention::Cli(text[start..].to_string()));
         }
     }
+    mentions
 }
 
 fn mentions(doc: &str) -> Vec<Mention> {
-    let mut out = Vec::new();
     let mut in_fence = false;
+    let mut mentions = Vec::new();
     for line in doc.lines() {
         if line.trim_start().starts_with("```") {
             in_fence = !in_fence;
             continue;
         }
         if in_fence {
-            mentions_in(line, &mut out);
+            mentions.extend(mentions_in(line));
             continue;
         }
-        let mut code = false;
-        for part in line.split('`') {
-            if code {
-                mentions_in(part, &mut out);
-            }
-            code = !code;
-        }
+        mentions.extend(
+            line.split('`')
+                .enumerate()
+                .filter(|(index, _)| index % 2 == 1)
+                .flat_map(|(_, part)| mentions_in(part)),
+        );
     }
-    out
+    mentions
 }
 
 // Returns the first live verb among `tokens` and the first token it could
