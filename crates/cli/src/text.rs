@@ -32,7 +32,7 @@ pub fn specify(output: &SpecifyOutput, w: &mut dyn fmt::Write) -> fmt::Result {
 // Writes one line per changed requirement and section, prefixed by the
 // projection it appears in.
 fn changes(diff: &Diff, w: &mut dyn fmt::Write) -> fmt::Result {
-    let spec = Artifact::Spec.projection();
+    let spec = format!("{}.md", Artifact::Spec.as_ref());
     for entry in &diff.spec.added {
         writeln!(w, "    {spec} + {} {}", entry.id, entry.subject)?;
     }
@@ -45,7 +45,7 @@ fn changes(diff: &Diff, w: &mut dyn fmt::Write) -> fmt::Result {
         writeln!(w, "    {spec} ~ {} {}: {fields}", entry.id, entry.subject)?;
     }
 
-    let design = Artifact::Design.projection();
+    let design = format!("{}.md", Artifact::Design.as_ref());
     for kind in &diff.design.added {
         writeln!(w, "    {design} + {}", kind.as_ref())?;
     }

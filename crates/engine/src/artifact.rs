@@ -22,7 +22,9 @@ use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use sha2::{Digest, Sha256};
-use strum::VariantArray as _;
+use strum::AsRefStr;
+use strum::EnumString;
+use strum::VariantArray;
 
 pub use self::design::{Block, Design, Section, SectionKind, TYPE, citations};
 pub use self::spec::{
@@ -41,18 +43,7 @@ pub const RESERVED: &[&str] = &["#", ID, SOURCES, STATUS, NOTE, TYPE];
 /// The two artifacts of one revision, in digest order. A caller names one by
 /// its kebab-case key (`as_ref()` / `parse()`, `spec`), the same spelling
 /// serde uses.
-#[derive(
-    Debug,
-    Clone,
-    Copy,
-    PartialEq,
-    Eq,
-    Serialize,
-    Deserialize,
-    strum::AsRefStr,
-    strum::EnumString,
-    strum::VariantArray,
-)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, AsRefStr, EnumString, VariantArray)]
 #[serde(rename_all = "kebab-case")]
 #[strum(serialize_all = "kebab-case")]
 pub enum Artifact {
@@ -71,15 +62,6 @@ impl Artifact {
             Self::Design => "design.json",
         }
     }
-
-    /// The rendered projection's file name.
-    #[must_use]
-    pub const fn projection(self) -> &'static str {
-        match self {
-            Self::Spec => "spec.md",
-            Self::Design => "design.md",
-        }
-    }
 }
 
 /// The specification and design one `specify` run produces, committed under
@@ -88,7 +70,7 @@ impl Artifact {
 /// The id is a function of the content alone, so identical runs are
 /// byte-stable and a revision read back from storage is verified against the
 /// id it was stored under.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Revision {
     /// The behavioural specification.
