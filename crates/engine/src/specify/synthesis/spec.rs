@@ -1,102 +1,39 @@
 //! The `spec.md` brief
 //!
 //! Asks the model for the drafted content of `spec.md`: the preamble and, for
-//! every requirement the evidence changed, its acceptance scenarios. The
-//! requirements, their ids, their provenance, and their bodies are the
-//! engine's: the schema names the subjects to draft, every candidate draft is
-//! verified to carry exactly one entry per listed subject, and the engine
-//! places the accepted draft beside its facts in the specification. A
-//! requirement whose incumbent still stands keeps the incumbent's scenarios,
-//! and a run in which every requirement does is placed without a turn.
+//! every requirement, its acceptance scenarios. The requirements, their ids,
+//! their provenance, and their bodies are the engine's: the schema names the
+//! subjects to draft, every candidate draft is verified to carry exactly one
+//! entry per listed subject, and the engine places the accepted draft beside
+//! its facts in the specification.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::{self, Display, Formatter};
 
 use emery_source::claims::DOTTED_KEBAB_PATTERN;
-use omnia_guest::{Error, Model};
 use schemars::JsonSchema;
 use serde::Deserialize;
 use serde_json::{Value, json};
 
-use crate::artifact::{Cited, EMERY, Requirement, Scenario, Spec, Status};
+use crate::artifact::{Cited, EMERY, Scenario, Spec, Status};
 use crate::specify::Extract;
-use crate::specify::basis::{self, Basis};
+use crate::specify::basis::Basis;
 use crate::specify::brief::{Brief, Review};
 use crate::specify::synthesis::ClaimsSection;
 
 /// What the engine needs to ask the model for `spec.md` and to verify its
-/// draft: the extracts, the requirement bases derived from them, and the
-/// specification the run continues.
+/// draft: the extracts and the requirement bases derived from them.
 pub struct SpecBrief<'a> {
     extracts: &'a [Extract],
     bases: &'a [Basis],
-    prior: Option<&'a Spec>,
 }
 
 impl<'a> SpecBrief<'a> {
-    /// Creates the brief for `spec.md` from the `extracts`, the requirement
-    /// `bases` derived from them, and the `prior` specification they were
-    /// numbered from.
+    /// Creates the brief for `spec.md` from the `extracts` and the
+    /// requirement `bases` derived from them.
     #[must_use]
-    pub const fn new(extracts: &'a [Extract], bases: &'a [Basis], prior: Option<&'a Spec>) -> Self {
-        Self {
-            extracts,
-            bases,
-            prior,
-        }
-    }
-
-    /// Resolves the specification: asks the model for the drafted content
-    /// of every requirement without an incumbent, or — when every requirement
-    /// has one — keeps the prior preamble and places the incumbents
-    /// without a turn.
-    ///
-    /// # Errors
-    ///
-    /// A model failure is `bad_gateway`; an answer outside the schema, or a
-    /// draft the backend could not repair within its rounds, is `bad_request`.
-    pub async fn resolve<M: Model>(self, model: &M) -> Result<Spec, Error> {
-        if let Some(prior) = self.prior
-            && self.drafted().next().is_none()
-        {
-            tracing::info!("every requirement stands; the specification is carried");
-            return Ok(self.place(prior.preamble.clone(), BTreeMap::new()));
-        }
-
-        self.judge(model).await
-    }
-
-    // The bases the model drafts: those without an incumbent.
-    fn drafted(&self) -> impl Iterator<Item = &Basis> {
-        self.bases.iter().filter(|basis| basis.incumbent.is_none())
-    }
-
-    // Places the specification: every requirement in id order, each the
-    // engine's facts beside its scenarios — drafted, or the incumbent's.
-    fn place(&self, preamble: Vec<String>, mut drafts: BTreeMap<String, Vec<Scenario>>) -> Spec {
-        let mut requirements: Vec<Requirement> = self
-            .bases
-            .iter()
-            .map(|basis| {
-                let scenarios = basis.incumbent.as_ref().map_or_else(
-                    || {
-                        drafts
-                            .remove(basis.subject.as_str())
-                            .expect("verify held the draft to the requirements")
-                    },
-                    |incumbent| incumbent.scenarios.clone(),
-                );
-                basis.requirement(scenarios)
-            })
-            .collect();
-        requirements.sort_by_key(|requirement| requirement.id);
-
-        Spec {
-            emery: EMERY,
-            next_id: basis::next_id(self.bases, self.prior),
-            preamble,
-            requirements,
-        }
+    pub const fn new(extracts: &'a [Extract], bases: &'a [Basis]) -> Self {
+        Self { extracts, bases }
     }
 }
 
@@ -115,26 +52,26 @@ impl Brief for SpecBrief<'_> {
         "synthesis/tags.md",
     ];
 
-    // Tightens the derived schema to this run: exactly one entry per drafted
+    // Tightens the derived schema to this run: exactly one entry per
     // requirement, each `subject` drawn from their subjects, and at least one
     // scenario per entry.
     fn tighten(&self, schema: &mut Value) {
-        let count = self.drafted().count();
+        let count = self.bases.len();
         schema["properties"]["requirements"]["minItems"] = json!(count);
         schema["properties"]["requirements"]["maxItems"] = json!(count);
         schema["$defs"]["Draft"]["properties"]["subject"]["enum"] =
-            json!(self.drafted().map(|basis| &basis.subject).collect::<Vec<_>>());
+            json!(self.bases.iter().map(|basis| &basis.subject).collect::<Vec<_>>());
         schema["$defs"]["Draft"]["properties"]["scenarios"]["minItems"] = json!(1);
     }
 
-    // Verifies a candidate draft against the requirements: every drafted
-    // requirement exactly once and nothing else, at least one scenario per
-    // entry with one-line fields, no reserved opener in the preamble.
+    // Verifies a candidate draft against the requirements: every requirement
+    // exactly once and nothing else, at least one scenario per entry with
+    // one-line fields, no reserved opener in the preamble.
     fn verify(&self, answer: &SpecAnswer, review: &mut Review) {
         review.paragraphs(&answer.preamble, "preamble");
 
-        let by_subject: BTreeMap<&str, &Basis> =
-            self.bases.iter().map(|basis| (basis.subject.as_str(), basis)).collect();
+        let subjects: BTreeSet<&str> =
+            self.bases.iter().map(|basis| basis.subject.as_str()).collect();
         let mut seen = BTreeSet::new();
         for draft in &answer.requirements {
             let subject = draft.subject.as_str();
@@ -142,17 +79,9 @@ impl Brief for SpecBrief<'_> {
                 review.note(format_args!("`{subject}` is drafted more than once"));
                 continue;
             }
-
-            match by_subject.get(subject) {
-                None => {
-                    review.note(format_args!("`{subject}` is not a requirement"));
-                    continue;
-                }
-                Some(basis) if basis.incumbent.is_some() => {
-                    review.note(format_args!("`{subject}` is unchanged and not to be drafted"));
-                    continue;
-                }
-                Some(_) => {}
+            if !subjects.contains(subject) {
+                review.note(format_args!("`{subject}` is not a requirement"));
+                continue;
             }
 
             let label = format!("`{subject}`");
@@ -168,29 +97,44 @@ impl Brief for SpecBrief<'_> {
             }
         }
 
-        for basis in self.drafted().filter(|basis| !seen.contains(basis.subject.as_str())) {
-            review.note(format_args!("requirement `{}` is not drafted", basis.subject));
+        for subject in subjects.difference(&seen) {
+            review.note(format_args!("requirement `{subject}` is not drafted"));
         }
     }
 
-    // Places the accepted draft in the specification beside the incumbents.
+    // Places the accepted draft in the specification: every requirement in
+    // id order, each the engine's facts beside its drafted scenarios.
     fn into_output(self, answer: SpecAnswer) -> Self::Output {
-        let drafts =
+        let mut drafts: BTreeMap<String, Vec<Scenario>> =
             answer.requirements.into_iter().map(|draft| (draft.subject, draft.scenarios)).collect();
-        self.place(answer.preamble, drafts)
+        let requirements = self
+            .bases
+            .iter()
+            .map(|basis| {
+                let scenarios = drafts
+                    .remove(basis.subject.as_str())
+                    .expect("verify held the draft to the requirements");
+                basis.requirement(scenarios)
+            })
+            .collect();
+
+        Spec {
+            emery: EMERY,
+            preamble: answer.preamble,
+            requirements,
+        }
     }
 }
 
 // Renders the user turn of the prompt: every claim in every extract, then
 // every requirement to draft with its id, status, sources, and coverage, each
-// contributing claim labelled winner / loser / contributor, then the
-// requirements that stand unchanged, for the preamble's sake.
+// contributing claim labelled winner / loser / contributor.
 impl Display for SpecBrief<'_> {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         write!(f, "Draft `spec.md`.\n\n{claims}", claims = ClaimsSection(self.extracts))?;
 
         f.write_str("\n## Requirements (draft one entry per subject)\n\n")?;
-        for basis in self.drafted() {
+        for basis in self.bases {
             let sources = basis.contributors().map(Cited::from).map(|cited| cited.to_string());
             let coverage = if basis.covered { "evidenced" } else { "not evidenced" };
             writeln!(
@@ -219,17 +163,6 @@ impl Display for SpecBrief<'_> {
                         statement = member.statement,
                     )?;
                 }
-            }
-        }
-
-        let standing: Vec<&Basis> =
-            self.bases.iter().filter(|basis| basis.incumbent.is_some()).collect();
-        if !standing.is_empty() {
-            f.write_str(
-                "\n## Unchanged requirements (already drafted; do not answer for these)\n\n",
-            )?;
-            for basis in standing {
-                writeln!(f, "- {id} `{subject}`", id = basis.id, subject = basis.subject)?;
             }
         }
 

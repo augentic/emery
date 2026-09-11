@@ -11,16 +11,10 @@
 //! shape serves the command line, a config file, and any other transport,
 //! and it is checked whole before a single adapter loads.
 //!
-//! A run may also carry a revision — the documents of an earlier revision that
-//! travel beside the code they specify. The carried revision anchors the run:
-//! it becomes the current revision, its requirements lend their ids to the
-//! requirements that continue them, and only what the evidence changed is
-//! drafted again. With nothing carried, the store's current revision anchors
-//! the run the same way.
-//!
-//! The result reports what was committed — the revision id and the
-//! diff against the anchoring revision — so a caller can see what
-//! changed without reading the documents.
+//! Every run starts from its sources alone: nothing of an earlier revision
+//! is read into the synthesis. The result reports what was committed — the
+//! revision id and the diff against the revision it displaced — so a caller
+//! can see what changed without reading the documents.
 
 mod basis;
 mod brief;
@@ -37,26 +31,21 @@ use omnia_guest::api::Context;
 use omnia_guest::plugins::Digest;
 use omnia_guest::{BlobStore, Error, Model, Plugins, StateStore, bad_request};
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
 
 use crate::adapter::{AdapterRef, Loader};
-use crate::artifact::Revision;
 pub use crate::artifact::{ReqId, SectionKind};
 pub use crate::store::{Changed, DesignDiff, Diff, Entry, SpecDiff};
 use crate::{preopen_path, store};
 
 /// Runs `specify` over the context's provider.
 ///
-/// Checks the source list, anchors the run on the carried or current revision,
-/// then extracts each source's evidence, derives the requirements,
-/// synthesises the revision, and commits it.
+/// Checks the source list, then extracts each source's evidence, derives the
+/// requirements, synthesises the revision, and commits it.
 ///
 /// # Errors
 ///
-/// Returns `BadRequest` for a source the rules refuse, a claim the gate
-/// rejects, or a carried revision that is outdated (`spec-outdated`) or not a
-/// revision (`revision-invalid`), and passes through the extract, synthesis,
-/// and store failures.
+/// Returns `BadRequest` for a source the rules refuse or a claim the gate
+/// rejects, and passes through the extract, synthesis, and store failures.
 pub async fn specify<P: Model + Source + StateStore + BlobStore + Plugins>(
     input: SpecifyInput, context: Context<P>,
 ) -> Result<SpecifyOutput, Error> {
@@ -64,9 +53,8 @@ pub async fn specify<P: Model + Source + StateStore + BlobStore + Plugins>(
 
     input.validate()?;
 
-    let prior = input.revision(provider).await?;
     let extracts = input.extract(provider).await?;
-    let revision = synthesis::synthesise(provider, &extracts, prior.as_ref()).await?;
+    let revision = synthesis::synthesise(provider, &extracts).await?;
     let (id, diff) = store::commit(provider, &revision).await?;
 
     Ok(SpecifyOutput { revision: id, diff })
@@ -77,19 +65,6 @@ pub async fn specify<P: Model + Source + StateStore + BlobStore + Plugins>(
 pub struct SpecifyInput {
     /// The run's source configurations, in extraction order.
     pub sources: Vec<SourceConfig>,
-    /// The revision carried beside the code, when the project has one.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub carried: Option<Carried>,
-}
-
-/// The documents of an earlier revision left beside the code: the
-/// `document` of each `show --format json` envelope, still unread.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Carried {
-    /// The specification document.
-    pub spec: Value,
-    /// The design document.
-    pub design: Value,
 }
 
 impl SpecifyInput {
@@ -110,18 +85,6 @@ impl SpecifyInput {
         }
 
         Ok(())
-    }
-
-    async fn revision<P: StateStore + BlobStore>(
-        &self, provider: &P,
-    ) -> Result<Option<Revision>, Error> {
-        if let Some(Carried { spec, design }) = &self.carried {
-            let revision = Revision::read(spec.clone(), design.clone())?;
-            store::adopt(provider, &revision).await?;
-            Ok(Some(revision))
-        } else {
-            Ok(store::current(provider).await.ok().flatten())
-        }
     }
 
     async fn extract<P: Source + Plugins>(&self, provider: &P) -> Result<Vec<Extract>, Error> {
@@ -238,7 +201,7 @@ impl SourceConfig {
 pub struct SpecifyOutput {
     /// Committed revision id.
     pub revision: String,
-    /// Diff from the anchoring revision; absent on the first run and when
+    /// Diff from the displaced revision; absent on the first run and when
     /// the outgoing revision was unreadable.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub diff: Option<Diff>,

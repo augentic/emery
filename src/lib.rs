@@ -11,11 +11,18 @@
 #![cfg(target_arch = "wasm32")]
 
 use omnia_guest::api::command::Response;
+use omnia_guest::{BlobStore, Model, Plugins, StateStore};
 use wasip3::cli::environment;
 
-omnia_guest::provider! {
-    struct Provider: Model + StateStore + BlobStore + Plugins;
-}
+// The bare provider: every capability keeps its WASI-backed default body, so
+// each impl is empty and the runtime's grants decide what the engine can do.
+#[derive(Clone)]
+struct Provider;
+
+impl Model for Provider {}
+impl StateStore for Provider {}
+impl BlobStore for Provider {}
+impl Plugins for Provider {}
 impl emery_source::Source for Provider {}
 
 omnia_guest::command!(dispatch);

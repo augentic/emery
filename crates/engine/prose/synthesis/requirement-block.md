@@ -29,8 +29,6 @@ One entry per requirement listed under *Requirements (draft one entry per subjec
 
 - **`scenarios`** — at least one, each with a `name`, optional `given` lines, a `when`, a `then`, and optional `and` lines that follow the `then`, all single lines. Draft from the `criterion` claims covering the requirement; for an uncovered requirement, a scenario that states what is checked without inventing the outcome. For a requirement in `conflict` (see [authority.md](authority.md)), the scenario must not pick a side.
 
-A requirement listed under *Unchanged requirements* already has its scenarios from the revision this run continues; it is context for your preamble, and an entry for it is refused.
-
 The engine refuses a draft that omits a listed requirement, drafts a subject that is not listed, drafts a subject twice, omits a scenario, or opens a preamble paragraph line with `#`, `ID:`, `Sources:`, `Status:`, `Note:`, or `Type:`.
 
 ## Scenario conventions

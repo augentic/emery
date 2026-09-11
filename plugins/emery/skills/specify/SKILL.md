@@ -6,7 +6,7 @@ argument-hint: <adapter>
 
 # Specify Skill
 
-`emery specify` is the one generate verb: it resolves the named source adapters (a local component loads through the deployment loader, read fresh each run; an exact package reference fetches from its registry; either load's optional `digest` pin is verified host-side), extracts, derives the requirements, synthesises, and commits one revision, swapping the current revision id. Nothing about the source list persists between runs — repeat the sources on every invocation, or keep them in an operator-owned `emery.toml`. A project that carries `.emery/spec.json` and `.emery/design.json` (the `emery show --format json` envelopes of a revision) continues that revision: requirements keep their ids, and only what the evidence changed is drafted again. This skill installs or refreshes the CLI, elicits arguments, invokes the verb, re-projects the committed revision, and relays its output.
+`emery specify` is the one generate verb: it resolves the named source adapters (a local component loads through the deployment loader, read fresh each run; an exact package reference fetches from its registry; either load's optional `digest` pin is verified host-side), extracts, derives the requirements, synthesises, and commits one revision, swapping the current revision id. Nothing about the source list persists between runs — repeat the sources on every invocation, or keep them in an operator-owned `emery.toml`. Every run starts from its sources alone: nothing of the stored revision reaches the synthesis, and requirements number from `REQ-001` in source order. This skill installs or refreshes the CLI, elicits arguments, invokes the verb, re-projects the committed revision, and relays its output.
 
 ## Invocation
 
@@ -32,20 +32,17 @@ Specify dispatches model judgment and can take a while on large workspaces; it r
 
 ## Re-project
 
-After every successful run, write the committed revision beside the code — the Markdown projections for review and the JSON envelopes as the revision the next run continues:
+After every successful run, write the committed revision's Markdown projections beside the code for review:
 
 ```bash
 emery show spec --quiet > spec.md
 emery show design --quiet > design.md
-mkdir -p .emery
-emery show spec --format json --quiet > .emery/spec.json
-emery show design --format json --quiet > .emery/design.json
 ```
 
-Track all four files in version control. Never edit them by hand: `spec.md` and `design.md` are projections of `.emery/*.json`, and a hand edit is overwritten by the next run (change a source and re-run instead). At the hand-off to implementation, the four files travel with the generated code, so a later `specify` in that project inherits the requirement ids.
+Track both files in version control. Never edit them by hand: they are projections of the stored revision, and a hand edit is overwritten by the next run (change a source and re-run instead).
 
 ## Relay
 
-- Surface the CLI output verbatim — the success envelope names the committed revision and the re-mine diff against the one it continued.
+- Surface the CLI output verbatim — the success envelope names the committed revision and the re-mine diff against the one it displaced.
 - Review is `spec.md` / `design.md` as re-projected, or `emery show spec` / `emery show design` directly — never read or edit `.omnia/storage` state by hand.
-- On non-zero exit, surface the structured error and stop — never hand-roll spec documents. A `refused` failure means the loader rejected the request (a pin that no longer matches, a malformed pin, an invalid artifact, or an unserved location); relay the hint and let the operator decide. A `revision-invalid` or `spec-outdated` failure names the carried `.emery/` pair: relay the hint (restore the pair from one revision, or remove `.emery/` to regenerate) and let the operator decide.
+- On non-zero exit, surface the structured error and stop — never hand-roll spec documents. A `refused` failure means the loader rejected the request (a pin that no longer matches, a malformed pin, an invalid artifact, or an unserved location); relay the hint and let the operator decide. A `spec-outdated` failure means the stored revision predates this binary's grammar: relay the hint (re-run `emery specify` to regenerate) and let the operator decide.

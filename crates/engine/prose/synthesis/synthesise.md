@@ -12,7 +12,7 @@ How claims land is [claim-landing.md](claim-landing.md); how disagreement resolv
 The request carries:
 
 1. **Claims** — every source's Evidence: its key, authority class (`intent` / `documentation` / `behaviour`), and typed claims. This is the complete evidence; nothing else exists.
-2. **Requirements** — for `spec.md`: one per requirement to draft, with its `REQ-NNN` id, the subject, `Status:`, the `Sources:` list of `source:claim` pairs, whether acceptance criteria are evidenced, and every contributing claim with its role (winner, loser, or contributor); then the requirements that stand unchanged from the revision this run continues, by id and subject, for context. Ids are stable across runs — a requirement keeps its id through the claims it cites — and are never yours to assign. These requirements are engine-owned facts, not suggestions; you draft scenarios for each listed subject and nothing else.
+2. **Requirements** — for `spec.md`: one per requirement to draft, with its `REQ-NNN` id, the subject, `Status:`, the `Sources:` list of `source:claim` pairs, whether acceptance criteria are evidenced, and every contributing claim with its role (winner, loser, or contributor). Ids are the engine's — numbered in the order of each requirement's earliest claim — and are never yours to assign. These requirements are engine-owned facts, not suggestions; you draft scenarios for each listed subject and nothing else.
 3. **Sections** — for `design.md`: every section of the closed vocabulary with its presence (`required`, `permitted`, or `omitted`) and the `type` claims to reference, computed from the claim kinds present. The plan is an engine-owned fact, not a suggestion.
 
 ## Contract

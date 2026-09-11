@@ -16,8 +16,14 @@ use schemars::JsonSchema;
 use serde::Deserialize;
 use serde_json::json;
 
-/// The `list_docs` arguments: none.
+/// The `list_docs` arguments: none. The braces stay — a braced struct derives
+/// the empty `object` schema a tool's parameters must be, where a unit struct
+/// would derive `null`.
 #[derive(Debug, Deserialize, JsonSchema)]
+#[expect(
+    clippy::empty_structs_with_brackets,
+    reason = "the schema derive needs the braced form for an object"
+)]
 struct ListDocs {}
 
 /// The `read_doc` arguments.

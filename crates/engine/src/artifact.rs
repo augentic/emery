@@ -15,7 +15,7 @@
 mod design;
 mod spec;
 
-use omnia_guest::Error;
+use omnia_guest::{Error, server_error};
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -27,8 +27,8 @@ pub use self::spec::{
     Cited, ID, Loser, NOTE, ReqId, Requirement, SOURCES, STATUS, Scenario, Spec, Status,
 };
 
-/// The grammar this engine writes and reads; a stored or carried revision
-/// stamped with another is outdated.
+/// The grammar this engine writes and reads; a stored revision stamped with
+/// another is outdated.
 pub const EMERY: u32 = 2;
 
 /// Line openers a drafted paragraph may not use: `#`, so no draft line reads
@@ -102,8 +102,8 @@ impl Revision {
     /// # Errors
     ///
     /// `spec-outdated` when either document's `emery` stamp is missing or
-    /// another grammar's; `revision-invalid` when a document does not fit
-    /// the revision.
+    /// another grammar's; `server_error` when a document under this grammar
+    /// does not fit the revision, since this engine did not write it.
     pub fn read(spec: Value, design: Value) -> Result<Self, Error> {
         Ok(Self {
             spec: stamped(spec, Document::Spec)?,
@@ -163,10 +163,7 @@ fn stamped<T: DeserializeOwned>(value: Value, document: Document) -> Result<T, E
         });
     }
 
-    serde_json::from_value(value).map_err(|err| Error::BadRequest {
-        code: "revision-invalid".into(),
-        description: format!("`{name}` is not a revision: {err}"),
-    })
+    serde_json::from_value(value).map_err(|err| server_error!("`{name}` is not a revision: {err}"))
 }
 
 /// Hashes stored files as SHA-256 over the length-prefixed names and bodies,

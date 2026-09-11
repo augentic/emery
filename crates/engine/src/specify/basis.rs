@@ -12,12 +12,8 @@
 //! Authority is withheld from the request, so the answer cannot be steered
 //! toward a winner; a run over one source never asks at all.
 //!
-//! Each basis then takes its id from the revision the run continues: the
-//! requirement it shares a cited `(source, claim)` with, else the one on the
-//! same subject, and a fresh id from the prior `next_id` otherwise. A basis
-//! whose facts still match the requirement it continues names it as its
-//! incumbent, and the incumbent's drafted content is kept rather than asked
-//! for again.
+//! The bases are numbered in order from `REQ-001`, each group's position set
+//! by its earliest claim, so the same sources in the same order number alike.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::{self, Display, Formatter};
@@ -28,90 +24,20 @@ use schemars::JsonSchema;
 use serde::Deserialize;
 use serde_json::{Value, json};
 
-use crate::artifact::{Cited, Loser, ReqId, Requirement, Scenario, Spec, Status};
+use crate::artifact::{Cited, Loser, ReqId, Requirement, Scenario, Status};
 use crate::specify::Extract;
 use crate::specify::brief::{Brief, Review};
 
 /// Derives every requirement basis in `extracts`, asking the model to group
-/// the claims on any run over two or more sources, then numbers the bases
-/// from the revision they continue.
+/// the claims on any run over two or more sources.
 ///
 /// # Errors
 ///
 /// A model failure is `bad_gateway`; an answer outside the schema, or a
 /// grouping the backend could not repair within its rounds, is `bad_request`.
-pub async fn derive<M: Model>(
-    model: &M, extracts: &[Extract], prior: Option<&Spec>,
-) -> Result<Vec<Basis>, Error> {
+pub async fn derive<M: Model>(model: &M, extracts: &[Extract]) -> Result<Vec<Basis>, Error> {
     let brief = GroupingBrief::collect(extracts);
-    let mut bases = if extracts.len() < 2 {
-        brief.bases(&brief.baseline())
-    } else {
-        brief.judge(model).await?
-    };
-
-    inherit(&mut bases, prior);
-    Ok(bases)
-}
-
-/// The id the next new requirement takes after `bases`: past every id in use
-/// and never below the prior revision's own allocation, so an id is never reused.
-#[must_use]
-pub fn next_id(bases: &[Basis], prior: Option<&Spec>) -> u32 {
-    bases
-        .iter()
-        .map(|basis| basis.id.number() + 1)
-        .chain(prior.map(|spec| spec.next_id))
-        .max()
-        .unwrap_or(1)
-}
-
-// Numbers the bases from the prior revision: each of its requirements, lowest
-// id first, lends its id to one unnumbered basis continuing it — the one
-// holding its subject claim when several do — so a merge keeps the lowest id
-// and a split keeps the id with the subject; the rest allocate from
-// `next_id`. A basis whose facts still match the requirement it continues
-// keeps it as the incumbent. Without a prior revision, the bases number from
-// 1 in order.
-fn inherit(bases: &mut [Basis], prior: Option<&Spec>) {
-    let Some(prior) = prior else {
-        for (basis, id) in bases.iter_mut().zip(1..) {
-            basis.id = ReqId::new(id);
-        }
-        return;
-    };
-
-    let mut ordered: Vec<&Requirement> = prior.requirements.iter().collect();
-    ordered.sort_by_key(|requirement| requirement.id);
-    let continued: Vec<Vec<usize>> = bases.iter().map(|basis| basis.continued(&ordered)).collect();
-
-    let mut numbered = vec![false; bases.len()];
-    for (position, requirement) in ordered.iter().enumerate() {
-        let claimants: Vec<usize> = (0..bases.len())
-            .filter(|&index| !numbered[index] && continued[index].contains(&position))
-            .collect();
-        let owner = claimants
-            .iter()
-            .copied()
-            .find(|&index| {
-                bases[index].classes.iter().flatten().any(|member| member.id == requirement.subject)
-            })
-            .or_else(|| claimants.first().copied());
-
-        if let Some(index) = owner {
-            let heir = &mut bases[index];
-            heir.id = requirement.id;
-            if heir.requirement(requirement.scenarios.clone()) == **requirement {
-                heir.incumbent = Some((*requirement).clone());
-            }
-            numbered[index] = true;
-        }
-    }
-
-    let fresh = bases.iter_mut().zip(numbered).filter(|(_, numbered)| !numbered);
-    for (next, (heir, _)) in (prior.next_id..).zip(fresh) {
-        heir.id = ReqId::new(next);
-    }
+    if extracts.len() < 2 { Ok(brief.bases(&brief.baseline())) } else { brief.judge(model).await }
 }
 
 /// A partition of every requirement claim into requirements, each carrying a
@@ -137,11 +63,10 @@ pub struct Group {
 
 /// The basis for one requirement before any prose: its id, subject, status,
 /// acceptance-criterion coverage, and contributors in agreeing classes, the
-/// winning class first — and the requirement it continues unchanged,
-/// when there is one.
+/// winning class first.
 #[derive(Debug, Clone)]
 pub struct Basis {
-    /// The requirement id: inherited from the prior revision, or newly allocated.
+    /// The requirement id: its position in the run, from `REQ-001`.
     pub id: ReqId,
     /// The heading name: the top contributor's claim id.
     pub subject: String,
@@ -151,17 +76,13 @@ pub struct Basis {
     pub covered: bool,
     /// The agreeing classes, the winning class first.
     pub classes: Vec<Vec<Contributor>>,
-    /// The requirement this basis continues with every fact
-    /// unchanged, whose drafted content is kept without a turn.
-    pub incumbent: Option<Requirement>,
 }
 
 impl Basis {
     // Builds a requirement from its classes, sorted by authority then source
     // order. One class is agreed (unknown when no criterion covers it); several
     // are a divergence when one holds the top authority alone, else a conflict.
-    // The id is `inherit`'s to set; until then it is the unallocated 0.
-    fn of(mut classes: Vec<Vec<Contributor>>, criteria: &[&str]) -> Self {
+    fn of(id: ReqId, mut classes: Vec<Vec<Contributor>>, criteria: &[&str]) -> Self {
         for class in &mut classes {
             class.sort_by_key(|member| (member.authority, member.index));
         }
@@ -186,12 +107,11 @@ impl Basis {
         };
 
         Self {
-            id: ReqId::new(0),
+            id,
             subject: classes[0][0].id.clone(),
             status,
             covered,
             classes,
-            incumbent: None,
         }
     }
 
@@ -241,34 +161,6 @@ impl Basis {
             losers,
             scenarios,
         }
-    }
-
-    // Finds the prior requirements (positions in `ordered`) this basis
-    // continues: any that cites one of its `(source, claim)` pairs, else the
-    // one on its subject.
-    fn continued(&self, ordered: &[&Requirement]) -> Vec<usize> {
-        let cited: Vec<usize> = ordered
-            .iter()
-            .enumerate()
-            .filter(|(_, requirement)| {
-                requirement.sources.iter().any(|cited| {
-                    self.classes
-                        .iter()
-                        .flatten()
-                        .any(|member| (&member.source, &member.id) == (&cited.source, &cited.claim))
-                })
-            })
-            .map(|(position, _)| position)
-            .collect();
-        if !cited.is_empty() {
-            return cited;
-        }
-
-        ordered
-            .iter()
-            .position(|requirement| requirement.subject == self.subject)
-            .into_iter()
-            .collect()
     }
 }
 
@@ -361,7 +253,8 @@ impl<'a> GroupingBrief<'a> {
         }
     }
 
-    // Turns a grouping into bases, ordered by each group's earliest claim.
+    // Turns a grouping into bases, ordered by each group's earliest claim and
+    // numbered from `REQ-001` in that order.
     fn bases(&self, grouping: &Grouping) -> Vec<Basis> {
         let mut groups: Vec<(usize, Vec<Vec<Contributor>>)> = grouping
             .groups
@@ -379,7 +272,11 @@ impl<'a> GroupingBrief<'a> {
             })
             .collect();
         groups.sort_by_key(|(first, _)| *first);
-        groups.into_iter().map(|(_, classes)| Basis::of(classes, &self.criteria)).collect()
+        groups
+            .into_iter()
+            .zip(1..)
+            .map(|((_, classes), number)| Basis::of(ReqId::new(number), classes, &self.criteria))
+            .collect()
     }
 }
 

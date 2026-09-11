@@ -29,50 +29,48 @@ struct Case {
     json_channels: bool,
 }
 
-const fn cases() -> [Case; 5] {
-    [
-        Case {
-            name: "help",
-            argv: &["emery", "--help"],
-            exit: 0,
-            stdout: "Usage: emery [OPTIONS] <COMMAND>",
-            stderr: "",
-            json_channels: false,
-        },
-        Case {
-            name: "version",
-            argv: &["emery", "--version"],
-            exit: 0,
-            stdout: concat!("emery ", env!("CARGO_PKG_VERSION")),
-            stderr: "",
-            json_channels: false,
-        },
-        Case {
-            name: "completions",
-            argv: &["emery", "completions", "zsh"],
-            exit: 0,
-            stdout: "_emery",
-            stderr: "",
-            json_channels: false,
-        },
-        Case {
-            name: "specify source required",
-            argv: &["emery", "specify"],
-            exit: 1,
-            stdout: "",
-            stderr: "specify-source-required",
-            json_channels: false,
-        },
-        Case {
-            name: "show not generated",
-            argv: &["emery", "--format", "json", "show", "spec"],
-            exit: 2,
-            stdout: "",
-            stderr: "spec-not-generated",
-            json_channels: true,
-        },
-    ]
-}
+const CASES: [Case; 5] = [
+    Case {
+        name: "help",
+        argv: &["emery", "--help"],
+        exit: 0,
+        stdout: "Usage: emery [OPTIONS] <COMMAND>",
+        stderr: "",
+        json_channels: false,
+    },
+    Case {
+        name: "version",
+        argv: &["emery", "--version"],
+        exit: 0,
+        stdout: concat!("emery ", env!("CARGO_PKG_VERSION")),
+        stderr: "",
+        json_channels: false,
+    },
+    Case {
+        name: "completions",
+        argv: &["emery", "completions", "zsh"],
+        exit: 0,
+        stdout: "_emery",
+        stderr: "",
+        json_channels: false,
+    },
+    Case {
+        name: "specify source required",
+        argv: &["emery", "specify"],
+        exit: 1,
+        stdout: "",
+        stderr: "specify-source-required",
+        json_channels: false,
+    },
+    Case {
+        name: "show not generated",
+        argv: &["emery", "--format", "json", "show", "spec"],
+        exit: 2,
+        stdout: "",
+        stderr: "spec-not-generated",
+        json_channels: true,
+    },
+];
 
 // Deleted verbs are deleted from the grammar, not hidden. A usage error
 // exits `USAGE_EXIT` (64), so exit 2 always means a `NotFound` envelope.
@@ -257,7 +255,7 @@ async fn argv_zero_replaced() {
 // The stdout/stderr channel contract, table-driven across the surface.
 #[tokio::test]
 async fn response_contract() {
-    for case in cases() {
+    for case in CASES {
         // A fresh store keeps `specify` sourceless and `show` without a revision.
         let response = cli(&Provider::idle(), case.argv).await;
         let stdout = String::from_utf8(response.stdout).expect("stdout is UTF-8");

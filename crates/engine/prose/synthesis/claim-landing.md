@@ -26,5 +26,5 @@ A `criterion` whose id equals or extends any contributing id (`<id>.<rest>`) cov
 
 ## Order and stability
 
-- Requirements appear in id order; the engine renders `spec.md` in that order. A `REQ-NNN` id is inherited from the revision the run continues through the `(source, claim)` pairs a requirement cites — else its subject — and newly allocated otherwise; it is never reused. Your draft is keyed by subject, never by position.
+- Requirements appear in id order; the engine renders `spec.md` in that order. A `REQ-NNN` id is the engine's, numbered from `REQ-001` in the order of each requirement's earliest claim. Your draft is keyed by subject, never by position.
 - Re-running over identical claims must produce byte-identical artifacts: no timestamps, counters, or free-running variation.

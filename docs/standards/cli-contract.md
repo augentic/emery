@@ -20,7 +20,7 @@ Never hand-edit `.omnia/storage` state (the revision store); never `mkdir -p .om
 
 ## JSON envelope
 
-Every CLI verb that skills consume emits a stable **flat body**: the command-specific fields at the top level of a single JSON object. On success the body is exactly that — there is no `ok` discriminant, no `data` wrapper around the payload, and no top-level envelope-version stamp. On failure the flat object carries three top-level keys: `error` (a discriminant string: kebab-case for the five recovery codes, snake_case for Omnia defaults), `message` (a humanised one-liner), and `exit-code` (the integer the binary returns). Skills invoked with `--format json` parse the body and branch on the `error` field rather than on stdout text.
+Every CLI verb that skills consume emits a stable **flat body**: the command-specific fields at the top level of a single JSON object. On success the body is exactly that — there is no `ok` discriminant, no `data` wrapper around the payload, and no top-level envelope-version stamp. On failure the flat object carries three top-level keys: `error` (a discriminant string: kebab-case for the four recovery codes, snake_case for Omnia defaults), `message` (a humanised one-liner), and `exit-code` (the integer the binary returns). Skills invoked with `--format json` parse the body and branch on the `error` field rather than on stdout text.
 
 Stream roles are part of the contract: the semantic result body (text or JSON) is stdout; the failure body and live host tracing are stderr. The failure body carries no styling in either format; colour policy belongs to the host tracing layer alone. Host tracing is selected by the reserved host log flags, peeled from argv before the guest sees it: bare invocations default to INFO progress, `--quiet` turns tracing off, and `--debug` adds backend debug tracing (both flags win over any ambient `RUST_LOG`). Skills follow the plugin rule's tracing contract and relay the semantic result once without repeating tracing lines.
 
@@ -31,8 +31,7 @@ The `error` discriminants are part of the public contract that skills and tests 
 - `specify-source-required` — `emery specify` without a source and with no project-root `emery.toml` to discover.
 - `spec-not-generated` — `emery show` before any revision is committed.
 - `unsupported-version` — an adapter's declared minimum `emery-version` is newer than the running binary.
-- `spec-outdated` — the revision (stored, or carried in `.emery/`) was written under an older grammar than the running binary reads; regenerate.
-- `revision-invalid` — the carried `.emery/spec.json` / `.emery/design.json` pair is incomplete, not `emery show --format json` envelopes, or not a revision; restore both from one revision or remove `.emery/`.
+- `spec-outdated` — the stored revision was written under an older grammar than the running binary reads; regenerate.
 - `refused` — the loader rejected the request: a mismatched or malformed `digest` pin, an invalid component, a missing source-seam export, or a location kind this deployment does not serve; the message names which.
 - `unavailable` — the deployment's acquirer could not produce a registry package (network, endpoint, or a missing exact version); check connectivity and the source's `registry` override.
 
@@ -40,7 +39,7 @@ The `error` discriminants are part of the public contract that skills and tests 
 
 The CLI uses the Omnia 1:1 exit map; the one table lives in [`AGENTS.md` § Exit codes](../../AGENTS.md#exit-codes). Two notes for skills: on `unsupported-version` (exit `1`), tell the operator to update the installed binary through its install channel; exit `64` carries clap's own usage text on stderr and no JSON envelope — a skill that sees it has built a bad argv.
 
-Skills should branch on the exit code first (success vs failure class) and on the five kebab recovery discriminants second (`specify-source-required`, `unsupported-version`, `spec-not-generated`, `spec-outdated`, `revision-invalid`). Other failures share the Omnia snake_case default for that class (`bad_request`, `not_found`, `server_error`, `bad_gateway`). New exit codes are not invented by skills or the CLI.
+Skills should branch on the exit code first (success vs failure class) and on the four kebab recovery discriminants second (`specify-source-required`, `unsupported-version`, `spec-not-generated`, `spec-outdated`). Other failures share the Omnia snake_case default for that class (`bad_request`, `not_found`, `server_error`, `bad_gateway`). New exit codes are not invented by skills or the CLI.
 
 ## Cross-references
 

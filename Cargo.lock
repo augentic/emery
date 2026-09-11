@@ -1058,7 +1058,6 @@ dependencies = [
  "emery-engine",
  "omnia-guest",
  "serde",
- "serde_json",
  "strum 0.28.0",
  "toml",
 ]

@@ -5,9 +5,7 @@
 //! calls for is decided by the claim kinds it extracted: the schema names that
 //! subset, every candidate draft is verified against the plan, the bound
 //! sources it may cite, and the `type` claims whose signatures the engine
-//! inserts, and the engine places the accepted draft in the design. A
-//! design that still passes the same verification over this run's
-//! evidence is accepted as it stands.
+//! inserts, and the engine places the accepted draft in the design.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::{self, Display, Formatter};
@@ -42,23 +40,6 @@ impl<'a> DesignBrief<'a> {
             spec,
             plan: Plan::collect(extracts),
         }
-    }
-
-    /// Tells whether a `design` still passes this run's verification
-    /// — the plan, the bound sources, the `type` claims and their signatures —
-    /// so it can be kept without a turn.
-    #[must_use]
-    pub fn accepts(&self, design: &Design) -> bool {
-        let mut review = Review::default();
-        self.verify(&DesignAnswer::from(design), &mut review);
-
-        review.is_clean()
-            && design.sections.iter().flat_map(|section| &section.blocks).all(|block| match block {
-                artifact::Block::Type { key, signature } => {
-                    self.plan.signatures.get(key.as_str()).copied() == Some(signature.as_str())
-                }
-                artifact::Block::Text(_) => true,
-            })
     }
 }
 
@@ -256,24 +237,6 @@ pub struct DesignAnswer {
     pub sections: Vec<Section<Block>>,
 }
 
-// A committed design as the draft it was placed from: the blocks without
-// their signatures, so it can be verified like a candidate.
-impl From<&Design> for DesignAnswer {
-    fn from(design: &Design) -> Self {
-        Self {
-            preamble: design.preamble.clone(),
-            sections: design
-                .sections
-                .iter()
-                .map(|section| Section {
-                    kind: section.kind,
-                    blocks: section.blocks.iter().map(Block::from).collect(),
-                })
-                .collect(),
-        }
-    }
-}
-
 /// One design block: a paragraph, or a reference to a `type` claim whose
 /// signature the renderer inserts verbatim.
 #[derive(Debug, Clone, Deserialize, JsonSchema)]
@@ -283,15 +246,6 @@ pub enum Block {
     Text(String),
     /// The key of a `type` claim.
     Type(String),
-}
-
-impl From<&artifact::Block> for Block {
-    fn from(block: &artifact::Block) -> Self {
-        match block {
-            artifact::Block::Text(text) => Self::Text(text.clone()),
-            artifact::Block::Type { key, .. } => Self::Type(key.clone()),
-        }
-    }
 }
 
 // The facts a design draft is verified against: the kinds of every extracted

@@ -31,8 +31,6 @@ const SCENARIO: &str = "#### Scenario:";
 pub struct Spec {
     /// The grammar the document was written under.
     pub emery: u32,
-    /// The next requirement id to allocate; ids are never reused.
-    pub next_id: u32,
     /// Markdown paragraphs before the first requirement.
     pub preamble: Vec<String>,
     /// The requirements, in id order.
@@ -229,7 +227,7 @@ impl Display for Scenario {
 }
 
 /// A requirement id, `REQ-NNN`: a positive number, zero-padded to at least
-/// three digits, allocated once and never reused.
+/// three digits.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(try_from = "String", into = "String")]
 pub struct ReqId(u32);
@@ -241,12 +239,6 @@ impl ReqId {
     #[must_use]
     pub const fn new(number: u32) -> Self {
         Self(number)
-    }
-
-    /// The id's number.
-    #[must_use]
-    pub const fn number(self) -> u32 {
-        self.0
     }
 }
 

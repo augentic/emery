@@ -4,6 +4,8 @@
 //! which commands exist learns it from the shipped surface rather than from a
 //! list that would have to be kept in step by hand.
 
+use emery_source::claims::is_kebab;
+
 /// Extracts the sorted verb names from the `Commands:` section of
 /// `emery --help`.
 pub fn verbs(help: &str) -> Vec<String> {
@@ -14,12 +16,7 @@ pub fn verbs(help: &str) -> Vec<String> {
         .take_while(|line| !line.is_empty())
         .filter_map(|line| {
             let name = line.split_whitespace().next()?;
-            let kebab = !name.is_empty()
-                && !name.starts_with('-')
-                && name
-                    .chars()
-                    .all(|ch| ch.is_ascii_lowercase() || ch.is_ascii_digit() || ch == '-');
-            kebab.then(|| name.to_owned())
+            is_kebab(name).then(|| name.to_string())
         })
         .collect();
     names.sort_unstable();

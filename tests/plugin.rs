@@ -9,67 +9,17 @@
 
 #![cfg(not(target_arch = "wasm32"))]
 
+#[path = "support/provider.rs"]
+mod provider;
 #[path = "support/verbs.rs"]
 mod verbs;
 
 use std::collections::BTreeSet;
-use std::future::Future;
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
 
-use emery_source::Source;
-use emery_source::types::{AdapterMetadata, Evidence, SourceInput};
-use omnia_guest::Error;
-use omnia_test::guest::Memory;
-
-// Capabilities are never dispatched; the suite only inspects the grammar.
-#[derive(Clone, Debug, Default)]
-struct Inert {
-    storage: Arc<Memory>,
-}
-
-omnia_test::delegate!(impl Inert {
-    StateStore + BlobStore => storage,
-});
-
-impl omnia_guest::Model for Inert {
-    fn complete(
-        &self, _request: omnia_guest::model::Request,
-    ) -> impl Future<Output = Result<omnia_guest::model::Reply, omnia_guest::model::Error>> {
-        std::future::ready(never_dispatched())
-    }
-
-    fn complete_with<H, F>(
-        &self, _request: omnia_guest::model::Request, _handler: H,
-    ) -> impl Future<Output = Result<omnia_guest::model::Reply, omnia_guest::model::Error>> + Send
-    where
-        H: FnMut(omnia_guest::model::ToolCall) -> F + Send,
-        F: Future<Output = Result<String, String>> + Send,
-    {
-        std::future::ready(never_dispatched())
-    }
-}
-
-impl Source for Inert {
-    fn extract(
-        &self, _id: &str, _input: &SourceInput,
-    ) -> impl Future<Output = Result<Evidence, Error>> + Send {
-        std::future::ready(never_extracted())
-    }
-
-    fn metadata(&self, _id: &str) -> AdapterMetadata {
-        unreachable!("the plugin suite never dispatches Source")
-    }
-}
-
-impl omnia_guest::Plugins for Inert {
-    fn load(
-        &self, _plugin: &omnia_guest::plugins::PluginRef,
-    ) -> impl Future<Output = Result<omnia_guest::plugins::Plugin, omnia_guest::plugins::Error>> + Send
-    {
-        std::future::ready(never_loaded())
-    }
-}
+use emery_source::claims::is_kebab;
+use omnia_guest::api::command::Response;
+use provider::Provider;
 
 #[derive(Debug)]
 enum Mention {
@@ -83,9 +33,10 @@ const GLOBAL_FLAGS: &[&str] = &["--debug", "--quiet", "--format", "--help", "--v
 // Each skill's flags validate against its single wrapped verb.
 const SKILL_VERBS: &[(&str, &str)] = &[("specify", "specify")];
 
-/// Runs `argv` through the live grammar over the inert provider.
-async fn grammar(argv: &[&str]) -> omnia_guest::api::command::Response {
-    emery_cli::run(Inert::default(), argv.iter().copied()).await
+// Runs `argv` through the live grammar; no capability is dispatched, so an
+// idle provider serves.
+async fn grammar(argv: &[&str]) -> Response {
+    provider::cli(&Provider::idle(), argv).await
 }
 
 // Plugin-rule CLI mentions must resolve to live verbs and flags.
@@ -162,18 +113,6 @@ fn every_skill() {
     }
 }
 
-fn never_dispatched() -> Result<omnia_guest::model::Reply, omnia_guest::model::Error> {
-    unreachable!("the plugin suite never dispatches the model")
-}
-
-fn never_loaded() -> Result<omnia_guest::plugins::Plugin, omnia_guest::plugins::Error> {
-    unreachable!("the plugin suite never dispatches the loader")
-}
-
-fn never_extracted() -> Result<Evidence, Error> {
-    unreachable!("the plugin suite never dispatches Source")
-}
-
 fn plugin_dir() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("plugins/emery")
 }
@@ -232,12 +171,6 @@ fn mentions(doc: &str) -> Vec<Mention> {
     out
 }
 
-fn is_kebab(token: &str) -> bool {
-    !token.is_empty()
-        && token.chars().all(|ch| ch.is_ascii_lowercase() || ch.is_ascii_digit() || ch == '-')
-        && !token.starts_with('-')
-}
-
 // Returns the first live verb among `tokens` and the first token it could
 // not consume.
 fn walk_verb<'a>(
@@ -251,7 +184,7 @@ fn walk_verb<'a>(
             break;
         }
         if verb.is_none() && verbs.contains(*token) {
-            verb = Some((*token).to_owned());
+            verb = Some((*token).to_string());
             continue;
         }
         rest = Some(*token);

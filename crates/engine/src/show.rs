@@ -7,9 +7,7 @@
 //! Review goes through this operation rather than the filesystem so the
 //! revision store stays the engine's own: callers see a document rendered
 //! from the stored revision, paired with the revision id it belongs to and the
-//! typed document itself, and never the storage layout beneath it. The JSON envelope
-//! is what a project carries beside its code as `.emery/<document>.json`, so
-//! the next `specify` can continue the revision.
+//! typed document itself, and never the storage layout beneath it.
 
 use omnia_guest::api::Context;
 use omnia_guest::{BlobStore, Error, StateStore, server_error};
@@ -27,9 +25,8 @@ pub struct ShowInput {
     pub document: Document,
 }
 
-/// Successful review result — and, read back, the `.emery/<document>.json`
-/// envelope a project carries.
-#[derive(Debug, Serialize, Deserialize)]
+/// Successful review result.
+#[derive(Debug, Serialize)]
 #[serde(rename_all = "kebab-case")]
 pub struct ShowOutput {
     /// Current revision id.

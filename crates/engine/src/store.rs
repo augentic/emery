@@ -41,22 +41,6 @@ pub async fn commit<S: StateStore + BlobStore>(
     Ok((id, diff))
 }
 
-/// Makes `revision` the current unless it already is — no diff, no prune of
-/// anything but the revision it displaces: the anchor a carried revision
-/// gives the run that follows.
-///
-/// # Errors
-///
-/// Fails if another run swapped the id first or storage refuses the write.
-pub async fn adopt<S: StateStore + BlobStore>(store: &S, revision: &Revision) -> Result<(), Error> {
-    let observed = observe(store).await;
-    if observed.outgoing_id() == Some(revision.id().as_str()) {
-        return Ok(());
-    }
-
-    swap(store, revision, observed).await.map(drop)
-}
-
 // Writes the documents and swaps the current id against `observed`;
 // a lost swap leaves the documents as an inert, unreferenced orphan.
 async fn swap<S: StateStore + BlobStore>(
@@ -70,7 +54,7 @@ async fn swap<S: StateStore + BlobStore>(
     for (document, body) in revision.files() {
         BlobStore::put(store, CONTAINER, &key(&id, document), body.as_bytes())
             .await
-            .map_err(|err| server_error!("writing revision document: {}", err.description()))?;
+            .context("writing revision document")?;
     }
 
     StateStore::cas(store, CURRENT, observed.token.as_deref(), id.as_bytes())
@@ -98,9 +82,7 @@ fn key(id: &str, document: Document) -> String {
 ///
 /// Fails closed for a dangling, incomplete, unreadable, or tampered revision.
 pub async fn current<S: StateStore + BlobStore>(store: &S) -> Result<Option<Revision>, Error> {
-    let Some(raw) = StateStore::get(store, CURRENT)
-        .await
-        .map_err(|err| server_error!("getting current revision id: {}", err.description()))?
+    let Some(raw) = StateStore::get(store, CURRENT).await.context("getting current revision id")?
     else {
         return Ok(None);
     };
@@ -155,7 +137,7 @@ async fn load<S: BlobStore>(store: &S, id: &str) -> Result<Revision, Error> {
 async fn read<S: BlobStore>(store: &S, id: &str, document: Document) -> Result<Vec<u8>, Error> {
     BlobStore::get(store, CONTAINER, &key(id, document))
         .await
-        .map_err(|err| server_error!("reading revision document: {}", err.description()))?
+        .context("reading revision document")?
         .ok_or_else(|| server_error!("revision `{id}` does not contain `{}`", document.file()))
 }
 
@@ -216,8 +198,8 @@ pub struct SpecDiff {
 }
 
 impl SpecDiff {
-    // Matches requirements by id: a requirement keeps its id across runs, so
-    // one that only moved is not a change.
+    // Matches requirements by id — the position each run numbers in source
+    // order — so a requirement whose place moved reads as a change.
     fn between(outgoing: &Spec, incoming: &Spec) -> Self {
         let mut diff = Self::default();
         for requirement in &incoming.requirements {
@@ -348,7 +330,6 @@ mod tests {
         Revision {
             spec: Spec {
                 emery: EMERY,
-                next_id: 1,
                 preamble: vec![preamble.to_string()],
                 requirements: vec![],
             },

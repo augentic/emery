@@ -10,11 +10,6 @@
 //! stored revision is a function of the facts and the draft alone, and a
 //! changed value re-ids every revision.
 //!
-//! What the revision the run continues already settled is not asked again: a
-//! requirement whose facts stand keeps its scenarios, a specification in
-//! which every requirement stands is placed without a turn, and a design that
-//! still verifies over an unchanged specification is kept whole.
-//!
 //! Nothing the engine already knows is asked of the model: it never writes a
 //! heading, an id, a `Sources:` list, a status, a note, or a type signature,
 //! so it cannot drop, reorder, or quietly rewrite a requirement, invent or
@@ -31,34 +26,20 @@ use serde_json::Value;
 use self::design::DesignBrief;
 use self::spec::SpecBrief;
 use crate::artifact::Revision;
-use crate::specify::Extract;
-use crate::specify::basis;
 use crate::specify::brief::Brief as _;
+use crate::specify::{Extract, basis};
 
-/// Takes the extracts of every source, the requirement bases derived from
-/// them, and the `prior` revision the run continues, then synthesises the
-/// specification and design, asking the model only for what the prior
-/// revision did not settle.
+/// Takes the extracts of every source and the requirement bases derived from
+/// them, then synthesises the specification and design.
 ///
 /// # Errors
 ///
 /// A model failure is `bad_gateway`; an answer outside the schema, or a draft
 /// the backend could not repair within its rounds, is `bad_request`.
-pub async fn synthesise<M: Model>(
-    model: &M, extracts: &[Extract], prior: Option<&Revision>,
-) -> Result<Revision, Error> {
-    let spec = prior.as_ref().map(|revision| &revision.spec);
-    let bases = basis::derive(model, &extracts, spec).await?;
-    let spec = SpecBrief::new(extracts, &bases, spec).resolve(model).await?;
-    let brief = DesignBrief::new(extracts, &spec);
-
-    let design = match prior {
-        Some(prior) if prior.spec == spec && brief.accepts(&prior.design) => {
-            tracing::info!("the specification stands; the design is carried");
-            prior.design.clone()
-        }
-        _ => brief.judge(model).await?,
-    };
+pub async fn synthesise<M: Model>(model: &M, extracts: &[Extract]) -> Result<Revision, Error> {
+    let bases = basis::derive(model, extracts).await?;
+    let spec = SpecBrief::new(extracts, &bases).judge(model).await?;
+    let design = DesignBrief::new(extracts, &spec).judge(model).await?;
 
     Ok(Revision { spec, design })
 }
