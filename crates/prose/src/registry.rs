@@ -32,7 +32,13 @@ pub fn body(docs: &[Doc], path: &str) -> Option<&'static str> {
     find(docs, path).map(|doc| doc.body)
 }
 
-/// Generates the `docs` accessor over the build-time `DOCS` table.
+/// Includes the registry the crate's build script generated.
+///
+/// The build script's `emery_prose::emit` call writes `prose_docs.rs` into
+/// `OUT_DIR`: the embedded document table and the
+/// `pub fn docs() -> &'static [Doc]` accessor over it. This macro brings
+/// [`Doc`] into scope for that file and includes it, so the module it expands
+/// in exposes `docs()`.
 ///
 /// ```ignore
 /// mod registry {
@@ -42,14 +48,8 @@ pub fn body(docs: &[Doc], path: &str) -> Option<&'static str> {
 #[macro_export]
 macro_rules! registry {
     () => {
-        pub use $crate::registry::Doc;
+        use $crate::registry::Doc;
 
         include!(concat!(env!("OUT_DIR"), "/prose_docs.rs"));
-
-        /// Returns every embedded document, sorted by tree-relative path.
-        #[must_use]
-        pub fn docs() -> &'static [Doc] {
-            DOCS
-        }
     };
 }
