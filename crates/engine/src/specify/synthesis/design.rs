@@ -11,6 +11,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::{self, Display, Formatter};
 
 use emery_source::types::ClaimKind;
+use omnia_guest::{Error, server_error};
 use schemars::JsonSchema;
 use serde::Deserialize;
 use serde_json::{Value, json};
@@ -151,40 +152,38 @@ impl Brief for DesignBrief<'_> {
 
     // Places the draft in the design: the drafted sections in vocabulary
     // order, each `type` block carrying the claim's signature.
-    fn into_output(self, answer: DesignAnswer) -> Self::Output {
-        let mut sections = answer.sections;
-        sections.sort_by_key(|section| section.kind);
-        let sections = sections
-            .into_iter()
-            .map(|section| Section {
-                kind: section.kind,
-                blocks: section
-                    .blocks
-                    .into_iter()
-                    .map(|block| match block {
-                        Block::Text(text) => revision::Block::Text(text),
-                        Block::Type(key) => {
-                            let signature = self
-                                .plan
-                                .signatures
-                                .get(key.as_str())
-                                .copied()
-                                .expect("verify held the draft to the type claims");
-                            revision::Block::Type {
-                                key,
-                                signature: signature.to_string(),
-                            }
+    fn into_output(self, answer: DesignAnswer) -> Result<Design, Error> {
+        let mut drafted = answer.sections;
+        drafted.sort_by_key(|section| section.kind);
+        let mut sections = Vec::with_capacity(drafted.len());
+        for section in drafted {
+            let mut blocks = Vec::with_capacity(section.blocks.len());
+            for block in section.blocks {
+                blocks.push(match block {
+                    Block::Text(text) => revision::Block::Text(text),
+                    Block::Type(key) => {
+                        let signature =
+                            self.plan.signatures.get(key.as_str()).copied().ok_or_else(|| {
+                                server_error!("type `{key}` was accepted without a type claim")
+                            })?;
+                        revision::Block::Type {
+                            key,
+                            signature: signature.to_string(),
                         }
-                    })
-                    .collect(),
-            })
-            .collect();
+                    }
+                });
+            }
+            sections.push(Section {
+                kind: section.kind,
+                blocks,
+            });
+        }
 
-        Design {
+        Ok(Design {
             emery: EMERY,
             preamble: answer.preamble,
             sections,
-        }
+        })
     }
 }
 

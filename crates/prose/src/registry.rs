@@ -24,16 +24,12 @@ pub fn find<'d>(docs: &'d [Doc], path: &str) -> Option<&'d Doc> {
     docs.binary_search_by(|doc| doc.path.cmp(path)).ok().map(|idx| &docs[idx])
 }
 
-/// Returns the body for an embedded `path`.
-///
-/// # Panics
-///
-/// Panics if `path` is absent, indicating a registry/tree mismatch.
+/// Returns the body of the document at `path`, or `None` when the build did
+/// not embed it — a registry/tree mismatch the caller reports as its own
+/// failure, never a silent miss.
 #[must_use]
-pub fn body(docs: &[Doc], path: &str) -> &'static str {
-    find(docs, path)
-        .unwrap_or_else(|| panic!("document `{path}` is not embedded in the registry"))
-        .body
+pub fn body(docs: &[Doc], path: &str) -> Option<&'static str> {
+    find(docs, path).map(|doc| doc.body)
 }
 
 /// Generates registry accessors for the build-time `DOCS` table.
@@ -56,13 +52,10 @@ macro_rules! registry {
             DOCS
         }
 
-        /// Returns the body of a document the registry is guaranteed to embed.
-        ///
-        /// # Panics
-        ///
-        /// When `path` is not embedded.
+        /// Returns the body of the embedded document at `path`, or `None`
+        /// when the build did not embed it.
         #[must_use]
-        pub fn body(path: &str) -> &'static str {
+        pub fn body(path: &str) -> Option<&'static str> {
             $crate::registry::body(DOCS, path)
         }
     };

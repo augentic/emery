@@ -258,7 +258,7 @@ Engine operations, the adapter SDK, and adapters return `omnia_guest::Error` (`B
 
 **Hint lookup.** Long-form recovery hints live in `crates/cli/src/lib.rs` (`hint` on `unsupported-version` / `specify-source-required` / `spec-not-generated` / `spec-outdated` and the loader discriminants, attached through `Command::hints`). Adding a new hint extends that lookup, not the error type. Engine descriptions stay transport-neutral — they name the path, adapter, or rule, never a flag, a verb, or "the CLI"; flag-vocabulary recovery text belongs in the hint table.
 
-`unwrap()` and `expect()` are reserved for invariants the type system can't express (e.g. "this enum variant covers `Status::value_variants()`"). Always include a justification string in `expect`. User-facing errors must surface as an Omnia `Error`, not panics.
+**Production code does not panic.** The engine and every adapter run as wasm guests, where a panic is a trap — no `Failure` envelope, no exit code — so `unwrap()`, `expect()`, `panic!`, and indexing a position the code has not just checked belong in tests and build scripts alone (there a panic *is* the failure report). An invariant the type system cannot express still fails as an Omnia `Error`: the engine's own defect — a document that does not serialise, a fact an accepted answer names that the brief cannot place — is `server_error!` (exit 3) with a description naming the defect. Library accessors return `Option` or `Result` rather than panicking on a miss (`emery_prose::registry::body`), leaving the caller to report it.
 
 ## `#[non_exhaustive]`
 

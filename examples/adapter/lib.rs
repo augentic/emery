@@ -13,7 +13,7 @@ emery_adapter::source!(crate::Adapter);
 
 use emery_adapter::types::{Context, Evidence, SourceContent, SourceInput};
 use emery_adapter::{
-    Error, EvidenceTurn, Model, SourceAdapter, bad_request, content_note, evidence,
+    Error, EvidenceTurn, Model, SourceAdapter, bad_request, content_note, evidence, server_error,
 };
 use emery_prose::registry::{self, Doc};
 
@@ -40,7 +40,8 @@ impl SourceAdapter for Adapter {
     async fn extract<P: Model>(
         model: &P, ctx: &Context<'_>, input: &SourceInput,
     ) -> Result<Evidence, Error> {
-        let system = registry::body(DOCS, "prompts/extract.md");
+        let system = registry::body(DOCS, "prompts/extract.md")
+            .ok_or_else(|| server_error!("`prompts/extract.md` is not embedded"))?;
         let turn = EvidenceTurn::prepared("greeting", greeting_note(input)?);
         evidence(model, ctx, input, system, turn).await
     }

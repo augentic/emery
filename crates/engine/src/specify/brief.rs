@@ -13,7 +13,7 @@
 use std::fmt::Display;
 
 use omnia_guest::model::{Findings, Question};
-use omnia_guest::{Error, Model};
+use omnia_guest::{Error, Model, server_error};
 use schemars::JsonSchema;
 use serde::de::DeserializeOwned;
 use serde_json::Value;
@@ -44,7 +44,10 @@ pub trait Brief: Display + Sync + Sized {
     fn verify(&self, answer: &Self::Answer, review: &mut Review);
 
     /// Transforms the answer into output specific to the brief.
-    fn into_output(self, answer: Self::Answer) -> Self::Output;
+    ///
+    /// The answer passed [`Self::verify`], so a fact it names that the brief
+    /// cannot place is the engine's own defect: `server_error`.
+    fn into_output(self, answer: Self::Answer) -> Result<Self::Output, Error>;
 
     /// Puts the brief to `model` and turns the answer its verification
     /// accepted into this brief's output.
@@ -52,16 +55,18 @@ pub trait Brief: Display + Sync + Sized {
     /// # Errors
     ///
     /// A model failure is `bad_gateway`; a candidate outside the answer's
-    /// shape or the backend's spent rounds is `bad_request`.
+    /// shape or the backend's spent rounds is `bad_request`; synthesis prose
+    /// the build did not embed is `server_error`.
     async fn judge<M: Model>(self, model: &M) -> Result<Self::Output, Error> {
         tracing::info!(question = Self::NAME, "asking the model");
-        let system = Self::PROSE
-            .iter()
-            .map(|path| crate::prose::body(path))
-            .collect::<Vec<_>>()
-            .join("\n\n---\n\n");
+        let mut system = Vec::with_capacity(Self::PROSE.len());
+        for path in Self::PROSE {
+            let prose = crate::prose::body(path)
+                .ok_or_else(|| server_error!("synthesis prose `{path}` is not embedded"))?;
+            system.push(prose);
+        }
         let answer = Question::<Self::Answer>::new(Self::NAME)
-            .system(system)
+            .system(system.join("\n\n---\n\n"))
             .schema(|schema| self.tighten(schema))
             .ask(model, self.to_string(), None, |answer| {
                 let mut review = Review::default();
@@ -70,7 +75,7 @@ pub trait Brief: Display + Sync + Sized {
             })
             .await?;
 
-        Ok(self.into_output(answer))
+        self.into_output(answer)
     }
 }
 

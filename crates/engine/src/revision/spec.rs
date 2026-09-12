@@ -47,7 +47,7 @@ impl Spec {
 }
 
 impl revision::Document for Spec {
-    const FILE: &'static str = "spec.json";
+    const NAME: &'static str = "spec";
 }
 
 // Renders `spec.md`: the preamble, then every requirement block.

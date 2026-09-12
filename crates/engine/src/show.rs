@@ -10,9 +10,8 @@
 //! typed document itself, and never the storage layout beneath it.
 
 use omnia_guest::api::Context;
-use omnia_guest::{BlobStore, Error, StateStore, server_error};
+use omnia_guest::{BlobStore, Error, StateStore};
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
 use strum::{AsRefStr, EnumString, VariantArray};
 
 use crate::revision::Document;
@@ -70,19 +69,13 @@ pub struct ShowOutput {
     pub revision: String,
     /// The rendered Markdown projection.
     pub body: String,
-    /// The stored document the projection was rendered from.
-    pub document: Value,
 }
 
 impl ShowOutput {
     fn new<D: Document>(document: &D, revision: String) -> Result<Self, Error> {
-        let value = serde_json::to_value(document)
-            .map_err(|err| server_error!("`{}` did not serialise: {err}", D::FILE))?;
-
         Ok(Self {
             body: document.to_markdown(&revision),
             revision,
-            document: value,
         })
     }
 }

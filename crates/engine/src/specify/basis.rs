@@ -19,7 +19,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::{self, Display, Formatter};
 
 use emery_source::types::{Authority, ClaimKind};
-use omnia_guest::{Error, Model};
+use omnia_guest::{Error, Model, server_error};
 use schemars::JsonSchema;
 use serde::Deserialize;
 use serde_json::{Value, json};
@@ -37,7 +37,7 @@ use crate::specify::brief::{Brief, Review};
 /// grouping the backend could not repair within its rounds, is `bad_request`.
 pub async fn derive<M: Model>(model: &M, extracts: &[Extract]) -> Result<Vec<Basis>, Error> {
     let brief = GroupingBrief::collect(extracts);
-    if extracts.len() < 2 { Ok(brief.bases(&brief.baseline())) } else { brief.judge(model).await }
+    if extracts.len() < 2 { brief.bases(&brief.baseline()) } else { brief.judge(model).await }
 }
 
 /// A partition of every requirement claim into requirements, each carrying a
@@ -82,7 +82,13 @@ impl Basis {
     // Builds a requirement from its classes, sorted by authority then source
     // order. One class is agreed (unknown when no criterion covers it); several
     // are a divergence when one holds the top authority alone, else a conflict.
-    fn of(id: ReqId, mut classes: Vec<Vec<Contributor>>, criteria: &[&str]) -> Self {
+    fn of(id: ReqId, mut classes: Vec<Vec<Contributor>>, criteria: &[&str]) -> Result<Self, Error> {
+        // The grouping was verified, so a requirement without a claim, or a
+        // class without one, is the engine's own defect; from here every
+        // class has a lead.
+        if classes.is_empty() || classes.iter().any(Vec::is_empty) {
+            return Err(server_error!("requirement {id} was grouped with a class of no claims"));
+        }
         for class in &mut classes {
             class.sort_by_key(|member| (member.authority, member.index));
         }
@@ -106,13 +112,13 @@ impl Basis {
             _ => Status::Conflict,
         };
 
-        Self {
+        Ok(Self {
             id,
             subject: classes[0][0].id.clone(),
             status,
             covered,
             classes,
-        }
+        })
     }
 
     /// Lists every contributor, highest authority first and source order
@@ -250,28 +256,34 @@ impl<'a> GroupingBrief<'a> {
 
     // Turns a grouping into bases, ordered by each group's earliest claim and
     // numbered from `REQ-001` in that order.
-    fn bases(&self, grouping: &Grouping) -> Vec<Basis> {
-        let mut groups: Vec<(usize, Vec<Vec<Contributor>>)> = grouping
-            .groups
-            .iter()
-            .map(|group| {
-                let first = group.claims.iter().copied().min().unwrap_or_default();
-                let classes = group
-                    .classes
-                    .iter()
-                    .map(|class| {
-                        class.iter().map(|&index| self.contributors[index].clone()).collect()
-                    })
-                    .collect();
-                (first, classes)
-            })
-            .collect();
+    fn bases(&self, grouping: &Grouping) -> Result<Vec<Basis>, Error> {
+        let mut groups: Vec<(usize, Vec<Vec<Contributor>>)> =
+            Vec::with_capacity(grouping.groups.len());
+        for group in &grouping.groups {
+            let first = group.claims.iter().copied().min().unwrap_or_default();
+            let mut classes = Vec::with_capacity(group.classes.len());
+            for class in &group.classes {
+                classes.push(
+                    class.iter().map(|&index| self.contributor(index)).collect::<Result<_, _>>()?,
+                );
+            }
+            groups.push((first, classes));
+        }
         groups.sort_by_key(|(first, _)| *first);
         groups
             .into_iter()
             .zip(1..)
             .map(|((_, classes), number)| Basis::of(ReqId::new(number), classes, &self.criteria))
             .collect()
+    }
+
+    // The claim a grouping names by index. The grouping was verified against
+    // these contributors, so a miss is the engine's own defect.
+    fn contributor(&self, index: usize) -> Result<Contributor, Error> {
+        self.contributors
+            .get(index)
+            .cloned()
+            .ok_or_else(|| server_error!("the grouping names claim {index}, which does not exist"))
     }
 }
 
@@ -359,7 +371,7 @@ impl Brief for GroupingBrief<'_> {
     }
 
     // Turns the accepted grouping into requirements.
-    fn into_output(self, answer: Grouping) -> Self::Output {
+    fn into_output(self, answer: Grouping) -> Result<Vec<Basis>, Error> {
         self.bases(&answer)
     }
 }

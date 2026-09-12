@@ -7,8 +7,8 @@
 //! never parsed back from prose.
 //!
 //! This module carries the model both documents share — the revision, its
-//! id, the [`Document`] contract each of its files meets (a fixed file name,
-//! the canonical bytes, the projection), and the [`Diff`] between two
+//! id, the [`Document`] contract each of its files meets (a name, the
+//! canonical bytes, the projection), and the [`Diff`] between two
 //! revisions — together with the vocabulary the renderer and the drafting
 //! checks agree on: the heading markers, the provenance and note keys, and
 //! the line openers a drafted paragraph may not use because the renderer owns
@@ -42,11 +42,17 @@ pub const EMERY: u32 = 2;
 pub const RESERVED: &[&str] = &["#", ID, SOURCES, STATUS, NOTE, TYPE];
 
 /// One document of a revision: a serde shape under the [`EMERY`] stamp that
-/// the store files under a fixed name and the projection renders by
+/// the store files under `{NAME}.json` and the projection renders by
 /// `Display`.
 pub trait Document: Serialize + DeserializeOwned + Display {
-    /// The file name the store commits the document under.
-    const FILE: &'static str;
+    /// This document's name (`spec`, `design`).
+    const NAME: &'static str;
+
+    /// The store file name: `{NAME}.json`.
+    #[must_use]
+    fn file() -> String {
+        crate::revision::file(Self::NAME)
+    }
 
     /// Reads one document from its stored JSON, refusing another grammar's
     /// before the shape is checked.
@@ -58,7 +64,7 @@ pub trait Document: Serialize + DeserializeOwned + Display {
     /// under this grammar does not fit, since this engine did not write it.
     fn from_json(bytes: &[u8]) -> Result<Self, Error> {
         let value: Value = serde_json::from_slice(bytes)
-            .map_err(|err| server_error!("`{}` is not JSON: {err}", Self::FILE))?;
+            .map_err(|err| server_error!("`{}` is not JSON: {err}", Self::NAME))?;
 
         // The stamp is the one field every grammar shares, so it is read
         // before the shape.
@@ -68,23 +74,27 @@ pub trait Document: Serialize + DeserializeOwned + Display {
                 code: "spec-outdated".into(),
                 description: format!(
                     "`{}` was written under emery grammar {stamp}; this engine reads {EMERY}",
-                    Self::FILE
+                    Self::NAME
                 ),
             });
         }
 
         serde_json::from_value(value)
-            .map_err(|err| server_error!("`{}` is not a revision: {err}", Self::FILE))
+            .map_err(|err| server_error!("`{}` is not a revision: {err}", Self::NAME))
     }
 
     /// The canonical JSON the store hashes and writes: pretty, declaration
     /// order, one trailing newline.
-    #[must_use]
-    fn to_json(&self) -> String {
+    ///
+    /// # Errors
+    ///
+    /// `server_error` when the document does not serialise — this engine
+    /// built it, so a failure is a defect, not a revision.
+    fn to_json(&self) -> Result<String, Error> {
         let mut text = serde_json::to_string_pretty(self)
-            .expect("the revision serialises: no maps with non-string keys, no floats");
+            .map_err(|err| server_error!("`{}` does not serialise: {err}", Self::NAME))?;
         text.push('\n');
-        text
+        Ok(text)
     }
 
     /// The Markdown projection: the front matter stamping the grammar and
@@ -111,8 +121,8 @@ pub struct Revision {
 }
 
 impl Revision {
-    /// Every file name a revision holds, in digest order.
-    pub const FILES: [&'static str; 2] = [Spec::FILE, Design::FILE];
+    /// Every document name a revision holds, in digest order.
+    pub const NAMES: [&'static str; 2] = [Spec::NAME, Design::NAME];
 
     /// Reads the revision stored under `id` from the bytes of its two
     /// documents, refusing bytes that no longer hash to the id before either
@@ -124,8 +134,9 @@ impl Revision {
     /// content-addressed, so a mismatch is corruption, not a revision — then
     /// each document's own refusals, `spec-outdated` first.
     pub fn read(id: &str, spec: &[u8], design: &[u8]) -> Result<Self, Error> {
-        let files = [(Spec::FILE, spec), (Design::FILE, design)];
-        if digest(files.into_iter()) != id {
+        let spec_file = Spec::file();
+        let design_file = Design::file();
+        if digest([(spec_file.as_str(), spec), (design_file.as_str(), design)].into_iter()) != id {
             return Err(server_error!("revision `{id}` does not match its content"));
         }
 
@@ -136,16 +147,28 @@ impl Revision {
     }
 
     /// Each document as canonical JSON under its file name, in digest order.
-    #[must_use]
-    pub fn files(&self) -> Vec<(&'static str, String)> {
-        vec![(Spec::FILE, self.spec.to_json()), (Design::FILE, self.design.to_json())]
+    ///
+    /// # Errors
+    ///
+    /// `server_error` when a document does not serialise.
+    pub fn files(&self) -> Result<Vec<(String, String)>, Error> {
+        Ok(vec![(Spec::file(), self.spec.to_json()?), (Design::file(), self.design.to_json()?)])
     }
 
     /// The content id: the digest of every file, in digest order.
-    #[must_use]
-    pub fn id(&self) -> String {
-        digest(self.files().iter().map(|(name, body)| (*name, body.as_bytes())))
+    ///
+    /// # Errors
+    ///
+    /// `server_error` when a document does not serialise.
+    pub fn id(&self) -> Result<String, Error> {
+        let files = self.files()?;
+        Ok(digest(files.iter().map(|(name, body)| (name.as_str(), body.as_bytes()))))
     }
+}
+
+// One suffix: the store commits every document as JSON.
+pub fn file(name: &str) -> String {
+    format!("{name}.json")
 }
 
 fn digest<'a>(files: impl Iterator<Item = (&'a str, &'a [u8])>) -> String {
@@ -160,29 +183,16 @@ fn digest<'a>(files: impl Iterator<Item = (&'a str, &'a [u8])>) -> String {
 }
 
 // Writes one document body: the title, each preamble paragraph, and each
-// typed block, with every line right-trimmed.
+// typed block, one blank line apart.
 fn write<T: Display>(
     f: &mut Formatter<'_>, title: &str, preamble: &[String], blocks: &[T],
 ) -> fmt::Result {
     write!(f, "# {title}")?;
-
-    // write the preamble paragraphs
     for paragraph in preamble {
-        // for (position, line) in paragraph.lines().enumerate() {
-        //     f.write_str(if position == 0 { "\n\n" } else { "\n" })?;
-        //     f.write_str(line.trim_end())?;
-        // }
-         write!(f, "\n\n{paragraph}")?;
+        write!(f, "\n\n{paragraph}")?;
     }
-
-    // write the typed blocks.
     for block in blocks {
-        for (position, line) in block.to_string().lines().enumerate() {
-            f.write_str(if position == 0 { "\n\n" } else { "\n" })?;
-            f.write_str(line.trim_end())?;
-        }
+        write!(f, "\n\n{block}")?;
     }
     f.write_str("\n")
 }
-
-

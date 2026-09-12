@@ -13,7 +13,7 @@
 use anyhow::Context;
 use omnia_guest::{BlobStore, Error, StateStore, server_error};
 
-use crate::revision::{Design, Diff, Document as _, Revision, Spec};
+use crate::revision::{Design, Diff, Document as _, Revision, Spec, file};
 
 /// Keyvalue key holding the current revision id.
 pub const CURRENT: &str = "current-revision";
@@ -51,9 +51,9 @@ async fn swap<S: StateStore + BlobStore>(
         BlobStore::create_container(store, CONTAINER).await?;
     }
 
-    let id = revision.id();
-    for (name, body) in revision.files() {
-        BlobStore::put(store, CONTAINER, &key(&id, name), body.as_bytes())
+    let id = revision.id()?;
+    for (name, body) in revision.files()? {
+        BlobStore::put(store, CONTAINER, &key(&id, &name), body.as_bytes())
             .await
             .context("writing revision document")?;
     }
@@ -64,8 +64,8 @@ async fn swap<S: StateStore + BlobStore>(
 
     // The swap landed; prune the outgoing revision.
     if let Some(outgoing) = observed.outgoing_id().filter(|outgoing| *outgoing != id) {
-        for name in Revision::FILES {
-            let _ = BlobStore::delete(store, CONTAINER, &key(outgoing, name)).await;
+        for name in Revision::NAMES {
+            let _ = BlobStore::delete(store, CONTAINER, &key(outgoing, &file(name))).await;
         }
     }
 
@@ -113,8 +113,8 @@ async fn observe<S: StateStore + BlobStore>(store: &S) -> Observation {
 // bytes that no longer hash to the id, then another grammar's, then a shape
 // this engine did not write.
 async fn load<S: BlobStore>(store: &S, id: &str) -> Result<Revision, Error> {
-    let spec = read(store, id, Spec::FILE).await?;
-    let design = read(store, id, Design::FILE).await?;
+    let spec = read(store, id, &Spec::file()).await?;
+    let design = read(store, id, &Design::file()).await?;
     Revision::read(id, &spec, &design)
 }
 
@@ -182,8 +182,9 @@ mod tests {
         );
         let (current, _) = current(&memory).await.expect("current").expect("committed");
         assert_eq!(current, winner, "the current id still names the winner");
-        let spec = memory.object(CONTAINER, &key(&winner, Spec::FILE)).expect("winning spec");
-        assert_eq!(spec, winning.spec.to_json().as_bytes(), "the winning revision is intact");
+        let spec = memory.object(CONTAINER, &key(&winner, &Spec::file())).expect("winning spec");
+        let json = winning.spec.to_json().expect("serialises");
+        assert_eq!(spec, json.as_bytes(), "the winning revision is intact");
     }
 
     fn revision(preamble: &str) -> Revision {

@@ -17,7 +17,7 @@ use std::str::FromStr;
 use emery_source::Source;
 use emery_source::claims::is_kebab;
 use omnia_guest::plugins::{Digest, Location, PluginCache, PluginRef};
-use omnia_guest::{Error, Plugins, bad_request, not_found};
+use omnia_guest::{Error, Plugins, bad_request, not_found, server_error};
 use serde::{Deserialize, Serialize};
 
 use crate::preopen_path;
@@ -80,8 +80,12 @@ fn check_version<P: Source>(provider: &P, name: &str, id: &str) -> Result<(), Er
         bad_request!("adapter `{name}` ({id}) has an invalid `emery-version` `{declared}`: {err}")
     })?;
 
-    let running = semver::Version::parse(env!("CARGO_PKG_VERSION"))
-        .expect("the running version is this crate's own, which Cargo checked is SemVer");
+    let running = semver::Version::parse(env!("CARGO_PKG_VERSION")).map_err(|err| {
+        server_error!(
+            "the running emery version `{}` is not SemVer: {err}",
+            env!("CARGO_PKG_VERSION")
+        )
+    })?;
     if running < minimum {
         return Err(Error::BadRequest {
             code: "unsupported-version".into(),

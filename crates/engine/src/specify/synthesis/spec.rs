@@ -11,6 +11,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::{self, Display, Formatter};
 
 use emery_source::claims::DOTTED_KEBAB_PATTERN;
+use omnia_guest::{Error, server_error};
 use schemars::JsonSchema;
 use serde::Deserialize;
 use serde_json::{Value, json};
@@ -104,25 +105,22 @@ impl Brief for SpecBrief<'_> {
 
     // Places the accepted draft in the specification: every requirement in
     // id order, each the engine's facts beside its drafted scenarios.
-    fn into_output(self, answer: SpecAnswer) -> Self::Output {
+    fn into_output(self, answer: SpecAnswer) -> Result<Spec, Error> {
         let mut drafts: BTreeMap<String, Vec<Scenario>> =
             answer.requirements.into_iter().map(|draft| (draft.subject, draft.scenarios)).collect();
-        let requirements = self
-            .bases
-            .iter()
-            .map(|basis| {
-                let scenarios = drafts
-                    .remove(basis.subject.as_str())
-                    .expect("verify held the draft to the requirements");
-                basis.requirement(scenarios)
-            })
-            .collect();
+        let mut requirements = Vec::with_capacity(self.bases.len());
+        for basis in self.bases {
+            let scenarios = drafts.remove(basis.subject.as_str()).ok_or_else(|| {
+                server_error!("requirement `{}` was accepted without a draft", basis.subject)
+            })?;
+            requirements.push(basis.requirement(scenarios));
+        }
 
-        Spec {
+        Ok(Spec {
             emery: EMERY,
             preamble: answer.preamble,
             requirements,
-        }
+        })
     }
 }
 

@@ -38,7 +38,7 @@ impl Design {
 }
 
 impl revision::Document for Design {
-    const FILE: &'static str = "design.json";
+    const NAME: &'static str = "design";
 }
 
 // Renders `design.md`: the preamble, then every section under its heading.
