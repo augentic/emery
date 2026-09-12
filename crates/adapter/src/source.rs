@@ -1,4 +1,4 @@
-//! The adapter contract
+//! The source adapter role
 //!
 //! [`SourceAdapter`] is what an adapter implements: the noun its source goes
 //! by, the reference documents it embeds, and the `extract` operation that
@@ -6,9 +6,15 @@
 //! shares — the resolve-time metadata, the extraction prompt, and the one
 //! model call — so an implementation states only what is its own.
 //!
-//! Keeping the trait separate from the wasm export lets an adapter be
-//! exercised natively against a scripted model, with the component wiring
-//! added only at the guest boundary.
+//! The trait is native; the wasm export lives in the `export` child, built
+//! for `wasm32` alone. Keeping them apart lets an adapter be exercised
+//! natively against a scripted model, with the component wiring added only at
+//! the guest boundary.
+
+// The component export, re-exported at the crate root for the `source!`
+// macro; no adapter names it.
+#[cfg(target_arch = "wasm32")]
+pub mod export;
 
 use std::future::Future;
 

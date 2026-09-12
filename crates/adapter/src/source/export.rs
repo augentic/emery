@@ -1,7 +1,7 @@
 //! Component export
 //!
-//! Turns a [`crate::SourceAdapter`] implementation into the `source-adapter`
-//! wasm world the engine loads: the bindings the [`crate::source!`] macro's
+//! Turns a [`SourceAdapter`] implementation into the `source-adapter` wasm
+//! world the engine loads: the bindings the [`crate::source!`] macro's
 //! `guest` module wires into, and the two answers it gives over them. An
 //! adapter crate invokes the macro once and gains a complete component export
 //! without touching the generated bindings.

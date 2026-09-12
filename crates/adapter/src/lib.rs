@@ -10,21 +10,20 @@
 //! Failures are omnia's [`Error`]: an adapter refuses its input with
 //! [`bad_request!`] and reports anything else with the sibling macros.
 
-mod adapter;
 mod brief;
 mod references;
+mod source;
 
 // The `source!` macro expands against this; no adapter names it.
-#[cfg(target_arch = "wasm32")]
-#[doc(hidden)]
-pub mod source;
-
-pub use adapter::{Context, SourceAdapter};
 pub use brief::Material;
 pub use emery_source::{
     AdapterMetadata, Authority, Backing, Claim, ClaimKind, Evidence, SourceContent, SourceInput,
 };
 pub use omnia_guest::{Error, Model, bad_gateway, bad_request, model, not_found, server_error};
+#[cfg(target_arch = "wasm32")]
+#[doc(hidden)]
+pub use source::export;
+pub use source::{Context, SourceAdapter};
 
 /// Wires a [`SourceAdapter`] into component exports.
 ///
@@ -40,21 +39,21 @@ macro_rules! source {
     ($adapter:ty) => {
         #[cfg(target_arch = "wasm32")]
         mod guest {
-            struct Adapter;
-            $crate::source::export!(Adapter with_types_in $crate::source);
+            use $crate::export;
 
-            impl $crate::source::Guest for Adapter {
-                fn metadata(
-                    _id: $crate::source::AdapterId,
-                ) -> $crate::source::AdapterMetadata {
-                    $crate::source::metadata::<$adapter>()
+            struct Adapter;
+            export::export!(Adapter with_types_in export);
+
+            impl export::Guest for Adapter {
+                fn metadata(_id: export::AdapterId) -> export::AdapterMetadata {
+                    export::metadata::<$adapter>()
                 }
 
                 async fn extract(
-                    id: $crate::source::AdapterId,
-                    input: $crate::source::Input,
-                ) -> Result<$crate::source::Evidence, $crate::source::Error> {
-                    $crate::source::extract::<$adapter>(id, input).await
+                    id: export::AdapterId,
+                    input: export::Input,
+                ) -> Result<export::Evidence, export::Error> {
+                    export::extract::<$adapter>(id, input).await
                 }
             }
         }
