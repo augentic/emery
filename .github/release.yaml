@@ -10,10 +10,5 @@ changelog:
   exclude:
     authors:
       - dependabot
-  # categories:
-  #   - title: Bugfixes
-  #     labels:
-  #       - bugfix
-  #   - title: Features
-  #     labels:
-  #       - enhancement
+      - dependabot[bot]
+
