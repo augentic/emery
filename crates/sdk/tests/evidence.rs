@@ -9,11 +9,11 @@
 //! as `bad_request` with the last findings, and a host refusal passing through
 //! as `bad_request`.
 
-use emery_adapter::model::{Error as ModelError, ToolCall};
-use emery_adapter::{
+use emery_prose::registry::Doc;
+use emery_sdk::model::{Error as ModelError, ToolCall};
+use emery_sdk::{
     Context, Error, Evidence, Material, Model, SourceAdapter, SourceContent, SourceInput,
 };
-use emery_prose::registry::Doc;
 use omnia_test::SeenFormat;
 use omnia_test::guest::Scripted;
 

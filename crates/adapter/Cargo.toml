@@ -1,11 +1,11 @@
 [package]
-name = "emery-source"
+name = "emery-adapter"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
 rust-version.workspace = true
-description = "The emery:adapter/source contract, both sides: WIT bindings, the Evidence DTOs, the import-side Source capability, and the claim gate (id grammar + required extras)"
+description = "The emery:adapter contract, both sides: one module per axis carrying its WIT bindings, DTOs, and import-side capability — today the source axis with the Evidence IR and the claim gate (id grammar + required extras)"
 categories = ["development-tools"]
 keywords = ["emery", "adapter", "wit"]
 readme = "../../README.md"

@@ -16,11 +16,11 @@ use std::future::Future;
 use omnia_guest::Error;
 use serde::{Deserialize, Serialize};
 
-use crate::Evidence;
+use crate::source::Evidence;
 
 /// Import-side source dispatch over the `emery:adapter/source` contract.
 ///
-/// Adapters implement the export-side `SourceAdapter` from `emery-adapter`
+/// Adapters implement the export-side `SourceAdapter` from `emery-sdk`
 /// instead. An extract failure arrives classified: an adapter refusing its
 /// input is `BadRequest`, any other failure `BadGateway`.
 pub trait Source: Send + Sync {
@@ -35,7 +35,7 @@ pub trait Source: Send + Sync {
     fn extract(
         &self, id: &str, input: &SourceInput,
     ) -> impl Future<Output = Result<Evidence, Error>> + Send {
-        crate::bindings::import::extract(id, input)
+        crate::source::bindings::import::extract(id, input)
     }
 
     /// Returns resolve-time metadata for `id`.
@@ -45,7 +45,7 @@ pub trait Source: Send + Sync {
     /// Returns resolve-time metadata for `id`.
     #[cfg(target_arch = "wasm32")]
     fn metadata(&self, id: &str) -> AdapterMetadata {
-        crate::bindings::import::metadata(id)
+        crate::source::bindings::import::metadata(id)
     }
 }
 

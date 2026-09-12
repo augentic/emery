@@ -15,7 +15,8 @@ use std::path::{Path, PathBuf};
 use std::str::FromStr;
 
 use anyhow::Context;
-use emery_source::{Source, is_kebab};
+use emery_adapter::is_kebab;
+use emery_adapter::source::Source;
 use omnia_guest::plugins::{Digest, Location, PluginCache, PluginRef};
 use omnia_guest::{Error, Plugins, bad_request, not_found};
 use serde::{Deserialize, Serialize};

@@ -9,11 +9,11 @@
 //! This is the only wasm-specific code an adapter carries, which keeps the
 //! rest of its logic portable and testable natively.
 
-use emery_source::SourceInput;
-pub use emery_source::export::*;
+use emery_adapter::source::SourceInput;
+pub use emery_adapter::source::export::*;
 use omnia_guest::model::WasiModel;
 
-use crate::{Context, SourceAdapter};
+use super::{Context, SourceAdapter};
 
 /// Answers `metadata` for adapter `A`: its record, lowered onto the WIT bindings.
 #[must_use]

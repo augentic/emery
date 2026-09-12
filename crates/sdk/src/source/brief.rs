@@ -9,9 +9,9 @@
 
 use std::fmt::{self, Display, Formatter};
 
-use emery_source::SourceContent;
+use emery_adapter::source::SourceContent;
 
-use crate::Context;
+use super::Context;
 
 /// What the model is given to extract from.
 #[derive(Debug)]

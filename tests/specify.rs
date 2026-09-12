@@ -21,8 +21,8 @@ use std::fs;
 use std::path::Path;
 use std::sync::Arc;
 
+use emery_adapter::source::{Authority, ClaimKind, Evidence, SourceContent};
 use emery_engine::{CONTAINER, CURRENT};
-use emery_source::{Authority, ClaimKind, Evidence, SourceContent};
 use omnia_guest::model::Error as ModelError;
 use omnia_guest::plugins::{Digest, Error as LoadError, Location};
 use omnia_guest::{BlobStore, StateStore, bad_gateway, bad_request};

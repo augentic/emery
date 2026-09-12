@@ -1,29 +1,31 @@
-//! Source adapter SDK
+//! Adapter SDK
 //!
-//! Everything an adapter author needs to build an Emery source adapter: the
-//! [`SourceAdapter`] trait to implement, the [`Material`] an extraction hands
-//! the model, and the export macro that turns an implementation into a wasm
-//! component.
+//! Everything an adapter author needs to build an Emery adapter, one role
+//! per axis. Today that is the source role: the [`SourceAdapter`] trait to
+//! implement, the [`Material`] an extraction hands the model, and the export
+//! macro that turns an implementation into a wasm component.
 //!
-//! The contract itself lives in `emery-source` and is re-exported here, so an
+//! The contract itself lives in `emery-adapter` and is re-exported here, so an
 //! adapter depends on one crate and never sees the WIT bindings directly.
 //! Failures are omnia's [`Error`]: an adapter refuses its input with
 //! [`bad_request!`] and reports anything else with the sibling macros.
 
-mod brief;
 mod references;
 mod source;
 
-// The `source!` macro expands against this; no adapter names it.
-pub use brief::Material;
-pub use emery_source::{
+pub use emery_adapter::source::{
     AdapterMetadata, Authority, Backing, Claim, ClaimKind, Evidence, SourceContent, SourceInput,
 };
 pub use omnia_guest::{Error, Model, bad_gateway, bad_request, model, not_found, server_error};
+pub use source::{Context, Material, SourceAdapter};
+
+/// The export shims the role macros expand against, one per role; no adapter
+/// names them.
 #[cfg(target_arch = "wasm32")]
 #[doc(hidden)]
-pub use source::export;
-pub use source::{Context, SourceAdapter};
+pub mod export {
+    pub use crate::source::export as source;
+}
 
 /// Wires a [`SourceAdapter`] into component exports.
 ///
@@ -32,14 +34,14 @@ pub use source::{Context, SourceAdapter};
 /// natively.
 ///
 /// ```ignore
-/// emery_adapter::source!(crate::Captures);
+/// emery_sdk::source!(crate::Captures);
 /// ```
 #[macro_export]
 macro_rules! source {
     ($adapter:ty) => {
         #[cfg(target_arch = "wasm32")]
         mod guest {
-            use $crate::export;
+            use $crate::export::source as export;
 
             struct Adapter;
             export::export!(Adapter with_types_in export);

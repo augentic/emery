@@ -6,11 +6,11 @@
 //! suites depend on — and that its provided members answer from the
 //! adapter's own declarations: the `emery-version` pin, the extraction prompt.
 
-use emery_adapter::{
+use emery_prose::registry::Doc;
+use emery_sdk::{
     AdapterMetadata, Context, Error, Evidence, Material, Model, SourceAdapter, SourceContent,
     SourceInput,
 };
-use emery_prose::registry::Doc;
 use omnia_test::guest::Scripted;
 
 const DOCS: &[Doc] = &[Doc {

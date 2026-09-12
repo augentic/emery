@@ -18,7 +18,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::{self, Display, Formatter};
 
-use emery_source::{Authority, ClaimKind};
+use emery_adapter::source::{Authority, ClaimKind};
 use omnia_guest::{Error, Model, server_error};
 use schemars::JsonSchema;
 use serde::Deserialize;

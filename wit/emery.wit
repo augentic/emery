@@ -151,8 +151,8 @@ interface source {
 
 /// A source adapter component: the one axis interface. The interface
 /// is imported as well as exported so the one binding generation in
-/// the SDK also carries the engine guest's caller side
-/// (`source::import`).
+/// the `emery-adapter` contract crate also carries the engine guest's
+/// caller side (`source::bindings::import`).
 world source-adapter {
   import source;
   export source;

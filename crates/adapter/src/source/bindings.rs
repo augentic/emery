@@ -5,8 +5,8 @@
 //! rest of the workspace uses.
 //!
 //! Both directions come from one generation: adapters export through it via
-//! the SDK's `source!` macro over [`export`] (re-exported at the crate root),
-//! and the engine guest calls into it through [`import`]. The records live
+//! the SDK's `source!` macro over [`export`] (re-exported from the axis
+//! module), and the engine guest calls into it through [`import`]. The records live
 //! in the WIT `types` interface, so the export side and the caller side bind
 //! the same Rust types and each conversion is written once, here at the
 //! module root — `From` where the WIT form always lifts, `TryFrom` where an
@@ -36,7 +36,7 @@ mod generated {
 }
 
 use self::generated::emery::adapter::types as wit;
-use crate::{
+use crate::source::{
     AdapterMetadata, Authority, Backing, Claim, ClaimKind, Evidence, SourceContent, SourceInput,
 };
 
@@ -266,7 +266,7 @@ pub mod import {
 
     use super::generated::emery::adapter::source as imported;
     use super::wit;
-    use crate::{AdapterMetadata, Evidence, SourceInput};
+    use crate::source::{AdapterMetadata, Evidence, SourceInput};
 
     /// Returns resolve-time metadata for `id`.
     #[must_use]

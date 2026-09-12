@@ -14,7 +14,7 @@ use std::future::Future;
 use std::sync::{Arc, Mutex};
 
 use anyhow::Result;
-use emery_source::{
+use emery_adapter::source::{
     AdapterMetadata, Authority, Backing, Claim, ClaimKind, Evidence, Source, SourceInput,
 };
 use omnia_guest::api::command::Response;

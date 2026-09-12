@@ -7,7 +7,7 @@
 //! claim missing an extra its kind requires. Pinning the gate here keeps the
 //! two enforcement points from disagreeing.
 
-use emery_source::{Authority, Backing, ClaimKind, Evidence};
+use emery_adapter::source::{Authority, Backing, ClaimKind, Evidence};
 
 #[test]
 fn parse_evidence() {

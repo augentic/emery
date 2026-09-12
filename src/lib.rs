@@ -22,7 +22,7 @@ impl Model for Provider {}
 impl StateStore for Provider {}
 impl BlobStore for Provider {}
 impl Plugins for Provider {}
-impl emery_source::Source for Provider {}
+impl emery_adapter::source::Source for Provider {}
 
 omnia_guest::command!(dispatch);
 

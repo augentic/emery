@@ -1,25 +1,17 @@
-//! The source adapter contract
+//! The `emery:adapter` contract
 //!
-//! The agreement between the Emery engine and every source adapter: the
-//! `emery:adapter/source` WIT world, the Rust types that mirror its records,
-//! the rules a claim must satisfy, and the [`Source`] capability the engine
-//! calls adapters through.
+//! The agreement between the Emery engine and every adapter: the Rust side of
+//! the `emery:adapter` WIT package, one module per axis. Each axis module
+//! carries its WIT world's bindings, the Rust types that mirror its records,
+//! the rules those records must satisfy, and the capability the engine calls
+//! adapters of that axis through. Today there is one axis, [`source`]; the
+//! grammar every name in the contract follows is shared at the root.
 //!
 //! Both sides depend on this one crate so they cannot drift apart. The engine
 //! consumes it directly; adapters receive it re-exported through the
-//! `emery-adapter` SDK.
+//! `emery-sdk` SDK.
 
-#[cfg(target_arch = "wasm32")]
-mod bindings;
-
-mod capability;
-mod evidence;
 mod grammar;
+pub mod source;
 
-// The SDK's `source!` macro expands against these; no adapter names them.
-#[cfg(target_arch = "wasm32")]
-#[doc(hidden)]
-pub use bindings::export;
-pub use capability::{AdapterMetadata, Source, SourceContent, SourceInput};
-pub use evidence::{Authority, Backing, Claim, ClaimKind, Evidence};
 pub use grammar::{CLAIM_ID_REGEX, is_kebab};

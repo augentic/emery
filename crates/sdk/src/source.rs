@@ -9,21 +9,24 @@
 //! The trait is native; the wasm export lives in the `export` child, built
 //! for `wasm32` alone. Keeping them apart lets an adapter be exercised
 //! natively against a scripted model, with the component wiring added only at
-//! the guest boundary.
+//! the guest boundary. The `brief` child is the role's prose: the one brief
+//! an extraction puts to the model.
 
-// The component export, re-exported at the crate root for the `source!`
-// macro; no adapter names it.
+mod brief;
+// The component export, re-exported as the crate root's `export::source` for
+// the `source!` macro; no adapter names it.
 #[cfg(target_arch = "wasm32")]
 pub mod export;
 
 use std::future::Future;
 
+use emery_adapter::source::{AdapterMetadata, Evidence, SourceContent, SourceInput};
 use emery_prose::registry::{self, Doc};
-use emery_source::{AdapterMetadata, Evidence, SourceContent, SourceInput};
 use omnia_guest::model::Question;
 use omnia_guest::{Error, Model, server_error};
 
-use crate::brief::{Brief, Material};
+use self::brief::Brief;
+pub use self::brief::Material;
 use crate::references;
 
 // The one extraction prompt every adapter embeds.
