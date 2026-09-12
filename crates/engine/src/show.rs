@@ -9,9 +9,11 @@
 //! from the stored revision, paired with the revision id it belongs to and the
 //! typed document itself, and never the storage layout beneath it.
 
+use anyhow::Context as _;
 use omnia_guest::api::Context;
 use omnia_guest::{BlobStore, Error, StateStore};
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 use strum::{AsRefStr, EnumString, VariantArray};
 
 use crate::revision::Document;
@@ -69,13 +71,21 @@ pub struct ShowOutput {
     pub revision: String,
     /// The rendered Markdown projection.
     pub body: String,
+    /// The stored document the projection was rendered from, as it is
+    /// stored.
+    pub document: Value,
 }
 
 impl ShowOutput {
+    // The document serialises under the same derive the store wrote it
+    // with, so a failure here is the engine's own defect: `server_error`.
     fn new<D: Document>(document: &D, revision: String) -> Result<Self, Error> {
+        let value = serde_json::to_value(document)
+            .with_context(|| format!("`{}` does not serialise", D::NAME))?;
         Ok(Self {
             body: document.to_markdown(&revision),
             revision,
+            document: value,
         })
     }
 }

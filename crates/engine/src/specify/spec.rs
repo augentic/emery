@@ -19,8 +19,7 @@ use serde_json::{Value, json};
 use crate::revision::{EMERY, Scenario, Spec, Status};
 use crate::specify::Extract;
 use crate::specify::basis::Basis;
-use crate::specify::brief::{Brief, Review};
-use crate::specify::synthesis::ClaimsSection;
+use crate::specify::brief::{Brief, ClaimsSection, Review};
 
 /// What the engine needs to ask the model for `spec.md` and to verify its
 /// draft: the extracts and the requirement bases derived from them.

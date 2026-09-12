@@ -18,7 +18,8 @@
 
 mod basis;
 mod brief;
-mod synthesis;
+mod design;
+mod spec;
 
 use std::collections::BTreeSet;
 use std::path::Path;
@@ -32,27 +33,37 @@ use omnia_guest::plugins::Digest;
 use omnia_guest::{BlobStore, Error, Model, Plugins, StateStore, bad_request};
 use serde::{Deserialize, Serialize};
 
+use self::basis::GroupingBrief;
+use self::brief::Brief as _;
+use self::design::DesignBrief;
+use self::spec::SpecBrief;
 use crate::adapter::{AdapterRef, Loader};
+use crate::revision::Revision;
 pub use crate::revision::{Changed, DesignDiff, Diff, Entry, ReqId, SectionKind, SpecDiff};
 use crate::{preopen_path, store};
 
 /// Runs `specify` over the context's provider.
 ///
 /// Checks the source list, then extracts each source's evidence, derives the
-/// requirements, synthesises the revision, and commits it.
+/// requirement bases, drafts the specification and then the design over them,
+/// and commits the pair as one revision.
 ///
 /// # Errors
 ///
-/// Returns `BadRequest` for a source the rules refuse or a claim the gate
-/// rejects, and passes through the extract, synthesis, and store failures.
+/// Returns `BadRequest` for a source the rules refuse, a claim the gate
+/// rejects, or a draft the model could not bring within the brief's rounds;
+/// `BadGateway` for a model failure; and passes through the extract and
+/// store failures.
 pub async fn specify<P: Model + Source + StateStore + BlobStore + Plugins>(
     input: SpecifyInput, context: Context<P>,
 ) -> Result<SpecifyOutput, Error> {
     let provider = context.provider();
 
     let extracts = input.extract(provider).await?;
-    let revision = synthesis::synthesise(provider, &extracts).await?;
-    let (id, diff) = store::commit(provider, &revision).await?;
+    let bases = GroupingBrief::new(&extracts).derive(provider).await?;
+    let spec = SpecBrief::new(&extracts, &bases).judge(provider).await?;
+    let design = DesignBrief::new(&extracts, &spec).judge(provider).await?;
+    let (id, diff) = store::commit(provider, &Revision { spec, design }).await?;
 
     Ok(SpecifyOutput { revision: id, diff })
 }

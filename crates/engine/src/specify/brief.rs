@@ -7,10 +7,21 @@
 //! only an answer it accepts becomes output — requirements or a document — and
 //! the brief alone produces that output.
 //!
-//! The model is never asked for anything the engine can decide itself, and
-//! nothing the engine renders comes from an unchecked answer.
+//! A run puts up to three briefs in turn — how the requirement claims group
+//! (on a run over two or more sources), the drafted content of `spec.md`,
+//! then of `design.md` — and places each accepted answer beside the engine's
+//! facts in the revision. Nothing the engine already knows is asked of the
+//! model: it never writes a heading, an id, a `Sources:` list, a status, a
+//! note, or a type signature, so it cannot drop, reorder, or quietly rewrite
+//! a requirement, invent or omit a section, cite an unbound source, or
+//! paraphrase a signature. The stored revision is a function of the facts
+//! and the accepted drafts alone.
+//!
+//! This module carries what every brief shares: the trait, the [`Review`]
+//! each verification records on, and the [`ClaimsSection`] of the prompt the
+//! document briefs open with.
 
-use std::fmt::Display;
+use std::fmt::{self, Display, Formatter};
 
 use omnia_guest::model::{Findings, Question};
 use omnia_guest::{Error, Model, server_error};
@@ -19,6 +30,7 @@ use serde::de::DeserializeOwned;
 use serde_json::Value;
 
 use crate::revision::RESERVED;
+use crate::specify::Extract;
 
 // `Sync`: the verify closure `Question::ask` takes is `Send`, and it
 // borrows the brief.
@@ -131,5 +143,38 @@ impl Review {
         } else if text.contains('\n') {
             self.note(format_args!("{label} spans more than one line"));
         }
+    }
+}
+
+// The `## Claims` section of a document brief's turn: every claim in every
+// extract, under its source key and authority, so the model sees the whole
+// body it must draft from.
+pub struct ClaimsSection<'a>(pub &'a [Extract]);
+
+impl Display for ClaimsSection<'_> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        f.write_str("## Claims\n")?;
+
+        for extract in self.0 {
+            write!(
+                f,
+                "\n### source `{key}` ({authority})\n\n",
+                key = extract.key,
+                authority = extract.evidence.authority
+            )?;
+
+            for claim in &extract.evidence.claims {
+                let id = claim.id.as_deref().unwrap_or("-");
+                let synopsis = claim.synopsis.as_deref().unwrap_or("");
+                writeln!(
+                    f,
+                    "- {kind} `{id}` — {synopsis} — {extras}",
+                    kind = claim.kind,
+                    extras = Value::Object(claim.extras.clone()),
+                )?;
+            }
+        }
+
+        Ok(())
     }
 }
