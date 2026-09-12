@@ -5,13 +5,19 @@
 //! carries its WIT world's bindings, the Rust types that mirror its records,
 //! the rules those records must satisfy, and the capability the engine calls
 //! adapters of that axis through. Today there is one axis, [`source`]; the
-//! grammar every name in the contract follows is shared at the root.
+//! kebab grammar every name in the contract follows is shared at the root.
 //!
 //! Both sides depend on this one crate so they cannot drift apart. The engine
 //! consumes it directly; adapters receive it re-exported through the
 //! `emery-sdk` SDK.
 
-mod grammar;
 pub mod source;
 
-pub use grammar::{CLAIM_ID_REGEX, is_kebab};
+/// Tells whether `value` follows the kebab grammar shared by claim-id
+/// segments, source keys, and adapter names: `[a-z0-9]+(-[a-z0-9]+)*`.
+#[must_use]
+pub fn is_kebab(value: &str) -> bool {
+    value.split('-').all(|segment| {
+        !segment.is_empty() && segment.bytes().all(|byte| matches!(byte, b'a'..=b'z' | b'0'..=b'9'))
+    })
+}

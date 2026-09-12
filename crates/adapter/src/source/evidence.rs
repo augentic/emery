@@ -6,9 +6,10 @@
 //! kind's required extras are declared next to it, so the contract states in
 //! one place what a complete claim of that kind looks like.
 //!
-//! The rules a claim must satisfy — the grammar its id follows, which kinds
-//! must carry an id at all, and the extras each kind requires — are applied
-//! by [`Evidence::findings`], which reports every violation as one line. Two
+//! The rules a claim must satisfy — the grammar its id follows
+//! ([`CLAIM_ID_REGEX`]), which kinds must carry an id at all, and the extras
+//! each kind requires — are declared here and applied by
+//! [`Evidence::findings`], which reports every violation as one line. Two
 //! parties enforce them: an adapter checks its own answer so a bad claim can
 //! be repaired before it leaves the guest, and the engine checks again on
 //! receipt, because it cannot assume every adapter did.
@@ -20,7 +21,18 @@
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-use crate::grammar::{CLAIM_ID_REGEX, is_valid};
+use crate::is_kebab;
+
+/// Claim-id grammar: kebab segments joined by `.`. Rides the derived
+/// `Claim.id` schema as a steering `pattern` and is enforced again in code by
+/// the claim gate.
+pub const CLAIM_ID_REGEX: &str = "^[a-z0-9]+(-[a-z0-9]+)*(\\.[a-z0-9]+(-[a-z0-9]+)*)*$";
+
+// Tells whether `value` is kebab segments joined by `.`; `is_kebab` refuses
+// the empty segment an empty value or a doubled dot leaves.
+fn is_claim_id(value: &str) -> bool {
+    value.split('.').all(is_kebab)
+}
 
 /// Extracted claims and their document-level authority.
 #[derive(Clone, Debug, Deserialize, JsonSchema)]
@@ -114,7 +126,7 @@ impl Claim {
     fn findings(&self, index: usize) -> impl Iterator<Item = String> + '_ {
         let kind = self.kind;
         let id = match self.id.as_deref() {
-            Some(id) if !is_valid(id) => {
+            Some(id) if !is_claim_id(id) => {
                 Some(format!("- claim {index}: id `{id}` does not match `{CLAIM_ID_REGEX}`"))
             }
             None if kind.requires_id() => {

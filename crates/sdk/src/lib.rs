@@ -17,15 +17,11 @@ pub use emery_adapter::source::{
     AdapterMetadata, Authority, Backing, Claim, ClaimKind, Evidence, SourceContent, SourceInput,
 };
 pub use omnia_guest::{Error, Model, bad_gateway, bad_request, model, not_found, server_error};
-pub use source::{Context, Material, SourceAdapter};
-
-/// The export shims the role macros expand against, one per role; no adapter
-/// names them.
+// The export shim the `source!` macro expands against; no adapter names it.
 #[cfg(target_arch = "wasm32")]
 #[doc(hidden)]
-pub mod export {
-    pub use crate::source::export as source;
-}
+pub use source::export;
+pub use source::{Context, Material, SourceAdapter};
 
 /// Wires a [`SourceAdapter`] into component exports.
 ///
@@ -41,7 +37,7 @@ macro_rules! source {
     ($adapter:ty) => {
         #[cfg(target_arch = "wasm32")]
         mod guest {
-            use $crate::export::source as export;
+            use $crate::export;
 
             struct Adapter;
             export::export!(Adapter with_types_in export);

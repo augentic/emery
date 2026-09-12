@@ -21,4 +21,4 @@ mod evidence;
 #[doc(hidden)]
 pub use bindings::export;
 pub use capability::{AdapterMetadata, Source, SourceContent, SourceInput};
-pub use evidence::{Authority, Backing, Claim, ClaimKind, Evidence};
+pub use evidence::{Authority, Backing, CLAIM_ID_REGEX, Claim, ClaimKind, Evidence};

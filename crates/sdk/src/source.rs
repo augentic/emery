@@ -13,8 +13,8 @@
 //! an extraction puts to the model.
 
 mod brief;
-// The component export, re-exported as the crate root's `export::source` for
-// the `source!` macro; no adapter names it.
+// The component export, re-exported at the crate root for the `source!`
+// macro; no adapter names it.
 #[cfg(target_arch = "wasm32")]
 pub mod export;
 
