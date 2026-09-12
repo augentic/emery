@@ -11,8 +11,8 @@
 //! [`bad_request!`] and reports anything else with the sibling macros.
 
 mod adapter;
+mod brief;
 mod references;
-mod turn;
 
 // The `source!` macro expands against this; no adapter names it.
 #[cfg(target_arch = "wasm32")]
@@ -20,11 +20,11 @@ mod turn;
 pub mod source;
 
 pub use adapter::{Context, SourceAdapter};
+pub use brief::Material;
 pub use emery_source::{
     AdapterMetadata, Authority, Backing, Claim, ClaimKind, Evidence, SourceContent, SourceInput,
 };
 pub use omnia_guest::{Error, Model, bad_gateway, bad_request, model, not_found, server_error};
-pub use turn::Material;
 
 /// Wires a [`SourceAdapter`] into component exports.
 ///

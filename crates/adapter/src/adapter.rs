@@ -17,8 +17,8 @@ use emery_source::{AdapterMetadata, Evidence, SourceContent, SourceInput};
 use omnia_guest::model::Question;
 use omnia_guest::{Error, Model, server_error};
 
+use crate::brief::{Brief, Material};
 use crate::references;
-use crate::turn::{Material, Turn};
 
 // The one extraction prompt every adapter embeds.
 const PROMPT: &str = "prompts/extract.md";
@@ -67,7 +67,7 @@ pub trait SourceAdapter {
     /// Asks the model for the source's evidence and returns the accepted
     /// document: the one model call an adapter makes.
     ///
-    /// The prompt is [`Self::prompt`]; the turn names the source and carries
+    /// The prompt is [`Self::prompt`]; the brief names the source and carries
     /// `material`; the `list_docs` / `read_doc` tools answer from
     /// [`Self::docs`]; a bound workspace is lent. The schema steers the
     /// answer's shape but cannot express every rule a claim must satisfy, so
@@ -87,7 +87,7 @@ pub trait SourceAdapter {
     ) -> impl Future<Output = Result<Evidence, Error>> + Send {
         async move {
             let system = Self::prompt()?;
-            let turn = Turn {
+            let brief = Brief {
                 source: Self::SOURCE,
                 ctx,
                 material: &material,
@@ -102,7 +102,7 @@ pub trait SourceAdapter {
             question
                 .ask(
                     model,
-                    turn.to_string(),
+                    brief.to_string(),
                     Some(references::answering(Self::docs())),
                     |evidence| {
                         let findings = evidence.findings();
@@ -127,7 +127,7 @@ pub struct Context<'a> {
 
 impl Context<'_> {
     // The workspace lent to the model: a bound tree's root; nothing for an
-    // inline value, which rides the turn instead.
+    // inline value, which rides the brief instead.
     fn lend(&self) -> Option<&str> {
         match &self.input.content {
             SourceContent::Workspace(root) => Some(root),

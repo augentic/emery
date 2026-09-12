@@ -1,10 +1,11 @@
-//! The user turn
+//! The evidence brief
 //!
-//! What the model is told when an adapter asks for evidence: which source it
-//! is extracting, the material it has been given, where the reference
-//! documents are, and the fixed closing ask. An adapter chooses only the
-//! [`Material`]; the SDK owns the envelope so every adapter's turn reads
-//! alike and the closing ask cannot drift between adapters.
+//! The one brief an adapter puts to the model: which source it is
+//! extracting, the material it has been given, where the reference documents
+//! are, and the fixed closing ask. Its `Display` is the user turn. An adapter
+//! chooses only the [`Material`]; the SDK owns the envelope so every
+//! adapter's brief reads alike and the closing ask cannot drift between
+//! adapters.
 
 use std::fmt::{self, Display, Formatter};
 
@@ -22,15 +23,15 @@ pub enum Material {
     Prepared(String),
 }
 
-// The rendered turn: the adapter's source noun, the call's context, and the
-// material.
-pub struct Turn<'a> {
+// The brief: the adapter's source noun, the call's context, and the
+// material; rendered as the user turn.
+pub struct Brief<'a> {
     pub source: &'static str,
     pub ctx: &'a Context<'a>,
     pub material: &'a Material,
 }
 
-impl Display for Turn<'_> {
+impl Display for Brief<'_> {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         let input = self.ctx.input;
         write!(
