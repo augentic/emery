@@ -1,4 +1,4 @@
-//! # The revision artifacts
+//! # The revision
 //!
 //! The typed specification and design a `specify` run commits, serialised as
 //! canonical JSON and identified by the digest of those bytes. The two
@@ -7,13 +7,15 @@
 //! never parsed back from prose.
 //!
 //! This module carries the model both documents share — the revision, its
-//! id, and the [`Document`] contract each of its files meets: a fixed file
-//! name, the canonical bytes, and the projection — together with the
-//! vocabulary the renderer and the drafting checks agree on: the heading
-//! markers, the provenance and note keys, and the line openers a drafted
-//! paragraph may not use because the renderer owns them.
+//! id, the [`Document`] contract each of its files meets (a fixed file name,
+//! the canonical bytes, the projection), and the [`Diff`] between two
+//! revisions — together with the vocabulary the renderer and the drafting
+//! checks agree on: the heading markers, the provenance and note keys, and
+//! the line openers a drafted paragraph may not use because the renderer owns
+//! them.
 
 mod design;
+mod diff;
 mod spec;
 
 use std::fmt::{self, Display, Formatter};
@@ -26,6 +28,7 @@ use sha2::{Digest, Sha256};
 
 use self::design::TYPE;
 pub use self::design::{Block, Design, Section, SectionKind, citations};
+pub use self::diff::{Changed, DesignDiff, Diff, Entry, SpecDiff};
 pub use self::spec::{Cited, Loser, ReqId, Requirement, Scenario, Spec, Status};
 use self::spec::{ID, NOTE, SOURCES, STATUS};
 
@@ -45,17 +48,31 @@ pub trait Document: Serialize + DeserializeOwned + Display {
     /// The file name the store commits the document under.
     const FILE: &'static str;
 
-    /// Deserialises one document from its JSON.
-    fn from_json(value: Value) -> Result<Self, Error> {
-        if value["emery"] != EMERY {
+    /// Reads one document from its stored JSON, refusing another grammar's
+    /// before the shape is checked.
+    ///
+    /// # Errors
+    ///
+    /// `spec-outdated` when the `emery` stamp is missing or another
+    /// grammar's; `server_error` when the bytes are not JSON or a document
+    /// under this grammar does not fit, since this engine did not write it.
+    fn from_json(bytes: &[u8]) -> Result<Self, Error> {
+        let value: Value = serde_json::from_slice(bytes)
+            .map_err(|err| server_error!("`{}` is not JSON: {err}", Self::FILE))?;
+
+        // The stamp is the one field every grammar shares, so it is read
+        // before the shape.
+        let stamp = &value["emery"];
+        if *stamp != EMERY {
             return Err(Error::BadRequest {
                 code: "spec-outdated".into(),
                 description: format!(
-                    "`{}` was not written under emery grammar {EMERY}",
+                    "`{}` was written under emery grammar {stamp}; this engine reads {EMERY}",
                     Self::FILE
                 ),
             });
         }
+
         serde_json::from_value(value)
             .map_err(|err| server_error!("`{}` is not a revision: {err}", Self::FILE))
     }
@@ -97,15 +114,21 @@ impl Revision {
     /// Every file name a revision holds, in digest order.
     pub const FILES: [&'static str; 2] = [Spec::FILE, Design::FILE];
 
-    /// Reads a revision from its two JSON documents, refusing another
-    /// grammar's before the shape is checked.
+    /// Reads the revision stored under `id` from the bytes of its two
+    /// documents, refusing bytes that no longer hash to the id before either
+    /// document is read.
     ///
     /// # Errors
     ///
-    /// `spec-outdated` when either document's `emery` stamp is missing or
-    /// another grammar's; `server_error` when a document under this grammar
-    /// does not fit the revision, since this engine did not write it.
-    pub fn read(spec: Value, design: Value) -> Result<Self, Error> {
+    /// `server_error` when the bytes do not match the id — the store is
+    /// content-addressed, so a mismatch is corruption, not a revision — then
+    /// each document's own refusals, `spec-outdated` first.
+    pub fn read(id: &str, spec: &[u8], design: &[u8]) -> Result<Self, Error> {
+        let files = [(Spec::FILE, spec), (Design::FILE, design)];
+        if digest(files.into_iter()) != id {
+            return Err(server_error!("revision `{id}` does not match its content"));
+        }
+
         Ok(Self {
             spec: Spec::from_json(spec)?,
             design: Design::from_json(design)?,
@@ -121,37 +144,11 @@ impl Revision {
     /// The content id: the digest of every file, in digest order.
     #[must_use]
     pub fn id(&self) -> String {
-        let files = self.files();
-        digest(files.iter().map(|(name, body)| (*name, body.as_bytes())))
+        digest(self.files().iter().map(|(name, body)| (*name, body.as_bytes())))
     }
 }
 
-// Writes one document body: the title, each preamble paragraph, and each
-// typed block, with every line right-trimmed.
-fn write<T: Display>(
-    f: &mut Formatter<'_>, title: &str, preamble: &[String], blocks: &[T],
-) -> fmt::Result {
-    write!(f, "# {title}")?;
-    for block in preamble {
-        write_block(f, block)?;
-    }
-    for block in blocks {
-        write_block(f, &block.to_string())?;
-    }
-    f.write_str("\n")
-}
-
-fn write_block(f: &mut Formatter<'_>, block: &str) -> fmt::Result {
-    for (position, line) in block.lines().enumerate() {
-        f.write_str(if position == 0 { "\n\n" } else { "\n" })?;
-        f.write_str(line.trim_end())?;
-    }
-    Ok(())
-}
-
-/// Hashes stored files as SHA-256 over the length-prefixed names and bodies,
-/// in the order given; the id of the revision whose files they are.
-pub fn digest<'a>(files: impl Iterator<Item = (&'a str, &'a [u8])>) -> String {
+fn digest<'a>(files: impl Iterator<Item = (&'a str, &'a [u8])>) -> String {
     let mut hasher = Sha256::new();
     for (name, body) in files {
         hasher.update((name.len() as u64).to_be_bytes());
@@ -161,3 +158,31 @@ pub fn digest<'a>(files: impl Iterator<Item = (&'a str, &'a [u8])>) -> String {
     }
     hex::encode(hasher.finalize())
 }
+
+// Writes one document body: the title, each preamble paragraph, and each
+// typed block, with every line right-trimmed.
+fn write<T: Display>(
+    f: &mut Formatter<'_>, title: &str, preamble: &[String], blocks: &[T],
+) -> fmt::Result {
+    write!(f, "# {title}")?;
+
+    // write the preamble paragraphs
+    for paragraph in preamble {
+        // for (position, line) in paragraph.lines().enumerate() {
+        //     f.write_str(if position == 0 { "\n\n" } else { "\n" })?;
+        //     f.write_str(line.trim_end())?;
+        // }
+         write!(f, "\n\n{paragraph}")?;
+    }
+
+    // write the typed blocks.
+    for block in blocks {
+        for (position, line) in block.to_string().lines().enumerate() {
+            f.write_str(if position == 0 { "\n\n" } else { "\n" })?;
+            f.write_str(line.trim_end())?;
+        }
+    }
+    f.write_str("\n")
+}
+
+

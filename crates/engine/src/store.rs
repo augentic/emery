@@ -3,7 +3,7 @@
 //! Where committed revisions live. A revision is the specification and design
 //! one `specify` run produced, committed as canonical JSON under the id of its
 //! content; the store commits a new revision, reads the current one, and
-//! reports how it differs from the one it replaced.
+//! reports how the new one differs from the one it replaced.
 //!
 //! A revision is identified by the digest of its content, never a sequence
 //! number, so the same revision always has the same id and a document that no
@@ -12,12 +12,8 @@
 
 use anyhow::Context;
 use omnia_guest::{BlobStore, Error, StateStore, server_error};
-use serde::Serialize;
-use serde_json::Value;
 
-use crate::revision::{
-    Design, Document as _, ReqId, Requirement, Revision, SectionKind, Spec, digest,
-};
+use crate::revision::{Design, Diff, Document as _, Revision, Spec};
 
 /// Keyvalue key holding the current revision id.
 pub const CURRENT: &str = "current-revision";
@@ -113,22 +109,13 @@ async fn observe<S: StateStore + BlobStore>(store: &S) -> Observation {
     Observation { token, outgoing }
 }
 
-// Loads revision `id` and checks that its bytes still hash to that id: the
-// store is content-addressed, so documents that no longer match the id they
-// sit under are corruption, not a revision.
+// Loads revision `id` from its two documents; the revision itself refuses
+// bytes that no longer hash to the id, then another grammar's, then a shape
+// this engine did not write.
 async fn load<S: BlobStore>(store: &S, id: &str) -> Result<Revision, Error> {
     let spec = read(store, id, Spec::FILE).await?;
     let design = read(store, id, Design::FILE).await?;
-
-    let files = [(Spec::FILE, spec.as_slice()), (Design::FILE, design.as_slice())];
-    if digest(files.into_iter()) != id {
-        return Err(server_error!("revision `{id}` does not match its content"));
-    }
-
-    // The bytes are the ones committed: a revision under another grammar is
-    // outdated, and one this grammar cannot read was not written by this
-    // engine.
-    Revision::read(parse(id, Spec::FILE, &spec)?, parse(id, Design::FILE, &design)?)
+    Revision::read(id, &spec, &design)
 }
 
 // Reads one document of revision `id`; a document absent under a named
@@ -138,13 +125,6 @@ async fn read<S: BlobStore>(store: &S, id: &str, name: &str) -> Result<Vec<u8>, 
         .await
         .context("reading revision document")?
         .ok_or_else(|| server_error!("revision `{id}` does not contain `{name}`"))
-}
-
-// Parses one committed document of revision `id` as JSON.
-fn parse(id: &str, name: &str, bytes: &[u8]) -> Result<Value, Error> {
-    let value = serde_json::from_slice(bytes)
-        .with_context(|| format!("revision `{id}`: `{name}` is not JSON"))?;
-    Ok(value)
 }
 
 // Reads the revision id a CAS token holds; a non-UTF-8 token names none.
@@ -168,135 +148,6 @@ impl Observation {
     // The outgoing revision's id, the blobs a landed swap prunes.
     fn outgoing_id(&self) -> Option<&str> {
         self.token.as_deref().and_then(id_of)
-    }
-}
-
-/// An ephemeral re-mine diff against the outgoing revision.
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "kebab-case")]
-pub struct Diff {
-    /// The outgoing revision id this run superseded.
-    pub from: String,
-    /// The requirements that changed.
-    pub spec: SpecDiff,
-    /// The sections that changed.
-    pub design: DesignDiff,
-}
-
-impl Diff {
-    // Diffs `incoming` against `outgoing` by typed equality: requirements by
-    // id, sections by kind, never by position.
-    fn between(from: &str, outgoing: &Revision, incoming: &Revision) -> Self {
-        Self {
-            from: from.to_string(),
-            spec: SpecDiff::between(&outgoing.spec, &incoming.spec),
-            design: DesignDiff::between(&outgoing.design, &incoming.design),
-        }
-    }
-}
-
-/// The requirements that differ between two revisions.
-#[derive(Debug, Clone, Default, Serialize)]
-#[serde(rename_all = "kebab-case")]
-pub struct SpecDiff {
-    /// Requirements present only in the incoming revision.
-    pub added: Vec<Entry>,
-    /// Requirements present only in the outgoing revision.
-    pub removed: Vec<Entry>,
-    /// Requirements present in both whose content changed.
-    pub changed: Vec<Changed>,
-}
-
-impl SpecDiff {
-    // Matches requirements by id — the position each run numbers in source
-    // order — so a requirement whose place moved reads as a change.
-    fn between(outgoing: &Spec, incoming: &Spec) -> Self {
-        let mut diff = Self::default();
-        for requirement in &incoming.requirements {
-            match outgoing.requirement(requirement.id) {
-                None => diff.added.push(Entry::from(requirement)),
-                Some(before) => {
-                    let fields = before.differences(requirement);
-                    if !fields.is_empty() {
-                        diff.changed.push(Changed {
-                            requirement: Entry::from(requirement),
-                            fields,
-                        });
-                    }
-                }
-            }
-        }
-        diff.removed.extend(
-            outgoing
-                .requirements
-                .iter()
-                .filter(|requirement| incoming.requirement(requirement.id).is_none())
-                .map(Entry::from),
-        );
-        diff
-    }
-}
-
-/// One requirement named by a diff.
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "kebab-case")]
-pub struct Entry {
-    /// The requirement id.
-    pub id: ReqId,
-    /// The requirement subject.
-    pub subject: String,
-}
-
-impl From<&Requirement> for Entry {
-    fn from(requirement: &Requirement) -> Self {
-        Self {
-            id: requirement.id,
-            subject: requirement.subject.clone(),
-        }
-    }
-}
-
-/// One requirement whose content changed, and the fields that differ.
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "kebab-case")]
-pub struct Changed {
-    /// The requirement, named as the diff names every other.
-    #[serde(flatten)]
-    pub requirement: Entry,
-    /// The differing fields, in declaration order.
-    pub fields: Vec<&'static str>,
-}
-
-/// The design sections that differ between two revisions, by kind.
-#[derive(Debug, Clone, Default, Serialize)]
-#[serde(rename_all = "kebab-case")]
-pub struct DesignDiff {
-    /// Sections present only in the incoming revision.
-    pub added: Vec<SectionKind>,
-    /// Sections present only in the outgoing revision.
-    pub removed: Vec<SectionKind>,
-    /// Sections present in both whose blocks changed.
-    pub changed: Vec<SectionKind>,
-}
-
-impl DesignDiff {
-    fn between(outgoing: &Design, incoming: &Design) -> Self {
-        let mut diff = Self::default();
-        for section in &incoming.sections {
-            match outgoing.section(section.kind) {
-                None => diff.added.push(section.kind),
-                Some(before) if before.blocks != section.blocks => diff.changed.push(section.kind),
-                Some(_) => {}
-            }
-        }
-        diff.removed.extend(
-            outgoing
-                .sections
-                .iter()
-                .filter(|section| incoming.section(section.kind).is_none())
-                .map(|section| section.kind),
-        );
-        diff
     }
 }
 

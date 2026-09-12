@@ -1,11 +1,12 @@
 //! Synthesis
 //!
-//! Synthesises the requirements and the extracted claims into a revision: the
-//! typed specification and design. The model is asked up to two typed
-//! questions in turn — the drafted content of `spec.md`, then of `design.md`
-//! — each put as a brief that verifies every candidate answer against the
-//! requirements, the section plan, and the evidence before the engine places
-//! the accepted answer beside its own facts in the revision. Every heading,
+//! Synthesises the extracted claims into a revision: the typed specification
+//! and design. The model is asked up to three typed questions in turn — how
+//! the requirement claims group (on a run over two or more sources), the
+//! drafted content of `spec.md`, then of `design.md` — each put as a brief
+//! that verifies every candidate answer against the engine's facts (the
+//! requirement bases, the section plan, the evidence) before the engine places
+//! the accepted answer beside those facts in the revision. Every heading,
 //! provenance line, body, tag, note, and signature is the engine's, so the
 //! stored revision is a function of the facts and the draft alone, and a
 //! changed value re-ids every revision.
@@ -29,8 +30,8 @@ use crate::revision::Revision;
 use crate::specify::brief::Brief as _;
 use crate::specify::{Extract, basis};
 
-/// Takes the extracts of every source and the requirement bases derived from
-/// them, then synthesises the specification and design.
+/// Synthesises the specification and design from the extracts of every
+/// source: the requirement bases first, then each document in turn.
 ///
 /// # Errors
 ///

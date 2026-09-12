@@ -80,25 +80,6 @@ pub struct Requirement {
     pub scenarios: Vec<Scenario>,
 }
 
-impl Requirement {
-    /// Names the fields, other than `id`, on which `self` and `other` differ.
-    #[must_use]
-    pub fn differences(&self, other: &Self) -> Vec<&'static str> {
-        [
-            ("subject", self.subject != other.subject),
-            ("status", self.status != other.status),
-            ("covered", self.covered != other.covered),
-            ("sources", self.sources != other.sources),
-            ("body", self.body != other.body),
-            ("losers", self.losers != other.losers),
-            ("scenarios", self.scenarios != other.scenarios),
-        ]
-        .into_iter()
-        .filter_map(|(name, differs)| differs.then_some(name))
-        .collect()
-    }
-}
-
 // Renders the tagged heading, provenance, body, notes, and scenarios.
 impl Display for Requirement {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
