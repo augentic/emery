@@ -34,7 +34,7 @@ type Recorded = Vec<(String, SourceInput)>;
 /// Scripted `Source`: per-key evidence, per-adapter minimum `emery`
 /// versions, and a record of every dispatch. An unscripted key answers
 /// the greeting requirement as documentation evidence; a scripted failure
-/// is the classified error the wire lift would have produced.
+/// is the classified error the WIT bindings lift would have produced.
 #[derive(Clone, Debug, Default)]
 pub struct SourceScript {
     /// Extract outcomes keyed by source key.

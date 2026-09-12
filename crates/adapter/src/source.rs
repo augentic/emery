@@ -15,18 +15,18 @@ use omnia_guest::model::WasiModel;
 
 use crate::{Context, SourceAdapter};
 
-/// Answers `metadata` for adapter `A`: its record, lowered onto the wire.
+/// Answers `metadata` for adapter `A`: its record, lowered onto the WIT bindings.
 #[must_use]
 pub fn metadata<A: SourceAdapter>() -> AdapterMetadata {
     A::metadata().into()
 }
 
 /// Answers `extract` for adapter `A`: its evidence, or its failure lowered
-/// onto the wire variant.
+/// onto the WIT bindings variant.
 ///
 /// # Errors
 ///
-/// Returns the adapter's failure lowered onto the wire variant.
+/// Returns the adapter's failure lowered onto the WIT bindings variant.
 pub async fn extract<A: SourceAdapter>(id: AdapterId, input: Input) -> Result<Evidence, Error> {
     let input = SourceInput::from(input);
     let ctx = Context {

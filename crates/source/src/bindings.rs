@@ -1,7 +1,7 @@
 //! WIT bindings
 //!
 //! The generated Rust bindings for the `source-adapter` WIT world, plus the
-//! conversions between the generated wire records and the contract types the
+//! conversions between the generated WIT records and the contract types the
 //! rest of the workspace uses.
 //!
 //! Both directions come from one generation: adapters export through it via
@@ -9,12 +9,12 @@
 //! and the engine guest calls into it through [`import`]. The records live
 //! in the WIT `types` interface, so the export side and the caller side bind
 //! the same Rust types and each conversion is written once, here at the
-//! module root — `From` where the wire form always lifts, `TryFrom` where an
+//! module root — `From` where the WIT form always lifts, `TryFrom` where an
 //! extra's canonical JSON must parse.
 //!
 //! The WIT `error` variant lives here alone: an adapter's `omnia_guest::Error`
 //! is lowered onto it for [`export`], and [`import::extract`] lifts it back
-//! into the same classes, so neither side of the seam names the wire variant.
+//! into the same classes, so neither side of the seam names the WIT variant.
 
 mod generated {
     #![allow(
@@ -174,7 +174,7 @@ impl From<wit::Backing> for Backing {
 
 impl From<Claim> for wit::Claim {
     fn from(claim: Claim) -> Self {
-        // Open body fields ride the wire as canonical JSON text (A8);
+        // Open body fields ride the WIT bindings as canonical JSON text (A8);
         // `serde_json::Value` always encodes.
         let extras =
             claim.extras.into_iter().map(|(key, value)| (key, value.to_string())).collect();
@@ -189,7 +189,7 @@ impl From<Claim> for wit::Claim {
     }
 }
 
-// Lifts a claim off the wire, parsing each extra back from its canonical
+// Lifts a claim off the WIT bindings, parsing each extra back from its canonical
 // JSON (A8); an extra that fails to parse is a typed error rather than a
 // dropped key.
 impl TryFrom<wit::Claim> for Claim {
@@ -235,7 +235,7 @@ impl TryFrom<wit::Evidence> for Evidence {
     }
 }
 
-// Lowers an adapter failure onto the wire, which carries the description
+// Lowers an adapter failure onto the WIT bindings, which carries the description
 // alone: a refusal of the input becomes `invalid-request`, every other
 // class `internal`; the lift restores the class. `io` is lifted but never
 // produced.
@@ -261,7 +261,7 @@ pub mod export {
     pub use super::generated::*;
 }
 
-/// The import side: the engine guest's caller over the wire.
+/// The import side: the engine guest's caller over the WIT bindings.
 pub mod import {
     use omnia_guest::{Error, bad_gateway, bad_request};
 

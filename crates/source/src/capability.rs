@@ -35,7 +35,7 @@ pub trait Source: Send + Sync {
     fn extract(
         &self, id: &str, input: &SourceInput,
     ) -> impl Future<Output = Result<Evidence, Error>> + Send {
-        crate::wire::import::extract(id, input)
+        crate::bindings::import::extract(id, input)
     }
 
     /// Returns resolve-time metadata for `id`.
@@ -45,7 +45,7 @@ pub trait Source: Send + Sync {
     /// Returns resolve-time metadata for `id`.
     #[cfg(target_arch = "wasm32")]
     fn metadata(&self, id: &str) -> AdapterMetadata {
-        crate::wire::import::metadata(id)
+        crate::bindings::import::metadata(id)
     }
 }
 
