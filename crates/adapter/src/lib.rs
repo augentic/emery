@@ -6,7 +6,7 @@
 //! component.
 //!
 //! The contract itself lives in `emery-source` and is re-exported here, so an
-//! adapter depends on one crate and never sees the wire bindings directly.
+//! adapter depends on one crate and never sees the WIT bindings directly.
 //! Failures are omnia's [`Error`]: an adapter refuses its input with
 //! [`bad_request!`] and reports anything else with the sibling macros.
 

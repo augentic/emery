@@ -9,15 +9,14 @@
 //! consumes it directly; adapters receive it re-exported through the
 //! `emery-adapter` SDK.
 
+#[cfg(target_arch = "wasm32")]
+mod bindings;
 mod capability;
 mod evidence;
 mod grammar;
 
 #[cfg(target_arch = "wasm32")]
-mod wire;
-
+pub use bindings::export;
 pub use capability::{AdapterMetadata, Source, SourceContent, SourceInput};
 pub use evidence::{Authority, Backing, Claim, ClaimKind, Evidence};
 pub use grammar::{CLAIM_ID_REGEX, is_kebab};
-#[cfg(target_arch = "wasm32")]
-pub use wire::export;
