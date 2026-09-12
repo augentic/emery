@@ -7,12 +7,11 @@
 //! never parsed back from prose.
 //!
 //! This module carries the model both documents share — the revision, its
-//! id, the [`Document`] contract each of its files meets (a name, the
-//! canonical bytes, the projection), and the [`Diff`] between two
-//! revisions — together with the vocabulary the renderer and the drafting
-//! checks agree on: the heading markers, the provenance and note keys, and
-//! the line openers a drafted paragraph may not use because the renderer owns
-//! them.
+//! id, the [`Document`] contract each meets (a name, the canonical bytes,
+//! the projection), and the [`Diff`] between two revisions — together with
+//! the vocabulary the renderer and the drafting checks agree on: the heading
+//! markers, the provenance and note keys, and the line openers a drafted
+//! paragraph may not use because the renderer owns them.
 
 mod design;
 mod diff;
@@ -20,6 +19,7 @@ mod spec;
 
 use std::fmt::{self, Display, Formatter};
 
+use anyhow::Context;
 use omnia_guest::{Error, server_error};
 use serde::Serialize;
 use serde::de::DeserializeOwned;
@@ -42,17 +42,10 @@ pub const EMERY: u32 = 2;
 pub const RESERVED: &[&str] = &["#", ID, SOURCES, STATUS, NOTE, TYPE];
 
 /// One document of a revision: a serde shape under the [`EMERY`] stamp that
-/// the store files under `{NAME}.json` and the projection renders by
-/// `Display`.
+/// the projection renders by `Display`.
 pub trait Document: Serialize + DeserializeOwned + Display {
     /// This document's name (`spec`, `design`).
     const NAME: &'static str;
-
-    /// The store file name: `{NAME}.json`.
-    #[must_use]
-    fn file() -> String {
-        crate::revision::file(Self::NAME)
-    }
 
     /// Reads one document from its stored JSON, refusing another grammar's
     /// before the shape is checked.
@@ -64,7 +57,7 @@ pub trait Document: Serialize + DeserializeOwned + Display {
     /// under this grammar does not fit, since this engine did not write it.
     fn from_json(bytes: &[u8]) -> Result<Self, Error> {
         let value: Value = serde_json::from_slice(bytes)
-            .map_err(|err| server_error!("`{}` is not JSON: {err}", Self::NAME))?;
+            .with_context(|| format!("`{}` is not JSON", Self::NAME))?;
 
         // The stamp is the one field every grammar shares, so it is read
         // before the shape.
@@ -79,8 +72,8 @@ pub trait Document: Serialize + DeserializeOwned + Display {
             });
         }
 
-        serde_json::from_value(value)
-            .map_err(|err| server_error!("`{}` is not a revision: {err}", Self::NAME))
+        Ok(serde_json::from_value(value)
+            .with_context(|| format!("`{}` is not a revision", Self::NAME))?)
     }
 
     /// The canonical JSON the store hashes and writes: pretty, declaration
@@ -92,7 +85,7 @@ pub trait Document: Serialize + DeserializeOwned + Display {
     /// built it, so a failure is a defect, not a revision.
     fn to_json(&self) -> Result<String, Error> {
         let mut text = serde_json::to_string_pretty(self)
-            .map_err(|err| server_error!("`{}` does not serialise: {err}", Self::NAME))?;
+            .with_context(|| format!("`{}` does not serialise", Self::NAME))?;
         text.push('\n');
         Ok(text)
     }
@@ -121,9 +114,6 @@ pub struct Revision {
 }
 
 impl Revision {
-    /// Every document name a revision holds, in digest order.
-    pub const NAMES: [&'static str; 2] = [Spec::NAME, Design::NAME];
-
     /// Reads the revision stored under `id` from the bytes of its two
     /// documents, refusing bytes that no longer hash to the id before either
     /// document is read.
@@ -134,9 +124,7 @@ impl Revision {
     /// content-addressed, so a mismatch is corruption, not a revision — then
     /// each document's own refusals, `spec-outdated` first.
     pub fn read(id: &str, spec: &[u8], design: &[u8]) -> Result<Self, Error> {
-        let spec_file = Spec::file();
-        let design_file = Design::file();
-        if digest([(spec_file.as_str(), spec), (design_file.as_str(), design)].into_iter()) != id {
+        if digest(spec, design) != id {
             return Err(server_error!("revision `{id}` does not match its content"));
         }
 
@@ -146,36 +134,20 @@ impl Revision {
         })
     }
 
-    /// Each document as canonical JSON under its file name, in digest order.
-    ///
-    /// # Errors
-    ///
-    /// `server_error` when a document does not serialise.
-    pub fn files(&self) -> Result<Vec<(String, String)>, Error> {
-        Ok(vec![(Spec::file(), self.spec.to_json()?), (Design::file(), self.design.to_json()?)])
-    }
-
-    /// The content id: the digest of every file, in digest order.
+    /// The content id: the digest of the specification and design bytes, in
+    /// that order.
     ///
     /// # Errors
     ///
     /// `server_error` when a document does not serialise.
     pub fn id(&self) -> Result<String, Error> {
-        let files = self.files()?;
-        Ok(digest(files.iter().map(|(name, body)| (name.as_str(), body.as_bytes()))))
+        Ok(digest(self.spec.to_json()?.as_bytes(), self.design.to_json()?.as_bytes()))
     }
 }
 
-// One suffix: the store commits every document as JSON.
-pub fn file(name: &str) -> String {
-    format!("{name}.json")
-}
-
-fn digest<'a>(files: impl Iterator<Item = (&'a str, &'a [u8])>) -> String {
+fn digest(spec: &[u8], design: &[u8]) -> String {
     let mut hasher = Sha256::new();
-    for (name, body) in files {
-        hasher.update((name.len() as u64).to_be_bytes());
-        hasher.update(name.as_bytes());
+    for body in [spec, design] {
         hasher.update((body.len() as u64).to_be_bytes());
         hasher.update(body);
     }

@@ -12,10 +12,11 @@
 
 use std::path::{Path, PathBuf};
 
+use anyhow::Context;
 use emery_engine::specify::{SourceConfig, SourceContent};
 use emery_engine::{AdapterRef, preopen_path};
 use omnia_guest::plugins::Digest;
-use omnia_guest::{Error, bad_request, server_error};
+use omnia_guest::{Error, bad_request};
 
 /// The project-root config discovered by a run naming no sources.
 pub const CONFIG_FILE: &str = "emery.toml";
@@ -55,10 +56,10 @@ pub fn decode(
 // `specify-source-required`; a file that fails to parse is refused here.
 fn discover() -> Result<Vec<SourceConfig>, Error> {
     let path = Path::new(CONFIG_FILE);
-    match path.try_exists() {
-        Ok(true) => from_file(path),
-        Ok(false) => Ok(Vec::new()),
-        Err(err) => Err(server_error!("reading {CONFIG_FILE}: {err}")),
+    if path.try_exists().with_context(|| format!("reading {CONFIG_FILE}"))? {
+        from_file(path)
+    } else {
+        Ok(Vec::new())
     }
 }
 
@@ -100,10 +101,8 @@ fn source(reference: &str, content: SourceContent) -> Result<SourceConfig, Error
 // Reads and decodes an operator-owned config file; any parse failure is
 // refused, and the engine never writes the file.
 fn from_file(path: &Path) -> Result<Vec<SourceConfig>, Error> {
-    let raw = std::fs::read_to_string(path).map_err(|source| {
-        let path = path.display();
-        server_error!("reading {path}: {source}")
-    })?;
+    let raw =
+        std::fs::read_to_string(path).with_context(|| format!("reading {}", path.display()))?;
     let file: ConfigFile = toml::from_str(&raw).map_err(|err| {
         let path = path.display();
         bad_request!("{path}: {err}")

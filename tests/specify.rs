@@ -1522,13 +1522,10 @@ fn document(storage: &Memory, id: &str, name: &str) -> Vec<u8> {
 }
 
 // The content id a revision holding `spec` and `design` sits under —
-// SHA-256 over the length-prefixed file names and bodies, `spec.json` then
-// `design.json`.
+// SHA-256 over the length-prefixed bodies, spec then design.
 fn revision(spec: &[u8], design: &[u8]) -> String {
     let mut hasher = Sha256::new();
-    for (name, body) in [("spec.json", spec), ("design.json", design)] {
-        hasher.update((name.len() as u64).to_be_bytes());
-        hasher.update(name.as_bytes());
+    for body in [spec, design] {
         hasher.update((body.len() as u64).to_be_bytes());
         hasher.update(body);
     }

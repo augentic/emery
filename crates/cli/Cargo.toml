@@ -11,6 +11,7 @@ keywords = ["emery", "cli"]
 readme = "../../README.md"
 
 [dependencies]
+anyhow.workspace = true
 clap.workspace = true
 emery-engine.workspace = true
 omnia-guest.workspace = true

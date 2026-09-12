@@ -14,10 +14,11 @@ use std::fmt::{self, Display, Formatter};
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
 
+use anyhow::Context;
 use emery_source::Source;
 use emery_source::claims::is_kebab;
 use omnia_guest::plugins::{Digest, Location, PluginCache, PluginRef};
-use omnia_guest::{Error, Plugins, bad_request, not_found, server_error};
+use omnia_guest::{Error, Plugins, bad_request, not_found};
 use serde::{Deserialize, Serialize};
 
 use crate::preopen_path;
@@ -80,11 +81,8 @@ fn check_version<P: Source>(provider: &P, name: &str, id: &str) -> Result<(), Er
         bad_request!("adapter `{name}` ({id}) has an invalid `emery-version` `{declared}`: {err}")
     })?;
 
-    let running = semver::Version::parse(env!("CARGO_PKG_VERSION")).map_err(|err| {
-        server_error!(
-            "the running emery version `{}` is not SemVer: {err}",
-            env!("CARGO_PKG_VERSION")
-        )
+    let running = semver::Version::parse(env!("CARGO_PKG_VERSION")).with_context(|| {
+        format!("the running emery version `{}` is not SemVer", env!("CARGO_PKG_VERSION"))
     })?;
     if running < minimum {
         return Err(Error::BadRequest {

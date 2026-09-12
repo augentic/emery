@@ -13,7 +13,7 @@
 use anyhow::Context;
 use omnia_guest::{BlobStore, Error, StateStore, server_error};
 
-use crate::revision::{Design, Diff, Document as _, Revision, Spec, file};
+use crate::revision::{Design, Diff, Document as _, Revision, Spec};
 
 /// Keyvalue key holding the current revision id.
 pub const CURRENT: &str = "current-revision";
@@ -52,8 +52,10 @@ async fn swap<S: StateStore + BlobStore>(
     }
 
     let id = revision.id()?;
-    for (name, body) in revision.files()? {
-        BlobStore::put(store, CONTAINER, &key(&id, &name), body.as_bytes())
+    for (name, body) in
+        [(Spec::NAME, revision.spec.to_json()?), (Design::NAME, revision.design.to_json()?)]
+    {
+        BlobStore::put(store, CONTAINER, &key(&id, name), body.as_bytes())
             .await
             .context("writing revision document")?;
     }
@@ -64,8 +66,8 @@ async fn swap<S: StateStore + BlobStore>(
 
     // The swap landed; prune the outgoing revision.
     if let Some(outgoing) = observed.outgoing_id().filter(|outgoing| *outgoing != id) {
-        for name in Revision::NAMES {
-            let _ = BlobStore::delete(store, CONTAINER, &key(outgoing, &file(name))).await;
+        for name in [Spec::NAME, Design::NAME] {
+            let _ = BlobStore::delete(store, CONTAINER, &key(outgoing, name)).await;
         }
     }
 
@@ -74,7 +76,7 @@ async fn swap<S: StateStore + BlobStore>(
 
 // The blob name a revision's document is stored under.
 fn key(id: &str, name: &str) -> String {
-    format!("{id}/{name}")
+    format!("{id}/{name}.json")
 }
 
 /// Returns the current revision id and value in `store`, or `None` before the
@@ -113,8 +115,8 @@ async fn observe<S: StateStore + BlobStore>(store: &S) -> Observation {
 // bytes that no longer hash to the id, then another grammar's, then a shape
 // this engine did not write.
 async fn load<S: BlobStore>(store: &S, id: &str) -> Result<Revision, Error> {
-    let spec = read(store, id, &Spec::file()).await?;
-    let design = read(store, id, &Design::file()).await?;
+    let spec = read(store, id, Spec::NAME).await?;
+    let design = read(store, id, Design::NAME).await?;
     Revision::read(id, &spec, &design)
 }
 
@@ -182,7 +184,7 @@ mod tests {
         );
         let (current, _) = current(&memory).await.expect("current").expect("committed");
         assert_eq!(current, winner, "the current id still names the winner");
-        let spec = memory.object(CONTAINER, &key(&winner, &Spec::file())).expect("winning spec");
+        let spec = memory.object(CONTAINER, &key(&winner, Spec::NAME)).expect("winning spec");
         let json = winning.spec.to_json().expect("serialises");
         assert_eq!(spec, json.as_bytes(), "the winning revision is intact");
     }

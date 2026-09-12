@@ -1053,6 +1053,7 @@ dependencies = [
 name = "emery-cli"
 version = "0.38.0"
 dependencies = [
+ "anyhow",
  "clap",
  "emery-engine",
  "omnia-guest",
