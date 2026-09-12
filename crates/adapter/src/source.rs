@@ -9,10 +9,11 @@
 //! This is the only wasm-specific code an adapter carries, which keeps the
 //! rest of its logic portable and testable natively.
 
+use emery_source::SourceInput;
 pub use emery_source::export::*;
+use omnia_guest::model::WasiModel;
 
-use crate::types::{Context, SourceContent, SourceInput};
-use crate::{SourceAdapter, WasiModel};
+use crate::{Context, SourceAdapter};
 
 /// Answers `metadata` for adapter `A`: its record, lowered onto the wire.
 #[must_use]
@@ -28,16 +29,10 @@ pub fn metadata<A: SourceAdapter>() -> AdapterMetadata {
 /// Returns the adapter's failure lowered onto the wire variant.
 pub async fn extract<A: SourceAdapter>(id: AdapterId, input: Input) -> Result<Evidence, Error> {
     let input = SourceInput::from(input);
-    // A bound tree is lent to the model; an inline value rides the prompt.
-    let lend = match &input.content {
-        SourceContent::Workspace(root) => Some(root.as_str()),
-        SourceContent::Value(_) => None,
-    };
     let ctx = Context {
         adapter_id: &id,
-        docs: A::docs(),
-        lend,
+        input: &input,
     };
 
-    Ok(A::extract(&WasiModel, &ctx, &input).await?.into())
+    Ok(A::extract(&WasiModel, &ctx).await?.into())
 }

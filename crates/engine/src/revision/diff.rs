@@ -1,10 +1,11 @@
 //! # The revision diff
 //!
-//! How one revision differs from the one it displaced: the requirements
-//! added, removed, or changed, matched by id, and the design sections
-//! likewise, matched by kind. The diff is typed equality over two revisions,
-//! never a comparison of their projections, and it is reported once — with
-//! the run that committed the incoming revision — and stored nowhere.
+//! How one revision differs from the one it displaced: each document's
+//! preamble, the requirements added, removed, or changed, matched by id, and
+//! the design sections likewise, matched by kind. The diff is typed equality
+//! over two revisions, never a comparison of their projections, and it is
+//! reported once — with the run that committed the incoming revision — and
+//! stored nowhere.
 
 use serde::Serialize;
 
@@ -24,8 +25,8 @@ pub struct Diff {
 
 impl Diff {
     /// Diffs `incoming` against `outgoing`, the revision `from` names, by
-    /// typed equality: requirements by id, sections by kind, never by
-    /// position.
+    /// typed equality: preambles whole, requirements by id, sections by kind,
+    /// never by position.
     #[must_use]
     pub fn between(from: &str, outgoing: &Revision, incoming: &Revision) -> Self {
         Self {
@@ -40,6 +41,8 @@ impl Diff {
 #[derive(Debug, Clone, Default, Serialize)]
 #[serde(rename_all = "kebab-case")]
 pub struct SpecDiff {
+    /// Whether the preamble changed.
+    pub preamble: bool,
     /// Requirements present only in the incoming revision.
     pub added: Vec<Entry>,
     /// Requirements present only in the outgoing revision.
@@ -52,7 +55,10 @@ impl SpecDiff {
     // Matches requirements by id — the position each run numbers in source
     // order — so a requirement whose place moved reads as a change.
     fn between(outgoing: &Spec, incoming: &Spec) -> Self {
-        let mut diff = Self::default();
+        let mut diff = Self {
+            preamble: outgoing.preamble != incoming.preamble,
+            ..Self::default()
+        };
         for requirement in &incoming.requirements {
             match outgoing.requirement(requirement.id) {
                 None => diff.added.push(Entry::from(requirement)),
@@ -112,6 +118,8 @@ pub struct Changed {
 #[derive(Debug, Clone, Default, Serialize)]
 #[serde(rename_all = "kebab-case")]
 pub struct DesignDiff {
+    /// Whether the preamble changed.
+    pub preamble: bool,
     /// Sections present only in the incoming revision.
     pub added: Vec<SectionKind>,
     /// Sections present only in the outgoing revision.
@@ -122,7 +130,10 @@ pub struct DesignDiff {
 
 impl DesignDiff {
     fn between(outgoing: &Design, incoming: &Design) -> Self {
-        let mut diff = Self::default();
+        let mut diff = Self {
+            preamble: outgoing.preamble != incoming.preamble,
+            ..Self::default()
+        };
         for section in &incoming.sections {
             match outgoing.section(section.kind) {
                 None => diff.added.push(section.kind),

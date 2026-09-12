@@ -40,16 +40,17 @@ The success body names the committed revision and its reviewable set:
   "diff": {
     "from": "1a2b3c4d…",
     "spec": {
+      "preamble": true,
       "added": [{ "id": "REQ-003", "subject": "access.audit" }],
       "removed": [],
       "changed": [{ "id": "REQ-002", "subject": "session.timeout", "fields": ["body", "scenarios"] }]
     },
-    "design": { "added": [], "removed": [], "changed": ["domain-model"] }
+    "design": { "preamble": false, "added": [], "removed": [], "changed": ["domain-model"] }
   }
 }
 ```
 
-`diff` is the re-mine diff against the outgoing current revision, computed by typed equality over the two revisions: `spec` lists requirements matched by `id` as `{ id, subject }` entries (ids are positional — `REQ-001` onward in source order — so a requirement whose place moved reads as a change), each `changed` entry naming the fields that differ (`subject`, `status`, `covered`, `sources`, `body`, `losers`, `scenarios`); `design` lists sections by their kebab-case key. It is absent on a first run; on a byte-stable re-run `from` equals `revision` and every list is empty; nothing is persisted for it. Text mode prints one line per entry prefixed by the projection it appears in: `    spec.md + REQ-003 access.audit`, `    spec.md ~ REQ-002 session.timeout: body, scenarios`, `    design.md ~ domain-model`.
+`diff` is the re-mine diff against the outgoing current revision, computed by typed equality over the two revisions: each document's `preamble` flags whether its preamble changed; `spec` lists requirements matched by `id` as `{ id, subject }` entries (ids are positional — `REQ-001` onward in source order — so a requirement whose place moved reads as a change), each `changed` entry naming the fields that differ (`subject`, `status`, `covered`, `sources`, `body`, `losers`, `scenarios`); `design` lists sections by their kebab-case key. It is absent on a first run; on a byte-stable re-run `from` equals `revision`, both `preamble` flags are false, and every list is empty; nothing is persisted for it. Text mode prints one line per entry prefixed by the projection it appears in: `    spec.md ~ preamble`, `    spec.md + REQ-003 access.audit`, `    spec.md ~ REQ-002 session.timeout: body, scenarios`, `    design.md ~ domain-model`.
 
 A pin that no longer matches the resolved bytes fails with `error: "refused"` (exit 1).
 

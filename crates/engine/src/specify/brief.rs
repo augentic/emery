@@ -73,7 +73,7 @@ pub trait Brief: Display + Sync + Sized {
         tracing::info!(question = Self::NAME, "asking the model");
         let mut system = Vec::with_capacity(Self::PROSE.len());
         for path in Self::PROSE {
-            let prose = crate::prose::body(path)
+            let prose = emery_prose::registry::body(crate::prose::docs(), path)
                 .ok_or_else(|| server_error!("synthesis prose `{path}` is not embedded"))?;
             system.push(prose);
         }

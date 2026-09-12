@@ -4,9 +4,14 @@ Unreleased
 
 ### Added
 
+- The `specify` re-mine diff flags a changed preamble: `SpecDiff` / `DesignDiff` carry `preamble: bool`, the JSON envelope carries it per document, and text mode prints `spec.md ~ preamble` / `design.md ~ preamble`.
+
 ### Changed
 
-- `emery_prose::registry::body`, and the `body` the `registry!` macro generates, return `Option<&'static str>` instead of panicking on a path the build did not embed; an adapter maps the miss to its own `Error` (`server_error!`).
+- `emery_prose::registry::body` returns `Option<&'static str>` instead of panicking on a path the build did not embed; the `registry!` macro generates `docs()` alone — the SDK's `SourceAdapter::prompt` reads the extraction prompt from `docs()` and reports a miss as `server_error`.
+- `emery-source` exposes every public item at the crate root (`emery_source::{Source, SourceInput, SourceContent, AdapterMetadata, Evidence, Claim, ClaimKind, Authority, Backing, CLAIM_ID_REGEX, is_kebab}`); the `types` and `claims` modules are gone, as are the test-only `SourceInput::workspace` / `SourceInput::value` constructors.
+- `emery-adapter` reshapes the `SourceAdapter` trait around a provided `evidence` call: an adapter declares `const SOURCE` (the noun the turn names its source by), `docs()`, and `extract(model, ctx)`, and asks for evidence with `Self::evidence(model, ctx, Material::Bound | Material::Prepared(note))`. `Context` is `{ adapter_id, input }`; `EvidenceTurn`, the free `evidence` fn, `content_note`, and the `types` module are deleted; the crate re-exports the contract's types at its root and omnia's `model` module in place of fourteen individual model types.
+- The SDK's user turn always offers the `list_docs` / `read_doc` reference tools (every adapter embeds at least its prompt) and describes a bound workspace as "the `<SOURCE>` source tree".
 
 ---
 

@@ -38,7 +38,7 @@ const SPECIFY_DESC: &str = "Generate spec.md and design.md from source adapters.
     digest pins, reconciles their claims, and atomically commits a new revision.";
 const SHOW_DESC: &str = "Print an artifact from the current revision.\n\n\
     Text output contains only the artifact body. `--format json` also includes the \
-    revision id.";
+    revision id and the typed document.";
 const COMPLETIONS_DESC: &str = "Generate shell completions.\n\n\
     Pipe into your shell's completion directory. Example: \
     `emery completions zsh > ~/.zsh/_emery`";

@@ -8,7 +8,7 @@
 use std::fmt::{self, Display, Formatter};
 use std::str::FromStr;
 
-use emery_source::types::Authority;
+use emery_source::Authority;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 

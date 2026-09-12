@@ -16,7 +16,6 @@ use wasip3::cli::environment;
 
 // The bare provider: every capability keeps its WASI-backed default body, so
 // each impl is empty and the runtime's grants decide what the engine can do.
-#[derive(Clone)]
 struct Provider;
 
 impl Model for Provider {}

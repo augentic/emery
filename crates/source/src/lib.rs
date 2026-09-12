@@ -10,12 +10,14 @@
 //! `emery-adapter` SDK.
 
 mod capability;
-pub mod claims;
-pub mod types;
+mod evidence;
+mod grammar;
 
 #[cfg(target_arch = "wasm32")]
 mod wire;
 
-pub use capability::Source;
+pub use capability::{AdapterMetadata, Source, SourceContent, SourceInput};
+pub use evidence::{Authority, Backing, Claim, ClaimKind, Evidence};
+pub use grammar::{CLAIM_ID_REGEX, is_kebab};
 #[cfg(target_arch = "wasm32")]
 pub use wire::export;

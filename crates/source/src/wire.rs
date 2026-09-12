@@ -36,17 +36,19 @@ mod generated {
 }
 
 use self::generated::emery::adapter::types as wit;
-use crate::types;
+use crate::{
+    AdapterMetadata, Authority, Backing, Claim, ClaimKind, Evidence, SourceContent, SourceInput,
+};
 
-impl From<types::AdapterMetadata> for wit::AdapterMetadata {
-    fn from(metadata: types::AdapterMetadata) -> Self {
+impl From<AdapterMetadata> for wit::AdapterMetadata {
+    fn from(metadata: AdapterMetadata) -> Self {
         Self {
             emery_version: metadata.emery_version,
         }
     }
 }
 
-impl From<wit::AdapterMetadata> for types::AdapterMetadata {
+impl From<wit::AdapterMetadata> for AdapterMetadata {
     fn from(metadata: wit::AdapterMetadata) -> Self {
         Self {
             emery_version: metadata.emery_version,
@@ -54,16 +56,16 @@ impl From<wit::AdapterMetadata> for types::AdapterMetadata {
     }
 }
 
-impl From<types::SourceContent> for wit::Content {
-    fn from(content: types::SourceContent) -> Self {
+impl From<SourceContent> for wit::Content {
+    fn from(content: SourceContent) -> Self {
         match content {
-            types::SourceContent::Workspace(root) => Self::Workspace(root),
-            types::SourceContent::Value(value) => Self::Value(value),
+            SourceContent::Workspace(root) => Self::Workspace(root),
+            SourceContent::Value(value) => Self::Value(value),
         }
     }
 }
 
-impl From<wit::Content> for types::SourceContent {
+impl From<wit::Content> for SourceContent {
     fn from(content: wit::Content) -> Self {
         match content {
             wit::Content::Workspace(root) => Self::Workspace(root),
@@ -72,8 +74,8 @@ impl From<wit::Content> for types::SourceContent {
     }
 }
 
-impl From<types::SourceInput> for wit::Input {
-    fn from(input: types::SourceInput) -> Self {
+impl From<SourceInput> for wit::Input {
+    fn from(input: SourceInput) -> Self {
         Self {
             key: input.key,
             content: input.content.into(),
@@ -81,7 +83,7 @@ impl From<types::SourceInput> for wit::Input {
     }
 }
 
-impl From<wit::Input> for types::SourceInput {
+impl From<wit::Input> for SourceInput {
     fn from(input: wit::Input) -> Self {
         Self {
             key: input.key,
@@ -90,17 +92,17 @@ impl From<wit::Input> for types::SourceInput {
     }
 }
 
-impl From<types::Authority> for wit::Authority {
-    fn from(authority: types::Authority) -> Self {
+impl From<Authority> for wit::Authority {
+    fn from(authority: Authority) -> Self {
         match authority {
-            types::Authority::Intent => Self::Intent,
-            types::Authority::Documentation => Self::Documentation,
-            types::Authority::Behaviour => Self::Behaviour,
+            Authority::Intent => Self::Intent,
+            Authority::Documentation => Self::Documentation,
+            Authority::Behaviour => Self::Behaviour,
         }
     }
 }
 
-impl From<wit::Authority> for types::Authority {
+impl From<wit::Authority> for Authority {
     fn from(authority: wit::Authority) -> Self {
         match authority {
             wit::Authority::Intent => Self::Intent,
@@ -110,28 +112,28 @@ impl From<wit::Authority> for types::Authority {
     }
 }
 
-impl From<types::ClaimKind> for wit::ClaimKind {
-    fn from(kind: types::ClaimKind) -> Self {
+impl From<ClaimKind> for wit::ClaimKind {
+    fn from(kind: ClaimKind) -> Self {
         match kind {
-            types::ClaimKind::Intent => Self::Intent,
-            types::ClaimKind::Requirement => Self::Requirement,
-            types::ClaimKind::Criterion => Self::Criterion,
-            types::ClaimKind::Decision => Self::Decision,
-            types::ClaimKind::Section => Self::Section,
-            types::ClaimKind::Diagram => Self::Diagram,
-            types::ClaimKind::Contract => Self::Contract,
-            types::ClaimKind::Example => Self::Example,
-            types::ClaimKind::Excerpt => Self::Excerpt,
-            types::ClaimKind::Type => Self::Type,
-            types::ClaimKind::Call => Self::Call,
-            types::ClaimKind::Region => Self::Region,
-            types::ClaimKind::Container => Self::Container,
-            types::ClaimKind::Leaf => Self::Leaf,
+            ClaimKind::Intent => Self::Intent,
+            ClaimKind::Requirement => Self::Requirement,
+            ClaimKind::Criterion => Self::Criterion,
+            ClaimKind::Decision => Self::Decision,
+            ClaimKind::Section => Self::Section,
+            ClaimKind::Diagram => Self::Diagram,
+            ClaimKind::Contract => Self::Contract,
+            ClaimKind::Example => Self::Example,
+            ClaimKind::Excerpt => Self::Excerpt,
+            ClaimKind::Type => Self::Type,
+            ClaimKind::Call => Self::Call,
+            ClaimKind::Region => Self::Region,
+            ClaimKind::Container => Self::Container,
+            ClaimKind::Leaf => Self::Leaf,
         }
     }
 }
 
-impl From<wit::ClaimKind> for types::ClaimKind {
+impl From<wit::ClaimKind> for ClaimKind {
     fn from(kind: wit::ClaimKind) -> Self {
         match kind {
             wit::ClaimKind::Intent => Self::Intent,
@@ -152,16 +154,16 @@ impl From<wit::ClaimKind> for types::ClaimKind {
     }
 }
 
-impl From<types::Backing> for wit::Backing {
-    fn from(backing: types::Backing) -> Self {
+impl From<Backing> for wit::Backing {
+    fn from(backing: Backing) -> Self {
         match backing {
-            types::Backing::Payload(payload) => Self::Payload(payload),
-            types::Backing::Path(path) => Self::Path(path),
+            Backing::Payload(payload) => Self::Payload(payload),
+            Backing::Path(path) => Self::Path(path),
         }
     }
 }
 
-impl From<wit::Backing> for types::Backing {
+impl From<wit::Backing> for Backing {
     fn from(backing: wit::Backing) -> Self {
         match backing {
             wit::Backing::Payload(payload) => Self::Payload(payload),
@@ -170,8 +172,8 @@ impl From<wit::Backing> for types::Backing {
     }
 }
 
-impl From<types::Claim> for wit::Claim {
-    fn from(claim: types::Claim) -> Self {
+impl From<Claim> for wit::Claim {
+    fn from(claim: Claim) -> Self {
         // Open body fields ride the wire as canonical JSON text (A8);
         // `serde_json::Value` always encodes.
         let extras =
@@ -190,7 +192,7 @@ impl From<types::Claim> for wit::Claim {
 // Lifts a claim off the wire, parsing each extra back from its canonical
 // JSON (A8); an extra that fails to parse is a typed error rather than a
 // dropped key.
-impl TryFrom<wit::Claim> for types::Claim {
+impl TryFrom<wit::Claim> for Claim {
     type Error = String;
 
     fn try_from(claim: wit::Claim) -> Result<Self, String> {
@@ -213,8 +215,8 @@ impl TryFrom<wit::Claim> for types::Claim {
     }
 }
 
-impl From<types::Evidence> for wit::Evidence {
-    fn from(evidence: types::Evidence) -> Self {
+impl From<Evidence> for wit::Evidence {
+    fn from(evidence: Evidence) -> Self {
         Self {
             authority: evidence.authority.into(),
             claims: evidence.claims.into_iter().map(Into::into).collect(),
@@ -222,7 +224,7 @@ impl From<types::Evidence> for wit::Evidence {
     }
 }
 
-impl TryFrom<wit::Evidence> for types::Evidence {
+impl TryFrom<wit::Evidence> for Evidence {
     type Error = String;
 
     fn try_from(evidence: wit::Evidence) -> Result<Self, String> {
@@ -265,11 +267,11 @@ pub mod import {
 
     use super::generated::emery::adapter::source as imported;
     use super::wit;
-    use crate::types;
+    use crate::{AdapterMetadata, Evidence, SourceInput};
 
     /// Returns resolve-time metadata for `id`.
     #[must_use]
-    pub fn metadata(id: &str) -> types::AdapterMetadata {
+    pub fn metadata(id: &str) -> AdapterMetadata {
         imported::metadata(id).into()
     }
 
@@ -279,7 +281,7 @@ pub mod import {
     ///
     /// An adapter refusing its input is `BadRequest`; any other adapter
     /// failure, or an extra that is not canonical JSON, is `BadGateway`.
-    pub async fn extract(id: &str, input: &types::SourceInput) -> Result<types::Evidence, Error> {
+    pub async fn extract(id: &str, input: &SourceInput) -> Result<Evidence, Error> {
         let answer = imported::extract(id.to_string(), input.clone().into()).await.map_err(
             |err| match err {
                 wit::Error::InvalidRequest(detail) => bad_request!("source `{id}`: {detail}"),
@@ -288,6 +290,6 @@ pub mod import {
                 }
             },
         )?;
-        types::Evidence::try_from(answer).map_err(|detail| bad_gateway!("source `{id}`: {detail}"))
+        Evidence::try_from(answer).map_err(|detail| bad_gateway!("source `{id}`: {detail}"))
     }
 }

@@ -1,33 +1,28 @@
 //! Source adapter SDK
 //!
 //! Everything an adapter author needs to build an Emery source adapter: the
-//! [`SourceAdapter`] trait to implement, the [`EvidenceTurn`] envelope and
-//! [`evidence`] call that ask the extract question, and the export macro that
-//! turns an implementation into a wasm component.
+//! [`SourceAdapter`] trait to implement, the [`Material`] an extraction hands
+//! the model, and the export macro that turns an implementation into a wasm
+//! component.
 //!
 //! The contract itself lives in `emery-source` and is re-exported here, so an
 //! adapter depends on one crate and never sees the wire bindings directly.
 //! Failures are omnia's [`Error`]: an adapter refuses its input with
 //! [`bad_request!`] and reports anything else with the sibling macros.
 
-mod evidence;
-mod operations;
+mod adapter;
 mod references;
-pub mod types;
+mod turn;
 
 #[cfg(target_arch = "wasm32")]
 pub mod source;
 
-pub use emery_source::Source;
-pub use evidence::{EvidenceTurn, content_note, evidence};
-#[cfg(target_arch = "wasm32")]
-pub use omnia_guest::model::WasiModel;
-pub use omnia_guest::model::{
-    Findings, Format, Function, Message, Question, Reply, Request, Role, SchemaFormat, Tool,
-    ToolCall, ToolFuture, Tools,
+pub use adapter::{Context, SourceAdapter};
+pub use emery_source::{
+    AdapterMetadata, Authority, Backing, Claim, ClaimKind, Evidence, SourceContent, SourceInput,
 };
-pub use omnia_guest::{Error, Model, bad_gateway, bad_request, not_found, server_error};
-pub use operations::SourceAdapter;
+pub use omnia_guest::{Error, Model, bad_gateway, bad_request, model, not_found, server_error};
+pub use turn::Material;
 
 /// Wires a [`SourceAdapter`] into component exports.
 ///

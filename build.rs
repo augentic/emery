@@ -42,29 +42,12 @@ fn main() {
     }
 }
 
-// Precompiles the component ahead of time for the consuming binary; the
-// runtime options and Cargo's target triple must match it.
-fn precompile(raw: &Path, out: &Path) {
-    let options = omnia::RuntimeOptions::load_env().expect("runtime options from the build env");
-    let mut config = omnia::wasmtime::Config::from(&options);
-    let triple = std::env::var("TARGET").expect("cargo env");
-    config.target(&triple).unwrap_or_else(|err| {
-        panic!("wasmtime cannot compile for target {triple}: {err}");
-    });
-
-    let engine = omnia::wasmtime::Engine::new(&config).expect("wasmtime engine for AOT compile");
-    let component = omnia::wasmtime::component::Component::from_file(&engine, raw)
-        .unwrap_or_else(|err| panic!("compiling engine component {}: {err}", raw.display()));
-    let serialized = component.serialize().expect("serializing the compiled engine component");
-
-    std::fs::write(out, serialized)
-        .unwrap_or_else(|err| panic!("writing {}: {err}", out.display()));
-}
-
+// Builds the engine guest for wasm32 in a nested Cargo invocation and returns
+// the component's path.
 fn build_engine() -> PathBuf {
     let manifest_dir = PathBuf::from(std::env::var_os("CARGO_MANIFEST_DIR").expect("cargo env"));
     for tracked in ["src", "crates", "wit", "Cargo.toml", "Cargo.lock"] {
-        println!("cargo:rerun-if-changed={}", manifest_dir.join(tracked).display());
+        println!("cargo::rerun-if-changed={}", manifest_dir.join(tracked).display());
     }
 
     check_wasm_target();
@@ -141,4 +124,23 @@ fn check_wasm_target() {
     }
     let libdir = PathBuf::from(String::from_utf8_lossy(&output.stdout).trim());
     assert!(libdir.is_dir(), "{TARGET_HINT}");
+}
+
+// Precompiles the component ahead of time for the consuming binary; the
+// runtime options and Cargo's target triple must match it.
+fn precompile(raw: &Path, out: &Path) {
+    let options = omnia::RuntimeOptions::load_env().expect("runtime options from the build env");
+    let mut config = omnia::wasmtime::Config::from(&options);
+    let triple = std::env::var("TARGET").expect("cargo env");
+    config.target(&triple).unwrap_or_else(|err| {
+        panic!("wasmtime cannot compile for target {triple}: {err}");
+    });
+
+    let engine = omnia::wasmtime::Engine::new(&config).expect("wasmtime engine for AOT compile");
+    let component = omnia::wasmtime::component::Component::from_file(&engine, raw)
+        .unwrap_or_else(|err| panic!("compiling engine component {}: {err}", raw.display()));
+    let serialized = component.serialize().expect("serializing the compiled engine component");
+
+    std::fs::write(out, serialized)
+        .unwrap_or_else(|err| panic!("writing {}: {err}", out.display()));
 }
