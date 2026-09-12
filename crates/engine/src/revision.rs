@@ -149,23 +149,6 @@ fn write_block(f: &mut Formatter<'_>, block: &str) -> fmt::Result {
     Ok(())
 }
 
-// // Deserialises one revision document after checking its grammar stamp: the
-// // stamp is the one field every grammar shares, so it is read before the shape.
-// fn stamped<D: Document + DeserializeOwned>(value: Value) -> Result<D, Error> {
-//     let name = D::FILE;
-//     let stamp = &value["emery"];
-//     if *stamp != EMERY {
-//         return Err(Error::BadRequest {
-//             code: "spec-outdated".into(),
-//             description: format!(
-//                 "`{name}` was written under emery grammar {stamp}; this engine reads {EMERY}"
-//             ),
-//         });
-//     }
-
-//     serde_json::from_value(value).map_err(|err| server_error!("`{name}` is not a revision: {err}"))
-// }
-
 /// Hashes stored files as SHA-256 over the length-prefixed names and bodies,
 /// in the order given; the id of the revision whose files they are.
 pub fn digest<'a>(files: impl Iterator<Item = (&'a str, &'a [u8])>) -> String {
