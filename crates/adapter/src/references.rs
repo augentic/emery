@@ -59,13 +59,7 @@ pub fn answering(docs: &'static [Doc]) -> Option<Tools> {
     })
 }
 
-/// Answers one reference tool call over the embedded `docs`.
-///
-/// # Errors
-///
-/// Returns a repairable message for an unknown tool, malformed
-/// arguments, or an unembedded path.
-pub fn answer(docs: &[Doc], call: &ToolCall) -> Result<String, String> {
+fn answer(docs: &[Doc], call: &ToolCall) -> Result<String, String> {
     match call.name.as_str() {
         "list_docs" => {
             let paths: Vec<&str> = docs.iter().map(|doc| doc.path).collect();

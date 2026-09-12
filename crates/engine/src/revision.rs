@@ -24,10 +24,10 @@ use serde::de::DeserializeOwned;
 use serde_json::Value;
 use sha2::{Digest, Sha256};
 
-pub use self::design::{Block, Design, Section, SectionKind, TYPE, citations};
-pub use self::spec::{
-    Cited, ID, Loser, NOTE, ReqId, Requirement, SOURCES, STATUS, Scenario, Spec, Status,
-};
+use self::design::TYPE;
+pub use self::design::{Block, Design, Section, SectionKind, citations};
+pub use self::spec::{Cited, Loser, ReqId, Requirement, Scenario, Spec, Status};
+use self::spec::{ID, NOTE, SOURCES, STATUS};
 
 /// The grammar this engine writes and reads; a stored revision stamped with
 /// another is outdated.
@@ -41,9 +41,24 @@ pub const RESERVED: &[&str] = &["#", ID, SOURCES, STATUS, NOTE, TYPE];
 /// One document of a revision: a serde shape under the [`EMERY`] stamp that
 /// the store files under a fixed name and the projection renders by
 /// `Display`.
-pub trait Document: Serialize + Display {
+pub trait Document: Serialize + DeserializeOwned + Display {
     /// The file name the store commits the document under.
     const FILE: &'static str;
+
+    /// Deserialises one document from its JSON.
+    fn from_json(value: Value) -> Result<Self, Error> {
+        if value["emery"] != EMERY {
+            return Err(Error::BadRequest {
+                code: "spec-outdated".into(),
+                description: format!(
+                    "`{}` was not written under emery grammar {EMERY}",
+                    Self::FILE
+                ),
+            });
+        }
+        serde_json::from_value(value)
+            .map_err(|err| server_error!("`{}` is not a revision: {err}", Self::FILE))
+    }
 
     /// The canonical JSON the store hashes and writes: pretty, declaration
     /// order, one trailing newline.
@@ -92,8 +107,8 @@ impl Revision {
     /// does not fit the revision, since this engine did not write it.
     pub fn read(spec: Value, design: Value) -> Result<Self, Error> {
         Ok(Self {
-            spec: stamped(spec)?,
-            design: stamped(design)?,
+            spec: Spec::from_json(spec)?,
+            design: Design::from_json(design)?,
         })
     }
 
@@ -101,6 +116,13 @@ impl Revision {
     #[must_use]
     pub fn files(&self) -> Vec<(&'static str, String)> {
         vec![(Spec::FILE, self.spec.to_json()), (Design::FILE, self.design.to_json())]
+    }
+
+    /// The content id: the digest of every file, in digest order.
+    #[must_use]
+    pub fn id(&self) -> String {
+        let files = self.files();
+        digest(files.iter().map(|(name, body)| (*name, body.as_bytes())))
     }
 }
 
@@ -127,22 +149,22 @@ fn write_block(f: &mut Formatter<'_>, block: &str) -> fmt::Result {
     Ok(())
 }
 
-// Deserialises one revision document after checking its grammar stamp: the
-// stamp is the one field every grammar shares, so it is read before the shape.
-fn stamped<D: Document + DeserializeOwned>(value: Value) -> Result<D, Error> {
-    let name = D::FILE;
-    let stamp = &value["emery"];
-    if *stamp != EMERY {
-        return Err(Error::BadRequest {
-            code: "spec-outdated".into(),
-            description: format!(
-                "`{name}` was written under emery grammar {stamp}; this engine reads {EMERY}"
-            ),
-        });
-    }
+// // Deserialises one revision document after checking its grammar stamp: the
+// // stamp is the one field every grammar shares, so it is read before the shape.
+// fn stamped<D: Document + DeserializeOwned>(value: Value) -> Result<D, Error> {
+//     let name = D::FILE;
+//     let stamp = &value["emery"];
+//     if *stamp != EMERY {
+//         return Err(Error::BadRequest {
+//             code: "spec-outdated".into(),
+//             description: format!(
+//                 "`{name}` was written under emery grammar {stamp}; this engine reads {EMERY}"
+//             ),
+//         });
+//     }
 
-    serde_json::from_value(value).map_err(|err| server_error!("`{name}` is not a revision: {err}"))
-}
+//     serde_json::from_value(value).map_err(|err| server_error!("`{name}` is not a revision: {err}"))
+// }
 
 /// Hashes stored files as SHA-256 over the length-prefixed names and bodies,
 /// in the order given; the id of the revision whose files they are.

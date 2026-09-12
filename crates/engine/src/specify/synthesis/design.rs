@@ -16,7 +16,7 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 use strum::VariantArray as _;
 
-use crate::artifact::{self, Design, EMERY, Section, SectionKind, Spec, citations};
+use crate::revision::{self, Design, EMERY, Section, SectionKind, Spec, citations};
 use crate::specify::Extract;
 use crate::specify::brief::{Brief, Review};
 use crate::specify::synthesis::ClaimsSection;
@@ -162,7 +162,7 @@ impl Brief for DesignBrief<'_> {
                     .blocks
                     .into_iter()
                     .map(|block| match block {
-                        Block::Text(text) => artifact::Block::Text(text),
+                        Block::Text(text) => revision::Block::Text(text),
                         Block::Type(key) => {
                             let signature = self
                                 .plan
@@ -170,7 +170,7 @@ impl Brief for DesignBrief<'_> {
                                 .get(key.as_str())
                                 .copied()
                                 .expect("verify held the draft to the type claims");
-                            artifact::Block::Type {
+                            revision::Block::Type {
                                 key,
                                 signature: signature.to_string(),
                             }

@@ -33,7 +33,7 @@ use omnia_guest::{BlobStore, Error, Model, Plugins, StateStore, bad_request};
 use serde::{Deserialize, Serialize};
 
 use crate::adapter::{AdapterRef, Loader};
-pub use crate::artifact::{ReqId, SectionKind};
+pub use crate::revision::{ReqId, SectionKind};
 pub use crate::store::{Changed, DesignDiff, Diff, Entry, SpecDiff};
 use crate::{preopen_path, store};
 

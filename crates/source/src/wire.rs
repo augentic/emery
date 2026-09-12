@@ -5,12 +5,12 @@
 //! rest of the workspace uses.
 //!
 //! Both directions come from one generation: adapters export through it via
-//! the SDK's `source!` macro over [`export`], and the engine guest calls into
-//! it through [`import`]. The records live in the WIT `types` interface, so
-//! the export side and the caller side bind the same Rust types and each
-//! conversion is written once, here at the module root — `From` where the
-//! wire form always lifts, `TryFrom` where an extra's canonical JSON must
-//! parse.
+//! the SDK's `source!` macro over [`export`] (re-exported at the crate root),
+//! and the engine guest calls into it through [`import`]. The records live
+//! in the WIT `types` interface, so the export side and the caller side bind
+//! the same Rust types and each conversion is written once, here at the
+//! module root — `From` where the wire form always lifts, `TryFrom` where an
+//! extra's canonical JSON must parse.
 //!
 //! The WIT `error` variant lives here alone: an adapter's `omnia_guest::Error`
 //! is lowered onto it for [`export`], and [`import::extract`] lifts it back

@@ -9,7 +9,7 @@
 //! This is the only wasm-specific code an adapter carries, which keeps the
 //! rest of its logic portable and testable natively.
 
-pub use emery_source::wire::export::*;
+pub use emery_source::export::*;
 
 use crate::types::{Context, SourceContent, SourceInput};
 use crate::{SourceAdapter, WasiModel};

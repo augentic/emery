@@ -10,7 +10,7 @@ use std::fmt::{self, Display, Formatter};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-use crate::artifact;
+use crate::revision;
 
 const CITATION: &str = "(from ";
 
@@ -37,14 +37,14 @@ impl Design {
     }
 }
 
-impl artifact::Document for Design {
+impl revision::Document for Design {
     const FILE: &'static str = "design.json";
 }
 
 // Renders `design.md`: the preamble, then every section under its heading.
 impl Display for Design {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        artifact::write(f, "Design", &self.preamble, &self.sections)
+        revision::write(f, "Design", &self.preamble, &self.sections)
     }
 }
 

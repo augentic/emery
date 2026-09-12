@@ -15,7 +15,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use strum::{AsRefStr, EnumString, VariantArray};
 
-use crate::artifact::Document;
+use crate::revision::Document;
 use crate::store;
 
 /// Reads one document of the current revision over the context's provider,
@@ -28,8 +28,6 @@ use crate::store;
 pub async fn show<P: StateStore + BlobStore>(
     input: ShowInput, context: Context<P>,
 ) -> Result<ShowOutput, Error> {
-    let ShowInput { artifact } = input;
-
     let Some((id, revision)) = store::current(context.provider()).await? else {
         return Err(Error::NotFound {
             code: "spec-not-generated".into(),
@@ -37,9 +35,9 @@ pub async fn show<P: StateStore + BlobStore>(
         });
     };
 
-    match artifact {
-        Artifact::Spec => reviewed(&revision.spec, id),
-        Artifact::Design => reviewed(&revision.design, id),
+    match input.artifact {
+        Artifact::Spec => ShowOutput::new(&revision.spec, id),
+        Artifact::Design => ShowOutput::new(&revision.design, id),
     }
 }
 
@@ -76,14 +74,15 @@ pub struct ShowOutput {
     pub document: Value,
 }
 
-// Pairs one document's projection and stored shape with its revision id.
-fn reviewed<D: Document>(document: &D, revision: String) -> Result<ShowOutput, Error> {
-    let value = serde_json::to_value(document)
-        .map_err(|err| server_error!("`{}` did not serialise: {err}", D::FILE))?;
+impl ShowOutput {
+    fn new<D: Document>(document: &D, revision: String) -> Result<Self, Error> {
+        let value = serde_json::to_value(document)
+            .map_err(|err| server_error!("`{}` did not serialise: {err}", D::FILE))?;
 
-    Ok(ShowOutput {
-        body: document.to_markdown(&revision),
-        revision,
-        document: value,
-    })
+        Ok(Self {
+            body: document.to_markdown(&revision),
+            revision,
+            document: value,
+        })
+    }
 }

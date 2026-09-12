@@ -14,6 +14,8 @@ pub mod claims;
 pub mod types;
 
 #[cfg(target_arch = "wasm32")]
-pub mod wire;
+mod wire;
 
 pub use capability::Source;
+#[cfg(target_arch = "wasm32")]
+pub use wire::export;

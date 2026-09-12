@@ -10,7 +10,7 @@
 //! terminal text, and exit codes to whichever front end drives it.
 
 mod adapter;
-mod artifact;
+mod revision;
 pub mod show;
 pub mod specify;
 mod store;

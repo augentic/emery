@@ -15,7 +15,7 @@ use omnia_guest::{BlobStore, Error, StateStore, server_error};
 use serde::Serialize;
 use serde_json::Value;
 
-use crate::artifact::{
+use crate::revision::{
     Design, Document as _, ReqId, Requirement, Revision, SectionKind, Spec, digest,
 };
 
@@ -55,9 +55,8 @@ async fn swap<S: StateStore + BlobStore>(
         BlobStore::create_container(store, CONTAINER).await?;
     }
 
-    let files = revision.files();
-    let id = digest(files.iter().map(|(name, body)| (*name, body.as_bytes())));
-    for (name, body) in files {
+    let id = revision.id();
+    for (name, body) in revision.files() {
         BlobStore::put(store, CONTAINER, &key(&id, name), body.as_bytes())
             .await
             .context("writing revision document")?;
@@ -309,7 +308,7 @@ mod tests {
     use omnia_test::guest::Memory;
 
     use super::*;
-    use crate::artifact::EMERY;
+    use crate::revision::EMERY;
 
     #[tokio::test]
     async fn commit_conflict() {

@@ -12,7 +12,7 @@ use emery_source::types::Authority;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-use crate::artifact;
+use crate::revision;
 
 /// The `ID:` provenance key; the three keys follow the heading in this order.
 pub const ID: &str = "ID:";
@@ -46,14 +46,14 @@ impl Spec {
     }
 }
 
-impl artifact::Document for Spec {
+impl revision::Document for Spec {
     const FILE: &'static str = "spec.json";
 }
 
 // Renders `spec.md`: the preamble, then every requirement block.
 impl Display for Spec {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        artifact::write(f, "Specification", &self.preamble, &self.requirements)
+        revision::write(f, "Specification", &self.preamble, &self.requirements)
     }
 }
 

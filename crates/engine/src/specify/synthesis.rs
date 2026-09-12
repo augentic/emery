@@ -25,7 +25,7 @@ use serde_json::Value;
 
 use self::design::DesignBrief;
 use self::spec::SpecBrief;
-use crate::artifact::Revision;
+use crate::revision::Revision;
 use crate::specify::brief::Brief as _;
 use crate::specify::{Extract, basis};
 

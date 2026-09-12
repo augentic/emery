@@ -15,7 +15,7 @@ use schemars::JsonSchema;
 use serde::Deserialize;
 use serde_json::{Value, json};
 
-use crate::artifact::{EMERY, Scenario, Spec, Status};
+use crate::revision::{EMERY, Scenario, Spec, Status};
 use crate::specify::Extract;
 use crate::specify::basis::Basis;
 use crate::specify::brief::{Brief, Review};

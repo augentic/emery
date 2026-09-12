@@ -12,7 +12,7 @@
 
 mod evidence;
 mod operations;
-pub mod references;
+mod references;
 pub mod types;
 
 #[cfg(target_arch = "wasm32")]

@@ -24,7 +24,7 @@ use schemars::JsonSchema;
 use serde::Deserialize;
 use serde_json::{Value, json};
 
-use crate::artifact::{Cited, Loser, ReqId, Requirement, Scenario, Status};
+use crate::revision::{Cited, Loser, ReqId, Requirement, Scenario, Status};
 use crate::specify::Extract;
 use crate::specify::brief::{Brief, Review};
 
@@ -45,7 +45,7 @@ pub async fn derive<M: Model>(model: &M, extracts: &[Extract]) -> Result<Vec<Bas
 #[derive(Debug, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 #[schemars(title = "Emery grouping answer")]
-pub struct Grouping {
+struct Grouping {
     /// One entry per requirement.
     pub groups: Vec<Group>,
 }
@@ -53,7 +53,7 @@ pub struct Grouping {
 /// The claims of one requirement and how they agree.
 #[derive(Debug, Default, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
-pub struct Group {
+struct Group {
     /// Indices of every claim describing this requirement.
     pub claims: Vec<usize>,
     /// A partition of `claims`: each class holds claims that say the same
