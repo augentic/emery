@@ -117,7 +117,7 @@ impl Claim {
             Some(id) if !is_valid(id) => {
                 Some(format!("- claim {index}: id `{id}` does not match `{CLAIM_ID_REGEX}`"))
             }
-            None if !kind.required_extras().is_empty() => {
+            None if kind.requires_id() => {
                 Some(format!("- claim {index}: `{kind}` claims require an id"))
             }
             _ => None,
@@ -175,6 +175,13 @@ pub enum ClaimKind {
 }
 
 impl ClaimKind {
+    /// Tells whether a claim of this kind must carry an id: requirements,
+    /// criteria, and examples, the kinds a specification cites by id.
+    #[must_use]
+    pub const fn requires_id(self) -> bool {
+        matches!(self, Self::Requirement | Self::Criterion | Self::Example)
+    }
+
     /// Returns the extras this kind must carry.
     ///
     /// Widening this closed table is a contract change.

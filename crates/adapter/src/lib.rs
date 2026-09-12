@@ -14,7 +14,9 @@ mod adapter;
 mod references;
 mod turn;
 
+// The `source!` macro expands against this; no adapter names it.
 #[cfg(target_arch = "wasm32")]
+#[doc(hidden)]
 pub mod source;
 
 pub use adapter::{Context, SourceAdapter};

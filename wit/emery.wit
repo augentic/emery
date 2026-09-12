@@ -8,10 +8,10 @@ package emery:adapter@0.1.0;
 /// operations so that a world importing and exporting `source` binds
 /// them once, and the caller side and the export side share one type.
 interface types {
-  /// The error returned by operations.
+  /// The error returned by operations: the adapter refused its input, or
+  /// failed on its own account.
   variant error {
     invalid-request(string),
-    io(string),
     internal(string),
   }
 

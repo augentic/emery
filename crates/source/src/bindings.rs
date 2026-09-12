@@ -237,8 +237,7 @@ impl TryFrom<wit::Evidence> for Evidence {
 
 // Lowers an adapter failure onto the WIT bindings, which carries the description
 // alone: a refusal of the input becomes `invalid-request`, every other
-// class `internal`; the lift restores the class. `io` is lifted but never
-// produced.
+// class `internal`; the lift restores the class.
 impl From<omnia_guest::Error> for wit::Error {
     fn from(error: omnia_guest::Error) -> Self {
         let description = error.description();
@@ -285,9 +284,7 @@ pub mod import {
         let answer = imported::extract(id.to_string(), input.clone().into()).await.map_err(
             |err| match err {
                 wit::Error::InvalidRequest(detail) => bad_request!("source `{id}`: {detail}"),
-                wit::Error::Io(detail) | wit::Error::Internal(detail) => {
-                    bad_gateway!("source `{id}`: {detail}")
-                }
+                wit::Error::Internal(detail) => bad_gateway!("source `{id}`: {detail}"),
             },
         )?;
         Evidence::try_from(answer).map_err(|detail| bad_gateway!("source `{id}`: {detail}"))

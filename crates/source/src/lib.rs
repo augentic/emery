@@ -11,11 +11,14 @@
 
 #[cfg(target_arch = "wasm32")]
 mod bindings;
+
 mod capability;
 mod evidence;
 mod grammar;
 
+// The SDK's `source!` macro expands against these; no adapter names them.
 #[cfg(target_arch = "wasm32")]
+#[doc(hidden)]
 pub use bindings::export;
 pub use capability::{AdapterMetadata, Source, SourceContent, SourceInput};
 pub use evidence::{Authority, Backing, Claim, ClaimKind, Evidence};
