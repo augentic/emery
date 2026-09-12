@@ -27,7 +27,7 @@ const HEADING: &str = "### Requirement:";
 const SCENARIO: &str = "#### Scenario:";
 
 /// The specification.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Spec {
     /// The grammar the document was written under.
@@ -46,6 +46,10 @@ impl Spec {
     }
 }
 
+impl artifact::Document for Spec {
+    const FILE: &'static str = "spec.json";
+}
+
 // Renders `spec.md`: the preamble, then every requirement block.
 impl Display for Spec {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
@@ -54,7 +58,7 @@ impl Display for Spec {
 }
 
 /// One requirement: the engine's facts and the drafted prose.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Requirement {
     /// The stable id.
@@ -140,7 +144,7 @@ impl Display for Requirement {
 }
 
 /// One cited claim: the source key and the claim id it contributed.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Cited {
     /// The source key.
@@ -157,7 +161,7 @@ impl Display for Cited {
 }
 
 /// One class whose statement the requirement records as a note.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Loser {
     /// Every member's source key, in authority order.
@@ -186,7 +190,7 @@ impl Display for Loser {
 
 /// One acceptance scenario: the shape the specification stores and the shape a
 /// draft answers in — the same fields, so the draft is placed as it stands.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct Scenario {
     /// The scenario heading name.
@@ -229,7 +233,7 @@ impl Display for Scenario {
 
 /// A requirement id, `REQ-NNN`: a positive number, zero-padded to at least
 /// three digits.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(try_from = "String", into = "String")]
 pub struct ReqId(u32);
 

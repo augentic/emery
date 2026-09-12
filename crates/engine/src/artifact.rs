@@ -7,10 +7,11 @@
 //! never parsed back from prose.
 //!
 //! This module carries the model both documents share — the revision, its
-//! id, and the projection renderer — together with the vocabulary the
-//! renderer and the drafting checks agree on: the heading markers, the
-//! provenance and note keys, and the line openers a drafted paragraph may not
-//! use because the renderer owns them.
+//! id, and the [`Document`] contract each of its files meets: a fixed file
+//! name, the canonical bytes, and the projection — together with the
+//! vocabulary the renderer and the drafting checks agree on: the heading
+//! markers, the provenance and note keys, and the line openers a drafted
+//! paragraph may not use because the renderer owns them.
 
 mod design;
 mod spec;
@@ -18,13 +19,10 @@ mod spec;
 use std::fmt::{self, Display, Formatter};
 
 use omnia_guest::{Error, server_error};
+use serde::Serialize;
 use serde::de::DeserializeOwned;
-use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use sha2::{Digest, Sha256};
-use strum::AsRefStr;
-use strum::EnumString;
-use strum::VariantArray;
 
 pub use self::design::{Block, Design, Section, SectionKind, TYPE, citations};
 pub use self::spec::{
@@ -40,27 +38,29 @@ pub const EMERY: u32 = 2;
 /// line keys, so no draft line passes as provenance, a note, or a type label.
 pub const RESERVED: &[&str] = &["#", ID, SOURCES, STATUS, NOTE, TYPE];
 
-/// The two artifacts of one revision, in digest order. A caller names one by
-/// its kebab-case key (`as_ref()` / `parse()`, `spec`), the same spelling
-/// serde uses.
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, AsRefStr, EnumString, VariantArray)]
-#[serde(rename_all = "kebab-case")]
-#[strum(serialize_all = "kebab-case")]
-pub enum Artifact {
-    /// The behavioural specification.
-    Spec,
-    /// The rebuild design.
-    Design,
-}
+/// One document of a revision: a serde shape under the [`EMERY`] stamp that
+/// the store files under a fixed name and the projection renders by
+/// `Display`.
+pub trait Document: Serialize + Display {
+    /// The file name the store commits the document under.
+    const FILE: &'static str;
 
-impl Artifact {
-    /// The revision document's file name in the store.
+    /// The canonical JSON the store hashes and writes: pretty, declaration
+    /// order, one trailing newline.
     #[must_use]
-    pub const fn file(self) -> &'static str {
-        match self {
-            Self::Spec => "spec.json",
-            Self::Design => "design.json",
-        }
+    fn to_json(&self) -> String {
+        let mut text = serde_json::to_string_pretty(self)
+            .expect("the revision serialises: no maps with non-string keys, no floats");
+        text.push('\n');
+        text
+    }
+
+    /// The Markdown projection: the front matter stamping the grammar and
+    /// `revision` — the id of the revision this document belongs to, which
+    /// the caller has already computed — then the document body.
+    #[must_use]
+    fn to_markdown(&self, id: &str) -> String {
+        format!("---\nemery: {EMERY}\nrevision: {id}\n---\n\n{self}")
     }
 }
 
@@ -70,8 +70,7 @@ impl Artifact {
 /// The id is a function of the content alone, so identical runs are
 /// byte-stable and a revision read back from storage is verified against the
 /// id it was stored under.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
+#[derive(Debug)]
 pub struct Revision {
     /// The behavioural specification.
     pub spec: Spec,
@@ -80,6 +79,9 @@ pub struct Revision {
 }
 
 impl Revision {
+    /// Every file name a revision holds, in digest order.
+    pub const FILES: [&'static str; 2] = [Spec::FILE, Design::FILE];
+
     /// Reads a revision from its two JSON documents, refusing another
     /// grammar's before the shape is checked.
     ///
@@ -90,40 +92,15 @@ impl Revision {
     /// does not fit the revision, since this engine did not write it.
     pub fn read(spec: Value, design: Value) -> Result<Self, Error> {
         Ok(Self {
-            spec: stamped(spec, Artifact::Spec)?,
-            design: stamped(design, Artifact::Design)?,
+            spec: stamped(spec)?,
+            design: stamped(design)?,
         })
     }
 
-    /// Serialises each document as canonical JSON, in digest order: pretty,
-    /// declaration order, one trailing newline.
+    /// Each document as canonical JSON under its file name, in digest order.
     #[must_use]
-    pub fn files(&self) -> Vec<(Artifact, String)> {
-        Artifact::VARIANTS
-            .iter()
-            .copied()
-            .map(|artifact| {
-                let mut text = match artifact {
-                    Artifact::Spec => serde_json::to_string_pretty(&self.spec),
-                    Artifact::Design => serde_json::to_string_pretty(&self.design),
-                }
-                .expect("the revision serialises: no maps with non-string keys, no floats");
-                text.push('\n');
-                (artifact, text)
-            })
-            .collect()
-    }
-
-    /// Renders `artifact`'s Markdown projection: the front matter stamping
-    /// the grammar and `revision` — this revision's id, which the caller has
-    /// already computed — then the document body.
-    #[must_use]
-    pub fn render(&self, artifact: Artifact, id: &str) -> String {
-        let body: &dyn Display = match artifact {
-            Artifact::Spec => &self.spec,
-            Artifact::Design => &self.design,
-        };
-        format!("---\nemery: {EMERY}\nrevision: {id}\n---\n\n{body}")
+    pub fn files(&self) -> Vec<(&'static str, String)> {
+        vec![(Spec::FILE, self.spec.to_json()), (Design::FILE, self.design.to_json())]
     }
 }
 
@@ -152,8 +129,8 @@ fn write_block(f: &mut Formatter<'_>, block: &str) -> fmt::Result {
 
 // Deserialises one revision document after checking its grammar stamp: the
 // stamp is the one field every grammar shares, so it is read before the shape.
-fn stamped<T: DeserializeOwned>(value: Value, artifact: Artifact) -> Result<T, Error> {
-    let name = artifact.file();
+fn stamped<D: Document + DeserializeOwned>(value: Value) -> Result<D, Error> {
+    let name = D::FILE;
     let stamp = &value["emery"];
     if *stamp != EMERY {
         return Err(Error::BadRequest {

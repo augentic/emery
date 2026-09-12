@@ -18,7 +18,7 @@ const CITATION: &str = "(from ";
 pub const TYPE: &str = "Type:";
 
 /// The design.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Design {
     /// The grammar the document was written under.
@@ -37,6 +37,10 @@ impl Design {
     }
 }
 
+impl artifact::Document for Design {
+    const FILE: &'static str = "design.json";
+}
+
 // Renders `design.md`: the preamble, then every section under its heading.
 impl Display for Design {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
@@ -46,7 +50,7 @@ impl Display for Design {
 
 /// One `## ` section: the revision's, over its placed [`Block`]s, or a
 /// draft's, over the blocks a draft answers in.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 #[schemars(rename = "Section")]
 pub struct Section<B = Block> {
@@ -68,7 +72,7 @@ impl Display for Section {
 }
 
 /// One design block: a drafted paragraph, or a `type` claim's signature.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum Block {
     /// One Markdown paragraph.

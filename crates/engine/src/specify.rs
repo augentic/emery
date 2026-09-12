@@ -51,8 +51,7 @@ pub async fn specify<P: Model + Source + StateStore + BlobStore + Plugins>(
 ) -> Result<SpecifyOutput, Error> {
     let provider = context.provider();
 
-    let prepared = input.prepare()?;
-    let extracts = input.extract(provider, prepared).await?;
+    let extracts = input.extract(provider).await?;
     let revision = synthesis::synthesise(provider, &extracts).await?;
     let (id, diff) = store::commit(provider, &revision).await?;
 
@@ -67,6 +66,38 @@ pub struct SpecifyInput {
 }
 
 impl SpecifyInput {
+    async fn extract<P: Source + Plugins>(&self, provider: &P) -> Result<Vec<Extract>, Error> {
+        let inputs = self.prepare()?;
+
+        let mut extracts = Vec::with_capacity(self.sources.len());
+        let loader = Loader::new(provider);
+
+        for (config, input) in self.sources.iter().zip(inputs) {
+            let id = loader
+                .load(&config.adapter, config.digest.as_ref(), config.registry.as_deref())
+                .await?;
+
+            let key = input.key.as_str();
+            tracing::debug!(config = %key, "extracting");
+            let evidence = Source::extract(provider, &id, &input).await?;
+
+            // The adapter is a guest the engine did not write, so the
+            // contract's claim gate is re-run here, fail-closed.
+            let findings = evidence.findings();
+            if !findings.is_empty() {
+                let findings = findings.join("\n");
+                return Err(bad_request!("source `{key}` returned invalid claims:\n{findings}"));
+            }
+
+            extracts.push(Extract {
+                key: input.key,
+                evidence,
+            });
+        }
+
+        Ok(extracts)
+    }
+
     fn prepare(&self) -> Result<Vec<SourceInput>, Error> {
         if self.sources.is_empty() {
             return Err(Error::BadRequest {
@@ -86,38 +117,6 @@ impl SpecifyInput {
         }
 
         Ok(inputs)
-    }
-
-    async fn extract<P: Source + Plugins>(
-        &self, provider: &P, inputs: Vec<SourceInput>,
-    ) -> Result<Vec<Extract>, Error> {
-        let mut extracts = Vec::with_capacity(self.sources.len());
-        let loader = Loader::new(provider);
-
-        for (source, input) in self.sources.iter().zip(inputs) {
-            let id = loader
-                .load(&source.adapter, source.digest.as_ref(), source.registry.as_deref())
-                .await?;
-
-            let key = input.key.as_str();
-            tracing::debug!(source = %key, "extracting");
-            let evidence = Source::extract(provider, &id, &input).await?;
-
-            // The adapter is a guest the engine did not write, so the
-            // contract's claim gate is re-run here, fail-closed.
-            let findings = evidence.findings();
-            if !findings.is_empty() {
-                let findings = findings.join("\n");
-                return Err(bad_request!("source `{key}` returned invalid claims:\n{findings}"));
-            }
-
-            extracts.push(Extract {
-                key: input.key,
-                evidence,
-            });
-        }
-
-        Ok(extracts)
     }
 }
 

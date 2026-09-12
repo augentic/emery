@@ -14,9 +14,10 @@ use anyhow::Context;
 use omnia_guest::{BlobStore, Error, StateStore, server_error};
 use serde::Serialize;
 use serde_json::Value;
-use strum::VariantArray as _;
 
-use crate::artifact::{Artifact, Design, ReqId, Requirement, Revision, SectionKind, Spec, digest};
+use crate::artifact::{
+    Design, Document as _, ReqId, Requirement, Revision, SectionKind, Spec, digest,
+};
 
 /// Keyvalue key holding the current revision id.
 pub const CURRENT: &str = "current-revision";
@@ -55,9 +56,9 @@ async fn swap<S: StateStore + BlobStore>(
     }
 
     let files = revision.files();
-    let id = digest(files.iter().map(|(artifact, body)| (artifact.file(), body.as_bytes())));
-    for (artifact, body) in files {
-        BlobStore::put(store, CONTAINER, &key(&id, artifact), body.as_bytes())
+    let id = digest(files.iter().map(|(name, body)| (*name, body.as_bytes())));
+    for (name, body) in files {
+        BlobStore::put(store, CONTAINER, &key(&id, name), body.as_bytes())
             .await
             .context("writing revision document")?;
     }
@@ -68,8 +69,8 @@ async fn swap<S: StateStore + BlobStore>(
 
     // The swap landed; prune the outgoing revision.
     if let Some(outgoing) = observed.outgoing_id().filter(|outgoing| *outgoing != id) {
-        for artifact in Artifact::VARIANTS {
-            let _ = BlobStore::delete(store, CONTAINER, &key(outgoing, *artifact)).await;
+        for name in Revision::FILES {
+            let _ = BlobStore::delete(store, CONTAINER, &key(outgoing, name)).await;
         }
     }
 
@@ -77,8 +78,8 @@ async fn swap<S: StateStore + BlobStore>(
 }
 
 // The blob name a revision's document is stored under.
-fn key(id: &str, artifact: Artifact) -> String {
-    format!("{id}/{}", artifact.file())
+fn key(id: &str, name: &str) -> String {
+    format!("{id}/{name}")
 }
 
 /// Returns the current revision id and value in `store`, or `None` before the
@@ -117,11 +118,10 @@ async fn observe<S: StateStore + BlobStore>(store: &S) -> Observation {
 // store is content-addressed, so documents that no longer match the id they
 // sit under are corruption, not a revision.
 async fn load<S: BlobStore>(store: &S, id: &str) -> Result<Revision, Error> {
-    let spec = read(store, id, Artifact::Spec).await?;
-    let design = read(store, id, Artifact::Design).await?;
+    let spec = read(store, id, Spec::FILE).await?;
+    let design = read(store, id, Design::FILE).await?;
 
-    let files =
-        [(Artifact::Spec.file(), spec.as_slice()), (Artifact::Design.file(), design.as_slice())];
+    let files = [(Spec::FILE, spec.as_slice()), (Design::FILE, design.as_slice())];
     if digest(files.into_iter()) != id {
         return Err(server_error!("revision `{id}` does not match its content"));
     }
@@ -129,22 +129,22 @@ async fn load<S: BlobStore>(store: &S, id: &str) -> Result<Revision, Error> {
     // The bytes are the ones committed: a revision under another grammar is
     // outdated, and one this grammar cannot read was not written by this
     // engine.
-    Revision::read(parse(id, Artifact::Spec, &spec)?, parse(id, Artifact::Design, &design)?)
+    Revision::read(parse(id, Spec::FILE, &spec)?, parse(id, Design::FILE, &design)?)
 }
 
 // Reads one document of revision `id`; a document absent under a named
 // revision is corruption.
-async fn read<S: BlobStore>(store: &S, id: &str, artifact: Artifact) -> Result<Vec<u8>, Error> {
-    BlobStore::get(store, CONTAINER, &key(id, artifact))
+async fn read<S: BlobStore>(store: &S, id: &str, name: &str) -> Result<Vec<u8>, Error> {
+    BlobStore::get(store, CONTAINER, &key(id, name))
         .await
         .context("reading revision document")?
-        .ok_or_else(|| server_error!("revision `{id}` does not contain `{}`", artifact.file()))
+        .ok_or_else(|| server_error!("revision `{id}` does not contain `{name}`"))
 }
 
 // Parses one committed document of revision `id` as JSON.
-fn parse(id: &str, artifact: Artifact, bytes: &[u8]) -> Result<Value, Error> {
+fn parse(id: &str, name: &str, bytes: &[u8]) -> Result<Value, Error> {
     let value = serde_json::from_slice(bytes)
-        .with_context(|| format!("revision `{id}`: `{}` is not JSON", artifact.file()))?;
+        .with_context(|| format!("revision `{id}`: `{name}` is not JSON"))?;
     Ok(value)
 }
 
@@ -332,9 +332,8 @@ mod tests {
         );
         let (current, _) = current(&memory).await.expect("current").expect("committed");
         assert_eq!(current, winner, "the current id still names the winner");
-        let spec = memory.object(CONTAINER, &key(&winner, Artifact::Spec)).expect("winning spec");
-        let (_, canonical) = winning.files().swap_remove(0);
-        assert_eq!(spec, canonical.as_bytes(), "the winning revision is intact");
+        let spec = memory.object(CONTAINER, &key(&winner, Spec::FILE)).expect("winning spec");
+        assert_eq!(spec, winning.spec.to_json().as_bytes(), "the winning revision is intact");
     }
 
     fn revision(preamble: &str) -> Revision {
