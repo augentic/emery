@@ -14,13 +14,13 @@ brew install emery
 ## Conventions
 
 - All commands return structured output on stdout and use exit codes for success/failure; `--format json` selects the JSON envelope (see [CLI output shapes](../cli-output-shapes.md)).
-- Commands that modify `.emery/` state are idempotent where possible.
-- Skills delegate to the CLI for all structural operations — they never hand-edit `.emery/` state directly.
+- Commands that modify `.omnia/storage` state are idempotent where possible.
+- Skills delegate to the CLI for all structural operations — they never hand-edit `.omnia/storage` state directly.
 
 ## Commands
 
 | Verb | Purpose |
 |------|---------|
-| [emery specify](specify.md) | Generate `spec.md` / `design.md` from the sources named on the invocation and commit them as the current revision |
-| [emery show](show.md) | Print a reviewable document of the current revision to stdout |
+| [emery specify](specify.md) | Generate the specification and design from the sources named on the invocation, continuing the revision the project carries, and commit them as the current revision |
+| [emery show](show.md) | Print a reviewable artifact of the current revision to stdout; `--format json` carries the typed document |
 | `emery completions <shell>` | Print a shell-completion script; auto-derived from the live clap surface |

@@ -4,14 +4,13 @@
 //! `Evidence` schema with the claim-id pattern, `check` set, the reference
 //! tools and workspace lend following the context), reference calls answered
 //! from the embedded corpus, a candidate the claim gate rejects corrected in
-//! place, the backend's spent rounds surfacing as `Internal` with the last
-//! findings, and a host refusal passing through typed.
+//! place, the backend's spent rounds surfacing as `bad_request` with the last
+//! findings, and a host refusal passing through as `bad_request`.
 
-use std::path::Path;
-
-use emery_adapter::types::{Authority, Backing, ClaimKind, Context, Error, Evidence, SourceInput};
-use emery_adapter::{Error as ModelError, ToolCall, content_note, evidence};
+use emery_adapter::types::{Authority, Backing, ClaimKind, Context, Evidence, SourceInput};
+use emery_adapter::{Error, EvidenceTurn, ToolCall, content_note, evidence};
 use emery_prose::registry::Doc;
+use omnia_guest::model::Error as ModelError;
 use omnia_test::SeenFormat;
 use omnia_test::guest::Scripted;
 
@@ -25,17 +24,18 @@ const VALID: &str = r#"{"authority":"documentation","claims":[
     {"kind":"decision"}
 ]}"#;
 
-fn context(docs: &'static [Doc], lend: Option<&str>) -> Context<'static> {
+const fn context(docs: &'static [Doc], lend: Option<&'static str>) -> Context<'static> {
     Context {
         adapter_id: "source:probe",
-        project_root: Path::new("."),
         docs,
-        lend: lend.map(str::to_string),
+        lend,
     }
 }
 
 async fn ask(model: &Scripted, ctx: &Context<'_>) -> Result<Evidence, Error> {
-    evidence(model, ctx, "SYSTEM".to_string(), "USER".to_string()).await
+    let input = SourceInput::value("brief", "Ship it.");
+    let turn = EvidenceTurn::bound("probe", "unused");
+    evidence(model, ctx, &input, "SYSTEM", turn).await
 }
 
 // The request carries the system prose, the user turn, the derived
@@ -53,7 +53,20 @@ async fn request_shape() {
     assert_eq!(seen.len(), 1);
     let request = &seen[0];
     assert_eq!(request.system.as_deref(), Some("SYSTEM"));
-    assert_eq!(request.messages, ["USER"]);
+    assert_eq!(
+        request.messages,
+        [concat!(
+            "Extract the claim set of the probe source bound to adapter `source:probe` (source ",
+            "key `brief`).\n\n",
+            "The bound material is this inline value; no `$SOURCE_DIR` is lent:\n\n",
+            "Ship it.\n\n",
+            "Nothing else is reachable; extract mines only this source.\n\n",
+            "The prompt's references are available through this call's `read_doc` tool ",
+            "(`list_docs` enumerates them); load referenced bodies on demand.\n\n",
+            "Answer with one JSON object matching the gated Evidence schema. The caller persists ",
+            "the document; do not write it yourself."
+        )]
+    );
     assert!(request.check, "acceptance is the check, not the reply text");
     assert_eq!(request.tools, ["list_docs", "read_doc"], "a docs-carrying call offers the tools");
     assert_eq!(request.workspace.as_deref(), Some("/lend/docs"), "the lend follows the context");
@@ -87,12 +100,27 @@ async fn bare_context() {
     let request = &model.seen()[0];
     assert!(request.tools.is_empty(), "no docs, no tools");
     assert!(request.workspace.is_none(), "no lend for an inline value");
+    assert!(!request.messages[0].contains("read_doc"), "no corpus affordance is advertised");
+}
+
+#[tokio::test]
+async fn prepared_turn() {
+    let model = Scripted::answering([VALID]);
+    let ctx = context(&[], None);
+    let input = SourceInput::value("intent", "ignored");
+    let turn = EvidenceTurn::prepared("intent", "PREPARED MATERIAL");
+
+    evidence(&model, &ctx, &input, "SYSTEM", turn).await.expect("accepted");
+
+    let user = &model.seen()[0].messages[0];
+    assert!(user.contains("\n\nPREPARED MATERIAL\n\n"), "{user}");
+    assert!(!user.contains("ignored"), "the prepared note replaces input rendering");
 }
 
 // Reference calls are answered in-process from the corpus before the
 // candidate is checked.
 #[tokio::test]
-async fn references_answered() {
+async fn doc_refs() {
     let model = Scripted::answering([VALID]).calling(
         0,
         [
@@ -126,7 +154,7 @@ async fn references_answered() {
 // sent back as the correction and the next candidate is checked again, so
 // the engine never sees the claim it would otherwise refuse.
 #[tokio::test]
-async fn gate_findings_corrected() {
+async fn gate_findings() {
     let model = Scripted::answering([
         r#"{"authority":"documentation","claims":[{"kind":"requirement"}]}"#,
         VALID,
@@ -149,7 +177,7 @@ async fn gate_findings_corrected() {
 }
 
 // When the backend spends its rounds on a rejected candidate the last
-// findings surface as `Internal`, so the host's own error is never the
+// findings surface as `bad_request`, so the host's own error is never the
 // adapter's answer.
 #[tokio::test]
 async fn rounds_exhausted() {
@@ -159,30 +187,31 @@ async fn rounds_exhausted() {
     let ctx = context(&[], None);
 
     let error = ask(&model, &ctx).await.expect_err("the only candidate fails the gate");
-    let Error::Internal(detail) = error else {
-        panic!("spent rounds are internal: {error}");
+    let Error::BadRequest { code, description } = error else {
+        panic!("spent rounds are a bad request: {error}");
     };
-    assert!(detail.contains("budget exhausted"), "{detail}");
-    assert!(detail.contains("id `Not.Valid` does not match"), "{detail}");
+    assert_eq!(code, "bad_request");
+    assert!(description.contains("budget exhausted"), "{description}");
+    assert!(description.contains("id `Not.Valid` does not match"), "{description}");
     assert_eq!(model.exchanges().len(), 1, "one check, rejected");
 }
 
-// A request the host refuses is the adapter's `InvalidRequest`, untouched.
+// A request the host refuses is a `bad_request` carrying the host's reason.
 #[tokio::test]
-async fn invalid_request_passes_through() {
+async fn invalid_request() {
     let model = Scripted::new([Err(ModelError::InvalidRequest("no such model".to_string()))]);
     let ctx = context(&[], None);
 
     let error = ask(&model, &ctx).await.expect_err("the host refused");
     assert!(
-        matches!(&error, Error::InvalidRequest(detail) if detail == "no such model"),
+        matches!(&error, Error::BadRequest { description, .. } if description == "invalid request: no such model"),
         "{error}"
     );
     assert!(model.exchanges().is_empty(), "nothing to check");
 }
 
 #[test]
-fn evidence_deserializes() {
+fn parse_evidence() {
     let evidence: Evidence = serde_json::from_str(
         r#"{
             "authority": "behaviour",
@@ -233,7 +262,7 @@ fn evidence_deserializes() {
 
 // Unpinned `synopsis` and `backing` shapes become absent, not fatal.
 #[test]
-fn open_body_fields_lenient() {
+fn open_fields() {
     let evidence: Evidence = serde_json::from_str(
         r#"{
             "authority": "documentation",
@@ -254,7 +283,7 @@ fn open_body_fields_lenient() {
 }
 
 #[test]
-fn content_note_names_the_binding() {
+fn source_note() {
     let workspace = content_note(&SourceInput::workspace("docs", "/lend/docs"), "the docs tree");
     assert!(workspace.contains("`/lend/docs` — the docs tree the prompt walks"), "{workspace}");
 

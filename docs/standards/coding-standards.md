@@ -30,11 +30,11 @@ fn step(...) { ... }
 
 Comments answer "why does this look like this *today?*" — non-obvious intent, trade-offs, or constraints the code itself can't convey. Migration trails, old labels, and "this used to be X" rationale belong in commit messages — not in code or doc comments. Doc comments on items that surface in `--help` (clap `#[derive]` fields) must be operator-facing one-liners; rationale moves below the derive block where it doesn't leak into help output.
 
-Density caps are **review only** — clippy and rustfmt cannot express them. They apply to Rust sources and to WIT contracts (`wit/`, `crates/*/wit/`):
+What each kind of comment is for, in Rust sources and WIT contracts (`wit/`, `crates/*/wit/`) alike. There are no length caps: a comment is as long as its why takes, and no longer.
 
-- **Module `//!` docs** answer "what is this module, and why does it exist?" for a reader who has not opened the file: a short title line, then **one or two paragraphs** in plain language. Say what the module is for and what it guarantees; never how it works — that is the code's job, and prose about mechanics goes stale first. No deployment tours, no AGENTS.md restatements, no RFC archaeology, and no house shorthand (`fail-closed`, `typed`, kernel names) the reader would have to look up.
-- **Item `///` docs** keep the overview under **~8 lines** before any `#` section. `# Errors` / `# Panics` sections may list discriminants; keep each bullet one line.
-- **`//` comments** run **≤ 3 consecutive lines**. A tip lives next to the surprising branch it explains, never inside a preamble essay.
+- **Module `//!` docs** answer "what is this module, and why does it exist?" for a reader who has not opened the file: a short title line, then plain-language paragraphs. Say what the module is for and what it guarantees; never how it works — that is the code's job, and prose about mechanics goes stale first. No deployment tours, no AGENTS.md restatements, no RFC archaeology, and no house shorthand (`fail-closed`, `typed`, kernel names) the reader would have to look up.
+- **Item `///` docs** follow the [Rust API Guidelines](https://rust-lang.github.io/api-guidelines/documentation.html): a one-line summary, then whatever the reader needs, with `# Errors` / `# Panics` sections where they apply.
+- **`//` comments** sit beside the surprising branch they explain, never in a preamble essay.
 - **Historical phrases** are banned in comments and docs: `Phase `, `formerly`, `previously lived`, `old contract`, `former tests`, `to avoid the`. Git history is the record.
 
 ```rust
@@ -47,13 +47,13 @@ Density caps are **review only** — clippy and rustfmt cannot express them. The
 // GOOD
 //! The `specify` operation
 //!
-//! Emery's central operation: given a list of source bindings, extract each
-//! source's claims, derive the requirement rows under authority precedence,
+//! Emery's central operation: given a list of sources, extract each
+//! source's claims, derive the requirements under authority precedence,
 //! synthesise `spec.md` and `design.md`, and commit the pair as one new
 //! revision.
 //!
-//! The result reports what was committed — the revision id, the counts, and
-//! the diff against the superseded revision — so a caller can see what
+//! The result reports what was committed — the revision id and the
+//! diff against the outgoing revision — so a caller can see what
 //! changed without reading the documents.
 ```
 
@@ -83,11 +83,11 @@ Doc comments describe what this is today. Version-history tables, dated bumps, c
 
 ## Naming
 
-Prefer short, idiomatic Rust names. Don't restate context the surrounding module, type, or function already supplies. Avoid `_local` / `_value` / `_helper` suffixes. New functions: 1–3 words. Predicates start with `is_` / `has_`. DTOs returned by handlers are `<Action>Body` / `<Action>Row`, never `<Action>Response` / `<Action>Json` (the type's role is `Body`; the format dispatch lives in the command projector — see [handler-shape.md](./handler-shape.md)).
+Prefer short, idiomatic Rust names. Don't restate context the surrounding module, type, or function already supplies. Avoid `_local` / `_value` / `_helper` suffixes. Predicates start with `is_` / `has_`. A handler's DTOs are `<Verb>Input` and `<Verb>Output` (`SpecifyInput` → `SpecifyOutput`, `ShowInput` → `ShowOutput`): omnia's own names for the two positions, the `input: I` the fn takes and its `Handler::Output`. Never `<Verb>Body` — in omnia's vocabulary a body is the *encoded* wire form (`Encoded`, `ErrorBody`) the projector produces from the output. Never `<Verb>Response` — `omnia_guest::api::command::Response` is the buffered envelope the façade owns. Never `<Verb>Json` — the format dispatch lives in the command projector (see [handler-shape.md](./handler-shape.md)). The prefix repeats the module (`specify::SpecifyInput`) on purpose: the types are consumed cross-crate, where `emery_engine::specify::SpecifyInput` is what the reader sees.
 
-**Identifier length.** Declared item names (`fn` / `struct` / `enum` / `trait` / `type` / `const` / `static` / `mod`), named fields, and enum variants are **≤ 25 characters** (Unicode scalars on the bare identifier, not the module path). **Review only** — clippy has no identifier-length lint (`module_name_repetitions` still catches in-module restatement). Push narrative into docs, comments, or nested `mod` context — not into the identifier.
+**Tests.** A `#[test]` `fn` names the *scenario* (`gen_spec`, `shared_roots`), never the outcome or the assertion (`rendered_documents_read_back`, `clean_evidence_passes`). The `//` requirement comment above the test carries the why; the identifier does not.
 
-A function defined in `mod <name>` (or `commands/<name>.rs`) MUST NOT carry `<name>` as a suffix or prefix on its own name — the module path already supplies that context. Clippy's `module_name_repetitions` (on by default through the `pedantic` group) catches this at lint time.
+A function defined in `mod <name>` (or `commands/<name>.rs`) MUST NOT carry `<name>` as a suffix or prefix on its own name — the module path already supplies that context. Review only: clippy's `module_name_repetitions` sits in the `restriction` group and stays off, because it would flag the `<Verb>Input` / `<Verb>Output` DTOs, which repeat their module deliberately (see above).
 
 ```rust
 // BAD — file is commands/registry.rs / mod registry
@@ -99,19 +99,26 @@ fn add_to_registry(ctx: &Ctx) -> ... { ... }
 fn show(ctx: &Ctx) -> ... { ... }
 fn validate(ctx: &Ctx) -> ... { ... }
 fn add(ctx: &Ctx) -> ... { ... }
+
+// BAD — the identifier narrates the assertion
+fn rendered_documents_read_back() { ... }
+
+// GOOD — the scenario; the comment carries the why
+// A re-run over changed evidence reports the heading-level remine.
+fn remine_supersedes() { ... }
 ```
 
 ## Brevity
 
 The codebase optimises for short reading over short writing. Concretely:
 
-- **Names**: 1–3 words. Predicates start with `is_` / `has_`. Avoid `_local` / `_value` / `_helper` / `_path` / `_dir` suffixes when the parameter type or surrounding context already says so (`is_slot(p: &Path)`, not `is_slot_path`).
-- **Cross-module redundancy**: `WorkspaceBranchPreparationFailed` inside `Error` reads as `Error::WorkspaceBranchPreparationFailed` — drop the `Workspace` prefix when every variant in the cluster already operates on a workspace. Clippy's `module_name_repetitions` catches the in-module cases; cross-module redundancy is on you and reviewers.
+- **Names**: predicates start with `is_` / `has_`. Avoid `_local` / `_value` / `_helper` / `_path` / `_dir` suffixes when the parameter type or surrounding context already says so (`is_slot(p: &Path)`, not `is_slot_path`).
+- **Cross-module redundancy**: `WorkspaceBranchPreparationFailed` inside `Error` reads as `Error::WorkspaceBranchPreparationFailed` — drop the `Workspace` prefix when every variant in the cluster already operates on a workspace. In-module and cross-module redundancy are both on you and reviewers (`module_name_repetitions` is off — see [Naming](#naming)).
 - **One-variant enums** are dead overhead. Drop the variant or the enum. If the type's name already discriminates, the enum adds nothing.
 - **Field prefixes**: a struct named `RegistryAmendmentArgs` does not carry `proposed_` on every field — the struct name already says "proposal".
 - **Comment redundancy**: don't paraphrase a `match` arm's variant in a `// …` comment when the variant's doc-comment already explains it.
 
-Reviewers catch the density caps (see [Comments](#comments)) and the 25-character identifier cap (see [Naming](#naming)). Clippy's `module_name_repetitions` catches the in-module restatement cases.
+Reviewers catch comment redundancy (see [Comments](#comments)) and module-name restatement (see [Naming](#naming)).
 
 ## Module shape
 
@@ -127,89 +134,82 @@ A module reads top-down: what it does, what it yields, how. **Review only.**
 ```rust
 // BAD — entry buried under a private helper, wrapper with one caller
 async fn dispatch<P: Source>(provider: &P, id: &str, input: &SourceInput) -> Result<Evidence, Error> {
-    provider.extract(id, input).await.map_err(|err| bad_gateway!("source `{id}`: {err}"))
+    provider.extract(id, input).await
 }
 
-/// Resolves, extracts, and validates every source binding.
-pub async fn extract<P: Source + Plugins>(...) -> Result<Vec<SourceSet>, Error> {
-    for binding in bindings {
-        let resolved = /* … */;
-        let evidence = dispatch(provider, &resolved.id, &binding.input()?).await?;
-        let set = SourceSet { /* … */ };
-        set.validate()?;
-        sets.push(set);
+/// Loads, extracts, and validates every source.
+pub async fn evidence<P: Source + Plugins>(...) -> Result<Vec<Extract>, Error> {
+    for source in sources {
+        let adapter = /* … */;
+        let evidence = dispatch(provider, &adapter.id, &source.input()?).await?;
+        gate(&evidence)?;
+        extracted.push(Extract { /* … */ });
     }
-    Ok(sets)
+    Ok(extracted)
 }
 
 // GOOD — entry first, capability named, phases separated, wrapper inlined
-/// Resolves, extracts, and validates every source binding.
-pub async fn extract<P: Source + Plugins>(...) -> Result<Vec<SourceSet>, Error> {
-    for binding in bindings {
-        let input = binding.input()?;
-        let resolved = /* … */;
+/// Loads, extracts, and validates every source.
+pub async fn evidence<P: Source + Plugins>(...) -> Result<Vec<Extract>, Error> {
+    for source in sources {
+        let input = source.input()?;
+        let adapter = /* … */;
 
-        let id = &resolved.id;
-        let evidence = Source::extract(provider, id, &input)
-            .await
-            .map_err(|err| bad_gateway!("source `{id}`: {err}"))?;
+        let evidence = Source::extract(provider, &adapter.id, &input).await?;
 
-        let set = SourceSet { /* … */ };
-        set.validate()?;
-        sets.push(set);
+        let findings = evidence.findings();
+        if !findings.is_empty() {
+            return Err(bad_request!(/* … */));
+        }
+        extracted.push(Extract { /* … */ });
     }
 
-    Ok(sets)
+    Ok(extracted)
 }
 
-/// A validated claim set extracted from one source.
-pub struct SourceSet { /* … */ }
-
-impl SourceSet {
-    // Validates claim grammar and required extras fail-closed (A8).
-    fn validate(&self) -> Result<(), Error> { /* … */ }
-}
+/// One source's evidence, under the key the documents cite it by.
+pub struct Extract { /* … */ }
 ```
 
 ## Format dispatch
 
-Operations do **not** open-code `match format { Json, Text }`. They return typed bodies; omnia's command projector (`omnia_guest::api::command::Command::call`, driven from `crates/cli/src/lib.rs`) owns format dispatch through `omnia_guest::api::Format::encode`. Operations never pick a sink directly. See [handler-shape.md](./handler-shape.md) for the operation and projector contract.
+Operations do **not** open-code `match format { Json, Text }`. They return typed outputs; omnia's command projector (`omnia_guest::api::command::Command::call`, driven from `crates/cli/src/lib.rs`) owns format dispatch through `omnia_guest::api::Format::encode`. Operations never pick a sink directly. See [handler-shape.md](./handler-shape.md) for the operation and projector contract.
 
 ```rust
 // BAD
 match format {
-    Format::Json => serde_json::to_writer(stdout(), &SomeBody::from(&r))?,
+    Format::Json => serde_json::to_writer(stdout(), &SomeOutput::from(&r))?,
     Format::Text => println!("..."),
 }
 
-// GOOD — the operation returns the typed body; the projector renders it
-Ok(SomeBody::from(&result))
+// GOOD — the operation returns the typed output; the projector encodes it
+Ok(SomeOutput::from(&result))
 ```
 
-Text mode renders through the body's render fn in `crates/cli/src/text.rs` (`fn(&Body, &mut dyn fmt::Write) -> fmt::Result`, passed to `Command::call` as the verb's text form); the JSON path goes through `serde::Serialize` automatically. Engine bodies carry no `Display` — a body's terminal shape is a CLI concern, and an engine `Display` would quietly become part of every other transport's contract. New code must not introduce `match … format`.
+Text mode renders through the output's render fn in `crates/cli/src/text.rs` (`fn(&Output, &mut dyn fmt::Write) -> fmt::Result`, passed to `Command::call` as the verb's text form); the JSON path goes through `serde::Serialize` automatically. Engine outputs carry no `Display` — their terminal shape is a CLI concern, and an engine `Display` would quietly become part of every other transport's contract. New code must not introduce `match … format`.
 
 ## One emit path
 
-Success bodies and failures leave operations as typed values. Omnia's command projector renders those values at the command boundary — the success body in the selected format on stdout, the `Failure` envelope on stderr; no handler writes stdout or stderr. If you need a bespoke failure shape, construct an Omnia `Error` (macros for defaults; explicit variants only for the three recovery codes); do not hand-roll a `*ErrBody` DTO or a second envelope. `emery_cli` contributes only the render fns and the hint table; it never encodes.
+Outputs and failures leave operations as typed values. Omnia's command projector encodes those values at the command boundary — the output as the success body in the selected format on stdout, the `Failure` envelope on stderr; no handler writes stdout or stderr. If you need a bespoke failure shape, construct an Omnia `Error` (macros for defaults; explicit variants only for the four recovery codes); do not hand-roll a `*ErrBody` DTO or a second envelope. `emery_cli` contributes only the render fns and the hint table; it never encodes.
 
 ## DTOs
 
-Response DTOs (`*Body`, `*Row`) are **top-level** structs under `mod`. Declaring a DTO inside a function body, match arm, or closure forces a per-file `#![allow(items_after_statements, …)]` suppression and is the signal that a handler hasn't been migrated yet.
+Output DTOs (`*Output`, and any row type they carry) are **top-level** structs under `mod`. Declaring a DTO inside a function body, match arm, or closure forces a per-file `#![allow(items_after_statements, …)]` suppression and is the signal that a handler hasn't been migrated yet.
 
-**Construct DTOs through `From` impls, not named builders.** Use `impl From<&Domain> for Body` so the conversion is discoverable at the trait surface and call sites read `Body::from(&domain)`. Named constructors are reserved for multi-arg or fallible builders (e.g. `RegistryProposalRow::from_kind` returns `Option<Self>`); each survivor carries a one-line doc justification.
+**Construct DTOs through `From` impls, not named builders.** Use `impl From<&Domain> for FrobOutput` so the conversion is discoverable at the trait surface and call sites read `FrobOutput::from(&domain)`. Named constructors are reserved for multi-arg or fallible builders (e.g. `RegistryProposalRow::from_kind` returns `Option<Self>`); each survivor carries a one-line doc justification.
 
 **Typed fields, not stringly-typed ones.** `pub status` / `pub kind` (and any other field whose domain has a finite enum) carry the underlying domain enum with `#[derive(Serialize)]` + `#[serde(rename_all = "kebab-case")]`. Drop `.to_string()` at construction sites; the wire shape is unchanged.
 
-**`PathBuf` for path fields.** `*Body` fields that hold a filesystem path are `path: PathBuf`. Do not store `String` paths in DTOs; serde's default `PathBuf` serialization carries the bytes losslessly.
+**`PathBuf` for path fields.** `*Output` fields that hold a filesystem path are `path: PathBuf`. Do not store `String` paths in DTOs; serde's default `PathBuf` serialization carries the bytes losslessly.
 
 **Field-type allowlist.** DTO fields use the strictest type the wire shape supports:
 
-| Domain                                   | Type                                                                                                              | Notes                                                       |
-| ---------------------------------------- | ----------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------- |
-| Filesystem path                          | `PathBuf`                                                                                                         | never `String`; serde's default carries the path losslessly |
-| Status / kind / phase with finite domain | the underlying enum + `#[serde(rename_all = "kebab-case")]`                                                       | drop `.to_string()` at construction                         |
-| Stable kebab discriminant                | `&'static str`                                                                                                    | lives in the binary                                         |
-| Count                                    | `usize`                                                                                                           | JSON has neither `u32` nor `u64`                            |
+| Domain                                   | Type                                                        | Notes                                                       |
+| ---------------------------------------- | ----------------------------------------------------------- | ----------------------------------------------------------- |
+| Filesystem path                          | `PathBuf`                                                   | never `String`; serde's default carries the path losslessly |
+| Status / kind / phase with finite domain | the underlying enum + `#[serde(rename_all = "kebab-case")]` | drop `.to_string()` at construction                         |
+| Stable kebab discriminant                | `&'static str`                                              | lives in the binary                                         |
+| Count                                    | `usize`                                                     | JSON has neither `u32` nor `u64`                            |
 
 **Single-variant enums are dead overhead.** Drop either the variant or the enum; the type's name already says "this DTO represents kind X". The `BriefAction::Init` pattern is the canonical example of what not to add.
 
@@ -217,12 +217,12 @@ Response DTOs (`*Body`, `*Row`) are **top-level** structs under `mod`. Declaring
 // BAD — DTO inside fn body
 fn handle(...) {
     #[derive(Serialize)]
-    struct Body { name: String }
-    output::write(format, &Body { name }, write_text)?;
+    struct HandleOutput { name: String }
+    output::write(format, &HandleOutput { name }, write_text)?;
 }
 
 // BAD — named builder, stringly-typed status, String path
-impl Body {
+impl HandleOutput {
     pub(crate) fn from_outcome(outcome: &Outcome, path: PathBuf) -> Self {
         Self {
             status: outcome.status.to_string(),
@@ -231,34 +231,34 @@ impl Body {
     }
 }
 
-// GOOD — the engine body is a Serialize-only DTO …
+// GOOD — the engine output is a Serialize-only DTO …
 #[derive(Serialize)]
 #[serde(rename_all = "kebab-case")]
-pub struct HandleBody {
+pub struct HandleOutput {
     pub name: String,
     pub status: OutcomeStatus,
     pub path: PathBuf,
 }
 
-impl From<&Outcome> for HandleBody {
+impl From<&Outcome> for HandleOutput {
     fn from(outcome: &Outcome) -> Self { /* ... */ }
 }
 
 // … and its text mode is a render fn in the CLI (crates/cli/src/text.rs)
-pub fn handle(body: &HandleBody, out: &mut dyn fmt::Write) -> fmt::Result {
-    writeln!(out, "{}", body.name)
+pub fn handle(output: &HandleOutput, w: &mut dyn fmt::Write) -> fmt::Result {
+    writeln!(w, "{}", output.name)
 }
 ```
 
 ## Errors
 
-Engine operations return `omnia_guest::Error` (`BadRequest`, `NotFound`, `ServerError`, `BadGateway`). Construct Omnia defaults with the crate-root macros (`bad_request!`, `not_found!`, `server_error!`, `bad_gateway!`); those emit snake_case codes (`bad_request`, …). Keep explicit variant construction only for the three recovery discriminants (`specify-source-required`, `unsupported-version`, `spec-not-generated`). Do not introduce a house error type or constructor wrappers.
+Engine operations, the adapter SDK, and adapters return `omnia_guest::Error` (`BadRequest`, `NotFound`, `ServerError`, `BadGateway`). Construct Omnia defaults with the crate-root macros (`bad_request!`, `not_found!`, `server_error!`, `bad_gateway!`); those emit snake_case codes (`bad_request`, …). Keep explicit variant construction only for the four recovery discriminants (`specify-source-required`, `unsupported-version`, `spec-not-generated`, `spec-outdated`). Do not introduce a house error type or constructor wrappers; the adapter WIT `error` variant is lowered and lifted inside `emery_source::wire` alone (see [style.md](./style.md#failures-are-omnia-errors)).
 
-**Class on a direct match.** Pick the Omnia variant that matches the failure: operator or input refusals are `BadRequest` (exit 1), missing resources are `NotFound` (exit 2), upstream or model failures are `BadGateway` (exit 4). Anything else — I/O, storage, leftover conversions — is `ServerError` (exit 3). Do not invent new codes or new exit slots. See [handler-shape.md §"Exit codes"](./handler-shape.md#exit-codes).
+**Class on a direct match.** Pick the Omnia variant that matches the failure: operator or input refusals are `BadRequest` (exit 1), missing resources are `NotFound` (exit 2), upstream or model failures are `BadGateway` (exit 4). Anything else — I/O, storage, leftover conversions — is `ServerError` (exit 3). An adapter's `BadRequest` keeps its class through the `Source` capability, so an adapter refusing its input exits 1 like any other input refusal; every other adapter failure reaches the engine as `BadGateway`. Do not invent new codes or new exit slots. See [handler-shape.md §"Exit codes"](./handler-shape.md#exit-codes).
 
-**Hint lookup.** Long-form recovery hints live in `crates/cli/src/lib.rs` (`hint` on `unsupported-version` / `specify-source-required` / `spec-not-generated` and the loader discriminants, attached through `Command::hints`). Adding a new hint extends that lookup, not the error type. Engine descriptions stay transport-neutral — they name the path, adapter, or rule, never a flag, a verb, or "the CLI"; flag-vocabulary recovery text belongs in the hint table.
+**Hint lookup.** Long-form recovery hints live in `crates/cli/src/lib.rs` (`hint` on `unsupported-version` / `specify-source-required` / `spec-not-generated` / `spec-outdated` and the loader discriminants, attached through `Command::hints`). Adding a new hint extends that lookup, not the error type. Engine descriptions stay transport-neutral — they name the path, adapter, or rule, never a flag, a verb, or "the CLI"; flag-vocabulary recovery text belongs in the hint table.
 
-`unwrap()` and `expect()` are reserved for invariants the type system can't express (e.g. "this enum variant covers `Status::value_variants()`"). Always include a justification string in `expect`. User-facing errors must surface as an Omnia `Error`, not panics.
+**Production code does not panic.** The engine and every adapter run as wasm guests, where a panic is a trap — no `Failure` envelope, no exit code — so `unwrap()`, `expect()`, `panic!`, and indexing a position the code has not just checked belong in tests and build scripts alone (there a panic *is* the failure report). An invariant the type system cannot express still fails as an Omnia `Error`: the engine's own defect — a document that does not serialise, a fact an accepted answer names that the brief cannot place — is `server_error!` (exit 3) with a description naming the defect. Library accessors return `Option` or `Result` rather than panicking on a miss (`emery_prose::registry::body`), leaving the caller to report it.
 
 ## `#[non_exhaustive]`
 
@@ -282,7 +282,7 @@ crates/foo/src/
     └── render.rs
 ```
 
-**Module length cap** — keep new modules ≤ 400 lines. When a file outgrows that, split by concern (one verb per file, model vs IO vs transitions, etc.) before adding more code. Prefer `<parent>/<module>.rs` + `<parent>/<module>/<concern>.rs` over a single fat file with `// ---` separators.
+There is no module length cap. Split a file when a reader gains a seam — a concern with its own consumers or its own vocabulary — never because it crossed a line count; a type and the one brief or judgment that uses it read better together than apart. When you do split, prefer `<parent>/<module>.rs` + `<parent>/<module>/<concern>.rs` over `// ---` separators inside one file.
 
 ## No-op forwarders
 

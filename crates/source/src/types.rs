@@ -1,39 +1,203 @@
 //! Contract types
 //!
-//! The Rust forms of the records in the `emery:adapter` WIT package — the
-//! input an adapter receives, the [`Evidence`] it returns, and the [`Error`]
-//! an operation can fail with. These are the types engine and adapter code
-//! work with; the generated wire bindings stay behind them.
+//! The Rust forms of the records in the `emery:adapter` WIT package: what an
+//! adapter is given ([`SourceInput`] over a workspace or an inline value),
+//! what it reports about itself ([`AdapterMetadata`]), and what it returns —
+//! an [`Evidence`] document of typed [`Claim`]s with an [`Authority`] class.
+//! Engine and adapter code work with these; the generated wire bindings stay
+//! behind them, and operations fail with `omnia_guest::Error`.
 //!
-//! Serde derives sit only on the types that cross a JSON boundary: the
-//! [`Evidence`] a model answer is parsed into, and the [`SourceInput`] shape
-//! the engine's `specify` request carries.
+//! [`ClaimKind`] is the closed taxonomy the whole system agrees on, and each
+//! kind's required extras are declared next to it so the contract states in
+//! one place what a complete claim of that kind looks like. Serde derives sit
+//! only on the types that cross a JSON boundary: the [`Evidence`] a model
+//! answer is parsed into, the [`SourceInput`] the engine's `specify` request
+//! carries, and the [`Authority`] a committed requirement records.
 
-mod source;
+use schemars::JsonSchema;
+use serde::{Deserialize, Serialize};
 
-pub use source::{
-    Authority, Backing, Claim, ClaimKind, Evidence, SourceContent, SourceInput, SourceMetadata,
-};
+use crate::claims::DOTTED_KEBAB_PATTERN;
 
-/// Adapter operation error.
-#[derive(Clone, Debug, PartialEq, Eq, thiserror::Error)]
-pub enum Error {
-    /// Malformed request.
-    #[error("invalid request: {0}")]
-    InvalidRequest(String),
-    /// Filesystem failure.
-    #[error("io: {0}")]
-    Io(String),
-    /// Judgment or answer-handling failure.
-    #[error("internal: {0}")]
-    Internal(String),
+/// Resolve-time source adapter metadata.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct AdapterMetadata {
+    /// Exact minimum Emery version, if any.
+    pub emery_version: Option<String>,
 }
 
-impl From<omnia_guest::model::Error> for Error {
-    fn from(err: omnia_guest::model::Error) -> Self {
-        match err {
-            omnia_guest::model::Error::InvalidRequest(detail) => Self::InvalidRequest(detail),
-            other => Self::Internal(other.to_string()),
+/// Workspace or inline source content.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum SourceContent {
+    /// Deployment-local root of a read-only source view.
+    Workspace(String),
+    /// Inline value without a filesystem lend.
+    Value(String),
+}
+
+/// Source operation input.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub struct SourceInput {
+    /// Binding key.
+    pub key: String,
+    /// Workspace or inline content.
+    pub content: SourceContent,
+}
+
+impl SourceInput {
+    /// Creates workspace input over `root`.
+    #[must_use]
+    pub fn workspace(key: impl Into<String>, root: impl Into<String>) -> Self {
+        Self {
+            key: key.into(),
+            content: SourceContent::Workspace(root.into()),
         }
     }
+
+    /// Creates inline-value input.
+    #[must_use]
+    pub fn value(key: impl Into<String>, value: impl Into<String>) -> Self {
+        Self {
+            key: key.into(),
+            content: SourceContent::Value(value.into()),
+        }
+    }
+}
+
+/// Claim-set authority. The variants are declared in rank order, so the
+/// derived `Ord` is the authority hierarchy: `Intent` outranks
+/// `Documentation`, which outranks `Behaviour`.
+#[derive(
+    Clone,
+    Copy,
+    Debug,
+    Serialize,
+    Deserialize,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    JsonSchema,
+    strum::Display,
+)]
+#[serde(rename_all = "kebab-case")]
+#[strum(serialize_all = "kebab-case")]
+pub enum Authority {
+    /// Operator directives.
+    Intent,
+    /// Specifications and documentation.
+    Documentation,
+    /// Observed behaviour.
+    Behaviour,
+}
+
+/// Closed claim taxonomy; update the workflow contract and schema together.
+#[derive(
+    Clone, Copy, Debug, Deserialize, PartialEq, Eq, PartialOrd, Ord, JsonSchema, strum::Display,
+)]
+#[serde(rename_all = "kebab-case")]
+#[strum(serialize_all = "kebab-case")]
+pub enum ClaimKind {
+    /// Operator intent.
+    Intent,
+    /// Behavioural requirement.
+    Requirement,
+    /// Acceptance criterion.
+    Criterion,
+    /// Recorded decision.
+    Decision,
+    /// Document section.
+    Section,
+    /// Diagram.
+    Diagram,
+    /// API contract.
+    Contract,
+    /// Runtime capture.
+    Example,
+    /// Verbatim excerpt.
+    Excerpt,
+    /// Type declaration.
+    Type,
+    /// Call site.
+    Call,
+    /// Code region.
+    Region,
+    /// Container such as a module or package.
+    Container,
+    /// Leaf item.
+    Leaf,
+}
+
+/// Claim backing.
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq, JsonSchema)]
+#[serde(rename_all = "kebab-case")]
+pub enum Backing {
+    /// Inline verbatim data.
+    Payload(String),
+    /// Filesystem path.
+    Path(String),
+}
+
+/// A claim extracted from a source.
+///
+/// Open per-kind fields flatten into [`Claim::extras`]. `synopsis` and
+/// `backing` are lenient: malformed shapes become absent.
+#[derive(Clone, Debug, Deserialize, JsonSchema)]
+#[serde(rename_all = "kebab-case")]
+pub struct Claim {
+    /// Kind from the closed taxonomy.
+    pub kind: ClaimKind,
+    /// Stable dotted-kebab ID; required for requirements, criteria, and examples.
+    #[schemars(regex(pattern = DOTTED_KEBAB_PATTERN))]
+    pub id: Option<String>,
+    /// Source anchor: `<path>`, `<path>#L<n>`, or `<path>#L<n>-L<n>`.
+    pub path: Option<String>,
+    /// Semantic headline.
+    #[serde(default, deserialize_with = "lenient")]
+    pub synopsis: Option<String>,
+    /// Path or inline backing.
+    #[serde(default, deserialize_with = "lenient")]
+    pub backing: Option<Backing>,
+    /// Open per-kind fields preserved for synthesis.
+    #[serde(flatten)]
+    pub extras: serde_json::Map<String, serde_json::Value>,
+}
+
+impl Claim {
+    /// The `statement` extra as text, every run of whitespace collapsed to
+    /// one space so a reflowed statement still matches. A non-string value
+    /// is rendered rather than dropped: the claim gate requires the extra,
+    /// not that it is a string.
+    #[must_use]
+    pub fn statement(&self) -> String {
+        let normalise = |text: &str| text.split_whitespace().collect::<Vec<_>>().join(" ");
+        match self.extras.get("statement") {
+            Some(serde_json::Value::String(text)) => normalise(text),
+            Some(other) => normalise(&other.to_string()),
+            None => String::new(),
+        }
+    }
+}
+
+/// Extracted claims and their document-level authority.
+#[derive(Clone, Debug, Deserialize, JsonSchema)]
+#[serde(rename_all = "kebab-case")]
+pub struct Evidence {
+    /// Document-level authority.
+    pub authority: Authority,
+    /// Extracted claims.
+    pub claims: Vec<Claim>,
+}
+
+// Deserializes an open field leniently: a malformed value becomes `None`
+// instead of failing the whole document.
+fn lenient<'de, D, T>(deserializer: D) -> Result<Option<T>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+    T: serde::de::DeserializeOwned,
+{
+    let value = serde_json::Value::deserialize(deserializer)?;
+    Ok(T::deserialize(value).ok())
 }

@@ -2,10 +2,10 @@
 
 Hard-coded conventions of the rendered `design.md`. These are not configurable.
 
-`design.md` carries the technical shape the non-behavioural claims evidence. The engine renders `# Design`, your `preamble` paragraphs, then one `## ` section per drafted entry, in this fixed order whatever order you answer in:
+`design.md` carries the technical shape the non-behavioural claims evidence. The engine renders its front matter (`emery: <grammar>`, `revision: <id>`), `# Design`, your `preamble` paragraphs, then one `## ` section per drafted entry, in this fixed order whatever order you answer in:
 
 1. `overview` → `## Overview` — what the system is and why, from `intent` and top-level `section` claims and the rendered `spec.md`. Always required.
-2. `domain-model` → `## Domain model` — types and identifiers. Reference every `type` claim exactly once as a `type` block; the engine inserts its `signature` verbatim as a fenced code block.
+2. `domain-model` → `## Domain model` — types and identifiers. Reference every `type` claim exactly once as a `type` block; the engine renders a `Type: <key>` line and the claim's `signature` verbatim as a fenced code block beneath it.
 3. `apis` → `## APIs and integrations` — external surfaces (`call` / `contract` claims, surface-naming requirements).
 4. `technical-logic` → `## Technical logic` — delegation, validation, errors; fold abstracting `excerpt` claims.
 5. `ui-layout` → `## UI / layout` — only with spatial claims (`region` / `container` / `leaf`), rendered as one tree.
@@ -13,7 +13,7 @@ Hard-coded conventions of the rendered `design.md`. These are not configurable.
 
 ## Section plan
 
-The request lists every section with its presence — `required`, `permitted`, or `omit` — computed by the engine from the claim kinds present. Draft every `required` section, never an `omit` section, and a `permitted` section only when claims inform it. Each drafted section carries at least one block.
+The request lists every section with its presence — `required`, `permitted`, or `omitted` — computed by the engine from the claim kinds present. Draft every `required` section, never an `omitted` section, and a `permitted` section only when claims inform it. Each drafted section carries at least one block.
 
 ## Blocks
 

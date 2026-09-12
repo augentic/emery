@@ -11,47 +11,56 @@
 
 use std::fmt;
 
-use emery_engine::show::{Document, ShowBody};
-use emery_engine::specify::{Changes, SpecifyBody};
+use emery_engine::show::{Artifact, ShowOutput};
+use emery_engine::specify::{Diff, SpecifyOutput};
 
-/// The `specify` result line and its indented detail.
-pub fn specify(body: &SpecifyBody, out: &mut dyn fmt::Write) -> fmt::Result {
-    writeln!(out, "committed revision {}", body.revision)?;
-    writeln!(out, "  requirements: {}", body.requirements)?;
-    writeln!(out, "  sources: {}", body.sources)?;
-    for entry in &body.digests {
-        writeln!(out, "  digest {}: {}", entry.source, entry.digest)?;
-    }
-    if let Some(diff) = &body.diff {
-        if diff.is_empty() {
-            writeln!(out, "  diff vs {}: none (byte-stable)", diff.from)?;
+/// Writes the `specify` result: the committed-revision line and its indented
+/// detail.
+pub fn specify(output: &SpecifyOutput, w: &mut dyn fmt::Write) -> fmt::Result {
+    writeln!(w, "committed revision {}", output.revision)?;
+    if let Some(diff) = &output.diff {
+        if diff.from == output.revision {
+            writeln!(w, "  diff vs {}: none (byte-stable)", diff.from)?;
         } else {
-            writeln!(out, "  diff vs {}: {}", diff.from, diff.artifacts.join(", "))?;
-            changes(out, Document::Spec, &diff.spec)?;
-            changes(out, Document::Design, &diff.design)?;
+            writeln!(w, "  diff vs {}:", diff.from)?;
+            changes(diff, w)?;
         }
     }
     Ok(())
 }
 
-// One line per changed section, prefixed by its document.
-fn changes(out: &mut dyn fmt::Write, document: Document, changes: &Changes) -> fmt::Result {
-    let document = document.file();
-    for heading in &changes.added {
-        writeln!(out, "    {document} + {heading}")?;
+// Writes one line per changed requirement and section, prefixed by the
+// projection it appears in.
+fn changes(diff: &Diff, w: &mut dyn fmt::Write) -> fmt::Result {
+    let spec = format!("{}.md", Artifact::Spec.as_ref());
+    for entry in &diff.spec.added {
+        writeln!(w, "    {spec} + {} {}", entry.id, entry.subject)?;
     }
-    for heading in &changes.removed {
-        writeln!(out, "    {document} - {heading}")?;
+    for entry in &diff.spec.removed {
+        writeln!(w, "    {spec} - {} {}", entry.id, entry.subject)?;
     }
-    for heading in &changes.changed {
-        writeln!(out, "    {document} ~ {heading}")?;
+    for changed in &diff.spec.changed {
+        let entry = &changed.requirement;
+        let fields = changed.fields.join(", ");
+        writeln!(w, "    {spec} ~ {} {}: {fields}", entry.id, entry.subject)?;
+    }
+
+    let design = format!("{}.md", Artifact::Design.as_ref());
+    for kind in &diff.design.added {
+        writeln!(w, "    {design} + {}", kind.as_ref())?;
+    }
+    for kind in &diff.design.removed {
+        writeln!(w, "    {design} - {}", kind.as_ref())?;
+    }
+    for kind in &diff.design.changed {
+        writeln!(w, "    {design} ~ {}", kind.as_ref())?;
     }
     Ok(())
 }
 
-/// The document alone — a deliberate exception to the result-line
-/// convention so `emery show spec` pipes cleanly; the revision id rides
-/// the JSON envelope.
-pub fn show(body: &ShowBody, out: &mut dyn fmt::Write) -> fmt::Result {
-    out.write_str(&body.body)
+/// Writes the document body alone — a deliberate exception to the
+/// result-line convention so `emery show spec` pipes cleanly; the revision id
+/// rides the JSON envelope.
+pub fn show(output: &ShowOutput, w: &mut dyn fmt::Write) -> fmt::Result {
+    w.write_str(&output.body)
 }

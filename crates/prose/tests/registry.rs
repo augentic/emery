@@ -2,8 +2,8 @@
 //!
 //! What callers can rely on from an embedded corpus: a document is found by
 //! its tree-relative path, its body comes back intact, and asking for a path
-//! the build did not embed is a programming error that panics rather than a
-//! silent miss.
+//! the build did not embed is `None` — the caller reports the mismatch as its
+//! own failure, so it is never a silent miss and never a panic.
 
 use emery_prose::registry::{Doc, body, find};
 
@@ -32,11 +32,10 @@ fn find_by_path() {
 
 #[test]
 fn body_lookup() {
-    assert_eq!(body(DOCS, "prompts/build.md"), "# build");
+    assert_eq!(body(DOCS, "prompts/build.md"), Some("# build"));
 }
 
 #[test]
-#[should_panic(expected = "document `prompts/missing.md` is not embedded")]
-fn body_miss_panics() {
-    let _ = body(DOCS, "prompts/missing.md");
+fn body_miss() {
+    assert_eq!(body(DOCS, "prompts/missing.md"), None);
 }

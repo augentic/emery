@@ -1,12 +1,12 @@
 # Emery Developer Guide
 
-Emery is being rebuilt as a **spec generator**. The v1 delivery engine — the `plan → refine → execute → finalize` workflow, the target-adapter build loop, and the definition loop — is frozen and archived at git tag `v1`:
+Emery is a **spec generator**. The v1 delivery engine — the `plan → refine → execute → finalize` workflow, the target-adapter build loop, and the definition loop — is archived at git tag `v1`:
 
 ```bash
 git worktree add ../emery-v1 v1
 ```
 
-This guide documents what ships **today**: the `emery` CLI's reduced surface (the `specify` spec generator plus the `show` read verb), the source-adapter contract, and the contributor standards for the Rust workspace.
+This guide documents the `emery` CLI (the `specify` spec generator plus the `show` read verb), the source-adapter contract, and the contributor standards for the Rust workspace.
 
 ## Guide structure
 

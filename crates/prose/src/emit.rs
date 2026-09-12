@@ -14,14 +14,15 @@ use std::path::{Path, PathBuf};
 
 use anyhow::{Result, bail};
 
-struct File {
+// One Markdown document found in the tree: its tree-relative path and the
+// canonical file the generated table `include_str!`s.
+struct Markdown {
     path: String,
     file: PathBuf,
 }
 
-/// Embed and link-check `tree` relative to the crate manifest.
-///
-/// Writes `prose_docs.rs` into `OUT_DIR`.
+/// Embeds and link-checks the Markdown `tree` relative to the crate manifest,
+/// writing `prose_docs.rs` into `OUT_DIR`.
 ///
 /// # Panics
 ///
@@ -38,7 +39,7 @@ pub fn emit(tree: &str) {
     }
 }
 
-// Walk `root` and write a sorted `DOCS` table to `out_dir/prose_docs.rs`.
+// Walks `root` and writes a sorted `DOCS` table to `out_dir/prose_docs.rs`.
 fn emit_from(root: &Path, out_dir: &Path) -> Result<()> {
     let mut files = Vec::new();
     if root.is_dir() {
@@ -58,7 +59,7 @@ fn emit_from(root: &Path, out_dir: &Path) -> Result<()> {
          pub static DOCS: &[Doc] = &[\n",
     );
 
-    for File { path, file } in &files {
+    for Markdown { path, file } in &files {
         check_links(file)?;
 
         writeln!(
@@ -74,8 +75,9 @@ fn emit_from(root: &Path, out_dir: &Path) -> Result<()> {
     Ok(())
 }
 
-// Symlinks are followed, so the canonical-path stack is the cycle guard.
-fn walk(dir: &Path, path: &str, files: &mut Vec<File>, stack: &mut Vec<PathBuf>) -> Result<()> {
+// Recurses into `dir`, collecting Markdown files. Symlinks are followed, so
+// the canonical-path stack is the cycle guard.
+fn walk(dir: &Path, path: &str, files: &mut Vec<Markdown>, stack: &mut Vec<PathBuf>) -> Result<()> {
     println!("cargo:rerun-if-changed={}", dir.display());
 
     let canonical = fs::canonicalize(dir)?;
@@ -90,7 +92,7 @@ fn walk(dir: &Path, path: &str, files: &mut Vec<File>, stack: &mut Vec<PathBuf>)
 }
 
 fn walk_entries(
-    dir: &Path, path: &str, files: &mut Vec<File>, stack: &mut Vec<PathBuf>,
+    dir: &Path, path: &str, files: &mut Vec<Markdown>, stack: &mut Vec<PathBuf>,
 ) -> Result<()> {
     for entry in fs::read_dir(dir)? {
         let entry = entry?;
@@ -103,7 +105,7 @@ fn walk_entries(
             walk(&entry_path, &path, files, stack)?;
         } else if metadata.is_file() && entry_path.extension().is_some_and(|ext| ext == "md") {
             println!("cargo:rerun-if-changed={}", entry_path.display());
-            files.push(File {
+            files.push(Markdown {
                 path,
                 file: fs::canonicalize(&entry_path)?,
             });
@@ -113,7 +115,8 @@ fn walk_entries(
     Ok(())
 }
 
-// Fenced code is skipped so a `](` inside a snippet is not a link.
+// Fails on any relative link in `file` whose target does not exist. Fenced
+// code is skipped so a `](` inside a snippet is not a link.
 fn check_links(file: &Path) -> Result<()> {
     let body = fs::read_to_string(file)?;
     let dir = file.parent().expect("file");
@@ -148,18 +151,15 @@ fn check_links(file: &Path) -> Result<()> {
     Ok(())
 }
 
-fn link_targets(body: &str) -> Vec<&str> {
-    let mut targets = Vec::new();
-    let mut rest = body;
-    while let Some(open) = rest.find("](") {
-        rest = &rest[open + 2..];
-        let Some(close) = rest.find(')') else {
-            break;
-        };
-        targets.push(rest[..close].trim());
-        rest = &rest[close + 1..];
-    }
-    targets
+fn link_targets(mut body: &str) -> impl Iterator<Item = &str> {
+    std::iter::from_fn(move || {
+        let open = body.find("](")?;
+        body = &body[open + 2..];
+        let close = body.find(')')?;
+        let target = body[..close].trim();
+        body = &body[close + 1..];
+        Some(target)
+    })
 }
 
 #[cfg(test)]
@@ -168,7 +168,8 @@ mod tests {
 
     use super::*;
 
-    // directory symlink and fenced `](` — live engine tree has neither.
+    // A directory symlink is followed and a `](` inside fenced code is not a
+    // link; the live engine tree has neither, so this is the only coverage.
     #[test]
     fn embeds() {
         let tmp = tempfile::tempdir().expect("tempdir");
@@ -188,7 +189,8 @@ mod tests {
         assert!(generated.contains("path: \"runtime/rule.md\""), "{generated}");
     }
 
-    // fail-closed refusals no live corpus can arrange.
+    // A dangling link and a symlink cycle each fail the build; no live corpus
+    // can arrange either.
     #[test]
     fn refuses() {
         let tmp = tempfile::tempdir().expect("tempdir");

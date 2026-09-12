@@ -1,3 +1,8 @@
+---
+emery: 2
+revision: <revision>
+---
+
 # Specification
 
 One bound source: the mock component's minimal greeting profile, reconciled with no disagreement and one acceptance gap.
@@ -5,7 +10,7 @@ One bound source: the mock component's minimal greeting profile, reconciled with
 ### Requirement: greeting.behaviour [unknown]
 
 ID: REQ-001
-Sources: [source]
+Sources: [source:greeting.behaviour]
 Status: unknown
 
 GET /greeting returns the static string 'hello'.
@@ -14,5 +19,6 @@ Note: acceptance criteria not evidenced.
 
 #### Scenario: Greeting requested
 
+- **GIVEN** the greeting surface is bound
 - **WHEN** `/greeting` is requested
 - **THEN** the response is `hello`

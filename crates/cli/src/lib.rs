@@ -11,30 +11,33 @@
 //! failure envelope, and the exit map — is omnia's command façade
 //! (`omnia_guest::api::command`), so this crate owns only what is Emery's.
 
-mod config;
+mod sources;
 mod text;
 
 use std::borrow::Cow;
 use std::ffi::OsString;
+use std::path::PathBuf;
 
+use clap::builder::{PossibleValue, PossibleValuesParser, TypedValueParser};
 use clap::{Parser, Subcommand};
 use emery_engine::Provider;
-use emery_engine::show::{Document, Show, show};
-use emery_engine::specify::{Specify, specify};
+use emery_engine::show::{Artifact, ShowInput, show};
+use emery_engine::specify::{SpecifyInput, specify};
 use omnia_guest::Error;
 use omnia_guest::api::command::{Command, Parsed, Response, Shell, completions, parse};
 use omnia_guest::api::{Client, Format, Metadata};
+use strum::VariantArray as _;
 
 const ABOUT: &str = "Deterministic primitives for spec-driven development";
 const SPECIFY_DESC: &str = "Generate spec.md and design.md from source adapters.\n\n\
     Name one or more adapters, use `--description <adapter>=<text>` for inline input, \
-    or use `--config [<path>]` (default: `emery.toml`). With no bindings, Emery looks \
-    for `emery.toml` in the project root. Config and command-line bindings cannot be \
+    or use `--config [<path>]` (default: `emery.toml`). With no sources, Emery looks \
+    for `emery.toml` in the project root. Config and command-line sources cannot be \
     combined.\n\n\
     Adapter paths are project-relative. Each run reloads adapters, verifies optional \
     digest pins, reconciles their claims, and atomically commits a new revision.";
-const SHOW_DESC: &str = "Print a document from the current revision.\n\n\
-    Text output contains only the document body. `--format json` also includes the \
+const SHOW_DESC: &str = "Print an artifact from the current revision.\n\n\
+    Text output contains only the artifact body. `--format json` also includes the \
     revision id.";
 const COMPLETIONS_DESC: &str = "Generate shell completions.\n\n\
     Pipe into your shell's completion directory. Example: \
@@ -48,7 +51,8 @@ const NAME: &str = "emery";
 // (`EMERY_REQUEST_ID`, `EMERY_CORRELATION_ID`, `EMERY_CAUSATION_ID`).
 const ENV_PREFIX: &str = "EMERY";
 
-/// Parse and execute one argument vector over `provider`, buffering both channels.
+/// Parses and executes one argument vector over `provider`, buffering both
+/// output channels.
 ///
 /// Clap's own outcomes — help and version on stdout at exit 0, a usage
 /// error on stderr at `USAGE_EXIT` — are complete responses before any
@@ -73,13 +77,17 @@ where
     let command = Command::new(&client, &metadata, app.format).hints(|error| hint(&error.code()));
     match app.verb {
         Verb::Completions { shell } => completions::<App>(shell, NAME),
-        Verb::Specify(grammar) => command.call(specify, || grammar.decode(), text::specify).await,
-        Verb::Show(grammar) => command.call(show, || Ok(grammar.decode()), text::show).await,
+        Verb::Specify(arguments) => {
+            command.call(specify, || arguments.decode(), text::specify).await
+        }
+        Verb::Show(ShowArgs { artifact }) => {
+            command.call(show, || Ok(ShowInput { artifact }), text::show).await
+        }
     }
 }
 
-// `bin_name` pins usage text to `emery`: Omnia forwards the routed id as
-// argv[0], and clap only reads argv[0] when `bin_name` is unset.
+// `bin_name` pins usage text to `emery`: Omnia forwards the engine guest's
+// own id as argv[0], and clap only reads argv[0] when `bin_name` is unset.
 #[derive(Debug, Parser)]
 #[command(
     name = NAME,
@@ -104,7 +112,7 @@ enum Verb {
     /// Generate spec.md and design.md from the named sources
     #[command(long_about = SPECIFY_DESC)]
     Specify(SpecifyArgs),
-    /// Print a reviewable document of the current revision to stdout
+    /// Print a reviewable artifact of the current revision to stdout
     #[command(long_about = SHOW_DESC)]
     Show(ShowArgs),
     /// Print a shell-completion script for `<shell>` to stdout
@@ -126,60 +134,45 @@ struct SpecifyArgs {
     #[arg(long = "description", short = 'd')]
     descriptions: Vec<String>,
     /// Operator-owned config; the omitted value selects emery.toml.
-    #[arg(long, short = 'c', num_args = 0..=1, default_missing_value = config::CONFIG_FILE)]
-    config: Option<String>,
+    #[arg(long, short = 'c', num_args = 0..=1, default_missing_value = sources::CONFIG_FILE)]
+    config: Option<PathBuf>,
 }
 
 impl SpecifyArgs {
-    fn decode(self) -> Result<Specify, Error> {
+    fn decode(self) -> Result<SpecifyInput, Error> {
         let Self {
             adapters,
             descriptions,
             config,
         } = self;
-        let sources = config::decode(&adapters, &descriptions, config.as_deref())?;
-        Ok(Specify { sources })
+        let sources = sources::decode(&adapters, &descriptions, config.as_deref())?;
+        Ok(SpecifyInput { sources })
     }
 }
 
 // The `show` grammar; field docs are its `--help` text.
 #[derive(Debug, clap::Args)]
 struct ShowArgs {
-    /// Reviewable document of the current revision.
-    #[arg(value_enum)]
-    document: DocumentArg,
+    /// Reviewable artifact of the current revision.
+    #[arg(value_parser = artifacts())]
+    artifact: Artifact,
 }
 
-impl ShowArgs {
-    fn decode(self) -> Show {
-        let Self { document } = self;
-        Show {
-            document: document.into(),
-        }
-    }
+// The engine's closed artifact vocabulary as clap values, each with its help
+// line; the exhaustive match makes a new variant a façade compile error.
+fn artifacts() -> impl TypedValueParser<Value = Artifact> {
+    PossibleValuesParser::new(Artifact::VARIANTS.iter().map(|artifact| {
+        let help = match artifact {
+            Artifact::Spec => "The behavioural specification artifact.",
+            Artifact::Design => "The rebuild design artifact.",
+        };
+        PossibleValue::new(artifact.as_ref()).help(help)
+    }))
+    .try_map(|value: String| value.parse::<Artifact>())
 }
 
-// The closed document vocabulary as clap values; the exhaustive
-// conversion pins it to the engine's `Document`.
-#[derive(Debug, Clone, Copy, clap::ValueEnum)]
-enum DocumentArg {
-    /// The behavioural specification document.
-    Spec,
-    /// The rebuild design document.
-    Design,
-}
-
-impl From<DocumentArg> for Document {
-    fn from(document: DocumentArg) -> Self {
-        match document {
-            DocumentArg::Spec => Self::Spec,
-            DocumentArg::Design => Self::Design,
-        }
-    }
-}
-
-// The remedy hints the failure envelope carries, keyed by the `error`
-// discriminant: flag and verb vocabulary lives here, never in engine
+// Looks up the remedy hint the failure envelope carries for an `error`
+// discriminant; flag and verb vocabulary lives here, never in engine
 // descriptions.
 fn hint(code: &str) -> Option<Cow<'static, str>> {
     let hint = match code {
@@ -191,6 +184,9 @@ fn hint(code: &str) -> Option<Cow<'static, str>> {
         }
         "spec-not-generated" => {
             "run `emery specify <adapter>...` to commit a revision, then re-run show"
+        }
+        "spec-outdated" => {
+            "the revision predates this emery's grammar: re-run `emery specify <adapter>...` to regenerate it"
         }
         "refused" => {
             "the loader refused the component; the message above names why (digest, export, or location)"

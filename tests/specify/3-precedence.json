@@ -1,0 +1,106 @@
+{
+  "emery": 2,
+  "preamble": [
+    "Four bound sources disagree; authority resolves what it can, tied peers surface as [conflict] for the operator, and the uncovered acceptance gap is preserved, never guessed."
+  ],
+  "requirements": [
+    {
+      "id": "REQ-001",
+      "subject": "login.flow",
+      "status": "conflict",
+      "covered": true,
+      "sources": [
+        {
+          "source": "docs",
+          "claim": "login.flow"
+        },
+        {
+          "source": "wiki-live",
+          "claim": "login.flow"
+        },
+        {
+          "source": "code",
+          "claim": "login.flow"
+        }
+      ],
+      "body": [],
+      "losers": [
+        {
+          "sources": [
+            "docs"
+          ],
+          "authority": "documentation",
+          "claim": "login.flow",
+          "statement": "Users sign in with a magic link."
+        },
+        {
+          "sources": [
+            "wiki-live"
+          ],
+          "authority": "documentation",
+          "claim": "login.flow",
+          "statement": "Users sign in with a passkey."
+        },
+        {
+          "sources": [
+            "code"
+          ],
+          "authority": "behaviour",
+          "claim": "login.flow",
+          "statement": "Users sign in with email and password."
+        }
+      ],
+      "scenarios": [
+        {
+          "name": "Login selected",
+          "given": [],
+          "when": "a login method must be selected",
+          "then": "operator reconciliation is required",
+          "and": []
+        }
+      ]
+    },
+    {
+      "id": "REQ-002",
+      "subject": "session.timeout",
+      "status": "divergence",
+      "covered": false,
+      "sources": [
+        {
+          "source": "intent",
+          "claim": "session.timeout"
+        },
+        {
+          "source": "docs",
+          "claim": "session.timeout"
+        },
+        {
+          "source": "code",
+          "claim": "session-expiry"
+        }
+      ],
+      "body": [
+        "Sessions must expire after 30 minutes of inactivity."
+      ],
+      "losers": [
+        {
+          "sources": [
+            "code"
+          ],
+          "authority": "behaviour",
+          "claim": "session-expiry",
+          "statement": "Sessions expire after 15 minutes of inactivity."
+        }
+      ],
+      "scenarios": [
+        {
+          "name": "Session expires",
+          "given": [],
+          "when": "a session is inactive for 30 minutes",
+          "then": "the session expires",
+          "and": []
+        }
+      ]
+    }
+  ]
+}

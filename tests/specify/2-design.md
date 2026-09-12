@@ -1,3 +1,8 @@
+---
+emery: 2
+revision: <revision>
+---
+
 # Design
 
 Rebuild design for the greeting surface reconciled in `spec.md`.

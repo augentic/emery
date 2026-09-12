@@ -9,13 +9,12 @@
 //! It is also the reference shape for adapter authors: one `SourceAdapter`
 //! implementation, an embedded prose tree, and a single `source!` export.
 
-#[cfg(target_arch = "wasm32")]
-mod guest {
-    emery_adapter::source!(crate::Adapter);
-}
+emery_adapter::source!(crate::Adapter);
 
-use emery_adapter::types::{Context, Error, Evidence, SourceContent, SourceInput};
-use emery_adapter::{Model, SourceAdapter, content_note, evidence};
+use emery_adapter::types::{Context, Evidence, SourceContent, SourceInput};
+use emery_adapter::{
+    Error, EvidenceTurn, Model, SourceAdapter, bad_request, content_note, evidence, server_error,
+};
 use emery_prose::registry::{self, Doc};
 
 static DOCS: &[Doc] = &[
@@ -34,9 +33,6 @@ static DOCS: &[Doc] = &[
 pub struct Adapter;
 
 impl SourceAdapter for Adapter {
-    // Development-only: must never match a release pin.
-    const IDENTITY: &str = concat!("source@", env!("CARGO_PKG_VERSION"));
-
     fn docs() -> &'static [Doc] {
         DOCS
     }
@@ -44,27 +40,20 @@ impl SourceAdapter for Adapter {
     async fn extract<P: Model>(
         model: &P, ctx: &Context<'_>, input: &SourceInput,
     ) -> Result<Evidence, Error> {
-        let system = registry::body(DOCS, "prompts/extract.md").to_string();
-        let user = format!(
-            "Extract the claim set of the greeting source bound to adapter `{id}` \
-             (source key `{key}`).\n\n\
-             {content}\n\n\
-             Answer with one JSON object matching the gated schema: the Evidence body \
-             (`authority`, `claims`) the prompt describes. The caller persists the \
-             document; do not write it yourself.",
-            id = ctx.adapter_id,
-            key = input.key,
-            content = greeting_note(input)?,
-        );
-        evidence(model, ctx, system, user).await
+        let system = registry::body(DOCS, "prompts/extract.md")
+            .ok_or_else(|| server_error!("`prompts/extract.md` is not embedded"))?;
+        let turn = EvidenceTurn::prepared("greeting", greeting_note(input)?);
+        evidence(model, ctx, input, system, turn).await
     }
 }
 
-// The shared note, plus the greeting fallback and the empty-brief refusal.
+// Builds the prompt's content note: refuses an empty inline brief, passes an
+// inline value through, and points a workspace at `references/greeting.md`
+// as the fallback when the tree states no greeting.
 fn greeting_note(input: &SourceInput) -> Result<String, Error> {
     match &input.content {
         SourceContent::Value(value) if value.trim().is_empty() => {
-            Err(Error::InvalidRequest("the bound greeting brief is empty".to_string()))
+            Err(bad_request!("the bound greeting brief is empty"))
         }
         SourceContent::Value(_) => Ok(content_note(input, "")),
         SourceContent::Workspace(_) => Ok(format!(

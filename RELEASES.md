@@ -6,6 +6,8 @@ Unreleased
 
 ### Changed
 
+- `emery_prose::registry::body`, and the `body` the `registry!` macro generates, return `Option<&'static str>` instead of panicking on a path the build did not embed; an adapter maps the miss to its own `Error` (`server_error!`).
+
 ---
 
 Release notes for previous releases can be found on the respective release branches of the repository.

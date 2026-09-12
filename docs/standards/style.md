@@ -7,13 +7,13 @@ Cross-cutting code-quality rules every Rust change in this workspace honours, co
 The baseline's M-SHORT-NAMES, sharpened: a type lives in `crates/<crate>/<module>/<file>.rs`, and that path is four words of free context. Don't prefix the type with module-name fragments. Private and `pub(crate)` symbols rarely need disambiguation; re-exports that cross crate boundaries may.
 
 ```rust
-// crates/engine/src/plugin.rs
+// crates/engine/src/adapter.rs
 // BAD: SourceAdapterLoader GOOD: Loader
 ```
 
-## Engine failures are Omnia errors
+## Failures are Omnia errors
 
-Engine and CLI code does not introduce an `Error` type. Return `omnia_guest::Error` and pick the class on a direct match: `BadRequest` for operator or input refusals, `NotFound` for missing resources, `BadGateway` for upstream or model failures; everything else is `ServerError`. Construct defaults with `bad_request!` and siblings (snake_case `error` field). Keep explicit variants only for `specify-source-required`, `unsupported-version`, and `spec-not-generated`. The adapter WIT seam (`emery_source::types::Error`) is a different contract — do not replace it with Omnia errors.
+No Emery code — engine, CLI, the adapter SDK, or an adapter — introduces an `Error` type. Return `omnia_guest::Error` and pick the class on a direct match: `BadRequest` for operator or input refusals, `NotFound` for missing resources, `BadGateway` for upstream or model failures; everything else is `ServerError`. Construct defaults with `bad_request!` and siblings (snake_case `error` field). Keep explicit variants only for the recovery discriminants `specify-source-required`, `unsupported-version`, `spec-not-generated`, and `spec-outdated`. Inside a fn, `anyhow` carries the unclassified tail — `.context(…)?` over a storage or filesystem call lands as `server_error` — but never `.context()` an Omnia `Error`, whose `Display` repeats its code. The adapter contract is obliged to keep its WIT `error` variant; it is contained in `emery_source::wire`, where the export side lowers an adapter's Omnia `Error` onto it (`BadRequest` / `NotFound` → `invalid-request`, the rest → `internal`) and `wire::import::extract` lifts it back (`invalid-request` → `bad_request`, `io` / `internal` → `bad_gateway`). Nothing else names the wire variant.
 
 ```rust
 // BAD — a house error type, even if it later maps to Omnia.
@@ -26,16 +26,16 @@ let path = path.display();
 omnia_guest::server_error!("{path} ({source})")
 ```
 
-## One body per command, no wrapper newtype
+## One output per command, no wrapper newtype
 
-Don't introduce a wrapper newtype to hang a rendering off a body. Write the body's render fn in the CLI (`crates/cli/src/text.rs`, `fn(&Body, &mut dyn fmt::Write) -> fmt::Result`, handed to omnia's `Command::call`) and keep `std::fmt::Display` off engine bodies altogether: their terminal shape is the CLI's contract, not the engine's. If the same rendering appears in three command files, it's one body — promote it.
+Don't introduce a wrapper newtype to hang a rendering off an output. Write the output's render fn in the CLI (`crates/cli/src/text.rs`, `fn(&Output, &mut dyn fmt::Write) -> fmt::Result`, handed to omnia's `Command::call`) and keep `std::fmt::Display` off engine outputs altogether: their terminal shape is the CLI's contract, not the engine's. If the same rendering appears in three command files, it's one output — promote it.
 
 ```rust
 // BAD — wrapper newtype existing only to carry a rendering.
-struct SpecifyText<'a>(&'a SpecifyBody);
+struct SpecifyText<'a>(&'a SpecifyOutput);
 impl Text for SpecifyText<'_> { /* ... */ }
-// GOOD — Text on the body, in the façade.
-impl Text for SpecifyBody { /* ... */ }
+// GOOD — Text on the output, in the façade.
+impl Text for SpecifyOutput { /* ... */ }
 ```
 
 ## No traits for testability alone
@@ -52,7 +52,7 @@ store.cas(CURRENT_KEY, observed.as_deref(), id.as_bytes()).await?;
 
 ## Reach for the standard crate first
 
-Before writing a macro or a trait, search crates.io. Top-1000 crates that fit beat hand-rolled equivalents: `strum` for kebab-case enum mirrors, `thiserror` for error layering, `anyhow` for error wrapping in tests, `derive_more` for trivial newtype impls.
+Before writing a macro or a trait, search crates.io. Top-1000 crates that fit beat hand-rolled equivalents: `strum` for kebab-case enum mirrors, `anyhow` for error context over the unclassified tail and in tests, `derive_more` for trivial newtype impls.
 
 ```rust
 // BAD — hand-rolled Display/FromStr mirror of a Serialize derive.
@@ -65,7 +65,7 @@ enum Kind { /* ... */ }
 
 ## No archaeology in code
 
-Comments — doc comments and `//` line comments alike — describe what the code *does today*. Historical framing — "Phase 1 …", "old contract renamed …", "previously lived in …", "former tests collapse here", "to avoid the X → Y cycle" — is deleted, not relocated; git history is the record. The density caps (module `//!` a title plus one or two plain-language paragraphs on what and why, `///` overview under ~8, `//` runs ≤ 3) are review-only — see [coding-standards.md § Comments](./coding-standards.md#comments).
+Comments — doc comments and `//` line comments alike — describe what the code *does today*. Historical framing — "Phase 1 …", "old contract renamed …", "previously lived in …", "former tests collapse here", "to avoid the X → Y cycle" — is deleted, not relocated; git history is the record. What each kind of comment is for is in [coding-standards.md § Comments](./coding-standards.md#comments).
 
 ```rust
 // BAD

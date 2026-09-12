@@ -1,6 +1,6 @@
 # Tag grammar
 
-Three review-signal tags render into `spec.md` from each requirement's row, after the heading name. The engine writes them; they document uncertainty inline so the operator can resolve it at the source and re-run `emery specify`.
+Three review-signal tags render into `spec.md` from each requirement's status, after the heading name. The engine writes them; they document uncertainty inline so the operator can resolve it at the source and re-run `emery specify`.
 
 ## Closed tag set
 
@@ -12,12 +12,12 @@ Three review-signal tags render into `spec.md` from each requirement's row, afte
 
 One tag per heading, mirroring `Status:`; `conflict` outranks `divergence`, which outranks `unknown`, so an uncovered divergence keeps `[divergence]` and gains the gap note. `Status: agreed` carries no tag.
 
-## What the tag asks of your draft
+## What the tag asks of your scenarios
 
-- **`[unknown]`** — a body stating what is evidenced, and a scenario that does not invent the acceptance behaviour.
-- **`[conflict]`** — no body; a scenario that names what must be decided without picking a side.
-- **`[divergence]`** — the winning value as the body; no mention of the loser.
+- **`[unknown]`** — a scenario that states what is checked and does not invent the acceptance behaviour.
+- **`[conflict]`** — a scenario that names what must be decided without picking a side.
+- **`[divergence]`** — scenarios that follow the winning value, with no mention of the loser.
 
 ## Anti-patterns
 
-Restating a tag, status, or note in a paragraph; auto-resolving a `[conflict]`; guessing acceptance behaviour for an `[unknown]` row.
+Restating a tag, status, or note in a paragraph; auto-resolving a `[conflict]`; guessing acceptance behaviour for an `[unknown]` requirement.

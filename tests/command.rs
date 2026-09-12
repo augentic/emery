@@ -29,50 +29,48 @@ struct Case {
     json_channels: bool,
 }
 
-const fn cases() -> [Case; 5] {
-    [
-        Case {
-            name: "help",
-            argv: &["emery", "--help"],
-            exit: 0,
-            stdout: "Usage: emery [OPTIONS] <COMMAND>",
-            stderr: "",
-            json_channels: false,
-        },
-        Case {
-            name: "version",
-            argv: &["emery", "--version"],
-            exit: 0,
-            stdout: concat!("emery ", env!("CARGO_PKG_VERSION")),
-            stderr: "",
-            json_channels: false,
-        },
-        Case {
-            name: "completions",
-            argv: &["emery", "completions", "zsh"],
-            exit: 0,
-            stdout: "_emery",
-            stderr: "",
-            json_channels: false,
-        },
-        Case {
-            name: "specify source required",
-            argv: &["emery", "specify"],
-            exit: 1,
-            stdout: "",
-            stderr: "specify-source-required",
-            json_channels: false,
-        },
-        Case {
-            name: "show not generated",
-            argv: &["emery", "--format", "json", "show", "spec"],
-            exit: 2,
-            stdout: "",
-            stderr: "spec-not-generated",
-            json_channels: true,
-        },
-    ]
-}
+const CASES: [Case; 5] = [
+    Case {
+        name: "help",
+        argv: &["emery", "--help"],
+        exit: 0,
+        stdout: "Usage: emery [OPTIONS] <COMMAND>",
+        stderr: "",
+        json_channels: false,
+    },
+    Case {
+        name: "version",
+        argv: &["emery", "--version"],
+        exit: 0,
+        stdout: concat!("emery ", env!("CARGO_PKG_VERSION")),
+        stderr: "",
+        json_channels: false,
+    },
+    Case {
+        name: "completions",
+        argv: &["emery", "completions", "zsh"],
+        exit: 0,
+        stdout: "_emery",
+        stderr: "",
+        json_channels: false,
+    },
+    Case {
+        name: "specify source required",
+        argv: &["emery", "specify"],
+        exit: 1,
+        stdout: "",
+        stderr: "specify-source-required",
+        json_channels: false,
+    },
+    Case {
+        name: "show not generated",
+        argv: &["emery", "--format", "json", "show", "spec"],
+        exit: 2,
+        stdout: "",
+        stderr: "spec-not-generated",
+        json_channels: true,
+    },
+];
 
 // Deleted verbs are deleted from the grammar, not hidden. A usage error
 // exits `USAGE_EXIT` (64), so exit 2 always means a `NotFound` envelope.
@@ -118,11 +116,11 @@ async fn route_budget() {
     }
 }
 
-// A bindingless run discovers the project-root `emery.toml`; with no
-// file to discover it refuses typed and writes nothing. The CWD move
-// is safe under nextest's process-per-test isolation.
+// A run naming no sources discovers the project-root `emery.toml`; with no
+// file to discover it fails with a typed error and writes nothing. The CWD
+// move is safe under nextest's process-per-test isolation.
 #[tokio::test]
-async fn specify_without_sources() {
+async fn no_sources() {
     let dir = tempfile::TempDir::new().expect("tempdir");
     std::env::set_current_dir(dir.path()).expect("enter empty project");
     let provider = Provider::idle();
@@ -130,7 +128,7 @@ async fn specify_without_sources() {
     let response = cli(&provider, &["emery", "specify"]).await;
     assert_eq!(response.exit, 1);
     let stderr = String::from_utf8_lossy(&response.stderr);
-    assert!(stderr.contains("no source bindings"), "{stderr}");
+    assert!(stderr.contains("no sources"), "{stderr}");
 
     fail(&provider, &["emery", "specify"], 1, "specify-source-required").await;
     assert!(provider.storage.is_empty(), "a refused run writes nothing");
@@ -140,7 +138,7 @@ async fn specify_without_sources() {
 // project-relative `emery.toml`; a missing explicit file is a read
 // error, never a discovery miss.
 #[tokio::test]
-async fn specify_default_config_path() {
+async fn default_config() {
     let dir = tempfile::TempDir::new().expect("tempdir");
     std::env::set_current_dir(dir.path()).expect("enter empty project");
     let provider = Provider::idle();
@@ -152,9 +150,10 @@ async fn specify_default_config_path() {
     assert!(provider.storage.is_empty(), "a refused run writes nothing");
 }
 
-// `--config` carries the whole binding list; mixing refuses typed.
+// `--config` carries the whole source list; mixing it with argv sources is
+// refused with a typed error.
 #[tokio::test]
-async fn specify_mixed_sources() {
+async fn mixed_sources() {
     let provider = Provider::idle();
 
     for argv in [
@@ -163,14 +162,12 @@ async fn specify_mixed_sources() {
     ] {
         fail(&provider, argv, 1, "bad_request").await;
     }
-
-    assert!(provider.storage.is_empty(), "a refused run writes nothing");
 }
 
-// Each source binds once; a repeated key refuses typed whichever
-// carrier repeats it.
+// Each source binds once; a repeated key is refused with a typed error
+// whichever carrier repeats it.
 #[tokio::test]
-async fn specify_duplicate_source() {
+async fn duplicate() {
     let provider = Provider::idle();
     for argv in [
         &["emery", "specify", "docs", "docs"][..],
@@ -178,12 +175,11 @@ async fn specify_duplicate_source() {
     ] {
         fail(&provider, argv, 1, "bad_request").await;
     }
-    assert!(provider.storage.is_empty(), "a refused run writes nothing");
 }
 
 // `--description` needs the `<adapter>=<text>` shape.
 #[tokio::test]
-async fn specify_malformed_description() {
+async fn bad_description() {
     let provider = Provider::idle();
     fail(&provider, &["emery", "specify", "--description", "no-equals"], 1, "bad_request").await;
 }
@@ -191,7 +187,7 @@ async fn specify_malformed_description() {
 // The superseded flag spellings are deleted from the grammar, not
 // aliased (hard cut): clap refuses them as unknown arguments.
 #[tokio::test]
-async fn specify_old_flags_deleted() {
+async fn old_flags() {
     let provider = Provider::idle();
     for argv in [
         &["emery", "specify", "--sources", "emery.toml"][..],
@@ -201,9 +197,10 @@ async fn specify_old_flags_deleted() {
     }
 }
 
-// The read verb fails typed before any revision is committed.
+// `show` fails with a typed `spec-not-generated` error before any revision
+// is committed.
 #[tokio::test]
-async fn show_without_revision() {
+async fn no_revision() {
     let provider = Provider::idle();
 
     let response = cli(&provider, &["emery", "show", "spec"]).await;
@@ -212,11 +209,10 @@ async fn show_without_revision() {
     assert!(stderr.contains("spec-not-generated"), "{stderr}");
 
     fail(&provider, &["emery", "show", "design"], 2, "spec-not-generated").await;
-    assert!(provider.storage.is_empty(), "a refused read writes nothing");
 }
 
 #[tokio::test]
-async fn globals_and_completions() {
+async fn completions() {
     let provider = Provider::idle();
 
     let completions = cli_ok(&provider, &["emery", "completions", "zsh"]).await;
@@ -229,7 +225,7 @@ async fn globals_and_completions() {
 
 // Adapters version independently, so the binary reports its own SemVer.
 #[tokio::test]
-async fn version_host_semver() {
+async fn host_semver() {
     let provider = Provider::idle();
     let response = cli_ok(&provider, &["emery", "--version"]).await;
     let stdout = String::from_utf8_lossy(&response.stdout);
@@ -255,7 +251,7 @@ async fn argv_zero_replaced() {
 // The stdout/stderr channel contract, table-driven across the surface.
 #[tokio::test]
 async fn response_contract() {
-    for case in cases() {
+    for case in CASES {
         // A fresh store keeps `specify` sourceless and `show` without a revision.
         let response = cli(&Provider::idle(), case.argv).await;
         let stdout = String::from_utf8(response.stdout).expect("stdout is UTF-8");

@@ -12,44 +12,45 @@ use std::future::ready;
 
 use emery_prose::registry::{self, Doc};
 use omnia_guest::model::{Function, Tool, ToolCall, ToolFuture, Tools};
-use serde_json::{Value, json};
+use schemars::JsonSchema;
+use serde::Deserialize;
+use serde_json::json;
 
-/// The reference tools declared for a docs-carrying judgment.
+/// The `list_docs` arguments: none. The braces stay — a braced struct derives
+/// the empty `object` schema a tool's parameters must be, where a unit struct
+/// would derive `null`.
+#[derive(Debug, Deserialize, JsonSchema)]
+#[expect(
+    clippy::empty_structs_with_brackets,
+    reason = "the schema derive needs the braced form for an object"
+)]
+struct ListDocs {}
+
+/// The `read_doc` arguments.
+#[derive(Debug, Deserialize, JsonSchema)]
+struct ReadDoc {
+    /// Adapter-relative document path, e.g. `prompts/build.md`.
+    path: String,
+}
+
+/// Declares the `list_docs` and `read_doc` tools for a judgment that carries
+/// reference documents.
 #[must_use]
 pub fn tools() -> Vec<Tool> {
     vec![
-        Tool::Function(
-            Function::builder()
-                .name("list_docs")
-                .description("List every reference document path this adapter embeds.")
-                .parameters(json!({ "type": "object", "properties": {} }).to_string())
-                .build(),
-        ),
-        Tool::Function(
-            Function::builder()
-                .name("read_doc")
-                .description("Read one embedded reference document in full by its path.")
-                .parameters(
-                    json!({
-                        "type": "object",
-                        "properties": {
-                            "path": {
-                                "type": "string",
-                                "description": "Adapter-relative document path, \
-                                                e.g. `prompts/build.md`."
-                            }
-                        },
-                        "required": ["path"]
-                    })
-                    .to_string(),
-                )
-                .build(),
-        ),
+        Tool::Function(Function::of::<ListDocs>(
+            "list_docs",
+            "List every reference document path this adapter embeds.",
+        )),
+        Tool::Function(Function::of::<ReadDoc>(
+            "read_doc",
+            "Read one embedded reference document in full by its path.",
+        )),
     ]
 }
 
-/// The tool handler a question passes to `ask`: [`answer`] over `docs`, or
-/// `None` when the adapter embeds nothing to consult.
+/// Builds the tool handler a question passes to `ask`: [`answer`] over
+/// `docs`, or `None` when the adapter embeds nothing to consult.
 #[must_use]
 pub fn answering(docs: &'static [Doc]) -> Option<Tools> {
     (!docs.is_empty()).then(|| {
@@ -58,29 +59,16 @@ pub fn answering(docs: &'static [Doc]) -> Option<Tools> {
     })
 }
 
-/// Answers one reference tool call over the embedded `docs`.
-///
-/// # Errors
-///
-/// Returns a repairable message for an unknown tool, malformed
-/// arguments, or an unembedded path.
-pub fn answer(docs: &[Doc], call: &ToolCall) -> Result<String, String> {
+fn answer(docs: &[Doc], call: &ToolCall) -> Result<String, String> {
     match call.name.as_str() {
         "list_docs" => {
             let paths: Vec<&str> = docs.iter().map(|doc| doc.path).collect();
             Ok(json!({ "paths": paths }).to_string())
         }
         "read_doc" => {
-            let arguments: Value = serde_json::from_str(&call.arguments)
-                .map_err(|err| format!("read_doc: invalid arguments: {err}"))?;
-            let path = arguments
-                .get("path")
-                .and_then(Value::as_str)
-                .ok_or_else(|| "read_doc requires a string `path` argument".to_string())?;
-            registry::resolve(docs, path).map_or_else(
-                || Err(format!("no document `{path}`")),
-                |body| Ok(json!({ "path": path, "body": body }).to_string()),
-            )
+            let ReadDoc { path } = call.arguments().map_err(|err| format!("read_doc: {err}"))?;
+            let doc = registry::find(docs, &path).ok_or_else(|| format!("no document `{path}`"))?;
+            Ok(json!({ "path": path, "body": doc.body }).to_string())
         }
         other => Err(format!("unknown tool `{other}`")),
     }

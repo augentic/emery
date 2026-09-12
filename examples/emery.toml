@@ -1,14 +1,14 @@
 # Emery configuration.
 #
-# Each [[source]] entry binds one source, in declaration order; `name`
-# is the binding key. Exactly one content key — `path` or `description`
+# Each [[source]] entry names one source, in declaration order; `name`
+# is the source key. Exactly one content key — `path` or `description`
 # (omitted means the workspace lend at `.`). `path` and a local
 # component `adapter` resolve relative to this file.
 
 # Live journey: local mock component + its fixture tree.
 [[source]]
 name = "docs"
-adapter = "../target/wasm32-wasip2/release/adapter.wasm"
+adapter = "../target/wasm32-wasip2/release/examples/adapter.wasm"
 path = "docs/"
 
 # # Workspace lend of the invocation directory (the default: path = ".").
@@ -16,8 +16,8 @@ path = "docs/"
 # name = "docs"
 # adapter = "emery:documentation@1.2.0"
 
-# # Local path, resolved relative to this file. The name is the binding
-# # key, so one adapter may bind several roots.
+# # Local path, resolved relative to this file. The name is the source
+# # key, so one adapter may name several roots.
 # [[source]]
 # name = "api-surface"
 # adapter = "typescript"
@@ -30,7 +30,7 @@ path = "docs/"
 # adapter = "intent@1.0.0"
 # description = "Ship a location-independent spec generator."
 
-# # Local component path as the adapter selector, loaded through the
+# # Local component path as the adapter reference, loaded through the
 # # deployment loader and read fresh on every run. Adapter location and
 # # source location are separate axes.
 # [[source]]

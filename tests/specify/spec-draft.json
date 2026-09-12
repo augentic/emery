@@ -5,12 +5,10 @@
   "requirements": [
     {
       "subject": "greeting.behaviour",
-      "body": [
-        "GET /greeting returns the static string 'hello'."
-      ],
       "scenarios": [
         {
           "name": "Greeting requested",
+          "given": ["the greeting surface is bound"],
           "when": "`/greeting` is requested",
           "then": "the response is `hello`"
         }

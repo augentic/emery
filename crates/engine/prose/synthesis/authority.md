@@ -6,7 +6,7 @@ Every Evidence document carries one closed `authority` class. Highest wins:
 2. **`documentation`** — operator-provided written product or technical intent (internal docs, RFCs, product notes). Emitted by the `documentation` source adapter.
 3. **`behaviour`** — what legacy code actually does. Emitted by behaviour sources such as `typescript` and future code or observation adapters.
 
-The **engine** resolves authority before you are called; the requirement rows carry the outcome. You never pick winners, derive `Status:`, or order `Sources:` — you draft honest content for the rows as they stand.
+The **engine** resolves authority before you are called; the requirements carry the outcome. You never pick winners, derive `Status:`, or order the `Sources:` pairs — you draft honest content for the requirements as they stand.
 
 ## Status derivation (engine-computed)
 
@@ -19,10 +19,10 @@ A requirement's contributing claims were grouped into agreeing classes. The engi
 | ≥2, unique top authority | `divergence` | `[divergence]` |
 | ≥2 at the same top authority | `conflict` | `[conflict]` |
 
-An uncovered `divergence` or `conflict` row keeps its tag; the engine adds the gap note beneath its loser notes.
+An uncovered `divergence` or `conflict` requirement keeps its tag; the engine adds the gap note beneath its loser notes.
 
-## What you draft per resolution
+## What the resolution renders
 
-- **`agreed`** / **`unknown`** — the shared statement as the operative body: quote documentation language lightly normalised, paraphrase behaviour into present-tense system prose.
-- **`divergence`** — the winning class's statement as the operative body. Do not mention the losers: the engine renders one `Note:` per losing class from their verbatim statements.
-- **`conflict`** — no body at all (`"body": []`). The engine renders one `Note:` per class and a closing note handing the decision to the operator; you draft only the scenario, which must not pick a side.
+- **`agreed`** / **`unknown`** — the shared statement is the body.
+- **`divergence`** — the winning class's statement is the body; the engine renders one `Note:` per losing class from their verbatim statements. Your scenarios follow the winner and never mention the losers.
+- **`conflict`** — no body at all. The engine renders one `Note:` per class and a closing note handing the decision to the operator; your scenario must not pick a side.

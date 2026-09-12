@@ -1,6 +1,6 @@
 # Requirement block
 
-Every requirement in `spec.md` is one block the engine renders from its row and your draft: heading, three provenance lines, body, templated notes, and at least one scenario. You draft the body paragraphs and the scenarios for each subject; everything else is rendered.
+Every requirement in `spec.md` is one block the engine renders from the requirement and your draft: heading, three provenance lines, the body, templated notes, and at least one scenario. You draft the scenarios for each listed subject; everything else — including the body — is rendered.
 
 ## What the engine renders
 
@@ -8,31 +8,31 @@ Every requirement in `spec.md` is one block the engine renders from its row and 
 ### Requirement: <subject>[ <tag>]
 
 ID: REQ-<NNN>
-Sources: [<source>, <source>, …]
+Sources: [<source>:<claim>, <source>:<claim>, …]
 Status: <agreed|unknown|conflict|divergence>
 
-<your body paragraphs>
+<the winning claim's statement, verbatim; none for a requirement in conflict>
 
-Note: <templated loser and gap lines, where the row has them>
+Note: <templated loser and gap lines, where the requirement has them>
 
 #### Scenario: <your scenario name>
 
 - **GIVEN** <your context, optional>
 - **WHEN** <your trigger or input>
 - **THEN** <your expected behaviour>
+- **AND** <your follow-on outcome, optional>
 ```
 
 ## What you draft
 
-One entry per row, keyed by the row's `subject` exactly as listed:
+One entry per requirement listed under *Requirements (draft one entry per subject)*, keyed by its `subject` exactly as listed:
 
-- **`body`** — one or more Markdown paragraphs, each a string. One requirement, one behavioural assertion. Empty for a `conflict` row (see [authority.md](authority.md)); at least one paragraph otherwise.
-- **`scenarios`** — at least one, each with a `name`, optional `given` lines, a `when`, and a `then`, all single lines. Draft from the `criterion` claims covering the row; for an uncovered row, a scenario that states what is checked without inventing the outcome.
+- **`scenarios`** — at least one, each with a `name`, optional `given` lines, a `when`, a `then`, and optional `and` lines that follow the `then`, all single lines. Draft from the `criterion` claims covering the requirement; for an uncovered requirement, a scenario that states what is checked without inventing the outcome. For a requirement in `conflict` (see [authority.md](authority.md)), the scenario must not pick a side.
 
-The engine refuses a draft that omits a row, drafts a subject that is not a row, drafts a subject twice, gives a conflict row a body, gives any other row none, omits a scenario, or opens a paragraph line with `#`, `ID:`, `Sources:`, `Status:`, or `Note:`.
+The engine refuses a draft that omits a listed requirement, drafts a subject that is not listed, drafts a subject twice, omits a scenario, or opens a preamble paragraph line with `#`, `ID:`, `Sources:`, `Status:`, `Note:`, or `Type:`.
 
-## Body conventions
+## Scenario conventions
 
-- **Verbatim source language where possible.** Quote documentation claims lightly normalised; paraphrase behaviour claims into present-tense system prose.
-- **No commentary about provenance.** Winners, losers, and gaps are the engine's notes; do not restate them.
-- **No invented citations.** Cite only claims present in the request's Evidence.
+- **Verbatim source language where possible.** Draw the trigger and the outcome from the `criterion` and `requirement` claims; do not paraphrase behaviour into a different behaviour.
+- **No commentary about provenance.** Winners, losers, and gaps are the engine's notes; a scenario never restates them.
+- **No invented outcomes.** Where no criterion evidences the outcome, state what is checked and leave the outcome to the evidence.

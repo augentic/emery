@@ -18,12 +18,7 @@ crate-type = ["cdylib", "rlib"]
 name = "emery"
 path = "src/main.rs"
 
-[dependencies]
-cfg-if.workspace = true
-emery-source.workspace = true
-
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
-anyhow.workspace = true
 omnia.workspace = true
 omnia-cursor.workspace = true
 omnia-filesystem.workspace = true
@@ -34,21 +29,28 @@ omnia-wasi-otel.workspace = true
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 emery-cli.workspace = true
+emery-source.workspace = true
 omnia-guest.workspace = true
 wasip3.workspace = true
 
 [build-dependencies]
+emery-prose = { workspace = true, features = ["emit"] }
 omnia.workspace = true
 
 [dev-dependencies]
+cfg-if.workspace = true
 emery-adapter.workspace = true
 emery-prose.workspace = true
+hex.workspace = true
 serde_json.workspace = true
+sha2.workspace = true
 tempfile.workspace = true
 
 [target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]
+anyhow.workspace = true
 emery-cli.workspace = true
 emery-engine.workspace = true
+emery-source.workspace = true
 omnia-guest.workspace = true
 omnia-test = { workspace = true, features = ["guest"] }
 tokio = { workspace = true, features = ["macros", "rt"] }
@@ -134,13 +136,11 @@ serde_json = "1.0.151"
 sha2 = "0.11"
 strum = { version = "0.28", features = ["derive"] }
 tempfile = "3.27.0"
-thiserror = "2.0.20"
 tokio = { version = "1.53.1", features = ["fs", "io-util", "rt"] }
-toml = "1.1.5"
+toml = "1.1.6"
 tracing = "0.1.44"
-wasip3 = "0.8.0"
-wasmtime = { version = "48.0.1", default-features = false, features = ["anyhow", "component-model-bytes"] }
-wit-bindgen = { version = "0.61.1", features = ["async-spawn"] }
+wasip3 = "0.9.0"
+wit-bindgen = { version = "0.62.0", features = ["async-spawn"] }
 
 emery-adapter = { path = "crates/adapter" }
 emery-cli = { path = "crates/cli" }
@@ -149,11 +149,7 @@ emery-prose = { path = "crates/prose" }
 emery-source = { path = "crates/source" }
 
 omnia = { version = "0.36.0", default-features = false, features = ["jit", "link", "plugin"] }
-omnia-core = "0.36.0"
 omnia-guest = { version = "0.36.0", default-features = false, features = ["command"] }
-omnia-guest-macros = "0.36.0"
-omnia-host-macros = "0.36.0"
-omnia-plugin = "0.36.0"
 omnia-test = { version = "0.36.0", default-features = false }
 omnia-wasi-blobstore = "0.36.0"
 omnia-wasi-keyvalue = "0.36.0"

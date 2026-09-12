@@ -6,26 +6,27 @@
 //! run, verifying an optional digest pin and refusing adapters that require
 //! a newer Emery than the one running.
 //!
-//! Loads are remembered for the run so two bindings on the same adapter
-//! share one guest, and a conflicting pin on the second binding is caught
+//! Loads are remembered for the run so two sources on the same adapter
+//! share one guest, and a conflicting pin on the second source is caught
 //! here rather than surfacing as a confusing host error.
 
-use std::fmt;
+use std::fmt::{self, Display, Formatter};
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
 
+use anyhow::Context;
 use emery_source::Source;
 use emery_source::claims::is_kebab;
-use omnia_guest::plugins::{Digest, Location, Plugin, PluginCache, PluginRef};
+use omnia_guest::plugins::{Digest, Location, PluginCache, PluginRef};
 use omnia_guest::{Error, Plugins, bad_request, not_found};
 use serde::{Deserialize, Serialize};
 
 use crate::preopen_path;
 
-/// One run's adapter loads over a provider: loads memoize by identity
-/// for the run, so a second binding on the same adapter reuses the held
-/// guest and a disagreeing pin refuses `already-active` from the memo
-/// rather than the host.
+/// Loads adapters for one run over a provider. Loads are memoized by
+/// identity, so a second source on the same adapter reuses the held guest,
+/// and a disagreeing pin is refused as `already-active` by the memo rather
+/// than by the host.
 pub struct Loader<'a, P: Source + Plugins> {
     provider: &'a P,
     // The memo wraps the same provider; `PluginCache` exposes no accessor
@@ -34,7 +35,7 @@ pub struct Loader<'a, P: Source + Plugins> {
 }
 
 impl<'a, P: Source + Plugins> Loader<'a, P> {
-    /// An empty memo over `provider`.
+    /// Creates a loader with an empty memo over `provider`.
     pub const fn new(provider: &'a P) -> Self {
         Self {
             provider,
@@ -42,38 +43,36 @@ impl<'a, P: Source + Plugins> Loader<'a, P> {
         }
     }
 
-    /// Loads the adapter a selector names — a local component or registry
-    /// package — enforcing its minimum `emery-version`, and returns its
-    /// routed dispatch id.
+    /// Loads the adapter a reference names — a local component or registry
+    /// package — enforcing its minimum `emery-version`, and returns the
+    /// adapter id the `Source` capability addresses it by.
     ///
     /// # Errors
     ///
-    /// Returns selector, load, or version failures.
+    /// Returns reference, load, or version failures.
     pub async fn load(
-        &self, selector: &AdapterRef, pin: Option<&Digest>, registry: Option<&str>,
-    ) -> Result<Loaded, Error> {
-        let name = selector.name();
-        let loaded = match selector.request(pin, registry)? {
-            Some(request) => Loaded::from(self.cache.ensure(&request).await?),
-            None => Loaded {
-                id: dispatch_id(name),
-                digest: None,
-            },
+        &self, adapter: &AdapterRef, pin: Option<&Digest>, registry: Option<&str>,
+    ) -> Result<String, Error> {
+        let name = adapter.name();
+        let id = match adapter.request(pin, registry)? {
+            Some(request) => self.cache.ensure(&request).await?.id().to_string(),
+            None => adapter_id(name),
         };
-        check_version(self.provider, name, &loaded.id)?;
+        check_version(self.provider, name, &id)?;
 
-        Ok(loaded)
+        Ok(id)
     }
 }
 
-// The id a bare or local adapter dispatches under: the `source:` role
-// prefix over its name. Registry packages dispatch under the package
+// Builds the id a bare or local adapter is addressed by: the `source:` role
+// prefix over its name. A registry package is addressed by the package
 // reference itself.
-fn dispatch_id(name: &str) -> String {
+fn adapter_id(name: &str) -> String {
     format!("source:{name}")
 }
 
-// Refuse when the running emery is older than the adapter's minimum.
+// Refuses the adapter when the running emery is older than the minimum its
+// `emery-version` metadata declares.
 fn check_version<P: Source>(provider: &P, name: &str, id: &str) -> Result<(), Error> {
     let Some(declared) = provider.metadata(id).emery_version else {
         return Ok(());
@@ -82,9 +81,10 @@ fn check_version<P: Source>(provider: &P, name: &str, id: &str) -> Result<(), Er
         bad_request!("adapter `{name}` ({id}) has an invalid `emery-version` `{declared}`: {err}")
     })?;
 
-    // The running version is this crate's own, so it always parses.
-    let running = semver::Version::parse(env!("CARGO_PKG_VERSION"));
-    if running.is_ok_and(|running| running < minimum) {
+    let running = semver::Version::parse(env!("CARGO_PKG_VERSION")).with_context(|| {
+        format!("the running emery version `{}` is not SemVer", env!("CARGO_PKG_VERSION"))
+    })?;
+    if running < minimum {
         return Err(Error::BadRequest {
             code: "unsupported-version".into(),
             description: format!("adapter {name} ({id}) requires emery {minimum} or newer"),
@@ -92,26 +92,6 @@ fn check_version<P: Source>(provider: &P, name: &str, id: &str) -> Result<(), Er
     }
 
     Ok(())
-}
-
-/// One loaded source adapter: the routed dispatch id plus, for a
-/// loader-loaded adapter, its content digest.
-#[derive(Debug)]
-pub struct Loaded {
-    /// Routed dispatch id: the package reference for a registry
-    /// package, `source:<name>` otherwise.
-    pub id: String,
-    /// Sha256 digest of the loaded component bytes.
-    pub digest: Option<Digest>,
-}
-
-impl From<Plugin> for Loaded {
-    fn from(plugin: Plugin) -> Self {
-        Self {
-            id: plugin.id().to_owned(),
-            digest: Some(plugin.digest().clone()),
-        }
-    }
 }
 
 /// An operator-supplied adapter reference; on the wire it is the operator
@@ -177,7 +157,7 @@ impl FromStr for AdapterRef {
                     return Ok(package);
                 }
             }
-            None if is_kebab(value) => return Ok(Self::Bare(value.to_owned())),
+            None if is_kebab(value) => return Ok(Self::Bare(value.to_string())),
             _ => {}
         }
 
@@ -185,9 +165,10 @@ impl FromStr for AdapterRef {
     }
 }
 
-impl fmt::Display for AdapterRef {
-    // The selector as an operator writes it; a component renders its path.
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+impl Display for AdapterRef {
+    // Writes the reference as an operator would type it; a component renders
+    // as its path.
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         match self {
             Self::Package {
                 namespace,
@@ -214,8 +195,8 @@ impl AdapterRef {
         })?;
 
         Ok(Self::Package {
-            namespace: namespace.to_owned(),
-            name: name.to_owned(),
+            namespace: namespace.to_string(),
+            name: name.to_string(),
             version,
         })
     }
@@ -228,8 +209,8 @@ impl AdapterRef {
         }
     }
 
-    // The adapter name is the file stem, minus an `emery` crate prefix,
-    // in kebab case.
+    // Builds a component reference from `path`, naming the adapter after the
+    // file stem minus any `emery_` / `emery-` crate prefix, in kebab case.
     fn component(path: &str) -> Result<Self, Error> {
         let stem = Path::new(path)
             .file_stem()
@@ -244,15 +225,15 @@ impl AdapterRef {
         })
     }
 
-    // The `omnia:plugins/loader` request this selector names, or `None`
-    // for a bare name, which dispatches a statically declared guest.
+    // Builds the `omnia:plugins/loader` request this reference names — `None`
+    // for a bare name, which addresses a statically declared guest.
     fn request(
         &self, pin: Option<&Digest>, registry: Option<&str>,
     ) -> Result<Option<PluginRef>, Error> {
         let (package, location) = match self {
             Self::Bare(_) => return Ok(None),
             Self::Package { .. } => {
-                (self.to_string(), Location::Registry(registry.map(ToOwned::to_owned)))
+                (self.to_string(), Location::Registry(registry.map(ToString::to_string)))
             }
             // The loader reads the file fresh and refuses a missing path
             // itself; this typo gate only lands it on `not_found` instead.
@@ -266,7 +247,7 @@ impl AdapterRef {
                         "adapter `{path}` did not resolve to a `.wasm` component at {relative}"
                     ));
                 }
-                (dispatch_id(name), Location::Path(relative.display().to_string()))
+                (adapter_id(name), Location::Path(relative.display().to_string()))
             }
         };
 
@@ -280,16 +261,18 @@ impl AdapterRef {
     }
 }
 
+// The serde side of the parse: a decoder reports the refusal's description
+// at the offending field, so the message carries no error code of its own.
 impl TryFrom<String> for AdapterRef {
-    type Error = Error;
+    type Error = String;
 
-    fn try_from(value: String) -> Result<Self, Error> {
-        value.parse()
+    fn try_from(value: String) -> Result<Self, String> {
+        value.parse().map_err(|err: Error| err.description())
     }
 }
 
 impl From<AdapterRef> for String {
-    fn from(selector: AdapterRef) -> Self {
-        selector.to_string()
+    fn from(adapter: AdapterRef) -> Self {
+        adapter.to_string()
     }
 }

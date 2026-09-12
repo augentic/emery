@@ -1,6 +1,6 @@
 # Contributing to Emery
 
-This section is for developers working on the Emery framework itself — the Rust runtime, the Cursor skill wrapper, and docs. The v1 workflow is archived at git tag `v1`; feature work is frozen until the spec walking skeleton is green.
+This section is for developers working on the Emery framework itself — the Rust runtime, the Cursor skill wrapper, and docs. The v1 workflow is archived at git tag `v1`.
 
 ## Repository map
 
@@ -42,7 +42,7 @@ No published binary is downloaded — every invocation builds from the in-tree C
 
 ## Contribution workflow
 
-1. **Discuss first.** Open a GitHub issue before starting work to confirm alignment with the remediation plan.
+1. **Discuss first.** Open a GitHub issue before starting work to agree the approach.
 2. **Branch from `main`.** Create a feature branch for your change.
 3. **Make your edits.** Follow the conventions described in the sub-pages below.
 4. **Run checks.** `make links` for the Developer Guide; `make ci` for the full gate.

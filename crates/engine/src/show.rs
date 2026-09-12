@@ -1,61 +1,91 @@
 //! The `show` operation
 //!
-//! Reads one document — `spec.md` or `design.md` — from the current
+//! Renders one document — `spec.md` or `design.md` — from the current
 //! specification revision so an operator, or a skill acting for one, can
 //! review what the last `specify` committed.
 //!
 //! Review goes through this operation rather than the filesystem so the
-//! revision store stays the engine's own: callers see a document paired with
-//! the revision id it belongs to, and never the storage layout beneath it.
+//! revision store stays the engine's own: callers see a document rendered
+//! from the stored revision, paired with the revision id it belongs to and the
+//! typed document itself, and never the storage layout beneath it.
 
+use anyhow::Context as _;
 use omnia_guest::api::Context;
 use omnia_guest::{BlobStore, Error, StateStore};
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
+use strum::{AsRefStr, EnumString, VariantArray};
 
-pub use crate::artifact::Document;
-use crate::store::Store;
+use crate::revision::Document;
+use crate::store;
 
-/// Read one document of the current revision.
-#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
-#[serde(rename_all = "kebab-case")]
-pub struct Show {
-    /// Which document to read.
-    pub document: Document,
-}
-
-/// Successful review result.
-#[derive(Debug, Serialize)]
-#[serde(rename_all = "kebab-case")]
-pub struct ShowBody {
-    /// Current revision id.
-    pub revision: String,
-    /// Which document `body` carries.
-    pub document: Document,
-    /// The document body.
-    pub body: String,
-}
-
-/// Read one document of the current revision over the context's provider.
+/// Reads one document of the current revision over the context's provider,
+/// returning it with the revision id it belongs to.
 ///
 /// # Errors
 ///
 /// Returns `NotFound` (`spec-not-generated`) when no revision has been
 /// committed, and passes through the store's failures.
 pub async fn show<P: StateStore + BlobStore>(
-    input: Show, context: Context<P>,
-) -> Result<ShowBody, Error> {
-    let Show { document } = input;
-
-    let Some(revision) = Store::new(context.provider()).current().await? else {
+    input: ShowInput, context: Context<P>,
+) -> Result<ShowOutput, Error> {
+    let Some((id, revision)) = store::current(context.provider()).await? else {
         return Err(Error::NotFound {
             code: "spec-not-generated".into(),
             description: "no specification revision has been committed".into(),
         });
     };
 
-    Ok(ShowBody {
-        revision: revision.id(),
-        document,
-        body: revision.into_body(document),
-    })
+    match input.artifact {
+        Artifact::Spec => ShowOutput::new(&revision.spec, id),
+        Artifact::Design => ShowOutput::new(&revision.design, id),
+    }
+}
+
+/// Read one artifact of the current revision.
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub struct ShowInput {
+    /// Which artifact to read.
+    pub artifact: Artifact,
+}
+
+/// The reviewable artifacts of a revision. A caller names one by its
+/// kebab-case key (`as_ref()` / `parse()`, `spec`), the same spelling serde
+/// uses.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, AsRefStr, EnumString, VariantArray)]
+#[serde(rename_all = "kebab-case")]
+#[strum(serialize_all = "kebab-case")]
+pub enum Artifact {
+    /// The behavioural specification.
+    Spec,
+    /// The rebuild design.
+    Design,
+}
+
+/// Successful review result.
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub struct ShowOutput {
+    /// Current revision id.
+    pub revision: String,
+    /// The rendered Markdown projection.
+    pub body: String,
+    /// The stored document the projection was rendered from, as it is
+    /// stored.
+    pub document: Value,
+}
+
+impl ShowOutput {
+    // The document serialises under the same derive the store wrote it
+    // with, so a failure here is the engine's own defect: `server_error`.
+    fn new<D: Document>(document: &D, revision: String) -> Result<Self, Error> {
+        let value = serde_json::to_value(document)
+            .with_context(|| format!("`{}` does not serialise", D::NAME))?;
+        Ok(Self {
+            body: document.to_markdown(&revision),
+            revision,
+            document: value,
+        })
+    }
 }
