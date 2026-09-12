@@ -29,10 +29,13 @@ pub fn specify(output: &SpecifyOutput, w: &mut dyn fmt::Write) -> fmt::Result {
     Ok(())
 }
 
-// Writes one line per changed requirement and section, prefixed by the
-// projection it appears in.
+// Writes one line per changed preamble, requirement, and section, prefixed
+// by the projection it appears in.
 fn changes(diff: &Diff, w: &mut dyn fmt::Write) -> fmt::Result {
     let spec = format!("{}.md", Artifact::Spec.as_ref());
+    if diff.spec.preamble {
+        writeln!(w, "    {spec} ~ preamble")?;
+    }
     for entry in &diff.spec.added {
         writeln!(w, "    {spec} + {} {}", entry.id, entry.subject)?;
     }
@@ -46,6 +49,9 @@ fn changes(diff: &Diff, w: &mut dyn fmt::Write) -> fmt::Result {
     }
 
     let design = format!("{}.md", Artifact::Design.as_ref());
+    if diff.design.preamble {
+        writeln!(w, "    {design} ~ preamble")?;
+    }
     for kind in &diff.design.added {
         writeln!(w, "    {design} + {}", kind.as_ref())?;
     }

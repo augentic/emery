@@ -2,8 +2,8 @@
 //!
 //! The runtime view of an embedded corpus: a [`Doc`] is one document with
 //! its tree-relative path and body, and the lookup functions find a document
-//! by that path. [`crate::registry!`] gives a crate its own `docs` and `body`
-//! accessors over the table the build step generated.
+//! by that path. [`crate::registry!`] gives a crate its own `docs` accessor
+//! over the table the build step generated.
 //!
 //! Paths are the stable names prompts and reference tools use to address
 //! documents, so a lookup by path is the only interface the registry needs.
@@ -32,7 +32,13 @@ pub fn body(docs: &[Doc], path: &str) -> Option<&'static str> {
     find(docs, path).map(|doc| doc.body)
 }
 
-/// Generates registry accessors for the build-time `DOCS` table.
+/// Includes the registry the crate's build script generated.
+///
+/// The build script's `emery_prose::emit` call writes `prose_docs.rs` into
+/// `OUT_DIR`: the embedded document table and the
+/// `pub fn docs() -> &'static [Doc]` accessor over it. This macro brings
+/// [`Doc`] into scope for that file and includes it, so the module it expands
+/// in exposes `docs()`.
 ///
 /// ```ignore
 /// mod registry {
@@ -42,21 +48,8 @@ pub fn body(docs: &[Doc], path: &str) -> Option<&'static str> {
 #[macro_export]
 macro_rules! registry {
     () => {
-        pub use $crate::registry::Doc;
+        use $crate::registry::Doc;
 
         include!(concat!(env!("OUT_DIR"), "/prose_docs.rs"));
-
-        /// Returns every embedded document, sorted by tree-relative path.
-        #[must_use]
-        pub fn docs() -> &'static [Doc] {
-            DOCS
-        }
-
-        /// Returns the body of the embedded document at `path`, or `None`
-        /// when the build did not embed it.
-        #[must_use]
-        pub fn body(path: &str) -> Option<&'static str> {
-            $crate::registry::body(DOCS, path)
-        }
     };
 }

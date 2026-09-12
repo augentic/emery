@@ -1017,7 +1017,7 @@ dependencies = [
  "emery-cli",
  "emery-engine",
  "emery-prose",
- "emery-source",
+ "emery-sdk",
  "hex",
  "omnia",
  "omnia-cursor",
@@ -1039,14 +1039,12 @@ dependencies = [
 name = "emery-adapter"
 version = "0.38.0"
 dependencies = [
- "emery-prose",
- "emery-source",
  "omnia-guest",
- "omnia-test",
  "schemars",
  "serde",
  "serde_json",
- "tokio",
+ "strum 0.28.0",
+ "wit-bindgen 0.62.0",
 ]
 
 [[package]]
@@ -1067,8 +1065,8 @@ name = "emery-engine"
 version = "0.38.0"
 dependencies = [
  "anyhow",
+ "emery-adapter",
  "emery-prose",
- "emery-source",
  "hex",
  "omnia-guest",
  "omnia-test",
@@ -1091,15 +1089,17 @@ dependencies = [
 ]
 
 [[package]]
-name = "emery-source"
+name = "emery-sdk"
 version = "0.38.0"
 dependencies = [
+ "emery-adapter",
+ "emery-prose",
  "omnia-guest",
+ "omnia-test",
  "schemars",
  "serde",
  "serde_json",
- "strum 0.28.0",
- "wit-bindgen 0.62.0",
+ "tokio",
 ]
 
 [[package]]

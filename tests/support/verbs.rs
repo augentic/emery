@@ -4,7 +4,7 @@
 //! which commands exist learns it from the shipped surface rather than from a
 //! list that would have to be kept in step by hand.
 
-use emery_source::claims::is_kebab;
+use emery_adapter::is_kebab;
 
 /// Extracts the sorted verb names from the `Commands:` section of
 /// `emery --help`.

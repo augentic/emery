@@ -10,7 +10,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::{self, Display, Formatter};
 
-use emery_source::claims::DOTTED_KEBAB_PATTERN;
+use emery_adapter::source::CLAIM_ID_REGEX;
 use omnia_guest::{Error, server_error};
 use schemars::JsonSchema;
 use serde::Deserialize;
@@ -190,7 +190,7 @@ pub struct SpecAnswer {
 #[serde(deny_unknown_fields)]
 pub struct Draft {
     /// The requirement's subject, exactly as listed.
-    #[schemars(regex(pattern = DOTTED_KEBAB_PATTERN))]
+    #[schemars(regex(pattern = CLAIM_ID_REGEX))]
     pub subject: String,
     /// At least one scenario.
     pub scenarios: Vec<Scenario>,

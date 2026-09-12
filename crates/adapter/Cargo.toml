@@ -5,24 +5,20 @@ edition.workspace = true
 license.workspace = true
 repository.workspace = true
 rust-version.workspace = true
-description = "Emery adapter SDK: the source operations trait, the typed evidence question over omnia's model capability, the reference-tool closure, and the wasm export macro over the emery-source contract"
+description = "The emery:adapter contract, both sides: one module per axis carrying its WIT bindings, DTOs, and import-side capability — today the source axis with the Evidence IR and the claim gate (id grammar + required extras)"
 categories = ["development-tools"]
-keywords = ["emery", "adapter", "sdk"]
+keywords = ["emery", "adapter", "wit"]
 readme = "../../README.md"
 
 [lints]
 workspace = true
 
 [dependencies]
-emery-prose.workspace = true
-emery-source.workspace = true
 omnia-guest.workspace = true
 schemars.workspace = true
 serde.workspace = true
 serde_json.workspace = true
+strum.workspace = true
 
-[dev-dependencies]
-tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
-
-[target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]
-omnia-test = { workspace = true, features = ["guest"] }
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+wit-bindgen.workspace = true

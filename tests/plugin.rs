@@ -17,7 +17,7 @@ mod verbs;
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 
-use emery_source::claims::is_kebab;
+use emery_adapter::is_kebab;
 use omnia_guest::api::command::Response;
 use provider::Provider;
 

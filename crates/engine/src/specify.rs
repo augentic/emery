@@ -24,10 +24,9 @@ mod spec;
 use std::collections::BTreeSet;
 use std::path::Path;
 
-use emery_source::Source;
-use emery_source::claims::is_kebab;
-pub use emery_source::types::SourceContent;
-use emery_source::types::{Evidence, SourceInput};
+use emery_adapter::is_kebab;
+pub use emery_adapter::source::SourceContent;
+use emery_adapter::source::{Evidence, Source, SourceInput};
 use omnia_guest::api::Context;
 use omnia_guest::plugins::Digest;
 use omnia_guest::{BlobStore, Error, Model, Plugins, StateStore, bad_request};

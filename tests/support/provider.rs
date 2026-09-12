@@ -14,9 +14,8 @@ use std::future::Future;
 use std::sync::{Arc, Mutex};
 
 use anyhow::Result;
-use emery_source::Source;
-use emery_source::types::{
-    AdapterMetadata, Authority, Backing, Claim, ClaimKind, Evidence, SourceInput,
+use emery_adapter::source::{
+    AdapterMetadata, Authority, Backing, Claim, ClaimKind, Evidence, Source, SourceInput,
 };
 use omnia_guest::api::command::Response;
 use omnia_guest::plugins::{self, Digest, PluginRef};
@@ -35,7 +34,7 @@ type Recorded = Vec<(String, SourceInput)>;
 /// Scripted `Source`: per-key evidence, per-adapter minimum `emery`
 /// versions, and a record of every dispatch. An unscripted key answers
 /// the greeting requirement as documentation evidence; a scripted failure
-/// is the classified error the wire lift would have produced.
+/// is the classified error the WIT bindings lift would have produced.
 #[derive(Clone, Debug, Default)]
 pub struct SourceScript {
     /// Extract outcomes keyed by source key.

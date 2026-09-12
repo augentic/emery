@@ -1,43 +1,24 @@
-//! Component export
+//! The source axis
 //!
-//! Turns a [`crate::SourceAdapter`] implementation into the `source-adapter`
-//! wasm world the engine loads: the bindings the [`crate::source!`] macro's
-//! `guest` module wires into, and the two answers it gives over them. An
-//! adapter crate invokes the macro once and gains a complete component export
-//! without touching the generated bindings.
+//! The `emery:adapter/source` seam: the `source-adapter` WIT world, the
+//! records that cross it — what an adapter is given ([`SourceInput`]) and
+//! what it returns ([`Evidence`], the spec IR) — the claim gate those records
+//! must pass, and the [`Source`] capability the engine calls source adapters
+//! through.
 //!
-//! This is the only wasm-specific code an adapter carries, which keeps the
-//! rest of its logic portable and testable natively.
+//! Every public item of the axis is exported here from three private
+//! modules: `capability` (the import-side trait and the inbound records),
+//! `evidence` (the outbound document and its gate), and, on `wasm32`,
+//! `bindings` (the one WIT generation both sides ride).
 
-pub use emery_source::export::*;
+#[cfg(target_arch = "wasm32")]
+mod bindings;
+mod capability;
+mod evidence;
 
-use crate::types::{Context, SourceContent, SourceInput};
-use crate::{SourceAdapter, WasiModel};
-
-/// Answers `metadata` for adapter `A`: its record, lowered onto the wire.
-#[must_use]
-pub fn metadata<A: SourceAdapter>() -> AdapterMetadata {
-    A::metadata().into()
-}
-
-/// Answers `extract` for adapter `A`: its evidence, or its failure lowered
-/// onto the wire variant.
-///
-/// # Errors
-///
-/// Returns the adapter's failure lowered onto the wire variant.
-pub async fn extract<A: SourceAdapter>(id: AdapterId, input: Input) -> Result<Evidence, Error> {
-    let input = SourceInput::from(input);
-    // A bound tree is lent to the model; an inline value rides the prompt.
-    let lend = match &input.content {
-        SourceContent::Workspace(root) => Some(root.as_str()),
-        SourceContent::Value(_) => None,
-    };
-    let ctx = Context {
-        adapter_id: &id,
-        docs: A::docs(),
-        lend,
-    };
-
-    Ok(A::extract(&WasiModel, &ctx, &input).await?.into())
-}
+// The SDK's `source!` macro expands against these; no adapter names them.
+#[cfg(target_arch = "wasm32")]
+#[doc(hidden)]
+pub use bindings::export;
+pub use capability::{AdapterMetadata, Source, SourceContent, SourceInput};
+pub use evidence::{Authority, Backing, CLAIM_ID_REGEX, Claim, ClaimKind, Evidence};

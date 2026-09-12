@@ -4,7 +4,7 @@ The external baseline is the [Pragmatic Rust Guidelines](https://microsoft.githu
 
 ## Lints
 
-Workspace lints live in `Cargo.toml`. Defaults are aggressive — clippy `all`/`cargo`/`nursery`/`pedantic` are all `warn`, plus a curated set of `restriction` lints and a tightened rust lint set (`missing_debug_implementations`, `single_use_lifetimes`, `redundant_lifetimes`). Compile under `RUSTFLAGS=-Dwarnings` (`make test` does this), so any new warning fails CI.
+Workspace lints live in `Cargo.toml`. Defaults are aggressive — clippy `all`/`cargo`/`nursery`/`pedantic` are all `warn`, plus a curated set of `restriction` lints and a tightened rust lint set (`missing_docs`, `unsafe_code`, and the rest of the `[workspace.lints.rust]` table). Compile under `RUSTFLAGS=-Dwarnings` (`make test` does this), so any new warning fails CI.
 
 Visibility on internal items follows clippy's `redundant_pub_crate` (nursery) rather than rustc's `unreachable_pub`: prefer bare `pub` and let the parent module's privacy do the constraining. The two lints are mutually exclusive — enabling both would loop. `unreachable_pub` stays at its allow-by-default, and any `#[expect(unreachable_pub, …)]` carve-out is a rot signal, not a tool you reach for.
 
@@ -252,7 +252,7 @@ pub fn handle(output: &HandleOutput, w: &mut dyn fmt::Write) -> fmt::Result {
 
 ## Errors
 
-Engine operations, the adapter SDK, and adapters return `omnia_guest::Error` (`BadRequest`, `NotFound`, `ServerError`, `BadGateway`). Construct Omnia defaults with the crate-root macros (`bad_request!`, `not_found!`, `server_error!`, `bad_gateway!`); those emit snake_case codes (`bad_request`, …). Keep explicit variant construction only for the four recovery discriminants (`specify-source-required`, `unsupported-version`, `spec-not-generated`, `spec-outdated`). Do not introduce a house error type or constructor wrappers; the adapter WIT `error` variant is lowered and lifted inside `emery_source::wire` alone (see [style.md](./style.md#failures-are-omnia-errors)).
+Engine operations, the adapter SDK, and adapters return `omnia_guest::Error` (`BadRequest`, `NotFound`, `ServerError`, `BadGateway`). Construct Omnia defaults with the crate-root macros (`bad_request!`, `not_found!`, `server_error!`, `bad_gateway!`); those emit snake_case codes (`bad_request`, …). Keep explicit variant construction only for the four recovery discriminants (`specify-source-required`, `unsupported-version`, `spec-not-generated`, `spec-outdated`). Do not introduce a house error type or constructor wrappers; the adapter WIT `error` variant is lowered and lifted inside the contract crate's `source::bindings` (`emery-adapter`) alone (see [style.md](./style.md#failures-are-omnia-errors)).
 
 **Class on a direct match.** Pick the Omnia variant that matches the failure: operator or input refusals are `BadRequest` (exit 1), missing resources are `NotFound` (exit 2), upstream or model failures are `BadGateway` (exit 4). Anything else — I/O, storage, leftover conversions — is `ServerError` (exit 3). An adapter's `BadRequest` keeps its class through the `Source` capability, so an adapter refusing its input exits 1 like any other input refusal; every other adapter failure reaches the engine as `BadGateway`. Do not invent new codes or new exit slots. See [handler-shape.md §"Exit codes"](./handler-shape.md#exit-codes).
 

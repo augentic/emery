@@ -21,8 +21,8 @@ use std::fs;
 use std::path::Path;
 use std::sync::Arc;
 
+use emery_adapter::source::{Authority, ClaimKind, Evidence, SourceContent};
 use emery_engine::{CONTAINER, CURRENT};
-use emery_source::types::{Authority, ClaimKind, Evidence, SourceContent};
 use omnia_guest::model::Error as ModelError;
 use omnia_guest::plugins::{Digest, Error as LoadError, Location};
 use omnia_guest::{BlobStore, StateStore, bad_gateway, bad_request};
@@ -510,6 +510,8 @@ async fn remine_supersedes() {
     // --------------------------------------------------
     let stdout = String::from_utf8_lossy(&resp.stdout);
     assert!(stdout.contains(&format!("diff vs {first}:\n")), "{stdout}");
+    assert!(stdout.contains("spec.md ~ preamble\n"), "the reworded preamble is a change: {stdout}");
+    assert!(!stdout.contains("design.md ~ preamble"), "a standing preamble is not: {stdout}");
     assert!(stdout.contains("spec.md - REQ-003 legacy.export"), "{stdout}");
     assert!(stdout.contains("spec.md ~ REQ-001 greeting.behaviour: body, scenarios"), "{stdout}");
     assert!(stdout.contains("design.md ~ overview"), "{stdout}");
@@ -537,10 +539,11 @@ async fn remine_supersedes() {
     provider.model.assert_exhausted();
 }
 
-// The JSON envelope carries the re-mine diff per document: `spec` lists
-// requirements by id and subject, `changed` naming the differing fields;
-// `design` lists sections by kind. The second run's evidence changes the
-// greeting's statement, adds an audit requirement, and adds a `type` claim.
+// The JSON envelope carries the re-mine diff per document: each flags its
+// preamble; `spec` lists requirements by id and subject, `changed` naming the
+// differing fields; `design` lists sections by kind. The second run's
+// evidence changes the greeting's statement, adds an audit requirement, and
+// adds a `type` claim; its drafts drop both preambles.
 #[tokio::test]
 async fn diff_envelope() {
     let second_spec = r#"{"preamble": [], "requirements": [
@@ -579,6 +582,7 @@ async fn diff_envelope() {
     let diff = &envelope["diff"];
     assert_eq!(diff["from"], first, "{envelope}");
     assert!(diff.get("documents").is_none(), "the diff is typed, not by file: {envelope}");
+    assert_eq!(diff["spec"]["preamble"], serde_json::json!(true), "{envelope}");
     assert_eq!(
         diff["spec"]["added"],
         serde_json::json!([{"id": "REQ-002", "subject": "access.audit"}]),
@@ -594,6 +598,7 @@ async fn diff_envelope() {
         }]),
         "{envelope}"
     );
+    assert_eq!(diff["design"]["preamble"], serde_json::json!(true), "{envelope}");
     assert_eq!(diff["design"]["changed"], serde_json::json!(["overview"]), "{envelope}");
     assert_eq!(diff["design"]["added"], serde_json::json!(["domain-model"]), "{envelope}");
     assert_eq!(diff["design"]["removed"], serde_json::json!([]), "{envelope}");

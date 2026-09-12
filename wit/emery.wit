@@ -8,10 +8,10 @@ package emery:adapter@0.1.0;
 /// operations so that a world importing and exporting `source` binds
 /// them once, and the caller side and the export side share one type.
 interface types {
-  /// The error returned by operations.
+  /// The error returned by operations: the adapter refused its input, or
+  /// failed on its own account.
   variant error {
     invalid-request(string),
-    io(string),
     internal(string),
   }
 
@@ -19,7 +19,7 @@ interface types {
   /// pinned package identity (e.g. "source:documentation@1.0.0"),
   /// "<axis>:<name>" for an unpinned cache-backed component. Host-mediated
   /// dispatch routes each call to the exporting guest by this first
-  /// argument; the wire type stays an opaque string.
+  /// argument; the WIT type stays an opaque string.
   type adapter-id = string;
 
   /// Either a read-only source view or an inline value. Never a
@@ -53,7 +53,7 @@ interface types {
     behaviour
   }
 
-  /// The closed claim-kind taxonomy shared with the wire type. New
+  /// The closed claim-kind taxonomy shared with the WIT type. New
   /// kinds require updating the contract and this record together.
   enum claim-kind {
     intent,
@@ -94,7 +94,7 @@ interface types {
     path: option<string>,
     /// A synthesis-grade headline summarizing the semantic meaning of this
     /// claim. Used by synthesis to merge related claims across sources.
-    /// An open per-kind body field on the wire, so answers may omit it.
+    /// An open per-kind body field on the WIT bindings, so answers may omit it.
     synopsis: option<string>,
     /// The backing data of the claim's evidence (either a path or a raw payload).
     backing: option<backing>,
@@ -151,8 +151,8 @@ interface source {
 
 /// A source adapter component: the one axis interface. The interface
 /// is imported as well as exported so the one binding generation in
-/// the SDK also carries the engine guest's caller side
-/// (`source::import`).
+/// the `emery-adapter` contract crate also carries the engine guest's
+/// caller side (`source::bindings::import`).
 world source-adapter {
   import source;
   export source;

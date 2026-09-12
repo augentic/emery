@@ -24,18 +24,11 @@ static DOCS: &[Doc] = &[
 ];
 
 #[test]
-fn find_by_path() {
+fn lookup() {
     assert_eq!(find(DOCS, "prompts/guidance.md").map(|doc| doc.body), Some("# guidance"));
     assert_eq!(find(DOCS, "references/verifier.md").map(|doc| doc.body), Some("# verifier"));
     assert!(find(DOCS, "prompts/missing.md").is_none());
-}
 
-#[test]
-fn body_lookup() {
     assert_eq!(body(DOCS, "prompts/build.md"), Some("# build"));
-}
-
-#[test]
-fn body_miss() {
     assert_eq!(body(DOCS, "prompts/missing.md"), None);
 }

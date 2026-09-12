@@ -35,7 +35,7 @@ See [#host-to-guest-tool-calls](#host-to-guest-tool-calls) for more detail.
 
 In Emery, the only tools a completion session declares are the reference tools — `list_docs` and `read_doc` — over the adapter's embedded prose corpus. `wasi-model` delivers them as two streams rather than direct callbacks: the host writes each `ToolCall` to the session's `calls` stream, and the guest answers with a `ToolResult` on a second stream it created and passed to `create`, carrying the same correlation ID so the host can resume the completion.
 
-Every answer is served in-process from the embedded corpus (`emery_adapter::references`): `list_docs` returns the embedded document paths, `read_doc` returns one document body by adapter-relative path, and anything else — an unknown tool, malformed arguments, an unembedded path — comes back as a repairable error. No HTTP shelf, no MCP callback, and no access to the source input or the revision store crosses this seam; the model reaches nothing but the adapter's own reference documents.
+Every answer is served in-process from the embedded corpus (`emery_sdk::references`): `list_docs` returns the embedded document paths, `read_doc` returns one document body by adapter-relative path, and anything else — an unknown tool, malformed arguments, an unembedded path — comes back as a repairable error. No HTTP shelf, no MCP callback, and no access to the source input or the revision store crosses this seam; the model reaches nothing but the adapter's own reference documents.
 
 ## Installing cursor-sdk-bridge
 
