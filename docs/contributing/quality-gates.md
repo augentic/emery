@@ -4,13 +4,13 @@ Emery proves engine correctness from this repository alone. The placement rules 
 
 ## Gate 1 — repository correctness (every push)
 
-`make ci` owns formatting, lints (native and, through `make wasm`, the adapter SDK and mock adapter for `wasm32-wasip2`), the test suites, and the mdBook links gate (Developer Guide link integrity, `make links`). The native suites inside it are led by the root scenario binaries (`tests/specify.rs`, `tests/command.rs`, `tests/plugin.rs`), which drive the in-process command router over scripted capabilities — the whole product arc from argv to committed storage, plus the CLI wire contract and the plugin-rule grammar check. The surviving crate suites prove independent library contracts (the adapter SDK, prose); CLI-unreachable engine branches are kernel unit tests beside their code.
+`make ci` owns formatting, clippy, the test suites, doctests, rustdoc, and the supply-chain checks (vet, deny). The native suites inside it are led by the root scenario binaries (`tests/specify.rs`, `tests/command.rs`, `tests/plugin.rs`), which drive the in-process command router over scripted capabilities — the whole product arc from argv to committed storage, plus the CLI wire contract and the plugin-rule grammar check. The surviving crate suites prove independent library contracts (the adapter SDK, prose); CLI-unreachable engine branches are kernel unit tests beside their code.
 
 This gate is model-free and self-contained: no sibling checkout, no live model, no network.
 
 ## The WASM boundary
 
-No gate in this repository instantiates a component. The wasm32 side is compiled twice instead: the root build script builds the engine guest for `wasm32-wasip2` on every native build (so `make lint` and `make test` already type-check `emery-cli`, `emery-engine`, and `emery-adapter` for the guest), and `make wasm` runs clippy over the adapter SDK's export side and the mock adapter for the same target. Instantiating the `emery:adapter/source` seam under the real omnia runtime is `emery-adapters`' conformance rung, which drives every first-party component through the published contract. `make source` / `make runtime` remain for the live Cursor journey.
+No gate in this repository instantiates a component. The root build script builds the engine guest for `wasm32-wasip2` on every native build, so `make lint` and `make test` already type-check `emery-cli`, `emery-engine`, and `emery-adapter` for the guest. The adapter SDK's export side and the mock adapter are compiled for wasm32 only by the live journey's `cargo build --example adapter --target wasm32-wasip2 --release` ([examples/README.md](../../examples/README.md)); no gate lints them. Instantiating the `emery:adapter/source` seam under the real omnia runtime is `emery-adapters`' conformance rung, which drives every first-party component through the published contract.
 
 ## Placement decision
 
@@ -31,16 +31,16 @@ Do not copy an assertion into another gate for reassurance: each fact has one ow
 
 ## Consistency (links)
 
-Repo invariants that are cheap to enforce in CI and expensive to notice later. Developer Guide link integrity is the mdBook build (`mdbook-linkcheck2` via [`docs/book.toml`](../book.toml)); it runs inside `make ci`. Docs house style is **not** a CI predicate; ultrathin skill body style is guidance in [`docs/standards/cli-contract.md`](../standards/cli-contract.md).
+Repo invariants that are cheap to enforce and expensive to notice later. Developer Guide link integrity is the mdBook build (`mdbook-linkcheck2` via [`docs/book.toml`](../book.toml)); it is not part of `make ci`, so run it yourself when you touch `docs/`. Docs house style is **not** a CI predicate; ultrathin skill body style is guidance in [`docs/standards/cli-contract.md`](../standards/cli-contract.md).
 
 ```bash
-make links              # Developer Guide link integrity (mdbook build)
-make ci                 # the full gate (includes links)
+mdbook build docs       # Developer Guide + link integrity
+make ci                 # the full Rust gate
 make check              # the pre-commit subset
 ```
 
-| Invariant                      | Owner                                                                                                          | When it runs                    |
-| ------------------------------ | -------------------------------------------------------------------------------------------------------------- | ------------------------------- |
-| Developer Guide link integrity | `mdbook-linkcheck2` over [`docs/book.toml`](../book.toml) — `make links` locally, the `links` job in CI per push | Every `make ci` and every push |
+| Invariant                      | Owner                                                                                                                                                              | When it runs                                                                                              |
+| ------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------- |
+| Developer Guide link integrity | `mdbook-linkcheck2` over [`docs/book.toml`](../book.toml) — `mdbook build docs` locally, the [Docs workflow](../../.github/workflows/docs.yaml) in CI | Locally on demand; in CI on a push to `main` that touches `docs/**` |
 
 Every relative link in the Developer Guide must resolve. Web links are skipped (`follow-web-links = false`); links that leave `docs/` (for example into `crates/` or `AGENTS.md`) are allowed (`traverse-parent-directories = true`). Chapters referenced as in-book targets must appear in `SUMMARY.md`; prefer file hrefs over bare directory paths.

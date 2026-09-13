@@ -33,8 +33,8 @@ The Rust workspace owns deterministic operations. The `/emery:specify` skill und
 Contributing needs a Rust toolchain, not a separately installed `emery`. The first `make` installs mise if it is missing:
 
 ```bash
-make links # Developer Guide link integrity
-make ci    # the full Rust workspace gate
+mdbook build docs # Developer Guide + link check
+make ci           # the full Rust workspace gate
 cargo install --path . --locked # install the working-tree CLI into ~/.cargo/bin
 ```
 
@@ -45,7 +45,7 @@ No published binary is downloaded — every invocation builds from the in-tree C
 1. **Discuss first.** Open a GitHub issue before starting work to agree the approach.
 2. **Branch from `main`.** Create a feature branch for your change.
 3. **Make your edits.** Follow the conventions described in the sub-pages below.
-4. **Run checks.** `make links` for the Developer Guide; `make ci` for the full gate.
+4. **Run checks.** `mdbook build docs` for the Developer Guide; `make ci` for the full gate.
 5. **Open a pull request** against `main`. All patches require at least one maintainer review.
 6. **Sign off.** Every commit must carry a DCO sign-off (`git commit -s`). See [CONTRIBUTING.md](https://github.com/augentic/emery/blob/main/CONTRIBUTING.md) for the full certificate text.
 

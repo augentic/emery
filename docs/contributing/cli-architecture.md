@@ -14,7 +14,7 @@ The engine is versioned by the binary — the binary *contains* its engine, so n
 
 ## Core crate dependency graph
 
-The authoritative crate graph (leaf → root, with per-crate roles) lives in [AGENTS.md](../../AGENTS.md). The headline shape: `prose` and `adapter` are the leaves (the embedded-corpus registry and the `emery:adapter` contract, one module per axis), `sdk` is the guest-only SDK over them; `engine` owns the domain and the transport-neutral `specify` / `show` operations (path plumbing in `emery_engine::preopen_path`, adapter loading in the engine's `adapter` module) and returns `omnia_guest::Error` from those operations — no clap, no toml, no terminal text; `cli` (`emery-cli`) is the command façade over the engine: clap grammar, source carriers, `Client` dispatch, the text/JSON projector, and the exit contract; the root package's `src/lib.rs` is wasm32-only: it declares the bare model provider (paths and adapter dispatch are structural, not provider capabilities) and runs `emery_cli::run`; the root binary (`src/main.rs`) owns the native deployment policy inline as one `omnia::runtime!` invocation embedding the engine bytes. Architecture standards beyond the graph (the `.omnia/storage` layout boundary, WASI carve-outs) live in [architecture.md](../standards/architecture.md).
+The authoritative crate graph (leaf → root, with per-crate roles) lives in [architecture.md](../standards/architecture.md#workspace-layout). The headline shape: `prose` and `adapter` are the leaves (the embedded-corpus registry and the `emery:adapter` contract, one module per axis), `sdk` is the guest-only SDK over them; `engine` owns the domain and the transport-neutral `specify` / `show` operations (path plumbing in `emery_engine::preopen_path`, adapter loading in the engine's `adapter` module) and returns `omnia_guest::Error` from those operations — no clap, no toml, no terminal text; `cli` (`emery-cli`) is the command façade over the engine: clap grammar, source carriers, `Client` dispatch, the text/JSON projector, and the exit contract; the root package's `src/lib.rs` is wasm32-only: it declares the bare model provider (paths and adapter dispatch are structural, not provider capabilities) and runs `emery_cli::run`; the root binary (`src/main.rs`) owns the native deployment policy inline as one `omnia::runtime!` invocation embedding the engine bytes. Architecture standards beyond the graph (the deployment, adapter resolution, the `.omnia/storage` layout boundary) live there too.
 
 ## Dispatch pattern
 
@@ -43,7 +43,7 @@ Progress is `tracing`, never stdout: the engine emits a handful of INFO events a
 
 ## Exit codes
 
-The exit-code contract is part of the public interface for operators and skill wrappers; `omnia_guest::Error::exit_code` maps the variants and is the single source of truth, applied by omnia's `Command` projector. The one table lives in [AGENTS.md § Exit codes](../../AGENTS.md#exit-codes).
+The exit-code contract is part of the public interface for operators and skill wrappers; `omnia_guest::Error::exit_code` maps the variants and is the single source of truth, applied by omnia's `Command` projector. The one table lives in [cli-contract.md § Exit codes](../standards/cli-contract.md#exit-codes).
 
 Guest commands inherit the same contract: omnia's command façade projects parser, decoder, and handler outcomes into a buffered command response; the WASI run export forwards its exit and the binary passes it through verbatim.
 

@@ -42,7 +42,7 @@ Handlers return `omnia_guest::Error` with transport-neutral descriptions: name t
 
 ## Exit codes
 
-The Omnia 1:1 exit map is fixed; the one table lives in [AGENTS.md § Exit codes](../../AGENTS.md#exit-codes). Omnia default codes are snake_case (`bad_request`, `not_found`, `server_error`, `bad_gateway`); the recovery and loader discriminants stay kebab-case so skills can branch on them.
+The Omnia 1:1 exit map is fixed; the one table lives in [cli-contract.md § Exit codes](./cli-contract.md#exit-codes). Omnia default codes are snake_case (`bad_request`, `not_found`, `server_error`, `bad_gateway`); the recovery and loader discriminants stay kebab-case so skills can branch on them.
 
 `omnia_guest::Error::exit_code` maps the variants and is the single source of truth; omnia's `Command` projector applies it to every terminal operation failure, and `omnia_guest::api::command::USAGE_EXIT` is the usage status. Do not invent new exit codes.
 

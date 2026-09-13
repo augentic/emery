@@ -6,7 +6,7 @@ Canonical JSON envelope shapes for the `emery *` commands that skills shell out 
 
 - `--format json` responses are a **flat body**: every successful body is a single JSON object carrying the command-specific fields **at the top level** — there is no `ok` discriminant, no `data` wrapper, and no top-level envelope-version stamp.
 - Failures keep the same flat shape with three extra top-level keys:
-  - `error` — a discriminant string: kebab-case for the four recovery codes (`specify-source-required`, `unsupported-version`, `spec-not-generated`, `spec-outdated`), snake_case for the Omnia defaults (`bad_request`, `not_found`, `server_error`, `bad_gateway`). The discriminant is grep-stable and forms part of the public contract; see [`AGENTS.md`](../../AGENTS.md#exit-codes) for the exit-code table.
+  - `error` — a discriminant string: kebab-case for the four recovery codes (`specify-source-required`, `unsupported-version`, `spec-not-generated`, `spec-outdated`), snake_case for the Omnia defaults (`bad_request`, `not_found`, `server_error`, `bad_gateway`). The discriminant is grep-stable and forms part of the public contract; see [cli-contract.md](../standards/cli-contract.md#exit-codes) for the exit-code table.
   - `message` — humanised one-liner suitable for direct rendering.
   - `exit-code` — the integer the binary returns.
 - Paths are emitted as plain strings relative to the repo root unless the field name says otherwise.

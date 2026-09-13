@@ -8,11 +8,11 @@ make test                              # native suites; model-free
 
 ## `make test` — the default edit loop
 
-Runs `cargo nextest --workspace` over the workspace. The root scenario suites carry the product: `tests/specify.rs` (the in-process `specify` → `show` arc — sources, extraction, the grouping and draft judgments, canonical rendering, the revision store), `tests/command.rs` (the CLI wire contract: grammar, exit codes, channels), and `tests/plugin.rs` (plugin-rule mentions vs the shipped grammar), all over scripted `Model` + `Source` + storage — without a component, a model call, or filesystem engine state. The surviving crate suites prove independent library contracts (the adapter SDK, prose); CLI-unreachable engine branches are kernel unit tests beside their code. No suite compiles or instantiates a component: the root build script compiles the engine guest for wasm32 on every native build, and `make wasm` lints the adapter SDK and the mock adapter for `wasm32-wasip2`.
+Runs `cargo nextest --workspace` over the workspace. The root scenario suites carry the product: `tests/specify.rs` (the in-process `specify` → `show` arc — sources, extraction, the grouping and draft judgments, canonical rendering, the revision store), `tests/command.rs` (the CLI wire contract: grammar, exit codes, channels), and `tests/plugin.rs` (plugin-rule mentions vs the shipped grammar), all over scripted `Model` + `Source` + storage — without a component, a model call, or filesystem engine state. The surviving crate suites prove independent library contracts (the adapter SDK, prose); CLI-unreachable engine branches are kernel unit tests beside their code. No suite compiles or instantiates a component: the root build script compiles the engine guest for wasm32 on every native build.
 
 An ordinary change should never need to leave this rung.
 
-`make check` is the pre-commit gate: formatting, clippy under `-D warnings` (guest deny-list in `crates/clippy.toml`), `make wasm`, this rung, doctests, docs, and the links gate. `make ci` adds vet/deny.
+`make check` is the pre-commit gate: formatting, clippy under `-D warnings` (guest deny-list in `crates/clippy.toml`), this rung, doctests, and rustdoc. `make ci` adds vet/deny. Developer Guide link integrity is `mdbook build docs`, run separately.
 
 ## Keeping `target/` bounded
 
@@ -20,7 +20,8 @@ Cargo never garbage-collects `target/`: every distinct feature set, profile, `RU
 
 ## What CI runs
 
-- Per push: `make ci` — the self-contained workspace gate (nextest `--workspace`, clippy/doc/doctest/links/vet/deny). No sibling checkout, no model.
+- Per push: the shared Rust workflow — the same gate as `make ci` (fmt, clippy, nextest `--workspace`, doctests, rustdoc, vet, deny). No sibling checkout, no model.
+- On a push to `main` that touches `docs/**`: the Docs workflow builds the Developer Guide (with its link check) and deploys it.
 - CI never requires model credentials.
 
 `emery-adapters` gates its own crates and components against the published WIT contract and its declared engine pin; neither repository gates on the other's HEAD.
