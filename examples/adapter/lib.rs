@@ -3,8 +3,7 @@
 //! The smallest complete source adapter: it reads a greeting fixture and
 //! asks the model to describe it as claims. It exists so the engine can be
 //! exercised end to end on the live journey without depending on a
-//! first-party adapter from the adapters repository, and so the SDK's wasm32
-//! export side is linted by `make wasm`.
+//! first-party adapter from the adapters repository.
 //!
 //! It has the shape of a real adapter — one `SourceAdapter` implementation,
 //! an embedded prose tree, a single `source!` export — with one difference: a

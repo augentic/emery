@@ -37,11 +37,24 @@ The `error` discriminants are part of the public contract that skills and tests 
 
 ## Exit codes
 
-The CLI uses the Omnia 1:1 exit map; the one table lives in [`AGENTS.md` § Exit codes](../../AGENTS.md#exit-codes). Two notes for skills: on `unsupported-version` (exit `1`), tell the operator to update the installed binary through its install channel; exit `64` carries clap's own usage text on stderr and no JSON envelope — a skill that sees it has built a bad argv.
+`omnia_guest::Error::exit_code` maps the four `Error` variants 1:1 and is the single source of truth; omnia's command façade applies it to every failure `emery_cli::run` reports, and there is no exit table in this repository's code.
+
+| Code | Name           | When                                                                                                                                                                                                                                           |
+| ---- | -------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 0    | `EXIT_SUCCESS` | Command succeeded.                                                                                                                                                                                                                             |
+| 1    | `BadRequest`   | Operator or input refusal, including an adapter refusing its input. The `error` field is `specify-source-required`, `unsupported-version`, `spec-outdated`, a loader refusal (`refused`, `already-active`), or the Omnia default `bad_request`. |
+| 2    | `NotFound`     | Missing resource. The `error` field is `spec-not-generated` or the Omnia default `not_found`.                                                                                                                                                  |
+| 3    | `ServerError`  | Unclassified default: I/O, storage, leftover conversions. The `error` field is the Omnia default `server_error` or the loader's `internal`.                                                                                                    |
+| 4    | `BadGateway`   | Upstream, model, adapter, or component-acquisition failure. The `error` field is the Omnia default `bad_gateway` or the loader's `unavailable`.                                                                                                |
+| 64   | `USAGE_EXIT`   | Clap usage error (unknown verb or flag, missing argument), rendered by clap on stderr with no envelope. `EX_USAGE`, so exit 2 always means a `NotFound` envelope.                                                                               |
+
+Omnia default codes are snake_case (`bad_request`, `not_found`, `server_error`, `bad_gateway`). The recovery and loader discriminants stay kebab-case so skills can branch on them.
+
+Two notes for skills: on `unsupported-version` (exit `1`), tell the operator to update the installed binary through its install channel; exit `64` carries clap's own usage text on stderr and no JSON envelope — a skill that sees it has built a bad argv.
 
 Skills should branch on the exit code first (success vs failure class) and on the four kebab recovery discriminants second (`specify-source-required`, `unsupported-version`, `spec-not-generated`, `spec-outdated`). Other failures share the Omnia snake_case default for that class (`bad_request`, `not_found`, `server_error`, `bad_gateway`). New exit codes are not invented by skills or the CLI.
 
 ## Cross-references
 
 - [docs/reference/cli-output-shapes.md](../reference/cli-output-shapes.md) — canonical envelope shapes per verb.
-- [`AGENTS.md`](../../AGENTS.md) — authoritative source for exit codes, Omnia error classes, `error` discriminants, and CLI architecture.
+- [`AGENTS.md`](../../AGENTS.md) — repository map, vocabulary, and invariants.

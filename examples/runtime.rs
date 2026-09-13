@@ -1,7 +1,8 @@
 //! Journey runtime
 //!
 //! A development build of the shipped runtime for walking the live
-//! `specify` → `show` journey against the mock adapter built by `make source`.
+//! `specify` → `show` journey against the mock adapter (`cargo build --example
+//! adapter --target wasm32-wasip2 --release`).
 //! It mirrors the shipped deployment except that adapters load only from
 //! local paths, so the journey never reaches out to a registry.
 //!
