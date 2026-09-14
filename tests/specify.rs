@@ -1235,6 +1235,38 @@ async fn package_loads() {
     }
 }
 
+// The source list is checked whole before a single adapter loads: a package
+// adapter behind a refused key, or behind a duplicated one, is never fetched
+// and never gated.
+#[tokio::test]
+async fn bad_key_package() {
+    let cases = [
+        (
+            "[[source]]\nname = \"Docs\"\nadapter = \"emery:documentation@1.2.0\"\n",
+            "is not a kebab-case key",
+        ),
+        (
+            "[[source]]\nname = \"docs\"\nadapter = \"emery:documentation@1.2.0\"\n\n\
+             [[source]]\nname = \"docs\"\nadapter = \"emery:intent@1.0.0\"\n",
+            "appears twice",
+        ),
+    ];
+    for (body, fragment) in cases {
+        let scratch = Scratch::new();
+        let config = scratch.config(body);
+        let provider = Provider::idle();
+
+        let envelope =
+            fail(&provider, &["emery", "specify", "--config", &config], 1, "bad_request").await;
+        assert_message(&envelope, fragment);
+        assert!(provider.plugins.loads().is_empty(), "a refused list loads nothing: {fragment}");
+        assert!(
+            provider.source.metadata.lock().expect("metadata").is_empty(),
+            "a refused list gates nothing: {fragment}"
+        );
+    }
+}
+
 // Load failures land on the exit contract: an acquisition (registry)
 // or network) failure is the loader's `unavailable` on the
 // BadGateway exit; a component refused host-side validation is

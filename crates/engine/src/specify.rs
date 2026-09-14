@@ -63,28 +63,23 @@ pub async fn specify<P: Model + Source + StateStore + BlobStore + Plugins>(
 ) -> Result<SpecifyOutput, Error> {
     let provider = context.provider();
 
-    // load adapters
-    adapter::load(provider, input.sources.iter().map(|s| &s.adapter)).await?;
+    // load source adapters
+    let bound = Bound::all(&input.sources)?;
+    adapter::load(provider, bound.iter().map(|source| source.adapter)).await?;
 
-    // extract all sources
-    let inputs = input.to_inputs()?;
-    let outcomes = future::join_all(
-        input
-            .sources
-            .iter()
-            .map(|s| s.adapter.to_string())
-            .zip(inputs)
-            .map(|(adapter_id, input)| extract(provider, adapter_id, input)),
-    )
-    .await;
+    // extract all source in parallel
+    let outcomes = future::join_all(bound.iter().map(|source| source.extract(provider))).await;
 
-    // collect results
+    // collect extracts or findings for failed extracts
     let mut extracts = Vec::with_capacity(outcomes.len());
     let mut failures = Vec::new();
-    for outcome in outcomes {
+    for (source, outcome) in bound.iter().zip(outcomes) {
         match outcome {
-            Ok(extracted) => extracts.push(extracted),
-            Err(error) => failures.push(error.description()),
+            Ok(extract) => extracts.push(extract),
+            Err(error) => {
+                tracing::warn!(source = %source.input.key, %error, "extract failed");
+                failures.push(error.description());
+            }
         }
     }
 
@@ -92,6 +87,7 @@ pub async fn specify<P: Model + Source + StateStore + BlobStore + Plugins>(
         return Err(server_error!(failures.join("\n")));
     }
 
+    // synthesise extracts into a unified set of specifications
     let bases = GroupingBrief::new(&extracts).derive(provider).await?;
     let spec = SpecBrief::new(&extracts, &bases).judge(provider).await?;
     let design = DesignBrief::new(&extracts, &spec).judge(provider).await?;
@@ -100,68 +96,12 @@ pub async fn specify<P: Model + Source + StateStore + BlobStore + Plugins>(
     Ok(SpecifyOutput { revision: id, diff })
 }
 
-// One source's validated evidence, under the key the documents cite it by.
-#[derive(Debug)]
-struct Extract {
-    source: String,
-    evidence: Evidence,
-}
-
-// Extracts evidence from a source.
-async fn extract<P: Source>(
-    provider: &P, adapter_id: String, input: SourceInput,
-) -> Result<Extract, Error> {
-    let source = input.key.clone();
-    tracing::debug!(%source,  "extracting");
-
-    let outcome = Source::extract(provider, &adapter_id, &input).await.and_then(|evidence| {
-        let findings = evidence.findings();
-        if findings.is_empty() {
-            Ok(evidence)
-        } else {
-            Err(server_error!("`{source}` returned invalid claims:\n{}", findings.join("\n")))
-        }
-    });
-
-    if let Err(error) = &outcome {
-        tracing::warn!(%source,  %error, "extract failed");
-    }
-
-    outcome.map(|evidence| Extract { source, evidence })
-}
-
 /// Generate a specification revision from sources.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub struct SpecifyInput {
     /// The run's source configurations, in declaration order.
     pub sources: Vec<SourceConfig>,
-}
-
-impl SpecifyInput {
-    // Checks the rules every transport must get — a non-empty list, unique
-    // keys, and each source's own — and prepares every guest input, all
-    // before any adapter loads.
-    fn to_inputs(&self) -> Result<Vec<SourceInput>, Error> {
-        if self.sources.is_empty() {
-            return Err(Error::BadRequest {
-                code: "specify-source-required".into(),
-                description: "no sources".into(),
-            });
-        }
-
-        let mut keys = BTreeSet::new();
-        let mut inputs = Vec::with_capacity(self.sources.len());
-        for source in &self.sources {
-            let input = source.prepare()?;
-            if !keys.insert(source.key.as_str()) {
-                return Err(bad_request!("source `{}` appears twice", source.key));
-            }
-            inputs.push(input);
-        }
-
-        Ok(inputs)
-    }
 }
 
 /// A source for one run.
@@ -216,4 +156,71 @@ pub struct SpecifyOutput {
     /// the outgoing revision was unreadable.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub diff: Option<Diff>,
+}
+
+// One source bound to its adapter: the adapter the call routes to and the
+// input it carries.
+struct Bound<'a> {
+    adapter: &'a AdapterRef,
+    input: SourceInput,
+}
+
+impl<'a> Bound<'a> {
+    // Binds every source under the rules every transport must get — a
+    // non-empty list, unique keys, and each source's own — before any
+    // adapter loads.
+    fn all(sources: &'a [SourceConfig]) -> Result<Vec<Self>, Error> {
+        if sources.is_empty() {
+            return Err(Error::BadRequest {
+                code: "specify-source-required".into(),
+                description: "no sources".into(),
+            });
+        }
+
+        let mut keys = BTreeSet::new();
+        let mut bound = Vec::with_capacity(sources.len());
+        for source in sources {
+            let input = source.prepare()?;
+            if !keys.insert(source.key.as_str()) {
+                return Err(bad_request!("source `{}` appears twice", source.key));
+            }
+            bound.push(Self {
+                adapter: &source.adapter,
+                input,
+            });
+        }
+
+        Ok(bound)
+    }
+
+    // Extracts the source and gates its claims again on receipt: the SDK
+    // gates in the guest, but the engine cannot assume every adapter is the
+    // SDK's. A miss is the adapter's, not the operator's, so it is never a
+    // `BadRequest`.
+    async fn extract<P: Source>(&self, provider: &P) -> Result<Extract, Error> {
+        let source = &self.input.key;
+        tracing::debug!(%source, "extracting");
+
+        let evidence = Source::extract(provider, &self.adapter.to_string(), &self.input).await?;
+
+        let findings = evidence.findings();
+        if !findings.is_empty() {
+            return Err(server_error!(
+                "`{source}` returned invalid claims:\n{}",
+                findings.join("\n")
+            ));
+        }
+
+        Ok(Extract {
+            source: source.clone(),
+            evidence,
+        })
+    }
+}
+
+// One source's validated evidence, under the key the documents cite it by.
+#[derive(Debug)]
+struct Extract {
+    source: String,
+    evidence: Evidence,
 }
