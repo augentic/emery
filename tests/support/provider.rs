@@ -16,7 +16,7 @@ use std::time::Duration;
 
 use anyhow::Result;
 use emery_adapter::source::{
-    AdapterMetadata, Authority, Backing, Claim, ClaimKind, Evidence, Source, SourceInput,
+    AdapterMetadata, Backing, Claim, ClaimKind, Evidence, Source, SourceInput, SourceKind,
 };
 use omnia_guest::api::command::Response;
 use omnia_guest::plugins::{self, Digest, PluginRef};
@@ -46,10 +46,12 @@ type Recorded = Vec<(String, SourceInput)>;
 pub struct SourceScript {
     /// Extract outcomes keyed by source key.
     pub evidence: BTreeMap<String, Result<Evidence, Error>>,
-    /// Minimum `emery` versions keyed by adapter name.
+    /// Minimum `emery` versions keyed by adapter id — the reference itself.
     pub versions: BTreeMap<String, String>,
     /// Every extract dispatch, recorded for call assertions.
     pub calls: Arc<Mutex<Recorded>>,
+    /// Every metadata dispatch, by adapter id, in call order.
+    pub metadata: Arc<Mutex<Vec<String>>>,
     /// When set, every extract is held until each expected source has been
     /// requested, so a scenario can prove the engine runs its sources
     /// together.
@@ -102,10 +104,8 @@ pub struct Provider<S = Memory> {
     pub model: Scripted,
     /// The scripted `Source`.
     pub source: SourceScript,
-    /// The scripted `Plugins` loader: an unscripted, unpinned package
-    /// resolves to the fixed `digest("ab")`; a pin that disagrees with a
-    /// scripted digest refuses `refused`, mirroring the host's
-    /// verify-before-validate step.
+    /// The scripted `Plugins` loader: an unscripted package resolves to
+    /// the fixed `digest("ab")`.
     pub plugins: ScriptedLoader,
     /// The scripted storage pair.
     pub storage: Arc<S>,
@@ -262,7 +262,7 @@ impl<S: Send + Sync + 'static> Source for Provider<S> {
         self.source.calls.lock().expect("calls").push((id.to_string(), input.clone()));
         let outcome = self.source.evidence.get(&input.key).cloned().unwrap_or_else(|| {
             Ok(evidence(
-                Authority::Documentation,
+                SourceKind::Documentation,
                 vec![requirement("greeting.behaviour", GREETING)],
             ))
         });
@@ -277,12 +277,9 @@ impl<S: Send + Sync + 'static> Source for Provider<S> {
     }
 
     fn metadata(&self, id: &str) -> AdapterMetadata {
-        // Routed ids are `source:<name>` or a package reference
-        // (`<namespace>:<name>@<version>`); versions key on the name.
-        let name = id.split_once('@').map_or(id, |(stem, _)| stem);
-        let name = name.rsplit_once(':').map_or(name, |(_, stem)| stem);
+        self.source.metadata.lock().expect("metadata").push(id.to_string());
         AdapterMetadata {
-            emery_version: self.source.versions.get(name).cloned(),
+            emery_version: self.source.versions.get(id).cloned(),
         }
     }
 }
@@ -320,6 +317,6 @@ pub fn requirement(id: &str, statement: &str) -> Claim {
 }
 
 /// Builds an evidence document over `claims`.
-pub const fn evidence(authority: Authority, claims: Vec<Claim>) -> Evidence {
-    Evidence { authority, claims }
+pub const fn evidence(kind: SourceKind, claims: Vec<Claim>) -> Evidence {
+    Evidence { kind, claims }
 }

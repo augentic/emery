@@ -158,9 +158,9 @@ impl Display for SpecBrief<'_> {
                 for member in class {
                     writeln!(
                         f,
-                        "  - {role}: {source} ({authority}, `{claim}`): {statement}",
+                        "  - {role}: {source} ({kind}, `{claim}`): {statement}",
                         source = member.source,
-                        authority = member.authority,
+                        kind = member.kind,
                         claim = member.id,
                         statement = member.statement,
                     )?;

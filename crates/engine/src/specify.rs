@@ -33,7 +33,6 @@ pub use emery_adapter::source::SourceContent;
 use emery_adapter::source::{Evidence, Source, SourceInput};
 use futures::future;
 use omnia_guest::api::Context;
-use omnia_guest::plugins::Digest;
 use omnia_guest::{BlobStore, Error, Model, Plugins, StateStore, bad_request, server_error};
 use serde::{Deserialize, Serialize};
 
@@ -41,7 +40,7 @@ use self::basis::GroupingBrief;
 use self::brief::Brief as _;
 use self::design::DesignBrief;
 use self::spec::SpecBrief;
-use crate::adapter::{AdapterRef, Loader};
+use crate::adapter::{self, AdapterRef};
 use crate::revision::Revision;
 pub use crate::revision::{Changed, DesignDiff, Diff, Entry, ReqId, SectionKind, SpecDiff};
 use crate::{preopen_path, store};
@@ -82,29 +81,21 @@ pub struct SpecifyInput {
 impl SpecifyInput {
     // Extract specified sources.
     async fn extract<P: Source + Plugins>(&self, provider: &P) -> Result<Vec<Extract>, Error> {
-        let inputs = self.prepare()?;
-
-        // load adapters in series to benefit from caching identical adapters
-        let loader = Loader::new(provider);
-        let mut ids = Vec::with_capacity(self.sources.len());
-        for cfg in &self.sources {
-            ids.push(
-                loader.load(&cfg.adapter, cfg.digest.as_ref(), cfg.registry.as_deref()).await?,
-            );
-        }
+        adapter::load(provider, &self.sources).await?;
 
         // extract from each source in parallel
+        let inputs = self.to_inputs()?;
         let outcomes = future::join_all(
-            ids.iter().zip(inputs).map(|(id, input)| extract_source(provider, id, input)),
+            self.sources
+                .iter()
+                .zip(inputs)
+                .map(|(cfg, input)| extract_source(provider, &cfg.adapter, input)),
         )
         .await;
 
         // check for failures
-        let failures: Vec<String> = outcomes
-            .iter()
-            .filter_map(|outcome| outcome.as_ref().err())
-            .map(Error::description)
-            .collect();
+        let failures: Vec<String> =
+            outcomes.iter().filter_map(|o| o.as_ref().err()).map(Error::description).collect();
         if !failures.is_empty() {
             return Err(server_error!(failures.join("\n")));
         }
@@ -112,7 +103,7 @@ impl SpecifyInput {
         Ok(outcomes.into_iter().filter_map(Result::ok).collect())
     }
 
-    fn prepare(&self) -> Result<Vec<SourceInput>, Error> {
+    fn to_inputs(&self) -> Result<Vec<SourceInput>, Error> {
         if self.sources.is_empty() {
             return Err(Error::BadRequest {
                 code: "specify-source-required".into(),
@@ -135,13 +126,14 @@ impl SpecifyInput {
 }
 
 async fn extract_source<P: Source>(
-    provider: &P, id: &str, input: SourceInput,
+    provider: &P, adapter: &AdapterRef, input: SourceInput,
 ) -> Result<Extract, Error> {
+    let id = adapter.to_string();
     tracing::debug!(source = %input.key, adapter = %id, "extracting");
     let key = input.key.clone();
 
     let outcome = async {
-        let evidence = Source::extract(provider, id, &input).await?;
+        let evidence = Source::extract(provider, &id, &input).await?;
         let findings = evidence.findings().join("\n");
         if !findings.is_empty() {
             return Err(server_error!("`{key}` returned invalid claims:\n{findings}"));
@@ -175,10 +167,6 @@ pub struct SourceConfig {
     /// What the adapter extracts: a project-relative read-only root
     /// (`.` binds the project) or an inline value.
     pub content: SourceContent,
-    /// Optional sha256 content pin for a loader-loaded adapter,
-    /// verified host-side before validation.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub digest: Option<Digest>,
     /// Optional registry endpoint override for a package adapter;
     /// `None` selects the acquirer's default.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -192,16 +180,10 @@ impl SourceConfig {
         if !is_kebab(key) {
             return Err(bad_request!("source `{key}` is not a kebab-case key"));
         }
-        if self.registry.is_some() && !matches!(self.adapter, AdapterRef::Package { .. }) {
+        if self.registry.is_some() && !matches!(self.adapter, AdapterRef::Package(_)) {
             return Err(bad_request!(
                 "source `{key}`: `registry` requires a package adapter \
                  (`<namespace>:<name>@<version>`)"
-            ));
-        }
-        if self.digest.is_some() && matches!(self.adapter, AdapterRef::Bare(_)) {
-            return Err(bad_request!(
-                "source `{key}`: `digest` requires a `.wasm` path or package adapter, not a bare \
-                 name"
             ));
         }
 

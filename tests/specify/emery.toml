@@ -41,14 +41,6 @@ adapter = "./source.wasm"
 # adapter = "acme:ledger@2.1.0"
 # registry = "registry.acme.example"
 
-# # Content pin for a loader-loaded adapter's bytes (local component or
-# # registry package), verified host-side before validation; an unpinned
-# # load reports its digest in the envelope — commit it here to pin.
-# [[source]]
-# name = "pinned"
-# adapter = "./adapters/pinned.wasm"
-# digest = "sha256:9f2c44…"
-
 # # Remote repository, read at the pinned ref over the host-bound read
 # # grant (GitHub MCP server) — never downloaded. Reserved; refuses typed
 # # until the read-view grant exists.

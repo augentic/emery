@@ -52,8 +52,6 @@ The success body names the committed revision and its reviewable set:
 
 `diff` is the re-mine diff against the outgoing current revision, computed by typed equality over the two revisions: each document's `preamble` flags whether its preamble changed; `spec` lists requirements matched by `id` as `{ id, subject }` entries (ids are positional — `REQ-001` onward in source order — so a requirement whose place moved reads as a change), each `changed` entry naming the fields that differ (`subject`, `status`, `covered`, `sources`, `body`, `losers`, `scenarios`); `design` lists sections by their kebab-case key. It is absent on a first run; on a byte-stable re-run `from` equals `revision`, both `preamble` flags are false, and every list is empty; nothing is persisted for it. Text mode prints one line per entry prefixed by the projection it appears in: `    spec.md ~ preamble`, `    spec.md + REQ-003 access.audit`, `    spec.md ~ REQ-002 session.timeout: body, scenarios`, `    design.md ~ domain-model`.
 
-A pin that no longer matches the resolved bytes fails with `error: "refused"` (exit 1).
-
 `emery specify` with no source — and no project-root `emery.toml` to discover — fails with `error: "specify-source-required"` (exit 1); mixing `--config` with positional adapters or `--description`, or naming an absolute or project-escaping local path, fails with `error: "bad_request"` (exit 1). `--config` without a value explicitly selects the project-relative `emery.toml`. A GitHub URL source fails with `error: "bad_request"`. A model draft (grouping, spec, or design) that still fails its check once the backend's rounds are spent exits 1 with `error: "bad_request"` carrying the last correction and its findings; a model failure exits 4 with `error: "bad_gateway"`. Source extraction failures — evidence the claim gate rejects, an adapter refusing its input, or any other adapter failure — exit 3 with `error: "server_error"`; every failed source's description appears in declaration order.
 
 ### `emery show <spec|design>`
@@ -75,7 +73,7 @@ The success body carries the revision id, the Markdown projection, and the typed
         "covered": true,
         "sources": [{ "source": "intent", "claim": "session.timeout" }, { "source": "code", "claim": "session-expiry" }],
         "body": ["Sessions must expire after 30 minutes of inactivity."],
-        "losers": [{ "sources": ["code"], "authority": "behaviour", "claim": "session-expiry", "statement": "…" }],
+        "losers": [{ "sources": ["code"], "kind": "behaviour", "claim": "session-expiry", "statement": "…" }],
         "scenarios": [{ "name": "Session expires", "given": [], "when": "…", "then": "…", "and": [] }]
       }
     ]

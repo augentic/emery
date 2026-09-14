@@ -2,9 +2,10 @@
 //!
 //! What an adapter can rely on from `SourceAdapter::evidence`: the request it
 //! builds (the embedded prompt as the system, the SDK-owned turn around the
-//! adapter's material, the `Evidence` schema with the claim-id pattern,
+//! adapter's material, the claims-only schema with the claim-id pattern,
 //! `check` set, the reference tools, and the workspace lend following the
-//! input), reference calls answered from the embedded corpus, a candidate the
+//! input), the adapter's kind stamped whatever the scripted answer says,
+//! reference calls answered from the embedded corpus, a candidate the
 //! claim gate rejects corrected in place, the backend's spent rounds surfacing
 //! as `bad_request` with the last findings, and a host refusal passing through
 //! as `bad_request`.
@@ -13,6 +14,7 @@ use emery_prose::registry::Doc;
 use emery_sdk::model::{Error as ModelError, ToolCall};
 use emery_sdk::{
     Context, Error, Evidence, Material, Model, SourceAdapter, SourceContent, SourceInput,
+    SourceKind,
 };
 use omnia_test::SeenFormat;
 use omnia_test::guest::Scripted;
@@ -28,7 +30,7 @@ const DOCS: &[Doc] = &[
     },
 ];
 
-const VALID: &str = r#"{"authority":"documentation","claims":[
+const VALID: &str = r#"{"claims":[
     {"kind":"requirement","id":"password-reset.request","statement":"Users reset by email."},
     {"kind":"decision"}
 ]}"#;
@@ -36,6 +38,7 @@ const VALID: &str = r#"{"authority":"documentation","claims":[
 struct Probe;
 
 impl SourceAdapter for Probe {
+    const KIND: SourceKind = SourceKind::Documentation;
     const SOURCE: &'static str = "probe";
 
     fn docs() -> &'static [Doc] {
@@ -81,6 +84,7 @@ async fn request_shape() {
         .await
         .expect("a valid answer is accepted first time");
     assert_eq!(accepted.claims.len(), 2);
+    assert_eq!(accepted.kind, Probe::KIND);
 
     let seen = model.seen();
     assert_eq!(seen.len(), 1);
@@ -95,7 +99,7 @@ async fn request_shape() {
             "prompt walks. Nothing outside it is reachable; extract mines only this source.\n\n",
             "The prompt's references are available through this call's `read_doc` tool ",
             "(`list_docs` enumerates them); load referenced bodies on demand.\n\n",
-            "Answer with one JSON object matching the gated Evidence schema. The caller persists ",
+            "Answer with one JSON object matching the gated claims schema. The caller persists ",
             "the document; do not write it yourself."
         )]
     );
@@ -108,6 +112,7 @@ async fn request_shape() {
     };
     assert_eq!(name, "evidence");
     let schema: serde_json::Value = serde_json::from_str(schema).expect("generated schema parses");
+    assert!(schema.pointer("/properties/kind").is_none(), "the answer is claims alone: {schema}");
     let claim = schema.pointer("/$defs/Claim").expect("Claim definition");
     assert_eq!(
         claim.pointer("/properties/id/pattern").and_then(serde_json::Value::as_str),
@@ -187,10 +192,7 @@ async fn doc_refs() {
 // the engine never sees the claim it would otherwise refuse.
 #[tokio::test]
 async fn gate_findings() {
-    let model = Scripted::answering([
-        r#"{"authority":"documentation","claims":[{"kind":"requirement"}]}"#,
-        VALID,
-    ]);
+    let model = Scripted::answering([r#"{"claims":[{"kind":"requirement"}]}"#, VALID]);
 
     let accepted = ask(&model, &value("Ship it."), Material::Bound)
         .await
@@ -215,7 +217,7 @@ async fn gate_findings() {
 #[tokio::test]
 async fn rounds_exhausted() {
     let model = Scripted::answering([
-        r#"{"authority":"documentation","claims":[{"kind":"criterion","id":"Not.Valid","criterion":"x"}]}"#,
+        r#"{"claims":[{"kind":"criterion","id":"Not.Valid","criterion":"x"}]}"#,
     ]);
 
     let error = ask(&model, &value("Ship it."), Material::Bound)
@@ -242,4 +244,34 @@ async fn invalid_request() {
         "{error}"
     );
     assert!(model.exchanges().is_empty(), "nothing to check");
+}
+
+// The returned document carries the adapter's constant, whatever kind a
+// scripted answer might have named.
+#[tokio::test]
+async fn stamped_kind() {
+    let model = Scripted::answering([VALID]);
+
+    let accepted = ask(&model, &value("Ship it."), Material::Bound).await.expect("accepted");
+    assert_eq!(accepted.kind, SourceKind::Documentation);
+    model.assert_exhausted();
+}
+
+// A stray `kind` key is a schema miss: the answer is claims alone.
+#[tokio::test]
+async fn stray_kind() {
+    let model = Scripted::answering([r#"{"kind":"intent","claims":[{"kind":"decision"}]}"#, VALID]);
+
+    let accepted = ask(&model, &value("Ship it."), Material::Bound)
+        .await
+        .expect("the second candidate is claims-only");
+    assert_eq!(accepted.kind, Probe::KIND);
+
+    let exchanges = model.exchanges();
+    let correction = exchanges[0].outcome.as_ref().expect_err("the stray key is refused");
+    assert!(
+        correction.contains("schema") || correction.contains("unknown field"),
+        "a stray kind key is a schema miss: {correction}"
+    );
+    model.assert_exhausted();
 }

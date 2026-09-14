@@ -1,7 +1,7 @@
 //! Evidence
 //!
 //! What an adapter returns: an [`Evidence`] document of typed [`Claim`]s
-//! under an [`Authority`] class — the spec IR every source is reduced to.
+//! stamped with its [`SourceKind`] — the spec IR every source is reduced to.
 //! [`ClaimKind`] is the closed taxonomy the whole system agrees on, and each
 //! kind's required extras are declared next to it, so the contract states in
 //! one place what a complete claim of that kind looks like.
@@ -15,7 +15,7 @@
 //! receipt, because it cannot assume every adapter did.
 //!
 //! Serde derives sit only on the shapes that cross a JSON boundary: the
-//! document a model answer is parsed into, and the [`Authority`] a committed
+//! document a model answer is parsed into, and the [`SourceKind`] a committed
 //! requirement records.
 
 use schemars::JsonSchema;
@@ -34,12 +34,12 @@ fn is_claim_id(value: &str) -> bool {
     value.split('.').all(is_kebab)
 }
 
-/// Extracted claims and their document-level authority.
+/// Extracted claims and the kind of source they were read from.
 #[derive(Clone, Debug, Deserialize, JsonSchema)]
 #[serde(rename_all = "kebab-case")]
 pub struct Evidence {
-    /// Document-level authority.
-    pub authority: Authority,
+    /// The kind of source the claims were read from.
+    pub kind: SourceKind,
     /// Extracted claims.
     pub claims: Vec<Claim>,
 }
@@ -53,9 +53,11 @@ impl Evidence {
     }
 }
 
-/// Claim-set authority. The variants are declared in rank order, so the
-/// derived `Ord` is the authority hierarchy: `Intent` outranks
-/// `Documentation`, which outranks `Behaviour`.
+/// The kind of source an [`Evidence`] document was read from.
+///
+/// The variants are declared in authority order — `Intent` outranks
+/// `Documentation`, which outranks `Behaviour` — so the derived `Ord` is the
+/// precedence a cross-source disagreement is resolved under.
 #[derive(
     Clone,
     Copy,
@@ -71,7 +73,7 @@ impl Evidence {
 )]
 #[serde(rename_all = "kebab-case")]
 #[strum(serialize_all = "kebab-case")]
-pub enum Authority {
+pub enum SourceKind {
     /// Operator directives.
     Intent,
     /// Specifications and documentation.

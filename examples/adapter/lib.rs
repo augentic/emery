@@ -15,7 +15,8 @@ emery_sdk::source!(crate::Adapter);
 
 use emery_prose::registry::Doc;
 use emery_sdk::{
-    Context, Error, Evidence, Material, Model, SourceAdapter, SourceContent, bad_request,
+    Context, Error, Evidence, Material, Model, SourceAdapter, SourceContent, SourceKind,
+    bad_request,
 };
 
 static DOCS: &[Doc] = &[
@@ -34,6 +35,7 @@ static DOCS: &[Doc] = &[
 pub struct Adapter;
 
 impl SourceAdapter for Adapter {
+    const KIND: SourceKind = SourceKind::Documentation;
     const SOURCE: &'static str = "greeting";
 
     fn docs() -> &'static [Doc] {

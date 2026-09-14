@@ -34,8 +34,8 @@ const SPECIFY_DESC: &str = "Generate spec.md and design.md from source adapters.
     or use `--config [<path>]` (default: `emery.toml`). With no sources, Emery looks \
     for `emery.toml` in the project root. Config and command-line sources cannot be \
     combined.\n\n\
-    Adapter paths are project-relative. Each run reloads adapters, verifies optional \
-    digest pins, reconciles their claims, and atomically commits a new revision.";
+    Adapter paths are project-relative. Each run reloads adapters, reconciles their \
+    claims, and atomically commits a new revision.";
 const SHOW_DESC: &str = "Print an artifact from the current revision.\n\n\
     Text output contains only the artifact body. `--format json` also includes the \
     revision id and the typed document.";
@@ -189,7 +189,7 @@ fn hint(code: &str) -> Option<Cow<'static, str>> {
             "the revision predates this emery's grammar: re-run `emery specify <adapter>...` to regenerate it"
         }
         "refused" => {
-            "the loader refused the component; the message above names why (digest, export, or location)"
+            "the loader refused the component; the message above names why (export or location)"
         }
         "unavailable" => {
             "the registry could not supply the package: check the network, the exact version, and any `registry` override"

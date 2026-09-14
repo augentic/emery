@@ -7,13 +7,13 @@
 //! grammar or a claim missing an extra its kind requires. Pinning the gate
 //! here keeps the two enforcement points from disagreeing.
 
-use emery_adapter::source::{Authority, Backing, ClaimKind, Evidence};
+use emery_adapter::source::{Backing, ClaimKind, Evidence, SourceKind};
 
 #[test]
 fn parse_evidence() {
     let evidence = evidence(
         r#"{
-            "authority": "behaviour",
+            "kind": "behaviour",
             "claims": [
                 {
                     "kind": "example",
@@ -30,7 +30,7 @@ fn parse_evidence() {
         }"#,
     );
 
-    assert_eq!(evidence.authority, Authority::Behaviour);
+    assert_eq!(evidence.kind, SourceKind::Behaviour);
     assert_eq!(evidence.claims.len(), 2);
     let example = &evidence.claims[0];
     assert_eq!(example.kind, ClaimKind::Example);
@@ -63,7 +63,7 @@ fn parse_evidence() {
 fn open_fields() {
     let evidence = evidence(
         r#"{
-            "authority": "documentation",
+            "kind": "documentation",
             "claims": [
                 {"kind": "section", "synopsis": {"headline": "structured"}, "backing": "bare string"},
                 {"kind": "decision", "synopsis": "kept", "backing": {"payload": "ADR-7"}}
@@ -82,7 +82,7 @@ fn open_fields() {
 #[test]
 fn clean_evidence() {
     let clean = evidence(
-        r#"{"authority":"documentation","claims":[
+        r#"{"kind":"documentation","claims":[
             {"kind":"requirement","id":"password-reset.request","statement":"Users reset by email."},
             {"kind":"criterion","id":"password-reset.expiry","criterion":"Links expire in 30m."},
             {"kind":"example","id":"password-reset.stale","replay-digest":"sha256:00"},
@@ -95,7 +95,7 @@ fn clean_evidence() {
 #[test]
 fn malformed_ids() {
     let malformed = evidence(
-        r#"{"authority":"documentation","claims":[
+        r#"{"kind":"documentation","claims":[
             {"kind":"requirement","statement":"Unnamed."},
             {"kind":"criterion","id":"Not.Valid","criterion":"Misnamed."},
             {"kind":"section"}
@@ -117,7 +117,7 @@ fn missing_extras() {
     assert!(ClaimKind::Decision.required_extras().is_empty());
 
     let bare = evidence(
-        r#"{"authority":"documentation","claims":[
+        r#"{"kind":"documentation","claims":[
             {"kind":"requirement","id":"password-reset.request"},
             {"kind":"example","id":"password-reset.stale","input":{}},
             {"kind":"section","synopsis":"no extras required"}

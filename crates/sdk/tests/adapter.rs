@@ -9,7 +9,7 @@
 use emery_prose::registry::Doc;
 use emery_sdk::{
     AdapterMetadata, Context, Error, Evidence, Material, Model, SourceAdapter, SourceContent,
-    SourceInput,
+    SourceInput, SourceKind,
 };
 use omnia_test::guest::Scripted;
 
@@ -24,6 +24,7 @@ const PIN: Option<&str> = Some(env!("CARGO_PKG_VERSION"));
 struct Probe;
 
 impl SourceAdapter for Probe {
+    const KIND: SourceKind = SourceKind::Documentation;
     const SOURCE: &'static str = "probe";
 
     fn docs() -> &'static [Doc] {
@@ -39,6 +40,7 @@ impl SourceAdapter for Probe {
 struct Mute;
 
 impl SourceAdapter for Mute {
+    const KIND: SourceKind = SourceKind::Behaviour;
     const SOURCE: &'static str = "mute";
 
     fn docs() -> &'static [Doc] {
@@ -53,7 +55,7 @@ impl SourceAdapter for Mute {
 #[tokio::test]
 async fn source_dispatch() {
     let model = Scripted::answering([
-        r#"{"authority":"documentation","claims":[{"kind":"requirement","id":"one.claim","statement":"One."}]}"#,
+        r#"{"claims":[{"kind":"requirement","id":"one.claim","statement":"One."}]}"#,
     ]);
     let input = SourceInput {
         key: "main".to_string(),
@@ -65,6 +67,7 @@ async fn source_dispatch() {
     };
 
     let evidence = Probe::extract(&model, &ctx).await.expect("scripted extract succeeds");
+    assert_eq!(evidence.kind, Probe::KIND);
     assert_eq!(evidence.claims.len(), 1);
     assert_eq!(evidence.claims[0].id.as_deref(), Some("one.claim"));
     assert_eq!(

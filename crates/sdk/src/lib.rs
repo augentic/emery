@@ -2,8 +2,9 @@
 //!
 //! Everything an adapter author needs to build an Emery adapter, one role
 //! per axis. Today that is the source role: the [`SourceAdapter`] trait to
-//! implement, the [`Material`] an extraction hands the model, and the export
-//! macro that turns an implementation into a wasm component.
+//! implement, the [`Material`] an extraction hands the model, the claims-only
+//! [`Answer`] the model returns, and the export macro that turns an
+//! implementation into a wasm component.
 //!
 //! The contract itself lives in `emery-adapter` and is re-exported here, so an
 //! adapter depends on one crate and never sees the WIT bindings directly.
@@ -14,14 +15,14 @@ mod references;
 mod source;
 
 pub use emery_adapter::source::{
-    AdapterMetadata, Authority, Backing, Claim, ClaimKind, Evidence, SourceContent, SourceInput,
+    AdapterMetadata, Backing, Claim, ClaimKind, Evidence, SourceContent, SourceInput, SourceKind,
 };
 pub use omnia_guest::{Error, Model, bad_gateway, bad_request, model, not_found, server_error};
 // The export shim the `source!` macro expands against; no adapter names it.
 #[cfg(target_arch = "wasm32")]
 #[doc(hidden)]
 pub use source::export;
-pub use source::{Context, Material, SourceAdapter};
+pub use source::{Answer, Context, Material, SourceAdapter};
 
 /// Wires a [`SourceAdapter`] into component exports.
 ///

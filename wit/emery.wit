@@ -15,11 +15,13 @@ interface types {
     internal(string),
   }
 
-  /// An exact routed adapter identity: "<axis>:<name>@<version>" for a
-  /// pinned package identity (e.g. "source:documentation@1.0.0"),
-  /// "<axis>:<name>" for an unpinned cache-backed component. Host-mediated
-  /// dispatch routes each call to the exporting guest by this first
-  /// argument; the WIT type stays an opaque string.
+  /// An exact routed adapter identity: the adapter reference itself. A
+  /// statically declared guest is its bare name (e.g. "intent"), a local
+  /// component its project-relative path (e.g. "adapters/intent.wasm"),
+  /// a registry package the package reference
+  /// (e.g. "emery:documentation@1.0.0"). Host-mediated dispatch routes
+  /// each call to the exporting guest by this first argument; the WIT
+  /// type stays an opaque string.
   type adapter-id = string;
 
   /// Either a read-only source view or an inline value. Never a
@@ -41,10 +43,10 @@ interface types {
     content: content,
   }
 
-  /// Document-level authority class for an extracted claim set, per the
-  /// closed authority hierarchy (`intent` > `documentation` >
-  /// `behaviour`). Controls who wins a cross-source disagreement.
-  enum authority {
+  /// The kind of source an extracted claim set was read from. Kinds rank
+  /// by authority (`intent` > `documentation` > `behaviour`), which
+  /// decides who wins a cross-source disagreement.
+  enum source-kind {
     /// Operator directives. Highest authority.
     intent,
     /// Written specifications and documentation.
@@ -108,8 +110,8 @@ interface types {
 
   /// The claim set returned by the extract operation.
   record evidence {
-    /// The document-level authority class of this claim set.
-    authority: authority,
+    /// The kind of source this claim set was read from.
+    kind: source-kind,
     /// The claims extracted from the source.
     claims: list<claim>,
   }

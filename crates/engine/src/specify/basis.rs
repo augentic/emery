@@ -18,7 +18,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::{self, Display, Formatter};
 
-use emery_adapter::source::{Authority, ClaimKind};
+use emery_adapter::source::{ClaimKind, SourceKind};
 use omnia_guest::{Error, Model, server_error};
 use schemars::JsonSchema;
 use serde::Deserialize;
@@ -49,7 +49,7 @@ impl<'a> GroupingBrief<'a> {
                 match claim.kind {
                     ClaimKind::Requirement => contributors.push(Contributor {
                         source: extract.key.clone(),
-                        authority: extract.evidence.authority,
+                        kind: extract.evidence.kind,
                         id: id.to_string(),
                         statement: claim.statement(),
                         synopsis: claim.synopsis.clone(),
@@ -316,9 +316,10 @@ pub struct Basis {
 }
 
 impl Basis {
-    // Builds a requirement from its classes, sorted by authority then source
-    // order. One class is agreed (unknown when no criterion covers it); several
-    // are a divergence when one holds the top authority alone, else a conflict.
+    // Builds a requirement from its classes, sorted by source-kind authority
+    // then source order. One class is agreed (unknown when no criterion covers
+    // it); several are a divergence when one holds the top authority alone,
+    // else a conflict.
     fn of(id: ReqId, mut classes: Vec<Vec<Contributor>>, criteria: &[&str]) -> Result<Self, Error> {
         // The grouping was verified, so a requirement without a claim, or a
         // class without one, is the engine's own defect; from here every
@@ -327,11 +328,11 @@ impl Basis {
             return Err(server_error!("requirement {id} was grouped with a class of no claims"));
         }
         for class in &mut classes {
-            class.sort_by_key(|member| (member.authority, member.index));
+            class.sort_by_key(|member| (member.kind, member.index));
         }
-        classes.sort_by_key(|class| (class[0].authority, class[0].index));
+        classes.sort_by_key(|class| (class[0].kind, class[0].index));
 
-        let top = classes[0][0].authority;
+        let top = classes[0][0].kind;
         // A criterion covers a requirement when it is that claim id or a
         // dotted child of it (`session.timeout.idle` covers `session.timeout`).
         let covered = classes.iter().flatten().any(|member| {
@@ -343,9 +344,7 @@ impl Basis {
         let status = match classes.len() {
             1 if covered => Status::Agreed,
             1 => Status::Unknown,
-            _ if classes.iter().skip(1).all(|class| class[0].authority != top) => {
-                Status::Divergence
-            }
+            _ if classes.iter().skip(1).all(|class| class[0].kind != top) => Status::Divergence,
             _ => Status::Conflict,
         };
 
@@ -359,10 +358,10 @@ impl Basis {
     }
 
     /// Lists every contributor, highest authority first and source order
-    /// within an authority.
+    /// within a kind.
     pub fn contributors(&self) -> impl Iterator<Item = &Contributor> {
         let mut members: Vec<&Contributor> = self.classes.iter().flatten().collect();
-        members.sort_by_key(|member| (member.authority, member.index));
+        members.sort_by_key(|member| (member.kind, member.index));
         members.into_iter()
     }
 
@@ -383,7 +382,7 @@ impl Basis {
                 let lead = &class[0];
                 Loser {
                     sources: class.iter().map(|member| member.source.clone()).collect(),
-                    authority: lead.authority,
+                    kind: lead.kind,
                     claim: lead.id.clone(),
                     statement: lead.statement.clone(),
                 }
@@ -408,15 +407,15 @@ impl Basis {
 pub struct Contributor {
     /// The source key.
     pub source: String,
-    /// The source's authority class.
-    pub authority: Authority,
+    /// The source's kind, which ranks it against the other contributors.
+    pub kind: SourceKind,
     /// The claim id, which may differ from the requirement's subject.
     pub id: String,
     /// The claim's `statement` extra, whitespace-normalised.
     pub statement: String,
     /// The claim's synopsis, shown to the grouping judgment alone.
     pub synopsis: Option<String>,
-    /// Position in source order, the tie-break within an authority.
+    /// Position in source order, the tie-break within a kind.
     pub index: usize,
 }
 

@@ -61,7 +61,7 @@ impl Display for Brief<'_> {
         f.write_str(
             "\n\nThe prompt's references are available through this call's `read_doc` tool \
              (`list_docs` enumerates them); load referenced bodies on demand.\n\n\
-             Answer with one JSON object matching the gated Evidence schema. The caller persists \
+             Answer with one JSON object matching the gated claims schema. The caller persists \
              the document; do not write it yourself.",
         )
     }

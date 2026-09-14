@@ -37,7 +37,7 @@ mod generated {
 
 use self::generated::emery::adapter::types as wit;
 use crate::source::{
-    AdapterMetadata, Authority, Backing, Claim, ClaimKind, Evidence, SourceContent, SourceInput,
+    AdapterMetadata, Backing, Claim, ClaimKind, Evidence, SourceContent, SourceInput, SourceKind,
 };
 
 impl From<AdapterMetadata> for wit::AdapterMetadata {
@@ -92,22 +92,22 @@ impl From<wit::Input> for SourceInput {
     }
 }
 
-impl From<Authority> for wit::Authority {
-    fn from(authority: Authority) -> Self {
-        match authority {
-            Authority::Intent => Self::Intent,
-            Authority::Documentation => Self::Documentation,
-            Authority::Behaviour => Self::Behaviour,
+impl From<SourceKind> for wit::SourceKind {
+    fn from(kind: SourceKind) -> Self {
+        match kind {
+            SourceKind::Intent => Self::Intent,
+            SourceKind::Documentation => Self::Documentation,
+            SourceKind::Behaviour => Self::Behaviour,
         }
     }
 }
 
-impl From<wit::Authority> for Authority {
-    fn from(authority: wit::Authority) -> Self {
-        match authority {
-            wit::Authority::Intent => Self::Intent,
-            wit::Authority::Documentation => Self::Documentation,
-            wit::Authority::Behaviour => Self::Behaviour,
+impl From<wit::SourceKind> for SourceKind {
+    fn from(kind: wit::SourceKind) -> Self {
+        match kind {
+            wit::SourceKind::Intent => Self::Intent,
+            wit::SourceKind::Documentation => Self::Documentation,
+            wit::SourceKind::Behaviour => Self::Behaviour,
         }
     }
 }
@@ -218,7 +218,7 @@ impl TryFrom<wit::Claim> for Claim {
 impl From<Evidence> for wit::Evidence {
     fn from(evidence: Evidence) -> Self {
         Self {
-            authority: evidence.authority.into(),
+            kind: evidence.kind.into(),
             claims: evidence.claims.into_iter().map(Into::into).collect(),
         }
     }
@@ -229,7 +229,7 @@ impl TryFrom<wit::Evidence> for Evidence {
 
     fn try_from(evidence: wit::Evidence) -> Result<Self, String> {
         Ok(Self {
-            authority: evidence.authority.into(),
+            kind: evidence.kind.into(),
             claims: evidence.claims.into_iter().map(TryInto::try_into).collect::<Result<_, _>>()?,
         })
     }

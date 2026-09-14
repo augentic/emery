@@ -8,7 +8,7 @@
 use std::fmt::{self, Display, Formatter};
 use std::str::FromStr;
 
-use emery_adapter::source::Authority;
+use emery_adapter::source::SourceKind;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
@@ -147,22 +147,22 @@ impl Display for Cited {
 pub struct Loser {
     /// Every member's source key, in authority order.
     pub sources: Vec<String>,
-    /// The lead member's authority.
-    pub authority: Authority,
+    /// The lead member's source kind.
+    pub kind: SourceKind,
     /// The lead member's claim id.
     pub claim: String,
     /// The lead member's statement, whitespace-normalised.
     pub statement: String,
 }
 
-// Writes `Note: <sources> (<authority>, <claim>): <statement>`.
+// Writes `Note: <sources> (<kind>, <claim>): <statement>`.
 impl Display for Loser {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         write!(
             f,
-            "{NOTE} {sources} ({authority}, {claim}): {statement}",
+            "{NOTE} {sources} ({kind}, {claim}): {statement}",
             sources = self.sources.join(", "),
-            authority = self.authority,
+            kind = self.kind,
             claim = self.claim,
             statement = self.statement,
         )

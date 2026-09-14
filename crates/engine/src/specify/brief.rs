@@ -147,8 +147,8 @@ impl Review {
 }
 
 // The `## Claims` section of a document brief's turn: every claim in every
-// extract, under its source key and authority, so the model sees the whole
-// body it must draft from.
+// extract, under its source key and kind, so the model sees the whole body it
+// must draft from.
 pub struct ClaimsSection<'a>(pub &'a [Extract]);
 
 impl Display for ClaimsSection<'_> {
@@ -158,9 +158,9 @@ impl Display for ClaimsSection<'_> {
         for extract in self.0 {
             write!(
                 f,
-                "\n### source `{key}` ({authority})\n\n",
+                "\n### source `{key}` ({kind})\n\n",
                 key = extract.key,
-                authority = extract.evidence.authority
+                kind = extract.evidence.kind
             )?;
 
             for claim in &extract.evidence.claims {

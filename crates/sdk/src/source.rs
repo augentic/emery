@@ -1,10 +1,12 @@
 //! The source adapter role
 //!
 //! [`SourceAdapter`] is what an adapter implements: the noun its source goes
-//! by, the reference documents it embeds, and the `extract` operation that
-//! reads a source and returns evidence. The trait carries what every adapter
-//! shares — the resolve-time metadata, the extraction prompt, and the one
-//! model call — so an implementation states only what is its own.
+//! by, the kind of source it reads, the reference documents it embeds, and
+//! the `extract` operation that reads a source and returns evidence. The
+//! trait carries what every adapter shares — the resolve-time metadata, the
+//! extraction prompt, and the one model call — so an implementation states
+//! only what is its own. The model answers claims; the SDK stamps the
+//! adapter's source kind.
 //!
 //! The trait is native; the wasm export lives in the `export` child, built
 //! for `wasm32` alone. Keeping them apart lets an adapter be exercised
@@ -20,10 +22,14 @@ pub mod export;
 
 use std::future::Future;
 
-use emery_adapter::source::{AdapterMetadata, Evidence, SourceContent, SourceInput};
+use emery_adapter::source::{
+    AdapterMetadata, Claim, Evidence, SourceContent, SourceInput, SourceKind,
+};
 use emery_prose::registry::{self, Doc};
 use omnia_guest::model::Question;
 use omnia_guest::{Error, Model, server_error};
+use schemars::JsonSchema;
+use serde::Deserialize;
 
 use self::brief::Brief;
 pub use self::brief::Material;
@@ -41,9 +47,22 @@ pub trait SourceAdapter {
     /// `TypeScript / JavaScript`).
     const SOURCE: &'static str;
 
+    /// The kind of source this adapter reads: a fact about its input, never
+    /// answered by the model.
+    const KIND: SourceKind;
+
     /// Returns the adapter's embedded reference documents, the extraction
     /// prompt among them.
     fn docs() -> &'static [Doc];
+
+    /// The document this adapter returns for `claims`.
+    #[must_use]
+    fn stamp(claims: Vec<Claim>) -> Evidence {
+        Evidence {
+            kind: Self::KIND,
+            claims,
+        }
+    }
 
     /// Extracts the source's claim set.
     ///
@@ -73,18 +92,18 @@ pub trait SourceAdapter {
             .ok_or_else(|| server_error!("`{PROMPT}` is not embedded"))
     }
 
-    /// Asks the model for the source's evidence and returns the accepted
+    /// Asks the model for the source's claims and returns the accepted
     /// document: the one model call an adapter makes.
     ///
     /// The prompt is [`Self::prompt`]; the brief names the source and carries
     /// `material`; the `list_docs` / `read_doc` tools answer from
-    /// [`Self::docs`]; a bound workspace is lent. The schema steers the
-    /// answer's shape but cannot express every rule a claim must satisfy, so
-    /// each candidate the backend proposes is run through the contract's claim
-    /// gate before it is accepted; a miss goes back to the model as findings
-    /// and the backend asks again. The engine re-runs the same gate on
-    /// receipt, but an adapter that checks in place rarely hands it evidence
-    /// to reject.
+    /// [`Self::docs`]; a bound workspace is lent. The schema steers a
+    /// claims-only answer; the SDK stamps [`Self::KIND`]. The schema
+    /// cannot express every rule a claim must satisfy, so each candidate the
+    /// backend proposes is run through the contract's claim gate before it is
+    /// accepted; a miss goes back to the model as findings and the backend
+    /// asks again. The engine re-runs the same gate on receipt, but an
+    /// adapter that checks in place rarely hands it evidence to reject.
     ///
     /// # Errors
     ///
@@ -103,7 +122,7 @@ pub trait SourceAdapter {
             };
 
             let mut question =
-                Question::<Evidence>::new("evidence").system(system).tools(references::tools());
+                Question::<Answer>::new("evidence").system(system).tools(references::tools());
             if let Some(lend) = ctx.lend() {
                 question = question.workspace(lend);
             }
@@ -113,15 +132,28 @@ pub trait SourceAdapter {
                     model,
                     brief.to_string(),
                     Some(references::answering(Self::docs())),
-                    |evidence| {
-                        let findings = evidence.findings();
+                    |answer| {
+                        let findings = Self::stamp(answer.claims.clone()).findings();
                         if findings.is_empty() { Ok(()) } else { Err(findings) }
                     },
                 )
                 .await
+                .map(|answer| Self::stamp(answer.claims))
                 .map_err(Error::from)
         }
     }
+}
+
+/// The model's extraction answer: claims alone.
+///
+/// The SDK stamps [`SourceAdapter::KIND`]. A stray `kind` key is a schema
+/// miss.
+#[derive(Debug, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+#[schemars(title = "Emery evidence answer")]
+pub struct Answer {
+    /// Extracted claims.
+    pub claims: Vec<Claim>,
 }
 
 /// Call-scoped adapter environment: which adapter was addressed, and with

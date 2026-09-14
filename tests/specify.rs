@@ -17,20 +17,20 @@
 
 mod support;
 
-use std::fs;
 use std::path::Path;
 use std::sync::Arc;
+use std::{fs, slice};
 
-use emery_adapter::source::{Authority, ClaimKind, Evidence, SourceContent};
+use emery_adapter::source::{ClaimKind, Evidence, SourceContent, SourceKind};
 use emery_engine::{CONTAINER, CURRENT};
 use omnia_guest::model::Error as ModelError;
-use omnia_guest::plugins::{Digest, Error as LoadError, Location};
+use omnia_guest::plugins::{Error as LoadError, Location};
 use omnia_guest::{BlobStore, StateStore, bad_gateway, bad_request};
 use omnia_test::SeenFormat;
 use omnia_test::guest::{Memory, Namespaced, Scripted};
 use serde_json::Value;
 use sha2::{Digest as _, Sha256};
-use support::{Provider, Rendezvous, claim, cli_ok, digest, evidence, fail, requirement};
+use support::{Provider, Rendezvous, claim, cli_ok, evidence, fail, requirement};
 
 // Scripted drafts, the canonical documents the engine commits from them, and
 // the documents it renders from those documents.
@@ -113,12 +113,12 @@ async fn gen_spec() {
     // Observe: the load, the current id, and the revision.
     // --------------------------------------------------
     let request = provider.plugins.loads().first().cloned().expect("one load request");
-    assert_eq!(request.package, "source:source", "the adapter id is the loaded package identity");
+    assert_eq!(request.package, component, "the adapter reference is the loaded package identity");
     let Location::Path(path) = &request.location else {
         panic!("a local component loads by path");
     };
     assert!(path.ends_with("source.wasm"), "the preopen-relative path rides the request: {path}");
-    assert!(request.digest.is_none(), "an unpinned source requests no digest");
+    assert!(request.digest.is_none(), "a load request carries no digest");
     assert!(
         provider.storage.objects("adapters").is_empty(),
         "nothing mirrors into engine storage; the loader reads the file fresh"
@@ -202,20 +202,17 @@ async fn from_file() {
     provider.model.assert_exhausted();
 }
 
-// One adapter may name several roots: the loader is asked once, each
-// source extracts over its own workspace, and the two claims of one id
-// are one requirement citing both sources.
+// One adapter may name several roots: the loader and the version gate are
+// asked once, each source extracts over its own workspace, and the two
+// claims of one id are one requirement citing both sources.
 #[tokio::test]
 async fn shared_roots() {
-    let cases: &[(&str, &str, bool)] = &[
-        ("emery:documentation@1.2.0", "emery:documentation@1.2.0", false),
-        ("./source.wasm", "source:source", true),
-    ];
-    for (adapter, package, wasm) in cases {
+    let cases: &[(&str, bool)] = &[("emery:documentation@1.2.0", false), ("./source.wasm", true)];
+    for (adapter, wasm) in cases {
         let scratch = Scratch::new();
-        if *wasm {
-            scratch.component();
-        }
+        // A package is its own identity; a local component's is its path
+        // anchored at the config file, however the file spelled it.
+        let package = if *wasm { scratch.component() } else { (*adapter).to_string() };
         let config = scratch.config(&format!(
             "[[source]]\nname = \"docs\"\nadapter = \"{adapter}\"\npath = \"docs\"\n\n\
              [[source]]\nname = \"api\"\nadapter = \"{adapter}\"\npath = \"api\"\n"
@@ -234,13 +231,19 @@ async fn shared_roots() {
 
         let loads = provider.plugins.loads();
         assert_eq!(loads.len(), 1, "{adapter}: one adapter identity loads once");
-        assert_eq!(loads[0].package, *package, "{adapter}");
+        assert_eq!(loads[0].package, package, "{adapter}");
+        let gated = provider.source.metadata.lock().expect("metadata").clone();
+        assert_eq!(
+            gated,
+            slice::from_ref(&package),
+            "{adapter}: one adapter identity is gated once"
+        );
 
         let calls = provider.source.calls.lock().expect("calls");
         assert_eq!(calls.len(), 2, "{adapter}: each source extracts");
-        assert_eq!(calls[0].0, *package);
+        assert_eq!(calls[0].0, package);
         assert_eq!(calls[0].1.key, "docs");
-        assert_eq!(calls[1].0, *package);
+        assert_eq!(calls[1].0, package);
         assert_eq!(calls[1].1.key, "api");
         drop(calls);
 
@@ -314,7 +317,7 @@ async fn description_source() {
     assert!(spec.contains("Sources: [intent:greeting.behaviour]"));
     let calls = provider.source.calls.lock().expect("calls");
     let (id, input) = calls.first().expect("one extract dispatch");
-    assert_eq!(id, "source:intent", "a bare adapter dispatches by routed name");
+    assert_eq!(id, "intent", "a bare adapter dispatches to the guest declared under its name");
     assert_eq!(input.key, "intent");
     assert_eq!(input.content, SourceContent::Value("Ship it.".to_string()));
     drop(calls);
@@ -334,7 +337,7 @@ async fn authority_precedence() {
     provider.source.evidence.insert(
         "docs".to_string(),
         Ok(evidence(
-            Authority::Documentation,
+            SourceKind::Documentation,
             vec![
                 requirement("login.flow", "Users sign in with a magic link."),
                 requirement("session.timeout", "Sessions expire after 30 minutes of inactivity."),
@@ -351,14 +354,14 @@ async fn authority_precedence() {
     provider.source.evidence.insert(
         "wiki-live".to_string(),
         Ok(evidence(
-            Authority::Documentation,
+            SourceKind::Documentation,
             vec![requirement("login.flow", "Users sign in with a passkey.")],
         )),
     );
     provider.source.evidence.insert(
         "code".to_string(),
         Ok(evidence(
-            Authority::Behaviour,
+            SourceKind::Behaviour,
             vec![
                 requirement("login.flow", "Users sign in with email and password."),
                 // Behaviour names the timeout differently; the grouping
@@ -370,7 +373,7 @@ async fn authority_precedence() {
     provider.source.evidence.insert(
         "intent".to_string(),
         Ok(evidence(
-            Authority::Intent,
+            SourceKind::Intent,
             vec![requirement(
                 "session.timeout",
                 "Sessions must expire after 30 minutes of inactivity.",
@@ -440,14 +443,14 @@ async fn grouping_refused() {
         provider.source.evidence.insert(
             "docs".to_string(),
             Ok(evidence(
-                Authority::Documentation,
+                SourceKind::Documentation,
                 vec![requirement("session.timeout", "Sessions expire after 30 minutes.")],
             )),
         );
         provider.source.evidence.insert(
             "code".to_string(),
             Ok(evidence(
-                Authority::Behaviour,
+                SourceKind::Behaviour,
                 vec![requirement("session.timeout", "Sessions expire after 15 minutes.")],
             )),
         );
@@ -594,7 +597,7 @@ async fn diff_envelope() {
     provider.source.evidence.insert(
         "docs".to_string(),
         Ok(evidence(
-            Authority::Documentation,
+            SourceKind::Documentation,
             vec![
                 requirement(
                     "greeting.behaviour",
@@ -653,7 +656,7 @@ fn docs_evidence(requirements: &[(&str, &str)]) -> Evidence {
             ]
         })
         .collect();
-    evidence(Authority::Documentation, claims)
+    evidence(SourceKind::Documentation, claims)
 }
 
 // The drafts are keyed by subject, so their order is immaterial; the
@@ -702,7 +705,7 @@ async fn extras_missing() {
     provider
         .source
         .evidence
-        .insert("docs".to_string(), Ok(evidence(Authority::Documentation, vec![bare])));
+        .insert("docs".to_string(), Ok(evidence(SourceKind::Documentation, vec![bare])));
 
     fail(&provider, &["emery", "specify", "docs"], 3, "server_error").await;
 }
@@ -904,7 +907,7 @@ async fn dishonest_design() {
     let signature = "interface Greeting { text: string }";
     let evidence = || {
         Ok(evidence(
-            Authority::Documentation,
+            SourceKind::Documentation,
             vec![
                 requirement(
                     "greeting.behaviour",
@@ -1061,13 +1064,12 @@ async fn config_file() {
             "bad_request",
             "is not a kebab-case key",
         ),
-        // A malformed pin on a local component refuses before any load.
         (
-            "[[source]]\nname = \"pinned\"\nadapter = \"./source.wasm\"\n\
+            "[[source]]\nname = \"local\"\nadapter = \"./source.wasm\"\n\
              digest = \"sha256:9f2c44aa\"\n",
             1,
             "bad_request",
-            "64 hex characters",
+            "unknown field `digest`",
         ),
         (
             "[[source]]\nname = \"upstream\"\nadapter = \"documentation\"\ngit = \"https://github.com/acme/api@v2\"\n",
@@ -1122,16 +1124,10 @@ async fn config_file() {
     }
 }
 
-// The loader keys are gated by reference kind: `registry` only steers
-// registry acquisition, so it rides only a package-shaped reference,
-// and a `digest` pin binds exact bytes the loader acquires, so a bare
-// name — which never loads — cannot carry one.
+// `registry` only steers registry acquisition, so it rides only a
+// package-shaped reference.
 #[tokio::test]
 async fn loader_keys_gated() {
-    let pinned_bare = format!(
-        "[[source]]\nname = \"pinned\"\nadapter = \"documentation\"\ndigest = \"{}\"\n",
-        digest("ab")
-    );
     let cases: &[(&str, &str)] = &[
         (
             "[[source]]\nname = \"local\"\nadapter = \"./source.wasm\"\n\
@@ -1143,7 +1139,6 @@ async fn loader_keys_gated() {
              registry = \"registry.acme.example\"\n",
             "`registry` requires a package adapter",
         ),
-        (pinned_bare.as_str(), "not a bare name"),
     ];
     for (body, fragment) in cases {
         let scratch = Scratch::new();
@@ -1226,44 +1221,6 @@ async fn component_missing() {
     }
 }
 
-// A pin that matches the resolved bytes loads and extracts; the pin
-// rides the load request.
-#[tokio::test]
-async fn pinned_component() {
-    let scratch = Scratch::new();
-    scratch.component();
-    let config = scratch.config(&format!(
-        "[[source]]\nname = \"local\"\nadapter = \"./source.wasm\"\ndigest = \"{}\"\n",
-        digest("ab")
-    ));
-
-    let provider = Provider::answering([SPEC_ANSWER, DESIGN_ANSWER]);
-    cli_ok(&provider, &["emery", "specify", "--config", &config]).await;
-
-    let loads = provider.plugins.loads();
-    let request = loads.first().expect("one load request");
-    assert_eq!(request.digest, Some(digest("ab")), "the source's pin rides the load request");
-    provider.model.assert_exhausted();
-}
-
-// A pinned local component must hash to exactly the pinned bytes: the
-// loader's typed mismatch refusal surfaces on the exit contract before
-// anything extracts or commits.
-#[tokio::test]
-async fn digest_mismatch() {
-    let scratch = Scratch::new();
-    scratch.component();
-    let config = scratch.config(&format!(
-        "[[source]]\nname = \"local\"\nadapter = \"./source.wasm\"\ndigest = \"{}\"\n",
-        digest("11")
-    ));
-
-    let mut provider = Provider::idle();
-    provider.plugins = provider.plugins.clone().digest("source:source", digest("ab"));
-
-    fail(&provider, &["emery", "specify", "--config", &config], 1, "refused").await;
-}
-
 // GitHub URLs are refused: a source checkout is not an adapter.
 #[tokio::test]
 async fn github_refused() {
@@ -1293,7 +1250,7 @@ async fn package_loads() {
             Location::Registry(None),
             "no override selects the acquirer's default registry"
         );
-        assert!(request.digest.is_none(), "an unpinned source requests no digest");
+        assert!(request.digest.is_none(), "a load request carries no digest");
         let calls = provider.source.calls.lock().expect("calls");
         let (id, input) = calls.first().expect("one extract dispatch");
         assert_eq!(id, "emery:demo@1.2.0", "the adapter id is the loaded package identity");
@@ -1327,51 +1284,7 @@ async fn registry_override() {
     provider.model.assert_exhausted();
 }
 
-// A registry package pin verifies like a local component pin: the pin
-// rides the load request, and a mismatch is refused with a typed error
-// before anything extracts or commits.
-#[tokio::test]
-async fn pinned_package() {
-    let pinned = |pin: &Digest| {
-        format!("[[source]]\nname = \"demo\"\nadapter = \"emery:demo@1.2.0\"\ndigest = \"{pin}\"\n")
-    };
-
-    let scratch = Scratch::new();
-    let config = scratch.config(&pinned(&digest("ab")));
-
-    let provider = Provider::answering([SPEC_ANSWER, DESIGN_ANSWER]);
-    cli_ok(&provider, &["emery", "specify", "--config", &config]).await;
-    let request = provider.plugins.loads().first().cloned().expect("one load request");
-    assert_eq!(request.digest, Some(digest("ab")), "the source's pin rides the load request");
-    provider.model.assert_exhausted();
-
-    let mismatched = Scratch::new();
-    let config = mismatched.config(&pinned(&digest("11")));
-
-    let mut provider = Provider::idle();
-    provider.plugins = provider.plugins.clone().digest("emery:demo@1.2.0", digest("ab"));
-    fail(&provider, &["emery", "specify", "--config", &config], 1, "refused").await;
-}
-
-// A second source that re-pins an already-loaded adapter is refused as
-// `already-active`: the loader cannot re-bind the identity.
-#[tokio::test]
-async fn conflicting_pin() {
-    let scratch = Scratch::new();
-    let config = scratch.config(&format!(
-        "[[source]]\nname = \"a\"\nadapter = \"emery:demo@1.2.0\"\ndigest = \"{}\"\n\n\
-         [[source]]\nname = \"b\"\nadapter = \"emery:demo@1.2.0\"\ndigest = \"{}\"\n",
-        digest("ab"),
-        digest("cd"),
-    ));
-
-    let provider = Provider::idle();
-    fail(&provider, &["emery", "specify", "--config", &config], 1, "already-active").await;
-    let loads = provider.plugins.loads();
-    assert_eq!(loads.len(), 1, "the conflicting pin never reaches the loader");
-}
-
-// Load failures land on the exit contract: an acquisition (registry
+// Load failures land on the exit contract: an acquisition (registry)
 // or network) failure is the loader's `unavailable` on the
 // BadGateway exit; a component refused host-side validation is
 // `refused` on the BadRequest exit.
