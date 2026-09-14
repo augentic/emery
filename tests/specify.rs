@@ -1124,32 +1124,6 @@ async fn config_file() {
     }
 }
 
-// `registry` only steers registry acquisition, so it rides only a
-// package-shaped reference.
-#[tokio::test]
-async fn loader_keys_gated() {
-    let cases: &[(&str, &str)] = &[
-        (
-            "[[source]]\nname = \"local\"\nadapter = \"./source.wasm\"\n\
-             registry = \"registry.acme.example\"\n",
-            "`registry` requires a package adapter",
-        ),
-        (
-            "[[source]]\nname = \"docs\"\nadapter = \"documentation\"\n\
-             registry = \"registry.acme.example\"\n",
-            "`registry` requires a package adapter",
-        ),
-    ];
-    for (body, fragment) in cases {
-        let scratch = Scratch::new();
-        let config = scratch.config(body);
-        let provider = Provider::idle();
-        let envelope =
-            fail(&provider, &["emery", "specify", "--config", &config], 1, "bad_request").await;
-        assert_message(&envelope, fragment);
-    }
-}
-
 // File-relative `path` entries anchor at the file's directory, fold
 // `.` and `..` lexically, and stay `.`-relative so the guest preopen
 // can open them; `description` entries lend nothing; `[[source]]`
@@ -1230,8 +1204,9 @@ async fn github_refused() {
 
 // An exact package reference (`emery:<name>@<semver>`, or the
 // first-party shorthand as sugar for the `emery` namespace) loads
-// through the deployment loader from the acquirer's default registry
-// and is addressed by its own package identity — no parallel adapter id.
+// through the deployment loader, which resolves the registry from the
+// package's namespace under the deployment's policy, and is addressed by
+// its own package identity — no parallel adapter id.
 #[tokio::test]
 async fn package_loads() {
     for reference in ["emery:demo@1.2.0", "demo@1.2.0"] {
@@ -1248,7 +1223,7 @@ async fn package_loads() {
         assert_eq!(
             request.location,
             Location::Registry(None),
-            "no override selects the acquirer's default registry"
+            "a load names no endpoint; the deployment's registry policy resolves it"
         );
         assert!(request.digest.is_none(), "a load request carries no digest");
         let calls = provider.source.calls.lock().expect("calls");
@@ -1258,30 +1233,6 @@ async fn package_loads() {
         drop(calls);
         provider.model.assert_exhausted();
     }
-}
-
-// The source's `registry` key overrides the acquirer's default
-// endpoint per source.
-#[tokio::test]
-async fn registry_override() {
-    let scratch = Scratch::new();
-    let config = scratch.config(
-        "[[source]]\nname = \"ledger\"\nadapter = \"acme:ledger@2.1.0\"\n\
-         registry = \"registry.acme.example\"\n",
-    );
-
-    let provider = Provider::answering([SPEC_ANSWER, DESIGN_ANSWER]);
-    cli_ok(&provider, &["emery", "specify", "--config", &config]).await;
-
-    let loads = provider.plugins.loads();
-    let request = loads.first().expect("one load request");
-    assert_eq!(request.package, "acme:ledger@2.1.0", "third-party namespaces pass through");
-    assert_eq!(
-        request.location,
-        Location::Registry(Some("registry.acme.example".to_string())),
-        "the source's override rides the load request"
-    );
-    provider.model.assert_exhausted();
 }
 
 // Load failures land on the exit contract: an acquisition (registry)

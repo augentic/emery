@@ -93,7 +93,6 @@ fn source(reference: &str, content: SourceContent) -> Result<SourceConfig, Error
         key: key(&adapter),
         adapter,
         content,
-        registry: None,
     })
 }
 
@@ -163,7 +162,6 @@ struct SourceEntry {
     git: Option<String>,
     url: Option<String>,
     description: Option<String>,
-    registry: Option<String>,
 }
 
 impl SourceEntry {
@@ -203,7 +201,6 @@ impl SourceEntry {
             key: name,
             adapter,
             content,
-            registry: self.registry,
         })
     }
 }

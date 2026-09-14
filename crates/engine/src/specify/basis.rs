@@ -48,7 +48,7 @@ impl<'a> GroupingBrief<'a> {
                 let Some(id) = claim.id.as_deref() else { continue };
                 match claim.kind {
                     ClaimKind::Requirement => contributors.push(Contributor {
-                        source: extract.key.clone(),
+                        source: extract.source.clone(),
                         kind: extract.evidence.kind,
                         id: id.to_string(),
                         statement: claim.statement(),

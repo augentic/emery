@@ -64,22 +64,21 @@ pub async fn specify<P: Model + Source + StateStore + BlobStore + Plugins>(
     let provider = context.provider();
 
     // load adapters
-    let adapters = input.sources.iter().map(|s| (&s.adapter, s.registry.as_deref()));
-    adapter::load(provider, adapters).await?;
+    adapter::load(provider, input.sources.iter().map(|s| &s.adapter)).await?;
 
-    // Extracts every source together and waits for all of them, so a run with
-    // several failing sources reports every failure rather than the first one
-    // the race happened to surface.
+    // extract all sources
     let inputs = input.to_inputs()?;
     let outcomes = future::join_all(
         input
             .sources
             .iter()
+            .map(|s| s.adapter.to_string())
             .zip(inputs)
-            .map(|(source, input)| extract(provider, &source.adapter, input)),
+            .map(|(adapter_id, input)| extract(provider, adapter_id, input)),
     )
     .await;
 
+    // collect results
     let mut extracts = Vec::with_capacity(outcomes.len());
     let mut failures = Vec::new();
     for outcome in outcomes {
@@ -88,6 +87,7 @@ pub async fn specify<P: Model + Source + StateStore + BlobStore + Plugins>(
             Err(error) => failures.push(error.description()),
         }
     }
+
     if !failures.is_empty() {
         return Err(server_error!(failures.join("\n")));
     }
@@ -98,6 +98,36 @@ pub async fn specify<P: Model + Source + StateStore + BlobStore + Plugins>(
     let (id, diff) = store::commit(provider, &Revision { spec, design }).await?;
 
     Ok(SpecifyOutput { revision: id, diff })
+}
+
+// One source's validated evidence, under the key the documents cite it by.
+#[derive(Debug)]
+struct Extract {
+    source: String,
+    evidence: Evidence,
+}
+
+// Extracts evidence from a source.
+async fn extract<P: Source>(
+    provider: &P, adapter_id: String, input: SourceInput,
+) -> Result<Extract, Error> {
+    let source = input.key.clone();
+    tracing::debug!(%source,  "extracting");
+
+    let outcome = Source::extract(provider, &adapter_id, &input).await.and_then(|evidence| {
+        let findings = evidence.findings();
+        if findings.is_empty() {
+            Ok(evidence)
+        } else {
+            Err(server_error!("`{source}` returned invalid claims:\n{}", findings.join("\n")))
+        }
+    });
+
+    if let Err(error) = &outcome {
+        tracing::warn!(%source,  %error, "extract failed");
+    }
+
+    outcome.map(|evidence| Extract { source, evidence })
 }
 
 /// Generate a specification revision from sources.
@@ -145,10 +175,6 @@ pub struct SourceConfig {
     /// What the adapter extracts: a project-relative read-only root
     /// (`.` binds the project) or an inline value.
     pub content: SourceContent,
-    /// Optional registry endpoint override for a package adapter;
-    /// `None` selects the acquirer's default.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub registry: Option<String>,
 }
 
 impl SourceConfig {
@@ -158,12 +184,6 @@ impl SourceConfig {
         let key = &self.key;
         if !is_kebab(key) {
             return Err(bad_request!("source `{key}` is not a kebab-case key"));
-        }
-        if self.registry.is_some() && !matches!(self.adapter, AdapterRef::Package(_)) {
-            return Err(bad_request!(
-                "source `{key}`: `registry` requires a package adapter \
-                 (`<namespace>:<name>@<version>`)"
-            ));
         }
 
         let content = match &self.content {
@@ -196,38 +216,4 @@ pub struct SpecifyOutput {
     /// the outgoing revision was unreadable.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub diff: Option<Diff>,
-}
-
-// Extracts one source and gates its claims. The adapter checks its own
-// answer before returning it, so a document that fails the gate here is
-// the engine's failure to report, not the operator's.
-async fn extract<P: Source>(
-    provider: &P, adapter: &AdapterRef, input: SourceInput,
-) -> Result<Extract, Error> {
-    let id = adapter.to_string();
-    tracing::debug!(source = %input.key, adapter = %id, "extracting");
-
-    let outcome = Source::extract(provider, &id, &input).await.and_then(|evidence| {
-        let findings = evidence.findings();
-        if findings.is_empty() {
-            Ok(evidence)
-        } else {
-            Err(server_error!("`{}` returned invalid claims:\n{}", input.key, findings.join("\n")))
-        }
-    });
-    if let Err(error) = &outcome {
-        tracing::warn!(source = %input.key, adapter = %id, %error, "extract failed");
-    }
-
-    outcome.map(|evidence| Extract {
-        key: input.key,
-        evidence,
-    })
-}
-
-// One source's validated evidence, under the key the documents cite it by.
-#[derive(Debug)]
-struct Extract {
-    key: String,
-    evidence: Evidence,
 }

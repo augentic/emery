@@ -192,7 +192,7 @@ fn hint(code: &str) -> Option<Cow<'static, str>> {
             "the loader refused the component; the message above names why (export or location)"
         }
         "unavailable" => {
-            "the registry could not supply the package: check the network, the exact version, and any `registry` override"
+            "the registry could not supply the package: check the network and that the exact version is published under its namespace"
         }
         _ => return None,
     };

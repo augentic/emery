@@ -21,7 +21,7 @@ When authoritative inputs are incomplete, preserve the gap as `[unknown]` rather
 | `crates/sdk` | The guest-only adapter SDK: `SourceAdapter` and the `source!` export macro. No production crate depends on it |
 | `crates/engine` | Transport-neutral `specify` / `show` operations over a capability `Provider`; the typed `Revision`, its Markdown projection, and the revision store. No clap, toml, terminal text, or exit codes |
 | `crates/cli` | The clap grammar, the source carriers (argv, `--description`, `--config` / project-root `emery.toml`), the text render fns, and the hint table. `run(provider, argv)` drives omnia's command façade |
-| `src/` | `lib.rs`: the wasm32 engine guest. `main.rs`: the shipped runtime — one `omnia::runtime!` block; the invocation directory mounts read-only as `.`, revision state lives in `.omnia/storage`, Cursor answers the model, adapters load from local `.wasm` paths or the `omnia.host` registry |
+| `src/` | `lib.rs`: the wasm32 engine guest. `main.rs`: the shipped runtime — one `omnia::runtime!` block; the invocation directory mounts read-only as `.`, revision state lives in `.omnia/storage`, Cursor answers the model, adapters load from local `.wasm` paths or from the registries `wasm-pkg.toml` routes their namespaces to (`omnia.host` by default) |
 | `examples/` | `adapter/` is the one mock source adapter; `runtime.rs` is a path-only journey host; `emery.toml` binds them |
 | `tests/` | Root scenario suites (`specify.rs`, `command.rs`, `plugin.rs`) over `tests/support/` |
 | `wit/`, `docs/`, `plugins/emery/` | The WIT package; the Developer Guide (mdBook; house standards under `docs/standards/`); the Cursor plugin |

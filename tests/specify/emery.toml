@@ -34,12 +34,11 @@ adapter = "./source.wasm"
 # name = "custom"
 # adapter = "./adapters/custom.wasm"
 
-# # Registry endpoint override for a package-shaped adapter; omitted,
-# # the acquirer's compiled-in default endpoint serves the fetch.
+# # Third-party package: the registry is resolved from the namespace by
+# # the emery deployment's compiled-in wasm-pkg config, never by this file.
 # [[source]]
 # name = "third-party"
 # adapter = "acme:ledger@2.1.0"
-# registry = "registry.acme.example"
 
 # # Remote repository, read at the pinned ref over the host-bound read
 # # grant (GitHub MCP server) — never downloaded. Reserved; refuses typed

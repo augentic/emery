@@ -25,19 +25,18 @@ use serde::{Deserialize, Serialize};
 use crate::preopen_path;
 
 /// Loads adapters and registers them with the `Source` capability using
-/// `AdapterRef` identity. An adapter several sources share is loaded once,
-/// using the first source's registry.
+/// `AdapterRef` identity. An adapter several sources share is loaded once.
 ///
 /// # Errors
 ///
 /// Returns reference, load, or version failures.
 pub async fn load<'a, P: Source + Plugins>(
-    provider: &P, adapters: impl IntoIterator<Item = (&'a AdapterRef, Option<&'a str>)>,
+    provider: &P, adapters: impl IntoIterator<Item = &'a AdapterRef>,
 ) -> Result<(), Error> {
     let mut ids = Vec::new();
     let mut plugins = Vec::new();
 
-    for (adapter, registry) in adapters {
+    for adapter in adapters {
         let id = adapter.to_string();
         if ids.contains(&id) {
             continue;
@@ -45,7 +44,9 @@ pub async fn load<'a, P: Source + Plugins>(
 
         let location = match adapter {
             AdapterRef::Static(_) => None,
-            AdapterRef::Package(_) => Some(Location::Registry(registry.map(String::from))),
+            // A package names no endpoint: the deployment's registry policy
+            // resolves its namespace, so no project file can redirect a load.
+            AdapterRef::Package(_) => Some(Location::Registry(None)),
             AdapterRef::File(path) => {
                 let local = preopen_path(path)?;
                 if !local.is_file() {

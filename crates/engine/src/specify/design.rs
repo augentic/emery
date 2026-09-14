@@ -275,7 +275,7 @@ impl<'a> Plan<'a> {
 
         Self {
             kinds: claims().map(|claim| claim.kind).collect(),
-            bound: extracts.iter().map(|extract| extract.key.as_str()).collect(),
+            bound: extracts.iter().map(|extract| extract.source.as_str()).collect(),
             signatures,
         }
     }

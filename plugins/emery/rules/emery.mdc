@@ -47,7 +47,7 @@ Every CLI failure prints a kebab-case error code (and usually a `hint:` line —
 | `unsupported-version` | The installed binary is older than an adapter's declared minimum `emery-version` | Reinstall through the binary's install channel (the hint prints the literal command), then rerun |
 | `spec-not-generated` | `emery show` was run before any revision was committed | `/emery:specify <adapter>` first |
 | `refused` | The loader rejected the request (an invalid component, a missing source-seam export, or an unserved location) | Read the message and fix the artifact or location |
-| `unavailable` | The registry fetch for a package adapter failed (network, endpoint, or a missing exact version) | Check connectivity, that the exact version exists, and the source's `registry` override, then rerun |
+| `unavailable` | The registry fetch for a package adapter failed (network, endpoint, or a missing exact version) | Check connectivity and that the exact version is published under its namespace, then rerun |
 | `spec-outdated` | The stored revision was written under an older grammar than this binary reads | Re-run `/emery:specify <adapter>` to regenerate |
 
 ### Reviewing the generated documents

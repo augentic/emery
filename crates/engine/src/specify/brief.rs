@@ -159,7 +159,7 @@ impl Display for ClaimsSection<'_> {
             write!(
                 f,
                 "\n### source `{key}` ({kind})\n\n",
-                key = extract.key,
+                key = extract.source,
                 kind = extract.evidence.kind
             )?;
 
