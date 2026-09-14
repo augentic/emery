@@ -47,9 +47,10 @@ use crate::{preopen_path, store};
 
 /// Runs `specify` over the context's provider.
 ///
-/// Checks the source list, then extracts every source's evidence at once,
-/// derives the requirement bases, drafts the specification and then the
-/// design over them, and commits the pair as one revision.
+/// Checks the source list whole, loads the adapters it names, extracts every
+/// source's evidence at once, derives the requirement bases, drafts the
+/// specification and then the design over them, and commits the pair as one
+/// revision.
 ///
 /// # Errors
 ///
@@ -62,7 +63,35 @@ pub async fn specify<P: Model + Source + StateStore + BlobStore + Plugins>(
 ) -> Result<SpecifyOutput, Error> {
     let provider = context.provider();
 
-    let extracts = input.extract(provider).await?;
+    // load adapters
+    let adapters = input.sources.iter().map(|s| (&s.adapter, s.registry.as_deref()));
+    adapter::load(provider, adapters).await?;
+
+    // Extracts every source together and waits for all of them, so a run with
+    // several failing sources reports every failure rather than the first one
+    // the race happened to surface.
+    let inputs = input.to_inputs()?;
+    let outcomes = future::join_all(
+        input
+            .sources
+            .iter()
+            .zip(inputs)
+            .map(|(source, input)| extract(provider, &source.adapter, input)),
+    )
+    .await;
+
+    let mut extracts = Vec::with_capacity(outcomes.len());
+    let mut failures = Vec::new();
+    for outcome in outcomes {
+        match outcome {
+            Ok(extracted) => extracts.push(extracted),
+            Err(error) => failures.push(error.description()),
+        }
+    }
+    if !failures.is_empty() {
+        return Err(server_error!(failures.join("\n")));
+    }
+
     let bases = GroupingBrief::new(&extracts).derive(provider).await?;
     let spec = SpecBrief::new(&extracts, &bases).judge(provider).await?;
     let design = DesignBrief::new(&extracts, &spec).judge(provider).await?;
@@ -73,36 +102,16 @@ pub async fn specify<P: Model + Source + StateStore + BlobStore + Plugins>(
 
 /// Generate a specification revision from sources.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
 pub struct SpecifyInput {
     /// The run's source configurations, in declaration order.
     pub sources: Vec<SourceConfig>,
 }
 
 impl SpecifyInput {
-    // Extract specified sources.
-    async fn extract<P: Source + Plugins>(&self, provider: &P) -> Result<Vec<Extract>, Error> {
-        adapter::load(provider, &self.sources).await?;
-
-        // extract from each source in parallel
-        let inputs = self.to_inputs()?;
-        let outcomes = future::join_all(
-            self.sources
-                .iter()
-                .zip(inputs)
-                .map(|(cfg, input)| extract_source(provider, &cfg.adapter, input)),
-        )
-        .await;
-
-        // check for failures
-        let failures: Vec<String> =
-            outcomes.iter().filter_map(|o| o.as_ref().err()).map(Error::description).collect();
-        if !failures.is_empty() {
-            return Err(server_error!(failures.join("\n")));
-        }
-
-        Ok(outcomes.into_iter().filter_map(Result::ok).collect())
-    }
-
+    // Checks the rules every transport must get — a non-empty list, unique
+    // keys, and each source's own — and prepares every guest input, all
+    // before any adapter loads.
     fn to_inputs(&self) -> Result<Vec<SourceInput>, Error> {
         if self.sources.is_empty() {
             return Err(Error::BadRequest {
@@ -125,40 +134,9 @@ impl SpecifyInput {
     }
 }
 
-async fn extract_source<P: Source>(
-    provider: &P, adapter: &AdapterRef, input: SourceInput,
-) -> Result<Extract, Error> {
-    let id = adapter.to_string();
-    tracing::debug!(source = %input.key, adapter = %id, "extracting");
-    let key = input.key.clone();
-
-    let outcome = async {
-        let evidence = Source::extract(provider, &id, &input).await?;
-        let findings = evidence.findings().join("\n");
-        if !findings.is_empty() {
-            return Err(server_error!("`{key}` returned invalid claims:\n{findings}"));
-        }
-
-        Ok(evidence)
-    }
-    .await;
-
-    if let Err(error) = &outcome {
-        tracing::warn!(source = %key, adapter = %id, %error, "extract failed");
-    }
-
-    outcome.map(|evidence| Extract { key, evidence })
-}
-
-// One source's validated evidence, under the key the documents cite it by.
-#[derive(Debug)]
-struct Extract {
-    key: String,
-    evidence: Evidence,
-}
-
 /// A source for one run.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
 pub struct SourceConfig {
     /// Stable kebab-case source key.
     pub key: String,
@@ -174,7 +152,8 @@ pub struct SourceConfig {
 }
 
 impl SourceConfig {
-    // Checks one source's rules and prepares the guest input before any load.
+    // Checks this source's rules and maps it to the adapter's `extract`
+    // input; the one place an operator root meets the guest preopen.
     fn prepare(&self) -> Result<SourceInput, Error> {
         let key = &self.key;
         if !is_kebab(key) {
@@ -187,28 +166,21 @@ impl SourceConfig {
             ));
         }
 
-        self.input()
-    }
-
-    // Maps this source to the adapter `extract` input; the one place an
-    // operator root meets the guest preopen.
-    fn input(&self) -> Result<SourceInput, Error> {
         let content = match &self.content {
-            // `.` spans the project preopen, including `.omnia/`, until
-            // guest capability profiles can exclude the revision store.
+            // The adapter lends the root to the model by preopen name, so it
+            // is spelled beneath the `.` mount: `.` itself, or `./<path>`.
+            // `.` spans the whole project, `.omnia/` included, until guest
+            // capability profiles can exclude the revision store.
             SourceContent::Workspace(relative) => {
-                let relative = preopen_path(Path::new(relative))?;
-                let root = if relative == Path::new(".") {
-                    relative
-                } else {
-                    Path::new(".").join(relative)
-                };
-                SourceContent::Workspace(root.display().to_string())
+                let relative = preopen_path(Path::new(relative))?.display().to_string();
+                let root = if relative == "." { relative } else { format!("./{relative}") };
+                SourceContent::Workspace(root)
             }
             value @ SourceContent::Value(_) => value.clone(),
         };
+
         Ok(SourceInput {
-            key: self.key.clone(),
+            key: key.clone(),
             content,
         })
     }
@@ -216,6 +188,7 @@ impl SourceConfig {
 
 /// Successful specification result: the revision the store committed.
 #[derive(Debug, Serialize)]
+#[serde(rename_all = "kebab-case")]
 pub struct SpecifyOutput {
     /// Committed revision id.
     pub revision: String,
@@ -223,4 +196,38 @@ pub struct SpecifyOutput {
     /// the outgoing revision was unreadable.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub diff: Option<Diff>,
+}
+
+// Extracts one source and gates its claims. The adapter checks its own
+// answer before returning it, so a document that fails the gate here is
+// the engine's failure to report, not the operator's.
+async fn extract<P: Source>(
+    provider: &P, adapter: &AdapterRef, input: SourceInput,
+) -> Result<Extract, Error> {
+    let id = adapter.to_string();
+    tracing::debug!(source = %input.key, adapter = %id, "extracting");
+
+    let outcome = Source::extract(provider, &id, &input).await.and_then(|evidence| {
+        let findings = evidence.findings();
+        if findings.is_empty() {
+            Ok(evidence)
+        } else {
+            Err(server_error!("`{}` returned invalid claims:\n{}", input.key, findings.join("\n")))
+        }
+    });
+    if let Err(error) = &outcome {
+        tracing::warn!(source = %input.key, adapter = %id, %error, "extract failed");
+    }
+
+    outcome.map(|evidence| Extract {
+        key: input.key,
+        evidence,
+    })
+}
+
+// One source's validated evidence, under the key the documents cite it by.
+#[derive(Debug)]
+struct Extract {
+    key: String,
+    evidence: Evidence,
 }

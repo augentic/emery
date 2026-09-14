@@ -15,6 +15,7 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use anyhow::Result;
+use emery_adapter::is_kebab;
 use emery_adapter::source::{
     AdapterMetadata, Backing, Claim, ClaimKind, Evidence, Source, SourceInput, SourceKind,
 };
@@ -132,6 +133,15 @@ impl<S> Provider<S> {
             plugins: ScriptedLoader::default().defaulting(digest("ab")),
             storage,
         }
+    }
+
+    // Mirrors host-mediated dispatch: a bare name is a guest the deployment
+    // declares; any other id is routable only once the loader has landed it.
+    // A source call before its load is the engine's ordering defect, and it
+    // fails here rather than only under the real runtime.
+    fn routable(&self, id: &str) {
+        let loaded = self.plugins.loads().iter().any(|plugin| plugin.package == id);
+        assert!(is_kebab(id) || loaded, "`{id}` was dispatched before its load");
     }
 }
 
@@ -257,6 +267,7 @@ impl<S: Send + Sync + 'static> Source for Provider<S> {
     fn extract(
         &self, id: &str, input: &SourceInput,
     ) -> impl Future<Output = Result<Evidence, Error>> + Send {
+        self.routable(id);
         // The dispatch is recorded and the outcome chosen before the future
         // is polled, so `calls` is dispatch order whatever resolves first.
         self.source.calls.lock().expect("calls").push((id.to_string(), input.clone()));
@@ -277,6 +288,7 @@ impl<S: Send + Sync + 'static> Source for Provider<S> {
     }
 
     fn metadata(&self, id: &str) -> AdapterMetadata {
+        self.routable(id);
         self.source.metadata.lock().expect("metadata").push(id.to_string());
         AdapterMetadata {
             emery_version: self.source.versions.get(id).cloned(),

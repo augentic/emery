@@ -24,11 +24,9 @@ use serde::{Deserialize, Serialize};
 
 use crate::preopen_path;
 
-/// Loads each distinct adapter among `adapters` — a reference and, for a
-/// package, the registry endpoint override it loads from (`None` selects
-/// the acquirer's default) — and registers it with the `Source` capability
-/// by its `AdapterRef` identity. An adapter several sources share is loaded
-/// once, under the first source's registry.
+/// Loads adapters and registers them with the `Source` capability using
+/// `AdapterRef` identity. An adapter several sources share is loaded once,
+/// using the first source's registry.
 ///
 /// # Errors
 ///
@@ -38,6 +36,7 @@ pub async fn load<'a, P: Source + Plugins>(
 ) -> Result<(), Error> {
     let mut ids = Vec::new();
     let mut plugins = Vec::new();
+
     for (adapter, registry) in adapters {
         let id = adapter.to_string();
         if ids.contains(&id) {
@@ -55,39 +54,40 @@ pub async fn load<'a, P: Source + Plugins>(
                 Some(Location::Path(local.display().to_string()))
             }
         };
+
         if let Some(location) = location {
             plugins.push(PluginRef::builder().package(id.as_str()).location(location).build());
         }
         ids.push(id);
     }
 
-    // Every load at once, so a run waits only for its slowest acquisition;
-    // the host load is idempotent, so the order they land in is immaterial.
-    // The first failure in declaration order is the one reported.
-    let loads = plugins.iter().map(|plugin| Plugins::load(provider, plugin));
-    for loaded in future::join_all(loads).await {
+    // load all adapters in parallel
+    let loaders = plugins.iter().map(|plugin| Plugins::load(provider, plugin));
+    for loaded in future::join_all(loaders).await {
         loaded?;
     }
 
+    let version = semver::Version::parse(env!("CARGO_PKG_VERSION"))
+        .with_context(|| format!("issue with emery version `{}`", env!("CARGO_PKG_VERSION")))?;
+
     for id in &ids {
-        check_version(provider, id)?;
+        // get each adapter's declared minimum `emery-version`
+        if let Some(declared) = Source::metadata(provider, id).emery_version {
+            is_supported(id, &declared, &version)?;
+        }
     }
 
     Ok(())
 }
 
-fn check_version<P: Source>(provider: &P, id: &str) -> Result<(), Error> {
-    let Some(declared) = provider.metadata(id).emery_version else {
-        return Ok(());
-    };
-
-    let minimum = semver::Version::parse(&declared).map_err(|err| {
+// Refuses an adapter whose declared minimum `emery-version` the running
+// binary does not meet.
+fn is_supported(id: &str, declared: &str, running: &semver::Version) -> Result<(), Error> {
+    let minimum = semver::Version::parse(declared).map_err(|err| {
         bad_request!("adapter `{id}` has an invalid `emery-version` `{declared}`: {err}")
     })?;
-    let running = semver::Version::parse(env!("CARGO_PKG_VERSION")).with_context(|| {
-        format!("the running emery version `{}` is not SemVer", env!("CARGO_PKG_VERSION"))
-    })?;
-    if running < minimum {
+
+    if *running < minimum {
         return Err(Error::BadRequest {
             code: "unsupported-version".into(),
             description: format!("adapter `{id}` requires emery {minimum} or newer"),

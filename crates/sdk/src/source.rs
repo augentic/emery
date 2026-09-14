@@ -47,12 +47,11 @@ pub trait SourceAdapter {
     /// `TypeScript / JavaScript`).
     const SOURCE: &'static str;
 
-    /// The kind of source this adapter reads: a fact about its input, never
-    /// answered by the model.
+    /// The kind of source this adapter processes.
     const KIND: SourceKind;
 
-    /// Returns the adapter's embedded reference documents, the extraction
-    /// prompt among them.
+    /// Returns the adapter's embedded reference documents, including the
+    /// extraction prompt.
     fn docs() -> &'static [Doc];
 
     /// The document this adapter returns for `claims`.
