@@ -3,14 +3,13 @@
 //! How an operator names an adapter and how the engine brings it into the
 //! run. An [`AdapterRef`] is a registry package, a statically declared
 //! guest, or a local file; [`load`] loads the adapters a run's sources name,
-//! each once, and refuses any that requires a newer Emery than the one
-//! running.
+//! each once and all together, and refuses any that requires a newer Emery
+//! than the one running.
 //!
 //! The reference is the identity: the plugin loader registers an adapter,
 //! and the `Source` capability dispatches to it, by the [`AdapterRef`]'s
 //! `Display`.
 
-use std::collections::BTreeSet;
 use std::fmt::{self, Display, Formatter};
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
@@ -18,33 +17,36 @@ use std::str::FromStr;
 use anyhow::Context;
 use emery_adapter::is_kebab;
 use emery_adapter::source::Source;
+use futures::future;
 use omnia_guest::plugins::{Location, PluginRef};
 use omnia_guest::{Error, Plugins, bad_request, not_found};
 use serde::{Deserialize, Serialize};
 
 use crate::preopen_path;
-use crate::specify::SourceConfig;
 
-/// Loads each source's adapter and registers it with the `Source`
-/// capability, by its `AdapterRef` identity. An adapter several sources
-/// share is loaded once.
+/// Loads each distinct adapter among `adapters` — a reference and, for a
+/// package, the registry endpoint override it loads from (`None` selects
+/// the acquirer's default) — and registers it with the `Source` capability
+/// by its `AdapterRef` identity. An adapter several sources share is loaded
+/// once, under the first source's registry.
 ///
 /// # Errors
 ///
 /// Returns reference, load, or version failures.
-pub async fn load<P: Source + Plugins>(
-    provider: &P, sources: &[SourceConfig],
+pub async fn load<'a, P: Source + Plugins>(
+    provider: &P, adapters: impl IntoIterator<Item = (&'a AdapterRef, Option<&'a str>)>,
 ) -> Result<(), Error> {
-    let mut loaded = BTreeSet::new();
-    for config in sources {
-        let id = config.adapter.to_string();
-        if loaded.contains(&id) {
+    let mut ids = Vec::new();
+    let mut plugins = Vec::new();
+    for (adapter, registry) in adapters {
+        let id = adapter.to_string();
+        if ids.contains(&id) {
             continue;
         }
 
-        let location = match &config.adapter {
+        let location = match adapter {
             AdapterRef::Static(_) => None,
-            AdapterRef::Package(_) => Some(Location::Registry(config.registry.clone())),
+            AdapterRef::Package(_) => Some(Location::Registry(registry.map(String::from))),
             AdapterRef::File(path) => {
                 let local = preopen_path(path)?;
                 if !local.is_file() {
@@ -54,12 +56,21 @@ pub async fn load<P: Source + Plugins>(
             }
         };
         if let Some(location) = location {
-            let plugin = PluginRef::builder().package(id.as_str()).location(location).build();
-            Plugins::load(provider, &plugin).await?;
+            plugins.push(PluginRef::builder().package(id.as_str()).location(location).build());
         }
+        ids.push(id);
+    }
 
-        check_version(provider, &id)?;
-        loaded.insert(id);
+    // Every load at once, so a run waits only for its slowest acquisition;
+    // the host load is idempotent, so the order they land in is immaterial.
+    // The first failure in declaration order is the one reported.
+    let loads = plugins.iter().map(|plugin| Plugins::load(provider, plugin));
+    for loaded in future::join_all(loads).await {
+        loaded?;
+    }
+
+    for id in &ids {
+        check_version(provider, id)?;
     }
 
     Ok(())
