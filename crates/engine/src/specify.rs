@@ -80,8 +80,7 @@ pub struct SpecifyInput {
 }
 
 impl SpecifyInput {
-    // Loads every adapter in series, so the loader's one load per identity
-    // holds, then extracts every source at once and waits for all of them.
+    // Extract specified sources.
     async fn extract<P: Source + Plugins>(&self, provider: &P) -> Result<Vec<Extract>, Error> {
         let inputs = self.prepare()?;
 
@@ -100,23 +99,17 @@ impl SpecifyInput {
         )
         .await;
 
-        // collect results
-        let (extracts, failures) = outcomes.into_iter().fold(
-            (Vec::new(), Vec::new()),
-            |(mut extracts, mut failures), outcome| {
-                match outcome {
-                    Ok(extract) => extracts.push(extract),
-                    Err(error) => failures.push(error.description()),
-                }
-                (extracts, failures)
-            },
-        );
-
+        // check for failures
+        let failures: Vec<String> = outcomes
+            .iter()
+            .filter_map(|outcome| outcome.as_ref().err())
+            .map(Error::description)
+            .collect();
         if !failures.is_empty() {
-            return Err(server_error!("{}", failures.join("\n")));
+            return Err(server_error!(failures.join("\n")));
         }
 
-        Ok(extracts)
+        Ok(outcomes.into_iter().filter_map(Result::ok).collect())
     }
 
     fn prepare(&self) -> Result<Vec<SourceInput>, Error> {
@@ -145,13 +138,13 @@ async fn extract_source<P: Source>(
     provider: &P, id: String, input: SourceInput,
 ) -> Result<Extract, Error> {
     tracing::debug!(source = %input.key, "extracting");
+    let key = input.key.clone();
 
     let outcome = async {
         let evidence = Source::extract(provider, &id, &input).await?;
         let findings = evidence.findings().join("\n");
-
         if !findings.is_empty() {
-            return Err(bad_request!("`{}` returned invalid claims:\n{findings}", input.key));
+            return Err(server_error!("`{key}` returned invalid claims:\n{findings}"));
         }
 
         Ok(evidence)
@@ -159,13 +152,10 @@ async fn extract_source<P: Source>(
     .await;
 
     if let Err(error) = &outcome {
-        tracing::warn!(source = %input.key, %error, "extract failed");
+        tracing::warn!(source = %key, %error, "extract failed");
     }
 
-    outcome.map(|evidence| Extract {
-        key: input.key,
-        evidence,
-    })
+    outcome.map(|evidence| Extract { key, evidence })
 }
 
 // One source's validated evidence, under the key the documents cite it by.
