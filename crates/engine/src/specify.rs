@@ -95,7 +95,7 @@ impl SpecifyInput {
 
         // extract from each source in parallel
         let outcomes = future::join_all(
-            ids.into_iter().zip(inputs).map(|(id, input)| extract_source(provider, id, input)),
+            ids.iter().zip(inputs).map(|(id, input)| extract_source(provider, id, input)),
         )
         .await;
 
@@ -135,13 +135,13 @@ impl SpecifyInput {
 }
 
 async fn extract_source<P: Source>(
-    provider: &P, id: String, input: SourceInput,
+    provider: &P, id: &str, input: SourceInput,
 ) -> Result<Extract, Error> {
-    tracing::debug!(source = %input.key, "extracting");
+    tracing::debug!(source = %input.key, adapter = %id, "extracting");
     let key = input.key.clone();
 
     let outcome = async {
-        let evidence = Source::extract(provider, &id, &input).await?;
+        let evidence = Source::extract(provider, id, &input).await?;
         let findings = evidence.findings().join("\n");
         if !findings.is_empty() {
             return Err(server_error!("`{key}` returned invalid claims:\n{findings}"));
@@ -152,7 +152,7 @@ async fn extract_source<P: Source>(
     .await;
 
     if let Err(error) = &outcome {
-        tracing::warn!(source = %key, %error, "extract failed");
+        tracing::warn!(source = %key, adapter = %id, %error, "extract failed");
     }
 
     outcome.map(|evidence| Extract { key, evidence })
@@ -186,6 +186,28 @@ pub struct SourceConfig {
 }
 
 impl SourceConfig {
+    // Checks one source's rules and prepares the guest input before any load.
+    fn prepare(&self) -> Result<SourceInput, Error> {
+        let key = &self.key;
+        if !is_kebab(key) {
+            return Err(bad_request!("source `{key}` is not a kebab-case key"));
+        }
+        if self.registry.is_some() && !matches!(self.adapter, AdapterRef::Package { .. }) {
+            return Err(bad_request!(
+                "source `{key}`: `registry` requires a package adapter \
+                 (`<namespace>:<name>@<version>`)"
+            ));
+        }
+        if self.digest.is_some() && matches!(self.adapter, AdapterRef::Bare(_)) {
+            return Err(bad_request!(
+                "source `{key}`: `digest` requires a `.wasm` path or package adapter, not a bare \
+                 name"
+            ));
+        }
+
+        self.input()
+    }
+
     // Maps this source to the adapter `extract` input; the one place an
     // operator root meets the guest preopen.
     fn input(&self) -> Result<SourceInput, Error> {
@@ -207,28 +229,6 @@ impl SourceConfig {
             key: self.key.clone(),
             content,
         })
-    }
-
-    // Checks one source's rules and prepares the guest input before any load.
-    fn prepare(&self) -> Result<SourceInput, Error> {
-        let key = &self.key;
-        if !is_kebab(key) {
-            return Err(bad_request!("source `{key}` is not a kebab-case key"));
-        }
-        if self.registry.is_some() && !matches!(self.adapter, AdapterRef::Package { .. }) {
-            return Err(bad_request!(
-                "source `{key}`: `registry` requires a package adapter \
-                 (`<namespace>:<name>@<version>`)"
-            ));
-        }
-        if self.digest.is_some() && matches!(self.adapter, AdapterRef::Bare(_)) {
-            return Err(bad_request!(
-                "source `{key}`: `digest` requires a `.wasm` path or package adapter, not a bare \
-                 name"
-            ));
-        }
-
-        self.input()
     }
 }
 

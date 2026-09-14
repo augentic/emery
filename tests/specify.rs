@@ -1053,6 +1053,14 @@ async fn config_file() {
             "bad_request",
             "appears twice",
         ),
+        // The source key is the TOML `name`; the engine, not the decoder,
+        // enforces kebab-case so every transport gets the same rule.
+        (
+            "[[source]]\nname = \"Docs\"\nadapter = \"documentation\"\n",
+            1,
+            "bad_request",
+            "is not a kebab-case key",
+        ),
         // A malformed pin on a local component refuses before any load.
         (
             "[[source]]\nname = \"pinned\"\nadapter = \"./source.wasm\"\n\
