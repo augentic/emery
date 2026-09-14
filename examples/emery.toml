@@ -19,7 +19,7 @@ path = "docs/"
 # # Local path, resolved relative to this file. The name is the source
 # # key, so one adapter may name several roots.
 # [[source]]
-# name = "api-surface"
+# name = "code"
 # adapter = "typescript"
 # path = "packages/api/src"
 
@@ -49,12 +49,12 @@ path = "docs/"
 # # grant — never downloaded. Reserved; refuses typed until the
 # # read-view grant exists.
 # [[source]]
-# name = "upstream-api"
+# name = "code"
 # adapter = "documentation"
 # git = "https://github.com/acme/api@v2.3.0"
 
 # # Remote resource, read live at extract time. Reserved, as above.
 # [[source]]
-# name = "api-contract"
+# name = "api"
 # adapter = "documentation"
 # url = "https://example.com/spec/openapi.yaml"

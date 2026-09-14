@@ -1067,6 +1067,7 @@ dependencies = [
  "anyhow",
  "emery-adapter",
  "emery-prose",
+ "futures",
  "hex",
  "omnia-guest",
  "omnia-test",

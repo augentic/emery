@@ -30,7 +30,7 @@ use omnia_test::SeenFormat;
 use omnia_test::guest::{Memory, Namespaced, Scripted};
 use serde_json::Value;
 use sha2::{Digest as _, Sha256};
-use support::{Provider, claim, cli_ok, digest, evidence, fail, requirement};
+use support::{Provider, Rendezvous, claim, cli_ok, digest, evidence, fail, requirement};
 
 // Scripted drafts, the canonical documents the engine commits from them, and
 // the documents it renders from those documents.
@@ -246,6 +246,38 @@ async fn shared_roots() {
 
         provider.model.assert_exhausted();
     }
+}
+
+// The sources of one run extract together: every extract is dispatched
+// before any resolves, so a run takes as long as its slowest source. The
+// double holds each extract until the other has been requested, bounded so
+// an engine that extracts one source at a time fails naming the source that
+// never came; dispatch still follows declaration order, so the claims index
+// as before.
+#[tokio::test]
+async fn sources_together() {
+    let grouping = baseline_grouping(2);
+    let mut provider = Provider::answering([grouping.as_str(), SPEC_ANSWER, DESIGN_ANSWER]);
+    provider.source.rendezvous = Some(Rendezvous::from_iter(["docs", "api"]));
+
+    cli_ok(&provider, &["emery", "specify", "docs", "api"]).await;
+
+    let order: Vec<String> = provider
+        .source
+        .calls
+        .lock()
+        .expect("calls")
+        .iter()
+        .map(|(_, input)| input.key.clone())
+        .collect();
+    assert_eq!(order, ["docs", "api"], "dispatch keeps declaration order");
+    assert!(
+        shown(&provider, "spec")
+            .await
+            .contains("Sources: [docs:greeting.behaviour, api:greeting.behaviour]"),
+        "both sources contribute, cited in declaration order"
+    );
+    provider.model.assert_exhausted();
 }
 
 // A run naming no sources at all discovers the project-root
@@ -660,8 +692,8 @@ const REMINE_SECOND: &str = r#"{
   ]
 }"#;
 
-// A requirement claim missing its `statement` extra fails the whole run
-// with a typed error (the A8 claim gate) before anything commits.
+// A requirement claim missing its `statement` extra is invalid adapter
+// output, so extraction fails as an internal error before anything commits.
 #[tokio::test]
 async fn extras_missing() {
     let mut provider = Provider::idle();
@@ -672,10 +704,12 @@ async fn extras_missing() {
         .evidence
         .insert("docs".to_string(), Ok(evidence(Authority::Documentation, vec![bare])));
 
-    fail(&provider, &["emery", "specify", "docs"], 1, "bad_request").await;
+    fail(&provider, &["emery", "specify", "docs"], 3, "server_error").await;
 }
 
-// An adapter failure surfaces as the upstream error it is.
+// An adapter failure is internal to Emery whether the source ran alone or
+// beside one that succeeded: the run waits for every source, discards the
+// evidence it gathered, and reports one server error.
 #[tokio::test]
 async fn extract_fails() {
     let mut provider = Provider::idle();
@@ -684,12 +718,41 @@ async fn extract_fails() {
         .evidence
         .insert("docs".to_string(), Err(bad_gateway!("source `docs`: the adapter exploded")));
 
-    let envelope = fail(&provider, &["emery", "specify", "docs"], 4, "bad_gateway").await;
-    assert_eq!(envelope["message"], "source `docs`: the adapter exploded");
+    for argv in [&["emery", "specify", "docs"][..], &["emery", "specify", "docs", "api"][..]] {
+        let envelope = fail(&provider, argv, 3, "server_error").await;
+        assert_eq!(envelope["message"], "source `docs`: the adapter exploded", "{argv:?}");
+    }
 }
 
-// An adapter refusing its input is the operator's error, not the
-// adapter's: the refusal keeps its class through the engine.
+// Every failing source is reported in one run, in declaration order, and
+// the public envelope is one server error rather than inheriting an
+// arbitrary adapter error class.
+#[tokio::test]
+async fn two_failures() {
+    let mut provider = Provider::idle();
+    provider
+        .source
+        .evidence
+        .insert("docs".to_string(), Err(bad_gateway!("source `docs`: the adapter exploded")));
+    provider
+        .source
+        .evidence
+        .insert("code".to_string(), Err(bad_request!("source `code`: the brief is empty")));
+
+    let envelope = fail(&provider, &["emery", "specify", "docs", "code"], 3, "server_error").await;
+    assert_eq!(
+        envelope["message"],
+        "source `docs`: the adapter exploded\nsource `code`: the brief is empty"
+    );
+
+    let envelope = fail(&provider, &["emery", "specify", "code", "docs"], 3, "server_error").await;
+    assert_eq!(
+        envelope["message"],
+        "source `code`: the brief is empty\nsource `docs`: the adapter exploded"
+    );
+}
+
+// An adapter's own refusal is internal to Emery at the public boundary.
 #[tokio::test]
 async fn extract_refuses() {
     let mut provider = Provider::idle();
@@ -698,7 +761,7 @@ async fn extract_refuses() {
         .evidence
         .insert("docs".to_string(), Err(bad_request!("source `docs`: the brief is empty")));
 
-    let envelope = fail(&provider, &["emery", "specify", "docs"], 1, "bad_request").await;
+    let envelope = fail(&provider, &["emery", "specify", "docs"], 3, "server_error").await;
     assert_eq!(envelope["message"], "source `docs`: the brief is empty");
 }
 

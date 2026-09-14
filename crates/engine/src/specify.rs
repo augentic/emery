@@ -11,6 +11,10 @@
 //! shape serves the command line, a config file, and any other transport,
 //! and it is checked whole before a single adapter loads.
 //!
+//! Every source extracts at once and the run waits for all of them, so a run
+//! takes as long as its slowest source, and every source that fails is
+//! reported together, in declaration order, rather than only the first.
+//!
 //! Every run starts from its sources alone: nothing of an earlier revision
 //! is read into the synthesis. The result reports what was committed — the
 //! revision id and the diff against the revision it displaced — so a caller
@@ -27,9 +31,10 @@ use std::path::Path;
 use emery_adapter::is_kebab;
 pub use emery_adapter::source::SourceContent;
 use emery_adapter::source::{Evidence, Source, SourceInput};
+use futures::future;
 use omnia_guest::api::Context;
 use omnia_guest::plugins::Digest;
-use omnia_guest::{BlobStore, Error, Model, Plugins, StateStore, bad_request};
+use omnia_guest::{BlobStore, Error, Model, Plugins, StateStore, bad_request, server_error};
 use serde::{Deserialize, Serialize};
 
 use self::basis::GroupingBrief;
@@ -43,16 +48,16 @@ use crate::{preopen_path, store};
 
 /// Runs `specify` over the context's provider.
 ///
-/// Checks the source list, then extracts each source's evidence, derives the
-/// requirement bases, drafts the specification and then the design over them,
-/// and commits the pair as one revision.
+/// Checks the source list, then extracts every source's evidence at once,
+/// derives the requirement bases, drafts the specification and then the
+/// design over them, and commits the pair as one revision.
 ///
 /// # Errors
 ///
-/// Returns `BadRequest` for a source the rules refuse, a claim the gate
-/// rejects, or a draft the model could not bring within the brief's rounds;
-/// `BadGateway` for a model failure; and passes through the extract and
-/// store failures.
+/// Returns `BadRequest` for a source the rules refuse or a draft the model
+/// could not bring within the brief's rounds; `ServerError` when one or more
+/// source extractions fail; `BadGateway` for a model failure; and passes
+/// through load and store failures.
 pub async fn specify<P: Model + Source + StateStore + BlobStore + Plugins>(
     input: SpecifyInput, context: Context<P>,
 ) -> Result<SpecifyOutput, Error> {
@@ -70,38 +75,45 @@ pub async fn specify<P: Model + Source + StateStore + BlobStore + Plugins>(
 /// Generate a specification revision from sources.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SpecifyInput {
-    /// The run's source configurations, in extraction order.
+    /// The run's source configurations, in declaration order.
     pub sources: Vec<SourceConfig>,
 }
 
 impl SpecifyInput {
+    // Loads every adapter in series, so the loader's one load per identity
+    // holds, then extracts every source at once and waits for all of them.
     async fn extract<P: Source + Plugins>(&self, provider: &P) -> Result<Vec<Extract>, Error> {
         let inputs = self.prepare()?;
 
-        let mut extracts = Vec::with_capacity(self.sources.len());
+        // load adapters in series to benefit from caching identical adapters
         let loader = Loader::new(provider);
+        let mut ids = Vec::with_capacity(self.sources.len());
+        for cfg in &self.sources {
+            ids.push(
+                loader.load(&cfg.adapter, cfg.digest.as_ref(), cfg.registry.as_deref()).await?,
+            );
+        }
 
-        for (config, input) in self.sources.iter().zip(inputs) {
-            let id = loader
-                .load(&config.adapter, config.digest.as_ref(), config.registry.as_deref())
-                .await?;
+        // extract from each source in parallel
+        let outcomes = future::join_all(
+            ids.into_iter().zip(inputs).map(|(id, input)| extract_source(provider, id, input)),
+        )
+        .await;
 
-            let key = input.key.as_str();
-            tracing::debug!(config = %key, "extracting");
-            let evidence = Source::extract(provider, &id, &input).await?;
+        // collect results
+        let (extracts, failures) = outcomes.into_iter().fold(
+            (Vec::new(), Vec::new()),
+            |(mut extracts, mut failures), outcome| {
+                match outcome {
+                    Ok(extract) => extracts.push(extract),
+                    Err(error) => failures.push(error.description()),
+                }
+                (extracts, failures)
+            },
+        );
 
-            // The adapter is a guest the engine did not write, so the
-            // contract's claim gate is re-run here, fail-closed.
-            let findings = evidence.findings();
-            if !findings.is_empty() {
-                let findings = findings.join("\n");
-                return Err(bad_request!("source `{key}` returned invalid claims:\n{findings}"));
-            }
-
-            extracts.push(Extract {
-                key: input.key,
-                evidence,
-            });
+        if !failures.is_empty() {
+            return Err(server_error!("{}", failures.join("\n")));
         }
 
         Ok(extracts)
@@ -127,6 +139,33 @@ impl SpecifyInput {
 
         Ok(inputs)
     }
+}
+
+async fn extract_source<P: Source>(
+    provider: &P, id: String, input: SourceInput,
+) -> Result<Extract, Error> {
+    tracing::debug!(source = %input.key, "extracting");
+
+    let outcome = async {
+        let evidence = Source::extract(provider, &id, &input).await?;
+        let findings = evidence.findings().join("\n");
+
+        if !findings.is_empty() {
+            return Err(bad_request!("`{}` returned invalid claims:\n{findings}", input.key));
+        }
+
+        Ok(evidence)
+    }
+    .await;
+
+    if let Err(error) = &outcome {
+        tracing::warn!(source = %input.key, %error, "extract failed");
+    }
+
+    outcome.map(|evidence| Extract {
+        key: input.key,
+        evidence,
+    })
 }
 
 // One source's validated evidence, under the key the documents cite it by.
