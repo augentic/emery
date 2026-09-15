@@ -67,7 +67,7 @@ pub async fn specify<P: Model + Source + StateStore + BlobStore + Plugins>(
     let bound = Bound::all(&input.sources)?;
     adapter::load(provider, bound.iter().map(|source| source.adapter)).await?;
 
-    // extract all source in parallel
+    // extract all sources in parallel
     let outcomes = future::join_all(bound.iter().map(|source| source.extract(provider))).await;
 
     // collect extracts or findings for failed extracts
@@ -91,9 +91,11 @@ pub async fn specify<P: Model + Source + StateStore + BlobStore + Plugins>(
     let bases = GroupingBrief::new(&extracts).derive(provider).await?;
     let spec = SpecBrief::new(&extracts, &bases).judge(provider).await?;
     let design = DesignBrief::new(&extracts, &spec).judge(provider).await?;
-    let (id, diff) = store::commit(provider, &Revision { spec, design }).await?;
 
-    Ok(SpecifyOutput { revision: id, diff })
+    // commit the revision
+    let (revision, diff) = store::commit(provider, &Revision { spec, design }).await?;
+
+    Ok(SpecifyOutput { revision, diff })
 }
 
 /// Generate a specification revision from sources.

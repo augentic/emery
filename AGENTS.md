@@ -18,7 +18,7 @@ When authoritative inputs are incomplete, preserve the gap as `[unknown]` rather
 | --- | --- |
 | `crates/prose` | Embedded prompt corpora: the `Doc` registry. Feature `emit` (build-dependencies only) is the embed-time walker and link check |
 | `crates/adapter` | The `emery:adapter` WIT contract, both sides, one module per axis (`emery_adapter::source`): the `Source` capability, `SourceInput`, `Evidence` / `Claim`, and the claim gate `Evidence::findings` |
-| `crates/sdk` | The guest-only adapter SDK: `SourceAdapter` and the `source!` export macro. No production crate depends on it |
+| `crates/sdk` | The guest-only adapter SDK: `SourceAdapter` with its provided `extract` over an adapter's `survey`, the `survey` walk helpers, and the `source!` export macro. No production crate depends on it |
 | `crates/engine` | Transport-neutral `specify` / `show` operations over a capability `Provider`; the typed `Revision`, its Markdown projection, and the revision store. No clap, toml, terminal text, or exit codes |
 | `crates/cli` | The clap grammar, the source carriers (argv, `--description`, `--config` / project-root `emery.toml`), the text render fns, and the hint table. `run(provider, argv)` drives omnia's command façade |
 | `src/` | `lib.rs`: the wasm32 engine guest. `main.rs`: the shipped runtime — one `omnia::runtime!` block; the invocation directory mounts read-only as `.`, revision state lives in `.omnia/storage`, Cursor answers the model, adapters load from local `.wasm` paths or from the registries `wasm-pkg.toml` routes their namespaces to (`omnia.host` by default) |
@@ -43,6 +43,7 @@ Baseline: the [Pragmatic Rust Guidelines](https://microsoft.github.io/rust-guide
 
 - Short names that lean on the module path: `adapter::load`, `registry::show` — never `load_source_adapter` or `show_registry`. Handler DTOs are `<Verb>Input` / `<Verb>Output`. There are no length caps.
 - Comments say what and why, never how. `//!` module docs: a title line, then plain paragraphs. `///` on exported items, with `# Errors` where it applies; an example when it helps. Private items carry a `//` only when it explains something non-obvious. No history in comments.
+- Inside a fn body, a `//` comment is one of two things, and its shape says which. A **section header** is a lowercase fragment with no full stop — an imperative phrase or a bare noun — above a blank-line-separated block, naming what the block achieves (`// load source adapters`, `// commit the revision`, `// notes`); read together the headers are the fn's outline, so a reader skims them first and drops into a block second. A **why** is a capitalised sentence beside the one line that would otherwise surprise (`// The swap landed; prune the outgoing revision.`). Neither restates what the line beneath it plainly does, and a fn readable at a glance carries no headers.
 - `<module>.rs` plus `<module>/<child>.rs`; `mod.rs` only under `tests/support/`.
 - Name the capability at the dispatch site (`Source::extract(provider, ..)`, `BlobStore::put(store, ..)`). Prefer `strum`, `anyhow`, and `derive_more` to hand-rolled impls. Suppress a lint with `#[expect(lint, reason = "…")]` at the smallest scope, never `#[allow]`.
 - Formatting is nightly rustfmt (`make fmt`); never hand-format.

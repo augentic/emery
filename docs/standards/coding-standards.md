@@ -34,7 +34,8 @@ What each kind of comment is for, in Rust sources and WIT contracts (`wit/`, `cr
 
 - **Module `//!` docs** answer "what is this module, and why does it exist?" for a reader who has not opened the file: a short title line, then plain-language paragraphs. Say what the module is for and what it guarantees; never how it works — that is the code's job, and prose about mechanics goes stale first. No deployment tours, no AGENTS.md restatements, no RFC archaeology, and no house shorthand (`fail-closed`, `typed`, kernel names) the reader would have to look up.
 - **Item `///` docs** follow the [Rust API Guidelines](https://rust-lang.github.io/api-guidelines/documentation.html): a one-line summary, then whatever the reader needs, with `# Errors` / `# Panics` sections where they apply.
-- **`//` comments** sit beside the surprising branch they explain, never in a preamble essay.
+- **`//` section headers** outline a fn body too long to take in at once: a lowercase fragment with no full stop — an imperative phrase or a bare noun — above each blank-line-separated block, naming what the block achieves rather than how (`// load source adapters`, `// collect extracts or findings for failed extracts`, `// scenarios`). Together they are the pseudocode the fn was written from, so a reader can follow the headers alone and open a block only when it matters. A fn readable at a glance gets none, and a header never repeats the line beneath it.
+- **`//` why comments** are capitalised sentences beside the surprising branch they explain, never in a preamble essay. The casing is the signal: a lowercase fragment is an outline entry to skim; a sentence is something to stop and read.
 - **Historical phrases** are banned in comments and docs: `Phase `, `formerly`, `previously lived`, `old contract`, `former tests`, `to avoid the`. Git history is the record.
 
 ```rust
@@ -75,6 +76,26 @@ The composition-root failure mode is the essay that restates architecture and hi
 // …inside the macro body:
 // The invocation directory mounts read-only — nothing writes the tree.
 mounts: [{ name: ".", path: "." }],
+```
+
+Inside a fn body the two `//` kinds are told apart by shape — a header is a lowercase fragment, a why is a sentence — and neither narrates the line beneath it:
+
+```rust
+// BAD — narrates the code, and the casing hides which kind it is.
+// Create the vectors.
+let mut extracts = Vec::with_capacity(outcomes.len());
+let mut failures = Vec::new();
+// Loop over the outcomes.
+for (source, outcome) in bound.iter().zip(outcomes) { /* ... */ }
+
+// GOOD — one header names the block's step; the why is a sentence.
+// collect extracts or findings for failed extracts
+let mut extracts = Vec::with_capacity(outcomes.len());
+let mut failures = Vec::new();
+for (source, outcome) in bound.iter().zip(outcomes) { /* ... */ }
+
+// The swap landed; prune the outgoing revision.
+if let Some(outgoing) = observed.outgoing_id().filter(|outgoing| *outgoing != id) { /* ... */ }
 ```
 
 Doc comments describe what this is today. Version-history tables, dated bumps, commit hashes, and migration notes belong in git log — not in `///` blocks. Longer prose belongs in the standards docs.

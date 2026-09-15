@@ -7,6 +7,7 @@ Unreleased
 - The `specify` re-mine diff flags a changed preamble: `SpecDiff` / `DesignDiff` carry `preamble: bool`, the JSON envelope carries it per document, and text mode prints `spec.md ~ preamble` / `design.md ~ preamble`.
 - `emery_sdk::Material::Within(files)`: files beneath the input's root, named relative to it, as one material. The SDK lends the files' common ancestor — a per-directory material is enforced by the grant — and lists the files relative to it in the turn; only a set sharing no directory lends the root with every path stated. The paths are sorted and deduped; one that escapes the root is `bad_request`, a set naming no file is `bad_request`, and `Within` over an inline value is `server_error`.
 - `emery_sdk::IN_FLIGHT` (4): the completions one adapter holds pending at once.
+- `emery_sdk::survey`, the mechanical half of a tree adapter's survey: `files(root, keep)` lists the regular files beneath a root, sorted and named relative to it, asking `keep` about every entry (`survey::Entry::Dir` prunes a directory, `File` selects a file) and never offering the engine's own files — `.omnia/` directories and `spec.md` / `design.md` wherever they appear; `by_directory(files, floor)` cuts the list into one group per top-level directory holding at least `floor` files, in directory order, and folds the root's own files and every smaller directory into one sorted remainder. `Material` derives `PartialEq`, so an adapter's suite can assert its survey.
 
 ### Changed
 

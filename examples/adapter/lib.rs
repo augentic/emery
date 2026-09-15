@@ -14,10 +14,7 @@
 emery_sdk::source!(crate::Adapter);
 
 use emery_prose::registry::Doc;
-use emery_sdk::{
-    Context, Error, Evidence, Material, Model, SourceAdapter, SourceContent, SourceKind,
-    bad_request,
-};
+use emery_sdk::{Context, Error, Material, SourceAdapter, SourceContent, SourceKind, bad_request};
 
 static DOCS: &[Doc] = &[
     Doc {
@@ -42,25 +39,22 @@ impl SourceAdapter for Adapter {
         DOCS
     }
 
-    async fn extract<P: Model>(model: &P, ctx: &Context<'_>) -> Result<Evidence, Error> {
-        Self::evidence(model, ctx, material(ctx)?).await
-    }
-}
-
-// Refuses an empty inline brief, binds a non-empty one, and points a
-// workspace at `references/greeting.md` as the fallback when the tree states
-// no greeting.
-fn material(ctx: &Context<'_>) -> Result<Material, Error> {
-    match &ctx.input.content {
-        SourceContent::Value(value) if value.trim().is_empty() => {
-            Err(bad_request!("the bound greeting brief is empty"))
-        }
-        SourceContent::Value(_) => Ok(Material::Bound),
-        SourceContent::Workspace(root) => Ok(Material::Prepared(format!(
-            "`$SOURCE_DIR` is the read-only view at `{root}` — the greeting tree the prompt \
-             walks. Prefer the bound tree; fall back to `references/greeting.md` when the tree \
-             does not state a greeting. Nothing outside it is reachable; extract mines only this \
-             source."
-        ))),
+    // One material: an empty inline brief is refused, a non-empty one is
+    // bound, and a workspace is pointed at `references/greeting.md` as the
+    // fallback when the tree states no greeting.
+    fn survey(ctx: &Context<'_>) -> Result<Vec<Material>, Error> {
+        let material = match &ctx.input.content {
+            SourceContent::Value(value) if value.trim().is_empty() => {
+                return Err(bad_request!("the bound greeting brief is empty"));
+            }
+            SourceContent::Value(_) => Material::Bound,
+            SourceContent::Workspace(root) => Material::Prepared(format!(
+                "`$SOURCE_DIR` is the read-only view at `{root}` — the greeting tree the prompt \
+                 walks. Prefer the bound tree; fall back to `references/greeting.md` when the \
+                 tree does not state a greeting. Nothing outside it is reachable; extract mines \
+                 only this source."
+            )),
+        };
+        Ok(vec![material])
     }
 }

@@ -1093,6 +1093,7 @@ dependencies = [
 name = "emery-sdk"
 version = "0.38.0"
 dependencies = [
+ "anyhow",
  "emery-adapter",
  "emery-prose",
  "futures",
@@ -1101,6 +1102,7 @@ dependencies = [
  "schemars",
  "serde",
  "serde_json",
+ "tempfile",
  "tokio",
 ]
 

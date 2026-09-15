@@ -15,7 +15,7 @@ use omnia_guest::{Error, bad_request, server_error};
 use super::Context;
 
 /// What the model is given to extract from.
-#[derive(Debug)]
+#[derive(Debug, Eq, PartialEq)]
 pub enum Material {
     /// The bound input itself: a lent workspace, described as this adapter's
     /// source tree, or an inline value quoted into the turn.

@@ -5,7 +5,7 @@
 //! the materials its input splits into. The trait carries what every adapter
 //! shares — the resolve-time metadata, the extraction prompt, the model call
 //! per material, and the `extract` operation that surveys the input, mines
-//! every material with at most [`CONCURRENT`] calls pending, and joins the
+//! every material with at most four calls pending, and joins the
 //! partials into one document — so an implementation states only what is
 //! its own. The model answers claims; the SDK stamps the adapter's source
 //! kind.
@@ -14,13 +14,16 @@
 //! for `wasm32` alone. Keeping them apart lets an adapter be exercised
 //! natively against a scripted model, with the component wiring added only at
 //! the guest boundary. The `brief` child is the role's prose: the one brief
-//! an extraction puts to the model, and what each material is lent.
+//! an extraction puts to the model, and what each material is lent. The
+//! `survey` child is the mechanical half of a tree adapter's survey: the walk
+//! that lists its files and the cut by directory.
 
 mod brief;
 // The component export, re-exported at the crate root for the `source!`
 // macro; no adapter names it.
 #[cfg(target_arch = "wasm32")]
 pub mod export;
+pub mod survey;
 
 use std::future::Future;
 
@@ -37,7 +40,7 @@ use self::brief::{Brief, Lend};
 use crate::references;
 
 // Completions one adapter holds pending at once.
- const CONCURRENT: usize = 4;
+const CONCURRENT: usize = 4;
 
 /// Contract implemented by source adapters.
 ///
@@ -62,6 +65,9 @@ pub trait SourceAdapter {
     /// input and refuses an unusable one with `BadRequest` here, before a
     /// model call is spent. A survey of one is a single [`Self::evidence`]
     /// call; a survey of several runs them together and joins the answers.
+    /// A tree adapter lists its files with [`survey::files`] and cuts them
+    /// with [`survey::by_directory`], then names each cut as the
+    /// [`Material`] its source kind calls for.
     ///
     /// # Errors
     ///
@@ -80,7 +86,7 @@ pub trait SourceAdapter {
     }
 
     /// Extracts the source's claim set: the survey's materials, mined with
-    /// at most [`CONCURRENT`] model calls pending and joined in material
+    /// at most four model calls pending and joined in material
     /// order into one document.
     ///
     /// Provided: an adapter states its materials through [`Self::survey`]
@@ -141,7 +147,7 @@ pub trait SourceAdapter {
     /// `server_error` when the build did not embed it.
     fn prompt() -> Result<&'static str, Error> {
         registry::body(Self::docs(), "prompts/extract.md")
-            .ok_or_else(|| server_error!("prompt is not embedded"))
+            .ok_or_else(|| server_error!("`prompts/extract.md` is not embedded"))
     }
 
     /// Asks the model for one material's claims and returns the accepted
