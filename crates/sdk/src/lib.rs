@@ -19,7 +19,7 @@
 //! # Examples
 //!
 //! The smallest complete adapter declares the kind of source it reads, embeds
-//! its prompt, and leaves the survey at its default of one material:
+//! its prompt, and leaves the survey at its default of one seam:
 //!
 //! ```
 //! use emery_sdk::{Doc, SourceAdapter, SourceKind};
@@ -55,11 +55,11 @@
 //! - **Claim**, **evidence**: one typed statement about the source, and the
 //!   document of claims an adapter returns. The **claim gate**
 //!   ([`Evidence::findings`]) is the set of rules every claim must satisfy.
-//! - **Material**: the part of a source one model call is asked about. The
-//!   **survey** ([`SourceAdapter::survey`]) decides the materials before any
-//!   call is made; a material is **mined** when the model is asked about it.
+//! - **Seam**: the part of a source one model call is asked about. The
+//!   **survey** ([`SourceAdapter::survey`]) decides the seams before any
+//!   call is made; a seam is **mined** when the model is asked about it.
 //! - **Lend**: the directory the model may read during a call — the source
-//!   root, or a material's own directory.
+//!   root, or a seam's own directory.
 //! - **Findings**, **rounds**: the claim gate's report on an answer, sent back
 //!   to the model so it can answer again; the host bounds how many rounds a
 //!   call gets.
@@ -83,7 +83,7 @@ pub use omnia_guest::{Error, Model, bad_gateway, bad_request, model, not_found, 
 #[cfg(target_arch = "wasm32")]
 #[doc(hidden)]
 pub use source::export;
-pub use source::{Context, Material, SourceAdapter, survey};
+pub use source::{Context, Seam, SourceAdapter, survey};
 
 /// Exports a [`SourceAdapter`] as the component the engine loads.
 ///

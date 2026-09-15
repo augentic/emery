@@ -348,7 +348,7 @@ async fn model_missing_prompt() {
 }
 
 // An inline value has no tree to survey: the adapter's own defect, as a
-// `Within` material over a value is.
+// `Files` seam over a value is.
 #[tokio::test]
 async fn model_inline_value() {
     let model = Scripted::default();

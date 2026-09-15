@@ -4,13 +4,13 @@
 //! build — the promise adapter authors' own test suites depend on — and its
 //! provided members answer from the adapter's own declarations: the
 //! `emery-version` pin and the kind of source in `metadata`, the extraction
-//! prompt, the survey's material.
+//! prompt, the survey's seam.
 
 use std::future::{Future, ready};
 
 use emery_sdk::{
-    AdapterMetadata, Context, Doc, Error, Material, Model, SourceAdapter, SourceContent,
-    SourceInput, SourceKind,
+    AdapterMetadata, Context, Doc, Error, Model, Seam, SourceAdapter, SourceContent, SourceInput,
+    SourceKind,
 };
 use omnia_test::guest::Scripted;
 
@@ -34,8 +34,8 @@ impl SourceAdapter for Probe {
     // Mechanical: the key is the note, with no model turn.
     fn survey<P: Model>(
         _model: &P, ctx: &Context<'_>,
-    ) -> impl Future<Output = Result<Vec<Material>, Error>> + Send {
-        ready(Ok(vec![Material::Prepared(ctx.input.key.clone())]))
+    ) -> impl Future<Output = Result<Vec<Seam>, Error>> + Send {
+        ready(Ok(vec![Seam::Note(ctx.input.key.clone())]))
     }
 }
 
@@ -76,7 +76,7 @@ async fn source_dispatch() {
     );
     assert!(
         request.messages[0].contains("\n\nmain\n\n"),
-        "the survey's prepared note is the turn's material: {}",
+        "the survey's note is the turn's seam: {}",
         request.messages[0]
     );
 

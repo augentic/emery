@@ -16,7 +16,7 @@ emery_sdk::source!(crate::Adapter);
 use std::future::{Future, ready};
 
 use emery_sdk::{
-    Context, Doc, Error, Material, Model, SourceAdapter, SourceContent, SourceKind, bad_request,
+    Context, Doc, Error, Model, Seam, SourceAdapter, SourceContent, SourceKind, bad_request,
 };
 
 static DOCS: &[Doc] = &[
@@ -41,25 +41,25 @@ impl SourceAdapter for Adapter {
         DOCS
     }
 
-    // One material, chosen without the model — so the survey is ready at
+    // One seam, chosen without the model — so the survey is ready at
     // once: an empty inline brief is refused, a non-empty one is bound, and
     // a workspace is pointed at `references/greeting.md` as the fallback when
     // the tree states no greeting.
     fn survey<P: Model>(
         _model: &P, ctx: &Context<'_>,
-    ) -> impl Future<Output = Result<Vec<Material>, Error>> + Send {
-        let material = match &ctx.input.content {
+    ) -> impl Future<Output = Result<Vec<Seam>, Error>> + Send {
+        let seam = match &ctx.input.content {
             SourceContent::Value(value) if value.trim().is_empty() => {
                 return ready(Err(bad_request!("the bound greeting brief is empty")));
             }
-            SourceContent::Value(_) => Material::Bound,
-            SourceContent::Workspace(root) => Material::Prepared(format!(
+            SourceContent::Value(_) => Seam::Whole,
+            SourceContent::Workspace(root) => Seam::Note(format!(
                 "`$SOURCE_DIR` is the read-only view at `{root}` — the greeting tree the prompt \
                  walks. Prefer the bound tree; fall back to `references/greeting.md` when the \
                  tree does not state a greeting. Nothing outside it is reachable; extract mines \
                  only this source."
             )),
         };
-        ready(Ok(vec![material]))
+        ready(Ok(vec![seam]))
     }
 }

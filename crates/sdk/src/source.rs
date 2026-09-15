@@ -1,10 +1,10 @@
 //! The [`SourceAdapter`] trait and its provided extraction.
 //!
 //! An implementation states the kind of source it reads, the documents it
-//! embeds, and how its input cuts into [materials](crate#vocabulary). The
+//! embeds, and how its input cuts into [seams](crate#vocabulary). The
 //! trait provides the rest — the metadata, the prompt, the model call per
-//! material, and [`SourceAdapter::extract`], which surveys the input, mines
-//! every material, and joins the answers into one document.
+//! seam, and [`SourceAdapter::extract`], which surveys the input, mines
+//! every seam, and joins the answers into one document.
 //!
 //! The trait is native. The wasm export is the `export` child, built for
 //! `wasm32` alone, so an adapter is tested natively against a scripted model
@@ -25,7 +25,6 @@ use futures::stream::{self, StreamExt as _};
 use omnia_guest::model::Question;
 use omnia_guest::{Error, Model, bad_gateway, bad_request, not_found, server_error};
 
-pub use self::brief::Material;
 use self::brief::{Brief, Lend};
 use crate::references;
 
@@ -36,9 +35,9 @@ const CONCURRENT: usize = 4;
 ///
 /// An implementation states the kind of source it reads ([`Self::KIND`]), the
 /// documents it embeds ([`Self::docs`]), and, for a source worth splitting,
-/// how it cuts into [materials](crate#vocabulary) ([`Self::survey`]). The
+/// how it cuts into [seams](crate#vocabulary) ([`Self::survey`]). The
 /// provided methods do the rest: [`Self::extract`] surveys the input, asks the
-/// model about each material, and joins the answers into one [`Evidence`]
+/// model about each seam, and joins the answers into one [`Evidence`]
 /// document.
 ///
 /// The trait is generic over [`Model`], so an adapter is tested natively
@@ -58,9 +57,9 @@ pub trait SourceAdapter {
     /// Returns the adapter's embedded documents, including the extraction prompt.
     fn docs() -> &'static [Doc];
 
-    /// Returns the materials to mine, one model call each.
+    /// Returns the seams to mine, one model call each.
     ///
-    /// The default is the whole input as one [`Material::Bound`]. An adapter
+    /// The default is the whole input as one [`Seam::Whole`]. An adapter
     /// whose source is worth splitting overrides this to list or read its
     /// input and cut it:
     ///
@@ -71,7 +70,7 @@ pub trait SourceAdapter {
     /// The survey only decides the cut; it never mines. Input the adapter
     /// cannot use is refused here, before any model call is spent. A survey
     /// that does not ask the model returns [`std::future::ready`] over its
-    /// materials rather than being an `async fn`.
+    /// seams rather than being an `async fn`.
     ///
     /// # Errors
     ///
@@ -80,28 +79,28 @@ pub trait SourceAdapter {
     /// [`Error::ServerError`] for a survey prompt the build did not embed.
     fn survey<P: Model>(
         _model: &P, _ctx: &Context<'_>,
-    ) -> impl Future<Output = Result<Vec<Material>, Error>> + Send {
-        async { Ok(vec![Material::Bound]) }
+    ) -> impl Future<Output = Result<Vec<Seam>, Error>> + Send {
+        async { Ok(vec![Seam::Whole]) }
     }
 
     /// Extracts the source's claims as one [`Evidence`] document.
     ///
     /// Provided; an adapter overrides [`Self::survey`] instead. The survey's
-    /// materials are each put to the model by [`Self::evidence`], several at
-    /// a time, and the answers are joined in material order. Each material's
+    /// seams are each put to the model by [`Self::evidence`], several at
+    /// a time, and the answers are joined in seam order. Each seam's
     /// `path` anchors and path backings are re-rooted under the directory it
     /// was lent, so the document cites one path space however the source was
     /// cut.
     ///
-    /// Every material is waited for. When more than one fails, the error names
+    /// Every seam is waited for. When more than one fails, the error names
     /// them all and takes the class of the first.
     ///
     /// # Errors
     ///
     /// - [`Error::BadRequest`] when the survey refuses the input or yields no
-    ///   material, a [`Material::Within`] path escapes the root, or the
+    ///   seam, a [`Seam::Files`] path escapes the root, or the
     ///   model's answer still fails the claim gate once its rounds are spent.
-    /// - [`Error::ServerError`] for a [`Material::Within`] over an inline
+    /// - [`Error::ServerError`] for a [`Seam::Files`] over an inline
     ///   value, or a prompt the build did not embed.
     /// - [`Error::BadGateway`] for a tool or transport failure.
     fn extract<P: Model>(
@@ -109,17 +108,15 @@ pub trait SourceAdapter {
     ) -> impl Future<Output = Result<Evidence, Error>> + Send {
         async move {
             let key = &ctx.input.key;
-            let materials = Self::survey(model, ctx).await?;
-            if materials.is_empty() {
+            let seams = Self::survey(model, ctx).await?;
+            if seams.is_empty() {
                 return Err(bad_request!("`{key}`: the survey found nothing to mine"));
             }
 
-            let lends = materials
-                .iter()
-                .map(|material| Lend::of(material, ctx))
-                .collect::<Result<Vec<_>, _>>()?;
-            let outcomes: Vec<_> = stream::iter(materials)
-                .map(|material| Self::evidence(model, ctx, material))
+            let lends =
+                seams.iter().map(|seam| Lend::of(seam, ctx)).collect::<Result<Vec<_>, _>>()?;
+            let outcomes: Vec<_> = stream::iter(seams)
+                .map(|seam| Self::evidence(model, ctx, seam))
                 .buffered(CONCURRENT)
                 .collect()
                 .await;
@@ -153,11 +150,11 @@ pub trait SourceAdapter {
             .ok_or_else(|| server_error!("`prompts/extract.md` is not embedded"))
     }
 
-    /// Asks the model about one material and returns the accepted claims.
+    /// Asks the model about one seam and returns the accepted claims.
     ///
     /// The system prompt is [`Self::prompt`]. The turn names the adapter and
-    /// the source key, describes `material`, and lends the model the directory
-    /// the material may read; the `list_docs` and `read_doc` tools answer from
+    /// the source key, describes `seam`, and lends the model the directory
+    /// the seam may read; the `list_docs` and `read_doc` tools answer from
     /// [`Self::docs`]. The answer is checked against the claim gate
     /// ([`Evidence::findings`]), and findings go back to the model for another
     /// round until it answers clean or the host's rounds are spent. The engine
@@ -166,20 +163,20 @@ pub trait SourceAdapter {
     /// # Errors
     ///
     /// - [`Error::BadRequest`] when the host refuses the request, the rounds
-    ///   are spent with findings outstanding, or a [`Material::Within`] path
+    ///   are spent with findings outstanding, or a [`Seam::Files`] path
     ///   escapes the root.
     /// - [`Error::ServerError`] for a prompt the build did not embed, or a
-    ///   [`Material::Within`] over an inline value.
+    ///   [`Seam::Files`] over an inline value.
     /// - [`Error::BadGateway`] for a tool or transport failure.
     fn evidence<P: Model>(
-        model: &P, ctx: &Context<'_>, material: Material,
+        model: &P, ctx: &Context<'_>, seam: Seam,
     ) -> impl Future<Output = Result<Evidence, Error>> + Send {
         async move {
             let system = Self::prompt()?;
-            let lend = Lend::of(&material, ctx)?;
+            let lend = Lend::of(&seam, ctx)?;
             let brief = Brief {
                 ctx,
-                material: &material,
+                seam: &seam,
                 lend: &lend,
             };
 
@@ -205,6 +202,30 @@ pub trait SourceAdapter {
     }
 }
 
+/// The part of a source one model call is asked about.
+///
+/// A survey returns one or more seams; see the
+/// [vocabulary](crate#vocabulary).
+#[derive(Debug, Eq, PartialEq)]
+pub enum Seam {
+    /// The whole input: a workspace described as the source tree, or an
+    /// inline value quoted into the turn.
+    Whole,
+    /// Files beneath the input's root, named relative to it.
+    ///
+    /// The model is lent the files' common directory alone; only a set
+    /// scattered across the root is lent the root itself. `path` anchors in
+    /// the answer are relative to that directory and are re-rooted under the
+    /// source root when the seams are joined. Paths are sorted and
+    /// deduplicated; one that escapes the root is refused.
+    Files(Vec<String>),
+    /// A note the adapter wrote for a source that needs its own handling.
+    ///
+    /// The whole root is lent, and the note stands in the turn where the
+    /// SDK's description of the input would be.
+    Note(String),
+}
+
 /// What one call knows: which adapter was addressed, and with what input.
 #[derive(Debug)]
 pub struct Context<'a> {
@@ -214,7 +235,7 @@ pub struct Context<'a> {
     pub input: &'a SourceInput,
 }
 
-// A lone material's failure is the source's as it stands; several are reported
+// A lone seam's failure is the source's as it stands; several are reported
 // together, under the first one's class.
 fn collect(key: &str, outcomes: Vec<Result<Evidence, Error>>) -> Result<Vec<Evidence>, Error> {
     let count = outcomes.len();
@@ -233,16 +254,16 @@ fn collect(key: &str, outcomes: Vec<Result<Evidence, Error>>) -> Result<Vec<Evid
     };
     let report: Vec<String> = failures
         .iter()
-        .map(|(index, error)| format!("- material {index}: {}", error.description()))
+        .map(|(index, error)| format!("- seam {index}: {}", error.description()))
         .collect();
 
     Err(reclass(
         first,
-        &format!("`{key}`: {} of {count} materials failed:\n{}", failures.len(), report.join("\n")),
+        &format!("`{key}`: {} of {count} seams failed:\n{}", failures.len(), report.join("\n")),
     ))
 }
 
-// The first failed material decides the class; the report names them all.
+// The first failed seam decides the class; the report names them all.
 fn reclass(class: &Error, description: &str) -> Error {
     match class {
         Error::BadRequest { .. } => bad_request!("{description}"),
@@ -252,7 +273,7 @@ fn reclass(class: &Error, description: &str) -> Error {
     }
 }
 
-// Re-rooting each material's anchors under what it was lent gives the source
+// Re-rooting each seam's anchors under what it was lent gives the source
 // one path space however it was cut.
 fn join(lends: &[Lend], partials: Vec<Evidence>) -> Vec<Claim> {
     lends
@@ -264,7 +285,7 @@ fn join(lends: &[Lend], partials: Vec<Evidence>) -> Vec<Claim> {
         .collect()
 }
 
-// A material lent the root itself has nothing to re-root. An anchor's `#L`
+// A seam lent the root itself has nothing to re-root. An anchor's `#L`
 // suffix follows the path, so a prefix leaves it intact.
 fn reroot(within: &str, mut claim: Claim) -> Claim {
     if within.is_empty() {

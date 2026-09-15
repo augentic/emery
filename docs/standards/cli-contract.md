@@ -32,7 +32,7 @@ The `error` discriminants are part of the public contract that skills and tests 
 - `spec-not-generated` — `emery show` before any revision is committed.
 - `unsupported-version` — an adapter's declared minimum `emery-version` is newer than the running binary.
 - `spec-outdated` — the stored revision was written under an older grammar than the running binary reads; regenerate.
-- `refused` — the loader rejected the request: an invalid component, a missing source-seam export, or a location kind this deployment does not serve; the message names which.
+- `refused` — the loader rejected the request: an invalid component, a missing `emery:adapter/source` export, or a location kind this deployment does not serve; the message names which.
 - `unavailable` — the deployment's acquirer could not produce a registry package (network, endpoint, or a missing exact version); check connectivity and that the exact version is published under its namespace.
 
 ## Exit codes

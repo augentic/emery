@@ -1,6 +1,6 @@
-//! Lists a tree adapter's files and cuts them into materials.
+//! Lists a tree adapter's files and cuts them into seams.
 //!
-//! A tree adapter surveys before its first material is mined: [`files`] lists
+//! A tree adapter surveys before its first seam is mined: [`files`] lists
 //! the files beneath the root, and one of two cuts groups them.
 //! [`by_directory`] is mechanical — one group per top-level directory.
 //! [`by_model`] asks the model once, under the adapter's `prompts/survey.md`,
@@ -9,7 +9,7 @@
 //!
 //! Both cuts fold under a grain floor: a group too small to be worth its own
 //! model call joins one remainder, with every file no group claims, so the
-//! materials cover the tree whole however it was cut. The walk never offers
+//! seams cover the tree whole however it was cut. The walk never offers
 //! the engine's own files — `spec.md`, `design.md`, `.omnia/` — so no adapter
 //! can mine a projection of the last revision back into evidence.
 
@@ -162,7 +162,7 @@ pub async fn by_model<P: Model>(
 #[serde(deny_unknown_fields)]
 #[schemars(title = "Emery survey answer")]
 pub struct Partition {
-    /// The groups, in the order the materials will be mined.
+    /// The groups, in the order the seams will be mined.
     pub groups: Vec<Group>,
 }
 

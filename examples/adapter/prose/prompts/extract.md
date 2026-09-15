@@ -6,7 +6,7 @@ Read [`references/greeting.md`](../references/greeting.md) via `read_doc` before
 
 ## Inputs
 
-- `$SOURCE_DIR` — read-only view of the bound greeting tree. Absent when the source is an inline `value` (the material is then in the message).
+- `$SOURCE_DIR` — read-only view of the bound greeting tree. Absent when the source is an inline `value` (the seam is then in the message).
 - **Source key** — the authored source key the engine passed on the WIT bindings.
 
 Nothing outside the bound source is reachable. Extract mines this source completely in one pass.

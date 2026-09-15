@@ -1,12 +1,12 @@
 //! Asserts what an adapter gets from `SourceAdapter::extract` without overriding it.
 //!
-//! - The survey's materials mined through `evidence` — at most `IN_FLIGHT`
-//!   pending, in material order — and joined into one document with each
-//!   material's anchors re-rooted under what it was lent.
-//! - The default survey of one bound material: a single `evidence` call whose
+//! - The survey's seams mined through `evidence` — at most `IN_FLIGHT`
+//!   pending, in seam order — and joined into one document with each
+//!   seam's anchors re-rooted under what it was lent.
+//! - The default survey of one bound seam: a single `evidence` call whose
 //!   outcome passes through unchanged.
 //! - The refusals a survey earns before any model call.
-//! - Every failed material reported together under the first one's class.
+//! - Every failed seam reported together under the first one's class.
 
 use std::collections::BTreeMap;
 use std::future::{Future, ready};
@@ -15,8 +15,8 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 
 use emery_sdk::model::{Error as ModelError, Reply, Request, ToolCall};
 use emery_sdk::{
-    Backing, Context, Doc, Error, Evidence, Material, Model, SourceAdapter, SourceContent,
-    SourceInput, SourceKind,
+    Backing, Context, Doc, Error, Evidence, Model, Seam, SourceAdapter, SourceContent, SourceInput,
+    SourceKind,
 };
 use omnia_test::guest::Scripted;
 
@@ -25,7 +25,7 @@ const DOCS: &[Doc] = &[Doc {
     body: "SYSTEM",
 }];
 
-// One claim anchored relative to its material's lend, so the joined document
+// One claim anchored relative to its seam's lend, so the joined document
 // shows which lend each claim came through.
 const NOTE: &str =
     r#"{"claims":[{"kind":"decision","path":"note.md#L1","backing":{"path":"note.md"}}]}"#;
@@ -41,7 +41,7 @@ impl SourceAdapter for Plain {
     }
 }
 
-// An adapter whose survey is the materials given.
+// An adapter whose survey is the seams given.
 macro_rules! probe {
     ($name:ident, $survey:expr) => {
         struct $name;
@@ -55,22 +55,22 @@ macro_rules! probe {
 
             fn survey<P: Model>(
                 _model: &P, _ctx: &Context<'_>,
-            ) -> impl Future<Output = Result<Vec<Material>, Error>> + Send {
+            ) -> impl Future<Output = Result<Vec<Seam>, Error>> + Send {
                 ready(Ok($survey))
             }
         }
     };
 }
 
-probe!(Split, vec![within(["a/x.md"]), within(["b/y.md"]), within(["c/z.md"])]);
-probe!(Pair, vec![within(["a/x.md"]), within(["b/y.md"])]);
-probe!(Wide, (0..=4).map(|i| within([format!("d{i}/f.md").as_str()])).collect());
+probe!(Split, vec![files(["a/x.md"]), files(["b/y.md"]), files(["c/z.md"])]);
+probe!(Pair, vec![files(["a/x.md"]), files(["b/y.md"])]);
+probe!(Wide, (0..=4).map(|i| files([format!("d{i}/f.md").as_str()])).collect());
 probe!(Nothing, Vec::new());
-probe!(Blank, vec![within([])]);
-probe!(Escape, vec![within(["a/x.md"]), within(["../secret.md"])]);
+probe!(Blank, vec![files([])]);
+probe!(Escape, vec![files(["a/x.md"]), files(["../secret.md"])]);
 
 /// A model routed by the request's workspace lend: one FIFO script per lend,
-/// so each material — every `Within` here lends its own directory — answers
+/// so each seam — every `Files` seam here lends its own directory — answers
 /// from its own script whichever order the fan-out polls them in. It also
 /// counts the completions pending at once, yielding before each answer so
 /// every future the SDK has started is in flight together.
@@ -116,7 +116,7 @@ impl Model for ByLend {
     {
         let pending = self.pending.fetch_add(1, Ordering::SeqCst) + 1;
         self.peak.fetch_max(pending, Ordering::SeqCst);
-        // One yield lets every buffered material start; the second lets each
+        // One yield lets every buffered seam start; the second lets each
         // record the others before any of them answers.
         tokio::task::yield_now().await;
         tokio::task::yield_now().await;
@@ -141,8 +141,8 @@ fn value(text: &str) -> SourceInput {
     }
 }
 
-fn within<const N: usize>(paths: [&str; N]) -> Material {
-    Material::Within(paths.into_iter().map(str::to_string).collect())
+fn files<const N: usize>(paths: [&str; N]) -> Seam {
+    Seam::Files(paths.into_iter().map(str::to_string).collect())
 }
 
 async fn extract<A: SourceAdapter, M: Model>(
@@ -161,7 +161,7 @@ fn paths(evidence: &Evidence) -> Vec<&str> {
 }
 
 // An adapter that states no survey mines the bound input whole in one model
-// turn — the request `evidence` builds for `Material::Bound` — and returns
+// turn — the request `evidence` builds for `Seam::Whole` — and returns
 // its claims with anchors as answered.
 #[tokio::test]
 async fn default_survey() {
@@ -172,7 +172,7 @@ async fn default_survey() {
     assert_eq!(paths(&evidence), ["note.md#L1"]);
     assert_eq!(evidence.claims[0].backing, Some(Backing::Path("note.md".to_string())));
     let seen = model.seen();
-    assert_eq!(seen.len(), 1, "one material, one turn");
+    assert_eq!(seen.len(), 1, "one seam, one turn");
     assert_eq!(seen[0].workspace.as_deref(), Some("./docs"), "the root is lent");
     let user = &seen[0].messages[0];
     assert!(
@@ -184,9 +184,9 @@ async fn default_survey() {
     model.assert_exhausted();
 }
 
-// Three `Within` materials, each lending its own directory, run through three
-// model turns and join as one document: claims in material order, each `path`
-// anchor and path backing re-rooted under the material's lend, and each turn
+// Three `Files` seams, each lending its own directory, run through three
+// model turns and join as one document: claims in seam order, each `path`
+// anchor and path backing re-rooted under the seam's lend, and each turn
 // listing its files relative to what it was lent.
 #[tokio::test]
 async fn three_materials() {
@@ -196,7 +196,7 @@ async fn three_materials() {
         .lend("./docs/c", Scripted::answering([NOTE]));
 
     let evidence =
-        extract::<Split, _>(&model, &workspace("./docs")).await.expect("three materials join");
+        extract::<Split, _>(&model, &workspace("./docs")).await.expect("three seams join");
 
     assert_eq!(paths(&evidence), ["a/note.md#L1", "b/note.md#L1", "c/note.md#L1"]);
     let backings: Vec<_> = evidence.claims.iter().map(|claim| claim.backing.clone()).collect();
@@ -210,7 +210,7 @@ async fn three_materials() {
     );
     for (lend, file) in [("./docs/a", "x.md"), ("./docs/b", "y.md"), ("./docs/c", "z.md")] {
         let seen = model.scripts[lend].seen();
-        assert_eq!(seen.len(), 1, "one turn per material");
+        assert_eq!(seen.len(), 1, "one turn per seam");
         assert_eq!(seen[0].workspace.as_deref(), Some(lend));
         let user = &seen[0].messages[0];
         assert!(user.contains(&format!("read-only view at `{lend}`")), "{user}");
@@ -221,7 +221,7 @@ async fn three_materials() {
 
 // A survey wider than 4 holds exactly 4 completions
 // pending at once — the fan-out is neither serial nor unbounded — and the
-// joined document still reads in material order.
+// joined document still reads in seam order.
 #[tokio::test]
 async fn concurrent() {
     let mut model = ByLend::default();
@@ -230,9 +230,9 @@ async fn concurrent() {
     }
 
     let evidence =
-        extract::<Wide, _>(&model, &workspace("./docs")).await.expect("every material joins");
+        extract::<Wide, _>(&model, &workspace("./docs")).await.expect("every seam joins");
 
-    assert_eq!(model.peak(), 4, "5 materials hold at most 4 completions pending");
+    assert_eq!(model.peak(), 4, "5 seams hold at most 4 completions pending");
 
     let expected: Vec<String> = (0..=4).map(|i| format!("d{i}/note.md#L1")).collect();
     assert_eq!(paths(&evidence), expected);
@@ -254,9 +254,9 @@ async fn empty_survey() {
     assert!(model.seen().is_empty(), "no turn was spent");
 }
 
-// Every material's lend is checked before the first model call, so a `Within`
+// Every seam's lend is checked before the first model call, so a `Files`
 // path that escapes the root refuses the source with no turn spent — even
-// when an earlier material was sound.
+// when an earlier seam was sound.
 #[tokio::test]
 async fn escaping_path() {
     let model = Scripted::default();
@@ -269,7 +269,7 @@ async fn escaping_path() {
     assert!(model.seen().is_empty(), "no turn was spent");
 }
 
-// A `Within` material naming no file has nothing to mine; refused as the
+// A `Files` seam naming no file has nothing to mine; refused as the
 // input's, before any model call.
 #[tokio::test]
 async fn empty_within() {
@@ -282,7 +282,7 @@ async fn empty_within() {
     assert!(model.seen().is_empty(), "no turn was spent");
 }
 
-// `Within` over an inline value is the adapter's own defect — there is no
+// `Files` over an inline value is the adapter's own defect — there is no
 // tree to lend — so the class is the adapter's, not the operator's.
 #[tokio::test]
 async fn within_value() {
@@ -295,8 +295,8 @@ async fn within_value() {
     assert!(model.seen().is_empty(), "no turn was spent");
 }
 
-// One material of two fails: the fan-out waits for both, then the source
-// fails under that material's class, naming it by index and no other.
+// One seam of two fails: the fan-out waits for both, then the source
+// fails under that seam's class, naming it by index and no other.
 #[tokio::test]
 async fn one_material_fails() {
     let model = ByLend::default()
@@ -304,17 +304,17 @@ async fn one_material_fails() {
         .lend("./docs/b", Scripted::new([Err(ModelError::Backend("down".to_string()))]));
 
     let error =
-        extract::<Pair, _>(&model, &workspace("./docs")).await.expect_err("one material failed");
+        extract::<Pair, _>(&model, &workspace("./docs")).await.expect_err("one seam failed");
 
     assert_eq!(error.code(), "bad_gateway");
     assert_eq!(
         error.description(),
-        "`docs`: 1 of 2 materials failed:\n- material 1: backend failure: down"
+        "`docs`: 1 of 2 seams failed:\n- seam 1: backend failure: down"
     );
     model.assert_exhausted();
 }
 
-// Two materials of three fail differently: both are reported, in material
+// Two seams of three fail differently: both are reported, in seam
 // order, and the first one's class carries.
 #[tokio::test]
 async fn two_materials_fail() {
@@ -327,26 +327,25 @@ async fn two_materials_fail() {
         .lend("./docs/c", Scripted::new([Err(ModelError::Backend("down".to_string()))]));
 
     let error =
-        extract::<Split, _>(&model, &workspace("./docs")).await.expect_err("two materials failed");
+        extract::<Split, _>(&model, &workspace("./docs")).await.expect_err("two seams failed");
 
     assert_eq!(error.code(), "bad_request", "the first failure's class");
     assert_eq!(
         error.description(),
-        "`docs`: 2 of 3 materials failed:\n- material 0: invalid request: no such model\n- \
-         material 2: backend failure: down"
+        "`docs`: 2 of 3 seams failed:\n- seam 0: invalid request: no such model\n- \
+         seam 2: backend failure: down"
     );
     model.assert_exhausted();
 }
 
 // A survey of one is a single `evidence` call: its failure is the source's
-// exactly as `evidence` reported it, with no material report around it.
+// exactly as `evidence` reported it, with no seam report around it.
 #[tokio::test]
 async fn single_material_passthrough() {
     let model = Scripted::new([Err(ModelError::Backend("down".to_string()))]);
 
-    let error = extract::<Plain, _>(&model, &workspace("./docs"))
-        .await
-        .expect_err("the one material failed");
+    let error =
+        extract::<Plain, _>(&model, &workspace("./docs")).await.expect_err("the one seam failed");
 
     assert_eq!(error.code(), "bad_gateway");
     assert_eq!(error.description(), "backend failure: down");

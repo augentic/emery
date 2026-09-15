@@ -10,7 +10,7 @@ This gate is model-free and self-contained: no sibling checkout, no live model, 
 
 ## The WASM boundary
 
-No gate in this repository instantiates a component. The root build script builds the engine guest for `wasm32-wasip2` on every native build, so `make lint` and `make test` already type-check `emery-cli`, `emery-engine`, and `emery-adapter` for the guest. The adapter SDK's export side and the mock adapter are compiled for wasm32 only by the live journey's `cargo build --example adapter --target wasm32-wasip2 --release` ([examples/README.md](../../examples/README.md)); no gate lints them. Instantiating the `emery:adapter/source` seam under the real omnia runtime is `emery-adapters`' conformance rung, which drives every first-party component through the published contract.
+No gate in this repository instantiates a component. The root build script builds the engine guest for `wasm32-wasip2` on every native build, so `make lint` and `make test` already type-check `emery-cli`, `emery-engine`, and `emery-adapter` for the guest. The adapter SDK's export side and the mock adapter are compiled for wasm32 only by the live journey's `cargo build --example adapter --target wasm32-wasip2 --release` ([examples/README.md](../../examples/README.md)); no gate lints them. Instantiating a component over `emery:adapter/source` under the real omnia runtime is `emery-adapters`' conformance rung, which drives every first-party component through the published contract.
 
 ## Placement decision
 

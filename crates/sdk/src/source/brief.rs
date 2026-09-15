@@ -1,6 +1,6 @@
-//! The turn an adapter puts to the model, and what each material is lent.
+//! The turn an adapter puts to the model, and what each seam is lent.
 //!
-//! An adapter chooses only the [`Material`]. The SDK owns the rest of the turn
+//! An adapter chooses only the [`Seam`]. The SDK owns the rest of the turn
 //! — which source is being extracted, what the model may read, where the
 //! reference documents are, and the fixed closing ask — so every adapter's
 //! turn reads alike and the closing ask cannot drift.
@@ -10,33 +10,9 @@ use std::fmt::{self, Display, Formatter};
 use emery_adapter::source::SourceContent;
 use omnia_guest::{Error, bad_request, server_error};
 
-use super::Context;
+use super::{Context, Seam};
 
-/// The part of a source one model call is asked about.
-///
-/// A survey returns one or more materials; see the
-/// [vocabulary](crate#vocabulary).
-#[derive(Debug, Eq, PartialEq)]
-pub enum Material {
-    /// The whole input: a workspace described as the source tree, or an
-    /// inline value quoted into the turn.
-    Bound,
-    /// A note the adapter prepared for a source that needs its own handling.
-    ///
-    /// The whole root is lent, and the note stands in the turn where the
-    /// SDK's description of the input would be.
-    Prepared(String),
-    /// Files beneath the input's root, named relative to it.
-    ///
-    /// The model is lent the files' common directory alone; only a set
-    /// scattered across the root is lent the root itself. `path` anchors in
-    /// the answer are relative to that directory and are re-rooted under the
-    /// source root when the materials are joined. Paths are sorted and
-    /// deduplicated; one that escapes the root is refused.
-    Within(Vec<String>),
-}
-
-// What one material is lent: the directory the model receives, its path
+// What one seam is lent: the directory the model receives, its path
 // beneath the source root, and the files to mine relative to it.
 #[derive(Debug)]
 pub struct Lend {
@@ -44,24 +20,24 @@ pub struct Lend {
     // inline value.
     pub workspace: Option<String>,
     // The lend's path beneath the source root, empty when the root itself is
-    // lent. Every `path` anchor the material answers is re-rooted under it.
+    // lent. Every `path` anchor the seam answers is re-rooted under it.
     pub within: String,
-    // For `Within`, the files to mine relative to the lend, sorted and
+    // For `Files`, the files to mine relative to the lend, sorted and
     // deduped; empty otherwise.
     pub files: Vec<String>,
 }
 
 impl Lend {
-    // What `material` is lent under `ctx`. A `Within` path that escapes the
-    // root, or a set naming no file, is `bad_request`; `Within` over an
+    // What `seam` is lent under `ctx`. A `Files` path that escapes the
+    // root, or a set naming no file, is `bad_request`; `Files` over an
     // inline value is the adapter's own defect, so `server_error`.
-    pub fn of(material: &Material, ctx: &Context<'_>) -> Result<Self, Error> {
+    pub fn of(seam: &Seam, ctx: &Context<'_>) -> Result<Self, Error> {
         let key = &ctx.input.key;
-        let root = match (&ctx.input.content, material) {
+        let root = match (&ctx.input.content, seam) {
             (SourceContent::Workspace(root), _) => root,
-            (SourceContent::Value(_), Material::Within(_)) => {
+            (SourceContent::Value(_), Seam::Files(_)) => {
                 return Err(server_error!(
-                    "`{key}`: a `Within` material needs a workspace input, not an inline value"
+                    "`{key}`: a `Files` seam needs a workspace input, not an inline value"
                 ));
             }
             (SourceContent::Value(_), _) => {
@@ -73,7 +49,7 @@ impl Lend {
             }
         };
 
-        let Material::Within(paths) = material else {
+        let Seam::Files(paths) = seam else {
             return Ok(Self {
                 workspace: Some(root.clone()),
                 within: String::new(),
@@ -88,7 +64,7 @@ impl Lend {
         files.sort();
         files.dedup();
         let Some((first, rest)) = files.split_first() else {
-            return Err(bad_request!("`{key}`: a `Within` material names no file"));
+            return Err(bad_request!("`{key}`: a `Files` seam names no file"));
         };
 
         // The longest prefix every file's directory shares is the lend.
@@ -110,7 +86,7 @@ impl Lend {
     }
 }
 
-// A `Within` path as its segments: `/`-separated, with empty and `.`
+// A `Files` path as its segments: `/`-separated, with empty and `.`
 // segments dropped. A leading `/` or a `..` is an escape from the root.
 fn segments<'a>(key: &str, path: &'a str) -> Result<Vec<&'a str>, Error> {
     if path.starts_with('/') || path.split('/').any(|segment| segment == "..") {
@@ -134,11 +110,11 @@ const fn parent<'a, 'b>(file: &'a [&'b str]) -> &'a [&'b str] {
     }
 }
 
-// The brief: the call's context, the material and what it is lent; rendered
+// The brief: the call's context, the seam and what it is lent; rendered
 // as the user turn.
 pub struct Brief<'a> {
     pub ctx: &'a Context<'a>,
-    pub material: &'a Material,
+    pub seam: &'a Seam,
     pub lend: &'a Lend,
 }
 
@@ -152,9 +128,9 @@ impl Display for Brief<'_> {
             key = input.key,
         )?;
 
-        match (self.material, &input.content) {
-            (Material::Prepared(note), _) => f.write_str(note)?,
-            (Material::Within(_), _) => {
+        match (self.seam, &input.content) {
+            (Seam::Note(note), _) => f.write_str(note)?,
+            (Seam::Files(_), _) => {
                 writeln!(
                     f,
                     "`$SOURCE_DIR` is the read-only view at `{workspace}` — the part of the \
@@ -169,14 +145,14 @@ impl Display for Brief<'_> {
                      reachable; extract mines only this source.",
                 )?;
             }
-            (Material::Bound, SourceContent::Workspace(root)) => write!(
+            (Seam::Whole, SourceContent::Workspace(root)) => write!(
                 f,
                 "`$SOURCE_DIR` is the read-only view at `{root}` — the source tree the prompt \
                  walks. Nothing outside it is reachable; extract mines only this source."
             )?,
-            (Material::Bound, SourceContent::Value(value)) => write!(
+            (Seam::Whole, SourceContent::Value(value)) => write!(
                 f,
-                "The bound material is this inline value; no `$SOURCE_DIR` is lent:\n\n{value}\n\n\
+                "The bound seam is this inline value; no `$SOURCE_DIR` is lent:\n\n{value}\n\n\
                  Nothing else is reachable; extract mines only this source."
             )?,
         }
