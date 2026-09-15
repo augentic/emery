@@ -4,12 +4,13 @@
 //! scripted model. It shows the trait is complete enough to implement and
 //! exercise without a wasm build — the promise adapter authors' own test
 //! suites depend on — and that its provided members answer from the
-//! adapter's own declarations: the `emery-version` pin, the extraction prompt.
+//! adapter's own declarations: the `emery-version` pin, the extraction
+//! prompt, the survey's material.
 
 use emery_prose::registry::Doc;
 use emery_sdk::{
-    AdapterMetadata, Context, Error, Evidence, Material, Model, SourceAdapter, SourceContent,
-    SourceInput, SourceKind,
+    AdapterMetadata, Context, Error, Material, SourceAdapter, SourceContent, SourceInput,
+    SourceKind,
 };
 use omnia_test::guest::Scripted;
 
@@ -31,12 +32,13 @@ impl SourceAdapter for Probe {
         DOCS
     }
 
-    async fn extract<P: Model>(model: &P, ctx: &Context<'_>) -> Result<Evidence, Error> {
-        Self::evidence(model, ctx, Material::Prepared(ctx.input.key.clone())).await
+    fn survey(ctx: &Context<'_>) -> Result<Vec<Material>, Error> {
+        Ok(vec![Material::Prepared(ctx.input.key.clone())])
     }
 }
 
-// An adapter whose corpus lacks the extraction prompt.
+// An adapter whose corpus lacks the extraction prompt; its survey is the
+// default.
 struct Mute;
 
 impl SourceAdapter for Mute {
@@ -45,10 +47,6 @@ impl SourceAdapter for Mute {
 
     fn docs() -> &'static [Doc] {
         &[]
-    }
-
-    async fn extract<P: Model>(model: &P, ctx: &Context<'_>) -> Result<Evidence, Error> {
-        Self::evidence(model, ctx, Material::Bound).await
     }
 }
 
@@ -70,10 +68,16 @@ async fn source_dispatch() {
     assert_eq!(evidence.kind, Probe::KIND);
     assert_eq!(evidence.claims.len(), 1);
     assert_eq!(evidence.claims[0].id.as_deref(), Some("one.claim"));
+    let request = &model.seen()[0];
     assert_eq!(
-        model.seen()[0].system.as_deref(),
+        request.system.as_deref(),
         Some("EXTRACT"),
         "the embedded `prompts/extract.md` is the system prompt"
+    );
+    assert!(
+        request.messages[0].contains("\n\nmain\n\n"),
+        "the survey's prepared note is the turn's material: {}",
+        request.messages[0]
     );
 
     assert_eq!(

@@ -4,17 +4,17 @@
 //! builds (the embedded prompt as the system, the SDK-owned turn around the
 //! adapter's material, the claims-only schema with the claim-id pattern,
 //! `check` set, the reference tools, and the workspace lend following the
-//! input), the adapter's kind stamped whatever the scripted answer says,
-//! reference calls answered from the embedded corpus, a candidate the
-//! claim gate rejects corrected in place, the backend's spent rounds surfacing
-//! as `bad_request` with the last findings, and a host refusal passing through
-//! as `bad_request`.
+//! material — the input's root, or a `Within` set's common ancestor), the
+//! adapter's kind stamped whatever the scripted answer says, reference calls
+//! answered from the embedded corpus, a candidate the claim gate rejects
+//! corrected in place, the backend's spent rounds surfacing as `bad_request`
+//! with the last findings, and a host refusal passing through as
+//! `bad_request`.
 
 use emery_prose::registry::Doc;
 use emery_sdk::model::{Error as ModelError, ToolCall};
 use emery_sdk::{
-    Context, Error, Evidence, Material, Model, SourceAdapter, SourceContent, SourceInput,
-    SourceKind,
+    Context, Error, Evidence, Material, SourceAdapter, SourceContent, SourceInput, SourceKind,
 };
 use omnia_test::SeenFormat;
 use omnia_test::guest::Scripted;
@@ -43,10 +43,6 @@ impl SourceAdapter for Probe {
 
     fn docs() -> &'static [Doc] {
         DOCS
-    }
-
-    async fn extract<P: Model>(model: &P, ctx: &Context<'_>) -> Result<Evidence, Error> {
-        Self::evidence(model, ctx, Material::Bound).await
     }
 }
 
@@ -150,6 +146,51 @@ async fn prepared_turn() {
     let user = &model.seen()[0].messages[0];
     assert!(user.contains("\n\nPREPARED MATERIAL\n\n"), "{user}");
     assert!(!user.contains("ignored"), "the prepared note replaces the input rendering");
+}
+
+// A `Within` material lends its files' common ancestor — so a per-directory
+// material is enforced by the grant, not told — and lists the files relative
+// to it, sorted, once each, `.` segments dropped.
+#[tokio::test]
+async fn within_turn() {
+    let model = Scripted::answering([VALID]);
+    let files = ["guide/setup.md", "./guide/intro.md", "guide/intro.md"];
+
+    ask(&model, &workspace("/lend/docs"), Material::Within(files.map(str::to_string).into()))
+        .await
+        .expect("accepted");
+
+    let request = &model.seen()[0];
+    assert_eq!(request.workspace.as_deref(), Some("/lend/docs/guide"), "the common ancestor");
+    let user = &request.messages[0];
+    assert!(
+        user.contains(
+            "`$SOURCE_DIR` is the read-only view at `/lend/docs/guide` — the part of the probe \
+             source tree this call mines. Mine these files beneath it and nothing else:\n\n\
+             - `intro.md`\n- `setup.md`\n\nAnchor every `path` relative to `$SOURCE_DIR`."
+        ),
+        "{user}"
+    );
+    model.assert_exhausted();
+}
+
+// Files sharing no directory beneath the root lend the root itself, every
+// path stated as it was named.
+#[tokio::test]
+async fn within_scattered() {
+    let model = Scripted::answering([VALID]);
+    let files = ["guide/intro.md", "api.md"];
+
+    ask(&model, &workspace("/lend/docs"), Material::Within(files.map(str::to_string).into()))
+        .await
+        .expect("accepted");
+
+    let request = &model.seen()[0];
+    assert_eq!(request.workspace.as_deref(), Some("/lend/docs"), "the root is lent");
+    let user = &request.messages[0];
+    assert!(user.contains("read-only view at `/lend/docs` — the part of the probe"), "{user}");
+    assert!(user.contains("nothing else:\n\n- `api.md`\n- `guide/intro.md`\n\n"), "{user}");
+    model.assert_exhausted();
 }
 
 // Reference calls are answered in-process from the corpus before the
