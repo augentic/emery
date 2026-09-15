@@ -13,11 +13,10 @@ use std::future::{Future, ready};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
-use emery_prose::registry::Doc;
 use emery_sdk::model::{Error as ModelError, Reply, Request, ToolCall};
 use emery_sdk::{
-    Backing, Context, Error, Evidence, Material, Model, SourceAdapter, SourceContent, SourceInput,
-    SourceKind,
+    Backing, Context, Doc, Error, Evidence, Material, Model, SourceAdapter, SourceContent,
+    SourceInput, SourceKind,
 };
 use omnia_test::guest::Scripted;
 

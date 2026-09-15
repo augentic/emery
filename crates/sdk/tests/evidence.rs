@@ -12,10 +12,9 @@
 //!   findings.
 //! - A host refusal passing through as `bad_request`.
 
-use emery_prose::registry::Doc;
 use emery_sdk::model::{Error as ModelError, ToolCall};
 use emery_sdk::{
-    Context, Error, Evidence, Material, SourceAdapter, SourceContent, SourceInput, SourceKind,
+    Context, Doc, Error, Evidence, Material, SourceAdapter, SourceContent, SourceInput, SourceKind,
 };
 use omnia_test::SeenFormat;
 use omnia_test::guest::Scripted;

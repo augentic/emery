@@ -11,7 +11,10 @@
 //! an adapter never sees the WIT bindings. [`Source`], the capability the
 //! engine calls adapters through, is re-exported for a program that drives an
 //! adapter the way the engine does; an adapter implements [`SourceAdapter`]
-//! and never `Source`.
+//! and never `Source`. The embedded-document registry comes from
+//! `emery-prose` and is re-exported too — [`Doc`], [`mod@registry`], and
+//! [`registry!`] — so an adapter's `[dependencies]` is this crate alone;
+//! `emery-prose` is its build dependency, for the `emit` walker.
 //!
 //! # Examples
 //!
@@ -19,8 +22,7 @@
 //! its prompt, and leaves the survey at its default of one material:
 //!
 //! ```
-//! use emery_prose::registry::Doc;
-//! use emery_sdk::{SourceAdapter, SourceKind};
+//! use emery_sdk::{Doc, SourceAdapter, SourceKind};
 //!
 //! static DOCS: &[Doc] = &[Doc {
 //!     path: "prompts/extract.md",
@@ -41,10 +43,10 @@
 //! # fn main() {}
 //! ```
 //!
-//! A shipped adapter embeds its prompt with `emery_prose::emit` and
-//! `emery_prose::registry!` rather than a hand-written table, and a tree
-//! adapter overrides [`SourceAdapter::survey`] to cut its input with the
-//! [`survey`] helpers.
+//! A shipped adapter embeds its prompt with `emery_prose::emit` in its build
+//! script and [`registry!`] in its crate root rather than a hand-written
+//! table, and a tree adapter overrides [`SourceAdapter::survey`] to cut its
+//! input with the [`survey`] helpers.
 //!
 //! # Vocabulary
 //!
@@ -73,6 +75,9 @@ pub use emery_adapter::source::{
     AdapterMetadata, Backing, Claim, ClaimKind, Evidence, Source, SourceContent, SourceInput,
     SourceKind,
 };
+// The module and the `registry!` macro share the name; one `use` carries both.
+pub use emery_prose::registry;
+pub use emery_prose::registry::Doc;
 pub use omnia_guest::{Error, Model, bad_gateway, bad_request, model, not_found, server_error};
 // The export shim the `source!` macro expands against; no adapter names it.
 #[cfg(target_arch = "wasm32")]
@@ -89,8 +94,7 @@ pub use source::{Context, Material, SourceAdapter, survey};
 /// # Examples
 ///
 /// ```
-/// # use emery_prose::registry::Doc;
-/// # use emery_sdk::{SourceAdapter, SourceKind};
+/// # use emery_sdk::{Doc, SourceAdapter, SourceKind};
 /// # struct Adapter;
 /// # impl SourceAdapter for Adapter {
 /// #     const KIND: SourceKind = SourceKind::Intent;

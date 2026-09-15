@@ -16,9 +16,8 @@ use std::fs;
 use std::os::unix::fs::symlink;
 use std::path::Path;
 
-use emery_prose::registry::Doc;
 use emery_sdk::survey::{self, Entry};
-use emery_sdk::{Context, Error, SourceContent, SourceInput};
+use emery_sdk::{Context, Doc, Error, SourceContent, SourceInput};
 use omnia_test::SeenFormat;
 use omnia_test::guest::Scripted;
 

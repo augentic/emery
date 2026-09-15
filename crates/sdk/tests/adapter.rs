@@ -8,10 +8,9 @@
 
 use std::future::{Future, ready};
 
-use emery_prose::registry::Doc;
 use emery_sdk::{
-    AdapterMetadata, Context, Error, Material, Model, SourceAdapter, SourceContent, SourceInput,
-    SourceKind,
+    AdapterMetadata, Context, Doc, Error, Material, Model, SourceAdapter, SourceContent,
+    SourceInput, SourceKind,
 };
 use omnia_test::guest::Scripted;
 
