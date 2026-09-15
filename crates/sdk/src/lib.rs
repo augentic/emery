@@ -8,7 +8,10 @@
 //! left with what is specific to its source.
 //!
 //! The contract types come from `emery-adapter` and are re-exported here, so
-//! an adapter never sees the WIT bindings.
+//! an adapter never sees the WIT bindings. [`Source`], the capability the
+//! engine calls adapters through, is re-exported for a program that drives an
+//! adapter the way the engine does; an adapter implements [`SourceAdapter`]
+//! and never `Source`.
 //!
 //! # Examples
 //!
@@ -67,7 +70,8 @@ mod references;
 mod source;
 
 pub use emery_adapter::source::{
-    AdapterMetadata, Backing, Claim, ClaimKind, Evidence, SourceContent, SourceInput, SourceKind,
+    AdapterMetadata, Backing, Claim, ClaimKind, Evidence, Source, SourceContent, SourceInput,
+    SourceKind,
 };
 pub use omnia_guest::{Error, Model, bad_gateway, bad_request, model, not_found, server_error};
 // The export shim the `source!` macro expands against; no adapter names it.
