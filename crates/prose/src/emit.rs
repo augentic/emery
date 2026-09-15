@@ -1,12 +1,9 @@
-//! Build-time corpus embedding
+//! Walks a Markdown tree at build time and generates its document table.
 //!
-//! Walks a Markdown tree at build time and generates the document table the
-//! [`crate::registry!`] macro includes, so a crate's prose is compiled in and
-//! versioned with its code.
-//!
-//! Every relative link in the tree is checked while embedding. Prompts are
-//! meant to reference depth rather than inline it, and a dangling reference
-//! would otherwise only be discovered when a model asked for the document.
+//! [`emit`] runs from a build script. It walks the tree, checks every relative
+//! link it finds, and writes the table [`crate::registry!`] includes, so a
+//! crate's prose is compiled in and versioned with its code. A dangling link
+//! fails the build rather than surfacing when a model asks for the document.
 
 use std::fmt::Write as _;
 use std::fs;
@@ -38,16 +35,18 @@ pub fn docs() -> &'static [Doc] {
 }
 ";
 
-/// Embeds and link-checks the Markdown `tree` relative to the crate manifest,
-/// writing `prose_docs.rs` into `OUT_DIR`.
+/// Embeds the Markdown `tree`, relative to the crate manifest, as a document table.
 ///
-/// The generated file is the whole registry a crate gets: a private table of
-/// [`crate::registry::Doc`]s and the `pub fn docs() -> &'static [Doc]`
-/// accessor over it. [`crate::registry!`] includes it.
+/// The table is written to `prose_docs.rs` in `OUT_DIR`: a private table of
+/// [`Doc`](crate::registry::Doc)s sorted by path, and the
+/// `pub fn docs() -> &'static [Doc]` accessor over it that
+/// [`crate::registry!`] includes. Every relative link in the tree is checked
+/// while embedding, and symlinked directories are followed.
 ///
 /// # Panics
 ///
-/// Panics on any failure so the build stops.
+/// Panics, failing the build, when the tree holds no Markdown document, a
+/// relative link has no target, or a symlink cycle is found.
 pub fn emit(tree: &str) {
     let manifest_dir =
         PathBuf::from(std::env::var("CARGO_MANIFEST_DIR").expect("cargo sets CARGO_MANIFEST_DIR"));

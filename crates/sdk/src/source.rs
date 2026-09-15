@@ -1,23 +1,14 @@
-//! The source adapter role
+//! The [`SourceAdapter`] trait and its provided extraction.
 //!
-//! [`SourceAdapter`] is what an adapter implements: the kind of source it
-//! reads, the reference documents it embeds, and the materials its input
-//! splits into. The trait carries what every adapter
-//! shares — the resolve-time metadata, the extraction prompt, the model call
-//! per material, and the `extract` operation that surveys the input, mines
-//! every material with at most four calls pending, and joins the
-//! partials into one document — so an implementation states only what is
-//! its own. The model answers claims alone; the kind of source rides the
-//! adapter's metadata, read by the engine before any extract.
+//! An implementation states the kind of source it reads, the documents it
+//! embeds, and how its input cuts into [materials](crate#vocabulary). The
+//! trait provides the rest — the metadata, the prompt, the model call per
+//! material, and [`SourceAdapter::extract`], which surveys the input, mines
+//! every material, and joins the answers into one document.
 //!
-//! The trait is native; the wasm export lives in the `export` child, built
-//! for `wasm32` alone. Keeping them apart lets an adapter be exercised
-//! natively against a scripted model, with the component wiring added only at
-//! the guest boundary. The `brief` child is the role's prose: the one brief
-//! an extraction puts to the model, and what each material is lent. The
-//! `survey` child is what a tree adapter's survey is built from: the walk
-//! that lists its files, the mechanical cut by directory, and the one model
-//! call that cuts by what the files serve.
+//! The trait is native. The wasm export is the `export` child, built for
+//! `wasm32` alone, so an adapter is tested natively against a scripted model
+//! and the component wiring is added only at the guest boundary.
 
 mod brief;
 // The component export, re-exported at the crate root for the `source!`
@@ -41,70 +32,78 @@ use crate::references;
 // Completions one adapter holds pending at once.
 const CONCURRENT: usize = 4;
 
-/// Contract implemented by source adapters.
+/// What a source adapter implements.
 ///
-/// Generic over [`Model`] for native test doubles and the wasm host model;
-/// deliberately not object-safe.
+/// An implementation states the kind of source it reads ([`Self::KIND`]), the
+/// documents it embeds ([`Self::docs`]), and, for a source worth splitting,
+/// how it cuts into [materials](crate#vocabulary) ([`Self::survey`]). The
+/// provided methods do the rest: [`Self::extract`] surveys the input, asks the
+/// model about each material, and joins the answers into one [`Evidence`]
+/// document.
+///
+/// The trait is generic over [`Model`], so an adapter is tested natively
+/// against a scripted model and runs in the guest against the host's. It is
+/// not object-safe.
+///
+/// # Examples
+///
+/// See the [crate-level example](crate#examples) for a complete adapter.
 pub trait SourceAdapter {
-    /// The kind of source this adapter reads, reported through
-    /// [`Self::metadata`] so the engine ranks its evidence before any
-    /// extract.
+    /// The kind of source this adapter reads.
+    ///
+    /// Reported in [`Self::metadata`], so the engine ranks the adapter's
+    /// evidence before any extract; the model never answers it.
     const KIND: SourceKind;
 
-    /// Returns the adapter's embedded reference documents, including the
-    /// extraction prompt.
+    /// Returns the adapter's embedded documents, including the extraction prompt.
     fn docs() -> &'static [Doc];
 
-    /// The materials to mine, one model call each; by default the bound
-    /// input, whole.
+    /// Returns the materials to mine, one model call each.
     ///
-    /// An implementation lists or reads its input and refuses an unusable
-    /// one with `BadRequest` here, before any model call is spent. It cuts
-    /// its input mechanically, or asks the model once through
-    /// [`survey::by_model`] — never more: the survey chooses how a source
-    /// splits, it does not mine. A survey of one is a single
-    /// [`Self::evidence`] call; a survey of several runs them together and
-    /// joins the answers. A tree adapter lists its files with
-    /// [`survey::files`], cuts them with [`survey::by_directory`] or
-    /// [`survey::by_model`], then names each cut as the [`Material`] its
-    /// source kind calls for.
+    /// The default is the whole input as one [`Material::Bound`]. An adapter
+    /// whose source is worth splitting overrides this to list or read its
+    /// input and cut it:
     ///
-    /// A survey that asks the model is an `async fn`; one that does not is
-    /// ready at once, and says so by returning
-    /// [`std::future::ready`] over the materials it computed.
+    /// - mechanically, with [`survey::files`] and [`survey::by_directory`];
+    /// - or by asking the model once, with [`survey::by_model`], how the files
+    ///   group by what they serve.
+    ///
+    /// The survey only decides the cut; it never mines. Input the adapter
+    /// cannot use is refused here, before any model call is spent. A survey
+    /// that does not ask the model returns [`std::future::ready`] over its
+    /// materials rather than being an `async fn`.
     ///
     /// # Errors
     ///
-    /// `BadRequest` when the input cannot be mined, or the model's survey
-    /// could not be brought within its rounds; `ServerError` for a survey
-    /// prompt the build did not embed.
+    /// Returns [`Error::BadRequest`] when the input cannot be mined or the
+    /// model's grouping could not be brought within its rounds, and
+    /// [`Error::ServerError`] for a survey prompt the build did not embed.
     fn survey<P: Model>(
         _model: &P, _ctx: &Context<'_>,
     ) -> impl Future<Output = Result<Vec<Material>, Error>> + Send {
         async { Ok(vec![Material::Bound]) }
     }
 
-    /// Extracts the source's claim set: the survey's materials, mined with
-    /// at most four model calls pending and joined in material
-    /// order into one document.
+    /// Extracts the source's claims as one [`Evidence`] document.
     ///
-    /// Provided: an adapter states its materials through [`Self::survey`]
-    /// and leaves the fan-out to the SDK. The survey runs first, alone, and
-    /// no material is mined until it has returned. Each material's claims
-    /// are appended in material order, its `path` anchors and path backings
-    /// re-rooted under what it was lent, so a source cites one path space
-    /// however it was split. Every material is waited for, then the failures
-    /// are reported together, each with its material index, under the first
-    /// one's class. A survey of one material is a single `evidence` call and
-    /// its outcome, unchanged.
+    /// Provided; an adapter overrides [`Self::survey`] instead. The survey's
+    /// materials are each put to the model by [`Self::evidence`], several at
+    /// a time, and the answers are joined in material order. Each material's
+    /// `path` anchors and path backings are re-rooted under the directory it
+    /// was lent, so the document cites one path space however the source was
+    /// cut.
+    ///
+    /// Every material is waited for. When more than one fails, the error names
+    /// them all and takes the class of the first.
     ///
     /// # Errors
     ///
-    /// `BadRequest` for a survey that refuses its input or yields nothing, a
-    /// `Within` path that escapes the root, or a model call that ends on
-    /// rejected findings; `ServerError` for a `Within` material over an
-    /// inline value or a missing prompt; `BadGateway` for a tool or
-    /// transport failure.
+    /// - [`Error::BadRequest`] when the survey refuses the input or yields no
+    ///   material, a [`Material::Within`] path escapes the root, or the
+    ///   model's answer still fails the claim gate once its rounds are spent.
+    /// - [`Error::ServerError`] for a [`Material::Within`] over an inline
+    ///   value, or a prompt the build did not embed.
+    /// - [`Error::BadGateway`] for a tool or transport failure.
     fn extract<P: Model>(
         model: &P, ctx: &Context<'_>,
     ) -> impl Future<Output = Result<Evidence, Error>> + Send {
@@ -132,8 +131,10 @@ pub trait SourceAdapter {
         }
     }
 
-    /// Reports resolve-time metadata: by default the SDK's own version as
-    /// the exact `emery` pin, and [`Self::KIND`] as the kind of source.
+    /// Returns the metadata the engine reads before any extract.
+    ///
+    /// The default requires the SDK's own version of Emery and reports
+    /// [`Self::KIND`] as the kind of source.
     #[must_use]
     fn metadata() -> AdapterMetadata {
         AdapterMetadata {
@@ -142,39 +143,34 @@ pub trait SourceAdapter {
         }
     }
 
-    /// The extraction prompt: the `prompts/extract.md` document among
-    /// [`Self::docs`].
+    /// Returns the extraction prompt: `prompts/extract.md` among [`Self::docs`].
     ///
     /// # Errors
     ///
-    /// `server_error` when the build did not embed it.
+    /// Returns [`Error::ServerError`] when the build did not embed it.
     fn prompt() -> Result<&'static str, Error> {
         registry::body(Self::docs(), "prompts/extract.md")
             .ok_or_else(|| server_error!("`prompts/extract.md` is not embedded"))
     }
 
-    /// Asks the model for one material's claims and returns the accepted
-    /// document: the one model call per material.
+    /// Asks the model about one material and returns the accepted claims.
     ///
-    /// The prompt is [`Self::prompt`]; the brief names the adapter and source
-    /// key and carries `material`; the `list_docs` / `read_doc` tools answer from
-    /// [`Self::docs`]; what the material is lent — a bound root, or a
-    /// `Within` set's common ancestor — rides the workspace grant. The schema
-    /// is the contract's [`Evidence`], which steers a claims-only answer: the
-    /// kind of source is the adapter's metadata, never the model's to state.
-    /// The schema cannot express every rule a claim must satisfy, so each
-    /// candidate the backend proposes is run through the contract's claim
-    /// gate before it is accepted; a miss goes back to the model as findings
-    /// and the backend asks again. The engine re-runs the same gate on
-    /// receipt, but an adapter that checks in place rarely hands it evidence
-    /// to reject.
+    /// The system prompt is [`Self::prompt`]. The turn names the adapter and
+    /// the source key, describes `material`, and lends the model the directory
+    /// the material may read; the `list_docs` and `read_doc` tools answer from
+    /// [`Self::docs`]. The answer is checked against the claim gate
+    /// ([`Evidence::findings`]), and findings go back to the model for another
+    /// round until it answers clean or the host's rounds are spent. The engine
+    /// runs the same gate again on receipt.
     ///
     /// # Errors
     ///
-    /// A request the host refuses, the last gate findings once the backend's
-    /// rounds are spent, or a `Within` path that escapes the root is
-    /// `BadRequest`; a tool or transport failure is `BadGateway`; a missing
-    /// prompt, or `Within` over an inline value, is `ServerError`.
+    /// - [`Error::BadRequest`] when the host refuses the request, the rounds
+    ///   are spent with findings outstanding, or a [`Material::Within`] path
+    ///   escapes the root.
+    /// - [`Error::ServerError`] for a prompt the build did not embed, or a
+    ///   [`Material::Within`] over an inline value.
+    /// - [`Error::BadGateway`] for a tool or transport failure.
     fn evidence<P: Model>(
         model: &P, ctx: &Context<'_>, material: Material,
     ) -> impl Future<Output = Result<Evidence, Error>> + Send {
@@ -209,20 +205,17 @@ pub trait SourceAdapter {
     }
 }
 
-/// Call-scoped adapter environment: which adapter was addressed, and with
-/// what input.
+/// What one call knows: which adapter was addressed, and with what input.
 #[derive(Debug)]
 pub struct Context<'a> {
-    /// The adapter id the call was addressed to.
+    /// The id the call addressed the adapter by.
     pub adapter_id: &'a str,
-    /// The source key and the workspace or inline value to extract from.
+    /// The source key and the workspace or inline value to read.
     pub input: &'a SourceInput,
 }
 
-// Every material's evidence in material order, or one error naming each
-// failed material under the first failure's class. A lone material's
-// failure is the source's as it stands: a survey of one is a single
-// evidence call.
+// A lone material's failure is the source's as it stands; several are reported
+// together, under the first one's class.
 fn collect(key: &str, outcomes: Vec<Result<Evidence, Error>>) -> Result<Vec<Evidence>, Error> {
     let count = outcomes.len();
     let mut partials = Vec::with_capacity(count);
@@ -249,8 +242,7 @@ fn collect(key: &str, outcomes: Vec<Result<Evidence, Error>>) -> Result<Vec<Evid
     ))
 }
 
-// `description` under `class`'s variant: the first failed material decides
-// how the source's failure is classified; the report names them all.
+// The first failed material decides the class; the report names them all.
 fn reclass(class: &Error, description: &str) -> Error {
     match class {
         Error::BadRequest { .. } => bad_request!("{description}"),
@@ -260,9 +252,8 @@ fn reclass(class: &Error, description: &str) -> Error {
     }
 }
 
-// The partials' claims in material order, each material's anchors re-rooted
-// under what it was lent, so a source cites one path space however it was
-// split.
+// Re-rooting each material's anchors under what it was lent gives the source
+// one path space however it was cut.
 fn join(lends: &[Lend], partials: Vec<Evidence>) -> Vec<Claim> {
     lends
         .iter()
@@ -273,8 +264,7 @@ fn join(lends: &[Lend], partials: Vec<Evidence>) -> Vec<Claim> {
         .collect()
 }
 
-// `claim` with its `path` anchor and path backing beneath `within`; a
-// material lent the root itself has nothing to re-root. An anchor's `#L`
+// A material lent the root itself has nothing to re-root. An anchor's `#L`
 // suffix follows the path, so a prefix leaves it intact.
 fn reroot(within: &str, mut claim: Claim) -> Claim {
     if within.is_empty() {

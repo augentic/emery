@@ -1,15 +1,13 @@
-//! The source axis
+//! The source axis of the contract.
 //!
-//! The `emery:adapter/source` seam: the `source-adapter` WIT world, the
-//! records that cross it — what an adapter is given ([`SourceInput`]) and
-//! what it returns ([`Evidence`], the spec IR) — the claim gate those records
-//! must pass, and the [`Source`] capability the engine calls source adapters
-//! through.
+//! A source adapter is given a [`SourceInput`] — a key and a workspace or
+//! inline value — and returns [`Evidence`], a document of typed claims. This
+//! module carries those records, the claim gate every document must pass
+//! ([`Evidence::findings`]), and the [`Source`] capability the engine calls
+//! source adapters through.
 //!
-//! Every public item of the axis is exported here from three private
-//! modules: `capability` (the import-side trait and the inbound records),
-//! `evidence` (the outbound document and its gate), and, on `wasm32`,
-//! `bindings` (the one WIT generation both sides ride).
+//! On `wasm32` the module also carries the WIT bindings both sides ride. The
+//! export side is reached only through the SDK's `source!` macro.
 
 #[cfg(target_arch = "wasm32")]
 mod bindings;

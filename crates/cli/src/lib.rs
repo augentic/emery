@@ -1,15 +1,15 @@
-//! The `emery` command line
+//! The `emery` command line: its verbs, their help, and the text of each result.
 //!
-//! The operator-facing surface of Emery: the `specify`, `show`, and
-//! `completions` verbs, their help text, the rules that turn a parsed
-//! command into an engine operation, and the text shape of each result.
+//! This crate is the operator-facing surface of Emery: the `specify`, `show`,
+//! and `completions` verbs, the rules that turn a parsed command into an
+//! engine operation, and the text shape of each result. The engine knows
+//! nothing about arguments, text, or exit codes, so the same operations can be
+//! driven by another transport and the grammar can change without touching
+//! the engine.
 //!
-//! The engine knows nothing about arguments, text, or exit codes. Keeping
-//! that vocabulary here means the same operations can be driven by another
-//! transport, and the command grammar can change without touching the
-//! engine. The projection itself — decode → `Client::call` → encode, the
-//! failure envelope, and the exit map — is omnia's command façade
-//! (`omnia_guest::api::command`), so this crate owns only what is Emery's.
+//! The projection itself — decode, `Client::call`, encode, the failure
+//! envelope, and the exit map — is omnia's command façade
+//! (`omnia_guest::api::command`); this crate owns only what is Emery's.
 
 mod sources;
 mod text;
@@ -51,16 +51,15 @@ const NAME: &str = "emery";
 // (`EMERY_REQUEST_ID`, `EMERY_CORRELATION_ID`, `EMERY_CAUSATION_ID`).
 const ENV_PREFIX: &str = "EMERY";
 
-/// Parses and executes one argument vector over `provider`, buffering both
-/// output channels.
+/// Parses `argv` and runs the command it names over `provider`.
 ///
-/// Clap's own outcomes — help and version on stdout at exit 0, a usage
-/// error on stderr at `USAGE_EXIT` — are complete responses before any
-/// verb runs. Each verb decodes into its engine input, runs its handler fn
-/// through the client, and is projected by the façade: the success body
-/// rides stdout in the selected format, the failure envelope rides stderr
-/// with the exit status from the one exit map. `completions` never
-/// reaches a handler.
+/// Both output channels are buffered into the [`Response`]. Clap's own
+/// outcomes — help and version on stdout at exit 0, a usage error on stderr —
+/// are complete responses before any verb runs. Each verb decodes into its
+/// engine input and runs through the client, and the façade projects the
+/// result: the success body on stdout in the selected format, or the failure
+/// envelope on stderr with its exit status. `completions` never reaches a
+/// handler.
 pub async fn run<P, I, T>(provider: P, argv: I) -> Response
 where
     P: Provider,

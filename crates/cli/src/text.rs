@@ -1,21 +1,18 @@
-//! Text output
+//! Renders each command result as text.
 //!
-//! The human-readable rendering of each command result. JSON output falls
-//! out of the result types' `Serialize` derives; text output needs a hand
-//! written shape per result, and those shapes live here as the render fns
-//! the command projector encodes `--format text` through.
-//!
-//! Keeping text rendering apart from the engine's result types lets the
-//! terminal presentation follow the Developer Guide's output conventions
-//! without those conventions leaking into the engine.
+//! JSON output falls out of the result types' `Serialize` derives; text output
+//! needs a hand-written shape per result, and those shapes live here as the
+//! render fns the command façade encodes `--format text` through. Keeping them
+//! apart from the engine's result types lets the terminal presentation follow
+//! the Developer Guide's output conventions without those conventions leaking
+//! into the engine.
 
 use std::fmt;
 
 use emery_engine::show::{Artifact, ShowOutput};
 use emery_engine::specify::{Diff, SpecifyOutput};
 
-/// Writes the `specify` result: the committed-revision line and its indented
-/// detail.
+/// Writes the committed revision line, with the diff indented beneath it.
 pub fn specify(output: &SpecifyOutput, w: &mut dyn fmt::Write) -> fmt::Result {
     writeln!(w, "committed revision {}", output.revision)?;
     if let Some(diff) = &output.diff {
@@ -64,9 +61,10 @@ fn changes(diff: &Diff, w: &mut dyn fmt::Write) -> fmt::Result {
     Ok(())
 }
 
-/// Writes the document body alone — a deliberate exception to the
-/// result-line convention so `emery show spec` pipes cleanly; the revision id
-/// rides the JSON envelope.
+/// Writes the document body alone.
+///
+/// A deliberate exception to the result-line convention, so `emery show spec`
+/// pipes cleanly; the revision id rides the JSON envelope.
 pub fn show(output: &ShowOutput, w: &mut dyn fmt::Write) -> fmt::Result {
     w.write_str(&output.body)
 }

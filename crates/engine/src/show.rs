@@ -1,13 +1,11 @@
-//! The `show` operation
+//! Reads one document of the current revision back for review.
 //!
-//! Renders one document — `spec.md` or `design.md` — from the current
-//! specification revision so an operator, or a skill acting for one, can
-//! review what the last `specify` committed.
-//!
-//! Review goes through this operation rather than the filesystem so the
-//! revision store stays the engine's own: callers see a document rendered
-//! from the stored revision, paired with the revision id it belongs to and the
-//! typed document itself, and never the storage layout beneath it.
+//! [`show`] renders `spec.md` or `design.md` from the current revision so an
+//! operator, or a skill acting for one, can review what the last `specify`
+//! committed. Review goes through the operation rather than the filesystem, so
+//! the revision store stays the engine's own: a caller gets the rendered
+//! document, the revision id it belongs to, and the typed document itself,
+//! never the storage layout beneath them.
 
 use anyhow::Context as _;
 use omnia_guest::api::Context;
@@ -19,13 +17,12 @@ use strum::{AsRefStr, EnumString, VariantArray};
 use crate::revision::Document;
 use crate::store;
 
-/// Reads one document of the current revision over the context's provider,
-/// returning it with the revision id it belongs to.
+/// Reads one document of the current revision over the context's provider.
 ///
 /// # Errors
 ///
-/// Returns `NotFound` (`spec-not-generated`) when no revision has been
-/// committed, and passes through the store's failures.
+/// Returns [`Error::NotFound`] with code `spec-not-generated` when no revision
+/// has been committed, and passes through the store's failures.
 pub async fn show<P: StateStore + BlobStore>(
     input: ShowInput, context: Context<P>,
 ) -> Result<ShowOutput, Error> {
@@ -42,17 +39,18 @@ pub async fn show<P: StateStore + BlobStore>(
     }
 }
 
-/// Read one artifact of the current revision.
+/// The input to [`show`]: which document to read.
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub struct ShowInput {
-    /// Which artifact to read.
+    /// The document to read.
     pub artifact: Artifact,
 }
 
-/// The reviewable artifacts of a revision. A caller names one by its
-/// kebab-case key (`as_ref()` / `parse()`, `spec`), the same spelling serde
-/// uses.
+/// A reviewable document of a revision.
+///
+/// A caller names one by its kebab-case key — `spec`, `design` — through
+/// `parse()` and `as_ref()`, the same spelling serde uses.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, AsRefStr, EnumString, VariantArray)]
 #[serde(rename_all = "kebab-case")]
 #[strum(serialize_all = "kebab-case")]
@@ -63,16 +61,16 @@ pub enum Artifact {
     Design,
 }
 
-/// Successful review result.
+/// The rendered document, with the revision it belongs to.
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "kebab-case")]
 pub struct ShowOutput {
-    /// Current revision id.
+    /// The id of the current revision.
     pub revision: String,
-    /// The rendered Markdown projection.
+    /// The document rendered as Markdown, with front matter naming the
+    /// revision.
     pub body: String,
-    /// The stored document the projection was rendered from, as it is
-    /// stored.
+    /// The stored document the projection was rendered from, as JSON.
     pub document: Value,
 }
 

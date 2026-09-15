@@ -1,17 +1,16 @@
-//! # The revision
+//! The typed specification and design a run commits.
 //!
-//! The typed specification and design a `specify` run commits, serialised as
-//! canonical JSON and identified by the digest of those bytes. The two
-//! Markdown documents an operator reads, `spec.md` and `design.md`, are
-//! projections rendered from the revision on demand, so a stored revision is
-//! never parsed back from prose.
+//! A revision is serialised as canonical JSON and identified by the digest of
+//! those bytes. The Markdown an operator reads — `spec.md`, `design.md` — is
+//! projected from the revision on demand, so a stored revision is never parsed
+//! back from prose.
 //!
-//! This module carries the model both documents share — the revision, its
-//! id, the [`Document`] contract each meets (a name, the canonical bytes,
-//! the projection), and the [`Diff`] between two revisions — together with
-//! the vocabulary the renderer and the drafting checks agree on: the heading
-//! markers, the provenance and note keys, and the line openers a drafted
-//! paragraph may not use because the renderer owns them.
+//! This module carries what both documents share: the [`Revision`] and its
+//! id, the [`Document`] contract each meets (a name, the canonical bytes, the
+//! projection), the [`Diff`] between two revisions, and the vocabulary the
+//! renderer and the drafting checks agree on — the heading markers, the
+//! provenance and note keys, and the line openers a drafted paragraph may not
+//! use because the renderer owns them.
 
 mod design;
 mod diff;
@@ -32,29 +31,33 @@ pub use self::diff::{Changed, DesignDiff, Diff, Entry, SpecDiff};
 pub use self::spec::{Cited, Loser, ReqId, Requirement, Scenario, Spec, Status};
 use self::spec::{ID, NOTE, SOURCES, STATUS};
 
-/// The grammar this engine writes and reads; a stored revision stamped with
-/// another is outdated.
+/// The grammar this engine writes and reads.
+///
+/// A stored revision stamped with another grammar is outdated.
 pub const EMERY: u32 = 2;
 
-/// Line openers a drafted paragraph may not use: `#`, so no draft line reads
-/// as a heading (a `## ` section, `HEADING`, `SCENARIO`); and the engine's own
-/// line keys, so no draft line passes as provenance, a note, or a type label.
+/// The line openers a drafted paragraph may not use.
+///
+/// `#`, so no draft line reads as a heading, and the engine's own line keys,
+/// so no draft line passes as provenance, a note, or a type label.
 pub const RESERVED: &[&str] = &["#", ID, SOURCES, STATUS, NOTE, TYPE];
 
-/// One document of a revision: a serde shape under the [`EMERY`] stamp that
-/// the projection renders by `Display`.
+/// One document of a revision, stored as JSON and projected as Markdown.
 pub trait Document: Serialize + DeserializeOwned + Display {
-    /// This document's name (`spec`, `design`).
+    /// The document's name: `spec` or `design`.
     const NAME: &'static str;
 
-    /// Reads one document from its stored JSON, refusing another grammar's
-    /// before the shape is checked.
+    /// Reads the document from its stored JSON.
+    ///
+    /// The grammar stamp is checked before the shape, so another grammar's
+    /// document is reported as outdated rather than malformed.
     ///
     /// # Errors
     ///
-    /// `spec-outdated` when the `emery` stamp is missing or another
-    /// grammar's; `server_error` when the bytes are not JSON or a document
-    /// under this grammar does not fit, since this engine did not write it.
+    /// Returns [`Error::BadRequest`] with code `spec-outdated` when the `emery`
+    /// stamp is missing or another grammar's, and [`Error::ServerError`] when
+    /// the bytes are not JSON or a document under this grammar does not fit —
+    /// this engine did not write it.
     fn from_json(bytes: &[u8]) -> Result<Self, Error> {
         let value: Value = serde_json::from_slice(bytes)
             .with_context(|| format!("`{}` is not JSON", Self::NAME))?;
@@ -76,13 +79,14 @@ pub trait Document: Serialize + DeserializeOwned + Display {
             .with_context(|| format!("`{}` is not a revision", Self::NAME))?)
     }
 
-    /// The canonical JSON the store hashes and writes: pretty, declaration
-    /// order, one trailing newline.
+    /// Returns the canonical JSON the store hashes and writes.
+    ///
+    /// Pretty-printed, in declaration order, with one trailing newline.
     ///
     /// # Errors
     ///
-    /// `server_error` when the document does not serialise — this engine
-    /// built it, so a failure is a defect, not a revision.
+    /// Returns [`Error::ServerError`] when the document does not serialise;
+    /// this engine built it, so a failure is a defect.
     fn to_json(&self) -> Result<String, Error> {
         let mut text = serde_json::to_string_pretty(self)
             .with_context(|| format!("`{}` does not serialise", Self::NAME))?;
@@ -90,21 +94,22 @@ pub trait Document: Serialize + DeserializeOwned + Display {
         Ok(text)
     }
 
-    /// The Markdown projection: the front matter stamping the grammar and
-    /// `revision` — the id of the revision this document belongs to, which
-    /// the caller has already computed — then the document body.
+    /// Renders the Markdown projection, with front matter naming revision `id`.
+    ///
+    /// `id` is the id of the revision the document belongs to, which the
+    /// caller has already computed.
     #[must_use]
     fn to_markdown(&self, id: &str) -> String {
         format!("---\nemery: {EMERY}\nrevision: {id}\n---\n\n{self}")
     }
 }
 
-/// The specification and design one `specify` run produces, committed under
-/// the id of their canonical bytes.
+/// The specification and design one `specify` run produces.
 ///
-/// The id is a function of the content alone, so identical runs are
-/// byte-stable and a revision read back from storage is verified against the
-/// id it was stored under.
+/// A revision is committed under the id of its canonical bytes. The id is a
+/// function of the content alone, so identical runs are byte-stable, and a
+/// revision read back from storage is verified against the id it was stored
+/// under.
 #[derive(Debug)]
 pub struct Revision {
     /// The behavioural specification.
@@ -114,14 +119,14 @@ pub struct Revision {
 }
 
 impl Revision {
-    /// Reads the revision stored under `id` from the bytes of its two
-    /// documents, refusing bytes that no longer hash to the id before either
-    /// document is read.
+    /// Reads the revision stored under `id` from the bytes of its two documents.
+    ///
+    /// The bytes are verified against `id` before either document is read.
     ///
     /// # Errors
     ///
-    /// `server_error` when the bytes do not match the id — the store is
-    /// content-addressed, so a mismatch is corruption, not a revision — then
+    /// Returns [`Error::ServerError`] when the bytes do not hash to `id` — the
+    /// store is content-addressed, so a mismatch is corruption — and otherwise
     /// each document's own refusals, `spec-outdated` first.
     pub fn read(id: &str, spec: &[u8], design: &[u8]) -> Result<Self, Error> {
         if digest(spec, design) != id {
@@ -134,12 +139,11 @@ impl Revision {
         })
     }
 
-    /// The content id: the digest of the specification and design bytes, in
-    /// that order.
+    /// Returns the content id: the digest of the specification and design bytes.
     ///
     /// # Errors
     ///
-    /// `server_error` when a document does not serialise.
+    /// Returns [`Error::ServerError`] when a document does not serialise.
     pub fn id(&self) -> Result<String, Error> {
         Ok(digest(self.spec.to_json()?.as_bytes(), self.design.to_json()?.as_bytes()))
     }

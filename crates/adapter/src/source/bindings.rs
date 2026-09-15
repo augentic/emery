@@ -1,20 +1,14 @@
-//! WIT bindings
+//! The generated WIT bindings and their conversions to the contract types.
 //!
-//! The generated Rust bindings for the `source-adapter` WIT world, plus the
-//! conversions between the generated WIT records and the contract types the
-//! rest of the workspace uses.
+//! Both sides ride one generation of the `source-adapter` world. Adapters
+//! export through it via the SDK's `source!` macro over [`export`]; the engine
+//! guest calls into it through [`import`]. Each conversion between a WIT
+//! record and its contract type is written once here: `From` where the WIT
+//! form always lifts, `TryFrom` where an extra's canonical JSON must parse.
 //!
-//! Both directions come from one generation: adapters export through it via
-//! the SDK's `source!` macro over [`export`] (re-exported from the axis
-//! module), and the engine guest calls into it through [`import`]. The records live
-//! in the WIT `types` interface, so the export side and the caller side bind
-//! the same Rust types and each conversion is written once, here at the
-//! module root — `From` where the WIT form always lifts, `TryFrom` where an
-//! extra's canonical JSON must parse.
-//!
-//! The WIT `error` variant lives here alone: an adapter's `omnia_guest::Error`
-//! is lowered onto it for [`export`], and [`import::extract`] lifts it back
-//! into the same classes, so neither side of the seam names the WIT variant.
+//! The WIT `error` variant is known here alone. An adapter's
+//! [`omnia_guest::Error`] is lowered onto it on the export side and lifted
+//! back by [`import::extract`], so neither party names the variant.
 
 mod generated {
     #![allow(
@@ -176,8 +170,8 @@ impl From<wit::Backing> for Backing {
 
 impl From<Claim> for wit::Claim {
     fn from(claim: Claim) -> Self {
-        // Open body fields ride the WIT bindings as canonical JSON text (A8);
-        // `serde_json::Value` always encodes.
+        // Extras cross the WIT bindings as canonical JSON text; `serde_json::Value`
+        // always encodes.
         let extras =
             claim.extras.into_iter().map(|(key, value)| (key, value.to_string())).collect();
         Self {
@@ -191,9 +185,8 @@ impl From<Claim> for wit::Claim {
     }
 }
 
-// Lifts a claim off the WIT bindings, parsing each extra back from its canonical
-// JSON (A8); an extra that fails to parse is a typed error rather than a
-// dropped key.
+// An extra that fails to parse back from its canonical JSON is an error, never
+// a dropped key.
 impl TryFrom<wit::Claim> for Claim {
     type Error = String;
 
@@ -235,9 +228,9 @@ impl TryFrom<wit::Evidence> for Evidence {
     }
 }
 
-// Lowers an adapter failure onto the WIT bindings, which carries the description
-// alone: a refusal of the input becomes `invalid-request`, every other
-// class `internal`; the lift restores the class.
+// The WIT variant carries the description alone: a refusal of the input is
+// `invalid-request`, every other class `internal`, and the lift restores the
+// class.
 impl From<omnia_guest::Error> for wit::Error {
     fn from(error: omnia_guest::Error) -> Self {
         let description = error.description();
@@ -252,7 +245,7 @@ impl From<omnia_guest::Error> for wit::Error {
     }
 }
 
-/// The export side: the bindings an adapter's `source!` macro wires into.
+/// The bindings an adapter's `source!` macro exports through.
 pub mod export {
     // The root glob carries the bindgen support items the `export!` macro
     // expands against; the second names the world's records and `Guest`.
@@ -260,7 +253,7 @@ pub mod export {
     pub use super::generated::*;
 }
 
-/// The import side: the engine guest's caller over the WIT bindings.
+/// The engine guest's calls into a loaded adapter.
 pub mod import {
     use omnia_guest::{Error, bad_gateway, bad_request};
 
@@ -268,18 +261,19 @@ pub mod import {
     use super::wit;
     use crate::source::{AdapterMetadata, Evidence, SourceInput};
 
-    /// Returns resolve-time metadata for `id`.
+    /// Returns the metadata the adapter registered as `id` declares.
     #[must_use]
     pub fn metadata(id: &str) -> AdapterMetadata {
         imported::metadata(id).into()
     }
 
-    /// Dispatches `extract` to `id`.
+    /// Asks the adapter registered as `id` to extract `input`.
     ///
     /// # Errors
     ///
-    /// An adapter refusing its input is `BadRequest`; any other adapter
-    /// failure, or an extra that is not canonical JSON, is `BadGateway`.
+    /// Returns [`Error::BadRequest`] when the adapter refuses its input, and
+    /// [`Error::BadGateway`] for any other adapter failure or an extra that
+    /// is not canonical JSON.
     pub async fn extract(id: &str, input: &SourceInput) -> Result<Evidence, Error> {
         let answer = imported::extract(id.to_string(), input.clone().into()).await.map_err(
             |err| match err {

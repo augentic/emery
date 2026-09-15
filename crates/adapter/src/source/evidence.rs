@@ -1,69 +1,98 @@
-//! Evidence
+//! The claims an adapter returns, and the gate they must pass.
 //!
-//! What an adapter returns: an [`Evidence`] document of typed [`Claim`]s —
-//! the spec IR every source is reduced to. The [`SourceKind`] the document
-//! ranks under is not on it: it is the adapter's, reported in its metadata,
-//! so the model that answers the claims never answers the kind. [`ClaimKind`]
-//! is the closed taxonomy the whole system agrees on, and each kind's
-//! required extras are declared next to it, so the contract states in one
-//! place what a complete claim of that kind looks like.
+//! An adapter answers with one [`Evidence`] document of [`Claim`]s. Each claim
+//! has a kind from the closed [`ClaimKind`] taxonomy, and each kind states the
+//! extras a complete claim of that kind carries. The [`SourceKind`] a document
+//! ranks under is not part of it: the adapter declares its kind in its
+//! metadata, so the model that writes the claims never chooses their
+//! authority.
 //!
-//! The rules a claim must satisfy — the grammar its id follows
-//! ([`CLAIM_ID_REGEX`]), which kinds must carry an id at all, and the extras
-//! each kind requires — are declared here and applied by
-//! [`Evidence::findings`], which reports every violation as one line. Two
-//! parties enforce them: an adapter checks its own answer so a bad claim can
-//! be repaired before it leaves the guest, and the engine checks again on
-//! receipt, because it cannot assume every adapter did.
-//!
-//! Serde derives sit only on the shapes that cross a JSON boundary: the
-//! document a model answer is parsed into, and the [`SourceKind`] a committed
-//! requirement records.
+//! The claim gate, [`Evidence::findings`], applies the rules every claim must
+//! satisfy: the id grammar ([`CLAIM_ID_REGEX`]), which kinds must carry an id,
+//! and the extras each kind requires. Both parties run it — an adapter before
+//! its answer leaves the guest, so a bad claim can be repaired, and the
+//! engine again on receipt.
 
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use crate::is_kebab;
 
-/// Claim-id grammar: kebab segments joined by `.`. Rides the derived
-/// `Claim.id` schema as a steering `pattern` and is enforced again in code by
-/// the claim gate.
+/// The claim-id grammar: kebab-case segments joined by `.`.
+///
+/// The derived schema for [`Claim::id`] carries it as a `pattern`, and the
+/// claim gate enforces it again in code.
 pub const CLAIM_ID_REGEX: &str = "^[a-z0-9]+(-[a-z0-9]+)*(\\.[a-z0-9]+(-[a-z0-9]+)*)*$";
 
-// Tells whether `value` is kebab segments joined by `.`; `is_kebab` refuses
-// the empty segment an empty value or a doubled dot leaves.
+// `is_kebab` refuses the empty segment an empty value or a doubled dot
+// leaves, so the split needs no further check.
 fn is_claim_id(value: &str) -> bool {
     value.split('.').all(is_kebab)
 }
 
-/// Extracted claims: the document an adapter returns and the shape a model
-/// answers in.
+/// The document an adapter returns: its claims, and nothing else.
 ///
-/// Claims alone — a document-level key such as `kind` is a schema miss,
-/// since the kind is the adapter's to declare, not the model's to answer.
+/// This is also the shape a model answers in. It carries claims alone — the
+/// kind of source is declared by the adapter, not answered by the model — so
+/// a document-level `kind` is refused as an unknown field.
+///
+/// # Examples
+///
+/// ```
+/// use emery_adapter::source::Evidence;
+///
+/// let evidence: Evidence = serde_json::from_str(
+///     r#"{
+///         "claims": [{
+///             "kind": "requirement",
+///             "id": "orders.create",
+///             "path": "docs/orders.md#L3",
+///             "statement": "POST /orders creates an order."
+///         }]
+///     }"#,
+/// )?;
+/// assert!(evidence.findings().is_empty());
+/// # Ok::<(), serde_json::Error>(())
+/// ```
 #[derive(Clone, Debug, Deserialize, JsonSchema)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
 #[schemars(title = "Emery evidence answer")]
 pub struct Evidence {
-    /// Extracted claims.
+    /// The extracted claims.
     pub claims: Vec<Claim>,
 }
 
 impl Evidence {
-    /// Collects every finding over the document's claims, one line each, in
-    /// claim order; empty when the document passes the gate.
+    /// Returns every rule the document's claims break, one line each.
+    ///
+    /// Findings come in claim order and name the claim by its index. An empty
+    /// result means the document passes the claim gate.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use emery_adapter::source::Evidence;
+    ///
+    /// let evidence: Evidence =
+    ///     serde_json::from_str(r#"{ "claims": [{ "kind": "requirement", "id": "Orders" }] }"#)?;
+    ///
+    /// // A malformed id, and a requirement without its `statement` extra.
+    /// assert_eq!(evidence.findings().len(), 2);
+    /// # Ok::<(), serde_json::Error>(())
+    /// ```
     #[must_use]
     pub fn findings(&self) -> Vec<String> {
         self.claims.iter().enumerate().flat_map(|(index, claim)| claim.findings(index)).collect()
     }
 }
 
-/// The kind of source an adapter reads, declared in its metadata and
-/// applied by the engine to every [`Evidence`] document the adapter returns.
+/// The kind of source an adapter reads, which ranks its evidence.
 ///
-/// The variants are declared in authority order — `Intent` outranks
-/// `Documentation`, which outranks `Behaviour` — so the derived `Ord` is the
-/// precedence a cross-source disagreement is resolved under.
+/// An adapter declares its kind in its metadata, and the engine applies it to
+/// every [`Evidence`] document the adapter returns. The variants are declared
+/// in authority order — `Intent` outranks `Documentation`, which outranks
+/// `Behaviour` — so the derived `Ord` is the precedence a cross-source
+/// disagreement is resolved under.
 #[derive(
     Clone,
     Copy,
@@ -88,36 +117,40 @@ pub enum SourceKind {
     Behaviour,
 }
 
-/// A claim extracted from a source.
+/// One typed statement about a source.
 ///
-/// Open per-kind fields flatten into [`Claim::extras`]. `synopsis` and
-/// `backing` are lenient: malformed shapes become absent.
+/// The fields every kind shares are named; anything else a kind carries
+/// flattens into [`Claim::extras`]. `synopsis` and `backing` are lenient: a
+/// malformed value becomes `None` rather than failing the document.
 #[derive(Clone, Debug, Deserialize, JsonSchema)]
 #[serde(rename_all = "kebab-case")]
 pub struct Claim {
-    /// Kind from the closed taxonomy.
+    /// The claim's kind, from the closed taxonomy.
     pub kind: ClaimKind,
-    /// Stable dotted-kebab ID; required for requirements, criteria, and examples.
+    /// A stable dotted kebab-case id; required for requirements, criteria,
+    /// and examples.
     #[schemars(regex(pattern = CLAIM_ID_REGEX))]
     pub id: Option<String>,
-    /// Source anchor: `<path>`, `<path>#L<n>`, or `<path>#L<n>-L<n>`.
+    /// Where in the source the claim comes from: `<path>`, `<path>#L<n>`, or
+    /// `<path>#L<n>-L<n>`.
     pub path: Option<String>,
-    /// Semantic headline.
+    /// A one-line headline.
     #[serde(default, deserialize_with = "lenient")]
     pub synopsis: Option<String>,
-    /// Path or inline backing.
+    /// What backs the claim: inline data, or a path to it.
     #[serde(default, deserialize_with = "lenient")]
     pub backing: Option<Backing>,
-    /// Open per-kind fields preserved for synthesis.
+    /// The kind-specific fields, kept for synthesis.
     #[serde(flatten)]
     pub extras: serde_json::Map<String, serde_json::Value>,
 }
 
 impl Claim {
-    /// The `statement` extra as text, every run of whitespace collapsed to
-    /// one space so a reflowed statement still matches. A non-string value
-    /// is rendered rather than dropped: the claim gate requires the extra,
-    /// not that it is a string.
+    /// Returns the `statement` extra as text, with whitespace collapsed.
+    ///
+    /// Runs of whitespace become one space, so a reflowed statement still
+    /// compares equal. A non-string value is rendered as JSON rather than
+    /// dropped, and a missing extra is the empty string.
     #[must_use]
     pub fn statement(&self) -> String {
         let normalise = |text: &str| text.split_whitespace().collect::<Vec<_>>().join(" ");
@@ -157,7 +190,10 @@ impl Claim {
     }
 }
 
-/// Closed claim taxonomy; update the workflow contract and schema together.
+/// The closed taxonomy of claim kinds.
+///
+/// Adding a kind is a contract change: the WIT package, the prompts, and the
+/// schema move together.
 #[derive(
     Clone, Copy, Debug, Deserialize, PartialEq, Eq, PartialOrd, Ord, JsonSchema, strum::Display,
 )]
@@ -195,16 +231,18 @@ pub enum ClaimKind {
 }
 
 impl ClaimKind {
-    /// Tells whether a claim of this kind must carry an id: requirements,
-    /// criteria, and examples, the kinds a specification cites by id.
+    /// Returns `true` if a claim of this kind must carry an id.
+    ///
+    /// Requirements, criteria, and examples must: they are the kinds a
+    /// specification cites by id.
     #[must_use]
     pub const fn requires_id(self) -> bool {
         matches!(self, Self::Requirement | Self::Criterion | Self::Example)
     }
 
-    /// Returns the extras this kind must carry.
+    /// Returns the extras a complete claim of this kind must carry.
     ///
-    /// Widening this closed table is a contract change.
+    /// Widening this table is a contract change.
     #[must_use]
     pub const fn required_extras(self) -> &'static [&'static str] {
         match self {
@@ -216,13 +254,13 @@ impl ClaimKind {
     }
 }
 
-/// Claim backing.
+/// What backs a claim: data carried inline, or a path to it.
 #[derive(Clone, Debug, Deserialize, PartialEq, Eq, JsonSchema)]
 #[serde(rename_all = "kebab-case")]
 pub enum Backing {
-    /// Inline verbatim data.
+    /// Verbatim data carried inline.
     Payload(String),
-    /// Filesystem path.
+    /// A path within the source.
     Path(String),
 }
 

@@ -1,19 +1,17 @@
-//! The survey
+//! Lists a tree adapter's files and cuts them into materials.
 //!
-//! What a tree adapter does before its first material is mined: list the
-//! files beneath its root and cut them into the materials it will mine. The
-//! walk honours the engine's own skip roots — `spec.md`, `design.md`,
-//! `.omnia/` — wherever they appear, so no adapter can mine a projection of
-//! the last revision back into evidence; every other choice of entry is the
-//! adapter's, asked per entry.
+//! A tree adapter surveys before its first material is mined: [`files`] lists
+//! the files beneath the root, and one of two cuts groups them.
+//! [`by_directory`] is mechanical — one group per top-level directory.
+//! [`by_model`] asks the model once, under the adapter's `prompts/survey.md`,
+//! to group the files by what they serve — a route, a command, an exported
+//! API — which no directory layout states.
 //!
-//! Two cuts are offered. [`by_directory`] is mechanical: one group per
-//! top-level directory. [`by_model`] asks the model once, under the adapter's
-//! `prompts/survey.md`, to group the files by what they serve — a route, a
-//! command, an exported API — which no directory layout states. Both fold
-//! under a grain floor: a group too small to be worth its own model call
-//! folds, with every file no group claims, into one remainder, so a survey
-//! covers the tree whole however it was cut.
+//! Both cuts fold under a grain floor: a group too small to be worth its own
+//! model call joins one remainder, with every file no group claims, so the
+//! materials cover the tree whole however it was cut. The walk never offers
+//! the engine's own files — `spec.md`, `design.md`, `.omnia/` — so no adapter
+//! can mine a projection of the last revision back into evidence.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Write as _;
@@ -30,7 +28,7 @@ use serde::Deserialize;
 use super::Context;
 use crate::references;
 
-/// A directory entry the walk asks an adapter about.
+/// A directory entry the walk offers to an adapter's `keep`.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Entry {
     /// A directory; refusing it prunes everything beneath.
@@ -39,17 +37,18 @@ pub enum Entry {
     File,
 }
 
-/// The files beneath `root`, sorted and named relative to it with `/`.
+/// Returns the files beneath `root`, sorted, as `/`-separated paths relative to it.
 ///
-/// `keep` is asked for every entry with its root-relative path and kind; a
-/// refused directory is not entered. The engine's skip roots are never
-/// offered: `.omnia/` directories and `spec.md` / `design.md` files are
-/// pruned wherever they appear. Symlinks are not followed.
+/// `keep` is asked about every entry with its root-relative path and kind; a
+/// refused directory is not entered. The engine's own `.omnia/` directories
+/// and `spec.md` / `design.md` files are never offered, wherever they appear.
+/// Symlinks are not followed.
 ///
 /// # Errors
 ///
-/// `ServerError` when a directory cannot be read; `BadRequest` for an entry
-/// whose name is not UTF-8, which no `path` anchor could cite.
+/// Returns [`Error::ServerError`] when a directory cannot be read, and
+/// [`Error::BadRequest`] for an entry whose name is not UTF-8, which no `path`
+/// anchor could cite.
 pub fn files(
     root: &Path, mut keep: impl FnMut(&Path, Entry) -> bool,
 ) -> Result<Vec<String>, Error> {
@@ -58,13 +57,24 @@ pub fn files(
     Ok(found)
 }
 
-/// `files` cut by top-level directory under a grain `floor`.
+/// Groups `files` by top-level directory, folding directories under `floor`.
 ///
-/// One group per directory holding at least `floor` files, in lexicographic
-/// order of directory name, then one remainder holding the root's own files
-/// and every smaller directory's, sorted; an empty remainder is dropped.
-/// Files keep the order they arrived in within a group, so sorted input
-/// yields sorted groups.
+/// Each directory holding at least `floor` files is one group, in directory
+/// order. The root's own files and every smaller directory's fold into one
+/// sorted remainder, last; an empty remainder is dropped. Files keep their
+/// order within a group, so sorted input yields sorted groups.
+///
+/// # Examples
+///
+/// ```
+/// use emery_sdk::survey::by_directory;
+///
+/// let files =
+///     ["README.md", "api/orders.md", "api/users.md", "notes/todo.md"].map(String::from).to_vec();
+///
+/// let groups = by_directory(files, 2);
+/// assert_eq!(groups, [vec!["api/orders.md", "api/users.md"], vec!["README.md", "notes/todo.md"]]);
+/// ```
 #[must_use]
 pub fn by_directory(files: Vec<String>, floor: usize) -> Vec<Vec<String>> {
     let mut directories: BTreeMap<String, Vec<String>> = BTreeMap::new();
@@ -91,28 +101,28 @@ pub fn by_directory(files: Vec<String>, floor: usize) -> Vec<Vec<String>> {
     groups
 }
 
-/// `files` cut by the model under a grain `floor`: one call, before any
-/// material is mined.
+/// Groups `files` by asking the model once how they serve the source.
 ///
-/// The adapter's `prompts/survey.md` among `docs` is the system prompt; the
-/// turn names the adapter and source, lists the candidate files, and lends
-/// the input's root so the model can read them; the `list_docs` / `read_doc`
-/// tools answer from `docs`. The answer is one [`Partition`], checked whole:
-/// a group naming no file, a file not among `files`, or a file in two groups
-/// goes back as findings and the backend asks again within its rounds.
+/// The adapter's `prompts/survey.md` among `docs` is the system prompt. The
+/// turn names the adapter and source, lists the candidate files, and lends the
+/// input's root so the model can read them; the `list_docs` and `read_doc`
+/// tools answer from `docs`. The model answers one [`Partition`], checked
+/// whole: a group naming no file, a file not among `files`, or a file in two
+/// groups goes back as findings for another round.
 ///
-/// The accepted groups come back in answer order, each sorted; a group of
+/// The accepted groups come back in answer order, each sorted. A group of
 /// fewer than `floor` files folds, with every file the model left out, into
-/// one sorted remainder last, and an empty remainder is dropped. Coverage is
-/// total and mechanical: the model chooses the grouping, never omission. A
-/// tree with no files spends no turn and cuts into nothing.
+/// one sorted remainder, last; an empty remainder is dropped. The model
+/// chooses the grouping, never omission, so coverage is total. A tree with no
+/// files spends no turn and cuts into nothing.
 ///
 /// # Errors
 ///
-/// `ServerError` when `prompts/survey.md` is not embedded or the input is an
-/// inline value, both before any turn; `BadRequest` for a request the host
-/// refuses or the last findings once the backend's rounds are spent;
-/// `BadGateway` for a tool or transport failure.
+/// - [`Error::ServerError`] when `prompts/survey.md` is not embedded or the
+///   input is an inline value; both are found before any turn is spent.
+/// - [`Error::BadRequest`] when the host refuses the request or the rounds
+///   are spent with findings outstanding.
+/// - [`Error::BadGateway`] for a tool or transport failure.
 pub async fn by_model<P: Model>(
     model: &P, ctx: &Context<'_>, docs: &'static [Doc], files: &[String], floor: usize,
 ) -> Result<Vec<Vec<String>>, Error> {
@@ -144,10 +154,10 @@ pub async fn by_model<P: Model>(
 
 /// The model's survey answer: the candidate files partitioned into groups.
 ///
-/// The shape a survey prompt's worked example must parse as. A file the
-/// model leaves out of every group is not a miss — it joins the remainder —
-/// but a file named that was never offered, named twice, or a group naming
-/// no file is.
+/// A survey prompt's worked example must parse as this shape. Leaving a file
+/// out of every group is allowed — it joins the remainder. Naming a file that
+/// was never offered, naming one twice, or a group naming no file is a
+/// finding.
 #[derive(Debug, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 #[schemars(title = "Emery survey answer")]
@@ -156,7 +166,7 @@ pub struct Partition {
     pub groups: Vec<Group>,
 }
 
-/// One group of a [`Partition`]: files that serve one thing together.
+/// One group of a [`Partition`]: the files that serve one thing together.
 #[derive(Debug, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct Group {

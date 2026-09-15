@@ -1,24 +1,21 @@
-//! The `specify` operation
+//! Generates a specification revision from a list of sources.
 //!
-//! Emery's central operation: given a list of sources, extract each
-//! source's claims, derive the requirements under authority precedence,
-//! synthesise `spec.md` and `design.md`, and commit the pair as one new
-//! revision.
+//! Each source's claims are extracted, the requirements are derived under
+//! authority precedence, `spec.md` and `design.md` are synthesised, and the
+//! pair is committed as one revision. The result reports the revision id and
+//! the diff against the revision it displaced, so a caller can see what
+//! changed without reading the documents.
 //!
-//! A [`SourceConfig`] names one source to extract from: the adapter to use,
-//! the key the specification will cite it by, and either a workspace to read
-//! or an inline value. The list is per-run input, never stored, so the same
-//! shape serves the command line, a config file, and any other transport,
-//! and it is checked whole before a single adapter loads.
+//! A [`SourceConfig`] names one source: the adapter to use, the key the
+//! specification cites it by, and a workspace to read or an inline value. The
+//! list is per-run input, never stored, so one shape serves the command line,
+//! a config file, and any other transport; it is checked whole before any
+//! adapter loads.
 //!
-//! Every source extracts at once and the run waits for all of them, so a run
-//! takes as long as its slowest source, and every source that fails is
-//! reported together, in declaration order, rather than only the first.
-//!
-//! Every run starts from its sources alone: nothing of an earlier revision
-//! is read into the synthesis. The result reports what was committed — the
-//! revision id and the diff against the revision it displaced — so a caller
-//! can see what changed without reading the documents.
+//! Every source extracts at once, and a run waits for all of them, so every
+//! source that fails is reported together rather than only the first. A run
+//! starts from its sources alone: nothing of an earlier revision is read into
+//! the synthesis.
 
 mod basis;
 mod brief;
@@ -47,17 +44,22 @@ use crate::{preopen_path, store};
 
 /// Runs `specify` over the context's provider.
 ///
-/// Checks the source list whole, loads the adapters it names, extracts every
-/// source's evidence at once, derives the requirement bases, drafts the
-/// specification and then the design over them, and commits the pair as one
-/// revision.
+/// The source list is checked whole, the adapters it names are loaded, every
+/// source is extracted at once, and the specification and design are
+/// synthesised over the claims and committed as one revision.
 ///
 /// # Errors
 ///
-/// Returns `BadRequest` for a source the rules refuse or a draft the model
-/// could not bring within the brief's rounds; `ServerError` when one or more
-/// source extractions fail; `BadGateway` for a model failure; and passes
-/// through load and store failures.
+/// - [`Error::BadRequest`] for a source list the rules refuse (code
+///   `specify-source-required` when it is empty), an adapter that requires a
+///   newer Emery (code `unsupported-version`), or a draft the model could not
+///   bring within its rounds.
+/// - [`Error::NotFound`] for an adapter path that names no file.
+/// - [`Error::ServerError`] when any extraction fails or storage refuses the
+///   commit.
+/// - [`Error::BadGateway`] for a model failure.
+///
+/// Adapter load failures pass through with their own class.
 pub async fn specify<P: Model + Source + StateStore + BlobStore + Plugins>(
     input: SpecifyInput, context: Context<P>,
 ) -> Result<SpecifyOutput, Error> {
@@ -99,24 +101,24 @@ pub async fn specify<P: Model + Source + StateStore + BlobStore + Plugins>(
     Ok(SpecifyOutput { revision, diff })
 }
 
-/// Generate a specification revision from sources.
+/// The input to [`specify`]: the sources of one run.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub struct SpecifyInput {
-    /// The run's source configurations, in declaration order.
+    /// The run's sources, in declaration order.
     pub sources: Vec<SourceConfig>,
 }
 
-/// A source for one run.
+/// One source of a run: its key, its adapter, and what to read.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub struct SourceConfig {
-    /// Stable kebab-case source key.
+    /// The kebab-case key the specification cites the source by.
     pub key: String,
-    /// Which adapter extracts this source.
+    /// The adapter that extracts the source.
     pub adapter: AdapterRef,
-    /// What the adapter extracts: a project-relative read-only root
-    /// (`.` binds the project) or an inline value.
+    /// What the adapter reads: a project-relative directory (`.` is the
+    /// project itself) or an inline value.
     pub content: SourceContent,
 }
 
@@ -149,14 +151,15 @@ impl SourceConfig {
     }
 }
 
-/// Successful specification result: the revision the store committed.
+/// What a successful run committed.
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "kebab-case")]
 pub struct SpecifyOutput {
-    /// Committed revision id.
+    /// The id of the committed revision.
     pub revision: String,
-    /// Diff from the displaced revision; absent on the first run and when
-    /// the outgoing revision was unreadable.
+    /// The diff against the revision this run displaced.
+    ///
+    /// Absent on the first run, and when the outgoing revision was unreadable.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub diff: Option<Diff>,
 }

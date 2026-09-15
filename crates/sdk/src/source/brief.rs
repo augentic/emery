@@ -1,11 +1,9 @@
-//! The evidence brief
+//! The turn an adapter puts to the model, and what each material is lent.
 //!
-//! The one brief an adapter puts to the model: which source it is
-//! extracting, the material it has been given and what that material is
-//! lent, where the reference documents are, and the fixed closing ask. Its
-//! `Display` is the user turn. An adapter chooses only the [`Material`]; the
-//! SDK owns the envelope so every adapter's brief reads alike and the closing
-//! ask cannot drift between adapters.
+//! An adapter chooses only the [`Material`]. The SDK owns the rest of the turn
+//! — which source is being extracted, what the model may read, where the
+//! reference documents are, and the fixed closing ask — so every adapter's
+//! turn reads alike and the closing ask cannot drift.
 
 use std::fmt::{self, Display, Formatter};
 
@@ -14,20 +12,27 @@ use omnia_guest::{Error, bad_request, server_error};
 
 use super::Context;
 
-/// What the model is given to extract from.
+/// The part of a source one model call is asked about.
+///
+/// A survey returns one or more materials; see the
+/// [vocabulary](crate#vocabulary).
 #[derive(Debug, Eq, PartialEq)]
 pub enum Material {
-    /// The bound input itself: a lent workspace, described as the source
-    /// tree, or an inline value quoted into the turn.
+    /// The whole input: a workspace described as the source tree, or an
+    /// inline value quoted into the turn.
     Bound,
     /// A note the adapter prepared for a source that needs its own handling.
+    ///
+    /// The whole root is lent, and the note stands in the turn where the
+    /// SDK's description of the input would be.
     Prepared(String),
-    /// Files beneath the input's root, named relative to it. The lend is the
-    /// files' common ancestor — one directory, enforced by the grant — and
-    /// only a scattered set lends the root itself, with the paths stated.
-    /// `path` anchors come back relative to the lend and are re-rooted under
-    /// the source root when the materials are joined. The paths are sorted
-    /// and deduped; one that escapes the root is refused.
+    /// Files beneath the input's root, named relative to it.
+    ///
+    /// The model is lent the files' common directory alone; only a set
+    /// scattered across the root is lent the root itself. `path` anchors in
+    /// the answer are relative to that directory and are re-rooted under the
+    /// source root when the materials are joined. Paths are sorted and
+    /// deduplicated; one that escapes the root is refused.
     Within(Vec<String>),
 }
 

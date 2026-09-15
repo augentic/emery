@@ -1,9 +1,8 @@
-//! # The design
+//! The typed form of `design.md`.
 //!
-//! The typed form of `design.md`: a preamble and the sections of a closed
-//! vocabulary in a fixed order, each a run of drafted paragraphs and the type
-//! signatures the engine placed verbatim. `Display` renders the Markdown
-//! projection an operator reads.
+//! A [`Design`] is a preamble and the sections of a closed vocabulary in a
+//! fixed order, each a run of drafted paragraphs and the type signatures the
+//! engine placed verbatim. `Display` renders the Markdown an operator reads.
 
 use std::fmt::{self, Display, Formatter};
 
@@ -17,7 +16,7 @@ const CITATION: &str = "(from ";
 /// The `Type:` key: the engine's own line labelling a signature fence.
 pub const TYPE: &str = "Type:";
 
-/// The design.
+/// The design: a preamble and its sections, in vocabulary order.
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Design {
@@ -30,7 +29,7 @@ pub struct Design {
 }
 
 impl Design {
-    /// Finds the section of `kind`.
+    /// Returns the section of `kind`, if the design has one.
     #[must_use]
     pub fn section(&self, kind: SectionKind) -> Option<&Section> {
         self.sections.iter().find(|section| section.kind == kind)
@@ -48,8 +47,10 @@ impl Display for Design {
     }
 }
 
-/// One `## ` section: the revision's, over its placed [`Block`]s, or a
-/// draft's, over the blocks a draft answers in.
+/// One `## ` section of the design.
+///
+/// The revision's sections hold placed [`Block`]s; a draft's hold the blocks a
+/// draft answers in, so `B` is the block type.
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 #[schemars(rename = "Section")]
@@ -98,9 +99,19 @@ impl Display for Block {
     }
 }
 
-/// The closed `## ` vocabulary, in document order. A draft names a section
-/// by its kebab-case key (`as_ref()`, `domain-model`); the document by its
-/// title (`Display`, `Domain model`).
+/// The closed vocabulary of `## ` sections, in document order.
+///
+/// A draft names a section by its kebab-case key (`as_ref()`, `domain-model`);
+/// the document by its title (`Display`, `Domain model`).
+///
+/// # Examples
+///
+/// ```
+/// use emery_engine::specify::SectionKind;
+///
+/// assert_eq!(SectionKind::DomainModel.as_ref(), "domain-model");
+/// assert_eq!(SectionKind::DomainModel.to_string(), "Domain model");
+/// ```
 #[derive(
     Debug,
     Clone,
@@ -146,8 +157,9 @@ impl Display for SectionKind {
     }
 }
 
-/// Yields every source key cited as `(from <key>)` in `text`. The
-/// parenthesised text must be one token: a phrase such as `(from the
+/// Returns every source key cited as `(from <key>)` in `text`.
+///
+/// The parenthesised text must be one token: a phrase such as `(from the
 /// browser)` is prose, not a citation.
 pub fn citations(text: &str) -> impl Iterator<Item = &str> {
     text.match_indices(CITATION).filter_map(|(at, _)| {

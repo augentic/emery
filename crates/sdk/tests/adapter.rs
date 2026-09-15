@@ -1,11 +1,10 @@
-//! `SourceAdapter` contract
+//! Drives a minimal `SourceAdapter` natively over a scripted model.
 //!
-//! A minimal adapter implemented against the trait, driven natively over a
-//! scripted model. It shows the trait is complete enough to implement and
-//! exercise without a wasm build — the promise adapter authors' own test
-//! suites depend on — and that its provided members answer from the
-//! adapter's own declarations: the `emery-version` pin and the kind of
-//! source in `metadata`, the extraction prompt, the survey's material.
+//! The trait is complete enough to implement and exercise without a wasm
+//! build — the promise adapter authors' own test suites depend on — and its
+//! provided members answer from the adapter's own declarations: the
+//! `emery-version` pin and the kind of source in `metadata`, the extraction
+//! prompt, the survey's material.
 
 use std::future::{Future, ready};
 

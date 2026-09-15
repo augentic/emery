@@ -1,31 +1,31 @@
-//! # The revision diff
+//! How one revision differs from the one it displaced.
 //!
-//! How one revision differs from the one it displaced: each document's
-//! preamble, the requirements added, removed, or changed, matched by id, and
-//! the design sections likewise, matched by kind. The diff is typed equality
-//! over two revisions, never a comparison of their projections, and it is
-//! reported once — with the run that committed the incoming revision — and
-//! stored nowhere.
+//! Each document's preamble, the requirements added, removed, or changed
+//! (matched by id), and the design sections likewise (matched by kind). The
+//! diff is typed equality over two revisions, never a comparison of their
+//! projections. It is reported once, with the run that committed the incoming
+//! revision, and stored nowhere.
 
 use serde::Serialize;
 
 use super::{Design, ReqId, Requirement, Revision, SectionKind, Spec};
 
-/// An ephemeral re-mine diff against the outgoing revision.
+/// The differences between a committed revision and the one it displaced.
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "kebab-case")]
 pub struct Diff {
-    /// The outgoing revision id this run superseded.
+    /// The id of the revision this run displaced.
     pub from: String,
-    /// The requirements that changed.
+    /// What changed in the specification.
     pub spec: SpecDiff,
-    /// The sections that changed.
+    /// What changed in the design.
     pub design: DesignDiff,
 }
 
 impl Diff {
-    /// Diffs `incoming` against `outgoing`, the revision `from` names, by
-    /// typed equality: preambles whole, requirements by id, sections by kind,
+    /// Returns the differences between `outgoing`, which `from` names, and `incoming`.
+    ///
+    /// Preambles compare whole, requirements by id, and sections by kind —
     /// never by position.
     #[must_use]
     pub fn between(from: &str, outgoing: &Revision, incoming: &Revision) -> Self {

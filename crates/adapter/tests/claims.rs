@@ -1,13 +1,14 @@
-//! Claims contract
+//! Asserts what the engine and every adapter can rely on from an evidence document.
 //!
-//! What both the engine and every adapter can rely on from the claims of an
-//! evidence document: the body a model answers with parses into typed claims
-//! that keep their open extras, malformed open fields become absent rather
-//! than fatal, a document-level key is refused — the kind of source is the
-//! adapter's metadata, never the answer's — and the claim gate refuses an id
-//! outside the dotted-kebab grammar or a claim missing an extra its kind
-//! requires. Pinning the gate here keeps the two enforcement points from
-//! disagreeing.
+//! - The body a model answers with parses into typed claims that keep their
+//!   open extras.
+//! - Malformed open fields become absent rather than fatal.
+//! - A document-level key is refused: the kind of source is the adapter's
+//!   metadata, never the answer's.
+//! - The claim gate refuses an id outside the dotted-kebab grammar, or a
+//!   claim missing an extra its kind requires.
+//!
+//! Pinning the gate here keeps the two enforcement points from disagreeing.
 
 use emery_adapter::source::{Backing, ClaimKind, Evidence};
 

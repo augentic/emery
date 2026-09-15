@@ -1,12 +1,12 @@
-//! The provided `extract`
+//! Asserts what an adapter gets from `SourceAdapter::extract` without overriding it.
 //!
-//! What an adapter gets from `SourceAdapter::extract` without overriding it:
-//! the survey's materials mined through `evidence` — at most `IN_FLIGHT`
-//! pending, in material order — and joined into one document with each
-//! material's anchors re-rooted under what it was lent; the default survey of
-//! one bound material, a single `evidence` call whose outcome passes through
-//! unchanged; the refusals a survey earns before any model call; and every
-//! failed material reported together under the first one's class.
+//! - The survey's materials mined through `evidence` — at most `IN_FLIGHT`
+//!   pending, in material order — and joined into one document with each
+//!   material's anchors re-rooted under what it was lent.
+//! - The default survey of one bound material: a single `evidence` call whose
+//!   outcome passes through unchanged.
+//! - The refusals a survey earns before any model call.
+//! - Every failed material reported together under the first one's class.
 
 use std::collections::BTreeMap;
 use std::future::{Future, ready};

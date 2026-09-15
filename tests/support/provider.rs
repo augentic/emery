@@ -1,9 +1,9 @@
-//! The scripted provider
+//! Scripts every capability of a provider and drives the command façade over it.
 //!
-//! A provider whose every capability — model, source, plugin loading,
-//! storage — is a scripted double, and the runner that drives the command
-//! façade over it in-process. Each capability impl delegates to the field
-//! named for it, the shape a production provider's single backend has.
+//! The model, source, plugin loading, and storage capabilities are each a
+//! scripted double, and each impl delegates to the field named for it — the
+//! shape a production provider's single backend has. The runner drives the
+//! command façade over the provider in-process.
 //!
 //! Scripting rather than mocking means each scenario states exactly the turns
 //! it will consume, and a scenario that consumes more or fewer fails, so the
@@ -39,11 +39,12 @@ const RENDEZVOUS: Duration = Duration::from_secs(1);
 /// Dispatched `(adapter id, input)` pairs, in call order.
 type Recorded = Vec<(String, SourceInput)>;
 
-/// Scripted `Source`: per-key evidence, per-adapter metadata — the minimum
-/// `emery` version and the kind of source — and a record of every dispatch.
-/// An unscripted key answers the greeting requirement; an unscripted adapter
-/// reads documentation; a scripted failure is the classified error the WIT
-/// bindings lift would have produced.
+/// A scripted `Source` with a record of every dispatch.
+///
+/// Evidence is scripted per key; the minimum `emery` version and the kind of
+/// source per adapter. An unscripted key answers the greeting requirement; an
+/// unscripted adapter reads documentation; a scripted failure is the
+/// classified error the WIT bindings' lift would have produced.
 #[derive(Clone, Debug, Default)]
 pub struct SourceScript {
     /// Extract outcomes keyed by source key.

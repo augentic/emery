@@ -1,14 +1,16 @@
-//! The evidence call
+//! Asserts what an adapter can rely on from `SourceAdapter::evidence`.
 //!
-//! What an adapter can rely on from `SourceAdapter::evidence`: the request it
-//! builds (the embedded prompt as the system, the SDK-owned turn around the
-//! adapter's material, the claims-only schema with the claim-id pattern,
-//! `check` set, the reference tools, and the workspace lend following the
-//! material — the input's root, or a `Within` set's common ancestor), a
-//! document-level kind refused as a schema miss, reference calls answered
-//! from the embedded corpus, a candidate the claim gate rejects corrected in
-//! place, the backend's spent rounds surfacing as `bad_request` with the
-//! last findings, and a host refusal passing through as `bad_request`.
+//! - The request it builds: the embedded prompt as the system, the SDK-owned
+//!   turn around the adapter's material, the claims-only schema with the
+//!   claim-id pattern, `check` set, the reference tools, and the workspace
+//!   lend following the material — the input's root, or a `Within` set's
+//!   common ancestor.
+//! - A document-level kind refused as a schema miss.
+//! - Reference calls answered from the embedded corpus.
+//! - A candidate the claim gate rejects corrected in place.
+//! - The backend's spent rounds surfacing as `bad_request` with the last
+//!   findings.
+//! - A host refusal passing through as `bad_request`.
 
 use emery_prose::registry::Doc;
 use emery_sdk::model::{Error as ModelError, ToolCall};

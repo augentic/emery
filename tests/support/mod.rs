@@ -1,8 +1,7 @@
-//! Scenario support
+//! Provides the scripted provider and the runners the root suites share.
 //!
-//! The shared plumbing behind the root suites: the scripted provider and
-//! runner in [`provider`], plus the runners that assert on the response —
-//! a success, or the typed failure envelope.
+//! The provider and its runner are in [`provider`]; the runners here assert
+//! on the response — a success, or the typed failure envelope.
 
 mod provider;
 
@@ -21,9 +20,10 @@ where
     resp
 }
 
-/// Runs `argv` in JSON mode and asserts the typed failure envelope, and that
-/// the refused run left storage exactly as it found it: a refusal never
-/// commits, prunes, or writes.
+/// Runs `argv` in JSON mode and asserts the typed failure envelope.
+///
+/// Also asserts that the refused run left storage exactly as it found it: a
+/// refusal never commits, prunes, or writes.
 pub async fn fail(provider: &Provider, argv: &[&str], exit: u8, code: &str) -> Value {
     let before = provider.storage.snapshot();
     let mut json = vec!["emery", "--format", "json"];

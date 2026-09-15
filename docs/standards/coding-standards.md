@@ -32,8 +32,16 @@ Comments answer "why does this look like this *today?*" — non-obvious intent, 
 
 What each kind of comment is for, in Rust sources and WIT contracts (`wit/`, `crates/*/wit/`) alike. There are no length caps: a comment is as long as its why takes, and no longer.
 
-- **Module `//!` docs** answer "what is this module, and why does it exist?" for a reader who has not opened the file: a short title line, then plain-language paragraphs. Say what the module is for and what it guarantees; never how it works — that is the code's job, and prose about mechanics goes stale first. No deployment tours, no AGENTS.md restatements, no RFC archaeology, and no house shorthand (`fail-closed`, `typed`, kernel names) the reader would have to look up.
-- **Item `///` docs** follow the [Rust API Guidelines](https://rust-lang.github.io/api-guidelines/documentation.html): a one-line summary, then whatever the reader needs, with `# Errors` / `# Panics` sections where they apply.
+Doc comments (`///`, `//!`) follow the conventions the widely used crates — `std`, `serde`, `tokio`, `anyhow` — converge on, sharpened by the [Rust API Guidelines](https://rust-lang.github.io/api-guidelines/documentation.html) and the [Pragmatic Rust Guidelines](https://microsoft.github.io/rust-guidelines/guidelines/docs/index.html) (M-FIRST-DOC-SENTENCE, M-MODULE-DOCS, M-CANONICAL-DOCS):
+
+- **Written for the crate's user, not its maintainer.** A doc comment states the observable contract — what goes in, what comes out, what is guaranteed — and leaves the mechanics to the code and the `//` comments beside it. Prose about how a body works goes stale first and is the reader's least need.
+- **The first line is one short summary sentence** of about fifteen words, ending in a full stop, then a blank line, then the detail. rustdoc lifts that sentence into every index page, so it must stand alone. A fn's summary is a third-person verb sentence (`Returns …`, `Commits …`, `Groups …`); a type's or constant's is a noun phrase (`A claim extracted from a source.`); a module's says what the module provides (`Lists a tree adapter's files and cuts them into materials.`). Never a bare title (`The survey`), a heading, a `Tells whether …`, or a noun phrase standing in for a verb (`` `files` cut by directory … ``).
+- **Detail is short plain sentences and lists.** One idea per sentence; three or more things are a bullet list, not a colon-and-dash clause. A paragraph the reader cannot take in at a glance is two paragraphs.
+- **Canonical sections**, spelled and ordered `# Examples`, `# Errors`, `# Panics`. `# Errors` names each class the caller can match on, linked, one bullet per class when there is more than one: ``Returns [`Error::BadRequest`] when …``. A recovery code is named beside its class: ``[`Error::NotFound`] with code `spec-not-generated` when …``. Never the macro name (`bad_request`), a category (`load failures`), or `Fails if …`.
+- **Examples are compiled doctests** (`cargo test --doc` runs in `make check`): `?` rather than `unwrap`, setup hidden behind `#` lines. Every crate a third party depends on (`emery-sdk`, `emery-adapter`, `emery-prose`) carries a quick start under `# Examples` in its crate root; a trait an author implements shows a complete impl; a pure fn shows one call and its result. `ignore` is for code that cannot compile natively, and a `//` beside the fence says why.
+- **Vocabulary is the ecosystem's, or defined once and linked.** A house term (material, lend, survey, claim gate, revision) is defined under `# Vocabulary` in the crate root of the crate that owns it and linked on first use in an item's docs (``[material](crate#vocabulary)``). A term the reader would have to look up elsewhere — AGENTS.md, an RFC, omnia's internals — does not appear.
+- **Every mentioned item is an intra-doc link** (``[`Evidence`]``, ``[`Self::survey`]``), in `///` docs as in `//!` docs. A plain code span is for a value, a path, or an item this crate cannot name.
+- **Module `//!` docs** answer "what is this module, and why does it exist?" for a reader who has not opened the file: the summary sentence, then plain paragraphs on what the module is for and what it guarantees. No deployment tours, no AGENTS.md restatements, no RFC archaeology. A module doc long enough to need structure uses `#` headings, and a heading is never its first line.
 - **`//` section headers** outline a fn body too long to take in at once: a lowercase fragment with no full stop — an imperative phrase or a bare noun — above each blank-line-separated block, naming what the block achieves rather than how (`// load source adapters`, `// collect extracts or findings for failed extracts`, `// scenarios`). Together they are the pseudocode the fn was written from, so a reader can follow the headers alone and open a block only when it matters. A fn readable at a glance gets none, and a header never repeats the line beneath it.
 - **`//` why comments** are capitalised sentences beside the surprising branch they explain, never in a preamble essay. The casing is the signal: a lowercase fragment is an outline entry to skim; a sentence is something to stop and read.
 - **Historical phrases** are banned in comments and docs: `Phase `, `formerly`, `previously lived`, `old contract`, `former tests`, `to avoid the`. Git history is the record.
@@ -45,17 +53,49 @@ What each kind of comment is for, in Rust sources and WIT contracts (`wit/`, `cr
 //! `design.md`. The pre-Phase-3.7 filename was `charter.md`;
 //! Historical rename detail belongs in git history, not module docs.
 
-// GOOD
+// BAD — a title where the summary sentence belongs; the index shows "The
+// `specify` operation" beside a module already called `specify`.
 //! The `specify` operation
 //!
 //! Emery's central operation: given a list of sources, extract each
 //! source's claims, derive the requirements under authority precedence,
 //! synthesise `spec.md` and `design.md`, and commit the pair as one new
 //! revision.
+
+// GOOD
+//! Generates a specification revision from a list of sources.
 //!
-//! The result reports what was committed — the revision id and the
-//! diff against the outgoing revision — so a caller can see what
+//! Each source's claims are extracted, the requirements are derived under
+//! authority precedence, `spec.md` and `design.md` are synthesised, and the
+//! pair is committed as one revision. The result reports the revision id and
+//! the diff against the revision it displaced, so a caller can see what
 //! changed without reading the documents.
+```
+
+The same shape on an item — summary, detail, `# Errors` naming what the caller matches on:
+
+```rust
+// BAD — one 27-word sentence carrying the mechanics; the error section names
+// no class.
+/// Commits `revision` to `store` — diff against the readable outgoing
+/// revision, write, swap the current id, prune — returning the content id
+/// and the advisory re-mine diff.
+///
+/// # Errors
+///
+/// Fails if another run swapped the id first or storage refuses the write.
+
+// GOOD
+/// Commits `revision` as the current revision.
+///
+/// Both documents are written, the current id is swapped by compare-and-swap,
+/// and the revision it displaced is pruned. Returns the new content id and,
+/// when the outgoing revision was readable, the [`Diff`] against it.
+///
+/// # Errors
+///
+/// Returns [`Error::ServerError`] when another run swapped the id first or
+/// storage refuses a write.
 ```
 
 The composition-root failure mode is the essay that restates architecture and hides the tip. The module doc says what the deployment is and why it is fixed; the operational tip stays at the site that needs it:
@@ -65,13 +105,12 @@ The composition-root failure mode is the essay that restates architecture and hi
 // operational fact (the read-only project mount) buried in the middle.
 
 // GOOD
-//! The `emery` executable
+//! The shipped `emery` runtime.
 //!
-//! The shipped runtime: one omnia deployment that embeds the engine guest
-//! and declares everything it is allowed to touch.
-//!
-//! The deployment is fixed at compile time so a given `emery` binary always
-//! runs with the same policy; there is no runtime configuration to audit.
+//! One omnia deployment that embeds the engine guest and declares everything
+//! it is allowed to touch. The deployment is fixed at compile time so a given
+//! `emery` binary always runs with the same policy; there is no runtime
+//! configuration to audit.
 
 // …inside the macro body:
 // The invocation directory mounts read-only — nothing writes the tree.

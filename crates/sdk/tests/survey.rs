@@ -1,14 +1,16 @@
-//! The survey helpers
+//! Asserts what the survey helpers decide for a tree adapter.
 //!
-//! What `files` and `by_directory` decide so a tree adapter does not
-//! rewrite the walk: skip roots, the keep filter, the grain floor, and
-//! that a symlink is not a file to mine. And what `by_model` does for the
-//! one survey call an adapter may make: the request it builds (the embedded
-//! survey prompt as the system, the root lent, the candidate files listed,
-//! the `survey` schema), the fold of its accepted partition under the floor
-//! with every unassigned file, the corrections a partition earns, the
-//! backend's spent rounds as `bad_request`, and the refusals that spend no
-//! turn.
+//! `files` and `by_directory` spare the adapter the walk: skip roots, the
+//! keep filter, the grain floor, and that a symlink is not a file to mine.
+//! `by_model` is the one survey call an adapter may make:
+//!
+//! - the request it builds: the embedded survey prompt as the system, the
+//!   root lent, the candidate files listed, the `survey` schema;
+//! - the fold of its accepted partition under the floor with every
+//!   unassigned file;
+//! - the corrections a partition earns;
+//! - the backend's spent rounds as `bad_request`;
+//! - the refusals that spend no turn.
 
 use std::fs;
 use std::os::unix::fs::symlink;

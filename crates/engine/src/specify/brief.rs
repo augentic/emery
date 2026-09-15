@@ -1,25 +1,22 @@
-//! Briefs
+//! One typed question put to the model, and what it takes to accept the answer.
 //!
-//! One judgment put to the model: what the engine asks, how it steers the
-//! answer, and what it accepts. A brief carries a run's facts, names the
-//! prose that instructs the model, renders the turn, tightens the answer's
-//! derived schema to the run, and verifies every candidate against the facts;
-//! only an answer it accepts becomes output — requirements or a document — and
-//! the brief alone produces that output.
+//! A [`Brief`] carries a run's facts, names the prose that instructs the
+//! model, renders the turn, tightens the answer's derived schema to the run,
+//! and verifies every candidate against the facts. Only an accepted answer
+//! becomes output — requirements or a document — and the brief alone produces
+//! it.
 //!
-//! A run puts up to three briefs in turn — how the requirement claims group
-//! (on a run over two or more sources), the drafted content of `spec.md`,
-//! then of `design.md` — and places each accepted answer beside the engine's
-//! facts in the revision. Nothing the engine already knows is asked of the
-//! model: it never writes a heading, an id, a `Sources:` list, a status, a
-//! note, or a type signature, so it cannot drop, reorder, or quietly rewrite
-//! a requirement, invent or omit a section, cite an unbound source, or
-//! paraphrase a signature. The stored revision is a function of the facts
-//! and the accepted drafts alone.
+//! A run puts up to three briefs in turn: how the requirement claims group
+//! (over two or more sources), the drafted content of `spec.md`, then of
+//! `design.md`. Nothing the engine already knows is asked of the model — no
+//! heading, id, `Sources:` list, status, note, or type signature — so it
+//! cannot drop, reorder, or rewrite a requirement, invent or omit a section,
+//! cite an unbound source, or paraphrase a signature. The stored revision is a
+//! function of the facts and the accepted drafts alone.
 //!
-//! This module carries what every brief shares: the trait, the [`Review`]
-//! each verification records on, and the [`ClaimsSection`] of the prompt the
-//! document briefs open with.
+//! This module carries what every brief shares: the trait, the [`Review`] a
+//! verification records on, and the [`ClaimsSection`] the document briefs
+//! open their turn with.
 
 use std::fmt::{self, Display, Formatter};
 
@@ -47,28 +44,34 @@ pub trait Brief: Display + Sync + Sized {
     /// The synthesis prose, in prompt order.
     const PROSE: &'static [&'static str];
 
-    /// Tightens the derived `schema` toward this run. Steering for the
-    /// provider; [`Self::verify`] is the gate.
+    /// Tightens the derived `schema` to this run.
+    ///
+    /// The schema steers the model; [`Self::verify`] is the gate.
     fn tighten(&self, schema: &mut Value);
 
-    /// Verifies a candidate answer against the run's facts, recording every
-    /// finding on `review` for repair.
+    /// Verifies a candidate answer against the run's facts.
+    ///
+    /// Every finding is recorded on `review`, and goes back to the model for
+    /// repair.
     fn verify(&self, answer: &Self::Answer, review: &mut Review);
 
-    /// Transforms the answer into output specific to the brief.
-    ///
-    /// The answer passed [`Self::verify`], so a fact it names that the brief
-    /// cannot place is the engine's own defect: `server_error`.
-    fn into_output(self, answer: Self::Answer) -> Result<Self::Output, Error>;
-
-    /// Puts the brief to `model` and turns the answer its verification
-    /// accepted into this brief's output.
+    /// Turns the accepted answer into this brief's output.
     ///
     /// # Errors
     ///
-    /// A model failure is `bad_gateway`; a candidate outside the answer's
-    /// shape or the backend's spent rounds is `bad_request`; synthesis prose
-    /// the build did not embed is `server_error`.
+    /// Returns [`Error::ServerError`] when the answer names a fact the brief
+    /// cannot place; the answer passed [`Self::verify`], so that is the
+    /// engine's own defect.
+    fn into_output(self, answer: Self::Answer) -> Result<Self::Output, Error>;
+
+    /// Puts the brief to `model` and returns the output of the accepted answer.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::BadGateway`] for a model failure, [`Error::BadRequest`]
+    /// for a candidate outside the answer's shape or one the model could not
+    /// repair within its rounds, and [`Error::ServerError`] for synthesis prose
+    /// the build did not embed.
     async fn judge<M: Model>(self, model: &M) -> Result<Self::Output, Error> {
         tracing::info!(question = Self::NAME, "asking the model");
         let mut system = Vec::with_capacity(Self::PROSE.len());

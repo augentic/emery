@@ -1,13 +1,26 @@
-//! The specification engine
+//! Emery's engine: the operations that write and read a specification revision.
 //!
-//! Emery's core: the operations that generate a specification revision from
-//! sources ([`specify`]) and read one back for review ([`show`]),
-//! together with the source rules and adapter references those
-//! operations accept.
+//! [`specify`] extracts typed claims from a run's sources, derives the
+//! requirements under authority precedence, synthesises a specification and a
+//! design, and commits the pair as one content-addressed revision. [`show`]
+//! reads a document of the current revision back as Markdown. Both are typed
+//! operations over a [`Provider`] of capabilities; argument parsing, terminal
+//! text, and exit codes belong to whichever front end drives them.
 //!
-//! The engine is transport-neutral. It speaks in typed operations and
-//! results over a [`Provider`] of capabilities, and leaves argument parsing,
-//! terminal text, and exit codes to whichever front end drives it.
+//! # Vocabulary
+//!
+//! - **Revision**: the specification and design one run commits, identified
+//!   by the digest of their canonical JSON. The revision is the truth; the
+//!   Markdown an operator reads is a projection of it.
+//! - **Brief**: one typed question put to the model during synthesis, with
+//!   the checks its answer must pass before it is accepted. A run puts up to
+//!   three: how the requirement claims group, the draft of `spec.md`, and the
+//!   draft of `design.md`.
+//! - **Basis**: what one requirement is built on before any prose is drafted —
+//!   its contributing claims grouped into agreeing classes, ranked by the
+//!   authority of their sources.
+//! - **Rounds**: an answer that fails its checks goes back to the model with
+//!   the findings; the host bounds how many rounds a brief gets.
 
 mod adapter;
 mod revision;
@@ -22,11 +35,27 @@ use emery_adapter::source::Source;
 use omnia_guest::{BlobStore, Error, Model, Plugins, StateStore, bad_request};
 pub use store::{CONTAINER, CURRENT};
 
-/// Normalizes an operator path inside the `.` project preopen.
+/// Normalises an operator path to a path beneath the `.` project preopen.
+///
+/// `.` components are dropped and `..` steps back over the segment before it.
+/// An empty result is `.`, the project root itself.
+///
+/// # Examples
+///
+/// ```
+/// use std::path::Path;
+///
+/// use emery_engine::preopen_path;
+///
+/// assert_eq!(preopen_path(Path::new("./docs/../src"))?, Path::new("src"));
+/// assert_eq!(preopen_path(Path::new("."))?, Path::new("."));
+/// assert!(preopen_path(Path::new("../outside")).is_err());
+/// # Ok::<(), omnia_guest::Error>(())
+/// ```
 ///
 /// # Errors
 ///
-/// Returns a `BadRequest` for an absolute path or a relative path that
+/// Returns [`Error::BadRequest`] for an absolute path, or a relative path that
 /// escapes above the project root.
 pub fn preopen_path(path: &Path) -> Result<PathBuf, Error> {
     let mut normalized = PathBuf::new();
@@ -50,8 +79,10 @@ pub fn preopen_path(path: &Path) -> Result<PathBuf, Error> {
     Ok(if normalized.as_os_str().is_empty() { PathBuf::from(".") } else { normalized })
 }
 
-/// Every capability an operation may need, gathered into one bound so a
-/// transport can name the provider it binds with a single trait.
+/// Every capability an operation may need, as one bound.
+///
+/// A transport names the provider it binds with this single trait. Any type
+/// carrying all of the capabilities implements it.
 pub trait Provider:
     Model + Source + StateStore + BlobStore + Plugins + Send + Sync + 'static
 {

@@ -1,12 +1,10 @@
-//! Journey runtime
+//! A development build of the shipped runtime for the live journey.
 //!
-//! A development build of the shipped runtime for walking the live
-//! `specify` → `show` journey against the mock adapter (`cargo build --example
-//! adapter --target wasm32-wasip2 --release`).
-//! It mirrors the shipped deployment except that adapters load only from
-//! local paths, so the journey never reaches out to a registry.
-//!
-//! Run it with `specify --config examples/emery.toml`.
+//! It walks `specify` → `show` against the mock adapter (`cargo build
+//! --example adapter --target wasm32-wasip2 --release`) and mirrors the shipped
+//! deployment except that adapters load only from local paths, so the journey
+//! never reaches out to a registry. Run it with `specify --config
+//! examples/emery.toml`.
 
 cfg_if::cfg_if! {
     if #[cfg(target_arch = "wasm32")] {

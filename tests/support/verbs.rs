@@ -1,13 +1,12 @@
-//! Live verbs
+//! Reads the verb names out of `emery --help`.
 //!
-//! Reads the verb names out of `emery --help`, so a suite that needs to know
-//! which commands exist learns it from the shipped surface rather than from a
-//! list that would have to be kept in step by hand.
+//! A suite that needs to know which commands exist learns it from the shipped
+//! surface rather than from a list that would have to be kept in step by
+//! hand.
 
 use emery_adapter::is_kebab;
 
-/// Extracts the sorted verb names from the `Commands:` section of
-/// `emery --help`.
+/// Returns the sorted verb names from the `Commands:` section of `help`.
 pub fn verbs(help: &str) -> Vec<&str> {
     let mut names: Vec<&str> = help
         .lines()

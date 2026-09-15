@@ -1,10 +1,9 @@
-//! The `specify` → `show` product arc
+//! Walks the `specify` → `show` arc an operator lives through.
 //!
-//! The scenarios an operator lives through: naming sources, generating a
-//! specification, reviewing it, regenerating it, and hitting every refusal
-//! along the way — an invalid source, an untrusted adapter, a model draft
-//! that still does not fit the requirements or the plan once the backend's
-//! rounds are spent.
+//! The scenarios: naming sources, generating a specification, reviewing it,
+//! regenerating it, and hitting every refusal along the way — an invalid
+//! source, an untrusted adapter, a model draft that still does not fit the
+//! requirements or the plan once the backend's rounds are spent.
 //!
 //! Each scenario drives the real command façade over scripted capabilities,
 //! so it reads as usage documentation while still asserting the exact

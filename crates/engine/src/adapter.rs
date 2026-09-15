@@ -1,14 +1,13 @@
-//! Adapter references and loading
+//! How an operator names an adapter, and how the engine loads it.
 //!
-//! How an operator names an adapter and how the engine brings it into the
-//! run. An [`AdapterRef`] is a registry package, a statically declared
-//! guest, or a local file; [`load`] loads the adapters a run's sources name,
-//! each once and all together, refuses any that requires a newer Emery than
-//! the one running, and reads off the kind of source each declares — the
-//! rank its evidence will carry, known before any extract.
+//! An [`AdapterRef`] is a registry package, a guest the deployment declares,
+//! or a local `.wasm` file. [`load`] brings every adapter a run's sources name
+//! into the run — each once, all together — refuses any that requires a newer
+//! Emery than the one running, and reads the kind of source each declares,
+//! which ranks its evidence before any extract.
 //!
-//! The reference is the identity: the plugin loader registers an adapter,
-//! and the `Source` capability dispatches to it, by the [`AdapterRef`]'s
+//! The reference is the identity: the plugin loader registers an adapter, and
+//! the `Source` capability dispatches to it, by the [`AdapterRef`]'s
 //! `Display`.
 
 use std::collections::BTreeMap;
@@ -26,14 +25,20 @@ use serde::{Deserialize, Serialize};
 
 use crate::preopen_path;
 
-/// Loads adapters and registers them with the `Source` capability using
-/// `AdapterRef` identity. An adapter several sources share is loaded once.
-/// Returns the kind of source each distinct adapter declares, keyed by its
-/// id, from the one `metadata` read that also gates its `emery-version`.
+/// Loads the `adapters` and returns the kind of source each declares, by id.
+///
+/// An adapter several sources share is loaded once, and every adapter is
+/// loaded before any is read. Each adapter's metadata is read once: it gates
+/// the Emery version the adapter requires and supplies its kind.
 ///
 /// # Errors
 ///
-/// Returns reference, load, or version failures.
+/// - [`Error::BadRequest`] for a file reference that escapes the project, an
+///   adapter with a malformed `emery-version`, or one that requires a newer
+///   Emery than this (code `unsupported-version`).
+/// - [`Error::NotFound`] for a file reference that names no file.
+///
+/// Plugin load failures pass through with their own class.
 pub async fn load<'a, P: Source + Plugins>(
     provider: &P, adapters: impl IntoIterator<Item = &'a AdapterRef>,
 ) -> Result<BTreeMap<String, SourceKind>, Error> {
@@ -105,19 +110,34 @@ fn is_supported(id: &str, declared: &str, running: &semver::Version) -> Result<(
     Ok(())
 }
 
-/// An operator-supplied adapter reference, and the adapter's identity.
+/// How an operator names an adapter, and the adapter's identity.
 ///
-/// On the wire it is the operator's string; in memory, that string
-/// normalised (`intent@1.0.0` becomes `emery:intent@1.0.0`, a `file://`
-/// prefix is dropped). `Display` and the string conversion give that string
-/// back, and the plugin loader and the `Source` capability address the
-/// adapter by it.
+/// On the wire it is the operator's string. In memory it is that string
+/// normalised — `intent@1.0.0` becomes `emery:intent@1.0.0`, and a `file://`
+/// prefix is dropped — and `Display` gives the normalised string back. The
+/// plugin loader and the `Source` capability address the adapter by it.
+///
+/// # Examples
+///
+/// ```
+/// use emery_engine::AdapterRef;
+///
+/// let package: AdapterRef = "intent@1.0.0".parse()?;
+/// assert_eq!(package.to_string(), "emery:intent@1.0.0");
+///
+/// let file: AdapterRef = "file://./intent.wasm".parse()?;
+/// assert_eq!(file.to_string(), "./intent.wasm");
+///
+/// let declared: AdapterRef = "intent".parse()?;
+/// assert_eq!(declared.to_string(), "intent");
+/// # Ok::<(), omnia_guest::Error>(())
+/// ```
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(try_from = "String", into = "String")]
 pub enum AdapterRef {
-    /// Project-relative path to a `.wasm` component.
+    /// A project-relative path to a `.wasm` component.
     File(PathBuf),
-    /// Registry package, always `<namespace>:<name>@<version>`.
+    /// A registry package, always `<namespace>:<name>@<version>`.
     Package(String),
     /// A guest the deployment declares, named bare (`intent`).
     Static(String),
@@ -135,13 +155,13 @@ impl Display for AdapterRef {
 impl FromStr for AdapterRef {
     type Err = Error;
 
-    /// Parses `./intent.wasm`, `intent`, `emery:intent@1.0.0`, or its
+    /// Parses `./intent.wasm`, `intent`, `emery:intent@1.0.0`, or the
     /// shorthand `intent@1.0.0`.
     ///
     /// # Errors
     ///
-    /// Returns `BadRequest` for an empty value, a GitHub URL, or a malformed
-    /// package reference.
+    /// Returns [`Error::BadRequest`] for an empty value, a GitHub URL, or a
+    /// malformed package reference.
     fn from_str(value: &str) -> Result<Self, Error> {
         let value = value.trim();
         if value.is_empty() {
