@@ -5,7 +5,7 @@
 //! the materials its input splits into. The trait carries what every adapter
 //! shares — the resolve-time metadata, the extraction prompt, the model call
 //! per material, and the `extract` operation that surveys the input, mines
-//! every material with at most [`IN_FLIGHT`] calls pending, and joins the
+//! every material with at most [`CONCURRENT`] calls pending, and joins the
 //! partials into one document — so an implementation states only what is
 //! its own. The model answers claims; the SDK stamps the adapter's source
 //! kind.
@@ -36,16 +36,8 @@ pub use self::brief::Material;
 use self::brief::{Brief, Lend};
 use crate::references;
 
-// The one extraction prompt every adapter embeds.
-const PROMPT: &str = "prompts/extract.md";
-
-/// Completions one adapter holds pending at once.
-///
-/// [`SourceAdapter::extract`] mines its materials at most this many at a
-/// time, yielding them in material order. Each pending completion is a model
-/// session of its own, so the bound is per adapter: a run holds up to its
-/// sources times this.
-pub const IN_FLIGHT: usize = 4;
+// Completions one adapter holds pending at once.
+ const CONCURRENT: usize = 4;
 
 /// Contract implemented by source adapters.
 ///
@@ -88,7 +80,7 @@ pub trait SourceAdapter {
     }
 
     /// Extracts the source's claim set: the survey's materials, mined with
-    /// at most [`IN_FLIGHT`] model calls pending and joined in material
+    /// at most [`CONCURRENT`] model calls pending and joined in material
     /// order into one document.
     ///
     /// Provided: an adapter states its materials through [`Self::survey`]
@@ -123,7 +115,7 @@ pub trait SourceAdapter {
 
             let outcomes: Vec<_> = stream::iter(materials)
                 .map(|material| Self::evidence(model, ctx, material))
-                .buffered(IN_FLIGHT)
+                .buffered(CONCURRENT)
                 .collect()
                 .await;
 
@@ -148,8 +140,8 @@ pub trait SourceAdapter {
     ///
     /// `server_error` when the build did not embed it.
     fn prompt() -> Result<&'static str, Error> {
-        registry::body(Self::docs(), PROMPT)
-            .ok_or_else(|| server_error!("`{PROMPT}` is not embedded"))
+        registry::body(Self::docs(), "prompts/extract.md")
+            .ok_or_else(|| server_error!("prompt is not embedded"))
     }
 
     /// Asks the model for one material's claims and returns the accepted

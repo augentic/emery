@@ -1,16 +1,24 @@
 //! Adapter SDK
 //!
-//! Everything an adapter author needs to build an Emery adapter, one role
-//! per axis. Today that is the source role: the [`SourceAdapter`] trait to
-//! implement, the [`Material`]s its survey hands the model — mined at most
-//! [`IN_FLIGHT`] at once and joined into one document by the provided
-//! `extract` — the claims-only [`Answer`] the model returns, and the export
-//! macro that turns an implementation into a wasm component.
+//! The one crate an Emery adapter depends on. An adapter is a WebAssembly
+//! component that reads one kind of source — a document tree, a codebase, a
+//! written brief — and returns typed claims about it. This crate carries what
+//! every such adapter needs and would otherwise write again: the contract
+//! types, the model call and its claim gate, the error vocabulary, and the
+//! component export.
 //!
-//! The contract itself lives in `emery-adapter` and is re-exported here, so an
-//! adapter depends on one crate and never sees the WIT bindings directly.
-//! Failures are omnia's [`Error`]: an adapter refuses its input with
-//! [`bad_request!`] and reports anything else with the sibling macros.
+//! An adapter implements [`SourceAdapter`] for its source kind: it says which
+//! [`Material`]s the model should read and refuses input it cannot use. The
+//! SDK does the rest — asks the model for each material, checks the
+//! claims-only [`Answer`] against the claim gate, and joins the results into
+//! one [`Evidence`] document. The [`source!`] macro then turns the
+//! implementation into a component. Adapter code is left with what is
+//! specific to its source, and nothing else.
+//!
+//! The contract lives in `emery-adapter` and is re-exported here, so an
+//! adapter never sees the WIT bindings. Failures are omnia's [`Error`]: an
+//! adapter refuses its input with [`bad_request!`] and reports anything else
+//! with the sibling macros.
 
 mod references;
 mod source;
@@ -23,7 +31,7 @@ pub use omnia_guest::{Error, Model, bad_gateway, bad_request, model, not_found, 
 #[cfg(target_arch = "wasm32")]
 #[doc(hidden)]
 pub use source::export;
-pub use source::{Answer, Context, IN_FLIGHT, Material, SourceAdapter};
+pub use source::{Answer, Context, Material, SourceAdapter};
 
 /// Wires a [`SourceAdapter`] into component exports.
 ///

@@ -16,8 +16,8 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use emery_prose::registry::Doc;
 use emery_sdk::model::{Error as ModelError, Reply, Request, ToolCall};
 use emery_sdk::{
-    Backing, Context, Error, Evidence, IN_FLIGHT, Material, Model, SourceAdapter, SourceContent,
-    SourceInput, SourceKind,
+    Backing, Context, Error, Evidence, Material, Model, SourceAdapter, SourceContent, SourceInput,
+    SourceKind,
 };
 use omnia_test::guest::Scripted;
 
@@ -65,7 +65,7 @@ macro_rules! probe {
 
 probe!(Split, vec![within(["a/x.md"]), within(["b/y.md"]), within(["c/z.md"])]);
 probe!(Pair, vec![within(["a/x.md"]), within(["b/y.md"])]);
-probe!(Wide, (0..=IN_FLIGHT).map(|i| within([format!("d{i}/f.md").as_str()])).collect());
+probe!(Wide, (0..=4).map(|i| within([format!("d{i}/f.md").as_str()])).collect());
 probe!(Nothing, Vec::new());
 probe!(Blank, vec![within([])]);
 probe!(Escape, vec![within(["a/x.md"]), within(["../secret.md"])]);
@@ -223,27 +223,24 @@ async fn three_materials() {
     model.assert_exhausted();
 }
 
-// A survey wider than `IN_FLIGHT` holds exactly `IN_FLIGHT` completions
+// A survey wider than 4 holds exactly 4 completions
 // pending at once — the fan-out is neither serial nor unbounded — and the
 // joined document still reads in material order.
 #[tokio::test]
-async fn in_flight_bound() {
+async fn concurrent() {
     let mut model = ByLend::default();
-    for i in 0..=IN_FLIGHT {
+    for i in 0..=4 {
         model = model.lend(&format!("./docs/d{i}"), Scripted::answering([NOTE]));
     }
 
     let evidence =
         extract::<Wide, _>(&model, &workspace("./docs")).await.expect("every material joins");
 
-    assert_eq!(
-        model.peak(),
-        IN_FLIGHT,
-        "{} materials hold at most {IN_FLIGHT} completions pending",
-        IN_FLIGHT + 1
-    );
-    let expected: Vec<String> = (0..=IN_FLIGHT).map(|i| format!("d{i}/note.md#L1")).collect();
+    assert_eq!(model.peak(), 4, "5 materials hold at most 4 completions pending");
+
+    let expected: Vec<String> = (0..=4).map(|i| format!("d{i}/note.md#L1")).collect();
     assert_eq!(paths(&evidence), expected);
+
     model.assert_exhausted();
 }
 
