@@ -17,8 +17,8 @@ use super::Context;
 /// What the model is given to extract from.
 #[derive(Debug, Eq, PartialEq)]
 pub enum Material {
-    /// The bound input itself: a lent workspace, described as this adapter's
-    /// source tree, or an inline value quoted into the turn.
+    /// The bound input itself: a lent workspace, described as the source
+    /// tree, or an inline value quoted into the turn.
     Bound,
     /// A note the adapter prepared for a source that needs its own handling.
     Prepared(String),
@@ -129,10 +129,9 @@ const fn parent<'a, 'b>(file: &'a [&'b str]) -> &'a [&'b str] {
     }
 }
 
-// The brief: the adapter's source noun, the call's context, the material
-// and what it is lent; rendered as the user turn.
+// The brief: the call's context, the material and what it is lent; rendered
+// as the user turn.
 pub struct Brief<'a> {
-    pub source: &'static str,
     pub ctx: &'a Context<'a>,
     pub material: &'a Material,
     pub lend: &'a Lend,
@@ -143,9 +142,7 @@ impl Display for Brief<'_> {
         let input = self.ctx.input;
         write!(
             f,
-            "Extract the claim set of the {source} source bound to adapter `{id}` (source key \
-             `{key}`).\n\n",
-            source = self.source,
+            "Extract the claim set of the source bound to adapter `{id}` (source key `{key}`).\n\n",
             id = self.ctx.adapter_id,
             key = input.key,
         )?;
@@ -156,10 +153,8 @@ impl Display for Brief<'_> {
                 writeln!(
                     f,
                     "`$SOURCE_DIR` is the read-only view at `{workspace}` — the part of the \
-                     {source} source tree this call mines. Mine these files beneath it and \
-                     nothing else:",
+                     source tree this call mines. Mine these files beneath it and nothing else:",
                     workspace = self.lend.workspace.as_deref().unwrap_or_default(),
-                    source = self.source,
                 )?;
                 for file in &self.lend.files {
                     write!(f, "\n- `{file}`")?;
@@ -171,9 +166,8 @@ impl Display for Brief<'_> {
             }
             (Material::Bound, SourceContent::Workspace(root)) => write!(
                 f,
-                "`$SOURCE_DIR` is the read-only view at `{root}` — the {source} source tree the \
-                 prompt walks. Nothing outside it is reachable; extract mines only this source.",
-                source = self.source,
+                "`$SOURCE_DIR` is the read-only view at `{root}` — the source tree the prompt \
+                 walks. Nothing outside it is reachable; extract mines only this source."
             )?,
             (Material::Bound, SourceContent::Value(value)) => write!(
                 f,

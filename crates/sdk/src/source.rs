@@ -1,8 +1,8 @@
 //! The source adapter role
 //!
-//! [`SourceAdapter`] is what an adapter implements: the noun its source goes
-//! by, the kind of source it reads, the reference documents it embeds, and
-//! the materials its input splits into. The trait carries what every adapter
+//! [`SourceAdapter`] is what an adapter implements: the kind of source it
+//! reads, the reference documents it embeds, and the materials its input
+//! splits into. The trait carries what every adapter
 //! shares — the resolve-time metadata, the extraction prompt, the model call
 //! per material, and the `extract` operation that surveys the input, mines
 //! every material with at most four calls pending, and joins the
@@ -46,10 +46,6 @@ const CONCURRENT: usize = 4;
 /// Generic over [`Model`] for native test doubles and the wasm host model;
 /// deliberately not object-safe.
 pub trait SourceAdapter {
-    /// The noun the prompt calls this adapter's source (`documentation`,
-    /// `TypeScript / JavaScript`).
-    const SOURCE: &'static str;
-
     /// The kind of source this adapter reads, reported through
     /// [`Self::metadata`] so the engine ranks its evidence before any
     /// extract.
@@ -160,8 +156,8 @@ pub trait SourceAdapter {
     /// Asks the model for one material's claims and returns the accepted
     /// document: the one model call per material.
     ///
-    /// The prompt is [`Self::prompt`]; the brief names the source and carries
-    /// `material`; the `list_docs` / `read_doc` tools answer from
+    /// The prompt is [`Self::prompt`]; the brief names the adapter and source
+    /// key and carries `material`; the `list_docs` / `read_doc` tools answer from
     /// [`Self::docs`]; what the material is lent — a bound root, or a
     /// `Within` set's common ancestor — rides the workspace grant. The schema
     /// is the contract's [`Evidence`], which steers a claims-only answer: the
@@ -186,7 +182,6 @@ pub trait SourceAdapter {
             let system = Self::prompt()?;
             let lend = Lend::of(&material, ctx)?;
             let brief = Brief {
-                source: Self::SOURCE,
                 ctx,
                 material: &material,
                 lend: &lend,

@@ -28,7 +28,6 @@ struct Probe;
 
 impl SourceAdapter for Probe {
     const KIND: SourceKind = SourceKind::Documentation;
-    const SOURCE: &'static str = "probe";
 
     fn docs() -> &'static [Doc] {
         DOCS
@@ -48,7 +47,6 @@ struct Mute;
 
 impl SourceAdapter for Mute {
     const KIND: SourceKind = SourceKind::Behaviour;
-    const SOURCE: &'static str = "mute";
 
     fn docs() -> &'static [Doc] {
         &[]

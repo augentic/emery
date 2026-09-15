@@ -38,7 +38,6 @@ struct Probe;
 
 impl SourceAdapter for Probe {
     const KIND: SourceKind = SourceKind::Documentation;
-    const SOURCE: &'static str = "probe";
 
     fn docs() -> &'static [Doc] {
         DOCS
@@ -87,10 +86,10 @@ async fn request_shape() {
     assert_eq!(
         request.messages,
         [concat!(
-            "Extract the claim set of the probe source bound to adapter `source:probe` (source ",
-            "key `docs`).\n\n",
-            "`$SOURCE_DIR` is the read-only view at `/lend/docs` — the probe source tree the ",
-            "prompt walks. Nothing outside it is reachable; extract mines only this source.\n\n",
+            "Extract the claim set of the source bound to adapter `source:probe` (source key ",
+            "`docs`).\n\n",
+            "`$SOURCE_DIR` is the read-only view at `/lend/docs` — the source tree the prompt ",
+            "walks. Nothing outside it is reachable; extract mines only this source.\n\n",
             "The prompt's references are available through this call's `read_doc` tool ",
             "(`list_docs` enumerates them); load referenced bodies on demand.\n\n",
             "Answer with one JSON object matching the gated claims schema. The caller persists ",
@@ -163,8 +162,8 @@ async fn within_turn() {
     let user = &request.messages[0];
     assert!(
         user.contains(
-            "`$SOURCE_DIR` is the read-only view at `/lend/docs/guide` — the part of the probe \
-             source tree this call mines. Mine these files beneath it and nothing else:\n\n\
+            "`$SOURCE_DIR` is the read-only view at `/lend/docs/guide` — the part of the source \
+             tree this call mines. Mine these files beneath it and nothing else:\n\n\
              - `intro.md`\n- `setup.md`\n\nAnchor every `path` relative to `$SOURCE_DIR`."
         ),
         "{user}"
@@ -186,7 +185,10 @@ async fn within_scattered() {
     let request = &model.seen()[0];
     assert_eq!(request.workspace.as_deref(), Some("/lend/docs"), "the root is lent");
     let user = &request.messages[0];
-    assert!(user.contains("read-only view at `/lend/docs` — the part of the probe"), "{user}");
+    assert!(
+        user.contains("read-only view at `/lend/docs` — the part of the source tree"),
+        "{user}"
+    );
     assert!(user.contains("nothing else:\n\n- `api.md`\n- `guide/intro.md`\n\n"), "{user}");
     model.assert_exhausted();
 }

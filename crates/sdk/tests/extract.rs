@@ -36,7 +36,6 @@ struct Plain;
 
 impl SourceAdapter for Plain {
     const KIND: SourceKind = SourceKind::Documentation;
-    const SOURCE: &'static str = "probe";
 
     fn docs() -> &'static [Doc] {
         DOCS
@@ -50,7 +49,6 @@ macro_rules! probe {
 
         impl SourceAdapter for $name {
             const KIND: SourceKind = SourceKind::Documentation;
-            const SOURCE: &'static str = "probe";
 
             fn docs() -> &'static [Doc] {
                 DOCS
@@ -180,8 +178,7 @@ async fn default_survey() {
     let user = &seen[0].messages[0];
     assert!(
         user.contains(
-            "`$SOURCE_DIR` is the read-only view at `./docs` — the probe source tree the prompt \
-             walks."
+            "`$SOURCE_DIR` is the read-only view at `./docs` — the source tree the prompt walks."
         ),
         "{user}"
     );
