@@ -19,15 +19,11 @@ use omnia_wasi_otel::{OtelDefault, WasiOtel};
 
 omnia::runtime!({
     mode: command,
-    guests: [
-        {
-            id: "emery",
-            source: include_bytes!(concat!(env!("OUT_DIR"), "/emery.cwasm")),
-        }
-    ],
-    mounts: [
-        { name: ".", path: "." },
-    ],
+    guests: [{
+        id: "emery",
+        source: include_bytes!(concat!(env!("OUT_DIR"), "/emery.cwasm")),
+    }],
+    mounts: [{ name: ".", path: "." }],
     link: {
         interfaces: ["emery:adapter/source@0.1.0"],
     },
