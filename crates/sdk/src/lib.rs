@@ -9,12 +9,14 @@
 //!
 //! An adapter implements [`SourceAdapter`] for its source kind: it says which
 //! [`Material`]s the model should read and refuses input it cannot use. The
-//! SDK does the rest — asks the model for each material, checks the
-//! claims-only [`Answer`] against the claim gate, and joins the results into
-//! one [`Evidence`] document. A tree adapter lists and cuts its files with
-//! [`survey`], which prunes the engine's own files for it. The [`source!`]
-//! macro then turns the implementation into a component. Adapter code is
-//! left with what is specific to its source, and nothing else.
+//! SDK does the rest — reports the kind in the adapter's metadata, asks the
+//! model for each material's claims-only [`Evidence`], checks it against the
+//! claim gate, and joins the results into one document. A tree adapter lists
+//! its files with [`survey`], which prunes the engine's own files for it,
+//! and cuts them mechanically by directory or, through one model call under
+//! its own survey prompt, by what they serve. The [`source!`] macro then
+//! turns the implementation into a component. Adapter code is left with what
+//! is specific to its source, and nothing else.
 //!
 //! The contract lives in `emery-adapter` and is re-exported here, so an
 //! adapter never sees the WIT bindings. Failures are omnia's [`Error`]: an
@@ -32,7 +34,7 @@ pub use omnia_guest::{Error, Model, bad_gateway, bad_request, model, not_found, 
 #[cfg(target_arch = "wasm32")]
 #[doc(hidden)]
 pub use source::export;
-pub use source::{Answer, Context, Material, SourceAdapter, survey};
+pub use source::{Context, Material, SourceAdapter, survey};
 
 /// Wires a [`SourceAdapter`] into component exports.
 ///

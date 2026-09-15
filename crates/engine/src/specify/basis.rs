@@ -49,7 +49,7 @@ impl<'a> GroupingBrief<'a> {
                 match claim.kind {
                     ClaimKind::Requirement => contributors.push(Contributor {
                         source: extract.source.clone(),
-                        kind: extract.evidence.kind,
+                        kind: extract.kind,
                         id: id.to_string(),
                         statement: claim.statement(),
                         synopsis: claim.synopsis.clone(),

@@ -192,6 +192,53 @@ pub async fn evidence<P: Source + Plugins>(...) -> Result<Vec<Extract>, Error> {
 pub struct Extract { /* … */ }
 ```
 
+## Results, not out-parameters
+
+A fn delivers what it computes through its return value. A `&mut Vec<_>` / `&mut String` / `&mut BTreeMap<_, _>` parameter the callee pushes into is an out-parameter: the fn's real signature hides in a side effect, every call site declares and threads a `let mut`, and the fn can no longer be read, tested, or composed as inputs → output. Recursive tree walks are where this creeps in — each level "needs somewhere to put" its files — and the answer is the same as anywhere else: each level returns its own part and the caller `extend`s. The extra allocation per directory is noise beside the I/O the walk exists to do.
+
+When one accumulator is not enough — a cycle-guard stack pushed on entry and popped on exit, several outputs gathered at once, a walk that should be lazy — the state is a type and the walk is its `&mut self` method. The mutation then has an owner and a name, and the caller gets one value back from `into_files()` rather than a row of `&mut` slots.
+
+`&mut` on a parameter is for something the caller hands over to be *used*, not for something the callee produces: the `fmt::Write` sink in a render fn, an `FnMut` callback the callee invokes, a value the fn edits in place by contract (`tighten(&self, schema: &mut Value)`). The test is direction: if the caller reads the argument afterwards to learn the fn's answer, it is an out-parameter and the answer belongs in the return type.
+
+```rust
+// BAD — the answer arrives by side effect; every level threads the slot.
+fn files(root: &Path, mut keep: impl FnMut(&Path, Entry) -> bool) -> Result<Vec<String>, Error> {
+    let mut found = Vec::new();
+    walk(root, "", &mut keep, &mut found)?;
+    found.sort();
+    Ok(found)
+}
+fn walk(dir: &Path, prefix: &str, keep: &mut impl FnMut(&Path, Entry) -> bool, found: &mut Vec<String>) -> Result<(), Error> {
+    for entry in fs::read_dir(dir)? {
+        /* … */
+        if is_dir { walk(&entry.path(), &relative, keep, found)?; } else { found.push(relative); }
+    }
+    Ok(())
+}
+
+// GOOD — each level returns its part; the caller extends.
+fn files(root: &Path, mut keep: impl FnMut(&Path, Entry) -> bool) -> Result<Vec<String>, Error> {
+    let mut found = walk(root, "", &mut keep)?;
+    found.sort();
+    Ok(found)
+}
+fn walk(dir: &Path, prefix: &str, keep: &mut impl FnMut(&Path, Entry) -> bool) -> Result<Vec<String>, Error> {
+    let mut found = Vec::new();
+    for entry in fs::read_dir(dir)? {
+        /* … */
+        if is_dir { found.extend(walk(&entry.path(), &relative, keep)?); } else { found.push(relative); }
+    }
+    Ok(found)
+}
+
+// GOOD — more state than one list: the state is a type, the walk its method.
+struct Walk { files: Vec<Entry>, ancestors: Vec<PathBuf> }
+impl Walk {
+    fn descend(&mut self, dir: &Path, path: &str) -> Result<()> { /* push, recurse, pop */ }
+    fn into_files(self) -> Vec<Entry> { self.files }
+}
+```
+
 ## Format dispatch
 
 Operations do **not** open-code `match format { Json, Text }`. They return typed outputs; omnia's command projector (`omnia_guest::api::command::Command::call`, driven from `crates/cli/src/lib.rs`) owns format dispatch through `omnia_guest::api::Format::encode`. Operations never pick a sink directly. See [handler-shape.md](./handler-shape.md) for the operation and projector contract.

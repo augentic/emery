@@ -13,8 +13,12 @@
 
 emery_sdk::source!(crate::Adapter);
 
+use std::future::{Future, ready};
+
 use emery_prose::registry::Doc;
-use emery_sdk::{Context, Error, Material, SourceAdapter, SourceContent, SourceKind, bad_request};
+use emery_sdk::{
+    Context, Error, Material, Model, SourceAdapter, SourceContent, SourceKind, bad_request,
+};
 
 static DOCS: &[Doc] = &[
     Doc {
@@ -39,13 +43,16 @@ impl SourceAdapter for Adapter {
         DOCS
     }
 
-    // One material: an empty inline brief is refused, a non-empty one is
-    // bound, and a workspace is pointed at `references/greeting.md` as the
-    // fallback when the tree states no greeting.
-    fn survey(ctx: &Context<'_>) -> Result<Vec<Material>, Error> {
+    // One material, chosen without the model — so the survey is ready at
+    // once: an empty inline brief is refused, a non-empty one is bound, and
+    // a workspace is pointed at `references/greeting.md` as the fallback when
+    // the tree states no greeting.
+    fn survey<P: Model>(
+        _model: &P, ctx: &Context<'_>,
+    ) -> impl Future<Output = Result<Vec<Material>, Error>> + Send {
         let material = match &ctx.input.content {
             SourceContent::Value(value) if value.trim().is_empty() => {
-                return Err(bad_request!("the bound greeting brief is empty"));
+                return ready(Err(bad_request!("the bound greeting brief is empty")));
             }
             SourceContent::Value(_) => Material::Bound,
             SourceContent::Workspace(root) => Material::Prepared(format!(
@@ -55,6 +62,6 @@ impl SourceAdapter for Adapter {
                  only this source."
             )),
         };
-        Ok(vec![material])
+        ready(Ok(vec![material]))
     }
 }

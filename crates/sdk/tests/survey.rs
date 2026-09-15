@@ -1,14 +1,67 @@
-//! The mechanical survey
+//! The survey helpers
 //!
 //! What `files` and `by_directory` decide so a tree adapter does not
 //! rewrite the walk: skip roots, the keep filter, the grain floor, and
-//! that a symlink is not a file to mine.
+//! that a symlink is not a file to mine. And what `by_model` does for the
+//! one survey call an adapter may make: the request it builds (the embedded
+//! survey prompt as the system, the root lent, the candidate files listed,
+//! the `survey` schema), the fold of its accepted partition under the floor
+//! with every unassigned file, the corrections a partition earns, the
+//! backend's spent rounds as `bad_request`, and the refusals that spend no
+//! turn.
 
 use std::fs;
 use std::os::unix::fs::symlink;
 use std::path::Path;
 
+use emery_prose::registry::Doc;
 use emery_sdk::survey::{self, Entry};
+use emery_sdk::{Context, Error, SourceContent, SourceInput};
+use omnia_test::SeenFormat;
+use omnia_test::guest::Scripted;
+
+const DOCS: &[Doc] = &[
+    Doc {
+        path: "prompts/extract.md",
+        body: "EXTRACT",
+    },
+    Doc {
+        path: "prompts/survey.md",
+        body: "SURVEY",
+    },
+];
+
+// A corpus without a survey prompt.
+const MUTE: &[Doc] = &[Doc {
+    path: "prompts/extract.md",
+    body: "EXTRACT",
+}];
+
+const FILES: &[&str] = &[
+    "index.ts",
+    "jobs/nightly.ts",
+    "routes/orders.ts",
+    "routes/users.ts",
+    "services/orders.ts",
+    "services/users.ts",
+];
+
+fn workspace(root: &str) -> SourceInput {
+    SourceInput {
+        key: "code".to_string(),
+        content: SourceContent::Workspace(root.to_string()),
+    }
+}
+
+async fn survey(
+    model: &Scripted, docs: &'static [Doc], input: &SourceInput, floor: usize,
+) -> Result<Vec<Vec<String>>, Error> {
+    let ctx = Context {
+        adapter_id: "source:probe",
+        input,
+    };
+    survey::by_model(model, &ctx, docs, &owned(FILES), floor).await
+}
 
 fn write(root: &Path, rel: &str, body: &str) {
     let path = root.join(rel);
@@ -117,4 +170,212 @@ fn no_empty_remainder() {
         survey::by_directory(owned(&["a/1.md", "a/2.md", "b/1.md"]), 1),
         [owned(&["a/1.md", "a/2.md"]), owned(&["b/1.md"])]
     );
+}
+
+// The survey request carries the embedded survey prompt as the system, the
+// root lent whole so the model can read what it groups, every candidate
+// file listed as the model must name it, the reference tools, `check` set,
+// and the `Partition` schema under `survey`.
+#[tokio::test]
+async fn model_request() {
+    let model = Scripted::answering([
+        r#"{"groups":[{"name":"orders","files":["routes/orders.ts","services/orders.ts"]}]}"#,
+    ]);
+
+    survey(&model, DOCS, &workspace("/lend/code"), 2).await.expect("accepted");
+
+    let seen = model.seen();
+    assert_eq!(seen.len(), 1, "one survey turn");
+    let request = &seen[0];
+    assert_eq!(request.system.as_deref(), Some("SURVEY"));
+    assert_eq!(request.workspace.as_deref(), Some("/lend/code"), "the root is lent");
+    assert!(request.check, "acceptance is the check");
+    assert_eq!(request.tools, ["list_docs", "read_doc"], "the corpus is offered through tools");
+    let turn = &request.messages[0];
+    assert!(turn.contains("adapter `source:probe` (source key `code`)"), "{turn}");
+    assert!(turn.contains("read-only view at `/lend/code`"), "{turn}");
+    for file in FILES {
+        assert!(turn.contains(&format!("\n- `{file}`")), "`{file}` is offered: {turn}");
+    }
+    assert!(turn.contains("fewer than 2 files"), "the floor is stated: {turn}");
+    let SeenFormat::Schema { name, schema } = &request.format else {
+        panic!("the survey is steered by schema");
+    };
+    assert_eq!(name, "survey");
+    let schema: serde_json::Value = serde_json::from_str(schema).expect("generated schema parses");
+    assert!(schema.pointer("/properties/groups").is_some(), "{schema}");
+    let group = schema.pointer("/$defs/Group").expect("Group definition");
+    assert!(group.pointer("/properties/name").is_some(), "{group}");
+    assert!(group.pointer("/properties/files").is_some(), "{group}");
+    model.assert_exhausted();
+}
+
+// The accepted groups come back in answer order, each sorted; a group under
+// the floor folds, with every file the model left out, into one sorted
+// remainder last — so the whole tree is mined however the model grouped it.
+#[tokio::test]
+async fn model_fold() {
+    let model = Scripted::answering([r#"{"groups":[
+            {"name":"users","files":["services/users.ts","routes/users.ts"]},
+            {"name":"nightly","files":["jobs/nightly.ts"]},
+            {"name":"orders","files":["routes/orders.ts","services/orders.ts"]}
+        ]}"#]);
+
+    let groups = survey(&model, DOCS, &workspace("/lend/code"), 2).await.expect("accepted");
+
+    assert_eq!(
+        groups,
+        [
+            owned(&["routes/users.ts", "services/users.ts"]),
+            owned(&["routes/orders.ts", "services/orders.ts"]),
+            owned(&["index.ts", "jobs/nightly.ts"]),
+        ]
+    );
+    model.assert_exhausted();
+}
+
+// A partition that names every file in groups meeting the floor has no
+// remainder; a floor of one keeps every group.
+#[tokio::test]
+async fn model_no_remainder() {
+    let model = Scripted::answering([r#"{"groups":[
+            {"name":"orders","files":["routes/orders.ts","services/orders.ts"]},
+            {"name":"users","files":["routes/users.ts","services/users.ts"]},
+            {"name":"nightly","files":["jobs/nightly.ts"]},
+            {"name":"entry","files":["index.ts"]}
+        ]}"#]);
+
+    let groups = survey(&model, DOCS, &workspace("/lend/code"), 1).await.expect("accepted");
+
+    assert_eq!(
+        groups,
+        [
+            owned(&["routes/orders.ts", "services/orders.ts"]),
+            owned(&["routes/users.ts", "services/users.ts"]),
+            owned(&["jobs/nightly.ts"]),
+            owned(&["index.ts"]),
+        ]
+    );
+}
+
+// A candidate the check refuses — a file never offered, a file in two
+// groups, a group naming none — goes back as findings and the next candidate
+// is checked; the model chooses the grouping, never what exists.
+#[tokio::test]
+async fn model_corrections() {
+    let model = Scripted::answering([
+        r#"{"groups":[
+            {"name":"orders","files":["routes/orders.ts","routes/orders.ts"]},
+            {"name":"ghost","files":["routes/ghost.ts"]},
+            {"name":"empty","files":[]}
+        ]}"#,
+        r#"{"groups":[{"name":"orders","files":["routes/orders.ts","services/orders.ts"]}]}"#,
+    ]);
+
+    let groups = survey(&model, DOCS, &workspace("/lend/code"), 2)
+        .await
+        .expect("the second candidate is a partition");
+
+    assert_eq!(
+        groups,
+        [
+            owned(&["routes/orders.ts", "services/orders.ts"]),
+            owned(&["index.ts", "jobs/nightly.ts", "routes/users.ts", "services/users.ts"]),
+        ]
+    );
+    let exchanges = model.exchanges();
+    assert_eq!(exchanges.len(), 2, "one rejection, one acceptance");
+    let correction = exchanges[0].outcome.as_ref().expect_err("the first candidate is rejected");
+    assert!(
+        correction.contains("`routes/orders.ts` appears in more than one group"),
+        "{correction}"
+    );
+    assert!(
+        correction.contains("`routes/ghost.ts` is not among the files offered"),
+        "{correction}"
+    );
+    assert!(correction.contains("group `empty` names no file"), "{correction}");
+    assert_eq!(exchanges[1].outcome, Ok(String::new()));
+    model.assert_exhausted();
+}
+
+// A stray key on the answer is a schema miss, corrected like a finding.
+#[tokio::test]
+async fn model_stray_key() {
+    let model = Scripted::answering([
+        r#"{"groups":[{"name":"orders","files":["routes/orders.ts"],"reason":"handler"}]}"#,
+        r#"{"groups":[{"name":"orders","files":["routes/orders.ts","services/orders.ts"]}]}"#,
+    ]);
+
+    survey(&model, DOCS, &workspace("/lend/code"), 2).await.expect("the second candidate parses");
+
+    let exchanges = model.exchanges();
+    let correction = exchanges[0].outcome.as_ref().expect_err("the stray key is refused");
+    assert!(correction.contains("unknown field"), "{correction}");
+}
+
+// When the backend spends its rounds on a rejected partition the last
+// findings surface as `bad_request`, as an evidence call's do.
+#[tokio::test]
+async fn model_rounds_exhausted() {
+    let model = Scripted::answering([r#"{"groups":[{"name":"ghost","files":["nope.ts"]}]}"#]);
+
+    let error = survey(&model, DOCS, &workspace("/lend/code"), 2)
+        .await
+        .expect_err("the only candidate names a file never offered");
+
+    let Error::BadRequest { code, description } = error else {
+        panic!("spent rounds are a bad request: {error}");
+    };
+    assert_eq!(code, "bad_request");
+    assert!(description.contains("`nope.ts` is not among the files offered"), "{description}");
+    assert_eq!(model.exchanges().len(), 1, "one check, rejected");
+}
+
+// A corpus without `prompts/survey.md` is the adapter build's own defect,
+// reported before a turn is spent.
+#[tokio::test]
+async fn model_missing_prompt() {
+    let model = Scripted::default();
+
+    let error =
+        survey(&model, MUTE, &workspace("/lend/code"), 2).await.expect_err("no prompt to ask with");
+
+    assert_eq!(error.code(), "server_error");
+    assert!(error.description().contains("`prompts/survey.md` is not embedded"), "{error}");
+    assert!(model.seen().is_empty(), "no turn was spent");
+}
+
+// An inline value has no tree to survey: the adapter's own defect, as a
+// `Within` material over a value is.
+#[tokio::test]
+async fn model_inline_value() {
+    let model = Scripted::default();
+    let input = SourceInput {
+        key: "code".to_string(),
+        content: SourceContent::Value("export const port = 8080;".to_string()),
+    };
+
+    let error = survey(&model, DOCS, &input, 2).await.expect_err("no tree to survey");
+
+    assert_eq!(error.code(), "server_error");
+    assert!(error.description().contains("not an inline value"), "{error}");
+    assert!(model.seen().is_empty(), "no turn was spent");
+}
+
+// No files, nothing to partition: no turn is spent and the survey is empty,
+// for `extract` to refuse as it refuses any empty survey.
+#[tokio::test]
+async fn model_no_files() {
+    let model = Scripted::default();
+    let input = workspace("/lend/code");
+    let ctx = Context {
+        adapter_id: "source:probe",
+        input: &input,
+    };
+
+    let groups = survey::by_model(&model, &ctx, DOCS, &[], 2).await.expect("nothing to ask");
+
+    assert!(groups.is_empty());
+    assert!(model.seen().is_empty(), "no turn was spent");
 }

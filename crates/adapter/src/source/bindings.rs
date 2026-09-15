@@ -44,6 +44,7 @@ impl From<AdapterMetadata> for wit::AdapterMetadata {
     fn from(metadata: AdapterMetadata) -> Self {
         Self {
             emery_version: metadata.emery_version,
+            kind: metadata.kind.into(),
         }
     }
 }
@@ -52,6 +53,7 @@ impl From<wit::AdapterMetadata> for AdapterMetadata {
     fn from(metadata: wit::AdapterMetadata) -> Self {
         Self {
             emery_version: metadata.emery_version,
+            kind: metadata.kind.into(),
         }
     }
 }
@@ -218,7 +220,6 @@ impl TryFrom<wit::Claim> for Claim {
 impl From<Evidence> for wit::Evidence {
     fn from(evidence: Evidence) -> Self {
         Self {
-            kind: evidence.kind.into(),
             claims: evidence.claims.into_iter().map(Into::into).collect(),
         }
     }
@@ -229,7 +230,6 @@ impl TryFrom<wit::Evidence> for Evidence {
 
     fn try_from(evidence: wit::Evidence) -> Result<Self, String> {
         Ok(Self {
-            kind: evidence.kind.into(),
             claims: evidence.claims.into_iter().map(TryInto::try_into).collect::<Result<_, _>>()?,
         })
     }

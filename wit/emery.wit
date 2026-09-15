@@ -43,9 +43,10 @@ interface types {
     content: content,
   }
 
-  /// The kind of source an extracted claim set was read from. Kinds rank
-  /// by authority (`intent` > `documentation` > `behaviour`), which
-  /// decides who wins a cross-source disagreement.
+  /// The kind of source an adapter reads: a fact about the artefact, so
+  /// the adapter declares it in its metadata and the model never answers
+  /// it. Kinds rank by authority (`intent` > `documentation` >
+  /// `behaviour`), which decides who wins a cross-source disagreement.
   enum source-kind {
     /// Operator directives. Highest authority.
     intent,
@@ -108,22 +109,27 @@ interface types {
     extras: list<tuple<string, string>>,
   }
 
-  /// The claim set returned by the extract operation.
+  /// The claim set returned by the extract operation. The kind of source
+  /// it was read from is the adapter's, reported by `metadata`, never
+  /// carried on the document.
   record evidence {
-    /// The kind of source this claim set was read from.
-    kind: source-kind,
     /// The claims extracted from the source.
     claims: list<claim>,
   }
 
   /// The adapter's deterministic metadata: identity lives in the
-  /// wasm-pkg package reference and axis in the exported world, so only
-  /// the host version requirement remains on the record.
+  /// wasm-pkg package reference and axis in the exported world, so the
+  /// record carries the host version requirement and the kind of source
+  /// the adapter reads — both compiled-in constants.
   record adapter-metadata {
     /// Optional minimum `emery` version this adapter needs, as an exact
     /// semver (like Cargo's `rust-version`). The host aborts at resolve
     /// time when the running binary is older. Absent means no minimum.
     emery-version: option<string>,
+    /// The kind of source this adapter reads, which ranks its evidence
+    /// against other sources'. Fixed per adapter at resolve time, before
+    /// any extract.
+    kind: source-kind,
   }
 }
 

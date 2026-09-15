@@ -16,7 +16,7 @@ use std::future::Future;
 use omnia_guest::Error;
 use serde::{Deserialize, Serialize};
 
-use crate::source::Evidence;
+use crate::source::{Evidence, SourceKind};
 
 /// Import-side source dispatch over the `emery:adapter/source` contract.
 ///
@@ -70,9 +70,13 @@ pub enum SourceContent {
     Value(String),
 }
 
-/// Resolve-time source adapter metadata.
+/// Resolve-time source adapter metadata: compiled-in constants, read once
+/// per adapter before any extract.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct AdapterMetadata {
     /// Exact minimum Emery version, if any.
     pub emery_version: Option<String>,
+    /// The kind of source the adapter reads, which ranks its evidence
+    /// against other sources'.
+    pub kind: SourceKind,
 }

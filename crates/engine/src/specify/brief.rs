@@ -160,7 +160,7 @@ impl Display for ClaimsSection<'_> {
                 f,
                 "\n### source `{key}` ({kind})\n\n",
                 key = extract.source,
-                kind = extract.evidence.kind
+                kind = extract.kind
             )?;
 
             for claim in &extract.evidence.claims {

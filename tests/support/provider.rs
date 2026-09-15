@@ -39,16 +39,20 @@ const RENDEZVOUS: Duration = Duration::from_secs(1);
 /// Dispatched `(adapter id, input)` pairs, in call order.
 type Recorded = Vec<(String, SourceInput)>;
 
-/// Scripted `Source`: per-key evidence, per-adapter minimum `emery`
-/// versions, and a record of every dispatch. An unscripted key answers
-/// the greeting requirement as documentation evidence; a scripted failure
-/// is the classified error the WIT bindings lift would have produced.
+/// Scripted `Source`: per-key evidence, per-adapter metadata — the minimum
+/// `emery` version and the kind of source — and a record of every dispatch.
+/// An unscripted key answers the greeting requirement; an unscripted adapter
+/// reads documentation; a scripted failure is the classified error the WIT
+/// bindings lift would have produced.
 #[derive(Clone, Debug, Default)]
 pub struct SourceScript {
     /// Extract outcomes keyed by source key.
     pub evidence: BTreeMap<String, Result<Evidence, Error>>,
     /// Minimum `emery` versions keyed by adapter id — the reference itself.
     pub versions: BTreeMap<String, String>,
+    /// Kinds of source keyed by adapter id; an unscripted adapter reads
+    /// documentation.
+    pub kinds: BTreeMap<String, SourceKind>,
     /// Every extract dispatch, recorded for call assertions.
     pub calls: Arc<Mutex<Recorded>>,
     /// Every metadata dispatch, by adapter id, in call order.
@@ -271,12 +275,12 @@ impl<S: Send + Sync + 'static> Source for Provider<S> {
         // The dispatch is recorded and the outcome chosen before the future
         // is polled, so `calls` is dispatch order whatever resolves first.
         self.source.calls.lock().expect("calls").push((id.to_string(), input.clone()));
-        let outcome = self.source.evidence.get(&input.key).cloned().unwrap_or_else(|| {
-            Ok(evidence(
-                SourceKind::Documentation,
-                vec![requirement("greeting.behaviour", GREETING)],
-            ))
-        });
+        let outcome = self
+            .source
+            .evidence
+            .get(&input.key)
+            .cloned()
+            .unwrap_or_else(|| Ok(evidence(vec![requirement("greeting.behaviour", GREETING)])));
         let rendezvous = self.source.rendezvous.clone();
         let key = input.key.clone();
         async move {
@@ -292,6 +296,7 @@ impl<S: Send + Sync + 'static> Source for Provider<S> {
         self.source.metadata.lock().expect("metadata").push(id.to_string());
         AdapterMetadata {
             emery_version: self.source.versions.get(id).cloned(),
+            kind: self.source.kinds.get(id).copied().unwrap_or(SourceKind::Documentation),
         }
     }
 }
@@ -329,6 +334,6 @@ pub fn requirement(id: &str, statement: &str) -> Claim {
 }
 
 /// Builds an evidence document over `claims`.
-pub const fn evidence(kind: SourceKind, claims: Vec<Claim>) -> Evidence {
-    Evidence { kind, claims }
+pub const fn evidence(claims: Vec<Claim>) -> Evidence {
+    Evidence { claims }
 }

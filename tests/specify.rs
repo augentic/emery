@@ -334,51 +334,43 @@ async fn description_source() {
 #[tokio::test]
 async fn authority_precedence() {
     let mut provider = Provider::answering([GROUPING_ANSWER, PRECEDENCE_ANSWER, DESIGN_ANSWER]);
+    // The rank is the adapter's metadata, read at load: a bare adapter's id
+    // is its source key, and the unscripted ones read documentation.
+    provider.source.kinds.insert("code".to_string(), SourceKind::Behaviour);
+    provider.source.kinds.insert("intent".to_string(), SourceKind::Intent);
     provider.source.evidence.insert(
         "docs".to_string(),
-        Ok(evidence(
-            SourceKind::Documentation,
-            vec![
-                requirement("login.flow", "Users sign in with a magic link."),
-                requirement("session.timeout", "Sessions expire after 30 minutes of inactivity."),
-                claim(
-                    ClaimKind::Criterion,
-                    "login.flow.success",
-                    ("criterion", "A valid link signs the user in."),
-                ),
-                // Non-requirement kinds ride along as synthesis context.
-                claim(ClaimKind::Decision, "auth.decision", ("body", "Sessions are cookie-bound.")),
-            ],
-        )),
+        Ok(evidence(vec![
+            requirement("login.flow", "Users sign in with a magic link."),
+            requirement("session.timeout", "Sessions expire after 30 minutes of inactivity."),
+            claim(
+                ClaimKind::Criterion,
+                "login.flow.success",
+                ("criterion", "A valid link signs the user in."),
+            ),
+            // Non-requirement kinds ride along as synthesis context.
+            claim(ClaimKind::Decision, "auth.decision", ("body", "Sessions are cookie-bound.")),
+        ])),
     );
     provider.source.evidence.insert(
         "wiki-live".to_string(),
-        Ok(evidence(
-            SourceKind::Documentation,
-            vec![requirement("login.flow", "Users sign in with a passkey.")],
-        )),
+        Ok(evidence(vec![requirement("login.flow", "Users sign in with a passkey.")])),
     );
     provider.source.evidence.insert(
         "code".to_string(),
-        Ok(evidence(
-            SourceKind::Behaviour,
-            vec![
-                requirement("login.flow", "Users sign in with email and password."),
-                // Behaviour names the timeout differently; the grouping
-                // call, not the id, joins it to the requirement.
-                requirement("session-expiry", "Sessions expire after 15 minutes of inactivity."),
-            ],
-        )),
+        Ok(evidence(vec![
+            requirement("login.flow", "Users sign in with email and password."),
+            // Behaviour names the timeout differently; the grouping
+            // call, not the id, joins it to the requirement.
+            requirement("session-expiry", "Sessions expire after 15 minutes of inactivity."),
+        ])),
     );
     provider.source.evidence.insert(
         "intent".to_string(),
-        Ok(evidence(
-            SourceKind::Intent,
-            vec![requirement(
-                "session.timeout",
-                "Sessions must expire after 30 minutes of inactivity.",
-            )],
-        )),
+        Ok(evidence(vec![requirement(
+            "session.timeout",
+            "Sessions must expire after 30 minutes of inactivity.",
+        )])),
     );
 
     cli_ok(
@@ -440,19 +432,14 @@ async fn authority_precedence() {
 #[tokio::test]
 async fn grouping_refused() {
     let bind = |provider: &mut Provider| {
+        provider.source.kinds.insert("code".to_string(), SourceKind::Behaviour);
         provider.source.evidence.insert(
             "docs".to_string(),
-            Ok(evidence(
-                SourceKind::Documentation,
-                vec![requirement("session.timeout", "Sessions expire after 30 minutes.")],
-            )),
+            Ok(evidence(vec![requirement("session.timeout", "Sessions expire after 30 minutes.")])),
         );
         provider.source.evidence.insert(
             "code".to_string(),
-            Ok(evidence(
-                SourceKind::Behaviour,
-                vec![requirement("session.timeout", "Sessions expire after 15 minutes.")],
-            )),
+            Ok(evidence(vec![requirement("session.timeout", "Sessions expire after 15 minutes.")])),
         );
     };
     let cases: &[(&str, &str)] = &[
@@ -596,21 +583,15 @@ async fn diff_envelope() {
 
     provider.source.evidence.insert(
         "docs".to_string(),
-        Ok(evidence(
-            SourceKind::Documentation,
-            vec![
-                requirement(
-                    "greeting.behaviour",
-                    "GET /greeting returns the static string 'howdy'.",
-                ),
-                requirement("access.audit", "Access is audited."),
-                claim(
-                    ClaimKind::Type,
-                    "greeting.type",
-                    ("signature", "interface Greeting { text: string }"),
-                ),
-            ],
-        )),
+        Ok(evidence(vec![
+            requirement("greeting.behaviour", "GET /greeting returns the static string 'howdy'."),
+            requirement("access.audit", "Access is audited."),
+            claim(
+                ClaimKind::Type,
+                "greeting.type",
+                ("signature", "interface Greeting { text: string }"),
+            ),
+        ])),
     );
     let resp = cli_ok(&provider, &["emery", "--format", "json", "specify", "docs"]).await;
     let envelope: Value = serde_json::from_slice(&resp.stdout).expect("one JSON envelope");
@@ -656,7 +637,7 @@ fn docs_evidence(requirements: &[(&str, &str)]) -> Evidence {
             ]
         })
         .collect();
-    evidence(SourceKind::Documentation, claims)
+    evidence(claims)
 }
 
 // The drafts are keyed by subject, so their order is immaterial; the
@@ -702,10 +683,7 @@ async fn extras_missing() {
     let mut provider = Provider::idle();
     let mut bare = requirement("greeting.behaviour", "");
     bare.extras.clear();
-    provider
-        .source
-        .evidence
-        .insert("docs".to_string(), Ok(evidence(SourceKind::Documentation, vec![bare])));
+    provider.source.evidence.insert("docs".to_string(), Ok(evidence(vec![bare])));
 
     fail(&provider, &["emery", "specify", "docs"], 3, "server_error").await;
 }
@@ -906,16 +884,10 @@ async fn invalid_design() {
 async fn dishonest_design() {
     let signature = "interface Greeting { text: string }";
     let evidence = || {
-        Ok(evidence(
-            SourceKind::Documentation,
-            vec![
-                requirement(
-                    "greeting.behaviour",
-                    "GET /greeting returns the static string 'hello'.",
-                ),
-                claim(ClaimKind::Type, "greeting.type", ("signature", signature)),
-            ],
-        ))
+        Ok(evidence(vec![
+            requirement("greeting.behaviour", "GET /greeting returns the static string 'hello'."),
+            claim(ClaimKind::Type, "greeting.type", ("signature", signature)),
+        ]))
     };
     let draft = |sections: &str| format!(r#"{{"preamble": [], "sections": [{sections}]}}"#);
     // `(from the browser)` is prose — a citation key is one token.

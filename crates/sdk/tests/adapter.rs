@@ -4,12 +4,14 @@
 //! scripted model. It shows the trait is complete enough to implement and
 //! exercise without a wasm build — the promise adapter authors' own test
 //! suites depend on — and that its provided members answer from the
-//! adapter's own declarations: the `emery-version` pin, the extraction
-//! prompt, the survey's material.
+//! adapter's own declarations: the `emery-version` pin and the kind of
+//! source in `metadata`, the extraction prompt, the survey's material.
+
+use std::future::{Future, ready};
 
 use emery_prose::registry::Doc;
 use emery_sdk::{
-    AdapterMetadata, Context, Error, Material, SourceAdapter, SourceContent, SourceInput,
+    AdapterMetadata, Context, Error, Material, Model, SourceAdapter, SourceContent, SourceInput,
     SourceKind,
 };
 use omnia_test::guest::Scripted;
@@ -32,8 +34,11 @@ impl SourceAdapter for Probe {
         DOCS
     }
 
-    fn survey(ctx: &Context<'_>) -> Result<Vec<Material>, Error> {
-        Ok(vec![Material::Prepared(ctx.input.key.clone())])
+    // Mechanical: the key is the note, with no model turn.
+    fn survey<P: Model>(
+        _model: &P, ctx: &Context<'_>,
+    ) -> impl Future<Output = Result<Vec<Material>, Error>> + Send {
+        ready(Ok(vec![Material::Prepared(ctx.input.key.clone())]))
     }
 }
 
@@ -65,7 +70,6 @@ async fn source_dispatch() {
     };
 
     let evidence = Probe::extract(&model, &ctx).await.expect("scripted extract succeeds");
-    assert_eq!(evidence.kind, Probe::KIND);
     assert_eq!(evidence.claims.len(), 1);
     assert_eq!(evidence.claims[0].id.as_deref(), Some("one.claim"));
     let request = &model.seen()[0];
@@ -80,10 +84,13 @@ async fn source_dispatch() {
         request.messages[0]
     );
 
+    // The kind is the adapter's constant, reported where the engine reads it
+    // before any extract.
     assert_eq!(
         Probe::metadata(),
         AdapterMetadata {
             emery_version: PIN.map(str::to_string),
+            kind: Probe::KIND,
         }
     );
     assert_eq!(Probe::docs()[0].path, "prompts/extract.md");

@@ -9,7 +9,7 @@
 //! failed material reported together under the first one's class.
 
 use std::collections::BTreeMap;
-use std::future::Future;
+use std::future::{Future, ready};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
@@ -56,8 +56,10 @@ macro_rules! probe {
                 DOCS
             }
 
-            fn survey(_ctx: &Context<'_>) -> Result<Vec<Material>, Error> {
-                Ok($survey)
+            fn survey<P: Model>(
+                _model: &P, _ctx: &Context<'_>,
+            ) -> impl Future<Output = Result<Vec<Material>, Error>> + Send {
+                ready(Ok($survey))
             }
         }
     };
@@ -163,14 +165,13 @@ fn paths(evidence: &Evidence) -> Vec<&str> {
 
 // An adapter that states no survey mines the bound input whole in one model
 // turn — the request `evidence` builds for `Material::Bound` — and returns
-// its claims stamped, anchors as answered.
+// its claims with anchors as answered.
 #[tokio::test]
 async fn default_survey() {
     let model = Scripted::answering([NOTE]);
 
     let evidence = extract::<Plain, _>(&model, &workspace("./docs")).await.expect("one bound turn");
 
-    assert_eq!(evidence.kind, Plain::KIND);
     assert_eq!(paths(&evidence), ["note.md#L1"]);
     assert_eq!(evidence.claims[0].backing, Some(Backing::Path("note.md".to_string())));
     let seen = model.seen();
@@ -201,7 +202,6 @@ async fn three_materials() {
     let evidence =
         extract::<Split, _>(&model, &workspace("./docs")).await.expect("three materials join");
 
-    assert_eq!(evidence.kind, Split::KIND);
     assert_eq!(paths(&evidence), ["a/note.md#L1", "b/note.md#L1", "c/note.md#L1"]);
     let backings: Vec<_> = evidence.claims.iter().map(|claim| claim.backing.clone()).collect();
     assert_eq!(

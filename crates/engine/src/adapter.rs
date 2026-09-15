@@ -3,20 +3,22 @@
 //! How an operator names an adapter and how the engine brings it into the
 //! run. An [`AdapterRef`] is a registry package, a statically declared
 //! guest, or a local file; [`load`] loads the adapters a run's sources name,
-//! each once and all together, and refuses any that requires a newer Emery
-//! than the one running.
+//! each once and all together, refuses any that requires a newer Emery than
+//! the one running, and reads off the kind of source each declares — the
+//! rank its evidence will carry, known before any extract.
 //!
 //! The reference is the identity: the plugin loader registers an adapter,
 //! and the `Source` capability dispatches to it, by the [`AdapterRef`]'s
 //! `Display`.
 
+use std::collections::BTreeMap;
 use std::fmt::{self, Display, Formatter};
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
 
 use anyhow::Context;
 use emery_adapter::is_kebab;
-use emery_adapter::source::Source;
+use emery_adapter::source::{Source, SourceKind};
 use futures::future;
 use omnia_guest::plugins::{Location, PluginRef};
 use omnia_guest::{Error, Plugins, bad_request, not_found};
@@ -26,13 +28,15 @@ use crate::preopen_path;
 
 /// Loads adapters and registers them with the `Source` capability using
 /// `AdapterRef` identity. An adapter several sources share is loaded once.
+/// Returns the kind of source each distinct adapter declares, keyed by its
+/// id, from the one `metadata` read that also gates its `emery-version`.
 ///
 /// # Errors
 ///
 /// Returns reference, load, or version failures.
 pub async fn load<'a, P: Source + Plugins>(
     provider: &P, adapters: impl IntoIterator<Item = &'a AdapterRef>,
-) -> Result<(), Error> {
+) -> Result<BTreeMap<String, SourceKind>, Error> {
     let mut ids = Vec::new();
     let mut plugins = Vec::new();
 
@@ -71,14 +75,17 @@ pub async fn load<'a, P: Source + Plugins>(
     let version = semver::Version::parse(env!("CARGO_PKG_VERSION"))
         .with_context(|| format!("issue with emery version `{}`", env!("CARGO_PKG_VERSION")))?;
 
-    for id in &ids {
-        // get each adapter's declared minimum `emery-version`
-        if let Some(declared) = Source::metadata(provider, id).emery_version {
-            is_supported(id, &declared, &version)?;
+    // gate each adapter's version and record its kind
+    let mut kinds = BTreeMap::new();
+    for id in ids {
+        let metadata = Source::metadata(provider, &id);
+        if let Some(declared) = &metadata.emery_version {
+            is_supported(&id, declared, &version)?;
         }
+        kinds.insert(id, metadata.kind);
     }
 
-    Ok(())
+    Ok(kinds)
 }
 
 // Refuses an adapter whose declared minimum `emery-version` the running

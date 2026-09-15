@@ -1,10 +1,12 @@
 //! Evidence
 //!
-//! What an adapter returns: an [`Evidence`] document of typed [`Claim`]s
-//! stamped with its [`SourceKind`] — the spec IR every source is reduced to.
-//! [`ClaimKind`] is the closed taxonomy the whole system agrees on, and each
-//! kind's required extras are declared next to it, so the contract states in
-//! one place what a complete claim of that kind looks like.
+//! What an adapter returns: an [`Evidence`] document of typed [`Claim`]s —
+//! the spec IR every source is reduced to. The [`SourceKind`] the document
+//! ranks under is not on it: it is the adapter's, reported in its metadata,
+//! so the model that answers the claims never answers the kind. [`ClaimKind`]
+//! is the closed taxonomy the whole system agrees on, and each kind's
+//! required extras are declared next to it, so the contract states in one
+//! place what a complete claim of that kind looks like.
 //!
 //! The rules a claim must satisfy — the grammar its id follows
 //! ([`CLAIM_ID_REGEX`]), which kinds must carry an id at all, and the extras
@@ -34,12 +36,15 @@ fn is_claim_id(value: &str) -> bool {
     value.split('.').all(is_kebab)
 }
 
-/// Extracted claims and the kind of source they were read from.
+/// Extracted claims: the document an adapter returns and the shape a model
+/// answers in.
+///
+/// Claims alone — a document-level key such as `kind` is a schema miss,
+/// since the kind is the adapter's to declare, not the model's to answer.
 #[derive(Clone, Debug, Deserialize, JsonSchema)]
-#[serde(rename_all = "kebab-case")]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
+#[schemars(title = "Emery evidence answer")]
 pub struct Evidence {
-    /// The kind of source the claims were read from.
-    pub kind: SourceKind,
     /// Extracted claims.
     pub claims: Vec<Claim>,
 }
@@ -53,7 +58,8 @@ impl Evidence {
     }
 }
 
-/// The kind of source an [`Evidence`] document was read from.
+/// The kind of source an adapter reads, declared in its metadata and
+/// applied by the engine to every [`Evidence`] document the adapter returns.
 ///
 /// The variants are declared in authority order — `Intent` outranks
 /// `Documentation`, which outranks `Behaviour` — so the derived `Ord` is the

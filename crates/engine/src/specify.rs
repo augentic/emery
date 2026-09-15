@@ -25,12 +25,12 @@ mod brief;
 mod design;
 mod spec;
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 
 use emery_adapter::is_kebab;
 pub use emery_adapter::source::SourceContent;
-use emery_adapter::source::{Evidence, Source, SourceInput};
+use emery_adapter::source::{Evidence, Source, SourceInput, SourceKind};
 use futures::future;
 use omnia_guest::api::Context;
 use omnia_guest::{BlobStore, Error, Model, Plugins, StateStore, bad_request, server_error};
@@ -65,10 +65,11 @@ pub async fn specify<P: Model + Source + StateStore + BlobStore + Plugins>(
 
     // load source adapters
     let bound = Bound::all(&input.sources)?;
-    adapter::load(provider, bound.iter().map(|source| source.adapter)).await?;
+    let kinds = adapter::load(provider, bound.iter().map(|source| source.adapter)).await?;
 
-    // extract all sources in parallel
-    let outcomes = future::join_all(bound.iter().map(|source| source.extract(provider))).await;
+    // extract all sources in parallel, each ranked by its adapter's kind
+    let outcomes =
+        future::join_all(bound.iter().map(|source| source.extract(provider, &kinds))).await;
 
     // collect extracts or findings for failed extracts
     let mut extracts = Vec::with_capacity(outcomes.len());
@@ -195,15 +196,21 @@ impl<'a> Bound<'a> {
         Ok(bound)
     }
 
-    // Extracts the source and gates its claims again on receipt: the SDK
-    // gates in the guest, but the engine cannot assume every adapter is the
-    // SDK's. A miss is the adapter's, not the operator's, so it is never a
-    // `BadRequest`.
-    async fn extract<P: Source>(&self, provider: &P) -> Result<Extract, Error> {
+    // Extracts the source under the kind its adapter declared at load.
+    async fn extract<P: Source>(
+        &self, provider: &P, kinds: &BTreeMap<String, SourceKind>,
+    ) -> Result<Extract, Error> {
         let source = &self.input.key;
-        tracing::debug!(%source, "extracting");
+        let adapter = self.adapter.to_string();
+        // The load registered every bound adapter, so an absent kind is the
+        // engine's own slip, never the operator's.
+        let kind = kinds
+            .get(&adapter)
+            .copied()
+            .ok_or_else(|| server_error!("adapter `{adapter}` was not loaded"))?;
+        tracing::debug!(%source, %kind, "extracting");
 
-        let evidence = Source::extract(provider, &self.adapter.to_string(), &self.input).await?;
+        let evidence = Source::extract(provider, &adapter, &self.input).await?;
 
         let findings = evidence.findings();
         if !findings.is_empty() {
@@ -215,14 +222,17 @@ impl<'a> Bound<'a> {
 
         Ok(Extract {
             source: source.clone(),
+            kind,
             evidence,
         })
     }
 }
 
-// One source's validated evidence, under the key the documents cite it by.
+// One source's validated evidence, under the key the documents cite it by
+// and the kind its adapter declared, which ranks it against the others.
 #[derive(Debug)]
 struct Extract {
     source: String,
+    kind: SourceKind,
     evidence: Evidence,
 }

@@ -4,12 +4,11 @@
 //! builds (the embedded prompt as the system, the SDK-owned turn around the
 //! adapter's material, the claims-only schema with the claim-id pattern,
 //! `check` set, the reference tools, and the workspace lend following the
-//! material — the input's root, or a `Within` set's common ancestor), the
-//! adapter's kind stamped whatever the scripted answer says, reference calls
-//! answered from the embedded corpus, a candidate the claim gate rejects
-//! corrected in place, the backend's spent rounds surfacing as `bad_request`
-//! with the last findings, and a host refusal passing through as
-//! `bad_request`.
+//! material — the input's root, or a `Within` set's common ancestor), a
+//! document-level kind refused as a schema miss, reference calls answered
+//! from the embedded corpus, a candidate the claim gate rejects corrected in
+//! place, the backend's spent rounds surfacing as `bad_request` with the
+//! last findings, and a host refusal passing through as `bad_request`.
 
 use emery_prose::registry::Doc;
 use emery_sdk::model::{Error as ModelError, ToolCall};
@@ -80,7 +79,6 @@ async fn request_shape() {
         .await
         .expect("a valid answer is accepted first time");
     assert_eq!(accepted.claims.len(), 2);
-    assert_eq!(accepted.kind, Probe::KIND);
 
     let seen = model.seen();
     assert_eq!(seen.len(), 1);
@@ -287,18 +285,8 @@ async fn invalid_request() {
     assert!(model.exchanges().is_empty(), "nothing to check");
 }
 
-// The returned document carries the adapter's constant, whatever kind a
-// scripted answer might have named.
-#[tokio::test]
-async fn stamped_kind() {
-    let model = Scripted::answering([VALID]);
-
-    let accepted = ask(&model, &value("Ship it."), Material::Bound).await.expect("accepted");
-    assert_eq!(accepted.kind, SourceKind::Documentation);
-    model.assert_exhausted();
-}
-
-// A stray `kind` key is a schema miss: the answer is claims alone.
+// A stray `kind` key is a schema miss: the answer is claims alone, and the
+// kind of source is the adapter's metadata, never the model's to state.
 #[tokio::test]
 async fn stray_kind() {
     let model = Scripted::answering([r#"{"kind":"intent","claims":[{"kind":"decision"}]}"#, VALID]);
@@ -306,7 +294,7 @@ async fn stray_kind() {
     let accepted = ask(&model, &value("Ship it."), Material::Bound)
         .await
         .expect("the second candidate is claims-only");
-    assert_eq!(accepted.kind, Probe::KIND);
+    assert_eq!(accepted.claims.len(), 2);
 
     let exchanges = model.exchanges();
     let correction = exchanges[0].outcome.as_ref().expect_err("the stray key is refused");
