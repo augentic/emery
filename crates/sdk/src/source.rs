@@ -114,18 +114,18 @@ pub trait SourceAdapter {
             if materials.is_empty() {
                 return Err(bad_request!("`{key}`: the survey found nothing to mine"));
             }
+
             let lends = materials
                 .iter()
                 .map(|material| Lend::of(material, ctx))
                 .collect::<Result<Vec<_>, _>>()?;
-
             let outcomes: Vec<_> = stream::iter(materials)
                 .map(|material| Self::evidence(model, ctx, material))
                 .buffered(CONCURRENT)
                 .collect()
                 .await;
-
             let partials = collect(key, outcomes)?;
+
             Ok(Evidence {
                 claims: join(&lends, partials),
             })
