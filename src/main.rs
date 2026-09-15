@@ -1,13 +1,14 @@
-//! The `emery` executable
+//! The shipped `emery` runtime.
 //!
-//! The shipped runtime: one omnia deployment that embeds the engine guest and
-//! declares everything it is allowed to touch. The invocation directory is
-//! mounted read-only as the project, revision state is kept under
-//! `.omnia/storage`, the model is Cursor, and adapters may be loaded from
-//! local `.wasm` files or the `omnia.host` registry.
+//! One omnia deployment that embeds the engine guest and declares everything
+//! it is allowed to touch. The invocation directory is mounted read-only as
+//! the project, revision state is kept under `.omnia/storage`, the model is
+//! Cursor, and adapters load from local `.wasm` files or from the registries
+//! `wasm-pkg.toml` routes their namespaces to, `omnia.host` by default.
 //!
 //! The deployment is fixed at compile time so a given `emery` binary always
-//! runs with the same policy; there is no runtime configuration to audit.
+//! runs with the same policy; there is no runtime configuration to audit, and
+//! no project file can name a registry.
 
 use omnia_cursor::Client as Cursor;
 use omnia_filesystem::{Client as Filesystem, ConnectOptions};
@@ -33,7 +34,7 @@ omnia::runtime!({
     plugin: {
         locations: [
             { name: ".", path: "." },
-            { registry: "omnia.host" },
+            { registry: "omnia.host", config: include_str!("wasm-pkg.toml") },
         ],
     },
     hosts: {

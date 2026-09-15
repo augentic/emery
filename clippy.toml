@@ -1,6 +1,6 @@
 # https://doc.rust-lang.org/stable/clippy/index.html
 
-doc-valid-idents = []
+doc-valid-idents = ["GitHub", "MiB", "OAuth", "OpenTelemetry", "SemVer", "WebAssembly", "YAML"]
 
 # Transitive duplicates we do not control. Clippy's cargo group stays on;
 # this list is the ratchet — drop a name when `cargo tree --duplicates` is clean.

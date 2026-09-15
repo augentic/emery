@@ -1,21 +1,23 @@
-//! The scripted provider
+//! Scripts every capability of a provider and drives the command façade over it.
 //!
-//! A provider whose every capability — model, source, plugin loading,
-//! storage — is a scripted double, and the runner that drives the command
-//! façade over it in-process. Each capability impl delegates to the field
-//! named for it, the shape a production provider's single backend has.
+//! The model, source, plugin loading, and storage capabilities are each a
+//! scripted double, and each impl delegates to the field named for it — the
+//! shape a production provider's single backend has. The runner drives the
+//! command façade over the provider in-process.
 //!
 //! Scripting rather than mocking means each scenario states exactly the turns
 //! it will consume, and a scenario that consumes more or fewer fails, so the
 //! suites cannot silently stop exercising a path.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::future::Future;
 use std::sync::{Arc, Mutex};
+use std::time::Duration;
 
 use anyhow::Result;
+use emery_adapter::is_kebab;
 use emery_adapter::source::{
-    AdapterMetadata, Authority, Backing, Claim, ClaimKind, Evidence, Source, SourceInput,
+    AdapterMetadata, Backing, Claim, ClaimKind, Evidence, Source, SourceInput, SourceKind,
 };
 use omnia_guest::api::command::Response;
 use omnia_guest::plugins::{self, Digest, PluginRef};
@@ -25,24 +27,80 @@ use omnia_guest::{
 };
 use omnia_test::guest::{Memory, Scripted, ScriptedLoader};
 use serde_json::Value;
+use tokio::sync::Barrier;
 
 const GREETING: &str = "GET /greeting returns the static string 'hello'.";
+
+// How long a held extract waits for the other sources before the double
+// gives up: long enough for an in-process run, short enough that a
+// serialising engine fails the scenario instead of hanging it.
+const RENDEZVOUS: Duration = Duration::from_secs(1);
 
 /// Dispatched `(adapter id, input)` pairs, in call order.
 type Recorded = Vec<(String, SourceInput)>;
 
-/// Scripted `Source`: per-key evidence, per-adapter minimum `emery`
-/// versions, and a record of every dispatch. An unscripted key answers
-/// the greeting requirement as documentation evidence; a scripted failure
-/// is the classified error the WIT bindings lift would have produced.
+/// A scripted `Source` with a record of every dispatch.
+///
+/// Evidence is scripted per key; the minimum `emery` version and the kind of
+/// source per adapter. An unscripted key answers the greeting requirement; an
+/// unscripted adapter reads documentation; a scripted failure is the
+/// classified error the WIT bindings' lift would have produced.
 #[derive(Clone, Debug, Default)]
 pub struct SourceScript {
     /// Extract outcomes keyed by source key.
     pub evidence: BTreeMap<String, Result<Evidence, Error>>,
-    /// Minimum `emery` versions keyed by adapter name.
+    /// Minimum `emery` versions keyed by adapter id — the reference itself.
     pub versions: BTreeMap<String, String>,
+    /// Kinds of source keyed by adapter id; an unscripted adapter reads
+    /// documentation.
+    pub kinds: BTreeMap<String, SourceKind>,
     /// Every extract dispatch, recorded for call assertions.
     pub calls: Arc<Mutex<Recorded>>,
+    /// Every metadata dispatch, by adapter id, in call order.
+    pub metadata: Arc<Mutex<Vec<String>>>,
+    /// When set, every extract is held until each expected source has been
+    /// requested, so a scenario can prove the engine runs its sources
+    /// together.
+    pub rendezvous: Option<Rendezvous>,
+}
+
+/// A meeting point for the sources of one run: no extract resolves until
+/// every expected source has asked to extract. An engine that extracts its
+/// sources one at a time never gets there, so the wait is bounded and the
+/// failure names the sources that never arrived.
+#[derive(Clone, Debug)]
+pub struct Rendezvous {
+    expected: BTreeSet<String>,
+    arrived: Arc<Mutex<BTreeSet<String>>>,
+    barrier: Arc<Barrier>,
+}
+
+impl<T: Into<String>> FromIterator<T> for Rendezvous {
+    /// Builds the rendezvous over the source keys of one run.
+    fn from_iter<I: IntoIterator<Item = T>>(iter: I) -> Self {
+        let expected: BTreeSet<String> = iter.into_iter().map(Into::into).collect();
+        Self {
+            barrier: Arc::new(Barrier::new(expected.len())),
+            arrived: Arc::default(),
+            expected,
+        }
+    }
+}
+
+impl Rendezvous {
+    // Holds `key` until every expected source has arrived, or fails the
+    // scenario once the bound elapses.
+    async fn wait(&self, key: &str) {
+        self.arrived.lock().expect("arrived").insert(key.to_string());
+        if tokio::time::timeout(RENDEZVOUS, self.barrier.wait()).await.is_err() {
+            let missing: Vec<String> =
+                self.expected.difference(&self.arrived.lock().expect("arrived")).cloned().collect();
+            panic!(
+                "source `{key}` waited {RENDEZVOUS:?} for {missing:?}, which never asked to \
+                 extract: the engine is extracting its sources one at a time"
+            );
+        }
+    }
 }
 
 /// The scripted provider behind every root scenario.
@@ -52,10 +110,8 @@ pub struct Provider<S = Memory> {
     pub model: Scripted,
     /// The scripted `Source`.
     pub source: SourceScript,
-    /// The scripted `Plugins` loader: an unscripted, unpinned package
-    /// resolves to the fixed `digest("ab")`; a pin that disagrees with a
-    /// scripted digest refuses `refused`, mirroring the host's
-    /// verify-before-validate step.
+    /// The scripted `Plugins` loader: an unscripted package resolves to
+    /// the fixed `digest("ab")`.
     pub plugins: ScriptedLoader,
     /// The scripted storage pair.
     pub storage: Arc<S>,
@@ -82,6 +138,15 @@ impl<S> Provider<S> {
             plugins: ScriptedLoader::default().defaulting(digest("ab")),
             storage,
         }
+    }
+
+    // Mirrors host-mediated dispatch: a bare name is a guest the deployment
+    // declares; any other id is routable only once the loader has landed it.
+    // A source call before its load is the engine's ordering defect, and it
+    // fails here rather than only under the real runtime.
+    fn routable(&self, id: &str) {
+        let loaded = self.plugins.loads().iter().any(|plugin| plugin.package == id);
+        assert!(is_kebab(id) || loaded, "`{id}` was dispatched before its load");
     }
 }
 
@@ -207,23 +272,32 @@ impl<S: Send + Sync + 'static> Source for Provider<S> {
     fn extract(
         &self, id: &str, input: &SourceInput,
     ) -> impl Future<Output = Result<Evidence, Error>> + Send {
+        self.routable(id);
+        // The dispatch is recorded and the outcome chosen before the future
+        // is polled, so `calls` is dispatch order whatever resolves first.
         self.source.calls.lock().expect("calls").push((id.to_string(), input.clone()));
-        let outcome = self.source.evidence.get(&input.key).cloned().unwrap_or_else(|| {
-            Ok(evidence(
-                Authority::Documentation,
-                vec![requirement("greeting.behaviour", GREETING)],
-            ))
-        });
-        std::future::ready(outcome)
+        let outcome = self
+            .source
+            .evidence
+            .get(&input.key)
+            .cloned()
+            .unwrap_or_else(|| Ok(evidence(vec![requirement("greeting.behaviour", GREETING)])));
+        let rendezvous = self.source.rendezvous.clone();
+        let key = input.key.clone();
+        async move {
+            if let Some(rendezvous) = rendezvous {
+                rendezvous.wait(&key).await;
+            }
+            outcome
+        }
     }
 
     fn metadata(&self, id: &str) -> AdapterMetadata {
-        // Routed ids are `source:<name>` or a package reference
-        // (`<namespace>:<name>@<version>`); versions key on the name.
-        let name = id.split_once('@').map_or(id, |(stem, _)| stem);
-        let name = name.rsplit_once(':').map_or(name, |(_, stem)| stem);
+        self.routable(id);
+        self.source.metadata.lock().expect("metadata").push(id.to_string());
         AdapterMetadata {
-            emery_version: self.source.versions.get(name).cloned(),
+            emery_version: self.source.versions.get(id).cloned(),
+            kind: self.source.kinds.get(id).copied().unwrap_or(SourceKind::Documentation),
         }
     }
 }
@@ -261,6 +335,6 @@ pub fn requirement(id: &str, statement: &str) -> Claim {
 }
 
 /// Builds an evidence document over `claims`.
-pub const fn evidence(authority: Authority, claims: Vec<Claim>) -> Evidence {
-    Evidence { authority, claims }
+pub const fn evidence(claims: Vec<Claim>) -> Evidence {
+    Evidence { claims }
 }

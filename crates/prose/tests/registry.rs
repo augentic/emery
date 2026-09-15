@@ -1,9 +1,9 @@
-//! Registry contract
+//! Asserts what callers can rely on from an embedded corpus.
 //!
-//! What callers can rely on from an embedded corpus: a document is found by
-//! its tree-relative path, its body comes back intact, and asking for a path
-//! the build did not embed is `None` — the caller reports the mismatch as its
-//! own failure, so it is never a silent miss and never a panic.
+//! A document is found by its tree-relative path, its body comes back intact,
+//! and asking for a path the build did not embed is `None` — the caller
+//! reports the mismatch as its own failure, so it is never a silent miss and
+//! never a panic.
 
 use emery_prose::registry::{Doc, body, find};
 

@@ -29,7 +29,7 @@
           "sources": [
             "docs"
           ],
-          "authority": "documentation",
+          "kind": "documentation",
           "claim": "login.flow",
           "statement": "Users sign in with a magic link."
         },
@@ -37,7 +37,7 @@
           "sources": [
             "wiki-live"
           ],
-          "authority": "documentation",
+          "kind": "documentation",
           "claim": "login.flow",
           "statement": "Users sign in with a passkey."
         },
@@ -45,7 +45,7 @@
           "sources": [
             "code"
           ],
-          "authority": "behaviour",
+          "kind": "behaviour",
           "claim": "login.flow",
           "statement": "Users sign in with email and password."
         }
@@ -87,7 +87,7 @@
           "sources": [
             "code"
           ],
-          "authority": "behaviour",
+          "kind": "behaviour",
           "claim": "session-expiry",
           "statement": "Sessions expire after 15 minutes of inactivity."
         }

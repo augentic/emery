@@ -14,7 +14,7 @@ emery specify                       # discovers the project-root emery.toml
 
 The one generate verb. Each run names its own sources: every positional `<adapter>` names a **workspace-backed** source (the adapter reads a read-only view rooted at the project directory; the source key is the adapter name), and every `--description <adapter>=<text>` (repeatable, `-d`) names a **description-backed** source (the adapter extracts the inline text; no filesystem view is lent). Nothing about the source list persists between runs — repeat the sources on every invocation (Makefile, skill, CI), or keep them in an operator-owned `emery.toml` selected with `--config [<path>]` (`-c`; the omitted value selects the project-relative `emery.toml`). A run naming no sources at all discovers the project-root `emery.toml` as a fallback — discovery is a fallback, never merged with argv sources.
 
-Each run resolves its adapters before extracting; a local `.wasm` component or an exact package reference loads through the deployment's `omnia:plugins/loader` capability. A component is read fresh on every run — nothing is mirrored, so deleting the file makes the next run refuse typed; a package fetches from the source's `registry` override or the compiled-in default endpoint (`omnia.host`), likewise read fresh on every run — the deployment keeps no project cache. A source's optional `digest` pin is verified host-side before validation. Extract dispatches every source over the `Source` capability; the engine then groups the requirement claims into requirements (byte-equal ids always merge; across two or more sources the model judges the rest, with authority withheld), ranks each requirement's agreeing classes under authority precedence (intent > documentation > behaviour) into its status, drafts the scenarios and design content through schema-gated model answers checked against those requirements and the claim-derived section plan (each requirement's body is the winning claim's statement, rendered by the engine), places the accepted drafts beside its facts in the typed documents, and commits them as one revision, atomically swapping the current revision id. Gaps stay `[unknown]`; disagreement surfaces inline as `[conflict]` / `[divergence]`. Re-running over identical sources is byte-stable and reports an empty re-mine diff in the success envelope — nothing is persisted for the diff. Review the committed set with [`emery show`](show.md).
+Each run resolves its adapters before extracting; a local `.wasm` component or an exact package reference loads through the deployment's `omnia:plugins/loader` capability. A component is read fresh on every run — nothing is mirrored, so deleting the file makes the next run refuse typed; a package fetches from the registry the deployment routes its namespace to (compiled in as [`src/wasm-pkg.toml`](../../../src/wasm-pkg.toml); `omnia.host` by default), likewise read fresh on every run — the deployment keeps no project cache. Extract dispatches every source over the `Source` capability at once and waits for all of them, so a run takes as long as its slowest source; the engine then groups the requirement claims into requirements (byte-equal ids always merge; across two or more sources the model judges the rest, with authority withheld), ranks each requirement's agreeing classes under authority precedence (intent > documentation > behaviour) into its status, drafts the scenarios and design content through schema-gated model answers checked against those requirements and the claim-derived section plan (each requirement's body is the winning claim's statement, rendered by the engine), places the accepted drafts beside its facts in the typed documents, and commits them as one revision, atomically swapping the current revision id. Gaps stay `[unknown]`; disagreement surfaces inline as `[conflict]` / `[divergence]`. Re-running over identical sources is byte-stable and reports an empty re-mine diff in the success envelope — nothing is persisted for the diff. Review the committed set with [`emery show`](show.md).
 
 ### Every run starts from new
 
@@ -22,7 +22,7 @@ Nothing of the stored revision reaches a run: the requirements are numbered `REQ
 
 `emery specify` without any source — and with no project-root `emery.toml` to discover — fails typed with `specify-source-required` (exit `1`); there is no interactive prompt mode, so every other input arrives as a flag. Naming the same `name` twice fails as `bad_request` (exit `1`); a `--description` entry without `<adapter>=` fails as `bad_request` (exit `1`); combining `--config` with positional adapters or `--description` fails as `bad_request` (exit `1`).
 
-A local `.wasm` component loads dynamically through the deployment loader (the journey host in [`examples/runtime.rs`](../../../examples/runtime.rs) loads the built mock component via [`examples/emery.toml`](../../../examples/emery.toml)), and a package reference (`emery:intent@1.0.0`, or the `intent@1.0.0` shorthand for the `emery` namespace) fetches from its registry and registers under the package reference itself. Registry and network failures refuse `unavailable` (exit `4`); a fetched artifact that fails host-side validation refuses `refused` (exit `1`). A bare name still dispatches only guests declared in the runtime invocation and fails at dispatch outside that set. GitHub URLs are refused (`bad_request`). An adapter that refuses its input fails as `bad_request` (exit `1`); any other adapter failure is `bad_gateway` (exit `4`), naming the source.
+A local `.wasm` component loads dynamically through the deployment loader (the journey host in [`examples/runtime.rs`](../../../examples/runtime.rs) loads the built mock component via [`examples/emery.toml`](../../../examples/emery.toml)), and a package reference (`emery:intent@1.0.0`, or the `intent@1.0.0` shorthand for the `emery` namespace) fetches from its registry and registers under the package reference itself. Registry and network failures refuse `unavailable` (exit `4`); a fetched artifact that fails host-side validation refuses `refused` (exit `1`). A bare name still dispatches only guests declared in the runtime invocation and fails at dispatch outside that set. GitHub URLs are refused (`bad_request`). Source extraction is internal to Emery: an adapter refusal, another adapter failure, or evidence the claim gate rejects is reported as `server_error` (exit `3`). When several sources fail in one run, every description appears in that server error in declaration order.
 
 This is the CLI command invoked by [`/emery:specify`](../../../plugins/emery/skills/specify/SKILL.md). The skill elicits any missing arguments conversationally and passes them as flags; the CLI itself has no interactive mode.
 
@@ -30,7 +30,7 @@ This is the CLI command invoked by [`/emery:specify`](../../../plugins/emery/ski
 
 `emery.toml` is operator-authored and operator-owned: the engine never writes it, and reads it when the `--config` flag names it or when a run naming no sources discovers it at the project root. `--config` without a value names the project-relative `emery.toml`; an explicit value names another project-relative file (a missing explicit file is a read error, exit `3`, never a discovery miss). Each `[[source]]` entry names one source, in declaration order; its `name` is the source key, so one adapter may name several roots (the shared adapter loads once; each source still extracts over its own root). Exactly one content key per entry — `path` or `description`; omitted means the workspace lend at `.`. `path` (and a local component `adapter`) resolves relative to the file containing it, as Cargo resolves `path` dependencies. Duplicate names fail as `bad_request` (exit `1`), the same typed error argv raises.
 
-Every filesystem input is normalized within the project preopen `.`. Absolute paths and relative paths that escape above it fail as `bad_request` (exit `1`); the engine never tries to infer a host path from the guest's ambient working directory. The `git` and `url` content keys are reserved: they parse but refuse typed (`bad_request`) until the remote read-view grant exists. The per-source `digest` key pins a loader-loaded adapter's exact bytes (`sha256:<hex>`) — a local component's or a registry package's — verified host-side before validation; a mismatch refuses `refused` (exit `1`), and a pin on a bare name refuses `bad_request`. The per-source `registry` key overrides the acquirer's default endpoint for one package-shaped adapter; on any other reference it refuses `bad_request`.
+Every filesystem input is normalized within the project preopen `.`. Absolute paths and relative paths that escape above it fail as `bad_request` (exit `1`); the engine never tries to infer a host path from the guest's ambient working directory. The `git` and `url` content keys are reserved: they parse but refuse typed (`bad_request`) until the remote read-view grant exists. Which registry serves a package adapter is the deployment's compiled-in policy, resolved from the package's namespace: no `[[source]]` key names a registry, and an unknown key is a parse error (`bad_request`).
 
 ```toml
 # Workspace lend of the invocation directory (the default: path = ".").
@@ -51,21 +51,16 @@ name = "intent"
 adapter = "intent@1.0.0"
 description = "Ship a location-independent spec generator."
 
-# Local component, loaded fresh each run; the optional digest pins its
-# exact bytes.
+# Local component, loaded fresh each run.
 [[source]]
 name = "custom"
 adapter = "./adapters/custom.wasm"
-digest = "sha256:9f2c44…"
 
-# Third-party registry package: the registry key overrides the
-# compiled-in default endpoint, and the digest pin verifies the
-# fetched bytes host-side.
+# Third-party package: the deployment resolves the registry from the
+# namespace; the file names no registry.
 [[source]]
 name = "third-party"
 adapter = "acme:ledger@2.1.0"
-registry = "registry.acme.example"
-digest = "sha256:55c29a…"
 ```
 
 ## Options

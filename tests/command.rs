@@ -1,7 +1,6 @@
-//! CLI wire contract
+//! Asserts what the `emery` command promises regardless of what the engine does.
 //!
-//! What the `emery` command promises regardless of what the engine does:
-//! which verbs exist, how grammar mistakes are reported, which exit code each
+//! Which verbs exist, how grammar mistakes are reported, which exit code each
 //! failure class maps to, and what lands on stdout versus stderr in text and
 //! JSON mode.
 //!

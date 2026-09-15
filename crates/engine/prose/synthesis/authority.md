@@ -1,6 +1,6 @@
 # Authority hierarchy
 
-Every Evidence document carries one closed `authority` class. Highest wins:
+Every source is read under one closed `kind`, declared by its adapter. Kinds rank by authority; highest wins:
 
 1. **`intent`** — inline operator directives (the `intent` source adapter is the only first-party emitter).
 2. **`documentation`** — operator-provided written product or technical intent (internal docs, RFCs, product notes). Emitted by the `documentation` source adapter.

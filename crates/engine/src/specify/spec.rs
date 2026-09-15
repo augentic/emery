@@ -1,11 +1,10 @@
-//! The `spec.md` brief
+//! Asks the model for the drafted content of `spec.md`.
 //!
-//! Asks the model for the drafted content of `spec.md`: the preamble and, for
-//! every requirement, its acceptance scenarios. The requirements, their ids,
-//! their provenance, and their bodies are the engine's: the schema names the
-//! subjects to draft, every candidate draft is verified to carry exactly one
-//! entry per listed subject, and the engine places the accepted draft beside
-//! its facts in the specification.
+//! The draft is the preamble and, for every requirement, its acceptance
+//! scenarios. The requirements, their ids, their provenance, and their bodies
+//! are the engine's: the schema names the subjects to draft, every candidate
+//! is verified to carry exactly one entry per subject, and the accepted draft
+//! is placed beside the engine's facts in the specification.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::{self, Display, Formatter};
@@ -21,16 +20,16 @@ use crate::specify::Extract;
 use crate::specify::basis::Basis;
 use crate::specify::brief::{Brief, ClaimsSection, Review};
 
-/// What the engine needs to ask the model for `spec.md` and to verify its
-/// draft: the extracts and the requirement bases derived from them.
+/// The brief that asks for the draft of `spec.md`.
+///
+/// It carries the extracts and the requirement bases derived from them.
 pub struct SpecBrief<'a> {
     extracts: &'a [Extract],
     bases: &'a [Basis],
 }
 
 impl<'a> SpecBrief<'a> {
-    /// Creates the brief for `spec.md` from the `extracts` and the
-    /// requirement `bases` derived from them.
+    /// Creates the brief over the `extracts` and the `bases` derived from them.
     #[must_use]
     pub const fn new(extracts: &'a [Extract], bases: &'a [Basis]) -> Self {
         Self { extracts, bases }
@@ -158,9 +157,9 @@ impl Display for SpecBrief<'_> {
                 for member in class {
                     writeln!(
                         f,
-                        "  - {role}: {source} ({authority}, `{claim}`): {statement}",
+                        "  - {role}: {source} ({kind}, `{claim}`): {statement}",
                         source = member.source,
-                        authority = member.authority,
+                        kind = member.kind,
                         claim = member.id,
                         statement = member.statement,
                     )?;
@@ -172,9 +171,10 @@ impl Display for SpecBrief<'_> {
     }
 }
 
-/// The `spec.md` draft: preamble paragraphs and one entry per requirement to
-/// draft. Only what needs synthesis is asked for; every heading, provenance
-/// line, body, and note is the renderer's.
+/// The `spec.md` draft: preamble paragraphs and one entry per requirement.
+///
+/// Only what needs synthesis is asked for; every heading, provenance line,
+/// body, and note is the renderer's.
 #[derive(Debug, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 #[schemars(title = "Emery spec draft")]

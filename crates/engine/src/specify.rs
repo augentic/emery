@@ -1,114 +1,182 @@
-//! The `specify` operation
+//! Generates a specification revision from a list of sources.
 //!
-//! Emery's central operation: given a list of sources, extract each
-//! source's claims, derive the requirements under authority precedence,
-//! synthesise `spec.md` and `design.md`, and commit the pair as one new
-//! revision.
+//! Each source's claims are extracted, the requirements are derived under
+//! authority precedence, `spec.md` and `design.md` are synthesised, and the
+//! pair is committed as one revision. The result reports the revision id and
+//! the diff against the revision it displaced, so a caller can see what
+//! changed without reading the documents.
 //!
-//! A [`SourceConfig`] names one source to extract from: the adapter to use,
-//! the key the specification will cite it by, and either a workspace to read
-//! or an inline value. The list is per-run input, never stored, so the same
-//! shape serves the command line, a config file, and any other transport,
-//! and it is checked whole before a single adapter loads.
+//! A [`SourceConfig`] names one source: the adapter to use, the key the
+//! specification cites it by, and a workspace to read or an inline value. The
+//! list is per-run input, never stored, so one shape serves the command line,
+//! a config file, and any other transport; it is checked whole before any
+//! adapter loads.
 //!
-//! Every run starts from its sources alone: nothing of an earlier revision
-//! is read into the synthesis. The result reports what was committed — the
-//! revision id and the diff against the revision it displaced — so a caller
-//! can see what changed without reading the documents.
+//! Every source extracts at once, and a run waits for all of them, so every
+//! source that fails is reported together rather than only the first. A run
+//! starts from its sources alone: nothing of an earlier revision is read into
+//! the synthesis.
 
 mod basis;
 mod brief;
 mod design;
 mod spec;
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 
 use emery_adapter::is_kebab;
 pub use emery_adapter::source::SourceContent;
-use emery_adapter::source::{Evidence, Source, SourceInput};
+use emery_adapter::source::{Evidence, Source, SourceInput, SourceKind};
+use futures::future;
 use omnia_guest::api::Context;
-use omnia_guest::plugins::Digest;
-use omnia_guest::{BlobStore, Error, Model, Plugins, StateStore, bad_request};
+use omnia_guest::{BlobStore, Error, Model, Plugins, StateStore, bad_request, server_error};
 use serde::{Deserialize, Serialize};
 
 use self::basis::GroupingBrief;
 use self::brief::Brief as _;
 use self::design::DesignBrief;
 use self::spec::SpecBrief;
-use crate::adapter::{AdapterRef, Loader};
+use crate::adapter::{self, AdapterRef};
 use crate::revision::Revision;
 pub use crate::revision::{Changed, DesignDiff, Diff, Entry, ReqId, SectionKind, SpecDiff};
 use crate::{preopen_path, store};
 
 /// Runs `specify` over the context's provider.
 ///
-/// Checks the source list, then extracts each source's evidence, derives the
-/// requirement bases, drafts the specification and then the design over them,
-/// and commits the pair as one revision.
+/// The source list is checked whole, the adapters it names are loaded, every
+/// source is extracted at once, and the specification and design are
+/// synthesised over the claims and committed as one revision.
 ///
 /// # Errors
 ///
-/// Returns `BadRequest` for a source the rules refuse, a claim the gate
-/// rejects, or a draft the model could not bring within the brief's rounds;
-/// `BadGateway` for a model failure; and passes through the extract and
-/// store failures.
+/// - [`Error::BadRequest`] for a source list the rules refuse (code
+///   `specify-source-required` when it is empty), an adapter that requires a
+///   newer Emery (code `unsupported-version`), or a draft the model could not
+///   bring within its rounds.
+/// - [`Error::NotFound`] for an adapter path that names no file.
+/// - [`Error::ServerError`] when any extraction fails or storage refuses the
+///   commit.
+/// - [`Error::BadGateway`] for a model failure.
+///
+/// Adapter load failures pass through with their own class.
 pub async fn specify<P: Model + Source + StateStore + BlobStore + Plugins>(
     input: SpecifyInput, context: Context<P>,
 ) -> Result<SpecifyOutput, Error> {
     let provider = context.provider();
 
-    let extracts = input.extract(provider).await?;
+    // load source adapters
+    let bound = Bound::all(&input.sources)?;
+    let kinds = adapter::load(provider, bound.iter().map(|source| source.adapter)).await?;
+
+    // extract all sources in parallel, each ranked by its adapter's kind
+    let outcomes =
+        future::join_all(bound.iter().map(|source| source.extract(provider, &kinds))).await;
+
+    // collect extracts or findings for failed extracts
+    let mut extracts = Vec::with_capacity(outcomes.len());
+    let mut failures = Vec::new();
+    for (source, outcome) in bound.iter().zip(outcomes) {
+        match outcome {
+            Ok(extract) => extracts.push(extract),
+            Err(error) => {
+                tracing::warn!(source = %source.input.key, %error, "extract failed");
+                failures.push(error.description());
+            }
+        }
+    }
+
+    if !failures.is_empty() {
+        return Err(server_error!(failures.join("\n")));
+    }
+
+    // synthesise extracts into a unified set of specifications
     let bases = GroupingBrief::new(&extracts).derive(provider).await?;
     let spec = SpecBrief::new(&extracts, &bases).judge(provider).await?;
     let design = DesignBrief::new(&extracts, &spec).judge(provider).await?;
-    let (id, diff) = store::commit(provider, &Revision { spec, design }).await?;
 
-    Ok(SpecifyOutput { revision: id, diff })
+    // commit the revision
+    let (revision, diff) = store::commit(provider, &Revision { spec, design }).await?;
+
+    Ok(SpecifyOutput { revision, diff })
 }
 
-/// Generate a specification revision from sources.
+/// The input to [`specify`]: the sources of one run.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
 pub struct SpecifyInput {
-    /// The run's source configurations, in extraction order.
+    /// The run's sources, in declaration order.
     pub sources: Vec<SourceConfig>,
 }
 
-impl SpecifyInput {
-    async fn extract<P: Source + Plugins>(&self, provider: &P) -> Result<Vec<Extract>, Error> {
-        let inputs = self.prepare()?;
+/// One source of a run: its key, its adapter, and what to read.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub struct SourceConfig {
+    /// The kebab-case key the specification cites the source by.
+    pub key: String,
+    /// The adapter that extracts the source.
+    pub adapter: AdapterRef,
+    /// What the adapter reads: a project-relative directory (`.` is the
+    /// project itself) or an inline value.
+    pub content: SourceContent,
+}
 
-        let mut extracts = Vec::with_capacity(self.sources.len());
-        let loader = Loader::new(provider);
-
-        for (config, input) in self.sources.iter().zip(inputs) {
-            let id = loader
-                .load(&config.adapter, config.digest.as_ref(), config.registry.as_deref())
-                .await?;
-
-            let key = input.key.as_str();
-            tracing::debug!(config = %key, "extracting");
-            let evidence = Source::extract(provider, &id, &input).await?;
-
-            // The adapter is a guest the engine did not write, so the
-            // contract's claim gate is re-run here, fail-closed.
-            let findings = evidence.findings();
-            if !findings.is_empty() {
-                let findings = findings.join("\n");
-                return Err(bad_request!("source `{key}` returned invalid claims:\n{findings}"));
-            }
-
-            extracts.push(Extract {
-                key: input.key,
-                evidence,
-            });
+impl SourceConfig {
+    // Checks this source's rules and maps it to the adapter's `extract`
+    // input; the one place an operator root meets the guest preopen.
+    fn prepare(&self) -> Result<SourceInput, Error> {
+        let key = &self.key;
+        if !is_kebab(key) {
+            return Err(bad_request!("source `{key}` is not a kebab-case key"));
         }
 
-        Ok(extracts)
-    }
+        let content = match &self.content {
+            // The adapter lends the root to the model by preopen name, so it
+            // is spelled beneath the `.` mount: `.` itself, or `./<path>`.
+            // `.` spans the whole project, `.omnia/` included, until guest
+            // capability profiles can exclude the revision store.
+            SourceContent::Workspace(relative) => {
+                let relative = preopen_path(Path::new(relative))?.display().to_string();
+                let root = if relative == "." { relative } else { format!("./{relative}") };
+                SourceContent::Workspace(root)
+            }
+            value @ SourceContent::Value(_) => value.clone(),
+        };
 
-    fn prepare(&self) -> Result<Vec<SourceInput>, Error> {
-        if self.sources.is_empty() {
+        Ok(SourceInput {
+            key: key.clone(),
+            content,
+        })
+    }
+}
+
+/// What a successful run committed.
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub struct SpecifyOutput {
+    /// The id of the committed revision.
+    pub revision: String,
+    /// The diff against the revision this run displaced.
+    ///
+    /// Absent on the first run, and when the outgoing revision was unreadable.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub diff: Option<Diff>,
+}
+
+// One source bound to its adapter: the adapter the call routes to and the
+// input it carries.
+struct Bound<'a> {
+    adapter: &'a AdapterRef,
+    input: SourceInput,
+}
+
+impl<'a> Bound<'a> {
+    // Binds every source under the rules every transport must get — a
+    // non-empty list, unique keys, and each source's own — before any
+    // adapter loads.
+    fn all(sources: &'a [SourceConfig]) -> Result<Vec<Self>, Error> {
+        if sources.is_empty() {
             return Err(Error::BadRequest {
                 code: "specify-source-required".into(),
                 description: "no sources".into(),
@@ -116,100 +184,58 @@ impl SpecifyInput {
         }
 
         let mut keys = BTreeSet::new();
-        let mut inputs = Vec::with_capacity(self.sources.len());
-        for source in &self.sources {
+        let mut bound = Vec::with_capacity(sources.len());
+        for source in sources {
             let input = source.prepare()?;
             if !keys.insert(source.key.as_str()) {
                 return Err(bad_request!("source `{}` appears twice", source.key));
             }
-            inputs.push(input);
+            bound.push(Self {
+                adapter: &source.adapter,
+                input,
+            });
         }
 
-        Ok(inputs)
+        Ok(bound)
     }
-}
 
-// One source's validated evidence, under the key the documents cite it by.
-#[derive(Debug)]
-struct Extract {
-    key: String,
-    evidence: Evidence,
-}
+    // Extracts the source under the kind its adapter declared at load.
+    async fn extract<P: Source>(
+        &self, provider: &P, kinds: &BTreeMap<String, SourceKind>,
+    ) -> Result<Extract, Error> {
+        let source = &self.input.key;
+        let adapter = self.adapter.to_string();
+        // The load registered every bound adapter, so an absent kind is the
+        // engine's own slip, never the operator's.
+        let kind = kinds
+            .get(&adapter)
+            .copied()
+            .ok_or_else(|| server_error!("adapter `{adapter}` was not loaded"))?;
+        tracing::debug!(%source, %kind, "extracting");
 
-/// A source for one run.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct SourceConfig {
-    /// Stable kebab-case source key.
-    pub key: String,
-    /// Which adapter extracts this source.
-    pub adapter: AdapterRef,
-    /// What the adapter extracts: a project-relative read-only root
-    /// (`.` binds the project) or an inline value.
-    pub content: SourceContent,
-    /// Optional sha256 content pin for a loader-loaded adapter,
-    /// verified host-side before validation.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub digest: Option<Digest>,
-    /// Optional registry endpoint override for a package adapter;
-    /// `None` selects the acquirer's default.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub registry: Option<String>,
-}
+        let evidence = Source::extract(provider, &adapter, &self.input).await?;
 
-impl SourceConfig {
-    // Maps this source to the adapter `extract` input; the one place an
-    // operator root meets the guest preopen.
-    fn input(&self) -> Result<SourceInput, Error> {
-        let content = match &self.content {
-            // `.` spans the project preopen, including `.omnia/`, until
-            // guest capability profiles can exclude the revision store.
-            SourceContent::Workspace(relative) => {
-                let relative = preopen_path(Path::new(relative))?;
-                let root = if relative == Path::new(".") {
-                    relative
-                } else {
-                    Path::new(".").join(relative)
-                };
-                SourceContent::Workspace(root.display().to_string())
-            }
-            value @ SourceContent::Value(_) => value.clone(),
-        };
-        Ok(SourceInput {
-            key: self.key.clone(),
-            content,
+        let findings = evidence.findings();
+        if !findings.is_empty() {
+            return Err(server_error!(
+                "`{source}` returned invalid claims:\n{}",
+                findings.join("\n")
+            ));
+        }
+
+        Ok(Extract {
+            source: source.clone(),
+            kind,
+            evidence,
         })
     }
-
-    // Checks one source's rules and prepares the guest input before any load.
-    fn prepare(&self) -> Result<SourceInput, Error> {
-        let key = &self.key;
-        if !is_kebab(key) {
-            return Err(bad_request!("source `{key}` is not a kebab-case key"));
-        }
-        if self.registry.is_some() && !matches!(self.adapter, AdapterRef::Package { .. }) {
-            return Err(bad_request!(
-                "source `{key}`: `registry` requires a package adapter \
-                 (`<namespace>:<name>@<version>`)"
-            ));
-        }
-        if self.digest.is_some() && matches!(self.adapter, AdapterRef::Bare(_)) {
-            return Err(bad_request!(
-                "source `{key}`: `digest` requires a `.wasm` path or package adapter, not a bare \
-                 name"
-            ));
-        }
-
-        self.input()
-    }
 }
 
-/// Successful specification result: the revision the store committed.
-#[derive(Debug, Serialize)]
-pub struct SpecifyOutput {
-    /// Committed revision id.
-    pub revision: String,
-    /// Diff from the displaced revision; absent on the first run and when
-    /// the outgoing revision was unreadable.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub diff: Option<Diff>,
+// One source's validated evidence, under the key the documents cite it by
+// and the kind its adapter declared, which ranks it against the others.
+#[derive(Debug)]
+struct Extract {
+    source: String,
+    kind: SourceKind,
+    evidence: Evidence,
 }

@@ -15,11 +15,13 @@ interface types {
     internal(string),
   }
 
-  /// An exact routed adapter identity: "<axis>:<name>@<version>" for a
-  /// pinned package identity (e.g. "source:documentation@1.0.0"),
-  /// "<axis>:<name>" for an unpinned cache-backed component. Host-mediated
-  /// dispatch routes each call to the exporting guest by this first
-  /// argument; the WIT type stays an opaque string.
+  /// An exact routed adapter identity: the adapter reference itself. A
+  /// statically declared guest is its bare name (e.g. "intent"), a local
+  /// component its project-relative path (e.g. "adapters/intent.wasm"),
+  /// a registry package the package reference
+  /// (e.g. "emery:documentation@1.0.0"). Host-mediated dispatch routes
+  /// each call to the exporting guest by this first argument; the WIT
+  /// type stays an opaque string.
   type adapter-id = string;
 
   /// Either a read-only source view or an inline value. Never a
@@ -41,10 +43,11 @@ interface types {
     content: content,
   }
 
-  /// Document-level authority class for an extracted claim set, per the
-  /// closed authority hierarchy (`intent` > `documentation` >
-  /// `behaviour`). Controls who wins a cross-source disagreement.
-  enum authority {
+  /// The kind of source an adapter reads: a fact about the artefact, so
+  /// the adapter declares it in its metadata and the model never answers
+  /// it. Kinds rank by authority (`intent` > `documentation` >
+  /// `behaviour`), which decides who wins a cross-source disagreement.
+  enum source-kind {
     /// Operator directives. Highest authority.
     intent,
     /// Written specifications and documentation.
@@ -106,22 +109,27 @@ interface types {
     extras: list<tuple<string, string>>,
   }
 
-  /// The claim set returned by the extract operation.
+  /// The claim set returned by the extract operation. The kind of source
+  /// it was read from is the adapter's, reported by `metadata`, never
+  /// carried on the document.
   record evidence {
-    /// The document-level authority class of this claim set.
-    authority: authority,
     /// The claims extracted from the source.
     claims: list<claim>,
   }
 
   /// The adapter's deterministic metadata: identity lives in the
-  /// wasm-pkg package reference and axis in the exported world, so only
-  /// the host version requirement remains on the record.
+  /// wasm-pkg package reference and axis in the exported world, so the
+  /// record carries the host version requirement and the kind of source
+  /// the adapter reads — both compiled-in constants.
   record adapter-metadata {
     /// Optional minimum `emery` version this adapter needs, as an exact
     /// semver (like Cargo's `rust-version`). The host aborts at resolve
     /// time when the running binary is older. Absent means no minimum.
     emery-version: option<string>,
+    /// The kind of source this adapter reads, which ranks its evidence
+    /// against other sources'. Fixed per adapter at resolve time, before
+    /// any extract.
+    kind: source-kind,
   }
 }
 

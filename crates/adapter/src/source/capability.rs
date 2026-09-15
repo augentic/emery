@@ -1,36 +1,45 @@
-//! The `Source` capability
+//! The [`Source`] capability and the records that cross into an adapter.
 //!
-//! [`Source`] is how the engine reaches an adapter: it addresses a loaded
-//! adapter by id and asks it to extract evidence or report its metadata.
-//! It follows the shape of omnia's other capability traits so a provider
-//! carries it alongside `Model`, storage, and plugin loading. The records
-//! that cross the seam inward — what an adapter is given and what it reports
-//! about itself — are declared beside it.
+//! [`Source`] is how the engine reaches a loaded adapter: it addresses the
+//! adapter by id and asks it to extract evidence or report its metadata. It
+//! has the shape of omnia's other capability traits, so one provider carries
+//! it beside `Model`, storage, and plugin loading.
 //!
-//! In a wasm guest the trait dispatches over the WIT import automatically. In
-//! a native build the methods are left for the caller to implement, so a test
-//! can script exactly what an adapter would have returned.
+//! In a wasm guest the trait dispatches over the WIT import by default. In a
+//! native build the methods are left to the implementor, so a test can script
+//! exactly what an adapter would have returned.
 
 use std::future::Future;
 
 use omnia_guest::Error;
 use serde::{Deserialize, Serialize};
 
-use crate::source::Evidence;
+use crate::source::{Evidence, SourceKind};
 
-/// Import-side source dispatch over the `emery:adapter/source` contract.
+/// The capability the engine calls source adapters through.
 ///
-/// Adapters implement the export-side `SourceAdapter` from `emery-sdk`
-/// instead. An extract failure arrives classified: an adapter refusing its
-/// input is `BadRequest`, any other failure `BadGateway`.
+/// Adapters implement the export side — `SourceAdapter` in `emery-sdk` — not
+/// this trait. An extract failure arrives classified: an adapter refusing its
+/// input is [`Error::BadRequest`], and any other failure is
+/// [`Error::BadGateway`].
 pub trait Source: Send + Sync {
-    /// Dispatches `extract` to `id`.
+    /// Asks the adapter registered as `id` to extract `input`.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::BadRequest`] when the adapter refuses its input, and
+    /// [`Error::BadGateway`] for any other adapter failure.
     #[cfg(not(target_arch = "wasm32"))]
     fn extract(
         &self, id: &str, input: &SourceInput,
     ) -> impl Future<Output = Result<Evidence, Error>> + Send;
 
-    /// Dispatches `extract` to `id`.
+    /// Asks the adapter registered as `id` to extract `input`.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::BadRequest`] when the adapter refuses its input, and
+    /// [`Error::BadGateway`] for any other adapter failure.
     #[cfg(target_arch = "wasm32")]
     fn extract(
         &self, id: &str, input: &SourceInput,
@@ -38,41 +47,43 @@ pub trait Source: Send + Sync {
         crate::source::bindings::import::extract(id, input)
     }
 
-    /// Returns resolve-time metadata for `id`.
+    /// Returns the metadata the adapter registered as `id` declares.
     #[cfg(not(target_arch = "wasm32"))]
     fn metadata(&self, id: &str) -> AdapterMetadata;
 
-    /// Returns resolve-time metadata for `id`.
+    /// Returns the metadata the adapter registered as `id` declares.
     #[cfg(target_arch = "wasm32")]
     fn metadata(&self, id: &str) -> AdapterMetadata {
         crate::source::bindings::import::metadata(id)
     }
 }
 
-/// Source operation input: the key the specification cites the source by and
-/// what the adapter extracts from.
+/// The input to one `extract` call: the source's key and its content.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub struct SourceInput {
-    /// Binding key.
+    /// The key the specification cites the source by.
     pub key: String,
-    /// Workspace or inline content.
+    /// The workspace or inline value to read.
     pub content: SourceContent,
 }
 
-/// Workspace or inline source content.
+/// The content of a source: a directory to read, or an inline value.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum SourceContent {
-    /// Deployment-local root of a read-only source view.
+    /// A read-only directory, named as the guest sees it.
     Workspace(String),
-    /// Inline value without a filesystem lend.
+    /// Text given inline; no directory is lent.
     Value(String),
 }
 
-/// Resolve-time source adapter metadata.
+/// What an adapter declares about itself, read once before any extract.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct AdapterMetadata {
-    /// Exact minimum Emery version, if any.
+    /// The minimum Emery version the adapter requires, if it states one.
     pub emery_version: Option<String>,
+    /// The kind of source the adapter reads, which ranks its evidence
+    /// against other sources'.
+    pub kind: SourceKind,
 }

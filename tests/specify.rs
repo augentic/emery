@@ -1,10 +1,9 @@
-//! The `specify` → `show` product arc
+//! Walks the `specify` → `show` arc an operator lives through.
 //!
-//! The scenarios an operator lives through: naming sources, generating a
-//! specification, reviewing it, regenerating it, and hitting every refusal
-//! along the way — an invalid source, an untrusted adapter, a model draft
-//! that still does not fit the requirements or the plan once the backend's
-//! rounds are spent.
+//! The scenarios: naming sources, generating a specification, reviewing it,
+//! regenerating it, and hitting every refusal along the way — an invalid
+//! source, an untrusted adapter, a model draft that still does not fit the
+//! requirements or the plan once the backend's rounds are spent.
 //!
 //! Each scenario drives the real command façade over scripted capabilities,
 //! so it reads as usage documentation while still asserting the exact
@@ -17,20 +16,20 @@
 
 mod support;
 
-use std::fs;
 use std::path::Path;
 use std::sync::Arc;
+use std::{fs, slice};
 
-use emery_adapter::source::{Authority, ClaimKind, Evidence, SourceContent};
+use emery_adapter::source::{ClaimKind, Evidence, SourceContent, SourceKind};
 use emery_engine::{CONTAINER, CURRENT};
 use omnia_guest::model::Error as ModelError;
-use omnia_guest::plugins::{Digest, Error as LoadError, Location};
+use omnia_guest::plugins::{Error as LoadError, Location};
 use omnia_guest::{BlobStore, StateStore, bad_gateway, bad_request};
 use omnia_test::SeenFormat;
 use omnia_test::guest::{Memory, Namespaced, Scripted};
 use serde_json::Value;
 use sha2::{Digest as _, Sha256};
-use support::{Provider, claim, cli_ok, digest, evidence, fail, requirement};
+use support::{Provider, Rendezvous, claim, cli_ok, evidence, fail, requirement};
 
 // Scripted drafts, the canonical documents the engine commits from them, and
 // the documents it renders from those documents.
@@ -113,12 +112,12 @@ async fn gen_spec() {
     // Observe: the load, the current id, and the revision.
     // --------------------------------------------------
     let request = provider.plugins.loads().first().cloned().expect("one load request");
-    assert_eq!(request.package, "source:source", "the adapter id is the loaded package identity");
+    assert_eq!(request.package, component, "the adapter reference is the loaded package identity");
     let Location::Path(path) = &request.location else {
         panic!("a local component loads by path");
     };
     assert!(path.ends_with("source.wasm"), "the preopen-relative path rides the request: {path}");
-    assert!(request.digest.is_none(), "an unpinned source requests no digest");
+    assert!(request.digest.is_none(), "a load request carries no digest");
     assert!(
         provider.storage.objects("adapters").is_empty(),
         "nothing mirrors into engine storage; the loader reads the file fresh"
@@ -202,20 +201,17 @@ async fn from_file() {
     provider.model.assert_exhausted();
 }
 
-// One adapter may name several roots: the loader is asked once, each
-// source extracts over its own workspace, and the two claims of one id
-// are one requirement citing both sources.
+// One adapter may name several roots: the loader and the version gate are
+// asked once, each source extracts over its own workspace, and the two
+// claims of one id are one requirement citing both sources.
 #[tokio::test]
 async fn shared_roots() {
-    let cases: &[(&str, &str, bool)] = &[
-        ("emery:documentation@1.2.0", "emery:documentation@1.2.0", false),
-        ("./source.wasm", "source:source", true),
-    ];
-    for (adapter, package, wasm) in cases {
+    let cases: &[(&str, bool)] = &[("emery:documentation@1.2.0", false), ("./source.wasm", true)];
+    for (adapter, wasm) in cases {
         let scratch = Scratch::new();
-        if *wasm {
-            scratch.component();
-        }
+        // A package is its own identity; a local component's is its path
+        // anchored at the config file, however the file spelled it.
+        let package = if *wasm { scratch.component() } else { (*adapter).to_string() };
         let config = scratch.config(&format!(
             "[[source]]\nname = \"docs\"\nadapter = \"{adapter}\"\npath = \"docs\"\n\n\
              [[source]]\nname = \"api\"\nadapter = \"{adapter}\"\npath = \"api\"\n"
@@ -234,18 +230,56 @@ async fn shared_roots() {
 
         let loads = provider.plugins.loads();
         assert_eq!(loads.len(), 1, "{adapter}: one adapter identity loads once");
-        assert_eq!(loads[0].package, *package, "{adapter}");
+        assert_eq!(loads[0].package, package, "{adapter}");
+        let gated = provider.source.metadata.lock().expect("metadata").clone();
+        assert_eq!(
+            gated,
+            slice::from_ref(&package),
+            "{adapter}: one adapter identity is gated once"
+        );
 
         let calls = provider.source.calls.lock().expect("calls");
         assert_eq!(calls.len(), 2, "{adapter}: each source extracts");
-        assert_eq!(calls[0].0, *package);
+        assert_eq!(calls[0].0, package);
         assert_eq!(calls[0].1.key, "docs");
-        assert_eq!(calls[1].0, *package);
+        assert_eq!(calls[1].0, package);
         assert_eq!(calls[1].1.key, "api");
         drop(calls);
 
         provider.model.assert_exhausted();
     }
+}
+
+// The sources of one run extract together: every extract is dispatched
+// before any resolves, so a run takes as long as its slowest source. The
+// double holds each extract until the other has been requested, bounded so
+// an engine that extracts one source at a time fails naming the source that
+// never came; dispatch still follows declaration order, so the claims index
+// as before.
+#[tokio::test]
+async fn sources_together() {
+    let grouping = baseline_grouping(2);
+    let mut provider = Provider::answering([grouping.as_str(), SPEC_ANSWER, DESIGN_ANSWER]);
+    provider.source.rendezvous = Some(Rendezvous::from_iter(["docs", "api"]));
+
+    cli_ok(&provider, &["emery", "specify", "docs", "api"]).await;
+
+    let order: Vec<String> = provider
+        .source
+        .calls
+        .lock()
+        .expect("calls")
+        .iter()
+        .map(|(_, input)| input.key.clone())
+        .collect();
+    assert_eq!(order, ["docs", "api"], "dispatch keeps declaration order");
+    assert!(
+        shown(&provider, "spec")
+            .await
+            .contains("Sources: [docs:greeting.behaviour, api:greeting.behaviour]"),
+        "both sources contribute, cited in declaration order"
+    );
+    provider.model.assert_exhausted();
 }
 
 // A run naming no sources at all discovers the project-root
@@ -282,7 +316,7 @@ async fn description_source() {
     assert!(spec.contains("Sources: [intent:greeting.behaviour]"));
     let calls = provider.source.calls.lock().expect("calls");
     let (id, input) = calls.first().expect("one extract dispatch");
-    assert_eq!(id, "source:intent", "a bare adapter dispatches by routed name");
+    assert_eq!(id, "intent", "a bare adapter dispatches to the guest declared under its name");
     assert_eq!(input.key, "intent");
     assert_eq!(input.content, SourceContent::Value("Ship it.".to_string()));
     drop(calls);
@@ -299,51 +333,43 @@ async fn description_source() {
 #[tokio::test]
 async fn authority_precedence() {
     let mut provider = Provider::answering([GROUPING_ANSWER, PRECEDENCE_ANSWER, DESIGN_ANSWER]);
+    // The rank is the adapter's metadata, read at load: a bare adapter's id
+    // is its source key, and the unscripted ones read documentation.
+    provider.source.kinds.insert("code".to_string(), SourceKind::Behaviour);
+    provider.source.kinds.insert("intent".to_string(), SourceKind::Intent);
     provider.source.evidence.insert(
         "docs".to_string(),
-        Ok(evidence(
-            Authority::Documentation,
-            vec![
-                requirement("login.flow", "Users sign in with a magic link."),
-                requirement("session.timeout", "Sessions expire after 30 minutes of inactivity."),
-                claim(
-                    ClaimKind::Criterion,
-                    "login.flow.success",
-                    ("criterion", "A valid link signs the user in."),
-                ),
-                // Non-requirement kinds ride along as synthesis context.
-                claim(ClaimKind::Decision, "auth.decision", ("body", "Sessions are cookie-bound.")),
-            ],
-        )),
+        Ok(evidence(vec![
+            requirement("login.flow", "Users sign in with a magic link."),
+            requirement("session.timeout", "Sessions expire after 30 minutes of inactivity."),
+            claim(
+                ClaimKind::Criterion,
+                "login.flow.success",
+                ("criterion", "A valid link signs the user in."),
+            ),
+            // Non-requirement kinds ride along as synthesis context.
+            claim(ClaimKind::Decision, "auth.decision", ("body", "Sessions are cookie-bound.")),
+        ])),
     );
     provider.source.evidence.insert(
         "wiki-live".to_string(),
-        Ok(evidence(
-            Authority::Documentation,
-            vec![requirement("login.flow", "Users sign in with a passkey.")],
-        )),
+        Ok(evidence(vec![requirement("login.flow", "Users sign in with a passkey.")])),
     );
     provider.source.evidence.insert(
         "code".to_string(),
-        Ok(evidence(
-            Authority::Behaviour,
-            vec![
-                requirement("login.flow", "Users sign in with email and password."),
-                // Behaviour names the timeout differently; the grouping
-                // call, not the id, joins it to the requirement.
-                requirement("session-expiry", "Sessions expire after 15 minutes of inactivity."),
-            ],
-        )),
+        Ok(evidence(vec![
+            requirement("login.flow", "Users sign in with email and password."),
+            // Behaviour names the timeout differently; the grouping
+            // call, not the id, joins it to the requirement.
+            requirement("session-expiry", "Sessions expire after 15 minutes of inactivity."),
+        ])),
     );
     provider.source.evidence.insert(
         "intent".to_string(),
-        Ok(evidence(
-            Authority::Intent,
-            vec![requirement(
-                "session.timeout",
-                "Sessions must expire after 30 minutes of inactivity.",
-            )],
-        )),
+        Ok(evidence(vec![requirement(
+            "session.timeout",
+            "Sessions must expire after 30 minutes of inactivity.",
+        )])),
     );
 
     cli_ok(
@@ -405,19 +431,14 @@ async fn authority_precedence() {
 #[tokio::test]
 async fn grouping_refused() {
     let bind = |provider: &mut Provider| {
+        provider.source.kinds.insert("code".to_string(), SourceKind::Behaviour);
         provider.source.evidence.insert(
             "docs".to_string(),
-            Ok(evidence(
-                Authority::Documentation,
-                vec![requirement("session.timeout", "Sessions expire after 30 minutes.")],
-            )),
+            Ok(evidence(vec![requirement("session.timeout", "Sessions expire after 30 minutes.")])),
         );
         provider.source.evidence.insert(
             "code".to_string(),
-            Ok(evidence(
-                Authority::Behaviour,
-                vec![requirement("session.timeout", "Sessions expire after 15 minutes.")],
-            )),
+            Ok(evidence(vec![requirement("session.timeout", "Sessions expire after 15 minutes.")])),
         );
     };
     let cases: &[(&str, &str)] = &[
@@ -561,21 +582,15 @@ async fn diff_envelope() {
 
     provider.source.evidence.insert(
         "docs".to_string(),
-        Ok(evidence(
-            Authority::Documentation,
-            vec![
-                requirement(
-                    "greeting.behaviour",
-                    "GET /greeting returns the static string 'howdy'.",
-                ),
-                requirement("access.audit", "Access is audited."),
-                claim(
-                    ClaimKind::Type,
-                    "greeting.type",
-                    ("signature", "interface Greeting { text: string }"),
-                ),
-            ],
-        )),
+        Ok(evidence(vec![
+            requirement("greeting.behaviour", "GET /greeting returns the static string 'howdy'."),
+            requirement("access.audit", "Access is audited."),
+            claim(
+                ClaimKind::Type,
+                "greeting.type",
+                ("signature", "interface Greeting { text: string }"),
+            ),
+        ])),
     );
     let resp = cli_ok(&provider, &["emery", "--format", "json", "specify", "docs"]).await;
     let envelope: Value = serde_json::from_slice(&resp.stdout).expect("one JSON envelope");
@@ -621,7 +636,7 @@ fn docs_evidence(requirements: &[(&str, &str)]) -> Evidence {
             ]
         })
         .collect();
-    evidence(Authority::Documentation, claims)
+    evidence(claims)
 }
 
 // The drafts are keyed by subject, so their order is immaterial; the
@@ -660,22 +675,21 @@ const REMINE_SECOND: &str = r#"{
   ]
 }"#;
 
-// A requirement claim missing its `statement` extra fails the whole run
-// with a typed error (the A8 claim gate) before anything commits.
+// A requirement claim missing its `statement` extra is invalid adapter
+// output, so extraction fails as an internal error before anything commits.
 #[tokio::test]
 async fn extras_missing() {
     let mut provider = Provider::idle();
     let mut bare = requirement("greeting.behaviour", "");
     bare.extras.clear();
-    provider
-        .source
-        .evidence
-        .insert("docs".to_string(), Ok(evidence(Authority::Documentation, vec![bare])));
+    provider.source.evidence.insert("docs".to_string(), Ok(evidence(vec![bare])));
 
-    fail(&provider, &["emery", "specify", "docs"], 1, "bad_request").await;
+    fail(&provider, &["emery", "specify", "docs"], 3, "server_error").await;
 }
 
-// An adapter failure surfaces as the upstream error it is.
+// An adapter failure is internal to Emery whether the source ran alone or
+// beside one that succeeded: the run waits for every source, discards the
+// evidence it gathered, and reports one server error.
 #[tokio::test]
 async fn extract_fails() {
     let mut provider = Provider::idle();
@@ -684,12 +698,41 @@ async fn extract_fails() {
         .evidence
         .insert("docs".to_string(), Err(bad_gateway!("source `docs`: the adapter exploded")));
 
-    let envelope = fail(&provider, &["emery", "specify", "docs"], 4, "bad_gateway").await;
-    assert_eq!(envelope["message"], "source `docs`: the adapter exploded");
+    for argv in [&["emery", "specify", "docs"][..], &["emery", "specify", "docs", "api"][..]] {
+        let envelope = fail(&provider, argv, 3, "server_error").await;
+        assert_eq!(envelope["message"], "source `docs`: the adapter exploded", "{argv:?}");
+    }
 }
 
-// An adapter refusing its input is the operator's error, not the
-// adapter's: the refusal keeps its class through the engine.
+// Every failing source is reported in one run, in declaration order, and
+// the public envelope is one server error rather than inheriting an
+// arbitrary adapter error class.
+#[tokio::test]
+async fn two_failures() {
+    let mut provider = Provider::idle();
+    provider
+        .source
+        .evidence
+        .insert("docs".to_string(), Err(bad_gateway!("source `docs`: the adapter exploded")));
+    provider
+        .source
+        .evidence
+        .insert("code".to_string(), Err(bad_request!("source `code`: the brief is empty")));
+
+    let envelope = fail(&provider, &["emery", "specify", "docs", "code"], 3, "server_error").await;
+    assert_eq!(
+        envelope["message"],
+        "source `docs`: the adapter exploded\nsource `code`: the brief is empty"
+    );
+
+    let envelope = fail(&provider, &["emery", "specify", "code", "docs"], 3, "server_error").await;
+    assert_eq!(
+        envelope["message"],
+        "source `code`: the brief is empty\nsource `docs`: the adapter exploded"
+    );
+}
+
+// An adapter's own refusal is internal to Emery at the public boundary.
 #[tokio::test]
 async fn extract_refuses() {
     let mut provider = Provider::idle();
@@ -698,7 +741,7 @@ async fn extract_refuses() {
         .evidence
         .insert("docs".to_string(), Err(bad_request!("source `docs`: the brief is empty")));
 
-    let envelope = fail(&provider, &["emery", "specify", "docs"], 1, "bad_request").await;
+    let envelope = fail(&provider, &["emery", "specify", "docs"], 3, "server_error").await;
     assert_eq!(envelope["message"], "source `docs`: the brief is empty");
 }
 
@@ -840,16 +883,10 @@ async fn invalid_design() {
 async fn dishonest_design() {
     let signature = "interface Greeting { text: string }";
     let evidence = || {
-        Ok(evidence(
-            Authority::Documentation,
-            vec![
-                requirement(
-                    "greeting.behaviour",
-                    "GET /greeting returns the static string 'hello'.",
-                ),
-                claim(ClaimKind::Type, "greeting.type", ("signature", signature)),
-            ],
-        ))
+        Ok(evidence(vec![
+            requirement("greeting.behaviour", "GET /greeting returns the static string 'hello'."),
+            claim(ClaimKind::Type, "greeting.type", ("signature", signature)),
+        ]))
     };
     let draft = |sections: &str| format!(r#"{{"preamble": [], "sections": [{sections}]}}"#);
     // `(from the browser)` is prose — a citation key is one token.
@@ -990,13 +1027,20 @@ async fn config_file() {
             "bad_request",
             "appears twice",
         ),
-        // A malformed pin on a local component refuses before any load.
+        // The source key is the TOML `name`; the engine, not the decoder,
+        // enforces kebab-case so every transport gets the same rule.
         (
-            "[[source]]\nname = \"pinned\"\nadapter = \"./source.wasm\"\n\
+            "[[source]]\nname = \"Docs\"\nadapter = \"documentation\"\n",
+            1,
+            "bad_request",
+            "is not a kebab-case key",
+        ),
+        (
+            "[[source]]\nname = \"local\"\nadapter = \"./source.wasm\"\n\
              digest = \"sha256:9f2c44aa\"\n",
             1,
             "bad_request",
-            "64 hex characters",
+            "unknown field `digest`",
         ),
         (
             "[[source]]\nname = \"upstream\"\nadapter = \"documentation\"\ngit = \"https://github.com/acme/api@v2\"\n",
@@ -1048,39 +1092,6 @@ async fn config_file() {
     // Host-absolute and escaping paths never cross into the guest namespace.
     for path in ["/nonexistent/emery.toml", "../emery.toml"] {
         fail(&provider, &["emery", "specify", "--config", path], 1, "bad_request").await;
-    }
-}
-
-// The loader keys are gated by reference kind: `registry` only steers
-// registry acquisition, so it rides only a package-shaped reference,
-// and a `digest` pin binds exact bytes the loader acquires, so a bare
-// name — which never loads — cannot carry one.
-#[tokio::test]
-async fn loader_keys_gated() {
-    let pinned_bare = format!(
-        "[[source]]\nname = \"pinned\"\nadapter = \"documentation\"\ndigest = \"{}\"\n",
-        digest("ab")
-    );
-    let cases: &[(&str, &str)] = &[
-        (
-            "[[source]]\nname = \"local\"\nadapter = \"./source.wasm\"\n\
-             registry = \"registry.acme.example\"\n",
-            "`registry` requires a package adapter",
-        ),
-        (
-            "[[source]]\nname = \"docs\"\nadapter = \"documentation\"\n\
-             registry = \"registry.acme.example\"\n",
-            "`registry` requires a package adapter",
-        ),
-        (pinned_bare.as_str(), "not a bare name"),
-    ];
-    for (body, fragment) in cases {
-        let scratch = Scratch::new();
-        let config = scratch.config(body);
-        let provider = Provider::idle();
-        let envelope =
-            fail(&provider, &["emery", "specify", "--config", &config], 1, "bad_request").await;
-        assert_message(&envelope, fragment);
     }
 }
 
@@ -1155,44 +1166,6 @@ async fn component_missing() {
     }
 }
 
-// A pin that matches the resolved bytes loads and extracts; the pin
-// rides the load request.
-#[tokio::test]
-async fn pinned_component() {
-    let scratch = Scratch::new();
-    scratch.component();
-    let config = scratch.config(&format!(
-        "[[source]]\nname = \"local\"\nadapter = \"./source.wasm\"\ndigest = \"{}\"\n",
-        digest("ab")
-    ));
-
-    let provider = Provider::answering([SPEC_ANSWER, DESIGN_ANSWER]);
-    cli_ok(&provider, &["emery", "specify", "--config", &config]).await;
-
-    let loads = provider.plugins.loads();
-    let request = loads.first().expect("one load request");
-    assert_eq!(request.digest, Some(digest("ab")), "the source's pin rides the load request");
-    provider.model.assert_exhausted();
-}
-
-// A pinned local component must hash to exactly the pinned bytes: the
-// loader's typed mismatch refusal surfaces on the exit contract before
-// anything extracts or commits.
-#[tokio::test]
-async fn digest_mismatch() {
-    let scratch = Scratch::new();
-    scratch.component();
-    let config = scratch.config(&format!(
-        "[[source]]\nname = \"local\"\nadapter = \"./source.wasm\"\ndigest = \"{}\"\n",
-        digest("11")
-    ));
-
-    let mut provider = Provider::idle();
-    provider.plugins = provider.plugins.clone().digest("source:source", digest("ab"));
-
-    fail(&provider, &["emery", "specify", "--config", &config], 1, "refused").await;
-}
-
 // GitHub URLs are refused: a source checkout is not an adapter.
 #[tokio::test]
 async fn github_refused() {
@@ -1202,8 +1175,9 @@ async fn github_refused() {
 
 // An exact package reference (`emery:<name>@<semver>`, or the
 // first-party shorthand as sugar for the `emery` namespace) loads
-// through the deployment loader from the acquirer's default registry
-// and is addressed by its own package identity — no parallel adapter id.
+// through the deployment loader, which resolves the registry from the
+// package's namespace under the deployment's policy, and is addressed by
+// its own package identity — no parallel adapter id.
 #[tokio::test]
 async fn package_loads() {
     for reference in ["emery:demo@1.2.0", "demo@1.2.0"] {
@@ -1220,9 +1194,9 @@ async fn package_loads() {
         assert_eq!(
             request.location,
             Location::Registry(None),
-            "no override selects the acquirer's default registry"
+            "a load names no endpoint; the deployment's registry policy resolves it"
         );
-        assert!(request.digest.is_none(), "an unpinned source requests no digest");
+        assert!(request.digest.is_none(), "a load request carries no digest");
         let calls = provider.source.calls.lock().expect("calls");
         let (id, input) = calls.first().expect("one extract dispatch");
         assert_eq!(id, "emery:demo@1.2.0", "the adapter id is the loaded package identity");
@@ -1232,75 +1206,39 @@ async fn package_loads() {
     }
 }
 
-// The source's `registry` key overrides the acquirer's default
-// endpoint per source.
+// The source list is checked whole before a single adapter loads: a package
+// adapter behind a refused key, or behind a duplicated one, is never fetched
+// and never gated.
 #[tokio::test]
-async fn registry_override() {
-    let scratch = Scratch::new();
-    let config = scratch.config(
-        "[[source]]\nname = \"ledger\"\nadapter = \"acme:ledger@2.1.0\"\n\
-         registry = \"registry.acme.example\"\n",
-    );
+async fn bad_key_package() {
+    let cases = [
+        (
+            "[[source]]\nname = \"Docs\"\nadapter = \"emery:documentation@1.2.0\"\n",
+            "is not a kebab-case key",
+        ),
+        (
+            "[[source]]\nname = \"docs\"\nadapter = \"emery:documentation@1.2.0\"\n\n\
+             [[source]]\nname = \"docs\"\nadapter = \"emery:intent@1.0.0\"\n",
+            "appears twice",
+        ),
+    ];
+    for (body, fragment) in cases {
+        let scratch = Scratch::new();
+        let config = scratch.config(body);
+        let provider = Provider::idle();
 
-    let provider = Provider::answering([SPEC_ANSWER, DESIGN_ANSWER]);
-    cli_ok(&provider, &["emery", "specify", "--config", &config]).await;
-
-    let loads = provider.plugins.loads();
-    let request = loads.first().expect("one load request");
-    assert_eq!(request.package, "acme:ledger@2.1.0", "third-party namespaces pass through");
-    assert_eq!(
-        request.location,
-        Location::Registry(Some("registry.acme.example".to_string())),
-        "the source's override rides the load request"
-    );
-    provider.model.assert_exhausted();
+        let envelope =
+            fail(&provider, &["emery", "specify", "--config", &config], 1, "bad_request").await;
+        assert_message(&envelope, fragment);
+        assert!(provider.plugins.loads().is_empty(), "a refused list loads nothing: {fragment}");
+        assert!(
+            provider.source.metadata.lock().expect("metadata").is_empty(),
+            "a refused list gates nothing: {fragment}"
+        );
+    }
 }
 
-// A registry package pin verifies like a local component pin: the pin
-// rides the load request, and a mismatch is refused with a typed error
-// before anything extracts or commits.
-#[tokio::test]
-async fn pinned_package() {
-    let pinned = |pin: &Digest| {
-        format!("[[source]]\nname = \"demo\"\nadapter = \"emery:demo@1.2.0\"\ndigest = \"{pin}\"\n")
-    };
-
-    let scratch = Scratch::new();
-    let config = scratch.config(&pinned(&digest("ab")));
-
-    let provider = Provider::answering([SPEC_ANSWER, DESIGN_ANSWER]);
-    cli_ok(&provider, &["emery", "specify", "--config", &config]).await;
-    let request = provider.plugins.loads().first().cloned().expect("one load request");
-    assert_eq!(request.digest, Some(digest("ab")), "the source's pin rides the load request");
-    provider.model.assert_exhausted();
-
-    let mismatched = Scratch::new();
-    let config = mismatched.config(&pinned(&digest("11")));
-
-    let mut provider = Provider::idle();
-    provider.plugins = provider.plugins.clone().digest("emery:demo@1.2.0", digest("ab"));
-    fail(&provider, &["emery", "specify", "--config", &config], 1, "refused").await;
-}
-
-// A second source that re-pins an already-loaded adapter is refused as
-// `already-active`: the loader cannot re-bind the identity.
-#[tokio::test]
-async fn conflicting_pin() {
-    let scratch = Scratch::new();
-    let config = scratch.config(&format!(
-        "[[source]]\nname = \"a\"\nadapter = \"emery:demo@1.2.0\"\ndigest = \"{}\"\n\n\
-         [[source]]\nname = \"b\"\nadapter = \"emery:demo@1.2.0\"\ndigest = \"{}\"\n",
-        digest("ab"),
-        digest("cd"),
-    ));
-
-    let provider = Provider::idle();
-    fail(&provider, &["emery", "specify", "--config", &config], 1, "already-active").await;
-    let loads = provider.plugins.loads();
-    assert_eq!(loads.len(), 1, "the conflicting pin never reaches the loader");
-}
-
-// Load failures land on the exit contract: an acquisition (registry
+// Load failures land on the exit contract: an acquisition (registry)
 // or network) failure is the loader's `unavailable` on the
 // BadGateway exit; a component refused host-side validation is
 // `refused` on the BadRequest exit.

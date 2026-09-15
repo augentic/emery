@@ -1,19 +1,21 @@
-//! Claims contract
+//! Asserts what the engine and every adapter can rely on from an evidence document.
 //!
-//! What both the engine and every adapter can rely on from the claims of an
-//! evidence document: the body a model answers with parses into typed claims
-//! that keep their open extras, malformed open fields become absent rather
-//! than fatal, and the claim gate refuses an id outside the dotted-kebab
-//! grammar or a claim missing an extra its kind requires. Pinning the gate
-//! here keeps the two enforcement points from disagreeing.
+//! - The body a model answers with parses into typed claims that keep their
+//!   open extras.
+//! - Malformed open fields become absent rather than fatal.
+//! - A document-level key is refused: the kind of source is the adapter's
+//!   metadata, never the answer's.
+//! - The claim gate refuses an id outside the dotted-kebab grammar, or a
+//!   claim missing an extra its kind requires.
+//!
+//! Pinning the gate here keeps the two enforcement points from disagreeing.
 
-use emery_adapter::source::{Authority, Backing, ClaimKind, Evidence};
+use emery_adapter::source::{Backing, ClaimKind, Evidence};
 
 #[test]
 fn parse_evidence() {
     let evidence = evidence(
         r#"{
-            "authority": "behaviour",
             "claims": [
                 {
                     "kind": "example",
@@ -30,7 +32,6 @@ fn parse_evidence() {
         }"#,
     );
 
-    assert_eq!(evidence.authority, Authority::Behaviour);
     assert_eq!(evidence.claims.len(), 2);
     let example = &evidence.claims[0];
     assert_eq!(example.kind, ClaimKind::Example);
@@ -58,12 +59,21 @@ fn parse_evidence() {
     assert!(claim.extras.is_empty(), "no unmodeled keys, no extras");
 }
 
+// The document is claims alone: a source kind on it is not the model's to
+// answer, so the key is a parse failure rather than a value to reconcile.
+#[test]
+fn document_kind() {
+    let refused =
+        serde_json::from_str::<Evidence>(r#"{"kind":"intent","claims":[{"kind":"decision"}]}"#)
+            .expect_err("a document-level kind is refused");
+    assert!(refused.to_string().contains("unknown field `kind`"), "{refused}");
+}
+
 // Unpinned `synopsis` and `backing` shapes become absent, not fatal.
 #[test]
 fn open_fields() {
     let evidence = evidence(
         r#"{
-            "authority": "documentation",
             "claims": [
                 {"kind": "section", "synopsis": {"headline": "structured"}, "backing": "bare string"},
                 {"kind": "decision", "synopsis": "kept", "backing": {"payload": "ADR-7"}}
@@ -82,7 +92,7 @@ fn open_fields() {
 #[test]
 fn clean_evidence() {
     let clean = evidence(
-        r#"{"authority":"documentation","claims":[
+        r#"{"claims":[
             {"kind":"requirement","id":"password-reset.request","statement":"Users reset by email."},
             {"kind":"criterion","id":"password-reset.expiry","criterion":"Links expire in 30m."},
             {"kind":"example","id":"password-reset.stale","replay-digest":"sha256:00"},
@@ -95,7 +105,7 @@ fn clean_evidence() {
 #[test]
 fn malformed_ids() {
     let malformed = evidence(
-        r#"{"authority":"documentation","claims":[
+        r#"{"claims":[
             {"kind":"requirement","statement":"Unnamed."},
             {"kind":"criterion","id":"Not.Valid","criterion":"Misnamed."},
             {"kind":"section"}
@@ -117,7 +127,7 @@ fn missing_extras() {
     assert!(ClaimKind::Decision.required_extras().is_empty());
 
     let bare = evidence(
-        r#"{"authority":"documentation","claims":[
+        r#"{"claims":[
             {"kind":"requirement","id":"password-reset.request"},
             {"kind":"example","id":"password-reset.stale","input":{}},
             {"kind":"section","synopsis":"no extras required"}

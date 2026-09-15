@@ -1,12 +1,9 @@
-//! Reference tools
+//! The `list_docs` and `read_doc` tools a model call offers.
 //!
-//! The `list_docs` and `read_doc` tools a judgment offers the model, so it
-//! can consult the adapter's embedded reference documents on demand instead
-//! of receiving the whole corpus in the prompt.
-//!
-//! Tool calls are answered in-process from the embedded [`Doc`] table. There
-//! is no server behind them, so an adapter needs no network access and no
-//! external endpoint to expose its references.
+//! The model consults the adapter's embedded documents on demand instead of
+//! receiving the whole corpus in the prompt. Calls are answered in-process
+//! from the embedded [`Doc`] table; there is no server behind them, so an
+//! adapter needs no network access to expose its references.
 
 use std::future::ready;
 
@@ -16,9 +13,9 @@ use schemars::JsonSchema;
 use serde::Deserialize;
 use serde_json::json;
 
-/// The `list_docs` arguments: none. The braces stay — a braced struct derives
-/// the empty `object` schema a tool's parameters must be, where a unit struct
-/// would derive `null`.
+/// The `list_docs` arguments: none.
+// A braced struct derives the empty `object` schema a tool's parameters must
+// be; a unit struct would derive `null`.
 #[derive(Debug, Deserialize, JsonSchema)]
 #[expect(
     clippy::empty_structs_with_brackets,
@@ -29,11 +26,11 @@ struct ListDocs {}
 /// The `read_doc` arguments.
 #[derive(Debug, Deserialize, JsonSchema)]
 struct ReadDoc {
-    /// Adapter-relative document path, e.g. `prompts/build.md`.
+    /// The adapter-relative document path, such as `prompts/extract.md`.
     path: String,
 }
 
-/// Declares the `list_docs` and `read_doc` tools.
+/// Returns the declarations of the `list_docs` and `read_doc` tools.
 #[must_use]
 pub fn tools() -> Vec<Tool> {
     vec![
@@ -48,8 +45,7 @@ pub fn tools() -> Vec<Tool> {
     ]
 }
 
-/// Builds the tool handler a question passes to `ask`: [`answer`] over
-/// `docs`.
+/// Returns the handler that answers those tools from `docs`.
 #[must_use]
 pub fn answering(docs: &'static [Doc]) -> Tools {
     Box::new(move |call: ToolCall| -> ToolFuture { Box::pin(ready(answer(docs, &call))) })

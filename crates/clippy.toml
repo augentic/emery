@@ -1,4 +1,4 @@
-doc-valid-idents = ["GitHub", "SemVer"]
+doc-valid-idents = ["GitHub", "MiB", "OAuth", "OpenTelemetry", "SemVer", "WebAssembly", "YAML"]
 
 # Keep in lockstep with the repository-root `clippy.toml`. Crate members
 # resolve this file first and do not inherit the root allowlist.

@@ -1,15 +1,17 @@
-//! `SourceAdapter` contract
+//! Drives a minimal `SourceAdapter` natively over a scripted model.
 //!
-//! A minimal adapter implemented against the trait, driven natively over a
-//! scripted model. It shows the trait is complete enough to implement and
-//! exercise without a wasm build — the promise adapter authors' own test
-//! suites depend on — and that its provided members answer from the
-//! adapter's own declarations: the `emery-version` pin, the extraction prompt.
+//! The trait is complete enough to implement and exercise without a wasm
+//! build — the promise adapter authors' own test suites depend on — and its
+//! provided members answer from the adapter's own declarations: the
+//! `emery-version` pin and the kind of source in `metadata`, the extraction
+//! prompt, the survey's material.
+
+use std::future::{Future, ready};
 
 use emery_prose::registry::Doc;
 use emery_sdk::{
-    AdapterMetadata, Context, Error, Evidence, Material, Model, SourceAdapter, SourceContent,
-    SourceInput,
+    AdapterMetadata, Context, Error, Material, Model, SourceAdapter, SourceContent, SourceInput,
+    SourceKind,
 };
 use omnia_test::guest::Scripted;
 
@@ -24,36 +26,36 @@ const PIN: Option<&str> = Some(env!("CARGO_PKG_VERSION"));
 struct Probe;
 
 impl SourceAdapter for Probe {
-    const SOURCE: &'static str = "probe";
+    const KIND: SourceKind = SourceKind::Documentation;
 
     fn docs() -> &'static [Doc] {
         DOCS
     }
 
-    async fn extract<P: Model>(model: &P, ctx: &Context<'_>) -> Result<Evidence, Error> {
-        Self::evidence(model, ctx, Material::Prepared(ctx.input.key.clone())).await
+    // Mechanical: the key is the note, with no model turn.
+    fn survey<P: Model>(
+        _model: &P, ctx: &Context<'_>,
+    ) -> impl Future<Output = Result<Vec<Material>, Error>> + Send {
+        ready(Ok(vec![Material::Prepared(ctx.input.key.clone())]))
     }
 }
 
-// An adapter whose corpus lacks the extraction prompt.
+// An adapter whose corpus lacks the extraction prompt; its survey is the
+// default.
 struct Mute;
 
 impl SourceAdapter for Mute {
-    const SOURCE: &'static str = "mute";
+    const KIND: SourceKind = SourceKind::Behaviour;
 
     fn docs() -> &'static [Doc] {
         &[]
-    }
-
-    async fn extract<P: Model>(model: &P, ctx: &Context<'_>) -> Result<Evidence, Error> {
-        Self::evidence(model, ctx, Material::Bound).await
     }
 }
 
 #[tokio::test]
 async fn source_dispatch() {
     let model = Scripted::answering([
-        r#"{"authority":"documentation","claims":[{"kind":"requirement","id":"one.claim","statement":"One."}]}"#,
+        r#"{"claims":[{"kind":"requirement","id":"one.claim","statement":"One."}]}"#,
     ]);
     let input = SourceInput {
         key: "main".to_string(),
@@ -67,16 +69,25 @@ async fn source_dispatch() {
     let evidence = Probe::extract(&model, &ctx).await.expect("scripted extract succeeds");
     assert_eq!(evidence.claims.len(), 1);
     assert_eq!(evidence.claims[0].id.as_deref(), Some("one.claim"));
+    let request = &model.seen()[0];
     assert_eq!(
-        model.seen()[0].system.as_deref(),
+        request.system.as_deref(),
         Some("EXTRACT"),
         "the embedded `prompts/extract.md` is the system prompt"
     );
+    assert!(
+        request.messages[0].contains("\n\nmain\n\n"),
+        "the survey's prepared note is the turn's material: {}",
+        request.messages[0]
+    );
 
+    // The kind is the adapter's constant, reported where the engine reads it
+    // before any extract.
     assert_eq!(
         Probe::metadata(),
         AdapterMetadata {
             emery_version: PIN.map(str::to_string),
+            kind: Probe::KIND,
         }
     );
     assert_eq!(Probe::docs()[0].path, "prompts/extract.md");

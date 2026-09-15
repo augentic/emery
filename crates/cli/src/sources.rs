@@ -1,33 +1,30 @@
-//! Sources from the command line
+//! Builds the source list of a `specify` run from the command line.
 //!
-//! Builds the list of sources a `specify` run works from. An
-//! operator can name adapters and inline descriptions directly on the
-//! command line, point at an `emery.toml` with `--config`, or name nothing
-//! and let the project-root `emery.toml` be picked up.
-//!
-//! The source list is an input to each run, never something Emery stores,
-//! so this module is the only place that knows where sources come from.
-//! Mixing a config file with command-line sources is refused rather than
-//! merged, so a run has exactly one source of truth.
+//! An operator names adapters and inline descriptions directly, points at an
+//! `emery.toml` with `--config`, or names nothing and lets the project-root
+//! `emery.toml` be picked up. The list is an input to each run, never
+//! something Emery stores, so this module is the only place that knows where
+//! sources come from. A config file and command-line sources are refused
+//! together rather than merged, so a run has exactly one source of truth.
 
+use std::ffi::OsStr;
 use std::path::{Path, PathBuf};
 
 use anyhow::Context;
 use emery_engine::specify::{SourceConfig, SourceContent};
 use emery_engine::{AdapterRef, preopen_path};
-use omnia_guest::plugins::Digest;
 use omnia_guest::{Error, bad_request};
 
-/// The project-root config discovered by a run naming no sources.
+/// The config file a run naming no sources looks for at the project root.
 pub const CONFIG_FILE: &str = "emery.toml";
 
 /// Decodes the run's source list from the `specify` arguments.
 ///
 /// # Errors
 ///
-/// Returns a `BadRequest` when `--config` is mixed with positional
-/// adapters or `--description` sources, and propagates the argv,
-/// file, and discovery decoder failures.
+/// Returns [`Error::BadRequest`] when `--config` is combined with positional
+/// adapters or `--description` sources, or when any source is malformed, and
+/// [`Error::ServerError`] when a config file cannot be read.
 pub fn decode(
     adapters: &[String], descriptions: &[String], config: Option<&Path>,
 ) -> Result<Vec<SourceConfig>, Error> {
@@ -65,7 +62,7 @@ fn discover() -> Result<Vec<SourceConfig>, Error> {
 
 // Builds the sources named on the command line: each positional adapter
 // lends the workspace at `.`, each `--description` entry is an inline value,
-// and the key is the adapter name.
+// and the key is the adapter's kebab stem.
 fn from_argv(adapters: &[String], descriptions: &[String]) -> Result<Vec<SourceConfig>, Error> {
     let workspaces = adapters
         .iter()
@@ -85,16 +82,42 @@ fn from_argv(adapters: &[String], descriptions: &[String]) -> Result<Vec<SourceC
     workspaces.chain(values).collect()
 }
 
-// Builds the source a command-line reference names: the adapter, unpinned
-// and keyed by its name, over `content`.
+// Builds the source a command-line reference names over `content`, keyed
+// by the adapter's kebab stem.
 fn source(reference: &str, content: SourceContent) -> Result<SourceConfig, Error> {
-    let adapter: AdapterRef = reference.parse()?;
+    let adapter = anchored(reference.parse()?, Path::new("."))?;
     Ok(SourceConfig {
-        key: adapter.name().to_string(),
+        key: key(&adapter),
         adapter,
         content,
-        digest: None,
-        registry: None,
+    })
+}
+
+// Derives the source key of a command-line adapter: its kebab stem,
+// `intent` for `emery_intent.wasm` and `emery:intent@1.0.0` alike.
+fn key(adapter: &AdapterRef) -> String {
+    match adapter {
+        AdapterRef::Static(name) => name.clone(),
+        AdapterRef::Package(package) => {
+            let rest = package.split_once(':').map_or(package.as_str(), |(_, rest)| rest);
+            rest.split_once('@').map_or(rest, |(name, _)| name).to_string()
+        }
+        AdapterRef::File(path) => {
+            let stem = path.file_stem().and_then(OsStr::to_str).unwrap_or_default();
+            let stem =
+                stem.strip_prefix("emery_").or_else(|| stem.strip_prefix("emery-")).unwrap_or(stem);
+            stem.replace('_', "-")
+        }
+    }
+}
+
+// Resolves a local component reference against `base`, the directory its
+// path is written relative to, to the one project-relative path that is the
+// adapter's identity; other reference kinds pass through.
+fn anchored(adapter: AdapterRef, base: &Path) -> Result<AdapterRef, Error> {
+    Ok(match adapter {
+        AdapterRef::File(path) => AdapterRef::File(resolved(base, &path)?),
+        other => other,
     })
 }
 
@@ -125,8 +148,8 @@ struct ConfigFile {
 }
 
 // `name` and `adapter` are required; every other key is optional. The
-// adapter reference and the digest pin are parsed by the decoder, so a
-// malformed one is refused with its line.
+// adapter reference is parsed by the decoder, so a malformed one is
+// refused with its line.
 #[derive(Debug, serde::Deserialize)]
 #[serde(deny_unknown_fields, rename_all = "kebab-case")]
 struct SourceEntry {
@@ -136,8 +159,6 @@ struct SourceEntry {
     git: Option<String>,
     url: Option<String>,
     description: Option<String>,
-    registry: Option<String>,
-    digest: Option<Digest>,
 }
 
 impl SourceEntry {
@@ -157,14 +178,8 @@ impl SourceEntry {
         }
 
         // A local component path resolves relative to the file, like Cargo
-        // `path` dependencies; other reference kinds pass through unchanged.
-        let adapter = match self.adapter {
-            AdapterRef::Component { name, path } => AdapterRef::Component {
-                name,
-                path: resolved(base, &path)?,
-            },
-            other => other,
-        };
+        // `path` dependencies.
+        let adapter = anchored(self.adapter, base)?;
         let content = match (self.path, self.description) {
             (Some(_), Some(_)) => {
                 return Err(bad_request!(
@@ -183,8 +198,6 @@ impl SourceEntry {
             key: name,
             adapter,
             content,
-            digest: self.digest,
-            registry: self.registry,
         })
     }
 }

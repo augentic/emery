@@ -1,14 +1,14 @@
-//! # The specification
+//! The typed form of `spec.md`.
 //!
-//! The typed form of `spec.md`: a preamble and one requirement per subject,
-//! each carrying the facts the engine derived — id, status, coverage, cited
-//! claims, the statements that lost — and the drafted body and scenarios.
-//! `Display` renders the Markdown projection an operator reads.
+//! A [`Spec`] is a preamble and one [`Requirement`] per subject, each carrying
+//! the facts the engine derived — id, status, coverage, cited claims, the
+//! statements that lost — and the drafted body and scenarios. `Display`
+//! renders the Markdown an operator reads.
 
 use std::fmt::{self, Display, Formatter};
 use std::str::FromStr;
 
-use emery_adapter::source::Authority;
+use emery_adapter::source::SourceKind;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
@@ -26,7 +26,7 @@ pub const NOTE: &str = "Note:";
 const HEADING: &str = "### Requirement:";
 const SCENARIO: &str = "#### Scenario:";
 
-/// The specification.
+/// The specification: a preamble and its requirements, in id order.
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Spec {
@@ -39,7 +39,7 @@ pub struct Spec {
 }
 
 impl Spec {
-    /// Finds the requirement `id` names.
+    /// Returns the requirement `id` names, if the specification has one.
     #[must_use]
     pub fn requirement(&self, id: ReqId) -> Option<&Requirement> {
         self.requirements.iter().find(|requirement| requirement.id == id)
@@ -147,30 +147,32 @@ impl Display for Cited {
 pub struct Loser {
     /// Every member's source key, in authority order.
     pub sources: Vec<String>,
-    /// The lead member's authority.
-    pub authority: Authority,
+    /// The lead member's source kind.
+    pub kind: SourceKind,
     /// The lead member's claim id.
     pub claim: String,
     /// The lead member's statement, whitespace-normalised.
     pub statement: String,
 }
 
-// Writes `Note: <sources> (<authority>, <claim>): <statement>`.
+// Writes `Note: <sources> (<kind>, <claim>): <statement>`.
 impl Display for Loser {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         write!(
             f,
-            "{NOTE} {sources} ({authority}, {claim}): {statement}",
+            "{NOTE} {sources} ({kind}, {claim}): {statement}",
             sources = self.sources.join(", "),
-            authority = self.authority,
+            kind = self.kind,
             claim = self.claim,
             statement = self.statement,
         )
     }
 }
 
-/// One acceptance scenario: the shape the specification stores and the shape a
-/// draft answers in — the same fields, so the draft is placed as it stands.
+/// One acceptance scenario.
+///
+/// The specification stores this shape and a draft answers in it, so an
+/// accepted draft is placed as it stands.
 #[derive(Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct Scenario {
@@ -189,8 +191,9 @@ pub struct Scenario {
 }
 
 impl Scenario {
-    /// Yields the scenario's lines in document order — every `given`, the
-    /// `when`, the `then`, every `and` — each with its field name.
+    /// Returns the scenario's lines in document order, each with its field name.
+    ///
+    /// Every `given`, then the `when`, the `then`, and every `and`.
     pub fn lines(&self) -> impl Iterator<Item = (&'static str, &str)> {
         self.given
             .iter()
@@ -212,8 +215,18 @@ impl Display for Scenario {
     }
 }
 
-/// A requirement id, `REQ-NNN`: a positive number, zero-padded to at least
-/// three digits.
+/// A requirement id, `REQ-NNN`: a positive number, zero-padded to three digits.
+///
+/// # Examples
+///
+/// ```
+/// use emery_engine::specify::ReqId;
+///
+/// assert_eq!(ReqId::new(7).to_string(), "REQ-007");
+/// assert_eq!("REQ-007".parse::<ReqId>()?, ReqId::new(7));
+/// assert!("REQ-7".parse::<ReqId>().is_err());
+/// # Ok::<(), String>(())
+/// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(try_from = "String", into = "String")]
 pub struct ReqId(u32);
@@ -221,7 +234,7 @@ pub struct ReqId(u32);
 impl ReqId {
     const PREFIX: &str = "REQ-";
 
-    /// The id numbered `number`.
+    /// Returns the id numbered `number`.
     #[must_use]
     pub const fn new(number: u32) -> Self {
         Self(number)
@@ -261,8 +274,10 @@ impl Display for ReqId {
     }
 }
 
-/// The closed `Status:` vocabulary; every status but `agreed` doubles as
-/// the heading `[tag]`.
+/// The closed `Status:` vocabulary.
+///
+/// Every status but `agreed` also appears as the `[tag]` on the requirement
+/// heading.
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Serialize, Deserialize, strum::Display)]
 #[serde(rename_all = "kebab-case")]
 #[strum(serialize_all = "kebab-case")]

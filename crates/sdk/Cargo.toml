@@ -5,7 +5,7 @@ edition.workspace = true
 license.workspace = true
 repository.workspace = true
 rust-version.workspace = true
-description = "Emery adapter SDK: the SourceAdapter trait with its provided evidence call over omnia's model capability, the reference-tool closure, and the wasm export macro over the emery-adapter contract"
+description = "Emery adapter SDK: the SourceAdapter trait with its provided extract — a survey of materials, one evidence call each over omnia's model capability, joined — the reference-tool closure, and the wasm export macro over the emery-adapter contract"
 categories = ["development-tools"]
 keywords = ["emery", "adapter", "sdk"]
 readme = "../../README.md"
@@ -14,8 +14,10 @@ readme = "../../README.md"
 workspace = true
 
 [dependencies]
+anyhow.workspace = true
 emery-adapter.workspace = true
 emery-prose.workspace = true
+futures.workspace = true
 omnia-guest.workspace = true
 schemars.workspace = true
 serde.workspace = true
@@ -26,3 +28,4 @@ tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]
 omnia-test = { workspace = true, features = ["guest"] }
+tempfile.workspace = true

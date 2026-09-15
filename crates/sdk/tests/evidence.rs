@@ -1,18 +1,21 @@
-//! The evidence call
+//! Asserts what an adapter can rely on from `SourceAdapter::evidence`.
 //!
-//! What an adapter can rely on from `SourceAdapter::evidence`: the request it
-//! builds (the embedded prompt as the system, the SDK-owned turn around the
-//! adapter's material, the `Evidence` schema with the claim-id pattern,
-//! `check` set, the reference tools, and the workspace lend following the
-//! input), reference calls answered from the embedded corpus, a candidate the
-//! claim gate rejects corrected in place, the backend's spent rounds surfacing
-//! as `bad_request` with the last findings, and a host refusal passing through
-//! as `bad_request`.
+//! - The request it builds: the embedded prompt as the system, the SDK-owned
+//!   turn around the adapter's material, the claims-only schema with the
+//!   claim-id pattern, `check` set, the reference tools, and the workspace
+//!   lend following the material — the input's root, or a `Within` set's
+//!   common ancestor.
+//! - A document-level kind refused as a schema miss.
+//! - Reference calls answered from the embedded corpus.
+//! - A candidate the claim gate rejects corrected in place.
+//! - The backend's spent rounds surfacing as `bad_request` with the last
+//!   findings.
+//! - A host refusal passing through as `bad_request`.
 
 use emery_prose::registry::Doc;
 use emery_sdk::model::{Error as ModelError, ToolCall};
 use emery_sdk::{
-    Context, Error, Evidence, Material, Model, SourceAdapter, SourceContent, SourceInput,
+    Context, Error, Evidence, Material, SourceAdapter, SourceContent, SourceInput, SourceKind,
 };
 use omnia_test::SeenFormat;
 use omnia_test::guest::Scripted;
@@ -28,7 +31,7 @@ const DOCS: &[Doc] = &[
     },
 ];
 
-const VALID: &str = r#"{"authority":"documentation","claims":[
+const VALID: &str = r#"{"claims":[
     {"kind":"requirement","id":"password-reset.request","statement":"Users reset by email."},
     {"kind":"decision"}
 ]}"#;
@@ -36,14 +39,10 @@ const VALID: &str = r#"{"authority":"documentation","claims":[
 struct Probe;
 
 impl SourceAdapter for Probe {
-    const SOURCE: &'static str = "probe";
+    const KIND: SourceKind = SourceKind::Documentation;
 
     fn docs() -> &'static [Doc] {
         DOCS
-    }
-
-    async fn extract<P: Model>(model: &P, ctx: &Context<'_>) -> Result<Evidence, Error> {
-        Self::evidence(model, ctx, Material::Bound).await
     }
 }
 
@@ -89,13 +88,13 @@ async fn request_shape() {
     assert_eq!(
         request.messages,
         [concat!(
-            "Extract the claim set of the probe source bound to adapter `source:probe` (source ",
-            "key `docs`).\n\n",
-            "`$SOURCE_DIR` is the read-only view at `/lend/docs` — the probe source tree the ",
-            "prompt walks. Nothing outside it is reachable; extract mines only this source.\n\n",
+            "Extract the claim set of the source bound to adapter `source:probe` (source key ",
+            "`docs`).\n\n",
+            "`$SOURCE_DIR` is the read-only view at `/lend/docs` — the source tree the prompt ",
+            "walks. Nothing outside it is reachable; extract mines only this source.\n\n",
             "The prompt's references are available through this call's `read_doc` tool ",
             "(`list_docs` enumerates them); load referenced bodies on demand.\n\n",
-            "Answer with one JSON object matching the gated Evidence schema. The caller persists ",
+            "Answer with one JSON object matching the gated claims schema. The caller persists ",
             "the document; do not write it yourself."
         )]
     );
@@ -108,6 +107,7 @@ async fn request_shape() {
     };
     assert_eq!(name, "evidence");
     let schema: serde_json::Value = serde_json::from_str(schema).expect("generated schema parses");
+    assert!(schema.pointer("/properties/kind").is_none(), "the answer is claims alone: {schema}");
     let claim = schema.pointer("/$defs/Claim").expect("Claim definition");
     assert_eq!(
         claim.pointer("/properties/id/pattern").and_then(serde_json::Value::as_str),
@@ -145,6 +145,54 @@ async fn prepared_turn() {
     let user = &model.seen()[0].messages[0];
     assert!(user.contains("\n\nPREPARED MATERIAL\n\n"), "{user}");
     assert!(!user.contains("ignored"), "the prepared note replaces the input rendering");
+}
+
+// A `Within` material lends its files' common ancestor — so a per-directory
+// material is enforced by the grant, not told — and lists the files relative
+// to it, sorted, once each, `.` segments dropped.
+#[tokio::test]
+async fn within_turn() {
+    let model = Scripted::answering([VALID]);
+    let files = ["guide/setup.md", "./guide/intro.md", "guide/intro.md"];
+
+    ask(&model, &workspace("/lend/docs"), Material::Within(files.map(str::to_string).into()))
+        .await
+        .expect("accepted");
+
+    let request = &model.seen()[0];
+    assert_eq!(request.workspace.as_deref(), Some("/lend/docs/guide"), "the common ancestor");
+    let user = &request.messages[0];
+    assert!(
+        user.contains(
+            "`$SOURCE_DIR` is the read-only view at `/lend/docs/guide` — the part of the source \
+             tree this call mines. Mine these files beneath it and nothing else:\n\n\
+             - `intro.md`\n- `setup.md`\n\nAnchor every `path` relative to `$SOURCE_DIR`."
+        ),
+        "{user}"
+    );
+    model.assert_exhausted();
+}
+
+// Files sharing no directory beneath the root lend the root itself, every
+// path stated as it was named.
+#[tokio::test]
+async fn within_scattered() {
+    let model = Scripted::answering([VALID]);
+    let files = ["guide/intro.md", "api.md"];
+
+    ask(&model, &workspace("/lend/docs"), Material::Within(files.map(str::to_string).into()))
+        .await
+        .expect("accepted");
+
+    let request = &model.seen()[0];
+    assert_eq!(request.workspace.as_deref(), Some("/lend/docs"), "the root is lent");
+    let user = &request.messages[0];
+    assert!(
+        user.contains("read-only view at `/lend/docs` — the part of the source tree"),
+        "{user}"
+    );
+    assert!(user.contains("nothing else:\n\n- `api.md`\n- `guide/intro.md`\n\n"), "{user}");
+    model.assert_exhausted();
 }
 
 // Reference calls are answered in-process from the corpus before the
@@ -187,10 +235,7 @@ async fn doc_refs() {
 // the engine never sees the claim it would otherwise refuse.
 #[tokio::test]
 async fn gate_findings() {
-    let model = Scripted::answering([
-        r#"{"authority":"documentation","claims":[{"kind":"requirement"}]}"#,
-        VALID,
-    ]);
+    let model = Scripted::answering([r#"{"claims":[{"kind":"requirement"}]}"#, VALID]);
 
     let accepted = ask(&model, &value("Ship it."), Material::Bound)
         .await
@@ -215,7 +260,7 @@ async fn gate_findings() {
 #[tokio::test]
 async fn rounds_exhausted() {
     let model = Scripted::answering([
-        r#"{"authority":"documentation","claims":[{"kind":"criterion","id":"Not.Valid","criterion":"x"}]}"#,
+        r#"{"claims":[{"kind":"criterion","id":"Not.Valid","criterion":"x"}]}"#,
     ]);
 
     let error = ask(&model, &value("Ship it."), Material::Bound)
@@ -242,4 +287,24 @@ async fn invalid_request() {
         "{error}"
     );
     assert!(model.exchanges().is_empty(), "nothing to check");
+}
+
+// A stray `kind` key is a schema miss: the answer is claims alone, and the
+// kind of source is the adapter's metadata, never the model's to state.
+#[tokio::test]
+async fn stray_kind() {
+    let model = Scripted::answering([r#"{"kind":"intent","claims":[{"kind":"decision"}]}"#, VALID]);
+
+    let accepted = ask(&model, &value("Ship it."), Material::Bound)
+        .await
+        .expect("the second candidate is claims-only");
+    assert_eq!(accepted.claims.len(), 2);
+
+    let exchanges = model.exchanges();
+    let correction = exchanges[0].outcome.as_ref().expect_err("the stray key is refused");
+    assert!(
+        correction.contains("schema") || correction.contains("unknown field"),
+        "a stray kind key is a schema miss: {correction}"
+    );
+    model.assert_exhausted();
 }

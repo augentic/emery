@@ -1,7 +1,4 @@
-//! Cursor plugin drift
-//!
-//! Checks that the Cursor plugin's rule text only names verbs, flags, and
-//! skills the shipped `emery` command actually has.
+//! Checks that the Cursor plugin names only verbs, flags, and skills `emery` has.
 //!
 //! The plugin is prose an agent follows, so nothing else would catch it
 //! describing a verb that has since been deleted or renamed. Tying it to the

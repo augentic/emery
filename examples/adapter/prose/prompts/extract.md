@@ -29,7 +29,6 @@ Do not invent a `criterion`. A `requirement` without `statement` fails the run c
 
 ```json
 {
-  "authority": "documentation",
   "claims": [
     {
       "kind": "requirement",

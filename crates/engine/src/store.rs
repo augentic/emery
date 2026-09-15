@@ -1,33 +1,32 @@
-//! The revision store
+//! Stores the current revision and commits the next.
 //!
-//! Where committed revisions live. A revision is the specification and design
-//! one `specify` run produced, committed as canonical JSON under the id of its
-//! content; the store commits a new revision, reads the current one, and
-//! reports how the new one differs from the one it replaced.
-//!
-//! A revision is identified by the digest of its content, never a sequence
-//! number, so the same revision always has the same id and a document that no
-//! longer matches its id is recognised as corruption. Only the current
-//! revision is kept, which keeps the store small and its meaning simple.
+//! A revision is committed as canonical JSON under the digest of its content,
+//! so the same revision always has the same id and a document that no longer
+//! matches its id is recognised as corruption. Only the current revision is
+//! kept: [`commit`] writes the new one, swaps the current id, and prunes the
+//! one it displaced; [`current`] reads it back.
 
 use anyhow::Context;
 use omnia_guest::{BlobStore, Error, StateStore, server_error};
 
 use crate::revision::{Design, Diff, Document as _, Revision, Spec};
 
-/// Keyvalue key holding the current revision id.
+/// The key-value key holding the current revision id.
 pub const CURRENT: &str = "current-revision";
 
-/// Blobstore container holding every revision's documents under `<id>/`.
+/// The blob container holding each revision's documents under `<id>/`.
 pub const CONTAINER: &str = "revisions";
 
-/// Commits `revision` to `store` — diff against the readable outgoing
-/// revision, write, swap the current id, prune — returning the content id
-/// and the advisory re-mine diff.
+/// Commits `revision` as the current revision.
+///
+/// Both documents are written, the current id is swapped by compare-and-swap,
+/// and the revision it displaced is pruned. Returns the new content id and,
+/// when the outgoing revision was readable, the [`Diff`] against it.
 ///
 /// # Errors
 ///
-/// Fails if another run swapped the id first or storage refuses the write.
+/// Returns [`Error::ServerError`] when another run swapped the id first or
+/// storage refuses a write.
 pub async fn commit<S: StateStore + BlobStore>(
     store: &S, revision: &Revision,
 ) -> Result<(String, Option<Diff>), Error> {
@@ -79,12 +78,14 @@ fn key(id: &str, name: &str) -> String {
     format!("{id}/{name}.json")
 }
 
-/// Returns the current revision id and value in `store`, or `None` before the
-/// first commit.
+/// Returns the current revision and its id, or `None` before the first commit.
 ///
 /// # Errors
 ///
-/// Fails closed for a dangling, incomplete, unreadable, or tampered revision.
+/// Returns [`Error::ServerError`] for a current id that names no complete
+/// revision, or a revision whose bytes no longer match its id, and
+/// [`Error::BadRequest`] with code `spec-outdated` for a revision written
+/// under another grammar.
 pub async fn current<S: StateStore + BlobStore>(
     store: &S,
 ) -> Result<Option<(String, Revision)>, Error> {

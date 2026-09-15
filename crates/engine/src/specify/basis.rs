@@ -1,24 +1,22 @@
-//! Requirement bases
+//! Derives the basis each requirement in `spec.md` is built on.
 //!
-//! Derives the basis each requirement in `spec.md` is built on from the
-//! requirement claims in the extracts. Which claims across sources describe
-//! one requirement, and which of them agree, is a judgement: the model answers
-//! it as one partition — claims into requirements, each requirement's claims
-//! into agreeing classes — over a baseline that pre-merges byte-equal ids. The
-//! engine validates the partition, then derives everything else from it and the
-//! closed authority ranking: the subject, the status, the winner and losers,
-//! and whether any acceptance criterion covers the requirement.
+//! Which requirement claims across sources describe one requirement, and
+//! which of them agree, is a judgement. The model answers it as one partition
+//! — claims into requirements, each requirement's claims into agreeing classes
+//! — over a baseline that pre-merges byte-equal ids. The engine verifies the
+//! partition and derives everything else from it and the closed authority
+//! ranking: the subject, the status, the winner and losers, and whether any
+//! acceptance criterion covers the requirement.
 //!
 //! Authority is withheld from the request, so the answer cannot be steered
-//! toward a winner; a run over one source never asks at all.
-//!
-//! The bases are numbered in order from `REQ-001`, each group's position set
-//! by its earliest claim, so the same sources in the same order number alike.
+//! toward a winner; a run over one source never asks at all. The bases are
+//! numbered from `REQ-001` in order of each group's earliest claim, so the
+//! same sources in the same order number alike.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::{self, Display, Formatter};
 
-use emery_adapter::source::{Authority, ClaimKind};
+use emery_adapter::source::{ClaimKind, SourceKind};
 use omnia_guest::{Error, Model, server_error};
 use schemars::JsonSchema;
 use serde::Deserialize;
@@ -28,9 +26,11 @@ use crate::revision::{Cited, Loser, ReqId, Requirement, Scenario, Status};
 use crate::specify::Extract;
 use crate::specify::brief::{Brief, Review};
 
-/// What the engine needs to ask the model how the requirement claims group
-/// and to verify its answer: every requirement claim in source order, every
-/// criterion id, and how many sources the run spans.
+/// The brief that asks how the requirement claims group.
+///
+/// It carries every requirement claim in source order, every criterion id,
+/// and how many sources the run spans: what the turn lists, and what the
+/// answer is verified against.
 pub struct GroupingBrief<'a> {
     contributors: Vec<Contributor>,
     criteria: Vec<&'a str>,
@@ -38,7 +38,7 @@ pub struct GroupingBrief<'a> {
 }
 
 impl<'a> GroupingBrief<'a> {
-    /// Creates the grouping brief from the `extracts`.
+    /// Creates the brief over the `extracts`.
     #[must_use]
     pub fn new(extracts: &'a [Extract]) -> Self {
         let mut contributors: Vec<Contributor> = Vec::new();
@@ -48,8 +48,8 @@ impl<'a> GroupingBrief<'a> {
                 let Some(id) = claim.id.as_deref() else { continue };
                 match claim.kind {
                     ClaimKind::Requirement => contributors.push(Contributor {
-                        source: extract.key.clone(),
-                        authority: extract.evidence.authority,
+                        source: extract.source.clone(),
+                        kind: extract.kind,
                         id: id.to_string(),
                         statement: claim.statement(),
                         synopsis: claim.synopsis.clone(),
@@ -68,15 +68,16 @@ impl<'a> GroupingBrief<'a> {
         }
     }
 
-    /// Derives every requirement basis, asking the model to group the claims
-    /// on a run over two or more sources and taking the baseline alone on a
-    /// run over one.
+    /// Derives every requirement basis.
+    ///
+    /// A run over two or more sources asks the model to group the claims; a
+    /// run over one takes the baseline alone and spends no call.
     ///
     /// # Errors
     ///
-    /// A model failure is `bad_gateway`; an answer outside the schema, or a
-    /// grouping the backend could not repair within its rounds, is
-    /// `bad_request`.
+    /// Returns [`Error::BadGateway`] for a model failure, and
+    /// [`Error::BadRequest`] for an answer outside the schema or a grouping
+    /// the model could not repair within its rounds.
     pub async fn derive<M: Model>(self, model: &M) -> Result<Vec<Basis>, Error> {
         if self.sources < 2 { self.bases(&self.baseline()) } else { self.judge(model).await }
     }
@@ -298,9 +299,10 @@ pub struct Group {
     pub classes: Vec<Vec<usize>>,
 }
 
-/// The basis for one requirement before any prose: its id, subject, status,
-/// acceptance-criterion coverage, and contributors in agreeing classes, the
-/// winning class first.
+/// What one requirement is built on before any prose is drafted.
+///
+/// Its id, subject, status, and acceptance-criterion coverage, and its
+/// contributors in agreeing classes with the winning class first.
 #[derive(Debug)]
 pub struct Basis {
     /// The requirement id: its position in the run, from `REQ-001`.
@@ -316,9 +318,10 @@ pub struct Basis {
 }
 
 impl Basis {
-    // Builds a requirement from its classes, sorted by authority then source
-    // order. One class is agreed (unknown when no criterion covers it); several
-    // are a divergence when one holds the top authority alone, else a conflict.
+    // Builds a requirement from its classes, sorted by source-kind authority
+    // then source order. One class is agreed (unknown when no criterion covers
+    // it); several are a divergence when one holds the top authority alone,
+    // else a conflict.
     fn of(id: ReqId, mut classes: Vec<Vec<Contributor>>, criteria: &[&str]) -> Result<Self, Error> {
         // The grouping was verified, so a requirement without a claim, or a
         // class without one, is the engine's own defect; from here every
@@ -327,11 +330,11 @@ impl Basis {
             return Err(server_error!("requirement {id} was grouped with a class of no claims"));
         }
         for class in &mut classes {
-            class.sort_by_key(|member| (member.authority, member.index));
+            class.sort_by_key(|member| (member.kind, member.index));
         }
-        classes.sort_by_key(|class| (class[0].authority, class[0].index));
+        classes.sort_by_key(|class| (class[0].kind, class[0].index));
 
-        let top = classes[0][0].authority;
+        let top = classes[0][0].kind;
         // A criterion covers a requirement when it is that claim id or a
         // dotted child of it (`session.timeout.idle` covers `session.timeout`).
         let covered = classes.iter().flatten().any(|member| {
@@ -343,9 +346,7 @@ impl Basis {
         let status = match classes.len() {
             1 if covered => Status::Agreed,
             1 => Status::Unknown,
-            _ if classes.iter().skip(1).all(|class| class[0].authority != top) => {
-                Status::Divergence
-            }
+            _ if classes.iter().skip(1).all(|class| class[0].kind != top) => Status::Divergence,
             _ => Status::Conflict,
         };
 
@@ -358,17 +359,19 @@ impl Basis {
         })
     }
 
-    /// Lists every contributor, highest authority first and source order
-    /// within an authority.
+    /// Returns every contributor, highest authority first and in source order
+    /// within a kind.
     pub fn contributors(&self) -> impl Iterator<Item = &Contributor> {
         let mut members: Vec<&Contributor> = self.classes.iter().flatten().collect();
-        members.sort_by_key(|member| (member.authority, member.index));
+        members.sort_by_key(|member| (member.kind, member.index));
         members.into_iter()
     }
 
-    /// Places `scenarios` beside the engine's facts as the requirement this
-    /// basis commits: the body is the winning statement, none for a conflict;
-    /// the notes are the losing classes.
+    /// Returns the requirement this basis commits, with `scenarios` as its
+    /// drafted prose.
+    ///
+    /// The body is the winning statement — none for a conflict — and the
+    /// losing classes become notes.
     #[must_use]
     pub fn requirement(&self, scenarios: Vec<Scenario>) -> Requirement {
         let winner = &self.classes[0][0].statement;
@@ -383,7 +386,7 @@ impl Basis {
                 let lead = &class[0];
                 Loser {
                     sources: class.iter().map(|member| member.source.clone()).collect(),
-                    authority: lead.authority,
+                    kind: lead.kind,
                     claim: lead.id.clone(),
                     statement: lead.statement.clone(),
                 }
@@ -408,15 +411,15 @@ impl Basis {
 pub struct Contributor {
     /// The source key.
     pub source: String,
-    /// The source's authority class.
-    pub authority: Authority,
+    /// The source's kind, which ranks it against the other contributors.
+    pub kind: SourceKind,
     /// The claim id, which may differ from the requirement's subject.
     pub id: String,
     /// The claim's `statement` extra, whitespace-normalised.
     pub statement: String,
     /// The claim's synopsis, shown to the grouping judgment alone.
     pub synopsis: Option<String>,
-    /// Position in source order, the tie-break within an authority.
+    /// Position in source order, the tie-break within a kind.
     pub index: usize,
 }
 
