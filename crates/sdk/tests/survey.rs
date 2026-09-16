@@ -68,8 +68,9 @@ async fn survey(
     let ctx = Context {
         adapter_id: "source:probe",
         input,
+        model,
     };
-    survey::surfaces(model, &ctx, docs, keep).await
+    survey::surfaces(&ctx, docs, keep).await
 }
 
 fn surface(name: &str, entry: &str) -> Surface {

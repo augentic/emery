@@ -19,15 +19,15 @@ use crate::references;
 // Turns one adapter holds pending at once.
 const CONCURRENT: usize = 4;
 
-/// Mines `seams` through the model and joins the claims into one [`Evidence`] document.
+/// Mines `seams` through the call's model and joins the claims into one [`Evidence`] document.
 ///
-/// Each seam is one turn. `prompts/extract.md` among `docs` is the system
-/// prompt; the turn names the adapter and the source key from `ctx`,
-/// describes the seam, and lends the model the source root; the `list_docs`
-/// and `read_doc` tools answer from `docs`. The answer is checked against
-/// the claim gate ([`Evidence::findings`]), and findings go back to the
-/// model for another round until it answers clean or the host's rounds are
-/// spent. The engine runs the same gate again on receipt.
+/// Each seam is one turn, put to the model `ctx` carries. `prompts/extract.md`
+/// among `docs` is the system prompt; the turn names the adapter and the
+/// source key from `ctx`, describes the seam, and lends the model the source
+/// root; the `list_docs` and `read_doc` tools answer from `docs`. The answer
+/// is checked against the claim gate ([`Evidence::findings`]), and findings
+/// go back to the model for another round until it answers clean or the
+/// host's rounds are spent. The engine runs the same gate again on receipt.
 ///
 /// At most four turns are pending at once. The claims join in seam order.
 /// Every seam of a workspace is lent the root, so every `path` anchor is
@@ -44,16 +44,17 @@ const CONCURRENT: usize = 4;
 ///   corpus without `prompts/extract.md`.
 /// - [`Error::BadGateway`] for a tool or transport failure.
 pub async fn mine<P: Model>(
-    model: &P, ctx: &Context<'_>, docs: &'static [Doc], seams: &[Seam],
+    ctx: &Context<'_, P>, docs: &'static [Doc], seams: &[Seam],
 ) -> Result<Evidence, Error> {
     let key = &ctx.input.key;
     if seams.is_empty() {
         return Err(bad_request!("`{key}`: nothing to mine"));
     }
 
-    let lends = seams.iter().map(|seam| Lend::of(seam, ctx)).collect::<Result<Vec<_>, _>>()?;
+    let lends =
+        seams.iter().map(|seam| Lend::of(seam, ctx.input)).collect::<Result<Vec<_>, _>>()?;
     let outcomes: Vec<_> = stream::iter(seams.iter().zip(&lends))
-        .map(|(seam, lend)| evidence(model, ctx, docs, seam, lend))
+        .map(|(seam, lend)| evidence(ctx, docs, seam, lend))
         .buffered(CONCURRENT)
         .collect()
         .await;
@@ -86,20 +87,25 @@ pub enum Seam {
     Note(String),
 }
 
-/// What one call knows: which adapter was addressed, and with what input.
+/// What one call knows: which adapter was addressed, with what input, and the model that answers.
+///
+/// The guest's lift builds one per call with the host's model; a native test
+/// builds one with a scripted model in the same field.
 #[derive(Debug)]
-pub struct Context<'a> {
+pub struct Context<'a, P> {
     /// The id the call addressed the adapter by.
     pub adapter_id: &'a str,
     /// The source key and the workspace or inline value to read.
     pub input: &'a SourceInput,
+    /// The model every turn of the call is put to.
+    pub model: &'a P,
 }
 
 // One seam's turn: the embedded prompt as the system, the brief as the user
 // turn, the seam's lend, and the claim gate as the check the backend loops
 // on until the answer is clean or its rounds are spent.
 async fn evidence<P: Model>(
-    model: &P, ctx: &Context<'_>, docs: &'static [Doc], seam: &Seam, lend: &Lend,
+    ctx: &Context<'_, P>, docs: &'static [Doc], seam: &Seam, lend: &Lend,
 ) -> Result<Evidence, Error> {
     let system = emery_prose::body(docs, "prompts/extract.md")
         .ok_or_else(|| server_error!("`prompts/extract.md` is not embedded"))?;
@@ -112,7 +118,7 @@ async fn evidence<P: Model>(
     }
 
     question
-        .ask(model, brief.to_string(), Some(references::answering(docs)), |answer| {
+        .ask(ctx.model, brief.to_string(), Some(references::answering(docs)), |answer| {
             let findings = answer.findings();
             if findings.is_empty() { Ok(()) } else { Err(findings) }
         })

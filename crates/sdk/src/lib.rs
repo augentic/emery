@@ -6,15 +6,17 @@
 //! [`source_adapter!`] over two plain fns of the adapter's own: `metadata`,
 //! answered with [`metadata`] for the kind of source it reads, and `extract`,
 //! which runs [`mine`] over the [seams](#vocabulary) the adapter's own survey
-//! chose, on the host's model. Adapter code is left with what is specific to
-//! its source: the kind it reads, the documents it embeds, and how its input
-//! cuts.
+//! chose. Every call arrives as a [`Context`] — the adapter addressed, the
+//! input, and the model that answers — so adapter code is left with what is
+//! specific to its source: the kind it reads, the documents it embeds, and
+//! how its input cuts. It names no backend: the guest's lift puts the host's
+//! model in the `Context`, and a native test puts a scripted one there.
 //!
 //! The contract types come from `emery-adapter` and are re-exported here. On
 //! `wasm32` the crate also carries the world's bindings (`export`), which the
 //! macro expands against and a guest written by hand implements directly,
-//! and `Provider`, the host's model on omnia's WASI defaults, which a guest
-//! lends to [`mine`] and to a survey by model.
+//! and `Provider`, the host's model on omnia's WASI defaults, which the
+//! macro's lift binds into every call.
 //! [`Source`], the capability the engine calls adapters through, is
 //! re-exported for a program that drives an adapter the way the engine does;
 //! an adapter exports the world, never implements `Source`. The embedded
@@ -29,7 +31,7 @@
 //! so the crate builds natively and its survey is tested there:
 //!
 //! ```
-//! use emery_sdk::{Context, Doc, Error, Seam, SourceKind};
+//! use emery_sdk::{Doc, Error, Seam, SourceInput, SourceKind};
 //!
 //! pub const KIND: SourceKind = SourceKind::Intent;
 //!
@@ -39,13 +41,13 @@
 //! }];
 //!
 //! /// Returns the seams to mine: a brief is never split.
-//! pub fn survey(_ctx: &Context<'_>) -> Result<Vec<Seam>, Error> {
+//! pub fn survey(_input: &SourceInput) -> Result<Vec<Seam>, Error> {
 //!     Ok(vec![Seam::Whole])
 //! }
 //!
 //! #[cfg(target_arch = "wasm32")]
 //! mod guest {
-//!     use emery_sdk::{AdapterMetadata, Context, Error, Evidence, Provider};
+//!     use emery_sdk::{AdapterMetadata, Context, Error, Evidence, Model};
 //!
 //!     emery_sdk::source_adapter!(metadata, extract);
 //!
@@ -53,9 +55,9 @@
 //!         emery_sdk::metadata(super::KIND)
 //!     }
 //!
-//!     async fn extract(ctx: &Context<'_>) -> Result<Evidence, Error> {
-//!         let seams = super::survey(ctx)?;
-//!         emery_sdk::mine(&Provider, ctx, super::DOCS, &seams).await
+//!     async fn extract<P: Model>(ctx: &Context<'_, P>) -> Result<Evidence, Error> {
+//!         let seams = super::survey(ctx.input)?;
+//!         emery_sdk::mine(ctx, super::DOCS, &seams).await
 //!     }
 //! }
 //! # fn main() {}
@@ -77,6 +79,8 @@
 //! - **Seam**: the part of a source one model call is asked about. The
 //!   **survey** is the adapter's own choice of seams, made before any call;
 //!   a seam is **mined** ([`mine`]) when the model is asked about it.
+//! - **Context**: what one call knows ([`Context`]) — the adapter addressed,
+//!   the input, and the model every turn of the call is put to.
 //! - **Lend**: the directory the model may read during a call — the source
 //!   root, for every seam of a workspace.
 //! - **Findings**, **rounds**: the claim gate's report on an answer, sent back

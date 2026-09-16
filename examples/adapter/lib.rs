@@ -9,11 +9,11 @@
 //! tree `emery_sdk::include_prose!` embeds, a survey, and a `wasm32`-only
 //! guest that exports the `source-adapter` world through
 //! `emery_sdk::source_adapter!`, its `extract` the survey then
-//! `emery_sdk::mine` on the host's model.
+//! `emery_sdk::mine` over the call's context.
 
 #[cfg(target_arch = "wasm32")]
 mod guest {
-    use emery_sdk::{AdapterMetadata, Context, Doc, Error, Evidence, Provider, SourceKind};
+    use emery_sdk::{AdapterMetadata, Context, Doc, Error, Evidence, Model, SourceKind};
 
     // The extraction prompt and its reference, from the tree beside this file.
     static DOCS: &[Doc] = emery_sdk::include_prose!("prose");
@@ -24,13 +24,13 @@ mod guest {
         emery_sdk::metadata(SourceKind::Documentation)
     }
 
-    async fn extract(ctx: &Context<'_>) -> Result<Evidence, Error> {
-        let seams = super::survey(ctx)?;
-        emery_sdk::mine(&Provider, ctx, DOCS, &seams).await
+    async fn extract<P: Model>(ctx: &Context<'_, P>) -> Result<Evidence, Error> {
+        let seams = super::survey(ctx.input)?;
+        emery_sdk::mine(ctx, DOCS, &seams).await
     }
 }
 
-use emery_sdk::{Context, Error, Seam, SourceContent, bad_request};
+use emery_sdk::{Error, Seam, SourceContent, SourceInput, bad_request};
 
 /// Returns the one seam to mine: a bound brief whole, or a tree with the fallback noted.
 ///
@@ -40,8 +40,8 @@ use emery_sdk::{Context, Error, Seam, SourceContent, bad_request};
 /// # Errors
 ///
 /// Returns [`Error::BadRequest`] when the bound brief is empty.
-pub fn survey(ctx: &Context<'_>) -> Result<Vec<Seam>, Error> {
-    let seam = match &ctx.input.content {
+pub fn survey(input: &SourceInput) -> Result<Vec<Seam>, Error> {
+    let seam = match &input.content {
         SourceContent::Value(value) if value.trim().is_empty() => {
             return Err(bad_request!("the bound greeting brief is empty"));
         }

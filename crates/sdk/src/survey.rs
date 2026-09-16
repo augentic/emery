@@ -103,17 +103,17 @@ pub fn list(root: &str, mut keep: impl FnMut(Entry<'_>) -> bool) -> Result<Vec<S
     Ok(files)
 }
 
-/// Asks the model once for the surfaces the source exposes, each with its entry module.
+/// Asks the call's model once for the surfaces the source exposes, each with its entry module.
 ///
 /// The adapter's `prompts/survey.md` among `docs` is the system prompt. The
-/// turn names the adapter and source from `ctx` and lends the root so the
-/// model can read the tree; the `list_docs` and `read_doc` tools answer from
-/// `docs`. The model answers one [`Inventory`], checked whole: a surface
-/// without a name, two surfaces of one name, or an entry that is not a
-/// regular file beneath the root that `keep` accepts — asked about each
-/// directory on the way and the file itself, as [`list`] would ask — goes
-/// back as findings for another round. The engine's own files are never an
-/// entry.
+/// turn, put to the model `ctx` carries, names the adapter and source from
+/// `ctx` and lends the root so the model can read the tree; the `list_docs`
+/// and `read_doc` tools answer from `docs`. The model answers one
+/// [`Inventory`], checked whole: a surface without a name, two surfaces of
+/// one name, or an entry that is not a regular file beneath the root that
+/// `keep` accepts — asked about each directory on the way and the file
+/// itself, as [`list`] would ask — goes back as findings for another round.
+/// The engine's own files are never an entry.
 ///
 /// The surfaces come back in answer order, each entry as a `/`-separated
 /// path relative to the root. A module may be the entry of several
@@ -131,8 +131,7 @@ pub fn list(root: &str, mut keep: impl FnMut(Entry<'_>) -> bool) -> Result<Vec<S
 ///   are spent with findings outstanding.
 /// - [`Error::BadGateway`] for a tool or transport failure.
 pub async fn surfaces<P: Model>(
-    model: &P, ctx: &Context<'_>, docs: &'static [Doc],
-    mut keep: impl FnMut(Entry<'_>) -> bool + Send,
+    ctx: &Context<'_, P>, docs: &'static [Doc], mut keep: impl FnMut(Entry<'_>) -> bool + Send,
 ) -> Result<Vec<Surface>, Error> {
     let key = &ctx.input.key;
     let system = emery_prose::body(docs, "prompts/survey.md")
@@ -147,7 +146,7 @@ pub async fn surfaces<P: Model>(
         .system(system)
         .tools(references::tools())
         .workspace(root)
-        .ask(model, turn(ctx, root), Some(references::answering(docs)), |answer| {
+        .ask(ctx.model, turn(ctx, root), Some(references::answering(docs)), |answer| {
             let findings = answer.findings(root, &mut keep);
             if findings.is_empty() { Ok(()) } else { Err(findings) }
         })
@@ -241,7 +240,7 @@ fn module(
 
 // The survey turn: which source is being surveyed, the root lent, how an
 // entry is named, and where the model's work stops.
-fn turn(ctx: &Context<'_>, root: &str) -> String {
+fn turn<P>(ctx: &Context<'_, P>, root: &str) -> String {
     format!(
         "Survey the source bound to adapter `{id}` (source key `{key}`) before it is mined.\n\n\
          `$SOURCE_DIR` is the read-only view at `{root}` — the source tree. List the surfaces it \

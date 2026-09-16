@@ -7,7 +7,7 @@
 
 use std::fmt::{self, Display, Formatter};
 
-use emery_adapter::source::SourceContent;
+use emery_adapter::source::{SourceContent, SourceInput};
 use omnia_sdk::{Error, bad_request, server_error};
 
 use super::{Context, Seam};
@@ -26,12 +26,12 @@ pub struct Lend {
 }
 
 impl Lend {
-    // What `seam` is lent under `ctx`. A `Files` path that escapes the
+    // What `seam` is lent of `input`. A `Files` path that escapes the
     // root, or a set naming no file, is `bad_request`; `Files` over an
     // inline value is the adapter's own defect, so `server_error`.
-    pub fn of(seam: &Seam, ctx: &Context<'_>) -> Result<Self, Error> {
-        let key = &ctx.input.key;
-        let root = match (&ctx.input.content, seam) {
+    pub fn of(seam: &Seam, input: &SourceInput) -> Result<Self, Error> {
+        let key = &input.key;
+        let root = match (&input.content, seam) {
             (SourceContent::Workspace(root), _) => root,
             (SourceContent::Value(_), Seam::Files(_)) => {
                 return Err(server_error!(
@@ -74,13 +74,13 @@ impl Lend {
 
 // The brief: the call's context, the seam and what it is lent; rendered
 // as the user turn.
-pub struct Brief<'a> {
-    pub ctx: &'a Context<'a>,
+pub struct Brief<'a, P> {
+    pub ctx: &'a Context<'a, P>,
     pub seam: &'a Seam,
     pub lend: &'a Lend,
 }
 
-impl Display for Brief<'_> {
+impl<P> Display for Brief<'_, P> {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         let input = self.ctx.input;
         write!(

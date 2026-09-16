@@ -99,8 +99,9 @@ async fn mine<M: Model>(model: &M, input: &SourceInput, seams: &[Seam]) -> Resul
     let ctx = Context {
         adapter_id: "probe",
         input,
+        model,
     };
-    emery_sdk::mine(model, &ctx, DOCS, seams).await
+    emery_sdk::mine(&ctx, DOCS, seams).await
 }
 
 // Each claim's `path` anchor, in document order.
