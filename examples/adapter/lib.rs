@@ -12,8 +12,7 @@
 #[cfg(target_arch = "wasm32")]
 mod guest {
     use emery_sdk::export::{self, AdapterId, AdapterMetadata, Error, Evidence, Guest, Input};
-    use emery_sdk::model::WasiModel;
-    use emery_sdk::{Context, Doc, SourceInput, SourceKind};
+    use emery_sdk::{Doc, SourceKind};
 
     // The extraction prompt and its reference, from the tree beside this file.
     static DOCS: &[Doc] = emery_sdk::include_prose!("prose");
@@ -23,17 +22,11 @@ mod guest {
 
     impl Guest for Adapter {
         fn metadata(_id: AdapterId) -> AdapterMetadata {
-            export::metadata(SourceKind::Documentation)
+            emery_sdk::metadata(SourceKind::Documentation)
         }
 
         async fn extract(id: AdapterId, input: Input) -> Result<Evidence, Error> {
-            let input = SourceInput::from(input);
-            let ctx = Context {
-                adapter_id: &id,
-                input: &input,
-            };
-            let seams = super::survey(&input.content)?;
-            Ok(emery_sdk::mine(&WasiModel, &ctx, DOCS, &seams).await?.into())
+            emery_sdk::extract(id, input, DOCS, async |ctx| super::survey(&ctx.input.content)).await
         }
     }
 }

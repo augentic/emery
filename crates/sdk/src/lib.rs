@@ -4,10 +4,11 @@
 //! — a document tree, a codebase, a written brief — and returns typed claims
 //! about it. It is a guest of the `source-adapter` world: it implements the
 //! world's `Guest` from the `export` module and answers the two calls with
-//! what this crate supplies — `export::metadata` for the kind of source it
-//! reads, and, for `extract`, [`mine`] over the [seams](#vocabulary) its own
-//! survey chose. Adapter code is left with what is specific to its source:
-//! the kind it reads, the documents it embeds, and how its input cuts.
+//! what this crate supplies — `metadata` for the kind of source it reads, and
+//! `extract`, which runs [`mine`] over the [seams](#vocabulary) the adapter's
+//! own survey chose. Adapter code is left with what is specific to its
+//! source: the kind it reads, the documents it embeds, and how its input
+//! cuts.
 //!
 //! The contract types come from `emery-adapter` and are re-exported here;
 //! on `wasm32`, so is the world the adapter exports through (`export`).
@@ -42,22 +43,18 @@
 //! #[cfg(target_arch = "wasm32")]
 //! mod guest {
 //!     use emery_sdk::export::{self, AdapterId, AdapterMetadata, Error, Evidence, Guest, Input};
-//!     use emery_sdk::model::WasiModel;
-//!     use emery_sdk::{Context, SourceInput};
 //!
 //!     struct Adapter;
 //!     export::export!(Adapter with_types_in export);
 //!
 //!     impl Guest for Adapter {
 //!         fn metadata(_id: AdapterId) -> AdapterMetadata {
-//!             export::metadata(super::KIND)
+//!             emery_sdk::metadata(super::KIND)
 //!         }
 //!
 //!         async fn extract(id: AdapterId, input: Input) -> Result<Evidence, Error> {
-//!             let input = SourceInput::from(input);
-//!             let ctx = Context { adapter_id: &id, input: &input };
-//!             let seams = super::survey(&input.content)?;
-//!             Ok(emery_sdk::mine(&WasiModel, &ctx, super::DOCS, &seams).await?.into())
+//!             emery_sdk::extract(id, input, super::DOCS, async |ctx| super::survey(&ctx.input.content))
+//!                 .await
 //!         }
 //!     }
 //! }
@@ -89,12 +86,13 @@
 //! with [`bad_request!`] and reports anything else with the sibling macros;
 //! there is no adapter error type.
 
-#[cfg(target_arch = "wasm32")]
-pub mod export;
 mod mine;
 mod references;
 pub mod survey;
 
+#[cfg(target_arch = "wasm32")]
+#[doc(inline)]
+pub use emery_adapter::source::export;
 pub use emery_adapter::source::{
     AdapterMetadata, Backing, Claim, ClaimKind, Evidence, Source, SourceContent, SourceInput,
     SourceKind,
@@ -108,3 +106,41 @@ pub mod prose {
 }
 
 pub use self::mine::{Context, Seam, mine};
+
+/// Returns the `metadata` answer for an adapter reading `kind` sources.
+///
+/// The `emery-version` pin is this SDK's own version: the contract the
+/// adapter compiled against.
+#[cfg(target_arch = "wasm32")]
+#[must_use]
+pub fn metadata(kind: SourceKind) -> export::AdapterMetadata {
+    AdapterMetadata {
+        emery_version: Some(env!("CARGO_PKG_VERSION").to_string()),
+        kind,
+    }
+    .into()
+}
+
+/// Answers `extract`: lifts `input`, surveys it, and mines the seams over the host model.
+///
+/// `survey` is the adapter's own choice of [seams](crate#vocabulary), given
+/// the call's [`Context`]; everything else is [`mine`] under the
+/// `prompts/extract.md` among `docs`, over the host's model. The outcome is
+/// lowered onto the world's `evidence` and `error`.
+///
+/// # Errors
+///
+/// Whatever `survey` or [`mine`] returns, lowered onto the WIT `error`.
+#[cfg(target_arch = "wasm32")]
+pub async fn extract(
+    id: export::AdapterId, input: export::Input, docs: &'static [Doc],
+    survey: impl AsyncFnOnce(&Context<'_>) -> Result<Vec<Seam>, Error>,
+) -> Result<export::Evidence, export::Error> {
+    let input = SourceInput::from(input);
+    let ctx = Context {
+        adapter_id: &id,
+        input: &input,
+    };
+    let seams = survey(&ctx).await?;
+    Ok(mine(&omnia_sdk::model::WasiModel, &ctx, docs, &seams).await?.into())
+}
