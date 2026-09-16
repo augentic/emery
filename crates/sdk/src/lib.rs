@@ -2,51 +2,72 @@
 //!
 //! A source adapter is a WebAssembly component that reads one kind of source
 //! — a document tree, a codebase, a written brief — and returns typed claims
-//! about it. An adapter implements [`SourceAdapter`] and invokes [`source!`];
-//! this crate supplies the rest: the contract types, the model call and its
-//! claim gate, the error vocabulary, and the component export. Adapter code is
-//! left with what is specific to its source.
+//! about it. It is a guest of the `source-adapter` world: it implements the
+//! world's `Guest` from the `export` module and answers the two calls with
+//! what this crate supplies — `export::metadata` for the kind of source it
+//! reads, and, for `extract`, [`mine`] over the [seams](#vocabulary) its own
+//! survey chose. Adapter code is left with what is specific to its source:
+//! the kind it reads, the documents it embeds, and how its input cuts.
 //!
-//! The contract types come from `emery-adapter` and are re-exported here, so
-//! an adapter never sees the WIT bindings. [`Source`], the capability the
-//! engine calls adapters through, is re-exported for a program that drives an
-//! adapter the way the engine does; an adapter implements [`SourceAdapter`]
-//! and never `Source`. The embedded-document registry comes from
-//! `emery-prose` and is re-exported too — [`Doc`], [`mod@registry`], and
-//! [`registry!`] — so an adapter's `[dependencies]` is this crate alone;
-//! `emery-prose` is its build dependency, for the `emit` walker.
+//! The contract types come from `emery-adapter` and are re-exported here;
+//! on `wasm32`, so is the world the adapter exports through (`export`).
+//! [`Source`], the capability the engine calls adapters through, is
+//! re-exported for a program that drives an adapter the way the engine does;
+//! an adapter implements the world's `Guest`, never `Source`. The
+//! embedded-document registry comes from `emery-prose` and is re-exported
+//! too — [`Doc`], [`mod@registry`], and [`registry!`] — so an adapter's
+//! `[dependencies]` is this crate alone; `emery-prose` is its build
+//! dependency, for the `emit` walker.
 //!
 //! # Examples
 //!
 //! The smallest complete adapter declares the kind of source it reads, embeds
-//! its prompt, and leaves the survey at its default of one seam:
+//! its prompt, keeps a brief whole, and exports the world on `wasm32` alone
+//! — so the crate builds natively and its survey is tested there:
 //!
 //! ```
-//! use emery_sdk::{Doc, SourceAdapter, SourceKind};
+//! use emery_sdk::{Doc, Error, Seam, SourceContent, SourceKind};
 //!
-//! static DOCS: &[Doc] = &[Doc {
+//! pub const KIND: SourceKind = SourceKind::Intent;
+//!
+//! pub static DOCS: &[Doc] = &[Doc {
 //!     path: "prompts/extract.md",
 //!     body: "Extract every requirement the brief states as a `requirement` claim.",
 //! }];
 //!
-//! struct Adapter;
-//!
-//! impl SourceAdapter for Adapter {
-//!     const KIND: SourceKind = SourceKind::Intent;
-//!
-//!     fn docs() -> &'static [Doc] {
-//!         DOCS
-//!     }
+//! /// Returns the seams to mine: a brief is never split.
+//! pub fn survey(_content: &SourceContent) -> Result<Vec<Seam>, Error> {
+//!     Ok(vec![Seam::Whole])
 //! }
 //!
-//! emery_sdk::source!(crate::Adapter);
+//! #[cfg(target_arch = "wasm32")]
+//! mod guest {
+//!     use emery_sdk::export::{self, AdapterId, AdapterMetadata, Error, Evidence, Guest, Input};
+//!     use emery_sdk::model::WasiModel;
+//!     use emery_sdk::{Context, SourceInput};
+//!
+//!     struct Adapter;
+//!     export::export!(Adapter with_types_in export);
+//!
+//!     impl Guest for Adapter {
+//!         fn metadata(_id: AdapterId) -> AdapterMetadata {
+//!             export::metadata(super::KIND)
+//!         }
+//!
+//!         async fn extract(id: AdapterId, input: Input) -> Result<Evidence, Error> {
+//!             let input = SourceInput::from(input);
+//!             let ctx = Context { adapter_id: &id, input: &input };
+//!             let seams = super::survey(&input.content)?;
+//!             Ok(emery_sdk::mine(&WasiModel, &ctx, super::DOCS, &seams).await?.into())
+//!         }
+//!     }
+//! }
 //! # fn main() {}
 //! ```
 //!
 //! A shipped adapter embeds its prompt with `emery_prose::emit` in its build
 //! script and [`registry!`] in its crate root rather than a hand-written
-//! table, and a tree adapter overrides [`SourceAdapter::survey`] to cut its
-//! input with the [`survey`] helpers.
+//! table, and a tree adapter cuts its input with the [`survey`] helpers.
 //!
 //! # Vocabulary
 //!
@@ -56,8 +77,8 @@
 //!   document of claims an adapter returns. The **claim gate**
 //!   ([`Evidence::findings`]) is the set of rules every claim must satisfy.
 //! - **Seam**: the part of a source one model call is asked about. The
-//!   **survey** ([`SourceAdapter::survey`]) decides the seams before any
-//!   call is made; a seam is **mined** when the model is asked about it.
+//!   **survey** is the adapter's own choice of seams, made before any call;
+//!   a seam is **mined** ([`mine`]) when the model is asked about it.
 //! - **Lend**: the directory the model may read during a call — the source
 //!   root, or a seam's own directory.
 //! - **Findings**, **rounds**: the claim gate's report on an answer, sent back
@@ -68,8 +89,11 @@
 //! with [`bad_request!`] and reports anything else with the sibling macros;
 //! there is no adapter error type.
 
+#[cfg(target_arch = "wasm32")]
+pub mod export;
+mod mine;
 mod references;
-mod source;
+pub mod survey;
 
 pub use emery_adapter::source::{
     AdapterMetadata, Backing, Claim, ClaimKind, Evidence, Source, SourceContent, SourceInput,
@@ -79,54 +103,5 @@ pub use emery_adapter::source::{
 pub use emery_prose::registry;
 pub use emery_prose::registry::Doc;
 pub use omnia_sdk::{Error, Model, bad_gateway, bad_request, model, not_found, server_error};
-// The export shim the `source!` macro expands against; no adapter names it.
-#[cfg(target_arch = "wasm32")]
-#[doc(hidden)]
-pub use source::export;
-pub use source::{Context, Seam, SourceAdapter, survey};
 
-/// Exports a [`SourceAdapter`] as the component the engine loads.
-///
-/// Invoke it once at the crate root with the path to the implementing type.
-/// The expansion is a `wasm32`-only module, so the crate carries no `cfg` of
-/// its own and still builds natively for its tests.
-///
-/// # Examples
-///
-/// ```
-/// # use emery_sdk::{Doc, SourceAdapter, SourceKind};
-/// # struct Adapter;
-/// # impl SourceAdapter for Adapter {
-/// #     const KIND: SourceKind = SourceKind::Intent;
-/// #     fn docs() -> &'static [Doc] {
-/// #         &[]
-/// #     }
-/// # }
-/// emery_sdk::source!(crate::Adapter);
-/// # fn main() {}
-/// ```
-#[macro_export]
-macro_rules! source {
-    ($adapter:ty) => {
-        #[cfg(target_arch = "wasm32")]
-        mod guest {
-            use $crate::export;
-
-            struct Adapter;
-            export::export!(Adapter with_types_in export);
-
-            impl export::Guest for Adapter {
-                fn metadata(_id: export::AdapterId) -> export::AdapterMetadata {
-                    export::metadata::<$adapter>()
-                }
-
-                async fn extract(
-                    id: export::AdapterId,
-                    input: export::Input,
-                ) -> Result<export::Evidence, export::Error> {
-                    export::extract::<$adapter>(id, input).await
-                }
-            }
-        }
-    };
-}
+pub use self::mine::{Context, Seam, mine};

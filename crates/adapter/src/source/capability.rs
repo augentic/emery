@@ -18,10 +18,10 @@ use crate::source::{Evidence, SourceKind};
 
 /// The capability the engine calls source adapters through.
 ///
-/// Adapters implement the export side — `SourceAdapter` in `emery-sdk` — not
-/// this trait. An extract failure arrives classified: an adapter refusing its
-/// input is [`Error::BadRequest`], and any other failure is
-/// [`Error::BadGateway`].
+/// Adapters implement the export side — the world's `Guest`, through
+/// `emery-sdk` — not this trait. An extract failure arrives classified: an
+/// adapter refusing its input is [`Error::BadRequest`], and any other failure
+/// is [`Error::BadGateway`].
 pub trait Source: Send + Sync {
     /// Asks the adapter registered as `id` to extract `input`.
     ///

@@ -1,7 +1,7 @@
 //! The generated WIT bindings and their conversions to the contract types.
 //!
-//! Both sides ride one generation of the `source-adapter` world. Adapters
-//! export through it via the SDK's `source!` macro over [`export`]; the engine
+//! Both sides ride one generation of the `source-adapter` world. An adapter's
+//! guest implements [`export`]'s `Guest`, through `emery-sdk`; the engine
 //! guest calls into it through [`import`]. Each conversion between a WIT
 //! record and its contract type is written once here: `From` where the WIT
 //! form always lifts, `TryFrom` where an extra's canonical JSON must parse.
@@ -245,7 +245,7 @@ impl From<omnia_sdk::Error> for wit::Error {
     }
 }
 
-/// The bindings an adapter's `source!` macro exports through.
+/// The bindings an adapter exports through: the world's `Guest`, its records, and `export!`.
 pub mod export {
     // The root glob carries the bindgen support items the `export!` macro
     // expands against; the second names the world's records and `Guest`.

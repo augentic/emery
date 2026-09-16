@@ -25,8 +25,7 @@ use omnia_sdk::{Error, Model, bad_request, server_error};
 use schemars::JsonSchema;
 use serde::Deserialize;
 
-use super::Context;
-use crate::references;
+use crate::{Context, references};
 
 /// A directory entry the walk offers to an adapter's `keep`.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
