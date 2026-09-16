@@ -1,65 +1,59 @@
-//! Embeds a crate's prompts and reference documents at build time.
+//! Embeds a crate's prompts and reference documents at compile time.
 //!
 //! Prompts and references ship inside the binaries that use them — the
 //! engine's synthesis prose, each adapter's extraction prose — rather than
 //! being read from disk at run time. This crate is the shared way to do that:
-//! [`emit`] walks a Markdown tree from a build script and generates a document
-//! table, [`include_prose!`] includes that table where the crate wants its
-//! `docs()`, and [`find`] and [`body`] look a [`Doc`] up in it by path.
-//!
-//! [`emit`] sits behind the `emit` feature, so a build script enables it and a
-//! shipped guest never carries the walker.
+//! [`include_prose!`] embeds a Markdown tree as a table of [`Doc`]s the way
+//! `include_str!` embeds one file, and [`find`] and [`body`] look a document
+//! up in that table by path.
 //!
 //! # Examples
 //!
-//! The build script's `main` embeds the crate's `prose/` tree:
+//! A crate embeds the `prose/` tree beside its `src/` and reads a document by
+//! path:
 //!
-//! ```no_run
-//! // build.rs, with `emery-prose = { features = ["emit"] }` as a build-dependency.
-//! emery_prose::emit("prose");
 //! ```
+//! use emery_prose::Doc;
 //!
-//! The crate then includes the generated table and reads a document by path:
+//! static DOCS: &[Doc] = emery_prose::include_prose!("../tests/fixtures");
 //!
-//! ```ignore
-//! // `ignore`: the included file exists only under the crate's own build script.
-//! mod prose {
-//!     emery_prose::include_prose!();
-//! }
-//!
-//! let prompt = emery_prose::body(prose::docs(), "prompts/extract.md");
+//! let prompt = emery_prose::body(DOCS, "prompts/extract.md");
+//! assert!(prompt.is_some());
 //! ```
 
 mod doc;
-#[cfg(feature = "emit")]
-mod emit;
 
 pub use doc::{Doc, body, find};
-#[cfg(feature = "emit")]
-pub use emit::emit;
+#[doc(hidden)]
+pub use emery_prose_macros::include_prose as __include_prose;
 
-/// Includes the document table the crate's build script generated.
+/// Embeds the Markdown tree at `tree`, relative to the invoking file, as a table of [`Doc`]s.
 ///
-/// The build script's [`emit`] call writes `prose_docs.rs` into `OUT_DIR`.
-/// This macro brings [`Doc`] into scope and includes that file, so the module
-/// it expands in exposes `pub fn docs() -> &'static [Doc]` over the embedded
-/// documents.
+/// The expansion is a `&'static [Doc]` holding every `.md` file beneath
+/// `tree`, sorted by tree-relative path, each body embedded as `include_str!`
+/// embeds it. Symlinked directories are followed. The build fails at the
+/// invocation when the tree is missing or holds no document, when a relative
+/// link in any document has no target, or when a symlink cycle is found.
+///
+/// Cargo tracks each embedded file, so an edit rebuilds the crate; a file
+/// added to or removed from the tree is tracked only by a build script that
+/// prints `cargo::rerun-if-changed=<tree>`.
 ///
 /// # Examples
 ///
-/// ```ignore
-/// // `ignore`: the included file exists only under the crate's own build script.
-/// mod prose {
-///     emery_prose::include_prose!();
-/// }
+/// ```
+/// use emery_prose::Doc;
 ///
-/// let prompt = emery_prose::body(prose::docs(), "prompts/extract.md");
+/// static DOCS: &[Doc] = emery_prose::include_prose!("../tests/fixtures");
+///
+/// assert_eq!(
+///     DOCS.iter().map(|doc| doc.path).collect::<Vec<_>>(),
+///     ["prompts/extract.md", "references/ids.md",]
+/// );
 /// ```
 #[macro_export]
 macro_rules! include_prose {
-    () => {
-        use $crate::Doc;
-
-        include!(concat!(env!("OUT_DIR"), "/prose_docs.rs"));
+    ($tree:literal) => {
+        $crate::__include_prose!($crate::Doc, $tree)
     };
 }

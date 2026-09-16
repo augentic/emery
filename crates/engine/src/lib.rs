@@ -90,7 +90,5 @@ pub trait Provider:
 
 impl<P: Model + Source + StateStore + BlobStore + Plugins + Send + Sync + 'static> Provider for P {}
 
-// Generated from the link-checked synthesis corpus at build time.
-mod prose {
-    emery_prose::include_prose!();
-}
+// The link-checked synthesis corpus, embedded at compile time.
+static DOCS: &[emery_prose::Doc] = emery_prose::include_prose!("../prose");

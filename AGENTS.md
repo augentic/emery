@@ -16,7 +16,7 @@ When authoritative inputs are incomplete, preserve the gap as `[unknown]` rather
 
 | Path | Role |
 | --- | --- |
-| `crates/prose` | Embedded prompt corpora: `emit` writes the `Doc` table a build script embeds, `include_prose!` includes it, `find` / `body` look a document up by path. Feature `emit` (build-dependencies only) is the embed-time walker and link check |
+| `crates/prose` | Embedded prompt corpora: `include_prose!("../prose")` embeds a Markdown tree, relative to the invoking file, as a `&'static [Doc]` the way `include_str!` embeds one file; `find` / `body` look a document up by path. `crates/prose-macros` is the procedural macro behind it — the walk and the link check — reached only through `emery_prose::include_prose!` |
 | `crates/adapter` | The `emery:adapter` WIT contract, both sides, one module per axis (`emery_adapter::source`): the `Source` capability, `SourceInput`, `Evidence` / `Claim`, and the claim gate `Evidence::findings` |
 | `crates/sdk` | The guest-only adapter SDK, types and functions in omnia's helper shape: `mine` (one gated model turn per seam, joined), the `survey` helpers (the walk, the cut by directory, the one-call cut by model), and on `wasm32` the `export` module — the `source-adapter` world an adapter's own `Guest` impl exports through, plus `export::metadata`; it re-exports the contract types and the embedded prose (`Doc`, `include_prose!`, the `prose` lookups), so an adapter's `[dependencies]` is `emery-sdk` alone. No production crate depends on it |
 | `crates/engine` | Transport-neutral `specify` / `show` operations over a capability `Provider`; the typed `Revision`, its Markdown projection, and the revision store. No clap, toml, terminal text, or exit codes |
@@ -26,7 +26,7 @@ When authoritative inputs are incomplete, preserve the gap as `[unknown]` rather
 | `tests/` | Root scenario suites (`specify.rs`, `command.rs`, `plugin.rs`) over `tests/support/` |
 | `wit/`, `docs/`, `plugins/emery/` | The WIT package; the Developer Guide (mdBook; house standards under `docs/standards/`); the Cursor plugin |
 
-Dependency direction, leaf to root: `prose`, `adapter` → `sdk`; `prose`, `adapter` → `engine` → `cli` → root. Never `engine → cli`; nothing in production depends on `sdk`. Details: [docs/standards/architecture.md](docs/standards/architecture.md).
+Dependency direction, leaf to root: `prose-macros` → `prose`; `prose`, `adapter` → `sdk`; `prose`, `adapter` → `engine` → `cli` → root. Never `engine → cli`; nothing in production depends on `sdk`. Details: [docs/standards/architecture.md](docs/standards/architecture.md).
 
 ## Invariants
 

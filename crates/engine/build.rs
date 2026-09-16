@@ -1,8 +1,8 @@
-//! Embeds the synthesis prompt corpus under `prose/` and checks its links.
+//! Rebuilds the engine when a document is added to or removed from `prose/`.
 //!
-//! A prompt that references a missing document is a build failure rather
-//! than a run-time surprise.
+//! `include_prose!` embeds every document under `prose/` by content, so an
+//! edit rebuilds on its own; only a new or deleted file needs the tree watched.
 
 fn main() {
-    emery_prose::emit("prose");
+    println!("cargo::rerun-if-changed=prose");
 }

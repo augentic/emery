@@ -1016,7 +1016,6 @@ dependencies = [
  "emery-adapter",
  "emery-cli",
  "emery-engine",
- "emery-prose",
  "emery-sdk",
  "hex",
  "omnia",
@@ -1083,6 +1082,13 @@ dependencies = [
 
 [[package]]
 name = "emery-prose"
+version = "0.38.0"
+dependencies = [
+ "emery-prose-macros",
+]
+
+[[package]]
+name = "emery-prose-macros"
 version = "0.38.0"
 dependencies = [
  "anyhow",

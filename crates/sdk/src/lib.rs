@@ -16,8 +16,7 @@
 //! an adapter implements the world's `Guest`, never `Source`. The embedded
 //! documents come from `emery-prose` and are re-exported too — [`Doc`],
 //! [`include_prose!`], and the lookups in [`mod@prose`] — so an adapter's
-//! `[dependencies]` is this crate alone; `emery-prose` is its build
-//! dependency, for the `emit` walker.
+//! `[dependencies]` is this crate alone.
 //!
 //! # Examples
 //!
@@ -65,9 +64,10 @@
 //! # fn main() {}
 //! ```
 //!
-//! A shipped adapter embeds its prompt with `emery_prose::emit` in its build
-//! script and [`include_prose!`] in its crate root rather than a hand-written
-//! table, and a tree adapter cuts its input with the [`survey`] helpers.
+//! A shipped adapter embeds its `prose/` tree with
+//! `include_prose!("../prose")` in its guest module rather than writing the
+//! table by hand, and a tree adapter cuts its input with the [`survey`]
+//! helpers.
 //!
 //! # Vocabulary
 //!
