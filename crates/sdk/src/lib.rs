@@ -6,9 +6,9 @@
 //! world's `Guest` from the `export` module and answers the two calls with
 //! what this crate supplies — `metadata` for the kind of source it reads, and
 //! `extract`, which runs [`mine`] over the [seams](#vocabulary) the adapter's
-//! own survey chose. Adapter code is left with what is specific to its
-//! source: the kind it reads, the documents it embeds, and how its input
-//! cuts.
+//! own survey chose, on the [`Model`] the guest binds once. Adapter code is
+//! left with what is specific to its source: the kind it reads, the
+//! documents it embeds, and how its input cuts.
 //!
 //! The contract types come from `emery-adapter` and are re-exported here;
 //! on `wasm32`, so is the world the adapter exports through (`export`).
@@ -22,8 +22,9 @@
 //! # Examples
 //!
 //! The smallest complete adapter declares the kind of source it reads, embeds
-//! its prompt, keeps a brief whole, and exports the world on `wasm32` alone
-//! — so the crate builds natively and its survey is tested there:
+//! its prompt, keeps a brief whole, binds the host's model once, and exports
+//! the world on `wasm32` alone — so the crate builds natively and its survey
+//! is tested there:
 //!
 //! ```
 //! use emery_sdk::{Context, Doc, Error, Seam, SourceKind};
@@ -42,7 +43,12 @@
 //!
 //! #[cfg(target_arch = "wasm32")]
 //! mod guest {
+//!     use emery_sdk::Model;
 //!     use emery_sdk::export::{self, AdapterId, AdapterMetadata, Error, Evidence, Guest, Input};
+//!
+//!     // The adapter's capabilities on the WASI defaults: the model alone.
+//!     struct Provider;
+//!     impl Model for Provider {}
 //!
 //!     struct Adapter;
 //!     export::export!(Adapter with_types_in export);
@@ -53,7 +59,10 @@
 //!         }
 //!
 //!         async fn extract(id: AdapterId, input: Input) -> Result<Evidence, Error> {
-//!             emery_sdk::extract(id, input, super::DOCS, async |ctx| super::survey(ctx)).await
+//!             emery_sdk::extract(&Provider, id, input, super::DOCS, async |_, ctx| {
+//!                 super::survey(ctx)
+//!             })
+//!             .await
 //!         }
 //!     }
 //! }
@@ -120,28 +129,31 @@ pub fn metadata(kind: SourceKind) -> export::AdapterMetadata {
     .into()
 }
 
-/// Answers `extract`: lifts `input`, surveys it, and mines the seams over the host model.
+/// Answers `extract`: lifts `input`, surveys it, and mines the seams over `model`.
 ///
-/// `survey` is the adapter's own choice of [seams](crate#vocabulary), given
+/// `model` is the guest's one model capability, lent to `survey` and to
+/// [`mine`] alike, so a guest binds it once — a unit `Provider` with an
+/// empty `impl Model`, as every omnia guest declares. `survey` is the
+/// adapter's own choice of [seams](crate#vocabulary), given the model and
 /// the call's [`Context`]; everything else is [`mine`] under the
-/// `prompts/extract.md` among `docs`, over the host's model. The outcome is
-/// lowered onto the world's `evidence` and `error`. A mechanical survey is a
-/// plain fn, passed as `async |ctx| survey::survey(ctx)`; a survey that asks
-/// the model is already async, so the guest passes `survey::survey`.
+/// `prompts/extract.md` among `docs`. The outcome is lowered onto the
+/// world's `evidence` and `error`. A mechanical survey ignores the model,
+/// passed as `async |_, ctx| survey::survey(ctx)`; one that asks it passes
+/// it on, `async |model, ctx| survey::survey(model, ctx, DOCS).await`.
 ///
 /// # Errors
 ///
 /// Whatever `survey` or [`mine`] returns, lowered onto the WIT `error`.
 #[cfg(target_arch = "wasm32")]
-pub async fn extract(
-    id: export::AdapterId, input: export::Input, docs: &'static [Doc],
-    survey: impl AsyncFnOnce(&Context<'_>) -> Result<Vec<Seam>, Error>,
+pub async fn extract<P: Model>(
+    model: &P, id: export::AdapterId, input: export::Input, docs: &'static [Doc],
+    survey: impl AsyncFnOnce(&P, &Context<'_>) -> Result<Vec<Seam>, Error>,
 ) -> Result<export::Evidence, export::Error> {
     let input = SourceInput::from(input);
     let ctx = Context {
         adapter_id: &id,
         input: &input,
     };
-    let seams = survey(&ctx).await?;
-    Ok(mine(&omnia_sdk::model::WasiModel, &ctx, docs, &seams).await?.into())
+    let seams = survey(model, &ctx).await?;
+    Ok(mine(model, &ctx, docs, &seams).await?.into())
 }
