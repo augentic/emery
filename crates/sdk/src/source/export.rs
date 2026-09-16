@@ -8,7 +8,7 @@
 
 use emery_adapter::source::SourceInput;
 pub use emery_adapter::source::export::*;
-use omnia_guest::model::WasiModel;
+use omnia_sdk::model::WasiModel;
 
 use super::{Context, SourceAdapter};
 

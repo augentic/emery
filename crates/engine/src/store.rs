@@ -7,7 +7,7 @@
 //! one it displaced; [`current`] reads it back.
 
 use anyhow::Context;
-use omnia_guest::{BlobStore, Error, StateStore, server_error};
+use omnia_sdk::{BlobStore, Error, StateStore, server_error};
 
 use crate::revision::{Design, Diff, Document as _, Revision, Spec};
 

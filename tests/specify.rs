@@ -22,9 +22,9 @@ use std::{fs, slice};
 
 use emery_adapter::source::{ClaimKind, Evidence, SourceContent, SourceKind};
 use emery_engine::{CONTAINER, CURRENT};
-use omnia_guest::model::Error as ModelError;
-use omnia_guest::plugins::{Error as LoadError, Location};
-use omnia_guest::{BlobStore, StateStore, bad_gateway, bad_request};
+use omnia_sdk::model::Error as ModelError;
+use omnia_sdk::plugins::{Error as LoadError, Location};
+use omnia_sdk::{BlobStore, StateStore, bad_gateway, bad_request};
 use omnia_test::SeenFormat;
 use omnia_test::guest::{Memory, Namespaced, Scripted};
 use serde_json::Value;

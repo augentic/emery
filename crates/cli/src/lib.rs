@@ -9,7 +9,7 @@
 //!
 //! The projection itself — decode, `Client::call`, encode, the failure
 //! envelope, and the exit map — is omnia's command façade
-//! (`omnia_guest::api::command`); this crate owns only what is Emery's.
+//! (`omnia_sdk::api::command`); this crate owns only what is Emery's.
 
 mod sources;
 mod text;
@@ -23,9 +23,9 @@ use clap::{Parser, Subcommand};
 use emery_engine::Provider;
 use emery_engine::show::{Artifact, ShowInput, show};
 use emery_engine::specify::{SpecifyInput, specify};
-use omnia_guest::Error;
-use omnia_guest::api::command::{Command, Parsed, Response, Shell, completions, parse};
-use omnia_guest::api::{Client, Format, Metadata};
+use omnia_sdk::Error;
+use omnia_sdk::api::command::{Command, Parsed, Response, Shell, completions, parse};
+use omnia_sdk::api::{Client, Format, Metadata};
 use strum::VariantArray as _;
 
 const ABOUT: &str = "Deterministic primitives for spec-driven development";

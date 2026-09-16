@@ -30,7 +30,7 @@ omnia-wasi-otel.workspace = true
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 emery-adapter.workspace = true
 emery-cli.workspace = true
-omnia-guest.workspace = true
+omnia-sdk.workspace = true
 wasip3.workspace = true
 
 [build-dependencies]
@@ -50,7 +50,7 @@ anyhow.workspace = true
 emery-adapter.workspace = true
 emery-cli.workspace = true
 emery-engine.workspace = true
-omnia-guest.workspace = true
+omnia-sdk.workspace = true
 omnia-test = { workspace = true, features = ["guest"] }
 tokio = { workspace = true, features = ["macros", "rt", "sync", "time"] }
 
@@ -126,7 +126,7 @@ unused_result_ok = "warn"
 [workspace.dependencies]
 anyhow = "1.0.104"
 cfg-if = "1.0.4"
-clap = { version = "4.6.6", features = ["derive", "env"] }
+clap = { version = "4.6.7", features = ["derive", "env"] }
 futures = "0.3.34"
 hex = "0.4.3"
 schemars = "1.2.2"
@@ -149,7 +149,7 @@ emery-prose = { path = "crates/prose" }
 emery-sdk = { path = "crates/sdk" }
 
 omnia = { version = "0.36.0", default-features = false, features = ["jit", "link", "plugin"] }
-omnia-guest = { version = "0.36.0", default-features = false, features = ["command"] }
+omnia-sdk = { version = "0.36.0", default-features = false, features = ["command"] }
 omnia-test = { version = "0.36.0", default-features = false }
 omnia-wasi-blobstore = "0.36.0"
 omnia-wasi-keyvalue = "0.36.0"
@@ -162,7 +162,7 @@ omnia-filesystem = "0.29.0"
 [patch.crates-io]
 omnia = { git = "https://github.com/augentic/omnia" }
 omnia-core = { git = "https://github.com/augentic/omnia" }
-omnia-guest = { git = "https://github.com/augentic/omnia" }
+omnia-sdk = { git = "https://github.com/augentic/omnia" }
 omnia-guest-macros = { git = "https://github.com/augentic/omnia" }
 omnia-host-macros = { git = "https://github.com/augentic/omnia" }
 omnia-plugin = { git = "https://github.com/augentic/omnia" }
@@ -173,7 +173,7 @@ omnia-wasi-model = { git = "https://github.com/augentic/omnia" }
 omnia-wasi-otel = { git = "https://github.com/augentic/omnia" }
 # omnia = { path = "../omnia/crates/omnia" }
 # omnia-core = { path = "../omnia/crates/omnia-core" }
-# omnia-guest = { path = "../omnia/crates/omnia-guest" }
+# omnia-sdk = { path = "../omnia/crates/omnia-sdk" }
 # omnia-guest-macros = { path = "../omnia/crates/guest-macros" }
 # omnia-host-macros = { path = "../omnia/crates/host-macros" }
 # omnia-plugin = { path = "../omnia/crates/omnia-plugin" }
@@ -187,10 +187,6 @@ omnia-cursor = { git = "https://github.com/augentic/omnia-backends" }
 omnia-filesystem = { git = "https://github.com/augentic/omnia-backends" }
 # omnia-cursor = { path = "../omnia-backends/crates/cursor" }
 # omnia-filesystem = { path = "../omnia-backends/crates/filesystem" }
-
-# `wrpc-wasmtime` 0.1.0 is unpublished on crates.io.
-wrpc-transport = { git = "https://github.com/bytecodealliance/wrpc" }
-wrpc-wasmtime = { git = "https://github.com/bytecodealliance/wrpc" }
 
 [profile.release]
 lto = true

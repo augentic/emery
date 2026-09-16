@@ -22,8 +22,8 @@ use std::future::Future;
 use emery_adapter::source::{AdapterMetadata, Backing, Claim, Evidence, SourceInput, SourceKind};
 use emery_prose::registry::{self, Doc};
 use futures::stream::{self, StreamExt as _};
-use omnia_guest::model::Question;
-use omnia_guest::{Error, Model, bad_gateway, bad_request, not_found, server_error};
+use omnia_sdk::model::Question;
+use omnia_sdk::{Error, Model, bad_gateway, bad_request, not_found, server_error};
 
 use self::brief::{Brief, Lend};
 use crate::references;
@@ -130,10 +130,11 @@ pub trait SourceAdapter {
                 .buffered(CONCURRENT)
                 .collect()
                 .await;
+
             let partials = collect(key, outcomes)?;
 
             Ok(Evidence {
-                claims: join(&lends, partials),
+                claims: to_claims(&lends, partials),
             })
         }
     }
@@ -242,6 +243,18 @@ fn collect(key: &str, outcomes: Vec<Result<Evidence, Error>>) -> Result<Vec<Evid
     ))
 }
 
+// Re-rooting each seam's anchors under what it was lent gives the source
+// one path space however it was cut.
+fn to_claims(lends: &[Lend], partials: Vec<Evidence>) -> Vec<Claim> {
+    lends
+        .iter()
+        .zip(partials)
+        .flat_map(|(lend, partial)| {
+            partial.claims.into_iter().map(move |claim| reroot(&lend.within, claim))
+        })
+        .collect()
+}
+
 // The first failed seam decides the class; the report names them all.
 fn reclass(class: &Error, description: &str) -> Error {
     match class {
@@ -250,18 +263,6 @@ fn reclass(class: &Error, description: &str) -> Error {
         Error::ServerError { .. } => server_error!("{description}"),
         Error::BadGateway { .. } => bad_gateway!("{description}"),
     }
-}
-
-// Re-rooting each seam's anchors under what it was lent gives the source
-// one path space however it was cut.
-fn join(lends: &[Lend], partials: Vec<Evidence>) -> Vec<Claim> {
-    lends
-        .iter()
-        .zip(partials)
-        .flat_map(|(lend, partial)| {
-            partial.claims.into_iter().map(move |claim| reroot(&lend.within, claim))
-        })
-        .collect()
 }
 
 // A seam lent the root itself has nothing to re-root. An anchor's `#L`

@@ -2,7 +2,7 @@
 
 The deterministic surface skills depend on. The surviving skill in this repository (`/emery:specify`) shells out to the `emery` binary; it is an ultrathin wrapper over one verb. The v1 workflow verbs and their skills are archived at git tag `v1`.
 
-The CLI itself is built in the in-tree Cargo workspace at the repo root: the `emery-cli` crate (`crates/cli`) owns the grammar over the transport-neutral `emery-engine` operations, and omnia's command façade (`omnia_guest::api::command`) owns the envelope and the exit contract. This document captures the verbs skills call, the envelope shape they consume, and pointers to the authoritative wire-contract definitions.
+The CLI itself is built in the in-tree Cargo workspace at the repo root: the `emery-cli` crate (`crates/cli`) owns the grammar over the transport-neutral `emery-engine` operations, and omnia's command façade (`omnia_sdk::api::command`) owns the envelope and the exit contract. This document captures the verbs skills call, the envelope shape they consume, and pointers to the authoritative wire-contract definitions.
 
 ## Rule: all deterministic operations live in the CLI
 
@@ -37,7 +37,7 @@ The `error` discriminants are part of the public contract that skills and tests 
 
 ## Exit codes
 
-`omnia_guest::Error::exit_code` maps the four `Error` variants 1:1 and is the single source of truth; omnia's command façade applies it to every failure `emery_cli::run` reports, and there is no exit table in this repository's code.
+`omnia_sdk::Error::exit_code` maps the four `Error` variants 1:1 and is the single source of truth; omnia's command façade applies it to every failure `emery_cli::run` reports, and there is no exit table in this repository's code.
 
 | Code | Name           | When                                                                                                                                                                                                                                           |
 | ---- | -------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |

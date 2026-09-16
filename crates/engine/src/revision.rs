@@ -19,7 +19,7 @@ mod spec;
 use std::fmt::{self, Display, Formatter};
 
 use anyhow::Context;
-use omnia_guest::{Error, server_error};
+use omnia_sdk::{Error, server_error};
 use serde::Serialize;
 use serde::de::DeserializeOwned;
 use serde_json::Value;

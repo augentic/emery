@@ -19,9 +19,9 @@ use emery_adapter::is_kebab;
 use emery_adapter::source::{
     AdapterMetadata, Backing, Claim, ClaimKind, Evidence, Source, SourceInput, SourceKind,
 };
-use omnia_guest::api::command::Response;
-use omnia_guest::plugins::{self, Digest, PluginRef};
-use omnia_guest::{
+use omnia_sdk::api::command::Response;
+use omnia_sdk::plugins::{self, Digest, PluginRef};
+use omnia_sdk::{
     BlobStore, CasError, ContainerMetadata, Error, Model, ObjectMetadata, Plugins, StateStore,
     model,
 };

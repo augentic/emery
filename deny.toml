@@ -2,9 +2,7 @@
 
 [graph]
 all-features = true
-# Only what is built: the shipped hosts (publish.yaml's matrix, also the CI
-# and dev hosts) and the WASI component target of the engine guest and the
-# mock adapter.
+
 targets = [
   "aarch64-apple-darwin",
   "x86_64-unknown-linux-gnu",
@@ -37,8 +35,7 @@ ignore = true
 [sources]
 allow-git = [
   "https://github.com/augentic/omnia",
-  "https://github.com/augentic/omnia-backends",
-  "https://github.com/bytecodealliance/wrpc"
+  "https://github.com/augentic/omnia-backends"
 ]
 
 [bans]

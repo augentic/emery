@@ -8,8 +8,8 @@
 
 #![cfg(target_arch = "wasm32")]
 
-use omnia_guest::api::command::Response;
-use omnia_guest::{BlobStore, Model, Plugins, StateStore};
+use omnia_sdk::api::command::Response;
+use omnia_sdk::{BlobStore, Model, Plugins, StateStore};
 use wasip3::cli::environment;
 
 // The bare provider: every capability keeps its WASI-backed default body, so
@@ -22,7 +22,7 @@ impl BlobStore for Provider {}
 impl Plugins for Provider {}
 impl emery_adapter::source::Source for Provider {}
 
-omnia_guest::command!(dispatch);
+omnia_sdk::command!(dispatch);
 
 async fn dispatch() -> Response {
     emery_cli::run(Provider, environment::get_arguments()).await

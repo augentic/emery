@@ -14,7 +14,7 @@ The engine is versioned by the binary — the binary *contains* its engine, so n
 
 ## Core crate dependency graph
 
-The authoritative crate graph (leaf → root, with per-crate roles) lives in [architecture.md](../standards/architecture.md#workspace-layout). The headline shape: `prose` and `adapter` are the leaves (the embedded-corpus registry and the `emery:adapter` contract, one module per axis), `sdk` is the guest-only SDK over them; `engine` owns the domain and the transport-neutral `specify` / `show` operations (path plumbing in `emery_engine::preopen_path`, adapter loading in the engine's `adapter` module) and returns `omnia_guest::Error` from those operations — no clap, no toml, no terminal text; `cli` (`emery-cli`) is the command façade over the engine: clap grammar, source carriers, `Client` dispatch, the text/JSON projector, and the exit contract; the root package's `src/lib.rs` is wasm32-only: it declares the bare model provider (paths and adapter dispatch are structural, not provider capabilities) and runs `emery_cli::run`; the root binary (`src/main.rs`) owns the native deployment policy inline as one `omnia::runtime!` invocation embedding the engine bytes. Architecture standards beyond the graph (the deployment, adapter resolution, the `.omnia/storage` layout boundary) live there too.
+The authoritative crate graph (leaf → root, with per-crate roles) lives in [architecture.md](../standards/architecture.md#workspace-layout). The headline shape: `prose` and `adapter` are the leaves (the embedded-corpus registry and the `emery:adapter` contract, one module per axis), `sdk` is the guest-only SDK over them; `engine` owns the domain and the transport-neutral `specify` / `show` operations (path plumbing in `emery_engine::preopen_path`, adapter loading in the engine's `adapter` module) and returns `omnia_sdk::Error` from those operations — no clap, no toml, no terminal text; `cli` (`emery-cli`) is the command façade over the engine: clap grammar, source carriers, `Client` dispatch, the text/JSON projector, and the exit contract; the root package's `src/lib.rs` is wasm32-only: it declares the bare model provider (paths and adapter dispatch are structural, not provider capabilities) and runs `emery_cli::run`; the root binary (`src/main.rs`) owns the native deployment policy inline as one `omnia::runtime!` invocation embedding the engine bytes. Architecture standards beyond the graph (the deployment, adapter resolution, the `.omnia/storage` layout boundary) live there too.
 
 ## Dispatch pattern
 
@@ -27,7 +27,7 @@ src/main.rs   →  omnia::runtime! (command mode; embedded engine bytes, static 
 
 The deployment projects nothing out of argv: no pre-boot fact depends on the parsed grammar — the invocation directory is the project root, and everything else, displays and rejections included, renders in the guest.
 
-The operator grammar is assembled in `crates/cli/src/lib.rs` on façade-side `SpecifyArgs` / `ShowArgs` types (`clap::Args`), each decoding into its engine input (`emery_engine::specify::SpecifyInput`, `emery_engine::show::ShowInput` — serde DTOs handled by the engine's `specify` / `show` fns, `omnia_guest::api::Handler<P, I>` through omnia's blanket impl) by exhaustive struct literal, so grammar/input drift is a compile error. `emery_cli` owns clap behavior, the source carriers (argv, `--config`, root discovery), the per-output text render fns, and the hint table; `emery_cli::run(provider, argv)` is the whole entry, and it runs on omnia's command façade (`omnia_guest::api::command`): `parse::<App>` classifies argv, `Command::new(&client, &metadata, format).hints(hint).call(handler, decode, render)` projects each verb, `completions::<App>` answers the completions verb, and the buffered `Response` comes back. The WASI shim (`omnia_guest::command!(dispatch)` in `src/lib.rs`) constructs the provider, runs that grammar, and returns the `Response`; omnia's `Response` implements `IntoExit`, which writes both channels and hands the exit status to `execute_wasi` (telemetry init/flush and exact exit). The handler contract is documented in [docs/standards/handler-shape.md](../standards/handler-shape.md).
+The operator grammar is assembled in `crates/cli/src/lib.rs` on façade-side `SpecifyArgs` / `ShowArgs` types (`clap::Args`), each decoding into its engine input (`emery_engine::specify::SpecifyInput`, `emery_engine::show::ShowInput` — serde DTOs handled by the engine's `specify` / `show` fns, `omnia_sdk::api::Handler<P, I>` through omnia's blanket impl) by exhaustive struct literal, so grammar/input drift is a compile error. `emery_cli` owns clap behavior, the source carriers (argv, `--config`, root discovery), the per-output text render fns, and the hint table; `emery_cli::run(provider, argv)` is the whole entry, and it runs on omnia's command façade (`omnia_sdk::api::command`): `parse::<App>` classifies argv, `Command::new(&client, &metadata, format).hints(hint).call(handler, decode, render)` projects each verb, `completions::<App>` answers the completions verb, and the buffered `Response` comes back. The WASI shim (`omnia_sdk::command!(dispatch)` in `src/lib.rs`) constructs the provider, runs that grammar, and returns the `Response`; omnia's `Response` implements `IntoExit`, which writes both channels and hands the exit status to `execute_wasi` (telemetry init/flush and exact exit). The handler contract is documented in [docs/standards/handler-shape.md](../standards/handler-shape.md).
 
 ## JSON envelope contract
 
@@ -43,17 +43,17 @@ Progress is `tracing`, never stdout: the engine emits a handful of INFO events a
 
 ## Exit codes
 
-The exit-code contract is part of the public interface for operators and skill wrappers; `omnia_guest::Error::exit_code` maps the variants and is the single source of truth, applied by omnia's `Command` projector. The one table lives in [cli-contract.md § Exit codes](../standards/cli-contract.md#exit-codes).
+The exit-code contract is part of the public interface for operators and skill wrappers; `omnia_sdk::Error::exit_code` maps the variants and is the single source of truth, applied by omnia's `Command` projector. The one table lives in [cli-contract.md § Exit codes](../standards/cli-contract.md#exit-codes).
 
 Guest commands inherit the same contract: omnia's command façade projects parser, decoder, and handler outcomes into a buffered command response; the WASI run export forwards its exit and the binary passes it through verbatim.
 
 ## Error handling
 
-Commands return `omnia_guest::Error`. Construct the Omnia class that matches: `BadRequest` for operator or input refusals, `NotFound` for missing resources, `BadGateway` for upstream or model failures; everything else is `ServerError`. Do not introduce a house error type.
+Commands return `omnia_sdk::Error`. Construct the Omnia class that matches: `BadRequest` for operator or input refusals, `NotFound` for missing resources, `BadGateway` for upstream or model failures; everything else is `ServerError`. Do not introduce a house error type.
 
 The pattern for a command operation:
 
-1. Call into a library crate function that returns `Result<T, omnia_guest::Error>`
+1. Call into a library crate function that returns `Result<T, omnia_sdk::Error>`
 2. Return a typed `Serialize` body; its render fn in `crates/cli/src/text.rs` is its text mode
 3. Let omnia's command projector render success or apply the shared error contract
 

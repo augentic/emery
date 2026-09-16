@@ -32,7 +32,7 @@ use std::path::{Component, Path, PathBuf};
 
 pub use adapter::AdapterRef;
 use emery_adapter::source::Source;
-use omnia_guest::{BlobStore, Error, Model, Plugins, StateStore, bad_request};
+use omnia_sdk::{BlobStore, Error, Model, Plugins, StateStore, bad_request};
 pub use store::{CONTAINER, CURRENT};
 
 /// Normalises an operator path to a path beneath the `.` project preopen.
@@ -50,7 +50,7 @@ pub use store::{CONTAINER, CURRENT};
 /// assert_eq!(preopen_path(Path::new("./docs/../src"))?, Path::new("src"));
 /// assert_eq!(preopen_path(Path::new("."))?, Path::new("."));
 /// assert!(preopen_path(Path::new("../outside")).is_err());
-/// # Ok::<(), omnia_guest::Error>(())
+/// # Ok::<(), omnia_sdk::Error>(())
 /// ```
 ///
 /// # Errors

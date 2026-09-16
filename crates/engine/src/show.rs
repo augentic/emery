@@ -8,8 +8,8 @@
 //! never the storage layout beneath them.
 
 use anyhow::Context as _;
-use omnia_guest::api::Context;
-use omnia_guest::{BlobStore, Error, StateStore};
+use omnia_sdk::api::Context;
+use omnia_sdk::{BlobStore, Error, StateStore};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use strum::{AsRefStr, EnumString, VariantArray};

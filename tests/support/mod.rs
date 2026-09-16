@@ -5,8 +5,8 @@
 
 mod provider;
 
-use omnia_guest::api::command::Response;
-use omnia_guest::{BlobStore, StateStore};
+use omnia_sdk::api::command::Response;
+use omnia_sdk::{BlobStore, StateStore};
 pub use provider::*;
 use serde_json::Value;
 

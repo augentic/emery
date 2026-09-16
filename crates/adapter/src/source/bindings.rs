@@ -7,7 +7,7 @@
 //! form always lifts, `TryFrom` where an extra's canonical JSON must parse.
 //!
 //! The WIT `error` variant is known here alone. An adapter's
-//! [`omnia_guest::Error`] is lowered onto it on the export side and lifted
+//! [`omnia_sdk::Error`] is lowered onto it on the export side and lifted
 //! back by [`import::extract`], so neither party names the variant.
 
 mod generated {
@@ -231,14 +231,14 @@ impl TryFrom<wit::Evidence> for Evidence {
 // The WIT variant carries the description alone: a refusal of the input is
 // `invalid-request`, every other class `internal`, and the lift restores the
 // class.
-impl From<omnia_guest::Error> for wit::Error {
-    fn from(error: omnia_guest::Error) -> Self {
+impl From<omnia_sdk::Error> for wit::Error {
+    fn from(error: omnia_sdk::Error) -> Self {
         let description = error.description();
         match error {
-            omnia_guest::Error::BadRequest { .. } | omnia_guest::Error::NotFound { .. } => {
+            omnia_sdk::Error::BadRequest { .. } | omnia_sdk::Error::NotFound { .. } => {
                 Self::InvalidRequest(description)
             }
-            omnia_guest::Error::ServerError { .. } | omnia_guest::Error::BadGateway { .. } => {
+            omnia_sdk::Error::ServerError { .. } | omnia_sdk::Error::BadGateway { .. } => {
                 Self::Internal(description)
             }
         }
@@ -255,7 +255,7 @@ pub mod export {
 
 /// The engine guest's calls into a loaded adapter.
 pub mod import {
-    use omnia_guest::{Error, bad_gateway, bad_request};
+    use omnia_sdk::{Error, bad_gateway, bad_request};
 
     use super::generated::emery::adapter::source as imported;
     use super::wit;

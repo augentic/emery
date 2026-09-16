@@ -13,7 +13,7 @@ use std::path::{Path, PathBuf};
 use anyhow::Context;
 use emery_engine::specify::{SourceConfig, SourceContent};
 use emery_engine::{AdapterRef, preopen_path};
-use omnia_guest::{Error, bad_request};
+use omnia_sdk::{Error, bad_request};
 
 /// The config file a run naming no sources looks for at the project root.
 pub const CONFIG_FILE: &str = "emery.toml";

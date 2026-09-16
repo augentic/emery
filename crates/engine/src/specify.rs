@@ -29,8 +29,8 @@ use emery_adapter::is_kebab;
 pub use emery_adapter::source::SourceContent;
 use emery_adapter::source::{Evidence, Source, SourceInput, SourceKind};
 use futures::future;
-use omnia_guest::api::Context;
-use omnia_guest::{BlobStore, Error, Model, Plugins, StateStore, bad_request, server_error};
+use omnia_sdk::api::Context;
+use omnia_sdk::{BlobStore, Error, Model, Plugins, StateStore, bad_request, server_error};
 use serde::{Deserialize, Serialize};
 
 use self::basis::GroupingBrief;

@@ -15,7 +15,7 @@ use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 
 use emery_adapter::is_kebab;
-use omnia_guest::api::command::Response;
+use omnia_sdk::api::command::Response;
 use provider::Provider;
 
 #[derive(Debug)]

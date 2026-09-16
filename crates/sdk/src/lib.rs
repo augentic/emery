@@ -78,7 +78,7 @@ pub use emery_adapter::source::{
 // The module and the `registry!` macro share the name; one `use` carries both.
 pub use emery_prose::registry;
 pub use emery_prose::registry::Doc;
-pub use omnia_guest::{Error, Model, bad_gateway, bad_request, model, not_found, server_error};
+pub use omnia_sdk::{Error, Model, bad_gateway, bad_request, model, not_found, server_error};
 // The export shim the `source!` macro expands against; no adapter names it.
 #[cfg(target_arch = "wasm32")]
 #[doc(hidden)]

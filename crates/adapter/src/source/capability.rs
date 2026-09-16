@@ -11,7 +11,7 @@
 
 use std::future::Future;
 
-use omnia_guest::Error;
+use omnia_sdk::Error;
 use serde::{Deserialize, Serialize};
 
 use crate::source::{Evidence, SourceKind};

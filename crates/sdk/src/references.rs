@@ -8,7 +8,7 @@
 use std::future::ready;
 
 use emery_prose::registry::{self, Doc};
-use omnia_guest::model::{Function, Tool, ToolCall, ToolFuture, Tools};
+use omnia_sdk::model::{Function, Tool, ToolCall, ToolFuture, Tools};
 use schemars::JsonSchema;
 use serde::Deserialize;
 use serde_json::json;

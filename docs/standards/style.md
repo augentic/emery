@@ -13,7 +13,7 @@ The baseline's M-SHORT-NAMES, sharpened: a type lives in `crates/<crate>/<module
 
 ## Failures are Omnia errors
 
-No Emery code — engine, CLI, the adapter SDK, or an adapter — introduces an `Error` type. Return `omnia_guest::Error` and pick the class on a direct match: `BadRequest` for operator or input refusals, `NotFound` for missing resources, `BadGateway` for upstream or model failures; everything else is `ServerError`. Construct defaults with `bad_request!` and siblings (snake_case `error` field). Keep explicit variants only for the recovery discriminants `specify-source-required`, `unsupported-version`, `spec-not-generated`, and `spec-outdated`. Inside a fn, `anyhow` carries the unclassified tail — `.context(…)?` over a storage or filesystem call lands as `server_error` — but never `.context()` an Omnia `Error`, whose `Display` repeats its code. The adapter contract is obliged to keep its WIT `error` variant; it is contained in the contract crate's `source::bindings` (`emery-adapter`), where the export side lowers an adapter's Omnia `Error` onto it (`BadRequest` / `NotFound` → `invalid-request`, the rest → `internal`) and `bindings::import::extract` lifts it back (`invalid-request` → `bad_request`, `internal` → `bad_gateway`). These classes stay inside the adapter boundary: `specify` reports extraction failures together as `ServerError`. Nothing else names the WIT variant.
+No Emery code — engine, CLI, the adapter SDK, or an adapter — introduces an `Error` type. Return `omnia_sdk::Error` and pick the class on a direct match: `BadRequest` for operator or input refusals, `NotFound` for missing resources, `BadGateway` for upstream or model failures; everything else is `ServerError`. Construct defaults with `bad_request!` and siblings (snake_case `error` field). Keep explicit variants only for the recovery discriminants `specify-source-required`, `unsupported-version`, `spec-not-generated`, and `spec-outdated`. Inside a fn, `anyhow` carries the unclassified tail — `.context(…)?` over a storage or filesystem call lands as `server_error` — but never `.context()` an Omnia `Error`, whose `Display` repeats its code. The adapter contract is obliged to keep its WIT `error` variant; it is contained in the contract crate's `source::bindings` (`emery-adapter`), where the export side lowers an adapter's Omnia `Error` onto it (`BadRequest` / `NotFound` → `invalid-request`, the rest → `internal`) and `bindings::import::extract` lifts it back (`invalid-request` → `bad_request`, `internal` → `bad_gateway`). These classes stay inside the adapter boundary: `specify` reports extraction failures together as `ServerError`. Nothing else names the WIT variant.
 
 ```rust
 // BAD — a house error type, even if it later maps to Omnia.
@@ -23,7 +23,7 @@ enum Error {
 }
 // GOOD — Omnia class via the crate-root macro.
 let path = path.display();
-omnia_guest::server_error!("{path} ({source})")
+omnia_sdk::server_error!("{path} ({source})")
 ```
 
 ## One output per command, no wrapper newtype
@@ -40,7 +40,7 @@ impl Text for SpecifyOutput { /* ... */ }
 
 ## No traits for testability alone
 
-House rule — generic advice about abstracting dependencies for mockability does not apply here. Don't introduce a trait whose only non-test impl is `RealX`. The right test boundary is the lowest external surface — `std::process::Command` or the filesystem. When a stable in-tree boundary already exists — for example the storage capability pair (`omnia_guest::StateStore` / `BlobStore`) every engine-state write goes through, scripted in memory by native tests — use that instead of inventing a sibling trait pair.
+House rule — generic advice about abstracting dependencies for mockability does not apply here. Don't introduce a trait whose only non-test impl is `RealX`. The right test boundary is the lowest external surface — `std::process::Command` or the filesystem. When a stable in-tree boundary already exists — for example the storage capability pair (`omnia_sdk::StateStore` / `BlobStore`) every engine-state write goes through, scripted in memory by native tests — use that instead of inventing a sibling trait pair.
 
 ```rust
 // BAD — trait pair that exists so MockGenerationStore can swap in.

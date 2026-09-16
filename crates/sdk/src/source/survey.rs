@@ -20,8 +20,8 @@ use std::path::Path;
 use anyhow::Context as _;
 use emery_adapter::source::SourceContent;
 use emery_prose::registry::{self, Doc};
-use omnia_guest::model::Question;
-use omnia_guest::{Error, Model, bad_request, server_error};
+use omnia_sdk::model::Question;
+use omnia_sdk::{Error, Model, bad_request, server_error};
 use schemars::JsonSchema;
 use serde::Deserialize;
 

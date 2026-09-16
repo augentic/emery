@@ -20,8 +20,8 @@
 
 use std::fmt::{self, Display, Formatter};
 
-use omnia_guest::model::{Findings, Question};
-use omnia_guest::{Error, Model, server_error};
+use omnia_sdk::model::{Findings, Question};
+use omnia_sdk::{Error, Model, server_error};
 use schemars::JsonSchema;
 use serde::de::DeserializeOwned;
 use serde_json::Value;

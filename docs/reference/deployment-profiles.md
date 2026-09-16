@@ -4,7 +4,7 @@ How the `emery` runtime binds engine storage, and how deployments other than the
 
 ## The storage boundary
 
-Engine state — the revision store and its current revision id — is reachable only through the storage capabilities (`omnia_guest::StateStore` / `BlobStore` on the guest side). The names the engine uses are flat, deployment-neutral formulas:
+Engine state — the revision store and its current revision id — is reachable only through the storage capabilities (`omnia_sdk::StateStore` / `BlobStore` on the guest side). The names the engine uses are flat, deployment-neutral formulas:
 
 | Surface             | Kind                            | Name                                    |
 | ------------------- | ------------------------------- | --------------------------------------- |

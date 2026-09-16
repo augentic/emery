@@ -14,7 +14,7 @@ mod support;
 #[path = "support/verbs.rs"]
 mod verbs;
 
-use omnia_guest::api::command::USAGE_EXIT;
+use omnia_sdk::api::command::USAGE_EXIT;
 use serde_json::Value;
 use support::{Provider, cli, cli_ok, fail};
 use verbs::verbs;

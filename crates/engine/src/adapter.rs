@@ -19,8 +19,8 @@ use anyhow::Context;
 use emery_adapter::is_kebab;
 use emery_adapter::source::{Source, SourceKind};
 use futures::future;
-use omnia_guest::plugins::{Location, PluginRef};
-use omnia_guest::{Error, Plugins, bad_request, not_found};
+use omnia_sdk::plugins::{Location, PluginRef};
+use omnia_sdk::{Error, Plugins, bad_request, not_found};
 use serde::{Deserialize, Serialize};
 
 use crate::preopen_path;
@@ -130,7 +130,7 @@ fn is_supported(id: &str, declared: &str, running: &semver::Version) -> Result<(
 ///
 /// let declared: AdapterRef = "intent".parse()?;
 /// assert_eq!(declared.to_string(), "intent");
-/// # Ok::<(), omnia_guest::Error>(())
+/// # Ok::<(), omnia_sdk::Error>(())
 /// ```
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(try_from = "String", into = "String")]

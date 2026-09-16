@@ -8,7 +8,7 @@
 use std::fmt::{self, Display, Formatter};
 
 use emery_adapter::source::SourceContent;
-use omnia_guest::{Error, bad_request, server_error};
+use omnia_sdk::{Error, bad_request, server_error};
 
 use super::{Context, Seam};
 
