@@ -1,30 +1,30 @@
-//! Lists a tree adapter's files and cuts them into seams.
+//! Lists a tree adapter's files and asks the model for the surfaces a source exposes.
 //!
-//! A tree adapter surveys before its first seam is mined: [`Tree::list`]
-//! walks the files beneath the source root, and one of two cuts groups them.
-//! [`Tree::by_directory`] is mechanical — one group per top-level directory.
-//! [`Tree::by_model`] asks the model once, under the adapter's
-//! `prompts/survey.md`, to group the files by what they serve — a route, a
-//! command, an exported API — which no directory layout states.
+//! A tree adapter surveys before its first seam is mined, one of two ways.
+//! [`list`] walks the files beneath the source root under the adapter's
+//! `keep`, for an adapter that cuts its tree itself. [`surfaces`] asks the
+//! model once, under the adapter's `prompts/survey.md`, for the surfaces the
+//! source exposes — a route, a command, a job, an exported API — each with
+//! the module a caller enters it at, which no directory layout states; the
+//! entry is held to the tree under the same `keep`, the adapter mines each
+//! surface from it, and the model groups nothing.
 //!
-//! Both cuts fold under a grain floor: a group too small to be worth its own
-//! model call joins one remainder, with every file no group claims, so the
-//! seams cover the tree whole however it was cut. The walk never offers
-//! the engine's own files — `spec.md`, `design.md`, `.omnia/` — so no adapter
-//! can mine a projection of the last revision back into evidence.
+//! Neither offers nor accepts the engine's own files — `spec.md`,
+//! `design.md`, `.omnia/` — so no adapter can mine a projection of the last
+//! revision back into evidence.
 
-use std::collections::{BTreeMap, BTreeSet};
-use std::fmt::Write as _;
+use std::collections::BTreeSet;
 use std::path::Path;
 
 use anyhow::Context as _;
+use emery_adapter::source::SourceContent;
 use emery_prose::Doc;
 use omnia_sdk::model::Question;
 use omnia_sdk::{Error, Model, bad_request, server_error};
 use schemars::JsonSchema;
 use serde::Deserialize;
 
-use crate::{Context, references};
+use crate::{Context, path, references};
 
 /// A directory entry the walk offers to an adapter's `keep`, by its root-relative path.
 ///
@@ -68,251 +68,199 @@ impl<'a> Entry<'a> {
     }
 }
 
-/// The files beneath one source root, sorted, named relative to it.
+/// Lists the files beneath `root`, sorted, as `/`-separated paths relative to it.
 ///
-/// A tree is listed once, by [`Tree::list`], and cut by [`Tree::by_directory`]
-/// or [`Tree::by_model`]. The root it was listed under travels with the files,
-/// so a cut by model lends the directory the files are relative to.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct Tree<'a> {
-    root: &'a str,
-    files: Vec<String>,
+/// `keep` is asked about every entry; a refused directory is not entered.
+/// The engine's own `.omnia/` directories and `spec.md` / `design.md` files
+/// are never offered, wherever they appear. Symlinks are not followed.
+///
+/// # Examples
+///
+/// ```
+/// use emery_sdk::survey;
+///
+/// # let scratch = tempfile::tempdir()?;
+/// # for file in ["README.md", "api/orders.md", "api/users.md", "notes/todo.md", ".git/HEAD"] {
+/// #     let path = scratch.path().join(file);
+/// #     std::fs::create_dir_all(path.parent().unwrap())?;
+/// #     std::fs::write(path, "")?;
+/// # }
+/// # let root = scratch.path().to_str().unwrap();
+/// let files = survey::list(root, |entry| !entry.hidden())?;
+///
+/// assert_eq!(files, ["README.md", "api/orders.md", "api/users.md", "notes/todo.md"]);
+/// # anyhow::Ok(())
+/// ```
+///
+/// # Errors
+///
+/// Returns [`Error::ServerError`] when a directory cannot be read, and
+/// [`Error::BadRequest`] for an entry whose name is not UTF-8, which no
+/// `path` anchor could cite.
+pub fn list(root: &str, mut keep: impl FnMut(Entry<'_>) -> bool) -> Result<Vec<String>, Error> {
+    let mut files = walk(Path::new(root), "", &mut keep)?;
+    files.sort();
+    Ok(files)
 }
 
-impl<'a> Tree<'a> {
-    /// Lists the files beneath `root`, sorted, as `/`-separated paths relative to it.
-    ///
-    /// `keep` is asked about every entry; a refused directory is not
-    /// entered. The engine's own `.omnia/` directories and `spec.md` /
-    /// `design.md` files are never offered, wherever they appear. Symlinks are
-    /// not followed.
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// use emery_sdk::survey::Tree;
-    ///
-    /// # let scratch = tempfile::tempdir()?;
-    /// # for file in ["README.md", "api/orders.md", "api/users.md", "notes/todo.md", ".git/HEAD"] {
-    /// #     let path = scratch.path().join(file);
-    /// #     std::fs::create_dir_all(path.parent().unwrap())?;
-    /// #     std::fs::write(path, "")?;
-    /// # }
-    /// # let root = scratch.path().to_str().unwrap();
-    /// let tree = Tree::list(root, |entry| !entry.hidden())?;
-    ///
-    /// assert_eq!(tree.files(), ["README.md", "api/orders.md", "api/users.md", "notes/todo.md"]);
-    /// assert_eq!(
-    ///     tree.by_directory(2),
-    ///     [vec!["api/orders.md", "api/users.md"], vec!["README.md", "notes/todo.md"]]
-    /// );
-    /// # anyhow::Ok(())
-    /// ```
-    ///
-    /// # Errors
-    ///
-    /// Returns [`Error::ServerError`] when a directory cannot be read, and
-    /// [`Error::BadRequest`] for an entry whose name is not UTF-8, which no
-    /// `path` anchor could cite.
-    pub fn list(root: &'a str, mut keep: impl FnMut(Entry<'_>) -> bool) -> Result<Self, Error> {
-        let mut files = walk(Path::new(root), "", &mut keep)?;
-        files.sort();
-        Ok(Self { root, files })
-    }
+/// Asks the model once for the surfaces the source exposes, each with its entry module.
+///
+/// The adapter's `prompts/survey.md` among `docs` is the system prompt. The
+/// turn names the adapter and source from `ctx` and lends the root so the
+/// model can read the tree; the `list_docs` and `read_doc` tools answer from
+/// `docs`. The model answers one [`Inventory`], checked whole: a surface
+/// without a name, two surfaces of one name, or an entry that is not a
+/// regular file beneath the root that `keep` accepts — asked about each
+/// directory on the way and the file itself, as [`list`] would ask — goes
+/// back as findings for another round. The engine's own files are never an
+/// entry.
+///
+/// The surfaces come back in answer order, each entry as a `/`-separated
+/// path relative to the root. A module may be the entry of several
+/// surfaces, and a module no surface enters is not one: the model finds the
+/// boundary, and the adapter mines what each surface reaches from it. A tree
+/// the model finds no surface in exposes nothing, and what that means is the
+/// adapter's to decide.
+///
+/// # Errors
+///
+/// - [`Error::ServerError`] when `prompts/survey.md` is not embedded, or the
+///   input is an inline value, which has no tree to survey — both found
+///   before any turn is spent.
+/// - [`Error::BadRequest`] when the host refuses the request or the rounds
+///   are spent with findings outstanding.
+/// - [`Error::BadGateway`] for a tool or transport failure.
+pub async fn surfaces<P: Model>(
+    model: &P, ctx: &Context<'_>, docs: &'static [Doc],
+    mut keep: impl FnMut(Entry<'_>) -> bool + Send,
+) -> Result<Vec<Surface>, Error> {
+    let key = &ctx.input.key;
+    let system = emery_prose::body(docs, "prompts/survey.md")
+        .ok_or_else(|| server_error!("`prompts/survey.md` is not embedded"))?;
+    let SourceContent::Workspace(root) = &ctx.input.content else {
+        return Err(server_error!(
+            "`{key}`: a survey by model needs a workspace input, not an inline value"
+        ));
+    };
 
-    /// Returns the root the files are relative to, as the engine lent it.
-    #[must_use]
-    pub const fn root(&self) -> &'a str {
-        self.root
-    }
+    let inventory = Question::<Inventory>::new("survey")
+        .system(system)
+        .tools(references::tools())
+        .workspace(root)
+        .ask(model, turn(ctx, root), Some(references::answering(docs)), |answer| {
+            let findings = answer.findings(root, &mut keep);
+            if findings.is_empty() { Ok(()) } else { Err(findings) }
+        })
+        .await
+        .map_err(Error::from)?;
 
-    /// Returns the files, sorted, as `/`-separated paths relative to the root.
-    #[must_use]
-    pub fn files(&self) -> &[String] {
-        &self.files
-    }
-
-    /// Groups the files by top-level directory, folding directories under `floor`.
-    ///
-    /// Each directory holding at least `floor` files is one group, in
-    /// directory order. The root's own files and every smaller directory's
-    /// fold into one sorted remainder, last; an empty remainder is dropped.
-    /// Files keep their order within a group, so the groups are sorted.
-    #[must_use]
-    pub fn by_directory(&self, floor: usize) -> Vec<Vec<String>> {
-        let mut directories: BTreeMap<&str, Vec<String>> = BTreeMap::new();
-        let mut remainder = Vec::new();
-        for file in &self.files {
-            match file.split_once('/') {
-                Some((directory, _)) => {
-                    directories.entry(directory).or_default().push(file.clone());
-                }
-                None => remainder.push(file.clone()),
-            }
-        }
-
-        let mut groups = Vec::with_capacity(directories.len() + 1);
-        for group in directories.into_values() {
-            if group.len() >= floor {
-                groups.push(group);
-            } else {
-                remainder.extend(group);
-            }
-        }
-        if !remainder.is_empty() {
-            remainder.sort();
-            groups.push(remainder);
-        }
-        groups
-    }
-
-    /// Groups the files by asking the model once how they serve the source.
-    ///
-    /// The adapter's `prompts/survey.md` among `docs` is the system prompt.
-    /// The turn names the adapter and source from `ctx`, lists the files, and
-    /// lends the root so the model can read them; the `list_docs` and
-    /// `read_doc` tools answer from `docs`. The model answers one
-    /// [`Partition`], checked whole: a group naming no file, a file not among
-    /// the tree's, or a file in two groups goes back as findings for another
-    /// round.
-    ///
-    /// The accepted groups come back in answer order, each sorted. A group of
-    /// fewer than `floor` files folds, with every file the model left out,
-    /// into one sorted remainder, last; an empty remainder is dropped. The
-    /// model chooses the grouping, never omission, so coverage is total. A
-    /// tree with no files spends no turn and cuts into nothing.
-    ///
-    /// # Errors
-    ///
-    /// - [`Error::ServerError`] when `prompts/survey.md` is not embedded,
-    ///   found before any turn is spent.
-    /// - [`Error::BadRequest`] when the host refuses the request or the rounds
-    ///   are spent with findings outstanding.
-    /// - [`Error::BadGateway`] for a tool or transport failure.
-    pub async fn by_model<P: Model>(
-        &self, model: &P, ctx: &Context<'_>, docs: &'static [Doc], floor: usize,
-    ) -> Result<Vec<Vec<String>>, Error> {
-        let system = emery_prose::body(docs, "prompts/survey.md")
-            .ok_or_else(|| server_error!("`prompts/survey.md` is not embedded"))?;
-        if self.files.is_empty() {
-            return Ok(Vec::new());
-        }
-
-        let files = &self.files;
-        let partition = Question::<Partition>::new("survey")
-            .system(system)
-            .tools(references::tools())
-            .workspace(self.root)
-            .ask(model, turn(ctx, self, floor), Some(references::answering(docs)), |answer| {
-                let findings = answer.findings(files);
-                if findings.is_empty() { Ok(()) } else { Err(findings) }
-            })
-            .await
-            .map_err(Error::from)?;
-
-        Ok(partition.fold(files, floor))
-    }
+    Ok(inventory
+        .surfaces
+        .into_iter()
+        .map(|surface| Surface {
+            // The check accepted the entry, so it is a path beneath the root.
+            entry: path::beneath(&surface.entry).unwrap_or(surface.entry),
+            name: surface.name,
+        })
+        .collect())
 }
 
-/// The model's survey answer: the candidate files partitioned into groups.
+/// The model's survey answer: the surfaces the source exposes.
 ///
-/// A survey prompt's worked example must parse as this shape. Leaving a file
-/// out of every group is allowed — it joins the remainder. Naming a file that
-/// was never offered, naming one twice, or a group naming no file is a
-/// finding.
+/// A survey prompt's worked example must parse as this shape. An empty
+/// inventory is a valid answer — the model found no surface — and what it
+/// means is the adapter's to decide. A surface without a name, two surfaces
+/// of one name, or an entry that is not a module of the tree is a finding.
 #[derive(Debug, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 #[schemars(title = "Emery survey answer")]
-pub struct Partition {
-    /// The groups, in the order the seams will be mined.
-    pub groups: Vec<Group>,
+pub struct Inventory {
+    /// The surfaces, in the order the seams will be mined.
+    pub surfaces: Vec<Surface>,
 }
 
-/// One group of a [`Partition`]: the files that serve one thing together.
-#[derive(Debug, Deserialize, JsonSchema)]
+/// One surface a source exposes: what a caller outside it reaches, and where.
+#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq)]
 #[serde(deny_unknown_fields)]
-pub struct Group {
-    /// What the group serves, as the prompt asked it to be named.
+pub struct Surface {
+    /// What the surface is, as the prompt asked it to be named.
     pub name: String,
-    /// The files, each exactly as it was offered.
-    pub files: Vec<String>,
+    /// The module a caller enters the surface at, as a path relative to the root.
+    pub entry: String,
 }
 
-impl Partition {
-    // What the check holds against a candidate: every file named must be one
-    // offered, once; every group must name at least one.
-    fn findings(&self, offered: &[String]) -> Vec<String> {
+impl Inventory {
+    // What the check holds against a candidate: every surface named once, and
+    // entered at a module of the tree that `keep` accepts.
+    fn findings(&self, root: &str, keep: &mut impl FnMut(Entry<'_>) -> bool) -> Vec<String> {
         let mut findings = Vec::new();
-        let mut seen = BTreeSet::new();
-        for group in &self.groups {
-            if group.files.is_empty() {
-                findings.push(format!("group `{}` names no file", group.name));
+        let mut names = BTreeSet::new();
+        for surface in &self.surfaces {
+            if surface.name.trim().is_empty() {
+                findings.push(format!("the surface entered at `{}` has no name", surface.entry));
+            } else if !names.insert(surface.name.as_str()) {
+                findings.push(format!("surface `{}` is listed twice", surface.name));
             }
-            for file in &group.files {
-                if !offered.contains(file) {
-                    findings.push(format!("`{file}` is not among the files offered"));
-                } else if !seen.insert(file.as_str()) {
-                    findings.push(format!("`{file}` appears in more than one group"));
-                }
+            if let Err(finding) = module(root, &surface.entry, keep) {
+                findings.push(finding);
             }
         }
         findings
     }
-
-    // The accepted groups under `floor`: each large enough stands, sorted;
-    // the rest and every file no group claims are one sorted remainder.
-    fn fold(self, offered: &[String], floor: usize) -> Vec<Vec<String>> {
-        let mut assigned = BTreeSet::new();
-        let mut groups = Vec::with_capacity(self.groups.len() + 1);
-        let mut remainder = Vec::new();
-        for group in self.groups {
-            assigned.extend(group.files.iter().cloned());
-            if group.files.len() >= floor {
-                let mut files = group.files;
-                files.sort();
-                groups.push(files);
-            } else {
-                remainder.extend(group.files);
-            }
-        }
-        remainder.extend(offered.iter().filter(|file| !assigned.contains(*file)).cloned());
-        if !remainder.is_empty() {
-            remainder.sort();
-            groups.push(remainder);
-        }
-        groups
-    }
 }
 
-// The survey turn: which source is being surveyed, the root lent, the
-// candidate files as the model must name them, and what the floor does with
-// what it leaves out.
-fn turn(ctx: &Context<'_>, tree: &Tree<'_>, floor: usize) -> String {
-    let mut turn = format!(
-        "Survey the source bound to adapter `{id}` (source key `{key}`) before it is mined.\n\n\
-         `$SOURCE_DIR` is the read-only view at `{root}` — the source tree. Partition these files \
-         beneath it into the groups the prompt describes, each named for what it serves; name \
-         every file exactly as listed, in one group at most:",
-        id = ctx.adapter_id,
-        key = ctx.input.key,
-        root = tree.root,
-    );
-    for file in &tree.files {
-        // Writing to a `String` cannot fail.
-        let _ = write!(turn, "\n- `{file}`");
+// `named` as a path beneath `root` when it is a regular file there that
+// `keep` accepts — asked about each directory on the way and the file itself,
+// as the walk would offer them — and none of the engine's own; otherwise the
+// finding.
+fn module(
+    root: &str, named: &str, keep: &mut impl FnMut(Entry<'_>) -> bool,
+) -> Result<String, String> {
+    let entry = path::beneath(named).map_err(|reason| format!("`{named}` {reason}"))?;
+
+    let regular = std::fs::symlink_metadata(Path::new(root).join(&entry))
+        .is_ok_and(|metadata| metadata.is_file());
+    if !regular {
+        return Err(format!("no file at `{named}`"));
     }
-    // Writing to a `String` cannot fail.
-    let _ = write!(
-        turn,
-        "\n\nA group of fewer than {floor} files, and every file you leave out, join one remainder \
-         the caller mines together — so leave out what serves no group rather than forcing it \
-         into one. Read under `$SOURCE_DIR` to decide; nothing outside it is reachable.\n\n\
+
+    let refused = || format!("`{named}` is not a module this adapter mines");
+    for (index, _) in entry.match_indices('/') {
+        let dir = Entry::Dir(&entry[..index]);
+        if SKIP_DIRS.contains(&dir.name()) || !keep(dir) {
+            return Err(refused());
+        }
+    }
+    let file = Entry::File(&entry);
+    if SKIP_FILES.contains(&file.name()) || !keep(file) {
+        return Err(refused());
+    }
+
+    Ok(entry)
+}
+
+// The survey turn: which source is being surveyed, the root lent, how an
+// entry is named, and where the model's work stops.
+fn turn(ctx: &Context<'_>, root: &str) -> String {
+    format!(
+        "Survey the source bound to adapter `{id}` (source key `{key}`) before it is mined.\n\n\
+         `$SOURCE_DIR` is the read-only view at `{root}` — the source tree. List the surfaces it \
+         exposes as the prompt describes them, each named for what a caller outside the source \
+         reaches, with the module the caller enters it at. Name an entry as a `/`-separated path \
+         relative to `$SOURCE_DIR`, to a module of the kind the prompt says this adapter mines; \
+         a module may be the entry of several surfaces, and a module no surface enters is not \
+         named.\n\n\
+         Read under `$SOURCE_DIR` to decide; nothing outside it is reachable. The caller mines \
+         each surface from its entry, following what it reaches through the whole tree — you \
+         follow nothing and group nothing. When the tree declares no surface, answer none rather \
+         than inventing one.\n\n\
          The prompt's references are available through this call's `read_doc` tool (`list_docs` \
          enumerates them); load referenced bodies on demand.\n\n\
-         Answer with one JSON object matching the survey schema. The caller mines the groups; \
-         extract nothing yourself."
-    );
-    turn
+         Answer with one JSON object matching the survey schema. The caller mines the surfaces; \
+         extract nothing yourself.",
+        id = ctx.adapter_id,
+        key = ctx.input.key,
+    )
 }
 
 // The engine's own files: output, never input, wherever they sit in a tree.

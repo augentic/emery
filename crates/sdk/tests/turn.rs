@@ -3,8 +3,7 @@
 //! - The request it builds: the embedded prompt as the system, the SDK-owned
 //!   turn around the adapter's seam, the claims-only schema with the
 //!   claim-id pattern, `check` set, the reference tools, and the workspace
-//!   lend following the seam — the input's root, or a `Files` set's
-//!   common ancestor.
+//!   lend — the input's root, for every seam of a workspace.
 //! - A corpus without the prompt refused before any turn.
 //! - A document-level kind refused as a schema miss.
 //! - Reference calls answered from the embedded corpus.
@@ -162,48 +161,28 @@ async fn prepared_turn() {
     assert!(!user.contains("ignored"), "the note replaces the input rendering");
 }
 
-// A `Files` seam lends its files' common ancestor — so a per-directory
-// seam is enforced by the grant, not told — and lists the files relative
-// to it, sorted, once each, `.` segments dropped.
+// A `Files` seam lends the root — the read-only mount is the boundary — and
+// lists the files to mine relative to it, sorted, once each, `.` segments
+// dropped, so every anchor the model answers is already root-relative.
 #[tokio::test]
-async fn within_turn() {
+async fn files_turn() {
     let model = Scripted::answering([VALID]);
-    let seam = files(["guide/setup.md", "./guide/intro.md", "guide/intro.md"]);
+    let seam = files(["guide/setup.md", "./guide/intro.md", "guide/intro.md", "api.md"]);
 
     ask(&model, &workspace("/lend/docs"), seam).await.expect("accepted");
-
-    let request = &model.seen()[0];
-    assert_eq!(request.workspace.as_deref(), Some("/lend/docs/guide"), "the common ancestor");
-    let user = &request.messages[0];
-    assert!(
-        user.contains(
-            "`$SOURCE_DIR` is the read-only view at `/lend/docs/guide` — the part of the source \
-             tree this call mines. Mine these files beneath it and nothing else:\n\n\
-             - `intro.md`\n- `setup.md`\n\nAnchor every `path` relative to `$SOURCE_DIR`."
-        ),
-        "{user}"
-    );
-    model.assert_exhausted();
-}
-
-// Files sharing no directory beneath the root lend the root itself, every
-// path stated as it was named.
-#[tokio::test]
-async fn within_scattered() {
-    let model = Scripted::answering([VALID]);
-
-    ask(&model, &workspace("/lend/docs"), files(["guide/intro.md", "api.md"]))
-        .await
-        .expect("accepted");
 
     let request = &model.seen()[0];
     assert_eq!(request.workspace.as_deref(), Some("/lend/docs"), "the root is lent");
     let user = &request.messages[0];
     assert!(
-        user.contains("read-only view at `/lend/docs` — the part of the source tree"),
+        user.contains(
+            "`$SOURCE_DIR` is the read-only view at `/lend/docs` — the source tree. Mine these \
+             files beneath it and nothing else:\n\n\
+             - `api.md`\n- `guide/intro.md`\n- `guide/setup.md`\n\n\
+             Anchor every `path` relative to `$SOURCE_DIR`."
+        ),
         "{user}"
     );
-    assert!(user.contains("nothing else:\n\n- `api.md`\n- `guide/intro.md`\n\n"), "{user}");
     model.assert_exhausted();
 }
 

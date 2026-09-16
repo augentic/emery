@@ -2,12 +2,12 @@
 //!
 //! An adapter decides the [seams](crate#vocabulary); [`mine`] does the rest
 //! of an `extract` — one model turn per seam under the adapter's embedded
-//! prompt, the claim gate on every answer, and the join that re-roots each
-//! seam's anchors under the directory it was lent.
+//! prompt, the claim gate on every answer, and the join of the seams' claims
+//! in seam order.
 
 mod brief;
 
-use emery_adapter::source::{Backing, Claim, Evidence, SourceInput};
+use emery_adapter::source::{Evidence, SourceInput};
 use emery_prose::Doc;
 use futures::stream::{self, StreamExt as _};
 use omnia_sdk::model::Question;
@@ -23,17 +23,17 @@ const CONCURRENT: usize = 4;
 ///
 /// Each seam is one turn. `prompts/extract.md` among `docs` is the system
 /// prompt; the turn names the adapter and the source key from `ctx`,
-/// describes the seam, and lends the model the directory the seam may read;
-/// the `list_docs` and `read_doc` tools answer from `docs`. The answer is
-/// checked against the claim gate ([`Evidence::findings`]), and findings go
-/// back to the model for another round until it answers clean or the host's
-/// rounds are spent. The engine runs the same gate again on receipt.
+/// describes the seam, and lends the model the source root; the `list_docs`
+/// and `read_doc` tools answer from `docs`. The answer is checked against
+/// the claim gate ([`Evidence::findings`]), and findings go back to the
+/// model for another round until it answers clean or the host's rounds are
+/// spent. The engine runs the same gate again on receipt.
 ///
-/// At most four turns are pending at once. The claims join in seam order,
-/// each seam's `path` anchors and path backings re-rooted under the
-/// directory it was lent, so the document cites one path space however the
-/// source was cut. Every seam is waited for; when more than one fails, the
-/// error names them all and takes the class of the first.
+/// At most four turns are pending at once. The claims join in seam order.
+/// Every seam of a workspace is lent the root, so every `path` anchor is
+/// relative to it and the document cites one path space however the source
+/// was cut. Every seam is waited for; when more than one fails, the error
+/// names them all and takes the class of the first.
 ///
 /// # Errors
 ///
@@ -60,7 +60,7 @@ pub async fn mine<P: Model>(
     let partials = collect(key, outcomes)?;
 
     Ok(Evidence {
-        claims: to_claims(&lends, partials),
+        claims: partials.into_iter().flat_map(|partial| partial.claims).collect(),
     })
 }
 
@@ -75,11 +75,9 @@ pub enum Seam {
     Whole,
     /// Files beneath the input's root, named relative to it.
     ///
-    /// The model is lent the files' common directory alone; only a set
-    /// scattered across the root is lent the root itself. `path` anchors in
-    /// the answer are relative to that directory and are re-rooted under the
-    /// source root when the seams are joined. Paths are sorted and
-    /// deduplicated; one that escapes the root is refused.
+    /// The whole root is lent, and the turn lists the files relative to it,
+    /// sorted and deduplicated, as the only ones to mine. One that escapes
+    /// the root is refused.
     Files(Vec<String>),
     /// A note the adapter wrote for a source that needs its own handling.
     ///
@@ -150,18 +148,6 @@ fn collect(key: &str, outcomes: Vec<Result<Evidence, Error>>) -> Result<Vec<Evid
     ))
 }
 
-// Re-rooting each seam's anchors under what it was lent gives the source
-// one path space however it was cut.
-fn to_claims(lends: &[Lend], partials: Vec<Evidence>) -> Vec<Claim> {
-    lends
-        .iter()
-        .zip(partials)
-        .flat_map(|(lend, partial)| {
-            partial.claims.into_iter().map(move |claim| reroot(&lend.within, claim))
-        })
-        .collect()
-}
-
 // The first failed seam decides the class; the report names them all.
 fn reclass(class: &Error, description: &str) -> Error {
     match class {
@@ -170,20 +156,4 @@ fn reclass(class: &Error, description: &str) -> Error {
         Error::ServerError { .. } => server_error!("{description}"),
         Error::BadGateway { .. } => bad_gateway!("{description}"),
     }
-}
-
-// A seam lent the root itself has nothing to re-root. An anchor's `#L`
-// suffix follows the path, so a prefix leaves it intact.
-fn reroot(within: &str, mut claim: Claim) -> Claim {
-    if within.is_empty() {
-        return claim;
-    }
-
-    claim.path = claim.path.map(|path| format!("{within}/{path}"));
-    claim.backing = claim.backing.map(|backing| match backing {
-        Backing::Path(path) => Backing::Path(format!("{within}/{path}")),
-        payload @ Backing::Payload(_) => payload,
-    });
-
-    claim
 }

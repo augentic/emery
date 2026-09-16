@@ -8,12 +8,12 @@
 //! It has the shape of a real adapter: the kind of source it reads, the prose
 //! tree `emery_sdk::include_prose!` embeds, a survey, and a `wasm32`-only
 //! guest that binds the host's model once and exports the `source-adapter`
-//! world over `emery_sdk::mine`.
+//! world through `emery_sdk::source_adapter!`, its `extract` the survey then
+//! `emery_sdk::mine`.
 
 #[cfg(target_arch = "wasm32")]
 mod guest {
-    use emery_sdk::export::{self, AdapterId, AdapterMetadata, Error, Evidence, Guest, Input};
-    use emery_sdk::{Doc, Model, SourceKind};
+    use emery_sdk::{AdapterMetadata, Context, Doc, Error, Evidence, Model, SourceKind};
 
     // The extraction prompt and its reference, from the tree beside this file.
     static DOCS: &[Doc] = emery_sdk::include_prose!("prose");
@@ -22,17 +22,15 @@ mod guest {
     struct Provider;
     impl Model for Provider {}
 
-    struct Adapter;
-    export::export!(Adapter with_types_in export);
+    emery_sdk::source_adapter!(metadata, extract);
 
-    impl Guest for Adapter {
-        fn metadata(_id: AdapterId) -> AdapterMetadata {
-            emery_sdk::metadata(SourceKind::Documentation)
-        }
+    fn metadata() -> AdapterMetadata {
+        emery_sdk::metadata(SourceKind::Documentation)
+    }
 
-        async fn extract(id: AdapterId, input: Input) -> Result<Evidence, Error> {
-            emery_sdk::extract(&Provider, id, input, DOCS, async |_, ctx| super::survey(ctx)).await
-        }
+    async fn extract(ctx: &Context<'_>) -> Result<Evidence, Error> {
+        let seams = super::survey(ctx)?;
+        emery_sdk::mine(&Provider, ctx, DOCS, &seams).await
     }
 }
 

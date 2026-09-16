@@ -11,18 +11,16 @@ use emery_adapter::source::SourceContent;
 use omnia_sdk::{Error, bad_request, server_error};
 
 use super::{Context, Seam};
+use crate::path;
 
-// What one seam is lent: the directory the model receives, its path
-// beneath the source root, and the files to mine relative to it.
+// What one seam is lent: the root the model receives, and the files to mine
+// relative to it.
 #[derive(Debug)]
 pub struct Lend {
-    // The directory lent through the request's workspace grant; none for an
-    // inline value.
+    // The source root, lent through the request's workspace grant; none for
+    // an inline value.
     pub workspace: Option<String>,
-    // The lend's path beneath the source root, empty when the root itself is
-    // lent. Every `path` anchor the seam answers is re-rooted under it.
-    pub within: String,
-    // For `Files`, the files to mine relative to the lend, sorted and
+    // For `Files`, the files to mine relative to the root, sorted and
     // deduped; empty otherwise.
     pub files: Vec<String>,
 }
@@ -43,7 +41,6 @@ impl Lend {
             (SourceContent::Value(_), _) => {
                 return Ok(Self {
                     workspace: None,
-                    within: String::new(),
                     files: Vec::new(),
                 });
             }
@@ -52,61 +49,26 @@ impl Lend {
         let Seam::Files(paths) = seam else {
             return Ok(Self {
                 workspace: Some(root.clone()),
-                within: String::new(),
                 files: Vec::new(),
             });
         };
 
         let mut files = Vec::with_capacity(paths.len());
-        for path in paths {
-            files.push(segments(key, path)?);
+        for named in paths {
+            let file = path::beneath(named)
+                .map_err(|reason| bad_request!("`{key}`: `{named}` {reason}"))?;
+            files.push(file);
         }
         files.sort();
         files.dedup();
-        let Some((first, rest)) = files.split_first() else {
+        if files.is_empty() {
             return Err(bad_request!("`{key}`: a `Files` seam names no file"));
-        };
-
-        // The longest prefix every file's directory shares is the lend.
-        let mut ancestor = parent(first);
-        for file in rest {
-            let shared = ancestor.iter().zip(parent(file)).take_while(|(a, b)| a == b).count();
-            ancestor = &ancestor[..shared];
         }
 
-        let within = ancestor.join("/");
-        let workspace = if within.is_empty() { root.clone() } else { format!("{root}/{within}") };
-        let files = files.iter().map(|file| file[ancestor.len()..].join("/")).collect();
-
         Ok(Self {
-            workspace: Some(workspace),
-            within,
+            workspace: Some(root.clone()),
             files,
         })
-    }
-}
-
-// A `Files` path as its segments: `/`-separated, with empty and `.`
-// segments dropped. A leading `/` or a `..` is an escape from the root.
-fn segments<'a>(key: &str, path: &'a str) -> Result<Vec<&'a str>, Error> {
-    if path.starts_with('/') || path.split('/').any(|segment| segment == "..") {
-        return Err(bad_request!("`{key}`: `{path}` escapes the source root"));
-    }
-
-    let segments: Vec<&str> =
-        path.split('/').filter(|segment| !segment.is_empty() && *segment != ".").collect();
-    if segments.is_empty() {
-        return Err(bad_request!("`{key}`: `{path}` names no file"));
-    }
-
-    Ok(segments)
-}
-
-// A file's directory: its segments but the last.
-const fn parent<'a, 'b>(file: &'a [&'b str]) -> &'a [&'b str] {
-    match file.split_last() {
-        Some((_, parent)) => parent,
-        None => &[],
     }
 }
 
@@ -133,8 +95,8 @@ impl Display for Brief<'_> {
             (Seam::Files(_), _) => {
                 writeln!(
                     f,
-                    "`$SOURCE_DIR` is the read-only view at `{workspace}` — the part of the \
-                     source tree this call mines. Mine these files beneath it and nothing else:",
+                    "`$SOURCE_DIR` is the read-only view at `{workspace}` — the source tree. Mine \
+                     these files beneath it and nothing else:",
                     workspace = self.lend.workspace.as_deref().unwrap_or_default(),
                 )?;
                 for file in &self.lend.files {

@@ -1,8 +1,8 @@
 //! Asserts what `emery_sdk::mine` makes of an adapter's seams.
 //!
 //! - Each seam mined in one model turn — at most four pending, in seam order
-//!   — and joined into one document with each seam's anchors re-rooted under
-//!   what it was lent.
+//!   — and joined into one document, claims in seam order with their anchors
+//!   as answered.
 //! - One bound seam: a single turn whose outcome passes through unchanged.
 //! - The refusals earned before any model call.
 //! - Every failed seam reported together under the first one's class.
@@ -21,32 +21,39 @@ const DOCS: &[Doc] = &[Doc {
     body: "SYSTEM",
 }];
 
-// One claim anchored relative to its seam's lend, so the joined document
-// shows which lend each claim came through.
-const NOTE: &str =
-    r#"{"claims":[{"kind":"decision","path":"note.md#L1","backing":{"path":"note.md"}}]}"#;
+// One claim anchored at a note beside the seam's file, so the joined
+// document shows which seam each claim came through.
+fn note(dir: &str) -> String {
+    format!(
+        r#"{{"claims":[{{"kind":"decision","path":"{dir}/note.md#L1","backing":{{"path":"{dir}/note.md"}}}}]}}"#
+    )
+}
 
-/// A model routed by the request's workspace lend: one FIFO script per lend,
-/// so each seam — every `Files` seam here lends its own directory — answers
-/// from its own script whichever order the fan-out polls them in. It also
-/// counts the completions pending at once, yielding before each answer so
-/// every future the SDK has started is in flight together.
+/// A model routed by the file the turn lists: one FIFO script per file, so
+/// each seam — every `Files` seam here names one file, and all are lent the
+/// same root — answers from its own script whichever order the fan-out polls
+/// them in. It also counts the completions pending at once, yielding before
+/// each answer so every future the SDK has started is in flight together.
 #[derive(Clone, Default)]
-struct ByLend {
+struct ByFile {
     scripts: BTreeMap<String, Scripted>,
     pending: Arc<AtomicUsize>,
     peak: Arc<AtomicUsize>,
 }
 
-impl ByLend {
-    fn lend(mut self, workspace: &str, script: Scripted) -> Self {
-        self.scripts.insert(workspace.to_string(), script);
+impl ByFile {
+    fn file(mut self, file: &str, script: Scripted) -> Self {
+        self.scripts.insert(file.to_string(), script);
         self
     }
 
     fn script(&self, request: &Request) -> &Scripted {
-        let lend = request.workspace.as_deref().unwrap_or_default();
-        self.scripts.get(lend).unwrap_or_else(|| panic!("no script for the lend `{lend}`"))
+        let turn = request.messages.first().map(|message| message.content.as_str());
+        let turn = turn.unwrap_or_default();
+        self.scripts
+            .iter()
+            .find(|(file, _)| turn.contains(&format!("\n- `{file}`")))
+            .map_or_else(|| panic!("no script for the turn:\n{turn}"), |(_, script)| script)
     }
 
     // The most completions pending at once.
@@ -61,7 +68,7 @@ impl ByLend {
     }
 }
 
-impl Model for ByLend {
+impl Model for ByFile {
     fn complete(&self, request: Request) -> impl Future<Output = Result<Reply, ModelError>> + Send {
         self.script(&request).complete(request)
     }
@@ -119,13 +126,13 @@ fn paths(evidence: &Evidence) -> Vec<&str> {
 // `Seam::Whole` — whose claims come back with anchors as answered.
 #[tokio::test]
 async fn whole() {
-    let model = Scripted::answering([NOTE]);
+    let model = Scripted::answering([note("a")]);
 
     let evidence =
         mine(&model, &workspace("./docs"), &[Seam::Whole]).await.expect("one bound turn");
 
-    assert_eq!(paths(&evidence), ["note.md#L1"]);
-    assert_eq!(evidence.claims[0].backing, Some(Backing::Path("note.md".to_string())));
+    assert_eq!(paths(&evidence), ["a/note.md#L1"]);
+    assert_eq!(evidence.claims[0].backing, Some(Backing::Path("a/note.md".to_string())));
     let seen = model.seen();
     assert_eq!(seen.len(), 1, "one seam, one turn");
     assert_eq!(seen[0].workspace.as_deref(), Some("./docs"), "the root is lent");
@@ -139,16 +146,15 @@ async fn whole() {
     model.assert_exhausted();
 }
 
-// Three `Files` seams, each lending its own directory, run through three
-// model turns and join as one document: claims in seam order, each `path`
-// anchor and path backing re-rooted under the seam's lend, and each turn
-// listing its files relative to what it was lent.
+// Three `Files` seams run through three model turns, each lent the root and
+// listing its own file relative to it, and join as one document: claims in
+// seam order, every anchor and path backing as the model answered it.
 #[tokio::test]
 async fn three_seams() {
-    let model = ByLend::default()
-        .lend("./docs/a", Scripted::answering([NOTE]))
-        .lend("./docs/b", Scripted::answering([NOTE]))
-        .lend("./docs/c", Scripted::answering([NOTE]));
+    let model = ByFile::default()
+        .file("a/x.md", Scripted::answering([note("a")]))
+        .file("b/y.md", Scripted::answering([note("b")]))
+        .file("c/z.md", Scripted::answering([note("c")]));
     let seams = [files(["a/x.md"]), files(["b/y.md"]), files(["c/z.md"])];
 
     let evidence = mine(&model, &workspace("./docs"), &seams).await.expect("three seams join");
@@ -163,12 +169,12 @@ async fn three_seams() {
             Some(Backing::Path("c/note.md".to_string())),
         ]
     );
-    for (lend, file) in [("./docs/a", "x.md"), ("./docs/b", "y.md"), ("./docs/c", "z.md")] {
-        let seen = model.scripts[lend].seen();
+    for file in ["a/x.md", "b/y.md", "c/z.md"] {
+        let seen = model.scripts[file].seen();
         assert_eq!(seen.len(), 1, "one turn per seam");
-        assert_eq!(seen[0].workspace.as_deref(), Some(lend));
+        assert_eq!(seen[0].workspace.as_deref(), Some("./docs"), "every seam is lent the root");
         let user = &seen[0].messages[0];
-        assert!(user.contains(&format!("read-only view at `{lend}`")), "{user}");
+        assert!(user.contains("read-only view at `./docs` — the source tree."), "{user}");
         assert!(user.contains(&format!("nothing else:\n\n- `{file}`\n\n")), "{user}");
     }
     model.assert_exhausted();
@@ -179,9 +185,9 @@ async fn three_seams() {
 // seam order.
 #[tokio::test]
 async fn concurrent() {
-    let mut model = ByLend::default();
+    let mut model = ByFile::default();
     for i in 0..=4 {
-        model = model.lend(&format!("./docs/d{i}"), Scripted::answering([NOTE]));
+        model = model.file(&format!("d{i}/f.md"), Scripted::answering([note(&format!("d{i}"))]));
     }
     let seams: Vec<_> = (0..=4).map(|i| files([format!("d{i}/f.md").as_str()])).collect();
 
@@ -223,7 +229,7 @@ async fn escaping_path() {
 // A `Files` seam naming no file has nothing to mine; refused as the
 // input's, before any model call.
 #[tokio::test]
-async fn empty_within() {
+async fn empty_files() {
     let model = Scripted::default();
 
     let error = mine(&model, &workspace("./docs"), &[files([])]).await.expect_err("no file");
@@ -236,7 +242,7 @@ async fn empty_within() {
 // `Files` over an inline value is the adapter's own defect — there is no
 // tree to lend — so the class is the adapter's, not the operator's.
 #[tokio::test]
-async fn within_value() {
+async fn files_value() {
     let model = Scripted::default();
 
     let error =
@@ -251,9 +257,9 @@ async fn within_value() {
 // fails under that seam's class, naming it by index and no other.
 #[tokio::test]
 async fn one_seam_fails() {
-    let model = ByLend::default()
-        .lend("./docs/a", Scripted::answering([NOTE]))
-        .lend("./docs/b", Scripted::new([Err(ModelError::Backend("down".to_string()))]));
+    let model = ByFile::default()
+        .file("a/x.md", Scripted::answering([note("a")]))
+        .file("b/y.md", Scripted::new([Err(ModelError::Backend("down".to_string()))]));
     let seams = [files(["a/x.md"]), files(["b/y.md"])];
 
     let error = mine(&model, &workspace("./docs"), &seams).await.expect_err("one seam failed");
@@ -270,13 +276,13 @@ async fn one_seam_fails() {
 // and the first one's class carries.
 #[tokio::test]
 async fn two_seams_fail() {
-    let model = ByLend::default()
-        .lend(
-            "./docs/a",
+    let model = ByFile::default()
+        .file(
+            "a/x.md",
             Scripted::new([Err(ModelError::InvalidRequest("no such model".to_string()))]),
         )
-        .lend("./docs/b", Scripted::answering([NOTE]))
-        .lend("./docs/c", Scripted::new([Err(ModelError::Backend("down".to_string()))]));
+        .file("b/y.md", Scripted::answering([note("b")]))
+        .file("c/z.md", Scripted::new([Err(ModelError::Backend("down".to_string()))]));
     let seams = [files(["a/x.md"]), files(["b/y.md"]), files(["c/z.md"])];
 
     let error = mine(&model, &workspace("./docs"), &seams).await.expect_err("two seams failed");

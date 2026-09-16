@@ -2,19 +2,20 @@
 //!
 //! A source adapter is a WebAssembly component that reads one kind of source
 //! — a document tree, a codebase, a written brief — and returns typed claims
-//! about it. It is a guest of the `source-adapter` world: it implements the
-//! world's `Guest` from the `export` module and answers the two calls with
-//! what this crate supplies — `metadata` for the kind of source it reads, and
-//! `extract`, which runs [`mine`] over the [seams](#vocabulary) the adapter's
-//! own survey chose, on the [`Model`] the guest binds once. Adapter code is
-//! left with what is specific to its source: the kind it reads, the
-//! documents it embeds, and how its input cuts.
+//! about it. It is a guest of the `source-adapter` world, exported through
+//! [`source_adapter!`] over two plain fns of the adapter's own: `metadata`,
+//! answered with [`metadata`] for the kind of source it reads, and `extract`,
+//! which runs [`mine`] over the [seams](#vocabulary) the adapter's own survey
+//! chose, on the [`Model`] the guest binds once. Adapter code is left with
+//! what is specific to its source: the kind it reads, the documents it
+//! embeds, and how its input cuts.
 //!
 //! The contract types come from `emery-adapter` and are re-exported here;
-//! on `wasm32`, so is the world the adapter exports through (`export`).
+//! on `wasm32`, so are the world's bindings (`export`), which the macro
+//! expands against and a guest written by hand implements directly.
 //! [`Source`], the capability the engine calls adapters through, is
 //! re-exported for a program that drives an adapter the way the engine does;
-//! an adapter implements the world's `Guest`, never `Source`. The embedded
+//! an adapter exports the world, never implements `Source`. The embedded
 //! documents come from `emery-prose` and are re-exported too — [`Doc`],
 //! [`include_prose!`], and the lookups in [`mod@prose`] — so an adapter's
 //! `[dependencies]` is this crate alone.
@@ -43,27 +44,21 @@
 //!
 //! #[cfg(target_arch = "wasm32")]
 //! mod guest {
-//!     use emery_sdk::Model;
-//!     use emery_sdk::export::{self, AdapterId, AdapterMetadata, Error, Evidence, Guest, Input};
+//!     use emery_sdk::{AdapterMetadata, Context, Error, Evidence, Model};
 //!
 //!     // The adapter's capabilities on the WASI defaults: the model alone.
 //!     struct Provider;
 //!     impl Model for Provider {}
 //!
-//!     struct Adapter;
-//!     export::export!(Adapter with_types_in export);
+//!     emery_sdk::source_adapter!(metadata, extract);
 //!
-//!     impl Guest for Adapter {
-//!         fn metadata(_id: AdapterId) -> AdapterMetadata {
-//!             emery_sdk::metadata(super::KIND)
-//!         }
+//!     fn metadata() -> AdapterMetadata {
+//!         emery_sdk::metadata(super::KIND)
+//!     }
 //!
-//!         async fn extract(id: AdapterId, input: Input) -> Result<Evidence, Error> {
-//!             emery_sdk::extract(&Provider, id, input, super::DOCS, async |_, ctx| {
-//!                 super::survey(ctx)
-//!             })
-//!             .await
-//!         }
+//!     async fn extract(ctx: &Context<'_>) -> Result<Evidence, Error> {
+//!         let seams = super::survey(ctx)?;
+//!         emery_sdk::mine(&Provider, ctx, super::DOCS, &seams).await
 //!     }
 //! }
 //! # fn main() {}
@@ -71,8 +66,9 @@
 //!
 //! A shipped adapter embeds its `prose/` tree with
 //! `include_prose!("../prose")` in its guest module rather than writing the
-//! table by hand, and a tree adapter lists and cuts its input through
-//! [`survey::Tree`].
+//! table by hand, and a tree adapter lists its input through
+//! [`survey::list`] or asks the model for its surfaces through
+//! [`survey::surfaces`].
 //!
 //! # Vocabulary
 //!
@@ -85,7 +81,7 @@
 //!   **survey** is the adapter's own choice of seams, made before any call;
 //!   a seam is **mined** ([`mine`]) when the model is asked about it.
 //! - **Lend**: the directory the model may read during a call — the source
-//!   root, or a seam's own directory.
+//!   root, for every seam of a workspace.
 //! - **Findings**, **rounds**: the claim gate's report on an answer, sent back
 //!   to the model so it can answer again; the host bounds how many rounds a
 //!   call gets.
@@ -94,7 +90,10 @@
 //! with [`bad_request!`] and reports anything else with the sibling macros;
 //! there is no adapter error type.
 
+#[doc(hidden)]
+pub mod guest;
 mod mine;
+mod path;
 mod references;
 pub mod survey;
 
@@ -118,42 +117,12 @@ pub use self::mine::{Context, Seam, mine};
 /// Returns the `metadata` answer for an adapter reading `kind` sources.
 ///
 /// The `emery-version` pin is this SDK's own version: the contract the
-/// adapter compiled against.
-#[cfg(target_arch = "wasm32")]
+/// adapter compiled against. An adapter builds an [`AdapterMetadata`] itself
+/// only to loosen or tighten that pin.
 #[must_use]
-pub fn metadata(kind: SourceKind) -> export::AdapterMetadata {
+pub fn metadata(kind: SourceKind) -> AdapterMetadata {
     AdapterMetadata {
         emery_version: Some(env!("CARGO_PKG_VERSION").to_string()),
         kind,
     }
-    .into()
-}
-
-/// Answers `extract`: lifts `input`, surveys it, and mines the seams over `model`.
-///
-/// `model` is the guest's one model capability, lent to `survey` and to
-/// [`mine`] alike, so a guest binds it once — a unit `Provider` with an
-/// empty `impl Model`, as every omnia guest declares. `survey` is the
-/// adapter's own choice of [seams](crate#vocabulary), given the model and
-/// the call's [`Context`]; everything else is [`mine`] under the
-/// `prompts/extract.md` among `docs`. The outcome is lowered onto the
-/// world's `evidence` and `error`. A mechanical survey ignores the model,
-/// passed as `async |_, ctx| survey::survey(ctx)`; one that asks it passes
-/// it on, `async |model, ctx| survey::survey(model, ctx, DOCS).await`.
-///
-/// # Errors
-///
-/// Whatever `survey` or [`mine`] returns, lowered onto the WIT `error`.
-#[cfg(target_arch = "wasm32")]
-pub async fn extract<P: Model>(
-    model: &P, id: export::AdapterId, input: export::Input, docs: &'static [Doc],
-    survey: impl AsyncFnOnce(&P, &Context<'_>) -> Result<Vec<Seam>, Error>,
-) -> Result<export::Evidence, export::Error> {
-    let input = SourceInput::from(input);
-    let ctx = Context {
-        adapter_id: &id,
-        input: &input,
-    };
-    let seams = survey(model, &ctx).await?;
-    Ok(mine(model, &ctx, docs, &seams).await?.into())
 }
