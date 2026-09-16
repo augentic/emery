@@ -1,11 +1,12 @@
 //! Asserts what the survey helpers decide for a tree adapter.
 //!
-//! `files` and `by_directory` spare the adapter the walk: skip roots, the
-//! keep filter, the grain floor, and that a symlink is not a file to mine.
-//! `by_model` is the one survey call an adapter may make:
+//! `Tree::list` and `Tree::by_directory` spare the adapter the walk: skip
+//! roots, the keep filter and what an offered `Entry` says of itself, the
+//! grain floor, and that a symlink is not a file to mine. `Tree::by_model` is
+//! the one survey call an adapter may make:
 //!
 //! - the request it builds: the embedded survey prompt as the system, the
-//!   root lent, the candidate files listed, the `survey` schema;
+//!   tree's root lent, the candidate files listed, the `survey` schema;
 //! - the fold of its accepted partition under the floor with every
 //!   unassigned file;
 //! - the corrections a partition earns;
@@ -16,7 +17,7 @@ use std::fs;
 use std::os::unix::fs::symlink;
 use std::path::Path;
 
-use emery_sdk::survey::{self, Entry};
+use emery_sdk::survey::{Entry, Tree};
 use emery_sdk::{Context, Doc, Error, SourceContent, SourceInput};
 use omnia_test::SeenFormat;
 use omnia_test::guest::Scripted;
@@ -55,13 +56,14 @@ fn workspace(root: &str) -> SourceInput {
 }
 
 async fn survey(
-    model: &Scripted, docs: &'static [Doc], input: &SourceInput, floor: usize,
+    model: &Scripted, docs: &'static [Doc], tree: &Tree<'_>, floor: usize,
 ) -> Result<Vec<Vec<String>>, Error> {
+    let input = workspace(tree.root());
     let ctx = Context {
         adapter_id: "source:probe",
-        input,
+        input: &input,
     };
-    survey::by_model(model, &ctx, docs, &owned(FILES), floor).await
+    tree.by_model(model, &ctx, docs, floor).await
 }
 
 fn write(root: &Path, rel: &str, body: &str) {
@@ -72,22 +74,34 @@ fn write(root: &Path, rel: &str, body: &str) {
     fs::write(path, body).expect("write");
 }
 
+// The scratch root as the engine lends one: a string.
+fn utf8(root: &Path) -> &str {
+    root.to_str().expect("a UTF-8 scratch root")
+}
+
+// An empty file at each relative path, then the tree listed whole.
+fn listed<'a>(root: &'a Path, files: &[&str]) -> Tree<'a> {
+    for file in files {
+        write(root, file, "");
+    }
+    Tree::list(utf8(root), |_| true).expect("walk")
+}
+
 fn owned(files: &[&str]) -> Vec<String> {
     files.iter().copied().map(str::to_string).collect()
 }
 
 // Every regular file beneath the root is listed relative to it, sorted, with
-// `/` separators — the path space a claim's `path` anchor cites.
+// `/` separators — the path space a claim's `path` anchor cites — and the
+// tree remembers the root it was listed under.
 #[test]
 fn lists_relative() {
     let tmp = tempfile::tempdir().expect("tempdir");
-    write(tmp.path(), "b.md", "");
-    write(tmp.path(), "a/y.md", "");
-    write(tmp.path(), "a/x.md", "");
 
-    let found = survey::files(tmp.path(), |_, _| true).expect("walk");
+    let tree = listed(tmp.path(), &["b.md", "a/y.md", "a/x.md"]);
 
-    assert_eq!(found, ["a/x.md", "a/y.md", "b.md"]);
+    assert_eq!(tree.files(), ["a/x.md", "a/y.md", "b.md"]);
+    assert_eq!(tree.root(), utf8(tmp.path()));
 }
 
 // The engine's own files are never offered, wherever they sit: a projection
@@ -95,18 +109,22 @@ fn lists_relative() {
 #[test]
 fn skip_roots() {
     let tmp = tempfile::tempdir().expect("tempdir");
-    write(tmp.path(), "readme.md", "");
-    write(tmp.path(), "spec.md", "");
-    write(tmp.path(), "design.md", "");
-    write(tmp.path(), ".omnia/store.json", "");
-    write(tmp.path(), "nested/spec.md", "");
-    write(tmp.path(), "nested/design.md", "");
-    write(tmp.path(), "nested/.omnia/x", "");
-    write(tmp.path(), "nested/keep.md", "");
 
-    let found = survey::files(tmp.path(), |_, _| true).expect("walk");
+    let tree = listed(
+        tmp.path(),
+        &[
+            "readme.md",
+            "spec.md",
+            "design.md",
+            ".omnia/store.json",
+            "nested/spec.md",
+            "nested/design.md",
+            "nested/.omnia/x",
+            "nested/keep.md",
+        ],
+    );
 
-    assert_eq!(found, ["nested/keep.md", "readme.md"]);
+    assert_eq!(tree.files(), ["nested/keep.md", "readme.md"]);
 }
 
 // A refused directory is not entered; a refused file is omitted. Every other
@@ -119,13 +137,35 @@ fn keep_filter() {
     write(tmp.path(), "vendor/lib.md", "");
     write(tmp.path(), "src/main.rs", "");
 
-    let found = survey::files(tmp.path(), |path, kind| match kind {
-        Entry::Dir => path != Path::new("vendor"),
-        Entry::File => path.extension().is_none_or(|ext| ext != "lock"),
+    let tree = Tree::list(utf8(tmp.path()), |entry| match entry {
+        Entry::Dir(path) => path != "vendor",
+        Entry::File(_) => entry.extension().is_none_or(|ext| ext != "lock"),
     })
     .expect("walk");
 
-    assert_eq!(found, ["keep.md", "src/main.rs"]);
+    assert_eq!(tree.files(), ["keep.md", "src/main.rs"]);
+}
+
+// An offered entry describes itself by its root-relative path: its own name
+// is the last segment, its extension follows the last dot of a name that is
+// not itself a dot file, and a dot name is hidden — so an adapter states its
+// policy without unpicking the path.
+#[test]
+fn entry_readers() {
+    let file = Entry::File("api/orders.test.ts");
+    assert_eq!(file.path(), "api/orders.test.ts");
+    assert_eq!(file.name(), "orders.test.ts");
+    assert_eq!(file.extension(), Some("ts"));
+    assert!(!file.hidden());
+
+    let dir = Entry::Dir(".github");
+    assert_eq!(dir.name(), ".github");
+    assert_eq!(dir.extension(), None, "a leading dot is not an extension");
+    assert!(dir.hidden());
+
+    assert_eq!(Entry::File("README").extension(), None);
+    assert_eq!(Entry::File("src/.env.local").extension(), Some("local"));
+    assert!(Entry::File("src/.env.local").hidden());
 }
 
 // A symlink is not a regular file or a directory to enter, so a link at the
@@ -136,17 +176,16 @@ fn skips_symlinks() {
     write(tmp.path(), "real.md", "");
     symlink(tmp.path().join("real.md"), tmp.path().join("link.md")).expect("symlink");
 
-    let found = survey::files(tmp.path(), |_, _| true).expect("walk");
+    let tree = Tree::list(utf8(tmp.path()), |_| true).expect("walk");
 
-    assert_eq!(found, ["real.md"]);
+    assert_eq!(tree.files(), ["real.md"]);
 }
 
 // A root the walk cannot open is the adapter host's defect, not the
 // operator's input.
 #[test]
 fn missing_root() {
-    let error =
-        survey::files(Path::new("/no/such/emery-survey-root"), |_, _| true).expect_err("missing");
+    let error = Tree::list("/no/such/emery-survey-root", |_| true).expect_err("missing");
 
     assert_eq!(error.code(), "server_error");
     assert!(error.description().contains("reading"), "{error}");
@@ -157,44 +196,46 @@ fn missing_root() {
 // into one sorted remainder.
 #[test]
 fn grain_floor() {
-    assert_eq!(
-        survey::by_directory(owned(&["a/1.md", "a/2.md", "b/1.md", "root.md"]), 2),
-        [owned(&["a/1.md", "a/2.md"]), owned(&["b/1.md", "root.md"])]
-    );
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let tree = listed(tmp.path(), &["a/1.md", "a/2.md", "b/1.md", "root.md"]);
+
+    assert_eq!(tree.by_directory(2), [owned(&["a/1.md", "a/2.md"]), owned(&["b/1.md", "root.md"])]);
 }
 
 // When every directory meets the floor, the remainder is only the root's
 // own files; when there are none, it is dropped.
 #[test]
 fn no_empty_remainder() {
-    assert_eq!(
-        survey::by_directory(owned(&["a/1.md", "a/2.md", "b/1.md"]), 1),
-        [owned(&["a/1.md", "a/2.md"]), owned(&["b/1.md"])]
-    );
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let tree = listed(tmp.path(), &["a/1.md", "a/2.md", "b/1.md"]);
+
+    assert_eq!(tree.by_directory(1), [owned(&["a/1.md", "a/2.md"]), owned(&["b/1.md"])]);
 }
 
 // The survey request carries the embedded survey prompt as the system, the
-// root lent whole so the model can read what it groups, every candidate
-// file listed as the model must name it, the reference tools, `check` set,
-// and the `Partition` schema under `survey`.
+// tree's root lent whole so the model can read what it groups, every
+// candidate file listed as the model must name it, the reference tools,
+// `check` set, and the `Partition` schema under `survey`.
 #[tokio::test]
 async fn model_request() {
     let model = Scripted::answering([
         r#"{"groups":[{"name":"orders","files":["routes/orders.ts","services/orders.ts"]}]}"#,
     ]);
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let tree = listed(tmp.path(), FILES);
 
-    survey(&model, DOCS, &workspace("/lend/code"), 2).await.expect("accepted");
+    survey(&model, DOCS, &tree, 2).await.expect("accepted");
 
     let seen = model.seen();
     assert_eq!(seen.len(), 1, "one survey turn");
     let request = &seen[0];
     assert_eq!(request.system.as_deref(), Some("SURVEY"));
-    assert_eq!(request.workspace.as_deref(), Some("/lend/code"), "the root is lent");
+    assert_eq!(request.workspace.as_deref(), Some(tree.root()), "the root is lent");
     assert!(request.check, "acceptance is the check");
     assert_eq!(request.tools, ["list_docs", "read_doc"], "the corpus is offered through tools");
     let turn = &request.messages[0];
     assert!(turn.contains("adapter `source:probe` (source key `code`)"), "{turn}");
-    assert!(turn.contains("read-only view at `/lend/code`"), "{turn}");
+    assert!(turn.contains(&format!("read-only view at `{}`", tree.root())), "{turn}");
     for file in FILES {
         assert!(turn.contains(&format!("\n- `{file}`")), "`{file}` is offered: {turn}");
     }
@@ -221,8 +262,10 @@ async fn model_fold() {
             {"name":"nightly","files":["jobs/nightly.ts"]},
             {"name":"orders","files":["routes/orders.ts","services/orders.ts"]}
         ]}"#]);
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let tree = listed(tmp.path(), FILES);
 
-    let groups = survey(&model, DOCS, &workspace("/lend/code"), 2).await.expect("accepted");
+    let groups = survey(&model, DOCS, &tree, 2).await.expect("accepted");
 
     assert_eq!(
         groups,
@@ -245,8 +288,10 @@ async fn model_no_remainder() {
             {"name":"nightly","files":["jobs/nightly.ts"]},
             {"name":"entry","files":["index.ts"]}
         ]}"#]);
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let tree = listed(tmp.path(), FILES);
 
-    let groups = survey(&model, DOCS, &workspace("/lend/code"), 1).await.expect("accepted");
+    let groups = survey(&model, DOCS, &tree, 1).await.expect("accepted");
 
     assert_eq!(
         groups,
@@ -272,10 +317,10 @@ async fn model_corrections() {
         ]}"#,
         r#"{"groups":[{"name":"orders","files":["routes/orders.ts","services/orders.ts"]}]}"#,
     ]);
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let tree = listed(tmp.path(), FILES);
 
-    let groups = survey(&model, DOCS, &workspace("/lend/code"), 2)
-        .await
-        .expect("the second candidate is a partition");
+    let groups = survey(&model, DOCS, &tree, 2).await.expect("the second candidate is a partition");
 
     assert_eq!(
         groups,
@@ -307,8 +352,10 @@ async fn model_stray_key() {
         r#"{"groups":[{"name":"orders","files":["routes/orders.ts"],"reason":"handler"}]}"#,
         r#"{"groups":[{"name":"orders","files":["routes/orders.ts","services/orders.ts"]}]}"#,
     ]);
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let tree = listed(tmp.path(), FILES);
 
-    survey(&model, DOCS, &workspace("/lend/code"), 2).await.expect("the second candidate parses");
+    survey(&model, DOCS, &tree, 2).await.expect("the second candidate parses");
 
     let exchanges = model.exchanges();
     let correction = exchanges[0].outcome.as_ref().expect_err("the stray key is refused");
@@ -320,8 +367,10 @@ async fn model_stray_key() {
 #[tokio::test]
 async fn model_rounds_exhausted() {
     let model = Scripted::answering([r#"{"groups":[{"name":"ghost","files":["nope.ts"]}]}"#]);
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let tree = listed(tmp.path(), FILES);
 
-    let error = survey(&model, DOCS, &workspace("/lend/code"), 2)
+    let error = survey(&model, DOCS, &tree, 2)
         .await
         .expect_err("the only candidate names a file never offered");
 
@@ -338,29 +387,13 @@ async fn model_rounds_exhausted() {
 #[tokio::test]
 async fn model_missing_prompt() {
     let model = Scripted::default();
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let tree = listed(tmp.path(), FILES);
 
-    let error =
-        survey(&model, MUTE, &workspace("/lend/code"), 2).await.expect_err("no prompt to ask with");
+    let error = survey(&model, MUTE, &tree, 2).await.expect_err("no prompt to ask with");
 
     assert_eq!(error.code(), "server_error");
     assert!(error.description().contains("`prompts/survey.md` is not embedded"), "{error}");
-    assert!(model.seen().is_empty(), "no turn was spent");
-}
-
-// An inline value has no tree to survey: the adapter's own defect, as a
-// `Files` seam over a value is.
-#[tokio::test]
-async fn model_inline_value() {
-    let model = Scripted::default();
-    let input = SourceInput {
-        key: "code".to_string(),
-        content: SourceContent::Value("export const port = 8080;".to_string()),
-    };
-
-    let error = survey(&model, DOCS, &input, 2).await.expect_err("no tree to survey");
-
-    assert_eq!(error.code(), "server_error");
-    assert!(error.description().contains("not an inline value"), "{error}");
     assert!(model.seen().is_empty(), "no turn was spent");
 }
 
@@ -369,13 +402,10 @@ async fn model_inline_value() {
 #[tokio::test]
 async fn model_no_files() {
     let model = Scripted::default();
-    let input = workspace("/lend/code");
-    let ctx = Context {
-        adapter_id: "source:probe",
-        input: &input,
-    };
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let tree = listed(tmp.path(), &[]);
 
-    let groups = survey::by_model(&model, &ctx, DOCS, &[], 2).await.expect("nothing to ask");
+    let groups = survey(&model, DOCS, &tree, 2).await.expect("nothing to ask");
 
     assert!(groups.is_empty());
     assert!(model.seen().is_empty(), "no turn was spent");

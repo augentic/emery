@@ -241,13 +241,13 @@ When one accumulator is not enough — a cycle-guard stack pushed on entry and p
 
 ```rust
 // BAD — the answer arrives by side effect; every level threads the slot.
-fn files(root: &Path, mut keep: impl FnMut(&Path, Entry) -> bool) -> Result<Vec<String>, Error> {
+fn files(root: &Path, mut keep: impl FnMut(Entry<'_>) -> bool) -> Result<Vec<String>, Error> {
     let mut found = Vec::new();
     walk(root, "", &mut keep, &mut found)?;
     found.sort();
     Ok(found)
 }
-fn walk(dir: &Path, prefix: &str, keep: &mut impl FnMut(&Path, Entry) -> bool, found: &mut Vec<String>) -> Result<(), Error> {
+fn walk(dir: &Path, prefix: &str, keep: &mut impl FnMut(Entry<'_>) -> bool, found: &mut Vec<String>) -> Result<(), Error> {
     for entry in fs::read_dir(dir)? {
         /* … */
         if is_dir { walk(&entry.path(), &relative, keep, found)?; } else { found.push(relative); }
@@ -256,12 +256,12 @@ fn walk(dir: &Path, prefix: &str, keep: &mut impl FnMut(&Path, Entry) -> bool, f
 }
 
 // GOOD — each level returns its part; the caller extends.
-fn files(root: &Path, mut keep: impl FnMut(&Path, Entry) -> bool) -> Result<Vec<String>, Error> {
+fn files(root: &Path, mut keep: impl FnMut(Entry<'_>) -> bool) -> Result<Vec<String>, Error> {
     let mut found = walk(root, "", &mut keep)?;
     found.sort();
     Ok(found)
 }
-fn walk(dir: &Path, prefix: &str, keep: &mut impl FnMut(&Path, Entry) -> bool) -> Result<Vec<String>, Error> {
+fn walk(dir: &Path, prefix: &str, keep: &mut impl FnMut(Entry<'_>) -> bool) -> Result<Vec<String>, Error> {
     let mut found = Vec::new();
     for entry in fs::read_dir(dir)? {
         /* … */

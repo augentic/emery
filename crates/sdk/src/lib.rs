@@ -71,8 +71,8 @@
 //!
 //! A shipped adapter embeds its `prose/` tree with
 //! `include_prose!("../prose")` in its guest module rather than writing the
-//! table by hand, and a tree adapter cuts its input with the [`survey`]
-//! helpers.
+//! table by hand, and a tree adapter lists and cuts its input through
+//! [`survey::Tree`].
 //!
 //! # Vocabulary
 //!

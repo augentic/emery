@@ -1,11 +1,11 @@
 //! Lists a tree adapter's files and cuts them into seams.
 //!
-//! A tree adapter surveys before its first seam is mined: [`files`] lists
-//! the files beneath the root, and one of two cuts groups them.
-//! [`by_directory`] is mechanical — one group per top-level directory.
-//! [`by_model`] asks the model once, under the adapter's `prompts/survey.md`,
-//! to group the files by what they serve — a route, a command, an exported
-//! API — which no directory layout states.
+//! A tree adapter surveys before its first seam is mined: [`Tree::list`]
+//! walks the files beneath the source root, and one of two cuts groups them.
+//! [`Tree::by_directory`] is mechanical — one group per top-level directory.
+//! [`Tree::by_model`] asks the model once, under the adapter's
+//! `prompts/survey.md`, to group the files by what they serve — a route, a
+//! command, an exported API — which no directory layout states.
 //!
 //! Both cuts fold under a grain floor: a group too small to be worth its own
 //! model call joins one remainder, with every file no group claims, so the
@@ -18,7 +18,6 @@ use std::fmt::Write as _;
 use std::path::Path;
 
 use anyhow::Context as _;
-use emery_adapter::source::SourceContent;
 use emery_prose::Doc;
 use omnia_sdk::model::Question;
 use omnia_sdk::{Error, Model, bad_request, server_error};
@@ -27,128 +26,192 @@ use serde::Deserialize;
 
 use crate::{Context, references};
 
-/// A directory entry the walk offers to an adapter's `keep`.
+/// A directory entry the walk offers to an adapter's `keep`, by its root-relative path.
+///
+/// The path is `/`-separated, as the listing carries it, and UTF-8: an
+/// entry whose name is not is refused before any is offered.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum Entry {
+pub enum Entry<'a> {
     /// A directory; refusing it prunes everything beneath.
-    Dir,
+    Dir(&'a str),
     /// A regular file; refusing it leaves it out of the survey.
-    File,
+    File(&'a str),
 }
 
-/// Returns the files beneath `root`, sorted, as `/`-separated paths relative to it.
-///
-/// `keep` is asked about every entry with its root-relative path and kind; a
-/// refused directory is not entered. The engine's own `.omnia/` directories
-/// and `spec.md` / `design.md` files are never offered, wherever they appear.
-/// Symlinks are not followed.
-///
-/// # Errors
-///
-/// Returns [`Error::ServerError`] when a directory cannot be read, and
-/// [`Error::BadRequest`] for an entry whose name is not UTF-8, which no `path`
-/// anchor could cite.
-pub fn files(
-    root: &Path, mut keep: impl FnMut(&Path, Entry) -> bool,
-) -> Result<Vec<String>, Error> {
-    let mut found = walk(root, "", &mut keep)?;
-    found.sort();
-    Ok(found)
-}
-
-/// Groups `files` by top-level directory, folding directories under `floor`.
-///
-/// Each directory holding at least `floor` files is one group, in directory
-/// order. The root's own files and every smaller directory's fold into one
-/// sorted remainder, last; an empty remainder is dropped. Files keep their
-/// order within a group, so sorted input yields sorted groups.
-///
-/// # Examples
-///
-/// ```
-/// use emery_sdk::survey::by_directory;
-///
-/// let files =
-///     ["README.md", "api/orders.md", "api/users.md", "notes/todo.md"].map(String::from).to_vec();
-///
-/// let groups = by_directory(files, 2);
-/// assert_eq!(groups, [vec!["api/orders.md", "api/users.md"], vec!["README.md", "notes/todo.md"]]);
-/// ```
-#[must_use]
-pub fn by_directory(files: Vec<String>, floor: usize) -> Vec<Vec<String>> {
-    let mut directories: BTreeMap<String, Vec<String>> = BTreeMap::new();
-    let mut remainder = Vec::new();
-    for file in files {
-        match file.split_once('/') {
-            Some((directory, _)) => directories.entry(directory.to_owned()).or_default().push(file),
-            None => remainder.push(file),
+impl<'a> Entry<'a> {
+    /// Returns the `/`-separated path relative to the root, as the listing carries it.
+    #[must_use]
+    pub const fn path(self) -> &'a str {
+        match self {
+            Self::Dir(path) | Self::File(path) => path,
         }
     }
 
-    let mut groups = Vec::with_capacity(directories.len() + 1);
-    for group in directories.into_values() {
-        if group.len() >= floor {
-            groups.push(group);
-        } else {
-            remainder.extend(group);
-        }
+    /// Returns the entry's own name: the last segment of its path.
+    #[must_use]
+    pub fn name(self) -> &'a str {
+        let path = self.path();
+        path.rsplit_once('/').map_or(path, |(_, name)| name)
     }
-    if !remainder.is_empty() {
-        remainder.sort();
-        groups.push(remainder);
+
+    /// Returns the part of the name after its last dot; a leading dot is not one.
+    #[must_use]
+    pub fn extension(self) -> Option<&'a str> {
+        let (stem, extension) = self.name().rsplit_once('.')?;
+        (!stem.is_empty()).then_some(extension)
     }
-    groups
+
+    /// Returns `true` when the name begins with a dot: tooling by convention, never source.
+    #[must_use]
+    pub fn hidden(self) -> bool {
+        self.name().starts_with('.')
+    }
 }
 
-/// Groups `files` by asking the model once how they serve the source.
+/// The files beneath one source root, sorted, named relative to it.
 ///
-/// The adapter's `prompts/survey.md` among `docs` is the system prompt. The
-/// turn names the adapter and source, lists the candidate files, and lends the
-/// input's root so the model can read them; the `list_docs` and `read_doc`
-/// tools answer from `docs`. The model answers one [`Partition`], checked
-/// whole: a group naming no file, a file not among `files`, or a file in two
-/// groups goes back as findings for another round.
-///
-/// The accepted groups come back in answer order, each sorted. A group of
-/// fewer than `floor` files folds, with every file the model left out, into
-/// one sorted remainder, last; an empty remainder is dropped. The model
-/// chooses the grouping, never omission, so coverage is total. A tree with no
-/// files spends no turn and cuts into nothing.
-///
-/// # Errors
-///
-/// - [`Error::ServerError`] when `prompts/survey.md` is not embedded or the
-///   input is an inline value; both are found before any turn is spent.
-/// - [`Error::BadRequest`] when the host refuses the request or the rounds
-///   are spent with findings outstanding.
-/// - [`Error::BadGateway`] for a tool or transport failure.
-pub async fn by_model<P: Model>(
-    model: &P, ctx: &Context<'_>, docs: &'static [Doc], files: &[String], floor: usize,
-) -> Result<Vec<Vec<String>>, Error> {
-    let key = &ctx.input.key;
-    let system = emery_prose::body(docs, "prompts/survey.md")
-        .ok_or_else(|| server_error!("`prompts/survey.md` is not embedded"))?;
-    let SourceContent::Workspace(root) = &ctx.input.content else {
-        return Err(server_error!(
-            "`{key}`: a model survey needs a workspace input, not an inline value"
-        ));
-    };
-    if files.is_empty() {
-        return Ok(Vec::new());
+/// A tree is listed once, by [`Tree::list`], and cut by [`Tree::by_directory`]
+/// or [`Tree::by_model`]. The root it was listed under travels with the files,
+/// so a cut by model lends the directory the files are relative to.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct Tree<'a> {
+    root: &'a str,
+    files: Vec<String>,
+}
+
+impl<'a> Tree<'a> {
+    /// Lists the files beneath `root`, sorted, as `/`-separated paths relative to it.
+    ///
+    /// `keep` is asked about every entry; a refused directory is not
+    /// entered. The engine's own `.omnia/` directories and `spec.md` /
+    /// `design.md` files are never offered, wherever they appear. Symlinks are
+    /// not followed.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use emery_sdk::survey::Tree;
+    ///
+    /// # let scratch = tempfile::tempdir()?;
+    /// # for file in ["README.md", "api/orders.md", "api/users.md", "notes/todo.md", ".git/HEAD"] {
+    /// #     let path = scratch.path().join(file);
+    /// #     std::fs::create_dir_all(path.parent().unwrap())?;
+    /// #     std::fs::write(path, "")?;
+    /// # }
+    /// # let root = scratch.path().to_str().unwrap();
+    /// let tree = Tree::list(root, |entry| !entry.hidden())?;
+    ///
+    /// assert_eq!(tree.files(), ["README.md", "api/orders.md", "api/users.md", "notes/todo.md"]);
+    /// assert_eq!(
+    ///     tree.by_directory(2),
+    ///     [vec!["api/orders.md", "api/users.md"], vec!["README.md", "notes/todo.md"]]
+    /// );
+    /// # anyhow::Ok(())
+    /// ```
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::ServerError`] when a directory cannot be read, and
+    /// [`Error::BadRequest`] for an entry whose name is not UTF-8, which no
+    /// `path` anchor could cite.
+    pub fn list(root: &'a str, mut keep: impl FnMut(Entry<'_>) -> bool) -> Result<Self, Error> {
+        let mut files = walk(Path::new(root), "", &mut keep)?;
+        files.sort();
+        Ok(Self { root, files })
     }
 
-    let partition = Question::<Partition>::new("survey")
-        .system(system)
-        .tools(references::tools())
-        .workspace(root)
-        .ask(model, turn(ctx, root, files, floor), Some(references::answering(docs)), |answer| {
-            let findings = answer.findings(files);
-            if findings.is_empty() { Ok(()) } else { Err(findings) }
-        })
-        .await
-        .map_err(Error::from)?;
+    /// Returns the root the files are relative to, as the engine lent it.
+    #[must_use]
+    pub const fn root(&self) -> &'a str {
+        self.root
+    }
 
-    Ok(partition.fold(files, floor))
+    /// Returns the files, sorted, as `/`-separated paths relative to the root.
+    #[must_use]
+    pub fn files(&self) -> &[String] {
+        &self.files
+    }
+
+    /// Groups the files by top-level directory, folding directories under `floor`.
+    ///
+    /// Each directory holding at least `floor` files is one group, in
+    /// directory order. The root's own files and every smaller directory's
+    /// fold into one sorted remainder, last; an empty remainder is dropped.
+    /// Files keep their order within a group, so the groups are sorted.
+    #[must_use]
+    pub fn by_directory(&self, floor: usize) -> Vec<Vec<String>> {
+        let mut directories: BTreeMap<&str, Vec<String>> = BTreeMap::new();
+        let mut remainder = Vec::new();
+        for file in &self.files {
+            match file.split_once('/') {
+                Some((directory, _)) => {
+                    directories.entry(directory).or_default().push(file.clone());
+                }
+                None => remainder.push(file.clone()),
+            }
+        }
+
+        let mut groups = Vec::with_capacity(directories.len() + 1);
+        for group in directories.into_values() {
+            if group.len() >= floor {
+                groups.push(group);
+            } else {
+                remainder.extend(group);
+            }
+        }
+        if !remainder.is_empty() {
+            remainder.sort();
+            groups.push(remainder);
+        }
+        groups
+    }
+
+    /// Groups the files by asking the model once how they serve the source.
+    ///
+    /// The adapter's `prompts/survey.md` among `docs` is the system prompt.
+    /// The turn names the adapter and source from `ctx`, lists the files, and
+    /// lends the root so the model can read them; the `list_docs` and
+    /// `read_doc` tools answer from `docs`. The model answers one
+    /// [`Partition`], checked whole: a group naming no file, a file not among
+    /// the tree's, or a file in two groups goes back as findings for another
+    /// round.
+    ///
+    /// The accepted groups come back in answer order, each sorted. A group of
+    /// fewer than `floor` files folds, with every file the model left out,
+    /// into one sorted remainder, last; an empty remainder is dropped. The
+    /// model chooses the grouping, never omission, so coverage is total. A
+    /// tree with no files spends no turn and cuts into nothing.
+    ///
+    /// # Errors
+    ///
+    /// - [`Error::ServerError`] when `prompts/survey.md` is not embedded,
+    ///   found before any turn is spent.
+    /// - [`Error::BadRequest`] when the host refuses the request or the rounds
+    ///   are spent with findings outstanding.
+    /// - [`Error::BadGateway`] for a tool or transport failure.
+    pub async fn by_model<P: Model>(
+        &self, model: &P, ctx: &Context<'_>, docs: &'static [Doc], floor: usize,
+    ) -> Result<Vec<Vec<String>>, Error> {
+        let system = emery_prose::body(docs, "prompts/survey.md")
+            .ok_or_else(|| server_error!("`prompts/survey.md` is not embedded"))?;
+        if self.files.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        let files = &self.files;
+        let partition = Question::<Partition>::new("survey")
+            .system(system)
+            .tools(references::tools())
+            .workspace(self.root)
+            .ask(model, turn(ctx, self, floor), Some(references::answering(docs)), |answer| {
+                let findings = answer.findings(files);
+                if findings.is_empty() { Ok(()) } else { Err(findings) }
+            })
+            .await
+            .map_err(Error::from)?;
+
+        Ok(partition.fold(files, floor))
+    }
 }
 
 /// The model's survey answer: the candidate files partitioned into groups.
@@ -224,7 +287,7 @@ impl Partition {
 // The survey turn: which source is being surveyed, the root lent, the
 // candidate files as the model must name them, and what the floor does with
 // what it leaves out.
-fn turn(ctx: &Context<'_>, root: &str, files: &[String], floor: usize) -> String {
+fn turn(ctx: &Context<'_>, tree: &Tree<'_>, floor: usize) -> String {
     let mut turn = format!(
         "Survey the source bound to adapter `{id}` (source key `{key}`) before it is mined.\n\n\
          `$SOURCE_DIR` is the read-only view at `{root}` — the source tree. Partition these files \
@@ -232,8 +295,9 @@ fn turn(ctx: &Context<'_>, root: &str, files: &[String], floor: usize) -> String
          every file exactly as listed, in one group at most:",
         id = ctx.adapter_id,
         key = ctx.input.key,
+        root = tree.root,
     );
-    for file in files {
+    for file in &tree.files {
         // Writing to a `String` cannot fail.
         let _ = write!(turn, "\n- `{file}`");
     }
@@ -258,7 +322,7 @@ const SKIP_FILES: &[&str] = &["spec.md", "design.md"];
 // `dir`'s kept files as `prefix`-relative paths, descending into each kept
 // directory.
 fn walk(
-    dir: &Path, prefix: &str, keep: &mut impl FnMut(&Path, Entry) -> bool,
+    dir: &Path, prefix: &str, keep: &mut impl FnMut(Entry<'_>) -> bool,
 ) -> Result<Vec<String>, Error> {
     let reading = || format!("reading `{}`", dir.display());
     let mut found = Vec::new();
@@ -275,13 +339,11 @@ fn walk(
         let relative = if prefix.is_empty() { name.to_owned() } else { format!("{prefix}/{name}") };
 
         if file_type.is_dir() {
-            if SKIP_DIRS.contains(&name) || !keep(Path::new(&relative), Entry::Dir) {
+            if SKIP_DIRS.contains(&name) || !keep(Entry::Dir(&relative)) {
                 continue;
             }
             found.extend(walk(&entry.path(), &relative, keep)?);
-        } else if file_type.is_file()
-            && !SKIP_FILES.contains(&name)
-            && keep(Path::new(&relative), Entry::File)
+        } else if file_type.is_file() && !SKIP_FILES.contains(&name) && keep(Entry::File(&relative))
         {
             found.push(relative);
         }
