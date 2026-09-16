@@ -26,7 +26,7 @@
 //! — so the crate builds natively and its survey is tested there:
 //!
 //! ```
-//! use emery_sdk::{Doc, Error, Seam, SourceContent, SourceKind};
+//! use emery_sdk::{Context, Doc, Error, Seam, SourceKind};
 //!
 //! pub const KIND: SourceKind = SourceKind::Intent;
 //!
@@ -36,7 +36,7 @@
 //! }];
 //!
 //! /// Returns the seams to mine: a brief is never split.
-//! pub fn survey(_content: &SourceContent) -> Result<Vec<Seam>, Error> {
+//! pub fn survey(_ctx: &Context<'_>) -> Result<Vec<Seam>, Error> {
 //!     Ok(vec![Seam::Whole])
 //! }
 //!
@@ -53,8 +53,7 @@
 //!         }
 //!
 //!         async fn extract(id: AdapterId, input: Input) -> Result<Evidence, Error> {
-//!             emery_sdk::extract(id, input, super::DOCS, async |ctx| super::survey(&ctx.input.content))
-//!                 .await
+//!             emery_sdk::extract(id, input, super::DOCS, async |ctx| super::survey(ctx)).await
 //!         }
 //!     }
 //! }
@@ -126,7 +125,9 @@ pub fn metadata(kind: SourceKind) -> export::AdapterMetadata {
 /// `survey` is the adapter's own choice of [seams](crate#vocabulary), given
 /// the call's [`Context`]; everything else is [`mine`] under the
 /// `prompts/extract.md` among `docs`, over the host's model. The outcome is
-/// lowered onto the world's `evidence` and `error`.
+/// lowered onto the world's `evidence` and `error`. A mechanical survey is a
+/// plain fn, passed as `async |ctx| survey::survey(ctx)`; a survey that asks
+/// the model is already async, so the guest passes `survey::survey`.
 ///
 /// # Errors
 ///

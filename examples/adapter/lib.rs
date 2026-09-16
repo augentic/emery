@@ -26,12 +26,12 @@ mod guest {
         }
 
         async fn extract(id: AdapterId, input: Input) -> Result<Evidence, Error> {
-            emery_sdk::extract(id, input, DOCS, async |ctx| super::survey(&ctx.input.content)).await
+            emery_sdk::extract(id, input, DOCS, async |ctx| super::survey(ctx)).await
         }
     }
 }
 
-use emery_sdk::{Error, Seam, SourceContent, bad_request};
+use emery_sdk::{Context, Error, Seam, SourceContent, bad_request};
 
 /// Returns the one seam to mine: a bound brief whole, or a tree with the fallback noted.
 ///
@@ -41,8 +41,8 @@ use emery_sdk::{Error, Seam, SourceContent, bad_request};
 /// # Errors
 ///
 /// Returns [`Error::BadRequest`] when the bound brief is empty.
-pub fn survey(content: &SourceContent) -> Result<Vec<Seam>, Error> {
-    let seam = match content {
+pub fn survey(ctx: &Context<'_>) -> Result<Vec<Seam>, Error> {
+    let seam = match &ctx.input.content {
         SourceContent::Value(value) if value.trim().is_empty() => {
             return Err(bad_request!("the bound greeting brief is empty"));
         }
