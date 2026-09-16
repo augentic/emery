@@ -7,7 +7,7 @@
 
 use std::future::ready;
 
-use emery_prose::registry::{self, Doc};
+use emery_prose::Doc;
 use omnia_sdk::model::{Function, Tool, ToolCall, ToolFuture, Tools};
 use schemars::JsonSchema;
 use serde::Deserialize;
@@ -59,7 +59,8 @@ fn answer(docs: &[Doc], call: &ToolCall) -> Result<String, String> {
         }
         "read_doc" => {
             let ReadDoc { path } = call.arguments().map_err(|err| format!("read_doc: {err}"))?;
-            let doc = registry::find(docs, &path).ok_or_else(|| format!("no document `{path}`"))?;
+            let doc =
+                emery_prose::find(docs, &path).ok_or_else(|| format!("no document `{path}`"))?;
             Ok(json!({ "path": path, "body": doc.body }).to_string())
         }
         other => Err(format!("unknown tool `{other}`")),

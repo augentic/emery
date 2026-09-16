@@ -8,7 +8,7 @@
 mod brief;
 
 use emery_adapter::source::{Backing, Claim, Evidence, SourceInput};
-use emery_prose::registry::{self, Doc};
+use emery_prose::Doc;
 use futures::stream::{self, StreamExt as _};
 use omnia_sdk::model::Question;
 use omnia_sdk::{Error, Model, bad_gateway, bad_request, not_found, server_error};
@@ -103,7 +103,7 @@ pub struct Context<'a> {
 async fn evidence<P: Model>(
     model: &P, ctx: &Context<'_>, docs: &'static [Doc], seam: &Seam, lend: &Lend,
 ) -> Result<Evidence, Error> {
-    let system = registry::body(docs, "prompts/extract.md")
+    let system = emery_prose::body(docs, "prompts/extract.md")
         .ok_or_else(|| server_error!("`prompts/extract.md` is not embedded"))?;
     let brief = Brief { ctx, seam, lend };
 

@@ -1,10 +1,9 @@
-//! Looks embedded documents up by path.
+//! One embedded document, and the lookups over a table of them.
 //!
 //! A [`Doc`] is one embedded document: its tree-relative path and its body.
-//! [`find`] and [`body`] look one up in a table sorted by path, and
-//! [`crate::registry!`] gives a crate the `docs()` accessor over the table its
-//! build script generated. Paths are the stable names prompts and reference
-//! tools address documents by, so lookup by path is the whole interface.
+//! [`find`] and [`body`] look one up in a table sorted by path. Paths are the
+//! stable names prompts and reference tools address documents by, so lookup
+//! by path is the whole interface.
 
 /// One embedded document: its tree-relative path and its Markdown body.
 #[derive(Clone, Copy, Debug)]
@@ -22,7 +21,7 @@ pub struct Doc {
 /// # Examples
 ///
 /// ```
-/// use emery_prose::registry::{Doc, find};
+/// use emery_prose::{Doc, find};
 ///
 /// static DOCS: &[Doc] = &[
 ///     Doc {
@@ -51,30 +50,4 @@ pub fn find<'d>(docs: &'d [Doc], path: &str) -> Option<&'d Doc> {
 #[must_use]
 pub fn body(docs: &[Doc], path: &str) -> Option<&'static str> {
     find(docs, path).map(|doc| doc.body)
-}
-
-/// Includes the document table the crate's build script generated.
-///
-/// The build script's [`emit`](crate::emit) call writes `prose_docs.rs` into
-/// `OUT_DIR`. This macro brings [`Doc`] into scope and includes that file, so
-/// the module it expands in exposes `pub fn docs() -> &'static [Doc]` over the
-/// embedded documents.
-///
-/// # Examples
-///
-/// ```ignore
-/// // `ignore`: the included file exists only under the crate's own build script.
-/// mod registry {
-///     emery_prose::registry!();
-/// }
-///
-/// let prompt = emery_prose::registry::body(registry::docs(), "prompts/extract.md");
-/// ```
-#[macro_export]
-macro_rules! registry {
-    () => {
-        use $crate::registry::Doc;
-
-        include!(concat!(env!("OUT_DIR"), "/prose_docs.rs"));
-    };
 }

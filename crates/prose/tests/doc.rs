@@ -5,7 +5,7 @@
 //! reports the mismatch as its own failure, so it is never a silent miss and
 //! never a panic.
 
-use emery_prose::registry::{Doc, body, find};
+use emery_prose::{Doc, body, find};
 
 // A sorted table, as the `prose` codegen emits.
 static DOCS: &[Doc] = &[

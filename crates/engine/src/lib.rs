@@ -92,5 +92,5 @@ impl<P: Model + Source + StateStore + BlobStore + Plugins + Send + Sync + 'stati
 
 // Generated from the link-checked synthesis corpus at build time.
 mod prose {
-    emery_prose::registry!();
+    emery_prose::include_prose!();
 }

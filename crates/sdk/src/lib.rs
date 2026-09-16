@@ -13,9 +13,9 @@
 //! on `wasm32`, so is the world the adapter exports through (`export`).
 //! [`Source`], the capability the engine calls adapters through, is
 //! re-exported for a program that drives an adapter the way the engine does;
-//! an adapter implements the world's `Guest`, never `Source`. The
-//! embedded-document registry comes from `emery-prose` and is re-exported
-//! too — [`Doc`], [`mod@registry`], and [`registry!`] — so an adapter's
+//! an adapter implements the world's `Guest`, never `Source`. The embedded
+//! documents come from `emery-prose` and are re-exported too — [`Doc`],
+//! [`include_prose!`], and the lookups in [`mod@prose`] — so an adapter's
 //! `[dependencies]` is this crate alone; `emery-prose` is its build
 //! dependency, for the `emit` walker.
 //!
@@ -66,7 +66,7 @@
 //! ```
 //!
 //! A shipped adapter embeds its prompt with `emery_prose::emit` in its build
-//! script and [`registry!`] in its crate root rather than a hand-written
+//! script and [`include_prose!`] in its crate root rather than a hand-written
 //! table, and a tree adapter cuts its input with the [`survey`] helpers.
 //!
 //! # Vocabulary
@@ -99,9 +99,12 @@ pub use emery_adapter::source::{
     AdapterMetadata, Backing, Claim, ClaimKind, Evidence, Source, SourceContent, SourceInput,
     SourceKind,
 };
-// The module and the `registry!` macro share the name; one `use` carries both.
-pub use emery_prose::registry;
-pub use emery_prose::registry::Doc;
+pub use emery_prose::{Doc, include_prose};
 pub use omnia_sdk::{Error, Model, bad_gateway, bad_request, model, not_found, server_error};
+
+/// Lookups over an adapter's embedded documents, by tree-relative path.
+pub mod prose {
+    pub use emery_prose::{body, find};
+}
 
 pub use self::mine::{Context, Seam, mine};

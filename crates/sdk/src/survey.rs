@@ -19,7 +19,7 @@ use std::path::Path;
 
 use anyhow::Context as _;
 use emery_adapter::source::SourceContent;
-use emery_prose::registry::{self, Doc};
+use emery_prose::Doc;
 use omnia_sdk::model::Question;
 use omnia_sdk::{Error, Model, bad_request, server_error};
 use schemars::JsonSchema;
@@ -126,7 +126,7 @@ pub async fn by_model<P: Model>(
     model: &P, ctx: &Context<'_>, docs: &'static [Doc], files: &[String], floor: usize,
 ) -> Result<Vec<Vec<String>>, Error> {
     let key = &ctx.input.key;
-    let system = registry::body(docs, "prompts/survey.md")
+    let system = emery_prose::body(docs, "prompts/survey.md")
         .ok_or_else(|| server_error!("`prompts/survey.md` is not embedded"))?;
     let SourceContent::Workspace(root) = &ctx.input.content else {
         return Err(server_error!(

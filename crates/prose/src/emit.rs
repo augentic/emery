@@ -1,7 +1,7 @@
 //! Walks a Markdown tree at build time and generates its document table.
 //!
 //! [`emit`] runs from a build script. It walks the tree, checks every relative
-//! link it finds, and writes the table [`crate::registry!`] includes, so a
+//! link it finds, and writes the table [`crate::include_prose!`] includes, so a
 //! crate's prose is compiled in and versioned with its code. A dangling link
 //! fails the build rather than surfacing when a model asks for the document.
 
@@ -38,9 +38,9 @@ pub fn docs() -> &'static [Doc] {
 /// Embeds the Markdown `tree`, relative to the crate manifest, as a document table.
 ///
 /// The table is written to `prose_docs.rs` in `OUT_DIR`: a private table of
-/// [`Doc`](crate::registry::Doc)s sorted by path, and the
+/// [`Doc`](crate::Doc)s sorted by path, and the
 /// `pub fn docs() -> &'static [Doc]` accessor over it that
-/// [`crate::registry!`] includes. Every relative link in the tree is checked
+/// [`crate::include_prose!`] includes. Every relative link in the tree is checked
 /// while embedding, and symlinked directories are followed.
 ///
 /// # Panics
