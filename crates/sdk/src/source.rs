@@ -2,9 +2,9 @@
 //!
 //! An implementation states the kind of source it reads, the documents it
 //! embeds, and how its input cuts into [seams](crate#vocabulary). The
-//! trait provides the rest — the metadata, the prompt, the model call per
-//! seam, and [`SourceAdapter::extract`], which surveys the input, mines
-//! every seam, and joins the answers into one document.
+//! trait provides the rest — the metadata, and [`SourceAdapter::extract`],
+//! which surveys the input, puts each seam to the model, and joins the
+//! answers into one document.
 //!
 //! The trait is native. The wasm export is the `export` child, built for
 //! `wasm32` alone, so an adapter is tested natively against a scripted model
@@ -86,11 +86,19 @@ pub trait SourceAdapter {
     /// Extracts the source's claims as one [`Evidence`] document.
     ///
     /// Provided; an adapter overrides [`Self::survey`] instead. The survey's
-    /// seams are each put to the model by [`Self::evidence`], several at
-    /// a time, and the answers are joined in seam order. Each seam's
-    /// `path` anchors and path backings are re-rooted under the directory it
-    /// was lent, so the document cites one path space however the source was
-    /// cut.
+    /// seams are each put to the model as one turn, several at a time, and
+    /// the answers are joined in seam order. Each seam's `path` anchors and
+    /// path backings are re-rooted under the directory it was lent, so the
+    /// document cites one path space however the source was cut.
+    ///
+    /// A seam's turn is the SDK's. `prompts/extract.md` among [`Self::docs`]
+    /// is the system prompt; the turn names the adapter and the source key,
+    /// describes the seam, and lends the model the directory the seam may
+    /// read; the `list_docs` and `read_doc` tools answer from [`Self::docs`].
+    /// The answer is checked against the claim gate ([`Evidence::findings`]),
+    /// and findings go back to the model for another round until it answers
+    /// clean or the host's rounds are spent. The engine runs the same gate
+    /// again on receipt.
     ///
     /// Every seam is waited for. When more than one fails, the error names
     /// them all and takes the class of the first.
@@ -98,8 +106,9 @@ pub trait SourceAdapter {
     /// # Errors
     ///
     /// - [`Error::BadRequest`] when the survey refuses the input or yields no
-    ///   seam, a [`Seam::Files`] path escapes the root, or the
-    ///   model's answer still fails the claim gate once its rounds are spent.
+    ///   seam, a [`Seam::Files`] path escapes the root or names no file, the
+    ///   host refuses a request, or the model's answer still fails the claim
+    ///   gate once its rounds are spent.
     /// - [`Error::ServerError`] for a [`Seam::Files`] over an inline
     ///   value, or a prompt the build did not embed.
     /// - [`Error::BadGateway`] for a tool or transport failure.
@@ -113,10 +122,11 @@ pub trait SourceAdapter {
                 return Err(bad_request!("`{key}`: the survey found nothing to mine"));
             }
 
+            let docs = Self::docs();
             let lends =
                 seams.iter().map(|seam| Lend::of(seam, ctx)).collect::<Result<Vec<_>, _>>()?;
             let outcomes: Vec<_> = stream::iter(seams)
-                .map(|seam| Self::evidence(model, ctx, seam))
+                .map(|seam| evidence(model, ctx, docs, seam))
                 .buffered(CONCURRENT)
                 .collect()
                 .await;
@@ -137,67 +147,6 @@ pub trait SourceAdapter {
         AdapterMetadata {
             emery_version: Some(env!("CARGO_PKG_VERSION").to_string()),
             kind: Self::KIND,
-        }
-    }
-
-    /// Returns the extraction prompt: `prompts/extract.md` among [`Self::docs`].
-    ///
-    /// # Errors
-    ///
-    /// Returns [`Error::ServerError`] when the build did not embed it.
-    fn prompt() -> Result<&'static str, Error> {
-        registry::body(Self::docs(), "prompts/extract.md")
-            .ok_or_else(|| server_error!("`prompts/extract.md` is not embedded"))
-    }
-
-    /// Asks the model about one seam and returns the accepted claims.
-    ///
-    /// The system prompt is [`Self::prompt`]. The turn names the adapter and
-    /// the source key, describes `seam`, and lends the model the directory
-    /// the seam may read; the `list_docs` and `read_doc` tools answer from
-    /// [`Self::docs`]. The answer is checked against the claim gate
-    /// ([`Evidence::findings`]), and findings go back to the model for another
-    /// round until it answers clean or the host's rounds are spent. The engine
-    /// runs the same gate again on receipt.
-    ///
-    /// # Errors
-    ///
-    /// - [`Error::BadRequest`] when the host refuses the request, the rounds
-    ///   are spent with findings outstanding, or a [`Seam::Files`] path
-    ///   escapes the root.
-    /// - [`Error::ServerError`] for a prompt the build did not embed, or a
-    ///   [`Seam::Files`] over an inline value.
-    /// - [`Error::BadGateway`] for a tool or transport failure.
-    fn evidence<P: Model>(
-        model: &P, ctx: &Context<'_>, seam: Seam,
-    ) -> impl Future<Output = Result<Evidence, Error>> + Send {
-        async move {
-            let system = Self::prompt()?;
-            let lend = Lend::of(&seam, ctx)?;
-            let brief = Brief {
-                ctx,
-                seam: &seam,
-                lend: &lend,
-            };
-
-            let mut question =
-                Question::<Evidence>::new("evidence").system(system).tools(references::tools());
-            if let Some(workspace) = &lend.workspace {
-                question = question.workspace(workspace);
-            }
-
-            question
-                .ask(
-                    model,
-                    brief.to_string(),
-                    Some(references::answering(Self::docs())),
-                    |answer| {
-                        let findings = answer.findings();
-                        if findings.is_empty() { Ok(()) } else { Err(findings) }
-                    },
-                )
-                .await
-                .map_err(Error::from)
         }
     }
 }
@@ -233,6 +182,36 @@ pub struct Context<'a> {
     pub adapter_id: &'a str,
     /// The source key and the workspace or inline value to read.
     pub input: &'a SourceInput,
+}
+
+// One seam's turn: the embedded prompt as the system, the brief as the user
+// turn, the seam's lend, and the claim gate as the check the backend loops
+// on until the answer is clean or its rounds are spent.
+async fn evidence<P: Model>(
+    model: &P, ctx: &Context<'_>, docs: &'static [Doc], seam: Seam,
+) -> Result<Evidence, Error> {
+    let system = registry::body(docs, "prompts/extract.md")
+        .ok_or_else(|| server_error!("`prompts/extract.md` is not embedded"))?;
+    let lend = Lend::of(&seam, ctx)?;
+    let brief = Brief {
+        ctx,
+        seam: &seam,
+        lend: &lend,
+    };
+
+    let mut question =
+        Question::<Evidence>::new("evidence").system(system).tools(references::tools());
+    if let Some(workspace) = &lend.workspace {
+        question = question.workspace(workspace);
+    }
+
+    question
+        .ask(model, brief.to_string(), Some(references::answering(docs)), |answer| {
+            let findings = answer.findings();
+            if findings.is_empty() { Ok(()) } else { Err(findings) }
+        })
+        .await
+        .map_err(Error::from)
 }
 
 // A lone seam's failure is the source's as it stands; several are reported

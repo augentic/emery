@@ -1,10 +1,10 @@
 //! Asserts what an adapter gets from `SourceAdapter::extract` without overriding it.
 //!
-//! - The survey's seams mined through `evidence` — at most `IN_FLIGHT`
+//! - The survey's seams each mined in one model turn — at most `IN_FLIGHT`
 //!   pending, in seam order — and joined into one document with each
 //!   seam's anchors re-rooted under what it was lent.
-//! - The default survey of one bound seam: a single `evidence` call whose
-//!   outcome passes through unchanged.
+//! - The default survey of one bound seam: a single turn whose outcome
+//!   passes through unchanged.
 //! - The refusals a survey earns before any model call.
 //! - Every failed seam reported together under the first one's class.
 
@@ -161,7 +161,7 @@ fn paths(evidence: &Evidence) -> Vec<&str> {
 }
 
 // An adapter that states no survey mines the bound input whole in one model
-// turn — the request `evidence` builds for `Seam::Whole` — and returns
+// turn — the one `evidence.rs` asserts for `Seam::Whole` — and returns
 // its claims with anchors as answered.
 #[tokio::test]
 async fn default_survey() {
@@ -338,8 +338,8 @@ async fn two_materials_fail() {
     model.assert_exhausted();
 }
 
-// A survey of one is a single `evidence` call: its failure is the source's
-// exactly as `evidence` reported it, with no seam report around it.
+// A survey of one is a single turn: its failure is the source's exactly as
+// the model reported it, with no seam report around it.
 #[tokio::test]
 async fn single_material_passthrough() {
     let model = Scripted::new([Err(ModelError::Backend("down".to_string()))]);

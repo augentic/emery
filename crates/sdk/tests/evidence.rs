@@ -1,4 +1,4 @@
-//! Asserts what an adapter can rely on from `SourceAdapter::evidence`.
+//! Asserts the turn `SourceAdapter::extract` puts to the model for one seam.
 //!
 //! - The request it builds: the embedded prompt as the system, the SDK-owned
 //!   turn around the adapter's seam, the claims-only schema with the
@@ -11,10 +11,17 @@
 //! - The backend's spent rounds surfacing as `bad_request` with the last
 //!   findings.
 //! - A host refusal passing through as `bad_request`.
+//!
+//! Every adapter here surveys into one seam, so each extract is one turn and
+//! its outcome passes through unchanged; the fan-out and join over several
+//! are `extract.rs`'s.
+
+use std::future::{Future, ready};
 
 use emery_sdk::model::{Error as ModelError, ToolCall};
 use emery_sdk::{
-    Context, Doc, Error, Evidence, Seam, SourceAdapter, SourceContent, SourceInput, SourceKind,
+    Context, Doc, Error, Evidence, Model, Seam, SourceAdapter, SourceContent, SourceInput,
+    SourceKind,
 };
 use omnia_test::SeenFormat;
 use omnia_test::guest::Scripted;
@@ -35,6 +42,7 @@ const VALID: &str = r#"{"claims":[
     {"kind":"decision"}
 ]}"#;
 
+// An adapter that states no survey: the default is the bound input, whole.
 struct Probe;
 
 impl SourceAdapter for Probe {
@@ -44,6 +52,31 @@ impl SourceAdapter for Probe {
         DOCS
     }
 }
+
+// An adapter whose survey is the one seam given.
+macro_rules! probe {
+    ($name:ident, $seam:expr) => {
+        struct $name;
+
+        impl SourceAdapter for $name {
+            const KIND: SourceKind = SourceKind::Documentation;
+
+            fn docs() -> &'static [Doc] {
+                DOCS
+            }
+
+            fn survey<P: Model>(
+                _model: &P, _ctx: &Context<'_>,
+            ) -> impl Future<Output = Result<Vec<Seam>, Error>> + Send {
+                ready(Ok(vec![$seam]))
+            }
+        }
+    };
+}
+
+probe!(Noted, Seam::Note("THE NOTE".to_string()));
+probe!(Within, files(["guide/setup.md", "./guide/intro.md", "guide/intro.md"]));
+probe!(Scattered, files(["guide/intro.md", "api.md"]));
 
 fn workspace(root: &str) -> SourceInput {
     SourceInput {
@@ -59,12 +92,16 @@ fn value(text: &str) -> SourceInput {
     }
 }
 
-async fn ask(model: &Scripted, input: &SourceInput, seam: Seam) -> Result<Evidence, Error> {
+fn files<const N: usize>(paths: [&str; N]) -> Seam {
+    Seam::Files(paths.into_iter().map(str::to_string).collect())
+}
+
+async fn ask<A: SourceAdapter>(model: &Scripted, input: &SourceInput) -> Result<Evidence, Error> {
     let ctx = Context {
         adapter_id: "source:probe",
         input,
     };
-    Probe::evidence(model, &ctx, seam).await
+    A::extract(model, &ctx).await
 }
 
 // The request carries the embedded prompt, the turn describing the lent
@@ -75,7 +112,7 @@ async fn ask(model: &Scripted, input: &SourceInput, seam: Seam) -> Result<Eviden
 async fn request_shape() {
     let model = Scripted::answering([VALID]);
 
-    let accepted = ask(&model, &workspace("/lend/docs"), Seam::Whole)
+    let accepted = ask::<Probe>(&model, &workspace("/lend/docs"))
         .await
         .expect("a valid answer is accepted first time");
     assert_eq!(accepted.claims.len(), 2);
@@ -126,7 +163,7 @@ async fn request_shape() {
 async fn inline_value() {
     let model = Scripted::answering([VALID]);
 
-    ask(&model, &value("Ship it."), Seam::Whole).await.expect("accepted");
+    ask::<Probe>(&model, &value("Ship it.")).await.expect("accepted");
     let request = &model.seen()[0];
     assert!(request.workspace.is_none(), "no lend for an inline value");
     let user = &request.messages[0];
@@ -134,11 +171,13 @@ async fn inline_value() {
     assert!(user.contains("no `$SOURCE_DIR` is lent:\n\nShip it.\n\n"), "{user}");
 }
 
+// A `Note` seam stands in the turn where the SDK's rendering of the input
+// would be.
 #[tokio::test]
 async fn prepared_turn() {
     let model = Scripted::answering([VALID]);
 
-    ask(&model, &value("ignored"), Seam::Note("THE NOTE".to_string())).await.expect("accepted");
+    ask::<Noted>(&model, &value("ignored")).await.expect("accepted");
     let user = &model.seen()[0].messages[0];
     assert!(user.contains("\n\nTHE NOTE\n\n"), "{user}");
     assert!(!user.contains("ignored"), "the note replaces the input rendering");
@@ -150,11 +189,8 @@ async fn prepared_turn() {
 #[tokio::test]
 async fn within_turn() {
     let model = Scripted::answering([VALID]);
-    let files = ["guide/setup.md", "./guide/intro.md", "guide/intro.md"];
 
-    ask(&model, &workspace("/lend/docs"), Seam::Files(files.map(str::to_string).into()))
-        .await
-        .expect("accepted");
+    ask::<Within>(&model, &workspace("/lend/docs")).await.expect("accepted");
 
     let request = &model.seen()[0];
     assert_eq!(request.workspace.as_deref(), Some("/lend/docs/guide"), "the common ancestor");
@@ -175,11 +211,8 @@ async fn within_turn() {
 #[tokio::test]
 async fn within_scattered() {
     let model = Scripted::answering([VALID]);
-    let files = ["guide/intro.md", "api.md"];
 
-    ask(&model, &workspace("/lend/docs"), Seam::Files(files.map(str::to_string).into()))
-        .await
-        .expect("accepted");
+    ask::<Scattered>(&model, &workspace("/lend/docs")).await.expect("accepted");
 
     let request = &model.seen()[0];
     assert_eq!(request.workspace.as_deref(), Some("/lend/docs"), "the root is lent");
@@ -212,7 +245,7 @@ async fn doc_refs() {
         ],
     );
 
-    ask(&model, &value("Ship it."), Seam::Whole).await.expect("accepted");
+    ask::<Probe>(&model, &value("Ship it.")).await.expect("accepted");
     let exchanges = model.exchanges();
     assert_eq!(exchanges.len(), 3, "two reference calls, then the check");
     assert_eq!(
@@ -234,7 +267,7 @@ async fn doc_refs() {
 async fn gate_findings() {
     let model = Scripted::answering([r#"{"claims":[{"kind":"requirement"}]}"#, VALID]);
 
-    let accepted = ask(&model, &value("Ship it."), Seam::Whole)
+    let accepted = ask::<Probe>(&model, &value("Ship it."))
         .await
         .expect("the second candidate passes the gate");
     assert_eq!(accepted.claims.len(), 2);
@@ -260,7 +293,7 @@ async fn rounds_exhausted() {
         r#"{"claims":[{"kind":"criterion","id":"Not.Valid","criterion":"x"}]}"#,
     ]);
 
-    let error = ask(&model, &value("Ship it."), Seam::Whole)
+    let error = ask::<Probe>(&model, &value("Ship it."))
         .await
         .expect_err("the only candidate fails the gate");
     let Error::BadRequest { code, description } = error else {
@@ -277,7 +310,7 @@ async fn rounds_exhausted() {
 async fn invalid_request() {
     let model = Scripted::new([Err(ModelError::InvalidRequest("no such model".to_string()))]);
 
-    let error = ask(&model, &value("Ship it."), Seam::Whole).await.expect_err("the host refused");
+    let error = ask::<Probe>(&model, &value("Ship it.")).await.expect_err("the host refused");
     assert!(
         matches!(&error, Error::BadRequest { description, .. } if description == "invalid request: no such model"),
         "{error}"
@@ -291,7 +324,7 @@ async fn invalid_request() {
 async fn stray_kind() {
     let model = Scripted::answering([r#"{"kind":"intent","claims":[{"kind":"decision"}]}"#, VALID]);
 
-    let accepted = ask(&model, &value("Ship it."), Seam::Whole)
+    let accepted = ask::<Probe>(&model, &value("Ship it."))
         .await
         .expect("the second candidate is claims-only");
     assert_eq!(accepted.claims.len(), 2);
