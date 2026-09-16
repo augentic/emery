@@ -68,6 +68,26 @@ pub struct SourceInput {
     pub content: SourceContent,
 }
 
+impl SourceInput {
+    /// Returns the input lending the read-only directory at `root`, cited as `key`.
+    #[must_use]
+    pub fn workspace(key: impl Into<String>, root: impl Into<String>) -> Self {
+        Self {
+            key: key.into(),
+            content: SourceContent::Workspace(root.into()),
+        }
+    }
+
+    /// Returns the input carrying `text` inline, cited as `key`, lending nothing.
+    #[must_use]
+    pub fn value(key: impl Into<String>, text: impl Into<String>) -> Self {
+        Self {
+            key: key.into(),
+            content: SourceContent::Value(text.into()),
+        }
+    }
+}
+
 /// The content of a source: a directory to read, or an inline value.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]

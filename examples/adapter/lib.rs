@@ -7,20 +7,16 @@
 //!
 //! It has the shape of a real adapter: the kind of source it reads, the prose
 //! tree `emery_sdk::include_prose!` embeds, a survey, and a `wasm32`-only
-//! guest that binds the host's model once and exports the `source-adapter`
-//! world through `emery_sdk::source_adapter!`, its `extract` the survey then
-//! `emery_sdk::mine`.
+//! guest that exports the `source-adapter` world through
+//! `emery_sdk::source_adapter!`, its `extract` the survey then
+//! `emery_sdk::mine` on the host's model.
 
 #[cfg(target_arch = "wasm32")]
 mod guest {
-    use emery_sdk::{AdapterMetadata, Context, Doc, Error, Evidence, Model, SourceKind};
+    use emery_sdk::{AdapterMetadata, Context, Doc, Error, Evidence, Provider, SourceKind};
 
     // The extraction prompt and its reference, from the tree beside this file.
     static DOCS: &[Doc] = emery_sdk::include_prose!("prose");
-
-    // The adapter's capabilities on the WASI defaults: the model alone.
-    struct Provider;
-    impl Model for Provider {}
 
     emery_sdk::source_adapter!(metadata, extract);
 

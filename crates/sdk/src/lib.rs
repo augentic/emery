@@ -6,13 +6,15 @@
 //! [`source_adapter!`] over two plain fns of the adapter's own: `metadata`,
 //! answered with [`metadata`] for the kind of source it reads, and `extract`,
 //! which runs [`mine`] over the [seams](#vocabulary) the adapter's own survey
-//! chose, on the [`Model`] the guest binds once. Adapter code is left with
-//! what is specific to its source: the kind it reads, the documents it
-//! embeds, and how its input cuts.
+//! chose, on the host's model. Adapter code is left with what is specific to
+//! its source: the kind it reads, the documents it embeds, and how its input
+//! cuts.
 //!
-//! The contract types come from `emery-adapter` and are re-exported here;
-//! on `wasm32`, so are the world's bindings (`export`), which the macro
-//! expands against and a guest written by hand implements directly.
+//! The contract types come from `emery-adapter` and are re-exported here. On
+//! `wasm32` the crate also carries the world's bindings (`export`), which the
+//! macro expands against and a guest written by hand implements directly,
+//! and `Provider`, the host's model on omnia's WASI defaults, which a guest
+//! lends to [`mine`] and to a survey by model.
 //! [`Source`], the capability the engine calls adapters through, is
 //! re-exported for a program that drives an adapter the way the engine does;
 //! an adapter exports the world, never implements `Source`. The embedded
@@ -23,9 +25,8 @@
 //! # Examples
 //!
 //! The smallest complete adapter declares the kind of source it reads, embeds
-//! its prompt, keeps a brief whole, binds the host's model once, and exports
-//! the world on `wasm32` alone — so the crate builds natively and its survey
-//! is tested there:
+//! its prompt, keeps a brief whole, and exports the world on `wasm32` alone —
+//! so the crate builds natively and its survey is tested there:
 //!
 //! ```
 //! use emery_sdk::{Context, Doc, Error, Seam, SourceKind};
@@ -44,11 +45,7 @@
 //!
 //! #[cfg(target_arch = "wasm32")]
 //! mod guest {
-//!     use emery_sdk::{AdapterMetadata, Context, Error, Evidence, Model};
-//!
-//!     // The adapter's capabilities on the WASI defaults: the model alone.
-//!     struct Provider;
-//!     impl Model for Provider {}
+//!     use emery_sdk::{AdapterMetadata, Context, Error, Evidence, Provider};
 //!
 //!     emery_sdk::source_adapter!(metadata, extract);
 //!
@@ -106,6 +103,9 @@ pub use emery_adapter::source::{
 };
 pub use emery_prose::{Doc, include_prose};
 pub use omnia_sdk::{Error, Model, bad_gateway, bad_request, model, not_found, server_error};
+
+#[cfg(target_arch = "wasm32")]
+pub use self::guest::Provider;
 
 /// Lookups over an adapter's embedded documents, by tree-relative path.
 pub mod prose {

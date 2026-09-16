@@ -19,7 +19,7 @@ use std::os::unix::fs::symlink;
 use std::path::Path;
 
 use emery_sdk::survey::{self, Entry, Surface};
-use emery_sdk::{Context, Doc, Error, SourceContent, SourceInput};
+use emery_sdk::{Context, Doc, Error, SourceInput};
 use omnia_test::SeenFormat;
 use omnia_test::guest::Scripted;
 
@@ -52,13 +52,6 @@ const FILES: &[&str] = &[
     "spec.md",
     "types/index.d.ts",
 ];
-
-fn workspace(root: &str) -> SourceInput {
-    SourceInput {
-        key: "code".to_string(),
-        content: SourceContent::Workspace(root.to_string()),
-    }
-}
 
 // The suite's policy, stated as an adapter states one: no `services/`
 // directory, no declaration file.
@@ -216,7 +209,7 @@ async fn model_request() {
     let tmp = tempfile::tempdir().expect("tempdir");
     let root = tree(tmp.path(), FILES);
 
-    survey(&model, DOCS, &workspace(root)).await.expect("accepted");
+    survey(&model, DOCS, &SourceInput::workspace("code", root)).await.expect("accepted");
 
     let seen = model.seen();
     assert_eq!(seen.len(), 1, "one survey turn");
@@ -257,7 +250,8 @@ async fn model_surfaces() {
     let tmp = tempfile::tempdir().expect("tempdir");
     let root = tree(tmp.path(), FILES);
 
-    let surfaces = survey(&model, DOCS, &workspace(root)).await.expect("accepted");
+    let surfaces =
+        survey(&model, DOCS, &SourceInput::workspace("code", root)).await.expect("accepted");
 
     assert_eq!(
         surfaces,
@@ -282,7 +276,8 @@ async fn model_normalised() {
     let tmp = tempfile::tempdir().expect("tempdir");
     let root = tree(tmp.path(), FILES);
 
-    let surfaces = survey(&model, DOCS, &workspace(root)).await.expect("accepted");
+    let surfaces =
+        survey(&model, DOCS, &SourceInput::workspace("code", root)).await.expect("accepted");
 
     assert_eq!(surfaces, [surface("POST /orders", "routes/orders.ts")]);
     assert_eq!(model.exchanges().len(), 1, "one turn, accepted");
@@ -314,8 +309,9 @@ async fn model_corrections() {
     let tmp = tempfile::tempdir().expect("tempdir");
     let root = tree(tmp.path(), FILES);
 
-    let surfaces =
-        survey(&model, DOCS, &workspace(root)).await.expect("the second candidate is an inventory");
+    let surfaces = survey(&model, DOCS, &SourceInput::workspace("code", root))
+        .await
+        .expect("the second candidate is an inventory");
 
     assert_eq!(surfaces, [surface("POST /orders", "routes/orders.ts")]);
     let exchanges = model.exchanges();
@@ -348,7 +344,9 @@ async fn model_stray_key() {
     let tmp = tempfile::tempdir().expect("tempdir");
     let root = tree(tmp.path(), FILES);
 
-    survey(&model, DOCS, &workspace(root)).await.expect("the second candidate parses");
+    survey(&model, DOCS, &SourceInput::workspace("code", root))
+        .await
+        .expect("the second candidate parses");
 
     let exchanges = model.exchanges();
     let correction = exchanges[0].outcome.as_ref().expect_err("the stray key is refused");
@@ -363,7 +361,7 @@ async fn model_rounds_exhausted() {
     let tmp = tempfile::tempdir().expect("tempdir");
     let root = tree(tmp.path(), FILES);
 
-    let error = survey(&model, DOCS, &workspace(root))
+    let error = survey(&model, DOCS, &SourceInput::workspace("code", root))
         .await
         .expect_err("the only candidate is entered at no file");
 
@@ -383,7 +381,9 @@ async fn model_missing_prompt() {
     let tmp = tempfile::tempdir().expect("tempdir");
     let root = tree(tmp.path(), FILES);
 
-    let error = survey(&model, MUTE, &workspace(root)).await.expect_err("no prompt to ask with");
+    let error = survey(&model, MUTE, &SourceInput::workspace("code", root))
+        .await
+        .expect_err("no prompt to ask with");
 
     assert_eq!(error.code(), "server_error");
     assert!(error.description().contains("`prompts/survey.md` is not embedded"), "{error}");
@@ -396,10 +396,7 @@ async fn model_missing_prompt() {
 #[tokio::test]
 async fn model_inline_value() {
     let model = Scripted::default();
-    let input = SourceInput {
-        key: "code".to_string(),
-        content: SourceContent::Value("export const x = 1;".to_string()),
-    };
+    let input = SourceInput::value("code", "export const x = 1;");
 
     let error = survey(&model, DOCS, &input).await.expect_err("no tree to survey");
 
@@ -418,8 +415,9 @@ async fn model_no_surfaces() {
     let tmp = tempfile::tempdir().expect("tempdir");
     let root = tree(tmp.path(), &[]);
 
-    let surfaces =
-        survey(&model, DOCS, &workspace(root)).await.expect("an empty inventory is accepted");
+    let surfaces = survey(&model, DOCS, &SourceInput::workspace("code", root))
+        .await
+        .expect("an empty inventory is accepted");
 
     assert!(surfaces.is_empty());
     assert_eq!(model.exchanges().len(), 1, "one turn, accepted");

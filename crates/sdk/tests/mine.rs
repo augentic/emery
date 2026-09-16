@@ -13,7 +13,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 use emery_sdk::model::{Error as ModelError, Reply, Request, ToolCall};
-use emery_sdk::{Backing, Context, Doc, Error, Evidence, Model, Seam, SourceContent, SourceInput};
+use emery_sdk::{Backing, Context, Doc, Error, Evidence, Model, Seam, SourceInput};
 use omnia_test::guest::Scripted;
 
 const DOCS: &[Doc] = &[Doc {
@@ -91,20 +91,6 @@ impl Model for ByFile {
     }
 }
 
-fn workspace(root: &str) -> SourceInput {
-    SourceInput {
-        key: "docs".to_string(),
-        content: SourceContent::Workspace(root.to_string()),
-    }
-}
-
-fn value(text: &str) -> SourceInput {
-    SourceInput {
-        key: "brief".to_string(),
-        content: SourceContent::Value(text.to_string()),
-    }
-}
-
 fn files<const N: usize>(paths: [&str; N]) -> Seam {
     Seam::Files(paths.into_iter().map(str::to_string).collect())
 }
@@ -128,8 +114,9 @@ fn paths(evidence: &Evidence) -> Vec<&str> {
 async fn whole() {
     let model = Scripted::answering([note("a")]);
 
-    let evidence =
-        mine(&model, &workspace("./docs"), &[Seam::Whole]).await.expect("one bound turn");
+    let evidence = mine(&model, &SourceInput::workspace("docs", "./docs"), &[Seam::Whole])
+        .await
+        .expect("one bound turn");
 
     assert_eq!(paths(&evidence), ["a/note.md#L1"]);
     assert_eq!(evidence.claims[0].backing, Some(Backing::Path("a/note.md".to_string())));
@@ -157,7 +144,9 @@ async fn three_seams() {
         .file("c/z.md", Scripted::answering([note("c")]));
     let seams = [files(["a/x.md"]), files(["b/y.md"]), files(["c/z.md"])];
 
-    let evidence = mine(&model, &workspace("./docs"), &seams).await.expect("three seams join");
+    let evidence = mine(&model, &SourceInput::workspace("docs", "./docs"), &seams)
+        .await
+        .expect("three seams join");
 
     assert_eq!(paths(&evidence), ["a/note.md#L1", "b/note.md#L1", "c/note.md#L1"]);
     let backings: Vec<_> = evidence.claims.iter().map(|claim| claim.backing.clone()).collect();
@@ -191,7 +180,9 @@ async fn concurrent() {
     }
     let seams: Vec<_> = (0..=4).map(|i| files([format!("d{i}/f.md").as_str()])).collect();
 
-    let evidence = mine(&model, &workspace("./docs"), &seams).await.expect("every seam joins");
+    let evidence = mine(&model, &SourceInput::workspace("docs", "./docs"), &seams)
+        .await
+        .expect("every seam joins");
 
     assert_eq!(model.peak(), 4, "5 seams hold at most 4 completions pending");
     let expected: Vec<String> = (0..=4).map(|i| format!("d{i}/note.md#L1")).collect();
@@ -204,7 +195,9 @@ async fn concurrent() {
 async fn no_seams() {
     let model = Scripted::default();
 
-    let error = mine(&model, &workspace("./docs"), &[]).await.expect_err("nothing to mine");
+    let error = mine(&model, &SourceInput::workspace("docs", "./docs"), &[])
+        .await
+        .expect_err("nothing to mine");
 
     assert_eq!(error.code(), "bad_request");
     assert!(error.description().contains("nothing to mine"), "{error}");
@@ -219,7 +212,9 @@ async fn escaping_path() {
     let model = Scripted::default();
     let seams = [files(["a/x.md"]), files(["../secret.md"])];
 
-    let error = mine(&model, &workspace("./docs"), &seams).await.expect_err("a path escapes");
+    let error = mine(&model, &SourceInput::workspace("docs", "./docs"), &seams)
+        .await
+        .expect_err("a path escapes");
 
     assert_eq!(error.code(), "bad_request");
     assert!(error.description().contains("`../secret.md` escapes the source root"), "{error}");
@@ -232,7 +227,9 @@ async fn escaping_path() {
 async fn empty_files() {
     let model = Scripted::default();
 
-    let error = mine(&model, &workspace("./docs"), &[files([])]).await.expect_err("no file");
+    let error = mine(&model, &SourceInput::workspace("docs", "./docs"), &[files([])])
+        .await
+        .expect_err("no file");
 
     assert_eq!(error.code(), "bad_request");
     assert!(error.description().contains("names no file"), "{error}");
@@ -245,8 +242,9 @@ async fn empty_files() {
 async fn files_value() {
     let model = Scripted::default();
 
-    let error =
-        mine(&model, &value("Ship it."), &[files(["a/x.md"])]).await.expect_err("no tree to lend");
+    let error = mine(&model, &SourceInput::value("brief", "Ship it."), &[files(["a/x.md"])])
+        .await
+        .expect_err("no tree to lend");
 
     assert_eq!(error.code(), "server_error");
     assert!(error.description().contains("not an inline value"), "{error}");
@@ -262,7 +260,9 @@ async fn one_seam_fails() {
         .file("b/y.md", Scripted::new([Err(ModelError::Backend("down".to_string()))]));
     let seams = [files(["a/x.md"]), files(["b/y.md"])];
 
-    let error = mine(&model, &workspace("./docs"), &seams).await.expect_err("one seam failed");
+    let error = mine(&model, &SourceInput::workspace("docs", "./docs"), &seams)
+        .await
+        .expect_err("one seam failed");
 
     assert_eq!(error.code(), "bad_gateway");
     assert_eq!(
@@ -285,7 +285,9 @@ async fn two_seams_fail() {
         .file("c/z.md", Scripted::new([Err(ModelError::Backend("down".to_string()))]));
     let seams = [files(["a/x.md"]), files(["b/y.md"]), files(["c/z.md"])];
 
-    let error = mine(&model, &workspace("./docs"), &seams).await.expect_err("two seams failed");
+    let error = mine(&model, &SourceInput::workspace("docs", "./docs"), &seams)
+        .await
+        .expect_err("two seams failed");
 
     assert_eq!(error.code(), "bad_request", "the first failure's class");
     assert_eq!(
@@ -302,8 +304,9 @@ async fn two_seams_fail() {
 async fn single_seam_passthrough() {
     let model = Scripted::new([Err(ModelError::Backend("down".to_string()))]);
 
-    let error =
-        mine(&model, &workspace("./docs"), &[Seam::Whole]).await.expect_err("the one seam failed");
+    let error = mine(&model, &SourceInput::workspace("docs", "./docs"), &[Seam::Whole])
+        .await
+        .expect_err("the one seam failed");
 
     assert_eq!(error.code(), "bad_gateway");
     assert_eq!(error.description(), "backend failure: down");
