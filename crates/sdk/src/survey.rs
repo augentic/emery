@@ -14,8 +14,7 @@ use omnia_sdk::{Error, Model, server_error};
 use schemars::JsonSchema;
 use serde::Deserialize;
 
-use crate::workspace;
-use crate::{Context, path, references};
+use crate::{Context, path, references, workspace};
 
 /// Returns the surfaces discovered by the model in a workspace source.
 ///
