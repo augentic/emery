@@ -4,7 +4,7 @@
 //! filter receives each [`Entry`] and may prune directories or omit files.
 //! Emery's `.omnia/` directories and generated documents are always excluded.
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use anyhow::Context as _;
 use omnia_sdk::{Error, bad_request};
@@ -114,7 +114,7 @@ pub(crate) fn excluded(entry: Entry<'_>) -> bool {
 pub(crate) fn offered_file(
     root: &str, relative: &str, keep: &mut impl FnMut(Entry<'_>) -> bool,
 ) -> Result<(), String> {
-    let mut current = Path::new(root);
+    let mut current = PathBuf::from(root);
     let mut offset = 0;
     let mut components = relative.split('/');
     let Some(first) = components.next() else {
@@ -124,13 +124,11 @@ pub(crate) fn offered_file(
 
     loop {
         let rel_path = &relative[..offset + component.len()];
-        let entry = match find_entry(current, component) {
-            Some(entry) => entry,
-            None => return Err(format!("no file at `{relative}`")),
+        let Some(entry) = find_entry(&current, component) else {
+            return Err(format!("no file at `{relative}`"));
         };
-        let file_type = match entry.file_type() {
-            Ok(file_type) => file_type,
-            Err(_) => return Err(format!("no file at `{relative}`")),
+        let Ok(file_type) = entry.file_type() else {
+            return Err(format!("no file at `{relative}`"));
         };
 
         match components.next() {

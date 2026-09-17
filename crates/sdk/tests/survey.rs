@@ -319,7 +319,8 @@ async fn model_symlink_dir() {
         .expect("the second candidate is an inventory");
 
     assert_eq!(surfaces, [surface("POST /orders", "routes/orders.ts")]);
-    let correction = model.exchanges()[0].outcome.as_ref().expect_err("the link is refused");
+    let exchanges = model.exchanges();
+    let correction = exchanges[0].outcome.as_ref().expect_err("the link is refused");
     assert!(correction.contains("no file at `link/nested/file.ts`"), "{correction}");
 }
 
