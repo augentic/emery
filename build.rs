@@ -55,11 +55,10 @@ fn build_engine(manifest_dir: &Path, out_dir: &Path, release: bool) -> PathBuf {
     if release {
         child.arg("--release");
     }
-    
-    // sanitize first so ambient CARGO_TARGET_DIR removal cannot clobber this value.
-    sanitize(&mut child);
+
+    // engine build environment
+    child = sanitize(child);
     child.env("CARGO_TARGET_DIR", &target_dir);
-    // wasmtime ignores guest DWARF unless asked
     child.env("CARGO_PROFILE_DEV_DEBUG", "0");
 
     let status = child.status().unwrap_or_else(|err| panic!("failed to spawn engine build: {err}"));
@@ -82,16 +81,19 @@ fn nested_dir(out_dir: &Path) -> PathBuf {
 }
 
 // Strip host's env vars from the child's environment.
-fn sanitize(child: &mut Command) {
+fn sanitize(mut child: Command) -> Command {
     for (key, _) in std::env::vars_os() {
         let Some(key) = key.to_str() else { continue };
+
         let cargo = key.starts_with("CARGO_") && !matches!(key, "CARGO_HOME" | "CARGO_NET_OFFLINE");
         let rustc = matches!(
             key,
             "RUSTFLAGS" | "RUSTDOCFLAGS" | "RUSTC" | "RUSTC_WRAPPER" | "RUSTC_WORKSPACE_WRAPPER"
         );
+        
         if cargo || rustc {
             child.env_remove(key);
         }
     }
+    child
 }
