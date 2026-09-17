@@ -21,7 +21,7 @@ mod guest {
 
     async fn extract<P: Model>(ctx: &Context<'_, P>) -> Result<Evidence, Error> {
         let seams = super::survey(ctx.input)?;
-        emery_sdk::mine(ctx, super::DOCS, &seams).await
+        emery_sdk::extract(ctx, super::DOCS, &seams).await
     }
 }
 

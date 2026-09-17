@@ -41,7 +41,7 @@ const CONCURRENT: usize = 4;
 /// - Returns [`Error::ServerError`] when [`Seam::Files`] is used with inline
 ///   input or `docs` does not contain `prompts/extract.md`.
 /// - Returns [`Error::BadGateway`] when a model tool or transport fails.
-pub async fn mine<P: Model>(
+pub async fn extract<P: Model>(
     ctx: &Context<'_, P>, docs: &'static [Doc], seams: &[Seam],
 ) -> Result<Evidence, Error> {
     let key = &ctx.input.key;

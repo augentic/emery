@@ -93,13 +93,13 @@ fn files<const N: usize>(paths: [&str; N]) -> Seam {
     Seam::Files(paths.into_iter().map(str::to_string).collect())
 }
 
-async fn mine<M: Model>(model: &M, input: &SourceInput, seams: &[Seam]) -> Result<Evidence, Error> {
+async fn extract<M: Model>(model: &M, input: &SourceInput, seams: &[Seam]) -> Result<Evidence, Error> {
     let ctx = Context {
         adapter_id: "probe",
         input,
         model,
     };
-    emery_sdk::mine(&ctx, DOCS, seams).await
+    emery_sdk::extract(&ctx, DOCS, seams).await
 }
 
 // Each claim's `path` anchor, in document order.
@@ -113,7 +113,7 @@ fn paths(evidence: &Evidence) -> Vec<&str> {
 async fn whole() {
     let model = Scripted::answering([note("a")]);
 
-    let evidence = mine(&model, &SourceInput::workspace("docs", "./docs"), &[Seam::Whole])
+    let evidence = extract(&model, &SourceInput::workspace("docs", "./docs"), &[Seam::Whole])
         .await
         .expect("one bound turn");
 
@@ -143,7 +143,7 @@ async fn three_seams() {
         .file("c/z.md", Scripted::answering([note("c")]));
     let seams = [files(["a/x.md"]), files(["b/y.md"]), files(["c/z.md"])];
 
-    let evidence = mine(&model, &SourceInput::workspace("docs", "./docs"), &seams)
+    let evidence = extract(&model, &SourceInput::workspace("docs", "./docs"), &seams)
         .await
         .expect("three seams join");
 
@@ -179,7 +179,7 @@ async fn concurrent() {
     }
     let seams: Vec<_> = (0..=4).map(|i| files([format!("d{i}/f.md").as_str()])).collect();
 
-    let evidence = mine(&model, &SourceInput::workspace("docs", "./docs"), &seams)
+    let evidence = extract(&model, &SourceInput::workspace("docs", "./docs"), &seams)
         .await
         .expect("every seam joins");
 
@@ -189,17 +189,17 @@ async fn concurrent() {
     model.assert_exhausted();
 }
 
-// No seam is refused before any model call: the input had nothing to mine.
+// No seam is refused before any model call: the input had nothing to extract.
 #[tokio::test]
 async fn no_seams() {
     let model = Scripted::default();
 
-    let error = mine(&model, &SourceInput::workspace("docs", "./docs"), &[])
+    let error = extract(&model, &SourceInput::workspace("docs", "./docs"), &[])
         .await
-        .expect_err("nothing to mine");
+        .expect_err("nothing to extract");
 
     assert_eq!(error.code(), "bad_request");
-    assert!(error.description().contains("nothing to mine"), "{error}");
+    assert!(error.description().contains("nothing to extract"), "{error}");
     assert!(model.seen().is_empty(), "no turn was spent");
 }
 
@@ -211,7 +211,7 @@ async fn escaping_path() {
     let model = Scripted::default();
     let seams = [files(["a/x.md"]), files(["../secret.md"])];
 
-    let error = mine(&model, &SourceInput::workspace("docs", "./docs"), &seams)
+    let error = extract(&model, &SourceInput::workspace("docs", "./docs"), &seams)
         .await
         .expect_err("a path escapes");
 
@@ -220,13 +220,13 @@ async fn escaping_path() {
     assert!(model.seen().is_empty(), "no turn was spent");
 }
 
-// A `Files` seam naming no file has nothing to mine; refused as the
+// A `Files` seam naming no file has nothing to extract; refused as the
 // input's, before any model call.
 #[tokio::test]
 async fn empty_files() {
     let model = Scripted::default();
 
-    let error = mine(&model, &SourceInput::workspace("docs", "./docs"), &[files([])])
+    let error = extract(&model, &SourceInput::workspace("docs", "./docs"), &[files([])])
         .await
         .expect_err("no file");
 
@@ -241,7 +241,7 @@ async fn empty_files() {
 async fn files_value() {
     let model = Scripted::default();
 
-    let error = mine(&model, &SourceInput::value("brief", "Ship it."), &[files(["a/x.md"])])
+    let error = extract(&model, &SourceInput::value("brief", "Ship it."), &[files(["a/x.md"])])
         .await
         .expect_err("no tree to lend");
 
@@ -259,7 +259,7 @@ async fn one_seam_fails() {
         .file("b/y.md", Scripted::new([Err(ModelError::Backend("down".to_string()))]));
     let seams = [files(["a/x.md"]), files(["b/y.md"])];
 
-    let error = mine(&model, &SourceInput::workspace("docs", "./docs"), &seams)
+    let error = extract(&model, &SourceInput::workspace("docs", "./docs"), &seams)
         .await
         .expect_err("one seam failed");
 
@@ -284,7 +284,7 @@ async fn two_seams_fail() {
         .file("c/z.md", Scripted::new([Err(ModelError::Backend("down".to_string()))]));
     let seams = [files(["a/x.md"]), files(["b/y.md"]), files(["c/z.md"])];
 
-    let error = mine(&model, &SourceInput::workspace("docs", "./docs"), &seams)
+    let error = extract(&model, &SourceInput::workspace("docs", "./docs"), &seams)
         .await
         .expect_err("two seams failed");
 
@@ -303,7 +303,7 @@ async fn two_seams_fail() {
 async fn single_seam_passthrough() {
     let model = Scripted::new([Err(ModelError::Backend("down".to_string()))]);
 
-    let error = mine(&model, &SourceInput::workspace("docs", "./docs"), &[Seam::Whole])
+    let error = extract(&model, &SourceInput::workspace("docs", "./docs"), &[Seam::Whole])
         .await
         .expect_err("the one seam failed");
 

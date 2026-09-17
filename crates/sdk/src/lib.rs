@@ -46,7 +46,7 @@
 //!
 //!     async fn extract<P: Model>(ctx: &Context<'_, P>) -> Result<Evidence, Error> {
 //!         let seams = super::survey(ctx.input)?;
-//!         emery_sdk::mine(ctx, super::DOCS, &seams).await
+//!         emery_sdk::extract(ctx, super::DOCS, &seams).await
 //!     }
 //! }
 //! # fn main() {}
@@ -70,9 +70,9 @@
 //! Fallible APIs return [`Error`]. Use [`bad_request!`] when an adapter rejects
 //! unusable input.
 
+mod extract;
 #[doc(hidden)]
 pub mod guest;
-mod mine;
 mod path;
 mod references;
 pub mod survey;
@@ -96,7 +96,7 @@ pub mod prose {
     pub use emery_prose::{body, check, find};
 }
 
-pub use self::mine::{Context, Seam, mine};
+pub use self::extract::{Context, Seam, extract};
 
 /// Returns the `metadata` answer for an adapter reading `kind` sources.
 ///

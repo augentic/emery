@@ -39,7 +39,7 @@ async fn ask(model: &Scripted, input: &SourceInput, seam: Seam) -> Result<Eviden
         input,
         model,
     };
-    emery_sdk::mine(&ctx, DOCS, &[seam]).await
+    emery_sdk::extract(&ctx, DOCS, &[seam]).await
 }
 
 // The request carries the embedded prompt, the turn describing the lent
@@ -109,7 +109,7 @@ async fn missing_prompt() {
     };
 
     let error =
-        emery_sdk::mine(&ctx, &[], &[Seam::Whole]).await.expect_err("no prompt to ask with");
+        emery_sdk::extract(&ctx, &[], &[Seam::Whole]).await.expect_err("no prompt to ask with");
 
     assert_eq!(error.code(), "server_error");
     assert!(error.description().contains("`prompts/extract.md` is not embedded"), "{error}");
