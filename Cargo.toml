@@ -145,7 +145,6 @@ emery-adapter = { path = "crates/adapter" }
 emery-cli = { path = "crates/cli" }
 emery-engine = { path = "crates/engine" }
 emery-prose = { path = "crates/prose" }
-emery-prose-macros = { path = "crates/prose-macros" }
 emery-sdk = { path = "crates/sdk" }
 
 omnia = { version = "0.36.0", default-features = false, features = ["jit", "link", "plugin"] }

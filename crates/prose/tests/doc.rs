@@ -7,7 +7,7 @@
 
 use emery_prose::{Doc, body, find};
 
-// A sorted table, as the `prose` codegen emits.
+// A table written by hand, as a probe's is; `prose!` expands to the same shape.
 static DOCS: &[Doc] = &[
     Doc {
         path: "prompts/build.md",

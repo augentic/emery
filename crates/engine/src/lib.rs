@@ -90,5 +90,33 @@ pub trait Provider:
 
 impl<P: Model + Source + StateStore + BlobStore + Plugins + Send + Sync + 'static> Provider for P {}
 
-// The link-checked synthesis corpus, embedded at compile time.
-static DOCS: &[emery_prose::Doc] = emery_prose::include_prose!("../prose");
+// The synthesis corpus, embedded at compile time; `tests::corpus` holds the
+// list to the tree.
+static DOCS: &[emery_prose::Doc] = emery_prose::prose!(
+    "../prose",
+    [
+        "synthesis/authority.md",
+        "synthesis/claim-landing.md",
+        "synthesis/design-format.md",
+        "synthesis/grouping.md",
+        "synthesis/requirement-block.md",
+        "synthesis/spec-format.md",
+        "synthesis/synthesise.md",
+        "synthesis/tags.md",
+    ]
+);
+
+#[cfg(test)]
+mod tests {
+    use std::path::Path;
+
+    // Keep (entry-point-unreachable): a synthesis document the list leaves
+    // out, or a link no listed document answers, is invisible to every run
+    // until a brief asks for it.
+    #[test]
+    fn corpus() {
+        let tree = Path::new(env!("CARGO_MANIFEST_DIR")).join("prose");
+        let findings = emery_prose::check(super::DOCS, &tree);
+        assert!(findings.is_empty(), "{}", findings.join("\n"));
+    }
+}

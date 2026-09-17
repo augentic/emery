@@ -1,9 +1,9 @@
 //! One embedded document, and the lookups over a table of them.
 //!
 //! A [`Doc`] is one embedded document: its tree-relative path and its body.
-//! [`find`] and [`body`] look one up in a table sorted by path. Paths are the
-//! stable names prompts and reference tools address documents by, so lookup
-//! by path is the whole interface.
+//! [`find`] and [`body`] look one up in a table by path. Paths are the stable
+//! names prompts and reference tools address documents by, so lookup by path
+//! is the whole interface.
 
 /// One embedded document: its tree-relative path and its Markdown body.
 #[derive(Clone, Copy, Debug)]
@@ -15,8 +15,6 @@ pub struct Doc {
 }
 
 /// Returns the document at `path`, if the table embeds one.
-///
-/// `docs` must be sorted by path, as a generated table is.
 ///
 /// # Examples
 ///
@@ -39,7 +37,7 @@ pub struct Doc {
 /// ```
 #[must_use]
 pub fn find<'d>(docs: &'d [Doc], path: &str) -> Option<&'d Doc> {
-    docs.binary_search_by(|doc| doc.path.cmp(path)).ok().map(|idx| &docs[idx])
+    docs.iter().find(|doc| doc.path == path)
 }
 
 /// Returns the body of the document at `path`, if the table embeds one.

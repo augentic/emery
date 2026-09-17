@@ -21,8 +21,8 @@
 //! re-exported for a program that drives an adapter the way the engine does;
 //! an adapter exports the world, never implements `Source`. The embedded
 //! documents come from `emery-prose` and are re-exported too — [`Doc`],
-//! [`include_prose!`], and the lookups in [`mod@prose`] — so an adapter's
-//! `[dependencies]` is this crate alone.
+//! [`prose!`], and the lookups and the check in [`mod@prose`] — so an
+//! adapter's `[dependencies]` is this crate alone.
 //!
 //! # Examples
 //!
@@ -63,11 +63,11 @@
 //! # fn main() {}
 //! ```
 //!
-//! A shipped adapter embeds its `prose/` tree with
-//! `include_prose!("../prose")` in its guest module rather than writing the
-//! table by hand, and a tree adapter lists its input through
-//! [`survey::list`] or asks the model for its surfaces through
-//! [`survey::surfaces`].
+//! A shipped adapter lists the documents of its `prose/` tree with
+//! `prose!("../prose", [..])` at its crate root rather than writing the
+//! bodies by hand, so its suite can hold the list to the tree with
+//! [`prose::check`]; a tree adapter lists its input through [`survey::list`]
+//! or asks the model for its surfaces through [`survey::surfaces`].
 //!
 //! # Vocabulary
 //!
@@ -105,15 +105,15 @@ pub use emery_adapter::source::{
     AdapterMetadata, Backing, Claim, ClaimKind, Evidence, Source, SourceContent, SourceInput,
     SourceKind,
 };
-pub use emery_prose::{Doc, include_prose};
+pub use emery_prose::{Doc, prose};
 pub use omnia_sdk::{Error, Model, bad_gateway, bad_request, model, not_found, server_error};
 
 #[cfg(target_arch = "wasm32")]
 pub use self::guest::Provider;
 
-/// Lookups over an adapter's embedded documents, by tree-relative path.
+/// Lookups over an adapter's embedded documents by tree-relative path, and the check that holds the table to its tree.
 pub mod prose {
-    pub use emery_prose::{body, find};
+    pub use emery_prose::{body, check, find};
 }
 
 pub use self::mine::{Context, Seam, mine};

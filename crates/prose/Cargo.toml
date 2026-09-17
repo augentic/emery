@@ -5,7 +5,7 @@ edition.workspace = true
 license.workspace = true
 repository.workspace = true
 rust-version.workspace = true
-description = "Embedded prompt corpora: include_prose! embeds a link-checked Markdown tree as a Doc table at compile time, and find / body look a document up by path"
+description = "Embedded prompt corpora: prose! embeds the listed documents of a Markdown tree as a Doc table at compile time, find / body look a document up by path, and check holds the table to the tree"
 categories = ["development-tools"]
 keywords = ["emery", "prose", "embed"]
 readme = "../../README.md"
@@ -13,5 +13,5 @@ readme = "../../README.md"
 [lints]
 workspace = true
 
-[dependencies]
-emery-prose-macros.workspace = true
+[dev-dependencies]
+tempfile.workspace = true

@@ -1084,14 +1084,6 @@ dependencies = [
 name = "emery-prose"
 version = "0.38.0"
 dependencies = [
- "emery-prose-macros",
-]
-
-[[package]]
-name = "emery-prose-macros"
-version = "0.38.0"
-dependencies = [
- "anyhow",
  "tempfile",
 ]
 

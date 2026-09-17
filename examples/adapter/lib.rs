@@ -6,17 +6,20 @@
 //! adapters repository.
 //!
 //! It has the shape of a real adapter: the kind of source it reads, the prose
-//! tree `emery_sdk::include_prose!` embeds, a survey, and a `wasm32`-only
-//! guest that exports the `source-adapter` world through
+//! it lists with `emery_sdk::prose!`, a survey, and a `wasm32`-only guest
+//! that exports the `source-adapter` world through
 //! `emery_sdk::source_adapter!`, its `extract` the survey then
 //! `emery_sdk::mine` over the call's context.
 
+use emery_sdk::{Doc, Error, Seam, SourceContent, SourceInput, bad_request};
+
+/// The prose the guest embeds: the extraction prompt and the one reference it links.
+pub static DOCS: &[Doc] =
+    emery_sdk::prose!("prose", ["prompts/extract.md", "references/greeting.md"]);
+
 #[cfg(target_arch = "wasm32")]
 mod guest {
-    use emery_sdk::{AdapterMetadata, Context, Doc, Error, Evidence, Model, SourceKind};
-
-    // The extraction prompt and its reference, from the tree beside this file.
-    static DOCS: &[Doc] = emery_sdk::include_prose!("prose");
+    use emery_sdk::{AdapterMetadata, Context, Error, Evidence, Model, SourceKind};
 
     emery_sdk::source_adapter!(metadata, extract);
 
@@ -26,11 +29,9 @@ mod guest {
 
     async fn extract<P: Model>(ctx: &Context<'_, P>) -> Result<Evidence, Error> {
         let seams = super::survey(ctx.input)?;
-        emery_sdk::mine(ctx, DOCS, &seams).await
+        emery_sdk::mine(ctx, super::DOCS, &seams).await
     }
 }
-
-use emery_sdk::{Error, Seam, SourceContent, SourceInput, bad_request};
 
 /// Returns the one seam to mine: a bound brief whole, or a tree with the fallback noted.
 ///
