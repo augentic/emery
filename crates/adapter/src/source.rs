@@ -1,14 +1,11 @@
-//! The source axis of the contract.
+//! Defines source-adapter inputs, outputs, and the engine-facing capability.
 //!
-//! A source adapter is given a [`SourceInput`] — a key and a workspace or
-//! inline value — and returns [`Evidence`], a document of typed claims. This
-//! module carries those records, the claim gate every document must pass
-//! ([`Evidence::findings`]), and the [`Source`] capability the engine calls
-//! source adapters through.
+//! [`SourceInput`] identifies the source to read. An adapter returns
+//! [`Evidence`], whose claims are validated by [`Evidence::findings`]. The
+//! engine invokes adapters through [`Source`].
 //!
-//! On `wasm32` the module also carries the WIT bindings both sides ride:
-//! `export`, the world an adapter's guest implements, which `emery-sdk`
-//! re-exports for it.
+//! On WebAssembly targets, `export` contains the guest interface implemented
+//! by an adapter.
 
 #[cfg(target_arch = "wasm32")]
 mod bindings;

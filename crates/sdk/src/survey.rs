@@ -1,12 +1,9 @@
-//! Finds the caller-facing surfaces a workspace source exposes.
+//! Discovers caller-facing surfaces in workspace input.
 //!
-//! [`surfaces`] is an optional helper for an adapter whose survey needs the
-//! model to find a semantic boundary — a route, a command, a job, an exported
-//! API — and the module a caller enters it at. The adapter still owns its
-//! survey and decides how the returned surfaces become seams.
-//!
-//! The helper accepts no engine-owned file — `spec.md`, `design.md`,
-//! `.omnia/` — as a surface entry.
+//! [`surfaces`] asks the model to identify boundaries such as routes,
+//! commands, jobs, and exported APIs. Each result names the module where a
+//! caller enters that surface. The adapter decides how results become mining
+//! [seams](crate#vocabulary).
 
 use std::collections::BTreeSet;
 use std::path::Path;
@@ -21,33 +18,27 @@ use serde::Deserialize;
 use crate::workspace::{self, Entry};
 use crate::{Context, path, references};
 
-/// Asks the call's model once for the surfaces the source exposes, each with its entry module.
+/// Returns the surfaces discovered by the model in a workspace source.
 ///
-/// The adapter's `prompts/survey.md` among `docs` is the system prompt. The
-/// turn, put to the model `ctx` carries, names the adapter and source from
-/// `ctx` and lends the root so the model can read the tree; the `list_docs`
-/// and `read_doc` tools answer from `docs`. The model answers one
-/// [`Inventory`], checked whole: a surface without a name, two surfaces of
-/// one name, or an entry that is not a regular file beneath the root accepted
-/// by `keep` — asked about each [`Entry::Dir`] on the way and the
-/// [`Entry::File`] itself — goes back as findings for another round. The
-/// engine's own files are never an entry.
+/// `docs` must contain `prompts/survey.md`, which becomes the system prompt.
+/// The model may read the workspace and the embedded reference documents.
 ///
-/// The surfaces come back in answer order, each entry as a `/`-separated
-/// path relative to the root. A module may be the entry of several
-/// surfaces, and a module no surface enters is not one: the model finds the
-/// boundary, and the adapter mines what each surface reaches from it. A tree
-/// the model finds no surface in exposes nothing, and what that means is the
-/// adapter's to decide.
+/// Every surface must have a unique, nonempty name and a root-relative entry
+/// path. The entry must be a regular file accepted by `keep`, as must each
+/// directory leading to it. Emery's `.omnia/` directories and generated
+/// documents are always rejected.
+///
+/// Results preserve model order. Several surfaces may share an entry module,
+/// and an empty inventory is valid.
 ///
 /// # Errors
 ///
-/// - [`Error::ServerError`] when `prompts/survey.md` is not embedded, or the
-///   input is an inline value, which has no tree to survey — both found
-///   before any turn is spent.
-/// - [`Error::BadRequest`] when the host refuses the request or the rounds
-///   are spent with findings outstanding.
-/// - [`Error::BadGateway`] for a tool or transport failure.
+/// - Returns [`Error::BadRequest`] when the request is invalid or the model
+///   cannot produce a valid inventory within the available rounds.
+/// - Returns [`Error::ServerError`] when `docs` does not contain
+///   `prompts/survey.md` or the source contains inline text instead of a
+///   workspace.
+/// - Returns [`Error::BadGateway`] when a model tool or transport fails.
 pub async fn surfaces<P: Model>(
     ctx: &Context<'_, P>, docs: &'static [Doc], mut keep: impl FnMut(Entry<'_>) -> bool + Send,
 ) -> Result<Vec<Surface>, Error> {
@@ -82,27 +73,25 @@ pub async fn surfaces<P: Model>(
         .collect())
 }
 
-/// The model's survey answer: the surfaces the source exposes.
+/// The complete set of surfaces reported by the model.
 ///
-/// A survey prompt's worked example must parse as this shape. An empty
-/// inventory is a valid answer — the model found no surface — and what it
-/// means is the adapter's to decide. A surface without a name, two surfaces
-/// of one name, or an entry that is not a module of the tree is a finding.
+/// An empty inventory is valid. [`surfaces`] validates names and entry paths
+/// before returning the surfaces to an adapter.
 #[derive(Debug, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 #[schemars(title = "Emery survey answer")]
 pub struct Inventory {
-    /// The surfaces, in the order the seams will be mined.
+    /// The [`Surface`] values in discovery order.
     pub surfaces: Vec<Surface>,
 }
 
-/// One surface a source exposes: what a caller outside it reaches, and where.
+/// A caller-facing capability and the module where it is entered.
 #[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct Surface {
-    /// What the surface is, as the prompt asked it to be named.
+    /// A description of the exposed capability.
     pub name: String,
-    /// The module a caller enters the surface at, as a path relative to the root.
+    /// The entry module as a path relative to the workspace root.
     pub entry: String,
 }
 

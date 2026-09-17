@@ -1,21 +1,13 @@
-//! The mock source adapter the live journey runs against.
+//! Demonstrates a minimal Emery source adapter.
 //!
-//! The smallest complete source adapter: it reads a greeting fixture and asks
-//! the model to describe it as claims. It exists so the engine can be
-//! exercised end to end without depending on a first-party adapter from the
-//! adapters repository.
+//! The adapter extracts greeting claims from inline text or a workspace. It
+//! shows the three parts of an adapter:
 //!
-//! It has the shape of a real adapter: the kind of source it reads, the prose
-//! it lists with `emery_sdk::prose!`, a survey, and a `wasm32`-only guest
-//! that exports the `source-adapter` world through
-//! `emery_sdk::source_adapter!`, its `extract` the survey then
-//! `emery_sdk::mine` over the call's context.
+//! - An embedded prompt and its references.
+//! - A survey that selects mining seams.
+//! - A WebAssembly guest exported with `emery_sdk::source_adapter!`.
 
 use emery_sdk::{Doc, Error, Seam, SourceContent, SourceInput, bad_request};
-
-/// The prose the guest embeds: the extraction prompt and the one reference it links.
-pub static DOCS: &[Doc] =
-    emery_sdk::prose!("prose", ["prompts/extract.md", "references/greeting.md"]);
 
 #[cfg(target_arch = "wasm32")]
 mod guest {
@@ -33,10 +25,14 @@ mod guest {
     }
 }
 
-/// Returns the one seam to mine: a bound brief whole, or a tree with the fallback noted.
+/// The prompt and reference document embedded in the adapter.
+pub static DOCS: &[Doc] =
+    emery_sdk::prose!("prose", ["prompts/extract.md", "references/greeting.md"]);
+
+/// Returns one mining seam for the greeting source.
 ///
-/// A workspace is pointed at `references/greeting.md` as the fallback when
-/// the tree states no greeting.
+/// Inline text is mined as a whole. A workspace seam instructs extraction to
+/// use `references/greeting.md` when the source tree contains no greeting.
 ///
 /// # Errors
 ///

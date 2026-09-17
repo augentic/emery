@@ -1,14 +1,12 @@
-//! One embedded document, and the lookups over a table of them.
+//! Defines embedded documents and path-based lookup functions.
 //!
-//! A [`Doc`] is one embedded document: its tree-relative path and its body.
-//! [`find`] and [`body`] look one up in a table by path. Paths are the stable
-//! names prompts and reference tools address documents by, so lookup by path
-//! is the whole interface.
+//! Document paths are stable, tree-relative identifiers. Both [`find`] and
+//! [`body`] compare them exactly.
 
-/// One embedded document: its tree-relative path and its Markdown body.
+/// An embedded Markdown document.
 #[derive(Clone, Copy, Debug)]
 pub struct Doc {
-    /// The path relative to the embedded tree, such as `prompts/extract.md`.
+    /// The path relative to the document tree, such as `prompts/extract.md`.
     pub path: &'static str,
     /// The document's Markdown body.
     pub body: &'static str,
@@ -42,9 +40,19 @@ pub fn find<'d>(docs: &'d [Doc], path: &str) -> Option<&'d Doc> {
 
 /// Returns the body of the document at `path`, if the table embeds one.
 ///
-/// `None` means the build did not embed the document: a mismatch between the
-/// table and the tree, which the caller reports as its own failure rather than
-/// treating as a missing page.
+/// # Examples
+///
+/// ```
+/// use emery_prose::{Doc, body};
+///
+/// let docs = [Doc {
+///     path: "prompts/extract.md",
+///     body: "Extract every claim.",
+/// }];
+///
+/// assert_eq!(body(&docs, "prompts/extract.md"), Some("Extract every claim."));
+/// assert_eq!(body(&docs, "prompts/missing.md"), None);
+/// ```
 #[must_use]
 pub fn body(docs: &[Doc], path: &str) -> Option<&'static str> {
     find(docs, path).map(|doc| doc.body)

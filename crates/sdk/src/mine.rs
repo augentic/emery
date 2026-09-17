@@ -1,9 +1,8 @@
-//! Mines the seams of one source and joins the claims into one document.
+//! Mines source seams and combines their claims.
 //!
-//! An adapter decides the [seams](crate#vocabulary); [`mine`] does the rest
-//! of an `extract` — one model turn per seam under the adapter's embedded
-//! prompt, the claim gate on every answer, and the join of the seams' claims
-//! in seam order.
+//! An adapter divides its input into [seams](crate#vocabulary). [`mine`]
+//! submits each seam to the model, validates every response, and returns one
+//! evidence document in seam order.
 
 mod brief;
 
@@ -19,30 +18,29 @@ use crate::references;
 // Turns one adapter holds pending at once.
 const CONCURRENT: usize = 4;
 
-/// Mines `seams` through the call's model and joins the claims into one [`Evidence`] document.
+/// Mines each seam and combines accepted claims into one [`Evidence`] document.
 ///
-/// Each seam is one turn, put to the model `ctx` carries. `prompts/extract.md`
-/// among `docs` is the system prompt; the turn names the adapter and the
-/// source key from `ctx`, describes the seam, and lends the model the source
-/// root; the `list_docs` and `read_doc` tools answer from `docs`. The answer
-/// is checked against the claim gate ([`Evidence::findings`]), and findings
-/// go back to the model for another round until it answers clean or the
-/// host's rounds are spent. The engine runs the same gate again on receipt.
+/// `docs` must contain `prompts/extract.md`, which becomes the system prompt
+/// for every request. The model receives the adapter identifier, source key,
+/// seam description, and access to embedded references. Responses are
+/// checked with [`Evidence::findings`]; rejected responses may be corrected
+/// until the host's round limit is reached.
 ///
-/// At most four turns are pending at once. The claims join in seam order.
-/// Every seam of a workspace is lent the root, so every `path` anchor is
-/// relative to it and the document cites one path space however the source
-/// was cut. Every seam is waited for; when more than one fails, the error
-/// names them all and takes the class of the first.
+/// Up to four requests run concurrently. All requests are awaited, while
+/// claims retain the order of `seams`. Every workspace seam uses the same
+/// source root, so claim paths share one root-relative namespace.
+///
+/// When several seams fail, the returned error describes each failure and
+/// uses the class of the first failed seam.
 ///
 /// # Errors
 ///
-/// - [`Error::BadRequest`] when `seams` is empty, a [`Seam::Files`] path
-///   escapes the root or names no file, the host refuses a request, or the
-///   model's answer still fails the claim gate once its rounds are spent.
-/// - [`Error::ServerError`] for a [`Seam::Files`] over an inline value, or a
-///   corpus without `prompts/extract.md`.
-/// - [`Error::BadGateway`] for a tool or transport failure.
+/// - Returns [`Error::BadRequest`] when `seams` is empty, a
+///   [`Seam::Files`] path is invalid, the model rejects the request, or no
+///   valid response is produced within the available rounds.
+/// - Returns [`Error::ServerError`] when [`Seam::Files`] is used with inline
+///   input or `docs` does not contain `prompts/extract.md`.
+/// - Returns [`Error::BadGateway`] when a model tool or transport fails.
 pub async fn mine<P: Model>(
     ctx: &Context<'_, P>, docs: &'static [Doc], seams: &[Seam],
 ) -> Result<Evidence, Error> {
@@ -65,39 +63,33 @@ pub async fn mine<P: Model>(
     })
 }
 
-/// The part of a source one model call is asked about.
+/// A portion of a source assigned to one model request.
 ///
 /// An adapter's survey chooses one or more seams before any call is made;
 /// see the [vocabulary](crate#vocabulary).
 #[derive(Debug, Eq, PartialEq)]
 pub enum Seam {
-    /// The whole input: a workspace described as the source tree, or an
-    /// inline value quoted into the turn.
+    /// The complete workspace or inline value.
     Whole,
-    /// Files beneath the input's root, named relative to it.
+    /// Selected files beneath a workspace root.
     ///
-    /// The whole root is lent, and the turn lists the files relative to it,
-    /// sorted and deduplicated, as the only ones to mine. One that escapes
-    /// the root is refused.
+    /// Paths are sorted, deduplicated, and interpreted relative to the root.
+    /// A path that escapes the root is rejected.
     Files(Vec<String>),
-    /// A note the adapter wrote for a source that needs its own handling.
+    /// Adapter-defined instructions describing what to mine.
     ///
-    /// The whole root is lent, and the note stands in the turn where the
-    /// SDK's description of the input would be.
+    /// For workspace input, the complete root remains available to the model.
     Note(String),
 }
 
-/// What one call knows: which adapter was addressed, with what input, and the model that answers.
-///
-/// The guest's lift builds one per call with the host's model; a native test
-/// builds one with a scripted model in the same field.
+/// The input and model available during one adapter extraction.
 #[derive(Debug)]
 pub struct Context<'a, P> {
-    /// The id the call addressed the adapter by.
+    /// The identifier used to address the adapter.
     pub adapter_id: &'a str,
-    /// The source key and the workspace or inline value to read.
+    /// The [`SourceInput`] identifying the source and its content.
     pub input: &'a SourceInput,
-    /// The model every turn of the call is put to.
+    /// The [`Model`] used for survey and extraction requests.
     pub model: &'a P,
 }
 

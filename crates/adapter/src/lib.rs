@@ -1,27 +1,49 @@
-//! The contract between the Emery engine and its source adapters.
+//! Defines the contract between the Emery engine and source adapters.
 //!
-//! The engine asks a source adapter to read one source — a document tree, a
-//! codebase, a written brief — and to answer with typed claims about it. This
-//! crate is the Rust side of the `emery:adapter` WIT package, compiled into
-//! both parties so neither can drift from the other. The engine depends on it
-//! directly; adapters receive it re-exported through the `emery-sdk` crate.
+//! A source adapter receives a [`source::SourceInput`] and returns
+//! [`source::Evidence`] containing typed [`source::Claim`]s. The
+//! [`source::Source`] capability is the engine-facing side of that exchange.
 //!
-//! The package is organised by axis, one module each. Today there is one,
-//! [`source`], carrying:
+//! This crate supplies the shared Rust types for the `emery:adapter` WIT
+//! package. On WebAssembly targets, `source::export` also exposes the guest
+//! interface implemented by adapters.
 //!
-//! - [`source::SourceInput`], what an adapter is given: a key and a workspace
-//!   or inline value.
-//! - [`source::Evidence`], what it returns: a document of typed
-//!   [`source::Claim`]s, checked by the claim gate
-//!   [`source::Evidence::findings`].
-//! - [`source::Source`], the capability the engine calls adapters through.
+//! # Examples
 //!
-//! Every name in the contract — a claim-id segment, a source key, an adapter
-//! name — follows the kebab grammar [`is_kebab`] checks.
+//! Create an input and validate an adapter response:
+//!
+//! ```
+//! use emery_adapter::source::{Evidence, SourceInput};
+//!
+//! let input = SourceInput::workspace("orders", ".");
+//! assert_eq!(input.key, "orders");
+//!
+//! let evidence: Evidence = serde_json::from_str(
+//!     r#"{
+//!         "claims": [{
+//!             "kind": "requirement",
+//!             "id": "orders.create",
+//!             "statement": "POST /orders creates an order."
+//!         }]
+//!     }"#,
+//! )?;
+//! assert!(evidence.findings().is_empty());
+//! # Ok::<(), serde_json::Error>(())
+//! ```
+//!
+//! # Vocabulary
+//!
+//! - **Source adapter**: a component that extracts claims from one source.
+//! - **Evidence**: the complete set of [`source::Claim`]s returned for one
+//!   input.
+//! - **Claim gate**: the validation performed by
+//!   [`source::Evidence::findings`] before evidence is accepted.
 
 pub mod source;
 
-/// Returns `true` if `value` is kebab-case: `[a-z0-9]+(-[a-z0-9]+)*`.
+/// Returns whether `value` is lowercase kebab-case.
+///
+/// A valid value matches `[a-z0-9]+(-[a-z0-9]+)*`.
 ///
 /// Claim-id segments, source keys, and adapter names all follow this grammar.
 ///

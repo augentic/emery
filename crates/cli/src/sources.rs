@@ -1,11 +1,9 @@
-//! Builds the source list of a `specify` run from the command line.
+//! Builds a `specify` source list from command-line arguments.
 //!
-//! An operator names adapters and inline descriptions directly, points at an
-//! `emery.toml` with `--config`, or names nothing and lets the project-root
-//! `emery.toml` be picked up. The list is an input to each run, never
-//! something Emery stores, so this module is the only place that knows where
-//! sources come from. A config file and command-line sources are refused
-//! together rather than merged, so a run has exactly one source of truth.
+//! Sources may come from positional adapters, inline descriptions, or an
+//! `emery.toml` file. Configuration files cannot be combined with direct
+//! command-line sources. When no source is specified, the project-root
+//! `emery.toml` is used if present.
 
 use std::ffi::OsStr;
 use std::path::{Path, PathBuf};
@@ -22,9 +20,9 @@ pub const CONFIG_FILE: &str = "emery.toml";
 ///
 /// # Errors
 ///
-/// Returns [`Error::BadRequest`] when `--config` is combined with positional
-/// adapters or `--description` sources, or when any source is malformed, and
-/// [`Error::ServerError`] when a config file cannot be read.
+/// - Returns [`Error::BadRequest`] when `--config` is combined with positional
+///   adapters or `--description` sources, or when any source is malformed.
+/// - Returns [`Error::ServerError`] when a config file cannot be read.
 pub fn decode(
     adapters: &[String], descriptions: &[String], config: Option<&Path>,
 ) -> Result<Vec<SourceConfig>, Error> {

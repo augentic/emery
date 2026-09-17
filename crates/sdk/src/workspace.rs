@@ -1,18 +1,30 @@
-//! Lists files in a workspace source under an adapter's entry policy.
+//! Lists workspace files under an adapter-defined filter.
 //!
-//! [`list`] walks regular files beneath a source root, asking the adapter's
-//! filter about each [`Entry`]. The engine's own `.omnia/` directories and
-//! `spec.md` / `design.md` files are never offered.
+//! [`list`] visits directories and regular files beneath a source root. The
+//! filter receives each [`Entry`] and may prune directories or omit files.
+//! Emery's `.omnia/` directories and generated documents are always excluded.
 
 use std::path::Path;
 
 use anyhow::Context as _;
 use omnia_sdk::{Error, bad_request};
 
-/// A workspace entry offered to an adapter's filter by its root-relative path.
+/// A workspace entry passed to an adapter's filter.
 ///
-/// The path is `/`-separated and UTF-8. An entry whose name is not UTF-8 is
-/// refused before any entry is offered.
+/// Paths are UTF-8 and use `/` separators. Encountering a non-UTF-8 name
+/// aborts the listing.
+///
+/// # Examples
+///
+/// ```
+/// use emery_sdk::workspace::Entry;
+///
+/// let entry = Entry::File("src/lib.rs");
+/// assert_eq!(entry.path(), "src/lib.rs");
+/// assert_eq!(entry.name(), "lib.rs");
+/// assert_eq!(entry.extension(), Some("rs"));
+/// assert!(!entry.hidden());
+/// ```
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Entry<'a> {
     /// A directory; refusing it prunes everything beneath.
@@ -30,32 +42,35 @@ impl<'a> Entry<'a> {
         }
     }
 
-    /// Returns the entry's own name: the last segment of its path.
+    /// Returns the final segment of the entry's path.
     #[must_use]
     pub fn name(self) -> &'a str {
         let path = self.path();
         path.rsplit_once('/').map_or(path, |(_, name)| name)
     }
 
-    /// Returns the part of the name after its last dot; a leading dot is not one.
+    /// Returns the part of the name after its final dot.
+    ///
+    /// A leading dot does not introduce an extension.
     #[must_use]
     pub fn extension(self) -> Option<&'a str> {
         let (stem, extension) = self.name().rsplit_once('.')?;
         (!stem.is_empty()).then_some(extension)
     }
 
-    /// Returns `true` when the entry's name begins with a dot.
+    /// Returns whether the entry's name begins with a dot.
     #[must_use]
     pub fn hidden(self) -> bool {
         self.name().starts_with('.')
     }
 }
 
-/// Lists the files beneath `root`, sorted, as `/`-separated paths relative to it.
+/// Returns sorted, root-relative paths for files accepted by `keep`.
 ///
 /// `keep` is asked about every entry; a refused directory is not entered.
-/// The engine's own `.omnia/` directories and `spec.md` / `design.md` files
-/// are never offered, wherever they appear. Symlinks are not followed.
+/// `.omnia/` directories and generated `spec.md` and `design.md` files are
+/// never offered, wherever they occur. Symlinks and non-regular files are not
+/// followed or returned.
 ///
 /// # Examples
 ///
@@ -65,21 +80,21 @@ impl<'a> Entry<'a> {
 /// # let scratch = tempfile::tempdir()?;
 /// # for file in ["README.md", "api/orders.md", "api/users.md", "notes/todo.md", ".git/HEAD"] {
 /// #     let path = scratch.path().join(file);
-/// #     std::fs::create_dir_all(path.parent().unwrap())?;
+/// #     let parent = path.parent().ok_or("file has no parent")?;
+/// #     std::fs::create_dir_all(parent)?;
 /// #     std::fs::write(path, "")?;
 /// # }
-/// # let root = scratch.path().to_str().unwrap();
+/// # let root = scratch.path().to_str().ok_or("temporary path is not UTF-8")?;
 /// let files = workspace::list(root, |entry| !entry.hidden())?;
 ///
 /// assert_eq!(files, ["README.md", "api/orders.md", "api/users.md", "notes/todo.md"]);
-/// # anyhow::Ok(())
+/// # Ok::<(), Box<dyn std::error::Error>>(())
 /// ```
 ///
 /// # Errors
 ///
-/// Returns [`Error::ServerError`] when a directory cannot be read, and
-/// [`Error::BadRequest`] for an entry whose name is not UTF-8, which no
-/// `path` anchor could cite.
+/// - Returns [`Error::BadRequest`] when an entry name is not UTF-8.
+/// - Returns [`Error::ServerError`] when the workspace cannot be read.
 pub fn list(root: &str, mut keep: impl FnMut(Entry<'_>) -> bool) -> Result<Vec<String>, Error> {
     let mut files = walk(Path::new(root), "", &mut keep)?;
     files.sort();

@@ -1,9 +1,8 @@
-//! The turn an adapter puts to the model, and what each seam is lent.
+//! Formats the model request for one mining seam.
 //!
-//! An adapter chooses only the [`Seam`]. The SDK owns the rest of the turn
-//! — which source is being extracted, what the model may read, where the
-//! reference documents are, and the fixed closing ask — so every adapter's
-//! turn reads alike and the closing ask cannot drift.
+//! The request identifies the source, describes the selected [`Seam`], grants
+//! the required workspace access, and explains how to read embedded reference
+//! documents.
 
 use std::fmt::{self, Display, Formatter};
 

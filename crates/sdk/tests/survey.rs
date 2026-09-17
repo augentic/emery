@@ -1,15 +1,9 @@
-//! Asserts model-assisted discovery of a workspace source's surfaces.
+//! Verifies model-assisted discovery of caller-facing surfaces.
 //!
-//! `survey::surfaces` is the optional survey call an adapter may make:
-//!
-//! - the request it builds: the embedded survey prompt as the system, the
-//!   root lent with no listing, the `survey` schema;
-//! - the surfaces of its accepted inventory, in answer order, however many
-//!   enter at one module, each entry normalised;
-//! - the corrections an inventory earns, held against the tree and the
-//!   adapter's `keep`;
-//! - the backend's spent rounds as `bad_request`;
-//! - the refusals that spend no turn, and the answer that exposes nothing.
+//! The scenarios cover request construction, result ordering, entry-path
+//! normalisation, and validation against both the workspace and adapter
+//! filter. They also cover empty inventories, pre-request failures, correction
+//! rounds, and model error classification.
 
 use std::fs;
 use std::path::Path;

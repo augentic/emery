@@ -1,18 +1,15 @@
-//! Renders each command result as text.
+//! Renders engine results as command-line text.
 //!
-//! JSON output falls out of the result types' `Serialize` derives; text output
-//! needs a hand-written shape per result, and those shapes live here as the
-//! render fns the command façade encodes `--format text` through. Keeping them
-//! apart from the engine's result types lets the terminal presentation follow
-//! the Developer Guide's output conventions without those conventions leaking
-//! into the engine.
+//! Each function writes the `--format text` representation of one command
+//! result. Structured output is provided by the result types' Serde
+//! implementations.
 
 use std::fmt;
 
 use emery_engine::show::{Artifact, ShowOutput};
 use emery_engine::specify::{Diff, SpecifyOutput};
 
-/// Writes the committed revision line, with the diff indented beneath it.
+/// Writes a [`SpecifyOutput`] revision line with its [`Diff`] beneath it.
 pub fn specify(output: &SpecifyOutput, w: &mut dyn fmt::Write) -> fmt::Result {
     writeln!(w, "committed revision {}", output.revision)?;
     if let Some(diff) = &output.diff {
@@ -61,10 +58,10 @@ fn changes(diff: &Diff, w: &mut dyn fmt::Write) -> fmt::Result {
     Ok(())
 }
 
-/// Writes the document body alone.
+/// Writes a [`ShowOutput`] document body alone.
 ///
-/// A deliberate exception to the result-line convention, so `emery show spec`
-/// pipes cleanly; the revision id rides the JSON envelope.
+/// No status line or revision identifier is added, allowing the Markdown to be
+/// piped directly to another command.
 pub fn show(output: &ShowOutput, w: &mut dyn fmt::Write) -> fmt::Result {
     w.write_str(&output.body)
 }

@@ -1,14 +1,8 @@
-//! The generated WIT bindings and their conversions to the contract types.
+//! Implements the WebAssembly interface shared by adapters and the engine.
 //!
-//! Both sides ride one generation of the `source-adapter` world. An adapter's
-//! guest implements [`export`]'s `Guest`, through `emery-sdk`; the engine
-//! guest calls into it through [`import`]. Each conversion between a WIT
-//! record and its contract type is written once here: `From` where the WIT
-//! form always lifts, `TryFrom` where an extra's canonical JSON must parse.
-//!
-//! The WIT `error` variant is known here alone. An adapter's
-//! [`omnia_sdk::Error`] is lowered onto it on the export side and lifted
-//! back by [`import::extract`], so neither party names the variant.
+//! Adapters implement [`export::Guest`], while the engine invokes them
+//! through [`import`]. Contract records and errors are converted at this
+//! boundary.
 
 mod generated {
     #![allow(
@@ -245,7 +239,10 @@ impl From<omnia_sdk::Error> for wit::Error {
     }
 }
 
-/// The bindings an adapter exports through: the world's `Guest`, its records, and `export!`.
+/// The WebAssembly guest interface implemented by a source adapter.
+///
+/// This module exposes the generated `Guest` trait, its records, and the
+/// `export!` macro.
 pub mod export {
     // The root glob carries the bindgen support items the `export!` macro
     // expands against; the second names the world's records and `Guest`.
@@ -253,7 +250,7 @@ pub mod export {
     pub use super::generated::*;
 }
 
-/// The engine guest's calls into a loaded adapter.
+/// The WebAssembly client used to invoke a loaded source adapter.
 pub mod import {
     use omnia_sdk::{Error, bad_gateway, bad_request};
 
@@ -267,13 +264,13 @@ pub mod import {
         imported::metadata(id).into()
     }
 
-    /// Asks the adapter registered as `id` to extract `input`.
+    /// Extracts evidence from `input` using the adapter registered as `id`.
     ///
     /// # Errors
     ///
-    /// Returns [`Error::BadRequest`] when the adapter refuses its input, and
-    /// [`Error::BadGateway`] for any other adapter failure or an extra that
-    /// is not canonical JSON.
+    /// - Returns [`Error::BadRequest`] when the adapter rejects the input.
+    /// - Returns [`Error::BadGateway`] when the adapter fails internally or
+    ///   returns an extra that is not canonical JSON.
     pub async fn extract(id: &str, input: &SourceInput) -> Result<Evidence, Error> {
         let answer = imported::extract(id.to_string(), input.clone().into()).await.map_err(
             |err| match err {

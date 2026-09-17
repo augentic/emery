@@ -1,22 +1,17 @@
-//! The guest side of the `source-adapter` world: the one export an adapter makes.
+//! Exports adapter functions through the `source-adapter` guest interface.
 //!
-//! [`source_adapter!`](crate::source_adapter) binds an adapter's two plain
-//! fns — its `metadata` answer and its `extract` — as the world's exports.
-//! The lift of the WIT input and the host's model onto a
-//! [`Context`](crate::Context), and the lowering of the outcome onto the
-//! world's `evidence` and `error`, happen here, so an adapter's own code
-//! names the contract types alone and no backend at all.
+//! [`source_adapter!`](crate::source_adapter) converts WIT inputs into SDK
+//! types, supplies the host model through [`Context`](crate::Context), and
+//! converts the adapter's result back into WIT records.
 
 #[cfg(target_arch = "wasm32")]
 use crate::{AdapterMetadata, Context, Error, Evidence, Model, SourceInput, export};
 
-/// The host's model on omnia's WASI defaults: the one capability an adapter's call carries.
+/// The default model provider supplied to adapter extraction functions.
 ///
-/// The lift behind [`source_adapter!`](crate::source_adapter) puts it in the
-/// [`Context`](crate::Context) of every call, so an adapter written over the
-/// macro never names it; a guest written by hand builds its `Context` with
-/// `model: &Provider`, or with a provider of its own. It is the unit struct
-/// with the empty [`Model`] impl every omnia guest would otherwise declare.
+/// [`source_adapter!`](crate::source_adapter) places this provider in each
+/// [`Context`](crate::Context). It delegates model requests through Omnia's
+/// WebAssembly interface.
 #[cfg(target_arch = "wasm32")]
 #[derive(Clone, Copy, Debug, Default)]
 pub struct Provider;
@@ -24,25 +19,20 @@ pub struct Provider;
 #[cfg(target_arch = "wasm32")]
 impl Model for Provider {}
 
-/// Exports the `source-adapter` world over an adapter's `metadata` and `extract` fns.
+/// Exports an adapter's metadata and extraction functions as a component.
 ///
-/// The two paths are the world's two exports, in the WIT's order. The first
-/// names a plain `fn() -> AdapterMetadata` — [`metadata`](crate::metadata)
-/// for the kind of source the adapter reads. The second names an
-/// `async fn<P: Model>(&Context<'_, P>) -> Result<Evidence, Error>`: the
-/// adapter's own survey for the [seams](crate#vocabulary), then
-/// [`mine`](crate::mine) over them, and nothing else. The macro implements
-/// the world's `Guest` on a private type and invokes the bindings' `export!`
-/// for it; the WIT input and the host's model, `Provider`, are lifted onto
-/// a [`Context`](crate::Context) before the adapter's `extract` is called,
-/// and its outcome is lowered onto the WIT `evidence` and `error` after, so
-/// neither fn names a binding or a backend. A fn of another shape is refused
-/// where the macro names it.
+/// The arguments must identify functions with these signatures:
 ///
-/// The expansion rides the `export` module, which exists on `wasm32` alone,
-/// so the macro is invoked inside the guest's `#[cfg(target_arch = "wasm32")]`
-/// module; a guest with needs of its own implements `export::Guest` by hand
-/// instead.
+/// - `fn() -> AdapterMetadata`
+/// - `async fn<P: Model>(&Context<'_, P>) -> Result<Evidence, Error>`
+///
+/// The macro supplies a [`Context`](crate::Context) containing the imported
+/// source input and host model. It then converts the returned evidence or
+/// error into the `source-adapter` WIT records.
+///
+/// Invoke this macro inside a `#[cfg(target_arch = "wasm32")]` module because
+/// the export interface exists only on WebAssembly targets. Adapters needing
+/// custom guest behaviour may implement `export::Guest` directly.
 ///
 /// # Examples
 ///
@@ -91,18 +81,18 @@ macro_rules! source_adapter {
     };
 }
 
-/// Lowers the adapter's `metadata` answer onto the world's record.
+/// Converts an adapter's metadata response into the guest record.
 #[cfg(target_arch = "wasm32")]
 #[must_use]
 pub fn metadata(answer: impl FnOnce() -> AdapterMetadata) -> export::AdapterMetadata {
     answer().into()
 }
 
-/// Lifts the WIT input and the host's model onto a [`Context`], runs the adapter's `extract`, and lowers the outcome.
+/// Runs an adapter extraction with converted input and the host model.
 ///
 /// # Errors
 ///
-/// Whatever the adapter's `extract` returns, lowered onto the WIT `error`.
+/// Returns the adapter's error converted to the guest error record.
 #[cfg(target_arch = "wasm32")]
 pub async fn extract(
     answer: impl AsyncFnOnce(&Context<'_, Provider>) -> Result<Evidence, Error>,

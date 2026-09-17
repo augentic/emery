@@ -1,12 +1,11 @@
-//! Asserts what the `emery` command promises regardless of what the engine does.
+//! Verifies Emery's command-line contract independently of engine behaviour.
 //!
-//! Which verbs exist, how grammar mistakes are reported, which exit code each
-//! failure class maps to, and what lands on stdout versus stderr in text and
-//! JSON mode.
+//! The scenarios cover available commands, grammar errors, exit-code mapping,
+//! stream selection, and text and JSON output.
 //!
 //! Every scenario finishes before the engine touches a model or a source, so
-//! the provider here is idle. That keeps these cases about the command
-//! surface alone; the product behaviour behind it is `specify.rs`.
+//! the scripted provider remains idle. End-to-end product behaviour is covered
+//! by `specify.rs`.
 
 #![cfg(not(target_arch = "wasm32"))]
 

@@ -1,13 +1,8 @@
 //! Scripts every capability of a provider and drives the command façade over it.
 //!
-//! The model, source, plugin loading, and storage capabilities are each a
-//! scripted double, and each impl delegates to the field named for it — the
-//! shape a production provider's single backend has. The runner drives the
-//! command façade over the provider in-process.
-//!
-//! Scripting rather than mocking means each scenario states exactly the turns
-//! it will consume, and a scenario that consumes more or fewer fails, so the
-//! suites cannot silently stop exercising a path.
+//! Model, source, plugin, and storage capabilities use strict scripts. Each
+//! scenario must consume exactly the expected operations, so an unexercised or
+//! unexpected path fails immediately.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::future::Future;
@@ -64,10 +59,10 @@ pub struct SourceScript {
     pub rendezvous: Option<Rendezvous>,
 }
 
-/// A meeting point for the sources of one run: no extract resolves until
-/// every expected source has asked to extract. An engine that extracts its
-/// sources one at a time never gets there, so the wait is bounded and the
-/// failure names the sources that never arrived.
+/// A barrier that holds extraction until every expected source has arrived.
+///
+/// The bounded wait reports missing sources, allowing serial extraction to
+/// fail clearly instead of deadlocking the suite.
 #[derive(Clone, Debug)]
 pub struct Rendezvous {
     expected: BTreeSet<String>,
@@ -110,8 +105,9 @@ pub struct Provider<S = Memory> {
     pub model: Scripted,
     /// The scripted `Source`.
     pub source: SourceScript,
-    /// The scripted `Plugins` loader: an unscripted package resolves to
-    /// the fixed `digest("ab")`.
+    /// The scripted [`Plugins`] loader.
+    ///
+    /// An unscripted package resolves to the fixed `digest("ab")`.
     pub plugins: ScriptedLoader,
     /// The scripted storage pair.
     pub storage: Arc<S>,

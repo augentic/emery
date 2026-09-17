@@ -1,34 +1,23 @@
-//! The SDK an Emery source adapter is written against.
+//! Builds Emery source adapters.
 //!
-//! A source adapter is a WebAssembly component that reads one kind of source
-//! — a document tree, a codebase, a written brief — and returns typed claims
-//! about it. It is a guest of the `source-adapter` world, exported through
-//! [`source_adapter!`] over two plain fns of the adapter's own: `metadata`,
-//! answered with [`metadata`] for the kind of source it reads, and `extract`,
-//! which runs [`mine`] over the [seams](#vocabulary) the adapter's own survey
-//! chose. Every call arrives as a [`Context`] — the adapter addressed, the
-//! input, and the model that answers — so adapter code is left with what is
-//! specific to its source: the kind it reads, the documents it embeds, and
-//! how its input cuts. It names no backend: the guest's lift puts the host's
-//! model in the `Context`, and a native test puts a scripted one there.
+//! A source adapter reads a [`SourceInput`] and returns typed [`Evidence`].
+//! This crate provides the pieces shared by adapters:
 //!
-//! The contract types come from `emery-adapter` and are re-exported here. On
-//! `wasm32` the crate also carries the world's bindings (`export`), which the
-//! macro expands against and a guest written by hand implements directly,
-//! and `Provider`, the host's model on omnia's WASI defaults, which the
-//! macro's lift binds into every call.
-//! [`Source`], the capability the engine calls adapters through, is
-//! re-exported for a program that drives an adapter the way the engine does;
-//! an adapter exports the world, never implements `Source`. The embedded
-//! documents come from `emery-prose` and are re-exported too — [`Doc`],
-//! [`prose!`], and the lookups and the check in [`mod@prose`] — so an
-//! adapter's `[dependencies]` is this crate alone.
+//! - [`source_adapter!`] exports an adapter's metadata and extraction
+//!   functions as a WebAssembly component.
+//! - [`Context`], [`Seam`], and [`mine`] run extraction over the boundaries
+//!   selected by an adapter.
+//! - [`workspace::list`] traverses workspace input under an adapter-defined
+//!   filter.
+//! - [`survey::surfaces`] optionally discovers caller-facing entry points.
+//! - [`Doc`], [`prose!`], and [`mod@prose`] embed and inspect adapter guidance.
+//!
+//! Contract types and [`Error`] are re-exported, allowing an adapter to depend
+//! on this crate alone.
 //!
 //! # Examples
 //!
-//! The smallest complete adapter declares the kind of source it reads, embeds
-//! its prompt, keeps a brief whole, and exports the world on `wasm32` alone —
-//! so the crate builds natively and its survey is tested there:
+//! This adapter treats its input as a single mining seam:
 //!
 //! ```
 //! use emery_sdk::{Doc, Error, Seam, SourceInput, SourceKind};
@@ -40,7 +29,7 @@
 //!     body: "Extract every requirement the brief states as a `requirement` claim.",
 //! }];
 //!
-//! /// Returns the seams to mine: a brief is never split.
+//! /// Returns the input as a single mining seam.
 //! pub fn survey(_input: &SourceInput) -> Result<Vec<Seam>, Error> {
 //!     Ok(vec![Seam::Whole])
 //! }
@@ -63,35 +52,23 @@
 //! # fn main() {}
 //! ```
 //!
-//! A shipped adapter lists the documents of its `prose/` tree with
-//! `prose!("../prose", [..])` at its crate root rather than writing the
-//! bodies by hand, so its suite can hold the list to the tree with
-//! [`prose::check`]. An adapter may inspect a workspace through
-//! [`workspace::list`] or ask the model for caller-facing surfaces through
-//! [`survey::surfaces`]; neither helper defines how the adapter surveys its
-//! source into seams.
+//! Adapters commonly embed a `prose/` directory with [`prose!`] and validate
+//! it with [`prose::check`].
 //!
 //! # Vocabulary
 //!
-//! - **Source**: what one adapter is asked to read — a directory or an inline
-//!   value — under the key the specification cites it by.
-//! - **Claim**, **evidence**: one typed statement about the source, and the
-//!   document of claims an adapter returns. The **claim gate**
-//!   ([`Evidence::findings`]) is the set of rules every claim must satisfy.
-//! - **Seam**: the part of a source one model call is asked about. The
-//!   **survey** is the adapter's own choice of seams, made before any call;
-//!   a seam is **mined** ([`mine`]) when the model is asked about it.
-//! - **Context**: what one call knows ([`Context`]) — the adapter addressed,
-//!   the input, and the model every turn of the call is put to.
-//! - **Lend**: the directory the model may read during a call — the source
-//!   root, for every seam of a workspace.
-//! - **Findings**, **rounds**: the claim gate's report on an answer, sent back
-//!   to the model so it can answer again; the host bounds how many rounds a
-//!   call gets.
+//! - **Seam**: the portion of a source handled by one model request. See
+//!   [`Seam`].
+//! - **Survey**: the adapter-specific step that divides an input into seams
+//!   before extraction.
+//! - **Context**: the adapter identifier, source input, and model available to
+//!   one extraction call. See [`Context`].
+//! - **Lend**: the workspace directory made readable to the model for a seam.
+//! - **Finding**: a validation problem returned to the model for correction.
+//!   The host limits how many correction rounds are available.
 //!
-//! Every failure is omnia's [`Error`]. An adapter refuses input it cannot use
-//! with [`bad_request!`] and reports anything else with the sibling macros;
-//! there is no adapter error type.
+//! Fallible APIs return [`Error`]. Use [`bad_request!`] when an adapter rejects
+//! unusable input.
 
 #[doc(hidden)]
 pub mod guest;
@@ -114,7 +91,7 @@ pub use omnia_sdk::{Error, Model, bad_gateway, bad_request, model, not_found, se
 #[cfg(target_arch = "wasm32")]
 pub use self::guest::Provider;
 
-/// Lookups over an adapter's embedded documents by tree-relative path, and the check that holds the table to its tree.
+/// Provides lookup and validation for an adapter's embedded documents.
 pub mod prose {
     pub use emery_prose::{body, check, find};
 }
@@ -123,9 +100,19 @@ pub use self::mine::{Context, Seam, mine};
 
 /// Returns the `metadata` answer for an adapter reading `kind` sources.
 ///
-/// The `emery-version` pin is this SDK's own version: the contract the
-/// adapter compiled against. An adapter builds an [`AdapterMetadata`] itself
-/// only to loosen or tighten that pin.
+/// The `emery-version` pin is this SDK's own version, identifying the contract
+/// the adapter compiled against. Build an [`AdapterMetadata`] directly only
+/// when the adapter must loosen or tighten that pin.
+///
+/// # Examples
+///
+/// ```
+/// use emery_sdk::{SourceKind, metadata};
+///
+/// let metadata = metadata(SourceKind::Intent);
+/// assert_eq!(metadata.kind, SourceKind::Intent);
+/// assert!(metadata.emery_version.is_some());
+/// ```
 #[must_use]
 pub fn metadata(kind: SourceKind) -> AdapterMetadata {
     AdapterMetadata {

@@ -1,21 +1,12 @@
-//! Generates a specification revision from a list of sources.
+//! Generates specification revisions from configured sources.
 //!
-//! Each source's claims are extracted, the requirements are derived under
-//! authority precedence, `spec.md` and `design.md` are synthesised, and the
-//! pair is committed as one revision. The result reports the revision id and
-//! the diff against the revision it displaced, so a caller can see what
-//! changed without reading the documents.
+//! [`specify`] validates the complete source list before loading adapters.
+//! Sources are extracted concurrently, then their claims are reconciled by
+//! authority and synthesised into `spec.md` and `design.md`.
 //!
-//! A [`SourceConfig`] names one source: the adapter to use, the key the
-//! specification cites it by, and a workspace to read or an inline value. The
-//! list is per-run input, never stored, so one shape serves the command line,
-//! a config file, and any other transport; it is checked whole before any
-//! adapter loads.
-//!
-//! Every source extracts at once, and a run waits for all of them, so every
-//! source that fails is reported together rather than only the first. A run
-//! starts from its sources alone: nothing of an earlier revision is read into
-//! the synthesis.
+//! The two documents are committed as one content-addressed revision. An
+//! earlier revision contributes only the returned [`Diff`]; it is never used
+//! as synthesis input.
 
 mod basis;
 mod brief;
@@ -42,24 +33,27 @@ use crate::revision::Revision;
 pub use crate::revision::{Changed, DesignDiff, Diff, Entry, ReqId, SectionKind, SpecDiff};
 use crate::{preopen_path, store};
 
-/// Runs `specify` over the context's provider.
+/// Generates and commits a specification revision from `input`.
 ///
-/// The source list is checked whole, the adapters it names are loaded, every
-/// source is extracted at once, and the specification and design are
-/// synthesised over the claims and committed as one revision.
+/// The source list is validated before any adapter loads. Extraction runs
+/// concurrently and waits for every source, allowing all extraction failures
+/// to be reported together.
 ///
 /// # Errors
 ///
-/// - [`Error::BadRequest`] for a source list the rules refuse (code
-///   `specify-source-required` when it is empty), an adapter that requires a
-///   newer Emery (code `unsupported-version`), or a draft the model could not
-///   bring within its rounds.
-/// - [`Error::NotFound`] for an adapter path that names no file.
-/// - [`Error::ServerError`] when any extraction fails or storage refuses the
-///   commit.
-/// - [`Error::BadGateway`] for a model failure.
+/// - Returns [`Error::BadRequest`] for an empty source list, duplicate or
+///   malformed source keys, a workspace path outside the project, an adapter
+///   input refusal, an incompatible adapter, or a synthesis response that
+///   cannot be accepted. An empty list uses code `specify-source-required`;
+///   an incompatible adapter uses code `unsupported-version`.
+/// - Returns [`Error::NotFound`] when a local adapter does not exist.
+/// - Returns [`Error::ServerError`] when extracted evidence has findings from
+///   [`Evidence::findings`], or internal validation, serialisation, or storage
+///   fails.
+/// - Returns [`Error::BadGateway`] when adapter acquisition or extraction, or
+///   a model operation, fails upstream.
 ///
-/// Adapter load failures pass through with their own class.
+/// Errors from [`Plugins::load`] retain their original class and code.
 pub async fn specify<P: Model + Source + StateStore + BlobStore + Plugins>(
     input: SpecifyInput, context: Context<P>,
 ) -> Result<SpecifyOutput, Error> {
@@ -101,24 +95,26 @@ pub async fn specify<P: Model + Source + StateStore + BlobStore + Plugins>(
     Ok(SpecifyOutput { revision, diff })
 }
 
-/// The input to [`specify`]: the sources of one run.
+/// The sources used to generate one revision.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub struct SpecifyInput {
-    /// The run's sources, in declaration order.
+    /// Sources in declaration order, which reconciliation preserves for
+    /// stable requirement numbering.
     pub sources: Vec<SourceConfig>,
 }
 
-/// One source of a run: its key, its adapter, and what to read.
+/// Configuration for one source used by [`specify`].
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub struct SourceConfig {
-    /// The kebab-case key the specification cites the source by.
+    /// The kebab-case key used to cite this source.
     pub key: String,
     /// The adapter that extracts the source.
     pub adapter: AdapterRef,
-    /// What the adapter reads: a project-relative directory (`.` is the
-    /// project itself) or an inline value.
+    /// A project-relative workspace or inline text read by the adapter.
+    ///
+    /// `.` identifies the project root.
     pub content: SourceContent,
 }
 
@@ -151,13 +147,13 @@ impl SourceConfig {
     }
 }
 
-/// What a successful run committed.
+/// The revision committed by a successful [`specify`] operation.
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "kebab-case")]
 pub struct SpecifyOutput {
-    /// The id of the committed revision.
+    /// The content identifier of the committed revision.
     pub revision: String,
-    /// The diff against the revision this run displaced.
+    /// Changes from the displaced revision.
     ///
     /// Absent on the first run, and when the outgoing revision was unreadable.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -238,4 +234,23 @@ struct Extract {
     source: String,
     kind: SourceKind,
     evidence: Evidence,
+}
+
+#[cfg(test)]
+mod tests {
+    use std::path::Path;
+
+    use super::brief::Brief as _;
+    use super::{DesignBrief, GroupingBrief, SpecBrief};
+
+    // Keep (entry-point-unreachable): a synthesis document the list leaves
+    // out, or a link no listed document answers, is invisible to every run;
+    // one no brief puts to the model is embedded and never read.
+    #[test]
+    fn corpus() {
+        let tree = Path::new(env!("CARGO_MANIFEST_DIR")).join("prose");
+        let prompts = [GroupingBrief::PROSE, SpecBrief::PROSE, DesignBrief::PROSE].concat();
+        let findings = emery_prose::check(crate::DOCS, &tree, &prompts);
+        assert!(findings.is_empty(), "{}", findings.join("\n"));
+    }
 }

@@ -1,11 +1,9 @@
-//! Asserts what `emery_sdk::mine` makes of an adapter's seams.
+//! Verifies mining, concurrency, ordering, and failure aggregation across seams.
 //!
-//! - Each seam mined in one model turn — at most four pending, in seam order
-//!   — and joined into one document, claims in seam order with their anchors
-//!   as answered.
-//! - One bound seam: a single turn whose outcome passes through unchanged.
-//! - The refusals earned before any model call.
-//! - Every failed seam reported together under the first one's class.
+//! Each seam produces one model request, with at most four requests pending.
+//! Claims preserve seam order even when requests complete out of order. The
+//! scenarios also cover pre-request validation, single-seam errors, and
+//! aggregation of several failures under the first failure's class.
 
 use std::collections::BTreeMap;
 use std::future::Future;
@@ -29,11 +27,11 @@ fn note(dir: &str) -> String {
     )
 }
 
-/// A model routed by the file the turn lists: one FIFO script per file, so
-/// each seam — every `Files` seam here names one file, and all are lent the
-/// same root — answers from its own script whichever order the fan-out polls
-/// them in. It also counts the completions pending at once, yielding before
-/// each answer so every future the SDK has started is in flight together.
+/// A model with one FIFO answer script per named seam file.
+///
+/// Each file receives its own responses regardless of polling order. The
+/// model also records peak concurrency, yielding before every response so all
+/// requests started by the SDK can become pending together.
 #[derive(Clone, Default)]
 struct ByFile {
     scripts: BTreeMap<String, Scripted>,

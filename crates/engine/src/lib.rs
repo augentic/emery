@@ -1,26 +1,24 @@
-//! Emery's engine: the operations that write and read a specification revision.
+//! Provides transport-independent operations for creating and reading Emery revisions.
 //!
-//! [`specify`] extracts typed claims from a run's sources, derives the
-//! requirements under authority precedence, synthesises a specification and a
-//! design, and commits the pair as one content-addressed revision. [`show`]
-//! reads a document of the current revision back as Markdown. Both are typed
-//! operations over a [`Provider`] of capabilities; argument parsing, terminal
-//! text, and exit codes belong to whichever front end drives them.
+//! [`specify`] extracts source claims, reconciles requirements by authority,
+//! synthesises a specification and design, and commits both as one
+//! content-addressed revision. [`show`] renders either document from the
+//! current revision.
+//!
+//! Both operations use a [`Provider`] of model, adapter, storage, and plugin
+//! capabilities. Command-line parsing and presentation are handled outside
+//! this crate.
 //!
 //! # Vocabulary
 //!
-//! - **Revision**: the specification and design one run commits, identified
-//!   by the digest of their canonical JSON. The revision is the truth; the
-//!   Markdown an operator reads is a projection of it.
-//! - **Brief**: one typed question put to the model during synthesis, with
-//!   the checks its answer must pass before it is accepted. A run puts up to
-//!   three: how the requirement claims group, the draft of `spec.md`, and the
-//!   draft of `design.md`.
-//! - **Basis**: what one requirement is built on before any prose is drafted —
-//!   its contributing claims grouped into agreeing classes, ranked by the
-//!   authority of their sources.
-//! - **Rounds**: an answer that fails its checks goes back to the model with
-//!   the findings; the host bounds how many rounds a brief gets.
+//! - **Revision**: a typed specification and design identified by the digest
+//!   of their canonical JSON. Markdown output is a projection of this data.
+//! - **Brief**: a typed synthesis question and the checks its answer must
+//!   satisfy.
+//! - **Basis**: the reconciled claims, authority, and coverage from which a
+//!   requirement is built.
+//! - **Round**: one attempt to answer a brief. Rejected answers may be returned
+//!   to the model for correction until the host's limit is reached.
 
 mod adapter;
 mod revision;
@@ -79,10 +77,10 @@ pub fn preopen_path(path: &Path) -> Result<PathBuf, Error> {
     Ok(if normalized.as_os_str().is_empty() { PathBuf::from(".") } else { normalized })
 }
 
-/// Every capability an operation may need, as one bound.
+/// A bundle of every capability an engine operation may require.
 ///
-/// A transport names the provider it binds with this single trait. Any type
-/// carrying all of the capabilities implements it.
+/// Any type implementing the required model, source, storage, and plugin
+/// capabilities implements this trait automatically.
 pub trait Provider:
     Model + Source + StateStore + BlobStore + Plugins + Send + Sync + 'static
 {
@@ -90,8 +88,8 @@ pub trait Provider:
 
 impl<P: Model + Source + StateStore + BlobStore + Plugins + Send + Sync + 'static> Provider for P {}
 
-// The synthesis corpus, embedded at compile time; `tests::corpus` holds the
-// list to the tree.
+// The synthesis corpus, embedded at compile time; `specify::tests::corpus`
+// holds the list to the tree and to the briefs that read it.
 static DOCS: &[emery_prose::Doc] = emery_prose::prose!(
     "../prose",
     [
@@ -105,18 +103,3 @@ static DOCS: &[emery_prose::Doc] = emery_prose::prose!(
         "synthesis/tags.md",
     ]
 );
-
-#[cfg(test)]
-mod tests {
-    use std::path::Path;
-
-    // Keep (entry-point-unreachable): a synthesis document the list leaves
-    // out, or a link no listed document answers, is invisible to every run
-    // until a brief asks for it.
-    #[test]
-    fn corpus() {
-        let tree = Path::new(env!("CARGO_MANIFEST_DIR")).join("prose");
-        let findings = emery_prose::check(super::DOCS, &tree);
-        assert!(findings.is_empty(), "{}", findings.join("\n"));
-    }
-}

@@ -1,14 +1,8 @@
-//! How an operator names an adapter, and how the engine loads it.
+//! Parses adapter references and loads the adapters required by a run.
 //!
-//! An [`AdapterRef`] is a registry package, a guest the deployment declares,
-//! or a local `.wasm` file. [`load`] brings every adapter a run's sources name
-//! into the run — each once, all together — refuses any that requires a newer
-//! Emery than the one running, and reads the kind of source each declares,
-//! which ranks its evidence before any extract.
-//!
-//! The reference is the identity: the plugin loader registers an adapter, and
-//! the `Source` capability dispatches to it, by the [`AdapterRef`]'s
-//! `Display`.
+//! An [`AdapterRef`] identifies a built-in guest, registry package, or local
+//! WebAssembly component. [`load`] loads each unique reference, checks version
+//! compatibility, and returns the source authority declared by every adapter.
 
 use std::collections::BTreeMap;
 use std::fmt::{self, Display, Formatter};
@@ -25,20 +19,20 @@ use serde::{Deserialize, Serialize};
 
 use crate::preopen_path;
 
-/// Loads the `adapters` and returns the kind of source each declares, by id.
+/// Loads each referenced adapter and returns its declared source kind.
 ///
-/// An adapter several sources share is loaded once, and every adapter is
-/// loaded before any is read. Each adapter's metadata is read once: it gates
-/// the Emery version the adapter requires and supplies its kind.
+/// Duplicate references are loaded once. All components are loaded before
+/// metadata is queried. A declared minimum Emery version must not exceed the
+/// running version.
 ///
 /// # Errors
 ///
-/// - [`Error::BadRequest`] for a file reference that escapes the project, an
-///   adapter with a malformed `emery-version`, or one that requires a newer
-///   Emery than this (code `unsupported-version`).
-/// - [`Error::NotFound`] for a file reference that names no file.
+/// - Returns [`Error::BadRequest`] for a path outside the project, malformed
+///   version metadata, or an incompatible adapter. Incompatible versions use
+///   code `unsupported-version`.
+/// - Returns [`Error::NotFound`] when a local component does not exist.
 ///
-/// Plugin load failures pass through with their own class.
+/// Errors from [`Plugins::load`] are returned unchanged.
 pub async fn load<'a, P: Source + Plugins>(
     provider: &P, adapters: impl IntoIterator<Item = &'a AdapterRef>,
 ) -> Result<BTreeMap<String, SourceKind>, Error> {
@@ -110,12 +104,12 @@ fn is_supported(id: &str, declared: &str, running: &semver::Version) -> Result<(
     Ok(())
 }
 
-/// How an operator names an adapter, and the adapter's identity.
+/// A reference to a source adapter.
 ///
-/// On the wire it is the operator's string. In memory it is that string
-/// normalised — `intent@1.0.0` becomes `emery:intent@1.0.0`, and a `file://`
-/// prefix is dropped — and `Display` gives the normalised string back. The
-/// plugin loader and the `Source` capability address the adapter by it.
+/// Parsing normalises package shorthands and local file prefixes.
+/// `intent@1.0.0` becomes `emery:intent@1.0.0`, while
+/// `file://./intent.wasm` becomes `./intent.wasm`. Its [`Display`]
+/// implementation returns that normalised identity.
 ///
 /// # Examples
 ///
@@ -137,9 +131,9 @@ fn is_supported(id: &str, declared: &str, running: &semver::Version) -> Result<(
 pub enum AdapterRef {
     /// A project-relative path to a `.wasm` component.
     File(PathBuf),
-    /// A registry package, always `<namespace>:<name>@<version>`.
+    /// A registry package in `<namespace>:<name>@<version>` form.
     Package(String),
-    /// A guest the deployment declares, named bare (`intent`).
+    /// A built-in adapter identified by a bare name such as `intent`.
     Static(String),
 }
 
@@ -155,8 +149,9 @@ impl Display for AdapterRef {
 impl FromStr for AdapterRef {
     type Err = Error;
 
-    /// Parses `./intent.wasm`, `intent`, `emery:intent@1.0.0`, or the
-    /// shorthand `intent@1.0.0`.
+    /// Parses a local path, bare adapter name, or versioned package.
+    ///
+    /// A package without an explicit namespace uses `emery`.
     ///
     /// # Errors
     ///

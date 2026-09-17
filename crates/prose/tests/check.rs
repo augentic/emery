@@ -1,11 +1,9 @@
-//! Asserts what `prose!` embeds and what `check` holds a table to.
+//! Verifies document embedding and corpus validation.
 //!
-//! The list names each document by tree-relative path and embeds its body
-//! verbatim from the tree beside the invoking file. The check walks that tree
-//! — through a symlinked directory, never through a cycle — and reports a
-//! document the list leaves out, a listed document the tree lacks, a path
-//! listed twice, and a relative link no listed document answers; a link in
-//! fenced code is not a link, and neither is a URL.
+//! The scenarios cover table order, verbatim bodies, missing and duplicate
+//! entries, prompt reachability, and relative-link resolution. They also
+//! verify symlink traversal and ensure links in fenced code or external URLs
+//! are ignored.
 
 use std::fs;
 use std::os::unix::fs::symlink;
@@ -24,7 +22,8 @@ fn fixtures() {
     assert_eq!(body(DOCS, "references/ids.md"), Some(include_str!("fixtures/references/ids.md")));
     assert_eq!(body(DOCS, "prompts/extract.md"), Some(include_str!("fixtures/prompts/extract.md")));
 
-    let findings = check(DOCS, &Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures"));
+    let tree = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures");
+    let findings = check(DOCS, &tree, &["prompts/extract.md"]);
     assert!(findings.is_empty(), "{}", findings.join("\n"));
 }
 
@@ -34,13 +33,13 @@ fn fixtures() {
 #[test]
 fn unlisted() {
     let tmp = tempfile::tempdir().expect("tempdir");
-    write(tmp.path(), "a.md", "# A\n");
+    write(tmp.path(), "a.md", "# A, see [c](c.md)\n");
     write(tmp.path(), "b.md", "# B\n");
     write(tmp.path(), "notes.txt", "not a document\n");
 
-    let table = [doc("a.md", "# A\n"), doc("c.md", "# C\n")];
+    let table = [doc("a.md", "# A, see [c](c.md)\n"), doc("c.md", "# C\n")];
     assert_eq!(
-        check(&table, tmp.path()),
+        check(&table, tmp.path(), &["a.md"]),
         [
             "`b.md` is in the tree but not in the table",
             "`c.md` is in the table but not in the tree",
@@ -55,7 +54,35 @@ fn repeated() {
     write(tmp.path(), "a.md", "# A\n");
 
     let table = [doc("a.md", "# A\n"), doc("a.md", "# A\n")];
-    assert_eq!(check(&table, tmp.path()), ["`a.md` is listed twice"]);
+    assert_eq!(check(&table, tmp.path(), &["a.md"]), ["`a.md` is listed twice"]);
+}
+
+// A listed document no prompt reaches is embedded and never read, and a link
+// from another unreached document does not rescue it; a prompt the table
+// lacks is `server_error` on every run. Both are the table's own drift, so
+// the tree agrees with the list throughout.
+#[test]
+fn unlinked() {
+    let tmp = tempfile::tempdir().expect("tempdir");
+    write(tmp.path(), "prompts/extract.md", "see [ids](../references/ids.md)\n");
+    write(tmp.path(), "references/ids.md", "# Ids\n");
+    write(tmp.path(), "references/notes.md", "see [more](more.md)\n");
+    write(tmp.path(), "references/more.md", "# More\n");
+
+    let table = [
+        doc("prompts/extract.md", "see [ids](../references/ids.md)\n"),
+        doc("references/ids.md", "# Ids\n"),
+        doc("references/notes.md", "see [more](more.md)\n"),
+        doc("references/more.md", "# More\n"),
+    ];
+    assert_eq!(
+        check(&table, tmp.path(), &["prompts/extract.md", "prompts/survey.md"]),
+        [
+            "`prompts/survey.md` is a prompt the table does not hold",
+            "`references/notes.md` is reached from no prompt",
+            "`references/more.md` is reached from no prompt",
+        ]
+    );
 }
 
 // A symlinked directory is part of the tree, and a `](` inside fenced code
@@ -83,7 +110,7 @@ fn symlinked() {
         doc("b.md", "# B\n"),
         doc("runtime/rule.md", "# Rule\n"),
     ];
-    let findings = check(&table, &tree);
+    let findings = check(&table, &tree, &["a.md"]);
     assert!(findings.is_empty(), "{}", findings.join("\n"));
 }
 
@@ -105,7 +132,7 @@ fn dangling() {
         doc("references/ids.md", "# Ids, see [nope](nope.md)\n"),
     ];
     assert_eq!(
-        check(&table, tmp.path()),
+        check(&table, tmp.path(), &["prompts/extract.md"]),
         [
             "`prompts/extract.md` links `../../x.md`, which leaves the tree",
             "`references/ids.md` links `nope.md`, and the table holds no `references/nope.md`",
@@ -119,14 +146,14 @@ fn dangling() {
 fn unwalkable() {
     let tmp = tempfile::tempdir().expect("tempdir");
 
-    let absent = check(&[], &tmp.path().join("absent"));
+    let absent = check(&[], &tmp.path().join("absent"), &[]);
     assert_eq!(absent.len(), 1, "{absent:?}");
     assert!(absent[0].contains("cannot be read"), "{}", absent[0]);
 
     let cycle = tmp.path().join("cycle");
     write(&cycle, "intro.md", "# Intro\n");
     symlink(Path::new("."), cycle.join("loop")).expect("symlink");
-    let looped = check(&[doc("intro.md", "# Intro\n")], &cycle);
+    let looped = check(&[doc("intro.md", "# Intro\n")], &cycle, &["intro.md"]);
     assert_eq!(looped.len(), 1, "{looped:?}");
     assert!(looped[0].contains("symlink cycle"), "{}", looped[0]);
 }

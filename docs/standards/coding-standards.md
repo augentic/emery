@@ -37,11 +37,13 @@ Doc comments (`///`, `//!`) follow the conventions the widely used crates — `s
 - **Written for the crate's user, not its maintainer.** A doc comment states the observable contract — what goes in, what comes out, what is guaranteed — and leaves the mechanics to the code and the `//` comments beside it. Prose about how a body works goes stale first and is the reader's least need.
 - **The first line is one short summary sentence** of about fifteen words, ending in a full stop, then a blank line, then the detail. rustdoc lifts that sentence into every index page, so it must stand alone. A fn's summary is a third-person verb sentence (`Returns …`, `Commits …`, `Groups …`); a type's or constant's is a noun phrase (`A claim extracted from a source.`); a module's says what the module provides (`Lists a tree adapter's files and cuts them into seams.`). Never a bare title (`The survey`), a heading, a `Tells whether …`, or a noun phrase standing in for a verb (`` `files` cut by directory … ``).
 - **Detail is short plain sentences and lists.** One idea per sentence; three or more things are a bullet list, not a colon-and-dash clause. A paragraph the reader cannot take in at a glance is two paragraphs.
+- **Types explain invariants; fields and variants explain distinctions.** State accepted formats, ordering, defaults, and relationships that the signature cannot show. ``/// The source key.`` merely repeats the field name; ``/// The key used to cite this source in a specification.`` tells the caller why it exists.
+- **Claims are exact and current.** Document only behaviour the implementation enforces. Distinguish input forms, ordering, normalisation, retries, side effects, and refusal conditions when those differences are observable; omit them when they are not.
 - **Canonical sections**, spelled and ordered `# Examples`, `# Errors`, `# Panics`. `# Errors` names each class the caller can match on, linked, one bullet per class when there is more than one: ``Returns [`Error::BadRequest`] when …``. A recovery code is named beside its class: ``[`Error::NotFound`] with code `spec-not-generated` when …``. Never the macro name (`bad_request`), a category (`load failures`), or `Fails if …`.
 - **Examples are compiled doctests** (`cargo test --doc` runs in `make check`): `?` rather than `unwrap`, setup hidden behind `#` lines. Every crate a third party depends on (`emery-sdk`, `emery-adapter`, `emery-prose`) carries a quick start under `# Examples` in its crate root; a trait an author implements shows a complete impl; a pure fn shows one call and its result. `ignore` is for code that cannot compile natively, and a `//` beside the fence says why.
 - **Vocabulary is the ecosystem's, or defined once and linked.** A house term (seam, lend, survey, claim gate, revision) is defined under `# Vocabulary` in the crate root of the crate that owns it and linked on first use in an item's docs (``[seam](crate#vocabulary)``). A term the reader would have to look up elsewhere — AGENTS.md, an RFC, omnia's internals — does not appear.
 - **Every mentioned item is an intra-doc link** (``[`Evidence`]``, ``[`Seam::Files`]``), in `///` docs as in `//!` docs. A plain code span is for a value, a path, or an item this crate cannot name.
-- **Module `//!` docs** answer "what is this module, and why does it exist?" for a reader who has not opened the file: the summary sentence, then plain paragraphs on what the module is for and what it guarantees. No deployment tours, no AGENTS.md restatements, no RFC archaeology. A module doc long enough to need structure uses `#` headings, and a heading is never its first line.
+- **Module `//!` docs** answer "what is this module, and why does it exist?" for a reader who has not opened the file: the summary sentence, then plain paragraphs on what the module is for and what it guarantees. No deployment tours, no AGENTS.md restatements, no RFC archaeology. Build scripts, test suites, file placement, and `cfg` wiring stay out unless they change what the crate's user can call. A module doc long enough to need structure uses `#` headings, and a heading is never its first line.
 - **`//` section headers** outline a fn body too long to take in at once: a lowercase fragment with no full stop — an imperative phrase or a bare noun — above each blank-line-separated block, naming what the block achieves rather than how (`// load source adapters`, `// collect extracts or findings for failed extracts`, `// scenarios`). Together they are the pseudocode the fn was written from, so a reader can follow the headers alone and open a block only when it matters. A fn readable at a glance gets none, and a header never repeats the line beneath it.
 - **`//` why comments** are capitalised sentences beside the surprising branch they explain, never in a preamble essay. The casing is the signal: a lowercase fragment is an outline entry to skim; a sentence is something to stop and read.
 - **Historical phrases** are banned in comments and docs: `Phase `, `formerly`, `previously lived`, `old contract`, `former tests`, `to avoid the`. Git history is the record.
@@ -105,12 +107,11 @@ The composition-root failure mode is the essay that restates architecture and hi
 // operational fact (the read-only project mount) buried in the middle.
 
 // GOOD
-//! The shipped `emery` runtime.
+//! Defines the shipped `emery` runtime.
 //!
-//! One omnia deployment that embeds the engine guest and declares everything
-//! it is allowed to touch. The deployment is fixed at compile time so a given
-//! `emery` binary always runs with the same policy; there is no runtime
-//! configuration to audit.
+//! The runtime embeds the engine guest and declares every capability it may
+//! use. Its policy is fixed at compile time, so every copy of a given binary
+//! has the same authority.
 
 // …inside the macro body:
 // The invocation directory mounts read-only — nothing writes the tree.
@@ -139,7 +140,7 @@ if let Some(outgoing) = observed.outgoing_id().filter(|outgoing| *outgoing != id
 
 Doc comments describe what this is today. Version-history tables, dated bumps, commit hashes, and migration notes belong in git log — not in `///` blocks. Longer prose belongs in the standards docs.
 
-`cargo doc` is part of `make ci`, so doc comments must compile. Reference paths inside backticks (`` `Self::config_path` ``) are fine; bare links (`[Foo]`) need a corresponding intra-doc target or rustdoc fails the build.
+`cargo doc` is part of `make ci`, so doc comments must compile. Reference paths inside backticks (`` `Self::config_path` ``) are fine; bare links (`[Foo]`) need a corresponding intra-doc target or rustdoc fails the build. When a public item is target-gated, build that target's documentation too; for the guest surface, run `RUSTDOCFLAGS=-Dwarnings cargo doc --no-deps --workspace --all-features --locked --target wasm32-wasip2`.
 
 ## Naming
 

@@ -1,22 +1,12 @@
-//! One typed question put to the model, and what it takes to accept the answer.
+//! Defines the shared workflow for typed synthesis requests.
 //!
-//! A [`Brief`] carries a run's facts, names the prose that instructs the
-//! model, renders the turn, tightens the answer's derived schema to the run,
-//! and verifies every candidate against the facts. Only an accepted answer
-//! becomes output — requirements or a document — and the brief alone produces
-//! it.
+//! A [`Brief`] combines engine facts, prompt documents, an answer schema, and
+//! validation. Only a response that passes both deserialisation and
+//! fact-based checks can produce engine output.
 //!
-//! A run puts up to three briefs in turn: how the requirement claims group
-//! (over two or more sources), the drafted content of `spec.md`, then of
-//! `design.md`. Nothing the engine already knows is asked of the model — no
-//! heading, id, `Sources:` list, status, note, or type signature — so it
-//! cannot drop, reorder, or rewrite a requirement, invent or omit a section,
-//! cite an unbound source, or paraphrase a signature. The stored revision is a
-//! function of the facts and the accepted drafts alone.
-//!
-//! This module carries what every brief shares: the trait, the [`Review`] a
-//! verification records on, and the [`ClaimsSection`] the document briefs
-//! open their turn with.
+//! Synthesis may use briefs for claim grouping, specification drafting, and
+//! design drafting. Facts already known to the engine are validated or
+//! inserted directly rather than requested from the model.
 
 use std::fmt::{self, Display, Formatter};
 
@@ -35,43 +25,44 @@ pub trait Brief: Display + Sync + Sized {
     /// The typed answer the brief asks for.
     type Answer: JsonSchema + DeserializeOwned + Send;
 
-    /// What the judgment yields: requirements, a document.
+    /// The engine value produced from an accepted answer.
     type Output;
 
-    /// The question's name.
+    /// The stable name of the model request.
     const NAME: &'static str;
 
-    /// The synthesis prose, in prompt order.
+    /// Paths of prompt documents, in assembly order.
     const PROSE: &'static [&'static str];
 
-    /// Tightens the derived `schema` to this run.
+    /// Restricts the derived `schema` using facts from this run.
     ///
-    /// The schema steers the model; [`Self::verify`] is the gate.
+    /// Schema changes guide generation; [`Self::verify`] remains the
+    /// authoritative check.
     fn tighten(&self, schema: &mut Value);
 
-    /// Verifies a candidate answer against the run's facts.
+    /// Validates a candidate answer against facts from this run.
     ///
-    /// Every finding is recorded on `review`, and goes back to the model for
-    /// repair.
+    /// Every violation is recorded in `review` for a possible correction
+    /// round.
     fn verify(&self, answer: &Self::Answer, review: &mut Review);
 
-    /// Turns the accepted answer into this brief's output.
+    /// Converts an accepted answer into engine output.
     ///
     /// # Errors
     ///
-    /// Returns [`Error::ServerError`] when the answer names a fact the brief
-    /// cannot place; the answer passed [`Self::verify`], so that is the
-    /// engine's own defect.
+    /// Returns [`Error::ServerError`] when the accepted answer cannot be
+    /// reconciled with the brief's facts.
     fn into_output(self, answer: Self::Answer) -> Result<Self::Output, Error>;
 
-    /// Puts the brief to `model` and returns the output of the accepted answer.
+    /// Submits the brief to `model` and returns validated engine output.
     ///
     /// # Errors
     ///
-    /// Returns [`Error::BadGateway`] for a model failure, [`Error::BadRequest`]
-    /// for a candidate outside the answer's shape or one the model could not
-    /// repair within its rounds, and [`Error::ServerError`] for synthesis prose
-    /// the build did not embed.
+    /// - Returns [`Error::BadRequest`] when no valid answer is produced within
+    ///   the available rounds.
+    /// - Returns [`Error::ServerError`] when a required prompt document is not
+    ///   embedded or an accepted answer cannot be converted.
+    /// - Returns [`Error::BadGateway`] when the model operation fails.
     async fn judge<M: Model>(self, model: &M) -> Result<Self::Output, Error> {
         tracing::info!(question = Self::NAME, "asking the model");
         let mut system = Vec::with_capacity(Self::PROSE.len());

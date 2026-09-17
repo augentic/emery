@@ -1,9 +1,7 @@
-//! The `list_docs` and `read_doc` tools a model call offers.
+//! Provides model tools for reading embedded reference documents.
 //!
-//! The model consults the adapter's embedded documents on demand instead of
-//! receiving the whole corpus in the prompt. Calls are answered in-process
-//! from the embedded [`Doc`] table; there is no server behind them, so an
-//! adapter needs no network access to expose its references.
+//! The tools list available paths and retrieve complete document bodies from
+//! an in-memory [`Doc`] table. They require no network service.
 
 use std::future::ready;
 
@@ -13,7 +11,7 @@ use schemars::JsonSchema;
 use serde::Deserialize;
 use serde_json::json;
 
-/// The `list_docs` arguments: none.
+/// The empty argument object accepted by `list_docs`.
 // A braced struct derives the empty `object` schema a tool's parameters must
 // be; a unit struct would derive `null`.
 #[derive(Debug, Deserialize, JsonSchema)]
@@ -23,7 +21,7 @@ use serde_json::json;
 )]
 struct ListDocs {}
 
-/// The `read_doc` arguments.
+/// The document selector accepted by `read_doc`.
 #[derive(Debug, Deserialize, JsonSchema)]
 struct ReadDoc {
     /// The adapter-relative document path, such as `prompts/extract.md`.

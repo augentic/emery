@@ -1,8 +1,8 @@
-//! The typed form of `design.md`.
+//! Defines the typed data and Markdown rendering for `design.md`.
 //!
-//! A [`Design`] is a preamble and the sections of a closed vocabulary in a
-//! fixed order, each a run of drafted paragraphs and the type signatures the
-//! engine placed verbatim. `Display` renders the Markdown an operator reads.
+//! A [`Design`] contains introductory paragraphs and a fixed vocabulary of
+//! sections. Section blocks contain drafted prose or verbatim type
+//! signatures.
 
 use std::fmt::{self, Display, Formatter};
 
@@ -13,16 +13,16 @@ use crate::revision;
 
 const CITATION: &str = "(from ";
 
-/// The `Type:` key: the engine's own line labelling a signature fence.
+/// The `Type:` key written before a type-signature fence.
 pub const TYPE: &str = "Type:";
 
-/// The design: a preamble and its sections, in vocabulary order.
+/// A rebuild design in its stored form.
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Design {
     /// The grammar the document was written under.
     pub emery: u32,
-    /// Markdown paragraphs before the first section.
+    /// Markdown paragraphs preceding the first section.
     pub preamble: Vec<String>,
     /// The sections, in vocabulary order.
     pub sections: Vec<Section>,
@@ -47,15 +47,15 @@ impl Display for Design {
     }
 }
 
-/// One `## ` section of the design.
+/// A section of a rebuild design.
 ///
-/// The revision's sections hold placed [`Block`]s; a draft's hold the blocks a
-/// draft answers in, so `B` is the block type.
+/// `B` allows the same section shape to hold either draft blocks or stored
+/// [`Block`] values.
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 #[schemars(rename = "Section")]
 pub struct Section<B = Block> {
-    /// The heading, from the closed vocabulary.
+    /// The section heading.
     pub kind: SectionKind,
     /// The blocks, in reading order.
     pub blocks: Vec<B>,
@@ -72,15 +72,15 @@ impl Display for Section {
     }
 }
 
-/// One design block: a drafted paragraph, or a `type` claim's signature.
+/// A paragraph or type signature in a design section.
 #[derive(Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum Block {
     /// One Markdown paragraph.
     Text(String),
-    /// A `type` claim's signature, placed verbatim.
+    /// A type claim's verbatim signature.
     Type {
-        /// The claim's key.
+        /// The source claim's key.
         key: String,
         /// The claim's signature.
         signature: String,
@@ -99,10 +99,11 @@ impl Display for Block {
     }
 }
 
-/// The closed vocabulary of `## ` sections, in document order.
+/// A section in the rebuild design.
 ///
-/// A draft names a section by its kebab-case key (`as_ref()`, `domain-model`);
-/// the document by its title (`Display`, `Domain model`).
+/// Variants are declared in document order. [`AsRef::as_ref`] returns the
+/// kebab-case key used in structured data, while [`Display`] returns the
+/// Markdown heading.
 ///
 /// # Examples
 ///

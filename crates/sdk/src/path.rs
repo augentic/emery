@@ -1,10 +1,10 @@
-//! Normalises a path named beneath the source root.
+//! Validates root-relative paths within a source.
 
-/// Returns `path` as a `/`-separated path beneath the root, or why it is not one.
+/// Returns a normalised root-relative path or an explanatory error.
 ///
-/// Empty and `.` segments are dropped. A leading `/` or a `..` segment
-/// escapes the root; a path with no segment left names no file. The reason
-/// reads after the path it describes: `` `x` escapes the source root ``.
+/// Empty and `.` segments are removed. A leading `/`, any `..` segment, or a
+/// path with no remaining segments is rejected. Error text is phrased to
+/// follow the offending path, as in `` `x` escapes the source root ``.
 pub fn beneath(path: &str) -> Result<String, &'static str> {
     if path.starts_with('/') || path.split('/').any(|segment| segment == "..") {
         return Err("escapes the source root");

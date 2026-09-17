@@ -1,4 +1,4 @@
-//! Asserts workspace listing and the entry policy exposed to adapters.
+//! Verifies workspace listing and adapter-defined entry filters.
 //!
 //! The listing carries root-relative regular files in order, omits engine
 //! output and symlinks, and applies the adapter's filter while walking.

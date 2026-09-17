@@ -1,9 +1,7 @@
-//! Asserts what callers can rely on from an embedded corpus.
+//! Verifies exact path lookup in an embedded document table.
 //!
-//! A document is found by its tree-relative path, its body comes back intact,
-//! and asking for a path the build did not embed is `None` — the caller
-//! reports the mismatch as its own failure, so it is never a silent miss and
-//! never a panic.
+//! Existing documents retain their complete bodies. Missing paths return
+//! `None` rather than panicking.
 
 use emery_prose::{Doc, body, find};
 

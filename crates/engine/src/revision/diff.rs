@@ -1,32 +1,29 @@
-//! How one revision differs from the one it displaced.
+//! Describes changes between two specification revisions.
 //!
-//! Each document's preamble, the requirements added, removed, or changed
-//! (matched by id), and the design sections likewise (matched by kind). The
-//! diff is typed equality over two revisions, never a comparison of their
-//! projections. It is reported once, with the run that committed the incoming
-//! revision, and stored nowhere.
+//! Requirements are matched by identifier and design sections by kind.
+//! Comparisons use typed revision data rather than rendered Markdown.
 
 use serde::Serialize;
 
 use super::{Design, ReqId, Requirement, Revision, SectionKind, Spec};
 
-/// The differences between a committed revision and the one it displaced.
+/// Changes from a displaced revision to a newly committed revision.
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "kebab-case")]
 pub struct Diff {
-    /// The id of the revision this run displaced.
+    /// The identifier of the displaced revision.
     pub from: String,
-    /// What changed in the specification.
+    /// Changes to the behavioural specification.
     pub spec: SpecDiff,
-    /// What changed in the design.
+    /// Changes to the rebuild design.
     pub design: DesignDiff,
 }
 
 impl Diff {
-    /// Returns the differences between `outgoing`, which `from` names, and `incoming`.
+    /// Returns the changes from `outgoing` to `incoming`.
     ///
-    /// Preambles compare whole, requirements by id, and sections by kind —
-    /// never by position.
+    /// `from` must identify `outgoing`. Preambles are compared as complete
+    /// values, requirements by identifier, and design sections by kind.
     #[must_use]
     pub fn between(from: &str, outgoing: &Revision, incoming: &Revision) -> Self {
         Self {
@@ -37,17 +34,17 @@ impl Diff {
     }
 }
 
-/// The requirements that differ between two revisions.
+/// Changes to the specification portion of a revision.
 #[derive(Debug, Clone, Default, Serialize)]
 #[serde(rename_all = "kebab-case")]
 pub struct SpecDiff {
     /// Whether the preamble changed.
     pub preamble: bool,
-    /// Requirements present only in the incoming revision.
+    /// Requirements present only in the new revision.
     pub added: Vec<Entry>,
-    /// Requirements present only in the outgoing revision.
+    /// Requirements present only in the displaced revision.
     pub removed: Vec<Entry>,
-    /// Requirements present in both whose content changed.
+    /// Requirements present in both revisions with differing content.
     pub changed: Vec<Changed>,
 }
 
@@ -84,11 +81,11 @@ impl SpecDiff {
     }
 }
 
-/// One requirement named by a diff.
+/// A requirement identified in a revision diff.
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "kebab-case")]
 pub struct Entry {
-    /// The requirement id.
+    /// The stable requirement identifier.
     pub id: ReqId,
     /// The requirement subject.
     pub subject: String,
@@ -103,28 +100,28 @@ impl From<&Requirement> for Entry {
     }
 }
 
-/// One requirement whose content changed, and the fields that differ.
+/// A requirement changed between revisions.
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "kebab-case")]
 pub struct Changed {
-    /// The requirement, named as the diff names every other.
+    /// The requirement's identifier and subject in the new revision.
     #[serde(flatten)]
     pub requirement: Entry,
-    /// The differing fields, in declaration order.
+    /// Names of the differing fields, in declaration order.
     pub fields: Vec<&'static str>,
 }
 
-/// The design sections that differ between two revisions, by kind.
+/// Changes to the design portion of a revision.
 #[derive(Debug, Clone, Default, Serialize)]
 #[serde(rename_all = "kebab-case")]
 pub struct DesignDiff {
     /// Whether the preamble changed.
     pub preamble: bool,
-    /// Sections present only in the incoming revision.
+    /// Sections present only in the new revision.
     pub added: Vec<SectionKind>,
-    /// Sections present only in the outgoing revision.
+    /// Sections present only in the displaced revision.
     pub removed: Vec<SectionKind>,
-    /// Sections present in both whose blocks changed.
+    /// Sections present in both revisions with differing blocks.
     pub changed: Vec<SectionKind>,
 }
 

@@ -1,17 +1,16 @@
-//! Embeds a crate's prompts and reference documents at compile time.
+//! Embeds Markdown prompts and reference documents into Rust binaries.
 //!
-//! Prompts and references ship inside the binaries that use them — the
-//! engine's synthesis prose, each adapter's extraction prose — rather than
-//! being read from disk at run time. This crate is the shared way to do that:
-//! [`prose!`] embeds the listed documents of a Markdown tree as a table of
-//! [`Doc`]s the way `include_str!` embeds one file, [`find`] and [`body`]
-//! look a document up in that table by path, and [`check`] is the test that
-//! holds the table to the tree — every document listed, every link answered.
+//! [`prose!`] creates a static table of [`Doc`] values from files selected at
+//! compile time. [`find`] and [`body`] retrieve documents by their
+//! tree-relative paths.
+//!
+//! [`check`] validates an embedded table against its source tree and prompt
+//! graph. It is intended for native tests, where the original files are
+//! available.
 //!
 //! # Examples
 //!
-//! A crate lists the documents of the `prose/` tree beside its `src/` and
-//! reads one by path:
+//! Embed selected files and read one by path:
 //!
 //! ```
 //! use emery_prose::Doc;
@@ -29,15 +28,15 @@ mod doc;
 pub use self::check::check;
 pub use self::doc::{Doc, body, find};
 
-/// Embeds the listed documents of the Markdown tree at `root`, relative to the invoking file, as a table of [`Doc`]s.
+/// Embeds selected Markdown files as a static table of [`Doc`] values.
 ///
-/// The expansion is a `&'static [Doc]`, one entry per listed path in the
-/// order listed: its `path` is the tree-relative path as written and its
-/// body is the file at `root/path` as `include_str!` embeds it, so the two
-/// cannot disagree and an edit to any listed file rebuilds the crate. A
-/// listed document the tree does not hold fails the build at the invocation.
-/// A document the tree holds but the list does not is simply not embedded;
-/// [`check`] is the test that finds one.
+/// `root` is relative to the source file invoking the macro. Each listed path
+/// is relative to that root and becomes one table entry, preserving the order
+/// written in the invocation.
+///
+/// File bodies are included at compile time, like `include_str!`. A missing
+/// listed file therefore fails the build. Files that exist under `root` but
+/// are not listed are omitted; use [`check`] in a native test to detect them.
 ///
 /// # Examples
 ///

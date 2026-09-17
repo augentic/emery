@@ -1,16 +1,9 @@
-//! Asserts the turn `emery_sdk::mine` puts to the model for one seam.
+//! Verifies the model exchange used to mine one seam.
 //!
-//! - The request it builds: the embedded prompt as the system, the SDK-owned
-//!   turn around the adapter's seam, the claims-only schema with the
-//!   claim-id pattern, `check` set, the reference tools, and the workspace
-//!   lend — the input's root, for every seam of a workspace.
-//! - A corpus without the prompt refused before any turn.
-//! - A document-level kind refused as a schema miss.
-//! - Reference calls answered from the embedded corpus.
-//! - A candidate the claim gate rejects corrected in place.
-//! - The backend's spent rounds surfacing as `bad_request` with the last
-//!   findings.
-//! - A host refusal passing through as `bad_request`.
+//! The scenarios cover the system prompt, seam description, evidence schema,
+//! claim check, reference tools, and workspace grant. They also verify
+//! pre-request validation, correction rounds, exhausted budgets, and model
+//! error classification.
 //!
 //! Every call here mines one seam, so each is one turn and its outcome passes
 //! through unchanged; the fan-out and join over several are `mine.rs`'s.

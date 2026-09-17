@@ -1,4 +1,4 @@
-//! The check that holds an embedded table to the tree it was listed from.
+//! Validates an embedded document table against its source files.
 
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
@@ -6,18 +6,22 @@ use std::{fs, io};
 
 use crate::Doc;
 
-/// Returns every way the table `docs` and the Markdown tree at `root` disagree; empty when they agree.
+/// Returns inconsistencies between `docs`, its source tree, and its prompts.
 ///
-/// The tree is walked as it stands on disk, symlinked directories followed,
-/// and every `.md` beneath it must be listed once in `docs` under its
-/// tree-relative path. Every relative link in a listed body — outside fenced
-/// code, its fragment dropped — must name a document in the table, so what a
-/// prompt tells the model to read is always there to be read. Each finding
-/// names the document and what is wrong with it.
+/// An empty result means all of the following are true:
 ///
-/// This is the test that keeps a [`prose!`](crate::prose) list in step with
-/// its tree: run it natively over the tree beside the crate, from a suite
-/// that can name the table.
+/// - Every Markdown file beneath `root` appears exactly once in `docs`.
+/// - Every relative link in an embedded document resolves to another entry.
+/// - Every path in `prompts` identifies an embedded document.
+/// - Every other document is reachable by following links from a prompt.
+///
+/// Symlinked directories are followed. Unreadable paths and symlink cycles
+/// are reported as findings. Links inside fenced code are ignored, and URL
+/// fragments do not affect the document path. Each finding identifies the
+/// relevant path and violation.
+///
+/// Use this function in a native test beside a [`prose!`](crate::prose)
+/// invocation.
 ///
 /// # Examples
 ///
@@ -30,16 +34,17 @@ use crate::Doc;
 ///     emery_prose::prose!("../tests/fixtures", ["prompts/extract.md", "references/ids.md"]);
 ///
 /// let tree = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures");
-/// let findings = emery_prose::check(DOCS, &tree);
+/// let findings = emery_prose::check(DOCS, &tree, &["prompts/extract.md"]);
 /// assert!(findings.is_empty(), "{}", findings.join("\n"));
 /// ```
 #[must_use]
-pub fn check(docs: &[Doc], root: &Path) -> Vec<String> {
+pub fn check(docs: &[Doc], root: &Path, prompts: &[&str]) -> Vec<String> {
     let on_disk = match walk(root, "", &[]) {
         Ok(paths) => paths,
         Err(finding) => return vec![finding],
     };
 
+    // hold the table to the tree
     let mut findings = Vec::new();
     let mut listed = BTreeSet::new();
     for doc in docs {
@@ -54,6 +59,7 @@ pub fn check(docs: &[Doc], root: &Path) -> Vec<String> {
         findings.push(format!("`{path}` is in the table but not in the tree"));
     }
 
+    // hold every link to the table
     for doc in docs {
         for target in links(doc.body) {
             match resolve(doc.path, target) {
@@ -69,7 +75,38 @@ pub fn check(docs: &[Doc], root: &Path) -> Vec<String> {
             }
         }
     }
+
+    // hold every document to a prompt
+    for prompt in prompts {
+        if !listed.contains(*prompt) {
+            findings.push(format!("`{prompt}` is a prompt the table does not hold"));
+        }
+    }
+    let reached = reach(docs, prompts);
+    for doc in docs {
+        if !reached.contains(doc.path) {
+            findings.push(format!("`{}` is reached from no prompt", doc.path));
+        }
+    }
     findings
+}
+
+// The paths of every document in `docs` a listed prompt reaches by following
+// links: the prompts themselves, then whatever they link, and so on.
+fn reach(docs: &[Doc], prompts: &[&str]) -> BTreeSet<&'static str> {
+    let mut reached = BTreeSet::new();
+    let mut frontier: Vec<&Doc> =
+        prompts.iter().filter_map(|prompt| crate::find(docs, prompt)).collect();
+    while let Some(doc) = frontier.pop() {
+        if !reached.insert(doc.path) {
+            continue;
+        }
+        for target in links(doc.body) {
+            let linked = resolve(doc.path, target).and_then(|path| crate::find(docs, &path));
+            frontier.extend(linked);
+        }
+    }
+    reached
 }
 
 // Every `.md` beneath `dir` by tree-relative path. Symlinks are followed, so
