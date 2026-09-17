@@ -6,6 +6,7 @@
 //! rounds, and model error classification.
 
 use std::fs;
+use std::os::unix::fs::symlink;
 use std::path::Path;
 
 use emery_sdk::survey::{self, Surface};
@@ -298,6 +299,28 @@ async fn model_inline_value() {
     assert_eq!(error.code(), "server_error");
     assert!(error.description().contains("not an inline value"), "{error}");
     assert!(model.seen().is_empty(), "no turn was spent");
+}
+
+// A path through a directory symlink is not a module the walk would offer,
+// even when the target file exists.
+#[tokio::test]
+async fn model_symlink_dir() {
+    let model = Scripted::answering([
+        r#"{"surfaces":[{"name":"GET /orders","entry":"link/nested/file.ts"}]}"#,
+        r#"{"surfaces":[{"name":"POST /orders","entry":"routes/orders.ts"}]}"#,
+    ]);
+    let tmp = tempfile::tempdir().expect("tempdir");
+    write(tmp.path(), "real/nested/file.ts", "");
+    symlink(tmp.path().join("real"), tmp.path().join("link")).expect("symlink");
+    let root = tree(tmp.path(), FILES);
+
+    let surfaces = survey(&model, DOCS, &SourceInput::workspace("code", root))
+        .await
+        .expect("the second candidate is an inventory");
+
+    assert_eq!(surfaces, [surface("POST /orders", "routes/orders.ts")]);
+    let correction = model.exchanges()[0].outcome.as_ref().expect_err("the link is refused");
+    assert!(correction.contains("no file at `link/nested/file.ts`"), "{correction}");
 }
 
 // An empty inventory is an answer, not a finding: the model read the tree

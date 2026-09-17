@@ -108,6 +108,63 @@ pub(crate) fn excluded(entry: Entry<'_>) -> bool {
     }
 }
 
+// Whether `relative` is a regular file the walk would offer under `keep` — each
+// component is read from its parent with `read_dir`, as in [`list`], not by
+// resolving the full path.
+pub(crate) fn offered_file(
+    root: &str, relative: &str, keep: &mut impl FnMut(Entry<'_>) -> bool,
+) -> Result<(), String> {
+    let mut current = Path::new(root);
+    let mut offset = 0;
+    let mut components = relative.split('/');
+    let Some(first) = components.next() else {
+        return Err(format!("no file at `{relative}`"));
+    };
+    let mut component = first;
+
+    loop {
+        let rel_path = &relative[..offset + component.len()];
+        let entry = match find_entry(current, component) {
+            Some(entry) => entry,
+            None => return Err(format!("no file at `{relative}`")),
+        };
+        let file_type = match entry.file_type() {
+            Ok(file_type) => file_type,
+            Err(_) => return Err(format!("no file at `{relative}`")),
+        };
+
+        match components.next() {
+            None => {
+                if !file_type.is_file() {
+                    return Err(format!("no file at `{relative}`"));
+                }
+                let offered = Entry::File(rel_path);
+                if excluded(offered) || !keep(offered) {
+                    return Err(format!("`{relative}` is not a module this adapter mines"));
+                }
+                return Ok(());
+            }
+            Some(next) => {
+                if !file_type.is_dir() {
+                    return Err(format!("no file at `{relative}`"));
+                }
+                let offered = Entry::Dir(rel_path);
+                if excluded(offered) || !keep(offered) {
+                    return Err(format!("`{relative}` is not a module this adapter mines"));
+                }
+                current = entry.path();
+                offset += component.len() + 1;
+                component = next;
+            }
+        }
+    }
+}
+
+fn find_entry(dir: &Path, name: &str) -> Option<std::fs::DirEntry> {
+    let reading = std::fs::read_dir(dir).ok()?;
+    reading.filter_map(Result::ok).find(|entry| entry.file_name().to_str() == Some(name))
+}
+
 // The engine's own files: output, never input, wherever they sit in a tree.
 const SKIP_DIRS: &[&str] = &[".omnia"];
 const SKIP_FILES: &[&str] = &["spec.md", "design.md"];

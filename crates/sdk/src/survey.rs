@@ -6,7 +6,6 @@
 //! [seams](crate#vocabulary).
 
 use std::collections::BTreeSet;
-use std::path::Path;
 
 use emery_adapter::source::SourceContent;
 use emery_prose::Doc;
@@ -15,7 +14,7 @@ use omnia_sdk::{Error, Model, server_error};
 use schemars::JsonSchema;
 use serde::Deserialize;
 
-use crate::workspace::{self, Entry};
+use crate::workspace;
 use crate::{Context, path, references};
 
 /// Returns the surfaces discovered by the model in a workspace source.
@@ -123,25 +122,7 @@ fn module(
     root: &str, named: &str, keep: &mut impl FnMut(Entry<'_>) -> bool,
 ) -> Result<String, String> {
     let entry = path::beneath(named).map_err(|reason| format!("`{named}` {reason}"))?;
-
-    let regular = std::fs::symlink_metadata(Path::new(root).join(&entry))
-        .is_ok_and(|metadata| metadata.is_file());
-    if !regular {
-        return Err(format!("no file at `{named}`"));
-    }
-
-    let refused = || format!("`{named}` is not a module this adapter mines");
-    for (index, _) in entry.match_indices('/') {
-        let dir = Entry::Dir(&entry[..index]);
-        if workspace::excluded(dir) || !keep(dir) {
-            return Err(refused());
-        }
-    }
-    let file = Entry::File(&entry);
-    if workspace::excluded(file) || !keep(file) {
-        return Err(refused());
-    }
-
+    workspace::offered_file(root, &entry, keep)?;
     Ok(entry)
 }
 

@@ -117,6 +117,19 @@ fn skips_symlinks() {
     assert_eq!(files, ["real.md"]);
 }
 
+// A directory symlink is not entered, so a file reachable only through the
+// link is not offered.
+#[test]
+fn skips_symlink_dirs() {
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let root = tree(tmp.path(), &["real/nested/file.md"]);
+    symlink(tmp.path().join("real"), tmp.path().join("link")).expect("symlink");
+
+    let files = workspace::list(root, |_| true).expect("walk");
+
+    assert_eq!(files, ["real/nested/file.md"]);
+}
+
 // A root the walk cannot open is the adapter host's defect, not the
 // operator's input.
 #[test]
