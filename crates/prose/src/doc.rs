@@ -19,7 +19,7 @@ pub struct Doc {
 /// ```
 /// use emery_prose::{Doc, find};
 ///
-/// static DOCS: &[Doc] = &[
+/// static PROSE: &[Doc] = &[
 ///     Doc {
 ///         path: "prompts/extract.md",
 ///         body: "Extract every claim.",
@@ -30,8 +30,8 @@ pub struct Doc {
 ///     },
 /// ];
 ///
-/// assert_eq!(find(DOCS, "references/ids.md").map(|doc| doc.body), Some("# Ids"));
-/// assert!(find(DOCS, "references/missing.md").is_none());
+/// assert_eq!(find(PROSE, "references/ids.md").map(|doc| doc.body), Some("# Ids"));
+/// assert!(find(PROSE, "references/missing.md").is_none());
 /// ```
 #[must_use]
 pub fn find<'d>(docs: &'d [Doc], path: &str) -> Option<&'d Doc> {

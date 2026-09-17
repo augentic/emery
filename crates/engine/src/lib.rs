@@ -90,7 +90,7 @@ impl<P: Model + Source + StateStore + BlobStore + Plugins + Send + Sync + 'stati
 
 // The synthesis corpus, embedded at compile time; `specify::tests::corpus`
 // holds the list to the tree and to the briefs that read it.
-static DOCS: &[emery_prose::Doc] = emery_prose::prose!(
+static PROSE: &[emery_prose::Doc] = emery_prose::prose!(
     "../prose",
     [
         "synthesis/authority.md",

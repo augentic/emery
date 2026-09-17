@@ -250,7 +250,7 @@ mod tests {
     fn corpus() {
         let tree = Path::new(env!("CARGO_MANIFEST_DIR")).join("prose");
         let prompts = [GroupingBrief::PROSE, SpecBrief::PROSE, DesignBrief::PROSE].concat();
-        let findings = emery_prose::check(crate::DOCS, &tree, &prompts);
+        let findings = emery_prose::check(crate::PROSE, &tree, &prompts);
         assert!(findings.is_empty(), "{}", findings.join("\n"));
     }
 }

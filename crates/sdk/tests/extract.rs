@@ -14,7 +14,7 @@ use emery_sdk::model::{Error as ModelError, Reply, Request, ToolCall};
 use emery_sdk::{Backing, Context, Doc, Error, Evidence, Model, Seam, SourceInput};
 use omnia_test::guest::Scripted;
 
-const DOCS: &[Doc] = &[Doc {
+const PROSE: &[Doc] = &[Doc {
     path: "prompts/extract.md",
     body: "SYSTEM",
 }];
@@ -93,13 +93,15 @@ fn files<const N: usize>(paths: [&str; N]) -> Seam {
     Seam::Files(paths.into_iter().map(str::to_string).collect())
 }
 
-async fn extract<M: Model>(model: &M, input: &SourceInput, seams: &[Seam]) -> Result<Evidence, Error> {
+async fn extract<M: Model>(
+    model: &M, input: &SourceInput, seams: &[Seam],
+) -> Result<Evidence, Error> {
     let ctx = Context {
         adapter_id: "probe",
         input,
         model,
     };
-    emery_sdk::extract(&ctx, DOCS, seams).await
+    emery_sdk::extract(&ctx, PROSE, seams).await
 }
 
 // Each claim's `path` anchor, in document order.

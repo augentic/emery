@@ -15,10 +15,10 @@
 //! ```
 //! use emery_prose::Doc;
 //!
-//! static DOCS: &[Doc] =
+//! static PROSE: &[Doc] =
 //!     emery_prose::prose!("../tests/fixtures", ["prompts/extract.md", "references/ids.md"]);
 //!
-//! let prompt = emery_prose::body(DOCS, "prompts/extract.md");
+//! let prompt = emery_prose::body(PROSE, "prompts/extract.md");
 //! assert!(prompt.is_some());
 //! ```
 
@@ -43,14 +43,14 @@ pub use self::doc::{Doc, body, find};
 /// ```
 /// use emery_prose::Doc;
 ///
-/// static DOCS: &[Doc] =
+/// static PROSE: &[Doc] =
 ///     emery_prose::prose!("../tests/fixtures", ["prompts/extract.md", "references/ids.md"]);
 ///
 /// assert_eq!(
-///     DOCS.iter().map(|doc| doc.path).collect::<Vec<_>>(),
+///     PROSE.iter().map(|doc| doc.path).collect::<Vec<_>>(),
 ///     ["prompts/extract.md", "references/ids.md"]
 /// );
-/// assert_eq!(DOCS[1].body, include_str!("../tests/fixtures/references/ids.md"));
+/// assert_eq!(PROSE[1].body, include_str!("../tests/fixtures/references/ids.md"));
 /// ```
 #[macro_export]
 macro_rules! prose {

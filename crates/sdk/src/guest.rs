@@ -38,7 +38,7 @@ impl Model for Provider {}
 ///
 /// ```
 /// # use emery_sdk::{Doc, Error, Seam, SourceInput};
-/// # pub static DOCS: &[Doc] = &[Doc { path: "prompts/extract.md", body: "Extract." }];
+/// # pub static PROSE: &[Doc] = &[Doc { path: "prompts/extract.md", body: "Extract." }];
 /// # pub fn survey(_input: &SourceInput) -> Result<Vec<Seam>, Error> {
 /// #     Ok(vec![Seam::Whole])
 /// # }
@@ -54,7 +54,7 @@ impl Model for Provider {}
 ///
 ///     async fn extract<P: Model>(ctx: &Context<'_, P>) -> Result<Evidence, Error> {
 ///         let seams = super::survey(ctx.input)?;
-///         emery_sdk::extract(ctx, super::DOCS, &seams).await
+///         emery_sdk::extract(ctx, super::PROSE, &seams).await
 ///     }
 /// }
 /// # fn main() {}

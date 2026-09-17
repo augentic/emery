@@ -11,19 +11,19 @@ use std::path::Path;
 
 use emery_prose::{Doc, body, check};
 
-static DOCS: &[Doc] = emery_prose::prose!("fixtures", ["prompts/extract.md", "references/ids.md"]);
+static PROSE: &[Doc] = emery_prose::prose!("fixtures", ["prompts/extract.md", "references/ids.md"]);
 
 // The fixtures agree with their list: the one place the list, the embed, and
 // the check are seen together over a real tree.
 #[test]
 fn fixtures() {
-    let paths: Vec<&str> = DOCS.iter().map(|doc| doc.path).collect();
+    let paths: Vec<&str> = PROSE.iter().map(|doc| doc.path).collect();
     assert_eq!(paths, ["prompts/extract.md", "references/ids.md"]);
-    assert_eq!(body(DOCS, "references/ids.md"), Some(include_str!("fixtures/references/ids.md")));
-    assert_eq!(body(DOCS, "prompts/extract.md"), Some(include_str!("fixtures/prompts/extract.md")));
+    assert_eq!(body(PROSE, "references/ids.md"), Some(include_str!("fixtures/references/ids.md")));
+    assert_eq!(body(PROSE, "prompts/extract.md"), Some(include_str!("fixtures/prompts/extract.md")));
 
     let tree = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures");
-    let findings = check(DOCS, &tree, &["prompts/extract.md"]);
+    let findings = check(PROSE, &tree, &["prompts/extract.md"]);
     assert!(findings.is_empty(), "{}", findings.join("\n"));
 }
 

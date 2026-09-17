@@ -13,7 +13,7 @@ use emery_sdk::{Context, Doc, Error, Evidence, Seam, SourceInput};
 use omnia_test::SeenFormat;
 use omnia_test::guest::Scripted;
 
-const DOCS: &[Doc] = &[
+const PROSE: &[Doc] = &[
     Doc {
         path: "prompts/extract.md",
         body: "SYSTEM",
@@ -39,7 +39,7 @@ async fn ask(model: &Scripted, input: &SourceInput, seam: Seam) -> Result<Eviden
         input,
         model,
     };
-    emery_sdk::extract(&ctx, DOCS, &[seam]).await
+    emery_sdk::extract(&ctx, PROSE, &[seam]).await
 }
 
 // The request carries the embedded prompt, the turn describing the lent

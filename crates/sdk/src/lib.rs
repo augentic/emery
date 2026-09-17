@@ -24,7 +24,7 @@
 //!
 //! pub const KIND: SourceKind = SourceKind::Intent;
 //!
-//! pub static DOCS: &[Doc] = &[Doc {
+//! pub static PROSE: &[Doc] = &[Doc {
 //!     path: "prompts/extract.md",
 //!     body: "Extract every requirement the brief states as a `requirement` claim.",
 //! }];
@@ -46,7 +46,7 @@
 //!
 //!     async fn extract<P: Model>(ctx: &Context<'_, P>) -> Result<Evidence, Error> {
 //!         let seams = super::survey(ctx.input)?;
-//!         emery_sdk::extract(ctx, super::DOCS, &seams).await
+//!         emery_sdk::extract(ctx, super::PROSE, &seams).await
 //!     }
 //! }
 //! # fn main() {}
