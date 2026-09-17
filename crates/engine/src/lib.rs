@@ -1,26 +1,24 @@
-//! Emery's engine: the operations that write and read a specification revision.
+//! Provides transport-independent operations for creating and reading Emery revisions.
 //!
-//! [`specify`] extracts typed claims from a run's sources, derives the
-//! requirements under authority precedence, synthesises a specification and a
-//! design, and commits the pair as one content-addressed revision. [`show`]
-//! reads a document of the current revision back as Markdown. Both are typed
-//! operations over a [`Provider`] of capabilities; argument parsing, terminal
-//! text, and exit codes belong to whichever front end drives them.
+//! [`specify`] extracts source claims, reconciles requirements by authority,
+//! synthesises a specification and design, and commits both as one
+//! content-addressed revision. [`show`] renders either document from the
+//! current revision.
+//!
+//! Both operations use a [`Provider`] of model, adapter, storage, and plugin
+//! capabilities. Command-line parsing and presentation are handled outside
+//! this crate.
 //!
 //! # Vocabulary
 //!
-//! - **Revision**: the specification and design one run commits, identified
-//!   by the digest of their canonical JSON. The revision is the truth; the
-//!   Markdown an operator reads is a projection of it.
-//! - **Brief**: one typed question put to the model during synthesis, with
-//!   the checks its answer must pass before it is accepted. A run puts up to
-//!   three: how the requirement claims group, the draft of `spec.md`, and the
-//!   draft of `design.md`.
-//! - **Basis**: what one requirement is built on before any prose is drafted —
-//!   its contributing claims grouped into agreeing classes, ranked by the
-//!   authority of their sources.
-//! - **Rounds**: an answer that fails its checks goes back to the model with
-//!   the findings; the host bounds how many rounds a brief gets.
+//! - **Revision**: a typed specification and design identified by the digest
+//!   of their canonical JSON. Markdown output is a projection of this data.
+//! - **Brief**: a typed synthesis question and the checks its answer must
+//!   satisfy.
+//! - **Basis**: the reconciled claims, authority, and coverage from which a
+//!   requirement is built.
+//! - **Round**: one attempt to answer a brief. Rejected answers may be returned
+//!   to the model for correction until the host's limit is reached.
 
 mod adapter;
 mod revision;
@@ -32,7 +30,7 @@ use std::path::{Component, Path, PathBuf};
 
 pub use adapter::AdapterRef;
 use emery_adapter::source::Source;
-use omnia_guest::{BlobStore, Error, Model, Plugins, StateStore, bad_request};
+use omnia_sdk::{BlobStore, Error, Model, Plugins, StateStore, bad_request};
 pub use store::{CONTAINER, CURRENT};
 
 /// Normalises an operator path to a path beneath the `.` project preopen.
@@ -50,7 +48,7 @@ pub use store::{CONTAINER, CURRENT};
 /// assert_eq!(preopen_path(Path::new("./docs/../src"))?, Path::new("src"));
 /// assert_eq!(preopen_path(Path::new("."))?, Path::new("."));
 /// assert!(preopen_path(Path::new("../outside")).is_err());
-/// # Ok::<(), omnia_guest::Error>(())
+/// # Ok::<(), omnia_sdk::Error>(())
 /// ```
 ///
 /// # Errors
@@ -79,10 +77,10 @@ pub fn preopen_path(path: &Path) -> Result<PathBuf, Error> {
     Ok(if normalized.as_os_str().is_empty() { PathBuf::from(".") } else { normalized })
 }
 
-/// Every capability an operation may need, as one bound.
+/// A bundle of every capability an engine operation may require.
 ///
-/// A transport names the provider it binds with this single trait. Any type
-/// carrying all of the capabilities implements it.
+/// Any type implementing the required model, source, storage, and plugin
+/// capabilities implements this trait automatically.
 pub trait Provider:
     Model + Source + StateStore + BlobStore + Plugins + Send + Sync + 'static
 {
@@ -90,7 +88,18 @@ pub trait Provider:
 
 impl<P: Model + Source + StateStore + BlobStore + Plugins + Send + Sync + 'static> Provider for P {}
 
-// Generated from the link-checked synthesis corpus at build time.
-mod prose {
-    emery_prose::registry!();
-}
+// The synthesis corpus, embedded at compile time; `specify::tests::corpus`
+// holds the list to the tree and to the briefs that read it.
+static DOCS: &[emery_prose::Doc] = emery_prose::prose!(
+    "../prose",
+    [
+        "synthesis/authority.md",
+        "synthesis/claim-landing.md",
+        "synthesis/design-format.md",
+        "synthesis/grouping.md",
+        "synthesis/requirement-block.md",
+        "synthesis/spec-format.md",
+        "synthesis/synthesise.md",
+        "synthesis/tags.md",
+    ]
+);

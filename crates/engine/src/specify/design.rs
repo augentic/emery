@@ -1,17 +1,15 @@
-//! Asks the model for the drafted content of `design.md`.
+//! Synthesises the drafted content of `design.md`.
 //!
-//! The draft is the preamble and the blocks of each section. Which sections of
-//! the closed vocabulary a run calls for follows from the claim kinds it
-//! extracted: the schema names that subset, every candidate is verified against
-//! the plan, the bound sources it may cite, and the `type` claims whose
-//! signatures the engine inserts, and the accepted draft is placed in the
-//! design.
+//! Extracted claim kinds determine which design sections are required,
+//! permitted, or omitted. The model supplies introductory paragraphs and
+//! section prose. The engine validates source citations and inserts type
+//! signatures verbatim from evidence.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::{self, Display, Formatter};
 
 use emery_adapter::source::ClaimKind;
-use omnia_guest::{Error, server_error};
+use omnia_sdk::{Error, server_error};
 use schemars::JsonSchema;
 use serde::Deserialize;
 use serde_json::{Value, json};
@@ -21,10 +19,10 @@ use crate::revision::{self, Design, EMERY, Section, SectionKind, Spec, citations
 use crate::specify::Extract;
 use crate::specify::brief::{Brief, ClaimsSection, Review};
 
-/// The brief that asks for the draft of `design.md`.
+/// A synthesis brief for the drafted portions of `design.md`.
 ///
-/// It carries the extracts, the specification the design follows, and the
-/// section plan derived from the claims.
+/// The brief contains extracted claims, the specification being implemented,
+/// and the section plan derived from evidence.
 pub struct DesignBrief<'a> {
     extracts: &'a [Extract],
     spec: &'a Spec,
@@ -32,7 +30,7 @@ pub struct DesignBrief<'a> {
 }
 
 impl<'a> DesignBrief<'a> {
-    /// Creates the brief over the `extracts` and the `spec` the design follows.
+    /// Returns a design brief for `extracts` and `spec`.
     #[must_use]
     pub fn new(extracts: &'a [Extract], spec: &'a Spec) -> Self {
         Self {
@@ -223,21 +221,20 @@ impl Display for DesignBrief<'_> {
     }
 }
 
-/// The `design.md` draft: preamble paragraphs and one entry per section.
+/// Model-authored content for a rebuild design.
 ///
-/// Only what needs synthesis is asked for; every heading and signature is the
-/// renderer's.
+/// The engine supplies section headings and type signatures.
 #[derive(Debug, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 #[schemars(title = "Emery design draft")]
 pub struct DesignAnswer {
     /// Markdown paragraphs before the first section.
     pub preamble: Vec<String>,
-    /// One entry per rendered section; any order.
+    /// One entry per rendered section, in any order.
     pub sections: Vec<Section<Block>>,
 }
 
-/// One drafted block: a paragraph, or a reference to a `type` claim.
+/// A drafted paragraph or reference to a type claim.
 ///
 /// The renderer inserts a referenced claim's signature verbatim.
 #[derive(Debug, Deserialize, JsonSchema)]

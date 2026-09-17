@@ -1,9 +1,8 @@
-//! The typed form of `spec.md`.
+//! Defines the typed data and Markdown rendering for `spec.md`.
 //!
-//! A [`Spec`] is a preamble and one [`Requirement`] per subject, each carrying
-//! the facts the engine derived — id, status, coverage, cited claims, the
-//! statements that lost — and the drafted body and scenarios. `Display`
-//! renders the Markdown an operator reads.
+//! A [`Spec`] contains introductory paragraphs and ordered [`Requirement`]
+//! records. Each requirement combines reconciled source facts with drafted
+//! acceptance scenarios.
 
 use std::fmt::{self, Display, Formatter};
 use std::str::FromStr;
@@ -14,25 +13,25 @@ use serde::{Deserialize, Serialize};
 
 use crate::revision;
 
-/// The `ID:` provenance key; the three keys follow the heading in this order.
+/// The `ID:` provenance key written below a requirement heading.
 pub const ID: &str = "ID:";
 /// The `Sources:` provenance key.
 pub const SOURCES: &str = "Sources:";
 /// The `Status:` provenance key.
 pub const STATUS: &str = "Status:";
-/// The `Note:` key: the engine's own lines below the provenance.
+/// The `Note:` key used for generated requirement notes.
 pub const NOTE: &str = "Note:";
 
 const HEADING: &str = "### Requirement:";
 const SCENARIO: &str = "#### Scenario:";
 
-/// The specification: a preamble and its requirements, in id order.
+/// A behavioural specification in its stored form.
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Spec {
     /// The grammar the document was written under.
     pub emery: u32,
-    /// Markdown paragraphs before the first requirement.
+    /// Markdown paragraphs preceding the first requirement.
     pub preamble: Vec<String>,
     /// The requirements, in id order.
     pub requirements: Vec<Requirement>,
@@ -57,24 +56,26 @@ impl Display for Spec {
     }
 }
 
-/// One requirement: the engine's facts and the drafted prose.
+/// A reconciled requirement and its drafted acceptance scenarios.
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Requirement {
-    /// The stable id.
+    /// The stable requirement identifier.
     pub id: ReqId,
-    /// The heading name: the top contributor's claim id.
+    /// The heading derived from the highest-authority contributing claim.
     pub subject: String,
-    /// How the contributors agree.
+    /// The reconciliation outcome for contributing claims.
     pub status: Status,
     /// Whether an acceptance criterion covers the requirement.
     pub covered: bool,
-    /// Every cited claim, highest authority first.
+    /// Contributing claims in descending authority order.
     pub sources: Vec<Cited>,
-    /// Markdown paragraphs; empty for a requirement in conflict.
+    /// Markdown body paragraphs, empty when the requirement is in conflict.
     pub body: Vec<String>,
-    /// The classes whose statements are notes: the losing classes of a
-    /// divergence, every class of a conflict.
+    /// Contributor classes rendered as notes.
+    ///
+    /// This contains losing classes for a divergence and every class for a
+    /// conflict.
     pub losers: Vec<Loser>,
     /// The acceptance scenarios.
     pub scenarios: Vec<Scenario>,
@@ -124,7 +125,7 @@ impl Display for Requirement {
     }
 }
 
-/// One cited claim: the source key and the claim id it contributed.
+/// A claim cited by a requirement.
 #[derive(Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Cited {
@@ -141,17 +142,17 @@ impl Display for Cited {
     }
 }
 
-/// One class whose statement the requirement records as a note.
+/// A contributor class rendered as a requirement note.
 #[derive(Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Loser {
     /// Every member's source key, in authority order.
     pub sources: Vec<String>,
-    /// The lead member's source kind.
+    /// The authority class of the leading contributor.
     pub kind: SourceKind,
-    /// The lead member's claim id.
+    /// The leading contributor's claim identifier.
     pub claim: String,
-    /// The lead member's statement, whitespace-normalised.
+    /// The leading contributor's normalised statement.
     pub statement: String,
 }
 
@@ -169,23 +170,20 @@ impl Display for Loser {
     }
 }
 
-/// One acceptance scenario.
-///
-/// The specification stores this shape and a draft answers in it, so an
-/// accepted draft is placed as it stands.
+/// An acceptance scenario attached to a requirement.
 #[derive(Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct Scenario {
     /// The scenario heading name.
     pub name: String,
-    /// Optional GIVEN context, one line each.
+    /// Optional `GIVEN` conditions, one line each.
     #[serde(default)]
     pub given: Vec<String>,
-    /// The WHEN trigger, one line.
+    /// The `WHEN` trigger.
     pub when: String,
-    /// The THEN outcome, one line.
+    /// The primary `THEN` outcome.
     pub then: String,
-    /// Optional further AND outcomes, one line each.
+    /// Additional `AND` outcomes, one line each.
     #[serde(default)]
     pub and: Vec<String>,
 }
@@ -215,7 +213,10 @@ impl Display for Scenario {
     }
 }
 
-/// A requirement id, `REQ-NNN`: a positive number, zero-padded to three digits.
+/// A requirement identifier rendered as `REQ-NNN`.
+///
+/// Parsing accepts positive numbers in canonical form, padded to at least
+/// three digits.
 ///
 /// # Examples
 ///
@@ -235,6 +236,8 @@ impl ReqId {
     const PREFIX: &str = "REQ-";
 
     /// Returns the id numbered `number`.
+    ///
+    /// Requirement numbers produced by the engine begin at one.
     #[must_use]
     pub const fn new(number: u32) -> Self {
         Self(number)
@@ -274,20 +277,20 @@ impl Display for ReqId {
     }
 }
 
-/// The closed `Status:` vocabulary.
+/// The reconciliation status of a requirement.
 ///
-/// Every status but `agreed` also appears as the `[tag]` on the requirement
-/// heading.
+/// Every status except [`Status::Agreed`] is also rendered as a tag on the
+/// requirement heading.
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Serialize, Deserialize, strum::Display)]
 #[serde(rename_all = "kebab-case")]
 #[strum(serialize_all = "kebab-case")]
 pub enum Status {
-    /// One class of contributors, covered by a criterion.
+    /// All contributors agree and acceptance criteria provide coverage.
     Agreed,
-    /// One class of contributors, no acceptance criterion in evidence.
+    /// All contributors agree but no acceptance criterion provides coverage.
     Unknown,
-    /// Tied top-authority disagreement; the operator must reconcile.
+    /// Highest-authority contributors disagree and require reconciliation.
     Conflict,
-    /// Authority-resolved disagreement; the losers are notes.
+    /// A higher-authority contributor resolves the disagreement.
     Divergence,
 }

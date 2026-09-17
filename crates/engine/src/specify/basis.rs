@@ -1,23 +1,18 @@
-//! Derives the basis each requirement in `spec.md` is built on.
+//! Reconciles requirement claims into deterministic requirement bases.
 //!
-//! Which requirement claims across sources describe one requirement, and
-//! which of them agree, is a judgement. The model answers it as one partition
-//! — claims into requirements, each requirement's claims into agreeing classes
-//! — over a baseline that pre-merges byte-equal ids. The engine verifies the
-//! partition and derives everything else from it and the closed authority
-//! ranking: the subject, the status, the winner and losers, and whether any
-//! acceptance criterion covers the requirement.
+//! Claims sharing an identifier are grouped before any model request. For
+//! multiple sources, the model may group remaining claims by meaning and
+//! agreement. The engine validates that partition, applies source authority,
+//! and derives status, coverage, winners, and losing statements.
 //!
-//! Authority is withheld from the request, so the answer cannot be steered
-//! toward a winner; a run over one source never asks at all. The bases are
-//! numbered from `REQ-001` in order of each group's earliest claim, so the
-//! same sources in the same order number alike.
+//! A single-source run requires no grouping request. Requirements are numbered
+//! from `REQ-001` by the earliest claim in each group.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::{self, Display, Formatter};
 
 use emery_adapter::source::{ClaimKind, SourceKind};
-use omnia_guest::{Error, Model, server_error};
+use omnia_sdk::{Error, Model, server_error};
 use schemars::JsonSchema;
 use serde::Deserialize;
 use serde_json::{Value, json};
@@ -26,11 +21,10 @@ use crate::revision::{Cited, Loser, ReqId, Requirement, Scenario, Status};
 use crate::specify::Extract;
 use crate::specify::brief::{Brief, Review};
 
-/// The brief that asks how the requirement claims group.
+/// A synthesis brief for grouping requirement claims.
 ///
-/// It carries every requirement claim in source order, every criterion id,
-/// and how many sources the run spans: what the turn lists, and what the
-/// answer is verified against.
+/// The brief contains requirement claims in source order and every acceptance
+/// criterion identifier. Source authority is withheld from the model.
 pub struct GroupingBrief<'a> {
     contributors: Vec<Contributor>,
     criteria: Vec<&'a str>,
@@ -38,7 +32,7 @@ pub struct GroupingBrief<'a> {
 }
 
 impl<'a> GroupingBrief<'a> {
-    /// Creates the brief over the `extracts`.
+    /// Returns a grouping brief for `extracts`.
     #[must_use]
     pub fn new(extracts: &'a [Extract]) -> Self {
         let mut contributors: Vec<Contributor> = Vec::new();
@@ -75,9 +69,11 @@ impl<'a> GroupingBrief<'a> {
     ///
     /// # Errors
     ///
-    /// Returns [`Error::BadGateway`] for a model failure, and
-    /// [`Error::BadRequest`] for an answer outside the schema or a grouping
-    /// the model could not repair within its rounds.
+    /// - Returns [`Error::BadRequest`] when the model cannot produce a valid
+    ///   grouping within the available rounds.
+    /// - Returns [`Error::ServerError`] when required prose is missing or a
+    ///   grouping cannot be reconciled with the claims.
+    /// - Returns [`Error::BadGateway`] when the model operation fails.
     pub async fn derive<M: Model>(self, model: &M) -> Result<Vec<Basis>, Error> {
         if self.sources < 2 { self.bases(&self.baseline()) } else { self.judge(model).await }
     }
@@ -278,42 +274,39 @@ impl Display for GroupingBrief<'_> {
     }
 }
 
-/// A partition of every requirement claim into requirements, each carrying a
-/// partition of its claims into agreeing classes.
+/// A partition of requirement claims into requirements and agreement classes.
 #[derive(Debug, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 #[schemars(title = "Emery grouping answer")]
 pub struct Grouping {
-    /// One entry per requirement.
+    /// One group per requirement.
     pub groups: Vec<Group>,
 }
 
-/// The claims of one requirement and how they agree.
+/// The claims assigned to one requirement and their agreement classes.
 #[derive(Debug, Default, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct Group {
     /// Indices of every claim describing this requirement.
     pub claims: Vec<usize>,
-    /// A partition of `claims`: each class holds claims that say the same
-    /// thing.
+    /// Partitions of [`Group::claims`] that express equivalent statements.
     pub classes: Vec<Vec<usize>>,
 }
 
-/// What one requirement is built on before any prose is drafted.
+/// Reconciled facts used to construct one requirement.
 ///
-/// Its id, subject, status, and acceptance-criterion coverage, and its
-/// contributors in agreeing classes with the winning class first.
+/// Contributors are grouped by agreement, with the winning class first.
 #[derive(Debug)]
 pub struct Basis {
-    /// The requirement id: its position in the run, from `REQ-001`.
+    /// The requirement identifier, assigned from `REQ-001`.
     pub id: ReqId,
-    /// The heading name: the top contributor's claim id.
+    /// The heading derived from the highest-authority claim identifier.
     pub subject: String,
-    /// The `Status:` value.
+    /// The reconciliation outcome.
     pub status: Status,
     /// Whether any criterion claim covers the requirement.
     pub covered: bool,
-    /// The agreeing classes, the winning class first.
+    /// Agreement classes, with the winning class first.
     pub classes: Vec<Vec<Contributor>>,
 }
 
@@ -359,16 +352,14 @@ impl Basis {
         })
     }
 
-    /// Returns every contributor, highest authority first and in source order
-    /// within a kind.
+    /// Returns contributors by descending authority and then source order.
     pub fn contributors(&self) -> impl Iterator<Item = &Contributor> {
         let mut members: Vec<&Contributor> = self.classes.iter().flatten().collect();
         members.sort_by_key(|member| (member.kind, member.index));
         members.into_iter()
     }
 
-    /// Returns the requirement this basis commits, with `scenarios` as its
-    /// drafted prose.
+    /// Returns the requirement produced from this basis and `scenarios`.
     ///
     /// The body is the winning statement — none for a conflict — and the
     /// losing classes become notes.
@@ -406,20 +397,20 @@ impl Basis {
     }
 }
 
-/// One source's claim in a requirement.
+/// A source claim contributing to a requirement.
 #[derive(Debug, Clone)]
 pub struct Contributor {
     /// The source key.
     pub source: String,
-    /// The source's kind, which ranks it against the other contributors.
+    /// The source kind used to rank this contributor.
     pub kind: SourceKind,
-    /// The claim id, which may differ from the requirement's subject.
+    /// The claim identifier, which may differ from the requirement subject.
     pub id: String,
-    /// The claim's `statement` extra, whitespace-normalised.
+    /// The claim statement with whitespace normalised.
     pub statement: String,
-    /// The claim's synopsis, shown to the grouping judgment alone.
+    /// An optional synopsis provided to the grouping model.
     pub synopsis: Option<String>,
-    /// Position in source order, the tie-break within a kind.
+    /// Position in source order, used to break authority ties.
     pub index: usize,
 }
 

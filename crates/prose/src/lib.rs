@@ -1,38 +1,63 @@
-//! Embeds a crate's prompts and reference documents at build time.
+//! Embeds Markdown prompts and reference documents into Rust binaries.
 //!
-//! Prompts and references ship inside the binaries that use them — the
-//! engine's synthesis prose, each adapter's extraction prose — rather than
-//! being read from disk at run time. This crate is the shared way to do that:
-//! [`emit`] walks a Markdown tree from a build script and generates a document
-//! table, and [`mod@registry`] looks documents up in it by path.
+//! [`prose!`] creates a static table of [`Doc`] values from files selected at
+//! compile time. [`find`] and [`body`] retrieve documents by their
+//! tree-relative paths.
 //!
-//! [`emit`] sits behind the `emit` feature, so a build script enables it and a
-//! shipped guest never carries the walker.
+//! [`check`] validates an embedded table against its source tree and prompt
+//! graph. It is intended for native tests, where the original files are
+//! available.
 //!
 //! # Examples
 //!
-//! The build script's `main` embeds the crate's `prose/` tree:
+//! Embed selected files and read one by path:
 //!
-//! ```no_run
-//! // build.rs, with `emery-prose = { features = ["emit"] }` as a build-dependency.
-//! emery_prose::emit("prose");
 //! ```
+//! use emery_prose::Doc;
 //!
-//! The crate then includes the generated table and reads a document by path:
+//! static DOCS: &[Doc] =
+//!     emery_prose::prose!("../tests/fixtures", ["prompts/extract.md", "references/ids.md"]);
 //!
-//! ```ignore
-//! // `ignore`: the included file exists only under the crate's own build script.
-//! mod registry {
-//!     emery_prose::registry!();
-//! }
-//!
-//! let prompt = emery_prose::registry::body(registry::docs(), "prompts/extract.md");
+//! let prompt = emery_prose::body(DOCS, "prompts/extract.md");
+//! assert!(prompt.is_some());
 //! ```
 
-pub mod registry;
+mod check;
+mod doc;
 
-#[cfg(feature = "emit")]
-mod emit;
+pub use self::check::check;
+pub use self::doc::{Doc, body, find};
 
-#[cfg(feature = "emit")]
-pub use emit::emit;
+/// Embeds selected Markdown files as a static table of [`Doc`] values.
+///
+/// `root` is relative to the source file invoking the macro. Each listed path
+/// is relative to that root and becomes one table entry, preserving the order
+/// written in the invocation.
+///
+/// File bodies are included at compile time, like `include_str!`. A missing
+/// listed file therefore fails the build. Files that exist under `root` but
+/// are not listed are omitted; use [`check`] in a native test to detect them.
+///
+/// # Examples
+///
+/// ```
+/// use emery_prose::Doc;
+///
+/// static DOCS: &[Doc] =
+///     emery_prose::prose!("../tests/fixtures", ["prompts/extract.md", "references/ids.md"]);
+///
+/// assert_eq!(
+///     DOCS.iter().map(|doc| doc.path).collect::<Vec<_>>(),
+///     ["prompts/extract.md", "references/ids.md"]
+/// );
+/// assert_eq!(DOCS[1].body, include_str!("../tests/fixtures/references/ids.md"));
+/// ```
+#[macro_export]
+macro_rules! prose {
+    ($root:literal, [$($path:literal),+ $(,)?]) => {
+        &[$($crate::Doc {
+            path: $path,
+            body: ::core::include_str!(::core::concat!($root, "/", $path)),
+        }),+]
+    };
+}

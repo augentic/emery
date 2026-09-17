@@ -1,8 +1,7 @@
-//! Checks that the Cursor plugin names only verbs, flags, and skills `emery` has.
+//! Verifies that the Cursor plugin describes Emery's current command surface.
 //!
-//! The plugin is prose an agent follows, so nothing else would catch it
-//! describing a verb that has since been deleted or renamed. Tying it to the
-//! live `--help` surface turns that drift into a failing test.
+//! Plugin prose is checked against live help output so deleted or renamed
+//! commands, flags, and skills cannot remain documented silently.
 
 #![cfg(not(target_arch = "wasm32"))]
 
@@ -15,7 +14,7 @@ use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 
 use emery_adapter::is_kebab;
-use omnia_guest::api::command::Response;
+use omnia_sdk::api::command::Response;
 use provider::Provider;
 
 #[derive(Debug)]

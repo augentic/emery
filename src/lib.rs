@@ -1,15 +1,13 @@
-//! The engine guest: the wasm component the shipped runtime embeds.
+//! Implements the WebAssembly engine guest used by the shipped runtime.
 //!
-//! It binds the host's model, storage, and plugin capabilities into one
-//! provider and hands the process arguments to the command façade. Running the
-//! engine as a guest is what gives Emery its sandbox: the project is mounted
-//! read-only, and every effect the engine has goes through a capability the
-//! runtime deliberately granted.
+//! The guest passes process arguments to the command interface and supplies
+//! host-provided model, storage, source, and plugin capabilities. All external
+//! effects therefore remain subject to the runtime's grants.
 
 #![cfg(target_arch = "wasm32")]
 
-use omnia_guest::api::command::Response;
-use omnia_guest::{BlobStore, Model, Plugins, StateStore};
+use omnia_sdk::api::command::Response;
+use omnia_sdk::{BlobStore, Model, Plugins, StateStore};
 use wasip3::cli::environment;
 
 // The bare provider: every capability keeps its WASI-backed default body, so
@@ -22,7 +20,7 @@ impl BlobStore for Provider {}
 impl Plugins for Provider {}
 impl emery_adapter::source::Source for Provider {}
 
-omnia_guest::command!(dispatch);
+omnia_sdk::command!(dispatch);
 
 async fn dispatch() -> Response {
     emery_cli::run(Provider, environment::get_arguments()).await

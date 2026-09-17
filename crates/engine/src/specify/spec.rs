@@ -1,16 +1,15 @@
-//! Asks the model for the drafted content of `spec.md`.
+//! Synthesises the drafted content of `spec.md`.
 //!
-//! The draft is the preamble and, for every requirement, its acceptance
-//! scenarios. The requirements, their ids, their provenance, and their bodies
-//! are the engine's: the schema names the subjects to draft, every candidate
-//! is verified to carry exactly one entry per subject, and the accepted draft
-//! is placed beside the engine's facts in the specification.
+//! The model supplies introductory paragraphs and acceptance scenarios. The
+//! engine retains ownership of requirement identifiers, provenance, status,
+//! and body text. Every response must contain exactly one draft for each
+//! requirement subject.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::{self, Display, Formatter};
 
 use emery_adapter::source::CLAIM_ID_REGEX;
-use omnia_guest::{Error, server_error};
+use omnia_sdk::{Error, server_error};
 use schemars::JsonSchema;
 use serde::Deserialize;
 use serde_json::{Value, json};
@@ -20,16 +19,17 @@ use crate::specify::Extract;
 use crate::specify::basis::Basis;
 use crate::specify::brief::{Brief, ClaimsSection, Review};
 
-/// The brief that asks for the draft of `spec.md`.
+/// A synthesis brief for the drafted portions of `spec.md`.
 ///
-/// It carries the extracts and the requirement bases derived from them.
+/// The brief combines extracted claims with their reconciled requirement
+/// bases.
 pub struct SpecBrief<'a> {
     extracts: &'a [Extract],
     bases: &'a [Basis],
 }
 
 impl<'a> SpecBrief<'a> {
-    /// Creates the brief over the `extracts` and the `bases` derived from them.
+    /// Returns a specification brief for `extracts` and `bases`.
     #[must_use]
     pub const fn new(extracts: &'a [Extract], bases: &'a [Basis]) -> Self {
         Self { extracts, bases }
@@ -171,25 +171,24 @@ impl Display for SpecBrief<'_> {
     }
 }
 
-/// The `spec.md` draft: preamble paragraphs and one entry per requirement.
+/// Model-authored content for a specification.
 ///
-/// Only what needs synthesis is asked for; every heading, provenance line,
-/// body, and note is the renderer's.
+/// The engine supplies headings, provenance, requirement bodies, and notes.
 #[derive(Debug, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 #[schemars(title = "Emery spec draft")]
 pub struct SpecAnswer {
     /// Markdown paragraphs before the first requirement.
     pub preamble: Vec<String>,
-    /// One draft per listed requirement, keyed by subject; any order.
+    /// One draft per requirement subject, in any order.
     pub requirements: Vec<Draft>,
 }
 
-/// The drafted content of one requirement.
+/// Drafted acceptance scenarios for one requirement.
 #[derive(Debug, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct Draft {
-    /// The requirement's subject, exactly as listed.
+    /// The requirement subject exactly as supplied by the engine.
     #[schemars(regex(pattern = CLAIM_ID_REGEX))]
     pub subject: String,
     /// At least one scenario.

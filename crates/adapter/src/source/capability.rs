@@ -1,45 +1,79 @@
-//! The [`Source`] capability and the records that cross into an adapter.
+//! Defines the [`Source`] capability and records supplied to an adapter.
 //!
-//! [`Source`] is how the engine reaches a loaded adapter: it addresses the
-//! adapter by id and asks it to extract evidence or report its metadata. It
-//! has the shape of omnia's other capability traits, so one provider carries
-//! it beside `Model`, storage, and plugin loading.
-//!
-//! In a wasm guest the trait dispatches over the WIT import by default. In a
-//! native build the methods are left to the implementor, so a test can script
-//! exactly what an adapter would have returned.
+//! The engine uses [`Source`] to query a loaded adapter's metadata and extract
+//! evidence from an input. WebAssembly builds dispatch through the imported
+//! adapter interface; native builds require an implementation.
 
 use std::future::Future;
 
-use omnia_guest::Error;
+use omnia_sdk::Error;
 use serde::{Deserialize, Serialize};
 
 use crate::source::{Evidence, SourceKind};
 
-/// The capability the engine calls source adapters through.
+/// The engine capability for querying and invoking source adapters.
 ///
-/// Adapters implement the export side — `SourceAdapter` in `emery-sdk` — not
-/// this trait. An extract failure arrives classified: an adapter refusing its
-/// input is [`Error::BadRequest`], and any other failure is
+/// Adapter components implement the guest interface rather than this trait.
+/// The WebAssembly implementation classifies an input refusal as
+/// [`Error::BadRequest`] and any other adapter failure as
 /// [`Error::BadGateway`].
+///
+/// # Examples
+///
+/// A native host can provide adapters directly:
+///
+/// ```
+/// use std::future::{Future, ready};
+///
+/// use emery_adapter::source::{
+///     AdapterMetadata, Claim, ClaimKind, Evidence, Source, SourceInput, SourceKind,
+/// };
+/// use omnia_sdk::Error;
+///
+/// struct Host;
+///
+/// impl Source for Host {
+///     fn extract(
+///         &self, _id: &str, _input: &SourceInput,
+///     ) -> impl Future<Output = Result<Evidence, Error>> + Send {
+///         ready(Ok(Evidence {
+///             claims: vec![Claim {
+///                 kind: ClaimKind::Decision,
+///                 id: None,
+///                 path: None,
+///                 synopsis: None,
+///                 backing: None,
+///                 extras: serde_json::Map::new(),
+///             }],
+///         }))
+///     }
+///
+///     fn metadata(&self, _id: &str) -> AdapterMetadata {
+///         AdapterMetadata {
+///             emery_version: None,
+///             kind: SourceKind::Documentation,
+///         }
+///     }
+/// }
+/// ```
 pub trait Source: Send + Sync {
-    /// Asks the adapter registered as `id` to extract `input`.
+    /// Extracts evidence from `input` using the adapter registered as `id`.
     ///
     /// # Errors
     ///
-    /// Returns [`Error::BadRequest`] when the adapter refuses its input, and
-    /// [`Error::BadGateway`] for any other adapter failure.
+    /// - Returns [`Error::BadRequest`] when the adapter rejects its input.
+    /// - Returns [`Error::BadGateway`] for any other adapter failure.
     #[cfg(not(target_arch = "wasm32"))]
     fn extract(
         &self, id: &str, input: &SourceInput,
     ) -> impl Future<Output = Result<Evidence, Error>> + Send;
 
-    /// Asks the adapter registered as `id` to extract `input`.
+    /// Extracts evidence from `input` using the adapter registered as `id`.
     ///
     /// # Errors
     ///
-    /// Returns [`Error::BadRequest`] when the adapter refuses its input, and
-    /// [`Error::BadGateway`] for any other adapter failure.
+    /// - Returns [`Error::BadRequest`] when the adapter rejects its input.
+    /// - Returns [`Error::BadGateway`] for any other adapter failure.
     #[cfg(target_arch = "wasm32")]
     fn extract(
         &self, id: &str, input: &SourceInput,
@@ -58,32 +92,71 @@ pub trait Source: Send + Sync {
     }
 }
 
-/// The input to one `extract` call: the source's key and its content.
+/// The source identifier and content supplied to one extraction.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub struct SourceInput {
-    /// The key the specification cites the source by.
+    /// The key used to cite the source in a specification.
     pub key: String,
-    /// The workspace or inline value to read.
+    /// The workspace or inline text presented to the adapter.
     pub content: SourceContent,
 }
 
-/// The content of a source: a directory to read, or an inline value.
+impl SourceInput {
+    /// Returns an input backed by the read-only directory at `root`.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use emery_adapter::source::{SourceContent, SourceInput};
+    ///
+    /// let input = SourceInput::workspace("docs", "./docs");
+    /// assert_eq!(input.key, "docs");
+    /// assert_eq!(input.content, SourceContent::Workspace("./docs".into()));
+    /// ```
+    #[must_use]
+    pub fn workspace(key: impl Into<String>, root: impl Into<String>) -> Self {
+        Self {
+            key: key.into(),
+            content: SourceContent::Workspace(root.into()),
+        }
+    }
+
+    /// Returns an input containing `text` without an associated workspace.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use emery_adapter::source::{SourceContent, SourceInput};
+    ///
+    /// let input = SourceInput::value("intent", "Preserve compatibility.");
+    /// assert_eq!(input.key, "intent");
+    /// assert_eq!(input.content, SourceContent::Value("Preserve compatibility.".into()));
+    /// ```
+    #[must_use]
+    pub fn value(key: impl Into<String>, text: impl Into<String>) -> Self {
+        Self {
+            key: key.into(),
+            content: SourceContent::Value(text.into()),
+        }
+    }
+}
+
+/// The content presented to a source adapter.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum SourceContent {
-    /// A read-only directory, named as the guest sees it.
+    /// A read-only directory, named as the adapter sees it.
     Workspace(String),
-    /// Text given inline; no directory is lent.
+    /// Text supplied inline without a workspace.
     Value(String),
 }
 
-/// What an adapter declares about itself, read once before any extract.
+/// Metadata declared by a source adapter.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct AdapterMetadata {
-    /// The minimum Emery version the adapter requires, if it states one.
+    /// The minimum compatible Emery version, if the adapter declares one.
     pub emery_version: Option<String>,
-    /// The kind of source the adapter reads, which ranks its evidence
-    /// against other sources'.
+    /// The source kind used to rank this adapter's evidence.
     pub kind: SourceKind,
 }

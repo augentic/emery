@@ -1,20 +1,19 @@
-//! Stores the current revision and commits the next.
+//! Persists content-addressed revisions and tracks the current revision.
 //!
-//! A revision is committed as canonical JSON under the digest of its content,
-//! so the same revision always has the same id and a document that no longer
-//! matches its id is recognised as corruption. Only the current revision is
-//! kept: [`commit`] writes the new one, swaps the current id, and prunes the
-//! one it displaced; [`current`] reads it back.
+//! [`commit`] stores both documents, atomically updates the current revision
+//! identifier, and removes the displaced revision. [`current`] verifies and
+//! returns the stored revision. Content is checked against its identifier when
+//! read, allowing corruption to be detected.
 
 use anyhow::Context;
-use omnia_guest::{BlobStore, Error, StateStore, server_error};
+use omnia_sdk::{BlobStore, Error, StateStore, server_error};
 
 use crate::revision::{Design, Diff, Document as _, Revision, Spec};
 
-/// The key-value key holding the current revision id.
+/// The state-store key containing the current revision identifier.
 pub const CURRENT: &str = "current-revision";
 
-/// The blob container holding each revision's documents under `<id>/`.
+/// The blob container containing revision documents under `<id>/`.
 pub const CONTAINER: &str = "revisions";
 
 /// Commits `revision` as the current revision.
@@ -25,8 +24,8 @@ pub const CONTAINER: &str = "revisions";
 ///
 /// # Errors
 ///
-/// Returns [`Error::ServerError`] when another run swapped the id first or
-/// storage refuses a write.
+/// Returns [`Error::ServerError`] when serialisation or storage fails,
+/// including when another writer updates the current identifier first.
 pub async fn commit<S: StateStore + BlobStore>(
     store: &S, revision: &Revision,
 ) -> Result<(String, Option<Diff>), Error> {
@@ -82,10 +81,10 @@ fn key(id: &str, name: &str) -> String {
 ///
 /// # Errors
 ///
-/// Returns [`Error::ServerError`] for a current id that names no complete
-/// revision, or a revision whose bytes no longer match its id, and
-/// [`Error::BadRequest`] with code `spec-outdated` for a revision written
-/// under another grammar.
+/// - Returns [`Error::BadRequest`] with code `spec-outdated` when the stored
+///   revision uses a different grammar.
+/// - Returns [`Error::ServerError`] when storage fails, the current revision
+///   is incomplete, or its content no longer matches its identifier.
 pub async fn current<S: StateStore + BlobStore>(
     store: &S,
 ) -> Result<Option<(String, Revision)>, Error> {

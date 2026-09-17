@@ -1,12 +1,11 @@
-//! Engine component build script
+//! Builds and embeds the WebAssembly engine component.
 //!
-//! Compiles the engine guest to a wasm32 component and hands the result to
-//! the shipped runtime, so one `cargo build` yields a self-contained `emery`
-//! binary with the engine embedded rather than a binary that hunts for a
-//! component on disk at run time.
+//! The nested build compiles the engine guest for `wasm32-wasip2`. Debug
+//! builds embed the component directly, while release builds precompile it for
+//! faster startup.
 //!
-//! Release builds also precompile the component ahead of time, so the shipped
-//! binary starts without paying a JIT cost on every invocation.
+//! The resulting `emery` binary is self-contained and does not load its engine
+//! component from disk at run time.
 
 use std::path::{Path, PathBuf};
 use std::process::Command;

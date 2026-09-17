@@ -22,10 +22,11 @@ depends = ["check", "vet", "deny"]
 run = "cargo +nightly fmt --all"
 
 [lint]
+env = { RUSTFLAGS = "-Dwarnings" }
 run = "cargo clippy --workspace --all-targets --all-features -- -D warnings"
 
 [doc]
-env = { RUSTDOCFLAGS = "-Dwarnings" }
+env = { RUSTFLAGS = "-Dwarnings", RUSTDOCFLAGS = "-Dwarnings" }
 run = "cargo doc --no-deps --workspace --all-features --locked"
 
 [test]
@@ -33,6 +34,7 @@ env = { RUSTFLAGS = "-Dwarnings" }
 run = "cargo nextest run --locked --workspace --all-features --no-tests=pass"
 
 [test-docs]
+env = { RUSTFLAGS = "-Dwarnings" }
 run = "cargo test --doc --workspace --all-features"
 
 [vet]

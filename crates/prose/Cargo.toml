@@ -4,20 +4,14 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
-description = "Embedded prompt corpora: the runtime Doc registry, plus (feature `emit`) build-time codegen that walks a markdown tree, link-checks it, and emits the document table with its docs() accessor"
-categories = ["development-tools::build-utils"]
-keywords = ["emery", "prose", "codegen"]
+rust-version.workspace = true
+description = "Embedded prompt corpora: prose! embeds the listed documents of a Markdown tree as a Doc table at compile time, find / body look a document up by path, and check holds the table to the tree"
+categories = ["development-tools"]
+keywords = ["emery", "prose", "embed"]
 readme = "../../README.md"
 
 [lints]
 workspace = true
-
-[features]
-# Build-time walker + link check; enable from `[build-dependencies]` only.
-emit = ["dep:anyhow"]
-
-[dependencies]
-anyhow = { workspace = true, optional = true }
 
 [dev-dependencies]
 tempfile.workspace = true

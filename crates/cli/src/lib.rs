@@ -1,15 +1,11 @@
-//! The `emery` command line: its verbs, their help, and the text of each result.
+//! Implements Emery's command-line interface.
 //!
-//! This crate is the operator-facing surface of Emery: the `specify`, `show`,
-//! and `completions` verbs, the rules that turn a parsed command into an
-//! engine operation, and the text shape of each result. The engine knows
-//! nothing about arguments, text, or exit codes, so the same operations can be
-//! driven by another transport and the grammar can change without touching
-//! the engine.
+//! The interface provides the `specify`, `show`, and `completions` commands.
+//! It translates command-line sources into engine inputs, renders text output,
+//! and supplies recovery hints for known failures.
 //!
-//! The projection itself — decode, `Client::call`, encode, the failure
-//! envelope, and the exit map — is omnia's command façade
-//! (`omnia_guest::api::command`); this crate owns only what is Emery's.
+//! [`run`] returns a buffered response, leaving process I/O and exit handling
+//! to the caller.
 
 mod sources;
 mod text;
@@ -23,9 +19,9 @@ use clap::{Parser, Subcommand};
 use emery_engine::Provider;
 use emery_engine::show::{Artifact, ShowInput, show};
 use emery_engine::specify::{SpecifyInput, specify};
-use omnia_guest::Error;
-use omnia_guest::api::command::{Command, Parsed, Response, Shell, completions, parse};
-use omnia_guest::api::{Client, Format, Metadata};
+use omnia_sdk::Error;
+use omnia_sdk::api::command::{Command, Parsed, Response, Shell, completions, parse};
+use omnia_sdk::api::{Client, Format, Metadata};
 use strum::VariantArray as _;
 
 const ABOUT: &str = "Deterministic primitives for spec-driven development";
@@ -51,15 +47,11 @@ const NAME: &str = "emery";
 // (`EMERY_REQUEST_ID`, `EMERY_CORRELATION_ID`, `EMERY_CAUSATION_ID`).
 const ENV_PREFIX: &str = "EMERY";
 
-/// Parses `argv` and runs the command it names over `provider`.
+/// Executes the command described by `argv` using a [`Provider`].
 ///
-/// Both output channels are buffered into the [`Response`]. Clap's own
-/// outcomes — help and version on stdout at exit 0, a usage error on stderr —
-/// are complete responses before any verb runs. Each verb decodes into its
-/// engine input and runs through the client, and the façade projects the
-/// result: the success body on stdout in the selected format, or the failure
-/// envelope on stderr with its exit status. `completions` never reaches a
-/// handler.
+/// The returned [`Response`] contains the exit status and buffered standard
+/// output and error. Help, version, and usage responses are produced without
+/// invoking an engine operation.
 pub async fn run<P, I, T>(provider: P, argv: I) -> Response
 where
     P: Provider,

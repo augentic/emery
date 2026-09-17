@@ -1,14 +1,8 @@
-//! Asserts what the engine and every adapter can rely on from an evidence document.
+//! Verifies evidence deserialisation and claim validation.
 //!
-//! - The body a model answers with parses into typed claims that keep their
-//!   open extras.
-//! - Malformed open fields become absent rather than fatal.
-//! - A document-level key is refused: the kind of source is the adapter's
-//!   metadata, never the answer's.
-//! - The claim gate refuses an id outside the dotted-kebab grammar, or a
-//!   claim missing an extra its kind requires.
-//!
-//! Pinning the gate here keeps the two enforcement points from disagreeing.
+//! The scenarios cover typed common fields, preserved extras, lenient optional
+//! fields, and rejection of unknown document fields. They also verify the
+//! dotted identifier grammar and kind-specific required extras.
 
 use emery_adapter::source::{Backing, ClaimKind, Evidence};
 

@@ -35,13 +35,15 @@ What each kind of comment is for, in Rust sources and WIT contracts (`wit/`, `cr
 Doc comments (`///`, `//!`) follow the conventions the widely used crates — `std`, `serde`, `tokio`, `anyhow` — converge on, sharpened by the [Rust API Guidelines](https://rust-lang.github.io/api-guidelines/documentation.html) and the [Pragmatic Rust Guidelines](https://microsoft.github.io/rust-guidelines/guidelines/docs/index.html) (M-FIRST-DOC-SENTENCE, M-MODULE-DOCS, M-CANONICAL-DOCS):
 
 - **Written for the crate's user, not its maintainer.** A doc comment states the observable contract — what goes in, what comes out, what is guaranteed — and leaves the mechanics to the code and the `//` comments beside it. Prose about how a body works goes stale first and is the reader's least need.
-- **The first line is one short summary sentence** of about fifteen words, ending in a full stop, then a blank line, then the detail. rustdoc lifts that sentence into every index page, so it must stand alone. A fn's summary is a third-person verb sentence (`Returns …`, `Commits …`, `Groups …`); a type's or constant's is a noun phrase (`A claim extracted from a source.`); a module's says what the module provides (`Lists a tree adapter's files and cuts them into materials.`). Never a bare title (`The survey`), a heading, a `Tells whether …`, or a noun phrase standing in for a verb (`` `files` cut by directory … ``).
+- **The first line is one short summary sentence** of about fifteen words, ending in a full stop, then a blank line, then the detail. rustdoc lifts that sentence into every index page, so it must stand alone. A fn's summary is a third-person verb sentence (`Returns …`, `Commits …`, `Groups …`); a type's or constant's is a noun phrase (`A claim extracted from a source.`); a module's says what the module provides (`Lists a tree adapter's files and cuts them into seams.`). Never a bare title (`The survey`), a heading, a `Tells whether …`, or a noun phrase standing in for a verb (`` `files` cut by directory … ``).
 - **Detail is short plain sentences and lists.** One idea per sentence; three or more things are a bullet list, not a colon-and-dash clause. A paragraph the reader cannot take in at a glance is two paragraphs.
+- **Types explain invariants; fields and variants explain distinctions.** State accepted formats, ordering, defaults, and relationships that the signature cannot show. ``/// The source key.`` merely repeats the field name; ``/// The key used to cite this source in a specification.`` tells the caller why it exists.
+- **Claims are exact and current.** Document only behaviour the implementation enforces. Distinguish input forms, ordering, normalisation, retries, side effects, and refusal conditions when those differences are observable; omit them when they are not.
 - **Canonical sections**, spelled and ordered `# Examples`, `# Errors`, `# Panics`. `# Errors` names each class the caller can match on, linked, one bullet per class when there is more than one: ``Returns [`Error::BadRequest`] when …``. A recovery code is named beside its class: ``[`Error::NotFound`] with code `spec-not-generated` when …``. Never the macro name (`bad_request`), a category (`load failures`), or `Fails if …`.
 - **Examples are compiled doctests** (`cargo test --doc` runs in `make check`): `?` rather than `unwrap`, setup hidden behind `#` lines. Every crate a third party depends on (`emery-sdk`, `emery-adapter`, `emery-prose`) carries a quick start under `# Examples` in its crate root; a trait an author implements shows a complete impl; a pure fn shows one call and its result. `ignore` is for code that cannot compile natively, and a `//` beside the fence says why.
-- **Vocabulary is the ecosystem's, or defined once and linked.** A house term (material, lend, survey, claim gate, revision) is defined under `# Vocabulary` in the crate root of the crate that owns it and linked on first use in an item's docs (``[material](crate#vocabulary)``). A term the reader would have to look up elsewhere — AGENTS.md, an RFC, omnia's internals — does not appear.
-- **Every mentioned item is an intra-doc link** (``[`Evidence`]``, ``[`Self::survey`]``), in `///` docs as in `//!` docs. A plain code span is for a value, a path, or an item this crate cannot name.
-- **Module `//!` docs** answer "what is this module, and why does it exist?" for a reader who has not opened the file: the summary sentence, then plain paragraphs on what the module is for and what it guarantees. No deployment tours, no AGENTS.md restatements, no RFC archaeology. A module doc long enough to need structure uses `#` headings, and a heading is never its first line.
+- **Vocabulary is the ecosystem's, or defined once and linked.** A house term (seam, lend, survey, claim gate, revision) is defined under `# Vocabulary` in the crate root of the crate that owns it and linked on first use in an item's docs (``[seam](crate#vocabulary)``). A term the reader would have to look up elsewhere — AGENTS.md, an RFC, omnia's internals — does not appear.
+- **Every mentioned item is an intra-doc link** (``[`Evidence`]``, ``[`Seam::Files`]``), in `///` docs as in `//!` docs. A plain code span is for a value, a path, or an item this crate cannot name.
+- **Module `//!` docs** answer "what is this module, and why does it exist?" for a reader who has not opened the file: the summary sentence, then plain paragraphs on what the module is for and what it guarantees. No deployment tours, no AGENTS.md restatements, no RFC archaeology. Build scripts, test suites, file placement, and `cfg` wiring stay out unless they change what the crate's user can call. A module doc long enough to need structure uses `#` headings, and a heading is never its first line.
 - **`//` section headers** outline a fn body too long to take in at once: a lowercase fragment with no full stop — an imperative phrase or a bare noun — above each blank-line-separated block, naming what the block achieves rather than how (`// load source adapters`, `// collect extracts or findings for failed extracts`, `// scenarios`). Together they are the pseudocode the fn was written from, so a reader can follow the headers alone and open a block only when it matters. A fn readable at a glance gets none, and a header never repeats the line beneath it.
 - **`//` why comments** are capitalised sentences beside the surprising branch they explain, never in a preamble essay. The casing is the signal: a lowercase fragment is an outline entry to skim; a sentence is something to stop and read.
 - **Historical phrases** are banned in comments and docs: `Phase `, `formerly`, `previously lived`, `old contract`, `former tests`, `to avoid the`. Git history is the record.
@@ -105,12 +107,11 @@ The composition-root failure mode is the essay that restates architecture and hi
 // operational fact (the read-only project mount) buried in the middle.
 
 // GOOD
-//! The shipped `emery` runtime.
+//! Defines the shipped `emery` runtime.
 //!
-//! One omnia deployment that embeds the engine guest and declares everything
-//! it is allowed to touch. The deployment is fixed at compile time so a given
-//! `emery` binary always runs with the same policy; there is no runtime
-//! configuration to audit.
+//! The runtime embeds the engine guest and declares every capability it may
+//! use. Its policy is fixed at compile time, so every copy of a given binary
+//! has the same authority.
 
 // …inside the macro body:
 // The invocation directory mounts read-only — nothing writes the tree.
@@ -139,11 +140,11 @@ if let Some(outgoing) = observed.outgoing_id().filter(|outgoing| *outgoing != id
 
 Doc comments describe what this is today. Version-history tables, dated bumps, commit hashes, and migration notes belong in git log — not in `///` blocks. Longer prose belongs in the standards docs.
 
-`cargo doc` is part of `make ci`, so doc comments must compile. Reference paths inside backticks (`` `Self::config_path` ``) are fine; bare links (`[Foo]`) need a corresponding intra-doc target or rustdoc fails the build.
+`cargo doc` is part of `make ci`, so doc comments must compile. Reference paths inside backticks (`` `Self::config_path` ``) are fine; bare links (`[Foo]`) need a corresponding intra-doc target or rustdoc fails the build. When a public item is target-gated, build that target's documentation too; for the guest surface, run `RUSTDOCFLAGS=-Dwarnings cargo doc --no-deps --workspace --all-features --locked --target wasm32-wasip2`.
 
 ## Naming
 
-Prefer short, idiomatic Rust names. Don't restate context the surrounding module, type, or function already supplies. Avoid `_local` / `_value` / `_helper` suffixes. Predicates start with `is_` / `has_`. A handler's DTOs are `<Verb>Input` and `<Verb>Output` (`SpecifyInput` → `SpecifyOutput`, `ShowInput` → `ShowOutput`): omnia's own names for the two positions, the `input: I` the fn takes and its `Handler::Output`. Never `<Verb>Body` — in omnia's vocabulary a body is the *encoded* wire form (`Encoded`, `ErrorBody`) the projector produces from the output. Never `<Verb>Response` — `omnia_guest::api::command::Response` is the buffered envelope the façade owns. Never `<Verb>Json` — the format dispatch lives in the command projector (see [handler-shape.md](./handler-shape.md)). The prefix repeats the module (`specify::SpecifyInput`) on purpose: the types are consumed cross-crate, where `emery_engine::specify::SpecifyInput` is what the reader sees.
+Prefer short, idiomatic Rust names. Don't restate context the surrounding module, type, or function already supplies. Avoid `_local` / `_value` / `_helper` suffixes. Predicates start with `is_` / `has_`. A handler's DTOs are `<Verb>Input` and `<Verb>Output` (`SpecifyInput` → `SpecifyOutput`, `ShowInput` → `ShowOutput`): omnia's own names for the two positions, the `input: I` the fn takes and its `Handler::Output`. Never `<Verb>Body` — in omnia's vocabulary a body is the *encoded* wire form (`Encoded`, `ErrorBody`) the projector produces from the output. Never `<Verb>Response` — `omnia_sdk::api::command::Response` is the buffered envelope the façade owns. Never `<Verb>Json` — the format dispatch lives in the command projector (see [handler-shape.md](./handler-shape.md)). The prefix repeats the module (`specify::SpecifyInput`) on purpose: the types are consumed cross-crate, where `emery_engine::specify::SpecifyInput` is what the reader sees.
 
 **Tests.** A `#[test]` `fn` names the *scenario* (`gen_spec`, `shared_roots`), never the outcome or the assertion (`rendered_documents_read_back`, `clean_evidence_passes`). The `//` requirement comment above the test carries the why; the identifier does not.
 
@@ -188,7 +189,7 @@ A module reads top-down: what it does, what it yields, how. **Review only.**
 - **Phases, not statements**: one blank line separates the phases of a function body (acquire → transform → validate → return) and precedes a trailing `Ok(...)` when the body has more than a few statements. Do not blank-line every statement.
 - **Comment by visibility**: exported items carry `///`. Private and `pub(crate)` items carry a `//` line only when it answers "why" — a comment that restates the name is deleted. Clippy's `missing_errors_doc` / `missing_panics_doc` only check exported items, so a `# Errors` section on a non-exported fn is noise, not a requirement; reducing visibility is the lever that lets you drop it.
 - **Inline single-use wrappers**: a private fn with one caller whose body is one expression, and whose name adds nothing the expression does not say, is inlined at the call site. Keep the fn when it has two or more callers, names a concept the call site should not spell out (`store::failed`), or is a multi-step body.
-- **Name the capability at the dispatch site**: when the receiver is a generic bounded by more than one capability trait (`P: Source + Plugins`, `S: StateStore + BlobStore`), call `Source::extract(provider, …)` / `BlobStore::put(store, …)` rather than `provider.extract(…)`, so the seam being crossed is visible without resolving the bound.
+- **Name the capability at the dispatch site**: when the receiver is a generic bounded by more than one capability trait (`P: Source + Plugins`, `S: StateStore + BlobStore`), call `Source::extract(provider, …)` / `BlobStore::put(store, …)` rather than `provider.extract(…)`, so the boundary being crossed is visible without resolving the bound.
 - **Keep an `impl` with its type**: no `impl ForeignType` in a consumer module. A consumer that needs behaviour over a type it does not own writes a free fn taking `&Type`.
 
 ```rust
@@ -241,13 +242,13 @@ When one accumulator is not enough — a cycle-guard stack pushed on entry and p
 
 ```rust
 // BAD — the answer arrives by side effect; every level threads the slot.
-fn files(root: &Path, mut keep: impl FnMut(&Path, Entry) -> bool) -> Result<Vec<String>, Error> {
+fn files(root: &Path, mut keep: impl FnMut(Entry<'_>) -> bool) -> Result<Vec<String>, Error> {
     let mut found = Vec::new();
     walk(root, "", &mut keep, &mut found)?;
     found.sort();
     Ok(found)
 }
-fn walk(dir: &Path, prefix: &str, keep: &mut impl FnMut(&Path, Entry) -> bool, found: &mut Vec<String>) -> Result<(), Error> {
+fn walk(dir: &Path, prefix: &str, keep: &mut impl FnMut(Entry<'_>) -> bool, found: &mut Vec<String>) -> Result<(), Error> {
     for entry in fs::read_dir(dir)? {
         /* … */
         if is_dir { walk(&entry.path(), &relative, keep, found)?; } else { found.push(relative); }
@@ -256,12 +257,12 @@ fn walk(dir: &Path, prefix: &str, keep: &mut impl FnMut(&Path, Entry) -> bool, f
 }
 
 // GOOD — each level returns its part; the caller extends.
-fn files(root: &Path, mut keep: impl FnMut(&Path, Entry) -> bool) -> Result<Vec<String>, Error> {
+fn files(root: &Path, mut keep: impl FnMut(Entry<'_>) -> bool) -> Result<Vec<String>, Error> {
     let mut found = walk(root, "", &mut keep)?;
     found.sort();
     Ok(found)
 }
-fn walk(dir: &Path, prefix: &str, keep: &mut impl FnMut(&Path, Entry) -> bool) -> Result<Vec<String>, Error> {
+fn walk(dir: &Path, prefix: &str, keep: &mut impl FnMut(Entry<'_>) -> bool) -> Result<Vec<String>, Error> {
     let mut found = Vec::new();
     for entry in fs::read_dir(dir)? {
         /* … */
@@ -280,7 +281,7 @@ impl Walk {
 
 ## Format dispatch
 
-Operations do **not** open-code `match format { Json, Text }`. They return typed outputs; omnia's command projector (`omnia_guest::api::command::Command::call`, driven from `crates/cli/src/lib.rs`) owns format dispatch through `omnia_guest::api::Format::encode`. Operations never pick a sink directly. See [handler-shape.md](./handler-shape.md) for the operation and projector contract.
+Operations do **not** open-code `match format { Json, Text }`. They return typed outputs; omnia's command projector (`omnia_sdk::api::command::Command::call`, driven from `crates/cli/src/lib.rs`) owns format dispatch through `omnia_sdk::api::Format::encode`. Operations never pick a sink directly. See [handler-shape.md](./handler-shape.md) for the operation and projector contract.
 
 ```rust
 // BAD
@@ -359,13 +360,13 @@ pub fn handle(output: &HandleOutput, w: &mut dyn fmt::Write) -> fmt::Result {
 
 ## Errors
 
-Engine operations, the adapter SDK, and adapters return `omnia_guest::Error` (`BadRequest`, `NotFound`, `ServerError`, `BadGateway`). Construct Omnia defaults with the crate-root macros (`bad_request!`, `not_found!`, `server_error!`, `bad_gateway!`); those emit snake_case codes (`bad_request`, …). Keep explicit variant construction only for the four recovery discriminants (`specify-source-required`, `unsupported-version`, `spec-not-generated`, `spec-outdated`). Do not introduce a house error type or constructor wrappers; the adapter WIT `error` variant is lowered and lifted inside the contract crate's `source::bindings` (`emery-adapter`) alone (see [style.md](./style.md#failures-are-omnia-errors)).
+Engine operations, the adapter SDK, and adapters return `omnia_sdk::Error` (`BadRequest`, `NotFound`, `ServerError`, `BadGateway`). Construct Omnia defaults with the crate-root macros (`bad_request!`, `not_found!`, `server_error!`, `bad_gateway!`); those emit snake_case codes (`bad_request`, …). Keep explicit variant construction only for the four recovery discriminants (`specify-source-required`, `unsupported-version`, `spec-not-generated`, `spec-outdated`). Do not introduce a house error type or constructor wrappers; the adapter WIT `error` variant is lowered and lifted inside the contract crate's `source::bindings` (`emery-adapter`) alone (see [style.md](./style.md#failures-are-omnia-errors)).
 
 **Class on a direct match.** Pick the Omnia variant that matches the failure: operator or input refusals are `BadRequest` (exit 1), missing resources are `NotFound` (exit 2), upstream or model failures are `BadGateway` (exit 4). Anything else — I/O, storage, leftover conversions — is `ServerError` (exit 3). The `Source` capability preserves an adapter's internal classification, but `specify` treats extraction as an internal implementation detail and reports one or more extraction failures together as `ServerError`; loader failures happen before extraction and keep their own class. Do not invent new codes or new exit slots. See [handler-shape.md §"Exit codes"](./handler-shape.md#exit-codes).
 
 **Hint lookup.** Long-form recovery hints live in `crates/cli/src/lib.rs` (`hint` on `unsupported-version` / `specify-source-required` / `spec-not-generated` / `spec-outdated` and the loader discriminants, attached through `Command::hints`). Adding a new hint extends that lookup, not the error type. Engine descriptions stay transport-neutral — they name the path, adapter, or rule, never a flag, a verb, or "the CLI"; flag-vocabulary recovery text belongs in the hint table.
 
-**Production code does not panic.** The engine and every adapter run as wasm guests, where a panic is a trap — no `Failure` envelope, no exit code — so `unwrap()`, `expect()`, `panic!`, and indexing a position the code has not just checked belong in tests and build scripts alone (there a panic *is* the failure report). An invariant the type system cannot express still fails as an Omnia `Error`: the engine's own defect — a document that does not serialise, a fact an accepted answer names that the brief cannot place — is `server_error!` (exit 3) with a description naming the defect. Library accessors return `Option` or `Result` rather than panicking on a miss (`emery_prose::registry::body`), leaving the caller to report it.
+**Production code does not panic.** The engine and every adapter run as wasm guests, where a panic is a trap — no `Failure` envelope, no exit code — so `unwrap()`, `expect()`, `panic!`, and indexing a position the code has not just checked belong in tests and build scripts alone (there a panic *is* the failure report). An invariant the type system cannot express still fails as an Omnia `Error`: the engine's own defect — a document that does not serialise, a fact an accepted answer names that the brief cannot place — is `server_error!` (exit 3) with a description naming the defect. Library accessors return `Option` or `Result` rather than panicking on a miss (`emery_prose::body`), leaving the caller to report it.
 
 ## `#[non_exhaustive]`
 
@@ -389,7 +390,7 @@ crates/foo/src/
     └── render.rs
 ```
 
-There is no module length cap. Split a file when a reader gains a seam — a concern with its own consumers or its own vocabulary — never because it crossed a line count; a type and the one brief or judgment that uses it read better together than apart. When you do split, prefer `<parent>/<module>.rs` + `<parent>/<module>/<concern>.rs` over `// ---` separators inside one file.
+There is no module length cap. Split a file when a reader gains a boundary — a concern with its own consumers or its own vocabulary — never because it crossed a line count; a type and the one brief or judgment that uses it read better together than apart. When you do split, prefer `<parent>/<module>.rs` + `<parent>/<module>/<concern>.rs` over `// ---` separators inside one file.
 
 ## No-op forwarders
 

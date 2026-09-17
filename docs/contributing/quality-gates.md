@@ -10,14 +10,14 @@ This gate is model-free and self-contained: no sibling checkout, no live model, 
 
 ## The WASM boundary
 
-No gate in this repository instantiates a component. The root build script builds the engine guest for `wasm32-wasip2` on every native build, so `make lint` and `make test` already type-check `emery-cli`, `emery-engine`, and `emery-adapter` for the guest. The adapter SDK's export side and the mock adapter are compiled for wasm32 only by the live journey's `cargo build --example adapter --target wasm32-wasip2 --release` ([examples/README.md](../../examples/README.md)); no gate lints them. Instantiating the `emery:adapter/source` seam under the real omnia runtime is `emery-adapters`' conformance rung, which drives every first-party component through the published contract.
+No gate in this repository instantiates a component. The root build script builds the engine guest for `wasm32-wasip2` on every native build, so `make lint` and `make test` already type-check `emery-cli`, `emery-engine`, and `emery-adapter` for the guest. The adapter SDK's export side and the mock adapter are compiled for wasm32 only by the live journey's `cargo build --example adapter --target wasm32-wasip2 --release` ([examples/README.md](../../examples/README.md)); no gate lints them. Instantiating a component over `emery:adapter/source` under the real omnia runtime is `emery-adapters`' conformance rung, which drives every first-party component through the published contract.
 
 ## Placement decision
 
 When adding coverage, the default write path is a root product scenario — a crate test is the exception, and a `src` unit test the last resort:
 
 1. Put every CLI-reachable behavior in the root scenario suites (`tests/specify.rs`, `tests/command.rs`, `tests/plugin.rs`); a behavior whose subject is the wasm boundary itself belongs to `emery-adapters`' conformance rung.
-2. Put an independently useful library contract (the adapter SDK, the prose walker) in that crate's integration suite; the same holds for a product invariant impractical to arrange through the entry points.
+2. Put an independently useful library contract (the adapter SDK, the prose embed and its check) in that crate's integration suite; the same holds for a product invariant impractical to arrange through the entry points.
 3. Put a private dense matrix in a kernel unit test only when integration is impractical.
 4. If no deterministic predicate can decide the result, it has no automated home here — adapter output quality belongs to adapter authors, model transport to omnia.
 

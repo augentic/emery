@@ -1,16 +1,11 @@
-//! Walks the `specify` → `show` arc an operator lives through.
+//! Verifies the operator journey from `specify` through `show` and regeneration.
 //!
-//! The scenarios: naming sources, generating a specification, reviewing it,
-//! regenerating it, and hitting every refusal along the way — an invalid
-//! source, an untrusted adapter, a model draft that still does not fit the
-//! requirements or the plan once the backend's rounds are spent.
+//! The scenarios cover source selection, specification generation, review,
+//! revision replacement, and every caller-visible refusal.
 //!
 //! Each scenario drives the real command façade over scripted capabilities,
-//! so it reads as usage documentation while still asserting the exact
-//! envelope, exit code, and stored revision the operator would see. The
-//! model answers are typed drafts, so the scripted turns are JSON; the
-//! stored documents are the engine's canonical JSON, and the documents `show`
-//! renders from them are the engine's canonical Markdown.
+//! asserting the exact envelope, exit code, storage operations, and Markdown
+//! projection an operator would observe.
 
 #![cfg(not(target_arch = "wasm32"))]
 
@@ -22,9 +17,9 @@ use std::{fs, slice};
 
 use emery_adapter::source::{ClaimKind, Evidence, SourceContent, SourceKind};
 use emery_engine::{CONTAINER, CURRENT};
-use omnia_guest::model::Error as ModelError;
-use omnia_guest::plugins::{Error as LoadError, Location};
-use omnia_guest::{BlobStore, StateStore, bad_gateway, bad_request};
+use omnia_sdk::model::Error as ModelError;
+use omnia_sdk::plugins::{Error as LoadError, Location};
+use omnia_sdk::{BlobStore, StateStore, bad_gateway, bad_request};
 use omnia_test::SeenFormat;
 use omnia_test::guest::{Memory, Namespaced, Scripted};
 use serde_json::Value;
