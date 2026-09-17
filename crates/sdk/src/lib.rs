@@ -66,8 +66,10 @@
 //! A shipped adapter lists the documents of its `prose/` tree with
 //! `prose!("../prose", [..])` at its crate root rather than writing the
 //! bodies by hand, so its suite can hold the list to the tree with
-//! [`prose::check`]; a tree adapter lists its input through [`survey::list`]
-//! or asks the model for its surfaces through [`survey::surfaces`].
+//! [`prose::check`]. An adapter may inspect a workspace through
+//! [`workspace::list`] or ask the model for caller-facing surfaces through
+//! [`survey::surfaces`]; neither helper defines how the adapter surveys its
+//! source into seams.
 //!
 //! # Vocabulary
 //!
@@ -97,6 +99,7 @@ mod mine;
 mod path;
 mod references;
 pub mod survey;
+pub mod workspace;
 
 #[cfg(target_arch = "wasm32")]
 #[doc(inline)]

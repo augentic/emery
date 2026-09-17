@@ -1,107 +1,25 @@
-//! Lists a tree adapter's files and asks the model for the surfaces a source exposes.
+//! Finds the caller-facing surfaces a workspace source exposes.
 //!
-//! A tree adapter surveys before its first seam is mined, one of two ways.
-//! [`list`] walks the files beneath the source root under the adapter's
-//! `keep`, for an adapter that cuts its tree itself. [`surfaces`] asks the
-//! model once, under the adapter's `prompts/survey.md`, for the surfaces the
-//! source exposes — a route, a command, a job, an exported API — each with
-//! the module a caller enters it at, which no directory layout states; the
-//! entry is held to the tree under the same `keep`, the adapter mines each
-//! surface from it, and the model groups nothing.
+//! [`surfaces`] is an optional helper for an adapter whose survey needs the
+//! model to find a semantic boundary — a route, a command, a job, an exported
+//! API — and the module a caller enters it at. The adapter still owns its
+//! survey and decides how the returned surfaces become seams.
 //!
-//! Neither offers nor accepts the engine's own files — `spec.md`,
-//! `design.md`, `.omnia/` — so no adapter can mine a projection of the last
-//! revision back into evidence.
+//! The helper accepts no engine-owned file — `spec.md`, `design.md`,
+//! `.omnia/` — as a surface entry.
 
 use std::collections::BTreeSet;
 use std::path::Path;
 
-use anyhow::Context as _;
 use emery_adapter::source::SourceContent;
 use emery_prose::Doc;
 use omnia_sdk::model::Question;
-use omnia_sdk::{Error, Model, bad_request, server_error};
+use omnia_sdk::{Error, Model, server_error};
 use schemars::JsonSchema;
 use serde::Deserialize;
 
+use crate::workspace::{self, Entry};
 use crate::{Context, path, references};
-
-/// A directory entry the walk offers to an adapter's `keep`, by its root-relative path.
-///
-/// The path is `/`-separated, as the listing carries it, and UTF-8: an
-/// entry whose name is not is refused before any is offered.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum Entry<'a> {
-    /// A directory; refusing it prunes everything beneath.
-    Dir(&'a str),
-    /// A regular file; refusing it leaves it out of the survey.
-    File(&'a str),
-}
-
-impl<'a> Entry<'a> {
-    /// Returns the `/`-separated path relative to the root, as the listing carries it.
-    #[must_use]
-    pub const fn path(self) -> &'a str {
-        match self {
-            Self::Dir(path) | Self::File(path) => path,
-        }
-    }
-
-    /// Returns the entry's own name: the last segment of its path.
-    #[must_use]
-    pub fn name(self) -> &'a str {
-        let path = self.path();
-        path.rsplit_once('/').map_or(path, |(_, name)| name)
-    }
-
-    /// Returns the part of the name after its last dot; a leading dot is not one.
-    #[must_use]
-    pub fn extension(self) -> Option<&'a str> {
-        let (stem, extension) = self.name().rsplit_once('.')?;
-        (!stem.is_empty()).then_some(extension)
-    }
-
-    /// Returns `true` when the name begins with a dot: tooling by convention, never source.
-    #[must_use]
-    pub fn hidden(self) -> bool {
-        self.name().starts_with('.')
-    }
-}
-
-/// Lists the files beneath `root`, sorted, as `/`-separated paths relative to it.
-///
-/// `keep` is asked about every entry; a refused directory is not entered.
-/// The engine's own `.omnia/` directories and `spec.md` / `design.md` files
-/// are never offered, wherever they appear. Symlinks are not followed.
-///
-/// # Examples
-///
-/// ```
-/// use emery_sdk::survey;
-///
-/// # let scratch = tempfile::tempdir()?;
-/// # for file in ["README.md", "api/orders.md", "api/users.md", "notes/todo.md", ".git/HEAD"] {
-/// #     let path = scratch.path().join(file);
-/// #     std::fs::create_dir_all(path.parent().unwrap())?;
-/// #     std::fs::write(path, "")?;
-/// # }
-/// # let root = scratch.path().to_str().unwrap();
-/// let files = survey::list(root, |entry| !entry.hidden())?;
-///
-/// assert_eq!(files, ["README.md", "api/orders.md", "api/users.md", "notes/todo.md"]);
-/// # anyhow::Ok(())
-/// ```
-///
-/// # Errors
-///
-/// Returns [`Error::ServerError`] when a directory cannot be read, and
-/// [`Error::BadRequest`] for an entry whose name is not UTF-8, which no
-/// `path` anchor could cite.
-pub fn list(root: &str, mut keep: impl FnMut(Entry<'_>) -> bool) -> Result<Vec<String>, Error> {
-    let mut files = walk(Path::new(root), "", &mut keep)?;
-    files.sort();
-    Ok(files)
-}
 
 /// Asks the call's model once for the surfaces the source exposes, each with its entry module.
 ///
@@ -110,10 +28,10 @@ pub fn list(root: &str, mut keep: impl FnMut(Entry<'_>) -> bool) -> Result<Vec<S
 /// `ctx` and lends the root so the model can read the tree; the `list_docs`
 /// and `read_doc` tools answer from `docs`. The model answers one
 /// [`Inventory`], checked whole: a surface without a name, two surfaces of
-/// one name, or an entry that is not a regular file beneath the root that
-/// `keep` accepts — asked about each directory on the way and the file
-/// itself, as [`list`] would ask — goes back as findings for another round.
-/// The engine's own files are never an entry.
+/// one name, or an entry that is not a regular file beneath the root accepted
+/// by `keep` — asked about each [`Entry::Dir`] on the way and the
+/// [`Entry::File`] itself — goes back as findings for another round. The
+/// engine's own files are never an entry.
 ///
 /// The surfaces come back in answer order, each entry as a `/`-separated
 /// path relative to the root. A module may be the entry of several
@@ -226,12 +144,12 @@ fn module(
     let refused = || format!("`{named}` is not a module this adapter mines");
     for (index, _) in entry.match_indices('/') {
         let dir = Entry::Dir(&entry[..index]);
-        if SKIP_DIRS.contains(&dir.name()) || !keep(dir) {
+        if workspace::excluded(dir) || !keep(dir) {
             return Err(refused());
         }
     }
     let file = Entry::File(&entry);
-    if SKIP_FILES.contains(&file.name()) || !keep(file) {
+    if workspace::excluded(file) || !keep(file) {
         return Err(refused());
     }
 
@@ -260,40 +178,4 @@ fn turn<P>(ctx: &Context<'_, P>, root: &str) -> String {
         id = ctx.adapter_id,
         key = ctx.input.key,
     )
-}
-
-// The engine's own files: output, never input, wherever they sit in a tree.
-const SKIP_DIRS: &[&str] = &[".omnia"];
-const SKIP_FILES: &[&str] = &["spec.md", "design.md"];
-
-// `dir`'s kept files as `prefix`-relative paths, descending into each kept
-// directory.
-fn walk(
-    dir: &Path, prefix: &str, keep: &mut impl FnMut(Entry<'_>) -> bool,
-) -> Result<Vec<String>, Error> {
-    let reading = || format!("reading `{}`", dir.display());
-    let mut found = Vec::new();
-    for entry in std::fs::read_dir(dir).with_context(reading)? {
-        let entry = entry.with_context(reading)?;
-        let name = entry.file_name();
-        let Some(name) = name.to_str() else {
-            return Err(bad_request!(
-                "`{}` is not UTF-8; no `path` anchor could cite it",
-                entry.path().display()
-            ));
-        };
-        let file_type = entry.file_type().with_context(reading)?;
-        let relative = if prefix.is_empty() { name.to_owned() } else { format!("{prefix}/{name}") };
-
-        if file_type.is_dir() {
-            if SKIP_DIRS.contains(&name) || !keep(Entry::Dir(&relative)) {
-                continue;
-            }
-            found.extend(walk(&entry.path(), &relative, keep)?);
-        } else if file_type.is_file() && !SKIP_FILES.contains(&name) && keep(Entry::File(&relative))
-        {
-            found.push(relative);
-        }
-    }
-    Ok(found)
 }
