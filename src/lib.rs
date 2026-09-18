@@ -7,10 +7,10 @@
 #![cfg(target_arch = "wasm32")]
 
 use emery_cli::Verbosity;
-use omnia_sdk::api::command::Response;
+use omnia_sdk::api::command::{self, Response};
 use omnia_sdk::{BlobStore, Model, Plugins, StateStore};
-use tracing::Level;
 use wasip3::cli::environment;
+use wasip3::exports::cli::run::Guest;
 
 // The bare provider: every capability keeps its WASI-backed default body, so
 // each impl is empty and the runtime's grants decide what the engine can do.
@@ -22,11 +22,21 @@ impl BlobStore for Provider {}
 impl Plugins for Provider {}
 impl emery_adapter::source::Source for Provider {}
 
-omnia_sdk::command!(dispatch);
+struct CliGuest;
 
-// The root span of a run. `command!` owns the telemetry lifecycle around it,
+wasip3::cli::command::export!(CliGuest);
+
+impl Guest for CliGuest {
+    #[omnia_wasi_otel::instrument(name = "cli_guest_run")]
+    async fn run() -> Result<(), ()> {
+        command::execute_wasi(dispatch()).await;
+        Ok(())
+    }
+}
+
+// The root span of a run. `execute_wasi` owns the telemetry lifecycle around it,
 // so the export flushes before any exit, a non-zero one included.
-#[omnia_wasi_otel::instrument(name = "cli_guest_run", level = Level::DEBUG)]
+
 async fn dispatch() -> Response {
     emery_cli::run(Provider, environment::get_arguments(), trace).await
 }

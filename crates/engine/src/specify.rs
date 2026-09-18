@@ -192,11 +192,10 @@ impl<'a> Bound<'a> {
 
         let findings = evidence.findings();
         if !findings.is_empty() {
-            return Err(server_error!(
-                "`{source}` returned invalid claims:\n{}",
-                findings.join("\n")
-            ));
+            return Err(server_error!("`{source}` returned invalid claims"));
         }
+
+        tracing::debug!(%source, claims = evidence.claims.len(), "extracted");
 
         Ok(Extract {
             source: source.clone(),
