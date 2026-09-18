@@ -17,7 +17,7 @@ use serde::de::DeserializeOwned;
 use serde_json::Value;
 
 use crate::revision::RESERVED;
-use crate::specify::Extract;
+use crate::specify::{Extract, PROSE};
 
 // `Sync`: the verify closure `Question::ask` takes is `Send`, and it
 // borrows the brief.
@@ -67,7 +67,7 @@ pub trait Brief: Display + Sync + Sized {
         tracing::info!(question = Self::NAME, "asking the model");
         let mut system = Vec::with_capacity(Self::PROSE.len());
         for path in Self::PROSE {
-            let prose = emery_prose::body(crate::DOCS, path)
+            let prose = emery_prose::body(PROSE, path)
                 .ok_or_else(|| server_error!("synthesis prose `{path}` is not embedded"))?;
             system.push(prose);
         }

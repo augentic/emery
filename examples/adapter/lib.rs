@@ -21,13 +21,12 @@ mod guest {
 
     async fn extract<P: Model>(ctx: &Context<'_, P>) -> Result<Evidence, Error> {
         let seams = super::survey(ctx.input)?;
-        emery_sdk::mine(ctx, super::DOCS, &seams).await
+        emery_sdk::extract(ctx, super::PROSE, &seams).await
     }
 }
 
 /// The prompt and reference document embedded in the adapter.
-pub static DOCS: &[Doc] =
-    emery_sdk::prose!("prose", ["prompts/extract.md", "references/greeting.md"]);
+pub static PROSE: &[Doc] = emery_sdk::prose!["prose/extract.md", "prose/references/greeting.md"];
 
 /// Returns one mining seam for the greeting source.
 ///

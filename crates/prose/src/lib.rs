@@ -10,15 +10,15 @@
 //!
 //! # Examples
 //!
-//! Embed selected files and read one by path:
+//! Embed selected files and read one by its tree-relative path:
 //!
 //! ```
 //! use emery_prose::Doc;
 //!
-//! static DOCS: &[Doc] =
-//!     emery_prose::prose!("../tests/fixtures", ["prompts/extract.md", "references/ids.md"]);
+//! static PROSE: &[Doc] =
+//!     emery_prose::prose!["../tests/prose/extract.md", "../tests/prose/references/ids.md"];
 //!
-//! let prompt = emery_prose::body(DOCS, "prompts/extract.md");
+//! let prompt = emery_prose::body(PROSE, "extract.md");
 //! assert!(prompt.is_some());
 //! ```
 
@@ -26,38 +26,44 @@ mod check;
 mod doc;
 
 pub use self::check::check;
+#[doc(hidden)]
+pub use self::doc::within;
 pub use self::doc::{Doc, body, find};
 
-/// Embeds selected Markdown files as a static table of [`Doc`] values.
+/// Embeds the listed Markdown files as a static table of [`Doc`] values.
 ///
-/// `root` is relative to the source file invoking the macro. Each listed path
-/// is relative to that root and becomes one table entry, preserving the order
-/// written in the invocation.
+/// Each path names a file relative to the invoking source file, the way
+/// `include_str!` does, and the file must sit beneath a `prose/` directory:
+/// its table path is what follows that segment, so
+/// `"../prose/references/ids.md"` is embedded as `references/ids.md` and
+/// `"../prose/extract.md"` as `extract.md`. Entries keep the order written
+/// in the invocation.
 ///
 /// File bodies are included at compile time, like `include_str!`. A missing
-/// listed file therefore fails the build. Files that exist under `root` but
-/// are not listed are omitted; use [`check`] in a native test to detect them.
+/// listed file, or one outside a `prose/` directory, therefore fails the
+/// build. Files that exist under the tree but are not listed are omitted; use
+/// [`check`] in a native test to detect them.
 ///
 /// # Examples
 ///
 /// ```
 /// use emery_prose::Doc;
 ///
-/// static DOCS: &[Doc] =
-///     emery_prose::prose!("../tests/fixtures", ["prompts/extract.md", "references/ids.md"]);
+/// static PROSE: &[Doc] =
+///     emery_prose::prose!["../tests/prose/extract.md", "../tests/prose/references/ids.md"];
 ///
 /// assert_eq!(
-///     DOCS.iter().map(|doc| doc.path).collect::<Vec<_>>(),
-///     ["prompts/extract.md", "references/ids.md"]
+///     PROSE.iter().map(|doc| doc.path).collect::<Vec<_>>(),
+///     ["extract.md", "references/ids.md"]
 /// );
-/// assert_eq!(DOCS[1].body, include_str!("../tests/fixtures/references/ids.md"));
+/// assert_eq!(PROSE[1].body, include_str!("../tests/prose/references/ids.md"));
 /// ```
 #[macro_export]
 macro_rules! prose {
-    ($root:literal, [$($path:literal),+ $(,)?]) => {
+    ($($path:literal),+ $(,)?) => {
         &[$($crate::Doc {
-            path: $path,
-            body: ::core::include_str!(::core::concat!($root, "/", $path)),
+            path: $crate::within($path),
+            body: ::core::include_str!($path),
         }),+]
     };
 }

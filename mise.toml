@@ -18,3 +18,18 @@
 includes = ["mise-rust.toml"]
 # includes = ["git::https://github.com/augentic/.github.git//mise/rust.toml?ref=v0.1.0"]
 
+# -------------------------------------
+# Engine overrides
+# -------------------------------------
+
+# The guest side — the engine guest in `src/lib.rs`, the SDK's `component`
+# module and the `source_adapter!` expansion, and the mock adapter under
+# `examples/adapter/` — is `cfg(target_arch = "wasm32")`, which native clippy
+# compiles to nothing: lint it for its own target too. The build script
+# skips itself for wasm32, so the second pass never recurses.
+[tasks.lint]
+run = [
+  "cargo clippy --workspace --all-targets --all-features -- -D warnings",
+  "cargo clippy -p emery-sdk -p emery --lib --example adapter --target wasm32-wasip2 -- -D warnings",
+]
+

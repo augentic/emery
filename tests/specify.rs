@@ -13,6 +13,7 @@ mod support;
 
 use std::path::Path;
 use std::sync::Arc;
+use std::time::Duration;
 use std::{fs, slice};
 
 use emery_adapter::source::{ClaimKind, Evidence, SourceContent, SourceKind};
@@ -682,9 +683,9 @@ async fn extras_missing() {
     fail(&provider, &["emery", "specify", "docs"], 3, "server_error").await;
 }
 
-// An adapter failure is internal to Emery whether the source ran alone or
-// beside one that succeeded: the run waits for every source, discards the
-// evidence it gathered, and reports one server error.
+// An adapter's upstream failure reaches the public boundary as the adapter
+// put it — its class, code, and message — whether the source ran alone or
+// beside one that succeeded, whose evidence is discarded.
 #[tokio::test]
 async fn extract_fails() {
     let mut provider = Provider::idle();
@@ -694,14 +695,14 @@ async fn extract_fails() {
         .insert("docs".to_string(), Err(bad_gateway!("source `docs`: the adapter exploded")));
 
     for argv in [&["emery", "specify", "docs"][..], &["emery", "specify", "docs", "api"][..]] {
-        let envelope = fail(&provider, argv, 3, "server_error").await;
+        let envelope = fail(&provider, argv, 4, "bad_gateway").await;
         assert_eq!(envelope["message"], "source `docs`: the adapter exploded", "{argv:?}");
     }
 }
 
-// Every failing source is reported in one run, in declaration order, and
-// the public envelope is one server error rather than inheriting an
-// arbitrary adapter error class.
+// The first failure to land is the run's: with two sources failing at once,
+// the one dispatched first — declaration order — is reported and the other
+// is never seen.
 #[tokio::test]
 async fn two_failures() {
     let mut provider = Provider::idle();
@@ -712,22 +713,18 @@ async fn two_failures() {
     provider
         .source
         .evidence
-        .insert("code".to_string(), Err(bad_request!("source `code`: the brief is empty")));
+        .insert("code".to_string(), Err(bad_gateway!("source `code`: the model is down")));
 
-    let envelope = fail(&provider, &["emery", "specify", "docs", "code"], 3, "server_error").await;
-    assert_eq!(
-        envelope["message"],
-        "source `docs`: the adapter exploded\nsource `code`: the brief is empty"
-    );
+    let envelope = fail(&provider, &["emery", "specify", "docs", "code"], 4, "bad_gateway").await;
+    assert_eq!(envelope["message"], "source `docs`: the adapter exploded");
 
-    let envelope = fail(&provider, &["emery", "specify", "code", "docs"], 3, "server_error").await;
-    assert_eq!(
-        envelope["message"],
-        "source `code`: the brief is empty\nsource `docs`: the adapter exploded"
-    );
+    let envelope = fail(&provider, &["emery", "specify", "code", "docs"], 4, "bad_gateway").await;
+    assert_eq!(envelope["message"], "source `code`: the model is down");
 }
 
-// An adapter's own refusal is internal to Emery at the public boundary.
+// A source's refusal of its input is the operator's to fix, so it reaches
+// the public boundary as the adapter put it — its class, code, and message —
+// rather than as an internal error.
 #[tokio::test]
 async fn extract_refuses() {
     let mut provider = Provider::idle();
@@ -736,8 +733,40 @@ async fn extract_refuses() {
         .evidence
         .insert("docs".to_string(), Err(bad_request!("source `docs`: the brief is empty")));
 
-    let envelope = fail(&provider, &["emery", "specify", "docs"], 3, "server_error").await;
+    let envelope = fail(&provider, &["emery", "specify", "docs"], 1, "bad_request").await;
     assert_eq!(envelope["message"], "source `docs`: the brief is empty");
+}
+
+// A refusal ends the run as soon as it lands: the other source's extract is
+// held forever, and the run still fails under the refusal inside a bound
+// that a run waiting for every source would exceed. Both sources were
+// dispatched before either resolved.
+#[tokio::test]
+async fn refusal_fails_fast() {
+    let mut provider = Provider::idle();
+    provider.source.held.insert("docs".to_string());
+    provider
+        .source
+        .evidence
+        .insert("code".to_string(), Err(bad_request!("source `code`: the brief is empty")));
+
+    let envelope = tokio::time::timeout(
+        Duration::from_secs(5),
+        fail(&provider, &["emery", "specify", "docs", "code"], 1, "bad_request"),
+    )
+    .await
+    .expect("the refusal ends the run while `docs` is still pending");
+
+    assert_eq!(envelope["message"], "source `code`: the brief is empty");
+    let dispatched: Vec<String> = provider
+        .source
+        .calls
+        .lock()
+        .expect("calls")
+        .iter()
+        .map(|(_, input)| input.key.clone())
+        .collect();
+    assert_eq!(dispatched, ["docs", "code"], "both sources were dispatched before the refusal");
 }
 
 // An adapter declaring a newer minimum `emery-version` than the binary

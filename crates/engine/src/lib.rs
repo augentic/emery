@@ -87,19 +87,3 @@ pub trait Provider:
 }
 
 impl<P: Model + Source + StateStore + BlobStore + Plugins + Send + Sync + 'static> Provider for P {}
-
-// The synthesis corpus, embedded at compile time; `specify::tests::corpus`
-// holds the list to the tree and to the briefs that read it.
-static DOCS: &[emery_prose::Doc] = emery_prose::prose!(
-    "../prose",
-    [
-        "synthesis/authority.md",
-        "synthesis/claim-landing.md",
-        "synthesis/design-format.md",
-        "synthesis/grouping.md",
-        "synthesis/requirement-block.md",
-        "synthesis/spec-format.md",
-        "synthesis/synthesise.md",
-        "synthesis/tags.md",
-    ]
-);

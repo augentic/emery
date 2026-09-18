@@ -6,16 +6,16 @@
 //! error classification.
 //!
 //! Every call here mines one seam, so each is one turn and its outcome passes
-//! through unchanged; the fan-out and join over several are `mine.rs`'s.
+//! through unchanged; the fan-out and join over several are `extract.rs`'s.
 
-use emery_sdk::model::{Error as ModelError, ToolCall};
 use emery_sdk::{Context, Doc, Error, Evidence, Seam, SourceInput};
+use omnia_sdk::model::{Error as ModelError, ToolCall};
 use omnia_test::SeenFormat;
 use omnia_test::guest::Scripted;
 
-const DOCS: &[Doc] = &[
+const PROSE: &[Doc] = &[
     Doc {
-        path: "prompts/extract.md",
+        path: "extract.md",
         body: "SYSTEM",
     },
     Doc {
@@ -39,7 +39,7 @@ async fn ask(model: &Scripted, input: &SourceInput, seam: Seam) -> Result<Eviden
         input,
         model,
     };
-    emery_sdk::mine(&ctx, DOCS, &[seam]).await
+    emery_sdk::extract(&ctx, PROSE, &[seam]).await
 }
 
 // The request carries the embedded prompt, the turn describing the lent
@@ -96,8 +96,8 @@ async fn request_shape() {
     model.assert_exhausted();
 }
 
-// A corpus without `prompts/extract.md` is the adapter build's own defect,
-// reported before a model call is spent.
+// A corpus without `extract.md` is the adapter build's own defect, reported
+// before a model call is spent.
 #[tokio::test]
 async fn missing_prompt() {
     let model = Scripted::default();
@@ -109,10 +109,10 @@ async fn missing_prompt() {
     };
 
     let error =
-        emery_sdk::mine(&ctx, &[], &[Seam::Whole]).await.expect_err("no prompt to ask with");
+        emery_sdk::extract(&ctx, &[], &[Seam::Whole]).await.expect_err("no prompt to ask with");
 
     assert_eq!(error.code(), "server_error");
-    assert!(error.description().contains("`prompts/extract.md` is not embedded"), "{error}");
+    assert!(error.description().contains("`extract.md` is not embedded"), "{error}");
     assert!(model.seen().is_empty(), "nothing was asked");
 }
 
@@ -168,8 +168,9 @@ async fn files_turn() {
     model.assert_exhausted();
 }
 
-// Reference calls are answered in-process from the corpus before the
-// candidate is checked.
+// Reference calls are answered in-process before the candidate is checked:
+// from the adapter's corpus, then from the SDK's runtime references, which
+// the adapter never lists.
 #[tokio::test]
 async fn doc_refs() {
     let model = Scripted::answering([VALID]).calling(
@@ -185,22 +186,38 @@ async fn doc_refs() {
                 name: "read_doc".to_string(),
                 arguments: r#"{"path":"references/greeting.md"}"#.to_string(),
             },
+            ToolCall {
+                id: "3".to_string(),
+                name: "read_doc".to_string(),
+                arguments: r#"{"path":"claims.md"}"#.to_string(),
+            },
         ],
     );
 
     ask(&model, &SourceInput::value("brief", "Ship it."), Seam::Whole).await.expect("accepted");
     let exchanges = model.exchanges();
-    assert_eq!(exchanges.len(), 3, "two reference calls, then the check");
+    assert_eq!(exchanges.len(), 4, "three reference calls, then the check");
     assert_eq!(
         exchanges[0].outcome.as_deref(),
-        Ok(r#"{"paths":["prompts/extract.md","references/greeting.md"]}"#)
+        Ok(concat!(
+            r#"{"paths":["extract.md","references/greeting.md","#,
+            r#""claims.md","reconciliation.md"]}"#
+        ))
     );
     assert_eq!(
         exchanges[1].outcome.as_deref(),
         Ok(r#"{"body":"Greet warmly.","path":"references/greeting.md"}"#)
     );
-    assert_eq!(exchanges[2].tool, "check");
-    assert_eq!(exchanges[2].outcome, Ok(String::new()));
+    let runtime: serde_json::Value =
+        serde_json::from_str(exchanges[2].outcome.as_deref().expect("the runtime table answers"))
+            .expect("a JSON answer");
+    assert_eq!(runtime["path"], "claims.md");
+    assert_eq!(
+        runtime["body"],
+        emery_sdk::body(emery_sdk::RUNTIME, "claims.md").expect("embedded")
+    );
+    assert_eq!(exchanges[3].tool, "check");
+    assert_eq!(exchanges[3].outcome, Ok(String::new()));
 }
 
 // A candidate the claim gate rejects — a missing id, a missing extra — is

@@ -15,20 +15,20 @@ use emery_sdk::{Context, Doc, Error, SourceInput};
 use omnia_test::SeenFormat;
 use omnia_test::guest::Scripted;
 
-const DOCS: &[Doc] = &[
+const PROSE: &[Doc] = &[
     Doc {
-        path: "prompts/extract.md",
+        path: "extract.md",
         body: "EXTRACT",
     },
     Doc {
-        path: "prompts/survey.md",
+        path: "survey.md",
         body: "SURVEY",
     },
 ];
 
 // A corpus without a survey prompt.
 const MUTE: &[Doc] = &[Doc {
-    path: "prompts/extract.md",
+    path: "extract.md",
     body: "EXTRACT",
 }];
 
@@ -105,7 +105,7 @@ async fn model_request() {
     let tmp = tempfile::tempdir().expect("tempdir");
     let root = tree(tmp.path(), FILES);
 
-    survey(&model, DOCS, &SourceInput::workspace("code", root)).await.expect("accepted");
+    survey(&model, PROSE, &SourceInput::workspace("code", root)).await.expect("accepted");
 
     let seen = model.seen();
     assert_eq!(seen.len(), 1, "one survey turn");
@@ -147,7 +147,7 @@ async fn model_surfaces() {
     let root = tree(tmp.path(), FILES);
 
     let surfaces =
-        survey(&model, DOCS, &SourceInput::workspace("code", root)).await.expect("accepted");
+        survey(&model, PROSE, &SourceInput::workspace("code", root)).await.expect("accepted");
 
     assert_eq!(
         surfaces,
@@ -173,7 +173,7 @@ async fn model_normalised() {
     let root = tree(tmp.path(), FILES);
 
     let surfaces =
-        survey(&model, DOCS, &SourceInput::workspace("code", root)).await.expect("accepted");
+        survey(&model, PROSE, &SourceInput::workspace("code", root)).await.expect("accepted");
 
     assert_eq!(surfaces, [surface("POST /orders", "routes/orders.ts")]);
     assert_eq!(model.exchanges().len(), 1, "one turn, accepted");
@@ -205,7 +205,7 @@ async fn model_corrections() {
     let tmp = tempfile::tempdir().expect("tempdir");
     let root = tree(tmp.path(), FILES);
 
-    let surfaces = survey(&model, DOCS, &SourceInput::workspace("code", root))
+    let surfaces = survey(&model, PROSE, &SourceInput::workspace("code", root))
         .await
         .expect("the second candidate is an inventory");
 
@@ -240,7 +240,7 @@ async fn model_stray_key() {
     let tmp = tempfile::tempdir().expect("tempdir");
     let root = tree(tmp.path(), FILES);
 
-    survey(&model, DOCS, &SourceInput::workspace("code", root))
+    survey(&model, PROSE, &SourceInput::workspace("code", root))
         .await
         .expect("the second candidate parses");
 
@@ -257,7 +257,7 @@ async fn model_rounds_exhausted() {
     let tmp = tempfile::tempdir().expect("tempdir");
     let root = tree(tmp.path(), FILES);
 
-    let error = survey(&model, DOCS, &SourceInput::workspace("code", root))
+    let error = survey(&model, PROSE, &SourceInput::workspace("code", root))
         .await
         .expect_err("the only candidate is entered at no file");
 
@@ -269,8 +269,8 @@ async fn model_rounds_exhausted() {
     assert_eq!(model.exchanges().len(), 1, "one check, rejected");
 }
 
-// A corpus without `prompts/survey.md` is the adapter build's own defect,
-// reported before a turn is spent.
+// A corpus without `survey.md` is the adapter build's own defect, reported
+// before a turn is spent.
 #[tokio::test]
 async fn model_missing_prompt() {
     let model = Scripted::default();
@@ -282,7 +282,7 @@ async fn model_missing_prompt() {
         .expect_err("no prompt to ask with");
 
     assert_eq!(error.code(), "server_error");
-    assert!(error.description().contains("`prompts/survey.md` is not embedded"), "{error}");
+    assert!(error.description().contains("`survey.md` is not embedded"), "{error}");
     assert!(model.seen().is_empty(), "no turn was spent");
 }
 
@@ -294,7 +294,7 @@ async fn model_inline_value() {
     let model = Scripted::default();
     let input = SourceInput::value("code", "export const x = 1;");
 
-    let error = survey(&model, DOCS, &input).await.expect_err("no tree to survey");
+    let error = survey(&model, PROSE, &input).await.expect_err("no tree to survey");
 
     assert_eq!(error.code(), "server_error");
     assert!(error.description().contains("not an inline value"), "{error}");
@@ -314,7 +314,7 @@ async fn model_symlink_dir() {
     symlink(tmp.path().join("real"), tmp.path().join("link")).expect("symlink");
     let root = tree(tmp.path(), FILES);
 
-    let surfaces = survey(&model, DOCS, &SourceInput::workspace("code", root))
+    let surfaces = survey(&model, PROSE, &SourceInput::workspace("code", root))
         .await
         .expect("the second candidate is an inventory");
 
@@ -334,7 +334,7 @@ async fn model_no_surfaces() {
     let tmp = tempfile::tempdir().expect("tempdir");
     let root = tree(tmp.path(), &[]);
 
-    let surfaces = survey(&model, DOCS, &SourceInput::workspace("code", root))
+    let surfaces = survey(&model, PROSE, &SourceInput::workspace("code", root))
         .await
         .expect("an empty inventory is accepted");
 

@@ -1043,7 +1043,7 @@ version = "2.9.0"
 criteria = "safe-to-deploy"
 
 [[exemptions.unicode-ident]]
-version = "1.0.25"
+version = "1.0.26"
 criteria = "safe-to-deploy"
 
 [[exemptions.untrusted]]

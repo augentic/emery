@@ -2,7 +2,7 @@
 
 Emery's product is the Rust `emery` runtime and the source/target adapters in [`augentic/emery-adapters`](https://github.com/augentic/emery-adapters). The `plugins/` tree is only the Cursor distribution surface: ultrathin slash-command wrappers that invoke CLI verbs and relay their output.
 
-Do not put orchestration, synthesis, validation, or code-generation prose in skill bodies. That work lives in guest orchestrations, embedded judgment prompts (`crates/slice/prompts/`, `crates/change/prompts/`), and adapter `prose/prompts/` in the adapters repo.
+Do not put orchestration, synthesis, validation, or code-generation prose in skill bodies. That work lives in guest orchestrations, embedded judgment prompts (`crates/engine/prose/`), and adapter `prose/extract.md` prompts in the adapters repo.
 
 ## What ships
 

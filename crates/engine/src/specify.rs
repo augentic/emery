@@ -1,8 +1,9 @@
 //! Generates specification revisions from configured sources.
 //!
 //! [`specify`] validates the complete source list before loading adapters.
-//! Sources are extracted concurrently, then their claims are reconciled by
-//! authority and synthesised into `spec.md` and `design.md`.
+//! Sources are extracted concurrently, and the first failure among them ends
+//! the run; their claims are then reconciled by authority and synthesised into
+//! `spec.md` and `design.md`.
 //!
 //! The two documents are committed as one content-addressed revision. An
 //! earlier revision contributes only the returned [`Diff`]; it is never used
@@ -35,25 +36,23 @@ use crate::{preopen_path, store};
 
 /// Generates and commits a specification revision from `input`.
 ///
-/// The source list is validated before any adapter loads. Extraction runs
-/// concurrently and waits for every source, allowing all extraction failures
-/// to be reported together.
+/// The source list is checked before any adapter loads. Sources are extracted
+/// concurrently, and the first failure among them ends the run.
 ///
 /// # Errors
 ///
-/// - Returns [`Error::BadRequest`] for an empty source list, duplicate or
-///   malformed source keys, a workspace path outside the project, an adapter
-///   input refusal, an incompatible adapter, or a synthesis response that
-///   cannot be accepted. An empty list uses code `specify-source-required`;
-///   an incompatible adapter uses code `unsupported-version`.
+/// - Returns [`Error::BadRequest`] for an empty source list (code
+///   `specify-source-required`), a malformed or repeated key, a workspace path
+///   outside the project, an incompatible adapter (code `unsupported-version`),
+///   a source that refuses its input, or a synthesis answer that cannot be
+///   accepted.
 /// - Returns [`Error::NotFound`] when a local adapter does not exist.
-/// - Returns [`Error::ServerError`] when extracted evidence has findings from
-///   [`Evidence::findings`], or internal validation, serialisation, or storage
-///   fails.
-/// - Returns [`Error::BadGateway`] when adapter acquisition or extraction, or
-///   a model operation, fails upstream.
+/// - Returns [`Error::ServerError`] when evidence has [`Evidence::findings`],
+///   or serialisation or storage fails.
+/// - Returns [`Error::BadGateway`] when an adapter, its acquisition, or the
+///   model fails upstream.
 ///
-/// Errors from [`Plugins::load`] retain their original class and code.
+/// A loader's or a source's error keeps its own class and code.
 pub async fn specify<P: Model + Source + StateStore + BlobStore + Plugins>(
     input: SpecifyInput, context: Context<P>,
 ) -> Result<SpecifyOutput, Error> {
@@ -61,28 +60,11 @@ pub async fn specify<P: Model + Source + StateStore + BlobStore + Plugins>(
 
     // load source adapters
     let bound = Bound::all(&input.sources)?;
-    let kinds = adapter::load(provider, bound.iter().map(|source| source.adapter)).await?;
+    let kinds = &adapter::load(provider, bound.iter().map(|source| source.adapter)).await?;
 
     // extract all sources in parallel, each ranked by its adapter's kind
-    let outcomes =
-        future::join_all(bound.iter().map(|source| source.extract(provider, &kinds))).await;
-
-    // collect extracts or findings for failed extracts
-    let mut extracts = Vec::with_capacity(outcomes.len());
-    let mut failures = Vec::new();
-    for (source, outcome) in bound.iter().zip(outcomes) {
-        match outcome {
-            Ok(extract) => extracts.push(extract),
-            Err(error) => {
-                tracing::warn!(source = %source.input.key, %error, "extract failed");
-                failures.push(error.description());
-            }
-        }
-    }
-
-    if !failures.is_empty() {
-        return Err(server_error!(failures.join("\n")));
-    }
+    let extracts =
+        future::try_join_all(bound.iter().map(|source| source.extract(provider, kinds))).await?;
 
     // synthesise extracts into a unified set of specifications
     let bases = GroupingBrief::new(&extracts).derive(provider).await?;
@@ -201,8 +183,7 @@ impl<'a> Bound<'a> {
     ) -> Result<Extract, Error> {
         let source = &self.input.key;
         let adapter = self.adapter.to_string();
-        // The load registered every bound adapter, so an absent kind is the
-        // engine's own slip, never the operator's.
+
         let kind = kinds
             .get(&adapter)
             .copied()
@@ -218,6 +199,7 @@ impl<'a> Bound<'a> {
                 findings.join("\n")
             ));
         }
+        tracing::debug!(%source, claims = evidence.claims.len(), "extracted");
 
         Ok(Extract {
             source: source.clone(),
@@ -236,6 +218,19 @@ struct Extract {
     evidence: Evidence,
 }
 
+// The synthesis corpus; `tests::corpus` holds the list to the tree and to
+// the briefs that read it.
+static PROSE: &[emery_prose::Doc] = emery_prose::prose![
+    "../prose/authority.md",
+    "../prose/claim-landing.md",
+    "../prose/design-format.md",
+    "../prose/grouping.md",
+    "../prose/requirement-block.md",
+    "../prose/spec-format.md",
+    "../prose/synthesise.md",
+    "../prose/tags.md",
+];
+
 #[cfg(test)]
 mod tests {
     use std::path::Path;
@@ -250,7 +245,7 @@ mod tests {
     fn corpus() {
         let tree = Path::new(env!("CARGO_MANIFEST_DIR")).join("prose");
         let prompts = [GroupingBrief::PROSE, SpecBrief::PROSE, DesignBrief::PROSE].concat();
-        let findings = emery_prose::check(crate::DOCS, &tree, &prompts);
+        let findings = emery_prose::check(super::PROSE, &tree, &prompts, &[]);
         assert!(findings.is_empty(), "{}", findings.join("\n"));
     }
 }

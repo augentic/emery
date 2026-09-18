@@ -5,10 +5,16 @@ edition.workspace = true
 license.workspace = true
 repository.workspace = true
 rust-version.workspace = true
-description = "Emery adapter SDK: the types and functions a source-adapter guest is written with — mine over an adapter's seams, one gated model call each over omnia's model capability, joined; workspace traversal and optional surface discovery; the reference-tool closure; and the world's export bindings over the emery-adapter contract"
+description = "The Emery adapter SDK: gated extraction over an adapter's seams, workspace traversal, surface discovery, and the source-adapter component export"
 categories = ["development-tools"]
 keywords = ["emery", "adapter", "sdk"]
-readme = "../../README.md"
+readme = "README.md"
+
+# A guest crate: `export`, `Provider`, and the world `source_adapter!` exports
+# exist on wasm32 alone, so that is the target the documentation opens on.
+[package.metadata.docs.rs]
+default-target = "wasm32-wasip2"
+targets = ["wasm32-wasip2", "x86_64-unknown-linux-gnu"]
 
 [lints]
 workspace = true
@@ -22,9 +28,10 @@ omnia-sdk.workspace = true
 schemars.workspace = true
 serde.workspace = true
 serde_json.workspace = true
+tracing.workspace = true
 
 [dev-dependencies]
-tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
+tokio = { workspace = true, features = ["macros", "rt-multi-thread", "sync", "time"] }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]
 omnia-test = { workspace = true, features = ["guest"] }

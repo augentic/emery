@@ -105,7 +105,7 @@ cargo binstall --git https://github.com/augentic/emery emery@<version>
 ```
 
 - **GitHub Release archives.** Download the archive for your platform from the GitHub Release page, verify it against the companion `.sha256` file, and place the `emery` binary on your `PATH`.
-- **Source builds** — `build.rs` embeds the wasm32 engine (requires the `wasm32-wasip2` target):
+- **Source builds** — `build.rs` embeds the wasm32 engine:
 
 ```bash
 cargo install --git https://github.com/augentic/emery --locked
