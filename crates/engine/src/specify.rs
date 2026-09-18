@@ -178,8 +178,8 @@ impl<'a> Bound<'a> {
     }
 
     // Extracts the source under the kind its adapter declared at load.
-    async fn extract<P: Source>(
-        &self, provider: &P, kinds: &BTreeMap<String, SourceKind>,
+    async fn extract<S: Source>(
+        &self, provider: &S, kinds: &BTreeMap<String, SourceKind>,
     ) -> Result<Extract, Error> {
         let source = &self.input.key;
         let adapter = self.adapter.to_string();
@@ -188,8 +188,6 @@ impl<'a> Bound<'a> {
             .get(&adapter)
             .copied()
             .ok_or_else(|| server_error!("adapter `{adapter}` was not loaded"))?;
-        tracing::debug!(%source, %kind, "extracting");
-
         let evidence = Source::extract(provider, &adapter, &self.input).await?;
 
         let findings = evidence.findings();
@@ -199,7 +197,6 @@ impl<'a> Bound<'a> {
                 findings.join("\n")
             ));
         }
-        tracing::debug!(%source, claims = evidence.claims.len(), "extracted");
 
         Ok(Extract {
             source: source.clone(),

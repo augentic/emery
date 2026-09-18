@@ -71,7 +71,6 @@ pub async fn extract<P: Model>(
     }
 
     // one gated turn per seam, largest first, at most CONCURRENT pending
-    tracing::debug!(%key, seams = plans.len(), "extracting");
     let mut order: Vec<_> = plans.iter().enumerate().collect();
     order.sort_by_key(|(_, plan)| plan.size().map(Reverse));
     let outcomes = stream::iter(order)
@@ -85,7 +84,9 @@ pub async fn extract<P: Model>(
     // join the accepted claims in seam order
     let partials = join(key, outcomes)?;
     let claims: Vec<_> = partials.into_iter().flat_map(|partial| partial.claims).collect();
+
     tracing::debug!(%key, claims = claims.len(), "extracted");
+    
     Ok(Evidence { claims })
 }
 
