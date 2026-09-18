@@ -86,7 +86,7 @@ pub async fn extract<P: Model>(
     let claims: Vec<_> = partials.into_iter().flat_map(|partial| partial.claims).collect();
 
     tracing::debug!(%key, claims = claims.len(), "extracted");
-    
+
     Ok(Evidence { claims })
 }
 
