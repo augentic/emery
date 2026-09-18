@@ -12,6 +12,9 @@ pub struct Doc {
     pub body: &'static str,
 }
 
+// The directory segment a listed file must sit beneath; its table path starts after it.
+const TREE: &[u8] = b"prose/";
+
 /// Returns the tree-relative path of the file at `path`: what follows its `prose/` segment.
 ///
 /// `../prose/prompts/extract.md` and `prose/prompts/extract.md` both yield
@@ -25,7 +28,6 @@ pub struct Doc {
 #[doc(hidden)]
 #[must_use]
 pub const fn within(path: &'static str) -> &'static str {
-    const TREE: &[u8] = b"prose/";
     let bytes = path.as_bytes();
     let mut start = 0;
     while start + TREE.len() <= bytes.len() {
@@ -39,7 +41,6 @@ pub const fn within(path: &'static str) -> &'static str {
 }
 
 const fn names_tree(bytes: &[u8], at: usize) -> bool {
-    const TREE: &[u8] = b"prose/";
     let mut i = 0;
     while i < TREE.len() {
         if bytes[at + i] != TREE[i] {

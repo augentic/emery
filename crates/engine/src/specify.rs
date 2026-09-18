@@ -236,6 +236,19 @@ struct Extract {
     evidence: Evidence,
 }
 
+// The synthesis corpus; `tests::corpus` holds the list to the tree and to
+// the briefs that read it.
+static PROSE: &[emery_prose::Doc] = emery_prose::prose![
+    "../prose/synthesis/authority.md",
+    "../prose/synthesis/claim-landing.md",
+    "../prose/synthesis/design-format.md",
+    "../prose/synthesis/grouping.md",
+    "../prose/synthesis/requirement-block.md",
+    "../prose/synthesis/spec-format.md",
+    "../prose/synthesis/synthesise.md",
+    "../prose/synthesis/tags.md",
+];
+
 #[cfg(test)]
 mod tests {
     use std::path::Path;
@@ -250,7 +263,7 @@ mod tests {
     fn corpus() {
         let tree = Path::new(env!("CARGO_MANIFEST_DIR")).join("prose");
         let prompts = [GroupingBrief::PROSE, SpecBrief::PROSE, DesignBrief::PROSE].concat();
-        let findings = emery_prose::check(crate::PROSE, &tree, &prompts, &[]);
+        let findings = emery_prose::check(super::PROSE, &tree, &prompts, &[]);
         assert!(findings.is_empty(), "{}", findings.join("\n"));
     }
 }

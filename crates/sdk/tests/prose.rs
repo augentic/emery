@@ -5,7 +5,7 @@
 
 use std::path::Path;
 
-use emery_sdk::prose::RUNTIME;
+use emery_sdk::prose::{RUNTIME, check};
 
 // Every runtime reference is a root: an adapter's prompt links whichever it
 // needs, so none is reached through another by rule, and every link between
@@ -14,6 +14,6 @@ use emery_sdk::prose::RUNTIME;
 fn runtime() {
     let tree = Path::new(env!("CARGO_MANIFEST_DIR")).join("prose");
     let roots: Vec<&str> = RUNTIME.iter().map(|doc| doc.path).collect();
-    let findings = emery_prose::check(RUNTIME, &tree, &roots, &[]);
+    let findings = check(RUNTIME, &tree, &roots, &[]);
     assert!(findings.is_empty(), "{}", findings.join("\n"));
 }

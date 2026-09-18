@@ -1,14 +1,37 @@
-//! Provides the shared runtime references and corpus validation for adapters.
+//! Provides the embedded-prose lookups and the runtime references every adapter shares.
 //!
-//! [`RUNTIME`] is the SDK's own document table: the references every adapter
+//! [`RUNTIME`] is the SDK's own document table: the references an adapter
 //! prompt may link under the `emery/` prefix. The reference tools answer a
-//! model's `read_doc` from an adapter's table first and then from [`RUNTIME`],
-//! and [`check`] accepts links into it.
-
-use std::path::Path;
+//! model's `read_doc` from an adapter's table first and then from [`RUNTIME`];
+//! [`check`] accepts links into it when given it as the imports.
+//!
+//! # Examples
+//!
+//! Hold an adapter's table to its tree, with the runtime references as the
+//! documents a link may name without the tree holding them:
+//!
+//! ```
+//! use std::path::Path;
+//!
+//! use emery_sdk::Doc;
+//! use emery_sdk::prose::{RUNTIME, check};
+//!
+//! static PROSE: &[Doc] = &[Doc {
+//!     path: "prompts/extract.md",
+//!     body: "Ids follow [claims.md](../emery/claims.md).",
+//! }];
+//!
+//! # let dir = tempfile::tempdir()?;
+//! # std::fs::create_dir(dir.path().join("prompts"))?;
+//! # std::fs::write(dir.path().join("prompts/extract.md"), PROSE[0].body)?;
+//! # let tree = dir.path();
+//! let findings = check(PROSE, tree, &["prompts/extract.md"], RUNTIME);
+//! assert!(findings.is_empty(), "{}", findings.join("\n"));
+//! # Ok::<(), std::io::Error>(())
+//! ```
 
 use emery_prose::Doc;
-pub use emery_prose::{body, find};
+pub use emery_prose::{body, check, find};
 
 /// The runtime references every adapter prompt may link under `emery/`.
 ///
@@ -20,40 +43,7 @@ pub use emery_prose::{body, find};
 /// A prompt links them as it links the adapter's own references
 /// (`../emery/claims.md` from `prompts/extract.md`), and the model reads them
 /// through `read_doc` beside the adapter's table. An adapter never lists them:
-/// a table holding a document at one of these paths fails [`check`].
+/// pass this table to [`check`] as the imports, and a listed document at one
+/// of these paths is a finding.
 pub static RUNTIME: &[Doc] =
     emery_prose::prose!["../prose/emery/claims.md", "../prose/emery/reconciliation.md"];
-
-/// Returns inconsistencies between an adapter's `docs`, its tree, and its prompts.
-///
-/// The findings are the prose crate's, with [`RUNTIME`] as the imports: every
-/// Markdown file beneath `root` is listed once in `docs`, every relative link
-/// names a listed document or a runtime reference, every path in `prompts`
-/// is listed, every other listed document is reached from a prompt through
-/// those links, and no listed document shadows a runtime reference. Use it in
-/// a native test beside the adapter's [`prose!`](crate::prose!) invocation.
-///
-/// # Examples
-///
-/// ```
-/// use std::path::Path;
-///
-/// use emery_sdk::Doc;
-///
-/// static PROSE: &[Doc] = &[Doc {
-///     path: "prompts/extract.md",
-///     body: "Ids follow [claims.md](../emery/claims.md).",
-/// }];
-///
-/// # let dir = tempfile::tempdir()?;
-/// # std::fs::create_dir(dir.path().join("prompts"))?;
-/// # std::fs::write(dir.path().join("prompts/extract.md"), PROSE[0].body)?;
-/// # let tree = dir.path();
-/// let findings = emery_sdk::prose::check(PROSE, tree, &["prompts/extract.md"]);
-/// assert!(findings.is_empty(), "{}", findings.join("\n"));
-/// # Ok::<(), std::io::Error>(())
-/// ```
-#[must_use]
-pub fn check(docs: &[Doc], root: &Path, prompts: &[&str]) -> Vec<String> {
-    emery_prose::check(docs, root, prompts, RUNTIME)
-}

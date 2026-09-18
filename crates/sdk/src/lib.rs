@@ -55,9 +55,9 @@
 //!
 //! An adapter lists its `prose/` directory with [`prose!`]
 //! (`prose!["../prose/prompts/extract.md", ..]` from `src/lib.rs`) and holds
-//! the list to the tree with [`prose::check`]. Its prompts link the shared
-//! references in [`prose::RUNTIME`] as `../emery/claims.md` without listing
-//! them.
+//! the list to the tree with [`prose::check`], [`prose::RUNTIME`] as the
+//! imports. Its prompts link those shared references as `../emery/claims.md`
+//! without listing them.
 //!
 //! # Vocabulary
 //!
