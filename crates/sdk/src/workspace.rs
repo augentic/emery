@@ -9,6 +9,10 @@ use std::path::{Path, PathBuf};
 use anyhow::Context as _;
 use omnia_sdk::{Error, bad_request};
 
+// The engine's own files: output, never input, wherever they sit in a tree.
+const SKIP_DIRS: &[&str] = &[".omnia"];
+const SKIP_FILES: &[&str] = &["spec.md", "design.md"];
+
 /// A workspace entry passed to an adapter's filter.
 ///
 /// Paths are UTF-8 and use `/` separators. Encountering a non-UTF-8 name
@@ -101,6 +105,7 @@ pub fn list(root: &str, mut keep: impl FnMut(Entry<'_>) -> bool) -> Result<Vec<S
     Ok(files)
 }
 
+// Whether an entry is one of the engine's own, offered to no `keep`.
 pub(crate) fn excluded(entry: Entry<'_>) -> bool {
     match entry {
         Entry::Dir(_) => SKIP_DIRS.contains(&entry.name()),
@@ -108,64 +113,56 @@ pub(crate) fn excluded(entry: Entry<'_>) -> bool {
     }
 }
 
-// Whether `relative` is a regular file the walk would offer under `keep` — each
-// component is read from its parent with `read_dir`, as in [`list`], not by
-// resolving the full path.
+// Why the walk would not offer a regular file at a root-relative path.
+#[derive(Debug)]
+pub(crate) enum Unoffered {
+    // No regular file sits at the path: a segment is missing, is not the kind
+    // its position needs, or is a symlink the walk never follows.
+    NoFile,
+    // The file, or a directory on the way to it, is the engine's own or one
+    // `keep` refuses.
+    Refused,
+}
+
+// Holds `relative` to the walk: each directory on the way and the file itself
+// is read from its parent with `read_dir`, as [`list`] reads them, and offered
+// to `keep` in the same order — never resolved as one path.
 pub(crate) fn offered_file(
     root: &str, relative: &str, keep: &mut impl FnMut(Entry<'_>) -> bool,
-) -> Result<(), String> {
-    let mut current = PathBuf::from(root);
-    let mut offset = 0;
-    let mut components = relative.split('/');
-    let Some(first) = components.next() else {
-        return Err(format!("no file at `{relative}`"));
-    };
-    let mut component = first;
-
-    loop {
-        let rel_path = &relative[..offset + component.len()];
-        let Some(entry) = find_entry(&current, component) else {
-            return Err(format!("no file at `{relative}`"));
+) -> Result<(), Unoffered> {
+    let mut dir = PathBuf::from(root);
+    for prefix in prefixes(relative) {
+        let offered =
+            if prefix.len() == relative.len() { Entry::File(prefix) } else { Entry::Dir(prefix) };
+        let found = find_entry(&dir, offered.name()).ok_or(Unoffered::NoFile)?;
+        let Ok(file_type) = found.file_type() else {
+            return Err(Unoffered::NoFile);
         };
-        let Ok(file_type) = entry.file_type() else {
-            return Err(format!("no file at `{relative}`"));
+        let expected = match offered {
+            Entry::Dir(_) => file_type.is_dir(),
+            Entry::File(_) => file_type.is_file(),
         };
-
-        match components.next() {
-            None => {
-                if !file_type.is_file() {
-                    return Err(format!("no file at `{relative}`"));
-                }
-                let offered = Entry::File(rel_path);
-                if excluded(offered) || !keep(offered) {
-                    return Err(format!("`{relative}` is not a module this adapter mines"));
-                }
-                return Ok(());
-            }
-            Some(next) => {
-                if !file_type.is_dir() {
-                    return Err(format!("no file at `{relative}`"));
-                }
-                let offered = Entry::Dir(rel_path);
-                if excluded(offered) || !keep(offered) {
-                    return Err(format!("`{relative}` is not a module this adapter mines"));
-                }
-                current = entry.path();
-                offset += component.len() + 1;
-                component = next;
-            }
+        if !expected {
+            return Err(Unoffered::NoFile);
         }
+        if excluded(offered) || !keep(offered) {
+            return Err(Unoffered::Refused);
+        }
+        dir = found.path();
     }
+    Ok(())
+}
+
+// Each prefix of `relative` ending at a segment, shortest first: `a`, `a/b`,
+// `a/b/c`.
+fn prefixes(relative: &str) -> impl Iterator<Item = &str> {
+    relative.match_indices('/').map(|(end, _)| &relative[..end]).chain(std::iter::once(relative))
 }
 
 fn find_entry(dir: &Path, name: &str) -> Option<std::fs::DirEntry> {
     let reading = std::fs::read_dir(dir).ok()?;
     reading.filter_map(Result::ok).find(|entry| entry.file_name().to_str() == Some(name))
 }
-
-// The engine's own files: output, never input, wherever they sit in a tree.
-const SKIP_DIRS: &[&str] = &[".omnia"];
-const SKIP_FILES: &[&str] = &["spec.md", "design.md"];
 
 // `dir`'s kept files as `prefix`-relative paths, descending into each kept
 // directory.

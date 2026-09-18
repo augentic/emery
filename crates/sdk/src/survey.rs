@@ -14,8 +14,8 @@ use omnia_sdk::{Error, Model, server_error};
 use schemars::JsonSchema;
 use serde::Deserialize;
 
-use crate::workspace::Entry;
-use crate::{Context, path, references, workspace};
+use crate::workspace::{Entry, Unoffered};
+use crate::{Context, beneath, references, workspace};
 
 /// Returns the surfaces discovered by the model in a workspace source.
 ///
@@ -65,7 +65,7 @@ pub async fn surfaces<P: Model>(
         .into_iter()
         .map(|surface| Surface {
             // The check accepted the entry, so it is a path beneath the root.
-            entry: path::beneath(&surface.entry).unwrap_or(surface.entry),
+            entry: beneath(&surface.entry).unwrap_or(surface.entry),
             name: surface.name,
         })
         .collect())
@@ -120,9 +120,12 @@ impl Inventory {
 fn module(
     root: &str, named: &str, keep: &mut impl FnMut(Entry<'_>) -> bool,
 ) -> Result<String, String> {
-    let entry = path::beneath(named).map_err(|reason| format!("`{named}` {reason}"))?;
-    workspace::offered_file(root, &entry, keep)?;
-    Ok(entry)
+    let entry = beneath(named).map_err(|reason| format!("`{named}` {reason}"))?;
+    match workspace::offered_file(root, &entry, keep) {
+        Ok(()) => Ok(entry),
+        Err(Unoffered::NoFile) => Err(format!("no file at `{entry}`")),
+        Err(Unoffered::Refused) => Err(format!("`{entry}` is not a module this adapter mines")),
+    }
 }
 
 // The survey turn: which source is being surveyed, the root lent, how an

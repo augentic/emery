@@ -12,7 +12,10 @@ use schemars::JsonSchema;
 use serde::Deserialize;
 use serde_json::json;
 
-use crate::prose::RUNTIME;
+use crate::RUNTIME;
+
+// The doc comments on these argument types reach the model: `JsonSchema`
+// carries each as the `description` of the tool's parameters.
 
 /// The empty argument object accepted by `list_docs`.
 // A braced struct derives the empty `object` schema a tool's parameters must

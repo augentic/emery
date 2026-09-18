@@ -5,7 +5,7 @@
 
 use std::path::Path;
 
-use emery_sdk::prose::{RUNTIME, check};
+use emery_sdk::{RUNTIME, check};
 
 // Every runtime reference is a root: an adapter's prompt links whichever it
 // needs, so none is reached through another by rule, and every link between

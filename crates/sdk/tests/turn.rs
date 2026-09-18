@@ -6,7 +6,7 @@
 //! error classification.
 //!
 //! Every call here mines one seam, so each is one turn and its outcome passes
-//! through unchanged; the fan-out and join over several are `mine.rs`'s.
+//! through unchanged; the fan-out and join over several are `extract.rs`'s.
 
 use emery_sdk::model::{Error as ModelError, ToolCall};
 use emery_sdk::{Context, Doc, Error, Evidence, Seam, SourceInput};
@@ -214,7 +214,7 @@ async fn doc_refs() {
     assert_eq!(runtime["path"], "claims.md");
     assert_eq!(
         runtime["body"],
-        emery_sdk::prose::body(emery_sdk::prose::RUNTIME, "claims.md").expect("embedded")
+        emery_sdk::body(emery_sdk::RUNTIME, "claims.md").expect("embedded")
     );
     assert_eq!(exchanges[3].tool, "check");
     assert_eq!(exchanges[3].outcome, Ok(String::new()));

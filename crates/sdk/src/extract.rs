@@ -1,6 +1,6 @@
 //! Mines source seams and combines their claims.
 //!
-//! An adapter divides its input into [seams](crate#vocabulary). [`mine`]
+//! An adapter divides its input into [seams](crate#vocabulary). [`extract`]
 //! submits each seam to the model, validates every response, and returns one
 //! evidence document in seam order.
 
@@ -12,7 +12,7 @@ use futures::stream::{self, StreamExt as _};
 use omnia_sdk::model::Question;
 use omnia_sdk::{Error, Model, bad_gateway, bad_request, not_found, server_error};
 
-use crate::{path, references};
+use crate::{Context, beneath, references};
 
 // Turns one adapter holds pending at once.
 const CONCURRENT: usize = 4;
@@ -45,7 +45,7 @@ pub async fn extract<P: Model>(
 ) -> Result<Evidence, Error> {
     let key = &ctx.input.key;
     if seams.is_empty() {
-        return Err(bad_request!("`{key}`: nothing to mine"));
+        return Err(bad_request!("`{key}`: nothing to extract"));
     }
 
     let lends =
@@ -79,17 +79,6 @@ pub enum Seam {
     ///
     /// For workspace input, the complete root remains available to the model.
     Note(String),
-}
-
-/// The input and model available during one adapter extraction.
-#[derive(Debug)]
-pub struct Context<'a, P> {
-    /// The identifier used to address the adapter.
-    pub adapter_id: &'a str,
-    /// The [`SourceInput`] identifying the source and its content.
-    pub input: &'a SourceInput,
-    /// The [`Model`] used for survey and extraction requests.
-    pub model: &'a P,
 }
 
 // What one seam is lent: the root the model receives, and the files to mine
@@ -134,8 +123,8 @@ impl Lend {
 
         let mut files = Vec::with_capacity(paths.len());
         for named in paths {
-            let file = path::beneath(named)
-                .map_err(|reason| bad_request!("`{key}`: `{named}` {reason}"))?;
+            let file =
+                beneath(named).map_err(|reason| bad_request!("`{key}`: `{named}` {reason}"))?;
             files.push(file);
         }
         files.sort();
