@@ -2,13 +2,17 @@
 //!
 //! An adapter divides its input into [seams](crate#vocabulary). [`extract`]
 //! settles every seam against the input, puts each to the model as one gated
-//! turn, and returns one evidence document in seam order.
+//! turn — largest first, a bounded number pending, an upstream failure put
+//! once more — and returns one evidence document in seam order.
 
+use std::cmp::Reverse;
+use std::collections::BTreeMap;
 use std::fmt::{self, Display, Formatter};
 
 use emery_adapter::source::{Evidence, SourceContent, SourceInput};
 use emery_prose::Doc;
 use futures::stream::{self, StreamExt as _};
+use futures::{FutureExt as _, TryFutureExt as _};
 use omnia_sdk::model::Question;
 use omnia_sdk::{Error, Model, bad_request, server_error};
 
@@ -16,8 +20,10 @@ use crate::{Context, beneath, question};
 
 /// The most turns one [`extract`] call holds pending at once.
 ///
-/// Seams past this many wait for an earlier turn to answer, so a survey that
-/// cuts finer than this gains nothing in wall-clock time.
+/// The cap is on the turns in flight, not on how finely a survey cuts: a seam
+/// past this many waits for a slot, and a small seam fills the slot a large
+/// one leaves as soon as it answers, so finer cuts pack the slots better even
+/// though no more than this many are answered at once.
 pub const CONCURRENT: usize = 4;
 
 /// Mines each seam and combines accepted claims into one [`Evidence`] document.
@@ -28,9 +34,13 @@ pub const CONCURRENT: usize = 4;
 /// checked with [`Evidence::findings`]; rejected responses may be corrected
 /// until the host's round limit is reached.
 ///
-/// Up to [`CONCURRENT`] requests run concurrently. All requests are awaited,
-/// while claims retain the order of `seams`. Every workspace seam uses the
-/// same source root, so claim paths share one root-relative namespace.
+/// Up to [`CONCURRENT`] requests run concurrently, largest first: a
+/// [`Seam::Files`] by its file count, a [`Seam::Whole`] or [`Seam::Note`],
+/// whose size is not known, before them, and ties in seam order. A request
+/// that fails upstream — the model or a tool transport — is put once more; a
+/// refusal is not. All requests are awaited, and claims retain the order of
+/// `seams`. Every workspace seam uses the same source root, so claim paths
+/// share one root-relative namespace.
 ///
 /// When several seams fail, the returned error describes each failure and
 /// carries the class and code of the first failed seam.
@@ -42,7 +52,8 @@ pub const CONCURRENT: usize = 4;
 ///   valid response is produced within the available rounds.
 /// - Returns [`Error::ServerError`] when [`Seam::Files`] is used with inline
 ///   input or `docs` does not contain `extract.md`.
-/// - Returns [`Error::BadGateway`] when a model tool or transport fails.
+/// - Returns [`Error::BadGateway`] when a model tool or transport fails on
+///   the retried request too.
 pub async fn extract<P: Model>(
     ctx: &Context<'_, P>, docs: &'static [Doc], seams: &[Seam],
 ) -> Result<Evidence, Error> {
@@ -59,18 +70,23 @@ pub async fn extract<P: Model>(
         question = question.workspace(root);
     }
 
-    // one gated turn per seam, at most CONCURRENT pending
-    let outcomes: Vec<_> = stream::iter(&plans)
-        .map(|plan| turn(&question, ctx, docs, plan))
-        .buffered(CONCURRENT)
+    // one gated turn per seam, largest first, at most CONCURRENT pending
+    tracing::debug!(%key, seams = plans.len(), "extracting");
+    let mut order: Vec<_> = plans.iter().enumerate().collect();
+    order.sort_by_key(|(_, plan)| plan.size().map(Reverse));
+    let outcomes = stream::iter(order)
+        .map(|(index, plan)| {
+            turn(&question, ctx, docs, index, plan).map(move |outcome| (index, outcome))
+        })
+        .buffer_unordered(CONCURRENT)
         .collect()
         .await;
 
     // join the accepted claims in seam order
     let partials = join(key, outcomes)?;
-    Ok(Evidence {
-        claims: partials.into_iter().flat_map(|partial| partial.claims).collect(),
-    })
+    let claims: Vec<_> = partials.into_iter().flat_map(|partial| partial.claims).collect();
+    tracing::debug!(%key, claims = claims.len(), "extracted");
+    Ok(Evidence { claims })
 }
 
 /// A portion of a source assigned to one model request.
@@ -135,6 +151,44 @@ impl<'a> Plan<'a> {
             }
         }
     }
+
+    // The seam's size where one is known: the files a `Files` seam lists.
+    const fn size(&self) -> Option<usize> {
+        match self {
+            Self::Files { files, .. } => Some(files.len()),
+            Self::Note(_) | Self::Tree(_) | Self::Value(_) => None,
+        }
+    }
+}
+
+// One seam's turn: the question asked with the seam's brief, the reference
+// tools answered from `docs`, and the claim gate as the check the backend
+// loops on until the answer is clean or its rounds are spent. A turn that
+// fails upstream is put once more, and the second outcome stands.
+#[tracing::instrument(skip_all, err(level = "warn"), fields(key = %ctx.input.key, seam = index))]
+async fn turn<P: Model>(
+    question: &Question<Evidence>, ctx: &Context<'_, P>, docs: &'static [Doc], index: usize,
+    plan: &Plan<'_>,
+) -> Result<Evidence, Error> {
+    let brief = Brief {
+        adapter_id: ctx.adapter_id,
+        key: &ctx.input.key,
+        plan,
+    };
+    let ask = || {
+        question
+            .ask(ctx.model, brief.to_string(), Some(question::answering(docs)), |answer| {
+                question::gate(answer.findings())
+            })
+            .map_err(Error::from)
+    };
+    match ask().await {
+        Err(error @ Error::BadGateway { .. }) => {
+            tracing::warn!(%error, "failed upstream; putting the turn once more");
+            ask().await
+        }
+        outcome => outcome,
+    }
 }
 
 // The user turn of one seam: which source is bound, what the seam is lent,
@@ -191,33 +245,16 @@ impl Display for Brief<'_> {
     }
 }
 
-// One seam's turn: the question asked with the seam's brief, the reference
-// tools answered from `docs`, and the claim gate as the check the backend
-// loops on until the answer is clean or its rounds are spent.
-async fn turn<P: Model>(
-    question: &Question<Evidence>, ctx: &Context<'_, P>, docs: &'static [Doc], plan: &Plan<'_>,
-) -> Result<Evidence, Error> {
-    let brief = Brief {
-        adapter_id: ctx.adapter_id,
-        key: &ctx.input.key,
-        plan,
-    };
-    question
-        .ask(ctx.model, brief.to_string(), Some(question::answering(docs)), |answer| {
-            question::gate(answer.findings())
-        })
-        .await
-        .map_err(Error::from)
-}
-
 // The accepted documents in seam order, or the source's failure: a lone
 // seam's as it stands, several seams' reported together under the first
 // one's class and code.
-fn join(key: &str, outcomes: Vec<Result<Evidence, Error>>) -> Result<Vec<Evidence>, Error> {
+fn join(
+    key: &str, outcomes: BTreeMap<usize, Result<Evidence, Error>>,
+) -> Result<Vec<Evidence>, Error> {
     let count = outcomes.len();
     let mut accepted = Vec::with_capacity(count);
     let mut failed = Vec::new();
-    for (index, outcome) in outcomes.into_iter().enumerate() {
+    for (index, outcome) in outcomes {
         match outcome {
             Ok(evidence) => accepted.push(evidence),
             Err(error) => failed.push((index, error)),
