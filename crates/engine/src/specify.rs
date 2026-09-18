@@ -239,14 +239,14 @@ struct Extract {
 // The synthesis corpus; `tests::corpus` holds the list to the tree and to
 // the briefs that read it.
 static PROSE: &[emery_prose::Doc] = emery_prose::prose![
-    "../prose/synthesis/authority.md",
-    "../prose/synthesis/claim-landing.md",
-    "../prose/synthesis/design-format.md",
-    "../prose/synthesis/grouping.md",
-    "../prose/synthesis/requirement-block.md",
-    "../prose/synthesis/spec-format.md",
-    "../prose/synthesis/synthesise.md",
-    "../prose/synthesis/tags.md",
+    "../prose/authority.md",
+    "../prose/claim-landing.md",
+    "../prose/design-format.md",
+    "../prose/grouping.md",
+    "../prose/requirement-block.md",
+    "../prose/spec-format.md",
+    "../prose/synthesise.md",
+    "../prose/tags.md",
 ];
 
 #[cfg(test)]

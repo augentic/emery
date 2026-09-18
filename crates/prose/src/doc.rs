@@ -6,7 +6,7 @@
 /// An embedded Markdown document.
 #[derive(Clone, Copy, Debug)]
 pub struct Doc {
-    /// The path relative to the document tree, such as `prompts/extract.md`.
+    /// The path relative to the document tree, such as `references/ids.md`.
     pub path: &'static str,
     /// The document's Markdown body.
     pub body: &'static str,
@@ -17,8 +17,8 @@ const TREE: &[u8] = b"prose/";
 
 /// Returns the tree-relative path of the file at `path`: what follows its `prose/` segment.
 ///
-/// `../prose/prompts/extract.md` and `prose/prompts/extract.md` both yield
-/// `prompts/extract.md`. The first `prose/` segment counts, so a document
+/// `../prose/references/ids.md` and `prose/references/ids.md` both yield
+/// `references/ids.md`. The first `prose/` segment counts, so a document
 /// beneath a nested `prose/` keeps that part of its path.
 ///
 /// # Panics
@@ -60,7 +60,7 @@ const fn names_tree(bytes: &[u8], at: usize) -> bool {
 ///
 /// static PROSE: &[Doc] = &[
 ///     Doc {
-///         path: "prompts/extract.md",
+///         path: "extract.md",
 ///         body: "Extract every claim.",
 ///     },
 ///     Doc {
@@ -85,12 +85,12 @@ pub fn find<'d>(docs: &'d [Doc], path: &str) -> Option<&'d Doc> {
 /// use emery_prose::{Doc, body};
 ///
 /// let docs = [Doc {
-///     path: "prompts/extract.md",
+///     path: "extract.md",
 ///     body: "Extract every claim.",
 /// }];
 ///
-/// assert_eq!(body(&docs, "prompts/extract.md"), Some("Extract every claim."));
-/// assert_eq!(body(&docs, "prompts/missing.md"), None);
+/// assert_eq!(body(&docs, "extract.md"), Some("Extract every claim."));
+/// assert_eq!(body(&docs, "missing.md"), None);
 /// ```
 #[must_use]
 pub fn body(docs: &[Doc], path: &str) -> Option<&'static str> {

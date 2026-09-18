@@ -11,7 +11,7 @@ use std::path::Path;
 
 use emery_prose::{Doc, body, check};
 
-static PROSE: &[Doc] = emery_prose::prose!["prose/prompts/extract.md", "prose/references/ids.md"];
+static PROSE: &[Doc] = emery_prose::prose!["prose/extract.md", "prose/references/ids.md"];
 
 // A document is named from the invoking file, as `include_str!` names one,
 // so a list may climb out of its directory and back into the tree; the table
@@ -23,14 +23,14 @@ static CLIMBING: &[Doc] = emery_prose::prose!["../tests/prose/references/ids.md"
 #[test]
 fn fixtures() {
     let paths: Vec<&str> = PROSE.iter().map(|doc| doc.path).collect();
-    assert_eq!(paths, ["prompts/extract.md", "references/ids.md"]);
+    assert_eq!(paths, ["extract.md", "references/ids.md"]);
     assert_eq!(body(PROSE, "references/ids.md"), Some(include_str!("prose/references/ids.md")));
-    assert_eq!(body(PROSE, "prompts/extract.md"), Some(include_str!("prose/prompts/extract.md")));
+    assert_eq!(body(PROSE, "extract.md"), Some(include_str!("prose/extract.md")));
     assert_eq!(CLIMBING[0].path, "references/ids.md");
     assert_eq!(CLIMBING[0].body, include_str!("prose/references/ids.md"));
 
     let tree = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/prose");
-    let findings = check(PROSE, &tree, &["prompts/extract.md"], &[]);
+    let findings = check(PROSE, &tree, &["extract.md"], &[]);
     assert!(findings.is_empty(), "{}", findings.join("\n"));
 }
 
@@ -67,25 +67,26 @@ fn repeated() {
 // A listed document no prompt reaches is embedded and never read, and a link
 // from another unreached document does not rescue it; a prompt the table
 // lacks is `server_error` on every run. Both are the table's own drift, so
-// the tree agrees with the list throughout.
+// the tree agrees with the list throughout. A reference climbing back to the
+// prompt stays inside the tree.
 #[test]
 fn unlinked() {
     let tmp = tempfile::tempdir().expect("tempdir");
-    write(tmp.path(), "prompts/extract.md", "see [ids](../references/ids.md)\n");
-    write(tmp.path(), "references/ids.md", "# Ids\n");
+    write(tmp.path(), "extract.md", "see [ids](references/ids.md)\n");
+    write(tmp.path(), "references/ids.md", "# Ids, see [extract](../extract.md)\n");
     write(tmp.path(), "references/notes.md", "see [more](more.md)\n");
     write(tmp.path(), "references/more.md", "# More\n");
 
     let table = [
-        doc("prompts/extract.md", "see [ids](../references/ids.md)\n"),
-        doc("references/ids.md", "# Ids\n"),
+        doc("extract.md", "see [ids](references/ids.md)\n"),
+        doc("references/ids.md", "# Ids, see [extract](../extract.md)\n"),
         doc("references/notes.md", "see [more](more.md)\n"),
         doc("references/more.md", "# More\n"),
     ];
     assert_eq!(
-        check(&table, tmp.path(), &["prompts/extract.md", "prompts/survey.md"], &[]),
+        check(&table, tmp.path(), &["extract.md", "survey.md"], &[]),
         [
-            "`prompts/survey.md` is a prompt the table does not hold",
+            "`survey.md` is a prompt the table does not hold",
             "`references/notes.md` is reached from no prompt",
             "`references/more.md` is reached from no prompt",
         ]
@@ -128,18 +129,18 @@ fn symlinked() {
 #[test]
 fn imported() {
     let tmp = tempfile::tempdir().expect("tempdir");
-    write(tmp.path(), "prompts/extract.md", "see [claims](../emery/claims.md)\n");
-    let imports = [doc("emery/claims.md", "# Claims\n"), doc("emery/pipeline.md", "# Pipeline\n")];
+    write(tmp.path(), "extract.md", "see [claims](claims.md)\n");
+    let imports = [doc("claims.md", "# Claims\n"), doc("pipeline.md", "# Pipeline\n")];
 
-    let table = [doc("prompts/extract.md", "see [claims](../emery/claims.md)\n")];
-    let findings = check(&table, tmp.path(), &["prompts/extract.md"], &imports);
+    let table = [doc("extract.md", "see [claims](claims.md)\n")];
+    let findings = check(&table, tmp.path(), &["extract.md"], &imports);
     assert!(findings.is_empty(), "{}", findings.join("\n"));
 
-    write(tmp.path(), "emery/claims.md", "# Mine\n");
-    let shadowing = [table[0], doc("emery/claims.md", "# Mine\n")];
+    write(tmp.path(), "claims.md", "# Mine\n");
+    let shadowing = [table[0], doc("claims.md", "# Mine\n")];
     assert_eq!(
-        check(&shadowing, tmp.path(), &["prompts/extract.md"], &imports),
-        ["`emery/claims.md` shadows an import"]
+        check(&shadowing, tmp.path(), &["extract.md"], &imports),
+        ["`claims.md` shadows an import"]
     );
 }
 
@@ -149,21 +150,17 @@ fn imported() {
 #[test]
 fn dangling() {
     let tmp = tempfile::tempdir().expect("tempdir");
-    write(
-        tmp.path(),
-        "prompts/extract.md",
-        "see [ids](../references/ids.md) and [out](../../x.md)\n",
-    );
+    write(tmp.path(), "extract.md", "see [ids](references/ids.md) and [out](../x.md)\n");
     write(tmp.path(), "references/ids.md", "# Ids, see [nope](nope.md)\n");
 
     let table = [
-        doc("prompts/extract.md", "see [ids](../references/ids.md) and [out](../../x.md)\n"),
+        doc("extract.md", "see [ids](references/ids.md) and [out](../x.md)\n"),
         doc("references/ids.md", "# Ids, see [nope](nope.md)\n"),
     ];
     assert_eq!(
-        check(&table, tmp.path(), &["prompts/extract.md"], &[]),
+        check(&table, tmp.path(), &["extract.md"], &[]),
         [
-            "`prompts/extract.md` links `../../x.md`, which leaves the tree",
+            "`extract.md` links `../x.md`, which leaves the tree",
             "`references/ids.md` links `nope.md`, and the table holds no `references/nope.md`",
         ]
     );

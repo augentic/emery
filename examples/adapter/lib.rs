@@ -26,8 +26,7 @@ mod guest {
 }
 
 /// The prompt and reference document embedded in the adapter.
-pub static PROSE: &[Doc] =
-    emery_sdk::prose!["prose/prompts/extract.md", "prose/references/greeting.md"];
+pub static PROSE: &[Doc] = emery_sdk::prose!["prose/extract.md", "prose/references/greeting.md"];
 
 /// Returns one mining seam for the greeting source.
 ///

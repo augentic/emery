@@ -143,7 +143,7 @@ impl Brief for GroupingBrief<'_> {
     type Output = Vec<Basis>;
 
     const NAME: &'static str = "grouping";
-    const PROSE: &'static [&'static str] = &["synthesis/grouping.md"];
+    const PROSE: &'static [&'static str] = &["grouping.md"];
 
     // Tightens the derived schema to this run: every index at most the last
     // claim's, and at least one group.

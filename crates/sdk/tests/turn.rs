@@ -15,7 +15,7 @@ use omnia_test::guest::Scripted;
 
 const PROSE: &[Doc] = &[
     Doc {
-        path: "prompts/extract.md",
+        path: "extract.md",
         body: "SYSTEM",
     },
     Doc {
@@ -96,8 +96,8 @@ async fn request_shape() {
     model.assert_exhausted();
 }
 
-// A corpus without `prompts/extract.md` is the adapter build's own defect,
-// reported before a model call is spent.
+// A corpus without `extract.md` is the adapter build's own defect, reported
+// before a model call is spent.
 #[tokio::test]
 async fn missing_prompt() {
     let model = Scripted::default();
@@ -112,7 +112,7 @@ async fn missing_prompt() {
         emery_sdk::extract(&ctx, &[], &[Seam::Whole]).await.expect_err("no prompt to ask with");
 
     assert_eq!(error.code(), "server_error");
-    assert!(error.description().contains("`prompts/extract.md` is not embedded"), "{error}");
+    assert!(error.description().contains("`extract.md` is not embedded"), "{error}");
     assert!(model.seen().is_empty(), "nothing was asked");
 }
 
@@ -189,7 +189,7 @@ async fn doc_refs() {
             ToolCall {
                 id: "3".to_string(),
                 name: "read_doc".to_string(),
-                arguments: r#"{"path":"emery/claims.md"}"#.to_string(),
+                arguments: r#"{"path":"claims.md"}"#.to_string(),
             },
         ],
     );
@@ -200,8 +200,8 @@ async fn doc_refs() {
     assert_eq!(
         exchanges[0].outcome.as_deref(),
         Ok(concat!(
-            r#"{"paths":["prompts/extract.md","references/greeting.md","#,
-            r#""emery/claims.md","emery/reconciliation.md"]}"#
+            r#"{"paths":["extract.md","references/greeting.md","#,
+            r#""claims.md","reconciliation.md"]}"#
         ))
     );
     assert_eq!(
@@ -211,10 +211,10 @@ async fn doc_refs() {
     let runtime: serde_json::Value =
         serde_json::from_str(exchanges[2].outcome.as_deref().expect("the runtime table answers"))
             .expect("a JSON answer");
-    assert_eq!(runtime["path"], "emery/claims.md");
+    assert_eq!(runtime["path"], "claims.md");
     assert_eq!(
         runtime["body"],
-        emery_sdk::prose::body(emery_sdk::prose::RUNTIME, "emery/claims.md").expect("embedded")
+        emery_sdk::prose::body(emery_sdk::prose::RUNTIME, "claims.md").expect("embedded")
     );
     assert_eq!(exchanges[3].tool, "check");
     assert_eq!(exchanges[3].outcome, Ok(String::new()));

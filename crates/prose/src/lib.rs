@@ -15,12 +15,10 @@
 //! ```
 //! use emery_prose::Doc;
 //!
-//! static PROSE: &[Doc] = emery_prose::prose![
-//!     "../tests/prose/prompts/extract.md",
-//!     "../tests/prose/references/ids.md"
-//! ];
+//! static PROSE: &[Doc] =
+//!     emery_prose::prose!["../tests/prose/extract.md", "../tests/prose/references/ids.md"];
 //!
-//! let prompt = emery_prose::body(PROSE, "prompts/extract.md");
+//! let prompt = emery_prose::body(PROSE, "extract.md");
 //! assert!(prompt.is_some());
 //! ```
 
@@ -37,8 +35,9 @@ pub use self::doc::{Doc, body, find};
 /// Each path names a file relative to the invoking source file, the way
 /// `include_str!` does, and the file must sit beneath a `prose/` directory:
 /// its table path is what follows that segment, so
-/// `"../prose/prompts/extract.md"` is embedded as `prompts/extract.md`.
-/// Entries keep the order written in the invocation.
+/// `"../prose/references/ids.md"` is embedded as `references/ids.md` and
+/// `"../prose/extract.md"` as `extract.md`. Entries keep the order written
+/// in the invocation.
 ///
 /// File bodies are included at compile time, like `include_str!`. A missing
 /// listed file, or one outside a `prose/` directory, therefore fails the
@@ -50,14 +49,12 @@ pub use self::doc::{Doc, body, find};
 /// ```
 /// use emery_prose::Doc;
 ///
-/// static PROSE: &[Doc] = emery_prose::prose![
-///     "../tests/prose/prompts/extract.md",
-///     "../tests/prose/references/ids.md"
-/// ];
+/// static PROSE: &[Doc] =
+///     emery_prose::prose!["../tests/prose/extract.md", "../tests/prose/references/ids.md"];
 ///
 /// assert_eq!(
 ///     PROSE.iter().map(|doc| doc.path).collect::<Vec<_>>(),
-///     ["prompts/extract.md", "references/ids.md"]
+///     ["extract.md", "references/ids.md"]
 /// );
 /// assert_eq!(PROSE[1].body, include_str!("../tests/prose/references/ids.md"));
 /// ```

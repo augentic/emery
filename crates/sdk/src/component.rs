@@ -38,7 +38,7 @@ impl Model for Provider {}
 ///
 /// ```
 /// # use emery_sdk::{Doc, Error, Seam, SourceInput};
-/// # pub static PROSE: &[Doc] = &[Doc { path: "prompts/extract.md", body: "Extract." }];
+/// # pub static PROSE: &[Doc] = &[Doc { path: "extract.md", body: "Extract." }];
 /// # pub fn survey(_input: &SourceInput) -> Result<Vec<Seam>, Error> {
 /// #     Ok(vec![Seam::Whole])
 /// # }
@@ -68,13 +68,13 @@ macro_rules! source_adapter {
 
             impl $crate::export::Guest for Adapter {
                 fn metadata(_id: $crate::export::AdapterId) -> $crate::export::AdapterMetadata {
-                    $crate::guest::metadata($metadata)
+                    $crate::component::metadata($metadata)
                 }
 
                 async fn extract(
                     id: $crate::export::AdapterId, input: $crate::export::Input,
                 ) -> Result<$crate::export::Evidence, $crate::export::Error> {
-                    $crate::guest::extract($extract, id, input).await
+                    $crate::component::extract($extract, id, input).await
                 }
             }
         };

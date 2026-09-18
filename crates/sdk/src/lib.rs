@@ -26,7 +26,7 @@
 //! pub const KIND: SourceKind = SourceKind::Intent;
 //!
 //! pub static PROSE: &[Doc] = &[Doc {
-//!     path: "prompts/extract.md",
+//!     path: "extract.md",
 //!     body: "Extract every requirement the brief states as a `requirement` claim.",
 //! }];
 //!
@@ -54,10 +54,9 @@
 //! ```
 //!
 //! An adapter lists its `prose/` directory with [`prose!`]
-//! (`prose!["../prose/prompts/extract.md", ..]` from `src/lib.rs`) and holds
-//! the list to the tree with [`prose::check`], [`prose::RUNTIME`] as the
-//! imports. Its prompts link those shared references as `../emery/claims.md`
-//! without listing them.
+//! (`prose!["../prose/extract.md", ..]` from `src/lib.rs`) and holds the list
+//! to the tree with [`prose::check`], [`prose::RUNTIME`] as the imports. Its
+//! prompts link those shared references as `claims.md` without listing them.
 //!
 //! # Vocabulary
 //!
@@ -74,9 +73,9 @@
 //! Fallible APIs return [`Error`]. Use [`bad_request!`] when an adapter rejects
 //! unusable input.
 
-mod extract;
 #[doc(hidden)]
-pub mod guest;
+pub mod component;
+mod extract;
 mod path;
 pub mod prose;
 mod references;
@@ -93,9 +92,9 @@ pub use emery_adapter::source::{
 pub use emery_prose::{Doc, prose};
 pub use omnia_sdk::{Error, Model, bad_gateway, bad_request, model, not_found, server_error};
 
-pub use self::extract::{Context, Seam, extract};
 #[cfg(target_arch = "wasm32")]
-pub use self::guest::Provider;
+pub use self::component::Provider;
+pub use self::extract::{Context, Seam, extract};
 
 /// Returns the `metadata` answer for an adapter reading `kind` sources.
 ///

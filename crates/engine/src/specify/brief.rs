@@ -17,8 +17,7 @@ use serde::de::DeserializeOwned;
 use serde_json::Value;
 
 use crate::revision::RESERVED;
-use crate::specify::Extract;
-use crate::specify::PROSE;
+use crate::specify::{Extract, PROSE};
 
 // `Sync`: the verify closure `Question::ask` takes is `Send`, and it
 // borrows the brief.

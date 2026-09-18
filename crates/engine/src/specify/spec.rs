@@ -43,12 +43,12 @@ impl Brief for SpecBrief<'_> {
     const NAME: &'static str = "spec-draft";
     // Prompt order is significant.
     const PROSE: &'static [&'static str] = &[
-        "synthesis/synthesise.md",
-        "synthesis/authority.md",
-        "synthesis/claim-landing.md",
-        "synthesis/requirement-block.md",
-        "synthesis/spec-format.md",
-        "synthesis/tags.md",
+        "synthesise.md",
+        "authority.md",
+        "claim-landing.md",
+        "requirement-block.md",
+        "spec-format.md",
+        "tags.md",
     ];
 
     // Tightens the derived schema to this run: exactly one entry per

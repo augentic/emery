@@ -15,7 +15,7 @@ use emery_sdk::{Backing, Context, Doc, Error, Evidence, Model, Seam, SourceInput
 use omnia_test::guest::Scripted;
 
 const PROSE: &[Doc] = &[Doc {
-    path: "prompts/extract.md",
+    path: "extract.md",
     body: "SYSTEM",
 }];
 

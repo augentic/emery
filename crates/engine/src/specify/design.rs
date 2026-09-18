@@ -46,8 +46,7 @@ impl Brief for DesignBrief<'_> {
     type Output = Design;
 
     const NAME: &'static str = "design-draft";
-    const PROSE: &'static [&'static str] =
-        &["synthesis/synthesise.md", "synthesis/design-format.md"];
+    const PROSE: &'static [&'static str] = &["synthesise.md", "design-format.md"];
 
     // Tightens the derived schema to this run's plan: at least as many
     // sections as the plan requires, `kind` limited to the kinds the plan does

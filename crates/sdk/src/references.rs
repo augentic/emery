@@ -27,7 +27,7 @@ struct ListDocs {}
 /// The document selector accepted by `read_doc`.
 #[derive(Debug, Deserialize, JsonSchema)]
 struct ReadDoc {
-    /// The adapter-relative document path, such as `prompts/extract.md`.
+    /// The document path as `list_docs` lists it, such as `claims.md`.
     path: String,
 }
 
@@ -38,7 +38,7 @@ pub fn tools() -> Vec<Tool> {
         Tool::Function(Function::of::<ListDocs>(
             "list_docs",
             "List every reference document path this call can read: the adapter's own, then \
-             Emery's shared `emery/` references.",
+             Emery's shared `claims.md` and `reconciliation.md`.",
         )),
         Tool::Function(Function::of::<ReadDoc>(
             "read_doc",

@@ -90,7 +90,7 @@ fn sanitize(mut child: Command) -> Command {
             key,
             "RUSTFLAGS" | "RUSTDOCFLAGS" | "RUSTC" | "RUSTC_WRAPPER" | "RUSTC_WORKSPACE_WRAPPER"
         );
-        
+
         if cargo || rustc {
             child.env_remove(key);
         }

@@ -19,7 +19,7 @@ use crate::{Context, path, references, workspace};
 
 /// Returns the surfaces discovered by the model in a workspace source.
 ///
-/// `docs` must contain `prompts/survey.md`, which becomes the system prompt.
+/// `docs` must contain `survey.md`, which becomes the system prompt.
 /// The model may read the workspace and the embedded reference documents.
 ///
 /// Every surface must have a unique, nonempty name and a root-relative entry
@@ -34,16 +34,15 @@ use crate::{Context, path, references, workspace};
 ///
 /// - Returns [`Error::BadRequest`] when the request is invalid or the model
 ///   cannot produce a valid inventory within the available rounds.
-/// - Returns [`Error::ServerError`] when `docs` does not contain
-///   `prompts/survey.md` or the source contains inline text instead of a
-///   workspace.
+/// - Returns [`Error::ServerError`] when `docs` does not contain `survey.md`
+///   or the source contains inline text instead of a workspace.
 /// - Returns [`Error::BadGateway`] when a model tool or transport fails.
 pub async fn surfaces<P: Model>(
     ctx: &Context<'_, P>, docs: &'static [Doc], mut keep: impl FnMut(Entry<'_>) -> bool + Send,
 ) -> Result<Vec<Surface>, Error> {
     let key = &ctx.input.key;
-    let system = emery_prose::body(docs, "prompts/survey.md")
-        .ok_or_else(|| server_error!("`prompts/survey.md` is not embedded"))?;
+    let system = emery_prose::body(docs, "survey.md")
+        .ok_or_else(|| server_error!("`survey.md` is not embedded"))?;
     let SourceContent::Workspace(root) = &ctx.input.content else {
         return Err(server_error!(
             "`{key}`: a survey by model needs a workspace input, not an inline value"

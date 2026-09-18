@@ -17,18 +17,18 @@ use omnia_test::guest::Scripted;
 
 const PROSE: &[Doc] = &[
     Doc {
-        path: "prompts/extract.md",
+        path: "extract.md",
         body: "EXTRACT",
     },
     Doc {
-        path: "prompts/survey.md",
+        path: "survey.md",
         body: "SURVEY",
     },
 ];
 
 // A corpus without a survey prompt.
 const MUTE: &[Doc] = &[Doc {
-    path: "prompts/extract.md",
+    path: "extract.md",
     body: "EXTRACT",
 }];
 
@@ -269,8 +269,8 @@ async fn model_rounds_exhausted() {
     assert_eq!(model.exchanges().len(), 1, "one check, rejected");
 }
 
-// A corpus without `prompts/survey.md` is the adapter build's own defect,
-// reported before a turn is spent.
+// A corpus without `survey.md` is the adapter build's own defect, reported
+// before a turn is spent.
 #[tokio::test]
 async fn model_missing_prompt() {
     let model = Scripted::default();
@@ -282,7 +282,7 @@ async fn model_missing_prompt() {
         .expect_err("no prompt to ask with");
 
     assert_eq!(error.code(), "server_error");
-    assert!(error.description().contains("`prompts/survey.md` is not embedded"), "{error}");
+    assert!(error.description().contains("`survey.md` is not embedded"), "{error}");
     assert!(model.seen().is_empty(), "no turn was spent");
 }
 
