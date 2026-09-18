@@ -6,9 +6,8 @@
 
 #![cfg(target_arch = "wasm32")]
 
-use std::io::Write;
-
-use omnia_sdk::api::command::{self, IntoExit, Response};
+use emery_cli::Verbosity;
+use omnia_sdk::api::command::Response;
 use omnia_sdk::{BlobStore, Model, Plugins, StateStore};
 use tracing::Level;
 use wasip3::cli::environment;
@@ -23,18 +22,26 @@ impl BlobStore for Provider {}
 impl Plugins for Provider {}
 impl emery_adapter::source::Source for Provider {}
 
-struct CliGuest;
+omnia_sdk::command!(dispatch);
 
-wasip3::cli::command::export!(CliGuest);
-
-impl wasip3::exports::cli::run::Guest for CliGuest {
-    #[omnia_wasi_otel::instrument(name = "cli_guest_run", level = Level::DEBUG)]
-    async fn run() -> Result<(), ()> {
-        command::execute_wasi(dispatch()).await;
-        Ok(())
-    }
+// The root span of a run. `command!` owns the telemetry lifecycle around it,
+// so the export flushes before any exit, a non-zero one included.
+#[omnia_wasi_otel::instrument(name = "cli_guest_run", level = Level::DEBUG)]
+async fn dispatch() -> Response {
+    emery_cli::run(Provider, environment::get_arguments(), trace).await
 }
 
-async fn dispatch() -> Response {
-    emery_cli::run(Provider, environment::get_arguments()).await
+// Reloads the guest tracing filter to the level the invocation selects.
+fn trace(verbosity: Verbosity) {
+    let preset = verbosity.directives();
+    let ambient = match verbosity {
+        Verbosity::Quiet => None,
+        Verbosity::Progress | Verbosity::Debug => std::env::var("RUST_LOG").ok(),
+    };
+
+    let refined = ambient
+        .and_then(|ambient| omnia_wasi_otel::set_filter(&format!("{preset},{ambient}")).ok());
+    if refined.is_none() {
+        let _ = omnia_wasi_otel::set_filter(preset);
+    }
 }

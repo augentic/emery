@@ -307,11 +307,15 @@ impl<S: Send + Sync + 'static> Source for Provider<S> {
 }
 
 /// Runs one CLI invocation in-process, returning the raw response.
+///
+/// The verbosity the invocation selects is dropped: no scenario here
+/// installs a subscriber. `command.rs` records it where the flags are the
+/// scenario.
 pub async fn cli<S>(provider: &Provider<S>, argv: &[&str]) -> Response
 where
     S: StateStore + BlobStore + Send + Sync + 'static,
 {
-    emery_cli::run(provider.clone(), argv.iter().copied()).await
+    emery_cli::run(provider.clone(), argv.iter().copied(), |_verbosity| ()).await
 }
 
 /// Builds a full-length `sha256:` digest from one repeated hex pair.

@@ -131,7 +131,7 @@ version = "4.0.3"
 criteria = "safe-to-deploy"
 
 [[exemptions.cc]]
-version = "1.4.6"
+version = "1.4.7"
 criteria = "safe-to-deploy"
 
 [[exemptions.cfg-if]]
@@ -308,6 +308,10 @@ criteria = "safe-to-deploy"
 
 [[exemptions.fastrand]]
 version = "2.5.0"
+criteria = "safe-to-deploy"
+
+[[exemptions.find-msvc-tools]]
+version = "0.1.13"
 criteria = "safe-to-deploy"
 
 [[exemptions.fixedbitset]]

@@ -13,7 +13,8 @@ mod support;
 #[path = "support/verbs.rs"]
 mod verbs;
 
-use omnia_sdk::api::command::USAGE_EXIT;
+use emery_cli::Verbosity;
+use omnia_sdk::api::command::{Response, USAGE_EXIT};
 use serde_json::Value;
 use support::{Provider, cli, cli_ok, fail};
 use verbs::verbs;
@@ -229,6 +230,65 @@ async fn host_semver() {
     let stdout = String::from_utf8_lossy(&response.stdout);
     let expected = format!("emery {}", env!("CARGO_PKG_VERSION"));
     assert!(stdout.trim_end().ends_with(&expected), "{stdout}");
+}
+
+// Runs `argv`, returning the response and every verbosity it reported.
+async fn recorded(provider: &Provider, argv: &[&str]) -> (Response, Vec<Verbosity>) {
+    let mut seen = Vec::new();
+    let response = emery_cli::run(provider.clone(), argv.iter().copied(), |verbosity| {
+        seen.push(verbosity);
+    })
+    .await;
+    (response, seen)
+}
+
+// The verbosity flags are global grammar: position-independent, reported
+// to the caller exactly once before the verb runs, and never a verb's own
+// option. Combining them is a usage error, not a startup failure.
+#[tokio::test]
+async fn verbosity_flags() {
+    let provider = Provider::idle();
+
+    // reported once, wherever the flag sits, and the verb still dispatches
+    for (argv, expected) in [
+        (&["emery", "show", "spec"][..], Verbosity::Progress),
+        (&["emery", "--debug", "show", "spec"][..], Verbosity::Debug),
+        (&["emery", "show", "spec", "--debug"][..], Verbosity::Debug),
+        (&["emery", "show", "--quiet", "spec"][..], Verbosity::Quiet),
+        (&["emery", "--quiet", "specify"][..], Verbosity::Quiet),
+    ] {
+        let (response, seen) = recorded(&provider, argv).await;
+        assert_eq!(seen, [expected], "{argv:?}");
+        let stderr = String::from_utf8_lossy(&response.stderr);
+        assert_ne!(response.exit, USAGE_EXIT, "{argv:?}: {stderr}");
+        assert!(!stderr.contains("Usage:"), "{argv:?}: {stderr}");
+    }
+
+    // exclusive wherever the two sit, before anything is reported
+    for argv in [
+        &["emery", "--debug", "--quiet", "show", "spec"][..],
+        &["emery", "--debug", "show", "spec", "--quiet"][..],
+        &["emery", "show", "--quiet", "spec", "--debug"][..],
+    ] {
+        let (response, seen) = recorded(&provider, argv).await;
+        let stderr = String::from_utf8_lossy(&response.stderr);
+        assert_eq!(response.exit, USAGE_EXIT, "{argv:?}: {stderr}");
+        assert!(stderr.contains("--debug") && stderr.contains("--quiet"), "{argv:?}: {stderr}");
+        assert!(seen.is_empty(), "{argv:?}: a usage error reports no verbosity: {seen:?}");
+    }
+
+    // help and version report nothing either
+    for argv in [&["emery", "--help"][..], &["emery", "--version"][..]] {
+        let (response, seen) = recorded(&provider, argv).await;
+        assert_eq!(response.exit, 0, "{argv:?}");
+        assert!(seen.is_empty(), "{argv:?}: {seen:?}");
+    }
+
+    // listed on the root help
+    let help = cli_ok(&provider, &["emery", "--help"]).await;
+    let help = String::from_utf8_lossy(&help.stdout);
+    assert!(help.contains("--debug"), "{help}");
+    assert!(help.contains("--quiet"), "{help}");
 }
 
 // Omnia forwards raw argv; a routed-id argv[0] renders as `emery`.

@@ -11,7 +11,7 @@ Canonical JSON envelope shapes for the `emery *` commands that skills shell out 
   - `exit-code` — the integer the binary returns.
 - Paths are emitted as plain strings relative to the repo root unless the field name says otherwise.
 - All keys are `kebab-case`. Body shapes are pinned by the typed `*Output` DTOs in `emery-engine` (`Serialize`) and change only with the CLI's own versioning; the failure envelope is `emery-cli`'s.
-- Stream roles: the semantic result body (text or JSON) is **stdout**; the failure envelope and live host tracing are **stderr**. Tracing verbosity is selected by the reserved host log flags (`--debug` / `--quiet`, peeled before the guest sees argv; see [cli-contract.md](../standards/cli-contract.md)).
+- Stream roles: the semantic result body (text or JSON) is **stdout**; the failure envelope and live tracing are **stderr**. Tracing verbosity is selected by the global `--debug` / `--quiet` flags of the `emery` grammar (see [cli-contract.md](../standards/cli-contract.md)).
 
 ## Text-mode style
 
