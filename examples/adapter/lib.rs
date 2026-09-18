@@ -25,9 +25,10 @@ mod guest {
     }
 }
 
+// A root-package example has no `prose/` beside `Cargo.toml`, so the tree is named.
 /// The prompt and reference document embedded in the adapter.
 pub static PROSE: &[Doc] =
-    emery_sdk::prose!("prose", ["prompts/extract.md", "references/greeting.md"]);
+    emery_sdk::prose!("examples/adapter/prose", ["prompts/extract.md", "references/greeting.md"]);
 
 /// Returns one mining seam for the greeting source.
 ///

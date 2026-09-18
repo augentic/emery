@@ -10,7 +10,8 @@
 //! - [`workspace::list`] traverses workspace input under an adapter-defined
 //!   filter.
 //! - [`survey::surfaces`] optionally discovers caller-facing entry points.
-//! - [`Doc`], [`prose!`], and [`mod@prose`] embed and inspect adapter guidance.
+//! - [`Doc`], [`prose!`], and [`mod@prose`] embed and inspect adapter guidance;
+//!   [`prose::RUNTIME`] is the guidance every adapter shares.
 //!
 //! Contract types and [`Error`] are re-exported, allowing an adapter to depend
 //! on this crate alone.
@@ -52,8 +53,10 @@
 //! # fn main() {}
 //! ```
 //!
-//! Adapters commonly embed a `prose/` directory with [`prose!`] and validate
-//! it with [`prose::check`].
+//! An adapter lists its `prose/` directory with [`prose!`]
+//! (`prose!["prompts/extract.md", ..]`) and holds the list to the tree with
+//! [`prose::check`]. Its prompts link the shared references in
+//! [`prose::RUNTIME`] as `../emery/claims.md` without listing them.
 //!
 //! # Vocabulary
 //!
@@ -74,6 +77,7 @@ mod extract;
 #[doc(hidden)]
 pub mod guest;
 mod path;
+pub mod prose;
 mod references;
 pub mod survey;
 pub mod workspace;
@@ -88,15 +92,9 @@ pub use emery_adapter::source::{
 pub use emery_prose::{Doc, prose};
 pub use omnia_sdk::{Error, Model, bad_gateway, bad_request, model, not_found, server_error};
 
+pub use self::extract::{Context, Seam, extract};
 #[cfg(target_arch = "wasm32")]
 pub use self::guest::Provider;
-
-/// Provides lookup and validation for an adapter's embedded documents.
-pub mod prose {
-    pub use emery_prose::{body, check, find};
-}
-
-pub use self::extract::{Context, Seam, extract};
 
 /// Returns the `metadata` answer for an adapter reading `kind` sources.
 ///

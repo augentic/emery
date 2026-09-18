@@ -1,9 +1,9 @@
 //! Verifies document embedding and corpus validation.
 //!
 //! The scenarios cover table order, verbatim bodies, missing and duplicate
-//! entries, prompt reachability, and relative-link resolution. They also
-//! verify symlink traversal and ensure links in fenced code or external URLs
-//! are ignored.
+//! entries, prompt reachability, relative-link resolution, and imported
+//! documents. They also verify symlink traversal and ensure links in fenced
+//! code or external URLs are ignored.
 
 use std::fs;
 use std::os::unix::fs::symlink;
@@ -11,7 +11,8 @@ use std::path::Path;
 
 use emery_prose::{Doc, body, check};
 
-static PROSE: &[Doc] = emery_prose::prose!("fixtures", ["prompts/extract.md", "references/ids.md"]);
+static PROSE: &[Doc] =
+    emery_prose::prose!("tests/fixtures", ["prompts/extract.md", "references/ids.md"]);
 
 // The fixtures agree with their list: the one place the list, the embed, and
 // the check are seen together over a real tree.
@@ -20,10 +21,13 @@ fn fixtures() {
     let paths: Vec<&str> = PROSE.iter().map(|doc| doc.path).collect();
     assert_eq!(paths, ["prompts/extract.md", "references/ids.md"]);
     assert_eq!(body(PROSE, "references/ids.md"), Some(include_str!("fixtures/references/ids.md")));
-    assert_eq!(body(PROSE, "prompts/extract.md"), Some(include_str!("fixtures/prompts/extract.md")));
+    assert_eq!(
+        body(PROSE, "prompts/extract.md"),
+        Some(include_str!("fixtures/prompts/extract.md"))
+    );
 
     let tree = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures");
-    let findings = check(PROSE, &tree, &["prompts/extract.md"]);
+    let findings = check(PROSE, &tree, &["prompts/extract.md"], &[]);
     assert!(findings.is_empty(), "{}", findings.join("\n"));
 }
 
@@ -39,7 +43,7 @@ fn unlisted() {
 
     let table = [doc("a.md", "# A, see [c](c.md)\n"), doc("c.md", "# C\n")];
     assert_eq!(
-        check(&table, tmp.path(), &["a.md"]),
+        check(&table, tmp.path(), &["a.md"], &[]),
         [
             "`b.md` is in the tree but not in the table",
             "`c.md` is in the table but not in the tree",
@@ -54,7 +58,7 @@ fn repeated() {
     write(tmp.path(), "a.md", "# A\n");
 
     let table = [doc("a.md", "# A\n"), doc("a.md", "# A\n")];
-    assert_eq!(check(&table, tmp.path(), &["a.md"]), ["`a.md` is listed twice"]);
+    assert_eq!(check(&table, tmp.path(), &["a.md"], &[]), ["`a.md` is listed twice"]);
 }
 
 // A listed document no prompt reaches is embedded and never read, and a link
@@ -76,7 +80,7 @@ fn unlinked() {
         doc("references/more.md", "# More\n"),
     ];
     assert_eq!(
-        check(&table, tmp.path(), &["prompts/extract.md", "prompts/survey.md"]),
+        check(&table, tmp.path(), &["prompts/extract.md", "prompts/survey.md"], &[]),
         [
             "`prompts/survey.md` is a prompt the table does not hold",
             "`references/notes.md` is reached from no prompt",
@@ -85,9 +89,8 @@ fn unlinked() {
     );
 }
 
-// A symlinked directory is part of the tree, and a `](` inside fenced code
-// is not a link; the live adapter trees share their runtime references by
-// symlink, so this is where that is proved.
+// A symlinked directory is part of the tree, so a document reached through
+// one is listed like any other, and a `](` inside fenced code is not a link.
 #[test]
 fn symlinked() {
     let tmp = tempfile::tempdir().expect("tempdir");
@@ -110,8 +113,31 @@ fn symlinked() {
         doc("b.md", "# B\n"),
         doc("runtime/rule.md", "# Rule\n"),
     ];
-    let findings = check(&table, &tree, &["a.md"]);
+    let findings = check(&table, &tree, &["a.md"], &[]);
     assert!(findings.is_empty(), "{}", findings.join("\n"));
+}
+
+// A link may name a document another table embeds beside this one — the
+// SDK's runtime references beside an adapter's own — which the tree need not
+// hold and no prompt need reach; a listed document at an import's path would
+// answer lookups meant for the import, so it is a finding even when the tree
+// holds it and a prompt reaches it.
+#[test]
+fn imported() {
+    let tmp = tempfile::tempdir().expect("tempdir");
+    write(tmp.path(), "prompts/extract.md", "see [claims](../emery/claims.md)\n");
+    let imports = [doc("emery/claims.md", "# Claims\n"), doc("emery/pipeline.md", "# Pipeline\n")];
+
+    let table = [doc("prompts/extract.md", "see [claims](../emery/claims.md)\n")];
+    let findings = check(&table, tmp.path(), &["prompts/extract.md"], &imports);
+    assert!(findings.is_empty(), "{}", findings.join("\n"));
+
+    write(tmp.path(), "emery/claims.md", "# Mine\n");
+    let shadowing = [table[0], doc("emery/claims.md", "# Mine\n")];
+    assert_eq!(
+        check(&shadowing, tmp.path(), &["prompts/extract.md"], &imports),
+        ["`emery/claims.md` shadows an import"]
+    );
 }
 
 // A link is checked against the table, not the disk: a target the tree holds
@@ -132,7 +158,7 @@ fn dangling() {
         doc("references/ids.md", "# Ids, see [nope](nope.md)\n"),
     ];
     assert_eq!(
-        check(&table, tmp.path(), &["prompts/extract.md"]),
+        check(&table, tmp.path(), &["prompts/extract.md"], &[]),
         [
             "`prompts/extract.md` links `../../x.md`, which leaves the tree",
             "`references/ids.md` links `nope.md`, and the table holds no `references/nope.md`",
@@ -146,14 +172,14 @@ fn dangling() {
 fn unwalkable() {
     let tmp = tempfile::tempdir().expect("tempdir");
 
-    let absent = check(&[], &tmp.path().join("absent"), &[]);
+    let absent = check(&[], &tmp.path().join("absent"), &[], &[]);
     assert_eq!(absent.len(), 1, "{absent:?}");
     assert!(absent[0].contains("cannot be read"), "{}", absent[0]);
 
     let cycle = tmp.path().join("cycle");
     write(&cycle, "intro.md", "# Intro\n");
     symlink(Path::new("."), cycle.join("loop")).expect("symlink");
-    let looped = check(&[doc("intro.md", "# Intro\n")], &cycle, &["intro.md"]);
+    let looped = check(&[doc("intro.md", "# Intro\n")], &cycle, &["intro.md"], &[]);
     assert_eq!(looped.len(), 1, "{looped:?}");
     assert!(looped[0].contains("symlink cycle"), "{}", looped[0]);
 }

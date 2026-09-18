@@ -6,14 +6,21 @@ use std::{fs, io};
 
 use crate::Doc;
 
-/// Returns inconsistencies between `docs`, its source tree, and its prompts.
+/// Returns inconsistencies between `docs`, its source tree, its prompts, and its imports.
 ///
 /// An empty result means all of the following are true:
 ///
 /// - Every Markdown file beneath `root` appears exactly once in `docs`.
-/// - Every relative link in an embedded document resolves to another entry.
+/// - Every relative link in an embedded document resolves to another entry
+///   or to an import.
 /// - Every path in `prompts` identifies an embedded document.
 /// - Every other document is reachable by following links from a prompt.
+/// - No document shares its path with an import.
+///
+/// `imports` are documents another table embeds beside `docs`, so a link may
+/// name one; none is required beneath `root` or reached from a prompt. A
+/// document at an import's path would answer lookups meant for the import,
+/// so it is a finding.
 ///
 /// Symlinked directories are followed. Unreadable paths and symlink cycles
 /// are reported as findings. Links inside fenced code are ignored, and URL
@@ -31,14 +38,14 @@ use crate::Doc;
 /// use emery_prose::Doc;
 ///
 /// static PROSE: &[Doc] =
-///     emery_prose::prose!("../tests/fixtures", ["prompts/extract.md", "references/ids.md"]);
+///     emery_prose::prose!("tests/fixtures", ["prompts/extract.md", "references/ids.md"]);
 ///
 /// let tree = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures");
-/// let findings = emery_prose::check(PROSE, &tree, &["prompts/extract.md"]);
+/// let findings = emery_prose::check(PROSE, &tree, &["prompts/extract.md"], &[]);
 /// assert!(findings.is_empty(), "{}", findings.join("\n"));
 /// ```
 #[must_use]
-pub fn check(docs: &[Doc], root: &Path, prompts: &[&str]) -> Vec<String> {
+pub fn check(docs: &[Doc], root: &Path, prompts: &[&str], imports: &[Doc]) -> Vec<String> {
     let on_disk = match walk(root, "", &[]) {
         Ok(paths) => paths,
         Err(finding) => return vec![finding],
@@ -59,11 +66,17 @@ pub fn check(docs: &[Doc], root: &Path, prompts: &[&str]) -> Vec<String> {
         findings.push(format!("`{path}` is in the table but not in the tree"));
     }
 
-    // hold every link to the table
+    // hold the table apart from the imports
+    let imported: BTreeSet<&str> = imports.iter().map(|doc| doc.path).collect();
+    for path in imported.iter().filter(|path| listed.contains(**path)) {
+        findings.push(format!("`{path}` shadows an import"));
+    }
+
+    // hold every link to the table or the imports
     for doc in docs {
         for target in links(doc.body) {
             match resolve(doc.path, target) {
-                Some(linked) if listed.contains(&linked) => {}
+                Some(linked) if listed.contains(&linked) || imported.contains(linked.as_str()) => {}
                 Some(linked) => findings.push(format!(
                     "`{}` links `{target}`, and the table holds no `{linked}`",
                     doc.path

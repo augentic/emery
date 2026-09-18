@@ -24,6 +24,7 @@ Do not invent a `criterion`. A `requirement` without `statement` fails the run c
 
 - The requirement id stays `greeting.behaviour`.
 - A criterion id equals that id or extends it with a dotted suffix (`greeting.behaviour.body`).
+- The id grammar, `path` anchors, and the fail-closed gate are [claims.md](../emery/claims.md)'s, shared by every adapter.
 
 ## Output contract
 

@@ -168,8 +168,9 @@ async fn files_turn() {
     model.assert_exhausted();
 }
 
-// Reference calls are answered in-process from the corpus before the
-// candidate is checked.
+// Reference calls are answered in-process before the candidate is checked:
+// from the adapter's corpus, then from the SDK's runtime references, which
+// the adapter never lists.
 #[tokio::test]
 async fn doc_refs() {
     let model = Scripted::answering([VALID]).calling(
@@ -185,22 +186,38 @@ async fn doc_refs() {
                 name: "read_doc".to_string(),
                 arguments: r#"{"path":"references/greeting.md"}"#.to_string(),
             },
+            ToolCall {
+                id: "3".to_string(),
+                name: "read_doc".to_string(),
+                arguments: r#"{"path":"emery/claims.md"}"#.to_string(),
+            },
         ],
     );
 
     ask(&model, &SourceInput::value("brief", "Ship it."), Seam::Whole).await.expect("accepted");
     let exchanges = model.exchanges();
-    assert_eq!(exchanges.len(), 3, "two reference calls, then the check");
+    assert_eq!(exchanges.len(), 4, "three reference calls, then the check");
     assert_eq!(
         exchanges[0].outcome.as_deref(),
-        Ok(r#"{"paths":["prompts/extract.md","references/greeting.md"]}"#)
+        Ok(concat!(
+            r#"{"paths":["prompts/extract.md","references/greeting.md","#,
+            r#""emery/claims.md","emery/reconciliation.md"]}"#
+        ))
     );
     assert_eq!(
         exchanges[1].outcome.as_deref(),
         Ok(r#"{"body":"Greet warmly.","path":"references/greeting.md"}"#)
     );
-    assert_eq!(exchanges[2].tool, "check");
-    assert_eq!(exchanges[2].outcome, Ok(String::new()));
+    let runtime: serde_json::Value =
+        serde_json::from_str(exchanges[2].outcome.as_deref().expect("the runtime table answers"))
+            .expect("a JSON answer");
+    assert_eq!(runtime["path"], "emery/claims.md");
+    assert_eq!(
+        runtime["body"],
+        emery_sdk::prose::body(emery_sdk::prose::RUNTIME, "emery/claims.md").expect("embedded")
+    );
+    assert_eq!(exchanges[3].tool, "check");
+    assert_eq!(exchanges[3].outcome, Ok(String::new()));
 }
 
 // A candidate the claim gate rejects — a missing id, a missing extra — is
