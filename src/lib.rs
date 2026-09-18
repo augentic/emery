@@ -27,7 +27,7 @@ struct CliGuest;
 wasip3::cli::command::export!(CliGuest);
 
 impl Guest for CliGuest {
-    #[omnia_wasi_otel::instrument(name = "cli_guest_run")]
+    // #[omnia_wasi_otel::instrument(name = "cli_guest_run")]
     async fn run() -> Result<(), ()> {
         command::execute_wasi(dispatch()).await;
         Ok(())
@@ -38,11 +38,11 @@ impl Guest for CliGuest {
 // so the export flushes before any exit, a non-zero one included.
 
 async fn dispatch() -> Response {
-    emery_cli::run(Provider, environment::get_arguments(), trace).await
+    emery_cli::run(Provider, environment::get_arguments(), set_filter).await
 }
 
-// Reloads the guest tracing filter to the level the invocation selects.
-fn trace(verbosity: Verbosity) {
+// Sets the tracing filter for the guest to the level specified.
+fn set_filter(verbosity: Verbosity) {
     let filter = verbosity.into_filter();
     if verbosity != Verbosity::Quiet
         && let Ok(rust_log) = std::env::var("RUST_LOG")

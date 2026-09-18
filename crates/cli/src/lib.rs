@@ -51,12 +51,12 @@ const NAME: &str = "emery";
 /// The global `--verbose` and `--quiet` flags select a [`Verbosity`] reported
 /// through `verbosity` once the grammar parses and before the verb runs.
 /// Combining them is a usage error, and the callback is never reached.
-pub async fn run<P, I, T, V>(provider: P, argv: I, mut verbosity: V) -> Response
+pub async fn run<P, I, T, F>(provider: P, argv: I, set_filter: F) -> Response
 where
     P: Provider,
     I: IntoIterator<Item = T>,
     T: Into<OsString> + Clone,
-    V: FnMut(Verbosity),
+    F: FnOnce(Verbosity),
 {
     let app = match parse::<App>(argv) {
         Parsed::App(app) => app,
@@ -65,14 +65,14 @@ where
     };
 
     match app.verbosity() {
-        Ok(level) => verbosity(level),
+        Ok(level) => set_filter(level),
         Err(error) => return Response::usage(&error),
     }
 
     let client = Client::new(NAME, provider);
     let metadata = Metadata::from_env("EMERY");
     let command = Command::new(&client, &metadata, app.format).hints(|error| hint(&error.code()));
-    
+
     match app.verb {
         Verb::Specify(arguments) => {
             command.call(specify, || arguments.decode(), text::specify).await
