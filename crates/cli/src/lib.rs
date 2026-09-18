@@ -24,7 +24,7 @@ use emery_engine::Provider;
 use emery_engine::show::{Artifact, ShowInput, show};
 use emery_engine::specify::{SpecifyInput, specify};
 use omnia_sdk::Error;
-use omnia_sdk::api::command::{Command, Parsed, Response, Shell, completions, parse};
+use omnia_sdk::api::command::{Command, Parsed, Response, parse};
 use omnia_sdk::api::{Client, Format, Metadata};
 use strum::VariantArray as _;
 
@@ -39,17 +39,8 @@ const SPECIFY_DESC: &str = "Generate spec.md and design.md from source adapters.
 const SHOW_DESC: &str = "Print an artifact from the current revision.\n\n\
     Text output contains only the artifact body. `--format json` also includes the \
     revision id and the typed document.";
-const COMPLETIONS_DESC: &str = "Generate shell completions.\n\n\
-    Pipe into your shell's completion directory. Example: \
-    `emery completions zsh > ~/.zsh/_emery`";
 
-// The program name: the clap surface, the completions target, and the
-// `Client` owner are one spelling.
 const NAME: &str = "emery";
-
-// The environment prefix carrying invocation metadata
-// (`EMERY_REQUEST_ID`, `EMERY_CORRELATION_ID`, `EMERY_CAUSATION_ID`).
-const ENV_PREFIX: &str = "EMERY";
 
 /// Executes the command described by `argv` using a [`Provider`].
 ///
@@ -72,15 +63,17 @@ where
         Parsed::Display(text) => return Response::success(text),
         Parsed::Usage(error) => return Response::usage(&error),
     };
+
     match app.verbosity() {
         Ok(level) => verbosity(level),
         Err(error) => return Response::usage(&error),
     }
+
     let client = Client::new(NAME, provider);
-    let metadata = Metadata::from_env(ENV_PREFIX);
+    let metadata = Metadata::from_env("EMERY");
     let command = Command::new(&client, &metadata, app.format).hints(|error| hint(&error.code()));
+    
     match app.verb {
-        Verb::Completions { shell } => completions::<App>(shell, NAME),
         Verb::Specify(arguments) => {
             command.call(specify, || arguments.decode(), text::specify).await
         }
@@ -185,12 +178,6 @@ enum Verb {
     /// Print a reviewable artifact of the current revision to stdout
     #[command(long_about = SHOW_DESC)]
     Show(ShowArgs),
-    /// Print a shell-completion script for `<shell>` to stdout
-    #[command(long_about = COMPLETIONS_DESC)]
-    Completions {
-        /// Shell to generate completions for
-        shell: Shell,
-    },
 }
 
 // The `specify` grammar; field docs are its `--help` text. Decoding
