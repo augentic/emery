@@ -6,8 +6,11 @@
 
 #![cfg(target_arch = "wasm32")]
 
-use omnia_sdk::api::command::Response;
+use std::io::Write;
+
+use omnia_sdk::api::command::{IntoExit, Response};
 use omnia_sdk::{BlobStore, Model, Plugins, StateStore};
+use tracing::Level;
 use wasip3::cli::environment;
 
 // The bare provider: every capability keeps its WASI-backed default body, so
@@ -20,7 +23,17 @@ impl BlobStore for Provider {}
 impl Plugins for Provider {}
 impl emery_adapter::source::Source for Provider {}
 
-omnia_sdk::command!(dispatch);
+struct CliGuest;
+
+wasip3::cli::command::export!(CliGuest);
+
+impl wasip3::exports::cli::run::Guest for CliGuest {
+    #[omnia_wasi_otel::instrument(name = "cli_guest_run", level = Level::DEBUG)]
+    async fn run() -> Result<(), ()> {
+        omnia_sdk::api::command::execute_wasi(dispatch()).await;
+        Ok(())
+    }
+}
 
 async fn dispatch() -> Response {
     emery_cli::run(Provider, environment::get_arguments()).await

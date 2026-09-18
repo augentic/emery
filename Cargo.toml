@@ -31,6 +31,8 @@ omnia-wasi-otel.workspace = true
 emery-adapter.workspace = true
 emery-cli.workspace = true
 omnia-sdk.workspace = true
+omnia-wasi-otel.workspace = true
+tracing.workspace = true
 wasip3.workspace = true
 
 [build-dependencies]

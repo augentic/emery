@@ -58,7 +58,7 @@ Decoders (`crates/cli/src/sources.rs`: argv positionals + `--description`, the `
 
 `emery_cli::run(provider, argv)` is the whole entry: `parse::<App>(argv)` classifies clap's outcomes (`Parsed::Display` — `--help`, `--version` — is stdout at exit 0; `Parsed::Usage` is `Response::usage` at `USAGE_EXIT`), then each verb decodes into its engine input and runs through `Command::new(&Client::new(NAME, provider), &Metadata::from_env("EMERY"), format).hints(hint).call(handler, decode, render)`; `completions` short-circuits to `command::completions::<App>`. The buffered `Response` comes back. Wire-contract suites call the same `run` and assert on the buffered channels.
 
-On wasm, the guest (`src/lib.rs`) exports `wasi:cli/run` through `omnia_sdk::command!(dispatch)`; `dispatch` runs `emery_cli::run` over its provider and returns the `Response` itself; omnia's `Response` implements `IntoExit`, so the macro writes both channels (a `BrokenPipe` keeps the response's own exit, any other refused channel exits 3) and hands the exit status to `execute_wasi` — the WASI last mile that initializes and flushes guest telemetry and exits with the exact status. Every path runs the same grammar and projector.
+On wasm, the guest (`src/lib.rs`) exports `wasi:cli/run` under `#[omnia_wasi_otel::instrument]`; `dispatch` runs `emery_cli::run` over its provider and returns the `Response` itself; omnia's `Response` implements `IntoExit`, so the export writes both channels (a `BrokenPipe` keeps the response's own exit, any other refused channel exits 3) and exits with the exact status after flushing guest telemetry. Every path runs the same grammar and projector.
 
 Target discipline per verb arm:
 

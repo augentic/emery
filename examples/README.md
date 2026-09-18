@@ -25,8 +25,6 @@ cargo run --example runtime -- --debug specify --config examples/emery.toml
 cargo run --example runtime -- --debug show spec
 ```
 
-The config binds the built mock component by path (`[emery.toml](emery.toml)`) and lends `[docs/](docs/)` as `$SOURCE_DIR`. A bare name still only dispatches guests declared in the runtime invocation, and this host declares none.
-
 *Extract* and *synthesis* both complete through the Cursor backend. The mock guest answers reference-tool calls in-process the same way the [omnia-cursor example](https://github.com/augentic/omnia-backends/tree/main/examples/cursor) does.
 
 See [#host-to-guest-tool-calls](#host-to-guest-tool-calls) for more detail.
