@@ -10,8 +10,8 @@ use std::future::Future;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
-use emery_sdk::model::{Error as ModelError, Reply, Request, ToolCall};
 use emery_sdk::{Backing, Context, Doc, Error, Evidence, Model, Seam, SourceInput};
+use omnia_sdk::model::{Error as ModelError, Reply, Request, ToolCall};
 use omnia_test::guest::Scripted;
 
 const PROSE: &[Doc] = &[Doc {

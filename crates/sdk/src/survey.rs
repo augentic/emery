@@ -6,16 +6,16 @@
 //! [seams](crate#vocabulary).
 
 use std::collections::BTreeSet;
+use std::fmt::{self, Display, Formatter};
 
 use emery_adapter::source::SourceContent;
 use emery_prose::Doc;
-use omnia_sdk::model::Question;
 use omnia_sdk::{Error, Model, server_error};
 use schemars::JsonSchema;
 use serde::Deserialize;
 
 use crate::workspace::{Entry, Unoffered};
-use crate::{Context, beneath, references, workspace};
+use crate::{Context, beneath, question, workspace};
 
 /// Returns the surfaces discovered by the model in a workspace source.
 ///
@@ -41,24 +41,23 @@ pub async fn surfaces<P: Model>(
     ctx: &Context<'_, P>, docs: &'static [Doc], mut keep: impl FnMut(Entry<'_>) -> bool + Send,
 ) -> Result<Vec<Surface>, Error> {
     let key = &ctx.input.key;
-    let system = emery_prose::body(docs, "survey.md")
-        .ok_or_else(|| server_error!("`survey.md` is not embedded"))?;
     let SourceContent::Workspace(root) = &ctx.input.content else {
         return Err(server_error!(
             "`{key}`: a survey by model needs a workspace input, not an inline value"
         ));
     };
+    let question = question::of::<Inventory>("survey", docs, "survey.md")?.workspace(root);
+    let brief = Brief {
+        adapter_id: ctx.adapter_id,
+        key,
+        root,
+    };
 
-    let inventory = Question::<Inventory>::new("survey")
-        .system(system)
-        .tools(references::tools())
-        .workspace(root)
-        .ask(ctx.model, turn(ctx, root), Some(references::answering(docs)), |answer| {
-            let findings = answer.findings(root, &mut keep);
-            if findings.is_empty() { Ok(()) } else { Err(findings) }
+    let inventory = question
+        .ask(ctx.model, brief.to_string(), Some(question::answering(docs)), |answer| {
+            question::gate(answer.findings(root, &mut keep))
         })
-        .await
-        .map_err(Error::from)?;
+        .await?;
 
     Ok(inventory
         .surfaces
@@ -75,7 +74,7 @@ pub async fn surfaces<P: Model>(
 ///
 /// An empty inventory is valid. [`surfaces`] validates names and entry paths
 /// before returning the surfaces to an adapter.
-#[derive(Debug, Deserialize, JsonSchema)]
+#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq)]
 #[serde(deny_unknown_fields)]
 #[schemars(title = "Emery survey answer")]
 pub struct Inventory {
@@ -128,26 +127,37 @@ fn module(
     }
 }
 
-// The survey turn: which source is being surveyed, the root lent, how an
-// entry is named, and where the model's work stops.
-fn turn<P>(ctx: &Context<'_, P>, root: &str) -> String {
-    format!(
-        "Survey the source bound to adapter `{id}` (source key `{key}`) before it is mined.\n\n\
-         `$SOURCE_DIR` is the read-only view at `{root}` — the source tree. List the surfaces it \
-         exposes as the prompt describes them, each named for what a caller outside the source \
-         reaches, with the module the caller enters it at. Name an entry as a `/`-separated path \
-         relative to `$SOURCE_DIR`, to a module of the kind the prompt says this adapter mines; \
-         a module may be the entry of several surfaces, and a module no surface enters is not \
-         named.\n\n\
-         Read under `$SOURCE_DIR` to decide; nothing outside it is reachable. The caller mines \
-         each surface from its entry, following what it reaches through the whole tree — you \
-         follow nothing and group nothing. When the tree declares no surface, answer none rather \
-         than inventing one.\n\n\
-         The prompt's references are available through this call's `read_doc` tool (`list_docs` \
-         enumerates them); load referenced bodies on demand.\n\n\
-         Answer with one JSON object matching the survey schema. The caller mines the surfaces; \
-         extract nothing yourself.",
-        id = ctx.adapter_id,
-        key = ctx.input.key,
-    )
+// The user turn of the survey: which source is surveyed, the root lent, how
+// an entry is named, and where the model's work stops.
+struct Brief<'a> {
+    adapter_id: &'a str,
+    key: &'a str,
+    root: &'a str,
+}
+
+impl Display for Brief<'_> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "Survey the source bound to adapter `{id}` (source key `{key}`) before it is \
+             mined.\n\n\
+             `$SOURCE_DIR` is the read-only view at `{root}` — the source tree. List the surfaces \
+             it exposes as the prompt describes them, each named for what a caller outside the \
+             source reaches, with the module the caller enters it at. Name an entry as a \
+             `/`-separated path relative to `$SOURCE_DIR`, to a module of the kind the prompt \
+             says this adapter mines; a module may be the entry of several surfaces, and a \
+             module no surface enters is not named.\n\n\
+             Read under `$SOURCE_DIR` to decide; nothing outside it is reachable. The caller \
+             mines each surface from its entry, following what it reaches through the whole \
+             tree — you follow nothing and group nothing. When the tree declares no surface, \
+             answer none rather than inventing one.\n\n\
+             The prompt's references are available through this call's `read_doc` tool \
+             (`list_docs` enumerates them); load referenced bodies on demand.\n\n\
+             Answer with one JSON object matching the survey schema. The caller mines the \
+             surfaces; extract nothing yourself.",
+            id = self.adapter_id,
+            key = self.key,
+            root = self.root,
+        )
+    }
 }

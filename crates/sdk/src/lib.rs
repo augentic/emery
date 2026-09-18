@@ -1,4 +1,4 @@
-//! Builds Emery source adapters.
+//! Provides the types and functions a source adapter is written with.
 //!
 //! A source adapter reads a [`SourceInput`] and returns typed [`Evidence`].
 //! The crate root holds what every adapter uses; the modules hold what some
@@ -7,8 +7,8 @@
 //! - [`source_adapter!`] exports an adapter's metadata and extraction
 //!   functions as a WebAssembly component, and [`metadata`] answers the
 //!   first of them.
-//! - [`Context`], [`Seam`], and [`extract`] run extraction over the
-//!   boundaries selected by an adapter.
+//! - [`Context`], [`Seam`], and [`extract`](fn@extract) run extraction over the
+//!   boundaries selected by an adapter, at most [`CONCURRENT`] at a time.
 //! - [`Doc`], [`prose!`], [`body`], and [`find`] embed and read adapter
 //!   guidance; [`RUNTIME`] is the guidance every adapter shares, and
 //!   [`check`] holds an adapter's list to its tree.
@@ -17,7 +17,9 @@
 //! - [`survey::surfaces`] optionally discovers caller-facing entry points.
 //!
 //! Contract types and [`Error`] are re-exported, allowing an adapter to depend
-//! on this crate alone.
+//! on this crate alone. [`Source`] is among them for a host program that calls
+//! an adapter the way the engine does; an adapter implements the world's guest
+//! interface through [`source_adapter!`] and never [`Source`].
 //!
 //! # Examples
 //!
@@ -67,6 +69,8 @@
 //!   [`Seam`].
 //! - **Survey**: the adapter-specific step that divides an input into seams
 //!   before extraction.
+//! - **Mine**: to put one seam to the model under the adapter's `extract.md`
+//!   and gate its answer. [`extract`](fn@extract) mines every seam of a source.
 //! - **Context**: the adapter identifier, source input, and model available to
 //!   one extraction call. See [`Context`].
 //! - **Lend**: the workspace directory made readable to the model for a seam.
@@ -80,7 +84,7 @@
 #[doc(hidden)]
 pub mod component;
 mod extract;
-mod references;
+mod question;
 pub mod survey;
 pub mod workspace;
 
@@ -92,11 +96,11 @@ pub use emery_adapter::source::{
     SourceKind,
 };
 pub use emery_prose::{Doc, body, check, find, prose};
-pub use omnia_sdk::{Error, Model, bad_gateway, bad_request, model, not_found, server_error};
+pub use omnia_sdk::{Error, Model, bad_gateway, bad_request, not_found, server_error};
 
 #[cfg(target_arch = "wasm32")]
 pub use self::component::Provider;
-pub use self::extract::{Seam, extract};
+pub use self::extract::{CONCURRENT, Seam, extract};
 
 /// The runtime references every adapter prompt may link.
 ///
@@ -222,7 +226,7 @@ pub fn metadata(kind: SourceKind) -> AdapterMetadata {
 
 /// The adapter addressed, its input, and the model available to one extraction call.
 ///
-/// [`extract`] and [`survey::surfaces`] both take it, so an adapter's survey
+/// [`extract`](fn@extract) and [`survey::surfaces`] both take it, so an adapter's survey
 /// and its extraction put their turns to the same model.
 #[derive(Debug)]
 pub struct Context<'a, P> {

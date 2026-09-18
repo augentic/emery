@@ -125,24 +125,19 @@ pub(crate) enum Unoffered {
 }
 
 // Holds `relative` to the walk: each directory on the way and the file itself
-// is read from its parent with `read_dir`, as [`list`] reads them, and offered
-// to `keep` in the same order — never resolved as one path.
+// is read from its parent as [`list`] reads them, and offered to `keep` in
+// the same order.
 pub(crate) fn offered_file(
     root: &str, relative: &str, keep: &mut impl FnMut(Entry<'_>) -> bool,
 ) -> Result<(), Unoffered> {
     let mut dir = PathBuf::from(root);
-    for prefix in prefixes(relative) {
-        let offered =
-            if prefix.len() == relative.len() { Entry::File(prefix) } else { Entry::Dir(prefix) };
+    for offered in steps(relative) {
         let found = find_entry(&dir, offered.name()).ok_or(Unoffered::NoFile)?;
-        let Ok(file_type) = found.file_type() else {
-            return Err(Unoffered::NoFile);
+        let placed = match offered {
+            Entry::Dir(_) => found.file_type().is_ok_and(|kind| kind.is_dir()),
+            Entry::File(_) => found.file_type().is_ok_and(|kind| kind.is_file()),
         };
-        let expected = match offered {
-            Entry::Dir(_) => file_type.is_dir(),
-            Entry::File(_) => file_type.is_file(),
-        };
-        if !expected {
+        if !placed {
             return Err(Unoffered::NoFile);
         }
         if excluded(offered) || !keep(offered) {
@@ -153,12 +148,18 @@ pub(crate) fn offered_file(
     Ok(())
 }
 
-// Each prefix of `relative` ending at a segment, shortest first: `a`, `a/b`,
-// `a/b/c`.
-fn prefixes(relative: &str) -> impl Iterator<Item = &str> {
-    relative.match_indices('/').map(|(end, _)| &relative[..end]).chain(std::iter::once(relative))
+// Each entry the walk offers on the way to `relative`, in walk order: every
+// directory, then the file.
+fn steps(relative: &str) -> impl Iterator<Item = Entry<'_>> {
+    relative
+        .match_indices('/')
+        .map(|(end, _)| Entry::Dir(&relative[..end]))
+        .chain(std::iter::once(Entry::File(relative)))
 }
 
+// The entry named `name` in `dir`, read as the walk reads it. A `DirEntry`
+// reports a symlink as a symlink, so a link on the way is refused as the walk
+// refuses it; the metadata of the joined path would have followed it.
 fn find_entry(dir: &Path, name: &str) -> Option<std::fs::DirEntry> {
     let reading = std::fs::read_dir(dir).ok()?;
     reading.filter_map(Result::ok).find(|entry| entry.file_name().to_str() == Some(name))

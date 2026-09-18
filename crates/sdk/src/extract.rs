@@ -1,8 +1,8 @@
 //! Mines source seams and combines their claims.
 //!
 //! An adapter divides its input into [seams](crate#vocabulary). [`extract`]
-//! submits each seam to the model, validates every response, and returns one
-//! evidence document in seam order.
+//! settles every seam against the input, puts each to the model as one gated
+//! turn, and returns one evidence document in seam order.
 
 use std::fmt::{self, Display, Formatter};
 
@@ -10,12 +10,15 @@ use emery_adapter::source::{Evidence, SourceContent, SourceInput};
 use emery_prose::Doc;
 use futures::stream::{self, StreamExt as _};
 use omnia_sdk::model::Question;
-use omnia_sdk::{Error, Model, bad_gateway, bad_request, not_found, server_error};
+use omnia_sdk::{Error, Model, bad_request, server_error};
 
-use crate::{Context, beneath, references};
+use crate::{Context, beneath, question};
 
-// Turns one adapter holds pending at once.
-const CONCURRENT: usize = 4;
+/// The most turns one [`extract`] call holds pending at once.
+///
+/// Seams past this many wait for an earlier turn to answer, so a survey that
+/// cuts finer than this gains nothing in wall-clock time.
+pub const CONCURRENT: usize = 4;
 
 /// Mines each seam and combines accepted claims into one [`Evidence`] document.
 ///
@@ -25,12 +28,12 @@ const CONCURRENT: usize = 4;
 /// checked with [`Evidence::findings`]; rejected responses may be corrected
 /// until the host's round limit is reached.
 ///
-/// Up to four requests run concurrently. All requests are awaited, while
-/// claims retain the order of `seams`. Every workspace seam uses the same
-/// source root, so claim paths share one root-relative namespace.
+/// Up to [`CONCURRENT`] requests run concurrently. All requests are awaited,
+/// while claims retain the order of `seams`. Every workspace seam uses the
+/// same source root, so claim paths share one root-relative namespace.
 ///
 /// When several seams fail, the returned error describes each failure and
-/// uses the class of the first failed seam.
+/// carries the class and code of the first failed seam.
 ///
 /// # Errors
 ///
@@ -48,15 +51,23 @@ pub async fn extract<P: Model>(
         return Err(bad_request!("`{key}`: nothing to extract"));
     }
 
-    let lends =
-        seams.iter().map(|seam| Lend::of(seam, ctx.input)).collect::<Result<Vec<_>, _>>()?;
-    let outcomes: Vec<_> = stream::iter(seams.iter().zip(&lends))
-        .map(|(seam, lend)| evidence(ctx, docs, seam, lend))
+    // settle every seam and the question before the first turn is spent
+    let plans =
+        seams.iter().map(|seam| Plan::of(seam, ctx.input)).collect::<Result<Vec<_>, _>>()?;
+    let mut question = question::of::<Evidence>("evidence", docs, "extract.md")?;
+    if let SourceContent::Workspace(root) = &ctx.input.content {
+        question = question.workspace(root);
+    }
+
+    // one gated turn per seam, at most CONCURRENT pending
+    let outcomes: Vec<_> = stream::iter(&plans)
+        .map(|plan| turn(&question, ctx, docs, plan))
         .buffered(CONCURRENT)
         .collect()
         .await;
-    let partials = collect(key, outcomes)?;
 
+    // join the accepted claims in seam order
+    let partials = join(key, outcomes)?;
     Ok(Evidence {
         claims: partials.into_iter().flat_map(|partial| partial.claims).collect(),
     })
@@ -66,7 +77,7 @@ pub async fn extract<P: Model>(
 ///
 /// An adapter's survey chooses one or more seams before any call is made;
 /// see the [vocabulary](crate#vocabulary).
-#[derive(Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub enum Seam {
     /// The complete workspace or inline value.
     Whole,
@@ -81,93 +92,77 @@ pub enum Seam {
     Note(String),
 }
 
-// What one seam is lent: the root the model receives, and the files to mine
-// relative to it.
+// What one seam puts to the model, settled against the input before any turn
+// is spent.
 #[derive(Debug)]
-struct Lend {
-    // The source root, lent through the request's workspace grant; none for
-    // an inline value.
-    workspace: Option<String>,
-    // For `Files`, the files to mine relative to the root, sorted and
-    // deduped; empty otherwise.
-    files: Vec<String>,
+enum Plan<'a> {
+    // The adapter's own note, standing where the input's rendering would.
+    Note(&'a str),
+    // The files to mine beneath the lent root: sorted, once each, all beneath it.
+    Files { root: &'a str, files: Vec<String> },
+    // The whole tree, lent.
+    Tree(&'a str),
+    // The inline value, which rides the turn; nothing is lent.
+    Value(&'a str),
 }
 
-impl Lend {
-    // What `seam` is lent of `input`. A `Files` path that escapes the
-    // root, or a set naming no file, is `bad_request`; `Files` over an
-    // inline value is the adapter's own defect, so `server_error`.
-    fn of(seam: &Seam, input: &SourceInput) -> Result<Self, Error> {
+impl<'a> Plan<'a> {
+    // A `Files` path that escapes the root, or a set naming no file, is
+    // `bad_request`; `Files` over an inline value is the adapter's own
+    // defect, so `server_error`.
+    fn of(seam: &'a Seam, input: &'a SourceInput) -> Result<Self, Error> {
         let key = &input.key;
-        let root = match (&input.content, seam) {
-            (SourceContent::Workspace(root), _) => root,
-            (SourceContent::Value(_), Seam::Files(_)) => {
-                return Err(server_error!(
-                    "`{key}`: a `Files` seam needs a workspace input, not an inline value"
-                ));
+        match (seam, &input.content) {
+            (Seam::Note(note), _) => Ok(Self::Note(note)),
+            (Seam::Whole, SourceContent::Workspace(root)) => Ok(Self::Tree(root)),
+            (Seam::Whole, SourceContent::Value(value)) => Ok(Self::Value(value)),
+            (Seam::Files(_), SourceContent::Value(_)) => Err(server_error!(
+                "`{key}`: a `Files` seam needs a workspace input, not an inline value"
+            )),
+            (Seam::Files(named), SourceContent::Workspace(root)) => {
+                let mut files = named
+                    .iter()
+                    .map(|path| {
+                        beneath(path).map_err(|reason| bad_request!("`{key}`: `{path}` {reason}"))
+                    })
+                    .collect::<Result<Vec<_>, _>>()?;
+                files.sort();
+                files.dedup();
+                if files.is_empty() {
+                    return Err(bad_request!("`{key}`: a `Files` seam names no file"));
+                }
+                Ok(Self::Files { root, files })
             }
-            (SourceContent::Value(_), _) => {
-                return Ok(Self {
-                    workspace: None,
-                    files: Vec::new(),
-                });
-            }
-        };
-
-        let Seam::Files(paths) = seam else {
-            return Ok(Self {
-                workspace: Some(root.clone()),
-                files: Vec::new(),
-            });
-        };
-
-        let mut files = Vec::with_capacity(paths.len());
-        for named in paths {
-            let file =
-                beneath(named).map_err(|reason| bad_request!("`{key}`: `{named}` {reason}"))?;
-            files.push(file);
         }
-        files.sort();
-        files.dedup();
-        if files.is_empty() {
-            return Err(bad_request!("`{key}`: a `Files` seam names no file"));
-        }
-
-        Ok(Self {
-            workspace: Some(root.clone()),
-            files,
-        })
     }
 }
 
-// The brief: the call's context, the seam and what it is lent; rendered
-// as the user turn.
-struct Brief<'a, P> {
-    ctx: &'a Context<'a, P>,
-    seam: &'a Seam,
-    lend: &'a Lend,
+// The user turn of one seam: which source is bound, what the seam is lent,
+// and where the model's work stops.
+struct Brief<'a> {
+    adapter_id: &'a str,
+    key: &'a str,
+    plan: &'a Plan<'a>,
 }
 
-impl<P> Display for Brief<'_, P> {
+impl Display for Brief<'_> {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        let input = self.ctx.input;
         write!(
             f,
             "Extract the claim set of the source bound to adapter `{id}` (source key `{key}`).\n\n",
-            id = self.ctx.adapter_id,
-            key = input.key,
+            id = self.adapter_id,
+            key = self.key,
         )?;
 
-        match (self.seam, &input.content) {
-            (Seam::Note(note), _) => f.write_str(note)?,
-            (Seam::Files(_), _) => {
+        match self.plan {
+            Plan::Note(note) => f.write_str(note)?,
+            Plan::Files { root, files } => {
                 writeln!(
                     f,
-                    "`$SOURCE_DIR` is the read-only view at `{workspace}` — the source tree. Mine \
-                     these files beneath it and nothing else:",
-                    workspace = self.lend.workspace.as_deref().unwrap_or_default(),
+                    "`$SOURCE_DIR` is the read-only view at `{root}` — the source tree. Mine these \
+                     files beneath it and nothing else:"
                 )?;
-                for file in &self.lend.files {
+                for file in files {
                     write!(f, "\n- `{file}`")?;
                 }
                 f.write_str(
@@ -175,12 +170,12 @@ impl<P> Display for Brief<'_, P> {
                      reachable; extract mines only this source.",
                 )?;
             }
-            (Seam::Whole, SourceContent::Workspace(root)) => write!(
+            Plan::Tree(root) => write!(
                 f,
                 "`$SOURCE_DIR` is the read-only view at `{root}` — the source tree the prompt \
                  walks. Nothing outside it is reachable; extract mines only this source."
             )?,
-            (Seam::Whole, SourceContent::Value(value)) => write!(
+            Plan::Value(value) => write!(
                 f,
                 "The bound seam is this inline value; no `$SOURCE_DIR` is lent:\n\n{value}\n\n\
                  Nothing else is reachable; extract mines only this source."
@@ -196,65 +191,67 @@ impl<P> Display for Brief<'_, P> {
     }
 }
 
-// One seam's turn: the embedded prompt as the system, the brief as the user
-// turn, the seam's lend, and the claim gate as the check the backend loops
-// on until the answer is clean or its rounds are spent.
-async fn evidence<P: Model>(
-    ctx: &Context<'_, P>, docs: &'static [Doc], seam: &Seam, lend: &Lend,
+// One seam's turn: the question asked with the seam's brief, the reference
+// tools answered from `docs`, and the claim gate as the check the backend
+// loops on until the answer is clean or its rounds are spent.
+async fn turn<P: Model>(
+    question: &Question<Evidence>, ctx: &Context<'_, P>, docs: &'static [Doc], plan: &Plan<'_>,
 ) -> Result<Evidence, Error> {
-    let system = emery_prose::body(docs, "extract.md")
-        .ok_or_else(|| server_error!("`extract.md` is not embedded"))?;
-    let brief = Brief { ctx, seam, lend };
-
-    let mut question =
-        Question::<Evidence>::new("evidence").system(system).tools(references::tools());
-    if let Some(workspace) = &lend.workspace {
-        question = question.workspace(workspace);
-    }
-
+    let brief = Brief {
+        adapter_id: ctx.adapter_id,
+        key: &ctx.input.key,
+        plan,
+    };
     question
-        .ask(ctx.model, brief.to_string(), Some(references::answering(docs)), |answer| {
-            let findings = answer.findings();
-            if findings.is_empty() { Ok(()) } else { Err(findings) }
+        .ask(ctx.model, brief.to_string(), Some(question::answering(docs)), |answer| {
+            question::gate(answer.findings())
         })
         .await
         .map_err(Error::from)
 }
 
-// A lone seam's failure is the source's as it stands; several are reported
-// together, under the first one's class.
-fn collect(key: &str, outcomes: Vec<Result<Evidence, Error>>) -> Result<Vec<Evidence>, Error> {
+// The accepted documents in seam order, or the source's failure: a lone
+// seam's as it stands, several seams' reported together under the first
+// one's class and code.
+fn join(key: &str, outcomes: Vec<Result<Evidence, Error>>) -> Result<Vec<Evidence>, Error> {
     let count = outcomes.len();
-    let mut partials = Vec::with_capacity(count);
-    let mut failures = Vec::new();
+    let mut accepted = Vec::with_capacity(count);
+    let mut failed = Vec::new();
     for (index, outcome) in outcomes.into_iter().enumerate() {
         match outcome {
-            Ok(evidence) => partials.push(evidence),
-            Err(error) if count == 1 => return Err(error),
-            Err(error) => failures.push((index, error)),
+            Ok(evidence) => accepted.push(evidence),
+            Err(error) => failed.push((index, error)),
         }
     }
 
-    let Some((_, first)) = failures.first() else {
-        return Ok(partials);
-    };
-    let report: Vec<String> = failures
-        .iter()
-        .map(|(index, error)| format!("- seam {index}: {}", error.description()))
-        .collect();
-
-    Err(reclass(
-        first,
-        &format!("`{key}`: {} of {count} seams failed:\n{}", failures.len(), report.join("\n")),
-    ))
+    match failed.as_slice() {
+        [] => Ok(accepted),
+        [(_, only)] if count == 1 => Err(only.clone()),
+        [(_, first), ..] => {
+            let report: Vec<String> = failed
+                .iter()
+                .map(|(index, error)| format!("- seam {index}: {}", error.description()))
+                .collect();
+            Err(described(
+                first,
+                format!(
+                    "`{key}`: {} of {count} seams failed:\n{}",
+                    failed.len(),
+                    report.join("\n")
+                ),
+            ))
+        }
+    }
 }
 
-// The first failed seam decides the class; the report names them all.
-fn reclass(class: &Error, description: &str) -> Error {
-    match class {
-        Error::BadRequest { .. } => bad_request!("{description}"),
-        Error::NotFound { .. } => not_found!("{description}"),
-        Error::ServerError { .. } => server_error!("{description}"),
-        Error::BadGateway { .. } => bad_gateway!("{description}"),
+// `error` with `description` in place of its own; the class and code carry.
+fn described(error: &Error, description: String) -> Error {
+    let mut described = error.clone();
+    match &mut described {
+        Error::BadRequest { description: own, .. }
+        | Error::NotFound { description: own, .. }
+        | Error::ServerError { description: own, .. }
+        | Error::BadGateway { description: own, .. } => *own = description,
     }
+    described
 }

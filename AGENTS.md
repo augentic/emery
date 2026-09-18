@@ -61,7 +61,7 @@ All from the repository root through `make` ([`Makefile`](Makefile) → mise):
 make ci          # check + vet + deny — run before committing
 make check       # fmt + lint + test + test-docs + doc
 make test        # cargo nextest run --locked --workspace --all-features, under -Dwarnings
-make lint        # cargo clippy --workspace --all-targets --all-features -- -D warnings
+make lint        # cargo clippy --workspace --all-targets --all-features -- -D warnings, then the guest side (emery-sdk, the engine guest, examples/adapter) for wasm32-wasip2
 make fmt         # cargo +nightly fmt --all
 make cov         # cargo llvm-cov nextest --workspace
 make sweep       # drop target/ artifacts untouched for a week
