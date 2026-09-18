@@ -11,8 +11,12 @@ use std::path::Path;
 
 use emery_prose::{Doc, body, check};
 
-static PROSE: &[Doc] =
-    emery_prose::prose!("tests/fixtures", ["prompts/extract.md", "references/ids.md"]);
+static PROSE: &[Doc] = emery_prose::prose!["prose/prompts/extract.md", "prose/references/ids.md"];
+
+// A document is named from the invoking file, as `include_str!` names one,
+// so a list may climb out of its directory and back into the tree; the table
+// path is what follows `prose/` either way.
+static CLIMBING: &[Doc] = emery_prose::prose!["../tests/prose/references/ids.md"];
 
 // The fixtures agree with their list: the one place the list, the embed, and
 // the check are seen together over a real tree.
@@ -20,13 +24,12 @@ static PROSE: &[Doc] =
 fn fixtures() {
     let paths: Vec<&str> = PROSE.iter().map(|doc| doc.path).collect();
     assert_eq!(paths, ["prompts/extract.md", "references/ids.md"]);
-    assert_eq!(body(PROSE, "references/ids.md"), Some(include_str!("fixtures/references/ids.md")));
-    assert_eq!(
-        body(PROSE, "prompts/extract.md"),
-        Some(include_str!("fixtures/prompts/extract.md"))
-    );
+    assert_eq!(body(PROSE, "references/ids.md"), Some(include_str!("prose/references/ids.md")));
+    assert_eq!(body(PROSE, "prompts/extract.md"), Some(include_str!("prose/prompts/extract.md")));
+    assert_eq!(CLIMBING[0].path, "references/ids.md");
+    assert_eq!(CLIMBING[0].body, include_str!("prose/references/ids.md"));
 
-    let tree = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures");
+    let tree = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/prose");
     let findings = check(PROSE, &tree, &["prompts/extract.md"], &[]);
     assert!(findings.is_empty(), "{}", findings.join("\n"));
 }

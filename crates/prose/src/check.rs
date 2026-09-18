@@ -37,10 +37,12 @@ use crate::Doc;
 ///
 /// use emery_prose::Doc;
 ///
-/// static PROSE: &[Doc] =
-///     emery_prose::prose!("tests/fixtures", ["prompts/extract.md", "references/ids.md"]);
+/// static PROSE: &[Doc] = emery_prose::prose![
+///     "../tests/prose/prompts/extract.md",
+///     "../tests/prose/references/ids.md"
+/// ];
 ///
-/// let tree = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures");
+/// let tree = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/prose");
 /// let findings = emery_prose::check(PROSE, &tree, &["prompts/extract.md"], &[]);
 /// assert!(findings.is_empty(), "{}", findings.join("\n"));
 /// ```

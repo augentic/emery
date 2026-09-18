@@ -21,7 +21,8 @@ pub use emery_prose::{body, find};
 /// (`../emery/claims.md` from `prompts/extract.md`), and the model reads them
 /// through `read_doc` beside the adapter's table. An adapter never lists them:
 /// a table holding a document at one of these paths fails [`check`].
-pub static RUNTIME: &[Doc] = emery_prose::prose!["emery/claims.md", "emery/reconciliation.md"];
+pub static RUNTIME: &[Doc] =
+    emery_prose::prose!["../prose/emery/claims.md", "../prose/emery/reconciliation.md"];
 
 /// Returns inconsistencies between an adapter's `docs`, its tree, and its prompts.
 ///
