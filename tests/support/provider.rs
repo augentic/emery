@@ -39,11 +39,15 @@ type Recorded = Vec<(String, SourceInput)>;
 /// Evidence is scripted per key; the minimum `emery` version and the kind of
 /// source per adapter. An unscripted key answers the greeting requirement; an
 /// unscripted adapter reads documentation; a scripted failure is the
-/// classified error the WIT bindings' lift would have produced.
+/// classified error the WIT bindings' lift would have produced; a held key
+/// never answers at all.
 #[derive(Clone, Debug, Default)]
 pub struct SourceScript {
     /// Extract outcomes keyed by source key.
     pub evidence: BTreeMap<String, Result<Evidence, Error>>,
+    /// Source keys whose extract never resolves, so a scenario can prove the
+    /// engine does not wait for them.
+    pub held: BTreeSet<String>,
     /// Minimum `emery` versions keyed by adapter id — the reference itself.
     pub versions: BTreeMap<String, String>,
     /// Kinds of source keyed by adapter id; an unscripted adapter reads
@@ -279,10 +283,14 @@ impl<S: Send + Sync + 'static> Source for Provider<S> {
             .cloned()
             .unwrap_or_else(|| Ok(evidence(vec![requirement("greeting.behaviour", GREETING)])));
         let rendezvous = self.source.rendezvous.clone();
+        let held = self.source.held.contains(&input.key);
         let key = input.key.clone();
         async move {
             if let Some(rendezvous) = rendezvous {
                 rendezvous.wait(&key).await;
+            }
+            if held {
+                std::future::pending::<()>().await;
             }
             outcome
         }
