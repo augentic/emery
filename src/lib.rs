@@ -8,7 +8,7 @@
 
 use std::io::Write;
 
-use omnia_sdk::api::command::{IntoExit, Response};
+use omnia_sdk::api::command::{self, IntoExit, Response};
 use omnia_sdk::{BlobStore, Model, Plugins, StateStore};
 use tracing::Level;
 use wasip3::cli::environment;
@@ -30,7 +30,7 @@ wasip3::cli::command::export!(CliGuest);
 impl wasip3::exports::cli::run::Guest for CliGuest {
     #[omnia_wasi_otel::instrument(name = "cli_guest_run", level = Level::DEBUG)]
     async fn run() -> Result<(), ()> {
-        omnia_sdk::api::command::execute_wasi(dispatch()).await;
+        command::execute_wasi(dispatch()).await;
         Ok(())
     }
 }
