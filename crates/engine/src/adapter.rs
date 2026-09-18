@@ -81,6 +81,12 @@ pub async fn load<'a, P: Source + Plugins>(
         if let Some(declared) = &metadata.emery_version {
             is_supported(&id, declared, &version)?;
         }
+        tracing::debug!(
+            adapter = %id,
+            kind = %metadata.kind,
+            emery_version = ?metadata.emery_version,
+            "adapter loaded"
+        );
         kinds.insert(id, metadata.kind);
     }
 

@@ -21,7 +21,7 @@ That is the whole shipped surface. The source list never persists — repeat the
 
 ## Tracing and output
 
-Tracing is selected by the global `--debug` / `--quiet` flags of the `emery` grammar — prefer them to setting `RUST_LOG` on an `emery` subprocess. They are accepted anywhere in argv, so they are position-independent and never collide with a verb's own options.
+Tracing is selected by the global `--verbose` / `--quiet` flags of the `emery` grammar — prefer them to setting `RUST_LOG` on an `emery` subprocess. They are accepted anywhere in argv, so they are position-independent and never collide with a verb's own options.
 
 - **Short deterministic verbs** (`emery --version`, `emery show spec`) pass `--quiet` so the result card is uncluttered:
 
@@ -29,9 +29,9 @@ Tracing is selected by the global `--debug` / `--quiet` flags of the `emery` gra
 emery specify <adapter> --quiet
 ```
 
-**Debug mode**: when the operator explicitly asks for debug (says "debug", or passes `debug` / `--debug` on the slash command), pass `--debug` on **every** `emery` subprocess in that skill invocation (it replaces `--quiet` — the two flags are mutually exclusive, and combining them is a usage error).
+**Debug mode**: when the operator explicitly asks for debug (says "debug", or passes `debug` / `--verbose` on the slash command), pass `--verbose` on **every** `emery` subprocess in that skill invocation (it replaces `--quiet` — the two flags are mutually exclusive, and combining them is a usage error).
 
-`--debug` turns on the INFO progress filter plus the engine's debug tracing. `--quiet` wins over any ambient `RUST_LOG`; a bare or `--debug` run lets `RUST_LOG` refine its filter. The flags reach the engine alone: an adapter is its own guest, and only `RUST_LOG` on the process reaches its tracing.
+`--verbose` turns on the INFO progress filter plus the engine's debug tracing; repeated (`--verbose --verbose`) it adds the engine's trace detail. `--quiet` wins over any ambient `RUST_LOG`; a bare or `--verbose` run lets `RUST_LOG` refine its filter. The flags reach the engine alone: an adapter is its own guest, and only `RUST_LOG` on the process reaches its tracing.
 
 Stream roles: the semantic CLI result (text or JSON envelope) is stdout; command failures and live tracing are stderr. Relay the semantic result or structured error once, verbatim; do not repeat or reformat tracing lines in the closing response.
 

@@ -19,10 +19,10 @@ cargo build --example adapter --target wasm32-wasip2 --release
 
 # run the example
 export CURSOR_API_KEY=<Cursor API key>
-cargo run --example runtime -- --debug specify --config examples/emery.toml
+cargo run --example runtime -- -v specify --config examples/emery.toml
 
 # review the committed spec
-cargo run --example runtime -- --debug show spec
+cargo run --example runtime -- -v show spec
 ```
 
 *Extract* and *synthesis* both complete through the Cursor backend. The mock guest answers reference-tool calls in-process the same way the [omnia-cursor example](https://github.com/augentic/omnia-backends/tree/main/examples/cursor) does.

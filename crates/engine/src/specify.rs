@@ -188,13 +188,13 @@ impl<'a> Bound<'a> {
             .get(&adapter)
             .copied()
             .ok_or_else(|| server_error!("adapter `{adapter}` was not loaded"))?;
+        tracing::info!(%source, %adapter, %kind, "extracting");
         let evidence = Source::extract(provider, &adapter, &self.input).await?;
 
         let findings = evidence.findings();
         if !findings.is_empty() {
             return Err(server_error!("`{source}` returned invalid claims"));
         }
-
         tracing::debug!(%source, claims = evidence.claims.len(), "extracted");
 
         Ok(Extract {

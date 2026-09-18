@@ -33,6 +33,7 @@ pub async fn show<P: StateStore + BlobStore>(
             description: "no specification revision has been committed".into(),
         });
     };
+    tracing::debug!(revision = %id, artifact = input.artifact.as_ref(), "revision read");
 
     match input.artifact {
         Artifact::Spec => ShowOutput::new(&revision.spec, id),

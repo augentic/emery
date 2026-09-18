@@ -5,20 +5,21 @@
 //! and supplies recovery hints for known failures.
 //!
 //! [`run`] returns a buffered response, leaving process I/O and exit handling
-//! to the caller. The global `--debug` and `--quiet` flags select the tracing
-//! filter [`run`] reports through its callback before the verb runs; the crate
-//! installs no subscriber of its own.
+//! to the caller. The global `--verbose` and `--quiet` flags select the
+//! tracing filter [`run`] reports through its callback before the verb runs;
+//! the crate installs no subscriber of its own.
 
 mod sources;
 mod text;
 
 use std::borrow::Cow;
 use std::ffi::OsString;
+use std::fmt::{self, Display, Formatter};
 use std::path::PathBuf;
 
 use clap::builder::{PossibleValue, PossibleValuesParser, TypedValueParser};
 use clap::error::ErrorKind;
-use clap::{CommandFactory as _, Parser, Subcommand};
+use clap::{ArgAction, CommandFactory as _, Parser, Subcommand};
 use emery_engine::Provider;
 use emery_engine::show::{Artifact, ShowInput, show};
 use emery_engine::specify::{SpecifyInput, specify};
@@ -56,7 +57,7 @@ const ENV_PREFIX: &str = "EMERY";
 /// output and error. Help, version, and usage responses are produced without
 /// invoking an engine operation.
 ///
-/// The global `--debug` and `--quiet` flags select a [`Verbosity`] reported
+/// The global `--verbose` and `--quiet` flags select a [`Verbosity`] reported
 /// through `verbosity` once the grammar parses and before the verb runs.
 /// Combining them is a usage error, and the callback is never reached.
 pub async fn run<P, I, T, V>(provider: P, argv: I, mut verbosity: V) -> Response
@@ -109,59 +110,70 @@ struct App {
     #[arg(long, env = "EMERY_FORMAT", default_value = "text", global = true)]
     format: Format,
 
-    /// Show engine debug tracing on stderr.
-    #[arg(long, global = true)]
-    debug: bool,
+    /// Show engine debug tracing on stderr; repeat for trace detail.
+    #[arg(short, long, action = ArgAction::Count, global = true)]
+    verbose: u8,
 
     /// Silence tracing.
-    #[arg(long, global = true)]
+    #[arg(short, long, global = true)]
     quiet: bool,
 }
 
 impl App {
-    // Folds the two verbosity flags, refusing both together as a usage
-    // error. Clap validates a `conflicts_with` per command level, so
-    // `--debug` on the root and `--quiet` on the verb would never meet.
+    // Folds the counted `-v` and `-q` into one level, refusing both together
+    // as a usage error. Clap validates a `conflicts_with` per command level,
+    // so `-v` on the root and `-q` on the verb would never meet.
     fn verbosity(&self) -> Result<Verbosity, clap::Error> {
-        match (self.debug, self.quiet) {
-            (true, true) => Err(Self::command().error(
+        match (self.verbose, self.quiet) {
+            (1.., true) => Err(Self::command().error(
                 ErrorKind::ArgumentConflict,
-                "the argument '--debug' cannot be used with '--quiet'",
+                "the argument '--verbose' cannot be used with '--quiet'",
             )),
-            (true, false) => Ok(Verbosity::Debug),
-            (false, true) => Ok(Verbosity::Quiet),
-            (false, false) => Ok(Verbosity::Progress),
+            (0, true) => Ok(Verbosity::Quiet),
+            (0, false) => Ok(Verbosity::Info),
+            (1, false) => Ok(Verbosity::Debug),
+            (2.., false) => Ok(Verbosity::Trace),
         }
     }
 }
 
-/// The tracing level the global `--debug` and `--quiet` flags select.
+/// The tracing level the global `--verbose` and `--quiet` flags select.
 ///
-/// A bare run is [`Self::Progress`], `--quiet` is [`Self::Quiet`], and
-/// `--debug` is [`Self::Debug`].
+/// A bare run is [`Self::Info`], `-q` is [`Self::Quiet`], `-v` is
+/// [`Self::Debug`], and `-vv` or more is [`Self::Trace`].
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Verbosity {
-    /// INFO progress on a bare invocation.
-    Progress,
-    /// No tracing, selected by `--quiet`.
+    /// No tracing, selected by `-q`.
     Quiet,
-    /// INFO progress plus engine DEBUG, selected by `--debug`.
+    /// INFO progress on a bare invocation.
+    Info,
+    /// INFO progress plus engine DEBUG, selected by `-v`.
     Debug,
+    /// DEBUG everywhere plus engine TRACE, selected by `-vv`.
+    Trace,
 }
 
 impl Verbosity {
     /// Returns the `RUST_LOG` directives this level selects.
     ///
-    /// - [`Self::Progress`] selects `info`
     /// - [`Self::Quiet`] selects `off`
+    /// - [`Self::Info`] selects `info`
     /// - [`Self::Debug`] selects `info` plus `emery_cli`, `emery_engine`, and `omnia_sdk` at `debug`
+    /// - [`Self::Trace`] selects `debug` plus `emery_cli`, `emery_engine`, and `omnia_sdk` at `trace`
     #[must_use]
-    pub const fn directives(self) -> &'static str {
+    pub const fn into_filter(self) -> &'static str {
         match self {
-            Self::Progress => "info",
             Self::Quiet => "off",
+            Self::Info => "info",
             Self::Debug => "info,emery_cli=debug,emery_engine=debug,omnia_sdk=debug",
+            Self::Trace => "debug,emery_cli=trace,emery_engine=trace,omnia_sdk=trace",
         }
+    }
+}
+
+impl Display for Verbosity {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.into_filter())
     }
 }
 

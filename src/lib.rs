@@ -43,15 +43,12 @@ async fn dispatch() -> Response {
 
 // Reloads the guest tracing filter to the level the invocation selects.
 fn trace(verbosity: Verbosity) {
-    let preset = verbosity.directives();
-    let ambient = match verbosity {
-        Verbosity::Quiet => None,
-        Verbosity::Progress | Verbosity::Debug => std::env::var("RUST_LOG").ok(),
-    };
-
-    let refined = ambient
-        .and_then(|ambient| omnia_wasi_otel::set_filter(&format!("{preset},{ambient}")).ok());
-    if refined.is_none() {
-        let _ = omnia_wasi_otel::set_filter(preset);
+    let filter = verbosity.into_filter();
+    if verbosity != Verbosity::Quiet
+        && let Ok(rust_log) = std::env::var("RUST_LOG")
+        && omnia_wasi_otel::set_filter(&format!("{filter},{rust_log}")).is_ok()
+    {
+        return;
     }
+    let _ = omnia_wasi_otel::set_filter(filter);
 }

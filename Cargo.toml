@@ -54,6 +54,8 @@ emery-engine.workspace = true
 omnia-sdk.workspace = true
 omnia-test = { workspace = true, features = ["guest"] }
 tokio = { workspace = true, features = ["macros", "rt", "sync", "time"] }
+tracing.workspace = true
+tracing-subscriber.workspace = true
 
 [[example]]
 name = "adapter"
@@ -140,6 +142,7 @@ tempfile = "3.27.0"
 tokio = { version = "1.53.1", features = ["fs", "io-util", "rt"] }
 toml = "1.1.6"
 tracing = "0.1.44"
+tracing-subscriber = { version = "0.3.23", features = ["env-filter", "fmt"] }
 wasip3 = "0.9.0"
 wit-bindgen = { version = "0.62.0", features = ["async-spawn"] }
 

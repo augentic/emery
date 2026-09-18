@@ -1032,6 +1032,7 @@ dependencies = [
  "tempfile",
  "tokio",
  "tracing",
+ "tracing-subscriber",
  "wasip3 0.9.0+wasi-0.3.0",
 ]
 
@@ -1058,6 +1059,7 @@ dependencies = [
  "serde",
  "strum 0.28.0",
  "toml",
+ "tracing",
 ]
 
 [[package]]

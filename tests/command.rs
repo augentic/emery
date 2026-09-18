@@ -251,10 +251,13 @@ async fn verbosity_flags() {
 
     // reported once, wherever the flag sits, and the verb still dispatches
     for (argv, expected) in [
-        (&["emery", "show", "spec"][..], Verbosity::Progress),
-        (&["emery", "--debug", "show", "spec"][..], Verbosity::Debug),
-        (&["emery", "show", "spec", "--debug"][..], Verbosity::Debug),
-        (&["emery", "show", "--quiet", "spec"][..], Verbosity::Quiet),
+        (&["emery", "show", "spec"][..], Verbosity::Info),
+        (&["emery", "-v", "show", "spec"][..], Verbosity::Debug),
+        (&["emery", "show", "spec", "--verbose"][..], Verbosity::Debug),
+        (&["emery", "-vv", "show", "spec"][..], Verbosity::Trace),
+        (&["emery", "show", "spec", "-v", "-v"][..], Verbosity::Trace),
+        (&["emery", "show", "-vvv", "spec"][..], Verbosity::Trace),
+        (&["emery", "show", "-q", "spec"][..], Verbosity::Quiet),
         (&["emery", "--quiet", "specify"][..], Verbosity::Quiet),
     ] {
         let (response, seen) = recorded(&provider, argv).await;
@@ -266,14 +269,14 @@ async fn verbosity_flags() {
 
     // exclusive wherever the two sit, before anything is reported
     for argv in [
-        &["emery", "--debug", "--quiet", "show", "spec"][..],
-        &["emery", "--debug", "show", "spec", "--quiet"][..],
-        &["emery", "show", "--quiet", "spec", "--debug"][..],
+        &["emery", "-v", "-q", "show", "spec"][..],
+        &["emery", "--verbose", "show", "spec", "--quiet"][..],
+        &["emery", "show", "-q", "spec", "-vv"][..],
     ] {
         let (response, seen) = recorded(&provider, argv).await;
         let stderr = String::from_utf8_lossy(&response.stderr);
         assert_eq!(response.exit, USAGE_EXIT, "{argv:?}: {stderr}");
-        assert!(stderr.contains("--debug") && stderr.contains("--quiet"), "{argv:?}: {stderr}");
+        assert!(stderr.contains("--verbose") && stderr.contains("--quiet"), "{argv:?}: {stderr}");
         assert!(seen.is_empty(), "{argv:?}: a usage error reports no verbosity: {seen:?}");
     }
 
@@ -284,11 +287,11 @@ async fn verbosity_flags() {
         assert!(seen.is_empty(), "{argv:?}: {seen:?}");
     }
 
-    // listed on the root help
+    // listed on the root help, short and long
     let help = cli_ok(&provider, &["emery", "--help"]).await;
     let help = String::from_utf8_lossy(&help.stdout);
-    assert!(help.contains("--debug"), "{help}");
-    assert!(help.contains("--quiet"), "{help}");
+    assert!(help.contains("-v, --verbose"), "{help}");
+    assert!(help.contains("-q, --quiet"), "{help}");
 }
 
 // Omnia forwards raw argv; a routed-id argv[0] renders as `emery`.

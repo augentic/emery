@@ -26,7 +26,7 @@ pub const CONFIG_FILE: &str = "emery.toml";
 pub fn decode(
     adapters: &[String], descriptions: &[String], config: Option<&Path>,
 ) -> Result<Vec<SourceConfig>, Error> {
-    match config {
+    let (carrier, sources) = match config {
         Some(path) => {
             if !adapters.is_empty() || !descriptions.is_empty() {
                 return Err(bad_request!(
@@ -39,11 +39,16 @@ pub fn decode(
                 bad_request!("invalid argument --config: {description}")
             })?;
 
-            from_file(&path)
+            (path.display().to_string(), from_file(&path)?)
         }
-        None if adapters.is_empty() && descriptions.is_empty() => discover(),
-        None => from_argv(adapters, descriptions),
-    }
+        None if adapters.is_empty() && descriptions.is_empty() => {
+            (CONFIG_FILE.to_string(), discover()?)
+        }
+        None => ("argv".to_string(), from_argv(adapters, descriptions)?),
+    };
+    tracing::debug!(%carrier, sources = sources.len(), "sources decoded");
+
+    Ok(sources)
 }
 
 // Reads the project-root `emery.toml` for a run that names no sources. A
