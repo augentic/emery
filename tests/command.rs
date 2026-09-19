@@ -292,6 +292,20 @@ async fn verbosity_flags() {
     let help = String::from_utf8_lossy(&help.stdout);
     assert!(help.contains("-v, --verbose"), "{help}");
     assert!(help.contains("-q, --quiet"), "{help}");
+
+    // composed with the ambient directives after presets; quiet stays absolute
+    let rust_log = std::env::var("RUST_LOG").ok().filter(|directives| !directives.is_empty());
+    for (verbosity, preset) in [
+        (Verbosity::Info, "info"),
+        (Verbosity::Debug, "info,emery_cli=debug,emery_engine=debug,omnia_sdk=debug"),
+        (Verbosity::Trace, "debug,emery_cli=trace,emery_engine=trace,omnia_sdk=trace"),
+    ] {
+        let expected = rust_log
+            .as_ref()
+            .map_or_else(|| preset.to_owned(), |directives| format!("{preset},{directives}"));
+        assert_eq!(verbosity.into_filter(), expected);
+    }
+    assert_eq!(Verbosity::Quiet.into_filter(), "off");
 }
 
 // Omnia forwards raw argv; a routed-id argv[0] renders as `emery`.

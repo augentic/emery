@@ -14,7 +14,6 @@ mod text;
 
 use std::borrow::Cow;
 use std::ffi::OsString;
-use std::fmt::{self, Display, Formatter};
 use std::path::PathBuf;
 
 use clap::builder::{PossibleValue, PossibleValuesParser, TypedValueParser};
@@ -39,7 +38,6 @@ const SPECIFY_DESC: &str = "Generate spec.md and design.md from source adapters.
 const SHOW_DESC: &str = "Print an artifact from the current revision.\n\n\
     Text output contains only the artifact body. `--format json` also includes the \
     revision id and the typed document.";
-
 const NAME: &str = "emery";
 
 /// Executes the command described by `argv` using a [`Provider`].
@@ -147,22 +145,31 @@ pub enum Verbosity {
 }
 
 impl Verbosity {
-    /// Returns the `RUST_LOG` directives this level selects.
+    /// Returns the tracing directives this level selects, refined by the ambient `RUST_LOG`.
     ///
     /// - [`Self::Quiet`] selects `off`
     /// - [`Self::Info`] selects `info`
     /// - [`Self::Debug`] selects `info` plus `emery_cli`, `emery_engine`, and `omnia_sdk` at `debug`
     /// - [`Self::Trace`] selects `debug` plus `emery_cli`, `emery_engine`, and `omnia_sdk` at `trace`
+    ///
+    /// Every level but [`Self::Quiet`] appends the directives of a set `RUST_LOG`
+    /// after its own, so for a target both name the environment's wins.
     #[must_use]
-    pub const fn into_filter(self) -> &'static str {
-        match self {
-            Self::Quiet => "off",
+    pub fn into_filter(self) -> Cow<'static, str> {
+        let preset = match self {
+            Self::Quiet => return Cow::Borrowed("off"),
             Self::Info => "info",
             Self::Debug => "info,emery_cli=debug,emery_engine=debug,omnia_sdk=debug",
             Self::Trace => "debug,emery_cli=trace,emery_engine=trace,omnia_sdk=trace",
+        };
+        match std::env::var("RUST_LOG") {
+            Ok(rust_log) if !rust_log.is_empty() => Cow::Owned(format!("{preset},{rust_log}")),
+            _ => Cow::Borrowed(preset),
         }
     }
 }
+
+use std::fmt::{self, Display, Formatter};
 
 impl Display for Verbosity {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {

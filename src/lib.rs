@@ -41,14 +41,7 @@ async fn dispatch() -> Response {
     emery_cli::run(Provider, environment::get_arguments(), set_filter).await
 }
 
-// Sets the tracing filter for the guest to the level specified.
+// Reloads the guest tracing filter to the level the flags selected.
 fn set_filter(verbosity: Verbosity) {
-    let filter = verbosity.into_filter();
-    if verbosity != Verbosity::Quiet
-        && let Ok(rust_log) = std::env::var("RUST_LOG")
-        && omnia_wasi_otel::set_filter(&format!("{filter},{rust_log}")).is_ok()
-    {
-        return;
-    }
-    let _ = omnia_wasi_otel::set_filter(filter);
+    let _ = omnia_wasi_otel::set_filter(&verbosity.into_filter());
 }

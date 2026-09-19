@@ -232,7 +232,7 @@ async fn traced(provider: &Provider, argv: &[&str]) -> String {
     let _guard = tracing::subscriber::set_default(subscriber);
 
     let response = emery_cli::run(provider.clone(), argv.iter().copied(), |verbosity| {
-        let filter = EnvFilter::try_new(verbosity.to_string()).expect("filter that parses");
+        let filter = EnvFilter::try_new(verbosity.into_filter()).expect("filter that parses");
         handle.reload(filter).expect("reloads the filter");
     })
     .await;
