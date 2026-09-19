@@ -100,16 +100,13 @@ where
 struct App {
     #[command(subcommand)]
     verb: Verb,
-
-    /// Select the output format.
+    // Select the output format.
     #[arg(long, env = "EMERY_FORMAT", default_value = "text", global = true)]
     format: Format,
-
-    /// Show engine debug tracing on stderr; repeat for trace detail.
+    // Show engine debug tracing on stderr; repeat for trace detail.
     #[arg(short, long, action = ArgAction::Count, global = true)]
     verbose: u8,
-
-    /// Silence tracing.
+    // Silence tracing.
     #[arg(short, long, global = true)]
     quiet: bool,
 }
