@@ -28,7 +28,7 @@ emery specify <adapter>... [--description <adapter>=<text>] --quiet
 # or: emery specify --config [<path>] --quiet
 ```
 
-Specify dispatches model judgment and can take a while on large workspaces; it runs with `--quiet` per the plugin rule's *Tracing and output* contract (`--debug` replaces it when the operator asks for debug).
+Specify dispatches model judgment and can take a while on large workspaces; it runs with `--quiet` per the plugin rule's *Tracing and output* contract (`--verbose` replaces it when the operator asks for debug).
 
 ## Re-project
 

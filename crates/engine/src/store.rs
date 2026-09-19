@@ -61,6 +61,7 @@ async fn swap<S: StateStore + BlobStore>(
     StateStore::cas(store, CURRENT, observed.token.as_deref(), id.as_bytes())
         .await
         .context("swapping current revision")?;
+    tracing::debug!(%id, outgoing = ?observed.outgoing_id(), "revision committed");
 
     // The swap landed; prune the outgoing revision.
     if let Some(outgoing) = observed.outgoing_id().filter(|outgoing| *outgoing != id) {

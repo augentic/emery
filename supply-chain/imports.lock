@@ -177,13 +177,6 @@ user-id = 4484
 user-login = "hsivonen"
 user-name = "Henri Sivonen"
 
-[[publisher.find-msvc-tools]]
-version = "0.1.0"
-when = "2025-08-29"
-user-id = 539
-user-login = "cuviper"
-user-name = "Josh Stone"
-
 [[publisher.flate2]]
 version = "1.1.10"
 when = "2026-08-28"
@@ -297,13 +290,6 @@ when = "2025-10-03"
 user-id = 2915
 user-login = "Amanieu"
 user-name = "Amanieu d'Antras"
-
-[[publisher.prettyplease]]
-version = "0.2.37"
-when = "2025-08-19"
-user-id = 3618
-user-login = "dtolnay"
-user-name = "David Tolnay"
 
 [[publisher.prettyplease]]
 version = "0.3.0"
@@ -542,11 +528,6 @@ when = "2026-07-20"
 trusted-publisher = "github:bytecodealliance/wasm-tools"
 
 [[publisher.wasm-encoder]]
-version = "0.258.0"
-when = "2026-08-24"
-trusted-publisher = "github:bytecodealliance/wasm-tools"
-
-[[publisher.wasm-encoder]]
 version = "0.259.0"
 when = "2026-09-10"
 trusted-publisher = "github:bytecodealliance/wasm-tools"
@@ -562,11 +543,6 @@ when = "2026-07-20"
 trusted-publisher = "github:bytecodealliance/wasm-tools"
 
 [[publisher.wasm-metadata]]
-version = "0.258.0"
-when = "2026-08-24"
-trusted-publisher = "github:bytecodealliance/wasm-tools"
-
-[[publisher.wasm-metadata]]
 version = "0.259.0"
 when = "2026-09-10"
 trusted-publisher = "github:bytecodealliance/wasm-tools"
@@ -579,11 +555,6 @@ trusted-publisher = "github:bytecodealliance/wasm-tools"
 [[publisher.wasmparser]]
 version = "0.254.0"
 when = "2026-07-20"
-trusted-publisher = "github:bytecodealliance/wasm-tools"
-
-[[publisher.wasmparser]]
-version = "0.258.0"
-when = "2026-08-24"
 trusted-publisher = "github:bytecodealliance/wasm-tools"
 
 [[publisher.wasmparser]]
@@ -917,18 +888,8 @@ when = "2026-04-17"
 trusted-publisher = "github:bytecodealliance/wit-bindgen"
 
 [[publisher.wit-bindgen]]
-version = "0.61.1"
-when = "2026-08-25"
-trusted-publisher = "github:bytecodealliance/wit-bindgen"
-
-[[publisher.wit-bindgen]]
 version = "0.62.0"
 when = "2026-09-10"
-trusted-publisher = "github:bytecodealliance/wit-bindgen"
-
-[[publisher.wit-bindgen-core]]
-version = "0.61.1"
-when = "2026-08-25"
 trusted-publisher = "github:bytecodealliance/wit-bindgen"
 
 [[publisher.wit-bindgen-core]]
@@ -937,18 +898,8 @@ when = "2026-09-10"
 trusted-publisher = "github:bytecodealliance/wit-bindgen"
 
 [[publisher.wit-bindgen-rust]]
-version = "0.61.1"
-when = "2026-08-25"
-trusted-publisher = "github:bytecodealliance/wit-bindgen"
-
-[[publisher.wit-bindgen-rust]]
 version = "0.62.0"
 when = "2026-09-10"
-trusted-publisher = "github:bytecodealliance/wit-bindgen"
-
-[[publisher.wit-bindgen-rust-macro]]
-version = "0.61.1"
-when = "2026-08-25"
 trusted-publisher = "github:bytecodealliance/wit-bindgen"
 
 [[publisher.wit-bindgen-rust-macro]]
@@ -964,11 +915,6 @@ trusted-publisher = "github:bytecodealliance/wasm-tools"
 [[publisher.wit-component]]
 version = "0.254.0"
 when = "2026-07-20"
-trusted-publisher = "github:bytecodealliance/wasm-tools"
-
-[[publisher.wit-component]]
-version = "0.258.0"
-when = "2026-08-24"
 trusted-publisher = "github:bytecodealliance/wasm-tools"
 
 [[publisher.wit-component]]
@@ -984,11 +930,6 @@ trusted-publisher = "github:bytecodealliance/wasm-tools"
 [[publisher.wit-parser]]
 version = "0.254.0"
 when = "2026-07-20"
-trusted-publisher = "github:bytecodealliance/wasm-tools"
-
-[[publisher.wit-parser]]
-version = "0.258.0"
-when = "2026-08-24"
 trusted-publisher = "github:bytecodealliance/wasm-tools"
 
 [[publisher.wit-parser]]
@@ -1511,12 +1452,6 @@ This major version update has a few minor breaking changes but everything
 this crate has to do with iterators and `Result` and such. No `unsafe` or
 anything like that, all looks good.
 """
-
-[[audits.bytecode-alliance.audits.find-msvc-tools]]
-who = "Alex Crichton <alex@alexcrichton.com>"
-criteria = "safe-to-deploy"
-delta = "0.1.0 -> 0.1.4"
-notes = "Nothing out of the ordinary for a crate finding MSVC tooling."
 
 [[audits.bytecode-alliance.audits.foldhash]]
 who = "Alex Crichton <alex@alexcrichton.com>"
@@ -2224,19 +2159,6 @@ who = "Jan-Erik Rediger <jrediger@mozilla.com>"
 criteria = "safe-to-deploy"
 version = "0.1.9"
 aggregated-from = "https://raw.githubusercontent.com/mozilla/glean/main/supply-chain/audits.toml"
-
-[[audits.mozilla.audits.find-msvc-tools]]
-who = "Jan-Erik Rediger <jrediger@mozilla.com>"
-criteria = "safe-to-deploy"
-delta = "0.1.4 -> 0.1.8"
-aggregated-from = "https://raw.githubusercontent.com/mozilla/glean/main/supply-chain/audits.toml"
-
-[[audits.mozilla.audits.find-msvc-tools]]
-who = "Emilio Cobos Álvarez <emilio@crisal.io>"
-criteria = "safe-to-deploy"
-delta = "0.1.8 -> 0.1.12"
-notes = "Pretty minor changes, no new unsafe code."
-aggregated-from = "https://hg.mozilla.org/mozilla-central/raw-file/tip/supply-chain/audits.toml"
 
 [[audits.mozilla.audits.fnv]]
 who = "Bobby Holley <bobbyholley@gmail.com>"
