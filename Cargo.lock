@@ -1100,6 +1100,7 @@ dependencies = [
  "futures",
  "omnia-sdk",
  "omnia-test",
+ "omnia-wasi-otel",
  "schemars",
  "serde",
  "serde_json",

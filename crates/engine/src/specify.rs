@@ -177,7 +177,11 @@ impl<'a> Bound<'a> {
         Ok(bound)
     }
 
-    // Extracts the source under the kind its adapter declared at load.
+    #[tracing::instrument(
+        skip_all,
+        err(level = "warn"),
+        fields(source = %self.input.key, adapter = %self.adapter)
+    )]
     async fn extract<S: Source>(
         &self, provider: &S, kinds: &BTreeMap<String, SourceKind>,
     ) -> Result<Extract, Error> {
@@ -193,7 +197,10 @@ impl<'a> Bound<'a> {
 
         let findings = evidence.findings();
         if !findings.is_empty() {
-            return Err(server_error!("`{source}` returned invalid claims"));
+            return Err(server_error!(
+                "`{source}` returned invalid claims:\n{}",
+                findings.join("\n")
+            ));
         }
         tracing::debug!(%source, claims = evidence.claims.len(), "extracted");
 
