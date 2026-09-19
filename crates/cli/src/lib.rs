@@ -52,7 +52,7 @@ const NAME: &str = "emery";
 /// The global `--verbose` and `--quiet` flags select a [`Verbosity`] reported
 /// through `verbosity` once the grammar parses and before the verb runs.
 /// Combining them is a usage error, and the callback is never reached.
-pub async fn run<P, I, T, F>(provider: P, argv: I, set_filter: F) -> Response
+pub async fn run<P, I, T, F>(provider: P, argv: I, on_verbosity: F) -> Response
 where
     P: Provider,
     I: IntoIterator<Item = T>,
@@ -66,7 +66,7 @@ where
     };
 
     match app.verbosity() {
-        Ok(level) => set_filter(level),
+        Ok(level) => on_verbosity(level),
         Err(error) => return Response::usage(&error),
     }
 
@@ -100,13 +100,13 @@ where
 struct App {
     #[command(subcommand)]
     verb: Verb,
-    // Select the output format.
+    /// Select the output format.
     #[arg(long, env = "EMERY_FORMAT", default_value = "text", global = true)]
     format: Format,
-    // Show engine debug tracing on stderr; repeat for trace detail.
+    /// Show engine debug tracing on stderr; repeat for trace detail.
     #[arg(short, long, action = ArgAction::Count, global = true)]
     verbose: u8,
-    // Silence tracing.
+    /// Silence engine tracing.
     #[arg(short, long, global = true)]
     quiet: bool,
 }
@@ -135,7 +135,7 @@ impl App {
 /// [`Self::Debug`], and `-vv` or more is [`Self::Trace`].
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Verbosity {
-    /// No tracing, selected by `-q`.
+    /// No engine tracing, selected by `-q`.
     Quiet,
     /// INFO progress on a bare invocation.
     Info,
@@ -146,35 +146,23 @@ pub enum Verbosity {
 }
 
 impl Verbosity {
-    /// Returns the tracing directives this level selects, refined by the ambient `RUST_LOG`.
+    /// Returns the tracing directives this level selects, a `RUST_LOG` string.
     ///
     /// - [`Self::Quiet`] selects `off`
     /// - [`Self::Info`] selects `info`
     /// - [`Self::Debug`] selects `info` plus `emery_cli`, `emery_engine`, and `omnia_sdk` at `debug`
     /// - [`Self::Trace`] selects `debug` plus `emery_cli`, `emery_engine`, and `omnia_sdk` at `trace`
     ///
-    /// Every level but [`Self::Quiet`] appends the directives of a set `RUST_LOG`
-    /// after its own, so for a target both name the environment's wins.
+    /// The string is the level's defaults alone; the guest that installs it
+    /// lets the process `RUST_LOG` refine them.
     #[must_use]
-    pub fn into_filter(self) -> Cow<'static, str> {
-        let preset = match self {
-            Self::Quiet => return Cow::Borrowed("off"),
+    pub const fn directives(self) -> &'static str {
+        match self {
+            Self::Quiet => "off",
             Self::Info => "info",
             Self::Debug => "info,emery_cli=debug,emery_engine=debug,omnia_sdk=debug",
             Self::Trace => "debug,emery_cli=trace,emery_engine=trace,omnia_sdk=trace",
-        };
-        match std::env::var("RUST_LOG") {
-            Ok(rust_log) if !rust_log.is_empty() => Cow::Owned(format!("{preset},{rust_log}")),
-            _ => Cow::Borrowed(preset),
         }
-    }
-}
-
-use std::fmt::{self, Display, Formatter};
-
-impl Display for Verbosity {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", self.into_filter())
     }
 }
 

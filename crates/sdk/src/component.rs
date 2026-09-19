@@ -22,6 +22,7 @@ impl Model for Provider {}
 /// # Errors
 ///
 /// Returns the adapter's error lowered onto the guest error record.
+#[omnia_wasi_otel::instrument(name = "source_adapter_extract")]
 pub async fn call(
     extract: impl AsyncFnOnce(&Context<'_, Provider>) -> Result<Evidence, Error>,
     id: export::AdapterId, input: export::Input,

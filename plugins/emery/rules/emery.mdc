@@ -31,7 +31,7 @@ emery specify <adapter> --quiet
 
 **Debug mode**: when the operator explicitly asks for debug (says "debug", or passes `debug` / `--verbose` on the slash command), pass `--verbose` on **every** `emery` subprocess in that skill invocation (it replaces `--quiet` — the two flags are mutually exclusive, and combining them is a usage error).
 
-`--verbose` turns on the INFO progress filter plus the engine's debug tracing; repeated (`--verbose --verbose`) it adds the engine's trace detail. `--quiet` wins over any ambient `RUST_LOG`; a bare or `--verbose` run lets `RUST_LOG` refine its filter. The flags reach the engine alone: an adapter is its own guest, and only `RUST_LOG` on the process reaches its tracing.
+`--verbose` turns on the INFO progress filter plus the engine's debug tracing; repeated (`--verbose --verbose`) it adds the engine's trace detail. An ambient `RUST_LOG` refines every level, `--quiet` included, so a subprocess that must be silent runs without one. The flags reach the engine alone: an adapter is its own guest, and only `RUST_LOG` on the process reaches its tracing.
 
 Stream roles: the semantic CLI result (text or JSON envelope) is stdout; command failures and live tracing are stderr. Relay the semantic result or structured error once, verbatim; do not repeat or reformat tracing lines in the closing response.
 

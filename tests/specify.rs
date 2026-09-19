@@ -232,7 +232,7 @@ async fn traced(provider: &Provider, argv: &[&str]) -> String {
     let _guard = tracing::subscriber::set_default(subscriber);
 
     let response = emery_cli::run(provider.clone(), argv.iter().copied(), |verbosity| {
-        let filter = EnvFilter::try_new(verbosity.into_filter()).expect("filter that parses");
+        let filter = EnvFilter::try_new(verbosity.directives()).expect("filter that parses");
         handle.reload(filter).expect("reloads the filter");
     })
     .await;
@@ -773,7 +773,13 @@ async fn extras_missing() {
     bare.extras.clear();
     provider.source.evidence.insert("docs".to_string(), Ok(evidence(vec![bare])));
 
-    fail(&provider, &["emery", "specify", "docs"], 3, "server_error").await;
+    let envelope = fail(&provider, &["emery", "specify", "docs"], 3, "server_error").await;
+    assert!(
+        envelope["message"].as_str().is_some_and(|message| message.contains(
+            "- claim 0: `requirement` `greeting.behaviour` is missing extra `statement`"
+        )),
+        "{envelope}"
+    );
 }
 
 // An adapter's upstream failure reaches the public boundary as the adapter
