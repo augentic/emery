@@ -38,14 +38,36 @@ where
 }
 
 /// Returns the check's verdict on a candidate: clean, or the findings to correct.
-pub fn gate(findings: Findings) -> Result<(), Findings> {
-    if findings.is_empty() { Ok(()) } else { Err(findings) }
+///
+/// A rejection is reported at DEBUG with its findings, under the source `key`
+/// and, for a mining turn, its `seam`.
+pub fn gate(findings: Findings, key: &str, seam: Option<usize>) -> Result<(), Findings> {
+    if findings.is_empty() {
+        return Ok(());
+    }
+    tracing::debug!(%key, seam, ?findings, "candidate rejected");
+    Err(findings)
 }
 
 /// Returns the handler that answers the reference tools from `docs` and then [`RUNTIME`].
+///
+/// Each call is reported at DEBUG with its arguments as the model sent them,
+/// under the source `key` and, for a mining turn, its `seam`.
 #[must_use]
-pub fn answering(docs: &'static [Doc]) -> Tools {
-    Box::new(move |call: ToolCall| -> ToolFuture { Box::pin(ready(answer(docs, &call))) })
+pub fn answering(docs: &'static [Doc], key: &str, seam: Option<usize>) -> Tools {
+    let key = key.to_owned();
+    Box::new(move |call: ToolCall| -> ToolFuture {
+        let answered = answer(docs, &call);
+        tracing::debug!(
+            %key,
+            seam,
+            tool = %call.name,
+            arguments = %call.arguments,
+            error = answered.as_deref().err(),
+            "answered"
+        );
+        Box::pin(ready(answered))
+    })
 }
 
 // The doc comments on these argument types reach the model: `JsonSchema`

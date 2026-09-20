@@ -85,8 +85,6 @@ pub async fn extract<P: Model>(
     let partials = join(key, outcomes)?;
     let claims: Vec<_> = partials.into_iter().flat_map(|partial| partial.claims).collect();
 
-    tracing::debug!(%key, claims = claims.len(), "extracted");
-
     Ok(Evidence { claims })
 }
 
@@ -165,31 +163,50 @@ impl<'a> Plan<'a> {
 // One seam's turn: the question asked with the seam's brief, the reference
 // tools answered from `docs`, and the claim gate as the check the backend
 // loops on until the answer is clean or its rounds are spent. A turn that
-// fails upstream is put once more, and the second outcome stands.
-#[tracing::instrument(skip_all, err(level = "warn"), fields(key = %ctx.input.key, seam = index))]
+// fails upstream is put once more, and the second outcome stands. The turn
+// is one of several in flight, so its events name the seam themselves; a
+// failure's description is `join`'s to report, once, so the event carries
+// the class alone.
+#[tracing::instrument(skip_all, fields(key = %ctx.input.key, seam = index))]
 async fn turn<P: Model>(
     question: &Question<Evidence>, ctx: &Context<'_, P>, docs: &'static [Doc], index: usize,
     plan: &Plan<'_>,
 ) -> Result<Evidence, Error> {
+    let key = &ctx.input.key;
     let brief = Brief {
         adapter_id: ctx.adapter_id,
-        key: &ctx.input.key,
+        key,
         plan,
     };
     let ask = || {
         question
-            .ask(ctx.model, brief.to_string(), Some(question::answering(docs)), |answer| {
-                question::gate(answer.findings())
-            })
+            .ask(
+                ctx.model,
+                brief.to_string(),
+                Some(question::answering(docs, key, Some(index))),
+                |answer| question::gate(answer.findings(), key, Some(index)),
+            )
             .map_err(Error::from)
     };
-    match ask().await {
+
+    tracing::info!(%key, seam = index, files = plan.size(), "mining");
+    let outcome = match ask().await {
         Err(error @ Error::BadGateway { .. }) => {
-            tracing::warn!(%error, "failed upstream; putting the turn once more");
+            tracing::warn!(%key, seam = index, %error, "failed upstream; putting the turn once more");
             ask().await
         }
         outcome => outcome,
+    };
+    match &outcome {
+        Ok(evidence) => {
+            tracing::debug!(%key, seam = index, claims = evidence.claims.len(), "mined");
+        }
+        Err(error) => {
+            tracing::warn!(%key, seam = index, code = %error.code(), "failed");
+        }
     }
+
+    outcome
 }
 
 // The user turn of one seam: which source is bound, what the seam is lent,

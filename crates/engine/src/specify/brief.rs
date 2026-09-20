@@ -63,7 +63,7 @@ pub trait Brief: Display + Sync + Sized {
     /// - Returns [`Error::ServerError`] when a required prompt document is not
     ///   embedded or an accepted answer cannot be converted.
     /// - Returns [`Error::BadGateway`] when the model operation fails.
-    #[tracing::instrument(skip_all, err(level = "warn"), fields(question = Self::NAME))]
+    #[tracing::instrument(skip_all, fields(question = Self::NAME))]
     async fn judge<M: Model>(self, model: &M) -> Result<Self::Output, Error> {
         tracing::info!(question = Self::NAME, "asking the model");
         let mut system = Vec::with_capacity(Self::PROSE.len());
