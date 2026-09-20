@@ -177,11 +177,7 @@ impl<'a> Bound<'a> {
         Ok(bound)
     }
 
-    #[tracing::instrument(
-        skip_all,
-        err(level = "warn"),
-        fields(source = %self.input.key, adapter = %self.adapter)
-    )]
+    #[tracing::instrument(skip_all, fields(source = %self.input.key, adapter = %self.adapter))]
     async fn extract<S: Source>(
         &self, provider: &S, kinds: &BTreeMap<String, SourceKind>,
     ) -> Result<Extract, Error> {

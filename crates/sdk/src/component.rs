@@ -19,6 +19,9 @@ impl Model for Provider {}
 
 /// Calls an adapter's extraction over the lifted input and the host model.
 ///
+/// The guest's tracing filter is set to [`FILTER`] before the adapter runs;
+/// an adapter that wants another level sets its own afterwards.
+///
 /// # Errors
 ///
 /// Returns the adapter's error lowered onto the guest error record.
@@ -27,6 +30,11 @@ pub async fn call(
     extract: impl AsyncFnOnce(&Context<'_, Provider>) -> Result<Evidence, Error>,
     id: export::AdapterId, input: export::Input,
 ) -> Result<export::Evidence, export::Error> {
+    // The subscriber the telemetry scope installed opens at omnia's `error`.
+    if let Err(error) = omnia_wasi_otel::set_filter("info") {
+        eprintln!("tracing filter not reloaded: {error:#}");
+    }
+
     let input = SourceInput::from(input);
     let ctx = Context {
         adapter_id: &id,

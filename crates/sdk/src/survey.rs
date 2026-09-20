@@ -53,11 +53,21 @@ pub async fn surfaces<P: Model>(
         root,
     };
 
+    tracing::info!(%key, "surveying");
     let inventory = question
-        .ask(ctx.model, brief.to_string(), Some(question::answering(docs)), |answer| {
-            question::gate(answer.findings(root, &mut keep))
+        .ask(ctx.model, brief.to_string(), Some(question::answering(docs, key, None)), |answer| {
+            question::gate(answer.findings(root, &mut keep), key, None)
         })
         .await?;
+    tracing::debug!(
+        %key,
+        surfaces = ?inventory
+            .surfaces
+            .iter()
+            .map(|surface| format!("{} @ {}", surface.name, surface.entry))
+            .collect::<Vec<_>>(),
+        "surveyed"
+    );
 
     Ok(inventory
         .surfaces

@@ -79,6 +79,12 @@
 //!
 //! Fallible APIs return [`Error`]. Use [`bad_request!`] when an adapter rejects
 //! unusable input.
+//!
+//! Progress is `tracing` on stderr. An extraction call opens the guest's filter
+//! at `info`, which the process `RUST_LOG` refines: INFO as each model turn
+//! opens, WARN when one is put once more or fails, DEBUG for what each turn
+//! yielded and for every reference-tool call and rejected candidate. Every
+//! event names the source key and, within a seam, its index.
 
 #[cfg(target_arch = "wasm32")]
 #[doc(hidden)]
