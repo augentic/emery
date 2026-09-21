@@ -78,18 +78,18 @@
 //! unusable input.
 //!
 //! Progress is emitted through `tracing`; every event names the source key
-//! and, within a seam, its index.
+//! and, within a seam, its index. An extraction opens at the level the
+//! caller named on the dispatch chain (`omnia_wasi_otel::level()`; the
+//! engine's `-v` / `-q` flags name it), mapped onto the crates the guest
+//! owns — the adapter's own, `emery_sdk`, and `omnia_sdk` — with the
+//! adapter's `RUST_LOG` applied on top.
 
-#[cfg(target_arch = "wasm32")]
-#[doc(hidden)]
-pub mod component;
 mod extract;
 mod level;
 mod question;
 pub mod survey;
 pub mod workspace;
 
-pub use emery_adapter::TRACING;
 #[cfg(target_arch = "wasm32")]
 #[doc(inline)]
 pub use emery_adapter::source::export;
@@ -100,8 +100,6 @@ pub use emery_adapter::source::{
 pub use emery_prose::{Doc, body, check, find, prose};
 pub use omnia_sdk::{Error, Model, bad_gateway, bad_request, not_found, server_error};
 
-#[cfg(target_arch = "wasm32")]
-pub use self::component::Provider;
 pub use self::extract::{CONCURRENT, Seam, extract};
 
 /// The runtime references every adapter prompt may link.
@@ -140,12 +138,47 @@ macro_rules! source_adapter {
                 async fn extract(
                     id: $crate::export::AdapterId, input: $crate::export::Input,
                 ) -> Result<$crate::export::Evidence, $crate::export::Error> {
-                    $crate::component::call($extract, ::core::env!("CARGO_CRATE_NAME"), id, input)
-                        .await
+                    $crate::call($extract, ::core::env!("CARGO_CRATE_NAME"), id, input).await
                 }
             }
         };
     };
+}
+
+/// The host model an extraction is put to on WebAssembly.
+///
+/// [`source_adapter!`] binds it into every [`Context`] it builds; the empty
+/// [`Model`] impl delegates each request through Omnia's WASI interface.
+#[cfg(target_arch = "wasm32")]
+#[derive(Clone, Copy, Debug, Default)]
+pub struct Provider;
+
+#[cfg(target_arch = "wasm32")]
+impl Model for Provider {}
+
+// The `extract` arm of `source_adapter!`: the WIT input and the host model lifted onto a
+// `Context` for the adapter's `extract`, its outcome lowered onto the WIT records.
+#[cfg(target_arch = "wasm32")]
+#[doc(hidden)]
+#[omnia_wasi_otel::instrument(name = "source_adapter_extract")]
+pub async fn call(
+    extract: impl AsyncFnOnce(&Context<'_, Provider>) -> Result<Evidence, Error>, adapter: &str,
+    id: export::AdapterId, input: export::Input,
+) -> Result<export::Evidence, export::Error> {
+    // The chain's level admitted this span; the preset narrows what follows to the crates the
+    // guest owns.
+    let directives = level::directives(omnia_wasi_otel::level(), adapter);
+    if let Err(error) = omnia_wasi_otel::set_filter(&directives) {
+        eprintln!("tracing filter not reloaded: {error:#}");
+    }
+
+    let input = SourceInput::from(input);
+    let ctx = Context {
+        adapter_id: &id,
+        input: &input,
+        model: &Provider,
+    };
+    Ok(extract(&ctx).await?.into())
 }
 
 /// Returns the `metadata` answer for an adapter reading `kind` sources.
