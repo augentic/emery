@@ -270,6 +270,14 @@ criteria = "safe-to-deploy"
 version = "2.11.1"
 criteria = "safe-to-deploy"
 
+[[exemptions.der]]
+version = "0.8.2"
+criteria = "safe-to-deploy"
+
+[[exemptions.der_derive]]
+version = "0.8.0"
+criteria = "safe-to-deploy"
+
 [[exemptions.derive_builder]]
 version = "0.20.2"
 criteria = "safe-to-deploy"
@@ -316,6 +324,10 @@ criteria = "safe-to-deploy"
 
 [[exemptions.fixedbitset]]
 version = "0.5.7"
+criteria = "safe-to-deploy"
+
+[[exemptions.flagset]]
+version = "0.4.7"
 criteria = "safe-to-deploy"
 
 [[exemptions.fromenv]]
@@ -427,7 +439,7 @@ version = "1.11.1"
 criteria = "safe-to-deploy"
 
 [[exemptions.hyper-rustls]]
-version = "0.27.9"
+version = "0.27.10"
 criteria = "safe-to-deploy"
 
 [[exemptions.hyper-timeout]]
@@ -731,7 +743,7 @@ version = "0.9.5"
 criteria = "safe-to-deploy"
 
 [[exemptions.rand]]
-version = "0.10.2"
+version = "0.10.3"
 criteria = "safe-to-deploy"
 
 [[exemptions.rand_core]]
@@ -818,10 +830,6 @@ criteria = "safe-to-deploy"
 version = "1.2.2"
 criteria = "safe-to-deploy"
 
-[[exemptions.sea-query]]
-version = "1.0.2"
-criteria = "safe-to-deploy"
-
 [[exemptions.secrecy]]
 version = "0.10.3"
 criteria = "safe-to-deploy"
@@ -890,6 +898,10 @@ criteria = "safe-to-deploy"
 version = "0.13.5"
 criteria = "safe-to-deploy"
 
+[[exemptions.spki]]
+version = "0.8.0"
+criteria = "safe-to-deploy"
+
 [[exemptions.sqlite-wasm-rs]]
 version = "0.5.5"
 criteria = "safe-to-deploy"
@@ -948,6 +960,14 @@ criteria = "safe-to-deploy"
 
 [[exemptions.tinyvec]]
 version = "1.13.3"
+criteria = "safe-to-deploy"
+
+[[exemptions.tls_codec]]
+version = "0.4.2"
+criteria = "safe-to-deploy"
+
+[[exemptions.tls_codec_derive]]
+version = "0.4.2"
 criteria = "safe-to-deploy"
 
 [[exemptions.tokio]]
@@ -1128,6 +1148,10 @@ criteria = "safe-to-deploy"
 
 [[exemptions.writeable]]
 version = "0.6.4"
+criteria = "safe-to-deploy"
+
+[[exemptions.x509-cert]]
+version = "0.3.0"
 criteria = "safe-to-deploy"
 
 [[exemptions.yoke]]

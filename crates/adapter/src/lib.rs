@@ -1,3 +1,5 @@
+#![warn(missing_docs, clippy::missing_errors_doc)]
+
 //! Defines the contract between the Emery engine and source adapters.
 //!
 //! A source adapter receives a [`source::SourceInput`] and returns
@@ -40,6 +42,9 @@
 //!   [`source::Evidence::findings`] before evidence is accepted.
 
 pub mod source;
+
+/// The baggage key that names the tracing level an adapter extraction opens at.
+pub const TRACING: &str = "emery.tracing";
 
 /// Returns whether `value` is lowercase kebab-case.
 ///

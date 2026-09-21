@@ -1,40 +1,47 @@
-//! Answers the `source-adapter` guest interface over an adapter's functions.
-//!
-//! [`source_adapter!`](crate::source_adapter) lowers the adapter's metadata
-//! with the contract's `From` and answers `extract` through [`call`], which
-//! lifts the WIT input onto a [`Context`](crate::Context) carrying the host
-//! model, runs the adapter's extraction, and lowers its outcome.
+use tracing::level_filters::LevelFilter;
 
-use crate::{Context, Error, Evidence, Model, SourceInput, export};
+use crate::{Context, Error, Evidence, Model, SourceInput, TRACING, export, level};
 
 /// The default model provider supplied to adapter extraction functions.
 ///
-/// [`source_adapter!`](crate::source_adapter) places this provider in each
-/// [`Context`](crate::Context). It delegates model requests through Omnia's
-/// WebAssembly interface.
+/// It delegates model requests through Omnia's WebAssembly interface.
 #[derive(Clone, Copy, Debug, Default)]
 pub struct Provider;
 
 impl Model for Provider {}
 
-/// Calls an adapter's extraction over the lifted input and the host model.
-///
-/// The guest's tracing filter is set to [`FILTER`] before the adapter runs;
-/// an adapter that wants another level sets its own afterwards.
-///
-/// # Errors
-///
-/// Returns the adapter's error lowered onto the guest error record.
-#[omnia_wasi_otel::instrument(name = "source_adapter_extract")]
+#[doc(hidden)]
 pub async fn call(
+    extract: impl AsyncFnOnce(&Context<'_, Provider>) -> Result<Evidence, Error>, adapter: &str,
+    id: export::AdapterId, input: export::Input,
+) -> Result<export::Evidence, export::Error> {
+    // The scope starts at `error`; reload before `run` opens its instrumented span.
+    omnia_wasi_otel::scope(move || async move {
+        reload(adapter);
+        run(extract, id, input).await
+    })
+    .await
+}
+
+fn reload(adapter: &str) {
+    let level = omnia_wasi_otel::baggage().get(TRACING).map_or(LevelFilter::INFO, |value| {
+        let value = value.as_str();
+        value.parse().unwrap_or_else(|err| {
+            eprintln!("tracing level `{value}` not recognised, opening at info: {err}");
+            LevelFilter::INFO
+        })
+    });
+
+    if let Err(error) = omnia_wasi_otel::set_filter(&level::directives(level, adapter)) {
+        eprintln!("tracing filter not reloaded: {error:#}");
+    }
+}
+
+#[omnia_wasi_otel::instrument(name = "source_adapter_extract")]
+async fn run(
     extract: impl AsyncFnOnce(&Context<'_, Provider>) -> Result<Evidence, Error>,
     id: export::AdapterId, input: export::Input,
 ) -> Result<export::Evidence, export::Error> {
-    // The subscriber the telemetry scope installed opens at omnia's `error`.
-    if let Err(error) = omnia_wasi_otel::set_filter("info") {
-        eprintln!("tracing filter not reloaded: {error:#}");
-    }
-
     let input = SourceInput::from(input);
     let ctx = Context {
         adapter_id: &id,
