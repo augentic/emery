@@ -108,7 +108,7 @@ pub use self::extract::{CONCURRENT, Seam, extract};
 ///
 /// `claims.md` defines claims and their gate; `reconciliation.md` explains
 /// where accepted claims land. Prompts link these paths without listing them
-/// in their own table, and pass [`RUNTIME`] to [`check`] as imports.
+/// in their own table; pass [`RUNTIME`] to [`check`] as imports.
 pub static RUNTIME: &[Doc] = prose!["../prose/claims.md", "../prose/reconciliation.md"];
 
 /// Exports an adapter's metadata and extraction functions as a component.
