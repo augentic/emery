@@ -58,20 +58,16 @@ pub async fn specify<P: Model + Source + StateStore + BlobStore + Plugins>(
 ) -> Result<SpecifyOutput, Error> {
     let provider = context.provider();
 
-    // load source adapters
     let bound = Bound::all(&input.sources)?;
     let kinds = &adapter::load(provider, bound.iter().map(|source| source.adapter)).await?;
 
-    // extract all sources in parallel, each ranked by its adapter's kind
     let extracts =
         future::try_join_all(bound.iter().map(|source| source.extract(provider, kinds))).await?;
 
-    // synthesise extracts into a unified set of specifications
     let bases = GroupingBrief::new(&extracts).derive(provider).await?;
     let spec = SpecBrief::new(&extracts, &bases).judge(provider).await?;
     let design = DesignBrief::new(&extracts, &spec).judge(provider).await?;
 
-    // commit the revision
     let (revision, diff) = store::commit(provider, &Revision { spec, design }).await?;
 
     Ok(SpecifyOutput { revision, diff })
@@ -142,17 +138,12 @@ pub struct SpecifyOutput {
     pub diff: Option<Diff>,
 }
 
-// One source bound to its adapter: the adapter the call routes to and the
-// input it carries.
 struct Bound<'a> {
     adapter: &'a AdapterRef,
     input: SourceInput,
 }
 
 impl<'a> Bound<'a> {
-    // Binds every source under the rules every transport must get — a
-    // non-empty list, unique keys, and each source's own — before any
-    // adapter loads.
     fn all(sources: &'a [SourceConfig]) -> Result<Vec<Self>, Error> {
         if sources.is_empty() {
             return Err(Error::BadRequest {
@@ -208,8 +199,6 @@ impl<'a> Bound<'a> {
     }
 }
 
-// One source's validated evidence, under the key the documents cite it by
-// and the kind its adapter declared, which ranks it against the others.
 #[derive(Debug)]
 struct Extract {
     source: String,
@@ -217,8 +206,6 @@ struct Extract {
     evidence: Evidence,
 }
 
-// The synthesis corpus; `tests::corpus` holds the list to the tree and to
-// the briefs that read it.
 static PROSE: &[emery_prose::Doc] = emery_prose::prose![
     "../prose/authority.md",
     "../prose/claim-landing.md",
@@ -237,9 +224,6 @@ mod tests {
     use super::brief::Brief as _;
     use super::{DesignBrief, GroupingBrief, SpecBrief};
 
-    // Keep (entry-point-unreachable): a synthesis document the list leaves
-    // out, or a link no listed document answers, is invisible to every run;
-    // one no brief puts to the model is embedded and never read.
     #[test]
     fn corpus() {
         let tree = Path::new(env!("CARGO_MANIFEST_DIR")).join("prose");

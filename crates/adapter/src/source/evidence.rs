@@ -29,25 +29,6 @@ fn is_claim_id(value: &str) -> bool {
 ///
 /// The source kind is declared in adapter metadata and is not part of this
 /// document. Unknown document fields are rejected during deserialisation.
-///
-/// # Examples
-///
-/// ```
-/// use emery_adapter::source::Evidence;
-///
-/// let evidence: Evidence = serde_json::from_str(
-///     r#"{
-///         "claims": [{
-///             "kind": "requirement",
-///             "id": "orders.create",
-///             "path": "docs/orders.md#L3",
-///             "statement": "POST /orders creates an order."
-///         }]
-///     }"#,
-/// )?;
-/// assert!(evidence.findings().is_empty());
-/// # Ok::<(), serde_json::Error>(())
-/// ```
 #[derive(Clone, Debug, Deserialize, JsonSchema)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
 #[schemars(title = "Emery evidence answer")]
@@ -247,15 +228,6 @@ impl ClaimKind {
     ///
     /// Requirements, criteria, and examples must: they are the kinds a
     /// specification cites by id.
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// use emery_adapter::source::ClaimKind;
-    ///
-    /// assert!(ClaimKind::Requirement.requires_id());
-    /// assert!(!ClaimKind::Decision.requires_id());
-    /// ```
     #[must_use]
     pub const fn requires_id(self) -> bool {
         matches!(self, Self::Requirement | Self::Criterion | Self::Example)
@@ -263,14 +235,8 @@ impl ClaimKind {
 
     /// Returns the extras a complete claim of this kind must carry.
     ///
-    /// # Examples
-    ///
-    /// ```
-    /// use emery_adapter::source::ClaimKind;
-    ///
-    /// assert_eq!(ClaimKind::Criterion.required_extras(), ["criterion"]);
-    /// assert!(ClaimKind::Decision.required_extras().is_empty());
-    /// ```
+    /// Requirements need `statement`, criteria need `criterion`, examples
+    /// need `replay-digest`, and other kinds need none.
     #[must_use]
     pub const fn required_extras(self) -> &'static [&'static str] {
         match self {

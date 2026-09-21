@@ -17,6 +17,7 @@ use emery_cli::Verbosity;
 use omnia_sdk::api::command::{Response, USAGE_EXIT};
 use serde_json::Value;
 use support::{Provider, cli, cli_ok, fail};
+use tracing::level_filters::LevelFilter;
 use verbs::verbs;
 
 struct Case {
@@ -292,18 +293,25 @@ async fn verbosity_flags() {
     let help = String::from_utf8_lossy(&help.stdout);
     assert!(help.contains("-v, --verbose"), "{help}");
     assert!(help.contains("-q, --quiet"), "{help}");
-    assert!(help.contains("Show engine debug tracing on stderr"), "{help}");
-    assert!(help.contains("Silence engine tracing"), "{help}");
+    assert!(help.contains("Show debug tracing on stderr"), "{help}");
+    assert!(help.contains("Silence tracing"), "{help}");
 
-    // each level is one deterministic preset; the guest telemetry layer
-    // applies the process RUST_LOG after it
-    for (verbosity, expected) in [
-        (Verbosity::Quiet, "off"),
-        (Verbosity::Info, "info"),
-        (Verbosity::Debug, "info,emery_cli=debug,emery_engine=debug,omnia_sdk=debug"),
-        (Verbosity::Trace, "debug,emery_cli=trace,emery_engine=trace,omnia_sdk=trace"),
+    for (verbosity, directives, level) in [
+        (Verbosity::Quiet, "off", LevelFilter::OFF),
+        (Verbosity::Info, "info", LevelFilter::INFO),
+        (
+            Verbosity::Debug,
+            "info,emery_cli=debug,emery_engine=debug,omnia_sdk=debug",
+            LevelFilter::DEBUG,
+        ),
+        (
+            Verbosity::Trace,
+            "debug,emery_cli=trace,emery_engine=trace,omnia_sdk=trace",
+            LevelFilter::TRACE,
+        ),
     ] {
-        assert_eq!(verbosity.directives(), expected);
+        assert_eq!(verbosity.directives(), directives);
+        assert_eq!(verbosity.level(), level);
     }
 }
 

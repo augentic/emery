@@ -6,14 +6,14 @@
 
 #![cfg(target_arch = "wasm32")]
 
+use emery_adapter::TRACING;
 use emery_cli::Verbosity;
 use omnia_sdk::api::command::{self, Response};
 use omnia_sdk::{BlobStore, Model, Plugins, StateStore};
 use wasip3::cli::environment;
 use wasip3::exports::cli::run::Guest;
 
-// The bare provider: every capability keeps its WASI-backed default body, so
-// each impl is empty and the runtime's grants decide what the engine can do.
+// Empty impls retain the WASI defaults selected by the runtime's grants.
 struct Provider;
 
 impl Model for Provider {}
@@ -22,10 +22,6 @@ impl BlobStore for Provider {}
 impl Plugins for Provider {}
 impl emery_adapter::source::Source for Provider {}
 
-// What `omnia_sdk::command!(dispatch)` expands to, written out so the export
-// reads in place: `wasi:cli/run` is exported on a private type whose `run`
-// hands the entry to `execute_wasi`, the one owner of telemetry
-// initialization, flushing, channel writes, and process exit.
 struct CliGuest;
 
 wasip3::cli::command::export!(CliGuest);
@@ -38,13 +34,13 @@ impl Guest for CliGuest {
 }
 
 async fn dispatch() -> Response {
-    emery_cli::run(Provider, environment::get_arguments(), set_filter).await
+    emery_cli::run(Provider, environment::get_arguments(), on_verbosity).await
 }
 
-// Reloads the guest tracing filter to the level the flags selected; the
-// guest's `RUST_LOG` refines whatever the level sets.
-fn set_filter(verbosity: Verbosity) {
+// Baggage carries the level through link dispatches to adapter guests.
+fn on_verbosity(verbosity: Verbosity) {
     if let Err(error) = omnia_wasi_otel::set_filter(verbosity.directives()) {
         eprintln!("tracing filter not reloaded: {error:#}");
     }
+    omnia_wasi_otel::set_baggage([(TRACING, verbosity.level().to_string())]);
 }

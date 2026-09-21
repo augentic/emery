@@ -1,8 +1,3 @@
-//! Defines embedded documents and path-based lookup functions.
-//!
-//! Document paths are stable, tree-relative identifiers. Both [`find`] and
-//! [`body`] compare them exactly.
-
 /// An embedded Markdown document.
 #[derive(Clone, Copy, Debug)]
 pub struct Doc {
@@ -12,19 +7,8 @@ pub struct Doc {
     pub body: &'static str,
 }
 
-// The directory segment a listed file must sit beneath; its table path starts after it.
 const TREE: &[u8] = b"prose/";
 
-/// Returns the tree-relative path of the file at `path`: what follows its `prose/` segment.
-///
-/// `../prose/references/ids.md` and `prose/references/ids.md` both yield
-/// `references/ids.md`. The first `prose/` segment counts, so a document
-/// beneath a nested `prose/` keeps that part of its path.
-///
-/// # Panics
-///
-/// Panics when no segment of `path` is `prose`. The macro calls this in a
-/// `static` initializer, where the panic fails the build at the list.
 #[doc(hidden)]
 #[must_use]
 pub const fn within(path: &'static str) -> &'static str {
@@ -52,46 +36,12 @@ const fn names_tree(bytes: &[u8], at: usize) -> bool {
 }
 
 /// Returns the document at `path`, if the table embeds one.
-///
-/// # Examples
-///
-/// ```
-/// use emery_prose::{Doc, find};
-///
-/// static PROSE: &[Doc] = &[
-///     Doc {
-///         path: "extract.md",
-///         body: "Extract every claim.",
-///     },
-///     Doc {
-///         path: "references/ids.md",
-///         body: "# Ids",
-///     },
-/// ];
-///
-/// assert_eq!(find(PROSE, "references/ids.md").map(|doc| doc.body), Some("# Ids"));
-/// assert!(find(PROSE, "references/missing.md").is_none());
-/// ```
 #[must_use]
 pub fn find<'d>(docs: &'d [Doc], path: &str) -> Option<&'d Doc> {
     docs.iter().find(|doc| doc.path == path)
 }
 
 /// Returns the body of the document at `path`, if the table embeds one.
-///
-/// # Examples
-///
-/// ```
-/// use emery_prose::{Doc, body};
-///
-/// let docs = [Doc {
-///     path: "extract.md",
-///     body: "Extract every claim.",
-/// }];
-///
-/// assert_eq!(body(&docs, "extract.md"), Some("Extract every claim."));
-/// assert_eq!(body(&docs, "missing.md"), None);
-/// ```
 #[must_use]
 pub fn body(docs: &[Doc], path: &str) -> Option<&'static str> {
     find(docs, path).map(|doc| doc.body)

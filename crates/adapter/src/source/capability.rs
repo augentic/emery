@@ -104,16 +104,6 @@ pub struct SourceInput {
 
 impl SourceInput {
     /// Returns an input backed by the read-only directory at `root`.
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// use emery_adapter::source::{SourceContent, SourceInput};
-    ///
-    /// let input = SourceInput::workspace("docs", "./docs");
-    /// assert_eq!(input.key, "docs");
-    /// assert_eq!(input.content, SourceContent::Workspace("./docs".into()));
-    /// ```
     #[must_use]
     pub fn workspace(key: impl Into<String>, root: impl Into<String>) -> Self {
         Self {
@@ -123,16 +113,6 @@ impl SourceInput {
     }
 
     /// Returns an input containing `text` without an associated workspace.
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// use emery_adapter::source::{SourceContent, SourceInput};
-    ///
-    /// let input = SourceInput::value("intent", "Preserve compatibility.");
-    /// assert_eq!(input.key, "intent");
-    /// assert_eq!(input.content, SourceContent::Value("Preserve compatibility.".into()));
-    /// ```
     #[must_use]
     pub fn value(key: impl Into<String>, text: impl Into<String>) -> Self {
         Self {

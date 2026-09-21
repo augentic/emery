@@ -1,3 +1,5 @@
+#![warn(missing_docs, clippy::missing_errors_doc)]
+
 //! Provides the types and functions a source adapter is written with.
 //!
 //! A source adapter reads a [`SourceInput`] and returns typed [`Evidence`].
@@ -58,11 +60,6 @@
 //! # fn main() {}
 //! ```
 //!
-//! An adapter lists its `prose/` directory with [`prose!`]
-//! (`prose!["../prose/extract.md", ..]` from `src/lib.rs`) and holds the list
-//! to the tree with [`check`], [`RUNTIME`] as the imports. Its prompts link
-//! those shared references as `claims.md` without listing them.
-//!
 //! # Vocabulary
 //!
 //! - **Seam**: the portion of a source handled by one model request. See
@@ -80,20 +77,19 @@
 //! Fallible APIs return [`Error`]. Use [`bad_request!`] when an adapter rejects
 //! unusable input.
 //!
-//! Progress is `tracing` on stderr. An extraction call opens the guest's filter
-//! at `info`, which the process `RUST_LOG` refines: INFO as each model turn
-//! opens, WARN when one is put once more or fails, DEBUG for what each turn
-//! yielded and for every reference-tool call and rejected candidate. Every
-//! event names the source key and, within a seam, its index.
+//! Progress is emitted through `tracing`; every event names the source key
+//! and, within a seam, its index.
 
 #[cfg(target_arch = "wasm32")]
 #[doc(hidden)]
 pub mod component;
 mod extract;
+mod level;
 mod question;
 pub mod survey;
 pub mod workspace;
 
+pub use emery_adapter::TRACING;
 #[cfg(target_arch = "wasm32")]
 #[doc(inline)]
 pub use emery_adapter::source::export;
@@ -110,39 +106,9 @@ pub use self::extract::{CONCURRENT, Seam, extract};
 
 /// The runtime references every adapter prompt may link.
 ///
-/// - `claims.md` — the claim `id` grammar, `path` anchors, the skip roots,
-///   and the fail-closed gate.
-/// - `reconciliation.md` — the `specify` pipeline and where extracted claims
-///   land in it.
-///
-/// A prompt links them as it links the adapter's own references
-/// (`claims.md` from `extract.md`), and the model reads them through
-/// `read_doc` beside the adapter's table. An adapter never lists them: pass
-/// this table to [`check`] as the imports, and a listed document at one of
-/// these paths is a finding.
-///
-/// # Examples
-///
-/// Hold an adapter's table to its tree, with the runtime references as the
-/// documents a link may name without the tree holding them:
-///
-/// ```
-/// use std::path::Path;
-///
-/// use emery_sdk::{Doc, RUNTIME, check};
-///
-/// static PROSE: &[Doc] = &[Doc {
-///     path: "extract.md",
-///     body: "Ids follow [claims.md](claims.md).",
-/// }];
-///
-/// # let dir = tempfile::tempdir()?;
-/// # std::fs::write(dir.path().join("extract.md"), PROSE[0].body)?;
-/// # let tree = dir.path();
-/// let findings = check(PROSE, tree, &["extract.md"], RUNTIME);
-/// assert!(findings.is_empty(), "{}", findings.join("\n"));
-/// # Ok::<(), std::io::Error>(())
-/// ```
+/// `claims.md` defines claims and their gate; `reconciliation.md` explains
+/// where accepted claims land. Prompts link these paths without listing them
+/// in their own table, and pass [`RUNTIME`] to [`check`] as imports.
 pub static RUNTIME: &[Doc] = prose!["../prose/claims.md", "../prose/reconciliation.md"];
 
 /// Exports an adapter's metadata and extraction functions as a component.
@@ -159,32 +125,6 @@ pub static RUNTIME: &[Doc] = prose!["../prose/claims.md", "../prose/reconciliati
 /// Invoke this macro inside a `#[cfg(target_arch = "wasm32")]` module because
 /// the export interface exists only on WebAssembly targets. Adapters needing
 /// custom guest behaviour may implement `export::Guest` directly.
-///
-/// # Examples
-///
-/// ```
-/// # use emery_sdk::{Doc, Error, Seam, SourceInput};
-/// # pub static PROSE: &[Doc] = &[Doc { path: "extract.md", body: "Extract." }];
-/// # pub fn survey(_input: &SourceInput) -> Result<Vec<Seam>, Error> {
-/// #     Ok(vec![Seam::Whole])
-/// # }
-/// #[cfg(target_arch = "wasm32")]
-/// mod guest {
-///     use emery_sdk::{AdapterMetadata, Context, Error, Evidence, Model, SourceKind};
-///
-///     emery_sdk::source_adapter!(metadata, extract);
-///
-///     fn metadata() -> AdapterMetadata {
-///         emery_sdk::metadata(SourceKind::Documentation)
-///     }
-///
-///     async fn extract<P: Model>(ctx: &Context<'_, P>) -> Result<Evidence, Error> {
-///         let seams = super::survey(ctx.input)?;
-///         emery_sdk::extract(ctx, super::PROSE, &seams).await
-///     }
-/// }
-/// # fn main() {}
-/// ```
 #[macro_export]
 macro_rules! source_adapter {
     ($metadata:path, $extract:path $(,)?) => {
@@ -200,7 +140,8 @@ macro_rules! source_adapter {
                 async fn extract(
                     id: $crate::export::AdapterId, input: $crate::export::Input,
                 ) -> Result<$crate::export::Evidence, $crate::export::Error> {
-                    $crate::component::call($extract, id, input).await
+                    $crate::component::call($extract, ::core::env!("CARGO_CRATE_NAME"), id, input)
+                        .await
                 }
             }
         };
@@ -212,16 +153,6 @@ macro_rules! source_adapter {
 /// The `emery-version` pin is this SDK's own version, identifying the contract
 /// the adapter compiled against. Build an [`AdapterMetadata`] directly only
 /// when the adapter must loosen or tighten that pin.
-///
-/// # Examples
-///
-/// ```
-/// use emery_sdk::{SourceKind, metadata};
-///
-/// let metadata = metadata(SourceKind::Intent);
-/// assert_eq!(metadata.kind, SourceKind::Intent);
-/// assert!(metadata.emery_version.is_some());
-/// ```
 #[must_use]
 pub fn metadata(kind: SourceKind) -> AdapterMetadata {
     AdapterMetadata {
@@ -244,11 +175,6 @@ pub struct Context<'a, P> {
     pub model: &'a P,
 }
 
-/// Returns a normalised root-relative path or an explanatory error.
-///
-/// Empty and `.` segments are removed. A leading `/`, any `..` segment, or a
-/// path with no remaining segments is rejected. Error text is phrased to
-/// follow the offending path, as in `` `x` escapes the source root ``.
 fn beneath(path: &str) -> Result<String, &'static str> {
     if path.starts_with('/') || path.split('/').any(|segment| segment == "..") {
         return Err("escapes the source root");

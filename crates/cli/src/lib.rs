@@ -26,6 +26,7 @@ use omnia_sdk::Error;
 use omnia_sdk::api::command::{Command, Parsed, Response, Shell, completions, parse};
 use omnia_sdk::api::{Client, Format, Metadata};
 use strum::VariantArray as _;
+use tracing::level_filters::LevelFilter;
 
 const ABOUT: &str = "Deterministic primitives for spec-driven development";
 const SPECIFY_DESC: &str = "Generate spec.md and design.md from source adapters.\n\n\
@@ -103,10 +104,10 @@ struct App {
     /// Select the output format.
     #[arg(long, env = "EMERY_FORMAT", default_value = "text", global = true)]
     format: Format,
-    /// Show engine debug tracing on stderr; repeat for trace detail.
+    /// Show debug tracing on stderr; repeat for trace detail.
     #[arg(short, long, action = ArgAction::Count, global = true)]
     verbose: u8,
-    /// Silence engine tracing.
+    /// Silence tracing.
     #[arg(short, long, global = true)]
     quiet: bool,
 }
@@ -129,13 +130,13 @@ impl App {
     }
 }
 
-/// The tracing level the global `--verbose` and `--quiet` flags select.
+/// The tracing detail selected by the global `--verbose` and `--quiet` flags.
 ///
-/// A bare run is [`Self::Info`], `-q` is [`Self::Quiet`], `-v` is
-/// [`Self::Debug`], and `-vv` or more is [`Self::Trace`].
+/// [`Self::directives`] configures the engine guest, while [`Self::level`] is
+/// propagated to adapter guests.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Verbosity {
-    /// No engine tracing, selected by `-q`.
+    /// No tracing, selected by `-q`.
     Quiet,
     /// INFO progress on a bare invocation.
     Info,
@@ -146,15 +147,9 @@ pub enum Verbosity {
 }
 
 impl Verbosity {
-    /// Returns the tracing directives this level selects, a `RUST_LOG` string.
+    /// Returns the engine tracing directives for this selection.
     ///
-    /// - [`Self::Quiet`] selects `off`
-    /// - [`Self::Info`] selects `info`
-    /// - [`Self::Debug`] selects `info` plus `emery_cli`, `emery_engine`, and `omnia_sdk` at `debug`
-    /// - [`Self::Trace`] selects `debug` plus `emery_cli`, `emery_engine`, and `omnia_sdk` at `trace`
-    ///
-    /// The string is the level's defaults alone; the guest that installs it
-    /// lets the process `RUST_LOG` refine them.
+    /// The process's `RUST_LOG` may refine this preset.
     #[must_use]
     pub const fn directives(self) -> &'static str {
         match self {
@@ -162,6 +157,17 @@ impl Verbosity {
             Self::Info => "info",
             Self::Debug => "info,emery_cli=debug,emery_engine=debug,omnia_sdk=debug",
             Self::Trace => "debug,emery_cli=trace,emery_engine=trace,omnia_sdk=trace",
+        }
+    }
+
+    /// Returns the tracing level propagated to dispatched adapter guests.
+    #[must_use]
+    pub const fn level(self) -> LevelFilter {
+        match self {
+            Self::Quiet => LevelFilter::OFF,
+            Self::Info => LevelFilter::INFO,
+            Self::Debug => LevelFilter::DEBUG,
+            Self::Trace => LevelFilter::TRACE,
         }
     }
 }
@@ -182,9 +188,6 @@ enum Verb {
     },
 }
 
-// The `specify` grammar; field docs are its `--help` text. Decoding
-// builds the engine input by exhaustive struct literal, so an engine
-// field the grammar does not carry fails to compile here.
 #[derive(Debug, clap::Args)]
 struct SpecifyArgs {
     /// Workspace-backed source adapters or local component paths.
@@ -209,7 +212,6 @@ impl SpecifyArgs {
     }
 }
 
-// The `show` grammar; field docs are its `--help` text.
 #[derive(Debug, clap::Args)]
 struct ShowArgs {
     /// Reviewable artifact of the current revision.
@@ -217,8 +219,6 @@ struct ShowArgs {
     artifact: Artifact,
 }
 
-// The engine's closed artifact vocabulary as clap values, each with its help
-// line; the exhaustive match makes a new variant a façade compile error.
 fn artifacts() -> impl TypedValueParser<Value = Artifact> {
     PossibleValuesParser::new(Artifact::VARIANTS.iter().map(|artifact| {
         let help = match artifact {
@@ -230,9 +230,7 @@ fn artifacts() -> impl TypedValueParser<Value = Artifact> {
     .try_map(|value: String| value.parse::<Artifact>())
 }
 
-// Looks up the remedy hint the failure envelope carries for an `error`
-// discriminant; flag and verb vocabulary lives here, never in engine
-// descriptions.
+// Flag and verb vocabulary stays at the CLI boundary.
 fn hint(code: &str) -> Option<Cow<'static, str>> {
     let hint = match code {
         "unsupported-version" => {

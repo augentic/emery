@@ -1,3 +1,5 @@
+#![warn(missing_docs, clippy::missing_errors_doc)]
+
 //! Embeds Markdown prompts and reference documents into Rust binaries.
 //!
 //! [`prose!`] creates a static table of [`Doc`] values from files selected at

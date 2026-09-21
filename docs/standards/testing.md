@@ -36,7 +36,7 @@ Root suites are organized by operator story, one auto-discovered test binary per
 
 Shared scenario plumbing lives in the dir form `tests/support/mod.rs` (invisible to auto-discovery), declared per binary with `mod support;`. `command.rs` and `plugin.rs` path-include `tests/support/verbs.rs` for the live verb set parsed from `emery --help`. Fixtures are root-local under `tests/<binary>/` and embedded with `include_str!`. Root binaries are gated `#![cfg(not(target_arch = "wasm32"))]`.
 
-Root scenarios read like usage documentation, the same way `credibil/dwn`'s `tests/` directory demonstrates its product: a module doc naming the story, a `//` requirement comment above each test, a short scenario name, and section comments separating arrange, act, and observe. A new contributor should be able to learn the CLI from `tests/specify.rs` alone.
+Root scenarios are executable usage contracts. A short scenario name, representative setup, and assertions should normally tell the story themselves. Add a module doc, requirement comment, or arrange/act/observe section only when it supplies context the code does not.
 
 If a function needs unit tests, it belongs in a workspace crate, not the binary — see [architecture.md §"Workspace layout"](./architecture.md#workspace-layout) and [handler-shape.md §"Dispatch contract"](./handler-shape.md#dispatch-contract-commandrs).
 
@@ -65,7 +65,7 @@ Applied to every existing (or proposed) test, one bucket per behavior cluster �
 - **Delete** — the observable behavior is already asserted by a root scenario, or the test is tautological, mock-heavy, or an internal snapshot that gives no boundary signal.
 - **Collapse** — a dense pure `(input → output/code)` matrix becomes one table-driven test with a block per case; coverage-neutral by construction.
 - **Re-home** — product-reachable behavior lands in a root scenario, arranged through the entry points.
-- **Keep** — an independent library contract (crate integration) or a genuinely unreachable defensive branch (unit), carrying a one-line comment naming which clause it survives under.
+- **Keep** — an independent library contract (crate integration) or a genuinely unreachable defensive branch (unit).
 
 **Re-home is not a 1:1 port.** Re-homed coverage is a scenario contract: arrange through the real entry (CLI argv, a temp file), act once, and assert at the public boundary — exit code, JSON `error` discriminant, storage contents — never private struct fields re-exposed for the test. A small number of representative scenarios replaces the matrix; the dense edges either stay collapsed in their owning crate or are dropped as redundant.
 
@@ -105,7 +105,7 @@ Test function names are identifiers, not sentences — the same brevity rules as
 
 - Drop tokens the binary name or enclosing module already supplies: in `command.rs`, write `unknown_verb`, not `command_unknown_verb_refuses`.
 - Group a cluster that shares a subject under a nested `mod <subject>` rather than repeating the subject as a prefix.
-- Push the full narrative into the `//` requirement comment above the `fn`, not the identifier.
+- Add a `//` requirement comment only when the scenario's non-obvious rationale does not belong in its identifier.
 
 `module_name_repetitions` is off workspace-wide, so nothing fires on a long `#[test]` fn; keep identifiers short anyway ([coding-standards.md §"Naming"](./coding-standards.md#naming)).
 
@@ -113,6 +113,6 @@ Test function names are identifiers, not sentences — the same brevity rules as
 
 - Script engine state with `omnia_test::guest::Memory` (or `Namespaced`) and assert on its contents plus the envelope (`tests/support/mod.rs`); reserve `tempfile::TempDir` for operator-supplied inputs.
 - Nothing here instantiates a component; a behavior that needs the wasm boundary itself belongs to `emery-adapters`' conformance rung, and anything the in-process router can reach belongs in the native suites, where the envelope is observable.
-- Open every root scenario with a `//` requirement comment and separate arrange/act/observe with section comments — the scenario is documentation first.
+- Use comments in a root scenario only for non-obvious requirements or phases; do not label setup and assertions that already read clearly.
 - Prefer structural assertions (status fields, exit codes, JSON shape) over byte-for-byte prose comparisons, except where bytes are the contract (the stored revision is canonical JSON; `show` renders the projection alone).
 - Tests that need git operations set deterministic `GIT_*` author/committer env vars so authorship is stable.
