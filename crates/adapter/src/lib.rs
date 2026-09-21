@@ -43,9 +43,6 @@
 
 pub mod source;
 
-/// The baggage key that names the tracing level an adapter extraction opens at.
-pub const TRACING: &str = "emery.tracing";
-
 /// Returns whether `value` is lowercase kebab-case.
 ///
 /// A valid value matches `[a-z0-9]+(-[a-z0-9]+)*`.

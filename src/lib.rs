@@ -6,7 +6,6 @@
 
 #![cfg(target_arch = "wasm32")]
 
-use emery_adapter::TRACING;
 use emery_cli::Verbosity;
 use omnia_sdk::api::command::{self, Response};
 use omnia_sdk::{BlobStore, Model, Plugins, StateStore};
@@ -37,10 +36,10 @@ async fn dispatch() -> Response {
     emery_cli::run(Provider, environment::get_arguments(), on_verbosity).await
 }
 
-// Baggage carries the level through link dispatches to adapter guests.
+// Every adapter the run dispatches opens its tracing at the level the chain carries.
 fn on_verbosity(verbosity: Verbosity) {
     if let Err(error) = omnia_wasi_otel::set_filter(verbosity.directives()) {
         eprintln!("tracing filter not reloaded: {error:#}");
     }
-    omnia_wasi_otel::set_baggage([(TRACING, verbosity.level().to_string())]);
+    omnia_wasi_otel::set_baggage([(omnia_wasi_otel::LEVEL, verbosity.level().to_string())]);
 }
