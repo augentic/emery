@@ -550,10 +550,6 @@ criteria = "safe-to-deploy"
 version = "0.2.19"
 criteria = "safe-to-deploy"
 
-[[exemptions.leb128]]
-version = "0.2.7"
-criteria = "safe-to-deploy"
-
 [[exemptions.libsqlite3-sys]]
 version = "0.38.2"
 criteria = "safe-to-deploy"
@@ -619,7 +615,7 @@ version = "5.0.0"
 criteria = "safe-to-deploy"
 
 [[exemptions.object]]
-version = "0.39.1"
+version = "0.40.0"
 criteria = "safe-to-deploy"
 
 [[exemptions.oci-client]]
@@ -1140,10 +1136,6 @@ criteria = "safe-to-deploy"
 
 [[exemptions.winx]]
 version = "0.36.4"
-criteria = "safe-to-deploy"
-
-[[exemptions.witx]]
-version = "0.9.1"
 criteria = "safe-to-deploy"
 
 [[exemptions.writeable]]
