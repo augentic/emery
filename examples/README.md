@@ -17,11 +17,8 @@ The adapter lives at `[adapter/](adapter/)` — the same anatomy as a first-part
 # build the source adapter
 cargo build --example adapter --target wasm32-wasip2 --release
 
-# run the example
+# run the example in debug (-v) — each -v raises tracing level, each -q lowers it
 export CURSOR_API_KEY=<Cursor API key>
-cargo run --example runtime -- specify --config examples/emery.toml
-
-# the same run at debug (-v) — each -v raises the level a step, each -q lowers it
 cargo run --example runtime -- -v specify --config examples/emery.toml
 
 # review the committed spec
