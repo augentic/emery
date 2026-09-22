@@ -21,6 +21,9 @@ cargo build --example adapter --target wasm32-wasip2 --release
 export CURSOR_API_KEY=<Cursor API key>
 cargo run --example runtime -- specify --config examples/emery.toml
 
+# the same run at debug (-v) — each -v raises the level a step, each -q lowers it
+cargo run --example runtime -- -v specify --config examples/emery.toml
+
 # review the committed spec
 cargo run --example runtime -- show spec
 ```

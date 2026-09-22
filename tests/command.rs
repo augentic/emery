@@ -182,21 +182,49 @@ async fn bad_description() {
     fail(&provider, &["emery", "specify", "--description", "no-equals"], 1, "bad_request").await;
 }
 
-// Superseded spellings and the deleted verbosity flags are gone from the
-// grammar, not aliased: clap refuses them as unknown arguments.
+// Superseded spellings are gone from the grammar, not aliased: clap refuses
+// them as unknown arguments.
 #[tokio::test]
 async fn old_flags() {
     let provider = Provider::idle();
     for argv in [
         &["emery", "specify", "--sources", "emery.toml"][..],
         &["emery", "specify", "--value", "intent=text"][..],
-        &["emery", "specify", "--verbose"][..],
-        &["emery", "specify", "-v"][..],
-        &["emery", "specify", "--quiet"][..],
-        &["emery", "specify", "-q"][..],
     ] {
         assert_eq!(cli(&provider, argv).await.exit, USAGE_EXIT, "{argv:?}");
     }
+}
+
+// The verbosity flags are the runtime's: it reads them from argv and sets
+// `RUST_LOG` before the guest runs, so the grammar declares them — before or
+// after the verb, repeated — and the run is otherwise the bare run. `-v`
+// beside `-q` is the grammar's own usage error.
+#[tokio::test]
+async fn verbosity_flags() {
+    let provider = Provider::idle();
+    for argv in [
+        &["emery", "-v", "show", "spec"][..],
+        &["emery", "-vv", "show", "spec"][..],
+        &["emery", "--verbose", "show", "spec"][..],
+        &["emery", "show", "spec", "-v"][..],
+        &["emery", "-q", "show", "spec"][..],
+        &["emery", "-qq", "show", "spec"][..],
+        &["emery", "show", "spec", "--quiet"][..],
+    ] {
+        fail(&provider, argv, 2, "spec-not-generated").await;
+    }
+
+    assert_eq!(cli(&provider, &["emery", "-v", "-q", "show", "spec"]).await.exit, USAGE_EXIT);
+
+    let help = cli_ok(&provider, &["emery", "--help"]).await;
+    let help = String::from_utf8_lossy(&help.stdout);
+    assert!(help.contains("-v, --verbose"), "{help}");
+    assert!(help.contains("-q, --quiet"), "{help}");
+
+    // The flattened flags bring none of their own docs into the about text.
+    let short = cli_ok(&provider, &["emery", "-h"]).await;
+    let short = String::from_utf8_lossy(&short.stdout);
+    assert_eq!(help.lines().next(), short.lines().next(), "{help}");
 }
 
 // `show` fails with a typed `spec-not-generated` error before any revision

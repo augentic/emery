@@ -41,7 +41,6 @@ cfg_if::cfg_if! {
                 WasiKeyValue: Filesystem(ConnectOptions { root: ".omnia/storage".into() }),
                 WasiBlobstore: Filesystem(ConnectOptions { root: ".omnia/storage".into() }),
             },
-            env: { RUST_LOG: "info" }
         });
     }
 }

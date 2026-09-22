@@ -6,7 +6,8 @@
 //!
 //! [`run`] returns a buffered response, leaving process I/O and exit handling
 //! to the caller. The crate installs no subscriber of its own; tracing follows
-//! the process `RUST_LOG`.
+//! the `RUST_LOG` the runtime sets from its verbosity flags, which the grammar
+//! declares (`-v`, `-q`) and never reads.
 
 mod sources;
 mod text;
@@ -21,7 +22,7 @@ use emery_engine::Provider;
 use emery_engine::show::{Artifact, ShowInput, show};
 use emery_engine::specify::{SpecifyInput, specify};
 use omnia_sdk::Error;
-use omnia_sdk::api::command::{Command, Parsed, Response, Shell, completions, parse};
+use omnia_sdk::api::command::{Command, Parsed, Response, Shell, Verbosity, completions, parse};
 use omnia_sdk::api::{Client, Format, Metadata};
 use strum::VariantArray as _;
 
@@ -91,6 +92,12 @@ struct App {
     /// Select the output format.
     #[arg(long, env = "EMERY_FORMAT", default_value = "text", global = true)]
     format: Format,
+    // The runtime reads these from argv and sets `RUST_LOG` before the guest
+    // runs; declaring them lists them in help and completions and refuses
+    // `-v` beside `-q`.
+    #[command(flatten)]
+    #[expect(dead_code, reason = "the runtime acts on the flags; the grammar only declares them")]
+    verbosity: Verbosity,
 }
 
 #[derive(Debug, Subcommand)]
