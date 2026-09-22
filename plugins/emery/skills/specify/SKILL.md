@@ -28,7 +28,7 @@ emery specify <adapter>... [--description <adapter>=<text>]
 # or: emery specify --config [<path>]
 ```
 
-Specify dispatches model judgment and can take a while on large workspaces. Tracing follows the process `RUST_LOG` per the plugin rule's *Tracing and output* contract (the runtime defaults guests to `emery_sdk=info`; set `RUST_LOG=debug` when the operator asks for debug).
+Specify dispatches model judgment and can take a while on large workspaces. Tracing follows the plugin rule's *Tracing and output* contract (a bare run is `info`; pass `-v` when the operator asks for debug).
 
 ## Re-project
 

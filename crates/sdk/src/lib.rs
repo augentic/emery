@@ -78,12 +78,11 @@
 //! unusable input.
 //!
 //! Progress is emitted through `tracing`; every event names the source key
-//! and, within a seam, its index. An adapter opens at Omnia's `error`
-//! default with its guest environment's `RUST_LOG` applied on top; the
-//! shipped `emery` runtime declares `RUST_LOG=emery_sdk=info` as that
-//! environment's default, so this crate's progress reaches stderr on a bare
-//! run and an operator's own `RUST_LOG` (`emery_sdk=debug`, `off`) replaces
-//! it. The engine's `-v` / `-q` flags govern the engine alone.
+//! and, within a seam, its index. An adapter opens at its guest environment's
+//! `RUST_LOG`, which the Omnia runtime sets from the run's one tracing level:
+//! `info` on a bare `emery` run, so this crate's progress reaches stderr,
+//! one step up per `-v` and down per `-q`, and an operator's own `RUST_LOG`
+//! (`emery_sdk=debug`, `off`) kept when no flag is passed.
 
 mod extract;
 mod question;

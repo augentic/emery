@@ -21,9 +21,9 @@ That is the whole shipped surface. The source list never persists — repeat the
 
 ## Tracing and output
 
-Tracing follows the process `RUST_LOG`. The shipped runtime defaults every guest's `RUST_LOG` to `emery_sdk=info` when the process sets none, so an adapter's SDK progress (each survey and seam turn as it opens) reaches stderr on a bare run and the engine stays at omnia's `error` default. An operator's own `RUST_LOG` replaces that default whole, for the engine and every adapter: `RUST_LOG=info` admits the engine's progress, `RUST_LOG=debug` adds its detail and the SDK's, `RUST_LOG=emery_sdk=debug` admits the SDK alone, and `RUST_LOG=off` silences every guest.
+One tracing level governs a run — the runtime's host console, the engine, and every adapter alike. A bare run is `info`: the engine's progress at its slow steps and each adapter's survey and seam turn as it opens reach stderr, retries at WARN. Each `-v` raises the level one step and each `-q` lowers it — `-q` warn (progress gone, warnings kept), `-qq` error, `-qqq` off; `-v` debug, `-vv` trace — before or after the verb, and `-v` beside `-q` is a usage error. The flags override a process `RUST_LOG`; a bare run keeps one that is set, so `RUST_LOG=emery_sdk=debug emery specify …` refines a bare run and `RUST_LOG=off` silences it.
 
-**Debug mode**: when the operator explicitly asks for debug (says "debug", or passes `debug` on the slash command), set `RUST_LOG=debug` on **every** `emery` subprocess in that skill invocation. A subprocess that must be fully silent sets `RUST_LOG=off` so it does not inherit a raised filter.
+**Debug mode**: when the operator explicitly asks for debug (says "debug", or passes `debug` on the slash command), pass `-v` to **every** `emery` subprocess in that skill invocation. A subprocess that must be fully silent passes `-qqq` (or keeps `RUST_LOG=off`) so it does not inherit a raised filter.
 
 Stream roles: the semantic CLI result (text or JSON envelope) is stdout; command failures and live tracing are stderr. Relay the semantic result or structured error once, verbatim; do not repeat or reformat tracing lines in the closing response.
 
