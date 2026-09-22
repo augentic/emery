@@ -13,12 +13,13 @@ use omnia_wasi_otel::{OtelDefault, WasiOtel};
 
 omnia::runtime!({
     mode: command,
+    mounts: [{ name: ".", path: "." }],
     guests: [{
         id: "emery",
         source: include_bytes!(concat!(env!("OUT_DIR"), "/emery.cwasm")),
     }],
-    // Source workspaces are read-only; revision writes use storage capabilities.
-    mounts: [{ name: ".", path: "." }],
+    // Target-scoped: a bare level would reach the engine guest too and defeat `-q`.
+    env: { RUST_LOG: "emery_sdk=info" },
     link: {
         interfaces: ["emery:adapter/source@0.1.0"],
     },

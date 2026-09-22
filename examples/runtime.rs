@@ -27,6 +27,7 @@ cfg_if::cfg_if! {
                 source: include_bytes!(concat!(env!("OUT_DIR"), "/emery.cwasm")),
             }],
             mounts: [{ name: ".", path: "." }],
+            env: { RUST_LOG: "emery_sdk=info" },
             link: {
                 interfaces: ["emery:adapter/source@0.1.0"],
             },

@@ -26,7 +26,6 @@ use omnia_sdk::Error;
 use omnia_sdk::api::command::{Command, Parsed, Response, Shell, completions, parse};
 use omnia_sdk::api::{Client, Format, Metadata};
 use strum::VariantArray as _;
-use tracing::level_filters::LevelFilter;
 
 const ABOUT: &str = "Deterministic primitives for spec-driven development";
 const SPECIFY_DESC: &str = "Generate spec.md and design.md from source adapters.\n\n\
@@ -132,8 +131,8 @@ impl App {
 
 /// The tracing detail selected by the global `--verbose` and `--quiet` flags.
 ///
-/// [`Self::directives`] configures the engine guest, while [`Self::level`] is
-/// propagated to adapter guests.
+/// [`Self::directives`] configures the engine guest alone; an adapter guest
+/// follows its own environment's `RUST_LOG`.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Verbosity {
     /// No tracing, selected by `-q`.
@@ -157,17 +156,6 @@ impl Verbosity {
             Self::Info => "info",
             Self::Debug => "info,emery_cli=debug,emery_engine=debug,omnia_sdk=debug",
             Self::Trace => "debug,emery_cli=trace,emery_engine=trace,omnia_sdk=trace",
-        }
-    }
-
-    /// Returns the tracing level propagated to dispatched adapter guests.
-    #[must_use]
-    pub const fn level(self) -> LevelFilter {
-        match self {
-            Self::Quiet => LevelFilter::OFF,
-            Self::Info => LevelFilter::INFO,
-            Self::Debug => LevelFilter::DEBUG,
-            Self::Trace => LevelFilter::TRACE,
         }
     }
 }

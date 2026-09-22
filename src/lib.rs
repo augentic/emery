@@ -36,10 +36,8 @@ async fn dispatch() -> Response {
     emery_cli::run(Provider, environment::get_arguments(), on_verbosity).await
 }
 
-// Every adapter the run dispatches opens its tracing at the level the chain carries.
 fn on_verbosity(verbosity: Verbosity) {
     if let Err(error) = omnia_wasi_otel::set_filter(verbosity.directives()) {
         eprintln!("tracing filter not reloaded: {error:#}");
     }
-    omnia_wasi_otel::set_baggage([(omnia_wasi_otel::LEVEL, verbosity.level().to_string())]);
 }
