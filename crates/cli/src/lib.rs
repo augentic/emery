@@ -5,9 +5,8 @@
 //! and supplies recovery hints for known failures.
 //!
 //! [`run`] returns a buffered response, leaving process I/O and exit handling
-//! to the caller. The global `--verbose` and `--quiet` flags select the
-//! tracing filter [`run`] reports through its callback before the verb runs;
-//! the crate installs no subscriber of its own.
+//! to the caller. The crate installs no subscriber of its own; tracing follows
+//! the process `RUST_LOG`.
 
 mod sources;
 mod text;
@@ -17,8 +16,7 @@ use std::ffi::OsString;
 use std::path::PathBuf;
 
 use clap::builder::{PossibleValue, PossibleValuesParser, TypedValueParser};
-use clap::error::ErrorKind;
-use clap::{ArgAction, CommandFactory as _, Parser, Subcommand};
+use clap::{Parser, Subcommand};
 use emery_engine::Provider;
 use emery_engine::show::{Artifact, ShowInput, show};
 use emery_engine::specify::{SpecifyInput, specify};
@@ -48,27 +46,17 @@ const NAME: &str = "emery";
 /// The returned [`Response`] contains the exit status and buffered standard
 /// output and error. Help, version, and usage responses are produced without
 /// invoking an engine operation.
-///
-/// The global `--verbose` and `--quiet` flags select a [`Verbosity`] reported
-/// through `verbosity` once the grammar parses and before the verb runs.
-/// Combining them is a usage error, and the callback is never reached.
-pub async fn run<P, I, T, F>(provider: P, argv: I, on_verbosity: F) -> Response
+pub async fn run<P, I, T>(provider: P, argv: I) -> Response
 where
     P: Provider,
     I: IntoIterator<Item = T>,
     T: Into<OsString> + Clone,
-    F: FnOnce(Verbosity),
 {
     let app = match parse::<App>(argv) {
         Parsed::App(app) => app,
         Parsed::Display(text) => return Response::success(text),
         Parsed::Usage(error) => return Response::usage(&error),
     };
-
-    match app.verbosity() {
-        Ok(level) => on_verbosity(level),
-        Err(error) => return Response::usage(&error),
-    }
 
     let client = Client::new(NAME, provider);
     let metadata = Metadata::from_env("EMERY");
@@ -103,61 +91,6 @@ struct App {
     /// Select the output format.
     #[arg(long, env = "EMERY_FORMAT", default_value = "text", global = true)]
     format: Format,
-    /// Show debug tracing on stderr; repeat for trace detail.
-    #[arg(short, long, action = ArgAction::Count, global = true)]
-    verbose: u8,
-    /// Silence tracing.
-    #[arg(short, long, global = true)]
-    quiet: bool,
-}
-
-impl App {
-    // Folds the counted `-v` and `-q` into one level, refusing both together
-    // as a usage error. Clap validates a `conflicts_with` per command level,
-    // so `-v` on the root and `-q` on the verb would never meet.
-    fn verbosity(&self) -> Result<Verbosity, clap::Error> {
-        match (self.verbose, self.quiet) {
-            (1.., true) => Err(Self::command().error(
-                ErrorKind::ArgumentConflict,
-                "the argument '--verbose' cannot be used with '--quiet'",
-            )),
-            (0, true) => Ok(Verbosity::Quiet),
-            (0, false) => Ok(Verbosity::Info),
-            (1, false) => Ok(Verbosity::Debug),
-            (2.., false) => Ok(Verbosity::Trace),
-        }
-    }
-}
-
-/// The tracing detail selected by the global `--verbose` and `--quiet` flags.
-///
-/// [`Self::directives`] configures the engine guest alone; an adapter guest
-/// follows its own environment's `RUST_LOG`.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum Verbosity {
-    /// No tracing, selected by `-q`.
-    Quiet,
-    /// INFO progress on a bare invocation.
-    Info,
-    /// INFO progress plus engine DEBUG, selected by `-v`.
-    Debug,
-    /// DEBUG everywhere plus engine TRACE, selected by `-vv`.
-    Trace,
-}
-
-impl Verbosity {
-    /// Returns the engine tracing directives for this selection.
-    ///
-    /// The process's `RUST_LOG` may refine this preset.
-    #[must_use]
-    pub const fn directives(self) -> &'static str {
-        match self {
-            Self::Quiet => "off",
-            Self::Info => "info",
-            Self::Debug => "info,emery_cli=debug,emery_engine=debug,omnia_sdk=debug",
-            Self::Trace => "debug,emery_cli=trace,emery_engine=trace,omnia_sdk=trace",
-        }
-    }
 }
 
 #[derive(Debug, Subcommand)]

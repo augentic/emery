@@ -6,7 +6,6 @@
 
 #![cfg(target_arch = "wasm32")]
 
-use emery_cli::Verbosity;
 use omnia_sdk::api::command::{self, Response};
 use omnia_sdk::{BlobStore, Model, Plugins, StateStore};
 use wasip3::cli::environment;
@@ -33,11 +32,5 @@ impl Guest for CliGuest {
 }
 
 async fn dispatch() -> Response {
-    emery_cli::run(Provider, environment::get_arguments(), on_verbosity).await
-}
-
-fn on_verbosity(verbosity: Verbosity) {
-    if let Err(error) = omnia_wasi_otel::set_filter(verbosity.directives()) {
-        eprintln!("tracing filter not reloaded: {error:#}");
-    }
+    emery_cli::run(Provider, environment::get_arguments()).await
 }

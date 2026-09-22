@@ -13,8 +13,7 @@ mod support;
 #[path = "support/verbs.rs"]
 mod verbs;
 
-use emery_cli::Verbosity;
-use omnia_sdk::api::command::{Response, USAGE_EXIT};
+use omnia_sdk::api::command::USAGE_EXIT;
 use serde_json::Value;
 use support::{Provider, cli, cli_ok, fail};
 use verbs::verbs;
@@ -183,14 +182,18 @@ async fn bad_description() {
     fail(&provider, &["emery", "specify", "--description", "no-equals"], 1, "bad_request").await;
 }
 
-// The superseded flag spellings are deleted from the grammar, not
-// aliased (hard cut): clap refuses them as unknown arguments.
+// Superseded spellings and the deleted verbosity flags are gone from the
+// grammar, not aliased: clap refuses them as unknown arguments.
 #[tokio::test]
 async fn old_flags() {
     let provider = Provider::idle();
     for argv in [
         &["emery", "specify", "--sources", "emery.toml"][..],
         &["emery", "specify", "--value", "intent=text"][..],
+        &["emery", "specify", "--verbose"][..],
+        &["emery", "specify", "-v"][..],
+        &["emery", "specify", "--quiet"][..],
+        &["emery", "specify", "-q"][..],
     ] {
         assert_eq!(cli(&provider, argv).await.exit, USAGE_EXIT, "{argv:?}");
     }
@@ -230,79 +233,6 @@ async fn host_semver() {
     let stdout = String::from_utf8_lossy(&response.stdout);
     let expected = format!("emery {}", env!("CARGO_PKG_VERSION"));
     assert!(stdout.trim_end().ends_with(&expected), "{stdout}");
-}
-
-// Runs `argv`, returning the response and every verbosity it reported.
-async fn recorded(provider: &Provider, argv: &[&str]) -> (Response, Vec<Verbosity>) {
-    let mut seen = Vec::new();
-    let response = emery_cli::run(provider.clone(), argv.iter().copied(), |verbosity| {
-        seen.push(verbosity);
-    })
-    .await;
-    (response, seen)
-}
-
-// The verbosity flags are global grammar: position-independent, reported
-// to the caller exactly once before the verb runs, and never a verb's own
-// option. Combining them is a usage error, not a startup failure.
-#[tokio::test]
-async fn verbosity_flags() {
-    let provider = Provider::idle();
-
-    // reported once, wherever the flag sits, and the verb still dispatches
-    for (argv, expected) in [
-        (&["emery", "show", "spec"][..], Verbosity::Info),
-        (&["emery", "-v", "show", "spec"][..], Verbosity::Debug),
-        (&["emery", "show", "spec", "--verbose"][..], Verbosity::Debug),
-        (&["emery", "-vv", "show", "spec"][..], Verbosity::Trace),
-        (&["emery", "show", "spec", "-v", "-v"][..], Verbosity::Trace),
-        (&["emery", "show", "-vvv", "spec"][..], Verbosity::Trace),
-        (&["emery", "show", "-q", "spec"][..], Verbosity::Quiet),
-        (&["emery", "--quiet", "specify"][..], Verbosity::Quiet),
-    ] {
-        let (response, seen) = recorded(&provider, argv).await;
-        assert_eq!(seen, [expected], "{argv:?}");
-        let stderr = String::from_utf8_lossy(&response.stderr);
-        assert_ne!(response.exit, USAGE_EXIT, "{argv:?}: {stderr}");
-        assert!(!stderr.contains("Usage:"), "{argv:?}: {stderr}");
-    }
-
-    // exclusive wherever the two sit, before anything is reported
-    for argv in [
-        &["emery", "-v", "-q", "show", "spec"][..],
-        &["emery", "--verbose", "show", "spec", "--quiet"][..],
-        &["emery", "show", "-q", "spec", "-vv"][..],
-    ] {
-        let (response, seen) = recorded(&provider, argv).await;
-        let stderr = String::from_utf8_lossy(&response.stderr);
-        assert_eq!(response.exit, USAGE_EXIT, "{argv:?}: {stderr}");
-        assert!(stderr.contains("--verbose") && stderr.contains("--quiet"), "{argv:?}: {stderr}");
-        assert!(seen.is_empty(), "{argv:?}: a usage error reports no verbosity: {seen:?}");
-    }
-
-    // help and version report nothing either
-    for argv in [&["emery", "--help"][..], &["emery", "--version"][..]] {
-        let (response, seen) = recorded(&provider, argv).await;
-        assert_eq!(response.exit, 0, "{argv:?}");
-        assert!(seen.is_empty(), "{argv:?}: {seen:?}");
-    }
-
-    // listed on the root help, short and long
-    let help = cli_ok(&provider, &["emery", "--help"]).await;
-    let help = String::from_utf8_lossy(&help.stdout);
-    assert!(help.contains("-v, --verbose"), "{help}");
-    assert!(help.contains("-q, --quiet"), "{help}");
-    assert!(help.contains("Show debug tracing on stderr"), "{help}");
-    assert!(help.contains("Silence tracing"), "{help}");
-
-    for (verbosity, directives) in [
-        (Verbosity::Quiet, "off"),
-        (Verbosity::Info, "info"),
-        (Verbosity::Debug, "info,emery_cli=debug,emery_engine=debug,omnia_sdk=debug"),
-        (Verbosity::Trace, "debug,emery_cli=trace,emery_engine=trace,omnia_sdk=trace"),
-    ] {
-        assert_eq!(verbosity.directives(), directives);
-    }
 }
 
 // Omnia forwards raw argv; a routed-id argv[0] renders as `emery`.

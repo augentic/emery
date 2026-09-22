@@ -21,17 +21,9 @@ That is the whole shipped surface. The source list never persists — repeat the
 
 ## Tracing and output
 
-Tracing is selected by the global `--verbose` / `--quiet` flags of the `emery` grammar — prefer them to setting `RUST_LOG` on an `emery` subprocess. They are accepted anywhere in argv, so they are position-independent and never collide with a verb's own options.
+Tracing follows the process `RUST_LOG`. The shipped runtime defaults every guest's `RUST_LOG` to `emery_sdk=info` when the process sets none, so an adapter's SDK progress (each survey and seam turn as it opens) reaches stderr on a bare run and the engine stays at omnia's `error` default. An operator's own `RUST_LOG` replaces that default whole, for the engine and every adapter: `RUST_LOG=info` admits the engine's progress, `RUST_LOG=debug` adds its detail and the SDK's, `RUST_LOG=emery_sdk=debug` admits the SDK alone, and `RUST_LOG=off` silences every guest.
 
-- **Short deterministic verbs** (`emery --version`, `emery show spec`) pass `--quiet` so the result card is uncluttered:
-
-```text
-emery specify <adapter> --quiet
-```
-
-**Debug mode**: when the operator explicitly asks for debug (says "debug", or passes `debug` / `--verbose` on the slash command), pass `--verbose` on **every** `emery` subprocess in that skill invocation (it replaces `--quiet` — the two flags are mutually exclusive, and combining them is a usage error).
-
-`--verbose` turns on the INFO progress filter plus the engine's debug tracing; repeated (`--verbose --verbose`) it adds the engine's trace detail. An ambient `RUST_LOG` refines every level, `--quiet` included, so a subprocess that must be silent does not inherit a raised one. The flags govern the engine alone. Each adapter the run dispatches is its own guest and follows the `RUST_LOG` its environment carries, which the runtime defaults to `emery_sdk=info` — INFO progress (each survey and seam turn as it opens) on every run unless the process sets its own: `RUST_LOG=emery_sdk=debug` for the SDK's debug detail, `RUST_LOG=off` for none — so a `specify` subprocess that must be fully silent runs `--quiet` with `RUST_LOG=off` in its environment.
+**Debug mode**: when the operator explicitly asks for debug (says "debug", or passes `debug` on the slash command), set `RUST_LOG=debug` on **every** `emery` subprocess in that skill invocation. A subprocess that must be fully silent sets `RUST_LOG=off` so it does not inherit a raised filter.
 
 Stream roles: the semantic CLI result (text or JSON envelope) is stdout; command failures and live tracing are stderr. Relay the semantic result or structured error once, verbatim; do not repeat or reformat tracing lines in the closing response.
 

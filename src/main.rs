@@ -18,8 +18,6 @@ omnia::runtime!({
         id: "emery",
         source: include_bytes!(concat!(env!("OUT_DIR"), "/emery.cwasm")),
     }],
-    // Target-scoped: a bare level would reach the engine guest too and defeat `-q`.
-    env: { RUST_LOG: "emery_sdk=info" },
     link: {
         interfaces: ["emery:adapter/source@0.1.0"],
     },
@@ -34,5 +32,6 @@ omnia::runtime!({
         WasiModel: Cursor,
         WasiKeyValue: Filesystem(ConnectOptions { root: ".omnia/storage".into() }),
         WasiBlobstore: Filesystem(ConnectOptions { root: ".omnia/storage".into() }),
-    }
+    },
+    env: { RUST_LOG: "info" }
 });

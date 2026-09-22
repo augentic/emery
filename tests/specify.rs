@@ -12,9 +12,9 @@
 mod support;
 
 use std::path::Path;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use std::time::Duration;
-use std::{fs, io, slice};
+use std::{fs, slice};
 
 use emery_adapter::source::{ClaimKind, Evidence, SourceContent, SourceKind};
 use emery_engine::{CONTAINER, CURRENT};
@@ -26,8 +26,6 @@ use omnia_test::guest::{Memory, Namespaced, Scripted};
 use serde_json::Value;
 use sha2::{Digest as _, Sha256};
 use support::{Provider, Rendezvous, claim, cli_ok, evidence, fail, requirement};
-use tracing_subscriber::layer::SubscriberExt as _;
-use tracing_subscriber::{EnvFilter, fmt, reload};
 
 // Scripted drafts, the canonical documents the engine commits from them, and
 // the documents it renders from those documents.
@@ -169,97 +167,6 @@ async fn gen_spec() {
     assert_eq!(current(&provider.storage), id, "the same revision keeps its id");
 
     provider.model.assert_exhausted();
-}
-
-// The verbosity a run selects is the filter the guest installs, so the same
-// journey stands in for the guest: a bare run reports INFO progress alone,
-// `-v` adds the engine's DEBUG detail at every step — the sources, the load,
-// each extract, each answer, the commit, the read — `-vv` keeps it, and `-q`
-// reports nothing. The callback reloads the filter as `src/lib.rs` does.
-#[tokio::test]
-async fn verbosity_directives() {
-    const PROGRESS: &[&str] = &[
-        "INFO",
-        "emery_engine::specify: extracting",
-        "emery_engine::specify::brief: asking the model",
-    ];
-    const DETAIL: &[&str] = &[
-        "DEBUG",
-        "emery_cli::sources: sources decoded",
-        "emery_engine::adapter: adapter loaded",
-        "emery_engine::specify: extracted",
-        "emery_engine::specify::brief: answered",
-        "emery_engine::store: revision committed",
-        "emery_engine::show: revision read",
-    ];
-
-    let scratch = Scratch::new();
-    let component = scratch.component();
-
-    for (flag, detail) in [(None, false), (Some("-v"), true), (Some("-vv"), true)] {
-        let provider = Provider::answering([SPEC_ANSWER, DESIGN_ANSWER]);
-        let mut argv = vec!["emery", "specify", &component];
-        argv.extend(flag);
-        let mut written = traced(&provider, &argv).await;
-        let mut argv = vec!["emery", "show", "spec"];
-        argv.extend(flag);
-        written.push_str(&traced(&provider, &argv).await);
-
-        for line in PROGRESS {
-            assert!(written.contains(line), "{flag:?}: `{line}` missing:\n{written}");
-        }
-        for line in DETAIL {
-            assert_eq!(written.contains(line), detail, "{flag:?}: `{line}`:\n{written}");
-        }
-        provider.model.assert_exhausted();
-    }
-
-    let provider = Provider::answering([SPEC_ANSWER, DESIGN_ANSWER]);
-    let written = traced(&provider, &["emery", "-q", "specify", &component]).await;
-    assert!(written.is_empty(), "-q: a quiet run writes no tracing:\n{written}");
-    provider.model.assert_exhausted();
-}
-
-// Runs `argv` to success under a subscriber the run's own verbosity filters,
-// as the guest shim filters the guest's, and returns every line it wrote.
-async fn traced(provider: &Provider, argv: &[&str]) -> String {
-    let sink = Sink::default();
-    let writer = sink.clone();
-    let (filter, handle) = reload::Layer::new(EnvFilter::new("off"));
-    let subscriber = tracing_subscriber::registry()
-        .with(filter)
-        .with(fmt::layer().with_ansi(false).with_writer(move || writer.clone()));
-    let _guard = tracing::subscriber::set_default(subscriber);
-
-    let response = emery_cli::run(provider.clone(), argv.iter().copied(), |verbosity| {
-        let filter = EnvFilter::try_new(verbosity.directives()).expect("filter that parses");
-        handle.reload(filter).expect("reloads the filter");
-    })
-    .await;
-    assert_eq!(response.exit, 0, "{argv:?}: {}", String::from_utf8_lossy(&response.stderr));
-
-    sink.text()
-}
-
-// Everything the subscriber wrote during one traced run.
-#[derive(Clone, Default)]
-struct Sink(Arc<Mutex<Vec<u8>>>);
-
-impl Sink {
-    fn text(&self) -> String {
-        String::from_utf8_lossy(&self.0.lock().expect("sink")).into_owned()
-    }
-}
-
-impl io::Write for Sink {
-    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
-        self.0.lock().expect("sink").extend_from_slice(buf);
-        Ok(buf.len())
-    }
-
-    fn flush(&mut self) -> io::Result<()> {
-        Ok(())
-    }
 }
 
 // `--config` is the other specify authority: entry names become
