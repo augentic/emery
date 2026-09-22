@@ -24,9 +24,9 @@ enum Mention<'a> {
 }
 
 // Global flags are validated by `command.rs`, not against a verb's help: a
-// verbless mention (`emery --version --quiet`) has no verb help to check,
-// and a verb's help repeats them under a shared heading.
-const GLOBAL_FLAGS: &[&str] = &["--verbose", "--quiet", "--format", "--help", "--version"];
+// verbless mention (`emery --version`) has no verb help to check, and a
+// verb's help repeats them under a shared heading.
+const GLOBAL_FLAGS: &[&str] = &["--format", "--help", "--version"];
 
 // Each skill's flags validate against its single wrapped verb.
 const SKILL_VERBS: &[(&str, &str)] = &[("specify", "specify")];

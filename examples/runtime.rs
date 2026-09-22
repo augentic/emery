@@ -22,11 +22,11 @@ cfg_if::cfg_if! {
 
         omnia::runtime!({
             mode: command,
+            mounts: [{ name: ".", path: "." }],
             guests: [{
                 id: "emery",
                 source: include_bytes!(concat!(env!("OUT_DIR"), "/emery.cwasm")),
             }],
-            mounts: [{ name: ".", path: "." }],
             link: {
                 interfaces: ["emery:adapter/source@0.1.0"],
             },
@@ -40,7 +40,8 @@ cfg_if::cfg_if! {
                 WasiModel: Cursor,
                 WasiKeyValue: Filesystem(ConnectOptions { root: ".omnia/storage".into() }),
                 WasiBlobstore: Filesystem(ConnectOptions { root: ".omnia/storage".into() }),
-            }
+            },
+            env: { RUST_LOG: "info" }
         });
     }
 }

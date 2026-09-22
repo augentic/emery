@@ -13,12 +13,11 @@ use omnia_wasi_otel::{OtelDefault, WasiOtel};
 
 omnia::runtime!({
     mode: command,
+    mounts: [{ name: ".", path: "." }],
     guests: [{
         id: "emery",
         source: include_bytes!(concat!(env!("OUT_DIR"), "/emery.cwasm")),
     }],
-    // Source workspaces are read-only; revision writes use storage capabilities.
-    mounts: [{ name: ".", path: "." }],
     link: {
         interfaces: ["emery:adapter/source@0.1.0"],
     },
@@ -33,5 +32,6 @@ omnia::runtime!({
         WasiModel: Cursor,
         WasiKeyValue: Filesystem(ConnectOptions { root: ".omnia/storage".into() }),
         WasiBlobstore: Filesystem(ConnectOptions { root: ".omnia/storage".into() }),
-    }
+    },
+    env: { RUST_LOG: "info" }
 });

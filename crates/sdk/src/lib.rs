@@ -78,14 +78,14 @@
 //! unusable input.
 //!
 //! Progress is emitted through `tracing`; every event names the source key
-//! and, within a seam, its index. An extraction opens at the level the
-//! caller named on the dispatch chain (`omnia_wasi_otel::level()`; the
-//! engine's `-v` / `-q` flags name it), mapped onto the crates the guest
-//! owns — the adapter's own, `emery_sdk`, and `omnia_sdk` — with the
-//! adapter's `RUST_LOG` applied on top.
+//! and, within a seam, its index. An adapter opens at Omnia's `error`
+//! default with its guest environment's `RUST_LOG` applied on top; the
+//! shipped `emery` runtime declares `RUST_LOG=emery_sdk=info` as that
+//! environment's default, so this crate's progress reaches stderr on a bare
+//! run and an operator's own `RUST_LOG` (`emery_sdk=debug`, `off`) replaces
+//! it. The engine's `-v` / `-q` flags govern the engine alone.
 
 mod extract;
-mod level;
 mod question;
 pub mod survey;
 pub mod workspace;
@@ -138,7 +138,7 @@ macro_rules! source_adapter {
                 async fn extract(
                     id: $crate::export::AdapterId, input: $crate::export::Input,
                 ) -> Result<$crate::export::Evidence, $crate::export::Error> {
-                    $crate::call($extract, ::core::env!("CARGO_CRATE_NAME"), id, input).await
+                    $crate::call($extract, id, input).await
                 }
             }
         };
@@ -162,16 +162,9 @@ impl Model for Provider {}
 #[doc(hidden)]
 #[omnia_wasi_otel::instrument(name = "source_adapter_extract")]
 pub async fn call(
-    extract: impl AsyncFnOnce(&Context<'_, Provider>) -> Result<Evidence, Error>, adapter: &str,
+    extract: impl AsyncFnOnce(&Context<'_, Provider>) -> Result<Evidence, Error>,
     id: export::AdapterId, input: export::Input,
 ) -> Result<export::Evidence, export::Error> {
-    // The chain's level admitted this span; the preset narrows what follows to the crates the
-    // guest owns.
-    let directives = level::directives(omnia_wasi_otel::level(), adapter);
-    if let Err(error) = omnia_wasi_otel::set_filter(&directives) {
-        eprintln!("tracing filter not reloaded: {error:#}");
-    }
-
     let input = SourceInput::from(input);
     let ctx = Context {
         adapter_id: &id,

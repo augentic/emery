@@ -18,25 +18,25 @@ brew install emery
 # or: cargo install --git https://github.com/augentic/emery --locked
 ```
 
-Then run `emery --version --quiet` and stop on failure.
+Then run `emery --version` and stop on failure.
 
 2. **Elicit every required input and pass it as a flag** — the CLI has no interactive prompt mode: no source at all — and no project-root `emery.toml` to discover — fails typed (`specify-source-required`). Gather conversationally: the source adapters to extract (each positional `<adapter>` is a workspace-backed source; each `--description <adapter>=<text>` is an inline source such as an operator directive). An operator who keeps a config file selects it instead with `--config [<path>]`; omit the value only for the project-relative `emery.toml`, and a run naming no sources at all discovers that file on its own. Never combine the file carrier with positional adapters or `--description` (mixing fails typed, exit 1). Local paths must stay relative to the project and must not escape it.
 3. **Invoke**:
 
 ```bash
-emery specify <adapter>... [--description <adapter>=<text>] --quiet
-# or: emery specify --config [<path>] --quiet
+emery specify <adapter>... [--description <adapter>=<text>]
+# or: emery specify --config [<path>]
 ```
 
-Specify dispatches model judgment and can take a while on large workspaces; it runs with `--quiet` per the plugin rule's *Tracing and output* contract (`--verbose` replaces it when the operator asks for debug).
+Specify dispatches model judgment and can take a while on large workspaces. Tracing follows the process `RUST_LOG` per the plugin rule's *Tracing and output* contract (the runtime defaults guests to `emery_sdk=info`; set `RUST_LOG=debug` when the operator asks for debug).
 
 ## Re-project
 
 After every successful run, write the committed revision's Markdown projections beside the code for review:
 
 ```bash
-emery show spec --quiet > spec.md
-emery show design --quiet > design.md
+emery show spec > spec.md
+emery show design > design.md
 ```
 
 Track both files in version control. Never edit them by hand: they are projections of the stored revision, and a hand edit is overwritten by the next run (change a source and re-run instead).
