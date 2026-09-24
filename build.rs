@@ -2,10 +2,11 @@
 //!
 //! The build script compiles the engine guest for `wasm32-wasip2` and emits
 //! the artifact's path as `EMERY_GUEST`, which the `runtime!` invocation in
-//! `src/main.rs` reads with `env!` and embeds with `include_bytes!`. The
-//! artifact is the raw component (`emery.wasm`), JIT-compiled at startup: the
-//! runtime plans each run's deployment itself and mounts it through the
-//! macro's `run`, whose safe build admits raw components alone.
+//! `src/main.rs` reads with `env!` and embeds with `include_bytes!`. Debug
+//! builds name the raw component (`emery.wasm`, JIT-compiled at startup);
+//! release builds precompile it to `emery.cwasm` for faster startup — for the
+//! binary's own target, under the runtime's default compile settings, so the
+//! build shell's environment steers neither. The runtime loads either format.
 //!
 //! The resulting `emery` binary is self-contained and does not load its engine
 //! component from disk at run time.
@@ -23,7 +24,24 @@ fn main() {
     let out_dir = PathBuf::from(std::env::var_os("OUT_DIR").expect("cargo env"));
     let release = std::env::var("PROFILE").as_deref() == Ok("release");
 
-    let guest = build_engine(&manifest_dir, &out_dir, release);
+    let wasm = build_engine(&manifest_dir, &out_dir, release);
+    let guest = if release {
+        // The binary's target, not the build machine's; the runtime's default
+        // settings, not the build shell's — `main.rs` loads it with neither.
+        let target = std::env::var("TARGET").expect("cargo env");
+        let compiled = out_dir.join("emery.cwasm");
+        omnia::compile::compile(
+            &wasm,
+            Some(compiled.clone()),
+            Some(&target),
+            &omnia::CompileOptions::default(),
+        )
+        .expect("should compile the wasm component");
+        compiled
+    } else {
+        // JIT avoids the Cranelift AOT cost during edits and CI.
+        wasm
+    };
     println!("cargo:rustc-env=EMERY_GUEST={}", guest.display());
 }
 

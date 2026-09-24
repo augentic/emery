@@ -38,6 +38,9 @@ toml.workspace = true
 emery-adapter.workspace = true
 wasip3.workspace = true
 
+[build-dependencies]
+omnia.workspace = true
+
 [dev-dependencies]
 emery-sdk.workspace = true
 hex.workspace = true

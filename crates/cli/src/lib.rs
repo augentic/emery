@@ -246,7 +246,7 @@ fn hint(code: &str) -> Option<Cow<'static, str>> {
             "the revision predates this emery's grammar: re-run `emery specify <adapter>...` to regenerate it"
         }
         "refused" => {
-            "the loader refused the component; the message above names why: a missing export, an invalid artifact, a mismatched digest, or a bare name this deployment does not declare"
+            "the loader refused the component; the message above names why: a missing export, an invalid artifact, a pre-compiled artifact where raw wasm is required, a mismatched digest, or a bare name this deployment does not declare"
         }
         "unavailable" => {
             "the registry could not supply the package: check the network and that the exact version is published under its namespace"

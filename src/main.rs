@@ -104,7 +104,11 @@ fn entry(adapter: &AdapterRef, pin: Option<&Digest>) -> Option<GuestEntry> {
         AdapterRef::Package { .. } => SourceSpec::package(adapter.to_string()),
         AdapterRef::Static(_) => return None,
     };
-    let entry = GuestEntry::new(adapter.guest(), source).on_demand();
+    // The invocation names the path, the pin, and the registry routing alike,
+    // so the pin proves nothing about who built the bytes: the only
+    // pre-compiled artifact is the engine compiled into this binary, and an
+    // adapter is always raw wasm.
+    let entry = GuestEntry::new(adapter.guest(), source).on_demand().wasm_only();
     // A decoded `sha256:` digest always parses, and the engine holds the
     // attested digest to the pin regardless.
     Some(match pin.and_then(|pin| pin.as_str().parse().ok()) {
@@ -148,4 +152,44 @@ fn level(verbose: u8, quiet: u8) -> Option<LevelFilter> {
     let start = LADDER.iter().position(|&rung| rung == Mode::Command.level())?;
     let rung = (start + usize::from(verbose)).saturating_sub(usize::from(quiet));
     Some(LADDER[rung.min(LADDER.len() - 1)])
+}
+
+// Unit tests by placement: `main.rs` is the shipped runtime, which no root
+// suite drives in-process, and what it declares is read off the manifest.
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn adapter(reference: &str) -> AdapterRef {
+        reference.parse().expect("a well-formed adapter reference")
+    }
+
+    // Every adapter an invocation names — a local component, a package —
+    // is an on-demand guest that admits raw wasm alone, pinned when the
+    // source pins it; a bare name declares nothing.
+    #[test]
+    fn declared_adapters_are_wasm_only() {
+        let pin: Digest = format!("sha256:{}", "ab".repeat(32)).parse().expect("a digest");
+        let plan = Plan {
+            adapters: vec![
+                (adapter("adapters/custom.wasm"), Some(pin.clone())),
+                (adapter("emery:intent@1.2.3"), None),
+                (adapter("engine"), None),
+            ],
+            ..Plan::default()
+        };
+
+        let manifest = declare(Manifest::new(), &plan);
+        let names: Vec<&str> = manifest.guests.iter().map(|guest| guest.name.as_str()).collect();
+        assert_eq!(names, ["custom", "emery:intent@1.2.3"]);
+        for guest in &manifest.guests {
+            assert!(guest.on_demand, "`{}` loads on demand", guest.name);
+            assert!(guest.wasm_only, "`{}` admits raw wasm alone", guest.name);
+        }
+        assert_eq!(
+            manifest.guests[0].digest.map(|digest| digest.to_string()),
+            Some(pin.to_string())
+        );
+        assert_eq!(manifest.guests[1].digest, None);
+    }
 }

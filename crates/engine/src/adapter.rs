@@ -157,7 +157,7 @@ pub async fn load<'a, P: Source + Plugins>(
     for ((reference, (_, pin)), plugin) in guests.into_iter().zip(handles) {
         let id = plugin.id();
         if let Some(pin) = &pin
-            && plugin.digest() != Some(pin)
+            && plugin.digest() != pin
         {
             return Err(unpinned(&reference, plugin.digest(), pin));
         }
@@ -188,8 +188,7 @@ pub async fn load<'a, P: Source + Plugins>(
 // The loader's refusal of an adapter whose resolved bytes are not the ones
 // its `[[source]] digest` pins — the deployment's answer where it carries the
 // pin, and the engine's where it does not.
-fn unpinned(reference: &str, resolved: Option<&Digest>, pin: &Digest) -> Error {
-    let resolved = resolved.map_or_else(|| "no digest".to_owned(), ToString::to_string);
+fn unpinned(reference: &str, resolved: &Digest, pin: &Digest) -> Error {
     plugins::Error::Refused(format!(
         "adapter `{reference}` resolved to {resolved}, not its pinned digest {pin}"
     ))
