@@ -195,26 +195,32 @@ async fn old_flags() {
     }
 }
 
-// The verbosity flags are the runtime's: it reads them from argv and sets
-// `RUST_LOG` before the guest runs, so the grammar declares them — before or
-// after the verb, repeated — and the run is otherwise the bare run. `-v`
-// beside `-q` is the grammar's own usage error.
+// The verbosity flags are the runtime's: it reads them from argv through the
+// plan and sets the run's level before the guest runs, so the grammar
+// declares them — before or after the verb, repeated — and the run is
+// otherwise the bare run. `-v` beside `-q` is the grammar's own usage error,
+// and the plan of a usage error selects nothing.
 #[tokio::test]
 async fn verbosity_flags() {
     let provider = Provider::idle();
-    for argv in [
-        &["emery", "-v", "show", "spec"][..],
-        &["emery", "-vv", "show", "spec"][..],
-        &["emery", "--verbose", "show", "spec"][..],
-        &["emery", "show", "spec", "-v"][..],
-        &["emery", "-q", "show", "spec"][..],
-        &["emery", "-qq", "show", "spec"][..],
-        &["emery", "show", "spec", "--quiet"][..],
+    for (argv, verbose, quiet) in [
+        (&["emery", "-v", "show", "spec"][..], 1, 0),
+        (&["emery", "-vv", "show", "spec"][..], 2, 0),
+        (&["emery", "--verbose", "show", "spec"][..], 1, 0),
+        (&["emery", "show", "spec", "-v"][..], 1, 0),
+        (&["emery", "-q", "show", "spec"][..], 0, 1),
+        (&["emery", "-qq", "show", "spec"][..], 0, 2),
+        (&["emery", "show", "spec", "--quiet"][..], 0, 1),
     ] {
         fail(&provider, argv, 2, "spec-not-generated").await;
+        let plan = emery_cli::plan(argv.iter().copied());
+        assert_eq!((plan.verbose, plan.quiet), (verbose, quiet), "{argv:?}");
+        assert!(plan.adapters.is_empty(), "`show` names no adapter: {argv:?}");
     }
 
     assert_eq!(cli(&provider, &["emery", "-v", "-q", "show", "spec"]).await.exit, USAGE_EXIT);
+    let plan = emery_cli::plan(["emery", "-v", "-q", "show", "spec"]);
+    assert_eq!((plan.verbose, plan.quiet), (0, 0), "a usage error plans the bare run");
 
     let help = cli_ok(&provider, &["emery", "--help"]).await;
     let help = String::from_utf8_lossy(&help.stdout);
@@ -225,6 +231,59 @@ async fn verbosity_flags() {
     let short = cli_ok(&provider, &["emery", "-h"]).await;
     let short = String::from_utf8_lossy(&short.stdout);
     assert_eq!(help.lines().next(), short.lines().next(), "{help}");
+}
+
+// The runtime declares a `specify` run's adapters before the engine runs, by
+// reading the same carriers the run decodes: once per guest, a repeated
+// reference pinned by the first digest among them, and carriers that do not
+// decode declaring nothing — the run reports the refusal itself.
+#[tokio::test]
+async fn deployment_plan() {
+    let scratch = tempfile::TempDir::new_in(env!("CARGO_MANIFEST_DIR")).expect("project tempdir");
+    let component = scratch.path().join("custom.wasm");
+    std::fs::write(&component, b"\0asm-stub").expect("write component");
+    let component = component
+        .strip_prefix(env!("CARGO_MANIFEST_DIR"))
+        .expect("path under project")
+        .to_str()
+        .expect("utf-8 path")
+        .to_string();
+    let pin = support::digest("cd");
+    let config = scratch.path().join("emery.toml");
+    std::fs::write(
+        &config,
+        format!(
+            "[[source]]\nname = \"docs\"\nadapter = \"./custom.wasm\"\n\n\
+             [[source]]\nname = \"api\"\nadapter = \"./custom.wasm\"\ndigest = \"{pin}\"\n\n\
+             [[source]]\nname = \"demo\"\nadapter = \"demo@1.2.0\"\n\n\
+             [[source]]\nname = \"intent\"\nadapter = \"intent\"\n"
+        ),
+    )
+    .expect("write emery.toml");
+    let config = config.strip_prefix(env!("CARGO_MANIFEST_DIR")).expect("path under project");
+
+    let plan = emery_cli::plan(["emery", "specify", "--config", config.to_str().expect("utf-8")]);
+    let declared: Vec<(String, Option<String>)> = plan
+        .adapters
+        .iter()
+        .map(|(adapter, pin)| (adapter.guest(), pin.as_ref().map(ToString::to_string)))
+        .collect();
+    assert_eq!(
+        declared,
+        [
+            ("custom".to_string(), Some(pin.to_string())),
+            ("emery:demo@1.2.0".to_string(), None),
+            ("intent".to_string(), None),
+        ],
+        "one entry per guest, the shared component pinned by the one digest given"
+    );
+
+    let plan = emery_cli::plan(["emery", "specify", &component, "--description", "intent=brief"]);
+    let declared: Vec<String> = plan.adapters.iter().map(|(adapter, _)| adapter.guest()).collect();
+    assert_eq!(declared, ["custom", "intent"], "argv and `--description` carriers plan alike");
+
+    let plan = emery_cli::plan(["emery", "specify", &component, "--config", "emery.toml"]);
+    assert!(plan.adapters.is_empty(), "carriers the run refuses to combine declare nothing");
 }
 
 // `show` fails with a typed `spec-not-generated` error before any revision

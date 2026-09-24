@@ -17,9 +17,9 @@ use std::time::Duration;
 use std::{fs, slice};
 
 use emery_adapter::source::{ClaimKind, Evidence, SourceContent, SourceKind};
-use emery_engine::{CONTAINER, CURRENT};
+use emery_engine::{AdapterRef, CONTAINER, CURRENT};
 use omnia_sdk::model::Error as ModelError;
-use omnia_sdk::plugins::{Error as LoadError, Location};
+use omnia_sdk::plugins::Error as LoadError;
 use omnia_sdk::{BlobStore, StateStore, bad_gateway, bad_request};
 use omnia_test::SeenFormat;
 use omnia_test::guest::{Memory, Namespaced, Scripted};
@@ -111,12 +111,11 @@ async fn gen_spec() {
     // --------------------------------------------------
     // Observe: the load, the current id, and the revision.
     // --------------------------------------------------
-    let request = provider.plugins.loads().first().cloned().expect("one load request");
-    let Location::Path(path) = &request.location else {
-        panic!("a local component loads by path");
-    };
-    assert!(path.ends_with("source.wasm"), "the preopen-relative path rides the request: {path}");
-    assert!(request.digest.is_none(), "an unpinned source loads without a digest");
+    assert_eq!(
+        provider.plugins.loads(),
+        ["source"],
+        "a local component loads by its stem, the guest the runtime declares it as"
+    );
     assert!(
         provider.storage.objects("adapters").is_empty(),
         "nothing mirrors into engine storage; the loader reads the file fresh"
@@ -173,7 +172,8 @@ async fn gen_spec() {
 }
 
 // `--config` is the other specify authority: entry names become
-// source keys, and a local adapter resolves relative to the file.
+// source keys, and a local adapter resolves relative to the file — the
+// component the entry names exists only there, and the run finds it.
 #[tokio::test]
 async fn from_file() {
     let scratch = Scratch::new();
@@ -183,13 +183,18 @@ async fn from_file() {
     let provider = Provider::answering([SPEC_ANSWER, DESIGN_ANSWER]);
 
     cli_ok(&provider, &["emery", "specify", "--config", &config]).await;
-    let request = provider.plugins.loads().first().cloned().expect("one load request");
-    let Location::Path(path) = &request.location else {
-        panic!("a local component loads by path");
+    assert_eq!(provider.plugins.loads(), ["source"], "the file-relative component loads by stem");
+    let plan = emery_cli::plan(["emery", "specify", "--config", &config]);
+    let [(adapter, None)] = plan.adapters.as_slice() else {
+        panic!("the runtime declares the one unpinned component: {:?}", plan.adapters);
+    };
+    let AdapterRef::File(path) = adapter else {
+        panic!("a local component is declared from its path: {adapter}");
     };
     assert!(
         path.ends_with("source.wasm") && !path.starts_with("./"),
-        "the file-relative reference resolves against the config directory: {path}"
+        "the file-relative reference resolves against the config directory: {}",
+        path.display()
     );
 
     assert!(
@@ -209,7 +214,7 @@ async fn shared_roots() {
     for (adapter, wasm) in cases {
         let scratch = Scratch::new();
         // A package dispatches by its reference; a local component by its
-        // file's stem, the name the loader registers it under.
+        // file's stem, the guest name the runtime declares it under.
         let package = if *wasm {
             scratch.component();
             "source".to_string()
@@ -232,9 +237,11 @@ async fn shared_roots() {
             "{adapter}: both sources contribute to the one requirement"
         );
 
-        let loads = provider.plugins.loads();
-        assert_eq!(loads.len(), 1, "{adapter}: one adapter identity loads once");
-        assert_eq!(loads[0].location.name(), package, "{adapter}");
+        assert_eq!(
+            provider.plugins.loads(),
+            slice::from_ref(&package),
+            "{adapter}: one adapter identity loads once"
+        );
         let gated = provider.source.metadata.lock().expect("metadata").clone();
         assert_eq!(
             gated,
@@ -1228,8 +1235,9 @@ async fn github_refused() {
 // An exact package reference (`emery:<name>@<semver>`, or the
 // first-party shorthand as sugar for the `emery` namespace) loads
 // through the deployment loader under its own package identity — no
-// parallel adapter id — and names the registry its namespace routes to:
-// with no `[registries]` table, `emery` is augentic's.
+// parallel adapter id — the guest the runtime declares for it, routed to
+// the registry its namespace routes to: with no `[registries]` table,
+// `emery` is augentic's.
 #[tokio::test]
 async fn package_loads() {
     for reference in ["emery:demo@1.2.0", "demo@1.2.0"] {
@@ -1237,18 +1245,18 @@ async fn package_loads() {
 
         cli_ok(&provider, &["emery", "specify", reference]).await;
 
-        let loads = provider.plugins.loads();
-        let request = loads.first().expect("one load request");
         assert_eq!(
-            request.location,
-            Location::Registry {
-                package: "emery:demo@1.2.0".to_string(),
-                endpoint: Some("augentic.io".to_string()),
-            },
-            "the package reference is the load identity, and the load names its registry: \
-             {reference}"
+            provider.plugins.loads(),
+            ["emery:demo@1.2.0"],
+            "the package reference is the load identity: {reference}"
         );
-        assert!(request.digest.is_none(), "an unpinned package loads without a digest");
+        let plan = emery_cli::plan(["emery", "specify", reference]);
+        assert_eq!(
+            plan.adapters,
+            [("emery:demo@1.2.0".parse().expect("a package reference"), None)],
+            "the runtime declares the package, unpinned: {reference}"
+        );
+        assert_eq!(plan.registries.routes().get("emery"), Some(&"augentic.io"), "{reference}");
         let calls = provider.source.calls.lock().expect("calls");
         let (id, input) = calls.first().expect("one extract dispatch");
         assert_eq!(id, "emery:demo@1.2.0", "the adapter id is the loaded package identity");
@@ -1259,18 +1267,20 @@ async fn package_loads() {
 }
 
 // A bare name is a guest the deployment declares: the load attests it by
-// name, reading nothing and carrying no digest, and the source dispatches
-// by the name the handle returns.
+// name, the runtime declares nothing for it, and the source dispatches by
+// the name the handle returns.
 #[tokio::test]
 async fn bare_declared() {
     let provider = Provider::answering([SPEC_ANSWER, DESIGN_ANSWER]).declaring(["intent"]);
 
     cli_ok(&provider, &["emery", "specify", "intent"]).await;
 
-    let loads = provider.plugins.loads();
-    assert_eq!(loads.len(), 1, "a declared guest is one load");
-    assert_eq!(loads[0].location, Location::Declared("intent".to_string()));
-    assert!(loads[0].digest.is_none(), "a declared guest is attested, never pinned");
+    assert_eq!(provider.plugins.loads(), ["intent"], "a declared guest is one load, by name");
+    assert_eq!(
+        emery_cli::plan(["emery", "specify", "intent"]).adapters,
+        [(AdapterRef::Static("intent".to_string()), None)],
+        "the runtime sees the bare name and has nothing to declare for it"
+    );
     let gated = provider.source.metadata.lock().expect("metadata").clone();
     assert_eq!(gated, ["intent"], "the version gate reads the attested name");
     let calls = provider.source.calls.lock().expect("calls");
@@ -1295,8 +1305,8 @@ async fn bare_undeclared() {
     );
 }
 
-// A local component registers under its file's stem, and every dispatch
-// names that stem — the id the loader returned, not the path.
+// A local component is declared under its file's stem, loads by it, and
+// every dispatch names that stem — the id the loader returned, not the path.
 #[tokio::test]
 async fn file_named_by_stem() {
     let scratch = Scratch::new();
@@ -1305,8 +1315,12 @@ async fn file_named_by_stem() {
 
     cli_ok(&provider, &["emery", "specify", &component]).await;
 
-    let loads = provider.plugins.loads();
-    assert_eq!(loads[0].location.name(), "custom", "the path registers as its stem");
+    assert_eq!(provider.plugins.loads(), ["custom"], "the path loads as its stem");
+    let plan = emery_cli::plan(["emery", "specify", &component]);
+    let [(adapter, None)] = plan.adapters.as_slice() else {
+        panic!("the runtime declares the one component: {:?}", plan.adapters);
+    };
+    assert_eq!(adapter.guest(), "custom", "the runtime declares it under the stem it loads by");
     let gated = provider.source.metadata.lock().expect("metadata").clone();
     assert_eq!(gated, ["custom"]);
     let calls = provider.source.calls.lock().expect("calls");
@@ -1318,21 +1332,28 @@ async fn file_named_by_stem() {
 }
 
 // The `[registries]` table routes a package's namespace: with no line, the
-// `emery` namespace is augentic's; a line names the registry the load
-// carries, and may re-route `emery` itself.
+// `emery` namespace is augentic's; a line names the registry the runtime
+// routes the namespace to, and may re-route `emery` itself. The package
+// loads by its reference, the guest the runtime declares.
 #[tokio::test]
 async fn package_routed() {
-    let cases: &[(&str, &str, &str)] = &[
-        // (table, package, the registry the load names)
-        ("", "emery:demo@1.2.0", "augentic.io"),
-        ("[registries]\nacme = \"registry.acme.io\"\n", "acme:ledger@2.1.0", "registry.acme.io"),
+    let cases: &[(&str, &str, &str, &str)] = &[
+        // (table, package, its namespace, the registry the runtime routes it to)
+        ("", "emery:demo@1.2.0", "emery", "augentic.io"),
+        (
+            "[registries]\nacme = \"registry.acme.io\"\n",
+            "acme:ledger@2.1.0",
+            "acme",
+            "registry.acme.io",
+        ),
         (
             "[registries]\nemery = \"staging.augentic.io\"\n",
             "emery:demo@1.2.0",
+            "emery",
             "staging.augentic.io",
         ),
     ];
-    for (table, package, endpoint) in cases {
+    for (table, package, namespace, endpoint) in cases {
         let scratch = Scratch::new();
         let config = scratch
             .config(&format!("[[source]]\nname = \"docs\"\nadapter = \"{package}\"\n{table}"));
@@ -1340,13 +1361,11 @@ async fn package_routed() {
 
         cli_ok(&provider, &["emery", "specify", "--config", &config]).await;
 
-        let loads = provider.plugins.loads();
+        assert_eq!(provider.plugins.loads(), [*package], "{package} under {table:?}");
+        let plan = emery_cli::plan(["emery", "specify", "--config", &config]);
         assert_eq!(
-            loads[0].location,
-            Location::Registry {
-                package: (*package).to_string(),
-                endpoint: Some((*endpoint).to_string()),
-            },
+            plan.registries.routes().get(namespace),
+            Some(endpoint),
             "{package} under {table:?}"
         );
         provider.model.assert_exhausted();
@@ -1409,14 +1428,13 @@ async fn package_argv_registries() {
 
     cli_ok(&provider, &["emery", "specify", "acme:ledger@2.1.0"]).await;
 
-    let loads = provider.plugins.loads();
-    assert_eq!(loads.len(), 1, "argv names the run's only source");
+    assert_eq!(provider.plugins.loads(), ["acme:ledger@2.1.0"], "argv names the run's only source");
+    let plan = emery_cli::plan(["emery", "specify", "acme:ledger@2.1.0"]);
+    assert_eq!(plan.adapters.len(), 1, "the runtime declares argv's one package");
     assert_eq!(
-        loads[0].location,
-        Location::Registry {
-            package: "acme:ledger@2.1.0".to_string(),
-            endpoint: Some("registry.acme.io".to_string()),
-        }
+        plan.registries.routes().get("acme"),
+        Some(&"registry.acme.io"),
+        "the runtime routes the namespace from the project's table"
     );
     assert!(
         shown(&provider, "spec").await.contains("Sources: [ledger:greeting.behaviour]"),
@@ -1425,8 +1443,9 @@ async fn package_argv_registries() {
     provider.model.assert_exhausted();
 }
 
-// A `[[source]]` digest reaches the load as its pin, for a local component
-// and a package alike.
+// A `[[source]]` digest is the pin the runtime declares each adapter under,
+// for a local component and a package alike, and the digest the engine
+// holds the loaded adapter to.
 #[tokio::test]
 async fn source_digest_pinned() {
     let scratch = Scratch::new();
@@ -1437,20 +1456,24 @@ async fn source_digest_pinned() {
          [[source]]\nname = \"demo\"\nadapter = \"emery:demo@1.2.0\"\ndigest = \"{pin}\"\n"
     ));
     let grouping = baseline_grouping(2);
-    let provider = Provider::answering([grouping.as_str(), SPEC_ANSWER, DESIGN_ANSWER]);
+    let mut provider = Provider::answering([grouping.as_str(), SPEC_ANSWER, DESIGN_ANSWER]);
+    provider.plugins =
+        provider.plugins.clone().digest("source", pin.clone()).digest("emery:demo@1.2.0", pin.clone());
 
     cli_ok(&provider, &["emery", "specify", "--config", &config]).await;
 
-    let loads = provider.plugins.loads();
-    assert_eq!(loads.len(), 2);
-    for request in &loads {
-        assert_eq!(request.digest.as_ref(), Some(&pin), "{:?} carries its pin", request.location);
+    assert_eq!(provider.plugins.loads(), ["source", "emery:demo@1.2.0"]);
+    let plan = emery_cli::plan(["emery", "specify", "--config", &config]);
+    assert_eq!(plan.adapters.len(), 2, "the runtime declares both adapters");
+    for (adapter, declared) in &plan.adapters {
+        assert_eq!(declared.as_ref(), Some(&pin), "{adapter} is declared under its pin");
     }
     provider.model.assert_exhausted();
 }
 
-// A pin the component does not resolve to is the loader's refusal, landing
-// on the exit contract as `refused`.
+// A pin the loaded adapter does not resolve to is refused, landing on the
+// exit contract as `refused`: the deployment refuses the load where it
+// carries the pin, and the engine refuses the handle where it does not.
 #[tokio::test]
 async fn source_digest_mismatch() {
     let scratch = Scratch::new();
@@ -1464,7 +1487,8 @@ async fn source_digest_mismatch() {
 
     let envelope = fail(&provider, &["emery", "specify", "--config", &config], 1, "refused").await;
 
-    assert_message(&envelope, "is not the pinned");
+    assert_message(&envelope, "source.wasm` resolved to");
+    assert_message(&envelope, &format!("not its pinned digest {}", digest("cd")));
     assert!(
         provider.source.metadata.lock().expect("metadata").is_empty(),
         "a refused load is never gated"

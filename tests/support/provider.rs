@@ -15,8 +15,9 @@ use anyhow::Result;
 use emery_adapter::source::{
     AdapterMetadata, Backing, Claim, ClaimKind, Evidence, Source, SourceInput, SourceKind,
 };
+use emery_engine::AdapterRef;
 use omnia_sdk::api::command::Response;
-use omnia_sdk::plugins::{self, Digest, PluginRef};
+use omnia_sdk::plugins::{self, Digest};
 use omnia_sdk::{
     BlobStore, CasError, ContainerMetadata, Error, Model, ObjectMetadata, Plugins, StateStore,
     model,
@@ -112,10 +113,15 @@ pub struct Provider<S = Memory> {
     pub source: SourceScript,
     /// The scripted [`Plugins`] loader.
     ///
-    /// It declares no guest until a scenario says so through
-    /// [`Provider::declaring`], as the shipped runtime declares none; an
-    /// unscripted, unpinned component resolves to the fixed `digest("ab")`.
+    /// It admits every component and package a run names, as the shipped
+    /// runtime declares each before the engine runs, and resolves an
+    /// unscripted one to the fixed `digest("ab")`. A bare name is admitted
+    /// only once a scenario declares it through [`Provider::declaring`]; the
+    /// shipped runtime declares none, so [`cli`] refuses every other, as the
+    /// deployment's allow-list would.
     pub plugins: ScriptedLoader,
+    /// The bare names declared as guests of the scripted deployment.
+    pub declared: BTreeSet<String>,
     /// The scripted storage pair.
     pub storage: Arc<S>,
 }
@@ -139,6 +145,7 @@ impl<S> Provider<S> {
             model: Scripted::answering(answers),
             source: SourceScript::default(),
             plugins: ScriptedLoader::default().defaulting(digest("ab")),
+            declared: BTreeSet::new(),
             storage,
         }
     }
@@ -149,17 +156,38 @@ impl<S> Provider<S> {
     /// attests it; a bare name no scenario declares is refused, as the shipped
     /// runtime — which declares no adapter at all — refuses every one.
     pub fn declaring<'a>(mut self, names: impl IntoIterator<Item = &'a str>) -> Self {
-        self.plugins = names.into_iter().fold(self.plugins, ScriptedLoader::declare);
+        self.declared.extend(names.into_iter().map(str::to_owned));
         self
     }
 
+    // Mirrors the shipped runtime's read of the invocation before the run:
+    // every component and package it names is declared, and a bare name is a
+    // guest of the deployment or nothing — refused by the loader, typed, as
+    // the deployment's allow-list refuses a name it never declared.
+    fn declare(&self, argv: &[&str]) {
+        let undeclared = emery_cli::plan(argv.iter().copied())
+            .adapters
+            .into_iter()
+            .filter_map(|(adapter, _)| match adapter {
+                AdapterRef::Static(name) if !self.declared.contains(&name) => Some(name),
+                _ => None,
+            });
+        // The loader's script is shared through its handle, so the returned
+        // builder is the same loader.
+        drop(undeclared.fold(self.plugins.clone(), |loader, name| {
+            let refusal =
+                plugins::Error::Refused(format!("no guest `{name}` is declared by this deployment"));
+            loader.refuse(name, refusal)
+        }));
+    }
+
     // Mirrors host-mediated dispatch: an id is routable only once the loader
-    // has landed it — a declared guest attested by name, a component under
-    // the name its location registers. A source call before its load is the
-    // engine's ordering defect, and it fails here rather than only under the
-    // real runtime.
+    // has landed it — a declared guest attested by name, a component or a
+    // package under the guest name the engine loads it by. A source call
+    // before its load is the engine's ordering defect, and it fails here
+    // rather than only under the real runtime.
     fn routable(&self, id: &str) {
-        let loaded = self.plugins.loads().iter().any(|plugin| plugin.location.name() == id);
+        let loaded = self.plugins.loads().iter().any(|name| name == id);
         assert!(loaded, "`{id}` was dispatched before its load");
     }
 }
@@ -170,6 +198,7 @@ impl<S> Clone for Provider<S> {
             model: self.model.clone(),
             source: self.source.clone(),
             plugins: self.plugins.clone(),
+            declared: self.declared.clone(),
             storage: Arc::clone(&self.storage),
         }
     }
@@ -198,9 +227,9 @@ impl<S: Send + Sync + 'static> Model for Provider<S> {
 
 impl<S: Send + Sync + 'static> Plugins for Provider<S> {
     fn load(
-        &self, plugin: &PluginRef,
+        &self, name: &str,
     ) -> impl Future<Output = Result<plugins::Plugin, plugins::Error>> + Send {
-        Plugins::load(&self.plugins, plugin)
+        Plugins::load(&self.plugins, name)
     }
 }
 
@@ -321,10 +350,14 @@ impl<S: Send + Sync + 'static> Source for Provider<S> {
 }
 
 /// Runs one CLI invocation in-process, returning the raw response.
+///
+/// The scripted deployment is planned from `argv` first, as the shipped
+/// runtime plans its own before the engine runs.
 pub async fn cli<S>(provider: &Provider<S>, argv: &[&str]) -> Response
 where
     S: StateStore + BlobStore + Send + Sync + 'static,
 {
+    provider.declare(argv);
     emery_cli::run(provider.clone(), argv.iter().copied()).await
 }
 

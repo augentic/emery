@@ -5,9 +5,11 @@
 //! and supplies recovery hints for known failures.
 //!
 //! [`run`] returns a buffered response, leaving process I/O and exit handling
-//! to the caller. The crate installs no subscriber of its own; tracing follows
-//! the `RUST_LOG` the runtime sets from its verbosity flags, which the grammar
-//! declares (`-v`, `-q`) and never reads.
+//! to the caller. [`plan`] reads the same invocation ahead of the run for the
+//! runtime that hosts it: the adapters to declare and the verbosity flags to
+//! act on. The crate installs no subscriber of its own; tracing follows the
+//! `RUST_LOG` the runtime sets from those flags, which the grammar declares
+//! (`-v`, `-q`) and the run never reads.
 
 mod sources;
 mod text;
@@ -18,12 +20,13 @@ use std::path::PathBuf;
 
 use clap::builder::{PossibleValue, PossibleValuesParser, TypedValueParser};
 use clap::{Parser, Subcommand};
-use emery_engine::Provider;
 use emery_engine::show::{Artifact, ShowInput, show};
 use emery_engine::specify::{SpecifyInput, specify};
+use emery_engine::{AdapterRef, Provider, Registries};
 use omnia_sdk::Error;
 use omnia_sdk::api::command::{Command, Parsed, Response, Shell, Verbosity, completions, parse};
 use omnia_sdk::api::{Client, Format, Metadata};
+use omnia_sdk::plugins::Digest;
 use strum::VariantArray as _;
 
 const ABOUT: &str = "Deterministic primitives for spec-driven development";
@@ -76,6 +79,72 @@ where
     }
 }
 
+/// What a runtime reads from an invocation before the run it hosts.
+///
+/// The deployment's guest list is the loader's allow-list, so a runtime
+/// declares the adapters a `specify` invocation names before the engine asks
+/// for them, and it sets the run's tracing level from the verbosity flags the
+/// grammar declares.
+#[derive(Debug, Default)]
+pub struct Plan {
+    /// Every adapter the run names, once each by the guest it loads as
+    /// ([`AdapterRef::guest`]), with the `[[source]] digest` pinning it, in
+    /// declaration order.
+    pub adapters: Vec<(AdapterRef, Option<Digest>)>,
+    /// The registry serving each package namespace the run may fetch from.
+    pub registries: Registries,
+    /// How many times `-v` / `--verbose` is given.
+    pub verbose: u8,
+    /// How many times `-q` / `--quiet` is given.
+    pub quiet: u8,
+}
+
+/// Reads what the runtime hosting `argv` declares and selects before the run.
+///
+/// The adapters come from the carriers the run itself decodes — positional
+/// adapters, `--description`, `--config`, or the project-root `emery.toml` —
+/// read the same way, from the same working directory. An invocation that is
+/// not a `specify`, or whose sources do not decode, names no adapter: the run
+/// reports the usage error or refusal, and the runtime pre-empts none of it.
+/// Two references naming one guest are one entry, pinned by the first digest
+/// among them; the run refuses the pair itself.
+#[must_use]
+pub fn plan<I, T>(argv: I) -> Plan
+where
+    I: IntoIterator<Item = T>,
+    T: Into<OsString> + Clone,
+{
+    let Parsed::App(app) = parse::<App>(argv) else {
+        return Plan::default();
+    };
+    let mut plan = Plan {
+        verbose: app.verbosity.verbose,
+        quiet: app.verbosity.quiet,
+        ..Plan::default()
+    };
+    let Verb::Specify(arguments) = app.verb else {
+        return plan;
+    };
+    let Ok(SpecifyInput { sources, registries }) = arguments.decode() else {
+        return plan;
+    };
+
+    for source in sources {
+        let guest = source.adapter.guest();
+        match plan.adapters.iter_mut().find(|(adapter, _)| adapter.guest() == guest) {
+            Some((_, pin)) => {
+                if pin.is_none() {
+                    *pin = source.digest;
+                }
+            }
+            None => plan.adapters.push((source.adapter, source.digest)),
+        }
+    }
+    plan.registries = registries;
+
+    plan
+}
+
 // `bin_name` pins usage text to `emery`: Omnia forwards the engine guest's
 // own id as argv[0], and clap only reads argv[0] when `bin_name` is unset.
 #[derive(Debug, Parser)]
@@ -94,11 +163,10 @@ struct App {
     /// Select the output format.
     #[arg(long, env = "EMERY_FORMAT", default_value = "text", global = true)]
     format: Format,
-    // The runtime reads these from argv and sets `RUST_LOG` before the guest
-    // runs; declaring them lists them in help and completions and refuses
-    // `-v` beside `-q`.
+    // The runtime acts on these, through `plan`, before the guest runs;
+    // declaring them lists them in help and completions and refuses `-v`
+    // beside `-q`.
     #[command(flatten)]
-    #[expect(dead_code, reason = "the runtime acts on the flags; the grammar only declares them")]
     verbosity: Verbosity,
 }
 

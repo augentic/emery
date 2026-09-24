@@ -18,7 +18,12 @@ crate-type = ["cdylib", "rlib"]
 name = "emery"
 path = "src/main.rs"
 
+[dependencies]
+emery-cli.workspace = true
+omnia-sdk.workspace = true
+
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+emery-engine.workspace = true
 omnia.workspace = true
 omnia-cursor.workspace = true
 omnia-filesystem.workspace = true
@@ -26,15 +31,12 @@ omnia-wasi-blobstore.workspace = true
 omnia-wasi-keyvalue.workspace = true
 omnia-wasi-model.workspace = true
 omnia-wasi-otel.workspace = true
+serde.workspace = true
+toml.workspace = true
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 emery-adapter.workspace = true
-emery-cli.workspace = true
-omnia-sdk.workspace = true
 wasip3.workspace = true
-
-[build-dependencies]
-omnia.workspace = true
 
 [dev-dependencies]
 emery-sdk.workspace = true
@@ -154,31 +156,31 @@ omnia-cursor = "0.31.0"
 omnia-filesystem = "0.31.0"
 
 [patch.crates-io]
-# omnia = { git = "https://github.com/augentic/omnia" }
-# omnia-core = { git = "https://github.com/augentic/omnia" }
-# omnia-sdk = { git = "https://github.com/augentic/omnia" }
-# omnia-guest-macros = { git = "https://github.com/augentic/omnia" }
-# omnia-host-macros = { git = "https://github.com/augentic/omnia" }
-# omnia-plugin = { git = "https://github.com/augentic/omnia" }
-# omnia-test = { git = "https://github.com/augentic/omnia" }
-# omnia-wasi-blobstore = { git = "https://github.com/augentic/omnia" }
-# omnia-wasi-keyvalue = { git = "https://github.com/augentic/omnia" }
-# omnia-wasi-model = { git = "https://github.com/augentic/omnia" }
-# omnia-wasi-otel = { git = "https://github.com/augentic/omnia" }
-omnia = { path = "../omnia/crates/omnia" }
-omnia-core = { path = "../omnia/crates/omnia-core" }
-omnia-sdk = { path = "../omnia/crates/omnia-sdk" }
-omnia-guest-macros = { path = "../omnia/crates/guest-macros" }
-omnia-host-macros = { path = "../omnia/crates/host-macros" }
-omnia-plugin = { path = "../omnia/crates/omnia-plugin" }
-omnia-test = { path = "../omnia/crates/omnia-test" }
-omnia-wasi-blobstore = { path = "../omnia/crates/wasi-blobstore" }
-omnia-wasi-keyvalue = { path = "../omnia/crates/wasi-keyvalue" }
-omnia-wasi-model = { path = "../omnia/crates/wasi-model" }
-omnia-wasi-otel = { path = "../omnia/crates/wasi-otel" }
+omnia = { git = "https://github.com/augentic/omnia" }
+omnia-core = { git = "https://github.com/augentic/omnia" }
+omnia-sdk = { git = "https://github.com/augentic/omnia" }
+omnia-guest-macros = { git = "https://github.com/augentic/omnia" }
+omnia-host-macros = { git = "https://github.com/augentic/omnia" }
+omnia-plugin = { git = "https://github.com/augentic/omnia" }
+omnia-test = { git = "https://github.com/augentic/omnia" }
+omnia-wasi-blobstore = { git = "https://github.com/augentic/omnia" }
+omnia-wasi-keyvalue = { git = "https://github.com/augentic/omnia" }
+omnia-wasi-model = { git = "https://github.com/augentic/omnia" }
+omnia-wasi-otel = { git = "https://github.com/augentic/omnia" }
+# omnia = { path = "../omnia/crates/omnia" }
+# omnia-core = { path = "../omnia/crates/omnia-core" }
+# omnia-sdk = { path = "../omnia/crates/omnia-sdk" }
+# omnia-guest-macros = { path = "../omnia/crates/guest-macros" }
+# omnia-host-macros = { path = "../omnia/crates/host-macros" }
+# omnia-plugin = { path = "../omnia/crates/omnia-plugin" }
+# omnia-test = { path = "../omnia/crates/omnia-test" }
+# omnia-wasi-blobstore = { path = "../omnia/crates/wasi-blobstore" }
+# omnia-wasi-keyvalue = { path = "../omnia/crates/wasi-keyvalue" }
+# omnia-wasi-model = { path = "../omnia/crates/wasi-model" }
+# omnia-wasi-otel = { path = "../omnia/crates/wasi-otel" }
 
-omnia-cursor = { git = "https://github.com/augentic/omnia-backends" }
-omnia-filesystem = { git = "https://github.com/augentic/omnia-backends" }
+omnia-cursor = { path = "/tmp/omnia-backends-310/crates/cursor" }
+omnia-filesystem = { path = "/tmp/omnia-backends-310/crates/filesystem" }
 # omnia-cursor = { path = "../omnia-backends/crates/cursor" }
 # omnia-filesystem = { path = "../omnia-backends/crates/filesystem" }
 
