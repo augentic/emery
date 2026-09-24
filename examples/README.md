@@ -2,7 +2,7 @@
 
 Live `specify` journey via [omnia-cursor](https://github.com/augentic/omnia-backends/tree/main/crates/cursor): the mock adapter extracts greeting claims from `[docs/](docs/)` through the host model, the engine synthesises `spec.md` / `design.md`, and the revision commits.
 
-The adapter lives at `[adapter/](adapter/)` — the same anatomy as a first-party adapter. The `[runtime](runtime.rs)` host is a root-package example because it embeds the engine guest. The source input is `[docs/](docs/)`.
+The adapter lives at `[adapter/](adapter/)` — the same anatomy as a first-party adapter. The shipped `emery` binary hosts it: [emery.toml](emery.toml) names the built component by path, and the binary's `.` mount is the root it loads from. The source input is `[docs/](docs/)`.
 
 ## Prerequisites
 
@@ -19,10 +19,10 @@ cargo build --example adapter --target wasm32-wasip2 --release
 
 # run the example in debug (-v) — each -v raises tracing level, each -q lowers it
 export CURSOR_API_KEY=<Cursor API key>
-cargo run --example runtime -- -v specify --config examples/emery.toml
+cargo run -- -v specify --config examples/emery.toml
 
 # review the committed spec
-cargo run --example runtime -- show spec
+cargo run -- show spec
 ```
 
 *Extract* and *synthesis* both complete through the Cursor backend. The mock guest answers reference-tool calls in-process the same way the [omnia-cursor example](https://github.com/augentic/omnia-backends/tree/main/examples/cursor) does.

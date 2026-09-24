@@ -2,8 +2,10 @@
 # Selected with `emery specify --config [<path>]`, or discovered at the
 # project root by a run naming no sources at all.
 
-# Each [[source]] entry names one source, in declaration order; `name`
-# is the source key. The adapter is file-relative.
+# Each [[source]] entry names one source, in declaration order. `name` is
+# the source key; omitted, it is the adapter's key (a component file's
+# stem, here `source`). The adapter is file-relative; `digest` pins it.
+# `[registries]` routes a package adapter's namespace to its registry.
 [[source]]
 name = "greeting"
 adapter = "./source.wasm"
@@ -34,29 +36,11 @@ adapter = "./source.wasm"
 # name = "custom"
 # adapter = "./adapters/custom.wasm"
 
-# # Third-party package: the registry is resolved from the namespace by
-# # the emery deployment's compiled-in wasm-pkg config, never by this file.
+# # Third-party package: routed by `[registries]`, pinned, and keyed
+# # `ledger` by its name.
 # [[source]]
-# name = "third-party"
 # adapter = "acme:ledger@2.1.0"
-
-# # Remote repository, read at the pinned ref over the host-bound read
-# # grant (GitHub MCP server) — never downloaded. Reserved; refuses typed
-# # until the read-view grant exists.
-# [[source]]
-# name = "upstream-api"
-# adapter = "documentation"
-# git = "https://github.com/acme/api@v2.3.0"
-
-# # Remote resource behind an MCP-served product; the host binding routes
-# # the domain to Figma's MCP server. Reserved, as above.
-# [[source]]
-# name = "checkout-flow"
-# adapter = "documentation"
-# url = "https://www.figma.com/design/aBcD3fG/checkout-flow"
-
-# # Document at a URL, read live at extract time. Reserved, as above.
-# [[source]]
-# name = "api-contract"
-# adapter = "documentation"
-# url = "https://example.com/spec/openapi.yaml"
+# digest = "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+#
+# [registries]
+# acme = "registry.acme.io"

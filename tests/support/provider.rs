@@ -4,13 +4,14 @@
 //! scenario must consume exactly the expected operations, so an unexercised or
 //! unexpected path fails immediately.
 
+#![allow(dead_code, reason = "shared by suites that each use a subset")]
+
 use std::collections::{BTreeMap, BTreeSet};
 use std::future::Future;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use anyhow::Result;
-use emery_adapter::is_kebab;
 use emery_adapter::source::{
     AdapterMetadata, Backing, Claim, ClaimKind, Evidence, Source, SourceInput, SourceKind,
 };
@@ -111,7 +112,9 @@ pub struct Provider<S = Memory> {
     pub source: SourceScript,
     /// The scripted [`Plugins`] loader.
     ///
-    /// An unscripted package resolves to the fixed `digest("ab")`.
+    /// It declares no guest until a scenario says so through
+    /// [`Provider::declaring`], as the shipped runtime declares none; an
+    /// unscripted, unpinned component resolves to the fixed `digest("ab")`.
     pub plugins: ScriptedLoader,
     /// The scripted storage pair.
     pub storage: Arc<S>,
@@ -140,13 +143,24 @@ impl<S> Provider<S> {
         }
     }
 
-    // Mirrors host-mediated dispatch: a bare name is a guest the deployment
-    // declares; any other id is routable only once the loader has landed it.
-    // A source call before its load is the engine's ordering defect, and it
-    // fails here rather than only under the real runtime.
+    /// Declares each bare adapter name as a guest of the scripted deployment.
+    ///
+    /// A scenario dispatching a bare name declares it here, so the loader
+    /// attests it; a bare name no scenario declares is refused, as the shipped
+    /// runtime — which declares no adapter at all — refuses every one.
+    pub fn declaring<'a>(mut self, names: impl IntoIterator<Item = &'a str>) -> Self {
+        self.plugins = names.into_iter().fold(self.plugins, ScriptedLoader::declare);
+        self
+    }
+
+    // Mirrors host-mediated dispatch: an id is routable only once the loader
+    // has landed it — a declared guest attested by name, a component under
+    // the name its location registers. A source call before its load is the
+    // engine's ordering defect, and it fails here rather than only under the
+    // real runtime.
     fn routable(&self, id: &str) {
-        let loaded = self.plugins.loads().iter().any(|plugin| plugin.package == id);
-        assert!(is_kebab(id) || loaded, "`{id}` was dispatched before its load");
+        let loaded = self.plugins.loads().iter().any(|plugin| plugin.location.name() == id);
+        assert!(loaded, "`{id}` was dispatched before its load");
     }
 }
 

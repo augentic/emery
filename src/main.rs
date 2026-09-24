@@ -1,8 +1,10 @@
 //! Defines the shipped `emery` runtime.
 //!
-//! The runtime embeds the engine guest under capability and registry policies
-//! fixed at compile time. Every external effect remains limited to those
-//! grants.
+//! The runtime embeds the engine guest under capability policies fixed at
+//! compile time: the invocation directory is the one mount, so it is also the
+//! root a local adapter loads from, and a package adapter fetches from the
+//! registry the project's `emery.toml` routes its namespace to. Every
+//! external effect remains limited to those grants.
 
 use omnia_cursor::Client as Cursor;
 use omnia_filesystem::{Client as Filesystem, ConnectOptions};
@@ -14,19 +16,7 @@ use omnia_wasi_otel::{OtelDefault, WasiOtel};
 omnia::runtime!({
     mode: command,
     mounts: [{ name: ".", path: "." }],
-    guests: [{
-        id: "emery",
-        source: include_bytes!(concat!(env!("OUT_DIR"), "/emery.cwasm")),
-    }],
-    link: {
-        interfaces: ["emery:adapter/source@0.1.0"],
-    },
-    plugin: {
-        locations: [
-            { name: ".", path: "." },
-            { registry: "omnia.host", config: include_str!("wasm-pkg.toml") },
-        ],
-    },
+    guests: [{ path: env!("EMERY_GUEST") }],
     hosts: {
         WasiOtel: OtelDefault,
         WasiModel: Cursor,

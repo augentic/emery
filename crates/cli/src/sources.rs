@@ -1,22 +1,34 @@
 //! Builds a `specify` source list from command-line arguments.
 //!
 //! Sources may come from positional adapters, inline descriptions, or an
-//! `emery.toml` file. Configuration files cannot be combined with direct
+//! `emery.toml` file, which also carries the `[registries]` table package
+//! adapters route through. Configuration files cannot be combined with direct
 //! command-line sources. When no source is specified, the project-root
-//! `emery.toml` is used if present.
+//! `emery.toml` is used if present; a run naming its sources on the command
+//! line still reads that file's `[registries]` table.
 
 use std::ffi::OsStr;
 use std::path::{Path, PathBuf};
 
 use anyhow::Context;
 use emery_engine::specify::{SourceConfig, SourceContent};
-use emery_engine::{AdapterRef, preopen_path};
+use emery_engine::{AdapterRef, Registries, preopen_path};
+use omnia_sdk::plugins::Digest;
 use omnia_sdk::{Error, bad_request};
 
 /// The config file a run naming no sources looks for at the project root.
 pub const CONFIG_FILE: &str = "emery.toml";
 
-/// Decodes the run's source list from the `specify` arguments.
+/// What a run's carriers decode.
+#[derive(Debug, Default)]
+pub struct Decoded {
+    /// The sources, in declaration order.
+    pub sources: Vec<SourceConfig>,
+    /// The registries the run's package adapters fetch from.
+    pub registries: Registries,
+}
+
+/// Decodes the run's sources and registries from the `specify` arguments.
 ///
 /// # Errors
 ///
@@ -25,8 +37,8 @@ pub const CONFIG_FILE: &str = "emery.toml";
 /// - Returns [`Error::ServerError`] when a config file cannot be read.
 pub fn decode(
     adapters: &[String], descriptions: &[String], config: Option<&Path>,
-) -> Result<Vec<SourceConfig>, Error> {
-    let (carrier, sources) = match config {
+) -> Result<Decoded, Error> {
+    let (carrier, decoded) = match config {
         Some(path) => {
             if !adapters.is_empty() || !descriptions.is_empty() {
                 return Err(bad_request!(
@@ -44,22 +56,28 @@ pub fn decode(
         None if adapters.is_empty() && descriptions.is_empty() => {
             (CONFIG_FILE.to_string(), discover()?)
         }
-        None => ("argv".to_string(), from_argv(adapters, descriptions)?),
+        // argv names the sources; the project-root file routes their packages
+        None => {
+            let sources = from_argv(adapters, descriptions)?;
+            let registries = discover()?.registries;
+            ("argv".to_string(), Decoded { sources, registries })
+        }
     };
-    tracing::debug!(%carrier, sources = sources.len(), "sources decoded");
+    tracing::debug!(%carrier, sources = decoded.sources.len(), "sources decoded");
 
-    Ok(sources)
+    Ok(decoded)
 }
 
-// Reads the project-root `emery.toml` for a run that names no sources. A
-// missing file yields the empty list, which the engine refuses as
-// `specify-source-required`; a file that fails to parse is refused here.
-fn discover() -> Result<Vec<SourceConfig>, Error> {
+// Reads the project-root `emery.toml`. A missing file yields nothing — an
+// empty source list, which the engine refuses as `specify-source-required`
+// when it is the run's only carrier; a file that fails to parse is refused
+// here.
+fn discover() -> Result<Decoded, Error> {
     let path = Path::new(CONFIG_FILE);
     if path.try_exists().with_context(|| format!("reading {CONFIG_FILE}"))? {
         from_file(path)
     } else {
-        Ok(Vec::new())
+        Ok(Decoded::default())
     }
 }
 
@@ -93,22 +111,18 @@ fn source(reference: &str, content: SourceContent) -> Result<SourceConfig, Error
         key: key(&adapter),
         adapter,
         content,
+        digest: None,
     })
 }
 
-// Derives the source key of a command-line adapter: its kebab stem,
-// `intent` for `emery_intent.wasm` and `emery:intent@1.0.0` alike.
+// Derives the source key of an adapter: the bare name, a package's name
+// (`intent` for `emery:intent@1.0.0`), or a component file's stem kebab-cased
+// (`intent` for `intent.wasm`, `my-adapter` for `my_adapter.wasm`).
 fn key(adapter: &AdapterRef) -> String {
     match adapter {
-        AdapterRef::Static(name) => name.clone(),
-        AdapterRef::Package(package) => {
-            let rest = package.split_once(':').map_or(package.as_str(), |(_, rest)| rest);
-            rest.split_once('@').map_or(rest, |(name, _)| name).to_string()
-        }
+        AdapterRef::Static(name) | AdapterRef::Package { name, .. } => name.clone(),
         AdapterRef::File(path) => {
             let stem = path.file_stem().and_then(OsStr::to_str).unwrap_or_default();
-            let stem =
-                stem.strip_prefix("emery_").or_else(|| stem.strip_prefix("emery-")).unwrap_or(stem);
             stem.replace('_', "-")
         }
     }
@@ -126,7 +140,7 @@ fn anchored(adapter: AdapterRef, base: &Path) -> Result<AdapterRef, Error> {
 
 // Reads and decodes an operator-owned config file; any parse failure is
 // refused, and the engine never writes the file.
-fn from_file(path: &Path) -> Result<Vec<SourceConfig>, Error> {
+fn from_file(path: &Path) -> Result<Decoded, Error> {
     let raw =
         std::fs::read_to_string(path).with_context(|| format!("reading {}", path.display()))?;
     let file: ConfigFile = toml::from_str(&raw).map_err(|err| {
@@ -138,51 +152,48 @@ fn from_file(path: &Path) -> Result<Vec<SourceConfig>, Error> {
         .parent()
         .filter(|parent| !parent.as_os_str().is_empty())
         .unwrap_or_else(|| Path::new("."));
-    file.source.into_iter().map(|entry| entry.decode(base)).collect()
+    let sources =
+        file.source.into_iter().map(|entry| entry.decode(base)).collect::<Result<Vec<_>, _>>()?;
+
+    Ok(Decoded {
+        sources,
+        registries: file.registries,
+    })
 }
 
-// The operator-authored schema: ordered `[[source]]` entries whose
-// `name` is the source key, with exactly one optional content key.
+// The operator-authored schema: ordered `[[source]]` entries, each with
+// exactly one optional content key, and the `[registries]` table routing
+// package namespaces. An unknown key is refused with its name and line.
 #[derive(Debug, Default, serde::Deserialize)]
 #[serde(deny_unknown_fields)]
 #[serde(default)]
 struct ConfigFile {
     source: Vec<SourceEntry>,
+    registries: Registries,
 }
 
-// `name` and `adapter` are required; every other key is optional. The
-// adapter reference is parsed by the decoder, so a malformed one is
-// refused with its line.
+// `adapter` is required; every other key is optional. The adapter reference
+// is parsed by the decoder, so a malformed one is refused with its line.
 #[derive(Debug, serde::Deserialize)]
 #[serde(deny_unknown_fields, rename_all = "kebab-case")]
 struct SourceEntry {
-    name: String,
+    // The source key; omitted, the adapter's key, as on the command line.
+    name: Option<String>,
     adapter: AdapterRef,
     path: Option<PathBuf>,
-    git: Option<String>,
-    url: Option<String>,
     description: Option<String>,
+    // The `sha256:` pin the adapter's component must resolve to.
+    digest: Option<Digest>,
 }
 
 impl SourceEntry {
     // Decodes the entry into the engine's source, anchoring its relative
     // paths at `base`, the config file's directory.
     fn decode(self, base: &Path) -> Result<SourceConfig, Error> {
-        let name = self.name;
-        if let Some(remote) = self.git.as_deref().or(self.url.as_deref()) {
-            if remote.starts_with("git+") {
-                return Err(bad_request!(
-                    "source `{name}`: drop the `git+` prefix and write the plain URL"
-                ));
-            }
-            return Err(bad_request!(
-                "source `{name}`: `git` and `url` are not supported; use `path` or `description`"
-            ));
-        }
-
         // A local component path resolves relative to the file, like Cargo
         // `path` dependencies.
         let adapter = anchored(self.adapter, base)?;
+        let name = self.name.unwrap_or_else(|| key(&adapter));
         let content = match (self.path, self.description) {
             (Some(_), Some(_)) => {
                 return Err(bad_request!(
@@ -201,6 +212,7 @@ impl SourceEntry {
             key: name,
             adapter,
             content,
+            digest: self.digest,
         })
     }
 }
