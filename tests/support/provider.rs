@@ -165,18 +165,18 @@ impl<S> Provider<S> {
     // guest of the deployment or nothing — refused by the loader, typed, as
     // the deployment's allow-list refuses a name it never declared.
     fn declare(&self, argv: &[&str]) {
-        let undeclared = emery_cli::plan(argv.iter().copied())
-            .adapters
-            .into_iter()
-            .filter_map(|(adapter, _)| match adapter {
+        let undeclared = emery_cli::plan(argv.iter().copied()).adapters.into_iter().filter_map(
+            |(adapter, _)| match adapter {
                 AdapterRef::Static(name) if !self.declared.contains(&name) => Some(name),
                 _ => None,
-            });
+            },
+        );
         // The loader's script is shared through its handle, so the returned
         // builder is the same loader.
         drop(undeclared.fold(self.plugins.clone(), |loader, name| {
-            let refusal =
-                plugins::Error::Refused(format!("no guest `{name}` is declared by this deployment"));
+            let refusal = plugins::Error::Refused(format!(
+                "no guest `{name}` is declared by this deployment"
+            ));
             loader.refuse(name, refusal)
         }));
     }

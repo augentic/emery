@@ -73,8 +73,11 @@ impl Registries {
     /// The routing a deployment installs for the packages a run names.
     #[must_use]
     pub fn routes(&self) -> BTreeMap<&str, &str> {
-        let mut routes: BTreeMap<&str, &str> =
-            self.0.iter().map(|(namespace, registry)| (namespace.as_str(), registry.as_str())).collect();
+        let mut routes: BTreeMap<&str, &str> = self
+            .0
+            .iter()
+            .map(|(namespace, registry)| (namespace.as_str(), registry.as_str()))
+            .collect();
         routes.entry(FIRST_PARTY.0).or_insert(FIRST_PARTY.1);
         routes
     }

@@ -45,8 +45,10 @@ use crate::{preopen_path, store};
 /// - Returns [`Error::BadRequest`] for an empty source list (code
 ///   `specify-source-required`), a malformed or repeated key, a workspace path
 ///   outside the project, a package no registry routes, a digest on a declared
-///   guest, an incompatible adapter (code `unsupported-version`), a source that
-///   refuses its input, or a synthesis answer that cannot be accepted.
+///   guest, two adapters naming one guest, an adapter that resolves to other
+///   bytes than its digest pin (code `refused`), an incompatible adapter (code
+///   `unsupported-version`), a source that refuses its input, or a synthesis
+///   answer that cannot be accepted.
 /// - Returns [`Error::NotFound`] when a local adapter does not exist.
 /// - Returns [`Error::ServerError`] when evidence has [`Evidence::findings`],
 ///   or serialisation or storage fails.
@@ -107,7 +109,9 @@ pub struct SourceConfig {
     pub content: SourceContent,
     /// The `sha256:` digest the adapter's component must resolve to.
     ///
-    /// `None` trusts whatever the load resolves. A declared guest takes none.
+    /// The runtime declares the adapter's guest under it, and the run holds
+    /// the digest the loader attests to it. `None` trusts whatever the load
+    /// resolves. A declared guest takes none.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub digest: Option<Digest>,
 }

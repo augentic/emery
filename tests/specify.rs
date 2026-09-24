@@ -1457,8 +1457,11 @@ async fn source_digest_pinned() {
     ));
     let grouping = baseline_grouping(2);
     let mut provider = Provider::answering([grouping.as_str(), SPEC_ANSWER, DESIGN_ANSWER]);
-    provider.plugins =
-        provider.plugins.clone().digest("source", pin.clone()).digest("emery:demo@1.2.0", pin.clone());
+    provider.plugins = provider
+        .plugins
+        .clone()
+        .digest("source", pin.clone())
+        .digest("emery:demo@1.2.0", pin.clone());
 
     cli_ok(&provider, &["emery", "specify", "--config", &config]).await;
 

@@ -52,12 +52,6 @@ audit-as-crates-io = false
 [policy.omnia-wasi-websocket]
 audit-as-crates-io = false
 
-[policy.wrpc-introspect]
-audit-as-crates-io = false
-
-[policy.wrpc-transport]
-audit-as-crates-io = false
-
 [[exemptions.addr2line]]
 version = "0.26.1"
 criteria = "safe-to-deploy"
@@ -946,6 +940,14 @@ criteria = "safe-to-deploy"
 version = "3.3.0"
 criteria = "safe-to-deploy"
 
+[[exemptions.thiserror]]
+version = "2.0.21"
+criteria = "safe-to-deploy"
+
+[[exemptions.thiserror-impl]]
+version = "2.0.21"
+criteria = "safe-to-deploy"
+
 [[exemptions.thread_local]]
 version = "1.1.10"
 criteria = "safe-to-deploy"
@@ -1155,11 +1157,11 @@ version = "0.8.3"
 criteria = "safe-to-deploy"
 
 [[exemptions.zerocopy]]
-version = "0.8.57"
+version = "0.8.58"
 criteria = "safe-to-deploy"
 
 [[exemptions.zerocopy-derive]]
-version = "0.8.57"
+version = "0.8.58"
 criteria = "safe-to-deploy"
 
 [[exemptions.zerofrom]]

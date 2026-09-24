@@ -2,7 +2,7 @@
 
 Live `specify` journey via [omnia-cursor](https://github.com/augentic/omnia-backends/tree/main/crates/cursor): the mock adapter extracts greeting claims from `[docs/](docs/)` through the host model, the engine synthesises `spec.md` / `design.md`, and the revision commits.
 
-The adapter lives at `[adapter/](adapter/)` — the same anatomy as a first-party adapter. The shipped `emery` binary hosts it: [emery.toml](emery.toml) names the built component by path, and the binary's `.` mount is the root it loads from. The source input is `[docs/](docs/)`.
+The adapter lives at `[adapter/](adapter/)` — the same anatomy as a first-party adapter. The shipped `emery` binary hosts it: [emery.toml](emery.toml) names the built component by path, and the binary declares it as a guest of the run's deployment from that path before the engine runs. The source input is `[docs/](docs/)`.
 
 ## Prerequisites
 
