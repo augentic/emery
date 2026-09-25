@@ -5,7 +5,8 @@
 //! adapters route through. Configuration files cannot be combined with direct
 //! command-line sources. When no source is specified, the project-root
 //! `emery.toml` is used if present; a run naming its sources on the command
-//! line still reads that file's `[registries]` table.
+//! line still reads that file's `[registries]` table, and that table alone:
+//! its `[[source]]` entries are neither merged in nor decoded.
 
 use std::ffi::OsStr;
 use std::path::{Path, PathBuf};
@@ -15,6 +16,7 @@ use emery_engine::specify::{SourceConfig, SourceContent};
 use emery_engine::{AdapterRef, Registries, preopen_path};
 use omnia_sdk::plugins::Digest;
 use omnia_sdk::{Error, bad_request};
+use serde::de::{DeserializeOwned, IgnoredAny};
 
 /// The config file a run naming no sources looks for at the project root.
 pub const CONFIG_FILE: &str = "emery.toml";
@@ -54,12 +56,19 @@ pub fn decode(
             (path.display().to_string(), from_file(&path)?)
         }
         None if adapters.is_empty() && descriptions.is_empty() => {
-            (CONFIG_FILE.to_string(), discover()?)
+            let decoded = match discover()? {
+                Some(path) => from_file(path)?,
+                None => Decoded::default(),
+            };
+            (CONFIG_FILE.to_string(), decoded)
         }
         // argv names the sources; the project-root file routes their packages
         None => {
             let sources = from_argv(adapters, descriptions)?;
-            let registries = discover()?.registries;
+            let registries = match discover()? {
+                Some(path) => registries(path)?,
+                None => Registries::default(),
+            };
             ("argv".to_string(), Decoded { sources, registries })
         }
     };
@@ -68,17 +77,14 @@ pub fn decode(
     Ok(decoded)
 }
 
-// Reads the project-root `emery.toml`. A missing file yields nothing — an
-// empty source list, which the engine refuses as `specify-source-required`
-// when it is the run's only carrier; a file that fails to parse is refused
-// here.
-fn discover() -> Result<Decoded, Error> {
+// Finds the project-root `emery.toml`, if there is one. Missing, it yields
+// nothing: an empty source list, which the engine refuses as
+// `specify-source-required` when the file is the run's only carrier, or the
+// engine's one first-party route when argv names the sources.
+fn discover() -> Result<Option<&'static Path>, Error> {
     let path = Path::new(CONFIG_FILE);
-    if path.try_exists().with_context(|| format!("reading {CONFIG_FILE}"))? {
-        from_file(path)
-    } else {
-        Ok(Decoded::default())
-    }
+    let found = path.try_exists().with_context(|| format!("reading {CONFIG_FILE}"))?;
+    Ok(found.then_some(path))
 }
 
 // Builds the sources named on the command line: each positional adapter
@@ -138,15 +144,10 @@ fn anchored(adapter: AdapterRef, base: &Path) -> Result<AdapterRef, Error> {
     })
 }
 
-// Reads and decodes an operator-owned config file; any parse failure is
-// refused, and the engine never writes the file.
+// Reads and decodes an operator-owned config file: its sources, each
+// anchored at the file's directory, and its registries.
 fn from_file(path: &Path) -> Result<Decoded, Error> {
-    let raw =
-        std::fs::read_to_string(path).with_context(|| format!("reading {}", path.display()))?;
-    let file: ConfigFile = toml::from_str(&raw).map_err(|err| {
-        let path = path.display();
-        bad_request!("{path}: {err}")
-    })?;
+    let file: ConfigFile = parse(path)?;
 
     let base = path
         .parent()
@@ -161,14 +162,35 @@ fn from_file(path: &Path) -> Result<Decoded, Error> {
     })
 }
 
+// Reads an operator-owned config file for its `[registries]` table alone.
+// The `[[source]]` entries are skipped undecoded, so what they hold never
+// refuses a run that named its own sources.
+fn registries(path: &Path) -> Result<Registries, Error> {
+    let file: ConfigFile<IgnoredAny> = parse(path)?;
+    Ok(file.registries)
+}
+
+// Parses an operator-owned config file as `File`; any parse failure is
+// refused, and the engine never writes the file.
+fn parse<File: DeserializeOwned>(path: &Path) -> Result<File, Error> {
+    let raw =
+        std::fs::read_to_string(path).with_context(|| format!("reading {}", path.display()))?;
+    toml::from_str(&raw).map_err(|err| {
+        let path = path.display();
+        bad_request!("{path}: {err}")
+    })
+}
+
 // The operator-authored schema: ordered `[[source]]` entries, each with
 // exactly one optional content key, and the `[registries]` table routing
 // package namespaces. An unknown key is refused with its name and line.
+// `Sources` is the shape the entries are read as: decoded, or skipped by a
+// run reading the file for its table.
 #[derive(Debug, Default, serde::Deserialize)]
 #[serde(deny_unknown_fields)]
 #[serde(default)]
-struct ConfigFile {
-    source: Vec<SourceEntry>,
+struct ConfigFile<Sources = Vec<SourceEntry>> {
+    source: Sources,
     registries: Registries,
 }
 

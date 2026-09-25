@@ -17,9 +17,9 @@ use std::time::Duration;
 use std::{fs, slice};
 
 use emery_adapter::source::{ClaimKind, Evidence, SourceContent, SourceKind};
-use emery_engine::{AdapterRef, CONTAINER, CURRENT};
+use emery_engine::{CONTAINER, CURRENT, ENGINE};
 use omnia_sdk::model::Error as ModelError;
-use omnia_sdk::plugins::Error as LoadError;
+use omnia_sdk::plugins::{Error as LoadError, Location};
 use omnia_sdk::{BlobStore, StateStore, bad_gateway, bad_request};
 use omnia_test::SeenFormat;
 use omnia_test::guest::{Memory, Namespaced, Scripted};
@@ -111,11 +111,11 @@ async fn gen_spec() {
     // --------------------------------------------------
     // Observe: the load, the current id, and the revision.
     // --------------------------------------------------
-    assert_eq!(
-        provider.plugins.loads(),
-        ["source"],
-        "a local component loads by its stem, the guest the runtime declares it as"
-    );
+    let loads = provider.plugins.loads();
+    let [(Location::Path(path), None)] = loads.as_slice() else {
+        panic!("a local component is one unpinned load by path: {loads:?}");
+    };
+    assert!(path.ends_with("source.wasm"), "the preopen-relative path rides the request: {path}");
     assert!(
         provider.storage.objects("adapters").is_empty(),
         "nothing mirrors into engine storage; the loader reads the file fresh"
@@ -183,18 +183,13 @@ async fn from_file() {
     let provider = Provider::answering([SPEC_ANSWER, DESIGN_ANSWER]);
 
     cli_ok(&provider, &["emery", "specify", "--config", &config]).await;
-    assert_eq!(provider.plugins.loads(), ["source"], "the file-relative component loads by stem");
-    let plan = emery_cli::plan(["emery", "specify", "--config", &config]);
-    let [(adapter, None)] = plan.adapters.as_slice() else {
-        panic!("the runtime declares the one unpinned component: {:?}", plan.adapters);
-    };
-    let AdapterRef::File(path) = adapter else {
-        panic!("a local component is declared from its path: {adapter}");
+    let loads = provider.plugins.loads();
+    let [(Location::Path(path), None)] = loads.as_slice() else {
+        panic!("a local component is one unpinned load by path: {loads:?}");
     };
     assert!(
         path.ends_with("source.wasm") && !path.starts_with("./"),
-        "the file-relative reference resolves against the config directory: {}",
-        path.display()
+        "the file-relative reference resolves against the config directory: {path}"
     );
 
     assert!(
@@ -214,7 +209,7 @@ async fn shared_roots() {
     for (adapter, wasm) in cases {
         let scratch = Scratch::new();
         // A package dispatches by its reference; a local component by its
-        // file's stem, the guest name the runtime declares it under.
+        // file's stem, the guest name the loader registers it under.
         let package = if *wasm {
             scratch.component();
             "source".to_string()
@@ -238,7 +233,7 @@ async fn shared_roots() {
         );
 
         assert_eq!(
-            provider.plugins.loads(),
+            provider.loaded(),
             slice::from_ref(&package),
             "{adapter}: one adapter identity loads once"
         );
@@ -1235,9 +1230,8 @@ async fn github_refused() {
 // An exact package reference (`emery:<name>@<semver>`, or the
 // first-party shorthand as sugar for the `emery` namespace) loads
 // through the deployment loader under its own package identity — no
-// parallel adapter id — the guest the runtime declares for it, routed to
-// the registry its namespace routes to: with no `[registries]` table,
-// `emery` is augentic's.
+// parallel adapter id — and names the registry its namespace routes to:
+// with no `[registries]` table, `emery` is augentic's.
 #[tokio::test]
 async fn package_loads() {
     for reference in ["emery:demo@1.2.0", "demo@1.2.0"] {
@@ -1247,16 +1241,10 @@ async fn package_loads() {
 
         assert_eq!(
             provider.plugins.loads(),
-            ["emery:demo@1.2.0"],
-            "the package reference is the load identity: {reference}"
+            [(registry("emery:demo@1.2.0", "augentic.io"), None)],
+            "the package reference is the load identity, and the unpinned load names its \
+             registry: {reference}"
         );
-        let plan = emery_cli::plan(["emery", "specify", reference]);
-        assert_eq!(
-            plan.adapters,
-            [("emery:demo@1.2.0".parse().expect("a package reference"), None)],
-            "the runtime declares the package, unpinned: {reference}"
-        );
-        assert_eq!(plan.registries.routes().get("emery"), Some(&"augentic.io"), "{reference}");
         let calls = provider.source.calls.lock().expect("calls");
         let (id, input) = calls.first().expect("one extract dispatch");
         assert_eq!(id, "emery:demo@1.2.0", "the adapter id is the loaded package identity");
@@ -1267,19 +1255,18 @@ async fn package_loads() {
 }
 
 // A bare name is a guest the deployment declares: the load attests it by
-// name, the runtime declares nothing for it, and the source dispatches by
-// the name the handle returns.
+// name, reading nothing and carrying no digest, and the source dispatches
+// by the name the handle returns.
 #[tokio::test]
 async fn bare_declared() {
     let provider = Provider::answering([SPEC_ANSWER, DESIGN_ANSWER]).declaring(["intent"]);
 
     cli_ok(&provider, &["emery", "specify", "intent"]).await;
 
-    assert_eq!(provider.plugins.loads(), ["intent"], "a declared guest is one load, by name");
     assert_eq!(
-        emery_cli::plan(["emery", "specify", "intent"]).adapters,
-        [(AdapterRef::Static("intent".to_string()), None)],
-        "the runtime sees the bare name and has nothing to declare for it"
+        provider.plugins.loads(),
+        [(Location::Declared("intent".to_string()), None)],
+        "a declared guest is one load, by name, never pinned"
     );
     let gated = provider.source.metadata.lock().expect("metadata").clone();
     assert_eq!(gated, ["intent"], "the version gate reads the attested name");
@@ -1305,8 +1292,8 @@ async fn bare_undeclared() {
     );
 }
 
-// A local component is declared under its file's stem, loads by it, and
-// every dispatch names that stem — the id the loader returned, not the path.
+// A local component registers under its file's stem, and every dispatch
+// names that stem — the id the loader returned, not the path.
 #[tokio::test]
 async fn file_named_by_stem() {
     let scratch = Scratch::new();
@@ -1315,12 +1302,7 @@ async fn file_named_by_stem() {
 
     cli_ok(&provider, &["emery", "specify", &component]).await;
 
-    assert_eq!(provider.plugins.loads(), ["custom"], "the path loads as its stem");
-    let plan = emery_cli::plan(["emery", "specify", &component]);
-    let [(adapter, None)] = plan.adapters.as_slice() else {
-        panic!("the runtime declares the one component: {:?}", plan.adapters);
-    };
-    assert_eq!(adapter.guest(), "custom", "the runtime declares it under the stem it loads by");
+    assert_eq!(provider.loaded(), ["custom"], "the path registers as its stem");
     let gated = provider.source.metadata.lock().expect("metadata").clone();
     assert_eq!(gated, ["custom"]);
     let calls = provider.source.calls.lock().expect("calls");
@@ -1332,28 +1314,21 @@ async fn file_named_by_stem() {
 }
 
 // The `[registries]` table routes a package's namespace: with no line, the
-// `emery` namespace is augentic's; a line names the registry the runtime
-// routes the namespace to, and may re-route `emery` itself. The package
-// loads by its reference, the guest the runtime declares.
+// `emery` namespace is augentic's; a line names the registry the load
+// carries, and may re-route `emery` itself.
 #[tokio::test]
 async fn package_routed() {
-    let cases: &[(&str, &str, &str, &str)] = &[
-        // (table, package, its namespace, the registry the runtime routes it to)
-        ("", "emery:demo@1.2.0", "emery", "augentic.io"),
-        (
-            "[registries]\nacme = \"registry.acme.io\"\n",
-            "acme:ledger@2.1.0",
-            "acme",
-            "registry.acme.io",
-        ),
+    let cases: &[(&str, &str, &str)] = &[
+        // (table, package, the registry the load names)
+        ("", "emery:demo@1.2.0", "augentic.io"),
+        ("[registries]\nacme = \"registry.acme.io\"\n", "acme:ledger@2.1.0", "registry.acme.io"),
         (
             "[registries]\nemery = \"staging.augentic.io\"\n",
             "emery:demo@1.2.0",
-            "emery",
             "staging.augentic.io",
         ),
     ];
-    for (table, package, namespace, endpoint) in cases {
+    for (table, package, endpoint) in cases {
         let scratch = Scratch::new();
         let config = scratch
             .config(&format!("[[source]]\nname = \"docs\"\nadapter = \"{package}\"\n{table}"));
@@ -1361,11 +1336,9 @@ async fn package_routed() {
 
         cli_ok(&provider, &["emery", "specify", "--config", &config]).await;
 
-        assert_eq!(provider.plugins.loads(), [*package], "{package} under {table:?}");
-        let plan = emery_cli::plan(["emery", "specify", "--config", &config]);
         assert_eq!(
-            plan.registries.routes().get(namespace),
-            Some(endpoint),
+            provider.plugins.loads(),
+            [(registry(package, endpoint), None)],
             "{package} under {table:?}"
         );
         provider.model.assert_exhausted();
@@ -1410,6 +1383,31 @@ async fn file_stem_collision() {
     assert!(provider.plugins.loads().is_empty(), "a colliding list loads nothing");
 }
 
+// The engine is itself a guest of every deployment it runs in, declared at
+// boot as `emery`, so a reference that would load as it — a component with
+// that stem, or the bare name — is refused before any load: asked, the
+// loader would attest the engine in the adapter's place and extract would
+// be dispatched to it.
+#[tokio::test]
+async fn engine_as_adapter() {
+    let scratch = Scratch::new();
+    let component = scratch.write("adapters/emery.wasm", b"\0asm-stub");
+    let provider = Provider::idle().declaring([ENGINE]);
+
+    let envelope = fail(&provider, &["emery", "specify", &component], 1, "bad_request").await;
+    assert_message(&envelope, &format!("adapter `{component}` would register as `{ENGINE}`"));
+    assert_message(&envelope, "the engine itself; rename the component");
+
+    let envelope = fail(&provider, &["emery", "specify", ENGINE], 1, "bad_request").await;
+    assert_message(&envelope, &format!("adapter `{ENGINE}` is the engine itself"));
+
+    assert!(provider.plugins.loads().is_empty(), "the engine is never asked for as an adapter");
+    assert!(
+        provider.source.metadata.lock().expect("metadata").is_empty(),
+        "nothing is dispatched to the engine"
+    );
+}
+
 // A run naming its sources on the command line still routes them through
 // the project-root `emery.toml`'s `[registries]` table — the table alone;
 // the file's sources are never merged in. The CWD move is hermetic under
@@ -1428,13 +1426,10 @@ async fn package_argv_registries() {
 
     cli_ok(&provider, &["emery", "specify", "acme:ledger@2.1.0"]).await;
 
-    assert_eq!(provider.plugins.loads(), ["acme:ledger@2.1.0"], "argv names the run's only source");
-    let plan = emery_cli::plan(["emery", "specify", "acme:ledger@2.1.0"]);
-    assert_eq!(plan.adapters.len(), 1, "the runtime declares argv's one package");
     assert_eq!(
-        plan.registries.routes().get("acme"),
-        Some(&"registry.acme.io"),
-        "the runtime routes the namespace from the project's table"
+        provider.plugins.loads(),
+        [(registry("acme:ledger@2.1.0", "registry.acme.io"), None)],
+        "argv names the run's only source, routed by the project's table"
     );
     assert!(
         shown(&provider, "spec").await.contains("Sources: [ledger:greeting.behaviour]"),
@@ -1443,9 +1438,42 @@ async fn package_argv_registries() {
     provider.model.assert_exhausted();
 }
 
-// A `[[source]]` digest is the pin the runtime declares each adapter under,
-// for a local component and a package alike, and the digest the engine
-// holds the loaded adapter to.
+// A run naming its sources on the command line reads the project-root
+// `emery.toml` for the `[registries]` table alone: its `[[source]]` entries
+// stay undecoded, so an escaping path, an unknown key, or a malformed adapter
+// among them — each refused where the file carries the run's sources — never
+// refuses a run that named none of them. The CWD move is hermetic under
+// nextest's process-per-test isolation.
+#[tokio::test]
+async fn package_argv_malformed_sources() {
+    let project = tempfile::TempDir::new().expect("project dir");
+    std::env::set_current_dir(project.path()).expect("enter project");
+    for entry in [
+        "[[source]]\nname = \"docs\"\nadapter = \"documentation\"\npath = \"../../outside\"\n",
+        "[[source]]\nname = \"docs\"\nadapter = \"documentation\"\nbranch = \"main\"\n",
+        "[[source]]\nname = \"local\"\nadapter = \"/tmp/source.wasm\"\n",
+    ] {
+        fs::write(
+            project.path().join("emery.toml"),
+            format!("{entry}\n[registries]\nacme = \"registry.acme.io\"\n"),
+        )
+        .expect("write emery.toml");
+        fail(&Provider::idle(), &["emery", "specify"], 1, "bad_request").await;
+        let provider = Provider::answering([SPEC_ANSWER, DESIGN_ANSWER]);
+
+        cli_ok(&provider, &["emery", "specify", "acme:ledger@2.1.0"]).await;
+
+        assert_eq!(
+            provider.plugins.loads(),
+            [(registry("acme:ledger@2.1.0", "registry.acme.io"), None)],
+            "{entry}"
+        );
+        provider.model.assert_exhausted();
+    }
+}
+
+// A `[[source]]` digest reaches the load as its pin, for a local component
+// and a package alike.
 #[tokio::test]
 async fn source_digest_pinned() {
     let scratch = Scratch::new();
@@ -1465,18 +1493,15 @@ async fn source_digest_pinned() {
 
     cli_ok(&provider, &["emery", "specify", "--config", &config]).await;
 
-    assert_eq!(provider.plugins.loads(), ["source", "emery:demo@1.2.0"]);
-    let plan = emery_cli::plan(["emery", "specify", "--config", &config]);
-    assert_eq!(plan.adapters.len(), 2, "the runtime declares both adapters");
-    for (adapter, declared) in &plan.adapters {
-        assert_eq!(declared.as_ref(), Some(&pin), "{adapter} is declared under its pin");
+    assert_eq!(provider.loaded(), ["source", "emery:demo@1.2.0"]);
+    for (location, carried) in provider.plugins.loads() {
+        assert_eq!(carried, Some(pin.clone()), "{location} carries its pin");
     }
     provider.model.assert_exhausted();
 }
 
-// A pin the loaded adapter does not resolve to is refused, landing on the
-// exit contract as `refused`: the deployment refuses the load where it
-// carries the pin, and the engine refuses the handle where it does not.
+// A pin the component does not resolve to is the loader's refusal, landing
+// on the exit contract as `refused`.
 #[tokio::test]
 async fn source_digest_mismatch() {
     let scratch = Scratch::new();
@@ -1516,6 +1541,28 @@ async fn source_digest_on_bare() {
     assert_message(&envelope, "adapter `documentation`");
     assert_message(&envelope, "takes no digest");
     assert!(provider.plugins.loads().is_empty(), "a refused list loads nothing");
+}
+
+// The refusal holds for every entry naming the guest, not the first alone:
+// a digest on a later entry sharing a declared guest is refused the same
+// way, whether or not it happens to match the digest the loader attests.
+#[tokio::test]
+async fn source_digest_on_bare_repeated() {
+    for pin in [digest("ab"), digest("cd")] {
+        let scratch = Scratch::new();
+        let config = scratch.config(&format!(
+            "[[source]]\nname = \"docs\"\nadapter = \"documentation\"\n\n\
+             [[source]]\nname = \"guide\"\nadapter = \"documentation\"\ndigest = \"{pin}\"\n"
+        ));
+        let provider = Provider::idle().declaring(["documentation"]);
+
+        let envelope =
+            fail(&provider, &["emery", "specify", "--config", &config], 1, "bad_request").await;
+
+        assert_message(&envelope, "adapter `documentation`");
+        assert_message(&envelope, "takes no digest");
+        assert!(provider.plugins.loads().is_empty(), "a refused list loads nothing: {pin}");
+    }
 }
 
 // A `[[source]]` without `name` is keyed by its adapter, as an argv source
@@ -1782,6 +1829,15 @@ async fn multi_project() {
 fn assert_message(envelope: &Value, fragment: &str) {
     let message = envelope["message"].as_str().unwrap_or("");
     assert!(message.contains(fragment), "expected `{fragment}` in: {envelope}");
+}
+
+// The location a routed package loads at: its reference, at the registry
+// its namespace routes to.
+fn registry(package: &str, endpoint: &str) -> Location {
+    Location::Registry {
+        package: package.to_string(),
+        endpoint: Some(endpoint.to_string()),
+    }
 }
 
 // Reads the current revision id from a project's store.

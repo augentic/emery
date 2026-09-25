@@ -45,7 +45,8 @@ use crate::{preopen_path, store};
 /// - Returns [`Error::BadRequest`] for an empty source list (code
 ///   `specify-source-required`), a malformed or repeated key, a workspace path
 ///   outside the project, a package no registry routes, a digest on a declared
-///   guest, two adapters naming one guest, an adapter that resolves to other
+///   guest, two adapters naming one guest or one naming the engine's own
+///   ([`ENGINE`](crate::ENGINE)), an adapter that resolves to other
 ///   bytes than its digest pin (code `refused`), an incompatible adapter (code
 ///   `unsupported-version`), a source that refuses its input, or a synthesis
 ///   answer that cannot be accepted.
@@ -109,9 +110,9 @@ pub struct SourceConfig {
     pub content: SourceContent,
     /// The `sha256:` digest the adapter's component must resolve to.
     ///
-    /// The runtime declares the adapter's guest under it, and the run holds
-    /// the digest the loader attests to it. `None` trusts whatever the load
-    /// resolves. A declared guest takes none.
+    /// The run passes it on the load, and the loader holds the resolved
+    /// bytes to it. `None` trusts whatever the load resolves. A declared
+    /// guest takes none.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub digest: Option<Digest>,
 }
