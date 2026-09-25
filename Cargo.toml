@@ -37,7 +37,6 @@ wasip3.workspace = true
 omnia.workspace = true
 
 [dev-dependencies]
-cfg-if.workspace = true
 emery-sdk.workspace = true
 hex.workspace = true
 serde_json.workspace = true
@@ -57,10 +56,6 @@ tokio = { workspace = true, features = ["macros", "rt", "sync", "time"] }
 name = "adapter"
 path = "examples/adapter/lib.rs"
 crate-type = ["cdylib"]
-
-[[example]]
-name = "runtime"
-path = "examples/runtime.rs"
 
 [lints]
 workspace = true
@@ -125,7 +120,6 @@ unused_result_ok = "warn"
 
 [workspace.dependencies]
 anyhow = "1.0.104"
-cfg-if = "1.0.5"
 clap = { version = "4.6.7", features = ["derive", "env"] }
 futures = "0.3.34"
 hex = "0.4.3"
@@ -148,7 +142,7 @@ emery-engine = { path = "crates/engine" }
 emery-prose = { path = "crates/prose" }
 emery-sdk = { path = "crates/sdk" }
 
-omnia = { version = "0.37.0", default-features = false, features = ["jit", "link", "plugin"] }
+omnia = { version = "0.37.0", default-features = false, features = ["jit", "link", "loader"] }
 omnia-sdk = { version = "0.37.0", default-features = false, features = ["command"] }
 omnia-test = { version = "0.37.0", default-features = false }
 omnia-wasi-blobstore = "0.37.0"

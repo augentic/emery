@@ -1,8 +1,12 @@
-//! Builds and embeds the engine component.
+//! Builds the engine component and names it for the runtime to embed.
 //!
-//! The build script compiles the engine guest for `wasm32-wasip2`. Debug
-//! builds embed the component directly, while release builds precompile it for
-//! faster startup.
+//! The build script compiles the engine guest for `wasm32-wasip2` and emits
+//! the artifact's path as `EMERY_GUEST`, which the `runtime!` invocation in
+//! `src/main.rs` reads with `env!` and embeds with `include_bytes!`. Debug
+//! builds name the raw component (`emery.wasm`, JIT-compiled at startup);
+//! release builds precompile it to `emery.cwasm` for faster startup — for the
+//! binary's own target, under the runtime's default compile settings, so the
+//! build shell's environment steers neither. The runtime loads either format.
 //!
 //! The resulting `emery` binary is self-contained and does not load its engine
 //! component from disk at run time.
@@ -21,17 +25,24 @@ fn main() {
     let release = std::env::var("PROFILE").as_deref() == Ok("release");
 
     let wasm = build_engine(&manifest_dir, &out_dir, release);
-    let out = out_dir.join("emery.cwasm");
-
-    // compile engine.wasm?
-    if release {
-        // compile to cwasm
-        omnia::compile::compile(&wasm, Some(out)).expect("should compile the wasm component");
+    let guest = if release {
+        // The binary's target, not the build machine's; the runtime's default
+        // settings, not the build shell's — `main.rs` loads it with neither.
+        let target = std::env::var("TARGET").expect("cargo env");
+        let compiled = out_dir.join("emery.cwasm");
+        omnia::compile::compile(
+            &wasm,
+            Some(compiled.clone()),
+            Some(&target),
+            &omnia::CompileOptions::default(),
+        )
+        .expect("should compile the wasm component");
+        compiled
     } else {
-        // use JIT to avoid Cranelift AOT cost during edits and CI
-        std::fs::copy(&wasm, &out)
-            .unwrap_or_else(|err| panic!("copying {} to {}: {err}", wasm.display(), out.display()));
-    }
+        // JIT avoids the Cranelift AOT cost during edits and CI.
+        wasm
+    };
+    println!("cargo:rustc-env=EMERY_GUEST={}", guest.display());
 }
 
 // Build the engine wasm32 guest.

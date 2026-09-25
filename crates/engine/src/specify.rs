@@ -22,6 +22,7 @@ pub use emery_adapter::source::SourceContent;
 use emery_adapter::source::{Evidence, Source, SourceInput, SourceKind};
 use futures::future;
 use omnia_sdk::api::Context;
+use omnia_sdk::plugins::Digest;
 use omnia_sdk::{BlobStore, Error, Model, Plugins, StateStore, bad_request, server_error};
 use serde::{Deserialize, Serialize};
 
@@ -29,7 +30,7 @@ use self::basis::GroupingBrief;
 use self::brief::Brief as _;
 use self::design::DesignBrief;
 use self::spec::SpecBrief;
-use crate::adapter::{self, AdapterRef};
+use crate::adapter::{self, AdapterRef, Loaded, Registries};
 use crate::revision::Revision;
 pub use crate::revision::{Changed, DesignDiff, Diff, Entry, ReqId, SectionKind, SpecDiff};
 use crate::{preopen_path, store};
@@ -43,9 +44,12 @@ use crate::{preopen_path, store};
 ///
 /// - Returns [`Error::BadRequest`] for an empty source list (code
 ///   `specify-source-required`), a malformed or repeated key, a workspace path
-///   outside the project, an incompatible adapter (code `unsupported-version`),
-///   a source that refuses its input, or a synthesis answer that cannot be
-///   accepted.
+///   outside the project, a package no registry routes, a digest on a declared
+///   guest, two adapters naming one guest or one naming the engine's own
+///   ([`ENGINE`](crate::ENGINE)), an adapter that resolves to other
+///   bytes than its digest pin (code `refused`), an incompatible adapter (code
+///   `unsupported-version`), a source that refuses its input, or a synthesis
+///   answer that cannot be accepted.
 /// - Returns [`Error::NotFound`] when a local adapter does not exist.
 /// - Returns [`Error::ServerError`] when evidence has [`Evidence::findings`],
 ///   or serialisation or storage fails.
@@ -59,10 +63,15 @@ pub async fn specify<P: Model + Source + StateStore + BlobStore + Plugins>(
     let provider = context.provider();
 
     let bound = Bound::all(&input.sources)?;
-    let kinds = &adapter::load(provider, bound.iter().map(|source| source.adapter)).await?;
+    let loaded = &adapter::load(
+        provider,
+        bound.iter().map(|source| (source.adapter, source.digest)),
+        &input.registries,
+    )
+    .await?;
 
     let extracts =
-        future::try_join_all(bound.iter().map(|source| source.extract(provider, kinds))).await?;
+        future::try_join_all(bound.iter().map(|source| source.extract(provider, loaded))).await?;
 
     let bases = GroupingBrief::new(&extracts).derive(provider).await?;
     let spec = SpecBrief::new(&extracts, &bases).judge(provider).await?;
@@ -80,6 +89,11 @@ pub struct SpecifyInput {
     /// Sources in declaration order, which reconciliation preserves for
     /// stable requirement numbering.
     pub sources: Vec<SourceConfig>,
+    /// The registries package adapters fetch from, by namespace.
+    ///
+    /// Empty, only the `emery` namespace routes.
+    #[serde(default)]
+    pub registries: Registries,
 }
 
 /// Configuration for one source used by [`specify`].
@@ -94,6 +108,13 @@ pub struct SourceConfig {
     ///
     /// `.` identifies the project root.
     pub content: SourceContent,
+    /// The `sha256:` digest the adapter's component must resolve to.
+    ///
+    /// The run passes it on the load, and the loader holds the resolved
+    /// bytes to it. `None` trusts whatever the load resolves. A declared
+    /// guest takes none.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub digest: Option<Digest>,
 }
 
 impl SourceConfig {
@@ -140,6 +161,7 @@ pub struct SpecifyOutput {
 
 struct Bound<'a> {
     adapter: &'a AdapterRef,
+    digest: Option<&'a Digest>,
     input: SourceInput,
 }
 
@@ -161,6 +183,7 @@ impl<'a> Bound<'a> {
             }
             bound.push(Self {
                 adapter: &source.adapter,
+                digest: source.digest.as_ref(),
                 input,
             });
         }
@@ -170,17 +193,17 @@ impl<'a> Bound<'a> {
 
     #[tracing::instrument(skip_all, fields(source = %self.input.key, adapter = %self.adapter))]
     async fn extract<S: Source>(
-        &self, provider: &S, kinds: &BTreeMap<String, SourceKind>,
+        &self, provider: &S, loaded: &BTreeMap<String, Loaded>,
     ) -> Result<Extract, Error> {
         let source = &self.input.key;
         let adapter = self.adapter.to_string();
 
-        let kind = kinds
+        let Loaded { id, kind } = loaded
             .get(&adapter)
-            .copied()
             .ok_or_else(|| server_error!("adapter `{adapter}` was not loaded"))?;
+        let kind = *kind;
         tracing::info!(%source, %adapter, %kind, "extracting");
-        let evidence = Source::extract(provider, &adapter, &self.input).await?;
+        let evidence = Source::extract(provider, id, &self.input).await?;
 
         let findings = evidence.findings();
         if !findings.is_empty() {

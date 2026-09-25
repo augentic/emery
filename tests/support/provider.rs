@@ -4,18 +4,19 @@
 //! scenario must consume exactly the expected operations, so an unexercised or
 //! unexpected path fails immediately.
 
+#![allow(dead_code, reason = "shared by suites that each use a subset")]
+
 use std::collections::{BTreeMap, BTreeSet};
 use std::future::Future;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use anyhow::Result;
-use emery_adapter::is_kebab;
 use emery_adapter::source::{
     AdapterMetadata, Backing, Claim, ClaimKind, Evidence, Source, SourceInput, SourceKind,
 };
 use omnia_sdk::api::command::Response;
-use omnia_sdk::plugins::{self, Digest, PluginRef};
+use omnia_sdk::plugins::{self, Digest, Location};
 use omnia_sdk::{
     BlobStore, CasError, ContainerMetadata, Error, Model, ObjectMetadata, Plugins, StateStore,
     model,
@@ -111,7 +112,12 @@ pub struct Provider<S = Memory> {
     pub source: SourceScript,
     /// The scripted [`Plugins`] loader.
     ///
-    /// An unscripted package resolves to the fixed `digest("ab")`.
+    /// It admits every component path and package a run names, as the
+    /// shipped runtime's read-only project mount and registry routing admit
+    /// them, and resolves an unscripted one to the fixed `digest("ab")`. A
+    /// bare name is admitted only once a scenario declares it through
+    /// [`Provider::declaring`]; the shipped runtime declares none, so every
+    /// other is refused, as the deployment refuses a guest it never declared.
     pub plugins: ScriptedLoader,
     /// The scripted storage pair.
     pub storage: Arc<S>,
@@ -140,13 +146,32 @@ impl<S> Provider<S> {
         }
     }
 
-    // Mirrors host-mediated dispatch: a bare name is a guest the deployment
-    // declares; any other id is routable only once the loader has landed it.
-    // A source call before its load is the engine's ordering defect, and it
-    // fails here rather than only under the real runtime.
+    /// Declares each bare adapter name as a guest of the scripted deployment.
+    ///
+    /// A scenario dispatching a bare name declares it here, so the loader
+    /// attests it; a bare name no scenario declares is refused, as the shipped
+    /// runtime — which declares no adapter at all — refuses every one.
+    pub fn declaring<'a>(mut self, names: impl IntoIterator<Item = &'a str>) -> Self {
+        // The loader's script is shared through its handle, so the returned
+        // builder is the same loader.
+        self.plugins = names.into_iter().fold(self.plugins, ScriptedLoader::declare);
+        self
+    }
+
+    /// The name of every guest the loader was asked for, in call order —
+    /// what each load registers as, refused or not.
+    pub fn loaded(&self) -> Vec<String> {
+        self.plugins.loads().iter().map(|(location, _)| location.name().to_owned()).collect()
+    }
+
+    // Mirrors host-mediated dispatch: an id is routable only once the loader
+    // has landed it — a declared guest attested by name, a component or a
+    // package under the guest name the engine loads it by. A source call
+    // before its load is the engine's ordering defect, and it fails here
+    // rather than only under the real runtime.
     fn routable(&self, id: &str) {
-        let loaded = self.plugins.loads().iter().any(|plugin| plugin.package == id);
-        assert!(is_kebab(id) || loaded, "`{id}` was dispatched before its load");
+        let loaded = self.loaded().iter().any(|name| name == id);
+        assert!(loaded, "`{id}` was dispatched before its load");
     }
 }
 
@@ -184,9 +209,9 @@ impl<S: Send + Sync + 'static> Model for Provider<S> {
 
 impl<S: Send + Sync + 'static> Plugins for Provider<S> {
     fn load(
-        &self, plugin: &PluginRef,
+        &self, from: &Location, digest: Option<&Digest>,
     ) -> impl Future<Output = Result<plugins::Plugin, plugins::Error>> + Send {
-        Plugins::load(&self.plugins, plugin)
+        Plugins::load(&self.plugins, from, digest)
     }
 }
 

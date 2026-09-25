@@ -17,7 +17,7 @@ use std::time::Duration;
 use std::{fs, slice};
 
 use emery_adapter::source::{ClaimKind, Evidence, SourceContent, SourceKind};
-use emery_engine::{CONTAINER, CURRENT};
+use emery_engine::{CONTAINER, CURRENT, ENGINE};
 use omnia_sdk::model::Error as ModelError;
 use omnia_sdk::plugins::{Error as LoadError, Location};
 use omnia_sdk::{BlobStore, StateStore, bad_gateway, bad_request};
@@ -25,7 +25,7 @@ use omnia_test::SeenFormat;
 use omnia_test::guest::{Memory, Namespaced, Scripted};
 use serde_json::Value;
 use sha2::{Digest as _, Sha256};
-use support::{Provider, Rendezvous, claim, cli_ok, evidence, fail, requirement};
+use support::{Provider, Rendezvous, claim, cli_ok, digest, evidence, fail, requirement};
 
 // Scripted drafts, the canonical documents the engine commits from them, and
 // the documents it renders from those documents.
@@ -61,9 +61,13 @@ impl Scratch {
         Self(tempfile::TempDir::new_in(env!("CARGO_MANIFEST_DIR")).expect("project tempdir"))
     }
 
-    // Writes `body` under `name`, returning the project-relative path.
+    // Writes `body` under `name`, creating the directories it names, and
+    // returns the project-relative path.
     fn write(&self, name: &str, body: impl AsRef<[u8]>) -> String {
         let path = self.0.path().join(name);
+        if let Some(parent) = path.parent() {
+            fs::create_dir_all(parent).unwrap_or_else(|err| panic!("mkdir for {name}: {err}"));
+        }
         fs::write(&path, body).unwrap_or_else(|err| panic!("write {name}: {err}"));
         path.strip_prefix(env!("CARGO_MANIFEST_DIR"))
             .expect("path under project")
@@ -107,13 +111,11 @@ async fn gen_spec() {
     // --------------------------------------------------
     // Observe: the load, the current id, and the revision.
     // --------------------------------------------------
-    let request = provider.plugins.loads().first().cloned().expect("one load request");
-    assert_eq!(request.package, component, "the adapter reference is the loaded package identity");
-    let Location::Path(path) = &request.location else {
-        panic!("a local component loads by path");
+    let loads = provider.plugins.loads();
+    let [(Location::Path(path), None)] = loads.as_slice() else {
+        panic!("a local component is one unpinned load by path: {loads:?}");
     };
     assert!(path.ends_with("source.wasm"), "the preopen-relative path rides the request: {path}");
-    assert!(request.digest.is_none(), "a load request carries no digest");
     assert!(
         provider.storage.objects("adapters").is_empty(),
         "nothing mirrors into engine storage; the loader reads the file fresh"
@@ -170,7 +172,8 @@ async fn gen_spec() {
 }
 
 // `--config` is the other specify authority: entry names become
-// source keys, and a local adapter resolves relative to the file.
+// source keys, and a local adapter resolves relative to the file — the
+// component the entry names exists only there, and the run finds it.
 #[tokio::test]
 async fn from_file() {
     let scratch = Scratch::new();
@@ -180,9 +183,9 @@ async fn from_file() {
     let provider = Provider::answering([SPEC_ANSWER, DESIGN_ANSWER]);
 
     cli_ok(&provider, &["emery", "specify", "--config", &config]).await;
-    let request = provider.plugins.loads().first().cloned().expect("one load request");
-    let Location::Path(path) = &request.location else {
-        panic!("a local component loads by path");
+    let loads = provider.plugins.loads();
+    let [(Location::Path(path), None)] = loads.as_slice() else {
+        panic!("a local component is one unpinned load by path: {loads:?}");
     };
     assert!(
         path.ends_with("source.wasm") && !path.starts_with("./"),
@@ -205,9 +208,14 @@ async fn shared_roots() {
     let cases: &[(&str, bool)] = &[("emery:documentation@1.2.0", false), ("./source.wasm", true)];
     for (adapter, wasm) in cases {
         let scratch = Scratch::new();
-        // A package is its own identity; a local component's is its path
-        // anchored at the config file, however the file spelled it.
-        let package = if *wasm { scratch.component() } else { (*adapter).to_string() };
+        // A package dispatches by its reference; a local component by its
+        // file's stem, the guest name the loader registers it under.
+        let package = if *wasm {
+            scratch.component();
+            "source".to_string()
+        } else {
+            (*adapter).to_string()
+        };
         let config = scratch.config(&format!(
             "[[source]]\nname = \"docs\"\nadapter = \"{adapter}\"\npath = \"docs\"\n\n\
              [[source]]\nname = \"api\"\nadapter = \"{adapter}\"\npath = \"api\"\n"
@@ -224,9 +232,11 @@ async fn shared_roots() {
             "{adapter}: both sources contribute to the one requirement"
         );
 
-        let loads = provider.plugins.loads();
-        assert_eq!(loads.len(), 1, "{adapter}: one adapter identity loads once");
-        assert_eq!(loads[0].package, package, "{adapter}");
+        assert_eq!(
+            provider.loaded(),
+            slice::from_ref(&package),
+            "{adapter}: one adapter identity loads once"
+        );
         let gated = provider.source.metadata.lock().expect("metadata").clone();
         assert_eq!(
             gated,
@@ -255,7 +265,8 @@ async fn shared_roots() {
 #[tokio::test]
 async fn sources_together() {
     let grouping = baseline_grouping(2);
-    let mut provider = Provider::answering([grouping.as_str(), SPEC_ANSWER, DESIGN_ANSWER]);
+    let mut provider = Provider::answering([grouping.as_str(), SPEC_ANSWER, DESIGN_ANSWER])
+        .declaring(["docs", "api"]);
     provider.source.rendezvous = Some(Rendezvous::from_iter(["docs", "api"]));
 
     cli_ok(&provider, &["emery", "specify", "docs", "api"]).await;
@@ -291,7 +302,7 @@ async fn discovery() {
     .expect("write emery.toml");
     std::env::set_current_dir(project.path()).expect("enter project");
 
-    let provider = Provider::answering([SPEC_ANSWER, DESIGN_ANSWER]);
+    let provider = Provider::answering([SPEC_ANSWER, DESIGN_ANSWER]).declaring(["documentation"]);
 
     cli_ok(&provider, &["emery", "specify"]).await;
 
@@ -304,7 +315,7 @@ async fn discovery() {
 // component.
 #[tokio::test]
 async fn description_source() {
-    let provider = Provider::answering([SPEC_ANSWER, DESIGN_ANSWER]);
+    let provider = Provider::answering([SPEC_ANSWER, DESIGN_ANSWER]).declaring(["intent"]);
 
     cli_ok(&provider, &["emery", "specify", "--description", "intent=Ship it."]).await;
 
@@ -328,7 +339,8 @@ async fn description_source() {
 // — no synthetic gap requirement, so the rendered spec has two blocks.
 #[tokio::test]
 async fn authority_precedence() {
-    let mut provider = Provider::answering([GROUPING_ANSWER, PRECEDENCE_ANSWER, DESIGN_ANSWER]);
+    let mut provider = Provider::answering([GROUPING_ANSWER, PRECEDENCE_ANSWER, DESIGN_ANSWER])
+        .declaring(["docs", "wiki-live", "code", "intent"]);
     // The rank is the adapter's metadata, read at load: a bare adapter's id
     // is its source key, and the unscripted ones read documentation.
     provider.source.kinds.insert("code".to_string(), SourceKind::Behaviour);
@@ -451,7 +463,8 @@ async fn grouping_refused() {
         ("not json", "schema and answer type disagree"),
     ];
     for (answer, fragment) in cases {
-        let mut provider = Provider::answering([*answer, *answer, *answer]);
+        let mut provider =
+            Provider::answering([*answer, *answer, *answer]).declaring(["docs", "code"]);
         bind(&mut provider);
         let envelope =
             fail(&provider, &["emery", "specify", "docs", "code"], 1, "bad_request").await;
@@ -464,7 +477,8 @@ async fn grouping_refused() {
     let refused = r#"{"groups": [{"claims": [0], "classes": [[0]]}]}"#;
     let corrected = r#"{"groups": [{"claims": [0, 1], "classes": [[0], [1]]}]}"#;
     let spec = SPEC_ANSWER.replace("greeting.behaviour", "session.timeout");
-    let mut provider = Provider::answering([refused, corrected, spec.as_str(), DESIGN_ANSWER]);
+    let mut provider = Provider::answering([refused, corrected, spec.as_str(), DESIGN_ANSWER])
+        .declaring(["docs", "code"]);
     bind(&mut provider);
     cli_ok(&provider, &["emery", "specify", "docs", "code"]).await;
     let check = &provider.model.exchanges()[0];
@@ -493,7 +507,7 @@ async fn remine_supersedes() {
     // First run: the docs describe a greeting, a session timeout, and a
     // legacy export.
     // --------------------------------------------------
-    let mut provider = Provider::answering([REMINE_FIRST, DESIGN_ANSWER]);
+    let mut provider = Provider::answering([REMINE_FIRST, DESIGN_ANSWER]).declaring(["docs"]);
     provider.source.evidence.insert(
         "docs".to_string(),
         Ok(docs_evidence(&[
@@ -512,7 +526,8 @@ async fn remine_supersedes() {
     // --------------------------------------------------
     let second_design = DESIGN_ANSWER.replace("hello", "howdy");
     let mut provider =
-        Provider::over(Arc::clone(&provider.storage), [REMINE_SECOND, second_design.as_str()]);
+        Provider::over(Arc::clone(&provider.storage), [REMINE_SECOND, second_design.as_str()])
+            .declaring(["docs"]);
     provider.source.evidence.insert(
         "docs".to_string(),
         Ok(docs_evidence(&[
@@ -572,7 +587,8 @@ async fn diff_envelope() {
         {"kind": "domain-model", "blocks": [{"type": "greeting.type"}]}
     ]}"#;
     let mut provider =
-        Provider::answering([SPEC_ANSWER, DESIGN_ANSWER, second_spec, second_design]);
+        Provider::answering([SPEC_ANSWER, DESIGN_ANSWER, second_spec, second_design])
+            .declaring(["docs"]);
     cli_ok(&provider, &["emery", "specify", "docs"]).await;
     let first = current(&provider.storage);
 
@@ -675,7 +691,7 @@ const REMINE_SECOND: &str = r#"{
 // output, so extraction fails as an internal error before anything commits.
 #[tokio::test]
 async fn extras_missing() {
-    let mut provider = Provider::idle();
+    let mut provider = Provider::idle().declaring(["docs"]);
     let mut bare = requirement("greeting.behaviour", "");
     bare.extras.clear();
     provider.source.evidence.insert("docs".to_string(), Ok(evidence(vec![bare])));
@@ -694,7 +710,7 @@ async fn extras_missing() {
 // beside one that succeeded, whose evidence is discarded.
 #[tokio::test]
 async fn extract_fails() {
-    let mut provider = Provider::idle();
+    let mut provider = Provider::idle().declaring(["docs", "api"]);
     provider
         .source
         .evidence
@@ -711,7 +727,7 @@ async fn extract_fails() {
 // is never seen.
 #[tokio::test]
 async fn two_failures() {
-    let mut provider = Provider::idle();
+    let mut provider = Provider::idle().declaring(["docs", "code"]);
     provider
         .source
         .evidence
@@ -733,7 +749,7 @@ async fn two_failures() {
 // rather than as an internal error.
 #[tokio::test]
 async fn extract_refuses() {
-    let mut provider = Provider::idle();
+    let mut provider = Provider::idle().declaring(["docs"]);
     provider
         .source
         .evidence
@@ -749,7 +765,7 @@ async fn extract_refuses() {
 // dispatched before either resolved.
 #[tokio::test]
 async fn refusal_fails_fast() {
-    let mut provider = Provider::idle();
+    let mut provider = Provider::idle().declaring(["docs", "code"]);
     provider.source.held.insert("docs".to_string());
     provider
         .source
@@ -779,7 +795,7 @@ async fn refusal_fails_fast() {
 // refuses with the dedicated version exit code.
 #[tokio::test]
 async fn version_too_new() {
-    let mut provider = Provider::idle();
+    let mut provider = Provider::idle().declaring(["docs"]);
     provider.source.versions.insert("docs".to_string(), "99.0.0".to_string());
 
     fail(&provider, &["emery", "specify", "docs"], 1, "unsupported-version").await;
@@ -822,7 +838,8 @@ async fn invalid_draft() {
         ),
     ];
     for (answer, fragment) in cases {
-        let provider = Provider::answering([answer.as_str(), answer.as_str(), answer.as_str()]);
+        let provider = Provider::answering([answer.as_str(), answer.as_str(), answer.as_str()])
+            .declaring(["docs"]);
         let envelope = fail(&provider, &["emery", "specify", "docs"], 1, "bad_request").await;
         assert_message(&envelope, fragment);
         provider.model.assert_exhausted();
@@ -838,7 +855,8 @@ async fn repaired_draft() {
     let missing_scenario =
         SPEC_ANSWER.replace(r#""then": "the response is `hello`""#, r#""then": """#);
     assert_ne!(missing_scenario, SPEC_ANSWER, "the fixture carries the patched line");
-    let provider = Provider::answering([missing_scenario.as_str(), SPEC_ANSWER, DESIGN_ANSWER]);
+    let provider = Provider::answering([missing_scenario.as_str(), SPEC_ANSWER, DESIGN_ANSWER])
+        .declaring(["source"]);
 
     cli_ok(&provider, &["emery", "specify", "source"]).await;
 
@@ -897,7 +915,8 @@ async fn invalid_design() {
     ];
     for (answer, fragment) in cases {
         let provider =
-            Provider::answering([SPEC_ANSWER, answer.as_str(), answer.as_str(), answer.as_str()]);
+            Provider::answering([SPEC_ANSWER, answer.as_str(), answer.as_str(), answer.as_str()])
+                .declaring(["docs"]);
         let envelope = fail(&provider, &["emery", "specify", "docs"], 1, "bad_request").await;
         assert_message(&envelope, fragment);
         provider.model.assert_exhausted();
@@ -957,14 +976,15 @@ async fn dishonest_design() {
     ];
     for (answer, fragment) in cases {
         let mut provider =
-            Provider::answering([SPEC_ANSWER, answer.as_str(), answer.as_str(), answer.as_str()]);
+            Provider::answering([SPEC_ANSWER, answer.as_str(), answer.as_str(), answer.as_str()])
+                .declaring(["docs"]);
         provider.source.evidence.insert("docs".to_string(), evidence());
         let envelope = fail(&provider, &["emery", "specify", "docs"], 1, "bad_request").await;
         assert_message(&envelope, fragment);
         provider.model.assert_exhausted();
     }
 
-    let mut provider = Provider::answering([SPEC_ANSWER, honest.as_str()]);
+    let mut provider = Provider::answering([SPEC_ANSWER, honest.as_str()]).declaring(["docs"]);
     provider.source.evidence.insert("docs".to_string(), evidence());
     cli_ok(&provider, &["emery", "specify", "docs"]).await;
 
@@ -1009,7 +1029,7 @@ async fn dishonest_design() {
 async fn model_fails() {
     let provider = Provider {
         model: Scripted::new([Err(ModelError::Backend("scripted transport failure".into()))]),
-        ..Provider::idle()
+        ..Provider::idle().declaring(["docs"])
     };
     fail(&provider, &["emery", "specify", "docs"], 4, "bad_gateway").await;
     provider.model.assert_exhausted();
@@ -1041,7 +1061,6 @@ async fn config_file() {
             "bad_request",
             "unknown field `value`",
         ),
-        ("[[source]]\nadapter = \"documentation\"\n", 1, "bad_request", "missing field `name`"),
         (
             "[[source]]\nname = \"docs\"\nadapter = \"documentation\"\npath = \"docs\"\n\
              description = \"text\"\n",
@@ -1065,30 +1084,34 @@ async fn config_file() {
             "bad_request",
             "is not a kebab-case key",
         ),
+        // A pin is a full `sha256:` digest, checked as the file decodes.
         (
             "[[source]]\nname = \"local\"\nadapter = \"./source.wasm\"\n\
              digest = \"sha256:9f2c44aa\"\n",
             1,
             "bad_request",
-            "unknown field `digest`",
+            "is not 64 hex characters",
         ),
+        // Nothing is reserved: a remote content key is an unknown key.
         (
             "[[source]]\nname = \"upstream\"\nadapter = \"documentation\"\ngit = \"https://github.com/acme/api@v2\"\n",
             1,
             "bad_request",
-            "`git` and `url` are not supported",
+            "unknown field `git`",
         ),
         (
             "[[source]]\nname = \"upstream\"\nadapter = \"documentation\"\nurl = \"https://example.com/openapi.yaml\"\n",
             1,
             "bad_request",
-            "`git` and `url` are not supported",
+            "unknown field `url`",
         ),
+        // Which registry serves a package is the `[registries]` table's,
+        // never a `[[source]]` key's.
         (
-            "[[source]]\nname = \"upstream\"\nadapter = \"documentation\"\ngit = \"git+https://github.com/acme/api#deadbeef\"\n",
+            "[[source]]\nname = \"ledger\"\nadapter = \"acme:ledger@2.1.0\"\nregistry = \"registry.acme.io\"\n",
             1,
             "bad_request",
-            "drop the `git+` prefix",
+            "unknown field `registry`",
         ),
         (
             "[[source]]\nname = \"docs\"\nadapter = \"documentation\"\npath = \"../../outside\"\n",
@@ -1141,7 +1164,8 @@ async fn source_paths() {
 
     // Three sources contribute one id: the grouping turn merges them.
     let grouping = baseline_grouping(3);
-    let provider = Provider::answering([grouping.as_str(), SPEC_ANSWER, DESIGN_ANSWER]);
+    let provider = Provider::answering([grouping.as_str(), SPEC_ANSWER, DESIGN_ANSWER])
+        .declaring(["documentation", "intent", "local"]);
     cli_ok(&provider, &["emery", "specify", "--config", &config]).await;
 
     let calls = provider.source.calls.lock().expect("calls");
@@ -1205,9 +1229,9 @@ async fn github_refused() {
 
 // An exact package reference (`emery:<name>@<semver>`, or the
 // first-party shorthand as sugar for the `emery` namespace) loads
-// through the deployment loader, which resolves the registry from the
-// package's namespace under the deployment's policy, and is addressed by
-// its own package identity — no parallel adapter id.
+// through the deployment loader under its own package identity — no
+// parallel adapter id — and names the registry its namespace routes to:
+// with no `[registries]` table, `emery` is augentic's.
 #[tokio::test]
 async fn package_loads() {
     for reference in ["emery:demo@1.2.0", "demo@1.2.0"] {
@@ -1215,18 +1239,12 @@ async fn package_loads() {
 
         cli_ok(&provider, &["emery", "specify", reference]).await;
 
-        let loads = provider.plugins.loads();
-        let request = loads.first().expect("one load request");
         assert_eq!(
-            request.package, "emery:demo@1.2.0",
-            "the package reference is the load identity: {reference}"
+            provider.plugins.loads(),
+            [(registry("emery:demo@1.2.0", "augentic.io"), None)],
+            "the package reference is the load identity, and the unpinned load names its \
+             registry: {reference}"
         );
-        assert_eq!(
-            request.location,
-            Location::Registry(None),
-            "a load names no endpoint; the deployment's registry policy resolves it"
-        );
-        assert!(request.digest.is_none(), "a load request carries no digest");
         let calls = provider.source.calls.lock().expect("calls");
         let (id, input) = calls.first().expect("one extract dispatch");
         assert_eq!(id, "emery:demo@1.2.0", "the adapter id is the loaded package identity");
@@ -1234,6 +1252,344 @@ async fn package_loads() {
         drop(calls);
         provider.model.assert_exhausted();
     }
+}
+
+// A bare name is a guest the deployment declares: the load attests it by
+// name, reading nothing and carrying no digest, and the source dispatches
+// by the name the handle returns.
+#[tokio::test]
+async fn bare_declared() {
+    let provider = Provider::answering([SPEC_ANSWER, DESIGN_ANSWER]).declaring(["intent"]);
+
+    cli_ok(&provider, &["emery", "specify", "intent"]).await;
+
+    assert_eq!(
+        provider.plugins.loads(),
+        [(Location::Declared("intent".to_string()), None)],
+        "a declared guest is one load, by name, never pinned"
+    );
+    let gated = provider.source.metadata.lock().expect("metadata").clone();
+    assert_eq!(gated, ["intent"], "the version gate reads the attested name");
+    let calls = provider.source.calls.lock().expect("calls");
+    assert_eq!(calls[0].0, "intent", "extract dispatches by the attested name");
+    drop(calls);
+    provider.model.assert_exhausted();
+}
+
+// A bare name the deployment does not declare is refused by the loader —
+// a typed envelope before any metadata is read, never a dispatch trap.
+#[tokio::test]
+async fn bare_undeclared() {
+    let provider = Provider::idle();
+
+    let envelope = fail(&provider, &["emery", "specify", "nonesuch"], 1, "refused").await;
+
+    assert_message(&envelope, "no guest `nonesuch` is declared");
+    assert_eq!(provider.plugins.loads().len(), 1, "the load is what refuses");
+    assert!(
+        provider.source.metadata.lock().expect("metadata").is_empty(),
+        "nothing is gated: the guest was never routable"
+    );
+}
+
+// A local component registers under its file's stem, and every dispatch
+// names that stem — the id the loader returned, not the path.
+#[tokio::test]
+async fn file_named_by_stem() {
+    let scratch = Scratch::new();
+    let component = scratch.write("custom.wasm", b"\0asm-stub");
+    let provider = Provider::answering([SPEC_ANSWER, DESIGN_ANSWER]);
+
+    cli_ok(&provider, &["emery", "specify", &component]).await;
+
+    assert_eq!(provider.loaded(), ["custom"], "the path registers as its stem");
+    let gated = provider.source.metadata.lock().expect("metadata").clone();
+    assert_eq!(gated, ["custom"]);
+    let calls = provider.source.calls.lock().expect("calls");
+    let (id, input) = calls.first().expect("one extract dispatch");
+    assert_eq!(id, "custom", "extract dispatches by the stem");
+    assert_eq!(input.key, "custom", "the source key is the adapter's kebab stem");
+    drop(calls);
+    provider.model.assert_exhausted();
+}
+
+// The `[registries]` table routes a package's namespace: with no line, the
+// `emery` namespace is augentic's; a line names the registry the load
+// carries, and may re-route `emery` itself.
+#[tokio::test]
+async fn package_routed() {
+    let cases: &[(&str, &str, &str)] = &[
+        // (table, package, the registry the load names)
+        ("", "emery:demo@1.2.0", "augentic.io"),
+        ("[registries]\nacme = \"registry.acme.io\"\n", "acme:ledger@2.1.0", "registry.acme.io"),
+        (
+            "[registries]\nemery = \"staging.augentic.io\"\n",
+            "emery:demo@1.2.0",
+            "staging.augentic.io",
+        ),
+    ];
+    for (table, package, endpoint) in cases {
+        let scratch = Scratch::new();
+        let config = scratch
+            .config(&format!("[[source]]\nname = \"docs\"\nadapter = \"{package}\"\n{table}"));
+        let provider = Provider::answering([SPEC_ANSWER, DESIGN_ANSWER]);
+
+        cli_ok(&provider, &["emery", "specify", "--config", &config]).await;
+
+        assert_eq!(
+            provider.plugins.loads(),
+            [(registry(package, endpoint), None)],
+            "{package} under {table:?}"
+        );
+        provider.model.assert_exhausted();
+    }
+}
+
+// A package whose namespace no line routes is refused before any load,
+// naming the line that would route it.
+#[tokio::test]
+async fn package_unrouted() {
+    let scratch = Scratch::new();
+    let config = scratch.config("[[source]]\nname = \"ledger\"\nadapter = \"acme:ledger@2.1.0\"\n");
+    let provider = Provider::idle();
+
+    let envelope =
+        fail(&provider, &["emery", "specify", "--config", &config], 1, "bad_request").await;
+
+    assert_message(&envelope, "no registry routes `acme:ledger@2.1.0`");
+    assert_message(&envelope, "add `acme = \"<registry>\"` under `[registries]`");
+    assert!(provider.plugins.loads().is_empty(), "an unrouted package is never fetched");
+}
+
+// Two components sharing a file stem would register as one guest, so the
+// run refuses them by name before either loads — the loader's own answer
+// would blame whichever file happened to load second.
+#[tokio::test]
+async fn file_stem_collision() {
+    let scratch = Scratch::new();
+    let first = scratch.write("a/tool.wasm", b"\0asm-stub");
+    let second = scratch.write("b/tool.wasm", b"\0asm-stub");
+    let config = scratch.config(
+        "[[source]]\nname = \"first\"\nadapter = \"./a/tool.wasm\"\n\n\
+         [[source]]\nname = \"second\"\nadapter = \"./b/tool.wasm\"\n",
+    );
+    let provider = Provider::idle();
+
+    let envelope =
+        fail(&provider, &["emery", "specify", "--config", &config], 1, "bad_request").await;
+
+    assert_message(&envelope, &format!("adapters `{first}` and `{second}`"));
+    assert_message(&envelope, "would both register as `tool`");
+    assert!(provider.plugins.loads().is_empty(), "a colliding list loads nothing");
+}
+
+// The engine is itself a guest of every deployment it runs in, declared at
+// boot as `emery`, so a reference that would load as it — a component with
+// that stem, or the bare name — is refused before any load: asked, the
+// loader would attest the engine in the adapter's place and extract would
+// be dispatched to it.
+#[tokio::test]
+async fn engine_as_adapter() {
+    let scratch = Scratch::new();
+    let component = scratch.write("adapters/emery.wasm", b"\0asm-stub");
+    let provider = Provider::idle().declaring([ENGINE]);
+
+    let envelope = fail(&provider, &["emery", "specify", &component], 1, "bad_request").await;
+    assert_message(&envelope, &format!("adapter `{component}` would register as `{ENGINE}`"));
+    assert_message(&envelope, "the engine itself; rename the component");
+
+    let envelope = fail(&provider, &["emery", "specify", ENGINE], 1, "bad_request").await;
+    assert_message(&envelope, &format!("adapter `{ENGINE}` is the engine itself"));
+
+    assert!(provider.plugins.loads().is_empty(), "the engine is never asked for as an adapter");
+    assert!(
+        provider.source.metadata.lock().expect("metadata").is_empty(),
+        "nothing is dispatched to the engine"
+    );
+}
+
+// A run naming its sources on the command line still routes them through
+// the project-root `emery.toml`'s `[registries]` table — the table alone;
+// the file's sources are never merged in. The CWD move is hermetic under
+// nextest's process-per-test isolation.
+#[tokio::test]
+async fn package_argv_registries() {
+    let project = tempfile::TempDir::new().expect("project dir");
+    fs::write(
+        project.path().join("emery.toml"),
+        "[[source]]\nname = \"docs\"\nadapter = \"documentation\"\n\n\
+         [registries]\nacme = \"registry.acme.io\"\n",
+    )
+    .expect("write emery.toml");
+    std::env::set_current_dir(project.path()).expect("enter project");
+    let provider = Provider::answering([SPEC_ANSWER, DESIGN_ANSWER]);
+
+    cli_ok(&provider, &["emery", "specify", "acme:ledger@2.1.0"]).await;
+
+    assert_eq!(
+        provider.plugins.loads(),
+        [(registry("acme:ledger@2.1.0", "registry.acme.io"), None)],
+        "argv names the run's only source, routed by the project's table"
+    );
+    assert!(
+        shown(&provider, "spec").await.contains("Sources: [ledger:greeting.behaviour]"),
+        "the file's `[[source]]` entries stay out of an argv run"
+    );
+    provider.model.assert_exhausted();
+}
+
+// A run naming its sources on the command line reads the project-root
+// `emery.toml` for the `[registries]` table alone: its `[[source]]` entries
+// stay undecoded, so an escaping path, an unknown key, or a malformed adapter
+// among them — each refused where the file carries the run's sources — never
+// refuses a run that named none of them. The CWD move is hermetic under
+// nextest's process-per-test isolation.
+#[tokio::test]
+async fn package_argv_malformed_sources() {
+    let project = tempfile::TempDir::new().expect("project dir");
+    std::env::set_current_dir(project.path()).expect("enter project");
+    for entry in [
+        "[[source]]\nname = \"docs\"\nadapter = \"documentation\"\npath = \"../../outside\"\n",
+        "[[source]]\nname = \"docs\"\nadapter = \"documentation\"\nbranch = \"main\"\n",
+        "[[source]]\nname = \"local\"\nadapter = \"/tmp/source.wasm\"\n",
+    ] {
+        fs::write(
+            project.path().join("emery.toml"),
+            format!("{entry}\n[registries]\nacme = \"registry.acme.io\"\n"),
+        )
+        .expect("write emery.toml");
+        fail(&Provider::idle(), &["emery", "specify"], 1, "bad_request").await;
+        let provider = Provider::answering([SPEC_ANSWER, DESIGN_ANSWER]);
+
+        cli_ok(&provider, &["emery", "specify", "acme:ledger@2.1.0"]).await;
+
+        assert_eq!(
+            provider.plugins.loads(),
+            [(registry("acme:ledger@2.1.0", "registry.acme.io"), None)],
+            "{entry}"
+        );
+        provider.model.assert_exhausted();
+    }
+}
+
+// A `[[source]]` digest reaches the load as its pin, for a local component
+// and a package alike.
+#[tokio::test]
+async fn source_digest_pinned() {
+    let scratch = Scratch::new();
+    scratch.component();
+    let pin = digest("cd");
+    let config = scratch.config(&format!(
+        "[[source]]\nname = \"local\"\nadapter = \"./source.wasm\"\ndigest = \"{pin}\"\n\n\
+         [[source]]\nname = \"demo\"\nadapter = \"emery:demo@1.2.0\"\ndigest = \"{pin}\"\n"
+    ));
+    let grouping = baseline_grouping(2);
+    let mut provider = Provider::answering([grouping.as_str(), SPEC_ANSWER, DESIGN_ANSWER]);
+    provider.plugins = provider
+        .plugins
+        .clone()
+        .digest("source", pin.clone())
+        .digest("emery:demo@1.2.0", pin.clone());
+
+    cli_ok(&provider, &["emery", "specify", "--config", &config]).await;
+
+    assert_eq!(provider.loaded(), ["source", "emery:demo@1.2.0"]);
+    for (location, carried) in provider.plugins.loads() {
+        assert_eq!(carried, Some(pin.clone()), "{location} carries its pin");
+    }
+    provider.model.assert_exhausted();
+}
+
+// A pin the component does not resolve to is the loader's refusal, landing
+// on the exit contract as `refused`.
+#[tokio::test]
+async fn source_digest_mismatch() {
+    let scratch = Scratch::new();
+    scratch.component();
+    let config = scratch.config(&format!(
+        "[[source]]\nname = \"local\"\nadapter = \"./source.wasm\"\ndigest = \"{}\"\n",
+        digest("cd")
+    ));
+    let mut provider = Provider::idle();
+    provider.plugins = provider.plugins.clone().digest("source", digest("ab"));
+
+    let envelope = fail(&provider, &["emery", "specify", "--config", &config], 1, "refused").await;
+
+    assert_message(&envelope, "source.wasm` resolved to");
+    assert_message(&envelope, &format!("not its pinned digest {}", digest("cd")));
+    assert!(
+        provider.source.metadata.lock().expect("metadata").is_empty(),
+        "a refused load is never gated"
+    );
+}
+
+// A declared guest is attested by the deployment, never fetched, so a
+// digest on a bare name has nothing to check and is refused before any
+// load.
+#[tokio::test]
+async fn source_digest_on_bare() {
+    let scratch = Scratch::new();
+    let config = scratch.config(&format!(
+        "[[source]]\nname = \"docs\"\nadapter = \"documentation\"\ndigest = \"{}\"\n",
+        digest("cd")
+    ));
+    let provider = Provider::idle();
+
+    let envelope =
+        fail(&provider, &["emery", "specify", "--config", &config], 1, "bad_request").await;
+
+    assert_message(&envelope, "adapter `documentation`");
+    assert_message(&envelope, "takes no digest");
+    assert!(provider.plugins.loads().is_empty(), "a refused list loads nothing");
+}
+
+// The refusal holds for every entry naming the guest, not the first alone:
+// a digest on a later entry sharing a declared guest is refused the same
+// way, whether or not it happens to match the digest the loader attests.
+#[tokio::test]
+async fn source_digest_on_bare_repeated() {
+    for pin in [digest("ab"), digest("cd")] {
+        let scratch = Scratch::new();
+        let config = scratch.config(&format!(
+            "[[source]]\nname = \"docs\"\nadapter = \"documentation\"\n\n\
+             [[source]]\nname = \"guide\"\nadapter = \"documentation\"\ndigest = \"{pin}\"\n"
+        ));
+        let provider = Provider::idle().declaring(["documentation"]);
+
+        let envelope =
+            fail(&provider, &["emery", "specify", "--config", &config], 1, "bad_request").await;
+
+        assert_message(&envelope, "adapter `documentation`");
+        assert_message(&envelope, "takes no digest");
+        assert!(provider.plugins.loads().is_empty(), "a refused list loads nothing: {pin}");
+    }
+}
+
+// A `[[source]]` without `name` is keyed by its adapter, as an argv source
+// is: the bare name, a package's name, a component's kebab stem.
+#[tokio::test]
+async fn source_name_defaulted() {
+    let scratch = Scratch::new();
+    scratch.component();
+    let config = scratch.config(
+        "[[source]]\nadapter = \"documentation\"\n\n\
+         [[source]]\nadapter = \"emery:demo@1.2.0\"\n\n\
+         [[source]]\nadapter = \"./source.wasm\"\n",
+    );
+    let grouping = baseline_grouping(3);
+    let provider = Provider::answering([grouping.as_str(), SPEC_ANSWER, DESIGN_ANSWER])
+        .declaring(["documentation"]);
+
+    cli_ok(&provider, &["emery", "specify", "--config", &config]).await;
+
+    assert!(
+        shown(&provider, "spec").await.contains(
+            "Sources: [documentation:greeting.behaviour, demo:greeting.behaviour, \
+             source:greeting.behaviour]"
+        ),
+        "each entry is keyed by its adapter"
+    );
+    provider.model.assert_exhausted();
 }
 
 // The source list is checked whole before a single adapter loads: a package
@@ -1319,7 +1675,7 @@ async fn corrupt_current() {
 // bytes the id never named.
 #[tokio::test]
 async fn tampered_revision() {
-    let provider = Provider::answering([SPEC_ANSWER, DESIGN_ANSWER]);
+    let provider = Provider::answering([SPEC_ANSWER, DESIGN_ANSWER]).declaring(["docs"]);
     cli_ok(&provider, &["emery", "specify", "docs"]).await;
     let id = current(&provider.storage);
 
@@ -1333,7 +1689,7 @@ async fn tampered_revision() {
 // regenerates over it — no diff, the outdated blobs pruned.
 #[tokio::test]
 async fn spec_outdated() {
-    let provider = Provider::answering([SPEC_ANSWER, DESIGN_ANSWER]);
+    let provider = Provider::answering([SPEC_ANSWER, DESIGN_ANSWER]).declaring(["docs"]);
     let outdated = seed(
         &provider.storage,
         br#"{"emery": 1, "requirements": []}"#,
@@ -1372,7 +1728,8 @@ async fn repair_tampered() {
         DESIGN_ANSWER,
         second_spec.as_str(),
         second_design.as_str(),
-    ]);
+    ])
+    .declaring(["docs"]);
 
     cli_ok(&provider, &["emery", "specify", "docs"]).await;
     let first = current(&provider.storage);
@@ -1406,7 +1763,7 @@ async fn repair_tampered() {
 // a corrupt store never dead-ends the grammar.
 #[tokio::test]
 async fn repair_current() {
-    let provider = Provider::answering([SPEC_ANSWER, DESIGN_ANSWER]);
+    let provider = Provider::answering([SPEC_ANSWER, DESIGN_ANSWER]).declaring(["docs"]);
     provider.storage.insert_state(CURRENT, b"\xff\xfe");
     fail(&provider, &["emery", "show", "spec"], 3, "server_error").await;
 
@@ -1472,6 +1829,15 @@ async fn multi_project() {
 fn assert_message(envelope: &Value, fragment: &str) {
     let message = envelope["message"].as_str().unwrap_or("");
     assert!(message.contains(fragment), "expected `{fragment}` in: {envelope}");
+}
+
+// The location a routed package loads at: its reference, at the registry
+// its namespace routes to.
+fn registry(package: &str, endpoint: &str) -> Location {
+    Location::Registry {
+        package: package.to_string(),
+        endpoint: Some(endpoint.to_string()),
+    }
 }
 
 // Reads the current revision id from a project's store.

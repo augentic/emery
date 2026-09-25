@@ -31,9 +31,11 @@ const SPECIFY_DESC: &str = "Generate spec.md and design.md from source adapters.
     Name one or more adapters, use `--description <adapter>=<text>` for inline input, \
     or use `--config [<path>]` (default: `emery.toml`). With no sources, Emery looks \
     for `emery.toml` in the project root. Config and command-line sources cannot be \
-    combined.\n\n\
-    Adapter paths are project-relative. Each run reloads adapters, reconciles their \
-    claims, and atomically commits a new revision.";
+    combined; the project-root file's `[registries]` table routes a package adapter \
+    named on the command line all the same.\n\n\
+    Adapter paths are project-relative. A bare adapter name is a guest the deployment \
+    declares; the shipped binary declares none. Each run reloads adapters, reconciles \
+    their claims, and atomically commits a new revision.";
 const SHOW_DESC: &str = "Print an artifact from the current revision.\n\n\
     Text output contains only the artifact body. `--format json` also includes the \
     revision id and the typed document.";
@@ -118,7 +120,8 @@ enum Verb {
 
 #[derive(Debug, clap::Args)]
 struct SpecifyArgs {
-    /// Workspace-backed source adapters or local component paths.
+    /// Workspace-backed source adapters: a project-relative `.wasm` path, a
+    /// package reference, or a bare name the deployment declares.
     adapters: Vec<String>,
     /// Bind an inline source as `<adapter>=<text>`; repeatable.
     #[arg(long = "description", short = 'd')]
@@ -135,8 +138,9 @@ impl SpecifyArgs {
             descriptions,
             config,
         } = self;
-        let sources = sources::decode(&adapters, &descriptions, config.as_deref())?;
-        Ok(SpecifyInput { sources })
+        let sources::Decoded { sources, registries } =
+            sources::decode(&adapters, &descriptions, config.as_deref())?;
+        Ok(SpecifyInput { sources, registries })
     }
 }
 
@@ -174,7 +178,7 @@ fn hint(code: &str) -> Option<Cow<'static, str>> {
             "the revision predates this emery's grammar: re-run `emery specify <adapter>...` to regenerate it"
         }
         "refused" => {
-            "the loader refused the component; the message above names why (export or location)"
+            "the loader refused the component; the message above names why: a missing export, an invalid artifact, a pre-compiled artifact where raw wasm is required, a mismatched digest, or a bare name this deployment does not declare"
         }
         "unavailable" => {
             "the registry could not supply the package: check the network and that the exact version is published under its namespace"
