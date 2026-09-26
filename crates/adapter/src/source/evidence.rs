@@ -155,9 +155,6 @@ impl Claim {
         }
     }
 
-    // The claim's findings as `claim {index}`: an id outside the dotted-kebab
-    // grammar, or none on a kind that requires one; then every extra its kind
-    // requires that it lacks.
     fn findings(&self, index: usize) -> impl Iterator<Item = String> + '_ {
         let kind = self.kind;
         let id = match self.id.as_deref() {
@@ -258,8 +255,6 @@ pub enum Backing {
     Path(String),
 }
 
-// Deserializes an open field leniently: a malformed value becomes `None`
-// instead of failing the whole document.
 fn lenient<'de, D, T>(deserializer: D) -> Result<Option<T>, D::Error>
 where
     D: serde::Deserializer<'de>,

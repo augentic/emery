@@ -27,8 +27,6 @@ use serde_json::Value;
 use sha2::{Digest as _, Sha256};
 use support::{Provider, Rendezvous, claim, cli_ok, digest, evidence, fail, requirement};
 
-// Scripted drafts, the canonical documents the engine commits from them, and
-// the documents it renders from those documents.
 const SPEC_ANSWER: &str = include_str!("specify/spec-draft.json");
 const SPEC_REVISION: &str = include_str!("specify/1-spec.json");
 const SPEC_RENDERED: &str = include_str!("specify/1-spec.md");
@@ -41,8 +39,7 @@ const PRECEDENCE_REVISION: &str = include_str!("specify/3-precedence.json");
 const PRECEDENCE_RENDERED: &str = include_str!("specify/3-precedence.md");
 const SOURCES: &str = include_str!("specify/emery.toml");
 
-// Builds the grouping answer that merges `count` claims into one agreeing
-// requirement — what a run over one id appearing several times expects.
+// The grouping a run over `count` claims of one id expects: one agreeing requirement.
 fn baseline_grouping(count: usize) -> String {
     let indices = (0..count).collect::<Vec<_>>();
     serde_json::json!({
@@ -51,9 +48,8 @@ fn baseline_grouping(count: usize) -> String {
     .to_string()
 }
 
-// A scratch directory inside the project where one scenario's operator files
-// live. Every path handed to the CLI must stay project-relative for the
-// guest preopen, so each write answers with that relative path.
+// Inside the project: every path handed to the CLI must stay project-relative
+// for the guest preopen, so each write answers with that path.
 struct Scratch(tempfile::TempDir);
 
 impl Scratch {
@@ -61,8 +57,6 @@ impl Scratch {
         Self(tempfile::TempDir::new_in(env!("CARGO_MANIFEST_DIR")).expect("project tempdir"))
     }
 
-    // Writes `body` under `name`, creating the directories it names, and
-    // returns the project-relative path.
     fn write(&self, name: &str, body: impl AsRef<[u8]>) -> String {
         let path = self.0.path().join(name);
         if let Some(parent) = path.parent() {
@@ -76,41 +70,32 @@ impl Scratch {
             .to_string()
     }
 
-    // Writes the operator's `emery.toml`.
     fn config(&self, body: &str) -> String {
         self.write("emery.toml", body)
     }
 
-    // Writes a stub `source.wasm`: the loader is scripted, so the component
-    // only has to exist as a `.wasm` file.
+    // The loader is scripted, so the component only has to exist as a `.wasm` file.
     fn component(&self) -> String {
         self.write("source.wasm", b"\0asm-stub")
     }
 }
 
-// One `specify` loads, extracts, and commits the typed revision — no prior
-// verb; `show` renders each document from the committed revision; an
-// identical re-run drafts again from the sources alone, is byte-stable, and
-// says so.
+// --- journey ---
+
+// One `specify` with no prior verb, then `show`, then an identical re-run that
+// drafts again from the sources alone.
 #[tokio::test]
 async fn gen_spec() {
-    // --------------------------------------------------
-    // Arrange: only the operator-supplied component touches the
-    // filesystem; engine state stays in scripted storage.
-    // --------------------------------------------------
+    // arrange: scripted storage; only the operator's component touches the filesystem
     let scratch = Scratch::new();
     let component = scratch.component();
 
     let provider = Provider::answering([SPEC_ANSWER, DESIGN_ANSWER, SPEC_ANSWER, DESIGN_ANSWER]);
 
-    // --------------------------------------------------
-    // Act: the first specify.
-    // --------------------------------------------------
+    // the first specify
     cli_ok(&provider, &["emery", "specify", &component]).await;
 
-    // --------------------------------------------------
-    // Observe: the load, the current id, and the revision.
-    // --------------------------------------------------
+    // observe the load, the current id, and the revision
     let loads = provider.plugins.loads();
     let [(Location::Path(path), None)] = loads.as_slice() else {
         panic!("a local component is one unpinned load by path: {loads:?}");
@@ -122,9 +107,8 @@ async fn gen_spec() {
     );
     assert!(provider.storage.state("project.yaml").is_none(), "no project record exists");
     let id = current(&provider.storage);
-    // The stored documents are the engine's facts beside the drafts, as
-    // canonical JSON: the id, status, coverage, and cited claims are all the
-    // engine's.
+
+    // the committed documents are canonical JSON of the engine's facts
     let spec = document(&provider.storage, &id, "spec.json");
     assert_eq!(
         String::from_utf8_lossy(&spec),
@@ -138,8 +122,7 @@ async fn gen_spec() {
         "design.json is the canonical revision"
     );
 
-    // Review is `show`: text stdout is the document rendered from the
-    // revision — headings, provenance, the gap tag and note are all rendered.
+    // review through show
     assert_eq!(
         shown(&provider, "spec").await,
         projection(SPEC_RENDERED, &id),
@@ -150,8 +133,8 @@ async fn gen_spec() {
         projection(DESIGN_RENDERED, &id),
         "show renders design.md"
     );
-    // The JSON envelope carries the revision, the projection, and the typed
-    // document itself.
+
+    // the JSON envelope carries the revision, the projection, and the document
     let resp = cli_ok(&provider, &["emery", "--format", "json", "show", "spec"]).await;
     let envelope: Value = serde_json::from_slice(&resp.stdout).expect("one JSON envelope");
     assert_eq!(envelope["revision"], id, "{envelope}");
@@ -160,9 +143,7 @@ async fn gen_spec() {
         serde_json::from_str(SPEC_REVISION).expect("the revision fixture is JSON");
     assert_eq!(envelope["document"], document, "the envelope carries the typed document");
 
-    // An identical re-run reads nothing of the stored revision: both drafts
-    // are asked again, the same facts and drafts commit the same bytes, and
-    // the empty diff is reported.
+    // an identical re-run drafts again and commits the same bytes
     let resp = cli_ok(&provider, &["emery", "specify", &component]).await;
     let stdout = String::from_utf8_lossy(&resp.stdout);
     assert!(stdout.contains("none (byte-stable)"), "{stdout}");
@@ -171,9 +152,8 @@ async fn gen_spec() {
     provider.model.assert_exhausted();
 }
 
-// `--config` is the other specify authority: entry names become
-// source keys, and a local adapter resolves relative to the file — the
-// component the entry names exists only there, and the run finds it.
+// The component the entry names exists only beside the file, so the run must
+// resolve it there.
 #[tokio::test]
 async fn from_file() {
     let scratch = Scratch::new();
@@ -200,18 +180,13 @@ async fn from_file() {
     provider.model.assert_exhausted();
 }
 
-// One adapter may name several roots: the loader and the version gate are
-// asked once, each source extracts over its own workspace, and the two
-// claims of one id are one requirement citing both sources.
+// One adapter named by two sources is loaded and gated once, extracted twice.
 #[tokio::test]
 async fn shared_roots() {
     let cases: &[(&str, &str)] =
         &[("emery:documentation@1.2.0", "emery:documentation"), ("./source.wasm", "source")];
     for (adapter, package) in cases {
         let scratch = Scratch::new();
-        // A package dispatches by its reference without the version; a local
-        // component by its file's stem — the guest name the loader registers
-        // each under.
         if Path::new(adapter).extension().is_some() {
             scratch.component();
         }
@@ -247,12 +222,8 @@ async fn shared_roots() {
     }
 }
 
-// The sources of one run extract together: every extract is dispatched
-// before any resolves, so a run takes as long as its slowest source. The
-// double holds each extract until the other has been requested, bounded so
-// an engine that extracts one source at a time fails naming the source that
-// never came; dispatch still follows declaration order, so the claims index
-// as before.
+// The rendezvous holds each extract until the other is requested, so an engine
+// extracting one source at a time fails naming the one that never came.
 #[tokio::test]
 async fn sources_together() {
     let grouping = baseline_grouping(2);
@@ -280,9 +251,7 @@ async fn sources_together() {
     provider.model.assert_exhausted();
 }
 
-// A run naming no sources at all discovers the project-root
-// `emery.toml` before failing — never merged with argv sources. The
-// CWD move is hermetic under nextest's process-per-test isolation.
+// The CWD move is hermetic under nextest's process-per-test isolation.
 #[tokio::test]
 async fn discovery() {
     let project = tempfile::TempDir::new().expect("project dir");
@@ -301,9 +270,6 @@ async fn discovery() {
     provider.model.assert_exhausted();
 }
 
-// `--description` supplies inline text under the adapter's name: no
-// filesystem lend reaches extract, and a bare adapter needs no local
-// component.
 #[tokio::test]
 async fn description_source() {
     let provider = Provider::answering([SPEC_ANSWER, DESIGN_ANSWER]).declaring(["intent"]);
@@ -321,19 +287,17 @@ async fn description_source() {
     provider.model.assert_exhausted();
 }
 
-// Requirement identity and agreement are one model partition over the
-// byte-equal-id baseline, and authority derives the rest: the grouping
-// binds `code`'s `session-expiry` into the timeout requirement, where
-// the intent directive outranks it as [divergence] with one templated
-// loser note; tied documentation peers surface as [conflict] with no
-// body; and the uncovered timeout keeps its tag and gains the gap note
-// — no synthetic gap requirement, so the rendered spec has two blocks.
+// --- precedence ---
+
+// Identity is the grouping's, authority the engine's: intent outranks the
+// behaviour claim bound into the timeout, tied documentation peers conflict,
+// and the uncovered timeout keeps its gap tag.
 #[tokio::test]
 async fn authority_precedence() {
     let mut provider = Provider::answering([GROUPING_ANSWER, PRECEDENCE_ANSWER, DESIGN_ANSWER])
         .declaring(["docs", "wiki-live", "code", "intent"]);
-    // The rank is the adapter's metadata, read at load: a bare adapter's id
-    // is its source key, and the unscripted ones read documentation.
+
+    // rank each adapter by its metadata; the unscripted ones read documentation
     provider.source.kinds.insert("code".to_string(), SourceKind::Behaviour);
     provider.source.kinds.insert("intent".to_string(), SourceKind::Intent);
     provider.source.evidence.insert(
@@ -346,7 +310,6 @@ async fn authority_precedence() {
                 "login.flow.success",
                 ("criterion", "A valid link signs the user in."),
             ),
-            // Non-requirement kinds ride along as synthesis context.
             claim(ClaimKind::Decision, "auth.decision", ("body", "Sessions are cookie-bound.")),
         ])),
     );
@@ -358,8 +321,6 @@ async fn authority_precedence() {
         "code".to_string(),
         Ok(evidence(vec![
             requirement("login.flow", "Users sign in with email and password."),
-            // Behaviour names the timeout differently; the grouping
-            // call, not the id, joins it to the requirement.
             requirement("session-expiry", "Sessions expire after 15 minutes of inactivity."),
         ])),
     );
@@ -385,9 +346,7 @@ async fn authority_precedence() {
     )
     .await;
 
-    // The grouping request indexes every claim and withholds authority.
-    // The schema bounds those indexes; a derive reshape that no-ops the
-    // pointer would silently drop the hint.
+    // the grouping request indexes every claim and withholds authority
     let grouping = &provider.model.seen()[0];
     let request = grouping.messages.join("\n");
     assert!(request.contains("- 4 `code` `session-expiry`"), "{request}");
@@ -423,10 +382,8 @@ async fn authority_precedence() {
     provider.model.assert_exhausted();
 }
 
-// A grouping the partition rules refuse — a baseline pair split, a claim
-// in no group, a claim in two classes — is sent back as the correction
-// and the next candidate checked; a backend out of rounds fails with a
-// typed error carrying the last correction and commits nothing.
+// A refused grouping is the next candidate's correction; a backend out of rounds
+// fails typed and commits nothing.
 #[tokio::test]
 async fn grouping_refused() {
     let bind = |provider: &mut Provider| {
@@ -463,8 +420,7 @@ async fn grouping_refused() {
         provider.model.assert_exhausted();
     }
 
-    // The corrected answer commits: the same statements in two classes
-    // diverge, and the winner is the documentation.
+    // the corrected answer commits
     let refused = r#"{"groups": [{"claims": [0], "classes": [[0]]}]}"#;
     let corrected = r#"{"groups": [{"claims": [0, 1], "classes": [[0], [1]]}]}"#;
     let spec = SPEC_ANSWER.replace("greeting.behaviour", "session.timeout");
@@ -486,18 +442,13 @@ async fn grouping_refused() {
     provider.model.assert_exhausted();
 }
 
-// A re-run over changed evidence supersedes the revision: the old
-// blobs are pruned, the current id swaps, and the success envelope
-// reports the re-mine diff by requirement — removed and changed, naming
-// the fields that differ — while a requirement whose facts and place stand
-// is not a change. Every subject is drafted again; nothing of the outgoing
-// revision reaches the model.
+// --- regeneration ---
+
+// Every subject is drafted again and nothing of the outgoing revision reaches
+// the model; the envelope reports the diff by requirement.
 #[tokio::test]
 async fn remine_supersedes() {
-    // --------------------------------------------------
-    // First run: the docs describe a greeting, a session timeout, and a
-    // legacy export.
-    // --------------------------------------------------
+    // first run: a greeting, a session timeout, and a legacy export
     let mut provider = Provider::answering([REMINE_FIRST, DESIGN_ANSWER]).declaring(["docs"]);
     provider.source.evidence.insert(
         "docs".to_string(),
@@ -510,11 +461,7 @@ async fn remine_supersedes() {
     cli_ok(&provider, &["emery", "specify", "docs"]).await;
     let first = current(&provider.storage);
 
-    // --------------------------------------------------
-    // Second run: the greeting changed, the export is gone, and the
-    // design overview follows the greeting. The draft covers every
-    // remaining subject.
-    // --------------------------------------------------
+    // second run: the greeting changed, the export gone, the overview following it
     let second_design = DESIGN_ANSWER.replace("hello", "howdy");
     let mut provider =
         Provider::over(Arc::clone(&provider.storage), [REMINE_SECOND, second_design.as_str()])
@@ -528,9 +475,7 @@ async fn remine_supersedes() {
     );
     let resp = cli_ok(&provider, &["emery", "specify", "docs"]).await;
 
-    // --------------------------------------------------
-    // Observe: the diff, the swap, and the prune.
-    // --------------------------------------------------
+    // observe the diff, the swap, and the prune
     let stdout = String::from_utf8_lossy(&resp.stdout);
     assert!(stdout.contains(&format!("diff vs {first}:\n")), "{stdout}");
     assert!(stdout.contains("spec.md ~ preamble\n"), "the reworded preamble is a change: {stdout}");
@@ -562,11 +507,8 @@ async fn remine_supersedes() {
     provider.model.assert_exhausted();
 }
 
-// The JSON envelope carries the re-mine diff per document: each flags its
-// preamble; `spec` lists requirements by id and subject, `changed` naming the
-// differing fields; `design` lists sections by kind. The second run's
-// evidence changes the greeting's statement, adds an audit requirement, and
-// adds a `type` claim; its drafts drop both preambles.
+// The second run changes the greeting, adds an audit requirement and a `type`
+// claim, and drops both preambles.
 #[tokio::test]
 async fn diff_envelope() {
     let second_spec = r#"{"preamble": [], "requirements": [
@@ -623,8 +565,6 @@ async fn diff_envelope() {
     provider.model.assert_exhausted();
 }
 
-// Builds documentation evidence over `(subject, statement)` requirements in
-// document order, each covered by its own criterion.
 fn docs_evidence(requirements: &[(&str, &str)]) -> Evidence {
     let claims = requirements
         .iter()
@@ -642,8 +582,7 @@ fn docs_evidence(requirements: &[(&str, &str)]) -> Evidence {
     evidence(claims)
 }
 
-// The drafts are keyed by subject, so their order is immaterial; the
-// renderer places each under its requirement.
+// Out of requirement order on purpose: drafts are keyed by subject.
 const REMINE_FIRST: &str = r#"{
   "preamble": ["The docs describe a greeting, a session timeout, and a legacy export."],
   "requirements": [
@@ -662,8 +601,7 @@ const REMINE_FIRST: &str = r#"{
   ]
 }"#;
 
-// The second draft answers for every remaining subject, the timeout's
-// scenario word for word.
+// The timeout's scenario word for word, so it is not a change.
 const REMINE_SECOND: &str = r#"{
   "preamble": ["The docs describe a greeting and a session timeout."],
   "requirements": [
@@ -678,8 +616,9 @@ const REMINE_SECOND: &str = r#"{
   ]
 }"#;
 
-// A requirement claim missing its `statement` extra is invalid adapter
-// output, so extraction fails as an internal error before anything commits.
+// --- extraction ---
+
+// Invalid adapter output is an internal error, not the operator's.
 #[tokio::test]
 async fn extras_missing() {
     let mut provider = Provider::idle().declaring(["docs"]);
@@ -696,9 +635,8 @@ async fn extras_missing() {
     );
 }
 
-// An adapter's upstream failure reaches the public boundary as the adapter
-// put it — its class, code, and message — whether the source ran alone or
-// beside one that succeeded, whose evidence is discarded.
+// The failure reaches the boundary as the adapter put it, alone or beside a
+// source that succeeded.
 #[tokio::test]
 async fn extract_fails() {
     let mut provider = Provider::idle().declaring(["docs", "api"]);
@@ -713,9 +651,7 @@ async fn extract_fails() {
     }
 }
 
-// The first failure to land is the run's: with two sources failing at once,
-// the one dispatched first — declaration order — is reported and the other
-// is never seen.
+// The failure dispatched first — declaration order — is the run's.
 #[tokio::test]
 async fn two_failures() {
     let mut provider = Provider::idle().declaring(["docs", "code"]);
@@ -735,9 +671,7 @@ async fn two_failures() {
     assert_eq!(envelope["message"], "source `code`: the model is down");
 }
 
-// A source's refusal of its input is the operator's to fix, so it reaches
-// the public boundary as the adapter put it — its class, code, and message —
-// rather than as an internal error.
+// A refusal is the operator's to fix, so it keeps the adapter's class.
 #[tokio::test]
 async fn extract_refuses() {
     let mut provider = Provider::idle().declaring(["docs"]);
@@ -750,10 +684,7 @@ async fn extract_refuses() {
     assert_eq!(envelope["message"], "source `docs`: the brief is empty");
 }
 
-// A refusal ends the run as soon as it lands: the other source's extract is
-// held forever, and the run still fails under the refusal inside a bound
-// that a run waiting for every source would exceed. Both sources were
-// dispatched before either resolved.
+// `docs` is held forever, so a run waiting for every source would exceed the bound.
 #[tokio::test]
 async fn refusal_fails_fast() {
     let mut provider = Provider::idle().declaring(["docs", "code"]);
@@ -782,8 +713,6 @@ async fn refusal_fails_fast() {
     assert_eq!(dispatched, ["docs", "code"], "both sources were dispatched before the refusal");
 }
 
-// An adapter declaring a newer minimum `emery-version` than the binary
-// refuses with the dedicated version exit code.
 #[tokio::test]
 async fn version_too_new() {
     let mut provider = Provider::idle().declaring(["docs"]);
@@ -792,11 +721,10 @@ async fn version_too_new() {
     fail(&provider, &["emery", "specify", "docs"], 1, "unsupported-version").await;
 }
 
-// A spec draft outside its schema or its requirements is refused once the
-// backend's rounds are spent, one finding per case: not JSON, a requirement
-// left undrafted, a subject that is not a requirement, a subject drafted
-// twice, no scenario, and a preamble paragraph opening with a reserved
-// marker. The operator never sees a half-committed run.
+// --- synthesis ---
+
+// Each refusal is one finding once the backend's rounds are spent; nothing
+// half-commits.
 #[tokio::test]
 async fn invalid_draft() {
     let one = |preamble: &str, subject: &str, scenarios: &str| {
@@ -837,10 +765,8 @@ async fn invalid_draft() {
     }
 }
 
-// The schema steers the draft toward this run's requirements; the check is
-// the gate. A finding is fed back as the correction with the previous answer,
-// and the corrected draft commits: the operator sees one committed
-// revision, not the intermediate miss.
+// The schema steers and the check gates: the finding rides the correction, and
+// the corrected draft commits.
 #[tokio::test]
 async fn repaired_draft() {
     let missing_scenario =
@@ -881,11 +807,7 @@ async fn repaired_draft() {
     provider.model.assert_exhausted();
 }
 
-// The design leg is gated the same way: a draft outside its schema or plan
-// is refused once the backend's rounds are spent, one finding per case —
-// not JSON, the required overview absent, a section outside the closed
-// vocabulary, a requirement heading smuggled into a paragraph, and a
-// citation of a source the run never bound.
+// The design leg is gated as the spec leg is, one finding per case.
 #[tokio::test]
 async fn invalid_design() {
     let overview = |text: &str| {
@@ -914,11 +836,8 @@ async fn invalid_design() {
     }
 }
 
-// The evidence plans `design.md`'s sections: a `type` claim requires a
-// `domain-model` section referencing it exactly once, and a section no
-// claim informs may not appear. Every dishonest draft is refused; the
-// honest one commits with the signature rendered verbatim, and `show`
-// renders it.
+// The evidence plans the sections: a `type` claim requires one `domain-model`
+// reference, and a section no claim informs may not appear.
 #[tokio::test]
 async fn dishonest_design() {
     let signature = "interface Greeting { text: string }";
@@ -929,35 +848,31 @@ async fn dishonest_design() {
         ]))
     };
     let draft = |sections: &str| format!(r#"{{"preamble": [], "sections": [{sections}]}}"#);
-    // `(from the browser)` is prose — a citation key is one token.
+
+    // `(from the browser)` is prose: a citation key is one token
     let overview = r#"{"kind": "overview", "blocks": [{"text": "Requests arrive (from the browser) and (from docs) they route."}]}"#;
     let domain = r#"{"kind": "domain-model", "blocks": [{"text": "The greeting payload is one string field."}, {"type": "greeting.type"}]}"#;
     let honest = draft(&format!("{overview}, {domain}"));
     let cases: Vec<(String, &str)> = vec![
-        // The required `domain-model` is missing.
         (draft(overview), "`## Domain model` is required but absent"),
-        // `ui-layout` appears with no spatial claim behind it.
         (
             draft(&format!(
                 r#"{overview}, {domain}, {{"kind": "ui-layout", "blocks": [{{"text": "- page"}}]}}"#
             )),
             "`## UI / layout` is present but no claim informs it",
         ),
-        // The signature is quoted as prose instead of referenced.
         (
             draft(&format!(
                 r#"{overview}, {{"kind": "domain-model", "blocks": [{{"text": "`{signature}`"}}]}}"#
             )),
             "type `greeting.type` is never referenced",
         ),
-        // The type is referenced twice.
         (
             draft(&format!(
                 r#"{overview}, {{"kind": "domain-model", "blocks": [{{"type": "greeting.type"}}, {{"type": "greeting.type"}}]}}"#
             )),
             "type `greeting.type` is referenced 2 times",
         ),
-        // A type block outside `domain-model`, naming no type claim.
         (
             draft(&format!(
                 r#"{{"kind": "overview", "blocks": [{{"type": "greeting.other"}}]}}, {domain}"#
@@ -1015,7 +930,6 @@ async fn dishonest_design() {
     provider.model.assert_exhausted();
 }
 
-// A model transport failure surfaces as one typed synthesis error.
 #[tokio::test]
 async fn model_fails() {
     let provider = Provider {
@@ -1026,8 +940,8 @@ async fn model_fails() {
     provider.model.assert_exhausted();
 }
 
-// Every malformed operator-owned `emery.toml` is refused with a typed error
-// before anything commits.
+// --- config file ---
+
 #[tokio::test]
 async fn config_file() {
     let cases: &[(&str, u8, &str, &str)] = &[
@@ -1039,7 +953,6 @@ async fn config_file() {
             "unknown field `branch`",
         ),
         ("", 1, "specify-source-required", ""),
-        // The superseded `[sources.<key>]` / `value` schema fails loudly.
         (
             "[sources.docs]\nadapter = \"documentation\"\n",
             1,
@@ -1059,7 +972,6 @@ async fn config_file() {
             "bad_request",
             "both `path` and `description`",
         ),
-        // Duplicate names reuse argv's typed duplicate error.
         (
             "[[source]]\nname = \"docs\"\nadapter = \"documentation\"\n\n\
              [[source]]\nname = \"docs\"\nadapter = \"intent\"\n",
@@ -1067,15 +979,12 @@ async fn config_file() {
             "bad_request",
             "appears twice",
         ),
-        // The source key is the TOML `name`; the engine, not the decoder,
-        // enforces kebab-case so every transport gets the same rule.
         (
             "[[source]]\nname = \"Docs\"\nadapter = \"documentation\"\n",
             1,
             "bad_request",
             "is not a kebab-case key",
         ),
-        // A pin is a full `sha256:` digest, checked as the file decodes.
         (
             "[[source]]\nname = \"local\"\nadapter = \"./source.wasm\"\n\
              digest = \"sha256:9f2c44aa\"\n",
@@ -1083,7 +992,6 @@ async fn config_file() {
             "bad_request",
             "is not 64 hex characters",
         ),
-        // Nothing is reserved: a remote content key is an unknown key.
         (
             "[[source]]\nname = \"upstream\"\nadapter = \"documentation\"\ngit = \"https://github.com/acme/api@v2\"\n",
             1,
@@ -1096,8 +1004,6 @@ async fn config_file() {
             "bad_request",
             "unknown field `url`",
         ),
-        // Which registry serves a package is the `[registries]` table's,
-        // never a `[[source]]` key's.
         (
             "[[source]]\nname = \"ledger\"\nadapter = \"acme:ledger@2.1.0\"\nregistry = \"registry.acme.io\"\n",
             1,
@@ -1128,21 +1034,18 @@ async fn config_file() {
         }
     }
 
-    // An unreadable file is a typed filesystem error.
+    // an unreadable file is a filesystem error
     let provider = Provider::idle();
     fail(&provider, &["emery", "specify", "--config", "nonexistent/emery.toml"], 3, "server_error")
         .await;
 
-    // Host-absolute and escaping paths never cross into the guest namespace.
+    // host-absolute and escaping paths never reach the guest
     for path in ["/nonexistent/emery.toml", "../emery.toml"] {
         fail(&provider, &["emery", "specify", "--config", path], 1, "bad_request").await;
     }
 }
 
-// File-relative `path` entries anchor at the file's directory, fold
-// `.` and `..` lexically, and stay `.`-relative so the guest preopen
-// can open them; `description` entries lend nothing; `[[source]]`
-// entries extract in declaration order, not name order — all observed on
+// Path anchoring, inline descriptions, and declaration order, all observed on
 // the `SourceInput` the adapter receives.
 #[tokio::test]
 async fn source_paths() {
@@ -1153,7 +1056,7 @@ async fn source_paths() {
          [[source]]\nname = \"alpha\"\nadapter = \"local\"\npath = \"./docs\"\n",
     );
 
-    // Three sources contribute one id: the grouping turn merges them.
+    // three sources contribute one id, so a grouping turn is scripted
     let grouping = baseline_grouping(3);
     let provider = Provider::answering([grouping.as_str(), SPEC_ANSWER, DESIGN_ANSWER])
         .declaring(["documentation", "intent", "local"]);
@@ -1186,8 +1089,9 @@ async fn source_paths() {
     provider.model.assert_exhausted();
 }
 
-// Local components are read fresh on every run — nothing mirrors, so a
-// re-run after the operator deletes the source file fails with a typed error.
+// --- adapter references ---
+
+// Nothing mirrors a local component, so a re-run reads it fresh.
 #[tokio::test]
 async fn deleted_wasm() {
     let scratch = Scratch::new();
@@ -1201,7 +1105,6 @@ async fn deleted_wasm() {
     provider.model.assert_exhausted();
 }
 
-// A path that is not a `.wasm` component file is refused with a typed error.
 #[tokio::test]
 async fn component_missing() {
     let provider = Provider::idle();
@@ -1218,12 +1121,8 @@ async fn github_refused() {
     fail(&provider, &["emery", "specify", "https://github.com/acme/api"], 1, "bad_request").await;
 }
 
-// An exact package reference (`emery:<name>@<semver>`, or the
-// first-party shorthand as sugar for the `emery` namespace) loads
-// through the deployment loader and names the registry its namespace
-// routes to — with no `[registries]` table, `emery` is augentic's — and
-// registers as the reference without its version, the one guest a run
-// holds for that package; every dispatch names that identity.
+// `demo@1.2.0` is sugar for the `emery` namespace, which no table routes
+// anywhere but augentic's registry.
 #[tokio::test]
 async fn package_loads() {
     for reference in ["emery:demo@1.2.0", "demo@1.2.0"] {
@@ -1247,9 +1146,6 @@ async fn package_loads() {
     }
 }
 
-// A bare name is a guest the deployment declares: the load attests it by
-// name, reading nothing and carrying no digest, and the source dispatches
-// by the name the handle returns.
 #[tokio::test]
 async fn bare_declared() {
     let provider = Provider::answering([SPEC_ANSWER, DESIGN_ANSWER]).declaring(["intent"]);
@@ -1269,8 +1165,7 @@ async fn bare_declared() {
     provider.model.assert_exhausted();
 }
 
-// A bare name the deployment does not declare is refused by the loader —
-// a typed envelope before any metadata is read, never a dispatch trap.
+// The loader refuses, typed, before any dispatch could trap.
 #[tokio::test]
 async fn bare_undeclared() {
     let provider = Provider::idle();
@@ -1285,8 +1180,6 @@ async fn bare_undeclared() {
     );
 }
 
-// A local component registers under its file's stem, and every dispatch
-// names that stem — the id the loader returned, not the path.
 #[tokio::test]
 async fn file_named_by_stem() {
     let scratch = Scratch::new();
@@ -1306,9 +1199,6 @@ async fn file_named_by_stem() {
     provider.model.assert_exhausted();
 }
 
-// The `[registries]` table routes a package's namespace: with no line, the
-// `emery` namespace is augentic's; a line names the registry the load
-// carries, and may re-route `emery` itself.
 #[tokio::test]
 async fn package_routed() {
     let cases: &[(&str, &str, &str)] = &[
@@ -1338,8 +1228,6 @@ async fn package_routed() {
     }
 }
 
-// A package whose namespace no line routes is refused before any load,
-// naming the line that would route it.
 #[tokio::test]
 async fn package_unrouted() {
     let scratch = Scratch::new();
@@ -1354,9 +1242,8 @@ async fn package_unrouted() {
     assert!(provider.plugins.loads().is_empty(), "an unrouted package is never fetched");
 }
 
-// Two components sharing a file stem would register as one guest, so the
-// run refuses them by name before either loads — the loader's own answer
-// would blame whichever file happened to load second.
+// Refused before either loads: the loader's own answer would blame whichever
+// file happened to load second.
 #[tokio::test]
 async fn file_stem_collision() {
     let scratch = Scratch::new();
@@ -1376,9 +1263,8 @@ async fn file_stem_collision() {
     assert!(provider.plugins.loads().is_empty(), "a colliding list loads nothing");
 }
 
-// A package registers as its reference without the version, so two versions
-// of one package would register as one guest: the run refuses them by name
-// before either is fetched, as it refuses two components sharing a stem.
+// Two versions of one package register as one guest, as two components sharing
+// a stem do.
 #[tokio::test]
 async fn package_version_collision() {
     let scratch = Scratch::new();
@@ -1399,11 +1285,8 @@ async fn package_version_collision() {
     assert!(provider.plugins.loads().is_empty(), "a colliding list fetches nothing");
 }
 
-// The engine is itself a guest of every deployment it runs in, declared at
-// boot as `emery`, so a reference that would load as it — a component with
-// that stem, or the bare name — is refused before any load: asked, the
-// loader would attest the engine in the adapter's place and extract would
-// be dispatched to it.
+// Asked, the loader would attest the engine in the adapter's place and extract
+// would be dispatched to it.
 #[tokio::test]
 async fn engine_as_adapter() {
     let scratch = Scratch::new();
@@ -1424,10 +1307,8 @@ async fn engine_as_adapter() {
     );
 }
 
-// A run naming its sources on the command line still routes them through
-// the project-root `emery.toml`'s `[registries]` table — the table alone;
-// the file's sources are never merged in. The CWD move is hermetic under
-// nextest's process-per-test isolation.
+// The project-root table routes an argv source while the file's own sources
+// stay out. The CWD move is hermetic under nextest's process-per-test isolation.
 #[tokio::test]
 async fn package_argv_registries() {
     let project = tempfile::TempDir::new().expect("project dir");
@@ -1454,12 +1335,8 @@ async fn package_argv_registries() {
     provider.model.assert_exhausted();
 }
 
-// A run naming its sources on the command line reads the project-root
-// `emery.toml` for the `[registries]` table alone: its `[[source]]` entries
-// stay undecoded, so an escaping path, an unknown key, or a malformed adapter
-// among them — each refused where the file carries the run's sources — never
-// refuses a run that named none of them. The CWD move is hermetic under
-// nextest's process-per-test isolation.
+// The `[[source]]` entries stay undecoded when argv names the sources, so a
+// malformed one never refuses the run. The CWD move is hermetic under nextest.
 #[tokio::test]
 async fn package_argv_malformed_sources() {
     let project = tempfile::TempDir::new().expect("project dir");
@@ -1488,8 +1365,6 @@ async fn package_argv_malformed_sources() {
     }
 }
 
-// A `[[source]]` digest reaches the load as its pin, for a local component
-// and a package alike.
 #[tokio::test]
 async fn source_digest_pinned() {
     let scratch = Scratch::new();
@@ -1513,8 +1388,6 @@ async fn source_digest_pinned() {
     provider.model.assert_exhausted();
 }
 
-// A pin the component does not resolve to is the loader's refusal, landing
-// on the exit contract as `refused`.
 #[tokio::test]
 async fn source_digest_mismatch() {
     let scratch = Scratch::new();
@@ -1536,9 +1409,7 @@ async fn source_digest_mismatch() {
     );
 }
 
-// A declared guest is attested by the deployment, never fetched, so a
-// digest on a bare name has nothing to check and is refused before any
-// load.
+// A declared guest is attested, never fetched, so a digest has nothing to check.
 #[tokio::test]
 async fn source_digest_on_bare() {
     let scratch = Scratch::new();
@@ -1556,9 +1427,8 @@ async fn source_digest_on_bare() {
     assert!(provider.plugins.loads().is_empty(), "a refused list loads nothing");
 }
 
-// The refusal holds for every entry naming the guest, not the first alone:
-// a digest on a later entry sharing a declared guest is refused the same
-// way, whether or not it happens to match the digest the loader attests.
+// A digest on a later entry sharing the guest is refused whether or not it
+// matches what the loader attests.
 #[tokio::test]
 async fn source_digest_on_bare_repeated() {
     for pin in [digest("ab"), digest("cd")] {
@@ -1578,8 +1448,6 @@ async fn source_digest_on_bare_repeated() {
     }
 }
 
-// A `[[source]]` without `name` is keyed by its adapter, as an argv source
-// is: the bare name, a package's name, a component's kebab stem.
 #[tokio::test]
 async fn source_name_defaulted() {
     let scratch = Scratch::new();
@@ -1605,9 +1473,7 @@ async fn source_name_defaulted() {
     provider.model.assert_exhausted();
 }
 
-// The source list is checked whole before a single adapter loads: a package
-// adapter behind a refused key, or behind a duplicated one, is never fetched
-// and never gated.
+// The list is checked whole before a single adapter loads.
 #[tokio::test]
 async fn bad_key_package() {
     let cases = [
@@ -1637,11 +1503,8 @@ async fn bad_key_package() {
     }
 }
 
-// Load failures land on the exit contract: an acquisition (registry)
-// or network) failure is the loader's `unavailable` on the
-// BadGateway exit; a component refused host-side validation is
-// `refused` on the BadRequest exit. The loader answers by the name a
-// load registers — the package without its version.
+// `unavailable` lands on the BadGateway exit and `refused` on the BadRequest
+// exit; the loader answers by the registered name, the package without its version.
 #[tokio::test]
 async fn load_failures() {
     let mut provider = Provider::idle();
@@ -1659,8 +1522,6 @@ async fn load_failures() {
     fail(&provider, &["emery", "specify", "emery:demo@1.2.0"], 1, "refused").await;
 }
 
-// Package references pin an exact SemVer — no branches, tags, or
-// namespace-less names.
 #[tokio::test]
 async fn package_ref() {
     let cases: &[(&str, &str)] = &[
@@ -1675,8 +1536,9 @@ async fn package_ref() {
     }
 }
 
-// A current id naming a missing revision is corruption, never an empty
-// result.
+// --- store ---
+
+// A current id naming no revision is corruption, never an empty result.
 #[tokio::test]
 async fn corrupt_current() {
     let provider = Provider::idle();
@@ -1684,9 +1546,7 @@ async fn corrupt_current() {
     fail(&provider, &["emery", "show", "spec"], 3, "server_error").await;
 }
 
-// The store is content-addressed: a committed document rewritten under
-// its id no longer hashes to it, and `show` refuses rather than render
-// bytes the id never named.
+// A document rewritten under its id no longer hashes to it.
 #[tokio::test]
 async fn tampered_revision() {
     let provider = Provider::answering([SPEC_ANSWER, DESIGN_ANSWER]).declaring(["docs"]);
@@ -1698,9 +1558,8 @@ async fn tampered_revision() {
     fail(&provider, &["emery", "show", "spec"], 3, "server_error").await;
 }
 
-// A stored revision written under another grammar is outdated, not corrupt:
-// `show` refuses typed with `spec-outdated`, and the next `specify`
-// regenerates over it — no diff, the outdated blobs pruned.
+// Outdated is not corrupt: `show` refuses typed, and the next `specify`
+// regenerates over it.
 #[tokio::test]
 async fn spec_outdated() {
     let provider = Provider::answering([SPEC_ANSWER, DESIGN_ANSWER]).declaring(["docs"]);
@@ -1730,9 +1589,7 @@ async fn spec_outdated() {
     provider.model.assert_exhausted();
 }
 
-// Regeneration is the recovery path: a `specify` over a tampered
-// outgoing revision commits, prunes the tampered blobs, and suppresses
-// only the advisory diff.
+// Regeneration is the recovery path; only the advisory diff is suppressed.
 #[tokio::test]
 async fn repair_tampered() {
     let second_spec = SPEC_ANSWER.replace("hello", "howdy");
@@ -1772,9 +1629,8 @@ async fn repair_tampered() {
     provider.model.assert_exhausted();
 }
 
-// The current id is a raw compare-and-swap token: bytes that decode to
-// no id fail `show` closed, yet the next `specify` swaps over them, so
-// a corrupt store never dead-ends the grammar.
+// Bytes that decode to no id fail `show` closed, yet the next `specify` swaps
+// over them.
 #[tokio::test]
 async fn repair_current() {
     let provider = Provider::answering([SPEC_ANSWER, DESIGN_ANSWER]).declaring(["docs"]);
@@ -1789,15 +1645,13 @@ async fn repair_current() {
     provider.model.assert_exhausted();
 }
 
-// One shared store, two project-scoped views: multi-project isolation
-// is host policy over the engine's flat keys, with no engine change
-// (portable-storage step 8).
+// Isolation is host policy over the engine's flat keys.
 #[tokio::test]
 async fn multi_project() {
     let scratch = Scratch::new();
     let component = scratch.component();
 
-    // `Memory` is a shared handle: every clone reads the same store.
+    // one shared store, two project-scoped views
     let shared = Memory::default();
     let alpha = Provider::over(
         Arc::new(Namespaced::new("alpha", shared.clone())),
@@ -1811,7 +1665,7 @@ async fn multi_project() {
     cli_ok(&alpha, &["emery", "specify", &component]).await;
     cli_ok(&beta, &["emery", "specify", &component]).await;
 
-    // Every write landed under its project prefix; nothing landed flat.
+    // every write landed under its project prefix
     assert!(shared.state(CURRENT).is_none(), "no unprefixed current id exists");
     assert!(shared.objects(CONTAINER).is_empty(), "no unprefixed revision exists");
 
@@ -1819,7 +1673,7 @@ async fn multi_project() {
     let id_beta = project_current(&shared, "beta");
     assert_ne!(id_alpha, id_beta, "distinct documents commit distinct revisions");
 
-    // Each project's `show` renders its own committed revision alone.
+    // each project shows its own revision
     let spec_alpha = shared
         .object(&format!("alpha/{CONTAINER}"), &format!("{id_alpha}/spec.json"))
         .expect("spec.json");
@@ -1839,14 +1693,13 @@ async fn multi_project() {
     beta.model.assert_exhausted();
 }
 
-// Asserts that a failure envelope's message carries `fragment`.
+// --- helpers ---
+
 fn assert_message(envelope: &Value, fragment: &str) {
     let message = envelope["message"].as_str().unwrap_or("");
     assert!(message.contains(fragment), "expected `{fragment}` in: {envelope}");
 }
 
-// The location a routed package loads at: its reference, at the registry
-// its namespace routes to.
 fn registry(package: &str, endpoint: &str) -> Location {
     Location::Registry {
         package: package.to_string(),
@@ -1854,28 +1707,23 @@ fn registry(package: &str, endpoint: &str) -> Location {
     }
 }
 
-// Reads the current revision id from a project's store.
 fn current(storage: &Memory) -> String {
     stored_id(storage, CURRENT)
 }
 
-// Reads a namespaced project's current revision id from the shared store.
 fn project_current(shared: &Memory, project: &str) -> String {
     stored_id(shared, &format!("{project}/{CURRENT}"))
 }
 
-// Decodes the revision id `storage` holds under `key`.
 fn stored_id(storage: &Memory, key: &str) -> String {
     String::from_utf8(storage.state(key).expect("current")).expect("utf-8 revision id")
 }
 
-// Reads a committed revision document from the store.
 fn document(storage: &Memory, id: &str, name: &str) -> Vec<u8> {
     storage.object(CONTAINER, &format!("{id}/{name}")).unwrap_or_else(|| panic!("{name}"))
 }
 
-// The content id a revision holding `spec` and `design` sits under —
-// SHA-256 over the length-prefixed bodies, spec then design.
+// The engine's content id: SHA-256 over the length-prefixed bodies, spec then design.
 fn revision(spec: &[u8], design: &[u8]) -> String {
     let mut hasher = Sha256::new();
     for body in [spec, design] {
@@ -1885,8 +1733,6 @@ fn revision(spec: &[u8], design: &[u8]) -> String {
     hex::encode(hasher.finalize())
 }
 
-// Seeds `storage` with a current revision holding `spec` and `design` as its
-// stored documents, returning the content id it sits under.
 fn seed(storage: &Memory, spec: &[u8], design: &[u8]) -> String {
     let id = revision(spec, design);
     storage.insert_object(CONTAINER, &format!("{id}/spec.json"), spec);
@@ -1895,13 +1741,10 @@ fn seed(storage: &Memory, spec: &[u8], design: &[u8]) -> String {
     id
 }
 
-// Fills a Markdown fixture's `<revision>` placeholder with the id `show`
-// stamps in the front matter.
 fn projection(fixture: &str, id: &str) -> String {
     fixture.replace("<revision>", id)
 }
 
-// Renders `document` of the current revision through `show`.
 async fn shown<S>(provider: &Provider<S>, document: &str) -> String
 where
     S: StateStore + BlobStore + Send + Sync + 'static,

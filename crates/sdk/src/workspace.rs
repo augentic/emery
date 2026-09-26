@@ -105,7 +105,6 @@ pub fn list(root: &str, mut keep: impl FnMut(Entry<'_>) -> bool) -> Result<Vec<S
     Ok(files)
 }
 
-// Whether an entry is one of the engine's own, offered to no `keep`.
 pub(crate) fn excluded(entry: Entry<'_>) -> bool {
     match entry {
         Entry::Dir(_) => SKIP_DIRS.contains(&entry.name()),
@@ -113,20 +112,14 @@ pub(crate) fn excluded(entry: Entry<'_>) -> bool {
     }
 }
 
-// Why the walk would not offer a regular file at a root-relative path.
 #[derive(Debug)]
 pub(crate) enum Unoffered {
-    // No regular file sits at the path: a segment is missing, is not the kind
-    // its position needs, or is a symlink the walk never follows.
+    // A segment is missing, of the wrong kind, or a symlink the walk never follows.
     NoFile,
-    // The file, or a directory on the way to it, is the engine's own or one
-    // `keep` refuses.
     Refused,
 }
 
-// Holds `relative` to the walk: each directory on the way and the file itself
-// is read from its parent as [`list`] reads them, and offered to `keep` in
-// the same order.
+// Reads and offers each step as `list` does, so a path is held to the listing.
 pub(crate) fn offered_file(
     root: &str, relative: &str, keep: &mut impl FnMut(Entry<'_>) -> bool,
 ) -> Result<(), Unoffered> {
@@ -148,8 +141,6 @@ pub(crate) fn offered_file(
     Ok(())
 }
 
-// Each entry the walk offers on the way to `relative`, in walk order: every
-// directory, then the file.
 fn steps(relative: &str) -> impl Iterator<Item = Entry<'_>> {
     relative
         .match_indices('/')
@@ -157,16 +148,13 @@ fn steps(relative: &str) -> impl Iterator<Item = Entry<'_>> {
         .chain(std::iter::once(Entry::File(relative)))
 }
 
-// The entry named `name` in `dir`, read as the walk reads it. A `DirEntry`
-// reports a symlink as a symlink, so a link on the way is refused as the walk
-// refuses it; the metadata of the joined path would have followed it.
+// A `DirEntry` reports a symlink as a symlink; the metadata of the joined
+// path would have followed it.
 fn find_entry(dir: &Path, name: &str) -> Option<std::fs::DirEntry> {
     let reading = std::fs::read_dir(dir).ok()?;
     reading.filter_map(Result::ok).find(|entry| entry.file_name().to_str() == Some(name))
 }
 
-// `dir`'s kept files as `prefix`-relative paths, descending into each kept
-// directory.
 fn walk(
     dir: &Path, prefix: &str, keep: &mut impl FnMut(Entry<'_>) -> bool,
 ) -> Result<Vec<String>, Error> {

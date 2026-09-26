@@ -29,7 +29,7 @@ pub const CONTAINER: &str = "revisions";
 pub async fn commit<S: StateStore + BlobStore>(
     store: &S, revision: &Revision,
 ) -> Result<(String, Option<Diff>), Error> {
-    // One observation feeds both the advisory diff and the CAS.
+    // observe once for the diff and the CAS
     let observed = observe(store).await;
     let diff = observed
         .outgoing_id()
@@ -40,8 +40,7 @@ pub async fn commit<S: StateStore + BlobStore>(
     Ok((id, diff))
 }
 
-// Writes the documents and swaps the current id against `observed`;
-// a lost swap leaves the documents as an inert, unreferenced orphan.
+// A lost swap leaves the written documents as an inert, unreferenced orphan.
 async fn swap<S: StateStore + BlobStore>(
     store: &S, revision: &Revision, observed: Observation,
 ) -> Result<String, Error> {
@@ -63,7 +62,7 @@ async fn swap<S: StateStore + BlobStore>(
         .context("swapping current revision")?;
     tracing::debug!(%id, outgoing = ?observed.outgoing_id(), "revision committed");
 
-    // The swap landed; prune the outgoing revision.
+    // prune the outgoing revision
     if let Some(outgoing) = observed.outgoing_id().filter(|outgoing| *outgoing != id) {
         for name in [Spec::NAME, Design::NAME] {
             let _ = BlobStore::delete(store, CONTAINER, &key(outgoing, name)).await;
@@ -73,7 +72,6 @@ async fn swap<S: StateStore + BlobStore>(
     Ok(id)
 }
 
-// The blob name a revision's document is stored under.
 fn key(id: &str, name: &str) -> String {
     format!("{id}/{name}.json")
 }
@@ -100,9 +98,8 @@ pub async fn current<S: StateStore + BlobStore>(
     Ok(Some((id, revision)))
 }
 
-// Observes the CAS token and outgoing revision without failing; bad state
-// suppresses only the advisory diff, never the CAS, which still refuses a
-// stale token.
+// Bad state suppresses only the advisory diff; the CAS still refuses a stale
+// token.
 async fn observe<S: StateStore + BlobStore>(store: &S) -> Observation {
     let token = StateStore::get(store, CURRENT).await.ok().flatten();
     let outgoing = match token.as_deref().and_then(id_of) {
@@ -112,17 +109,12 @@ async fn observe<S: StateStore + BlobStore>(store: &S) -> Observation {
     Observation { token, outgoing }
 }
 
-// Loads revision `id` from its two documents; the revision itself refuses
-// bytes that no longer hash to the id, then another grammar's, then a shape
-// this engine did not write.
 async fn load<S: BlobStore>(store: &S, id: &str) -> Result<Revision, Error> {
     let spec = read(store, id, Spec::NAME).await?;
     let design = read(store, id, Design::NAME).await?;
     Revision::read(id, &spec, &design)
 }
 
-// Reads one document of revision `id`; a document absent under a named
-// revision is corruption.
 async fn read<S: BlobStore>(store: &S, id: &str, name: &str) -> Result<Vec<u8>, Error> {
     BlobStore::get(store, CONTAINER, &key(id, name))
         .await
@@ -130,33 +122,26 @@ async fn read<S: BlobStore>(store: &S, id: &str, name: &str) -> Result<Vec<u8>, 
         .ok_or_else(|| server_error!("revision `{id}` does not contain `{name}`"))
 }
 
-// Reads the revision id a CAS token holds; a non-UTF-8 token names none.
 fn id_of(token: &[u8]) -> Option<&str> {
     str::from_utf8(token).ok()
 }
 
-// The current revision observed before a compare-and-swap; one
-// observation drives one CAS and its advisory diff.
 #[derive(Debug)]
 struct Observation {
-    // The raw CAS token exactly as storage holds it. Absent before the
-    // first commit; also absent when storage could not be read, so the
-    // subsequent CAS fails closed against a present key.
+    // Absent when storage could not be read too, so the CAS fails closed
+    // against a present key.
     token: Option<Vec<u8>>,
-    // Advisory diff input; absent when no complete revision is readable.
     outgoing: Option<Revision>,
 }
 
 impl Observation {
-    // The outgoing revision's id, the blobs a landed swap prunes.
     fn outgoing_id(&self) -> Option<&str> {
         self.token.as_deref().and_then(id_of)
     }
 }
 
-// Keep (entry-point-unreachable): two runs racing one current id cannot
-// be arranged through the CLI, whose `commit` observes and swaps as one;
-// everything else the store does is owned by the root scenarios.
+// Two runs racing one current id cannot be arranged through the CLI, whose
+// `commit` observes and swaps as one.
 #[cfg(test)]
 mod tests {
     use omnia_test::guest::Memory;
@@ -168,7 +153,7 @@ mod tests {
     async fn commit_conflict() {
         let memory = Memory::default();
 
-        // Both runs observe the empty store; the winner swaps first.
+        // both runs observe the empty store, the winner swaps first
         let stale = observe(&memory).await;
         let observed = observe(&memory).await;
         let winning = revision("winner");

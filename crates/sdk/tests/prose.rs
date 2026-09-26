@@ -8,8 +8,7 @@ use std::path::Path;
 use emery_sdk::{RUNTIME, check};
 
 // Every runtime reference is a root: an adapter's prompt links whichever it
-// needs, so none is reached through another by rule, and every link between
-// them stays inside the table.
+// needs, so none is reached through another by rule.
 #[test]
 fn runtime() {
     let tree = Path::new(env!("CARGO_MANIFEST_DIR")).join("prose");

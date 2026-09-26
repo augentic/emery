@@ -5,7 +5,7 @@
 
 use emery_prose::{Doc, body, find};
 
-// A table written by hand, as a probe's is; `prose!` expands to the same shape.
+// Written by hand, as a probe's is; `prose!` expands to the same shape.
 static PROSE: &[Doc] = &[
     Doc {
         path: "build.md",

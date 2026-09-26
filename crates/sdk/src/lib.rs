@@ -155,8 +155,7 @@ pub struct Provider;
 #[cfg(target_arch = "wasm32")]
 impl Model for Provider {}
 
-// The `extract` arm of `source_adapter!`: the WIT input and the host model lifted onto a
-// `Context` for the adapter's `extract`, its outcome lowered onto the WIT records.
+/// The `extract` arm of [`source_adapter!`], reached through the macro alone.
 #[cfg(target_arch = "wasm32")]
 #[doc(hidden)]
 #[omnia_wasi_otel::instrument(name = "source_adapter_extract")]

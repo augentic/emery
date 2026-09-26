@@ -104,8 +104,6 @@ pub fn check(docs: &[Doc], root: &Path, prompts: &[&str], imports: &[Doc]) -> Ve
     findings
 }
 
-// The paths of every document in `docs` a listed prompt reaches by following
-// links: the prompts themselves, then whatever they link, and so on.
 fn reach(docs: &[Doc], prompts: &[&str]) -> BTreeSet<&'static str> {
     let mut reached = BTreeSet::new();
     let mut frontier: Vec<&Doc> =
@@ -122,8 +120,7 @@ fn reach(docs: &[Doc], prompts: &[&str]) -> BTreeSet<&'static str> {
     reached
 }
 
-// Every `.md` beneath `dir` by tree-relative path. Symlinks are followed, so
-// the canonical ancestors are the cycle guard.
+// Symlinks are followed, so the canonical ancestors are the cycle guard.
 fn walk(dir: &Path, prefix: &str, ancestors: &[PathBuf]) -> Result<BTreeSet<String>, String> {
     let unreadable = |err: io::Error| format!("`{}` cannot be read: {err}", dir.display());
     let canonical = fs::canonicalize(dir).map_err(unreadable)?;
@@ -143,7 +140,6 @@ fn walk(dir: &Path, prefix: &str, ancestors: &[PathBuf]) -> Result<BTreeSet<Stri
         let name = entry.file_name().to_string_lossy().into_owned();
         let path = if prefix.is_empty() { name } else { format!("{prefix}/{name}") };
 
-        // `metadata` follows a symlink, so a linked directory is walked.
         let metadata = fs::metadata(&file).map_err(unreadable)?;
         if metadata.is_dir() {
             found.extend(walk(&file, &path, &lineage)?);
@@ -154,8 +150,6 @@ fn walk(dir: &Path, prefix: &str, ancestors: &[PathBuf]) -> Result<BTreeSet<Stri
     Ok(found)
 }
 
-// The relative link targets in `body`, outside fenced code and without their
-// fragments; an absolute URL or a mailto is not a document.
 fn links(body: &str) -> Vec<&str> {
     let mut targets = Vec::new();
     let mut fenced = false;
@@ -182,8 +176,6 @@ fn links(body: &str) -> Vec<&str> {
     targets
 }
 
-// Where `target`, linked from the document at `from`, lands in the tree;
-// `None` when it climbs out of it.
 fn resolve(from: &str, target: &str) -> Option<String> {
     let mut segments: Vec<&str> =
         from.rsplit_once('/').map(|(dir, _)| dir.split('/').collect()).unwrap_or_default();

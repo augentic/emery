@@ -40,7 +40,6 @@ impl revision::Document for Design {
     const NAME: &'static str = "design";
 }
 
-// Renders `design.md`: the preamble, then every section under its heading.
 impl Display for Design {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         revision::write(f, "Design", &self.preamble, &self.sections)
@@ -61,7 +60,6 @@ pub struct Section<B = Block> {
     pub blocks: Vec<B>,
 }
 
-// Renders the heading, then each block.
 impl Display for Section {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         write!(f, "## {}", self.kind)?;
@@ -87,7 +85,6 @@ pub enum Block {
     },
 }
 
-// Writes a drafted paragraph, or a `Type:` fence with the claim's signature.
 impl Display for Block {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         match self {
@@ -144,7 +141,6 @@ pub enum SectionKind {
     Observability,
 }
 
-// Writes the section title as the document spells it.
 impl Display for SectionKind {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         f.write_str(match self {

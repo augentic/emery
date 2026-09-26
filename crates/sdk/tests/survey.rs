@@ -26,14 +26,13 @@ const PROSE: &[Doc] = &[
     },
 ];
 
-// A corpus without a survey prompt.
 const MUTE: &[Doc] = &[Doc {
     path: "extract.md",
     body: "EXTRACT",
 }];
 
-// A source tree with production modules, a directory and a file the suite's
-// `keep` refuses, and the engine's own files beside them.
+// Production modules, a directory and a file `keep` refuses, and the engine's
+// own files beside them.
 const FILES: &[&str] = &[
     ".omnia/store.json",
     "index.ts",
@@ -45,8 +44,7 @@ const FILES: &[&str] = &[
     "types/index.d.ts",
 ];
 
-// The suite's policy, stated as an adapter states one: no `services/`
-// directory, no declaration file.
+// Stated as an adapter states its policy.
 fn keep(entry: Entry<'_>) -> bool {
     match entry {
         Entry::Dir(path) => path != "services",
@@ -80,12 +78,10 @@ fn write(root: &Path, rel: &str, body: &str) {
     fs::write(path, body).expect("write");
 }
 
-// The scratch root as the engine lends one: a string.
 fn utf8(root: &Path) -> &str {
     root.to_str().expect("a UTF-8 scratch root")
 }
 
-// An empty file at each relative path; the root as the engine lends it.
 fn tree<'a>(root: &'a Path, files: &[&str]) -> &'a str {
     for file in files {
         write(root, file, "");
@@ -93,10 +89,8 @@ fn tree<'a>(root: &'a Path, files: &[&str]) -> &'a str {
     utf8(root)
 }
 
-// The survey request carries the embedded survey prompt as the system, the
-// root lent whole so the model reads the tree itself — no file is listed, so
-// the turn does not grow with the estate — the reference tools, `check`
-// set, and the `Inventory` schema under `survey`.
+// The root is lent whole and no file is listed, so the turn does not grow with
+// the estate.
 #[tokio::test]
 async fn model_request() {
     let model = Scripted::answering([
@@ -131,10 +125,8 @@ async fn model_request() {
     model.assert_exhausted();
 }
 
-// The surfaces come back in answer order, as many as the model found: a
-// module may be the entry of several, and a module no surface enters — a
-// service, the bootstrap — is no surface, so the tree is mined from its
-// boundary and nothing is grouped or folded.
+// A module may be the entry of several surfaces, and a module no surface enters
+// is no surface; nothing is grouped or folded.
 #[tokio::test]
 async fn model_surfaces() {
     let model = Scripted::answering([r#"{"surfaces":[
@@ -161,9 +153,7 @@ async fn model_surfaces() {
     model.assert_exhausted();
 }
 
-// An entry is held to the tree, not to a listing: a `./` prefix and a
-// doubled separator are dropped, and the surface comes back with the path
-// as a claim's anchor would cite it.
+// The surface comes back with its entry as a claim's anchor would cite it.
 #[tokio::test]
 async fn model_normalised() {
     let model = Scripted::answering([
@@ -180,12 +170,7 @@ async fn model_normalised() {
     model.assert_exhausted();
 }
 
-// A candidate the check refuses goes back as findings and the next candidate
-// is checked: a nameless surface, one name listed twice, an entry at no
-// file, at a directory, at a module the adapter's `keep` refuses — by its
-// directory or by itself — at one of the engine's own files, or escaping
-// the root. The model finds the boundary; the tree and the adapter say what
-// a module is.
+// The model finds the boundary; the tree and the adapter say what a module is.
 #[tokio::test]
 async fn model_corrections() {
     let model = Scripted::answering([
@@ -230,7 +215,6 @@ async fn model_corrections() {
     model.assert_exhausted();
 }
 
-// A stray key on the answer is a schema miss, corrected like a finding.
 #[tokio::test]
 async fn model_stray_key() {
     let model = Scripted::answering([
@@ -249,8 +233,7 @@ async fn model_stray_key() {
     assert!(correction.contains("unknown field"), "{correction}");
 }
 
-// When the backend spends its rounds on a rejected inventory the last
-// findings surface as `bad_request`, as an evidence call's do.
+// The last findings surface, as an evidence call's do.
 #[tokio::test]
 async fn model_rounds_exhausted() {
     let model = Scripted::answering([r#"{"surfaces":[{"name":"GET /ghosts","entry":"nope.ts"}]}"#]);
@@ -269,8 +252,7 @@ async fn model_rounds_exhausted() {
     assert_eq!(model.exchanges().len(), 1, "one check, rejected");
 }
 
-// A corpus without `survey.md` is the adapter build's own defect, reported
-// before a turn is spent.
+// A corpus without `survey.md` is the adapter build's own defect.
 #[tokio::test]
 async fn model_missing_prompt() {
     let model = Scripted::default();
@@ -286,9 +268,7 @@ async fn model_missing_prompt() {
     assert!(model.seen().is_empty(), "no turn was spent");
 }
 
-// An inline value has no tree to survey: asking is the adapter's own
-// defect, reported before a turn is spent, as a `Files` seam over a value
-// is.
+// No tree to survey is the adapter's own defect, as a `Files` seam over a value is.
 #[tokio::test]
 async fn model_inline_value() {
     let model = Scripted::default();
@@ -301,8 +281,7 @@ async fn model_inline_value() {
     assert!(model.seen().is_empty(), "no turn was spent");
 }
 
-// A path through a directory symlink is not a module the walk would offer,
-// even when the target file exists.
+// Not a module the walk would offer, even when the target file exists.
 #[tokio::test]
 async fn model_symlink_dir() {
     let model = Scripted::answering([
@@ -324,10 +303,8 @@ async fn model_symlink_dir() {
     assert!(correction.contains("no file at `link/nested/file.ts`"), "{correction}");
 }
 
-// An empty inventory is an answer, not a finding: the model read the tree
-// — here one with no file at all, which costs the turn like any other —
-// and found no boundary. It is accepted as it stands, and what a source with
-// no surface means is the adapter's to decide.
+// An empty inventory is an answer, not a finding; what a source with no surface
+// means is the adapter's to decide.
 #[tokio::test]
 async fn model_no_surfaces() {
     let model = Scripted::answering([r#"{"surfaces":[]}"#]);

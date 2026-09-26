@@ -4,9 +4,6 @@
 //! multiple sources, the model may group remaining claims by meaning and
 //! agreement. The engine validates that partition, applies source authority,
 //! and derives status, coverage, winners, and losing statements.
-//!
-//! A single-source run requires no grouping request. Requirements are numbered
-//! from `REQ-001` by the earliest claim in each group.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::{self, Display, Formatter};
@@ -78,8 +75,8 @@ impl<'a> GroupingBrief<'a> {
         if self.sources < 2 { self.bases(&self.baseline()) } else { self.judge(model).await }
     }
 
-    // The grouping settled without a model, which every answer must contain:
-    // byte-equal ids are one group, whitespace-equal statements one class.
+    // Byte-equal ids are one group and whitespace-equal statements one class;
+    // every answer must contain this grouping.
     fn baseline(&self) -> Grouping {
         let mut groups: Vec<(&str, Group)> = Vec::new();
         for (index, claim) in self.contributors.iter().enumerate() {
@@ -105,8 +102,8 @@ impl<'a> GroupingBrief<'a> {
         }
     }
 
-    // Turns a grouping into bases, ordered by each group's earliest claim and
-    // numbered from `REQ-001` in that order.
+    // Ordered by each group's earliest claim and numbered from `REQ-001` in
+    // that order.
     fn bases(&self, grouping: &Grouping) -> Result<Vec<Basis>, Error> {
         let mut groups: Vec<(usize, Vec<Vec<Contributor>>)> =
             Vec::with_capacity(grouping.groups.len());
@@ -128,8 +125,8 @@ impl<'a> GroupingBrief<'a> {
             .collect()
     }
 
-    // The claim a grouping names by index. The grouping was verified against
-    // these contributors, so a miss is the engine's own defect.
+    // The grouping was verified against these contributors, so a miss is the
+    // engine's own defect.
     fn contributor(&self, index: usize) -> Result<Contributor, Error> {
         self.contributors
             .get(index)
@@ -145,8 +142,6 @@ impl Brief for GroupingBrief<'_> {
     const NAME: &'static str = "grouping";
     const PROSE: &'static [&'static str] = &["grouping.md"];
 
-    // Tightens the derived schema to this run: every index at most the last
-    // claim's, and at least one group.
     fn tighten(&self, schema: &mut Value) {
         let last = self.contributors.len().saturating_sub(1);
         for pointer in ["/properties/claims/items", "/properties/classes/items/items"] {
@@ -157,9 +152,6 @@ impl Brief for GroupingBrief<'_> {
         schema["properties"]["groups"]["minItems"] = json!(1);
     }
 
-    // Verifies a candidate grouping: every claim in exactly one group, every
-    // group's claims in exactly one class, and no byte-equal ids split across
-    // groups.
     fn verify(&self, answer: &Grouping, review: &mut Review) {
         let count = self.contributors.len();
         let mut placed: BTreeMap<usize, usize> = BTreeMap::new();
@@ -206,7 +198,7 @@ impl Brief for GroupingBrief<'_> {
             review.note(format_args!("claim {index} is in no group"));
         }
 
-        // The baseline: byte-equal ids may not be split across groups.
+        // byte-equal ids may not be split across groups
         let mut by_id: BTreeMap<&str, BTreeSet<usize>> = BTreeMap::new();
         for (index, claim) in self.contributors.iter().enumerate() {
             if let Some(position) = placed.get(&index) {
@@ -221,15 +213,11 @@ impl Brief for GroupingBrief<'_> {
         }
     }
 
-    // Turns the accepted grouping into requirements.
     fn into_output(self, answer: Grouping) -> Result<Vec<Basis>, Error> {
         self.bases(&answer)
     }
 }
 
-// Renders the user turn of the prompt: every requirement claim with its index
-// (authority withheld), then the baseline's pre-merged groups the answer may
-// not split.
 impl Display for GroupingBrief<'_> {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         f.write_str(
@@ -311,14 +299,8 @@ pub struct Basis {
 }
 
 impl Basis {
-    // Builds a requirement from its classes, sorted by source-kind authority
-    // then source order. One class is agreed (unknown when no criterion covers
-    // it); several are a divergence when one holds the top authority alone,
-    // else a conflict.
     fn of(id: ReqId, mut classes: Vec<Vec<Contributor>>, criteria: &[&str]) -> Result<Self, Error> {
-        // The grouping was verified, so a requirement without a claim, or a
-        // class without one, is the engine's own defect; from here every
-        // class has a lead.
+        // an empty class is the engine's own defect; from here every class has a lead
         if classes.is_empty() || classes.iter().any(Vec::is_empty) {
             return Err(server_error!("requirement {id} was grouped with a class of no claims"));
         }
@@ -327,15 +309,15 @@ impl Basis {
         }
         classes.sort_by_key(|class| (class[0].kind, class[0].index));
 
-        let top = classes[0][0].kind;
-        // A criterion covers a requirement when it is that claim id or a
-        // dotted child of it (`session.timeout.idle` covers `session.timeout`).
+        // covered by a criterion at the claim id or a dotted child of it
         let covered = classes.iter().flatten().any(|member| {
             criteria.iter().any(|id| {
                 id.strip_prefix(member.id.as_str())
                     .is_some_and(|rest| rest.is_empty() || rest.starts_with('.'))
             })
         });
+
+        let top = classes[0][0].kind;
         let status = match classes.len() {
             1 if covered => Status::Agreed,
             1 => Status::Unknown,

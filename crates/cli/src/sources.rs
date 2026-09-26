@@ -1,12 +1,9 @@
-//! Builds a `specify` source list from command-line arguments.
+//! Decodes a `specify` run's sources and registries from its carriers.
 //!
-//! Sources may come from positional adapters, inline descriptions, or an
-//! `emery.toml` file, which also carries the `[registries]` table package
-//! adapters route through. Configuration files cannot be combined with direct
-//! command-line sources. When no source is specified, the project-root
-//! `emery.toml` is used if present; a run naming its sources on the command
-//! line still reads that file's `[registries]` table, and that table alone:
-//! its `[[source]]` entries are neither merged in nor decoded.
+//! The carriers are argv — positional adapters and `--description` values —
+//! and an operator-owned `emery.toml`, never both. A run naming its sources
+//! on the command line still reads the project-root file's `[registries]`
+//! table, and that table alone.
 
 use std::ffi::OsStr;
 use std::path::{Path, PathBuf};
@@ -77,19 +74,12 @@ pub fn decode(
     Ok(decoded)
 }
 
-// Finds the project-root `emery.toml`, if there is one. Missing, it yields
-// nothing: an empty source list, which the engine refuses as
-// `specify-source-required` when the file is the run's only carrier, or the
-// engine's one first-party route when argv names the sources.
 fn discover() -> Result<Option<&'static Path>, Error> {
     let path = Path::new(CONFIG_FILE);
     let found = path.try_exists().with_context(|| format!("reading {CONFIG_FILE}"))?;
     Ok(found.then_some(path))
 }
 
-// Builds the sources named on the command line: each positional adapter
-// lends the workspace at `.`, each `--description` entry is an inline value,
-// and the key is the adapter's kebab stem.
 fn from_argv(adapters: &[String], descriptions: &[String]) -> Result<Vec<SourceConfig>, Error> {
     let workspaces = adapters
         .iter()
@@ -109,8 +99,6 @@ fn from_argv(adapters: &[String], descriptions: &[String]) -> Result<Vec<SourceC
     workspaces.chain(values).collect()
 }
 
-// Builds the source a command-line reference names over `content`, keyed
-// by the adapter's kebab stem.
 fn source(reference: &str, content: SourceContent) -> Result<SourceConfig, Error> {
     let adapter = anchored(reference.parse()?, Path::new("."))?;
     Ok(SourceConfig {
@@ -121,9 +109,6 @@ fn source(reference: &str, content: SourceContent) -> Result<SourceConfig, Error
     })
 }
 
-// Derives the source key of an adapter: the bare name, a package's name
-// (`intent` for `emery:intent@1.0.0`), or a component file's stem kebab-cased
-// (`intent` for `intent.wasm`, `my-adapter` for `my_adapter.wasm`).
 fn key(adapter: &AdapterRef) -> String {
     match adapter {
         AdapterRef::Static(name) | AdapterRef::Package { name, .. } => name.clone(),
@@ -134,9 +119,6 @@ fn key(adapter: &AdapterRef) -> String {
     }
 }
 
-// Resolves a local component reference against `base`, the directory its
-// path is written relative to, to the one project-relative path that is the
-// adapter's identity; other reference kinds pass through.
 fn anchored(adapter: AdapterRef, base: &Path) -> Result<AdapterRef, Error> {
     Ok(match adapter {
         AdapterRef::File(path) => AdapterRef::File(resolved(base, &path)?),
@@ -144,8 +126,6 @@ fn anchored(adapter: AdapterRef, base: &Path) -> Result<AdapterRef, Error> {
     })
 }
 
-// Reads and decodes an operator-owned config file: its sources, each
-// anchored at the file's directory, and its registries.
 fn from_file(path: &Path) -> Result<Decoded, Error> {
     let file: ConfigFile = parse(path)?;
 
@@ -162,7 +142,6 @@ fn from_file(path: &Path) -> Result<Decoded, Error> {
     })
 }
 
-// Reads an operator-owned config file for its `[registries]` table alone.
 // The `[[source]]` entries are skipped undecoded, so what they hold never
 // refuses a run that named its own sources.
 fn registries(path: &Path) -> Result<Registries, Error> {
@@ -170,8 +149,6 @@ fn registries(path: &Path) -> Result<Registries, Error> {
     Ok(file.registries)
 }
 
-// Parses an operator-owned config file as `File`; any parse failure is
-// refused, and the engine never writes the file.
 fn parse<File: DeserializeOwned>(path: &Path) -> Result<File, Error> {
     let raw =
         std::fs::read_to_string(path).with_context(|| format!("reading {}", path.display()))?;
@@ -181,11 +158,8 @@ fn parse<File: DeserializeOwned>(path: &Path) -> Result<File, Error> {
     })
 }
 
-// The operator-authored schema: ordered `[[source]]` entries, each with
-// exactly one optional content key, and the `[registries]` table routing
-// package namespaces. An unknown key is refused with its name and line.
-// `Sources` is the shape the entries are read as: decoded, or skipped by a
-// run reading the file for its table.
+// `Sources` is the shape the `[[source]]` entries are read as: decoded, or
+// skipped by a run reading the file for its table alone.
 #[derive(Debug, Default, serde::Deserialize)]
 #[serde(deny_unknown_fields)]
 #[serde(default)]
@@ -194,26 +168,19 @@ struct ConfigFile<Sources = Vec<SourceEntry>> {
     registries: Registries,
 }
 
-// `adapter` is required; every other key is optional. The adapter reference
-// is parsed by the decoder, so a malformed one is refused with its line.
 #[derive(Debug, serde::Deserialize)]
 #[serde(deny_unknown_fields, rename_all = "kebab-case")]
 struct SourceEntry {
-    // The source key; omitted, the adapter's key, as on the command line.
+    // Omitted, the adapter's key, as on the command line.
     name: Option<String>,
     adapter: AdapterRef,
     path: Option<PathBuf>,
     description: Option<String>,
-    // The `sha256:` pin the adapter's component must resolve to.
     digest: Option<Digest>,
 }
 
 impl SourceEntry {
-    // Decodes the entry into the engine's source, anchoring its relative
-    // paths at `base`, the config file's directory.
     fn decode(self, base: &Path) -> Result<SourceConfig, Error> {
-        // A local component path resolves relative to the file, like Cargo
-        // `path` dependencies.
         let adapter = anchored(self.adapter, base)?;
         let name = self.name.unwrap_or_else(|| key(&adapter));
         let content = match (self.path, self.description) {
@@ -239,8 +206,6 @@ impl SourceEntry {
     }
 }
 
-// Anchors `relative` at the file's directory, refusing any path outside
-// the `.` project preopen.
 fn resolved(base: &Path, relative: &Path) -> Result<PathBuf, Error> {
     preopen_path(&base.join(relative))
 }

@@ -69,11 +69,11 @@ pub async fn surfaces<P: Model>(
         "surveyed"
     );
 
+    // the check accepted every entry, so each is a path beneath the root
     Ok(inventory
         .surfaces
         .into_iter()
         .map(|surface| Surface {
-            // The check accepted the entry, so it is a path beneath the root.
             entry: beneath(&surface.entry).unwrap_or(surface.entry),
             name: surface.name,
         })
@@ -103,8 +103,6 @@ pub struct Surface {
 }
 
 impl Inventory {
-    // What the check holds against a candidate: every surface named once, and
-    // entered at a module of the tree that `keep` accepts.
     fn findings(&self, root: &str, keep: &mut impl FnMut(Entry<'_>) -> bool) -> Vec<String> {
         let mut findings = Vec::new();
         let mut names = BTreeSet::new();
@@ -122,10 +120,6 @@ impl Inventory {
     }
 }
 
-// `named` as a path beneath `root` when it is a regular file there that
-// `keep` accepts — asked about each directory on the way and the file itself,
-// as the walk would offer them — and none of the engine's own; otherwise the
-// finding.
 fn module(
     root: &str, named: &str, keep: &mut impl FnMut(Entry<'_>) -> bool,
 ) -> Result<String, String> {
@@ -137,8 +131,7 @@ fn module(
     }
 }
 
-// The user turn of the survey: which source is surveyed, the root lent, how
-// an entry is named, and where the model's work stops.
+// The user turn of the survey.
 struct Brief<'a> {
     adapter_id: &'a str,
     key: &'a str,

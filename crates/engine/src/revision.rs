@@ -57,8 +57,7 @@ pub trait Document: Serialize + DeserializeOwned + Display {
         let value: Value = serde_json::from_slice(bytes)
             .with_context(|| format!("`{}` is not JSON", Self::NAME))?;
 
-        // The stamp is the one field every grammar shares, so it is read
-        // before the shape.
+        // check the grammar stamp before the shape
         let stamp = &value["emery"];
         if *stamp != EMERY {
             return Err(Error::BadRequest {
@@ -151,8 +150,6 @@ fn digest(spec: &[u8], design: &[u8]) -> String {
     hex::encode(hasher.finalize())
 }
 
-// Writes one document body: the title, each preamble paragraph, and each
-// typed block, one blank line apart.
 fn write<T: Display>(
     f: &mut Formatter<'_>, title: &str, preamble: &[String], blocks: &[T],
 ) -> fmt::Result {

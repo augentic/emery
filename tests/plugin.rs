@@ -23,21 +23,17 @@ enum Mention<'a> {
     Skill { name: &'a str, rest: &'a str },
 }
 
-// Global flags are validated by `command.rs`, not against a verb's help: a
-// verbless mention (`emery --version`) has no verb help to check, and a
-// verb's help repeats them under a shared heading.
+// Validated by `command.rs`, not against a verb's help: a verbless mention has
+// no verb help to check.
 const GLOBAL_FLAGS: &[&str] = &["--format", "--help", "--version"];
 
-// Each skill's flags validate against its single wrapped verb.
+// Each skill's flags validate against the one verb it wraps.
 const SKILL_VERBS: &[(&str, &str)] = &[("specify", "specify")];
 
-// Runs `argv` through the live grammar; no capability is dispatched, so an
-// idle provider serves.
 async fn grammar(argv: &[&str]) -> Response {
     provider::cli(&Provider::idle(), argv).await
 }
 
-// Plugin-rule CLI mentions must resolve to live verbs and flags.
 #[tokio::test]
 async fn rule_matches() {
     let rule = plugin_dir().join("rules/emery.mdc");
@@ -91,7 +87,6 @@ async fn rule_matches() {
     }
 }
 
-// Every shipped skill is named by the always-applied rule.
 #[test]
 fn every_skill() {
     let doc = std::fs::read_to_string(plugin_dir().join("rules/emery.mdc")).expect("rule");
@@ -113,9 +108,8 @@ fn plugin_dir() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("plugins/emery")
 }
 
-// Collects every standalone `emery` mention in `text` — a `/emery:<skill>`
-// reference or a CLI invocation — skipping dotted or slashed paths and
-// `emery-adapters`.
+// A standalone `emery` is a CLI mention; `/emery:<skill>` a skill; a dotted or
+// slashed path, or `emery-adapters`, neither.
 fn mentions_in(text: &str) -> Vec<Mention<'_>> {
     let bytes = text.as_bytes();
     let mut mentions = Vec::new();
@@ -169,8 +163,6 @@ fn mentions(doc: &str) -> Vec<Mention<'_>> {
     mentions
 }
 
-// Returns the first live verb among `tokens` and the first token it could
-// not consume.
 fn walk_verb<'a>(
     tokens: impl IntoIterator<Item = &'a str>, verbs: &BTreeSet<&str>,
 ) -> (Option<&'a str>, Option<&'a str>) {

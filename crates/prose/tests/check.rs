@@ -13,13 +13,12 @@ use emery_prose::{Doc, body, check};
 
 static PROSE: &[Doc] = emery_prose::prose!["prose/extract.md", "prose/references/ids.md"];
 
-// A document is named from the invoking file, as `include_str!` names one,
-// so a list may climb out of its directory and back into the tree; the table
-// path is what follows `prose/` either way.
+// A list may climb out of its directory and back into the tree; the table path
+// is what follows `prose/` either way.
 static CLIMBING: &[Doc] = emery_prose::prose!["../tests/prose/references/ids.md"];
 
-// The fixtures agree with their list: the one place the list, the embed, and
-// the check are seen together over a real tree.
+// The one place the list, the embed, and the check are seen together over a
+// real tree.
 #[test]
 fn fixtures() {
     let paths: Vec<&str> = PROSE.iter().map(|doc| doc.path).collect();
@@ -35,8 +34,7 @@ fn fixtures() {
 }
 
 // A document added to the tree but not to the list is the one drift the
-// compiler cannot see; a listed document the tree lacks is caught here too,
-// for a table written by hand.
+// compiler cannot see.
 #[test]
 fn unlisted() {
     let tmp = tempfile::tempdir().expect("tempdir");
@@ -54,7 +52,7 @@ fn unlisted() {
     );
 }
 
-// A path listed twice would make one lookup answer for two entries.
+// One lookup would answer for two entries.
 #[test]
 fn repeated() {
     let tmp = tempfile::tempdir().expect("tempdir");
@@ -64,11 +62,8 @@ fn repeated() {
     assert_eq!(check(&table, tmp.path(), &["a.md"], &[]), ["`a.md` is listed twice"]);
 }
 
-// A listed document no prompt reaches is embedded and never read, and a link
-// from another unreached document does not rescue it; a prompt the table
-// lacks is `server_error` on every run. Both are the table's own drift, so
-// the tree agrees with the list throughout. A reference climbing back to the
-// prompt stays inside the tree.
+// A link from another unreached document does not rescue an unreached one, and
+// a reference climbing back to the prompt stays inside the tree.
 #[test]
 fn unlinked() {
     let tmp = tempfile::tempdir().expect("tempdir");
@@ -93,8 +88,8 @@ fn unlinked() {
     );
 }
 
-// A symlinked directory is part of the tree, so a document reached through
-// one is listed like any other, and a `](` inside fenced code is not a link.
+// A symlinked directory is part of the tree, and a `](` inside fenced code is
+// not a link.
 #[test]
 fn symlinked() {
     let tmp = tempfile::tempdir().expect("tempdir");
@@ -121,11 +116,8 @@ fn symlinked() {
     assert!(findings.is_empty(), "{}", findings.join("\n"));
 }
 
-// A link may name a document another table embeds beside this one — the
-// SDK's runtime references beside an adapter's own — which the tree need not
-// hold and no prompt need reach; a listed document at an import's path would
-// answer lookups meant for the import, so it is a finding even when the tree
-// holds it and a prompt reaches it.
+// An import need not be in the tree or reached from a prompt; a listed document
+// at an import's path would answer lookups meant for the import.
 #[test]
 fn imported() {
     let tmp = tempfile::tempdir().expect("tempdir");
@@ -144,9 +136,8 @@ fn imported() {
     );
 }
 
-// A link is checked against the table, not the disk: a target the tree holds
-// but the list omits is as unanswerable to `read_doc` as one that never
-// existed, and a link that climbs out of the tree names nothing embeddable.
+// A link is checked against the table, not the disk: a target the list omits is
+// as unanswerable to `read_doc` as one that never existed.
 #[test]
 fn dangling() {
     let tmp = tempfile::tempdir().expect("tempdir");
@@ -166,8 +157,7 @@ fn dangling() {
     );
 }
 
-// A missing tree and a symlink cycle are reported rather than walked forever
-// or mistaken for an empty tree.
+// Reported rather than walked forever or mistaken for an empty tree.
 #[test]
 fn unwalkable() {
     let tmp = tempfile::tempdir().expect("tempdir");

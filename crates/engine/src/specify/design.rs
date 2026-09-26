@@ -48,14 +48,10 @@ impl Brief for DesignBrief<'_> {
     const NAME: &'static str = "design-draft";
     const PROSE: &'static [&'static str] = &["synthesise.md", "design-format.md"];
 
-    // Tightens the derived schema to this run's plan: at least as many
-    // sections as the plan requires, `kind` limited to the kinds the plan does
-    // not forbid, and `type` blocks limited to this run's `type` claim keys.
     fn tighten(&self, schema: &mut Value) {
         schema["properties"]["sections"]["minItems"] = json!(self.plan.required().count());
 
-        // The derived `kind` refers to the whole vocabulary; the run's
-        // subset replaces the reference in place.
+        // replace the derived `kind` reference with this run's subset
         let kinds = SectionKind::VARIANTS
             .iter()
             .filter(|kind| self.plan.presence(**kind) != Presence::Omitted)
@@ -70,8 +66,7 @@ impl Brief for DesignBrief<'_> {
             defs.remove("SectionKind");
         }
 
-        // The derived `Block` oneOf includes every variant; restrict the
-        // `{"type": …}` arm to this run's type keys.
+        // restrict the `{"type": …}` arm to this run's type keys
         if !self.plan.signatures.is_empty()
             && let Some(block) = schema
                 .pointer_mut("/$defs/Block/oneOf")
@@ -84,9 +79,6 @@ impl Brief for DesignBrief<'_> {
         }
     }
 
-    // Verifies a candidate draft against the plan: every required section
-    // present, none forbidden, duplicated, or empty; each `type` claim placed
-    // once, only under `## Domain model`; citations bound; no reserved opener.
     fn verify(&self, answer: &DesignAnswer, review: &mut Review) {
         review.paragraphs(&answer.preamble, "preamble");
 
@@ -146,8 +138,6 @@ impl Brief for DesignBrief<'_> {
         }
     }
 
-    // Places the draft in the design: the drafted sections in vocabulary
-    // order, each `type` block carrying the claim's signature.
     fn into_output(self, answer: DesignAnswer) -> Result<Design, Error> {
         let mut drafted = answer.sections;
         drafted.sort_by_key(|section| section.kind);
@@ -183,9 +173,6 @@ impl Brief for DesignBrief<'_> {
     }
 }
 
-// Renders the user turn of the prompt: every claim in every extract, the
-// plan's verdict on each section kind with its reason, the `type` claims to
-// place, and the rendered `spec.md` the design must follow.
 impl Display for DesignBrief<'_> {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         write!(f, "Draft `design.md`.\n\n{claims}", claims = ClaimsSection(self.extracts))?;
@@ -245,12 +232,8 @@ pub enum Block {
     Type(String),
 }
 
-// The facts a design draft is verified against: the kinds of every extracted
-// claim (which decide the sections this run requires, permits, or forbids),
-// the bound sources it may cite, and the `type` claims it must reference —
-// each by key (its id, or its path when it has none), with the trimmed
-// signature the engine places. A `type` claim without a string `signature`
-// has nothing to place and is not planned.
+// A `type` claim is keyed by its id, or its path when it has none; one
+// without a string `signature` has nothing to place and is not planned.
 struct Plan<'a> {
     kinds: BTreeSet<ClaimKind>,
     bound: BTreeSet<&'a str>,
@@ -278,14 +261,10 @@ impl<'a> Plan<'a> {
         }
     }
 
-    // Lists every `type` claim key the draft must reference, in key order.
     fn keys(&self) -> impl Iterator<Item = &str> {
         self.signatures.keys().copied()
     }
 
-    // Decides whether section `kind` is required, permitted, or forbidden:
-    // `Overview`, and any kind with an informant claim present, is required;
-    // uninformed `Observability` / `TechnicalLogic` permitted; the rest forbidden.
     fn presence(&self, kind: SectionKind) -> Presence {
         let informed = informants(kind).iter().any(|claim| self.kinds.contains(claim));
         match (kind, informed) {
@@ -297,7 +276,6 @@ impl<'a> Plan<'a> {
         }
     }
 
-    // Lists every section the plan requires, in vocabulary order.
     fn required(&self) -> impl Iterator<Item = SectionKind> + '_ {
         SectionKind::VARIANTS
             .iter()
@@ -306,8 +284,6 @@ impl<'a> Plan<'a> {
     }
 }
 
-// Whether the evidence calls for a section, tolerates it, or leaves it out;
-// the lowercase name is the presence the prompt states.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, strum::Display)]
 #[strum(serialize_all = "lowercase")]
 enum Presence {
@@ -316,9 +292,8 @@ enum Presence {
     Omitted,
 }
 
-// Maps a section kind to the claim kinds whose presence requires it.
-// `Overview` and `Observability` have none: the first is always required, the
-// second only ever permitted.
+// `Overview` and `Observability` have no informant: the first is always
+// required, the second only ever permitted.
 const fn informants(kind: SectionKind) -> &'static [ClaimKind] {
     match kind {
         SectionKind::Overview | SectionKind::Observability => &[],

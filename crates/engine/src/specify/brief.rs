@@ -19,6 +19,7 @@ use serde_json::Value;
 use crate::revision::RESERVED;
 use crate::specify::{Extract, PROSE};
 
+/// A typed synthesis question and the checks its answer must satisfy.
 // `Sync`: the verify closure `Question::ask` takes is `Send`, and it
 // borrows the brief.
 pub trait Brief: Display + Sync + Sized {
@@ -87,29 +88,29 @@ pub trait Brief: Display + Sync + Sized {
     }
 }
 
-// What a brief records against one candidate. One type, so the bullet every
-// finding carries and the accept-or-reject verdict are decided here rather
-// than by each brief.
+/// The findings a brief records against one candidate.
 #[derive(Default)]
 pub struct Review(Findings);
 
 impl Review {
-    // Records one finding as a bullet: omnia joins the findings with newlines
-    // under `## Findings`, so the list markup is the engine's.
+    /// Records one finding.
+    ///
+    /// Each finding is a bullet: omnia joins them with newlines under
+    /// `## Findings`, so the list markup is the engine's.
     pub fn note(&mut self, finding: impl Display) {
         self.0.push(format!("- {finding}"));
     }
 
-    // Accepts a candidate nothing was found against; rejects one with the
-    // findings the backend feeds back as the correction.
+    /// Accepts a candidate nothing was found against, else rejects it with
+    /// the findings the backend feeds back as the correction.
     pub fn verdict(self) -> Result<(), Findings> {
         if self.0.is_empty() { Ok(()) } else { Err(self.0) }
     }
 
-    // The prose checks the document briefs share. A draft is placed into a
-    // document the engine renders, so it may not carry the document's own
-    // markup: a paragraph may not be blank or open a line with a reserved
-    // marker.
+    /// Checks that a drafted paragraph carries none of the document's own markup.
+    ///
+    /// A paragraph may not be blank or open a line with a reserved marker,
+    /// since the draft is placed into a document the engine renders.
     pub fn paragraph(&mut self, text: &str, label: impl Display) {
         if text.trim().is_empty() {
             self.note(format_args!("{label} has a blank paragraph"));
@@ -132,7 +133,7 @@ impl Review {
         }
     }
 
-    // A scenario field is one non-blank line.
+    /// Checks that `text` is one non-blank line.
     pub fn line(&mut self, text: &str, label: impl Display) {
         if text.trim().is_empty() {
             self.note(format_args!("{label} is blank"));
@@ -142,9 +143,8 @@ impl Review {
     }
 }
 
-// The `## Claims` section of a document brief's turn: every claim in every
-// extract, under its source key and kind, so the model sees the whole body it
-// must draft from.
+/// The `## Claims` section of a document brief's turn: every claim of every
+/// extract under its source key and kind.
 pub struct ClaimsSection<'a>(pub &'a [Extract]);
 
 impl Display for ClaimsSection<'_> {

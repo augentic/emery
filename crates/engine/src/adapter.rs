@@ -1,21 +1,10 @@
-//! Parses adapter references and loads the adapters required by a run.
+//! Parses adapter references and loads the adapters a run names.
 //!
-//! An [`AdapterRef`] identifies a declared guest, registry package, or local
-//! WebAssembly component, and names the guest it loads as
-//! ([`AdapterRef::guest`]). [`load`] loads each unique reference through the
-//! deployment loader at the location it names — a declared guest by name, a
-//! package at the registry its namespace routes to, a local component by its
-//! project-relative path — refusing two that name one guest, and one that
-//! names the engine's own ([`ENGINE`]), before any loads; the loader holds
-//! each to its digest pin. It then checks version compatibility and returns
-//! what each adapter [`Loaded`] as: the identity it dispatches by and the
-//! source authority it declares. [`Registries`] routes a package reference
-//! to the registry that serves its namespace.
-//!
-//! The deployment's grant bounds every load: a local component loads through
-//! the project root the runtime mounts read-only, a package from the
-//! registry the project's `[registries]` table names, and a bare name only
-//! where the deployment declares the guest.
+//! Every load goes through the deployment loader at the location the
+//! reference names, and the deployment's grant bounds it: a local component
+//! loads through the project root the runtime mounts read-only, a package
+//! from the registry the project's `[registries]` table routes its namespace
+//! to, and a bare name only where the deployment declares the guest.
 
 use std::collections::BTreeMap;
 use std::collections::btree_map::Entry;
@@ -59,7 +48,6 @@ pub const ENGINE: &str = "emery";
 #[serde(transparent)]
 pub struct Registries(BTreeMap<String, String>);
 
-// The route the engine knows without any project line.
 const FIRST_PARTY: (&str, &str) = ("emery", "augentic.io");
 
 impl Registries {
@@ -179,8 +167,6 @@ pub async fn load<'a, P: Source + Plugins>(
     Ok(loaded)
 }
 
-// Refuses an adapter whose declared minimum `emery-version` the running
-// binary does not meet.
 fn is_supported(id: &str, declared: &str, running: &semver::Version) -> Result<(), Error> {
     let minimum = semver::Version::parse(declared).map_err(|err| {
         bad_request!("adapter `{id}` has an invalid `emery-version` `{declared}`: {err}")
@@ -196,13 +182,8 @@ fn is_supported(id: &str, declared: &str, running: &semver::Version) -> Result<(
     Ok(())
 }
 
-// The loader location a reference names once it can load at all: never the
-// engine's own guest, which the loader would attest in place of an adapter;
-// a declared guest by name, which the deployment pins; a package at the
-// registry its namespace routes to; a local component by its project-relative
-// path, which must be a file. Asked of every source entry, so a digest on any
-// entry naming a declared guest is refused, not only one on the entry that
-// names it first.
+// Asked of every source entry rather than each distinct reference, so a
+// digest on any entry naming a declared guest is refused.
 fn location(
     adapter: &AdapterRef, digest: Option<&Digest>, registries: &Registries,
 ) -> Result<Location, Error> {
@@ -220,8 +201,6 @@ fn location(
             }
             Location::Declared(name.clone())
         }
-        // The load names the registry the project's table routes the
-        // namespace to, so the deployment needs no routing of its own.
         AdapterRef::Package { namespace, .. } => {
             let endpoint = registries.get(namespace).ok_or_else(|| {
                 bad_request!(
@@ -256,7 +235,8 @@ fn location(
 /// `intent@1.0.0` becomes `emery:intent@1.0.0`, while
 /// `file://./intent.wasm` becomes `./intent.wasm`. Its [`Display`]
 /// implementation returns that normalised identity, and [`guest`] the name
-/// of the guest it loads as.
+/// of the guest it loads as. An empty value, a GitHub URL, or a malformed
+/// package reference parses as [`Error::BadRequest`].
 ///
 /// [`guest`]: Self::guest
 ///
@@ -337,14 +317,6 @@ impl Display for AdapterRef {
 impl FromStr for AdapterRef {
     type Err = Error;
 
-    /// Parses a local path, bare adapter name, or versioned package.
-    ///
-    /// A package without an explicit namespace uses `emery`.
-    ///
-    /// # Errors
-    ///
-    /// Returns [`Error::BadRequest`] for an empty value, a GitHub URL, or a
-    /// malformed package reference.
     fn from_str(value: &str) -> Result<Self, Error> {
         let value = value.trim();
         if value.is_empty() {
@@ -361,7 +333,7 @@ impl FromStr for AdapterRef {
             return Ok(Self::Static(value.to_string()));
         }
 
-        // `<namespace>:<name>@<version>`; the namespace defaults to `emery`.
+        // parse `<namespace>:<name>@<version>`, the namespace defaulting to `emery`
         let (namespace, rest) = value.split_once(':').unwrap_or((FIRST_PARTY.0, value));
         let (name, version) = rest
             .split_once('@')
@@ -384,8 +356,8 @@ impl FromStr for AdapterRef {
     }
 }
 
-// The serde side of the parse: a decoder reports the refusal's description
-// at the offending field, so the message carries no error code of its own.
+// A decoder reports the refusal at the offending field, where the error's
+// class and code would be noise.
 impl TryFrom<String> for AdapterRef {
     type Error = String;
 

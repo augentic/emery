@@ -18,7 +18,6 @@ use serde_json::json;
 
 use crate::RUNTIME;
 
-// The tool names as the model calls them.
 const LIST_DOCS: &str = "list_docs";
 const READ_DOC: &str = "read_doc";
 

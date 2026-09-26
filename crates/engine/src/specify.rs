@@ -118,8 +118,7 @@ pub struct SourceConfig {
 }
 
 impl SourceConfig {
-    // Checks this source's rules and maps it to the adapter's `extract`
-    // input; the one place an operator root meets the guest preopen.
+    // The one place an operator root meets the guest preopen.
     fn prepare(&self) -> Result<SourceInput, Error> {
         let key = &self.key;
         if !is_kebab(key) {
@@ -127,10 +126,7 @@ impl SourceConfig {
         }
 
         let content = match &self.content {
-            // The adapter lends the root to the model by preopen name, so it
-            // is spelled beneath the `.` mount: `.` itself, or `./<path>`.
-            // `.` spans the whole project, `.omnia/` included, until guest
-            // capability profiles can exclude the revision store.
+            // spell the lent root beneath the `.` mount: `.` itself, or `./<path>`
             SourceContent::Workspace(relative) => {
                 let relative = preopen_path(Path::new(relative))?.display().to_string();
                 let root = if relative == "." { relative } else { format!("./{relative}") };
