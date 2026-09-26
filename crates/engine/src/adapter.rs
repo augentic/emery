@@ -97,7 +97,8 @@ pub struct Loaded {
 ///
 /// - Returns [`Error::BadRequest`] for a path outside the project, a digest
 ///   on a declared guest, two digests on one adapter, two references that
-///   name one guest, a reference that names the engine's own guest
+///   name one guest (two components sharing a file stem, two versions of
+///   one package), a reference that names the engine's own guest
 ///   ([`ENGINE`]), a package whose namespace `registries` does not route,
 ///   malformed version metadata, or an incompatible adapter. Incompatible
 ///   versions use code `unsupported-version`; an adapter that resolves to
@@ -135,8 +136,8 @@ pub async fn load<'a, P: Source + Plugins>(
     for (reference, (location, _)) in &locations {
         if let Some(first) = names.insert(location.name(), reference) {
             return Err(bad_request!(
-                "adapters `{first}` and `{reference}` would both register as `{}`; rename one \
-                 component",
+                "adapters `{first}` and `{reference}` would both register as `{}`; a run loads \
+                 one adapter per guest name",
                 location.name()
             ));
         }
@@ -266,7 +267,7 @@ fn location(
 ///
 /// let package: AdapterRef = "intent@1.0.0".parse()?;
 /// assert_eq!(package.to_string(), "emery:intent@1.0.0");
-/// assert_eq!(package.guest(), "emery:intent@1.0.0");
+/// assert_eq!(package.guest(), "emery:intent");
 ///
 /// let file: AdapterRef = "file://./adapters/intent.wasm".parse()?;
 /// assert_eq!(file.to_string(), "./adapters/intent.wasm");
@@ -300,11 +301,12 @@ pub enum AdapterRef {
 impl AdapterRef {
     /// Returns the name of the guest this reference loads and dispatches by.
     ///
-    /// A bare name is the guest itself, a package loads as its exact
-    /// reference, and a local component as its file's stem —
-    /// `./adapters/custom.wasm` dispatches as `custom`. The deployment
-    /// declares a component or package under this name, and the loader admits
-    /// it by it.
+    /// A bare name is the guest itself, a package loads as its reference
+    /// without the version — `emery:intent@1.0.0` dispatches as
+    /// `emery:intent`, so a run holds one version of a package — and a local
+    /// component as its file's stem — `./adapters/custom.wasm` dispatches as
+    /// `custom`. The deployment declares a component or package under this
+    /// name, and the loader admits it by it.
     #[must_use]
     pub fn guest(&self) -> String {
         match self {
@@ -312,7 +314,8 @@ impl AdapterRef {
                 .file_stem()
                 .and_then(OsStr::to_str)
                 .map_or_else(|| path.display().to_string(), str::to_owned),
-            Self::Package { .. } | Self::Static(_) => self.to_string(),
+            Self::Package { namespace, name, .. } => format!("{namespace}:{name}"),
+            Self::Static(name) => name.clone(),
         }
     }
 }

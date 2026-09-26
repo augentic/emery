@@ -11,10 +11,10 @@
 
 mod support;
 
+use std::fs;
 use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration;
-use std::{fs, slice};
 
 use emery_adapter::source::{ClaimKind, Evidence, SourceContent, SourceKind};
 use emery_engine::{CONTAINER, CURRENT, ENGINE};
@@ -205,17 +205,16 @@ async fn from_file() {
 // claims of one id are one requirement citing both sources.
 #[tokio::test]
 async fn shared_roots() {
-    let cases: &[(&str, bool)] = &[("emery:documentation@1.2.0", false), ("./source.wasm", true)];
-    for (adapter, wasm) in cases {
+    let cases: &[(&str, &str)] =
+        &[("emery:documentation@1.2.0", "emery:documentation"), ("./source.wasm", "source")];
+    for (adapter, package) in cases {
         let scratch = Scratch::new();
-        // A package dispatches by its reference; a local component by its
-        // file's stem, the guest name the loader registers it under.
-        let package = if *wasm {
+        // A package dispatches by its reference without the version; a local
+        // component by its file's stem — the guest name the loader registers
+        // each under.
+        if Path::new(adapter).extension().is_some() {
             scratch.component();
-            "source".to_string()
-        } else {
-            (*adapter).to_string()
-        };
+        }
         let config = scratch.config(&format!(
             "[[source]]\nname = \"docs\"\nadapter = \"{adapter}\"\npath = \"docs\"\n\n\
              [[source]]\nname = \"api\"\nadapter = \"{adapter}\"\npath = \"api\"\n"
@@ -232,23 +231,15 @@ async fn shared_roots() {
             "{adapter}: both sources contribute to the one requirement"
         );
 
-        assert_eq!(
-            provider.loaded(),
-            slice::from_ref(&package),
-            "{adapter}: one adapter identity loads once"
-        );
+        assert_eq!(provider.loaded(), [*package], "{adapter}: one adapter identity loads once");
         let gated = provider.source.metadata.lock().expect("metadata").clone();
-        assert_eq!(
-            gated,
-            slice::from_ref(&package),
-            "{adapter}: one adapter identity is gated once"
-        );
+        assert_eq!(gated, [*package], "{adapter}: one adapter identity is gated once");
 
         let calls = provider.source.calls.lock().expect("calls");
         assert_eq!(calls.len(), 2, "{adapter}: each source extracts");
-        assert_eq!(calls[0].0, package);
+        assert_eq!(calls[0].0, *package);
         assert_eq!(calls[0].1.key, "docs");
-        assert_eq!(calls[1].0, package);
+        assert_eq!(calls[1].0, *package);
         assert_eq!(calls[1].1.key, "api");
         drop(calls);
 
@@ -1229,9 +1220,10 @@ async fn github_refused() {
 
 // An exact package reference (`emery:<name>@<semver>`, or the
 // first-party shorthand as sugar for the `emery` namespace) loads
-// through the deployment loader under its own package identity — no
-// parallel adapter id — and names the registry its namespace routes to:
-// with no `[registries]` table, `emery` is augentic's.
+// through the deployment loader and names the registry its namespace
+// routes to — with no `[registries]` table, `emery` is augentic's — and
+// registers as the reference without its version, the one guest a run
+// holds for that package; every dispatch names that identity.
 #[tokio::test]
 async fn package_loads() {
     for reference in ["emery:demo@1.2.0", "demo@1.2.0"] {
@@ -1242,12 +1234,13 @@ async fn package_loads() {
         assert_eq!(
             provider.plugins.loads(),
             [(registry("emery:demo@1.2.0", "augentic.io"), None)],
-            "the package reference is the load identity, and the unpinned load names its \
-             registry: {reference}"
+            "the exact reference is fetched, and the unpinned load names its registry: \
+             {reference}"
         );
+        assert_eq!(provider.loaded(), ["emery:demo"], "the package registers without its version");
         let calls = provider.source.calls.lock().expect("calls");
         let (id, input) = calls.first().expect("one extract dispatch");
-        assert_eq!(id, "emery:demo@1.2.0", "the adapter id is the loaded package identity");
+        assert_eq!(id, "emery:demo", "the adapter id is the registered guest");
         assert_eq!(input.key, "demo", "the source key is the adapter name");
         drop(calls);
         provider.model.assert_exhausted();
@@ -1383,6 +1376,29 @@ async fn file_stem_collision() {
     assert!(provider.plugins.loads().is_empty(), "a colliding list loads nothing");
 }
 
+// A package registers as its reference without the version, so two versions
+// of one package would register as one guest: the run refuses them by name
+// before either is fetched, as it refuses two components sharing a stem.
+#[tokio::test]
+async fn package_version_collision() {
+    let scratch = Scratch::new();
+    let config = scratch.config(
+        "[[source]]\nname = \"docs\"\nadapter = \"emery:documentation@1.2.0\"\n\n\
+         [[source]]\nname = \"api\"\nadapter = \"documentation@1.3.0\"\n",
+    );
+    let provider = Provider::idle();
+
+    let envelope =
+        fail(&provider, &["emery", "specify", "--config", &config], 1, "bad_request").await;
+
+    assert_message(
+        &envelope,
+        "adapters `emery:documentation@1.2.0` and `emery:documentation@1.3.0`",
+    );
+    assert_message(&envelope, "would both register as `emery:documentation`");
+    assert!(provider.plugins.loads().is_empty(), "a colliding list fetches nothing");
+}
+
 // The engine is itself a guest of every deployment it runs in, declared at
 // boot as `emery`, so a reference that would load as it — a component with
 // that stem, or the bare name — is refused before any load: asked, the
@@ -1485,15 +1501,12 @@ async fn source_digest_pinned() {
     ));
     let grouping = baseline_grouping(2);
     let mut provider = Provider::answering([grouping.as_str(), SPEC_ANSWER, DESIGN_ANSWER]);
-    provider.plugins = provider
-        .plugins
-        .clone()
-        .digest("source", pin.clone())
-        .digest("emery:demo@1.2.0", pin.clone());
+    provider.plugins =
+        provider.plugins.clone().digest("source", pin.clone()).digest("emery:demo", pin.clone());
 
     cli_ok(&provider, &["emery", "specify", "--config", &config]).await;
 
-    assert_eq!(provider.loaded(), ["source", "emery:demo@1.2.0"]);
+    assert_eq!(provider.loaded(), ["source", "emery:demo"]);
     for (location, carried) in provider.plugins.loads() {
         assert_eq!(carried, Some(pin.clone()), "{location} carries its pin");
     }
@@ -1627,12 +1640,13 @@ async fn bad_key_package() {
 // Load failures land on the exit contract: an acquisition (registry)
 // or network) failure is the loader's `unavailable` on the
 // BadGateway exit; a component refused host-side validation is
-// `refused` on the BadRequest exit.
+// `refused` on the BadRequest exit. The loader answers by the name a
+// load registers — the package without its version.
 #[tokio::test]
 async fn load_failures() {
     let mut provider = Provider::idle();
     provider.plugins = provider.plugins.clone().refuse(
-        "emery:demo@1.2.0",
+        "emery:demo",
         LoadError::Unavailable("resolving `emery:demo@1.2.0`: endpoint unreachable".to_string()),
     );
     fail(&provider, &["emery", "specify", "emery:demo@1.2.0"], 4, "unavailable").await;
@@ -1641,7 +1655,7 @@ async fn load_failures() {
     provider.plugins = provider
         .plugins
         .clone()
-        .refuse("emery:demo@1.2.0", LoadError::Refused("not a raw wasm component".to_string()));
+        .refuse("emery:demo", LoadError::Refused("not a raw wasm component".to_string()));
     fail(&provider, &["emery", "specify", "emery:demo@1.2.0"], 1, "refused").await;
 }
 
