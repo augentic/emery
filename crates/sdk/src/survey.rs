@@ -41,10 +41,10 @@ use crate::{Context, beneath, prompt, reference, workspace};
 pub async fn surfaces<P: Model>(
     ctx: &Context<'_, P>, docs: &'static [Doc], mut keep: impl FnMut(Entry<'_>) -> bool + Send,
 ) -> Result<Vec<Surface>, Error> {
-    let key = &ctx.input.key;
+    let source = &ctx.input.key;
     let SourceContent::Workspace(root) = &ctx.input.content else {
         return Err(server_error!(
-            "`{key}`: a survey by model needs a workspace input, not an inline value"
+            "`{source}`: a survey by model needs a workspace input, not an inline value"
         ));
     };
     let question = Question::<Inventory>::new("survey")
@@ -53,23 +53,23 @@ pub async fn surfaces<P: Model>(
         .workspace(root);
     let brief = Brief {
         adapter_id: ctx.adapter_id,
-        key,
+        source,
         root,
     };
 
-    tracing::info!(%key, "surveying");
+    tracing::info!(%source, "surveying");
     let inventory = question
-        .ask(ctx.model, brief.to_string(), Some(reference::serve(docs, key, None)), |answer| {
+        .ask(ctx.model, brief.to_string(), Some(reference::serve(docs, source, None)), |answer| {
             let findings = answer.findings(root, &mut keep);
             if findings.is_empty() {
                 return Ok(());
             }
-            tracing::debug!(%key, ?findings, "candidate rejected");
+            tracing::debug!(%source, ?findings, "candidate rejected");
             Err(findings)
         })
         .await?;
     tracing::debug!(
-        %key,
+        %source,
         surfaces = ?inventory
             .surfaces
             .iter()
@@ -143,7 +143,7 @@ fn module(
 // The user turn of the survey.
 struct Brief<'a> {
     adapter_id: &'a str,
-    key: &'a str,
+    source: &'a str,
     root: &'a str,
 }
 
@@ -151,7 +151,7 @@ impl Display for Brief<'_> {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         write!(
             f,
-            "Survey the source bound to adapter `{id}` (source key `{key}`) before it is \
+            "Survey the source bound to adapter `{id}` (source key `{source}`) before it is \
              mined.\n\n\
              `$SOURCE_DIR` is the read-only view at `{root}` — the source tree. List the surfaces \
              it exposes as the prompt describes them, each named for what a caller outside the \
@@ -168,7 +168,7 @@ impl Display for Brief<'_> {
              Answer with one JSON object matching the survey schema. The caller mines the \
              surfaces; extract nothing yourself.",
             id = self.adapter_id,
-            key = self.key,
+            source = self.source,
             root = self.root,
         )
     }

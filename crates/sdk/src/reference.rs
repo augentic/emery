@@ -36,10 +36,10 @@ pub fn tools() -> Vec<Tool> {
 /// Returns the handler that serves the reference tools from `docs` and then [`RUNTIME`].
 ///
 /// Each call is reported at DEBUG with its arguments as the model sent them,
-/// under the `adapter` and, for a mining turn, its `seam`.
+/// under the `source` key and, for a mining turn, its `seam`.
 #[must_use]
-pub fn serve(docs: &'static [Doc], adapter: &str, seam: Option<usize>) -> Tools {
-    let adapter = adapter.to_owned();
+pub fn serve(docs: &'static [Doc], source: &str, seam: Option<usize>) -> Tools {
+    let source = source.to_owned();
 
     Box::new(move |call: ToolCall| -> ToolFuture {
         let response = match call.name.as_str() {
@@ -59,7 +59,7 @@ pub fn serve(docs: &'static [Doc], adapter: &str, seam: Option<usize>) -> Tools 
         };
 
         tracing::debug!(
-            %adapter,
+            %source,
             seam,
             tool = %call.name,
             arguments = %call.arguments,
