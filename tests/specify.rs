@@ -174,7 +174,7 @@ async fn from_file() {
 
     assert!(
         shown(&provider, "spec").await.contains("Sources: [greeting:greeting.behaviour]"),
-        "the entry name is the source key the renderer cites"
+        "the entry name is the source name the renderer cites"
     );
 
     provider.model.assert_exhausted();
@@ -213,9 +213,9 @@ async fn shared_roots() {
         let calls = provider.source.calls.lock().expect("calls");
         assert_eq!(calls.len(), 2, "{adapter}: each source extracts");
         assert_eq!(calls[0].0, *package);
-        assert_eq!(calls[0].1.key, "docs");
+        assert_eq!(calls[0].1.name, "docs");
         assert_eq!(calls[1].0, *package);
-        assert_eq!(calls[1].1.key, "api");
+        assert_eq!(calls[1].1.name, "api");
         drop(calls);
 
         provider.model.assert_exhausted();
@@ -239,7 +239,7 @@ async fn sources_together() {
         .lock()
         .expect("calls")
         .iter()
-        .map(|(_, input)| input.key.clone())
+        .map(|(_, input)| input.name.clone())
         .collect();
     assert_eq!(order, ["docs", "api"], "dispatch keeps declaration order");
     assert!(
@@ -281,7 +281,7 @@ async fn description_source() {
     let calls = provider.source.calls.lock().expect("calls");
     let (id, input) = calls.first().expect("one extract dispatch");
     assert_eq!(id, "intent", "a bare adapter dispatches to the guest declared under its name");
-    assert_eq!(input.key, "intent");
+    assert_eq!(input.name, "intent");
     assert_eq!(input.content, SourceContent::Value("Ship it.".to_string()));
     drop(calls);
     provider.model.assert_exhausted();
@@ -708,7 +708,7 @@ async fn refusal_fails_fast() {
         .lock()
         .expect("calls")
         .iter()
-        .map(|(_, input)| input.key.clone())
+        .map(|(_, input)| input.name.clone())
         .collect();
     assert_eq!(dispatched, ["docs", "code"], "both sources were dispatched before the refusal");
 }
@@ -983,7 +983,7 @@ async fn config_file() {
             "[[source]]\nname = \"Docs\"\nadapter = \"documentation\"\n",
             1,
             "bad_request",
-            "is not a kebab-case key",
+            "is not a kebab-case name",
         ),
         (
             "[[source]]\nname = \"local\"\nadapter = \"./source.wasm\"\n\
@@ -1063,10 +1063,10 @@ async fn source_paths() {
     cli_ok(&provider, &["emery", "specify", "--config", &config]).await;
 
     let calls = provider.source.calls.lock().expect("calls");
-    let order: Vec<&str> = calls.iter().map(|(_, input)| input.key.as_str()).collect();
+    let order: Vec<&str> = calls.iter().map(|(_, input)| input.name.as_str()).collect();
     assert_eq!(order, ["zulu", "intent", "alpha"], "entries extract in declaration order");
-    for key in ["zulu", "alpha"] {
-        let (_, input) = calls.iter().find(|(_, input)| input.key == key).expect("dispatched");
+    for name in ["zulu", "alpha"] {
+        let (_, input) = calls.iter().find(|(_, input)| input.name == name).expect("dispatched");
         let SourceContent::Workspace(root) = &input.content else {
             panic!("a path source lends a workspace");
         };
@@ -1079,7 +1079,7 @@ async fn source_paths() {
             "`.` and `..` fold away lexically against the file's directory: {root}"
         );
     }
-    let (_, input) = calls.iter().find(|(_, input)| input.key == "intent").expect("dispatched");
+    let (_, input) = calls.iter().find(|(_, input)| input.name == "intent").expect("dispatched");
     assert_eq!(
         input.content,
         SourceContent::Value("Ship it.".to_string()),
@@ -1140,7 +1140,7 @@ async fn package_loads() {
         let calls = provider.source.calls.lock().expect("calls");
         let (id, input) = calls.first().expect("one extract dispatch");
         assert_eq!(id, "emery:demo", "the adapter id is the registered guest");
-        assert_eq!(input.key, "demo", "the source key is the adapter name");
+        assert_eq!(input.name, "demo", "the source name is the adapter name");
         drop(calls);
         provider.model.assert_exhausted();
     }
@@ -1194,7 +1194,7 @@ async fn file_named_by_stem() {
     let calls = provider.source.calls.lock().expect("calls");
     let (id, input) = calls.first().expect("one extract dispatch");
     assert_eq!(id, "custom", "extract dispatches by the stem");
-    assert_eq!(input.key, "custom", "the source key is the adapter's kebab stem");
+    assert_eq!(input.name, "custom", "the source name is the adapter's kebab stem");
     drop(calls);
     provider.model.assert_exhausted();
 }
@@ -1479,7 +1479,7 @@ async fn bad_key_package() {
     let cases = [
         (
             "[[source]]\nname = \"Docs\"\nadapter = \"emery:documentation@1.2.0\"\n",
-            "is not a kebab-case key",
+            "is not a kebab-case name",
         ),
         (
             "[[source]]\nname = \"docs\"\nadapter = \"emery:documentation@1.2.0\"\n\n\

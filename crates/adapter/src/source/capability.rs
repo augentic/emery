@@ -96,8 +96,11 @@ pub trait Source: Send + Sync {
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub struct SourceInput {
-    /// The key used to cite the source in a specification.
-    pub key: String,
+    /// The name the specification cites the source by.
+    ///
+    /// The operator's `[[source]] name`, or the adapter's name when the entry
+    /// names none; kebab-case, and distinct from the adapter's identifier.
+    pub name: String,
     /// The workspace or inline text presented to the adapter.
     pub content: SourceContent,
 }
@@ -105,18 +108,18 @@ pub struct SourceInput {
 impl SourceInput {
     /// Returns an input backed by the read-only directory at `root`.
     #[must_use]
-    pub fn workspace(key: impl Into<String>, root: impl Into<String>) -> Self {
+    pub fn workspace(name: impl Into<String>, root: impl Into<String>) -> Self {
         Self {
-            key: key.into(),
+            name: name.into(),
             content: SourceContent::Workspace(root.into()),
         }
     }
 
     /// Returns an input containing `text` without an associated workspace.
     #[must_use]
-    pub fn value(key: impl Into<String>, text: impl Into<String>) -> Self {
+    pub fn value(name: impl Into<String>, text: impl Into<String>) -> Self {
         Self {
-            key: key.into(),
+            name: name.into(),
             content: SourceContent::Value(text.into()),
         }
     }

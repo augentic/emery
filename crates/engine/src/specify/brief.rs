@@ -144,7 +144,7 @@ impl Review {
 }
 
 /// The `## Claims` section of a document brief's turn: every claim of every
-/// extract under its source key and kind.
+/// extract under its source name and kind.
 pub struct ClaimsSection<'a>(pub &'a [Extract]);
 
 impl Display for ClaimsSection<'_> {
@@ -154,8 +154,8 @@ impl Display for ClaimsSection<'_> {
         for extract in self.0 {
             write!(
                 f,
-                "\n### source `{key}` ({kind})\n\n",
-                key = extract.source,
+                "\n### source `{source}` ({kind})\n\n",
+                source = extract.source,
                 kind = extract.kind
             )?;
 

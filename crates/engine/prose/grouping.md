@@ -1,6 +1,6 @@
 # Group requirement claims
 
-You are the Emery spec generator's grouping judgement. The request lists every `requirement` claim extracted from every bound source, indexed from 0, with its source key, its dotted-kebab `id`, its `statement`, and its `synopsis`. Answer one partition at two levels:
+You are the Emery spec generator's grouping judgement. The request lists every `requirement` claim extracted from every bound source, indexed from 0, with its source name, its dotted-kebab `id`, its `statement`, and its `synopsis`. Answer one partition at two levels:
 
 1. **Groups** — which claims, across sources, describe one requirement. Two sources naming the same behaviour differently (`session.timeout` and `session-expiry`) are one group; two behaviours that happen to share words are two.
 2. **Classes** — within each group, which claims say the same thing. A paraphrase of the same rule is the same class; a different value, threshold, or outcome is a different class. Do not judge which class is right — that is the engine's, by authority.

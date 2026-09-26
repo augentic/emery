@@ -33,12 +33,13 @@ interface types {
     value(string),
   }
 
-  /// Typed source-operation input: the source key plus
+  /// Typed source-operation input: the source name plus
   /// workspace-or-value. Sources are value-in — they never read the
   /// revision store or lifecycle authority.
   record input {
-    /// Source key.
-    key: string,
+    /// Source name: the operator's `[[source]] name`, the adapter's name
+    /// when omitted; the specification cites the source by it.
+    name: string,
     /// Read-only source view or inline value.
     content: content,
   }

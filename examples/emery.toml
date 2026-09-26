@@ -1,34 +1,28 @@
 # Emery configuration.
 #
-# Each [[source]] entry names one source, in declaration order. `adapter`
-# is a package reference (`emery:documentation@1.2.0`, or the first-party
-# shorthand `documentation@1.2.0`) or a `.wasm` path relative to this file.
-# `name` is the source key; omitted, it is the adapter's key, as on the
-# command line (`documentation`, a component file's stem kebab-cased). At
-# most one content key — `path`, relative to this file, or `description`;
-# with neither the source lends the invocation directory. `digest` pins the
-# adapter's bytes to a `sha256:` hash. A package loads as its reference
-# without the version, a component as its file's stem, so two references
-# that load as one guest — two versions of one package, two components
-# sharing a stem — are refused.
+# Each [[source]] entry names one source. 
+#  - `adapter`: points to a package or a `.wasm` path relative to this file.
+#  - `name`: the name the specification cites the source by; omitted, it is 
+#    the adapter's name, as on the command line.
+#  - `path`: a workspace path relative to this file.
+#  - `description`: an inline description.
+#  - `digest`: pins the adapter's bytes to a `sha256:` hash.
 #
-# `[registries]` routes a package namespace to its registry. `emery` is
-# augentic.io unless a line here re-routes it; any other namespace is
-# refused until a line routes it.
+# `[registries]` routes a namespace to its registry. `emery` is augentic.io 
+# unless re-routed; other namespaces must be routed.
 
 # Live journey: the mock component over its fixture tree.
 [[source]]
-name = "docs" # the component's stem would key it `adapter`
+name = "docs"
 adapter = "../target/wasm32-wasip2/release/examples/adapter.wasm"
 path = "docs/"
 
-# # A first-party package over the invocation directory, keyed `documentation`.
+# # A first-party package over the invocation directory, named `documentation`.
 # [[source]]
 # adapter = "documentation@1.2.0"
 
-# # One adapter may name several roots; the name keys each.
+# # One adapter may name several roots; the name identifies each.
 # [[source]]
-# name = "api"
 # adapter = "emery:typescript@1.2.0"
 # path = "packages/api/src"
 

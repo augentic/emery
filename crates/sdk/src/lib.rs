@@ -77,7 +77,7 @@
 //! Fallible APIs return [`Error`]. Use [`bad_request!`] when an adapter rejects
 //! unusable input.
 //!
-//! Progress is emitted through `tracing`; every event names the source key
+//! Progress is emitted through `tracing`; every event names the source
 //! and, within a seam, its index. An adapter opens at its guest environment's
 //! `RUST_LOG`, which the Omnia runtime sets from the run's one tracing level:
 //! `info` on a bare `emery` run, so this crate's progress reaches stderr,

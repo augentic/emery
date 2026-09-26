@@ -268,7 +268,7 @@ pub enum AdapterRef {
         /// The namespace `[registries]` routes to a registry, `emery` for a
         /// first-party adapter.
         namespace: String,
-        /// The package name, the source key a run derives.
+        /// The package name, the source name a run derives.
         name: String,
         /// The exact version to fetch.
         version: semver::Version,

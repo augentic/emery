@@ -127,7 +127,7 @@ impl Display for Requirement {
 #[derive(Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Cited {
-    /// The source key.
+    /// The source name.
     pub source: String,
     /// The claim id within that source.
     pub claim: String,
@@ -143,7 +143,7 @@ impl Display for Cited {
 #[derive(Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Loser {
-    /// Every member's source key, in authority order.
+    /// Every member's source name, in authority order.
     pub sources: Vec<String>,
     /// The authority class of the leading contributor.
     pub kind: SourceKind,

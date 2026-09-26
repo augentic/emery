@@ -29,7 +29,7 @@ pub const CONCURRENT: usize = 4;
 /// Mines each seam and combines accepted claims into one [`Evidence`] document.
 ///
 /// `docs` must contain `extract.md`, which becomes the system prompt for
-/// every request. The model receives the adapter identifier, source key,
+/// every request. The model receives the adapter identifier, source name,
 /// seam description, and access to embedded references. Responses are
 /// checked with [`Evidence::findings`]; rejected responses may be corrected
 /// until the host's round limit is reached.
@@ -57,7 +57,7 @@ pub const CONCURRENT: usize = 4;
 pub async fn extract<P: Model>(
     ctx: &Context<'_, P>, docs: &'static [Doc], seams: &[Seam],
 ) -> Result<Evidence, Error> {
-    let source = &ctx.input.key;
+    let source = &ctx.input.name;
     if seams.is_empty() {
         return Err(bad_request!("`{source}`: nothing to extract"));
     }
@@ -132,7 +132,7 @@ impl<'a> Plan<'a> {
     // A `Files` seam over an inline value is the adapter's own defect, so
     // `server_error`; the rest is the operator's input.
     fn of(seam: &'a Seam, input: &'a SourceInput) -> Result<Self, Error> {
-        let source = &input.key;
+        let source = &input.name;
         match (seam, &input.content) {
             (Seam::Note(note), _) => Ok(Self::Note(note)),
             (Seam::Whole, SourceContent::Workspace(root)) => Ok(Self::Tree(root)),
@@ -169,12 +169,12 @@ impl<'a> Plan<'a> {
 // The turn is one of several in flight, so its events name the seam
 // themselves; the failure's description is `join`'s to report once, so the
 // event carries the class alone.
-#[tracing::instrument(skip_all, fields(source = %ctx.input.key, seam = index))]
+#[tracing::instrument(skip_all, fields(source = %ctx.input.name, seam = index))]
 async fn turn<P: Model>(
     question: &Question<Evidence>, ctx: &Context<'_, P>, docs: &'static [Doc], index: usize,
     plan: &Plan<'_>,
 ) -> Result<Evidence, Error> {
-    let source = &ctx.input.key;
+    let source = &ctx.input.name;
     let brief = Brief {
         adapter_id: ctx.adapter_id,
         source,
@@ -234,8 +234,7 @@ impl Display for Brief<'_> {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         write!(
             f,
-            "Extract the claim set of the source bound to adapter `{id}` (source key \
-             `{source}`).\n\n",
+            "Extract the claim set of the source `{source}` bound to adapter `{id}`.\n\n",
             id = self.adapter_id,
             source = self.source,
         )?;

@@ -41,7 +41,7 @@ use crate::{Context, beneath, prompt, reference, workspace};
 pub async fn surfaces<P: Model>(
     ctx: &Context<'_, P>, docs: &'static [Doc], mut keep: impl FnMut(Entry<'_>) -> bool + Send,
 ) -> Result<Vec<Surface>, Error> {
-    let source = &ctx.input.key;
+    let source = &ctx.input.name;
     let SourceContent::Workspace(root) = &ctx.input.content else {
         return Err(server_error!(
             "`{source}`: a survey by model needs a workspace input, not an inline value"
@@ -151,8 +151,7 @@ impl Display for Brief<'_> {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         write!(
             f,
-            "Survey the source bound to adapter `{id}` (source key `{source}`) before it is \
-             mined.\n\n\
+            "Survey the source `{source}` bound to adapter `{id}` before it is mined.\n\n\
              `$SOURCE_DIR` is the read-only view at `{root}` — the source tree. List the surfaces \
              it exposes as the prompt describes them, each named for what a caller outside the \
              source reaches, with the module the caller enters it at. Name an entry as a \

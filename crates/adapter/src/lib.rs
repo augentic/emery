@@ -18,7 +18,7 @@
 //! use emery_adapter::source::{Evidence, SourceInput};
 //!
 //! let input = SourceInput::workspace("orders", ".");
-//! assert_eq!(input.key, "orders");
+//! assert_eq!(input.name, "orders");
 //!
 //! let evidence: Evidence = serde_json::from_str(
 //!     r#"{
@@ -47,7 +47,7 @@ pub mod source;
 ///
 /// A valid value matches `[a-z0-9]+(-[a-z0-9]+)*`.
 ///
-/// Claim-id segments, source keys, and adapter names all follow this grammar.
+/// Claim-id segments, source names, and adapter names all follow this grammar.
 ///
 /// # Examples
 ///

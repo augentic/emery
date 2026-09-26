@@ -66,7 +66,7 @@ impl From<wit::Content> for SourceContent {
 impl From<SourceInput> for wit::Input {
     fn from(input: SourceInput) -> Self {
         Self {
-            key: input.key,
+            name: input.name,
             content: input.content.into(),
         }
     }
@@ -75,7 +75,7 @@ impl From<SourceInput> for wit::Input {
 impl From<wit::Input> for SourceInput {
     fn from(input: wit::Input) -> Self {
         Self {
-            key: input.key,
+            name: input.name,
             content: input.content.into(),
         }
     }
