@@ -149,7 +149,6 @@ impl DesignDiff {
     }
 }
 
-// Names the fields, other than `id`, on which `before` and `after` differ.
 fn differences(before: &Requirement, after: &Requirement) -> Vec<&'static str> {
     [
         ("subject", before.subject != after.subject),

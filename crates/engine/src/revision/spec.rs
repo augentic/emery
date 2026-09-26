@@ -49,7 +49,6 @@ impl revision::Document for Spec {
     const NAME: &'static str = "spec";
 }
 
-// Renders `spec.md`: the preamble, then every requirement block.
 impl Display for Spec {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         revision::write(f, "Specification", &self.preamble, &self.requirements)
@@ -81,7 +80,6 @@ pub struct Requirement {
     pub scenarios: Vec<Scenario>,
 }
 
-// Renders the tagged heading, provenance, body, notes, and scenarios.
 impl Display for Requirement {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         write!(f, "{HEADING} {}", self.subject)?;
@@ -135,7 +133,6 @@ pub struct Cited {
     pub claim: String,
 }
 
-// Writes the citation as the `Sources:` line spells it, `<source>:<claim>`.
 impl Display for Cited {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         write!(f, "{}:{}", self.source, self.claim)
@@ -156,7 +153,6 @@ pub struct Loser {
     pub statement: String,
 }
 
-// Writes `Note: <sources> (<kind>, <claim>): <statement>`.
 impl Display for Loser {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         write!(
@@ -201,8 +197,6 @@ impl Scenario {
     }
 }
 
-// Writes `#### Scenario: <name>`, then one `- **GIVEN**` / `**WHEN**` /
-// `**THEN**` / `**AND**` bullet per line.
 impl Display for Scenario {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         writeln!(f, "{SCENARIO} {}", self.name.trim())?;

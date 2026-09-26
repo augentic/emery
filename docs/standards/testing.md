@@ -105,7 +105,7 @@ Test function names are identifiers, not sentences — the same brevity rules as
 
 - Drop tokens the binary name or enclosing module already supplies: in `command.rs`, write `unknown_verb`, not `command_unknown_verb_refuses`.
 - Group a cluster that shares a subject under a nested `mod <subject>` rather than repeating the subject as a prefix.
-- Add a `//` requirement comment only when the scenario's non-obvious rationale does not belong in its identifier.
+- Add a `//` above a test — never `///` — only for rationale its identifier and assertions do not expose, in one or two sentences.
 
 `module_name_repetitions` is off workspace-wide, so nothing fires on a long `#[test]` fn; keep identifiers short anyway ([coding-standards.md §"Naming"](./coding-standards.md#naming)).
 

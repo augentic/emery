@@ -26,8 +26,7 @@ fn main() {
 
     let wasm = build_engine(&manifest_dir, &out_dir, release);
     let guest = if release {
-        // The binary's target, not the build machine's; the runtime's default
-        // settings, not the build shell's — `main.rs` loads it with neither.
+        // precompile for the binary's own target under the runtime's default settings
         let target = std::env::var("TARGET").expect("cargo env");
         let compiled = out_dir.join("emery.cwasm");
         omnia::compile::compile(
@@ -39,13 +38,12 @@ fn main() {
         .expect("should compile the wasm component");
         compiled
     } else {
-        // JIT avoids the Cranelift AOT cost during edits and CI.
+        // leave a debug build to JIT at startup
         wasm
     };
     println!("cargo:rustc-env=EMERY_GUEST={}", guest.display());
 }
 
-// Build the engine wasm32 guest.
 fn build_engine(manifest_dir: &Path, out_dir: &Path, release: bool) -> PathBuf {
     for tracked in ["src", "crates", "wit", "Cargo.toml", "Cargo.lock"] {
         println!("cargo::rerun-if-changed={}", manifest_dir.join(tracked).display());
@@ -81,7 +79,6 @@ fn build_engine(manifest_dir: &Path, out_dir: &Path, release: bool) -> PathBuf {
         .join("emery.wasm")
 }
 
-// Child build's target directory.
 fn nested_dir(out_dir: &Path) -> PathBuf {
     // the nearest `build` ancestor is Cargo's
     out_dir
@@ -91,7 +88,6 @@ fn nested_dir(out_dir: &Path) -> PathBuf {
         .map_or_else(|| out_dir.join("engine"), |target| target.join("engine"))
 }
 
-// Strip host's env vars from the child's environment.
 fn sanitize(mut child: Command) -> Command {
     for (key, _) in std::env::vars_os() {
         let Some(key) = key.to_str() else { continue };

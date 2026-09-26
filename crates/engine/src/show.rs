@@ -87,8 +87,8 @@ pub struct ShowOutput {
 }
 
 impl ShowOutput {
-    // The document serialises under the same derive the store wrote it
-    // with, so a failure here is the engine's own defect: `server_error`.
+    // The store wrote the document under this derive, so a failure here is
+    // the engine's own defect.
     fn new<D: Document>(document: &D, revision: String) -> Result<Self, Error> {
         let value = serde_json::to_value(document)
             .with_context(|| format!("`{}` does not serialise", D::NAME))?;

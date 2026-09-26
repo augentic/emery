@@ -70,8 +70,7 @@ const CASES: [Case; 5] = [
     },
 ];
 
-// Deleted verbs are deleted from the grammar, not hidden. A usage error
-// exits `USAGE_EXIT` (64), so exit 2 always means a `NotFound` envelope.
+// A usage error exits `USAGE_EXIT`, so exit 2 always means a `NotFound` envelope.
 #[tokio::test]
 async fn route_budget() {
     let provider = Provider::idle();
@@ -114,9 +113,7 @@ async fn route_budget() {
     }
 }
 
-// A run naming no sources discovers the project-root `emery.toml`; with no
-// file to discover it fails with a typed error and writes nothing. The CWD
-// move is safe under nextest's process-per-test isolation.
+// The CWD move is hermetic under nextest's process-per-test isolation.
 #[tokio::test]
 async fn no_sources() {
     let dir = tempfile::TempDir::new().expect("tempdir");
@@ -132,9 +129,8 @@ async fn no_sources() {
     assert!(provider.storage.is_empty(), "a refused run writes nothing");
 }
 
-// Naming the file carrier without a value explicitly selects the
-// project-relative `emery.toml`; a missing explicit file is a read
-// error, never a discovery miss.
+// A bare `--config` names the project-relative `emery.toml` explicitly, so a
+// missing file is a read error, never a discovery miss.
 #[tokio::test]
 async fn default_config() {
     let dir = tempfile::TempDir::new().expect("tempdir");
@@ -148,8 +144,6 @@ async fn default_config() {
     assert!(provider.storage.is_empty(), "a refused run writes nothing");
 }
 
-// `--config` carries the whole source list; mixing it with argv sources is
-// refused with a typed error.
 #[tokio::test]
 async fn mixed_sources() {
     let provider = Provider::idle();
@@ -162,8 +156,7 @@ async fn mixed_sources() {
     }
 }
 
-// Each source binds once; a repeated key is refused with a typed error
-// whichever carrier repeats it.
+// A repeated key is refused whichever carrier repeats it.
 #[tokio::test]
 async fn duplicate() {
     let provider = Provider::idle();
@@ -175,15 +168,13 @@ async fn duplicate() {
     }
 }
 
-// `--description` needs the `<adapter>=<text>` shape.
 #[tokio::test]
 async fn bad_description() {
     let provider = Provider::idle();
     fail(&provider, &["emery", "specify", "--description", "no-equals"], 1, "bad_request").await;
 }
 
-// Superseded spellings are gone from the grammar, not aliased: clap refuses
-// them as unknown arguments.
+// Superseded spellings are gone from the grammar, not aliased.
 #[tokio::test]
 async fn old_flags() {
     let provider = Provider::idle();
@@ -195,10 +186,8 @@ async fn old_flags() {
     }
 }
 
-// The verbosity flags are the runtime's: it reads them from argv and sets
-// `RUST_LOG` before the guest runs, so the grammar declares them — before or
-// after the verb, repeated — and the run is otherwise the bare run. `-v`
-// beside `-q` is the grammar's own usage error.
+// The runtime reads the verbosity flags from argv before the guest runs, so the
+// grammar declares them and the run is otherwise the bare run.
 #[tokio::test]
 async fn verbosity_flags() {
     let provider = Provider::idle();
@@ -221,14 +210,12 @@ async fn verbosity_flags() {
     assert!(help.contains("-v, --verbose"), "{help}");
     assert!(help.contains("-q, --quiet"), "{help}");
 
-    // The flattened flags bring none of their own docs into the about text.
+    // the flattened flags bring none of their own docs into the about text
     let short = cli_ok(&provider, &["emery", "-h"]).await;
     let short = String::from_utf8_lossy(&short.stdout);
     assert_eq!(help.lines().next(), short.lines().next(), "{help}");
 }
 
-// `show` fails with a typed `spec-not-generated` error before any revision
-// is committed.
 #[tokio::test]
 async fn no_revision() {
     let provider = Provider::idle();
@@ -278,11 +265,10 @@ async fn argv_zero_replaced() {
     assert!(!stderr.contains("emery:engine@0.1.0"));
 }
 
-// The stdout/stderr channel contract, table-driven across the surface.
 #[tokio::test]
 async fn response_contract() {
     for case in CASES {
-        // A fresh store keeps `specify` sourceless and `show` without a revision.
+        // a fresh store keeps `specify` sourceless and `show` without a revision
         let response = cli(&Provider::idle(), case.argv).await;
         let stdout = String::from_utf8(response.stdout).expect("stdout is UTF-8");
         let stderr = String::from_utf8(response.stderr).expect("stderr is UTF-8");

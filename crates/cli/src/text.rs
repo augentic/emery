@@ -1,8 +1,4 @@
-//! Renders engine results as command-line text.
-//!
-//! Each function writes the `--format text` representation of one command
-//! result. Structured output is provided by the result types' Serde
-//! implementations.
+//! Renders engine results as `--format text` output.
 
 use std::fmt;
 
@@ -23,8 +19,6 @@ pub fn specify(output: &SpecifyOutput, w: &mut dyn fmt::Write) -> fmt::Result {
     Ok(())
 }
 
-// Writes one line per changed preamble, requirement, and section, prefixed
-// by the projection it appears in.
 fn changes(diff: &Diff, w: &mut dyn fmt::Write) -> fmt::Result {
     let spec = format!("{}.md", Artifact::Spec.as_ref());
     if diff.spec.preamble {

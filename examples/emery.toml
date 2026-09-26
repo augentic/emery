@@ -1,55 +1,46 @@
 # Emery configuration.
 #
-# Each [[source]] entry names one source, in declaration order. `name` is
-# the source key; omitted, it is the adapter's key, as on the command line
-# (`typescript`, `intent`, a component file's stem kebab-cased). Exactly
-# one content key — `path` or `description` (omitted means the workspace
-# lend at `.`). `path` and a local component `adapter` resolve relative to
-# this file. `digest` pins the adapter's component to a `sha256:` content
-# hash. Two components sharing a file stem are one guest to the loader and
-# are refused; rename one.
+# Each [[source]] entry names one source, in declaration order. `adapter`
+# is a package reference (`emery:documentation@1.2.0`, or the first-party
+# shorthand `documentation@1.2.0`) or a `.wasm` path relative to this file.
+# `name` is the source key; omitted, it is the adapter's key, as on the
+# command line (`documentation`, a component file's stem kebab-cased). At
+# most one content key — `path`, relative to this file, or `description`;
+# with neither the source lends the invocation directory. `digest` pins the
+# adapter's bytes to a `sha256:` hash. A package loads as its reference
+# without the version, a component as its file's stem, so two references
+# that load as one guest — two versions of one package, two components
+# sharing a stem — are refused.
 #
-# `[registries]` routes a package adapter's namespace to its registry.
-# `emery` routes to augentic.io unless a line here says otherwise; any
-# other namespace is refused until a line here routes it.
+# `[registries]` routes a package namespace to its registry. `emery` is
+# augentic.io unless a line here re-routes it; any other namespace is
+# refused until a line routes it.
 
-# Live journey: local mock component + its fixture tree.
+# Live journey: the mock component over its fixture tree.
 [[source]]
 name = "docs" # the component's stem would key it `adapter`
 adapter = "../target/wasm32-wasip2/release/examples/adapter.wasm"
 path = "docs/"
 
-# [registries]
-# acme = "registry.acme.io"
-
-# # Workspace lend of the invocation directory (the default: path = ".").
+# # A first-party package over the invocation directory, keyed `documentation`.
 # [[source]]
-# name = "docs"
-# adapter = "emery:documentation@1.2.0"
+# adapter = "documentation@1.2.0"
 
-# # Local path, resolved relative to this file. The name is the source
-# # key, so one adapter may name several roots.
+# # One adapter may name several roots; the name keys each.
 # [[source]]
-# name = "code"
-# adapter = "typescript"
+# name = "api"
+# adapter = "emery:typescript@1.2.0"
 # path = "packages/api/src"
 
-# # Inline description instead of a filesystem view — the file form of
-# # `--description`. First-party shorthand (`intent@1.0.0` → `emery:intent@1.0.0`).
+# # An inline description — the file form of `--description`.
 # [[source]]
-# name = "intent"
 # adapter = "intent@1.0.0"
 # description = "Ship a location-independent spec generator."
 
-# # Local component path as the adapter reference, loaded through the
-# # deployment loader and read fresh on every run. Adapter location and
-# # source location are separate axes.
-# [[source]]
-# name = "custom"
-# adapter = "./adapters/custom.wasm"
-
-# # Third-party package: routed by `[registries]` above, pinned, and keyed
-# # `ledger` by its name.
+# # A third-party package, routed by `[registries]` and pinned.
 # [[source]]
 # adapter = "acme:ledger@2.1.0"
 # digest = "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+#
+# [registries]
+# acme = "registry.acme.io"

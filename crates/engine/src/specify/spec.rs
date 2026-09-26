@@ -41,7 +41,6 @@ impl Brief for SpecBrief<'_> {
     type Output = Spec;
 
     const NAME: &'static str = "spec-draft";
-    // Prompt order is significant.
     const PROSE: &'static [&'static str] = &[
         "synthesise.md",
         "authority.md",
@@ -51,9 +50,6 @@ impl Brief for SpecBrief<'_> {
         "tags.md",
     ];
 
-    // Tightens the derived schema to this run: exactly one entry per
-    // requirement, each `subject` drawn from their subjects, and at least one
-    // scenario per entry.
     fn tighten(&self, schema: &mut Value) {
         let count = self.bases.len();
         schema["properties"]["requirements"]["minItems"] = json!(count);
@@ -63,9 +59,6 @@ impl Brief for SpecBrief<'_> {
         schema["$defs"]["Draft"]["properties"]["scenarios"]["minItems"] = json!(1);
     }
 
-    // Verifies a candidate draft against the requirements: every requirement
-    // exactly once and nothing else, at least one scenario per entry with
-    // one-line fields, no reserved opener in the preamble.
     fn verify(&self, answer: &SpecAnswer, review: &mut Review) {
         review.paragraphs(&answer.preamble, "preamble");
 
@@ -101,8 +94,6 @@ impl Brief for SpecBrief<'_> {
         }
     }
 
-    // Places the accepted draft in the specification: every requirement in
-    // id order, each the engine's facts beside its drafted scenarios.
     fn into_output(self, answer: SpecAnswer) -> Result<Spec, Error> {
         let mut drafts: BTreeMap<String, Vec<Scenario>> =
             answer.requirements.into_iter().map(|draft| (draft.subject, draft.scenarios)).collect();
@@ -122,9 +113,6 @@ impl Brief for SpecBrief<'_> {
     }
 }
 
-// Renders the user turn of the prompt: every claim in every extract, then
-// every requirement to draft with its id, status, sources, and coverage, each
-// contributing claim labelled winner / loser / contributor.
 impl Display for SpecBrief<'_> {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         write!(f, "Draft `spec.md`.\n\n{claims}", claims = ClaimsSection(self.extracts))?;

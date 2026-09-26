@@ -107,24 +107,18 @@ pub enum Seam {
     Note(String),
 }
 
-// What one seam puts to the model, settled against the input before any turn
-// is spent.
+// A seam settled against the input before any turn is spent.
 #[derive(Debug)]
 enum Plan<'a> {
-    // The adapter's own note, standing where the input's rendering would.
     Note(&'a str),
-    // The files to mine beneath the lent root: sorted, once each, all beneath it.
     Files { root: &'a str, files: Vec<String> },
-    // The whole tree, lent.
     Tree(&'a str),
-    // The inline value, which rides the turn; nothing is lent.
     Value(&'a str),
 }
 
 impl<'a> Plan<'a> {
-    // A `Files` path that escapes the root, or a set naming no file, is
-    // `bad_request`; `Files` over an inline value is the adapter's own
-    // defect, so `server_error`.
+    // A `Files` seam over an inline value is the adapter's own defect, so
+    // `server_error`; the rest is the operator's input.
     fn of(seam: &'a Seam, input: &'a SourceInput) -> Result<Self, Error> {
         let key = &input.key;
         match (seam, &input.content) {
@@ -151,7 +145,6 @@ impl<'a> Plan<'a> {
         }
     }
 
-    // The seam's size where one is known: the files a `Files` seam lists.
     const fn size(&self) -> Option<usize> {
         match self {
             Self::Files { files, .. } => Some(files.len()),
@@ -160,13 +153,9 @@ impl<'a> Plan<'a> {
     }
 }
 
-// One seam's turn: the question asked with the seam's brief, the reference
-// tools answered from `docs`, and the claim gate as the check the backend
-// loops on until the answer is clean or its rounds are spent. A turn that
-// fails upstream is put once more, and the second outcome stands. The turn
-// is one of several in flight, so its events name the seam themselves; a
-// failure's description is `join`'s to report, once, so the event carries
-// the class alone.
+// The turn is one of several in flight, so its events name the seam
+// themselves; the failure's description is `join`'s to report once, so the
+// event carries the class alone.
 #[tracing::instrument(skip_all, fields(key = %ctx.input.key, seam = index))]
 async fn turn<P: Model>(
     question: &Question<Evidence>, ctx: &Context<'_, P>, docs: &'static [Doc], index: usize,
@@ -209,8 +198,7 @@ async fn turn<P: Model>(
     outcome
 }
 
-// The user turn of one seam: which source is bound, what the seam is lent,
-// and where the model's work stops.
+// The user turn of one seam.
 struct Brief<'a> {
     adapter_id: &'a str,
     key: &'a str,
@@ -263,9 +251,6 @@ impl Display for Brief<'_> {
     }
 }
 
-// The accepted documents in seam order, or the source's failure: a lone
-// seam's as it stands, several seams' reported together under the first
-// one's class and code.
 fn join(
     key: &str, outcomes: BTreeMap<usize, Result<Evidence, Error>>,
 ) -> Result<Vec<Evidence>, Error> {

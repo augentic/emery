@@ -1,9 +1,5 @@
 //! Implements Emery's command-line interface.
 //!
-//! The interface provides the `specify`, `show`, and `completions` commands.
-//! It translates command-line sources into engine inputs, renders text output,
-//! and supplies recovery hints for known failures.
-//!
 //! [`run`] returns a buffered response, leaving process I/O and exit handling
 //! to the caller. The crate installs no subscriber of its own; tracing follows
 //! the `RUST_LOG` the runtime sets from its verbosity flags, which the grammar
@@ -94,9 +90,8 @@ struct App {
     /// Select the output format.
     #[arg(long, env = "EMERY_FORMAT", default_value = "text", global = true)]
     format: Format,
-    // The runtime reads these from argv and sets `RUST_LOG` before the guest
-    // runs; declaring them lists them in help and completions and refuses
-    // `-v` beside `-q`.
+    // Declared so help and completions list them and `-v` beside `-q` is
+    // refused; the runtime reads them from argv before the guest runs.
     #[command(flatten)]
     #[expect(dead_code, reason = "the runtime acts on the flags; the grammar only declares them")]
     verbosity: Verbosity,

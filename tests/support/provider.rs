@@ -27,12 +27,10 @@ use tokio::sync::Barrier;
 
 const GREETING: &str = "GET /greeting returns the static string 'hello'.";
 
-// How long a held extract waits for the other sources before the double
-// gives up: long enough for an in-process run, short enough that a
-// serialising engine fails the scenario instead of hanging it.
+// Long enough for an in-process run, short enough that a serialising engine
+// fails the scenario instead of hanging it.
 const RENDEZVOUS: Duration = Duration::from_secs(1);
 
-/// Dispatched `(adapter id, input)` pairs, in call order.
 type Recorded = Vec<(String, SourceInput)>;
 
 /// A scripted `Source` with a record of every dispatch.
@@ -76,7 +74,6 @@ pub struct Rendezvous {
 }
 
 impl<T: Into<String>> FromIterator<T> for Rendezvous {
-    /// Builds the rendezvous over the source keys of one run.
     fn from_iter<I: IntoIterator<Item = T>>(iter: I) -> Self {
         let expected: BTreeSet<String> = iter.into_iter().map(Into::into).collect();
         Self {
@@ -88,8 +85,6 @@ impl<T: Into<String>> FromIterator<T> for Rendezvous {
 }
 
 impl Rendezvous {
-    // Holds `key` until every expected source has arrived, or fails the
-    // scenario once the bound elapses.
     async fn wait(&self, key: &str) {
         self.arrived.lock().expect("arrived").insert(key.to_string());
         if tokio::time::timeout(RENDEZVOUS, self.barrier.wait()).await.is_err() {
@@ -152,8 +147,6 @@ impl<S> Provider<S> {
     /// attests it; a bare name no scenario declares is refused, as the shipped
     /// runtime — which declares no adapter at all — refuses every one.
     pub fn declaring<'a>(mut self, names: impl IntoIterator<Item = &'a str>) -> Self {
-        // The loader's script is shared through its handle, so the returned
-        // builder is the same loader.
         self.plugins = names.into_iter().fold(self.plugins, ScriptedLoader::declare);
         self
     }
@@ -164,11 +157,9 @@ impl<S> Provider<S> {
         self.plugins.loads().iter().map(|(location, _)| location.name().to_owned()).collect()
     }
 
-    // Mirrors host-mediated dispatch: an id is routable only once the loader
-    // has landed it — a declared guest attested by name, a component or a
-    // package under the guest name the engine loads it by. A source call
-    // before its load is the engine's ordering defect, and it fails here
-    // rather than only under the real runtime.
+    // An id is routable only once the loader has landed it; a dispatch before
+    // its load is the engine's ordering defect, caught here rather than under
+    // the real runtime alone.
     fn routable(&self, id: &str) {
         let loaded = self.loaded().iter().any(|name| name == id);
         assert!(loaded, "`{id}` was dispatched before its load");
@@ -186,8 +177,8 @@ impl<S> Clone for Provider<S> {
     }
 }
 
-// Several capabilities share method names (`get`, `put`, `delete`), so every
-// delegation is a fully qualified trait call.
+// Several capabilities share method names, so every delegation is a fully
+// qualified trait call.
 
 impl<S: Send + Sync + 'static> Model for Provider<S> {
     fn complete(
@@ -298,8 +289,8 @@ impl<S: Send + Sync + 'static> Source for Provider<S> {
         &self, id: &str, input: &SourceInput,
     ) -> impl Future<Output = Result<Evidence, Error>> + Send {
         self.routable(id);
-        // The dispatch is recorded and the outcome chosen before the future
-        // is polled, so `calls` is dispatch order whatever resolves first.
+
+        // record the dispatch before the future is polled, so `calls` is dispatch order
         self.source.calls.lock().expect("calls").push((id.to_string(), input.clone()));
         let outcome = self
             .source

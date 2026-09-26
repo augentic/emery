@@ -17,12 +17,10 @@ fn write(root: &Path, rel: &str) {
     fs::write(path, "").expect("write");
 }
 
-// The scratch root as the engine lends one: a string.
 fn utf8(root: &Path) -> &str {
     root.to_str().expect("a UTF-8 scratch root")
 }
 
-// An empty file at each relative path; the root as the engine lends it.
 fn tree<'a>(root: &'a Path, files: &[&str]) -> &'a str {
     for file in files {
         write(root, file);
@@ -30,8 +28,7 @@ fn tree<'a>(root: &'a Path, files: &[&str]) -> &'a str {
     utf8(root)
 }
 
-// Every regular file beneath the root is listed relative to it, sorted, with
-// `/` separators — the path space a claim's `path` anchor cites.
+// The listing is the path space a claim's `path` anchor cites.
 #[test]
 fn lists_relative() {
     let tmp = tempfile::tempdir().expect("tempdir");
@@ -42,8 +39,7 @@ fn lists_relative() {
     assert_eq!(files, ["a/x.md", "a/y.md", "b.md"]);
 }
 
-// The engine's own files are never offered, wherever they sit: a projection
-// of the last revision is output, not a source to mine.
+// A projection of the last revision is output, not a source to mine.
 #[test]
 fn skip_roots() {
     let tmp = tempfile::tempdir().expect("tempdir");
@@ -66,8 +62,6 @@ fn skip_roots() {
     assert_eq!(files, ["nested/keep.md", "readme.md"]);
 }
 
-// A refused directory is not entered; a refused file is omitted. Every other
-// entry is the adapter's.
 #[test]
 fn keep_filter() {
     let tmp = tempfile::tempdir().expect("tempdir");
@@ -82,10 +76,8 @@ fn keep_filter() {
     assert_eq!(files, ["keep.md", "src/main.rs"]);
 }
 
-// An offered entry describes itself by its root-relative path: its own name
-// is the last segment, its extension follows the last dot of a name that is
-// not itself a dot file, and a dot name is hidden — so an adapter states its
-// policy without unpicking the path.
+// A leading dot is hidden, not an extension, so an adapter states its policy
+// without unpicking the path.
 #[test]
 fn entry_readers() {
     let file = Entry::File("api/orders.test.ts");
@@ -104,8 +96,7 @@ fn entry_readers() {
     assert!(Entry::File("src/.env.local").hidden());
 }
 
-// A symlink is not a regular file or a directory to enter, so a link at the
-// root — even to a real file beside it — is not listed.
+// Even a link to a real file beside it is not listed.
 #[test]
 fn skips_symlinks() {
     let tmp = tempfile::tempdir().expect("tempdir");
@@ -117,8 +108,6 @@ fn skips_symlinks() {
     assert_eq!(files, ["real.md"]);
 }
 
-// A directory symlink is not entered, so a file reachable only through the
-// link is not offered.
 #[test]
 fn skips_symlink_dirs() {
     let tmp = tempfile::tempdir().expect("tempdir");
@@ -130,8 +119,7 @@ fn skips_symlink_dirs() {
     assert_eq!(files, ["real/nested/file.md"]);
 }
 
-// A root the walk cannot open is the adapter host's defect, not the
-// operator's input.
+// A root the walk cannot open is the adapter host's defect, not the operator's.
 #[test]
 fn missing_root() {
     let error = workspace::list("/no/such/emery-workspace-root", |_| true).expect_err("missing");

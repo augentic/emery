@@ -17,7 +17,7 @@ The adapter lives at `[adapter/](adapter/)` — the same anatomy as a first-part
 # build the source adapter
 cargo build --example adapter --target wasm32-wasip2 --release
 
-# run the example in debug (-v) — each -v raises tracing level, each -q lowers it
+# run the example
 export CURSOR_API_KEY=<Cursor API key>
 cargo run -- -v specify --config examples/emery.toml
 
@@ -25,7 +25,13 @@ cargo run -- -v specify --config examples/emery.toml
 cargo run -- show spec
 ```
 
-*Extract* and *synthesis* both complete through the Cursor backend. The mock guest answers reference-tool calls in-process the same way the [omnia-cursor example](https://github.com/augentic/omnia-backends/tree/main/examples/cursor) does.
+### Tracing
+
+The example above runs with the `-v` flag, which sets tracing level to `debug`. Each additional `v` raises the level, while `-q[q]` lowers it.
+
+### Backend callbacks
+
+*Extract* and *synthesis* both run through the Cursor backend. The guest answers reference-tool calls in-process, just like the [omnia-cursor example](https://github.com/augentic/omnia-backends/tree/main/examples/cursor) does.
 
 See [#host-to-guest-tool-calls](#host-to-guest-tool-calls) below for more detail.
 

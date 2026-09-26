@@ -42,10 +42,6 @@ async fn ask(model: &Scripted, input: &SourceInput, seam: Seam) -> Result<Eviden
     emery_sdk::extract(&ctx, PROSE, &[seam]).await
 }
 
-// The request carries the embedded prompt, the turn describing the lent
-// tree, the derived `Evidence` schema under `evidence` with the claim-id
-// grammar as a steering pattern, the reference tools, the lend, and the check
-// the backend loops on.
 #[tokio::test]
 async fn request_shape() {
     let model = Scripted::answering([VALID]);
@@ -96,8 +92,7 @@ async fn request_shape() {
     model.assert_exhausted();
 }
 
-// A corpus without `extract.md` is the adapter build's own defect, reported
-// before a model call is spent.
+// A corpus without `extract.md` is the adapter build's own defect.
 #[tokio::test]
 async fn missing_prompt() {
     let model = Scripted::default();
@@ -116,7 +111,6 @@ async fn missing_prompt() {
     assert!(model.seen().is_empty(), "nothing was asked");
 }
 
-// An inline value rides the turn and lends nothing.
 #[tokio::test]
 async fn inline_value() {
     let model = Scripted::answering([VALID]);
@@ -129,8 +123,7 @@ async fn inline_value() {
     assert!(user.contains("no `$SOURCE_DIR` is lent:\n\nShip it.\n\n"), "{user}");
 }
 
-// A `Note` seam stands in the turn where the SDK's rendering of the input
-// would be.
+// A `Note` seam stands where the SDK's rendering of the input would be.
 #[tokio::test]
 async fn prepared_turn() {
     let model = Scripted::answering([VALID]);
@@ -143,9 +136,8 @@ async fn prepared_turn() {
     assert!(!user.contains("ignored"), "the note replaces the input rendering");
 }
 
-// A `Files` seam lends the root — the read-only mount is the boundary — and
-// lists the files to mine relative to it, sorted, once each, `.` segments
-// dropped, so every anchor the model answers is already root-relative.
+// The files are listed sorted, once each, `.` segments dropped, so every anchor
+// the model answers is already root-relative.
 #[tokio::test]
 async fn files_turn() {
     let model = Scripted::answering([VALID]);
@@ -168,9 +160,8 @@ async fn files_turn() {
     model.assert_exhausted();
 }
 
-// Reference calls are answered in-process before the candidate is checked:
-// from the adapter's corpus, then from the SDK's runtime references, which
-// the adapter never lists.
+// Answered from the adapter's corpus, then from the SDK's runtime references,
+// which the adapter never lists.
 #[tokio::test]
 async fn doc_refs() {
     let model = Scripted::answering([VALID]).calling(
@@ -220,9 +211,7 @@ async fn doc_refs() {
     assert_eq!(exchanges[3].outcome, Ok(String::new()));
 }
 
-// A candidate the claim gate rejects — a missing id, a missing extra — is
-// sent back as the correction and the next candidate is checked again, so
-// the engine never sees the claim it would otherwise refuse.
+// The engine never sees the claim it would otherwise refuse.
 #[tokio::test]
 async fn gate_findings() {
     let model = Scripted::answering([r#"{"claims":[{"kind":"requirement"}]}"#, VALID]);
@@ -244,9 +233,7 @@ async fn gate_findings() {
     assert_eq!(model.requests().len(), 2, "one scripted answer per attempt");
 }
 
-// When the backend spends its rounds on a rejected candidate the last
-// findings surface as `bad_request`, so the host's own error is never the
-// adapter's answer.
+// The last findings surface, so the host's own error is never the adapter's answer.
 #[tokio::test]
 async fn rounds_exhausted() {
     let model = Scripted::answering([
@@ -265,7 +252,6 @@ async fn rounds_exhausted() {
     assert_eq!(model.exchanges().len(), 1, "one check, rejected");
 }
 
-// A request the host refuses is a `bad_request` carrying the host's reason.
 #[tokio::test]
 async fn invalid_request() {
     let model = Scripted::new([Err(ModelError::InvalidRequest("no such model".to_string()))]);
@@ -280,8 +266,7 @@ async fn invalid_request() {
     assert!(model.exchanges().is_empty(), "nothing to check");
 }
 
-// A stray `kind` key is a schema miss: the answer is claims alone, and the
-// kind of source is the adapter's metadata, never the model's to state.
+// The kind of source is the adapter's metadata, never the model's to state.
 #[tokio::test]
 async fn stray_kind() {
     let model = Scripted::answering([r#"{"kind":"intent","claims":[{"kind":"decision"}]}"#, VALID]);

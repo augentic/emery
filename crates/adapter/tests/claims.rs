@@ -32,7 +32,6 @@ fn parse_evidence() {
     assert_eq!(example.id.as_deref(), Some("password-reset.expiry"));
     assert_eq!(example.path.as_deref(), Some("captures/reset.json#L3-L9"));
     assert_eq!(example.backing, Some(Backing::Path("captures/reset.json".to_string())));
-    // Open per-kind fields are preserved (A8).
     assert_eq!(
         example.extras.get("replay-digest").and_then(serde_json::Value::as_str),
         Some(concat!(
@@ -53,8 +52,8 @@ fn parse_evidence() {
     assert!(claim.extras.is_empty(), "no unmodeled keys, no extras");
 }
 
-// The document is claims alone: a source kind on it is not the model's to
-// answer, so the key is a parse failure rather than a value to reconcile.
+// A source kind is not the model's to answer, so the key is a parse failure
+// rather than a value to reconcile.
 #[test]
 fn document_kind() {
     let refused =
@@ -63,7 +62,7 @@ fn document_kind() {
     assert!(refused.to_string().contains("unknown field `kind`"), "{refused}");
 }
 
-// Unpinned `synopsis` and `backing` shapes become absent, not fatal.
+// An unpinned shape becomes absent, not fatal.
 #[test]
 fn open_fields() {
     let evidence = evidence(
@@ -112,7 +111,7 @@ fn malformed_ids() {
     assert!(detail.contains("`Not.Valid`"), "finding names the malformed id: {detail}");
 }
 
-// The closed table is the single A8 rule both gates consume.
+// The closed table is the one rule both gates consume.
 #[test]
 fn missing_extras() {
     assert_eq!(ClaimKind::Requirement.required_extras(), ["statement"]);

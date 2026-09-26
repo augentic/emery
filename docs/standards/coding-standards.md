@@ -46,8 +46,13 @@ Doc comments (`///`, `//!`) follow the conventions the widely used crates — `s
 - **Vocabulary is the ecosystem's, or defined once and linked.** A house term (seam, lend, survey, claim gate, revision) is defined under `# Vocabulary` in the crate root of the crate that owns it and linked on first use in an item's docs (``[seam](crate#vocabulary)``). A term the reader would have to look up elsewhere — AGENTS.md, an RFC, omnia's internals — does not appear.
 - **Every mentioned item is an intra-doc link** (``[`Evidence`]``, ``[`Seam::Files`]``), in `///` docs as in `//!` docs. A plain code span is for a value, a path, or an item this crate cannot name.
 - **Public module `//!` docs** answer "what is this module, and why does it exist?" for a reader who has not opened the file: the summary sentence, then only the contract the module adds. A private module carries docs only when it introduces a concept its code does not make clear. No deployment tours, AGENTS.md restatements, RFC archaeology, build scripts, test suites, file placement, or `cfg` wiring.
-- **`//` section headers** outline a fn body too long to take in at once: a lowercase fragment with no full stop — an imperative phrase or a bare noun — above each blank-line-separated block, naming what the block achieves rather than how (`// load source adapters`, `// collect extracts or findings for failed extracts`, `// scenarios`). Together they are the pseudocode the fn was written from, so a reader can follow the headers alone and open a block only when it matters. A fn readable at a glance gets none, and a header never repeats the line beneath it.
-- **`//` why comments** are capitalised sentences beside the surprising branch they explain, never in a preamble essay. The casing is the signal: a lowercase fragment is an outline entry to skim; a sentence is something to stop and read.
+- **`///` goes only on `pub` items**: types, fns, fields, variants, trait items, and `pub use` re-exports. Nothing else takes it — not a private or `pub(crate)` item, not an `impl` block or a trait-impl method (the trait already documents those). Two exceptions, each because the `///` is lifted somewhere other than rustdoc: a clap derive field, where it is the `--help` text, and a `JsonSchema` type, where it becomes the schema's `description`; a `//` above the item says which. The supported API crates run `missing_docs`, so every reachable item there is documented by construction.
+- **Private items take a `//`, and only when needed.** A private or `pub(crate)` item carries a `//` above it only when a senior Rust developer would not see the fact from the name and signature: a constraint, a why, an invariant the type does not encode. It may run to several sentences when it carries a real why. A comment that restates the name, labels a `match` arm, or paraphrases the body is deleted; most private fns carry nothing.
+- **`//!` only where it says something the file's name does not.** A module whose name is its contract carries none.
+- **Inside a body a `//` is a section header**: one line, lowercase, no full stop — an imperative phrase or a bare noun — above a blank-line-separated block, naming what the block achieves rather than how (`// load source adapters`, `// join the accepted claims in seam order`, `// scenarios`). Read together the headers are the fn's outline, so a reader skims them first and drops into a block second. A header never narrates the line beneath it, and a fn readable at a glance carries none. The one trick a senior Rust developer would not see through is called out as `// HACK: …`, the only in-body comment that explains code.
+- **Section dividers** in a long file are `// --- name ---`, never box-drawing characters or rules of dashes.
+- **Tests take `//`, never `///`**, and a `#[test]` fn carries one only for rationale its scenario name and assertions do not expose, in one or two sentences. `pub` items under `tests/support/` are the suites' shared API and keep `///`.
+- **Commented-out code is deleted**, not kept.
 - **Historical phrases** are banned in comments and docs: `Phase `, `formerly`, `previously lived`, `old contract`, `former tests`, `to avoid the`. Git history is the record.
 
 ```rust
@@ -120,23 +125,43 @@ The composition-root failure mode is the essay that restates architecture and hi
 mounts: [{ name: ".", path: "." }],
 ```
 
-Inside a fn body the two `//` kinds are told apart by shape — a header is a lowercase fragment, a why is a sentence — and neither narrates the line beneath it:
+Rustdoc follows visibility, not effort. A private helper carries only what its signature cannot say, and a trait-impl method carries nothing — the trait documents it:
 
 ```rust
-// BAD — narrates the code, and the casing hides which kind it is.
+// BAD — rustdoc on a private helper and on a trait-impl method.
+/// Reads one document of revision `id`.
+async fn read<S: BlobStore>(store: &S, id: &str, name: &str) -> Result<Vec<u8>, Error> { /* ... */ }
+
+impl FromStr for AdapterRef {
+    /// Parses a local path, bare adapter name, or versioned package.
+    fn from_str(value: &str) -> Result<Self, Error> { /* ... */ }
+}
+
+// GOOD — the helper's name says what it does; what it parses is `AdapterRef`'s doc.
+async fn read<S: BlobStore>(store: &S, id: &str, name: &str) -> Result<Vec<u8>, Error> { /* ... */ }
+
+impl FromStr for AdapterRef {
+    fn from_str(value: &str) -> Result<Self, Error> { /* ... */ }
+}
+```
+
+Inside a fn body a `//` heads the block beneath it. It never narrates the next line, and it never explains the code:
+
+```rust
+// BAD — narrates the code, and a sentence where a header belongs.
 // Create the vectors.
 let mut extracts = Vec::with_capacity(outcomes.len());
 let mut failures = Vec::new();
-// Loop over the outcomes.
-for (source, outcome) in bound.iter().zip(outcomes) { /* ... */ }
+// The swap landed, so we prune the outgoing revision.
+if let Some(outgoing) = observed.outgoing_id().filter(|outgoing| *outgoing != id) { /* ... */ }
 
-// GOOD — one header names the block's step; the why is a sentence.
+// GOOD — each header names its block's step, so the headers alone outline the fn.
 // collect extracts or findings for failed extracts
 let mut extracts = Vec::with_capacity(outcomes.len());
 let mut failures = Vec::new();
 for (source, outcome) in bound.iter().zip(outcomes) { /* ... */ }
 
-// The swap landed; prune the outgoing revision.
+// prune the outgoing revision
 if let Some(outgoing) = observed.outgoing_id().filter(|outgoing| *outgoing != id) { /* ... */ }
 ```
 
@@ -148,7 +173,7 @@ Doc comments describe what this is today. Version-history tables, dated bumps, c
 
 Prefer short, idiomatic Rust names. Don't restate context the surrounding module, type, or function already supplies. Avoid `_local` / `_value` / `_helper` suffixes. Predicates start with `is_` / `has_`. A handler's DTOs are `<Verb>Input` and `<Verb>Output` (`SpecifyInput` → `SpecifyOutput`, `ShowInput` → `ShowOutput`): omnia's own names for the two positions, the `input: I` the fn takes and its `Handler::Output`. Never `<Verb>Body` — in omnia's vocabulary a body is the *encoded* wire form (`Encoded`, `ErrorBody`) the projector produces from the output. Never `<Verb>Response` — `omnia_sdk::api::command::Response` is the buffered envelope the façade owns. Never `<Verb>Json` — the format dispatch lives in the command projector (see [handler-shape.md](./handler-shape.md)). The prefix repeats the module (`specify::SpecifyInput`) on purpose: the types are consumed cross-crate, where `emery_engine::specify::SpecifyInput` is what the reader sees.
 
-**Tests.** A `#[test]` `fn` names the *scenario* (`gen_spec`, `shared_roots`), never the outcome or the assertion (`rendered_documents_read_back`, `clean_evidence_passes`). Add a comment only when the scenario name, setup, and assertions do not expose the requirement or why this layer owns it.
+**Tests.** A `#[test]` `fn` names the *scenario* (`gen_spec`, `shared_roots`), never the outcome or the assertion (`rendered_documents_read_back`, `clean_evidence_passes`). Add a `//` — never `///` — only when the scenario name, setup, and assertions do not expose the requirement or why this layer owns it, and keep it to one or two sentences.
 
 A function defined in `mod <name>` (or `commands/<name>.rs`) MUST NOT carry `<name>` as a suffix or prefix on its own name — the module path already supplies that context. Review only: clippy's `module_name_repetitions` sits in the `restriction` group and stays off, because it would flag the `<Verb>Input` / `<Verb>Output` DTOs, which repeat their module deliberately (see above).
 
@@ -189,7 +214,7 @@ A module reads top-down: what it does, what it yields, how. **Review only.**
 
 - **Order**: module doc, `use`, constants, the public entry function(s), the public types those entries take or return (each `struct`/`enum` immediately followed by its `impl` blocks), then private helpers in call order, then `#[cfg(test)]`. A private state machine or DTO the entry uses goes *below* the entry, not above it.
 - **Phases, not statements**: one blank line separates the phases of a function body (acquire → transform → validate → return) and precedes a trailing `Ok(...)` when the body has more than a few statements. Do not blank-line every statement.
-- **Comment by visibility**: supported external API items carry `///`. Workspace-facing items carry Rustdoc when their contract is useful across the crate boundary, not merely because Rust visibility makes them reachable. Private and `pub(crate)` items carry a `//` line only when it answers "why" — a comment that restates the name is deleted. A `# Errors` section on a non-API fn is noise.
+- **Comment by visibility**: `pub` items carry `///`; everything else — private, `pub(crate)`, `impl` blocks, trait-impl methods — carries a `//` only when it says something the name and signature do not. A comment that restates the name is deleted, and a `# Errors` section on a non-API fn is noise ([Comments](#comments)).
 - **Inline single-use wrappers**: a private fn with one caller whose body is one expression, and whose name adds nothing the expression does not say, is inlined at the call site. Keep the fn when it has two or more callers, names a concept the call site should not spell out (`store::failed`), or is a multi-step body.
 - **Name the capability at the dispatch site**: when the receiver is a generic bounded by more than one capability trait (`P: Source + Plugins`, `S: StateStore + BlobStore`), call `Source::extract(provider, …)` / `BlobStore::put(store, …)` rather than `provider.extract(…)`, so the boundary being crossed is visible without resolving the bound.
 - **Keep an `impl` with its type**: no `impl ForeignType` in a consumer module. A consumer that needs behaviour over a type it does not own writes a free fn taking `&Type`.

@@ -16,8 +16,7 @@ mod generated {
     wit_bindgen::generate!({
         world: "source-adapter",
         path: "../../wit",
-        // The WIT marks `extract` alone as `async func`, so the bindings need
-        // no `async:` list here.
+        // `extract` alone is `async func` in the WIT, so no `async:` list is needed
         generate_all,
         pub_export_macro: true,
     });
@@ -164,8 +163,7 @@ impl From<wit::Backing> for Backing {
 
 impl From<Claim> for wit::Claim {
     fn from(claim: Claim) -> Self {
-        // Extras cross the WIT bindings as canonical JSON text; `serde_json::Value`
-        // always encodes.
+        // extras cross the bindings as canonical JSON text
         let extras =
             claim.extras.into_iter().map(|(key, value)| (key, value.to_string())).collect();
         Self {
@@ -179,8 +177,6 @@ impl From<Claim> for wit::Claim {
     }
 }
 
-// An extra that fails to parse back from its canonical JSON is an error, never
-// a dropped key.
 impl TryFrom<wit::Claim> for Claim {
     type Error = String;
 
@@ -222,9 +218,8 @@ impl TryFrom<wit::Evidence> for Evidence {
     }
 }
 
-// The WIT variant carries the description alone: a refusal of the input is
-// `invalid-request`, every other class `internal`, and the lift restores the
-// class.
+// The WIT variant carries the description alone; the lift in `Source::extract`
+// restores the class.
 impl From<omnia_sdk::Error> for wit::Error {
     fn from(error: omnia_sdk::Error) -> Self {
         let description = error.description();

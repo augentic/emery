@@ -19,7 +19,7 @@ adapter = "./source.wasm"
 # # key, so one adapter may name several roots.
 # [[source]]
 # name = "api-surface"
-# adapter = "typescript"
+# adapter = "emery:typescript@1.2.0"
 # path = "packages/api/src"
 
 # # Inline description instead of a filesystem view — the file form of
