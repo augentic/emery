@@ -10,12 +10,13 @@ use std::fmt::{self, Display, Formatter};
 
 use emery_adapter::source::SourceContent;
 use emery_prose::Doc;
+use omnia_sdk::model::Question;
 use omnia_sdk::{Error, Model, server_error};
 use schemars::JsonSchema;
 use serde::Deserialize;
 
 use crate::workspace::{Entry, Unoffered};
-use crate::{Context, beneath, question, workspace};
+use crate::{Context, beneath, prompt, reference, workspace};
 
 /// Returns the surfaces discovered by the model in a workspace source.
 ///
@@ -46,7 +47,10 @@ pub async fn surfaces<P: Model>(
             "`{key}`: a survey by model needs a workspace input, not an inline value"
         ));
     };
-    let question = question::of::<Inventory>("survey", docs, "survey.md")?.workspace(root);
+    let question = Question::<Inventory>::new("survey")
+        .system(prompt(docs, "survey.md")?)
+        .tools(reference::tools())
+        .workspace(root);
     let brief = Brief {
         adapter_id: ctx.adapter_id,
         key,
@@ -55,8 +59,13 @@ pub async fn surfaces<P: Model>(
 
     tracing::info!(%key, "surveying");
     let inventory = question
-        .ask(ctx.model, brief.to_string(), Some(question::answering(docs, key, None)), |answer| {
-            question::gate(answer.findings(root, &mut keep), key, None)
+        .ask(ctx.model, brief.to_string(), Some(reference::serve(docs, key, None)), |answer| {
+            let findings = answer.findings(root, &mut keep);
+            if findings.is_empty() {
+                return Ok(());
+            }
+            tracing::debug!(%key, ?findings, "candidate rejected");
+            Err(findings)
         })
         .await?;
     tracing::debug!(

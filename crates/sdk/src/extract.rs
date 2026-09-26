@@ -16,7 +16,7 @@ use futures::{FutureExt as _, TryFutureExt as _};
 use omnia_sdk::model::Question;
 use omnia_sdk::{Error, Model, bad_request, server_error};
 
-use crate::{Context, beneath, question};
+use crate::{Context, beneath, prompt, reference};
 
 /// The most turns one [`extract`] call holds pending at once.
 ///
@@ -65,7 +65,9 @@ pub async fn extract<P: Model>(
     // settle every seam and the question before the first turn is spent
     let plans =
         seams.iter().map(|seam| Plan::of(seam, ctx.input)).collect::<Result<Vec<_>, _>>()?;
-    let mut question = question::of::<Evidence>("evidence", docs, "extract.md")?;
+    let mut question = Question::<Evidence>::new("evidence")
+        .system(prompt(docs, "extract.md")?)
+        .tools(reference::tools());
     if let SourceContent::Workspace(root) = &ctx.input.content {
         question = question.workspace(root);
     }
@@ -182,8 +184,15 @@ async fn turn<P: Model>(
             .ask(
                 ctx.model,
                 brief.to_string(),
-                Some(question::answering(docs, key, Some(index))),
-                |answer| question::gate(answer.findings(), key, Some(index)),
+                Some(reference::serve(docs, key, Some(index))),
+                |answer| {
+                    let findings = answer.findings();
+                    if findings.is_empty() {
+                        return Ok(());
+                    }
+                    tracing::debug!(%key, seam = index, ?findings, "candidate rejected");
+                    Err(findings)
+                },
             )
             .map_err(Error::from)
     };

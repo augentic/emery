@@ -85,7 +85,7 @@
 //! (`emery_sdk=debug`, `off`) kept when no flag is passed.
 
 mod extract;
-mod question;
+mod reference;
 pub mod survey;
 pub mod workspace;
 
@@ -197,6 +197,12 @@ pub struct Context<'a, P> {
     pub input: &'a SourceInput,
     /// The [`Model`] used for survey and extraction requests.
     pub model: &'a P,
+}
+
+// A missing prompt is the adapter build's own defect, reported before a turn
+// is spent.
+fn prompt(docs: &[Doc], path: &str) -> Result<&'static str, Error> {
+    body(docs, path).ok_or_else(|| server_error!("`{path}` is not embedded"))
 }
 
 fn beneath(path: &str) -> Result<String, &'static str> {
