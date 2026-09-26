@@ -107,6 +107,16 @@ pub enum Seam {
     Note(String),
 }
 
+impl Display for Seam {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Whole => write!(f, "whole"),
+            Self::Files(files) => write!(f, "files: {}", files.join(", ")),
+            Self::Note(note) => write!(f, "note: {note}"),
+        }
+    }
+}
+
 // A seam settled against the input before any turn is spent.
 #[derive(Debug)]
 enum Plan<'a> {
