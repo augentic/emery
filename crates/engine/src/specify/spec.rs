@@ -101,8 +101,13 @@ impl Brief for SpecBrief<'_> {
     }
 
     fn into_output(self, answer: SpecAnswer) -> Result<Spec, Error> {
-        let mut drafts: BTreeMap<String, Vec<Scenario>> =
-            answer.requirements.into_iter().map(|draft| (draft.subject, draft.scenarios)).collect();
+        let mut drafts: BTreeMap<String, Vec<Scenario>> = answer
+            .requirements
+            .into_iter()
+            .map(|draft| {
+                (draft.subject, draft.scenarios.into_iter().map(Scenario::trimmed).collect())
+            })
+            .collect();
         let mut requirements = Vec::with_capacity(self.bases.len());
         for basis in self.bases {
             let scenarios = drafts.remove(basis.subject.as_str()).ok_or_else(|| {

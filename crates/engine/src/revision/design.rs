@@ -89,9 +89,7 @@ impl Display for Block {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         match self {
             Self::Text(text) => f.write_str(text),
-            Self::Type { key, signature } => {
-                write!(f, "{TYPE} {key}\n```\n{}\n```", signature.trim_end())
-            }
+            Self::Type { key, signature } => write!(f, "{TYPE} {key}\n```\n{signature}\n```"),
         }
     }
 }

@@ -161,6 +161,32 @@ async fn gen_spec() {
     provider.model.assert_exhausted();
 }
 
+// Padding around a drafted line is the model's, not the specification's, so
+// it is dropped before the revision is stored and never reaches the id.
+#[tokio::test]
+async fn padded_lines() {
+    let scratch = Scratch::new();
+    let component = scratch.component();
+    let mut answer: Value = serde_json::from_str(SPEC_ANSWER).expect("the draft fixture is JSON");
+    let scenario = &mut answer["requirements"][0]["scenarios"][0];
+    scenario["name"] = Value::String("  Greeting requested ".into());
+    scenario["given"] = serde_json::json!([" the greeting surface is bound\t"]);
+    scenario["when"] = Value::String("`/greeting` is requested  ".into());
+    scenario["then"] = Value::String(" the response is `hello`".into());
+    let padded = answer.to_string();
+    let provider = Provider::answering([padded.as_str(), DESIGN_ANSWER]);
+
+    cli_ok(&provider, &["emery", "specify", &component]).await;
+
+    let id = current(&provider.storage);
+    assert_eq!(
+        String::from_utf8_lossy(&document(&provider.storage, &id, "spec.json")),
+        SPEC_REVISION,
+        "the stored lines carry none of the padding"
+    );
+    provider.model.assert_exhausted();
+}
+
 // The component the entry names exists only beside the file, so the run must
 // resolve it there.
 #[tokio::test]
@@ -1702,6 +1728,27 @@ async fn source_digest_pinned() {
         assert_eq!(carried, Some(pin.clone()), "{location} carries its pin");
     }
     provider.model.assert_exhausted();
+}
+
+// One adapter loads once under one pin, so two entries pinning it differently
+// cannot both be honoured; the list is refused before either is asked for.
+#[tokio::test]
+async fn source_digest_conflict() {
+    let scratch = Scratch::new();
+    scratch.component();
+    let config = scratch.config(&format!(
+        "[[source]]\nname = \"docs\"\nadapter = \"./source.wasm\"\ndigest = \"{}\"\n\n\
+         [[source]]\nname = \"api\"\nadapter = \"./source.wasm\"\ndigest = \"{}\"\n",
+        digest("cd"),
+        digest("ab")
+    ));
+    let provider = Provider::idle();
+
+    let envelope =
+        fail(&provider, &["emery", "specify", "--config", &config], 1, "bad_request").await;
+
+    assert_message(&envelope, "source.wasm` is pinned to two digests");
+    assert!(provider.plugins.loads().is_empty(), "a conflicting pin loads nothing");
 }
 
 #[tokio::test]

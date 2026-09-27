@@ -195,13 +195,30 @@ impl Scenario {
             .chain([("when", self.when.as_str()), ("then", self.then.as_str())])
             .chain(self.and.iter().map(|text| ("and", text.as_str())))
     }
+
+    /// Returns the scenario with the whitespace around each line dropped.
+    ///
+    /// A revision stores lines in this form, so two drafts that differ only
+    /// in padding commit as one revision.
+    #[must_use]
+    pub fn trimmed(self) -> Self {
+        let line = |text: String| text.trim().to_owned();
+        let lines = |texts: Vec<String>| texts.into_iter().map(line).collect();
+        Self {
+            name: line(self.name),
+            given: lines(self.given),
+            when: line(self.when),
+            then: line(self.then),
+            and: lines(self.and),
+        }
+    }
 }
 
 impl Display for Scenario {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        writeln!(f, "{SCENARIO} {}", self.name.trim())?;
+        writeln!(f, "{SCENARIO} {}", self.name)?;
         for (field, text) in self.lines() {
-            write!(f, "\n- **{}** {}", field.to_ascii_uppercase(), text.trim())?;
+            write!(f, "\n- **{}** {text}", field.to_ascii_uppercase())?;
         }
         Ok(())
     }
