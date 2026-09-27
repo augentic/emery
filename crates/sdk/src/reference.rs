@@ -12,10 +12,14 @@ use schemars::JsonSchema;
 use serde::Deserialize;
 use serde_json::json;
 
-use crate::RUNTIME;
+use crate::{CLAIMS, EXTRACT, RUNTIME, SURVEY};
 
 const LIST_DOCS: &str = "list_docs";
 const READ_DOC: &str = "read_doc";
+
+// Never listed: each is the system of one kind of turn, so a turn either
+// carries it already or has nothing to learn from it.
+const SYSTEM: &[&str] = &[EXTRACT, SURVEY, CLAIMS];
 
 /// Returns the reference tools declared to the model on every turn.
 #[must_use]
@@ -23,8 +27,8 @@ pub fn tools() -> Vec<Tool> {
     vec![
         Tool::Function(Function::of::<ListDocs>(
             LIST_DOCS,
-            "List the reference document paths this call can read beyond what the system \
-             prompt already carries: the adapter's own, then Emery's shared ones.",
+            "List the further reference documents this call can read: the adapter's own, then \
+             Emery's shared ones.",
         )),
         Tool::Function(Function::of::<ReadDoc>(
             READ_DOC,
@@ -35,16 +39,15 @@ pub fn tools() -> Vec<Tool> {
 
 /// Returns the handler that serves the reference tools from `docs` and then [`RUNTIME`].
 ///
-/// `carried` names the documents the turn's system prompt already holds.
-/// `list_docs` omits them and `read_doc` still answers them, so a followed
-/// link never fails.
+/// `list_docs` lists the adapter's references and the runtime references,
+/// never a system document — `extract.md`, `survey.md`, or `claims.md` — since
+/// a turn either carries it already or has nothing to learn from it.
+/// `read_doc` still answers every document, so a followed link never fails.
 ///
 /// Each call is reported at DEBUG with its arguments as the model sent them,
 /// under the `source` name and, for a mining turn, its `seam`.
 #[must_use]
-pub fn serve(
-    docs: &'static [Doc], source: &str, seam: Option<usize>, carried: &'static [&'static str],
-) -> Tools {
+pub fn serve(docs: &'static [Doc], source: &str, seam: Option<usize>) -> Tools {
     let source = source.to_owned();
 
     Box::new(move |call: ToolCall| -> ToolFuture {
@@ -54,7 +57,7 @@ pub fn serve(
                     .iter()
                     .chain(RUNTIME)
                     .map(|doc| doc.path)
-                    .filter(|path| !carried.contains(path))
+                    .filter(|path| !SYSTEM.contains(path))
                     .collect();
                 Ok(json!({ "paths": paths }).to_string())
             }

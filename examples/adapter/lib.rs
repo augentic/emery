@@ -42,12 +42,13 @@ pub fn survey(input: &SourceInput) -> Result<Vec<Seam>, Error> {
             return Err(bad_request!("the bound greeting brief is empty"));
         }
         SourceContent::Value(_) => Seam::Whole,
-        SourceContent::Workspace(root) => Seam::Note(format!(
-            "`$SOURCE_DIR` is the read-only view at `{root}` — the greeting tree the prompt \
-             walks. Prefer the bound tree; fall back to `references/greeting.md` when the tree \
-             does not state a greeting. Nothing outside it is reachable; extract mines only this \
-             source."
-        )),
+        SourceContent::Workspace(_) => Seam::Note(
+            "`$SOURCE_DIR` is the bound greeting tree, lent read-only: the root of every file \
+             you can read, and the root every `path` is relative to. Prefer the bound tree; fall \
+             back to `references/greeting.md` when the tree does not state a greeting. Nothing \
+             outside it is reachable; extract mines only this source."
+                .to_owned(),
+        ),
     };
     Ok(vec![seam])
 }

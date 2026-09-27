@@ -805,6 +805,7 @@ async fn invalid_draft() {
     };
     let scenario = r#"{"name": "Greeting", "when": "greeted", "then": "hello"}"#;
     let restated = r#"{"name": "Greeting", "when": "get /greeting returns the static string 'hello'", "then": "hello"}"#;
+    let refrain = r#"{"name": "Greeting", "when": "greeted", "then": "GET /greeting returns the static string 'hello'."}"#;
     let cases: Vec<(String, &str)> = vec![
         ("Not a spec at all.".to_string(), "schema and answer type disagree"),
         (
@@ -828,6 +829,7 @@ async fn invalid_draft() {
             "opens with the reserved marker `Sources:`",
         ),
         (one("", "greeting.behaviour", restated), "scenario `when` restates the requirement"),
+        (one("", "greeting.behaviour", refrain), "scenario `then` restates the requirement"),
     ];
     for (answer, fragment) in cases {
         let provider = Provider::answering([answer.as_str(), answer.as_str(), answer.as_str()])

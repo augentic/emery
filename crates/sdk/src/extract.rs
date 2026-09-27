@@ -16,10 +16,7 @@ use futures::{FutureExt as _, TryFutureExt as _};
 use omnia_sdk::model::Question;
 use omnia_sdk::{Error, Model, bad_request, server_error};
 
-use crate::{CLAIMS, Context, RUNTIME, beneath, prompt, reference};
-
-// The adapter's prompt among its documents: the system of every mining turn.
-const PROMPT: &str = "extract.md";
+use crate::{CLAIMS, Context, EXTRACT, RUNTIME, beneath, prompt, reference};
 
 /// The most turns one [`extract`] call holds pending at once.
 ///
@@ -67,22 +64,17 @@ pub async fn extract<P: Model>(
         return Err(bad_request!("`{source}`: nothing to extract"));
     }
 
-    // settle every seam and the question before the first turn is spent
+    // settle every seam and the system before the first turn is spent
     let plans =
         seams.iter().map(|seam| Plan::of(seam, ctx.input)).collect::<Result<Vec<_>, _>>()?;
-    let system = format!("{}\n\n---\n\n{}", prompt(docs, PROMPT)?, prompt(RUNTIME, CLAIMS)?);
-    let mut question =
-        Question::<Evidence>::new("evidence").system(system).tools(reference::tools());
-    if let SourceContent::Workspace(root) = &ctx.input.content {
-        question = question.workspace(root);
-    }
+    let system = format!("{}\n\n---\n\n{}", prompt(docs, EXTRACT)?, prompt(RUNTIME, CLAIMS)?);
 
     // one gated turn per seam, largest first, at most CONCURRENT pending
     let mut order: Vec<_> = plans.iter().enumerate().collect();
     order.sort_by_key(|(_, plan)| plan.size().map(Reverse));
     let outcomes = stream::iter(order)
         .map(|(index, plan)| {
-            turn(&question, ctx, docs, index, plan).map(move |outcome| (index, outcome))
+            turn(&system, ctx, docs, index, plan).map(move |outcome| (index, outcome))
         })
         .buffer_unordered(CONCURRENT)
         .collect()
@@ -127,12 +119,13 @@ impl Display for Seam {
     }
 }
 
-// A seam settled against the input before any turn is spent.
+// A seam settled against the input before any turn is spent. The lend carries
+// the root, so no plan names it.
 #[derive(Debug)]
 enum Plan<'a> {
     Note(&'a str),
-    Files { root: &'a str, files: Vec<String> },
-    Tree(&'a str),
+    Files(Vec<String>),
+    Tree,
     Value(&'a str),
 }
 
@@ -143,12 +136,12 @@ impl<'a> Plan<'a> {
         let source = &input.name;
         match (seam, &input.content) {
             (Seam::Note(note), _) => Ok(Self::Note(note)),
-            (Seam::Whole, SourceContent::Workspace(root)) => Ok(Self::Tree(root)),
+            (Seam::Whole, SourceContent::Workspace(_)) => Ok(Self::Tree),
             (Seam::Whole, SourceContent::Value(value)) => Ok(Self::Value(value)),
             (Seam::Files(_), SourceContent::Value(_)) => Err(server_error!(
                 "`{source}`: a `Files` seam needs a workspace input, not an inline value"
             )),
-            (Seam::Files(named), SourceContent::Workspace(root)) => {
+            (Seam::Files(named), SourceContent::Workspace(_)) => {
                 let mut files = named
                     .iter()
                     .map(|path| {
@@ -161,15 +154,15 @@ impl<'a> Plan<'a> {
                 if files.is_empty() {
                     return Err(bad_request!("`{source}`: a `Files` seam names no file"));
                 }
-                Ok(Self::Files { root, files })
+                Ok(Self::Files(files))
             }
         }
     }
 
     const fn size(&self) -> Option<usize> {
         match self {
-            Self::Files { files, .. } => Some(files.len()),
-            Self::Note(_) | Self::Tree(_) | Self::Value(_) => None,
+            Self::Files(files) => Some(files.len()),
+            Self::Note(_) | Self::Tree | Self::Value(_) => None,
         }
     }
 
@@ -186,37 +179,45 @@ impl<'a> Plan<'a> {
                     line.to_owned()
                 }
             }
-            Self::Files { files, .. } => match files.as_slice() {
+            Self::Files(files) => match files.as_slice() {
                 [only] => only.clone(),
                 [first, rest @ ..] => format!("{first} (+{})", rest.len()),
                 [] => String::new(),
             },
-            Self::Tree(_) => "tree".to_owned(),
+            Self::Tree => "tree".to_owned(),
             Self::Value(_) => "value".to_owned(),
         }
     }
 }
 
 // The turn is one of several in flight, so its events name the seam
-// themselves; the failure's description is `join`'s to report once, so the
-// event carries the class alone.
+// themselves, and its question is labelled by the seam so a backend's
+// per-completion telemetry names it too; the failure's description is
+// `join`'s to report once, so the event carries the class alone.
 #[tracing::instrument(skip_all, fields(source = %ctx.input.name, seam = index))]
 async fn turn<P: Model>(
-    question: &Question<Evidence>, ctx: &Context<'_, P>, docs: &'static [Doc], index: usize,
-    plan: &Plan<'_>,
+    system: &str, ctx: &Context<'_, P>, docs: &'static [Doc], index: usize, plan: &Plan<'_>,
 ) -> Result<Evidence, Error> {
     let source = &ctx.input.name;
+    let mut question = Question::<Evidence>::new(&format!("evidence-{source}-{index}"))
+        .system(system)
+        .tools(reference::tools());
+    if let SourceContent::Workspace(root) = &ctx.input.content {
+        question = question.workspace(root);
+    }
+
     let brief = Brief {
         adapter_id: ctx.adapter_id,
         source,
         plan,
     };
+
     let ask = || {
         question
             .ask(
                 ctx.model,
                 brief.to_string(),
-                Some(reference::serve(docs, source, Some(index), &[PROMPT, CLAIMS])),
+                Some(reference::serve(docs, source, Some(index))),
                 |answer| {
                     let findings = answer.findings();
                     if findings.is_empty() {
@@ -231,6 +232,7 @@ async fn turn<P: Model>(
 
     let label = plan.label();
     tracing::info!(%source, seam = index, label, files = plan.size(), "mining");
+
     let outcome = match ask().await {
         Err(error @ Error::BadGateway { .. }) => {
             tracing::warn!(
@@ -244,9 +246,14 @@ async fn turn<P: Model>(
         }
         outcome => outcome,
     };
+
     match &outcome {
         Ok(evidence) => {
             tracing::info!(%source, seam = index, label, claims = evidence.claims.len(), "mined");
+            if tracing::enabled!(tracing::Level::TRACE) {
+                let json = serde_json::to_string(evidence).unwrap_or_default();
+                tracing::trace!(%source, seam = index, evidence = %json, "accepted");
+            }
         }
         Err(error) => {
             tracing::warn!(%source, seam = index, label, code = %error.code(), "failed");
@@ -274,11 +281,10 @@ impl Display for Brief<'_> {
 
         match self.plan {
             Plan::Note(note) => f.write_str(note)?,
-            Plan::Files { root, files } => {
-                writeln!(
-                    f,
-                    "`$SOURCE_DIR` is the read-only view at `{root}` — the source tree. Mine these \
-                     files beneath it and nothing else:"
+            Plan::Files(files) => {
+                f.write_str(
+                    "`$SOURCE_DIR` is the bound source tree, lent read-only: the root of every \
+                     file you can read. Mine these files beneath it and nothing else:\n",
                 )?;
                 for file in files {
                     write!(f, "\n- `{file}`")?;
@@ -288,10 +294,10 @@ impl Display for Brief<'_> {
                      reachable; extract mines only this source.",
                 )?;
             }
-            Plan::Tree(root) => write!(
-                f,
-                "`$SOURCE_DIR` is the read-only view at `{root}` — the source tree the prompt \
-                 walks. Nothing outside it is reachable; extract mines only this source."
+            Plan::Tree => f.write_str(
+                "`$SOURCE_DIR` is the bound source tree, lent read-only: the root of every file \
+                 you can read, and the root every `path` is relative to. Walk it as the prompt \
+                 describes. Nothing outside it is reachable; extract mines only this source.",
             )?,
             Plan::Value(value) => write!(
                 f,

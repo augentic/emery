@@ -111,7 +111,8 @@ async fn model_request() {
     assert_eq!(request.tools, ["list_docs", "read_doc"], "the corpus is offered through tools");
     let turn = &request.messages[0];
     assert!(turn.contains("the source `code` bound to adapter `source:probe`"), "{turn}");
-    assert!(turn.contains(&format!("read-only view at `{root}`")), "{turn}");
+    assert!(turn.contains("`$SOURCE_DIR` is the bound source tree, lent read-only:"), "{turn}");
+    assert!(!turn.contains(root), "the lend carries the root, not the brief: {turn}");
     assert!(turn.contains("relative to `$SOURCE_DIR`"), "{turn}");
     assert!(turn.contains("## Modules"), "the brief lists the kept modules: {turn}");
     for module in ["index.ts", "jobs/nightly.ts", "routes/orders.ts", "routes/users.ts"] {
@@ -123,7 +124,7 @@ async fn model_request() {
     let SeenFormat::Schema { name, schema } = &request.format else {
         panic!("the survey is steered by schema");
     };
-    assert_eq!(name, "survey");
+    assert_eq!(name, "survey-code", "the question is labelled by source");
     let schema: serde_json::Value = serde_json::from_str(schema).expect("generated schema parses");
     assert!(schema.pointer("/properties/surfaces").is_some(), "{schema}");
     let surface = schema.pointer("/$defs/Surface").expect("Surface definition");
@@ -132,8 +133,9 @@ async fn model_request() {
     model.assert_exhausted();
 }
 
-// The survey's system carries the survey prompt alone, so `list_docs` omits
-// it and nothing else; the prompt still answers when read.
+// A system document is never listed — the survey's own prompt, the mining
+// prompt of the turns that follow, or the claim rules a survey emits none
+// under — and an unlisted document still answers when read.
 #[tokio::test]
 async fn model_list_docs() {
     let model = Scripted::answering([
@@ -163,8 +165,8 @@ async fn model_list_docs() {
     assert_eq!(exchanges.len(), 3, "two reference calls, then the check");
     assert_eq!(
         exchanges[0].outcome.as_deref(),
-        Ok(r#"{"paths":["extract.md","claims.md","reconciliation.md"]}"#),
-        "`list_docs` omits the prompt the system carries"
+        Ok(r#"{"paths":["reconciliation.md"]}"#),
+        "`list_docs` lists no system document"
     );
     assert_eq!(
         exchanges[1].outcome.as_deref(),

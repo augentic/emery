@@ -22,6 +22,10 @@ const PROSE: &[Doc] = &[
         path: "references/greeting.md",
         body: "Greet warmly.",
     },
+    Doc {
+        path: "survey.md",
+        body: "SURVEY",
+    },
 ];
 
 const VALID: &str = r#"{"claims":[
@@ -57,12 +61,18 @@ async fn request_shape() {
     let claims = emery_sdk::body(emery_sdk::RUNTIME, "claims.md").expect("embedded");
     let system = format!("SYSTEM\n\n---\n\n{claims}");
     assert_eq!(request.system.as_deref(), Some(system.as_str()));
+    assert!(
+        !request.messages[0].contains("/lend/docs"),
+        "the lend carries the root, not the brief: {}",
+        request.messages[0]
+    );
     assert_eq!(
         request.messages,
         [concat!(
             "Extract the claim set of the source `docs` bound to adapter `source:probe`.\n\n",
-            "`$SOURCE_DIR` is the read-only view at `/lend/docs` — the source tree the prompt ",
-            "walks. Nothing outside it is reachable; extract mines only this source.\n\n",
+            "`$SOURCE_DIR` is the bound source tree, lent read-only: the root of every file you ",
+            "can read, and the root every `path` is relative to. Walk it as the prompt ",
+            "describes. Nothing outside it is reachable; extract mines only this source.\n\n",
             "The claim rules (`claims.md`) are already in the system prompt; the prompt's ",
             "further references are available through this call's `read_doc` tool (`list_docs` ",
             "enumerates them); load referenced bodies on demand.\n\n",
@@ -77,7 +87,7 @@ async fn request_shape() {
     let SeenFormat::Schema { name, schema } = &request.format else {
         panic!("evidence is steered by schema");
     };
-    assert_eq!(name, "evidence");
+    assert_eq!(name, "evidence-docs-0", "the question is labelled by source and seam");
     let schema: serde_json::Value = serde_json::from_str(schema).expect("generated schema parses");
     assert!(schema.pointer("/properties/kind").is_none(), "the answer is claims alone: {schema}");
     let claim = schema.pointer("/$defs/Claim").expect("Claim definition");
@@ -152,18 +162,21 @@ async fn files_turn() {
     let user = &request.messages[0];
     assert!(
         user.contains(
-            "`$SOURCE_DIR` is the read-only view at `/lend/docs` — the source tree. Mine these \
-             files beneath it and nothing else:\n\n\
+            "`$SOURCE_DIR` is the bound source tree, lent read-only: the root of every file you \
+             can read. Mine these files beneath it and nothing else:\n\n\
              - `api.md`\n- `guide/intro.md`\n- `guide/setup.md`\n\n\
              Anchor every `path` relative to `$SOURCE_DIR`."
         ),
         "{user}"
     );
+    assert!(!user.contains("/lend/docs"), "the lend carries the root, not the brief: {user}");
     model.assert_exhausted();
 }
 
 // Answered from the adapter's corpus, then from the SDK's runtime references,
-// which the adapter never lists.
+// which the adapter never lists. No system document is offered — the claim
+// rules ride this turn's system, and the survey prompt steered a turn already
+// spent — though a read still answers each.
 #[tokio::test]
 async fn doc_refs() {
     let model = Scripted::answering([VALID]).calling(
@@ -184,16 +197,21 @@ async fn doc_refs() {
                 name: "read_doc".to_string(),
                 arguments: r#"{"path":"claims.md"}"#.to_string(),
             },
+            ToolCall {
+                id: "4".to_string(),
+                name: "read_doc".to_string(),
+                arguments: r#"{"path":"survey.md"}"#.to_string(),
+            },
         ],
     );
 
     ask(&model, &SourceInput::value("brief", "Ship it."), Seam::Whole).await.expect("accepted");
     let exchanges = model.exchanges();
-    assert_eq!(exchanges.len(), 4, "three reference calls, then the check");
+    assert_eq!(exchanges.len(), 5, "four reference calls, then the check");
     assert_eq!(
         exchanges[0].outcome.as_deref(),
         Ok(r#"{"paths":["references/greeting.md","reconciliation.md"]}"#),
-        "`list_docs` omits the active prompt and the claim rules the system carries"
+        "`list_docs` lists no system document"
     );
     assert_eq!(
         exchanges[1].outcome.as_deref(),
@@ -207,8 +225,13 @@ async fn doc_refs() {
         runtime["body"],
         emery_sdk::body(emery_sdk::RUNTIME, "claims.md").expect("embedded")
     );
-    assert_eq!(exchanges[3].tool, "check");
-    assert_eq!(exchanges[3].outcome, Ok(String::new()));
+    assert_eq!(
+        exchanges[3].outcome.as_deref(),
+        Ok(r#"{"body":"SURVEY","path":"survey.md"}"#),
+        "`read_doc` still answers an unlisted document"
+    );
+    assert_eq!(exchanges[4].tool, "check");
+    assert_eq!(exchanges[4].outcome, Ok(String::new()));
 }
 
 // The engine never sees the claim it would otherwise refuse.

@@ -28,8 +28,10 @@ fn is_claim_id(value: &str) -> bool {
 /// A collection of claims extracted from one source.
 ///
 /// The source kind is declared in adapter metadata and is not part of this
-/// document. Unknown document fields are rejected during deserialisation.
-#[derive(Clone, Debug, Deserialize, JsonSchema)]
+/// document. Unknown document fields are rejected during deserialisation, and
+/// a document serialises back to the JSON it was answered as, absent optional
+/// fields omitted.
+#[derive(Clone, Debug, Deserialize, Serialize, JsonSchema)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
 #[schemars(title = "Emery evidence answer")]
 pub struct Evidence {
@@ -95,7 +97,7 @@ pub enum SourceKind {
 /// Fields common to every claim are represented directly. Kind-specific
 /// fields are collected in [`Claim::extras`]. A malformed `synopsis` or
 /// `backing` value is treated as absent rather than rejecting the document.
-#[derive(Clone, Debug, Deserialize, JsonSchema)]
+#[derive(Clone, Debug, Deserialize, Serialize, JsonSchema)]
 #[serde(rename_all = "kebab-case")]
 pub struct Claim {
     /// The taxonomy variant controlling the claim's required fields.
@@ -104,15 +106,17 @@ pub struct Claim {
     ///
     /// Requirements, criteria, and examples require an identifier.
     #[schemars(regex(pattern = CLAIM_ID_REGEX))]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub id: Option<String>,
     /// The source location as `<path>`, `<path>#L<n>`, or
     /// `<path>#L<n>-L<n>`.
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub path: Option<String>,
     /// An optional one-line summary.
-    #[serde(default, deserialize_with = "lenient")]
+    #[serde(default, deserialize_with = "lenient", skip_serializing_if = "Option::is_none")]
     pub synopsis: Option<String>,
     /// Optional supporting material.
-    #[serde(default, deserialize_with = "lenient")]
+    #[serde(default, deserialize_with = "lenient", skip_serializing_if = "Option::is_none")]
     pub backing: Option<Backing>,
     /// Additional fields specific to the claim's [`ClaimKind`].
     ///
@@ -185,7 +189,17 @@ impl Claim {
 ///
 /// The taxonomy is closed. Unknown kinds are rejected during deserialisation.
 #[derive(
-    Clone, Copy, Debug, Deserialize, PartialEq, Eq, PartialOrd, Ord, JsonSchema, strum::Display,
+    Clone,
+    Copy,
+    Debug,
+    Deserialize,
+    Serialize,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    JsonSchema,
+    strum::Display,
 )]
 #[serde(rename_all = "kebab-case")]
 #[strum(serialize_all = "kebab-case")]
@@ -246,7 +260,7 @@ impl ClaimKind {
 }
 
 /// Supporting material attached to a claim.
-#[derive(Clone, Debug, Deserialize, PartialEq, Eq, JsonSchema)]
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq, JsonSchema)]
 #[serde(rename_all = "kebab-case")]
 pub enum Backing {
     /// Verbatim data stored in the evidence document.
