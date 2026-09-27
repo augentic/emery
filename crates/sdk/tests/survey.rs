@@ -132,8 +132,8 @@ async fn model_request() {
     model.assert_exhausted();
 }
 
-// The survey turn lists the corpus besides the active prompt; the active
-// prompt still answers when read.
+// The survey's system carries the survey prompt alone, so `list_docs` omits
+// it and nothing else; the prompt still answers when read.
 #[tokio::test]
 async fn model_list_docs() {
     let model = Scripted::answering([
@@ -163,13 +163,13 @@ async fn model_list_docs() {
     assert_eq!(exchanges.len(), 3, "two reference calls, then the check");
     assert_eq!(
         exchanges[0].outcome.as_deref(),
-        Ok(r#"{"paths":["extract.md","reconciliation.md"]}"#),
-        "`list_docs` omits the active prompt and the claim rules"
+        Ok(r#"{"paths":["extract.md","claims.md","reconciliation.md"]}"#),
+        "`list_docs` omits the prompt the system carries"
     );
     assert_eq!(
         exchanges[1].outcome.as_deref(),
         Ok(r#"{"body":"SURVEY","path":"survey.md"}"#),
-        "`read_doc` still answers the active prompt"
+        "`read_doc` still answers it"
     );
     model.assert_exhausted();
 }

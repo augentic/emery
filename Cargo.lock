@@ -2322,6 +2322,7 @@ dependencies = [
 [[package]]
 name = "omnia-cursor"
 version = "0.31.0"
+source = "git+https://github.com/augentic/omnia-backends#5f31c2d8ab4f62bc0eadffbb4902b1441a6c1444"
 dependencies = [
  "anyhow",
  "bytes",
@@ -2349,6 +2350,7 @@ dependencies = [
 [[package]]
 name = "omnia-filesystem"
 version = "0.31.0"
+source = "git+https://github.com/augentic/omnia-backends#5f31c2d8ab4f62bc0eadffbb4902b1441a6c1444"
 dependencies = [
  "anyhow",
  "fromenv",

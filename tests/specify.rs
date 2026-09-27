@@ -487,11 +487,14 @@ async fn seams_grouped() {
     assert_eq!(spec["requirements"].as_array().map(Vec::len), Some(1), "{spec}");
     let requirement = &spec["requirements"][0];
     assert_eq!(requirement["subject"], "start.persist", "{spec}");
-    let cited: Vec<&str> = requirement["sources"]
-        .as_array()
-        .map(|sources| sources.iter().map(|cited| cited["claim"].as_str().unwrap_or("")).collect())
-        .unwrap_or_default();
-    assert_eq!(cited, ["start.persist", "worker.persist"], "{spec}");
+    assert_eq!(
+        requirement["sources"],
+        serde_json::json!([
+            {"source": "docs", "claim": "start.persist"},
+            {"source": "docs", "claim": "worker.persist"}
+        ]),
+        "{spec}"
+    );
     provider.model.assert_exhausted();
 }
 
@@ -801,78 +804,77 @@ async fn invalid_draft() {
         )
     };
     let scenario = r#"{"name": "Greeting", "when": "greeted", "then": "hello"}"#;
-    let cases: Vec<(String, &str, Option<Evidence>)> = vec![
-        ("Not a spec at all.".to_string(), "schema and answer type disagree", None),
+    let restated = r#"{"name": "Greeting", "when": "get /greeting returns the static string 'hello'", "then": "hello"}"#;
+    let cases: Vec<(String, &str)> = vec![
+        ("Not a spec at all.".to_string(), "schema and answer type disagree"),
         (
             r#"{"preamble": [], "requirements": []}"#.to_string(),
             "requirement `greeting.behaviour` is not drafted",
-            None,
         ),
-        (one("", "greeting.renamed", scenario), "`greeting.renamed` is not a requirement", None),
+        (one("", "greeting.renamed", scenario), "`greeting.renamed` is not a requirement"),
         (
             format!(
                 r#"{{"preamble": [], "requirements": [{{"subject": "greeting.behaviour", "scenarios": [{scenario}]}}, {{"subject": "greeting.behaviour", "scenarios": [{scenario}]}}]}}"#
             ),
             "drafted more than once",
-            None,
         ),
-        (one("", "greeting.behaviour", ""), "has no scenario", None),
+        (one("", "greeting.behaviour", ""), "has no scenario"),
         (
             one("\"### Requirement: smuggled\"", "greeting.behaviour", scenario),
             "opens with the reserved marker `#`",
-            None,
         ),
         (
             one(r#""Hello.\nSources: [other]""#, "greeting.behaviour", scenario),
             "opens with the reserved marker `Sources:`",
-            None,
         ),
-        (
-            one(
-                "",
-                "greeting.behaviour",
-                r#"{"name": "Greeting", "when": "get /greeting returns the static string 'hello'", "then": "hello"}"#,
-            ),
-            "scenario `when` restates the requirement",
-            None,
-        ),
-        (
-            r#"{"preamble": [], "requirements": [
-                {"subject": "greeting.behaviour", "scenarios": [{"name": "Greeting", "when": "the greeting is requested", "then": "the system behaves correctly"}]},
-                {"subject": "greeting.formal", "scenarios": [{"name": "Formal", "when": "the formal greeting is requested", "then": "the system behaves correctly"}]}
-            ]}"#
-            .to_string(),
-            "repeats across 2 requirements",
-            Some(evidence(vec![
-                requirement(
-                    "greeting.behaviour",
-                    "GET /greeting returns the static string 'hello'.",
-                ),
-                requirement("greeting.formal", "GET /greeting/formal returns 'good day'."),
-            ])),
-        ),
+        (one("", "greeting.behaviour", restated), "scenario `when` restates the requirement"),
     ];
-    for (answer, fragment, evidence) in cases {
-        let mut provider = Provider::answering([answer.as_str(), answer.as_str(), answer.as_str()])
+    for (answer, fragment) in cases {
+        let provider = Provider::answering([answer.as_str(), answer.as_str(), answer.as_str()])
             .declaring(["docs"]);
-        if let Some(evidence) = evidence {
-            provider.source.evidence.insert("docs".to_string(), Ok(evidence));
-        }
         let envelope = fail(&provider, &["emery", "specify", "docs"], 1, "bad_request").await;
         assert_message(&envelope, fragment);
         provider.model.assert_exhausted();
     }
 }
 
-// An uncovered requirement commits an `[unknown]` outcome rather than an
-// invented one; a covered requirement refuses it.
+// One `then` across requirements is a refrain, not what each scenario observes.
 #[tokio::test]
-async fn unknown_scenario() {
+async fn shared_then() {
+    let draft = r#"{"preamble": [], "requirements": [
+        {"subject": "greeting.behaviour", "scenarios": [{"name": "Greeting", "when": "the greeting is requested", "then": "the system behaves correctly"}]},
+        {"subject": "greeting.formal", "scenarios": [{"name": "Formal", "when": "the formal greeting is requested", "then": "the system behaves correctly"}]}
+    ]}"#;
+    let mut provider = Provider::answering([draft, draft, draft]).declaring(["docs"]);
+    provider.source.evidence.insert(
+        "docs".to_string(),
+        Ok(evidence(vec![
+            requirement("greeting.behaviour", "GET /greeting returns the static string 'hello'."),
+            requirement("greeting.formal", "GET /greeting/formal returns 'good day'."),
+        ])),
+    );
+
+    let envelope = fail(&provider, &["emery", "specify", "docs"], 1, "bad_request").await;
+    assert_message(&envelope, "repeats across 2 requirements");
+    provider.model.assert_exhausted();
+}
+
+// `SPEC_ANSWER` with its one outcome left `[unknown]`.
+fn unknown_draft() -> String {
     let unknown =
         SPEC_ANSWER.replace(r#""then": "the response is `hello`""#, r#""then": "[unknown]""#);
     assert_ne!(unknown, SPEC_ANSWER, "the fixture carries the patched line");
+    unknown
+}
+
+// No criterion covers the requirement, so `[unknown]` commits in place of an
+// invented outcome.
+#[tokio::test]
+async fn unknown_uncovered() {
+    let unknown = unknown_draft();
     let provider = Provider::answering([unknown.as_str(), DESIGN_ANSWER]).declaring(["docs"]);
     cli_ok(&provider, &["emery", "specify", "docs"]).await;
+
     let id = current(&provider.storage);
     let spec: Value = serde_json::from_slice(&document(&provider.storage, &id, "spec.json"))
         .expect("the committed spec is JSON");
@@ -880,7 +882,13 @@ async fn unknown_scenario() {
     let shown = shown(&provider, "spec").await;
     assert!(shown.contains("- **THEN** [unknown]"), "{shown}");
     provider.model.assert_exhausted();
+}
 
+// A criterion covers the requirement, so its outcome is evidenced and
+// `[unknown]` is refused.
+#[tokio::test]
+async fn unknown_covered() {
+    let unknown = unknown_draft();
     let mut provider = Provider::answering([unknown.as_str(), unknown.as_str(), unknown.as_str()])
         .declaring(["docs"]);
     provider.source.evidence.insert(
@@ -890,6 +898,7 @@ async fn unknown_scenario() {
             "GET /greeting returns the static string 'hello'.",
         )])),
     );
+
     let envelope = fail(&provider, &["emery", "specify", "docs"], 1, "bad_request").await;
     assert_message(&envelope, "is `[unknown]` but the requirement is covered");
     provider.model.assert_exhausted();
@@ -1064,7 +1073,7 @@ async fn dishonest_design() {
 // stripped, so two runs that re-anchor the same declaration commit
 // byte-identical designs.
 #[tokio::test]
-async fn type_keyed_stably() {
+async fn type_reanchored() {
     let signature = "interface Greeting { text: string }";
     let evidence = |anchor: &str| {
         let mut typed = claim(ClaimKind::Type, "unused", ("signature", signature));

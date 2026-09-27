@@ -16,8 +16,8 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 
 use crate::revision::{Cited, Loser, ReqId, Requirement, Scenario, Status};
-use crate::specify::Extract;
 use crate::specify::brief::{Brief, Review};
+use crate::specify::{Extract, shape};
 
 /// A synthesis brief for grouping requirement claims.
 ///
@@ -62,11 +62,10 @@ impl<'a> GroupingBrief<'a> {
 
     /// Derives every requirement basis.
     ///
-    /// A run over two or more sources asks the model to group the claims,
-    /// as does a run over one whose requirement ids span two or more stems:
-    /// one source's seams may describe one behaviour under different nouns.
-    /// A run over one with a single stem takes the baseline alone and
-    /// spends no call.
+    /// A run over two or more sources asks the model to group the claims. So
+    /// does a run over one source whose requirement ids span two or more
+    /// stems, since its seams may describe one behaviour under different
+    /// nouns. Otherwise the baseline stands alone and no call is spent.
     ///
     /// # Errors
     ///
@@ -83,15 +82,10 @@ impl<'a> GroupingBrief<'a> {
         }
     }
 
-    // Distinct first segments among the contributors' ids: the seams'
-    // domain nouns, which collide when one source describes one behaviour
-    // under different names.
+    // The distinct stems among the contributors' ids: the nouns the seams led
+    // with, which differ when one source describes one behaviour twice.
     fn stems(&self) -> usize {
-        self.contributors
-            .iter()
-            .map(|claim| claim.id.split('.').next().unwrap_or_default())
-            .collect::<BTreeSet<_>>()
-            .len()
+        self.contributors.iter().map(|claim| shape::stem(&claim.id)).collect::<BTreeSet<_>>().len()
     }
 
     // Byte-equal ids are one group and whitespace-equal statements one class;

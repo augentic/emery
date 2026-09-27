@@ -111,7 +111,7 @@ cargo binstall --git https://github.com/augentic/emery emery@<version>
 cargo install --git https://github.com/augentic/emery --locked
 ```
 
-Bump the Homebrew formula `version` and `sha256` values in `augentic/homebrew-tap` when publishing a new host release. Subsequent updates use the same installation channel. `specify` additionally needs `cursor-sdk-bridge` on `PATH` (or `CURSOR_SDK_BRIDGE_BIN`) and `CURSOR_API_KEY` at run time — the `omnia-cursor` model backend spawns the bridge; verbs that never complete, such as `show`, run without either. The engine guest ships inside the binary, so replacing the binary replaces the engine with it. Install the bridge from the [sdk-bridge releases](https://github.com/cursor/sdk-bridge/releases).
+Bump the Homebrew formula `version` and `sha256` values in `augentic/homebrew-tap` when publishing a new host release. Subsequent updates use the same installation channel. `specify` additionally needs `cursor-sdk-bridge` on `PATH` (or `CURSOR_SDK_BRIDGE_BIN`) and `CURSOR_API_KEY` at run time — the `omnia-cursor` model backend spawns the bridge; verbs that put nothing to the model, such as `show`, run without either. The engine guest ships inside the binary, so replacing the binary replaces the engine with it. Install the bridge from the [sdk-bridge releases](https://github.com/cursor/sdk-bridge/releases).
 
 ## Adding a new target triple
 

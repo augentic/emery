@@ -19,6 +19,9 @@ use crate::specify::Extract;
 use crate::specify::basis::Basis;
 use crate::specify::brief::{Brief, ClaimsSection, Review};
 
+// The outcome a scenario states where no criterion evidences one.
+const UNKNOWN: &str = "[unknown]";
+
 /// A synthesis brief for the drafted portions of `spec.md`.
 ///
 /// The brief combines extracted claims with their reconciled requirement
@@ -62,10 +65,11 @@ impl Brief for SpecBrief<'_> {
     fn verify(&self, answer: &SpecAnswer, review: &mut Review) {
         review.paragraphs(&answer.preamble, "preamble");
 
+        // each draft against its requirement
         let by_subject: BTreeMap<&str, &Basis> =
             self.bases.iter().map(|basis| (basis.subject.as_str(), basis)).collect();
         let mut seen = BTreeSet::new();
-        let mut thens: BTreeMap<String, (&str, BTreeSet<&str>)> = BTreeMap::new();
+        let mut thens: BTreeMap<String, BTreeSet<&str>> = BTreeMap::new();
         for draft in &answer.requirements {
             let subject = draft.subject.as_str();
             if !seen.insert(subject) {
@@ -88,28 +92,41 @@ impl Brief for SpecBrief<'_> {
                     review.line(text, format_args!("{label} scenario `{field}`"));
                 }
 
-                for finding in boilerplate(basis, scenario) {
-                    review.note(format_args!("{label} scenario {finding}"));
+                let when = normalised(&scenario.when);
+                let restated = basis
+                    .classes
+                    .iter()
+                    .flatten()
+                    .any(|member| normalised(&member.statement) == when);
+                if restated {
+                    review.note(format_args!(
+                        "{label} scenario `when` restates the requirement; state the trigger"
+                    ));
                 }
 
-                let then = normal(&scenario.then);
-                if !then.is_empty() && then != "[unknown]" {
-                    thens
-                        .entry(then)
-                        .or_insert_with(|| (scenario.then.as_str(), BTreeSet::new()))
-                        .1
-                        .insert(subject);
+                let then = normalised(&scenario.then);
+                if then == UNKNOWN && basis.covered {
+                    review.note(format_args!(
+                        "{label} scenario `then` is `{UNKNOWN}` but the requirement is covered; \
+                         state the evidenced outcome"
+                    ));
+                }
+                if !then.is_empty() && then != UNKNOWN {
+                    thens.entry(then).or_default().insert(subject);
                 }
             }
         }
 
-        for subject in by_subject.keys().filter(|subject| !seen.contains(**subject)) {
-            review.note(format_args!("requirement `{subject}` is not drafted"));
+        // requirements no draft covers
+        for basis in self.bases.iter().filter(|basis| !seen.contains(basis.subject.as_str())) {
+            review.note(format_args!("requirement `{}` is not drafted", basis.subject));
         }
 
-        for (text, subjects) in thens.values().filter(|(_, subjects)| subjects.len() > 1) {
+        // one outcome across requirements
+        for (then, subjects) in thens.iter().filter(|(_, subjects)| subjects.len() > 1) {
             review.note(format_args!(
-                "the `then` `{text}` repeats across {} requirements; state what each scenario observes",
+                "the `then` `{then}` repeats across {} requirements; state what each scenario \
+                 observes",
                 subjects.len()
             ));
         }
@@ -134,32 +151,14 @@ impl Brief for SpecBrief<'_> {
     }
 }
 
-// A `when` that restates the requirement's statement is a finding, not a
-// trigger; `[unknown]` is an outcome only where the evidence has none.
-fn boilerplate(basis: &Basis, scenario: &Scenario) -> impl Iterator<Item = &'static str> {
-    let when = normal(&scenario.when);
-    let restated = normal(&basis.subject) == when
-        || basis.classes.iter().flatten().any(|member| normal(&member.statement) == when);
-    let unknown = scenario.then.trim() == "[unknown]" && basis.covered;
-    [
-        restated.then_some("`when` restates the requirement; state the trigger"),
-        unknown.then_some(
-            "`then` is `[unknown]` but the requirement is covered; state the evidenced outcome",
-        ),
-    ]
-    .into_iter()
-    .flatten()
-}
-
-// Lowercased, whitespace-collapsed, trailing punctuation trimmed: the shape
-// boilerplate is compared in.
-fn normal(text: &str) -> String {
+// Whitespace collapsed, trailing punctuation dropped, lowercased: the shape
+// two lines are compared in.
+fn normalised(text: &str) -> String {
     text.split_whitespace()
         .collect::<Vec<_>>()
         .join(" ")
-        .to_lowercase()
         .trim_end_matches(['.', '!', '?', ';', ':', ','])
-        .to_string()
+        .to_lowercase()
 }
 
 impl Display for SpecBrief<'_> {

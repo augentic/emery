@@ -232,11 +232,10 @@ pub enum Block {
     Type(String),
 }
 
-// A `type` claim is keyed by its declared name — its id, its `name`, or
-// its path with any line anchor stripped, so a re-anchored claim keeps its
-// key across runs; one without a string `signature` has nothing to place
-// and is not planned. A key taken by an earlier claim gains the later
-// claim's path in parentheses, so no claim plans over another.
+// A `type` claim is keyed by its declared name; one without a string
+// `signature` has nothing to place and is not planned. A name an earlier
+// claim took gains the later claim's anchored path in parentheses, so two
+// declarations of one name are placed apart.
 struct Plan<'a> {
     kinds: BTreeSet<ClaimKind>,
     bound: BTreeSet<&'a str>,
@@ -248,15 +247,12 @@ impl<'a> Plan<'a> {
         let claims = || extracts.iter().flat_map(|extract| &extract.evidence.claims);
         let mut signatures: BTreeMap<String, &'a str> = BTreeMap::new();
         for claim in claims().filter(|claim| claim.kind == ClaimKind::Type) {
-            let Some(Value::String(signature)) = claim.extras.get("signature") else {
-                continue;
-            };
-            let Some(stem) = type_key(claim) else { continue };
-            let key = if signatures.contains_key(&stem) {
-                let path = claim.path.as_deref().unwrap_or("unanchored");
-                format!("{stem} ({path})")
+            let Some(Value::String(signature)) = claim.extras.get("signature") else { continue };
+            let Some(name) = declared(claim) else { continue };
+            let key = if signatures.contains_key(name) {
+                format!("{name} ({})", claim.path.as_deref().unwrap_or("unanchored"))
             } else {
-                stem
+                name.to_owned()
             };
             signatures.insert(key, signature.trim_end());
         }
@@ -291,14 +287,20 @@ impl<'a> Plan<'a> {
     }
 }
 
-fn type_key(claim: &Claim) -> Option<String> {
-    if let Some(id) = claim.id.as_deref() {
-        return Some(id.to_string());
-    }
-    if let Some(Value::String(name)) = claim.extras.get("name") {
-        return Some(name.clone());
-    }
-    claim.path.as_deref().map(|path| path.split('#').next().unwrap_or(path).to_string())
+// The declared name of a `type` claim: its id, its `name` extra, or its path
+// with any `#L…` anchor stripped, so a re-anchored claim keeps its key.
+fn declared(claim: &Claim) -> Option<&str> {
+    claim
+        .id
+        .as_deref()
+        .or_else(|| match claim.extras.get("name") {
+            Some(Value::String(name)) => Some(name.as_str()),
+            _ => None,
+        })
+        .or_else(|| {
+            let path = claim.path.as_deref()?;
+            Some(path.split_once('#').map_or(path, |(file, _)| file))
+        })
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, strum::Display)]
