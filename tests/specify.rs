@@ -17,7 +17,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use emery_adapter::source::{ClaimKind, Evidence, SourceContent, SourceKind};
-use emery_engine::{CONTAINER, CURRENT, ENGINE};
+use emery_engine::{CONTAINER, ENGINE, REVISION_KEY};
 use omnia_sdk::model::Error as ModelError;
 use omnia_sdk::plugins::{Error as LoadError, Location};
 use omnia_sdk::{BlobStore, StateStore, bad_gateway, bad_request};
@@ -1837,7 +1837,7 @@ async fn package_ref() {
 #[tokio::test]
 async fn corrupt_current() {
     let provider = Provider::idle();
-    provider.storage.insert_state(CURRENT, b"0123456789abcdef");
+    provider.storage.insert_state(REVISION_KEY, b"0123456789abcdef");
     fail(&provider, &["emery", "show", "spec"], 3, "server_error").await;
 }
 
@@ -1929,7 +1929,7 @@ async fn repair_tampered() {
 #[tokio::test]
 async fn repair_current() {
     let provider = Provider::answering([SPEC_ANSWER, DESIGN_ANSWER]).declaring(["docs"]);
-    provider.storage.insert_state(CURRENT, b"\xff\xfe");
+    provider.storage.insert_state(REVISION_KEY, b"\xff\xfe");
     fail(&provider, &["emery", "show", "spec"], 3, "server_error").await;
 
     cli_ok(&provider, &["emery", "specify", "docs"]).await;
@@ -1961,7 +1961,7 @@ async fn multi_project() {
     cli_ok(&beta, &["emery", "specify", &component]).await;
 
     // every write landed under its project prefix
-    assert!(shared.state(CURRENT).is_none(), "no unprefixed current id exists");
+    assert!(shared.state(REVISION_KEY).is_none(), "no unprefixed current id exists");
     assert!(shared.objects(CONTAINER).is_empty(), "no unprefixed revision exists");
 
     let id_alpha = project_current(&shared, "alpha");
@@ -2003,11 +2003,11 @@ fn registry(package: &str, endpoint: &str) -> Location {
 }
 
 fn current(storage: &Memory) -> String {
-    stored_id(storage, CURRENT)
+    stored_id(storage, REVISION_KEY)
 }
 
 fn project_current(shared: &Memory, project: &str) -> String {
-    stored_id(shared, &format!("{project}/{CURRENT}"))
+    stored_id(shared, &format!("{project}/{REVISION_KEY}"))
 }
 
 fn stored_id(storage: &Memory, key: &str) -> String {
@@ -2032,7 +2032,7 @@ fn seed(storage: &Memory, spec: &[u8], design: &[u8]) -> String {
     let id = revision(spec, design);
     storage.insert_object(CONTAINER, &format!("{id}/spec.json"), spec);
     storage.insert_object(CONTAINER, &format!("{id}/design.json"), design);
-    storage.insert_state(CURRENT, id.as_bytes());
+    storage.insert_state(REVISION_KEY, id.as_bytes());
     id
 }
 

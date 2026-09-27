@@ -108,12 +108,11 @@ pub async fn load<'a, P: Source + Plugins>(
             }
             Entry::Occupied(mut slot) => {
                 let (_, pin) = slot.get_mut();
-                match (pin.as_ref(), digest) {
-                    (Some(first), Some(again)) if first != again => {
+                if let Some(again) = digest {
+                    let first = pin.get_or_insert_with(|| again.clone());
+                    if first != again {
                         return Err(bad_request!("adapter `{adapter}` is pinned to two digests"));
                     }
-                    (None, Some(again)) => *pin = Some(again.clone()),
-                    _ => {}
                 }
             }
         }

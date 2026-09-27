@@ -243,11 +243,14 @@ impl FromStr for ReqId {
 
     // An id is well formed exactly when it renders back to itself.
     fn from_str(text: &str) -> Result<Self, String> {
-        text.strip_prefix(Self::PREFIX)
-            .and_then(|digits| digits.parse().ok())
-            .map(Self)
-            .filter(|id| id.0 > 0 && id.to_string() == text)
-            .ok_or_else(|| format!("malformed id `{text}`"))
+        let malformed = || format!("malformed id `{text}`");
+        let digits = text.strip_prefix(Self::PREFIX).ok_or_else(malformed)?;
+        let number: u32 = digits.parse().ok().ok_or_else(malformed)?;
+        let id = Self(number);
+        if number == 0 || id.to_string() != text {
+            return Err(malformed());
+        }
+        Ok(id)
     }
 }
 

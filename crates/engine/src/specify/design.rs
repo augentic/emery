@@ -183,15 +183,17 @@ impl Display for DesignBrief<'_> {
         f.write_str("\n## Sections\n\n")?;
         for &kind in SectionKind::VARIANTS {
             let presence = self.plan.presence(kind);
-            let kinds =
-                kind.informants().iter().map(|kind| format!("`{kind}`")).collect::<Vec<_>>();
-            let reason = match (presence, kinds.is_empty()) {
-                (Presence::Required, false) => {
-                    format!(": {} claims are present", kinds.join(" / "))
-                }
-                (Presence::Omitted, false) => format!(": no {} claim", kinds.join(" / ")),
-                (Presence::Permitted, _) => " where claims inform it".to_string(),
-                _ => String::new(),
+            let informants = kind
+                .informants()
+                .iter()
+                .map(|kind| format!("`{kind}`"))
+                .collect::<Vec<_>>()
+                .join(" / ");
+            let reason = match presence {
+                Presence::Required if informants.is_empty() => String::new(),
+                Presence::Required => format!(": {informants} claims are present"),
+                Presence::Permitted => " where claims inform it".to_string(),
+                Presence::Omitted => format!(": no {informants} claim"),
             };
             writeln!(f, "- `{key}` (`## {kind}`) — {presence}{reason}", key = kind.as_ref())?;
         }

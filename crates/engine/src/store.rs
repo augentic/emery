@@ -11,7 +11,7 @@ use omnia_sdk::{BlobStore, Error, StateStore, server_error};
 use crate::revision::{Design, Diff, Document as _, Revision, Spec};
 
 /// The state-store key containing the current revision identifier.
-pub const CURRENT: &str = "current-revision";
+pub const REVISION_KEY: &str = "current-revision";
 
 /// The blob container containing revision documents under `<id>/`.
 pub const CONTAINER: &str = "revisions";
@@ -57,7 +57,7 @@ async fn swap<S: StateStore + BlobStore>(
             .context("writing revision document")?;
     }
 
-    StateStore::cas(store, CURRENT, observed.token.as_deref(), id.as_bytes())
+    StateStore::cas(store, REVISION_KEY, observed.token.as_deref(), id.as_bytes())
         .await
         .context("swapping current revision")?;
     tracing::debug!(%id, outgoing = ?observed.outgoing_id(), "revision committed");
@@ -87,7 +87,8 @@ fn key(id: &str, name: &str) -> String {
 pub async fn current<S: StateStore + BlobStore>(
     store: &S,
 ) -> Result<Option<(String, Revision)>, Error> {
-    let Some(raw) = StateStore::get(store, CURRENT).await.context("getting current revision id")?
+    let Some(raw) =
+        StateStore::get(store, REVISION_KEY).await.context("getting current revision id")?
     else {
         return Ok(None);
     };
@@ -99,14 +100,44 @@ pub async fn current<S: StateStore + BlobStore>(
 }
 
 // Bad state suppresses only the advisory diff; the CAS still refuses a stale
-// token.
+// token. Each suppressed failure is logged, since the CAS that follows can
+// only report it as a conflict.
 async fn observe<S: StateStore + BlobStore>(store: &S) -> Observation {
-    let token = StateStore::get(store, CURRENT).await.ok().flatten();
-    let outgoing = match token.as_deref().and_then(id_of) {
-        Some(id) => load(store, id).await.ok(),
-        None => None,
+    let nothing = Observation {
+        token: None,
+        outgoing: None,
     };
-    Observation { token, outgoing }
+
+    // the current id, or nothing when there is none or it cannot be read
+    let token = match StateStore::get(store, REVISION_KEY).await {
+        Ok(Some(token)) => token,
+        Ok(None) => return nothing,
+        Err(error) => {
+            tracing::warn!(%error, "revision id is unreadable");
+            return nothing;
+        }
+    };
+
+    // the revision it names, or nothing when it cannot be read
+    let Ok(id) = str::from_utf8(&token) else {
+        return Observation {
+            token: Some(token),
+            outgoing: None,
+        };
+    };
+
+    let revision = match load(store, id).await {
+        Ok(revision) => Some(revision),
+        Err(error) => {
+            tracing::warn!(%id, %error, "revision is unreadable");
+            None
+        }
+    };
+
+    Observation {
+        token: Some(token),
+        outgoing: revision,
+    }
 }
 
 async fn load<S: BlobStore>(store: &S, id: &str) -> Result<Revision, Error> {
@@ -122,10 +153,6 @@ async fn read<S: BlobStore>(store: &S, id: &str, name: &str) -> Result<Vec<u8>, 
         .ok_or_else(|| server_error!("revision `{id}` does not contain `{name}`"))
 }
 
-fn id_of(token: &[u8]) -> Option<&str> {
-    str::from_utf8(token).ok()
-}
-
 #[derive(Debug)]
 struct Observation {
     // Absent when storage could not be read too, so the CAS fails closed
@@ -136,7 +163,7 @@ struct Observation {
 
 impl Observation {
     fn outgoing_id(&self) -> Option<&str> {
-        self.token.as_deref().and_then(id_of)
+        self.token.as_deref().and_then(|token| str::from_utf8(token).ok())
     }
 }
 
