@@ -137,7 +137,7 @@ pub(crate) fn offered_file(
         }
         dir = found.path();
     }
-    
+
     Ok(())
 }
 
