@@ -49,8 +49,9 @@ use crate::{preopen_path, store};
 ///   guest, two adapters naming one guest or one naming the engine's own
 ///   ([`ENGINE`](crate::ENGINE)), an adapter that resolves to other
 ///   bytes than its digest pin (code `refused`), an incompatible adapter (code
-///   `unsupported-version`), a source that refuses its input, or a synthesis
-///   answer that cannot be accepted.
+///   `unsupported-version`), a source that refuses its input, sources that
+///   between them contribute no requirement claim, or a synthesis answer that
+///   cannot be accepted.
 /// - Returns [`Error::NotFound`] when a local adapter does not exist.
 /// - Returns [`Error::ServerError`] when evidence has [`Evidence::findings`],
 ///   or serialisation or storage fails.

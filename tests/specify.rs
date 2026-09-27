@@ -451,6 +451,55 @@ async fn grouping_refused() {
     provider.model.assert_exhausted();
 }
 
+// Two behaviour sources whose claims are all `type` pass the claim gate but
+// leave nothing to reconcile.
+#[tokio::test]
+async fn no_claims() {
+    let mut provider = Provider::idle().declaring(["api", "code"]);
+    for name in ["api", "code"] {
+        provider.source.kinds.insert(name.to_string(), SourceKind::Behaviour);
+        provider.source.evidence.insert(
+            name.to_string(),
+            Ok(evidence(vec![claim(
+                ClaimKind::Type,
+                "greeting.type",
+                ("signature", "interface Greeting { text: string }"),
+            )])),
+        );
+    }
+
+    let envelope = fail(&provider, &["emery", "specify", "api", "code"], 1, "bad_request").await;
+    assert_message(&envelope, "no source contributed a requirement claim");
+    provider.model.assert_exhausted();
+}
+
+// A second source with no requirement claim leaves one contributing source,
+// so no grouping turn is spent.
+#[tokio::test]
+async fn one_source() {
+    let mut provider =
+        Provider::answering([SPEC_ANSWER, DESIGN_ANSWER]).declaring(["docs", "code"]);
+    provider.source.kinds.insert("code".to_string(), SourceKind::Behaviour);
+    provider.source.evidence.insert(
+        "code".to_string(),
+        Ok(evidence(vec![claim(
+            ClaimKind::Decision,
+            "greeting.decision",
+            ("body", "The greeting is a static string."),
+        )])),
+    );
+
+    cli_ok(&provider, &["emery", "specify", "docs", "code"]).await;
+
+    let SeenFormat::Schema { name, .. } = &provider.model.seen()[0].format else {
+        panic!("the first turn is steered by schema");
+    };
+    assert_eq!(name, "spec-draft", "the baseline stands with no grouping turn");
+    let spec = shown(&provider, "spec").await;
+    assert!(spec.contains("### Requirement: greeting.behaviour"), "{spec}");
+    provider.model.assert_exhausted();
+}
+
 // One source whose seams describe one behaviour under two nouns is grouped
 // by the model, and the merged requirement cites both claims.
 #[tokio::test]

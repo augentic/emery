@@ -1,10 +1,12 @@
 //! Reconciles requirement claims into deterministic requirement bases.
 //!
 //! Claims sharing an identifier are grouped before any model request. For
-//! multiple sources — or one source whose requirement ids span several
-//! stems — the model may group remaining claims by meaning and agreement.
-//! The engine validates that partition, applies source authority, and
-//! derives status, coverage, winners, and losing statements.
+//! requirement claims from multiple sources — or from one source whose
+//! requirement ids span several stems — the model may group remaining claims
+//! by meaning and agreement. The engine validates that partition, applies
+//! source authority, and derives status, coverage, winners, and losing
+//! statements. A run in which no source contributes a requirement claim is
+//! refused before any request.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::{self, Display, Formatter};
@@ -55,28 +57,30 @@ impl<'a> GroupingBrief<'a> {
             }
         }
 
-        // unique sources
-        let source_count =
-            extracts.iter().map(|e| e.source.as_str()).collect::<BTreeSet<_>>().len();
+        // a source with no requirement claim has nothing to group
+        let sources =
+            contributors.iter().map(|claim| claim.source.as_str()).collect::<BTreeSet<_>>().len();
 
         Self {
             contributors,
             criteria,
-            sources: source_count,
+            sources,
         }
     }
 
     /// Derives every requirement basis.
     ///
-    /// A run over two or more sources asks the model to group the claims. So
-    /// does a run over one source whose requirement ids span two or more
-    /// stems, since its seams may describe one behaviour under different
-    /// nouns. Otherwise the baseline stands alone and no call is spent.
+    /// A run whose requirement claims come from two or more sources asks the
+    /// model to group them. So does a run over one contributing source whose
+    /// requirement ids span two or more stems, since its seams may describe
+    /// one behaviour under different nouns. Otherwise the baseline stands alone
+    /// and no call is spent.
     ///
     /// # Errors
     ///
-    /// - Returns [`Error::BadRequest`] when the model cannot produce a valid
-    ///   grouping within the available rounds.
+    /// - Returns [`Error::BadRequest`] when no source contributed a requirement
+    ///   claim, or when the model cannot produce a valid grouping within the
+    ///   available rounds.
     /// - Returns [`Error::ServerError`] when required prose is missing or a
     ///   grouping cannot be reconciled with the claims.
     /// - Returns [`Error::BadGateway`] when the model operation fails.
