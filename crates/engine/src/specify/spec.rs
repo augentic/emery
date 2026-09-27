@@ -70,6 +70,7 @@ impl Brief for SpecBrief<'_> {
             self.bases.iter().map(|basis| (basis.subject.as_str(), basis)).collect();
         let mut seen = BTreeSet::new();
         let mut thens: BTreeMap<String, BTreeSet<&str>> = BTreeMap::new();
+
         for draft in &answer.requirements {
             let subject = draft.subject.as_str();
             if !seen.insert(subject) {
@@ -86,6 +87,13 @@ impl Brief for SpecBrief<'_> {
                 review.note(format_args!("{label} has no scenario"));
             }
 
+            let statements: BTreeSet<String> = basis
+                .classes
+                .iter()
+                .flatten()
+                .map(|member| normalised(&member.statement))
+                .collect();
+
             for scenario in &draft.scenarios {
                 review.line(&scenario.name, format_args!("{label} scenario `name`"));
                 for (field, text) in scenario.lines() {
@@ -93,24 +101,27 @@ impl Brief for SpecBrief<'_> {
                 }
 
                 let when = normalised(&scenario.when);
-                let restated = basis
-                    .classes
-                    .iter()
-                    .flatten()
-                    .any(|member| normalised(&member.statement) == when);
-                if restated {
+                if statements.contains(&when) {
                     review.note(format_args!(
                         "{label} scenario `when` restates the requirement; state the trigger"
                     ));
                 }
 
                 let then = normalised(&scenario.then);
+                if statements.contains(&then) {
+                    review.note(format_args!(
+                        "{label} scenario `then` restates the requirement; state the outcome the \
+                         scenario observes"
+                    ));
+                }
+
                 if then == UNKNOWN && basis.covered {
                     review.note(format_args!(
                         "{label} scenario `then` is `{UNKNOWN}` but the requirement is covered; \
                          state the evidenced outcome"
                     ));
                 }
+
                 if !then.is_empty() && then != UNKNOWN {
                     thens.entry(then).or_default().insert(subject);
                 }

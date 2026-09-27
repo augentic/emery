@@ -16,10 +16,7 @@ use schemars::JsonSchema;
 use serde::Deserialize;
 
 use crate::workspace::{Entry, Unoffered};
-use crate::{Context, beneath, prompt, reference, workspace};
-
-// The adapter's survey prompt among its documents: the system of the turn.
-const PROMPT: &str = "survey.md";
+use crate::{Context, SURVEY, beneath, prompt, reference, workspace};
 
 /// The most modules one survey turn lists before it collapses them to directory counts.
 pub const MODULE_CAP: usize = 200;
@@ -59,33 +56,27 @@ pub async fn surfaces<P: Model>(
             "`{source}`: a survey by model needs a workspace input, not an inline value"
         ));
     };
-    let question = Question::<Inventory>::new("survey")
-        .system(prompt(docs, PROMPT)?)
+    let question = Question::<Inventory>::new(&format!("survey-{source}"))
+        .system(prompt(docs, SURVEY)?)
         .tools(reference::tools())
         .workspace(root);
     let modules = workspace::list(root, &mut keep)?;
     let brief = Brief {
         adapter_id: ctx.adapter_id,
         source,
-        root,
         modules: &modules,
     };
 
     tracing::info!(%source, "surveying");
     let inventory = question
-        .ask(
-            ctx.model,
-            brief.to_string(),
-            Some(reference::serve(docs, source, None, &[PROMPT])),
-            |answer| {
-                let findings = answer.findings(root, &mut keep);
-                if findings.is_empty() {
-                    return Ok(());
-                }
-                tracing::debug!(%source, ?findings, "candidate rejected");
-                Err(findings)
-            },
-        )
+        .ask(ctx.model, brief.to_string(), Some(reference::serve(docs, source, None)), |answer| {
+            let findings = answer.findings(root, &mut keep);
+            if findings.is_empty() {
+                return Ok(());
+            }
+            tracing::debug!(%source, ?findings, "candidate rejected");
+            Err(findings)
+        })
         .await?;
 
     let surfaces: Vec<_> = inventory
@@ -157,11 +148,11 @@ fn module(
     }
 }
 
-// The user turn of the survey.
+// The user turn of the survey. The lend carries the root, so the brief never
+// names it.
 struct Brief<'a> {
     adapter_id: &'a str,
     source: &'a str,
-    root: &'a str,
     modules: &'a [String],
 }
 
@@ -170,12 +161,12 @@ impl Display for Brief<'_> {
         write!(
             f,
             "Survey the source `{source}` bound to adapter `{id}` before it is mined.\n\n\
-             `$SOURCE_DIR` is the read-only view at `{root}` — the source tree. List the surfaces \
-             it exposes as the prompt describes them, each named for what a caller outside the \
-             source reaches, with the module the caller enters it at. Name an entry as a \
-             `/`-separated path relative to `$SOURCE_DIR`, to a module of the kind the prompt \
-             says this adapter mines; a module may be the entry of several surfaces, and a \
-             module no surface enters is not named.\n\n\
+             `$SOURCE_DIR` is the bound source tree, lent read-only: the root of every file you \
+             can read. List the surfaces it exposes as the prompt describes them, each named for \
+             what a caller outside the source reaches, with the module the caller enters it at. \
+             Name an entry as a `/`-separated path relative to `$SOURCE_DIR`, to a module of the \
+             kind the prompt says this adapter mines; a module may be the entry of several \
+             surfaces, and a module no surface enters is not named.\n\n\
              {modules}\
              Nothing outside `$SOURCE_DIR` is reachable. The caller mines each surface from its \
              entry, following what it reaches through the whole tree — you follow nothing and \
@@ -187,7 +178,6 @@ impl Display for Brief<'_> {
              surfaces; extract nothing yourself.",
             id = self.adapter_id,
             source = self.source,
-            root = self.root,
             modules = Modules(self.modules),
         )
     }

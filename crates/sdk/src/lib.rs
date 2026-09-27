@@ -108,8 +108,11 @@ pub use self::extract::{CONCURRENT, Seam, extract};
 /// in their own table; pass [`RUNTIME`] to [`check`] as imports.
 pub static RUNTIME: &[Doc] = prose!["../prose/claims.md", "../prose/reconciliation.md"];
 
-// The claim rules within `RUNTIME`, which every mining turn's system prompt
-// carries after the adapter's own.
+// The documents a turn's system prompt is built from: the adapter's two
+// prompts, and the claim rules within `RUNTIME` that every mining turn
+// carries after `extract.md`.
+const EXTRACT: &str = "extract.md";
+const SURVEY: &str = "survey.md";
 const CLAIMS: &str = "claims.md";
 
 /// Exports an adapter's metadata and extraction functions as a component.

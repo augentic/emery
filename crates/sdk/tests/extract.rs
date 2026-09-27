@@ -166,12 +166,9 @@ async fn whole() {
     assert_eq!(seen.len(), 1, "one seam, one turn");
     assert_eq!(seen[0].workspace.as_deref(), Some("./docs"), "the root is lent");
     let user = &seen[0].messages[0];
-    assert!(
-        user.contains(
-            "`$SOURCE_DIR` is the read-only view at `./docs` — the source tree the prompt walks."
-        ),
-        "{user}"
-    );
+    assert!(user.contains("`$SOURCE_DIR` is the bound source tree, lent read-only:"), "{user}");
+    assert!(user.contains("Walk it as the prompt describes."), "{user}");
+    assert!(!user.contains("./docs"), "the lend carries the root, not the brief: {user}");
     model.assert_exhausted();
 }
 
@@ -202,7 +199,7 @@ async fn three_seams() {
         assert_eq!(seen.len(), 1, "one turn per seam");
         assert_eq!(seen[0].workspace.as_deref(), Some("./docs"), "every seam is lent the root");
         let user = &seen[0].messages[0];
-        assert!(user.contains("read-only view at `./docs` — the source tree."), "{user}");
+        assert!(user.contains("`$SOURCE_DIR` is the bound source tree, lent read-only:"), "{user}");
         assert!(user.contains(&format!("nothing else:\n\n- `{file}`\n\n")), "{user}");
     }
     model.assert_exhausted();
