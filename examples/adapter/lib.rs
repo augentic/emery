@@ -25,30 +25,24 @@ mod guest {
     }
 }
 
-/// The prompt and reference document embedded in the adapter.
-pub static PROSE: &[Doc] = emery_sdk::prose!["prose/extract.md", "prose/references/greeting.md"];
+// The crate is a `cdylib` whose one caller is the `wasm32` guest above.
+#[cfg_attr(
+    not(target_arch = "wasm32"),
+    expect(dead_code, reason = "read by the guest module alone")
+)]
+static PROSE: &[Doc] = emery_sdk::prose!["prose/extract.md", "prose/references/greeting.md"];
 
-/// Returns one mining seam for the greeting source.
-///
-/// Inline text is mined as a whole. A workspace seam instructs extraction to
-/// use `references/greeting.md` when the source tree contains no greeting.
-///
-/// # Errors
-///
-/// Returns [`Error::BadRequest`] when the bound brief is empty.
-pub fn survey(input: &SourceInput) -> Result<Vec<Seam>, Error> {
-    let seam = match &input.content {
-        SourceContent::Value(value) if value.trim().is_empty() => {
-            return Err(bad_request!("the bound greeting brief is empty"));
-        }
-        SourceContent::Value(_) => Seam::Whole,
-        SourceContent::Workspace(_) => Seam::Note(
-            "`$SOURCE_DIR` is the bound greeting tree, lent read-only: the root of every file \
-             you can read, and the root every `path` is relative to. Prefer the bound tree; fall \
-             back to `references/greeting.md` when the tree does not state a greeting. Nothing \
-             outside it is reachable; extract mines only this source."
-                .to_owned(),
-        ),
-    };
-    Ok(vec![seam])
+// The greeting source is one seam however it arrives; an empty brief is
+// refused before a turn is spent.
+#[cfg_attr(
+    not(target_arch = "wasm32"),
+    expect(dead_code, reason = "called by the guest module alone")
+)]
+fn survey(input: &SourceInput) -> Result<Vec<Seam>, Error> {
+    if let SourceContent::Value(value) = &input.content
+        && value.trim().is_empty()
+    {
+        return Err(bad_request!("the bound greeting brief is empty"));
+    }
+    Ok(vec![Seam::Whole])
 }

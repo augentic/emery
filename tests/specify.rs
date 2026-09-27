@@ -1579,7 +1579,7 @@ async fn package_unrouted() {
         fail(&provider, &["emery", "specify", "--config", &config], 1, "bad_request").await;
 
     assert_message(&envelope, "no registry routes `acme:ledger@2.1.0`");
-    assert_message(&envelope, "add `acme = \"<registry>\"` under `[registries]`");
+    assert_message(&envelope, "`registries` names no route for namespace `acme`");
     assert!(provider.plugins.loads().is_empty(), "an unrouted package is never fetched");
 }
 

@@ -104,8 +104,8 @@ pub struct SpecifyInput {
 pub struct SourceConfig {
     /// The kebab-case name the specification cites this source by.
     ///
-    /// The operator's `[[source]] name`, or the adapter's name when the
-    /// entry names none.
+    /// The caller's own name for the source, or the adapter's
+    /// ([`AdapterRef::name`]) when the caller gives none.
     pub name: String,
     /// The adapter that extracts the source.
     pub adapter: AdapterRef,

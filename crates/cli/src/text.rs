@@ -9,7 +9,7 @@ use emery_engine::specify::{Diff, SpecifyOutput};
 pub fn specify(output: &SpecifyOutput, w: &mut dyn fmt::Write) -> fmt::Result {
     writeln!(w, "committed revision {}", output.revision)?;
     if let Some(diff) = &output.diff {
-        if diff.from == output.revision {
+        if diff.is_empty() {
             writeln!(w, "  diff vs {}: none (byte-stable)", diff.from)?;
         } else {
             write!(w, "  diff vs {}: ", diff.from)?;

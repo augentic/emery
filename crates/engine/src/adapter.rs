@@ -3,8 +3,8 @@
 //! Every load goes through the deployment loader at the location the
 //! reference names, and the deployment's grant bounds it: a local component
 //! loads through the project root the runtime mounts read-only, a package
-//! from the registry the project's `[registries]` table routes its namespace
-//! to, and a bare name only where the deployment declares the guest.
+//! from the registry the run's [`Registries`] route its namespace to, and a
+//! bare name only where the deployment declares the guest.
 
 use std::collections::BTreeMap;
 use std::collections::btree_map::Entry;
@@ -28,10 +28,9 @@ pub const ENGINE: &str = "emery";
 
 /// The registry serving each package namespace.
 ///
-/// A project's `[registries]` table, `<namespace> = "<registry>"`, over the
-/// one route the engine knows: `emery` resolves to `augentic.io` unless a
-/// line re-routes it. A namespace nothing routes refuses the package before
-/// any load.
+/// A map from namespace to registry endpoint, over the one route the engine
+/// knows: `emery` resolves to `augentic.io` unless an entry re-routes it. A
+/// namespace nothing routes refuses the package before any load.
 ///
 /// # Examples
 ///
@@ -226,7 +225,7 @@ pub enum AdapterRef {
     File(PathBuf),
     /// A registry package, `<namespace>:<name>@<version>`.
     Package {
-        /// The namespace `[registries]` routes to a registry, `emery` for a
+        /// The namespace [`Registries`] routes to a registry, `emery` for a
         /// first-party adapter.
         namespace: String,
         /// The package name, the [`name`](Self::name) a run derives.
@@ -306,8 +305,8 @@ impl AdapterRef {
             Self::Package { namespace, .. } => {
                 let endpoint = registries.get(namespace).ok_or_else(|| {
                     bad_request!(
-                        "no registry routes `{self}`: add `{namespace} = \"<registry>\"` under \
-                         `[registries]` in emery.toml"
+                        "no registry routes `{self}`: `registries` names no route for namespace \
+                         `{namespace}`"
                     )
                 })?;
                 Location::Registry {

@@ -32,6 +32,12 @@ impl Diff {
             design: DesignDiff::between(&outgoing.design, &incoming.design),
         }
     }
+
+    /// Returns whether the two revisions differ in nothing.
+    #[must_use]
+    pub const fn is_empty(&self) -> bool {
+        self.spec.is_empty() && self.design.is_empty()
+    }
 }
 
 /// Changes to the specification portion of a revision.
@@ -49,6 +55,15 @@ pub struct SpecDiff {
 }
 
 impl SpecDiff {
+    /// Returns whether the specifications differ in nothing.
+    #[must_use]
+    pub const fn is_empty(&self) -> bool {
+        !self.preamble
+            && self.added.is_empty()
+            && self.removed.is_empty()
+            && self.changed.is_empty()
+    }
+
     // Matches requirements by id — the position each run numbers in source
     // order — so a requirement whose place moved reads as a change.
     fn between(outgoing: &Spec, incoming: &Spec) -> Self {
@@ -126,6 +141,15 @@ pub struct DesignDiff {
 }
 
 impl DesignDiff {
+    /// Returns whether the designs differ in nothing.
+    #[must_use]
+    pub const fn is_empty(&self) -> bool {
+        !self.preamble
+            && self.added.is_empty()
+            && self.removed.is_empty()
+            && self.changed.is_empty()
+    }
+
     fn between(outgoing: &Design, incoming: &Design) -> Self {
         let mut diff = Self {
             preamble: outgoing.preamble != incoming.preamble,
