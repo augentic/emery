@@ -54,15 +54,18 @@ async fn request_shape() {
     let seen = model.seen();
     assert_eq!(seen.len(), 1);
     let request = &seen[0];
-    assert_eq!(request.system.as_deref(), Some("SYSTEM"));
+    let claims = emery_sdk::body(emery_sdk::RUNTIME, "claims.md").expect("embedded");
+    let system = format!("SYSTEM\n\n---\n\n{claims}");
+    assert_eq!(request.system.as_deref(), Some(system.as_str()));
     assert_eq!(
         request.messages,
         [concat!(
             "Extract the claim set of the source `docs` bound to adapter `source:probe`.\n\n",
             "`$SOURCE_DIR` is the read-only view at `/lend/docs` — the source tree the prompt ",
             "walks. Nothing outside it is reachable; extract mines only this source.\n\n",
-            "The prompt's references are available through this call's `read_doc` tool ",
-            "(`list_docs` enumerates them); load referenced bodies on demand.\n\n",
+            "The claim rules (`claims.md`) are already in the system prompt; the prompt's ",
+            "further references are available through this call's `read_doc` tool (`list_docs` ",
+            "enumerates them); load referenced bodies on demand.\n\n",
             "Answer with one JSON object matching the gated claims schema. The caller persists ",
             "the document; do not write it yourself."
         )]
@@ -189,10 +192,8 @@ async fn doc_refs() {
     assert_eq!(exchanges.len(), 4, "three reference calls, then the check");
     assert_eq!(
         exchanges[0].outcome.as_deref(),
-        Ok(concat!(
-            r#"{"paths":["extract.md","references/greeting.md","#,
-            r#""claims.md","reconciliation.md"]}"#
-        ))
+        Ok(r#"{"paths":["references/greeting.md","reconciliation.md"]}"#),
+        "`list_docs` omits the active prompt and the claim rules the system carries"
     );
     assert_eq!(
         exchanges[1].outcome.as_deref(),

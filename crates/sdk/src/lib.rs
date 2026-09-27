@@ -205,6 +205,13 @@ fn prompt(docs: &[Doc], path: &str) -> Result<&'static str, Error> {
     body(docs, path).ok_or_else(|| server_error!("`{path}` is not embedded"))
 }
 
+// The claim rules every mining turn carries in its system prompt, so a seam
+// holds the id grammar and the gate without spending a `read_doc` call on
+// them. A miss is the SDK build's own defect.
+fn claims() -> Result<&'static str, Error> {
+    body(RUNTIME, "claims.md").ok_or_else(|| server_error!("`claims.md` is not embedded"))
+}
+
 fn beneath(path: &str) -> Result<String, &'static str> {
     if path.starts_with('/') || path.split('/').any(|segment| segment == "..") {
         return Err("escapes the source root");

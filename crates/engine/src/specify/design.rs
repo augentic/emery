@@ -8,7 +8,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::{self, Display, Formatter};
 
-use emery_adapter::source::ClaimKind;
+use emery_adapter::source::{Claim, ClaimKind};
 use omnia_sdk::{Error, server_error};
 use schemars::JsonSchema;
 use serde::Deserialize;
@@ -133,7 +133,7 @@ impl Brief for DesignBrief<'_> {
             }
         }
 
-        for key in references.keys().filter(|key| !self.plan.signatures.contains_key(*key)) {
+        for key in references.keys().filter(|key| !self.plan.signatures.contains_key(**key)) {
             review.note(format_args!("type `{key}` is not a type claim"));
         }
     }
@@ -232,27 +232,34 @@ pub enum Block {
     Type(String),
 }
 
-// A `type` claim is keyed by its id, or its path when it has none; one
-// without a string `signature` has nothing to place and is not planned.
+// A `type` claim is keyed by its declared name — its id, its `name`, or
+// its path with any line anchor stripped, so a re-anchored claim keeps its
+// key across runs; one without a string `signature` has nothing to place
+// and is not planned. A key taken by an earlier claim gains the later
+// claim's path in parentheses, so no claim plans over another.
 struct Plan<'a> {
     kinds: BTreeSet<ClaimKind>,
     bound: BTreeSet<&'a str>,
-    signatures: BTreeMap<&'a str, &'a str>,
+    signatures: BTreeMap<String, &'a str>,
 }
 
 impl<'a> Plan<'a> {
     fn new(extracts: &'a [Extract]) -> Self {
         let claims = || extracts.iter().flat_map(|extract| &extract.evidence.claims);
-        let signatures = claims()
-            .filter(|claim| claim.kind == ClaimKind::Type)
-            .filter_map(|claim| {
-                let key = claim.id.as_deref().or(claim.path.as_deref())?;
-                let Some(Value::String(signature)) = claim.extras.get("signature") else {
-                    return None;
-                };
-                Some((key, signature.trim_end()))
-            })
-            .collect();
+        let mut signatures: BTreeMap<String, &'a str> = BTreeMap::new();
+        for claim in claims().filter(|claim| claim.kind == ClaimKind::Type) {
+            let Some(Value::String(signature)) = claim.extras.get("signature") else {
+                continue;
+            };
+            let Some(stem) = type_key(claim) else { continue };
+            let key = if signatures.contains_key(&stem) {
+                let path = claim.path.as_deref().unwrap_or("unanchored");
+                format!("{stem} ({path})")
+            } else {
+                stem
+            };
+            signatures.insert(key, signature.trim_end());
+        }
 
         Self {
             kinds: claims().map(|claim| claim.kind).collect(),
@@ -262,7 +269,7 @@ impl<'a> Plan<'a> {
     }
 
     fn keys(&self) -> impl Iterator<Item = &str> {
-        self.signatures.keys().copied()
+        self.signatures.keys().map(String::as_str)
     }
 
     fn presence(&self, kind: SectionKind) -> Presence {
@@ -282,6 +289,16 @@ impl<'a> Plan<'a> {
             .copied()
             .filter(|kind| self.presence(*kind) == Presence::Required)
     }
+}
+
+fn type_key(claim: &Claim) -> Option<String> {
+    if let Some(id) = claim.id.as_deref() {
+        return Some(id.to_string());
+    }
+    if let Some(Value::String(name)) = claim.extras.get("name") {
+        return Some(name.clone());
+    }
+    claim.path.as_deref().map(|path| path.split('#').next().unwrap_or(path).to_string())
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, strum::Display)]

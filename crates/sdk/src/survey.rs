@@ -5,7 +5,7 @@
 //! caller enters that surface. The adapter decides how results become mining
 //! [seams](crate#vocabulary).
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::{self, Display, Formatter};
 
 use emery_adapter::source::SourceContent;
@@ -20,8 +20,12 @@ use crate::{Context, beneath, prompt, reference, workspace};
 
 /// Returns the surfaces discovered by the model in a workspace source.
 ///
-/// `docs` must contain `survey.md`, which becomes the system prompt.
-/// The model may read the workspace and the embedded reference documents.
+/// `docs` must contain `survey.md`, which becomes the system prompt. The turn
+/// lists the modules `keep` accepts — every path when there are at most 200,
+/// else the top-level directories with their counts — so the model reads the
+/// manifest and the bootstrap among them rather than globbing the tree
+/// itself. The model may read the workspace and the embedded reference
+/// documents.
 ///
 /// Every surface must have a unique, nonempty name and a root-relative entry
 /// path. The entry must be a regular file accepted by `keep`, as must each
@@ -47,6 +51,7 @@ pub async fn surfaces<P: Model>(
             "`{source}`: a survey by model needs a workspace input, not an inline value"
         ));
     };
+    let modules = workspace::list(root, &mut keep)?;
     let question = Question::<Inventory>::new("survey")
         .system(prompt(docs, "survey.md")?)
         .tools(reference::tools())
@@ -55,28 +60,29 @@ pub async fn surfaces<P: Model>(
         adapter_id: ctx.adapter_id,
         source,
         root,
+        modules: &modules,
     };
 
     tracing::info!(%source, "surveying");
     let inventory = question
-        .ask(ctx.model, brief.to_string(), Some(reference::serve(docs, source, None)), |answer| {
-            let findings = answer.findings(root, &mut keep);
-            if findings.is_empty() {
-                return Ok(());
-            }
-            tracing::debug!(%source, ?findings, "candidate rejected");
-            Err(findings)
-        })
+        .ask(
+            ctx.model,
+            brief.to_string(),
+            Some(reference::serve(docs, source, None, "survey.md")),
+            |answer| {
+                let findings = answer.findings(root, &mut keep);
+                if findings.is_empty() {
+                    return Ok(());
+                }
+                tracing::debug!(%source, ?findings, "candidate rejected");
+                Err(findings)
+            },
+        )
         .await?;
-    tracing::info!(
-        %source,
-        surfaces = ?inventory
-            .surfaces
-            .iter()
-            .map(|surface| format!("{} @ {}", surface.name, surface.entry))
-            .collect::<Vec<_>>(),
-        "surveyed"
-    );
+
+    let surfaces =
+        inventory.surfaces.iter().map(|s| format!("{} @ {}", s.name, s.entry)).collect::<Vec<_>>();
+    tracing::info!(%source, surfaces = ?surfaces, "surveyed");
 
     // the check accepted every entry, so each is a path beneath the root
     Ok(inventory
@@ -145,6 +151,7 @@ struct Brief<'a> {
     adapter_id: &'a str,
     source: &'a str,
     root: &'a str,
+    modules: &'a [String],
 }
 
 impl Display for Brief<'_> {
@@ -157,18 +164,54 @@ impl Display for Brief<'_> {
              source reaches, with the module the caller enters it at. Name an entry as a \
              `/`-separated path relative to `$SOURCE_DIR`, to a module of the kind the prompt \
              says this adapter mines; a module may be the entry of several surfaces, and a \
-             module no surface enters is not named.\n\n\
-             Read under `$SOURCE_DIR` to decide; nothing outside it is reachable. The caller \
-             mines each surface from its entry, following what it reaches through the whole \
-             tree — you follow nothing and group nothing. When the tree declares no surface, \
-             answer none rather than inventing one.\n\n\
+             module no surface enters is not named.\n\n",
+            id = self.adapter_id,
+            source = self.source,
+            root = self.root,
+        )?;
+        modules(f, self.modules)?;
+        f.write_str(
+            "Read the manifest and the bootstrap among the modules listed; do not glob or list \
+             the tree yourself — nothing outside `$SOURCE_DIR` is reachable. The caller mines \
+             each surface from its entry, following what it reaches through the whole tree — \
+             you follow nothing and group nothing. When the tree declares no surface, answer \
+             none rather than inventing one.\n\n\
              The prompt's references are available through this call's `read_doc` tool \
              (`list_docs` enumerates them); load referenced bodies on demand.\n\n\
              Answer with one JSON object matching the survey schema. The caller mines the \
              surfaces; extract nothing yourself.",
-            id = self.adapter_id,
-            source = self.source,
-            root = self.root,
         )
     }
+}
+
+/// The most module paths one survey turn names before collapsing to counts.
+const MODULE_CAP: usize = 200;
+
+// The kept modules: every path while they fit the cap, else the top-level
+// directories with their counts and the root's own files, so the turn stays
+// bounded on a large estate.
+fn modules(f: &mut Formatter<'_>, modules: &[String]) -> fmt::Result {
+    f.write_str("## Modules\n\n")?;
+    if modules.len() <= MODULE_CAP {
+        for module in modules {
+            writeln!(f, "- `{module}`")?;
+        }
+        return writeln!(f);
+    }
+    let mut dirs: BTreeMap<&str, usize> = BTreeMap::new();
+    let mut root = Vec::new();
+    for module in modules {
+        match module.split_once('/') {
+            Some((dir, _)) => *dirs.entry(dir).or_default() += 1,
+            None => root.push(module),
+        }
+    }
+    for file in root {
+        writeln!(f, "- `{file}`")?;
+    }
+    for (dir, count) in dirs {
+        let modules = if count == 1 { "module" } else { "modules" };
+        writeln!(f, "- `{dir}/` ({count} {modules})")?;
+    }
+    writeln!(f)
 }

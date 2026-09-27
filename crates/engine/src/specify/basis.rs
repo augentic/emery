@@ -1,9 +1,10 @@
 //! Reconciles requirement claims into deterministic requirement bases.
 //!
 //! Claims sharing an identifier are grouped before any model request. For
-//! multiple sources, the model may group remaining claims by meaning and
-//! agreement. The engine validates that partition, applies source authority,
-//! and derives status, coverage, winners, and losing statements.
+//! multiple sources — or one source whose requirement ids span several
+//! stems — the model may group remaining claims by meaning and agreement.
+//! The engine validates that partition, applies source authority, and
+//! derives status, coverage, winners, and losing statements.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::{self, Display, Formatter};
@@ -61,8 +62,11 @@ impl<'a> GroupingBrief<'a> {
 
     /// Derives every requirement basis.
     ///
-    /// A run over two or more sources asks the model to group the claims; a
-    /// run over one takes the baseline alone and spends no call.
+    /// A run over two or more sources asks the model to group the claims,
+    /// as does a run over one whose requirement ids span two or more stems:
+    /// one source's seams may describe one behaviour under different nouns.
+    /// A run over one with a single stem takes the baseline alone and
+    /// spends no call.
     ///
     /// # Errors
     ///
@@ -72,7 +76,22 @@ impl<'a> GroupingBrief<'a> {
     ///   grouping cannot be reconciled with the claims.
     /// - Returns [`Error::BadGateway`] when the model operation fails.
     pub async fn derive<M: Model>(self, model: &M) -> Result<Vec<Basis>, Error> {
-        if self.sources < 2 { self.bases(&self.baseline()) } else { self.judge(model).await }
+        if self.sources < 2 && self.stems() < 2 {
+            self.bases(&self.baseline())
+        } else {
+            self.judge(model).await
+        }
+    }
+
+    // Distinct first segments among the contributors' ids: the seams'
+    // domain nouns, which collide when one source describes one behaviour
+    // under different names.
+    fn stems(&self) -> usize {
+        self.contributors
+            .iter()
+            .map(|claim| claim.id.split('.').next().unwrap_or_default())
+            .collect::<BTreeSet<_>>()
+            .len()
     }
 
     // Byte-equal ids are one group and whitespace-equal statements one class;
@@ -257,7 +276,8 @@ impl Display for GroupingBrief<'_> {
 
         f.write_str(
             "\nAnswer with every index in exactly one group, and every group's claims in exactly \
-             one agreeing class.\n",
+             one agreeing class. Two claims of one source that describe one requirement are one \
+             group, whatever nouns their seams gave them.\n",
         )
     }
 }

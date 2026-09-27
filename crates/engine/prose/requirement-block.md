@@ -27,12 +27,14 @@ Note: <templated loser and gap lines, where the requirement has them>
 
 One entry per requirement listed under *Requirements (draft one entry per subject)*, keyed by its `subject` exactly as listed:
 
-- **`scenarios`** — at least one, each with a `name`, optional `given` lines, a `when`, a `then`, and optional `and` lines that follow the `then`, all single lines. Draft from the `criterion` claims covering the requirement; for an uncovered requirement, a scenario that states what is checked without inventing the outcome. For a requirement in `conflict` (see [authority.md](authority.md)), the scenario must not pick a side.
+- **`scenarios`** — at least one, each with a `name`, optional `given` lines, a `when`, a `then`, and optional `and` lines that follow the `then`, all single lines. Draft from the `criterion` claims covering the requirement; for an uncovered requirement, a scenario that states what is checked, with `then` as `[unknown]` rather than an invented outcome. For a requirement in `conflict` (see [authority.md](authority.md)), the scenario must not pick a side.
 
-The engine refuses a draft that omits a listed requirement, drafts a subject that is not listed, drafts a subject twice, omits a scenario, or opens a preamble paragraph line with `#`, `ID:`, `Sources:`, `Status:`, `Note:`, or `Type:`.
+The engine refuses a draft that omits a listed requirement, drafts a subject that is not listed, drafts a subject twice, omits a scenario, opens a preamble paragraph line with `#`, `ID:`, `Sources:`, `Status:`, `Note:`, or `Type:`, or drafts boilerplate: a `when` that restates the requirement's statement, a `then` shared across requirements, or an `[unknown]` `then` for a covered requirement.
 
 ## Scenario conventions
 
 - **Verbatim source language where possible.** Draw the trigger and the outcome from the `criterion` and `requirement` claims; do not paraphrase behaviour into a different behaviour.
+- **A trigger, not a restatement.** The `when` names the event or input that starts the scenario — never the requirement's statement in other words.
+- **An outcome, not a refrain.** The `then` states what this scenario observes; one fixed phrase across requirements is refused.
 - **No commentary about provenance.** Winners, losers, and gaps are the engine's notes; a scenario never restates them.
-- **No invented outcomes.** Where no criterion evidences the outcome, state what is checked and leave the outcome to the evidence.
+- **No invented outcomes.** Where no criterion evidences the outcome, state what is checked and let `then` be `[unknown]`.

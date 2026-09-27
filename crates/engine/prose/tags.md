@@ -14,7 +14,7 @@ One tag per heading, mirroring `Status:`; `conflict` outranks `divergence`, whic
 
 ## What the tag asks of your scenarios
 
-- **`[unknown]`** — a scenario that states what is checked and does not invent the acceptance behaviour.
+- **`[unknown]`** — a scenario that states what is checked, with `then` as `[unknown]` rather than an invented acceptance behaviour.
 - **`[conflict]`** — a scenario that names what must be decided without picking a side.
 - **`[divergence]`** — scenarios that follow the winning value, with no mention of the loser.
 

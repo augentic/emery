@@ -62,19 +62,20 @@ impl Brief for SpecBrief<'_> {
     fn verify(&self, answer: &SpecAnswer, review: &mut Review) {
         review.paragraphs(&answer.preamble, "preamble");
 
-        let subjects: BTreeSet<&str> =
-            self.bases.iter().map(|basis| basis.subject.as_str()).collect();
+        let by_subject: BTreeMap<&str, &Basis> =
+            self.bases.iter().map(|basis| (basis.subject.as_str(), basis)).collect();
         let mut seen = BTreeSet::new();
+        let mut thens: BTreeMap<String, (&str, BTreeSet<&str>)> = BTreeMap::new();
         for draft in &answer.requirements {
             let subject = draft.subject.as_str();
             if !seen.insert(subject) {
                 review.note(format_args!("`{subject}` is drafted more than once"));
                 continue;
             }
-            if !subjects.contains(subject) {
+            let Some(basis) = by_subject.get(subject) else {
                 review.note(format_args!("`{subject}` is not a requirement"));
                 continue;
-            }
+            };
 
             let label = format!("`{subject}`");
             if draft.scenarios.is_empty() {
@@ -86,11 +87,31 @@ impl Brief for SpecBrief<'_> {
                 for (field, text) in scenario.lines() {
                     review.line(text, format_args!("{label} scenario `{field}`"));
                 }
+
+                for finding in boilerplate(basis, scenario) {
+                    review.note(format_args!("{label} scenario {finding}"));
+                }
+
+                let then = normal(&scenario.then);
+                if !then.is_empty() && then != "[unknown]" {
+                    thens
+                        .entry(then)
+                        .or_insert_with(|| (scenario.then.as_str(), BTreeSet::new()))
+                        .1
+                        .insert(subject);
+                }
             }
         }
 
-        for subject in subjects.difference(&seen) {
+        for subject in by_subject.keys().filter(|subject| !seen.contains(**subject)) {
             review.note(format_args!("requirement `{subject}` is not drafted"));
+        }
+
+        for (text, subjects) in thens.values().filter(|(_, subjects)| subjects.len() > 1) {
+            review.note(format_args!(
+                "the `then` `{text}` repeats across {} requirements; state what each scenario observes",
+                subjects.len()
+            ));
         }
     }
 
@@ -113,13 +134,45 @@ impl Brief for SpecBrief<'_> {
     }
 }
 
+// A `when` that restates the requirement's statement is a finding, not a
+// trigger; `[unknown]` is an outcome only where the evidence has none.
+fn boilerplate(basis: &Basis, scenario: &Scenario) -> impl Iterator<Item = &'static str> {
+    let when = normal(&scenario.when);
+    let restated = normal(&basis.subject) == when
+        || basis.classes.iter().flatten().any(|member| normal(&member.statement) == when);
+    let unknown = scenario.then.trim() == "[unknown]" && basis.covered;
+    [
+        restated.then_some("`when` restates the requirement; state the trigger"),
+        unknown.then_some(
+            "`then` is `[unknown]` but the requirement is covered; state the evidenced outcome",
+        ),
+    ]
+    .into_iter()
+    .flatten()
+}
+
+// Lowercased, whitespace-collapsed, trailing punctuation trimmed: the shape
+// boilerplate is compared in.
+fn normal(text: &str) -> String {
+    text.split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+        .to_lowercase()
+        .trim_end_matches(['.', '!', '?', ';', ':', ','])
+        .to_string()
+}
+
 impl Display for SpecBrief<'_> {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         write!(f, "Draft `spec.md`.\n\n{claims}", claims = ClaimsSection(self.extracts))?;
 
         f.write_str("\n## Requirements (draft one entry per subject)\n\n")?;
         for basis in self.bases {
-            let coverage = if basis.covered { "evidenced" } else { "not evidenced" };
+            let coverage = if basis.covered {
+                "evidenced"
+            } else {
+                "not evidenced — `then` may be `[unknown]`"
+            };
             write!(
                 f,
                 "- {id} `{subject}` — Status: {status} — Sources: [",
