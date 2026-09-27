@@ -109,7 +109,7 @@ async fn model_request() {
     assert!(request.check, "acceptance is the check");
     assert_eq!(request.tools, ["list_docs", "read_doc"], "the corpus is offered through tools");
     let turn = &request.messages[0];
-    assert!(turn.contains("adapter `source:probe` (source key `code`)"), "{turn}");
+    assert!(turn.contains("the source `code` bound to adapter `source:probe`"), "{turn}");
     assert!(turn.contains(&format!("read-only view at `{root}`")), "{turn}");
     assert!(turn.contains("relative to `$SOURCE_DIR`"), "{turn}");
     assert!(!turn.contains("\n- `"), "no file is listed: {turn}");

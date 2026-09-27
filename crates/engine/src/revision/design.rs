@@ -154,7 +154,7 @@ impl Display for SectionKind {
     }
 }
 
-/// Returns every source key cited as `(from <key>)` in `text`.
+/// Returns every source name cited as `(from <source>)` in `text`.
 ///
 /// The parenthesised text must be one token: a phrase such as `(from the
 /// browser)` is prose, not a citation.

@@ -12,6 +12,7 @@
 mod basis;
 mod brief;
 mod design;
+mod shape;
 mod spec;
 
 use std::collections::{BTreeMap, BTreeSet};
@@ -43,7 +44,7 @@ use crate::{preopen_path, store};
 /// # Errors
 ///
 /// - Returns [`Error::BadRequest`] for an empty source list (code
-///   `specify-source-required`), a malformed or repeated key, a workspace path
+///   `specify-source-required`), a malformed or repeated name, a workspace path
 ///   outside the project, a package no registry routes, a digest on a declared
 ///   guest, two adapters naming one guest or one naming the engine's own
 ///   ([`ENGINE`](crate::ENGINE)), an adapter that resolves to other
@@ -100,8 +101,11 @@ pub struct SpecifyInput {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub struct SourceConfig {
-    /// The kebab-case key used to cite this source.
-    pub key: String,
+    /// The kebab-case name the specification cites this source by.
+    ///
+    /// The operator's `[[source]] name`, or the adapter's name when the
+    /// entry names none.
+    pub name: String,
     /// The adapter that extracts the source.
     pub adapter: AdapterRef,
     /// A project-relative workspace or inline text read by the adapter.
@@ -120,9 +124,9 @@ pub struct SourceConfig {
 impl SourceConfig {
     // The one place an operator root meets the guest preopen.
     fn prepare(&self) -> Result<SourceInput, Error> {
-        let key = &self.key;
-        if !is_kebab(key) {
-            return Err(bad_request!("source `{key}` is not a kebab-case key"));
+        let name = &self.name;
+        if !is_kebab(name) {
+            return Err(bad_request!("source `{name}` is not a kebab-case name"));
         }
 
         let content = match &self.content {
@@ -136,7 +140,7 @@ impl SourceConfig {
         };
 
         Ok(SourceInput {
-            key: key.clone(),
+            name: name.clone(),
             content,
         })
     }
@@ -170,12 +174,12 @@ impl<'a> Bound<'a> {
             });
         }
 
-        let mut keys = BTreeSet::new();
+        let mut names = BTreeSet::new();
         let mut bound = Vec::with_capacity(sources.len());
         for source in sources {
             let input = source.prepare()?;
-            if !keys.insert(source.key.as_str()) {
-                return Err(bad_request!("source `{}` appears twice", source.key));
+            if !names.insert(source.name.as_str()) {
+                return Err(bad_request!("source `{}` appears twice", source.name));
             }
             bound.push(Self {
                 adapter: &source.adapter,
@@ -187,18 +191,18 @@ impl<'a> Bound<'a> {
         Ok(bound)
     }
 
-    #[tracing::instrument(skip_all, fields(source = %self.input.key, adapter = %self.adapter))]
+    #[tracing::instrument(skip_all, fields(source = %self.input.name, adapter = %self.adapter))]
     async fn extract<S: Source>(
         &self, provider: &S, loaded: &BTreeMap<String, Loaded>,
     ) -> Result<Extract, Error> {
-        let source = &self.input.key;
+        let source = &self.input.name;
         let adapter = self.adapter.to_string();
 
         let Loaded { id, kind } = loaded
             .get(&adapter)
             .ok_or_else(|| server_error!("adapter `{adapter}` was not loaded"))?;
         let kind = *kind;
-        tracing::info!(%source, %adapter, %kind, "extracting");
+        tracing::info!(%source, adapter = %id, %kind, "extracting");
         let evidence = Source::extract(provider, id, &self.input).await?;
 
         let findings = evidence.findings();
@@ -208,7 +212,13 @@ impl<'a> Bound<'a> {
                 findings.join("\n")
             ));
         }
-        tracing::debug!(%source, claims = evidence.claims.len(), "extracted");
+        tracing::info!(
+            %source,
+            claims = evidence.claims.len(),
+            kinds = shape::kinds(&evidence),
+            stems = shape::stems(&evidence),
+            "extracted"
+        );
 
         Ok(Extract {
             source: source.clone(),

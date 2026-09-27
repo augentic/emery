@@ -8,7 +8,7 @@ Never `git commit`, `git push`, open or close a pull request, or delete a branch
 
 ## Vocabulary
 
-- **source adapter** — a WebAssembly component exporting the WIT `source-adapter` world (`metadata` + `extract`): given a `SourceInput` (a key and a workspace or inline value) it returns an `Evidence` document of typed claims. See [wit/emery.wit](wit/emery.wit).
+- **source adapter** — a WebAssembly component exporting the WIT `source-adapter` world (`metadata` + `extract`): given a `SourceInput` (a name and a workspace or inline value) it returns an `Evidence` document of typed claims. See [wit/emery.wit](wit/emery.wit).
 - **engine** — this product: the engine guest and the crates behind it.
 - **capability** — an engine-side trait a provider carries: `Model`, `Source`, `Plugins`, `StateStore`, `BlobStore`.
 - **contract** — a typed agreement: WIT, CLI grammar, JSON envelope.

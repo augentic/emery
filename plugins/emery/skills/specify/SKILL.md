@@ -43,6 +43,6 @@ Track both files in version control. Never edit them by hand: they are projectio
 
 ## Relay
 
-- Surface the CLI output verbatim — the success envelope names the committed revision and the re-mine diff against the one it displaced.
+- Surface the CLI output verbatim — text names the committed revision with a one-line diff summary; the full per-requirement diff rides `--format json`.
 - Review is `spec.md` / `design.md` as re-projected, or `emery show spec` / `emery show design` directly — never read or edit `.omnia/storage` state by hand.
 - On non-zero exit, surface the structured error and stop — never hand-roll spec documents. A `refused` failure means the loader rejected the request (an invalid artifact, a bare name the runtime does not declare, or a `digest` the component does not resolve to); relay the hint and let the operator decide. A `spec-outdated` failure means the stored revision predates this binary's grammar: relay the hint (re-run `emery specify` to regenerate) and let the operator decide.

@@ -58,8 +58,7 @@ async fn request_shape() {
     assert_eq!(
         request.messages,
         [concat!(
-            "Extract the claim set of the source bound to adapter `source:probe` (source key ",
-            "`docs`).\n\n",
+            "Extract the claim set of the source `docs` bound to adapter `source:probe`.\n\n",
             "`$SOURCE_DIR` is the read-only view at `/lend/docs` — the source tree the prompt ",
             "walks. Nothing outside it is reachable; extract mines only this source.\n\n",
             "The prompt's references are available through this call's `read_doc` tool ",
@@ -119,7 +118,7 @@ async fn inline_value() {
     let request = &model.seen()[0];
     assert!(request.workspace.is_none(), "no lend for an inline value");
     let user = &request.messages[0];
-    assert!(user.contains("(source key `brief`)"), "{user}");
+    assert!(user.contains("the source `brief` bound to"), "{user}");
     assert!(user.contains("no `$SOURCE_DIR` is lent:\n\nShip it.\n\n"), "{user}");
 }
 

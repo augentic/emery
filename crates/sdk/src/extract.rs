@@ -16,7 +16,7 @@ use futures::{FutureExt as _, TryFutureExt as _};
 use omnia_sdk::model::Question;
 use omnia_sdk::{Error, Model, bad_request, server_error};
 
-use crate::{Context, beneath, question};
+use crate::{Context, beneath, prompt, reference};
 
 /// The most turns one [`extract`] call holds pending at once.
 ///
@@ -29,7 +29,7 @@ pub const CONCURRENT: usize = 4;
 /// Mines each seam and combines accepted claims into one [`Evidence`] document.
 ///
 /// `docs` must contain `extract.md`, which becomes the system prompt for
-/// every request. The model receives the adapter identifier, source key,
+/// every request. The model receives the adapter identifier, source name,
 /// seam description, and access to embedded references. Responses are
 /// checked with [`Evidence::findings`]; rejected responses may be corrected
 /// until the host's round limit is reached.
@@ -57,15 +57,17 @@ pub const CONCURRENT: usize = 4;
 pub async fn extract<P: Model>(
     ctx: &Context<'_, P>, docs: &'static [Doc], seams: &[Seam],
 ) -> Result<Evidence, Error> {
-    let key = &ctx.input.key;
+    let source = &ctx.input.name;
     if seams.is_empty() {
-        return Err(bad_request!("`{key}`: nothing to extract"));
+        return Err(bad_request!("`{source}`: nothing to extract"));
     }
 
     // settle every seam and the question before the first turn is spent
     let plans =
         seams.iter().map(|seam| Plan::of(seam, ctx.input)).collect::<Result<Vec<_>, _>>()?;
-    let mut question = question::of::<Evidence>("evidence", docs, "extract.md")?;
+    let mut question = Question::<Evidence>::new("evidence")
+        .system(prompt(docs, "extract.md")?)
+        .tools(reference::tools());
     if let SourceContent::Workspace(root) = &ctx.input.content {
         question = question.workspace(root);
     }
@@ -82,7 +84,7 @@ pub async fn extract<P: Model>(
         .await;
 
     // join the accepted claims in seam order
-    let partials = join(key, outcomes)?;
+    let partials = join(source, outcomes)?;
     let claims: Vec<_> = partials.into_iter().flat_map(|partial| partial.claims).collect();
 
     Ok(Evidence { claims })
@@ -104,7 +106,20 @@ pub enum Seam {
     /// Adapter-defined instructions describing what to mine.
     ///
     /// For workspace input, the complete root remains available to the model.
+    /// The note's first non-blank line is the seam's `label` on the events
+    /// [`extract`] logs for it, so lead with what the seam covers — the
+    /// surface and its entry — and put the standing instructions after.
     Note(String),
+}
+
+impl Display for Seam {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Whole => write!(f, "whole"),
+            Self::Files(files) => write!(f, "files: {}", files.join(", ")),
+            Self::Note(note) => write!(f, "note: {note}"),
+        }
+    }
 }
 
 // A seam settled against the input before any turn is spent.
@@ -120,25 +135,26 @@ impl<'a> Plan<'a> {
     // A `Files` seam over an inline value is the adapter's own defect, so
     // `server_error`; the rest is the operator's input.
     fn of(seam: &'a Seam, input: &'a SourceInput) -> Result<Self, Error> {
-        let key = &input.key;
+        let source = &input.name;
         match (seam, &input.content) {
             (Seam::Note(note), _) => Ok(Self::Note(note)),
             (Seam::Whole, SourceContent::Workspace(root)) => Ok(Self::Tree(root)),
             (Seam::Whole, SourceContent::Value(value)) => Ok(Self::Value(value)),
             (Seam::Files(_), SourceContent::Value(_)) => Err(server_error!(
-                "`{key}`: a `Files` seam needs a workspace input, not an inline value"
+                "`{source}`: a `Files` seam needs a workspace input, not an inline value"
             )),
             (Seam::Files(named), SourceContent::Workspace(root)) => {
                 let mut files = named
                     .iter()
                     .map(|path| {
-                        beneath(path).map_err(|reason| bad_request!("`{key}`: `{path}` {reason}"))
+                        beneath(path)
+                            .map_err(|reason| bad_request!("`{source}`: `{path}` {reason}"))
                     })
                     .collect::<Result<Vec<_>, _>>()?;
                 files.sort();
                 files.dedup();
                 if files.is_empty() {
-                    return Err(bad_request!("`{key}`: a `Files` seam names no file"));
+                    return Err(bad_request!("`{source}`: a `Files` seam names no file"));
                 }
                 Ok(Self::Files { root, files })
             }
@@ -151,20 +167,43 @@ impl<'a> Plan<'a> {
             Self::Note(_) | Self::Tree(_) | Self::Value(_) => None,
         }
     }
+
+    // What names the seam in a log line: a note's first line, a file list's
+    // first file and how many more, or the shape of a whole input
+    fn label(&self) -> String {
+        const WIDTH: usize = 72;
+        match self {
+            Self::Note(note) => {
+                let line = note.lines().find(|line| !line.trim().is_empty()).unwrap_or_default();
+                if line.chars().count() > WIDTH {
+                    format!("{}…", line.chars().take(WIDTH).collect::<String>())
+                } else {
+                    line.to_owned()
+                }
+            }
+            Self::Files { files, .. } => match files.as_slice() {
+                [only] => only.clone(),
+                [first, rest @ ..] => format!("{first} (+{})", rest.len()),
+                [] => String::new(),
+            },
+            Self::Tree(_) => "tree".to_owned(),
+            Self::Value(_) => "value".to_owned(),
+        }
+    }
 }
 
 // The turn is one of several in flight, so its events name the seam
 // themselves; the failure's description is `join`'s to report once, so the
 // event carries the class alone.
-#[tracing::instrument(skip_all, fields(key = %ctx.input.key, seam = index))]
+#[tracing::instrument(skip_all, fields(source = %ctx.input.name, seam = index))]
 async fn turn<P: Model>(
     question: &Question<Evidence>, ctx: &Context<'_, P>, docs: &'static [Doc], index: usize,
     plan: &Plan<'_>,
 ) -> Result<Evidence, Error> {
-    let key = &ctx.input.key;
+    let source = &ctx.input.name;
     let brief = Brief {
         adapter_id: ctx.adapter_id,
-        key,
+        source,
         plan,
     };
     let ask = || {
@@ -172,26 +211,40 @@ async fn turn<P: Model>(
             .ask(
                 ctx.model,
                 brief.to_string(),
-                Some(question::answering(docs, key, Some(index))),
-                |answer| question::gate(answer.findings(), key, Some(index)),
+                Some(reference::serve(docs, source, Some(index))),
+                |answer| {
+                    let findings = answer.findings();
+                    if findings.is_empty() {
+                        return Ok(());
+                    }
+                    tracing::debug!(%source, seam = index, ?findings, "candidate rejected");
+                    Err(findings)
+                },
             )
             .map_err(Error::from)
     };
 
-    tracing::info!(%key, seam = index, files = plan.size(), "mining");
+    let label = plan.label();
+    tracing::info!(%source, seam = index, label, files = plan.size(), "mining");
     let outcome = match ask().await {
         Err(error @ Error::BadGateway { .. }) => {
-            tracing::warn!(%key, seam = index, %error, "failed upstream; putting the turn once more");
+            tracing::warn!(
+                %source,
+                seam = index,
+                label,
+                %error,
+                "failed upstream; putting the turn once more"
+            );
             ask().await
         }
         outcome => outcome,
     };
     match &outcome {
         Ok(evidence) => {
-            tracing::debug!(%key, seam = index, claims = evidence.claims.len(), "mined");
+            tracing::info!(%source, seam = index, label, claims = evidence.claims.len(), "mined");
         }
         Err(error) => {
-            tracing::warn!(%key, seam = index, code = %error.code(), "failed");
+            tracing::warn!(%source, seam = index, label, code = %error.code(), "failed");
         }
     }
 
@@ -201,7 +254,7 @@ async fn turn<P: Model>(
 // The user turn of one seam.
 struct Brief<'a> {
     adapter_id: &'a str,
-    key: &'a str,
+    source: &'a str,
     plan: &'a Plan<'a>,
 }
 
@@ -209,9 +262,9 @@ impl Display for Brief<'_> {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         write!(
             f,
-            "Extract the claim set of the source bound to adapter `{id}` (source key `{key}`).\n\n",
+            "Extract the claim set of the source `{source}` bound to adapter `{id}`.\n\n",
             id = self.adapter_id,
-            key = self.key,
+            source = self.source,
         )?;
 
         match self.plan {
@@ -252,7 +305,7 @@ impl Display for Brief<'_> {
 }
 
 fn join(
-    key: &str, outcomes: BTreeMap<usize, Result<Evidence, Error>>,
+    source: &str, outcomes: BTreeMap<usize, Result<Evidence, Error>>,
 ) -> Result<Vec<Evidence>, Error> {
     let count = outcomes.len();
     let mut accepted = Vec::with_capacity(count);
@@ -275,7 +328,7 @@ fn join(
             Err(described(
                 first,
                 format!(
-                    "`{key}`: {} of {count} seams failed:\n{}",
+                    "`{source}`: {} of {count} seams failed:\n{}",
                     failed.len(),
                     report.join("\n")
                 ),

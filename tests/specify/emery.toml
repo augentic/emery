@@ -3,8 +3,9 @@
 # project root by a run naming no sources at all.
 
 # Each [[source]] entry names one source, in declaration order. `name` is
-# the source key; omitted, it is the adapter's key (a component file's
-# stem, here `source`). The adapter is file-relative; `digest` pins it.
+# the name the specification cites the source by; omitted, it is the
+# adapter's name (a component file's stem, here `source`). The adapter is
+# file-relative; `digest` pins it.
 # `[registries]` routes a package adapter's namespace to its registry.
 [[source]]
 name = "greeting"
@@ -15,8 +16,8 @@ adapter = "./source.wasm"
 # name = "docs"
 # adapter = "emery:documentation@1.2.0"
 
-# # Local path, resolved relative to this file. The name is the source
-# # key, so one adapter may name several roots.
+# # Local path, resolved relative to this file. The name identifies the
+# # source, so one adapter may name several roots.
 # [[source]]
 # name = "api-surface"
 # adapter = "emery:typescript@1.2.0"
@@ -36,8 +37,8 @@ adapter = "./source.wasm"
 # name = "custom"
 # adapter = "./adapters/custom.wasm"
 
-# # Third-party package: routed by `[registries]`, pinned, and keyed
-# # `ledger` by its name.
+# # Third-party package: routed by `[registries]`, pinned, and named
+# # `ledger` by its package.
 # [[source]]
 # adapter = "acme:ledger@2.1.0"
 # digest = "sha256:0000000000000000000000000000000000000000000000000000000000000000"

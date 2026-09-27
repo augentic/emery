@@ -10,12 +10,13 @@ use std::fmt::{self, Display, Formatter};
 
 use emery_adapter::source::SourceContent;
 use emery_prose::Doc;
+use omnia_sdk::model::Question;
 use omnia_sdk::{Error, Model, server_error};
 use schemars::JsonSchema;
 use serde::Deserialize;
 
 use crate::workspace::{Entry, Unoffered};
-use crate::{Context, beneath, question, workspace};
+use crate::{Context, beneath, prompt, reference, workspace};
 
 /// Returns the surfaces discovered by the model in a workspace source.
 ///
@@ -40,27 +41,35 @@ use crate::{Context, beneath, question, workspace};
 pub async fn surfaces<P: Model>(
     ctx: &Context<'_, P>, docs: &'static [Doc], mut keep: impl FnMut(Entry<'_>) -> bool + Send,
 ) -> Result<Vec<Surface>, Error> {
-    let key = &ctx.input.key;
+    let source = &ctx.input.name;
     let SourceContent::Workspace(root) = &ctx.input.content else {
         return Err(server_error!(
-            "`{key}`: a survey by model needs a workspace input, not an inline value"
+            "`{source}`: a survey by model needs a workspace input, not an inline value"
         ));
     };
-    let question = question::of::<Inventory>("survey", docs, "survey.md")?.workspace(root);
+    let question = Question::<Inventory>::new("survey")
+        .system(prompt(docs, "survey.md")?)
+        .tools(reference::tools())
+        .workspace(root);
     let brief = Brief {
         adapter_id: ctx.adapter_id,
-        key,
+        source,
         root,
     };
 
-    tracing::info!(%key, "surveying");
+    tracing::info!(%source, "surveying");
     let inventory = question
-        .ask(ctx.model, brief.to_string(), Some(question::answering(docs, key, None)), |answer| {
-            question::gate(answer.findings(root, &mut keep), key, None)
+        .ask(ctx.model, brief.to_string(), Some(reference::serve(docs, source, None)), |answer| {
+            let findings = answer.findings(root, &mut keep);
+            if findings.is_empty() {
+                return Ok(());
+            }
+            tracing::debug!(%source, ?findings, "candidate rejected");
+            Err(findings)
         })
         .await?;
-    tracing::debug!(
-        %key,
+    tracing::info!(
+        %source,
         surfaces = ?inventory
             .surfaces
             .iter()
@@ -134,7 +143,7 @@ fn module(
 // The user turn of the survey.
 struct Brief<'a> {
     adapter_id: &'a str,
-    key: &'a str,
+    source: &'a str,
     root: &'a str,
 }
 
@@ -142,8 +151,7 @@ impl Display for Brief<'_> {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         write!(
             f,
-            "Survey the source bound to adapter `{id}` (source key `{key}`) before it is \
-             mined.\n\n\
+            "Survey the source `{source}` bound to adapter `{id}` before it is mined.\n\n\
              `$SOURCE_DIR` is the read-only view at `{root}` — the source tree. List the surfaces \
              it exposes as the prompt describes them, each named for what a caller outside the \
              source reaches, with the module the caller enters it at. Name an entry as a \
@@ -159,7 +167,7 @@ impl Display for Brief<'_> {
              Answer with one JSON object matching the survey schema. The caller mines the \
              surfaces; extract nothing yourself.",
             id = self.adapter_id,
-            key = self.key,
+            source = self.source,
             root = self.root,
         )
     }

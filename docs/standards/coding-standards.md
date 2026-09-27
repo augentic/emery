@@ -39,7 +39,7 @@ Doc comments (`///`, `//!`) follow the conventions the widely used crates — `s
 - **Written for the crate's user, not its maintainer.** A doc comment states the observable contract — what goes in, what comes out, what is guaranteed — and leaves the mechanics to the code and the `//` comments beside it. Prose about how a body works goes stale first and is the reader's least need.
 - **The first line is one short summary sentence** of about fifteen words, ending in a full stop, then a blank line, then the detail. rustdoc lifts that sentence into every index page, so it must stand alone. A fn's summary is a third-person verb sentence (`Returns …`, `Commits …`, `Groups …`); a type's or constant's is a noun phrase (`A claim extracted from a source.`); a module's says what the module provides (`Lists a tree adapter's files and cuts them into seams.`). Never a bare title (`The survey`), a heading, a `Tells whether …`, or a noun phrase standing in for a verb (`` `files` cut by directory … ``).
 - **Detail is short plain sentences and lists.** One idea per sentence; three or more things are a bullet list, not a colon-and-dash clause. A paragraph the reader cannot take in at a glance is two paragraphs.
-- **Types explain invariants; fields and variants explain distinctions.** State accepted formats, ordering, defaults, and relationships that the signature cannot show. ``/// The source key.`` merely repeats the field name; ``/// The key used to cite this source in a specification.`` tells the caller why it exists.
+- **Types explain invariants; fields and variants explain distinctions.** State accepted formats, ordering, defaults, and relationships that the signature cannot show. ``/// The source name.`` merely repeats the field name; ``/// The name the specification cites this source by.`` tells the caller why it exists.
 - **Claims are exact and current.** Document only behaviour the implementation enforces. Distinguish input forms, ordering, normalisation, retries, side effects, and refusal conditions when those differences are observable; omit them when they are not.
 - **Canonical sections**, spelled and ordered `# Examples`, `# Errors`, `# Panics`. `# Errors` names each class the caller can match on, linked, one bullet per class when there is more than one: ``Returns [`Error::BadRequest`] when …``. A recovery code is named beside its class: ``[`Error::NotFound`] with code `spec-not-generated` when …``. Never the macro name (`bad_request`), a category (`load failures`), or `Fails if …`.
 - **Examples are compiled doctests** (`cargo test --doc` runs in `make check`): `?` rather than `unwrap`, setup hidden behind `#` lines. Every supported Rust API crate carries one quick start under `# Examples` in its crate root, and a trait an author implements shows a complete impl. Add an item example only when it teaches a usage pattern or non-obvious behaviour; an assertion that mirrors a constructor, accessor, or `match` arm is noise. `ignore` is for code that cannot compile natively, and a `//` beside the fence says why.
@@ -255,7 +255,7 @@ pub async fn evidence<P: Source + Plugins>(...) -> Result<Vec<Extract>, Error> {
     Ok(extracted)
 }
 
-/// One source's evidence, under the key the documents cite it by.
+/// One source's evidence, under the name the documents cite it by.
 pub struct Extract { /* … */ }
 ```
 

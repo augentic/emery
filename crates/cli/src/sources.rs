@@ -102,14 +102,15 @@ fn from_argv(adapters: &[String], descriptions: &[String]) -> Result<Vec<SourceC
 fn source(reference: &str, content: SourceContent) -> Result<SourceConfig, Error> {
     let adapter = anchored(reference.parse()?, Path::new("."))?;
     Ok(SourceConfig {
-        key: key(&adapter),
+        name: named(&adapter),
         adapter,
         content,
         digest: None,
     })
 }
 
-fn key(adapter: &AdapterRef) -> String {
+// The source's name when the operator gives none: the adapter's own.
+fn named(adapter: &AdapterRef) -> String {
     match adapter {
         AdapterRef::Static(name) | AdapterRef::Package { name, .. } => name.clone(),
         AdapterRef::File(path) => {
@@ -171,7 +172,7 @@ struct ConfigFile<Sources = Vec<SourceEntry>> {
 #[derive(Debug, serde::Deserialize)]
 #[serde(deny_unknown_fields, rename_all = "kebab-case")]
 struct SourceEntry {
-    // Omitted, the adapter's key, as on the command line.
+    // Omitted, the adapter's name, as on the command line.
     name: Option<String>,
     adapter: AdapterRef,
     path: Option<PathBuf>,
@@ -182,7 +183,7 @@ struct SourceEntry {
 impl SourceEntry {
     fn decode(self, base: &Path) -> Result<SourceConfig, Error> {
         let adapter = anchored(self.adapter, base)?;
-        let name = self.name.unwrap_or_else(|| key(&adapter));
+        let name = self.name.unwrap_or_else(|| named(&adapter));
         let content = match (self.path, self.description) {
             (Some(_), Some(_)) => {
                 return Err(bad_request!(
@@ -198,7 +199,7 @@ impl SourceEntry {
         };
 
         Ok(SourceConfig {
-            key: name,
+            name,
             adapter,
             content,
             digest: self.digest,

@@ -382,7 +382,7 @@ impl Basis {
 /// A source claim contributing to a requirement.
 #[derive(Debug, Clone)]
 pub struct Contributor {
-    /// The source key.
+    /// The source name.
     pub source: String,
     /// The source kind used to rank this contributor.
     pub kind: SourceKind,
