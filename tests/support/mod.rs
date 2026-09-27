@@ -22,6 +22,7 @@ where
 
 /// Runs `argv` in JSON mode and asserts the typed failure envelope.
 ///
+/// A failure writes the envelope to stderr alone, so stdout is asserted empty.
 /// Also asserts that the refused run left storage exactly as it found it: a
 /// refusal never commits, prunes, or writes.
 pub async fn fail(provider: &Provider, argv: &[&str], exit: u8, code: &str) -> Value {
@@ -30,6 +31,11 @@ pub async fn fail(provider: &Provider, argv: &[&str], exit: u8, code: &str) -> V
     json.extend(argv.iter().skip(1).copied());
     let resp = cli(provider, &json).await;
     assert_eq!(resp.exit, exit, "{code}: {}", String::from_utf8_lossy(&resp.stderr));
+    assert!(
+        resp.stdout.is_empty(),
+        "{code}: a failure writes nothing to stdout: {}",
+        String::from_utf8_lossy(&resp.stdout)
+    );
     let envelope: Value = serde_json::from_slice(&resp.stderr).expect("one JSON envelope");
     assert_eq!(envelope["error"], code, "{envelope}");
     assert_eq!(envelope["exit-code"], exit, "{envelope}");
