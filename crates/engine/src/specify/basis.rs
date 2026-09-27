@@ -10,7 +10,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::{self, Display, Formatter};
 
 use emery_adapter::source::{ClaimKind, SourceKind};
-use omnia_sdk::{Error, Model, server_error};
+use omnia_sdk::{Error, Model, bad_request, server_error};
 use schemars::JsonSchema;
 use serde::Deserialize;
 use serde_json::{Value, json};
@@ -35,9 +35,11 @@ impl<'a> GroupingBrief<'a> {
     pub fn new(extracts: &'a [Extract]) -> Self {
         let mut contributors: Vec<Contributor> = Vec::new();
         let mut criteria = Vec::new();
+
         for extract in extracts {
             for claim in &extract.evidence.claims {
                 let Some(id) = claim.id.as_deref() else { continue };
+
                 match claim.kind {
                     ClaimKind::Requirement => contributors.push(Contributor {
                         source: extract.source.clone(),
@@ -53,10 +55,14 @@ impl<'a> GroupingBrief<'a> {
             }
         }
 
+        // unique sources
+        let source_count =
+            extracts.iter().map(|e| e.source.as_str()).collect::<BTreeSet<_>>().len();
+
         Self {
             contributors,
             criteria,
-            sources: extracts.len(),
+            sources: source_count,
         }
     }
 
@@ -75,6 +81,10 @@ impl<'a> GroupingBrief<'a> {
     ///   grouping cannot be reconciled with the claims.
     /// - Returns [`Error::BadGateway`] when the model operation fails.
     pub async fn derive<M: Model>(self, model: &M) -> Result<Vec<Basis>, Error> {
+        if self.contributors.is_empty() {
+            return Err(bad_request!("no source contributed a requirement claim"));
+        }
+
         if self.sources < 2 && self.stems() < 2 {
             self.bases(&self.baseline())
         } else {
