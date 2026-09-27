@@ -1610,10 +1610,11 @@ async fn engine_as_adapter() {
 
     let envelope = fail(&provider, &["emery", "specify", &component], 1, "bad_request").await;
     assert_message(&envelope, &format!("adapter `{component}` would register as `{ENGINE}`"));
-    assert_message(&envelope, "the engine itself; rename the component");
+    assert_message(&envelope, "the engine itself; a run loads no adapter under that name");
 
     let envelope = fail(&provider, &["emery", "specify", ENGINE], 1, "bad_request").await;
-    assert_message(&envelope, &format!("adapter `{ENGINE}` is the engine itself"));
+    assert_message(&envelope, &format!("adapter `{ENGINE}` would register as `{ENGINE}`"));
+    assert_message(&envelope, "the engine itself; a run loads no adapter under that name");
 
     assert!(provider.plugins.loads().is_empty(), "the engine is never asked for as an adapter");
     assert!(

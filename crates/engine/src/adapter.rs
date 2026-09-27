@@ -79,8 +79,9 @@ pub struct Loaded {
 /// Loads each referenced adapter and returns what it loaded as.
 ///
 /// Duplicate references are loaded once, under one pin. Every adapter loads
-/// at the location its reference names, under the guest name it derives
-/// ([`AdapterRef::guest`]), and all load before metadata is queried. The
+/// at the location its reference names ([`AdapterRef::location`]), under the
+/// guest name that location registers ([`Location::name`]), and all load
+/// before metadata is queried. The
 /// loader holds a pinned adapter to its digest, and a declared minimum Emery
 /// version must not exceed the running version. The result is keyed by the
 /// reference's [`Display`] form.
@@ -192,12 +193,13 @@ fn is_supported(id: &str, declared: &str, running: &semver::Version) -> Result<(
 /// `intent@1.0.0` becomes `emery:intent@1.0.0`, while
 /// `file://./intent.wasm` becomes `./intent.wasm`. [`Display`] is that
 /// normalised identity — what config serialises and a run dedupes loads by —
-/// [`guest`] the name of the guest it loads as, and [`name`] the kebab-case
-/// name it lends a binding that names none. An empty value, a GitHub URL, or
-/// a malformed package reference parses as [`Error::BadRequest`].
+/// and [`name`] the kebab-case name it lends a binding that names none. The
+/// guest it loads and dispatches as is its [`location`]'s
+/// [`Location::name`]. An empty value, a GitHub URL, or a malformed package
+/// reference parses as [`Error::BadRequest`].
 ///
-/// [`guest`]: Self::guest
 /// [`name`]: Self::name
+/// [`location`]: Self::location
 ///
 /// # Examples
 ///
@@ -206,17 +208,14 @@ fn is_supported(id: &str, declared: &str, running: &semver::Version) -> Result<(
 ///
 /// let package: AdapterRef = "intent@1.0.0".parse()?;
 /// assert_eq!(package.to_string(), "emery:intent@1.0.0");
-/// assert_eq!(package.guest(), "emery:intent");
 /// assert_eq!(package.name()?, "intent");
 ///
 /// let file: AdapterRef = "file://./adapters/my_intent.wasm".parse()?;
 /// assert_eq!(file.to_string(), "./adapters/my_intent.wasm");
-/// assert_eq!(file.guest(), "my_intent");
 /// assert_eq!(file.name()?, "my-intent");
 ///
 /// let declared: AdapterRef = "intent".parse()?;
 /// assert_eq!(declared.to_string(), "intent");
-/// assert_eq!(declared.guest(), "intent");
 /// assert_eq!(declared.name()?, "intent");
 /// # Ok::<(), omnia_sdk::Error>(())
 /// ```
@@ -241,26 +240,6 @@ pub enum AdapterRef {
 }
 
 impl AdapterRef {
-    /// Returns the name of the guest this reference loads and dispatches by.
-    ///
-    /// A bare name is the guest itself, a package loads as its reference
-    /// without the version — `emery:intent@1.0.0` dispatches as
-    /// `emery:intent`, so a run holds one version of a package — and a local
-    /// component as its file's stem — `./adapters/custom.wasm` dispatches as
-    /// `custom`. The deployment declares a component or package under this
-    /// name, and the loader admits it by it.
-    #[must_use]
-    pub fn guest(&self) -> String {
-        match self {
-            Self::File(path) => path
-                .file_stem()
-                .and_then(OsStr::to_str)
-                .map_or_else(|| path.display().to_string(), str::to_owned),
-            Self::Package { namespace, name, .. } => format!("{namespace}:{name}"),
-            Self::Static(name) => name.clone(),
-        }
-    }
-
     /// Returns the kebab-case name this adapter lends what it is bound to.
     ///
     /// A bare name or a package is its name; a local component is its file's
@@ -315,12 +294,7 @@ impl AdapterRef {
     pub fn location(
         &self, digest: Option<&Digest>, registries: &Registries,
     ) -> Result<Location, Error> {
-        Ok(match self {
-            Self::Static(name) if name == ENGINE => {
-                return Err(bad_request!(
-                    "adapter `{name}` is the engine itself, not a source adapter"
-                ));
-            }
+        let location = match self {
             Self::Static(name) => {
                 if digest.is_some() {
                     return Err(bad_request!(
@@ -341,12 +315,6 @@ impl AdapterRef {
                     endpoint: Some(endpoint.to_owned()),
                 }
             }
-            Self::File(_) if self.guest() == ENGINE => {
-                return Err(bad_request!(
-                    "adapter `{self}` would register as `{ENGINE}`, the engine itself; rename \
-                     the component"
-                ));
-            }
             Self::File(path) => {
                 let local = preopen_path(path)?;
                 if !local.is_file() {
@@ -354,7 +322,17 @@ impl AdapterRef {
                 }
                 Location::Path(local.display().to_string())
             }
-        })
+        };
+
+        // asked, the loader would attest the engine in the adapter's place
+        if location.name() == ENGINE {
+            return Err(bad_request!(
+                "adapter `{self}` would register as `{ENGINE}`, the engine itself; a run loads no \
+                 adapter under that name"
+            ));
+        }
+
+        Ok(location)
     }
 }
 
