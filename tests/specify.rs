@@ -476,7 +476,7 @@ async fn no_claims() {
 // A second source with no requirement claim leaves one contributing source,
 // so no grouping turn is spent.
 #[tokio::test]
-async fn one_source() {
+async fn one_claims_source() {
     let mut provider =
         Provider::answering([SPEC_ANSWER, DESIGN_ANSWER]).declaring(["docs", "code"]);
     provider.source.kinds.insert("code".to_string(), SourceKind::Behaviour);
@@ -1157,6 +1157,71 @@ async fn type_reanchored() {
     assert_eq!(document(&provider.storage, &id, "design.json"), first, "design bytes are stable");
     let rendered = shown(&provider, "design").await;
     assert!(rendered.contains("Type: src/greeting.ts\n"), "{rendered}");
+    provider.model.assert_exhausted();
+}
+
+// Three `type` claims declaring one name: the second is keyed apart by its
+// path, the third — at that same path — by a counter, so every signature
+// reaches the plan and the design.
+#[tokio::test]
+async fn type_collisions() {
+    let signatures = [
+        "interface Greeting { text: string }",
+        "type Greeting = { text: string }",
+        "class Greeting { text = '' }",
+    ];
+    let typed = |anchor: Option<&str>, signature: &str| {
+        let mut typed = claim(ClaimKind::Type, "greeting.type", ("signature", signature));
+        typed.path = anchor.map(str::to_string);
+        typed
+    };
+    let mut provider = Provider::answering([
+        SPEC_ANSWER,
+        r#"{"preamble": [], "sections": [
+            {"kind": "overview", "blocks": [{"text": "The greeting is one static endpoint."}]},
+            {"kind": "domain-model", "blocks": [
+                {"type": "greeting.type"},
+                {"type": "greeting.type (src/greeting.ts#L1)"},
+                {"type": "greeting.type (src/greeting.ts#L1, 2)"}
+            ]}
+        ]}"#,
+    ])
+    .declaring(["docs"]);
+    provider.source.evidence.insert(
+        "docs".to_string(),
+        Ok(evidence(vec![
+            requirement("greeting.behaviour", "GET /greeting returns the static string 'hello'."),
+            typed(None, signatures[0]),
+            typed(Some("src/greeting.ts#L1"), signatures[1]),
+            typed(Some("src/greeting.ts#L1"), signatures[2]),
+        ])),
+    );
+
+    cli_ok(&provider, &["emery", "specify", "docs"]).await;
+
+    let SeenFormat::Schema { schema, .. } = &provider.model.seen()[1].format else {
+        panic!("the design is steered by schema");
+    };
+    let schema: Value = serde_json::from_str(schema).expect("the steering schema is JSON");
+    let block = schema["$defs"]["Block"]["oneOf"]
+        .as_array()
+        .and_then(|variants| {
+            variants.iter().find(|variant| variant["required"] == serde_json::json!(["type"]))
+        })
+        .expect("the type block variant");
+    assert_eq!(
+        block["properties"]["type"]["enum"],
+        serde_json::json!([
+            "greeting.type",
+            "greeting.type (src/greeting.ts#L1)",
+            "greeting.type (src/greeting.ts#L1, 2)"
+        ]),
+        "every declaration is offered under its own key"
+    );
+    let rendered = shown(&provider, "design").await;
+    for signature in signatures {
+        assert!(rendered.contains(&format!("```\n{signature}\n```")), "{rendered}");
+    }
     provider.model.assert_exhausted();
 }
 
