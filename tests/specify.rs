@@ -48,6 +48,15 @@ fn baseline_grouping(count: usize) -> String {
     .to_string()
 }
 
+// The grouping a judged run over `count` claims of distinct ids expects
+// when every claim stays its own requirement.
+fn separate_grouping(count: usize) -> String {
+    let groups: Vec<_> = (0..count)
+        .map(|index| serde_json::json!({"claims": [index], "classes": [[index]]}))
+        .collect();
+    serde_json::json!({ "groups": groups }).to_string()
+}
+
 // Inside the project: every path handed to the CLI must stay project-relative
 // for the guest preopen, so each write answers with that path.
 struct Scratch(tempfile::TempDir);
@@ -442,6 +451,53 @@ async fn grouping_refused() {
     provider.model.assert_exhausted();
 }
 
+// One source whose seams describe one behaviour under two nouns is grouped
+// by the model, and the merged requirement cites both claims.
+#[tokio::test]
+async fn seams_grouped() {
+    let grouping = r#"{"groups": [{"claims": [0, 1], "classes": [[0, 1]]}]}"#;
+    let spec = r#"{"preamble": ["One source, two seams, one behaviour."],
+        "requirements": [{"subject": "start.persist",
+            "scenarios": [{"name": "Persist", "when": "the service starts", "then": "the queue is persisted"}]}]}"#;
+    let mut provider = Provider::answering([grouping, spec, DESIGN_ANSWER]).declaring(["docs"]);
+    provider.source.evidence.insert(
+        "docs".to_string(),
+        Ok(evidence(vec![
+            requirement("start.persist", "Starting the service persists the queue."),
+            requirement("worker.persist", "The worker persists the queue on start."),
+        ])),
+    );
+
+    cli_ok(&provider, &["emery", "specify", "docs"]).await;
+
+    let seen = provider.model.seen();
+    let SeenFormat::Schema { name, .. } = &seen[0].format else {
+        panic!("one source over two stems is grouped by the model");
+    };
+    assert_eq!(name, "grouping");
+    let request = seen[0].messages.join("\n");
+    assert!(
+        request.contains("`start.persist`") && request.contains("`worker.persist`"),
+        "{request}"
+    );
+
+    let id = current(&provider.storage);
+    let spec: Value = serde_json::from_slice(&document(&provider.storage, &id, "spec.json"))
+        .expect("the committed spec is JSON");
+    assert_eq!(spec["requirements"].as_array().map(Vec::len), Some(1), "{spec}");
+    let requirement = &spec["requirements"][0];
+    assert_eq!(requirement["subject"], "start.persist", "{spec}");
+    assert_eq!(
+        requirement["sources"],
+        serde_json::json!([
+            {"source": "docs", "claim": "start.persist"},
+            {"source": "docs", "claim": "worker.persist"}
+        ]),
+        "{spec}"
+    );
+    provider.model.assert_exhausted();
+}
+
 // --- regeneration ---
 
 // Every subject is drafted again and nothing of the outgoing revision reaches
@@ -449,7 +505,9 @@ async fn grouping_refused() {
 #[tokio::test]
 async fn remine_supersedes() {
     // first run: a greeting, a session timeout, and a legacy export
-    let mut provider = Provider::answering([REMINE_FIRST, DESIGN_ANSWER]).declaring(["docs"]);
+    let first_grouping = separate_grouping(3);
+    let mut provider = Provider::answering([first_grouping.as_str(), REMINE_FIRST, DESIGN_ANSWER])
+        .declaring(["docs"]);
     provider.source.evidence.insert(
         "docs".to_string(),
         Ok(docs_evidence(&[
@@ -463,9 +521,12 @@ async fn remine_supersedes() {
 
     // second run: the greeting changed, the export gone, the overview following it
     let second_design = DESIGN_ANSWER.replace("hello", "howdy");
-    let mut provider =
-        Provider::over(Arc::clone(&provider.storage), [REMINE_SECOND, second_design.as_str()])
-            .declaring(["docs"]);
+    let second_grouping = separate_grouping(2);
+    let mut provider = Provider::over(
+        Arc::clone(&provider.storage),
+        [second_grouping.as_str(), REMINE_SECOND, second_design.as_str()],
+    )
+    .declaring(["docs"]);
     provider.source.evidence.insert(
         "docs".to_string(),
         Ok(docs_evidence(&[
@@ -488,7 +549,12 @@ async fn remine_supersedes() {
     );
     assert!(!stdout.contains("REQ-"), "no per-requirement entry rides text mode: {stdout}");
 
-    let request = provider.model.seen()[0].messages.join("\n");
+    let seen = provider.model.seen();
+    let SeenFormat::Schema { name, .. } = &seen[0].format else {
+        panic!("one source over two stems is grouped by the model");
+    };
+    assert_eq!(name, "grouping");
+    let request = seen[1].messages.join("\n");
     assert!(request.contains("- REQ-001 `greeting.behaviour`"), "{request}");
     assert!(request.contains("- REQ-002 `session.timeout`"), "{request}");
     assert!(!request.contains("Unchanged"), "nothing stands in from the outgoing run: {request}");
@@ -518,9 +584,15 @@ async fn diff_envelope() {
         {"kind": "overview", "blocks": [{"text": "One static `GET /greeting` endpoint returning `'howdy'`."}]},
         {"kind": "domain-model", "blocks": [{"type": "greeting.type"}]}
     ]}"#;
-    let mut provider =
-        Provider::answering([SPEC_ANSWER, DESIGN_ANSWER, second_spec, second_design])
-            .declaring(["docs"]);
+    let second_grouping = separate_grouping(2);
+    let mut provider = Provider::answering([
+        SPEC_ANSWER,
+        DESIGN_ANSWER,
+        second_grouping.as_str(),
+        second_spec,
+        second_design,
+    ])
+    .declaring(["docs"]);
     cli_ok(&provider, &["emery", "specify", "docs"]).await;
     let first = current(&provider.storage);
 
@@ -732,6 +804,7 @@ async fn invalid_draft() {
         )
     };
     let scenario = r#"{"name": "Greeting", "when": "greeted", "then": "hello"}"#;
+    let restated = r#"{"name": "Greeting", "when": "get /greeting returns the static string 'hello'", "then": "hello"}"#;
     let cases: Vec<(String, &str)> = vec![
         ("Not a spec at all.".to_string(), "schema and answer type disagree"),
         (
@@ -754,6 +827,7 @@ async fn invalid_draft() {
             one(r#""Hello.\nSources: [other]""#, "greeting.behaviour", scenario),
             "opens with the reserved marker `Sources:`",
         ),
+        (one("", "greeting.behaviour", restated), "scenario `when` restates the requirement"),
     ];
     for (answer, fragment) in cases {
         let provider = Provider::answering([answer.as_str(), answer.as_str(), answer.as_str()])
@@ -762,6 +836,72 @@ async fn invalid_draft() {
         assert_message(&envelope, fragment);
         provider.model.assert_exhausted();
     }
+}
+
+// One `then` across requirements is a refrain, not what each scenario observes.
+#[tokio::test]
+async fn shared_then() {
+    let draft = r#"{"preamble": [], "requirements": [
+        {"subject": "greeting.behaviour", "scenarios": [{"name": "Greeting", "when": "the greeting is requested", "then": "the system behaves correctly"}]},
+        {"subject": "greeting.formal", "scenarios": [{"name": "Formal", "when": "the formal greeting is requested", "then": "the system behaves correctly"}]}
+    ]}"#;
+    let mut provider = Provider::answering([draft, draft, draft]).declaring(["docs"]);
+    provider.source.evidence.insert(
+        "docs".to_string(),
+        Ok(evidence(vec![
+            requirement("greeting.behaviour", "GET /greeting returns the static string 'hello'."),
+            requirement("greeting.formal", "GET /greeting/formal returns 'good day'."),
+        ])),
+    );
+
+    let envelope = fail(&provider, &["emery", "specify", "docs"], 1, "bad_request").await;
+    assert_message(&envelope, "repeats across 2 requirements");
+    provider.model.assert_exhausted();
+}
+
+// `SPEC_ANSWER` with its one outcome left `[unknown]`.
+fn unknown_draft() -> String {
+    let unknown =
+        SPEC_ANSWER.replace(r#""then": "the response is `hello`""#, r#""then": "[unknown]""#);
+    assert_ne!(unknown, SPEC_ANSWER, "the fixture carries the patched line");
+    unknown
+}
+
+// No criterion covers the requirement, so `[unknown]` commits in place of an
+// invented outcome.
+#[tokio::test]
+async fn unknown_uncovered() {
+    let unknown = unknown_draft();
+    let provider = Provider::answering([unknown.as_str(), DESIGN_ANSWER]).declaring(["docs"]);
+    cli_ok(&provider, &["emery", "specify", "docs"]).await;
+
+    let id = current(&provider.storage);
+    let spec: Value = serde_json::from_slice(&document(&provider.storage, &id, "spec.json"))
+        .expect("the committed spec is JSON");
+    assert_eq!(spec["requirements"][0]["scenarios"][0]["then"], "[unknown]", "{spec}");
+    let shown = shown(&provider, "spec").await;
+    assert!(shown.contains("- **THEN** [unknown]"), "{shown}");
+    provider.model.assert_exhausted();
+}
+
+// A criterion covers the requirement, so its outcome is evidenced and
+// `[unknown]` is refused.
+#[tokio::test]
+async fn unknown_covered() {
+    let unknown = unknown_draft();
+    let mut provider = Provider::answering([unknown.as_str(), unknown.as_str(), unknown.as_str()])
+        .declaring(["docs"]);
+    provider.source.evidence.insert(
+        "docs".to_string(),
+        Ok(docs_evidence(&[(
+            "greeting.behaviour",
+            "GET /greeting returns the static string 'hello'.",
+        )])),
+    );
+
+    let envelope = fail(&provider, &["emery", "specify", "docs"], 1, "bad_request").await;
+    assert_message(&envelope, "is `[unknown]` but the requirement is covered");
+    provider.model.assert_exhausted();
 }
 
 // The schema steers and the check gates: the finding rides the correction, and
@@ -926,6 +1066,46 @@ async fn dishonest_design() {
         rendered,
         "the signature is rendered verbatim, labelled by its key, where the draft placed it"
     );
+    provider.model.assert_exhausted();
+}
+
+// A `type` claim without an id is keyed by its path with the line anchor
+// stripped, so two runs that re-anchor the same declaration commit
+// byte-identical designs.
+#[tokio::test]
+async fn type_reanchored() {
+    let signature = "interface Greeting { text: string }";
+    let evidence = |anchor: &str| {
+        let mut typed = claim(ClaimKind::Type, "unused", ("signature", signature));
+        typed.id = None;
+        typed.path = Some(format!("src/greeting.ts#{anchor}"));
+        Ok(evidence(vec![
+            requirement("greeting.behaviour", "GET /greeting returns the static string 'hello'."),
+            typed,
+        ]))
+    };
+    let design = r#"{"preamble": [], "sections": [
+        {"kind": "overview", "blocks": [{"text": "The greeting is one static endpoint."}]},
+        {"kind": "domain-model", "blocks": [{"type": "src/greeting.ts"}]}
+    ]}"#;
+
+    let mut provider = Provider::answering([SPEC_ANSWER, design]).declaring(["docs"]);
+    provider.source.evidence.insert("docs".to_string(), evidence("L1-L4"));
+    cli_ok(&provider, &["emery", "specify", "docs"]).await;
+    let id = current(&provider.storage);
+    let first = document(&provider.storage, &id, "design.json");
+
+    let mut provider =
+        Provider::over(Arc::clone(&provider.storage), [SPEC_ANSWER, design]).declaring(["docs"]);
+    provider.source.evidence.insert("docs".to_string(), evidence("L10-L14"));
+    let resp = cli_ok(&provider, &["emery", "specify", "docs"]).await;
+
+    let stdout = String::from_utf8_lossy(&resp.stdout);
+    assert!(stdout.contains("none (byte-stable)"), "{stdout}");
+    assert_eq!(current(&provider.storage), id, "the re-anchored run keeps its id");
+    assert_eq!(document(&provider.storage, &id, "design.json"), first, "design bytes are stable");
+    let rendered = shown(&provider, "design").await;
+    assert!(rendered.contains("Type: src/greeting.ts\n"), "{rendered}");
     provider.model.assert_exhausted();
 }
 

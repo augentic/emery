@@ -16,7 +16,10 @@ use futures::{FutureExt as _, TryFutureExt as _};
 use omnia_sdk::model::Question;
 use omnia_sdk::{Error, Model, bad_request, server_error};
 
-use crate::{Context, beneath, prompt, reference};
+use crate::{CLAIMS, Context, RUNTIME, beneath, prompt, reference};
+
+// The adapter's prompt among its documents: the system of every mining turn.
+const PROMPT: &str = "extract.md";
 
 /// The most turns one [`extract`] call holds pending at once.
 ///
@@ -28,11 +31,13 @@ pub const CONCURRENT: usize = 4;
 
 /// Mines each seam and combines accepted claims into one [`Evidence`] document.
 ///
-/// `docs` must contain `extract.md`, which becomes the system prompt for
-/// every request. The model receives the adapter identifier, source name,
-/// seam description, and access to embedded references. Responses are
-/// checked with [`Evidence::findings`]; rejected responses may be corrected
-/// until the host's round limit is reached.
+/// `docs` must contain `extract.md`. It becomes the system prompt for every
+/// request, with the shared `claims.md` of [`RUNTIME`] appended, so each turn
+/// carries the id grammar and the gate without a `read_doc` call for them.
+/// The model receives the adapter identifier, source name, seam description,
+/// and access to the remaining embedded references. Responses are checked
+/// with [`Evidence::findings`]; rejected responses may be corrected until the
+/// host's round limit is reached.
 ///
 /// Up to [`CONCURRENT`] requests run concurrently, largest first: a
 /// [`Seam::Files`] by its file count, a [`Seam::Whole`] or [`Seam::Note`],
@@ -65,9 +70,9 @@ pub async fn extract<P: Model>(
     // settle every seam and the question before the first turn is spent
     let plans =
         seams.iter().map(|seam| Plan::of(seam, ctx.input)).collect::<Result<Vec<_>, _>>()?;
-    let mut question = Question::<Evidence>::new("evidence")
-        .system(prompt(docs, "extract.md")?)
-        .tools(reference::tools());
+    let system = format!("{}\n\n---\n\n{}", prompt(docs, PROMPT)?, prompt(RUNTIME, CLAIMS)?);
+    let mut question =
+        Question::<Evidence>::new("evidence").system(system).tools(reference::tools());
     if let SourceContent::Workspace(root) = &ctx.input.content {
         question = question.workspace(root);
     }
@@ -211,7 +216,7 @@ async fn turn<P: Model>(
             .ask(
                 ctx.model,
                 brief.to_string(),
-                Some(reference::serve(docs, source, Some(index))),
+                Some(reference::serve(docs, source, Some(index), &[PROMPT, CLAIMS])),
                 |answer| {
                     let findings = answer.findings();
                     if findings.is_empty() {
@@ -296,8 +301,9 @@ impl Display for Brief<'_> {
         }
 
         f.write_str(
-            "\n\nThe prompt's references are available through this call's `read_doc` tool \
-             (`list_docs` enumerates them); load referenced bodies on demand.\n\n\
+            "\n\nThe claim rules (`claims.md`) are already in the system prompt; the prompt's \
+             further references are available through this call's `read_doc` tool (`list_docs` \
+             enumerates them); load referenced bodies on demand.\n\n\
              Answer with one JSON object matching the gated claims schema. The caller persists \
              the document; do not write it yourself.",
         )

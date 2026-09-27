@@ -114,7 +114,6 @@ pub(crate) fn excluded(entry: Entry<'_>) -> bool {
 
 #[derive(Debug)]
 pub(crate) enum Unoffered {
-    // A segment is missing, of the wrong kind, or a symlink the walk never follows.
     NoFile,
     Refused,
 }
@@ -138,6 +137,7 @@ pub(crate) fn offered_file(
         }
         dir = found.path();
     }
+
     Ok(())
 }
 

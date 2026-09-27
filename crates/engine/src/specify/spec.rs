@@ -19,6 +19,9 @@ use crate::specify::Extract;
 use crate::specify::basis::Basis;
 use crate::specify::brief::{Brief, ClaimsSection, Review};
 
+// The outcome a scenario states where no criterion evidences one.
+const UNKNOWN: &str = "[unknown]";
+
 /// A synthesis brief for the drafted portions of `spec.md`.
 ///
 /// The brief combines extracted claims with their reconciled requirement
@@ -62,19 +65,21 @@ impl Brief for SpecBrief<'_> {
     fn verify(&self, answer: &SpecAnswer, review: &mut Review) {
         review.paragraphs(&answer.preamble, "preamble");
 
-        let subjects: BTreeSet<&str> =
-            self.bases.iter().map(|basis| basis.subject.as_str()).collect();
+        // each draft against its requirement
+        let by_subject: BTreeMap<&str, &Basis> =
+            self.bases.iter().map(|basis| (basis.subject.as_str(), basis)).collect();
         let mut seen = BTreeSet::new();
+        let mut thens: BTreeMap<String, BTreeSet<&str>> = BTreeMap::new();
         for draft in &answer.requirements {
             let subject = draft.subject.as_str();
             if !seen.insert(subject) {
                 review.note(format_args!("`{subject}` is drafted more than once"));
                 continue;
             }
-            if !subjects.contains(subject) {
+            let Some(basis) = by_subject.get(subject) else {
                 review.note(format_args!("`{subject}` is not a requirement"));
                 continue;
-            }
+            };
 
             let label = format!("`{subject}`");
             if draft.scenarios.is_empty() {
@@ -86,11 +91,44 @@ impl Brief for SpecBrief<'_> {
                 for (field, text) in scenario.lines() {
                     review.line(text, format_args!("{label} scenario `{field}`"));
                 }
+
+                let when = normalised(&scenario.when);
+                let restated = basis
+                    .classes
+                    .iter()
+                    .flatten()
+                    .any(|member| normalised(&member.statement) == when);
+                if restated {
+                    review.note(format_args!(
+                        "{label} scenario `when` restates the requirement; state the trigger"
+                    ));
+                }
+
+                let then = normalised(&scenario.then);
+                if then == UNKNOWN && basis.covered {
+                    review.note(format_args!(
+                        "{label} scenario `then` is `{UNKNOWN}` but the requirement is covered; \
+                         state the evidenced outcome"
+                    ));
+                }
+                if !then.is_empty() && then != UNKNOWN {
+                    thens.entry(then).or_default().insert(subject);
+                }
             }
         }
 
-        for subject in subjects.difference(&seen) {
-            review.note(format_args!("requirement `{subject}` is not drafted"));
+        // requirements no draft covers
+        for basis in self.bases.iter().filter(|basis| !seen.contains(basis.subject.as_str())) {
+            review.note(format_args!("requirement `{}` is not drafted", basis.subject));
+        }
+
+        // one outcome across requirements
+        for (then, subjects) in thens.iter().filter(|(_, subjects)| subjects.len() > 1) {
+            review.note(format_args!(
+                "the `then` `{then}` repeats across {} requirements; state what each scenario \
+                 observes",
+                subjects.len()
+            ));
         }
     }
 
@@ -113,13 +151,27 @@ impl Brief for SpecBrief<'_> {
     }
 }
 
+// Whitespace collapsed, trailing punctuation dropped, lowercased: the shape
+// two lines are compared in.
+fn normalised(text: &str) -> String {
+    text.split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+        .trim_end_matches(['.', '!', '?', ';', ':', ','])
+        .to_lowercase()
+}
+
 impl Display for SpecBrief<'_> {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         write!(f, "Draft `spec.md`.\n\n{claims}", claims = ClaimsSection(self.extracts))?;
 
         f.write_str("\n## Requirements (draft one entry per subject)\n\n")?;
         for basis in self.bases {
-            let coverage = if basis.covered { "evidenced" } else { "not evidenced" };
+            let coverage = if basis.covered {
+                "evidenced"
+            } else {
+                "not evidenced — `then` may be `[unknown]`"
+            };
             write!(
                 f,
                 "- {id} `{subject}` — Status: {status} — Sources: [",

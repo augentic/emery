@@ -5,7 +5,7 @@
 //! caller enters that surface. The adapter decides how results become mining
 //! [seams](crate#vocabulary).
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::{self, Display, Formatter};
 
 use emery_adapter::source::SourceContent;
@@ -18,10 +18,20 @@ use serde::Deserialize;
 use crate::workspace::{Entry, Unoffered};
 use crate::{Context, beneath, prompt, reference, workspace};
 
+// The adapter's survey prompt among its documents: the system of the turn.
+const PROMPT: &str = "survey.md";
+
+/// The most modules one survey turn lists before it collapses them to directory counts.
+pub const MODULE_CAP: usize = 200;
+
 /// Returns the surfaces discovered by the model in a workspace source.
 ///
-/// `docs` must contain `survey.md`, which becomes the system prompt.
-/// The model may read the workspace and the embedded reference documents.
+/// `docs` must contain `survey.md`, which becomes the system prompt. The turn
+/// lists the modules `keep` accepts — every path up to [`MODULE_CAP`], else
+/// the root's own files and each top-level directory with its count — so the
+/// model reads the manifest and the bootstrap among them rather than globbing
+/// the tree. The model may read the workspace and the embedded reference
+/// documents.
 ///
 /// Every surface must have a unique, nonempty name and a root-relative entry
 /// path. The entry must be a regular file accepted by `keep`, as must each
@@ -33,10 +43,12 @@ use crate::{Context, beneath, prompt, reference, workspace};
 ///
 /// # Errors
 ///
-/// - Returns [`Error::BadRequest`] when the request is invalid or the model
-///   cannot produce a valid inventory within the available rounds.
-/// - Returns [`Error::ServerError`] when `docs` does not contain `survey.md`
-///   or the source contains inline text instead of a workspace.
+/// - Returns [`Error::BadRequest`] when a workspace name is not UTF-8, the
+///   request is invalid, or the model cannot produce a valid inventory within
+///   the available rounds.
+/// - Returns [`Error::ServerError`] when `docs` does not contain `survey.md`,
+///   the source contains inline text instead of a workspace, or the workspace
+///   cannot be read.
 /// - Returns [`Error::BadGateway`] when a model tool or transport fails.
 pub async fn surfaces<P: Model>(
     ctx: &Context<'_, P>, docs: &'static [Doc], mut keep: impl FnMut(Entry<'_>) -> bool + Send,
@@ -48,35 +60,40 @@ pub async fn surfaces<P: Model>(
         ));
     };
     let question = Question::<Inventory>::new("survey")
-        .system(prompt(docs, "survey.md")?)
+        .system(prompt(docs, PROMPT)?)
         .tools(reference::tools())
         .workspace(root);
+    let modules = workspace::list(root, &mut keep)?;
     let brief = Brief {
         adapter_id: ctx.adapter_id,
         source,
         root,
+        modules: &modules,
     };
 
     tracing::info!(%source, "surveying");
     let inventory = question
-        .ask(ctx.model, brief.to_string(), Some(reference::serve(docs, source, None)), |answer| {
-            let findings = answer.findings(root, &mut keep);
-            if findings.is_empty() {
-                return Ok(());
-            }
-            tracing::debug!(%source, ?findings, "candidate rejected");
-            Err(findings)
-        })
+        .ask(
+            ctx.model,
+            brief.to_string(),
+            Some(reference::serve(docs, source, None, &[PROMPT])),
+            |answer| {
+                let findings = answer.findings(root, &mut keep);
+                if findings.is_empty() {
+                    return Ok(());
+                }
+                tracing::debug!(%source, ?findings, "candidate rejected");
+                Err(findings)
+            },
+        )
         .await?;
-    tracing::info!(
-        %source,
-        surfaces = ?inventory
-            .surfaces
-            .iter()
-            .map(|surface| format!("{} @ {}", surface.name, surface.entry))
-            .collect::<Vec<_>>(),
-        "surveyed"
-    );
+
+    let surfaces: Vec<_> = inventory
+        .surfaces
+        .iter()
+        .map(|surface| format!("{} @ {}", surface.name, surface.entry))
+        .collect();
+    tracing::info!(%source, ?surfaces, "surveyed");
 
     // the check accepted every entry, so each is a path beneath the root
     Ok(inventory
@@ -145,6 +162,7 @@ struct Brief<'a> {
     adapter_id: &'a str,
     source: &'a str,
     root: &'a str,
+    modules: &'a [String],
 }
 
 impl Display for Brief<'_> {
@@ -158,10 +176,11 @@ impl Display for Brief<'_> {
              `/`-separated path relative to `$SOURCE_DIR`, to a module of the kind the prompt \
              says this adapter mines; a module may be the entry of several surfaces, and a \
              module no surface enters is not named.\n\n\
-             Read under `$SOURCE_DIR` to decide; nothing outside it is reachable. The caller \
-             mines each surface from its entry, following what it reaches through the whole \
-             tree — you follow nothing and group nothing. When the tree declares no surface, \
-             answer none rather than inventing one.\n\n\
+             {modules}\
+             Nothing outside `$SOURCE_DIR` is reachable. The caller mines each surface from its \
+             entry, following what it reaches through the whole tree — you follow nothing and \
+             group nothing. When the tree declares no surface, answer none rather than \
+             inventing one.\n\n\
              The prompt's references are available through this call's `read_doc` tool \
              (`list_docs` enumerates them); load referenced bodies on demand.\n\n\
              Answer with one JSON object matching the survey schema. The caller mines the \
@@ -169,6 +188,44 @@ impl Display for Brief<'_> {
             id = self.adapter_id,
             source = self.source,
             root = self.root,
+            modules = Modules(self.modules),
+        )
+    }
+}
+
+// The `## Modules` section of the turn, with how to read it: every kept
+// module while they fit the cap, else the root's own files and each top-level
+// directory with its count, so the turn stays bounded on a large estate.
+struct Modules<'a>(&'a [String]);
+
+impl Display for Modules<'_> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        f.write_str("## Modules\n\n")?;
+        if self.0.len() <= MODULE_CAP {
+            for module in self.0 {
+                writeln!(f, "- `{module}`")?;
+            }
+            return f.write_str(
+                "\nRead the manifest and the bootstrap among the modules listed; do not glob or \
+                 list the tree yourself.\n\n",
+            );
+        }
+
+        let mut dirs: BTreeMap<&str, usize> = BTreeMap::new();
+        for module in self.0 {
+            match module.split_once('/') {
+                Some((dir, _)) => *dirs.entry(dir).or_default() += 1,
+                None => writeln!(f, "- `{module}`")?,
+            }
+        }
+        for (dir, count) in dirs {
+            let noun = if count == 1 { "module" } else { "modules" };
+            writeln!(f, "- `{dir}/` ({count} {noun})")?;
+        }
+        f.write_str(
+            "\nThe tree has too many modules to list, so each top-level directory stands for the \
+             modules beneath it. Read the manifest and the bootstrap among the files listed and \
+             within those directories; list a directory only to reach them.\n\n",
         )
     }
 }

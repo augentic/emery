@@ -22,7 +22,7 @@ Where each closed claim kind's content belongs across the two artifacts. Groupin
 
 Byte-equal `requirement` ids are always one requirement; beyond that, the engine's grouping judgement decided which claims across sources describe one requirement and which agree. The requirement's subject is the highest-authority contributor's id; the other contributors' ids appear in the loser notes the engine renders. You never regroup, rename, or split a requirement.
 
-A `criterion` whose id equals or extends any contributing id (`<id>.<rest>`) covers the requirement. A requirement no criterion covers is an evidence gap: the engine tags it `[unknown]` when it is otherwise agreed and renders `Note: acceptance criteria not evidenced.`; you still draft a scenario that does not invent behaviour.
+A `criterion` whose id equals or extends any contributing id (`<id>.<rest>`) covers the requirement. A requirement no criterion covers is an evidence gap: the engine tags it `[unknown]` when it is otherwise agreed and renders `Note: acceptance criteria not evidenced.`; you still draft a scenario that states what is checked, with `then` as `[unknown]` rather than an invented outcome.
 
 ## Order and stability
 

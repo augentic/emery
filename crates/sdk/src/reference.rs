@@ -23,8 +23,8 @@ pub fn tools() -> Vec<Tool> {
     vec![
         Tool::Function(Function::of::<ListDocs>(
             LIST_DOCS,
-            "List every reference document path this call can read: the adapter's own, then \
-             Emery's shared `claims.md` and `reconciliation.md`.",
+            "List the reference document paths this call can read beyond what the system \
+             prompt already carries: the adapter's own, then Emery's shared ones.",
         )),
         Tool::Function(Function::of::<ReadDoc>(
             READ_DOC,
@@ -35,16 +35,27 @@ pub fn tools() -> Vec<Tool> {
 
 /// Returns the handler that serves the reference tools from `docs` and then [`RUNTIME`].
 ///
+/// `carried` names the documents the turn's system prompt already holds.
+/// `list_docs` omits them and `read_doc` still answers them, so a followed
+/// link never fails.
+///
 /// Each call is reported at DEBUG with its arguments as the model sent them,
 /// under the `source` name and, for a mining turn, its `seam`.
 #[must_use]
-pub fn serve(docs: &'static [Doc], source: &str, seam: Option<usize>) -> Tools {
+pub fn serve(
+    docs: &'static [Doc], source: &str, seam: Option<usize>, carried: &'static [&'static str],
+) -> Tools {
     let source = source.to_owned();
 
     Box::new(move |call: ToolCall| -> ToolFuture {
         let response = match call.name.as_str() {
             LIST_DOCS => {
-                let paths: Vec<&str> = docs.iter().chain(RUNTIME).map(|doc| doc.path).collect();
+                let paths: Vec<&str> = docs
+                    .iter()
+                    .chain(RUNTIME)
+                    .map(|doc| doc.path)
+                    .filter(|path| !carried.contains(path))
+                    .collect();
                 Ok(json!({ "paths": paths }).to_string())
             }
             READ_DOC => call.arguments().map_err(|err| format!("{READ_DOC}: {err}")).and_then(
@@ -87,6 +98,6 @@ struct ListDocs {}
 /// The document selector accepted by `read_doc`.
 #[derive(Debug, Deserialize, JsonSchema)]
 struct ReadDoc {
-    /// The document path as `list_docs` lists it, such as `claims.md`.
+    /// The document path as `list_docs` lists it, such as `reconciliation.md`.
     path: String,
 }

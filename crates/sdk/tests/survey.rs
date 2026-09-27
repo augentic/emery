@@ -12,6 +12,7 @@ use std::path::Path;
 use emery_sdk::survey::{self, Surface};
 use emery_sdk::workspace::Entry;
 use emery_sdk::{Context, Doc, Error, SourceInput};
+use omnia_sdk::model::ToolCall;
 use omnia_test::SeenFormat;
 use omnia_test::guest::Scripted;
 
@@ -89,8 +90,8 @@ fn tree<'a>(root: &'a Path, files: &[&str]) -> &'a str {
     utf8(root)
 }
 
-// The root is lent whole and no file is listed, so the turn does not grow with
-// the estate.
+// The root is lent whole and the kept modules are listed, capped, so the turn
+// stays bounded on a large estate.
 #[tokio::test]
 async fn model_request() {
     let model = Scripted::answering([
@@ -112,7 +113,13 @@ async fn model_request() {
     assert!(turn.contains("the source `code` bound to adapter `source:probe`"), "{turn}");
     assert!(turn.contains(&format!("read-only view at `{root}`")), "{turn}");
     assert!(turn.contains("relative to `$SOURCE_DIR`"), "{turn}");
-    assert!(!turn.contains("\n- `"), "no file is listed: {turn}");
+    assert!(turn.contains("## Modules"), "the brief lists the kept modules: {turn}");
+    for module in ["index.ts", "jobs/nightly.ts", "routes/orders.ts", "routes/users.ts"] {
+        assert!(turn.contains(&format!("- `{module}`")), "the brief names {module}: {turn}");
+    }
+    for refused in ["services/orders.ts", "types/index.d.ts", "spec.md", ".omnia/store.json"] {
+        assert!(!turn.contains(refused), "the brief names no refused file: {turn}");
+    }
     let SeenFormat::Schema { name, schema } = &request.format else {
         panic!("the survey is steered by schema");
     };
@@ -122,6 +129,76 @@ async fn model_request() {
     let surface = schema.pointer("/$defs/Surface").expect("Surface definition");
     assert!(surface.pointer("/properties/name").is_some(), "{surface}");
     assert!(surface.pointer("/properties/entry").is_some(), "{surface}");
+    model.assert_exhausted();
+}
+
+// The survey's system carries the survey prompt alone, so `list_docs` omits
+// it and nothing else; the prompt still answers when read.
+#[tokio::test]
+async fn model_list_docs() {
+    let model = Scripted::answering([
+        r#"{"surfaces":[{"name":"POST /orders","entry":"routes/orders.ts"}]}"#,
+    ])
+    .calling(
+        0,
+        [
+            ToolCall {
+                id: "1".to_string(),
+                name: "list_docs".to_string(),
+                arguments: "{}".to_string(),
+            },
+            ToolCall {
+                id: "2".to_string(),
+                name: "read_doc".to_string(),
+                arguments: r#"{"path":"survey.md"}"#.to_string(),
+            },
+        ],
+    );
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let root = tree(tmp.path(), FILES);
+
+    survey(&model, PROSE, &SourceInput::workspace("code", root)).await.expect("accepted");
+
+    let exchanges = model.exchanges();
+    assert_eq!(exchanges.len(), 3, "two reference calls, then the check");
+    assert_eq!(
+        exchanges[0].outcome.as_deref(),
+        Ok(r#"{"paths":["extract.md","claims.md","reconciliation.md"]}"#),
+        "`list_docs` omits the prompt the system carries"
+    );
+    assert_eq!(
+        exchanges[1].outcome.as_deref(),
+        Ok(r#"{"body":"SURVEY","path":"survey.md"}"#),
+        "`read_doc` still answers it"
+    );
+    model.assert_exhausted();
+}
+
+// Past the cap the brief collapses to top-level directories with counts,
+// naming only the root's own files.
+#[tokio::test]
+async fn model_modules_capped() {
+    let model = Scripted::answering([
+        r#"{"surfaces":[{"name":"POST /orders","entry":"routes/orders.ts"}]}"#,
+    ]);
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let root = tmp.path();
+    write(root, "index.ts", "");
+    write(root, "routes/orders.ts", "");
+    for i in 0..150 {
+        write(root, &format!("routes/gen{i:03}.ts"), "");
+    }
+    for i in 0..60 {
+        write(root, &format!("jobs/gen{i:03}.ts"), "");
+    }
+
+    survey(&model, PROSE, &SourceInput::workspace("code", utf8(root))).await.expect("accepted");
+
+    let turn = &model.seen()[0].messages[0];
+    assert!(turn.contains("- `index.ts`"), "the root's own file is named: {turn}");
+    assert!(turn.contains("- `jobs/` (60 modules)"), "{turn}");
+    assert!(turn.contains("- `routes/` (151 modules)"), "{turn}");
+    assert!(!turn.contains("gen000"), "no collapsed path is named: {turn}");
     model.assert_exhausted();
 }
 

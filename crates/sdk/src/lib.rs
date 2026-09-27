@@ -108,6 +108,10 @@ pub use self::extract::{CONCURRENT, Seam, extract};
 /// in their own table; pass [`RUNTIME`] to [`check`] as imports.
 pub static RUNTIME: &[Doc] = prose!["../prose/claims.md", "../prose/reconciliation.md"];
 
+// The claim rules within `RUNTIME`, which every mining turn's system prompt
+// carries after the adapter's own.
+const CLAIMS: &str = "claims.md";
+
 /// Exports an adapter's metadata and extraction functions as a component.
 ///
 /// The arguments must identify functions with these signatures:
@@ -199,8 +203,8 @@ pub struct Context<'a, P> {
     pub model: &'a P,
 }
 
-// A missing prompt is the adapter build's own defect, reported before a turn
-// is spent.
+// A missing document is a build's own defect — the adapter's for its prompt,
+// the SDK's for a runtime reference — reported before a turn is spent.
 fn prompt(docs: &[Doc], path: &str) -> Result<&'static str, Error> {
     body(docs, path).ok_or_else(|| server_error!("`{path}` is not embedded"))
 }
