@@ -69,8 +69,7 @@ impl Brief for SpecBrief<'_> {
         let by_subject: BTreeMap<&str, &Basis> =
             self.bases.iter().map(|basis| (basis.subject.as_str(), basis)).collect();
         let mut seen = BTreeSet::new();
-        let mut thens: BTreeMap<String, BTreeSet<&str>> = BTreeMap::new();
-
+        let mut outcomes: BTreeMap<String, BTreeSet<&str>> = BTreeMap::new();
         for draft in &answer.requirements {
             let subject = draft.subject.as_str();
             if !seen.insert(subject) {
@@ -81,50 +80,8 @@ impl Brief for SpecBrief<'_> {
                 review.note(format_args!("`{subject}` is not a requirement"));
                 continue;
             };
-
-            let label = format!("`{subject}`");
-            if draft.scenarios.is_empty() {
-                review.note(format_args!("{label} has no scenario"));
-            }
-
-            let statements: BTreeSet<String> = basis
-                .classes
-                .iter()
-                .flatten()
-                .map(|member| normalised(&member.statement))
-                .collect();
-
-            for scenario in &draft.scenarios {
-                review.line(&scenario.name, format_args!("{label} scenario `name`"));
-                for (field, text) in scenario.lines() {
-                    review.line(text, format_args!("{label} scenario `{field}`"));
-                }
-
-                let when = normalised(&scenario.when);
-                if statements.contains(&when) {
-                    review.note(format_args!(
-                        "{label} scenario `when` restates the requirement; state the trigger"
-                    ));
-                }
-
-                let then = normalised(&scenario.then);
-                if statements.contains(&then) {
-                    review.note(format_args!(
-                        "{label} scenario `then` restates the requirement; state the outcome the \
-                         scenario observes"
-                    ));
-                }
-
-                if then == UNKNOWN && basis.covered {
-                    review.note(format_args!(
-                        "{label} scenario `then` is `{UNKNOWN}` but the requirement is covered; \
-                         state the evidenced outcome"
-                    ));
-                }
-
-                if !then.is_empty() && then != UNKNOWN {
-                    thens.entry(then).or_default().insert(subject);
-                }
+            for outcome in verify_draft(basis, draft, review) {
+                outcomes.entry(outcome).or_default().insert(subject);
             }
         }
 
@@ -134,7 +91,7 @@ impl Brief for SpecBrief<'_> {
         }
 
         // one outcome across requirements
-        for (then, subjects) in thens.iter().filter(|(_, subjects)| subjects.len() > 1) {
+        for (then, subjects) in outcomes.iter().filter(|(_, subjects)| subjects.len() > 1) {
             review.note(format_args!(
                 "the `then` `{then}` repeats across {} requirements; state what each scenario \
                  observes",
@@ -160,6 +117,52 @@ impl Brief for SpecBrief<'_> {
             requirements,
         })
     }
+}
+
+// One draft against its requirement. Returns each evidenced `then` outcome
+// its scenarios state, normalised, for the check across requirements.
+fn verify_draft(basis: &Basis, draft: &Draft, review: &mut Review) -> Vec<String> {
+    let label = format!("`{}`", draft.subject);
+    if draft.scenarios.is_empty() {
+        review.note(format_args!("{label} has no scenario"));
+    }
+
+    // the requirement's own statements, which no scenario line may restate
+    let statements: BTreeSet<String> =
+        basis.classes.iter().flatten().map(|member| normalised(&member.statement)).collect();
+
+    let mut outcomes = Vec::new();
+    for scenario in &draft.scenarios {
+        review.line(&scenario.name, format_args!("{label} scenario `name`"));
+        for (field, text) in scenario.lines() {
+            review.line(text, format_args!("{label} scenario `{field}`"));
+        }
+
+        let when = normalised(&scenario.when);
+        if statements.contains(&when) {
+            review.note(format_args!(
+                "{label} scenario `when` restates the requirement; state the trigger"
+            ));
+        }
+
+        let then = normalised(&scenario.then);
+        if statements.contains(&then) {
+            review.note(format_args!(
+                "{label} scenario `then` restates the requirement; state the outcome the \
+                 scenario observes"
+            ));
+        }
+        if then == UNKNOWN && basis.covered {
+            review.note(format_args!(
+                "{label} scenario `then` is `{UNKNOWN}` but the requirement is covered; state \
+                 the evidenced outcome"
+            ));
+        }
+        if !then.is_empty() && then != UNKNOWN {
+            outcomes.push(then);
+        }
+    }
+    outcomes
 }
 
 // Whitespace collapsed, trailing punctuation dropped, lowercased: the shape

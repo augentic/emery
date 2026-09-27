@@ -159,29 +159,32 @@ impl Claim {
         }
     }
 
-    fn findings(&self, index: usize) -> impl Iterator<Item = String> + '_ {
+    fn findings(&self, index: usize) -> Vec<String> {
         let kind = self.kind;
-        let id = match self.id.as_deref() {
+        let mut findings = Vec::new();
+
+        // the id rule
+        match self.id.as_deref() {
             Some(id) if !is_claim_id(id) => {
-                Some(format!("- claim {index}: id `{id}` does not match `{CLAIM_ID_REGEX}`"))
+                findings
+                    .push(format!("- claim {index}: id `{id}` does not match `{CLAIM_ID_REGEX}`"));
             }
             None if kind.requires_id() => {
-                Some(format!("- claim {index}: `{kind}` claims require an id"))
+                findings.push(format!("- claim {index}: `{kind}` claims require an id"));
             }
-            _ => None,
-        };
+            _ => {}
+        }
 
-        let extras =
-            kind.required_extras().iter().filter(|&key| !self.extras.contains_key(*key)).map(
-                move |key| {
-                    format!(
-                        "- claim {index}: `{kind}` `{label}` is missing extra `{key}`",
-                        label = self.id.as_deref().unwrap_or("<unnamed>"),
-                    )
-                },
-            );
+        // the extras the kind requires
+        let label = self.id.as_deref().unwrap_or("<unnamed>");
+        for key in kind.required_extras() {
+            if !self.extras.contains_key(*key) {
+                findings
+                    .push(format!("- claim {index}: `{kind}` `{label}` is missing extra `{key}`"));
+            }
+        }
 
-        id.into_iter().chain(extras)
+        findings
     }
 }
 

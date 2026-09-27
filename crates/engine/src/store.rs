@@ -32,9 +32,9 @@ pub async fn commit<S: StateStore + BlobStore>(
     // observe once for the diff and the CAS
     let observed = observe(store).await;
     let diff = observed
-        .outgoing_id()
-        .zip(observed.outgoing.as_ref())
-        .map(|(id, outgoing)| Diff::between(id, outgoing, revision));
+        .id()
+        .zip(observed.revision.as_ref())
+        .map(|(from, outgoing)| Diff::between(from, outgoing, revision));
     let id = swap(store, revision, observed).await?;
 
     Ok((id, diff))
@@ -60,10 +60,10 @@ async fn swap<S: StateStore + BlobStore>(
     StateStore::cas(store, REVISION_KEY, observed.token.as_deref(), id.as_bytes())
         .await
         .context("swapping current revision")?;
-    tracing::debug!(%id, outgoing = ?observed.outgoing_id(), "revision committed");
+    tracing::debug!(%id, outgoing = ?observed.id(), "revision committed");
 
     // prune the outgoing revision
-    if let Some(outgoing) = observed.outgoing_id().filter(|outgoing| *outgoing != id) {
+    if let Some(outgoing) = observed.id().filter(|outgoing| *outgoing != id) {
         for name in [Spec::NAME, Design::NAME] {
             let _ = BlobStore::delete(store, CONTAINER, &key(outgoing, name)).await;
         }
@@ -105,7 +105,7 @@ pub async fn current<S: StateStore + BlobStore>(
 async fn observe<S: StateStore + BlobStore>(store: &S) -> Observation {
     let nothing = Observation {
         token: None,
-        outgoing: None,
+        revision: None,
     };
 
     // the current id, or nothing when there is none or it cannot be read
@@ -122,7 +122,7 @@ async fn observe<S: StateStore + BlobStore>(store: &S) -> Observation {
     let Ok(id) = str::from_utf8(&token) else {
         return Observation {
             token: Some(token),
-            outgoing: None,
+            revision: None,
         };
     };
 
@@ -136,7 +136,7 @@ async fn observe<S: StateStore + BlobStore>(store: &S) -> Observation {
 
     Observation {
         token: Some(token),
-        outgoing: revision,
+        revision,
     }
 }
 
@@ -158,11 +158,11 @@ struct Observation {
     // Absent when storage could not be read too, so the CAS fails closed
     // against a present key.
     token: Option<Vec<u8>>,
-    outgoing: Option<Revision>,
+    revision: Option<Revision>,
 }
 
 impl Observation {
-    fn outgoing_id(&self) -> Option<&str> {
+    fn id(&self) -> Option<&str> {
         self.token.as_deref().and_then(|token| str::from_utf8(token).ok())
     }
 }

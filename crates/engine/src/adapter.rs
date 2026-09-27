@@ -48,17 +48,21 @@ pub const ENGINE: &str = "emery";
 #[serde(transparent)]
 pub struct Registries(BTreeMap<String, String>);
 
-const FIRST_PARTY: (&str, &str) = ("emery", "augentic.io");
+const NAMESPACE: &str = "emery";
+const REGISTRY: &str = "augentic.io";
 
 impl Registries {
     /// Returns the registry serving `namespace`, if a project line or the
     /// first-party route names one.
     #[must_use]
     pub fn get(&self, namespace: &str) -> Option<&str> {
-        self.0
-            .get(namespace)
-            .map(String::as_str)
-            .or_else(|| (namespace == FIRST_PARTY.0).then_some(FIRST_PARTY.1))
+        if let Some(registry) = self.0.get(namespace) {
+            return Some(registry);
+        }
+        if namespace == NAMESPACE {
+            return Some(REGISTRY);
+        }
+        None
     }
 }
 
@@ -333,7 +337,7 @@ impl FromStr for AdapterRef {
         }
 
         // parse `<namespace>:<name>@<version>`, the namespace defaulting to `emery`
-        let (namespace, rest) = value.split_once(':').unwrap_or((FIRST_PARTY.0, value));
+        let (namespace, rest) = value.split_once(':').unwrap_or((NAMESPACE, value));
         let (name, version) = rest
             .split_once('@')
             .ok_or_else(|| bad_request!("adapter `{value}` is missing `@<version>`"))?;

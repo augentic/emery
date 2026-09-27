@@ -67,14 +67,10 @@ impl Brief for DesignBrief<'_> {
         }
 
         // restrict the `{"type": …}` arm to this run's type keys
-        if !self.plan.types.is_empty()
-            && let Some(block) = schema
-                .pointer_mut("/$defs/Block/oneOf")
-                .and_then(Value::as_array_mut)
-                .and_then(|variants| {
-                    variants.iter_mut().find(|variant| variant["required"] == json!(["type"]))
-                })
-        {
+        if self.plan.types.is_empty() {
+            return;
+        }
+        if let Some(block) = type_block(schema) {
             block["properties"]["type"]["enum"] = json!(self.plan.keys().collect::<Vec<_>>());
         }
     }
@@ -315,6 +311,12 @@ fn type_key(taken: &BTreeMap<String, &str>, name: &str, path: Option<&str>) -> S
         .map(|n| format!("{name} ({anchor}, {n})"))
         .find(|key| !taken.contains_key(key))
         .unwrap_or(anchored)
+}
+
+// The `{"type": …}` variant of the derived `Block` schema.
+fn type_block(schema: &mut Value) -> Option<&mut Value> {
+    let variants = schema.pointer_mut("/$defs/Block/oneOf")?.as_array_mut()?;
+    variants.iter_mut().find(|variant| variant["required"] == json!(["type"]))
 }
 
 // The declared name of a `type` claim: its id, its `name` extra, or its path

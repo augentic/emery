@@ -81,22 +81,25 @@ fn discover() -> Result<Option<&'static Path>, Error> {
 }
 
 fn from_argv(adapters: &[String], descriptions: &[String]) -> Result<Vec<SourceConfig>, Error> {
-    let workspaces = adapters
-        .iter()
-        .map(|reference| source(reference, SourceContent::Workspace(".".to_string())));
-    let values = descriptions.iter().map(|entry| {
-        let (reference, text) = entry
-            .split_once('=')
-            .filter(|(reference, _)| !reference.is_empty())
-            .ok_or_else(|| {
-                bad_request!(
-                    "invalid argument --description: expected `<adapter>=<text>`, got `{entry}`"
-                )
-            })?;
-        source(reference, SourceContent::Value(text.to_string()))
-    });
+    let mut sources = Vec::with_capacity(adapters.len() + descriptions.len());
 
-    workspaces.chain(values).collect()
+    // each positional adapter reads the project root
+    for reference in adapters {
+        sources.push(source(reference, SourceContent::Workspace(".".to_string()))?);
+    }
+
+    // each `--description <adapter>=<text>` reads its text
+    for entry in descriptions {
+        let split = entry.split_once('=').filter(|(reference, _)| !reference.is_empty());
+        let Some((reference, text)) = split else {
+            return Err(bad_request!(
+                "invalid argument --description: expected `<adapter>=<text>`, got `{entry}`"
+            ));
+        };
+        sources.push(source(reference, SourceContent::Value(text.to_string()))?);
+    }
+
+    Ok(sources)
 }
 
 fn source(reference: &str, content: SourceContent) -> Result<SourceConfig, Error> {
