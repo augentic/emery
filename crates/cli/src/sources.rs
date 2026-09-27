@@ -106,10 +106,11 @@ impl TryFrom<Carrier<'_>> for Decoded {
                 let mut sources = Vec::with_capacity(adapters.len() + descriptions.len());
 
                 for reference in adapters {
-                    sources.push(argv_source(reference)?);
+                    sources.push(argv_source(reference, SourceContent::Workspace(".".into()))?);
                 }
                 for entry in descriptions {
-                    sources.push(DescriptionBinding::try_from(entry.as_str())?.into_source());
+                    let (reference, text) = description(entry)?;
+                    sources.push(argv_source(reference, SourceContent::Value(text.into()))?);
                 }
 
                 let registries = match discover()? {
@@ -149,41 +150,20 @@ impl TryFrom<&Path> for Decoded {
     }
 }
 
-struct DescriptionBinding {
-    adapter: AdapterRef,
-    text: String,
+fn description(entry: &str) -> Result<(&str, &str), Error> {
+    entry.split_once('=').filter(|(reference, _)| !reference.is_empty()).ok_or_else(|| {
+        bad_request!("invalid argument --description: expected `<adapter>=<text>`, got `{entry}`")
+    })
 }
 
-impl TryFrom<&str> for DescriptionBinding {
-    type Error = Error;
-
-    fn try_from(entry: &str) -> Result<Self, Error> {
-        let split = entry.split_once('=').filter(|(reference, _)| !reference.is_empty());
-        let Some((reference, text)) = split else {
-            return Err(bad_request!(
-                "invalid argument --description: expected `<adapter>=<text>`, got `{entry}`"
-            ));
-        };
-        let adapter = AdapterRef::from_str(reference)?.anchored_to(Path::new("."))?;
-        Ok(Self {
-            adapter,
-            text: text.to_string(),
-        })
-    }
-}
-
-impl DescriptionBinding {
-    fn into_source(self) -> SourceConfig {
-        SourceConfig::new(self.adapter, SourceContent::Value(self.text))
-    }
-}
-
-fn argv_source(reference: &str) -> Result<SourceConfig, Error> {
+fn argv_source(reference: &str, content: SourceContent) -> Result<SourceConfig, Error> {
     let adapter = AdapterRef::from_str(reference)?.anchored_to(Path::new("."))?;
-    Ok(SourceConfig::new(
+    Ok(SourceConfig {
+        name: adapter.name()?,
         adapter,
-        SourceContent::Workspace(".".to_string()),
-    ))
+        content,
+        digest: None,
+    })
 }
 
 // The `[[source]]` entries are skipped undecoded, so what they hold never
@@ -237,7 +217,11 @@ impl SourceEntry {
     fn try_into_config(self, base: ConfigBase<'_>) -> Result<SourceConfig, Error> {
         let ConfigBase(base) = base;
         let adapter = self.adapter.anchored_to(base)?;
-        let name = self.name.unwrap_or_else(|| adapter.to_string());
+        let name = match self.name {
+            Some(name) => name,
+            None => adapter.name()?,
+        };
+
         let content = match (self.path, self.description) {
             (Some(_), Some(_)) => {
                 return Err(bad_request!(

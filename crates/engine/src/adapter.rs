@@ -83,7 +83,7 @@ pub struct Loaded {
 /// ([`AdapterRef::guest`]), and all load before metadata is queried. The
 /// loader holds a pinned adapter to its digest, and a declared minimum Emery
 /// version must not exceed the running version. The result is keyed by the
-/// reference's [`AdapterRef::reference`] form.
+/// reference's [`Display`] form.
 ///
 /// # Errors
 ///
@@ -106,7 +106,8 @@ pub async fn load<'a, P: Source + Plugins>(
     let mut locations: BTreeMap<String, (Location, Option<Digest>)> = BTreeMap::new();
     for (adapter, digest) in adapters {
         let location = adapter.location(digest, registries)?;
-        match locations.entry(adapter.reference()) {
+
+        match locations.entry(adapter.to_string()) {
             Entry::Vacant(slot) => {
                 slot.insert((location, digest.cloned()));
             }
@@ -115,10 +116,7 @@ pub async fn load<'a, P: Source + Plugins>(
                 if let Some(again) = digest {
                     let first = pin.get_or_insert_with(|| again.clone());
                     if first != again {
-                        return Err(bad_request!(
-                            "adapter `{}` is pinned to two digests",
-                            adapter.reference()
-                        ));
+                        return Err(bad_request!("adapter `{adapter}` is pinned to two digests"));
                     }
                 }
             }
@@ -192,15 +190,14 @@ fn is_supported(id: &str, declared: &str, running: &semver::Version) -> Result<(
 ///
 /// Parsing normalises package shorthands and local file prefixes.
 /// `intent@1.0.0` becomes `emery:intent@1.0.0`, while
-/// `file://./intent.wasm` becomes `./intent.wasm`. [`Display`] returns the
-/// adapter's name — the source name a run derives when the operator names
-/// none — and [`reference`] its normalised identity for config serialisation
-/// and load deduplication. [`guest`] is the name of the guest it loads as.
-/// An empty value, a GitHub URL, or a malformed package reference parses as
-/// [`Error::BadRequest`].
+/// `file://./intent.wasm` becomes `./intent.wasm`. [`Display`] is that
+/// normalised identity — what config serialises and a run dedupes loads by —
+/// [`guest`] the name of the guest it loads as, and [`name`] the kebab-case
+/// name it lends a binding that names none. An empty value, a GitHub URL, or
+/// a malformed package reference parses as [`Error::BadRequest`].
 ///
 /// [`guest`]: Self::guest
-/// [`reference`]: Self::reference
+/// [`name`]: Self::name
 ///
 /// # Examples
 ///
@@ -208,19 +205,19 @@ fn is_supported(id: &str, declared: &str, running: &semver::Version) -> Result<(
 /// use emery_engine::AdapterRef;
 ///
 /// let package: AdapterRef = "intent@1.0.0".parse()?;
-/// assert_eq!(package.to_string(), "intent");
-/// assert_eq!(package.reference(), "emery:intent@1.0.0");
+/// assert_eq!(package.to_string(), "emery:intent@1.0.0");
 /// assert_eq!(package.guest(), "emery:intent");
+/// assert_eq!(package.name()?, "intent");
 ///
-/// let file: AdapterRef = "file://./adapters/intent.wasm".parse()?;
-/// assert_eq!(file.to_string(), "intent");
-/// assert_eq!(file.reference(), "./adapters/intent.wasm");
-/// assert_eq!(file.guest(), "intent");
+/// let file: AdapterRef = "file://./adapters/my_intent.wasm".parse()?;
+/// assert_eq!(file.to_string(), "./adapters/my_intent.wasm");
+/// assert_eq!(file.guest(), "my_intent");
+/// assert_eq!(file.name()?, "my-intent");
 ///
 /// let declared: AdapterRef = "intent".parse()?;
 /// assert_eq!(declared.to_string(), "intent");
-/// assert_eq!(declared.reference(), "intent");
 /// assert_eq!(declared.guest(), "intent");
+/// assert_eq!(declared.name()?, "intent");
 /// # Ok::<(), omnia_sdk::Error>(())
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -233,7 +230,7 @@ pub enum AdapterRef {
         /// The namespace `[registries]` routes to a registry, `emery` for a
         /// first-party adapter.
         namespace: String,
-        /// The package name, the source name a run derives.
+        /// The package name, the [`name`](Self::name) a run derives.
         name: String,
         /// The exact version to fetch.
         version: semver::Version,
@@ -264,18 +261,32 @@ impl AdapterRef {
         }
     }
 
-    /// Returns the normalised reference serialised in config and used to dedupe loads.
-    #[must_use]
-    pub fn reference(&self) -> String {
-        match self {
-            Self::Package {
-                namespace,
-                name,
-                version,
-            } => format!("{namespace}:{name}@{version}"),
-            Self::Static(name) => name.clone(),
-            Self::File(path) => path.display().to_string(),
+    /// Returns the kebab-case name this adapter lends what it is bound to.
+    ///
+    /// A bare name or a package is its name; a local component is its file's
+    /// stem with `_` read as `-`, so `./adapters/my_tool.wasm` is `my-tool`.
+    /// A run uses it where an operator gives no `name` of their own.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::BadRequest`] when the derived name is not kebab-case,
+    /// as a component's stem need not be; the binding then needs an explicit
+    /// `name`.
+    pub fn name(&self) -> Result<String, Error> {
+        let name = match self {
+            Self::Static(name) | Self::Package { name, .. } => name.clone(),
+            Self::File(path) => {
+                let stem = path.file_stem().and_then(OsStr::to_str).unwrap_or_default();
+                stem.replace('_', "-")
+            }
+        };
+        if !is_kebab(&name) {
+            return Err(bad_request!(
+                "adapter `{self}` derives the name `{name}`, which is not kebab-case; set `name` \
+                 explicitly"
+            ));
         }
+        Ok(name)
     }
 
     /// Returns this reference with any local component path resolved from `base`.
@@ -321,27 +332,25 @@ impl AdapterRef {
             Self::Package { namespace, .. } => {
                 let endpoint = registries.get(namespace).ok_or_else(|| {
                     bad_request!(
-                        "no registry routes `{}`: add `{namespace} = \"<registry>\"` under \
-                         `[registries]` in emery.toml",
-                        self.reference()
+                        "no registry routes `{self}`: add `{namespace} = \"<registry>\"` under \
+                         `[registries]` in emery.toml"
                     )
                 })?;
                 Location::Registry {
-                    package: self.reference(),
+                    package: self.to_string(),
                     endpoint: Some(endpoint.to_owned()),
                 }
             }
             Self::File(_) if self.guest() == ENGINE => {
                 return Err(bad_request!(
-                    "adapter `{}` would register as `{ENGINE}`, the engine itself; rename the \
-                     component",
-                    self.reference()
+                    "adapter `{self}` would register as `{ENGINE}`, the engine itself; rename \
+                     the component"
                 ));
             }
             Self::File(path) => {
                 let local = preopen_path(path)?;
                 if !local.is_file() {
-                    return Err(not_found!("adapter `{}` not found", self.reference()));
+                    return Err(not_found!("adapter `{self}` not found"));
                 }
                 Location::Path(local.display().to_string())
             }
@@ -352,11 +361,13 @@ impl AdapterRef {
 impl Display for AdapterRef {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
         match self {
-            Self::Static(name) | Self::Package { name, .. } => f.write_str(name),
-            Self::File(path) => {
-                let stem = path.file_stem().and_then(OsStr::to_str).unwrap_or_default();
-                f.write_str(&stem.replace('_', "-"))
-            }
+            Self::Package {
+                namespace,
+                name,
+                version,
+            } => write!(f, "{namespace}:{name}@{version}"),
+            Self::Static(name) => f.write_str(name),
+            Self::File(path) => path.display().fmt(f),
         }
     }
 }
@@ -415,6 +426,6 @@ impl TryFrom<String> for AdapterRef {
 
 impl From<AdapterRef> for String {
     fn from(adapter: AdapterRef) -> Self {
-        adapter.reference()
+        adapter.to_string()
     }
 }

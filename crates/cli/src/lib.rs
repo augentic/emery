@@ -117,7 +117,9 @@ enum Verb {
 #[derive(Debug, clap::Args)]
 struct SpecifyArgs {
     /// Workspace-backed source adapters: a project-relative `.wasm` path, a
-    /// package reference, or a bare name the deployment declares.
+    /// package reference, or a bare name the deployment declares. Each source
+    /// takes its adapter's name — a component's file stem, `_` read as `-`;
+    /// a stem that is not kebab-case needs `name` on an emery.toml entry.
     adapters: Vec<String>,
     /// Bind an inline source as `<adapter>=<text>`; repeatable.
     #[arg(long = "description", short = 'd')]

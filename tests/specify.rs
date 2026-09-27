@@ -1494,6 +1494,26 @@ async fn file_named_by_stem() {
     provider.model.assert_exhausted();
 }
 
+// The stem is a name the operator never typed, so the refusal points at the
+// reference it came from and at the carrier that can name the source instead.
+#[tokio::test]
+async fn file_stem_not_kebab() {
+    let scratch = Scratch::new();
+    let component = scratch.write("MyTool.wasm", b"\0asm-stub");
+    let config = scratch.config("[[source]]\nadapter = \"./MyTool.wasm\"\n");
+    let provider = Provider::idle();
+
+    for argv in
+        [&["emery", "specify", &component][..], &["emery", "specify", "--config", &config][..]]
+    {
+        let envelope = fail(&provider, argv, 1, "bad_request").await;
+
+        assert_message(&envelope, "MyTool.wasm` derives the name `MyTool`");
+        assert_message(&envelope, "set `name` explicitly");
+        assert!(provider.plugins.loads().is_empty(), "the refusal precedes any load: {argv:?}");
+    }
+}
+
 #[tokio::test]
 async fn package_routed() {
     let cases: &[(&str, &str, &str)] = &[
