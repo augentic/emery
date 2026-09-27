@@ -123,6 +123,17 @@ pub struct SourceConfig {
 }
 
 impl SourceConfig {
+    /// Builds a source named by the adapter's [`to_string()`](AdapterRef::to_string) with no digest pin.
+    #[must_use]
+    pub fn new(adapter: AdapterRef, content: SourceContent) -> Self {
+        Self {
+            name: adapter.to_string(),
+            adapter,
+            content,
+            digest: None,
+        }
+    }
+
     // The one place an operator root meets the guest preopen.
     fn prepare(&self) -> Result<SourceInput, Error> {
         let name = &self.name;
@@ -197,7 +208,7 @@ impl<'a> Bound<'a> {
         &self, provider: &S, loaded: &BTreeMap<String, Loaded>,
     ) -> Result<Extract, Error> {
         let source = &self.input.name;
-        let adapter = self.adapter.to_string();
+        let adapter = self.adapter.reference();
 
         let Loaded { id, kind } = loaded
             .get(&adapter)

@@ -9,6 +9,7 @@ mod sources;
 mod text;
 
 use std::borrow::Cow;
+use std::convert::TryFrom;
 use std::ffi::OsString;
 use std::path::PathBuf;
 
@@ -64,7 +65,7 @@ where
     match app.verb {
         Verb::Completions { shell } => completions::<App>(shell, NAME),
         Verb::Specify(arguments) => {
-            command.call(specify, || arguments.decode(), text::specify).await
+            command.call(specify, || SpecifyInput::try_from(arguments), text::specify).await
         }
         Verb::Show(ShowArgs { artifact }) => {
             command.call(show, || Ok(ShowInput { artifact }), text::show).await
@@ -126,16 +127,22 @@ struct SpecifyArgs {
     config: Option<PathBuf>,
 }
 
-impl SpecifyArgs {
-    fn decode(self) -> Result<SpecifyInput, Error> {
-        let Self {
+impl TryFrom<SpecifyArgs> for SpecifyInput {
+    type Error = Error;
+
+    fn try_from(args: SpecifyArgs) -> Result<Self, Error> {
+        let SpecifyArgs {
             adapters,
             descriptions,
             config,
-        } = self;
-        let sources::Decoded { sources, registries } =
-            sources::decode(&adapters, &descriptions, config.as_deref())?;
-        Ok(SpecifyInput { sources, registries })
+        } = args;
+        let carriers = sources::SourceCarriers {
+            adapters: &adapters,
+            descriptions: &descriptions,
+            config: config.as_deref(),
+        };
+        let sources::Decoded { sources, registries } = carriers.try_into()?;
+        Ok(Self { sources, registries })
     }
 }
 
