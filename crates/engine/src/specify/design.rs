@@ -142,6 +142,7 @@ impl Brief for DesignBrief<'_> {
         let mut drafted = answer.sections;
         drafted.sort_by_key(|section| section.kind);
         let mut sections = Vec::with_capacity(drafted.len());
+
         for section in drafted {
             let mut blocks = Vec::with_capacity(section.blocks.len());
             for block in section.blocks {
@@ -159,6 +160,8 @@ impl Brief for DesignBrief<'_> {
                     }
                 });
             }
+
+            // add section to the output
             sections.push(Section {
                 kind: section.kind,
                 blocks,
@@ -180,7 +183,8 @@ impl Display for DesignBrief<'_> {
         f.write_str("\n## Sections\n\n")?;
         for &kind in SectionKind::VARIANTS {
             let presence = self.plan.presence(kind);
-            let kinds = informants(kind).iter().map(|kind| format!("`{kind}`")).collect::<Vec<_>>();
+            let kinds =
+                kind.informants().iter().map(|kind| format!("`{kind}`")).collect::<Vec<_>>();
             let reason = match (presence, kinds.is_empty()) {
                 (Presence::Required, false) => {
                     format!(": {} claims are present", kinds.join(" / "))
@@ -269,13 +273,15 @@ impl<'a> Plan<'a> {
     }
 
     fn presence(&self, kind: SectionKind) -> Presence {
-        let informed = informants(kind).iter().any(|claim| self.kinds.contains(claim));
-        match (kind, informed) {
-            (SectionKind::Overview, _) | (_, true) => Presence::Required,
-            (SectionKind::Observability | SectionKind::TechnicalLogic, false) => {
-                Presence::Permitted
-            }
-            (_, false) => Presence::Omitted,
+        let informed = kind.informants().iter().any(|claim| self.kinds.contains(claim));
+        if informed {
+            return Presence::Required;
+        }
+
+        match kind {
+            SectionKind::Overview => Presence::Required,
+            SectionKind::Observability | SectionKind::TechnicalLogic => Presence::Permitted,
+            _ => Presence::Omitted,
         }
     }
 
@@ -312,17 +318,16 @@ fn type_key(taken: &BTreeMap<String, &str>, name: &str, path: Option<&str>) -> S
 // The declared name of a `type` claim: its id, its `name` extra, or its path
 // with any `#L…` anchor stripped, so a re-anchored claim keeps its key.
 fn declared(claim: &Claim) -> Option<&str> {
-    claim
-        .id
-        .as_deref()
-        .or_else(|| match claim.extras.get("name") {
-            Some(Value::String(name)) => Some(name.as_str()),
-            _ => None,
-        })
-        .or_else(|| {
-            let path = claim.path.as_deref()?;
-            Some(path.split_once('#').map_or(path, |(file, _)| file))
-        })
+    if let Some(id) = claim.id.as_deref() {
+        return Some(id);
+    }
+    if let Some(Value::String(name)) = claim.extras.get("name") {
+        return Some(name);
+    }
+
+    let path = claim.path.as_deref()?;
+    let (file, _anchor) = path.split_once('#').unwrap_or((path, ""));
+    Some(file)
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, strum::Display)]
@@ -333,14 +338,17 @@ enum Presence {
     Omitted,
 }
 
-// `Overview` and `Observability` have no informant: the first is always
-// required, the second only ever permitted.
-const fn informants(kind: SectionKind) -> &'static [ClaimKind] {
-    match kind {
-        SectionKind::Overview | SectionKind::Observability => &[],
-        SectionKind::DomainModel => &[ClaimKind::Type],
-        SectionKind::Apis => &[ClaimKind::Call, ClaimKind::Contract],
-        SectionKind::TechnicalLogic => &[ClaimKind::Excerpt],
-        SectionKind::UiLayout => &[ClaimKind::Region, ClaimKind::Container, ClaimKind::Leaf],
+impl SectionKind {
+    // The claim kinds whose presence requires this section. `Overview` and
+    // `Observability` have none: the first is always required, the second
+    // only ever permitted.
+    const fn informants(self) -> &'static [ClaimKind] {
+        match self {
+            Self::Overview | Self::Observability => &[],
+            Self::DomainModel => &[ClaimKind::Type],
+            Self::Apis => &[ClaimKind::Call, ClaimKind::Contract],
+            Self::TechnicalLogic => &[ClaimKind::Excerpt],
+            Self::UiLayout => &[ClaimKind::Region, ClaimKind::Container, ClaimKind::Leaf],
+        }
     }
 }
