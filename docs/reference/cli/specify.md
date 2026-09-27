@@ -85,6 +85,8 @@ When `--format json` is provided, returns:
 - `revision` — the committed revision id, now current
 - `diff` — the re-mine diff against the outgoing current revision: `from`, then a `{ added, removed, changed }` object each for `spec` (requirements matched by `id` — positional, so a requirement whose place moved reads as a change — as `{ id, subject }`, a `changed` entry naming the differing `fields`) and `design` (section keys); absent on a first run, every list empty on a byte-stable re-run (see [CLI output shapes](../cli-output-shapes.md#emery-specify))
 
+Text mode prints only the revision and a one-line summary of those counts; the per-requirement entries ride the JSON envelope alone.
+
 ## See also
 
 - [`emery show`](show.md) renders the committed documents; see the [CLI reference](index.md).

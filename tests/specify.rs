@@ -445,7 +445,7 @@ async fn grouping_refused() {
 // --- regeneration ---
 
 // Every subject is drafted again and nothing of the outgoing revision reaches
-// the model; the envelope reports the diff by requirement.
+// the model; text reports a one-line diff summary while JSON carries the entries.
 #[tokio::test]
 async fn remine_supersedes() {
     // first run: a greeting, a session timeout, and a legacy export
@@ -475,19 +475,18 @@ async fn remine_supersedes() {
     );
     let resp = cli_ok(&provider, &["emery", "specify", "docs"]).await;
 
-    // observe the diff, the swap, and the prune
+    // observe the summary, the swap, and the prune
     let stdout = String::from_utf8_lossy(&resp.stdout);
-    assert!(stdout.contains(&format!("diff vs {first}:\n")), "{stdout}");
-    assert!(stdout.contains("spec.md ~ preamble\n"), "the reworded preamble is a change: {stdout}");
-    assert!(!stdout.contains("design.md ~ preamble"), "a standing preamble is not: {stdout}");
-    assert!(stdout.contains("spec.md - REQ-003 legacy.export"), "{stdout}");
-    assert!(stdout.contains("spec.md ~ REQ-001 greeting.behaviour: body, scenarios"), "{stdout}");
-    assert!(stdout.contains("design.md ~ overview"), "{stdout}");
-    assert!(!stdout.contains("spec.md +"), "no requirement is new: {stdout}");
-    assert!(
-        !stdout.contains("session.timeout"),
-        "a standing requirement is not a change: {stdout}"
+    assert_eq!(
+        stdout.lines().count(),
+        2,
+        "a changed run prints the revision plus one summary line: {stdout}"
     );
+    assert!(
+        stdout.contains(&format!("diff vs {first}: spec +0 -1 ~1 preamble, design +0 -0 ~1")),
+        "the summary counts the changes: {stdout}"
+    );
+    assert!(!stdout.contains("REQ-"), "no per-requirement entry rides text mode: {stdout}");
 
     let request = provider.model.seen()[0].messages.join("\n");
     assert!(request.contains("- REQ-001 `greeting.behaviour`"), "{request}");

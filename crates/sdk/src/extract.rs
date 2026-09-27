@@ -106,6 +106,9 @@ pub enum Seam {
     /// Adapter-defined instructions describing what to mine.
     ///
     /// For workspace input, the complete root remains available to the model.
+    /// The note's first non-blank line is the seam's `label` on the events
+    /// [`extract`] logs for it, so lead with what the seam covers — the
+    /// surface and its entry — and put the standing instructions after.
     Note(String),
 }
 
@@ -164,6 +167,29 @@ impl<'a> Plan<'a> {
             Self::Note(_) | Self::Tree(_) | Self::Value(_) => None,
         }
     }
+
+    // What names the seam in a log line: a note's first line, a file list's
+    // first file and how many more, or the shape of a whole input
+    fn label(&self) -> String {
+        const WIDTH: usize = 72;
+        match self {
+            Self::Note(note) => {
+                let line = note.lines().find(|line| !line.trim().is_empty()).unwrap_or_default();
+                if line.chars().count() > WIDTH {
+                    format!("{}…", line.chars().take(WIDTH).collect::<String>())
+                } else {
+                    line.to_owned()
+                }
+            }
+            Self::Files { files, .. } => match files.as_slice() {
+                [only] => only.clone(),
+                [first, rest @ ..] => format!("{first} (+{})", rest.len()),
+                [] => String::new(),
+            },
+            Self::Tree(_) => "tree".to_owned(),
+            Self::Value(_) => "value".to_owned(),
+        }
+    }
 }
 
 // The turn is one of several in flight, so its events name the seam
@@ -198,12 +224,14 @@ async fn turn<P: Model>(
             .map_err(Error::from)
     };
 
-    tracing::info!(%source, seam = index, files = plan.size(), "mining");
+    let label = plan.label();
+    tracing::info!(%source, seam = index, label, files = plan.size(), "mining");
     let outcome = match ask().await {
         Err(error @ Error::BadGateway { .. }) => {
             tracing::warn!(
                 %source,
                 seam = index,
+                label,
                 %error,
                 "failed upstream; putting the turn once more"
             );
@@ -213,10 +241,10 @@ async fn turn<P: Model>(
     };
     match &outcome {
         Ok(evidence) => {
-            tracing::debug!(%source, seam = index, claims = evidence.claims.len(), "mined");
+            tracing::info!(%source, seam = index, label, claims = evidence.claims.len(), "mined");
         }
         Err(error) => {
-            tracing::warn!(%source, seam = index, code = %error.code(), "failed");
+            tracing::warn!(%source, seam = index, label, code = %error.code(), "failed");
         }
     }
 

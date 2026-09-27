@@ -12,6 +12,7 @@
 mod basis;
 mod brief;
 mod design;
+mod shape;
 mod spec;
 
 use std::collections::{BTreeMap, BTreeSet};
@@ -201,7 +202,7 @@ impl<'a> Bound<'a> {
             .get(&adapter)
             .ok_or_else(|| server_error!("adapter `{adapter}` was not loaded"))?;
         let kind = *kind;
-        tracing::info!(%source, %adapter, %kind, "extracting");
+        tracing::info!(%source, adapter = %id, %kind, "extracting");
         let evidence = Source::extract(provider, id, &self.input).await?;
 
         let findings = evidence.findings();
@@ -211,7 +212,13 @@ impl<'a> Bound<'a> {
                 findings.join("\n")
             ));
         }
-        tracing::debug!(%source, claims = evidence.claims.len(), "extracted");
+        tracing::info!(
+            %source,
+            claims = evidence.claims.len(),
+            kinds = shape::kinds(&evidence),
+            stems = shape::stems(&evidence),
+            "extracted"
+        );
 
         Ok(Extract {
             source: source.clone(),

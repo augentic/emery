@@ -2,52 +2,44 @@
 
 use std::fmt;
 
-use emery_engine::show::{Artifact, ShowOutput};
+use emery_engine::show::ShowOutput;
 use emery_engine::specify::{Diff, SpecifyOutput};
 
-/// Writes a [`SpecifyOutput`] revision line with its [`Diff`] beneath it.
+/// Writes a [`SpecifyOutput`] revision line with a one-line diff summary.
 pub fn specify(output: &SpecifyOutput, w: &mut dyn fmt::Write) -> fmt::Result {
     writeln!(w, "committed revision {}", output.revision)?;
     if let Some(diff) = &output.diff {
         if diff.from == output.revision {
             writeln!(w, "  diff vs {}: none (byte-stable)", diff.from)?;
         } else {
-            writeln!(w, "  diff vs {}:", diff.from)?;
-            changes(diff, w)?;
+            write!(w, "  diff vs {}: ", diff.from)?;
+            summary(diff, w)?;
+            writeln!(w)?;
         }
     }
     Ok(())
 }
 
-fn changes(diff: &Diff, w: &mut dyn fmt::Write) -> fmt::Result {
-    let spec = format!("{}.md", Artifact::Spec.as_ref());
+fn summary(diff: &Diff, w: &mut dyn fmt::Write) -> fmt::Result {
+    write!(
+        w,
+        "spec +{} -{} ~{}",
+        diff.spec.added.len(),
+        diff.spec.removed.len(),
+        diff.spec.changed.len()
+    )?;
     if diff.spec.preamble {
-        writeln!(w, "    {spec} ~ preamble")?;
+        write!(w, " preamble")?;
     }
-    for entry in &diff.spec.added {
-        writeln!(w, "    {spec} + {} {}", entry.id, entry.subject)?;
-    }
-    for entry in &diff.spec.removed {
-        writeln!(w, "    {spec} - {} {}", entry.id, entry.subject)?;
-    }
-    for changed in &diff.spec.changed {
-        let entry = &changed.requirement;
-        let fields = changed.fields.join(", ");
-        writeln!(w, "    {spec} ~ {} {}: {fields}", entry.id, entry.subject)?;
-    }
-
-    let design = format!("{}.md", Artifact::Design.as_ref());
+    write!(
+        w,
+        ", design +{} -{} ~{}",
+        diff.design.added.len(),
+        diff.design.removed.len(),
+        diff.design.changed.len()
+    )?;
     if diff.design.preamble {
-        writeln!(w, "    {design} ~ preamble")?;
-    }
-    for kind in &diff.design.added {
-        writeln!(w, "    {design} + {}", kind.as_ref())?;
-    }
-    for kind in &diff.design.removed {
-        writeln!(w, "    {design} - {}", kind.as_ref())?;
-    }
-    for kind in &diff.design.changed {
-        writeln!(w, "    {design} ~ {}", kind.as_ref())?;
+        write!(w, " preamble")?;
     }
     Ok(())
 }

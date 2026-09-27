@@ -82,7 +82,7 @@ pub trait Brief: Display + Sync + Sized {
                 review.verdict()
             })
             .await?;
-        tracing::debug!(question = Self::NAME, "answered");
+        tracing::info!(question = Self::NAME, "answered");
 
         self.into_output(answer)
     }

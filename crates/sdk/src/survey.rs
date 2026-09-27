@@ -68,7 +68,7 @@ pub async fn surfaces<P: Model>(
             Err(findings)
         })
         .await?;
-    tracing::debug!(
+    tracing::info!(
         %source,
         surfaces = ?inventory
             .surfaces
