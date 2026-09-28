@@ -34,6 +34,11 @@ const GROUPING_ANSWER: &str = include_str!("specify/grouping.json");
 const PRECEDENCE_ANSWER: &str = include_str!("specify/precedence-draft.json");
 const PRECEDENCE_REVISION: &str = include_str!("specify/3-precedence.json");
 const PRECEDENCE_RENDERED: &str = include_str!("specify/3-precedence.md");
+const PLAN_REVISION: &str = include_str!("specify/4-plan.json");
+const PLAN_RENDERED: &str = include_str!("specify/4-plan.md");
+const SLICING_ANSWER: &str = include_str!("specify/slicing.json");
+const SLICED_REVISION: &str = include_str!("specify/5-sliced.json");
+const SLICED_RENDERED: &str = include_str!("specify/5-sliced.md");
 const SOURCES: &str = include_str!("specify/emery.toml");
 
 // The grouping a run over `count` claims of one id expects: one agreeing requirement.
@@ -52,6 +57,16 @@ fn separate_grouping(count: usize) -> String {
         .map(|index| serde_json::json!({"claims": [index], "classes": [[index]]}))
         .collect();
     serde_json::json!({ "groups": groups }).to_string()
+}
+
+// The slicing a run over several stems expects when every stem stays its own
+// slice, named for it, owning nothing and depending on nothing.
+fn separate_slicing(stems: &[(&str, &[&str])]) -> String {
+    let slices: Vec<_> = stems
+        .iter()
+        .map(|(name, requirements)| serde_json::json!({"name": name, "requirements": requirements}))
+        .collect();
+    serde_json::json!({ "preamble": [], "slices": slices }).to_string()
 }
 
 // Inside the project: every path handed to the CLI must stay project-relative
@@ -127,6 +142,12 @@ async fn gen_spec() {
         DESIGN_REVISION,
         "design.json is the canonical revision"
     );
+    let plan = document(&provider.storage, &id, "plan.json");
+    assert_eq!(
+        String::from_utf8_lossy(&plan),
+        PLAN_REVISION,
+        "one stem is one slice, planned with no turn spent"
+    );
 
     // review through show
     assert_eq!(
@@ -138,6 +159,11 @@ async fn gen_spec() {
         shown(&provider, "design").await,
         projection(DESIGN_RENDERED, &id),
         "show renders design.md"
+    );
+    assert_eq!(
+        shown(&provider, "plan").await,
+        projection(PLAN_RENDERED, &id),
+        "show renders plan.md"
     );
 
     // the JSON envelope carries the revision, the projection, and the document
@@ -326,8 +352,10 @@ async fn description_source() {
 // and the uncovered timeout keeps its gap tag.
 #[tokio::test]
 async fn authority_precedence() {
-    let mut provider = Provider::answering([GROUPING_ANSWER, PRECEDENCE_ANSWER, DESIGN_ANSWER])
-        .declaring(["docs", "wiki-live", "code", "intent"]);
+    let slicing = separate_slicing(&[("login", &["REQ-001"]), ("session", &["REQ-002"])]);
+    let mut provider =
+        Provider::answering([GROUPING_ANSWER, PRECEDENCE_ANSWER, DESIGN_ANSWER, slicing.as_str()])
+            .declaring(["docs", "wiki-live", "code", "intent"]);
 
     // rank each adapter by its metadata; the unscripted ones read documentation
     provider.source.kinds.insert("code".to_string(), SourceKind::Behaviour);
@@ -578,8 +606,18 @@ async fn seams_grouped() {
 async fn remine_supersedes() {
     // first run: a greeting, a session timeout, and a legacy export
     let first_grouping = separate_grouping(3);
-    let mut provider = Provider::answering([first_grouping.as_str(), REMINE_FIRST, DESIGN_ANSWER])
-        .declaring(["docs"]);
+    let first_slicing = separate_slicing(&[
+        ("greeting", &["REQ-001"]),
+        ("session", &["REQ-002"]),
+        ("legacy", &["REQ-003"]),
+    ]);
+    let mut provider = Provider::answering([
+        first_grouping.as_str(),
+        REMINE_FIRST,
+        DESIGN_ANSWER,
+        first_slicing.as_str(),
+    ])
+    .declaring(["docs"]);
     provider.source.evidence.insert(
         "docs".to_string(),
         Ok(docs_evidence(&[
@@ -594,9 +632,10 @@ async fn remine_supersedes() {
     // second run: the greeting changed, the export gone, the overview following it
     let second_design = DESIGN_ANSWER.replace("hello", "howdy");
     let second_grouping = separate_grouping(2);
+    let second_slicing = separate_slicing(&[("greeting", &["REQ-001"]), ("session", &["REQ-002"])]);
     let mut provider = Provider::over(
         Arc::clone(&provider.storage),
-        [second_grouping.as_str(), REMINE_SECOND, second_design.as_str()],
+        [second_grouping.as_str(), REMINE_SECOND, second_design.as_str(), second_slicing.as_str()],
     )
     .declaring(["docs"]);
     provider.source.evidence.insert(
@@ -616,10 +655,13 @@ async fn remine_supersedes() {
         "a changed run prints the revision plus one summary line: {stdout}"
     );
     assert!(
-        stdout.contains(&format!("diff vs {first}: spec +0 -1 ~1 preamble, design +0 -0 ~1")),
+        stdout.contains(&format!(
+            "diff vs {first}: spec +0 -1 ~1 preamble, design +0 -0 ~1, plan +0 -1 ~0"
+        )),
         "the summary counts the changes: {stdout}"
     );
     assert!(!stdout.contains("REQ-"), "no per-requirement entry rides text mode: {stdout}");
+    assert!(!stdout.contains("SLICE-"), "no per-slice entry rides text mode: {stdout}");
 
     let seen = provider.model.seen();
     let SeenFormat::Schema { name, .. } = &seen[0].format else {
@@ -657,12 +699,17 @@ async fn diff_envelope() {
         {"kind": "domain-model", "blocks": [{"type": "greeting.type"}]}
     ]}"#;
     let second_grouping = separate_grouping(2);
+    let second_slicing = r#"{"preamble": [], "slices": [
+        {"name": "greeting", "requirements": ["REQ-001"], "types": ["greeting.type"]},
+        {"name": "access", "requirements": ["REQ-002"]}
+    ]}"#;
     let mut provider = Provider::answering([
         SPEC_ANSWER,
         DESIGN_ANSWER,
         second_grouping.as_str(),
         second_spec,
         second_design,
+        second_slicing,
     ])
     .declaring(["docs"]);
     cli_ok(&provider, &["emery", "specify", "docs"]).await;
@@ -705,6 +752,18 @@ async fn diff_envelope() {
     assert_eq!(diff["design"]["changed"], serde_json::json!(["overview"]), "{envelope}");
     assert_eq!(diff["design"]["added"], serde_json::json!(["domain-model"]), "{envelope}");
     assert_eq!(diff["design"]["removed"], serde_json::json!([]), "{envelope}");
+    assert_eq!(diff["plan"]["preamble"], serde_json::json!(false), "{envelope}");
+    assert_eq!(
+        diff["plan"]["added"],
+        serde_json::json!([{"id": "SLICE-002", "name": "access"}]),
+        "{envelope}"
+    );
+    assert_eq!(diff["plan"]["removed"], serde_json::json!([]), "{envelope}");
+    assert_eq!(
+        diff["plan"]["changed"],
+        serde_json::json!([{"id": "SLICE-001", "name": "greeting", "fields": ["types"]}]),
+        "the greeting slice now owns the new type: {envelope}"
+    );
     provider.model.assert_exhausted();
 }
 
@@ -1140,7 +1199,7 @@ async fn dishonest_design() {
 
     let id = current(&provider.storage);
     let rendered = format!(
-        "---\nemery: 2\nrevision: {id}\n---\n\n# Design\n\n## Overview\n\n\
+        "---\nemery: 3\nrevision: {id}\n---\n\n# Design\n\n## Overview\n\n\
          Requests arrive (from the browser) and (from docs) they route.\n\n\
          ## Domain model\n\nThe greeting payload is one string field.\n\n\
          Type: greeting.type\n```\n{signature}\n```\n"
@@ -1255,6 +1314,14 @@ async fn type_collisions() {
     for signature in signatures {
         assert!(rendered.contains(&format!("```\n{signature}\n```")), "{rendered}");
     }
+    let plan = shown(&provider, "plan").await;
+    assert!(
+        plan.contains(
+            "Types: [greeting.type, greeting.type (src/greeting.ts#L1), greeting.type \
+             (src/greeting.ts#L1, 2)]"
+        ),
+        "the one slice owns every key in the design's order: {plan}"
+    );
     provider.model.assert_exhausted();
 }
 
@@ -1267,6 +1334,213 @@ async fn model_fails() {
     fail(&provider, &["emery", "specify", "docs"], 4, "bad_gateway").await;
     provider.model.assert_exhausted();
 }
+
+// --- slicing ---
+
+// Three stems and two types: the model merges two stems, the engine refuses
+// the draft that leaves a requirement out, then numbers the corrected slices by
+// their lowest requirement and writes every list in canonical order — the
+// requirements the answer listed backwards in id order, the types in the
+// design's.
+#[tokio::test]
+async fn sliced() {
+    let refused = r#"{"preamble": [], "slices": [
+        {"name": "authentication", "requirements": ["REQ-001", "REQ-002"]},
+        {"name": "orders", "requirements": ["REQ-003"], "types": ["orders.order", "orders.line"], "depends-on": ["authentication"]}
+    ]}"#;
+    let grouping = separate_grouping(4);
+    let mut provider = Provider::answering([
+        grouping.as_str(),
+        SLICED_SPEC,
+        SLICED_DESIGN,
+        refused,
+        SLICING_ANSWER,
+    ])
+    .declaring(["docs"]);
+    provider.source.evidence.insert("docs".to_string(), Ok(sliced_evidence()));
+
+    cli_ok(&provider, &["emery", "specify", "docs"]).await;
+
+    // the slicing request carries the stems, the keys, and both rendered documents
+    let slicing = &provider.model.seen()[3];
+    let SeenFormat::Schema { name, schema } = &slicing.format else {
+        panic!("the slicing is steered by schema");
+    };
+    assert_eq!(name, "slicing");
+    let schema: Value = serde_json::from_str(schema).expect("the steering schema is JSON");
+    assert_eq!(schema["properties"]["slices"]["minItems"], 1);
+    assert_eq!(schema["properties"]["slices"]["maxItems"], 3, "one slice per stem at most");
+    let draft = &schema["$defs"]["Draft"]["properties"];
+    assert_eq!(draft["requirements"]["minItems"], 1);
+    assert_eq!(
+        draft["requirements"]["items"]["enum"],
+        serde_json::json!(["REQ-001", "REQ-002", "REQ-003", "REQ-004"]),
+        "the run's requirement ids ride the schema as a hint"
+    );
+    assert_eq!(
+        draft["types"]["items"]["enum"],
+        serde_json::json!(["orders.order", "orders.line"]),
+        "the design's type keys ride the schema in document order"
+    );
+    let request = slicing.messages.join("\n");
+    assert!(request.contains("- `auth` — REQ-001\n"), "{request}");
+    assert!(request.contains("- `orders` — REQ-003, REQ-004\n"), "{request}");
+    assert!(request.contains("### Requirement: orders.cancel"), "the spec rides: {request}");
+    assert!(request.contains("## Domain model"), "the design rides: {request}");
+
+    // the refusal is the correction; the corrected slicing commits
+    let check = &provider.model.exchanges()[3];
+    assert_eq!(check.tool, "check");
+    let correction = check.outcome.as_ref().expect_err("the first slicing is rejected");
+    assert!(correction.contains("`REQ-004` is in no slice"), "{correction}");
+    let id = current(&provider.storage);
+    assert_eq!(
+        String::from_utf8_lossy(&document(&provider.storage, &id, "plan.json")),
+        SLICED_REVISION,
+        "plan.json is the canonical revision"
+    );
+    assert_eq!(
+        shown(&provider, "plan").await,
+        projection(SLICED_RENDERED, &id),
+        "show renders plan.md"
+    );
+    let resp = cli_ok(&provider, &["emery", "--format", "json", "show", "plan"]).await;
+    let envelope: Value = serde_json::from_slice(&resp.stdout).expect("one JSON envelope");
+    let document: Value =
+        serde_json::from_str(SLICED_REVISION).expect("the revision fixture is JSON");
+    assert_eq!(envelope["document"], document, "the envelope carries the typed plan");
+    provider.model.assert_exhausted();
+}
+
+// The slicing leg is gated as the drafts are, one finding per case.
+#[tokio::test]
+async fn invalid_plan() {
+    let plan = |slices: &str| format!(r#"{{"preamble": [], "slices": [{slices}]}}"#);
+    let all = |extra: &str| {
+        plan(&format!(
+            r#"{{"name": "all", "requirements": ["REQ-001", "REQ-002", "REQ-003", "REQ-004"], "types": ["orders.order", "orders.line"]{extra}}}"#
+        ))
+    };
+    let cases: Vec<(String, &str)> = vec![
+        (
+            plan(
+                r#"{"name": "authentication", "requirements": ["REQ-001", "REQ-002", "REQ-003"]}, {"name": "orders", "requirements": ["REQ-004"], "types": ["orders.order", "orders.line"]}"#,
+            ),
+            "requirements sharing the stem `orders` are split across `authentication`, `orders`",
+        ),
+        (
+            plan(
+                r#"{"name": "authentication", "requirements": ["REQ-001", "REQ-002"]}, {"name": "orders", "requirements": ["REQ-003"], "types": ["orders.order", "orders.line"]}"#,
+            ),
+            "`REQ-004` is in no slice",
+        ),
+        (
+            plan(
+                r#"{"name": "authentication", "requirements": ["REQ-001", "REQ-002", "REQ-003"]}, {"name": "orders", "requirements": ["REQ-003", "REQ-004"], "types": ["orders.order", "orders.line"]}"#,
+            ),
+            "`REQ-003` appears in more than one slice",
+        ),
+        (
+            plan(
+                r#"{"name": "all", "requirements": ["REQ-001", "REQ-002", "REQ-003", "REQ-004", "REQ-009"], "types": ["orders.order", "orders.line"]}"#,
+            ),
+            "slice `all`: `REQ-009` is not a requirement",
+        ),
+        (
+            plan(
+                r#"{"name": "all", "requirements": ["REQ-001", "REQ-002", "REQ-003", "REQ-004"], "types": ["orders.order", "orders.line"]}, {"name": "empty", "requirements": []}"#,
+            ),
+            "slice `empty` has no requirement",
+        ),
+        (
+            plan(
+                r#"{"name": "All Slices", "requirements": ["REQ-001", "REQ-002", "REQ-003", "REQ-004"], "types": ["orders.order", "orders.line"]}"#,
+            ),
+            "slice name `All Slices` is not kebab-case",
+        ),
+        (
+            plan(
+                r#"{"name": "all", "requirements": ["REQ-001", "REQ-002"]}, {"name": "all", "requirements": ["REQ-003", "REQ-004"], "types": ["orders.order", "orders.line"]}"#,
+            ),
+            "slice `all` is drafted more than once",
+        ),
+        (
+            all(r#", "depends-on": ["nothing"]"#),
+            "slice `all` depends on `nothing`, which is not a slice",
+        ),
+        (all(r#", "depends-on": ["all"]"#), "slice `all` depends on itself"),
+        (
+            plan(
+                r#"{"name": "authentication", "requirements": ["REQ-001", "REQ-002"], "depends-on": ["orders"]}, {"name": "orders", "requirements": ["REQ-003", "REQ-004"], "types": ["orders.order", "orders.line"], "depends-on": ["authentication"]}"#,
+            ),
+            "slices `authentication`, `orders` cannot be ordered",
+        ),
+        (
+            plan(
+                r#"{"name": "authentication", "requirements": ["REQ-001", "REQ-002"], "types": ["orders.order"]}, {"name": "orders", "requirements": ["REQ-003", "REQ-004"], "types": ["orders.order", "orders.line"]}"#,
+            ),
+            "type `orders.order` is owned by 2 slices: `authentication`, `orders`",
+        ),
+        (
+            plan(
+                r#"{"name": "all", "requirements": ["REQ-001", "REQ-002", "REQ-003", "REQ-004"], "types": ["orders.line"]}"#,
+            ),
+            "type `orders.order` is owned by no slice",
+        ),
+        (
+            plan(
+                r#"{"name": "all", "requirements": ["REQ-001", "REQ-002", "REQ-003", "REQ-004"], "types": ["orders.order", "orders.line", "orders.receipt"]}"#,
+            ),
+            "`orders.receipt` is not a type in the design",
+        ),
+        (
+            all(r#", "brief": ["Depends on: nothing"]"#),
+            "slice `all` brief: a paragraph line opens with the reserved marker `Depends on:`",
+        ),
+        ("not json".to_string(), "schema and answer type disagree"),
+    ];
+    for (answer, fragment) in cases {
+        let grouping = separate_grouping(4);
+        let mut provider = Provider::answering([
+            grouping.as_str(),
+            SLICED_SPEC,
+            SLICED_DESIGN,
+            answer.as_str(),
+            answer.as_str(),
+            answer.as_str(),
+        ])
+        .declaring(["docs"]);
+        provider.source.evidence.insert("docs".to_string(), Ok(sliced_evidence()));
+        let envelope = fail(&provider, &["emery", "specify", "docs"], 1, "bad_request").await;
+        assert_message(&envelope, fragment);
+        provider.model.assert_exhausted();
+    }
+}
+
+// Sign-in, its session, and two order behaviours over two `type` claims: three
+// stems, so the slicing is the model's.
+fn sliced_evidence() -> Evidence {
+    evidence(vec![
+        requirement("auth.login", "Users sign in with a credential."),
+        requirement("session.timeout", "Sessions expire after an hour of inactivity."),
+        requirement("orders.create", "A signed-in user places an order."),
+        requirement("orders.cancel", "A signed-in user cancels an open order."),
+        claim(ClaimKind::Type, "orders.order", ("signature", "interface Order { id: string }")),
+        claim(ClaimKind::Type, "orders.line", ("signature", "interface Line { sku: string }")),
+    ])
+}
+
+const SLICED_SPEC: &str = r#"{"preamble": ["Sign-in, its session, and orders over both."], "requirements": [
+    {"subject": "auth.login", "scenarios": [{"name": "Login", "when": "a valid credential is presented", "then": "the caller is signed in"}]},
+    {"subject": "session.timeout", "scenarios": [{"name": "Timeout", "when": "a session is idle for an hour", "then": "it times out"}]},
+    {"subject": "orders.create", "scenarios": [{"name": "Create", "when": "a signed-in caller places an order", "then": "the order is created"}]},
+    {"subject": "orders.cancel", "scenarios": [{"name": "Cancel", "when": "a signed-in caller cancels an order", "then": "the order is cancelled"}]}
+]}"#;
+
+const SLICED_DESIGN: &str = r#"{"preamble": [], "sections": [
+    {"kind": "overview", "blocks": [{"text": "Sign-in issues a session; orders are placed and cancelled under it."}]},
+    {"kind": "domain-model", "blocks": [{"type": "orders.order"}, {"type": "orders.line"}]}
+]}"#;
 
 // --- config file ---
 
@@ -1963,7 +2237,7 @@ mod store {
         );
         let second = current(&provider.storage);
         assert_ne!(first, second, "the repaired store names the new revision");
-        for name in ["spec.json", "design.json"] {
+        for name in ["spec.json", "design.json", "plan.json"] {
             assert!(
                 provider.storage.object(CONTAINER, &format!("{first}/{name}")).is_none(),
                 "the tampered outgoing revision is pruned: {name}"
@@ -1982,6 +2256,7 @@ mod store {
             &provider.storage,
             br#"{"emery": 1, "requirements": []}"#,
             br#"{"emery": 1, "sections": []}"#,
+            br#"{"emery": 1, "slices": []}"#,
         );
 
         let envelope = fail(&provider, &["emery", "show", "spec"], 1, "spec-outdated").await;
@@ -2092,20 +2367,22 @@ fn document(storage: &Memory, id: &str, name: &str) -> Vec<u8> {
     storage.object(CONTAINER, &format!("{id}/{name}")).unwrap_or_else(|| panic!("{name}"))
 }
 
-// The engine's content id: SHA-256 over the length-prefixed bodies, spec then design.
-fn revision(spec: &[u8], design: &[u8]) -> String {
+// The engine's content id: SHA-256 over the length-prefixed bodies, spec,
+// design, then plan.
+fn revision(spec: &[u8], design: &[u8], plan: &[u8]) -> String {
     let mut hasher = Sha256::new();
-    for body in [spec, design] {
+    for body in [spec, design, plan] {
         hasher.update((body.len() as u64).to_be_bytes());
         hasher.update(body);
     }
     hex::encode(hasher.finalize())
 }
 
-fn seed(storage: &Memory, spec: &[u8], design: &[u8]) -> String {
-    let id = revision(spec, design);
+fn seed(storage: &Memory, spec: &[u8], design: &[u8], plan: &[u8]) -> String {
+    let id = revision(spec, design, plan);
     storage.insert_object(CONTAINER, &format!("{id}/spec.json"), spec);
     storage.insert_object(CONTAINER, &format!("{id}/design.json"), design);
+    storage.insert_object(CONTAINER, &format!("{id}/plan.json"), plan);
     storage.insert_state(REVISION_KEY, id.as_bytes());
     id
 }

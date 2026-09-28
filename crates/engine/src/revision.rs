@@ -1,14 +1,16 @@
 //! Defines stored revisions and their Markdown projections.
 //!
-//! A [`Revision`] stores a typed specification and design as canonical JSON.
-//! Its content digest is the revision identifier. Markdown is rendered on
-//! demand and is never parsed back into revision data.
+//! A [`Revision`] stores a typed specification, design, and plan as canonical
+//! JSON. Its content digest is the revision identifier. Markdown is rendered
+//! on demand and is never parsed back into revision data.
 //!
 //! [`Document`] defines shared serialisation and rendering behaviour.
 //! [`Diff`] describes changes between revisions.
 
 mod design;
 mod diff;
+mod id;
+mod plan;
 mod spec;
 
 use std::fmt::{self, Display, Formatter};
@@ -22,20 +24,25 @@ use sha2::{Digest, Sha256};
 
 use self::design::TYPE;
 pub use self::design::{Block, Design, Section, SectionKind, citations};
-pub use self::diff::{Changed, DesignDiff, Diff, Entry, SpecDiff};
-pub use self::spec::{Cited, Loser, ReqId, Requirement, Scenario, Spec, Status};
+pub use self::diff::{Changed, DesignDiff, Diff, Entry, PlanDiff, SliceEntry, SpecDiff};
+pub use self::id::{ReqId, SliceId};
+use self::plan::{DEPENDS_ON, REQUIREMENTS, TYPES};
+pub use self::plan::{Plan, Slice};
+pub use self::spec::{Cited, Loser, Requirement, Scenario, Spec, Status};
 use self::spec::{ID, NOTE, SOURCES, STATUS};
 
 /// The revision grammar written and accepted by this engine.
 ///
 /// A stored revision stamped with another grammar is outdated.
-pub const EMERY: u32 = 2;
+pub const EMERY: u32 = 3;
 
 /// Line prefixes reserved for engine-generated Markdown.
 ///
 /// `#`, so no draft line reads as a heading, and the engine's own line keys,
-/// so no draft line passes as provenance, a note, or a type label.
-pub const RESERVED: &[&str] = &["#", ID, SOURCES, STATUS, NOTE, TYPE];
+/// so no draft line passes as provenance, a note, a type label, or a slice's
+/// lists.
+pub const RESERVED: &[&str] =
+    &["#", ID, SOURCES, STATUS, NOTE, TYPE, REQUIREMENTS, TYPES, DEPENDS_ON];
 
 /// A typed revision document stored as JSON and rendered as Markdown.
 pub trait Document: Serialize + DeserializeOwned + Display {
@@ -97,7 +104,7 @@ pub trait Document: Serialize + DeserializeOwned + Display {
     }
 }
 
-/// The specification and design committed as one unit.
+/// The specification, design, and plan committed as one unit.
 ///
 /// The identifier depends only on canonical document content. Reading a
 /// revision verifies its bytes against that identifier.
@@ -107,27 +114,30 @@ pub struct Revision {
     pub spec: Spec,
     /// The rebuild design.
     pub design: Design,
+    /// The build plan over the specification.
+    pub plan: Plan,
 }
 
 impl Revision {
     /// Reads and validates the revision stored under `id`.
     ///
-    /// The content digest is checked before either document is deserialised.
+    /// The content digest is checked before any document is deserialised.
     ///
     /// # Errors
     ///
-    /// - Returns [`Error::BadRequest`] with code `spec-outdated` when either
+    /// - Returns [`Error::BadRequest`] with code `spec-outdated` when a
     ///   document uses a different grammar.
     /// - Returns [`Error::ServerError`] when the content does not match `id`,
     ///   is not valid JSON, or does not match the current document shape.
-    pub fn read(id: &str, spec: &[u8], design: &[u8]) -> Result<Self, Error> {
-        if digest(spec, design) != id {
+    pub fn read(id: &str, spec: &[u8], design: &[u8], plan: &[u8]) -> Result<Self, Error> {
+        if digest([spec, design, plan]) != id {
             return Err(server_error!("revision `{id}` does not match its content"));
         }
 
         Ok(Self {
             spec: Spec::from_json(spec)?,
             design: Design::from_json(design)?,
+            plan: Plan::from_json(plan)?,
         })
     }
 
@@ -137,13 +147,17 @@ impl Revision {
     ///
     /// Returns [`Error::ServerError`] when a document does not serialise.
     pub fn id(&self) -> Result<String, Error> {
-        Ok(digest(self.spec.to_json()?.as_bytes(), self.design.to_json()?.as_bytes()))
+        Ok(digest([
+            self.spec.to_json()?.as_bytes(),
+            self.design.to_json()?.as_bytes(),
+            self.plan.to_json()?.as_bytes(),
+        ]))
     }
 }
 
-fn digest(spec: &[u8], design: &[u8]) -> String {
+fn digest(bodies: [&[u8]; 3]) -> String {
     let mut hasher = Sha256::new();
-    for body in [spec, design] {
+    for body in bodies {
         hasher.update((body.len() as u64).to_be_bytes());
         hasher.update(body);
     }

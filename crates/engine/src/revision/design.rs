@@ -34,6 +34,14 @@ impl Design {
     pub fn section(&self, kind: SectionKind) -> Option<&Section> {
         self.sections.iter().find(|section| section.kind == kind)
     }
+
+    /// Returns the key of every type block, in document order.
+    pub fn types(&self) -> impl Iterator<Item = &str> {
+        self.sections.iter().flat_map(|section| &section.blocks).filter_map(|block| match block {
+            Block::Type { key, .. } => Some(key.as_str()),
+            Block::Text(_) => None,
+        })
+    }
 }
 
 impl revision::Document for Design {

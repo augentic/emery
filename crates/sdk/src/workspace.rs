@@ -10,7 +10,7 @@ use anyhow::Context as _;
 use omnia_sdk::{Error, bad_request};
 
 const SKIP_DIRS: &[&str] = &[".omnia"];
-const SKIP_FILES: &[&str] = &["spec.md", "design.md"];
+const SKIP_FILES: &[&str] = &["spec.md", "design.md", "plan.md"];
 
 /// A workspace entry passed to an adapter's filter.
 ///
@@ -78,9 +78,9 @@ impl<'a> Entry<'a> {
 /// Returns sorted, root-relative paths for files accepted by `keep`.
 ///
 /// `keep` is asked about every entry; a refused directory is not entered.
-/// `.omnia/` directories and generated `spec.md` and `design.md` files are
-/// never offered, wherever they occur. Symlinks and non-regular files are not
-/// followed or returned.
+/// `.omnia/` directories and generated `spec.md`, `design.md`, and `plan.md`
+/// files are never offered, wherever they occur. Symlinks and non-regular
+/// files are not followed or returned.
 ///
 /// # Examples
 ///

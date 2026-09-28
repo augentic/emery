@@ -3,15 +3,16 @@
 //! [`specify`] validates the complete source list before loading adapters.
 //! Sources are extracted concurrently, and the first failure among them ends
 //! the run; their claims are then reconciled by authority and synthesised into
-//! `spec.md` and `design.md`.
+//! `spec.md` and `design.md`, and the specification is sliced into `plan.md`.
 //!
-//! The two documents are committed as one content-addressed revision. An
+//! The three documents are committed as one content-addressed revision. An
 //! earlier revision contributes only the returned [`Diff`]; it is never used
 //! as synthesis input.
 
 mod basis;
 mod brief;
 mod design;
+mod plan;
 mod shape;
 mod spec;
 
@@ -30,10 +31,13 @@ use serde::{Deserialize, Serialize};
 use self::basis::GroupingBrief;
 use self::brief::Brief as _;
 use self::design::DesignBrief;
+use self::plan::SliceBrief;
 use self::spec::SpecBrief;
 use crate::adapter::{self, AdapterRef, Loaded, Registries};
 use crate::revision::Revision;
-pub use crate::revision::{Changed, DesignDiff, Diff, Entry, ReqId, SectionKind, SpecDiff};
+pub use crate::revision::{
+    Changed, DesignDiff, Diff, Entry, PlanDiff, ReqId, SectionKind, SliceEntry, SliceId, SpecDiff,
+};
 use crate::{preopen_path, store};
 
 /// Generates and commits a specification revision from `input`.
@@ -55,7 +59,7 @@ use crate::{preopen_path, store};
 ///   - an incompatible adapter, with code `unsupported-version`;
 ///   - a source that refuses its input;
 ///   - sources that between them contribute no requirement claim;
-///   - a synthesis answer that cannot be accepted.
+///   - a synthesis or slicing answer that cannot be accepted.
 /// - Returns [`Error::NotFound`] when a local adapter does not exist.
 /// - Returns [`Error::ServerError`] when evidence has [`Evidence::findings`],
 ///   or serialisation or storage fails.
@@ -82,8 +86,9 @@ pub async fn specify<P: Model + Source + StateStore + BlobStore + Plugins>(
     let bases = GroupingBrief::new(&extracts).derive(provider).await?;
     let spec = SpecBrief::new(&extracts, &bases).judge(provider).await?;
     let design = DesignBrief::new(&extracts, &spec).judge(provider).await?;
+    let plan = SliceBrief::new(&spec, &design).derive(provider).await?;
 
-    let (revision, diff) = store::commit(provider, &Revision { spec, design }).await?;
+    let (revision, diff) = store::commit(provider, &Revision { spec, design, plan }).await?;
 
     Ok(SpecifyOutput { revision, diff })
 }
@@ -246,6 +251,7 @@ static PROSE: &[emery_prose::Doc] = emery_prose::prose![
     "../prose/design-format.md",
     "../prose/grouping.md",
     "../prose/requirement-block.md",
+    "../prose/slicing.md",
     "../prose/spec-format.md",
     "../prose/synthesise.md",
     "../prose/tags.md",
@@ -256,12 +262,14 @@ mod tests {
     use std::path::Path;
 
     use super::brief::Brief as _;
-    use super::{DesignBrief, GroupingBrief, SpecBrief};
+    use super::{DesignBrief, GroupingBrief, SliceBrief, SpecBrief};
 
     #[test]
     fn corpus() {
         let tree = Path::new(env!("CARGO_MANIFEST_DIR")).join("prose");
-        let prompts = [GroupingBrief::PROSE, SpecBrief::PROSE, DesignBrief::PROSE].concat();
+        let prompts =
+            [GroupingBrief::PROSE, SpecBrief::PROSE, DesignBrief::PROSE, SliceBrief::PROSE]
+                .concat();
         let findings = emery_prose::check(super::PROSE, &tree, &prompts, &[]);
         assert!(findings.is_empty(), "{}", findings.join("\n"));
     }

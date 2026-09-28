@@ -8,4 +8,4 @@ Every skill is an ultrathin invoke-and-relay wrapper: it elicits any missing arg
 
 | Skill | Command | Description |
 |-------|---------|-------------|
-| [specify](skills/specify/SKILL.md) | `/emery:specify` | Generate `spec.md` / `design.md` from the named sources (`emery specify`) |
+| [specify](skills/specify/SKILL.md) | `/emery:specify` | Generate `spec.md` / `design.md` / `plan.md` from the named sources (`emery specify`) |

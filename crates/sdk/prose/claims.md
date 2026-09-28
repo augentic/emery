@@ -12,7 +12,7 @@ An `id` is dotted-kebab: one or more segments joined by `.`, each segment lowerc
 
 - `password-reset.expiry`, `session.timeout`, `user-list.search-filter` are valid; `Not.Valid`, `req-007`, `session_timeout`, and a trailing `.` are not.
 - `id` is **required** on `requirement`, `criterion`, and `example` claims — deterministic reconciliation keys off it. It is optional on every other kind; carry it there only when the claim backs a specific requirement.
-- Derive ids from the domain concept the claim describes, using the source's own noun phrases — never from file names, heading positions, line numbers, or invented counters. Byte-equal ids across sources always merge into one requirement ([reconciliation.md](reconciliation.md)).
+- Derive ids from the domain concept the claim describes, using the source's own noun phrases — never from file names, heading positions, line numbers, or invented counters. Byte-equal ids across sources always merge into one requirement ([reconciliation.md](reconciliation.md)). The first segment is the surface the requirement belongs to — `session` in `session.timeout` — and the build plan slices the specification by it: requirements sharing a first segment are always built together, so lead each id with the noun of the surface it is built under.
 - A `criterion` id must equal its requirement's id or extend it with a dotted suffix (`password-reset.expiry` or `password-reset.expiry.window`). A criterion with an unrelated id leaves its requirement uncovered, and an uncovered requirement renders as an `[unknown]` acceptance gap.
 
 ## `path` anchors
@@ -29,7 +29,7 @@ Line numbers are 1-indexed against the file at extract time. The path is relativ
 
 The engine's own files live in the project the sources are bound from, and they are output, never input. Every adapter skips them wherever they appear under `$SOURCE_DIR` — never read them, never anchor a claim in them:
 
-- `spec.md` and `design.md` — the Markdown projections of the current revision, rendered by `emery show`.
+- `spec.md`, `design.md`, and `plan.md` — the Markdown projections of the current revision, rendered by `emery show`.
 - `.omnia/` — the runtime's storage root, where the committed revision lives.
 
 Mining a projection back into claims would make the engine's last answer look like evidence for its next one, and every requirement it re-derived that way would read as `agreed` with itself. Adapter prompts add their own language- or format-specific skip roots (`node_modules`, `target`, test trees, …) beside this list, never instead of it.

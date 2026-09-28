@@ -1,0 +1,39 @@
+{
+  "emery": 3,
+  "preamble": [
+    "Two slices: sign-in with its session, and orders over it."
+  ],
+  "slices": [
+    {
+      "id": "SLICE-001",
+      "name": "authentication",
+      "requirements": [
+        "REQ-001",
+        "REQ-002"
+      ],
+      "types": [],
+      "depends-on": [],
+      "brief": [
+        "Delivers sign-in and the session it issues; a session cannot be verified without a sign-in to issue it, so the two stems are one build."
+      ]
+    },
+    {
+      "id": "SLICE-002",
+      "name": "orders",
+      "requirements": [
+        "REQ-003",
+        "REQ-004"
+      ],
+      "types": [
+        "orders.order",
+        "orders.line"
+      ],
+      "depends-on": [
+        "SLICE-001"
+      ],
+      "brief": [
+        "Delivers order creation and cancellation for a signed-in caller; verified by placing and cancelling an order under a session from `authentication`."
+      ]
+    }
+  ]
+}

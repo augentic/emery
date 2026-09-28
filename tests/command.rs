@@ -169,6 +169,7 @@ async fn no_revision() {
     assert!(stderr.contains("spec-not-generated"), "{stderr}");
 
     fail(&provider, &["emery", "show", "design"], 2, "spec-not-generated").await;
+    fail(&provider, &["emery", "show", "plan"], 2, "spec-not-generated").await;
 }
 
 #[tokio::test]
