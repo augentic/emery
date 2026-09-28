@@ -1,5 +1,5 @@
 ---
-emery: 2
+emery: 3
 revision: <revision>
 ---
 

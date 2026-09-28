@@ -22,11 +22,11 @@ use crate::specify::brief::{Brief, ClaimsSection, Review};
 /// A synthesis brief for the drafted portions of `design.md`.
 ///
 /// The brief contains extracted claims, the specification being implemented,
-/// and the section plan derived from evidence.
+/// and the section outline derived from evidence.
 pub struct DesignBrief<'a> {
     extracts: &'a [Extract],
     spec: &'a Spec,
-    plan: Plan<'a>,
+    outline: Outline<'a>,
 }
 
 impl<'a> DesignBrief<'a> {
@@ -36,7 +36,7 @@ impl<'a> DesignBrief<'a> {
         Self {
             extracts,
             spec,
-            plan: Plan::new(extracts),
+            outline: Outline::new(extracts),
         }
     }
 }
@@ -49,12 +49,12 @@ impl Brief for DesignBrief<'_> {
     const PROSE: &'static [&'static str] = &["synthesise.md", "design-format.md"];
 
     fn tighten(&self, schema: &mut Value) {
-        schema["properties"]["sections"]["minItems"] = json!(self.plan.required().count());
+        schema["properties"]["sections"]["minItems"] = json!(self.outline.required().count());
 
         // replace the derived `kind` reference with this run's subset
         let kinds = SectionKind::VARIANTS
             .iter()
-            .filter(|kind| self.plan.presence(**kind) != Presence::Omitted)
+            .filter(|kind| self.outline.presence(**kind) != Presence::Omitted)
             .map(AsRef::as_ref)
             .collect::<Vec<_>>();
         if let Some(kind) = schema["$defs"]["Section"]["properties"]["kind"].as_object_mut() {
@@ -67,18 +67,18 @@ impl Brief for DesignBrief<'_> {
         }
 
         // restrict the `{"type": …}` arm to this run's type keys
-        if self.plan.types.is_empty() {
+        if self.outline.types.is_empty() {
             return;
         }
         if let Some(block) = type_block(schema) {
-            block["properties"]["type"]["enum"] = json!(self.plan.keys().collect::<Vec<_>>());
+            block["properties"]["type"]["enum"] = json!(self.outline.keys().collect::<Vec<_>>());
         }
     }
 
     fn verify(&self, answer: &DesignAnswer, review: &mut Review) {
         review.paragraphs(&answer.preamble, "preamble");
 
-        let sources = &self.plan.sources;
+        let sources = &self.outline.sources;
         let mut seen = BTreeSet::new();
         let mut references: BTreeMap<&str, usize> = BTreeMap::new();
         for section in &answer.sections {
@@ -87,7 +87,7 @@ impl Brief for DesignBrief<'_> {
             if !seen.insert(kind) {
                 review.note(format_args!("{label} is drafted more than once"));
             }
-            if self.plan.presence(kind) == Presence::Omitted {
+            if self.outline.presence(kind) == Presence::Omitted {
                 review.note(format_args!("{label} is present but no claim informs it"));
             }
             if section.blocks.is_empty() {
@@ -117,11 +117,11 @@ impl Brief for DesignBrief<'_> {
             }
         }
 
-        for kind in self.plan.required().filter(|kind| !seen.contains(kind)) {
+        for kind in self.outline.required().filter(|kind| !seen.contains(kind)) {
             review.note(format_args!("`## {kind}` is required but absent"));
         }
 
-        for key in self.plan.keys() {
+        for key in self.outline.keys() {
             match references.get(key).copied().unwrap_or_default() {
                 1 => {}
                 0 => review.note(format_args!("type `{key}` is never referenced")),
@@ -129,7 +129,7 @@ impl Brief for DesignBrief<'_> {
             }
         }
 
-        for key in references.keys().filter(|key| !self.plan.types.contains_key(**key)) {
+        for key in references.keys().filter(|key| !self.outline.types.contains_key(**key)) {
             review.note(format_args!("type `{key}` is not a type claim"));
         }
     }
@@ -146,7 +146,7 @@ impl Brief for DesignBrief<'_> {
                     Block::Text(text) => revision::Block::Text(text),
                     Block::Type(key) => {
                         let signature =
-                            self.plan.types.get(key.as_str()).copied().ok_or_else(|| {
+                            self.outline.types.get(key.as_str()).copied().ok_or_else(|| {
                                 server_error!("type `{key}` was accepted without a type claim")
                             })?;
                         revision::Block::Type {
@@ -177,7 +177,7 @@ impl Display for DesignBrief<'_> {
 
         f.write_str("\n## Sections\n\n")?;
         for &kind in SectionKind::VARIANTS {
-            let presence = self.plan.presence(kind);
+            let presence = self.outline.presence(kind);
             let informants = kind
                 .informants()
                 .iter()
@@ -193,13 +193,13 @@ impl Display for DesignBrief<'_> {
             writeln!(f, "- `{key}` (`## {kind}`) — {presence}{reason}", key = kind.as_ref())?;
         }
 
-        if !self.plan.types.is_empty() {
+        if !self.outline.types.is_empty() {
             f.write_str(
                 "\n## Type blocks\n\nReference each `type` claim exactly once under \
                  `domain-model` as a `{\"type\": \"<key>\"}` block; the engine inserts its \
                  signature verbatim.\n\n",
             )?;
-            for key in self.plan.keys() {
+            for key in self.outline.keys() {
                 writeln!(f, "- `{key}`")?;
             }
         }
@@ -238,13 +238,13 @@ pub enum Block {
 // `type` claim's key, the name the model references it by, to the signature
 // the engine renders under it. A `type` claim without a string `signature`
 // has nothing to render and is not offered.
-struct Plan<'a> {
+struct Outline<'a> {
     kinds: BTreeSet<ClaimKind>,
     sources: BTreeSet<&'a str>,
     types: BTreeMap<String, &'a str>,
 }
 
-impl<'a> Plan<'a> {
+impl<'a> Outline<'a> {
     fn new(extracts: &'a [Extract]) -> Self {
         let claims = || extracts.iter().flat_map(|extract| &extract.evidence.claims);
         let mut types: BTreeMap<String, &'a str> = BTreeMap::new();

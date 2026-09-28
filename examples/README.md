@@ -1,6 +1,6 @@
 # Source Adapter Example
 
-Live `specify` journey via [omnia-cursor](https://github.com/augentic/omnia-backends/tree/main/crates/cursor): the mock adapter extracts greeting claims from `[docs/](docs/)` through the host model, the engine synthesises `spec.md` / `design.md`, and the revision commits.
+Live `specify` journey via [omnia-cursor](https://github.com/augentic/omnia-backends/tree/main/crates/cursor): the mock adapter extracts greeting claims from `[docs/](docs/)` through the host model, the engine synthesises `spec.md` / `design.md` and slices `plan.md`, and the revision commits.
 
 The adapter lives at `[adapter/](adapter/)` — the same anatomy as a first-party adapter. The shipped `emery` binary hosts it: [emery.toml](emery.toml) names the built component by path, and the engine loads it through the deployment's read-only project mount at that path. The source input is `[docs/](docs/)`.
 
@@ -21,8 +21,9 @@ cargo build --example adapter --target wasm32-wasip2 --release
 set -a; source .env; set +a
 cargo run -- -v specify --config examples/emery.toml
 
-# review the committed spec
+# review the committed spec and its build plan
 cargo run -- show spec
+cargo run -- show plan
 ```
 
 Without `.env`:

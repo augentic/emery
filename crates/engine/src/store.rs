@@ -1,6 +1,6 @@
 //! Persists content-addressed revisions and tracks the current revision.
 //!
-//! [`commit`] stores both documents, atomically updates the current revision
+//! [`commit`] stores every document, atomically updates the current revision
 //! identifier, and removes the displaced revision. [`current`] verifies and
 //! returns the stored revision. Content is checked against its identifier when
 //! read, allowing corruption to be detected.
@@ -8,7 +8,7 @@
 use anyhow::Context;
 use omnia_sdk::{BlobStore, Error, StateStore, server_error};
 
-use crate::revision::{Design, Diff, Document as _, Revision, Spec};
+use crate::revision::{Design, Diff, Document as _, Plan, Revision, Spec};
 
 /// The state-store key containing the current revision identifier.
 pub const REVISION_KEY: &str = "current-revision";
@@ -18,7 +18,7 @@ pub const CONTAINER: &str = "revisions";
 
 /// Commits `revision` as the current revision.
 ///
-/// Both documents are written, the current id is swapped by compare-and-swap,
+/// Every document is written, the current id is swapped by compare-and-swap,
 /// and the revision it displaced is pruned. Returns the new content id and,
 /// when the outgoing revision was readable, the [`Diff`] against it.
 ///
@@ -49,9 +49,11 @@ async fn swap<S: StateStore + BlobStore>(
     }
 
     let id = revision.id()?;
-    for (name, body) in
-        [(Spec::NAME, revision.spec.to_json()?), (Design::NAME, revision.design.to_json()?)]
-    {
+    for (name, body) in [
+        (Spec::NAME, revision.spec.to_json()?),
+        (Design::NAME, revision.design.to_json()?),
+        (Plan::NAME, revision.plan.to_json()?),
+    ] {
         BlobStore::put(store, CONTAINER, &key(&id, name), body.as_bytes())
             .await
             .context("writing revision document")?;
@@ -60,11 +62,10 @@ async fn swap<S: StateStore + BlobStore>(
     StateStore::cas(store, REVISION_KEY, observed.token.as_deref(), id.as_bytes())
         .await
         .context("swapping current revision")?;
-    tracing::debug!(%id, outgoing = ?observed.id(), "revision committed");
 
     // prune the outgoing revision
     if let Some(outgoing) = observed.id().filter(|outgoing| *outgoing != id) {
-        for name in [Spec::NAME, Design::NAME] {
+        for name in [Spec::NAME, Design::NAME, Plan::NAME] {
             let _ = BlobStore::delete(store, CONTAINER, &key(outgoing, name)).await;
         }
     }
@@ -143,7 +144,8 @@ async fn observe<S: StateStore + BlobStore>(store: &S) -> Observation {
 async fn load<S: BlobStore>(store: &S, id: &str) -> Result<Revision, Error> {
     let spec = read(store, id, Spec::NAME).await?;
     let design = read(store, id, Design::NAME).await?;
-    Revision::read(id, &spec, &design)
+    let plan = read(store, id, Plan::NAME).await?;
+    Revision::read(id, &spec, &design, &plan)
 }
 
 async fn read<S: BlobStore>(store: &S, id: &str, name: &str) -> Result<Vec<u8>, Error> {
@@ -213,6 +215,11 @@ mod tests {
                 emery: EMERY,
                 preamble: vec![],
                 sections: vec![],
+            },
+            plan: Plan {
+                emery: EMERY,
+                preamble: vec![],
+                slices: vec![],
             },
         }
     }

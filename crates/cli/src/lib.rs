@@ -24,7 +24,7 @@ use omnia_sdk::api::{Client, Format, Metadata};
 use strum::VariantArray as _;
 
 const ABOUT: &str = "Deterministic primitives for spec-driven development";
-const SPECIFY_DESC: &str = "Generate spec.md and design.md from source adapters.\n\n\
+const SPECIFY_DESC: &str = "Generate spec.md, design.md, and plan.md from source adapters.\n\n\
     Name one or more adapters, use `--description <adapter>=<text>` for inline input, \
     or use `--config [<path>]` (default: `emery.toml`). With no sources, Emery looks \
     for `emery.toml` in the project root. Config and command-line sources cannot be \
@@ -100,7 +100,7 @@ struct App {
 
 #[derive(Debug, Subcommand)]
 enum Verb {
-    /// Generate spec.md and design.md from the named sources
+    /// Generate spec.md, design.md, and plan.md from the named sources
     #[command(long_about = SPECIFY_DESC)]
     Specify(SpecifyArgs),
     /// Print a reviewable artifact of the current revision to stdout
@@ -159,6 +159,7 @@ fn artifacts() -> impl TypedValueParser<Value = Artifact> {
         let help = match artifact {
             Artifact::Spec => "The behavioural specification artifact.",
             Artifact::Design => "The rebuild design artifact.",
+            Artifact::Plan => "The build plan artifact.",
         };
         PossibleValue::new(artifact.as_ref()).help(help)
     }))

@@ -1,12 +1,12 @@
 ---
 name: emery-specify
-description: Generate a specification by invoking `emery specify` over the named sources and relaying its output. Use whenever the operator wants to generate or regenerate `spec.md` / `design.md`.
+description: Generate a specification by invoking `emery specify` over the named sources and relaying its output. Use whenever the operator wants to generate or regenerate `spec.md` / `design.md` / `plan.md`.
 argument-hint: <adapter>
 ---
 
 # Specify Skill
 
-`emery specify` is the one generate verb: it resolves the named source adapters (a local component loads through the deployment loader, read fresh each run; an exact package reference fetches from its registry), extracts, derives the requirements, synthesises, and commits one revision, swapping the current revision id. Nothing about the source list persists between runs — repeat the sources on every invocation, or keep them in an operator-owned `emery.toml`. Every run starts from its sources alone: nothing of the stored revision reaches the synthesis, and requirements number from `REQ-001` in source order. This skill installs or refreshes the CLI, elicits arguments, invokes the verb, re-projects the committed revision, and relays its output.
+`emery specify` is the one generate verb: it resolves the named source adapters (a local component loads through the deployment loader, read fresh each run; an exact package reference fetches from its registry), extracts, derives the requirements, synthesises, slices the specification into a build plan, and commits one revision, swapping the current revision id. Nothing about the source list persists between runs — repeat the sources on every invocation, or keep them in an operator-owned `emery.toml`. Every run starts from its sources alone: nothing of the stored revision reaches the synthesis, and requirements number from `REQ-001` in source order. This skill installs or refreshes the CLI, elicits arguments, invokes the verb, re-projects the committed revision, and relays its output.
 
 ## Invocation
 
@@ -37,12 +37,13 @@ After every successful run, write the committed revision's Markdown projections 
 ```bash
 emery show spec > spec.md
 emery show design > design.md
+emery show plan > plan.md
 ```
 
-Track both files in version control. Never edit them by hand: they are projections of the stored revision, and a hand edit is overwritten by the next run (change a source and re-run instead).
+Track all three files in version control. Never edit them by hand: they are projections of the stored revision, and a hand edit is overwritten by the next run (change a source and re-run instead).
 
 ## Relay
 
-- Surface the CLI output verbatim — text names the committed revision with a one-line diff summary; the full per-requirement diff rides `--format json`.
-- Review is `spec.md` / `design.md` as re-projected, or `emery show spec` / `emery show design` directly — never read or edit `.omnia/storage` state by hand.
+- Surface the CLI output verbatim — text names the committed revision with a one-line diff summary; the full per-requirement and per-slice diff rides `--format json`.
+- Review is `spec.md` / `design.md` / `plan.md` as re-projected, or `emery show spec` / `emery show design` / `emery show plan` directly — never read or edit `.omnia/storage` state by hand.
 - On non-zero exit, surface the structured error and stop — never hand-roll spec documents. A `refused` failure means the loader rejected the request (an invalid artifact, a bare name the runtime does not declare, or a `digest` the component does not resolve to); relay the hint and let the operator decide. A `spec-outdated` failure means the stored revision predates this binary's grammar: relay the hint (re-run `emery specify` to regenerate) and let the operator decide.

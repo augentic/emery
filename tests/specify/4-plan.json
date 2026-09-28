@@ -1,0 +1,16 @@
+{
+  "emery": 3,
+  "preamble": [],
+  "slices": [
+    {
+      "id": "SLICE-001",
+      "name": "greeting",
+      "requirements": [
+        "REQ-001"
+      ],
+      "types": [],
+      "depends-on": [],
+      "brief": []
+    }
+  ]
+}

@@ -38,6 +38,7 @@ pub async fn show<P: StateStore + BlobStore>(
     match input.artifact {
         Artifact::Spec => ShowOutput::new(&revision.spec, id),
         Artifact::Design => ShowOutput::new(&revision.design, id),
+        Artifact::Plan => ShowOutput::new(&revision.plan, id),
     }
 }
 
@@ -51,8 +52,8 @@ pub struct ShowInput {
 
 /// A document available from a specification revision.
 ///
-/// String parsing, [`AsRef::as_ref`], and Serde use the lowercase names `spec`
-/// and `design`.
+/// String parsing, [`AsRef::as_ref`], and Serde use the lowercase names `spec`,
+/// `design`, and `plan`.
 ///
 /// # Examples
 ///
@@ -62,6 +63,7 @@ pub struct ShowInput {
 /// let artifact: Artifact = "spec".parse()?;
 /// assert!(matches!(artifact, Artifact::Spec));
 /// assert_eq!(Artifact::Design.as_ref(), "design");
+/// assert_eq!(Artifact::Plan.as_ref(), "plan");
 /// # Ok::<(), strum::ParseError>(())
 /// ```
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, AsRefStr, EnumString, VariantArray)]
@@ -72,6 +74,8 @@ pub enum Artifact {
     Spec,
     /// The rebuild design, rendered as `design.md`.
     Design,
+    /// The build plan, rendered as `plan.md`.
+    Plan,
 }
 
 /// A rendered revision document and its structured representation.

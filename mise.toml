@@ -15,8 +15,7 @@
 # "cargo:mdbook-linkcheck2" = { version = "latest", depends = ["cargo-binstall"] }
 
 [task_config]
-includes = ["mise-rust.toml"]
-# includes = ["git::https://github.com/augentic/.github.git//mise/rust.toml?ref=v0.1.0"]
+includes = ["git::https://github.com/augentic/.github.git//mise/rust.toml?ref=v0.1.2"]
 
 # -------------------------------------
 # Engine overrides

@@ -4,9 +4,9 @@
 //! validation. Only a response that passes both deserialisation and
 //! fact-based checks can produce engine output.
 //!
-//! Synthesis may use briefs for claim grouping, specification drafting, and
-//! design drafting. Facts already known to the engine are validated or
-//! inserted directly rather than requested from the model.
+//! Synthesis may use briefs for claim grouping, specification drafting,
+//! design drafting, and slicing. Facts already known to the engine are
+//! validated or inserted directly rather than requested from the model.
 
 use std::fmt::{self, Display, Formatter};
 

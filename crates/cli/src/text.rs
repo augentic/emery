@@ -21,25 +21,20 @@ pub fn specify(output: &SpecifyOutput, w: &mut dyn fmt::Write) -> fmt::Result {
 }
 
 fn summary(diff: &Diff, w: &mut dyn fmt::Write) -> fmt::Result {
-    write!(
-        w,
-        "spec +{} -{} ~{}",
-        diff.spec.added.len(),
-        diff.spec.removed.len(),
-        diff.spec.changed.len()
-    )?;
-    if diff.spec.preamble {
-        write!(w, " preamble")?;
-    }
-    write!(
-        w,
-        ", design +{} -{} ~{}",
-        diff.design.added.len(),
-        diff.design.removed.len(),
-        diff.design.changed.len()
-    )?;
-    if diff.design.preamble {
-        write!(w, " preamble")?;
+    let (spec, design, plan) = (&diff.spec, &diff.design, &diff.plan);
+    let documents = [
+        ("spec", spec.added.len(), spec.removed.len(), spec.changed.len(), spec.preamble),
+        ("design", design.added.len(), design.removed.len(), design.changed.len(), design.preamble),
+        ("plan", plan.added.len(), plan.removed.len(), plan.changed.len(), plan.preamble),
+    ];
+    for (position, (name, added, removed, changed, preamble)) in documents.into_iter().enumerate() {
+        if position > 0 {
+            w.write_str(", ")?;
+        }
+        write!(w, "{name} +{added} -{removed} ~{changed}")?;
+        if preamble {
+            w.write_str(" preamble")?;
+        }
     }
     Ok(())
 }
