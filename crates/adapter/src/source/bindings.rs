@@ -163,7 +163,6 @@ impl From<wit::Backing> for Backing {
 
 impl From<Claim> for wit::Claim {
     fn from(claim: Claim) -> Self {
-        // extras cross the bindings as canonical JSON text
         let extras =
             claim.extras.into_iter().map(|(key, value)| (key, value.to_string())).collect();
         Self {

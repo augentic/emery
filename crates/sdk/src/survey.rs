@@ -24,11 +24,11 @@ pub const MODULE_CAP: usize = 200;
 /// Returns the surfaces discovered by the model in a workspace source.
 ///
 /// `docs` must contain `survey.md`, which becomes the system prompt. The turn
-/// lists the modules `keep` accepts — every path up to [`MODULE_CAP`], else
-/// the root's own files and each top-level directory with its count — so the
-/// model reads the manifest and the bootstrap among them rather than globbing
-/// the tree. The model may read the workspace and the embedded reference
-/// documents.
+/// lists the modules `keep` accepts, so the model reads the manifest and the
+/// bootstrap among them rather than globbing the tree. Up to [`MODULE_CAP`]
+/// modules are listed by path; past that, the root's own files are listed and
+/// each top-level directory stands for its modules with a count. The model may
+/// read the workspace and the embedded reference documents.
 ///
 /// Every surface must have a unique, nonempty name and a root-relative entry
 /// path. The entry must be a regular file accepted by `keep`, as must each
@@ -180,9 +180,7 @@ impl Display for Brief<'_> {
     }
 }
 
-// The `## Modules` section of the turn, with how to read it: every kept
-// module while they fit the cap, else the root's own files and each top-level
-// directory with its count, so the turn stays bounded on a large estate.
+// The `## Modules` section of the turn, with how to read it.
 struct Modules<'a>(&'a [String]);
 
 impl Display for Modules<'_> {

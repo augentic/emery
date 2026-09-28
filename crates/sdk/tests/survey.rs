@@ -1,10 +1,3 @@
-//! Verifies model-assisted discovery of caller-facing surfaces.
-//!
-//! The scenarios cover request construction, result ordering, entry-path
-//! normalisation, and validation against both the workspace and adapter
-//! filter. They also cover empty inventories, pre-request failures, correction
-//! rounds, and model error classification.
-
 use std::fs;
 use std::os::unix::fs::symlink;
 use std::path::Path;
@@ -133,9 +126,9 @@ async fn request() {
     model.assert_exhausted();
 }
 
-// A system document is never listed — the survey's own prompt, the mining
-// prompt of the turns that follow, or the claim rules a survey emits none
-// under — and an unlisted document still answers when read.
+// No system document is listed: the survey's own prompt, the mining prompt of
+// the turns that follow, or the claim rules a survey emits none under. An
+// unlisted document still answers when read.
 #[tokio::test]
 async fn list_docs() {
     let model = Scripted::answering([

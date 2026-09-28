@@ -1,12 +1,12 @@
 //! Reconciles requirement claims into deterministic requirement bases.
 //!
-//! Claims sharing an identifier are grouped before any model request. For
-//! requirement claims from multiple sources — or from one source whose
-//! requirement ids span several stems — the model may group remaining claims
-//! by meaning and agreement. The engine validates that partition, applies
-//! source authority, and derives status, coverage, winners, and losing
-//! statements. A run in which no source contributes a requirement claim is
-//! refused before any request.
+//! Claims sharing an identifier are grouped before any model request. When
+//! requirement claims come from several sources, or from one source whose
+//! requirement ids span several stems, the model may group the remaining
+//! claims by meaning and agreement. The engine validates that partition,
+//! applies source authority, and derives status, coverage, winners, and
+//! losing statements. A run in which no source contributes a requirement
+//! claim is refused before any request.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::{self, Display, Formatter};
@@ -58,7 +58,7 @@ impl<'a> GroupingBrief<'a> {
             }
         }
 
-        // a source with no requirement claim has nothing to group
+        // count the sources that contribute a requirement claim
         let sources = contributors.iter().map(|claim| claim.source).collect::<BTreeSet<_>>().len();
         let baseline = baseline(&contributors);
 
@@ -331,7 +331,7 @@ impl<'a> Basis<'a> {
     fn of(
         id: ReqId, mut classes: Vec<Vec<Contributor<'a>>>, criteria: &[&str],
     ) -> Result<Self, Error> {
-        // an empty class is the engine's own defect; from here every class has a lead
+        // refuse an empty class, so every class below has a lead
         if classes.is_empty() || classes.iter().any(Vec::is_empty) {
             return Err(server_error!("requirement {id} was grouped with a class of no claims"));
         }
@@ -413,7 +413,7 @@ impl<'a> Basis<'a> {
 /// A source claim contributing to a requirement.
 #[derive(Debug)]
 pub struct Contributor<'a> {
-    /// The source name.
+    /// The name of the source the claim was extracted from.
     pub source: &'a str,
     /// The source kind used to rank this contributor.
     pub kind: SourceKind,

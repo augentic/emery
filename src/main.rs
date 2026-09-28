@@ -1,10 +1,10 @@
 //! Defines the shipped `emery` runtime.
 //!
 //! The runtime embeds the engine guest under capability policies fixed at
-//! compile time: the invocation directory is the one mount, so it is also the
-//! root a local adapter loads from, and a package adapter fetches from the
-//! registry the project's `emery.toml` routes its namespace to. Every
-//! external effect remains limited to those grants.
+//! compile time. The invocation directory is the one mount, read-only, so it
+//! is also the root a local adapter loads from. A package adapter fetches from
+//! the registry the project's `emery.toml` routes its namespace to. Every
+//! external effect stays within those grants.
 
 use omnia_cursor::Client as Cursor;
 use omnia_filesystem::{Client as Filesystem, ConnectOptions};

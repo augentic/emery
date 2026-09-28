@@ -1,10 +1,3 @@
-//! Verifies document embedding and corpus validation.
-//!
-//! The scenarios cover table order, verbatim bodies, missing and duplicate
-//! entries, prompt reachability, relative-link resolution, and imported
-//! documents. They also verify symlink traversal and ensure links in fenced
-//! code or external URLs are ignored.
-
 use std::fs;
 use std::os::unix::fs::symlink;
 use std::path::Path;

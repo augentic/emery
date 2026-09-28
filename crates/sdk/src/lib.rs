@@ -77,12 +77,14 @@
 //! Fallible APIs return [`Error`]. Use [`bad_request!`] when an adapter rejects
 //! unusable input.
 //!
-//! Progress is emitted through `tracing`; every event names the source
-//! and, within a seam, its index. An adapter opens at its guest environment's
+//! Progress is emitted through `tracing`. Every event names the source and,
+//! within a seam, its index. An adapter opens at its guest environment's
 //! `RUST_LOG`, which the Omnia runtime sets from the run's one tracing level:
-//! `info` on a bare `emery` run, so this crate's progress reaches stderr,
-//! one step up per `-v` and down per `-q`, and an operator's own `RUST_LOG`
-//! (`emery_sdk=debug`, `off`) kept when no flag is passed.
+//!
+//! - `info` on a bare `emery` run, so this crate's progress reaches stderr.
+//! - One step up per `-v` and one step down per `-q`.
+//! - The operator's own `RUST_LOG` (`emery_sdk=debug`, `off`) when no flag is
+//!   passed.
 
 mod extract;
 mod reference;

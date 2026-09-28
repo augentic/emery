@@ -64,8 +64,8 @@ impl SpecDiff {
             && self.changed.is_empty()
     }
 
-    // Matches requirements by id — the position each run numbers in source
-    // order — so a requirement whose place moved reads as a change.
+    // Requirements match by id, the position each run numbers in source
+    // order, so a requirement whose place moved reads as a change.
     fn between(outgoing: &Spec, incoming: &Spec) -> Self {
         let mut diff = Self {
             preamble: outgoing.preamble != incoming.preamble,

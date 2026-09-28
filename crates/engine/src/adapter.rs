@@ -80,21 +80,23 @@ pub struct Loaded {
 /// Duplicate references are loaded once, under one pin. Every adapter loads
 /// at the location its reference names ([`AdapterRef::location`]), under the
 /// guest name that location registers ([`Location::name`]), and all load
-/// before metadata is queried. The
-/// loader holds a pinned adapter to its digest, and a declared minimum Emery
-/// version must not exceed the running version. The result is keyed by the
-/// reference's [`Display`] form.
+/// before metadata is queried. The loader holds a pinned adapter to its
+/// digest, and a declared minimum Emery version must not exceed the running
+/// version. The result is keyed by the reference's [`Display`] form.
 ///
 /// # Errors
 ///
-/// - Returns [`Error::BadRequest`] for a path outside the project, a digest
-///   on a declared guest, two digests on one adapter, two references that
-///   name one guest (two components sharing a file stem, two versions of
-///   one package), a reference that names the engine's own guest
-///   ([`ENGINE`]), a package whose namespace `registries` does not route,
-///   malformed version metadata, or an incompatible adapter. Incompatible
-///   versions use code `unsupported-version`; an adapter that resolves to
-///   other bytes than its pin uses the loader's code `refused`.
+/// - Returns [`Error::BadRequest`] when a reference is refused:
+///   - a path outside the project;
+///   - a digest on a declared guest, or two digests on one adapter;
+///   - two references that name one guest, such as two components sharing a
+///     file stem or two versions of one package;
+///   - a reference that names the engine's own guest ([`ENGINE`]);
+///   - a package whose namespace `registries` does not route;
+///   - malformed version metadata;
+///   - an incompatible adapter, with code `unsupported-version`;
+///   - an adapter that resolves to other bytes than its pin, with the
+///     loader's code `refused`.
 /// - Returns [`Error::NotFound`] when a local component does not exist.
 ///
 /// Errors from [`Plugins::load`] are returned unchanged.
@@ -191,8 +193,8 @@ fn require_version(id: &str, declared: &str, running: &semver::Version) -> Resul
 /// Parsing normalises package shorthands and local file prefixes.
 /// `intent@1.0.0` becomes `emery:intent@1.0.0`, while
 /// `file://./intent.wasm` becomes `./intent.wasm`. [`Display`] is that
-/// normalised identity — what config serialises and a run dedupes loads by —
-/// and [`name`] the kebab-case name it lends a binding that names none. The
+/// normalised identity, which config serialises and a run dedupes loads by.
+/// [`name`] is the kebab-case name it lends a binding that names none. The
 /// guest it loads and dispatches as is its [`location`]'s
 /// [`Location::name`]. An empty value, a GitHub URL, or a malformed package
 /// reference parses as [`Error::BadRequest`].
@@ -323,7 +325,7 @@ impl AdapterRef {
             }
         };
 
-        // asked, the loader would attest the engine in the adapter's place
+        // refuse the engine's own guest name, which the loader would attest
         if location.name() == ENGINE {
             return Err(bad_request!(
                 "adapter `{self}` would register as `{ENGINE}`, the engine itself; a run loads no \

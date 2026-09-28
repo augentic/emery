@@ -1,9 +1,3 @@
-//! Verifies evidence deserialisation and claim validation.
-//!
-//! The scenarios cover typed common fields, preserved extras, lenient optional
-//! fields, and rejection of unknown document fields. They also verify the
-//! dotted identifier grammar and kind-specific required extras.
-
 use emery_adapter::source::{Backing, ClaimKind, Evidence};
 
 #[test]

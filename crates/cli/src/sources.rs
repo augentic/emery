@@ -28,7 +28,6 @@ pub struct Decoded {
     pub registries: Registries,
 }
 
-/// The mutually exclusive ways a run names its sources.
 enum Carrier<'a> {
     Config(&'a Path),
     DiscoverOrEmpty,
