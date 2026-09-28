@@ -14,10 +14,10 @@ use schemars::JsonSchema;
 use serde::Deserialize;
 use serde_json::{Value, json};
 
-use crate::revision::{EMERY, Scenario, Spec, Status};
+use crate::revision::{EMERY, Scenario, Spec};
 use crate::specify::Extract;
 use crate::specify::basis::Basis;
-use crate::specify::brief::{Brief, ClaimsSection, Review};
+use crate::specify::brief::{BasesSection, Brief, ClaimsSection, Review};
 
 // The outcome a scenario states where no criterion evidences one.
 const UNKNOWN: &str = "[unknown]";
@@ -184,49 +184,11 @@ impl Display for SpecBrief<'_> {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         write!(f, "Draft `spec.md`.\n\n{claims}", claims = ClaimsSection(self.extracts))?;
 
-        f.write_str("\n## Requirements (draft one entry per subject)\n\n")?;
-        for basis in self.bases {
-            let coverage = if basis.covered {
-                "evidenced"
-            } else {
-                "not evidenced — `then` may be `[unknown]`"
-            };
-            write!(
-                f,
-                "- {id} `{subject}` — Status: {status} — Sources: [",
-                id = basis.id,
-                subject = basis.subject,
-                status = basis.status,
-            )?;
-            for (position, member) in basis.contributors().enumerate() {
-                if position > 0 {
-                    f.write_str(", ")?;
-                }
-                write!(f, "{}:{}", member.source, member.id)?;
-            }
-            writeln!(f, "] — acceptance criteria {coverage}")?;
-
-            for (position, class) in basis.classes.iter().enumerate() {
-                let role = match (basis.status, position) {
-                    (Status::Divergence, 0) => "winner",
-                    (Status::Divergence, _) => "loser",
-                    _ => "contributor",
-                };
-
-                for member in class {
-                    writeln!(
-                        f,
-                        "  - {role}: {source} ({kind}, `{claim}`): {statement}",
-                        source = member.source,
-                        kind = member.kind,
-                        claim = member.id,
-                        statement = member.statement,
-                    )?;
-                }
-            }
-        }
-
-        Ok(())
+        write!(
+            f,
+            "\n## Requirements (draft one entry per subject)\n\n{bases}",
+            bases = BasesSection(self.bases)
+        )
     }
 }
 

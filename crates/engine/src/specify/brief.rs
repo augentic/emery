@@ -16,7 +16,8 @@ use schemars::JsonSchema;
 use serde::de::DeserializeOwned;
 use serde_json::Value;
 
-use crate::revision::RESERVED;
+use crate::revision::{RESERVED, Status};
+use crate::specify::basis::Basis;
 use crate::specify::{Extract, PROSE};
 
 /// A typed synthesis question and the checks its answer must satisfy.
@@ -143,6 +144,61 @@ impl Review {
         } else if text.contains('\n') {
             self.note(format_args!("{label} spans more than one line"));
         }
+    }
+}
+
+/// The requirement outline of a document brief's turn, one entry per basis.
+///
+/// Each entry carries the engine's facts about the requirement: its id,
+/// subject, status, sources, whether a criterion covers it, and every
+/// contributing claim with its role. The three drafts run from it together,
+/// so none waits on another's answer.
+pub struct BasesSection<'a>(pub &'a [Basis<'a>]);
+
+impl Display for BasesSection<'_> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        for basis in self.0 {
+            let coverage = if basis.covered {
+                "evidenced"
+            } else {
+                "not evidenced — `then` is the outcome the statements name, else `[unknown]`"
+            };
+            write!(
+                f,
+                "- {id} `{subject}` — Status: {status} — Sources: [",
+                id = basis.id,
+                subject = basis.subject,
+                status = basis.status,
+            )?;
+            for (position, member) in basis.contributors().enumerate() {
+                if position > 0 {
+                    f.write_str(", ")?;
+                }
+                write!(f, "{}:{}", member.source, member.id)?;
+            }
+            writeln!(f, "] — acceptance criteria {coverage}")?;
+
+            for (position, class) in basis.classes.iter().enumerate() {
+                let role = match (basis.status, position) {
+                    (Status::Divergence, 0) => "winner",
+                    (Status::Divergence, _) => "loser",
+                    _ => "contributor",
+                };
+
+                for member in class {
+                    writeln!(
+                        f,
+                        "  - {role}: {source} ({kind}, `{claim}`): {statement}",
+                        source = member.source,
+                        kind = member.kind,
+                        claim = member.id,
+                        statement = member.statement,
+                    )?;
+                }
+            }
+        }
+
+        Ok(())
     }
 }
 

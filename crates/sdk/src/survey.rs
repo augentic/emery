@@ -2,12 +2,13 @@
 //!
 //! [`surfaces`] asks the model to identify boundaries such as routes,
 //! commands, jobs, and exported APIs. Each result names the module where a
-//! caller enters that surface. The adapter decides how results become mining
-//! [seams](crate#vocabulary).
+//! caller enters that surface and the stem its claim ids lead with. The
+//! adapter decides how results become mining [seams](crate#vocabulary).
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::{self, Display, Formatter};
 
+use emery_adapter::is_kebab;
 use emery_adapter::source::SourceContent;
 use emery_prose::Doc;
 use omnia_sdk::model::Question;
@@ -30,13 +31,13 @@ pub const MODULE_CAP: usize = 200;
 /// each top-level directory stands for its modules with a count. The model may
 /// read the workspace and the embedded reference documents.
 ///
-/// Every surface must have a unique, nonempty name and a root-relative entry
-/// path. The entry must be a regular file accepted by `keep`, as must each
-/// directory leading to it. Emery's `.omnia/` directories and generated
-/// documents are always rejected.
+/// Every surface must have a unique, nonempty name, a root-relative entry
+/// path, and a lowercase kebab-case stem. The entry must be a regular file
+/// accepted by `keep`, as must each directory leading to it. Emery's `.omnia/`
+/// directories and generated documents are always rejected.
 ///
-/// Results preserve model order. Several surfaces may share an entry module,
-/// and an empty inventory is valid.
+/// Results preserve model order. Several surfaces may share an entry module
+/// or a stem, and an empty inventory is valid.
 ///
 /// # Errors
 ///
@@ -82,7 +83,7 @@ pub async fn surfaces<P: Model>(
     let surfaces: Vec<_> = inventory
         .surfaces
         .iter()
-        .map(|surface| format!("{} @ {}", surface.name, surface.entry))
+        .map(|surface| format!("{} @ {} [{}]", surface.name, surface.entry, surface.stem))
         .collect();
     tracing::info!(%source, ?surfaces, "surveyed");
 
@@ -93,14 +94,15 @@ pub async fn surfaces<P: Model>(
         .map(|surface| Surface {
             entry: beneath(&surface.entry).unwrap_or(surface.entry),
             name: surface.name,
+            stem: surface.stem,
         })
         .collect())
 }
 
 /// The complete set of surfaces reported by the model.
 ///
-/// An empty inventory is valid. [`surfaces`] validates names and entry paths
-/// before returning the surfaces to an adapter.
+/// An empty inventory is valid. [`surfaces`] validates names, entry paths,
+/// and stems before returning the surfaces to an adapter.
 #[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq)]
 #[serde(deny_unknown_fields)]
 #[schemars(title = "Emery survey answer")]
@@ -109,7 +111,7 @@ pub struct Inventory {
     pub surfaces: Vec<Surface>,
 }
 
-/// A caller-facing capability and the module where it is entered.
+/// A caller-facing capability, the module where it is entered, and the stem its claims lead with.
 #[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct Surface {
@@ -117,6 +119,9 @@ pub struct Surface {
     pub name: String,
     /// The entry module as a path relative to the workspace root.
     pub entry: String,
+    /// The first dotted segment of every `requirement` and `criterion` id mined from this
+    /// surface: lowercase kebab-case, `[a-z0-9]+(-[a-z0-9]+)*`.
+    pub stem: String,
 }
 
 impl Inventory {
@@ -131,6 +136,12 @@ impl Inventory {
             }
             if let Err(finding) = module(root, &surface.entry, keep) {
                 findings.push(finding);
+            }
+            if !is_kebab(&surface.stem) {
+                findings.push(format!(
+                    "surface `{}`: stem `{}` is not lowercase kebab-case",
+                    surface.name, surface.stem
+                ));
             }
         }
         findings
@@ -163,7 +174,11 @@ impl Display for Brief<'_> {
              what a caller outside the source reaches, with the module the caller enters it at. \
              Name an entry as a `/`-separated path relative to `$SOURCE_DIR`, to a module of the \
              kind the prompt says this adapter mines; a module may be the entry of several \
-             surfaces, and a module no surface enters is not named.\n\n\
+             surfaces, and a module no surface enters is not named. Give each surface a `stem`: \
+             the lowercase kebab-case noun that leads every `requirement` and `criterion` id its \
+             mining mints, as `orders` leads `orders.create`. The caller holds the surface's ids \
+             to it, so choose the noun a reader of the specification would file the surface \
+             under; two surfaces of one noun may share a stem.\n\n\
              {modules}\
              Nothing outside `$SOURCE_DIR` is reachable. The caller mines each surface from its \
              entry, following what it reaches through the whole tree — you follow nothing and \

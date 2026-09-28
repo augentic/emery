@@ -2,8 +2,9 @@
 //!
 //! [`specify`] validates the complete source list before loading adapters.
 //! Sources are extracted concurrently, and the first failure among them ends
-//! the run; their claims are then reconciled by authority and synthesised into
-//! `spec.md` and `design.md`, and the specification is sliced into `plan.md`.
+//! the run; their claims are then reconciled by authority into requirement
+//! bases, from which `spec.md`, `design.md`, and the `plan.md` slicing are
+//! drafted together.
 //!
 //! The three documents are committed as one content-addressed revision. An
 //! earlier revision contributes only the returned [`Diff`]; it is never used
@@ -84,9 +85,14 @@ pub async fn specify<P: Model + Source + StateStore + BlobStore + Plugins>(
         future::try_join_all(bound.iter().map(|source| source.extract(provider, loaded))).await?;
 
     let bases = GroupingBrief::new(&extracts).derive(provider).await?;
-    let spec = SpecBrief::new(&extracts, &bases).judge(provider).await?;
-    let design = DesignBrief::new(&extracts, &spec).judge(provider).await?;
-    let plan = SliceBrief::new(&spec, &design).derive(provider).await?;
+    let design = DesignBrief::new(&extracts, &bases);
+    let plan = SliceBrief::new(&bases, design.types());
+    let (spec, design, plan) = future::try_join3(
+        SpecBrief::new(&extracts, &bases).judge(provider),
+        design.judge(provider),
+        plan.derive(provider),
+    )
+    .await?;
 
     let (revision, diff) = store::commit(provider, &Revision { spec, design, plan }).await?;
 

@@ -1,4 +1,5 @@
-//! Synthesises the build plan over `spec.md` and `design.md`.
+//! Synthesises the build plan over the requirement bases and the design's
+//! type keys.
 //!
 //! Requirements sharing a stem — the first segment of their subject's dotted
 //! id — are one slice at the least. The model may merge stems into one slice
@@ -6,7 +7,9 @@
 //! owns, orders slices by build dependency, and briefs each. The engine
 //! validates that partition, numbers the slices by their lowest requirement,
 //! and writes every list in canonical order. A specification under one stem
-//! is one slice and no call is spent.
+//! is one slice and no call is spent. The brief runs from the bases and the
+//! keys the design will reference, so it is derived beside the specification
+//! and design drafts rather than after them.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::{self, Display, Formatter};
@@ -17,37 +20,38 @@ use schemars::JsonSchema;
 use serde::Deserialize;
 use serde_json::{Value, json};
 
-use crate::revision::{Design, EMERY, Plan, ReqId, Slice, SliceId, Spec};
-use crate::specify::brief::{Brief, Review};
+use crate::revision::{EMERY, Plan, ReqId, Slice, SliceId};
+use crate::specify::basis::Basis;
+use crate::specify::brief::{BasesSection, Brief, Review};
 use crate::specify::shape;
 
 /// A synthesis brief for the build plan.
 ///
-/// The brief contains the rendered specification and design, the stems the
-/// requirements fall under, and the design's type keys.
+/// The brief contains the requirement bases, the stems they fall under, and
+/// the design's type keys.
 pub struct SliceBrief<'a> {
-    spec: &'a Spec,
-    design: &'a Design,
+    bases: &'a [Basis<'a>],
+    types: Vec<String>,
     stems: Vec<Stem<'a>>,
 }
 
 impl<'a> SliceBrief<'a> {
-    /// Returns a slicing brief for `spec` and `design`.
+    /// Returns a slicing brief for `bases` and the design's `types`, in key order.
     #[must_use]
-    pub fn new(spec: &'a Spec, design: &'a Design) -> Self {
+    pub fn new(bases: &'a [Basis<'a>], types: Vec<String>) -> Self {
         let mut stems: Vec<Stem<'a>> = Vec::new();
-        for requirement in &spec.requirements {
-            let stem = shape::stem(&requirement.subject);
+        for basis in bases {
+            let stem = shape::stem(basis.subject);
             match stems.iter_mut().find(|entry| entry.stem == stem) {
-                Some(entry) => entry.requirements.push(requirement.id),
+                Some(entry) => entry.requirements.push(basis.id),
                 None => stems.push(Stem {
                     stem,
-                    requirements: vec![requirement.id],
+                    requirements: vec![basis.id],
                 }),
             }
         }
 
-        Self { spec, design, stems }
+        Self { bases, types, stems }
     }
 
     /// Derives the build plan.
@@ -72,14 +76,14 @@ impl<'a> SliceBrief<'a> {
 
     // The one stem as the one slice, named for it and owning every type.
     fn whole(self) -> Plan {
-        let Self { design, stems, .. } = self;
+        let Self { types, stems, .. } = self;
         let slices = stems
             .into_iter()
             .map(|stem| Slice {
                 id: SliceId::new(1),
                 name: stem.stem.to_owned(),
                 requirements: stem.requirements,
-                types: design.types().map(str::to_owned).collect(),
+                types: types.clone(),
                 depends_on: vec![],
                 brief: vec![],
             })
@@ -107,14 +111,12 @@ impl Brief for SliceBrief<'_> {
         // restrict each list to this run's requirement ids and type keys
         let draft = &mut schema["$defs"]["Draft"]["properties"];
         draft["requirements"]["minItems"] = json!(1);
-        draft["requirements"]["items"]["enum"] = json!(
-            self.spec.requirements.iter().map(|requirement| requirement.id).collect::<Vec<_>>()
-        );
-        let keys: Vec<&str> = self.design.types().collect();
-        if keys.is_empty() {
+        draft["requirements"]["items"]["enum"] =
+            json!(self.bases.iter().map(|basis| basis.id).collect::<Vec<_>>());
+        if self.types.is_empty() {
             draft["types"]["maxItems"] = json!(0);
         } else {
-            draft["types"]["items"]["enum"] = json!(keys);
+            draft["types"]["items"]["enum"] = json!(self.types);
         }
     }
 
@@ -122,8 +124,7 @@ impl Brief for SliceBrief<'_> {
         review.paragraphs(&answer.preamble, "preamble");
 
         // each slice on its own
-        let known: BTreeSet<ReqId> =
-            self.spec.requirements.iter().map(|requirement| requirement.id).collect();
+        let known: BTreeSet<ReqId> = self.bases.iter().map(|basis| basis.id).collect();
         let mut names = BTreeSet::new();
         let mut placed: BTreeMap<ReqId, &str> = BTreeMap::new();
         let mut owners: BTreeMap<&str, BTreeSet<&str>> = BTreeMap::new();
@@ -171,7 +172,7 @@ impl Brief for SliceBrief<'_> {
         }
 
         // type ownership
-        let keys: BTreeSet<&str> = self.design.types().collect();
+        let keys: BTreeSet<&str> = self.types.iter().map(String::as_str).collect();
         for key in &keys {
             match owners.get(key) {
                 Some(slices) if slices.len() == 1 => {}
@@ -223,12 +224,8 @@ impl Brief for SliceBrief<'_> {
         let mut slices = Vec::with_capacity(drafts.len());
         for (mut draft, number) in drafts.into_iter().zip(1..) {
             draft.requirements.sort_unstable();
-            let types = self
-                .design
-                .types()
-                .filter(|key| draft.types.iter().any(|owned| owned == key))
-                .map(str::to_owned)
-                .collect();
+            let types =
+                self.types.iter().filter(|key| draft.types.contains(key)).cloned().collect();
             let mut depends_on = draft
                 .depends_on
                 .iter()
@@ -316,8 +313,7 @@ impl Display for SliceBrief<'_> {
              can be built and verified apart from the other.\n",
         )?;
 
-        let keys: Vec<&str> = self.design.types().collect();
-        if keys.is_empty() {
+        if self.types.is_empty() {
             f.write_str(
                 "\n## Type keys\n\nThe design has no type; answer every `types` list empty.\n",
             )?;
@@ -326,17 +322,12 @@ impl Display for SliceBrief<'_> {
                 "\n## Type keys\n\nEach key is owned by exactly one slice, the one that builds \
                  the requirements defining it.\n\n",
             )?;
-            for key in keys {
+            for key in &self.types {
                 writeln!(f, "- `{key}`")?;
             }
         }
 
-        write!(
-            f,
-            "\n## The rendered `spec.md`\n\n{spec}\n## The rendered `design.md`\n\n{design}",
-            spec = self.spec,
-            design = self.design
-        )
+        write!(f, "\n## Requirements\n\n{bases}", bases = BasesSection(self.bases))
     }
 }
 

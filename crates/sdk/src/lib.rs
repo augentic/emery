@@ -9,14 +9,17 @@
 //! - [`source_adapter!`] exports an adapter's metadata and extraction
 //!   functions as a WebAssembly component, and [`metadata`] answers the
 //!   first of them.
-//! - [`Context`], [`Seam`], and [`extract`](fn@extract) run extraction over the
-//!   boundaries selected by an adapter, at most [`CONCURRENT`] at a time.
+//! - [`Context`], [`Seam`], [`Note`], and [`extract`](fn@extract) run
+//!   extraction over the boundaries selected by an adapter, at most
+//!   [`CONCURRENT`] at a time, laying a seam's files into its turn whole when
+//!   they fit within [`INLINE_BYTES`].
 //! - [`Doc`], [`prose!`], [`body`], and [`find`] embed and read adapter
 //!   guidance; [`RUNTIME`] is the guidance every adapter shares, and
 //!   [`check`] holds an adapter's list to its tree.
 //! - [`workspace::list`] traverses workspace input under an adapter-defined
-//!   filter.
-//! - [`survey::surfaces`] optionally discovers caller-facing entry points.
+//!   filter, and [`workspace::size`] measures what it found.
+//! - [`survey::surfaces`] optionally discovers caller-facing entry points,
+//!   each with the stem its claims lead with.
 //!
 //! Contract types and [`Error`] are re-exported, allowing an adapter to depend
 //! on this crate alone. [`Source`] is among them for a host program that calls
@@ -73,6 +76,9 @@
 //! - **Lend**: the workspace directory made readable to the model for a seam.
 //! - **Finding**: a validation problem returned to the model for correction.
 //!   The host limits how many correction rounds are available.
+//! - **Stem**: the first dotted segment of a claim id, `orders` in
+//!   `orders.create`. A [`Note`] may hold a seam's `requirement` and
+//!   `criterion` ids to its stems, and the engine slices its plan by stem.
 //!
 //! Fallible APIs return [`Error`]. Use [`bad_request!`] when an adapter rejects
 //! unusable input.
@@ -101,7 +107,7 @@ pub use emery_adapter::source::{
 pub use emery_prose::{Doc, body, check, find, prose};
 pub use omnia_sdk::{Error, Model, bad_gateway, bad_request, not_found, server_error};
 
-pub use self::extract::{CONCURRENT, Seam, extract};
+pub use self::extract::{CONCURRENT, INLINE_BYTES, Note, Seam, extract};
 
 /// The runtime references every adapter prompt may link.
 ///

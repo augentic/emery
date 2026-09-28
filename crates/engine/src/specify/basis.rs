@@ -3,10 +3,11 @@
 //! Claims sharing an identifier are grouped before any model request. When
 //! requirement claims come from several sources, or from one source whose
 //! requirement ids span several stems, the model may group the remaining
-//! claims by meaning and agreement. The engine validates that partition,
-//! applies source authority, and derives status, coverage, winners, and
-//! losing statements. A run in which no source contributes a requirement
-//! claim is refused before any request.
+//! claims by meaning and agreement, except that one source's distinct ids
+//! under one stem stay distinct requirements. The engine validates that
+//! partition, applies source authority, and derives status, coverage,
+//! winners, and losing statements. A run in which no source contributes a
+//! requirement claim is refused before any request.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::{self, Display, Formatter};
@@ -76,7 +77,9 @@ impl<'a> GroupingBrief<'a> {
     /// model to group them. So does a run over one contributing source whose
     /// requirement ids span two or more stems, since its seams may describe
     /// one behaviour under different nouns. Otherwise the baseline stands alone
-    /// and no call is spent.
+    /// and no call is spent. Whatever the model answers, claims sharing an id
+    /// stay one group, and one source's distinct ids under one stem stay
+    /// distinct groups.
     ///
     /// # Errors
     ///
@@ -240,6 +243,21 @@ impl<'a> Brief for GroupingBrief<'a> {
                 review.note(format_args!("claims sharing the id `{id}` are split across groups"));
             }
         }
+
+        // one source's distinct ids under one stem may not be merged
+        for (position, group) in answer.groups.iter().enumerate() {
+            let mut by_stem: BTreeMap<(&str, &str), BTreeSet<&str>> = BTreeMap::new();
+            for claim in group.claims.iter().filter_map(|&index| self.contributors.get(index)) {
+                by_stem.entry((claim.source, shape::stem(claim.id))).or_default().insert(claim.id);
+            }
+            for ((source, stem), ids) in by_stem.into_iter().filter(|(_, ids)| ids.len() > 1) {
+                let ids = ids.iter().map(|id| format!("`{id}`")).collect::<Vec<_>>().join(", ");
+                review.note(format_args!(
+                    "group {position}: `{source}` minted {ids} as distinct requirements under \
+                     the stem `{stem}`, so they are never one group"
+                ));
+            }
+        }
     }
 
     fn into_output(self, answer: Grouping) -> Result<Vec<Basis<'a>>, Error> {
@@ -285,8 +303,11 @@ impl Display for GroupingBrief<'_> {
 
         f.write_str(
             "\nAnswer with every index in exactly one group, and every group's claims in exactly \
-             one agreeing class. Two claims of one source that describe one requirement are one \
-             group, whatever nouns their seams gave them.\n",
+             one agreeing class. Two claims of one source that describe one requirement under \
+             different stems — the first segment of their ids — are one group, whatever nouns \
+             their seams gave them. Two claims of one source with different ids under one stem \
+             are distinct requirements: the call that minted them under one noun told them \
+             apart, and an answer that merges them is refused.\n",
         )
     }
 }

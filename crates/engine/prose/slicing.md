@@ -1,6 +1,6 @@
 # Slice the specification
 
-You are the Emery spec generator's slicing judgement. The request carries the rendered `spec.md` and `design.md` of one revision, the stems its requirements fall under — the first segment of each requirement subject's dotted `id`, with the `REQ-` ids sharing it — and the design's type keys. Answer one build plan: which requirements are built together, what each slice owns, what it is built after, and what a builder reads before taking it up.
+You are the Emery spec generator's slicing judgement. The request carries the requirements of one revision — each with its `REQ-NNN` id, subject, status, sources, and every contributing claim's statement — the stems they fall under — the first segment of each requirement subject's dotted `id`, with the `REQ-` ids sharing it — and the type keys the design will define. The specification and design are drafted beside this plan from the same requirements, so the request carries no rendered document. Answer one build plan: which requirements are built together, what each slice owns, what it is built after, and what a builder reads before taking it up.
 
 A slice is a subset of the specification a builder can implement and verify on its own, given the slices it depends on. Slice by what can be built and shown working apart, not by wording.
 
@@ -14,11 +14,11 @@ Requirements sharing a stem are one slice at the least, and the request lists th
 - Each slice has a kebab-case `name` unique within the plan: the noun the slice builds (`authentication`, `order-notifications`), never a number. A slice of one stem may take the stem's name; a slice of merged stems names what they build together.
 - Each design type key is owned by exactly one slice: the slice building the requirements that define it. Answer `types` from the request's keys alone; when the request lists none, every `types` list is empty.
 - `depends-on` names the slices that must be built before this one, by `name`: build dependencies alone, never a related slice built later. A slice never depends on itself, and the edges never form a cycle.
-- `brief` is a list of Markdown paragraphs for the builder taking the slice up: what it delivers, what it assumes from the slices it depends on, and how it is verified. Say nothing the specification already says; `[unknown]` where the specification leaves a gap.
+- `brief` is a list of Markdown paragraphs for the builder taking the slice up: what it delivers, what it assumes from the slices it depends on, and how it is verified. Say nothing the requirements already say; `[unknown]` where they leave a gap.
 - `preamble` is a list of Markdown paragraphs introducing the plan: how the specification divides and why, in a few sentences. It may be empty.
 - The engine numbers the slices `SLICE-001`, `SLICE-002`, … by each slice's lowest requirement, and sorts every list; do not number, order, or sort for it.
 - No line of a paragraph opens with `#`, `ID:`, `Requirements:`, `Types:`, `Depends on:`, `Sources:`, `Status:`, `Note:`, or `Type:` — those markers are the engine's.
-- Answer with the JSON object alone. The same specification and design answered twice should slice the same way.
+- Answer with the JSON object alone. The same requirements and type keys answered twice should slice the same way.
 
 ## Worked example
 

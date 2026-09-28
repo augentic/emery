@@ -598,6 +598,65 @@ async fn seams_grouped() {
     provider.model.assert_exhausted();
 }
 
+// The extract call that minted `start.persist` and `start.recover` under one
+// stem told them apart, so the grouping may merge across stems but never
+// within one source's stem.
+#[tokio::test]
+async fn same_stem_kept() {
+    let merged = r#"{"groups": [
+        {"claims": [0, 1], "classes": [[0], [1]]},
+        {"claims": [2], "classes": [[2]]}]}"#;
+    let corrected = r#"{"groups": [
+        {"claims": [0, 2], "classes": [[0, 2]]},
+        {"claims": [1], "classes": [[1]]}]}"#;
+    let spec = r#"{"preamble": ["One source, two stems."],
+        "requirements": [
+            {"subject": "start.persist",
+             "scenarios": [{"name": "Persist", "when": "the service starts", "then": "the queue is persisted"}]},
+            {"subject": "start.recover",
+             "scenarios": [{"name": "Recover", "when": "the service restarts", "then": "the queue is restored"}]}]}"#;
+    let mut provider =
+        Provider::answering([merged, corrected, spec, DESIGN_ANSWER]).declaring(["docs"]);
+    provider.source.evidence.insert(
+        "docs".to_string(),
+        Ok(evidence(vec![
+            requirement("start.persist", "Starting the service persists the queue."),
+            requirement("start.recover", "Restarting the service restores the queue."),
+            requirement("worker.persist", "The worker persists the queue on start."),
+        ])),
+    );
+
+    cli_ok(&provider, &["emery", "specify", "docs"]).await;
+
+    let check = &provider.model.exchanges()[0];
+    assert_eq!(check.tool, "check");
+    let correction = check.outcome.as_ref().expect_err("the same-stem merge is rejected");
+    assert!(
+        correction.contains(
+            "group 0: `docs` minted `start.persist`, `start.recover` as distinct requirements \
+             under the stem `start`, so they are never one group"
+        ),
+        "{correction}"
+    );
+    let request = provider.model.seen()[0].messages.join("\n");
+    assert!(request.contains("an answer that merges them is refused"), "{request}");
+
+    let id = current(&provider.storage);
+    let spec: Value = serde_json::from_slice(&document(&provider.storage, &id, "spec.json"))
+        .expect("the committed spec is JSON");
+    assert_eq!(spec["requirements"].as_array().map(Vec::len), Some(2), "{spec}");
+    assert_eq!(
+        spec["requirements"][0]["sources"],
+        serde_json::json!([
+            {"source": "docs", "claim": "start.persist"},
+            {"source": "docs", "claim": "worker.persist"}
+        ]),
+        "{spec}"
+    );
+    assert_eq!(spec["requirements"][1]["subject"], "start.recover", "{spec}");
+    provider.model.assert_exhausted();
+}
+
 // --- regeneration ---
 
 // Every subject is drafted again and nothing of the outgoing revision reaches
@@ -1385,8 +1444,9 @@ async fn model_fails() {
 // Three stems and two types: the model merges two stems, the engine refuses
 // the draft that leaves a requirement out, then numbers the corrected slices by
 // their lowest requirement and writes every list in canonical order — the
-// requirements the answer listed backwards in id order, the types in the
-// design's.
+// requirements the answer listed backwards in id order, the types in key
+// order. The slicing runs beside the two drafts from the bases, so its request
+// carries the requirement outline and the type keys, never a rendered document.
 #[tokio::test]
 async fn sliced() {
     let refused = r#"{"preamble": [], "slices": [
@@ -1406,7 +1466,7 @@ async fn sliced() {
 
     cli_ok(&provider, &["emery", "specify", "docs"]).await;
 
-    // the slicing request carries the stems, the keys, and both rendered documents
+    // the slicing request carries the stems, the keys, and the requirement outline
     let slicing = &provider.model.seen()[3];
     let SeenFormat::Schema { name, schema } = &slicing.format else {
         panic!("the slicing is steered by schema");
@@ -1424,14 +1484,24 @@ async fn sliced() {
     );
     assert_eq!(
         draft["types"]["items"]["enum"],
-        serde_json::json!(["orders.order", "orders.line"]),
-        "the design's type keys ride the schema in document order"
+        serde_json::json!(["orders.line", "orders.order"]),
+        "the design's type keys ride the schema in key order"
     );
     let request = slicing.messages.join("\n");
     assert!(request.contains("- `auth` — REQ-001\n"), "{request}");
     assert!(request.contains("- `orders` — REQ-003, REQ-004\n"), "{request}");
-    assert!(request.contains("### Requirement: orders.cancel"), "the spec rides: {request}");
-    assert!(request.contains("## Domain model"), "the design rides: {request}");
+    assert!(request.contains("- `orders.line`\n- `orders.order`\n"), "the keys ride: {request}");
+    assert!(
+        request.contains("- REQ-004 `orders.cancel` — Status: unknown"),
+        "the requirement outline rides: {request}"
+    );
+    assert!(!request.contains("### Requirement:"), "no rendered spec rides: {request}");
+    assert!(!request.contains("## Domain model"), "no rendered design rides: {request}");
+
+    // the design request carries the same outline in place of a rendered spec
+    let design = provider.model.seen()[2].messages.join("\n");
+    assert!(design.contains("- REQ-004 `orders.cancel` — Status: unknown"), "{design}");
+    assert!(!design.contains("### Requirement:"), "no rendered spec rides: {design}");
 
     // the refusal is the correction; the corrected slicing commits
     let check = &provider.model.exchanges()[3];

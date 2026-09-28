@@ -57,10 +57,11 @@ async fn survey(
     survey::surfaces(&ctx, docs, keep).await
 }
 
-fn surface(name: &str, entry: &str) -> Surface {
+fn surface(name: &str, entry: &str, stem: &str) -> Surface {
     Surface {
         name: name.to_string(),
         entry: entry.to_string(),
+        stem: stem.to_string(),
     }
 }
 
@@ -88,7 +89,7 @@ fn tree<'a>(root: &'a Path, files: &[&str]) -> &'a str {
 #[tokio::test]
 async fn request() {
     let model = Scripted::answering([
-        r#"{"surfaces":[{"name":"POST /orders","entry":"routes/orders.ts"}]}"#,
+        r#"{"surfaces":[{"name":"POST /orders","entry":"routes/orders.ts","stem":"orders"}]}"#,
     ]);
     let tmp = tempfile::tempdir().expect("tempdir");
     let root = tree(tmp.path(), FILES);
@@ -107,6 +108,7 @@ async fn request() {
     assert!(turn.contains("`$SOURCE_DIR` is the bound source tree, lent read-only:"), "{turn}");
     assert!(!turn.contains(root), "the lend carries the root, not the brief: {turn}");
     assert!(turn.contains("relative to `$SOURCE_DIR`"), "{turn}");
+    assert!(turn.contains("Give each surface a `stem`"), "the brief asks for a stem: {turn}");
     assert!(turn.contains("## Modules"), "the brief lists the kept modules: {turn}");
     for module in ["index.ts", "jobs/nightly.ts", "routes/orders.ts", "routes/users.ts"] {
         assert!(turn.contains(&format!("- `{module}`")), "the brief names {module}: {turn}");
@@ -123,6 +125,12 @@ async fn request() {
     let surface = schema.pointer("/$defs/Surface").expect("Surface definition");
     assert!(surface.pointer("/properties/name").is_some(), "{surface}");
     assert!(surface.pointer("/properties/entry").is_some(), "{surface}");
+    assert!(surface.pointer("/properties/stem").is_some(), "{surface}");
+    assert_eq!(
+        surface.get("required").and_then(serde_json::Value::as_array).map(Vec::len),
+        Some(3),
+        "every surface answers a stem: {surface}"
+    );
     model.assert_exhausted();
 }
 
@@ -132,7 +140,7 @@ async fn request() {
 #[tokio::test]
 async fn list_docs() {
     let model = Scripted::answering([
-        r#"{"surfaces":[{"name":"POST /orders","entry":"routes/orders.ts"}]}"#,
+        r#"{"surfaces":[{"name":"POST /orders","entry":"routes/orders.ts","stem":"orders"}]}"#,
     ])
     .calling(
         0,
@@ -174,7 +182,7 @@ async fn list_docs() {
 #[tokio::test]
 async fn modules_capped() {
     let model = Scripted::answering([
-        r#"{"surfaces":[{"name":"POST /orders","entry":"routes/orders.ts"}]}"#,
+        r#"{"surfaces":[{"name":"POST /orders","entry":"routes/orders.ts","stem":"orders"}]}"#,
     ]);
     let tmp = tempfile::tempdir().expect("tempdir");
     let root = tmp.path();
@@ -202,10 +210,10 @@ async fn modules_capped() {
 #[tokio::test]
 async fn surfaces() {
     let model = Scripted::answering([r#"{"surfaces":[
-            {"name":"POST /users","entry":"routes/users.ts"},
-            {"name":"nightly reconciliation job","entry":"jobs/nightly.ts"},
-            {"name":"GET /users/:id","entry":"routes/users.ts"},
-            {"name":"POST /orders","entry":"routes/orders.ts"}
+            {"name":"POST /users","entry":"routes/users.ts","stem":"users"},
+            {"name":"nightly reconciliation job","entry":"jobs/nightly.ts","stem":"reconciliation"},
+            {"name":"GET /users/:id","entry":"routes/users.ts","stem":"users"},
+            {"name":"POST /orders","entry":"routes/orders.ts","stem":"orders"}
         ]}"#]);
     let tmp = tempfile::tempdir().expect("tempdir");
     let root = tree(tmp.path(), FILES);
@@ -216,10 +224,10 @@ async fn surfaces() {
     assert_eq!(
         surfaces,
         [
-            surface("POST /users", "routes/users.ts"),
-            surface("nightly reconciliation job", "jobs/nightly.ts"),
-            surface("GET /users/:id", "routes/users.ts"),
-            surface("POST /orders", "routes/orders.ts"),
+            surface("POST /users", "routes/users.ts", "users"),
+            surface("nightly reconciliation job", "jobs/nightly.ts", "reconciliation"),
+            surface("GET /users/:id", "routes/users.ts", "users"),
+            surface("POST /orders", "routes/orders.ts", "orders"),
         ]
     );
     model.assert_exhausted();
@@ -229,7 +237,7 @@ async fn surfaces() {
 #[tokio::test]
 async fn normalised() {
     let model = Scripted::answering([
-        r#"{"surfaces":[{"name":"POST /orders","entry":"./routes//orders.ts"}]}"#,
+        r#"{"surfaces":[{"name":"POST /orders","entry":"./routes//orders.ts","stem":"orders"}]}"#,
     ]);
     let tmp = tempfile::tempdir().expect("tempdir");
     let root = tree(tmp.path(), FILES);
@@ -237,7 +245,7 @@ async fn normalised() {
     let surfaces =
         survey(&model, PROSE, &SourceInput::workspace("code", root)).await.expect("accepted");
 
-    assert_eq!(surfaces, [surface("POST /orders", "routes/orders.ts")]);
+    assert_eq!(surfaces, [surface("POST /orders", "routes/orders.ts", "orders")]);
     assert_eq!(model.exchanges().len(), 1, "one turn, accepted");
     model.assert_exhausted();
 }
@@ -247,17 +255,19 @@ async fn normalised() {
 async fn corrections() {
     let model = Scripted::answering([
         r#"{"surfaces":[
-            {"name":"POST /orders","entry":"routes/orders.ts"},
-            {"name":"POST /orders","entry":"index.ts"},
-            {"name":"","entry":"jobs/nightly.ts"},
-            {"name":"GET /ghosts","entry":"routes/ghost.ts"},
-            {"name":"routes","entry":"routes"},
-            {"name":"order service","entry":"services/orders.ts"},
-            {"name":"types","entry":"types/index.d.ts"},
-            {"name":"spec","entry":"spec.md"},
-            {"name":"outside","entry":"../x.ts"}
+            {"name":"POST /orders","entry":"routes/orders.ts","stem":"orders"},
+            {"name":"POST /orders","entry":"index.ts","stem":"orders"},
+            {"name":"","entry":"jobs/nightly.ts","stem":"nightly"},
+            {"name":"GET /ghosts","entry":"routes/ghost.ts","stem":"ghosts"},
+            {"name":"routes","entry":"routes","stem":"routes"},
+            {"name":"order service","entry":"services/orders.ts","stem":"orders"},
+            {"name":"types","entry":"types/index.d.ts","stem":"types"},
+            {"name":"spec","entry":"spec.md","stem":"spec"},
+            {"name":"outside","entry":"../x.ts","stem":"outside"},
+            {"name":"GET /users","entry":"routes/users.ts","stem":"Users"},
+            {"name":"PUT /users","entry":"routes/users.ts","stem":"users.write"}
         ]}"#,
-        r#"{"surfaces":[{"name":"POST /orders","entry":"routes/orders.ts"}]}"#,
+        r#"{"surfaces":[{"name":"POST /orders","entry":"routes/orders.ts","stem":"orders"}]}"#,
     ]);
     let tmp = tempfile::tempdir().expect("tempdir");
     let root = tree(tmp.path(), FILES);
@@ -266,7 +276,7 @@ async fn corrections() {
         .await
         .expect("the second candidate is an inventory");
 
-    assert_eq!(surfaces, [surface("POST /orders", "routes/orders.ts")]);
+    assert_eq!(surfaces, [surface("POST /orders", "routes/orders.ts", "orders")]);
     let exchanges = model.exchanges();
     assert_eq!(exchanges.len(), 2, "one rejection, one acceptance");
     let correction = exchanges[0].outcome.as_ref().expect_err("the first candidate is rejected");
@@ -279,6 +289,8 @@ async fn corrections() {
         "`types/index.d.ts` is not a module this adapter mines",
         "`spec.md` is not a module this adapter mines",
         "`../x.ts` escapes the source root",
+        "surface `GET /users`: stem `Users` is not lowercase kebab-case",
+        "surface `PUT /users`: stem `users.write` is not lowercase kebab-case",
     ] {
         assert!(correction.contains(finding), "{finding}: {correction}");
     }
@@ -290,8 +302,8 @@ async fn corrections() {
 #[tokio::test]
 async fn stray_key() {
     let model = Scripted::answering([
-        r#"{"surfaces":[{"name":"POST /orders","entry":"routes/orders.ts","files":["services/orders.ts"]}]}"#,
-        r#"{"surfaces":[{"name":"POST /orders","entry":"routes/orders.ts"}]}"#,
+        r#"{"surfaces":[{"name":"POST /orders","entry":"routes/orders.ts","stem":"orders","files":["services/orders.ts"]}]}"#,
+        r#"{"surfaces":[{"name":"POST /orders","entry":"routes/orders.ts","stem":"orders"}]}"#,
     ]);
     let tmp = tempfile::tempdir().expect("tempdir");
     let root = tree(tmp.path(), FILES);
@@ -308,7 +320,9 @@ async fn stray_key() {
 // The last findings surface, as an evidence call's do.
 #[tokio::test]
 async fn rounds_exhausted() {
-    let model = Scripted::answering([r#"{"surfaces":[{"name":"GET /ghosts","entry":"nope.ts"}]}"#]);
+    let model = Scripted::answering([
+        r#"{"surfaces":[{"name":"GET /ghosts","entry":"nope.ts","stem":"ghosts"}]}"#,
+    ]);
     let tmp = tempfile::tempdir().expect("tempdir");
     let root = tree(tmp.path(), FILES);
 
@@ -357,8 +371,8 @@ async fn inline_value() {
 #[tokio::test]
 async fn symlink_dir() {
     let model = Scripted::answering([
-        r#"{"surfaces":[{"name":"GET /orders","entry":"link/nested/file.ts"}]}"#,
-        r#"{"surfaces":[{"name":"POST /orders","entry":"routes/orders.ts"}]}"#,
+        r#"{"surfaces":[{"name":"GET /orders","entry":"link/nested/file.ts","stem":"orders"}]}"#,
+        r#"{"surfaces":[{"name":"POST /orders","entry":"routes/orders.ts","stem":"orders"}]}"#,
     ]);
     let tmp = tempfile::tempdir().expect("tempdir");
     write(tmp.path(), "real/nested/file.ts", "");
@@ -369,7 +383,7 @@ async fn symlink_dir() {
         .await
         .expect("the second candidate is an inventory");
 
-    assert_eq!(surfaces, [surface("POST /orders", "routes/orders.ts")]);
+    assert_eq!(surfaces, [surface("POST /orders", "routes/orders.ts", "orders")]);
     let exchanges = model.exchanges();
     let correction = exchanges[0].outcome.as_ref().expect_err("the link is refused");
     assert!(correction.contains("no file at `link/nested/file.ts`"), "{correction}");

@@ -4,7 +4,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use emery_sdk::{Backing, Context, Doc, Error, Evidence, Model, Seam, SourceInput};
+use emery_sdk::{Backing, Context, Doc, Error, Evidence, Model, Seam, SourceContent, SourceInput};
 use omnia_sdk::model::{Error as ModelError, Reply, Request, ToolCall};
 use omnia_test::guest::Scripted;
 use tokio::sync::Notify;
@@ -16,12 +16,30 @@ const PROSE: &[Doc] = &[Doc {
 
 const DEADLINE: Duration = Duration::from_secs(5);
 
-// Anchored beside the seam's file, so the joined document shows which seam
-// each claim came through.
-fn note(dir: &str) -> String {
+// Anchored at the seam's file, so the joined document shows which seam each
+// claim came through.
+fn note(file: &str) -> String {
     format!(
-        r#"{{"claims":[{{"kind":"decision","path":"{dir}/note.md#L1","backing":{{"path":"{dir}/note.md"}}}}]}}"#
+        r#"{{"claims":[{{"kind":"decision","path":"{file}#L1","backing":{{"path":"{file}"}}}}]}}"#
     )
+}
+
+// A tree holding every seam file with one line, lent as the source `docs`.
+fn workspace(files: &[&str]) -> (tempfile::TempDir, SourceInput) {
+    let tmp = tempfile::tempdir().expect("tempdir");
+    for file in files {
+        let path = tmp.path().join(file);
+        let parent = path.parent().expect("a parent");
+        std::fs::create_dir_all(parent).expect("mkdir");
+        std::fs::write(path, "the line\n").expect("write");
+    }
+    let root = tmp.path().to_str().expect("a UTF-8 scratch root");
+    let input = SourceInput::workspace("docs", root);
+    (tmp, input)
+}
+
+fn anchors<const N: usize>(files: [&str; N]) -> Vec<String> {
+    files.iter().map(|file| format!("{file}#L1")).collect()
 }
 
 // The class the SDK retries.
@@ -145,33 +163,40 @@ fn paths(evidence: &Evidence) -> Vec<&str> {
 
 #[tokio::test]
 async fn three_seams() {
+    let (_tmp, input) = workspace(&["a/x.md", "b/y.md", "c/z.md"]);
     let model = ByFile::default()
-        .file("a/x.md", Scripted::answering([note("a")]))
-        .file("b/y.md", Scripted::answering([note("b")]))
-        .file("c/z.md", Scripted::answering([note("c")]));
+        .file("a/x.md", Scripted::answering([note("a/x.md")]))
+        .file("b/y.md", Scripted::answering([note("b/y.md")]))
+        .file("c/z.md", Scripted::answering([note("c/z.md")]));
     let seams = [files(["a/x.md"]), files(["b/y.md"]), files(["c/z.md"])];
 
-    let evidence = extract(&model, &SourceInput::workspace("docs", "./docs"), &seams)
-        .await
-        .expect("three seams join");
+    let evidence = extract(&model, &input, &seams).await.expect("three seams join");
 
-    assert_eq!(paths(&evidence), ["a/note.md#L1", "b/note.md#L1", "c/note.md#L1"]);
+    assert_eq!(paths(&evidence), anchors(["a/x.md", "b/y.md", "c/z.md"]));
     let backings: Vec<_> = evidence.claims.iter().map(|claim| claim.backing.clone()).collect();
     assert_eq!(
         backings,
         [
-            Some(Backing::Path("a/note.md".to_string())),
-            Some(Backing::Path("b/note.md".to_string())),
-            Some(Backing::Path("c/note.md".to_string())),
+            Some(Backing::Path("a/x.md".to_string())),
+            Some(Backing::Path("b/y.md".to_string())),
+            Some(Backing::Path("c/z.md".to_string())),
         ]
     );
+    let SourceContent::Workspace(root) = &input.content else { panic!("a workspace") };
     for file in ["a/x.md", "b/y.md", "c/z.md"] {
         let seen = model.scripts[file].seen();
         assert_eq!(seen.len(), 1, "one turn per seam");
-        assert_eq!(seen[0].workspace.as_deref(), Some("./docs"), "every seam is lent the root");
+        assert_eq!(
+            seen[0].workspace.as_deref(),
+            Some(root.as_str()),
+            "every seam is lent the root"
+        );
         let user = &seen[0].messages[0];
         assert!(user.contains("`$SOURCE_DIR` is the bound source tree, lent read-only:"), "{user}");
-        assert!(user.contains(&format!("nothing else:\n\n- `{file}`\n\n")), "{user}");
+        assert!(
+            user.contains(&format!("### `{file}` (1 lines)\n\n```\n1|the line\n```\n\n")),
+            "the one file is laid out: {user}"
+        );
     }
     model.assert_exhausted();
 }
@@ -179,18 +204,19 @@ async fn three_seams() {
 // The fan-out is neither serial nor unbounded.
 #[tokio::test]
 async fn concurrent() {
+    let named: Vec<String> = (0..=4).map(|i| format!("d{i}/f.md")).collect();
+    let named: Vec<&str> = named.iter().map(String::as_str).collect();
+    let (_tmp, input) = workspace(&named);
     let mut model = ByFile::default();
-    for i in 0..=4 {
-        model = model.file(&format!("d{i}/f.md"), Scripted::answering([note(&format!("d{i}"))]));
+    for file in &named {
+        model = model.file(file, Scripted::answering([note(file)]));
     }
-    let seams: Vec<_> = (0..=4).map(|i| files([format!("d{i}/f.md").as_str()])).collect();
+    let seams: Vec<_> = named.iter().map(|file| files([*file])).collect();
 
-    let evidence = extract(&model, &SourceInput::workspace("docs", "./docs"), &seams)
-        .await
-        .expect("every seam joins");
+    let evidence = extract(&model, &input, &seams).await.expect("every seam joins");
 
     assert_eq!(model.peak(), 4, "5 seams hold at most 4 completions pending");
-    let expected: Vec<String> = (0..=4).map(|i| format!("d{i}/note.md#L1")).collect();
+    let expected: Vec<String> = named.iter().map(|file| format!("{file}#L1")).collect();
     assert_eq!(paths(&evidence), expected);
     model.assert_exhausted();
 }
@@ -199,21 +225,21 @@ async fn concurrent() {
 // a fan-out yielding in seam order would never dispatch.
 #[tokio::test]
 async fn head_of_line() {
+    let named: Vec<String> = (0..=4).map(|i| format!("d{i}/f.md")).collect();
+    let named: Vec<&str> = named.iter().map(String::as_str).collect();
+    let (_tmp, input) = workspace(&named);
     let mut model = ByFile::default().holding("d0/f.md", "d4/f.md");
-    for i in 0..=4 {
-        model = model.file(&format!("d{i}/f.md"), Scripted::answering([note(&format!("d{i}"))]));
+    for file in &named {
+        model = model.file(file, Scripted::answering([note(file)]));
     }
-    let seams: Vec<_> = (0..=4).map(|i| files([format!("d{i}/f.md").as_str()])).collect();
+    let seams: Vec<_> = named.iter().map(|file| files([*file])).collect();
 
-    let evidence = tokio::time::timeout(
-        DEADLINE,
-        extract(&model, &SourceInput::workspace("docs", "./docs"), &seams),
-    )
-    .await
-    .expect("the fifth seam is dispatched while the first is still pending")
-    .expect("every seam joins");
+    let evidence = tokio::time::timeout(DEADLINE, extract(&model, &input, &seams))
+        .await
+        .expect("the fifth seam is dispatched while the first is still pending")
+        .expect("every seam joins");
 
-    let expected: Vec<String> = (0..=4).map(|i| format!("d{i}/note.md#L1")).collect();
+    let expected: Vec<String> = named.iter().map(|file| format!("{file}#L1")).collect();
     assert_eq!(paths(&evidence), expected);
     model.assert_exhausted();
 }
@@ -221,21 +247,21 @@ async fn head_of_line() {
 // Small seams fill the slots the large ones leave.
 #[tokio::test]
 async fn largest_first() {
+    let (_tmp, input) =
+        workspace(&["a/1.md", "n/1.md", "b/1.md", "b/2.md", "b/3.md", "c/1.md", "c/2.md"]);
     let model = ByFile::default()
-        .file("a/1.md", Scripted::answering([note("a")]))
-        .file("n/1.md", Scripted::answering([note("n")]))
-        .file("b/1.md", Scripted::answering([note("b")]))
-        .file("c/1.md", Scripted::answering([note("c")]));
+        .file("a/1.md", Scripted::answering([note("a/1.md")]))
+        .file("n/1.md", Scripted::answering([note("n/1.md")]))
+        .file("b/1.md", Scripted::answering([note("b/1.md")]))
+        .file("c/1.md", Scripted::answering([note("c/1.md")]));
     let seams = [
         files(["a/1.md"]),
-        Seam::Note("Mine the surface entered at `n/1.md`.".to_string()),
+        Seam::Note("Mine the surface entered at `n/1.md`.".into()),
         files(["b/1.md", "b/2.md", "b/3.md"]),
         files(["c/1.md", "c/2.md"]),
     ];
 
-    let evidence = extract(&model, &SourceInput::workspace("docs", "./docs"), &seams)
-        .await
-        .expect("every seam joins");
+    let evidence = extract(&model, &input, &seams).await.expect("every seam joins");
 
     assert_eq!(
         model.arrivals(),
@@ -244,7 +270,7 @@ async fn largest_first() {
     );
     assert_eq!(
         paths(&evidence),
-        ["a/note.md#L1", "n/note.md#L1", "b/note.md#L1", "c/note.md#L1"],
+        anchors(["a/1.md", "n/1.md", "b/1.md", "c/1.md"]),
         "the document reads in seam order"
     );
     model.assert_exhausted();
@@ -252,23 +278,22 @@ async fn largest_first() {
 
 #[tokio::test]
 async fn retried() {
-    let model = ByFile::default().file("a/x.md", Scripted::answering([note("a")])).file(
+    let (_tmp, input) = workspace(&["a/x.md", "b/y.md"]);
+    let model = ByFile::default().file("a/x.md", Scripted::answering([note("a/x.md")])).file(
         "b/y.md",
         Scripted::new([
             down("down"),
             Ok(Reply {
-                answer: note("b"),
+                answer: note("b/y.md"),
                 usage: None,
             }),
         ]),
     );
     let seams = [files(["a/x.md"]), files(["b/y.md"])];
 
-    let evidence = extract(&model, &SourceInput::workspace("docs", "./docs"), &seams)
-        .await
-        .expect("the retried seam joins");
+    let evidence = extract(&model, &input, &seams).await.expect("the retried seam joins");
 
-    assert_eq!(paths(&evidence), ["a/note.md#L1", "b/note.md#L1"]);
+    assert_eq!(paths(&evidence), anchors(["a/x.md", "b/y.md"]));
     assert_eq!(model.turns("b/y.md"), 2, "the failed seam was put twice");
     assert_eq!(model.turns("a/x.md"), 1, "the answered seam once");
     model.assert_exhausted();
@@ -278,14 +303,13 @@ async fn retried() {
 // the retry's outcome stands in for the first failure.
 #[tokio::test]
 async fn retry_spent() {
+    let (_tmp, input) = workspace(&["a/x.md", "b/y.md"]);
     let model = ByFile::default()
-        .file("a/x.md", Scripted::answering([note("a")]))
+        .file("a/x.md", Scripted::answering([note("a/x.md")]))
         .file("b/y.md", Scripted::new([down("down"), down("still down")]));
     let seams = [files(["a/x.md"]), files(["b/y.md"])];
 
-    let error = extract(&model, &SourceInput::workspace("docs", "./docs"), &seams)
-        .await
-        .expect_err("the retry failed too");
+    let error = extract(&model, &input, &seams).await.expect_err("the retry failed too");
 
     assert_eq!(error.code(), "bad_gateway");
     assert_eq!(
@@ -300,18 +324,17 @@ async fn retry_spent() {
 // turns would not change it.
 #[tokio::test]
 async fn refusal_not_retried() {
+    let (_tmp, input) = workspace(&["a/x.md", "b/y.md", "c/z.md"]);
     let model = ByFile::default()
         .file(
             "a/x.md",
             Scripted::new([Err(ModelError::InvalidRequest("no such model".to_string()))]),
         )
-        .file("b/y.md", Scripted::answering([note("b")]))
+        .file("b/y.md", Scripted::answering([note("b/y.md")]))
         .file("c/z.md", Scripted::answering([r#"{"claims":[{"kind":"requirement","id":"c"}]}"#]));
     let seams = [files(["a/x.md"]), files(["b/y.md"]), files(["c/z.md"])];
 
-    let error = extract(&model, &SourceInput::workspace("docs", "./docs"), &seams)
-        .await
-        .expect_err("two seams are refused");
+    let error = extract(&model, &input, &seams).await.expect_err("two seams are refused");
 
     assert_eq!(error.code(), "bad_request");
     assert!(error.description().starts_with("`docs`: 2 of 3 seams failed:\n"), "{error}");
@@ -323,10 +346,9 @@ async fn refusal_not_retried() {
 #[tokio::test]
 async fn no_seams() {
     let model = Scripted::default();
+    let input = SourceInput::workspace("docs", "./docs");
 
-    let error = extract(&model, &SourceInput::workspace("docs", "./docs"), &[])
-        .await
-        .expect_err("nothing to extract");
+    let error = extract(&model, &input, &[]).await.expect_err("nothing to extract");
 
     assert_eq!(error.code(), "bad_request");
     assert!(error.description().contains("nothing to extract"), "{error}");
@@ -338,11 +360,10 @@ async fn no_seams() {
 #[tokio::test]
 async fn escaping_path() {
     let model = Scripted::default();
+    let input = SourceInput::workspace("docs", "./docs");
     let seams = [files(["a/x.md"]), files(["../secret.md"])];
 
-    let error = extract(&model, &SourceInput::workspace("docs", "./docs"), &seams)
-        .await
-        .expect_err("a path escapes");
+    let error = extract(&model, &input, &seams).await.expect_err("a path escapes");
 
     assert_eq!(error.code(), "bad_request");
     assert!(error.description().contains("`../secret.md` escapes the source root"), "{error}");
@@ -352,10 +373,9 @@ async fn escaping_path() {
 #[tokio::test]
 async fn empty_files() {
     let model = Scripted::default();
+    let input = SourceInput::workspace("docs", "./docs");
 
-    let error = extract(&model, &SourceInput::workspace("docs", "./docs"), &[files([])])
-        .await
-        .expect_err("no file");
+    let error = extract(&model, &input, &[files([])]).await.expect_err("no file");
 
     assert_eq!(error.code(), "bad_request");
     assert!(error.description().contains("names no file"), "{error}");
@@ -378,18 +398,17 @@ async fn files_value() {
 
 #[tokio::test]
 async fn two_seams_fail() {
+    let (_tmp, input) = workspace(&["a/x.md", "b/y.md", "c/z.md"]);
     let model = ByFile::default()
         .file(
             "a/x.md",
             Scripted::new([Err(ModelError::InvalidRequest("no such model".to_string()))]),
         )
-        .file("b/y.md", Scripted::answering([note("b")]))
+        .file("b/y.md", Scripted::answering([note("b/y.md")]))
         .file("c/z.md", Scripted::new([down("down"), down("down")]));
     let seams = [files(["a/x.md"]), files(["b/y.md"]), files(["c/z.md"])];
 
-    let error = extract(&model, &SourceInput::workspace("docs", "./docs"), &seams)
-        .await
-        .expect_err("two seams failed");
+    let error = extract(&model, &input, &seams).await.expect_err("two seams failed");
 
     assert_eq!(error.code(), "bad_request", "the first failure's class");
     assert_eq!(
@@ -405,10 +424,10 @@ async fn two_seams_fail() {
 #[tokio::test]
 async fn single_seam_passthrough() {
     let model = Scripted::new([down("down"), down("still down")]);
+    let input = SourceInput::workspace("docs", "./docs");
 
-    let error = extract(&model, &SourceInput::workspace("docs", "./docs"), &[Seam::Whole])
-        .await
-        .expect_err("the one seam failed twice");
+    let error =
+        extract(&model, &input, &[Seam::Whole]).await.expect_err("the one seam failed twice");
 
     assert_eq!(error.code(), "bad_gateway");
     assert_eq!(error.description(), "backend failure: still down");

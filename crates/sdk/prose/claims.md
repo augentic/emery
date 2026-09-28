@@ -23,7 +23,7 @@ Every claim mined from a `$SOURCE_DIR` tree carries a `path` rooted relative to 
 - `<path>#L<n>` — single line.
 - `<path>#L<start>-L<end>` — line range.
 
-Line numbers are 1-indexed against the file at extract time. The path is relative (no leading `/`, no `..`) and never under a skip root. Choose the tightest anchor that bounds the cited text: the anchor is the citation, the body field carries short context, and stable spans at named boundaries keep re-runs byte-stable.
+Line numbers are 1-indexed against the file at extract time, a range ends no earlier than it starts, and neither line exceeds the file's length. The path is relative (no leading `/`, no `..`), names a regular file the tree holds, and is never under a skip root. When the call lists or lays out the files it mines, the path names one of them. Choose the tightest anchor that bounds the cited text: the anchor is the citation, the body field carries short context, and stable spans at named boundaries keep re-runs byte-stable.
 
 ## Skip roots
 
@@ -36,7 +36,8 @@ Mining a projection back into claims would make the engine's last answer look li
 
 ## The fail-closed gate
 
-- Required body fields are a closed table: `requirement` → `statement`, `criterion` → `criterion`, `example` → `replay-digest`. A claim missing its required field, or carrying an `id` outside the grammar, fails the **whole run** closed as a typed `bad_request` naming the source, claim, and key. There is no partial acceptance and no fallback to `synopsis`.
+- Required body fields are a closed table: `requirement` → `statement`, `criterion` → `criterion`, `example` → `replay-digest`. A claim missing its required field, carrying an `id` outside the grammar, or carrying a `path` outside the grammar or the tree, fails the **whole run** closed as a typed `bad_request` naming the source, claim, and key. There is no partial acceptance and no fallback to `synopsis`.
+- When the call names the stem its `requirement` and `criterion` ids lead with, an id under another first segment is a finding too.
 - The caller checks the answer first: a failing answer is returned with the findings and a bounded number of repairs is asked for. Correct the named claims; do not drop them.
 - `claims: []` is valid output when the source genuinely has nothing to say. Never pad with speculative claims — the engine preserves gaps as `[unknown]` rather than guessing.
 - Never write Evidence to disk; return the JSON body and the caller persists it.
