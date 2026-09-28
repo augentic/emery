@@ -67,14 +67,10 @@ impl Brief for DesignBrief<'_> {
         }
 
         // restrict the `{"type": …}` arm to this run's type keys
-        if !self.plan.signatures.is_empty()
-            && let Some(block) = schema
-                .pointer_mut("/$defs/Block/oneOf")
-                .and_then(Value::as_array_mut)
-                .and_then(|variants| {
-                    variants.iter_mut().find(|variant| variant["required"] == json!(["type"]))
-                })
-        {
+        if self.plan.types.is_empty() {
+            return;
+        }
+        if let Some(block) = type_block(schema) {
             block["properties"]["type"]["enum"] = json!(self.plan.keys().collect::<Vec<_>>());
         }
     }
@@ -82,7 +78,7 @@ impl Brief for DesignBrief<'_> {
     fn verify(&self, answer: &DesignAnswer, review: &mut Review) {
         review.paragraphs(&answer.preamble, "preamble");
 
-        let bound = &self.plan.bound;
+        let sources = &self.plan.sources;
         let mut seen = BTreeSet::new();
         let mut references: BTreeMap<&str, usize> = BTreeMap::new();
         for section in &answer.sections {
@@ -102,7 +98,7 @@ impl Brief for DesignBrief<'_> {
                 match block {
                     Block::Text(text) => {
                         review.paragraph(text, &label);
-                        for key in citations(text).filter(|key| !bound.contains(key)) {
+                        for key in citations(text).filter(|key| !sources.contains(key)) {
                             review.note(format_args!(
                                 "{label} cites source `{key}`, which is not bound"
                             ));
@@ -133,7 +129,7 @@ impl Brief for DesignBrief<'_> {
             }
         }
 
-        for key in references.keys().filter(|key| !self.plan.signatures.contains_key(**key)) {
+        for key in references.keys().filter(|key| !self.plan.types.contains_key(**key)) {
             review.note(format_args!("type `{key}` is not a type claim"));
         }
     }
@@ -142,6 +138,7 @@ impl Brief for DesignBrief<'_> {
         let mut drafted = answer.sections;
         drafted.sort_by_key(|section| section.kind);
         let mut sections = Vec::with_capacity(drafted.len());
+
         for section in drafted {
             let mut blocks = Vec::with_capacity(section.blocks.len());
             for block in section.blocks {
@@ -149,7 +146,7 @@ impl Brief for DesignBrief<'_> {
                     Block::Text(text) => revision::Block::Text(text),
                     Block::Type(key) => {
                         let signature =
-                            self.plan.signatures.get(key.as_str()).copied().ok_or_else(|| {
+                            self.plan.types.get(key.as_str()).copied().ok_or_else(|| {
                                 server_error!("type `{key}` was accepted without a type claim")
                             })?;
                         revision::Block::Type {
@@ -159,6 +156,8 @@ impl Brief for DesignBrief<'_> {
                     }
                 });
             }
+
+            // add section to the output
             sections.push(Section {
                 kind: section.kind,
                 blocks,
@@ -180,19 +179,22 @@ impl Display for DesignBrief<'_> {
         f.write_str("\n## Sections\n\n")?;
         for &kind in SectionKind::VARIANTS {
             let presence = self.plan.presence(kind);
-            let kinds = informants(kind).iter().map(|kind| format!("`{kind}`")).collect::<Vec<_>>();
-            let reason = match (presence, kinds.is_empty()) {
-                (Presence::Required, false) => {
-                    format!(": {} claims are present", kinds.join(" / "))
-                }
-                (Presence::Omitted, false) => format!(": no {} claim", kinds.join(" / ")),
-                (Presence::Permitted, _) => " where claims inform it".to_string(),
-                _ => String::new(),
+            let informants = kind
+                .informants()
+                .iter()
+                .map(|kind| format!("`{kind}`"))
+                .collect::<Vec<_>>()
+                .join(" / ");
+            let reason = match presence {
+                Presence::Required if informants.is_empty() => String::new(),
+                Presence::Required => format!(": {informants} claims are present"),
+                Presence::Permitted => " where claims inform it".to_string(),
+                Presence::Omitted => format!(": no {informants} claim"),
             };
             writeln!(f, "- `{key}` (`## {kind}`) — {presence}{reason}", key = kind.as_ref())?;
         }
 
-        if !self.plan.signatures.is_empty() {
+        if !self.plan.types.is_empty() {
             f.write_str(
                 "\n## Type blocks\n\nReference each `type` claim exactly once under \
                  `domain-model` as a `{\"type\": \"<key>\"}` block; the engine inserts its \
@@ -232,50 +234,52 @@ pub enum Block {
     Type(String),
 }
 
-// A `type` claim is keyed by its declared name; one without a string
-// `signature` has nothing to place and is not planned. A name an earlier
-// claim took gains the later claim's anchored path in parentheses, so two
-// declarations of one name are placed apart.
+// What the evidence lets the design say: the claim kinds present, the source
+// names a citation may name, and the type blocks on offer — each `type`
+// claim's key (the name the model references it by, see `key`) to the
+// signature the engine renders under it. A `type` claim without a string
+// `signature` has nothing to render and is not offered.
 struct Plan<'a> {
     kinds: BTreeSet<ClaimKind>,
-    bound: BTreeSet<&'a str>,
-    signatures: BTreeMap<String, &'a str>,
+    sources: BTreeSet<&'a str>,
+    types: BTreeMap<String, &'a str>,
 }
 
 impl<'a> Plan<'a> {
     fn new(extracts: &'a [Extract]) -> Self {
         let claims = || extracts.iter().flat_map(|extract| &extract.evidence.claims);
-        let mut signatures: BTreeMap<String, &'a str> = BTreeMap::new();
+        let mut types: BTreeMap<String, &'a str> = BTreeMap::new();
+
         for claim in claims().filter(|claim| claim.kind == ClaimKind::Type) {
             let Some(Value::String(signature)) = claim.extras.get("signature") else { continue };
             let Some(name) = declared(claim) else { continue };
-            let key = if signatures.contains_key(name) {
-                format!("{name} ({})", claim.path.as_deref().unwrap_or("unanchored"))
-            } else {
-                name.to_owned()
-            };
-            signatures.insert(key, signature.trim_end());
+
+            // add the type claim under a unique and descriptive key
+            let key = type_key(&types, name, claim.path.as_deref());
+            types.insert(key, signature.trim_end());
         }
 
         Self {
             kinds: claims().map(|claim| claim.kind).collect(),
-            bound: extracts.iter().map(|extract| extract.source.as_str()).collect(),
-            signatures,
+            sources: extracts.iter().map(|extract| extract.source.as_str()).collect(),
+            types,
         }
     }
 
     fn keys(&self) -> impl Iterator<Item = &str> {
-        self.signatures.keys().map(String::as_str)
+        self.types.keys().map(String::as_str)
     }
 
     fn presence(&self, kind: SectionKind) -> Presence {
-        let informed = informants(kind).iter().any(|claim| self.kinds.contains(claim));
-        match (kind, informed) {
-            (SectionKind::Overview, _) | (_, true) => Presence::Required,
-            (SectionKind::Observability | SectionKind::TechnicalLogic, false) => {
-                Presence::Permitted
-            }
-            (_, false) => Presence::Omitted,
+        let informed = kind.informants().iter().any(|claim| self.kinds.contains(claim));
+        if informed {
+            return Presence::Required;
+        }
+
+        match kind {
+            SectionKind::Overview => Presence::Required,
+            SectionKind::Observability | SectionKind::TechnicalLogic => Presence::Permitted,
+            _ => Presence::Omitted,
         }
     }
 
@@ -287,20 +291,47 @@ impl<'a> Plan<'a> {
     }
 }
 
+// The key a `type` claim is placed under: its declared name; where an earlier
+// claim took that, the name with its anchored path in parentheses; and where
+// that is taken too, a counter from 2 beside the path, so no declaration
+// displaces another.
+fn type_key(taken: &BTreeMap<String, &str>, name: &str, path: Option<&str>) -> String {
+    if !taken.contains_key(name) {
+        return name.to_owned();
+    }
+
+    let anchor = path.unwrap_or("unanchored");
+    let anchored = format!("{name} ({anchor})");
+    if !taken.contains_key(&anchored) {
+        return anchored;
+    }
+
+    // more candidates than taken keys, so one is free
+    (2..=taken.len() + 2)
+        .map(|n| format!("{name} ({anchor}, {n})"))
+        .find(|key| !taken.contains_key(key))
+        .unwrap_or(anchored)
+}
+
+// The `{"type": …}` variant of the derived `Block` schema.
+fn type_block(schema: &mut Value) -> Option<&mut Value> {
+    let variants = schema.pointer_mut("/$defs/Block/oneOf")?.as_array_mut()?;
+    variants.iter_mut().find(|variant| variant["required"] == json!(["type"]))
+}
+
 // The declared name of a `type` claim: its id, its `name` extra, or its path
 // with any `#L…` anchor stripped, so a re-anchored claim keeps its key.
 fn declared(claim: &Claim) -> Option<&str> {
-    claim
-        .id
-        .as_deref()
-        .or_else(|| match claim.extras.get("name") {
-            Some(Value::String(name)) => Some(name.as_str()),
-            _ => None,
-        })
-        .or_else(|| {
-            let path = claim.path.as_deref()?;
-            Some(path.split_once('#').map_or(path, |(file, _)| file))
-        })
+    if let Some(id) = claim.id.as_deref() {
+        return Some(id);
+    }
+    if let Some(Value::String(name)) = claim.extras.get("name") {
+        return Some(name);
+    }
+
+    let path = claim.path.as_deref()?;
+    let (file, _anchor) = path.split_once('#').unwrap_or((path, ""));
+    Some(file)
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, strum::Display)]
@@ -311,14 +342,17 @@ enum Presence {
     Omitted,
 }
 
-// `Overview` and `Observability` have no informant: the first is always
-// required, the second only ever permitted.
-const fn informants(kind: SectionKind) -> &'static [ClaimKind] {
-    match kind {
-        SectionKind::Overview | SectionKind::Observability => &[],
-        SectionKind::DomainModel => &[ClaimKind::Type],
-        SectionKind::Apis => &[ClaimKind::Call, ClaimKind::Contract],
-        SectionKind::TechnicalLogic => &[ClaimKind::Excerpt],
-        SectionKind::UiLayout => &[ClaimKind::Region, ClaimKind::Container, ClaimKind::Leaf],
+impl SectionKind {
+    // The claim kinds whose presence requires this section. `Overview` and
+    // `Observability` have none: the first is always required, the second
+    // only ever permitted.
+    const fn informants(self) -> &'static [ClaimKind] {
+        match self {
+            Self::Overview | Self::Observability => &[],
+            Self::DomainModel => &[ClaimKind::Type],
+            Self::Apis => &[ClaimKind::Call, ClaimKind::Contract],
+            Self::TechnicalLogic => &[ClaimKind::Excerpt],
+            Self::UiLayout => &[ClaimKind::Region, ClaimKind::Container, ClaimKind::Leaf],
+        }
     }
 }

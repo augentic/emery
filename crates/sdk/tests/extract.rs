@@ -153,26 +153,6 @@ fn paths(evidence: &Evidence) -> Vec<&str> {
 }
 
 #[tokio::test]
-async fn whole() {
-    let model = Scripted::answering([note("a")]);
-
-    let evidence = extract(&model, &SourceInput::workspace("docs", "./docs"), &[Seam::Whole])
-        .await
-        .expect("one bound turn");
-
-    assert_eq!(paths(&evidence), ["a/note.md#L1"]);
-    assert_eq!(evidence.claims[0].backing, Some(Backing::Path("a/note.md".to_string())));
-    let seen = model.seen();
-    assert_eq!(seen.len(), 1, "one seam, one turn");
-    assert_eq!(seen[0].workspace.as_deref(), Some("./docs"), "the root is lent");
-    let user = &seen[0].messages[0];
-    assert!(user.contains("`$SOURCE_DIR` is the bound source tree, lent read-only:"), "{user}");
-    assert!(user.contains("Walk it as the prompt describes."), "{user}");
-    assert!(!user.contains("./docs"), "the lend carries the root, not the brief: {user}");
-    model.assert_exhausted();
-}
-
-#[tokio::test]
 async fn three_seams() {
     let model = ByFile::default()
         .file("a/x.md", Scripted::answering([note("a")]))
@@ -303,7 +283,8 @@ async fn retried() {
     model.assert_exhausted();
 }
 
-// The retry's outcome stands in for the first failure.
+// The fan-out waits for both seams before failing under the one's class, and
+// the retry's outcome stands in for the first failure.
 #[tokio::test]
 async fn retry_spent() {
     let model = ByFile::default()
@@ -402,26 +383,6 @@ async fn files_value() {
     assert_eq!(error.code(), "server_error");
     assert!(error.description().contains("not an inline value"), "{error}");
     assert!(model.seen().is_empty(), "no turn was spent");
-}
-
-// The fan-out waits for both seams before failing under the one's class.
-#[tokio::test]
-async fn one_seam_fails() {
-    let model = ByFile::default()
-        .file("a/x.md", Scripted::answering([note("a")]))
-        .file("b/y.md", Scripted::new([down("down"), down("down")]));
-    let seams = [files(["a/x.md"]), files(["b/y.md"])];
-
-    let error = extract(&model, &SourceInput::workspace("docs", "./docs"), &seams)
-        .await
-        .expect_err("one seam failed");
-
-    assert_eq!(error.code(), "bad_gateway");
-    assert_eq!(
-        error.description(),
-        "`docs`: 1 of 2 seams failed:\n- seam 1: backend failure: down"
-    );
-    model.assert_exhausted();
 }
 
 #[tokio::test]

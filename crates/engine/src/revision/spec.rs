@@ -195,13 +195,30 @@ impl Scenario {
             .chain([("when", self.when.as_str()), ("then", self.then.as_str())])
             .chain(self.and.iter().map(|text| ("and", text.as_str())))
     }
+
+    /// Returns the scenario with the whitespace around each line dropped.
+    ///
+    /// A revision stores lines in this form, so two drafts that differ only
+    /// in padding commit as one revision.
+    #[must_use]
+    pub fn trimmed(self) -> Self {
+        let line = |text: String| text.trim().to_owned();
+        let lines = |texts: Vec<String>| texts.into_iter().map(line).collect();
+        Self {
+            name: line(self.name),
+            given: lines(self.given),
+            when: line(self.when),
+            then: line(self.then),
+            and: lines(self.and),
+        }
+    }
 }
 
 impl Display for Scenario {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        writeln!(f, "{SCENARIO} {}", self.name.trim())?;
+        writeln!(f, "{SCENARIO} {}", self.name)?;
         for (field, text) in self.lines() {
-            write!(f, "\n- **{}** {}", field.to_ascii_uppercase(), text.trim())?;
+            write!(f, "\n- **{}** {text}", field.to_ascii_uppercase())?;
         }
         Ok(())
     }
@@ -243,11 +260,14 @@ impl FromStr for ReqId {
 
     // An id is well formed exactly when it renders back to itself.
     fn from_str(text: &str) -> Result<Self, String> {
-        text.strip_prefix(Self::PREFIX)
-            .and_then(|digits| digits.parse().ok())
-            .map(Self)
-            .filter(|id| id.0 > 0 && id.to_string() == text)
-            .ok_or_else(|| format!("malformed id `{text}`"))
+        let malformed = || format!("malformed id `{text}`");
+        let digits = text.strip_prefix(Self::PREFIX).ok_or_else(malformed)?;
+        let number: u32 = digits.parse().ok().ok_or_else(malformed)?;
+        let id = Self(number);
+        if number == 0 || id.to_string() != text {
+            return Err(malformed());
+        }
+        Ok(id)
     }
 }
 

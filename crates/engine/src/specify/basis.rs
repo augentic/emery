@@ -1,16 +1,18 @@
 //! Reconciles requirement claims into deterministic requirement bases.
 //!
 //! Claims sharing an identifier are grouped before any model request. For
-//! multiple sources — or one source whose requirement ids span several
-//! stems — the model may group remaining claims by meaning and agreement.
-//! The engine validates that partition, applies source authority, and
-//! derives status, coverage, winners, and losing statements.
+//! requirement claims from multiple sources — or from one source whose
+//! requirement ids span several stems — the model may group remaining claims
+//! by meaning and agreement. The engine validates that partition, applies
+//! source authority, and derives status, coverage, winners, and losing
+//! statements. A run in which no source contributes a requirement claim is
+//! refused before any request.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::{self, Display, Formatter};
 
 use emery_adapter::source::{ClaimKind, SourceKind};
-use omnia_sdk::{Error, Model, server_error};
+use omnia_sdk::{Error, Model, bad_request, server_error};
 use schemars::JsonSchema;
 use serde::Deserialize;
 use serde_json::{Value, json};
@@ -24,27 +26,30 @@ use crate::specify::{Extract, shape};
 /// The brief contains requirement claims in source order and every acceptance
 /// criterion identifier. Source authority is withheld from the model.
 pub struct GroupingBrief<'a> {
-    contributors: Vec<Contributor>,
+    contributors: Vec<Contributor<'a>>,
     criteria: Vec<&'a str>,
     sources: usize,
+    baseline: Grouping,
 }
 
 impl<'a> GroupingBrief<'a> {
     /// Returns a grouping brief for `extracts`.
     #[must_use]
     pub fn new(extracts: &'a [Extract]) -> Self {
-        let mut contributors: Vec<Contributor> = Vec::new();
+        let mut contributors: Vec<Contributor<'a>> = Vec::new();
         let mut criteria = Vec::new();
+
         for extract in extracts {
             for claim in &extract.evidence.claims {
                 let Some(id) = claim.id.as_deref() else { continue };
+
                 match claim.kind {
                     ClaimKind::Requirement => contributors.push(Contributor {
-                        source: extract.source.clone(),
+                        source: &extract.source,
                         kind: extract.kind,
-                        id: id.to_string(),
+                        id,
                         statement: claim.statement(),
-                        synopsis: claim.synopsis.clone(),
+                        synopsis: claim.synopsis.as_deref(),
                         index: contributors.len(),
                     }),
                     ClaimKind::Criterion => criteria.push(id),
@@ -53,30 +58,41 @@ impl<'a> GroupingBrief<'a> {
             }
         }
 
+        // a source with no requirement claim has nothing to group
+        let sources = contributors.iter().map(|claim| claim.source).collect::<BTreeSet<_>>().len();
+        let baseline = baseline(&contributors);
+
         Self {
             contributors,
             criteria,
-            sources: extracts.len(),
+            sources,
+            baseline,
         }
     }
 
     /// Derives every requirement basis.
     ///
-    /// A run over two or more sources asks the model to group the claims. So
-    /// does a run over one source whose requirement ids span two or more
-    /// stems, since its seams may describe one behaviour under different
-    /// nouns. Otherwise the baseline stands alone and no call is spent.
+    /// A run whose requirement claims come from two or more sources asks the
+    /// model to group them. So does a run over one contributing source whose
+    /// requirement ids span two or more stems, since its seams may describe
+    /// one behaviour under different nouns. Otherwise the baseline stands alone
+    /// and no call is spent.
     ///
     /// # Errors
     ///
-    /// - Returns [`Error::BadRequest`] when the model cannot produce a valid
-    ///   grouping within the available rounds.
+    /// - Returns [`Error::BadRequest`] when no source contributed a requirement
+    ///   claim, or when the model cannot produce a valid grouping within the
+    ///   available rounds.
     /// - Returns [`Error::ServerError`] when required prose is missing or a
     ///   grouping cannot be reconciled with the claims.
     /// - Returns [`Error::BadGateway`] when the model operation fails.
-    pub async fn derive<M: Model>(self, model: &M) -> Result<Vec<Basis>, Error> {
+    pub async fn derive<M: Model>(self, model: &M) -> Result<Vec<Basis<'a>>, Error> {
+        if self.contributors.is_empty() {
+            return Err(bad_request!("no source contributed a requirement claim"));
+        }
+
         if self.sources < 2 && self.stems() < 2 {
-            self.bases(&self.baseline())
+            bases(self.contributors, &self.criteria, &self.baseline)
         } else {
             self.judge(model).await
         }
@@ -85,72 +101,76 @@ impl<'a> GroupingBrief<'a> {
     // The distinct stems among the contributors' ids: the nouns the seams led
     // with, which differ when one source describes one behaviour twice.
     fn stems(&self) -> usize {
-        self.contributors.iter().map(|claim| shape::stem(&claim.id)).collect::<BTreeSet<_>>().len()
-    }
-
-    // Byte-equal ids are one group and whitespace-equal statements one class;
-    // every answer must contain this grouping.
-    fn baseline(&self) -> Grouping {
-        let mut groups: Vec<(&str, Group)> = Vec::new();
-        for (index, claim) in self.contributors.iter().enumerate() {
-            let position = groups.iter().position(|(id, _)| *id == claim.id).unwrap_or_else(|| {
-                groups.push((claim.id.as_str(), Group::default()));
-                groups.len() - 1
-            });
-            let group = &mut groups[position].1;
-            group.claims.push(index);
-            let class = group
-                .classes
-                .iter_mut()
-                .find(|class| self.contributors[class[0]].statement == claim.statement);
-
-            match class {
-                Some(class) => class.push(index),
-                None => group.classes.push(vec![index]),
-            }
-        }
-
-        Grouping {
-            groups: groups.into_iter().map(|(_, group)| group).collect(),
-        }
-    }
-
-    // Ordered by each group's earliest claim and numbered from `REQ-001` in
-    // that order.
-    fn bases(&self, grouping: &Grouping) -> Result<Vec<Basis>, Error> {
-        let mut groups: Vec<(usize, Vec<Vec<Contributor>>)> =
-            Vec::with_capacity(grouping.groups.len());
-        for group in &grouping.groups {
-            let first = group.claims.iter().copied().min().unwrap_or_default();
-            let mut classes = Vec::with_capacity(group.classes.len());
-            for class in &group.classes {
-                classes.push(
-                    class.iter().map(|&index| self.contributor(index)).collect::<Result<_, _>>()?,
-                );
-            }
-            groups.push((first, classes));
-        }
-        groups.sort_by_key(|(first, _)| *first);
-        groups
-            .into_iter()
-            .zip(1..)
-            .map(|((_, classes), number)| Basis::of(ReqId::new(number), classes, &self.criteria))
-            .collect()
-    }
-
-    // The grouping was verified against these contributors, so a miss is the
-    // engine's own defect.
-    fn contributor(&self, index: usize) -> Result<Contributor, Error> {
-        self.contributors
-            .get(index)
-            .cloned()
-            .ok_or_else(|| server_error!("the grouping names claim {index}, which does not exist"))
+        self.contributors.iter().map(|claim| shape::stem(claim.id)).collect::<BTreeSet<_>>().len()
     }
 }
 
-impl Brief for GroupingBrief<'_> {
+// Byte-equal ids are one group, in first-appearance order, and whitespace-equal
+// statements one class; every answer must contain this grouping.
+fn baseline(contributors: &[Contributor<'_>]) -> Grouping {
+    let mut groups: Vec<Group> = Vec::new();
+    let mut by_id: BTreeMap<&str, usize> = BTreeMap::new();
+    for (index, claim) in contributors.iter().enumerate() {
+        let position = *by_id.entry(claim.id).or_insert_with(|| {
+            groups.push(Group::default());
+            groups.len() - 1
+        });
+        let group = &mut groups[position];
+        group.claims.push(index);
+        let class = group
+            .classes
+            .iter_mut()
+            .find(|class| contributors[class[0]].statement == claim.statement);
+
+        match class {
+            Some(class) => class.push(index),
+            None => group.classes.push(vec![index]),
+        }
+    }
+
+    Grouping { groups }
+}
+
+// Ordered by each group's earliest claim and numbered from `REQ-001` in that
+// order. The grouping was verified to place every contributor exactly once, so
+// an index it misses or repeats is the engine's own defect.
+fn bases<'a>(
+    contributors: Vec<Contributor<'a>>, criteria: &[&str], grouping: &Grouping,
+) -> Result<Vec<Basis<'a>>, Error> {
+    let mut contributors: Vec<Option<Contributor<'a>>> =
+        contributors.into_iter().map(Some).collect();
+    let mut groups: Vec<(usize, Vec<Vec<Contributor<'a>>>)> =
+        Vec::with_capacity(grouping.groups.len());
+    for group in &grouping.groups {
+        let first = group.claims.iter().copied().min().unwrap_or_default();
+        let mut classes = Vec::with_capacity(group.classes.len());
+        for class in &group.classes {
+            let members = class
+                .iter()
+                .map(|&index| {
+                    contributors.get_mut(index).and_then(Option::take).ok_or_else(|| {
+                        server_error!(
+                            "the grouping names claim {index}, which does not exist or is \
+                             already placed"
+                        )
+                    })
+                })
+                .collect::<Result<_, _>>()?;
+            classes.push(members);
+        }
+        groups.push((first, classes));
+    }
+    groups.sort_by_key(|(first, _)| *first);
+    groups
+        .into_iter()
+        .zip(1..)
+        .map(|((_, classes), number)| Basis::of(ReqId::new(number), classes, criteria))
+        .collect()
+}
+
+impl<'a> Brief for GroupingBrief<'a> {
     type Answer = Grouping;
-    type Output = Vec<Basis>;
+    type Output = Vec<Basis<'a>>;
 
     const NAME: &'static str = "grouping";
     const PROSE: &'static [&'static str] = &["grouping.md"];
@@ -212,22 +232,18 @@ impl Brief for GroupingBrief<'_> {
         }
 
         // byte-equal ids may not be split across groups
-        let mut by_id: BTreeMap<&str, BTreeSet<usize>> = BTreeMap::new();
-        for (index, claim) in self.contributors.iter().enumerate() {
-            if let Some(position) = placed.get(&index) {
-                by_id.entry(claim.id.as_str()).or_default().insert(*position);
-            }
-        }
-
-        for (id, positions) in by_id {
+        for group in &self.baseline.groups {
+            let positions: BTreeSet<&usize> =
+                group.claims.iter().filter_map(|index| placed.get(index)).collect();
             if positions.len() > 1 {
+                let id = self.contributors[group.claims[0]].id;
                 review.note(format_args!("claims sharing the id `{id}` are split across groups"));
             }
         }
     }
 
-    fn into_output(self, answer: Grouping) -> Result<Vec<Basis>, Error> {
-        self.bases(&answer)
+    fn into_output(self, answer: Grouping) -> Result<Vec<Basis<'a>>, Error> {
+        bases(self.contributors, &self.criteria, &answer)
     }
 }
 
@@ -239,7 +255,7 @@ impl Display for GroupingBrief<'_> {
         )?;
 
         for (index, claim) in self.contributors.iter().enumerate() {
-            let synopsis = claim.synopsis.as_deref().unwrap_or("-");
+            let synopsis = claim.synopsis.unwrap_or("-");
             writeln!(
                 f,
                 "- {index} `{source}` `{id}` — {statement} — {synopsis}",
@@ -250,15 +266,14 @@ impl Display for GroupingBrief<'_> {
         }
 
         f.write_str("\n## Baseline\n\n")?;
-        let baseline = self.baseline();
         let merged: Vec<&Group> =
-            baseline.groups.iter().filter(|group| group.claims.len() > 1).collect();
+            self.baseline.groups.iter().filter(|group| group.claims.len() > 1).collect();
         if merged.is_empty() {
             f.write_str("No two claims share an id; every grouping is your judgement.\n")?;
         }
 
         for group in merged {
-            let id = &self.contributors[group.claims[0]].id;
+            let id = self.contributors[group.claims[0]].id;
             let indices =
                 group.claims.iter().map(ToString::to_string).collect::<Vec<_>>().join(", ");
             writeln!(
@@ -299,21 +314,23 @@ pub struct Group {
 ///
 /// Contributors are grouped by agreement, with the winning class first.
 #[derive(Debug)]
-pub struct Basis {
+pub struct Basis<'a> {
     /// The requirement identifier, assigned from `REQ-001`.
     pub id: ReqId,
     /// The heading derived from the highest-authority claim identifier.
-    pub subject: String,
+    pub subject: &'a str,
     /// The reconciliation outcome.
     pub status: Status,
     /// Whether any criterion claim covers the requirement.
     pub covered: bool,
     /// Agreement classes, with the winning class first.
-    pub classes: Vec<Vec<Contributor>>,
+    pub classes: Vec<Vec<Contributor<'a>>>,
 }
 
-impl Basis {
-    fn of(id: ReqId, mut classes: Vec<Vec<Contributor>>, criteria: &[&str]) -> Result<Self, Error> {
+impl<'a> Basis<'a> {
+    fn of(
+        id: ReqId, mut classes: Vec<Vec<Contributor<'a>>>, criteria: &[&str],
+    ) -> Result<Self, Error> {
         // an empty class is the engine's own defect; from here every class has a lead
         if classes.is_empty() || classes.iter().any(Vec::is_empty) {
             return Err(server_error!("requirement {id} was grouped with a class of no claims"));
@@ -326,7 +343,7 @@ impl Basis {
         // covered by a criterion at the claim id or a dotted child of it
         let covered = classes.iter().flatten().any(|member| {
             criteria.iter().any(|id| {
-                id.strip_prefix(member.id.as_str())
+                id.strip_prefix(member.id)
                     .is_some_and(|rest| rest.is_empty() || rest.starts_with('.'))
             })
         });
@@ -341,7 +358,7 @@ impl Basis {
 
         Ok(Self {
             id,
-            subject: classes[0][0].id.clone(),
+            subject: classes[0][0].id,
             status,
             covered,
             classes,
@@ -349,8 +366,8 @@ impl Basis {
     }
 
     /// Returns contributors by descending authority and then source order.
-    pub fn contributors(&self) -> impl Iterator<Item = &Contributor> {
-        let mut members: Vec<&Contributor> = self.classes.iter().flatten().collect();
+    pub fn contributors(&self) -> impl Iterator<Item = &Contributor<'a>> {
+        let mut members: Vec<&Contributor<'a>> = self.classes.iter().flatten().collect();
         members.sort_by_key(|member| (member.kind, member.index));
         members.into_iter()
     }
@@ -362,7 +379,7 @@ impl Basis {
     #[must_use]
     pub fn requirement(&self, scenarios: Vec<Scenario>) -> Requirement {
         let winner = &self.classes[0][0].statement;
-        let (body, noted): (Vec<String>, &[Vec<Contributor>]) = match self.status {
+        let (body, noted): (Vec<String>, &[Vec<Contributor<'a>>]) = match self.status {
             Status::Agreed | Status::Unknown => (vec![winner.clone()], &[]),
             Status::Divergence => (vec![winner.clone()], &self.classes[1..]),
             Status::Conflict => (Vec::new(), &self.classes),
@@ -372,9 +389,9 @@ impl Basis {
             .map(|class| {
                 let lead = &class[0];
                 Loser {
-                    sources: class.iter().map(|member| member.source.clone()).collect(),
+                    sources: class.iter().map(|member| member.source.to_string()).collect(),
                     kind: lead.kind,
-                    claim: lead.id.clone(),
+                    claim: lead.id.to_string(),
                     statement: lead.statement.clone(),
                 }
             })
@@ -382,7 +399,7 @@ impl Basis {
 
         Requirement {
             id: self.id,
-            subject: self.subject.clone(),
+            subject: self.subject.to_string(),
             status: self.status,
             covered: self.covered,
             sources: self.contributors().map(Cited::from).collect(),
@@ -394,27 +411,27 @@ impl Basis {
 }
 
 /// A source claim contributing to a requirement.
-#[derive(Debug, Clone)]
-pub struct Contributor {
+#[derive(Debug)]
+pub struct Contributor<'a> {
     /// The source name.
-    pub source: String,
+    pub source: &'a str,
     /// The source kind used to rank this contributor.
     pub kind: SourceKind,
     /// The claim identifier, which may differ from the requirement subject.
-    pub id: String,
+    pub id: &'a str,
     /// The claim statement with whitespace normalised.
     pub statement: String,
     /// An optional synopsis provided to the grouping model.
-    pub synopsis: Option<String>,
+    pub synopsis: Option<&'a str>,
     /// Position in source order, used to break authority ties.
     pub index: usize,
 }
 
-impl From<&Contributor> for Cited {
-    fn from(member: &Contributor) -> Self {
+impl From<&Contributor<'_>> for Cited {
+    fn from(member: &Contributor<'_>) -> Self {
         Self {
-            source: member.source.clone(),
-            claim: member.id.clone(),
+            source: member.source.to_string(),
+            claim: member.id.to_string(),
         }
     }
 }

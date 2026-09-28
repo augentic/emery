@@ -86,7 +86,7 @@ pub async fn surfaces<P: Model>(
         .collect();
     tracing::info!(%source, ?surfaces, "surveyed");
 
-    // the check accepted every entry, so each is a path beneath the root
+    // normalise the accepted entries
     Ok(inventory
         .surfaces
         .into_iter()
@@ -137,15 +137,12 @@ impl Inventory {
     }
 }
 
-fn module(
-    root: &str, named: &str, keep: &mut impl FnMut(Entry<'_>) -> bool,
-) -> Result<String, String> {
+fn module(root: &str, named: &str, keep: &mut impl FnMut(Entry<'_>) -> bool) -> Result<(), String> {
     let entry = beneath(named).map_err(|reason| format!("`{named}` {reason}"))?;
-    match workspace::offered_file(root, &entry, keep) {
-        Ok(()) => Ok(entry),
-        Err(Unoffered::NoFile) => Err(format!("no file at `{entry}`")),
-        Err(Unoffered::Refused) => Err(format!("`{entry}` is not a module this adapter mines")),
-    }
+    workspace::offered_file(root, &entry, keep).map_err(|unoffered| match unoffered {
+        Unoffered::NoFile => format!("no file at `{entry}`"),
+        Unoffered::Refused => format!("`{entry}` is not a module this adapter mines"),
+    })
 }
 
 // The user turn of the survey. The lend carries the root, so the brief never

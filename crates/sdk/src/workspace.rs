@@ -67,6 +67,14 @@ impl<'a> Entry<'a> {
     pub fn hidden(self) -> bool {
         self.name().starts_with('.')
     }
+
+    // The engine's own directories and generated documents, never offered.
+    fn excluded(self) -> bool {
+        match self {
+            Self::Dir(_) => SKIP_DIRS.contains(&self.name()),
+            Self::File(_) => SKIP_FILES.contains(&self.name()),
+        }
+    }
 }
 
 /// Returns sorted, root-relative paths for files accepted by `keep`.
@@ -105,13 +113,6 @@ pub fn list(root: &str, mut keep: impl FnMut(Entry<'_>) -> bool) -> Result<Vec<S
     Ok(files)
 }
 
-pub(crate) fn excluded(entry: Entry<'_>) -> bool {
-    match entry {
-        Entry::Dir(_) => SKIP_DIRS.contains(&entry.name()),
-        Entry::File(_) => SKIP_FILES.contains(&entry.name()),
-    }
-}
-
 #[derive(Debug)]
 pub(crate) enum Unoffered {
     NoFile,
@@ -132,7 +133,7 @@ pub(crate) fn offered_file(
         if !placed {
             return Err(Unoffered::NoFile);
         }
-        if excluded(offered) || !keep(offered) {
+        if offered.excluded() || !keep(offered) {
             return Err(Unoffered::Refused);
         }
         dir = found.path();
@@ -174,13 +175,13 @@ fn walk(
 
         if file_type.is_dir() {
             let offered = Entry::Dir(&relative);
-            if excluded(offered) || !keep(offered) {
+            if offered.excluded() || !keep(offered) {
                 continue;
             }
             found.extend(walk(&entry.path(), &relative, keep)?);
         } else if file_type.is_file() {
             let offered = Entry::File(&relative);
-            if !excluded(offered) && keep(offered) {
+            if !offered.excluded() && keep(offered) {
                 found.push(relative);
             }
         }

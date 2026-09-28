@@ -7,7 +7,7 @@ The adapter lives at `[adapter/](adapter/)` — the same anatomy as a first-part
 ## Prerequisites
 
 - [cursor-sdk-bridge](https://github.com/cursor/sdk-bridge). See [below](#installing-cursor-sdk-bridge) for installation.
-- `CURSOR_API_KEY`
+- `CURSOR_API_KEY` (optionally in `.env` file)
 
 
 
@@ -18,12 +18,20 @@ The adapter lives at `[adapter/](adapter/)` — the same anatomy as a first-part
 cargo build --example adapter --target wasm32-wasip2 --release
 
 # run the example
-export CURSOR_API_KEY=<Cursor API key>
+set -a; source .env; set +a
 cargo run -- -v specify --config examples/emery.toml
 
 # review the committed spec
 cargo run -- show spec
 ```
+
+Without `.env`:
+
+```bash
+export CURSOR_API_KEY=<Cursor API key>
+```
+
+
 
 ### Tracing
 

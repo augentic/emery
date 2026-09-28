@@ -3,8 +3,8 @@
 //! Every load goes through the deployment loader at the location the
 //! reference names, and the deployment's grant bounds it: a local component
 //! loads through the project root the runtime mounts read-only, a package
-//! from the registry the project's `[registries]` table routes its namespace
-//! to, and a bare name only where the deployment declares the guest.
+//! from the registry the run's [`Registries`] route its namespace to, and a
+//! bare name only where the deployment declares the guest.
 
 use std::collections::BTreeMap;
 use std::collections::btree_map::Entry;
@@ -21,17 +21,16 @@ use omnia_sdk::plugins::{Digest, Location};
 use omnia_sdk::{Error, Plugins, bad_request, not_found};
 use serde::{Deserialize, Serialize};
 
-use crate::preopen_path;
+use crate::{preopen_join, preopen_path};
 
 /// The name of the guest the engine itself runs as.
 pub const ENGINE: &str = "emery";
 
 /// The registry serving each package namespace.
 ///
-/// A project's `[registries]` table, `<namespace> = "<registry>"`, over the
-/// one route the engine knows: `emery` resolves to `augentic.io` unless a
-/// line re-routes it. A namespace nothing routes refuses the package before
-/// any load.
+/// A map from namespace to registry endpoint, over the one route the engine
+/// knows: `emery` resolves to `augentic.io` unless an entry re-routes it. A
+/// namespace nothing routes refuses the package before any load.
 ///
 /// # Examples
 ///
@@ -48,17 +47,21 @@ pub const ENGINE: &str = "emery";
 #[serde(transparent)]
 pub struct Registries(BTreeMap<String, String>);
 
-const FIRST_PARTY: (&str, &str) = ("emery", "augentic.io");
+const NAMESPACE: &str = "emery";
+const REGISTRY: &str = "augentic.io";
 
 impl Registries {
     /// Returns the registry serving `namespace`, if a project line or the
     /// first-party route names one.
     #[must_use]
     pub fn get(&self, namespace: &str) -> Option<&str> {
-        self.0
-            .get(namespace)
-            .map(String::as_str)
-            .or_else(|| (namespace == FIRST_PARTY.0).then_some(FIRST_PARTY.1))
+        if let Some(registry) = self.0.get(namespace) {
+            return Some(registry);
+        }
+        if namespace == NAMESPACE {
+            return Some(REGISTRY);
+        }
+        None
     }
 }
 
@@ -75,8 +78,9 @@ pub struct Loaded {
 /// Loads each referenced adapter and returns what it loaded as.
 ///
 /// Duplicate references are loaded once, under one pin. Every adapter loads
-/// at the location its reference names, under the guest name it derives
-/// ([`AdapterRef::guest`]), and all load before metadata is queried. The
+/// at the location its reference names ([`AdapterRef::location`]), under the
+/// guest name that location registers ([`Location::name`]), and all load
+/// before metadata is queried. The
 /// loader holds a pinned adapter to its digest, and a declared minimum Emery
 /// version must not exceed the running version. The result is keyed by the
 /// reference's [`Display`] form.
@@ -101,19 +105,19 @@ pub async fn load<'a, P: Source + Plugins>(
     // one load per distinct reference, under one pin, every entry checked
     let mut locations: BTreeMap<String, (Location, Option<Digest>)> = BTreeMap::new();
     for (adapter, digest) in adapters {
-        let location = location(adapter, digest, registries)?;
+        let location = adapter.location(digest, registries)?;
+
         match locations.entry(adapter.to_string()) {
             Entry::Vacant(slot) => {
                 slot.insert((location, digest.cloned()));
             }
             Entry::Occupied(mut slot) => {
                 let (_, pin) = slot.get_mut();
-                match (pin.as_ref(), digest) {
-                    (Some(first), Some(again)) if first != again => {
+                if let Some(again) = digest {
+                    let first = pin.get_or_insert_with(|| again.clone());
+                    if first != again {
                         return Err(bad_request!("adapter `{adapter}` is pinned to two digests"));
                     }
-                    (None, Some(again)) => *pin = Some(again.clone()),
-                    _ => {}
                 }
             }
         }
@@ -145,7 +149,7 @@ pub async fn load<'a, P: Source + Plugins>(
         let id = plugin.id();
         let metadata = Source::metadata(provider, id);
         if let Some(declared) = &metadata.emery_version {
-            is_supported(id, declared, &version)?;
+            require_version(id, declared, &version)?;
         }
 
         tracing::debug!(
@@ -167,7 +171,7 @@ pub async fn load<'a, P: Source + Plugins>(
     Ok(loaded)
 }
 
-fn is_supported(id: &str, declared: &str, running: &semver::Version) -> Result<(), Error> {
+fn require_version(id: &str, declared: &str, running: &semver::Version) -> Result<(), Error> {
     let minimum = semver::Version::parse(declared).map_err(|err| {
         bad_request!("adapter `{id}` has an invalid `emery-version` `{declared}`: {err}")
     })?;
@@ -182,63 +186,19 @@ fn is_supported(id: &str, declared: &str, running: &semver::Version) -> Result<(
     Ok(())
 }
 
-// Asked of every source entry rather than each distinct reference, so a
-// digest on any entry naming a declared guest is refused.
-fn location(
-    adapter: &AdapterRef, digest: Option<&Digest>, registries: &Registries,
-) -> Result<Location, Error> {
-    Ok(match adapter {
-        AdapterRef::Static(name) if name == ENGINE => {
-            return Err(bad_request!(
-                "adapter `{name}` is the engine itself, not a source adapter"
-            ));
-        }
-        AdapterRef::Static(name) => {
-            if digest.is_some() {
-                return Err(bad_request!(
-                    "adapter `{name}` is a guest built into the runtime; it takes no digest"
-                ));
-            }
-            Location::Declared(name.clone())
-        }
-        AdapterRef::Package { namespace, .. } => {
-            let endpoint = registries.get(namespace).ok_or_else(|| {
-                bad_request!(
-                    "no registry routes `{adapter}`: add `{namespace} = \"<registry>\"` under \
-                     `[registries]` in emery.toml"
-                )
-            })?;
-            Location::Registry {
-                package: adapter.to_string(),
-                endpoint: Some(endpoint.to_owned()),
-            }
-        }
-        AdapterRef::File(_) if adapter.guest() == ENGINE => {
-            return Err(bad_request!(
-                "adapter `{adapter}` would register as `{ENGINE}`, the engine itself; rename the \
-                 component"
-            ));
-        }
-        AdapterRef::File(path) => {
-            let local = preopen_path(path)?;
-            if !local.is_file() {
-                return Err(not_found!("adapter `{adapter}` not found"));
-            }
-            Location::Path(local.display().to_string())
-        }
-    })
-}
-
 /// A reference to a source adapter.
 ///
 /// Parsing normalises package shorthands and local file prefixes.
 /// `intent@1.0.0` becomes `emery:intent@1.0.0`, while
-/// `file://./intent.wasm` becomes `./intent.wasm`. Its [`Display`]
-/// implementation returns that normalised identity, and [`guest`] the name
-/// of the guest it loads as. An empty value, a GitHub URL, or a malformed
-/// package reference parses as [`Error::BadRequest`].
+/// `file://./intent.wasm` becomes `./intent.wasm`. [`Display`] is that
+/// normalised identity — what config serialises and a run dedupes loads by —
+/// and [`name`] the kebab-case name it lends a binding that names none. The
+/// guest it loads and dispatches as is its [`location`]'s
+/// [`Location::name`]. An empty value, a GitHub URL, or a malformed package
+/// reference parses as [`Error::BadRequest`].
 ///
-/// [`guest`]: Self::guest
+/// [`name`]: Self::name
+/// [`location`]: Self::location
 ///
 /// # Examples
 ///
@@ -247,15 +207,15 @@ fn location(
 ///
 /// let package: AdapterRef = "intent@1.0.0".parse()?;
 /// assert_eq!(package.to_string(), "emery:intent@1.0.0");
-/// assert_eq!(package.guest(), "emery:intent");
+/// assert_eq!(package.name()?, "intent");
 ///
-/// let file: AdapterRef = "file://./adapters/intent.wasm".parse()?;
-/// assert_eq!(file.to_string(), "./adapters/intent.wasm");
-/// assert_eq!(file.guest(), "intent");
+/// let file: AdapterRef = "file://./adapters/my_intent.wasm".parse()?;
+/// assert_eq!(file.to_string(), "./adapters/my_intent.wasm");
+/// assert_eq!(file.name()?, "my-intent");
 ///
 /// let declared: AdapterRef = "intent".parse()?;
 /// assert_eq!(declared.to_string(), "intent");
-/// assert_eq!(declared.guest(), "intent");
+/// assert_eq!(declared.name()?, "intent");
 /// # Ok::<(), omnia_sdk::Error>(())
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -265,10 +225,10 @@ pub enum AdapterRef {
     File(PathBuf),
     /// A registry package, `<namespace>:<name>@<version>`.
     Package {
-        /// The namespace `[registries]` routes to a registry, `emery` for a
+        /// The namespace [`Registries`] routes to a registry, `emery` for a
         /// first-party adapter.
         namespace: String,
-        /// The package name, the source name a run derives.
+        /// The package name, the [`name`](Self::name) a run derives.
         name: String,
         /// The exact version to fetch.
         version: semver::Version,
@@ -279,24 +239,99 @@ pub enum AdapterRef {
 }
 
 impl AdapterRef {
-    /// Returns the name of the guest this reference loads and dispatches by.
+    /// Returns the kebab-case name this adapter lends what it is bound to.
     ///
-    /// A bare name is the guest itself, a package loads as its reference
-    /// without the version — `emery:intent@1.0.0` dispatches as
-    /// `emery:intent`, so a run holds one version of a package — and a local
-    /// component as its file's stem — `./adapters/custom.wasm` dispatches as
-    /// `custom`. The deployment declares a component or package under this
-    /// name, and the loader admits it by it.
-    #[must_use]
-    pub fn guest(&self) -> String {
-        match self {
-            Self::File(path) => path
-                .file_stem()
-                .and_then(OsStr::to_str)
-                .map_or_else(|| path.display().to_string(), str::to_owned),
-            Self::Package { namespace, name, .. } => format!("{namespace}:{name}"),
-            Self::Static(name) => name.clone(),
+    /// A bare name or a package is its name; a local component is its file's
+    /// stem with `_` read as `-`, so `./adapters/my_tool.wasm` is `my-tool`.
+    /// A run uses it where an operator gives no `name` of their own.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::BadRequest`] when the derived name is not kebab-case,
+    /// as a component's stem need not be; the binding then needs an explicit
+    /// `name`.
+    pub fn name(&self) -> Result<String, Error> {
+        let name = match self {
+            Self::Static(name) | Self::Package { name, .. } => name.clone(),
+            Self::File(path) => {
+                let stem = path.file_stem().and_then(OsStr::to_str).unwrap_or_default();
+                stem.replace('_', "-")
+            }
+        };
+        if !is_kebab(&name) {
+            return Err(bad_request!(
+                "adapter `{self}` derives the name `{name}`, which is not kebab-case; set `name` \
+                 explicitly"
+            ));
         }
+        Ok(name)
+    }
+
+    /// Returns this reference with any local component path resolved from `base`.
+    ///
+    /// Package and declared references are unchanged. `base` is the directory
+    /// holding an operator config file when one is read; argv uses `.`.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::BadRequest`] when a file path escapes the project root.
+    pub fn anchored_to(&self, base: &Path) -> Result<Self, Error> {
+        Ok(match self {
+            Self::File(path) => Self::File(preopen_join(base, path)?),
+            other => other.clone(),
+        })
+    }
+
+    /// Returns the loader location this reference loads at.
+    ///
+    /// # Errors
+    ///
+    /// - Returns [`Error::BadRequest`] for a digest on a declared guest, a
+    ///   package whose namespace `registries` does not route, or a reference
+    ///   that would register as [`ENGINE`].
+    /// - Returns [`Error::NotFound`] when a local component does not exist.
+    pub fn location(
+        &self, digest: Option<&Digest>, registries: &Registries,
+    ) -> Result<Location, Error> {
+        let location = match self {
+            Self::Static(name) => {
+                if digest.is_some() {
+                    return Err(bad_request!(
+                        "adapter `{name}` is a guest built into the runtime; it takes no digest"
+                    ));
+                }
+                Location::Declared(name.clone())
+            }
+            Self::Package { namespace, .. } => {
+                let endpoint = registries.get(namespace).ok_or_else(|| {
+                    bad_request!(
+                        "no registry routes `{self}`: `registries` names no route for namespace \
+                         `{namespace}`"
+                    )
+                })?;
+                Location::Registry {
+                    package: self.to_string(),
+                    endpoint: Some(endpoint.to_owned()),
+                }
+            }
+            Self::File(path) => {
+                let local = preopen_path(path)?;
+                if !local.is_file() {
+                    return Err(not_found!("adapter `{self}` not found"));
+                }
+                Location::Path(local.display().to_string())
+            }
+        };
+
+        // asked, the loader would attest the engine in the adapter's place
+        if location.name() == ENGINE {
+            return Err(bad_request!(
+                "adapter `{self}` would register as `{ENGINE}`, the engine itself; a run loads no \
+                 adapter under that name"
+            ));
+        }
+
+        Ok(location)
     }
 }
 
@@ -309,7 +344,7 @@ impl Display for AdapterRef {
                 version,
             } => write!(f, "{namespace}:{name}@{version}"),
             Self::Static(name) => f.write_str(name),
-            Self::File(path) => write!(f, "{}", path.display()),
+            Self::File(path) => path.display().fmt(f),
         }
     }
 }
@@ -334,7 +369,7 @@ impl FromStr for AdapterRef {
         }
 
         // parse `<namespace>:<name>@<version>`, the namespace defaulting to `emery`
-        let (namespace, rest) = value.split_once(':').unwrap_or((FIRST_PARTY.0, value));
+        let (namespace, rest) = value.split_once(':').unwrap_or((NAMESPACE, value));
         let (name, version) = rest
             .split_once('@')
             .ok_or_else(|| bad_request!("adapter `{value}` is missing `@<version>`"))?;

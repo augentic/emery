@@ -23,7 +23,8 @@ use crate::Doc;
 /// so it is a finding.
 ///
 /// Symlinked directories are followed. Unreadable paths and symlink cycles
-/// are reported as findings. Links inside fenced code are ignored, and URL
+/// are reported as findings. Links inside a backtick code fence are ignored —
+/// an inline code span or a `~~~` fence is not recognised as code — and URL
 /// fragments do not affect the document path. Each finding identifies the
 /// relevant path and violation.
 ///
@@ -166,7 +167,8 @@ fn links(body: &str) -> Vec<&str> {
         while let Some(open) = rest.find("](") {
             rest = &rest[open + 2..];
             let Some(close) = rest.find(')') else { break };
-            let target = rest[..close].trim().split('#').next().unwrap_or_default();
+            let target = rest[..close].trim();
+            let (target, _anchor) = target.split_once('#').unwrap_or((target, ""));
             rest = &rest[close + 1..];
             if !target.is_empty() && !target.contains("://") && !target.starts_with("mailto:") {
                 targets.push(target);
@@ -177,8 +179,11 @@ fn links(body: &str) -> Vec<&str> {
 }
 
 fn resolve(from: &str, target: &str) -> Option<String> {
-    let mut segments: Vec<&str> =
-        from.rsplit_once('/').map(|(dir, _)| dir.split('/').collect()).unwrap_or_default();
+    // the directory `from` sits in, as segments; none at the root
+    let mut segments: Vec<&str> = match from.rsplit_once('/') {
+        Some((dir, _file)) => dir.split('/').collect(),
+        None => Vec::new(),
+    };
     for segment in target.split('/') {
         match segment {
             "" | "." => {}

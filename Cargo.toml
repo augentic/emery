@@ -38,18 +38,18 @@ omnia.workspace = true
 
 [dev-dependencies]
 emery-sdk.workspace = true
-hex.workspace = true
-serde_json.workspace = true
-sha2.workspace = true
-tempfile.workspace = true
 
 [target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]
 anyhow.workspace = true
 emery-adapter.workspace = true
 emery-cli.workspace = true
 emery-engine.workspace = true
+hex.workspace = true
 omnia-sdk.workspace = true
 omnia-test = { workspace = true, features = ["guest"] }
+serde_json.workspace = true
+sha2.workspace = true
+tempfile.workspace = true
 tokio = { workspace = true, features = ["macros", "rt", "sync", "time"] }
 
 [[example]]

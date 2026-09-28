@@ -98,8 +98,8 @@ pub trait Source: Send + Sync {
 pub struct SourceInput {
     /// The name the specification cites the source by.
     ///
-    /// The operator's `[[source]] name`, or the adapter's name when the entry
-    /// names none; kebab-case, and distinct from the adapter's identifier.
+    /// Kebab-case, chosen by the caller, and distinct from the adapter's
+    /// identifier.
     pub name: String,
     /// The workspace or inline text presented to the adapter.
     pub content: SourceContent,

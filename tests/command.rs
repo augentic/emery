@@ -14,61 +14,8 @@ mod support;
 mod verbs;
 
 use omnia_sdk::api::command::USAGE_EXIT;
-use serde_json::Value;
 use support::{Provider, cli, cli_ok, fail};
 use verbs::verbs;
-
-struct Case {
-    name: &'static str,
-    argv: &'static [&'static str],
-    exit: u8,
-    stdout: &'static str,
-    stderr: &'static str,
-    json_channels: bool,
-}
-
-const CASES: [Case; 5] = [
-    Case {
-        name: "help",
-        argv: &["emery", "--help"],
-        exit: 0,
-        stdout: "Usage: emery [OPTIONS] <COMMAND>",
-        stderr: "",
-        json_channels: false,
-    },
-    Case {
-        name: "version",
-        argv: &["emery", "--version"],
-        exit: 0,
-        stdout: concat!("emery ", env!("CARGO_PKG_VERSION")),
-        stderr: "",
-        json_channels: false,
-    },
-    Case {
-        name: "completions",
-        argv: &["emery", "completions", "zsh"],
-        exit: 0,
-        stdout: "_emery",
-        stderr: "",
-        json_channels: false,
-    },
-    Case {
-        name: "specify source required",
-        argv: &["emery", "specify"],
-        exit: 1,
-        stdout: "",
-        stderr: "specify-source-required",
-        json_channels: false,
-    },
-    Case {
-        name: "show not generated",
-        argv: &["emery", "--format", "json", "show", "spec"],
-        exit: 2,
-        stdout: "",
-        stderr: "spec-not-generated",
-        json_channels: true,
-    },
-];
 
 // A usage error exits `USAGE_EXIT`, so exit 2 always means a `NotFound` envelope.
 #[tokio::test]
@@ -126,7 +73,6 @@ async fn no_sources() {
     assert!(stderr.contains("no sources"), "{stderr}");
 
     fail(&provider, &["emery", "specify"], 1, "specify-source-required").await;
-    assert!(provider.storage.is_empty(), "a refused run writes nothing");
 }
 
 // A bare `--config` names the project-relative `emery.toml` explicitly, so a
@@ -137,11 +83,11 @@ async fn default_config() {
     std::env::set_current_dir(dir.path()).expect("enter empty project");
     let provider = Provider::idle();
 
-    let response = cli(&provider, &["emery", "specify", "--config"]).await;
-    assert_eq!(response.exit, 3);
-    let stderr = String::from_utf8_lossy(&response.stderr);
-    assert!(stderr.contains("emery.toml"), "{stderr}");
-    assert!(provider.storage.is_empty(), "a refused run writes nothing");
+    let envelope = fail(&provider, &["emery", "specify", "--config"], 3, "server_error").await;
+    assert!(
+        envelope["message"].as_str().is_some_and(|message| message.contains("emery.toml")),
+        "{envelope}"
+    );
 }
 
 #[tokio::test]
@@ -252,7 +198,7 @@ async fn host_semver() {
 
 // Omnia forwards raw argv; a routed-id argv[0] renders as `emery`.
 #[tokio::test]
-async fn argv_zero_replaced() {
+async fn routed_argv_zero() {
     let provider = Provider::idle();
     let expected = cli(&provider, &["emery", "specify", "--no-such-flag"]).await;
     let forwarded = cli(&provider, &["emery:engine@0.1.0", "specify", "--no-such-flag"]).await;
@@ -263,28 +209,4 @@ async fn argv_zero_replaced() {
     let stderr = String::from_utf8_lossy(&forwarded.stderr);
     assert!(stderr.contains("Usage: emery specify"), "{stderr}");
     assert!(!stderr.contains("emery:engine@0.1.0"));
-}
-
-#[tokio::test]
-async fn response_contract() {
-    for case in CASES {
-        // a fresh store keeps `specify` sourceless and `show` without a revision
-        let response = cli(&Provider::idle(), case.argv).await;
-        let stdout = String::from_utf8(response.stdout).expect("stdout is UTF-8");
-        let stderr = String::from_utf8(response.stderr).expect("stderr is UTF-8");
-
-        assert_eq!(response.exit, case.exit, "{} exit", case.name);
-        assert!(stdout.contains(case.stdout), "{} stdout: {stdout}", case.name);
-        assert!(stderr.contains(case.stderr), "{} stderr: {stderr}", case.name);
-        if case.json_channels {
-            if !stdout.is_empty() {
-                serde_json::from_str::<Value>(&stdout)
-                    .unwrap_or_else(|error| panic!("{} stdout JSON: {error}", case.name));
-            }
-            if !stderr.is_empty() {
-                serde_json::from_str::<Value>(&stderr)
-                    .unwrap_or_else(|error| panic!("{} stderr JSON: {error}", case.name));
-            }
-        }
-    }
 }

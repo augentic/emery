@@ -267,12 +267,19 @@ pub mod import {
     /// - Returns [`Error::BadGateway`] when the adapter fails internally or
     ///   returns an extra that is not canonical JSON.
     pub async fn extract(id: &str, input: &SourceInput) -> Result<Evidence, Error> {
+        let name = &input.name;
         let answer = imported::extract(id.to_string(), input.clone().into()).await.map_err(
             |err| match err {
-                wit::Error::InvalidRequest(detail) => bad_request!("source `{id}`: {detail}"),
-                wit::Error::Internal(detail) => bad_gateway!("source `{id}`: {detail}"),
+                wit::Error::InvalidRequest(detail) => {
+                    bad_request!("adapter `{id}` for source `{name}`: {detail}")
+                }
+                wit::Error::Internal(detail) => {
+                    bad_gateway!("adapter `{id}` for source `{name}`: {detail}")
+                }
             },
         )?;
-        Evidence::try_from(answer).map_err(|detail| bad_gateway!("source `{id}`: {detail}"))
+
+        Evidence::try_from(answer)
+            .map_err(|detail| bad_gateway!("adapter `{id}` for source `{name}`: {detail}"))
     }
 }

@@ -31,7 +31,7 @@ use std::path::{Component, Path, PathBuf};
 pub use adapter::{AdapterRef, ENGINE, Registries};
 use emery_adapter::source::Source;
 use omnia_sdk::{BlobStore, Error, Model, Plugins, StateStore, bad_request};
-pub use store::{CONTAINER, CURRENT};
+pub use store::{CONTAINER, REVISION_KEY};
 
 /// Normalises an operator path to a path beneath the `.` project preopen.
 ///
@@ -73,6 +73,15 @@ pub fn preopen_path(path: &Path) -> Result<PathBuf, Error> {
     }
 
     Ok(if normalized.as_os_str().is_empty() { PathBuf::from(".") } else { normalized })
+}
+
+/// Normalises `relative` beneath the project preopen, resolved from `base`.
+///
+/// # Errors
+///
+/// Returns [`Error::BadRequest`] when the joined path escapes the project root.
+pub fn preopen_join(base: &Path, relative: &Path) -> Result<PathBuf, Error> {
+    preopen_path(&base.join(relative))
 }
 
 /// A bundle of every capability an engine operation may require.

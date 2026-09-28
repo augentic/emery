@@ -93,7 +93,7 @@ fn tree<'a>(root: &'a Path, files: &[&str]) -> &'a str {
 // The root is lent whole and the kept modules are listed, capped, so the turn
 // stays bounded on a large estate.
 #[tokio::test]
-async fn model_request() {
+async fn request() {
     let model = Scripted::answering([
         r#"{"surfaces":[{"name":"POST /orders","entry":"routes/orders.ts"}]}"#,
     ]);
@@ -137,7 +137,7 @@ async fn model_request() {
 // prompt of the turns that follow, or the claim rules a survey emits none
 // under — and an unlisted document still answers when read.
 #[tokio::test]
-async fn model_list_docs() {
+async fn list_docs() {
     let model = Scripted::answering([
         r#"{"surfaces":[{"name":"POST /orders","entry":"routes/orders.ts"}]}"#,
     ])
@@ -179,7 +179,7 @@ async fn model_list_docs() {
 // Past the cap the brief collapses to top-level directories with counts,
 // naming only the root's own files.
 #[tokio::test]
-async fn model_modules_capped() {
+async fn modules_capped() {
     let model = Scripted::answering([
         r#"{"surfaces":[{"name":"POST /orders","entry":"routes/orders.ts"}]}"#,
     ]);
@@ -207,7 +207,7 @@ async fn model_modules_capped() {
 // A module may be the entry of several surfaces, and a module no surface enters
 // is no surface; nothing is grouped or folded.
 #[tokio::test]
-async fn model_surfaces() {
+async fn surfaces() {
     let model = Scripted::answering([r#"{"surfaces":[
             {"name":"POST /users","entry":"routes/users.ts"},
             {"name":"nightly reconciliation job","entry":"jobs/nightly.ts"},
@@ -234,7 +234,7 @@ async fn model_surfaces() {
 
 // The surface comes back with its entry as a claim's anchor would cite it.
 #[tokio::test]
-async fn model_normalised() {
+async fn normalised() {
     let model = Scripted::answering([
         r#"{"surfaces":[{"name":"POST /orders","entry":"./routes//orders.ts"}]}"#,
     ]);
@@ -251,7 +251,7 @@ async fn model_normalised() {
 
 // The model finds the boundary; the tree and the adapter say what a module is.
 #[tokio::test]
-async fn model_corrections() {
+async fn corrections() {
     let model = Scripted::answering([
         r#"{"surfaces":[
             {"name":"POST /orders","entry":"routes/orders.ts"},
@@ -295,7 +295,7 @@ async fn model_corrections() {
 }
 
 #[tokio::test]
-async fn model_stray_key() {
+async fn stray_key() {
     let model = Scripted::answering([
         r#"{"surfaces":[{"name":"POST /orders","entry":"routes/orders.ts","files":["services/orders.ts"]}]}"#,
         r#"{"surfaces":[{"name":"POST /orders","entry":"routes/orders.ts"}]}"#,
@@ -314,7 +314,7 @@ async fn model_stray_key() {
 
 // The last findings surface, as an evidence call's do.
 #[tokio::test]
-async fn model_rounds_exhausted() {
+async fn rounds_exhausted() {
     let model = Scripted::answering([r#"{"surfaces":[{"name":"GET /ghosts","entry":"nope.ts"}]}"#]);
     let tmp = tempfile::tempdir().expect("tempdir");
     let root = tree(tmp.path(), FILES);
@@ -333,7 +333,7 @@ async fn model_rounds_exhausted() {
 
 // A corpus without `survey.md` is the adapter build's own defect.
 #[tokio::test]
-async fn model_missing_prompt() {
+async fn missing_prompt() {
     let model = Scripted::default();
     let tmp = tempfile::tempdir().expect("tempdir");
     let root = tree(tmp.path(), FILES);
@@ -349,7 +349,7 @@ async fn model_missing_prompt() {
 
 // No tree to survey is the adapter's own defect, as a `Files` seam over a value is.
 #[tokio::test]
-async fn model_inline_value() {
+async fn inline_value() {
     let model = Scripted::default();
     let input = SourceInput::value("code", "export const x = 1;");
 
@@ -362,7 +362,7 @@ async fn model_inline_value() {
 
 // Not a module the walk would offer, even when the target file exists.
 #[tokio::test]
-async fn model_symlink_dir() {
+async fn symlink_dir() {
     let model = Scripted::answering([
         r#"{"surfaces":[{"name":"GET /orders","entry":"link/nested/file.ts"}]}"#,
         r#"{"surfaces":[{"name":"POST /orders","entry":"routes/orders.ts"}]}"#,
@@ -385,7 +385,7 @@ async fn model_symlink_dir() {
 // An empty inventory is an answer, not a finding; what a source with no surface
 // means is the adapter's to decide.
 #[tokio::test]
-async fn model_no_surfaces() {
+async fn no_surfaces() {
     let model = Scripted::answering([r#"{"surfaces":[]}"#]);
     let tmp = tempfile::tempdir().expect("tempdir");
     let root = tree(tmp.path(), &[]);
