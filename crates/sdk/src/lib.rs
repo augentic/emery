@@ -208,8 +208,8 @@ pub struct Context<'a, P> {
     pub model: &'a P,
 }
 
-// A missing document is a build's own defect — the adapter's for its prompt,
-// the SDK's for a runtime reference — reported before a turn is spent.
+// A missing document is a build's own defect, the adapter's for its prompt and
+// the SDK's for a runtime reference, reported before a turn is spent.
 fn prompt(docs: &[Doc], path: &str) -> Result<&'static str, Error> {
     body(docs, path).ok_or_else(|| server_error!("`{path}` is not embedded"))
 }

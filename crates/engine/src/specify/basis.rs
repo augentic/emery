@@ -374,8 +374,8 @@ impl<'a> Basis<'a> {
 
     /// Returns the requirement produced from this basis and `scenarios`.
     ///
-    /// The body is the winning statement — none for a conflict — and the
-    /// losing classes become notes.
+    /// The body is the winning statement, or none for a conflict. The losing
+    /// classes become notes.
     #[must_use]
     pub fn requirement(&self, scenarios: Vec<Scenario>) -> Requirement {
         let winner = &self.classes[0][0].statement;

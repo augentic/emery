@@ -1,7 +1,7 @@
 //! Provides the scripted provider and the runners the root suites share.
 //!
-//! The provider and its runner are in [`provider`]; the runners here assert
-//! on the response — a success, or the typed failure envelope.
+//! The provider and its runner are in [`provider`]. The runners here assert
+//! on the response, a success or the typed failure envelope.
 
 #![allow(dead_code, reason = "shared by suites that each use a subset")]
 
