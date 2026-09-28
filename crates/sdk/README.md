@@ -25,7 +25,6 @@ mod guest {
 The adapter writes `survey`, which chooses the seams; the SDK owns every model turn, the claim gate, and the component boundary.
 
 - API documentation: [docs.rs/emery-sdk](https://docs.rs/emery-sdk), built for `wasm32-wasip2` so the `export` module is present
-- Authoring guide: [emery-adapters/docs/authoring.md](https://github.com/augentic/emery-adapters/blob/main/docs/authoring.md)
-- First-party adapters: [augentic/emery-adapters](https://github.com/augentic/emery-adapters)
+- First-party adapters, and the shape a new one takes: [augentic/emery-adapters](https://github.com/augentic/emery-adapters)
 
 Licensed under MIT or Apache-2.0, at your option.

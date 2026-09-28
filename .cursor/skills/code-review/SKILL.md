@@ -2,8 +2,8 @@
 name: code-review
 description: >-
   Careful code-quality sweep of the Emery repository (or a given crate/directory)
-  against AGENTS.md and docs/standards/. Use when the user invokes /code-review
-  or asks for a standards-backed quality review of Rust workspace code.
+  against AGENTS.md. Use when the user invokes /code-review or asks for a
+  quality review of Rust workspace code.
 disable-model-invocation: true
 ---
 
@@ -12,9 +12,9 @@ disable-model-invocation: true
 Do a careful code-quality sweep of the current repository (or the crate/directory
 given as an argument, if any).
 
-Before reviewing, read the repo's own standards: `AGENTS.md` and everything it
-links under `docs/standards/` (style, coding-standards, testing). Review
-*against* those documents — they outrank your general preferences.
+Before reviewing, read `AGENTS.md`. Its Invariants and Testing sections are the
+contract to review against; everything else is idiomatic Rust as clippy and the
+surrounding code have it, not a house rule.
 
 Look for:
 
@@ -38,7 +38,8 @@ Rules of evidence:
 - Every finding cites file and line.
 - "Unused / can be removed" claims require a search showing no callers,
   including prose (`docs/`, `AGENTS.md`, adapter repos where relevant).
-- Skip purely stylistic preferences with no standards backing.
+- Skip purely stylistic preferences; a finding names an invariant, a bug, or a
+  simplification, not a taste.
 - If something might be a contract-locked boundary rather than YAGNI, flag the
   uncertainty instead of asserting.
 
