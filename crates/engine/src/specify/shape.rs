@@ -8,7 +8,7 @@ use std::collections::BTreeMap;
 
 use emery_adapter::source::{ClaimKind, Evidence};
 
-// `requirement=41 type=12`, kinds in taxonomy order
+/// Returns how many claims of each kind, as `requirement=41 type=12`, in taxonomy order.
 pub fn kinds(evidence: &Evidence) -> String {
     let mut counts: BTreeMap<ClaimKind, usize> = BTreeMap::new();
     for claim in &evidence.claims {
@@ -17,8 +17,7 @@ pub fn kinds(evidence: &Evidence) -> String {
     counts.iter().map(|(kind, count)| format!("{kind}={count}")).collect::<Vec<_>>().join(" ")
 }
 
-// `start=41 orders=35`: the stem of each requirement id and how many share
-// it, largest first
+/// Returns how many requirement ids share each stem, as `start=41 orders=35`, largest first.
 pub fn stems(evidence: &Evidence) -> String {
     let mut counts: BTreeMap<&str, usize> = BTreeMap::new();
     for claim in &evidence.claims {
@@ -36,7 +35,7 @@ pub fn stems(evidence: &Evidence) -> String {
     stems.iter().map(|(stem, count)| format!("{stem}={count}")).collect::<Vec<_>>().join(" ")
 }
 
-// The first segment of a dotted id: the domain noun the seam led it with.
+/// Returns the first segment of a dotted id, the domain noun the seam led it with.
 pub fn stem(id: &str) -> &str {
     id.split_once('.').map_or(id, |(stem, _)| stem)
 }

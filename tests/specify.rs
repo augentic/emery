@@ -1,8 +1,5 @@
 //! Verifies the operator journey from `specify` through `show` and regeneration.
 //!
-//! The scenarios cover source selection, specification generation, review,
-//! revision replacement, and every caller-visible refusal.
-//!
 //! Each scenario drives the real command façade over scripted capabilities,
 //! asserting the exact envelope, exit code, storage operations, and Markdown
 //! projection an operator would observe.

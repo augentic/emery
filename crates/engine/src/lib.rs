@@ -61,7 +61,6 @@ pub fn preopen_path(path: &Path) -> Result<PathBuf, Error> {
         match component {
             Component::CurDir => {}
             Component::Normal(part) => normalized.push(part),
-            // `..` with nothing to pop escapes the root; a root or prefix is absolute
             Component::ParentDir if normalized.pop() => {}
             Component::ParentDir | Component::RootDir | Component::Prefix(_) => {
                 return Err(bad_request!(

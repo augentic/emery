@@ -1,8 +1,5 @@
 //! Verifies Emery's command-line contract independently of engine behaviour.
 //!
-//! The scenarios cover available commands, grammar errors, exit-code mapping,
-//! stream selection, and text and JSON output.
-//!
 //! Every scenario finishes before the engine touches a model or a source, so
 //! the scripted provider remains idle. End-to-end product behaviour is covered
 //! by `specify.rs`.

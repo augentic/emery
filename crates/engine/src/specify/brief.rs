@@ -101,8 +101,10 @@ impl Review {
         self.0.push(format!("- {finding}"));
     }
 
-    /// Accepts a candidate nothing was found against, else rejects it with
-    /// the findings the backend feeds back as the correction.
+    /// Returns whether the candidate is accepted.
+    ///
+    /// A candidate nothing was found against is accepted. Otherwise the
+    /// findings are returned for the backend to feed back as the correction.
     pub fn verdict(self) -> Result<(), Findings> {
         if self.0.is_empty() { Ok(()) } else { Err(self.0) }
     }
@@ -127,6 +129,7 @@ impl Review {
         }
     }
 
+    /// Checks every paragraph in `texts` as [`Review::paragraph`] does.
     pub fn paragraphs(&mut self, texts: &[String], label: impl Display) {
         for text in texts {
             self.paragraph(text, &label);
@@ -143,8 +146,9 @@ impl Review {
     }
 }
 
-/// The `## Claims` section of a document brief's turn: every claim of every
-/// extract under its source name and kind.
+/// The `## Claims` section of a document brief's turn.
+///
+/// Every claim of every extract is listed under its source name and kind.
 pub struct ClaimsSection<'a>(pub &'a [Extract]);
 
 impl Display for ClaimsSection<'_> {

@@ -1,6 +1,6 @@
 //! Decodes a `specify` run's sources and registries from its carriers.
 //!
-//! The carriers are argv — positional adapters and `--description` values —
+//! The carriers are argv, as positional adapters and `--description` values,
 //! and an operator-owned `emery.toml`, never both. A run naming its sources
 //! on the command line still reads the project-root file's `[registries]`
 //! table, and that table alone.
@@ -28,7 +28,6 @@ pub struct Decoded {
     pub registries: Registries,
 }
 
-/// The mutually exclusive ways a run names its sources.
 enum Carrier<'a> {
     Config(&'a Path),
     DiscoverOrEmpty,

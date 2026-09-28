@@ -43,15 +43,19 @@ use crate::{preopen_path, store};
 ///
 /// # Errors
 ///
-/// - Returns [`Error::BadRequest`] for an empty source list (code
-///   `specify-source-required`), a malformed or repeated name, a workspace path
-///   outside the project, a package no registry routes, a digest on a declared
-///   guest, two adapters naming one guest or one naming the engine's own
-///   ([`ENGINE`](crate::ENGINE)), an adapter that resolves to other
-///   bytes than its digest pin (code `refused`), an incompatible adapter (code
-///   `unsupported-version`), a source that refuses its input, sources that
-///   between them contribute no requirement claim, or a synthesis answer that
-///   cannot be accepted.
+/// - Returns [`Error::BadRequest`] when the run is refused:
+///   - an empty source list, with code `specify-source-required`;
+///   - a malformed or repeated source name;
+///   - a workspace path outside the project;
+///   - a package no registry routes, or a digest on a declared guest;
+///   - two adapters naming one guest, or one naming the engine's own
+///     ([`ENGINE`](crate::ENGINE));
+///   - an adapter that resolves to other bytes than its digest pin, with code
+///     `refused`;
+///   - an incompatible adapter, with code `unsupported-version`;
+///   - a source that refuses its input;
+///   - sources that between them contribute no requirement claim;
+///   - a synthesis answer that cannot be accepted.
 /// - Returns [`Error::NotFound`] when a local adapter does not exist.
 /// - Returns [`Error::ServerError`] when evidence has [`Evidence::findings`],
 ///   or serialisation or storage fails.
@@ -130,8 +134,8 @@ impl SourceConfig {
             return Err(bad_request!("source `{name}` is not a kebab-case name"));
         }
 
+        // spell a lent root beneath the `.` mount: `.` itself, or `./<path>`
         let content = match &self.content {
-            // spell the lent root beneath the `.` mount: `.` itself, or `./<path>`
             SourceContent::Workspace(relative) => {
                 let relative = preopen_path(Path::new(relative))?.display().to_string();
                 let root = if relative == "." { relative } else { format!("./{relative}") };

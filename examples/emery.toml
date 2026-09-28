@@ -20,11 +20,12 @@ path = "docs/"
 # # A first-party package over the invocation directory, named `documentation`.
 # [[source]]
 # adapter = "documentation@1.2.0"
+# path = "docs/"
 
-# # One adapter may name several roots; the name identifies each.
+# # An adapter may point to a remote repository by URL.
 # [[source]]
 # adapter = "emery:typescript@1.2.0"
-# path = "packages/api/src"
+# url = "https://github.com/emery-io/emery-typescript"
 
 # # An inline description — the file form of `--description`.
 # [[source]]

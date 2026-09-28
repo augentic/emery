@@ -127,7 +127,7 @@ impl Display for Requirement {
 #[derive(Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Cited {
-    /// The source name.
+    /// The name of the source the claim was extracted from.
     pub source: String,
     /// The claim id within that source.
     pub claim: String,

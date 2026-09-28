@@ -22,11 +22,11 @@ use crate::Doc;
 /// document at an import's path would answer lookups meant for the import,
 /// so it is a finding.
 ///
-/// Symlinked directories are followed. Unreadable paths and symlink cycles
-/// are reported as findings. Links inside a backtick code fence are ignored —
-/// an inline code span or a `~~~` fence is not recognised as code — and URL
-/// fragments do not affect the document path. Each finding identifies the
-/// relevant path and violation.
+/// Symlinked directories are followed. An unreadable path or a symlink cycle
+/// is reported as a finding. A link inside a backtick code fence is ignored,
+/// though an inline code span or a `~~~` fence is not recognised as code. A
+/// URL fragment does not affect the document path. Each finding names the
+/// path and the rule it breaks.
 ///
 /// Use this function in a native test beside a [`prose!`](crate::prose)
 /// invocation.
@@ -179,7 +179,7 @@ fn links(body: &str) -> Vec<&str> {
 }
 
 fn resolve(from: &str, target: &str) -> Option<String> {
-    // the directory `from` sits in, as segments; none at the root
+    // the directory of `from`, as segments
     let mut segments: Vec<&str> = match from.rsplit_once('/') {
         Some((dir, _file)) => dir.split('/').collect(),
         None => Vec::new(),

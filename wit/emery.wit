@@ -1,53 +1,53 @@
-/// The `emery:adapter` contract: one source axis, two
-/// operations. Adapter guests export the `source` interface alone. No
-/// resource types cross the contract: dispatch carries plain values,
-/// routed by each call's `adapter-id` first argument.
+/// The `emery:adapter` contract: one source axis, two operations.
+///
+/// An adapter guest exports the `source` interface alone. No resource type
+/// crosses the contract. Dispatch carries plain values, routed by each
+/// call's `adapter-id` first argument.
 package emery:adapter@0.1.0;
 
-/// The records both sides of the contract exchange. Declared apart from the
-/// operations so that a world importing and exporting `source` binds
-/// them once, and the caller side and the export side share one type.
+/// The records both sides of the contract exchange.
+///
+/// They are declared apart from the operations so that a world importing
+/// and exporting `source` binds them once, and both sides share one type.
 interface types {
-  /// The error returned by operations: the adapter refused its input, or
-  /// failed on its own account.
+  /// The error an operation returns.
   variant error {
+    /// The adapter refused its input.
     invalid-request(string),
+    /// The adapter failed on its own account.
     internal(string),
   }
 
-  /// An exact routed adapter identity: the adapter reference itself. A
-  /// statically declared guest is its bare name (e.g. "intent"), a local
-  /// component its project-relative path (e.g. "adapters/intent.wasm"),
-  /// a registry package the package reference
-  /// (e.g. "emery:documentation@1.0.0"). Host-mediated dispatch routes
-  /// each call to the exporting guest by this first argument; the WIT
-  /// type stays an opaque string.
+  /// The identity dispatch routes a call by: the name the loader registered
+  /// the adapter's guest under. A declared guest is its bare name
+  /// (`intent`), a local component its file stem (`custom` for
+  /// `custom.wasm`), and a registry package its reference without the
+  /// version (`emery:intent`).
   type adapter-id = string;
 
-  /// Either a read-only source view or an inline value. Never a
-  /// revision-store path or lifecycle artifact root.
+  /// The content a source is read from: a read-only view or an inline
+  /// value. Never a revision-store path.
   variant content {
-    /// Deployment-local path of the read-only view root. No
-    /// revision-store grant and no writable stage.
+    /// The deployment-local path of the read-only view root.
     workspace(string),
+    /// The inline value itself.
     value(string),
   }
 
-  /// Typed source-operation input: the source name plus
-  /// workspace-or-value. Sources are value-in — they never read the
-  /// revision store or lifecycle authority.
+  /// The input to one extraction: the source's name and its content. A
+  /// source is value-in; it never reads the revision store.
   record input {
-    /// Source name: the operator's `[[source]] name`, the adapter's name
-    /// when omitted; the specification cites the source by it.
+    /// The name the specification cites the source by: the operator's
+    /// `[[source]] name`, or the adapter's name when omitted.
     name: string,
-    /// Read-only source view or inline value.
+    /// The read-only view or inline value.
     content: content,
   }
 
-  /// The kind of source an adapter reads: a fact about the artefact, so
-  /// the adapter declares it in its metadata and the model never answers
-  /// it. Kinds rank by authority (`intent` > `documentation` >
-  /// `behaviour`), which decides who wins a cross-source disagreement.
+  /// The kind of source an adapter reads. It is a fact about the artefact,
+  /// so the adapter declares it in its metadata and the model never answers
+  /// it. Kinds rank by authority, `intent` over `documentation` over
+  /// `behaviour`, which decides a cross-source disagreement.
   enum source-kind {
     /// Operator directives. Highest authority.
     intent,
@@ -57,8 +57,7 @@ interface types {
     behaviour
   }
 
-  /// The closed claim-kind taxonomy shared with the WIT type. New
-  /// kinds require updating the contract and this record together.
+  /// The closed taxonomy of claim kinds. A new kind changes the contract.
   enum claim-kind {
     intent,
     requirement,
@@ -67,7 +66,7 @@ interface types {
     section,
     diagram,
     contract,
-    /// Runtime capture claims, each carrying a `replay-digest` extra.
+    /// A runtime capture, carrying a `replay-digest` extra.
     example,
     excerpt,
     %type,
@@ -77,7 +76,7 @@ interface types {
     leaf
   }
 
-  /// The backing data of the claim's evidence.
+  /// The backing data of a claim's evidence.
   variant backing {
     /// A small, verbatim piece of data passed directly.
     payload(string),
@@ -85,83 +84,68 @@ interface types {
     path(string),
   }
 
-  /// A claim extracted from the source adapter.
+  /// A claim extracted from the source.
   record claim {
     /// The claim's kind from the closed taxonomy.
     kind: claim-kind,
-    /// Stable claim identifier (dotted kebab slug, e.g.
-    /// `password-reset.expiry`). Required when `kind` is `requirement`,
+    /// The stable claim identifier, a dotted kebab slug such as
+    /// `password-reset.expiry`. Required when `kind` is `requirement`,
     /// `criterion`, or `example`; optional on other kinds.
     id: option<string>,
-    /// Per-claim source anchor: `<path>`, `<path>#L<n>`, or
+    /// The claim's anchor in the source: `<path>`, `<path>#L<n>`, or
     /// `<path>#L<start>-L<end>`.
     path: option<string>,
-    /// A synthesis-grade headline summarizing the semantic meaning of this
-    /// claim. Used by synthesis to merge related claims across sources.
-    /// An open per-kind body field on the WIT bindings, so answers may omit it.
+    /// A one-line summary of the claim's meaning, which synthesis merges
+    /// related claims across sources by.
     synopsis: option<string>,
-    /// The backing data of the claim's evidence (either a path or a raw payload).
+    /// The backing data of the claim's evidence.
     backing: option<backing>,
-    /// Open per-kind body fields the closed record does not model
-    /// (`statement`, `criterion`, `replay-digest`, …), carried as
-    /// `(key, value)` pairs where each value is the field's canonical
-    /// JSON encoding. Synthesis reads these verbatim (A8) — the contract
-    /// must conserve them.
+    /// The per-kind body fields the closed record does not model, such as
+    /// `statement`, `criterion`, and `replay-digest`. Each pair is the
+    /// field's name and its canonical JSON encoding. Synthesis reads them
+    /// verbatim, so the contract conserves them.
     extras: list<tuple<string, string>>,
   }
 
-  /// The claim set returned by the extract operation. The kind of source
-  /// it was read from is the adapter's, reported by `metadata`, never
-  /// carried on the document.
+  /// The claim set an extraction returns. The kind of source it was read
+  /// from is the adapter's, reported by `metadata`, never carried here.
   record evidence {
     /// The claims extracted from the source.
     claims: list<claim>,
   }
 
-  /// The adapter's deterministic metadata: identity lives in the
-  /// wasm-pkg package reference and axis in the exported world, so the
-  /// record carries the host version requirement and the kind of source
-  /// the adapter reads — both compiled-in constants.
+  /// What an adapter declares about itself, as compiled-in constants.
+  /// Identity is the package reference and axis is the exported world, so
+  /// the record carries the host version requirement and the kind of
+  /// source alone.
   record adapter-metadata {
-    /// Optional minimum `emery` version this adapter needs, as an exact
-    /// semver (like Cargo's `rust-version`). The host aborts at resolve
-    /// time when the running binary is older. Absent means no minimum.
+    /// The minimum `emery` version this adapter needs, as an exact semver
+    /// like Cargo's `rust-version`. The host refuses the adapter when the
+    /// running binary is older. Absent means no minimum.
     emery-version: option<string>,
     /// The kind of source this adapter reads, which ranks its evidence
-    /// against other sources'. Fixed per adapter at resolve time, before
-    /// any extract.
+    /// against other sources'.
     kind: source-kind,
   }
 }
 
-/// The source adapter contract: `extract` is the one judgment operation.
-/// The guest assembles a prompt from its compiled-in fragments, opens the
-/// completion session with a workspace lend of the source view (or no
-/// lend for an inline value), answers the model's reference tool calls
-/// from its embedded corpus, and deserializes the schema-gated answer.
-///
-/// Extract's return is the specification IR (A8/A16):
-/// the engine fails closed when a claim kind's required extras are
-/// absent, and every open extra crosses the contract verbatim.
+/// The source adapter operations: `metadata` and `extract`.
 interface source {
   use types.{ adapter-id, adapter-metadata, error, evidence, input };
 
-  /// Reports the adapter's resolve-time metadata. Read once at resolve
-  /// time and cached against the artifact digest. Metadata, not judgment:
-  /// effect-free and answerable from compiled-in constants — no model
-  /// call, no filesystem access.
+  /// Reports the adapter's metadata. The host asks once per run, after the
+  /// load and before any extract. Effect-free and answerable from
+  /// compiled-in constants: no model call, no filesystem access.
   metadata: func(id: adapter-id) -> adapter-metadata;
 
-  /// Extracts the source's claim set — the one judgment operation. An
-  /// `async func` because a sync-lifted export cannot block on the
-  /// pending `completion.create` host future.
+  /// Extracts the source's claim set, the one judgment operation. Returns
+  /// `invalid-request` when the adapter refuses its input and `internal`
+  /// when it fails on its own account.
   extract: async func(id: adapter-id, input: input) -> result<evidence, error>;
 }
 
-/// A source adapter component: the one axis interface. The interface
-/// is imported as well as exported so the one binding generation in
-/// the `emery-adapter` contract crate also carries the engine guest's
-/// caller side (`source::bindings::import`).
+/// A source adapter component. The interface is imported as well as
+/// exported, so one binding generation carries the caller side too.
 world source-adapter {
   import source;
   export source;

@@ -157,7 +157,6 @@ impl Brief for DesignBrief<'_> {
                 });
             }
 
-            // add section to the output
             sections.push(Section {
                 kind: section.kind,
                 blocks,
@@ -235,10 +234,10 @@ pub enum Block {
 }
 
 // What the evidence lets the design say: the claim kinds present, the source
-// names a citation may name, and the type blocks on offer — each `type`
-// claim's key (the name the model references it by, see `key`) to the
-// signature the engine renders under it. A `type` claim without a string
-// `signature` has nothing to render and is not offered.
+// names a citation may name, and the type blocks on offer. `types` maps each
+// `type` claim's key, the name the model references it by, to the signature
+// the engine renders under it. A `type` claim without a string `signature`
+// has nothing to render and is not offered.
 struct Plan<'a> {
     kinds: BTreeSet<ClaimKind>,
     sources: BTreeSet<&'a str>,
@@ -254,7 +253,6 @@ impl<'a> Plan<'a> {
             let Some(Value::String(signature)) = claim.extras.get("signature") else { continue };
             let Some(name) = declared(claim) else { continue };
 
-            // add the type claim under a unique and descriptive key
             let key = type_key(&types, name, claim.path.as_deref());
             types.insert(key, signature.trim_end());
         }
@@ -291,10 +289,11 @@ impl<'a> Plan<'a> {
     }
 }
 
-// The key a `type` claim is placed under: its declared name; where an earlier
-// claim took that, the name with its anchored path in parentheses; and where
-// that is taken too, a counter from 2 beside the path, so no declaration
-// displaces another.
+// The key a `type` claim is placed under, so no declaration displaces another:
+// - its declared name;
+// - where an earlier claim took that, the name with its anchored path in
+//   parentheses;
+// - where that is taken too, a counter from 2 beside the path.
 fn type_key(taken: &BTreeMap<String, &str>, name: &str, path: Option<&str>) -> String {
     if !taken.contains_key(name) {
         return name.to_owned();
@@ -313,7 +312,6 @@ fn type_key(taken: &BTreeMap<String, &str>, name: &str, path: Option<&str>) -> S
         .unwrap_or(anchored)
 }
 
-// The `{"type": …}` variant of the derived `Block` schema.
 fn type_block(schema: &mut Value) -> Option<&mut Value> {
     let variants = schema.pointer_mut("/$defs/Block/oneOf")?.as_array_mut()?;
     variants.iter_mut().find(|variant| variant["required"] == json!(["type"]))

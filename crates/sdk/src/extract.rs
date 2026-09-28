@@ -2,8 +2,9 @@
 //!
 //! An adapter divides its input into [seams](crate#vocabulary). [`extract`]
 //! settles every seam against the input, puts each to the model as one gated
-//! turn — largest first, a bounded number pending, an upstream failure put
-//! once more — and returns one evidence document in seam order.
+//! turn, and returns one evidence document in seam order. Turns run largest
+//! first with a bounded number pending, and a turn that fails upstream is put
+//! once more.
 
 use std::cmp::Reverse;
 use std::collections::BTreeMap;
@@ -36,13 +37,13 @@ pub const CONCURRENT: usize = 4;
 /// with [`Evidence::findings`]; rejected responses may be corrected until the
 /// host's round limit is reached.
 ///
-/// Up to [`CONCURRENT`] requests run concurrently, largest first: a
-/// [`Seam::Files`] by its file count, a [`Seam::Whole`] or [`Seam::Note`],
-/// whose size is not known, before them, and ties in seam order. A request
-/// that fails upstream — the model or a tool transport — is put once more; a
-/// refusal is not. All requests are awaited, and claims retain the order of
-/// `seams`. Every workspace seam uses the same source root, so claim paths
-/// share one root-relative namespace.
+/// Up to [`CONCURRENT`] requests run concurrently, largest first. A
+/// [`Seam::Files`] is sized by its file count. A [`Seam::Whole`] or
+/// [`Seam::Note`] has no known size and goes before them. Ties keep seam
+/// order. A request that fails upstream, in the model or a tool transport, is
+/// put once more; a refusal is not. All requests are awaited, and claims
+/// retain the order of `seams`. Every workspace seam uses the same source
+/// root, so claim paths share one root-relative namespace.
 ///
 /// When several seams fail, the returned error describes each failure and
 /// carries the class and code of the first failed seam.
@@ -104,8 +105,8 @@ pub enum Seam {
     ///
     /// For workspace input, the complete root remains available to the model.
     /// The note's first non-blank line is the seam's `label` on the events
-    /// [`extract`] logs for it, so lead with what the seam covers — the
-    /// surface and its entry — and put the standing instructions after.
+    /// [`extract`] logs for it. Lead with what the seam covers, such as the
+    /// surface and its entry, and put the standing instructions after.
     Note(String),
 }
 
@@ -156,8 +157,6 @@ impl<'a> Plan<'a> {
         }
     }
 
-    // What names the seam in a log line: a note's first line, a file list's
-    // first file and how many more, or the shape of a whole input
     fn label(&self) -> String {
         const WIDTH: usize = 72;
         match self {
@@ -180,10 +179,10 @@ impl<'a> Plan<'a> {
     }
 }
 
-// The turn is one of several in flight, so its events name the seam
-// themselves, and its question is labelled by the seam so a backend's
-// per-completion telemetry names it too; the failure's description is
-// `join`'s to report once, so the event carries the class alone.
+// The turn is one of several in flight, so its events and its question name
+// the seam: the events for the run's log, the question for a backend's
+// per-completion telemetry. A failure's description is `join`'s to report
+// once, so the event carries the class alone.
 #[tracing::instrument(skip_all, fields(source = %ctx.input.name, seam = index))]
 async fn turn<P: Model>(
     system: &str, ctx: &Context<'_, P>, docs: &'static [Doc], index: usize, plan: &Plan<'_>,

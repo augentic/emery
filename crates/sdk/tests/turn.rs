@@ -1,10 +1,3 @@
-//! Verifies the model exchange used to mine one seam.
-//!
-//! The scenarios cover the system prompt, seam description, evidence schema,
-//! claim check, reference tools, and workspace grant. They also verify
-//! pre-request validation, correction rounds, exhausted budgets, and model
-//! error classification.
-//!
 //! Every call here mines one seam, so each is one turn and its outcome passes
 //! through unchanged; the fan-out and join over several are `extract.rs`'s.
 
@@ -174,9 +167,9 @@ async fn files_turn() {
 }
 
 // Answered from the adapter's corpus, then from the SDK's runtime references,
-// which the adapter never lists. No system document is offered — the claim
-// rules ride this turn's system, and the survey prompt steered a turn already
-// spent — though a read still answers each.
+// which the adapter never lists. No system document is offered, since the
+// claim rules ride this turn's system and the survey prompt steered a turn
+// already spent. A read still answers each.
 #[tokio::test]
 async fn doc_refs() {
     let model = Scripted::answering([VALID]).calling(

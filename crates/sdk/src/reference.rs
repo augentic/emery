@@ -17,8 +17,6 @@ use crate::{CLAIMS, EXTRACT, RUNTIME, SURVEY};
 const LIST_DOCS: &str = "list_docs";
 const READ_DOC: &str = "read_doc";
 
-// Never listed: each is the system of one kind of turn, so a turn either
-// carries it already or has nothing to learn from it.
 const SYSTEM: &[&str] = &[EXTRACT, SURVEY, CLAIMS];
 
 /// Returns the reference tools declared to the model on every turn.
@@ -39,9 +37,9 @@ pub fn tools() -> Vec<Tool> {
 
 /// Returns the handler that serves the reference tools from `docs` and then [`RUNTIME`].
 ///
-/// `list_docs` lists the adapter's references and the runtime references,
-/// never a system document — `extract.md`, `survey.md`, or `claims.md` — since
-/// a turn either carries it already or has nothing to learn from it.
+/// `list_docs` lists the adapter's references and the runtime references. It
+/// never lists a system document (`extract.md`, `survey.md`, `claims.md`),
+/// since a turn either carries it already or has nothing to learn from it.
 /// `read_doc` still answers every document, so a followed link never fails.
 ///
 /// Each call is reported at DEBUG with its arguments as the model sent them,
@@ -85,12 +83,10 @@ pub fn serve(docs: &'static [Doc], source: &str, seam: Option<usize>) -> Tools {
     })
 }
 
-// The doc comments on these argument types reach the model: `JsonSchema`
-// carries each as the `description` of the tool's parameters.
-
 /// The empty argument object accepted by `list_docs`.
-// A braced struct derives the empty `object` schema a tool's parameters must
-// be; a unit struct would derive `null`.
+// The `///` is the `JsonSchema` description the model reads. A braced struct
+// derives the empty `object` schema a tool's parameters must be; a unit struct
+// would derive `null`.
 #[derive(Debug, Deserialize, JsonSchema)]
 #[expect(
     clippy::empty_structs_with_brackets,
@@ -99,6 +95,7 @@ pub fn serve(docs: &'static [Doc], source: &str, seam: Option<usize>) -> Tools {
 struct ListDocs {}
 
 /// The document selector accepted by `read_doc`.
+// The `///` lines are the `JsonSchema` descriptions the model reads.
 #[derive(Debug, Deserialize, JsonSchema)]
 struct ReadDoc {
     /// The document path as `list_docs` lists it, such as `reconciliation.md`.

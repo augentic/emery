@@ -9,7 +9,6 @@ use std::path::{Path, PathBuf};
 use anyhow::Context as _;
 use omnia_sdk::{Error, bad_request};
 
-// The engine's own files: output, never input, wherever they sit in a tree.
 const SKIP_DIRS: &[&str] = &[".omnia"];
 const SKIP_FILES: &[&str] = &["spec.md", "design.md"];
 
@@ -68,7 +67,6 @@ impl<'a> Entry<'a> {
         self.name().starts_with('.')
     }
 
-    // The engine's own directories and generated documents, never offered.
     fn excluded(self) -> bool {
         match self {
             Self::Dir(_) => SKIP_DIRS.contains(&self.name()),

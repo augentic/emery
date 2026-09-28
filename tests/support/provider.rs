@@ -33,11 +33,14 @@ type Recorded = Vec<(String, SourceInput)>;
 
 /// A scripted `Source` with a record of every dispatch.
 ///
-/// Evidence is scripted per source name; the minimum `emery` version and the
-/// kind of source per adapter. An unscripted source answers the greeting
-/// requirement; an unscripted adapter reads documentation; a scripted failure
-/// is the classified error the WIT bindings' lift would have produced; a held
-/// source never answers at all.
+/// Evidence is scripted per source name, the minimum `emery` version and the
+/// kind of source per adapter.
+///
+/// - An unscripted source answers the greeting requirement.
+/// - An unscripted adapter reads documentation.
+/// - A scripted failure is the classified error the WIT bindings' lift would
+///   have produced.
+/// - A held source never answers at all.
 #[derive(Clone, Debug, Default)]
 pub struct SourceScript {
     /// Extract outcomes keyed by source name.
@@ -45,7 +48,8 @@ pub struct SourceScript {
     /// Source names whose extract never resolves, so a scenario can prove the
     /// engine does not wait for them.
     pub held: BTreeSet<String>,
-    /// Minimum `emery` versions keyed by adapter id — the reference itself.
+    /// Minimum `emery` versions keyed by adapter id, the guest name each
+    /// load registers.
     pub versions: BTreeMap<String, String>,
     /// Kinds of source by adapter id; an unscripted adapter reads
     /// documentation.
@@ -109,8 +113,8 @@ pub struct Provider<S = Memory> {
     /// shipped runtime's read-only project mount and registry routing admit
     /// them, and resolves an unscripted one to the fixed `digest("ab")`. A
     /// bare name is admitted only once a scenario declares it through
-    /// [`Provider::declaring`]; the shipped runtime declares none, so every
-    /// other is refused, as the deployment refuses a guest it never declared.
+    /// [`Provider::declaring`]. Every other is refused, as the deployment
+    /// refuses a guest it never declared.
     pub plugins: ScriptedLoader,
     /// The scripted storage pair.
     pub storage: Arc<S>,
@@ -142,15 +146,16 @@ impl<S> Provider<S> {
     /// Declares each bare adapter name as a guest of the scripted deployment.
     ///
     /// A scenario dispatching a bare name declares it here, so the loader
-    /// attests it; a bare name no scenario declares is refused, as the shipped
-    /// runtime — which declares no adapter at all — refuses every one.
+    /// attests it. A bare name no scenario declares is refused, as the shipped
+    /// runtime, which declares no adapter at all, refuses every one.
     pub fn declaring<'a>(mut self, names: impl IntoIterator<Item = &'a str>) -> Self {
         self.plugins = names.into_iter().fold(self.plugins, ScriptedLoader::declare);
         self
     }
 
-    /// The name of every guest the loader was asked for, in call order —
-    /// what each load registers as, refused or not.
+    /// Returns the name of every guest the loader was asked for, in call order.
+    ///
+    /// Each is what its load registers as, refused or not.
     pub fn loaded(&self) -> Vec<String> {
         self.plugins.loads().iter().map(|(location, _)| location.name().to_owned()).collect()
     }

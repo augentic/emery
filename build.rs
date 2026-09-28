@@ -1,21 +1,19 @@
 //! Builds the engine component and names it for the runtime to embed.
 //!
-//! The build script compiles the engine guest for `wasm32-wasip2` and emits
-//! the artifact's path as `EMERY_GUEST`, which the `runtime!` invocation in
-//! `src/main.rs` reads with `env!` and embeds with `include_bytes!`. Debug
-//! builds name the raw component (`emery.wasm`, JIT-compiled at startup);
-//! release builds precompile it to `emery.cwasm` for faster startup — for the
-//! binary's own target, under the runtime's default compile settings, so the
-//! build shell's environment steers neither. The runtime loads either format.
+//! The engine guest is compiled for `wasm32-wasip2` and its path is emitted as
+//! `EMERY_GUEST`, which the `runtime!` invocation in `src/main.rs` embeds. A
+//! debug build names the raw `emery.wasm`, which the runtime compiles at
+//! startup. A release build precompiles it to `emery.cwasm` for the binary's
+//! own target under the runtime's default compile settings, so the build
+//! shell's environment steers neither. The runtime loads either format.
 //!
-//! The resulting `emery` binary is self-contained and does not load its engine
-//! component from disk at run time.
+//! The `emery` binary is self-contained and never loads its engine from disk.
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
 fn main() {
-    // prevent recursion: skip this script if the target is wasm32
+    // skip the nested wasm32 build this script itself spawns
     if std::env::var("CARGO_CFG_TARGET_ARCH").as_deref() == Ok("wasm32") {
         return;
     }
@@ -26,7 +24,6 @@ fn main() {
 
     let wasm = build_engine(&manifest_dir, &out_dir, release);
     let guest = if release {
-        // precompile for the binary's own target under the runtime's default settings
         let target = std::env::var("TARGET").expect("cargo env");
         let compiled = out_dir.join("emery.cwasm");
         omnia::compile::compile(
@@ -38,7 +35,6 @@ fn main() {
         .expect("should compile the wasm component");
         compiled
     } else {
-        // leave a debug build to JIT at startup
         wasm
     };
     println!("cargo:rustc-env=EMERY_GUEST={}", guest.display());
@@ -49,7 +45,7 @@ fn build_engine(manifest_dir: &Path, out_dir: &Path, release: bool) -> PathBuf {
         println!("cargo::rerun-if-changed={}", manifest_dir.join(tracked).display());
     }
 
-    // reuse parent's Cargo build
+    // spawn the engine build with the parent's cargo
     let cargo = std::env::var_os("CARGO").expect("cargo env");
     let target_dir = nested_dir(out_dir);
 

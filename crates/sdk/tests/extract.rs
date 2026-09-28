@@ -1,12 +1,3 @@
-//! Verifies mining, concurrency, ordering, retry, and failure aggregation across seams.
-//!
-//! Each seam produces one model request, with at most four requests pending
-//! and a slot reused as soon as any request answers. Seams are dispatched
-//! largest first, and claims preserve seam order even when requests complete
-//! out of order. A request that fails upstream is put once more. The
-//! scenarios also cover pre-request validation, single-seam errors, and
-//! aggregation of several failures under the first failure's class.
-
 use std::collections::BTreeMap;
 use std::future::Future;
 use std::sync::atomic::{AtomicUsize, Ordering};
