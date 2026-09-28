@@ -4,8 +4,6 @@
 //! scenario must consume exactly the expected operations, so an unexercised or
 //! unexpected path fails immediately.
 
-#![allow(dead_code, reason = "shared by suites that each use a subset")]
-
 use std::collections::{BTreeMap, BTreeSet};
 use std::future::Future;
 use std::sync::{Arc, Mutex};

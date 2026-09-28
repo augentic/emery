@@ -29,8 +29,9 @@ fn is_claim_id(value: &str) -> bool {
 ///
 /// The source kind is declared in adapter metadata and is not part of this
 /// document. Unknown document fields are rejected during deserialisation, and
-/// a document serialises back to the JSON it was answered as, absent optional
-/// fields omitted.
+/// a document serialises back to the JSON it was answered as, with absent
+/// optional fields omitted and a malformed `synopsis` or `backing` dropped
+/// (see [`Claim`]).
 #[derive(Clone, Debug, Deserialize, Serialize, JsonSchema)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
 #[schemars(title = "Emery evidence answer")]

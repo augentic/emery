@@ -25,6 +25,7 @@ fn fixtures() {
     assert_eq!(paths, ["extract.md", "references/ids.md"]);
     assert_eq!(body(PROSE, "references/ids.md"), Some(include_str!("prose/references/ids.md")));
     assert_eq!(body(PROSE, "extract.md"), Some(include_str!("prose/extract.md")));
+    assert_eq!(body(PROSE, "missing.md"), None);
     assert_eq!(CLIMBING[0].path, "references/ids.md");
     assert_eq!(CLIMBING[0].body, include_str!("prose/references/ids.md"));
 

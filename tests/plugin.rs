@@ -5,8 +5,7 @@
 
 #![cfg(not(target_arch = "wasm32"))]
 
-#[path = "support/provider.rs"]
-mod provider;
+mod support;
 #[path = "support/verbs.rs"]
 mod verbs;
 
@@ -15,7 +14,7 @@ use std::path::{Path, PathBuf};
 
 use emery_adapter::is_kebab;
 use omnia_sdk::api::command::Response;
-use provider::Provider;
+use support::{Provider, cli};
 
 #[derive(Debug)]
 enum Mention<'a> {
@@ -31,11 +30,11 @@ const GLOBAL_FLAGS: &[&str] = &["--format", "--help", "--version"];
 const SKILL_VERBS: &[(&str, &str)] = &[("specify", "specify")];
 
 async fn grammar(argv: &[&str]) -> Response {
-    provider::cli(&Provider::idle(), argv).await
+    cli(&Provider::idle(), argv).await
 }
 
 #[tokio::test]
-async fn rule_matches() {
+async fn rule_mentions() {
     let rule = plugin_dir().join("rules/emery.mdc");
     let doc = std::fs::read_to_string(&rule)
         .unwrap_or_else(|err| panic!("reading {}: {err}", rule.display()));

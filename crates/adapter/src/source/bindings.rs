@@ -278,7 +278,7 @@ pub mod import {
                 }
             },
         )?;
-        
+
         Evidence::try_from(answer)
             .map_err(|detail| bad_gateway!("adapter `{id}` for source `{name}`: {detail}"))
     }

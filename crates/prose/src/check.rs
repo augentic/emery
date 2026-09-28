@@ -23,7 +23,8 @@ use crate::Doc;
 /// so it is a finding.
 ///
 /// Symlinked directories are followed. Unreadable paths and symlink cycles
-/// are reported as findings. Links inside fenced code are ignored, and URL
+/// are reported as findings. Links inside a backtick code fence are ignored —
+/// an inline code span or a `~~~` fence is not recognised as code — and URL
 /// fragments do not affect the document path. Each finding identifies the
 /// relevant path and violation.
 ///

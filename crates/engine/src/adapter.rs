@@ -149,7 +149,7 @@ pub async fn load<'a, P: Source + Plugins>(
         let id = plugin.id();
         let metadata = Source::metadata(provider, id);
         if let Some(declared) = &metadata.emery_version {
-            is_supported(id, declared, &version)?;
+            require_version(id, declared, &version)?;
         }
 
         tracing::debug!(
@@ -171,7 +171,7 @@ pub async fn load<'a, P: Source + Plugins>(
     Ok(loaded)
 }
 
-fn is_supported(id: &str, declared: &str, running: &semver::Version) -> Result<(), Error> {
+fn require_version(id: &str, declared: &str, running: &semver::Version) -> Result<(), Error> {
     let minimum = semver::Version::parse(declared).map_err(|err| {
         bad_request!("adapter `{id}` has an invalid `emery-version` `{declared}`: {err}")
     })?;

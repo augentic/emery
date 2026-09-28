@@ -28,13 +28,13 @@ const UNKNOWN: &str = "[unknown]";
 /// bases.
 pub struct SpecBrief<'a> {
     extracts: &'a [Extract],
-    bases: &'a [Basis],
+    bases: &'a [Basis<'a>],
 }
 
 impl<'a> SpecBrief<'a> {
     /// Returns a specification brief for `extracts` and `bases`.
     #[must_use]
-    pub const fn new(extracts: &'a [Extract], bases: &'a [Basis]) -> Self {
+    pub const fn new(extracts: &'a [Extract], bases: &'a [Basis<'a>]) -> Self {
         Self { extracts, bases }
     }
 }
@@ -66,8 +66,8 @@ impl Brief for SpecBrief<'_> {
         review.paragraphs(&answer.preamble, "preamble");
 
         // each draft against its requirement
-        let by_subject: BTreeMap<&str, &Basis> =
-            self.bases.iter().map(|basis| (basis.subject.as_str(), basis)).collect();
+        let by_subject: BTreeMap<&str, &Basis<'_>> =
+            self.bases.iter().map(|basis| (basis.subject, basis)).collect();
         let mut seen = BTreeSet::new();
         let mut outcomes: BTreeMap<String, BTreeSet<&str>> = BTreeMap::new();
         for draft in &answer.requirements {
@@ -86,7 +86,7 @@ impl Brief for SpecBrief<'_> {
         }
 
         // requirements no draft covers
-        for basis in self.bases.iter().filter(|basis| !seen.contains(basis.subject.as_str())) {
+        for basis in self.bases.iter().filter(|basis| !seen.contains(basis.subject)) {
             review.note(format_args!("requirement `{}` is not drafted", basis.subject));
         }
 
@@ -110,7 +110,7 @@ impl Brief for SpecBrief<'_> {
             .collect();
         let mut requirements = Vec::with_capacity(self.bases.len());
         for basis in self.bases {
-            let scenarios = drafts.remove(basis.subject.as_str()).ok_or_else(|| {
+            let scenarios = drafts.remove(basis.subject).ok_or_else(|| {
                 server_error!("requirement `{}` was accepted without a draft", basis.subject)
             })?;
             requirements.push(basis.requirement(scenarios));
@@ -126,7 +126,7 @@ impl Brief for SpecBrief<'_> {
 
 // One draft against its requirement. Returns each evidenced `then` outcome
 // its scenarios state, normalised, for the check across requirements.
-fn verify_draft(basis: &Basis, draft: &Draft, review: &mut Review) -> Vec<String> {
+fn verify_draft(basis: &Basis<'_>, draft: &Draft, review: &mut Review) -> Vec<String> {
     let label = format!("`{}`", draft.subject);
     if draft.scenarios.is_empty() {
         review.note(format_args!("{label} has no scenario"));

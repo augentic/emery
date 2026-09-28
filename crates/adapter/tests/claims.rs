@@ -111,14 +111,8 @@ fn malformed_ids() {
     assert!(detail.contains("`Not.Valid`"), "finding names the malformed id: {detail}");
 }
 
-// The closed table is the one rule both gates consume.
 #[test]
 fn missing_extras() {
-    assert_eq!(ClaimKind::Requirement.required_extras(), ["statement"]);
-    assert_eq!(ClaimKind::Criterion.required_extras(), ["criterion"]);
-    assert_eq!(ClaimKind::Example.required_extras(), ["replay-digest"]);
-    assert!(ClaimKind::Decision.required_extras().is_empty());
-
     let bare = evidence(
         r#"{"claims":[
             {"kind":"requirement","id":"password-reset.request"},

@@ -3,6 +3,8 @@
 //! The provider and its runner are in [`provider`]; the runners here assert
 //! on the response — a success, or the typed failure envelope.
 
+#![allow(dead_code, reason = "shared by suites that each use a subset")]
+
 mod provider;
 
 use omnia_sdk::api::command::Response;

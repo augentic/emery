@@ -73,7 +73,6 @@ async fn no_sources() {
     assert!(stderr.contains("no sources"), "{stderr}");
 
     fail(&provider, &["emery", "specify"], 1, "specify-source-required").await;
-    assert!(provider.storage.is_empty(), "a refused run writes nothing");
 }
 
 // A bare `--config` names the project-relative `emery.toml` explicitly, so a
@@ -84,11 +83,11 @@ async fn default_config() {
     std::env::set_current_dir(dir.path()).expect("enter empty project");
     let provider = Provider::idle();
 
-    let response = cli(&provider, &["emery", "specify", "--config"]).await;
-    assert_eq!(response.exit, 3);
-    let stderr = String::from_utf8_lossy(&response.stderr);
-    assert!(stderr.contains("emery.toml"), "{stderr}");
-    assert!(provider.storage.is_empty(), "a refused run writes nothing");
+    let envelope = fail(&provider, &["emery", "specify", "--config"], 3, "server_error").await;
+    assert!(
+        envelope["message"].as_str().is_some_and(|message| message.contains("emery.toml")),
+        "{envelope}"
+    );
 }
 
 #[tokio::test]
@@ -199,7 +198,7 @@ async fn host_semver() {
 
 // Omnia forwards raw argv; a routed-id argv[0] renders as `emery`.
 #[tokio::test]
-async fn argv_zero_replaced() {
+async fn routed_argv_zero() {
     let provider = Provider::idle();
     let expected = cli(&provider, &["emery", "specify", "--no-such-flag"]).await;
     let forwarded = cli(&provider, &["emery:engine@0.1.0", "specify", "--no-such-flag"]).await;

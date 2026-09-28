@@ -1,6 +1,8 @@
-//! The shape of one source's evidence for its `extracted` line: how many
-//! claims of each kind, and the id stems its requirements fall under, so a
-//! run's log shows what a source yielded without the document.
+//! Summarises one source's evidence for its `extracted` log line.
+//!
+//! The summary is how many claims of each kind, and the id stems its
+//! requirements fall under, so a run's log shows what a source yielded
+//! without the document.
 
 use std::collections::BTreeMap;
 
