@@ -317,14 +317,16 @@ fn type_block(schema: &mut Value) -> Option<&mut Value> {
     variants.iter_mut().find(|variant| variant["required"] == json!(["type"]))
 }
 
-// The declared name of a `type` claim: its id, its `name` extra, or its path
-// with any `#L…` anchor stripped, so a re-anchored claim keeps its key.
+// The declared name of a `type` claim: its `name` extra — the identifier the
+// declaration spells, which several claims sharing one `id` never share — then
+// its id, then its path with any `#L…` anchor stripped, so a re-anchored claim
+// keeps its key.
 fn declared(claim: &Claim) -> Option<&str> {
-    if let Some(id) = claim.id.as_deref() {
-        return Some(id);
-    }
     if let Some(Value::String(name)) = claim.extras.get("name") {
         return Some(name);
+    }
+    if let Some(id) = claim.id.as_deref() {
+        return Some(id);
     }
 
     let path = claim.path.as_deref()?;

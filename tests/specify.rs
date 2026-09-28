@@ -1325,6 +1325,51 @@ async fn type_collisions() {
     provider.model.assert_exhausted();
 }
 
+// Two `type` claims under one id declare two identifiers: each is keyed by
+// its `name`, so neither displaces the other and no key carries a path.
+#[tokio::test]
+async fn type_named() {
+    let typed = |name: &str, signature: &str| {
+        let mut typed = claim(ClaimKind::Type, "greeting.type", ("signature", signature));
+        typed.extras.insert("name".to_string(), Value::String(name.to_string()));
+        typed.path = Some(format!("src/{}.ts#L1", name.to_lowercase()));
+        typed
+    };
+    let mut provider = Provider::answering([
+        SPEC_ANSWER,
+        r#"{"preamble": [], "sections": [
+            {"kind": "overview", "blocks": [{"text": "The greeting is one static endpoint."}]},
+            {"kind": "domain-model", "blocks": [{"type": "Greeting"}, {"type": "Salutation"}]}
+        ]}"#,
+    ])
+    .declaring(["docs"]);
+    provider.source.evidence.insert(
+        "docs".to_string(),
+        Ok(evidence(vec![
+            requirement("greeting.behaviour", "GET /greeting returns the static string 'hello'."),
+            typed("Greeting", "interface Greeting { text: string }"),
+            typed("Salutation", "type Salutation = Greeting"),
+        ])),
+    );
+
+    cli_ok(&provider, &["emery", "specify", "docs"]).await;
+
+    let SeenFormat::Schema { schema, .. } = &provider.model.seen()[1].format else {
+        panic!("the design is steered by schema");
+    };
+    let schema: Value = serde_json::from_str(schema).expect("the steering schema is JSON");
+    let block = schema["$defs"]["Block"]["oneOf"]
+        .as_array()
+        .and_then(|variants| {
+            variants.iter().find(|variant| variant["required"] == serde_json::json!(["type"]))
+        })
+        .expect("the type block variant");
+    assert_eq!(block["properties"]["type"]["enum"], serde_json::json!(["Greeting", "Salutation"]));
+    let plan = shown(&provider, "plan").await;
+    assert!(plan.contains("Types: [Greeting, Salutation]"), "{plan}");
+    provider.model.assert_exhausted();
+}
+
 #[tokio::test]
 async fn model_fails() {
     let provider = Provider {

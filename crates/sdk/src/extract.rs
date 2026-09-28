@@ -41,9 +41,11 @@ pub const CONCURRENT: usize = 4;
 /// [`Seam::Files`] is sized by its file count. A [`Seam::Whole`] or
 /// [`Seam::Note`] has no known size and goes before them. Ties keep seam
 /// order. A request that fails upstream, in the model or a tool transport, is
-/// put once more; a refusal is not. All requests are awaited, and claims
-/// retain the order of `seams`. Every workspace seam uses the same source
-/// root, so claim paths share one root-relative namespace.
+/// put once more; a refusal is not, and neither is a request the backend's
+/// time budget ended, which the backend reports as a budget exhausted — the
+/// same request put again takes as long. All requests are awaited, and
+/// claims retain the order of `seams`. Every workspace seam uses the same
+/// source root, so claim paths share one root-relative namespace.
 ///
 /// When several seams fail, the returned error describes each failure and
 /// carries the class and code of the first failed seam.
@@ -52,7 +54,8 @@ pub const CONCURRENT: usize = 4;
 ///
 /// - Returns [`Error::BadRequest`] when `seams` is empty, a
 ///   [`Seam::Files`] path is invalid, the model rejects the request, or no
-///   valid response is produced within the available rounds.
+///   valid response is produced within the available rounds or the
+///   backend's time budget.
 /// - Returns [`Error::ServerError`] when [`Seam::Files`] is used with inline
 ///   input or `docs` does not contain `extract.md`.
 /// - Returns [`Error::BadGateway`] when a model tool or transport fails on

@@ -18,6 +18,6 @@ The request lists every section with its presence — `required`, `permitted`, o
 ## Blocks
 
 - **`{"text": "…"}`** — one Markdown paragraph. Cite decisions inline as `(from <source>)`, where `<source>` is exactly one bound source name; a citation naming an unbound source is refused. Refer to requirements by their `REQ-NNN` id inline — no `### Requirement:` or `#### Scenario:` heading and no provenance line belongs here.
-- **`{"type": "<key>"}`** — a `type` claim by its declared name — its id, its `name`, or its path with any line anchor stripped — under `domain-model` only. Interleave with text blocks to place each signature; every listed type claim is referenced exactly once, or the draft is refused.
+- **`{"type": "<key>"}`** — a `type` claim by its declared name — its `name`, else its id, else its path with any line anchor stripped — under `domain-model` only. Interleave with text blocks to place each signature; every listed type claim is referenced exactly once, or the draft is refused.
 
 Fold `decision` and `section` claims into the section they inform. Where the claims are silent, say nothing — never pad a section with invented architecture. No timestamps or run identifiers; re-runs must be byte-identical.
