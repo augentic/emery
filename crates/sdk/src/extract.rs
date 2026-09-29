@@ -39,6 +39,9 @@ pub const CONCURRENT: usize = 4;
 /// that lays a closure puts the entry first.
 pub const INLINE_BYTES: u64 = 64 * 1024;
 
+// How many of a seam's anchors in a claim's file a finding names.
+const NEAREST: usize = 16;
+
 /// Mines each seam and combines accepted claims into one [`Evidence`] document.
 ///
 /// `docs` must contain `extract.md`. It becomes the system prompt for every
@@ -132,10 +135,10 @@ pub async fn extract<P: Model>(
 ///   `path` grammar (`<path>#L<n>`, `<path>#L<start>-L<end>`, or a bare
 ///   `<path>` for the whole file) relative to the workspace root — where an
 ///   adapter's survey found a behaviour can start; a `requirement` whose
-///   `path` overlaps none of them is refused, so the model re-anchors it or
-///   leaves it out. Other kinds are not held to them. Empty leaves the
-///   anchors to the model; anchors over an inline value are the adapter's
-///   own defect.
+///   `path` overlaps none of them is refused with the nearest anchors in its
+///   file named, so the model re-anchors it or leaves it out. Other kinds
+///   are not held to them. Empty leaves the anchors to the model; anchors
+///   over an inline value are the adapter's own defect.
 ///
 /// # Examples
 ///
@@ -144,13 +147,14 @@ pub async fn extract<P: Model>(
 ///
 /// let brief = Seam::whole();
 /// let module = Seam::files(["src/orders.ts", "src/lib/pricing.ts"]);
+/// let anchored = Seam::anchors(["src/orders.ts#L4-L9"]);
 /// let surface = Seam {
 ///     text: "Surface `POST /orders` — entry `src/routes.ts` — stem `orders`.".to_owned(),
 ///     files: vec!["src/routes.ts".to_owned(), "src/lib/pricing.ts".to_owned()],
 ///     stems: vec!["orders".to_owned()],
 ///     anchors: vec!["src/routes.ts#L6-L9".to_owned(), "src/lib/pricing.ts#L12".to_owned()],
 /// };
-/// # let _ = (brief, module, surface);
+/// # let _ = (brief, module, anchored, surface);
 /// ```
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct Seam {
@@ -172,11 +176,7 @@ impl Seam {
     }
 
     /// Returns the seam over `files` beneath the workspace root, with no text and no stems.
-    pub fn files<I, S>(files: I) -> Self
-    where
-        I: IntoIterator<Item = S>,
-        S: Into<String>,
-    {
+    pub fn files(files: impl IntoIterator<Item = impl Into<String>>) -> Self {
         Self {
             files: files.into_iter().map(Into::into).collect(),
             ..Self::default()
@@ -187,6 +187,15 @@ impl Seam {
     pub fn note(text: impl Into<String>) -> Self {
         Self {
             text: text.into(),
+            ..Self::default()
+        }
+    }
+
+    /// Returns the seam over the whole workspace whose `requirement`s anchor at
+    /// `anchors`, each in the `path` grammar.
+    pub fn anchors(anchors: impl IntoIterator<Item = impl Into<String>>) -> Self {
+        Self {
+            anchors: anchors.into_iter().map(Into::into).collect(),
             ..Self::default()
         }
     }
@@ -383,19 +392,59 @@ impl<'a> Plan<'a> {
                 _ => {}
             }
 
-            // a requirement at one of the seam's anchors
+            // a requirement at one of the seam's anchors, the nearest in its
+            // file named so one correction can land
             if claim.kind == ClaimKind::Requirement
                 && !self.anchors.is_empty()
                 && !self.anchors.iter().any(|at| at.overlaps(&path, anchor.lines))
             {
-                findings.push(format!(
-                    "- claim {index}: path `{cited}` is at none of the lines this seam names for \
-                     a `requirement`; anchor it at the lines where its behaviour starts, or leave \
-                     it out"
-                ));
+                let nearest = self.nearest(&path, anchor.lines);
+                if nearest.is_empty() {
+                    findings.push(format!(
+                        "- claim {index}: path `{cited}` is at none of the lines this seam names \
+                         for a `requirement`, and it names none in `{path}`; anchor it in a file \
+                         where its behaviour starts, or leave it out"
+                    ));
+                } else {
+                    findings.push(format!(
+                        "- claim {index}: path `{cited}` is at none of the lines this seam names \
+                         for a `requirement`; in `{path}` it names {}; anchor it at the one where \
+                         its behaviour starts, or leave it out",
+                        nearest.join(", ")
+                    ));
+                }
             }
         }
         findings
+    }
+
+    // The seam's anchors in `path` nearest to `lines` — up to `NEAREST`, in
+    // file order — each as `L<n>` or `L<n>-L<n>`.
+    fn nearest(&self, path: &str, lines: Option<(u64, u64)>) -> Vec<String> {
+        let mut spans: Vec<(u64, u64)> =
+            self.anchors.iter().filter(|at| at.path == path).filter_map(|at| at.lines).collect();
+        spans.sort_unstable();
+        spans.dedup();
+        if let Some((from, to)) = lines
+            && spans.len() > NEAREST
+        {
+            let distance = |&(start, end): &(u64, u64)| {
+                if end < from { from - end } else { start.saturating_sub(to) }
+            };
+            spans.sort_by_key(distance);
+            spans.truncate(NEAREST);
+            spans.sort_unstable();
+        } else {
+            spans.truncate(NEAREST);
+        }
+        spans
+            .into_iter()
+            .map(
+                |(start, end)| {
+                    if start == end { format!("L{start}") } else { format!("L{start}-L{end}") }
+                },
+            )
+            .collect()
     }
 }
 
@@ -584,15 +633,17 @@ impl Display for Brief<'_> {
                 Laid(&scope.files, &scope.laid).fmt(f)?;
             }
             Lend::Files(scope) => {
+                let (laid, those) = match scope.laid.len() {
+                    1 => ("The first is".to_owned(), "it"),
+                    n => (format!("The first {n} are"), "them"),
+                };
                 write!(
                     f,
                     "`$SOURCE_DIR` is the bound source tree, lent read-only: the root every \
-                     `path` is relative to. Mine these files beneath it and nothing else. The \
-                     first {} are laid out here whole, every line led by its number, so cite \
-                     `#L<n>` from the numbers shown rather than reading them again; the rest are \
-                     listed after them, to read from `$SOURCE_DIR` as the seam reaches \
-                     them:\n\n",
-                    scope.laid.len()
+                     `path` is relative to. Mine these files beneath it and nothing else. {laid} \
+                     laid out here whole, every line led by its number, so cite `#L<n>` from the \
+                     numbers shown rather than reading {those} again; the rest are listed after \
+                     {those}, to read from `$SOURCE_DIR` as the seam reaches them:\n\n"
                 )?;
                 Laid(&scope.files, &scope.laid).fmt(f)?;
                 f.write_str("\n\nThe rest of this seam's files:\n")?;
@@ -674,7 +725,11 @@ impl Display for Laid<'_> {
             let lines: Vec<&str> = body.lines().collect();
             let width = lines.len().max(1).to_string().len();
             let fence = "`".repeat(longest_run(body).max(2) + 1);
-            writeln!(f, "### `{file}` ({} lines)\n\n{fence}", lines.len())?;
+            let count = match lines.len() {
+                1 => "1 line".to_owned(),
+                n => format!("{n} lines"),
+            };
+            writeln!(f, "### `{file}` ({count})\n\n{fence}")?;
             for (number, line) in (1..).zip(&lines) {
                 writeln!(f, "{number:>width$}|{line}")?;
             }

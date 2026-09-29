@@ -22,10 +22,6 @@ const VALID: &str = r#"{"claims":[
     {"kind":"decision"}
 ]}"#;
 
-fn files<const N: usize>(paths: [&str; N]) -> Seam {
-    Seam::files(paths)
-}
-
 fn stemmed<const N: usize>(text: &str, stems: [&str; N]) -> Seam {
     Seam {
         stems: stems.into_iter().map(str::to_string).collect(),
@@ -159,7 +155,7 @@ async fn prepared_turn() {
 #[tokio::test]
 async fn files_turn() {
     let model = Scripted::answering([VALID]);
-    let seam = files(["guide/setup.md", "./guide/intro.md", "guide/intro.md", "api.md"]);
+    let seam = Seam::files(["guide/setup.md", "./guide/intro.md", "guide/intro.md", "api.md"]);
 
     ask(&model, &SourceInput::workspace("docs", "/lend/docs"), seam).await.expect("accepted");
 
@@ -189,7 +185,7 @@ async fn files_laid() {
     write(tmp.path(), "guide/intro.md", "# Intro\nOne line, no trailing newline");
     let root = tmp.path().to_str().expect("a UTF-8 scratch root");
 
-    ask(&model, &SourceInput::workspace("docs", root), files(["api.md", "guide/intro.md"]))
+    ask(&model, &SourceInput::workspace("docs", root), Seam::files(["api.md", "guide/intro.md"]))
         .await
         .expect("accepted");
 
@@ -221,16 +217,16 @@ async fn files_listed() {
     let root = tmp.path().to_str().expect("a UTF-8 scratch root");
 
     let model = Scripted::answering([VALID]);
-    ask(&model, &SourceInput::workspace("docs", root), files(["a.md", "b.md", "c.md"]))
+    ask(&model, &SourceInput::workspace("docs", root), Seam::files(["a.md", "b.md", "c.md"]))
         .await
         .expect("accepted");
     let user = &model.seen()[0].messages[0];
     assert!(
         user.contains(
-            "Mine these files beneath it and nothing else. The first 1 are laid out here \
-             whole, every line led by its number, so cite `#L<n>` from the numbers shown rather \
-             than reading them again; the rest are listed after them, to read from \
-             `$SOURCE_DIR` as the seam reaches them:\n\n### `a.md` (1 lines)"
+            "Mine these files beneath it and nothing else. The first is laid out here whole, \
+             every line led by its number, so cite `#L<n>` from the numbers shown rather than \
+             reading it again; the rest are listed after it, to read from `$SOURCE_DIR` as the \
+             seam reaches them:\n\n### `a.md` (1 line)"
         ),
         "{user}"
     );
@@ -242,12 +238,12 @@ async fn files_listed() {
     );
 
     let model = Scripted::answering([VALID]);
-    ask(&model, &SourceInput::workspace("docs", root), files(["b.md", "a.md", "c.md"]))
+    ask(&model, &SourceInput::workspace("docs", root), Seam::files(["b.md", "a.md", "c.md"]))
         .await
         .expect("accepted");
     let user = &model.seen()[0].messages[0];
-    assert!(user.contains("The first 1 are laid out"), "{user}");
-    assert!(user.contains("### `b.md` (1 lines)"), "{user}");
+    assert!(user.contains("The first is laid out"), "{user}");
+    assert!(user.contains("### `b.md` (1 line)"), "{user}");
     assert!(user.contains("The rest of this seam's files:\n\n- `a.md`\n- `c.md`\n\n"), "{user}");
 
     let binary = tempfile::tempdir().expect("tempdir");
@@ -255,7 +251,7 @@ async fn files_listed() {
     write(binary.path(), "a.md", "text");
     let root = binary.path().to_str().expect("a UTF-8 scratch root");
     let model = Scripted::answering([VALID]);
-    ask(&model, &SourceInput::workspace("docs", root), files(["blob.bin", "a.md"]))
+    ask(&model, &SourceInput::workspace("docs", root), Seam::files(["blob.bin", "a.md"]))
         .await
         .expect("accepted");
     let user = &model.seen()[0].messages[0];
@@ -326,7 +322,7 @@ async fn files_stems() {
              root every `path` is relative to. Mine these files beneath it and nothing else. \
              Each is laid out here whole, every line led by its number, so cite `#L<n>` from the \
              numbers shown rather than reading it again:\n\n### `src/routes.ts` (1 \
-             lines)\n\n```\n1|export const x = 1;\n```\n\nLead every `requirement` and \
+             line)\n\n```\n1|export const x = 1;\n```\n\nLead every `requirement` and \
              `criterion` id with the stem `password-reset` as its first dotted segment; an id \
              under another stem is refused.\n\nAnchor every `path` relative to `$SOURCE_DIR`, \
              within these files. Nothing outside it is reachable; extract mines only this \
@@ -406,7 +402,7 @@ async fn path_findings() {
         ]}"#,
         r#"{"claims":[{"kind":"requirement","id":"a.one","statement":"x","path":"api.md#L3"}]}"#,
     ]);
-    let seam = files(["api.md", "guide/intro.md", "guide/missing.md", "dir.md"]);
+    let seam = Seam::files(["api.md", "guide/intro.md", "guide/missing.md", "dir.md"]);
 
     let accepted =
         ask(&model, &SourceInput::workspace("docs", root), seam).await.expect("corrected");
@@ -471,13 +467,17 @@ async fn path_whole() {
 
 // A `requirement` is held to the seam's anchors: one sharing a line with a
 // listed span is accepted, one at any other line — or citing a whole file
-// against listed lines — is a finding; a whole-file anchor listed covers its
-// file; a `criterion` and the rest are not held. The brief says so.
+// against listed lines — is a finding naming the anchors in its file, the
+// nearest sixteen of many; one in a file the seam anchors nothing in says so;
+// a whole-file anchor listed covers its file; a `criterion` and the rest are
+// not held. The brief says so.
 #[tokio::test]
 async fn anchor_findings() {
     let tmp = tempfile::tempdir().expect("tempdir");
     write(tmp.path(), "src/orders.ts", "one\ntwo\nthree\nfour\nfive\nsix\n");
     write(tmp.path(), "src/config.ts", "export const LIMIT = 3;\n");
+    write(tmp.path(), "src/lib/util.ts", "one\ntwo\n");
+    write(tmp.path(), "src/long.ts", &"line\n".repeat(60));
     let root = tmp.path().to_str().expect("a UTF-8 scratch root");
     let model = Scripted::answering([
         r#"{"claims":[
@@ -486,13 +486,21 @@ async fn anchor_findings() {
             {"kind":"requirement","id":"orders.whole","statement":"x","path":"src/orders.ts"},
             {"kind":"criterion","id":"orders.limit","criterion":"3","path":"src/orders.ts#L6"},
             {"kind":"requirement","id":"orders.config","statement":"x","path":"./src/config.ts"},
-            {"kind":"requirement","id":"orders.past","statement":"x","path":"src/orders.ts#L9"}
+            {"kind":"requirement","id":"orders.past","statement":"x","path":"src/orders.ts#L9"},
+            {"kind":"requirement","id":"orders.util","statement":"x","path":"src/lib/util.ts#L2"},
+            {"kind":"requirement","id":"orders.long","statement":"x","path":"src/long.ts#L41"}
         ]}"#,
         r#"{"claims":[{"kind":"requirement","id":"orders.create","statement":"x","path":"src/orders.ts#L3"}]}"#,
     ]);
+    let mut anchors = vec![
+        "src/orders.ts#L5-L6".to_owned(),
+        "src/orders.ts#L2-L3".to_owned(),
+        "./src/config.ts".to_owned(),
+    ];
+    anchors.extend((1..=60).step_by(3).map(|line| format!("src/long.ts#L{line}")));
     let seam = Seam {
-        anchors: vec!["src/orders.ts#L2-L3".to_owned(), "./src/config.ts".to_owned()],
-        ..files(["src/orders.ts", "src/config.ts"])
+        anchors,
+        ..Seam::files(["src/orders.ts", "src/config.ts", "src/lib/util.ts", "src/long.ts"])
     };
 
     let accepted =
@@ -511,15 +519,24 @@ async fn anchor_findings() {
     let correction = exchanges[0].outcome.as_ref().expect_err("the stray anchors are refused");
     for finding in [
         "claim 1: path `src/orders.ts#L1` is at none of the lines this seam names for a \
-         `requirement`; anchor it at the lines where its behaviour starts, or leave it out",
-        "claim 2: path `src/orders.ts` is at none of the lines",
+         `requirement`; in `src/orders.ts` it names L2-L3, L5-L6; anchor it at the one where its \
+         behaviour starts, or leave it out",
+        "claim 2: path `src/orders.ts` is at none of the lines this seam names for a \
+         `requirement`; in `src/orders.ts` it names L2-L3, L5-L6;",
         "claim 5: path `src/orders.ts#L9` cites line 9, but `src/orders.ts` has 6 lines",
+        "claim 6: path `src/lib/util.ts#L2` is at none of the lines this seam names for a \
+         `requirement`, and it names none in `src/lib/util.ts`; anchor it in a file where its \
+         behaviour starts, or leave it out",
+        "claim 7: path `src/long.ts#L41` is at none of the lines this seam names for a \
+         `requirement`; in `src/long.ts` it names L13, L16, L19, L22, L25, L28, L31, L34, L37, \
+         L40, L43, L46, L49, L52, L55, L58; anchor it",
     ] {
         assert!(correction.contains(finding), "{finding}: {correction}");
     }
     assert!(!correction.contains("claim 0:"), "an overlapping span is no finding: {correction}");
     assert!(!correction.contains("claim 3:"), "a criterion is not held: {correction}");
     assert!(!correction.contains("claim 4:"), "a whole-file anchor covers its file: {correction}");
+    assert!(!correction.contains("L10, L13"), "the farthest anchors are left out: {correction}");
     assert_eq!(
         correction.matches("claim 5:").count(),
         1,
@@ -535,7 +552,7 @@ async fn anchor_defects() {
     let model = Scripted::default();
     let seam = Seam {
         anchors: vec!["src/orders.ts#4".to_owned()],
-        ..files(["src/orders.ts"])
+        ..Seam::files(["src/orders.ts"])
     };
     let error = ask(&model, &SourceInput::workspace("code", "/lend/code"), seam)
         .await

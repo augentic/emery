@@ -142,10 +142,6 @@ impl Model for ByFile {
     }
 }
 
-fn files<const N: usize>(paths: [&str; N]) -> Seam {
-    Seam::files(paths)
-}
-
 async fn extract<M: Model>(
     model: &M, input: &SourceInput, seams: &[Seam],
 ) -> Result<Evidence, Error> {
@@ -168,7 +164,7 @@ async fn three_seams() {
         .file("a/x.md", Scripted::answering([note("a/x.md")]))
         .file("b/y.md", Scripted::answering([note("b/y.md")]))
         .file("c/z.md", Scripted::answering([note("c/z.md")]));
-    let seams = [files(["a/x.md"]), files(["b/y.md"]), files(["c/z.md"])];
+    let seams = [Seam::files(["a/x.md"]), Seam::files(["b/y.md"]), Seam::files(["c/z.md"])];
 
     let evidence = extract(&model, &input, &seams).await.expect("three seams join");
 
@@ -194,7 +190,7 @@ async fn three_seams() {
         let user = &seen[0].messages[0];
         assert!(user.contains("`$SOURCE_DIR` is the bound source tree, lent read-only:"), "{user}");
         assert!(
-            user.contains(&format!("### `{file}` (1 lines)\n\n```\n1|the line\n```\n\n")),
+            user.contains(&format!("### `{file}` (1 line)\n\n```\n1|the line\n```\n\n")),
             "the one file is laid out: {user}"
         );
     }
@@ -211,7 +207,7 @@ async fn concurrent() {
     for file in &named {
         model = model.file(file, Scripted::answering([note(file)]));
     }
-    let seams: Vec<_> = named.iter().map(|file| files([*file])).collect();
+    let seams: Vec<_> = named.iter().map(|file| Seam::files([*file])).collect();
 
     let evidence = extract(&model, &input, &seams).await.expect("every seam joins");
 
@@ -232,7 +228,7 @@ async fn head_of_line() {
     for file in &named {
         model = model.file(file, Scripted::answering([note(file)]));
     }
-    let seams: Vec<_> = named.iter().map(|file| files([*file])).collect();
+    let seams: Vec<_> = named.iter().map(|file| Seam::files([*file])).collect();
 
     let evidence = tokio::time::timeout(DEADLINE, extract(&model, &input, &seams))
         .await
@@ -255,10 +251,10 @@ async fn largest_first() {
         .file("b/1.md", Scripted::answering([note("b/1.md")]))
         .file("c/1.md", Scripted::answering([note("c/1.md")]));
     let seams = [
-        files(["a/1.md"]),
+        Seam::files(["a/1.md"]),
         Seam::note("Mine the surface entered at `n/1.md`."),
-        files(["b/1.md", "b/2.md", "b/3.md"]),
-        files(["c/1.md", "c/2.md"]),
+        Seam::files(["b/1.md", "b/2.md", "b/3.md"]),
+        Seam::files(["c/1.md", "c/2.md"]),
     ];
 
     let evidence = extract(&model, &input, &seams).await.expect("every seam joins");
@@ -289,7 +285,7 @@ async fn retried() {
             }),
         ]),
     );
-    let seams = [files(["a/x.md"]), files(["b/y.md"])];
+    let seams = [Seam::files(["a/x.md"]), Seam::files(["b/y.md"])];
 
     let evidence = extract(&model, &input, &seams).await.expect("the retried seam joins");
 
@@ -307,7 +303,7 @@ async fn retry_spent() {
     let model = ByFile::default()
         .file("a/x.md", Scripted::answering([note("a/x.md")]))
         .file("b/y.md", Scripted::new([down("down"), down("still down")]));
-    let seams = [files(["a/x.md"]), files(["b/y.md"])];
+    let seams = [Seam::files(["a/x.md"]), Seam::files(["b/y.md"])];
 
     let error = extract(&model, &input, &seams).await.expect_err("the retry failed too");
 
@@ -332,7 +328,7 @@ async fn refusal_not_retried() {
         )
         .file("b/y.md", Scripted::answering([note("b/y.md")]))
         .file("c/z.md", Scripted::answering([r#"{"claims":[{"kind":"requirement","id":"c"}]}"#]));
-    let seams = [files(["a/x.md"]), files(["b/y.md"]), files(["c/z.md"])];
+    let seams = [Seam::files(["a/x.md"]), Seam::files(["b/y.md"]), Seam::files(["c/z.md"])];
 
     let error = extract(&model, &input, &seams).await.expect_err("two seams are refused");
 
@@ -361,7 +357,7 @@ async fn no_seams() {
 async fn escaping_path() {
     let model = Scripted::default();
     let input = SourceInput::workspace("docs", "./docs");
-    let seams = [files(["a/x.md"]), files(["../secret.md"])];
+    let seams = [Seam::files(["a/x.md"]), Seam::files(["../secret.md"])];
 
     let error = extract(&model, &input, &seams).await.expect_err("a path escapes");
 
@@ -375,7 +371,7 @@ async fn dot_path() {
     let model = Scripted::default();
     let input = SourceInput::workspace("docs", "./docs");
 
-    let error = extract(&model, &input, &[files(["./"])]).await.expect_err("no file");
+    let error = extract(&model, &input, &[Seam::files(["./"])]).await.expect_err("no file");
 
     assert_eq!(error.code(), "bad_request");
     assert!(error.description().contains("names no file"), "{error}");
@@ -387,9 +383,10 @@ async fn dot_path() {
 async fn files_value() {
     let model = Scripted::default();
 
-    let error = extract(&model, &SourceInput::value("brief", "Ship it."), &[files(["a/x.md"])])
-        .await
-        .expect_err("no tree to lend");
+    let error =
+        extract(&model, &SourceInput::value("brief", "Ship it."), &[Seam::files(["a/x.md"])])
+            .await
+            .expect_err("no tree to lend");
 
     assert_eq!(error.code(), "server_error");
     assert!(error.description().contains("inline value with no tree to lend"), "{error}");
@@ -406,7 +403,7 @@ async fn two_seams_fail() {
         )
         .file("b/y.md", Scripted::answering([note("b/y.md")]))
         .file("c/z.md", Scripted::new([down("down"), down("down")]));
-    let seams = [files(["a/x.md"]), files(["b/y.md"]), files(["c/z.md"])];
+    let seams = [Seam::files(["a/x.md"]), Seam::files(["b/y.md"]), Seam::files(["c/z.md"])];
 
     let error = extract(&model, &input, &seams).await.expect_err("two seams failed");
 

@@ -3,8 +3,7 @@
 //! [`list`] visits directories and regular files beneath a source root. The
 //! filter receives each [`Entry`] and may prune directories or omit files.
 //! Emery's `.omnia/` directories and generated documents are always excluded,
-//! as the claim gate refuses a `path` anchored in them. [`size`] measures the
-//! files a listing found.
+//! as the claim gate refuses a `path` anchored in them.
 
 use std::path::Path;
 
@@ -109,39 +108,6 @@ pub fn list(root: &str, mut keep: impl FnMut(Entry<'_>) -> bool) -> Result<Vec<S
     let mut files = walk(Path::new(root), "", &mut keep)?;
     files.sort();
     Ok(files)
-}
-
-/// Returns the total size in bytes of `files` beneath `root`.
-///
-/// `files` are root-relative paths as [`list`] returns them. An adapter reads
-/// the total against [`INLINE_BYTES`](crate::INLINE_BYTES) to decide whether
-/// a tree is small enough to mine as one seam laid into the turn whole.
-///
-/// # Examples
-///
-/// ```
-/// use emery_sdk::workspace;
-///
-/// # let scratch = tempfile::tempdir()?;
-/// # std::fs::write(scratch.path().join("a.md"), "hello")?;
-/// # std::fs::write(scratch.path().join("b.md"), "world!")?;
-/// # let root = scratch.path().to_str().ok_or("temporary path is not UTF-8")?;
-/// let files = workspace::list(root, |_| true)?;
-/// assert_eq!(workspace::size(root, &files)?, 11);
-/// # Ok::<(), Box<dyn std::error::Error>>(())
-/// ```
-///
-/// # Errors
-///
-/// - Returns [`Error::ServerError`] when a file cannot be measured.
-pub fn size(root: &str, files: &[String]) -> Result<u64, Error> {
-    let root = Path::new(root);
-    files.iter().try_fold(0u64, |total, file| {
-        let full = root.join(file);
-        let meta =
-            std::fs::metadata(&full).with_context(|| format!("measuring `{}`", full.display()))?;
-        Ok(total.saturating_add(meta.len()))
-    })
 }
 
 fn walk(

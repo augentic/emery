@@ -17,12 +17,16 @@
 //!   guidance; [`RUNTIME`] is the guidance every adapter shares, and
 //!   [`check`] holds an adapter's list to its tree.
 //! - [`workspace::list`] traverses workspace input under an adapter-defined
-//!   filter, and [`workspace::size`] measures what it found.
+//!   filter.
 //!
 //! Contract types and [`Error`] are re-exported, allowing an adapter to depend
-//! on this crate alone. [`Source`] is among them for a host program that calls
-//! an adapter the way the engine does; an adapter implements the world's guest
-//! interface through [`source_adapter!`] and never [`Source`].
+//! on this crate alone: the claim types, [`Anchor`] and [`BadAnchor`] for the
+//! `path` grammar a survey spells anchors in, [`is_kebab`] for the stems it
+//! derives, and the [`serde_json`] and [`tracing`] crates for claims of its
+//! own and events beside this crate's. [`Source`] is among them for a host
+//! program that calls an adapter the way the engine does; an adapter
+//! implements the world's guest interface through [`source_adapter!`] and
+//! never [`Source`].
 //!
 //! # Examples
 //!
@@ -103,8 +107,8 @@ pub use emery_adapter::is_kebab;
 #[doc(inline)]
 pub use emery_adapter::source::export;
 pub use emery_adapter::source::{
-    AdapterMetadata, Backing, Claim, ClaimKind, Evidence, Source, SourceContent, SourceInput,
-    SourceKind,
+    AdapterMetadata, Anchor, Backing, BadAnchor, Claim, ClaimKind, Evidence, Source, SourceContent,
+    SourceInput, SourceKind,
 };
 pub use emery_prose::{Doc, body, check, find, prose};
 pub use omnia_sdk::{Error, Model, bad_gateway, bad_request, not_found, server_error};
