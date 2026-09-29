@@ -8,6 +8,7 @@
 //! design drafting, and slicing. Facts already known to the engine are
 //! validated or inserted directly rather than requested from the model.
 
+use std::borrow::Borrow;
 use std::fmt::{self, Display, Formatter};
 
 use omnia_sdk::model::{Findings, Question};
@@ -105,9 +106,14 @@ impl Review {
     /// Returns whether the candidate is accepted.
     ///
     /// A candidate nothing was found against is accepted. Otherwise the
-    /// findings are returned for the backend to feed back as the correction.
+    /// findings are logged at DEBUG under the brief's `judge` span and
+    /// returned for the backend to feed back as the correction.
     pub fn verdict(self) -> Result<(), Findings> {
-        if self.0.is_empty() { Ok(()) } else { Err(self.0) }
+        if self.0.is_empty() {
+            return Ok(());
+        }
+        tracing::debug!(findings = ?self.0, "candidate rejected");
+        Err(self.0)
     }
 
     /// Checks that a drafted paragraph carries none of the document's own markup.
@@ -152,12 +158,15 @@ impl Review {
 /// Each entry carries the engine's facts about the requirement: its id,
 /// subject, status, sources, whether a criterion covers it, and every
 /// contributing claim with its role. The three drafts run from it together,
-/// so none waits on another's answer.
-pub struct BasesSection<'a>(pub &'a [Basis<'a>]);
+/// so none waits on another's answer. The bases are owned or borrowed, so a
+/// brief over a chunk of the run's bases lists them as one over all of them
+/// does.
+pub struct BasesSection<'a, B>(pub &'a [B]);
 
-impl Display for BasesSection<'_> {
+impl<'a, B: Borrow<Basis<'a>>> Display for BasesSection<'a, B> {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         for basis in self.0 {
+            let basis: &Basis<'a> = basis.borrow();
             let coverage = if basis.covered {
                 "evidenced"
             } else {

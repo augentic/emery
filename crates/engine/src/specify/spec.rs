@@ -2,8 +2,10 @@
 //!
 //! The model supplies introductory paragraphs and acceptance scenarios. The
 //! engine retains ownership of requirement identifiers, provenance, status,
-//! and body text. Every response must contain exactly one draft for each
-//! requirement subject.
+//! and body text. A run is drafted in chunks of at most [`SPEC_CHUNK`]
+//! requirements, grouped by stem, each its own turn; every response must
+//! contain exactly one draft for each requirement subject of its chunk, and
+//! only the first chunk's carries the preamble.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::{self, Display, Formatter};
@@ -14,34 +16,101 @@ use schemars::JsonSchema;
 use serde::Deserialize;
 use serde_json::{Value, json};
 
-use crate::revision::{EMERY, Scenario, Spec};
-use crate::specify::Extract;
+use crate::revision::{EMERY, Requirement, Scenario, Spec};
 use crate::specify::basis::Basis;
 use crate::specify::brief::{BasesSection, Brief, ClaimsSection, Review};
+use crate::specify::{Extract, shape};
 
 // The outcome a scenario states where no criterion evidences one.
 const UNKNOWN: &str = "[unknown]";
 
+/// How many requirements one `spec-draft` turn drafts at most.
+///
+/// A larger run is drafted in chunks, each stem kept whole where it fits
+/// and smaller stems merged up to the cap, so a refused candidate costs one
+/// chunk's regeneration rather than the whole draft's.
+pub const SPEC_CHUNK: usize = 25;
+
 /// A synthesis brief for the drafted portions of `spec.md`.
 ///
-/// The brief combines extracted claims with their reconciled requirement
-/// bases.
+/// The brief combines extracted claims with one chunk of their reconciled
+/// requirement bases.
 pub struct SpecBrief<'a> {
     extracts: &'a [Extract],
-    bases: &'a [Basis<'a>],
+    bases: Vec<&'a Basis<'a>>,
+    // whether this chunk's answer carries the preamble: the first's alone
+    preamble: bool,
 }
 
 impl<'a> SpecBrief<'a> {
-    /// Returns a specification brief for `extracts` and `bases`.
+    /// Returns the briefs `bases` are drafted under, in requirement order:
+    /// one per chunk of at most [`SPEC_CHUNK`] requirements, grouped by
+    /// stem — a stem past the cap split, smaller ones merged up to it — the
+    /// first alone asking for the preamble.
     #[must_use]
-    pub const fn new(extracts: &'a [Extract], bases: &'a [Basis<'a>]) -> Self {
-        Self { extracts, bases }
+    pub fn chunked(extracts: &'a [Extract], bases: &'a [Basis<'a>]) -> Vec<Self> {
+        let mut stems: Vec<(&str, Vec<&'a Basis<'a>>)> = Vec::new();
+        for basis in bases {
+            let stem = shape::stem(basis.subject);
+            match stems.iter_mut().find(|(known, _)| *known == stem) {
+                Some((_, under)) => under.push(basis),
+                None => stems.push((stem, vec![basis])),
+            }
+        }
+
+        let mut chunks: Vec<Vec<&'a Basis<'a>>> = Vec::new();
+        let mut current: Vec<&'a Basis<'a>> = Vec::new();
+        for (_, under) in stems {
+            if under.len() > SPEC_CHUNK {
+                if !current.is_empty() {
+                    chunks.push(std::mem::take(&mut current));
+                }
+                chunks.extend(under.chunks(SPEC_CHUNK).map(<[_]>::to_vec));
+                continue;
+            }
+            if current.len() + under.len() > SPEC_CHUNK {
+                chunks.push(std::mem::take(&mut current));
+            }
+            current.extend(under);
+        }
+        if !current.is_empty() {
+            chunks.push(current);
+        }
+
+        chunks
+            .into_iter()
+            .enumerate()
+            .map(|(index, bases)| Self {
+                extracts,
+                bases,
+                preamble: index == 0,
+            })
+            .collect()
+    }
+
+    /// Returns the specification the chunks' accepted answers make together:
+    /// the preamble the first carried, and every requirement in id order.
+    #[must_use]
+    pub fn assemble(drafts: Vec<(Vec<String>, Vec<Requirement>)>) -> Spec {
+        let mut preamble = Vec::new();
+        let mut requirements = Vec::new();
+        for (paragraphs, drafted) in drafts {
+            preamble.extend(paragraphs);
+            requirements.extend(drafted);
+        }
+        requirements.sort_by_key(|requirement| requirement.id);
+
+        Spec {
+            emery: EMERY,
+            preamble,
+            requirements,
+        }
     }
 }
 
 impl Brief for SpecBrief<'_> {
     type Answer = SpecAnswer;
-    type Output = Spec;
+    type Output = (Vec<String>, Vec<Requirement>);
 
     const NAME: &'static str = "spec-draft";
     const PROSE: &'static [&'static str] = &[
@@ -60,14 +129,21 @@ impl Brief for SpecBrief<'_> {
         schema["$defs"]["Draft"]["properties"]["subject"]["enum"] =
             json!(self.bases.iter().map(|basis| &basis.subject).collect::<Vec<_>>());
         schema["$defs"]["Draft"]["properties"]["scenarios"]["minItems"] = json!(1);
+        if !self.preamble {
+            schema["properties"]["preamble"]["maxItems"] = json!(0);
+        }
     }
 
     fn verify(&self, answer: &SpecAnswer, review: &mut Review) {
-        review.paragraphs(&answer.preamble, "preamble");
+        if self.preamble {
+            review.paragraphs(&answer.preamble, "preamble");
+        } else if !answer.preamble.is_empty() {
+            review.note("the preamble is drafted with the first requirements; leave it empty here");
+        }
 
         // each draft against its requirement
         let by_subject: BTreeMap<&str, &Basis<'_>> =
-            self.bases.iter().map(|basis| (basis.subject, basis)).collect();
+            self.bases.iter().map(|basis| (basis.subject, *basis)).collect();
         let mut seen = BTreeSet::new();
         let mut outcomes: BTreeMap<String, BTreeSet<&str>> = BTreeMap::new();
         for draft in &answer.requirements {
@@ -90,17 +166,18 @@ impl Brief for SpecBrief<'_> {
             review.note(format_args!("requirement `{}` is not drafted", basis.subject));
         }
 
-        // one outcome across requirements
+        // one outcome across requirements: two behaviours can share one, so
+        // it is noted for the log, not held against the draft
         for (then, subjects) in outcomes.iter().filter(|(_, subjects)| subjects.len() > 1) {
-            review.note(format_args!(
-                "the `then` `{then}` repeats across {} requirements; state what each scenario \
-                 observes",
-                subjects.len()
-            ));
+            tracing::debug!(
+                then = then.as_str(),
+                requirements = subjects.len(),
+                "one `then` repeats across requirements"
+            );
         }
     }
 
-    fn into_output(self, answer: SpecAnswer) -> Result<Spec, Error> {
+    fn into_output(self, answer: SpecAnswer) -> Result<Self::Output, Error> {
         let mut drafts: BTreeMap<String, Vec<Scenario>> = answer
             .requirements
             .into_iter()
@@ -116,11 +193,7 @@ impl Brief for SpecBrief<'_> {
             requirements.push(basis.requirement(scenarios));
         }
 
-        Ok(Spec {
-            emery: EMERY,
-            preamble: answer.preamble,
-            requirements,
-        })
+        Ok((answer.preamble, requirements))
     }
 }
 
@@ -182,12 +255,21 @@ fn normalised(text: &str) -> String {
 
 impl Display for SpecBrief<'_> {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        write!(f, "Draft `spec.md`.\n\n{claims}", claims = ClaimsSection(self.extracts))?;
+        if self.preamble {
+            write!(f, "Draft `spec.md`.\n\n{claims}", claims = ClaimsSection(self.extracts))?;
+        } else {
+            write!(
+                f,
+                "Draft `spec.md`: the requirements below, one chunk of the specification's. \
+                 The preamble is drafted with the first chunk, so leave it empty.\n\n{claims}",
+                claims = ClaimsSection(self.extracts)
+            )?;
+        }
 
         write!(
             f,
             "\n## Requirements (draft one entry per subject)\n\n{bases}",
-            bases = BasesSection(self.bases)
+            bases = BasesSection(&self.bases)
         )
     }
 }

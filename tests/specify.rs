@@ -1030,14 +1030,15 @@ async fn invalid_draft() {
     }
 }
 
-// One `then` across requirements is a refrain, not what each scenario observes.
+// One `then` across requirements may be two behaviours sharing an outcome, so
+// it is accepted as drafted and left to the log.
 #[tokio::test]
 async fn shared_then() {
     let draft = r#"{"preamble": [], "requirements": [
-        {"subject": "greeting.behaviour", "scenarios": [{"name": "Greeting", "when": "the greeting is requested", "then": "the system behaves correctly"}]},
-        {"subject": "greeting.formal", "scenarios": [{"name": "Formal", "when": "the formal greeting is requested", "then": "the system behaves correctly"}]}
+        {"subject": "greeting.behaviour", "scenarios": [{"name": "Greeting", "when": "the greeting is requested", "then": "the response is a greeting"}]},
+        {"subject": "greeting.formal", "scenarios": [{"name": "Formal", "when": "the formal greeting is requested", "then": "the response is a greeting"}]}
     ]}"#;
-    let mut provider = Provider::answering([draft, draft, draft]).declaring(["docs"]);
+    let mut provider = Provider::answering([draft, DESIGN_ANSWER]).declaring(["docs"]);
     provider.source.evidence.insert(
         "docs".to_string(),
         Ok(evidence(vec![
@@ -1046,8 +1047,114 @@ async fn shared_then() {
         ])),
     );
 
-    let envelope = fail(&provider, &["emery", "specify", "docs"], 1, "bad_request").await;
-    assert_message(&envelope, "repeats across 2 requirements");
+    cli_ok(&provider, &["emery", "specify", "docs"]).await;
+
+    let check = &provider.model.exchanges()[0];
+    assert_eq!(check.tool, "check");
+    assert!(check.outcome.is_ok(), "the shared outcome is no finding: {:?}", check.outcome);
+    let id = current(&provider.storage);
+    let spec: Value = serde_json::from_slice(&document(&provider.storage, &id, "spec.json"))
+        .expect("the committed spec is JSON");
+    let outcomes: Vec<&Value> = spec["requirements"]
+        .as_array()
+        .expect("requirements")
+        .iter()
+        .map(|requirement| &requirement["scenarios"][0]["then"])
+        .collect();
+    assert_eq!(outcomes, vec!["the response is a greeting", "the response is a greeting"]);
+    provider.model.assert_exhausted();
+}
+
+// Past `SPEC_CHUNK` requirements the draft is chunked by stem: two turns run
+// beside the design, the second pinned to no preamble, and the specification
+// is assembled in id order whichever answers first.
+#[tokio::test]
+async fn chunked_draft() {
+    let chunk = emery_engine::specify::SPEC_CHUNK;
+    // `alpha` fills a chunk, `beta` and `gamma` merge into the next
+    let stems: Vec<(&str, usize)> = vec![("alpha", chunk), ("beta", 2), ("gamma", 1)];
+    let mut claims = Vec::new();
+    for (stem, count) in &stems {
+        for index in 0..*count {
+            let statement = format!("`{stem}` does thing {index}.");
+            claims.push(requirement(&format!("{stem}.thing-{index}"), &statement));
+        }
+    }
+    let drafts_for = |ids: &[String], preamble: &[&str]| {
+        let requirements: Vec<Value> = ids
+            .iter()
+            .map(|id| {
+                serde_json::json!({"subject": id, "scenarios": [{
+                    "name": format!("Scenario for {id}"),
+                    "when": format!("{id} is triggered"),
+                    "then": format!("{id} is observed"),
+                }]})
+            })
+            .collect();
+        serde_json::json!({"preamble": preamble, "requirements": requirements}).to_string()
+    };
+    let ids: Vec<String> = claims.iter().filter_map(|claim| claim.id.clone()).collect();
+    let (first, second) = ids.split_at(chunk);
+    let first_draft = drafts_for(first, &["Many things, drafted in chunks."]);
+    let second_draft = drafts_for(second, &[]);
+    let grouping = separate_grouping(claims.len());
+    let numbered: Vec<String> = (1..=claims.len()).map(|n| format!("REQ-{n:03}")).collect();
+    let alpha: Vec<&str> = numbered[..chunk].iter().map(String::as_str).collect();
+    let beta: Vec<&str> = numbered[chunk..chunk + 2].iter().map(String::as_str).collect();
+    let gamma: Vec<&str> = numbered[chunk + 2..].iter().map(String::as_str).collect();
+    let slicing = separate_slicing(&[("alpha", &alpha), ("beta", &beta), ("gamma", &gamma)]);
+    let mut provider = Provider::answering([
+        grouping.as_str(),
+        first_draft.as_str(),
+        second_draft.as_str(),
+        DESIGN_ANSWER,
+        slicing.as_str(),
+    ])
+    .declaring(["docs"]);
+    provider.source.evidence.insert("docs".to_string(), Ok(evidence(claims)));
+
+    cli_ok(&provider, &["emery", "specify", "docs"]).await;
+
+    // the first chunk asks for the preamble, the second is pinned to none
+    let seen = provider.model.seen();
+    let schemas: Vec<(&str, Value)> = seen[1..=2]
+        .iter()
+        .map(|turn| {
+            let SeenFormat::Schema { name, schema } = &turn.format else {
+                panic!("the draft is steered by schema");
+            };
+            (name.as_str(), serde_json::from_str(schema).expect("the steering schema is JSON"))
+        })
+        .collect();
+    assert_eq!(schemas[0].0, "spec-draft");
+    assert_eq!(schemas[1].0, "spec-draft");
+    assert_eq!(schemas[0].1["properties"]["requirements"]["maxItems"], chunk);
+    assert!(schemas[0].1["properties"]["preamble"].get("maxItems").is_none());
+    assert_eq!(schemas[1].1["properties"]["requirements"]["maxItems"], 3);
+    assert_eq!(schemas[1].1["properties"]["preamble"]["maxItems"], 0);
+    assert_eq!(
+        schemas[1].1["$defs"]["Draft"]["properties"]["subject"]["enum"],
+        serde_json::json!(["beta.thing-0", "beta.thing-1", "gamma.thing-0"]),
+        "the second chunk is the merged small stems"
+    );
+    let second_request = seen[2].messages.join("\n");
+    assert!(second_request.contains("leave it empty"), "{second_request}");
+    assert!(!second_request.contains("- REQ-001 `alpha.thing-0`"), "{second_request}");
+    assert!(second_request.contains("- REQ-028 `gamma.thing-0`"), "{second_request}");
+
+    // one specification, the preamble from the first chunk, every id in order
+    let id = current(&provider.storage);
+    let spec: Value = serde_json::from_slice(&document(&provider.storage, &id, "spec.json"))
+        .expect("the committed spec is JSON");
+    assert_eq!(spec["preamble"], serde_json::json!(["Many things, drafted in chunks."]));
+    let committed: Vec<&str> = spec["requirements"]
+        .as_array()
+        .expect("requirements")
+        .iter()
+        .map(|requirement| requirement["id"].as_str().expect("id"))
+        .collect();
+    assert_eq!(committed, numbered);
+    assert_eq!(spec["requirements"][chunk]["subject"], "beta.thing-0");
     provider.model.assert_exhausted();
 }
 

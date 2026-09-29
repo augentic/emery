@@ -12,7 +12,7 @@ use std::fmt::{self, Display, Formatter};
 use std::path::Path;
 
 use emery_adapter::is_kebab;
-use emery_adapter::source::{ClaimKind, Evidence, SourceContent, SourceInput};
+use emery_adapter::source::{Anchor, ClaimKind, Evidence, SourceContent, SourceInput};
 use emery_prose::Doc;
 use futures::stream::{self, StreamExt as _};
 use futures::{FutureExt as _, TryFutureExt as _};
@@ -31,11 +31,12 @@ pub const CONCURRENT: usize = 4;
 
 /// The most bytes of a seam's files that [`extract`] lays into its turn whole.
 ///
-/// A [`Seam::Files`] whose files fit within this together is put with every
-/// file's lines in the brief, numbered, so the model cites `path` anchors
-/// without reading the lend; past it, or when a file is not UTF-8 text, the
-/// files are listed by path instead. An adapter that cuts a tree by size reads
-/// it as its threshold for one seam.
+/// A [`Seam`]'s `files` are laid into the brief in order, every line numbered
+/// so the model cites `path` anchors without reading the lend, for as long as
+/// they fit within this together; the first that does not, or that is not
+/// UTF-8 text, and every file after it are listed by path instead. An adapter
+/// that cuts a tree by size reads it as its threshold for one seam, and one
+/// that lays a closure puts the entry first.
 pub const INLINE_BYTES: u64 = 64 * 1024;
 
 /// Mines each seam and combines accepted claims into one [`Evidence`] document.
@@ -43,36 +44,38 @@ pub const INLINE_BYTES: u64 = 64 * 1024;
 /// `docs` must contain `extract.md`. It becomes the system prompt for every
 /// request, with the shared `claims.md` of [`RUNTIME`] appended, so each turn
 /// carries the id grammar and the gate without a `read_doc` call for them.
-/// The model receives the adapter identifier, source name, seam description,
-/// and access to the remaining embedded references. Responses are checked
-/// with [`Evidence::findings`] and then held to the seam: a `path` names a
-/// regular file under the lent root, within a [`Seam::Files`]'s files, with a
-/// line range the file holds; on an inline value no claim carries a `path`; a
-/// `requirement` or `criterion` id leads with one of a [`Seam::Note`]'s stems
-/// when it has them. Rejected responses may be corrected until the host's
-/// round limit is reached.
+/// The model receives the adapter identifier, source name, the seam's `text`,
+/// its `files` or the whole input, its `stems`, and access to the remaining
+/// embedded references. Responses are checked with [`Evidence::findings`] and
+/// then held to the seam: a `path` names a regular file under the lent root,
+/// within the seam's `files` when it names any, with a line range the file
+/// holds; on an inline value no claim carries a `path`; a `requirement` or
+/// `criterion` id leads with one of the seam's `stems` when it has them; a
+/// `requirement`'s `path` overlaps one of the seam's `anchors` when it has
+/// them. Rejected responses may be corrected until the host's round limit is
+/// reached.
 ///
-/// Up to [`CONCURRENT`] requests run concurrently, largest first. A
-/// [`Seam::Files`] is sized by its file count. A [`Seam::Whole`] or
-/// [`Seam::Note`] has no known size and goes before them. Ties keep seam
-/// order. A request that fails upstream, in the model or a tool transport, is
-/// put once more; a refusal is not, and neither is a request the backend's
-/// time budget ended, which the backend reports as a budget exhausted — the
-/// same request put again takes as long. All requests are awaited, and
-/// claims retain the order of `seams`. Every workspace seam uses the same
-/// source root, so claim paths share one root-relative namespace.
+/// Up to [`CONCURRENT`] requests run concurrently, largest first. A seam
+/// naming files is sized by their count; one over the whole input has no
+/// known size and goes before them. Ties keep seam order. A request that
+/// fails upstream, in the model or a tool transport, is put once more; a
+/// refusal is not, and neither is a request the backend's time budget ended,
+/// which the backend reports as a budget exhausted — the same request put
+/// again takes as long. All requests are awaited, and claims retain the order
+/// of `seams`. Every workspace seam uses the same source root, so claim paths
+/// share one root-relative namespace.
 ///
 /// When several seams fail, the returned error describes each failure and
 /// carries the class and code of the first failed seam.
 ///
 /// # Errors
 ///
-/// - Returns [`Error::BadRequest`] when `seams` is empty, a [`Seam::Files`]
-///   path is invalid, the model rejects the request, or no valid response is
+/// - Returns [`Error::BadRequest`] when `seams` is empty, a seam's file path
+///   is invalid, the model rejects the request, or no valid response is
 ///   produced within the available rounds or the backend's time budget.
-/// - Returns [`Error::ServerError`] when [`Seam::Files`] is used with inline
-///   input, a [`Seam::Note`] stem is not kebab-case, or `docs` does not
-///   contain `extract.md`.
+/// - Returns [`Error::ServerError`] when a seam names files or anchors over an
+///   inline value, a stem is not kebab-case, an anchor is outside the `path`
+///   grammar, or `docs` does not contain `extract.md`.
 /// - Returns [`Error::BadGateway`] when a model tool or transport fails on
 ///   the retried request too.
 pub async fn extract<P: Model>(
@@ -108,157 +111,228 @@ pub async fn extract<P: Model>(
 
 /// A portion of a source assigned to one model request.
 ///
-/// An adapter's survey chooses one or more seams before any call is made;
-/// see the [vocabulary](crate#vocabulary).
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub enum Seam {
-    /// The complete workspace or inline value.
-    Whole,
-    /// Selected files beneath a workspace root.
-    ///
-    /// Paths are sorted, deduplicated, and interpreted relative to the root.
-    /// A path that escapes the root is rejected. The files are laid into the
-    /// turn whole when they fit within [`INLINE_BYTES`] together, and listed
-    /// otherwise; a claim's `path` must name one of them.
-    Files(Vec<String>),
-    /// Adapter-defined instructions describing what to mine.
-    ///
-    /// For workspace input, the complete root remains available to the model.
-    /// The [`Note`] carries the text and the stems the seam's ids lead with.
-    Note(Note),
-}
-
-/// The instructions of a [`Seam::Note`], with the stems the seam's ids are held to.
+/// An adapter's survey chooses one or more seams before any call is made; see
+/// the [vocabulary](crate#vocabulary). Each field narrows the turn and an
+/// empty one leaves it open, so [`Seam::whole`] is the input as it stands:
 ///
-/// `text` leads the turn. Its first non-blank line is the seam's `label` on
-/// the events [`extract`] logs for it, so lead with what the seam covers, such
-/// as the surface and its entry, and put the standing instructions after.
-///
-/// `stems` are the first dotted segments the seam's `requirement` and
-/// `criterion` ids lead with, each lowercase kebab-case; a claim under another
-/// stem is refused. Empty leaves the ids to the model.
+/// - `text` leads the turn. Its first non-blank line is the seam's `label` on
+///   the events [`extract`] logs for it, so lead with what the seam covers,
+///   such as the surface and its entry, and put the standing instructions
+///   after.
+/// - `files` are the files mined beneath a workspace root, relative to it;
+///   empty mines the whole lend. They keep their order, deduplicated, and the
+///   leading ones are laid into the turn whole for as long as they fit within
+///   [`INLINE_BYTES`] together, the rest listed, so an entry comes first; a
+///   claim's `path` must name one of them. A path that escapes the root is
+///   rejected; files over an inline value are the adapter's own defect.
+/// - `stems` are the first dotted segments the seam's `requirement` and
+///   `criterion` ids lead with, each lowercase kebab-case; a claim under
+///   another stem is refused. Empty leaves the ids to the model.
+/// - `anchors` are the lines a `requirement` may anchor at, each in the
+///   `path` grammar (`<path>#L<n>`, `<path>#L<start>-L<end>`, or a bare
+///   `<path>` for the whole file) relative to the workspace root — where an
+///   adapter's survey found a behaviour can start; a `requirement` whose
+///   `path` overlaps none of them is refused, so the model re-anchors it or
+///   leaves it out. Other kinds are not held to them. Empty leaves the
+///   anchors to the model; anchors over an inline value are the adapter's
+///   own defect.
 ///
 /// # Examples
 ///
 /// ```
-/// use emery_sdk::{Note, Seam};
+/// use emery_sdk::Seam;
 ///
-/// let surface = Seam::Note(Note {
-///     text: "Surface `POST /orders` — entry `src/routes.ts` — stem `orders`.".to_string(),
-///     stems: vec!["orders".to_string()],
-/// });
-/// let plain = Seam::Note(Note::from("Mine the brief as one requirement per paragraph."));
-/// # let _ = (surface, plain);
+/// let brief = Seam::whole();
+/// let module = Seam::files(["src/orders.ts", "src/lib/pricing.ts"]);
+/// let surface = Seam {
+///     text: "Surface `POST /orders` — entry `src/routes.ts` — stem `orders`.".to_owned(),
+///     files: vec!["src/routes.ts".to_owned(), "src/lib/pricing.ts".to_owned()],
+///     stems: vec!["orders".to_owned()],
+///     anchors: vec!["src/routes.ts#L6-L9".to_owned(), "src/lib/pricing.ts#L12".to_owned()],
+/// };
+/// # let _ = (brief, module, surface);
 /// ```
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
-pub struct Note {
-    /// The seam's instructions, leading the turn.
+pub struct Seam {
+    /// The seam's instructions, leading the turn; empty for none.
     pub text: String,
+    /// The files mined, relative to the workspace root; empty for the whole lend.
+    pub files: Vec<String>,
     /// The stems the seam's `requirement` and `criterion` ids lead with; empty for any.
     pub stems: Vec<String>,
+    /// The lines a `requirement` anchors at, in the `path` grammar; empty for any.
+    pub anchors: Vec<String>,
 }
 
-impl From<String> for Note {
-    fn from(text: String) -> Self {
+impl Seam {
+    /// Returns the seam over the complete workspace or inline value.
+    #[must_use]
+    pub fn whole() -> Self {
+        Self::default()
+    }
+
+    /// Returns the seam over `files` beneath the workspace root, with no text and no stems.
+    pub fn files<I, S>(files: I) -> Self
+    where
+        I: IntoIterator<Item = S>,
+        S: Into<String>,
+    {
         Self {
-            text,
+            files: files.into_iter().map(Into::into).collect(),
             ..Self::default()
         }
     }
-}
 
-impl From<&str> for Note {
-    fn from(text: &str) -> Self {
-        Self::from(text.to_owned())
+    /// Returns the seam over the whole input led by `text`.
+    pub fn note(text: impl Into<String>) -> Self {
+        Self {
+            text: text.into(),
+            ..Self::default()
+        }
     }
 }
 
 // A seam settled against the input before any turn is spent. The lend carries
 // the root, so no plan names it.
 #[derive(Debug)]
-enum Plan<'a> {
-    Note { text: &'a str, stems: Vec<&'a str> },
-    Files(Scope),
+struct Plan<'a> {
+    text: &'a str,
+    stems: Vec<&'a str>,
+    lend: Lend<'a>,
+    anchors: Vec<Anchored>,
+}
+
+// One line span a `requirement` may anchor at, root-relative; no lines is
+// the whole file.
+#[derive(Debug)]
+struct Anchored {
+    path: String,
+    lines: Option<(u64, u64)>,
+}
+
+impl Anchored {
+    // Whether a claim's anchor at `path` over `lines` shares a line with this
+    // one. A whole-file span here covers every line of its file; a claim
+    // citing a whole file against listed lines cites none of them.
+    fn overlaps(&self, path: &str, lines: Option<(u64, u64)>) -> bool {
+        self.path == path
+            && match (self.lines, lines) {
+                (None, _) => true,
+                (Some(_), None) => false,
+                (Some((start, end)), Some((from, to))) => from <= end && start <= to,
+            }
+    }
+}
+
+// What the turn is put over: the lent tree, files settled beneath it, or the
+// inline value itself.
+#[derive(Debug)]
+enum Lend<'a> {
     Tree,
+    Files(Scope),
     Value(&'a str),
 }
 
 impl<'a> Plan<'a> {
-    // A `Files` seam over an inline value, or a `Note` with a malformed stem,
-    // is the adapter's own defect, so `server_error`; the rest is the
-    // operator's input.
+    // Files over an inline value, or a malformed stem, is the adapter's own
+    // defect, so `server_error`; the rest is the operator's input.
     fn of(seam: &'a Seam, input: &'a SourceInput) -> Result<Self, Error> {
         let source = &input.name;
-        match (seam, &input.content) {
-            (Seam::Note(note), _) => {
-                let mut stems: Vec<&str> = note.stems.iter().map(String::as_str).collect();
-                if let Some(stem) = stems.iter().find(|stem| !is_kebab(stem)) {
-                    return Err(server_error!(
-                        "`{source}`: a `Note` seam's stem `{stem}` is not lowercase kebab-case"
-                    ));
-                }
-                stems.sort_unstable();
-                stems.dedup();
-                Ok(Self::Note {
-                    text: &note.text,
-                    stems,
-                })
-            }
-            (Seam::Whole, SourceContent::Workspace(_)) => Ok(Self::Tree),
-            (Seam::Whole, SourceContent::Value(value)) => Ok(Self::Value(value)),
-            (Seam::Files(_), SourceContent::Value(_)) => Err(server_error!(
-                "`{source}`: a `Files` seam needs a workspace input, not an inline value"
-            )),
-            (Seam::Files(named), SourceContent::Workspace(root)) => {
-                Ok(Self::Files(Scope::settle(source, root, named)?))
-            }
+
+        // the stems
+        let mut stems: Vec<&str> = seam.stems.iter().map(String::as_str).collect();
+        if let Some(stem) = stems.iter().find(|stem| !is_kebab(stem)) {
+            return Err(server_error!(
+                "`{source}`: a seam's stem `{stem}` is not lowercase kebab-case"
+            ));
         }
+        stems.sort_unstable();
+        stems.dedup();
+
+        // the lend
+        let lend = match (&input.content, seam.files.is_empty()) {
+            (SourceContent::Workspace(_), true) => Lend::Tree,
+            (SourceContent::Workspace(root), false) => {
+                Lend::Files(Scope::settle(source, root, &seam.files)?)
+            }
+            (SourceContent::Value(value), true) => Lend::Value(value),
+            (SourceContent::Value(_), false) => {
+                return Err(server_error!(
+                    "`{source}`: a seam names files, but the source is an inline value with no \
+                     tree to lend"
+                ));
+            }
+        };
+
+        // the anchors
+        if matches!(lend, Lend::Value(_)) && !seam.anchors.is_empty() {
+            return Err(server_error!(
+                "`{source}`: a seam names anchors, but the source is an inline value with no tree \
+                 to anchor in"
+            ));
+        }
+        let mut anchors = Vec::with_capacity(seam.anchors.len());
+        for anchor in &seam.anchors {
+            let parsed = Anchor::parse(anchor).map_err(|reason| {
+                server_error!("`{source}`: a seam's anchor `{anchor}` {reason}")
+            })?;
+            let path = beneath(parsed.path).unwrap_or_else(|_| parsed.path.to_owned());
+            anchors.push(Anchored {
+                path,
+                lines: parsed.lines,
+            });
+        }
+
+        Ok(Self {
+            text: &seam.text,
+            stems,
+            lend,
+            anchors,
+        })
     }
 
     const fn size(&self) -> Option<usize> {
-        match self {
-            Self::Files(scope) => Some(scope.files.len()),
-            Self::Note { .. } | Self::Tree | Self::Value(_) => None,
+        match &self.lend {
+            Lend::Files(scope) => Some(scope.files.len()),
+            Lend::Tree | Lend::Value(_) => None,
         }
     }
 
     fn label(&self) -> String {
         const WIDTH: usize = 72;
-        match self {
-            Self::Note { text, .. } => {
-                let line = text.lines().find(|line| !line.trim().is_empty()).unwrap_or_default();
-                if line.chars().count() > WIDTH {
-                    format!("{}…", line.chars().take(WIDTH).collect::<String>())
-                } else {
-                    line.to_owned()
-                }
-            }
-            Self::Files(scope) => match scope.files.as_slice() {
+        if let Some(line) = self.text.lines().find(|line| !line.trim().is_empty()) {
+            return if line.chars().count() > WIDTH {
+                format!("{}…", line.chars().take(WIDTH).collect::<String>())
+            } else {
+                line.to_owned()
+            };
+        }
+        match &self.lend {
+            Lend::Files(scope) => match scope.files.as_slice() {
                 [only] => only.clone(),
                 [first, rest @ ..] => format!("{first} (+{})", rest.len()),
                 [] => String::new(),
             },
-            Self::Tree => "tree".to_owned(),
-            Self::Value(_) => "value".to_owned(),
+            Lend::Tree => "tree".to_owned(),
+            Lend::Value(_) => "value".to_owned(),
         }
     }
 
     // The rules the claim gate cannot hold an answer to alone: a `path` within
-    // the lend and a `Files` seam's files, with lines the file holds, and an
-    // id under a `Note` seam's stems.
+    // the lend and the seam's files, with lines the file holds, an id under
+    // the seam's stems, and a `requirement` at one of the seam's anchors.
     fn findings(&self, content: &SourceContent, evidence: &Evidence) -> Vec<String> {
         let mut findings = Vec::new();
         let mut lines: BTreeMap<String, Option<u64>> = BTreeMap::new();
         for (index, claim) in evidence.claims.iter().enumerate() {
             // the stem
-            if let Self::Note { stems, .. } = self
-                && !stems.is_empty()
+            if !self.stems.is_empty()
                 && matches!(claim.kind, ClaimKind::Requirement | ClaimKind::Criterion)
                 && let Some(id) = claim.id.as_deref()
             {
                 let stem = id.split('.').next().unwrap_or(id);
-                if !stems.contains(&stem) {
-                    let listed = stems.iter().map(|s| format!("`{s}`")).collect::<Vec<_>>();
+                if !self.stems.contains(&stem) {
+                    let listed = self.stems.iter().map(|s| format!("`{s}`")).collect::<Vec<_>>();
                     findings.push(format!(
                         "- claim {index}: id `{id}` leads with `{stem}`, not a stem of this seam \
                          ({})",
@@ -281,8 +355,8 @@ impl<'a> Plan<'a> {
                 SourceContent::Workspace(root) => root,
             };
             let path = beneath(anchor.path).unwrap_or_else(|_| anchor.path.to_owned());
-            if let Self::Files(scope) = self
-                && scope.files.binary_search(&path).is_err()
+            if let Lend::Files(scope) = &self.lend
+                && !scope.files.contains(&path)
             {
                 findings.push(format!(
                     "- claim {index}: path `{cited}` is outside this seam; anchor within the \
@@ -293,14 +367,32 @@ impl<'a> Plan<'a> {
 
             let held = *lines.entry(path.clone()).or_insert_with(|| line_count(root, &path));
             match (held, anchor.lines) {
-                (None, _) => findings.push(format!(
-                    "- claim {index}: path `{cited}` names no regular file under the lent tree"
-                )),
-                (Some(total), Some((_, end))) if end > total => findings.push(format!(
-                    "- claim {index}: path `{cited}` cites line {end}, but `{path}` has {total} \
-                     lines"
-                )),
+                (None, _) => {
+                    findings.push(format!(
+                        "- claim {index}: path `{cited}` names no regular file under the lent tree"
+                    ));
+                    continue;
+                }
+                (Some(total), Some((_, end))) if end > total => {
+                    findings.push(format!(
+                        "- claim {index}: path `{cited}` cites line {end}, but `{path}` has \
+                         {total} lines"
+                    ));
+                    continue;
+                }
                 _ => {}
+            }
+
+            // a requirement at one of the seam's anchors
+            if claim.kind == ClaimKind::Requirement
+                && !self.anchors.is_empty()
+                && !self.anchors.iter().any(|at| at.overlaps(&path, anchor.lines))
+            {
+                findings.push(format!(
+                    "- claim {index}: path `{cited}` is at none of the lines this seam names for \
+                     a `requirement`; anchor it at the lines where its behaviour starts, or leave \
+                     it out"
+                ));
             }
         }
         findings
@@ -320,53 +412,59 @@ fn line_count(root: &str, path: &str) -> Option<u64> {
     Some(u64::try_from(breaks + usize::from(open)).unwrap_or(u64::MAX))
 }
 
-// The files a `Files` seam is held to, root-relative and sorted, and their
-// bodies when they fit within `INLINE_BYTES` together.
+// The files a seam is held to, root-relative in the adapter's order, and the
+// bodies of the leading ones that fit within `INLINE_BYTES` together.
 #[derive(Debug)]
 struct Scope {
     files: Vec<String>,
-    laid: Option<Vec<String>>,
+    laid: Vec<String>,
 }
 
 impl Scope {
     fn settle(source: &str, root: &str, named: &[String]) -> Result<Self, Error> {
-        let mut files = named
-            .iter()
-            .map(|path| {
-                beneath(path).map_err(|reason| bad_request!("`{source}`: `{path}` {reason}"))
-            })
-            .collect::<Result<Vec<_>, _>>()?;
-
-        files.sort();
-        files.dedup();
-
-        if files.is_empty() {
-            return Err(bad_request!("`{source}`: a `Files` seam names no file"));
+        let mut files: Vec<String> = Vec::with_capacity(named.len());
+        for path in named {
+            let file =
+                beneath(path).map_err(|reason| bad_request!("`{source}`: `{path}` {reason}"))?;
+            if !files.contains(&file) {
+                files.push(file);
+            }
         }
 
         let laid = lay(root, &files);
         Ok(Self { files, laid })
     }
+
+    // The files past the laid ones.
+    fn listed(&self) -> &[String] {
+        &self.files[self.laid.len()..]
+    }
 }
 
-// The bodies of `files` when every one is a UTF-8 regular file and they fit
-// within `INLINE_BYTES` together; sizes are summed before any body is read.
-fn lay(root: &str, files: &[String]) -> Option<Vec<String>> {
+// The bodies of the leading files of `files`, in order, for as long as each
+// is a UTF-8 regular file and they fit within `INLINE_BYTES` together; the
+// first that is not, or does not, ends the run and is listed with the rest.
+fn lay(root: &str, files: &[String]) -> Vec<String> {
     let root = Path::new(root);
     let mut total = 0u64;
+    let mut laid = Vec::new();
 
     for file in files {
-        let meta = std::fs::metadata(root.join(file)).ok()?;
+        let path = root.join(file);
+        let Ok(meta) = std::fs::metadata(&path) else { break };
         if !meta.is_file() {
-            return None;
+            break;
         }
-        total = total.checked_add(meta.len())?;
-        if total > INLINE_BYTES {
-            return None;
+        let Some(sum) = total.checked_add(meta.len()) else { break };
+        if sum > INLINE_BYTES {
+            break;
         }
+        let Ok(body) = std::fs::read_to_string(path) else { break };
+        total = sum;
+        laid.push(body);
     }
 
-    files.iter().map(|file| std::fs::read_to_string(root.join(file)).ok()).collect()
+    laid
 }
 
 // The turn is one of several in flight, so its events and its question name
@@ -459,68 +557,99 @@ impl Display for Brief<'_> {
             source = self.source,
         )?;
 
-        match self.plan {
-            Plan::Note { text, stems } => {
-                f.write_str(text)?;
-                match stems.as_slice() {
-                    [] => {}
-                    [stem] => write!(
-                        f,
-                        "\n\nLead every `requirement` and `criterion` id with the stem `{stem}` \
-                         as its first dotted segment; an id under another stem is refused."
-                    )?,
-                    stems => {
-                        let listed = stems.iter().map(|s| format!("`{s}`")).collect::<Vec<_>>();
-                        write!(
-                            f,
-                            "\n\nLead every `requirement` and `criterion` id with one of the \
-                             stems {} as its first dotted segment; an id under another stem is \
-                             refused.",
-                            listed.join(", ")
-                        )?;
-                    }
+        // the adapter's text
+        if !self.plan.text.is_empty() {
+            f.write_str(self.plan.text)?;
+            f.write_str("\n\n")?;
+        }
+
+        // the lend
+        match &self.plan.lend {
+            Lend::Files(scope) if scope.laid.is_empty() => {
+                f.write_str(
+                    "`$SOURCE_DIR` is the bound source tree, lent read-only: the root of every \
+                     file you can read. Mine these files beneath it and nothing else:\n",
+                )?;
+                for file in &scope.files {
+                    write!(f, "\n- `{file}`")?;
                 }
             }
-            Plan::Files(Scope {
-                files,
-                laid: Some(laid),
-            }) => {
+            Lend::Files(scope) if scope.listed().is_empty() => {
                 f.write_str(
                     "`$SOURCE_DIR` is the bound source tree, lent read-only: the root every \
                      `path` is relative to. Mine these files beneath it and nothing else. Each is \
                      laid out here whole, every line led by its number, so cite `#L<n>` from the \
                      numbers shown rather than reading it again:\n\n",
                 )?;
-                Laid(files, laid).fmt(f)?;
-                f.write_str(
-                    "\n\nAnchor every `path` relative to `$SOURCE_DIR`, within these files. \
-                     Nothing outside it is reachable; extract mines only this source.",
-                )?;
+                Laid(&scope.files, &scope.laid).fmt(f)?;
             }
-            Plan::Files(Scope { files, laid: None }) => {
-                f.write_str(
-                    "`$SOURCE_DIR` is the bound source tree, lent read-only: the root of every \
-                     file you can read. Mine these files beneath it and nothing else:\n",
+            Lend::Files(scope) => {
+                write!(
+                    f,
+                    "`$SOURCE_DIR` is the bound source tree, lent read-only: the root every \
+                     `path` is relative to. Mine these files beneath it and nothing else. The \
+                     first {} are laid out here whole, every line led by its number, so cite \
+                     `#L<n>` from the numbers shown rather than reading them again; the rest are \
+                     listed after them, to read from `$SOURCE_DIR` as the seam reaches \
+                     them:\n\n",
+                    scope.laid.len()
                 )?;
-                for file in files {
+                Laid(&scope.files, &scope.laid).fmt(f)?;
+                f.write_str("\n\nThe rest of this seam's files:\n")?;
+                for file in scope.listed() {
                     write!(f, "\n- `{file}`")?;
                 }
-                f.write_str(
-                    "\n\nAnchor every `path` relative to `$SOURCE_DIR`, within these files. \
-                     Nothing outside it is reachable; extract mines only this source.",
-                )?;
             }
-            Plan::Tree => f.write_str(
+            Lend::Tree => f.write_str(
                 "`$SOURCE_DIR` is the bound source tree, lent read-only: the root of every file \
                  you can read, and the root every `path` is relative to. Walk it as the prompt \
-                 describes. Nothing outside it is reachable; extract mines only this source.",
+                 describes.",
             )?,
-            Plan::Value(value) => write!(
+            Lend::Value(value) => write!(
                 f,
-                "The bound seam is this inline value; no `$SOURCE_DIR` is lent:\n\n{value}\n\n\
-                 Nothing else is reachable; extract mines only this source."
+                "The bound seam is this inline value; no `$SOURCE_DIR` is lent:\n\n{value}"
             )?,
         }
+
+        // the stems
+        match self.plan.stems.as_slice() {
+            [] => {}
+            [stem] => write!(
+                f,
+                "\n\nLead every `requirement` and `criterion` id with the stem `{stem}` as its \
+                 first dotted segment; an id under another stem is refused."
+            )?,
+            stems => {
+                let listed = stems.iter().map(|s| format!("`{s}`")).collect::<Vec<_>>();
+                write!(
+                    f,
+                    "\n\nLead every `requirement` and `criterion` id with one of the stems {} as \
+                     its first dotted segment; an id under another stem is refused.",
+                    listed.join(", ")
+                )?;
+            }
+        }
+
+        // the anchors
+        if !self.plan.anchors.is_empty() {
+            f.write_str(
+                "\n\nA `requirement` anchors at one of the lines the text above lists — where its \
+                 behaviour starts; one anchored at any other line is refused.",
+            )?;
+        }
+
+        // the anchor rule
+        f.write_str(match &self.plan.lend {
+            Lend::Files(_) => {
+                "\n\nAnchor every `path` relative to `$SOURCE_DIR`, within these files. Nothing \
+                 outside it is reachable; extract mines only this source."
+            }
+            Lend::Tree => {
+                "\n\nAnchor every `path` relative to `$SOURCE_DIR`. Nothing outside it is \
+                 reachable; extract mines only this source."
+            }
+            Lend::Value(_) => "\n\nNothing else is reachable; extract mines only this source.",
+        })?;
 
         f.write_str(
             "\n\nThe claim rules (`claims.md`) are already in the system prompt; the prompt's \

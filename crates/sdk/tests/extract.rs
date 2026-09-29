@@ -143,7 +143,7 @@ impl Model for ByFile {
 }
 
 fn files<const N: usize>(paths: [&str; N]) -> Seam {
-    Seam::Files(paths.into_iter().map(str::to_string).collect())
+    Seam::files(paths)
 }
 
 async fn extract<M: Model>(
@@ -256,7 +256,7 @@ async fn largest_first() {
         .file("c/1.md", Scripted::answering([note("c/1.md")]));
     let seams = [
         files(["a/1.md"]),
-        Seam::Note("Mine the surface entered at `n/1.md`.".into()),
+        Seam::note("Mine the surface entered at `n/1.md`."),
         files(["b/1.md", "b/2.md", "b/3.md"]),
         files(["c/1.md", "c/2.md"]),
     ];
@@ -266,7 +266,7 @@ async fn largest_first() {
     assert_eq!(
         model.arrivals(),
         ["n/1.md", "b/1.md", "c/1.md", "a/1.md"],
-        "the unsized seam first, then the `Files` seams by descending count"
+        "the unsized seam first, then the seams naming files by descending count"
     );
     assert_eq!(
         paths(&evidence),
@@ -371,11 +371,11 @@ async fn escaping_path() {
 }
 
 #[tokio::test]
-async fn empty_files() {
+async fn dot_path() {
     let model = Scripted::default();
     let input = SourceInput::workspace("docs", "./docs");
 
-    let error = extract(&model, &input, &[files([])]).await.expect_err("no file");
+    let error = extract(&model, &input, &[files(["./"])]).await.expect_err("no file");
 
     assert_eq!(error.code(), "bad_request");
     assert!(error.description().contains("names no file"), "{error}");
@@ -392,7 +392,7 @@ async fn files_value() {
         .expect_err("no tree to lend");
 
     assert_eq!(error.code(), "server_error");
-    assert!(error.description().contains("not an inline value"), "{error}");
+    assert!(error.description().contains("inline value with no tree to lend"), "{error}");
     assert!(model.seen().is_empty(), "no turn was spent");
 }
 
@@ -427,7 +427,7 @@ async fn single_seam_passthrough() {
     let input = SourceInput::workspace("docs", "./docs");
 
     let error =
-        extract(&model, &input, &[Seam::Whole]).await.expect_err("the one seam failed twice");
+        extract(&model, &input, &[Seam::whole()]).await.expect_err("the one seam failed twice");
 
     assert_eq!(error.code(), "bad_gateway");
     assert_eq!(error.description(), "backend failure: still down");

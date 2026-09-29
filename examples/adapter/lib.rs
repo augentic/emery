@@ -44,5 +44,5 @@ fn survey(input: &SourceInput) -> Result<Vec<Seam>, Error> {
     {
         return Err(bad_request!("the bound greeting brief is empty"));
     }
-    Ok(vec![Seam::Whole])
+    Ok(vec![Seam::whole()])
 }

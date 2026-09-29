@@ -1,7 +1,7 @@
 //! Every call here mines one seam, so each is one turn and its outcome passes
 //! through unchanged; the fan-out and join over several are `extract.rs`'s.
 
-use emery_sdk::{Context, Doc, Error, Evidence, Note, Seam, SourceInput};
+use emery_sdk::{Context, Doc, Error, Evidence, Seam, SourceInput};
 use omnia_sdk::model::{Error as ModelError, ToolCall};
 use omnia_test::SeenFormat;
 use omnia_test::guest::Scripted;
@@ -15,10 +15,6 @@ const PROSE: &[Doc] = &[
         path: "references/greeting.md",
         body: "Greet warmly.",
     },
-    Doc {
-        path: "survey.md",
-        body: "SURVEY",
-    },
 ];
 
 const VALID: &str = r#"{"claims":[
@@ -27,7 +23,14 @@ const VALID: &str = r#"{"claims":[
 ]}"#;
 
 fn files<const N: usize>(paths: [&str; N]) -> Seam {
-    Seam::Files(paths.into_iter().map(str::to_string).collect())
+    Seam::files(paths)
+}
+
+fn stemmed<const N: usize>(text: &str, stems: [&str; N]) -> Seam {
+    Seam {
+        stems: stems.into_iter().map(str::to_string).collect(),
+        ..Seam::note(text)
+    }
 }
 
 async fn ask(model: &Scripted, input: &SourceInput, seam: Seam) -> Result<Evidence, Error> {
@@ -43,7 +46,7 @@ async fn ask(model: &Scripted, input: &SourceInput, seam: Seam) -> Result<Eviden
 async fn request_shape() {
     let model = Scripted::answering([VALID]);
 
-    let accepted = ask(&model, &SourceInput::workspace("docs", "/lend/docs"), Seam::Whole)
+    let accepted = ask(&model, &SourceInput::workspace("docs", "/lend/docs"), Seam::whole())
         .await
         .expect("a valid answer is accepted first time");
     assert_eq!(accepted.claims.len(), 2);
@@ -65,7 +68,9 @@ async fn request_shape() {
             "Extract the claim set of the source `docs` bound to adapter `source:probe`.\n\n",
             "`$SOURCE_DIR` is the bound source tree, lent read-only: the root of every file you ",
             "can read, and the root every `path` is relative to. Walk it as the prompt ",
-            "describes. Nothing outside it is reachable; extract mines only this source.\n\n",
+            "describes.\n\n",
+            "Anchor every `path` relative to `$SOURCE_DIR`. Nothing outside it is reachable; ",
+            "extract mines only this source.\n\n",
             "The claim rules (`claims.md`) are already in the system prompt; the prompt's ",
             "further references are available through this call's `read_doc` tool (`list_docs` ",
             "enumerates them); load referenced bodies on demand.\n\n",
@@ -109,7 +114,7 @@ async fn missing_prompt() {
     };
 
     let error =
-        emery_sdk::extract(&ctx, &[], &[Seam::Whole]).await.expect_err("no prompt to ask with");
+        emery_sdk::extract(&ctx, &[], &[Seam::whole()]).await.expect_err("no prompt to ask with");
 
     assert_eq!(error.code(), "server_error");
     assert!(error.description().contains("`extract.md` is not embedded"), "{error}");
@@ -120,7 +125,7 @@ async fn missing_prompt() {
 async fn inline_value() {
     let model = Scripted::answering([VALID]);
 
-    ask(&model, &SourceInput::value("brief", "Ship it."), Seam::Whole).await.expect("accepted");
+    ask(&model, &SourceInput::value("brief", "Ship it."), Seam::whole()).await.expect("accepted");
     let request = &model.seen()[0];
     assert!(request.workspace.is_none(), "no lend for an inline value");
     let user = &request.messages[0];
@@ -128,23 +133,29 @@ async fn inline_value() {
     assert!(user.contains("no `$SOURCE_DIR` is lent:\n\nShip it.\n\n"), "{user}");
 }
 
-// A `Note` seam stands where the SDK's rendering of the input would be; with
-// no stems, nothing is appended.
+// A seam's text leads the turn and the input follows it; with no stems,
+// nothing is appended between the input and the closing rule.
 #[tokio::test]
 async fn prepared_turn() {
     let model = Scripted::answering([VALID]);
 
-    ask(&model, &SourceInput::value("brief", "ignored"), Seam::Note("THE NOTE".into()))
+    ask(&model, &SourceInput::value("brief", "Ship it."), Seam::note("THE NOTE"))
         .await
         .expect("accepted");
     let user = &model.seen()[0].messages[0];
-    assert!(user.contains("\n\nTHE NOTE\n\nThe claim rules"), "{user}");
-    assert!(!user.contains("ignored"), "the note replaces the input rendering");
+    assert!(
+        user.contains(
+            "bound to adapter `source:probe`.\n\nTHE NOTE\n\nThe bound seam is this inline \
+             value; no `$SOURCE_DIR` is lent:\n\nShip it.\n\nNothing else is reachable; extract \
+             mines only this source.\n\nThe claim rules"
+        ),
+        "{user}"
+    );
 }
 
-// The files are listed sorted, once each, `.` segments dropped, so every anchor
-// the model answers is already root-relative; with no tree at the root there
-// is nothing to lay out, so they are listed.
+// The files are listed in the seam's order, once each, `.` segments dropped,
+// so every anchor the model answers is already root-relative; with no tree at
+// the root there is nothing to lay out, so they are listed.
 #[tokio::test]
 async fn files_turn() {
     let model = Scripted::answering([VALID]);
@@ -159,7 +170,7 @@ async fn files_turn() {
         user.contains(
             "`$SOURCE_DIR` is the bound source tree, lent read-only: the root of every file you \
              can read. Mine these files beneath it and nothing else:\n\n\
-             - `api.md`\n- `guide/intro.md`\n- `guide/setup.md`\n\n\
+             - `guide/setup.md`\n- `guide/intro.md`\n- `api.md`\n\n\
              Anchor every `path` relative to `$SOURCE_DIR`, within these files."
         ),
         "{user}"
@@ -178,7 +189,7 @@ async fn files_laid() {
     write(tmp.path(), "guide/intro.md", "# Intro\nOne line, no trailing newline");
     let root = tmp.path().to_str().expect("a UTF-8 scratch root");
 
-    ask(&model, &SourceInput::workspace("docs", root), files(["guide/intro.md", "api.md"]))
+    ask(&model, &SourceInput::workspace("docs", root), files(["api.md", "guide/intro.md"]))
         .await
         .expect("accepted");
 
@@ -197,48 +208,71 @@ async fn files_laid() {
     model.assert_exhausted();
 }
 
-// Past INLINE_BYTES together, or with a file that is not text, the files are
-// listed as they would be with no tree at all.
+// The leading files are laid for as long as they fit within INLINE_BYTES
+// together; the first past it, or one that is not text, and every file after
+// it are listed. A first file that does not fit leaves every file listed.
 #[tokio::test]
 async fn files_listed() {
+    let budget = usize::try_from(emery_sdk::INLINE_BYTES).expect("fits");
     let tmp = tempfile::tempdir().expect("tempdir");
-    write(tmp.path(), "a.md", &"x".repeat(usize::try_from(emery_sdk::INLINE_BYTES).expect("fits")));
+    write(tmp.path(), "a.md", &"x".repeat(budget));
     write(tmp.path(), "b.md", "one byte over");
+    write(tmp.path(), "c.md", "after");
     let root = tmp.path().to_str().expect("a UTF-8 scratch root");
 
     let model = Scripted::answering([VALID]);
-    ask(&model, &SourceInput::workspace("docs", root), files(["a.md", "b.md"]))
+    ask(&model, &SourceInput::workspace("docs", root), files(["a.md", "b.md", "c.md"]))
         .await
         .expect("accepted");
     let user = &model.seen()[0].messages[0];
-    assert!(user.contains("nothing else:\n\n- `a.md`\n- `b.md`\n\n"), "{user}");
-    assert!(!user.contains("laid out"), "{user}");
+    assert!(
+        user.contains(
+            "Mine these files beneath it and nothing else. The first 1 are laid out here \
+             whole, every line led by its number, so cite `#L<n>` from the numbers shown rather \
+             than reading them again; the rest are listed after them, to read from \
+             `$SOURCE_DIR` as the seam reaches them:\n\n### `a.md` (1 lines)"
+        ),
+        "{user}"
+    );
+    assert!(
+        user.contains(
+            "```\n\nThe rest of this seam's files:\n\n- `b.md`\n- `c.md`\n\nAnchor every"
+        ),
+        "{user}"
+    );
+
+    let model = Scripted::answering([VALID]);
+    ask(&model, &SourceInput::workspace("docs", root), files(["b.md", "a.md", "c.md"]))
+        .await
+        .expect("accepted");
+    let user = &model.seen()[0].messages[0];
+    assert!(user.contains("The first 1 are laid out"), "{user}");
+    assert!(user.contains("### `b.md` (1 lines)"), "{user}");
+    assert!(user.contains("The rest of this seam's files:\n\n- `a.md`\n- `c.md`\n\n"), "{user}");
 
     let binary = tempfile::tempdir().expect("tempdir");
     std::fs::write(binary.path().join("blob.bin"), [0xff, 0xfe, 0x00]).expect("write");
     write(binary.path(), "a.md", "text");
     let root = binary.path().to_str().expect("a UTF-8 scratch root");
     let model = Scripted::answering([VALID]);
-    ask(&model, &SourceInput::workspace("docs", root), files(["a.md", "blob.bin"]))
+    ask(&model, &SourceInput::workspace("docs", root), files(["blob.bin", "a.md"]))
         .await
         .expect("accepted");
     let user = &model.seen()[0].messages[0];
-    assert!(user.contains("nothing else:\n\n- `a.md`\n- `blob.bin`\n\n"), "{user}");
+    assert!(user.contains("nothing else:\n\n- `blob.bin`\n- `a.md`\n\n"), "{user}");
+    assert!(!user.contains("laid out"), "{user}");
 }
 
-// One stem appends the stem rule after the text; several are offered as a
-// set, sorted and deduplicated.
+// The turn reads text, lend, stems, anchor rule: one stem appends the stem
+// rule after the lend; several are offered as a set, sorted and deduplicated.
 #[tokio::test]
 async fn note_stems() {
     let model = Scripted::answering([VALID, VALID]);
-    let one = Seam::Note(Note {
-        text: "Surface `POST /orders` — entry `src/routes.ts` — stem `orders`.".to_string(),
-        stems: vec!["password-reset".to_string()],
-    });
-    let several = Seam::Note(Note {
-        text: "Mine the tree.".to_string(),
-        stems: vec!["reset".to_string(), "password-reset".to_string(), "reset".to_string()],
-    });
+    let one = stemmed(
+        "Surface `POST /orders` — entry `src/routes.ts` — stem `orders`.",
+        ["password-reset"],
+    );
+    let several = stemmed("Mine the tree.", ["reset", "password-reset", "reset"]);
 
     ask(&model, &SourceInput::workspace("code", "/lend/code"), one).await.expect("accepted");
     ask(&model, &SourceInput::workspace("code", "/lend/code"), several).await.expect("accepted");
@@ -246,20 +280,59 @@ async fn note_stems() {
     let seen = model.seen();
     assert!(
         seen[0].messages[0].contains(
-            "— stem `orders`.\n\nLead every `requirement` and `criterion` id with the stem \
-             `password-reset` as its first dotted segment; an id under another stem is \
-             refused.\n\nThe claim rules"
+            "— stem `orders`.\n\n`$SOURCE_DIR` is the bound source tree, lent read-only: the \
+             root of every file you can read, and the root every `path` is relative to. Walk it \
+             as the prompt describes.\n\nLead every `requirement` and `criterion` id with the \
+             stem `password-reset` as its first dotted segment; an id under another stem is \
+             refused.\n\nAnchor every `path` relative to `$SOURCE_DIR`. Nothing outside it is \
+             reachable; extract mines only this source.\n\nThe claim rules"
         ),
         "{}",
         seen[0].messages[0]
     );
     assert!(
         seen[1].messages[0].contains(
-            "Mine the tree.\n\nLead every `requirement` and `criterion` id with one of the stems \
-             `password-reset`, `reset` as its first dotted segment"
+            "as the prompt describes.\n\nLead every `requirement` and `criterion` id with one of \
+             the stems `password-reset`, `reset` as its first dotted segment"
         ),
         "{}",
         seen[1].messages[0]
+    );
+    model.assert_exhausted();
+}
+
+// Files and stems together: the stem rule sits between the laid files and the
+// anchor rule, so the model reads what to mine before what to call it.
+#[tokio::test]
+async fn files_stems() {
+    let model = Scripted::answering([VALID]);
+    let tmp = tempfile::tempdir().expect("tempdir");
+    write(tmp.path(), "src/routes.ts", "export const x = 1;\n");
+    let root = tmp.path().to_str().expect("a UTF-8 scratch root");
+    let seam = Seam {
+        text: "Surface `POST /password-reset` — entry `src/routes.ts`.".to_string(),
+        files: vec!["src/routes.ts".to_string()],
+        stems: vec!["password-reset".to_string()],
+        anchors: Vec::new(),
+    };
+
+    ask(&model, &SourceInput::workspace("code", root), seam).await.expect("accepted");
+
+    let user = &model.seen()[0].messages[0];
+    assert!(
+        user.contains(
+            "bound to adapter `source:probe`.\n\nSurface `POST /password-reset` — entry \
+             `src/routes.ts`.\n\n`$SOURCE_DIR` is the bound source tree, lent read-only: the \
+             root every `path` is relative to. Mine these files beneath it and nothing else. \
+             Each is laid out here whole, every line led by its number, so cite `#L<n>` from the \
+             numbers shown rather than reading it again:\n\n### `src/routes.ts` (1 \
+             lines)\n\n```\n1|export const x = 1;\n```\n\nLead every `requirement` and \
+             `criterion` id with the stem `password-reset` as its first dotted segment; an id \
+             under another stem is refused.\n\nAnchor every `path` relative to `$SOURCE_DIR`, \
+             within these files. Nothing outside it is reachable; extract mines only this \
+             source.\n\nThe claim rules"
+        ),
+        "{user}"
     );
     model.assert_exhausted();
 }
@@ -269,11 +342,7 @@ async fn note_stems() {
 #[tokio::test]
 async fn note_defects() {
     let model = Scripted::default();
-    let stemmed = Seam::Note(Note {
-        text: "Mine.".to_string(),
-        stems: vec!["Orders".to_string()],
-    });
-    let error = ask(&model, &SourceInput::value("brief", "Ship it."), stemmed)
+    let error = ask(&model, &SourceInput::value("brief", "Ship it."), stemmed("Mine.", ["Orders"]))
         .await
         .expect_err("a stem outside the grammar");
     assert_eq!(error.code(), "server_error");
@@ -294,10 +363,7 @@ async fn stem_findings() {
         ]}"#,
         r#"{"claims":[{"kind":"requirement","id":"orders.create","statement":"Creates."}]}"#,
     ]);
-    let seam = Seam::Note(Note {
-        text: "Mine.".to_string(),
-        stems: vec!["orders".to_string(), "invoices".to_string()],
-    });
+    let seam = stemmed("Mine.", ["orders", "invoices"]);
 
     let accepted =
         ask(&model, &SourceInput::value("brief", "Ship it."), seam).await.expect("corrected");
@@ -367,8 +433,8 @@ async fn path_findings() {
     model.assert_exhausted();
 }
 
-// A whole-tree seam holds a `path` to the tree alone, as a `Note` does. A
-// `path` on an inline value cites nothing.
+// A seam naming no file holds a `path` to the tree alone. A `path` on an
+// inline value cites nothing.
 #[tokio::test]
 async fn path_whole() {
     let tmp = tempfile::tempdir().expect("tempdir");
@@ -381,7 +447,7 @@ async fn path_whole() {
         ]}"#,
         r#"{"claims":[{"kind":"requirement","id":"a.one","statement":"x","path":"api.md"}]}"#,
     ]);
-    ask(&model, &SourceInput::workspace("docs", root), Seam::Whole).await.expect("corrected");
+    ask(&model, &SourceInput::workspace("docs", root), Seam::whole()).await.expect("corrected");
     let exchanges = model.exchanges();
     let correction = exchanges[0].outcome.as_ref().expect_err("the ghost is refused");
     assert!(correction.contains("claim 1: path `nope.md` names no regular file"), "{correction}");
@@ -391,7 +457,7 @@ async fn path_whole() {
         r#"{"claims":[{"kind":"requirement","id":"a.one","statement":"x","path":"brief.md"}]}"#,
         VALID,
     ]);
-    ask(&model, &SourceInput::value("brief", "Ship it."), Seam::Whole).await.expect("corrected");
+    ask(&model, &SourceInput::value("brief", "Ship it."), Seam::whole()).await.expect("corrected");
     let exchanges = model.exchanges();
     let correction = exchanges[0].outcome.as_ref().expect_err("a path on a value");
     assert!(
@@ -401,6 +467,101 @@ async fn path_whole() {
         ),
         "{correction}"
     );
+}
+
+// A `requirement` is held to the seam's anchors: one sharing a line with a
+// listed span is accepted, one at any other line — or citing a whole file
+// against listed lines — is a finding; a whole-file anchor listed covers its
+// file; a `criterion` and the rest are not held. The brief says so.
+#[tokio::test]
+async fn anchor_findings() {
+    let tmp = tempfile::tempdir().expect("tempdir");
+    write(tmp.path(), "src/orders.ts", "one\ntwo\nthree\nfour\nfive\nsix\n");
+    write(tmp.path(), "src/config.ts", "export const LIMIT = 3;\n");
+    let root = tmp.path().to_str().expect("a UTF-8 scratch root");
+    let model = Scripted::answering([
+        r#"{"claims":[
+            {"kind":"requirement","id":"orders.create","statement":"x","path":"src/orders.ts#L3-L5"},
+            {"kind":"requirement","id":"orders.wire","statement":"x","path":"src/orders.ts#L1"},
+            {"kind":"requirement","id":"orders.whole","statement":"x","path":"src/orders.ts"},
+            {"kind":"criterion","id":"orders.limit","criterion":"3","path":"src/orders.ts#L6"},
+            {"kind":"requirement","id":"orders.config","statement":"x","path":"./src/config.ts"},
+            {"kind":"requirement","id":"orders.past","statement":"x","path":"src/orders.ts#L9"}
+        ]}"#,
+        r#"{"claims":[{"kind":"requirement","id":"orders.create","statement":"x","path":"src/orders.ts#L3"}]}"#,
+    ]);
+    let seam = Seam {
+        anchors: vec!["src/orders.ts#L2-L3".to_owned(), "./src/config.ts".to_owned()],
+        ..files(["src/orders.ts", "src/config.ts"])
+    };
+
+    let accepted =
+        ask(&model, &SourceInput::workspace("code", root), seam).await.expect("corrected");
+    assert_eq!(accepted.claims[0].path.as_deref(), Some("src/orders.ts#L3"));
+
+    let user = &model.seen()[0].messages[0];
+    assert!(
+        user.contains(
+            "A `requirement` anchors at one of the lines the text above lists — where its \
+             behaviour starts; one anchored at any other line is refused.\n\nAnchor every `path`"
+        ),
+        "{user}"
+    );
+    let exchanges = model.exchanges();
+    let correction = exchanges[0].outcome.as_ref().expect_err("the stray anchors are refused");
+    for finding in [
+        "claim 1: path `src/orders.ts#L1` is at none of the lines this seam names for a \
+         `requirement`; anchor it at the lines where its behaviour starts, or leave it out",
+        "claim 2: path `src/orders.ts` is at none of the lines",
+        "claim 5: path `src/orders.ts#L9` cites line 9, but `src/orders.ts` has 6 lines",
+    ] {
+        assert!(correction.contains(finding), "{finding}: {correction}");
+    }
+    assert!(!correction.contains("claim 0:"), "an overlapping span is no finding: {correction}");
+    assert!(!correction.contains("claim 3:"), "a criterion is not held: {correction}");
+    assert!(!correction.contains("claim 4:"), "a whole-file anchor covers its file: {correction}");
+    assert_eq!(
+        correction.matches("claim 5:").count(),
+        1,
+        "a line past the file is that finding alone: {correction}"
+    );
+    model.assert_exhausted();
+}
+
+// An anchor outside the grammar, or any anchor over an inline value, is the
+// adapter's own defect, refused before a turn is spent.
+#[tokio::test]
+async fn anchor_defects() {
+    let model = Scripted::default();
+    let seam = Seam {
+        anchors: vec!["src/orders.ts#4".to_owned()],
+        ..files(["src/orders.ts"])
+    };
+    let error = ask(&model, &SourceInput::workspace("code", "/lend/code"), seam)
+        .await
+        .expect_err("an anchor outside the grammar");
+    assert_eq!(error.code(), "server_error");
+    assert!(
+        error.description().contains(
+            "a seam's anchor `src/orders.ts#4` is not `<path>`, `<path>#L<n>`, or \
+             `<path>#L<n>-L<n>`"
+        ),
+        "{error}"
+    );
+
+    let seam = Seam {
+        anchors: vec!["brief.md#L1".to_owned()],
+        ..Seam::whole()
+    };
+    let error = ask(&model, &SourceInput::value("brief", "Ship it."), seam)
+        .await
+        .expect_err("anchors over a value");
+    assert_eq!(error.code(), "server_error");
+    assert!(
+        error.description().contains("a seam names anchors, but the source is an inline value"),
+        "{error}"
+    );
+    assert!(model.seen().is_empty(), "no turn was spent");
 }
 
 fn write(root: &std::path::Path, rel: &str, body: &str) {
@@ -413,8 +574,8 @@ fn write(root: &std::path::Path, rel: &str, body: &str) {
 
 // Answered from the adapter's corpus, then from the SDK's runtime references,
 // which the adapter never lists. No system document is offered, since the
-// claim rules ride this turn's system and the survey prompt steered a turn
-// already spent. A read still answers each.
+// prompt and the claim rules ride this turn's system already. A read still
+// answers each.
 #[tokio::test]
 async fn doc_refs() {
     let model = Scripted::answering([VALID]).calling(
@@ -438,12 +599,12 @@ async fn doc_refs() {
             ToolCall {
                 id: "4".to_string(),
                 name: "read_doc".to_string(),
-                arguments: r#"{"path":"survey.md"}"#.to_string(),
+                arguments: r#"{"path":"extract.md"}"#.to_string(),
             },
         ],
     );
 
-    ask(&model, &SourceInput::value("brief", "Ship it."), Seam::Whole).await.expect("accepted");
+    ask(&model, &SourceInput::value("brief", "Ship it."), Seam::whole()).await.expect("accepted");
     let exchanges = model.exchanges();
     assert_eq!(exchanges.len(), 5, "four reference calls, then the check");
     assert_eq!(
@@ -465,7 +626,7 @@ async fn doc_refs() {
     );
     assert_eq!(
         exchanges[3].outcome.as_deref(),
-        Ok(r#"{"body":"SURVEY","path":"survey.md"}"#),
+        Ok(r#"{"body":"SYSTEM","path":"extract.md"}"#),
         "`read_doc` still answers an unlisted document"
     );
     assert_eq!(exchanges[4].tool, "check");
@@ -477,7 +638,7 @@ async fn doc_refs() {
 async fn gate_findings() {
     let model = Scripted::answering([r#"{"claims":[{"kind":"requirement"}]}"#, VALID]);
 
-    let accepted = ask(&model, &SourceInput::value("brief", "Ship it."), Seam::Whole)
+    let accepted = ask(&model, &SourceInput::value("brief", "Ship it."), Seam::whole())
         .await
         .expect("the second candidate passes the gate");
     assert_eq!(accepted.claims.len(), 2);
@@ -501,7 +662,7 @@ async fn rounds_exhausted() {
         r#"{"claims":[{"kind":"criterion","id":"Not.Valid","criterion":"x"}]}"#,
     ]);
 
-    let error = ask(&model, &SourceInput::value("brief", "Ship it."), Seam::Whole)
+    let error = ask(&model, &SourceInput::value("brief", "Ship it."), Seam::whole())
         .await
         .expect_err("the only candidate fails the gate");
     let Error::BadRequest { code, description } = error else {
@@ -517,7 +678,7 @@ async fn rounds_exhausted() {
 async fn invalid_request() {
     let model = Scripted::new([Err(ModelError::InvalidRequest("no such model".to_string()))]);
 
-    let error = ask(&model, &SourceInput::value("brief", "Ship it."), Seam::Whole)
+    let error = ask(&model, &SourceInput::value("brief", "Ship it."), Seam::whole())
         .await
         .expect_err("the host refused");
     assert!(
@@ -532,7 +693,7 @@ async fn invalid_request() {
 async fn stray_kind() {
     let model = Scripted::answering([r#"{"kind":"intent","claims":[{"kind":"decision"}]}"#, VALID]);
 
-    let accepted = ask(&model, &SourceInput::value("brief", "Ship it."), Seam::Whole)
+    let accepted = ask(&model, &SourceInput::value("brief", "Ship it."), Seam::whole())
         .await
         .expect("the second candidate is claims-only");
     assert_eq!(accepted.claims.len(), 2);
