@@ -1,29 +1,5 @@
 # Install: https://mise.jdx.dev
 # Run: `mise run <task>` (the root Makefile forwards `make <task>` here)
 
-# # `mise install` and `mise run` install anything missing
-# [tools]
-# cargo-binstall = "latest"
-# mdbook = "latest"
-# "cargo:cargo-nextest" = { version = "latest", depends = ["cargo-binstall"] }
-# "cargo:cargo-deny" = { version = "latest", depends = ["cargo-binstall"] }
-# "cargo:cargo-vet" = { version = "latest", depends = ["cargo-binstall"] }
-# "cargo:cargo-audit" = { version = "latest", depends = ["cargo-binstall"] }
-# "cargo:cargo-outdated" = { version = "latest", depends = ["cargo-binstall"] }
-# "cargo:cargo-llvm-cov" = { version = "latest", depends = ["cargo-binstall"] }
-# "cargo:cargo-sweep" = { version = "latest", depends = ["cargo-binstall"] }
-# "cargo:mdbook-linkcheck2" = { version = "latest", depends = ["cargo-binstall"] }
-
 [task_config]
-includes = ["git::https://github.com/augentic/.github.git//mise/rust.toml?ref=v0.1.2"]
-
-# -------------------------------------
-# Engine overrides
-# -------------------------------------
-
-[tasks.lint]
-run = [
-  "cargo clippy --workspace --all-targets --all-features -- -D warnings",
-  "cargo clippy -p emery-sdk -p emery --lib --example adapter --target wasm32-wasip2 -- -D warnings",
-]
-
+includes = ["git::https://github.com/augentic/.github.git//mise/rust.toml?ref=v0.2.0"]

@@ -10,7 +10,7 @@ This gate is model-free and self-contained: no sibling checkout, no live model, 
 
 ## The WASM boundary
 
-No gate in this repository instantiates a component. The root build script builds the engine guest for `wasm32-wasip2` on every native build, so `make lint` and `make test` already type-check `emery-cli`, `emery-engine`, and `emery-adapter` for the guest. The adapter SDK's export side and the mock adapter are `cfg(target_arch = "wasm32")`, which native clippy compiles to nothing, so `make lint` runs a second clippy pass over `emery-sdk`, the engine guest, and the `adapter` example for `wasm32-wasip2`; they are built as a component only by the live journey's `cargo build --example adapter --target wasm32-wasip2 --release` ([examples/README.md](../../examples/README.md)). Instantiating a component over `emery:adapter/source` under the real omnia runtime is `emery-adapters`' conformance rung, which drives every first-party component through the published contract.
+No gate in this repository instantiates a component. The root build script builds the engine guest for `wasm32-wasip2` on every native build, so `make lint` and `make test` already type-check `emery-cli`, `emery-engine`, and `emery-adapter` for the guest. The adapter SDK's export side and the mock adapter are `cfg(target_arch = "wasm32")`, which native clippy compiles to nothing, so `make lint` runs the shared `lint-wasm` pass — clippy over every workspace lib, bin and example (never tests or benches) for `wasm32-wasip2` — which covers `emery-sdk`, the engine guest, the `adapter` example, and the `emery` bin (an empty `main` on wasm32); they are built as a component only by the live journey's `cargo build --example adapter --target wasm32-wasip2 --release` ([examples/README.md](../../examples/README.md)). Instantiating a component over `emery:adapter/source` under the real omnia runtime is `emery-adapters`' conformance rung, which drives every first-party component through the published contract.
 
 ## Placement decision
 
@@ -35,8 +35,8 @@ Repo invariants that are cheap to enforce and expensive to notice later. Develop
 
 ```bash
 mdbook build docs       # Developer Guide + link integrity
-make ci                 # the full Rust gate
-make check              # the pre-commit subset
+make ci                 # the full Rust gate, exactly the CI jobs
+make check              # local advisories: audit, fmt, lint, outdated, deps
 ```
 
 | Invariant                      | Owner                                                                                                                                                              | When it runs                                                                                              |

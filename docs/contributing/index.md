@@ -24,13 +24,13 @@ The Rust workspace owns deterministic operations. The `/emery:specify` skill und
 **For tooling and CLI work** (the Rust workspace at the repo root):
 
 - Rust stable toolchain — `cargo build` and the test suites use the channel pinned in [`rust-toolchain.toml`](../../rust-toolchain.toml); `make fmt` uses nightly rustfmt
-- [mise](https://mise.jdx.dev) — the root `Makefile` forwards unknown targets to [`mise.toml`](../../mise.toml); the first `make` installs mise if it is missing
+- [mise](https://mise.jdx.dev) — the root `Makefile` forwards every target to [`mise.toml`](../../mise.toml), which includes the shared Augentic Rust tasks; install mise yourself first (the `Makefile` never installs it)
 - [cargo-nextest](https://nexte.st/) — test runner used by the CI targets
 - [cargo-deny](https://embarkstudios.github.io/cargo-deny/) + [cargo-vet](https://mozilla.github.io/cargo-vet/) — supply-chain checks
 
 ## Building from a checkout
 
-Contributing needs a Rust toolchain, not a separately installed `emery`. The first `make` installs mise if it is missing:
+Contributing needs a Rust toolchain and [mise](https://mise.jdx.dev), not a separately installed `emery`:
 
 ```bash
 mdbook build docs # Developer Guide + link check

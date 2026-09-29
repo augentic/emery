@@ -25,7 +25,7 @@ When authoritative inputs are incomplete, preserve the gap as `[unknown]` rather
 | `crates/sdk` | The guest-only adapter SDK, types and functions in omnia's helper shape: `extract` (one gated model turn per seam, joined), `workspace::list` (physical workspace traversal under an adapter's `keep` over each offered `Entry`), `survey::surfaces` (the optional one-call semantic survey by model, each answered entry held to the workspace under the same `keep`), `metadata` (the `metadata` answer for a kind of source), and `source_adapter!(metadata, extract)` — the one macro, in omnia's `command!` shape, that exports the `source-adapter` world over an adapter's two plain fns on `wasm32`, lifting the WIT input and the host's model onto the `Context` and lowering the outcome; the `export` module beneath it stays public for a guest written by hand; `RUNTIME` is the runtime references every adapter shares (`crates/sdk/prose/`: `claims.md`, `reconciliation.md`), which a prompt at its own `prose/` root links as `claims.md` and never lists — `read_doc` answers them after the adapter's own table, and `check(docs, tree, prompts, RUNTIME)` — the prose crate's `check`, re-exported — holds an adapter's list to its tree with them as the imports; it re-exports the contract types and the embedded prose (`Doc`, `prose!`, the `body` / `find` lookups), so an adapter's `[dependencies]` is `emery-sdk` alone. No production crate depends on it |
 | `crates/engine` | Transport-neutral `specify` / `show` operations over a capability `Provider`; the typed `Revision` (`Spec`, `Design`, `Plan`), its Markdown projection, and the revision store. No clap, toml, terminal text, or exit codes |
 | `crates/cli` | The clap grammar, the source carriers (argv, `--description`, `--config` / project-root `emery.toml`), the text render fns, and the hint table. `run(provider, argv)` drives omnia's command façade |
-| `src/` | `lib.rs`: the wasm32 engine guest. `main.rs`: the shipped runtime — one `omnia::runtime!` invocation and nothing hand-written: the compiled-in policy is the invocation directory mounted read-only as `.` (the guest's data view and the one root a local adapter loads through), the engine embedded as the guest `emery` from `EMERY_GUEST`, revision state in `.omnia/storage`, and Cursor answering the model; it declares no adapter and no registry routing — where a package is fetched from is the project's `emery.toml` `[registries]` table (`emery` is `augentic.io` unless a line re-routes it), named by the engine on the load. One tracing level governs the host and every guest — `info` bare, one step up per `-v` and down per `-q`, a process `RUST_LOG` refining a bare run — read by omnia's direct entry from the flags the grammar declares through `omnia_sdk::api::command::Verbosity` |
+| `src/` | `lib.rs`: the wasm32 engine guest. `main.rs`: the shipped runtime — one `omnia::runtime!` invocation and nothing hand-written (on wasm32 the bin is an empty `main`, so the workspace-wide wasm32 clippy pass can include it): the compiled-in policy is the invocation directory mounted read-only as `.` (the guest's data view and the one root a local adapter loads through), the engine embedded as the guest `emery` from `EMERY_GUEST`, revision state in `.omnia/storage`, and Cursor answering the model; it declares no adapter and no registry routing — where a package is fetched from is the project's `emery.toml` `[registries]` table (`emery` is `augentic.io` unless a line re-routes it), named by the engine on the load. One tracing level governs the host and every guest — `info` bare, one step up per `-v` and down per `-q`, a process `RUST_LOG` refining a bare run — read by omnia's direct entry from the flags the grammar declares through `omnia_sdk::api::command::Verbosity` |
 | `examples/` | `adapter/` is the one mock source adapter; `emery.toml` names its built component for the shipped binary to load by path |
 | `tests/` | Root scenario suites (`specify.rs`, `command.rs`, `plugin.rs`) over `tests/support/` |
 | `wit/`, `docs/`, `plugins/emery/` | The WIT package; the Developer Guide (mdBook; house standards under `docs/standards/`); the Cursor plugin |
@@ -62,13 +62,16 @@ Root-led: every CLI-reachable behaviour lives in `tests/` and drives `emery_cli:
 
 All from the repository root through `make` ([`Makefile`](Makefile) → mise):
 
+The tasks are the shared [`augentic/.github`](https://github.com/augentic/.github) `mise/rust.toml`, pinned in [`mise.toml`](mise.toml) to the same tag the workflows under `.github/workflows/` use; bump both together.
+
 ```bash
-make ci          # check + vet + deny — run before committing
-make check       # fmt + lint + test + test-docs + doc
+make ci          # exactly the CI jobs: fmt-check + lint + test + test-docs + docs + vet + deny — run before committing
+make check       # local advisories: audit + fmt (rewrites) + lint + outdated + deps
 make test        # cargo nextest run --locked --workspace --all-features, under -Dwarnings
-make lint        # cargo clippy --workspace --all-targets --all-features -- -D warnings, then the guest side (emery-sdk, the engine guest, examples/adapter) for wasm32-wasip2
+make lint        # lint-host (cargo clippy --workspace --all-targets --all-features, then cargo hack --each-feature), then lint-wasm (the same over every lib, bin and example for wasm32-wasip2 — never tests)
 make fmt         # cargo +nightly fmt --all
-make cov         # cargo llvm-cov nextest --workspace
+make vet-regen   # regenerate cargo-vet imports/exemptions/unpublished, then vet
+make cov         # cargo llvm-cov nextest --workspace --all-features --summary-only
 make sweep       # drop target/ artifacts untouched for a week
 mdbook build docs   # Developer Guide + link check
 ```

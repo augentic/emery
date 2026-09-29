@@ -16,5 +16,5 @@ permissions:
 
 jobs:
   release:
-    uses: augentic/.github/.github/workflows/release.yaml@main
+    uses: augentic/.github/.github/workflows/release.yaml@v0.2.0
     secrets: inherit
