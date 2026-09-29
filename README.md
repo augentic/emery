@@ -33,12 +33,12 @@ emery --version
 
 ## Developing Emery (contributors)
 
-The repository root is a Rust workspace producing the `emery` binary. The root `Makefile` forwards every goal to [mise](mise.toml).
+The repository root is a Rust workspace producing the `emery` binary. The root `Makefile` forwards every goal to [mise](mise.toml), which includes the shared Augentic Rust tasks; install mise first.
 
 ```bash
 make test    # native integration suite
-make check   # format, lint, tests, doctests, and docs
-make ci      # full pre-commit gate, including vet and deny
+make ci      # exactly the CI gate: fmt-check, lint (host + wasm32), tests, doctests, docs, vet, deny
+make check   # local advisories: audit, fmt (rewrites), lint, outdated, deps
 ```
 
 Preview the working-tree Cursor skill against a local CLI:

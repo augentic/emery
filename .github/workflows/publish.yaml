@@ -28,8 +28,10 @@ jobs:
   ci:
     name: CI
     if: ${{ startsWith(github.ref_name, 'release-') }}
-    uses: augentic/.github/.github/workflows/ci.yaml@main
+    uses: augentic/.github/.github/workflows/ci.yaml@v0.2.0
     secrets: inherit
+    with:
+      targets: wasm32-wasip2
 
   binaries:
     needs: [ci]
@@ -55,7 +57,7 @@ jobs:
 
       - name: Cargo version
         id: cargo
-        uses: augentic/.github/.github/actions/cargo-version@main
+        uses: augentic/.github/.github/actions/cargo-version@v0.2.0
 
       - name: Build
         shell: bash
@@ -90,12 +92,12 @@ jobs:
     needs: [ci, binaries]
     permissions:
       contents: write
-    uses: augentic/.github/.github/workflows/publish.yaml@main
+    uses: augentic/.github/.github/workflows/publish.yaml@v0.2.0
     with:
       artifacts: archive-*
 
   crates:
     name: Publish crates
     needs: publish
-    uses: augentic/.github/.github/workflows/crates.yaml@main
+    uses: augentic/.github/.github/workflows/crates.yaml@v0.2.0
     secrets: inherit
