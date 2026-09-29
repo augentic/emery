@@ -12,5 +12,9 @@ permissions:
 
 jobs:
   ci:
-    uses: augentic/.github/.github/workflows/ci.yaml@main
+    uses: augentic/.github/.github/workflows/ci.yaml@v0.2.0
     secrets: inherit
+    with:
+      # Whole-workspace wasm32 clippy (libs, the `emery` bin, the `adapter`
+      # example); `src/main.rs` is gated to an empty `main` on wasm32.
+      targets: wasm32-wasip2

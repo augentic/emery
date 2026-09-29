@@ -12,7 +12,7 @@ Runs `cargo nextest --workspace` over the workspace. The root scenario suites ca
 
 An ordinary change should never need to leave this rung.
 
-`make check` is the pre-commit gate: formatting, clippy under `-D warnings` (guest deny-list in `crates/clippy.toml`), this rung, doctests, and rustdoc. `make ci` adds vet/deny. Developer Guide link integrity is `mdbook build docs`, run separately.
+`make ci` is the pre-commit gate and exactly what CI runs: format check, clippy under `-D warnings` natively and for `wasm32-wasip2` (guest deny-list in `crates/clippy.toml`), this rung, doctests, rustdoc, vet, deny. `make check` is the local advisory set instead (audit, `fmt` rewriting in place, lint, outdated, udeps). Developer Guide link integrity is `mdbook build docs`, run separately.
 
 ## Keeping `target/` bounded
 
@@ -20,7 +20,7 @@ Cargo never garbage-collects `target/`: every distinct feature set, profile, `RU
 
 ## What CI runs
 
-- Per push: the shared Rust workflow — the same gate as `make ci` (fmt, clippy, nextest `--workspace`, doctests, rustdoc, vet, deny). No sibling checkout, no model.
+- Per push: the shared [`augentic/.github`](https://github.com/augentic/.github) Rust workflow, pinned to the same tag as `mise.toml` — the same gate as `make ci` (fmt check, clippy natively and for `wasm32-wasip2`, nextest `--workspace`, doctests, rustdoc, vet, deny). No sibling checkout, no model.
 - On a push to `main` that touches `docs/**`: the Docs workflow builds the Developer Guide (with its link check) and deploys it.
 - CI never requires model credentials.
 
