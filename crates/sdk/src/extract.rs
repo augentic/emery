@@ -450,7 +450,7 @@ impl<'a> Plan<'a> {
 
 // The lines a regular file holds; `None` for anything else at the path. A
 // trailing newline closes the last line rather than opening another.
-fn line_count(root: &str, path: &str) -> Option<u64> {
+pub fn line_count(root: &str, path: &str) -> Option<u64> {
     let full = Path::new(root).join(path);
     if !std::fs::metadata(&full).ok()?.is_file() {
         return None;
@@ -493,7 +493,7 @@ impl Scope {
 // The bodies of the leading files of `files`, in order, for as long as each
 // is a UTF-8 regular file and they fit within `INLINE_BYTES` together; the
 // first that is not, or does not, ends the run and is listed with the rest.
-fn lay(root: &str, files: &[String]) -> Vec<String> {
+pub fn lay(root: &str, files: &[String]) -> Vec<String> {
     let root = Path::new(root);
     let mut total = 0u64;
     let mut laid = Vec::new();
@@ -714,7 +714,7 @@ impl Display for Brief<'_> {
 
 // The files of a scope whole: a heading per file, then its lines in a fence
 // no run of backticks inside can close, each led by its number.
-struct Laid<'a>(&'a [String], &'a [String]);
+pub struct Laid<'a>(pub &'a [String], pub &'a [String]);
 
 impl Display for Laid<'_> {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {

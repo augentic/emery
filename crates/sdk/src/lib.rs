@@ -100,6 +100,7 @@
 
 mod extract;
 mod reference;
+pub mod survey;
 pub mod workspace;
 
 pub use emery_adapter::is_kebab;
@@ -132,6 +133,8 @@ pub static RUNTIME: &[Doc] = prose!["../prose/claims.md", "../prose/reconciliati
 // `extract.md`.
 const EXTRACT: &str = "extract.md";
 const CLAIMS: &str = "claims.md";
+// The prompt of a survey by model, for the adapter that puts one.
+const SURVEY: &str = "survey.md";
 
 /// Exports an adapter's metadata and extraction functions as a component.
 ///
