@@ -15,7 +15,7 @@ use std::time::Duration;
 
 use emery_adapter::source::{ClaimKind, Evidence, SourceContent, SourceKind};
 use emery_engine::{CONTAINER, ENGINE, REVISION_KEY};
-use omnia_sdk::model::Error as ModelError;
+use omnia_sdk::model::{Error as ModelError, Reply};
 use omnia_sdk::plugins::{Digest, Error as LoadError, Location};
 use omnia_sdk::{BlobStore, StateStore, bad_gateway, bad_request};
 use omnia_test::SeenFormat;
@@ -207,6 +207,31 @@ async fn padded_lines() {
         SPEC_REVISION,
         "the stored lines carry none of the padding"
     );
+    provider.model.assert_exhausted();
+}
+
+// A drafted `given` or `and` written as one bare string where the schema asks
+// for a sequence is the model's slip, not a finding: it is read as the one-line
+// sequence and stored as such, with no correction round spent.
+#[tokio::test]
+async fn lines_as_strings() {
+    let scratch = Scratch::new();
+    let component = scratch.component();
+    let mut answer: Value = serde_json::from_str(SPEC_ANSWER).expect("the draft fixture is JSON");
+    let scenario = &mut answer["requirements"][0]["scenarios"][0];
+    scenario["given"] = Value::String("the greeting surface is bound".into());
+    scenario["and"] = Value::String("the greeting is logged".into());
+    let bare = answer.to_string();
+    let provider = Provider::answering([bare.as_str(), DESIGN_ANSWER]);
+
+    cli_ok(&provider, &["emery", "specify", &component]).await;
+
+    let id = current(&provider.storage);
+    let spec: Value = serde_json::from_slice(&document(&provider.storage, &id, "spec.json"))
+        .expect("the stored spec is JSON");
+    let stored = &spec["requirements"][0]["scenarios"][0];
+    assert_eq!(stored["given"], serde_json::json!(["the greeting surface is bound"]), "{spec}");
+    assert_eq!(stored["and"], serde_json::json!(["the greeting is logged"]), "{spec}");
     provider.model.assert_exhausted();
 }
 
@@ -600,23 +625,19 @@ async fn seams_grouped() {
 
 // The extract call that minted `start.persist` and `start.recover` under one
 // stem told them apart, so the grouping may merge across stems but never
-// within one source's stem.
+// within one source's stem: a group that does is split by the engine, the first
+// id keeping the group's other members, with no correction round spent.
 #[tokio::test]
-async fn same_stem_kept() {
+async fn same_stem_split() {
     let merged = r#"{"groups": [
-        {"claims": [0, 1], "classes": [[0], [1]]},
-        {"claims": [2], "classes": [[2]]}]}"#;
-    let corrected = r#"{"groups": [
-        {"claims": [0, 2], "classes": [[0, 2]]},
-        {"claims": [1], "classes": [[1]]}]}"#;
+        {"claims": [0, 1, 2], "classes": [[0, 2], [1]]}]}"#;
     let spec = r#"{"preamble": ["One source, two stems."],
         "requirements": [
             {"subject": "start.persist",
              "scenarios": [{"name": "Persist", "when": "the service starts", "then": "the queue is persisted"}]},
             {"subject": "start.recover",
              "scenarios": [{"name": "Recover", "when": "the service restarts", "then": "the queue is restored"}]}]}"#;
-    let mut provider =
-        Provider::answering([merged, corrected, spec, DESIGN_ANSWER]).declaring(["docs"]);
+    let mut provider = Provider::answering([merged, spec, DESIGN_ANSWER]).declaring(["docs"]);
     provider.source.evidence.insert(
         "docs".to_string(),
         Ok(evidence(vec![
@@ -630,16 +651,13 @@ async fn same_stem_kept() {
 
     let check = &provider.model.exchanges()[0];
     assert_eq!(check.tool, "check");
-    let correction = check.outcome.as_ref().expect_err("the same-stem merge is rejected");
     assert!(
-        correction.contains(
-            "group 0: `docs` minted `start.persist`, `start.recover` as distinct requirements \
-             under the stem `start`, so they are never one group"
-        ),
-        "{correction}"
+        check.outcome.is_ok(),
+        "the same-stem merge is split, not refused: {:?}",
+        check.outcome
     );
     let request = provider.model.seen()[0].messages.join("\n");
-    assert!(request.contains("an answer that merges them is refused"), "{request}");
+    assert!(request.contains("a group that merges them is split"), "{request}");
 
     let id = current(&provider.storage);
     let spec: Value = serde_json::from_slice(&document(&provider.storage, &id, "spec.json"))
@@ -651,9 +669,14 @@ async fn same_stem_kept() {
             {"source": "docs", "claim": "start.persist"},
             {"source": "docs", "claim": "worker.persist"}
         ]),
-        "{spec}"
+        "the first id keeps the cross-stem member: {spec}"
     );
     assert_eq!(spec["requirements"][1]["subject"], "start.recover", "{spec}");
+    assert_eq!(
+        spec["requirements"][1]["sources"],
+        serde_json::json!([{"source": "docs", "claim": "start.recover"}]),
+        "{spec}"
+    );
     provider.model.assert_exhausted();
 }
 
@@ -1536,13 +1559,41 @@ async fn type_named() {
     provider.model.assert_exhausted();
 }
 
+// A failing model is asked once more; a second failure is the run's.
 #[tokio::test]
 async fn model_fails() {
     let provider = Provider {
-        model: Scripted::new([Err(ModelError::Backend("scripted transport failure".into()))]),
+        model: Scripted::new([
+            Err(ModelError::Backend("scripted transport failure".into())),
+            Err(ModelError::Backend("scripted transport failure".into())),
+        ]),
         ..Provider::idle().declaring(["docs"])
     };
     fail(&provider, &["emery", "specify", "docs"], 4, "bad_gateway").await;
+    provider.model.assert_exhausted();
+}
+
+// One transport failure on the spec draft is retried and the run completes.
+#[tokio::test]
+async fn model_recovers() {
+    let reply = |answer: &str| {
+        Ok(Reply {
+            answer: answer.to_owned(),
+            usage: None,
+        })
+    };
+    let provider = Provider {
+        model: Scripted::new([
+            Err(ModelError::Backend("scripted transport failure".into())),
+            reply(SPEC_ANSWER),
+            reply(DESIGN_ANSWER),
+        ]),
+        ..Provider::idle().declaring(["docs"])
+    };
+    cli_ok(&provider, &["emery", "specify", "docs"]).await;
+    let seen = provider.model.seen();
+    assert_eq!(seen.len(), 3, "the failed ask and the two answered ones");
+    assert_eq!(seen[0].messages, seen[1].messages, "the retry puts the same question");
     provider.model.assert_exhausted();
 }
 

@@ -7,7 +7,7 @@ You are the Emery spec generator's grouping judgement. The request lists every `
 
 ## Baseline
 
-Claims that share a byte-equal `id` are pre-merged into one group and the request lists them. An answer that splits them across groups is refused. Claims of one source whose ids differ but share a stem — the first dotted segment, `orders` in `orders.create` — are distinct requirements: the call that minted them under one noun told them apart, and an answer that merges them is refused. Everything else is your judgement.
+Claims that share a byte-equal `id` are pre-merged into one group and the request lists them. An answer that splits them across groups is refused. Claims of one source whose ids differ but share a stem — the first dotted segment, `orders` in `orders.create` — are distinct requirements: the call that minted them under one noun told them apart, and a group that merges them is split by the engine, each id its own requirement, so spend no judgement on them. Everything else is your judgement.
 
 ## Contract
 

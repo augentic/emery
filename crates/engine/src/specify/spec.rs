@@ -5,12 +5,14 @@
 //! and body text. A run is drafted in chunks of at most [`SPEC_CHUNK`]
 //! requirements, grouped by stem, each its own turn; every response must
 //! contain exactly one draft for each requirement subject of its chunk, and
-//! only the first chunk's carries the preamble.
+//! only the first chunk's carries the preamble. The first chunk is briefed
+//! with every claim; each later one with the claims under its own stems and
+//! the detail anchored beside them.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::{self, Display, Formatter};
 
-use emery_adapter::source::CLAIM_ID_REGEX;
+use emery_adapter::source::{CLAIM_ID_REGEX, Claim, ClaimKind};
 use omnia_sdk::{Error, server_error};
 use schemars::JsonSchema;
 use serde::Deserialize;
@@ -18,7 +20,7 @@ use serde_json::{Value, json};
 
 use crate::revision::{EMERY, Requirement, Scenario, Spec};
 use crate::specify::basis::Basis;
-use crate::specify::brief::{BasesSection, Brief, ClaimsSection, Review};
+use crate::specify::brief::{self, BasesSection, Brief, ClaimsSection, Review};
 use crate::specify::{Extract, shape};
 
 // The outcome a scenario states where no criterion evidences one.
@@ -253,17 +255,61 @@ fn normalised(text: &str) -> String {
         .to_lowercase()
 }
 
+// The claims one chunk past the first is drafted from: every claim whose id
+// leads with one of the chunk's stems — its requirements, the criteria and
+// examples under them — and every unidentified claim anchored in a file one
+// of those requirement claims is anchored in, the detail beside them. The
+// first chunk carries the preamble, which describes the whole, so it lists
+// every claim instead.
+struct Scope<'a> {
+    stems: BTreeSet<&'a str>,
+    files: BTreeSet<&'a str>,
+}
+
+impl<'a> Scope<'a> {
+    fn of(extracts: &'a [Extract], bases: &[&Basis<'a>]) -> Self {
+        let stems: BTreeSet<&str> = bases
+            .iter()
+            .flat_map(|basis| basis.classes.iter().flatten())
+            .map(|member| shape::stem(member.id))
+            .collect();
+        let files = extracts
+            .iter()
+            .flat_map(|extract| &extract.evidence.claims)
+            .filter(|claim| claim.kind == ClaimKind::Requirement)
+            .filter(|claim| claim.id.as_deref().is_some_and(|id| stems.contains(shape::stem(id))))
+            .filter_map(|claim| claim.path.as_deref())
+            .map(file)
+            .collect();
+        Self { stems, files }
+    }
+
+    fn keeps(&self, claim: &Claim) -> bool {
+        claim.id.as_deref().map_or_else(
+            || claim.path.as_deref().is_none_or(|path| self.files.contains(file(path))),
+            |id| self.stems.contains(shape::stem(id)),
+        )
+    }
+}
+
+// The file a `path` anchor names, without its line range.
+fn file(path: &str) -> &str {
+    path.split_once('#').map_or(path, |(file, _)| file)
+}
+
 impl Display for SpecBrief<'_> {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         if self.preamble {
             write!(f, "Draft `spec.md`.\n\n{claims}", claims = ClaimsSection(self.extracts))?;
         } else {
-            write!(
-                f,
+            f.write_str(
                 "Draft `spec.md`: the requirements below, one chunk of the specification's. \
-                 The preamble is drafted with the first chunk, so leave it empty.\n\n{claims}",
-                claims = ClaimsSection(self.extracts)
+                 The preamble is drafted with the first chunk, so leave it empty. The claims \
+                 listed are the ones under this chunk's stems and the detail anchored beside \
+                 them; the source's other claims are other chunks' to draft from.\n\n",
             )?;
+            let scope = Scope::of(self.extracts, &self.bases);
+            brief::claims(f, self.extracts, |claim| scope.keeps(claim))?;
         }
 
         write!(

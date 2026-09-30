@@ -166,21 +166,42 @@ impl Display for Loser {
 }
 
 /// An acceptance scenario attached to a requirement.
+///
+/// `given` and `and` are lines; a draft that writes one line as a bare string
+/// where the schema asks for a sequence is read as the one-line sequence, so
+/// the slip costs no correction round. The stored form is always the sequence.
 #[derive(Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct Scenario {
     /// The scenario heading name.
     pub name: String,
     /// Optional `GIVEN` conditions, one line each.
-    #[serde(default)]
+    #[serde(default, deserialize_with = "lines")]
     pub given: Vec<String>,
     /// The `WHEN` trigger.
     pub when: String,
     /// The primary `THEN` outcome.
     pub then: String,
     /// Additional `AND` outcomes, one line each.
-    #[serde(default)]
+    #[serde(default, deserialize_with = "lines")]
     pub and: Vec<String>,
+}
+
+// A sequence of lines, or one line as a bare string.
+fn lines<'de, D: serde::Deserializer<'de>>(deserializer: D) -> Result<Vec<String>, D::Error> {
+    #[derive(Deserialize)]
+    #[serde(untagged)]
+    enum Lines {
+        One(String),
+        Many(Vec<String>),
+    }
+    Ok(match Lines::deserialize(deserializer)? {
+        Lines::One(line) => {
+            tracing::debug!("a scenario's lines arrived as one bare string; read as one line");
+            vec![line]
+        }
+        Lines::Many(lines) => lines,
+    })
 }
 
 impl Scenario {

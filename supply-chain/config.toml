@@ -709,11 +709,11 @@ version = "0.11.12"
 criteria = "safe-to-deploy"
 
 [[exemptions.quinn-proto]]
-version = "0.11.18"
+version = "0.11.19"
 criteria = "safe-to-deploy"
 
 [[exemptions.quinn-udp]]
-version = "0.5.15"
+version = "0.5.16"
 criteria = "safe-to-deploy"
 
 [[exemptions.r-efi]]
@@ -1153,7 +1153,7 @@ version = "0.8.3"
 criteria = "safe-to-deploy"
 
 [[exemptions.yoke-derive]]
-version = "0.8.3"
+version = "0.8.4"
 criteria = "safe-to-deploy"
 
 [[exemptions.zerocopy]]

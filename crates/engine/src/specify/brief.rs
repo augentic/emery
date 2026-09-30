@@ -11,7 +11,8 @@
 use std::borrow::Borrow;
 use std::fmt::{self, Display, Formatter};
 
-use omnia_sdk::model::{Findings, Question};
+use emery_adapter::source::Claim;
+use omnia_sdk::model::{Error as ModelError, Findings, Question};
 use omnia_sdk::{Error, Model, server_error};
 use schemars::JsonSchema;
 use serde::de::DeserializeOwned;
@@ -65,7 +66,8 @@ pub trait Brief: Display + Sync + Sized {
     ///   the available rounds.
     /// - Returns [`Error::ServerError`] when a required prompt document is not
     ///   embedded or an accepted answer cannot be converted.
-    /// - Returns [`Error::BadGateway`] when the model operation fails.
+    /// - Returns [`Error::BadGateway`] when the model operation fails twice
+    ///   over: a first failure is put once more before it is reported.
     #[tracing::instrument(skip_all, fields(question = Self::NAME))]
     async fn judge<M: Model>(self, model: &M) -> Result<Self::Output, Error> {
         tracing::info!(question = Self::NAME, "asking the model");
@@ -75,15 +77,24 @@ pub trait Brief: Display + Sync + Sized {
                 .ok_or_else(|| server_error!("synthesis prose `{path}` is not embedded"))?;
             system.push(prose);
         }
-        let answer = Question::<Self::Answer>::new(Self::NAME)
+        let question = Question::<Self::Answer>::new(Self::NAME)
             .system(system.join("\n\n---\n\n"))
-            .schema(|schema| self.tighten(schema))
-            .ask(model, self.to_string(), None, |answer| {
-                let mut review = Review::default();
-                self.verify(answer, &mut review);
-                review.verdict()
-            })
-            .await?;
+            .schema(|schema| self.tighten(schema));
+        let check = |answer: &Self::Answer| {
+            let mut review = Review::default();
+            self.verify(answer, &mut review);
+            review.verdict()
+        };
+        let answer = match question.ask(model, self.to_string(), None, check).await {
+            // the transport or a tool failed, not the answer — the failures the
+            // run would report as `bad_gateway` — so the question is put once
+            // more, fresh, before the run is given up
+            Err(failure @ (ModelError::Backend(_) | ModelError::ToolFailed(_))) => {
+                tracing::warn!(question = Self::NAME, %failure, "the model failed; asking once more");
+                question.ask(model, self.to_string(), None, check).await?
+            }
+            outcome => outcome?,
+        };
         tracing::info!(question = Self::NAME, "answered");
 
         self.into_output(answer)
@@ -218,28 +229,41 @@ pub struct ClaimsSection<'a>(pub &'a [Extract]);
 
 impl Display for ClaimsSection<'_> {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        f.write_str("## Claims\n")?;
-
-        for extract in self.0 {
-            write!(
-                f,
-                "\n### source `{source}` ({kind})\n\n",
-                source = extract.source,
-                kind = extract.kind
-            )?;
-
-            for claim in &extract.evidence.claims {
-                let id = claim.id.as_deref().unwrap_or("-");
-                let synopsis = claim.synopsis.as_deref().unwrap_or("");
-                writeln!(
-                    f,
-                    "- {kind} `{id}` — {synopsis} — {extras}",
-                    kind = claim.kind,
-                    extras = Value::Object(claim.extras.clone()),
-                )?;
-            }
-        }
-
-        Ok(())
+        claims(f, self.0, |_| true)
     }
+}
+
+/// Writes the `## Claims` section over the claims of `extracts` that `keep`
+/// admits, each under its source's name and kind; a source none of whose
+/// claims is kept is listed with none.
+///
+/// # Errors
+///
+/// Returns the formatter's error.
+pub fn claims(
+    f: &mut Formatter<'_>, extracts: &[Extract], keep: impl Fn(&Claim) -> bool,
+) -> fmt::Result {
+    f.write_str("## Claims\n")?;
+
+    for extract in extracts {
+        write!(
+            f,
+            "\n### source `{source}` ({kind})\n\n",
+            source = extract.source,
+            kind = extract.kind
+        )?;
+
+        for claim in extract.evidence.claims.iter().filter(|claim| keep(claim)) {
+            let id = claim.id.as_deref().unwrap_or("-");
+            let synopsis = claim.synopsis.as_deref().unwrap_or("");
+            writeln!(
+                f,
+                "- {kind} `{id}` — {synopsis} — {extras}",
+                kind = claim.kind,
+                extras = Value::Object(claim.extras.clone()),
+            )?;
+        }
+    }
+
+    Ok(())
 }
