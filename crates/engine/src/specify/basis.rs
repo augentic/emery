@@ -79,7 +79,8 @@ impl<'a> GroupingBrief<'a> {
     /// one behaviour under different nouns. Otherwise the baseline stands alone
     /// and no call is spent. Whatever the model answers, claims sharing an id
     /// stay one group, and one source's distinct ids under one stem stay
-    /// distinct groups.
+    /// distinct groups — a group that merges them is split, with no round
+    /// spent.
     ///
     /// # Errors
     ///
@@ -243,26 +244,63 @@ impl<'a> Brief for GroupingBrief<'a> {
                 review.note(format_args!("claims sharing the id `{id}` are split across groups"));
             }
         }
-
-        // one source's distinct ids under one stem may not be merged
-        for (position, group) in answer.groups.iter().enumerate() {
-            let mut by_stem: BTreeMap<(&str, &str), BTreeSet<&str>> = BTreeMap::new();
-            for claim in group.claims.iter().filter_map(|&index| self.contributors.get(index)) {
-                by_stem.entry((claim.source, shape::stem(claim.id))).or_default().insert(claim.id);
-            }
-            for ((source, stem), ids) in by_stem.into_iter().filter(|(_, ids)| ids.len() > 1) {
-                let ids = ids.iter().map(|id| format!("`{id}`")).collect::<Vec<_>>().join(", ");
-                review.note(format_args!(
-                    "group {position}: `{source}` minted {ids} as distinct requirements under \
-                     the stem `{stem}`, so they are never one group"
-                ));
-            }
-        }
     }
 
     fn into_output(self, answer: Grouping) -> Result<Vec<Basis<'a>>, Error> {
+        let answer = split(&self.contributors, answer);
         bases(self.contributors, &self.criteria, &answer)
     }
+}
+
+// One source's distinct ids under one stem are distinct requirements — the
+// call that minted them under one noun told them apart — so a group that
+// merges them is split without a round: the first such id keeps the group and
+// every other member, each further id takes its own claims into a new group,
+// and each group's classes are the answer's cut to its members.
+fn split(contributors: &[Contributor<'_>], answer: Grouping) -> Grouping {
+    let mut groups = Vec::with_capacity(answer.groups.len());
+    for group in answer.groups {
+        // (source, stem) → the distinct ids the group holds under it, in order
+        let mut by_stem: BTreeMap<(&str, &str), Vec<&str>> = BTreeMap::new();
+        for claim in group.claims.iter().filter_map(|&index| contributors.get(index)) {
+            let ids = by_stem.entry((claim.source, shape::stem(claim.id))).or_default();
+            if !ids.contains(&claim.id) {
+                ids.push(claim.id);
+            }
+        }
+        let spun: BTreeSet<&str> = by_stem
+            .iter()
+            .filter(|(_, ids)| ids.len() > 1)
+            .inspect(|((source, stem), ids)| {
+                tracing::debug!(
+                    source,
+                    stem,
+                    ?ids,
+                    "the grouping merged one source's distinct ids under one stem; split"
+                );
+            })
+            .flat_map(|(_, ids)| ids.iter().skip(1).copied())
+            .collect();
+        if spun.is_empty() {
+            groups.push(group);
+            continue;
+        }
+        let id_of = |index: usize| contributors.get(index).map(|claim| claim.id);
+        let cut = |keep: &dyn Fn(usize) -> bool| Group {
+            claims: group.claims.iter().copied().filter(|&index| keep(index)).collect(),
+            classes: group
+                .classes
+                .iter()
+                .map(|class| class.iter().copied().filter(|&index| keep(index)).collect())
+                .filter(|class: &Vec<usize>| !class.is_empty())
+                .collect(),
+        };
+        groups.push(cut(&|index| !id_of(index).is_some_and(|id| spun.contains(id))));
+        for id in spun {
+            groups.push(cut(&|index| id_of(index) == Some(id)));
+        }
+    }
+    Grouping { groups }
 }
 
 impl Display for GroupingBrief<'_> {
@@ -307,7 +345,7 @@ impl Display for GroupingBrief<'_> {
              different stems — the first segment of their ids — are one group, whatever nouns \
              their seams gave them. Two claims of one source with different ids under one stem \
              are distinct requirements: the call that minted them under one noun told them \
-             apart, and an answer that merges them is refused.\n",
+             apart, and a group that merges them is split, each id its own requirement.\n",
         )
     }
 }
