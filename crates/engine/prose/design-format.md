@@ -4,7 +4,7 @@ Hard-coded conventions of the rendered `design.md`. These are not configurable.
 
 `design.md` carries the technical shape the non-behavioural claims evidence. The engine renders its front matter (`emery: <grammar>`, `revision: <id>`), `# Design`, your `preamble` paragraphs, then one `## ` section per drafted entry, in this fixed order whatever order you answer in:
 
-1. `overview` → `## Overview` — what the system is and why, from `intent` and top-level `section` claims and the rendered `spec.md`. Always required.
+1. `overview` → `## Overview` — what the system is and why, from `intent` and top-level `section` claims and the request's requirements. Always required.
 2. `domain-model` → `## Domain model` — types and identifiers. Reference every `type` claim exactly once as a `type` block; the engine renders a `Type: <key>` line and the claim's `signature` verbatim as a fenced code block beneath it.
 3. `apis` → `## APIs and integrations` — external surfaces (`call` / `contract` claims, surface-naming requirements).
 4. `technical-logic` → `## Technical logic` — delegation, validation, errors; fold abstracting `excerpt` claims.
@@ -18,6 +18,6 @@ The request lists every section with its presence — `required`, `permitted`, o
 ## Blocks
 
 - **`{"text": "…"}`** — one Markdown paragraph. Cite decisions inline as `(from <source>)`, where `<source>` is exactly one bound source name; a citation naming an unbound source is refused. Refer to requirements by their `REQ-NNN` id inline — no `### Requirement:` or `#### Scenario:` heading and no provenance line belongs here.
-- **`{"type": "<key>"}`** — a `type` claim by its declared name — its id, its `name`, or its path with any line anchor stripped — under `domain-model` only. Interleave with text blocks to place each signature; every listed type claim is referenced exactly once, or the draft is refused.
+- **`{"type": "<key>"}`** — a `type` claim by its declared name — its `name`, else its id, else its path with any line anchor stripped — under `domain-model` only. Interleave with text blocks to place each signature; every listed type claim is referenced exactly once, or the draft is refused.
 
 Fold `decision` and `section` claims into the section they inform. Where the claims are silent, say nothing — never pad a section with invented architecture. No timestamps or run identifiers; re-runs must be byte-identical.

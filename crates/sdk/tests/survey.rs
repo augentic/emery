@@ -1,9 +1,7 @@
-use std::fs;
-use std::os::unix::fs::symlink;
-use std::path::Path;
+//! A survey by model is one turn whose answer is held to the tree before the
+//! adapter derives anything from it; every scenario here puts one.
 
-use emery_sdk::survey::{self, Surface};
-use emery_sdk::workspace::Entry;
+use emery_sdk::survey::{Facts, Inventory};
 use emery_sdk::{Context, Doc, Error, SourceInput};
 use omnia_sdk::model::ToolCall;
 use omnia_test::SeenFormat;
@@ -11,130 +9,163 @@ use omnia_test::guest::Scripted;
 
 const PROSE: &[Doc] = &[
     Doc {
-        path: "extract.md",
-        body: "EXTRACT",
-    },
-    Doc {
         path: "survey.md",
         body: "SURVEY",
     },
+    Doc {
+        path: "extract.md",
+        body: "SYSTEM",
+    },
+    Doc {
+        path: "references/surfaces.md",
+        body: "A route is a surface.",
+    },
 ];
 
-const MUTE: &[Doc] = &[Doc {
-    path: "extract.md",
-    body: "EXTRACT",
-}];
+const VALID: &str = r#"{"surfaces":[
+    {"name":"POST /orders","anchor":"src/routes/orders.ts#L2-L3","stem":"orders"},
+    {"name":"import command","anchor":"src/cli.ts","stem":"import"}
+],"unreached":["src/lib/unused.ts"]}"#;
 
-// Production modules, a directory and a file `keep` refuses, and the engine's
-// own files beside them.
-const FILES: &[&str] = &[
-    ".omnia/store.json",
-    "index.ts",
-    "jobs/nightly.ts",
-    "routes/orders.ts",
-    "routes/users.ts",
-    "services/orders.ts",
-    "spec.md",
-    "types/index.d.ts",
-];
-
-// Stated as an adapter states its policy.
-fn keep(entry: Entry<'_>) -> bool {
-    match entry {
-        Entry::Dir(path) => path != "services",
-        Entry::File(_) => !entry.name().ends_with(".d.ts"),
+fn write(root: &std::path::Path, rel: &str, body: &str) {
+    let path = root.join(rel);
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent).expect("mkdir");
     }
+    std::fs::write(path, body).expect("write");
 }
 
-async fn survey(
-    model: &Scripted, docs: &'static [Doc], input: &SourceInput,
-) -> Result<Vec<Surface>, Error> {
+// A tree of three modules and a manifest, lent as the source `svc`.
+fn tree() -> (tempfile::TempDir, SourceInput, Vec<String>) {
+    let tmp = tempfile::tempdir().expect("tempdir");
+    write(tmp.path(), "package.json", "{\"name\":\"svc\"}\n");
+    write(tmp.path(), "src/cli.ts", "import { run } from './lib/run';\nrun();\n");
+    write(
+        tmp.path(),
+        "src/routes/orders.ts",
+        "export const r = 1;\napp.post('/orders', h);\napp.get('/orders', l);\n",
+    );
+    write(tmp.path(), "src/lib/unused.ts", "export const dead = 1;\n");
+    let root = tmp.path().to_str().expect("a UTF-8 scratch root");
+    let input = SourceInput::workspace("svc", root);
+    let modules =
+        ["src/cli.ts", "src/lib/unused.ts", "src/routes/orders.ts"].map(str::to_owned).to_vec();
+    (tmp, input, modules)
+}
+
+async fn ask(
+    model: &Scripted, input: &SourceInput, facts: &Facts<'_>,
+    check: impl FnMut(&Inventory) -> Vec<String> + Send,
+) -> Result<Inventory, Error> {
     let ctx = Context {
         adapter_id: "source:probe",
         input,
         model,
     };
-    survey::surfaces(&ctx, docs, keep).await
+    emery_sdk::survey::surfaces(&ctx, PROSE, facts, check).await
 }
 
-fn surface(name: &str, entry: &str) -> Surface {
-    Surface {
-        name: name.to_string(),
-        entry: entry.to_string(),
-    }
-}
-
-fn write(root: &Path, rel: &str, body: &str) {
-    let path = root.join(rel);
-    if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent).expect("mkdir");
-    }
-    fs::write(path, body).expect("write");
-}
-
-fn utf8(root: &Path) -> &str {
-    root.to_str().expect("a UTF-8 scratch root")
-}
-
-fn tree<'a>(root: &'a Path, files: &[&str]) -> &'a str {
-    for file in files {
-        write(root, file, "");
-    }
-    utf8(root)
-}
-
-// The root is lent whole and the kept modules are listed, capped, so the turn
-// stays bounded on a large estate.
+// The turn carries the adapter's facts, the module list, the laid files, and
+// the lend; the answer is steered by the inventory schema.
 #[tokio::test]
-async fn request() {
-    let model = Scripted::answering([
-        r#"{"surfaces":[{"name":"POST /orders","entry":"routes/orders.ts"}]}"#,
-    ]);
-    let tmp = tempfile::tempdir().expect("tempdir");
-    let root = tree(tmp.path(), FILES);
+async fn request_shape() {
+    let (_tmp, input, modules) = tree();
+    let model = Scripted::answering([VALID]);
+    let files = vec!["package.json".to_owned(), "src/cli.ts".to_owned()];
+    let facts = Facts {
+        modules: &modules,
+        text: "The manifest names `svc`; `src/cli.ts` runs at load.\n",
+        files: &files,
+    };
 
-    survey(&model, PROSE, &SourceInput::workspace("code", root)).await.expect("accepted");
+    let inventory = ask(&model, &input, &facts, |_| Vec::new()).await.expect("accepted");
+    assert_eq!(inventory.surfaces.len(), 2);
+    assert_eq!(inventory.unreached, ["src/lib/unused.ts"]);
 
     let seen = model.seen();
-    assert_eq!(seen.len(), 1, "one survey turn");
+    assert_eq!(seen.len(), 1);
     let request = &seen[0];
     assert_eq!(request.system.as_deref(), Some("SURVEY"));
-    assert_eq!(request.workspace.as_deref(), Some(root), "the root is lent");
-    assert!(request.check, "acceptance is the check");
-    assert_eq!(request.tools, ["list_docs", "read_doc"], "the corpus is offered through tools");
-    let turn = &request.messages[0];
-    assert!(turn.contains("the source `code` bound to adapter `source:probe`"), "{turn}");
-    assert!(turn.contains("`$SOURCE_DIR` is the bound source tree, lent read-only:"), "{turn}");
-    assert!(!turn.contains(root), "the lend carries the root, not the brief: {turn}");
-    assert!(turn.contains("relative to `$SOURCE_DIR`"), "{turn}");
-    assert!(turn.contains("## Modules"), "the brief lists the kept modules: {turn}");
-    for module in ["index.ts", "jobs/nightly.ts", "routes/orders.ts", "routes/users.ts"] {
-        assert!(turn.contains(&format!("- `{module}`")), "the brief names {module}: {turn}");
-    }
-    for refused in ["services/orders.ts", "types/index.d.ts", "spec.md", ".omnia/store.json"] {
-        assert!(!turn.contains(refused), "the brief names no refused file: {turn}");
-    }
-    let SeenFormat::Schema { name, schema } = &request.format else {
-        panic!("the survey is steered by schema");
+    let root = match &input.content {
+        emery_sdk::SourceContent::Workspace(root) => root.clone(),
+        emery_sdk::SourceContent::Value(_) => unreachable!(),
     };
-    assert_eq!(name, "survey-code", "the question is labelled by source");
-    let schema: serde_json::Value = serde_json::from_str(schema).expect("generated schema parses");
+    assert_eq!(request.workspace.as_deref(), Some(root.as_str()), "the tree is lent");
+    assert_eq!(request.tools, ["list_docs", "read_doc"]);
+    assert!(request.check, "acceptance is the check");
+    let SeenFormat::Schema { name, schema } = &request.format else {
+        panic!("the inventory is steered by schema");
+    };
+    assert_eq!(name, "survey-svc");
+    let schema: serde_json::Value = serde_json::from_str(schema).expect("schema parses");
     assert!(schema.pointer("/properties/surfaces").is_some(), "{schema}");
-    let surface = schema.pointer("/$defs/Surface").expect("Surface definition");
-    assert!(surface.pointer("/properties/name").is_some(), "{surface}");
-    assert!(surface.pointer("/properties/entry").is_some(), "{surface}");
+    assert!(schema.pointer("/properties/unreached").is_some(), "{schema}");
+
+    let user = &request.messages[0];
+    assert!(user.starts_with("Survey the source `svc` bound to adapter `source:probe` before it is mined.\n\nThe manifest names `svc`; `src/cli.ts` runs at load.\n\n`$SOURCE_DIR` is the bound source tree"), "{user}");
+    assert!(
+        user.contains("- `src/cli.ts`\n- `src/lib/unused.ts`\n- `src/routes/orders.ts`\n\n"),
+        "{user}"
+    );
+    assert!(
+        user.contains(
+            "These files are laid out here whole, every line led by its number, so cite `#L<n>` \
+             from the numbers shown rather than reading them again:\n\n### `package.json` (1 \
+             line)\n\n```\n1|{\"name\":\"svc\"}\n```\n\n### `src/cli.ts` (2 lines)\n\n```\n1|import \
+             { run } from './lib/run';\n2|run();\n```\n\nName each surface"
+        ),
+        "{user}"
+    );
+    assert!(!user.contains(&root), "the lend carries the root, not the brief: {user}");
+    assert!(user.ends_with("Answer with one JSON object matching the survey schema."), "{user}");
     model.assert_exhausted();
 }
 
-// No system document is listed: the survey's own prompt, the mining prompt of
-// the turns that follow, or the claim rules a survey emits none under. An
-// unlisted document still answers when read.
+// With nothing to lay and no facts text, the brief is the module list alone
+// between the opening and the instructions.
 #[tokio::test]
-async fn list_docs() {
-    let model = Scripted::answering([
-        r#"{"surfaces":[{"name":"POST /orders","entry":"routes/orders.ts"}]}"#,
-    ])
-    .calling(
+async fn bare_facts() {
+    let (_tmp, input, modules) = tree();
+    let model = Scripted::answering([r#"{"surfaces":[]}"#]);
+    let facts = Facts {
+        modules: &modules,
+        text: "",
+        files: &[],
+    };
+
+    let inventory = ask(&model, &input, &facts, |_| Vec::new()).await.expect("none is valid");
+    assert!(inventory.surfaces.is_empty());
+    assert!(inventory.unreached.is_empty(), "`unreached` defaults to none");
+
+    let user = &model.seen()[0].messages[0];
+    assert!(
+        user.contains("before it is mined.\n\n`$SOURCE_DIR` is the bound source tree"),
+        "{user}"
+    );
+    assert!(!user.contains("laid out here whole"), "{user}");
+}
+
+// An inline value has no tree to survey: the adapter's own defect.
+#[tokio::test]
+async fn inline_value() {
+    let model = Scripted::default();
+    let input = SourceInput::value("brief", "Ship it.");
+    let facts = Facts::default();
+
+    let error = ask(&model, &input, &facts, |_| Vec::new()).await.expect_err("no tree");
+    assert_eq!(error.code(), "server_error");
+    assert!(error.description().contains("needs a workspace input"), "{error}");
+    assert!(model.seen().is_empty(), "no turn was spent");
+}
+
+// The survey turn offers the adapter's references and the runtime's through
+// the same tools a mining turn has; no system document is listed — the
+// survey prompt rides this turn's system, and a mining turn's prompt has
+// nothing to teach a survey — and a read still answers each.
+#[tokio::test]
+async fn doc_refs() {
+    let (_tmp, input, modules) = tree();
+    let model = Scripted::answering([VALID]).calling(
         0,
         [
             ToolCall {
@@ -145,249 +176,190 @@ async fn list_docs() {
             ToolCall {
                 id: "2".to_string(),
                 name: "read_doc".to_string(),
+                arguments: r#"{"path":"references/surfaces.md"}"#.to_string(),
+            },
+            ToolCall {
+                id: "3".to_string(),
+                name: "read_doc".to_string(),
                 arguments: r#"{"path":"survey.md"}"#.to_string(),
             },
         ],
     );
-    let tmp = tempfile::tempdir().expect("tempdir");
-    let root = tree(tmp.path(), FILES);
+    let facts = Facts {
+        modules: &modules,
+        text: "",
+        files: &[],
+    };
 
-    survey(&model, PROSE, &SourceInput::workspace("code", root)).await.expect("accepted");
-
+    ask(&model, &input, &facts, |_| Vec::new()).await.expect("accepted");
     let exchanges = model.exchanges();
-    assert_eq!(exchanges.len(), 3, "two reference calls, then the check");
+    assert_eq!(exchanges.len(), 4, "three reference calls, then the check");
     assert_eq!(
         exchanges[0].outcome.as_deref(),
-        Ok(r#"{"paths":["reconciliation.md"]}"#),
+        Ok(r#"{"paths":["references/surfaces.md","reconciliation.md"]}"#),
         "`list_docs` lists no system document"
     );
     assert_eq!(
         exchanges[1].outcome.as_deref(),
-        Ok(r#"{"body":"SURVEY","path":"survey.md"}"#),
-        "`read_doc` still answers it"
+        Ok(r#"{"body":"A route is a surface.","path":"references/surfaces.md"}"#)
     );
-    model.assert_exhausted();
-}
-
-// Past the cap the brief collapses to top-level directories with counts,
-// naming only the root's own files.
-#[tokio::test]
-async fn modules_capped() {
-    let model = Scripted::answering([
-        r#"{"surfaces":[{"name":"POST /orders","entry":"routes/orders.ts"}]}"#,
-    ]);
-    let tmp = tempfile::tempdir().expect("tempdir");
-    let root = tmp.path();
-    write(root, "index.ts", "");
-    write(root, "routes/orders.ts", "");
-    for i in 0..150 {
-        write(root, &format!("routes/gen{i:03}.ts"), "");
-    }
-    for i in 0..60 {
-        write(root, &format!("jobs/gen{i:03}.ts"), "");
-    }
-
-    survey(&model, PROSE, &SourceInput::workspace("code", utf8(root))).await.expect("accepted");
-
-    let turn = &model.seen()[0].messages[0];
-    assert!(turn.contains("- `index.ts`"), "the root's own file is named: {turn}");
-    assert!(turn.contains("- `jobs/` (60 modules)"), "{turn}");
-    assert!(turn.contains("- `routes/` (151 modules)"), "{turn}");
-    assert!(!turn.contains("gen000"), "no collapsed path is named: {turn}");
-    model.assert_exhausted();
-}
-
-// A module may be the entry of several surfaces, and a module no surface enters
-// is no surface; nothing is grouped or folded.
-#[tokio::test]
-async fn surfaces() {
-    let model = Scripted::answering([r#"{"surfaces":[
-            {"name":"POST /users","entry":"routes/users.ts"},
-            {"name":"nightly reconciliation job","entry":"jobs/nightly.ts"},
-            {"name":"GET /users/:id","entry":"routes/users.ts"},
-            {"name":"POST /orders","entry":"routes/orders.ts"}
-        ]}"#]);
-    let tmp = tempfile::tempdir().expect("tempdir");
-    let root = tree(tmp.path(), FILES);
-
-    let surfaces =
-        survey(&model, PROSE, &SourceInput::workspace("code", root)).await.expect("accepted");
-
     assert_eq!(
-        surfaces,
-        [
-            surface("POST /users", "routes/users.ts"),
-            surface("nightly reconciliation job", "jobs/nightly.ts"),
-            surface("GET /users/:id", "routes/users.ts"),
-            surface("POST /orders", "routes/orders.ts"),
-        ]
+        exchanges[2].outcome.as_deref(),
+        Ok(r#"{"body":"SURVEY","path":"survey.md"}"#),
+        "`read_doc` still answers an unlisted document"
     );
+    assert_eq!(exchanges[3].tool, "check");
+    assert_eq!(exchanges[3].outcome, Ok(String::new()));
     model.assert_exhausted();
-}
-
-// The surface comes back with its entry as a claim's anchor would cite it.
-#[tokio::test]
-async fn normalised() {
-    let model = Scripted::answering([
-        r#"{"surfaces":[{"name":"POST /orders","entry":"./routes//orders.ts"}]}"#,
-    ]);
-    let tmp = tempfile::tempdir().expect("tempdir");
-    let root = tree(tmp.path(), FILES);
-
-    let surfaces =
-        survey(&model, PROSE, &SourceInput::workspace("code", root)).await.expect("accepted");
-
-    assert_eq!(surfaces, [surface("POST /orders", "routes/orders.ts")]);
-    assert_eq!(model.exchanges().len(), 1, "one turn, accepted");
-    model.assert_exhausted();
-}
-
-// The model finds the boundary; the tree and the adapter say what a module is.
-#[tokio::test]
-async fn corrections() {
-    let model = Scripted::answering([
-        r#"{"surfaces":[
-            {"name":"POST /orders","entry":"routes/orders.ts"},
-            {"name":"POST /orders","entry":"index.ts"},
-            {"name":"","entry":"jobs/nightly.ts"},
-            {"name":"GET /ghosts","entry":"routes/ghost.ts"},
-            {"name":"routes","entry":"routes"},
-            {"name":"order service","entry":"services/orders.ts"},
-            {"name":"types","entry":"types/index.d.ts"},
-            {"name":"spec","entry":"spec.md"},
-            {"name":"outside","entry":"../x.ts"}
-        ]}"#,
-        r#"{"surfaces":[{"name":"POST /orders","entry":"routes/orders.ts"}]}"#,
-    ]);
-    let tmp = tempfile::tempdir().expect("tempdir");
-    let root = tree(tmp.path(), FILES);
-
-    let surfaces = survey(&model, PROSE, &SourceInput::workspace("code", root))
-        .await
-        .expect("the second candidate is an inventory");
-
-    assert_eq!(surfaces, [surface("POST /orders", "routes/orders.ts")]);
-    let exchanges = model.exchanges();
-    assert_eq!(exchanges.len(), 2, "one rejection, one acceptance");
-    let correction = exchanges[0].outcome.as_ref().expect_err("the first candidate is rejected");
-    for finding in [
-        "surface `POST /orders` is listed twice",
-        "the surface entered at `jobs/nightly.ts` has no name",
-        "no file at `routes/ghost.ts`",
-        "no file at `routes`",
-        "`services/orders.ts` is not a module this adapter mines",
-        "`types/index.d.ts` is not a module this adapter mines",
-        "`spec.md` is not a module this adapter mines",
-        "`../x.ts` escapes the source root",
-    ] {
-        assert!(correction.contains(finding), "{finding}: {correction}");
-    }
-    assert!(!correction.contains("`index.ts`"), "the second `POST /orders` is a sound entry");
-    assert_eq!(exchanges[1].outcome, Ok(String::new()));
-    model.assert_exhausted();
-}
-
-#[tokio::test]
-async fn stray_key() {
-    let model = Scripted::answering([
-        r#"{"surfaces":[{"name":"POST /orders","entry":"routes/orders.ts","files":["services/orders.ts"]}]}"#,
-        r#"{"surfaces":[{"name":"POST /orders","entry":"routes/orders.ts"}]}"#,
-    ]);
-    let tmp = tempfile::tempdir().expect("tempdir");
-    let root = tree(tmp.path(), FILES);
-
-    survey(&model, PROSE, &SourceInput::workspace("code", root))
-        .await
-        .expect("the second candidate parses");
-
-    let exchanges = model.exchanges();
-    let correction = exchanges[0].outcome.as_ref().expect_err("the stray key is refused");
-    assert!(correction.contains("unknown field"), "{correction}");
-}
-
-// The last findings surface, as an evidence call's do.
-#[tokio::test]
-async fn rounds_exhausted() {
-    let model = Scripted::answering([r#"{"surfaces":[{"name":"GET /ghosts","entry":"nope.ts"}]}"#]);
-    let tmp = tempfile::tempdir().expect("tempdir");
-    let root = tree(tmp.path(), FILES);
-
-    let error = survey(&model, PROSE, &SourceInput::workspace("code", root))
-        .await
-        .expect_err("the only candidate is entered at no file");
-
-    let Error::BadRequest { code, description } = error else {
-        panic!("spent rounds are a bad request: {error}");
-    };
-    assert_eq!(code, "bad_request");
-    assert!(description.contains("no file at `nope.ts`"), "{description}");
-    assert_eq!(model.exchanges().len(), 1, "one check, rejected");
 }
 
 // A corpus without `survey.md` is the adapter build's own defect.
 #[tokio::test]
 async fn missing_prompt() {
+    let (_tmp, input, modules) = tree();
     let model = Scripted::default();
-    let tmp = tempfile::tempdir().expect("tempdir");
-    let root = tree(tmp.path(), FILES);
+    let facts = Facts {
+        modules: &modules,
+        text: "",
+        files: &[],
+    };
+    let ctx = Context {
+        adapter_id: "source:mute",
+        input: &input,
+        model: &model,
+    };
 
-    let error = survey(&model, MUTE, &SourceInput::workspace("code", root))
+    let error = emery_sdk::survey::surfaces(&ctx, &[], &facts, |_| Vec::new())
         .await
         .expect_err("no prompt to ask with");
-
     assert_eq!(error.code(), "server_error");
     assert!(error.description().contains("`survey.md` is not embedded"), "{error}");
-    assert!(model.seen().is_empty(), "no turn was spent");
+    assert!(model.seen().is_empty());
 }
 
-// No tree to survey is the adapter's own defect, as a `Files` seam over a value is.
+// Every rule the tree can hold the answer to is a finding, all returned
+// together with the adapter's own, and the corrected answer is accepted with
+// its anchors normalised — the spelling the adapter's check read on every
+// round, so what it derives from rests on the paths the tree spells.
 #[tokio::test]
-async fn inline_value() {
-    let model = Scripted::default();
-    let input = SourceInput::value("code", "export const x = 1;");
-
-    let error = survey(&model, PROSE, &input).await.expect_err("no tree to survey");
-
-    assert_eq!(error.code(), "server_error");
-    assert!(error.description().contains("not an inline value"), "{error}");
-    assert!(model.seen().is_empty(), "no turn was spent");
-}
-
-// Not a module the walk would offer, even when the target file exists.
-#[tokio::test]
-async fn symlink_dir() {
+async fn gate_findings() {
+    let (_tmp, input, modules) = tree();
     let model = Scripted::answering([
-        r#"{"surfaces":[{"name":"GET /orders","entry":"link/nested/file.ts"}]}"#,
-        r#"{"surfaces":[{"name":"POST /orders","entry":"routes/orders.ts"}]}"#,
+        r#"{"surfaces":[
+            {"name":"","anchor":"src/cli.ts","stem":"import"},
+            {"name":"dup","anchor":"src/cli.ts#L1","stem":"a"},
+            {"name":"dup","anchor":"src/cli.ts#L1","stem":"b"},
+            {"name":"grammar","anchor":"src/cli.ts#5","stem":"cli"},
+            {"name":"escapes","anchor":"../cli.ts","stem":"cli"},
+            {"name":"stranger","anchor":"src/lib/run.ts#L1","stem":"run"},
+            {"name":"manifest","anchor":"package.json","stem":"svc"},
+            {"name":"long","anchor":"src/cli.ts#L1-L9","stem":"cli"},
+            {"name":"Cased","anchor":"src/cli.ts#L2","stem":"Import"}
+        ],"unreached":["src/lib/run.ts","src/cli.ts"]}"#,
+        r#"{"surfaces":[
+            {"name":"import command","anchor":"./src/cli.ts#L2-L2","stem":"import"}
+        ],"unreached":["./src/lib/unused.ts","src/routes/orders.ts"]}"#,
     ]);
-    let tmp = tempfile::tempdir().expect("tempdir");
-    write(tmp.path(), "real/nested/file.ts", "");
-    symlink(tmp.path().join("real"), tmp.path().join("link")).expect("symlink");
-    let root = tree(tmp.path(), FILES);
+    let facts = Facts {
+        modules: &modules,
+        text: "",
+        files: &[],
+    };
 
-    let surfaces = survey(&model, PROSE, &SourceInput::workspace("code", root))
-        .await
-        .expect("the second candidate is an inventory");
+    let mut checked: Vec<Inventory> = Vec::new();
+    let inventory = ask(&model, &input, &facts, |answer| {
+        checked.push(answer.clone());
+        if answer.surfaces.iter().any(|surface| surface.stem == "b") {
+            vec!["- the adapter refuses stem `b`".to_owned()]
+        } else {
+            Vec::new()
+        }
+    })
+    .await
+    .expect("corrected");
+    assert_eq!(inventory.surfaces.len(), 1);
+    assert_eq!(inventory.surfaces[0].anchor, "src/cli.ts#L2", "normalised root-relative");
+    assert_eq!(inventory.unreached, ["src/lib/unused.ts", "src/routes/orders.ts"]);
+    assert_eq!(checked.len(), 2, "the adapter's check ran on both rounds");
+    assert_eq!(checked[1], inventory, "the check read the spelling that is returned");
+    assert_eq!(
+        checked[0].surfaces[4].anchor, "../cli.ts",
+        "an anchor that escapes the root is left as answered for its finding"
+    );
+    let anchor = inventory.surfaces[0].anchor().expect("an accepted anchor parses");
+    assert_eq!((anchor.path, anchor.lines), ("src/cli.ts", Some((2, 2))));
 
-    assert_eq!(surfaces, [surface("POST /orders", "routes/orders.ts")]);
     let exchanges = model.exchanges();
-    let correction = exchanges[0].outcome.as_ref().expect_err("the link is refused");
-    assert!(correction.contains("no file at `link/nested/file.ts`"), "{correction}");
+    let correction = exchanges[0].outcome.as_ref().expect_err("the first answer is refused");
+    for finding in [
+        "- surface 0: has no name",
+        "- surface `dup` is listed twice",
+        "- surface `grammar`: anchor `src/cli.ts#5` is not `<path>`, `<path>#L<n>`, or \
+         `<path>#L<n>-L<n>`",
+        "- surface `escapes`: anchor `../cli.ts` escapes the source root",
+        "- surface `stranger`: anchor `src/lib/run.ts#L1` names no module of this source; anchor \
+         within the modules listed",
+        "- surface `manifest`: anchor `package.json` names no module of this source",
+        "- surface `long`: anchor `src/cli.ts#L1-L9` cites line 9, but `src/cli.ts` has 2 lines",
+        "- surface `Cased`: stem `Import` is not lowercase kebab-case",
+        "- unreached `src/lib/run.ts` names no module of this source",
+        "- unreached `src/cli.ts` is a surface's entry; a module is one or the other",
+        "- the adapter refuses stem `b`",
+    ] {
+        assert!(correction.contains(finding), "{finding}: {correction}");
+    }
+    assert!(exchanges[1].outcome.is_ok(), "the corrected answer is accepted");
+    model.assert_exhausted();
 }
 
-// An empty inventory is an answer, not a finding; what a source with no surface
-// means is the adapter's to decide.
+// The adapter's check runs on an answer the tree accepts, and its findings
+// alone drive the correction.
 #[tokio::test]
-async fn no_surfaces() {
-    let model = Scripted::answering([r#"{"surfaces":[]}"#]);
-    let tmp = tempfile::tempdir().expect("tempdir");
-    let root = tree(tmp.path(), &[]);
+async fn adapter_check() {
+    let (_tmp, input, modules) = tree();
+    let model = Scripted::answering([
+        r#"{"surfaces":[{"name":"start","anchor":"src/cli.ts","stem":"start"}]}"#,
+        VALID,
+    ]);
+    let facts = Facts {
+        modules: &modules,
+        text: "",
+        files: &[],
+    };
 
-    let surfaces = survey(&model, PROSE, &SourceInput::workspace("code", root))
-        .await
-        .expect("an empty inventory is accepted");
+    let inventory = ask(&model, &input, &facts, |answer| {
+        answer
+            .surfaces
+            .iter()
+            .filter(|surface| surface.stem == "start")
+            .map(|surface| format!("- surface `{}`: `start` is the caller's", surface.name))
+            .collect()
+    })
+    .await
+    .expect("corrected");
+    assert_eq!(inventory.surfaces[0].stem, "orders");
 
-    assert!(surfaces.is_empty());
-    assert_eq!(model.exchanges().len(), 1, "one turn, accepted");
+    let exchanges = model.exchanges();
+    let correction = exchanges[0].outcome.as_ref().expect_err("refused by the adapter");
+    assert!(correction.contains("- surface `start`: `start` is the caller's"), "{correction}");
+    assert!(!correction.contains("names no module"), "the tree held nothing: {correction}");
+    model.assert_exhausted();
+}
+
+// A rejected answer that never lands within the rounds is the operator's
+// `bad_request`, as a mining turn's is.
+#[tokio::test]
+async fn rounds_exhausted() {
+    let (_tmp, input, modules) = tree();
+    let model =
+        Scripted::answering([r#"{"surfaces":[{"name":"x","anchor":"nope.ts","stem":"x"}]}"#]);
+    let facts = Facts {
+        modules: &modules,
+        text: "",
+        files: &[],
+    };
+
+    let error = ask(&model, &input, &facts, |_| Vec::new()).await.expect_err("never accepted");
+    assert_eq!(error.code(), "bad_request", "{error}");
     model.assert_exhausted();
 }

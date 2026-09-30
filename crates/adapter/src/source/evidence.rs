@@ -5,8 +5,10 @@
 //! so evidence cannot assign its own authority.
 //!
 //! [`Evidence::findings`] implements the
-//! [claim gate](crate#vocabulary). It validates claim identifiers and the
-//! fields required by each claim kind.
+//! [claim gate](crate#vocabulary). It validates claim identifiers, the
+//! fields required by each claim kind, and the grammar of `path` anchors.
+
+use std::fmt::{self, Display, Formatter};
 
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -19,11 +21,158 @@ use crate::is_kebab;
 /// claim gate enforces it again in code.
 pub const CLAIM_ID_REGEX: &str = "^[a-z0-9]+(-[a-z0-9]+)*(\\.[a-z0-9]+(-[a-z0-9]+)*)*$";
 
+/// The directories of the engine's own that no claim may anchor in.
+///
+/// `.omnia/` is the runtime's storage root, wherever it occurs under a
+/// source root.
+pub const SKIP_DIRS: &[&str] = &[".omnia"];
+
+/// The files of the engine's own that no claim may anchor in.
+///
+/// They are the Markdown projections of the current revision, wherever they
+/// occur under a source root.
+pub const SKIP_FILES: &[&str] = &["spec.md", "design.md", "plan.md"];
+
 // `is_kebab` refuses the empty segment an empty value or a doubled dot
 // leaves, so the split needs no further check.
 fn is_claim_id(value: &str) -> bool {
     value.split('.').all(is_kebab)
 }
+
+/// A parsed `path` anchor: the file a claim cites and the lines within it.
+///
+/// The grammar is `<path>`, `<path>#L<n>`, or `<path>#L<start>-L<end>`,
+/// with the path relative to the source root and the lines 1-indexed.
+///
+/// # Examples
+///
+/// ```
+/// use emery_adapter::source::Anchor;
+///
+/// let anchor = Anchor::parse("src/orders.ts#L12-L34")?;
+/// assert_eq!(anchor.path, "src/orders.ts");
+/// assert_eq!(anchor.lines, Some((12, 34)));
+/// assert_eq!(anchor.to_string(), "src/orders.ts#L12-L34");
+///
+/// assert!(Anchor::parse("../secret.ts").is_err());
+/// assert!(Anchor::parse("src/orders.ts#L34-L12").is_err());
+/// # Ok::<(), emery_adapter::source::BadAnchor>(())
+/// ```
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct Anchor<'a> {
+    /// The cited file, relative to the source root.
+    pub path: &'a str,
+    /// The cited line range, inclusive, when the anchor names one.
+    pub lines: Option<(u64, u64)>,
+}
+
+// The anchor in the grammar `parse` reads: one line as `#L<n>`, never as a
+// range of one.
+impl Display for Anchor<'_> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        f.write_str(self.path)?;
+        match self.lines {
+            None => Ok(()),
+            Some((start, end)) if start == end => write!(f, "#L{start}"),
+            Some((start, end)) => write!(f, "#L{start}-L{end}"),
+        }
+    }
+}
+
+impl<'a> Anchor<'a> {
+    /// Parses `anchor` under the grammar of the claim rules.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`BadAnchor`] describing the first rule the anchor breaks: a
+    /// fragment outside the grammar, an absolute or `..` path, a path under
+    /// a skip root, or a range that ends before it starts.
+    pub fn parse(anchor: &'a str) -> Result<Self, BadAnchor> {
+        let (path, fragment) = anchor
+            .split_once('#')
+            .map_or((anchor, None), |(path, fragment)| (path, Some(fragment)));
+
+        if path.is_empty() || path.starts_with('/') || path.split('/').any(|seg| seg == "..") {
+            return Err(BadAnchor::Escapes);
+        }
+
+        let mut segments = path.split('/').filter(|seg| !seg.is_empty()).peekable();
+        while let Some(segment) = segments.next() {
+            let last = segments.peek().is_none();
+            if !last && SKIP_DIRS.contains(&segment) {
+                return Err(BadAnchor::SkipDir(segment.to_owned()));
+            }
+            if last && SKIP_FILES.contains(&segment) {
+                return Err(BadAnchor::SkipFile(segment.to_owned()));
+            }
+        }
+
+        let lines = fragment.map(lines).transpose()?;
+        if let Some((start, end)) = lines
+            && end < start
+        {
+            return Err(BadAnchor::Reversed { start, end });
+        }
+
+        Ok(Self { path, lines })
+    }
+}
+
+// The fragment after `#`: `L<n>` or `L<start>-L<end>`, each a positive
+// decimal with no sign, padding, or whitespace.
+fn lines(fragment: &str) -> Result<(u64, u64), BadAnchor> {
+    let number = |text: &str| -> Option<u64> {
+        let digits = text.strip_prefix('L')?;
+        if digits.is_empty()
+            || digits.starts_with('0')
+            || !digits.bytes().all(|b| b.is_ascii_digit())
+        {
+            return None;
+        }
+        digits.parse().ok()
+    };
+    let parsed = match fragment.split_once('-') {
+        Some((start, end)) => number(start).zip(number(end)),
+        None => number(fragment).map(|line| (line, line)),
+    };
+    parsed.ok_or(BadAnchor::Grammar)
+}
+
+/// The rule a `path` anchor breaks.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum BadAnchor {
+    /// The fragment is not `#L<n>` or `#L<start>-L<end>`.
+    Grammar,
+    /// The path is empty, absolute, or climbs above the source root.
+    Escapes,
+    /// The path is under a directory of [`SKIP_DIRS`].
+    SkipDir(String),
+    /// The path names a file of [`SKIP_FILES`].
+    SkipFile(String),
+    /// The range ends before it starts.
+    Reversed {
+        /// The first cited line.
+        start: u64,
+        /// The last cited line, before the first.
+        end: u64,
+    },
+}
+
+impl Display for BadAnchor {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Grammar => f.write_str("is not `<path>`, `<path>#L<n>`, or `<path>#L<n>-L<n>`"),
+            Self::Escapes => f.write_str("escapes the source root"),
+            Self::SkipDir(dir) => write!(f, "is under the skip root `{dir}/`"),
+            Self::SkipFile(file) => write!(f, "names the engine's own `{file}`"),
+            Self::Reversed { start, end } => {
+                write!(f, "ends at line {end}, before it starts at line {start}")
+            }
+        }
+    }
+}
+
+impl std::error::Error for BadAnchor {}
 
 /// A collection of claims extracted from one source.
 ///
@@ -44,18 +193,22 @@ impl Evidence {
     /// Returns every rule the document's claims break, one line each.
     ///
     /// Findings come in claim order and name the claim by its index. An empty
-    /// result means the document passes the claim gate.
+    /// result means the document passes the claim gate: every id is in the
+    /// grammar, every required extra is present, and every `path` parses as
+    /// an [`Anchor`].
     ///
     /// # Examples
     ///
     /// ```
     /// use emery_adapter::source::Evidence;
     ///
-    /// let evidence: Evidence =
-    ///     serde_json::from_str(r#"{ "claims": [{ "kind": "requirement", "id": "Orders" }] }"#)?;
+    /// let evidence: Evidence = serde_json::from_str(
+    ///     r#"{ "claims": [{ "kind": "requirement", "id": "Orders", "path": "../x.ts" }] }"#,
+    /// )?;
     ///
-    /// // A malformed id, and a requirement without its `statement` extra.
-    /// assert_eq!(evidence.findings().len(), 2);
+    /// // A malformed id, a requirement without its `statement` extra, and a
+    /// // path that escapes the source root.
+    /// assert_eq!(evidence.findings().len(), 3);
     /// # Ok::<(), serde_json::Error>(())
     /// ```
     #[must_use]
@@ -185,7 +338,23 @@ impl Claim {
             }
         }
 
+        // the anchor grammar
+        if let Some(path) = self.path.as_deref()
+            && let Err(bad) = Anchor::parse(path)
+        {
+            findings.push(format!("- claim {index}: path `{path}` {bad}"));
+        }
+
         findings
+    }
+
+    /// Returns the claim's `path` parsed as an [`Anchor`].
+    ///
+    /// `None` when the claim carries no path; `Some(Err(_))` when it carries
+    /// one outside the grammar, which [`Evidence::findings`] reports.
+    #[must_use]
+    pub fn anchor(&self) -> Option<Result<Anchor<'_>, BadAnchor>> {
+        self.path.as_deref().map(Anchor::parse)
     }
 }
 

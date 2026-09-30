@@ -1,4 +1,4 @@
-# Emery Developer Guide
+# Emery
 
 Emery is a **spec generator**. The v1 delivery engine — the `plan → refine → execute → finalize` workflow, the target-adapter build loop, and the definition loop — is archived at git tag `v1`:
 
@@ -6,10 +6,4 @@ Emery is a **spec generator**. The v1 delivery engine — the `plan → refine �
 git worktree add ../emery-v1 v1
 ```
 
-This guide documents the `emery` CLI (the `specify` spec generator plus the `show` read verb), the source-adapter contract, and the contributor standards for the Rust workspace.
-
-## Guide structure
-
-- **[Reference](reference/index.md)** — the shipped CLI verbs and output shapes.
-- **[Contributing](contributing/index.md)** — the Rust workspace, quality gates, and Cursor operator plugins.
-- **Standards** — the durable engineering policy: [CLI contract](standards/cli-contract.md), [testing](standards/testing.md), [architecture](standards/architecture.md), [coding standards](standards/coding-standards.md), [Rust style](standards/style.md), [handler shape](standards/handler-shape.md), and [documentation authoring](standards/doc-authoring.md).
+This book is the [reference](reference/index.md) for the shipped `emery` CLI: the `specify` spec generator, the `show` read verb, their output shapes, and the deployment profile the binary ships with. Contributor guidance is [`AGENTS.md`](https://github.com/augentic/emery/blob/main/AGENTS.md) and [`CONTRIBUTING.md`](https://github.com/augentic/emery/blob/main/CONTRIBUTING.md) in the repository.

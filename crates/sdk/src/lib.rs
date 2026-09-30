@@ -9,19 +9,28 @@
 //! - [`source_adapter!`] exports an adapter's metadata and extraction
 //!   functions as a WebAssembly component, and [`metadata`] answers the
 //!   first of them.
-//! - [`Context`], [`Seam`], and [`extract`](fn@extract) run extraction over the
-//!   boundaries selected by an adapter, at most [`CONCURRENT`] at a time.
+//! - [`Context`], [`Seam`], and [`extract`](fn@extract) run extraction over
+//!   the boundaries selected by an adapter, at most [`CONCURRENT`] at a time,
+//!   laying a seam's files into its turn whole when they fit within
+//!   [`INLINE_BYTES`].
 //! - [`Doc`], [`prose!`], [`body`], and [`find`] embed and read adapter
 //!   guidance; [`RUNTIME`] is the guidance every adapter shares, and
 //!   [`check`] holds an adapter's list to its tree.
 //! - [`workspace::list`] traverses workspace input under an adapter-defined
 //!   filter.
-//! - [`survey::surfaces`] optionally discovers caller-facing entry points.
+//! - [`survey::surfaces`] puts one turn to the model for the surfaces of a
+//!   workspace, from the [`survey::Facts`] an adapter's code read of it, and
+//!   holds the [`survey::Inventory`] it answers to the tree before the
+//!   adapter derives its seams from the accepted anchors.
 //!
 //! Contract types and [`Error`] are re-exported, allowing an adapter to depend
-//! on this crate alone. [`Source`] is among them for a host program that calls
-//! an adapter the way the engine does; an adapter implements the world's guest
-//! interface through [`source_adapter!`] and never [`Source`].
+//! on this crate alone: the claim types, [`Anchor`] and [`BadAnchor`] for the
+//! `path` grammar a survey spells anchors in, [`is_kebab`] for the stems it
+//! derives, and the [`serde_json`] and [`tracing`] crates for claims of its
+//! own and events beside this crate's. [`Source`] is among them for a host
+//! program that calls an adapter the way the engine does; an adapter
+//! implements the world's guest interface through [`source_adapter!`] and
+//! never [`Source`].
 //!
 //! # Examples
 //!
@@ -39,7 +48,7 @@
 //!
 //! /// Returns the input as a single mining seam.
 //! pub fn survey(_input: &SourceInput) -> Result<Vec<Seam>, Error> {
-//!     Ok(vec![Seam::Whole])
+//!     Ok(vec![Seam::whole()])
 //! }
 //!
 //! #[cfg(target_arch = "wasm32")]
@@ -65,7 +74,11 @@
 //! - **Seam**: the portion of a source handled by one model request. See
 //!   [`Seam`].
 //! - **Survey**: the adapter-specific step that divides an input into seams
-//!   before extraction.
+//!   before extraction. It is a plain function over the input where the
+//!   source alone decides the cut, or, where its surfaces are the model's to
+//!   name, code that reads the facts, puts one turn through
+//!   [`survey::surfaces`], and derives the seams from the anchors it
+//!   accepted; either way the stems, the closures, and the ids are code's.
 //! - **Mine**: to put one seam to the model under the adapter's `extract.md`
 //!   and gate its answer. [`extract`](fn@extract) mines every seam of a source.
 //! - **Context**: the adapter identifier, source input, and model available to
@@ -73,6 +86,12 @@
 //! - **Lend**: the workspace directory made readable to the model for a seam.
 //! - **Finding**: a validation problem returned to the model for correction.
 //!   The host limits how many correction rounds are available.
+//! - **Stem**: the first dotted segment of a claim id, `orders` in
+//!   `orders.create`. A [`Seam`]'s `stems` hold its `requirement` and
+//!   `criterion` ids to them, and the engine slices its plan by stem.
+//! - **Anchor**: a claim's `path`, a file and its lines. A [`Seam`]'s
+//!   `anchors` are the spans its survey found a behaviour can start at, and
+//!   hold every `requirement`'s anchor to one of them.
 //!
 //! Fallible APIs return [`Error`]. Use [`bad_request!`] when an adapter rejects
 //! unusable input.
@@ -91,17 +110,23 @@ mod reference;
 pub mod survey;
 pub mod workspace;
 
+pub use emery_adapter::is_kebab;
 #[cfg(target_arch = "wasm32")]
 #[doc(inline)]
 pub use emery_adapter::source::export;
 pub use emery_adapter::source::{
-    AdapterMetadata, Backing, Claim, ClaimKind, Evidence, Source, SourceContent, SourceInput,
-    SourceKind,
+    AdapterMetadata, Anchor, Backing, BadAnchor, Claim, ClaimKind, Evidence, Source, SourceContent,
+    SourceInput, SourceKind,
 };
 pub use emery_prose::{Doc, body, check, find, prose};
 pub use omnia_sdk::{Error, Model, bad_gateway, bad_request, not_found, server_error};
+/// The JSON crate a [`Claim`]'s `extras` are built from, for an adapter that
+/// joins claims of its own to what the model answered.
+pub use serde_json;
+/// The tracing crate, for an adapter's own events beside this crate's.
+pub use tracing;
 
-pub use self::extract::{CONCURRENT, Seam, extract};
+pub use self::extract::{CONCURRENT, INLINE_BYTES, Seam, extract};
 
 /// The runtime references every adapter prompt may link.
 ///
@@ -110,12 +135,13 @@ pub use self::extract::{CONCURRENT, Seam, extract};
 /// in their own table; pass [`RUNTIME`] to [`check`] as imports.
 pub static RUNTIME: &[Doc] = prose!["../prose/claims.md", "../prose/reconciliation.md"];
 
-// The documents a turn's system prompt is built from: the adapter's two
-// prompts, and the claim rules within `RUNTIME` that every mining turn
-// carries after `extract.md`.
+// The documents a turn's system prompt is built from: the adapter's prompt,
+// and the claim rules within `RUNTIME` that every mining turn carries after
+// `extract.md`.
 const EXTRACT: &str = "extract.md";
-const SURVEY: &str = "survey.md";
 const CLAIMS: &str = "claims.md";
+// The prompt of a survey by model, for the adapter that puts one.
+const SURVEY: &str = "survey.md";
 
 /// Exports an adapter's metadata and extraction functions as a component.
 ///
@@ -196,15 +222,15 @@ pub fn metadata(kind: SourceKind) -> AdapterMetadata {
 
 /// The adapter addressed, its input, and the model available to one extraction call.
 ///
-/// [`extract`](fn@extract) and [`survey::surfaces`] both take it, so an adapter's survey
-/// and its extraction put their turns to the same model.
+/// [`extract`](fn@extract) takes it, so every turn of a call is put to the
+/// one model the host bound.
 #[derive(Debug)]
 pub struct Context<'a, P> {
     /// The identifier used to address the adapter.
     pub adapter_id: &'a str,
     /// The [`SourceInput`] identifying the source and its content.
     pub input: &'a SourceInput,
-    /// The [`Model`] used for survey and extraction requests.
+    /// The [`Model`] used for extraction requests.
     pub model: &'a P,
 }
 

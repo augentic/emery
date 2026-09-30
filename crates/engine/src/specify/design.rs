@@ -15,29 +15,42 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 use strum::VariantArray as _;
 
-use crate::revision::{self, Design, EMERY, Section, SectionKind, Spec, citations};
+use crate::revision::{self, Design, EMERY, Section, SectionKind, citations};
 use crate::specify::Extract;
-use crate::specify::brief::{Brief, ClaimsSection, Review};
+use crate::specify::basis::Basis;
+use crate::specify::brief::{BasesSection, Brief, ClaimsSection, Review};
 
 /// A synthesis brief for the drafted portions of `design.md`.
 ///
-/// The brief contains extracted claims, the specification being implemented,
-/// and the section outline derived from evidence.
+/// The brief contains extracted claims, the requirement bases the
+/// specification is drafted from, and the section outline derived from
+/// evidence. It runs from the bases rather than the drafted specification, so
+/// the design and the specification are drafted together.
 pub struct DesignBrief<'a> {
     extracts: &'a [Extract],
-    spec: &'a Spec,
+    bases: &'a [Basis<'a>],
     outline: Outline<'a>,
 }
 
 impl<'a> DesignBrief<'a> {
-    /// Returns a design brief for `extracts` and `spec`.
+    /// Returns a design brief for `extracts` and `bases`.
     #[must_use]
-    pub fn new(extracts: &'a [Extract], spec: &'a Spec) -> Self {
+    pub fn new(extracts: &'a [Extract], bases: &'a [Basis<'a>]) -> Self {
         Self {
             extracts,
-            spec,
+            bases,
             outline: Outline::new(extracts),
         }
+    }
+
+    /// Returns the type keys the design offers, in key order.
+    ///
+    /// Every key is referenced exactly once by an accepted design, so the
+    /// accepted [`Design`]'s types are these as a set; the slicing brief takes
+    /// them before the design is drafted.
+    #[must_use]
+    pub fn types(&self) -> Vec<String> {
+        self.outline.keys().map(str::to_owned).collect()
     }
 }
 
@@ -204,7 +217,11 @@ impl Display for DesignBrief<'_> {
             }
         }
 
-        write!(f, "\n## The rendered `spec.md`\n\n{spec}", spec = self.spec)
+        write!(
+            f,
+            "\n## Requirements (the specification's, drafted beside this design)\n\n{bases}",
+            bases = BasesSection(self.bases)
+        )
     }
 }
 
@@ -317,14 +334,16 @@ fn type_block(schema: &mut Value) -> Option<&mut Value> {
     variants.iter_mut().find(|variant| variant["required"] == json!(["type"]))
 }
 
-// The declared name of a `type` claim: its id, its `name` extra, or its path
-// with any `#L…` anchor stripped, so a re-anchored claim keeps its key.
+// The declared name of a `type` claim: its `name` extra — the identifier the
+// declaration spells, which several claims sharing one `id` never share — then
+// its id, then its path with any `#L…` anchor stripped, so a re-anchored claim
+// keeps its key.
 fn declared(claim: &Claim) -> Option<&str> {
-    if let Some(id) = claim.id.as_deref() {
-        return Some(id);
-    }
     if let Some(Value::String(name)) = claim.extras.get("name") {
         return Some(name);
+    }
+    if let Some(id) = claim.id.as_deref() {
+        return Some(id);
     }
 
     let path = claim.path.as_deref()?;

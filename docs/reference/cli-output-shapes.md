@@ -6,12 +6,27 @@ Canonical JSON envelope shapes for the `emery *` commands that skills shell out 
 
 - `--format json` responses are a **flat body**: every successful body is a single JSON object carrying the command-specific fields **at the top level** — there is no `ok` discriminant, no `data` wrapper, and no top-level envelope-version stamp.
 - Failures keep the same flat shape with three extra top-level keys:
-  - `error` — a discriminant string: kebab-case for the four recovery codes (`specify-source-required`, `unsupported-version`, `spec-not-generated`, `spec-outdated`), snake_case for the Omnia defaults (`bad_request`, `not_found`, `server_error`, `bad_gateway`). The discriminant is grep-stable and forms part of the public contract; see [cli-contract.md](../standards/cli-contract.md#exit-codes) for the exit-code table.
+  - `error` — a discriminant string: kebab-case for the four recovery codes (`specify-source-required`, `unsupported-version`, `spec-not-generated`, `spec-outdated`), snake_case for the Omnia defaults (`bad_request`, `not_found`, `server_error`, `bad_gateway`). The discriminant is grep-stable and forms part of the public contract.
   - `message` — humanised one-liner suitable for direct rendering.
-  - `exit-code` — the integer the binary returns.
+  - `exit-code` — the integer the binary returns (see [Exit codes](#exit-codes)).
 - Paths are emitted as plain strings relative to the repo root unless the field name says otherwise.
 - All keys are `kebab-case`. Body shapes are pinned by the typed `*Output` DTOs in `emery-engine` (`Serialize`) and change only with the CLI's own versioning; the failure envelope is `emery-cli`'s.
-- Stream roles: the semantic result body (text or JSON) is **stdout**; the failure envelope and live tracing are **stderr**. Tracing is one level for the whole run — `info` bare, one step up per `-v` and down per `-q`, a process `RUST_LOG` refining a bare run (see [cli-contract.md](../standards/cli-contract.md)).
+- Stream roles: the semantic result body (text or JSON) is **stdout**; the failure envelope and live tracing are **stderr**. Tracing is one level for the whole run — `info` bare, one step up per `-v` and down per `-q`, a process `RUST_LOG` refining a bare run.
+
+## Exit codes
+
+`omnia_sdk::Error::exit_code` maps the four `Error` variants 1:1; there is no exit table in this repository's code.
+
+| Code | Class          | When                                                                                                                                                                 |
+| ---- | -------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 0    | success        | Command succeeded.                                                                                                                                                   |
+| 1    | `bad_request`  | Operator or input refusal. The `error` field is `specify-source-required`, `unsupported-version`, `spec-outdated`, the loader's `refused`, or `bad_request`.         |
+| 2    | `not_found`    | Missing resource. The `error` field is `spec-not-generated` or `not_found`.                                                                                          |
+| 3    | `server_error` | Evidence the claim gate rejects, or an unclassified failure: I/O, storage, conversions. The `error` field is `server_error` or the loader's `internal`.               |
+| 4    | `bad_gateway`  | Upstream model, adapter, or component-acquisition failure. The `error` field is `bad_gateway` or the loader's `unavailable`.                                          |
+| 64   | usage          | Clap usage error (unknown verb or flag, missing argument), rendered by clap on stderr with no envelope. `EX_USAGE`, so exit 2 always means a `not_found` envelope.    |
+
+Skills branch on the exit code first and on the four kebab-case recovery discriminants second. On `unsupported-version` (exit `1`), tell the operator to update the installed binary through its install channel; a skill that sees exit `64` has built a bad argv.
 
 ## Text-mode style
 

@@ -1,26 +1,15 @@
 [book]
-title = "Emery Developer Guide"
+title = "Emery"
 authors = ["Augentic"]
 language = "en"
 src = "."
 
 [output.html]
 git-repository-url = "https://github.com/augentic/emery"
-additional-css = ["assets/theme/emery-docs.css"]
-additional-js = ["assets/theme/authority-widget.js"]
-default-theme = "light"
-preferred-dark-theme = "navy"
-sidebar-header-nav = true
 admonitions = true
 
-[output.html.fold]
-enable = true
-level = 1
-
-# Relative-link integrity for the Developer Guide. Web links are house
-# style, not a CI predicate. Out-of-tree targets (`../../crates/…`,
-# `../../AGENTS.md`, …) are allowed so contributor docs can cite the
-# workspace. HTML lands under `docs/book/html/` when this backend is on.
+# Relative links must resolve; out-of-tree targets (`../../src/…`) are allowed
+# so the reference can cite the workspace. Web links are not checked.
 [output.linkcheck2]
 follow-web-links = false
 traverse-parent-directories = true

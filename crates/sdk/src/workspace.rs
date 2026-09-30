@@ -2,15 +2,14 @@
 //!
 //! [`list`] visits directories and regular files beneath a source root. The
 //! filter receives each [`Entry`] and may prune directories or omit files.
-//! Emery's `.omnia/` directories and generated documents are always excluded.
+//! Emery's `.omnia/` directories and generated documents are always excluded,
+//! as the claim gate refuses a `path` anchored in them.
 
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use anyhow::Context as _;
+use emery_adapter::source::{SKIP_DIRS, SKIP_FILES};
 use omnia_sdk::{Error, bad_request};
-
-const SKIP_DIRS: &[&str] = &[".omnia"];
-const SKIP_FILES: &[&str] = &["spec.md", "design.md", "plan.md"];
 
 /// A workspace entry passed to an adapter's filter.
 ///
@@ -109,49 +108,6 @@ pub fn list(root: &str, mut keep: impl FnMut(Entry<'_>) -> bool) -> Result<Vec<S
     let mut files = walk(Path::new(root), "", &mut keep)?;
     files.sort();
     Ok(files)
-}
-
-#[derive(Debug)]
-pub(crate) enum Unoffered {
-    NoFile,
-    Refused,
-}
-
-// Reads and offers each step as `list` does, so a path is held to the listing.
-pub(crate) fn offered_file(
-    root: &str, relative: &str, keep: &mut impl FnMut(Entry<'_>) -> bool,
-) -> Result<(), Unoffered> {
-    let mut dir = PathBuf::from(root);
-    for offered in steps(relative) {
-        let found = find_entry(&dir, offered.name()).ok_or(Unoffered::NoFile)?;
-        let placed = match offered {
-            Entry::Dir(_) => found.file_type().is_ok_and(|kind| kind.is_dir()),
-            Entry::File(_) => found.file_type().is_ok_and(|kind| kind.is_file()),
-        };
-        if !placed {
-            return Err(Unoffered::NoFile);
-        }
-        if offered.excluded() || !keep(offered) {
-            return Err(Unoffered::Refused);
-        }
-        dir = found.path();
-    }
-
-    Ok(())
-}
-
-fn steps(relative: &str) -> impl Iterator<Item = Entry<'_>> {
-    relative
-        .match_indices('/')
-        .map(|(end, _)| Entry::Dir(&relative[..end]))
-        .chain(std::iter::once(Entry::File(relative)))
-}
-
-// A `DirEntry` reports a symlink as a symlink; the metadata of the joined
-// path would have followed it.
-fn find_entry(dir: &Path, name: &str) -> Option<std::fs::DirEntry> {
-    let reading = std::fs::read_dir(dir).ok()?;
-    reading.filter_map(Result::ok).find(|entry| entry.file_name().to_str() == Some(name))
 }
 
 fn walk(

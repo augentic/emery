@@ -25,8 +25,8 @@
         "REQ-004"
       ],
       "types": [
-        "orders.order",
-        "orders.line"
+        "orders.line",
+        "orders.order"
       ],
       "depends-on": [
         "SLICE-001"

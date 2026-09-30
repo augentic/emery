@@ -17,7 +17,9 @@ use crate::{CLAIMS, EXTRACT, RUNTIME, SURVEY};
 const LIST_DOCS: &str = "list_docs";
 const READ_DOC: &str = "read_doc";
 
-const SYSTEM: &[&str] = &[EXTRACT, SURVEY, CLAIMS];
+// The documents a turn's system prompt is built from: a mining turn's, and
+// the survey turn's.
+const SYSTEM: &[&str] = &[EXTRACT, CLAIMS, SURVEY];
 
 /// Returns the reference tools declared to the model on every turn.
 #[must_use]
@@ -38,7 +40,7 @@ pub fn tools() -> Vec<Tool> {
 /// Returns the handler that serves the reference tools from `docs` and then [`RUNTIME`].
 ///
 /// `list_docs` lists the adapter's references and the runtime references. It
-/// never lists a system document (`extract.md`, `survey.md`, `claims.md`),
+/// never lists a system document (`extract.md`, `claims.md`, `survey.md`),
 /// since a turn either carries it already or has nothing to learn from it.
 /// `read_doc` still answers every document, so a followed link never fails.
 ///

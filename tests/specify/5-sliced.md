@@ -18,7 +18,7 @@ Delivers sign-in and the session it issues; a session cannot be verified without
 
 ID: SLICE-002
 Requirements: [REQ-003, REQ-004]
-Types: [orders.order, orders.line]
+Types: [orders.line, orders.order]
 Depends on: [SLICE-001]
 
 Delivers order creation and cancellation for a signed-in caller; verified by placing and cancelling an order under a session from `authentication`.

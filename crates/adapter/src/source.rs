@@ -15,4 +15,7 @@ mod evidence;
 #[cfg(target_arch = "wasm32")]
 pub use bindings::export;
 pub use capability::{AdapterMetadata, Source, SourceContent, SourceInput};
-pub use evidence::{Backing, CLAIM_ID_REGEX, Claim, ClaimKind, Evidence, SourceKind};
+pub use evidence::{
+    Anchor, Backing, BadAnchor, CLAIM_ID_REGEX, Claim, ClaimKind, Evidence, SKIP_DIRS, SKIP_FILES,
+    SourceKind,
+};

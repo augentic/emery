@@ -598,6 +598,65 @@ async fn seams_grouped() {
     provider.model.assert_exhausted();
 }
 
+// The extract call that minted `start.persist` and `start.recover` under one
+// stem told them apart, so the grouping may merge across stems but never
+// within one source's stem.
+#[tokio::test]
+async fn same_stem_kept() {
+    let merged = r#"{"groups": [
+        {"claims": [0, 1], "classes": [[0], [1]]},
+        {"claims": [2], "classes": [[2]]}]}"#;
+    let corrected = r#"{"groups": [
+        {"claims": [0, 2], "classes": [[0, 2]]},
+        {"claims": [1], "classes": [[1]]}]}"#;
+    let spec = r#"{"preamble": ["One source, two stems."],
+        "requirements": [
+            {"subject": "start.persist",
+             "scenarios": [{"name": "Persist", "when": "the service starts", "then": "the queue is persisted"}]},
+            {"subject": "start.recover",
+             "scenarios": [{"name": "Recover", "when": "the service restarts", "then": "the queue is restored"}]}]}"#;
+    let mut provider =
+        Provider::answering([merged, corrected, spec, DESIGN_ANSWER]).declaring(["docs"]);
+    provider.source.evidence.insert(
+        "docs".to_string(),
+        Ok(evidence(vec![
+            requirement("start.persist", "Starting the service persists the queue."),
+            requirement("start.recover", "Restarting the service restores the queue."),
+            requirement("worker.persist", "The worker persists the queue on start."),
+        ])),
+    );
+
+    cli_ok(&provider, &["emery", "specify", "docs"]).await;
+
+    let check = &provider.model.exchanges()[0];
+    assert_eq!(check.tool, "check");
+    let correction = check.outcome.as_ref().expect_err("the same-stem merge is rejected");
+    assert!(
+        correction.contains(
+            "group 0: `docs` minted `start.persist`, `start.recover` as distinct requirements \
+             under the stem `start`, so they are never one group"
+        ),
+        "{correction}"
+    );
+    let request = provider.model.seen()[0].messages.join("\n");
+    assert!(request.contains("an answer that merges them is refused"), "{request}");
+
+    let id = current(&provider.storage);
+    let spec: Value = serde_json::from_slice(&document(&provider.storage, &id, "spec.json"))
+        .expect("the committed spec is JSON");
+    assert_eq!(spec["requirements"].as_array().map(Vec::len), Some(2), "{spec}");
+    assert_eq!(
+        spec["requirements"][0]["sources"],
+        serde_json::json!([
+            {"source": "docs", "claim": "start.persist"},
+            {"source": "docs", "claim": "worker.persist"}
+        ]),
+        "{spec}"
+    );
+    assert_eq!(spec["requirements"][1]["subject"], "start.recover", "{spec}");
+    provider.model.assert_exhausted();
+}
+
 // --- regeneration ---
 
 // Every subject is drafted again and nothing of the outgoing revision reaches
@@ -971,14 +1030,15 @@ async fn invalid_draft() {
     }
 }
 
-// One `then` across requirements is a refrain, not what each scenario observes.
+// One `then` across requirements may be two behaviours sharing an outcome, so
+// it is accepted as drafted and left to the log.
 #[tokio::test]
 async fn shared_then() {
     let draft = r#"{"preamble": [], "requirements": [
-        {"subject": "greeting.behaviour", "scenarios": [{"name": "Greeting", "when": "the greeting is requested", "then": "the system behaves correctly"}]},
-        {"subject": "greeting.formal", "scenarios": [{"name": "Formal", "when": "the formal greeting is requested", "then": "the system behaves correctly"}]}
+        {"subject": "greeting.behaviour", "scenarios": [{"name": "Greeting", "when": "the greeting is requested", "then": "the response is a greeting"}]},
+        {"subject": "greeting.formal", "scenarios": [{"name": "Formal", "when": "the formal greeting is requested", "then": "the response is a greeting"}]}
     ]}"#;
-    let mut provider = Provider::answering([draft, draft, draft]).declaring(["docs"]);
+    let mut provider = Provider::answering([draft, DESIGN_ANSWER]).declaring(["docs"]);
     provider.source.evidence.insert(
         "docs".to_string(),
         Ok(evidence(vec![
@@ -987,8 +1047,114 @@ async fn shared_then() {
         ])),
     );
 
-    let envelope = fail(&provider, &["emery", "specify", "docs"], 1, "bad_request").await;
-    assert_message(&envelope, "repeats across 2 requirements");
+    cli_ok(&provider, &["emery", "specify", "docs"]).await;
+
+    let check = &provider.model.exchanges()[0];
+    assert_eq!(check.tool, "check");
+    assert!(check.outcome.is_ok(), "the shared outcome is no finding: {:?}", check.outcome);
+    let id = current(&provider.storage);
+    let spec: Value = serde_json::from_slice(&document(&provider.storage, &id, "spec.json"))
+        .expect("the committed spec is JSON");
+    let outcomes: Vec<&Value> = spec["requirements"]
+        .as_array()
+        .expect("requirements")
+        .iter()
+        .map(|requirement| &requirement["scenarios"][0]["then"])
+        .collect();
+    assert_eq!(outcomes, vec!["the response is a greeting", "the response is a greeting"]);
+    provider.model.assert_exhausted();
+}
+
+// Past `SPEC_CHUNK` requirements the draft is chunked by stem: two turns run
+// beside the design, the second pinned to no preamble, and the specification
+// is assembled in id order whichever answers first.
+#[tokio::test]
+async fn chunked_draft() {
+    let chunk = emery_engine::specify::SPEC_CHUNK;
+    // `alpha` fills a chunk, `beta` and `gamma` merge into the next
+    let stems: Vec<(&str, usize)> = vec![("alpha", chunk), ("beta", 2), ("gamma", 1)];
+    let mut claims = Vec::new();
+    for (stem, count) in &stems {
+        for index in 0..*count {
+            let statement = format!("`{stem}` does thing {index}.");
+            claims.push(requirement(&format!("{stem}.thing-{index}"), &statement));
+        }
+    }
+    let drafts_for = |ids: &[String], preamble: &[&str]| {
+        let requirements: Vec<Value> = ids
+            .iter()
+            .map(|id| {
+                serde_json::json!({"subject": id, "scenarios": [{
+                    "name": format!("Scenario for {id}"),
+                    "when": format!("{id} is triggered"),
+                    "then": format!("{id} is observed"),
+                }]})
+            })
+            .collect();
+        serde_json::json!({"preamble": preamble, "requirements": requirements}).to_string()
+    };
+    let ids: Vec<String> = claims.iter().filter_map(|claim| claim.id.clone()).collect();
+    let (first, second) = ids.split_at(chunk);
+    let first_draft = drafts_for(first, &["Many things, drafted in chunks."]);
+    let second_draft = drafts_for(second, &[]);
+    let grouping = separate_grouping(claims.len());
+    let numbered: Vec<String> = (1..=claims.len()).map(|n| format!("REQ-{n:03}")).collect();
+    let alpha: Vec<&str> = numbered[..chunk].iter().map(String::as_str).collect();
+    let beta: Vec<&str> = numbered[chunk..chunk + 2].iter().map(String::as_str).collect();
+    let gamma: Vec<&str> = numbered[chunk + 2..].iter().map(String::as_str).collect();
+    let slicing = separate_slicing(&[("alpha", &alpha), ("beta", &beta), ("gamma", &gamma)]);
+    let mut provider = Provider::answering([
+        grouping.as_str(),
+        first_draft.as_str(),
+        second_draft.as_str(),
+        DESIGN_ANSWER,
+        slicing.as_str(),
+    ])
+    .declaring(["docs"]);
+    provider.source.evidence.insert("docs".to_string(), Ok(evidence(claims)));
+
+    cli_ok(&provider, &["emery", "specify", "docs"]).await;
+
+    // the first chunk asks for the preamble, the second is pinned to none
+    let seen = provider.model.seen();
+    let schemas: Vec<(&str, Value)> = seen[1..=2]
+        .iter()
+        .map(|turn| {
+            let SeenFormat::Schema { name, schema } = &turn.format else {
+                panic!("the draft is steered by schema");
+            };
+            (name.as_str(), serde_json::from_str(schema).expect("the steering schema is JSON"))
+        })
+        .collect();
+    assert_eq!(schemas[0].0, "spec-draft");
+    assert_eq!(schemas[1].0, "spec-draft");
+    assert_eq!(schemas[0].1["properties"]["requirements"]["maxItems"], chunk);
+    assert!(schemas[0].1["properties"]["preamble"].get("maxItems").is_none());
+    assert_eq!(schemas[1].1["properties"]["requirements"]["maxItems"], 3);
+    assert_eq!(schemas[1].1["properties"]["preamble"]["maxItems"], 0);
+    assert_eq!(
+        schemas[1].1["$defs"]["Draft"]["properties"]["subject"]["enum"],
+        serde_json::json!(["beta.thing-0", "beta.thing-1", "gamma.thing-0"]),
+        "the second chunk is the merged small stems"
+    );
+    let second_request = seen[2].messages.join("\n");
+    assert!(second_request.contains("leave it empty"), "{second_request}");
+    assert!(!second_request.contains("- REQ-001 `alpha.thing-0`"), "{second_request}");
+    assert!(second_request.contains("- REQ-028 `gamma.thing-0`"), "{second_request}");
+
+    // one specification, the preamble from the first chunk, every id in order
+    let id = current(&provider.storage);
+    let spec: Value = serde_json::from_slice(&document(&provider.storage, &id, "spec.json"))
+        .expect("the committed spec is JSON");
+    assert_eq!(spec["preamble"], serde_json::json!(["Many things, drafted in chunks."]));
+    let committed: Vec<&str> = spec["requirements"]
+        .as_array()
+        .expect("requirements")
+        .iter()
+        .map(|requirement| requirement["id"].as_str().expect("id"))
+        .collect();
+    assert_eq!(committed, numbered);
+    assert_eq!(spec["requirements"][chunk]["subject"], "beta.thing-0");
     provider.model.assert_exhausted();
 }
 
@@ -1325,6 +1491,51 @@ async fn type_collisions() {
     provider.model.assert_exhausted();
 }
 
+// Two `type` claims under one id declare two identifiers: each is keyed by
+// its `name`, so neither displaces the other and no key carries a path.
+#[tokio::test]
+async fn type_named() {
+    let typed = |name: &str, signature: &str| {
+        let mut typed = claim(ClaimKind::Type, "greeting.type", ("signature", signature));
+        typed.extras.insert("name".to_string(), Value::String(name.to_string()));
+        typed.path = Some(format!("src/{}.ts#L1", name.to_lowercase()));
+        typed
+    };
+    let mut provider = Provider::answering([
+        SPEC_ANSWER,
+        r#"{"preamble": [], "sections": [
+            {"kind": "overview", "blocks": [{"text": "The greeting is one static endpoint."}]},
+            {"kind": "domain-model", "blocks": [{"type": "Greeting"}, {"type": "Salutation"}]}
+        ]}"#,
+    ])
+    .declaring(["docs"]);
+    provider.source.evidence.insert(
+        "docs".to_string(),
+        Ok(evidence(vec![
+            requirement("greeting.behaviour", "GET /greeting returns the static string 'hello'."),
+            typed("Greeting", "interface Greeting { text: string }"),
+            typed("Salutation", "type Salutation = Greeting"),
+        ])),
+    );
+
+    cli_ok(&provider, &["emery", "specify", "docs"]).await;
+
+    let SeenFormat::Schema { schema, .. } = &provider.model.seen()[1].format else {
+        panic!("the design is steered by schema");
+    };
+    let schema: Value = serde_json::from_str(schema).expect("the steering schema is JSON");
+    let block = schema["$defs"]["Block"]["oneOf"]
+        .as_array()
+        .and_then(|variants| {
+            variants.iter().find(|variant| variant["required"] == serde_json::json!(["type"]))
+        })
+        .expect("the type block variant");
+    assert_eq!(block["properties"]["type"]["enum"], serde_json::json!(["Greeting", "Salutation"]));
+    let plan = shown(&provider, "plan").await;
+    assert!(plan.contains("Types: [Greeting, Salutation]"), "{plan}");
+    provider.model.assert_exhausted();
+}
+
 #[tokio::test]
 async fn model_fails() {
     let provider = Provider {
@@ -1340,8 +1551,9 @@ async fn model_fails() {
 // Three stems and two types: the model merges two stems, the engine refuses
 // the draft that leaves a requirement out, then numbers the corrected slices by
 // their lowest requirement and writes every list in canonical order — the
-// requirements the answer listed backwards in id order, the types in the
-// design's.
+// requirements the answer listed backwards in id order, the types in key
+// order. The slicing runs beside the two drafts from the bases, so its request
+// carries the requirement outline and the type keys, never a rendered document.
 #[tokio::test]
 async fn sliced() {
     let refused = r#"{"preamble": [], "slices": [
@@ -1361,7 +1573,7 @@ async fn sliced() {
 
     cli_ok(&provider, &["emery", "specify", "docs"]).await;
 
-    // the slicing request carries the stems, the keys, and both rendered documents
+    // the slicing request carries the stems, the keys, and the requirement outline
     let slicing = &provider.model.seen()[3];
     let SeenFormat::Schema { name, schema } = &slicing.format else {
         panic!("the slicing is steered by schema");
@@ -1379,14 +1591,24 @@ async fn sliced() {
     );
     assert_eq!(
         draft["types"]["items"]["enum"],
-        serde_json::json!(["orders.order", "orders.line"]),
-        "the design's type keys ride the schema in document order"
+        serde_json::json!(["orders.line", "orders.order"]),
+        "the design's type keys ride the schema in key order"
     );
     let request = slicing.messages.join("\n");
     assert!(request.contains("- `auth` — REQ-001\n"), "{request}");
     assert!(request.contains("- `orders` — REQ-003, REQ-004\n"), "{request}");
-    assert!(request.contains("### Requirement: orders.cancel"), "the spec rides: {request}");
-    assert!(request.contains("## Domain model"), "the design rides: {request}");
+    assert!(request.contains("- `orders.line`\n- `orders.order`\n"), "the keys ride: {request}");
+    assert!(
+        request.contains("- REQ-004 `orders.cancel` — Status: unknown"),
+        "the requirement outline rides: {request}"
+    );
+    assert!(!request.contains("### Requirement:"), "no rendered spec rides: {request}");
+    assert!(!request.contains("## Domain model"), "no rendered design rides: {request}");
+
+    // the design request carries the same outline in place of a rendered spec
+    let design = provider.model.seen()[2].messages.join("\n");
+    assert!(design.contains("- REQ-004 `orders.cancel` — Status: unknown"), "{design}");
+    assert!(!design.contains("### Requirement:"), "no rendered spec rides: {design}");
 
     // the refusal is the correction; the corrected slicing commits
     let check = &provider.model.exchanges()[3];

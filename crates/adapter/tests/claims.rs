@@ -1,4 +1,4 @@
-use emery_adapter::source::{Backing, ClaimKind, Evidence};
+use emery_adapter::source::{Anchor, Backing, BadAnchor, ClaimKind, Evidence};
 
 #[test]
 fn parse_evidence() {
@@ -122,6 +122,80 @@ fn missing_extras() {
     );
     assert!(findings[0].contains("`password-reset.request` is missing extra `statement`"));
     assert!(findings[1].contains("`password-reset.stale` is missing extra `replay-digest`"));
+}
+
+#[test]
+fn anchors() {
+    let whole = Anchor::parse("src/orders.ts").expect("a whole-file anchor");
+    assert_eq!(whole.path, "src/orders.ts");
+    assert_eq!(whole.lines, None);
+    let line = Anchor::parse("src/orders.ts#L7").expect("a single line");
+    assert_eq!(line.lines, Some((7, 7)));
+    let range = Anchor::parse("docs/api/orders.md#L12-L34").expect("a range");
+    assert_eq!(range.path, "docs/api/orders.md");
+    assert_eq!(range.lines, Some((12, 34)));
+    assert_eq!(Anchor::parse("a/.omnia.md").map(|anchor| anchor.path), Ok("a/.omnia.md"));
+    assert_eq!(Anchor::parse("a/spec.md.bak").map(|anchor| anchor.path), Ok("a/spec.md.bak"));
+
+    for (anchor, expected) in [
+        ("src/orders.ts#12", BadAnchor::Grammar),
+        ("src/orders.ts#L", BadAnchor::Grammar),
+        ("src/orders.ts#L0", BadAnchor::Grammar),
+        ("src/orders.ts#L01", BadAnchor::Grammar),
+        ("src/orders.ts#L1-", BadAnchor::Grammar),
+        ("src/orders.ts#L1-L2-L3", BadAnchor::Grammar),
+        ("src/orders.ts#L1 -L2", BadAnchor::Grammar),
+        ("", BadAnchor::Escapes),
+        ("#L1", BadAnchor::Escapes),
+        ("/etc/passwd", BadAnchor::Escapes),
+        ("../secret.ts", BadAnchor::Escapes),
+        ("src/../../x.ts#L1", BadAnchor::Escapes),
+        (".omnia/storage/x.json", BadAnchor::SkipDir(".omnia".to_string())),
+        ("a/.omnia/x.json#L1", BadAnchor::SkipDir(".omnia".to_string())),
+        ("spec.md", BadAnchor::SkipFile("spec.md".to_string())),
+        ("docs/plan.md#L3", BadAnchor::SkipFile("plan.md".to_string())),
+        ("src/orders.ts#L34-L12", BadAnchor::Reversed { start: 34, end: 12 }),
+    ] {
+        assert_eq!(Anchor::parse(anchor), Err(expected), "{anchor}");
+    }
+}
+
+// The gate reports the anchor beside the id and the extras, once per claim,
+// and `Claim::anchor` gives a caller the parse without re-reading the finding.
+#[test]
+fn anchored_claims() {
+    let anchored = evidence(
+        r#"{"claims":[
+            {"kind":"requirement","id":"orders.create","path":"src/orders.ts#L3-L9","statement":"Creates."},
+            {"kind":"requirement","id":"orders.list","path":"../x.ts","statement":"Lists."},
+            {"kind":"call","path":"src/orders.ts#L9-L3"},
+            {"kind":"type","path":".omnia/x.json"},
+            {"kind":"decision"}
+        ]}"#,
+    );
+    let findings = anchored.findings();
+    assert_eq!(findings.len(), 3, "{findings:?}");
+    assert!(
+        findings[0].contains("claim 1: path `../x.ts` escapes the source root"),
+        "{findings:?}"
+    );
+    assert!(
+        findings[1].contains("claim 2: path `src/orders.ts#L9-L3` ends at line 3"),
+        "{findings:?}"
+    );
+    assert!(
+        findings[2].contains("claim 3: path `.omnia/x.json` is under the skip root"),
+        "{findings:?}"
+    );
+    assert_eq!(
+        anchored.claims[0].anchor(),
+        Some(Ok(Anchor {
+            path: "src/orders.ts",
+            lines: Some((3, 9)),
+        }))
+    );
+    assert_eq!(anchored.claims[1].anchor(), Some(Err(BadAnchor::Escapes)));
+    assert_eq!(anchored.claims[4].anchor(), None);
 }
 
 fn evidence(json: &str) -> Evidence {

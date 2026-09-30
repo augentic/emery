@@ -8,6 +8,7 @@
 //! design drafting, and slicing. Facts already known to the engine are
 //! validated or inserted directly rather than requested from the model.
 
+use std::borrow::Borrow;
 use std::fmt::{self, Display, Formatter};
 
 use omnia_sdk::model::{Findings, Question};
@@ -16,7 +17,8 @@ use schemars::JsonSchema;
 use serde::de::DeserializeOwned;
 use serde_json::Value;
 
-use crate::revision::RESERVED;
+use crate::revision::{RESERVED, Status};
+use crate::specify::basis::Basis;
 use crate::specify::{Extract, PROSE};
 
 /// A typed synthesis question and the checks its answer must satisfy.
@@ -104,9 +106,14 @@ impl Review {
     /// Returns whether the candidate is accepted.
     ///
     /// A candidate nothing was found against is accepted. Otherwise the
-    /// findings are returned for the backend to feed back as the correction.
+    /// findings are logged at DEBUG under the brief's `judge` span and
+    /// returned for the backend to feed back as the correction.
     pub fn verdict(self) -> Result<(), Findings> {
-        if self.0.is_empty() { Ok(()) } else { Err(self.0) }
+        if self.0.is_empty() {
+            return Ok(());
+        }
+        tracing::debug!(findings = ?self.0, "candidate rejected");
+        Err(self.0)
     }
 
     /// Checks that a drafted paragraph carries none of the document's own markup.
@@ -143,6 +150,64 @@ impl Review {
         } else if text.contains('\n') {
             self.note(format_args!("{label} spans more than one line"));
         }
+    }
+}
+
+/// The requirement outline of a document brief's turn, one entry per basis.
+///
+/// Each entry carries the engine's facts about the requirement: its id,
+/// subject, status, sources, whether a criterion covers it, and every
+/// contributing claim with its role. The three drafts run from it together,
+/// so none waits on another's answer. The bases are owned or borrowed, so a
+/// brief over a chunk of the run's bases lists them as one over all of them
+/// does.
+pub struct BasesSection<'a, B>(pub &'a [B]);
+
+impl<'a, B: Borrow<Basis<'a>>> Display for BasesSection<'a, B> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        for basis in self.0 {
+            let basis: &Basis<'a> = basis.borrow();
+            let coverage = if basis.covered {
+                "evidenced"
+            } else {
+                "not evidenced — `then` is the outcome the statements name, else `[unknown]`"
+            };
+            write!(
+                f,
+                "- {id} `{subject}` — Status: {status} — Sources: [",
+                id = basis.id,
+                subject = basis.subject,
+                status = basis.status,
+            )?;
+            for (position, member) in basis.contributors().enumerate() {
+                if position > 0 {
+                    f.write_str(", ")?;
+                }
+                write!(f, "{}:{}", member.source, member.id)?;
+            }
+            writeln!(f, "] — acceptance criteria {coverage}")?;
+
+            for (position, class) in basis.classes.iter().enumerate() {
+                let role = match (basis.status, position) {
+                    (Status::Divergence, 0) => "winner",
+                    (Status::Divergence, _) => "loser",
+                    _ => "contributor",
+                };
+
+                for member in class {
+                    writeln!(
+                        f,
+                        "  - {role}: {source} ({kind}, `{claim}`): {statement}",
+                        source = member.source,
+                        kind = member.kind,
+                        claim = member.id,
+                        statement = member.statement,
+                    )?;
+                }
+            }
+        }
+
+        Ok(())
     }
 }
 

@@ -1,6 +1,6 @@
 # Contribution Guide
 
-Augentic welcomes contributions to the Emery framework. This document covers the essentials for getting a pull request accepted. For detailed guidance on the runtime, adapters, schemas, and Cursor skill wrappers, see the [Contributing section](docs/contributing/index.md) of the Developer Guide.
+Augentic welcomes contributions to the Emery framework. This document covers the essentials for getting a pull request accepted. The repository map, vocabulary, invariants, and commands are in [`AGENTS.md`](AGENTS.md).
 
 ## Table of Contents
 
@@ -17,11 +17,11 @@ Unless you are fixing a known bug, we recommend discussing your change with the 
 The framework lives in one repository with two surfaces:
 
 - **Rust workspace** (`src/`, `crates/`, `examples/`) — the `emery` binary, guest orchestrations, and runtime-generated model answer contracts
-- **Prose and Cursor wrappers** (`plugins/`, `docs/`, `.cursor-plugin/`) — ultrathin `/emery:*` skill wrappers, documentation, and the marketplace manifest
+- **Prose and Cursor wrappers** (`plugins/`, `docs/`, `.cursor-plugin/`) — the ultrathin `/emery:*` skill wrapper, the CLI reference, and the marketplace manifest
 
 Adapters live in the sibling [`augentic/emery-adapters`](https://github.com/augentic/emery-adapters) repository.
 
-See the [Contributing Overview](docs/contributing/index.md) for the full repository map, development environment setup, and links to topic-specific guides. To preview working-tree `/emery:*` skills against a local CLI, see [Cursor operator plugins](docs/contributing/operator-plugins.md).
+To preview the working-tree `/emery:*` skill against a local CLI: `cargo install --path . --locked`, then `cursor-agent --plugin-dir plugins/emery` from the repository root. When `plugins/` content changes, bump `.cursor-plugin/marketplace.json` `metadata.version` and `plugins/emery/.cursor-plugin/plugin.json` `version` in the same PR; plugin SemVer is independent of the host CLI.
 
 ## Code style
 
@@ -33,8 +33,8 @@ See the [Contributing Overview](docs/contributing/index.md) for the full reposit
 
 ### Docs and skill wrappers
 
-- Keep `/emery:*` skill bodies ultrathin invoke-and-relay — body style is guidance in [`docs/standards/cli-contract.md`](docs/standards/cli-contract.md)
-- `mdbook build docs` must pass before submitting a pull request that touches docs. See [Quality gates](docs/contributing/quality-gates.md#consistency-links).
+- Keep `/emery:*` skill bodies ultrathin invoke-and-relay: check `emery --version`, elicit arguments, invoke one CLI verb, relay stdout
+- `mdbook build docs` must pass before submitting a pull request that touches docs
 - Use kebab-case for file names, change names, and adapter identifiers
 - Store behavior belongs in guest orchestrations or adapter prompts, not in skill bodies
 
@@ -95,12 +95,12 @@ Pull requests should be targeted at the `main` branch. Before creating a pull re
 
 1. Create a feature branch off of `main`.
 2. [Rebase](https://git-scm.com/book/en/Git-Branching-Rebasing) your local changes against `main`.
-3. Run checks: `mdbook build docs` for the Developer Guide; `make ci` for the full gate.
+3. Run checks: `make ci` for the full gate; `mdbook build docs` when the change touches `docs/`.
 4. Accept the Developer's Certificate of Origin on all commits (see above).
 
 All contributions are made via pull request. All patches from all contributors get reviewed. At least one review from a maintainer is required for all patches (even patches from maintainers).
 
-Normally, all pull requests must include tests that cover your change, written against the public boundaries: root product scenarios under `tests/` (the default — argv in, envelope/exit/storage out), with crate integration tests under `crates/*/tests/` only for independent library contracts. The placement rules live in [testing standards](docs/standards/testing.md) — read the triage buckets there before adding a test. Do not add a new `src` `#[cfg(test)]` module without a one-line Keep or Collapse reason from that document; the default home for every test is the root scenario layer. For skill-wrapper or docs changes, run `mdbook build docs` (and, for wrapper changes, manually verify the skill in a target project).
+Normally, all pull requests must include tests that cover your change, written against the public boundaries: root product scenarios under `tests/` (the default — argv in, envelope/exit/storage out), with crate integration tests under `crates/*/tests/` only for independent library contracts and unit tests only for CLI-unreachable branches. For skill-wrapper or docs changes, run `mdbook build docs` (and, for wrapper changes, manually verify the skill in a target project).
 
 ## Conduct
 

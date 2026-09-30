@@ -42,9 +42,4 @@ The environment variables apply to a bare `hosts:` row; a row carrying compiled-
 > [!WARNING]
 > Identifier grammar is backend policy. The filesystem backend rejects `/` inside a bucket or container name (path-traversal fencing), so a project-id prefix targeting it needs a single-segment delimiter (for example `<project>--revisions`) or per-project roots. The in-memory and remote backends accept `/`-separated identifiers.
 
-Remote-binding performance is unmeasured: the numbers stay unconfirmed until a remote backing is deployed and wall-clocked (design/portable-storage.md, risk 4).
-
-## See also
-
-- [Architecture standards](../standards/architecture.md) — deployment policy and the workspace shape.
-- [CLI architecture](../contributing/cli-architecture.md) — the `omnia::runtime!` invocation in detail.
+Remote-binding performance is unmeasured: the numbers stay unconfirmed until a remote backing is deployed and wall-clocked.

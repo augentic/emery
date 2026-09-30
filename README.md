@@ -28,9 +28,8 @@ emery --version
 
 ## Documentation
 
-- **CLI reference:** [docs/reference/cli/index.md](docs/reference/cli/index.md)
-- **Contributing:** [docs/contributing/index.md](docs/contributing/index.md)
-- **Full Developer Guide:** [emery.augentic.io](https://emery.augentic.io/) · [In-tree book source](docs/SUMMARY.md)
+- **CLI reference:** [emery.augentic.io](https://emery.augentic.io/) · [in-tree source](docs/reference/cli/index.md)
+- **Contributing:** [AGENTS.md](AGENTS.md) (repository map, invariants, commands) and [CONTRIBUTING.md](CONTRIBUTING.md)
 
 ## Developing Emery (contributors)
 
@@ -48,7 +47,7 @@ Preview the working-tree Cursor skill against a local CLI:
 cursor-agent --plugin-dir plugins/emery
 ```
 
-Start with the [developer loop](docs/contributing/dev-loop.md), then [Cursor operator plugins](docs/contributing/operator-plugins.md) and [CONTRIBUTING.md](CONTRIBUTING.md). See also [GOVERNANCE.md](GOVERNANCE.md) and [Code of Conduct](CODE-OF-CONDUCT.md).
+Start with [AGENTS.md](AGENTS.md), then [CONTRIBUTING.md](CONTRIBUTING.md). See also [GOVERNANCE.md](GOVERNANCE.md) and [Code of Conduct](CODE-OF-CONDUCT.md).
 
 ## License
 

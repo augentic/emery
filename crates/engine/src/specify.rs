@@ -2,8 +2,10 @@
 //!
 //! [`specify`] validates the complete source list before loading adapters.
 //! Sources are extracted concurrently, and the first failure among them ends
-//! the run; their claims are then reconciled by authority and synthesised into
-//! `spec.md` and `design.md`, and the specification is sliced into `plan.md`.
+//! the run; their claims are then reconciled by authority into requirement
+//! bases, from which `spec.md` — in chunks of at most [`SPEC_CHUNK`]
+//! requirements, grouped by stem — `design.md`, and the `plan.md` slicing are
+//! drafted together.
 //!
 //! The three documents are committed as one content-addressed revision. An
 //! earlier revision contributes only the returned [`Diff`]; it is never used
@@ -32,6 +34,7 @@ use self::basis::GroupingBrief;
 use self::brief::Brief as _;
 use self::design::DesignBrief;
 use self::plan::SliceBrief;
+pub use self::spec::SPEC_CHUNK;
 use self::spec::SpecBrief;
 use crate::adapter::{self, AdapterRef, Loaded, Registries};
 use crate::revision::Revision;
@@ -84,9 +87,16 @@ pub async fn specify<P: Model + Source + StateStore + BlobStore + Plugins>(
         future::try_join_all(bound.iter().map(|source| source.extract(provider, loaded))).await?;
 
     let bases = GroupingBrief::new(&extracts).derive(provider).await?;
-    let spec = SpecBrief::new(&extracts, &bases).judge(provider).await?;
-    let design = DesignBrief::new(&extracts, &spec).judge(provider).await?;
-    let plan = SliceBrief::new(&spec, &design).derive(provider).await?;
+    let design = DesignBrief::new(&extracts, &bases);
+    let plan = SliceBrief::new(&bases, design.types());
+    let chunks = SpecBrief::chunked(&extracts, &bases);
+    let (drafts, design, plan) = future::try_join3(
+        future::try_join_all(chunks.into_iter().map(|chunk| chunk.judge(provider))),
+        design.judge(provider),
+        plan.derive(provider),
+    )
+    .await?;
+    let spec = SpecBrief::assemble(drafts);
 
     let (revision, diff) = store::commit(provider, &Revision { spec, design, plan }).await?;
 
