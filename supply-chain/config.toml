@@ -977,7 +977,7 @@ version = "2.7.2"
 criteria = "safe-to-deploy"
 
 [[exemptions.tokio-rustls]]
-version = "0.26.5"
+version = "0.26.6"
 criteria = "safe-to-deploy"
 
 [[exemptions.tokio-stream]]

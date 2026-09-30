@@ -177,28 +177,36 @@ impl Inventory {
     // spells its modules; one outside the grammar or escaping the root is
     // left as answered, for `findings` to name.
     fn normalised(&self) -> Self {
-        let anchor = |spelled: &str| match Anchor::parse(spelled) {
-            Ok(anchor) => match beneath(anchor.path) {
-                Ok(path) => Anchor { path: &path, ..anchor }.to_string(),
-                Err(_) => spelled.to_owned(),
-            },
-            Err(_) => spelled.to_owned(),
+        let anchor = |spelled: &str| {
+            let respelled = || {
+                let anchor = Anchor::parse(spelled).ok()?;
+                let path = beneath(anchor.path).ok()?;
+                Some(
+                    Anchor {
+                        path: &path,
+                        ..anchor
+                    }
+                    .to_string(),
+                )
+            };
+            respelled().unwrap_or_else(|| spelled.to_owned())
         };
-        Self {
-            surfaces: self
-                .surfaces
-                .iter()
-                .map(|surface| Surface {
-                    anchor: anchor(&surface.anchor),
-                    ..surface.clone()
-                })
-                .collect(),
-            unreached: self
-                .unreached
-                .iter()
-                .map(|path| beneath(path).unwrap_or_else(|_| path.clone()))
-                .collect(),
-        }
+
+        let surfaces = self
+            .surfaces
+            .iter()
+            .map(|surface| Surface {
+                anchor: anchor(&surface.anchor),
+                ..surface.clone()
+            })
+            .collect();
+        let unreached = self
+            .unreached
+            .iter()
+            .map(|path| beneath(path).unwrap_or_else(|_| path.clone()))
+            .collect();
+
+        Self { surfaces, unreached }
     }
 
     // What the tree alone can hold a normalised answer to: each anchor a
