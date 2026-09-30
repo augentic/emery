@@ -71,11 +71,11 @@ async fn ask(
 async fn request_shape() {
     let (_tmp, input, modules) = tree();
     let model = Scripted::answering([VALID]);
-    let lay = vec!["package.json".to_owned(), "src/cli.ts".to_owned()];
+    let files = vec!["package.json".to_owned(), "src/cli.ts".to_owned()];
     let facts = Facts {
         modules: &modules,
         text: "The manifest names `svc`; `src/cli.ts` runs at load.\n",
-        lay: &lay,
+        files: &files,
     };
 
     let inventory = ask(&model, &input, &facts, |_| Vec::new()).await.expect("accepted");
@@ -130,7 +130,7 @@ async fn bare_facts() {
     let facts = Facts {
         modules: &modules,
         text: "",
-        lay: &[],
+        files: &[],
     };
 
     let inventory = ask(&model, &input, &facts, |_| Vec::new()).await.expect("none is valid");
@@ -188,7 +188,7 @@ async fn doc_refs() {
     let facts = Facts {
         modules: &modules,
         text: "",
-        lay: &[],
+        files: &[],
     };
 
     ask(&model, &input, &facts, |_| Vec::new()).await.expect("accepted");
@@ -221,7 +221,7 @@ async fn missing_prompt() {
     let facts = Facts {
         modules: &modules,
         text: "",
-        lay: &[],
+        files: &[],
     };
     let ctx = Context {
         adapter_id: "source:mute",
@@ -239,7 +239,8 @@ async fn missing_prompt() {
 
 // Every rule the tree can hold the answer to is a finding, all returned
 // together with the adapter's own, and the corrected answer is accepted with
-// its anchors normalised.
+// its anchors normalised — the spelling the adapter's check read on every
+// round, so what it derives from rests on the paths the tree spells.
 #[tokio::test]
 async fn gate_findings() {
     let (_tmp, input, modules) = tree();
@@ -262,10 +263,12 @@ async fn gate_findings() {
     let facts = Facts {
         modules: &modules,
         text: "",
-        lay: &[],
+        files: &[],
     };
 
+    let mut checked: Vec<Inventory> = Vec::new();
     let inventory = ask(&model, &input, &facts, |answer| {
+        checked.push(answer.clone());
         if answer.surfaces.iter().any(|surface| surface.stem == "b") {
             vec!["- the adapter refuses stem `b`".to_owned()]
         } else {
@@ -277,6 +280,12 @@ async fn gate_findings() {
     assert_eq!(inventory.surfaces.len(), 1);
     assert_eq!(inventory.surfaces[0].anchor, "src/cli.ts#L2", "normalised root-relative");
     assert_eq!(inventory.unreached, ["src/lib/unused.ts", "src/routes/orders.ts"]);
+    assert_eq!(checked.len(), 2, "the adapter's check ran on both rounds");
+    assert_eq!(checked[1], inventory, "the check read the spelling that is returned");
+    assert_eq!(
+        checked[0].surfaces[4].anchor, "../cli.ts",
+        "an anchor that escapes the root is left as answered for its finding"
+    );
     let anchor = inventory.surfaces[0].anchor().expect("an accepted anchor parses");
     assert_eq!((anchor.path, anchor.lines), ("src/cli.ts", Some((2, 2))));
 
@@ -315,7 +324,7 @@ async fn adapter_check() {
     let facts = Facts {
         modules: &modules,
         text: "",
-        lay: &[],
+        files: &[],
     };
 
     let inventory = ask(&model, &input, &facts, |answer| {
@@ -347,7 +356,7 @@ async fn rounds_exhausted() {
     let facts = Facts {
         modules: &modules,
         text: "",
-        lay: &[],
+        files: &[],
     };
 
     let error = ask(&model, &input, &facts, |_| Vec::new()).await.expect_err("never accepted");

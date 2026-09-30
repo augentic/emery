@@ -11,7 +11,7 @@
 //! each entry reaches, the anchors within it — rests on modules the tree
 //! holds.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::{self, Display, Formatter};
 
 use emery_adapter::is_kebab;
@@ -20,7 +20,7 @@ use emery_prose::Doc;
 use omnia_sdk::model::Question;
 use omnia_sdk::{Error, Model, server_error};
 use schemars::JsonSchema;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 use crate::extract::{Laid, lay, line_count};
 use crate::{Context, SURVEY, beneath, prompt, reference};
@@ -38,7 +38,7 @@ pub struct Facts<'a> {
     pub text: &'a str,
     /// The files laid into the turn whole, in order, for as long as they fit
     /// within [`INLINE_BYTES`](crate::INLINE_BYTES) together; the rest are left to the lend.
-    pub lay: &'a [String],
+    pub files: &'a [String],
 }
 
 /// Returns the surfaces the model names in a workspace source.
@@ -55,8 +55,14 @@ pub struct Facts<'a> {
 /// answer to what the adapter alone can know — which modules the named
 /// entries reach — and returns its own findings, empty for none. Every
 /// finding is returned to the model together for one correction round, until
-/// the host's round limit is reached. Accepted anchors come back with their
-/// path normalised root-relative.
+/// the host's round limit is reached.
+///
+/// Every anchor and `unreached` path is spelled root-relative, as
+/// `facts.modules` spells them, before `check` sees it and in what is
+/// returned: `./src/a.ts#L2-L2` reads `src/a.ts#L2`, so the adapter looks a
+/// path up as the tree spells it and never unpicks the model's spelling. One
+/// outside the grammar, or escaping the root, is left as answered for the
+/// finding that names it.
 ///
 /// # Errors
 ///
@@ -80,7 +86,7 @@ pub async fn surfaces<P: Model>(
         .system(prompt(docs, SURVEY)?)
         .tools(reference::tools())
         .workspace(root);
-    let laid = lay(root, facts.lay);
+    let laid = lay(root, facts.files);
     let brief = Brief {
         adapter_id: ctx.adapter_id,
         source,
@@ -89,10 +95,12 @@ pub async fn surfaces<P: Model>(
     };
 
     tracing::info!(%source, modules = facts.modules.len(), "surveying by model");
-    let mut inventory = question
+    let inventory = question
         .ask(ctx.model, brief.to_string(), Some(reference::serve(docs, source, None)), |answer| {
+            // the gate and the adapter's check read one spelling of every path
+            let answer = answer.normalised();
             let mut findings = answer.findings(root, facts.modules);
-            findings.extend(check(answer));
+            findings.extend(check(&answer));
             if findings.is_empty() {
                 return Ok(());
             }
@@ -100,36 +108,23 @@ pub async fn surfaces<P: Model>(
             Err(findings)
         })
         .await
-        .map_err(Error::from)?;
+        .map_err(Error::from)?
+        .normalised();
 
-    // normalise the accepted anchors and unreached paths
-    for surface in &mut inventory.surfaces {
-        if let Ok(anchor) = Anchor::parse(&surface.anchor) {
-            let path = beneath(anchor.path).unwrap_or_else(|_| anchor.path.to_owned());
-            surface.anchor = match anchor.lines {
-                None => path,
-                Some((start, end)) if start == end => format!("{path}#L{start}"),
-                Some((start, end)) => format!("{path}#L{start}-L{end}"),
-            };
-        }
-    }
-    for path in &mut inventory.unreached {
-        if let Ok(normalised) = beneath(path) {
-            *path = normalised;
-        }
-    }
-    let named: Vec<String> = inventory
-        .surfaces
-        .iter()
-        .map(|surface| format!("{} @ {} as {}", surface.name, surface.anchor, surface.stem))
-        .collect();
     tracing::info!(
         %source,
-        surfaces = named.len(),
+        surfaces = inventory.surfaces.len(),
         unreached = inventory.unreached.len(),
         "surveyed by model"
     );
-    tracing::debug!(%source, ?named, "the model's surfaces");
+    if tracing::enabled!(tracing::Level::DEBUG) {
+        let named: Vec<String> = inventory
+            .surfaces
+            .iter()
+            .map(|surface| format!("{} @ {} as {}", surface.name, surface.anchor, surface.stem))
+            .collect();
+        tracing::debug!(%source, ?named, "the model's surfaces");
+    }
 
     Ok(inventory)
 }
@@ -137,7 +132,7 @@ pub async fn surfaces<P: Model>(
 /// The surfaces the model names in a source, and the modules none reaches.
 ///
 /// An empty inventory is a valid answer: the tree declares no surface.
-#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq)]
+#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
 #[schemars(title = "Emery survey answer")]
 pub struct Inventory {
@@ -150,7 +145,7 @@ pub struct Inventory {
 }
 
 /// One surface the model names: what a caller does, where, and under which stem.
-#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq)]
+#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct Surface {
     /// What a caller outside the source does through the surface, as a
@@ -178,13 +173,43 @@ impl Surface {
 }
 
 impl Inventory {
-    // What the tree alone can hold the answer to: each anchor a module of the
-    // list with lines its file holds, each stem in the grammar, each name
-    // once, each unreached module of the list and no surface's entry.
+    // Every anchor and unreached path spelled root-relative, as the tree
+    // spells its modules; one outside the grammar or escaping the root is
+    // left as answered, for `findings` to name.
+    fn normalised(&self) -> Self {
+        let anchor = |spelled: &str| match Anchor::parse(spelled) {
+            Ok(anchor) => match beneath(anchor.path) {
+                Ok(path) => Anchor { path: &path, ..anchor }.to_string(),
+                Err(_) => spelled.to_owned(),
+            },
+            Err(_) => spelled.to_owned(),
+        };
+        Self {
+            surfaces: self
+                .surfaces
+                .iter()
+                .map(|surface| Surface {
+                    anchor: anchor(&surface.anchor),
+                    ..surface.clone()
+                })
+                .collect(),
+            unreached: self
+                .unreached
+                .iter()
+                .map(|path| beneath(path).unwrap_or_else(|_| path.clone()))
+                .collect(),
+        }
+    }
+
+    // What the tree alone can hold a normalised answer to: each anchor a
+    // module of the list with lines its file holds, each stem in the grammar,
+    // each name once, each unreached module of the list and no surface's
+    // entry. A file's lines are counted once however many anchors cite it.
     fn findings(&self, root: &str, modules: &[String]) -> Vec<String> {
         let mut findings = Vec::new();
         let mut names = BTreeSet::new();
         let mut entries = BTreeSet::new();
+        let mut lines: BTreeMap<&str, Option<u64>> = BTreeMap::new();
         for (index, surface) in self.surfaces.iter().enumerate() {
             let label = if surface.name.trim().is_empty() {
                 findings.push(format!("- surface {index}: has no name"));
@@ -200,10 +225,12 @@ impl Inventory {
                 Err(reason) => {
                     findings.push(format!("- {label}: anchor `{}` {reason}", surface.anchor));
                 }
-                Ok(anchor) => {
-                    let path = beneath(anchor.path).unwrap_or_else(|_| anchor.path.to_owned());
-                    let held = modules.contains(&path).then(|| line_count(root, &path));
-                    match (held, anchor.lines) {
+                Ok(Anchor { path, lines: cited }) => {
+                    let held = modules
+                        .iter()
+                        .any(|module| module == path)
+                        .then(|| *lines.entry(path).or_insert_with(|| line_count(root, path)));
+                    match (held, cited) {
                         (None, _) => findings.push(format!(
                             "- {label}: anchor `{}` names no module of this source; anchor within \
                              the modules listed",
@@ -236,10 +263,9 @@ impl Inventory {
         }
 
         for path in &self.unreached {
-            let normalised = beneath(path).unwrap_or_else(|_| path.clone());
-            if !modules.contains(&normalised) {
+            if !modules.contains(path) {
                 findings.push(format!("- unreached `{path}` names no module of this source"));
-            } else if entries.contains(&normalised) {
+            } else if entries.contains(path.as_str()) {
                 findings.push(format!(
                     "- unreached `{path}` is a surface's entry; a module is one or the other"
                 ));
@@ -295,7 +321,7 @@ impl Display for Brief<'_> {
                 "\n\n{these} laid out here whole, every line led by its number, so cite `#L<n>` \
                  from the numbers shown rather than reading {them} again:\n\n"
             )?;
-            Laid(&self.facts.lay[..self.laid.len()], self.laid).fmt(f)?;
+            Laid(&self.facts.files[..self.laid.len()], self.laid).fmt(f)?;
         }
 
         f.write_str(

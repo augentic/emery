@@ -52,6 +52,7 @@ fn is_claim_id(value: &str) -> bool {
 /// let anchor = Anchor::parse("src/orders.ts#L12-L34")?;
 /// assert_eq!(anchor.path, "src/orders.ts");
 /// assert_eq!(anchor.lines, Some((12, 34)));
+/// assert_eq!(anchor.to_string(), "src/orders.ts#L12-L34");
 ///
 /// assert!(Anchor::parse("../secret.ts").is_err());
 /// assert!(Anchor::parse("src/orders.ts#L34-L12").is_err());
@@ -63,6 +64,19 @@ pub struct Anchor<'a> {
     pub path: &'a str,
     /// The cited line range, inclusive, when the anchor names one.
     pub lines: Option<(u64, u64)>,
+}
+
+// The anchor in the grammar `parse` reads: one line as `#L<n>`, never as a
+// range of one.
+impl Display for Anchor<'_> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        f.write_str(self.path)?;
+        match self.lines {
+            None => Ok(()),
+            Some((start, end)) if start == end => write!(f, "#L{start}"),
+            Some((start, end)) => write!(f, "#L{start}-L{end}"),
+        }
+    }
 }
 
 impl<'a> Anchor<'a> {
