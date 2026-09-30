@@ -22,7 +22,7 @@ mod guest {
 }
 ```
 
-The adapter writes `survey`, which chooses the seams; the SDK owns every model turn, the claim gate, and the component boundary.
+The adapter writes `survey`, which chooses the seams — from the source alone, or from the surfaces the model names in one `survey::surfaces` turn over the facts the adapter's code read, held to the tree before anything is derived from them; the SDK owns every model turn, the claim gate, and the component boundary.
 
 - API documentation: [docs.rs/emery-sdk](https://docs.rs/emery-sdk), built for `wasm32-wasip2` so the `export` module is present
 - First-party adapters, and the shape a new one takes: [augentic/emery-adapters](https://github.com/augentic/emery-adapters)

@@ -18,6 +18,10 @@
 //!   [`check`] holds an adapter's list to its tree.
 //! - [`workspace::list`] traverses workspace input under an adapter-defined
 //!   filter.
+//! - [`survey::surfaces`] puts one turn to the model for the surfaces of a
+//!   workspace, from the [`survey::Facts`] an adapter's code read of it, and
+//!   holds the [`survey::Inventory`] it answers to the tree before the
+//!   adapter derives its seams from the accepted anchors.
 //!
 //! Contract types and [`Error`] are re-exported, allowing an adapter to depend
 //! on this crate alone: the claim types, [`Anchor`] and [`BadAnchor`] for the
@@ -70,8 +74,11 @@
 //! - **Seam**: the portion of a source handled by one model request. See
 //!   [`Seam`].
 //! - **Survey**: the adapter-specific step that divides an input into seams
-//!   before extraction — a plain function over the input, since the model
-//!   is put to nothing but the seams' turns.
+//!   before extraction. It is a plain function over the input where the
+//!   source alone decides the cut, or, where its surfaces are the model's to
+//!   name, code that reads the facts, puts one turn through
+//!   [`survey::surfaces`], and derives the seams from the anchors it
+//!   accepted; either way the stems, the closures, and the ids are code's.
 //! - **Mine**: to put one seam to the model under the adapter's `extract.md`
 //!   and gate its answer. [`extract`](fn@extract) mines every seam of a source.
 //! - **Context**: the adapter identifier, source input, and model available to

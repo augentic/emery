@@ -3,6 +3,7 @@
 
 use emery_sdk::survey::{Facts, Inventory};
 use emery_sdk::{Context, Doc, Error, SourceInput};
+use omnia_sdk::model::ToolCall;
 use omnia_test::SeenFormat;
 use omnia_test::guest::Scripted;
 
@@ -14,6 +15,10 @@ const PROSE: &[Doc] = &[
     Doc {
         path: "extract.md",
         body: "SYSTEM",
+    },
+    Doc {
+        path: "references/surfaces.md",
+        body: "A route is a surface.",
     },
 ];
 
@@ -151,6 +156,61 @@ async fn inline_value() {
     assert_eq!(error.code(), "server_error");
     assert!(error.description().contains("needs a workspace input"), "{error}");
     assert!(model.seen().is_empty(), "no turn was spent");
+}
+
+// The survey turn offers the adapter's references and the runtime's through
+// the same tools a mining turn has; no system document is listed — the
+// survey prompt rides this turn's system, and a mining turn's prompt has
+// nothing to teach a survey — and a read still answers each.
+#[tokio::test]
+async fn doc_refs() {
+    let (_tmp, input, modules) = tree();
+    let model = Scripted::answering([VALID]).calling(
+        0,
+        [
+            ToolCall {
+                id: "1".to_string(),
+                name: "list_docs".to_string(),
+                arguments: "{}".to_string(),
+            },
+            ToolCall {
+                id: "2".to_string(),
+                name: "read_doc".to_string(),
+                arguments: r#"{"path":"references/surfaces.md"}"#.to_string(),
+            },
+            ToolCall {
+                id: "3".to_string(),
+                name: "read_doc".to_string(),
+                arguments: r#"{"path":"survey.md"}"#.to_string(),
+            },
+        ],
+    );
+    let facts = Facts {
+        modules: &modules,
+        text: "",
+        lay: &[],
+    };
+
+    ask(&model, &input, &facts, |_| Vec::new()).await.expect("accepted");
+    let exchanges = model.exchanges();
+    assert_eq!(exchanges.len(), 4, "three reference calls, then the check");
+    assert_eq!(
+        exchanges[0].outcome.as_deref(),
+        Ok(r#"{"paths":["references/surfaces.md","reconciliation.md"]}"#),
+        "`list_docs` lists no system document"
+    );
+    assert_eq!(
+        exchanges[1].outcome.as_deref(),
+        Ok(r#"{"body":"A route is a surface.","path":"references/surfaces.md"}"#)
+    );
+    assert_eq!(
+        exchanges[2].outcome.as_deref(),
+        Ok(r#"{"body":"SURVEY","path":"survey.md"}"#),
+        "`read_doc` still answers an unlisted document"
+    );
+    assert_eq!(exchanges[3].tool, "check");
+    assert_eq!(exchanges[3].outcome, Ok(String::new()));
+    model.assert_exhausted();
 }
 
 // A corpus without `survey.md` is the adapter build's own defect.
