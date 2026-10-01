@@ -544,6 +544,10 @@ criteria = "safe-to-deploy"
 version = "0.2.19"
 criteria = "safe-to-deploy"
 
+[[exemptions.lazy_static]]
+version = "1.5.1"
+criteria = "safe-to-deploy"
+
 [[exemptions.libsqlite3-sys]]
 version = "0.38.2"
 criteria = "safe-to-deploy"

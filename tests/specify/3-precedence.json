@@ -1,5 +1,5 @@
 {
-  "emery": 3,
+  "emery": 4,
   "preamble": [
     "Four bound sources disagree; authority resolves what it can, tied peers surface as [conflict] for the operator, and the uncovered acceptance gap is preserved, never guessed."
   ],
@@ -12,15 +12,18 @@
       "sources": [
         {
           "source": "docs",
-          "claim": "login.flow"
+          "claim": "login.flow",
+          "path": null
         },
         {
           "source": "wiki-live",
-          "claim": "login.flow"
+          "claim": "login.flow",
+          "path": null
         },
         {
           "source": "code",
-          "claim": "login.flow"
+          "claim": "login.flow",
+          "path": null
         }
       ],
       "body": [],
@@ -68,15 +71,18 @@
       "sources": [
         {
           "source": "intent",
-          "claim": "session.timeout"
+          "claim": "session.timeout",
+          "path": null
         },
         {
           "source": "docs",
-          "claim": "session.timeout"
+          "claim": "session.timeout",
+          "path": null
         },
         {
           "source": "code",
-          "claim": "session-expiry"
+          "claim": "session-expiry",
+          "path": null
         }
       ],
       "body": [

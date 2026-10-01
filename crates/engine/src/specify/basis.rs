@@ -49,6 +49,7 @@ impl<'a> GroupingBrief<'a> {
                         source: &extract.source,
                         kind: extract.kind,
                         id,
+                        path: claim.path.as_deref(),
                         statement: claim.statement(),
                         synopsis: claim.synopsis.as_deref(),
                         index: contributors.len(),
@@ -478,6 +479,8 @@ pub struct Contributor<'a> {
     pub kind: SourceKind,
     /// The claim identifier, which may differ from the requirement subject.
     pub id: &'a str,
+    /// Where in the source the claim anchors, when it carries a `path`.
+    pub path: Option<&'a str>,
     /// The claim statement with whitespace normalised.
     pub statement: String,
     /// An optional synopsis provided to the grouping model.
@@ -491,6 +494,7 @@ impl From<&Contributor<'_>> for Cited {
         Self {
             source: member.source.to_string(),
             claim: member.id.to_string(),
+            path: member.path.map(str::to_owned),
         }
     }
 }

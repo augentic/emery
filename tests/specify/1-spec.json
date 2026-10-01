@@ -1,5 +1,5 @@
 {
-  "emery": 3,
+  "emery": 4,
   "preamble": [
     "One bound source: the mock component's minimal greeting profile, reconciled with no disagreement and one acceptance gap."
   ],
@@ -12,7 +12,8 @@
       "sources": [
         {
           "source": "source",
-          "claim": "greeting.behaviour"
+          "claim": "greeting.behaviour",
+          "path": null
         }
       ],
       "body": [

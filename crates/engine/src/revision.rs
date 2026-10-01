@@ -34,7 +34,7 @@ use self::spec::{ID, NOTE, SOURCES, STATUS};
 /// The revision grammar written and accepted by this engine.
 ///
 /// A stored revision stamped with another grammar is outdated.
-pub const EMERY: u32 = 3;
+pub const EMERY: u32 = 4;
 
 /// Line prefixes reserved for engine-generated Markdown.
 ///
