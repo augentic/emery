@@ -13,7 +13,7 @@ use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration;
 
-use emery_adapter::source::{ClaimKind, Evidence, SourceContent, SourceKind};
+use emery_adapter::source::{Claim, ClaimKind, Evidence, SourceContent, SourceKind};
 use emery_engine::{CONTAINER, ENGINE, REVISION_KEY};
 use omnia_sdk::model::{Error as ModelError, Reply};
 use omnia_sdk::plugins::{Digest, Error as LoadError, Location};
@@ -615,8 +615,8 @@ async fn seams_grouped() {
     assert_eq!(
         requirement["sources"],
         serde_json::json!([
-            {"source": "docs", "claim": "start.persist"},
-            {"source": "docs", "claim": "worker.persist"}
+            {"source": "docs", "claim": "start.persist", "path": null},
+            {"source": "docs", "claim": "worker.persist", "path": null}
         ]),
         "{spec}"
     );
@@ -666,15 +666,15 @@ async fn same_stem_split() {
     assert_eq!(
         spec["requirements"][0]["sources"],
         serde_json::json!([
-            {"source": "docs", "claim": "start.persist"},
-            {"source": "docs", "claim": "worker.persist"}
+            {"source": "docs", "claim": "start.persist", "path": null},
+            {"source": "docs", "claim": "worker.persist", "path": null}
         ]),
         "the first id keeps the cross-stem member: {spec}"
     );
     assert_eq!(spec["requirements"][1]["subject"], "start.recover", "{spec}");
     assert_eq!(
         spec["requirements"][1]["sources"],
-        serde_json::json!([{"source": "docs", "claim": "start.recover"}]),
+        serde_json::json!([{"source": "docs", "claim": "start.recover", "path": null}]),
         "{spec}"
     );
     provider.model.assert_exhausted();
@@ -849,6 +849,166 @@ async fn diff_envelope() {
     provider.model.assert_exhausted();
 }
 
+// The second run extracts the same two requirements in the other order, so
+// the position ids swap; each is matched to its displaced self by the stem
+// and the anchor it cites — one range shifted by a line, still overlapping —
+// and reads as a change of `id` naming the id it carried, never as a removal
+// and an addition.
+#[tokio::test]
+async fn remine_reordered() {
+    let grouping = separate_grouping(2);
+    let first_slicing = separate_slicing(&[("greeting", &["REQ-001"]), ("session", &["REQ-002"])]);
+    let mut provider = Provider::answering([
+        grouping.as_str(),
+        REMINE_SECOND,
+        DESIGN_ANSWER,
+        first_slicing.as_str(),
+    ])
+    .declaring(["docs"]);
+    provider.source.evidence.insert(
+        "docs".to_string(),
+        Ok(evidence(vec![
+            anchored(
+                "greeting.behaviour",
+                "GET /greeting returns 'howdy'.",
+                "src/greeting.ts#L3-L9",
+            ),
+            anchored("session.timeout", "Sessions time out after an hour.", "src/session.ts#L4-L8"),
+        ])),
+    );
+    cli_ok(&provider, &["emery", "specify", "docs"]).await;
+    let first = current(&provider.storage);
+
+    let second_slicing = separate_slicing(&[("session", &["REQ-001"]), ("greeting", &["REQ-002"])]);
+    let mut provider = Provider::over(
+        Arc::clone(&provider.storage),
+        [grouping.as_str(), REMINE_SECOND, DESIGN_ANSWER, second_slicing.as_str()],
+    )
+    .declaring(["docs"]);
+    provider.source.evidence.insert(
+        "docs".to_string(),
+        Ok(evidence(vec![
+            anchored("session.timeout", "Sessions time out after an hour.", "src/session.ts#L5-L9"),
+            anchored(
+                "greeting.behaviour",
+                "GET /greeting returns 'howdy'.",
+                "src/greeting.ts#L3-L9",
+            ),
+        ])),
+    );
+    let resp = cli_ok(&provider, &["emery", "--format", "json", "specify", "docs"]).await;
+
+    let envelope: Value = serde_json::from_slice(&resp.stdout).expect("one JSON envelope");
+    let diff = &envelope["diff"];
+    assert_eq!(diff["from"], first, "{envelope}");
+    assert_eq!(diff["spec"]["added"], serde_json::json!([]), "{envelope}");
+    assert_eq!(diff["spec"]["removed"], serde_json::json!([]), "{envelope}");
+    assert_eq!(
+        diff["spec"]["changed"],
+        serde_json::json!([
+            {"id": "REQ-001", "subject": "session.timeout", "was": "REQ-002", "fields": ["id", "sources"]},
+            {"id": "REQ-002", "subject": "greeting.behaviour", "was": "REQ-001", "fields": ["id"]},
+        ]),
+        "each requirement is matched where it anchors and reads as a moved id: {envelope}"
+    );
+    let spec: Value = serde_json::from_slice(&document(
+        &provider.storage,
+        &current(&provider.storage),
+        "spec.json",
+    ))
+    .expect("the committed spec is JSON");
+    assert_eq!(
+        spec["requirements"][0]["sources"],
+        serde_json::json!([{"source": "docs", "claim": "session.timeout", "path": "src/session.ts#L5-L9"}]),
+        "the citation carries the anchor: {spec}"
+    );
+    provider.model.assert_exhausted();
+}
+
+// Two requirements under one stem whose anchors meet, re-mined with the ids
+// shifted: the timeout's anchor has grown over the lines the renewal's held,
+// so the renewal's first candidate is the one the timeout takes; it pairs
+// with its own next rather than reading as a removal and an addition.
+#[tokio::test]
+async fn remine_contended_anchor() {
+    let grouping = separate_grouping(3);
+    let first_slicing =
+        separate_slicing(&[("session", &["REQ-001", "REQ-002"]), ("greeting", &["REQ-003"])]);
+    let mut provider = Provider::answering([
+        grouping.as_str(),
+        REMINE_SESSION,
+        DESIGN_ANSWER,
+        first_slicing.as_str(),
+    ])
+    .declaring(["docs"]);
+    provider.source.evidence.insert(
+        "docs".to_string(),
+        Ok(evidence(vec![
+            anchored("session.timeout", "Sessions time out after an hour.", "src/session.ts#L1-L3"),
+            anchored(
+                "session.renewal",
+                "Renewing a session restarts its hour.",
+                "src/session.ts#L4-L8",
+            ),
+            anchored(
+                "greeting.behaviour",
+                "GET /greeting returns 'howdy'.",
+                "src/greeting.ts#L3-L9",
+            ),
+        ])),
+    );
+    cli_ok(&provider, &["emery", "specify", "docs"]).await;
+    let first = current(&provider.storage);
+
+    let second_slicing =
+        separate_slicing(&[("greeting", &["REQ-001"]), ("session", &["REQ-002", "REQ-003"])]);
+    let mut provider = Provider::over(
+        Arc::clone(&provider.storage),
+        [grouping.as_str(), REMINE_SESSION, DESIGN_ANSWER, second_slicing.as_str()],
+    )
+    .declaring(["docs"]);
+    provider.source.evidence.insert(
+        "docs".to_string(),
+        Ok(evidence(vec![
+            anchored(
+                "greeting.behaviour",
+                "GET /greeting returns 'howdy'.",
+                "src/greeting.ts#L3-L9",
+            ),
+            anchored("session.timeout", "Sessions time out after an hour.", "src/session.ts#L1-L6"),
+            anchored(
+                "session.renewal",
+                "Renewing a session restarts its hour.",
+                "src/session.ts#L7-L10",
+            ),
+        ])),
+    );
+    let resp = cli_ok(&provider, &["emery", "--format", "json", "specify", "docs"]).await;
+
+    let envelope: Value = serde_json::from_slice(&resp.stdout).expect("one JSON envelope");
+    let diff = &envelope["diff"];
+    assert_eq!(diff["from"], first, "{envelope}");
+    assert_eq!(diff["spec"]["added"], serde_json::json!([]), "{envelope}");
+    assert_eq!(diff["spec"]["removed"], serde_json::json!([]), "{envelope}");
+    assert_eq!(
+        diff["spec"]["changed"],
+        serde_json::json!([
+            {"id": "REQ-001", "subject": "greeting.behaviour", "was": "REQ-003", "fields": ["id"]},
+            {"id": "REQ-002", "subject": "session.timeout", "was": "REQ-001", "fields": ["id", "sources"]},
+            {"id": "REQ-003", "subject": "session.renewal", "was": "REQ-002", "fields": ["id", "sources"]},
+        ]),
+        "a requirement whose first candidate is taken pairs with its next: {envelope}"
+    );
+    provider.model.assert_exhausted();
+}
+
+// A requirement claim anchored at `path`.
+fn anchored(subject: &str, statement: &str, path: &str) -> Claim {
+    let mut claim = requirement(subject, statement);
+    claim.path = Some(path.to_owned());
+    claim
+}
+
 fn docs_evidence(requirements: &[(&str, &str)]) -> Evidence {
     let claims = requirements
         .iter()
@@ -896,6 +1056,25 @@ const REMINE_SECOND: &str = r#"{
     {
       "subject": "session.timeout",
       "scenarios": [{"name": "Timeout", "when": "a session is idle for an hour", "then": "it times out"}]
+    }
+  ]
+}"#;
+
+// Two session requirements beside the greeting, answered to both runs.
+const REMINE_SESSION: &str = r#"{
+  "preamble": ["The docs describe a greeting and a session that times out and renews."],
+  "requirements": [
+    {
+      "subject": "greeting.behaviour",
+      "scenarios": [{"name": "Greeting", "when": "the greeting is requested", "then": "the response is howdy"}]
+    },
+    {
+      "subject": "session.timeout",
+      "scenarios": [{"name": "Timeout", "when": "a session is idle for an hour", "then": "it times out"}]
+    },
+    {
+      "subject": "session.renewal",
+      "scenarios": [{"name": "Renewal", "when": "a session is renewed", "then": "its hour restarts"}]
     }
   ]
 }"#;
@@ -1388,7 +1567,7 @@ async fn dishonest_design() {
 
     let id = current(&provider.storage);
     let rendered = format!(
-        "---\nemery: 3\nrevision: {id}\n---\n\n# Design\n\n## Overview\n\n\
+        "---\nemery: 4\nrevision: {id}\n---\n\n# Design\n\n## Overview\n\n\
          Requests arrive (from the browser) and (from docs) they route.\n\n\
          ## Domain model\n\nThe greeting payload is one string field.\n\n\
          Type: greeting.type\n```\n{signature}\n```\n"

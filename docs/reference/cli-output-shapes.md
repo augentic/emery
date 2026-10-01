@@ -58,7 +58,10 @@ The success body names the committed revision and its reviewable set:
       "preamble": true,
       "added": [{ "id": "REQ-003", "subject": "access.audit" }],
       "removed": [],
-      "changed": [{ "id": "REQ-002", "subject": "session.timeout", "fields": ["body", "scenarios"] }]
+      "changed": [
+        { "id": "REQ-002", "subject": "session.timeout", "fields": ["body", "scenarios"] },
+        { "id": "REQ-004", "subject": "orders.create", "was": "REQ-003", "fields": ["id"] }
+      ]
     },
     "design": { "preamble": false, "added": [], "removed": [], "changed": ["domain-model"] },
     "plan": {
@@ -71,7 +74,7 @@ The success body names the committed revision and its reviewable set:
 }
 ```
 
-`diff` is the re-mine diff against the outgoing current revision, computed by typed equality over the two revisions: each document's `preamble` flags whether its preamble changed; `spec` lists requirements matched by `id` as `{ id, subject }` entries (ids are positional — `REQ-001` onward in source order — so a requirement whose place moved reads as a change), each `changed` entry naming the fields that differ (`subject`, `status`, `covered`, `sources`, `body`, `losers`, `scenarios`); `design` lists sections by their kebab-case key; `plan` lists slices matched by `id` as `{ id, name }` entries (ids are positional too — `SLICE-001` onward by each slice's lowest requirement), each `changed` entry naming the fields that differ (`name`, `requirements`, `types`, `depends-on`, `brief`). It is absent on a first run; on a byte-stable re-run `from` equals `revision`, every `preamble` flag is false, and every list is empty; nothing is persisted for it. Text mode prints a one-line summary of those counts beneath the revision — `  diff vs 1a2b3c4d: spec +1 -0 ~1 preamble, design +0 -0 ~1, plan +1 -0 ~1` — so a run never spans more than two lines; the per-requirement and per-slice entries ride `--format json` alone.
+`diff` is the re-mine diff against the outgoing current revision, computed by typed equality over the two revisions: each document's `preamble` flags whether its preamble changed; `spec` lists requirements as `{ id, subject }` entries, matched first by where they anchor — the same stem and a cited `path` in common (same source and file, line ranges that meet), one to one, the pair sharing the most anchors first — and then by `id` (ids are positional — `REQ-001` onward in source order — so a requirement no anchor matches whose place moved reads as a removal and an addition), each `changed` entry naming the fields that differ (`id`, `subject`, `status`, `covered`, `sources`, `body`, `losers`, `scenarios`) and, when the match crossed ids, carrying `was`, the id the requirement held in the outgoing revision; `design` lists sections by their kebab-case key; `plan` lists slices matched by `id` as `{ id, name }` entries (ids are positional too — `SLICE-001` onward by each slice's lowest requirement), each `changed` entry naming the fields that differ (`name`, `requirements`, `types`, `depends-on`, `brief`). It is absent on a first run; on a byte-stable re-run `from` equals `revision`, every `preamble` flag is false, and every list is empty; nothing is persisted for it. Text mode prints a one-line summary of those counts beneath the revision — `  diff vs 1a2b3c4d: spec +1 -0 ~1 preamble, design +0 -0 ~1, plan +1 -0 ~1` — so a run never spans more than two lines; the per-requirement and per-slice entries ride `--format json` alone.
 
 `emery specify` with no source — and no project-root `emery.toml` to discover — fails with `error: "specify-source-required"` (exit 1); mixing `--config` with positional adapters or `--description`, or naming an absolute or project-escaping local path, fails with `error: "bad_request"` (exit 1). `--config` without a value explicitly selects the project-relative `emery.toml`. A GitHub URL source fails with `error: "bad_request"`. A model draft (grouping, spec, design, or slicing) that still fails its check once the backend's rounds are spent exits 1 with `error: "bad_request"` carrying the last correction and its findings; a model failure exits 4 with `error: "bad_gateway"`. The first source to fail ends the run — the sources still extracting are not waited for — and its failure is the envelope, as the adapter put it: a source refusing its input exits 1 with `error: "bad_request"` carrying the adapter's own description, an adapter failing upstream exits 4 with `error: "bad_gateway"`, and evidence the claim gate rejects exits 3 with `error: "server_error"` naming the findings.
 
@@ -82,9 +85,9 @@ The success body carries the revision id, the Markdown projection, and the typed
 ```json
 {
   "revision": "9f8e7d6c…",
-  "body": "---\nemery: 3\nrevision: 9f8e7d6c…\n---\n\n# Specification\n…",
+  "body": "---\nemery: 4\nrevision: 9f8e7d6c…\n---\n\n# Specification\n…",
   "document": {
-    "emery": 3,
+    "emery": 4,
     "preamble": ["…"],
     "requirements": [
       {
@@ -92,7 +95,7 @@ The success body carries the revision id, the Markdown projection, and the typed
         "subject": "session.timeout",
         "status": "divergence",
         "covered": true,
-        "sources": [{ "source": "intent", "claim": "session.timeout" }, { "source": "code", "claim": "session-expiry" }],
+        "sources": [{ "source": "intent", "claim": "session.timeout", "path": null }, { "source": "code", "claim": "session-expiry", "path": "src/session.ts#L12-L30" }],
         "body": ["Sessions must expire after 30 minutes of inactivity."],
         "losers": [{ "sources": ["code"], "kind": "behaviour", "claim": "session-expiry", "statement": "…" }],
         "scenarios": [{ "name": "Session expires", "given": [], "when": "…", "then": "…", "and": [] }]

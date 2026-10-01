@@ -1,7 +1,12 @@
 //! Describes changes between two specification revisions.
 //!
-//! Requirements and slices are matched by identifier and design sections by
-//! kind. Comparisons use typed revision data rather than rendered Markdown.
+//! Requirements are matched by where they anchor in the sources — the same
+//! stem and an overlapping cited `path` — then by identifier; slices are
+//! matched by identifier and design sections by kind. Comparisons use typed
+//! revision data rather than rendered Markdown.
+
+use std::cmp::Reverse;
+use std::collections::{BTreeMap, BTreeSet};
 
 use serde::Serialize;
 
@@ -25,8 +30,8 @@ impl Diff {
     /// Returns the changes from `outgoing` to `incoming`.
     ///
     /// `from` must identify `outgoing`. Preambles are compared as complete
-    /// values, requirements and slices by identifier, and design sections by
-    /// kind.
+    /// values, requirements by the stem and the cited anchors they share and
+    /// then by identifier, slices by identifier, and design sections by kind.
     #[must_use]
     pub fn between(from: &str, outgoing: &Revision, incoming: &Revision) -> Self {
         Self {
@@ -68,35 +73,87 @@ impl SpecDiff {
             && self.changed.is_empty()
     }
 
-    // Requirements match by id, the position each run numbers in source
-    // order, so a requirement whose place moved reads as a change.
+    // A requirement paired under another id reads as a change of `id`, with
+    // `was` naming the one it carried.
     fn between(outgoing: &Spec, incoming: &Spec) -> Self {
-        let mut diff = Self {
+        let pairing = Pairing::between(outgoing, incoming);
+        Self {
             preamble: outgoing.preamble != incoming.preamble,
-            ..Self::default()
-        };
-        for requirement in &incoming.requirements {
-            match outgoing.requirement(requirement.id) {
-                None => diff.added.push(Entry::from(requirement)),
-                Some(before) => {
-                    let fields = differences(before, requirement);
-                    if !fields.is_empty() {
-                        diff.changed.push(Changed {
-                            entry: Entry::from(requirement),
-                            fields,
-                        });
-                    }
-                }
+            added: pairing.added.into_iter().map(Entry::from).collect(),
+            removed: pairing.removed.into_iter().map(Entry::from).collect(),
+            changed: pairing
+                .paired
+                .into_iter()
+                .filter_map(|(before, after)| {
+                    let fields = differences(before, after);
+                    (!fields.is_empty()).then(|| Changed {
+                        entry: Entry {
+                            was: (before.id != after.id).then_some(before.id),
+                            ..Entry::from(after)
+                        },
+                        fields,
+                    })
+                })
+                .collect(),
+        }
+    }
+}
+
+// The one-to-one pairing of an outgoing specification's requirements with an
+// incoming one's, and what each side leaves unpaired.
+struct Pairing<'a> {
+    paired: Vec<(&'a Requirement, &'a Requirement)>,
+    added: Vec<&'a Requirement>,
+    removed: Vec<&'a Requirement>,
+}
+
+impl<'a> Pairing<'a> {
+    // Requirements pair first by where they anchor — under one stem, citing
+    // a place in common — since the anchors are the code's and hold across
+    // runs where the ids, the position each run numbers in source order, do
+    // not: the pair sharing the most places is taken first, ties in id order,
+    // so the pairing is the same whenever the two specifications are. What no
+    // anchor pairs then pairs by id. `paired` and `added` are in `incoming`'s
+    // id order, `removed` in `outgoing`'s.
+    fn between(outgoing: &'a Spec, incoming: &'a Spec) -> Self {
+        let mut anchored: Vec<(usize, &Requirement, &Requirement)> = outgoing
+            .requirements
+            .iter()
+            .flat_map(|before| incoming.requirements.iter().map(move |after| (before, after)))
+            .filter(|(before, after)| before.stem() == after.stem())
+            .map(|(before, after)| (before.shared_anchors(after), before, after))
+            .filter(|&(shared, ..)| shared > 0)
+            .collect();
+        anchored.sort_by_key(|&(shared, before, after)| (Reverse(shared), before.id, after.id));
+        let by_id = incoming
+            .requirements
+            .iter()
+            .filter_map(|after| outgoing.requirement(after.id).map(|before| (before, after)));
+        let candidates =
+            anchored.into_iter().map(|(_, before, after)| (before, after)).chain(by_id);
+
+        let mut taken = BTreeSet::new();
+        let mut paired = BTreeMap::new();
+        for (before, after) in candidates {
+            if !taken.contains(&before.id) && !paired.contains_key(&after.id) {
+                taken.insert(before.id);
+                paired.insert(after.id, (before, after));
             }
         }
-        diff.removed.extend(
-            outgoing
+
+        Self {
+            added: incoming
                 .requirements
                 .iter()
-                .filter(|requirement| incoming.requirement(requirement.id).is_none())
-                .map(Entry::from),
-        );
-        diff
+                .filter(|after| !paired.contains_key(&after.id))
+                .collect(),
+            removed: outgoing
+                .requirements
+                .iter()
+                .filter(|before| !taken.contains(&before.id))
+                .collect(),
+            paired: paired.into_values().collect(),
+        }
     }
 }
 
@@ -108,6 +165,10 @@ pub struct Entry {
     pub id: ReqId,
     /// The requirement subject.
     pub subject: String,
+    /// The identifier the requirement carried in the displaced revision, when
+    /// its anchors matched it there under another one.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub was: Option<ReqId>,
 }
 
 impl From<&Requirement> for Entry {
@@ -115,6 +176,7 @@ impl From<&Requirement> for Entry {
         Self {
             id: requirement.id,
             subject: requirement.subject.clone(),
+            was: None,
         }
     }
 }
@@ -256,6 +318,7 @@ impl From<&Slice> for SliceEntry {
 
 fn differences(before: &Requirement, after: &Requirement) -> Vec<&'static str> {
     [
+        ("id", before.id != after.id),
         ("subject", before.subject != after.subject),
         ("status", before.status != after.status),
         ("covered", before.covered != after.covered),

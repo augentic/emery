@@ -6,7 +6,7 @@
 
 use std::fmt::{self, Display, Formatter};
 
-use emery_adapter::source::SourceKind;
+use emery_adapter::source::{Anchor, SourceKind};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
@@ -79,6 +79,25 @@ pub struct Requirement {
     pub scenarios: Vec<Scenario>,
 }
 
+impl Requirement {
+    /// Returns the stem of the subject: the first segment of its dotted id,
+    /// the slice floor every requirement under it shares.
+    #[must_use]
+    pub fn stem(&self) -> &str {
+        self.subject.split_once('.').map_or(&self.subject, |(stem, _)| stem)
+    }
+
+    /// Returns how many anchors this requirement and `other` cite in common:
+    /// the pairs of their citations that [overlap](Cited::overlaps).
+    #[must_use]
+    pub fn shared_anchors(&self, other: &Self) -> usize {
+        self.sources
+            .iter()
+            .flat_map(|ours| other.sources.iter().filter(move |theirs| ours.overlaps(theirs)))
+            .count()
+    }
+}
+
 impl Display for Requirement {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         write!(f, "{HEADING} {}", self.subject)?;
@@ -130,6 +149,35 @@ pub struct Cited {
     pub source: String,
     /// The claim id within that source.
     pub claim: String,
+    /// Where in the source the claim anchors, in the claim `path` grammar
+    /// (`src/orders.ts#L12-L34`), when the claim carries one.
+    pub path: Option<String>,
+}
+
+impl Cited {
+    /// Returns whether this citation and `other` anchor at one place: the
+    /// same source and the same file, with line ranges that meet, or neither
+    /// naming lines. A citation without a `path` anchors nowhere.
+    #[must_use]
+    pub fn overlaps(&self, other: &Self) -> bool {
+        if self.source != other.source {
+            return false;
+        }
+        let (Some(ours), Some(theirs)) = (self.path.as_deref(), other.path.as_deref()) else {
+            return false;
+        };
+        let (Ok(ours), Ok(theirs)) = (Anchor::parse(ours), Anchor::parse(theirs)) else {
+            return false;
+        };
+        ours.path == theirs.path
+            && match (ours.lines, theirs.lines) {
+                (Some((start, end)), Some((other_start, other_end))) => {
+                    start <= other_end && other_start <= end
+                }
+                (None, None) => true,
+                _ => false,
+            }
+    }
 }
 
 impl Display for Cited {
