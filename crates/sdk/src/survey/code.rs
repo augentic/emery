@@ -10,7 +10,19 @@
 //! What a lookup reads of the language — the methods that are structure,
 //! the decorators that shape, the stems that name a role — comes from the
 //! adapter's [`Dialect`], passed to each lookup that reads one.
+//!
+//! A [`Tree`] holds every module of a workspace, settled through the
+//! adapter's [`Recogniser`], and answers what a survey asks of the tree as
+//! a whole; a [`Surface`] is what the code says of each place the survey
+//! named.
 
+mod recogniser;
+mod surface;
+mod tree;
+
+pub use self::recogniser::{Bootstrap, Listing, Manifest, Recogniser, Runs};
+pub use self::surface::{Derived, Receiver, Surface};
+pub use self::tree::{Parsed, TRACE, Tree};
 use super::resolve::Target;
 use super::{Dialect, Lines, unique};
 

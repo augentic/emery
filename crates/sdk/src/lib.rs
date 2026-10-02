@@ -18,17 +18,22 @@
 //!   [`check`] holds an adapter's list to its tree.
 //! - [`workspace::list`] traverses workspace input under an adapter-defined
 //!   filter.
-//! - [`survey::surfaces`] puts one turn to the model for the surfaces of a
-//!   workspace, from the [`survey::Facts`] an adapter's code read of it, and
-//!   holds the [`survey::Inventory`] it answers to the tree before the
-//!   adapter derives its seams from the accepted anchors.
+//! - [`survey::seams`] is the shared survey pipeline for an adapter that
+//!   parses its source: a [`survey::code::Tree`] read through the adapter's
+//!   [`survey::code::Recogniser`] in, the facts laid, one turn put for the
+//!   surfaces, the answer held to the tree, and the seams and `type` claims
+//!   of a [`survey::Survey`] out. [`survey::surfaces`] beneath it puts the
+//!   one turn over the [`survey::Facts`] an adapter renders itself and holds
+//!   the [`survey::Inventory`] it answers to the tree.
 //! - [`kebab`], [`survey::Lines`], [`survey::resolve`], [`survey::route`],
 //!   and [`survey::tests`] are what a survey spells stems, line spans,
 //!   import targets, routes, and stated behaviours with, each pure over
 //!   strings and reading no parsed module.
 //! - [`survey::code`] is the module an adapter's parser fills and the
-//!   lookups every rule reads it through; [`survey::Dialect`] carries the
-//!   names those lookups read of a language, one `static` per adapter.
+//!   lookups every rule reads it through, and the tree over every module
+//!   with the lookups that read it whole; [`survey::Dialect`] carries the
+//!   names and spellings those lookups read of a language, one `static` per
+//!   adapter.
 //!
 //! Contract types and [`Error`] are re-exported, allowing an adapter to depend
 //! on this crate alone: the claim types, [`Anchor`] and [`BadAnchor`] for the
@@ -83,9 +88,12 @@
 //! - **Survey**: the adapter-specific step that divides an input into seams
 //!   before extraction. It is a plain function over the input where the
 //!   source alone decides the cut, or, where its surfaces are the model's to
-//!   name, code that reads the facts, puts one turn through
-//!   [`survey::surfaces`], and derives the seams from the anchors it
-//!   accepted; either way the stems, the closures, and the ids are code's.
+//!   name, a parsed tree handed to [`survey::seams`], which puts one turn
+//!   and derives the seams from the anchors it accepted; either way the
+//!   stems, the closures, and the ids are code's.
+//! - **Recogniser**: what an adapter recognises of its own language that
+//!   the shared pipeline cannot — the bootstrap, a handler, a mount, what
+//!   the code says at an anchor. See [`survey::code::Recogniser`].
 //! - **Mine**: to put one seam to the model under the adapter's `extract.md`
 //!   and gate its answer. [`extract`](fn@extract) mines every seam of a source.
 //! - **Context**: the adapter identifier, source input, and model available to

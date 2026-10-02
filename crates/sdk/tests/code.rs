@@ -8,7 +8,7 @@ use emery_sdk::survey::code::{
 };
 use emery_sdk::survey::resolve::Target;
 use emery_sdk::survey::route::Spelling;
-use emery_sdk::survey::{Dialect, Lines};
+use emery_sdk::survey::{ClassSyntax, Dialect, Lines};
 
 static TYPESCRIPT: Dialect = Dialect {
     self_name: "this",
@@ -26,6 +26,14 @@ static TYPESCRIPT: Dialect = Dialect {
     openers: &['[', '{'],
     comment_prefixes: &["//", "*"],
     globals: &["fetch"],
+    options: &[],
+    manifests: &["package.json"],
+    barrels: &[],
+    constructs: Some("new"),
+    env_object: Some("process.env"),
+    enum_bases: &[],
+    class_syntax: ClassSyntax::BRACED,
+    described: "a case's title under its suites'",
     route: Spelling {
         pattern: &['*', '{', '(', '['],
         param_name: |segment| segment.trim_start_matches(':'),
@@ -48,6 +56,14 @@ static PYTHON: Dialect = Dialect {
     openers: &['[', '{', '('],
     comment_prefixes: &["#"],
     globals: &["open"],
+    options: &["add_argument", "option"],
+    manifests: &["pyproject.toml", "setup.cfg"],
+    barrels: &["__init__"],
+    constructs: None,
+    env_object: None,
+    enum_bases: &["Enum", "Flag"],
+    class_syntax: ClassSyntax::INDENTED,
+    described: "a test's docstring or name under its class's",
     route: Spelling {
         pattern: &['*', '{', '(', '[', '<'],
         param_name: |segment| segment.trim_start_matches(':'),
