@@ -37,7 +37,7 @@ jobs:
       # account as the API token.
       - name: Deploy to Cloudflare Workers
         if: github.event_name == 'push'
-        uses: cloudflare/wrangler-action@v3
+        uses: cloudflare/wrangler-action@v4
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
