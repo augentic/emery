@@ -1,3 +1,5 @@
+//! `workspace::list` walks a root under an adapter's `keep`, skipping the engine's own files.
+
 use std::fs;
 use std::os::unix::fs::symlink;
 use std::path::Path;

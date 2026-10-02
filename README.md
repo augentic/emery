@@ -47,7 +47,7 @@ Preview the working-tree Cursor skill against a local CLI:
 cursor-agent --plugin-dir plugins/emery
 ```
 
-Start with [AGENTS.md](AGENTS.md), then [CONTRIBUTING.md](CONTRIBUTING.md). See also [GOVERNANCE.md](GOVERNANCE.md) and [Code of Conduct](CODE-OF-CONDUCT.md).
+Start with [AGENTS.md](AGENTS.md), then [CONTRIBUTING.md](CONTRIBUTING.md). See also [GOVERNANCE.md](GOVERNANCE.md) and [Code of Conduct](CODE_OF_CONDUCT.md).
 
 ## License
 

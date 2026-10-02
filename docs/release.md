@@ -20,7 +20,7 @@ The host embeds no adapter-version recommendation and no registry routing: exact
 
 ## Release lines
 
-Releases live on durable `release-X.Y.Z` branches, the same shape as Omnia's shared `augentic/.github` workflows. `main` always carries the *next unreleased* version (Cargo version plus the `Unreleased` heading in `RELEASES.md`). The four verbs:
+Releases live on durable `release-X.Y.Z` branches, the same shape as Omnia's shared `augentic/toolkit` workflows. `main` always carries the *next unreleased* version (Cargo version plus the `Unreleased` heading in `RELEASES.md`). The four verbs:
 
 1. **Cut** — dispatch **Create Release** on `main`. It pushes `release-X.Y.Z` at the current tip and opens a PR that bumps `main` to the next unreleased version and resets `RELEASES.md`. Merge that PR; edit release notes on the release branch, not on `main`.
 2. **Stabilize** — on the release branch only: check the omnia pins (`cargo build --locked` must resolve on a clean runner — re-pin any local-path `[patch.crates-io]` entry to a pushed rev) and backport fixes from `main` (fixes land on `main` first when applicable).
@@ -53,10 +53,10 @@ Keep the table short — it is a statement of what was tested together, not a ve
 
 Publish composes four jobs (plus the release-branch skip gate):
 
-1. **`ci`.** Shared `augentic/.github` CI over the release branch.
+1. **`ci`.** Shared `augentic/toolkit` CI over the release branch.
 2. **`binaries`.** Local matrix job in `publish.yaml`: each leg builds and packages its archive, uploading it as a workflow artifact (`archive-<target>`).
-3. **`publish`.** Shared `augentic/.github` publish: date `RELEASES.md`, push `vX.Y.Z`, create the GitHub Release with notes and the `archive-*` workflow artifacts attached.
-4. **`crates`.** Shared `augentic/.github` `crates.yaml`: `cargo publish --workspace --locked` over the publishable `emery-*` packages (needs the org `CARGO_REGISTRY_TOKEN`). Until the omnia stack the workspace patches is itself on crates.io, this job fails on dependency resolution — expected, and no other artifact depends on it.
+3. **`publish`.** Shared `augentic/toolkit` publish: date `RELEASES.md`, push `vX.Y.Z`, create the GitHub Release with notes and the `archive-*` workflow artifacts attached.
+4. **`crates`.** Shared `augentic/toolkit` `crates.yaml`: `cargo publish --workspace --locked` over the publishable `emery-*` packages (needs the org `CARGO_REGISTRY_TOKEN`). Until the omnia stack the workspace patches is itself on crates.io, this job fails on dependency resolution — expected, and no other artifact depends on it.
 
 Each leg runs native `cargo build --release --locked --target <triple> --bin emery`. `build.rs` embeds the engine via a child `wasm32-wasip2` build and then ahead-of-time compiles it for the leg's target triple — Cargo's `TARGET`, passed to `omnia::compile::compile` explicitly — under `omnia::CompileOptions::default()` (same path as `cargo install --git`), so neither the build machine nor the build shell's environment steers the artifact. The runtime's compile-affecting settings (`MAX_FUEL`, `BRANCH_HINTING`, `MEMORY_RESERVATION`, `MEMORY_GUARD_SIZE`, `DEBUG_SYMBOLS`, `GENERATE_ADDRESS_MAP`) default to the same values, so a bare run loads the embedded artifact; an operator override at run time that diverges from those defaults rejects it at startup. Supported targets (Homebrew + `cargo-binstall`; no `cross`):
 

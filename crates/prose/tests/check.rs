@@ -1,3 +1,5 @@
+//! `check` holds a prose list to its tree, its links, and the prompts code puts.
+
 use std::fs;
 use std::os::unix::fs::symlink;
 use std::path::Path;

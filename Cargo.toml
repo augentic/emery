@@ -72,27 +72,27 @@ repository = "https://github.com/augentic/emery"
 rust-version = "1.98"
 version = "0.38.0"
 
+# conventions:begin lints/rust
 [workspace.lints.rust]
-# https://dirname.github.io/rust-std-doc/rustc/lints/listing/allowed-by-default.html
+# https://doc.rust-lang.org/rustc/lints/listing/allowed-by-default.html
+missing_docs = "warn"
 trivial_numeric_casts = "warn"
 unsafe_code = "deny"
 unsafe_op_in_unsafe_fn = "warn"
 unused_extern_crates = "warn"
+# conventions:end lints/rust
 
+# conventions:begin lints/clippy
 [workspace.lints.clippy]
 # https://doc.rust-lang.org/stable/clippy/index.html
 all = { level = "warn", priority = -1 }      # correctness, suspicious, style, complexity, perf
 cargo = { level = "warn", priority = -1 }
 nursery = { level = "warn", priority = -1 }
 pedantic = { level = "warn", priority = -1 }
-missing_errors_doc = "allow"
-missing_panics_doc = "allow"
 
 # Cherry-picked lints are from the `restriction` lint group in order to drive up
 # consistency, quality, and brevity
 # See https://microsoft.github.io/rust-guidelines/guidelines/universal/index.html
-
-# allow_attributes_without_reason = "warn"
 as_pointer_underscore = "warn"
 assertions_on_result_states = "warn"
 clone_on_ref_ptr = "warn"
@@ -112,6 +112,9 @@ unnecessary_safety_comment = "warn"
 unnecessary_safety_doc = "warn"
 unneeded_field_pattern = "warn"
 unused_result_ok = "warn"
+# conventions:end lints/clippy
+missing_errors_doc = "allow"
+missing_panics_doc = "allow"
 
 # Recommended-but-skipped restriction lints with rationale:
 # - `tests_outside_test_module`: fires on every integration test in `tests/*.rs`
