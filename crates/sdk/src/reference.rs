@@ -46,7 +46,6 @@ pub fn tools() -> Vec<Tool> {
 ///
 /// Each call is reported at DEBUG with its arguments as the model sent them,
 /// under the `source` name and, for a mining turn, its `seam`.
-#[must_use]
 pub fn serve(docs: &'static [Doc], source: &str, seam: Option<usize>) -> Tools {
     let source = source.to_owned();
 
