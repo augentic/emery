@@ -30,47 +30,14 @@ pub async fn commit<S: StateStore + BlobStore>(
     store: &S, revision: &Revision,
 ) -> Result<(String, Option<Diff>), Error> {
     // observe once for the diff and the CAS
-    let observed = observe(store).await;
+    let observed = Observation::of(store).await;
     let diff = observed
         .id()
         .zip(observed.revision.as_ref())
         .map(|(from, outgoing)| Diff::between(from, outgoing, revision));
-    let id = swap(store, revision, observed).await?;
+    let id = observed.swap(store, revision).await?;
 
     Ok((id, diff))
-}
-
-// A lost swap leaves the written documents as an inert, unreferenced orphan.
-async fn swap<S: StateStore + BlobStore>(
-    store: &S, revision: &Revision, observed: Observation,
-) -> Result<String, Error> {
-    if !BlobStore::container_exists(store, CONTAINER).await? {
-        BlobStore::create_container(store, CONTAINER).await?;
-    }
-
-    let id = revision.id()?;
-    for (name, body) in [
-        (Spec::NAME, revision.spec.to_json()?),
-        (Design::NAME, revision.design.to_json()?),
-        (Plan::NAME, revision.plan.to_json()?),
-    ] {
-        BlobStore::put(store, CONTAINER, &key(&id, name), body.as_bytes())
-            .await
-            .context("writing revision document")?;
-    }
-
-    StateStore::cas(store, REVISION_KEY, observed.token.as_deref(), id.as_bytes())
-        .await
-        .context("swapping current revision")?;
-
-    // prune the outgoing revision
-    if let Some(outgoing) = observed.id().filter(|outgoing| *outgoing != id) {
-        for name in [Spec::NAME, Design::NAME, Plan::NAME] {
-            let _ = BlobStore::delete(store, CONTAINER, &key(outgoing, name)).await;
-        }
-    }
-
-    Ok(id)
 }
 
 fn key(id: &str, name: &str) -> String {
@@ -100,47 +67,6 @@ pub async fn current<S: StateStore + BlobStore>(
     Ok(Some((id, revision)))
 }
 
-// Bad state suppresses only the advisory diff; the CAS still refuses a stale
-// token. Each suppressed failure is logged, since the CAS that follows can
-// only report it as a conflict.
-async fn observe<S: StateStore + BlobStore>(store: &S) -> Observation {
-    let nothing = Observation {
-        token: None,
-        revision: None,
-    };
-
-    // the current id, or nothing when there is none or it cannot be read
-    let token = match StateStore::get(store, REVISION_KEY).await {
-        Ok(Some(token)) => token,
-        Ok(None) => return nothing,
-        Err(error) => {
-            tracing::warn!(%error, "revision id is unreadable");
-            return nothing;
-        }
-    };
-
-    // the revision it names, or nothing when it cannot be read
-    let Ok(id) = str::from_utf8(&token) else {
-        return Observation {
-            token: Some(token),
-            revision: None,
-        };
-    };
-
-    let revision = match load(store, id).await {
-        Ok(revision) => Some(revision),
-        Err(error) => {
-            tracing::warn!(%id, %error, "revision is unreadable");
-            None
-        }
-    };
-
-    Observation {
-        token: Some(token),
-        revision,
-    }
-}
-
 async fn load<S: BlobStore>(store: &S, id: &str) -> Result<Revision, Error> {
     let spec = read(store, id, Spec::NAME).await?;
     let design = read(store, id, Design::NAME).await?;
@@ -164,6 +90,81 @@ struct Observation {
 }
 
 impl Observation {
+    // Bad state suppresses only the advisory diff; the CAS still refuses a
+    // stale token. Each suppressed failure is logged, since the CAS that
+    // follows can only report it as a conflict.
+    async fn of<S: StateStore + BlobStore>(store: &S) -> Self {
+        let nothing = Self {
+            token: None,
+            revision: None,
+        };
+
+        // the current id, or nothing when there is none or it cannot be read
+        let token = match StateStore::get(store, REVISION_KEY).await {
+            Ok(Some(token)) => token,
+            Ok(None) => return nothing,
+            Err(error) => {
+                tracing::warn!(%error, "revision id is unreadable");
+                return nothing;
+            }
+        };
+
+        // the revision it names, or nothing when it cannot be read
+        let Ok(id) = str::from_utf8(&token) else {
+            return Self {
+                token: Some(token),
+                revision: None,
+            };
+        };
+
+        let revision = match load(store, id).await {
+            Ok(revision) => Some(revision),
+            Err(error) => {
+                tracing::warn!(%id, %error, "revision is unreadable");
+                None
+            }
+        };
+
+        Self {
+            token: Some(token),
+            revision,
+        }
+    }
+
+    // A lost swap leaves the written documents as an inert, unreferenced
+    // orphan.
+    async fn swap<S: StateStore + BlobStore>(
+        self, store: &S, revision: &Revision,
+    ) -> Result<String, Error> {
+        if !BlobStore::container_exists(store, CONTAINER).await? {
+            BlobStore::create_container(store, CONTAINER).await?;
+        }
+
+        let id = revision.id()?;
+        for (name, body) in [
+            (Spec::NAME, revision.spec.to_json()?),
+            (Design::NAME, revision.design.to_json()?),
+            (Plan::NAME, revision.plan.to_json()?),
+        ] {
+            BlobStore::put(store, CONTAINER, &key(&id, name), body.as_bytes())
+                .await
+                .context("writing revision document")?;
+        }
+
+        StateStore::cas(store, REVISION_KEY, self.token.as_deref(), id.as_bytes())
+            .await
+            .context("swapping current revision")?;
+
+        // prune the outgoing revision
+        if let Some(outgoing) = self.id().filter(|outgoing| *outgoing != id) {
+            for name in [Spec::NAME, Design::NAME, Plan::NAME] {
+                let _ = BlobStore::delete(store, CONTAINER, &key(outgoing, name)).await;
+            }
+        }
+
+        Ok(id)
+    }
+
     fn id(&self) -> Option<&str> {
         self.token.as_deref().and_then(|token| str::from_utf8(token).ok())
     }
@@ -183,12 +184,13 @@ mod tests {
         let memory = Memory::default();
 
         // both runs observe the empty store, the winner swaps first
-        let stale = observe(&memory).await;
-        let observed = observe(&memory).await;
+        let stale = Observation::of(&memory).await;
+        let observed = Observation::of(&memory).await;
         let winning = revision("winner");
-        let winner = swap(&memory, &winning, observed).await.expect("commit");
+        let winner = observed.swap(&memory, &winning).await.expect("commit");
 
-        let err = swap(&memory, &revision("loser"), stale)
+        let err = stale
+            .swap(&memory, &revision("loser"))
             .await
             .expect_err("a stale observation must never last-write-wins over the swapped id");
         assert_eq!(err.code(), "server_error", "typed failure");

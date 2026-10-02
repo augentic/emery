@@ -1,8 +1,9 @@
-//! Defines the numbered identifiers a revision's records carry.
+//! Defines the identifiers a revision's records carry.
 //!
 //! [`ReqId`] numbers requirements and [`SliceId`] slices. Each is assigned
 //! from one in the order the engine fixes, rendered behind its own prefix,
-//! and stored as that rendering.
+//! and stored as that rendering. A requirement's subject is a dotted claim
+//! id, and its stem is the first segment.
 
 use std::fmt::{self, Display, Formatter};
 use std::str::FromStr;
@@ -104,4 +105,8 @@ numbered! {
     /// # Ok::<(), String>(())
     /// ```
     SliceId, "SLICE-"
+}
+
+pub fn stem(id: &str) -> &str {
+    id.split_once('.').map_or(id, |(stem, _)| stem)
 }

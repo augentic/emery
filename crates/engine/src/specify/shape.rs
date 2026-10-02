@@ -1,4 +1,5 @@
-//! Summarises one source's evidence for its `extracted` log line.
+//! Reads the shape of one source's evidence: its summary for the `extracted`
+//! log line, and the file a claim's `path` names.
 //!
 //! The summary is how many claims of each kind, and the id stems its
 //! requirements fall under, so a run's log shows what a source yielded
@@ -8,7 +9,10 @@ use std::collections::BTreeMap;
 
 use emery_adapter::source::{ClaimKind, Evidence};
 
-/// Returns how many claims of each kind, as `requirement=41 type=12`, in taxonomy order.
+use crate::revision;
+
+// How many claims of each kind, as `requirement=41 type=12`, in taxonomy
+// order.
 pub fn kinds(evidence: &Evidence) -> String {
     let mut counts: BTreeMap<ClaimKind, usize> = BTreeMap::new();
     for claim in &evidence.claims {
@@ -17,7 +21,8 @@ pub fn kinds(evidence: &Evidence) -> String {
     counts.iter().map(|(kind, count)| format!("{kind}={count}")).collect::<Vec<_>>().join(" ")
 }
 
-/// Returns how many requirement ids share each stem, as `start=41 orders=35`, largest first.
+// How many requirement ids share each stem, as `start=41 orders=35`, largest
+// first.
 pub fn stems(evidence: &Evidence) -> String {
     let mut counts: BTreeMap<&str, usize> = BTreeMap::new();
     for claim in &evidence.claims {
@@ -27,7 +32,7 @@ pub fn stems(evidence: &Evidence) -> String {
         let Some(id) = claim.id.as_deref() else {
             continue;
         };
-        *counts.entry(stem(id)).or_default() += 1;
+        *counts.entry(revision::stem(id)).or_default() += 1;
     }
 
     let mut stems: Vec<(&str, usize)> = counts.into_iter().collect();
@@ -35,9 +40,9 @@ pub fn stems(evidence: &Evidence) -> String {
     stems.iter().map(|(stem, count)| format!("{stem}={count}")).collect::<Vec<_>>().join(" ")
 }
 
-/// Returns the first segment of a dotted id, the domain noun the seam led it with.
-pub fn stem(id: &str) -> &str {
-    id.split_once('.').map_or(id, |(stem, _)| stem)
+// The file a `path` anchor names, without its line range.
+pub fn file(path: &str) -> &str {
+    path.split_once('#').map_or(path, |(file, _)| file)
 }
 
 #[cfg(test)]

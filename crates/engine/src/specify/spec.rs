@@ -18,8 +18,8 @@ use schemars::JsonSchema;
 use serde::Deserialize;
 use serde_json::{Value, json};
 
-use crate::revision::{EMERY, Requirement, Scenario, Spec};
-use crate::specify::basis::Basis;
+use crate::revision::{self, EMERY, Requirement, Scenario, Spec};
+use crate::specify::basis::{Basis, Contributor};
 use crate::specify::brief::{self, BasesSection, Brief, ClaimsSection, Review};
 use crate::specify::{Extract, shape};
 
@@ -53,7 +53,7 @@ impl<'a> SpecBrief<'a> {
     pub fn chunked(extracts: &'a [Extract], bases: &'a [Basis<'a>]) -> Vec<Self> {
         let mut stems: Vec<(&str, Vec<&'a Basis<'a>>)> = Vec::new();
         for basis in bases {
-            let stem = shape::stem(basis.subject);
+            let stem = basis.stem();
             match stems.iter_mut().find(|(known, _)| *known == stem) {
                 Some((_, under)) => under.push(basis),
                 None => stems.push((stem, vec![basis])),
@@ -158,7 +158,7 @@ impl Brief for SpecBrief<'_> {
                 review.note(format_args!("`{subject}` is not a requirement"));
                 continue;
             };
-            for outcome in verify_draft(basis, draft, review) {
+            for outcome in draft.verify(basis, review) {
                 outcomes.entry(outcome).or_default().insert(subject);
             }
         }
@@ -199,52 +199,6 @@ impl Brief for SpecBrief<'_> {
     }
 }
 
-// One draft against its requirement. Returns each evidenced `then` outcome
-// its scenarios state, normalised, for the check across requirements.
-fn verify_draft(basis: &Basis<'_>, draft: &Draft, review: &mut Review) -> Vec<String> {
-    let label = format!("`{}`", draft.subject);
-    if draft.scenarios.is_empty() {
-        review.note(format_args!("{label} has no scenario"));
-    }
-
-    // the requirement's own statements, which no scenario line may restate
-    let statements: BTreeSet<String> =
-        basis.classes.iter().flatten().map(|member| normalised(&member.statement)).collect();
-
-    let mut outcomes = Vec::new();
-    for scenario in &draft.scenarios {
-        review.line(&scenario.name, format_args!("{label} scenario `name`"));
-        for (field, text) in scenario.lines() {
-            review.line(text, format_args!("{label} scenario `{field}`"));
-        }
-
-        let when = normalised(&scenario.when);
-        if statements.contains(&when) {
-            review.note(format_args!(
-                "{label} scenario `when` restates the requirement; state the trigger"
-            ));
-        }
-
-        let then = normalised(&scenario.then);
-        if statements.contains(&then) {
-            review.note(format_args!(
-                "{label} scenario `then` restates the requirement; state the outcome the \
-                 scenario observes"
-            ));
-        }
-        if then == UNKNOWN && basis.covered {
-            review.note(format_args!(
-                "{label} scenario `then` is `{UNKNOWN}` but the requirement is covered; state \
-                 the evidenced outcome"
-            ));
-        }
-        if !then.is_empty() && then != UNKNOWN {
-            outcomes.push(then);
-        }
-    }
-    outcomes
-}
-
 // Whitespace collapsed, trailing punctuation dropped, lowercased: the shape
 // two lines are compared in.
 fn normalised(text: &str) -> String {
@@ -271,30 +225,27 @@ impl<'a> Scope<'a> {
         let stems: BTreeSet<&str> = bases
             .iter()
             .flat_map(|basis| basis.classes.iter().flatten())
-            .map(|member| shape::stem(member.id))
+            .map(Contributor::stem)
             .collect();
         let files = extracts
             .iter()
             .flat_map(|extract| &extract.evidence.claims)
             .filter(|claim| claim.kind == ClaimKind::Requirement)
-            .filter(|claim| claim.id.as_deref().is_some_and(|id| stems.contains(shape::stem(id))))
+            .filter(|claim| {
+                claim.id.as_deref().is_some_and(|id| stems.contains(revision::stem(id)))
+            })
             .filter_map(|claim| claim.path.as_deref())
-            .map(file)
+            .map(shape::file)
             .collect();
         Self { stems, files }
     }
 
     fn keeps(&self, claim: &Claim) -> bool {
         claim.id.as_deref().map_or_else(
-            || claim.path.as_deref().is_none_or(|path| self.files.contains(file(path))),
-            |id| self.stems.contains(shape::stem(id)),
+            || claim.path.as_deref().is_none_or(|path| self.files.contains(shape::file(path))),
+            |id| self.stems.contains(revision::stem(id)),
         )
     }
-}
-
-// The file a `path` anchor names, without its line range.
-fn file(path: &str) -> &str {
-    path.split_once('#').map_or(path, |(file, _)| file)
 }
 
 impl Display for SpecBrief<'_> {
@@ -342,4 +293,52 @@ pub struct Draft {
     pub subject: String,
     /// At least one scenario.
     pub scenarios: Vec<Scenario>,
+}
+
+impl Draft {
+    // Returns each evidenced `then` outcome the scenarios state, normalised,
+    // for the check across requirements.
+    fn verify(&self, basis: &Basis<'_>, review: &mut Review) -> Vec<String> {
+        let label = format!("`{}`", self.subject);
+        if self.scenarios.is_empty() {
+            review.note(format_args!("{label} has no scenario"));
+        }
+
+        // the requirement's own statements, which no scenario line may restate
+        let statements: BTreeSet<String> =
+            basis.classes.iter().flatten().map(|member| normalised(&member.statement)).collect();
+
+        let mut outcomes = Vec::new();
+        for scenario in &self.scenarios {
+            review.line(&scenario.name, format_args!("{label} scenario `name`"));
+            for (field, text) in scenario.lines() {
+                review.line(text, format_args!("{label} scenario `{field}`"));
+            }
+
+            let when = normalised(&scenario.when);
+            if statements.contains(&when) {
+                review.note(format_args!(
+                    "{label} scenario `when` restates the requirement; state the trigger"
+                ));
+            }
+
+            let then = normalised(&scenario.then);
+            if statements.contains(&then) {
+                review.note(format_args!(
+                    "{label} scenario `then` restates the requirement; state the outcome the \
+                     scenario observes"
+                ));
+            }
+            if then == UNKNOWN && basis.covered {
+                review.note(format_args!(
+                    "{label} scenario `then` is `{UNKNOWN}` but the requirement is covered; \
+                     state the evidenced outcome"
+                ));
+            }
+            if !then.is_empty() && then != UNKNOWN {
+                outcomes.push(then);
+            }
+        }
+        outcomes
+    }
 }

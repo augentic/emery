@@ -84,7 +84,7 @@ impl Requirement {
     /// the slice floor every requirement under it shares.
     #[must_use]
     pub fn stem(&self) -> &str {
-        self.subject.split_once('.').map_or(&self.subject, |(stem, _)| stem)
+        revision::stem(&self.subject)
     }
 
     /// Returns how many anchors this requirement and `other` cite in common:

@@ -16,9 +16,9 @@ use serde_json::{Value, json};
 use strum::VariantArray as _;
 
 use crate::revision::{self, Design, EMERY, Section, SectionKind, citations};
-use crate::specify::Extract;
 use crate::specify::basis::Basis;
 use crate::specify::brief::{BasesSection, Brief, ClaimsSection, Review};
+use crate::specify::{Extract, shape};
 
 /// A synthesis brief for the drafted portions of `design.md`.
 ///
@@ -345,10 +345,7 @@ fn declared(claim: &Claim) -> Option<&str> {
     if let Some(id) = claim.id.as_deref() {
         return Some(id);
     }
-
-    let path = claim.path.as_deref()?;
-    let (file, _anchor) = path.split_once('#').unwrap_or((path, ""));
-    Some(file)
+    claim.path.as_deref().map(shape::file)
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, strum::Display)]
