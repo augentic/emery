@@ -1,3 +1,5 @@
+//! `extract` puts one gated turn per seam and joins the answers into one document.
+
 use std::collections::BTreeMap;
 use std::future::Future;
 use std::sync::atomic::{AtomicUsize, Ordering};

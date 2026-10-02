@@ -38,9 +38,10 @@ To preview the working-tree `/emery:*` skill against a local CLI: `cargo install
 - Use kebab-case for file names, change names, and adapter identifiers
 - Store behavior belongs in guest orchestrations or adapter prompts, not in skill bodies
 
+<!-- conventions:begin contributing/dco -->
 ## Developer's Certificate of Origin
 
-All contributions must include acceptance of the DCO:
+All contributions must include acceptance of the [DCO](https://developercertificate.org/):
 
 ```text
 Developer Certificate of Origin
@@ -87,21 +88,27 @@ To accept the DCO, add this line to each commit message with your name and email
 Signed-off-by: Jane Example <jane@example.com>
 ```
 
-For legal reasons, no anonymous or pseudonymous contributions are accepted.
+For legal reasons, no anonymous or pseudonymous contributions are accepted; open a GitHub issue if this is a problem for you.
+<!-- conventions:end contributing/dco -->
 
+<!-- conventions:begin contributing/pull-requests -->
 ## Pull request procedure
 
 Pull requests should be targeted at the `main` branch. Before creating a pull request, go through this checklist:
 
 1. Create a feature branch off of `main`.
 2. [Rebase](https://git-scm.com/book/en/Git-Branching-Rebasing) your local changes against `main`.
-3. Run checks: `make ci` for the full gate; `mdbook build docs` when the change touches `docs/`.
+3. Run `make ci` and confirm that it passes: exactly the CI jobs, in order.
 4. Accept the Developer's Certificate of Origin on all commits (see above).
 
-All contributions are made via pull request. All patches from all contributors get reviewed. At least one review from a maintainer is required for all patches (even patches from maintainers).
+All contributions are made via pull request. All patches from all contributors get reviewed. At least one review from a maintainer is required for all patches (even patches from maintainers). When CI fails, authors are expected to update the pull request until it passes.
 
-Normally, all pull requests must include tests that cover your change, written against the public boundaries: root product scenarios under `tests/` (the default — argv in, envelope/exit/storage out), with crate integration tests under `crates/*/tests/` only for independent library contracts and unit tests only for CLI-unreachable branches. For skill-wrapper or docs changes, run `mdbook build docs` (and, for wrapper changes, manually verify the skill in a target project).
+Normally, all pull requests must include tests that cover your change. Occasionally, a change will be very difficult to test for; in those cases, include a note in your commit message explaining why.
+<!-- conventions:end contributing/pull-requests -->
 
+Tests here cover a change at its public boundary: root product scenarios under `tests/` (argv in; envelope, exit code, and storage out), crate integration tests under `crates/*/tests/` only for independent library contracts, unit tests only for CLI-unreachable branches. A change under `docs/` must pass `mdbook build docs`; a skill-wrapper change is also verified by hand in a target project.
+
+<!-- conventions:begin contributing/conduct -->
 ## Conduct
 
 Whether you are a regular contributor or a newcomer, we care about making this community a safe place for you and we've got your back.
@@ -110,5 +117,7 @@ Whether you are a regular contributor or a newcomer, we care about making this c
 - Be kind and courteous. There is no need to be mean or rude.
 - We will exclude you from interaction if you insult, demean or harass anyone. In particular, we do not tolerate behavior that excludes people in socially marginalized groups.
 - Private harassment is also unacceptable. If you feel you have been or are being harassed or made uncomfortable by a community member, please contact a member of the core team immediately.
+- Likewise any spamming, trolling, flaming, baiting or other attention-stealing behaviour is not welcome.
 
-We welcome discussion about creating a welcoming, safe, and productive environment for the community. If you have any questions, feedback, or concerns please let us know with a GitHub issue.
+We welcome discussion about creating a welcoming, safe, and productive environment for the community. If you have any questions, feedback, or concerns please let us know with a GitHub issue. The [Code of Conduct](CODE_OF_CONDUCT.md) applies throughout.
+<!-- conventions:end contributing/conduct -->

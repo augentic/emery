@@ -1,3 +1,5 @@
+//! An `Evidence` document parses from JSON and its claim gate names each malformed claim.
+
 use emery_adapter::source::{Anchor, Backing, BadAnchor, ClaimKind, Evidence};
 
 #[test]

@@ -55,10 +55,8 @@ allowed-duplicate-crates = [
   "wit-parser",
 ]
 
+# conventions:begin clippy/guest-deny-list
 disallowed-methods = [
-  # { path = "std::env::var", reason = "guests receive configuration through the provider" },
-  # { path = "std::env::vars", reason = "guests receive configuration through the provider" },
-  # { path = "std::env::var_os", reason = "guests receive configuration through the provider" },
   { path = "std::env::args", reason = "Omnia command routing owns argv" },
   { path = "std::env::args_os", reason = "Omnia command routing owns argv" },
   { path = "std::env::current_dir", reason = "guests use explicit named preopens" },
@@ -93,3 +91,4 @@ disallowed-types = [
   { path = "std::net::TcpListener", reason = "guests have no ambient socket capability" },
   { path = "std::net::UdpSocket", reason = "guests have no ambient socket capability" },
 ]
+# conventions:end clippy/guest-deny-list
