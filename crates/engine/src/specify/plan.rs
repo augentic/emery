@@ -23,7 +23,6 @@ use serde_json::{Value, json};
 use crate::revision::{EMERY, Plan, ReqId, Slice, SliceId};
 use crate::specify::basis::Basis;
 use crate::specify::brief::{BasesSection, Brief, Review};
-use crate::specify::shape;
 
 /// A synthesis brief for the build plan.
 ///
@@ -41,7 +40,7 @@ impl<'a> SliceBrief<'a> {
     pub fn new(bases: &'a [Basis<'a>], types: Vec<String>) -> Self {
         let mut stems: Vec<Stem<'a>> = Vec::new();
         for basis in bases {
-            let stem = shape::stem(basis.subject);
+            let stem = basis.stem();
             match stems.iter_mut().find(|entry| entry.stem == stem) {
                 Some(entry) => entry.requirements.push(basis.id),
                 None => stems.push(Stem {
@@ -201,7 +200,7 @@ impl Brief for SliceBrief<'_> {
                 }
             }
         }
-        let cyclic = unorderable(&answer.slices);
+        let cyclic = answer.unorderable();
         if !cyclic.is_empty() {
             review.note(format_args!(
                 "slices {} cannot be ordered: their `depends-on` edges contain a cycle",
@@ -259,43 +258,6 @@ impl Brief for SliceBrief<'_> {
     }
 }
 
-// The slice names Kahn's elimination cannot order: what remains once every
-// slice with no pending dependency is removed in turn. A dependency on a
-// name that is no slice, or on the slice itself, is found elsewhere and does
-// not count.
-fn unorderable(drafts: &[Draft]) -> Vec<&str> {
-    let names: BTreeSet<&str> = drafts.iter().map(|draft| draft.name.as_str()).collect();
-    let mut pending: BTreeMap<&str, BTreeSet<&str>> = drafts
-        .iter()
-        .map(|draft| {
-            let dependencies = draft
-                .depends_on
-                .iter()
-                .map(String::as_str)
-                .filter(|dependency| names.contains(dependency) && *dependency != draft.name)
-                .collect();
-            (draft.name.as_str(), dependencies)
-        })
-        .collect();
-
-    loop {
-        let free: Vec<&str> = pending
-            .iter()
-            .filter(|(_, dependencies)| dependencies.is_empty())
-            .map(|(name, _)| *name)
-            .collect();
-        if free.is_empty() {
-            return pending.into_keys().collect();
-        }
-        for name in free {
-            pending.remove(name);
-            for dependencies in pending.values_mut() {
-                dependencies.remove(name);
-            }
-        }
-    }
-}
-
 fn quoted<'a>(names: impl IntoIterator<Item = &'a str>) -> String {
     names.into_iter().map(|name| format!("`{name}`")).collect::<Vec<_>>().join(", ")
 }
@@ -342,6 +304,46 @@ pub struct SliceAnswer {
     pub preamble: Vec<String>,
     /// One draft per slice, in any order.
     pub slices: Vec<Draft>,
+}
+
+impl SliceAnswer {
+    // The slice names Kahn's elimination cannot order: what remains once every
+    // slice with no pending dependency is removed in turn. A dependency on a
+    // name that is no slice, or on the slice itself, is found elsewhere and
+    // does not count.
+    fn unorderable(&self) -> Vec<&str> {
+        let names: BTreeSet<&str> = self.slices.iter().map(|draft| draft.name.as_str()).collect();
+        let mut pending: BTreeMap<&str, BTreeSet<&str>> = self
+            .slices
+            .iter()
+            .map(|draft| {
+                let dependencies = draft
+                    .depends_on
+                    .iter()
+                    .map(String::as_str)
+                    .filter(|dependency| names.contains(dependency) && *dependency != draft.name)
+                    .collect();
+                (draft.name.as_str(), dependencies)
+            })
+            .collect();
+
+        loop {
+            let free: Vec<&str> = pending
+                .iter()
+                .filter(|(_, dependencies)| dependencies.is_empty())
+                .map(|(name, _)| *name)
+                .collect();
+            if free.is_empty() {
+                return pending.into_keys().collect();
+            }
+            for name in free {
+                pending.remove(name);
+                for dependencies in pending.values_mut() {
+                    dependencies.remove(name);
+                }
+            }
+        }
+    }
 }
 
 /// The drafted content of one slice, before the engine numbers and orders it.

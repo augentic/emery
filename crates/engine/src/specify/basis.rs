@@ -18,9 +18,9 @@ use schemars::JsonSchema;
 use serde::Deserialize;
 use serde_json::{Value, json};
 
-use crate::revision::{Cited, Loser, ReqId, Requirement, Scenario, Status};
+use crate::revision::{self, Cited, Loser, ReqId, Requirement, Scenario, Status};
+use crate::specify::Extract;
 use crate::specify::brief::{Brief, Review};
-use crate::specify::{Extract, shape};
 
 /// A synthesis brief for grouping requirement claims.
 ///
@@ -62,7 +62,7 @@ impl<'a> GroupingBrief<'a> {
 
         // count the sources that contribute a requirement claim
         let sources = contributors.iter().map(|claim| claim.source).collect::<BTreeSet<_>>().len();
-        let baseline = baseline(&contributors);
+        let baseline = Grouping::baseline(&contributors);
 
         Self {
             contributors,
@@ -97,7 +97,7 @@ impl<'a> GroupingBrief<'a> {
         }
 
         if self.sources < 2 && self.stems() < 2 {
-            bases(self.contributors, &self.criteria, &self.baseline)
+            self.baseline.bases(self.contributors, &self.criteria)
         } else {
             self.judge(model).await
         }
@@ -106,71 +106,8 @@ impl<'a> GroupingBrief<'a> {
     // The distinct stems among the contributors' ids: the nouns the seams led
     // with, which differ when one source describes one behaviour twice.
     fn stems(&self) -> usize {
-        self.contributors.iter().map(|claim| shape::stem(claim.id)).collect::<BTreeSet<_>>().len()
+        self.contributors.iter().map(Contributor::stem).collect::<BTreeSet<_>>().len()
     }
-}
-
-// Byte-equal ids are one group, in first-appearance order, and whitespace-equal
-// statements one class; every answer must contain this grouping.
-fn baseline(contributors: &[Contributor<'_>]) -> Grouping {
-    let mut groups: Vec<Group> = Vec::new();
-    let mut by_id: BTreeMap<&str, usize> = BTreeMap::new();
-    for (index, claim) in contributors.iter().enumerate() {
-        let position = *by_id.entry(claim.id).or_insert_with(|| {
-            groups.push(Group::default());
-            groups.len() - 1
-        });
-        let group = &mut groups[position];
-        group.claims.push(index);
-        let class = group
-            .classes
-            .iter_mut()
-            .find(|class| contributors[class[0]].statement == claim.statement);
-
-        match class {
-            Some(class) => class.push(index),
-            None => group.classes.push(vec![index]),
-        }
-    }
-
-    Grouping { groups }
-}
-
-// Ordered by each group's earliest claim and numbered from `REQ-001` in that
-// order. The grouping was verified to place every contributor exactly once, so
-// an index it misses or repeats is the engine's own defect.
-fn bases<'a>(
-    contributors: Vec<Contributor<'a>>, criteria: &[&str], grouping: &Grouping,
-) -> Result<Vec<Basis<'a>>, Error> {
-    let mut contributors: Vec<Option<Contributor<'a>>> =
-        contributors.into_iter().map(Some).collect();
-    let mut groups: Vec<(usize, Vec<Vec<Contributor<'a>>>)> =
-        Vec::with_capacity(grouping.groups.len());
-    for group in &grouping.groups {
-        let first = group.claims.iter().copied().min().unwrap_or_default();
-        let mut classes = Vec::with_capacity(group.classes.len());
-        for class in &group.classes {
-            let members = class
-                .iter()
-                .map(|&index| {
-                    contributors.get_mut(index).and_then(Option::take).ok_or_else(|| {
-                        server_error!(
-                            "the grouping names claim {index}, which does not exist or is \
-                             already placed"
-                        )
-                    })
-                })
-                .collect::<Result<_, _>>()?;
-            classes.push(members);
-        }
-        groups.push((first, classes));
-    }
-    groups.sort_by_key(|(first, _)| *first);
-    groups
-        .into_iter()
-        .zip(1..)
-        .map(|((_, classes), number)| Basis::of(ReqId::new(number), classes, criteria))
-        .collect()
 }
 
 impl<'a> Brief for GroupingBrief<'a> {
@@ -248,60 +185,8 @@ impl<'a> Brief for GroupingBrief<'a> {
     }
 
     fn into_output(self, answer: Grouping) -> Result<Vec<Basis<'a>>, Error> {
-        let answer = split(&self.contributors, answer);
-        bases(self.contributors, &self.criteria, &answer)
+        answer.split(&self.contributors).bases(self.contributors, &self.criteria)
     }
-}
-
-// One source's distinct ids under one stem are distinct requirements — the
-// call that minted them under one noun told them apart — so a group that
-// merges them is split without a round: the first such id keeps the group and
-// every other member, each further id takes its own claims into a new group,
-// and each group's classes are the answer's cut to its members.
-fn split(contributors: &[Contributor<'_>], answer: Grouping) -> Grouping {
-    let mut groups = Vec::with_capacity(answer.groups.len());
-    for group in answer.groups {
-        // (source, stem) → the distinct ids the group holds under it, in order
-        let mut by_stem: BTreeMap<(&str, &str), Vec<&str>> = BTreeMap::new();
-        for claim in group.claims.iter().filter_map(|&index| contributors.get(index)) {
-            let ids = by_stem.entry((claim.source, shape::stem(claim.id))).or_default();
-            if !ids.contains(&claim.id) {
-                ids.push(claim.id);
-            }
-        }
-        let spun: BTreeSet<&str> = by_stem
-            .iter()
-            .filter(|(_, ids)| ids.len() > 1)
-            .inspect(|((source, stem), ids)| {
-                tracing::debug!(
-                    source,
-                    stem,
-                    ?ids,
-                    "the grouping merged one source's distinct ids under one stem; split"
-                );
-            })
-            .flat_map(|(_, ids)| ids.iter().skip(1).copied())
-            .collect();
-        if spun.is_empty() {
-            groups.push(group);
-            continue;
-        }
-        let id_of = |index: usize| contributors.get(index).map(|claim| claim.id);
-        let cut = |keep: &dyn Fn(usize) -> bool| Group {
-            claims: group.claims.iter().copied().filter(|&index| keep(index)).collect(),
-            classes: group
-                .classes
-                .iter()
-                .map(|class| class.iter().copied().filter(|&index| keep(index)).collect())
-                .filter(|class: &Vec<usize>| !class.is_empty())
-                .collect(),
-        };
-        groups.push(cut(&|index| !id_of(index).is_some_and(|id| spun.contains(id))));
-        for id in spun {
-            groups.push(cut(&|index| id_of(index) == Some(id)));
-        }
-    }
-    Grouping { groups }
 }
 
 impl Display for GroupingBrief<'_> {
@@ -358,6 +243,123 @@ impl Display for GroupingBrief<'_> {
 pub struct Grouping {
     /// One group per requirement.
     pub groups: Vec<Group>,
+}
+
+impl Grouping {
+    // Byte-equal ids are one group, in first-appearance order, and
+    // whitespace-equal statements one class; every answer must contain this
+    // grouping.
+    fn baseline(contributors: &[Contributor<'_>]) -> Self {
+        let mut groups: Vec<Group> = Vec::new();
+        let mut by_id: BTreeMap<&str, usize> = BTreeMap::new();
+        for (index, claim) in contributors.iter().enumerate() {
+            let position = *by_id.entry(claim.id).or_insert_with(|| {
+                groups.push(Group::default());
+                groups.len() - 1
+            });
+            let group = &mut groups[position];
+            group.claims.push(index);
+            let class = group
+                .classes
+                .iter_mut()
+                .find(|class| contributors[class[0]].statement == claim.statement);
+
+            match class {
+                Some(class) => class.push(index),
+                None => group.classes.push(vec![index]),
+            }
+        }
+
+        Self { groups }
+    }
+
+    // One source's distinct ids under one stem are distinct requirements — the
+    // call that minted them under one noun told them apart — so a group that
+    // merges them is split without a round: the first such id keeps the group
+    // and every other member, each further id takes its own claims into a new
+    // group, and each group's classes are the answer's cut to its members.
+    fn split(self, contributors: &[Contributor<'_>]) -> Self {
+        let mut groups = Vec::with_capacity(self.groups.len());
+        for group in self.groups {
+            // (source, stem) → the distinct ids the group holds under it, in order
+            let mut by_stem: BTreeMap<(&str, &str), Vec<&str>> = BTreeMap::new();
+            for claim in group.claims.iter().filter_map(|&index| contributors.get(index)) {
+                let ids = by_stem.entry((claim.source, claim.stem())).or_default();
+                if !ids.contains(&claim.id) {
+                    ids.push(claim.id);
+                }
+            }
+            let spun: BTreeSet<&str> = by_stem
+                .iter()
+                .filter(|(_, ids)| ids.len() > 1)
+                .inspect(|((source, stem), ids)| {
+                    tracing::debug!(
+                        source,
+                        stem,
+                        ?ids,
+                        "the grouping merged one source's distinct ids under one stem; split"
+                    );
+                })
+                .flat_map(|(_, ids)| ids.iter().skip(1).copied())
+                .collect();
+            if spun.is_empty() {
+                groups.push(group);
+                continue;
+            }
+            let id_of = |index: usize| contributors.get(index).map(|claim| claim.id);
+            let cut = |keep: &dyn Fn(usize) -> bool| Group {
+                claims: group.claims.iter().copied().filter(|&index| keep(index)).collect(),
+                classes: group
+                    .classes
+                    .iter()
+                    .map(|class| class.iter().copied().filter(|&index| keep(index)).collect())
+                    .filter(|class: &Vec<usize>| !class.is_empty())
+                    .collect(),
+            };
+            groups.push(cut(&|index| !id_of(index).is_some_and(|id| spun.contains(id))));
+            for id in spun {
+                groups.push(cut(&|index| id_of(index) == Some(id)));
+            }
+        }
+        Self { groups }
+    }
+
+    // Ordered by each group's earliest claim and numbered from `REQ-001` in
+    // that order. The grouping was verified to place every contributor exactly
+    // once, so an index it misses or repeats is the engine's own defect.
+    fn bases<'a>(
+        &self, contributors: Vec<Contributor<'a>>, criteria: &[&str],
+    ) -> Result<Vec<Basis<'a>>, Error> {
+        let mut contributors: Vec<Option<Contributor<'a>>> =
+            contributors.into_iter().map(Some).collect();
+        let mut groups: Vec<(usize, Vec<Vec<Contributor<'a>>>)> =
+            Vec::with_capacity(self.groups.len());
+        for group in &self.groups {
+            let first = group.claims.iter().copied().min().unwrap_or_default();
+            let mut classes = Vec::with_capacity(group.classes.len());
+            for class in &group.classes {
+                let members = class
+                    .iter()
+                    .map(|&index| {
+                        contributors.get_mut(index).and_then(Option::take).ok_or_else(|| {
+                            server_error!(
+                                "the grouping names claim {index}, which does not exist or is \
+                                 already placed"
+                            )
+                        })
+                    })
+                    .collect::<Result<_, _>>()?;
+                classes.push(members);
+            }
+            groups.push((first, classes));
+        }
+        groups.sort_by_key(|(first, _)| *first);
+        groups
+            .into_iter()
+            .zip(1..)
+            .map(|((_, classes), number)| Basis::of(ReqId::new(number), classes, criteria))
+            .collect()
+    }
 }
 
 /// The claims assigned to one requirement and their agreement classes.
@@ -425,6 +427,12 @@ impl<'a> Basis<'a> {
         })
     }
 
+    /// Returns the stem of the subject: the first segment of its dotted id.
+    #[must_use]
+    pub fn stem(&self) -> &'a str {
+        revision::stem(self.subject)
+    }
+
     /// Returns contributors by descending authority and then source order.
     pub fn contributors(&self) -> impl Iterator<Item = &Contributor<'a>> {
         let mut members: Vec<&Contributor<'a>> = self.classes.iter().flatten().collect();
@@ -487,6 +495,14 @@ pub struct Contributor<'a> {
     pub synopsis: Option<&'a str>,
     /// Position in source order, used to break authority ties.
     pub index: usize,
+}
+
+impl<'a> Contributor<'a> {
+    /// Returns the stem of the claim id: the first segment of its dotted id.
+    #[must_use]
+    pub fn stem(&self) -> &'a str {
+        revision::stem(self.id)
+    }
 }
 
 impl From<&Contributor<'_>> for Cited {
