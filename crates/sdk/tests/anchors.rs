@@ -12,8 +12,8 @@ use emery_sdk::survey::resolve::Target;
 use emery_sdk::{Context, Doc, SourceInput};
 use omnia_test::guest::Scripted;
 use support::{
-    PYTHON, Stub, binding, call, callee, class, class_decl, export, from_package, function, line,
-    literal, member, module, name, named_import, path, span, tree, value, write,
+    PYTHON, Plain, Stub, binding, call, callee, class, class_decl, export, from_package, function,
+    line, literal, member, module, name, named_import, path, span, tree, value, write,
 };
 
 const PROSE: &[Doc] = &[
