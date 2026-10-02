@@ -146,11 +146,26 @@ fn handling() -> Vec<Plain> {
         export("user_list", ExportKind::Function, span(1, 2)),
         export("OrdersRepository", ExportKind::Class, span(4, 6)),
     ];
+    vec![api, services]
+}
+
+// A call into the tree whose result is bound to a name is a step the method
+// takes, as one for its effect alone or awaited is: into an imported
+// function, on a local a tree class constructed, on a member of `self`. The
+// construction that made the local only wires, a call on an untyped
+// parameter leads nowhere the tree knows, a call passed on is a value in
+// hand, and a module-level binding takes no step. A call through a package
+// is anchored and listed whatever becomes of its value — the one on a cursor
+// a `with` bound among them — and a bare call bound is kept off the list.
+#[tokio::test]
+async fn bound_steps() {
     let tmp = tempfile::tempdir().expect("tempdir");
     let root = tmp.path();
-    write(root, "app/api.py", &api.text);
-    write(root, "app/services.py", &services.text);
-    let tree = tree(root, &PYTHON, vec![api, services], Stub::default());
+    let modules = handling();
+    for module in &modules {
+        write(root, &module.path, &module.text);
+    }
+    let tree = tree(root, &PYTHON, modules, Stub::default());
     let input = SourceInput::workspace("svc", root.to_str().expect("a UTF-8 scratch root"));
     let model = Scripted::answering([API]);
     let ctx = Context {
