@@ -64,7 +64,8 @@ fn service(large: bool, bootstrap: Option<Runs>) -> (tempfile::TempDir, SourceIn
     write(
         root,
         "src/config.ts",
-        "const PORT = process.env.PORT;\nexport const config = { PORT };\n",
+        "const PORT = process.env.PORT;\nexport const config = { PORT };\nexport const LIMITS = \
+         {\n  pageSize: 20,\n};\n",
     );
     write(root, "src/data.ts", &pad(2));
     write(root, "src/jobs/nightly.ts", &pad(2));
@@ -184,6 +185,7 @@ fn fill(m: &mut Plain) {
                 key: "PORT".to_owned(),
                 lines: line(1),
             }];
+            module.bindings = vec![value("LIMITS", None, None, None, Init::Literal, span(3, 5))];
             module.exports = vec![export("config", ExportKind::Value, line(2))];
         }
         "src/data.ts" => {
@@ -333,6 +335,7 @@ async fn whole_tree() {
     );
     for section in [
         "Boundaries the code spells as values of their own, each at its line.",
+        "- `src/config.ts#L3-L5` — `LIMITS = { pageSize: 20, }`",
         "- `src/config.ts#L1` — `process.env.PORT` in `const PORT = process.env.PORT;`",
         "Packages these modules import, with the names bound to them.",
         "Data files these modules name by path, each with the modules reading it, laid after the \

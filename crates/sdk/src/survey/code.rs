@@ -438,13 +438,18 @@ impl Init {
 }
 
 /// What becomes of a call's value.
+///
+/// A call made for its effect, waited on, or bound to a name is a step the
+/// function takes; one passed, returned, or chained on is a value in hand.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Use {
     /// Dropped: an expression statement's, awaited or not.
     Discarded,
     /// Waited on, then used.
     Awaited,
-    /// Assigned, passed, returned, or chained on.
+    /// Bound to a name: assigned, or held by a `with` or `using`.
+    Bound,
+    /// Passed, returned, or chained on.
     Consumed,
 }
 

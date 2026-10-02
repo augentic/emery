@@ -43,9 +43,11 @@ pub(super) fn decisions<'m>(modules: impl IntoIterator<Item = &'m Module>) -> Op
             ));
         }
     }
+    
     if lines.is_empty() {
         return None;
     }
+
     Some(format!(
         "Decision points in these modules, each at its lines: the guards, switches and matches, \
          conditionals, throws and raises, catches, loop conditions, assertions, and timers the \
@@ -54,7 +56,8 @@ pub(super) fn decisions<'m>(modules: impl IntoIterator<Item = &'m Module>) -> Op
          these, at a `return`, at the line that opens the function or method whose whole body \
          is the behaviour, at a listed call or a package's construction, at a boundary or a \
          line that applies a named constant, at a step the function takes into the tree (a \
-         write, a delete, a publish, a lookup it awaits), at the code a stated behaviour names, \
+         write, a delete, a publish, a lookup it awaits or binds), at the code a stated \
+         behaviour names, \
          or at a surface's registration or handler lines; a line that only wires or assigns — \
          a value passed on, a field set, a value computed from the ones in hand — is no \
          requirement's anchor, and what `start` constructs with a boundary's value is one \
@@ -333,9 +336,9 @@ pub(super) fn anchors<'s, R: Recogniser>(
     anchors
 }
 
-// A call for its effect alone or one awaited, into the tree or on a member
-// of its class. Not a registration handed a handler, a structural call, or
-// a call at module level.
+// A call for its effect alone, awaited, or bound to a name, into the tree or
+// on a member of its class. Not a registration handed a handler, a
+// structural call, or a call at module level.
 fn step<R: Recogniser>(tree: &Tree<R>, module: &R::Module, call: &Call) -> bool {
     if call.value == Use::Consumed || call.frames.is_empty() || call.structural(tree.dialect) {
         return false;
@@ -423,7 +426,9 @@ pub(super) fn boundaries<'m>(
     ))
 }
 
-// A value written over several lines, as one.
+// A value written over several lines, as one, less the terminator that closes
+// the statement: a one-line head never carries it, so a `criterion` reads both
+// the same way.
 fn collapsed(dialect: &Dialect, text: &str, at: Lines) -> Option<String> {
     const COLLAPSED: usize = 400;
     let start = at.start.saturating_sub(1) as usize;
@@ -440,7 +445,7 @@ fn collapsed(dialect: &Dialect, text: &str, at: Lines) -> Option<String> {
         .collect::<Vec<_>>()
         .join(" ");
     let value = joined.split_once(" = ").map_or(joined.as_str(), |(_, value)| value);
-    let value = value.trim();
+    let value = value.trim().trim_end_matches(';').trim_end();
     if value.is_empty() {
         return None;
     }
@@ -509,7 +514,7 @@ pub(super) fn calls<R: Recogniser>(tree: &Tree<R>, files: &[String]) -> Option<S
             if call.constructs
                 || call.structural(tree.dialect)
                 || call.inner
-                || (call.args.is_empty() && call.value == Use::Consumed)
+                || (call.args.is_empty() && matches!(call.value, Use::Consumed | Use::Bound))
                 || call
                     .args
                     .iter()
