@@ -177,7 +177,7 @@ async fn completions() {
     let provider = Provider::idle();
 
     let completions = cli_ok(&provider, &["emery", "completions", "zsh"]).await;
-    assert!(!completions.stdout.is_empty());
+    assert_ne!(completions.stdout, [] as [u8; 0]);
     let help = cli_ok(&provider, &["emery", "completions", "--help"]).await;
     let help = String::from_utf8_lossy(&help.stdout);
     assert!(help.contains("Pipe into your shell's completion directory"));
