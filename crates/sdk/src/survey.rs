@@ -14,7 +14,10 @@
 //! What a survey derives by code alone is spelled with the helpers beneath:
 //! [`Lines`] for a span of a file, [`resolve`] for what an import leads to,
 //! [`route`] for the stems and discriminators a route or literal spells, and
-//! [`tests`] for the behaviours a tree's own tests state.
+//! [`tests`] for the behaviours a tree's own tests state. A survey that
+//! parses its source fills a [`code::Module`] per file and reads it through
+//! the lookups there, each reading the language from the adapter's
+//! [`Dialect`].
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::{self, Display, Formatter};
@@ -30,9 +33,24 @@ use serde::{Deserialize, Serialize};
 use crate::extract::{Laid, lay, line_count};
 use crate::{Context, SURVEY, beneath, prompt, reference};
 
+pub mod code;
+mod dialect;
 pub mod resolve;
 pub mod route;
 pub mod tests;
+
+pub use self::dialect::Dialect;
+
+// First-occurrence order.
+pub(crate) fn unique<T: PartialEq>(items: impl IntoIterator<Item = T>) -> Vec<T> {
+    let mut list = Vec::new();
+    for item in items {
+        if !list.contains(&item) {
+            list.push(item);
+        }
+    }
+    list
+}
 
 /// A span of lines within one file, 1-based and inclusive.
 ///

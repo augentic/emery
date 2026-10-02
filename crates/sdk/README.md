@@ -22,7 +22,7 @@ mod guest {
 }
 ```
 
-The adapter writes `survey`, which chooses the seams — from the source alone, or from the surfaces the model names in one `survey::surfaces` turn over the facts the adapter's code read, held to the tree before anything is derived from them; the SDK owns every model turn, the claim gate, and the component boundary. What the survey derives by code — stems, line spans, import targets, route discriminators, the behaviours a tree's own tests state — it spells with `kebab` and `survey::{Lines, resolve, route, tests}`, each pure over strings.
+The adapter writes `survey`, which chooses the seams — from the source alone, or from the surfaces the model names in one `survey::surfaces` turn over the facts the adapter's code read, held to the tree before anything is derived from them; the SDK owns every model turn, the claim gate, and the component boundary. What the survey derives by code — stems, line spans, import targets, route discriminators, the behaviours a tree's own tests state — it spells with `kebab` and `survey::{Lines, resolve, route, tests}`, each pure over strings. A survey that parses its source fills a `survey::code::Module` per file and reads it through the lookups there, each reading the language's names from the adapter's `survey::Dialect`.
 
 - API documentation: [docs.rs/emery-sdk](https://docs.rs/emery-sdk), built for `wasm32-wasip2` so the `export` module is present
 - First-party adapters, and the shape a new one takes: [augentic/emery-adapters](https://github.com/augentic/emery-adapters)

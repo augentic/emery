@@ -26,6 +26,9 @@
 //!   and [`survey::tests`] are what a survey spells stems, line spans,
 //!   import targets, routes, and stated behaviours with, each pure over
 //!   strings and reading no parsed module.
+//! - [`survey::code`] is the module an adapter's parser fills and the
+//!   lookups every rule reads it through; [`survey::Dialect`] carries the
+//!   names those lookups read of a language, one `static` per adapter.
 //!
 //! Contract types and [`Error`] are re-exported, allowing an adapter to depend
 //! on this crate alone: the claim types, [`Anchor`] and [`BadAnchor`] for the
