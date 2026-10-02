@@ -67,13 +67,19 @@ pub struct Module {
     pub decisions: Vec<Decision>,
     /// Every `return` or `yield` of a value.
     pub returns: Vec<Lines>,
-    /// Every load of a module by a computed name, which no resolver can follow.
-    pub dynamic: Vec<Lines>,
+    /// Every load of a module by a computed name, which no resolver can follow to a module.
+    pub dynamic: Vec<Dynamic>,
     /// Every read of a name, at its line.
     pub references: Vec<Reference>,
 }
 
 impl Module {
+    /// Returns the root-relative directory the module sits in; empty at the root.
+    #[must_use]
+    pub fn directory(&self) -> &str {
+        self.path.rsplit_once('/').map_or("", |(dir, _)| dir)
+    }
+
     /// Returns the stem the module's path spells, under `dialect`'s generic stems.
     ///
     /// The file's name before its first dot, unless the dialect lists it as
@@ -375,6 +381,9 @@ pub enum BindingKind {
         bases: Vec<String>,
     },
     /// A value bound at module or function scope.
+    ///
+    /// The name a `with` or `using` holds is one, its initializer the call
+    /// it manages.
     Value {
         /// The identifier path at the head of the initializer: `express`
         /// for `express()`, `click.group` for `click.group()`.
@@ -796,6 +805,25 @@ pub struct Decision {
     /// The first line, cut as an initializer's head is: `if (<test>)`,
     /// `match <subject>`, `except <type>`, the throw statement.
     pub text: String,
+}
+
+/// One load of a module by a computed name, which no resolver can follow to a module.
+///
+/// A seam past the load widens to the directory it leads into, where the
+/// load spells one, and to the loading module's own where it spells none.
+/// See [`Tree::widening`].
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct Dynamic {
+    /// The load's lines.
+    pub lines: Lines,
+    /// What the load spells of where it leads, as written: the literal a
+    /// computed name leads with (`app.plugins.`, `./plugins/`), or the
+    /// package whose path is walked (`plugins`). `None` where it spells
+    /// nothing.
+    pub specifier: Option<String>,
+    /// The root-relative directory the load leads into; `None` until the
+    /// resolver settles it, and where the load spells nothing.
+    pub scope: Option<String>,
 }
 
 /// One read of a name, at its line.

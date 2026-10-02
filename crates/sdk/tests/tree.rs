@@ -13,9 +13,9 @@ use emery_sdk::survey::code::{
 use emery_sdk::survey::resolve::Target;
 use emery_sdk::survey::tests::Statement;
 use support::{
-    PYTHON, Plain, Stub, TYPESCRIPT, binding, call, callee, class, class_decl, export, from_module,
-    from_package, function, import, inline, line, literal, member, module, name, named_import,
-    path, reference, span, tree, value, write,
+    PYTHON, Plain, Stub, TYPESCRIPT, binding, call, callee, class, class_decl, dynamic, export,
+    from_module, from_package, function, import, inline, line, literal, member, module, name,
+    named_import, path, reference, span, tree, value, write,
 };
 
 fn linked(from: &str, to: &[&str]) -> Plain {
@@ -321,25 +321,73 @@ fn identify_ids() {
     );
 }
 
-// A seam widens to the rest of the tree past an import the resolver could not
-// follow or a module loaded by a computed name; one that followed every
-// import widens to nothing.
+// A seam widens past an import the resolver could not follow to the
+// importing module's own directory, and past a load by a computed name to
+// the directory the load spells, or the loader's own where it spells none.
+// A directory's modules are those directly beneath it, the root's own at
+// the root; a file the survey set aside widens nothing, and what the seam
+// lays already is not laid again.
 #[test]
 fn widening() {
-    let mut a = module("a.ts", 3);
-    a.0.imports = vec![named_import("x", "@alias/x", Target::Unresolved("@alias/x".to_owned()))];
-    let mut b = module("b.ts", 3);
-    b.0.dynamic = vec![line(2)];
+    let mut aliased = module("src/api/a.ts", 3);
+    aliased.0.imports =
+        vec![named_import("x", "@alias/x", Target::Unresolved("@alias/x".to_owned()))];
+    let mut aside = module("src/api/d.ts", 3);
+    aside.0.imports = vec![named_import(
+        "fake",
+        "./fake.test",
+        Target::Skipped("src/api/fake.test.ts".to_owned()),
+    )];
+    let mut spelled = module("src/jobs/b.ts", 3);
+    spelled.0.dynamic = vec![dynamic(line(2), Some("src/plugins"))];
+    let mut unspelled = module("src/jobs/c.ts", 3);
+    unspelled.0.dynamic = vec![dynamic(line(1), None)];
+    let mut top = module("main.ts", 3);
+    top.0.imports = vec![named_import("y", "./gone", Target::Unresolved("./gone".to_owned()))];
     let tree = tree(
         Path::new("/svc"),
         &TYPESCRIPT,
-        vec![a, b, module("c.ts", 3), module("d.ts", 3)],
+        vec![
+            top,
+            module("index.ts", 3),
+            aliased,
+            aside,
+            module("src/api/e.ts", 3),
+            module("src/api/sub/f.ts", 3),
+            spelled,
+            unspelled,
+            module("src/jobs/d.ts", 3),
+            module("src/plugins/p.ts", 3),
+            module("src/plugins/q.ts", 3),
+        ],
         Stub::default(),
     );
+    let widening =
+        |files: &[&str]| tree.widening(&files.iter().map(|f| (*f).to_owned()).collect::<Vec<_>>());
 
-    assert_eq!(tree.widening(&["a.ts".to_owned()]), ["b.ts", "c.ts", "d.ts"]);
-    assert_eq!(tree.widening(&["b.ts".to_owned(), "c.ts".to_owned()]), ["a.ts", "d.ts"]);
-    assert_eq!(tree.widening(&["c.ts".to_owned()]), [] as [String; 0]);
+    assert_eq!(
+        widening(&["src/api/a.ts"]),
+        ["src/api/d.ts", "src/api/e.ts"],
+        "the importer's own directory, and nothing beneath it"
+    );
+    assert_eq!(
+        widening(&["src/jobs/b.ts"]),
+        ["src/plugins/p.ts", "src/plugins/q.ts"],
+        "the directory the load spells"
+    );
+    assert_eq!(
+        widening(&["src/jobs/c.ts"]),
+        ["src/jobs/b.ts", "src/jobs/d.ts"],
+        "the loader's own where it spells none"
+    );
+    assert_eq!(
+        widening(&["src/jobs/b.ts", "src/jobs/c.ts"]),
+        ["src/jobs/d.ts", "src/plugins/p.ts", "src/plugins/q.ts"],
+        "both directories in path order, less what the seam lays"
+    );
+    assert_eq!(widening(&["main.ts"]), ["index.ts"], "the root's own at the root");
+    assert_eq!(widening(&["src/api/d.ts"]), [] as [String; 0], "a file set aside widens nothing");
+    assert_eq!(widening(&["src/api/e.ts"]), [] as [String; 0]);
 }
 
 // A call registers when it hands a handler and is discarded, constructs, or

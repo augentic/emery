@@ -20,7 +20,7 @@ use super::code::{
     TypeKind, Use,
 };
 use super::resolve::Target;
-use super::{Dialect, Lines, grouped, push_unique};
+use super::{Dialect, Lines, grouped, push_unique, unique};
 
 // How many sites a callee is listed at before the rest are counted.
 const SITES: usize = 8;
@@ -43,7 +43,7 @@ pub(super) fn decisions<'m>(modules: impl IntoIterator<Item = &'m Module>) -> Op
             ));
         }
     }
-    
+
     if lines.is_empty() {
         return None;
     }
@@ -104,10 +104,11 @@ pub(super) fn unfollowed<'m>(
                 if unresolved.len() == 1 { "names" } else { "name" }
             ));
         }
-        if !module.dynamic.is_empty() {
-            let at: Vec<String> = module.dynamic.iter().map(ToString::to_string).collect();
+        for (scope, at) in grouped(module.dynamic.iter().map(|load| (&load.scope, load.lines))) {
+            let at: Vec<String> = at.iter().map(ToString::to_string).collect();
+            let of = scope.as_deref().map_or_else(String::new, |dir| format!(" of {}", named(dir)));
             items.push(format!(
-                "`{}` loads a module by a computed name at {}",
+                "`{}` loads a module{of} by a computed name at {}",
                 module.path,
                 at.join(", ")
             ));
@@ -116,17 +117,32 @@ pub(super) fn unfollowed<'m>(
     if items.is_empty() {
         return None;
     }
-    let consequence = if widened.is_empty() {
-        ""
-    } else {
-        " The modules after the closure are the rest of the tree, laid so what these name is \
-         still within reach; read them for that alone."
+
+    // name the directories laid past the closure
+    let laid: Vec<String> =
+        unique(widened.iter().map(|path| named(path.rsplit_once('/').map_or("", |(dir, _)| dir))));
+    let consequence = match laid.as_slice() {
+        [] => String::new(),
+        [one] => format!(
+            " The modules after the closure are the rest of {one}, laid so what these name is \
+             still within reach; read them for that alone."
+        ),
+        [most @ .., last] => format!(
+            " The modules after the closure are the rest of {} and {last}, laid so what these \
+             name is still within reach; read them for that alone.",
+            most.join(", ")
+        ),
     };
     Some(format!(
         "The caller could not follow every import: {}. What these name is in none of the lists \
          above.{consequence}",
         items.join("; ")
     ))
+}
+
+// A directory as the brief names it: in backticks, the root by its name.
+fn named(dir: &str) -> String {
+    if dir.is_empty() { "the root".to_owned() } else { format!("`{dir}`") }
 }
 
 /// Returns a `type` claim for every exported class, type alias, and
@@ -337,10 +353,16 @@ pub(super) fn anchors<'s, R: Recogniser>(
 }
 
 // A call for its effect alone, awaited, or bound to a name, into the tree or
-// on a member of its class. Not a registration handed a handler, a
-// structural call, or a call at module level.
+// on a member of its class. Not a construction bound to a name, which only
+// wires the local the steps on it are traced through; a registration handed
+// a handler; a structural call; or a call at module level.
 fn step<R: Recogniser>(tree: &Tree<R>, module: &R::Module, call: &Call) -> bool {
-    if call.value == Use::Consumed || call.frames.is_empty() || call.structural(tree.dialect) {
+    let wires = match call.value {
+        Use::Consumed => true,
+        Use::Bound => call.constructs,
+        Use::Discarded | Use::Awaited => false,
+    };
+    if wires || call.frames.is_empty() || call.structural(tree.dialect) {
         return false;
     }
     if call.args.iter().any(|arg| tree.recogniser.handler(tree, module, arg, &call.frames)) {

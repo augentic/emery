@@ -2,16 +2,19 @@
 //!
 //! An adapter's resolver follows each import the way its language's loader
 //! would and settles the outcome as a [`Target`]: a module of the tree, a
-//! package outside it, a data file, or nothing the tree answers. A survey
-//! reads the targets to close over a surface's modules, to list the
-//! packages a seam calls through, and to say what it could not follow.
-//! [`normalize`] spells the root-relative path a relative specifier reaches.
+//! package outside it, a data file, a file the survey set aside, or nothing
+//! the tree answers. A survey reads the targets to close over a surface's
+//! modules, to list the packages a seam calls through, and to say what it
+//! could not follow. [`normalize`] spells the root-relative path a relative
+//! specifier reaches.
 
 /// What one import leads to, as the adapter's resolver settled it.
 ///
 /// An import the tree does not answer is [`Target::Unresolved`], never
 /// dropped, so a survey can say what it could not follow and widen what it
-/// lays. Each accessor answers for its own variant alone.
+/// lays. One the resolver followed to a file the survey set aside is
+/// [`Target::Skipped`]: known, so it widens nothing, and no module's, so it
+/// reaches nothing. Each accessor answers for its own variant alone.
 #[derive(Clone, Debug, Eq, PartialEq)]
 #[non_exhaustive]
 pub enum Target {
@@ -22,6 +25,9 @@ pub enum Target {
     Package(String),
     /// A data file of the tree, by root-relative path.
     Data(String),
+    /// A file of the tree the survey's keep policy set aside, by
+    /// root-relative path: a test helper, a migration.
+    Skipped(String),
     /// A relative or aliased specifier no module or data file of the tree
     /// answers, as written.
     Unresolved(String),
@@ -51,6 +57,15 @@ impl Target {
     pub fn data(&self) -> Option<&str> {
         match self {
             Self::Data(path) => Some(path),
+            _ => None,
+        }
+    }
+
+    /// Returns the file's root-relative path, for a [`Target::Skipped`].
+    #[must_use]
+    pub fn skipped(&self) -> Option<&str> {
+        match self {
+            Self::Skipped(path) => Some(path),
             _ => None,
         }
     }

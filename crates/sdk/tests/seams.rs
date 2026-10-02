@@ -15,9 +15,9 @@ use emery_sdk::survey::resolve::Target;
 use emery_sdk::{Context, Doc, Error, SourceInput};
 use omnia_test::guest::Scripted;
 use support::{
-    PYTHON, Plain, Stub, TYPESCRIPT, call, callee, class, class_decl, decorated, export,
+    PYTHON, Plain, Stub, TYPESCRIPT, call, callee, class, class_decl, decorated, dynamic, export,
     from_module, from_package, function, line, literal, member, module, name, named_import,
-    reference, span, value, write,
+    reference, span, tree, value, write,
 };
 
 const PROSE: &[Doc] = &[
@@ -514,9 +514,9 @@ async fn check_round() {
 }
 
 // A tree past the budget is one seam per stem over what its surfaces reach;
-// the seam whose modules import what no module answers lays the rest of the
-// tree after its closure and says so, and each test follows the seams whose
-// files it imports.
+// the seam whose modules import what no module answers lays the importer's
+// own directory after its closure — nothing beneath it — and says so, and
+// each test follows the seams whose files it imports.
 #[tokio::test]
 async fn by_stem_widened() {
     let (_tmp, input, tree) = service(true, Some(Runs::Load));
@@ -549,15 +549,12 @@ async fn by_stem_widened() {
             "src/config.ts",
             "src/data.ts",
             "data/small.json",
-            "src/jobs/nightly.ts",
             "src/main.ts",
-            "src/routes/orders.ts",
             "src/store.ts",
             "data/big.json",
-            "tests/orders.test.ts",
             "tests/loose.test.ts",
         ],
-        "widened to the rest of the tree, in path order"
+        "widened to the rest of `src` in path order, and followed by the test importing none"
     );
     assert!(
         survey.seams[1].text.starts_with(
@@ -578,7 +575,7 @@ async fn by_stem_widened() {
         survey.seams[2].text.contains(
             "The caller could not follow every import: `@alias/x` from `src/ctl.ts` names no \
              module of the tree. What these name is in none of the lists above. The modules after \
-             the closure are the rest of the tree, laid so what these name is still within reach; \
+             the closure are the rest of `src`, laid so what these name is still within reach; \
              read them for that alone."
         ),
         "{}",
@@ -593,6 +590,71 @@ async fn by_stem_widened() {
     let types: Vec<&str> =
         survey.types.iter().map(|claim| claim.extras["name"].as_str().expect("name")).collect();
     assert_eq!(types, ["Store", "Ctl"]);
+    model.assert_exhausted();
+}
+
+// A seam widened past a load by a computed name lays the directory the load
+// spells, and the loader's own where it spells none, each named in the brief
+// beside the load; one widened from a module at the root lays the root's own
+// modules and says so.
+#[tokio::test]
+async fn by_stem_loaded() {
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let root = tmp.path();
+    let mut modules = Vec::new();
+    for (path, lines) in [
+        ("main.ts", 10_003),
+        ("index.ts", 2),
+        ("src/api/x.ts", 2),
+        ("src/jobs/loader.ts", 3),
+        ("src/jobs/other.ts", 2),
+        ("src/plugins/p.ts", 2),
+    ] {
+        write(root, path, &pad(lines));
+        let mut m = module(path, u32::try_from(lines).expect("a short file"));
+        m.0.text = pad(lines);
+        modules.push(m);
+    }
+    modules[0].0.imports =
+        vec![named_import("gone", "./gone", Target::Unresolved("./gone".to_owned()))];
+    modules[3].0.dynamic = vec![dynamic(line(2), Some("src/plugins")), dynamic(line(3), None)];
+    let tree = tree(root, &TYPESCRIPT, modules, Stub::default());
+    let input = SourceInput::workspace("svc", root.to_str().expect("a UTF-8 scratch root"));
+    let model = Scripted::answering([r#"{"surfaces":[
+        {"name":"run","anchor":"main.ts#L1","stem":"main"},
+        {"name":"load","anchor":"src/jobs/loader.ts#L2","stem":"jobs"}
+    ]}"#]);
+
+    let survey = run(&model, &input, &tree).await.expect("surveyed");
+
+    assert_eq!(survey.seams.len(), 2);
+    assert_eq!(files(&survey, 0), ["main.ts", "index.ts"], "the root's own modules");
+    assert!(
+        survey.seams[0].text.contains(
+            "The caller could not follow every import: `./gone` from `main.ts` names no module of \
+             the tree. What these name is in none of the lists above. The modules after the \
+             closure are the rest of the root, laid so what these name is still within reach; \
+             read them for that alone."
+        ),
+        "{}",
+        survey.seams[0].text
+    );
+    assert_eq!(
+        files(&survey, 1),
+        ["src/jobs/loader.ts", "src/jobs/other.ts", "src/plugins/p.ts"],
+        "the spelled directory and the loader's own, in path order"
+    );
+    assert!(
+        survey.seams[1].text.contains(
+            "The caller could not follow every import: `src/jobs/loader.ts` loads a module of \
+             `src/plugins` by a computed name at L2; `src/jobs/loader.ts` loads a module by a \
+             computed name at L3. What these name is in none of the lists above. The modules \
+             after the closure are the rest of `src/jobs` and `src/plugins`, laid so what these \
+             name is still within reach; read them for that alone."
+        ),
+        "{}",
+        survey.seams[1].text
+    );
     model.assert_exhausted();
 }
 

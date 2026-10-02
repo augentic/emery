@@ -202,21 +202,33 @@ impl<R: Recogniser> Tree<R> {
         order
     }
 
-    /// Returns the modules laid after a seam's `files` when one of them
-    /// imports what the resolver could not follow or loads a module by a
-    /// computed name: the rest of the tree, in path order.
+    /// Returns the modules laid after a seam's `files` for what one of them
+    /// imports but the resolver could not follow, or loads by a computed
+    /// name: the modules of each directory an unfollowed import leads into,
+    /// in path order.
     ///
+    /// An unresolved import leads into the importing module's own
+    /// directory; a load into the one it spells
+    /// ([`Dynamic::scope`](super::Dynamic::scope)), or the loading module's
+    /// own where it spells none. A directory's modules are
+    /// those directly beneath it, so one at the root is the root's own.
     /// Empty when every import of `files` was followed.
     #[must_use]
     pub fn widening(&self, files: &[String]) -> Vec<String> {
-        let unfollowed = files
-            .iter()
-            .filter_map(|path| self.modules.get(path))
-            .any(|module| !module.dynamic.is_empty() || !module.unresolved().is_empty());
-        if !unfollowed {
-            return Vec::new();
+        let mut scopes: BTreeSet<&str> = BTreeSet::new();
+        for module in files.iter().filter_map(|path| self.modules.get(path)) {
+            if !module.unresolved().is_empty() {
+                scopes.insert(module.directory());
+            }
+            for load in &module.dynamic {
+                scopes.insert(load.scope.as_deref().unwrap_or_else(|| module.directory()));
+            }
         }
-        self.modules.keys().filter(|path| !files.contains(*path)).cloned().collect()
+        self.modules
+            .iter()
+            .filter(|(path, module)| !files.contains(path) && scopes.contains(module.directory()))
+            .map(|(path, _)| path.clone())
+            .collect()
     }
 
     /// Returns the modules no other module imports, each in path order.

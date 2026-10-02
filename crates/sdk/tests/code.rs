@@ -180,7 +180,8 @@ fn reference(name: &str, line: u32) -> Reference {
 }
 
 // A module importing a module of the tree, a type alone, a package, a data
-// file, and two specifiers nothing answers, one of them type-only.
+// file, a test helper the survey set aside, and two specifiers nothing
+// answers, one of them type-only.
 fn importing() -> Module {
     Module {
         path: "src/app.ts".to_owned(),
@@ -189,6 +190,7 @@ fn importing() -> Module {
             import("Order", "./types", true, Target::Module("src/types.ts".to_owned())),
             import("express", "express", false, Target::Package("express".to_owned())),
             import("config", "./config.json", false, Target::Data("src/config.json".to_owned())),
+            import("fake", "./fake.test", false, Target::Skipped("src/fake.test.ts".to_owned())),
             import("missing", "./missing", false, Target::Unresolved("./missing".to_owned())),
             import("Shape", "./shape", true, Target::Unresolved("./shape".to_owned())),
             Import {
@@ -209,7 +211,8 @@ fn importing() -> Module {
 
 // A type-only import or re-export reaches its module under the dialect that
 // follows type imports and not under the one that does not; what nothing
-// answers is unresolved under both only where it is not type-only.
+// answers is unresolved under both only where it is not type-only, and a
+// file the survey set aside is neither reached nor unresolved.
 #[test]
 fn reached_type_only() {
     let module = importing();
@@ -222,7 +225,7 @@ fn reached_type_only() {
     assert_eq!(module.reached(&PYTHON), ["src/db.ts", "src/polyfill.ts"]);
     assert_eq!(module.unresolved(), ["./missing"]);
     assert_eq!(module.data(), ["src/config.json"]);
-    assert_eq!(module.targets().count(), 9, "every settled target, type-only ones included");
+    assert_eq!(module.targets().count(), 10, "every settled target, type-only ones included");
 }
 
 #[test]
@@ -236,6 +239,9 @@ fn import_lookups() {
     assert_eq!(module.package("express"), Some("express"));
     assert_eq!(module.package("db"), None, "a module is no package");
     assert_eq!(module.package("missing"), None);
+    assert_eq!(module.imported("fake"), None, "a file set aside is no module");
+    let skipped = module.import("fake").and_then(|import| import.target.as_ref()?.skipped());
+    assert_eq!(skipped, Some("src/fake.test.ts"));
 }
 
 // The innermost frame's binding wins, then the module's; a class field is
@@ -408,6 +414,23 @@ fn module_stems() {
     assert_eq!(stem("shop/orders/__init__.py", &PYTHON), "orders");
     assert_eq!(stem("app/views.py", &PYTHON), "views", "`app` roots the tree");
     assert_eq!(stem("manage.py", &PYTHON), "manage");
+}
+
+// A module's directory is its path less the file, empty at the root.
+#[test]
+fn module_directory() {
+    let directory = |path: &str| {
+        Module {
+            path: path.to_owned(),
+            ..Module::default()
+        }
+        .directory()
+        .to_owned()
+    };
+
+    assert_eq!(directory("src/routes/index.ts"), "src/routes");
+    assert_eq!(directory("shop/orders/__init__.py"), "shop/orders");
+    assert_eq!(directory("manage.py"), "");
 }
 
 // Structure is a listed method, a listener of no event or a lifecycle's, a

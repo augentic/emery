@@ -279,7 +279,8 @@ pub struct Survey {
 ///   every module, held to every stem its surfaces carry
 /// - a larger tree is one seam per stem, over the modules the surfaces
 ///   under it reach; where one imports what the resolver cannot follow or
-///   loads a module by a computed name, the rest of the tree follows
+///   loads a module by a computed name, the modules of the directory the
+///   import leads into follow ([`Tree::widening`](code::Tree::widening))
 /// - a tree the survey names no surface in is cut mechanically: one seam
 ///   under the package's or the root directory's name within the budget,
 ///   one per top-level directory past it

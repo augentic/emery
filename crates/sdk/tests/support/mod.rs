@@ -8,9 +8,9 @@ use std::path::Path;
 
 use emery_sdk::kebab;
 use emery_sdk::survey::code::{
-    Arg, Binding, BindingKind, Bootstrap, Call, Callee, ClassDecl, Decorated, Derived, Export,
-    ExportKind, Import, Imported, Init, Link, Manifest, Member, MemberKind, Module, Recogniser,
-    Reference, Runs, Scope, Tree, Use,
+    Arg, Binding, BindingKind, Bootstrap, Call, Callee, ClassDecl, Decorated, Derived, Dynamic,
+    Export, ExportKind, Import, Imported, Init, Link, Manifest, Member, MemberKind, Module,
+    Recogniser, Reference, Runs, Scope, Tree, Use,
 };
 use emery_sdk::survey::resolve::Target;
 use emery_sdk::survey::route::{self, Spelling};
@@ -481,6 +481,15 @@ pub fn reference(name: &str, line: u32) -> Reference {
     Reference {
         name: name.to_owned(),
         line,
+    }
+}
+
+/// A load by a computed name at `lines`, settled to the directory `scope` where it spells one.
+pub fn dynamic(lines: Lines, scope: Option<&str>) -> Dynamic {
+    Dynamic {
+        lines,
+        specifier: None,
+        scope: scope.map(str::to_owned),
     }
 }
 

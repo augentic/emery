@@ -4,7 +4,8 @@
 //! module, held to every stem its surfaces carry. A larger tree is one seam
 //! per stem, over the modules the surfaces under it reach, the entry first;
 //! where one of those imports what the resolver cannot follow or loads a
-//! module by a computed name, the rest of the tree follows. A tree the
+//! module by a computed name, the modules of the directory the import
+//! leads into follow. A tree the
 //! survey names no surface in is cut mechanically: one seam under the
 //! package's or the root directory's name within the budget, one per
 //! top-level directory past it. A seam's data files sit among its modules
@@ -32,8 +33,8 @@ const NO_SURFACE: &str = "No surface was found in this source: its survey named 
 
 pub(super) struct Lead {
     seam: Seam,
-    // The modules laid past the surfaces' closures to the rest of the tree.
-    // Only the cut by stem fills it.
+    // The modules laid past the surfaces' closures, in the directories their
+    // unfollowed imports lead into. Only the cut by stem fills it.
     widened: Vec<String>,
 }
 
