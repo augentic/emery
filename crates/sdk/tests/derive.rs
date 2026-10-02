@@ -154,9 +154,7 @@ fn route_discriminator() {
         Some("post-id-assign")
     );
     assert_eq!(
-        BRACED
-            .discriminator("GET", "/orders/{order_id}/items/<slug:name>", "orders")
-            .as_deref(),
+        BRACED.discriminator("GET", "/orders/{order_id}/items/<slug:name>", "orders").as_deref(),
         Some("get-order-id-items-name")
     );
     assert_eq!(
