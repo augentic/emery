@@ -10,6 +10,11 @@
 //! before it is returned, so what the adapter derives from it — the closure
 //! each entry reaches, the anchors within it — rests on modules the tree
 //! holds.
+//!
+//! What a survey derives by code alone is spelled with the helpers beneath:
+//! [`Lines`] for a span of a file, [`resolve`] for what an import leads to,
+//! [`route`] for the stems and discriminators a route or literal spells, and
+//! [`tests`] for the behaviours a tree's own tests state.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::{self, Display, Formatter};
@@ -24,6 +29,81 @@ use serde::{Deserialize, Serialize};
 
 use crate::extract::{Laid, lay, line_count};
 use crate::{Context, SURVEY, beneath, prompt, reference};
+
+pub mod resolve;
+pub mod route;
+pub mod tests;
+
+/// A span of lines within one file, 1-based and inclusive.
+///
+/// The default holds no line. [`Display`] renders the span as prose, with an
+/// en dash; [`Lines::anchor`] renders it in the claim `path` grammar. The
+/// span an [`Anchor`] cites converts into one, a line past `u32::MAX`
+/// saturating.
+///
+/// # Examples
+///
+/// ```
+/// use emery_sdk::survey::Lines;
+///
+/// let span = Lines { start: 3, end: 5 };
+/// assert!(span.holds(4));
+/// assert!(span.contains(Lines { start: 4, end: 5 }));
+/// assert_eq!(span.anchor(), "L3-L5");
+/// assert_eq!(span.to_string(), "L3–L5");
+/// assert_eq!(Lines::from((7, 7)).anchor(), "L7");
+/// ```
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Ord, PartialOrd)]
+pub struct Lines {
+    /// The first line of the span.
+    pub start: u32,
+    /// The last line of the span, no earlier than the first.
+    pub end: u32,
+}
+
+impl Lines {
+    /// Returns whether `other` lies wholly within this span.
+    #[must_use]
+    pub const fn contains(self, other: Self) -> bool {
+        self.start <= other.start && other.end <= self.end
+    }
+
+    /// Returns whether `line` lies within this span.
+    #[must_use]
+    pub const fn holds(self, line: u32) -> bool {
+        self.start <= line && line <= self.end
+    }
+
+    /// Returns the span in the claim anchor grammar: `L3`, or `L3-L5`.
+    #[must_use]
+    pub fn anchor(self) -> String {
+        if self.start == self.end {
+            format!("L{}", self.start)
+        } else {
+            format!("L{}-L{}", self.start, self.end)
+        }
+    }
+}
+
+impl From<(u64, u64)> for Lines {
+    fn from((start, end): (u64, u64)) -> Self {
+        let line = |cited: u64| u32::try_from(cited).unwrap_or(u32::MAX);
+        Self {
+            start: line(start),
+            end: line(end),
+        }
+    }
+}
+
+impl Display for Lines {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        if self.start == self.end {
+            write!(f, "L{}", self.start)
+        } else {
+            write!(f, "L{}–L{}", self.start, self.end)
+        }
+    }
+}
 
 /// What an adapter's code read of a tree, for the model to name its surfaces from.
 ///

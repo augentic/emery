@@ -22,6 +22,10 @@
 //!   workspace, from the [`survey::Facts`] an adapter's code read of it, and
 //!   holds the [`survey::Inventory`] it answers to the tree before the
 //!   adapter derives its seams from the accepted anchors.
+//! - [`kebab`], [`survey::Lines`], [`survey::resolve`], [`survey::route`],
+//!   and [`survey::tests`] are what a survey spells stems, line spans,
+//!   import targets, routes, and stated behaviours with, each pure over
+//!   strings and reading no parsed module.
 //!
 //! Contract types and [`Error`] are re-exported, allowing an adapter to depend
 //! on this crate alone: the claim types, [`Anchor`] and [`BadAnchor`] for the
@@ -218,6 +222,46 @@ pub fn metadata(kind: SourceKind) -> AdapterMetadata {
         emery_version: Some(env!("CARGO_PKG_VERSION").to_string()),
         kind,
     }
+}
+
+/// Returns `text` spelled as lowercase kebab-case, or `None` when nothing is left.
+///
+/// Camel humps split, anything that is not a letter or digit becomes a
+/// hyphen, and runs of hyphens collapse. The result passes [`is_kebab`].
+///
+/// # Examples
+///
+/// ```
+/// use emery_sdk::kebab;
+///
+/// assert_eq!(kebab("OrdersAPI"), Some("orders-api".to_owned()));
+/// assert_eq!(kebab("HTTPServer"), Some("http-server".to_owned()));
+/// assert_eq!(kebab("get_user__by id"), Some("get-user-by-id".to_owned()));
+/// assert_eq!(kebab("--"), None);
+/// ```
+#[must_use]
+pub fn kebab(text: &str) -> Option<String> {
+    let mut out = String::with_capacity(text.len() + 4);
+    let chars: Vec<char> = text.chars().collect();
+    for (i, &c) in chars.iter().enumerate() {
+        if c.is_ascii_alphanumeric() {
+            if c.is_ascii_uppercase() && i > 0 {
+                let prev = chars[i - 1];
+                let next = chars.get(i + 1).copied();
+                let hump = prev.is_ascii_lowercase()
+                    || prev.is_ascii_digit()
+                    || (prev.is_ascii_uppercase() && next.is_some_and(|n| n.is_ascii_lowercase()));
+                if hump && !out.ends_with('-') && !out.is_empty() {
+                    out.push('-');
+                }
+            }
+            out.push(c.to_ascii_lowercase());
+        } else if !out.is_empty() && !out.ends_with('-') {
+            out.push('-');
+        }
+    }
+    let trimmed = out.trim_matches('-');
+    is_kebab(trimmed).then(|| trimmed.to_owned())
 }
 
 /// The adapter addressed, its input, and the model available to one extraction call.
