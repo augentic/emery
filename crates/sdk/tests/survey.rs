@@ -1,11 +1,11 @@
 //! A survey by model is one turn whose answer is held to the tree before the
 //! adapter derives anything from it; every scenario here puts one.
 
-use emery_sdk::survey::{Facts, Inventory};
+use emery_sdk::survey::{Facts, Inventory, Surface};
 use emery_sdk::{Context, Doc, Error, SourceInput};
 use omnia_sdk::model::ToolCall;
-use omnia_test::SeenFormat;
 use omnia_test::guest::Scripted;
+use omnia_test::{Seen, SeenFormat};
 
 const PROSE: &[Doc] = &[
     Doc {
@@ -134,8 +134,8 @@ async fn bare_facts() {
     };
 
     let inventory = ask(&model, &input, &facts, |_| Vec::new()).await.expect("none is valid");
-    assert!(inventory.surfaces.is_empty());
-    assert!(inventory.unreached.is_empty(), "`unreached` defaults to none");
+    assert_eq!(inventory.surfaces, [] as [Surface; 0]);
+    assert_eq!(inventory.unreached, [] as [String; 0], "`unreached` defaults to none");
 
     let user = &model.seen()[0].messages[0];
     assert!(
@@ -155,7 +155,7 @@ async fn inline_value() {
     let error = ask(&model, &input, &facts, |_| Vec::new()).await.expect_err("no tree");
     assert_eq!(error.code(), "server_error");
     assert!(error.description().contains("needs a workspace input"), "{error}");
-    assert!(model.seen().is_empty(), "no turn was spent");
+    assert_eq!(model.seen(), [] as [Seen; 0], "no turn was spent");
 }
 
 // The survey turn offers the adapter's references and the runtime's through
@@ -234,7 +234,7 @@ async fn missing_prompt() {
         .expect_err("no prompt to ask with");
     assert_eq!(error.code(), "server_error");
     assert!(error.description().contains("`survey.md` is not embedded"), "{error}");
-    assert!(model.seen().is_empty());
+    assert_eq!(model.seen(), [] as [Seen; 0]);
 }
 
 // Every rule the tree can hold the answer to is a finding, all returned
