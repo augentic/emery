@@ -13,8 +13,14 @@
     },
     {
       "matchManagers": ["github-actions"],
-      "matchPackageNames": ["!augentic/toolkit"],
+      "matchPackageNames": ["/^augentic\\/(?!toolkit$)/"],
       "enabled": false
+    },
+    {
+      "matchManagers": ["github-actions"],
+      "matchPackageNames": ["!augentic/toolkit"],
+      "groupName": "github actions",
+      "groupSlug": "actions"
     }
   ],
   "customManagers": [
