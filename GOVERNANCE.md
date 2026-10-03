@@ -1,4 +1,3 @@
-<!-- Managed by augentic/toolkit from conventions/GOVERNANCE.md. Do not edit: run `make conventions-sync`. -->
 
 # Augentic Governance
 

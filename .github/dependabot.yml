@@ -1,6 +1,5 @@
 version: 2
 updates:
-# conventions:begin dependabot/actions
   - package-ecosystem: github-actions
     directory: /
     schedule:
@@ -13,4 +12,3 @@ updates:
       # The toolkit pin is Renovate's: one pull request over every `uses:`
       # and the mise `?ref=` together (renovate.json).
       - dependency-name: "augentic/*"
-# conventions:end dependabot/actions

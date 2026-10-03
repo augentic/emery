@@ -1,4 +1,3 @@
-# Managed by augentic/toolkit from conventions/workflows/release.yaml and conventions.toml. Do not edit: run `make conventions-sync`.
 
 name: Create Release
 
