@@ -144,11 +144,11 @@ version = "0.12.1"
 criteria = "safe-to-deploy"
 
 [[exemptions.bon]]
-version = "3.10.1"
+version = "3.10.2"
 criteria = "safe-to-deploy"
 
 [[exemptions.bon-macros]]
-version = "3.10.1"
+version = "3.10.2"
 criteria = "safe-to-deploy"
 
 [[exemptions.cap-fs-ext]]
@@ -908,7 +908,7 @@ version = "0.6.5"
 criteria = "safe-to-deploy"
 
 [[exemptions.spdx]]
-version = "0.13.5"
+version = "0.13.6"
 criteria = "safe-to-deploy"
 
 [[exemptions.spki]]
@@ -1076,7 +1076,7 @@ version = "0.9.0"
 criteria = "safe-to-deploy"
 
 [[exemptions.uuid]]
-version = "1.26.1"
+version = "1.27.0"
 criteria = "safe-to-deploy"
 
 [[exemptions.version_check]]

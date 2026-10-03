@@ -69,7 +69,7 @@ edition = "2024"
 homepage = "https://augentic.io"
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/augentic/emery"
-rust-version = "1.98"
+rust-version = "1.99"
 version = "0.38.0"
 
 # conventions:begin lints/rust
@@ -84,7 +84,6 @@ unused_extern_crates = "warn"
 
 # conventions:begin lints/clippy
 [workspace.lints.clippy]
-# https://doc.rust-lang.org/stable/clippy/index.html
 all = { level = "warn", priority = -1 }      # correctness, suspicious, style, complexity, perf
 cargo = { level = "warn", priority = -1 }
 nursery = { level = "warn", priority = -1 }

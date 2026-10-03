@@ -1,29 +1,152 @@
 //! Asks the model which surfaces a source exposes, from what an adapter's
-//! code read of it.
+//! code read of it, and cuts the seams from the answer.
 //!
 //! An adapter's survey is a plain fn over the input; this module is the one
-//! way a survey may put a turn to the model instead. The adapter renders the
-//! facts its code found — the modules, the manifest, the bootstrap, the
-//! packages and the calls made through them — as [`Facts`], and [`surfaces`]
-//! asks the model to name each surface, the anchor where it is registered or
-//! declared, and the stem its ids lead with. The answer is held to the tree
-//! before it is returned, so what the adapter derives from it — the closure
-//! each entry reaches, the anchors within it — rests on modules the tree
-//! holds.
+//! way a survey may put a turn to the model instead. An adapter that parses
+//! its source reads the tree into a [`code::Tree`] through its
+//! [`code::Recogniser`] and hands both to [`seams`], which lays the facts
+//! the tree holds, has the model name each surface at the anchor where it
+//! is registered or declared, holds the answer to the tree, derives the
+//! stems, ids, and closures from the accepted anchors, and cuts the seams.
+//! Beneath it, [`surfaces`] is the one turn, over the [`Facts`] an adapter
+//! renders itself, for a survey that cuts its own seams.
+//!
+//! What a survey derives by code alone is spelled with the helpers beneath:
+//! [`Lines`] for a span of a file, [`resolve`] for what an import leads to,
+//! [`route`] for the stems and discriminators a route or literal spells, and
+//! [`tests`] for the behaviours a tree's own tests state. A survey that
+//! parses its source fills a [`code::Module`] per file and reads it through
+//! the lookups there, each reading the language from the adapter's
+//! [`Dialect`].
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::{self, Display, Formatter};
 
 use emery_adapter::is_kebab;
-use emery_adapter::source::{Anchor, BadAnchor, SourceContent};
+use emery_adapter::source::{Anchor, BadAnchor, Claim, SourceContent};
 use emery_prose::Doc;
 use omnia_sdk::model::Question;
 use omnia_sdk::{Error, Model, server_error};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-use crate::extract::{Laid, lay, line_count};
+use self::code::{Recogniser, Tree};
+use self::lead::Lead;
+use self::located::Located;
+use crate::extract::{INLINE_BYTES, Laid, Seam, lay, line_count};
 use crate::{Context, SURVEY, beneath, prompt, reference};
+
+pub mod code;
+mod dialect;
+mod lead;
+mod located;
+pub mod resolve;
+pub mod route;
+mod skeleton;
+pub mod tests;
+
+pub use self::dialect::{ClassSyntax, Dialect};
+pub use self::skeleton::types;
+
+pub(crate) fn push_unique<T: PartialEq>(into: &mut Vec<T>, item: T) {
+    if !into.contains(&item) {
+        into.push(item);
+    }
+}
+
+// First-occurrence order.
+pub(crate) fn unique<T: PartialEq>(items: impl IntoIterator<Item = T>) -> Vec<T> {
+    let mut list = Vec::new();
+    for item in items {
+        push_unique(&mut list, item);
+    }
+    list
+}
+
+// Each key's values together, the keys in first-occurrence order.
+pub(crate) fn grouped<K: PartialEq, V>(
+    items: impl IntoIterator<Item = (K, V)>,
+) -> Vec<(K, Vec<V>)> {
+    let mut groups: Vec<(K, Vec<V>)> = Vec::new();
+    for (key, value) in items {
+        match groups.iter_mut().find(|(known, _)| *known == key) {
+            Some((_, values)) => values.push(value),
+            None => groups.push((key, vec![value])),
+        }
+    }
+    groups
+}
+
+/// A span of lines within one file, 1-based and inclusive.
+///
+/// The default holds no line. [`Display`] renders the span as prose, with an
+/// en dash; [`Lines::anchor`] renders it in the claim `path` grammar. The
+/// span an [`Anchor`] cites converts into one, a line past `u32::MAX`
+/// saturating.
+///
+/// # Examples
+///
+/// ```
+/// use emery_sdk::survey::Lines;
+///
+/// let span = Lines { start: 3, end: 5 };
+/// assert!(span.holds(4));
+/// assert!(span.contains(Lines { start: 4, end: 5 }));
+/// assert_eq!(span.anchor(), "L3-L5");
+/// assert_eq!(span.to_string(), "L3–L5");
+/// assert_eq!(Lines::from((7, 7)).anchor(), "L7");
+/// ```
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Ord, PartialOrd)]
+pub struct Lines {
+    /// The first line of the span.
+    pub start: u32,
+    /// The last line of the span, no earlier than the first.
+    pub end: u32,
+}
+
+impl Lines {
+    /// Returns whether `other` lies wholly within this span.
+    #[must_use]
+    pub const fn contains(self, other: Self) -> bool {
+        self.start <= other.start && other.end <= self.end
+    }
+
+    /// Returns whether `line` lies within this span.
+    #[must_use]
+    pub const fn holds(self, line: u32) -> bool {
+        self.start <= line && line <= self.end
+    }
+
+    /// Returns the span in the claim anchor grammar: `L3`, or `L3-L5`.
+    #[must_use]
+    pub fn anchor(self) -> String {
+        if self.start == self.end {
+            format!("L{}", self.start)
+        } else {
+            format!("L{}-L{}", self.start, self.end)
+        }
+    }
+}
+
+impl From<(u64, u64)> for Lines {
+    fn from((start, end): (u64, u64)) -> Self {
+        let line = |cited: u64| u32::try_from(cited).unwrap_or(u32::MAX);
+        Self {
+            start: line(start),
+            end: line(end),
+        }
+    }
+}
+
+impl Display for Lines {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        if self.start == self.end {
+            write!(f, "L{}", self.start)
+        } else {
+            write!(f, "L{}–L{}", self.start, self.end)
+        }
+    }
+}
 
 /// What an adapter's code read of a tree, for the model to name its surfaces from.
 ///
@@ -37,7 +160,7 @@ pub struct Facts<'a> {
     /// What the adapter's code read: the manifest, the bootstrap, the registration sites.
     pub text: &'a str,
     /// The files laid into the turn whole, in order, for as long as they fit
-    /// within [`INLINE_BYTES`](crate::INLINE_BYTES) together; the rest are left to the lend.
+    /// within [`INLINE_BYTES`] together; the rest are left to the lend.
     pub files: &'a [String],
 }
 
@@ -127,6 +250,142 @@ pub async fn surfaces<P: Model>(
     }
 
     Ok(inventory)
+}
+
+/// The seams of a surveyed tree, and the `type` claims its code declares.
+#[derive(Clone, Debug, Default)]
+pub struct Survey {
+    /// One seam per cut, each carrying its brief, files, stems, and anchors.
+    pub seams: Vec<Seam>,
+    /// The `type` claims the modules the seams reach declare, each anchored,
+    /// for the adapter to join after the model's answer.
+    pub types: Vec<Claim>,
+}
+
+/// Returns the seams of a parsed workspace tree, its surfaces named by the model.
+///
+/// One survey turn is put through [`surfaces`] under `docs`'s `survey.md`,
+/// laying the facts the tree holds: the manifest, the bootstrap, every call
+/// that hands a function to a package, every function, method, and class
+/// under a package's decorator, what the entry modules export, and the
+/// packages imported. The answer is held to the tree — a module the facts
+/// locate a surface in is reached by a named surface or listed `unreached`
+/// — and each accepted anchor is read by the tree's [`Recogniser`] for the
+/// stem, the ids, the methods, and the closure the code spells there.
+///
+/// The seams are cut from the surfaces:
+///
+/// - a tree within [`INLINE_BYTES`], or of one module, is one seam over
+///   every module, held to every stem its surfaces carry
+/// - a larger tree is one seam per stem, over the modules the surfaces
+///   under it reach; where one imports what the resolver cannot follow or
+///   loads a module by a computed name, the modules of the directory the
+///   import leads into follow ([`Tree::widening`](code::Tree::widening))
+/// - a tree the survey names no surface in is cut mechanically: one seam
+///   under the package's or the root directory's name within the budget,
+///   one per top-level directory past it
+///
+/// Each seam lays the data files its modules name among them and the
+/// tree's own tests after them, each test's statements in the brief of
+/// every seam whose modules it imports. The `type` claims are those of the
+/// modules the seams reach.
+///
+/// # Errors
+///
+/// - Returns [`Error::BadRequest`] when the model rejects the request or no
+///   valid answer is produced within the available rounds or the backend's
+///   time budget.
+/// - Returns [`Error::ServerError`] when `docs` does not contain `survey.md`
+///   or the source is an inline value with no tree to survey.
+/// - Returns [`Error::BadGateway`] when a model tool or transport fails.
+pub async fn seams<P: Model, R: Recogniser>(
+    ctx: &Context<'_, P>, docs: &'static [Doc], tree: &Tree<R>,
+) -> Result<Survey, Error> {
+    let source = &ctx.input.name;
+    let located = Located::new(tree);
+    let modules: Vec<String> = tree.modules.keys().cloned().collect();
+    let text = located.facts();
+    let files = located.laid();
+
+    // trace the facts for a host reading them without a turn
+    if tracing::enabled!(tracing::Level::TRACE) {
+        let json = serde_json::Value::String(text.clone()).to_string();
+        tracing::trace!(%source, facts = %json, "survey facts");
+    }
+    let facts = Facts {
+        modules: &modules,
+        text: &text,
+        files: &files,
+    };
+
+    let inventory = surfaces(ctx, docs, &facts, |answer| located.check(answer)).await?;
+
+    let surfaces = located.build(&inventory);
+    let restemmed: Vec<String> = inventory
+        .surfaces
+        .iter()
+        .filter_map(|named| {
+            let built = surfaces.iter().find(|surface| surface.name == named.name)?;
+            (built.stem != named.stem)
+                .then(|| format!("`{}`: `{}` for `{}`", named.name, built.stem, named.stem))
+        })
+        .collect();
+    if !restemmed.is_empty() {
+        tracing::debug!(
+            %source,
+            ?restemmed,
+            "stems the code spells at the anchors, in place of the survey's"
+        );
+    }
+
+    // log the modules under no surface
+    let covered: BTreeSet<&str> =
+        surfaces.iter().flat_map(|surface| surface.closure.iter().map(String::as_str)).collect();
+    let unplaced: Vec<&String> =
+        tree.modules.keys().filter(|path| !covered.contains(path.as_str())).collect();
+    tracing::info!(%source, surfaces = surfaces.len(), unplaced = unplaced.len(), "placed by model");
+    tracing::debug!(%source, ?unplaced, "modules under no surface");
+    logged(source, "surveyed", &surfaces);
+
+    // choose the cut by size and by whether any surface was named
+    let size: usize = tree.modules.values().map(|module| module.text.len()).sum();
+    let fits = tree.modules.len() == 1 || u64::try_from(size).unwrap_or(u64::MAX) <= INLINE_BYTES;
+    let leads = match (surfaces.is_empty(), fits) {
+        (false, true) => vec![Lead::whole(tree, &surfaces)],
+        (false, false) => Lead::by_stem(tree, &surfaces),
+        (true, true) => vec![Lead::unsurfaced(tree)],
+        (true, false) => Lead::by_directory(tree),
+    };
+    let seams: Vec<Seam> = leads.into_iter().map(|lead| lead.finish(tree, &surfaces)).collect();
+
+    let reached = unique(seams.iter().flat_map(|seam| seam.files.iter().map(String::as_str)));
+    let types = types(
+        tree.dialect,
+        reached.iter().filter_map(|path| tree.modules.get(*path)).map(|module| &**module),
+        true,
+    );
+
+    Ok(Survey { seams, types })
+}
+
+fn logged(source: &str, what: &str, surfaces: &[code::Surface]) {
+    if !tracing::enabled!(tracing::Level::TRACE) {
+        return;
+    }
+    let listed: Vec<serde_json::Value> = surfaces
+        .iter()
+        .map(|surface| {
+            serde_json::json!({
+                "name": surface.name,
+                "entry": surface.entry,
+                "stem": surface.stem,
+                "lines": surface.lines.anchor(),
+                "ids": surface.ids,
+            })
+        })
+        .collect();
+    let json = serde_json::Value::Array(listed).to_string();
+    tracing::trace!(%source, surfaces = %json, "{what}");
 }
 
 /// The surfaces the model names in a source, and the modules none reaches.
