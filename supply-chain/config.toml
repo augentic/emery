@@ -164,7 +164,7 @@ version = "4.0.3"
 criteria = "safe-to-deploy"
 
 [[exemptions.cc]]
-version = "1.5.1"
+version = "1.6.0"
 criteria = "safe-to-deploy"
 
 [[exemptions.cfg-if]]

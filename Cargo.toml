@@ -73,7 +73,7 @@ rust-version = "1.99"
 version = "0.38.0"
 
 [workspace.lints.rust]
-# https://doc.rust-lang.org/rustc/lints/listing/allowed-by-default.html
+meta_variable_misuse = "warn"
 missing_docs = "warn"
 trivial_numeric_casts = "warn"
 unsafe_code = "deny"
@@ -81,40 +81,22 @@ unsafe_op_in_unsafe_fn = "warn"
 unused_extern_crates = "warn"
 
 [workspace.lints.clippy]
-all = { level = "warn", priority = -1 }      # correctness, suspicious, style, complexity, perf
+all = { level = "warn", priority = -1 }
 cargo = { level = "warn", priority = -1 }
 nursery = { level = "warn", priority = -1 }
 pedantic = { level = "warn", priority = -1 }
 
-# Cherry-picked lints are from the `restriction` lint group in order to drive up
-# consistency, quality, and brevity
-# See https://microsoft.github.io/rust-guidelines/guidelines/universal/index.html
-as_pointer_underscore = "warn"
+# cherry-picked `restriction`s
+allow_attributes_without_reason = "warn"
 assertions_on_result_states = "warn"
-clone_on_ref_ptr = "warn"
-deref_by_slicing = "warn"
+dbg_macro = "warn"
 disallowed_script_idents = "warn"
 empty_drop = "warn"
-empty_enum_variants_with_brackets = "warn"
-empty_structs_with_brackets = "warn"
 fn_to_numeric_cast_any = "warn"
-if_then_some_else_none = "warn"
 map_err_ignore = "warn"
-redundant_type_annotations = "warn"
-renamed_function_params = "warn"
-semicolon_outside_block = "warn"
-undocumented_unsafe_blocks = "warn"
-unnecessary_safety_comment = "warn"
-unnecessary_safety_doc = "warn"
-unneeded_field_pattern = "warn"
+print_stderr = "warn"
+print_stdout = "warn"
 unused_result_ok = "warn"
-missing_errors_doc = "allow"
-missing_panics_doc = "allow"
-
-# Recommended-but-skipped restriction lints with rationale:
-# - `tests_outside_test_module`: fires on every integration test in `tests/*.rs`
-# - `str_to_string`: opinionated against `.to_string()` on `&str`;
-# - `field_scoped_visibility_modifiers`
 
 [workspace.dependencies]
 anyhow = "1.0.104"
@@ -185,9 +167,7 @@ lto = true
 opt-level = 2
 strip = true
 
-# Optimise WASI debug builds because Cranelift JIT-compiles at run time.
-# Dependencies keep line tables only (workspace crates are unaffected): wasmtime
-# and Cranelift with full debuginfo dominate `target/`.
+# Optimise Cranelift debug builds — the unoptimised codegen is ~10x slower.
 [profile.dev.package]
 "*" = { debug = "line-tables-only" }
 cranelift-assembler-x64 = { opt-level = 2 }

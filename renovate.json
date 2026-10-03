@@ -8,13 +8,19 @@
       "groupName": "augentic/toolkit",
       "commitMessageTopic": "augentic/toolkit",
       "prBodyNotes": [
-        "Run `make conventions-sync` on this branch and commit what changed before merging."
+        "Bump the toolkit pin in `mise.toml` and every `.github/workflows/` `uses:` reference in the same pull request."
       ]
     },
     {
       "matchManagers": ["github-actions"],
-      "matchPackageNames": ["!augentic/toolkit"],
+      "matchPackageNames": ["/^augentic\\/(?!toolkit$)/"],
       "enabled": false
+    },
+    {
+      "matchManagers": ["github-actions"],
+      "matchPackageNames": ["!augentic/toolkit"],
+      "groupName": "github actions",
+      "groupSlug": "actions"
     }
   ],
   "customManagers": [
