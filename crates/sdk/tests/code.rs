@@ -510,6 +510,29 @@ fn call_literal_keyword() {
         literal: Some("--file".to_owned()),
     });
     assert_eq!(chain.registered(None), ("command", Some("import".to_owned())));
+
+    let mut headed = call(callee("command", &["option", "action"]), Vec::new());
+    headed.callee.head_call = Some(Invocation {
+        literal: Some("sync".to_owned()),
+    });
+    headed.callee.links[0].call = Some(Invocation {
+        literal: Some("--file".to_owned()),
+    });
+    assert_eq!(
+        headed.registered(None),
+        ("command", Some("sync".to_owned())),
+        "the head's own call leads the chain"
+    );
+    let mut constructed = call(callee("Router", &["get"]), Vec::new());
+    constructed.callee.head_call = Some(Invocation { literal: None });
+    constructed.callee.links[0].call = Some(Invocation {
+        literal: Some("/items".to_owned()),
+    });
+    assert_eq!(
+        constructed.registered(None),
+        ("get", Some("/items".to_owned())),
+        "a head called with no literal does not lead"
+    );
     assert_eq!(
         route.registered(Some("/orders".to_owned())),
         ("route", Some("/orders".to_owned())),

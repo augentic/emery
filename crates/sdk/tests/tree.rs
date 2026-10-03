@@ -502,7 +502,8 @@ fn start_surface() {
 
 // A listing is read from disk: a module the parser is handed, a test module
 // read for what it imports and states, a feature inheriting the imports of
-// the tests beside it, an unreadable file left out, and a test stating
+// the tests beside it — under its directory's parent, or under its own
+// directory one deep — an unreadable file left out, and a test stating
 // nothing dropped.
 #[test]
 fn parsed_read() {
@@ -513,6 +514,8 @@ fn parsed_read() {
     write(root, "tests/test_a.py", "def test_x():\n    pass\n");
     write(root, "tests/test_empty.py", "\n");
     write(root, "tests/features/a.feature", "Feature: A\n  Scenario: lists\n    Given x\n");
+    write(root, "features/steps/b.py", "def step():\n    pass\n");
+    write(root, "features/b.feature", "Feature: B\n  Scenario: counts\n    Given y\n");
     std::fs::write(root.join("src/bad.py"), [0xff, 0xfe]).expect("write");
     let listing = Listing {
         modules: vec!["src/a.py".to_owned(), "src/b.py".to_owned(), "src/bad.py".to_owned()],
@@ -521,6 +524,8 @@ fn parsed_read() {
             "tests/test_a.py".to_owned(),
             "tests/test_empty.py".to_owned(),
             "tests/features/a.feature".to_owned(),
+            "features/steps/b.py".to_owned(),
+            "features/b.feature".to_owned(),
         ],
     };
 
@@ -530,6 +535,10 @@ fn parsed_read() {
         if path == "tests/test_a.py" {
             m.0.imports = vec![from_module("a", "src/a.py")];
             m.0.references = vec![reference("x", 1)];
+        }
+        if path == "features/steps/b.py" {
+            m.0.imports = vec![from_module("b", "src/b.py")];
+            m.0.references = vec![reference("y", 1)];
         }
         if path == "src/a.py" {
             m.0.imports = vec![from_module("b", "src/b.py")];
@@ -552,7 +561,7 @@ fn parsed_read() {
         ..Stub::default()
     });
     assert_eq!(tree.manifest.name.as_deref(), Some("svc"));
-    assert_eq!(tree.tests.len(), 2, "the test stating nothing is dropped");
+    assert_eq!(tree.tests.len(), 4, "the test stating nothing is dropped");
     assert_eq!(tree.tests[0].path, "tests/test_a.py");
     assert_eq!(tree.tests[0].imports, ["src/a.py"]);
     assert_eq!(
@@ -562,9 +571,18 @@ fn parsed_read() {
             line: 1
         }]
     );
-    assert_eq!(tree.tests[1].path, "tests/features/a.feature");
-    assert_eq!(tree.tests[1].imports, ["src/a.py"], "inherited from the tests under the parent");
-    assert_eq!(tree.tests[1].statements[0].text, "A › lists");
+    assert_eq!(tree.tests[1].path, "features/steps/b.py");
+    assert_eq!(tree.tests[1].imports, ["src/b.py"]);
+    assert_eq!(tree.tests[2].path, "tests/features/a.feature");
+    assert_eq!(tree.tests[2].imports, ["src/a.py"], "inherited from the tests under the parent");
+    assert_eq!(tree.tests[2].statements[0].text, "A › lists");
+    assert_eq!(tree.tests[3].path, "features/b.feature");
+    assert_eq!(
+        tree.tests[3].imports,
+        ["src/b.py"],
+        "one directory deep, inherited from the tests under its own directory alone"
+    );
+    assert_eq!(tree.tests[3].statements[0].text, "B › counts");
     assert_eq!(tree.closure(&["src/a.py".to_owned()], &[]), ["src/a.py", "src/b.py"]);
 }
 

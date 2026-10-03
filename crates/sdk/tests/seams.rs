@@ -415,7 +415,9 @@ async fn bootstrap_runs() {
         (Runs::Guard, "it runs under its `__main__` guard", "run under its `__main__` guard"),
     ] {
         let (_tmp, input, tree) = service(false, Some(runs));
-        let model = Scripted::answering([r#"{"surfaces":[],"unreached":["src/ctl.ts"]}"#]);
+        let model = Scripted::answering([
+            r#"{"surfaces":[],"unreached":["src/routes/orders.ts","src/ctl.ts"]}"#,
+        ]);
 
         let survey = run(&model, &input, &tree).await.expect("surveyed");
 
@@ -508,6 +510,32 @@ async fn check_round() {
     ] {
         assert!(correction.contains(finding), "{finding}\n---\n{correction}");
     }
+    assert_eq!(exchanges[1].outcome, Ok(String::new()), "the corrected answer is accepted");
+    assert_eq!(survey.seams[0].stems, ["start", "orders", "items"]);
+    model.assert_exhausted();
+}
+
+// The bootstrap reaches a module the facts locate a surface in; an answer
+// naming no surface there is sent back for it all the same, while the
+// bootstrap's own module, which `start` mines, is asked after by no finding.
+#[tokio::test]
+async fn check_under_bootstrap() {
+    let (_tmp, input, tree) = service(false, Some(Runs::Load));
+    let model = Scripted::answering([r#"{"surfaces":[],"unreached":["src/ctl.ts"]}"#, BOTH]);
+
+    let survey = run(&model, &input, &tree).await.expect("corrected");
+
+    let exchanges = model.exchanges();
+    assert_eq!(exchanges.len(), 2);
+    let correction = exchanges[0].outcome.as_ref().expect_err("the first answer is refused");
+    assert!(
+        correction.contains(
+            "- one module the facts list a registration or declaration in is reached by no \
+             surface you named and not listed under `unreached`: `src/routes/orders.ts`;"
+        ),
+        "{correction}"
+    );
+    assert!(!correction.contains("`src/main.ts`"), "the bootstrap is `start`'s: {correction}");
     assert_eq!(exchanges[1].outcome, Ok(String::new()), "the corrected answer is accepted");
     assert_eq!(survey.seams[0].stems, ["start", "orders", "items"]);
     model.assert_exhausted();

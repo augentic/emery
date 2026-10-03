@@ -307,12 +307,17 @@ impl<'t, R: Recogniser> Located<'t, R> {
             }
         }
 
-        // modules the facts locate a surface in that no surface reaches
-        let surfaces = self.build(answer);
-        let covered: BTreeSet<&str> = surfaces
+        // modules the facts locate a surface in that no named surface reaches;
+        // `start` covers its own module alone, since its closure stops only at
+        // the entries the answer names and would cover every one it leaves out
+        let surfaces = self.named(answer);
+        let mut covered: BTreeSet<&str> = surfaces
             .iter()
             .flat_map(|surface| surface.closure.iter().map(String::as_str))
             .collect();
+        if let Some(bootstrap) = &self.bootstrap {
+            covered.insert(bootstrap.module.path.as_str());
+        }
         let unreached: BTreeSet<&str> = answer.unreached.iter().map(String::as_str).collect();
         let missing: Vec<String> = tree
             .modules
@@ -343,11 +348,23 @@ impl<'t, R: Recogniser> Located<'t, R> {
         findings
     }
 
-    // An anchor the tree does not hold is skipped: the SDK's gate has refused
-    // it already.
     pub(super) fn build(&self, answer: &Inventory) -> Vec<Surface> {
         let tree = self.tree;
-        let mut surfaces: Vec<Surface> = answer
+        let mut surfaces = self.named(answer);
+        if let Some(bootstrap) = &self.bootstrap {
+            let start = Surface::start(tree, bootstrap, &surfaces);
+            surfaces.insert(0, start);
+        }
+        tree.identify(&mut surfaces);
+        surfaces
+    }
+
+    // The surfaces the answer names, each derived at its anchor and none
+    // identified yet. An anchor the tree does not hold is skipped: the SDK's
+    // gate has refused it already.
+    fn named(&self, answer: &Inventory) -> Vec<Surface> {
+        let tree = self.tree;
+        answer
             .surfaces
             .iter()
             .filter_map(|named| {
@@ -374,13 +391,7 @@ impl<'t, R: Recogniser> Located<'t, R> {
                     ids: Vec::new(),
                 })
             })
-            .collect();
-        if let Some(bootstrap) = &self.bootstrap {
-            let start = Surface::start(tree, bootstrap, &surfaces);
-            surfaces.insert(0, start);
-        }
-        tree.identify(&mut surfaces);
-        surfaces
+            .collect()
     }
 }
 

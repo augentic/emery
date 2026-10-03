@@ -95,7 +95,8 @@ impl<M: Deref<Target = Module>> Parsed<M> {
     /// Each module's imports are settled, the manifest read, and each test
     /// read for the modules it imports and the behaviours it states. A
     /// feature file inherits the imports of the test modules under its
-    /// directory's parent, and a test stating nothing is dropped.
+    /// directory's parent — under its own directory where that parent is
+    /// the root — and a test stating nothing is dropped.
     pub fn settle<R: Recogniser<Module = M>>(self, recogniser: R) -> Tree<R> {
         let Self {
             root,
@@ -125,13 +126,13 @@ impl<M: Deref<Target = Module>> Parsed<M> {
             }
         }
 
-        // a feature inherits the imports of the tests under its directory's parent
+        // a feature inherits the imports of the tests under its directory's
+        // parent, or under its own directory where that parent is the root
         for mut feature in features {
-            let beside = feature
-                .path
-                .rsplit_once('/')
-                .and_then(|(dir, _)| dir.rsplit_once('/'))
-                .map_or_else(String::new, |(parent, _)| format!("{parent}/"));
+            let beside = feature.path.rsplit_once('/').map_or_else(String::new, |(dir, _)| {
+                let scope = dir.rsplit_once('/').map_or(dir, |(parent, _)| parent);
+                format!("{scope}/")
+            });
             for test in tests.iter().filter(|test| test.path.starts_with(&beside)) {
                 for import in &test.imports {
                     push_unique(&mut feature.imports, import.clone());

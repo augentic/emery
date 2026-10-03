@@ -526,9 +526,17 @@ impl Call {
     /// own method and `led` stand.
     #[must_use]
     pub fn registered(&self, led: Option<String>) -> (&str, Option<String>) {
-        let chained = self.callee.links.iter().find_map(|link| {
-            let literal = link.call.as_ref()?.literal.clone()?;
-            Some((link.name.as_str(), literal))
+        let head = self
+            .callee
+            .head_call
+            .as_ref()
+            .and_then(|call| call.literal.clone())
+            .map(|literal| (self.callee.head.as_str(), literal));
+        let chained = head.or_else(|| {
+            self.callee.links.iter().find_map(|link| {
+                let literal = link.call.as_ref()?.literal.clone()?;
+                Some((link.name.as_str(), literal))
+            })
         });
         chained.map_or_else(|| (self.method(), led), |(method, literal)| (method, Some(literal)))
     }
