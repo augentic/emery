@@ -14,7 +14,9 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use emery_adapter::source::Anchor;
 
-use super::code::{Bootstrap, ClassDecl, Decorated, Export, ExportKind, Recogniser, Surface, Tree};
+use super::code::{
+    Bootstrap, ClassDecl, Decorated, Export, ExportKind, Receiver, Recogniser, Surface, Tree,
+};
 use super::resolve::Target;
 use super::{Inventory, Lines, push_unique, skeleton, unique};
 use crate::kebab;
@@ -59,15 +61,26 @@ impl<'t, R: Recogniser> Located<'t, R> {
             .calls
             .iter()
             .any(|call| tree.handed(module, call).is_some() && tree.registers(module, call))
-            || module.decorated.iter().any(|decorated| {
-                decorated.member.is_some()
-                    && decorated.registering(tree.dialect)
-                    && !Self::of_handed(handed, module, decorated)
-                    && decorated
-                        .name
-                        .first()
-                        .is_some_and(|head| tree.receiver_of(module, head).is_some())
-            })
+            || module
+                .decorated
+                .iter()
+                .any(|decorated| Self::listed(tree, handed, module, decorated).is_some())
+    }
+
+    // The package a decorator the facts list comes from: one that registers
+    // a function, a method, or a class through a package, and is not a
+    // handed class's.
+    fn listed(
+        tree: &Tree<R>, handed: &BTreeSet<(String, String)>, module: &R::Module,
+        decorated: &Decorated,
+    ) -> Option<Receiver> {
+        if (decorated.class.is_none() && decorated.member.is_none())
+            || !decorated.registering(tree.dialect)
+            || Self::of_handed(handed, module, decorated)
+        {
+            return None;
+        }
+        tree.receiver_of(module, decorated.name.first()?)
     }
 
     // A handed class's decorated method is an id of the registration, not a
@@ -174,12 +187,8 @@ impl<'t, R: Recogniser> Located<'t, R> {
         let tree = self.tree;
         let mut lines: Vec<String> = Vec::new();
         for module in tree.modules.values() {
-            for decorated in module.decorated.iter().filter(|d| {
-                d.registering(tree.dialect) && !Self::of_handed(&self.handed, module, d)
-            }) {
-                let Some(receiver) =
-                    decorated.name.first().and_then(|head| tree.receiver_of(module, head))
-                else {
+            for decorated in &module.decorated {
+                let Some(receiver) = Self::listed(tree, &self.handed, module, decorated) else {
                     continue;
                 };
                 let decorator = decorated.name.join(".");
@@ -348,9 +357,15 @@ impl<'t, R: Recogniser> Located<'t, R> {
         findings
     }
 
+    // `start` sets the bootstrap's own behaviour apart from the surfaces it
+    // mounts; where the answer names none, there is nothing to set it apart
+    // from, and the tree is cut as one with no surface.
     pub(super) fn build(&self, answer: &Inventory) -> Vec<Surface> {
         let tree = self.tree;
         let mut surfaces = self.named(answer);
+        if surfaces.is_empty() {
+            return surfaces;
+        }
         if let Some(bootstrap) = &self.bootstrap {
             let start = Surface::start(tree, bootstrap, &surfaces);
             surfaces.insert(0, start);
@@ -403,9 +418,10 @@ fn declared<'e>(
 ) -> Vec<String> {
     exports
         .filter_map(|export| {
+            let local = export.local.as_deref().unwrap_or(&export.name);
             let kind = match export.kind {
                 ExportKind::Function => "function",
-                ExportKind::Class if module.class(&export.name).is_some_and(&declares_data) => {
+                ExportKind::Class if module.class(local).is_some_and(&declares_data) => {
                     return None;
                 }
                 ExportKind::Class => "class",

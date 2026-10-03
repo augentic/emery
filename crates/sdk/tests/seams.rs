@@ -32,12 +32,11 @@ const PROSE: &[Doc] = &[
 ];
 
 const NO_SURFACE: &str = "No surface was found in this source: its survey named no route, command, \
-                          job, consumer, or exported API — no bootstrap the manifest names or a \
-                          conventional entry holds, no handler registered with a package, no \
-                          function, method, or class under a package's decorator, and no function \
-                          or class exported at an entry module for a caller. Read it as a library \
-                          is read — for what its exports do for a caller — and claim what the code \
-                          exhibits.";
+                          job, consumer, or exported API — no handler registered with a package, \
+                          no function, method, or class under a package's decorator, and no \
+                          function or class exported at an entry module for a caller. Read it as \
+                          a library is read — for what its exports do for a caller — and claim \
+                          what the code exhibits.";
 
 // Two surfaces the facts locate, at their registration and their decorator.
 const BOTH: &str = r#"{"surfaces":[
@@ -415,16 +414,14 @@ async fn bootstrap_runs() {
         (Runs::Guard, "it runs under its `__main__` guard", "run under its `__main__` guard"),
     ] {
         let (_tmp, input, tree) = service(false, Some(runs));
-        let model = Scripted::answering([
-            r#"{"surfaces":[],"unreached":["src/routes/orders.ts","src/ctl.ts"]}"#,
-        ]);
+        let model = Scripted::answering([BOTH]);
 
         let survey = run(&model, &input, &tree).await.expect("surveyed");
 
         let user = &model.seen()[0].messages[0];
         let sentence = format!("is `src/main.ts`: {said}. It is the caller's `start` surface");
         assert!(user.contains(&sentence), "{sentence}\n---\n{user}");
-        assert_eq!(survey.seams[0].stems, ["start"]);
+        assert_eq!(survey.seams[0].stems, ["start", "orders", "items"]);
         let note = format!("stem `start`: the process bootstrap, {how}: what runs");
         assert!(survey.seams[0].text.contains(&note), "{note}\n---\n{}", survey.seams[0].text);
         model.assert_exhausted();
@@ -538,6 +535,140 @@ async fn check_under_bootstrap() {
     assert!(!correction.contains("`src/main.ts`"), "the bootstrap is `start`'s: {correction}");
     assert_eq!(exchanges[1].outcome, Ok(String::new()), "the corrected answer is accepted");
     assert_eq!(survey.seams[0].stems, ["start", "orders", "items"]);
+    model.assert_exhausted();
+}
+
+// A tree with a bootstrap whose survey names no surface is cut as one with
+// none: whole under the fallback stem within the budget, by directory past
+// it, so the modules the bootstrap never reaches are mined all the same, and
+// no `start` stands alone.
+#[tokio::test]
+async fn bootstrap_unsurfaced() {
+    const NONE: &str = r#"{"surfaces":[],"unreached":["src/routes/orders.ts","src/ctl.ts"]}"#;
+    let (_tmp, input, tree) = service(false, Some(Runs::Load));
+    let model = Scripted::answering([NONE]);
+
+    let survey = run(&model, &input, &tree).await.expect("surveyed");
+
+    assert_eq!(survey.seams.len(), 1);
+    assert_eq!(survey.seams[0].stems, ["svc"], "no `start`: the manifest's name is the stem");
+    assert!(survey.seams[0].text.starts_with(NO_SURFACE), "{}", survey.seams[0].text);
+    assert_eq!(survey.seams[0].anchors, [] as [String; 0]);
+    model.assert_exhausted();
+
+    let (_tmp, input, tree) = service(true, Some(Runs::Load));
+    let model = Scripted::answering([NONE]);
+
+    let survey = run(&model, &input, &tree).await.expect("surveyed");
+
+    let stems: Vec<&[String]> = survey.seams.iter().map(|seam| seam.stems.as_slice()).collect();
+    assert_eq!(stems, [["jobs"], ["routes"]], "by directory, not by `start` alone");
+    for module in ["src/ctl.ts", "src/data.ts", "src/jobs/nightly.ts"] {
+        assert!(
+            files(&survey, 0).contains(&module),
+            "{module} lies outside the bootstrap's reach and is mined: {:?}",
+            files(&survey, 0)
+        );
+    }
+    model.assert_exhausted();
+}
+
+// A registering decorator on a class locates its module as one on a method
+// does: an answer that neither names a surface there nor lists the module
+// is sent back for it.
+#[tokio::test]
+async fn check_class_decorator() {
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let root = tmp.path();
+    write(root, "src/index.ts", &pad(2));
+    write(root, "src/jobs/nightly.ts", &pad(6));
+    let mut index = module("src/index.ts", 2);
+    index.0.bindings = vec![function("run", line(1))];
+    index.0.exports = vec![export("run", ExportKind::Function, line(1))];
+    let mut nightly = module("src/jobs/nightly.ts", 6);
+    nightly.0.imports = vec![from_package("Processor", "@nestjs/bull")];
+    nightly.0.bindings = vec![class("Nightly", &[], span(2, 6))];
+    nightly.0.decorated = vec![decorated(
+        Some("Nightly"),
+        None,
+        &["Processor"],
+        Some("nightly"),
+        span(2, 3),
+        span(2, 6),
+    )];
+    nightly.0.classes = vec![class_decl("Nightly", "export class Nightly", span(2, 6), Vec::new())];
+    let tree = tree(root, &TYPESCRIPT, vec![index, nightly], Stub::default());
+    let input = SourceInput::workspace("svc", root.to_str().expect("a UTF-8 scratch root"));
+    let model = Scripted::answering([
+        r#"{"surfaces":[]}"#,
+        r#"{"surfaces":[],"unreached":["src/jobs/nightly.ts"]}"#,
+    ]);
+
+    run(&model, &input, &tree).await.expect("corrected");
+
+    let user = &model.seen()[0].messages[0];
+    assert!(
+        user.contains(
+            "- `src/jobs/nightly.ts#L2-L6` — `@Processor(\"nightly\")` on class `Nightly`, \
+             through `@nestjs/bull`"
+        ),
+        "{user}"
+    );
+    let exchanges = model.exchanges();
+    assert_eq!(exchanges.len(), 2);
+    let correction = exchanges[0].outcome.as_ref().expect_err("the first answer is refused");
+    assert!(
+        correction.contains(
+            "- one module the facts list a registration or declaration in is reached by no \
+             surface you named and not listed under `unreached`: `src/jobs/nightly.ts`;"
+        ),
+        "{correction}"
+    );
+    assert_eq!(exchanges[1].outcome, Ok(String::new()), "the corrected answer is accepted");
+    model.assert_exhausted();
+}
+
+// An entry's exports are listed by what they declare: a class declaring data
+// alone is left out under the name it is exported as, where that differs
+// from the binding's.
+#[tokio::test]
+async fn exports_declared() {
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let root = tmp.path();
+    write(root, "src/index.ts", &pad(5));
+    let mut index = module("src/index.ts", 5);
+    index.0.bindings = vec![
+        function("run", line(1)),
+        class("Dto", &["TypedDict"], span(2, 3)),
+        class("Plain", &[], span(4, 5)),
+    ];
+    index.0.classes = vec![
+        class_decl("Dto", "class Dto extends TypedDict", span(2, 3), Vec::new()),
+        class_decl("Plain", "class Plain", span(4, 5), Vec::new()),
+    ];
+    index.0.exports = vec![
+        export("run", ExportKind::Function, line(1)),
+        emery_sdk::survey::code::Export {
+            local: Some("Dto".to_owned()),
+            ..export("OrderDto", ExportKind::Class, line(5))
+        },
+        emery_sdk::survey::code::Export {
+            local: Some("Plain".to_owned()),
+            ..export("Entity", ExportKind::Class, line(5))
+        },
+    ];
+    let tree = tree(root, &TYPESCRIPT, vec![index], Stub::default());
+    let input = SourceInput::workspace("svc", root.to_str().expect("a UTF-8 scratch root"));
+    let model = Scripted::answering([r#"{"surfaces":[]}"#]);
+
+    run(&model, &input, &tree).await.expect("surveyed");
+
+    let user = &model.seen()[0].messages[0];
+    assert!(
+        user.contains("- `src/index.ts` exports `run` (function) L1, `Entity` (class) L5\n"),
+        "{user}"
+    );
+    assert!(!user.contains("OrderDto"), "a data class is not an export to call: {user}");
     model.assert_exhausted();
 }
 
@@ -743,8 +874,8 @@ async fn by_directory() {
 }
 
 // Under a dialect with barrels, a lone top-level package is cut beneath, as
-// `src/` is, and the stem falls back to the root directory's name where the
-// manifest names none.
+// `src/` is, however many barrels declare it, and the stem falls back to the
+// root directory's name where the manifest names none.
 #[tokio::test]
 async fn by_directory_package() {
     let tmp = tempfile::tempdir().expect("tempdir");
@@ -752,6 +883,7 @@ async fn by_directory_package() {
     std::fs::create_dir_all(&root).expect("mkdir");
     write(&root, "manage.py", &pad(2));
     write(&root, "shop/__init__.py", &pad(1));
+    write(&root, "shop/__init__.pyi", &pad(1));
     write(&root, "shop/api/views.py", &pad(10_000).replace("//", "#"));
     write(&root, "shop/api/serializers.py", &pad(2));
     write(&root, "shop/jobs/run.py", &pad(2));
@@ -759,6 +891,7 @@ async fn by_directory_package() {
         modules: [
             "manage.py",
             "shop/__init__.py",
+            "shop/__init__.pyi",
             "shop/api/views.py",
             "shop/api/serializers.py",
             "shop/jobs/run.py",
@@ -788,7 +921,13 @@ async fn by_directory_package() {
     assert_eq!(survey.seams[0].stems, ["api"]);
     assert_eq!(
         files(&survey, 0),
-        ["manage.py", "shop/__init__.py", "shop/api/serializers.py", "shop/api/views.py"]
+        [
+            "manage.py",
+            "shop/__init__.py",
+            "shop/__init__.pyi",
+            "shop/api/serializers.py",
+            "shop/api/views.py"
+        ]
     );
     assert_eq!(survey.seams[1].stems, ["jobs"]);
     assert_eq!(files(&survey, 1), ["shop/jobs/run.py"]);

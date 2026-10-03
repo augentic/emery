@@ -24,12 +24,11 @@ use crate::{Seam, kebab};
 const DATA_BESIDE_BYTES: u64 = 8 * 1024;
 
 const NO_SURFACE: &str = "No surface was found in this source: its survey named no route, command, \
-                          job, consumer, or exported API — no bootstrap the manifest names or a \
-                          conventional entry holds, no handler registered with a package, \
-                          no function, method, or class under a package's decorator, \
-                          and no function or class exported at an entry module for a caller. \
-                          Read it as a library is read — for what its exports do for a caller — \
-                          and claim what the code exhibits.";
+                          job, consumer, or exported API — no handler registered with a package, \
+                          no function, method, or class under a package's decorator, and no \
+                          function or class exported at an entry module for a caller. Read it as \
+                          a library is read — for what its exports do for a caller — and claim \
+                          what the code exhibits.";
 
 pub(super) struct Lead {
     seam: Seam,
@@ -111,14 +110,15 @@ impl Lead {
     }
 
     pub(super) fn by_directory<R: Recogniser>(tree: &Tree<R>) -> Vec<Self> {
-        // cut beneath `src/` and beneath a lone top-level package
-        let packages: Vec<&str> = tree
-            .modules
-            .keys()
-            .filter_map(|path| barrel(tree.dialect.barrels, path))
-            .map(|package| package.strip_prefix("src/").unwrap_or(package))
-            .filter(|package| !package.contains('/'))
-            .collect();
+        // cut beneath `src/` and beneath a lone top-level package, however
+        // many barrels declare it
+        let packages = unique(
+            tree.modules
+                .keys()
+                .filter_map(|path| barrel(tree.dialect.barrels, path))
+                .map(|package| package.strip_prefix("src/").unwrap_or(package))
+                .filter(|package| !package.contains('/')),
+        );
         let package = match packages.as_slice() {
             [one] => Some(format!("{one}/")),
             _ => None,
