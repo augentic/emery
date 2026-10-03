@@ -2,7 +2,7 @@
 
 Live `specify` and `build` journey via [omnia-cursor](https://github.com/augentic/omnia-backends/tree/main/crates/cursor): the mock source adapter extracts greeting claims from [docs/](docs/) through the host model, the engine synthesises `spec.md` / `design.md` and slices `plan.md`, the revision commits, and the mock target adapter builds each slice of the plan into the invocation directory.
 
-The adapters live at [adapter/](adapter/) (the source) and [target/](target/) (the target) — the same anatomy as a first-party adapter. The shipped `emery` binary hosts them: [emery.toml](emery.toml) names each built component by path beneath the adapters root, `~/.emery/adapters`, which the runtime mounts read-only and apart from the project, so a component is never loaded from a tree a run can write. The source input is [docs/](docs/); the build writes `build/` beneath the invocation directory.
+The adapters live at [source/](source/) and [target/](target/) — the same anatomy as a first-party adapter. The shipped `emery` binary hosts them: [emery.toml](emery.toml) names each built component by path beneath the adapters root, `~/.emery/adapters`, which the runtime mounts read-only and apart from the project, so a component is never loaded from a tree a run can write. The source input is [docs/](docs/); the build writes `build/` beneath the invocation directory.
 
 ## Prerequisites
 
@@ -15,11 +15,11 @@ The adapters live at [adapter/](adapter/) (the source) and [target/](target/) (t
 
 ```bash
 # build the mock adapters
-cargo build --example adapter --example target --target wasm32-wasip2 --release
+cargo build --example source --example target --target wasm32-wasip2 --release
 
 # install them beneath the adapters root the runtime loads local components from
 mkdir -p ~/.emery/adapters
-install target/wasm32-wasip2/release/examples/adapter.wasm ~/.emery/adapters/
+install target/wasm32-wasip2/release/examples/source.wasm ~/.emery/adapters/
 install target/wasm32-wasip2/release/examples/target.wasm ~/.emery/adapters/
 
 # generate the specification set

@@ -53,8 +53,8 @@ tempfile.workspace = true
 tokio = { workspace = true, features = ["macros", "rt", "sync", "time"] }
 
 [[example]]
-name = "adapter"
-path = "examples/adapter/lib.rs"
+name = "source"
+path = "examples/source/lib.rs"
 crate-type = ["cdylib"]
 
 [[example]]

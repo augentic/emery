@@ -18,7 +18,7 @@
 # Live journey: the mock source component over its fixture tree.
 [[source]]
 name = "docs"
-adapter = "adapter.wasm"
+adapter = "source.wasm"
 path = "docs/"
 
 # Live journey: the mock target component, building into the invocation
