@@ -84,12 +84,15 @@ unused_extern_crates = "warn"
 
 # conventions:begin lints/clippy
 [workspace.lints.clippy]
-all = { level = "warn", priority = -1 } 
+# https://doc.rust-lang.org/stable/clippy/index.html
+all = { level = "warn", priority = -1 }      # correctness, suspicious, style, complexity, perf
 cargo = { level = "warn", priority = -1 }
 nursery = { level = "warn", priority = -1 }
 pedantic = { level = "warn", priority = -1 }
 
-# Cherry-picked lints from the `restriction` lint group
+# Cherry-picked lints are from the `restriction` lint group in order to drive up
+# consistency, quality, and brevity
+# See https://microsoft.github.io/rust-guidelines/guidelines/universal/index.html
 as_pointer_underscore = "warn"
 assertions_on_result_states = "warn"
 clone_on_ref_ptr = "warn"
