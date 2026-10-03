@@ -81,6 +81,7 @@ unsafe_op_in_unsafe_fn = "warn"
 unused_extern_crates = "warn"
 
 [workspace.lints.clippy]
+# https://doc.rust-lang.org/stable/clippy/index.html
 all = { level = "warn", priority = -1 }      # correctness, suspicious, style, complexity, perf
 cargo = { level = "warn", priority = -1 }
 nursery = { level = "warn", priority = -1 }
@@ -185,9 +186,7 @@ lto = true
 opt-level = 2
 strip = true
 
-# Optimise WASI debug builds because Cranelift JIT-compiles at run time.
-# Dependencies keep line tables only (workspace crates are unaffected): wasmtime
-# and Cranelift with full debuginfo dominate `target/`.
+# Optimise Cranelift debug builds — the unoptimised codegen is ~10x slower.
 [profile.dev.package]
 "*" = { debug = "line-tables-only" }
 cranelift-assembler-x64 = { opt-level = 2 }
