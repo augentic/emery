@@ -72,7 +72,6 @@ repository = "https://github.com/augentic/emery"
 rust-version = "1.99"
 version = "0.38.0"
 
-# conventions:begin lints/rust
 [workspace.lints.rust]
 # https://doc.rust-lang.org/rustc/lints/listing/allowed-by-default.html
 missing_docs = "warn"
@@ -80,9 +79,7 @@ trivial_numeric_casts = "warn"
 unsafe_code = "deny"
 unsafe_op_in_unsafe_fn = "warn"
 unused_extern_crates = "warn"
-# conventions:end lints/rust
 
-# conventions:begin lints/clippy
 [workspace.lints.clippy]
 all = { level = "warn", priority = -1 }      # correctness, suspicious, style, complexity, perf
 cargo = { level = "warn", priority = -1 }
@@ -111,7 +108,6 @@ unnecessary_safety_comment = "warn"
 unnecessary_safety_doc = "warn"
 unneeded_field_pattern = "warn"
 unused_result_ok = "warn"
-# conventions:end lints/clippy
 missing_errors_doc = "allow"
 missing_panics_doc = "allow"
 

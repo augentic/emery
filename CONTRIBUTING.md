@@ -38,7 +38,8 @@ To preview the working-tree `/emery:*` skill against a local CLI: `cargo install
 - Use kebab-case for file names, change names, and adapter identifiers
 - Store behavior belongs in guest orchestrations or adapter prompts, not in skill bodies
 
-<!-- conventions:begin contributing/dco -->
+<!-- BEGIN Managed by augentic/toolkit: conventions/contributing/dco.md -->
+<!-- Do not edit: run `make conventions-sync`. -->
 ## Developer's Certificate of Origin
 
 All contributions must include acceptance of the [DCO](https://developercertificate.org/):
@@ -89,9 +90,10 @@ Signed-off-by: Jane Example <jane@example.com>
 ```
 
 For legal reasons, no anonymous or pseudonymous contributions are accepted; open a GitHub issue if this is a problem for you.
-<!-- conventions:end contributing/dco -->
+<!-- END Managed by augentic/toolkit: conventions/contributing/dco.md -->
 
-<!-- conventions:begin contributing/pull-requests -->
+<!-- BEGIN Managed by augentic/toolkit: conventions/contributing/pull-requests.md -->
+<!-- Do not edit: run `make conventions-sync`. -->
 ## Pull request procedure
 
 Pull requests should be targeted at the `main` branch. Before creating a pull request, go through this checklist:
@@ -104,11 +106,12 @@ Pull requests should be targeted at the `main` branch. Before creating a pull re
 All contributions are made via pull request. All patches from all contributors get reviewed. At least one review from a maintainer is required for all patches (even patches from maintainers). When CI fails, authors are expected to update the pull request until it passes.
 
 Normally, all pull requests must include tests that cover your change. Occasionally, a change will be very difficult to test for; in those cases, include a note in your commit message explaining why.
-<!-- conventions:end contributing/pull-requests -->
+<!-- END Managed by augentic/toolkit: conventions/contributing/pull-requests.md -->
 
 Tests here cover a change at its public boundary: root product scenarios under `tests/` (argv in; envelope, exit code, and storage out), crate integration tests under `crates/*/tests/` only for independent library contracts, unit tests only for CLI-unreachable branches. A change under `docs/` must pass `mdbook build docs`; a skill-wrapper change is also verified by hand in a target project.
 
-<!-- conventions:begin contributing/conduct -->
+<!-- BEGIN Managed by augentic/toolkit: conventions/contributing/conduct.md -->
+<!-- Do not edit: run `make conventions-sync`. -->
 ## Conduct
 
 Whether you are a regular contributor or a newcomer, we care about making this community a safe place for you and we've got your back.
@@ -120,4 +123,4 @@ Whether you are a regular contributor or a newcomer, we care about making this c
 - Likewise any spamming, trolling, flaming, baiting or other attention-stealing behaviour is not welcome.
 
 We welcome discussion about creating a welcoming, safe, and productive environment for the community. If you have any questions, feedback, or concerns please let us know with a GitHub issue. The [Code of Conduct](CODE_OF_CONDUCT.md) applies throughout.
-<!-- conventions:end contributing/conduct -->
+<!-- END Managed by augentic/toolkit: conventions/contributing/conduct.md -->
