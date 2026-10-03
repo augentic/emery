@@ -74,7 +74,6 @@ version = "0.38.0"
 
 # conventions:begin lints/rust
 [workspace.lints.rust]
-# https://doc.rust-lang.org/rustc/lints/listing/allowed-by-default.html
 missing_docs = "warn"
 trivial_numeric_casts = "warn"
 unsafe_code = "deny"
@@ -84,14 +83,12 @@ unused_extern_crates = "warn"
 
 # conventions:begin lints/clippy
 [workspace.lints.clippy]
-all = { level = "warn", priority = -1 }      # correctness, suspicious, style, complexity, perf
+all = { level = "warn", priority = -1 } 
 cargo = { level = "warn", priority = -1 }
 nursery = { level = "warn", priority = -1 }
 pedantic = { level = "warn", priority = -1 }
 
-# Cherry-picked lints are from the `restriction` lint group in order to drive up
-# consistency, quality, and brevity
-# See https://microsoft.github.io/rust-guidelines/guidelines/universal/index.html
+# Cherry-picked lints from the `restriction` lint group
 as_pointer_underscore = "warn"
 assertions_on_result_states = "warn"
 clone_on_ref_ptr = "warn"
@@ -152,8 +149,8 @@ omnia-wasi-keyvalue = "0.37.0"
 omnia-wasi-model = "0.37.0"
 omnia-wasi-otel = "0.37.0"
 
-omnia-cursor = "0.31.0"
-omnia-filesystem = "0.31.0"
+omnia-cursor = "0.30.0"
+omnia-filesystem = "0.30.0"
 
 [patch.crates-io]
 omnia = { git = "https://github.com/augentic/omnia" }
@@ -189,9 +186,7 @@ lto = true
 opt-level = 2
 strip = true
 
-# Optimise WASI debug builds because Cranelift JIT-compiles at run time.
-# Dependencies keep line tables only (workspace crates are unaffected): wasmtime
-# and Cranelift with full debuginfo dominate `target/`.
+# Optimise Cranelift debug builds — the unoptimised codegen is ~10x slower.
 [profile.dev.package]
 "*" = { debug = "line-tables-only" }
 cranelift-assembler-x64 = { opt-level = 2 }
