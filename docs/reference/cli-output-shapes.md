@@ -6,7 +6,7 @@ Canonical JSON envelope shapes for the `emery *` commands that skills shell out 
 
 - `--format json` responses are a **flat body**: every successful body is a single JSON object carrying the command-specific fields **at the top level** — there is no `ok` discriminant, no `data` wrapper, and no top-level envelope-version stamp.
 - Failures keep the same flat shape with three extra top-level keys:
-  - `error` — a discriminant string: kebab-case for the four recovery codes (`specify-source-required`, `unsupported-version`, `spec-not-generated`, `spec-outdated`), snake_case for the Omnia defaults (`bad_request`, `not_found`, `server_error`, `bad_gateway`). The discriminant is grep-stable and forms part of the public contract.
+  - `error` — a discriminant string: kebab-case for the five recovery codes (`specify-source-required`, `build-target-required`, `unsupported-version`, `spec-not-generated`, `spec-outdated`), snake_case for the Omnia defaults (`bad_request`, `not_found`, `server_error`, `bad_gateway`). The discriminant is grep-stable and forms part of the public contract.
   - `message` — humanised one-liner suitable for direct rendering.
   - `exit-code` — the integer the binary returns (see [Exit codes](#exit-codes)).
 - Paths are emitted as plain strings relative to the repo root unless the field name says otherwise.
@@ -20,13 +20,13 @@ Canonical JSON envelope shapes for the `emery *` commands that skills shell out 
 | Code | Class          | When                                                                                                                                                                 |
 | ---- | -------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | 0    | success        | Command succeeded.                                                                                                                                                   |
-| 1    | `bad_request`  | Operator or input refusal. The `error` field is `specify-source-required`, `unsupported-version`, `spec-outdated`, the loader's `refused`, or `bad_request`.         |
+| 1    | `bad_request`  | Operator or input refusal. The `error` field is `specify-source-required`, `build-target-required`, `unsupported-version`, `spec-outdated`, the loader's `refused`, or `bad_request`. |
 | 2    | `not_found`    | Missing resource. The `error` field is `spec-not-generated` or `not_found`.                                                                                          |
-| 3    | `server_error` | Evidence the claim gate rejects, or an unclassified failure: I/O, storage, conversions. The `error` field is `server_error` or the loader's `internal`.               |
+| 3    | `server_error` | Evidence the claim gate rejects, a build report the report gate rejects, or an unclassified failure: I/O, storage, conversions. The `error` field is `server_error` or the loader's `internal`. |
 | 4    | `bad_gateway`  | Upstream model, adapter, or component-acquisition failure. The `error` field is `bad_gateway` or the loader's `unavailable`.                                          |
 | 64   | usage          | Clap usage error (unknown verb or flag, missing argument), rendered by clap on stderr with no envelope. `EX_USAGE`, so exit 2 always means a `not_found` envelope.    |
 
-Skills branch on the exit code first and on the four kebab-case recovery discriminants second. On `unsupported-version` (exit `1`), tell the operator to update the installed binary through its install channel; a skill that sees exit `64` has built a bad argv.
+Skills branch on the exit code first and on the five kebab-case recovery discriminants second. On `unsupported-version` (exit `1`), tell the operator to update the installed binary through its install channel; a skill that sees exit `64` has built a bad argv.
 
 ## Text-mode style
 
@@ -76,7 +76,25 @@ The success body names the committed revision and its reviewable set:
 
 `diff` is the re-mine diff against the outgoing current revision, computed by typed equality over the two revisions: each document's `preamble` flags whether its preamble changed; `spec` lists requirements as `{ id, subject }` entries, matched first by where they anchor — the same stem and a cited `path` in common (same source and file, line ranges that meet), one to one, the pair sharing the most anchors first — and then by `id` (ids are positional — `REQ-001` onward in source order — so a requirement no anchor matches whose place moved reads as a removal and an addition), each `changed` entry naming the fields that differ (`id`, `subject`, `status`, `covered`, `sources`, `body`, `losers`, `scenarios`) and, when the match crossed ids, carrying `was`, the id the requirement held in the outgoing revision; `design` lists sections by their kebab-case key; `plan` lists slices matched by `id` as `{ id, name }` entries (ids are positional too — `SLICE-001` onward by each slice's lowest requirement), each `changed` entry naming the fields that differ (`name`, `requirements`, `types`, `depends-on`, `brief`). It is absent on a first run; on a byte-stable re-run `from` equals `revision`, every `preamble` flag is false, and every list is empty; nothing is persisted for it. Text mode prints a one-line summary of those counts beneath the revision — `  diff vs 1a2b3c4d: spec +1 -0 ~1 preamble, design +0 -0 ~1, plan +1 -0 ~1` — so a run never spans more than two lines; the per-requirement and per-slice entries ride `--format json` alone.
 
-`emery specify` with no source — and no project-root `emery.toml` to discover — fails with `error: "specify-source-required"` (exit 1); mixing `--config` with positional adapters or `--description`, or naming an absolute or project-escaping local path, fails with `error: "bad_request"` (exit 1). `--config` without a value explicitly selects the project-relative `emery.toml`. A GitHub URL source fails with `error: "bad_request"`. A model draft (grouping, spec, design, or slicing) that still fails its check once the backend's rounds are spent exits 1 with `error: "bad_request"` carrying the last correction and its findings; a model failure exits 4 with `error: "bad_gateway"`. The first source to fail ends the run — the sources still extracting are not waited for — and its failure is the envelope, as the adapter put it: a source refusing its input exits 1 with `error: "bad_request"` carrying the adapter's own description, an adapter failing upstream exits 4 with `error: "bad_gateway"`, and evidence the claim gate rejects exits 3 with `error: "server_error"` naming the findings.
+`emery specify` with no source — and no project-root `emery.toml` to discover — fails with `error: "specify-source-required"` (exit 1); mixing `--config` with positional adapters or `--description`, or naming an absolute or escaping path (a source `path` above the project, a component above the adapters root), fails with `error: "bad_request"` (exit 1); a component path naming no file beneath the adapters root fails with `error: "not_found"` (exit 2). `--config` without a value explicitly selects the project-relative `emery.toml`. A GitHub URL source fails with `error: "bad_request"`. A model draft (grouping, spec, design, or slicing) that still fails its check once the backend's rounds are spent exits 1 with `error: "bad_request"` carrying the last correction and its findings; a model failure exits 4 with `error: "bad_gateway"`. The first source to fail ends the run — the sources still extracting are not waited for — and its failure is the envelope, as the adapter put it: a source refusing its input exits 1 with `error: "bad_request"` carrying the adapter's own description, an adapter failing upstream exits 4 with `error: "bad_gateway"`, and evidence the claim gate rejects exits 3 with `error: "server_error"` naming the findings.
+
+### `emery build`
+
+The success body names the revision whose plan was built and every slice in build order:
+
+```json
+{
+  "revision": "9f8e7d6c…",
+  "slices": [
+    { "id": "SLICE-001", "name": "authentication", "covered": ["REQ-001", "REQ-002"], "uncovered": [], "written": ["src/auth.rs"] },
+    { "id": "SLICE-002", "name": "orders", "covered": ["REQ-003"], "uncovered": ["REQ-004"], "written": ["src/orders.rs", "src/orders/create.rs"] }
+  ]
+}
+```
+
+Each slice carries the requirement ids the target adapter reported implemented (`covered`), those of the slice it left out (`uncovered`), both in id order, and the files it reported written, relative to the project root, in the order it named them. Text mode prints the revision and one line per slice — `  SLICE-002 orders: covered 1/2 (uncovered REQ-004), written 2 files` — so a run spans one line more than its slices.
+
+`emery build` with no adapter — and no project-root `emery.toml` carrying a `[target]` table — fails with `error: "build-target-required"` (exit 1); mixing `--config` with a positional adapter fails with `error: "bad_request"` (exit 1). Before any revision is committed it fails with `error: "spec-not-generated"` (exit 2), and over a stored revision under an older grammar with `error: "spec-outdated"` (exit 1), neither loading the adapter. The first slice to fail ends the run and its failure is the envelope, as the adapter put it — a refusal exits 1 with `error: "bad_request"`, an upstream failure exits 4 with `error: "bad_gateway"` — the `message` naming the slice (``slice `SLICE-002` (orders) failed; SLICE-001 built before it stays written: …``); a report the report gate rejects — a covered id outside the slice, a written path escaping the root or under `.omnia/`, either named twice — exits 3 with `error: "server_error"` naming the findings.
 
 ### `emery show <spec|design|plan>`
 
@@ -109,7 +127,7 @@ The success body carries the revision id, the Markdown projection, and the typed
 
 `plan.md` renders each slice as a `## Slice: <name>` block: its `ID:` and `Requirements:` lines, a `Types:` line where the slice owns a design type, a `Depends on:` line where it is built after another slice, then the brief's paragraphs.
 
-Before any revision is committed the verb fails with `error: "spec-not-generated"` (exit 2); a current revision id naming missing documents fails with `error: "server_error"` (exit 3); a stored revision under an older grammar fails with `error: "spec-outdated"` (exit 1).
+Before any revision is committed the verb fails with `error: "spec-not-generated"` (exit 2); a current revision id naming missing documents fails with `error: "server_error"` (exit 3); a stored revision under an older grammar fails with `error: "spec-outdated"` (exit 1). The `spec-not-generated` hint names both ways out: ``run `emery specify <adapter>...` to commit a revision, then re-run show or build``.
 
 ### `emery completions <shell>`
 

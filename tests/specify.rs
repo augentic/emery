@@ -9,12 +9,12 @@
 mod support;
 
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
 
 use emery_adapter::source::{Claim, ClaimKind, Evidence, SourceContent, SourceKind};
-use emery_engine::{CONTAINER, ENGINE, REVISION_KEY};
+use emery_engine::{ADAPTERS, CONTAINER, ENGINE, REVISION_KEY};
 use omnia_sdk::model::{Error as ModelError, Reply};
 use omnia_sdk::plugins::{Digest, Error as LoadError, Location};
 use omnia_sdk::{BlobStore, StateStore, bad_gateway, bad_request};
@@ -69,35 +69,61 @@ fn separate_slicing(stems: &[(&str, &[&str])]) -> String {
     serde_json::json!({ "preamble": [], "slices": slices }).to_string()
 }
 
-// Inside the project: every path handed to the CLI must stay project-relative
-// for the guest preopen, so each write answers with that path.
-struct Scratch(tempfile::TempDir);
+// Two roots, as the guest's two preopens: a config file is project-relative,
+// a component is relative to the adapters root the runtime mounts apart from
+// the project, so each write answers with the path the CLI is handed.
+struct Scratch {
+    project: tempfile::TempDir,
+    adapters: tempfile::TempDir,
+}
+
+const PROJECT_ROOT: &str = env!("CARGO_MANIFEST_DIR");
+
+fn adapters_root() -> PathBuf {
+    Path::new(PROJECT_ROOT).join(ADAPTERS)
+}
 
 impl Scratch {
     fn new() -> Self {
-        Self(tempfile::TempDir::new_in(env!("CARGO_MANIFEST_DIR")).expect("project tempdir"))
+        let adapters = adapters_root();
+        fs::create_dir_all(&adapters).expect("adapters root");
+        Self {
+            project: tempfile::TempDir::new_in(PROJECT_ROOT).expect("project tempdir"),
+            adapters: tempfile::TempDir::new_in(adapters).expect("adapters tempdir"),
+        }
     }
 
-    fn write(&self, name: &str, body: impl AsRef<[u8]>) -> String {
-        let path = self.0.path().join(name);
+    fn write_under(root: &Path, base: &Path, name: &str, body: impl AsRef<[u8]>) -> String {
+        let path = root.join(name);
         if let Some(parent) = path.parent() {
             fs::create_dir_all(parent).unwrap_or_else(|err| panic!("mkdir for {name}: {err}"));
         }
         fs::write(&path, body).unwrap_or_else(|err| panic!("write {name}: {err}"));
-        path.strip_prefix(env!("CARGO_MANIFEST_DIR"))
-            .expect("path under project")
+        path.strip_prefix(base)
+            .expect("path under its root")
             .to_str()
             .expect("utf-8 path")
             .to_string()
     }
 
+    // Writes `name` beneath the adapters root and returns its path relative to it.
+    fn write(&self, name: &str, body: impl AsRef<[u8]>) -> String {
+        Self::write_under(self.adapters.path(), &adapters_root(), name, body)
+    }
+
+    // Writes a config file beneath the project root and returns its project-relative path.
     fn config(&self, body: &str) -> String {
-        self.write("emery.toml", body)
+        Self::write_under(self.project.path(), Path::new(PROJECT_ROOT), "emery.toml", body)
     }
 
     // The loader is scripted, so the component only has to exist as a `.wasm` file.
     fn component(&self) -> String {
         self.write("source.wasm", b"\0asm-stub")
+    }
+
+    fn remove(&self, name: &str) {
+        fs::remove_file(self.adapters.path().join(name))
+            .unwrap_or_else(|err| panic!("remove {name}: {err}"));
     }
 }
 
@@ -121,7 +147,11 @@ async fn gen_spec() {
     let [(Location::Path(path), None)] = loads.as_slice() else {
         panic!("a local component is one unpinned load by path: {loads:?}");
     };
-    assert!(path.ends_with("source.wasm"), "the preopen-relative path rides the request: {path}");
+    assert_eq!(
+        *path,
+        format!("{ADAPTERS}/{component}"),
+        "the component loads beneath the adapters mount, never the project"
+    );
     assert!(
         provider.storage.objects("adapters").is_empty(),
         "nothing mirrors into engine storage; the loader reads the file fresh"
@@ -235,13 +265,13 @@ async fn lines_as_strings() {
     provider.model.assert_exhausted();
 }
 
-// The component the entry names exists only beside the file, so the run must
-// resolve it there.
+// The component the entry names lives beneath the adapters root, wherever the
+// file that names it is.
 #[tokio::test]
 async fn from_file() {
     let scratch = Scratch::new();
-    scratch.component();
-    let config = scratch.config(SOURCES);
+    let component = scratch.component();
+    let config = scratch.config(&SOURCES.replace("./source.wasm", &component));
 
     let provider = Provider::answering([SPEC_ANSWER, DESIGN_ANSWER]);
 
@@ -250,9 +280,10 @@ async fn from_file() {
     let [(Location::Path(path), None)] = loads.as_slice() else {
         panic!("a local component is one unpinned load by path: {loads:?}");
     };
-    assert!(
-        path.ends_with("source.wasm") && !path.starts_with("./"),
-        "the file-relative reference resolves against the config directory: {path}"
+    assert_eq!(
+        *path,
+        format!("{ADAPTERS}/{component}"),
+        "the reference resolves beneath the adapters mount, not the config directory"
     );
 
     assert!(
@@ -266,13 +297,12 @@ async fn from_file() {
 // One adapter named by two sources is loaded and gated once, extracted twice.
 #[tokio::test]
 async fn shared_roots() {
-    let cases: &[(&str, &str)] =
-        &[("emery:documentation@1.2.0", "emery:documentation"), ("./source.wasm", "source")];
+    // `None` is the scratch component, staged beneath the adapters root
+    let cases: &[(Option<&str>, &str)] =
+        &[(Some("emery:documentation@1.2.0"), "emery:documentation"), (None, "source")];
     for (adapter, package) in cases {
         let scratch = Scratch::new();
-        if Path::new(adapter).extension().is_some() {
-            scratch.component();
-        }
+        let adapter = adapter.map_or_else(|| scratch.component(), str::to_owned);
         let config = scratch.config(&format!(
             "[[source]]\nname = \"docs\"\nadapter = \"{adapter}\"\npath = \"docs\"\n\n\
              [[source]]\nname = \"api\"\nadapter = \"{adapter}\"\npath = \"api\"\n"
@@ -2152,12 +2182,12 @@ async fn source_paths() {
 #[tokio::test]
 async fn name_defaulted() {
     let scratch = Scratch::new();
-    scratch.component();
-    let config = scratch.config(
+    let component = scratch.component();
+    let config = scratch.config(&format!(
         "[[source]]\nadapter = \"documentation\"\n\n\
          [[source]]\nadapter = \"emery:demo@1.2.0\"\n\n\
-         [[source]]\nadapter = \"./source.wasm\"\n",
-    );
+         [[source]]\nadapter = \"{component}\"\n",
+    ));
     let grouping = baseline_grouping(3);
     let provider = Provider::answering([grouping.as_str(), SPEC_ANSWER, DESIGN_ANSWER])
         .declaring(["documentation"]);
@@ -2185,17 +2215,22 @@ async fn deleted_wasm() {
     let provider = Provider::answering([SPEC_ANSWER, DESIGN_ANSWER]);
     cli_ok(&provider, &["emery", "specify", &component]).await;
 
-    fs::remove_file(&component).expect("remove the operator's file");
+    scratch.remove("source.wasm");
     fail(&provider, &["emery", "specify", &component], 2, "not_found").await;
     provider.model.assert_exhausted();
 }
 
+// A component is looked for beneath the adapters root alone: one beside the
+// project's own files is not found there, and a path above the root is
+// refused before it is looked for.
 #[tokio::test]
 async fn component_missing() {
     let provider = Provider::idle();
-    fail(&provider, &["emery", "specify", "./missing.wasm"], 2, "not_found").await;
+    let envelope = fail(&provider, &["emery", "specify", "./missing.wasm"], 2, "not_found").await;
+    assert_message(&envelope, "adapter `./missing.wasm` not found beneath the adapters root");
     for path in ["/tmp/missing.wasm", "../missing.wasm"] {
-        fail(&provider, &["emery", "specify", path], 1, "bad_request").await;
+        let envelope = fail(&provider, &["emery", "specify", path], 1, "bad_request").await;
+        assert_message(&envelope, &format!("adapter `{path}` escapes the adapters root"));
     }
 }
 
@@ -2224,7 +2259,7 @@ async fn file_named_by_stem() {
 async fn file_stem_not_kebab() {
     let scratch = Scratch::new();
     let component = scratch.write("MyTool.wasm", b"\0asm-stub");
-    let config = scratch.config("[[source]]\nadapter = \"./MyTool.wasm\"\n");
+    let config = scratch.config(&format!("[[source]]\nadapter = \"{component}\"\n"));
     let provider = Provider::idle();
 
     for argv in
@@ -2245,10 +2280,10 @@ async fn file_stem_collision() {
     let scratch = Scratch::new();
     let first = scratch.write("a/tool.wasm", b"\0asm-stub");
     let second = scratch.write("b/tool.wasm", b"\0asm-stub");
-    let config = scratch.config(
-        "[[source]]\nname = \"first\"\nadapter = \"./a/tool.wasm\"\n\n\
-         [[source]]\nname = \"second\"\nadapter = \"./b/tool.wasm\"\n",
-    );
+    let config = scratch.config(&format!(
+        "[[source]]\nname = \"first\"\nadapter = \"{first}\"\n\n\
+         [[source]]\nname = \"second\"\nadapter = \"{second}\"\n",
+    ));
     let provider = Provider::idle();
 
     let envelope =
@@ -2534,10 +2569,10 @@ mod digest {
     #[tokio::test]
     async fn pinned() {
         let scratch = Scratch::new();
-        scratch.component();
+        let component = scratch.component();
         let pin = digest("cd");
         let config = scratch.config(&format!(
-            "[[source]]\nname = \"local\"\nadapter = \"./source.wasm\"\ndigest = \"{pin}\"\n\n\
+            "[[source]]\nname = \"local\"\nadapter = \"{component}\"\ndigest = \"{pin}\"\n\n\
              [[source]]\nname = \"demo\"\nadapter = \"emery:demo@1.2.0\"\ndigest = \"{pin}\"\n"
         ));
         let grouping = baseline_grouping(2);
@@ -2562,10 +2597,10 @@ mod digest {
     #[tokio::test]
     async fn conflict() {
         let scratch = Scratch::new();
-        scratch.component();
+        let component = scratch.component();
         let config = scratch.config(&format!(
-            "[[source]]\nname = \"docs\"\nadapter = \"./source.wasm\"\ndigest = \"{}\"\n\n\
-             [[source]]\nname = \"api\"\nadapter = \"./source.wasm\"\ndigest = \"{}\"\n",
+            "[[source]]\nname = \"docs\"\nadapter = \"{component}\"\ndigest = \"{}\"\n\n\
+             [[source]]\nname = \"api\"\nadapter = \"{component}\"\ndigest = \"{}\"\n",
             digest("cd"),
             digest("ab")
         ));
@@ -2581,9 +2616,9 @@ mod digest {
     #[tokio::test]
     async fn mismatch() {
         let scratch = Scratch::new();
-        scratch.component();
+        let component = scratch.component();
         let config = scratch.config(&format!(
-            "[[source]]\nname = \"local\"\nadapter = \"./source.wasm\"\ndigest = \"{}\"\n",
+            "[[source]]\nname = \"local\"\nadapter = \"{component}\"\ndigest = \"{}\"\n",
             digest("cd")
         ));
         let mut provider = Provider::idle();

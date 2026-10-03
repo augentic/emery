@@ -4,6 +4,7 @@
 //! Each slice is a subset of the specification that can be built on its own,
 //! with the design types it owns and the slices built before it.
 
+use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::{self, Display, Formatter};
 
 use serde::{Deserialize, Serialize};
@@ -36,6 +37,46 @@ impl Plan {
     #[must_use]
     pub fn slice(&self, id: SliceId) -> Option<&Slice> {
         self.slices.iter().find(|slice| slice.id == id)
+    }
+
+    /// Returns the slices in build order.
+    ///
+    /// Every slice comes after each slice it depends on; among the slices
+    /// ready at once, the lower id comes first. The plan is acyclic by
+    /// construction, so every slice is placed.
+    #[must_use]
+    pub fn order(&self) -> Vec<&Slice> {
+        let mut pending: BTreeMap<SliceId, BTreeSet<SliceId>> = self
+            .slices
+            .iter()
+            .map(|slice| {
+                let dependencies = slice
+                    .depends_on
+                    .iter()
+                    .copied()
+                    .filter(|dependency| {
+                        *dependency != slice.id && self.slice(*dependency).is_some()
+                    })
+                    .collect();
+                (slice.id, dependencies)
+            })
+            .collect();
+
+        // the lowest id with nothing pending, in turn; a cycle, which the
+        // engine never writes, falls back to id order
+        let mut ordered = Vec::with_capacity(self.slices.len());
+        while let Some(&first) = pending.keys().next() {
+            let next = pending
+                .iter()
+                .find(|(_, dependencies)| dependencies.is_empty())
+                .map_or(first, |(id, _)| *id);
+            pending.remove(&next);
+            for dependencies in pending.values_mut() {
+                dependencies.remove(&next);
+            }
+            ordered.extend(self.slice(next));
+        }
+        ordered
     }
 }
 

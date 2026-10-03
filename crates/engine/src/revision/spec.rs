@@ -42,6 +42,33 @@ impl Spec {
     pub fn requirement(&self, id: ReqId) -> Option<&Requirement> {
         self.requirements.iter().find(|requirement| requirement.id == id)
     }
+
+    /// Returns the specification cut to `ids`, as Markdown.
+    ///
+    /// The preamble, then the requirements `ids` name in the specification's
+    /// order, rendered as [`Display`] renders the whole. An id the
+    /// specification does not hold is left out.
+    #[must_use]
+    pub fn cut(&self, ids: &[ReqId]) -> String {
+        let requirements =
+            self.requirements.iter().filter(|requirement| ids.contains(&requirement.id)).collect();
+        Cut {
+            preamble: &self.preamble,
+            requirements,
+        }
+        .to_string()
+    }
+}
+
+struct Cut<'a> {
+    preamble: &'a [String],
+    requirements: Vec<&'a Requirement>,
+}
+
+impl Display for Cut<'_> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        revision::write(f, "Specification", self.preamble, &self.requirements)
+    }
 }
 
 impl revision::Document for Spec {

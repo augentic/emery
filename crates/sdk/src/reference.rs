@@ -12,14 +12,14 @@ use schemars::JsonSchema;
 use serde::Deserialize;
 use serde_json::json;
 
-use crate::{CLAIMS, EXTRACT, RUNTIME, SURVEY};
+use crate::{BUILD, CLAIMS, EXTRACT, RUNTIME, SURVEY};
 
 const LIST_DOCS: &str = "list_docs";
 const READ_DOC: &str = "read_doc";
 
-// The documents a turn's system prompt is built from: a mining turn's, and
-// the survey turn's.
-const SYSTEM: &[&str] = &[EXTRACT, CLAIMS, SURVEY];
+// The documents a turn's system prompt is built from: a mining turn's, the
+// survey turn's, and a build turn's.
+const SYSTEM: &[&str] = &[EXTRACT, CLAIMS, SURVEY, BUILD];
 
 /// Returns the reference tools declared to the model on every turn.
 #[must_use]
@@ -40,14 +40,16 @@ pub fn tools() -> Vec<Tool> {
 /// Returns the handler that serves the reference tools from `docs` and then [`RUNTIME`].
 ///
 /// `list_docs` lists the adapter's references and the runtime references. It
-/// never lists a system document (`extract.md`, `claims.md`, `survey.md`),
-/// since a turn either carries it already or has nothing to learn from it.
-/// `read_doc` still answers every document, so a followed link never fails.
+/// never lists a system document (`extract.md`, `claims.md`, `survey.md`,
+/// `build.md`), since a turn either carries it already or has nothing to
+/// learn from it. `read_doc` still answers every document, so a followed link
+/// never fails.
 ///
 /// Each call is reported at DEBUG with its arguments as the model sent them,
-/// under the `source` name and, for a mining turn, its `seam`.
-pub fn serve(docs: &'static [Doc], source: &str, seam: Option<usize>) -> Tools {
-    let source = source.to_owned();
+/// under the turn's `subject` — the source name, or the slice id of a build
+/// — and, for a mining turn, its `seam`.
+pub fn serve(docs: &'static [Doc], subject: &str, seam: Option<usize>) -> Tools {
+    let subject = subject.to_owned();
 
     Box::new(move |call: ToolCall| -> ToolFuture {
         let response = match call.name.as_str() {
@@ -72,7 +74,7 @@ pub fn serve(docs: &'static [Doc], source: &str, seam: Option<usize>) -> Tools {
         };
 
         tracing::debug!(
-            %source,
+            %subject,
             seam,
             tool = %call.name,
             arguments = %call.arguments,

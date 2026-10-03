@@ -4,8 +4,9 @@
 
 # Each [[source]] entry names one source, in declaration order. `name` is
 # the name the specification cites the source by; omitted, it is the
-# adapter's name (a component file's stem, here `source`). The adapter is
-# file-relative; `digest` pins it.
+# adapter's name (a component file's stem, here `source`). A component
+# adapter is a path beneath the adapters root, `~/.emery/adapters`, wherever
+# this file is; `digest` pins it.
 # `[registries]` routes a package adapter's namespace to its registry.
 [[source]]
 name = "greeting"
@@ -30,12 +31,12 @@ adapter = "./source.wasm"
 # adapter = "intent@1.0.0"
 # description = "Ship a location-independent spec generator."
 
-# # Local component path as the adapter reference, loaded through the
-# # deployment loader and read fresh on every run. Adapter location and
-# # source location are separate axes.
+# # Local component path as the adapter reference, beneath the adapters
+# # root, loaded through the deployment loader and read fresh on every run.
+# # Adapter location and source location are separate axes.
 # [[source]]
 # name = "custom"
-# adapter = "./adapters/custom.wasm"
+# adapter = "./custom/custom.wasm"
 
 # # Third-party package: routed by `[registries]`, pinned, and named
 # # `ledger` by its package.

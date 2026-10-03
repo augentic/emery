@@ -23,7 +23,7 @@ use std::path::Path;
 
 use emery_adapter::is_kebab;
 pub use emery_adapter::source::SourceContent;
-use emery_adapter::source::{Evidence, Source, SourceInput, SourceKind};
+use emery_adapter::source::{AdapterMetadata, Evidence, Source, SourceInput, SourceKind};
 use futures::future;
 use omnia_sdk::api::Context;
 use omnia_sdk::plugins::Digest;
@@ -213,15 +213,15 @@ impl<'a> Bound<'a> {
 
     #[tracing::instrument(skip_all, fields(source = %self.input.name, adapter = %self.adapter))]
     async fn extract<S: Source>(
-        &self, provider: &S, loaded: &BTreeMap<String, Loaded>,
+        &self, provider: &S, loaded: &BTreeMap<String, Loaded<AdapterMetadata>>,
     ) -> Result<Extract, Error> {
         let source = &self.input.name;
         let adapter = self.adapter.to_string();
 
-        let Loaded { id, kind } = loaded
+        let Loaded { id, metadata } = loaded
             .get(&adapter)
             .ok_or_else(|| server_error!("adapter `{adapter}` was not loaded"))?;
-        let kind = *kind;
+        let kind = metadata.kind;
         tracing::info!(%source, adapter = %id, %kind, "extracting");
         let evidence = Source::extract(provider, id, &self.input).await?;
 

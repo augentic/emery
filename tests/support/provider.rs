@@ -1,8 +1,8 @@
 //! Scripts every capability of a provider and drives the command façade over it.
 //!
-//! Model, source, plugin, and storage capabilities use strict scripts. Each
-//! scenario must consume exactly the expected operations, so an unexercised or
-//! unexpected path fails immediately.
+//! Model, source, target, plugin, and storage capabilities use strict
+//! scripts. Each scenario must consume exactly the expected operations, so an
+//! unexercised or unexpected path fails immediately.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::future::Future;
@@ -13,6 +13,7 @@ use anyhow::Result;
 use emery_adapter::source::{
     AdapterMetadata, Backing, Claim, ClaimKind, Evidence, Source, SourceInput, SourceKind,
 };
+use emery_adapter::target::{Report, Slice, Target, TargetMetadata};
 use omnia_sdk::api::command::Response;
 use omnia_sdk::plugins::{self, Digest, Location};
 use omnia_sdk::{
@@ -100,6 +101,28 @@ impl Rendezvous {
     }
 }
 
+/// A scripted `Target` with a record of every dispatch.
+///
+/// Reports are scripted per slice id, the minimum `emery` version per adapter.
+///
+/// - An unscripted slice reports every requirement covered and one file
+///   written, `src/<name>.rs`.
+/// - A scripted failure is the classified error the WIT bindings' lift would
+///   have produced.
+#[derive(Clone, Debug, Default)]
+pub struct TargetScript {
+    /// Build outcomes keyed by slice id.
+    pub reports: BTreeMap<String, Result<Report, Error>>,
+    /// Minimum `emery` versions keyed by adapter id, the guest name each
+    /// load registers.
+    pub versions: BTreeMap<String, String>,
+    /// Every build dispatch, recorded in dispatch order: the adapter id, the
+    /// slice, and the workspace root.
+    pub calls: Arc<Mutex<Vec<(String, Slice, String)>>>,
+    /// Every metadata dispatch, by adapter id, in call order.
+    pub metadata: Arc<Mutex<Vec<String>>>,
+}
+
 /// The scripted provider behind every root scenario.
 #[derive(Debug)]
 pub struct Provider<S = Memory> {
@@ -107,6 +130,8 @@ pub struct Provider<S = Memory> {
     pub model: Scripted,
     /// The scripted `Source`.
     pub source: SourceScript,
+    /// The scripted `Target`.
+    pub target: TargetScript,
     /// The scripted [`Plugins`] loader.
     ///
     /// It admits every component path and package a run names, as the
@@ -138,6 +163,7 @@ impl<S> Provider<S> {
         Self {
             model: Scripted::answering(answers),
             source: SourceScript::default(),
+            target: TargetScript::default(),
             plugins: ScriptedLoader::default().defaulting(digest("ab")),
             storage,
         }
@@ -174,6 +200,7 @@ impl<S> Clone for Provider<S> {
         Self {
             model: self.model.clone(),
             source: self.source.clone(),
+            target: self.target.clone(),
             plugins: self.plugins.clone(),
             storage: Arc::clone(&self.storage),
         }
@@ -321,6 +348,35 @@ impl<S: Send + Sync + 'static> Source for Provider<S> {
         AdapterMetadata {
             emery_version: self.source.versions.get(id).cloned(),
             kind: self.source.kinds.get(id).copied().unwrap_or(SourceKind::Documentation),
+        }
+    }
+}
+
+impl<S: Send + Sync + 'static> Target for Provider<S> {
+    fn build(
+        &self, id: &str, slice: &Slice, workspace: &str,
+    ) -> impl Future<Output = Result<Report, Error>> + Send {
+        self.routable(id);
+
+        self.target.calls.lock().expect("calls").push((
+            id.to_string(),
+            slice.clone(),
+            workspace.to_string(),
+        ));
+        let outcome = self.target.reports.get(&slice.id).cloned().unwrap_or_else(|| {
+            Ok(Report {
+                covered: slice.requirements.clone(),
+                written: vec![format!("src/{}.rs", slice.name)],
+            })
+        });
+        async move { outcome }
+    }
+
+    fn metadata(&self, id: &str) -> TargetMetadata {
+        self.routable(id);
+        self.target.metadata.lock().expect("metadata").push(id.to_string());
+        TargetMetadata {
+            emery_version: self.target.versions.get(id).cloned(),
         }
     }
 }

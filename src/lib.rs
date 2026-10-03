@@ -1,8 +1,8 @@
 //! Implements the WebAssembly engine guest used by the shipped runtime.
 //!
 //! The guest passes process arguments to the command interface and supplies
-//! host-provided model, storage, source, and plugin capabilities. All external
-//! effects therefore remain subject to the runtime's grants.
+//! host-provided model, storage, source, target, and plugin capabilities. All
+//! external effects therefore remain subject to the runtime's grants.
 
 #![cfg(target_arch = "wasm32")]
 
@@ -19,6 +19,7 @@ impl StateStore for Provider {}
 impl BlobStore for Provider {}
 impl Plugins for Provider {}
 impl emery_adapter::source::Source for Provider {}
+impl emery_adapter::target::Target for Provider {}
 
 struct CliGuest;
 

@@ -57,6 +57,11 @@ name = "adapter"
 path = "examples/adapter/lib.rs"
 crate-type = ["cdylib"]
 
+[[example]]
+name = "target"
+path = "examples/target/lib.rs"
+crate-type = ["cdylib"]
+
 [lints]
 workspace = true
 

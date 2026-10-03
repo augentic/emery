@@ -48,7 +48,7 @@ async fn route_budget() {
     let help = cli(&provider, &["emery", "--help"]).await;
     assert_eq!(help.exit, 0);
     let help = String::from_utf8_lossy(&help.stdout);
-    assert_eq!(verbs(&help), ["completions", "show", "specify"]);
+    assert_eq!(verbs(&help), ["build", "completions", "show", "specify"]);
     for gone in ["init", "plan", "slice", "system", "journal", "debt", "adapter"] {
         assert!(
             !help.lines().any(|line| line.trim_start().starts_with(gone)),
@@ -170,6 +170,36 @@ async fn no_revision() {
 
     fail(&provider, &["emery", "show", "design"], 2, "spec-not-generated").await;
     fail(&provider, &["emery", "show", "plan"], 2, "spec-not-generated").await;
+    fail(&provider, &["emery", "build", "builder"], 2, "spec-not-generated").await;
+}
+
+// A target is named on the command line or in the file, never both, and a
+// run naming none is refused typed.
+#[tokio::test]
+async fn mixed_targets() {
+    let provider = Provider::idle();
+
+    fail(&provider, &["emery", "build", "builder", "--config", "emery.toml"], 1, "bad_request")
+        .await;
+}
+
+// The CWD move is hermetic under nextest's process-per-test isolation.
+#[tokio::test]
+async fn no_target() {
+    let dir = tempfile::TempDir::new().expect("tempdir");
+    std::env::set_current_dir(dir.path()).expect("enter empty project");
+    let provider = Provider::idle();
+
+    let response = cli(&provider, &["emery", "build"]).await;
+    assert_eq!(response.exit, 1);
+    let stderr = String::from_utf8_lossy(&response.stderr);
+    assert!(stderr.contains("no target adapter"), "{stderr}");
+
+    let envelope = fail(&provider, &["emery", "build"], 1, "build-target-required").await;
+    assert!(
+        envelope["hint"].as_str().is_some_and(|hint| hint.contains("[target]")),
+        "the hint names the way out: {envelope}"
+    );
 }
 
 #[tokio::test]

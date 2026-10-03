@@ -1,8 +1,8 @@
-# Source Adapter Example
+# Adapter Examples
 
-Live `specify` journey via [omnia-cursor](https://github.com/augentic/omnia-backends/tree/main/crates/cursor): the mock adapter extracts greeting claims from `[docs/](docs/)` through the host model, the engine synthesises `spec.md` / `design.md` and slices `plan.md`, and the revision commits.
+Live `specify` and `build` journey via [omnia-cursor](https://github.com/augentic/omnia-backends/tree/main/crates/cursor): the mock source adapter extracts greeting claims from [docs/](docs/) through the host model, the engine synthesises `spec.md` / `design.md` and slices `plan.md`, the revision commits, and the mock target adapter builds each slice of the plan into the invocation directory.
 
-The adapter lives at `[adapter/](adapter/)` — the same anatomy as a first-party adapter. The shipped `emery` binary hosts it: [emery.toml](emery.toml) names the built component by path, and the engine loads it through the deployment's read-only project mount at that path. The source input is `[docs/](docs/)`.
+The adapters live at [adapter/](adapter/) (the source) and [target/](target/) (the target) — the same anatomy as a first-party adapter. The shipped `emery` binary hosts them: [emery.toml](emery.toml) names each built component by path beneath the adapters root, `~/.emery/adapters`, which the runtime mounts read-only and apart from the project, so a component is never loaded from a tree a run can write. The source input is [docs/](docs/); the build writes `build/` beneath the invocation directory.
 
 ## Prerequisites
 
@@ -14,16 +14,24 @@ The adapter lives at `[adapter/](adapter/)` — the same anatomy as a first-part
 ## Build and run
 
 ```bash
-# build the source adapter
-cargo build --example adapter --target wasm32-wasip2 --release
+# build the mock adapters
+cargo build --example adapter --example target --target wasm32-wasip2 --release
 
-# run the example
+# install them beneath the adapters root the runtime loads local components from
+mkdir -p ~/.emery/adapters
+install target/wasm32-wasip2/release/examples/adapter.wasm ~/.emery/adapters/
+install target/wasm32-wasip2/release/examples/target.wasm ~/.emery/adapters/
+
+# generate the specification set
 set -a; source .env; set +a
 cargo run -- -v specify --config examples/emery.toml
 
 # review the committed spec and its build plan
 cargo run -- show spec
 cargo run -- show plan
+
+# build every slice of the plan into the invocation directory
+cargo run -- -v build --config examples/emery.toml
 ```
 
 Without `.env`:
@@ -32,15 +40,15 @@ Without `.env`:
 export CURSOR_API_KEY=<Cursor API key>
 ```
 
-
+The mock target writes a Markdown stand-in for code: `build/<slice-name>/index.md` and one `REQ-NNN.md` per requirement, where a real target writes the implementation. The `build/` tree is the journey's output and is ignored by git.
 
 ### Tracing
 
-The example above runs with the `-v` flag, which sets tracing level to `debug`. Each additional `v` raises the level, while `-q[q]` lowers it.
+The examples above run with the `-v` flag, which sets tracing level to `debug`. Each additional `v` raises the level, while `-q[q]` lowers it.
 
 ### Backend callbacks
 
-*Extract* and *synthesis* both run through the Cursor backend. The guest answers reference-tool calls in-process, just like the [omnia-cursor example](https://github.com/augentic/omnia-backends/tree/main/examples/cursor) does.
+*Extract*, *synthesis*, and *build* all run through the Cursor backend. The guest answers reference-tool calls in-process, just like the [omnia-cursor example](https://github.com/augentic/omnia-backends/tree/main/examples/cursor) does.
 
 See [#host-to-guest-tool-calls](#host-to-guest-tool-calls) below for more detail.
 
@@ -48,7 +56,7 @@ See [#host-to-guest-tool-calls](#host-to-guest-tool-calls) below for more detail
 
 In Emery, the only tools a completion session declares are the reference tools — `list_docs` and `read_doc` — over the adapter's embedded prose corpus. `wasi-model` delivers them as two streams rather than direct callbacks: the host writes each `ToolCall` to the session's `calls` stream, and the guest answers with a `ToolResult` on a second stream it created and passed to `create`, carrying the same correlation ID so the host can resume the completion.
 
-Every answer is served in-process by the SDK from the adapter's listed `PROSE`: `list_docs` returns the adapter's reference paths and Emery's `reconciliation.md` — never a system document (`extract.md`, `claims.md`), which a turn either carries already or has nothing to learn from — `read_doc` returns one document body by adapter-relative path, and anything else — an unknown tool, malformed arguments, an unembedded path — comes back as a repairable error. No HTTP shelf, no MCP callback, and no access to the source input or the revision store crosses this boundary; the model reaches nothing but the adapter's own reference documents.
+Every answer is served in-process by the SDK from the adapter's listed `PROSE`: `list_docs` returns the adapter's reference paths and Emery's `reconciliation.md` — never a system document (`extract.md`, `claims.md`, `build.md`), which a turn either carries already or has nothing to learn from — `read_doc` returns one document body by adapter-relative path, and anything else — an unknown tool, malformed arguments, an unembedded path — comes back as a repairable error. No HTTP shelf, no MCP callback, and no access to the source input or the revision store crosses this boundary; the model reaches nothing but the adapter's own reference documents. The project tree itself is lent through the host's workspace tools: read-only to an extraction turn, writable to a build turn.
 
 ## Installing cursor-sdk-bridge
 

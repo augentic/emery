@@ -5,13 +5,14 @@ edition.workspace = true
 license.workspace = true
 repository.workspace = true
 rust-version.workspace = true
-description = "The Emery adapter SDK: gated extraction over an adapter's seams, workspace traversal, surface discovery, and the source-adapter component export"
+description = "The Emery adapter SDK: gated extraction over an adapter's seams, workspace traversal, surface discovery, the gated build of a plan slice, and the source-adapter and target-adapter component exports"
 categories = ["development-tools"]
 keywords = ["emery", "adapter", "sdk"]
 readme = "README.md"
 
-# A guest crate: `export`, `Provider`, and the world `source_adapter!` exports
-# exist on wasm32 alone, so that is the target the documentation opens on.
+# A guest crate: `export`, `Provider`, and the worlds `source_adapter!` and
+# `target_adapter!` export exist on wasm32 alone, so that is the target the
+# documentation opens on.
 [package.metadata.docs.rs]
 default-target = "wasm32-wasip2"
 targets = ["wasm32-wasip2", "x86_64-unknown-linux-gnu"]

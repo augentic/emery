@@ -1,11 +1,12 @@
-//! Provides transport-independent operations for creating and reading Emery revisions.
+//! Provides transport-independent operations for creating, reading, and building Emery revisions.
 //!
 //! [`specify`] extracts source claims, reconciles requirements by authority,
 //! synthesises a specification and design, slices the specification into a
 //! plan, and commits the three as one content-addressed revision. [`show`]
-//! renders any one document from the current revision.
+//! renders any one document from the current revision. [`build`] dispatches
+//! every slice of the current plan to a target adapter, in dependency order.
 //!
-//! Both operations use a [`Provider`] of model, adapter, storage, and plugin
+//! Every operation uses a [`Provider`] of model, adapter, storage, and plugin
 //! capabilities. Command-line parsing and presentation are handled outside
 //! this crate.
 //!
@@ -27,6 +28,7 @@
 //!   to the model for correction until the host's limit is reached.
 
 mod adapter;
+pub mod build;
 mod revision;
 pub mod show;
 pub mod specify;
@@ -34,8 +36,9 @@ mod store;
 
 use std::path::{Component, Path, PathBuf};
 
-pub use adapter::{AdapterRef, ENGINE, Registries};
+pub use adapter::{ADAPTERS, AdapterRef, ENGINE, Registries};
 use emery_adapter::source::Source;
+use emery_adapter::target::Target;
 use omnia_sdk::{BlobStore, Error, Model, Plugins, StateStore, bad_request};
 pub use store::{CONTAINER, REVISION_KEY};
 
@@ -91,11 +94,14 @@ pub fn preopen_join(base: &Path, relative: &Path) -> Result<PathBuf, Error> {
 
 /// A bundle of every capability an engine operation may require.
 ///
-/// Any type implementing the required model, source, storage, and plugin
-/// capabilities implements this trait automatically.
+/// Any type implementing the required model, source, target, storage, and
+/// plugin capabilities implements this trait automatically.
 pub trait Provider:
-    Model + Source + StateStore + BlobStore + Plugins + Send + Sync + 'static
+    Model + Source + Target + StateStore + BlobStore + Plugins + Send + Sync + 'static
 {
 }
 
-impl<P: Model + Source + StateStore + BlobStore + Plugins + Send + Sync + 'static> Provider for P {}
+impl<P: Model + Source + Target + StateStore + BlobStore + Plugins + Send + Sync + 'static> Provider
+    for P
+{
+}

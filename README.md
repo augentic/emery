@@ -6,12 +6,13 @@
 
 Emery reconciles intent, documentation, existing code, and captured behaviour into reviewable specifications — durable artifacts, not chat history.
 
-> The v1 delivery workflow (survey/extract, plan/refine/execute/finalize, target adapters) is archived at git tag `v1`; retrieve it with `git worktree add ../emery-v1 v1`. This tree carries the spec generator: `emery specify` synthesises the reviewable set from the sources named on the invocation, `emery show` renders it.
+> The v1 delivery workflow (survey/extract, plan/refine/execute/finalize) is archived at git tag `v1`; retrieve it with `git worktree add ../emery-v1 v1`. This tree carries the spec generator and its build step: `emery specify` synthesises the reviewable set from the sources named on the invocation, `emery build` hands its plan to a target adapter slice by slice, `emery show` renders it.
 
 ## The live surface
 
 ```bash
 emery specify <adapter>...  # extract, group, synthesise the spec + design, slice the plan
+emery build <adapter>       # build every slice of the plan into the project tree through a target adapter
 emery show spec             # render spec.md from the current revision (--format json: the revision)
 emery show plan             # render plan.md: the spec sliced into buildable pieces
 emery completions <sh>      # shell completions

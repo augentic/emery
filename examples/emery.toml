@@ -1,31 +1,35 @@
 # Emery configuration.
 #
-# Each [[source]] entry names one source. 
-#  - `adapter`: points to a package or a `.wasm` path relative to this file.
-#  - `name`: the name the specification cites the source by; omitted, it is 
+# Each [[source]] entry names one source.
+#  - `adapter`: a package, a `.wasm` path beneath the adapters root
+#    (`~/.emery/adapters`), or a bare name the deployment declares.
+#  - `name`: the name the specification cites the source by; omitted, it is
 #    the adapter's name, as on the command line.
 #  - `path`: a workspace path relative to this file.
 #  - `description`: an inline description.
 #  - `digest`: pins the adapter's bytes to a `sha256:` hash.
 #
-# `[registries]` routes a namespace to its registry. `emery` is augentic.io 
+# The [target] table names the one adapter `emery build` builds every slice
+# of the plan through: `adapter` and `digest`, as above.
+#
+# `[registries]` routes a namespace to its registry. `emery` is augentic.io
 # unless re-routed; other namespaces must be routed.
 
-# Live journey: the mock component over its fixture tree.
+# Live journey: the mock source component over its fixture tree.
 [[source]]
 name = "docs"
-adapter = "../target/wasm32-wasip2/release/examples/adapter.wasm"
+adapter = "adapter.wasm"
 path = "docs/"
+
+# Live journey: the mock target component, building into the invocation
+# directory.
+[target]
+adapter = "target.wasm"
 
 # # A first-party package over the invocation directory, named `documentation`.
 # [[source]]
 # adapter = "documentation@1.2.0"
 # path = "docs/"
-
-# # An adapter may point to a remote repository by URL.
-# [[source]]
-# adapter = "emery:typescript@1.2.0"
-# url = "https://github.com/emery-io/emery-typescript"
 
 # # An inline description — the file form of `--description`.
 # [[source]]

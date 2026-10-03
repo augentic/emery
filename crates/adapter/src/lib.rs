@@ -1,14 +1,17 @@
 #![warn(missing_docs, clippy::missing_errors_doc)]
 
-//! Defines the contract between the Emery engine and source adapters.
+//! Defines the contract between the Emery engine and its adapters.
 //!
 //! A source adapter receives a [`source::SourceInput`] and returns
 //! [`source::Evidence`] containing typed [`source::Claim`]s. The
 //! [`source::Source`] capability is the engine-facing side of that exchange.
+//! A target adapter receives a [`target::Slice`] of the build plan and
+//! returns a [`target::Report`] of what it built; [`target::Target`] is the
+//! engine-facing side.
 //!
 //! This crate supplies the shared Rust types for the `emery:adapter` WIT
-//! package. On WebAssembly targets, `source::export` also exposes the guest
-//! interface implemented by adapters.
+//! package. On WebAssembly targets, `source::export` and `target::export`
+//! also expose the guest interfaces implemented by adapters.
 //!
 //! # Examples
 //!
@@ -40,8 +43,13 @@
 //!   input.
 //! - **Claim gate**: the validation performed by
 //!   [`source::Evidence::findings`] before evidence is accepted.
+//! - **Target adapter**: a component that builds one slice of the plan into
+//!   a workspace.
+//! - **Report gate**: the validation performed by
+//!   [`target::Report::findings`] before a report is accepted.
 
 pub mod source;
+pub mod target;
 
 /// Returns whether `value` is lowercase kebab-case.
 ///

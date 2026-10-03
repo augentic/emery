@@ -1,14 +1,18 @@
 #![warn(missing_docs, clippy::missing_errors_doc)]
 
-//! Provides the types and functions a source adapter is written with.
+//! Provides the types and functions an adapter is written with.
 //!
-//! A source adapter reads a [`SourceInput`] and returns typed [`Evidence`].
-//! The crate root holds what every adapter uses; the modules hold what some
-//! adapters use:
+//! A source adapter reads a [`SourceInput`] and returns typed [`Evidence`];
+//! a target adapter builds a [`target::Slice`] of the plan into a workspace
+//! and returns a [`target::Report`]. The crate root holds what every source
+//! adapter uses, [`target`] what a target adapter uses, and the other modules
+//! what some source adapters use:
 //!
 //! - [`source_adapter!`] exports an adapter's metadata and extraction
 //!   functions as a WebAssembly component, and [`metadata`] answers the
-//!   first of them.
+//!   first of them. [`target_adapter!`] does the same for a target adapter's
+//!   metadata and build functions, with [`target::metadata`] and
+//!   [`target::build`] behind them.
 //! - [`Context`], [`Seam`], and [`extract`](fn@extract) run extraction over
 //!   the boundaries selected by an adapter, at most [`CONCURRENT`] at a time,
 //!   laying a seam's files into its turn whole when they fit within
@@ -98,9 +102,15 @@
 //!   and gate its answer. [`extract`](fn@extract) mines every seam of a source.
 //! - **Context**: the adapter identifier, source input, and model available to
 //!   one extraction call. See [`Context`].
-//! - **Lend**: the workspace directory made readable to the model for a seam.
+//! - **Lend**: the workspace directory made readable to the model for a seam,
+//!   or writable for a build.
 //! - **Finding**: a validation problem returned to the model for correction.
 //!   The host limits how many correction rounds are available.
+//! - **Slice**: the unit a target adapter builds, one entry of the plan with
+//!   its cut of the specification and the design. See [`target::Slice`].
+//! - **Report**: what a build answers, the requirements it covered and the
+//!   files it wrote, held to its slice by the report gate. See
+//!   [`target::Report`].
 //! - **Stem**: the first dotted segment of a claim id, `orders` in
 //!   `orders.create`. A [`Seam`]'s `stems` hold its `requirement` and
 //!   `criterion` ids to them, and the engine slices its plan by stem.
@@ -112,7 +122,8 @@
 //! unusable input.
 //!
 //! Progress is emitted through `tracing`. Every event names the source and,
-//! within a seam, its index. An adapter opens at its guest environment's
+//! within a seam, its index, or the slice a build is of. An adapter opens at
+//! its guest environment's
 //! `RUST_LOG`, which the Omnia runtime sets from the run's one tracing level:
 //!
 //! - `info` on a bare `emery` run, so this crate's progress reaches stderr.
@@ -123,6 +134,7 @@
 mod extract;
 mod reference;
 pub mod survey;
+pub mod target;
 pub mod workspace;
 
 pub use emery_adapter::is_kebab;
@@ -157,6 +169,8 @@ const EXTRACT: &str = "extract.md";
 const CLAIMS: &str = "claims.md";
 // The prompt of a survey by model, for the adapter that puts one.
 const SURVEY: &str = "survey.md";
+// The prompt of a target adapter's build turn.
+const BUILD: &str = "build.md";
 
 /// Exports an adapter's metadata and extraction functions as a component.
 ///
@@ -194,10 +208,50 @@ macro_rules! source_adapter {
     };
 }
 
-/// The host model an extraction is put to on WebAssembly.
+/// Exports a target adapter's metadata and build functions as a component.
 ///
-/// [`source_adapter!`] binds it into every [`Context`] it builds; the empty
-/// [`Model`] impl delegates each request through Omnia's WASI interface.
+/// The arguments must identify functions with these signatures:
+///
+/// - `fn() -> target::TargetMetadata`
+/// - `async fn<P: Model>(&target::Context<'_, P>) -> Result<target::Report, Error>`
+///
+/// The macro supplies a [`target::Context`] containing the imported slice,
+/// the workspace root, and the host model. It then converts the returned
+/// report or error into the `target-adapter` WIT records.
+///
+/// Invoke this macro inside a `#[cfg(target_arch = "wasm32")]` module because
+/// the export interface exists only on WebAssembly targets. Adapters needing
+/// custom guest behaviour may implement `target::export::Guest` directly.
+#[macro_export]
+macro_rules! target_adapter {
+    ($metadata:path, $build:path $(,)?) => {
+        const _: () = {
+            struct Adapter;
+    $crate::target::export::export!(Adapter with_types_in $crate::target::export);
+
+            impl $crate::target::export::Guest for Adapter {
+                fn metadata(
+                    _id: $crate::target::export::AdapterId,
+                ) -> $crate::target::export::TargetMetadata {
+                    $crate::target::export::TargetMetadata::from($metadata())
+                }
+
+                async fn build(
+                    id: $crate::target::export::AdapterId, slice: $crate::target::export::Slice,
+                    workspace: String,
+                ) -> Result<$crate::target::export::Report, $crate::target::export::Error> {
+                    $crate::target::call($build, id, slice, workspace).await
+                }
+            }
+        };
+    };
+}
+
+/// The host model a turn is put to on WebAssembly.
+///
+/// [`source_adapter!`] and [`target_adapter!`] bind it into every context
+/// they build; the empty [`Model`] impl delegates each request through
+/// Omnia's WASI interface.
 #[cfg(target_arch = "wasm32")]
 #[derive(Clone, Copy, Debug, Default)]
 pub struct Provider;

@@ -1,25 +1,27 @@
-//! Decodes a `specify` run's sources and registries from its carriers.
+//! Decodes a run's sources, target, and registries from its carriers.
 //!
-//! The carriers are argv, as positional adapters and `--description` values,
-//! and an operator-owned `emery.toml`, never both. A run naming its sources
-//! on the command line still reads the project-root file's `[registries]`
-//! table, and that table alone.
+//! The carriers are argv — positional adapters and `--description` values
+//! for `specify`, one positional adapter for `build` — and an operator-owned
+//! `emery.toml`, never both. A run naming its adapters on the command line
+//! still reads the project-root file's `[registries]` table, and that table
+//! alone.
 
 use std::convert::{TryFrom, TryInto};
 use std::path::{Path, PathBuf};
 use std::str::FromStr as _;
 
 use anyhow::Context;
+use emery_engine::build::BuildInput;
 use emery_engine::specify::{SourceConfig, SourceContent};
 use emery_engine::{AdapterRef, Registries, preopen_join, preopen_path};
 use omnia_sdk::plugins::Digest;
 use omnia_sdk::{Error, bad_request};
 use serde::de::{DeserializeOwned, IgnoredAny};
 
-/// The config file a run naming no sources looks for at the project root.
+/// The config file a run naming no adapters looks for at the project root.
 pub const CONFIG_FILE: &str = "emery.toml";
 
-/// What a run's carriers decode.
+/// What a `specify` run's carriers decode.
 #[derive(Debug, Default)]
 pub struct Decoded {
     /// The sources, in declaration order.
@@ -85,10 +87,7 @@ impl TryFrom<Carrier<'_>> for Decoded {
     fn try_from(carrier: Carrier<'_>) -> Result<Self, Error> {
         let (label, decoded) = match carrier {
             Carrier::Config(path) => {
-                let path = preopen_path(path).map_err(|err| {
-                    let description = err.description();
-                    bad_request!("invalid argument --config: {description}")
-                })?;
+                let path = config_path(path)?;
                 (path.display().to_string(), Self::try_from(path.as_path())?)
             }
             Carrier::DiscoverOrEmpty => {
@@ -112,10 +111,7 @@ impl TryFrom<Carrier<'_>> for Decoded {
                     sources.push(argv_source(reference, SourceContent::Value(text.into()))?);
                 }
 
-                let registries = match discover()? {
-                    Some(path) => registries_from(path)?,
-                    None => Registries::default(),
-                };
+                let registries = project_registries()?;
                 ("argv".to_string(), Self { sources, registries })
             }
         };
@@ -129,7 +125,7 @@ impl TryFrom<&Path> for Decoded {
     type Error = Error;
 
     fn try_from(path: &Path) -> Result<Self, Error> {
-        let file: ConfigFile = ConfigFile::read(path)?;
+        let file: ConfigFile<Vec<SourceEntry>, IgnoredAny> = ConfigFile::read(path)?;
 
         let base = path
             .parent()
@@ -149,6 +145,73 @@ impl TryFrom<&Path> for Decoded {
     }
 }
 
+/// A positional target adapter and an optional `--config` path.
+pub struct TargetCarriers<'a> {
+    /// The target adapter reference from argv.
+    pub adapter: Option<&'a str>,
+    /// When set, names the config file and forbids an argv adapter.
+    pub config: Option<&'a Path>,
+}
+
+impl TryFrom<TargetCarriers<'_>> for BuildInput {
+    type Error = Error;
+
+    fn try_from(carriers: TargetCarriers<'_>) -> Result<Self, Error> {
+        let (label, input) = match (carriers.adapter, carriers.config) {
+            (Some(_), Some(_)) => {
+                return Err(bad_request!("--config cannot be combined with `<adapter>`"));
+            }
+            (Some(reference), None) => {
+                let input = Self {
+                    adapter: AdapterRef::from_str(reference)?,
+                    digest: None,
+                    registries: project_registries()?,
+                };
+                ("argv".to_string(), input)
+            }
+            (None, Some(path)) => {
+                let path = config_path(path)?;
+                (path.display().to_string(), target_from(&path)?)
+            }
+            (None, None) => {
+                let Some(path) = discover()? else {
+                    return Err(target_required("no target adapter"));
+                };
+                (CONFIG_FILE.to_string(), target_from(path)?)
+            }
+        };
+        tracing::debug!(carrier = %label, adapter = %input.adapter, "target decoded");
+
+        Ok(input)
+    }
+}
+
+fn target_from(path: &Path) -> Result<BuildInput, Error> {
+    let file: ConfigFile<IgnoredAny, Option<TargetEntry>> = ConfigFile::read(path)?;
+    let Some(target) = file.target else {
+        return Err(target_required(&format!("{} has no `[target]` table", path.display())));
+    };
+    Ok(BuildInput {
+        adapter: target.adapter,
+        digest: target.digest,
+        registries: file.registries,
+    })
+}
+
+fn target_required(description: &str) -> Error {
+    Error::BadRequest {
+        code: "build-target-required".into(),
+        description: description.to_owned(),
+    }
+}
+
+fn config_path(path: &Path) -> Result<PathBuf, Error> {
+    preopen_path(path).map_err(|err| {
+        let description = err.description();
+        bad_request!("invalid argument --config: {description}")
+    })
+}
+
 fn description(entry: &str) -> Result<(&str, &str), Error> {
     entry.split_once('=').filter(|(reference, _)| !reference.is_empty()).ok_or_else(|| {
         bad_request!("invalid argument --description: expected `<adapter>=<text>`, got `{entry}`")
@@ -156,7 +219,7 @@ fn description(entry: &str) -> Result<(&str, &str), Error> {
 }
 
 fn argv_source(reference: &str, content: SourceContent) -> Result<SourceConfig, Error> {
-    let adapter = AdapterRef::from_str(reference)?.anchored_to(Path::new("."))?;
+    let adapter = AdapterRef::from_str(reference)?;
     Ok(SourceConfig {
         name: adapter.name()?,
         adapter,
@@ -165,10 +228,14 @@ fn argv_source(reference: &str, content: SourceContent) -> Result<SourceConfig, 
     })
 }
 
-// The `[[source]]` entries are skipped undecoded, so what they hold never
-// refuses a run that named its own sources.
-fn registries_from(path: &Path) -> Result<Registries, Error> {
-    Ok(ConfigFile::<IgnoredAny>::read(path)?.registries)
+// The project-root file's `[registries]` alone: its `[[source]]` entries and
+// `[target]` table are skipped undecoded, so what they hold never refuses a
+// run that named its own adapters.
+fn project_registries() -> Result<Registries, Error> {
+    Ok(match discover()? {
+        Some(path) => ConfigFile::<IgnoredAny, IgnoredAny>::read(path)?.registries,
+        None => Registries::default(),
+    })
 }
 
 fn discover() -> Result<Option<&'static Path>, Error> {
@@ -177,17 +244,21 @@ fn discover() -> Result<Option<&'static Path>, Error> {
     Ok(found.then_some(path))
 }
 
-// `Sources` is the shape the `[[source]]` entries are read as: decoded, or
-// skipped by a run reading the file for its table alone.
+// `Sources` and `Target` are the shapes the `[[source]]` entries and the
+// `[target]` table are read as: decoded, or skipped by a run reading the
+// file for another part alone.
 #[derive(Debug, Default, serde::Deserialize)]
 #[serde(deny_unknown_fields)]
 #[serde(default)]
-struct ConfigFile<Sources = Vec<SourceEntry>> {
+struct ConfigFile<Sources, Target> {
     source: Sources,
+    target: Target,
     registries: Registries,
 }
 
-impl<File: DeserializeOwned + Default> ConfigFile<File> {
+impl<Sources: DeserializeOwned + Default, Target: DeserializeOwned + Default>
+    ConfigFile<Sources, Target>
+{
     fn read(path: &Path) -> Result<Self, Error> {
         let raw =
             std::fs::read_to_string(path).with_context(|| format!("reading {}", path.display()))?;
@@ -203,9 +274,17 @@ impl<File: DeserializeOwned + Default> ConfigFile<File> {
 struct SourceEntry {
     // Omitted, the adapter's name, as on the command line.
     name: Option<String>,
+    // A local component is beneath the adapters root, never beside the file.
     adapter: AdapterRef,
     path: Option<PathBuf>,
     description: Option<String>,
+    digest: Option<Digest>,
+}
+
+#[derive(Debug, serde::Deserialize)]
+#[serde(deny_unknown_fields, rename_all = "kebab-case")]
+struct TargetEntry {
+    adapter: AdapterRef,
     digest: Option<Digest>,
 }
 
@@ -215,7 +294,7 @@ struct ConfigBase<'a>(&'a Path);
 impl SourceEntry {
     fn try_into_config(self, base: ConfigBase<'_>) -> Result<SourceConfig, Error> {
         let ConfigBase(base) = base;
-        let adapter = self.adapter.anchored_to(base)?;
+        let adapter = self.adapter;
         let name = match self.name {
             Some(name) => name,
             None => adapter.name()?,
