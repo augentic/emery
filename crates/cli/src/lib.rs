@@ -156,13 +156,12 @@ impl TryFrom<SpecifyArgs> for SpecifyInput {
             descriptions,
             config,
         } = args;
-        let carriers = config::SourceCarriers {
+        config::SourceCarriers {
             adapters: &adapters,
             descriptions: &descriptions,
             config: config.as_deref(),
-        };
-        let config::Decoded { sources, registries } = carriers.try_into()?;
-        Ok(Self { sources, registries })
+        }
+        .try_into()
     }
 }
 

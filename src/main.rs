@@ -47,11 +47,16 @@ omnia::runtime!({
     },
 });
 
-// The adapters root is created on first use so the mount opens; a root that
-// cannot be created is reported by the mount's own open.
+// The adapters root is created on first use so the mount opens. It must lie
+// apart from the project: with no home directory there is no such root, so
+// the runtime stops before any guest runs rather than mount one inside the
+// tree a run can write.
 #[cfg(not(target_arch = "wasm32"))]
 fn adapters_root() -> PathBuf {
-    let root = std::env::home_dir().unwrap_or_default().join(".emery").join("adapters");
-    let _ = std::fs::create_dir_all(&root);
+    let home = std::env::home_dir()
+        .expect("the adapters root is `~/.emery/adapters`, which needs a home directory: set HOME");
+    let root = home.join(".emery").join("adapters");
+    std::fs::create_dir_all(&root)
+        .unwrap_or_else(|err| panic!("creating the adapters root {}: {err}", root.display()));
     root
 }

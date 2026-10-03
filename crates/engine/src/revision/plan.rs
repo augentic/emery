@@ -42,11 +42,11 @@ impl Plan {
     /// Returns the slices in build order.
     ///
     /// Every slice comes after each slice it depends on; among the slices
-    /// ready at once, the lower id comes first. The plan is acyclic by
-    /// construction, so every slice is placed.
+    /// ready at once, the lower id comes first. The engine writes no cycle;
+    /// were a stored plan to hold one, its slices come last, in id order.
     #[must_use]
     pub fn order(&self) -> Vec<&Slice> {
-        let mut pending: BTreeMap<SliceId, BTreeSet<SliceId>> = self
+        let pending = self
             .slices
             .iter()
             .map(|slice| {
@@ -62,22 +62,26 @@ impl Plan {
             })
             .collect();
 
-        // the lowest id with nothing pending, in turn; a cycle, which the
-        // engine never writes, falls back to id order
-        let mut ordered = Vec::with_capacity(self.slices.len());
-        while let Some(&first) = pending.keys().next() {
-            let next = pending
-                .iter()
-                .find(|(_, dependencies)| dependencies.is_empty())
-                .map_or(first, |(id, _)| *id);
-            pending.remove(&next);
-            for dependencies in pending.values_mut() {
-                dependencies.remove(&next);
-            }
-            ordered.extend(self.slice(next));
-        }
-        ordered
+        let (ordered, cyclic) = kahn(pending);
+        ordered.into_iter().chain(cyclic).filter_map(|id| self.slice(id)).collect()
     }
+}
+
+// Kahn's elimination over `pending`, the nodes each node waits on: the lowest
+// node with nothing pending, in turn. Returns the nodes placed, then the
+// nodes a cycle leaves unplaceable, in their own order.
+pub fn kahn<T: Ord + Copy>(mut pending: BTreeMap<T, BTreeSet<T>>) -> (Vec<T>, Vec<T>) {
+    let mut ordered = Vec::with_capacity(pending.len());
+    while let Some(next) =
+        pending.iter().find(|(_, dependencies)| dependencies.is_empty()).map(|(node, _)| *node)
+    {
+        pending.remove(&next);
+        for dependencies in pending.values_mut() {
+            dependencies.remove(&next);
+        }
+        ordered.push(next);
+    }
+    (ordered, pending.into_keys().collect())
 }
 
 impl revision::Document for Plan {

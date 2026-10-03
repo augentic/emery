@@ -65,6 +65,13 @@ pub struct SourceScript {
     pub rendezvous: Option<Rendezvous>,
 }
 
+impl SourceScript {
+    /// Returns every extract dispatch so far: the adapter id and its input, in dispatch order.
+    pub fn calls(&self) -> Vec<(String, SourceInput)> {
+        self.calls.lock().expect("calls").clone()
+    }
+}
+
 /// A barrier that holds extraction until every expected source has arrived.
 ///
 /// The bounded wait reports missing sources, allowing serial extraction to
@@ -121,6 +128,14 @@ pub struct TargetScript {
     pub calls: Arc<Mutex<Vec<(String, Slice, String)>>>,
     /// Every metadata dispatch, by adapter id, in call order.
     pub metadata: Arc<Mutex<Vec<String>>>,
+}
+
+impl TargetScript {
+    /// Returns every build dispatch so far: the adapter id, the slice, and the
+    /// workspace root, in dispatch order.
+    pub fn calls(&self) -> Vec<(String, Slice, String)> {
+        self.calls.lock().expect("calls").clone()
+    }
 }
 
 /// The scripted provider behind every root scenario.

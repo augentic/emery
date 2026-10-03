@@ -129,12 +129,10 @@ pub async fn load<'a, P: Source + Plugins>(
 pub async fn load_target<P: Target + Plugins>(
     provider: &P, adapter: &AdapterRef, digest: Option<&Digest>, registries: &Registries,
 ) -> Result<Loaded<TargetMetadata>, Error> {
-    let mut loaded =
+    let loaded =
         load_axis(provider, [(adapter, digest)], registries, |id| Target::metadata(provider, id))
             .await?;
-    loaded
-        .remove(&adapter.to_string())
-        .ok_or_else(|| server_error!("adapter `{adapter}` was not loaded"))
+    loaded.into_values().next().ok_or_else(|| server_error!("adapter `{adapter}` was not loaded"))
 }
 
 // The metadata an axis declares, gated alike: each carries the minimum
@@ -383,7 +381,7 @@ impl AdapterRef {
 }
 
 impl Display for AdapterRef {
-    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         match self {
             Self::Package {
                 namespace,

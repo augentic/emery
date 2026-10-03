@@ -47,9 +47,14 @@
 //!   a workspace.
 //! - **Report gate**: the validation performed by
 //!   [`target::Report::findings`] before a report is accepted.
+//! - **Root-relative path**: a `/`-separated path beneath the root a run
+//!   lends, which both gates hold to [`beneath`].
 
+mod path;
 pub mod source;
 pub mod target;
+
+pub use path::{BadPath, SKIP_DIRS, SKIP_FILES, beneath};
 
 /// Returns whether `value` is lowercase kebab-case.
 ///

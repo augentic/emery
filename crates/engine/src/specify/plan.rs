@@ -20,7 +20,7 @@ use schemars::JsonSchema;
 use serde::Deserialize;
 use serde_json::{Value, json};
 
-use crate::revision::{EMERY, Plan, ReqId, Slice, SliceId};
+use crate::revision::{EMERY, Plan, ReqId, Slice, SliceId, kahn};
 use crate::specify::basis::Basis;
 use crate::specify::brief::{BasesSection, Brief, Review};
 
@@ -307,13 +307,12 @@ pub struct SliceAnswer {
 }
 
 impl SliceAnswer {
-    // The slice names Kahn's elimination cannot order: what remains once every
-    // slice with no pending dependency is removed in turn. A dependency on a
-    // name that is no slice, or on the slice itself, is found elsewhere and
-    // does not count.
+    // The slice names a cycle leaves unorderable. A dependency on a name that
+    // is no slice, or on the slice itself, is found elsewhere and does not
+    // count.
     fn unorderable(&self) -> Vec<&str> {
         let names: BTreeSet<&str> = self.slices.iter().map(|draft| draft.name.as_str()).collect();
-        let mut pending: BTreeMap<&str, BTreeSet<&str>> = self
+        let pending = self
             .slices
             .iter()
             .map(|draft| {
@@ -327,22 +326,8 @@ impl SliceAnswer {
             })
             .collect();
 
-        loop {
-            let free: Vec<&str> = pending
-                .iter()
-                .filter(|(_, dependencies)| dependencies.is_empty())
-                .map(|(name, _)| *name)
-                .collect();
-            if free.is_empty() {
-                return pending.into_keys().collect();
-            }
-            for name in free {
-                pending.remove(name);
-                for dependencies in pending.values_mut() {
-                    dependencies.remove(name);
-                }
-            }
-        }
+        let (_, cyclic) = kahn(pending);
+        cyclic
     }
 }
 

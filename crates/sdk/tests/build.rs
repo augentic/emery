@@ -188,7 +188,7 @@ async fn gate_findings() {
         "- covered `REQ-009` is not a requirement of slice `SLICE-001`; its requirements are \
          REQ-001, REQ-002",
         "- covered `REQ-001` is listed twice",
-        "- written `../escape.rs` escapes the workspace root",
+        "- written `../escape.rs` escapes the root",
         "- written `./` names no file",
         "- written `src/orders.rs` is listed twice",
         "- written `.omnia/storage/x` is under the engine's own `.omnia/`",

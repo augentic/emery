@@ -50,24 +50,10 @@ impl Spec {
     /// specification does not hold is left out.
     #[must_use]
     pub fn cut(&self, ids: &[ReqId]) -> String {
-        let requirements =
+        let requirements: Vec<&Requirement> =
             self.requirements.iter().filter(|requirement| ids.contains(&requirement.id)).collect();
-        Cut {
-            preamble: &self.preamble,
-            requirements,
-        }
-        .to_string()
-    }
-}
-
-struct Cut<'a> {
-    preamble: &'a [String],
-    requirements: Vec<&'a Requirement>,
-}
-
-impl Display for Cut<'_> {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        revision::write(f, "Specification", self.preamble, &self.requirements)
+        fmt::from_fn(|f| revision::write(f, "Specification", &self.preamble, &requirements))
+            .to_string()
     }
 }
 

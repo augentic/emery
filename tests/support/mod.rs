@@ -1,16 +1,21 @@
 //! Provides the scripted provider and the runners the root suites share.
 //!
-//! The provider and its runner are in [`provider`]. The runners here assert
+//! The provider and its runner are in [`provider`], the two scratch roots in
+//! [`scratch`], and the seeded revision in [`store`]. The runners here assert
 //! on the response, a success or the typed failure envelope.
 
-#![allow(dead_code, reason = "shared by suites that each use a subset")]
+#![allow(dead_code, unused_imports, reason = "shared by suites that each use a subset")]
 
 mod provider;
+mod scratch;
+mod store;
 
 use omnia_sdk::api::command::Response;
 use omnia_sdk::{BlobStore, StateStore};
 pub use provider::*;
+pub use scratch::*;
 use serde_json::Value;
+pub use store::*;
 
 /// Runs one CLI invocation and asserts success.
 pub async fn cli_ok<S>(provider: &Provider<S>, argv: &[&str]) -> Response

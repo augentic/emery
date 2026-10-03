@@ -104,7 +104,7 @@ pub async fn specify<P: Model + Source + StateStore + BlobStore + Plugins>(
 }
 
 /// The sources used to generate one revision.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "kebab-case")]
 pub struct SpecifyInput {
     /// Sources in declaration order, which reconciliation preserves for

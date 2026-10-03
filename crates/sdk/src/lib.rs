@@ -103,7 +103,8 @@
 //! - **Context**: the adapter identifier, source input, and model available to
 //!   one extraction call. See [`Context`].
 //! - **Lend**: the workspace directory made readable to the model for a seam,
-//!   or writable for a build.
+//!   or handed to it to build into for a build; what may be written beneath
+//!   it is the deployment's grant.
 //! - **Finding**: a validation problem returned to the model for correction.
 //!   The host limits how many correction rounds are available.
 //! - **Slice**: the unit a target adapter builds, one entry of the plan with
@@ -137,7 +138,6 @@ pub mod survey;
 pub mod target;
 pub mod workspace;
 
-pub use emery_adapter::is_kebab;
 #[cfg(target_arch = "wasm32")]
 #[doc(inline)]
 pub use emery_adapter::source::export;
@@ -145,6 +145,7 @@ pub use emery_adapter::source::{
     AdapterMetadata, Anchor, Backing, BadAnchor, Claim, ClaimKind, Evidence, Source, SourceContent,
     SourceInput, SourceKind,
 };
+pub use emery_adapter::{BadPath, beneath, is_kebab};
 pub use emery_prose::{Doc, body, check, find, prose};
 pub use omnia_sdk::{Error, Model, bad_gateway, bad_request, not_found, server_error};
 /// The JSON crate a [`Claim`]'s `extras` are built from, for an adapter that
@@ -347,18 +348,4 @@ pub struct Context<'a, P> {
 // the SDK's for a runtime reference, reported before a turn is spent.
 fn prompt(docs: &[Doc], path: &str) -> Result<&'static str, Error> {
     body(docs, path).ok_or_else(|| server_error!("`{path}` is not embedded"))
-}
-
-fn beneath(path: &str) -> Result<String, &'static str> {
-    if path.starts_with('/') || path.split('/').any(|segment| segment == "..") {
-        return Err("escapes the source root");
-    }
-
-    let segments: Vec<&str> =
-        path.split('/').filter(|segment| !segment.is_empty() && *segment != ".").collect();
-    if segments.is_empty() {
-        return Err("names no file");
-    }
-
-    Ok(segments.join("/"))
 }

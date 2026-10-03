@@ -2,39 +2,22 @@
 //!
 //! The carriers are argv — positional adapters and `--description` values
 //! for `specify`, one positional adapter for `build` — and an operator-owned
-//! `emery.toml`, never both. A run naming its adapters on the command line
-//! still reads the project-root file's `[registries]` table, and that table
-//! alone.
+//! `emery.toml`, never both. The file is read whole, so every table it holds
+//! must parse; a run naming its adapters on the command line takes its
+//! `[registries]` table alone.
 
-use std::convert::{TryFrom, TryInto};
 use std::path::{Path, PathBuf};
 use std::str::FromStr as _;
 
 use anyhow::Context;
 use emery_engine::build::BuildInput;
-use emery_engine::specify::{SourceConfig, SourceContent};
+use emery_engine::specify::{SourceConfig, SourceContent, SpecifyInput};
 use emery_engine::{AdapterRef, Registries, preopen_join, preopen_path};
 use omnia_sdk::plugins::Digest;
 use omnia_sdk::{Error, bad_request};
-use serde::de::{DeserializeOwned, IgnoredAny};
 
 /// The config file a run naming no adapters looks for at the project root.
 pub const CONFIG_FILE: &str = "emery.toml";
-
-/// What a `specify` run's carriers decode.
-#[derive(Debug, Default)]
-pub struct Decoded {
-    /// The sources, in declaration order.
-    pub sources: Vec<SourceConfig>,
-    /// The registries the run's package adapters fetch from.
-    pub registries: Registries,
-}
-
-enum Carrier<'a> {
-    Config(&'a Path),
-    DiscoverOrEmpty,
-    Argv { adapters: &'a [String], descriptions: &'a [String] },
-}
 
 /// Positional adapters, `--description` values, and an optional `--config` path.
 pub struct SourceCarriers<'a> {
@@ -46,63 +29,24 @@ pub struct SourceCarriers<'a> {
     pub config: Option<&'a Path>,
 }
 
-impl<'a> TryFrom<SourceCarriers<'a>> for Carrier<'a> {
+impl TryFrom<SourceCarriers<'_>> for SpecifyInput {
     type Error = Error;
 
-    fn try_from(carriers: SourceCarriers<'a>) -> Result<Self, Error> {
+    fn try_from(carriers: SourceCarriers<'_>) -> Result<Self, Error> {
         let SourceCarriers {
             adapters,
             descriptions,
             config,
         } = carriers;
-        match config {
-            Some(path) => {
-                if !adapters.is_empty() || !descriptions.is_empty() {
-                    return Err(bad_request!(
-                        "--config cannot be combined with `<adapter>` or `--description`"
-                    ));
-                }
-                Ok(Self::Config(path))
+        let argv = !adapters.is_empty() || !descriptions.is_empty();
+        let (label, input) = match (argv, config) {
+            (true, Some(_)) => {
+                return Err(bad_request!(
+                    "--config cannot be combined with `<adapter>` or `--description`"
+                ));
             }
-            None if adapters.is_empty() && descriptions.is_empty() => Ok(Self::DiscoverOrEmpty),
-            None => Ok(Self::Argv {
-                adapters,
-                descriptions,
-            }),
-        }
-    }
-}
-
-impl<'a> TryFrom<SourceCarriers<'a>> for Decoded {
-    type Error = Error;
-
-    fn try_from(carriers: SourceCarriers<'a>) -> Result<Self, Error> {
-        Carrier::try_from(carriers)?.try_into()
-    }
-}
-
-impl TryFrom<Carrier<'_>> for Decoded {
-    type Error = Error;
-
-    fn try_from(carrier: Carrier<'_>) -> Result<Self, Error> {
-        let (label, decoded) = match carrier {
-            Carrier::Config(path) => {
-                let path = config_path(path)?;
-                (path.display().to_string(), Self::try_from(path.as_path())?)
-            }
-            Carrier::DiscoverOrEmpty => {
-                let decoded = match discover()? {
-                    Some(path) => Self::try_from(path)?,
-                    None => Self::default(),
-                };
-                (CONFIG_FILE.to_string(), decoded)
-            }
-            Carrier::Argv {
-                adapters,
-                descriptions,
-            } => {
+            (true, None) => {
                 let mut sources = Vec::with_capacity(adapters.len() + descriptions.len());
-
                 for reference in adapters {
                     sources.push(argv_source(reference, SourceContent::Workspace(".".into()))?);
                 }
@@ -110,38 +54,30 @@ impl TryFrom<Carrier<'_>> for Decoded {
                     let (reference, text) = description(entry)?;
                     sources.push(argv_source(reference, SourceContent::Value(text.into()))?);
                 }
-
-                let registries = project_registries()?;
-                ("argv".to_string(), Self { sources, registries })
+                let input = Self {
+                    sources,
+                    registries: project_registries()?,
+                };
+                ("argv".to_string(), input)
+            }
+            (false, Some(path)) => {
+                let path = config_path(path)?;
+                (path.display().to_string(), sources_from(&path)?)
+            }
+            (false, None) => {
+                let input = match discover()? {
+                    Some(path) => sources_from(path)?,
+                    None => Self {
+                        sources: Vec::new(),
+                        registries: Registries::default(),
+                    },
+                };
+                (CONFIG_FILE.to_string(), input)
             }
         };
-        tracing::debug!(carrier = %label, sources = decoded.sources.len(), "sources decoded");
+        tracing::debug!(carrier = %label, sources = input.sources.len(), "sources decoded");
 
-        Ok(decoded)
-    }
-}
-
-impl TryFrom<&Path> for Decoded {
-    type Error = Error;
-
-    fn try_from(path: &Path) -> Result<Self, Error> {
-        let file: ConfigFile<Vec<SourceEntry>, IgnoredAny> = ConfigFile::read(path)?;
-
-        let base = path
-            .parent()
-            .filter(|parent| !parent.as_os_str().is_empty())
-            .unwrap_or_else(|| Path::new("."));
-        let base = ConfigBase(base);
-        let sources = file
-            .source
-            .into_iter()
-            .map(|entry| entry.try_into_config(base))
-            .collect::<Result<Vec<_>, _>>()?;
-
-        Ok(Self {
-            sources,
-            registries: file.registries,
-        })
+        Ok(input)
     }
 }
 
@@ -186,8 +122,25 @@ impl TryFrom<TargetCarriers<'_>> for BuildInput {
     }
 }
 
+fn sources_from(path: &Path) -> Result<SpecifyInput, Error> {
+    let file = ConfigFile::read(path)?;
+    let base = path
+        .parent()
+        .filter(|parent| !parent.as_os_str().is_empty())
+        .unwrap_or_else(|| Path::new("."));
+    let sources = file
+        .source
+        .into_iter()
+        .map(|entry| entry.into_config(base))
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(SpecifyInput {
+        sources,
+        registries: file.registries,
+    })
+}
+
 fn target_from(path: &Path) -> Result<BuildInput, Error> {
-    let file: ConfigFile<IgnoredAny, Option<TargetEntry>> = ConfigFile::read(path)?;
+    let file = ConfigFile::read(path)?;
     let Some(target) = file.target else {
         return Err(target_required(&format!("{} has no `[target]` table", path.display())));
     };
@@ -228,12 +181,9 @@ fn argv_source(reference: &str, content: SourceContent) -> Result<SourceConfig, 
     })
 }
 
-// The project-root file's `[registries]` alone: its `[[source]]` entries and
-// `[target]` table are skipped undecoded, so what they hold never refuses a
-// run that named its own adapters.
 fn project_registries() -> Result<Registries, Error> {
     Ok(match discover()? {
-        Some(path) => ConfigFile::<IgnoredAny, IgnoredAny>::read(path)?.registries,
+        Some(path) => ConfigFile::read(path)?.registries,
         None => Registries::default(),
     })
 }
@@ -244,21 +194,15 @@ fn discover() -> Result<Option<&'static Path>, Error> {
     Ok(found.then_some(path))
 }
 
-// `Sources` and `Target` are the shapes the `[[source]]` entries and the
-// `[target]` table are read as: decoded, or skipped by a run reading the
-// file for another part alone.
 #[derive(Debug, Default, serde::Deserialize)]
-#[serde(deny_unknown_fields)]
-#[serde(default)]
-struct ConfigFile<Sources, Target> {
-    source: Sources,
-    target: Target,
+#[serde(deny_unknown_fields, default)]
+struct ConfigFile {
+    source: Vec<SourceEntry>,
+    target: Option<TargetEntry>,
     registries: Registries,
 }
 
-impl<Sources: DeserializeOwned + Default, Target: DeserializeOwned + Default>
-    ConfigFile<Sources, Target>
-{
+impl ConfigFile {
     fn read(path: &Path) -> Result<Self, Error> {
         let raw =
             std::fs::read_to_string(path).with_context(|| format!("reading {}", path.display()))?;
@@ -281,19 +225,9 @@ struct SourceEntry {
     digest: Option<Digest>,
 }
 
-#[derive(Debug, serde::Deserialize)]
-#[serde(deny_unknown_fields, rename_all = "kebab-case")]
-struct TargetEntry {
-    adapter: AdapterRef,
-    digest: Option<Digest>,
-}
-
-#[derive(Clone, Copy)]
-struct ConfigBase<'a>(&'a Path);
-
 impl SourceEntry {
-    fn try_into_config(self, base: ConfigBase<'_>) -> Result<SourceConfig, Error> {
-        let ConfigBase(base) = base;
+    // `base` is the directory the file's `path` keys are relative to.
+    fn into_config(self, base: &Path) -> Result<SourceConfig, Error> {
         let adapter = self.adapter;
         let name = match self.name {
             Some(name) => name,
@@ -321,4 +255,11 @@ impl SourceEntry {
             digest: self.digest,
         })
     }
+}
+
+#[derive(Debug, serde::Deserialize)]
+#[serde(deny_unknown_fields, rename_all = "kebab-case")]
+struct TargetEntry {
+    adapter: AdapterRef,
+    digest: Option<Digest>,
 }

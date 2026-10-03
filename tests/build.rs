@@ -9,16 +9,13 @@
 mod support;
 
 use std::fs;
-use std::path::{Path, PathBuf};
 
 use emery_adapter::target::Report;
-use emery_engine::{ADAPTERS, CONTAINER, REVISION_KEY};
+use emery_engine::ADAPTERS;
 use omnia_sdk::plugins::Location;
 use omnia_sdk::{bad_gateway, bad_request};
-use omnia_test::guest::Memory;
 use serde_json::Value;
-use sha2::{Digest as _, Sha256};
-use support::{Provider, cli_ok, digest, fail};
+use support::{Provider, Scratch, cli_ok, digest, fail, seed};
 
 const SPEC: &[u8] = include_bytes!("build/spec.json");
 const DESIGN: &[u8] = include_bytes!("build/design.json");
@@ -34,70 +31,6 @@ const PLAN_002: &str = "## Slice: orders\n\nID: SLICE-002\nRequirements: [REQ-00
                         [orders.line, orders.order]\nDepends on: [SLICE-001]\n\nDelivers order \
                         creation and cancellation for a signed-in caller; verified by placing and \
                         cancelling an order under a session from `authentication`.";
-
-// Two roots, as the guest's two preopens: a config file is project-relative,
-// a component is relative to the adapters root the runtime mounts apart from
-// the project, so each write answers with the path the CLI is handed.
-struct Scratch {
-    project: tempfile::TempDir,
-    adapters: tempfile::TempDir,
-}
-
-const PROJECT_ROOT: &str = env!("CARGO_MANIFEST_DIR");
-
-fn adapters_root() -> PathBuf {
-    Path::new(PROJECT_ROOT).join(ADAPTERS)
-}
-
-impl Scratch {
-    fn new() -> Self {
-        let adapters = adapters_root();
-        fs::create_dir_all(&adapters).expect("adapters root");
-        Self {
-            project: tempfile::TempDir::new_in(PROJECT_ROOT).expect("project tempdir"),
-            adapters: tempfile::TempDir::new_in(adapters).expect("adapters tempdir"),
-        }
-    }
-
-    fn write_under(root: &Path, base: &Path, name: &str, body: &str) -> String {
-        let path = root.join(name);
-        fs::write(&path, body).unwrap_or_else(|err| panic!("write {name}: {err}"));
-        path.strip_prefix(base)
-            .expect("path under its root")
-            .to_str()
-            .expect("utf-8 path")
-            .to_string()
-    }
-
-    // The loader is scripted, so the component only has to exist as a `.wasm` file.
-    fn component(&self) -> String {
-        Self::write_under(self.adapters.path(), &adapters_root(), "builder.wasm", "\0asm-stub")
-    }
-
-    fn config(&self, body: &str) -> String {
-        Self::write_under(self.project.path(), Path::new(PROJECT_ROOT), "emery.toml", body)
-    }
-}
-
-// The engine's content id: SHA-256 over the length-prefixed bodies, spec,
-// design, then plan.
-fn revision(spec: &[u8], design: &[u8], plan: &[u8]) -> String {
-    let mut hasher = Sha256::new();
-    for body in [spec, design, plan] {
-        hasher.update((body.len() as u64).to_be_bytes());
-        hasher.update(body);
-    }
-    hex::encode(hasher.finalize())
-}
-
-fn seed(storage: &Memory, spec: &[u8], design: &[u8], plan: &[u8]) -> String {
-    let id = revision(spec, design, plan);
-    storage.insert_object(CONTAINER, &format!("{id}/spec.json"), spec);
-    storage.insert_object(CONTAINER, &format!("{id}/design.json"), design);
-    storage.insert_object(CONTAINER, &format!("{id}/plan.json"), plan);
-    storage.insert_state(REVISION_KEY, id.as_bytes());
-    id
-}
 
 // A provider over the two-slice revision, its model never dispatched.
 fn planned() -> (Provider, String) {
@@ -126,7 +59,7 @@ fn assert_message(envelope: &Value, fragment: &str) {
 #[tokio::test]
 async fn build_plan() {
     let scratch = Scratch::new();
-    let component = scratch.component();
+    let component = scratch.component("builder");
     let (mut provider, id) = planned();
     provider.target.reports.insert(
         "SLICE-002".to_string(),
@@ -153,7 +86,7 @@ async fn build_plan() {
     };
     assert_eq!(*path, format!("{ADAPTERS}/{component}"));
     assert_eq!(*provider.target.metadata.lock().expect("metadata"), ["builder"]);
-    let calls = provider.target.calls.lock().expect("calls").clone();
+    let calls = provider.target.calls();
     let [(first_id, first, first_root), (second_id, second, second_root)] = calls.as_slice() else {
         panic!("two slices are two dispatches: {calls:?}");
     };
@@ -196,7 +129,7 @@ async fn build_plan() {
 #[tokio::test]
 async fn build_from_config() {
     let scratch = Scratch::new();
-    let component = scratch.component();
+    let component = scratch.component("builder");
     let pin = digest("cd");
     let config = scratch.config(&format!(
         "[[source]]\nname = \"docs\"\nadapter = \"documentation\"\n\n\
@@ -216,7 +149,7 @@ async fn build_from_config() {
         provider.source.metadata.lock().expect("metadata").is_empty(),
         "no source adapter loads for a build"
     );
-    assert_eq!(provider.target.calls.lock().expect("calls").len(), 2);
+    assert_eq!(provider.target.calls().len(), 2);
 }
 
 // A run naming no adapter reads the project-root file; a package adapter
@@ -245,7 +178,7 @@ async fn build_discovered() {
             None
         )]
     );
-    assert_eq!(provider.target.calls.lock().expect("calls").len(), 2);
+    assert_eq!(provider.target.calls().len(), 2);
 
     // the table routes an argv adapter all the same
     let (provider, _) = planned();
@@ -279,7 +212,7 @@ async fn build_no_target() {
 #[tokio::test]
 async fn build_no_revision() {
     let scratch = Scratch::new();
-    let component = scratch.component();
+    let component = scratch.component("builder");
     let provider = Provider::idle();
 
     let envelope = fail(&provider, &["emery", "build", &component], 2, "spec-not-generated").await;
@@ -288,13 +221,13 @@ async fn build_no_revision() {
         "the hint names the way out: {envelope}"
     );
     assert!(provider.plugins.loads().is_empty(), "the revision is read before any load");
-    assert!(provider.target.calls.lock().expect("calls").is_empty(), "no slice is dispatched");
+    assert!(provider.target.calls().is_empty(), "no slice is dispatched");
 }
 
 #[tokio::test]
 async fn build_outdated() {
     let scratch = Scratch::new();
-    let component = scratch.component();
+    let component = scratch.component("builder");
     let provider = Provider::idle();
     seed(
         &provider.storage,
@@ -313,13 +246,13 @@ async fn build_outdated() {
 #[tokio::test]
 async fn build_unsupported_version() {
     let scratch = Scratch::new();
-    let component = scratch.component();
+    let component = scratch.component("builder");
     let (mut provider, _) = planned();
     provider.target.versions.insert("builder".to_string(), "99.0.0".to_string());
 
     let envelope = fail(&provider, &["emery", "build", &component], 1, "unsupported-version").await;
     assert_message(&envelope, "adapter `builder` requires emery 99.0.0 or newer");
-    assert!(provider.target.calls.lock().expect("calls").is_empty(), "no slice is dispatched");
+    assert!(provider.target.calls().is_empty(), "no slice is dispatched");
 }
 
 // A target's refusal of a slice keeps its class and code, named for the
@@ -327,7 +260,7 @@ async fn build_unsupported_version() {
 #[tokio::test]
 async fn build_refused() {
     let scratch = Scratch::new();
-    let component = scratch.component();
+    let component = scratch.component("builder");
     let (mut provider, _) = planned();
     provider
         .target
@@ -340,7 +273,7 @@ async fn build_refused() {
         "slice `SLICE-001` (authentication) failed: the tree already holds `src/`",
     );
     assert!(!envelope["message"].as_str().unwrap_or("").contains("stays written"));
-    assert_eq!(provider.target.calls.lock().expect("calls").len(), 1, "the run stops at the first");
+    assert_eq!(provider.target.calls().len(), 1, "the run stops at the first");
 }
 
 // A report the gate refuses is the adapter's defect: every rule it breaks is
@@ -348,7 +281,7 @@ async fn build_refused() {
 #[tokio::test]
 async fn build_bad_report() {
     let scratch = Scratch::new();
-    let component = scratch.component();
+    let component = scratch.component("builder");
     let (mut provider, _) = planned();
     provider.target.reports.insert(
         "SLICE-001".to_string(),
@@ -360,19 +293,19 @@ async fn build_bad_report() {
     for finding in [
         "- covered `REQ-009` is not a requirement of slice `SLICE-001`; its requirements are \
          REQ-001, REQ-002",
-        "- written `../escape.rs` escapes the workspace root",
+        "- written `../escape.rs` escapes the root",
         "- written `src/auth.rs` is listed twice",
     ] {
         assert_message(&envelope, finding);
     }
-    assert_eq!(provider.target.calls.lock().expect("calls").len(), 1);
+    assert_eq!(provider.target.calls().len(), 1);
 }
 
 // A failure after a slice was built names what stays written.
 #[tokio::test]
 async fn build_stops_at_failure() {
     let scratch = Scratch::new();
-    let component = scratch.component();
+    let component = scratch.component("builder");
     let (mut provider, _) = planned();
     provider
         .target
@@ -385,5 +318,5 @@ async fn build_stops_at_failure() {
         "slice `SLICE-002` (orders) failed; SLICE-001 built before it stays written: the model \
          timed out",
     );
-    assert_eq!(provider.target.calls.lock().expect("calls").len(), 2);
+    assert_eq!(provider.target.calls().len(), 2);
 }

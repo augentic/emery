@@ -415,7 +415,7 @@ async fn path_findings() {
         "claim 2: path `notes/todo.md` is outside this seam; anchor within the files it mines",
         "claim 3: path `guide/missing.md` names no regular file under the lent tree",
         "claim 4: path `dir.md` names no regular file under the lent tree",
-        "claim 6: path `../x.md` escapes the source root",
+        "claim 6: path `../x.md` escapes the root",
     ] {
         assert!(correction.contains(finding), "{finding}: {correction}");
     }

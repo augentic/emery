@@ -13,25 +13,13 @@ use std::fmt::{self, Display, Formatter};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-use crate::is_kebab;
+use crate::{BadPath, beneath, is_kebab};
 
 /// The regular expression for dotted, kebab-case claim identifiers.
 ///
 /// The derived schema for [`Claim::id`] carries it as a `pattern`, and the
 /// claim gate enforces it again in code.
 pub const CLAIM_ID_REGEX: &str = "^[a-z0-9]+(-[a-z0-9]+)*(\\.[a-z0-9]+(-[a-z0-9]+)*)*$";
-
-/// The directories of the engine's own that no claim may anchor in.
-///
-/// `.omnia/` is the runtime's storage root, wherever it occurs under a
-/// source root.
-pub const SKIP_DIRS: &[&str] = &[".omnia"];
-
-/// The files of the engine's own that no claim may anchor in.
-///
-/// They are the Markdown projections of the current revision, wherever they
-/// occur under a source root.
-pub const SKIP_FILES: &[&str] = &["spec.md", "design.md", "plan.md"];
 
 // `is_kebab` refuses the empty segment an empty value or a doubled dot
 // leaves, so the split needs no further check.
@@ -85,27 +73,13 @@ impl<'a> Anchor<'a> {
     /// # Errors
     ///
     /// Returns [`BadAnchor`] describing the first rule the anchor breaks: a
-    /// fragment outside the grammar, an absolute or `..` path, a path under
-    /// a skip root, or a range that ends before it starts.
+    /// path [`beneath`] refuses, a fragment outside the grammar, or a range
+    /// that ends before it starts.
     pub fn parse(anchor: &'a str) -> Result<Self, BadAnchor> {
         let (path, fragment) = anchor
             .split_once('#')
             .map_or((anchor, None), |(path, fragment)| (path, Some(fragment)));
-
-        if path.is_empty() || path.starts_with('/') || path.split('/').any(|seg| seg == "..") {
-            return Err(BadAnchor::Escapes);
-        }
-
-        let mut segments = path.split('/').filter(|seg| !seg.is_empty()).peekable();
-        while let Some(segment) = segments.next() {
-            let last = segments.peek().is_none();
-            if !last && SKIP_DIRS.contains(&segment) {
-                return Err(BadAnchor::SkipDir(segment.to_owned()));
-            }
-            if last && SKIP_FILES.contains(&segment) {
-                return Err(BadAnchor::SkipFile(segment.to_owned()));
-            }
-        }
+        beneath(path)?;
 
         let lines = fragment.map(lines).transpose()?;
         if let Some((start, end)) = lines
@@ -141,14 +115,10 @@ fn lines(fragment: &str) -> Result<(u64, u64), BadAnchor> {
 /// The rule a `path` anchor breaks.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum BadAnchor {
+    /// The path breaks a rule of [`beneath`].
+    Path(BadPath),
     /// The fragment is not `#L<n>` or `#L<start>-L<end>`.
     Grammar,
-    /// The path is empty, absolute, or climbs above the source root.
-    Escapes,
-    /// The path is under a directory of [`SKIP_DIRS`].
-    SkipDir(String),
-    /// The path names a file of [`SKIP_FILES`].
-    SkipFile(String),
     /// The range ends before it starts.
     Reversed {
         /// The first cited line.
@@ -158,13 +128,17 @@ pub enum BadAnchor {
     },
 }
 
+impl From<BadPath> for BadAnchor {
+    fn from(bad: BadPath) -> Self {
+        Self::Path(bad)
+    }
+}
+
 impl Display for BadAnchor {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         match self {
+            Self::Path(bad) => bad.fmt(f),
             Self::Grammar => f.write_str("is not `<path>`, `<path>#L<n>`, or `<path>#L<n>-L<n>`"),
-            Self::Escapes => f.write_str("escapes the source root"),
-            Self::SkipDir(dir) => write!(f, "is under the skip root `{dir}/`"),
-            Self::SkipFile(file) => write!(f, "names the engine's own `{file}`"),
             Self::Reversed { start, end } => {
                 write!(f, "ends at line {end}, before it starts at line {start}")
             }

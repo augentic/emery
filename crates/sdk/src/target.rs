@@ -1,9 +1,9 @@
 //! Provides the types and functions a target adapter is written with.
 //!
-//! A target adapter receives a [`Slice`] of the build plan and a writable
-//! workspace, and returns a [`Report`] of what it built. [`build`] puts the
-//! one gated turn: the slice's documents under the adapter's `build.md`, the
-//! workspace lent, and the answered report held to the slice by
+//! A target adapter receives a [`Slice`] of the build plan and the workspace
+//! to build into, and returns a [`Report`] of what it built. [`build`] puts
+//! the one gated turn: the slice's documents under the adapter's `build.md`,
+//! the workspace lent, and the answered report held to the slice by
 //! [`Report::findings`] until it passes. [`metadata`] answers the `metadata`
 //! export, and [`target_adapter!`](crate::target_adapter) exports both over
 //! an adapter's two plain fns.
@@ -60,8 +60,9 @@ pub struct Context<'a, P> {
     pub adapter_id: &'a str,
     /// The [`Slice`] to build.
     pub slice: &'a Slice,
-    /// The deployment-local path of the writable tree root, which the turn
-    /// lends to the model.
+    /// The deployment-local path of the tree root, which the turn lends to
+    /// the model. The deployment's grant decides what may be written beneath
+    /// it.
     pub workspace: &'a str,
     /// The [`Model`] the turn is put to.
     pub model: &'a P,
@@ -83,8 +84,8 @@ pub fn metadata() -> TargetMetadata {
 ///
 /// `docs` must contain `build.md`, which becomes the system prompt. The turn
 /// carries the slice's plan entry, its cut of the specification, and the
-/// whole design, lends the workspace writable, and offers the embedded
-/// references through the reference tools. The answered [`Report`] is held
+/// whole design, lends the workspace, and offers the embedded references
+/// through the reference tools. The answered [`Report`] is held
 /// to the slice by [`Report::findings`]; every finding is returned to the
 /// model for one correction round, until the host's round limit is reached.
 ///

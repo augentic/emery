@@ -11,11 +11,11 @@ use emery_adapter::target::{Slice as SliceInput, Target};
 use omnia_sdk::api::Context;
 use omnia_sdk::plugins::Digest;
 use omnia_sdk::{BlobStore, Error, Plugins, StateStore, server_error};
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 
 use crate::adapter::{self, AdapterRef, Loaded, Registries};
 pub use crate::revision::{ReqId, SliceId};
-use crate::revision::{Revision, Slice};
+use crate::revision::{Slice, Spec};
 use crate::store;
 
 // The root a build writes into, as the target adapter's lend names it.
@@ -70,9 +70,11 @@ pub async fn build<P: Target + StateStore + BlobStore + Plugins>(
     let order = revision.plan.order();
     tracing::info!(revision = %revision_id, adapter = %adapter, slices = order.len(), "building");
 
+    // every slice carries the whole design, rendered once
+    let design = revision.design.to_string();
     let mut built = Vec::with_capacity(order.len());
     for slice in order {
-        match build_slice(provider, &adapter, &revision, slice).await {
+        match build_slice(provider, &adapter, &revision.spec, &design, slice).await {
             Ok(outcome) => built.push(outcome),
             Err(error) => return Err(at_slice(error, slice, &built)),
         }
@@ -85,7 +87,7 @@ pub async fn build<P: Target + StateStore + BlobStore + Plugins>(
 }
 
 /// The target a build runs through.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "kebab-case")]
 pub struct BuildInput {
     /// The target adapter every slice is built through.
@@ -133,14 +135,14 @@ pub struct BuiltSlice {
 
 #[tracing::instrument(skip_all, fields(slice = %slice.id, name = %slice.name))]
 async fn build_slice<P: Target>(
-    provider: &P, adapter: &str, revision: &Revision, slice: &Slice,
+    provider: &P, adapter: &str, spec: &Spec, design: &str, slice: &Slice,
 ) -> Result<BuiltSlice, Error> {
     let input = SliceInput {
         id: slice.id.to_string(),
         name: slice.name.clone(),
         requirements: slice.requirements.iter().map(ToString::to_string).collect(),
-        spec: revision.spec.cut(&slice.requirements),
-        design: revision.design.to_string(),
+        spec: spec.cut(&slice.requirements),
+        design: design.to_owned(),
         plan: slice.to_string(),
     };
     tracing::info!(requirements = input.requirements.len(), "building slice");
@@ -156,7 +158,7 @@ async fn build_slice<P: Target>(
 
     // the gate held every covered id to the slice, so each is one of these
     let (covered, uncovered): (Vec<ReqId>, Vec<ReqId>) =
-        slice.requirements.iter().partition(|id| report.covered.contains(&id.to_string()));
+        slice.requirements.iter().partition(|id| report.covers(&id.to_string()));
     tracing::info!(
         covered = covered.len(),
         uncovered = uncovered.len(),
