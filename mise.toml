@@ -2,4 +2,4 @@
 # Run: `mise run <task>` (the root Makefile forwards `make <task>` here)
 
 [task_config]
-includes = ["git::https://github.com/augentic/toolkit.git//mise/rust.toml?ref=v0.3.0"]
+includes = ["git::https://github.com/augentic/toolkit.git//mise/rust.toml?ref=v0.4.0"]
