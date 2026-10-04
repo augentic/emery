@@ -3,10 +3,11 @@
 //! A target adapter receives a [`Slice`] of the build plan and the workspace
 //! to build into, and returns a [`Report`] of what it built. [`build`] puts
 //! the one gated turn: the slice's documents under the adapter's `build.md`,
-//! the workspace lent, and the answered report held to the slice by
-//! [`Report::findings`] until it passes. [`metadata`] answers the `metadata`
-//! export, and [`target_adapter!`](crate::target_adapter) exports both over
-//! an adapter's two plain fns.
+//! the workspace lent and written through the turn's `write_file` tool, and
+//! the answered report held to the slice by [`Report::findings`] and to the
+//! tree until it passes. [`metadata`] answers the `metadata` export, and
+//! [`target_adapter!`](crate::target_adapter) exports both over an adapter's
+//! two plain fns.
 //!
 //! # Examples
 //!
@@ -38,7 +39,10 @@
 //! # fn main() {}
 //! ```
 
+mod write;
+
 use std::fmt::{self, Display, Formatter};
+use std::path::Path;
 
 #[cfg(target_arch = "wasm32")]
 #[doc(inline)]
@@ -48,6 +52,7 @@ use emery_prose::Doc;
 use omnia_sdk::model::Question;
 use omnia_sdk::{Error, Model};
 
+use self::write::Writer;
 use crate::{BUILD, prompt, reference};
 
 /// The adapter addressed, the slice it builds, the tree it builds into, and the model.
@@ -61,8 +66,8 @@ pub struct Context<'a, P> {
     /// The [`Slice`] to build.
     pub slice: &'a Slice,
     /// The deployment-local path of the tree root, which the turn lends to
-    /// the model. The deployment's grant decides what may be written beneath
-    /// it.
+    /// the model and writes beneath through `write_file`. The deployment's
+    /// grant decides whether it may be written.
     pub workspace: &'a str,
     /// The [`Model`] the turn is put to.
     pub model: &'a P,
@@ -85,9 +90,13 @@ pub fn metadata() -> TargetMetadata {
 /// `docs` must contain `build.md`, which becomes the system prompt. The turn
 /// carries the slice's plan entry, its cut of the specification, and the
 /// whole design, lends the workspace, and offers the embedded references
-/// through the reference tools. The answered [`Report`] is held
-/// to the slice by [`Report::findings`]; every finding is returned to the
-/// model for one correction round, until the host's round limit is reached.
+/// through the reference tools. It writes through its `write_file` tool:
+/// one file beneath the workspace per call, created or replaced whole, at a
+/// path [`beneath`](crate::beneath) accepts. The answered [`Report`] is held
+/// to the slice by [`Report::findings`] and to the tree — a `written` path
+/// names a regular file under the workspace, and a file `write_file` wrote
+/// is listed; every finding is returned to the model for one correction
+/// round, until the host's round limit is reached.
 ///
 /// A failure upstream is not put again: the turn writes the tree as it
 /// goes, so a second turn would start over what the first left.
@@ -102,9 +111,14 @@ pub fn metadata() -> TargetMetadata {
 pub async fn build<P: Model>(ctx: &Context<'_, P>, docs: &'static [Doc]) -> Result<Report, Error> {
     let slice = ctx.slice;
     let id = &slice.id;
+    let root = Path::new(ctx.workspace);
+    let writer = Writer::new(ctx.workspace, id);
+    let written = writer.written();
+    let mut tools = reference::tools();
+    tools.push(Writer::tool());
     let question = Question::<Report>::new(&format!("build-{id}"))
         .system(prompt(docs, BUILD)?)
-        .tools(reference::tools())
+        .tools(tools)
         .workspace(ctx.workspace);
     let brief = Brief {
         adapter_id: ctx.adapter_id,
@@ -117,9 +131,11 @@ pub async fn build<P: Model>(ctx: &Context<'_, P>, docs: &'static [Doc]) -> Resu
         requirements = slice.requirements.len(),
         "building"
     );
+    let tools = writer.serve(reference::serve(docs, id, None));
     let report = question
-        .ask(ctx.model, brief.to_string(), Some(reference::serve(docs, id, None)), |answer| {
-            let findings = answer.findings(slice);
+        .ask(ctx.model, brief.to_string(), Some(tools), |answer| {
+            let mut findings = answer.findings(slice);
+            findings.extend(written.findings(root, answer));
             if findings.is_empty() {
                 return Ok(());
             }
@@ -174,8 +190,11 @@ impl Display for Brief<'_> {
             f,
             "Build the slice `{name}` ({id}) of the plan, bound to adapter `{adapter}`.\n\n\
              `$WORKSPACE` is the project tree, lent writable: the root of every file you can \
-             read and write, and the root every `written` path is relative to. Build the slice \
-             into it as the prompt describes, and change nothing outside it.\n\n\
+             read, and the root every `written` path is relative to. Write through this call's \
+             `write_file` tool alone: each call writes one file beneath `$WORKSPACE`, created \
+             or replaced whole, the directories above it created, and a path outside the tree \
+             or among the engine's own files is refused. Build the slice into it as the prompt \
+             describes, and change nothing outside it.\n\n\
              The slice's entry in the plan:\n\n{plan}\n\n\
              The specification, cut to the slice's requirements:\n\n{spec}\n\n\
              The design, whole:\n\n{design}\n\n",
@@ -197,9 +216,9 @@ impl Display for Brief<'_> {
              (`list_docs` enumerates them); load referenced bodies on demand.\n\n\
              Answer with one JSON object matching the report schema: `covered` lists each of \
              those requirement ids the tree now implements, once each and no other id; \
-             `written` lists each file you wrote or changed, once each, as a `/`-separated path \
-             relative to `$WORKSPACE`. Leave a requirement out of `covered` rather than claim \
-             what the tree does not hold.",
+             `written` lists each file `write_file` wrote, once each, as a `/`-separated path \
+             relative to `$WORKSPACE`, and only a file the tree now holds. Leave a requirement \
+             out of `covered` rather than claim what the tree does not hold.",
             ids = ids.join(", "),
         )
     }

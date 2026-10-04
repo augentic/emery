@@ -10,6 +10,8 @@ rustc-ice-*
 !/examples/target/**
 !/crates/adapter/src/target/
 !/crates/adapter/src/target/**
+!/crates/sdk/src/target/
+!/crates/sdk/src/target/**
 
 /emery
 docs/book/

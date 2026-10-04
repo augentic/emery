@@ -7,7 +7,7 @@ The adapters live at [source/](source/) and [target/](target/) — the same anat
 ## Prerequisites
 
 - [cursor-sdk-bridge](https://github.com/cursor/sdk-bridge). See [below](#installing-cursor-sdk-bridge) for installation.
-- `CURSOR_API_KEY` (optionally in `.env` file)
+- `CURSOR_API_KEY` in a `.env` file
 
 
 
@@ -54,9 +54,9 @@ See [#host-to-guest-tool-calls](#host-to-guest-tool-calls) below for more detail
 
 ## Host-to-guest tool calls
 
-In Emery, the only tools a completion session declares are the reference tools — `list_docs` and `read_doc` — over the adapter's embedded prose corpus. `wasi-model` delivers them as two streams rather than direct callbacks: the host writes each `ToolCall` to the session's `calls` stream, and the guest answers with a `ToolResult` on a second stream it created and passed to `create`, carrying the same correlation ID so the host can resume the completion.
+In Emery, the tools a completion session declares are the reference tools — `list_docs` and `read_doc` — over the adapter's embedded prose corpus, and, on a build turn alone, `write_file` over the lent tree. `wasi-model` delivers them as two streams rather than direct callbacks: the host writes each `ToolCall` to the session's `calls` stream, and the guest answers with a `ToolResult` on a second stream it created and passed to `create`, carrying the same correlation ID so the host can resume the completion.
 
-Every answer is served in-process by the SDK from the adapter's listed `PROSE`: `list_docs` returns the adapter's reference paths and Emery's `reconciliation.md` — never a system document (`extract.md`, `claims.md`, `build.md`), which a turn either carries already or has nothing to learn from — `read_doc` returns one document body by adapter-relative path, and anything else — an unknown tool, malformed arguments, an unembedded path — comes back as a repairable error. No HTTP shelf, no MCP callback, and no access to the source input or the revision store crosses this boundary; the model reaches nothing but the adapter's own reference documents. The project tree itself is lent through the host's workspace tools: read-only to an extraction turn, writable to a build turn.
+Every answer is served in-process by the SDK from the adapter's listed `PROSE`: `list_docs` returns the adapter's reference paths and Emery's `reconciliation.md` — never a system document (`extract.md`, `claims.md`, `build.md`), which a turn either carries already or has nothing to learn from — `read_doc` returns one document body by adapter-relative path, and anything else — an unknown tool, malformed arguments, an unembedded path — comes back as a repairable error. No HTTP shelf, no MCP callback, and no access to the source input or the revision store crosses this boundary; the model reaches nothing but the adapter's own reference documents and, on a build turn, the one write beneath the lent tree. The project tree itself is lent through the host's workspace tools, which read it; a build turn writes it through `write_file`, served the same way from the guest, one file per call beneath the lent root, refused under `.omnia/` and at the projections.
 
 ## Installing cursor-sdk-bridge
 

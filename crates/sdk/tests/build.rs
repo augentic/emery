@@ -1,5 +1,9 @@
-//! A build is one turn whose report is held to the slice before the adapter
-//! answers; every scenario here puts one over a scripted model.
+//! A build is one turn whose report is held to the slice and to the tree
+//! before the adapter answers; every scenario here puts one over a scripted
+//! model and a scratch tree.
+
+use std::fs;
+use std::path::Path;
 
 use emery_sdk::target::{Context, Report, Slice};
 use emery_sdk::{Doc, Error};
@@ -41,11 +45,39 @@ async fn ask(model: &Scripted, slice: &Slice, workspace: &str) -> Result<Report,
     emery_sdk::target::build(&ctx, PROSE).await
 }
 
-// The turn carries the slice's three documents and the lend, writable; the
-// answer is steered by the report schema.
+// Lays empty files beneath `root`, so a report naming them passes the tree rule.
+fn seed<'a>(root: &Path, files: impl IntoIterator<Item = &'a str>) {
+    for file in files {
+        let path = root.join(file);
+        fs::create_dir_all(path.parent().expect("a file has a parent")).expect("seed dir");
+        fs::write(path, b"").expect("seed file");
+    }
+}
+
+fn write_file(id: &str, path: &str, content: &str) -> ToolCall {
+    ToolCall {
+        id: id.to_owned(),
+        name: "write_file".to_owned(),
+        arguments: serde_json::json!({ "path": path, "content": content }).to_string(),
+    }
+}
+
+fn names(dir: &Path) -> Vec<String> {
+    let mut names: Vec<String> = fs::read_dir(dir)
+        .expect("read_dir")
+        .map(|entry| entry.expect("entry").file_name().to_string_lossy().into_owned())
+        .collect();
+    names.sort();
+    names
+}
+
+// The turn carries the slice's three documents, the lend, writable, and the
+// write tool beside the reference tools; the answer is steered by the report
+// schema.
 #[tokio::test]
 async fn request_shape() {
     let tmp = tempfile::tempdir().expect("tempdir");
+    seed(tmp.path(), ["src/orders.rs", "Cargo.toml"]);
     let root = tmp.path().to_str().expect("a UTF-8 scratch root");
     let model = Scripted::answering([VALID]);
     let slice = slice();
@@ -59,7 +91,7 @@ async fn request_shape() {
     let request = &seen[0];
     assert_eq!(request.system.as_deref(), Some("BUILD"));
     assert_eq!(request.workspace.as_deref(), Some(root), "the tree is lent");
-    assert_eq!(request.tools, ["list_docs", "read_doc"]);
+    assert_eq!(request.tools, ["list_docs", "read_doc", "write_file"]);
     assert!(request.check, "acceptance is the check");
     let SeenFormat::Schema { name, schema } = &request.format else {
         panic!("the report is steered by schema");
@@ -86,9 +118,107 @@ async fn request_shape() {
         ),
         "{user}"
     );
+    assert!(
+        user.contains(
+            "Write through this call's `write_file` tool alone: each call writes one file \
+             beneath `$WORKSPACE`, created or replaced whole"
+        ),
+        "{user}"
+    );
     assert!(user.contains("— `REQ-001`, `REQ-002` — and no other."), "{user}");
+    assert!(
+        user.contains(
+            "`written` lists each file `write_file` wrote, once each, as a `/`-separated path \
+             relative to `$WORKSPACE`, and only a file the tree now holds."
+        ),
+        "{user}"
+    );
     assert!(!user.contains(root), "the lend carries the root, not the brief: {user}");
     assert!(user.ends_with("rather than claim what the tree does not hold."), "{user}");
+    model.assert_exhausted();
+}
+
+// Each `write_file` call lands one file beneath the lend, the directories
+// above it created, or is refused by the path rule before anything is
+// written; the report naming what was written is accepted.
+#[tokio::test]
+async fn write_tool() {
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let root = tmp.path().to_str().expect("a UTF-8 scratch root");
+    let model = Scripted::answering([r#"{"covered":["REQ-001"],"written":["src/orders.rs"]}"#])
+        .calling(
+            0,
+            [
+                write_file("1", "./src//orders.rs", "pub struct Order;\n"),
+                write_file("2", "../escape.rs", ""),
+                write_file("3", ".omnia/storage/x", ""),
+                write_file("4", "docs/spec.md", ""),
+                ToolCall {
+                    id: "5".to_owned(),
+                    name: "write_file".to_owned(),
+                    arguments: r#"{"path":"src/lib.rs"}"#.to_owned(),
+                },
+            ],
+        );
+
+    let report = ask(&model, &slice(), root).await.expect("accepted");
+    assert_eq!(report.written, ["src/orders.rs"]);
+    assert_eq!(
+        fs::read_to_string(tmp.path().join("src/orders.rs")).expect("written"),
+        "pub struct Order;\n"
+    );
+    assert_eq!(names(tmp.path()), ["src"], "nothing but the one write lands beneath the root");
+    assert_eq!(names(&tmp.path().join("src")), ["orders.rs"]);
+
+    let exchanges = model.exchanges();
+    assert_eq!(exchanges.len(), 6, "five tool calls, then the check");
+    assert_eq!(
+        exchanges[0].outcome.as_deref(),
+        Ok(r#"{"bytes":18,"path":"src/orders.rs"}"#),
+        "the answer spells the path as the tree does"
+    );
+    assert_eq!(exchanges[1].outcome, Err("write_file: `../escape.rs` escapes the root".to_owned()));
+    assert_eq!(
+        exchanges[2].outcome,
+        Err("write_file: `.omnia/storage/x` is under the engine's own `.omnia/`".to_owned())
+    );
+    assert_eq!(
+        exchanges[3].outcome,
+        Err("write_file: `docs/spec.md` names the engine's own `spec.md`".to_owned())
+    );
+    let malformed = exchanges[4].outcome.as_deref().expect_err("arguments without content");
+    assert!(malformed.starts_with("write_file: invalid arguments"), "{malformed}");
+    assert_eq!(exchanges[5].tool, "check");
+    assert_eq!(exchanges[5].outcome, Ok(String::new()));
+    model.assert_exhausted();
+}
+
+// A `written` path the tree does not hold, and a file `write_file` wrote
+// that `written` leaves out, are both findings; the corrected report is
+// accepted however it spells the path, and the write stands across rounds.
+#[tokio::test]
+async fn written_unheld() {
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let root = tmp.path().to_str().expect("a UTF-8 scratch root");
+    let model = Scripted::answering([
+        r#"{"covered":["REQ-001"],"written":["src/missing.rs"]}"#,
+        r#"{"covered":["REQ-001"],"written":["./src/orders.rs"]}"#,
+    ])
+    .calling(0, [write_file("1", "src/orders.rs", "pub struct Order;\n")]);
+
+    let report = ask(&model, &slice(), root).await.expect("corrected");
+    assert_eq!(report.written, ["./src/orders.rs"], "the report reads as answered");
+
+    let exchanges = model.exchanges();
+    assert_eq!(exchanges.len(), 3, "the write, the refused check, the accepted check");
+    let correction = exchanges[1].outcome.as_ref().expect_err("the first report is refused");
+    for finding in [
+        "- written `src/missing.rs` names no regular file under the lent tree",
+        "- `write_file` wrote `src/orders.rs` this turn, which `written` leaves out",
+    ] {
+        assert!(correction.contains(finding), "{finding}: {correction}");
+    }
+    assert_eq!(exchanges[2].outcome, Ok(String::new()));
     model.assert_exhausted();
 }
 
@@ -99,6 +229,7 @@ async fn request_shape() {
 #[tokio::test]
 async fn doc_refs() {
     let tmp = tempfile::tempdir().expect("tempdir");
+    seed(tmp.path(), ["src/orders.rs", "Cargo.toml"]);
     let root = tmp.path().to_str().expect("a UTF-8 scratch root");
     let model = Scripted::answering([VALID]).calling(
         0,
@@ -170,6 +301,7 @@ async fn missing_prompt() {
 #[tokio::test]
 async fn gate_findings() {
     let tmp = tempfile::tempdir().expect("tempdir");
+    seed(tmp.path(), ["src/orders.rs"]);
     let root = tmp.path().to_str().expect("a UTF-8 scratch root");
     let model = Scripted::answering([
         r#"{"covered":["REQ-001","REQ-009","REQ-001"],

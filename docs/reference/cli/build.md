@@ -22,7 +22,9 @@ The first slice that fails ends the run. Its failure is returned as the adapter 
 
 ### The tree a build writes
 
-The runtime mounts the invocation directory as `.`, writable: the tree `specify` reads its sources from and `build` writes into. The adapters root, `~/.emery/adapters`, is mounted read-only as `adapters` and apart from the project, so a component is never loaded from a directory a run can write (see [Deployment profiles](../deployment-profiles.md)). A build lends the whole project tree to the adapter's model turn, `.omnia/` included; the revision store detects a document rewritten beneath it and fails closed on the next read, but does not prevent the write.
+The runtime mounts the invocation directory as `.`, writable: the tree `specify` reads its sources from and `build` writes into. The adapters root, `~/.emery/adapters`, is mounted read-only as `adapters` and apart from the project, so a component is never loaded from a directory a run can write (see [Deployment profiles](../deployment-profiles.md)).
+
+A build lends the whole project tree to the adapter's model turn. The model reads it through the host's workspace tools, which are read-only, and writes it through the SDK's `write_file` tool alone: one file per call, created or replaced whole, at a `/`-separated path relative to the project root. The tool refuses a path outside the root, one under `.omnia/`, and one naming `spec.md`, `design.md`, or `plan.md`, so the revision store and the projections are never written by a build; the mount beneath permits the write, the tool does not. Before the turn answers, the SDK holds the report to the tree: a `written` path the tree does not hold, or a file `write_file` wrote that `written` leaves out, is returned to the model as a correction, so a report of files never written does not reach the engine.
 
 ## The `[target]` table
 
