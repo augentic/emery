@@ -8,6 +8,8 @@ rustc-ice-*
 # without these exceptions .gitignore would silently exclude them from commits.
 !/examples/target/
 !/examples/target/**
+!/crates/adapter/src/target/
+!/crates/adapter/src/target/**
 
 /emery
 docs/book/
