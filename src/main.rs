@@ -42,6 +42,10 @@ cfg_if::cfg_if! {
         // The adapters directory is created on first use so the mount opens.
         // It must be outside emery's writable mount so a malicious guest
         // cannot write to it (following the W^X rule).
+        #[allow(
+            clippy::print_stderr,
+            reason = "runs before logging is initialised",
+        )]
         fn adapters_dir() -> PathBuf {
             let Some(home) = std::env::home_dir() else {
                 eprintln!(
