@@ -63,7 +63,8 @@ cfg_if::cfg_if! {
             }
             dir
         }
-    } else if #[cfg(target_arch = "wasm32")] {
-        fn main() {}
     }
 }
+
+#[cfg(target_arch = "wasm32")]
+fn main() {}
