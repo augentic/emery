@@ -2,6 +2,7 @@
 
 use std::fmt;
 
+use emery_engine::build::BuildOutput;
 use emery_engine::show::ShowOutput;
 use emery_engine::specify::{Diff, SpecifyOutput};
 
@@ -35,6 +36,25 @@ fn summary(diff: &Diff, w: &mut dyn fmt::Write) -> fmt::Result {
         if preamble {
             w.write_str(" preamble")?;
         }
+    }
+    Ok(())
+}
+
+/// Writes a [`BuildOutput`] revision line, then one line per slice built.
+///
+/// Each slice line counts the requirements covered of those it holds, names
+/// any left uncovered, and counts the files written.
+pub fn build(output: &BuildOutput, w: &mut dyn fmt::Write) -> fmt::Result {
+    writeln!(w, "built revision {}", output.revision)?;
+    for slice in &output.slices {
+        let total = slice.covered.len() + slice.uncovered.len();
+        write!(w, "  {} {}: covered {}/{total}", slice.id, slice.name, slice.covered.len())?;
+        if !slice.uncovered.is_empty() {
+            let ids: Vec<String> = slice.uncovered.iter().map(ToString::to_string).collect();
+            write!(w, " (uncovered {})", ids.join(", "))?;
+        }
+        let files = if slice.written.len() == 1 { "file" } else { "files" };
+        writeln!(w, ", written {} {files}", slice.written.len())?;
     }
     Ok(())
 }

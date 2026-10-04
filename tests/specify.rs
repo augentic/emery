@@ -14,15 +14,16 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use emery_adapter::source::{Claim, ClaimKind, Evidence, SourceContent, SourceKind};
-use emery_engine::{CONTAINER, ENGINE, REVISION_KEY};
+use emery_engine::{ADAPTERS, CONTAINER, ENGINE, REVISION_KEY};
 use omnia_sdk::model::{Error as ModelError, Reply};
 use omnia_sdk::plugins::{Digest, Error as LoadError, Location};
 use omnia_sdk::{BlobStore, StateStore, bad_gateway, bad_request};
 use omnia_test::SeenFormat;
 use omnia_test::guest::{Memory, Scripted};
 use serde_json::Value;
-use sha2::{Digest as _, Sha256};
-use support::{Provider, Rendezvous, claim, cli_ok, digest, evidence, fail, requirement};
+use support::{
+    Provider, Rendezvous, Scratch, claim, cli_ok, digest, evidence, fail, requirement, seed,
+};
 
 const SPEC_ANSWER: &str = include_str!("specify/spec-draft.json");
 const SPEC_REVISION: &str = include_str!("specify/1-spec.json");
@@ -69,38 +70,6 @@ fn separate_slicing(stems: &[(&str, &[&str])]) -> String {
     serde_json::json!({ "preamble": [], "slices": slices }).to_string()
 }
 
-// Inside the project: every path handed to the CLI must stay project-relative
-// for the guest preopen, so each write answers with that path.
-struct Scratch(tempfile::TempDir);
-
-impl Scratch {
-    fn new() -> Self {
-        Self(tempfile::TempDir::new_in(env!("CARGO_MANIFEST_DIR")).expect("project tempdir"))
-    }
-
-    fn write(&self, name: &str, body: impl AsRef<[u8]>) -> String {
-        let path = self.0.path().join(name);
-        if let Some(parent) = path.parent() {
-            fs::create_dir_all(parent).unwrap_or_else(|err| panic!("mkdir for {name}: {err}"));
-        }
-        fs::write(&path, body).unwrap_or_else(|err| panic!("write {name}: {err}"));
-        path.strip_prefix(env!("CARGO_MANIFEST_DIR"))
-            .expect("path under project")
-            .to_str()
-            .expect("utf-8 path")
-            .to_string()
-    }
-
-    fn config(&self, body: &str) -> String {
-        self.write("emery.toml", body)
-    }
-
-    // The loader is scripted, so the component only has to exist as a `.wasm` file.
-    fn component(&self) -> String {
-        self.write("source.wasm", b"\0asm-stub")
-    }
-}
-
 // --- journey ---
 
 // One `specify` with no prior verb, then `show`, then an identical re-run that
@@ -109,7 +78,7 @@ impl Scratch {
 async fn gen_spec() {
     // arrange: scripted storage; only the operator's component touches the filesystem
     let scratch = Scratch::new();
-    let component = scratch.component();
+    let component = scratch.component("source");
 
     let provider = Provider::answering([SPEC_ANSWER, DESIGN_ANSWER, SPEC_ANSWER, DESIGN_ANSWER]);
 
@@ -121,7 +90,11 @@ async fn gen_spec() {
     let [(Location::Path(path), None)] = loads.as_slice() else {
         panic!("a local component is one unpinned load by path: {loads:?}");
     };
-    assert!(path.ends_with("source.wasm"), "the preopen-relative path rides the request: {path}");
+    assert_eq!(
+        *path,
+        format!("{ADAPTERS}/{component}"),
+        "the component loads beneath the adapters mount, never the project"
+    );
     assert!(
         provider.storage.objects("adapters").is_empty(),
         "nothing mirrors into engine storage; the loader reads the file fresh"
@@ -189,7 +162,7 @@ async fn gen_spec() {
 #[tokio::test]
 async fn padded_lines() {
     let scratch = Scratch::new();
-    let component = scratch.component();
+    let component = scratch.component("source");
     let mut answer: Value = serde_json::from_str(SPEC_ANSWER).expect("the draft fixture is JSON");
     let scenario = &mut answer["requirements"][0]["scenarios"][0];
     scenario["name"] = Value::String("  Greeting requested ".into());
@@ -216,7 +189,7 @@ async fn padded_lines() {
 #[tokio::test]
 async fn lines_as_strings() {
     let scratch = Scratch::new();
-    let component = scratch.component();
+    let component = scratch.component("source");
     let mut answer: Value = serde_json::from_str(SPEC_ANSWER).expect("the draft fixture is JSON");
     let scenario = &mut answer["requirements"][0]["scenarios"][0];
     scenario["given"] = Value::String("the greeting surface is bound".into());
@@ -235,13 +208,13 @@ async fn lines_as_strings() {
     provider.model.assert_exhausted();
 }
 
-// The component the entry names exists only beside the file, so the run must
-// resolve it there.
+// The component the entry names lives beneath the adapters root, wherever the
+// file that names it is.
 #[tokio::test]
 async fn from_file() {
     let scratch = Scratch::new();
-    scratch.component();
-    let config = scratch.config(SOURCES);
+    let component = scratch.component("source");
+    let config = scratch.config(&SOURCES.replace("./source.wasm", &component));
 
     let provider = Provider::answering([SPEC_ANSWER, DESIGN_ANSWER]);
 
@@ -250,9 +223,10 @@ async fn from_file() {
     let [(Location::Path(path), None)] = loads.as_slice() else {
         panic!("a local component is one unpinned load by path: {loads:?}");
     };
-    assert!(
-        path.ends_with("source.wasm") && !path.starts_with("./"),
-        "the file-relative reference resolves against the config directory: {path}"
+    assert_eq!(
+        *path,
+        format!("{ADAPTERS}/{component}"),
+        "the reference resolves beneath the adapters mount, not the config directory"
     );
 
     assert!(
@@ -266,13 +240,12 @@ async fn from_file() {
 // One adapter named by two sources is loaded and gated once, extracted twice.
 #[tokio::test]
 async fn shared_roots() {
-    let cases: &[(&str, &str)] =
-        &[("emery:documentation@1.2.0", "emery:documentation"), ("./source.wasm", "source")];
+    // `None` is the scratch component, staged beneath the adapters root
+    let cases: &[(Option<&str>, &str)] =
+        &[(Some("emery:documentation@1.2.0"), "emery:documentation"), (None, "source")];
     for (adapter, package) in cases {
         let scratch = Scratch::new();
-        if Path::new(adapter).extension().is_some() {
-            scratch.component();
-        }
+        let adapter = adapter.map_or_else(|| scratch.component("source"), str::to_owned);
         let config = scratch.config(&format!(
             "[[source]]\nname = \"docs\"\nadapter = \"{adapter}\"\npath = \"docs\"\n\n\
              [[source]]\nname = \"api\"\nadapter = \"{adapter}\"\npath = \"api\"\n"
@@ -293,7 +266,7 @@ async fn shared_roots() {
         let gated = provider.source.metadata.lock().expect("metadata").clone();
         assert_eq!(gated, [*package], "{adapter}: one adapter identity is gated once");
 
-        let calls = provider.source.calls.lock().expect("calls");
+        let calls = provider.source.calls();
         assert_eq!(calls.len(), 2, "{adapter}: each source extracts");
         assert_eq!(calls[0].0, *package);
         assert_eq!(calls[0].1.name, "docs");
@@ -361,7 +334,7 @@ async fn description_source() {
 
     let spec = shown(&provider, "spec").await;
     assert!(spec.contains("Sources: [intent:greeting.behaviour]"));
-    let calls = provider.source.calls.lock().expect("calls");
+    let calls = provider.source.calls();
     let (id, input) = calls.first().expect("one extract dispatch");
     assert_eq!(id, "intent", "a bare adapter dispatches to the guest declared under its name");
     assert_eq!(input.name, "intent");
@@ -2122,7 +2095,7 @@ async fn source_paths() {
         .declaring(["documentation", "intent", "local"]);
     cli_ok(&provider, &["emery", "specify", "--config", &config]).await;
 
-    let calls = provider.source.calls.lock().expect("calls");
+    let calls = provider.source.calls();
     let order: Vec<&str> = calls.iter().map(|(_, input)| input.name.as_str()).collect();
     assert_eq!(order, ["zulu", "intent", "alpha"], "entries extract in declaration order");
     for name in ["zulu", "alpha"] {
@@ -2152,12 +2125,12 @@ async fn source_paths() {
 #[tokio::test]
 async fn name_defaulted() {
     let scratch = Scratch::new();
-    scratch.component();
-    let config = scratch.config(
+    let component = scratch.component("source");
+    let config = scratch.config(&format!(
         "[[source]]\nadapter = \"documentation\"\n\n\
          [[source]]\nadapter = \"emery:demo@1.2.0\"\n\n\
-         [[source]]\nadapter = \"./source.wasm\"\n",
-    );
+         [[source]]\nadapter = \"{component}\"\n",
+    ));
     let grouping = baseline_grouping(3);
     let provider = Provider::answering([grouping.as_str(), SPEC_ANSWER, DESIGN_ANSWER])
         .declaring(["documentation"]);
@@ -2180,22 +2153,27 @@ async fn name_defaulted() {
 #[tokio::test]
 async fn deleted_wasm() {
     let scratch = Scratch::new();
-    let component = scratch.component();
+    let component = scratch.component("source");
 
     let provider = Provider::answering([SPEC_ANSWER, DESIGN_ANSWER]);
     cli_ok(&provider, &["emery", "specify", &component]).await;
 
-    fs::remove_file(&component).expect("remove the operator's file");
+    scratch.remove("source.wasm");
     fail(&provider, &["emery", "specify", &component], 2, "not_found").await;
     provider.model.assert_exhausted();
 }
 
+// A component is looked for beneath the adapters root alone: one beside the
+// project's own files is not found there, and a path above the root is
+// refused before it is looked for.
 #[tokio::test]
 async fn component_missing() {
     let provider = Provider::idle();
-    fail(&provider, &["emery", "specify", "./missing.wasm"], 2, "not_found").await;
+    let envelope = fail(&provider, &["emery", "specify", "./missing.wasm"], 2, "not_found").await;
+    assert_message(&envelope, "adapter `./missing.wasm` not found beneath the adapters root");
     for path in ["/tmp/missing.wasm", "../missing.wasm"] {
-        fail(&provider, &["emery", "specify", path], 1, "bad_request").await;
+        let envelope = fail(&provider, &["emery", "specify", path], 1, "bad_request").await;
+        assert_message(&envelope, &format!("adapter `{path}` escapes the adapters root"));
     }
 }
 
@@ -2210,7 +2188,7 @@ async fn file_named_by_stem() {
     assert_eq!(provider.loaded(), ["custom"], "the path registers as its stem");
     let gated = provider.source.metadata.lock().expect("metadata").clone();
     assert_eq!(gated, ["custom"]);
-    let calls = provider.source.calls.lock().expect("calls");
+    let calls = provider.source.calls();
     let (id, input) = calls.first().expect("one extract dispatch");
     assert_eq!(id, "custom", "extract dispatches by the stem");
     assert_eq!(input.name, "custom", "the source name is the adapter's kebab stem");
@@ -2224,7 +2202,7 @@ async fn file_named_by_stem() {
 async fn file_stem_not_kebab() {
     let scratch = Scratch::new();
     let component = scratch.write("MyTool.wasm", b"\0asm-stub");
-    let config = scratch.config("[[source]]\nadapter = \"./MyTool.wasm\"\n");
+    let config = scratch.config(&format!("[[source]]\nadapter = \"{component}\"\n"));
     let provider = Provider::idle();
 
     for argv in
@@ -2245,10 +2223,10 @@ async fn file_stem_collision() {
     let scratch = Scratch::new();
     let first = scratch.write("a/tool.wasm", b"\0asm-stub");
     let second = scratch.write("b/tool.wasm", b"\0asm-stub");
-    let config = scratch.config(
-        "[[source]]\nname = \"first\"\nadapter = \"./a/tool.wasm\"\n\n\
-         [[source]]\nname = \"second\"\nadapter = \"./b/tool.wasm\"\n",
-    );
+    let config = scratch.config(&format!(
+        "[[source]]\nname = \"first\"\nadapter = \"{first}\"\n\n\
+         [[source]]\nname = \"second\"\nadapter = \"{second}\"\n",
+    ));
     let provider = Provider::idle();
 
     let envelope =
@@ -2329,7 +2307,7 @@ mod package {
                 ["emery:demo"],
                 "the package registers without its version"
             );
-            let calls = provider.source.calls.lock().expect("calls");
+            let calls = provider.source.calls();
             let (id, input) = calls.first().expect("one extract dispatch");
             assert_eq!(id, "emery:demo", "the adapter id is the registered guest");
             assert_eq!(input.name, "demo", "the source name is the adapter name");
@@ -2454,26 +2432,37 @@ mod package {
         provider.model.assert_exhausted();
     }
 
-    // The `[[source]]` entries stay undecoded when argv names the sources, so a
-    // malformed one never refuses the run. The CWD move is hermetic under nextest.
+    // The file is read whole, so a `[[source]]` entry that does not parse
+    // refuses a run that named its own sources too. One that parses, and is
+    // refused only where its path or adapter is located, refuses the run whose
+    // source it is alone. The CWD move is hermetic under nextest.
     #[tokio::test]
     async fn argv_malformed_sources() {
         let project = tempfile::TempDir::new().expect("project dir");
         std::env::set_current_dir(project.path()).expect("enter project");
-        for entry in [
-            "[[source]]\nname = \"docs\"\nadapter = \"documentation\"\npath = \"../../outside\"\n",
-            "[[source]]\nname = \"docs\"\nadapter = \"documentation\"\nbranch = \"main\"\n",
-            "[[source]]\nname = \"local\"\nadapter = \"/tmp/source.wasm\"\n",
-        ] {
+        let write = |entry: &str| {
             fs::write(
                 project.path().join("emery.toml"),
                 format!("{entry}\n[registries]\nacme = \"registry.acme.io\"\n"),
             )
             .expect("write emery.toml");
+        };
+
+        write("[[source]]\nname = \"docs\"\nadapter = \"documentation\"\nbranch = \"main\"\n");
+        fail(&Provider::idle(), &["emery", "specify"], 1, "bad_request").await;
+        let argv = ["emery", "specify", "acme:ledger@2.1.0"];
+        let envelope = fail(&Provider::idle(), &argv, 1, "bad_request").await;
+        assert_message(&envelope, "unknown field `branch`");
+
+        for entry in [
+            "[[source]]\nname = \"docs\"\nadapter = \"documentation\"\npath = \"../../outside\"\n",
+            "[[source]]\nname = \"local\"\nadapter = \"/tmp/source.wasm\"\n",
+        ] {
+            write(entry);
             fail(&Provider::idle(), &["emery", "specify"], 1, "bad_request").await;
             let provider = Provider::answering([SPEC_ANSWER, DESIGN_ANSWER]);
 
-            cli_ok(&provider, &["emery", "specify", "acme:ledger@2.1.0"]).await;
+            cli_ok(&provider, &argv).await;
 
             assert_eq!(
                 provider.plugins.loads(),
@@ -2503,7 +2492,7 @@ mod bare {
         );
         let gated = provider.source.metadata.lock().expect("metadata").clone();
         assert_eq!(gated, ["intent"], "the version gate reads the attested name");
-        let calls = provider.source.calls.lock().expect("calls");
+        let calls = provider.source.calls();
         assert_eq!(calls[0].0, "intent", "extract dispatches by the attested name");
         drop(calls);
         provider.model.assert_exhausted();
@@ -2534,10 +2523,10 @@ mod digest {
     #[tokio::test]
     async fn pinned() {
         let scratch = Scratch::new();
-        scratch.component();
+        let component = scratch.component("source");
         let pin = digest("cd");
         let config = scratch.config(&format!(
-            "[[source]]\nname = \"local\"\nadapter = \"./source.wasm\"\ndigest = \"{pin}\"\n\n\
+            "[[source]]\nname = \"local\"\nadapter = \"{component}\"\ndigest = \"{pin}\"\n\n\
              [[source]]\nname = \"demo\"\nadapter = \"emery:demo@1.2.0\"\ndigest = \"{pin}\"\n"
         ));
         let grouping = baseline_grouping(2);
@@ -2562,10 +2551,10 @@ mod digest {
     #[tokio::test]
     async fn conflict() {
         let scratch = Scratch::new();
-        scratch.component();
+        let component = scratch.component("source");
         let config = scratch.config(&format!(
-            "[[source]]\nname = \"docs\"\nadapter = \"./source.wasm\"\ndigest = \"{}\"\n\n\
-             [[source]]\nname = \"api\"\nadapter = \"./source.wasm\"\ndigest = \"{}\"\n",
+            "[[source]]\nname = \"docs\"\nadapter = \"{component}\"\ndigest = \"{}\"\n\n\
+             [[source]]\nname = \"api\"\nadapter = \"{component}\"\ndigest = \"{}\"\n",
             digest("cd"),
             digest("ab")
         ));
@@ -2581,9 +2570,9 @@ mod digest {
     #[tokio::test]
     async fn mismatch() {
         let scratch = Scratch::new();
-        scratch.component();
+        let component = scratch.component("source");
         let config = scratch.config(&format!(
-            "[[source]]\nname = \"local\"\nadapter = \"./source.wasm\"\ndigest = \"{}\"\n",
+            "[[source]]\nname = \"local\"\nadapter = \"{component}\"\ndigest = \"{}\"\n",
             digest("cd")
         ));
         let mut provider = Provider::idle();
@@ -2738,7 +2727,7 @@ mod store {
     #[tokio::test]
     async fn multi_project() {
         let scratch = Scratch::new();
-        let component = scratch.component();
+        let component = scratch.component("source");
 
         // one shared store, two project-scoped views
         let shared = Memory::default();
@@ -2817,26 +2806,6 @@ fn stored_id(storage: &Memory, key: &str) -> String {
 
 fn document(storage: &Memory, id: &str, name: &str) -> Vec<u8> {
     storage.object(CONTAINER, &format!("{id}/{name}")).unwrap_or_else(|| panic!("{name}"))
-}
-
-// The engine's content id: SHA-256 over the length-prefixed bodies, spec,
-// design, then plan.
-fn revision(spec: &[u8], design: &[u8], plan: &[u8]) -> String {
-    let mut hasher = Sha256::new();
-    for body in [spec, design, plan] {
-        hasher.update((body.len() as u64).to_be_bytes());
-        hasher.update(body);
-    }
-    hex::encode(hasher.finalize())
-}
-
-fn seed(storage: &Memory, spec: &[u8], design: &[u8], plan: &[u8]) -> String {
-    let id = revision(spec, design, plan);
-    storage.insert_object(CONTAINER, &format!("{id}/spec.json"), spec);
-    storage.insert_object(CONTAINER, &format!("{id}/design.json"), design);
-    storage.insert_object(CONTAINER, &format!("{id}/plan.json"), plan);
-    storage.insert_state(REVISION_KEY, id.as_bytes());
-    id
 }
 
 fn projection(fixture: &str, id: &str) -> String {

@@ -1,0 +1,112 @@
+{
+  "emery": 4,
+  "preamble": [
+    "Sign-in, its session, and orders over both."
+  ],
+  "requirements": [
+    {
+      "id": "REQ-001",
+      "subject": "auth.login",
+      "status": "unknown",
+      "covered": false,
+      "sources": [
+        {
+          "source": "docs",
+          "claim": "auth.login",
+          "path": null
+        }
+      ],
+      "body": [
+        "Users sign in with a credential."
+      ],
+      "losers": [],
+      "scenarios": [
+        {
+          "name": "Login",
+          "given": [],
+          "when": "a valid credential is presented",
+          "then": "the caller is signed in",
+          "and": []
+        }
+      ]
+    },
+    {
+      "id": "REQ-002",
+      "subject": "session.timeout",
+      "status": "unknown",
+      "covered": false,
+      "sources": [
+        {
+          "source": "docs",
+          "claim": "session.timeout",
+          "path": null
+        }
+      ],
+      "body": [
+        "Sessions expire after an hour of inactivity."
+      ],
+      "losers": [],
+      "scenarios": [
+        {
+          "name": "Timeout",
+          "given": [],
+          "when": "a session is idle for an hour",
+          "then": "it times out",
+          "and": []
+        }
+      ]
+    },
+    {
+      "id": "REQ-003",
+      "subject": "orders.create",
+      "status": "unknown",
+      "covered": false,
+      "sources": [
+        {
+          "source": "docs",
+          "claim": "orders.create",
+          "path": null
+        }
+      ],
+      "body": [
+        "A signed-in user places an order."
+      ],
+      "losers": [],
+      "scenarios": [
+        {
+          "name": "Create",
+          "given": [],
+          "when": "a signed-in caller places an order",
+          "then": "the order is created",
+          "and": []
+        }
+      ]
+    },
+    {
+      "id": "REQ-004",
+      "subject": "orders.cancel",
+      "status": "unknown",
+      "covered": false,
+      "sources": [
+        {
+          "source": "docs",
+          "claim": "orders.cancel",
+          "path": null
+        }
+      ],
+      "body": [
+        "A signed-in user cancels an open order."
+      ],
+      "losers": [],
+      "scenarios": [
+        {
+          "name": "Cancel",
+          "given": [],
+          "when": "a signed-in caller cancels an order",
+          "then": "the order is cancelled",
+          "and": []
+        }
+      ]
+    }
+  ]
+}

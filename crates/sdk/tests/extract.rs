@@ -364,7 +364,7 @@ async fn escaping_path() {
     let error = extract(&model, &input, &seams).await.expect_err("a path escapes");
 
     assert_eq!(error.code(), "bad_request");
-    assert!(error.description().contains("`../secret.md` escapes the source root"), "{error}");
+    assert!(error.description().contains("`../secret.md` escapes the root"), "{error}");
     assert!(model.seen().is_empty(), "no turn was spent");
 }
 

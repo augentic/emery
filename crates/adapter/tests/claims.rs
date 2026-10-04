@@ -1,5 +1,6 @@
 //! An `Evidence` document parses from JSON and its claim gate names each malformed claim.
 
+use emery_adapter::BadPath;
 use emery_adapter::source::{Anchor, Backing, BadAnchor, ClaimKind, Evidence};
 
 #[test]
@@ -147,15 +148,16 @@ fn anchors() {
         ("src/orders.ts#L1-", BadAnchor::Grammar),
         ("src/orders.ts#L1-L2-L3", BadAnchor::Grammar),
         ("src/orders.ts#L1 -L2", BadAnchor::Grammar),
-        ("", BadAnchor::Escapes),
-        ("#L1", BadAnchor::Escapes),
-        ("/etc/passwd", BadAnchor::Escapes),
-        ("../secret.ts", BadAnchor::Escapes),
-        ("src/../../x.ts#L1", BadAnchor::Escapes),
-        (".omnia/storage/x.json", BadAnchor::SkipDir(".omnia".to_string())),
-        ("a/.omnia/x.json#L1", BadAnchor::SkipDir(".omnia".to_string())),
-        ("spec.md", BadAnchor::SkipFile("spec.md".to_string())),
-        ("docs/plan.md#L3", BadAnchor::SkipFile("plan.md".to_string())),
+        ("", BadAnchor::Path(BadPath::Escapes)),
+        ("#L1", BadAnchor::Path(BadPath::Escapes)),
+        ("/etc/passwd", BadAnchor::Path(BadPath::Escapes)),
+        ("../secret.ts", BadAnchor::Path(BadPath::Escapes)),
+        ("src/../../x.ts#L1", BadAnchor::Path(BadPath::Escapes)),
+        ("./", BadAnchor::Path(BadPath::NoFile)),
+        (".omnia/storage/x.json", BadAnchor::Path(BadPath::SkipDir(".omnia".to_string()))),
+        ("a/.omnia/x.json#L1", BadAnchor::Path(BadPath::SkipDir(".omnia".to_string()))),
+        ("spec.md", BadAnchor::Path(BadPath::SkipFile("spec.md".to_string()))),
+        ("docs/plan.md#L3", BadAnchor::Path(BadPath::SkipFile("plan.md".to_string()))),
         ("src/orders.ts#L34-L12", BadAnchor::Reversed { start: 34, end: 12 }),
     ] {
         assert_eq!(Anchor::parse(anchor), Err(expected), "{anchor}");
@@ -177,16 +179,13 @@ fn anchored_claims() {
     );
     let findings = anchored.findings();
     assert_eq!(findings.len(), 3, "{findings:?}");
-    assert!(
-        findings[0].contains("claim 1: path `../x.ts` escapes the source root"),
-        "{findings:?}"
-    );
+    assert!(findings[0].contains("claim 1: path `../x.ts` escapes the root"), "{findings:?}");
     assert!(
         findings[1].contains("claim 2: path `src/orders.ts#L9-L3` ends at line 3"),
         "{findings:?}"
     );
     assert!(
-        findings[2].contains("claim 3: path `.omnia/x.json` is under the skip root"),
+        findings[2].contains("claim 3: path `.omnia/x.json` is under the engine's own"),
         "{findings:?}"
     );
     assert_eq!(
@@ -196,7 +195,7 @@ fn anchored_claims() {
             lines: Some((3, 9)),
         }))
     );
-    assert_eq!(anchored.claims[1].anchor(), Some(Err(BadAnchor::Escapes)));
+    assert_eq!(anchored.claims[1].anchor(), Some(Err(BadAnchor::Path(BadPath::Escapes))));
     assert_eq!(anchored.claims[4].anchor(), None);
 }
 

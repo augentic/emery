@@ -22,7 +22,9 @@ mod generated {
     });
 }
 
-use self::generated::emery::adapter::types as wit;
+// The shared `types` interface, which the target axis binds through this
+// generation rather than its own.
+pub use self::generated::emery::adapter::types as wit;
 use crate::source::{
     AdapterMetadata, Backing, Claim, ClaimKind, Evidence, SourceContent, SourceInput, SourceKind,
 };
@@ -217,8 +219,8 @@ impl TryFrom<wit::Evidence> for Evidence {
     }
 }
 
-// The WIT variant carries the description alone; the lift in `Source::extract`
-// restores the class.
+// The WIT variant carries the description alone; the lifts in
+// `Source::extract` and `Target::build` restore the class.
 impl From<omnia_sdk::Error> for wit::Error {
     fn from(error: omnia_sdk::Error) -> Self {
         let description = error.description();

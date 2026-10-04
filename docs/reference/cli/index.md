@@ -1,6 +1,6 @@
 # CLI Reference
 
-The `emery` CLI owns all deterministic operations. The grammar is two verbs plus the auto-derived `completions` — deleted verbs are gone from the grammar, not hidden.
+The `emery` CLI owns all deterministic operations. The grammar is three verbs plus the auto-derived `completions` — deleted verbs are gone from the grammar, not hidden.
 
 ## Installation
 
@@ -22,5 +22,6 @@ brew install emery
 | Verb | Purpose |
 |------|---------|
 | [emery specify](specify.md) | Generate the specification, design, and build plan from the sources named on the invocation, continuing the revision the project carries, and commit them as the current revision |
+| [emery build](build.md) | Build every slice of the current plan through a target adapter, in dependency order, into the project tree |
 | [emery show](show.md) | Print a reviewable artifact of the current revision to stdout; `--format json` carries the typed document |
 | `emery completions <shell>` | Print a shell-completion script; auto-derived from the live clap surface |

@@ -2,9 +2,10 @@
 //!
 //! Every load goes through the deployment loader at the location the
 //! reference names, and the deployment's grant bounds it: a local component
-//! loads through the project root the runtime mounts read-only, a package
-//! from the registry the run's [`Registries`] route its namespace to, and a
-//! bare name only where the deployment declares the guest.
+//! loads through the adapters root the runtime mounts read-only as
+//! [`ADAPTERS`], a package from the registry the run's [`Registries`] route
+//! its namespace to, and a bare name only where the deployment declares the
+//! guest.
 
 use std::collections::BTreeMap;
 use std::collections::btree_map::Entry;
@@ -15,16 +16,24 @@ use std::str::FromStr;
 
 use anyhow::Context;
 use emery_adapter::is_kebab;
-use emery_adapter::source::{Source, SourceKind};
+use emery_adapter::source::{AdapterMetadata, Source};
+use emery_adapter::target::{Target, TargetMetadata};
 use futures::future;
 use omnia_sdk::plugins::{Digest, Location};
-use omnia_sdk::{Error, Plugins, bad_request, not_found};
+use omnia_sdk::{Error, Plugins, bad_request, not_found, server_error};
 use serde::{Deserialize, Serialize};
 
-use crate::{preopen_join, preopen_path};
+use crate::preopen_path;
 
 /// The name of the guest the engine itself runs as.
 pub const ENGINE: &str = "emery";
+
+/// The name of the mount a local component loads through.
+///
+/// The runtime mounts the adapters root under it, read-only and apart from
+/// the project tree, so a component is never loaded from a directory a run
+/// can write. An [`AdapterRef::File`] is a path beneath that root.
+pub const ADAPTERS: &str = "adapters";
 
 /// The registry serving each package namespace.
 ///
@@ -67,15 +76,17 @@ impl Registries {
 
 /// What one adapter loaded as.
 #[derive(Debug, Clone)]
-pub struct Loaded {
+pub struct Loaded<M> {
     /// The identity the loader registered the adapter under, which every
-    /// source dispatch names.
+    /// dispatch names.
     pub id: String,
-    /// The kind of source the adapter declares, which ranks its claims.
-    pub kind: SourceKind,
+    /// The metadata the adapter declares for its axis: an
+    /// [`AdapterMetadata`], whose kind of source ranks a source adapter's
+    /// claims, or a [`TargetMetadata`].
+    pub metadata: M,
 }
 
-/// Loads each referenced adapter and returns what it loaded as.
+/// Loads each referenced source adapter and returns what it loaded as.
 ///
 /// Duplicate references are loaded once, under one pin. Every adapter loads
 /// at the location its reference names ([`AdapterRef::location`]), under the
@@ -87,7 +98,7 @@ pub struct Loaded {
 /// # Errors
 ///
 /// - Returns [`Error::BadRequest`] when a reference is refused:
-///   - a path outside the project;
+///   - a path outside the adapters root;
 ///   - a digest on a declared guest, or two digests on one adapter;
 ///   - two references that name one guest, such as two components sharing a
 ///     file stem or two versions of one package;
@@ -103,7 +114,49 @@ pub struct Loaded {
 pub async fn load<'a, P: Source + Plugins>(
     provider: &P, adapters: impl IntoIterator<Item = (&'a AdapterRef, Option<&'a Digest>)>,
     registries: &Registries,
-) -> Result<BTreeMap<String, Loaded>, Error> {
+) -> Result<BTreeMap<String, Loaded<AdapterMetadata>>, Error> {
+    load_axis(provider, adapters, registries, |id| Source::metadata(provider, id)).await
+}
+
+/// Loads the one target adapter a build names and returns what it loaded as.
+///
+/// The reference loads as [`load`] loads a source adapter, under the same
+/// refusals, and its declared minimum Emery version is gated the same way.
+///
+/// # Errors
+///
+/// As [`load`], over the one reference.
+pub async fn load_target<P: Target + Plugins>(
+    provider: &P, adapter: &AdapterRef, digest: Option<&Digest>, registries: &Registries,
+) -> Result<Loaded<TargetMetadata>, Error> {
+    let loaded =
+        load_axis(provider, [(adapter, digest)], registries, |id| Target::metadata(provider, id))
+            .await?;
+    loaded.into_values().next().ok_or_else(|| server_error!("adapter `{adapter}` was not loaded"))
+}
+
+// The metadata an axis declares, gated alike: each carries the minimum
+// `emery` version the adapter requires.
+trait Declared {
+    fn emery_version(&self) -> Option<&str>;
+}
+
+impl Declared for AdapterMetadata {
+    fn emery_version(&self) -> Option<&str> {
+        self.emery_version.as_deref()
+    }
+}
+
+impl Declared for TargetMetadata {
+    fn emery_version(&self) -> Option<&str> {
+        self.emery_version.as_deref()
+    }
+}
+
+async fn load_axis<'a, P: Plugins, M: Declared>(
+    provider: &P, adapters: impl IntoIterator<Item = (&'a AdapterRef, Option<&'a Digest>)>,
+    registries: &Registries, metadata: impl Fn(&str) -> M,
+) -> Result<BTreeMap<String, Loaded<M>>, Error> {
     // one load per distinct reference, under one pin, every entry checked
     let mut locations: BTreeMap<String, (Location, Option<Digest>)> = BTreeMap::new();
     for (adapter, digest) in adapters {
@@ -149,23 +202,18 @@ pub async fn load<'a, P: Source + Plugins>(
     let mut loaded = BTreeMap::new();
     for (reference, plugin) in locations.into_keys().zip(handles) {
         let id = plugin.id();
-        let metadata = Source::metadata(provider, id);
-        if let Some(declared) = &metadata.emery_version {
+        let metadata = metadata(id);
+        if let Some(declared) = metadata.emery_version() {
             require_version(id, declared, &version)?;
         }
 
-        tracing::debug!(
-            adapter = %reference,
-            %id,
-            kind = %metadata.kind,
-            "adapter loaded"
-        );
+        tracing::debug!(adapter = %reference, %id, "adapter loaded");
 
         loaded.insert(
             reference,
             Loaded {
                 id: id.to_owned(),
-                kind: metadata.kind,
+                metadata,
             },
         );
     }
@@ -188,7 +236,7 @@ fn require_version(id: &str, declared: &str, running: &semver::Version) -> Resul
     Ok(())
 }
 
-/// A reference to a source adapter.
+/// A reference to an adapter, of either axis.
 ///
 /// Parsing normalises package shorthands and local file prefixes.
 /// `intent@1.0.0` becomes `emery:intent@1.0.0`, while
@@ -223,7 +271,7 @@ fn require_version(id: &str, declared: &str, running: &semver::Version) -> Resul
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(try_from = "String", into = "String")]
 pub enum AdapterRef {
-    /// A project-relative path to a `.wasm` component.
+    /// A path to a `.wasm` component beneath the adapters root.
     File(PathBuf),
     /// A registry package, `<namespace>:<name>@<version>`.
     Package {
@@ -269,28 +317,17 @@ impl AdapterRef {
         Ok(name)
     }
 
-    /// Returns this reference with any local component path resolved from `base`.
-    ///
-    /// Package and declared references are unchanged. `base` is the directory
-    /// holding an operator config file when one is read; argv uses `.`.
-    ///
-    /// # Errors
-    ///
-    /// Returns [`Error::BadRequest`] when a file path escapes the project root.
-    pub fn anchored_to(&self, base: &Path) -> Result<Self, Error> {
-        Ok(match self {
-            Self::File(path) => Self::File(preopen_join(base, path)?),
-            other => other.clone(),
-        })
-    }
-
     /// Returns the loader location this reference loads at.
+    ///
+    /// A local component loads at its path beneath the [`ADAPTERS`] mount,
+    /// wherever the reference was written.
     ///
     /// # Errors
     ///
     /// - Returns [`Error::BadRequest`] for a digest on a declared guest, a
-    ///   package whose namespace `registries` does not route, or a reference
-    ///   that would register as [`ENGINE`].
+    ///   package whose namespace `registries` does not route, a local
+    ///   component whose path escapes the adapters root, or a reference that
+    ///   would register as [`ENGINE`].
     /// - Returns [`Error::NotFound`] when a local component does not exist.
     pub fn location(
         &self, digest: Option<&Digest>, registries: &Registries,
@@ -317,9 +354,15 @@ impl AdapterRef {
                 }
             }
             Self::File(path) => {
-                let local = preopen_path(path)?;
+                let Ok(relative) = preopen_path(path) else {
+                    return Err(bad_request!(
+                        "adapter `{self}` escapes the adapters root; a local component is a \
+                         relative path beneath it"
+                    ));
+                };
+                let local = Path::new(ADAPTERS).join(relative);
                 if !local.is_file() {
-                    return Err(not_found!("adapter `{self}` not found"));
+                    return Err(not_found!("adapter `{self}` not found beneath the adapters root"));
                 }
                 Location::Path(local.display().to_string())
             }
@@ -338,7 +381,7 @@ impl AdapterRef {
 }
 
 impl Display for AdapterRef {
-    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         match self {
             Self::Package {
                 namespace,

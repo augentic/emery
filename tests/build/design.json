@@ -1,0 +1,31 @@
+{
+  "emery": 4,
+  "preamble": [],
+  "sections": [
+    {
+      "kind": "overview",
+      "blocks": [
+        {
+          "text": "Sign-in issues a session; orders are placed and cancelled under it."
+        }
+      ]
+    },
+    {
+      "kind": "domain-model",
+      "blocks": [
+        {
+          "type": {
+            "key": "orders.order",
+            "signature": "interface Order { id: string }"
+          }
+        },
+        {
+          "type": {
+            "key": "orders.line",
+            "signature": "interface Line { sku: string }"
+          }
+        }
+      ]
+    }
+  ]
+}

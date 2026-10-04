@@ -4,6 +4,7 @@
 //! Each slice is a subset of the specification that can be built on its own,
 //! with the design types it owns and the slices built before it.
 
+use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::{self, Display, Formatter};
 
 use serde::{Deserialize, Serialize};
@@ -37,6 +38,50 @@ impl Plan {
     pub fn slice(&self, id: SliceId) -> Option<&Slice> {
         self.slices.iter().find(|slice| slice.id == id)
     }
+
+    /// Returns the slices in build order.
+    ///
+    /// Every slice comes after each slice it depends on; among the slices
+    /// ready at once, the lower id comes first. The engine writes no cycle;
+    /// were a stored plan to hold one, its slices come last, in id order.
+    #[must_use]
+    pub fn order(&self) -> Vec<&Slice> {
+        let pending = self
+            .slices
+            .iter()
+            .map(|slice| {
+                let dependencies = slice
+                    .depends_on
+                    .iter()
+                    .copied()
+                    .filter(|dependency| {
+                        *dependency != slice.id && self.slice(*dependency).is_some()
+                    })
+                    .collect();
+                (slice.id, dependencies)
+            })
+            .collect();
+
+        let (ordered, cyclic) = toposort(pending);
+        ordered.into_iter().chain(cyclic).filter_map(|id| self.slice(id)).collect()
+    }
+}
+
+// `pending` maps each node to the nodes it waits on. Kahn's algorithm, the
+// lowest ready node first: returns the nodes placed, then the nodes a cycle
+// leaves unplaceable, in their own order.
+pub fn toposort<T: Ord + Copy>(mut pending: BTreeMap<T, BTreeSet<T>>) -> (Vec<T>, Vec<T>) {
+    let mut ordered = Vec::with_capacity(pending.len());
+    while let Some(next) =
+        pending.iter().find(|(_, dependencies)| dependencies.is_empty()).map(|(node, _)| *node)
+    {
+        pending.remove(&next);
+        for dependencies in pending.values_mut() {
+            dependencies.remove(&next);
+        }
+        ordered.push(next);
+    }
+    (ordered, pending.into_keys().collect())
 }
 
 impl revision::Document for Plan {

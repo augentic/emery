@@ -1,14 +1,15 @@
-/// The `emery:adapter` contract: one source axis, two operations.
+/// The `emery:adapter` contract: a source axis and a target axis, each
+/// `metadata` and one judgment operation.
 ///
-/// An adapter guest exports the `source` interface alone. No resource type
-/// crosses the contract. Dispatch carries plain values, routed by each
-/// call's `adapter-id` first argument.
+/// An adapter guest exports one axis interface. No resource type crosses
+/// the contract. Dispatch carries plain values, routed by each call's
+/// `adapter-id` first argument.
 package emery:adapter@0.1.0;
 
 /// The records both sides of the contract exchange.
 ///
 /// They are declared apart from the operations so that a world importing
-/// and exporting `source` binds them once, and both sides share one type.
+/// and exporting an axis binds them once, and both sides share one type.
 interface types {
   /// The error an operation returns.
   variant error {
@@ -114,10 +115,10 @@ interface types {
     claims: list<claim>,
   }
 
-  /// What an adapter declares about itself, as compiled-in constants.
-  /// Identity is the package reference and axis is the exported world, so
-  /// the record carries the host version requirement and the kind of
-  /// source alone.
+  /// What a source adapter declares about itself, as compiled-in
+  /// constants. Identity is the package reference and axis is the exported
+  /// world, so the record carries the host version requirement and the
+  /// kind of source alone.
   record adapter-metadata {
     /// The minimum `emery` version this adapter needs, as an exact semver
     /// like Cargo's `rust-version`. The host refuses the adapter when the
@@ -126,6 +127,46 @@ interface types {
     /// The kind of source this adapter reads, which ranks its evidence
     /// against other sources'.
     kind: source-kind,
+  }
+
+  /// What a target adapter declares about itself, as compiled-in
+  /// constants: the host version requirement alone.
+  record target-metadata {
+    /// The minimum `emery` version this adapter needs, as an exact semver
+    /// like Cargo's `rust-version`. The host refuses the adapter when the
+    /// running binary is older. Absent means no minimum.
+    emery-version: option<string>,
+  }
+
+  /// One slice of the build plan, as `emery show` renders the revision it
+  /// comes from. A target is value-in; it never reads the revision store.
+  record slice {
+    /// The slice's stable identifier, `SLICE-001`.
+    id: string,
+    /// The slice's drafted kebab-case name, which labels the build.
+    name: string,
+    /// The ids of the requirements the slice builds, `REQ-001`, each one
+    /// `spec` renders. A report's `covered` is held to them, so neither
+    /// side reads them back out of the Markdown.
+    requirements: list<string>,
+    /// The specification cut to the slice: its preamble and the slice's
+    /// requirements, as `emery show spec` renders them.
+    spec: string,
+    /// The whole design, as `emery show design` renders it.
+    design: string,
+    /// The slice's own plan entry: the requirements it builds, the design
+    /// types it owns, the slices built before it, and its brief.
+    plan: string,
+  }
+
+  /// What a build reports beyond the tree it wrote.
+  record report {
+    /// The requirement ids the build implemented, each one of the slice's.
+    /// A requirement left out is uncovered; the report never says why.
+    covered: list<string>,
+    /// The files the build wrote or changed, as `/`-separated paths
+    /// relative to the workspace root.
+    written: list<string>,
   }
 }
 
@@ -149,4 +190,28 @@ interface source {
 world source-adapter {
   import source;
   export source;
+}
+
+/// The target adapter operations: `metadata` and `build`.
+interface target {
+  use types.{ adapter-id, error, report, slice, target-metadata };
+
+  /// Reports the adapter's metadata. The host asks once per run, after the
+  /// load and before any build. Effect-free and answerable from
+  /// compiled-in constants: no model call, no filesystem access.
+  metadata: func(id: adapter-id) -> target-metadata;
+
+  /// Builds `slice` into the writable tree at `workspace`, the one judgment
+  /// operation. `workspace` is the deployment-local path of the tree root,
+  /// which the adapter lends to its model. Returns `invalid-request` when
+  /// the adapter refuses its input and `internal` when it fails on its own
+  /// account.
+  build: async func(id: adapter-id, slice: slice, workspace: string) -> result<report, error>;
+}
+
+/// A target adapter component. The interface is imported as well as
+/// exported, so one binding generation carries the caller side too.
+world target-adapter {
+  import target;
+  export target;
 }

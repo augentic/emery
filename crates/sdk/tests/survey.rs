@@ -296,7 +296,7 @@ async fn gate_findings() {
         "- surface `dup` is listed twice",
         "- surface `grammar`: anchor `src/cli.ts#5` is not `<path>`, `<path>#L<n>`, or \
          `<path>#L<n>-L<n>`",
-        "- surface `escapes`: anchor `../cli.ts` escapes the source root",
+        "- surface `escapes`: anchor `../cli.ts` escapes the root",
         "- surface `stranger`: anchor `src/lib/run.ts#L1` names no module of this source; anchor \
          within the modules listed",
         "- surface `manifest`: anchor `package.json` names no module of this source",

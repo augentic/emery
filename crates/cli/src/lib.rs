@@ -5,7 +5,7 @@
 //! the `RUST_LOG` the runtime sets from its verbosity flags, which the grammar
 //! declares (`-v`, `-q`) and never reads.
 
-mod sources;
+mod config;
 mod text;
 
 use std::borrow::Cow;
@@ -16,6 +16,7 @@ use std::path::PathBuf;
 use clap::builder::{PossibleValue, PossibleValuesParser, TypedValueParser};
 use clap::{Parser, Subcommand};
 use emery_engine::Provider;
+use emery_engine::build::{BuildInput, build};
 use emery_engine::show::{Artifact, ShowInput, show};
 use emery_engine::specify::{SpecifyInput, specify};
 use omnia_sdk::Error;
@@ -30,9 +31,20 @@ const SPECIFY_DESC: &str = "Generate spec.md, design.md, and plan.md from source
     for `emery.toml` in the project root. Config and command-line sources cannot be \
     combined; the project-root file's `[registries]` table routes a package adapter \
     named on the command line all the same.\n\n\
-    Adapter paths are project-relative. A bare adapter name is a guest the deployment \
-    declares; the shipped binary declares none. Each run reloads adapters, reconciles \
-    their claims, and atomically commits a new revision.";
+    A `.wasm` adapter path is relative to the adapters root, `~/.emery/adapters`. A bare \
+    adapter name is a guest the deployment declares; the shipped binary declares none. \
+    Each run reloads adapters, reconciles their claims, and atomically commits a new \
+    revision.";
+const BUILD_DESC: &str = "Build the current plan through a target adapter.\n\n\
+    Name the adapter, or use `--config [<path>]` (default: `emery.toml`) to read its \
+    `[target]` table. With no adapter, Emery looks for `emery.toml` in the project root. \
+    Config and a command-line adapter cannot be combined; the project-root file's \
+    `[registries]` table routes a package adapter named on the command line all the \
+    same.\n\n\
+    Every slice of the plan is built in turn, each after the slices it depends on, into \
+    the project tree. The first slice that fails ends the run; the slices built before \
+    it stay written. A `.wasm` adapter path is relative to the adapters root, \
+    `~/.emery/adapters`.";
 const SHOW_DESC: &str = "Print an artifact from the current revision.\n\n\
     Text output contains only the artifact body. `--format json` also includes the \
     revision id and the typed document.";
@@ -66,6 +78,9 @@ where
         Verb::Completions { shell } => completions::<App>(shell, NAME),
         Verb::Specify(arguments) => {
             command.call(specify, || SpecifyInput::try_from(arguments), text::specify).await
+        }
+        Verb::Build(arguments) => {
+            command.call(build, || BuildInput::try_from(arguments), text::build).await
         }
         Verb::Show(ShowArgs { artifact }) => {
             command.call(show, || Ok(ShowInput { artifact }), text::show).await
@@ -103,6 +118,9 @@ enum Verb {
     /// Generate spec.md, design.md, and plan.md from the named sources
     #[command(long_about = SPECIFY_DESC)]
     Specify(SpecifyArgs),
+    /// Build every slice of the current plan through a target adapter
+    #[command(long_about = BUILD_DESC)]
+    Build(BuildArgs),
     /// Print a reviewable artifact of the current revision to stdout
     #[command(long_about = SHOW_DESC)]
     Show(ShowArgs),
@@ -116,15 +134,16 @@ enum Verb {
 
 #[derive(Debug, clap::Args)]
 struct SpecifyArgs {
-    /// Workspace-backed source adapters: a project-relative `.wasm` path, a
-    /// package reference, or a bare name the deployment declares. Each source
-    /// is named for its adapter; a component by its file stem, `_` read as `-`.
+    /// Workspace-backed source adapters: a `.wasm` path beneath the adapters
+    /// root, a package reference, or a bare name the deployment declares.
+    /// Each source is named for its adapter; a component by its file stem,
+    /// `_` read as `-`.
     adapters: Vec<String>,
     /// Bind an inline source as `<adapter>=<text>`; repeatable.
     #[arg(long = "description", short = 'd')]
     descriptions: Vec<String>,
     /// Operator-owned config; the omitted value selects emery.toml.
-    #[arg(long, short = 'c', num_args = 0..=1, default_missing_value = sources::CONFIG_FILE)]
+    #[arg(long, short = 'c', num_args = 0..=1, default_missing_value = config::CONFIG_FILE)]
     config: Option<PathBuf>,
 }
 
@@ -137,13 +156,35 @@ impl TryFrom<SpecifyArgs> for SpecifyInput {
             descriptions,
             config,
         } = args;
-        let carriers = sources::SourceCarriers {
+        config::SourceCarriers {
             adapters: &adapters,
             descriptions: &descriptions,
             config: config.as_deref(),
-        };
-        let sources::Decoded { sources, registries } = carriers.try_into()?;
-        Ok(Self { sources, registries })
+        }
+        .try_into()
+    }
+}
+
+#[derive(Debug, clap::Args)]
+struct BuildArgs {
+    /// The target adapter: a `.wasm` path beneath the adapters root, a
+    /// package reference, or a bare name the deployment declares.
+    adapter: Option<String>,
+    /// Operator-owned config; the omitted value selects emery.toml.
+    #[arg(long, short = 'c', num_args = 0..=1, default_missing_value = config::CONFIG_FILE)]
+    config: Option<PathBuf>,
+}
+
+impl TryFrom<BuildArgs> for BuildInput {
+    type Error = Error;
+
+    fn try_from(args: BuildArgs) -> Result<Self, Error> {
+        let BuildArgs { adapter, config } = args;
+        config::TargetCarriers {
+            adapter: adapter.as_deref(),
+            config: config.as_deref(),
+        }
+        .try_into()
     }
 }
 
@@ -175,8 +216,11 @@ fn hint(code: &str) -> Option<Cow<'static, str>> {
         "specify-source-required" => {
             "pass one or more adapters to `emery specify`, or add an `emery.toml` at the project root"
         }
+        "build-target-required" => {
+            "pass a target adapter to `emery build`, or add a `[target]` table to `emery.toml` at the project root"
+        }
         "spec-not-generated" => {
-            "run `emery specify <adapter>...` to commit a revision, then re-run show"
+            "run `emery specify <adapter>...` to commit a revision, then re-run show or build"
         }
         "spec-outdated" => {
             "the revision predates this emery's grammar: re-run `emery specify <adapter>...` to regenerate it"

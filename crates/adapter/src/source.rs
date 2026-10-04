@@ -8,7 +8,7 @@
 //! by an adapter.
 
 #[cfg(target_arch = "wasm32")]
-mod bindings;
+pub(crate) mod bindings;
 mod capability;
 mod evidence;
 
@@ -16,6 +16,5 @@ mod evidence;
 pub use bindings::export;
 pub use capability::{AdapterMetadata, Source, SourceContent, SourceInput};
 pub use evidence::{
-    Anchor, Backing, BadAnchor, CLAIM_ID_REGEX, Claim, ClaimKind, Evidence, SKIP_DIRS, SKIP_FILES,
-    SourceKind,
+    Anchor, Backing, BadAnchor, CLAIM_ID_REGEX, Claim, ClaimKind, Evidence, SourceKind,
 };

@@ -37,4 +37,4 @@ When `--format json` is provided, returns:
 
 ## See also
 
-- [`emery specify`](specify.md) commits the revision this verb renders; see the [CLI reference](index.md).
+- [`emery specify`](specify.md) commits the revision this verb renders, and [`emery build`](build.md) builds its plan; see the [CLI reference](index.md).

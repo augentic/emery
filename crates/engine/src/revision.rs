@@ -27,7 +27,7 @@ pub use self::design::{Block, Design, Section, SectionKind, citations};
 pub use self::diff::{Changed, DesignDiff, Diff, Entry, PlanDiff, SliceEntry, SpecDiff};
 pub use self::id::{ReqId, SliceId, stem};
 use self::plan::{DEPENDS_ON, REQUIREMENTS, TYPES};
-pub use self::plan::{Plan, Slice};
+pub use self::plan::{Plan, Slice, toposort};
 pub use self::spec::{Cited, Loser, Requirement, Scenario, Spec, Status};
 use self::spec::{ID, NOTE, SOURCES, STATUS};
 

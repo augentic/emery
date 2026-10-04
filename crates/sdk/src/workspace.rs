@@ -8,7 +8,7 @@
 use std::path::Path;
 
 use anyhow::Context as _;
-use emery_adapter::source::{SKIP_DIRS, SKIP_FILES};
+use emery_adapter::{SKIP_DIRS, SKIP_FILES};
 use omnia_sdk::{Error, bad_request};
 
 /// A workspace entry passed to an adapter's filter.
