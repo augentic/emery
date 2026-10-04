@@ -62,15 +62,15 @@ impl Plan {
             })
             .collect();
 
-        let (ordered, cyclic) = kahn(pending);
+        let (ordered, cyclic) = toposort(pending);
         ordered.into_iter().chain(cyclic).filter_map(|id| self.slice(id)).collect()
     }
 }
 
-// Kahn's elimination over `pending`, the nodes each node waits on: the lowest
-// node with nothing pending, in turn. Returns the nodes placed, then the
-// nodes a cycle leaves unplaceable, in their own order.
-pub fn kahn<T: Ord + Copy>(mut pending: BTreeMap<T, BTreeSet<T>>) -> (Vec<T>, Vec<T>) {
+// `pending` maps each node to the nodes it waits on. Kahn's algorithm, the
+// lowest ready node first: returns the nodes placed, then the nodes a cycle
+// leaves unplaceable, in their own order.
+pub fn toposort<T: Ord + Copy>(mut pending: BTreeMap<T, BTreeSet<T>>) -> (Vec<T>, Vec<T>) {
     let mut ordered = Vec::with_capacity(pending.len());
     while let Some(next) =
         pending.iter().find(|(_, dependencies)| dependencies.is_empty()).map(|(node, _)| *node)
