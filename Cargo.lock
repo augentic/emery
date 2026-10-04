@@ -1035,6 +1035,7 @@ name = "emery"
 version = "0.38.0"
 dependencies = [
  "anyhow",
+ "cfg-if",
  "emery-adapter",
  "emery-cli",
  "emery-engine",

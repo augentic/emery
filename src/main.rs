@@ -12,51 +12,54 @@
 //! The binary is host-only; on `wasm32` it compiles to an empty `main` so the
 //! workspace-wide wasm32 clippy pass can include it.
 
-#[cfg(not(target_arch = "wasm32"))]
-use std::path::PathBuf;
+cfg_if::cfg_if! {
+    if #[cfg(not(target_arch = "wasm32"))] {
+        use std::path::PathBuf;
 
-#[cfg(not(target_arch = "wasm32"))]
-use omnia_cursor::Client as Cursor;
-#[cfg(not(target_arch = "wasm32"))]
-use omnia_filesystem::{Client as Filesystem, ConnectOptions};
-#[cfg(not(target_arch = "wasm32"))]
-use omnia_wasi_blobstore::WasiBlobstore;
-#[cfg(not(target_arch = "wasm32"))]
-use omnia_wasi_keyvalue::WasiKeyValue;
-#[cfg(not(target_arch = "wasm32"))]
-use omnia_wasi_model::WasiModel;
-#[cfg(not(target_arch = "wasm32"))]
-use omnia_wasi_otel::{OtelDefault, WasiOtel};
+        use omnia_cursor::Client as Cursor;
+        use omnia_filesystem::{Client as Filesystem, ConnectOptions};
+        use omnia_wasi_blobstore::WasiBlobstore;
+        use omnia_wasi_keyvalue::WasiKeyValue;
+        use omnia_wasi_model::WasiModel;
+        use omnia_wasi_otel::{OtelDefault, WasiOtel};
 
-#[cfg(target_arch = "wasm32")]
-fn main() {}
+        omnia::runtime!({
+            mode: command,
+            mounts: [
+                { name: ".", path: ".", writable: true },
+                // adapters must be loaded from outside emery's writable mount (W^X rule)
+                { name: "adapters", path: adapters_dir() },
+            ],
+            guests: [{ path: env!("EMERY_GUEST") }],
+            hosts: {
+                WasiOtel: OtelDefault,
+                WasiModel: Cursor,
+                WasiKeyValue: Filesystem(ConnectOptions { root: ".omnia/storage".into() }),
+                WasiBlobstore: Filesystem(ConnectOptions { root: ".omnia/storage".into() }),
+            },
+        });
 
-#[cfg(not(target_arch = "wasm32"))]
-omnia::runtime!({
-    mode: command,
-    mounts: [
-        { name: ".", path: ".", writable: true },
-        { name: "adapters", path: adapters_root() },
-    ],
-    guests: [{ path: env!("EMERY_GUEST") }],
-    hosts: {
-        WasiOtel: OtelDefault,
-        WasiModel: Cursor,
-        WasiKeyValue: Filesystem(ConnectOptions { root: ".omnia/storage".into() }),
-        WasiBlobstore: Filesystem(ConnectOptions { root: ".omnia/storage".into() }),
-    },
-});
-
-// The adapters root is created on first use so the mount opens. It must lie
-// apart from the project: with no home directory there is no such root, so
-// the runtime stops before any guest runs rather than mount one inside the
-// tree a run can write.
-#[cfg(not(target_arch = "wasm32"))]
-fn adapters_root() -> PathBuf {
-    let home = std::env::home_dir()
-        .expect("the adapters root is `~/.emery/adapters`, which needs a home directory: set HOME");
-    let root = home.join(".emery").join("adapters");
-    std::fs::create_dir_all(&root)
-        .unwrap_or_else(|err| panic!("creating the adapters root {}: {err}", root.display()));
-    root
+        // The adapters directory is created on first use so the mount opens.
+        // It must be outside emery's writable mount so a malicious guest
+        // cannot write to it (following the W^X rule).
+        fn adapters_dir() -> PathBuf {
+            let Some(home) = std::env::home_dir() else {
+                eprintln!(
+                    "The adapters directory needs $HOME set.",
+                );
+                std::process::exit(1)
+            };
+            let dir = home.join(".emery").join("adapters");
+            if let Err(error) = std::fs::create_dir_all(&dir) {
+                eprintln!(
+                    "There was an issue creating `~/.emery/adapters`, which emery uses to load
+                    local adapters: {error}. You will need to create it before continuing."
+                );
+                std::process::exit(1)
+            }
+            dir
+        }
+    } else if #[cfg(target_arch = "wasm32")] {
+        fn main() {}
+    }
 }

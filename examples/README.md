@@ -17,7 +17,7 @@ The adapters live at [source/](source/) and [target/](target/) — the same anat
 # build the mock adapters
 cargo build --example source --example target --target wasm32-wasip2 --release
 
-# install them beneath the adapters root the runtime loads local components from
+# install adapters to emery's adapter cache (outside writable mount) 
 mkdir -p ~/.emery/adapters
 install target/wasm32-wasip2/release/examples/source.wasm ~/.emery/adapters/
 install target/wasm32-wasip2/release/examples/target.wasm ~/.emery/adapters/
