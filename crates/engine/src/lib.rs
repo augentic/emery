@@ -36,7 +36,7 @@ mod store;
 
 use std::path::{Component, Path, PathBuf};
 
-pub use adapter::{ADAPTERS, AdapterRef, ENGINE, Registries};
+pub use adapter::{ADAPTERS, AdapterRef, ENGINE};
 use emery_adapter::source::Source;
 use emery_adapter::target::Target;
 use omnia_sdk::{BlobStore, Error, Model, Plugins, StateStore, bad_request};

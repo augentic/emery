@@ -6,8 +6,8 @@
 # the name the specification cites the source by; omitted, it is the
 # adapter's name (a component file's stem, here `source`). A component
 # adapter is a path beneath the adapters root, `~/.emery/adapters`, wherever
-# this file is; `digest` pins it.
-# `[registries]` routes a package adapter's namespace to its registry.
+# this file is; `digest` pins it. A package adapter fetches from the registry
+# `~/.emery/wasm-pkg.toml` routes its namespace to; this file routes nothing.
 [[source]]
 name = "greeting"
 adapter = "./source.wasm"
@@ -38,11 +38,8 @@ adapter = "./source.wasm"
 # name = "custom"
 # adapter = "./custom/custom.wasm"
 
-# # Third-party package: routed by `[registries]`, pinned, and named
-# # `ledger` by its package.
+# # Third-party package: its `acme` namespace routed in
+# # `~/.emery/wasm-pkg.toml`, pinned, and named `ledger` by its package.
 # [[source]]
 # adapter = "acme:ledger@2.1.0"
 # digest = "sha256:0000000000000000000000000000000000000000000000000000000000000000"
-#
-# [registries]
-# acme = "registry.acme.io"

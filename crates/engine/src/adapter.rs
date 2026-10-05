@@ -3,8 +3,8 @@
 //! Every load goes through the deployment loader at the location the
 //! reference names, and the deployment's grant bounds it: a local component
 //! loads through the adapters root the runtime mounts read-only as
-//! [`ADAPTERS`], a package from the registry the run's [`Registries`] route
-//! its namespace to, and a bare name only where the deployment declares the
+//! [`ADAPTERS`], a package from the registry the deployment routes its
+//! namespace to, and a bare name only where the deployment declares the
 //! guest.
 
 use std::collections::BTreeMap;
@@ -35,44 +35,7 @@ pub const ENGINE: &str = "emery";
 /// can write. An [`AdapterRef::File`] is a path beneath that root.
 pub const ADAPTERS: &str = "adapters";
 
-/// The registry serving each package namespace.
-///
-/// A map from namespace to registry endpoint, over the one route the engine
-/// knows: `emery` resolves to `augentic.io` unless an entry re-routes it. A
-/// namespace nothing routes refuses the package before any load.
-///
-/// # Examples
-///
-/// ```
-/// use emery_engine::Registries;
-///
-/// let registries: Registries = serde_json::from_str(r#"{ "acme": "registry.acme.io" }"#)?;
-/// assert_eq!(registries.get("acme"), Some("registry.acme.io"));
-/// assert_eq!(registries.get("emery"), Some("augentic.io"));
-/// assert_eq!(registries.get("other"), None);
-/// # Ok::<(), serde_json::Error>(())
-/// ```
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
-#[serde(transparent)]
-pub struct Registries(BTreeMap<String, String>);
-
 const NAMESPACE: &str = "emery";
-const REGISTRY: &str = "augentic.io";
-
-impl Registries {
-    /// Returns the registry serving `namespace`, if a project line or the
-    /// first-party route names one.
-    #[must_use]
-    pub fn get(&self, namespace: &str) -> Option<&str> {
-        if let Some(registry) = self.0.get(namespace) {
-            return Some(registry);
-        }
-        if namespace == NAMESPACE {
-            return Some(REGISTRY);
-        }
-        None
-    }
-}
 
 /// What one adapter loaded as.
 #[derive(Debug, Clone)]
@@ -103,19 +66,18 @@ pub struct Loaded<M> {
 ///   - two references that name one guest, such as two components sharing a
 ///     file stem or two versions of one package;
 ///   - a reference that names the engine's own guest ([`ENGINE`]);
-///   - a package whose namespace `registries` does not route;
 ///   - malformed version metadata;
 ///   - an incompatible adapter, with code `unsupported-version`;
-///   - an adapter that resolves to other bytes than its pin, with the
-///     loader's code `refused`.
+///   - a package whose namespace the deployment routes nowhere, or an
+///     adapter that resolves to other bytes than its pin, with the loader's
+///     code `refused`.
 /// - Returns [`Error::NotFound`] when a local component does not exist.
 ///
 /// Errors from [`Plugins::load`] are returned unchanged.
 pub async fn load<'a, P: Source + Plugins>(
     provider: &P, adapters: impl IntoIterator<Item = (&'a AdapterRef, Option<&'a Digest>)>,
-    registries: &Registries,
 ) -> Result<BTreeMap<String, Loaded<AdapterMetadata>>, Error> {
-    load_axis(provider, adapters, registries, |id| Source::metadata(provider, id)).await
+    load_axis(provider, adapters, |id| Source::metadata(provider, id)).await
 }
 
 /// Loads the one target adapter a build names and returns what it loaded as.
@@ -127,11 +89,10 @@ pub async fn load<'a, P: Source + Plugins>(
 ///
 /// As [`load`], over the one reference.
 pub async fn load_target<P: Target + Plugins>(
-    provider: &P, adapter: &AdapterRef, digest: Option<&Digest>, registries: &Registries,
+    provider: &P, adapter: &AdapterRef, digest: Option<&Digest>,
 ) -> Result<Loaded<TargetMetadata>, Error> {
     let loaded =
-        load_axis(provider, [(adapter, digest)], registries, |id| Target::metadata(provider, id))
-            .await?;
+        load_axis(provider, [(adapter, digest)], |id| Target::metadata(provider, id)).await?;
     loaded.into_values().next().ok_or_else(|| server_error!("adapter `{adapter}` was not loaded"))
 }
 
@@ -155,12 +116,12 @@ impl Declared for TargetMetadata {
 
 async fn load_axis<'a, P: Plugins, M: Declared>(
     provider: &P, adapters: impl IntoIterator<Item = (&'a AdapterRef, Option<&'a Digest>)>,
-    registries: &Registries, metadata: impl Fn(&str) -> M,
+    metadata: impl Fn(&str) -> M,
 ) -> Result<BTreeMap<String, Loaded<M>>, Error> {
     // one load per distinct reference, under one pin, every entry checked
     let mut locations: BTreeMap<String, (Location, Option<Digest>)> = BTreeMap::new();
     for (adapter, digest) in adapters {
-        let location = adapter.location(digest, registries)?;
+        let location = adapter.location(digest)?;
 
         match locations.entry(adapter.to_string()) {
             Entry::Vacant(slot) => {
@@ -275,7 +236,7 @@ pub enum AdapterRef {
     File(PathBuf),
     /// A registry package, `<namespace>:<name>@<version>`.
     Package {
-        /// The namespace [`Registries`] routes to a registry, `emery` for a
+        /// The namespace the deployment routes to a registry, `emery` for a
         /// first-party adapter.
         namespace: String,
         /// The package name, the [`name`](Self::name) a run derives.
@@ -320,18 +281,16 @@ impl AdapterRef {
     /// Returns the loader location this reference loads at.
     ///
     /// A local component loads at its path beneath the [`ADAPTERS`] mount,
-    /// wherever the reference was written.
+    /// wherever the reference was written. A package names no registry: the
+    /// deployment routes its namespace, or refuses the load.
     ///
     /// # Errors
     ///
     /// - Returns [`Error::BadRequest`] for a digest on a declared guest, a
-    ///   package whose namespace `registries` does not route, a local
-    ///   component whose path escapes the adapters root, or a reference that
-    ///   would register as [`ENGINE`].
+    ///   local component whose path escapes the adapters root, or a
+    ///   reference that would register as [`ENGINE`].
     /// - Returns [`Error::NotFound`] when a local component does not exist.
-    pub fn location(
-        &self, digest: Option<&Digest>, registries: &Registries,
-    ) -> Result<Location, Error> {
+    pub fn location(&self, digest: Option<&Digest>) -> Result<Location, Error> {
         let location = match self {
             Self::Static(name) => {
                 if digest.is_some() {
@@ -341,18 +300,10 @@ impl AdapterRef {
                 }
                 Location::Declared(name.clone())
             }
-            Self::Package { namespace, .. } => {
-                let endpoint = registries.get(namespace).ok_or_else(|| {
-                    bad_request!(
-                        "no registry routes `{self}`: `registries` names no route for namespace \
-                         `{namespace}`"
-                    )
-                })?;
-                Location::Registry {
-                    package: self.to_string(),
-                    endpoint: Some(endpoint.to_owned()),
-                }
-            }
+            Self::Package { .. } => Location::Registry {
+                package: self.to_string(),
+                endpoint: None,
+            },
             Self::File(path) => {
                 let Ok(relative) = preopen_path(path) else {
                     return Err(bad_request!(

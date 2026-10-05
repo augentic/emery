@@ -26,6 +26,7 @@ omnia-wasi-blobstore.workspace = true
 omnia-wasi-keyvalue.workspace = true
 omnia-wasi-model.workspace = true
 omnia-wasi-otel.workspace = true
+toml.workspace = true
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 emery-adapter.workspace = true

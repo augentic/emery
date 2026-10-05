@@ -150,9 +150,11 @@ pub struct Provider<S = Memory> {
     /// The scripted [`Plugins`] loader.
     ///
     /// It admits every component path and package a run names, as the
-    /// shipped runtime's read-only project mount and registry routing admit
-    /// them, and resolves an unscripted one to the fixed `digest("ab")`. A
-    /// bare name is admitted only once a scenario declares it through
+    /// shipped runtime's read-only adapters mount admits a path and a
+    /// deployment routing every namespace admits a package, and resolves an
+    /// unscripted one to the fixed `digest("ab")`. A namespace the deployment
+    /// routes nowhere is a refusal a scenario scripts. A bare name is
+    /// admitted only once a scenario declares it through
     /// [`Provider::declaring`]. Every other is refused, as the deployment
     /// refuses a guest it never declared.
     pub plugins: ScriptedLoader,

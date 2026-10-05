@@ -29,22 +29,21 @@ const SPECIFY_DESC: &str = "Generate spec.md, design.md, and plan.md from source
     Name one or more adapters, use `--description <adapter>=<text>` for inline input, \
     or use `--config [<path>]` (default: `emery.toml`). With no sources, Emery looks \
     for `emery.toml` in the project root. Config and command-line sources cannot be \
-    combined; the project-root file's `[registries]` table routes a package adapter \
-    named on the command line all the same.\n\n\
-    A `.wasm` adapter path is relative to the adapters root, `~/.emery/adapters`. A bare \
-    adapter name is a guest the deployment declares; the shipped binary declares none. \
-    Each run reloads adapters, reconciles their claims, and atomically commits a new \
-    revision.";
+    combined.\n\n\
+    A `.wasm` adapter path is relative to the adapters root, `~/.emery/adapters`. A \
+    package adapter fetches from the registry `~/.emery/wasm-pkg.toml` routes its \
+    namespace to; `emery` is `augentic.io` unless re-routed there. A bare adapter name \
+    is a guest the deployment declares; the shipped binary declares none. Each run \
+    reloads adapters, reconciles their claims, and atomically commits a new revision.";
 const BUILD_DESC: &str = "Build the current plan through a target adapter.\n\n\
     Name the adapter, or use `--config [<path>]` (default: `emery.toml`) to read its \
     `[target]` table. With no adapter, Emery looks for `emery.toml` in the project root. \
-    Config and a command-line adapter cannot be combined; the project-root file's \
-    `[registries]` table routes a package adapter named on the command line all the \
-    same.\n\n\
+    Config and a command-line adapter cannot be combined.\n\n\
     Every slice of the plan is built in turn, each after the slices it depends on, into \
     the project tree. The first slice that fails ends the run; the slices built before \
     it stay written. A `.wasm` adapter path is relative to the adapters root, \
-    `~/.emery/adapters`.";
+    `~/.emery/adapters`; a package adapter fetches from the registry \
+    `~/.emery/wasm-pkg.toml` routes its namespace to.";
 const SHOW_DESC: &str = "Print an artifact from the current revision.\n\n\
     Text output contains only the artifact body. `--format json` also includes the \
     revision id and the typed document.";
@@ -226,7 +225,7 @@ fn hint(code: &str) -> Option<Cow<'static, str>> {
             "the revision predates this emery's grammar: re-run `emery specify <adapter>...` to regenerate it"
         }
         "refused" => {
-            "the loader refused the component; the message above names why: a missing export, an invalid artifact, a pre-compiled artifact where raw wasm is required, a mismatched digest, or a bare name this deployment does not declare"
+            "the loader refused the component; the message above names why: a missing export, an invalid artifact, a pre-compiled artifact where raw wasm is required, a mismatched digest, a bare name this deployment does not declare, or a package namespace nothing routes: add `<namespace> = \"<registry>\"` under `[namespace_registries]` in `~/.emery/wasm-pkg.toml`"
         }
         "unavailable" => {
             "the registry could not supply the package: check the network and that the exact version is published under its namespace"

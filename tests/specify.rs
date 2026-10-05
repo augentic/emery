@@ -2283,12 +2283,12 @@ mod package {
     use std::fs;
 
     use super::{
-        DESIGN_ANSWER, Provider, SPEC_ANSWER, Scratch, assert_message, cli_ok, fail, registry,
-        shown,
+        DESIGN_ANSWER, LoadError, Provider, SPEC_ANSWER, Scratch, assert_message, cli_ok, fail,
+        registry, shown,
     };
 
-    // `demo@1.2.0` is sugar for the `emery` namespace, which no table routes
-    // anywhere but augentic's registry.
+    // `demo@1.2.0` is sugar for the `emery` namespace; the load names no
+    // registry, since the deployment routes the namespace.
     #[tokio::test]
     async fn exact_ref() {
         for reference in ["emery:demo@1.2.0", "demo@1.2.0"] {
@@ -2298,8 +2298,8 @@ mod package {
 
             assert_eq!(
                 provider.plugins.loads(),
-                [(registry("emery:demo@1.2.0", "augentic.io"), None)],
-                "the exact reference is fetched, and the unpinned load names its registry: \
+                [(registry("emery:demo@1.2.0"), None)],
+                "the exact reference is fetched, unpinned, and the load names no registry: \
                  {reference}"
             );
             assert_eq!(
@@ -2334,52 +2334,62 @@ mod package {
         }
     }
 
+    // The deployment routes a namespace or refuses the load; the run names
+    // no registry either way, so nothing a project says can redirect a fetch.
     #[tokio::test]
-    async fn routed() {
-        let cases: &[(&str, &str, &str)] = &[
-            // (table, package, the registry the load names)
-            ("", "emery:demo@1.2.0", "augentic.io"),
-            (
-                "[registries]\nacme = \"registry.acme.io\"\n",
-                "acme:ledger@2.1.0",
-                "registry.acme.io",
-            ),
-            (
-                "[registries]\nemery = \"staging.augentic.io\"\n",
-                "emery:demo@1.2.0",
-                "staging.augentic.io",
-            ),
-        ];
-        for (table, package, endpoint) in cases {
-            let scratch = Scratch::new();
-            let config = scratch
-                .config(&format!("[[source]]\nname = \"docs\"\nadapter = \"{package}\"\n{table}"));
-            let provider = Provider::answering([SPEC_ANSWER, DESIGN_ANSWER]);
-
-            cli_ok(&provider, &["emery", "specify", "--config", &config]).await;
-
-            assert_eq!(
-                provider.plugins.loads(),
-                [(registry(package, endpoint), None)],
-                "{package} under {table:?}"
-            );
-            provider.model.assert_exhausted();
-        }
-    }
-
-    #[tokio::test]
-    async fn unrouted() {
+    async fn third_party_namespace() {
         let scratch = Scratch::new();
         let config =
             scratch.config("[[source]]\nname = \"ledger\"\nadapter = \"acme:ledger@2.1.0\"\n");
+        let provider = Provider::answering([SPEC_ANSWER, DESIGN_ANSWER]);
+
+        cli_ok(&provider, &["emery", "specify", "--config", &config]).await;
+
+        assert_eq!(
+            provider.plugins.loads(),
+            [(registry("acme:ledger@2.1.0"), None)],
+            "a routed namespace fetches, the load naming no registry"
+        );
+        provider.model.assert_exhausted();
+
+        // an unrouted namespace is the loader's refusal, hinted at the routing file
+        let mut provider = Provider::idle();
+        provider.plugins = provider.plugins.clone().refuse(
+            "acme:ledger",
+            LoadError::Refused(
+                "no registry routes `acme:ledger@2.1.0`: the load names none, and the \
+                 deployment's `registries` routes neither the `acme` namespace nor a default"
+                    .to_string(),
+            ),
+        );
+
+        let envelope =
+            fail(&provider, &["emery", "specify", "--config", &config], 1, "refused").await;
+
+        assert_message(&envelope, "no registry routes `acme:ledger@2.1.0`");
+        let hint = envelope["hint"].as_str().unwrap_or("");
+        assert!(
+            hint.contains("[namespace_registries]") && hint.contains("~/.emery/wasm-pkg.toml"),
+            "the hint names the line to add: {envelope}"
+        );
+        assert_eq!(provider.plugins.loads().len(), 1, "the loader is asked once and refuses");
+    }
+
+    // Routing is the deployment's, so the file reserves no table for it.
+    #[tokio::test]
+    async fn registries_table() {
+        let scratch = Scratch::new();
+        let config = scratch.config(
+            "[[source]]\nname = \"ledger\"\nadapter = \"acme:ledger@2.1.0\"\n\n\
+             [registries]\nacme = \"registry.acme.io\"\n",
+        );
         let provider = Provider::idle();
 
         let envelope =
             fail(&provider, &["emery", "specify", "--config", &config], 1, "bad_request").await;
 
-        assert_message(&envelope, "no registry routes `acme:ledger@2.1.0`");
-        assert_message(&envelope, "`registries` names no route for namespace `acme`");
-        assert!(provider.plugins.loads().is_empty(), "an unrouted package is never fetched");
+        assert_message(&envelope, "unknown field `registries`");
+        assert!(provider.plugins.loads().is_empty(), "a file that does not parse loads nothing");
     }
 
     // Two versions of one package register as one guest, as two components
@@ -2404,70 +2414,45 @@ mod package {
         assert!(provider.plugins.loads().is_empty(), "a colliding list fetches nothing");
     }
 
-    // The project-root table routes an argv source while the file's own sources
-    // stay out. The CWD move is hermetic under nextest's process-per-test isolation.
+    // An argv run reads no project-root file: one that does not parse, or
+    // whose source is located outside its root, refuses the discovered run
+    // alone. The CWD move is hermetic under nextest's process-per-test
+    // isolation.
     #[tokio::test]
-    async fn argv_registries() {
-        let project = tempfile::TempDir::new().expect("project dir");
-        fs::write(
-            project.path().join("emery.toml"),
-            "[[source]]\nname = \"docs\"\nadapter = \"documentation\"\n\n\
-             [registries]\nacme = \"registry.acme.io\"\n",
-        )
-        .expect("write emery.toml");
-        std::env::set_current_dir(project.path()).expect("enter project");
-        let provider = Provider::answering([SPEC_ANSWER, DESIGN_ANSWER]);
-
-        cli_ok(&provider, &["emery", "specify", "acme:ledger@2.1.0"]).await;
-
-        assert_eq!(
-            provider.plugins.loads(),
-            [(registry("acme:ledger@2.1.0", "registry.acme.io"), None)],
-            "argv names the run's only source, routed by the project's table"
-        );
-        assert!(
-            shown(&provider, "spec").await.contains("Sources: [ledger:greeting.behaviour]"),
-            "the file's `[[source]]` entries stay out of an argv run"
-        );
-        provider.model.assert_exhausted();
-    }
-
-    // The file is read whole, so a `[[source]]` entry that does not parse
-    // refuses a run that named its own sources too. One that parses, and is
-    // refused only where its path or adapter is located, refuses the run whose
-    // source it is alone. The CWD move is hermetic under nextest.
-    #[tokio::test]
-    async fn argv_malformed_sources() {
+    async fn argv_beside_project_file() {
         let project = tempfile::TempDir::new().expect("project dir");
         std::env::set_current_dir(project.path()).expect("enter project");
-        let write = |entry: &str| {
-            fs::write(
-                project.path().join("emery.toml"),
-                format!("{entry}\n[registries]\nacme = \"registry.acme.io\"\n"),
-            )
-            .expect("write emery.toml");
-        };
-
-        write("[[source]]\nname = \"docs\"\nadapter = \"documentation\"\nbranch = \"main\"\n");
-        fail(&Provider::idle(), &["emery", "specify"], 1, "bad_request").await;
         let argv = ["emery", "specify", "acme:ledger@2.1.0"];
-        let envelope = fail(&Provider::idle(), &argv, 1, "bad_request").await;
-        assert_message(&envelope, "unknown field `branch`");
 
-        for entry in [
-            "[[source]]\nname = \"docs\"\nadapter = \"documentation\"\npath = \"../../outside\"\n",
-            "[[source]]\nname = \"local\"\nadapter = \"/tmp/source.wasm\"\n",
+        for (entry, refusal) in [
+            (
+                "[[source]]\nname = \"docs\"\nadapter = \"documentation\"\nbranch = \"main\"\n",
+                "unknown field `branch`",
+            ),
+            (
+                "[[source]]\nname = \"docs\"\nadapter = \"documentation\"\npath = \"../../outside\"\n",
+                "must be relative to the project root",
+            ),
+            (
+                "[[source]]\nname = \"local\"\nadapter = \"/tmp/source.wasm\"\n",
+                "escapes the adapters root",
+            ),
         ] {
-            write(entry);
-            fail(&Provider::idle(), &["emery", "specify"], 1, "bad_request").await;
+            fs::write(project.path().join("emery.toml"), entry).expect("write emery.toml");
+            let envelope = fail(&Provider::idle(), &["emery", "specify"], 1, "bad_request").await;
+            assert_message(&envelope, refusal);
             let provider = Provider::answering([SPEC_ANSWER, DESIGN_ANSWER]);
 
             cli_ok(&provider, &argv).await;
 
             assert_eq!(
                 provider.plugins.loads(),
-                [(registry("acme:ledger@2.1.0", "registry.acme.io"), None)],
-                "{entry}"
+                [(registry("acme:ledger@2.1.0"), None)],
+                "argv names the run's only source: {entry}"
+            );
+            assert!(
+                shown(&provider, "spec").await.contains("Sources: [ledger:greeting.behaviour]"),
+                "the file's `[[source]]` entries stay out of an argv run"
             );
             provider.model.assert_exhausted();
         }
@@ -2785,10 +2770,11 @@ fn assert_message(envelope: &Value, fragment: &str) {
     assert!(message.contains(fragment), "expected `{fragment}` in: {envelope}");
 }
 
-fn registry(package: &str, endpoint: &str) -> Location {
+// A package load names no registry: the deployment routes its namespace.
+fn registry(package: &str) -> Location {
     Location::Registry {
         package: package.to_string(),
-        endpoint: Some(endpoint.to_string()),
+        endpoint: None,
     }
 }
 

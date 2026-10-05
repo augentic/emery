@@ -152,17 +152,14 @@ async fn build_from_config() {
     assert_eq!(provider.target.calls().len(), 2);
 }
 
-// A run naming no adapter reads the project-root file; a package adapter
-// routes through its `[registries]` table. The CWD move is hermetic under
-// nextest's process-per-test isolation.
+// A run naming no adapter reads the project-root file; a package adapter's
+// load names no registry, since the deployment routes its namespace. The CWD
+// move is hermetic under nextest's process-per-test isolation.
 #[tokio::test]
 async fn build_discovered() {
     let project = tempfile::TempDir::new().expect("project dir");
-    fs::write(
-        project.path().join("emery.toml"),
-        "[target]\nadapter = \"acme:builder@2.1.0\"\n\n[registries]\nacme = \"registry.acme.io\"\n",
-    )
-    .expect("write emery.toml");
+    fs::write(project.path().join("emery.toml"), "[target]\nadapter = \"acme:builder@2.1.0\"\n")
+        .expect("write emery.toml");
     std::env::set_current_dir(project.path()).expect("enter project");
     let (provider, _) = planned();
 
@@ -173,14 +170,14 @@ async fn build_discovered() {
         [(
             Location::Registry {
                 package: "acme:builder@2.1.0".to_string(),
-                endpoint: Some("registry.acme.io".to_string()),
+                endpoint: None,
             },
             None
         )]
     );
     assert_eq!(provider.target.calls().len(), 2);
 
-    // the table routes an argv adapter all the same
+    // an argv adapter loads the same way, reading no file
     let (provider, _) = planned();
     cli_ok(&provider, &["emery", "build", "acme:builder@2.1.0"]).await;
     assert_eq!(provider.loaded(), ["acme:builder"]);

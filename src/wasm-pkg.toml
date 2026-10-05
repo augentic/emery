@@ -1,0 +1,16 @@
+# ~/.emery/wasm-pkg.toml: where emery fetches package adapters from.
+#
+# emery reads this file at every start. It routes each package namespace to
+# the registry serving it, in the schema of wkg's config.toml.
+
+# Registries publishing /.well-known/wasm-pkg/registry.json:
+[namespace_registries]
+emery = "augentic.io"
+
+# A plain OCI host as a registry:
+# [namespace_registries]
+# acme = { registry = "ghcr.io", metadata = { preferredProtocol = "oci", oci = { registry = "ghcr.io", namespacePrefix = "acme/" } } }
+#
+# Credentials for a private registry:
+# [registry."registry.acme.io".oci]
+# auth = { username = "ci", password = "<token>" }

@@ -28,7 +28,7 @@ A build lends the whole project tree to the adapter's model turn. The model read
 
 ## The `[target]` table
 
-`emery.toml` is the same operator-owned file [`emery specify`](specify.md) reads. Its `[target]` table names the one adapter a build runs through and, optionally, the `sha256:` digest its component must resolve to; a declared guest takes none. A run naming its adapter on the command line still reads the project-root file, taking its `[registries]` table alone — its `[[source]]` entries and `[target]` table are not merged in. The file is read whole, so an unknown key under any table is a parse error naming the key (`bad_request`), whichever verb reads the file.
+`emery.toml` is the same operator-owned file [`emery specify`](specify.md) reads. Its `[target]` table names the one adapter a build runs through and, optionally, the `sha256:` digest its component must resolve to; a declared guest takes none. A run naming its adapter on the command line reads no file at all. The file is read whole, so an unknown key under any table is a parse error naming the key (`bad_request`), whichever verb reads the file. A package adapter fetches from the registry `~/.emery/wasm-pkg.toml` routes its namespace to, as under `specify` ([Registry routing](specify.md#registry-routing)); the project file names which package, never where from.
 
 ```toml
 [target]

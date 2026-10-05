@@ -1,10 +1,9 @@
-//! Decodes a run's sources, target, and registries from its carriers.
+//! Decodes a run's sources and target from its carriers.
 //!
 //! The carriers are argv — positional adapters and `--description` values
 //! for `specify`, one positional adapter for `build` — and an operator-owned
 //! `emery.toml`, never both. The file is read whole, so every table it holds
-//! must parse; a run naming its adapters on the command line takes its
-//! `[registries]` table alone.
+//! must parse; a run naming its adapters on the command line reads no file.
 
 use std::path::{Path, PathBuf};
 use std::str::FromStr as _;
@@ -12,7 +11,7 @@ use std::str::FromStr as _;
 use anyhow::Context;
 use emery_engine::build::BuildInput;
 use emery_engine::specify::{SourceConfig, SourceContent, SpecifyInput};
-use emery_engine::{AdapterRef, Registries, preopen_join, preopen_path};
+use emery_engine::{AdapterRef, preopen_join, preopen_path};
 use omnia_sdk::plugins::Digest;
 use omnia_sdk::{Error, bad_request};
 
@@ -54,11 +53,7 @@ impl TryFrom<SourceCarriers<'_>> for SpecifyInput {
                     let (reference, text) = description(entry)?;
                     sources.push(argv_source(reference, SourceContent::Value(text.into()))?);
                 }
-                let input = Self {
-                    sources,
-                    registries: project_registries()?,
-                };
-                ("argv".to_string(), input)
+                ("argv".to_string(), Self { sources })
             }
             (false, Some(path)) => {
                 let path = config_path(path)?;
@@ -67,10 +62,7 @@ impl TryFrom<SourceCarriers<'_>> for SpecifyInput {
             (false, None) => {
                 let input = match discover()? {
                     Some(path) => sources_from(path)?,
-                    None => Self {
-                        sources: Vec::new(),
-                        registries: Registries::default(),
-                    },
+                    None => Self { sources: Vec::new() },
                 };
                 (CONFIG_FILE.to_string(), input)
             }
@@ -101,7 +93,6 @@ impl TryFrom<TargetCarriers<'_>> for BuildInput {
                 let input = Self {
                     adapter: AdapterRef::from_str(reference)?,
                     digest: None,
-                    registries: project_registries()?,
                 };
                 ("argv".to_string(), input)
             }
@@ -133,10 +124,7 @@ fn sources_from(path: &Path) -> Result<SpecifyInput, Error> {
         .into_iter()
         .map(|entry| entry.into_config(base))
         .collect::<Result<Vec<_>, _>>()?;
-    Ok(SpecifyInput {
-        sources,
-        registries: file.registries,
-    })
+    Ok(SpecifyInput { sources })
 }
 
 fn target_from(path: &Path) -> Result<BuildInput, Error> {
@@ -147,7 +135,6 @@ fn target_from(path: &Path) -> Result<BuildInput, Error> {
     Ok(BuildInput {
         adapter: target.adapter,
         digest: target.digest,
-        registries: file.registries,
     })
 }
 
@@ -181,13 +168,6 @@ fn argv_source(reference: &str, content: SourceContent) -> Result<SourceConfig, 
     })
 }
 
-fn project_registries() -> Result<Registries, Error> {
-    Ok(match discover()? {
-        Some(path) => ConfigFile::read(path)?.registries,
-        None => Registries::default(),
-    })
-}
-
 fn discover() -> Result<Option<&'static Path>, Error> {
     let path = Path::new(CONFIG_FILE);
     let found = path.try_exists().with_context(|| format!("reading {CONFIG_FILE}"))?;
@@ -199,7 +179,6 @@ fn discover() -> Result<Option<&'static Path>, Error> {
 struct ConfigFile {
     source: Vec<SourceEntry>,
     target: Option<TargetEntry>,
-    registries: Registries,
 }
 
 impl ConfigFile {

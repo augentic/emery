@@ -36,7 +36,7 @@ use self::design::DesignBrief;
 use self::plan::SliceBrief;
 pub use self::spec::SPEC_CHUNK;
 use self::spec::SpecBrief;
-use crate::adapter::{self, AdapterRef, Loaded, Registries};
+use crate::adapter::{self, AdapterRef, Loaded};
 use crate::revision::Revision;
 pub use crate::revision::{
     Changed, DesignDiff, Diff, Entry, PlanDiff, ReqId, SectionKind, SliceEntry, SliceId, SpecDiff,
@@ -54,10 +54,11 @@ use crate::{preopen_path, store};
 ///   - an empty source list, with code `specify-source-required`;
 ///   - a malformed or repeated source name;
 ///   - a workspace path outside the project;
-///   - a package no registry routes, or a digest on a declared guest;
+///   - a digest on a declared guest;
 ///   - two adapters naming one guest, or one naming the engine's own
 ///     ([`ENGINE`](crate::ENGINE));
-///   - an adapter that resolves to other bytes than its digest pin, with code
+///   - a package whose namespace the deployment routes nowhere, or an
+///     adapter that resolves to other bytes than its digest pin, with code
 ///     `refused`;
 ///   - an incompatible adapter, with code `unsupported-version`;
 ///   - a source that refuses its input;
@@ -76,12 +77,9 @@ pub async fn specify<P: Model + Source + StateStore + BlobStore + Plugins>(
     let provider = context.provider();
 
     let bound = Bound::all(&input.sources)?;
-    let loaded = &adapter::load(
-        provider,
-        bound.iter().map(|source| (source.adapter, source.digest)),
-        &input.registries,
-    )
-    .await?;
+    let loaded =
+        &adapter::load(provider, bound.iter().map(|source| (source.adapter, source.digest)))
+            .await?;
 
     let extracts =
         future::try_join_all(bound.iter().map(|source| source.extract(provider, loaded))).await?;
@@ -110,11 +108,6 @@ pub struct SpecifyInput {
     /// Sources in declaration order, which reconciliation preserves for
     /// stable requirement numbering.
     pub sources: Vec<SourceConfig>,
-    /// The registries package adapters fetch from, by namespace.
-    ///
-    /// Empty, only the `emery` namespace routes.
-    #[serde(default)]
-    pub registries: Registries,
 }
 
 /// Configuration for one source used by [`specify`].

@@ -13,7 +13,7 @@ use omnia_sdk::plugins::Digest;
 use omnia_sdk::{BlobStore, Error, Plugins, StateStore, server_error};
 use serde::Serialize;
 
-use crate::adapter::{self, AdapterRef, Loaded, Registries};
+use crate::adapter::{self, AdapterRef, Loaded};
 pub use crate::revision::{ReqId, SliceId};
 use crate::revision::{Slice, Spec};
 use crate::store;
@@ -38,11 +38,11 @@ const WORKSPACE: &str = ".";
 ///   - with code `spec-outdated`, when the stored revision uses another
 ///     grammar;
 ///   - an adapter reference [`specify`](crate::specify::specify) would
-///     refuse: a path outside the adapters root, a package no registry
-///     routes, a digest on a declared guest, one naming the engine's own
-///     guest ([`ENGINE`](crate::ENGINE)), an incompatible adapter (code
-///     `unsupported-version`), or one resolving to other bytes than its pin
-///     (code `refused`);
+///     refuse: a path outside the adapters root, a digest on a declared
+///     guest, one naming the engine's own guest ([`ENGINE`](crate::ENGINE)),
+///     an incompatible adapter (code `unsupported-version`), a package whose
+///     namespace the deployment routes nowhere, or one resolving to other
+///     bytes than its pin (both code `refused`);
 ///   - a slice the adapter refuses, or answers no acceptable report for.
 /// - Returns [`Error::ServerError`] when a report breaks the report gate, or
 ///   storage fails.
@@ -64,8 +64,7 @@ pub async fn build<P: Target + StateStore + BlobStore + Plugins>(
     };
 
     let Loaded { id: adapter, .. } =
-        adapter::load_target(provider, &input.adapter, input.digest.as_ref(), &input.registries)
-            .await?;
+        adapter::load_target(provider, &input.adapter, input.digest.as_ref()).await?;
 
     let order = revision.plan.order();
     tracing::info!(revision = %revision_id, adapter = %adapter, slices = order.len(), "building");
@@ -99,11 +98,6 @@ pub struct BuildInput {
     /// guest takes none.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub digest: Option<Digest>,
-    /// The registries a package adapter fetches from, by namespace.
-    ///
-    /// Empty, only the `emery` namespace routes.
-    #[serde(default)]
-    pub registries: Registries,
 }
 
 /// What a successful [`build`] built.

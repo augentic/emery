@@ -16,7 +16,7 @@ The engine guest imports `emery:adapter/source`; it has no separate WIT package.
 
 Compatibility between host and adapters is declared — exact pins plus each adapter's `emery-version` (minimum host) — not implied by equal numbers. The Cursor `/emery:*` plugin is an ultrathin CLI wrapper; bump its marketplace / `plugin.json` versions only when `plugins/` content changes, not on every host release.
 
-The host embeds no adapter-version recommendation and no registry routing: exact package pins arrive as run input, fetched from the registry the project's `emery.toml` `[registries]` table routes their namespace to (`emery` is `augentic.io` unless a line re-routes it), and local components load by path from the `.` mount ([`examples/emery.toml`](../examples/emery.toml) loads the built mock source that way); the shipped runtime embeds the engine only. Statically declared adapter guests remain possible in a custom runtime invocation.
+The host embeds no adapter-version recommendation and one registry route: exact package pins arrive as run input, fetched from the registry the deployment routes their namespace to — the operator's `~/.emery/wasm-pkg.toml`, with `emery` compiled in as `augentic.io` unless a line there re-routes it; a project file never names a registry — and local components load by path from the read-only `adapters` mount ([`examples/emery.toml`](../examples/emery.toml) loads the built mock source that way); the shipped runtime embeds the engine only. Statically declared adapter guests remain possible in a custom runtime invocation.
 
 ## Release lines
 
