@@ -27,7 +27,6 @@ cfg_select! {
             mode: command,
             mounts: [
                 { name: ".", path: ".", writable: true },
-                // adapters must be loaded from outside emery's writable mount (W^X rule)
                 { name: "adapters", path: adapters_dir() },
             ],
             guests: [{ path: env!("EMERY_GUEST") }],
@@ -48,19 +47,16 @@ cfg_select! {
         )]
         fn adapters_dir() -> PathBuf {
             let Some(home) = std::env::home_dir() else {
-                eprintln!(
-                    "The adapters directory needs $HOME set.",
-                );
+                eprintln!("The adapters directory needs $HOME set.");
                 std::process::exit(1)
             };
+
             let dir = home.join(".emery").join("adapters");
             if let Err(error) = std::fs::create_dir_all(&dir) {
-                eprintln!(
-                    "There was an issue creating `~/.emery/adapters`, which emery uses to load
-                    local adapters: {error}. You will need to create it before continuing."
-                );
+                eprintln!("There was an issue creating `~/.emery/adapters`: {error}.");
                 std::process::exit(1)
             }
+            
             dir
         }
     }
