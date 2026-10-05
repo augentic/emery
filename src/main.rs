@@ -12,8 +12,8 @@
 //! The binary is host-only; on `wasm32` it compiles to an empty `main` so the
 //! workspace-wide wasm32 clippy pass can include it.
 
-cfg_if::cfg_if! {
-    if #[cfg(not(target_arch = "wasm32"))] {
+cfg_select! {
+    not(target_arch = "wasm32") => {
         use std::path::PathBuf;
 
         use omnia_cursor::Client as Cursor;
@@ -64,7 +64,7 @@ cfg_if::cfg_if! {
             dir
         }
     }
+    _ => {
+        fn main() {}
+    }
 }
-
-#[cfg(target_arch = "wasm32")]
-fn main() {}
