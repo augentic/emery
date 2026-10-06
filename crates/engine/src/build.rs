@@ -13,7 +13,7 @@ use omnia_sdk::plugins::Digest;
 use omnia_sdk::{BlobStore, Error, Plugins, StateStore, server_error};
 use serde::Serialize;
 
-use crate::adapter::{self, AdapterRef, Loaded, Registries};
+use crate::adapter::{self, AdapterRef, Loaded};
 pub use crate::revision::{ReqId, SliceId};
 use crate::revision::{Slice, Spec};
 use crate::store;
@@ -32,17 +32,16 @@ const WORKSPACE: &str = ".";
 /// # Errors
 ///
 /// - Returns [`Error::NotFound`] with code `spec-not-generated` when no
-///   revision has been committed, and without a code when a local adapter
-///   does not exist.
+///   revision has been committed.
 /// - Returns [`Error::BadRequest`] when the run is refused:
 ///   - with code `spec-outdated`, when the stored revision uses another
 ///     grammar;
-///   - an adapter reference [`specify`](crate::specify::specify) would
-///     refuse: a path outside the adapters root, a package no registry
-///     routes, a digest on a declared guest, one naming the engine's own
-///     guest ([`ENGINE`](crate::ENGINE)), an incompatible adapter (code
-///     `unsupported-version`), or one resolving to other bytes than its pin
-///     (code `refused`);
+///   - an adapter [`specify`](crate::specify::specify) would refuse: one that
+///     is not a target adapter ([`Axis::Target`](crate::Axis)), an
+///     incompatible one (code `unsupported-version`), a release the store
+///     lacks whose namespace the deployment routes nowhere, a pre-compiled
+///     artifact, or one resolving to other bytes than its pin (code
+///     `refused`);
 ///   - a slice the adapter refuses, or answers no acceptable report for.
 /// - Returns [`Error::ServerError`] when a report breaks the report gate, or
 ///   storage fails.
@@ -64,8 +63,7 @@ pub async fn build<P: Target + StateStore + BlobStore + Plugins>(
     };
 
     let Loaded { id: adapter, .. } =
-        adapter::load_target(provider, &input.adapter, input.digest.as_ref(), &input.registries)
-            .await?;
+        adapter::load_target(provider, &input.adapter, input.digest.as_ref()).await?;
 
     let order = revision.plan.order();
     tracing::info!(revision = %revision_id, adapter = %adapter, slices = order.len(), "building");
@@ -95,15 +93,10 @@ pub struct BuildInput {
     /// The `sha256:` digest the adapter's component must resolve to.
     ///
     /// The run passes it on the load, and the loader holds the resolved
-    /// bytes to it. `None` trusts whatever the load resolves. A declared
-    /// guest takes none.
+    /// bytes to it, stored or fetched. `None` trusts whatever the load
+    /// resolves.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub digest: Option<Digest>,
-    /// The registries a package adapter fetches from, by namespace.
-    ///
-    /// Empty, only the `emery` namespace routes.
-    #[serde(default)]
-    pub registries: Registries,
 }
 
 /// What a successful [`build`] built.

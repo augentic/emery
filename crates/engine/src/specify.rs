@@ -36,7 +36,7 @@ use self::design::DesignBrief;
 use self::plan::SliceBrief;
 pub use self::spec::SPEC_CHUNK;
 use self::spec::SpecBrief;
-use crate::adapter::{self, AdapterRef, Loaded, Registries};
+use crate::adapter::{self, AdapterRef, Loaded};
 use crate::revision::Revision;
 pub use crate::revision::{
     Changed, DesignDiff, Diff, Entry, PlanDiff, ReqId, SectionKind, SliceEntry, SliceId, SpecDiff,
@@ -54,16 +54,16 @@ use crate::{preopen_path, store};
 ///   - an empty source list, with code `specify-source-required`;
 ///   - a malformed or repeated source name;
 ///   - a workspace path outside the project;
-///   - a package no registry routes, or a digest on a declared guest;
-///   - two adapters naming one guest, or one naming the engine's own
-///     ([`ENGINE`](crate::ENGINE));
-///   - an adapter that resolves to other bytes than its digest pin, with code
-///     `refused`;
+///   - two digests on one adapter, or two adapters naming one guest — two
+///     versions of one package;
+///   - an adapter that is not a source adapter ([`Axis::Source`](crate::Axis));
+///   - a release the store lacks whose namespace the deployment routes
+///     nowhere, a pre-compiled artifact, or an adapter that resolves to other
+///     bytes than its digest pin, with code `refused`;
 ///   - an incompatible adapter, with code `unsupported-version`;
 ///   - a source that refuses its input;
 ///   - sources that between them contribute no requirement claim;
 ///   - a synthesis or slicing answer that cannot be accepted.
-/// - Returns [`Error::NotFound`] when a local adapter does not exist.
 /// - Returns [`Error::ServerError`] when evidence has [`Evidence::findings`],
 ///   or serialisation or storage fails.
 /// - Returns [`Error::BadGateway`] when an adapter, its acquisition, or the
@@ -76,12 +76,9 @@ pub async fn specify<P: Model + Source + StateStore + BlobStore + Plugins>(
     let provider = context.provider();
 
     let bound = Bound::all(&input.sources)?;
-    let loaded = &adapter::load(
-        provider,
-        bound.iter().map(|source| (source.adapter, source.digest)),
-        &input.registries,
-    )
-    .await?;
+    let loaded =
+        &adapter::load(provider, bound.iter().map(|source| (source.adapter, source.digest)))
+            .await?;
 
     let extracts =
         future::try_join_all(bound.iter().map(|source| source.extract(provider, loaded))).await?;
@@ -110,11 +107,6 @@ pub struct SpecifyInput {
     /// Sources in declaration order, which reconciliation preserves for
     /// stable requirement numbering.
     pub sources: Vec<SourceConfig>,
-    /// The registries package adapters fetch from, by namespace.
-    ///
-    /// Empty, only the `emery` namespace routes.
-    #[serde(default)]
-    pub registries: Registries,
 }
 
 /// Configuration for one source used by [`specify`].
@@ -135,8 +127,8 @@ pub struct SourceConfig {
     /// The `sha256:` digest the adapter's component must resolve to.
     ///
     /// The run passes it on the load, and the loader holds the resolved
-    /// bytes to it. `None` trusts whatever the load resolves. A declared
-    /// guest takes none.
+    /// bytes to it, stored or fetched. `None` trusts whatever the load
+    /// resolves.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub digest: Option<Digest>,
 }
@@ -213,13 +205,13 @@ impl<'a> Bound<'a> {
 
     #[tracing::instrument(skip_all, fields(source = %self.input.name, adapter = %self.adapter))]
     async fn extract<S: Source>(
-        &self, provider: &S, loaded: &BTreeMap<String, Loaded<AdapterMetadata>>,
+        &self, provider: &S, loaded: &BTreeMap<AdapterRef, Loaded<AdapterMetadata>>,
     ) -> Result<Extract, Error> {
         let source = &self.input.name;
-        let adapter = self.adapter.to_string();
+        let adapter = self.adapter;
 
         let Loaded { id, metadata } = loaded
-            .get(&adapter)
+            .get(adapter)
             .ok_or_else(|| server_error!("adapter `{adapter}` was not loaded"))?;
         let kind = metadata.kind;
         tracing::info!(%source, adapter = %id, %kind, "extracting");

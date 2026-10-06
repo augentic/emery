@@ -1,8 +1,10 @@
 //! Scripts every capability of a provider and drives the command façade over it.
 //!
-//! Model, source, target, plugin, and storage capabilities use strict
-//! scripts. Each scenario must consume exactly the expected operations, so an
-//! unexercised or unexpected path fails immediately.
+//! Model, source, target, and storage capabilities use strict scripts. Each
+//! scenario must consume exactly the expected operations, so an unexercised
+//! or unexpected path fails immediately. The plugin capability is a
+//! constant: every load lands, so the synthesis suites assert nothing of a
+//! load and the adapter boundary is the runtime suite's.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::future::Future;
@@ -14,13 +16,14 @@ use emery_adapter::source::{
     AdapterMetadata, Backing, Claim, ClaimKind, Evidence, Source, SourceInput, SourceKind,
 };
 use emery_adapter::target::{Report, Slice, Target, TargetMetadata};
+use emery_engine::Axis;
 use omnia_sdk::api::command::Response;
-use omnia_sdk::plugins::{self, Digest, Location};
+use omnia_sdk::plugins::{self, Digest, Location, Plugin};
 use omnia_sdk::{
     BlobStore, CasError, ContainerMetadata, Error, Model, ObjectMetadata, Plugins, StateStore,
     model,
 };
-use omnia_test::guest::{Memory, Scripted, ScriptedLoader};
+use omnia_test::guest::{Memory, Scripted};
 use serde_json::Value;
 use tokio::sync::Barrier;
 
@@ -147,15 +150,6 @@ pub struct Provider<S = Memory> {
     pub source: SourceScript,
     /// The scripted `Target`.
     pub target: TargetScript,
-    /// The scripted [`Plugins`] loader.
-    ///
-    /// It admits every component path and package a run names, as the
-    /// shipped runtime's read-only project mount and registry routing admit
-    /// them, and resolves an unscripted one to the fixed `digest("ab")`. A
-    /// bare name is admitted only once a scenario declares it through
-    /// [`Provider::declaring`]. Every other is refused, as the deployment
-    /// refuses a guest it never declared.
-    pub plugins: ScriptedLoader,
     /// The scripted storage pair.
     pub storage: Arc<S>,
 }
@@ -179,34 +173,8 @@ impl<S> Provider<S> {
             model: Scripted::answering(answers),
             source: SourceScript::default(),
             target: TargetScript::default(),
-            plugins: ScriptedLoader::default().defaulting(digest("ab")),
             storage,
         }
-    }
-
-    /// Declares each bare adapter name as a guest of the scripted deployment.
-    ///
-    /// A scenario dispatching a bare name declares it here, so the loader
-    /// attests it. A bare name no scenario declares is refused, as the shipped
-    /// runtime, which declares no adapter at all, refuses every one.
-    pub fn declaring<'a>(mut self, names: impl IntoIterator<Item = &'a str>) -> Self {
-        self.plugins = names.into_iter().fold(self.plugins, ScriptedLoader::declare);
-        self
-    }
-
-    /// Returns the name of every guest the loader was asked for, in call order.
-    ///
-    /// Each is what its load registers as, refused or not.
-    pub fn loaded(&self) -> Vec<String> {
-        self.plugins.loads().iter().map(|(location, _)| location.name().to_owned()).collect()
-    }
-
-    // An id is routable only once the loader has landed it; a dispatch before
-    // its load is the engine's ordering defect, caught here rather than under
-    // the real runtime alone.
-    fn routable(&self, id: &str) {
-        let loaded = self.loaded().iter().any(|name| name == id);
-        assert!(loaded, "`{id}` was dispatched before its load");
     }
 }
 
@@ -216,7 +184,6 @@ impl<S> Clone for Provider<S> {
             model: self.model.clone(),
             source: self.source.clone(),
             target: self.target.clone(),
-            plugins: self.plugins.clone(),
             storage: Arc::clone(&self.storage),
         }
     }
@@ -243,11 +210,14 @@ impl<S: Send + Sync + 'static> Model for Provider<S> {
     }
 }
 
+// Every load lands as the guest its location names, exporting both axes, at
+// a fixed digest: what a load resolves to is the runtime suite's to assert.
 impl<S: Send + Sync + 'static> Plugins for Provider<S> {
     fn load(
-        &self, from: &Location, digest: Option<&Digest>,
-    ) -> impl Future<Output = Result<plugins::Plugin, plugins::Error>> + Send {
-        Plugins::load(&self.plugins, from, digest)
+        &self, from: &Location, _digest: Option<&Digest>,
+    ) -> impl Future<Output = Result<Plugin, plugins::Error>> + Send {
+        let plugin = Plugin::new(from.name(), digest("ab"), Axis::INTERFACES);
+        async move { Ok(plugin) }
     }
 }
 
@@ -333,8 +303,6 @@ impl<S: Send + Sync + 'static> Source for Provider<S> {
     fn extract(
         &self, id: &str, input: &SourceInput,
     ) -> impl Future<Output = Result<Evidence, Error>> + Send {
-        self.routable(id);
-
         // record the dispatch before the future is polled, so `calls` is dispatch order
         self.source.calls.lock().expect("calls").push((id.to_string(), input.clone()));
         let outcome = self
@@ -358,7 +326,6 @@ impl<S: Send + Sync + 'static> Source for Provider<S> {
     }
 
     fn metadata(&self, id: &str) -> AdapterMetadata {
-        self.routable(id);
         self.source.metadata.lock().expect("metadata").push(id.to_string());
         AdapterMetadata {
             emery_version: self.source.versions.get(id).cloned(),
@@ -371,8 +338,6 @@ impl<S: Send + Sync + 'static> Target for Provider<S> {
     fn build(
         &self, id: &str, slice: &Slice, workspace: &str,
     ) -> impl Future<Output = Result<Report, Error>> + Send {
-        self.routable(id);
-
         self.target.calls.lock().expect("calls").push((
             id.to_string(),
             slice.clone(),
@@ -388,7 +353,6 @@ impl<S: Send + Sync + 'static> Target for Provider<S> {
     }
 
     fn metadata(&self, id: &str) -> TargetMetadata {
-        self.routable(id);
         self.target.metadata.lock().expect("metadata").push(id.to_string());
         TargetMetadata {
             emery_version: self.target.versions.get(id).cloned(),

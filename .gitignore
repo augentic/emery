@@ -27,9 +27,5 @@ sandbox.lock
 .omnia/
 stderr.log
 stdout.log
-
-# The root suites' stand-in for the adapters mount
-/adapters/
-
 # The live journey's mock target output
 /build/

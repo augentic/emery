@@ -1,17 +1,16 @@
 //! Parses adapter references and loads the adapters a run names.
 //!
-//! Every load goes through the deployment loader at the location the
-//! reference names, and the deployment's grant bounds it: a local component
-//! loads through the adapters root the runtime mounts read-only as
-//! [`ADAPTERS`], a package from the registry the run's [`Registries`] route
-//! its namespace to, and a bare name only where the deployment declares the
-//! guest.
+//! An adapter is an exact package reference, `namespace:name@version`, and
+//! nothing else. Every load goes through the deployment loader at the
+//! registry location the reference names, and the deployment's grant bounds
+//! it: the package store answers a release it holds, and the registry the
+//! deployment routes the namespace to answers one it lacks. The engine names
+//! no registry on a load, so a project file chooses which package and, by
+//! its pin, which bytes, and never where from.
 
 use std::collections::BTreeMap;
 use std::collections::btree_map::Entry;
-use std::ffi::OsStr;
 use std::fmt::{self, Display, Formatter};
-use std::path::{Path, PathBuf};
 use std::str::FromStr;
 
 use anyhow::Context;
@@ -20,57 +19,55 @@ use emery_adapter::source::{AdapterMetadata, Source};
 use emery_adapter::target::{Target, TargetMetadata};
 use futures::future;
 use omnia_sdk::plugins::{Digest, Location};
-use omnia_sdk::{Error, Plugins, bad_request, not_found, server_error};
+use omnia_sdk::{Error, Plugins, bad_request, server_error};
 use serde::{Deserialize, Serialize};
 
-use crate::preopen_path;
-
-/// The name of the guest the engine itself runs as.
-pub const ENGINE: &str = "emery";
-
-/// The name of the mount a local component loads through.
+/// The two kinds of adapter a run loads, each by the interface it exports.
 ///
-/// The runtime mounts the adapters root under it, read-only and apart from
-/// the project tree, so a component is never loaded from a directory a run
-/// can write. An [`AdapterRef::File`] is a path beneath that root.
-pub const ADAPTERS: &str = "adapters";
+/// A loaded component is held to its axis before any dispatch: one that does
+/// not export the axis's interface is refused typed rather than trapping at
+/// the first call.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Axis {
+    /// A source adapter, exporting `emery:adapter/source`.
+    Source,
+    /// A target adapter, exporting `emery:adapter/target`.
+    Target,
+}
 
-/// The registry serving each package namespace.
-///
-/// A map from namespace to registry endpoint, over the one route the engine
-/// knows: `emery` resolves to `augentic.io` unless an entry re-routes it. A
-/// namespace nothing routes refuses the package before any load.
-///
-/// # Examples
-///
-/// ```
-/// use emery_engine::Registries;
-///
-/// let registries: Registries = serde_json::from_str(r#"{ "acme": "registry.acme.io" }"#)?;
-/// assert_eq!(registries.get("acme"), Some("registry.acme.io"));
-/// assert_eq!(registries.get("emery"), Some("augentic.io"));
-/// assert_eq!(registries.get("other"), None);
-/// # Ok::<(), serde_json::Error>(())
-/// ```
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
-#[serde(transparent)]
-pub struct Registries(BTreeMap<String, String>);
+impl Axis {
+    /// The interface each axis's component exports, source first.
+    pub const INTERFACES: [&'static str; 2] =
+        ["emery:adapter/source@0.1.0", "emery:adapter/target@0.1.0"];
 
-const NAMESPACE: &str = "emery";
-const REGISTRY: &str = "augentic.io";
-
-impl Registries {
-    /// Returns the registry serving `namespace`, if a project line or the
-    /// first-party route names one.
+    /// Returns the interface a component of this axis exports.
     #[must_use]
-    pub fn get(&self, namespace: &str) -> Option<&str> {
-        if let Some(registry) = self.0.get(namespace) {
-            return Some(registry);
+    pub const fn interface(self) -> &'static str {
+        match self {
+            Self::Source => Self::INTERFACES[0],
+            Self::Target => Self::INTERFACES[1],
         }
-        if namespace == NAMESPACE {
-            return Some(REGISTRY);
+    }
+
+    /// Holds a loaded adapter's `exports` to this axis.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::BadRequest`] when `exports` lacks the axis's
+    /// [`interface`](Self::interface), naming the reference and the
+    /// interface it lacks.
+    pub fn require(self, reference: &AdapterRef, exports: &[String]) -> Result<(), Error> {
+        let interface = self.interface();
+        if exports.iter().any(|export| export == interface) {
+            return Ok(());
         }
-        None
+        Err(bad_request!(
+            "adapter `{reference}` is not a {} adapter: it exports no `{interface}`",
+            match self {
+                Self::Source => "source",
+                Self::Target => "target",
+            }
+        ))
     }
 }
 
@@ -89,48 +86,49 @@ pub struct Loaded<M> {
 /// Loads each referenced source adapter and returns what it loaded as.
 ///
 /// Duplicate references are loaded once, under one pin. Every adapter loads
-/// at the location its reference names ([`AdapterRef::location`]), under the
-/// guest name that location registers ([`Location::name`]), and all load
-/// before metadata is queried. The loader holds a pinned adapter to its
-/// digest, and a declared minimum Emery version must not exceed the running
-/// version. The result is keyed by the reference's [`Display`] form.
+/// at the registry location its reference names ([`AdapterRef::location`]),
+/// under the guest name that location registers ([`Location::name`]), and
+/// all load before any is held to its axis or asked for metadata. The loader
+/// holds a pinned adapter to its digest, and a declared minimum Emery version
+/// must not exceed the running version.
 ///
 /// # Errors
 ///
 /// - Returns [`Error::BadRequest`] when a reference is refused:
-///   - a path outside the adapters root;
-///   - a digest on a declared guest, or two digests on one adapter;
-///   - two references that name one guest, such as two components sharing a
-///     file stem or two versions of one package;
-///   - a reference that names the engine's own guest ([`ENGINE`]);
-///   - a package whose namespace `registries` does not route;
+///   - two digests on one adapter;
+///   - two references that name one guest — two versions of one package;
+///   - an adapter that does not export the source interface
+///     ([`Axis::Source`]);
 ///   - malformed version metadata;
 ///   - an incompatible adapter, with code `unsupported-version`;
-///   - an adapter that resolves to other bytes than its pin, with the
-///     loader's code `refused`.
-/// - Returns [`Error::NotFound`] when a local component does not exist.
+///   - a release the store lacks whose namespace the deployment routes
+///     nowhere, a pre-compiled artifact, or an adapter that resolves to other
+///     bytes than its pin, with the loader's code `refused`.
+/// - Returns [`Error::BadGateway`] when the registry cannot supply a release
+///   the store lacks, with the loader's code `unavailable`.
 ///
-/// Errors from [`Plugins::load`] are returned unchanged.
+/// A loader's error keeps its class and code; its description names the
+/// adapter that failed.
 pub async fn load<'a, P: Source + Plugins>(
     provider: &P, adapters: impl IntoIterator<Item = (&'a AdapterRef, Option<&'a Digest>)>,
-    registries: &Registries,
-) -> Result<BTreeMap<String, Loaded<AdapterMetadata>>, Error> {
-    load_axis(provider, adapters, registries, |id| Source::metadata(provider, id)).await
+) -> Result<BTreeMap<AdapterRef, Loaded<AdapterMetadata>>, Error> {
+    load_axis(provider, Axis::Source, adapters, |id| Source::metadata(provider, id)).await
 }
 
 /// Loads the one target adapter a build names and returns what it loaded as.
 ///
 /// The reference loads as [`load`] loads a source adapter, under the same
-/// refusals, and its declared minimum Emery version is gated the same way.
+/// refusals, held to the target interface ([`Axis::Target`]) instead, and
+/// its declared minimum Emery version is gated the same way.
 ///
 /// # Errors
 ///
 /// As [`load`], over the one reference.
 pub async fn load_target<P: Target + Plugins>(
-    provider: &P, adapter: &AdapterRef, digest: Option<&Digest>, registries: &Registries,
+    provider: &P, adapter: &AdapterRef, digest: Option<&Digest>,
 ) -> Result<Loaded<TargetMetadata>, Error> {
     let loaded =
-        load_axis(provider, [(adapter, digest)], registries, |id| Target::metadata(provider, id))
+        load_axis(provider, Axis::Target, [(adapter, digest)], |id| Target::metadata(provider, id))
             .await?;
     loaded.into_values().next().ok_or_else(|| server_error!("adapter `{adapter}` was not loaded"))
 }
@@ -154,63 +152,50 @@ impl Declared for TargetMetadata {
 }
 
 async fn load_axis<'a, P: Plugins, M: Declared>(
-    provider: &P, adapters: impl IntoIterator<Item = (&'a AdapterRef, Option<&'a Digest>)>,
-    registries: &Registries, metadata: impl Fn(&str) -> M,
-) -> Result<BTreeMap<String, Loaded<M>>, Error> {
-    // one load per distinct reference, under one pin, every entry checked
-    let mut locations: BTreeMap<String, (Location, Option<Digest>)> = BTreeMap::new();
-    for (adapter, digest) in adapters {
-        let location = adapter.location(digest, registries)?;
-
-        match locations.entry(adapter.to_string()) {
-            Entry::Vacant(slot) => {
-                slot.insert((location, digest.cloned()));
-            }
-            Entry::Occupied(mut slot) => {
-                let (_, pin) = slot.get_mut();
-                if let Some(again) = digest {
-                    let first = pin.get_or_insert_with(|| again.clone());
-                    if first != again {
-                        return Err(bad_request!("adapter `{adapter}` is pinned to two digests"));
-                    }
-                }
-            }
-        }
-    }
+    provider: &P, axis: Axis,
+    adapters: impl IntoIterator<Item = (&'a AdapterRef, Option<&'a Digest>)>,
+    metadata: impl Fn(&str) -> M,
+) -> Result<BTreeMap<AdapterRef, Loaded<M>>, Error> {
+    let pins = distinct(adapters)?;
 
     // refuse two references the loader would register as one guest
-    let mut names: BTreeMap<&str, &str> = BTreeMap::new();
-    for (reference, (location, _)) in &locations {
-        if let Some(first) = names.insert(location.name(), reference) {
+    let mut names: BTreeMap<String, &AdapterRef> = BTreeMap::new();
+    for adapter in pins.keys() {
+        let guest = adapter.guest();
+        if let Some(first) = names.get(&guest) {
             return Err(bad_request!(
-                "adapters `{first}` and `{reference}` would both register as `{}`; a run loads \
-                 one adapter per guest name",
-                location.name()
+                "adapters `{first}` and `{adapter}` would both register as `{guest}`; a run loads \
+                 one adapter per guest name"
             ));
         }
+        names.insert(guest, adapter);
     }
 
     // load all adapters in parallel
-    let loaders =
-        locations.values().map(|(location, pin)| Plugins::load(provider, location, pin.as_ref()));
+    let loaders = pins.iter().map(|(adapter, pin)| async move {
+        Plugins::load(provider, &adapter.location(), pin.as_ref())
+            .await
+            .map_err(|error| at_adapter(error.into(), adapter))
+    });
     let handles = future::try_join_all(loaders).await?;
 
     let version = semver::Version::parse(env!("CARGO_PKG_VERSION"))
         .with_context(|| format!("issue with emery version `{}`", env!("CARGO_PKG_VERSION")))?;
 
-    // gate each adapter's version and record what it loaded as
+    // hold each adapter to its axis, gate its version, and record what it loaded as
     let mut loaded = BTreeMap::new();
-    for (reference, plugin) in locations.into_keys().zip(handles) {
+    for (adapter, plugin) in pins.into_keys().zip(handles) {
+        axis.require(adapter, plugin.exports())?;
         let id = plugin.id();
         let metadata = metadata(id);
         if let Some(declared) = metadata.emery_version() {
             require_version(id, declared, &version)?;
         }
 
-        tracing::debug!(adapter = %reference, %id, "adapter loaded");
+        tracing::debug!(%adapter, %id, "adapter loaded");
 
         loaded.insert(
-            reference,
+            adapter.clone(),
             Loaded {
                 id: id.to_owned(),
                 metadata,
@@ -219,6 +204,53 @@ async fn load_axis<'a, P: Plugins, M: Declared>(
     }
 
     Ok(loaded)
+}
+
+// One load per distinct reference, under one pin, every entry checked.
+fn distinct<'a>(
+    adapters: impl IntoIterator<Item = (&'a AdapterRef, Option<&'a Digest>)>,
+) -> Result<BTreeMap<&'a AdapterRef, Option<Digest>>, Error> {
+    let mut pins: BTreeMap<&AdapterRef, Option<Digest>> = BTreeMap::new();
+    for (adapter, digest) in adapters {
+        match pins.entry(adapter) {
+            Entry::Vacant(slot) => {
+                slot.insert(digest.cloned());
+            }
+            Entry::Occupied(mut slot) => {
+                if let Some(again) = digest {
+                    let first = slot.get_mut().get_or_insert_with(|| again.clone());
+                    if first != again {
+                        return Err(bad_request!("adapter `{adapter}` is pinned to two digests"));
+                    }
+                }
+            }
+        }
+    }
+    Ok(pins)
+}
+
+// The loader's refusal, as the entry that failed: class and code kept, the
+// adapter named.
+fn at_adapter(error: Error, adapter: &AdapterRef) -> Error {
+    let describe = |description: String| format!("adapter `{adapter}`: {description}");
+    match error {
+        Error::BadRequest { code, description } => Error::BadRequest {
+            code,
+            description: describe(description),
+        },
+        Error::NotFound { code, description } => Error::NotFound {
+            code,
+            description: describe(description),
+        },
+        Error::ServerError { code, description } => Error::ServerError {
+            code,
+            description: describe(description),
+        },
+        Error::BadGateway { code, description } => Error::BadGateway {
+            code,
+            description: describe(description),
+        },
+    }
 }
 
 fn require_version(id: &str, declared: &str, running: &semver::Version) -> Result<(), Error> {
@@ -236,161 +268,78 @@ fn require_version(id: &str, declared: &str, running: &semver::Version) -> Resul
     Ok(())
 }
 
-/// A reference to an adapter, of either axis.
+/// An adapter reference: an exact package, `namespace:name@version`.
 ///
-/// Parsing normalises package shorthands and local file prefixes.
-/// `intent@1.0.0` becomes `emery:intent@1.0.0`, while
-/// `file://./intent.wasm` becomes `./intent.wasm`. [`Display`] is that
-/// normalised identity, which config serialises and a run dedupes loads by.
-/// [`name`] is the kebab-case name it lends a binding that names none. The
-/// guest it loads and dispatches as is its [`location`]'s
-/// [`Location::name`]. An empty value, a GitHub URL, or a malformed package
-/// reference parses as [`Error::BadRequest`].
+/// Parsing accepts that one form and nothing else — no default namespace, no
+/// latest, no path, no bare name. [`Display`] is the reference as spelled,
+/// which config serialises and a run dedupes loads by; [`name`] is the
+/// package name, which a run binds a source under when the operator gives
+/// none; [`guest`] is the name the adapter loads and dispatches as, the
+/// reference without its version. A malformed reference parses as
+/// [`Error::BadRequest`] with code `adapter-reference`.
 ///
 /// [`name`]: Self::name
-/// [`location`]: Self::location
+/// [`guest`]: Self::guest
 ///
 /// # Examples
 ///
 /// ```
 /// use emery_engine::AdapterRef;
 ///
-/// let package: AdapterRef = "intent@1.0.0".parse()?;
-/// assert_eq!(package.to_string(), "emery:intent@1.0.0");
-/// assert_eq!(package.name()?, "intent");
+/// let adapter: AdapterRef = "emery:intent@1.0.0".parse()?;
+/// assert_eq!(adapter.to_string(), "emery:intent@1.0.0");
+/// assert_eq!(adapter.name(), "intent");
+/// assert_eq!(adapter.guest(), "emery:intent");
 ///
-/// let file: AdapterRef = "file://./adapters/my_intent.wasm".parse()?;
-/// assert_eq!(file.to_string(), "./adapters/my_intent.wasm");
-/// assert_eq!(file.name()?, "my-intent");
-///
-/// let declared: AdapterRef = "intent".parse()?;
-/// assert_eq!(declared.to_string(), "intent");
-/// assert_eq!(declared.name()?, "intent");
+/// assert!("intent@1.0.0".parse::<AdapterRef>().is_err());
+/// assert!("emery:intent".parse::<AdapterRef>().is_err());
+/// assert!("./intent.wasm".parse::<AdapterRef>().is_err());
 /// # Ok::<(), omnia_sdk::Error>(())
 /// ```
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(try_from = "String", into = "String")]
-pub enum AdapterRef {
-    /// A path to a `.wasm` component beneath the adapters root.
-    File(PathBuf),
-    /// A registry package, `<namespace>:<name>@<version>`.
-    Package {
-        /// The namespace [`Registries`] routes to a registry, `emery` for a
-        /// first-party adapter.
-        namespace: String,
-        /// The package name, the [`name`](Self::name) a run derives.
-        name: String,
-        /// The exact version to fetch.
-        version: semver::Version,
-    },
-    /// A guest the deployment declares, identified by a bare name such as
-    /// `intent`.
-    Static(String),
+pub struct AdapterRef {
+    /// The namespace the deployment routes to a registry, `emery` for a
+    /// first-party adapter.
+    pub namespace: String,
+    /// The package name, the [`name`](Self::name) a run binds a source under.
+    pub name: String,
+    /// The exact version the store holds or the registry serves.
+    pub version: semver::Version,
 }
 
 impl AdapterRef {
-    /// Returns the kebab-case name this adapter lends what it is bound to.
-    ///
-    /// A bare name or a package is its name; a local component is its file's
-    /// stem with `_` read as `-`, so `./adapters/my_tool.wasm` is `my-tool`.
-    /// A run uses it where an operator gives no `name` of their own.
-    ///
-    /// # Errors
-    ///
-    /// Returns [`Error::BadRequest`] when the derived name is not kebab-case,
-    /// as a component's stem need not be; the binding then needs an explicit
-    /// `name`.
-    pub fn name(&self) -> Result<String, Error> {
-        let name = match self {
-            Self::Static(name) | Self::Package { name, .. } => name.clone(),
-            Self::File(path) => {
-                let stem = path.file_stem().and_then(OsStr::to_str).unwrap_or_default();
-                stem.replace('_', "-")
-            }
-        };
-        if !is_kebab(&name) {
-            return Err(bad_request!(
-                "adapter `{self}` derives the name `{name}`, which is not kebab-case; set `name` \
-                 explicitly"
-            ));
-        }
-        Ok(name)
+    /// Returns the package name, which a run binds a source under when the
+    /// operator gives no `name` of their own.
+    #[must_use]
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+
+    /// Returns the guest name this adapter loads and dispatches as: the
+    /// reference without its version.
+    #[must_use]
+    pub fn guest(&self) -> String {
+        format!("{}:{}", self.namespace, self.name)
     }
 
     /// Returns the loader location this reference loads at.
     ///
-    /// A local component loads at its path beneath the [`ADAPTERS`] mount,
-    /// wherever the reference was written.
-    ///
-    /// # Errors
-    ///
-    /// - Returns [`Error::BadRequest`] for a digest on a declared guest, a
-    ///   package whose namespace `registries` does not route, a local
-    ///   component whose path escapes the adapters root, or a reference that
-    ///   would register as [`ENGINE`].
-    /// - Returns [`Error::NotFound`] when a local component does not exist.
-    pub fn location(
-        &self, digest: Option<&Digest>, registries: &Registries,
-    ) -> Result<Location, Error> {
-        let location = match self {
-            Self::Static(name) => {
-                if digest.is_some() {
-                    return Err(bad_request!(
-                        "adapter `{name}` is a guest built into the runtime; it takes no digest"
-                    ));
-                }
-                Location::Declared(name.clone())
-            }
-            Self::Package { namespace, .. } => {
-                let endpoint = registries.get(namespace).ok_or_else(|| {
-                    bad_request!(
-                        "no registry routes `{self}`: `registries` names no route for namespace \
-                         `{namespace}`"
-                    )
-                })?;
-                Location::Registry {
-                    package: self.to_string(),
-                    endpoint: Some(endpoint.to_owned()),
-                }
-            }
-            Self::File(path) => {
-                let Ok(relative) = preopen_path(path) else {
-                    return Err(bad_request!(
-                        "adapter `{self}` escapes the adapters root; a local component is a \
-                         relative path beneath it"
-                    ));
-                };
-                let local = Path::new(ADAPTERS).join(relative);
-                if !local.is_file() {
-                    return Err(not_found!("adapter `{self}` not found beneath the adapters root"));
-                }
-                Location::Path(local.display().to_string())
-            }
-        };
-
-        // refuse the engine's own guest name, which the loader would attest
-        if location.name() == ENGINE {
-            return Err(bad_request!(
-                "adapter `{self}` would register as `{ENGINE}`, the engine itself; a run loads no \
-                 adapter under that name"
-            ));
+    /// The location names no registry: the deployment's store answers a
+    /// release it holds, its routing of the namespace one it lacks, or the
+    /// load is refused.
+    #[must_use]
+    pub fn location(&self) -> Location {
+        Location::Registry {
+            package: self.to_string(),
+            endpoint: None,
         }
-
-        Ok(location)
     }
 }
 
 impl Display for AdapterRef {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Package {
-                namespace,
-                name,
-                version,
-            } => write!(f, "{namespace}:{name}@{version}"),
-            Self::Static(name) => f.write_str(name),
-            Self::File(path) => path.display().fmt(f),
-        }
+        write!(f, "{}:{}@{}", self.namespace, self.name, self.version)
     }
 }
 
@@ -400,39 +349,37 @@ impl FromStr for AdapterRef {
     fn from_str(value: &str) -> Result<Self, Error> {
         let value = value.trim();
         if value.is_empty() {
-            return Err(bad_request!("adapter reference is empty"));
+            return Err(malformed("adapter reference is empty".to_owned()));
         }
         if value.starts_with("https://github.com/") {
-            return Err(bad_request!("adapter `{value}`: GitHub URLs are not supported"));
+            return Err(malformed(format!("adapter `{value}`: GitHub URLs are not supported")));
         }
-        let path = value.strip_prefix("file://").unwrap_or(value);
-        if Path::new(path).extension().is_some_and(|ext| ext == "wasm") {
-            return Ok(Self::File(PathBuf::from(path)));
-        }
-        if is_kebab(value) {
-            return Ok(Self::Static(value.to_string()));
-        }
-
-        // parse `<namespace>:<name>@<version>`, the namespace defaulting to `emery`
-        let (namespace, rest) = value.split_once(':').unwrap_or((NAMESPACE, value));
-        let (name, version) = rest
-            .split_once('@')
-            .ok_or_else(|| bad_request!("adapter `{value}` is missing `@<version>`"))?;
-        if name.is_empty() {
-            return Err(bad_request!("adapter `{value}` is missing a name before `@`"));
-        }
+        let Some((package, version)) = value.rsplit_once('@') else {
+            return Err(malformed(format!("adapter `{value}` names no version")));
+        };
+        let Some((namespace, name)) = package.split_once(':') else {
+            return Err(malformed(format!("adapter `{value}` names no namespace")));
+        };
         if !is_kebab(namespace) || !is_kebab(name) {
-            return Err(bad_request!("adapter `{value}` is not `<namespace>:<name>@<version>`"));
+            return Err(malformed(format!("adapter `{value}` is not `namespace:name@version`")));
         }
         let version = semver::Version::parse(version).map_err(|err| {
-            bad_request!("adapter `{value}` has an invalid version `{version}`: {err}")
+            malformed(format!("adapter `{value}` has an invalid version `{version}`: {err}"))
         })?;
 
-        Ok(Self::Package {
+        Ok(Self {
             namespace: namespace.to_owned(),
             name: name.to_owned(),
             version,
         })
+    }
+}
+
+// Every malformed reference shares one recovery: spell an exact package.
+fn malformed(description: String) -> Error {
+    Error::BadRequest {
+        code: "adapter-reference".into(),
+        description,
     }
 }
 

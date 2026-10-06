@@ -1,8 +1,8 @@
-//! Implements the WebAssembly engine guest used by the shipped runtime.
+//! Implements the WebAssembly engine guest the shipped runtime embeds.
 //!
 //! The guest passes process arguments to the command interface and supplies
-//! host-provided model, storage, source, target, and plugin capabilities. All
-//! external effects therefore remain subject to the runtime's grants.
+//! host-provided model, storage, source, target, and plugin capabilities, so
+//! every external effect stays subject to the runtime's grants.
 
 #![cfg(target_arch = "wasm32")]
 

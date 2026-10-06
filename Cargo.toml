@@ -10,16 +10,15 @@ license.workspace = true
 repository.workspace = true
 version.workspace = true
 
+# `rlib` alone: the wasm32 guest is built as a `cdylib` by `build.rs` on the
+# command line, so no native dylib is linked beside the binary.
 [lib]
 path = "src/lib.rs"
-crate-type = ["cdylib", "rlib"]
+crate-type = ["rlib"]
 
 [[bin]]
 name = "emery"
 path = "src/main.rs"
-
-[dependencies]
-cfg-if.workspace = true
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 omnia.workspace = true
@@ -29,6 +28,7 @@ omnia-wasi-blobstore.workspace = true
 omnia-wasi-keyvalue.workspace = true
 omnia-wasi-model.workspace = true
 omnia-wasi-otel.workspace = true
+toml.workspace = true
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 emery-adapter.workspace = true
@@ -49,7 +49,7 @@ emery-cli.workspace = true
 emery-engine.workspace = true
 hex.workspace = true
 omnia-sdk.workspace = true
-omnia-test = { workspace = true, features = ["guest"] }
+omnia-test = { workspace = true, features = ["guest", "host"] }
 serde_json.workspace = true
 sha2.workspace = true
 tempfile.workspace = true
@@ -108,7 +108,6 @@ unused_result_ok = "warn"
 
 [workspace.dependencies]
 anyhow = "1.0.104"
-cfg-if = "1.0.5"
 clap = { version = "4.6.7", features = ["derive", "env"] }
 futures = "0.3.34"
 hex = "0.4.3"

@@ -29,22 +29,22 @@ const SPECIFY_DESC: &str = "Generate spec.md, design.md, and plan.md from source
     Name one or more adapters, use `--description <adapter>=<text>` for inline input, \
     or use `--config [<path>]` (default: `emery.toml`). With no sources, Emery looks \
     for `emery.toml` in the project root. Config and command-line sources cannot be \
-    combined; the project-root file's `[registries]` table routes a package adapter \
-    named on the command line all the same.\n\n\
-    A `.wasm` adapter path is relative to the adapters root, `~/.emery/adapters`. A bare \
-    adapter name is a guest the deployment declares; the shipped binary declares none. \
-    Each run reloads adapters, reconciles their claims, and atomically commits a new \
-    revision.";
+    combined.\n\n\
+    An adapter is an exact package reference, `namespace:name@version`. Emery reads it \
+    from its store, `~/.emery/adapters`, where the file `namespace_name@version.wasm` is \
+    that release on this machine, and fetches a release the store lacks through the \
+    `emery` namespace's registry, `augentic.io`, keeping it there. Another namespace is \
+    fetched by `wkg get <reference> -o ~/.emery/adapters/`. Each run loads its adapters, \
+    reconciles their claims, and atomically commits a new revision.";
 const BUILD_DESC: &str = "Build the current plan through a target adapter.\n\n\
     Name the adapter, or use `--config [<path>]` (default: `emery.toml`) to read its \
     `[target]` table. With no adapter, Emery looks for `emery.toml` in the project root. \
-    Config and a command-line adapter cannot be combined; the project-root file's \
-    `[registries]` table routes a package adapter named on the command line all the \
-    same.\n\n\
+    Config and a command-line adapter cannot be combined.\n\n\
     Every slice of the plan is built in turn, each after the slices it depends on, into \
     the project tree. The first slice that fails ends the run; the slices built before \
-    it stay written. A `.wasm` adapter path is relative to the adapters root, \
-    `~/.emery/adapters`.";
+    it stay written. The adapter is an exact package reference, `namespace:name@version`, \
+    read from the store `~/.emery/adapters` and fetched through the `emery` namespace's \
+    registry when the store lacks it, as for `specify`.";
 const SHOW_DESC: &str = "Print an artifact from the current revision.\n\n\
     Text output contains only the artifact body. `--format json` also includes the \
     revision id and the typed document.";
@@ -134,10 +134,9 @@ enum Verb {
 
 #[derive(Debug, clap::Args)]
 struct SpecifyArgs {
-    /// Workspace-backed source adapters: a `.wasm` path beneath the adapters
-    /// root, a package reference, or a bare name the deployment declares.
-    /// Each source is named for its adapter; a component by its file stem,
-    /// `_` read as `-`.
+    /// Workspace-backed source adapters, each an exact package reference
+    /// `namespace:name@version`. Each source is named for its adapter's
+    /// package name.
     adapters: Vec<String>,
     /// Bind an inline source as `<adapter>=<text>`; repeatable.
     #[arg(long = "description", short = 'd')]
@@ -167,8 +166,7 @@ impl TryFrom<SpecifyArgs> for SpecifyInput {
 
 #[derive(Debug, clap::Args)]
 struct BuildArgs {
-    /// The target adapter: a `.wasm` path beneath the adapters root, a
-    /// package reference, or a bare name the deployment declares.
+    /// The target adapter, an exact package reference `namespace:name@version`.
     adapter: Option<String>,
     /// Operator-owned config; the omitted value selects emery.toml.
     #[arg(long, short = 'c', num_args = 0..=1, default_missing_value = config::CONFIG_FILE)]
@@ -225,11 +223,12 @@ fn hint(code: &str) -> Option<Cow<'static, str>> {
         "spec-outdated" => {
             "the revision predates this emery's grammar: re-run `emery specify <adapter>...` to regenerate it"
         }
+        "adapter-reference" => "an adapter is an exact package reference, `namespace:name@version`",
         "refused" => {
-            "the loader refused the component; the message above names why: a missing export, an invalid artifact, a pre-compiled artifact where raw wasm is required, a mismatched digest, or a bare name this deployment does not declare"
+            "the loader refused the component; the message above names why: an invalid artifact, a pre-compiled artifact where raw wasm is required, a mismatched digest, or a release the binary routes nowhere, which is fetched with `wkg get <reference> -o ~/.emery/adapters/`"
         }
         "unavailable" => {
-            "the registry could not supply the package: check the network and that the exact version is published under its namespace"
+            "the registry could not supply the release: check the network and that the exact version is published under its namespace; a copy at `~/.emery/adapters/<namespace>_<name>@<version>.wasm` stands in for it"
         }
         _ => return None,
     };

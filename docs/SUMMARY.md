@@ -12,4 +12,5 @@
   - [emery build](reference/cli/build.md)
   - [emery show](reference/cli/show.md)
   - [CLI output shapes](reference/cli-output-shapes.md)
+- [Adapters](reference/adapters.md)
 - [Deployment profiles](reference/deployment-profiles.md)

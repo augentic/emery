@@ -1,0 +1,6 @@
+# Routing for the `emery` namespace: where a run's first fetch of a release
+# comes from, in the schema of wkg's config.toml. Any other namespace reaches
+# the store, `~/.emery/adapters`, by `wkg get <reference> -o ~/.emery/adapters/`
+# under wkg's own routing.
+[namespace_registries]
+emery = "augentic.io"

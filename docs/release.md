@@ -10,13 +10,13 @@ Three surfaces version independently — never force them to share a number:
 | ---- | -------- | -------------- |
 | **Host** | `emery` binary / `emery:engine@<version>` | `[workspace.package].version` in `Cargo.toml`, the `v*` tag, `RELEASES.md` |
 | **WIT contract** | `emery:adapter@<wit version>` | the `package` declaration in `wit/emery.wit`; versions independently of the binary |
-| **Adapter train** | `emery:<name>@<semver>` → `ghcr.io/augentic/emery-adapters/<name>:<version>` | the adapters repo's shared `[workspace.package]` SemVer |
+| **Adapter train** | `emery:<name>@<semver>` → `ghcr.io/augentic/emery/<name>:<version>` | the adapters repo's shared `[workspace.package]` SemVer |
 
 The engine guest imports `emery:adapter/source`; it has no separate WIT package. The wasm-pkg identity `emery:engine@<version>` below is the compiled component, versioned with the binary.
 
 Compatibility between host and adapters is declared — exact pins plus each adapter's `emery-version` (minimum host) — not implied by equal numbers. The Cursor `/emery:*` plugin is an ultrathin CLI wrapper; bump its marketplace / `plugin.json` versions only when `plugins/` content changes, not on every host release.
 
-The host embeds no adapter-version recommendation and no registry routing: exact package pins arrive as run input, fetched from the registry the project's `emery.toml` `[registries]` table routes their namespace to (`emery` is `augentic.io` unless a line re-routes it), and local components load by path from the `.` mount ([`examples/emery.toml`](../examples/emery.toml) loads the built mock source that way); the shipped runtime embeds the engine only. Statically declared adapter guests remain possible in a custom runtime invocation.
+The host embeds no adapter and one registry route: every adapter is an exact package reference arriving as run input, read from the operator's store, `~/.emery/adapters`, and fetched into it on the first run that names a release the store lacks — from `augentic.io` for the `emery` namespace, compiled in and redirected by no file; any other namespace by the operator's `wkg get <reference> -o ~/.emery/adapters/` ([Adapters](reference/adapters.md)). A project file never names a registry. The shipped runtime embeds the engine only; the built mock components run under it once copied into the store under references of their own ([`examples/emery.toml`](../examples/emery.toml)). `~/.emery/wasm-pkg.toml` is not read.
 
 ## Release lines
 
@@ -67,7 +67,7 @@ Each leg runs native `cargo build --release --locked --target <triple> --bin eme
 
 Each leg produces `emery-v${VERSION}-${TARGET}.tar.gz` (unix) or `.zip` (Windows) plus a companion `.sha256`; the shared publish workflow attaches both when it creates the GitHub Release. Root `Cargo.toml` carries `[package.metadata.binstall]` pointing at those archive names.
 
-The shipped surface is the `emery` binary alone: the binary is one `omnia::runtime!` command-mode invocation (`src/main.rs`; `src/lib.rs` is the wasm32 guest alone) embedding the engine guest as static component bytes, with the CWD-rooted mounts inline — so there is no second binary or component to package.
+The shipped surface is the `emery` binary alone: the binary is one `omnia::runtime!` command-mode invocation (`src/main.rs`; the engine guest is `src/lib.rs`, built for wasm32) embedding the engine guest as static component bytes, with the CWD-rooted mount and the store inline — so there is no second binary or component to package.
 
 ## Publishing the wasm-pkg packages
 
@@ -85,7 +85,7 @@ wkg publish target/wasm32-wasip2/release/emery.wasm \
 
 ## Adapter components
 
-First-party adapter components are **not** built or published by this repo. They live in `augentic/emery-adapters`, ride the same release-branch verbs on their own lockstep train SemVer, and ship as Wasm OCI artifacts to GHCR (`ghcr.io/augentic/emery-adapters/<name>:<version>`) from that repo's **Publish Release** workflow (same `make publish <name>` path as a local breakout). Before an adapter train publishes, its tree must build against a **published** `emery:adapter` WIT pin, its engine git dependencies must be pinned to a **released** engine tag (`tag = "vX.Y.Z"`, no active sibling `[patch]` block), and each adapter's `emery-version` must name the minimum host that can run the train. There is no pull-on-miss. A host that wants those components as static guests builds them and declares them in the runtime invocation as further `guests:` entries, each named by its file's stem.
+First-party adapter components are **not** built or published by this repo. They live in `augentic/emery-adapters`, ride the same release-branch verbs on their own lockstep train SemVer, and ship as Wasm OCI artifacts to GHCR — `ghcr.io/augentic/emery/<name>:<version>`, which is where `augentic.io` resolves `emery:<name>@<version>` to — from that repo's **Publish Release** workflow (same `make publish <name>` path as a local breakout). Before an adapter train publishes, its tree must build against a **published** `emery:adapter` WIT pin, its engine git dependencies must be pinned to a **released** engine tag (`tag = "vX.Y.Z"`, no active sibling `[patch]` block), and each adapter's `emery-version` must name the minimum host that can run the train. A release is pulled on the first run that names it and the store lacks it, then read from the store; so a train must be published before a project can name it, and an engine release that moves the SDK is followed by a train built against it, with the `emery-version` gate refusing an older release at `metadata`.
 
 ## Installing a release
 

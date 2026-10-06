@@ -92,8 +92,9 @@ async fn mixed_sources() {
     let provider = Provider::idle();
 
     for argv in [
-        &["emery", "specify", "docs", "--config", "emery.toml"][..],
-        &["emery", "specify", "--description", "intent=text", "--config", "emery.toml"][..],
+        &["emery", "specify", "acme:docs@1.0.0", "--config", "emery.toml"][..],
+        &["emery", "specify", "--description", "acme:intent@1.0.0=text", "--config", "emery.toml"]
+            [..],
     ] {
         fail(&provider, argv, 1, "bad_request").await;
     }
@@ -104,8 +105,8 @@ async fn mixed_sources() {
 async fn duplicate() {
     let provider = Provider::idle();
     for argv in [
-        &["emery", "specify", "docs", "docs"][..],
-        &["emery", "specify", "docs", "--description", "docs=inline text"][..],
+        &["emery", "specify", "acme:docs@1.0.0", "acme:docs@1.0.0"][..],
+        &["emery", "specify", "acme:docs@1.0.0", "--description", "acme:docs@1.0.0=inline text"][..],
     ] {
         fail(&provider, argv, 1, "bad_request").await;
     }
@@ -170,7 +171,7 @@ async fn no_revision() {
 
     fail(&provider, &["emery", "show", "design"], 2, "spec-not-generated").await;
     fail(&provider, &["emery", "show", "plan"], 2, "spec-not-generated").await;
-    fail(&provider, &["emery", "build", "builder"], 2, "spec-not-generated").await;
+    fail(&provider, &["emery", "build", "acme:builder@1.0.0"], 2, "spec-not-generated").await;
 }
 
 // A target is named on the command line or in the file, never both, and a
@@ -179,8 +180,13 @@ async fn no_revision() {
 async fn mixed_targets() {
     let provider = Provider::idle();
 
-    fail(&provider, &["emery", "build", "builder", "--config", "emery.toml"], 1, "bad_request")
-        .await;
+    fail(
+        &provider,
+        &["emery", "build", "acme:builder@1.0.0", "--config", "emery.toml"],
+        1,
+        "bad_request",
+    )
+    .await;
 }
 
 // The CWD move is hermetic under nextest's process-per-test isolation.
