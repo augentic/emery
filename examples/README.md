@@ -19,8 +19,8 @@ cargo build --examples --target wasm32-wasip2 --release
 
 # copy adpaters to the omnia-managed plugin store using fully qualifed adapter name
 mkdir -p ~/.emery/adapters
-cp target/wasm32-wasip2/release/examples/source.wasm ~/.emery/adapters/example:source@0.1.0.wasm
-cp target/wasm32-wasip2/release/examples/target.wasm ~/.emery/adapters/example:target@0.1.0.wasm
+cp target/wasm32-wasip2/release/examples/source.wasm ~/.emery/adapters/example_source@0.1.0.wasm
+cp target/wasm32-wasip2/release/examples/target.wasm ~/.emery/adapters/example_target@0.1.0.wasm
 
 # generate the specification set
 set -a; source .env; set +a
