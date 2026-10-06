@@ -1,7 +1,8 @@
 //! Builds the engine component and the two mock adapters, and names them for the crate.
 //!
 //! The engine guest is compiled for `wasm32-wasip2` and its path is emitted as
-//! `EMERY_GUEST`, which the `runtime!` invocation in `src/runtime.rs` embeds.
+//! `EMERY_GUEST`, which the `runtime!` invocation in `src/main.rs` embeds and
+//! the runtime suite deploys.
 //! A debug build names the raw `emery.wasm`, which the runtime compiles at
 //! startup. A release build precompiles it to `emery.cwasm` for the binary's
 //! own target under the runtime's default compile settings, so the build

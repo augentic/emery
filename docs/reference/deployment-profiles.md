@@ -17,7 +17,7 @@ The `spec.md` / `design.md` / `plan.md` projections a project keeps beside its c
 
 ## The shipped profile: local filesystem
 
-The `hosts:` block of the `omnia::runtime!` invocation in [`src/runtime.rs`](../../src/runtime.rs) binds both storage hosts to `omnia_filesystem::Client` with the root compiled into the invocation: a durable, network-free store at `.omnia/storage` under the invocation directory (`blobstore/` and `keyvalue/`). The root is deployment policy, not an environment tunable — retargeting it means shipping a different profile, never setting `FILESYSTEM_ROOT`. One invocation directory is one project; isolation between projects is the filesystem root itself. Revisions survive restart; what a build writes into the working tree is the target adapter's, never the engine's.
+The `hosts:` block of the `omnia::runtime!` invocation in [`src/main.rs`](../../src/main.rs) binds both storage hosts to `omnia_filesystem::Client` with the root compiled into the invocation: a durable, network-free store at `.omnia/storage` under the invocation directory (`blobstore/` and `keyvalue/`). The root is deployment policy, not an environment tunable — retargeting it means shipping a different profile, never setting `FILESYSTEM_ROOT`. One invocation directory is one project; isolation between projects is the filesystem root itself. Revisions survive restart; what a build writes into the working tree is the target adapter's, never the engine's.
 
 ### The mount and the store
 
