@@ -161,7 +161,7 @@ fn description(entry: &str) -> Result<(&str, &str), Error> {
 fn argv_source(reference: &str, content: SourceContent) -> Result<SourceConfig, Error> {
     let adapter = AdapterRef::from_str(reference)?;
     Ok(SourceConfig {
-        name: adapter.name()?,
+        name: adapter.name().to_owned(),
         adapter,
         content,
         digest: None,
@@ -195,9 +195,8 @@ impl ConfigFile {
 #[derive(Debug, serde::Deserialize)]
 #[serde(deny_unknown_fields, rename_all = "kebab-case")]
 struct SourceEntry {
-    // Omitted, the adapter's name, as on the command line.
+    // Omitted, the adapter's package name, as on the command line.
     name: Option<String>,
-    // A local component is beneath the adapters root, never beside the file.
     adapter: AdapterRef,
     path: Option<PathBuf>,
     description: Option<String>,
@@ -208,10 +207,7 @@ impl SourceEntry {
     // `base` is the directory the file's `path` keys are relative to.
     fn into_config(self, base: &Path) -> Result<SourceConfig, Error> {
         let adapter = self.adapter;
-        let name = match self.name {
-            Some(name) => name,
-            None => adapter.name()?,
-        };
+        let name = self.name.unwrap_or_else(|| adapter.name().to_owned());
 
         let content = match (self.path, self.description) {
             (Some(_), Some(_)) => {

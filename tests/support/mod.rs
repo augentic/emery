@@ -1,6 +1,6 @@
 //! Provides the scripted provider and the runners the root suites share.
 //!
-//! The provider and its runner are in [`provider`], the two scratch roots in
+//! The provider and its runner are in [`provider`], the project scratch in
 //! [`scratch`], and the seeded revision in [`store`]. The runners here assert
 //! on the response, a success or the typed failure envelope.
 

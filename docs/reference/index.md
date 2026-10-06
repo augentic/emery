@@ -6,4 +6,5 @@ The lookup table for the shipped `emery` surface. The v1 delivery workflow's ref
 
 - [CLI Reference](cli/index.md) — the shipped verbs.
 - [CLI output shapes](cli-output-shapes.md) — the JSON envelopes and exit contract every verb honours.
-- [Deployment profiles](deployment-profiles.md) — how the runtime binds engine storage, and how other deployments swap that binding.
+- [Adapters](adapters.md) — the package reference a run names an adapter by, the store the binary reads it from, and how a release gets there.
+- [Deployment profiles](deployment-profiles.md) — how the runtime binds engine storage and mounts the project, and how other deployments swap those bindings.

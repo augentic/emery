@@ -17,7 +17,7 @@ The v1 delivery workflow (plan / refine / execute / status / finalize and the `s
 /emery:specify <adapter>           (every revision)
 ```
 
-That is the whole shipped surface. The source list never persists — repeat the adapters on every run, or keep them in an operator-owned `emery.toml` selected with `--config [<path>]` (`--config` alone means the project-relative `emery.toml`; a run naming no sources at all discovers the project-root file as a fallback). Every run starts from its sources alone — nothing of the stored revision reaches the synthesis, and requirements number from `REQ-001` in source order. After each run the skill writes `spec.md` / `design.md` / `plan.md` (the Markdown projections) beside the code for review. Never hand-edit `.omnia/storage` state (the revision store); route through the CLI.
+That is the whole shipped surface. An `<adapter>` is an exact package reference with a version, `namespace:name@version` (`emery:typescript@0.13.0`); the binary reads it from its store, `~/.emery/adapters`, and fetches a release the store lacks on the first run that names it. The source list never persists — repeat the adapters on every run, or keep them in an operator-owned `emery.toml` selected with `--config [<path>]` (`--config` alone means the project-relative `emery.toml`; a run naming no sources at all discovers the project-root file as a fallback). Every run starts from its sources alone — nothing of the stored revision reaches the synthesis, and requirements number from `REQ-001` in source order. After each run the skill writes `spec.md` / `design.md` / `plan.md` (the Markdown projections) beside the code for review. Never hand-edit `.omnia/storage` state (the revision store); route through the CLI.
 
 ## Tracing and output
 
@@ -36,10 +36,11 @@ Every CLI failure prints a kebab-case error code (and usually a `hint:` line —
 | Error code | What it means | Next action |
 |------------|---------------|-------------|
 | `specify-source-required` | `emery specify` was run without naming a source, and no project-root `emery.toml` was found | `emery specify <adapter>` (and/or `--description <adapter>=<text>`, or `--config [<path>]`) |
+| `adapter-reference` | An adapter was named without a version or a namespace, or as a path or bare name | Name the exact package reference, `namespace:name@version` |
 | `unsupported-version` | The installed binary is older than an adapter's declared minimum `emery-version` | Reinstall through the binary's install channel (the hint prints the literal command), then rerun |
 | `spec-not-generated` | `emery show` was run before any revision was committed | `/emery:specify <adapter>` first |
-| `refused` | The loader rejected the request (an invalid component, a missing `emery:adapter/source` export, or an unserved location) | Read the message and fix the artifact or location |
-| `unavailable` | The registry fetch for a package adapter failed (network, endpoint, or a missing exact version) | Check connectivity and that the exact version is published under its namespace, then rerun |
+| `refused` | The loader rejected the release (an invalid or pre-compiled artifact, a `digest` it does not resolve to, or a namespace the binary routes nowhere) | Read the message; for an unrouted namespace, `wkg get <reference> -o ~/.emery/adapters/` as the hint says |
+| `unavailable` | The registry fetch for a release the store lacks failed (network, endpoint, or a missing exact version) | Check connectivity and that the exact version is published under its namespace, then rerun; a copy at `~/.emery/adapters/<namespace>_<name>@<version>.wasm` stands in |
 | `spec-outdated` | The stored revision was written under an older grammar than this binary reads | Re-run `/emery:specify <adapter>` to regenerate |
 
 ### Reviewing the generated documents

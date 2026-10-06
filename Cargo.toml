@@ -10,9 +10,11 @@ license.workspace = true
 repository.workspace = true
 version.workspace = true
 
+# `rlib` alone: the wasm32 guest is built as a `cdylib` by `build.rs` on the
+# command line, so no native dylib is linked beside the binary.
 [lib]
 path = "src/lib.rs"
-crate-type = ["cdylib", "rlib"]
+crate-type = ["rlib"]
 
 [[bin]]
 name = "emery"
@@ -47,7 +49,7 @@ emery-cli.workspace = true
 emery-engine.workspace = true
 hex.workspace = true
 omnia-sdk.workspace = true
-omnia-test = { workspace = true, features = ["guest"] }
+omnia-test = { workspace = true, features = ["guest", "host"] }
 serde_json.workspace = true
 sha2.workspace = true
 tempfile.workspace = true

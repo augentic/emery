@@ -2,7 +2,7 @@
 
 Live `specify` and `build` journey via [omnia-cursor](https://github.com/augentic/omnia-backends/tree/main/crates/cursor): the mock source adapter extracts greeting claims from [docs/](docs/) through the host model, the engine synthesises `spec.md` / `design.md` and slices `plan.md`, the revision commits, and the mock target adapter builds each slice of the plan into the invocation directory.
 
-The adapters live at [source/](source/) and [target/](target/) — the same anatomy as a first-party adapter. The shipped `emery` binary hosts them: [emery.toml](emery.toml) names each built component by path beneath the adapters root, `~/.emery/adapters`, which the runtime mounts read-only and apart from the project, so a component is never loaded from a tree a run can write. The source input is [docs/](docs/); the build writes `build/` beneath the invocation directory.
+The adapters live at [source/](source/) and [target/](target/) — the same anatomy as a first-party adapter. The shipped `emery` binary hosts them: [emery.toml](emery.toml) names each as an exact package reference of its own, `example:source@0.1.0` and `example:target@0.1.0`, which the binary reads from its store, `~/.emery/adapters`, as `example_source@0.1.0.wasm` and `example_target@0.1.0.wasm` — the names `cp` writes below. The store lies apart from the project, so a component is never loaded from a tree a run can write, and nothing under the `example` namespace is fetched: a reference the store holds is read from it before any registry is asked. The source input is [docs/](docs/); the build writes `build/` beneath the invocation directory.
 
 ## Prerequisites
 
@@ -15,12 +15,12 @@ The adapters live at [source/](source/) and [target/](target/) — the same anat
 
 ```bash
 # build the mock adapters
-cargo build --example source --example target --target wasm32-wasip2 --release
+cargo build --examples --target wasm32-wasip2 --release
 
-# install adapters to emery's adapter cache (outside writable mount) 
+# copy them into emery's store under the references emery.toml names
 mkdir -p ~/.emery/adapters
-install target/wasm32-wasip2/release/examples/source.wasm ~/.emery/adapters/
-install target/wasm32-wasip2/release/examples/target.wasm ~/.emery/adapters/
+cp target/wasm32-wasip2/release/examples/source.wasm ~/.emery/adapters/example:source@0.1.0.wasm
+cp target/wasm32-wasip2/release/examples/target.wasm ~/.emery/adapters/example_target@0.1.0.wasm
 
 # generate the specification set
 set -a; source .env; set +a
@@ -40,7 +40,7 @@ Without `.env`:
 export CURSOR_API_KEY=<Cursor API key>
 ```
 
-The mock target writes a Markdown stand-in for code: `build/<slice-name>/index.md` and one `REQ-NNN.md` per requirement, where a real target writes the implementation. The `build/` tree is the journey's output and is ignored by git.
+The mock target writes a Markdown stand-in for code: `build/<slice-name>/index.md` and one `REQ-NNN.md` per requirement, where a real target writes the implementation. The `build/` tree is the journey's output and is ignored by git. A stored release is final until removed, so after rebuilding a mock copy it in again; `rm ~/.emery/adapters/example_*` takes both out of the store.
 
 ### Tracing
 
