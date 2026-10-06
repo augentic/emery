@@ -1,24 +1,35 @@
-//! Verifies the adapter boundary under the shipped runtime's own wiring.
+//! Verifies the adapter boundary under the omnia runtime.
 //!
-//! Each scenario overlays the binary's compiled-in deployment with scratch
+//! Each scenario deploys the engine guest the binary embeds over scratch
 //! roots — the project mounted writable as `.`, the package store, and a
-//! wasm-pkg `local` registry — and drives it over in-memory backends and a
-//! scripted model. omnia's real store and loader answer every load, so what
-//! a reference resolves to is asserted here and nowhere natively, and the
-//! operator's `$HOME` and the network are never touched.
+//! wasm-pkg `local` registry — under the hosts the engine imports, and
+//! drives it over in-memory backends and a scripted model. omnia's real
+//! store and loader answer every load, so what a reference resolves to is
+//! asserted here and nowhere natively, and the operator's `$HOME` and the
+//! network are never touched.
 
 #![cfg(not(target_arch = "wasm32"))]
 
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use omnia::{CompileOptions, Digest, ExitStatus};
+use omnia::{CompileOptions, Digest, ExitStatus, StoreCtx};
 use omnia_test::host::{Backends, Deployment, Run, Scratch, ScriptedModel, scratch};
+use omnia_wasi_blobstore::WasiBlobstore;
+use omnia_wasi_keyvalue::WasiKeyValue;
+use omnia_wasi_model::WasiModel;
+use omnia_wasi_otel::WasiOtel;
 use serde_json::Value;
+
+// The engine `build.rs` emits, as the binary embeds it.
+const GUEST: &str = env!("EMERY_GUEST");
 
 // The two mocks `build.rs` emits, raw wasm in every profile.
 const MOCK_SOURCE: &str = env!("EMERY_MOCK_SOURCE");
 const MOCK_TARGET: &str = env!("EMERY_MOCK_TARGET");
+
+// Every default in memory, the scripted model answering.
+type Bundle = Backends<ScriptedModel>;
 
 // The references the scenarios name, under a namespace the binary routes
 // nowhere; the scratch registry serves it where a scenario routes it.
@@ -52,16 +63,17 @@ impl Roots {
         }
     }
 
-    // The binary's deployment over these roots, the `acme` namespace routed
-    // to the scratch registry.
+    // The engine over these roots, the `acme` namespace routed to the
+    // scratch registry.
     fn deployment(&self, args: &[&str]) -> Deployment {
         self.unrouted(args).registries(local_registry_toml(self.registry.path()))
     }
 
-    // The binary's deployment over these roots under its own routing, which
-    // names no `acme`.
+    // The engine over these roots routing no namespace, as the binary routes
+    // no `acme`.
     fn unrouted(&self, args: &[&str]) -> Deployment {
-        Deployment::from(emery::runtime::manifest())
+        Deployment::new()
+            .guest("emery", GUEST)
             .mount(self.project.mount(true))
             .store(self.store.path())
             .args(args.iter().copied())
@@ -123,13 +135,22 @@ fn precompiled(roots: &Roots, wasm: &str) -> PathBuf {
     target
 }
 
-// One run of the binary's wiring over `backends` with `model` answering.
+// One run of the engine over `backends` with `model` answering.
 async fn emery(deployment: Deployment, backends: &Backends, model: &ScriptedModel) -> Run {
     deployment
         .captured()
-        .run_with::<emery::runtime::Hooks, _>(backends.clone().model(model.clone()))
+        .run(backends.clone().model(model.clone()), link)
         .await
         .expect("the deployment assembles and the command runs")
+}
+
+// The hosts the engine imports; the guest loader is assembly's.
+fn link(deployment: &mut omnia::Deployment<StoreCtx<Bundle>>) -> anyhow::Result<()> {
+    deployment.host::<WasiModel, Bundle>()?;
+    deployment.host::<WasiKeyValue, Bundle>()?;
+    deployment.host::<WasiBlobstore, Bundle>()?;
+    deployment.host::<WasiOtel, Bundle>()?;
+    Ok(())
 }
 
 fn assert_ok(run: &Run) {
@@ -442,12 +463,11 @@ async fn store_beneath_writable() {
         if present {
             fs::create_dir_all(&beneath).expect("creating the store beneath the project");
         }
-        let error = Deployment::from(emery::runtime::manifest())
-            .mount(roots.project.mount(true))
+        let error = roots
+            .unrouted(&["specify", SOURCE])
             .store(&beneath)
-            .args(["specify", SOURCE])
             .captured()
-            .run_with::<emery::runtime::Hooks, _>(backends.clone().model(ScriptedModel::default()))
+            .run(backends.clone().model(ScriptedModel::default()), link)
             .await
             .expect_err("the store beneath the project is refused at assembly");
         let message = format!("{error:#}");
