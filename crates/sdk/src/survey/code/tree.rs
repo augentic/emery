@@ -17,8 +17,8 @@ pub const TRACE: usize = 4;
 /// Every module of a tree parsed, before any import is settled.
 ///
 /// [`Parsed::read`] reads a workspace listing; the adapter builds its
-/// [`Recogniser`] from the modules and data files it holds, and
-/// [`Parsed::settle`] settles the tree through it.
+/// [`Recogniser`] from the root, modules, data files, and tests it holds,
+/// and [`Parsed::settle`] settles the tree through it.
 pub struct Parsed<M> {
     /// The workspace root every path is relative to.
     pub root: PathBuf,
@@ -29,7 +29,9 @@ pub struct Parsed<M> {
     pub modules: BTreeMap<String, M>,
     /// Every data file the listing named.
     pub data: Vec<String>,
-    tests: Vec<Pending<M>>,
+    /// Every test file the listing named.
+    pub tests: Vec<String>,
+    pending: Vec<Pending<M>>,
 }
 
 enum Pending<M> {
@@ -60,9 +62,9 @@ impl<M: Deref<Target = Module>> Parsed<M> {
             }
         }
 
-        let mut tests = Vec::new();
-        for path in listing.tests {
-            let text = match std::fs::read_to_string(root.join(&path)) {
+        let mut pending = Vec::new();
+        for path in &listing.tests {
+            let text = match std::fs::read_to_string(root.join(path)) {
                 Ok(text) => text,
                 Err(error) => {
                     tracing::warn!(path, %error, "test is not readable text; left out");
@@ -70,14 +72,14 @@ impl<M: Deref<Target = Module>> Parsed<M> {
                 }
             };
             if path.ends_with(".feature") {
-                tests.push(Pending::Feature(Test {
-                    path,
+                pending.push(Pending::Feature(Test {
+                    path: path.clone(),
                     imports: Vec::new(),
                     statements: scenarios(&text),
                 }));
             } else {
-                let module = parse(&path, text);
-                tests.push(Pending::Module(path, module));
+                let module = parse(path, text);
+                pending.push(Pending::Module(path.clone(), module));
             }
         }
 
@@ -86,7 +88,8 @@ impl<M: Deref<Target = Module>> Parsed<M> {
             dialect,
             modules,
             data: listing.data,
-            tests,
+            tests: listing.tests,
+            pending,
         }
     }
 
@@ -102,7 +105,7 @@ impl<M: Deref<Target = Module>> Parsed<M> {
             root,
             dialect,
             mut modules,
-            tests: pending,
+            pending,
             ..
         } = self;
         for module in modules.values_mut() {
