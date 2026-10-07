@@ -2,22 +2,24 @@
 
 The SDK an [Emery](https://github.com/augentic/emery) source adapter is written with.
 
-A source adapter is a WebAssembly component that reads one kind of source — an operator's brief, a documentation tree, a codebase — and returns typed claims for Emery to reconcile into a specification. This crate is the adapter's one dependency: the `source_adapter!` export, `extract` (one gated model turn per seam, joined into one document), `workspace::list` for dividing a source into seams, and the embedded prose an adapter's prompts are read from.
+A source adapter is a WebAssembly component that reads one kind of source — an operator's brief, a documentation tree, a codebase — and returns typed claims for Emery to reconcile into a specification. This crate is the adapter's one dependency: the `SourceAdapter` trait and the `source_adapter!` export, `extract` (one gated model turn per seam, joined into one document), `workspace::list` for dividing a source into seams, and the embedded prose an adapter's prompts are read from.
 
 ```rust
 #[cfg(target_arch = "wasm32")]
 mod guest {
-    use emery_sdk::{AdapterMetadata, Context, Error, Evidence, Model, SourceKind};
+    use emery_sdk::{Context, Error, Evidence, Model, SourceAdapter, SourceKind};
 
-    emery_sdk::source_adapter!(metadata, extract);
+    struct Adapter;
 
-    fn metadata() -> AdapterMetadata {
-        emery_sdk::metadata(SourceKind::Documentation)
-    }
+    emery_sdk::source_adapter!(Adapter);
 
-    async fn extract<P: Model>(ctx: &Context<'_, P>) -> Result<Evidence, Error> {
-        let seams = crate::survey::survey(ctx.input)?;
-        emery_sdk::extract(ctx, crate::PROSE, &seams).await
+    impl SourceAdapter for Adapter {
+        const KIND: SourceKind = SourceKind::Documentation;
+
+        async fn extract<P: Model>(ctx: &Context<'_, P>) -> Result<Evidence, Error> {
+            let seams = crate::survey::survey(ctx.input)?;
+            emery_sdk::extract(ctx, crate::PROSE, &seams).await
+        }
     }
 }
 ```
