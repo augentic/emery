@@ -14,7 +14,7 @@ use omnia_sdk::{BlobStore, Error, Plugins, StateStore, server_error};
 use serde::Serialize;
 
 use crate::adapter::{self, AdapterRef, Loaded};
-pub use crate::revision::{ReqId, SliceId};
+pub use crate::revision::{ReqId, SliceId, Waves};
 use crate::revision::{Slice, Spec};
 use crate::store;
 
@@ -65,8 +65,16 @@ pub async fn build<P: Target + StateStore + BlobStore + Plugins>(
     let Loaded { id: adapter, .. } =
         adapter::load_target(provider, &input.adapter, input.digest.as_ref()).await?;
 
+    let waves = revision.plan.waves();
     let order = revision.plan.order();
-    tracing::info!(revision = %revision_id, adapter = %adapter, slices = order.len(), "building");
+    tracing::info!(
+        revision = %revision_id,
+        adapter = %adapter,
+        slices = order.len(),
+        waves = waves.len(),
+        widest = waves.widest(),
+        "building"
+    );
 
     // every slice carries the whole design, rendered once
     let design = revision.design.to_string();
@@ -80,6 +88,7 @@ pub async fn build<P: Target + StateStore + BlobStore + Plugins>(
 
     Ok(BuildOutput {
         revision: revision_id,
+        waves,
         slices: built,
     })
 }
@@ -105,6 +114,11 @@ pub struct BuildInput {
 pub struct BuildOutput {
     /// The identifier of the revision whose plan was built.
     pub revision: String,
+    /// The plan's slices grouped into the sets ready to build at once.
+    ///
+    /// The slices were built one at a time, in the order the waves flatten
+    /// to; the waves are what a build could have run concurrently.
+    pub waves: Waves,
     /// Every slice, in build order, as its build reported it.
     pub slices: Vec<BuiltSlice>,
 }

@@ -85,9 +85,10 @@ Every adapter a run names is read from the store, `~/.emery/adapters`, and a rel
 When `--format json` is provided, returns:
 
 - `revision` — the committed revision id, now current
+- `waves` — the committed plan's slices grouped into the sets ready to build at once, a list of lists of slice ids in build order: the first wave every slice that depends on nothing, each wave after it every slice whose `depends-on` names only slices in the waves before, each wave in id order; their count is the plan's longest dependency chain and the widest is how many slices could build at once
 - `diff` — the re-mine diff against the outgoing current revision: `from`, then a `{ added, removed, changed }` object each for `spec` (requirements matched by `id` — positional, so a requirement whose place moved reads as a change — as `{ id, subject }`, a `changed` entry naming the differing `fields`), `design` (section keys), and `plan` (slices matched by `id` as `{ id, name }`, a `changed` entry naming the differing `fields`); absent on a first run, every list empty on a byte-stable re-run (see [CLI output shapes](../cli-output-shapes.md#emery-specify))
 
-Text mode prints only the revision and a one-line summary of those counts; the per-requirement and per-slice entries ride the JSON envelope alone.
+Text mode prints the revision, the plan's shape on one line — `  plan: 3 slices in 2 waves, widest 2` — and a one-line summary of those counts; the per-requirement and per-slice entries, and the waves themselves, ride the JSON envelope alone.
 
 ## See also
 

@@ -7,10 +7,11 @@
 
 use std::fmt::{self, Display, Formatter};
 
-/// The directories of the engine's own that no path may name.
+/// The directories no path may name.
 ///
-/// `.omnia/` is the runtime's storage root, wherever it occurs under a root.
-pub const SKIP_DIRS: &[&str] = &[".omnia"];
+/// `.emery/` is the engine's own root, where the committed revision lives,
+/// and `.git/` is the checkout's; both wherever they occur under a root.
+pub const SKIP_DIRS: &[&str] = &[".emery", ".git"];
 
 /// The files of the engine's own that no path may name.
 ///
@@ -22,8 +23,8 @@ pub const SKIP_FILES: &[&str] = &["spec.md", "design.md", "plan.md"];
 ///
 /// The result drops empty and `.` segments, so two spellings of one file
 /// compare equal. A path passes when it is relative, climbs no higher than
-/// the root, names a file beneath it, and names nothing of the engine's own:
-/// no segment of [`SKIP_DIRS`] and no final segment of [`SKIP_FILES`].
+/// the root, names a file beneath it, and names nothing reserved: no segment
+/// of [`SKIP_DIRS`] and no final segment of [`SKIP_FILES`].
 ///
 /// # Errors
 ///
@@ -37,7 +38,7 @@ pub const SKIP_FILES: &[&str] = &["spec.md", "design.md", "plan.md"];
 /// assert_eq!(beneath("./src//orders.rs"), Ok("src/orders.rs".to_owned()));
 /// assert_eq!(beneath("../secret"), Err(BadPath::Escapes));
 /// assert_eq!(beneath("./"), Err(BadPath::NoFile));
-/// assert_eq!(beneath(".omnia/storage/x"), Err(BadPath::SkipDir(".omnia".to_owned())));
+/// assert_eq!(beneath(".emery/storage/x"), Err(BadPath::SkipDir(".emery".to_owned())));
 /// assert_eq!(beneath("docs/spec.md"), Err(BadPath::SkipFile("spec.md".to_owned())));
 /// ```
 pub fn beneath(path: &str) -> Result<String, BadPath> {
@@ -78,7 +79,7 @@ impl Display for BadPath {
         match self {
             Self::Escapes => f.write_str("escapes the root"),
             Self::NoFile => f.write_str("names no file"),
-            Self::SkipDir(dir) => write!(f, "is under the engine's own `{dir}/`"),
+            Self::SkipDir(dir) => write!(f, "is under the reserved `{dir}/`"),
             Self::SkipFile(file) => write!(f, "names the engine's own `{file}`"),
         }
     }

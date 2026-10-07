@@ -159,7 +159,14 @@ async fn gen_spec() {
     // an identical re-run drafts again and commits the same bytes
     let resp = cli_ok(&provider, &["emery", "specify", SOURCE]).await;
     let stdout = String::from_utf8_lossy(&resp.stdout);
-    assert!(stdout.contains("none (byte-stable)"), "{stdout}");
+    assert_eq!(
+        stdout,
+        format!(
+            "committed revision {id}\n  plan: 1 slice in 1 wave, widest 1\n  diff vs {id}: none \
+             (byte-stable)\n"
+        ),
+        "the one-stem plan is one slice in one wave"
+    );
     assert_eq!(current(&provider.storage), id, "the same revision keeps its id");
 
     provider.model.assert_exhausted();
@@ -681,8 +688,12 @@ async fn remine_supersedes() {
     let stdout = String::from_utf8_lossy(&resp.stdout);
     assert_eq!(
         stdout.lines().count(),
-        2,
-        "a changed run prints the revision plus one summary line: {stdout}"
+        3,
+        "a changed run prints the revision, the plan's shape, and one summary line: {stdout}"
+    );
+    assert!(
+        stdout.contains("  plan: 2 slices in 1 wave, widest 2\n"),
+        "two independent slices are one wave: {stdout}"
     );
     assert!(
         stdout.contains(&format!(
@@ -1763,7 +1774,16 @@ async fn sliced() {
     ]);
     provider.source.evidence.insert("docs".to_string(), Ok(sliced_evidence()));
 
-    cli_ok(&provider, &["emery", "specify", &reference("docs")]).await;
+    let resp =
+        cli_ok(&provider, &["emery", "--format", "json", "specify", &reference("docs")]).await;
+
+    // the envelope carries the committed plan's waves
+    let committed: Value = serde_json::from_slice(&resp.stdout).expect("one JSON envelope");
+    assert_eq!(
+        committed["waves"],
+        serde_json::json!([["SLICE-001"], ["SLICE-002"]]),
+        "a chain of two is two waves: {committed}"
+    );
 
     // the slicing request carries the stems, the keys, and the requirement outline
     let slicing = &provider.model.seen()[3];

@@ -44,6 +44,6 @@ Track all three files in version control. Never edit them by hand: they are proj
 
 ## Relay
 
-- Surface the CLI output verbatim — text names the committed revision with a one-line diff summary; the full per-requirement and per-slice diff rides `--format json`.
-- Review is `spec.md` / `design.md` / `plan.md` as re-projected, or `emery show spec` / `emery show design` / `emery show plan` directly — never read or edit `.omnia/storage` state by hand.
+- Surface the CLI output verbatim — text names the committed revision, the plan's shape (`  plan: 3 slices in 2 waves, widest 2`), and a one-line diff summary; the full per-requirement and per-slice diff, and the waves themselves, ride `--format json`.
+- Review is `spec.md` / `design.md` / `plan.md` as re-projected, or `emery show spec` / `emery show design` / `emery show plan` directly — never read or edit `.emery/storage` state by hand.
 - On non-zero exit, surface the structured error and stop — never hand-roll spec documents. A `refused` failure means the loader rejected the request (an invalid or pre-compiled artifact, a `digest` the release does not resolve to, or a release under a namespace the binary routes nowhere, which the hint says to fetch with `wkg get <reference> -o ~/.emery/adapters/`); relay the hint and let the operator decide. A `spec-outdated` failure means the stored revision predates this binary's grammar: relay the hint (re-run `emery specify` to regenerate) and let the operator decide.

@@ -40,6 +40,7 @@ use crate::adapter::{self, AdapterRef, Loaded};
 use crate::revision::Revision;
 pub use crate::revision::{
     Changed, DesignDiff, Diff, Entry, PlanDiff, ReqId, SectionKind, SliceEntry, SliceId, SpecDiff,
+    Waves,
 };
 use crate::{preopen_path, store};
 
@@ -94,10 +95,15 @@ pub async fn specify<P: Model + Source + StateStore + BlobStore + Plugins>(
     )
     .await?;
     let spec = SpecBrief::assemble(drafts);
+    let waves = plan.waves();
 
     let (revision, diff) = store::commit(provider, &Revision { spec, design, plan }).await?;
 
-    Ok(SpecifyOutput { revision, diff })
+    Ok(SpecifyOutput {
+        revision,
+        waves,
+        diff,
+    })
 }
 
 /// The sources used to generate one revision.
@@ -164,6 +170,8 @@ impl SourceConfig {
 pub struct SpecifyOutput {
     /// The content identifier of the committed revision.
     pub revision: String,
+    /// The committed plan's slices grouped into the sets ready to build at once.
+    pub waves: Waves,
     /// Changes from the displaced revision.
     ///
     /// Absent on the first run, and when the outgoing revision was unreadable.

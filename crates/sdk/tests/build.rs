@@ -151,7 +151,7 @@ async fn write_tool() {
             [
                 write_file("1", "./src//orders.rs", "pub struct Order;\n"),
                 write_file("2", "../escape.rs", ""),
-                write_file("3", ".omnia/storage/x", ""),
+                write_file("3", ".emery/storage/x", ""),
                 write_file("4", "docs/spec.md", ""),
                 ToolCall {
                     id: "5".to_owned(),
@@ -180,7 +180,7 @@ async fn write_tool() {
     assert_eq!(exchanges[1].outcome, Err("write_file: `../escape.rs` escapes the root".to_owned()));
     assert_eq!(
         exchanges[2].outcome,
-        Err("write_file: `.omnia/storage/x` is under the engine's own `.omnia/`".to_owned())
+        Err("write_file: `.emery/storage/x` is under the reserved `.emery/`".to_owned())
     );
     assert_eq!(
         exchanges[3].outcome,
@@ -305,7 +305,7 @@ async fn gate_findings() {
     let root = tmp.path().to_str().expect("a UTF-8 scratch root");
     let model = Scripted::answering([
         r#"{"covered":["REQ-001","REQ-009","REQ-001"],
-            "written":["src/orders.rs","../escape.rs","./","src/orders.rs",".omnia/storage/x"]}"#,
+            "written":["src/orders.rs","../escape.rs","./","src/orders.rs",".emery/storage/x"]}"#,
         r#"{"covered":["REQ-001"],"written":["src/orders.rs"]}"#,
     ]);
     let slice = slice();
@@ -323,7 +323,7 @@ async fn gate_findings() {
         "- written `../escape.rs` escapes the root",
         "- written `./` names no file",
         "- written `src/orders.rs` is listed twice",
-        "- written `.omnia/storage/x` is under the engine's own `.omnia/`",
+        "- written `.emery/storage/x` is under the reserved `.emery/`",
     ] {
         assert!(correction.contains(finding), "{finding}: {correction}");
     }

@@ -211,8 +211,9 @@ impl Display for Brief<'_> {
              `$WORKSPACE` is the project tree, lent writable: the root of every file you can \
              read, and the root every `written` path is relative to. Write through this call's \
              `write_file` tool alone: each call writes one file beneath `$WORKSPACE`, created \
-             or replaced whole, the directories above it created, and a path outside the tree \
-             or among the engine's own files is refused. Build the slice into it as the prompt \
+             or replaced whole, the directories above it created, and a path outside the tree, \
+             under `.emery/` or `.git/`, or naming a projection is refused. Build the slice into \
+             it as the prompt \
              describes, and change nothing outside it.\n\n\
              The slice's entry in the plan:\n\n{plan}\n\n\
              The specification, cut to the slice's requirements:\n\n{spec}\n\n\

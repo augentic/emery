@@ -137,7 +137,8 @@ fn anchors() {
     let range = Anchor::parse("docs/api/orders.md#L12-L34").expect("a range");
     assert_eq!(range.path, "docs/api/orders.md");
     assert_eq!(range.lines, Some((12, 34)));
-    assert_eq!(Anchor::parse("a/.omnia.md").map(|anchor| anchor.path), Ok("a/.omnia.md"));
+    assert_eq!(Anchor::parse("a/.emery.md").map(|anchor| anchor.path), Ok("a/.emery.md"));
+    assert_eq!(Anchor::parse("a/.gitignore").map(|anchor| anchor.path), Ok("a/.gitignore"));
     assert_eq!(Anchor::parse("a/spec.md.bak").map(|anchor| anchor.path), Ok("a/spec.md.bak"));
 
     for (anchor, expected) in [
@@ -154,8 +155,10 @@ fn anchors() {
         ("../secret.ts", BadAnchor::Path(BadPath::Escapes)),
         ("src/../../x.ts#L1", BadAnchor::Path(BadPath::Escapes)),
         ("./", BadAnchor::Path(BadPath::NoFile)),
-        (".omnia/storage/x.json", BadAnchor::Path(BadPath::SkipDir(".omnia".to_string()))),
-        ("a/.omnia/x.json#L1", BadAnchor::Path(BadPath::SkipDir(".omnia".to_string()))),
+        (".emery/storage/x.json", BadAnchor::Path(BadPath::SkipDir(".emery".to_string()))),
+        ("a/.emery/x.json#L1", BadAnchor::Path(BadPath::SkipDir(".emery".to_string()))),
+        (".git/HEAD", BadAnchor::Path(BadPath::SkipDir(".git".to_string()))),
+        ("a/.git/x#L1", BadAnchor::Path(BadPath::SkipDir(".git".to_string()))),
         ("spec.md", BadAnchor::Path(BadPath::SkipFile("spec.md".to_string()))),
         ("docs/plan.md#L3", BadAnchor::Path(BadPath::SkipFile("plan.md".to_string()))),
         ("src/orders.ts#L34-L12", BadAnchor::Reversed { start: 34, end: 12 }),
@@ -173,7 +176,7 @@ fn anchored_claims() {
             {"kind":"requirement","id":"orders.create","path":"src/orders.ts#L3-L9","statement":"Creates."},
             {"kind":"requirement","id":"orders.list","path":"../x.ts","statement":"Lists."},
             {"kind":"call","path":"src/orders.ts#L9-L3"},
-            {"kind":"type","path":".omnia/x.json"},
+            {"kind":"type","path":".emery/x.json"},
             {"kind":"decision"}
         ]}"#,
     );
@@ -185,7 +188,7 @@ fn anchored_claims() {
         "{findings:?}"
     );
     assert!(
-        findings[2].contains("claim 3: path `.omnia/x.json` is under the engine's own"),
+        findings[2].contains("claim 3: path `.emery/x.json` is under the reserved `.emery/`"),
         "{findings:?}"
     );
     assert_eq!(

@@ -22,6 +22,7 @@ const BUILDER_ID: &str = "acme:builder";
 const SPEC: &[u8] = include_bytes!("build/spec.json");
 const DESIGN: &[u8] = include_bytes!("build/design.json");
 const PLAN: &[u8] = include_bytes!("build/plan.json");
+const WIDE_PLAN: &[u8] = include_bytes!("build/wide-plan.json");
 const SPEC_001: &str = include_str!("build/spec-001.md");
 const SPEC_002: &str = include_str!("build/spec-002.md");
 const DESIGN_MD: &str = include_str!("build/design.md");
@@ -74,8 +75,9 @@ async fn build_plan() {
     assert_eq!(
         stdout,
         format!(
-            "built revision {id}\n  SLICE-001 authentication: covered 2/2, written 1 file\n  \
-             SLICE-002 orders: covered 1/2 (uncovered REQ-004), written 2 files\n"
+            "built revision {id}\n  plan: 2 slices in 2 waves, widest 1\n  SLICE-001 \
+             authentication: covered 2/2, written 1 file\n  SLICE-002 orders: covered 1/2 \
+             (uncovered REQ-004), written 2 files\n"
         )
     );
 
@@ -106,6 +108,7 @@ async fn build_plan() {
     let resp = cli_ok(&provider, &["emery", "--format", "json", "build", BUILDER]).await;
     let envelope: Value = serde_json::from_slice(&resp.stdout).expect("one JSON envelope");
     assert_eq!(envelope["revision"], id, "{envelope}");
+    assert_eq!(envelope["waves"], serde_json::json!([["SLICE-001"], ["SLICE-002"]]), "{envelope}");
     assert_eq!(
         envelope["slices"],
         serde_json::json!([
@@ -117,6 +120,42 @@ async fn build_plan() {
 
     assert_eq!(provider.storage.snapshot(), before, "a build writes no engine state");
     provider.model.assert_exhausted();
+}
+
+// A slice waiting on nothing is built in the first wave whatever its id, so
+// the serial order is the waves flattened and a build at a width of one
+// reproduces it.
+#[tokio::test]
+async fn build_waves() {
+    let provider = Provider::idle();
+    let id = seed(&provider.storage, SPEC, DESIGN, WIDE_PLAN);
+
+    let resp = cli_ok(&provider, &["emery", "--format", "json", "build", BUILDER]).await;
+
+    let envelope: Value = serde_json::from_slice(&resp.stdout).expect("one JSON envelope");
+    assert_eq!(
+        envelope["waves"],
+        serde_json::json!([["SLICE-001", "SLICE-003"], ["SLICE-002"]]),
+        "{envelope}"
+    );
+    let dispatched: Vec<String> =
+        provider.target.calls().into_iter().map(|(_, slice, _)| slice.id).collect();
+    assert_eq!(dispatched, ["SLICE-001", "SLICE-003", "SLICE-002"]);
+    let built: Vec<&str> = envelope["slices"]
+        .as_array()
+        .expect("slices")
+        .iter()
+        .filter_map(|slice| slice["id"].as_str())
+        .collect();
+    assert_eq!(built, dispatched, "the report follows the dispatch order");
+
+    let resp = cli_ok(&provider, &["emery", "build", BUILDER]).await;
+    let stdout = String::from_utf8_lossy(&resp.stdout);
+    assert!(
+        stdout
+            .starts_with(&format!("built revision {id}\n  plan: 3 slices in 2 waves, widest 2\n")),
+        "{stdout}"
+    );
 }
 
 // The `[target]` table names the adapter and its pin, whether the file is
