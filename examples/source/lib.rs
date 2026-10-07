@@ -5,23 +5,26 @@
 //!
 //! - An embedded prompt and its references.
 //! - A survey that selects mining seams.
-//! - A WebAssembly guest exported with `emery_sdk::source_adapter!`.
+//! - A WebAssembly guest: an `emery_sdk::SourceAdapter` exported with
+//!   `emery_sdk::source_adapter!`.
 
 use emery_sdk::{Doc, Error, Seam, SourceContent, SourceInput, bad_request};
 
 #[cfg(target_arch = "wasm32")]
 mod guest {
-    use emery_sdk::{AdapterMetadata, Context, Error, Evidence, Model, SourceKind};
+    use emery_sdk::{Context, Error, Evidence, Model, SourceAdapter, SourceKind};
 
-    emery_sdk::source_adapter!(metadata, extract);
+    struct Adapter;
 
-    fn metadata() -> AdapterMetadata {
-        emery_sdk::metadata(SourceKind::Documentation)
-    }
+    emery_sdk::source_adapter!(Adapter);
 
-    async fn extract<P: Model>(ctx: &Context<'_, P>) -> Result<Evidence, Error> {
-        let seams = super::survey(ctx.input)?;
-        emery_sdk::extract(ctx, super::PROSE, &seams).await
+    impl SourceAdapter for Adapter {
+        const KIND: SourceKind = SourceKind::Documentation;
+
+        async fn extract<P: Model>(ctx: &Context<'_, P>) -> Result<Evidence, Error> {
+            let seams = super::survey(ctx.input)?;
+            emery_sdk::extract(ctx, super::PROSE, &seams).await
+        }
     }
 }
 

@@ -23,7 +23,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::{self, Display, Formatter};
 
 use emery_adapter::is_kebab;
-use emery_adapter::source::{Anchor, BadAnchor, Claim, SourceContent};
+use emery_adapter::source::{Anchor, BadAnchor, Claim, ClaimKind, Evidence, SourceContent};
 use emery_prose::Doc;
 use omnia_sdk::model::Question;
 use omnia_sdk::{Error, Model, server_error};
@@ -34,7 +34,7 @@ use self::code::{Recogniser, Tree};
 use self::lead::Lead;
 use self::located::Located;
 use crate::extract::{INLINE_BYTES, Laid, Seam, lay, line_count};
-use crate::{Context, SURVEY, beneath, prompt, reference};
+use crate::{Context, SURVEY, beneath, prompt, push_unique, reference, unique};
 
 pub mod code;
 mod dialect;
@@ -47,21 +47,6 @@ pub mod tests;
 
 pub use self::dialect::{ClassSyntax, Dialect};
 pub use self::skeleton::types;
-
-pub(crate) fn push_unique<T: PartialEq>(into: &mut Vec<T>, item: T) {
-    if !into.contains(&item) {
-        into.push(item);
-    }
-}
-
-// First-occurrence order.
-pub(crate) fn unique<T: PartialEq>(items: impl IntoIterator<Item = T>) -> Vec<T> {
-    let mut list = Vec::new();
-    for item in items {
-        push_unique(&mut list, item);
-    }
-    list
-}
 
 // Each key's values together, the keys in first-occurrence order.
 pub(crate) fn grouped<K: PartialEq, V>(
@@ -252,14 +237,52 @@ pub async fn surfaces<P: Model>(
     Ok(inventory)
 }
 
-/// The seams of a surveyed tree, and the `type` claims its code declares.
+/// The seams of a surveyed source, and the `type` claims its code declares.
+///
+/// [`seams`] returns one for a parsed workspace tree and [`Survey::value`]
+/// for an inline value; [`Survey::join`] puts the `type` claims into the
+/// evidence the seams were mined to.
 #[derive(Clone, Debug, Default)]
 pub struct Survey {
     /// One seam per cut, each carrying its brief, files, stems, and anchors.
     pub seams: Vec<Seam>,
-    /// The `type` claims the modules the seams reach declare, each anchored,
-    /// for the adapter to join after the model's answer.
+    /// The `type` claims the modules the seams reach declare, for
+    /// [`Survey::join`] to put in place of the model's.
     pub types: Vec<Claim>,
+}
+
+impl Survey {
+    /// Returns the survey of an inline value parsed as `module`.
+    ///
+    /// One seam over the whole input, with no survey turn, and the `type`
+    /// claims `module` declares, unanchored.
+    #[must_use]
+    pub fn value(dialect: &Dialect, module: &code::Module) -> Self {
+        Self {
+            seams: vec![Seam::whole()],
+            types: types(dialect, [module], false),
+        }
+    }
+
+    /// Returns `evidence` with this survey's `type` claims in place of the model's.
+    ///
+    /// The declarations are the code's to state: every `type` claim the
+    /// model answered is dropped, logged at DEBUG, and the parsed ones
+    /// follow the claims kept, in their order.
+    #[must_use]
+    pub fn join(self, mut evidence: Evidence) -> Evidence {
+        let answered = evidence.claims.len();
+        evidence.claims.retain(|claim| claim.kind != ClaimKind::Type);
+        let dropped = answered - evidence.claims.len();
+        if dropped > 0 {
+            tracing::debug!(
+                dropped,
+                "type claims the model answered give way to the parsed declarations"
+            );
+        }
+        evidence.claims.extend(self.types);
+        evidence
+    }
 }
 
 /// Returns the seams of a parsed workspace tree, its surfaces named by the model.

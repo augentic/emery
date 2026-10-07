@@ -195,13 +195,12 @@ impl Recogniser for Stub {
     // public methods. Anything else is named by the survey alone.
     fn derive(
         &self, tree: &Tree<Self>, module: &Plain, lines: Lines, name: &str, stem: &str,
-        mounts: &BTreeMap<String, String>,
     ) -> Derived {
         let Some(call) = tree.registration_at(module, lines) else {
             return Derived::named(tree, module, lines, name, stem);
         };
         let led = tree.led(module, call);
-        let mount = mounts.get(&module.path).map_or("", String::as_str);
+        let mount = tree.mount(&module.path);
         let derived = led.as_deref().and_then(|literal| {
             if literal.starts_with('/') {
                 tree.dialect.route.stem(&route::join(mount, literal))
@@ -509,6 +508,7 @@ pub fn tree(root: &Path, dialect: &'static Dialect, modules: Vec<Plain>, stub: S
         modules: modules.into_iter().map(|module| (module.path.clone(), module)).collect(),
         tests: Vec::new(),
         manifest: stub.manifest.clone(),
+        mounts: stub.mounts.clone(),
         recogniser: stub,
     }
 }

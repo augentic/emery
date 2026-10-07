@@ -8,11 +8,12 @@
 //! adapter uses, [`target`] what a target adapter uses, and the other modules
 //! what some source adapters use:
 //!
-//! - [`source_adapter!`] exports an adapter's metadata and extraction
-//!   functions as a WebAssembly component, and [`metadata`] answers the
-//!   first of them. [`target_adapter!`] does the same for a target adapter's
-//!   metadata and build functions, with [`target::metadata`] and
-//!   [`target::build`] behind them.
+//! - [`SourceAdapter`] is what a source adapter implements: the kind of
+//!   source it reads and its `extract`. [`source_adapter!`] exports a type
+//!   implementing it as a WebAssembly component, answering the component's
+//!   `metadata` through [`metadata`]. [`target::TargetAdapter`] and
+//!   [`target_adapter!`] do the same for a target adapter, with
+//!   [`target::metadata`] and [`target::build`] behind them.
 //! - [`Context`], [`Seam`], and [`extract`](fn@extract) run extraction over
 //!   the boundaries selected by an adapter, at most [`CONCURRENT`] at a time,
 //!   laying a seam's files into its turn whole when they fit within
@@ -29,10 +30,11 @@
 //!   of a [`survey::Survey`] out. [`survey::surfaces`] beneath it puts the
 //!   one turn over the [`survey::Facts`] an adapter renders itself and holds
 //!   the [`survey::Inventory`] it answers to the tree.
-//! - [`kebab`], [`survey::Lines`], [`survey::resolve`], [`survey::route`],
-//!   and [`survey::tests`] are what a survey spells stems, line spans,
-//!   import targets, routes, and stated behaviours with, each pure over
-//!   strings and reading no parsed module.
+//! - [`kebab`], [`unique`], [`push_unique`], [`survey::Lines`],
+//!   [`survey::resolve`], [`survey::route`], and [`survey::tests`] are what
+//!   a survey spells stems, once-each lists, line spans, import targets,
+//!   routes, and stated behaviours with, each pure over strings and
+//!   iterators and reading no parsed module.
 //! - [`survey::code`] is the module an adapter's parser fills and the
 //!   lookups every rule reads it through, and the tree over every module
 //!   with the lookups that read it whole; [`survey::Dialect`] carries the
@@ -45,7 +47,7 @@
 //! derives, and the [`serde_json`] and [`tracing`] crates for claims of its
 //! own and events beside this crate's. [`Source`] is among them for a host
 //! program that calls an adapter the way the engine does; an adapter
-//! implements the world's guest interface through [`source_adapter!`] and
+//! implements [`SourceAdapter`], exported through [`source_adapter!`], and
 //! never [`Source`].
 //!
 //! # Examples
@@ -53,9 +55,7 @@
 //! This adapter treats its input as a single mining seam:
 //!
 //! ```
-//! use emery_sdk::{Doc, Error, Seam, SourceInput, SourceKind};
-//!
-//! pub const KIND: SourceKind = SourceKind::Intent;
+//! use emery_sdk::{Doc, Error, Seam, SourceInput};
 //!
 //! pub static PROSE: &[Doc] = &[Doc {
 //!     path: "extract.md",
@@ -69,17 +69,19 @@
 //!
 //! #[cfg(target_arch = "wasm32")]
 //! mod guest {
-//!     use emery_sdk::{AdapterMetadata, Context, Error, Evidence, Model};
+//!     use emery_sdk::{Context, Error, Evidence, Model, SourceAdapter, SourceKind};
 //!
-//!     emery_sdk::source_adapter!(metadata, extract);
+//!     struct Adapter;
 //!
-//!     fn metadata() -> AdapterMetadata {
-//!         emery_sdk::metadata(super::KIND)
-//!     }
+//!     emery_sdk::source_adapter!(Adapter);
 //!
-//!     async fn extract<P: Model>(ctx: &Context<'_, P>) -> Result<Evidence, Error> {
-//!         let seams = super::survey(ctx.input)?;
-//!         emery_sdk::extract(ctx, super::PROSE, &seams).await
+//!     impl SourceAdapter for Adapter {
+//!         const KIND: SourceKind = SourceKind::Intent;
+//!
+//!         async fn extract<P: Model>(ctx: &Context<'_, P>) -> Result<Evidence, Error> {
+//!             let seams = super::survey(ctx.input)?;
+//!             emery_sdk::extract(ctx, super::PROSE, &seams).await
+//!         }
 //!     }
 //! }
 //! # fn main() {}
@@ -174,75 +176,72 @@ const SURVEY: &str = "survey.md";
 // The prompt of a target adapter's build turn.
 const BUILD: &str = "build.md";
 
-/// Exports an adapter's metadata and extraction functions as a component.
+/// Exports a [`SourceAdapter`] as the `source-adapter` world of a component.
 ///
-/// The arguments must identify functions with these signatures:
-///
-/// - `fn() -> AdapterMetadata`
-/// - `async fn<P: Model>(&Context<'_, P>) -> Result<Evidence, Error>`
-///
-/// The macro supplies a [`Context`] containing the imported source input and
-/// host model. It then converts the returned evidence or error into the
-/// `source-adapter` WIT records.
+/// The argument is a type implementing [`SourceAdapter`]. The component's
+/// `metadata` answers [`metadata`](fn@metadata) over the type's
+/// [`KIND`](SourceAdapter::KIND). Its `extract` builds a [`Context`] from the
+/// imported source input and the host model, puts it to the type's
+/// [`extract`](SourceAdapter::extract), and converts the returned evidence or
+/// error into the WIT records.
 ///
 /// Invoke this macro inside a `#[cfg(target_arch = "wasm32")]` module because
 /// the export interface exists only on WebAssembly targets. Adapters needing
 /// custom guest behaviour may implement `export::Guest` directly.
 #[macro_export]
 macro_rules! source_adapter {
-    ($metadata:path, $extract:path $(,)?) => {
+    ($adapter:ty $(,)?) => {
         const _: () = {
-            struct Adapter;
-    $crate::export::export!(Adapter with_types_in $crate::export);
+            struct Exported;
+    $crate::export::export!(Exported with_types_in $crate::export);
 
-            impl $crate::export::Guest for Adapter {
+            impl $crate::export::Guest for Exported {
                 fn metadata(_id: $crate::export::AdapterId) -> $crate::export::AdapterMetadata {
-                    $crate::export::AdapterMetadata::from($metadata())
+                    $crate::export::AdapterMetadata::from($crate::metadata(
+                        <$adapter as $crate::SourceAdapter>::KIND,
+                    ))
                 }
 
                 async fn extract(
                     id: $crate::export::AdapterId, input: $crate::export::Input,
                 ) -> Result<$crate::export::Evidence, $crate::export::Error> {
-                    $crate::call($extract, id, input).await
+                    $crate::call::<$adapter>(id, input).await
                 }
             }
         };
     };
 }
 
-/// Exports a target adapter's metadata and build functions as a component.
+/// Exports a [`target::TargetAdapter`] as the `target-adapter` world of a component.
 ///
-/// The arguments must identify functions with these signatures:
-///
-/// - `fn() -> target::TargetMetadata`
-/// - `async fn<P: Model>(&target::Context<'_, P>) -> Result<target::Report, Error>`
-///
-/// The macro supplies a [`target::Context`] containing the imported slice,
-/// the workspace root, and the host model. It then converts the returned
-/// report or error into the `target-adapter` WIT records.
+/// The argument is a type implementing [`target::TargetAdapter`]. The
+/// component's `metadata` answers [`target::metadata`]. Its `build` builds a
+/// [`target::Context`] from the imported slice, the workspace root, and the
+/// host model, puts it to the type's [`build`](target::TargetAdapter::build),
+/// and converts the returned report or error into the WIT records.
 ///
 /// Invoke this macro inside a `#[cfg(target_arch = "wasm32")]` module because
 /// the export interface exists only on WebAssembly targets. Adapters needing
 /// custom guest behaviour may implement `target::export::Guest` directly.
 #[macro_export]
 macro_rules! target_adapter {
-    ($metadata:path, $build:path $(,)?) => {
+    ($adapter:ty $(,)?) => {
         const _: () = {
-            struct Adapter;
-    $crate::target::export::export!(Adapter with_types_in $crate::target::export);
+            struct Exported;
+    $crate::target::export::export!(Exported with_types_in $crate::target::export);
 
-            impl $crate::target::export::Guest for Adapter {
+            impl $crate::target::export::Guest for Exported {
                 fn metadata(
                     _id: $crate::target::export::AdapterId,
                 ) -> $crate::target::export::TargetMetadata {
-                    $crate::target::export::TargetMetadata::from($metadata())
+                    $crate::target::export::TargetMetadata::from($crate::target::metadata())
                 }
 
                 async fn build(
                     id: $crate::target::export::AdapterId, slice: $crate::target::export::Slice,
                     workspace: String,
                 ) -> Result<$crate::target::export::Report, $crate::target::export::Error> {
-                    $crate::target::call($build, id, slice, workspace).await
+                    $crate::target::call::<$adapter>(id, slice, workspace).await
                 }
             }
         };
@@ -265,8 +264,7 @@ impl Model for Provider {}
 #[cfg(target_arch = "wasm32")]
 #[doc(hidden)]
 #[omnia_wasi_otel::instrument(name = "source_adapter_extract")]
-pub async fn call(
-    extract: impl AsyncFnOnce(&Context<'_, Provider>) -> Result<Evidence, Error>,
+pub async fn call<A: SourceAdapter>(
     id: export::AdapterId, input: export::Input,
 ) -> Result<export::Evidence, export::Error> {
     let input = SourceInput::from(input);
@@ -275,14 +273,16 @@ pub async fn call(
         input: &input,
         model: &Provider,
     };
-    Ok(extract(&ctx).await?.into())
+    Ok(A::extract(&ctx).await?.into())
 }
 
 /// Returns the `metadata` answer for an adapter reading `kind` sources.
 ///
-/// The `emery-version` pin is this SDK's own version, identifying the contract
-/// the adapter compiled against. Build an [`AdapterMetadata`] directly only
-/// when the adapter must loosen or tighten that pin.
+/// [`source_adapter!`] answers the component's `metadata` with it over the
+/// adapter's [`KIND`](SourceAdapter::KIND). The `emery-version` pin is this
+/// SDK's own version, identifying the contract the adapter compiled against.
+/// Build an [`AdapterMetadata`] directly only when the adapter must loosen or
+/// tighten that pin.
 #[must_use]
 pub fn metadata(kind: SourceKind) -> AdapterMetadata {
     AdapterMetadata {
@@ -331,6 +331,31 @@ pub fn kebab(text: &str) -> Option<String> {
     is_kebab(trimmed).then(|| trimmed.to_owned())
 }
 
+/// Pushes `item` onto `into` unless an equal item is already there.
+pub fn push_unique<T: PartialEq>(into: &mut Vec<T>, item: T) {
+    if !into.contains(&item) {
+        into.push(item);
+    }
+}
+
+/// Returns `items` with each equal item kept once, in first-occurrence order.
+///
+/// # Examples
+///
+/// ```
+/// use emery_sdk::unique;
+///
+/// assert_eq!(unique(["b", "a", "b", "c", "a"]), ["b", "a", "c"]);
+/// ```
+#[must_use]
+pub fn unique<T: PartialEq>(items: impl IntoIterator<Item = T>) -> Vec<T> {
+    let mut list = Vec::new();
+    for item in items {
+        push_unique(&mut list, item);
+    }
+    list
+}
+
 /// The adapter addressed, its input, and the model available to one extraction call.
 ///
 /// [`extract`](fn@extract) takes it, so every turn of a call is put to the
@@ -343,6 +368,27 @@ pub struct Context<'a, P> {
     pub input: &'a SourceInput,
     /// The [`Model`] used for extraction requests.
     pub model: &'a P,
+}
+
+/// A source adapter: the kind of source it reads and how it extracts one.
+///
+/// Implement it on a unit struct and hand that type to [`source_adapter!`],
+/// which exports the `source-adapter` world over it.
+pub trait SourceAdapter {
+    /// The kind of source the adapter reads, which ranks its evidence against
+    /// other sources'.
+    const KIND: SourceKind;
+
+    /// Extracts the evidence of the source `ctx` carries.
+    ///
+    /// Every turn goes through [`extract`](fn@extract), over the seams the
+    /// adapter's survey chose.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::BadRequest`] when the adapter refuses its input, and
+    /// what [`extract`](fn@extract) returns otherwise.
+    fn extract<P: Model>(ctx: &Context<'_, P>) -> impl Future<Output = Result<Evidence, Error>>;
 }
 
 // A missing document is a build's own defect, the adapter's for its prompt and

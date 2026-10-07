@@ -10,7 +10,7 @@
 //! runs that accept the same anchors cut the same seams. The bootstrap's
 //! `start` is the code's own surface, never the model's.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeSet;
 
 use emery_adapter::source::Anchor;
 
@@ -30,7 +30,6 @@ pub(super) struct Located<'t, R: Recogniser> {
     roots: Vec<String>,
     handed: BTreeSet<(String, String)>,
     locating: BTreeSet<&'t str>,
-    mounts: BTreeMap<String, String>,
 }
 
 impl<'t, R: Recogniser> Located<'t, R> {
@@ -49,7 +48,6 @@ impl<'t, R: Recogniser> Located<'t, R> {
             roots: tree.roots(),
             handed,
             locating,
-            mounts: tree.recogniser.mounts(tree),
         }
     }
 
@@ -386,14 +384,7 @@ impl<'t, R: Recogniser> Located<'t, R> {
                 let Anchor { path, lines } = Anchor::parse(&named.anchor).ok()?;
                 let module = tree.modules.get(path)?;
                 let lines = lines.map_or(module.span, Lines::from);
-                let derived = tree.recogniser.derive(
-                    tree,
-                    module,
-                    lines,
-                    &named.name,
-                    &named.stem,
-                    &self.mounts,
-                );
+                let derived = tree.recogniser.derive(tree, module, lines, &named.name, &named.stem);
                 Some(Surface {
                     name: named.name.clone(),
                     entry: module.path.clone(),

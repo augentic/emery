@@ -5,9 +5,10 @@
 //! the one gated turn: the slice's documents under the adapter's `build.md`,
 //! the workspace lent and written through the turn's `write_file` tool, and
 //! the answered report held to the slice by [`Report::findings`] and to the
-//! tree until it passes. [`metadata`] answers the `metadata` export, and
-//! [`target_adapter!`](crate::target_adapter) exports both over an adapter's
-//! two plain fns.
+//! tree until it passes. [`TargetAdapter`] is what a target adapter
+//! implements, and [`target_adapter!`](crate::target_adapter) exports a type
+//! implementing it, answering the component's `metadata` through
+//! [`metadata`].
 //!
 //! # Examples
 //!
@@ -23,17 +24,17 @@
 //!
 //! #[cfg(target_arch = "wasm32")]
 //! mod guest {
-//!     use emery_sdk::target::{Context, Report, TargetMetadata};
+//!     use emery_sdk::target::{Context, Report, TargetAdapter};
 //!     use emery_sdk::{Error, Model};
 //!
-//!     emery_sdk::target_adapter!(metadata, build);
+//!     struct Adapter;
 //!
-//!     fn metadata() -> TargetMetadata {
-//!         emery_sdk::target::metadata()
-//!     }
+//!     emery_sdk::target_adapter!(Adapter);
 //!
-//!     async fn build<P: Model>(ctx: &Context<'_, P>) -> Result<Report, Error> {
-//!         emery_sdk::target::build(ctx, super::PROSE).await
+//!     impl TargetAdapter for Adapter {
+//!         async fn build<P: Model>(ctx: &Context<'_, P>) -> Result<Report, Error> {
+//!             emery_sdk::target::build(ctx, super::PROSE).await
+//!         }
 //!     }
 //! }
 //! # fn main() {}
@@ -73,11 +74,30 @@ pub struct Context<'a, P> {
     pub model: &'a P,
 }
 
+/// A target adapter: how it builds one slice of the plan into the project tree.
+///
+/// Implement it on a unit struct and hand that type to
+/// [`target_adapter!`](crate::target_adapter), which exports the
+/// `target-adapter` world over it.
+pub trait TargetAdapter {
+    /// Builds the slice `ctx` carries into its workspace and reports what it
+    /// covered and wrote.
+    ///
+    /// The one turn goes through [`build`](fn@build).
+    ///
+    /// # Errors
+    ///
+    /// Returns what [`build`](fn@build) returns.
+    fn build<P: Model>(ctx: &Context<'_, P>) -> impl Future<Output = Result<Report, Error>>;
+}
+
 /// Returns the `metadata` answer for a target adapter.
 ///
-/// The `emery-version` pin is this SDK's own version, identifying the contract
-/// the adapter compiled against. Build a [`TargetMetadata`] directly only
-/// when the adapter must loosen or tighten that pin.
+/// [`target_adapter!`](crate::target_adapter) answers the component's
+/// `metadata` with it. The `emery-version` pin is this SDK's own version,
+/// identifying the contract the adapter compiled against. Build a
+/// [`TargetMetadata`] directly only when the adapter must loosen or tighten
+/// that pin.
 #[must_use]
 pub fn metadata() -> TargetMetadata {
     TargetMetadata {
@@ -162,8 +182,7 @@ pub async fn build<P: Model>(ctx: &Context<'_, P>, docs: &'static [Doc]) -> Resu
 #[cfg(target_arch = "wasm32")]
 #[doc(hidden)]
 #[omnia_wasi_otel::instrument(name = "target_adapter_build")]
-pub async fn call(
-    build: impl AsyncFnOnce(&Context<'_, crate::Provider>) -> Result<Report, Error>,
+pub async fn call<A: TargetAdapter>(
     id: export::AdapterId, slice: export::Slice, workspace: String,
 ) -> Result<export::Report, export::Error> {
     let slice = Slice::from(slice);
@@ -173,7 +192,7 @@ pub async fn call(
         workspace: &workspace,
         model: &crate::Provider,
     };
-    Ok(build(&ctx).await?.into())
+    Ok(A::build(&ctx).await?.into())
 }
 
 // The user turn of a build. The lend carries the root, so the brief never

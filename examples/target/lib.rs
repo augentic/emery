@@ -5,23 +5,24 @@
 //! adapter:
 //!
 //! - An embedded build prompt.
-//! - A WebAssembly guest exported with `emery_sdk::target_adapter!`.
+//! - A WebAssembly guest: an `emery_sdk::target::TargetAdapter` exported
+//!   with `emery_sdk::target_adapter!`.
 
 use emery_sdk::Doc;
 
 #[cfg(target_arch = "wasm32")]
 mod guest {
-    use emery_sdk::target::{Context, Report, TargetMetadata};
+    use emery_sdk::target::{Context, Report, TargetAdapter};
     use emery_sdk::{Error, Model};
 
-    emery_sdk::target_adapter!(metadata, build);
+    struct Adapter;
 
-    fn metadata() -> TargetMetadata {
-        emery_sdk::target::metadata()
-    }
+    emery_sdk::target_adapter!(Adapter);
 
-    async fn build<P: Model>(ctx: &Context<'_, P>) -> Result<Report, Error> {
-        emery_sdk::target::build(ctx, super::PROSE).await
+    impl TargetAdapter for Adapter {
+        async fn build<P: Model>(ctx: &Context<'_, P>) -> Result<Report, Error> {
+            emery_sdk::target::build(ctx, super::PROSE).await
+        }
     }
 }
 
