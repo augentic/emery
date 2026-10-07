@@ -34,8 +34,8 @@ cfg_select! {
             hosts: {
                 WasiOtel: OtelDefault,
                 WasiModel: Cursor,
-                WasiKeyValue: Filesystem(ConnectOptions { root: ".omnia/storage".into() }),
-                WasiBlobstore: Filesystem(ConnectOptions { root: ".omnia/storage".into() }),
+                WasiKeyValue: Filesystem(ConnectOptions { root: ".emery/storage".into() }),
+                WasiBlobstore: Filesystem(ConnectOptions { root: ".emery/storage".into() }),
             },
         });
     }

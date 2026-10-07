@@ -1,31 +1,9 @@
-target/
-.env
+/target/
 **/*.rs.bk
 rustc-ice-*
 .DS_Store
 
-# Source directories that share the `target` name with Cargo's build dir;
-# without these exceptions .gitignore would silently exclude them from commits.
-!/examples/target/
-!/examples/target/**
-!/crates/adapter/src/target/
-!/crates/adapter/src/target/**
-!/crates/sdk/src/target/
-!/crates/sdk/src/target/**
-
-/emery
+.env
 docs/book/
-
-# Stable, browsable quality-profile sandbox
-quality/.sandbox/
-
-# Operator-invoked local runs (eval harness + change example)
-sandbox/
-sandbox.lock
-
-# Emery project state and integration-run scratch logs
-.omnia/
-stderr.log
-stdout.log
-# The live journey's mock target output
+.emery/
 /build/
