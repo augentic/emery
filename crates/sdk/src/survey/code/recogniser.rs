@@ -86,7 +86,9 @@ pub trait Recogniser: Sized + Sync {
 
     /// Returns the route prefix each module's routes sit under, by module path.
     ///
-    /// Empty where the language's frameworks mount nothing under a prefix.
+    /// Called once when the tree settles; [`Tree::mounts`] carries the
+    /// answer. Empty where the language's frameworks mount nothing under a
+    /// prefix.
     fn mounts(&self, tree: &Tree<Self>) -> BTreeMap<String, String> {
         let _ = tree;
         BTreeMap::new()
@@ -107,11 +109,9 @@ pub trait Recogniser: Sized + Sync {
     /// `lines` is the anchor within `module`, the whole module where the
     /// survey cited none; `name` and `stem` are the survey's, for the
     /// surface nothing at the anchor derives further than
-    /// [`Derived::named`]. `mounts` is what [`mounts`](Self::mounts)
-    /// answered for the tree.
+    /// [`Derived::named`].
     fn derive(
         &self, tree: &Tree<Self>, module: &Self::Module, lines: Lines, name: &str, stem: &str,
-        mounts: &BTreeMap<String, String>,
     ) -> Derived;
 }
 

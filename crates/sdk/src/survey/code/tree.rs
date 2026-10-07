@@ -7,9 +7,9 @@ use std::path::{Path, PathBuf};
 use super::recogniser::{Listing, Manifest, Recogniser};
 use super::surface::{Receiver, Surface};
 use super::{Arg, BindingKind, Call, Imported, Module};
-use crate::kebab;
 use crate::survey::tests::{Test, scenarios};
-use crate::survey::{Dialect, Lines, push_unique};
+use crate::survey::{Dialect, Lines};
+use crate::{kebab, push_unique};
 
 /// How many bindings a receiver is traced through before it counts as the tree's own.
 pub const TRACE: usize = 4;
@@ -146,14 +146,17 @@ impl<M: Deref<Target = Module>> Parsed<M> {
         tests.retain(|test| !test.statements.is_empty());
 
         let manifest = recogniser.manifest();
-        Tree {
+        let mut tree = Tree {
             root,
             dialect,
             modules,
             tests,
             manifest,
+            mounts: BTreeMap::new(),
             recogniser,
-        }
+        };
+        tree.mounts = tree.recogniser.mounts(&tree);
+        tree
     }
 }
 
@@ -174,11 +177,21 @@ pub struct Tree<R: Recogniser> {
     pub tests: Vec<Test>,
     /// What the manifest declares; the default where the tree has none.
     pub manifest: Manifest,
+    /// The route prefix each module's routes sit under, by module path, as
+    /// the recogniser's [`mounts`](Recogniser::mounts) answered once the
+    /// tree settled.
+    pub mounts: BTreeMap<String, String>,
     /// The adapter's recogniser.
     pub recogniser: R,
 }
 
 impl<R: Recogniser> Tree<R> {
+    /// Returns the route prefix `module`'s routes sit under, empty for none.
+    #[must_use]
+    pub fn mount(&self, module: &str) -> &str {
+        self.mounts.get(module).map_or("", String::as_str)
+    }
+
     /// Returns the modules `seeds` reach, breadth-first and once each.
     ///
     /// The seeds the tree holds lead in their order. A module in `stop` is

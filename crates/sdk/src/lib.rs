@@ -29,10 +29,11 @@
 //!   of a [`survey::Survey`] out. [`survey::surfaces`] beneath it puts the
 //!   one turn over the [`survey::Facts`] an adapter renders itself and holds
 //!   the [`survey::Inventory`] it answers to the tree.
-//! - [`kebab`], [`survey::Lines`], [`survey::resolve`], [`survey::route`],
-//!   and [`survey::tests`] are what a survey spells stems, line spans,
-//!   import targets, routes, and stated behaviours with, each pure over
-//!   strings and reading no parsed module.
+//! - [`kebab`], [`unique`], [`push_unique`], [`survey::Lines`],
+//!   [`survey::resolve`], [`survey::route`], and [`survey::tests`] are what
+//!   a survey spells stems, once-each lists, line spans, import targets,
+//!   routes, and stated behaviours with, each pure over strings and
+//!   iterators and reading no parsed module.
 //! - [`survey::code`] is the module an adapter's parser fills and the
 //!   lookups every rule reads it through, and the tree over every module
 //!   with the lookups that read it whole; [`survey::Dialect`] carries the
@@ -329,6 +330,31 @@ pub fn kebab(text: &str) -> Option<String> {
     }
     let trimmed = out.trim_matches('-');
     is_kebab(trimmed).then(|| trimmed.to_owned())
+}
+
+/// Pushes `item` onto `into` unless an equal item is already there.
+pub fn push_unique<T: PartialEq>(into: &mut Vec<T>, item: T) {
+    if !into.contains(&item) {
+        into.push(item);
+    }
+}
+
+/// Returns `items` with each equal item kept once, in first-occurrence order.
+///
+/// # Examples
+///
+/// ```
+/// use emery_sdk::unique;
+///
+/// assert_eq!(unique(["b", "a", "b", "c", "a"]), ["b", "a", "c"]);
+/// ```
+#[must_use]
+pub fn unique<T: PartialEq>(items: impl IntoIterator<Item = T>) -> Vec<T> {
+    let mut list = Vec::new();
+    for item in items {
+        push_unique(&mut list, item);
+    }
+    list
 }
 
 /// The adapter addressed, its input, and the model available to one extraction call.
