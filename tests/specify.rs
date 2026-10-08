@@ -409,6 +409,96 @@ async fn authority_precedence() {
     provider.model.assert_exhausted();
 }
 
+// A `[[source]] rank` stands in for the kind's default: documentation ranked
+// beneath behaviour loses to it, and ranked level with it ties into a conflict.
+#[tokio::test]
+async fn configured_rank() {
+    let bind = |provider: &mut Provider| {
+        provider.source.kinds.insert(guest("code"), SourceKind::Behaviour);
+        provider.source.evidence.insert(
+            "docs".to_string(),
+            Ok(evidence(vec![requirement("session.timeout", "Sessions expire after 30 minutes.")])),
+        );
+        provider.source.evidence.insert(
+            "code".to_string(),
+            Ok(evidence(vec![requirement("session.timeout", "Sessions expire after 15 minutes.")])),
+        );
+    };
+    let grouping = r#"{"groups": [{"claims": [0, 1], "classes": [[0], [1]]}]}"#;
+    let spec = SPEC_ANSWER.replace("greeting.behaviour", "session.timeout");
+    let config = |rank: u32| {
+        format!(
+            "[[source]]\nname = \"docs\"\nadapter = \"{}\"\nrank = {rank}\n\n\
+             [[source]]\nname = \"code\"\nadapter = \"{}\"\n",
+            reference("docs"),
+            reference("code")
+        )
+    };
+
+    // ranked beneath the code's default 3, the documentation loses
+    let scratch = Scratch::new();
+    let path = scratch.config(&config(4));
+    let mut provider = Provider::answering([grouping, spec.as_str(), DESIGN_ANSWER]);
+    bind(&mut provider);
+    cli_ok(&provider, &["emery", "specify", "--config", &path]).await;
+
+    let id = current(&provider.storage);
+    let stored: Value = serde_json::from_slice(&document(&provider.storage, &id, "spec.json"))
+        .expect("the stored spec is JSON");
+    let requirement = &stored["requirements"][0];
+    assert_eq!(requirement["status"], "divergence", "{stored}");
+    assert_eq!(requirement["body"], serde_json::json!(["Sessions expire after 15 minutes."]));
+    assert_eq!(
+        requirement["losers"],
+        serde_json::json!([{
+            "sources": ["docs"],
+            "kind": "documentation",
+            "rank": 4,
+            "claim": "session.timeout",
+            "statement": "Sessions expire after 30 minutes.",
+        }]),
+        "the loser records the rank it lost under beside its kind"
+    );
+    let spec_md = shown(&provider, "spec").await;
+    assert!(spec_md.contains("### Requirement: session.timeout [divergence]"), "{spec_md}");
+    assert!(
+        spec_md.contains("Sources: [code:session.timeout, docs:session.timeout]"),
+        "citations follow rank, not kind: {spec_md}"
+    );
+    assert!(
+        spec_md.contains(
+            "Note: docs (documentation, rank 4, session.timeout): Sessions expire after 30 \
+             minutes."
+        ),
+        "{spec_md}"
+    );
+    assert!(
+        provider.model.seen().iter().skip(1).all(|draft| {
+            draft.messages.join("\n").contains("docs (documentation, rank 4, `session.timeout`)")
+        }),
+        "the drafting turns see the rank the note carries"
+    );
+    provider.model.assert_exhausted();
+
+    // ranked level with the code, the two tie into a conflict
+    let path = scratch.config(&config(3));
+    let mut provider = Provider::answering([grouping, spec.as_str(), DESIGN_ANSWER]);
+    bind(&mut provider);
+    cli_ok(&provider, &["emery", "specify", "--config", &path]).await;
+
+    let spec_md = shown(&provider, "spec").await;
+    assert!(spec_md.contains("### Requirement: session.timeout [conflict]"), "{spec_md}");
+    assert!(
+        spec_md.contains(
+            "Note: docs (documentation, rank 3, session.timeout): Sessions expire after 30 \
+             minutes.\nNote: code (behaviour, rank 3, session.timeout): Sessions expire after 15 \
+             minutes.\nNote: Operator reconciliation required."
+        ),
+        "{spec_md}"
+    );
+    provider.model.assert_exhausted();
+}
+
 // A refused grouping is the next candidate's correction; a backend out of rounds
 // fails typed and commits nothing.
 #[tokio::test]
@@ -466,7 +556,9 @@ async fn grouping_refused() {
     let spec = shown(&provider, "spec").await;
     assert!(spec.contains("### Requirement: session.timeout [divergence]"), "{spec}");
     assert!(
-        spec.contains("Note: code (behaviour, session.timeout): Sessions expire after 15 minutes."),
+        spec.contains(
+            "Note: code (behaviour, rank 3, session.timeout): Sessions expire after 15 minutes."
+        ),
         "{spec}"
     );
     provider.model.assert_exhausted();
@@ -1533,7 +1625,7 @@ async fn dishonest_design() {
 
     let id = current(&provider.storage);
     let rendered = format!(
-        "---\nemery: 4\nrevision: {id}\n---\n\n# Design\n\n## Overview\n\n\
+        "---\nemery: 5\nrevision: {id}\n---\n\n# Design\n\n## Overview\n\n\
          Requests arrive (from the browser) and (from docs) they route.\n\n\
          ## Domain model\n\nThe greeting payload is one string field.\n\n\
          Type: greeting.type\n```\n{signature}\n```\n"
@@ -2091,6 +2183,31 @@ async fn config_reference() {
         assert!(
             provider.source.metadata.lock().expect("metadata").is_empty(),
             "a refused reference loads nothing: {adapter}"
+        );
+    }
+}
+
+// A file's `rank` is a positive integer, refused at the field otherwise.
+#[tokio::test]
+async fn config_rank() {
+    let cases: &[(&str, &str)] = &[
+        ("0", "invalid value: integer `0`, expected a nonzero u32"),
+        ("-1", "invalid value: integer `-1`, expected a nonzero u32"),
+        ("1.5", "invalid type: floating point `1.5`, expected a nonzero u32"),
+        ("\"high\"", "invalid type: string \"high\", expected a nonzero u32"),
+    ];
+    for (rank, fragment) in cases {
+        let scratch = Scratch::new();
+        let config = scratch.config(&format!(
+            "[[source]]\nname = \"docs\"\nadapter = \"emery:documentation@1.2.0\"\nrank = {rank}\n"
+        ));
+        let provider = Provider::idle();
+        let envelope =
+            fail(&provider, &["emery", "specify", "--config", &config], 1, "bad_request").await;
+        assert_message(&envelope, fragment);
+        assert!(
+            provider.source.metadata.lock().expect("metadata").is_empty(),
+            "a refused rank loads nothing: {rank}"
         );
     }
 }

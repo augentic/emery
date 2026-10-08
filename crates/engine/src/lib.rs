@@ -29,6 +29,7 @@
 
 mod adapter;
 pub mod build;
+mod rank;
 mod revision;
 pub mod show;
 pub mod specify;
@@ -40,6 +41,7 @@ pub use adapter::{AdapterRef, Axis};
 use emery_adapter::source::Source;
 use emery_adapter::target::Target;
 use omnia_sdk::{BlobStore, Error, Model, Plugins, StateStore, bad_request};
+pub use rank::Rank;
 pub use store::{CONTAINER, REVISION_KEY};
 
 /// Normalises an operator path to a path beneath the `.` project preopen.

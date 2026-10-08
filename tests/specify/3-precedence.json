@@ -1,5 +1,5 @@
 {
-  "emery": 4,
+  "emery": 5,
   "preamble": [
     "Four bound sources disagree; authority resolves what it can, tied peers surface as [conflict] for the operator, and the uncovered acceptance gap is preserved, never guessed."
   ],
@@ -33,6 +33,7 @@
             "docs"
           ],
           "kind": "documentation",
+          "rank": 2,
           "claim": "login.flow",
           "statement": "Users sign in with a magic link."
         },
@@ -41,6 +42,7 @@
             "wiki-live"
           ],
           "kind": "documentation",
+          "rank": 2,
           "claim": "login.flow",
           "statement": "Users sign in with a passkey."
         },
@@ -49,6 +51,7 @@
             "code"
           ],
           "kind": "behaviour",
+          "rank": 3,
           "claim": "login.flow",
           "statement": "Users sign in with email and password."
         }
@@ -94,6 +97,7 @@
             "code"
           ],
           "kind": "behaviour",
+          "rank": 3,
           "claim": "session-expiry",
           "statement": "Sessions expire after 15 minutes of inactivity."
         }

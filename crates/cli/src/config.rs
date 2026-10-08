@@ -11,7 +11,7 @@ use std::str::FromStr as _;
 use anyhow::Context;
 use emery_engine::build::BuildInput;
 use emery_engine::specify::{SourceConfig, SourceContent, SpecifyInput};
-use emery_engine::{AdapterRef, preopen_join, preopen_path};
+use emery_engine::{AdapterRef, Rank, preopen_join, preopen_path};
 use omnia_sdk::plugins::Digest;
 use omnia_sdk::{Error, bad_request};
 
@@ -165,6 +165,7 @@ fn argv_source(reference: &str, content: SourceContent) -> Result<SourceConfig, 
         adapter,
         content,
         digest: None,
+        rank: None,
     })
 }
 
@@ -201,6 +202,7 @@ struct SourceEntry {
     path: Option<PathBuf>,
     description: Option<String>,
     digest: Option<Digest>,
+    rank: Option<Rank>,
 }
 
 impl SourceEntry {
@@ -228,6 +230,7 @@ impl SourceEntry {
             adapter,
             content,
             digest: self.digest,
+            rank: self.rank,
         })
     }
 }

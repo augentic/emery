@@ -18,6 +18,7 @@ use schemars::JsonSchema;
 use serde::Deserialize;
 use serde_json::{Value, json};
 
+use crate::Rank;
 use crate::revision::{self, Cited, Loser, ReqId, Requirement, Scenario, Status};
 use crate::specify::Extract;
 use crate::specify::brief::{Brief, Review};
@@ -48,6 +49,7 @@ impl<'a> GroupingBrief<'a> {
                     ClaimKind::Requirement => contributors.push(Contributor {
                         source: &extract.source,
                         kind: extract.kind,
+                        rank: extract.rank,
                         id,
                         path: claim.path.as_deref(),
                         statement: claim.statement(),
@@ -398,9 +400,9 @@ impl<'a> Basis<'a> {
             return Err(server_error!("requirement {id} was grouped with a class of no claims"));
         }
         for class in &mut classes {
-            class.sort_by_key(|member| (member.kind, member.index));
+            class.sort_by_key(|member| (member.rank, member.index));
         }
-        classes.sort_by_key(|class| (class[0].kind, class[0].index));
+        classes.sort_by_key(|class| (class[0].rank, class[0].index));
 
         // covered by a criterion at the claim id or a dotted child of it
         let covered = classes.iter().flatten().any(|member| {
@@ -410,11 +412,11 @@ impl<'a> Basis<'a> {
             })
         });
 
-        let top = classes[0][0].kind;
+        let top = classes[0][0].rank;
         let status = match classes.len() {
             1 if covered => Status::Agreed,
             1 => Status::Unknown,
-            _ if classes.iter().skip(1).all(|class| class[0].kind != top) => Status::Divergence,
+            _ if classes.iter().skip(1).all(|class| class[0].rank != top) => Status::Divergence,
             _ => Status::Conflict,
         };
 
@@ -436,7 +438,7 @@ impl<'a> Basis<'a> {
     /// Returns contributors by descending authority and then source order.
     pub fn contributors(&self) -> impl Iterator<Item = &Contributor<'a>> {
         let mut members: Vec<&Contributor<'a>> = self.classes.iter().flatten().collect();
-        members.sort_by_key(|member| (member.kind, member.index));
+        members.sort_by_key(|member| (member.rank, member.index));
         members.into_iter()
     }
 
@@ -459,6 +461,7 @@ impl<'a> Basis<'a> {
                 Loser {
                     sources: class.iter().map(|member| member.source.to_string()).collect(),
                     kind: lead.kind,
+                    rank: lead.rank,
                     claim: lead.id.to_string(),
                     statement: lead.statement.clone(),
                 }
@@ -483,8 +486,10 @@ impl<'a> Basis<'a> {
 pub struct Contributor<'a> {
     /// The name of the source the claim was extracted from.
     pub source: &'a str,
-    /// The source kind used to rank this contributor.
+    /// The kind of source the claim was extracted from.
     pub kind: SourceKind,
+    /// The authority rank the contributor is ordered by.
+    pub rank: Rank,
     /// The claim identifier, which may differ from the requirement subject.
     pub id: &'a str,
     /// Where in the source the claim anchors, when it carries a `path`.
