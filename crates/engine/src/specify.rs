@@ -222,7 +222,7 @@ impl<'a> Bound<'a> {
             .get(adapter)
             .ok_or_else(|| server_error!("adapter `{adapter}` was not loaded"))?;
         let kind = metadata.kind;
-        let rank = self.rank.unwrap_or_else(|| Rank::of(kind));
+        let rank = self.rank.unwrap_or_else(|| Rank::from(kind));
         tracing::info!(%source, adapter = %id, %kind, %rank, "extracting");
         let evidence = Source::extract(provider, id, &self.input).await?;
 
