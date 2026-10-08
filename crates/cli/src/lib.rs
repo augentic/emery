@@ -34,17 +34,24 @@ const SPECIFY_DESC: &str = "Generate spec.md, design.md, and plan.md from source
     from its store, `~/.emery/adapters`, where the file `namespace_name@version.wasm` is \
     that release on this machine, and fetches a release the store lacks through the \
     `emery` namespace's registry, `augentic.io`, keeping it there. Another namespace is \
-    fetched by `wkg get <reference> -o ~/.emery/adapters/`. Each run loads its adapters, \
-    reconciles their claims, and atomically commits a new revision.";
+    fetched by `wkg get <reference> -o ~/.emery/adapters/`. A `[[source]]` naming a \
+    `repository` and `revision` is read from a clone kept under `.emery/vcs/`, checked out \
+    at the revision for the run. Each run loads its adapters, reconciles their claims, and \
+    atomically commits a new revision.";
 const BUILD_DESC: &str = "Build the current plan through a target adapter.\n\n\
     Name the adapter, or use `--config [<path>]` (default: `emery.toml`) to read its \
     `[target]` table. With no adapter, Emery looks for `emery.toml` in the project root. \
     Config and a command-line adapter cannot be combined.\n\n\
-    Every slice of the plan is built in turn, each after the slices it depends on, into \
-    the project tree. The first slice that fails ends the run; the slices built before \
-    it stay written. The adapter is an exact package reference, `namespace:name@version`, \
-    read from the store `~/.emery/adapters` and fetched through the `emery` namespace's \
-    registry when the store lacks it, as for `specify`.";
+    The build starts from a sealed commit — the project checkout's head, which must hold \
+    no pending change outside `.emery/`, or the `branch` of the `[target] repository` the \
+    config names, cloned under `.emery/vcs/` — in a working copy of its own, never the \
+    checkout. Every slice of the plan is built in turn, each after the slices it depends \
+    on, and sealed as one commit; the integrated head is labelled `emery/<revision>` and \
+    pushed when `[target] remote` names where. The first slice that fails ends the run; \
+    the slices built before it stay committed in `.emery/vcs/integration`. The adapter is \
+    an exact package reference, `namespace:name@version`, read from the store \
+    `~/.emery/adapters` and fetched through the `emery` namespace's registry when the \
+    store lacks it, as for `specify`.";
 const SHOW_DESC: &str = "Print an artifact from the current revision.\n\n\
     Text output contains only the artifact body. `--format json` also includes the \
     revision id and the typed document.";
@@ -222,6 +229,15 @@ fn hint(code: &str) -> Option<Cow<'static, str>> {
         }
         "spec-outdated" => {
             "the revision predates this emery's grammar: re-run `emery specify <adapter>...` to regenerate it"
+        }
+        "repository-required" => {
+            "a build lands as a commit: run `emery build` from a repository checkout, or name one with `[target] repository` and `branch` in `emery.toml`"
+        }
+        "base-not-sealed" => {
+            "commit or stash the pending changes so the build starts from a sealed commit; `.emery/` is never counted, so add it to `.gitignore`"
+        }
+        "revision-not-found" => {
+            "check the `repository`, `revision`, `branch`, or `remote` in `emery.toml` against what the repository holds"
         }
         "adapter-reference" => "an adapter is an exact package reference, `namespace:name@version`",
         "refused" => {

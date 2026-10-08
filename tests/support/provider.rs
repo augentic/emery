@@ -1,10 +1,11 @@
 //! Scripts every capability of a provider and drives the command façade over it.
 //!
-//! Model, source, target, and storage capabilities use strict scripts. Each
-//! scenario must consume exactly the expected operations, so an unexercised
-//! or unexpected path fails immediately. The plugin capability is a
-//! constant: every load lands, so the synthesis suites assert nothing of a
-//! load and the adapter boundary is the runtime suite's.
+//! Model, source, target, storage, and version-control capabilities use
+//! strict scripts. Each scenario must consume exactly the expected
+//! operations, so an unexercised or unexpected path fails immediately. The
+//! plugin capability is a constant: every load lands, so the synthesis
+//! suites assert nothing of a load and the adapter boundary is the runtime
+//! suite's.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::future::Future;
@@ -20,12 +21,14 @@ use emery_engine::Axis;
 use omnia_sdk::api::command::Response;
 use omnia_sdk::plugins::{self, Digest, Location, Plugin};
 use omnia_sdk::{
-    BlobStore, CasError, ContainerMetadata, Error, Model, ObjectMetadata, Plugins, StateStore,
-    model,
+    BlobStore, CasError, ContainerMetadata, Error, Model, ObjectMetadata, Plugins, StateStore, Vcs,
+    model, vcs,
 };
 use omnia_test::guest::{Memory, Scripted};
 use serde_json::Value;
 use tokio::sync::Barrier;
+
+use super::vcs::VcsScript;
 
 const GREETING: &str = "GET /greeting returns the static string 'hello'.";
 
@@ -150,6 +153,8 @@ pub struct Provider<S = Memory> {
     pub source: SourceScript,
     /// The scripted `Target`.
     pub target: TargetScript,
+    /// The scripted `Vcs`.
+    pub vcs: VcsScript,
     /// The scripted storage pair.
     pub storage: Arc<S>,
 }
@@ -173,6 +178,7 @@ impl<S> Provider<S> {
             model: Scripted::answering(answers),
             source: SourceScript::default(),
             target: TargetScript::default(),
+            vcs: VcsScript::default(),
             storage,
         }
     }
@@ -184,6 +190,7 @@ impl<S> Clone for Provider<S> {
             model: self.model.clone(),
             source: self.source.clone(),
             target: self.target.clone(),
+            vcs: self.vcs.clone(),
             storage: Arc::clone(&self.storage),
         }
     }
@@ -357,6 +364,74 @@ impl<S: Send + Sync + 'static> Target for Provider<S> {
         TargetMetadata {
             emery_version: self.target.versions.get(id).cloned(),
         }
+    }
+}
+
+impl<S: Send + Sync + 'static> Vcs for Provider<S> {
+    fn resolve(
+        &self, repo: &str, revision: &str,
+    ) -> impl Future<Output = Result<String, vcs::Error>> + Send {
+        Vcs::resolve(&self.vcs, repo, revision)
+    }
+
+    fn head(&self, at: &str) -> impl Future<Output = Result<String, vcs::Error>> + Send {
+        Vcs::head(&self.vcs, at)
+    }
+
+    fn commit(
+        &self, at: &str, message: &str,
+    ) -> impl Future<Output = Result<Option<String>, vcs::Error>> + Send {
+        Vcs::commit(&self.vcs, at, message)
+    }
+
+    fn merge(
+        &self, at: &str, revision: &str, message: &str, policy: &[vcs::Rule],
+    ) -> impl Future<Output = Result<vcs::Merged, vcs::Error>> + Send {
+        Vcs::merge(&self.vcs, at, revision, message, policy)
+    }
+
+    fn init(&self, at: &str) -> impl Future<Output = Result<(), vcs::Error>> + Send {
+        Vcs::init(&self.vcs, at)
+    }
+
+    fn add(
+        &self, repo: &str, at: &str, revision: &str,
+    ) -> impl Future<Output = Result<(), vcs::Error>> + Send {
+        Vcs::add(&self.vcs, repo, at, revision)
+    }
+
+    fn remove(&self, at: &str) -> impl Future<Output = Result<(), vcs::Error>> + Send {
+        Vcs::remove(&self.vcs, at)
+    }
+
+    fn pending(
+        &self, at: &str,
+    ) -> impl Future<Output = Result<Vec<vcs::Change>, vcs::Error>> + Send {
+        Vcs::pending(&self.vcs, at)
+    }
+
+    fn clone_repo(
+        &self, url: &str, at: &str, options: vcs::CloneOptions,
+    ) -> impl Future<Output = Result<(), vcs::Error>> + Send {
+        Vcs::clone_repo(&self.vcs, url, at, options)
+    }
+
+    fn fetch(
+        &self, repo: &str, remote: &str,
+    ) -> impl Future<Output = Result<(), vcs::Error>> + Send {
+        Vcs::fetch(&self.vcs, repo, remote)
+    }
+
+    fn label(
+        &self, repo: &str, name: &str, revision: &str,
+    ) -> impl Future<Output = Result<(), vcs::Error>> + Send {
+        Vcs::label(&self.vcs, repo, name, revision)
+    }
+
+    fn push(
+        &self, repo: &str, remote: &str, label: &str,
+    ) -> impl Future<Output = Result<(), vcs::Error>> + Send {
+        Vcs::push(&self.vcs, repo, remote, label)
     }
 }
 

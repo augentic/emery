@@ -48,7 +48,7 @@ A registry that cannot supply the release — the network down, the exact versio
 
 ## The store and the project tree
 
-The runtime mounts the invocation directory as `.`, writable: the tree `specify` lends its source adapters to read and `build` lends its target adapter to write. The store lies apart from it, under `$HOME`, so a component is never loaded from a tree a run can write — a build turn's `write_file` reaches the project and nothing above it. The runtime holds the rule at startup: a store beneath the writable mount is refused before any verb runs, so running `emery` from `$HOME` itself is refused — a project is a directory of its own. A project file can say which package and, through `digest`, which bytes; it cannot say where from, so a rewritten `emery.toml` cannot redirect a fetch or reach into the store.
+The runtime mounts the invocation directory as `.`, writable: the tree `specify` lends its source adapters to read, and the repository `build` starts from, its integration working copy cut beneath `.emery/vcs/` and lent to the target adapter to write. The store lies apart from it, under `$HOME`, so a component is never loaded from a tree a run can write — a build turn's `write_file` reaches the working copy and nothing above it. The runtime holds the rule at startup: a store beneath the writable mount is refused before any verb runs, so running `emery` from `$HOME` itself is refused — a project is a directory of its own. A project file can say which package and, through `digest`, which bytes; it cannot say where from, so a rewritten `emery.toml` cannot redirect a fetch or reach into the store.
 
 ## Refusals at a glance
 

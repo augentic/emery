@@ -30,6 +30,8 @@ This is the CLI command invoked by [`/emery:specify`](../../../plugins/emery/ski
 
 `emery.toml` is operator-authored and operator-owned: the engine never writes it, and reads it when the `--config` flag names it or when a run naming no sources discovers it at the project root. `--config` without a value names the project-relative `emery.toml`; an explicit value names another project-relative file (a missing explicit file is a read error, exit `3`, never a discovery miss). Each `[[source]]` entry names one source, in declaration order; its `name` is the name the specification cites the source by, so one adapter may name several roots (the shared adapter loads once; each source still extracts over its own root). `name` may be omitted, in which case the entry is named as an argv source is — by the package's name (`documentation` for `emery:documentation@1.2.0`). `adapter` is an exact package reference, `namespace:name@version`, wherever the file sits. Exactly one content key per entry — `path` or `description`; omitted means the workspace lend at `.`. `path` resolves relative to the file containing it, as Cargo resolves `path` dependencies. `digest` pins the adapter's release to a full `sha256:` content hash, checked by the loader before the component is admitted. Duplicate names fail as `bad_request` (exit `1`), the same typed error argv raises.
 
+A `[[source]]` may read a **repository** instead of the project: `repository` names its URL and `revision` the label, tag, or commit to read it at, and the two go together — one without the other is refused at the file (`bad_request`), as is a `repository` beside a `description`. After the adapters load, the run fetches the clone it keeps under `.emery/vcs/repos/` (or clones it on the first run; two sources naming one repository, however they spell its URL, share one clone and one fetch), resolves the revision, cuts a working copy under `.emery/vcs/sources/<name>`, lends it to the adapter — at the `path` within it when the entry names one, a plain relative path that may not climb out of the copy — and removes the copy once the source answered, whether or not it succeeded. A revision the repository lacks, or a URL that names no repository, is `revision-not-found` (exit `2`) before any source is asked; a remote that refuses or cannot be reached is `bad_gateway` (exit `4`). Credentials are the host's `git`'s. The success envelope names each repository source with the commit its revision resolved to.
+
 The `[target]` table names the adapter [`emery build`](build.md) runs the plan through; `specify` takes nothing from it. A run naming its sources on the command line reads no file at all: the project-root `emery.toml` is a fallback for a run naming none, never merged in. The file is read whole, so a table that does not parse — an unknown key, an `adapter` that is not an exact package reference — refuses every run that reads the file; a `[[source]]` path that escapes the project refuses only the run whose source it is.
 
 Every source `path` is normalized within the project preopen `.`: absolute paths and relative paths that escape above the root fail as `bad_request` (exit `1`), and the engine never tries to infer a host path from the guest's ambient working directory. Nothing is reserved: an unknown key — `git`, `url`, a `[[source]] registry`, a `[registries]` table — is a parse error naming the key and its line (`bad_request`). The project names which package and, through `digest`, which bytes; where a release is fetched from is the binary's ([Adapters](../adapters.md)), so a rewritten `emery.toml` cannot redirect a fetch.
@@ -65,6 +67,15 @@ adapter = "emery:typescript@1.3.0-dev"
 [[source]]
 adapter = "acme:ledger@2.1.0"
 digest = "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+
+# Another repository, read at a tag in a working copy the run cuts and
+# removes; `path` is within the repository.
+[[source]]
+name = "upstream-api"
+adapter = "emery:typescript@1.2.0"
+repository = "https://github.com/acme/api.git"
+revision = "v2.3.0"
+path = "src"
 ```
 
 ## Where an adapter comes from
@@ -87,8 +98,9 @@ When `--format json` is provided, returns:
 - `revision` — the committed revision id, now current
 - `waves` — the committed plan's slices grouped into the sets ready to build at once, a list of lists of slice ids in build order: the first wave every slice that depends on nothing, each wave after it every slice whose `depends-on` names only slices in the waves before, each wave in id order; their count is the plan's longest dependency chain and the widest is how many slices could build at once
 - `diff` — the re-mine diff against the outgoing current revision: `from`, then a `{ added, removed, changed }` object each for `spec` (requirements matched by `id` — positional, so a requirement whose place moved reads as a change — as `{ id, subject }`, a `changed` entry naming the differing `fields`), `design` (section keys), and `plan` (slices matched by `id` as `{ id, name }`, a `changed` entry naming the differing `fields`); absent on a first run, every list empty on a byte-stable re-run (see [CLI output shapes](../cli-output-shapes.md#emery-specify))
+- `repositories` — every source read from a repository, in declaration order, each `{ source, repository, revision, commit }`: the source's name, the URL as the file spelled it, the revision asked for, and the commit it resolved to; omitted when no source names one
 
-Text mode prints the revision, the plan's shape on one line — `  plan: 3 slices in 2 waves, widest 2` — and a one-line summary of those counts; the per-requirement and per-slice entries, and the waves themselves, ride the JSON envelope alone.
+Text mode prints the revision, the plan's shape on one line — `  plan: 3 slices in 2 waves, widest 2` — one line per repository source — `  upstream-api read from https://github.com/acme/api.git at v2.3.0: 9f8e7d6…` — and a one-line summary of the diff's counts; the per-requirement and per-slice entries, and the waves themselves, ride the JSON envelope alone.
 
 ## See also
 

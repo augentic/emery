@@ -12,7 +12,7 @@ Emery reconciles intent, documentation, existing code, and captured behaviour in
 
 ```bash
 emery specify <adapter>...  # extract, group, synthesise the spec + design, slice the plan
-emery build <adapter>       # build every slice of the plan into the project tree through a target adapter
+emery build <adapter>       # build every slice of the plan through a target adapter, one commit each under emery/<revision>
 emery show spec             # render spec.md from the current revision (--format json: the revision)
 emery show plan             # render plan.md: the spec sliced into buildable pieces
 emery completions <sh>      # shell completions

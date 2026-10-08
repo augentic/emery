@@ -64,6 +64,17 @@ fn skip_roots() {
     assert_eq!(files, ["nested/keep.md", "readme.md"]);
 }
 
+// A working copy linked to a repository holds `.git` as a file naming it.
+#[test]
+fn skip_git_file() {
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let root = tree(tmp.path(), &["readme.md", ".git", "nested/.git", "nested/keep.md"]);
+
+    let files = workspace::list(root, |_| true).expect("walk");
+
+    assert_eq!(files, ["nested/keep.md", "readme.md"]);
+}
+
 #[test]
 fn keep_filter() {
     let tmp = tempfile::tempdir().expect("tempdir");

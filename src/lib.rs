@@ -1,13 +1,14 @@
 //! Implements the WebAssembly engine guest the shipped runtime embeds.
 //!
 //! The guest passes process arguments to the command interface and supplies
-//! host-provided model, storage, source, target, and plugin capabilities, so
-//! every external effect stays subject to the runtime's grants.
+//! host-provided model, storage, version-control, source, target, and plugin
+//! capabilities, so every external effect stays subject to the runtime's
+//! grants.
 
 #![cfg(target_arch = "wasm32")]
 
 use omnia_sdk::api::command::{self, Response};
-use omnia_sdk::{BlobStore, Model, Plugins, StateStore};
+use omnia_sdk::{BlobStore, Model, Plugins, StateStore, Vcs};
 use wasip3::cli::environment;
 use wasip3::exports::cli::run::Guest;
 
@@ -18,6 +19,7 @@ impl Model for Provider {}
 impl StateStore for Provider {}
 impl BlobStore for Provider {}
 impl Plugins for Provider {}
+impl Vcs for Provider {}
 impl emery_adapter::source::Source for Provider {}
 impl emery_adapter::target::Target for Provider {}
 

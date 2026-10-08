@@ -2183,6 +2183,232 @@ async fn name_defaulted() {
     provider.model.assert_exhausted();
 }
 
+// --- repository sources ---
+
+mod repository {
+    use omnia_sdk::vcs::Error;
+
+    use super::*;
+
+    const URL: &str = "https://example.com/acme/shop.git";
+    // `URL` normalised and hashed, the clone every run of it shares.
+    const CLONE: &str = "./.emery/vcs/repos/f4c82940a714c3c5";
+    const CHECKOUT: &str = "./.emery/vcs/sources/upstream";
+
+    fn upstream(scratch: &Scratch, body: &str) -> String {
+        scratch.config(&format!(
+            "[[source]]\nname = \"upstream\"\nadapter = \"emery:documentation@1.2.0\"\n\
+             repository = \"{URL}\"\n{body}"
+        ))
+    }
+
+    // A source naming a repository is read in a working copy of it at the
+    // revision: the clone fetched or made after the adapters load, the copy cut
+    // and lent, at the `path` within it, and removed once the source answered.
+    #[tokio::test]
+    async fn repository_source() {
+        let scratch = Scratch::new();
+        let config = upstream(&scratch, "revision = \"v1.2.0\"\npath = \"docs/api\"\n");
+        let provider = Provider::answering([SPEC_ANSWER, DESIGN_ANSWER]);
+        provider.vcs.fetches.script(CLONE, Err(Error::NotARepository));
+
+        let resp = cli_ok(&provider, &["emery", "specify", "--config", &config]).await;
+
+        let stdout = String::from_utf8_lossy(&resp.stdout);
+        assert!(
+            stdout.contains(&format!("\n  upstream read from {URL} at v1.2.0: v1.2.0-commit\n")),
+            "{stdout}"
+        );
+        assert_eq!(
+            provider.vcs.calls(),
+            [
+                format!("fetch {CLONE} origin"),
+                format!("clone {URL} {CLONE}"),
+                format!("resolve {CLONE} v1.2.0"),
+                format!("add {CLONE} {CHECKOUT} v1.2.0-commit"),
+                format!("remove {CHECKOUT}"),
+            ]
+        );
+        let calls = provider.source.calls();
+        let (_, input) = calls.first().expect("one extract dispatch");
+        assert_eq!(input.name, "upstream");
+        assert_eq!(
+            input.content,
+            SourceContent::Workspace(format!("{CHECKOUT}/docs/api")),
+            "the lend is the path within the working copy"
+        );
+        assert_eq!(
+            provider.source.metadata.lock().expect("metadata").len(),
+            1,
+            "the adapter loads before the repository is touched"
+        );
+        drop(calls);
+        provider.model.assert_exhausted();
+
+        // the JSON envelope names what was read, and a path omitted lends the copy whole
+        let config = upstream(&scratch, "revision = \"main\"\n");
+        let provider = Provider::answering([SPEC_ANSWER, DESIGN_ANSWER]);
+        let resp =
+            cli_ok(&provider, &["emery", "--format", "json", "specify", "--config", &config]).await;
+        let envelope: Value = serde_json::from_slice(&resp.stdout).expect("one JSON envelope");
+        assert_eq!(
+            envelope["repositories"],
+            serde_json::json!([
+                {"source": "upstream", "repository": URL, "revision": "main", "commit": "main-commit"}
+            ]),
+            "{envelope}"
+        );
+        assert_eq!(provider.vcs.calls()[0], format!("fetch {CLONE} origin"), "found, so fetched");
+        let calls = provider.source.calls();
+        assert_eq!(calls[0].1.content, SourceContent::Workspace(CHECKOUT.to_owned()));
+        drop(calls);
+        provider.model.assert_exhausted();
+    }
+
+    // Two sources naming one repository, however they spell its URL, share
+    // one clone fetched once and are read in working copies of their own.
+    #[tokio::test]
+    async fn repository_shared_clone() {
+        let scratch = Scratch::new();
+        let config = scratch.config(
+            "[[source]]\nname = \"docs\"\nadapter = \"emery:documentation@1.2.0\"\n\
+             repository = \"https://example.com/acme/shop.git\"\nrevision = \"main\"\n\n\
+             [[source]]\nname = \"api\"\nadapter = \"emery:documentation@1.2.0\"\n\
+             repository = \"HTTPS://Example.com/acme/shop/\"\nrevision = \"v2\"\npath = \"api\"\n",
+        );
+        let grouping = baseline_grouping(2);
+        let provider = Provider::answering([grouping.as_str(), SPEC_ANSWER, DESIGN_ANSWER]);
+
+        cli_ok(&provider, &["emery", "specify", "--config", &config]).await;
+
+        assert_eq!(
+            provider.vcs.calls(),
+            [
+                format!("fetch {CLONE} origin"),
+                format!("resolve {CLONE} main"),
+                format!("add {CLONE} ./.emery/vcs/sources/docs main-commit"),
+                format!("resolve {CLONE} v2"),
+                format!("add {CLONE} ./.emery/vcs/sources/api v2-commit"),
+                "remove ./.emery/vcs/sources/docs".to_owned(),
+                "remove ./.emery/vcs/sources/api".to_owned(),
+            ]
+        );
+        let roots: Vec<SourceContent> =
+            provider.source.calls().into_iter().map(|(_, input)| input.content).collect();
+        assert_eq!(
+            roots,
+            [
+                SourceContent::Workspace("./.emery/vcs/sources/docs".to_owned()),
+                SourceContent::Workspace("./.emery/vcs/sources/api/api".to_owned()),
+            ]
+        );
+        provider.model.assert_exhausted();
+    }
+
+    // The working copy goes whether or not the source answered; a stale one
+    // from a failed run is removed before the copy is cut again.
+    #[tokio::test]
+    async fn repository_removed_on_failure() {
+        let scratch = Scratch::new();
+        let config = upstream(&scratch, "revision = \"main\"\n");
+        let mut provider = Provider::idle();
+        provider
+            .source
+            .evidence
+            .insert("upstream".to_string(), Err(bad_gateway!("the adapter exploded")));
+        provider.vcs.adds.script(CHECKOUT, Err(Error::Exists(CHECKOUT.to_owned())));
+
+        let envelope =
+            fail(&provider, &["emery", "specify", "--config", &config], 4, "bad_gateway").await;
+
+        assert_eq!(envelope["message"], "the adapter exploded");
+        assert_eq!(
+            provider.vcs.calls(),
+            [
+                format!("fetch {CLONE} origin"),
+                format!("resolve {CLONE} main"),
+                format!("add {CLONE} {CHECKOUT} main-commit"),
+                format!("remove {CHECKOUT}"),
+                format!("add {CLONE} {CHECKOUT} main-commit"),
+                format!("remove {CHECKOUT}"),
+            ]
+        );
+        provider.vcs.assert_exhausted();
+    }
+
+    // A revision the repository lacks, or a URL that names none, is
+    // `revision-not-found` before any source is asked; a remote that cannot be
+    // reached is the gateway's.
+    #[tokio::test]
+    async fn repository_revision_missing() {
+        let scratch = Scratch::new();
+        let config = upstream(&scratch, "revision = \"v9\"\n");
+        let provider = Provider::idle();
+
+        provider.vcs.resolves.script(CLONE, Err(Error::NotFound("v9".to_owned())));
+        let envelope =
+            fail(&provider, &["emery", "specify", "--config", &config], 2, "revision-not-found")
+                .await;
+        assert_message(&envelope, &format!("repository `{URL}` has no `v9`"));
+        assert!(
+            envelope["hint"].as_str().is_some_and(|hint| hint.contains("`revision`")),
+            "{envelope}"
+        );
+        assert!(provider.source.calls().is_empty(), "no source is asked");
+
+        provider.vcs.fetches.script(CLONE, Err(Error::NotARepository));
+        provider.vcs.clones.script(CLONE, Err(Error::Access("authentication failed".to_owned())));
+        let envelope =
+            fail(&provider, &["emery", "specify", "--config", &config], 4, "bad_gateway").await;
+        assert_message(&envelope, &format!("repository `{URL}`: authentication failed"));
+        provider.vcs.assert_exhausted();
+    }
+
+    // A repository is read at a revision and at a path within it, never
+    // beside inline text or above the clone; the file is refused before any
+    // adapter loads.
+    #[tokio::test]
+    async fn repository_config() {
+        let cases: &[(&str, &str)] = &[
+            (
+                "[[source]]\nname = \"upstream\"\nadapter = \"emery:documentation@1.2.0\"\n\
+                 repository = \"https://example.com/acme/shop.git\"\n",
+                "source `upstream` sets `repository` without `revision`",
+            ),
+            (
+                "[[source]]\nname = \"upstream\"\nadapter = \"emery:documentation@1.2.0\"\n\
+                 revision = \"main\"\n",
+                "source `upstream` sets `revision` without `repository`",
+            ),
+            (
+                "[[source]]\nname = \"upstream\"\nadapter = \"emery:intent@1.0.0\"\n\
+                 repository = \"https://example.com/acme/shop.git\"\nrevision = \"main\"\n\
+                 description = \"Ship it.\"\n",
+                "source `upstream` sets both `repository` and `description`",
+            ),
+            (
+                "[[source]]\nname = \"upstream\"\nadapter = \"emery:documentation@1.2.0\"\n\
+                 repository = \"https://example.com/acme/shop.git\"\nrevision = \"main\"\n\
+                 path = \"../sibling\"\n",
+                "source `upstream`: path `../sibling` must lie within the repository",
+            ),
+        ];
+        for (body, fragment) in cases {
+            let scratch = Scratch::new();
+            let config = scratch.config(body);
+            let provider = Provider::idle();
+            let envelope =
+                fail(&provider, &["emery", "specify", "--config", &config], 1, "bad_request").await;
+            assert_message(&envelope, fragment);
+            assert!(
+                provider.source.metadata.lock().expect("metadata").is_empty(),
+                "a refused list gates nothing: {body}"
+            );
+            assert!(provider.vcs.calls().is_empty(), "nothing is asked of version control");
+        }
+    }
+}
+
 // --- adapter references ---
 
 mod reference {

@@ -6,10 +6,17 @@ use emery_engine::build::BuildOutput;
 use emery_engine::show::ShowOutput;
 use emery_engine::specify::{Diff, SpecifyOutput, Waves};
 
-/// Writes a [`SpecifyOutput`] revision line, the plan's shape, and a one-line diff summary.
+/// Writes a [`SpecifyOutput`] revision line, the plan's shape, one line per repository source, and a one-line diff summary.
 pub fn specify(output: &SpecifyOutput, w: &mut dyn fmt::Write) -> fmt::Result {
     writeln!(w, "committed revision {}", output.revision)?;
     waves(&output.waves, w)?;
+    for read in &output.repositories {
+        writeln!(
+            w,
+            "  {} read from {} at {}: {}",
+            read.source, read.repository, read.revision, read.commit
+        )?;
+    }
     if let Some(diff) = &output.diff {
         if diff.is_empty() {
             writeln!(w, "  diff vs {}: none (byte-stable)", diff.from)?;
@@ -41,13 +48,15 @@ fn summary(diff: &Diff, w: &mut dyn fmt::Write) -> fmt::Result {
     Ok(())
 }
 
-/// Writes a [`BuildOutput`] revision line, the plan's shape, then one line per slice built.
+/// Writes a [`BuildOutput`] revision line, the plan's shape, the base, one line per slice built, and the label.
 ///
 /// Each slice line counts the requirements covered of those it holds, names
-/// any left uncovered, and counts the files written.
+/// any left uncovered, counts the files written, and names the commit that
+/// sealed them.
 pub fn build(output: &BuildOutput, w: &mut dyn fmt::Write) -> fmt::Result {
     writeln!(w, "built revision {}", output.revision)?;
     waves(&output.waves, w)?;
+    writeln!(w, "  base {}", output.base)?;
     for slice in &output.slices {
         let total = slice.covered.len() + slice.uncovered.len();
         write!(w, "  {} {}: covered {}/{total}", slice.id, slice.name, slice.covered.len())?;
@@ -55,7 +64,15 @@ pub fn build(output: &BuildOutput, w: &mut dyn fmt::Write) -> fmt::Result {
             let ids: Vec<String> = slice.uncovered.iter().map(ToString::to_string).collect();
             write!(w, " (uncovered {})", ids.join(", "))?;
         }
-        writeln!(w, ", written {}", counted(slice.written.len(), "file"))?;
+        write!(w, ", written {}", counted(slice.written.len(), "file"))?;
+        match &slice.commit {
+            Some(commit) => writeln!(w, ", committed {commit}")?,
+            None => writeln!(w, ", nothing to commit")?,
+        }
+    }
+    writeln!(w, "  labelled {} at {}", output.label, output.head)?;
+    if let Some(remote) = &output.pushed {
+        writeln!(w, "  pushed to {remote}")?;
     }
     Ok(())
 }

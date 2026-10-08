@@ -40,6 +40,9 @@ audit-as-crates-io = false
 [policy.omnia-filesystem]
 audit-as-crates-io = false
 
+[policy.omnia-git]
+audit-as-crates-io = false
+
 [policy.omnia-guest-macros]
 audit-as-crates-io = false
 
@@ -86,6 +89,9 @@ audit-as-crates-io = false
 audit-as-crates-io = false
 
 [policy.omnia-wasi-sql]
+audit-as-crates-io = false
+
+[policy.omnia-wasi-vcs]
 audit-as-crates-io = false
 
 [policy.omnia-wasi-websocket]
@@ -368,10 +374,6 @@ version = "0.3.34"
 criteria = "safe-to-deploy"
 
 [[exemptions.futures-channel]]
-version = "0.3.34"
-criteria = "safe-to-deploy"
-
-[[exemptions.futures-core]]
 version = "0.3.34"
 criteria = "safe-to-deploy"
 
@@ -675,10 +677,6 @@ criteria = "safe-to-deploy"
 version = "0.33.0"
 criteria = "safe-to-deploy"
 
-[[exemptions.pastey]]
-version = "0.2.3"
-criteria = "safe-to-deploy"
-
 [[exemptions.petgraph]]
 version = "0.8.3"
 criteria = "safe-to-deploy"
@@ -693,10 +691,6 @@ criteria = "safe-to-deploy"
 
 [[exemptions.pin-project-lite]]
 version = "0.2.17"
-criteria = "safe-to-deploy"
-
-[[exemptions.pkg-config]]
-version = "0.3.34"
 criteria = "safe-to-deploy"
 
 [[exemptions.portable-atomic]]
@@ -1045,10 +1039,6 @@ criteria = "safe-to-deploy"
 
 [[exemptions.tracing-attributes]]
 version = "0.1.31"
-criteria = "safe-to-deploy"
-
-[[exemptions.tracing-core]]
-version = "0.1.36"
 criteria = "safe-to-deploy"
 
 [[exemptions.tracing-opentelemetry]]

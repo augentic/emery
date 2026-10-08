@@ -2,8 +2,8 @@
 //!
 //! [`list`] visits directories and regular files beneath a source root. The
 //! filter receives each [`Entry`] and may prune directories or omit files.
-//! Emery's `.emery/` directories, `.git/` directories, and generated documents
-//! are always excluded, as the claim gate refuses a `path` anchored in them.
+//! Emery's `.emery/` directories, `.git` entries, and generated documents are
+//! always excluded, as the claim gate refuses a `path` anchored in them.
 
 use std::path::Path;
 
@@ -66,10 +66,12 @@ impl<'a> Entry<'a> {
         self.name().starts_with('.')
     }
 
+    // A linked working copy's root holds `.git` as a file, so the skipped
+    // names are skipped as files too.
     fn excluded(self) -> bool {
         match self {
             Self::Dir(_) => SKIP_DIRS.contains(&self.name()),
-            Self::File(_) => SKIP_FILES.contains(&self.name()),
+            Self::File(_) => SKIP_FILES.contains(&self.name()) || SKIP_DIRS.contains(&self.name()),
         }
     }
 }
@@ -77,9 +79,9 @@ impl<'a> Entry<'a> {
 /// Returns sorted, root-relative paths for files accepted by `keep`.
 ///
 /// `keep` is asked about every entry; a refused directory is not entered.
-/// `.emery/` and `.git/` directories and generated `spec.md`, `design.md`,
-/// and `plan.md` files are never offered, wherever they occur. Symlinks and
-/// non-regular files are not followed or returned.
+/// `.emery/` and `.git` entries, directory or file, and generated `spec.md`,
+/// `design.md`, and `plan.md` files are never offered, wherever they occur.
+/// Symlinks and non-regular files are not followed or returned.
 ///
 /// # Examples
 ///
