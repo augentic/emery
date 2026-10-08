@@ -35,10 +35,10 @@ allow = [
 ignore = true
 
 [sources]
-# allow-git = [
-#   "https://github.com/augentic/omnia",
-#   "https://github.com/augentic/omnia-backends"
-# ]
+allow-git = [
+  "https://github.com/augentic/omnia",
+  "https://github.com/augentic/omnia-backends"
+]
 
 [bans]
 deny = []
