@@ -133,7 +133,7 @@ pub struct SourceConfig {
     pub digest: Option<Digest>,
     /// The authority rank the source is reconciled under.
     ///
-    /// `None` ranks the source by its adapter's kind ([`Rank::of`]): intent
+    /// `None` ranks the source by its adapter's kind ([`Rank::from`]): intent
     /// `1`, documentation `2`, behaviour `3`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub rank: Option<Rank>,

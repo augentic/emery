@@ -25,8 +25,8 @@ use serde::{Deserialize, Serialize};
 /// use emery_adapter::source::SourceKind;
 /// use emery_engine::Rank;
 ///
-/// assert!(Rank::of(SourceKind::Intent) < Rank::of(SourceKind::Documentation));
-/// assert_eq!(Rank::of(SourceKind::Behaviour).to_string(), "3");
+/// assert!(Rank::from(SourceKind::Intent) < Rank::from(SourceKind::Documentation));
+/// assert_eq!(Rank::from(SourceKind::Behaviour).to_string(), "3");
 /// assert!(serde_json::from_str::<Rank>("0").is_err());
 /// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]

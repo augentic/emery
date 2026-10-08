@@ -28,8 +28,8 @@
 //!   to the model for correction until the host's limit is reached.
 
 mod adapter;
-pub mod build;
 mod authority;
+pub mod build;
 mod revision;
 pub mod show;
 pub mod specify;
@@ -38,10 +38,10 @@ mod store;
 use std::path::{Component, Path, PathBuf};
 
 pub use adapter::{AdapterRef, Axis};
+pub use authority::Rank;
 use emery_adapter::source::Source;
 use emery_adapter::target::Target;
 use omnia_sdk::{BlobStore, Error, Model, Plugins, StateStore, bad_request};
-pub use authority::Rank;
 pub use store::{CONTAINER, REVISION_KEY};
 
 /// Normalises an operator path to a path beneath the `.` project preopen.
