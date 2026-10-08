@@ -33,7 +33,6 @@ use serde::{Deserialize, Serialize};
 #[serde(transparent)]
 pub struct Rank(NonZeroU32);
 
-/// Converts a source kind to its default rank.
 impl From<SourceKind> for Rank {
     fn from(value: SourceKind) -> Self {
         Self(match value {
