@@ -96,6 +96,7 @@ impl TryFrom<TargetCarriers<'_>> for BuildInput {
                     digest: None,
                     repository: None,
                     remote: None,
+                    jobs: None,
                 };
                 ("argv".to_string(), input)
             }
@@ -290,6 +291,7 @@ impl TargetEntry {
             digest: self.digest,
             repository,
             remote: self.remote,
+            jobs: None,
         })
     }
 }

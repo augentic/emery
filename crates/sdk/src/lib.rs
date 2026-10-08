@@ -173,8 +173,9 @@ const EXTRACT: &str = "extract.md";
 const CLAIMS: &str = "claims.md";
 // The prompt of a survey by model, for the adapter that puts one.
 const SURVEY: &str = "survey.md";
-// The prompt of a target adapter's build turn.
+// The prompts of a target adapter's build turn and its verify turn.
 const BUILD: &str = "build.md";
+const VERIFY: &str = "verify.md";
 
 /// Exports a [`SourceAdapter`] as the `source-adapter` world of a component.
 ///
@@ -215,10 +216,13 @@ macro_rules! source_adapter {
 /// Exports a [`target::TargetAdapter`] as the `target-adapter` world of a component.
 ///
 /// The argument is a type implementing [`target::TargetAdapter`]. The
-/// component's `metadata` answers [`target::metadata`]. Its `build` builds a
+/// component's `metadata` answers [`target::metadata`] over the type's
+/// [`MERGE_RULES`](target::TargetAdapter::MERGE_RULES). Its `build` builds a
 /// [`target::Context`] from the imported slice, the workspace root, and the
 /// host model, puts it to the type's [`build`](target::TargetAdapter::build),
-/// and converts the returned report or error into the WIT records.
+/// and converts the returned report or error into the WIT records; its
+/// `verify` does the same over a [`target::VerifyContext`] and the type's
+/// [`verify`](target::TargetAdapter::verify).
 ///
 /// Invoke this macro inside a `#[cfg(target_arch = "wasm32")]` module because
 /// the export interface exists only on WebAssembly targets. Adapters needing
@@ -234,7 +238,9 @@ macro_rules! target_adapter {
                 fn metadata(
                     _id: $crate::target::export::AdapterId,
                 ) -> $crate::target::export::TargetMetadata {
-                    $crate::target::export::TargetMetadata::from($crate::target::metadata())
+                    $crate::target::export::TargetMetadata::from($crate::target::metadata(
+                        <$adapter as $crate::target::TargetAdapter>::MERGE_RULES,
+                    ))
                 }
 
                 async fn build(
@@ -242,6 +248,13 @@ macro_rules! target_adapter {
                     workspace: String,
                 ) -> Result<$crate::target::export::Report, $crate::target::export::Error> {
                     $crate::target::call::<$adapter>(id, slice, workspace).await
+                }
+
+                async fn verify(
+                    id: $crate::target::export::AdapterId, workspace: String,
+                ) -> Result<$crate::target::export::Verdict, $crate::target::export::Error>
+                {
+                    $crate::target::verify_call::<$adapter>(id, workspace).await
                 }
             }
         };

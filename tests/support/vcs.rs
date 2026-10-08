@@ -2,20 +2,26 @@
 //!
 //! Answers are queued per location and consumed in order; an unqueued call
 //! answers a default that lets a journey through, so a scenario scripts the
-//! exchanges it bends and asserts the whole sequence it consumed. The two
-//! operations the engine never makes, `init` and `merge`, fail the scenario.
+//! exchanges it bends and asserts the whole sequence it consumed. The one
+//! operation the engine never makes, `init`, fails the scenario.
 
 use std::collections::{BTreeMap, VecDeque};
 use std::future::Future;
 use std::sync::{Arc, Mutex};
 
 use omnia_sdk::Vcs;
-use omnia_sdk::vcs::{Change, CloneOptions, Error, Merged, Rule};
+use omnia_sdk::vcs::{Change, CloneOptions, Entry, Error, Merged, Rule};
 
 /// The commit every unscripted `head` answers.
 pub const HEAD: &str = "9f8e7d6c5b4a39281706f5e4d3c2b1a0f9e8d7c6";
 
+// The labels a build sets and resumes from.
+const LABELS: &str = "emery/";
+
 type Queued<T> = BTreeMap<String, VecDeque<Result<T, Error>>>;
+
+/// One merge as the script saw it: the message whole and the policy it rode.
+pub type Merge = (String, Vec<Rule>);
 
 /// Answers queued per location, consumed in call order.
 #[derive(Clone, Debug, Default)]
@@ -43,8 +49,11 @@ impl<T> Queue<T> {
 ///
 /// - `pending` holds nothing;
 /// - `head` is [`HEAD`];
-/// - `resolve` is `<revision>-commit`;
+/// - `resolve` is `<revision>-commit`, except an `emery/` label, which is
+///   `NotFound`: a fresh build;
+/// - `log` holds nothing;
 /// - `commit` seals `<first word of the message>-commit`;
+/// - `merge` merges as `m:<first word of the message>`;
 /// - every other operation succeeds.
 #[derive(Clone, Debug, Default)]
 pub struct VcsScript {
@@ -54,8 +63,12 @@ pub struct VcsScript {
     pub heads: Queue<String>,
     /// `resolve` answers by repository.
     pub resolves: Queue<String>,
+    /// `log` answers by repository.
+    pub logs: Queue<Vec<Entry>>,
     /// `commit` answers by working copy.
     pub commits: Queue<Option<String>>,
+    /// `merge` answers by working copy.
+    pub merges: Queue<Merged>,
     /// `fetch` answers by repository.
     pub fetches: Queue<()>,
     /// `clone` answers by clone location.
@@ -68,11 +81,13 @@ pub struct VcsScript {
     pub labels: Queue<()>,
     /// `push` answers by repository.
     pub pushes: Queue<()>,
-    /// Every call, in order, spelled `<operation> <arguments>`; a commit
-    /// carries its message's first line.
+    /// Every call, in order, spelled `<operation> <arguments>`; a commit or
+    /// merge carries its message's first line.
     pub calls: Arc<Mutex<Vec<String>>>,
     /// Every commit message whole, in order.
     pub messages: Arc<Mutex<Vec<String>>>,
+    /// Every merge, in order.
+    pub merged: Arc<Mutex<Vec<Merge>>>,
 }
 
 impl VcsScript {
@@ -86,13 +101,20 @@ impl VcsScript {
         self.messages.lock().expect("messages").clone()
     }
 
+    /// Returns every merge so far, in order.
+    pub fn merged(&self) -> Vec<Merge> {
+        self.merged.lock().expect("merged").clone()
+    }
+
     /// Asserts that every queued answer was consumed.
     pub fn assert_exhausted(&self) {
         let left: Vec<String> = [
             ("pending", self.pending.drained()),
             ("head", self.heads.drained()),
             ("resolve", self.resolves.drained()),
+            ("log", self.logs.drained()),
             ("commit", self.commits.drained()),
+            ("merge", self.merges.drained()),
             ("fetch", self.fetches.drained()),
             ("clone", self.clones.drained()),
             ("add", self.adds.drained()),
@@ -116,7 +138,13 @@ impl Vcs for VcsScript {
         &self, repo: &str, revision: &str,
     ) -> impl Future<Output = Result<String, Error>> + Send {
         self.record(format!("resolve {repo} {revision}"));
-        let answer = self.resolves.take(repo).unwrap_or_else(|| Ok(format!("{revision}-commit")));
+        let answer = self.resolves.take(repo).unwrap_or_else(|| {
+            if revision.starts_with(LABELS) {
+                Err(Error::NotFound(revision.to_owned()))
+            } else {
+                Ok(format!("{revision}-commit"))
+            }
+        });
         async move { answer }
     }
 
@@ -140,10 +168,27 @@ impl Vcs for VcsScript {
     }
 
     fn merge(
-        &self, at: &str, revision: &str, _message: &str, _policy: &[Rule],
+        &self, at: &str, revision: &str, message: &str, policy: &[Rule],
     ) -> impl Future<Output = Result<Merged, Error>> + Send {
-        let call = format!("merged `{revision}` into `{at}`");
-        async move { panic!("the engine never merges, yet {call}") }
+        let first = message.lines().next().unwrap_or_default();
+        self.record(format!("merge {at} {revision} {first}"));
+        self.merged.lock().expect("merged").push((message.to_owned(), policy.to_vec()));
+        let answer = self.merges.take(at).unwrap_or_else(|| {
+            let word = first.split_whitespace().next().unwrap_or_default();
+            Ok(Merged {
+                commit: Some(format!("m:{word}")),
+                conflicts: Vec::new(),
+            })
+        });
+        async move { answer }
+    }
+
+    fn log(
+        &self, repo: &str, revision: &str, base: &str,
+    ) -> impl Future<Output = Result<Vec<Entry>, Error>> + Send {
+        self.record(format!("log {repo} {revision} {base}"));
+        let answer = self.logs.take(repo).unwrap_or_else(|| Ok(Vec::new()));
+        async move { answer }
     }
 
     fn init(&self, at: &str) -> impl Future<Output = Result<(), Error>> + Send {

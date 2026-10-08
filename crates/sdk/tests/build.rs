@@ -28,6 +28,7 @@ fn slice() -> Slice {
     Slice {
         id: "SLICE-001".to_owned(),
         name: "orders".to_owned(),
+        base: "1a2b3c4d5e6f708192a3b4c5d6e7f8091a2b3c4d".to_owned(),
         requirements: vec!["REQ-001".to_owned(), "REQ-002".to_owned()],
         spec: "## REQ-001\n\nOrders are created.\n\n## REQ-002\n\nOrders are listed.\n".to_owned(),
         design: "## Types\n\n`Order`\n".to_owned(),
@@ -106,6 +107,13 @@ async fn request_shape() {
         user.starts_with(
             "Build the slice `orders` (SLICE-001) of the plan, bound to adapter \
              `target:probe`.\n\n`$WORKSPACE` is the project tree, lent writable"
+        ),
+        "{user}"
+    );
+    assert!(
+        user.contains(
+            "The tree sits on commit `1a2b3c4d5e6f708192a3b4c5d6e7f8091a2b3c4d`, the integrated \
+             head this slice builds over."
         ),
         "{user}"
     );

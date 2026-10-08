@@ -46,9 +46,19 @@ wkg get acme:ledger@2.1.0 -o ~/.emery/adapters/
 
 A registry that cannot supply the release — the network down, the exact version unpublished — is the loader's `unavailable` (exit `4`), and a copy at `~/.emery/adapters/<namespace>_<name>@<version>.wasm` stands in for it.
 
+## The two axes
+
+A **source adapter** exports the `emery:adapter/source` interface — `metadata`, and `extract`, which reads one source into a document of typed claims — and is what [`emery specify`](cli/specify.md) runs. A **target adapter** exports `emery:adapter/target`, three functions [`emery build`](cli/build.md) calls in turn:
+
+- `metadata` names the adapter and its **merge rules**: each a glob of paths and the strategy a merge applies where both sides changed them — `union` keeps both sides' lines, each once (declaration and import lists); `ours` keeps the integrated side whole, for the adapter to regenerate (lockfiles); `theirs` the slice's. A path no rule covers that both sides changed is a conflict, which the build records and builds the slice again over; an adapter with no rule declares none.
+- `build` is called once per slice, with the slice's plan entry, the specification cut to its requirements, the whole design, the commit its tree sits on, and the slice's working copy, and answers a report of the requirement ids it covered and the files it wrote. An adapter written with `emery-sdk` puts one model turn per slice under its `build.md`, the tree lent writable through the SDK's `write_file` tool.
+- `verify` is called once per wave, with the integration working copy every slice of the wave merged into, and answers a verdict: `passed`, or each check that failed. An SDK adapter puts one turn under its `verify.md`, the tree lent with the shell and no write tool, so the checks the prompt names — a compiler, a test suite, a linter — run over the integrated tree, and a verdict whose `passed` disagrees with its failures is corrected before it answers.
+
+A component exporting the wrong interface for the verb is `bad_request` (exit `1`) before any dispatch, naming the interface it lacks.
+
 ## The store and the project tree
 
-The runtime mounts the invocation directory as `.`, writable: the tree `specify` lends its source adapters to read, and the repository `build` starts from, its integration working copy cut beneath `.emery/vcs/` and lent to the target adapter to write. The store lies apart from it, under `$HOME`, so a component is never loaded from a tree a run can write — a build turn's `write_file` reaches the working copy and nothing above it. The runtime holds the rule at startup: a store beneath the writable mount is refused before any verb runs, so running `emery` from `$HOME` itself is refused — a project is a directory of its own. A project file can say which package and, through `digest`, which bytes; it cannot say where from, so a rewritten `emery.toml` cannot redirect a fetch or reach into the store.
+The runtime mounts the invocation directory as `.`, writable: the tree `specify` lends its source adapters to read, and the repository `build` starts from, each slice's working copy cut beneath `.emery/vcs/` and lent to the target adapter to write, the integration working copy lent to it to verify. The store lies apart from it, under `$HOME`, so a component is never loaded from a tree a run can write — a build turn's `write_file` reaches the working copy and nothing above it. The runtime holds the rule at startup: a store beneath the writable mount is refused before any verb runs, so running `emery` from `$HOME` itself is refused — a project is a directory of its own. A project file can say which package and, through `digest`, which bytes; it cannot say where from, so a rewritten `emery.toml` cannot redirect a fetch or reach into the store.
 
 ## Refusals at a glance
 

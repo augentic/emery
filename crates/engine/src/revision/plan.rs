@@ -48,6 +48,26 @@ impl Plan {
         self.waves().iter().flatten().filter_map(|id| self.slice(*id)).collect()
     }
 
+    /// Returns the slices ready to build once `merged` are built: the unmerged slices whose dependencies are all merged, in id order.
+    ///
+    /// A dependency naming the slice itself or no slice of the plan holds
+    /// nothing back, as [`waves`](Plan::waves) ignores it. An empty result
+    /// with slices left unmerged means the rest wait on one another.
+    #[must_use]
+    pub fn ready(&self, merged: &BTreeSet<SliceId>) -> Vec<&Slice> {
+        self.slices
+            .iter()
+            .filter(|slice| !merged.contains(&slice.id))
+            .filter(|slice| {
+                slice.depends_on.iter().all(|dependency| {
+                    merged.contains(dependency)
+                        || *dependency == slice.id
+                        || self.slice(*dependency).is_none()
+                })
+            })
+            .collect()
+    }
+
     /// Returns the slices grouped into waves: the sets ready to build at once.
     ///
     /// The first wave holds every slice that depends on nothing; each wave

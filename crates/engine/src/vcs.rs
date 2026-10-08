@@ -5,23 +5,31 @@
 //! kept across runs and refreshed by a fetch. The project's own checkout is
 //! the `.` mount, never written: a source is read, and the plan built, in a
 //! [`WorkingCopy`] cut from a [`Repo`] and removed when the run is done with
-//! it.
+//! it. A build seals each slice under a [`Message`], which it reads back
+//! from the labelled history to resume.
 //!
 //! Every path here is deployment-local, as the [`Vcs`] capability takes it:
 //! `.` is the project mount and `./.emery/vcs/...` lies beneath it.
 
+use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 
 use emery_adapter::SKIP_DIRS;
-use omnia_sdk::vcs::{self, Change, CloneOptions};
+use emery_adapter::target::{MergeRule, MergeStrategy};
+use omnia_sdk::vcs::{self, Change, CloneOptions, Merged, Rule, Strategy};
 use omnia_sdk::{Error, Vcs, bad_gateway, server_error};
 use sha2::{Digest as _, Sha256};
+
+use crate::revision::{ReqId, SliceId};
 
 /// The directory beneath the project root that holds every clone and working copy.
 pub const ROOT: &str = ".emery/vcs";
 
 /// The working copy a build integrates its slices in.
 pub const INTEGRATION: &str = "./.emery/vcs/integration";
+
+/// The directory beneath the project root that holds the working copy each slice builds in.
+pub const WORKTREES: &str = "./.emery/vcs/worktrees";
 
 /// The remote a clone fetches from: the URL it was cloned from.
 pub const ORIGIN: &str = "origin";
@@ -33,6 +41,111 @@ const PROJECT: &str = ".";
 #[must_use]
 pub fn source_checkout(name: &str) -> String {
     format!("./{ROOT}/sources/{name}")
+}
+
+/// The working copy a slice builds in, by slice id.
+#[must_use]
+pub fn slice_worktree(slice: SliceId) -> String {
+    format!("{WORKTREES}/{slice}")
+}
+
+/// Maps the merge rules a target adapter declares onto the capability's.
+#[must_use]
+pub fn rules(declared: &[MergeRule]) -> Vec<Rule> {
+    declared
+        .iter()
+        .map(|rule| Rule {
+            paths: rule.paths.to_string(),
+            strategy: match rule.strategy {
+                MergeStrategy::Union => Strategy::Union,
+                MergeStrategy::Ours => Strategy::Ours,
+                MergeStrategy::Theirs => Strategy::Theirs,
+            },
+        })
+        .collect()
+}
+
+/// The message a build seals one slice under, in its working copy and as its merge.
+///
+/// The first line is `<id> <name>`; the trailers tie the commit to its
+/// revision, so a later run reads back from the labelled history which
+/// slices it holds. [`Display`](fmt::Display) writes it and
+/// [`parse`](Message::parse) reads it back.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Message {
+    /// The slice sealed.
+    pub slice: SliceId,
+    /// The slice's name.
+    pub name: String,
+    /// The revision whose plan the slice is of.
+    pub revision: String,
+    /// The slice's requirements.
+    pub requirements: Vec<ReqId>,
+    /// The requirements the build reported covered.
+    pub covered: Vec<ReqId>,
+    /// The adapter that built it, as the run named it.
+    pub adapter: String,
+    /// The integrated head the slice was built over.
+    pub base: String,
+    /// The wave the slice was built in, from one.
+    pub wave: usize,
+}
+
+impl Message {
+    /// Reads a message back from a commit's text; `None` when a build did not write it.
+    ///
+    /// Every trailer must be present and well formed, so what a run's own
+    /// commits say is read and anything else in the history is passed over.
+    #[must_use]
+    pub fn parse(text: &str) -> Option<Self> {
+        let mut lines = text.lines();
+        let (id, name) = lines.next()?.split_once(' ')?;
+        let slice: SliceId = id.parse().ok()?;
+        let trailers: BTreeMap<&str, &str> = lines
+            .filter_map(|line| line.split_once(':'))
+            .map(|(key, value)| (key, value.trim()))
+            .collect();
+        let ids = |key: &str| -> Option<Vec<ReqId>> {
+            let listed = trailers.get(key)?;
+            if listed.is_empty() {
+                return Some(Vec::new());
+            }
+            listed.split(", ").map(|id| id.parse().ok()).collect()
+        };
+        if trailers.get("Slice")?.parse::<SliceId>().ok()? != slice {
+            return None;
+        }
+        Some(Self {
+            slice,
+            name: name.trim().to_owned(),
+            revision: (*trailers.get("Revision")?).to_owned(),
+            requirements: ids("Requirements")?,
+            covered: ids("Covered")?,
+            adapter: (*trailers.get("Adapter")?).to_owned(),
+            base: (*trailers.get("Base")?).to_owned(),
+            wave: trailers.get("Wave")?.parse().ok()?,
+        })
+    }
+}
+
+impl fmt::Display for Message {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let list =
+            |ids: &[ReqId]| ids.iter().map(ToString::to_string).collect::<Vec<_>>().join(", ");
+        write!(
+            f,
+            "{slice} {name}\n\nSlice: {slice}\nRevision: {revision}\nRequirements: {requirements}\n\
+             Covered: {covered}\nAdapter: {adapter}\nBase: {base}\nWave: {wave}",
+            slice = self.slice,
+            name = self.name,
+            revision = self.revision,
+            requirements = list(&self.requirements),
+            covered = list(&self.covered),
+            adapter = self.adapter,
+            base = self.base,
+            wave = self.wave,
+        )
+    }
 }
 
 /// A repository named by URL, cloned once beneath [`ROOT`].
@@ -70,7 +183,7 @@ impl Repository {
         format!("./{ROOT}/repos/{}", self.key)
     }
 
-    /// Brings the clone up to date with its origin, cloning it first when the run has none.
+    /// Clones the repository, or brings the clone a run already has up to date with its origin.
     ///
     /// # Errors
     ///
@@ -80,17 +193,17 @@ impl Repository {
     ///   reached, or wants credentials.
     /// - Returns [`Error::ServerError`] when the capability fails otherwise.
     pub async fn ensure<V: Vcs>(&self, vcs: &V) -> Result<(), Error> {
+        // the clone is the one operation that creates its location: a read
+        // or a fetch at a path the run does not hold yet is refused there
         let at = self.path();
-        match vcs.fetch(&at, ORIGIN).await {
+        match vcs.clone_repo(&self.url, &at, CloneOptions { depth: None }).await {
             Ok(()) => {
-                tracing::info!(repository = %self.url, clone = %at, "fetched");
+                tracing::info!(repository = %self.url, clone = %at, "cloned");
                 Ok(())
             }
-            Err(vcs::Error::NotARepository) => {
-                tracing::info!(repository = %self.url, clone = %at, "cloning");
-                vcs.clone_repo(&self.url, &at, CloneOptions { depth: None })
-                    .await
-                    .map_err(|error| self.subject().refusal(error))
+            Err(vcs::Error::Exists(_)) => {
+                tracing::info!(repository = %self.url, clone = %at, "fetching");
+                vcs.fetch(&at, ORIGIN).await.map_err(|error| self.subject().refusal(error))
             }
             Err(error) => Err(self.subject().refusal(error)),
         }
@@ -131,28 +244,73 @@ impl Repo {
         }
     }
 
-    /// Points `label` at `commit` and, with `remote`, sends it there.
+    /// What `label` already holds over `base` for `revision`: the labelled head and the slices merged beneath it.
+    ///
+    /// The slices are read from the [`Message`]s a build sealed along the
+    /// label's first-parent chain; a commit a build did not write, or one
+    /// of another revision, is passed over. `None` means the repository has
+    /// no such label, so a build starts from `base`.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::NotFound`] with code `revision-not-found` when the
+    /// repository holds no `base`, and [`Error::ServerError`] when the
+    /// capability fails otherwise.
+    pub async fn merged_under<V: Vcs>(
+        &self, vcs: &V, label: &str, base: &str, revision: &str,
+    ) -> Result<Option<(String, BTreeSet<SliceId>)>, Error> {
+        let repo = self.path();
+        let head = match vcs.resolve(&repo, label).await {
+            Ok(head) => head,
+            Err(vcs::Error::NotFound(_)) => return Ok(None),
+            Err(error) => return Err(self.subject().refusal(error)),
+        };
+        let entries =
+            vcs.log(&repo, &head, base).await.map_err(|error| self.subject().refusal(error))?;
+        let merged = entries
+            .iter()
+            .filter_map(|entry| Message::parse(&entry.message))
+            .filter(|message| message.revision == revision)
+            .map(|message| message.slice)
+            .collect();
+        Ok(Some((head, merged)))
+    }
+
+    /// Points `label` at `commit`, creating or moving it.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::NotFound`] with code `revision-not-found` when the
+    /// repository holds no such commit, and [`Error::ServerError`] when the
+    /// capability fails otherwise.
+    pub async fn label<V: Vcs>(&self, vcs: &V, label: &str, commit: &str) -> Result<(), Error> {
+        vcs.label(&self.path(), label, commit)
+            .await
+            .map_err(|error| self.subject().refusal(error))?;
+        tracing::info!(label, commit, "labelled");
+        Ok(())
+    }
+
+    /// Sends `label` and the commits it reaches to `remote`.
     ///
     /// # Errors
     ///
     /// Returns [`Error::NotFound`] with code `revision-not-found` when the
     /// repository has no such remote, [`Error::BadGateway`] when it cannot
     /// be reached, and [`Error::ServerError`] otherwise.
-    pub async fn publish<V: Vcs>(
-        &self, vcs: &V, label: &str, commit: &str, remote: Option<&str>,
-    ) -> Result<(), Error> {
-        let subject = match self {
+    pub async fn push<V: Vcs>(&self, vcs: &V, label: &str, remote: &str) -> Result<(), Error> {
+        vcs.push(&self.path(), remote, label)
+            .await
+            .map_err(|error| self.subject().refusal(error))?;
+        tracing::info!(label, remote, "pushed");
+        Ok(())
+    }
+
+    fn subject(&self) -> Subject<'_> {
+        match self {
             Self::Project => Subject::Project,
             Self::Clone(repository) => repository.subject(),
-        };
-        let repo = self.path();
-        vcs.label(&repo, label, commit).await.map_err(|error| subject.refusal(error))?;
-        tracing::info!(label, commit, "labelled");
-        if let Some(remote) = remote {
-            vcs.push(&repo, remote, label).await.map_err(|error| subject.refusal(error))?;
-            tracing::info!(label, remote, "pushed");
         }
-        Ok(())
     }
 }
 
@@ -208,6 +366,24 @@ impl WorkingCopy {
     /// Returns [`Error::ServerError`] when the capability fails.
     pub async fn commit<V: Vcs>(&self, vcs: &V, message: &str) -> Result<Option<String>, Error> {
         vcs.commit(&self.at, message).await.map_err(|error| self.subject().refusal(error))
+    }
+
+    /// Merges `revision` into the working copy under `policy` and advances its head.
+    ///
+    /// A conflict no rule resolves is data: the paths come back and the
+    /// working copy is back on its head.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::NotFound`] with code `revision-not-found` when the
+    /// repository holds no such commit, and [`Error::ServerError`] when the
+    /// capability fails otherwise.
+    pub async fn merge<V: Vcs>(
+        &self, vcs: &V, revision: &str, message: &str, policy: &[Rule],
+    ) -> Result<Merged, Error> {
+        vcs.merge(&self.at, revision, message, policy)
+            .await
+            .map_err(|error| self.subject().refusal(error))
     }
 
     /// The commit the working copy sits on.

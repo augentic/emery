@@ -2203,14 +2203,13 @@ mod repository {
     }
 
     // A source naming a repository is read in a working copy of it at the
-    // revision: the clone fetched or made after the adapters load, the copy cut
+    // revision: the clone made or fetched after the adapters load, the copy cut
     // and lent, at the `path` within it, and removed once the source answered.
     #[tokio::test]
     async fn repository_source() {
         let scratch = Scratch::new();
         let config = upstream(&scratch, "revision = \"v1.2.0\"\npath = \"docs/api\"\n");
         let provider = Provider::answering([SPEC_ANSWER, DESIGN_ANSWER]);
-        provider.vcs.fetches.script(CLONE, Err(Error::NotARepository));
 
         let resp = cli_ok(&provider, &["emery", "specify", "--config", &config]).await;
 
@@ -2222,7 +2221,6 @@ mod repository {
         assert_eq!(
             provider.vcs.calls(),
             [
-                format!("fetch {CLONE} origin"),
                 format!("clone {URL} {CLONE}"),
                 format!("resolve {CLONE} v1.2.0"),
                 format!("add {CLONE} {CHECKOUT} v1.2.0-commit"),
@@ -2248,6 +2246,7 @@ mod repository {
         // the JSON envelope names what was read, and a path omitted lends the copy whole
         let config = upstream(&scratch, "revision = \"main\"\n");
         let provider = Provider::answering([SPEC_ANSWER, DESIGN_ANSWER]);
+        provider.vcs.clones.script(CLONE, Err(Error::Exists(CLONE.to_owned())));
         let resp =
             cli_ok(&provider, &["emery", "--format", "json", "specify", "--config", &config]).await;
         let envelope: Value = serde_json::from_slice(&resp.stdout).expect("one JSON envelope");
@@ -2258,7 +2257,11 @@ mod repository {
             ]),
             "{envelope}"
         );
-        assert_eq!(provider.vcs.calls()[0], format!("fetch {CLONE} origin"), "found, so fetched");
+        assert_eq!(
+            provider.vcs.calls()[..2],
+            [format!("clone {URL} {CLONE}"), format!("fetch {CLONE} origin")],
+            "found, so fetched"
+        );
         let calls = provider.source.calls();
         assert_eq!(calls[0].1.content, SourceContent::Workspace(CHECKOUT.to_owned()));
         drop(calls);
@@ -2266,7 +2269,7 @@ mod repository {
     }
 
     // Two sources naming one repository, however they spell its URL, share
-    // one clone fetched once and are read in working copies of their own.
+    // one clone made once and are read in working copies of their own.
     #[tokio::test]
     async fn repository_shared_clone() {
         let scratch = Scratch::new();
@@ -2284,7 +2287,7 @@ mod repository {
         assert_eq!(
             provider.vcs.calls(),
             [
-                format!("fetch {CLONE} origin"),
+                format!("clone {URL} {CLONE}"),
                 format!("resolve {CLONE} main"),
                 format!("add {CLONE} ./.emery/vcs/sources/docs main-commit"),
                 format!("resolve {CLONE} v2"),
@@ -2325,7 +2328,7 @@ mod repository {
         assert_eq!(
             provider.vcs.calls(),
             [
-                format!("fetch {CLONE} origin"),
+                format!("clone {URL} {CLONE}"),
                 format!("resolve {CLONE} main"),
                 format!("add {CLONE} {CHECKOUT} main-commit"),
                 format!("remove {CHECKOUT}"),
@@ -2356,7 +2359,6 @@ mod repository {
         );
         assert!(provider.source.calls().is_empty(), "no source is asked");
 
-        provider.vcs.fetches.script(CLONE, Err(Error::NotARepository));
         provider.vcs.clones.script(CLONE, Err(Error::Access("authentication failed".to_owned())));
         let envelope =
             fail(&provider, &["emery", "specify", "--config", &config], 4, "bad_gateway").await;

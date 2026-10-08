@@ -41,6 +41,7 @@ impl Report {
     /// let slice = Slice {
     ///     id: "SLICE-001".into(),
     ///     name: "orders".into(),
+    ///     base: "1a2b3c4d".into(),
     ///     requirements: vec!["REQ-001".into()],
     ///     spec: String::new(),
     ///     design: String::new(),

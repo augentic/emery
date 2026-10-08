@@ -12,14 +12,14 @@ use schemars::JsonSchema;
 use serde::Deserialize;
 use serde_json::json;
 
-use crate::{BUILD, CLAIMS, EXTRACT, RUNTIME, SURVEY};
+use crate::{BUILD, CLAIMS, EXTRACT, RUNTIME, SURVEY, VERIFY};
 
 const LIST_DOCS: &str = "list_docs";
 const READ_DOC: &str = "read_doc";
 
 // The documents a turn's system prompt is built from: a mining turn's, the
-// survey turn's, and a build turn's.
-const SYSTEM: &[&str] = &[EXTRACT, CLAIMS, SURVEY, BUILD];
+// survey turn's, a build turn's, and a verify turn's.
+const SYSTEM: &[&str] = &[EXTRACT, CLAIMS, SURVEY, BUILD, VERIFY];
 
 /// Returns the reference tools declared to the model on every turn.
 #[must_use]
@@ -41,13 +41,13 @@ pub fn tools() -> Vec<Tool> {
 ///
 /// `list_docs` lists the adapter's references and the runtime references. It
 /// never lists a system document (`extract.md`, `claims.md`, `survey.md`,
-/// `build.md`), since a turn either carries it already or has nothing to
-/// learn from it. `read_doc` still answers every document, so a followed link
-/// never fails.
+/// `build.md`, `verify.md`), since a turn either carries it already or has
+/// nothing to learn from it. `read_doc` still answers every document, so a
+/// followed link never fails.
 ///
 /// Each call is reported at DEBUG with its arguments as the model sent them,
-/// under the turn's `subject` — the source name, or the slice id of a build
-/// — and, for a mining turn, its `seam`.
+/// under the turn's `subject` — the source name, the slice id of a build, or
+/// `verify` — and, for a mining turn, its `seam`.
 pub fn serve(docs: &'static [Doc], subject: &str, seam: Option<usize>) -> Tools {
     let subject = subject.to_owned();
 

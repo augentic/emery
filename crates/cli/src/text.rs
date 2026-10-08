@@ -2,7 +2,7 @@
 
 use std::fmt;
 
-use emery_engine::build::BuildOutput;
+use emery_engine::build::{BuildOutput, BuiltSlice};
 use emery_engine::show::ShowOutput;
 use emery_engine::specify::{Diff, SpecifyOutput, Waves};
 
@@ -48,26 +48,49 @@ fn summary(diff: &Diff, w: &mut dyn fmt::Write) -> fmt::Result {
     Ok(())
 }
 
-/// Writes a [`BuildOutput`] revision line, the plan's shape, the base, one line per slice built, and the label.
+/// Writes a [`BuildOutput`] revision line, the plan's shape, the base, the slices resumed, each wave with the slices it merged, and the label.
 ///
-/// Each slice line counts the requirements covered of those it holds, names
-/// any left uncovered, counts the files written, and names the commit that
-/// sealed them.
+/// A wave line names the head it was verified at. Each slice line beneath
+/// it counts the requirements covered of those it holds, names any left
+/// uncovered, counts the files written, names the merge commit that brought
+/// them in, and the paths an earlier build of it conflicted at.
 pub fn build(output: &BuildOutput, w: &mut dyn fmt::Write) -> fmt::Result {
     writeln!(w, "built revision {}", output.revision)?;
     waves(&output.waves, w)?;
     writeln!(w, "  base {}", output.base)?;
-    for slice in &output.slices {
-        let total = slice.covered.len() + slice.uncovered.len();
-        write!(w, "  {} {}: covered {}/{total}", slice.id, slice.name, slice.covered.len())?;
-        if !slice.uncovered.is_empty() {
-            let ids: Vec<String> = slice.uncovered.iter().map(ToString::to_string).collect();
-            write!(w, " (uncovered {})", ids.join(", "))?;
-        }
-        write!(w, ", written {}", counted(slice.written.len(), "file"))?;
-        match &slice.commit {
-            Some(commit) => writeln!(w, ", committed {commit}")?,
-            None => writeln!(w, ", nothing to commit")?,
+    if !output.resumed.is_empty() {
+        let ids: Vec<String> = output.resumed.iter().map(ToString::to_string).collect();
+        writeln!(w, "  resumed: {}", ids.join(", "))?;
+    }
+    // a wave is verified when it merged something, so the heads pair with the
+    // waves the slices record, in order
+    let mut numbered: Vec<usize> = output.slices.iter().map(|slice| slice.wave).collect();
+    numbered.dedup();
+    for (head, wave) in output.verified.iter().zip(numbered) {
+        let merged: Vec<&BuiltSlice> =
+            output.slices.iter().filter(|slice| slice.wave == wave).collect();
+        writeln!(
+            w,
+            "  wave {wave}: {} verified at {}",
+            counted(merged.len(), "slice"),
+            head.get(..8).unwrap_or(head)
+        )?;
+        for slice in merged {
+            let total = slice.covered.len() + slice.uncovered.len();
+            write!(w, "    {} {}: covered {}/{total}", slice.id, slice.name, slice.covered.len())?;
+            if !slice.uncovered.is_empty() {
+                let ids: Vec<String> = slice.uncovered.iter().map(ToString::to_string).collect();
+                write!(w, " (uncovered {})", ids.join(", "))?;
+            }
+            write!(w, ", written {}", counted(slice.written.len(), "file"))?;
+            match &slice.commit {
+                Some(commit) => write!(w, ", merged {commit}")?,
+                None => write!(w, ", nothing to merge")?,
+            }
+            if !slice.conflicts.is_empty() {
+                write!(w, ", conflicted ({})", slice.conflicts.join(", "))?;
+            }
+            writeln!(w)?;
         }
     }
     writeln!(w, "  labelled {} at {}", output.label, output.head)?;
@@ -77,8 +100,8 @@ pub fn build(output: &BuildOutput, w: &mut dyn fmt::Write) -> fmt::Result {
     Ok(())
 }
 
-// `  plan: 4 slices in 3 waves, widest 2`: how many slices a build runs one
-// at a time, how many waves they fall into, and the most ready at once.
+// `  plan: 4 slices in 3 waves, widest 2`: how many slices the plan holds,
+// how many waves they fall into, and the most ready at once.
 fn waves(waves: &Waves, w: &mut dyn fmt::Write) -> fmt::Result {
     writeln!(
         w,

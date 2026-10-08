@@ -1,6 +1,6 @@
 # Adapter Examples
 
-Live `specify` and `build` journey via [omnia-cursor](https://github.com/augentic/omnia-backends/tree/main/crates/cursor): the mock source adapter extracts greeting claims from [docs/](docs/) through the host model, the engine synthesises `spec.md` / `design.md` and slices `plan.md`, the revision commits, and the mock target adapter builds each slice of the plan into a working copy cut from the project's sealed head, one commit per slice under the label `emery/<revision>`.
+Live `specify` and `build` journey via [omnia-cursor](https://github.com/augentic/omnia-backends/tree/main/crates/cursor): the mock source adapter extracts greeting claims from [docs/](docs/) through the host model, the engine synthesises `spec.md` / `design.md` and slices `plan.md`, the revision commits, and the mock target adapter builds the plan wave by wave — each ready slice in a working copy of its own cut from the project's sealed head, merged into the integrated tree in id order and verified by the adapter — under the label `emery/<revision>`.
 
 The adapters live at [source/](source/) and [target/](target/) — the same anatomy as a first-party adapter. The shipped `emery` binary hosts them: [emery.toml](emery.toml) names each as an exact package reference of its own, `example:source@0.1.0` and `example:target@0.1.0`, which the binary reads from its store, `~/.emery/adapters`, as `example_source@0.1.0.wasm` and `example_target@0.1.0.wasm` — the names `cp` writes below. The store lies apart from the project, so a component is never loaded from a tree a run can write, and nothing under the `example` namespace is fetched: a reference the store holds is read from it before any registry is asked. The source input is [docs/](docs/); the build lands as commits in the project repository, which is why the journey runs from a scratch project of its own rather than this checkout.
 
@@ -38,13 +38,16 @@ git init --quiet && git add --all && git commit --quiet --message "greeting docs
 "$emery" show spec
 "$emery" show plan
 
-# build every slice of the plan: one commit each, labelled emery/<revision>
+# build the plan: one merge commit per slice, a verified wave at a time, labelled emery/<revision>
 "$emery" -v build
 
 # read the build; the checkout itself is untouched
-git log --oneline HEAD..emery/<revision>
+git log --oneline --first-parent HEAD..emery/<revision>
 git diff --stat HEAD emery/<revision>
 git switch emery/<revision>          # or: git merge emery/<revision>
+
+# a second run has nothing left to build: the label records every slice
+"$emery" build
 ```
 
 Without `.env`:
@@ -53,9 +56,9 @@ Without `.env`:
 export CURSOR_API_KEY=<Cursor API key>
 ```
 
-The mock target writes a Markdown stand-in for code: `build/<slice-name>/index.md` and one `REQ-NNN.md` per requirement, where a real target writes the implementation. Each slice's files are its commit under the label; the `.emery/` beneath the project holds the revision store and the clones and working copies a run cuts, and is ignored so the checkout stays sealed. A `build` over a checkout with an uncommitted change is refused as `base-not-sealed`, naming the paths; commit or stash them and run it again. A stored release is final until removed, so after rebuilding a mock copy it in again; `rm ~/.emery/adapters/example_*` takes both out of the store.
+The mock target writes a Markdown stand-in for code: `build/<slice-name>/index.md` and one `REQ-NNN.md` per requirement, where a real target writes the implementation. Each slice builds in `.emery/vcs/worktrees/<id>`, and what it wrote is sealed there and merged into `.emery/vcs/integration` as one merge commit whose message carries the slice's trailers (`Slice:`, `Revision:`, `Wave:`, among others); the mock's one merge rule keeps both slices' lines when two write one `index.md`. After each wave the adapter's `verify.md` checks the integrated tree through the shell — every index lists files its directory holds, nothing written outside `build/` — and the label moves to the verified head, so a run that stops is resumed by the next from the last verified wave. `--jobs N` caps how many slices build at once. The `.emery/` beneath the project holds the revision store and the clones and working copies a run cuts, and is ignored so the checkout stays sealed. A `build` over a checkout with an uncommitted change is refused as `base-not-sealed`, naming the paths; commit or stash them and run it again. A stored release is final until removed, so after rebuilding a mock copy it in again; `rm ~/.emery/adapters/example_*` takes both out of the store.
 
-To build into another repository instead — a brownfield project, or a remote the label should land on — uncomment the `repository`, `branch`, and `remote` keys of the `[target]` table in [emery.toml](emery.toml): the build then starts from that branch's commit in a clone kept under `.emery/vcs/repos/`, and the label is pushed to the remote once every slice is sealed.
+To build into another repository instead — a brownfield project, or a remote the label should land on — uncomment the `repository`, `branch`, and `remote` keys of the `[target]` table in [emery.toml](emery.toml): the build then starts from that branch's commit in a clone kept under `.emery/vcs/repos/`, and the label is pushed to the remote once every wave is verified.
 
 ### Tracing
 
@@ -71,7 +74,7 @@ See [#host-to-guest-tool-calls](#host-to-guest-tool-calls) below for more detail
 
 In Emery, the tools a completion session declares are the reference tools — `list_docs` and `read_doc` — over the adapter's embedded prose corpus, and, on a build turn alone, `write_file` over the lent tree. `wasi-model` delivers them as two streams rather than direct callbacks: the host writes each `ToolCall` to the session's `calls` stream, and the guest answers with a `ToolResult` on a second stream it created and passed to `create`, carrying the same correlation ID so the host can resume the completion.
 
-Every answer is served in-process by the SDK from the adapter's listed `PROSE`: `list_docs` returns the adapter's reference paths and Emery's `reconciliation.md` — never a system document (`extract.md`, `claims.md`, `build.md`), which a turn either carries already or has nothing to learn from — `read_doc` returns one document body by adapter-relative path, and anything else — an unknown tool, malformed arguments, an unembedded path — comes back as a repairable error. No HTTP shelf, no MCP callback, and no access to the source input or the revision store crosses this boundary; the model reaches nothing but the adapter's own reference documents and, on a build turn, the one write beneath the lent tree. The lent tree is read through the host's workspace tools; a build turn is lent the integration working copy, never the checkout, and writes it through `write_file`, served the same way from the guest, one file per call beneath the lent root, refused under `.emery/` or `.git/` and at the projections.
+Every answer is served in-process by the SDK from the adapter's listed `PROSE`: `list_docs` returns the adapter's reference paths and Emery's `reconciliation.md` — never a system document (`extract.md`, `claims.md`, `build.md`, `verify.md`), which a turn either carries already or has nothing to learn from — `read_doc` returns one document body by adapter-relative path, and anything else — an unknown tool, malformed arguments, an unembedded path — comes back as a repairable error. No HTTP shelf, no MCP callback, and no access to the source input or the revision store crosses this boundary; the model reaches nothing but the adapter's own reference documents and, on a build turn, the one write beneath the lent tree. The lent tree is read through the host's workspace tools; a build turn is lent the slice's working copy, never the checkout, and writes it through `write_file`, served the same way from the guest, one file per call beneath the lent root, refused under `.emery/` or `.git/` and at the projections. A verify turn is lent the integration working copy with the shell and offers no `write_file`: it runs the adapter's checks and answers a verdict.
 
 ## Installing cursor-sdk-bridge
 

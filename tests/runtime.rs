@@ -60,6 +60,7 @@ const SPEC_ANSWER: &str = include_str!("specify/spec-draft.json");
 const DESIGN_ANSWER: &str = include_str!("specify/design-draft.json");
 const WRITE_GREETING: &str = r##"{"path": "build/greeting.md", "content": "# Greeting\n"}"##;
 const REPORT_ANSWER: &str = r#"{"covered": ["REQ-001"], "written": ["build/greeting.md"]}"#;
+const VERDICT_ANSWER: &str = r#"{"passed": true, "failures": []}"#;
 
 // Git under a scratch configuration: a wrapper exporting `GIT_CONFIG_GLOBAL`
 // and `GIT_CONFIG_NOSYSTEM` before handing over to the `git` on `PATH`, so
@@ -327,6 +328,34 @@ fn specifying() -> ScriptedModel {
     ScriptedModel::answering([EXTRACT_ANSWER, SPEC_ANSWER, DESIGN_ANSWER])
 }
 
+// The build script over the one-slice plan: the mock target's build turn,
+// writing the greeting through `write_file`, then its verify turn over the
+// integrated tree.
+fn building() -> ScriptedModel {
+    ScriptedModel::answering([REPORT_ANSWER, VERDICT_ANSWER])
+        .calling(0, [("write_file", WRITE_GREETING)])
+}
+
+// The greenfield journey through its first build: both mocks stored, the
+// project specified and sealed, the plan built and labelled. Returns the
+// roots, the backends, the revision, and the base the build started from.
+async fn built() -> (Roots, Bundle, String, String) {
+    let roots = Roots::new();
+    roots.stored(SOURCE, MOCK_SOURCE);
+    roots.stored(TARGET, MOCK_TARGET);
+    let backends = roots.backends().await;
+    let model = specifying();
+    assert_ok(&emery(roots.deployment(&["specify", SOURCE]), &backends, &model).await);
+    model.assert_exhausted();
+    let base = roots.sealed();
+    let model = building();
+    let run = emery(roots.deployment(&["build", TARGET]), &backends, &model).await;
+    assert_ok(&run);
+    model.assert_exhausted();
+    let revision = revision_of(&run);
+    (roots, backends, revision, base)
+}
+
 // --- the store ---
 
 // A release the store holds is the adapter: nothing is fetched, the file is
@@ -352,12 +381,13 @@ async fn specify_stored() {
     assert!(shown.stdout.contains("### Requirement: greeting.behaviour"), "{}", shown.stdout);
 }
 
-// A stored target builds every slice of the committed plan through its
-// turn's `write_file` into a working copy cut from the project's sealed
-// head; each slice is one commit under the label `emery/<revision>`, read
-// back through git, and the checkout itself is untouched.
+// A stored target builds the committed plan's one slice through its turn's
+// `write_file` into a working copy of its own cut from the project's sealed
+// head, verifies the integrated tree through a second turn, and the label
+// `emery/<revision>` holds one merge commit over the base whose message
+// carries the trailers a later run reads; the checkout itself is untouched.
 #[tokio::test]
-async fn build_labelled() {
+async fn build_merged_labelled() {
     let roots = Roots::new();
     roots.stored(SOURCE, MOCK_SOURCE);
     roots.stored(TARGET, MOCK_TARGET);
@@ -367,15 +397,23 @@ async fn build_labelled() {
     model.assert_exhausted();
     let base = roots.sealed();
 
-    let model =
-        ScriptedModel::answering([REPORT_ANSWER]).calling(0, [("write_file", WRITE_GREETING)]);
+    let model = building();
     let run = emery(roots.deployment(&["build", TARGET]), &backends, &model).await;
 
     assert_ok(&run);
     model.assert_exhausted();
     let lent = model.lent();
-    let build = lent.first().cloned().flatten().expect("the build turn lends a workspace");
-    assert!(build.ends_with(".emery/vcs/integration"), "{lent:?}");
+    let [build, verify] = lent.as_slice() else {
+        panic!("a build turn, then a verify turn: {lent:?}");
+    };
+    assert!(
+        build.as_deref().is_some_and(|at| at.ends_with(".emery/vcs/worktrees/SLICE-001")),
+        "the build turn is lent the slice's working copy: {lent:?}"
+    );
+    assert!(
+        verify.as_deref().is_some_and(|at| at.ends_with(".emery/vcs/integration")),
+        "the verify turn is lent the integration working copy: {lent:?}"
+    );
     let revision = revision_of(&run);
     let label = format!("emery/{revision}");
     let project = roots.project.path();
@@ -383,38 +421,87 @@ async fn build_labelled() {
     assert!(run.stdout.contains(&format!("\n  base {base}\n")), "{}", run.stdout);
     assert!(
         run.stdout.contains(&format!(
-            "SLICE-001 greeting: covered 1/1, written 1 file, committed {head}\n"
+            "\n  wave 1: 1 slice verified at {}\n    SLICE-001 greeting: covered 1/1, written 1 \
+             file, merged {head}\n",
+            &head[..8]
         )),
         "{}",
         run.stdout
     );
     assert!(run.stdout.ends_with(&format!("  labelled {label} at {head}\n")), "{}", run.stdout);
 
-    // the label holds one commit over the base, carrying what the slice wrote
+    // the label holds one merge over the base, bringing in the slice's own
+    // commit, which was built over the base too
     assert_eq!(roots.git.run(project, &["rev-parse", &format!("{label}~1")]), base);
+    let side = roots.git.run(project, &["rev-parse", &format!("{label}^2")]);
+    assert_eq!(roots.git.run(project, &["rev-parse", &format!("{side}~1")]), base);
     assert_eq!(
         roots.git.run(project, &["show", &format!("{label}:build/greeting.md")]),
         "# Greeting",
         "the target wrote the working copy through the turn"
     );
+    assert_eq!(
+        roots
+            .git
+            .run(project, &["log", "--first-parent", "--format=%s", &format!("{base}..{label}")]),
+        "SLICE-001 greeting",
+        "one merge per slice along the first-parent chain"
+    );
     let message = roots.git.run(project, &["log", "-1", "--format=%B", &label]);
     assert!(message.starts_with("SLICE-001 greeting\n\n"), "{message}");
     for trailer in [
+        "Slice: SLICE-001".to_owned(),
         format!("Revision: {revision}"),
         "Requirements: REQ-001".to_owned(),
         "Covered: REQ-001".to_owned(),
         format!("Adapter: {TARGET}"),
         format!("Base: {base}"),
+        "Wave: 1".to_owned(),
     ] {
         assert!(message.contains(&trailer), "`{trailer}` in: {message}");
     }
+    assert_eq!(
+        roots.git.run(project, &["log", "-1", "--format=%B", &side]),
+        message,
+        "the slice's commit and its merge carry one message"
+    );
 
-    // the checkout is as the operator left it, and the working copy is gone
+    // the checkout is as the operator left it, and the working copies are gone
     assert_eq!(roots.git.run(project, &["rev-parse", "HEAD"]), base);
     assert!(roots.project.read("build/greeting.md").is_none(), "nothing lands in the checkout");
     assert!(!project.join(".emery/vcs/integration").exists(), "the working copy is removed");
+    assert!(!project.join(".emery/vcs/worktrees/SLICE-001").exists(), "the slice's too");
     let listed = roots.git.run(project, &["worktree", "list", "--porcelain"]);
     assert_eq!(listed.matches("worktree ").count(), 1, "{listed}");
+    assert_eq!(roots.git.branches(project), [label, "main".to_owned()]);
+}
+
+// A second run over a labelled revision resumes from the label: the slice
+// its history records is not built again, so no turn is put, and the label
+// stands where the first run left it.
+#[tokio::test]
+async fn build_resumed() {
+    let (roots, backends, revision, base) = built().await;
+    let label = format!("emery/{revision}");
+    let project = roots.project.path();
+    let head = roots.git.run(project, &["rev-parse", &label]);
+
+    let model = ScriptedModel::default();
+    let run = emery(roots.deployment(&["build", TARGET]), &backends, &model).await;
+
+    assert_ok(&run);
+    model.assert_exhausted();
+    assert!(model.lent().is_empty(), "no turn is put: {:?}", model.lent());
+    assert_eq!(
+        run.stdout,
+        format!(
+            "built revision {revision}\n  plan: 1 slice in 1 wave, widest 1\n  base {base}\n  \
+             resumed: SLICE-001\n  labelled {label} at {head}\n"
+        )
+    );
+    assert_eq!(roots.git.run(project, &["rev-parse", &label]), head, "the label stands");
+    assert_eq!(roots.git.run(project, &["rev-parse", "HEAD"]), base);
+    assert!(!project.join(".emery/vcs/integration").exists(), "the working copy is removed");
     assert_eq!(roots.git.branches(project), [label, "main".to_owned()]);
 }
 
@@ -488,8 +575,7 @@ async fn build_brownfield_pushed() {
     assert_ok(&emery(roots.deployment(&["specify"]), &backends, &model).await);
     model.assert_exhausted();
 
-    let model =
-        ScriptedModel::answering([REPORT_ANSWER]).calling(0, [("write_file", WRITE_GREETING)]);
+    let model = building();
     let run = emery(roots.deployment(&["build"]), &backends, &model).await;
 
     assert_ok(&run);
@@ -498,10 +584,18 @@ async fn build_brownfield_pushed() {
     assert!(run.stdout.contains(&format!("\n  base {main}\n")), "{}", run.stdout);
     assert!(run.stdout.ends_with("  pushed to origin\n"), "{}", run.stdout);
 
-    // the origin holds the label over its main, which stands where it was
+    // the origin holds the label over its main, which stands where it was:
+    // one merge along the first-parent chain, the slice's commit beneath it
     assert_eq!(roots.git.branches(&origin), [label.clone(), "main".to_owned()]);
     assert_eq!(roots.git.run(&origin, &["rev-parse", "main"]), main);
     assert_eq!(roots.git.run(&origin, &["rev-parse", &format!("{label}~1")]), main);
+    assert_eq!(
+        roots
+            .git
+            .run(&origin, &["rev-list", "--count", "--first-parent", &format!("main..{label}")]),
+        "1"
+    );
+    assert_eq!(roots.git.run(&origin, &["rev-list", "--count", &format!("main..{label}")]), "2");
     assert_eq!(
         roots.git.run(&origin, &["show", &format!("{label}:build/greeting.md")]),
         "# Greeting"

@@ -23,6 +23,6 @@ brew install emery
 | Verb | Purpose |
 |------|---------|
 | [emery specify](specify.md) | Generate the specification, design, and build plan from the sources named on the invocation, continuing the revision the project carries, and commit them as the current revision |
-| [emery build](build.md) | Build every slice of the current plan through a target adapter, in dependency order, one commit each under the label `emery/<revision>` |
+| [emery build](build.md) | Build the current plan through a target adapter in waves, each slice merged into the label `emery/<revision>` and each wave verified; a re-run resumes from the label |
 | [emery show](show.md) | Print a reviewable artifact of the current revision to stdout; `--format json` carries the typed document |
 | `emery completions <shell>` | Print a shell-completion script; auto-derived from the live clap surface |
