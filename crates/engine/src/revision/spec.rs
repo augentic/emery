@@ -10,6 +10,7 @@ use emery_adapter::source::{Anchor, SourceKind};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
+use crate::Rank;
 use crate::revision::{self, ReqId};
 
 /// The `ID:` provenance key written below a requirement or slice heading.
@@ -205,8 +206,10 @@ impl Display for Cited {
 pub struct Loser {
     /// Every member's source name, in authority order.
     pub sources: Vec<String>,
-    /// The authority class of the leading contributor.
+    /// The kind of source the leading contributor was extracted from.
     pub kind: SourceKind,
+    /// The authority rank the leading contributor lost under.
+    pub rank: Rank,
     /// The leading contributor's claim identifier.
     pub claim: String,
     /// The leading contributor's normalised statement.
@@ -217,9 +220,10 @@ impl Display for Loser {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         write!(
             f,
-            "{NOTE} {sources} ({kind}, {claim}): {statement}",
+            "{NOTE} {sources} ({kind}, rank {rank}, {claim}): {statement}",
             sources = self.sources.join(", "),
             kind = self.kind,
+            rank = self.rank,
             claim = self.claim,
             statement = self.statement,
         )

@@ -9,6 +9,9 @@
 #  - `path`: a workspace path relative to this file.
 #  - `description`: an inline description.
 #  - `digest`: pins the adapter's bytes to a `sha256:` hash.
+#  - `rank`: the source's authority rank, an integer with 1 the highest;
+#    omitted, the adapter's kind decides (intent 1, documentation 2,
+#    behaviour 3). Equal ranks tie.
 #
 # The [target] table names the one adapter `emery build` builds every slice
 # of the plan through: `adapter` and `digest`, as above.
@@ -38,6 +41,13 @@ adapter = "example:target@0.1.0"
 # [[source]]
 # adapter = "emery:intent@1.0.0"
 # description = "Ship a location-independent spec generator."
+
+# # A wiki ranked beneath the code, so where they disagree the code wins.
+# [[source]]
+# name = "wiki"
+# adapter = "emery:documentation@1.2.0"
+# path = "wiki/"
+# rank = 4
 
 # # A third-party package, fetched into the store by
 # # `wkg get acme:ledger@2.1.0 -o ~/.emery/adapters/`, and pinned.

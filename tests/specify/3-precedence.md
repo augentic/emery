@@ -1,5 +1,5 @@
 ---
-emery: 4
+emery: 5
 revision: <revision>
 ---
 
@@ -13,9 +13,9 @@ ID: REQ-001
 Sources: [docs:login.flow, wiki-live:login.flow, code:login.flow]
 Status: conflict
 
-Note: docs (documentation, login.flow): Users sign in with a magic link.
-Note: wiki-live (documentation, login.flow): Users sign in with a passkey.
-Note: code (behaviour, login.flow): Users sign in with email and password.
+Note: docs (documentation, rank 2, login.flow): Users sign in with a magic link.
+Note: wiki-live (documentation, rank 2, login.flow): Users sign in with a passkey.
+Note: code (behaviour, rank 3, login.flow): Users sign in with email and password.
 Note: Operator reconciliation required.
 
 #### Scenario: Login selected
@@ -31,7 +31,7 @@ Status: divergence
 
 Sessions must expire after 30 minutes of inactivity.
 
-Note: code (behaviour, session-expiry): Sessions expire after 15 minutes of inactivity.
+Note: code (behaviour, rank 3, session-expiry): Sessions expire after 15 minutes of inactivity.
 Note: acceptance criteria not evidenced.
 
 #### Scenario: Session expires

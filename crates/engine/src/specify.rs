@@ -41,7 +41,7 @@ use crate::revision::Revision;
 pub use crate::revision::{
     Changed, DesignDiff, Diff, Entry, PlanDiff, ReqId, SectionKind, SliceEntry, SliceId, SpecDiff,
 };
-use crate::{preopen_path, store};
+use crate::{Rank, preopen_path, store};
 
 /// Generates and commits a specification revision from `input`.
 ///
@@ -131,6 +131,12 @@ pub struct SourceConfig {
     /// resolves.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub digest: Option<Digest>,
+    /// The authority rank the source is reconciled under.
+    ///
+    /// `None` ranks the source by its adapter's kind ([`Rank::from`]): intent
+    /// `1`, documentation `2`, behaviour `3`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub rank: Option<Rank>,
 }
 
 impl SourceConfig {
@@ -174,6 +180,7 @@ pub struct SpecifyOutput {
 struct Bound<'a> {
     adapter: &'a AdapterRef,
     digest: Option<&'a Digest>,
+    rank: Option<Rank>,
     input: SourceInput,
 }
 
@@ -196,6 +203,7 @@ impl<'a> Bound<'a> {
             bound.push(Self {
                 adapter: &source.adapter,
                 digest: source.digest.as_ref(),
+                rank: source.rank,
                 input,
             });
         }
@@ -214,7 +222,8 @@ impl<'a> Bound<'a> {
             .get(adapter)
             .ok_or_else(|| server_error!("adapter `{adapter}` was not loaded"))?;
         let kind = metadata.kind;
-        tracing::info!(%source, adapter = %id, %kind, "extracting");
+        let rank = self.rank.unwrap_or_else(|| Rank::from(kind));
+        tracing::info!(%source, adapter = %id, %kind, %rank, "extracting");
         let evidence = Source::extract(provider, id, &self.input).await?;
 
         let findings = evidence.findings();
@@ -235,6 +244,7 @@ impl<'a> Bound<'a> {
         Ok(Extract {
             source: source.clone(),
             kind,
+            rank,
             evidence,
         })
     }
@@ -244,6 +254,7 @@ impl<'a> Bound<'a> {
 struct Extract {
     source: String,
     kind: SourceKind,
+    rank: Rank,
     evidence: Evidence,
 }
 

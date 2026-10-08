@@ -208,9 +208,10 @@ impl<'a, B: Borrow<Basis<'a>>> Display for BasesSection<'a, B> {
                 for member in class {
                     writeln!(
                         f,
-                        "  - {role}: {source} ({kind}, `{claim}`): {statement}",
+                        "  - {role}: {source} ({kind}, rank {rank}, `{claim}`): {statement}",
                         source = member.source,
                         kind = member.kind,
+                        rank = member.rank,
                         claim = member.id,
                         statement = member.statement,
                     )?;
