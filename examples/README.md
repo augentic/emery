@@ -42,8 +42,8 @@ git init --quiet && git add --all && git commit --quiet --message "greeting docs
 "$emery" -v build
 
 # read the build; the checkout itself is untouched
-git log --oneline main..emery/<revision>
-git show --stat emery/<revision>
+git log --oneline HEAD..emery/<revision>
+git diff --stat HEAD emery/<revision>
 git switch emery/<revision>          # or: git merge emery/<revision>
 ```
 
