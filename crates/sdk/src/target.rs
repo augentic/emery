@@ -5,7 +5,7 @@
 //! slices has merged, it receives the integrated tree and returns a
 //! [`Verdict`] over it. [`build`] puts the one gated build turn: the slice's
 //! documents under the adapter's `build.md`, the workspace lent and written
-//! through the turn's `write_file` tool, and the answered report held to the
+//! through the turn's `write_files` tool, and the answered report held to the
 //! slice by [`Report::findings`] and to the tree until it passes. [`verify`]
 //! puts the one gated verify turn: the integrated tree lent under the
 //! adapter's `verify.md`, the checks it names run through the model's shell,
@@ -85,7 +85,7 @@ pub struct Context<'a, P> {
     /// The [`Slice`] to build.
     pub slice: &'a Slice,
     /// The deployment-local path of the tree root, which the turn lends to
-    /// the model and writes beneath through `write_file`. The deployment's
+    /// the model and writes beneath through `write_files`. The deployment's
     /// grant decides whether it may be written.
     pub workspace: &'a str,
     /// The [`Model`] the turn is put to.
@@ -163,11 +163,12 @@ pub fn metadata(merge_rules: &[MergeRule]) -> TargetMetadata {
 /// `docs` must contain `build.md`, which becomes the system prompt. The turn
 /// carries the slice's plan entry, its cut of the specification, and the
 /// whole design, lends the workspace, and offers the embedded references
-/// through the reference tools. It writes through its `write_file` tool:
-/// one file beneath the workspace per call, created or replaced whole, at a
-/// path [`beneath`](crate::beneath) accepts. The answered [`Report`] is held
+/// through the reference tools. It writes through its `write_files` tool:
+/// one or more files beneath the workspace per call, each created or
+/// replaced whole, at a path [`beneath`](crate::beneath) accepts, and a call
+/// naming one it refuses writes nothing. The answered [`Report`] is held
 /// to the slice by [`Report::findings`] and to the tree — a `written` path
-/// names a regular file under the workspace, and a file `write_file` wrote
+/// names a regular file under the workspace, and a file `write_files` wrote
 /// is listed; every finding is returned to the model for one correction
 /// round, until the host's round limit is reached.
 ///
@@ -235,7 +236,7 @@ pub async fn build<P: Model>(ctx: &Context<'_, P>, docs: &'static [Doc]) -> Resu
 ///
 /// `docs` must contain `verify.md`, which becomes the system prompt. The turn
 /// lends the tree and offers the embedded references through the reference
-/// tools, and no `write_file`: the model runs the checks the prompt names
+/// tools, and no `write_files`: the model runs the checks the prompt names
 /// through its shell and answers what they found. The answered [`Verdict`]
 /// is held to [`Verdict::findings`]; every finding is returned to the model
 /// for one correction round, until the host's round limit is reached. A
@@ -328,11 +329,12 @@ impl Display for Brief<'_> {
              `$WORKSPACE` is the project tree, lent writable: the root of every file you can \
              read, and the root every `written` path is relative to. The tree sits on commit \
              `{base}`, the integrated head this slice builds over. Write through this call's \
-             `write_file` tool alone: each call writes one file beneath `$WORKSPACE`, created \
-             or replaced whole, the directories above it created, and a path outside the tree, \
-             under `.emery/` or `.git/`, or naming a projection is refused. Build the slice into \
-             it as the prompt \
-             describes, and change nothing outside it.\n\n\
+             `write_files` tool alone: each call writes one or more files beneath `$WORKSPACE`, \
+             each created or replaced whole, the directories above it created, so lay the files \
+             you have ready together in one call; a call naming a path outside the tree, under \
+             `.emery/` or `.git/`, or naming a projection is refused whole and writes nothing. \
+             Build the slice into it as the prompt describes, and change nothing outside \
+             it.\n\n\
              The slice's entry in the plan:\n\n{plan}\n\n\
              The specification, cut to the slice's requirements:\n\n{spec}\n\n\
              The design, whole:\n\n{design}\n\n",
@@ -355,7 +357,7 @@ impl Display for Brief<'_> {
              (`list_docs` enumerates them); load referenced bodies on demand.\n\n\
              Answer with one JSON object matching the report schema: `covered` lists each of \
              those requirement ids the tree now implements, once each and no other id; \
-             `written` lists each file `write_file` wrote, once each, as a `/`-separated path \
+             `written` lists each file `write_files` wrote, once each, as a `/`-separated path \
              relative to `$WORKSPACE`, and only a file the tree now holds. Leave a requirement \
              out of `covered` rather than claim what the tree does not hold.",
             ids = ids.join(", "),

@@ -106,7 +106,7 @@
 //!   one extraction call. See [`Context`].
 //! - **Lend**: the workspace directory made readable to the model for a seam,
 //!   or handed to it to build into for a build, written through the build
-//!   turn's `write_file` tool; whether it may be written is the
+//!   turn's `write_files` tool; whether it may be written is the
 //!   deployment's grant.
 //! - **Finding**: a validation problem returned to the model for correction.
 //!   The host limits how many correction rounds are available.

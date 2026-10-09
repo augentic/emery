@@ -25,7 +25,7 @@ use sha2::{Digest, Sha256};
 use self::design::TYPE;
 pub use self::design::{Block, Design, Section, SectionKind, citations};
 pub use self::diff::{Changed, DesignDiff, Diff, Entry, PlanDiff, SliceEntry, SpecDiff};
-pub use self::id::{ReqId, SliceId, stem};
+pub use self::id::{ReqId, SliceId, stem, substem};
 use self::plan::{DEPENDS_ON, REQUIREMENTS, TYPES};
 pub use self::plan::{Plan, Slice, Waves, ranks};
 pub use self::spec::{Cited, Loser, Requirement, Scenario, Spec, Status};
