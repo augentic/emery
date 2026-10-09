@@ -118,9 +118,9 @@ The success body carries the revision id, the Markdown projection, and the typed
 ```json
 {
   "revision": "9f8e7d6c…",
-  "body": "---\nemery: 4\nrevision: 9f8e7d6c…\n---\n\n# Specification\n…",
+  "body": "---\nemery: 5\nrevision: 9f8e7d6c…\n---\n\n# Specification\n…",
   "document": {
-    "emery": 4,
+    "emery": 5,
     "preamble": ["…"],
     "requirements": [
       {
@@ -130,7 +130,7 @@ The success body carries the revision id, the Markdown projection, and the typed
         "covered": true,
         "sources": [{ "source": "intent", "claim": "session.timeout", "path": null }, { "source": "code", "claim": "session-expiry", "path": "src/session.ts#L12-L30" }],
         "body": ["Sessions must expire after 30 minutes of inactivity."],
-        "losers": [{ "sources": ["code"], "kind": "behaviour", "claim": "session-expiry", "statement": "…" }],
+        "losers": [{ "sources": ["code"], "kind": "behaviour", "rank": 3, "claim": "session-expiry", "statement": "…" }],
         "scenarios": [{ "name": "Session expires", "given": [], "when": "…", "then": "…", "and": [] }]
       }
     ]

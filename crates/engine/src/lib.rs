@@ -28,6 +28,7 @@
 //!   to the model for correction until the host's limit is reached.
 
 mod adapter;
+mod authority;
 pub mod build;
 mod revision;
 pub mod show;
@@ -38,6 +39,7 @@ pub mod vcs;
 use std::path::{Component, Path, PathBuf};
 
 pub use adapter::{AdapterRef, Axis};
+pub use authority::Rank;
 use emery_adapter::source::Source;
 use emery_adapter::target::Target;
 use omnia_sdk::{BlobStore, Error, Model, Plugins, StateStore, Vcs, bad_request};

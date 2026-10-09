@@ -45,7 +45,7 @@ pub use crate::revision::{
     Waves,
 };
 use crate::vcs::{Repository, WorkingCopy};
-use crate::{preopen_path, store, vcs};
+use crate::{Rank, preopen_path, store, vcs};
 
 /// Generates and commits a specification revision from `input`.
 ///
@@ -162,6 +162,12 @@ pub struct SourceConfig {
     /// resolves.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub digest: Option<Digest>,
+    /// The authority rank the source is reconciled under.
+    ///
+    /// `None` ranks the source by its adapter's kind ([`Rank::from`]): intent
+    /// `1`, documentation `2`, behaviour `3`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub rank: Option<Rank>,
 }
 
 /// A repository a source is read from, at a revision.
@@ -257,6 +263,7 @@ struct Bound<'a> {
     adapter: &'a AdapterRef,
     digest: Option<&'a Digest>,
     repository: Option<&'a SourceRepository>,
+    rank: Option<Rank>,
     input: SourceInput,
 }
 
@@ -280,6 +287,7 @@ impl<'a> Bound<'a> {
                 adapter: &source.adapter,
                 digest: source.digest.as_ref(),
                 repository: source.repository.as_ref(),
+                rank: source.rank,
                 input,
             });
         }
@@ -298,7 +306,8 @@ impl<'a> Bound<'a> {
             .get(adapter)
             .ok_or_else(|| server_error!("adapter `{adapter}` was not loaded"))?;
         let kind = metadata.kind;
-        tracing::info!(%source, adapter = %id, %kind, "extracting");
+        let rank = self.rank.unwrap_or_else(|| Rank::from(kind));
+        tracing::info!(%source, adapter = %id, %kind, %rank, "extracting");
         let evidence = Source::extract(provider, id, &self.input).await?;
 
         let findings = evidence.findings();
@@ -319,6 +328,7 @@ impl<'a> Bound<'a> {
         Ok(Extract {
             source: source.clone(),
             kind,
+            rank,
             evidence,
         })
     }
@@ -328,6 +338,7 @@ impl<'a> Bound<'a> {
 struct Extract {
     source: String,
     kind: SourceKind,
+    rank: Rank,
     evidence: Evidence,
 }
 
