@@ -9,10 +9,10 @@
 //! what some source adapters use:
 //!
 //! - [`SourceAdapter`] is what a source adapter implements: the kind of
-//!   source it reads and its `extract`. [`source_adapter!`] exports a type
+//!   source it reads and its `extract`. [`export_source!`] exports a type
 //!   implementing it as a WebAssembly component, answering the component's
 //!   `metadata` through [`metadata`]. [`target::TargetAdapter`] and
-//!   [`target_adapter!`] do the same for a target adapter, with
+//!   [`export_target!`] do the same for a target adapter, with
 //!   [`target::metadata`] and [`target::build`] behind them.
 //! - [`Context`], [`Seam`], and [`extract`](fn@extract) run extraction over
 //!   the boundaries selected by an adapter, at most [`CONCURRENT`] at a time,
@@ -47,7 +47,7 @@
 //! derives, and the [`serde_json`] and [`tracing`] crates for claims of its
 //! own and events beside this crate's. [`Source`] is among them for a host
 //! program that calls an adapter the way the engine does; an adapter
-//! implements [`SourceAdapter`], exported through [`source_adapter!`], and
+//! implements [`SourceAdapter`], exported through [`export_source!`], and
 //! never [`Source`].
 //!
 //! # Examples
@@ -73,7 +73,7 @@
 //!
 //!     struct Adapter;
 //!
-//!     emery_sdk::source_adapter!(Adapter);
+//!     emery_sdk::export_source!(Adapter);
 //!
 //!     impl SourceAdapter for Adapter {
 //!         const KIND: SourceKind = SourceKind::Intent;
@@ -190,7 +190,7 @@ const VERIFY: &str = "verify.md";
 /// the export interface exists only on WebAssembly targets. Adapters needing
 /// custom guest behaviour may implement `export::Guest` directly.
 #[macro_export]
-macro_rules! source_adapter {
+macro_rules! export_source {
     ($adapter:ty $(,)?) => {
         const _: () = {
             struct Exported;
@@ -228,7 +228,7 @@ macro_rules! source_adapter {
 /// the export interface exists only on WebAssembly targets. Adapters needing
 /// custom guest behaviour may implement `target::export::Guest` directly.
 #[macro_export]
-macro_rules! target_adapter {
+macro_rules! export_target {
     ($adapter:ty $(,)?) => {
         const _: () = {
             struct Exported;
@@ -263,7 +263,7 @@ macro_rules! target_adapter {
 
 /// The host model a turn is put to on WebAssembly.
 ///
-/// [`source_adapter!`] and [`target_adapter!`] bind it into every context
+/// [`export_source!`] and [`export_target!`] bind it into every context
 /// they build; the empty [`Model`] impl delegates each request through
 /// Omnia's WASI interface.
 #[cfg(target_arch = "wasm32")]
@@ -273,7 +273,7 @@ pub struct Provider;
 #[cfg(target_arch = "wasm32")]
 impl Model for Provider {}
 
-/// The `extract` arm of [`source_adapter!`], reached through the macro alone.
+/// The `extract` arm of [`export_source!`], reached through the macro alone.
 #[cfg(target_arch = "wasm32")]
 #[doc(hidden)]
 #[omnia_wasi_otel::instrument(name = "source_adapter_extract")]
@@ -291,7 +291,7 @@ pub async fn call<A: SourceAdapter>(
 
 /// Returns the `metadata` answer for an adapter reading `kind` sources.
 ///
-/// [`source_adapter!`] answers the component's `metadata` with it over the
+/// [`export_source!`] answers the component's `metadata` with it over the
 /// adapter's [`KIND`](SourceAdapter::KIND). The `emery-version` pin is this
 /// SDK's own version, identifying the contract the adapter compiled against.
 /// Build an [`AdapterMetadata`] directly only when the adapter must loosen or
@@ -385,7 +385,7 @@ pub struct Context<'a, P> {
 
 /// A source adapter: the kind of source it reads and how it extracts one.
 ///
-/// Implement it on a unit struct and hand that type to [`source_adapter!`],
+/// Implement it on a unit struct and hand that type to [`export_source!`],
 /// which exports the `source-adapter` world over it.
 pub trait SourceAdapter {
     /// The kind of source the adapter reads, which ranks its evidence against

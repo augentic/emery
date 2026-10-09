@@ -11,7 +11,7 @@
 //! adapter's `verify.md`, the checks it names run through the model's shell,
 //! and the answered verdict held to [`Verdict::findings`]. [`TargetAdapter`]
 //! is what a target adapter implements, and
-//! [`target_adapter!`](crate::target_adapter) exports a type implementing it,
+//! [`export_target!`](crate::export_target) exports a type implementing it,
 //! answering the component's `metadata` through [`metadata`] over the type's
 //! [`MERGE_RULES`](TargetAdapter::MERGE_RULES).
 //!
@@ -41,7 +41,7 @@
 //!
 //!     struct Adapter;
 //!
-//!     emery_sdk::target_adapter!(Adapter);
+//!     emery_sdk::export_target!(Adapter);
 //!
 //!     impl TargetAdapter for Adapter {
 //!         async fn build<P: Model>(ctx: &Context<'_, P>) -> Result<Report, Error> {
@@ -110,7 +110,7 @@ pub struct VerifyContext<'a, P> {
 /// A target adapter: how it builds one slice of the plan into the project tree, and verifies the tree.
 ///
 /// Implement it on a unit struct and hand that type to
-/// [`target_adapter!`](crate::target_adapter), which exports the
+/// [`export_target!`](crate::export_target), which exports the
 /// `target-adapter` world over it.
 pub trait TargetAdapter {
     /// The rules the engine merges every slice into the integrated tree
@@ -144,7 +144,7 @@ pub trait TargetAdapter {
 
 /// Returns the `metadata` answer for a target adapter merging under `merge_rules`.
 ///
-/// [`target_adapter!`](crate::target_adapter) answers the component's
+/// [`export_target!`](crate::export_target) answers the component's
 /// `metadata` with it over the adapter's
 /// [`MERGE_RULES`](TargetAdapter::MERGE_RULES). The `emery-version` pin is
 /// this SDK's own version, identifying the contract the adapter compiled
@@ -281,7 +281,7 @@ pub async fn verify<P: Model>(
     Ok(verdict)
 }
 
-/// The `build` arm of [`target_adapter!`](crate::target_adapter), reached through the macro alone.
+/// The `build` arm of [`export_target!`](crate::export_target), reached through the macro alone.
 #[cfg(target_arch = "wasm32")]
 #[doc(hidden)]
 #[omnia_wasi_otel::instrument(name = "target_adapter_build")]
@@ -298,7 +298,7 @@ pub async fn call<A: TargetAdapter>(
     Ok(A::build(&ctx).await?.into())
 }
 
-/// The `verify` arm of [`target_adapter!`](crate::target_adapter), reached through the macro alone.
+/// The `verify` arm of [`export_target!`](crate::export_target), reached through the macro alone.
 #[cfg(target_arch = "wasm32")]
 #[doc(hidden)]
 #[omnia_wasi_otel::instrument(name = "target_adapter_verify")]

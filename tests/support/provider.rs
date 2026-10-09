@@ -495,6 +495,12 @@ impl<S: Send + Sync + 'static> Vcs for Provider<S> {
         Vcs::labelled(&self.vcs, repo, name)
     }
 
+    fn fetched(
+        &self, repo: &str, remote: &str, name: &str,
+    ) -> impl Future<Output = Result<String, vcs::Error>> + Send {
+        Vcs::fetched(&self.vcs, repo, remote, name)
+    }
+
     fn push(
         &self, repo: &str, remote: &str, label: &str,
     ) -> impl Future<Output = Result<(), vcs::Error>> + Send {

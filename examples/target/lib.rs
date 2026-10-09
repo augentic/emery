@@ -8,7 +8,7 @@
 //! - An embedded build prompt and an embedded verify prompt.
 //! - A merge rule: both slices' lines kept when two write one `index.md`.
 //! - A WebAssembly guest: an `emery_sdk::target::TargetAdapter` exported
-//!   with `emery_sdk::target_adapter!`.
+//!   with `emery_sdk::export_target!`.
 
 use emery_sdk::Doc;
 
@@ -23,7 +23,7 @@ mod guest {
 
     struct Adapter;
 
-    emery_sdk::target_adapter!(Adapter);
+    emery_sdk::export_target!(Adapter);
 
     impl TargetAdapter for Adapter {
         // two slices that list requirements in one index keep both lists

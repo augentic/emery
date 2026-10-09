@@ -6,7 +6,7 @@
 //! - An embedded prompt and its references.
 //! - A survey that selects mining seams.
 //! - A WebAssembly guest: an `emery_sdk::SourceAdapter` exported with
-//!   `emery_sdk::source_adapter!`.
+//!   `emery_sdk::export_source!`.
 
 use emery_sdk::{Doc, Error, Seam, SourceContent, SourceInput, bad_request};
 
@@ -16,7 +16,7 @@ mod guest {
 
     struct Adapter;
 
-    emery_sdk::source_adapter!(Adapter);
+    emery_sdk::export_source!(Adapter);
 
     impl SourceAdapter for Adapter {
         const KIND: SourceKind = SourceKind::Documentation;
