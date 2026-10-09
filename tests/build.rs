@@ -148,12 +148,13 @@ fn integrated(repo: &str, base: &str, id: &str) -> Vec<String> {
 }
 
 // One wave's exchange over `repo`: every slice's working copy cut at `head`,
-// then each sealed, merged, and removed in id order, then the integrated
-// head verified and labelled.
+// then each found where it was cut, sealed, merged, and removed in id order,
+// then the integrated head verified and labelled.
 fn wave(repo: &str, id: &str, head: &str, slices: &[(&str, &str)]) -> Vec<String> {
     let mut calls: Vec<String> =
         slices.iter().map(|(slice, _)| format!("add {repo} {} {head}", worktree(slice))).collect();
     for (slice, name) in slices {
+        calls.push(format!("head {}", worktree(slice)));
         calls.push(format!("commit {} {slice} {name}", worktree(slice)));
         calls.push(format!("merge {INTEGRATION} {slice}-commit {slice} {name}"));
         calls.push(format!("remove {}", worktree(slice)));
@@ -1318,6 +1319,35 @@ async fn build_bad_report() {
     }
     assert_eq!(provider.target.calls().len(), 1);
     assert!(provider.vcs.messages().is_empty(), "no commit for a refused report");
+}
+
+// A working copy that no longer sits on the head it was cut at is a build
+// that sealed or moved commits of its own, through the shell the model has:
+// the slice is refused before anything of it is sealed or merged, both
+// commits named, and its working copy stays for inspection.
+#[tokio::test]
+async fn build_worktree_head_moved() {
+    let (provider, _) = planned();
+    let moved = "feedface0123456789abcdef0123456789abcdef";
+    provider.vcs.heads.script(&worktree("SLICE-001"), Ok(moved.to_owned()));
+
+    let envelope = fail(&provider, &["emery", "build", BUILDER], 3, "server_error").await;
+
+    assert_message(
+        &envelope,
+        &format!(
+            "slice `SLICE-001` (authentication) failed in wave 1: its working copy sits on \
+             `{moved}`, not the `{HEAD}` it was cut at: the build sealed or moved commits of its own"
+        ),
+    );
+    assert!(provider.vcs.messages().is_empty(), "nothing is sealed");
+    assert!(provider.vcs.merged().is_empty(), "nothing is merged");
+    let calls = provider.vcs.calls();
+    assert_eq!(calls.last().cloned(), Some(format!("head {}", worktree("SLICE-001"))), "{calls:?}");
+    assert!(!calls.contains(&format!("remove {}", worktree("SLICE-001"))), "left for inspection");
+    assert_eq!(provider.target.calls().len(), 1, "the run stops at the first");
+    assert!(provider.target.verifies().is_empty(), "a wave that did not integrate is not verified");
+    provider.vcs.assert_exhausted();
 }
 
 // A failure after a wave was verified names what stays merged, and where;
