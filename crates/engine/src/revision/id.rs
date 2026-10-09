@@ -110,3 +110,8 @@ numbered! {
 pub fn stem(id: &str) -> &str {
     id.split_once('.').map_or(id, |(stem, _)| stem)
 }
+
+// The first two segments of a dotted id; an id of fewer is whole.
+pub fn substem(id: &str) -> &str {
+    id.match_indices('.').nth(1).map_or(id, |(end, _)| &id[..end])
+}

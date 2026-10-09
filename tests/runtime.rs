@@ -59,7 +59,8 @@ const EXTRACT_ANSWER: &str = r#"{"claims": [{"kind": "requirement", "id": "greet
     "path": "docs/greeting.md#L3", "statement": "GET /greeting returns the static string 'hello'."}]}"#;
 const SPEC_ANSWER: &str = include_str!("specify/spec-draft.json");
 const DESIGN_ANSWER: &str = include_str!("specify/design-draft.json");
-const WRITE_GREETING: &str = r##"{"path": "build/greeting.md", "content": "# Greeting\n"}"##;
+const WRITE_GREETING: &str =
+    r##"{"files": [{"path": "build/greeting.md", "content": "# Greeting\n"}]}"##;
 const REPORT_ANSWER: &str = r#"{"covered": ["REQ-001"], "written": ["build/greeting.md"]}"#;
 const VERDICT_ANSWER: &str = r#"{"passed": true, "failures": []}"#;
 
@@ -343,11 +344,11 @@ fn specifying() -> ScriptedModel {
 }
 
 // The build script over the one-slice plan: the mock target's build turn,
-// writing the greeting through `write_file`, then its verify turn over the
+// writing the greeting through `write_files`, then its verify turn over the
 // integrated tree.
 fn building() -> ScriptedModel {
     ScriptedModel::answering([REPORT_ANSWER, VERDICT_ANSWER])
-        .calling(0, [("write_file", WRITE_GREETING)])
+        .calling(0, [("write_files", WRITE_GREETING)])
 }
 
 // The greenfield journey through its first build: both mocks stored, the
@@ -396,7 +397,7 @@ async fn specify_stored() {
 }
 
 // A stored target builds the committed plan's one slice through its turn's
-// `write_file` into a working copy of its own cut from the project's sealed
+// `write_files` into a working copy of its own cut from the project's sealed
 // head, verifies the integrated tree through a second turn, and the label
 // `emery/<revision>` holds one merge commit over the base whose message
 // carries the trailers a later run reads; the checkout itself is untouched.

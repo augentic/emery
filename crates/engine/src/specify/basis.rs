@@ -435,6 +435,13 @@ impl<'a> Basis<'a> {
         revision::stem(self.subject)
     }
 
+    /// Returns the sub-stem of the subject: the first two segments of its
+    /// dotted id, the slice floor under a stem past the cap.
+    #[must_use]
+    pub fn substem(&self) -> &'a str {
+        revision::substem(self.subject)
+    }
+
     /// Returns contributors by descending authority and then source order.
     pub fn contributors(&self) -> impl Iterator<Item = &Contributor<'a>> {
         let mut members: Vec<&Contributor<'a>> = self.classes.iter().flatten().collect();

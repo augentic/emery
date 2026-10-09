@@ -55,11 +55,15 @@ fn seed<'a>(root: &Path, files: impl IntoIterator<Item = &'a str>) {
     }
 }
 
-fn write_file(id: &str, path: &str, content: &str) -> ToolCall {
+fn write_files(id: &str, files: &[(&str, &str)]) -> ToolCall {
+    let files: Vec<_> = files
+        .iter()
+        .map(|(path, content)| serde_json::json!({ "path": path, "content": content }))
+        .collect();
     ToolCall {
         id: id.to_owned(),
-        name: "write_file".to_owned(),
-        arguments: serde_json::json!({ "path": path, "content": content }).to_string(),
+        name: "write_files".to_owned(),
+        arguments: serde_json::json!({ "files": files }).to_string(),
     }
 }
 
@@ -92,7 +96,7 @@ async fn request_shape() {
     let request = &seen[0];
     assert_eq!(request.system.as_deref(), Some("BUILD"));
     assert_eq!(request.workspace.as_deref(), Some(root), "the tree is lent");
-    assert_eq!(request.tools, ["list_docs", "read_doc", "write_file"]);
+    assert_eq!(request.tools, ["list_docs", "read_doc", "write_files"]);
     assert!(request.check, "acceptance is the check");
     let SeenFormat::Schema { name, schema } = &request.format else {
         panic!("the report is steered by schema");
@@ -128,15 +132,15 @@ async fn request_shape() {
     );
     assert!(
         user.contains(
-            "Write through this call's `write_file` tool alone: each call writes one file \
-             beneath `$WORKSPACE`, created or replaced whole"
+            "Write through this call's `write_files` tool alone: each call writes one or more \
+             files beneath `$WORKSPACE`, each created or replaced whole"
         ),
         "{user}"
     );
     assert!(user.contains("— `REQ-001`, `REQ-002` — and no other."), "{user}");
     assert!(
         user.contains(
-            "`written` lists each file `write_file` wrote, once each, as a `/`-separated path \
+            "`written` lists each file `write_files` wrote, once each, as a `/`-separated path \
              relative to `$WORKSPACE`, and only a file the tree now holds."
         ),
         "{user}"
@@ -146,62 +150,74 @@ async fn request_shape() {
     model.assert_exhausted();
 }
 
-// Each `write_file` call lands one file beneath the lend, the directories
-// above it created, or is refused by the path rule before anything is
-// written; the report naming what was written is accepted.
+// One `write_files` call lands every file it names beneath the lend, the
+// directories above each created; a call naming one path the rule refuses
+// writes nothing, every refusal named, as a call naming no file or missing a
+// content does; the report naming what was written is accepted.
 #[tokio::test]
 async fn write_tool() {
     let tmp = tempfile::tempdir().expect("tempdir");
     let root = tmp.path().to_str().expect("a UTF-8 scratch root");
-    let model = Scripted::answering([r#"{"covered":["REQ-001"],"written":["src/orders.rs"]}"#])
-        .calling(
-            0,
-            [
-                write_file("1", "./src//orders.rs", "pub struct Order;\n"),
-                write_file("2", "../escape.rs", ""),
-                write_file("3", ".emery/storage/x", ""),
-                write_file("4", "docs/spec.md", ""),
-                ToolCall {
-                    id: "5".to_owned(),
-                    name: "write_file".to_owned(),
-                    arguments: r#"{"path":"src/lib.rs"}"#.to_owned(),
-                },
-            ],
-        );
+    let model = Scripted::answering([
+        r#"{"covered":["REQ-001"],"written":["src/orders.rs","Cargo.toml"]}"#,
+    ])
+    .calling(
+        0,
+        [
+            write_files(
+                "1",
+                &[("./src//orders.rs", "pub struct Order;\n"), ("Cargo.toml", "[package]\n")],
+            ),
+            write_files(
+                "2",
+                &[
+                    ("src/lib.rs", "pub mod orders;\n"),
+                    ("../escape.rs", ""),
+                    (".emery/storage/x", ""),
+                    ("docs/spec.md", ""),
+                ],
+            ),
+            ToolCall {
+                id: "3".to_owned(),
+                name: "write_files".to_owned(),
+                arguments: r#"{"files":[{"path":"src/lib.rs"}]}"#.to_owned(),
+            },
+            write_files("4", &[]),
+        ],
+    );
 
     let report = ask(&model, &slice(), root).await.expect("accepted");
-    assert_eq!(report.written, ["src/orders.rs"]);
+    assert_eq!(report.written, ["src/orders.rs", "Cargo.toml"]);
     assert_eq!(
         fs::read_to_string(tmp.path().join("src/orders.rs")).expect("written"),
         "pub struct Order;\n"
     );
-    assert_eq!(names(tmp.path()), ["src"], "nothing but the one write lands beneath the root");
-    assert_eq!(names(&tmp.path().join("src")), ["orders.rs"]);
+    assert_eq!(fs::read_to_string(tmp.path().join("Cargo.toml")).expect("written"), "[package]\n");
+    assert_eq!(names(tmp.path()), ["Cargo.toml", "src"], "the one accepted call lands alone");
+    assert_eq!(names(&tmp.path().join("src")), ["orders.rs"], "the refused call wrote nothing");
 
     let exchanges = model.exchanges();
-    assert_eq!(exchanges.len(), 6, "five tool calls, then the check");
+    assert_eq!(exchanges.len(), 5, "four tool calls, then the check");
     assert_eq!(
         exchanges[0].outcome.as_deref(),
-        Ok(r#"{"bytes":18,"path":"src/orders.rs"}"#),
-        "the answer spells the path as the tree does"
-    );
-    assert_eq!(exchanges[1].outcome, Err("write_file: `../escape.rs` escapes the root".to_owned()));
-    assert_eq!(
-        exchanges[2].outcome,
-        Err("write_file: `.emery/storage/x` is under the reserved `.emery/`".to_owned())
+        Ok(r#"{"written":[{"bytes":18,"path":"src/orders.rs"},{"bytes":10,"path":"Cargo.toml"}]}"#),
+        "the answer spells each path as the tree does, in call order"
     );
     assert_eq!(
-        exchanges[3].outcome,
-        Err("write_file: `docs/spec.md` names the engine's own `spec.md`".to_owned())
+        exchanges[1].outcome,
+        Err("write_files: nothing written: `../escape.rs` escapes the root; `.emery/storage/x` \
+             is under the reserved `.emery/`; `docs/spec.md` names the engine's own `spec.md`"
+            .to_owned())
     );
-    let malformed = exchanges[4].outcome.as_deref().expect_err("arguments without content");
-    assert!(malformed.starts_with("write_file: invalid arguments"), "{malformed}");
-    assert_eq!(exchanges[5].tool, "check");
-    assert_eq!(exchanges[5].outcome, Ok(String::new()));
+    let malformed = exchanges[2].outcome.as_deref().expect_err("a file without content");
+    assert!(malformed.starts_with("write_files: invalid arguments"), "{malformed}");
+    assert_eq!(exchanges[3].outcome, Err("write_files: `files` names no file".to_owned()));
+    assert_eq!(exchanges[4].tool, "check");
+    assert_eq!(exchanges[4].outcome, Ok(String::new()));
     model.assert_exhausted();
 }
 
-// A `written` path the tree does not hold, and a file `write_file` wrote
+// A `written` path the tree does not hold, and a file `write_files` wrote
 // that `written` leaves out, are both findings; the corrected report is
 // accepted however it spells the path, and the write stands across rounds.
 #[tokio::test]
@@ -212,7 +228,7 @@ async fn written_unheld() {
         r#"{"covered":["REQ-001"],"written":["src/missing.rs"]}"#,
         r#"{"covered":["REQ-001"],"written":["./src/orders.rs"]}"#,
     ])
-    .calling(0, [write_file("1", "src/orders.rs", "pub struct Order;\n")]);
+    .calling(0, [write_files("1", &[("src/orders.rs", "pub struct Order;\n")])]);
 
     let report = ask(&model, &slice(), root).await.expect("corrected");
     assert_eq!(report.written, ["./src/orders.rs"], "the report reads as answered");
@@ -222,7 +238,7 @@ async fn written_unheld() {
     let correction = exchanges[1].outcome.as_ref().expect_err("the first report is refused");
     for finding in [
         "- written `src/missing.rs` names no regular file under the lent tree",
-        "- `write_file` wrote `src/orders.rs` this turn, which `written` leaves out",
+        "- `write_files` wrote `src/orders.rs` this turn, which `written` leaves out",
     ] {
         assert!(correction.contains(finding), "{finding}: {correction}");
     }

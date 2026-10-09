@@ -7,7 +7,8 @@
 //! the first failure among them ends the run; their claims are then
 //! reconciled by authority into requirement bases, from which `spec.md` — in
 //! chunks of at most [`SPEC_CHUNK`] requirements, grouped by stem —
-//! `design.md`, and the `plan.md` slicing are drafted together.
+//! `design.md`, and the `plan.md` slicing — the stem the slice floor, or its
+//! sub-stems past [`SLICE_CAP`] requirements — are drafted together.
 //!
 //! The three documents are committed as one content-addressed revision. An
 //! earlier revision contributes only the returned [`Diff`]; it is never used
@@ -35,6 +36,7 @@ use serde::{Deserialize, Serialize};
 use self::basis::GroupingBrief;
 use self::brief::Brief as _;
 use self::design::DesignBrief;
+pub use self::plan::SLICE_CAP;
 use self::plan::SliceBrief;
 pub use self::spec::SPEC_CHUNK;
 use self::spec::SpecBrief;

@@ -1,9 +1,9 @@
-//! Serves the `write_file` tool a build turn writes the lent tree through.
+//! Serves the `write_files` tool a build turn writes the lent tree through.
 //!
-//! [`Writer`] declares the tool and answers each call by writing one file
-//! beneath the workspace root, held to [`beneath`]. [`Written`] is what it
-//! wrote this turn, which the report gate holds the answered `written` list
-//! to beside the tree itself.
+//! [`Writer`] declares the tool and answers each call by writing the files it
+//! names beneath the workspace root, every path held to [`beneath`] before
+//! any is written. [`Written`] is what it wrote this turn, which the report
+//! gate holds the answered `written` list to beside the tree itself.
 
 use std::collections::BTreeSet;
 use std::future::ready;
@@ -17,7 +17,7 @@ use schemars::JsonSchema;
 use serde::Deserialize;
 use serde_json::json;
 
-const WRITE_FILE: &str = "write_file";
+const WRITE_FILES: &str = "write_files";
 
 // The write tool of one build turn: the root it writes beneath, the slice
 // its events name, and the files it has written.
@@ -38,11 +38,12 @@ impl Writer {
 
     #[must_use]
     pub(super) fn tool() -> Tool {
-        Tool::Function(Function::of::<WriteFile>(
-            WRITE_FILE,
-            "Write one file beneath `$WORKSPACE`, created or replaced whole, the directories \
-             above it created. The path is `/`-separated and relative to `$WORKSPACE`; one \
-             outside it, under `.emery/` or `.git/`, or naming a projection, is refused.",
+        Tool::Function(Function::of::<WriteFiles>(
+            WRITE_FILES,
+            "Write one or more files beneath `$WORKSPACE`, each created or replaced whole, the \
+             directories above it created. Each path is `/`-separated and relative to \
+             `$WORKSPACE`; a call naming a path outside it, under `.emery/` or `.git/`, or \
+             naming a projection, is refused whole and writes nothing.",
         ))
     }
 
@@ -51,44 +52,79 @@ impl Writer {
         self.written.clone()
     }
 
-    // Answers `write_file` here and hands every other call to `rest`.
+    // Answers `write_files` here and hands every other call to `rest`.
     pub(super) fn serve(self, mut rest: Tools) -> Tools {
         Box::new(move |call: ToolCall| -> ToolFuture {
-            if call.name != WRITE_FILE {
+            if call.name != WRITE_FILES {
                 return rest(call);
             }
             let outcome = self.write(&call);
+            let files = outcome
+                .as_ref()
+                .ok()
+                .map(|wrote| wrote.iter().map(|wrote| wrote.file.as_str()).collect::<Vec<_>>());
             tracing::debug!(
                 slice = %self.slice,
-                tool = WRITE_FILE,
-                path = outcome.as_ref().ok().map(|wrote| wrote.file.as_str()),
-                bytes = outcome.as_ref().ok().map(|wrote| wrote.bytes),
+                tool = WRITE_FILES,
+                files = ?files,
+                bytes = outcome
+                    .as_ref()
+                    .ok()
+                    .map(|wrote| wrote.iter().map(|wrote| wrote.bytes).sum::<usize>()),
                 error = outcome.as_ref().err().map(String::as_str),
                 "responded"
             );
-            let response = outcome
-                .map(|wrote| json!({ "path": wrote.file, "bytes": wrote.bytes }).to_string());
+            let response = outcome.map(|wrote| {
+                let written = wrote
+                    .iter()
+                    .map(|wrote| json!({ "path": wrote.file, "bytes": wrote.bytes }))
+                    .collect::<Vec<_>>();
+                json!({ "written": written }).to_string()
+            });
             Box::pin(ready(response))
         })
     }
 
-    fn write(&self, call: &ToolCall) -> Result<Wrote, String> {
-        let WriteFile { path, content } =
-            call.arguments().map_err(|err| format!("{WRITE_FILE}: {err}"))?;
-        let file = beneath(&path).map_err(|bad| format!("{WRITE_FILE}: `{path}` {bad}"))?;
-        let full = self.root.join(&file);
-        if let Some(parent) = full.parent() {
-            std::fs::create_dir_all(parent).map_err(|err| {
-                format!("{WRITE_FILE}: creating the directories above `{file}`: {err}")
-            })?;
+    // Every path is held to the root before the first write, so a call the
+    // rule refuses anywhere leaves the tree as it was.
+    fn write(&self, call: &ToolCall) -> Result<Vec<Wrote>, String> {
+        let WriteFiles { files } =
+            call.arguments().map_err(|err| format!("{WRITE_FILES}: {err}"))?;
+        if files.is_empty() {
+            return Err(format!("{WRITE_FILES}: `files` names no file"));
         }
-        std::fs::write(&full, &content)
-            .map_err(|err| format!("{WRITE_FILE}: writing `{file}`: {err}"))?;
-        self.written.record(file.clone());
-        Ok(Wrote {
-            file,
-            bytes: content.len(),
-        })
+
+        // the paths held to the rule
+        let mut accepted = Vec::with_capacity(files.len());
+        let mut refused = Vec::new();
+        for WriteFile { path, content } in files {
+            match beneath(&path) {
+                Ok(file) => accepted.push((file, content)),
+                Err(bad) => refused.push(format!("`{path}` {bad}")),
+            }
+        }
+        if !refused.is_empty() {
+            return Err(format!("{WRITE_FILES}: nothing written: {}", refused.join("; ")));
+        }
+
+        // the files laid in order
+        let mut wrote = Vec::with_capacity(accepted.len());
+        for (file, content) in accepted {
+            let full = self.root.join(&file);
+            if let Some(parent) = full.parent() {
+                std::fs::create_dir_all(parent).map_err(|err| {
+                    format!("{WRITE_FILES}: creating the directories above `{file}`: {err}")
+                })?;
+            }
+            std::fs::write(&full, &content)
+                .map_err(|err| format!("{WRITE_FILES}: writing `{file}`: {err}"))?;
+            self.written.record(file.clone());
+            wrote.push(Wrote {
+                file,
+                bytes: content.len(),
+            });
+        }
+        Ok(wrote)
     }
 }
 
@@ -97,7 +133,7 @@ struct Wrote {
     bytes: usize,
 }
 
-// The files `write_file` wrote this turn, shared between the tool and the
+// The files `write_files` wrote this turn, shared between the tool and the
 // gate: the tool handler and the check are both the question's to call, so
 // the set is behind a handle each can hold.
 #[derive(Clone, Debug, Default)]
@@ -126,7 +162,7 @@ impl Written {
 
         // the files written and left out
         findings.extend(self.lock().difference(&listed).map(|file| {
-            format!("- `{WRITE_FILE}` wrote `{file}` this turn, which `written` leaves out")
+            format!("- `{WRITE_FILES}` wrote `{file}` this turn, which `written` leaves out")
         }));
 
         findings
@@ -137,8 +173,16 @@ impl Written {
     }
 }
 
-/// The file `write_file` writes.
+/// The files one `write_files` call writes.
 // The `///` lines are the `JsonSchema` descriptions the model reads.
+#[derive(Debug, Deserialize, JsonSchema)]
+struct WriteFiles {
+    /// The files to write, in order; a later entry naming an earlier one's
+    /// path replaces it.
+    files: Vec<WriteFile>,
+}
+
+/// One file of a `write_files` call.
 #[derive(Debug, Deserialize, JsonSchema)]
 struct WriteFile {
     /// The `/`-separated path of the file, relative to `$WORKSPACE`.

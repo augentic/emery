@@ -8,8 +8,9 @@
 //! whose dependencies are merged is built at once, each in a working copy of
 //! its own cut at the wave's head, with its plan entry, its cut of the
 //! specification, and the whole design. What each wrote is sealed as its
-//! commit and merged into the integration working copy in id order under the
-//! adapter's merge rules. The adapter verifies the integrated tree, the wave
+//! commit, once its copy is found still sitting where it was cut, and merged
+//! into the integration working copy in id order under the adapter's merge
+//! rules. The adapter verifies the integrated tree, the wave
 //! is labelled, and the next wave is cut from it. The engine writes no state
 //! of its own: the labelled history is the output, pushed when the target
 //! names a remote.
@@ -79,7 +80,8 @@ pub const ATTEMPTS: usize = 2;
 ///   - a slice the adapter refuses, or answers no acceptable report for.
 /// - Returns [`Error::ServerError`] when a report breaks the report gate, a
 ///   verdict breaks [`Verdict::findings`](emery_adapter::target::Verdict::findings),
-///   the slices left to build wait on one another, or storage or version
+///   a slice's working copy no longer sits on the head it was cut at, the
+///   slices left to build wait on one another, or storage or version
 ///   control fails.
 /// - Returns [`Error::BadGateway`] when the adapter, its acquisition, the
 ///   model, or the repository's remote fails upstream.
@@ -438,11 +440,23 @@ impl Run<'_> {
 
     // Seals what the slice wrote and merges it into the integrated head;
     // `true` when it merged, `false` when a conflict leaves it for the next
-    // wave. The slice's working copy is removed either way.
+    // wave. The slice's working copy is removed either way, and left for
+    // inspection when the slice fails.
     async fn integrate<P: Vcs>(
         &self, provider: &P, progress: &mut Progress, built: Built<'_>, wave: usize,
     ) -> Result<bool, Error> {
         let slice = built.slice;
+
+        // the copy still sits where it was cut
+        let head = built.worktree.head(provider).await?;
+        if head != progress.head {
+            return Err(server_error!(
+                "its working copy sits on `{head}`, not the `{}` it was cut at: the build sealed \
+                 or moved commits of its own",
+                progress.head
+            ));
+        }
+
         let message = Message {
             slice: slice.id,
             name: slice.name.clone(),

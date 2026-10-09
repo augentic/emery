@@ -35,7 +35,7 @@ async fn ask(model: &Scripted, workspace: &str) -> Result<Verdict, Error> {
 }
 
 // The turn carries the verify prompt as its system, lends the integrated
-// tree, offers the reference tools and no `write_file`, and is steered by
+// tree, offers the reference tools and no `write_files`, and is steered by
 // the verdict schema.
 #[tokio::test]
 async fn request_shape() {

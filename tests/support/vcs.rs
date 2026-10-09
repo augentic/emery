@@ -45,7 +45,8 @@ impl<T> Queue<T> {
 /// Unscripted answers:
 ///
 /// - `pending` holds nothing;
-/// - `head` is [`HEAD`];
+/// - `head` is the revision `add` cut the working copy at, until a commit or
+///   a merge lands there; [`HEAD`] otherwise;
 /// - `resolve` is `<revision>-commit`;
 /// - `labelled` is `NotFound`: a fresh build;
 /// - `descends` holds;
@@ -90,6 +91,8 @@ pub struct VcsScript {
     pub messages: Arc<Mutex<Vec<String>>>,
     /// Every merge, in order.
     pub merged: Arc<Mutex<Vec<Merge>>>,
+    // the revision each working copy was cut at, while nothing has landed there
+    cut: Arc<Mutex<BTreeMap<String, String>>>,
 }
 
 impl VcsScript {
@@ -135,6 +138,10 @@ impl VcsScript {
     fn record(&self, call: String) {
         self.calls.lock().expect("calls").push(call);
     }
+
+    fn forget(&self, at: &str) {
+        self.cut.lock().expect("cut").remove(at);
+    }
 }
 
 impl Vcs for VcsScript {
@@ -156,7 +163,10 @@ impl Vcs for VcsScript {
 
     fn head(&self, at: &str) -> impl Future<Output = Result<String, Error>> + Send {
         self.record(format!("head {at}"));
-        let answer = self.heads.take(at).unwrap_or_else(|| Ok(HEAD.to_owned()));
+        let answer = self.heads.take(at).unwrap_or_else(|| {
+            let cut = self.cut.lock().expect("cut").get(at).cloned();
+            Ok(cut.unwrap_or_else(|| HEAD.to_owned()))
+        });
         async move { answer }
     }
 
@@ -170,6 +180,9 @@ impl Vcs for VcsScript {
             let word = first.split_whitespace().next().unwrap_or_default();
             Ok(Some(format!("{word}-commit")))
         });
+        if matches!(answer, Ok(Some(_))) {
+            self.forget(at);
+        }
         async move { answer }
     }
 
@@ -186,6 +199,9 @@ impl Vcs for VcsScript {
                 conflicts: Vec::new(),
             })
         });
+        if matches!(&answer, Ok(merged) if merged.commit.is_some()) {
+            self.forget(at);
+        }
         async move { answer }
     }
 
@@ -207,12 +223,16 @@ impl Vcs for VcsScript {
     ) -> impl Future<Output = Result<(), Error>> + Send {
         self.record(format!("add {repo} {at} {revision}"));
         let answer = self.adds.take(at).unwrap_or(Ok(()));
+        if answer.is_ok() {
+            self.cut.lock().expect("cut").insert(at.to_owned(), revision.to_owned());
+        }
         async move { answer }
     }
 
     fn remove(&self, at: &str) -> impl Future<Output = Result<(), Error>> + Send {
         self.record(format!("remove {at}"));
         let answer = self.removes.take(at).unwrap_or(Ok(()));
+        self.forget(at);
         async move { answer }
     }
 
