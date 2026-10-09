@@ -62,8 +62,8 @@ pub fn build(output: &BuildOutput, w: &mut dyn fmt::Write) -> fmt::Result {
         let ids: Vec<String> = output.resumed.iter().map(ToString::to_string).collect();
         writeln!(w, "  resumed: {}", ids.join(", "))?;
     }
-    // a wave is verified when it merged something, so the heads pair with the
-    // waves the slices record, in order
+    // a wave is verified when it integrated any slice, so the heads pair with
+    // the waves the slices record, in order
     let mut numbered: Vec<usize> = output.slices.iter().map(|slice| slice.wave).collect();
     numbered.dedup();
     for (head, wave) in output.verified.iter().zip(numbered) {

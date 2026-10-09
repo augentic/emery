@@ -423,6 +423,12 @@ impl<S: Send + Sync + 'static> Vcs for Provider<S> {
         Vcs::resolve(&self.vcs, repo, revision)
     }
 
+    fn descends(
+        &self, repo: &str, ancestor: &str, descendant: &str,
+    ) -> impl Future<Output = Result<bool, vcs::Error>> + Send {
+        Vcs::descends(&self.vcs, repo, ancestor, descendant)
+    }
+
     fn head(&self, at: &str) -> impl Future<Output = Result<String, vcs::Error>> + Send {
         Vcs::head(&self.vcs, at)
     }
@@ -481,6 +487,12 @@ impl<S: Send + Sync + 'static> Vcs for Provider<S> {
         &self, repo: &str, name: &str, revision: &str,
     ) -> impl Future<Output = Result<(), vcs::Error>> + Send {
         Vcs::label(&self.vcs, repo, name, revision)
+    }
+
+    fn labelled(
+        &self, repo: &str, name: &str,
+    ) -> impl Future<Output = Result<String, vcs::Error>> + Send {
+        Vcs::labelled(&self.vcs, repo, name)
     }
 
     fn push(

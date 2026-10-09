@@ -246,10 +246,15 @@ impl Repo {
 
     /// What `label` already holds over `base` for `revision`: the labelled head and the slices merged beneath it.
     ///
-    /// The slices are read from the [`Message`]s a build sealed along the
+    /// The label is read back as a label alone, never a tag or a remote's
+    /// branch of that spelling, and only where it descends from `base`. The
+    /// slices are read from the [`Message`]s a build sealed along the
     /// label's first-parent chain; a commit a build did not write, or one
-    /// of another revision, is passed over. `None` means the repository has
-    /// no such label, so a build starts from `base`.
+    /// of another revision, is passed over, so a label that descends from
+    /// `base` is resumed from wherever it stands, with no slice beneath it
+    /// when the chain names none. `None` means the repository has no such
+    /// label, or the label does not descend from `base`, so a build starts
+    /// from `base`.
     ///
     /// # Errors
     ///
@@ -260,19 +265,39 @@ impl Repo {
         &self, vcs: &V, label: &str, base: &str, revision: &str,
     ) -> Result<Option<(String, BTreeSet<SliceId>)>, Error> {
         let repo = self.path();
-        let head = match vcs.resolve(&repo, label).await {
+        let head = match vcs.labelled(&repo, label).await {
             Ok(head) => head,
             Err(vcs::Error::NotFound(_)) => return Ok(None),
             Err(error) => return Err(self.subject().refusal(error)),
         };
+        let descends = vcs
+            .descends(&repo, base, &head)
+            .await
+            .map_err(|error| self.subject().refusal(error))?;
+        if !descends {
+            tracing::warn!(
+                label,
+                base,
+                head,
+                "the label does not descend from the base; building from the base"
+            );
+            return Ok(None);
+        }
         let entries =
             vcs.log(&repo, &head, base).await.map_err(|error| self.subject().refusal(error))?;
-        let merged = entries
+        let merged: BTreeSet<SliceId> = entries
             .iter()
             .filter_map(|entry| Message::parse(&entry.message))
             .filter(|message| message.revision == revision)
             .map(|message| message.slice)
             .collect();
+        if merged.is_empty() {
+            tracing::info!(
+                label,
+                head,
+                "the label holds no slice of this revision; every slice builds from it"
+            );
+        }
         Ok(Some((head, merged)))
     }
 
@@ -291,13 +316,15 @@ impl Repo {
         Ok(())
     }
 
-    /// Sends `label` and the commits it reaches to `remote`.
+    /// Sends `label` and the commits it reaches to `remote`; nothing is forced.
     ///
     /// # Errors
     ///
     /// Returns [`Error::NotFound`] with code `revision-not-found` when the
-    /// repository has no such remote, [`Error::BadGateway`] when it cannot
-    /// be reached, and [`Error::ServerError`] otherwise.
+    /// repository has no such remote, [`Error::BadRequest`] with code
+    /// `label-diverged` when the remote's label holds commits this one does
+    /// not, [`Error::BadGateway`] when the remote cannot be reached, and
+    /// [`Error::ServerError`] otherwise.
     pub async fn push<V: Vcs>(&self, vcs: &V, label: &str, remote: &str) -> Result<(), Error> {
         vcs.push(&self.path(), remote, label)
             .await
@@ -476,6 +503,12 @@ impl Subject<'_> {
                 description: format!("{self} holds pending changes: {}", paths.join(", ")),
             },
             vcs::Error::Access(detail) => bad_gateway!("{self}: {detail}"),
+            vcs::Error::Diverged(label) => Error::BadRequest {
+                code: "label-diverged".into(),
+                description: format!(
+                    "{self}: the remote's `{label}` holds commits this build does not"
+                ),
+            },
             vcs::Error::Exists(what) => server_error!("{self}: `{what}` already exists"),
             vcs::Error::Other(detail) => server_error!("{self}: {detail}"),
         }

@@ -15,9 +15,6 @@ use omnia_sdk::vcs::{Change, CloneOptions, Entry, Error, Merged, Rule};
 /// The commit every unscripted `head` answers.
 pub const HEAD: &str = "9f8e7d6c5b4a39281706f5e4d3c2b1a0f9e8d7c6";
 
-// The labels a build sets and resumes from.
-const LABELS: &str = "emery/";
-
 type Queued<T> = BTreeMap<String, VecDeque<Result<T, Error>>>;
 
 /// One merge as the script saw it: the message whole and the policy it rode.
@@ -49,8 +46,9 @@ impl<T> Queue<T> {
 ///
 /// - `pending` holds nothing;
 /// - `head` is [`HEAD`];
-/// - `resolve` is `<revision>-commit`, except an `emery/` label, which is
-///   `NotFound`: a fresh build;
+/// - `resolve` is `<revision>-commit`;
+/// - `labelled` is `NotFound`: a fresh build;
+/// - `descends` holds;
 /// - `log` holds nothing;
 /// - `commit` seals `<first word of the message>-commit`;
 /// - `merge` merges as `m:<first word of the message>`;
@@ -63,6 +61,10 @@ pub struct VcsScript {
     pub heads: Queue<String>,
     /// `resolve` answers by repository.
     pub resolves: Queue<String>,
+    /// `labelled` answers by repository.
+    pub labelleds: Queue<String>,
+    /// `descends` answers by repository.
+    pub descends: Queue<bool>,
     /// `log` answers by repository.
     pub logs: Queue<Vec<Entry>>,
     /// `commit` answers by working copy.
@@ -112,6 +114,8 @@ impl VcsScript {
             ("pending", self.pending.drained()),
             ("head", self.heads.drained()),
             ("resolve", self.resolves.drained()),
+            ("labelled", self.labelleds.drained()),
+            ("descends", self.descends.drained()),
             ("log", self.logs.drained()),
             ("commit", self.commits.drained()),
             ("merge", self.merges.drained()),
@@ -138,13 +142,15 @@ impl Vcs for VcsScript {
         &self, repo: &str, revision: &str,
     ) -> impl Future<Output = Result<String, Error>> + Send {
         self.record(format!("resolve {repo} {revision}"));
-        let answer = self.resolves.take(repo).unwrap_or_else(|| {
-            if revision.starts_with(LABELS) {
-                Err(Error::NotFound(revision.to_owned()))
-            } else {
-                Ok(format!("{revision}-commit"))
-            }
-        });
+        let answer = self.resolves.take(repo).unwrap_or_else(|| Ok(format!("{revision}-commit")));
+        async move { answer }
+    }
+
+    fn descends(
+        &self, repo: &str, ancestor: &str, descendant: &str,
+    ) -> impl Future<Output = Result<bool, Error>> + Send {
+        self.record(format!("descends {repo} {ancestor} {descendant}"));
+        let answer = self.descends.take(repo).unwrap_or(Ok(true));
         async move { answer }
     }
 
@@ -236,6 +242,15 @@ impl Vcs for VcsScript {
     ) -> impl Future<Output = Result<(), Error>> + Send {
         self.record(format!("label {repo} {name} {revision}"));
         let answer = self.labels.take(repo).unwrap_or(Ok(()));
+        async move { answer }
+    }
+
+    fn labelled(
+        &self, repo: &str, name: &str,
+    ) -> impl Future<Output = Result<String, Error>> + Send {
+        self.record(format!("labelled {repo} {name}"));
+        let answer =
+            self.labelleds.take(repo).unwrap_or_else(|| Err(Error::NotFound(name.to_owned())));
         async move { answer }
     }
 

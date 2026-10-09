@@ -140,7 +140,7 @@ fn dispatched(provider: &Provider) -> Vec<(String, String, String)> {
 // label looked for, the integration working copy cut, one slice per wave.
 fn integrated(repo: &str, base: &str, id: &str) -> Vec<String> {
     let mut calls =
-        vec![format!("resolve {repo} emery/{id}"), format!("add {repo} {INTEGRATION} {base}")];
+        vec![format!("labelled {repo} emery/{id}"), format!("add {repo} {INTEGRATION} {base}")];
     calls.extend(wave(repo, id, base, &[AUTHENTICATION]));
     calls.extend(wave(repo, id, HEAD, &[ORDERS]));
     calls.push(format!("remove {INTEGRATION}"));
@@ -295,7 +295,7 @@ async fn build_waves() {
     let mut expected = vec![
         "pending .".to_owned(),
         "head .".to_owned(),
-        format!("resolve . emery/{id}"),
+        format!("labelled . emery/{id}"),
         format!("add . {INTEGRATION} {BASE}"),
     ];
     expected.extend(wave(".", &id, BASE, &[AUTHENTICATION, WIDE_ORDERS]));
@@ -352,7 +352,7 @@ async fn build_jobs_one() {
     let mut expected = vec![
         "pending .".to_owned(),
         "head .".to_owned(),
-        format!("resolve . emery/{id}"),
+        format!("labelled . emery/{id}"),
         format!("add . {INTEGRATION} {BASE}"),
     ];
     expected.extend(wave(".", &id, BASE, &[AUTHENTICATION, WIDE_ORDERS]));
@@ -429,7 +429,7 @@ async fn build_conflict_rebuilt() {
     let mut expected = vec![
         "pending .".to_owned(),
         "head .".to_owned(),
-        format!("resolve . emery/{id}"),
+        format!("labelled . emery/{id}"),
         format!("add . {INTEGRATION} {BASE}"),
     ];
     expected.extend(wave(".", &id, BASE, &[AUTHENTICATION, WIDE_ORDERS]));
@@ -631,14 +631,14 @@ async fn build_bad_verdict() {
     assert_message(&envelope, ": the model timed out");
 }
 
-// A label the repository holds for the revision is resumed: the slices its
-// history records are not built again, and the rest build over the labelled
-// head. A commit a build did not seal, or one sealed for another revision,
-// records nothing.
+// A label the repository holds for the revision is resumed once it is read
+// as a label and descends from the base: the slices its history records are
+// not built again, and the rest build over the labelled head. A commit a
+// build did not seal, or one sealed for another revision, records nothing.
 #[tokio::test]
 async fn build_resumed() {
     let (provider, id) = wide();
-    provider.vcs.resolves.script(".", Ok(LABELLED.to_owned()));
+    provider.vcs.labelleds.script(".", Ok(LABELLED.to_owned()));
     provider.vcs.logs.script(
         ".",
         Ok(vec![
@@ -660,7 +660,8 @@ async fn build_resumed() {
     let mut expected = vec![
         "pending .".to_owned(),
         "head .".to_owned(),
-        format!("resolve . emery/{id}"),
+        format!("labelled . emery/{id}"),
+        format!("descends . {HEAD} {LABELLED}"),
         format!("log . {LABELLED} {HEAD}"),
         format!("add . {INTEGRATION} {LABELLED}"),
     ];
@@ -674,7 +675,7 @@ async fn build_resumed() {
     assert_eq!(envelope["slices"][0]["wave"], 1, "{envelope}");
     assert_eq!(envelope["head"], HEAD, "{envelope}");
 
-    provider.vcs.resolves.script(".", Ok(LABELLED.to_owned()));
+    provider.vcs.labelleds.script(".", Ok(LABELLED.to_owned()));
     provider.vcs.logs.script(
         ".",
         Ok(vec![
@@ -704,7 +705,7 @@ async fn build_resumed() {
 #[tokio::test]
 async fn build_resumed_complete() {
     let (provider, id) = planned();
-    provider.vcs.resolves.script(".", Ok(LABELLED.to_owned()));
+    provider.vcs.labelleds.script(".", Ok(LABELLED.to_owned()));
     provider.vcs.logs.script(
         ".",
         Ok(vec![
@@ -733,12 +734,93 @@ async fn build_resumed_complete() {
         [
             "pending .".to_owned(),
             "head .".to_owned(),
-            format!("resolve . emery/{id}"),
+            format!("labelled . emery/{id}"),
+            format!("descends . {HEAD} {LABELLED}"),
             format!("log . {LABELLED} {HEAD}"),
             format!("add . {INTEGRATION} {LABELLED}"),
             format!("remove {INTEGRATION}"),
         ]
     );
+    provider.vcs.assert_exhausted();
+}
+
+// A label that does not descend from the base is not this base's history:
+// its chain is never read, and the build starts fresh from the base, every
+// slice built and the label moved onto the new head.
+#[tokio::test]
+async fn build_resumed_off_base() {
+    let (provider, id) = planned();
+    provider.vcs.labelleds.script(".", Ok(LABELLED.to_owned()));
+    provider.vcs.descends.script(".", Ok(false));
+
+    let resp = cli_ok(&provider, &["emery", "--format", "json", "build", BUILDER]).await;
+
+    let envelope: Value = serde_json::from_slice(&resp.stdout).expect("one JSON envelope");
+    assert!(envelope.get("resumed").is_none_or(|resumed| resumed == &json!([])), "{envelope}");
+    assert_eq!(envelope["base"], HEAD, "{envelope}");
+    assert_eq!(envelope["slices"].as_array().map(Vec::len), Some(2), "{envelope}");
+    assert_eq!(
+        dispatched(&provider),
+        [
+            ("SLICE-001".to_owned(), HEAD.to_owned(), worktree("SLICE-001")),
+            ("SLICE-002".to_owned(), HEAD.to_owned(), worktree("SLICE-002")),
+        ],
+        "every slice builds, the first over the base"
+    );
+    let mut expected = vec![
+        "pending .".to_owned(),
+        "head .".to_owned(),
+        format!("labelled . emery/{id}"),
+        format!("descends . {HEAD} {LABELLED}"),
+        format!("add . {INTEGRATION} {HEAD}"),
+    ];
+    expected.extend(wave(".", &id, HEAD, &[AUTHENTICATION]));
+    expected.extend(wave(".", &id, HEAD, &[ORDERS]));
+    expected.push(format!("remove {INTEGRATION}"));
+    assert_eq!(provider.vcs.calls(), expected, "no log over a label off the base");
+    provider.vcs.assert_exhausted();
+}
+
+// A label over the base whose chain records no slice of this revision is
+// still where the build resumes from: every slice builds over the labelled
+// head, and nothing is reported resumed.
+#[tokio::test]
+async fn build_resumed_empty() {
+    let (provider, id) = planned();
+    provider.vcs.labelleds.script(".", Ok(LABELLED.to_owned()));
+    provider.vcs.logs.script(
+        ".",
+        Ok(vec![
+            entry("c0ffee", "Merge branch 'feature'"),
+            entry(
+                "m:SLICE-001",
+                &message("other-revision", AUTHENTICATION, "REQ-001", "REQ-001", HEAD, 1),
+            ),
+        ]),
+    );
+
+    let resp = cli_ok(&provider, &["emery", "--format", "json", "build", BUILDER]).await;
+
+    let envelope: Value = serde_json::from_slice(&resp.stdout).expect("one JSON envelope");
+    assert!(envelope.get("resumed").is_none_or(|resumed| resumed == &json!([])), "{envelope}");
+    assert_eq!(envelope["slices"].as_array().map(Vec::len), Some(2), "{envelope}");
+    assert_eq!(
+        dispatched(&provider)[0],
+        ("SLICE-001".to_owned(), LABELLED.to_owned(), worktree("SLICE-001")),
+        "the first wave builds over the labelled head"
+    );
+    let mut expected = vec![
+        "pending .".to_owned(),
+        "head .".to_owned(),
+        format!("labelled . emery/{id}"),
+        format!("descends . {HEAD} {LABELLED}"),
+        format!("log . {LABELLED} {HEAD}"),
+        format!("add . {INTEGRATION} {LABELLED}"),
+    ];
+    expected.extend(wave(".", &id, LABELLED, &[AUTHENTICATION]));
+    expected.extend(wave(".", &id, HEAD, &[ORDERS]));
+    expected.push(format!("remove {INTEGRATION}"));
+    assert_eq!(provider.vcs.calls(), expected);
     provider.vcs.assert_exhausted();
 }
 
@@ -870,8 +952,44 @@ async fn build_remote_greenfield() {
     provider.vcs.pushes.script(".", Err(Error::NotFound("origin".to_owned())));
     let envelope =
         fail(&provider, &["emery", "build", "--config", &config], 2, "revision-not-found").await;
+    assert_message(&envelope, &format!("pushing `emery/{id}` to `origin` failed"));
     assert_message(&envelope, "the project repository has no `origin`");
     assert!(envelope["hint"].as_str().is_some_and(|hint| hint.contains("`remote`")), "{envelope}");
+}
+
+// A push the remote's label has moved past is refused, never forced: the
+// build stays labelled where its last wave was verified, every slice
+// merged, and the operator is told where the label stands and what to do.
+#[tokio::test]
+async fn build_push_diverged() {
+    let scratch = Scratch::new();
+    let config =
+        scratch.config(&format!("[target]\nadapter = \"{BUILDER}\"\nremote = \"origin\"\n"));
+    let (provider, id) = planned();
+    let label = format!("emery/{id}");
+    provider.vcs.pushes.script(".", Err(Error::Diverged(label.clone())));
+
+    let envelope =
+        fail(&provider, &["emery", "build", "--config", &config], 1, "label-diverged").await;
+
+    assert_message(
+        &envelope,
+        &format!(
+            "pushing `{label}` to `origin` failed; `{label}` stays at `{HEAD}` and nothing was \
+             forced: the project repository: the remote's `{label}` holds commits this build does \
+             not"
+        ),
+    );
+    assert!(envelope["hint"].as_str().is_some_and(|hint| hint.contains("--delete")), "{envelope}");
+    let calls = provider.vcs.calls();
+    assert_eq!(
+        calls[calls.len() - 2..],
+        [format!("label . {label} {HEAD}"), format!("push . origin {label}")],
+        "the label stands, set before the push, and the working copy stays"
+    );
+    assert_eq!(calls.iter().filter(|call| call.starts_with("push ")).count(), 1, "{calls:?}");
+    assert_eq!(provider.target.verifies().len(), 2, "every wave was verified before the push");
+    provider.vcs.assert_exhausted();
 }
 
 // A slice that changed nothing seals no commit and merges nothing, and the

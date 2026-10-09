@@ -183,7 +183,9 @@ pub async fn build<P: Target + StateStore + BlobStore + Plugins + Vcs>(
 
     // the label stands at the last verified head; sent on when the target names where
     if let Some(remote) = &input.remote {
-        repo.push(provider, &label, remote).await?;
+        repo.push(provider, &label, remote)
+            .await
+            .map_err(|error| at_push(error, &label, progress.labelled.as_deref(), remote))?;
     }
     integration.remove(provider).await?;
 
@@ -591,11 +593,28 @@ fn at_wave(
         [one] => format!("; {one} merged in it stays committed in `{INTEGRATION}`"),
         many => format!("; {} merged in it stay committed in `{INTEGRATION}`", many.join(", ")),
     };
-    let standing = labelled.map_or_else(
+    let standing = standing(label, labelled);
+    describe(error, |description| format!("wave {wave} failed{merged}; {standing}: {description}"))
+}
+
+// The push's failure keeps its class and code; the description gains the
+// remote and where the label stands, since every slice is merged and
+// labelled by then and the next build resumes from it.
+fn at_push(error: Error, label: &str, labelled: Option<&str>, remote: &str) -> Error {
+    let standing = standing(label, labelled);
+    describe(error, |description| {
+        format!(
+            "pushing `{label}` to `{remote}` failed; {standing} and nothing was forced: \
+             {description}"
+        )
+    })
+}
+
+fn standing(label: &str, labelled: Option<&str>) -> String {
+    labelled.map_or_else(
         || format!("`{label}` is not set"),
         |head| format!("`{label}` stays at `{head}`"),
-    );
-    describe(error, |description| format!("wave {wave} failed{merged}; {standing}: {description}"))
+    )
 }
 
 fn describe(error: Error, describe: impl FnOnce(String) -> String) -> Error {
