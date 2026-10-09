@@ -10,8 +10,8 @@ categories = ["development-tools"]
 keywords = ["emery", "adapter", "sdk"]
 readme = "README.md"
 
-# A guest crate: `export`, `Provider`, and the worlds `source_adapter!` and
-# `target_adapter!` export exist on wasm32 alone, so that is the target the
+# A guest crate: `export`, `Provider`, and the worlds `export_source!` and
+# `export_target!` export exist on wasm32 alone, so that is the target the
 # documentation opens on.
 [package.metadata.docs.rs]
 default-target = "wasm32-wasip2"
