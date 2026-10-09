@@ -129,13 +129,39 @@ interface types {
     kind: source-kind,
   }
 
+  /// How a merge resolves a conflict at a path a `merge-rule` matches,
+  /// before the conflict is reported.
+  enum merge-strategy {
+    /// Both sides' lines kept, each once: declaration and import lists.
+    union,
+    /// The integrated tree's side kept whole, for the build to regenerate:
+    /// lockfiles.
+    ours,
+    /// The slice's side kept whole.
+    theirs,
+  }
+
+  /// One rule for merging a slice into the integrated tree: a glob over
+  /// root-relative paths and the strategy for the paths it matches. The
+  /// first rule that matches applies.
+  record merge-rule {
+    /// The glob, over paths relative to the tree root.
+    paths: string,
+    /// How a conflict at a matching path is resolved.
+    strategy: merge-strategy,
+  }
+
   /// What a target adapter declares about itself, as compiled-in
-  /// constants: the host version requirement alone.
+  /// constants: the host version requirement and its merge rules.
   record target-metadata {
     /// The minimum `emery` version this adapter needs, as an exact semver
     /// like Cargo's `rust-version`. The host refuses the adapter when the
     /// running binary is older. Absent means no minimum.
     emery-version: option<string>,
+    /// The rules the engine merges every slice under, since the adapter
+    /// alone knows which files its builds regenerate and which they
+    /// extend. Empty leaves every conflict unresolved.
+    merge-rules: list<merge-rule>,
   }
 
   /// One slice of the build plan, as `emery show` renders the revision it
@@ -145,6 +171,9 @@ interface types {
     id: string,
     /// The slice's drafted kebab-case name, which labels the build.
     name: string,
+    /// The commit the lent tree sits on: the integrated head the slice
+    /// builds over, so a worker elsewhere can materialise the same tree.
+    base: string,
     /// The ids of the requirements the slice builds, `REQ-001`, each one
     /// `spec` renders. A report's `covered` is held to them, so neither
     /// side reads them back out of the Markdown.
@@ -167,6 +196,15 @@ interface types {
     /// The files the build wrote or changed, as `/`-separated paths
     /// relative to the workspace root.
     written: list<string>,
+  }
+
+  /// What a verification of the integrated tree found.
+  record verdict {
+    /// Whether every check passed. Agrees with `failures`: `true` with
+    /// none, `false` with at least one.
+    passed: bool,
+    /// Each check that failed, named with the tail of its output.
+    failures: list<string>,
   }
 }
 
@@ -192,21 +230,27 @@ world source-adapter {
   export source;
 }
 
-/// The target adapter operations: `metadata` and `build`.
+/// The target adapter operations: `metadata`, `build`, and `verify`.
 interface target {
-  use types.{ adapter-id, error, report, slice, target-metadata };
+  use types.{ adapter-id, error, report, slice, target-metadata, verdict };
 
   /// Reports the adapter's metadata. The host asks once per run, after the
   /// load and before any build. Effect-free and answerable from
   /// compiled-in constants: no model call, no filesystem access.
   metadata: func(id: adapter-id) -> target-metadata;
 
-  /// Builds `slice` into the writable tree at `workspace`, the one judgment
-  /// operation. `workspace` is the deployment-local path of the tree root,
-  /// which the adapter lends to its model. Returns `invalid-request` when
-  /// the adapter refuses its input and `internal` when it fails on its own
-  /// account.
+  /// Builds `slice` into the writable tree at `workspace`, the judgment
+  /// operation over one slice. `workspace` is the deployment-local path of
+  /// the tree root, which the adapter lends to its model. Returns
+  /// `invalid-request` when the adapter refuses its input and `internal`
+  /// when it fails on its own account.
   build: async func(id: adapter-id, slice: slice, workspace: string) -> result<report, error>;
+
+  /// Verifies the integrated tree at `workspace` once a wave of slices has
+  /// merged into it: the adapter runs its checks over the tree and answers
+  /// a `verdict`, writing nothing the engine keeps. Returns `internal` when
+  /// it fails on its own account.
+  verify: async func(id: adapter-id, workspace: string) -> result<verdict, error>;
 }
 
 /// A target adapter component. The interface is imported as well as

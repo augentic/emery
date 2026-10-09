@@ -1,30 +1,42 @@
 //! Provides the types and functions a target adapter is written with.
 //!
 //! A target adapter receives a [`Slice`] of the build plan and the workspace
-//! to build into, and returns a [`Report`] of what it built. [`build`] puts
-//! the one gated turn: the slice's documents under the adapter's `build.md`,
-//! the workspace lent and written through the turn's `write_file` tool, and
-//! the answered report held to the slice by [`Report::findings`] and to the
-//! tree until it passes. [`TargetAdapter`] is what a target adapter
-//! implements, and [`target_adapter!`](crate::target_adapter) exports a type
-//! implementing it, answering the component's `metadata` through
-//! [`metadata`].
+//! to build into, and returns a [`Report`] of what it built; once a wave of
+//! slices has merged, it receives the integrated tree and returns a
+//! [`Verdict`] over it. [`build`] puts the one gated build turn: the slice's
+//! documents under the adapter's `build.md`, the workspace lent and written
+//! through the turn's `write_file` tool, and the answered report held to the
+//! slice by [`Report::findings`] and to the tree until it passes. [`verify`]
+//! puts the one gated verify turn: the integrated tree lent under the
+//! adapter's `verify.md`, the checks it names run through the model's shell,
+//! and the answered verdict held to [`Verdict::findings`]. [`TargetAdapter`]
+//! is what a target adapter implements, and
+//! [`target_adapter!`](crate::target_adapter) exports a type implementing it,
+//! answering the component's `metadata` through [`metadata`] over the type's
+//! [`MERGE_RULES`](TargetAdapter::MERGE_RULES).
 //!
 //! # Examples
 //!
-//! This adapter builds every slice through the SDK's one turn:
+//! This adapter builds every slice and verifies every wave through the SDK's
+//! turns:
 //!
 //! ```
 //! use emery_sdk::Doc;
 //!
-//! pub static PROSE: &[Doc] = &[Doc {
-//!     path: "build.md",
-//!     body: "Implement each requirement as a Rust module under `src/`.",
-//! }];
+//! pub static PROSE: &[Doc] = &[
+//!     Doc {
+//!         path: "build.md",
+//!         body: "Implement each requirement as a Rust module under `src/`.",
+//!     },
+//!     Doc {
+//!         path: "verify.md",
+//!         body: "Run `cargo test` in `$WORKSPACE`.",
+//!     },
+//! ];
 //!
 //! #[cfg(target_arch = "wasm32")]
 //! mod guest {
-//!     use emery_sdk::target::{Context, Report, TargetAdapter};
+//!     use emery_sdk::target::{Context, Report, TargetAdapter, Verdict, VerifyContext};
 //!     use emery_sdk::{Error, Model};
 //!
 //!     struct Adapter;
@@ -34,6 +46,10 @@
 //!     impl TargetAdapter for Adapter {
 //!         async fn build<P: Model>(ctx: &Context<'_, P>) -> Result<Report, Error> {
 //!             emery_sdk::target::build(ctx, super::PROSE).await
+//!         }
+//!
+//!         async fn verify<P: Model>(ctx: &VerifyContext<'_, P>) -> Result<Verdict, Error> {
+//!             emery_sdk::target::verify(ctx, super::PROSE).await
 //!         }
 //!     }
 //! }
@@ -48,13 +64,15 @@ use std::path::Path;
 #[cfg(target_arch = "wasm32")]
 #[doc(inline)]
 pub use emery_adapter::target::export;
-pub use emery_adapter::target::{Report, Slice, Target, TargetMetadata};
+pub use emery_adapter::target::{
+    MergeRule, MergeStrategy, Report, Slice, Target, TargetMetadata, Verdict,
+};
 use emery_prose::Doc;
 use omnia_sdk::model::Question;
 use omnia_sdk::{Error, Model};
 
 use self::write::Writer;
-use crate::{BUILD, prompt, reference};
+use crate::{BUILD, VERIFY, prompt, reference};
 
 /// The adapter addressed, the slice it builds, the tree it builds into, and the model.
 ///
@@ -74,12 +92,35 @@ pub struct Context<'a, P> {
     pub model: &'a P,
 }
 
-/// A target adapter: how it builds one slice of the plan into the project tree.
+/// The adapter addressed, the integrated tree it verifies, and the model.
+///
+/// [`verify`] takes it, so the one turn of a call is put to the one model
+/// the host bound.
+#[derive(Debug)]
+pub struct VerifyContext<'a, P> {
+    /// The identifier used to address the adapter.
+    pub adapter_id: &'a str,
+    /// The deployment-local path of the integrated tree's root, which the
+    /// turn lends to the model for its checks to run in.
+    pub workspace: &'a str,
+    /// The [`Model`] the turn is put to.
+    pub model: &'a P,
+}
+
+/// A target adapter: how it builds one slice of the plan into the project tree, and verifies the tree.
 ///
 /// Implement it on a unit struct and hand that type to
 /// [`target_adapter!`](crate::target_adapter), which exports the
 /// `target-adapter` world over it.
 pub trait TargetAdapter {
+    /// The rules the engine merges every slice into the integrated tree
+    /// under, since the adapter alone knows which files its builds
+    /// regenerate and which they extend.
+    ///
+    /// The first rule matching a conflicting path applies; none leaves every
+    /// conflict unresolved, which the engine reports and rebuilds once.
+    const MERGE_RULES: &'static [MergeRule] = &[];
+
     /// Builds the slice `ctx` carries into its workspace and reports what it
     /// covered and wrote.
     ///
@@ -89,19 +130,31 @@ pub trait TargetAdapter {
     ///
     /// Returns what [`build`](fn@build) returns.
     fn build<P: Model>(ctx: &Context<'_, P>) -> impl Future<Output = Result<Report, Error>>;
+
+    /// Verifies the integrated tree `ctx` carries and reports what failed.
+    ///
+    /// The one turn goes through [`verify`](fn@verify).
+    ///
+    /// # Errors
+    ///
+    /// Returns what [`verify`](fn@verify) returns.
+    fn verify<P: Model>(ctx: &VerifyContext<'_, P>)
+    -> impl Future<Output = Result<Verdict, Error>>;
 }
 
-/// Returns the `metadata` answer for a target adapter.
+/// Returns the `metadata` answer for a target adapter merging under `merge_rules`.
 ///
 /// [`target_adapter!`](crate::target_adapter) answers the component's
-/// `metadata` with it. The `emery-version` pin is this SDK's own version,
-/// identifying the contract the adapter compiled against. Build a
-/// [`TargetMetadata`] directly only when the adapter must loosen or tighten
-/// that pin.
+/// `metadata` with it over the adapter's
+/// [`MERGE_RULES`](TargetAdapter::MERGE_RULES). The `emery-version` pin is
+/// this SDK's own version, identifying the contract the adapter compiled
+/// against. Build a [`TargetMetadata`] directly only when the adapter must
+/// loosen or tighten that pin.
 #[must_use]
-pub fn metadata() -> TargetMetadata {
+pub fn metadata(merge_rules: &[MergeRule]) -> TargetMetadata {
     TargetMetadata {
         emery_version: Some(env!("CARGO_PKG_VERSION").to_string()),
+        merge_rules: merge_rules.to_vec(),
     }
 }
 
@@ -178,6 +231,55 @@ pub async fn build<P: Model>(ctx: &Context<'_, P>, docs: &'static [Doc]) -> Resu
     Ok(report)
 }
 
+/// Verifies the integrated tree of `ctx` through one gated turn.
+///
+/// `docs` must contain `verify.md`, which becomes the system prompt. The turn
+/// lends the tree and offers the embedded references through the reference
+/// tools, and no `write_file`: the model runs the checks the prompt names
+/// through its shell and answers what they found. The answered [`Verdict`]
+/// is held to [`Verdict::findings`]; every finding is returned to the model
+/// for one correction round, until the host's round limit is reached. A
+/// verdict that fails is an answer, not an error: the caller decides what a
+/// failed wave means.
+///
+/// # Errors
+///
+/// - Returns [`Error::BadRequest`] when the model rejects the request or no
+///   valid verdict is produced within the available rounds or the backend's
+///   time budget.
+/// - Returns [`Error::ServerError`] when `docs` does not contain `verify.md`.
+/// - Returns [`Error::BadGateway`] when a model tool or transport fails.
+pub async fn verify<P: Model>(
+    ctx: &VerifyContext<'_, P>, docs: &'static [Doc],
+) -> Result<Verdict, Error> {
+    let question = Question::<Verdict>::new("verify")
+        .system(prompt(docs, VERIFY)?)
+        .tools(reference::tools())
+        .workspace(ctx.workspace);
+    let brief = VerifyBrief {
+        adapter_id: ctx.adapter_id,
+    };
+
+    tracing::info!("verifying");
+    let tools = reference::serve(docs, "verify", None);
+    let verdict = question
+        .ask(ctx.model, brief.to_string(), Some(tools), |answer| {
+            let findings = answer.findings();
+            if findings.is_empty() {
+                return Ok(());
+            }
+            tracing::debug!(?findings, "candidate rejected");
+            Err(findings)
+        })
+        .await
+        .map_err(Error::from)?;
+
+    tracing::info!(passed = verdict.passed, failures = verdict.failures.len(), "verified");
+    tracing::debug!(failures = ?verdict.failures, "the verdict");
+
+    Ok(verdict)
+}
+
 /// The `build` arm of [`target_adapter!`](crate::target_adapter), reached through the macro alone.
 #[cfg(target_arch = "wasm32")]
 #[doc(hidden)]
@@ -195,6 +297,21 @@ pub async fn call<A: TargetAdapter>(
     Ok(A::build(&ctx).await?.into())
 }
 
+/// The `verify` arm of [`target_adapter!`](crate::target_adapter), reached through the macro alone.
+#[cfg(target_arch = "wasm32")]
+#[doc(hidden)]
+#[omnia_wasi_otel::instrument(name = "target_adapter_verify")]
+pub async fn verify_call<A: TargetAdapter>(
+    id: export::AdapterId, workspace: String,
+) -> Result<export::Verdict, export::Error> {
+    let ctx = VerifyContext {
+        adapter_id: &id,
+        workspace: &workspace,
+        model: &crate::Provider,
+    };
+    Ok(A::verify(&ctx).await?.into())
+}
+
 // The user turn of a build. The lend carries the root, so the brief never
 // names it.
 struct Brief<'a> {
@@ -209,10 +326,12 @@ impl Display for Brief<'_> {
             f,
             "Build the slice `{name}` ({id}) of the plan, bound to adapter `{adapter}`.\n\n\
              `$WORKSPACE` is the project tree, lent writable: the root of every file you can \
-             read, and the root every `written` path is relative to. Write through this call's \
+             read, and the root every `written` path is relative to. The tree sits on commit \
+             `{base}`, the integrated head this slice builds over. Write through this call's \
              `write_file` tool alone: each call writes one file beneath `$WORKSPACE`, created \
-             or replaced whole, the directories above it created, and a path outside the tree \
-             or among the engine's own files is refused. Build the slice into it as the prompt \
+             or replaced whole, the directories above it created, and a path outside the tree, \
+             under `.emery/` or `.git/`, or naming a projection is refused. Build the slice into \
+             it as the prompt \
              describes, and change nothing outside it.\n\n\
              The slice's entry in the plan:\n\n{plan}\n\n\
              The specification, cut to the slice's requirements:\n\n{spec}\n\n\
@@ -220,6 +339,7 @@ impl Display for Brief<'_> {
             name = slice.name,
             id = slice.id,
             adapter = self.adapter_id,
+            base = slice.base,
             plan = slice.plan.trim_end(),
             spec = slice.spec.trim_end(),
             design = slice.design.trim_end(),
@@ -239,6 +359,32 @@ impl Display for Brief<'_> {
              relative to `$WORKSPACE`, and only a file the tree now holds. Leave a requirement \
              out of `covered` rather than claim what the tree does not hold.",
             ids = ids.join(", "),
+        )
+    }
+}
+
+// The user turn of a verification. The lend carries the root, so the brief
+// never names it.
+struct VerifyBrief<'a> {
+    adapter_id: &'a str,
+}
+
+impl Display for VerifyBrief<'_> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "Verify the integrated project tree, bound to adapter `{adapter}`.\n\n\
+             `$WORKSPACE` is the tree every slice of the wave has merged into, lent with the \
+             shell: run the checks the prompt names in it, read what they print, and write \
+             nothing you mean to keep. A check's by-products are the build's, not the \
+             tree's.\n\n\
+             The prompt's references are available through this call's `read_doc` tool \
+             (`list_docs` enumerates them); load referenced bodies on demand.\n\n\
+             Answer with one JSON object matching the verdict schema: `passed` is true when \
+             every check passed and false otherwise; `failures` names each check that failed, \
+             with the tail of its output, and is empty when `passed` is true. Report what the \
+             checks found rather than what the tree should hold.",
+            adapter = self.adapter_id,
         )
     }
 }

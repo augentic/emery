@@ -6,15 +6,21 @@
 #    and fetched into it when the store lacks it.
 #  - `name`: the name the specification cites the source by; omitted, it is
 #    the package's name, as on the command line.
-#  - `path`: a workspace path relative to this file.
+#  - `path`: a workspace path relative to this file — or, with `repository`,
+#    relative to the clone.
 #  - `description`: an inline description.
+#  - `repository` and `revision`: read a repository at a label, tag, or
+#    commit, in a working copy cut for the run; the two go together.
 #  - `digest`: pins the adapter's bytes to a `sha256:` hash.
 #  - `rank`: the source's authority rank, an integer with 1 the highest;
 #    omitted, the adapter's kind decides (intent 1, documentation 2,
 #    behaviour 3). Equal ranks tie.
 #
 # The [target] table names the one adapter `emery build` builds every slice
-# of the plan through: `adapter` and `digest`, as above.
+# of the plan through: `adapter` and `digest`, as above; `repository` and
+# `branch`, together, to build into a clone of another repository from that
+# branch's commit instead of the project's own sealed head; `remote` to push
+# the label `emery/<revision>` there once every slice is sealed.
 #
 # The `emery` namespace is fetched from augentic.io; any other namespace is
 # put in the store by hand, `wkg get <reference> -o ~/.emery/adapters/` or a
@@ -28,9 +34,12 @@ adapter = "example:source@0.1.0"
 path = "docs/"
 
 # Live journey: the mock target component, `example_target@0.1.0.wasm` in the
-# store, building into the invocation directory.
+# store, building into the project repository from its sealed head.
 [target]
 adapter = "example:target@0.1.0"
+# repository = "git@github.com:acme/shop.git"
+# branch = "main"
+# remote = "origin"
 
 # # A first-party package over the invocation directory, named `documentation`.
 # [[source]]
@@ -41,6 +50,14 @@ adapter = "example:target@0.1.0"
 # [[source]]
 # adapter = "emery:intent@1.0.0"
 # description = "Ship a location-independent spec generator."
+
+# # Another repository, read at a tag; `path` is within it.
+# [[source]]
+# name = "upstream-api"
+# adapter = "emery:typescript@1.2.0"
+# repository = "https://github.com/acme/api.git"
+# revision = "v2.3.0"
+# path = "src"
 
 # # A wiki ranked beneath the code, so where they disagree the code wins.
 # [[source]]

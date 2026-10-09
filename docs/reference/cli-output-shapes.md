@@ -47,11 +47,12 @@ The examples below are hand-curated illustrations of the happy path; the accept/
 
 ### `emery specify`
 
-The success body names the committed revision and its reviewable set:
+The success body names the committed revision, the shape of its plan, and its reviewable set:
 
 ```json
 {
   "revision": "9f8e7d6c…",
+  "waves": [["SLICE-001", "SLICE-003"], ["SLICE-002"]],
   "diff": {
     "from": "1a2b3c4d…",
     "spec": {
@@ -70,31 +71,45 @@ The success body names the committed revision and its reviewable set:
       "removed": [],
       "changed": [{ "id": "SLICE-001", "name": "authentication", "fields": ["requirements", "brief"] }]
     }
-  }
-}
-```
-
-`diff` is the re-mine diff against the outgoing current revision, computed by typed equality over the two revisions: each document's `preamble` flags whether its preamble changed; `spec` lists requirements as `{ id, subject }` entries, matched first by where they anchor — the same stem and a cited `path` in common (same source and file, line ranges that meet), one to one, the pair sharing the most anchors first — and then by `id` (ids are positional — `REQ-001` onward in source order — so a requirement no anchor matches whose place moved reads as a removal and an addition), each `changed` entry naming the fields that differ (`id`, `subject`, `status`, `covered`, `sources`, `body`, `losers`, `scenarios`) and, when the match crossed ids, carrying `was`, the id the requirement held in the outgoing revision; `design` lists sections by their kebab-case key; `plan` lists slices matched by `id` as `{ id, name }` entries (ids are positional too — `SLICE-001` onward by each slice's lowest requirement), each `changed` entry naming the fields that differ (`name`, `requirements`, `types`, `depends-on`, `brief`). It is absent on a first run; on a byte-stable re-run `from` equals `revision`, every `preamble` flag is false, and every list is empty; nothing is persisted for it. Text mode prints a one-line summary of those counts beneath the revision — `  diff vs 1a2b3c4d: spec +1 -0 ~1 preamble, design +0 -0 ~1, plan +1 -0 ~1` — so a run never spans more than two lines; the per-requirement and per-slice entries ride `--format json` alone.
-
-`emery specify` with no source — and no project-root `emery.toml` to discover — fails with `error: "specify-source-required"` (exit 1); mixing `--config` with positional adapters or `--description`, or naming an absolute or escaping source `path` (one above the project), fails with `error: "bad_request"` (exit 1); an adapter that is not an exact package reference `namespace:name@version` — a bare name, a path, a URL, a reference without a version — fails with `error: "adapter-reference"` (exit 1); a release the store lacks under a namespace the binary routes nowhere fails with the loader's `error: "refused"` (exit 1), and one its registry cannot supply with `error: "unavailable"` (exit 4). `--config` without a value explicitly selects the project-relative `emery.toml`. A model draft (grouping, spec, design, or slicing) that still fails its check once the backend's rounds are spent exits 1 with `error: "bad_request"` carrying the last correction and its findings; a model failure exits 4 with `error: "bad_gateway"`. The first source to fail ends the run — the sources still extracting are not waited for — and its failure is the envelope, as the adapter put it: a source refusing its input exits 1 with `error: "bad_request"` carrying the adapter's own description, an adapter failing upstream exits 4 with `error: "bad_gateway"`, and evidence the claim gate rejects exits 3 with `error: "server_error"` naming the findings.
-
-### `emery build`
-
-The success body names the revision whose plan was built and every slice in build order:
-
-```json
-{
-  "revision": "9f8e7d6c…",
-  "slices": [
-    { "id": "SLICE-001", "name": "authentication", "covered": ["REQ-001", "REQ-002"], "uncovered": [], "written": ["src/auth.rs"] },
-    { "id": "SLICE-002", "name": "orders", "covered": ["REQ-003"], "uncovered": ["REQ-004"], "written": ["src/orders.rs", "src/orders/create.rs"] }
+  },
+  "repositories": [
+    { "source": "upstream-api", "repository": "https://github.com/acme/api.git", "revision": "v2.3.0", "commit": "4e5f6a7b…" }
   ]
 }
 ```
 
-Each slice carries the requirement ids the target adapter reported implemented (`covered`), those of the slice it left out (`uncovered`), both in id order, and the files it reported written, relative to the project root, in the order it named them. Text mode prints the revision and one line per slice — `  SLICE-002 orders: covered 1/2 (uncovered REQ-004), written 2 files` — so a run spans one line more than its slices.
+`waves` is the committed plan's slices grouped into the sets ready to build at once: the first wave every slice that depends on nothing, each wave after it every slice whose `depends-on` names only slices in the waves before, each wave in id order. Their count is the plan's longest dependency chain, the widest of them how many slices could build at once, and `emery build` builds them flattened in that order. Text mode prints them as one line beneath the revision — `  plan: 3 slices in 2 waves, widest 2`.
 
-`emery build` with no adapter — and no project-root `emery.toml` carrying a `[target]` table — fails with `error: "build-target-required"` (exit 1); mixing `--config` with a positional adapter fails with `error: "bad_request"` (exit 1). Before any revision is committed it fails with `error: "spec-not-generated"` (exit 2), and over a stored revision under an older grammar with `error: "spec-outdated"` (exit 1), neither loading the adapter. The first slice to fail ends the run and its failure is the envelope, as the adapter put it — a refusal exits 1 with `error: "bad_request"`, an upstream failure exits 4 with `error: "bad_gateway"` — the `message` naming the slice (``slice `SLICE-002` (orders) failed; SLICE-001 built before it stays written: …``); a report the report gate rejects — a covered id outside the slice, a written path escaping the root or under `.omnia/`, either named twice — exits 3 with `error: "server_error"` naming the findings.
+`repositories` lists every source read from a repository, in declaration order: the source's name, the URL as `emery.toml` spelled it, the `revision` asked for, and the commit it resolved to on this run. It is omitted when no source names a repository. Text mode prints one line per entry beneath the plan line — `  upstream-api read from https://github.com/acme/api.git at v2.3.0: 4e5f6a7b…`.
+
+`diff` is the re-mine diff against the outgoing current revision, computed by typed equality over the two revisions: each document's `preamble` flags whether its preamble changed; `spec` lists requirements as `{ id, subject }` entries, matched first by where they anchor — the same stem and a cited `path` in common (same source and file, line ranges that meet), one to one, the pair sharing the most anchors first — and then by `id` (ids are positional — `REQ-001` onward in source order — so a requirement no anchor matches whose place moved reads as a removal and an addition), each `changed` entry naming the fields that differ (`id`, `subject`, `status`, `covered`, `sources`, `body`, `losers`, `scenarios`) and, when the match crossed ids, carrying `was`, the id the requirement held in the outgoing revision; `design` lists sections by their kebab-case key; `plan` lists slices matched by `id` as `{ id, name }` entries (ids are positional too — `SLICE-001` onward by each slice's lowest requirement), each `changed` entry naming the fields that differ (`name`, `requirements`, `types`, `depends-on`, `brief`). It is absent on a first run; on a byte-stable re-run `from` equals `revision`, every `preamble` flag is false, and every list is empty; nothing is persisted for it. Text mode prints a one-line summary of those counts beneath the plan line — `  diff vs 1a2b3c4d: spec +1 -0 ~1 preamble, design +0 -0 ~1, plan +1 -0 ~1` — so a run never spans more than three lines; the per-requirement and per-slice entries ride `--format json` alone.
+
+`emery specify` with no source — and no project-root `emery.toml` to discover — fails with `error: "specify-source-required"` (exit 1); mixing `--config` with positional adapters or `--description`, or naming an absolute or escaping source `path` (one above the project), fails with `error: "bad_request"` (exit 1); an adapter that is not an exact package reference `namespace:name@version` — a bare name, a path, a URL, a reference without a version — fails with `error: "adapter-reference"` (exit 1); a release the store lacks under a namespace the binary routes nowhere fails with the loader's `error: "refused"` (exit 1), and one its registry cannot supply with `error: "unavailable"` (exit 4). `--config` without a value explicitly selects the project-relative `emery.toml`. A `[[source]]` with a `repository` and no `revision`, a `revision` and no `repository`, a `repository` beside a `description`, or a `path` climbing out of the repository fails with `error: "bad_request"` (exit 1); a `revision` the repository lacks, or a `repository` URL that names none, fails with `error: "revision-not-found"` (exit 2) before any source is asked, and a remote that refuses or cannot be reached with `error: "bad_gateway"` (exit 4). A model draft (grouping, spec, design, or slicing) that still fails its check once the backend's rounds are spent exits 1 with `error: "bad_request"` carrying the last correction and its findings; a model failure exits 4 with `error: "bad_gateway"`. The first source to fail ends the run — the sources still extracting are not waited for — and its failure is the envelope, as the adapter put it: a source refusing its input exits 1 with `error: "bad_request"` carrying the adapter's own description, an adapter failing upstream exits 4 with `error: "bad_gateway"`, and evidence the claim gate rejects exits 3 with `error: "server_error"` naming the findings.
+
+### `emery build`
+
+The success body names the revision whose plan was built, the plan's waves, the base, the slices resumed from the label, every slice this run merged with its wave and merge commit, the head each wave was verified at, and the label on the integrated head:
+
+```json
+{
+  "revision": "9f8e7d6c…",
+  "waves": [["SLICE-001", "SLICE-003"], ["SLICE-002"]],
+  "base": "1a2b3c4d…",
+  "resumed": ["SLICE-001"],
+  "slices": [
+    { "id": "SLICE-003", "name": "catalogue", "wave": 1, "covered": ["REQ-005"], "uncovered": [], "written": ["src/catalogue.rs"], "commit": "5e6f7a8b…" },
+    { "id": "SLICE-002", "name": "orders", "wave": 2, "covered": ["REQ-003"], "uncovered": ["REQ-004"], "written": ["src/orders.rs", "src/orders/create.rs"], "commit": "9c0d1e2f…", "conflicts": ["src/lib.rs"] }
+  ],
+  "verified": ["5e6f7a8b…", "9c0d1e2f…"],
+  "head": "9c0d1e2f…",
+  "label": "emery/9f8e7d6c…",
+  "pushed": "origin"
+}
+```
+
+`waves` is the plan's shape as `emery specify` reported it when the revision was committed — the plan's own projection, which a conflicted slice's rebuild in a later wave departs from. `base` is the commit the build started from — the project checkout's head, or the `[target] branch`'s commit in the clone. `resumed` lists the slices the label `emery/<revision>` already held over the base, in id order, which were not built again; it is omitted when none were. `slices` is every slice this run built, in merge order: each carries `wave`, the wave it merged in from one; the requirement ids the target adapter reported implemented (`covered`) and those of the slice it left out (`uncovered`), both in id order; the files it reported written, relative to its working copy's root, in the order it named them; `commit`, the merge commit that brought what it changed into the integrated head, `null` when it changed nothing; and `conflicts`, the paths an earlier build of it conflicted at before it was built again over the merged head, omitted when none. `verified` is the integrated head each wave was verified and labelled at, in wave order, omitted when every slice was resumed. `head` is the integrated commit, `label` the branch `emery/<revision>` set on it, and `pushed` the remote it went to, omitted when the target names none. Text mode prints the revision, the plan line — `  plan: 3 slices in 2 waves, widest 2` — the base — `  base 1a2b3c4d…` — `  resumed: SLICE-001` when any slice was skipped, one block per wave — `  wave 2: 1 slice verified at 9c0d1e2f` over one line per slice, `    SLICE-002 orders: covered 1/2 (uncovered REQ-004), written 2 files, merged 9c0d1e2f…, conflicted (src/lib.rs)`, or `…, nothing to merge` — then `  labelled emery/9f8e7d6c… at 9c0d1e2f…` and, after a push, `  pushed to origin`.
+
+`emery build` with no adapter — and no project-root `emery.toml` carrying a `[target]` table — fails with `error: "build-target-required"` (exit 1); mixing `--config` with a positional adapter, or a `[target] repository` without a `branch` or a `branch` without a `repository`, fails with `error: "bad_request"` (exit 1); `--jobs 0` is a usage error (exit 64, no envelope). Before any revision is committed it fails with `error: "spec-not-generated"` (exit 2), and over a stored revision under an older grammar with `error: "spec-outdated"` (exit 1), neither loading the adapter. With no `[target] repository`, a project directory that is no repository fails with `error: "repository-required"` (exit 1), and a checkout holding pending changes outside `.emery/` and `.git/`, or no commit, with `error: "base-not-sealed"` (exit 1), the `message` listing the paths; a `branch` or `remote` the repository lacks, or a `repository` URL that names none, fails with `error: "revision-not-found"` (exit 2), and a remote that refuses or cannot be reached with `error: "bad_gateway"` (exit 4). The first failure ends the run and is the envelope. A slice's failure is as the adapter put it — a refusal exits 1 with `error: "bad_request"`, an upstream failure exits 4 with `error: "bad_gateway"` — the `message` naming the slice, its wave, and the working copy the slices merged before it stay in (``slice `SLICE-002` (orders) failed in wave 2; SLICE-001 merged before it stays committed in `./.emery/vcs/integration`: …``); a slice whose merge conflicts on its second build exits 1 with `error: "slice-conflict"`, the paths named; a wave the adapter does not verify exits 1 with `error: "verify-failed"`, the `message` naming the wave, the slices merged in it, where the label stands (``wave 2 failed; SLICE-002 merged in it stays committed in `./.emery/vcs/integration`; `emery/9f8e7d6c…` stays at `5e6f7a8b…`: verification failed: …``), and each failing check; a push the remote refuses because its `emery/<revision>` holds commits this build does not exits 1 with `error: "label-diverged"`, the `message` naming the remote and where the label stands (``pushing `emery/9f8e7d6c…` to `origin` failed; `emery/9f8e7d6c…` stays at `9c0d1e2f…` and nothing was forced: …``), as every push failure's does; a report the report gate rejects — a covered id outside the slice, a written path escaping the root or under `.emery/` or `.git/`, either named twice — or a verdict whose `passed` disagrees with its `failures` exits 3 with `error: "server_error"` naming the findings, as does a stored plan whose remaining slices wait on one another.
 
 ### `emery show <spec|design|plan>`
 

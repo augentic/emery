@@ -39,13 +39,43 @@ impl Plan {
         self.slices.iter().find(|slice| slice.id == id)
     }
 
-    /// Returns the slices in build order.
+    /// Returns the slices in build order: the [`waves`](Plan::waves) flattened.
     ///
-    /// Every slice comes after each slice it depends on; among the slices
-    /// ready at once, the lower id comes first. The engine writes no cycle;
-    /// were a stored plan to hold one, its slices come last, in id order.
+    /// Every slice comes after each slice it depends on; the slices of one
+    /// wave come in id order.
     #[must_use]
     pub fn order(&self) -> Vec<&Slice> {
+        self.waves().iter().flatten().filter_map(|id| self.slice(*id)).collect()
+    }
+
+    /// Returns the slices ready to build once `merged` are built: the unmerged slices whose dependencies are all merged, in id order.
+    ///
+    /// A dependency naming the slice itself or no slice of the plan holds
+    /// nothing back, as [`waves`](Plan::waves) ignores it. An empty result
+    /// with slices left unmerged means the rest wait on one another.
+    #[must_use]
+    pub fn ready(&self, merged: &BTreeSet<SliceId>) -> Vec<&Slice> {
+        self.slices
+            .iter()
+            .filter(|slice| !merged.contains(&slice.id))
+            .filter(|slice| {
+                slice.depends_on.iter().all(|dependency| {
+                    merged.contains(dependency)
+                        || *dependency == slice.id
+                        || self.slice(*dependency).is_none()
+                })
+            })
+            .collect()
+    }
+
+    /// Returns the slices grouped into waves: the sets ready to build at once.
+    ///
+    /// The first wave holds every slice that depends on nothing; each wave
+    /// after it holds every slice whose dependencies are all in the waves
+    /// before, in id order. The engine writes no cycle; were a stored plan
+    /// to hold one, its slices are one last wave, in id order.
+    #[must_use]
+    pub fn waves(&self) -> Waves {
         let pending = self
             .slices
             .iter()
@@ -62,26 +92,79 @@ impl Plan {
             })
             .collect();
 
-        let (ordered, cyclic) = toposort(pending);
-        ordered.into_iter().chain(cyclic).filter_map(|id| self.slice(id)).collect()
+        let (mut waves, cyclic) = ranks(pending);
+        if !cyclic.is_empty() {
+            waves.push(cyclic);
+        }
+        Waves(waves)
     }
 }
 
-// `pending` maps each node to the nodes it waits on. Kahn's algorithm, the
-// lowest ready node first: returns the nodes placed, then the nodes a cycle
+// `pending` maps each node to the nodes it waits on. Kahn's algorithm by
+// rank: each rank is every node waiting on nothing once the ranks before it
+// are placed, in its own order. Returns the ranks, then the nodes a cycle
 // leaves unplaceable, in their own order.
-pub fn toposort<T: Ord + Copy>(mut pending: BTreeMap<T, BTreeSet<T>>) -> (Vec<T>, Vec<T>) {
-    let mut ordered = Vec::with_capacity(pending.len());
-    while let Some(next) =
-        pending.iter().find(|(_, dependencies)| dependencies.is_empty()).map(|(node, _)| *node)
-    {
-        pending.remove(&next);
-        for dependencies in pending.values_mut() {
-            dependencies.remove(&next);
+pub fn ranks<T: Ord + Copy>(mut pending: BTreeMap<T, BTreeSet<T>>) -> (Vec<Vec<T>>, Vec<T>) {
+    let mut ranks = Vec::new();
+    loop {
+        let ready: Vec<T> = pending
+            .iter()
+            .filter(|(_, dependencies)| dependencies.is_empty())
+            .map(|(node, _)| *node)
+            .collect();
+        if ready.is_empty() {
+            break;
         }
-        ordered.push(next);
+        for node in &ready {
+            pending.remove(node);
+        }
+        for dependencies in pending.values_mut() {
+            for node in &ready {
+                dependencies.remove(node);
+            }
+        }
+        ranks.push(ready);
     }
-    (ordered, pending.into_keys().collect())
+    (ranks, pending.into_keys().collect())
+}
+
+/// The slices of a plan grouped into the sets ready to build at once.
+///
+/// Each wave lists its slice ids in id order, and the waves come in build
+/// order. The value serialises as a list of lists of ids.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(transparent)]
+pub struct Waves(Vec<Vec<SliceId>>);
+
+impl Waves {
+    /// Returns how many waves the plan builds in: its longest dependency chain.
+    #[must_use]
+    pub const fn len(&self) -> usize {
+        self.0.len()
+    }
+
+    /// Returns whether the plan has no slices.
+    #[must_use]
+    pub const fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+
+    /// Returns how many slices the waves hold between them.
+    #[must_use]
+    pub fn slices(&self) -> usize {
+        self.0.iter().map(Vec::len).sum()
+    }
+
+    /// Returns the width of the widest wave: the most slices ready at once.
+    #[must_use]
+    pub fn widest(&self) -> usize {
+        self.0.iter().map(Vec::len).max().unwrap_or(0)
+    }
+
+    /// Returns the waves in build order, each its slice ids in id order.
+    pub fn iter(&self) -> impl Iterator<Item = &[SliceId]> {
+        self.0.iter().map(Vec::as_slice)
+    }
 }
 
 impl revision::Document for Plan {

@@ -4,13 +4,14 @@
 //! for `specify`, one positional adapter for `build` — and an operator-owned
 //! `emery.toml`, never both. The file is read whole, so every table it holds
 //! must parse; a run naming its adapters on the command line reads no file.
+//! A repository, as a source's or the target's, is the file's alone.
 
 use std::path::{Path, PathBuf};
 use std::str::FromStr as _;
 
 use anyhow::Context;
-use emery_engine::build::BuildInput;
-use emery_engine::specify::{SourceConfig, SourceContent, SpecifyInput};
+use emery_engine::build::{BuildInput, TargetRepository};
+use emery_engine::specify::{SourceConfig, SourceContent, SourceRepository, SpecifyInput};
 use emery_engine::{AdapterRef, Rank, preopen_join, preopen_path};
 use omnia_sdk::plugins::Digest;
 use omnia_sdk::{Error, bad_request};
@@ -93,6 +94,9 @@ impl TryFrom<TargetCarriers<'_>> for BuildInput {
                 let input = Self {
                     adapter: AdapterRef::from_str(reference)?,
                     digest: None,
+                    repository: None,
+                    remote: None,
+                    jobs: None,
                 };
                 ("argv".to_string(), input)
             }
@@ -132,10 +136,7 @@ fn target_from(path: &Path) -> Result<BuildInput, Error> {
     let Some(target) = file.target else {
         return Err(target_required(&format!("{} has no `[target]` table", path.display())));
     };
-    Ok(BuildInput {
-        adapter: target.adapter,
-        digest: target.digest,
-    })
+    target.into_input()
 }
 
 fn target_required(description: &str) -> Error {
@@ -164,6 +165,7 @@ fn argv_source(reference: &str, content: SourceContent) -> Result<SourceConfig, 
         name: adapter.name().to_owned(),
         adapter,
         content,
+        repository: None,
         digest: None,
         rank: None,
     })
@@ -201,15 +203,32 @@ struct SourceEntry {
     adapter: AdapterRef,
     path: Option<PathBuf>,
     description: Option<String>,
+    repository: Option<String>,
+    revision: Option<String>,
     digest: Option<Digest>,
     rank: Option<Rank>,
 }
 
 impl SourceEntry {
-    // `base` is the directory the file's `path` keys are relative to.
+    // `base` is the directory the file's `path` keys are relative to; with
+    // a `repository`, `path` is relative to the clone instead.
     fn into_config(self, base: &Path) -> Result<SourceConfig, Error> {
         let adapter = self.adapter;
         let name = self.name.unwrap_or_else(|| adapter.name().to_owned());
+
+        let repository = match (self.repository, self.revision) {
+            (Some(url), Some(revision)) => Some(SourceRepository { url, revision }),
+            (Some(_), None) => {
+                return Err(bad_request!(
+                    "source `{name}` sets `repository` without `revision`; a repository is read \
+                     at a label, tag, or commit"
+                ));
+            }
+            (None, Some(_)) => {
+                return Err(bad_request!("source `{name}` sets `revision` without `repository`"));
+            }
+            (None, None) => None,
+        };
 
         let content = match (self.path, self.description) {
             (Some(_), Some(_)) => {
@@ -217,6 +236,15 @@ impl SourceEntry {
                     "source `{name}` sets both `path` and `description`; a source has one \
                      content key"
                 ));
+            }
+            (_, Some(_)) if repository.is_some() => {
+                return Err(bad_request!(
+                    "source `{name}` sets both `repository` and `description`; a repository is \
+                     read at a `path`"
+                ));
+            }
+            (Some(relative), None) if repository.is_some() => {
+                SourceContent::Workspace(relative.display().to_string())
             }
             (Some(relative), None) => {
                 SourceContent::Workspace(preopen_join(base, &relative)?.display().to_string())
@@ -229,6 +257,7 @@ impl SourceEntry {
             name,
             adapter,
             content,
+            repository,
             digest: self.digest,
             rank: self.rank,
         })
@@ -240,4 +269,32 @@ impl SourceEntry {
 struct TargetEntry {
     adapter: AdapterRef,
     digest: Option<Digest>,
+    repository: Option<String>,
+    branch: Option<String>,
+    remote: Option<String>,
+}
+
+impl TargetEntry {
+    fn into_input(self) -> Result<BuildInput, Error> {
+        let repository = match (self.repository, self.branch) {
+            (Some(url), Some(branch)) => Some(TargetRepository { url, branch }),
+            (Some(_), None) => {
+                return Err(bad_request!(
+                    "the target sets `repository` without `branch`; a build starts from the \
+                     branch's commit"
+                ));
+            }
+            (None, Some(_)) => {
+                return Err(bad_request!("the target sets `branch` without `repository`"));
+            }
+            (None, None) => None,
+        };
+        Ok(BuildInput {
+            adapter: self.adapter,
+            digest: self.digest,
+            repository,
+            remote: self.remote,
+            jobs: None,
+        })
+    }
 }

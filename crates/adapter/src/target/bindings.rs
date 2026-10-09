@@ -16,7 +16,7 @@ mod generated {
     wit_bindgen::generate!({
         world: "target-adapter",
         path: "../../wit",
-        // `build` alone is `async func` in the WIT, so no `async:` list is needed
+        // `build` and `verify` are `async func` in the WIT, so no `async:` list is needed
         generate_all,
         pub_export_macro: true,
         // the shared `types` are the source generation's, so one Rust type
@@ -28,12 +28,13 @@ mod generated {
 }
 
 use crate::source::bindings::wit;
-use crate::target::{Report, Slice, TargetMetadata};
+use crate::target::{MergeRule, MergeStrategy, Report, Slice, TargetMetadata, Verdict};
 
 impl From<TargetMetadata> for wit::TargetMetadata {
     fn from(metadata: TargetMetadata) -> Self {
         Self {
             emery_version: metadata.emery_version,
+            merge_rules: metadata.merge_rules.into_iter().map(Into::into).collect(),
         }
     }
 }
@@ -42,6 +43,45 @@ impl From<wit::TargetMetadata> for TargetMetadata {
     fn from(metadata: wit::TargetMetadata) -> Self {
         Self {
             emery_version: metadata.emery_version,
+            merge_rules: metadata.merge_rules.into_iter().map(Into::into).collect(),
+        }
+    }
+}
+
+impl From<MergeRule> for wit::MergeRule {
+    fn from(rule: MergeRule) -> Self {
+        Self {
+            paths: rule.paths.into_owned(),
+            strategy: rule.strategy.into(),
+        }
+    }
+}
+
+impl From<wit::MergeRule> for MergeRule {
+    fn from(rule: wit::MergeRule) -> Self {
+        Self {
+            paths: rule.paths.into(),
+            strategy: rule.strategy.into(),
+        }
+    }
+}
+
+impl From<MergeStrategy> for wit::MergeStrategy {
+    fn from(strategy: MergeStrategy) -> Self {
+        match strategy {
+            MergeStrategy::Union => Self::Union,
+            MergeStrategy::Ours => Self::Ours,
+            MergeStrategy::Theirs => Self::Theirs,
+        }
+    }
+}
+
+impl From<wit::MergeStrategy> for MergeStrategy {
+    fn from(strategy: wit::MergeStrategy) -> Self {
+        match strategy {
+            wit::MergeStrategy::Union => Self::Union,
+            wit::MergeStrategy::Ours => Self::Ours,
+            wit::MergeStrategy::Theirs => Self::Theirs,
         }
     }
 }
@@ -51,6 +91,7 @@ impl From<Slice> for wit::Slice {
         Self {
             id: slice.id,
             name: slice.name,
+            base: slice.base,
             requirements: slice.requirements,
             spec: slice.spec,
             design: slice.design,
@@ -64,10 +105,29 @@ impl From<wit::Slice> for Slice {
         Self {
             id: slice.id,
             name: slice.name,
+            base: slice.base,
             requirements: slice.requirements,
             spec: slice.spec,
             design: slice.design,
             plan: slice.plan,
+        }
+    }
+}
+
+impl From<Verdict> for wit::Verdict {
+    fn from(verdict: Verdict) -> Self {
+        Self {
+            passed: verdict.passed,
+            failures: verdict.failures,
+        }
+    }
+}
+
+impl From<wit::Verdict> for Verdict {
+    fn from(verdict: wit::Verdict) -> Self {
+        Self {
+            passed: verdict.passed,
+            failures: verdict.failures,
         }
     }
 }
@@ -107,7 +167,7 @@ pub mod import {
 
     use super::generated::emery::adapter::target as imported;
     use crate::source::bindings::wit;
-    use crate::target::{Report, Slice, TargetMetadata};
+    use crate::target::{Report, Slice, TargetMetadata, Verdict};
 
     /// Returns the metadata the adapter registered as `id` declares.
     #[must_use]
@@ -127,10 +187,30 @@ pub mod import {
     pub async fn build(id: &str, slice: &Slice, workspace: &str) -> Result<Report, Error> {
         let report = imported::build(id.to_string(), slice.clone().into(), workspace.to_string())
             .await
-            .map_err(|err| match err {
-                wit::Error::InvalidRequest(detail) => bad_request!("adapter `{id}`: {detail}"),
-                wit::Error::Internal(detail) => bad_gateway!("adapter `{id}`: {detail}"),
-            })?;
+            .map_err(|err| lower(id, err))?;
         Ok(report.into())
+    }
+
+    /// Verifies the integrated tree at `workspace` using the adapter registered as `id`.
+    ///
+    /// A failure names the adapter; the caller, which verifies wave by
+    /// wave, names the wave.
+    ///
+    /// # Errors
+    ///
+    /// - Returns [`Error::BadRequest`] when the adapter rejects its input.
+    /// - Returns [`Error::BadGateway`] when the adapter fails internally.
+    pub async fn verify(id: &str, workspace: &str) -> Result<Verdict, Error> {
+        let verdict = imported::verify(id.to_string(), workspace.to_string())
+            .await
+            .map_err(|err| lower(id, err))?;
+        Ok(verdict.into())
+    }
+
+    fn lower(id: &str, err: wit::Error) -> Error {
+        match err {
+            wit::Error::InvalidRequest(detail) => bad_request!("adapter `{id}`: {detail}"),
+            wit::Error::Internal(detail) => bad_gateway!("adapter `{id}`: {detail}"),
+        }
     }
 }

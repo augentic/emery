@@ -15,14 +15,14 @@ brew install emery
 
 - All commands return structured output on stdout and use exit codes for success/failure; `--format json` selects the JSON envelope (see [CLI output shapes](../cli-output-shapes.md)).
 - An adapter is named by an exact package reference, `namespace:name@version`, read from the store `~/.emery/adapters` and fetched into it on the first run that names it (see [Adapters](../adapters.md)).
-- Commands that modify `.omnia/storage` state are idempotent where possible.
-- Skills delegate to the CLI for all structural operations — they never hand-edit `.omnia/storage` state directly.
+- Commands that modify `.emery/storage` state are idempotent where possible.
+- Skills delegate to the CLI for all structural operations — they never hand-edit `.emery/storage` state directly.
 
 ## Commands
 
 | Verb | Purpose |
 |------|---------|
 | [emery specify](specify.md) | Generate the specification, design, and build plan from the sources named on the invocation, continuing the revision the project carries, and commit them as the current revision |
-| [emery build](build.md) | Build every slice of the current plan through a target adapter, in dependency order, into the project tree |
+| [emery build](build.md) | Build the current plan through a target adapter in waves, each slice merged into the label `emery/<revision>` and each wave verified; a re-run resumes from the label |
 | [emery show](show.md) | Print a reviewable artifact of the current revision to stdout; `--format json` carries the typed document |
 | `emery completions <shell>` | Print a shell-completion script; auto-derived from the live clap surface |

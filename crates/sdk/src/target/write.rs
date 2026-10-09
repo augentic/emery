@@ -42,7 +42,7 @@ impl Writer {
             WRITE_FILE,
             "Write one file beneath `$WORKSPACE`, created or replaced whole, the directories \
              above it created. The path is `/`-separated and relative to `$WORKSPACE`; one \
-             outside it, or among the engine's own files, is refused.",
+             outside it, under `.emery/` or `.git/`, or naming a projection, is refused.",
         ))
     }
 

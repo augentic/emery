@@ -28,6 +28,7 @@ fn slice() -> Slice {
     Slice {
         id: "SLICE-001".to_owned(),
         name: "orders".to_owned(),
+        base: "1a2b3c4d5e6f708192a3b4c5d6e7f8091a2b3c4d".to_owned(),
         requirements: vec!["REQ-001".to_owned(), "REQ-002".to_owned()],
         spec: "## REQ-001\n\nOrders are created.\n\n## REQ-002\n\nOrders are listed.\n".to_owned(),
         design: "## Types\n\n`Order`\n".to_owned(),
@@ -111,6 +112,13 @@ async fn request_shape() {
     );
     assert!(
         user.contains(
+            "The tree sits on commit `1a2b3c4d5e6f708192a3b4c5d6e7f8091a2b3c4d`, the integrated \
+             head this slice builds over."
+        ),
+        "{user}"
+    );
+    assert!(
+        user.contains(
             "The slice's entry in the plan:\n\n## SLICE-001 orders\n\nBuild the orders \
              module.\n\nThe specification, cut to the slice's requirements:\n\n## \
              REQ-001\n\nOrders are created.\n\n## REQ-002\n\nOrders are listed.\n\nThe design, \
@@ -151,7 +159,7 @@ async fn write_tool() {
             [
                 write_file("1", "./src//orders.rs", "pub struct Order;\n"),
                 write_file("2", "../escape.rs", ""),
-                write_file("3", ".omnia/storage/x", ""),
+                write_file("3", ".emery/storage/x", ""),
                 write_file("4", "docs/spec.md", ""),
                 ToolCall {
                     id: "5".to_owned(),
@@ -180,7 +188,7 @@ async fn write_tool() {
     assert_eq!(exchanges[1].outcome, Err("write_file: `../escape.rs` escapes the root".to_owned()));
     assert_eq!(
         exchanges[2].outcome,
-        Err("write_file: `.omnia/storage/x` is under the engine's own `.omnia/`".to_owned())
+        Err("write_file: `.emery/storage/x` is under the reserved `.emery/`".to_owned())
     );
     assert_eq!(
         exchanges[3].outcome,
@@ -305,7 +313,7 @@ async fn gate_findings() {
     let root = tmp.path().to_str().expect("a UTF-8 scratch root");
     let model = Scripted::answering([
         r#"{"covered":["REQ-001","REQ-009","REQ-001"],
-            "written":["src/orders.rs","../escape.rs","./","src/orders.rs",".omnia/storage/x"]}"#,
+            "written":["src/orders.rs","../escape.rs","./","src/orders.rs",".emery/storage/x"]}"#,
         r#"{"covered":["REQ-001"],"written":["src/orders.rs"]}"#,
     ]);
     let slice = slice();
@@ -323,7 +331,7 @@ async fn gate_findings() {
         "- written `../escape.rs` escapes the root",
         "- written `./` names no file",
         "- written `src/orders.rs` is listed twice",
-        "- written `.omnia/storage/x` is under the engine's own `.omnia/`",
+        "- written `.emery/storage/x` is under the reserved `.emery/`",
     ] {
         assert!(correction.contains(finding), "{finding}: {correction}");
     }

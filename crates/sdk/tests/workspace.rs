@@ -36,7 +36,8 @@ fn lists_relative() {
     assert_eq!(files, ["a/x.md", "a/y.md", "b.md"]);
 }
 
-// A projection of the last revision is output, not a source to mine.
+// A projection of the last revision is output, not a source to mine, and the
+// engine's root and the checkout's are no source either.
 #[test]
 fn skip_roots() {
     let tmp = tempfile::tempdir().expect("tempdir");
@@ -47,14 +48,27 @@ fn skip_roots() {
             "spec.md",
             "design.md",
             "plan.md",
-            ".omnia/store.json",
+            ".emery/store.json",
+            ".git/HEAD",
             "nested/spec.md",
             "nested/design.md",
             "nested/plan.md",
-            "nested/.omnia/x",
+            "nested/.emery/x",
+            "nested/.git/x",
             "nested/keep.md",
         ],
     );
+
+    let files = workspace::list(root, |_| true).expect("walk");
+
+    assert_eq!(files, ["nested/keep.md", "readme.md"]);
+}
+
+// A working copy linked to a repository holds `.git` as a file naming it.
+#[test]
+fn skip_git_file() {
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let root = tree(tmp.path(), &["readme.md", ".git", "nested/.git", "nested/keep.md"]);
 
     let files = workspace::list(root, |_| true).expect("walk");
 

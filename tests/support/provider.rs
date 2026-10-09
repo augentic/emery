@@ -1,12 +1,13 @@
 //! Scripts every capability of a provider and drives the command façade over it.
 //!
-//! Model, source, target, and storage capabilities use strict scripts. Each
-//! scenario must consume exactly the expected operations, so an unexercised
-//! or unexpected path fails immediately. The plugin capability is a
-//! constant: every load lands, so the synthesis suites assert nothing of a
-//! load and the adapter boundary is the runtime suite's.
+//! Model, source, target, storage, and version-control capabilities use
+//! strict scripts. Each scenario must consume exactly the expected
+//! operations, so an unexercised or unexpected path fails immediately. The
+//! plugin capability is a constant: every load lands, so the synthesis
+//! suites assert nothing of a load and the adapter boundary is the runtime
+//! suite's.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::future::Future;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -15,17 +16,19 @@ use anyhow::Result;
 use emery_adapter::source::{
     AdapterMetadata, Backing, Claim, ClaimKind, Evidence, Source, SourceInput, SourceKind,
 };
-use emery_adapter::target::{Report, Slice, Target, TargetMetadata};
+use emery_adapter::target::{MergeRule, Report, Slice, Target, TargetMetadata, Verdict};
 use emery_engine::Axis;
 use omnia_sdk::api::command::Response;
 use omnia_sdk::plugins::{self, Digest, Location, Plugin};
 use omnia_sdk::{
-    BlobStore, CasError, ContainerMetadata, Error, Model, ObjectMetadata, Plugins, StateStore,
-    model,
+    BlobStore, CasError, ContainerMetadata, Error, Model, ObjectMetadata, Plugins, StateStore, Vcs,
+    model, vcs,
 };
 use omnia_test::guest::{Memory, Scripted};
 use serde_json::Value;
 use tokio::sync::Barrier;
+
+use super::vcs::VcsScript;
 
 const GREETING: &str = "GET /greeting returns the static string 'hello'.";
 
@@ -75,10 +78,10 @@ impl SourceScript {
     }
 }
 
-/// A barrier that holds extraction until every expected source has arrived.
+/// A barrier that holds a dispatch until every expected one has arrived.
 ///
-/// The bounded wait reports missing sources, allowing serial extraction to
-/// fail clearly instead of deadlocking the suite.
+/// The bounded wait reports the dispatches that never came, allowing a
+/// serialising engine to fail clearly instead of deadlocking the suite.
 #[derive(Clone, Debug)]
 pub struct Rendezvous {
     expected: BTreeSet<String>,
@@ -98,14 +101,19 @@ impl<T: Into<String>> FromIterator<T> for Rendezvous {
 }
 
 impl Rendezvous {
+    // Only an expected dispatch waits: one outside the set would otherwise
+    // hold a barrier it is not counted in.
     async fn wait(&self, key: &str) {
+        if !self.expected.contains(key) {
+            return;
+        }
         self.arrived.lock().expect("arrived").insert(key.to_string());
         if tokio::time::timeout(RENDEZVOUS, self.barrier.wait()).await.is_err() {
             let missing: Vec<String> =
                 self.expected.difference(&self.arrived.lock().expect("arrived")).cloned().collect();
             panic!(
-                "source `{key}` waited {RENDEZVOUS:?} for {missing:?}, which never asked to \
-                 extract: the engine is extracting its sources one at a time"
+                "`{key}` waited {RENDEZVOUS:?} for {missing:?}, which were never dispatched: the \
+                 engine is running them one at a time"
             );
         }
     }
@@ -113,24 +121,36 @@ impl Rendezvous {
 
 /// A scripted `Target` with a record of every dispatch.
 ///
-/// Reports are scripted per slice id, the minimum `emery` version per adapter.
+/// Reports are scripted per slice id, verdicts in wave order, the minimum
+/// `emery` version and the merge rules per adapter.
 ///
 /// - An unscripted slice reports every requirement covered and one file
 ///   written, `src/<name>.rs`.
+/// - An unscripted verify passes.
 /// - A scripted failure is the classified error the WIT bindings' lift would
 ///   have produced.
 #[derive(Clone, Debug, Default)]
 pub struct TargetScript {
     /// Build outcomes keyed by slice id.
     pub reports: BTreeMap<String, Result<Report, Error>>,
+    /// Verify outcomes, consumed in wave order.
+    pub verdicts: Arc<Mutex<VecDeque<Result<Verdict, Error>>>>,
     /// Minimum `emery` versions keyed by adapter id, the guest name each
     /// load registers.
     pub versions: BTreeMap<String, String>,
+    /// The merge rules every adapter declares.
+    pub rules: Vec<MergeRule>,
     /// Every build dispatch, recorded in dispatch order: the adapter id, the
     /// slice, and the workspace root.
     pub calls: Arc<Mutex<Vec<(String, Slice, String)>>>,
+    /// Every verify dispatch, recorded in dispatch order: the workspace root.
+    pub verifies: Arc<Mutex<Vec<String>>>,
     /// Every metadata dispatch, by adapter id, in call order.
     pub metadata: Arc<Mutex<Vec<String>>>,
+    /// When set, every build of a slice it names is held until each of them
+    /// has been dispatched, so a scenario can prove the engine builds a wave
+    /// together.
+    pub rendezvous: Option<Rendezvous>,
 }
 
 impl TargetScript {
@@ -138,6 +158,16 @@ impl TargetScript {
     /// workspace root, in dispatch order.
     pub fn calls(&self) -> Vec<(String, Slice, String)> {
         self.calls.lock().expect("calls").clone()
+    }
+
+    /// Returns the workspace root of every verify dispatch so far, in dispatch order.
+    pub fn verifies(&self) -> Vec<String> {
+        self.verifies.lock().expect("verifies").clone()
+    }
+
+    /// Queues `verdict` for the next verify.
+    pub fn verdict(&self, verdict: Result<Verdict, Error>) {
+        self.verdicts.lock().expect("verdicts").push_back(verdict);
     }
 }
 
@@ -150,6 +180,8 @@ pub struct Provider<S = Memory> {
     pub source: SourceScript,
     /// The scripted `Target`.
     pub target: TargetScript,
+    /// The scripted `Vcs`.
+    pub vcs: VcsScript,
     /// The scripted storage pair.
     pub storage: Arc<S>,
 }
@@ -173,6 +205,7 @@ impl<S> Provider<S> {
             model: Scripted::answering(answers),
             source: SourceScript::default(),
             target: TargetScript::default(),
+            vcs: VcsScript::default(),
             storage,
         }
     }
@@ -184,6 +217,7 @@ impl<S> Clone for Provider<S> {
             model: self.model.clone(),
             source: self.source.clone(),
             target: self.target.clone(),
+            vcs: self.vcs.clone(),
             storage: Arc::clone(&self.storage),
         }
     }
@@ -349,6 +383,27 @@ impl<S: Send + Sync + 'static> Target for Provider<S> {
                 written: vec![format!("src/{}.rs", slice.name)],
             })
         });
+        let rendezvous = self.target.rendezvous.clone();
+        let key = slice.id.clone();
+        async move {
+            if let Some(rendezvous) = rendezvous {
+                rendezvous.wait(&key).await;
+            }
+            outcome
+        }
+    }
+
+    fn verify(
+        &self, _id: &str, workspace: &str,
+    ) -> impl Future<Output = Result<Verdict, Error>> + Send {
+        self.target.verifies.lock().expect("verifies").push(workspace.to_string());
+        let outcome =
+            self.target.verdicts.lock().expect("verdicts").pop_front().unwrap_or_else(|| {
+                Ok(Verdict {
+                    passed: true,
+                    failures: Vec::new(),
+                })
+            });
         async move { outcome }
     }
 
@@ -356,7 +411,94 @@ impl<S: Send + Sync + 'static> Target for Provider<S> {
         self.target.metadata.lock().expect("metadata").push(id.to_string());
         TargetMetadata {
             emery_version: self.target.versions.get(id).cloned(),
+            merge_rules: self.target.rules.clone(),
         }
+    }
+}
+
+impl<S: Send + Sync + 'static> Vcs for Provider<S> {
+    fn resolve(
+        &self, repo: &str, revision: &str,
+    ) -> impl Future<Output = Result<String, vcs::Error>> + Send {
+        Vcs::resolve(&self.vcs, repo, revision)
+    }
+
+    fn descends(
+        &self, repo: &str, ancestor: &str, descendant: &str,
+    ) -> impl Future<Output = Result<bool, vcs::Error>> + Send {
+        Vcs::descends(&self.vcs, repo, ancestor, descendant)
+    }
+
+    fn head(&self, at: &str) -> impl Future<Output = Result<String, vcs::Error>> + Send {
+        Vcs::head(&self.vcs, at)
+    }
+
+    fn commit(
+        &self, at: &str, message: &str,
+    ) -> impl Future<Output = Result<Option<String>, vcs::Error>> + Send {
+        Vcs::commit(&self.vcs, at, message)
+    }
+
+    fn merge(
+        &self, at: &str, revision: &str, message: &str, policy: &[vcs::Rule],
+    ) -> impl Future<Output = Result<vcs::Merged, vcs::Error>> + Send {
+        Vcs::merge(&self.vcs, at, revision, message, policy)
+    }
+
+    fn log(
+        &self, repo: &str, revision: &str, base: &str,
+    ) -> impl Future<Output = Result<Vec<vcs::Entry>, vcs::Error>> + Send {
+        Vcs::log(&self.vcs, repo, revision, base)
+    }
+
+    fn init(&self, at: &str) -> impl Future<Output = Result<(), vcs::Error>> + Send {
+        Vcs::init(&self.vcs, at)
+    }
+
+    fn add(
+        &self, repo: &str, at: &str, revision: &str,
+    ) -> impl Future<Output = Result<(), vcs::Error>> + Send {
+        Vcs::add(&self.vcs, repo, at, revision)
+    }
+
+    fn remove(&self, at: &str) -> impl Future<Output = Result<(), vcs::Error>> + Send {
+        Vcs::remove(&self.vcs, at)
+    }
+
+    fn pending(
+        &self, at: &str,
+    ) -> impl Future<Output = Result<Vec<vcs::Change>, vcs::Error>> + Send {
+        Vcs::pending(&self.vcs, at)
+    }
+
+    fn clone_repo(
+        &self, url: &str, at: &str, options: vcs::CloneOptions,
+    ) -> impl Future<Output = Result<(), vcs::Error>> + Send {
+        Vcs::clone_repo(&self.vcs, url, at, options)
+    }
+
+    fn fetch(
+        &self, repo: &str, remote: &str,
+    ) -> impl Future<Output = Result<(), vcs::Error>> + Send {
+        Vcs::fetch(&self.vcs, repo, remote)
+    }
+
+    fn label(
+        &self, repo: &str, name: &str, revision: &str,
+    ) -> impl Future<Output = Result<(), vcs::Error>> + Send {
+        Vcs::label(&self.vcs, repo, name, revision)
+    }
+
+    fn labelled(
+        &self, repo: &str, name: &str,
+    ) -> impl Future<Output = Result<String, vcs::Error>> + Send {
+        Vcs::labelled(&self.vcs, repo, name)
+    }
+
+    fn push(
+        &self, repo: &str, remote: &str, label: &str,
+    ) -> impl Future<Output = Result<(), vcs::Error>> + Send {
+        Vcs::push(&self.vcs, repo, remote, label)
     }
 }
 

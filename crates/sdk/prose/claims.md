@@ -27,10 +27,11 @@ Line numbers are 1-indexed against the file at extract time, a range ends no ear
 
 ## Skip roots
 
-The engine's own files live in the project the sources are bound from, and they are output, never input. Every adapter skips them wherever they appear under `$SOURCE_DIR` — never read them, never anchor a claim in them:
+The engine's own files live in the project the sources are bound from, and they are output, never input; the checkout's own directory is no input either. Every adapter skips them wherever they appear under `$SOURCE_DIR` — never read them, never anchor a claim in them:
 
 - `spec.md`, `design.md`, and `plan.md` — the Markdown projections of the current revision, rendered by `emery show`.
-- `.omnia/` — the runtime's storage root, where the committed revision lives.
+- `.emery/` — the engine's root, where the committed revision lives.
+- `.git/` — the checkout's history and metadata.
 
 Mining a projection back into claims would make the engine's last answer look like evidence for its next one, and every requirement it re-derived that way would read as `agreed` with itself. Adapter prompts add their own language- or format-specific skip roots (`node_modules`, `target`, test trees, …) beside this list, never instead of it.
 

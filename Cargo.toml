@@ -24,10 +24,12 @@ path = "src/main.rs"
 omnia.workspace = true
 omnia-cursor.workspace = true
 omnia-filesystem.workspace = true
+omnia-git.workspace = true
 omnia-wasi-blobstore.workspace = true
 omnia-wasi-keyvalue.workspace = true
 omnia-wasi-model.workspace = true
 omnia-wasi-otel.workspace = true
+omnia-wasi-vcs.workspace = true
 toml.workspace = true
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
@@ -118,8 +120,8 @@ serde_json = "1.0.151"
 sha2 = "0.11"
 strum = { version = "0.28", features = ["derive"] }
 tempfile = "3.27.0"
-tokio = { version = "1.53.1", features = ["fs", "io-util", "rt"] }
-toml = "1.1.6"
+tokio = { version = "1.53.2", features = ["fs", "io-util", "rt"] }
+toml = "1.1.7"
 tracing = "0.1.44"
 wasip3 = "0.9.0"
 wit-bindgen = { version = "0.62.0", features = ["async-spawn"] }
@@ -137,9 +139,11 @@ omnia-wasi-blobstore = "0.37.0"
 omnia-wasi-keyvalue = "0.37.0"
 omnia-wasi-model = "0.37.0"
 omnia-wasi-otel = "0.37.0"
+omnia-wasi-vcs = "0.37.0"
 
 omnia-cursor = "0.31.0"
 omnia-filesystem = "0.31.0"
+omnia-git = "0.31.0"
 
 [patch.crates-io]
 omnia = { git = "https://github.com/augentic/omnia" }
@@ -153,6 +157,7 @@ omnia-wasi-blobstore = { git = "https://github.com/augentic/omnia" }
 omnia-wasi-keyvalue = { git = "https://github.com/augentic/omnia" }
 omnia-wasi-model = { git = "https://github.com/augentic/omnia" }
 omnia-wasi-otel = { git = "https://github.com/augentic/omnia" }
+omnia-wasi-vcs = { git = "https://github.com/augentic/omnia" }
 # omnia = { path = "../omnia/crates/omnia" }
 # omnia-core = { path = "../omnia/crates/omnia-core" }
 # omnia-sdk = { path = "../omnia/crates/omnia-sdk" }
@@ -164,11 +169,14 @@ omnia-wasi-otel = { git = "https://github.com/augentic/omnia" }
 # omnia-wasi-keyvalue = { path = "../omnia/crates/wasi-keyvalue" }
 # omnia-wasi-model = { path = "../omnia/crates/wasi-model" }
 # omnia-wasi-otel = { path = "../omnia/crates/wasi-otel" }
+# omnia-wasi-vcs = { path = "../omnia/crates/wasi-vcs" }
 
 omnia-cursor = { git = "https://github.com/augentic/omnia-backends" }
 omnia-filesystem = { git = "https://github.com/augentic/omnia-backends" }
+omnia-git = { git = "https://github.com/augentic/omnia-backends" }
 # omnia-cursor = { path = "../omnia-backends/crates/cursor" }
 # omnia-filesystem = { path = "../omnia-backends/crates/filesystem" }
+# omnia-git = { path = "../omnia-backends/crates/git" }
 
 [profile.release]
 lto = true

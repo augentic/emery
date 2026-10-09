@@ -1,5 +1,5 @@
 ---
-description: Emery plugin context -- specification generation with the Emery CLI
+description: Emery plugin context -- specification generation and plan building with the Emery CLI
 alwaysApply: true
 ---
 
@@ -7,17 +7,20 @@ alwaysApply: true
 
 ## Overview
 
-This plugin provides the surviving Emery skill: generate a specification. The skill is an ultrathin wrapper that invokes the matching `emery` CLI verb and relays its output.
+This plugin provides the two Emery skills: generate a specification, and build its plan. Each skill is an ultrathin wrapper that invokes the matching `emery` CLI verb and relays its output.
 
-The v1 delivery workflow (plan / refine / execute / status / finalize and the `system-*` definition loop) is archived at git tag `v1`. Its verbs are deleted from the CLI grammar and its skills are deleted from this plugin — do not attempt to run them or reconstruct their behavior by hand. `emery specify` generates `spec.md` / `design.md` / `plan.md` from the sources named on the invocation; `emery show spec`, `emery show design`, and `emery show plan` print the reviewable documents of the current revision.
+The v1 delivery workflow (plan / refine / execute / status / finalize and the `system-*` definition loop) is archived at git tag `v1`. Its verbs are deleted from the CLI grammar and its skills are deleted from this plugin — do not attempt to run them or reconstruct their behavior by hand. `emery specify` generates `spec.md` / `design.md` / `plan.md` from the sources named on the invocation; `emery show spec`, `emery show design`, and `emery show plan` print the reviewable documents of the current revision; `emery build` builds the current plan in waves through one target adapter, and lands the result as one merge commit per slice under the label `emery/<revision>`, verified wave by wave.
 
 ## Workflow
 
 ```text
 /emery:specify <adapter>           (every revision)
+/emery:build [<adapter>]           (once the plan is reviewed)
 ```
 
-That is the whole shipped surface. An `<adapter>` is an exact package reference with a version, `namespace:name@version` (`emery:typescript@0.13.0`); the binary reads it from its store, `~/.emery/adapters`, and fetches a release the store lacks on the first run that names it. The source list never persists — repeat the adapters on every run, or keep them in an operator-owned `emery.toml` selected with `--config [<path>]` (`--config` alone means the project-relative `emery.toml`; a run naming no sources at all discovers the project-root file as a fallback). Every run starts from its sources alone — nothing of the stored revision reaches the synthesis, and requirements number from `REQ-001` in source order. After each run the skill writes `spec.md` / `design.md` / `plan.md` (the Markdown projections) beside the code for review. Never hand-edit `.omnia/storage` state (the revision store); route through the CLI.
+That is the whole shipped surface. An `<adapter>` is an exact package reference with a version, `namespace:name@version` (`emery:typescript@0.13.0`); the binary reads it from its store, `~/.emery/adapters`, and fetches a release the store lacks on the first run that names it. The source list never persists — repeat the adapters on every run, or keep them in an operator-owned `emery.toml` selected with `--config [<path>]` (`--config` alone means the project-relative `emery.toml`; a run naming no sources at all discovers the project-root file as a fallback). Every run starts from its sources alone — nothing of the stored revision reaches the synthesis, and requirements number from `REQ-001` in source order. After each run the skill writes `spec.md` / `design.md` / `plan.md` (the Markdown projections) beside the code for review. Never hand-edit `.emery/storage` state (the revision store); route through the CLI.
+
+`/emery:build` names one target adapter the same way, or takes it from the `[target]` table of the same `emery.toml`. It builds the committed plan in waves — every slice whose dependencies are merged at once, each in its own working copy cut from the project checkout's sealed head (or from the branch of the repository the `[target]` table names), up to `--jobs` at a time — and the engine seals each slice's changes as one commit, merges them in id order into an integration working copy under the adapter's merge rules, has the adapter verify the integrated tree, labels the verified head `emery/<revision>`, and, once every slice is merged, pushes the label to the `[target] remote` when one is named. A slice whose merge conflicts is built again in the next wave; a second conflict ends the run (`slice-conflict`), as a wave the adapter does not verify does (`verify-failed`), the label standing at the last verified wave, and a re-run resumes from that label rather than starting over. The checkout is never written and the skill commits nothing: it relays the base, the waves, the merges, the label, and the push, and offers `git log --first-parent`, `git merge`, or a pull request from the pushed label as the way to take them. A checkout with an uncommitted change outside `.emery/` is refused before any slice is built (`base-not-sealed`), so `.emery/` belongs in `.gitignore`. The projections stay `/emery:specify`'s to write, and the build never commits them.
 
 ## Tracing and output
 
@@ -36,9 +39,16 @@ Every CLI failure prints a kebab-case error code (and usually a `hint:` line —
 | Error code | What it means | Next action |
 |------------|---------------|-------------|
 | `specify-source-required` | `emery specify` was run without naming a source, and no project-root `emery.toml` was found | `emery specify <adapter>` (and/or `--description <adapter>=<text>`, or `--config [<path>]`) |
+| `build-target-required` | `emery build` was run without naming a target adapter, and no project-root `emery.toml` carries a `[target]` table | `emery build <adapter>`, or add a `[target]` table to `emery.toml` and `emery build --config` |
 | `adapter-reference` | An adapter was named without a version or a namespace, or as a path or bare name | Name the exact package reference, `namespace:name@version` |
 | `unsupported-version` | The installed binary is older than an adapter's declared minimum `emery-version` | Reinstall through the binary's install channel (the hint prints the literal command), then rerun |
-| `spec-not-generated` | `emery show` was run before any revision was committed | `/emery:specify <adapter>` first |
+| `spec-not-generated` | `emery show` or `emery build` was run before any revision was committed | `/emery:specify <adapter>` first |
+| `repository-required` | `emery build` was run from a directory that is no git repository, and no `[target] repository` was named | `git init` and seal a first commit, or add `repository` and `branch` to the `[target]` table |
+| `base-not-sealed` | The project checkout holds an uncommitted change outside `.emery/` and `.git/`, or has no commit, so there is no sealed base to build from | Commit or stash the paths the message lists (add `.emery/` to `.gitignore`), then rerun |
+| `revision-not-found` | A `[[source]] revision`, a `[target] branch`, or a `[target] remote` names nothing the repository holds | Check the name against the repository, then rerun |
+| `slice-conflict` | A slice's merge into the integrated tree conflicted on its second build: two slices rewrite the same files | Declare a merge rule in the adapter, or re-run `/emery:specify` for a plan that keeps them in one slice; the label stands at the last verified wave |
+| `verify-failed` | The adapter's verify turn failed a check over the integrated tree after a wave merged | Inspect `.emery/vcs/integration`; rerun to rebuild the wave from the last verified head, or `git bisect` over `emery/<revision>` to attribute the failure to a slice |
+| `label-diverged` | The `[target] remote`'s `emery/<revision>` holds commits this build does not — another build pushed first, or the branch was moved — so the push was refused, never forced; the label stands locally | Read the remote's branch (`git log --first-parent <remote>/emery/<revision>`); to replace it, `git push <remote> --delete emery/<revision>` and rerun, which resumes from the local label and pushes it; to keep it, leave this build |
 | `refused` | The loader rejected the release (an invalid or pre-compiled artifact, a `digest` it does not resolve to, or a namespace the binary routes nowhere) | Read the message; for an unrouted namespace, `wkg get <reference> -o ~/.emery/adapters/` as the hint says |
 | `unavailable` | The registry fetch for a release the store lacks failed (network, endpoint, or a missing exact version) | Check connectivity and that the exact version is published under its namespace, then rerun; a copy at `~/.emery/adapters/<namespace>_<name>@<version>.wasm` stands in |
 | `spec-outdated` | The stored revision was written under an older grammar than this binary reads | Re-run `/emery:specify <adapter>` to regenerate |
@@ -52,6 +62,7 @@ Every CLI failure prints a kebab-case error code (and usually a `hint:` line —
 
 - See the project root `AGENTS.md` for overall project context
 - [Specify SKILL.md](skills/specify/SKILL.md) — Generate a specification
+- [Build SKILL.md](skills/build/SKILL.md) — Build the plan into labelled commits
 
 ## Specification
 

@@ -2,7 +2,8 @@
 //!
 //! The runtime embeds the engine guest under grants fixed at compile time.
 //! The invocation directory is mounted as `.`, writable: the tree a run reads
-//! its sources from and builds into. Every adapter is a package, read from
+//! its sources from and the repository a build starts from, its working
+//! copies cut beneath `.emery/vcs`. Every adapter is a package, read from
 //! the store `~/.emery/adapters` before anything is fetched — the file
 //! `namespace_name@version.wasm` there is that release on this machine — and
 //! fetched through the one route compiled in here otherwise: the `emery`
@@ -11,6 +12,10 @@
 //! project, so a component is never loaded from a tree a run can write, and
 //! a run from the operator's home is refused at startup.
 //!
+//! Version control is the operator's own `git`, run by the git backend at
+//! the paths the engine lends beneath `.`: the repository a build labels and
+//! the clones a repository source or target is read from under `.emery/vcs`.
+//!
 //! The binary is host-only; on `wasm32` it compiles to an empty `main` so the
 //! workspace-wide wasm32 clippy pass can include it.
 
@@ -18,10 +23,12 @@ cfg_select! {
     not(target_arch = "wasm32") => {
         use omnia_cursor::Client as Cursor;
         use omnia_filesystem::{Client as Filesystem, ConnectOptions};
+        use omnia_git::Client as Git;
         use omnia_wasi_blobstore::WasiBlobstore;
         use omnia_wasi_keyvalue::WasiKeyValue;
         use omnia_wasi_model::WasiModel;
         use omnia_wasi_otel::{OtelDefault, WasiOtel};
+        use omnia_wasi_vcs::WasiVcs;
 
         omnia::runtime!({
             mode: command,
@@ -36,6 +43,7 @@ cfg_select! {
                 WasiModel: Cursor,
                 WasiKeyValue: Filesystem(ConnectOptions { root: ".emery/storage".into() }),
                 WasiBlobstore: Filesystem(ConnectOptions { root: ".emery/storage".into() }),
+                WasiVcs: Git,
             },
         });
     }

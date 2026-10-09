@@ -20,7 +20,7 @@ use schemars::JsonSchema;
 use serde::Deserialize;
 use serde_json::{Value, json};
 
-use crate::revision::{EMERY, Plan, ReqId, Slice, SliceId, toposort};
+use crate::revision::{EMERY, Plan, ReqId, Slice, SliceId, ranks};
 use crate::specify::basis::Basis;
 use crate::specify::brief::{BasesSection, Brief, Review};
 
@@ -326,7 +326,7 @@ impl SliceAnswer {
             })
             .collect();
 
-        let (_, cyclic) = toposort(pending);
+        let (_, cyclic) = ranks(pending);
         cyclic
     }
 }

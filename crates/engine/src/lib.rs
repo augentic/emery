@@ -6,9 +6,9 @@
 //! renders any one document from the current revision. [`build`] dispatches
 //! every slice of the current plan to a target adapter, in dependency order.
 //!
-//! Every operation uses a [`Provider`] of model, adapter, storage, and plugin
-//! capabilities. Command-line parsing and presentation are handled outside
-//! this crate.
+//! Every operation uses a [`Provider`] of model, adapter, storage,
+//! version-control, and plugin capabilities. Command-line parsing and
+//! presentation are handled outside this crate.
 //!
 //! # Vocabulary
 //!
@@ -34,6 +34,7 @@ mod revision;
 pub mod show;
 pub mod specify;
 mod store;
+pub mod vcs;
 
 use std::path::{Component, Path, PathBuf};
 
@@ -41,7 +42,7 @@ pub use adapter::{AdapterRef, Axis};
 pub use authority::Rank;
 use emery_adapter::source::Source;
 use emery_adapter::target::Target;
-use omnia_sdk::{BlobStore, Error, Model, Plugins, StateStore, bad_request};
+use omnia_sdk::{BlobStore, Error, Model, Plugins, StateStore, Vcs, bad_request};
 pub use store::{CONTAINER, REVISION_KEY};
 
 /// Normalises an operator path to a path beneath the `.` project preopen.
@@ -96,14 +97,15 @@ pub fn preopen_join(base: &Path, relative: &Path) -> Result<PathBuf, Error> {
 
 /// A bundle of every capability an engine operation may require.
 ///
-/// Any type implementing the required model, source, target, storage, and
-/// plugin capabilities implements this trait automatically.
+/// Any type implementing the required model, source, target, storage,
+/// version-control, and plugin capabilities implements this trait
+/// automatically.
 pub trait Provider:
-    Model + Source + Target + StateStore + BlobStore + Plugins + Send + Sync + 'static
+    Model + Source + Target + StateStore + BlobStore + Plugins + Vcs + Send + Sync + 'static
 {
 }
 
-impl<P: Model + Source + Target + StateStore + BlobStore + Plugins + Send + Sync + 'static> Provider
-    for P
+impl<P> Provider for P where
+    P: Model + Source + Target + StateStore + BlobStore + Plugins + Vcs + Send + Sync + 'static
 {
 }
