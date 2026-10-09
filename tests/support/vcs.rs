@@ -49,6 +49,7 @@ impl<T> Queue<T> {
 ///   a merge lands there; [`HEAD`] otherwise;
 /// - `resolve` is `<revision>-commit`;
 /// - `labelled` is `NotFound`: a fresh build;
+/// - `fetched` is `NotFound`: nothing fetched from the remote yet;
 /// - `descends` holds;
 /// - `log` holds nothing;
 /// - `commit` seals `<first word of the message>-commit`;
@@ -64,6 +65,8 @@ pub struct VcsScript {
     pub resolves: Queue<String>,
     /// `labelled` answers by repository.
     pub labelleds: Queue<String>,
+    /// `fetched` answers by repository.
+    pub fetcheds: Queue<String>,
     /// `descends` answers by repository.
     pub descends: Queue<bool>,
     /// `log` answers by repository.
@@ -118,6 +121,7 @@ impl VcsScript {
             ("head", self.heads.drained()),
             ("resolve", self.resolves.drained()),
             ("labelled", self.labelleds.drained()),
+            ("fetched", self.fetcheds.drained()),
             ("descends", self.descends.drained()),
             ("log", self.logs.drained()),
             ("commit", self.commits.drained()),
@@ -271,6 +275,15 @@ impl Vcs for VcsScript {
         self.record(format!("labelled {repo} {name}"));
         let answer =
             self.labelleds.take(repo).unwrap_or_else(|| Err(Error::NotFound(name.to_owned())));
+        async move { answer }
+    }
+
+    fn fetched(
+        &self, repo: &str, remote: &str, name: &str,
+    ) -> impl Future<Output = Result<String, Error>> + Send {
+        self.record(format!("fetched {repo} {remote} {name}"));
+        let answer =
+            self.fetcheds.take(repo).unwrap_or_else(|| Err(Error::NotFound(name.to_owned())));
         async move { answer }
     }
 
