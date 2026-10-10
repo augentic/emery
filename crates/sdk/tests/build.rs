@@ -89,7 +89,7 @@ async fn request_shape() {
 
     let report = ask(&model, &slice, root).await.expect("accepted");
     assert_eq!(report.covered, ["REQ-001", "REQ-002"]);
-    assert_eq!(report.written, ["src/orders.rs", "Cargo.toml"]);
+    assert_eq!(report.written, ["Cargo.toml", "src/orders.rs"], "`written` is answered sorted");
 
     let seen = model.seen();
     assert_eq!(seen.len(), 1);
@@ -140,8 +140,9 @@ async fn request_shape() {
     assert!(user.contains("— `REQ-001`, `REQ-002` — and no other."), "{user}");
     assert!(
         user.contains(
-            "`written` lists each file `write_files` wrote, once each, as a `/`-separated path \
-             relative to `$WORKSPACE`, and only a file the tree now holds."
+            "`written` lists the files `write_files` wrote, once each, as a `/`-separated path \
+             relative to `$WORKSPACE`, and only a file the tree now holds; a file you wrote and \
+             leave out is added for you."
         ),
         "{user}"
     );
@@ -187,7 +188,7 @@ async fn write_tool() {
     );
 
     let report = ask(&model, &slice(), root).await.expect("accepted");
-    assert_eq!(report.written, ["src/orders.rs", "Cargo.toml"]);
+    assert_eq!(report.written, ["Cargo.toml", "src/orders.rs"]);
     assert_eq!(
         fs::read_to_string(tmp.path().join("src/orders.rs")).expect("written"),
         "pub struct Order;\n"
@@ -211,37 +212,135 @@ async fn write_tool() {
     );
     let malformed = exchanges[2].outcome.as_deref().expect_err("a file without content");
     assert!(malformed.starts_with("write_files: invalid arguments"), "{malformed}");
-    assert_eq!(exchanges[3].outcome, Err("write_files: `files` names no file".to_owned()));
+    assert_eq!(
+        exchanges[3].outcome,
+        Err("write_files: `files` names no file and `delete` no path".to_owned())
+    );
     assert_eq!(exchanges[4].tool, "check");
     assert_eq!(exchanges[4].outcome, Ok(String::new()));
     model.assert_exhausted();
 }
 
-// A `written` path the tree does not hold, and a file `write_files` wrote
-// that `written` leaves out, are both findings; the corrected report is
-// accepted however it spells the path, and the write stands across rounds.
+// `files` spelled as a map from path to content is read as the listed shape
+// is, in the order the call spells it.
+#[tokio::test]
+async fn write_map_shape() {
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let root = tmp.path().to_str().expect("a UTF-8 scratch root");
+    let model = Scripted::answering([
+        r#"{"covered":["REQ-001"],"written":["src/orders.rs","Cargo.toml"]}"#,
+    ])
+    .calling(
+        0,
+        [ToolCall {
+            id: "1".to_owned(),
+            name: "write_files".to_owned(),
+            arguments:
+                r#"{"files":{"src/orders.rs":"pub struct Order;\n","Cargo.toml":"[package]\n"}}"#
+                    .to_owned(),
+        }],
+    );
+
+    let report = ask(&model, &slice(), root).await.expect("accepted");
+    assert_eq!(report.written, ["Cargo.toml", "src/orders.rs"]);
+    assert_eq!(
+        fs::read_to_string(tmp.path().join("src/orders.rs")).expect("written"),
+        "pub struct Order;\n"
+    );
+    assert_eq!(fs::read_to_string(tmp.path().join("Cargo.toml")).expect("written"), "[package]\n");
+
+    let exchanges = model.exchanges();
+    assert_eq!(exchanges.len(), 2, "the write, then the check");
+    assert_eq!(
+        exchanges[0].outcome.as_deref(),
+        Ok(r#"{"written":[{"bytes":18,"path":"src/orders.rs"},{"bytes":10,"path":"Cargo.toml"}]}"#)
+    );
+    model.assert_exhausted();
+}
+
+// `delete` removes the files it names beside the files written, one the
+// tree lacks counting as removed; a path the rule refuses refuses the call
+// whole; a call that only deletes is a call; and a file written then
+// removed is not filled into `written`.
+#[tokio::test]
+async fn write_delete() {
+    let tmp = tempfile::tempdir().expect("tempdir");
+    seed(tmp.path(), ["src/old.rs", "src/stale.rs"]);
+    let root = tmp.path().to_str().expect("a UTF-8 scratch root");
+    let model = Scripted::answering([r#"{"covered":["REQ-001"],"written":[]}"#]).calling(
+        0,
+        [
+            ToolCall {
+                id: "1".to_owned(),
+                name: "write_files".to_owned(),
+                arguments: r#"{"files":[{"path":"src/orders.rs","content":"pub struct Order;\n"},{"path":"src/draft.rs","content":""}],"delete":["src/old.rs","src/never.rs"]}"#
+                    .to_owned(),
+            },
+            ToolCall {
+                id: "2".to_owned(),
+                name: "write_files".to_owned(),
+                arguments: r#"{"delete":["src/stale.rs","../escape.rs"]}"#.to_owned(),
+            },
+            ToolCall {
+                id: "3".to_owned(),
+                name: "write_files".to_owned(),
+                arguments: r#"{"delete":["src/stale.rs","src/draft.rs"]}"#.to_owned(),
+            },
+        ],
+    );
+
+    let report = ask(&model, &slice(), root).await.expect("accepted");
+    assert_eq!(report.written, ["src/orders.rs"], "the file written and kept");
+    assert_eq!(names(&tmp.path().join("src")), ["orders.rs"]);
+
+    let exchanges = model.exchanges();
+    assert_eq!(exchanges.len(), 4, "three calls, then the check");
+    assert_eq!(
+        exchanges[0].outcome.as_deref(),
+        Ok(
+            r#"{"deleted":["src/old.rs","src/never.rs"],"written":[{"bytes":18,"path":"src/orders.rs"},{"bytes":0,"path":"src/draft.rs"}]}"#
+        )
+    );
+    assert_eq!(
+        exchanges[1].outcome,
+        Err("write_files: nothing written: `../escape.rs` escapes the root".to_owned())
+    );
+    assert_eq!(
+        exchanges[2].outcome.as_deref(),
+        Ok(r#"{"deleted":["src/stale.rs","src/draft.rs"],"written":[]}"#)
+    );
+    assert_eq!(exchanges[3].outcome, Ok(String::new()));
+    model.assert_exhausted();
+}
+
+// A `written` path the tree does not hold is a finding; a file `write_files`
+// wrote that `written` leaves out is none, since the accepted report is
+// filled in with it, every path spelled as the tree does, and the write
+// stands across rounds.
 #[tokio::test]
 async fn written_unheld() {
     let tmp = tempfile::tempdir().expect("tempdir");
     let root = tmp.path().to_str().expect("a UTF-8 scratch root");
     let model = Scripted::answering([
         r#"{"covered":["REQ-001"],"written":["src/missing.rs"]}"#,
-        r#"{"covered":["REQ-001"],"written":["./src/orders.rs"]}"#,
+        r#"{"covered":["REQ-001"],"written":["./Cargo.toml"]}"#,
     ])
-    .calling(0, [write_files("1", &[("src/orders.rs", "pub struct Order;\n")])]);
+    .calling(
+        0,
+        [write_files("1", &[("src/orders.rs", "pub struct Order;\n"), ("Cargo.toml", "")])],
+    );
 
     let report = ask(&model, &slice(), root).await.expect("corrected");
-    assert_eq!(report.written, ["./src/orders.rs"], "the report reads as answered");
+    assert_eq!(report.written, ["Cargo.toml", "src/orders.rs"], "filled from what was written");
 
     let exchanges = model.exchanges();
     assert_eq!(exchanges.len(), 3, "the write, the refused check, the accepted check");
     let correction = exchanges[1].outcome.as_ref().expect_err("the first report is refused");
-    for finding in [
-        "- written `src/missing.rs` names no regular file under the lent tree",
-        "- `write_files` wrote `src/orders.rs` this turn, which `written` leaves out",
-    ] {
-        assert!(correction.contains(finding), "{finding}: {correction}");
-    }
+    assert_eq!(
+        correction.lines().filter(|line| line.starts_with("- ")).collect::<Vec<_>>(),
+        ["- written `src/missing.rs` names no regular file under the lent tree"],
+        "{correction}"
+    );
     assert_eq!(exchanges[2].outcome, Ok(String::new()));
     model.assert_exhausted();
 }

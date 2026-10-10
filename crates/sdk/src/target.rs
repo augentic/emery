@@ -6,10 +6,12 @@
 //! [`Verdict`] over it. [`build`] puts the one gated build turn: the slice's
 //! documents under the adapter's `build.md`, the workspace lent and written
 //! through the turn's `write_files` tool, and the answered report held to the
-//! slice by [`Report::findings`] and to the tree until it passes. [`verify`]
-//! puts the one gated verify turn: the integrated tree lent under the
-//! adapter's `verify.md`, the checks it names run through the model's shell,
-//! and the answered verdict held to [`Verdict::findings`]. [`TargetAdapter`]
+//! slice by [`Report::findings`] and to the tree until it passes, its
+//! `written` filled in from what the tool wrote. [`verify`] puts the one
+//! gated verify turn: the integrated tree lent under the adapter's
+//! `verify.md`, the checks it names run through the model's shell, what they
+//! find repaired through the same `write_files`, and the answered verdict
+//! held to [`Verdict::findings`]. [`TargetAdapter`]
 //! is what a target adapter implements, and
 //! [`export_target!`](crate::export_target) exports a type implementing it,
 //! answering the component's `metadata` through [`metadata`] over the type's
@@ -71,8 +73,10 @@ use emery_prose::Doc;
 use omnia_sdk::model::Question;
 use omnia_sdk::{Error, Model};
 
-use self::write::Writer;
+use self::write::{Writer, Written};
 use crate::{BUILD, VERIFY, prompt, reference};
+
+const VERIFY_TURN: &str = "verify";
 
 /// The adapter addressed, the slice it builds, the tree it builds into, and the model.
 ///
@@ -101,7 +105,8 @@ pub struct VerifyContext<'a, P> {
     /// The identifier used to address the adapter.
     pub adapter_id: &'a str,
     /// The deployment-local path of the integrated tree's root, which the
-    /// turn lends to the model for its checks to run in.
+    /// turn lends to the model for its checks to run in and repairs beneath
+    /// through `write_files`.
     pub workspace: &'a str,
     /// The [`Model`] the turn is put to.
     pub model: &'a P,
@@ -118,7 +123,8 @@ pub trait TargetAdapter {
     /// regenerate and which they extend.
     ///
     /// The first rule matching a conflicting path applies; none leaves every
-    /// conflict unresolved, which the engine reports and rebuilds once.
+    /// conflict unresolved, which the engine reports and rebuilds over the
+    /// merged head.
     const MERGE_RULES: &'static [MergeRule] = &[];
 
     /// Builds the slice `ctx` carries into its workspace and reports what it
@@ -164,16 +170,20 @@ pub fn metadata(merge_rules: &[MergeRule]) -> TargetMetadata {
 /// carries the slice's plan entry, its cut of the specification, and the
 /// whole design, lends the workspace, and offers the embedded references
 /// through the reference tools. It writes through its `write_files` tool:
-/// one or more files beneath the workspace per call, each created or
-/// replaced whole, at a path [`beneath`](crate::beneath) accepts, and a call
-/// naming one it refuses writes nothing. The answered [`Report`] is held
-/// to the slice by [`Report::findings`] and to the tree — a `written` path
-/// names a regular file under the workspace, and a file `write_files` wrote
-/// is listed; every finding is returned to the model for one correction
-/// round, until the host's round limit is reached.
+/// one or more files beneath the workspace per call, listed or mapped by
+/// path, each created or replaced whole, at a path [`beneath`](crate::beneath)
+/// accepts, and the files its `delete` names removed; a call naming a path
+/// the rule refuses changes nothing. The answered [`Report`] is held to the
+/// slice by [`Report::findings`] and to the tree — a `written` path names a
+/// regular file under the workspace; every finding is returned to the model
+/// for one correction round, until the host's round limit is reached. The
+/// accepted report's `written` is filled in: every path it lists, spelled
+/// root-relative, and every file `write_files` wrote that the tree still
+/// holds, once each and sorted.
 ///
-/// A failure upstream is not put again: the turn writes the tree as it
-/// goes, so a second turn would start over what the first left.
+/// A failure upstream is not put again here: the turn writes the tree as it
+/// goes, so a second turn would start over what the first left. The caller
+/// that owns the tree may cut a fresh one and ask again.
 ///
 /// # Errors
 ///
@@ -206,10 +216,10 @@ pub async fn build<P: Model>(ctx: &Context<'_, P>, docs: &'static [Doc]) -> Resu
         "building"
     );
     let tools = writer.serve(reference::serve(docs, id, None));
-    let report = question
+    let mut report = question
         .ask(ctx.model, brief.to_string(), Some(tools), |answer| {
             let mut findings = answer.findings(slice);
-            findings.extend(written.findings(root, answer));
+            findings.extend(Written::findings(root, answer));
             if findings.is_empty() {
                 return Ok(());
             }
@@ -218,6 +228,7 @@ pub async fn build<P: Model>(ctx: &Context<'_, P>, docs: &'static [Doc]) -> Resu
         })
         .await
         .map_err(Error::from)?;
+    written.fill(root, &mut report);
 
     let uncovered = report.uncovered(slice);
     tracing::info!(
@@ -236,12 +247,14 @@ pub async fn build<P: Model>(ctx: &Context<'_, P>, docs: &'static [Doc]) -> Resu
 ///
 /// `docs` must contain `verify.md`, which becomes the system prompt. The turn
 /// lends the tree and offers the embedded references through the reference
-/// tools, and no `write_files`: the model runs the checks the prompt names
-/// through its shell and answers what they found. The answered [`Verdict`]
-/// is held to [`Verdict::findings`]; every finding is returned to the model
-/// for one correction round, until the host's round limit is reached. A
-/// verdict that fails is an answer, not an error: the caller decides what a
-/// failed wave means.
+/// tools and the same `write_files` a build has: the model runs the checks
+/// the prompt names through its shell, repairs what they find in the tree,
+/// runs them again, and answers what they finally found. The answered
+/// [`Verdict`] is held to [`Verdict::findings`]; every finding is returned
+/// to the model for one correction round, until the host's round limit is
+/// reached. A verdict that fails is an answer, not an error: the caller
+/// decides what a failed wave means, and what the repairs left in the tree
+/// is the caller's to seal.
 ///
 /// # Errors
 ///
@@ -253,16 +266,19 @@ pub async fn build<P: Model>(ctx: &Context<'_, P>, docs: &'static [Doc]) -> Resu
 pub async fn verify<P: Model>(
     ctx: &VerifyContext<'_, P>, docs: &'static [Doc],
 ) -> Result<Verdict, Error> {
-    let question = Question::<Verdict>::new("verify")
+    let writer = Writer::new(ctx.workspace, VERIFY_TURN);
+    let mut tools = reference::tools();
+    tools.push(Writer::tool());
+    let question = Question::<Verdict>::new(VERIFY_TURN)
         .system(prompt(docs, VERIFY)?)
-        .tools(reference::tools())
+        .tools(tools)
         .workspace(ctx.workspace);
     let brief = VerifyBrief {
         adapter_id: ctx.adapter_id,
     };
 
     tracing::info!("verifying");
-    let tools = reference::serve(docs, "verify", None);
+    let tools = writer.serve(reference::serve(docs, VERIFY_TURN, None));
     let verdict = question
         .ask(ctx.model, brief.to_string(), Some(tools), |answer| {
             let findings = answer.findings();
@@ -331,10 +347,10 @@ impl Display for Brief<'_> {
              `{base}`, the integrated head this slice builds over. Write through this call's \
              `write_files` tool alone: each call writes one or more files beneath `$WORKSPACE`, \
              each created or replaced whole, the directories above it created, so lay the files \
-             you have ready together in one call; a call naming a path outside the tree, under \
-             `.emery/` or `.git/`, or naming a projection is refused whole and writes nothing. \
-             Build the slice into it as the prompt describes, and change nothing outside \
-             it.\n\n\
+             you have ready together in one call, and removes the files its `delete` names; a \
+             call naming a path outside the tree, under `.emery/` or `.git/`, or naming a \
+             projection is refused whole and changes nothing. Build the slice into it as the \
+             prompt describes, and change nothing outside it.\n\n\
              The slice's entry in the plan:\n\n{plan}\n\n\
              The specification, cut to the slice's requirements:\n\n{spec}\n\n\
              The design, whole:\n\n{design}\n\n",
@@ -357,9 +373,10 @@ impl Display for Brief<'_> {
              (`list_docs` enumerates them); load referenced bodies on demand.\n\n\
              Answer with one JSON object matching the report schema: `covered` lists each of \
              those requirement ids the tree now implements, once each and no other id; \
-             `written` lists each file `write_files` wrote, once each, as a `/`-separated path \
-             relative to `$WORKSPACE`, and only a file the tree now holds. Leave a requirement \
-             out of `covered` rather than claim what the tree does not hold.",
+             `written` lists the files `write_files` wrote, once each, as a `/`-separated path \
+             relative to `$WORKSPACE`, and only a file the tree now holds; a file you wrote and \
+             leave out is added for you. Leave a requirement out of `covered` rather than \
+             claim what the tree does not hold.",
             ids = ids.join(", "),
         )
     }
@@ -376,16 +393,22 @@ impl Display for VerifyBrief<'_> {
         write!(
             f,
             "Verify the integrated project tree, bound to adapter `{adapter}`.\n\n\
-             `$WORKSPACE` is the tree every slice of the wave has merged into, lent with the \
-             shell: run the checks the prompt names in it, read what they print, and write \
-             nothing you mean to keep. A check's by-products are the build's, not the \
-             tree's.\n\n\
+             `$WORKSPACE` is the tree every slice of the wave has merged into, lent writable \
+             with the shell: run the checks the prompt names in it and read what they print. \
+             Where a check fails, repair the tree through this call's `write_files` tool alone \
+             — each call writes one or more files beneath `$WORKSPACE`, each created or \
+             replaced whole, and removes the files its `delete` names; a call naming a path \
+             outside the tree, under `.emery/` or `.git/`, or naming a projection is refused \
+             whole and changes nothing — then run the checks again. Keep each repair to what \
+             the failure shows and the prompt allows, and change nothing a passing check \
+             covers. What you write, and what the checks leave behind, is sealed as the wave's \
+             own commit.\n\n\
              The prompt's references are available through this call's `read_doc` tool \
              (`list_docs` enumerates them); load referenced bodies on demand.\n\n\
              Answer with one JSON object matching the verdict schema: `passed` is true when \
-             every check passed and false otherwise; `failures` names each check that failed, \
-             with the tail of its output, and is empty when `passed` is true. Report what the \
-             checks found rather than what the tree should hold.",
+             every check passed on its last run and false otherwise; `failures` names each \
+             check that still failed, with the tail of its output, and is empty when `passed` \
+             is true. Report what the checks found rather than what the tree should hold.",
             adapter = self.adapter_id,
         )
     }

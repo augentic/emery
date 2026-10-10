@@ -35,8 +35,8 @@ async fn ask(model: &Scripted, workspace: &str) -> Result<Verdict, Error> {
 }
 
 // The turn carries the verify prompt as its system, lends the integrated
-// tree, offers the reference tools and no `write_files`, and is steered by
-// the verdict schema.
+// tree writable, offers `write_files` beside the reference tools, and is
+// steered by the verdict schema.
 #[tokio::test]
 async fn request_shape() {
     let tmp = tempfile::tempdir().expect("tempdir");
@@ -52,7 +52,11 @@ async fn request_shape() {
     let request = &seen[0];
     assert_eq!(request.system.as_deref(), Some("VERIFY"));
     assert_eq!(request.workspace.as_deref(), Some(root), "the integrated tree is lent");
-    assert_eq!(request.tools, ["list_docs", "read_doc"], "nothing writes through a verify turn");
+    assert_eq!(
+        request.tools,
+        ["list_docs", "read_doc", "write_files"],
+        "a verify turn repairs through the build's tool"
+    );
     assert!(request.check, "acceptance is the check");
     let SeenFormat::Schema { name, schema } = &request.format else {
         panic!("the verdict is steered by schema");
@@ -66,18 +70,61 @@ async fn request_shape() {
     assert!(
         user.starts_with(
             "Verify the integrated project tree, bound to adapter `target:probe`.\n\n\
-             `$WORKSPACE` is the tree every slice of the wave has merged into, lent with the \
-             shell"
+             `$WORKSPACE` is the tree every slice of the wave has merged into, lent writable \
+             with the shell"
         ),
         "{user}"
     );
-    assert!(user.contains("write nothing you mean to keep"), "{user}");
     assert!(
-        user.contains("`failures` names each check that failed, with the tail of its output"),
+        user.contains(
+            "Where a check fails, repair the tree through this call's `write_files` tool alone"
+        ),
+        "{user}"
+    );
+    assert!(user.contains("then run the checks again"), "{user}");
+    assert!(
+        user.contains("`failures` names each check that still failed, with the tail of its output"),
         "{user}"
     );
     assert!(!user.contains(root), "the lend carries the root, not the brief: {user}");
     assert!(user.ends_with("rather than what the tree should hold."), "{user}");
+    model.assert_exhausted();
+}
+
+// A repair lands beneath the lent tree through `write_files`, as a build's
+// write does, and the verdict stands as answered: what the repair left in
+// the tree is the caller's to seal.
+#[tokio::test]
+async fn repairs() {
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let root = tmp.path().to_str().expect("a UTF-8 scratch root");
+    std::fs::create_dir_all(tmp.path().join("src")).expect("src dir");
+    std::fs::write(tmp.path().join("src/orders.rs"), "pub struct Order\n").expect("seed");
+    let model = Scripted::answering([PASSED]).calling(
+        0,
+        [ToolCall {
+            id: "1".to_owned(),
+            name: "write_files".to_owned(),
+            arguments: r#"{"files":[{"path":"src/orders.rs","content":"pub struct Order;\n"}]}"#
+                .to_owned(),
+        }],
+    );
+
+    let verdict = ask(&model, root).await.expect("accepted");
+    assert!(verdict.passed);
+    assert_eq!(
+        std::fs::read_to_string(tmp.path().join("src/orders.rs")).expect("repaired"),
+        "pub struct Order;\n"
+    );
+
+    let exchanges = model.exchanges();
+    assert_eq!(exchanges.len(), 2, "the repair, then the check");
+    assert_eq!(
+        exchanges[0].outcome.as_deref(),
+        Ok(r#"{"written":[{"bytes":18,"path":"src/orders.rs"}]}"#)
+    );
+    assert_eq!(exchanges[1].tool, "check");
+    assert_eq!(exchanges[1].outcome, Ok(String::new()));
     model.assert_exhausted();
 }
 

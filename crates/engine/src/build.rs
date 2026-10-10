@@ -7,19 +7,20 @@
 //! verified wave left off. The slices still to build go in waves: every slice
 //! whose dependencies are merged is built at once, each in a working copy of
 //! its own cut at the wave's head, with its plan entry, its cut of the
-//! specification, and the whole design. What each wrote is sealed as its
+//! specification, and the whole design. What each changed is sealed as its
 //! commit, once its copy is found still sitting where it was cut, and merged
 //! into the integration working copy in id order under the adapter's merge
-//! rules. The adapter verifies the integrated tree, the wave
-//! is labelled, and the next wave is cut from it. The engine writes no state
-//! of its own: the labelled history is the output, pushed when the target
-//! names a remote.
+//! rules. The adapter verifies the integrated tree, repairing what its
+//! checks find, the wave is labelled, and the next wave is cut from it. The
+//! engine writes no state of its own: the labelled history is the output,
+//! pushed when the target names a remote.
 //!
-//! A slice whose merge conflicts is left for the next wave and built again
-//! over the merged head; a second conflict ends the run. A wave the adapter
-//! does not verify ends the run with the label where the last verified wave
-//! left it. Either way the integration working copy is left for inspection
-//! and removed by the next run.
+//! A slice whose build fails upstream is built once more in a fresh copy. A
+//! slice whose merge conflicts is left for the next wave and built again
+//! over the merged head; its [`ATTEMPTS`]th conflict ends the run. A wave the
+//! adapter does not verify ends the run with the label where the last
+//! verified wave left it. Either way the integration working copy is left
+//! for inspection and removed by the next run.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::num::NonZeroUsize;
@@ -39,7 +40,11 @@ use crate::vcs::{INTEGRATION, Message, Repo, Repository, WorkingCopy};
 use crate::{store, vcs};
 
 /// How many times a slice is built before a conflict at its merge ends the run.
-pub const ATTEMPTS: usize = 2;
+pub const ATTEMPTS: usize = 3;
+
+// How many times a slice's build is put to the adapter when it fails
+// upstream, each in a fresh working copy.
+const RETRIES: usize = 2;
 
 /// Builds every slice of the current plan through the target adapter `input` names.
 ///
@@ -47,12 +52,14 @@ pub const ATTEMPTS: usize = 2;
 /// again. The rest go in waves: every slice whose dependencies are merged is
 /// built at once, up to `jobs` concurrently, in a working copy cut at the
 /// wave's head; each report is held to its slice by
-/// [`Report::findings`](emery_adapter::target::Report::findings), each
-/// commit merged in id order under the adapter's merge rules, and the wave
-/// verified by the adapter and labelled. A slice whose merge conflicts is
-/// built again in the next wave, over the merged head; the first failure
-/// ends the run, and what was merged before it stays committed in the
-/// integration working copy, the verified waves labelled.
+/// [`Report::findings`](emery_adapter::target::Report::findings), what each
+/// copy changed sealed as its commit and merged in id order under the
+/// adapter's merge rules, and the wave verified by the adapter and labelled,
+/// what its checks changed sealed first. A build that fails upstream is put
+/// once more in a fresh copy. A slice whose merge conflicts is built again in
+/// the next wave, over the merged head; the first failure ends the run, and
+/// what was merged before it stays committed in the integration working
+/// copy, the verified waves labelled.
 ///
 /// # Errors
 ///
@@ -84,7 +91,8 @@ pub const ATTEMPTS: usize = 2;
 ///   slices left to build wait on one another, or storage or version
 ///   control fails.
 /// - Returns [`Error::BadGateway`] when the adapter, its acquisition, the
-///   model, or the repository's remote fails upstream.
+///   model, or the repository's remote fails upstream; a slice's build is
+///   put twice before it does.
 ///
 /// A failure at a slice keeps the adapter's class and code; its description
 /// names the slice, its wave, and the slices merged before it. A failure at a
@@ -160,6 +168,7 @@ pub async fn build<P: Target + StateStore + BlobStore + Plugins + Vcs>(
         tries: BTreeMap::new(),
         conflicts: BTreeMap::new(),
         verified: Vec::new(),
+        repaired: Vec::new(),
     };
 
     // wave by wave, until every slice is merged
@@ -198,6 +207,7 @@ pub async fn build<P: Target + StateStore + BlobStore + Plugins + Vcs>(
         resumed: progress.resumed,
         slices: progress.built,
         verified: progress.verified,
+        repaired: progress.repaired,
         head: progress.head,
         label,
         pushed: input.remote,
@@ -269,6 +279,11 @@ pub struct BuildOutput {
     /// The integrated head each wave was verified and labelled at, in wave order.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub verified: Vec<String>,
+    /// The waves whose verification changed the integrated tree, from one,
+    /// each change sealed as `Wave <k> verified` before the head was
+    /// labelled.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub repaired: Vec<usize>,
     /// The integrated commit the label points at.
     pub head: String,
     /// The label set on the head, `emery/<revision>`.
@@ -292,8 +307,9 @@ pub struct BuiltSlice {
     pub covered: Vec<ReqId>,
     /// The slice's requirements the adapter did not report, in id order.
     pub uncovered: Vec<ReqId>,
-    /// The files the adapter reports written or changed, relative to the
-    /// working copy's root.
+    /// The paths the build changed in the slice's working copy — written,
+    /// edited, or removed — relative to its root and sorted: what its commit
+    /// records, read from the copy rather than the adapter's report.
     pub written: Vec<String>,
     /// The merge commit that brought what the slice wrote into the
     /// integrated head; `None` when it changed nothing.
@@ -330,6 +346,7 @@ struct Progress {
     tries: BTreeMap<SliceId, usize>,
     conflicts: BTreeMap<SliceId, Vec<String>>,
     verified: Vec<String>,
+    repaired: Vec<usize>,
 }
 
 // One slice built in its working copy, not yet merged.
@@ -338,7 +355,6 @@ struct Built<'a> {
     worktree: WorkingCopy,
     covered: Vec<ReqId>,
     uncovered: Vec<ReqId>,
-    written: Vec<String>,
 }
 
 enum Integrated {
@@ -398,7 +414,6 @@ impl Run<'_> {
         &self, provider: &P, slice: &'a Slice, head: &str, wave: usize,
     ) -> Result<Built<'a>, Error> {
         let at = vcs::slice_worktree(slice.id);
-        let worktree = WorkingCopy::cut(provider, &self.repo.path(), &at, head).await?;
         let input = SliceInput {
             id: slice.id.to_string(),
             name: slice.name.clone(),
@@ -409,7 +424,22 @@ impl Run<'_> {
             base: head.to_owned(),
         };
         tracing::info!(requirements = input.requirements.len(), wave, "building slice");
-        let report = Target::build(provider, self.adapter, &input, worktree.path()).await?;
+
+        // a build that fails upstream is put again in a fresh copy, since the
+        // first may have written part of the tree before it failed
+        let mut attempt = 0;
+        let (worktree, report) = loop {
+            attempt += 1;
+            let worktree = WorkingCopy::cut(provider, &self.repo.path(), &at, head).await?;
+            match Target::build(provider, self.adapter, &input, worktree.path()).await {
+                Ok(report) => break (worktree, report),
+                Err(Error::BadGateway { description, .. }) if attempt < RETRIES => {
+                    tracing::warn!(attempt, %description, "build failed upstream; building again");
+                    worktree.remove(provider).await?;
+                }
+                Err(error) => return Err(error),
+            }
+        };
 
         let findings = report.findings(&input);
         if !findings.is_empty() {
@@ -426,7 +456,7 @@ impl Run<'_> {
         tracing::info!(
             covered = covered.len(),
             uncovered = uncovered.len(),
-            written = report.written.len(),
+            reported = report.written.len(),
             "slice built"
         );
         Ok(Built {
@@ -434,11 +464,10 @@ impl Run<'_> {
             worktree,
             covered,
             uncovered,
-            written: report.written,
         })
     }
 
-    // Seals what the slice wrote and merges it into the integrated head;
+    // Seals what the slice changed and merges it into the integrated head;
     // `true` when it merged, `false` when a conflict leaves it for the next
     // wave. The slice's working copy is removed either way, and left for
     // inspection when the slice fails.
@@ -456,6 +485,12 @@ impl Run<'_> {
                 progress.head
             ));
         }
+
+        // what the build changed, as the copy holds it rather than as the
+        // report lists it
+        let mut written: Vec<String> =
+            built.worktree.pending(provider).await?.into_iter().map(|change| change.path).collect();
+        written.sort_unstable();
 
         let message = Message {
             slice: slice.id,
@@ -497,7 +532,7 @@ impl Run<'_> {
                     wave,
                     covered: built.covered,
                     uncovered: built.uncovered,
-                    written: built.written,
+                    written,
                     commit,
                     conflicts,
                 });
@@ -525,8 +560,8 @@ impl Run<'_> {
         }
     }
 
-    // Has the adapter verify the integrated tree, seals what its checks left
-    // behind, and labels the head the wave reached.
+    // Has the adapter verify the integrated tree, seals what its checks and
+    // repairs left behind, and labels the head the wave reached.
     async fn verify<P: Target + Vcs>(
         &self, provider: &P, progress: &mut Progress, wave: usize, merged: &[SliceId],
     ) -> Result<(), Error> {
@@ -548,7 +583,8 @@ impl Run<'_> {
             });
         }
 
-        // what the checks left behind, sealed as the wave's own commit
+        // what the checks and their repairs left behind, sealed as the wave's
+        // own commit
         let pending = self.integration.pending(provider).await?;
         if !pending.is_empty() {
             let ids: Vec<String> = merged.iter().map(ToString::to_string).collect();
@@ -562,8 +598,9 @@ impl Run<'_> {
             tracing::info!(
                 changed = pending.len(),
                 commit = sealed.as_deref().unwrap_or("none"),
-                "verification by-products sealed"
+                "verification changes sealed"
             );
+            progress.repaired.push(wave);
         }
 
         let head = self.integration.head(provider).await?;

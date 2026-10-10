@@ -109,6 +109,19 @@ fn worktree(slice: &str) -> String {
     format!("{WORKTREES}/{slice}")
 }
 
+// Scripts what the next build of `slice` leaves changed in its working copy.
+fn changed(provider: &Provider, slice: &str, paths: &[(&str, ChangeKind)]) {
+    provider.vcs.pending.script(
+        &worktree(slice),
+        Ok(paths.iter().map(|(path, kind)| change(path, *kind)).collect()),
+    );
+}
+
+// Scripts one added file, `src/<name>.rs`, as what the next build of a slice leaves.
+fn wrote(provider: &Provider, (slice, name): (&str, &str)) {
+    changed(provider, slice, &[(&format!("src/{name}.rs"), ChangeKind::Added)]);
+}
+
 // The message a build seals a slice under in its working copy and as its merge.
 fn message(
     id: &str, (slice, name): (&str, &str), requirements: &str, covered: &str, base: &str,
@@ -148,13 +161,14 @@ fn integrated(repo: &str, base: &str, id: &str) -> Vec<String> {
 }
 
 // One wave's exchange over `repo`: every slice's working copy cut at `head`,
-// then each found where it was cut, sealed, merged, and removed in id order,
-// then the integrated head verified and labelled.
+// then each found where it was cut, its changes read, sealed, merged, and
+// removed in id order, then the integrated head verified and labelled.
 fn wave(repo: &str, id: &str, head: &str, slices: &[(&str, &str)]) -> Vec<String> {
     let mut calls: Vec<String> =
         slices.iter().map(|(slice, _)| format!("add {repo} {} {head}", worktree(slice))).collect();
     for (slice, name) in slices {
         calls.push(format!("head {}", worktree(slice)));
+        calls.push(format!("pending {}", worktree(slice)));
         calls.push(format!("commit {} {slice} {name}", worktree(slice)));
         calls.push(format!("merge {INTEGRATION} {slice}-commit {slice} {name}"));
         calls.push(format!("remove {}", worktree(slice)));
@@ -172,7 +186,8 @@ fn wave(repo: &str, id: &str, head: &str, slices: &[(&str, &str)]) -> Vec<String
 // Every slice of the plan is dispatched after the slices it depends on, each
 // with its plan entry, its cut of the specification, the whole design, and
 // the head it builds over, into a working copy of its own cut from that
-// head; what each wrote is sealed as its commit and merged into the
+// head; what each changed in its copy, as the copy holds it rather than as
+// the report lists it, is sealed as its commit and merged into the
 // integration working copy, each wave verified and labelled, and the
 // engine's own state left as it was.
 #[tokio::test]
@@ -182,7 +197,14 @@ async fn build_plan() {
         "SLICE-002".to_string(),
         Ok(report(&["REQ-003"], &["src/orders.rs", "Cargo.toml"])),
     );
+    let orders_changed = [
+        ("src/orders.rs", ChangeKind::Added),
+        ("Cargo.toml", ChangeKind::Modified),
+        ("src/lib.rs", ChangeKind::Modified),
+    ];
     provider.vcs.heads.script(".", Ok(BASE.to_owned()));
+    wrote(&provider, AUTHENTICATION);
+    changed(&provider, "SLICE-002", &orders_changed);
     let before = provider.storage.snapshot();
 
     let resp = cli_ok(&provider, &["emery", "build", BUILDER]).await;
@@ -195,7 +217,7 @@ async fn build_plan() {
             "built revision {id}\n  plan: 2 slices in 2 waves, widest 1\n  base {BASE}\n  wave 1: \
              1 slice verified at 9f8e7d6c\n    SLICE-001 authentication: covered 2/2, written 1 \
              file, merged m:SLICE-001\n  wave 2: 1 slice verified at 9f8e7d6c\n    SLICE-002 \
-             orders: covered 1/2 (uncovered REQ-004), written 2 files, merged m:SLICE-002\n  \
+             orders: covered 1/2 (uncovered REQ-004), written 3 files, merged m:SLICE-002\n  \
              labelled emery/{id} at {HEAD}\n"
         )
     );
@@ -245,6 +267,8 @@ async fn build_plan() {
 
     // the JSON envelope
     provider.vcs.heads.script(".", Ok(BASE.to_owned()));
+    wrote(&provider, AUTHENTICATION);
+    changed(&provider, "SLICE-002", &orders_changed);
     let resp = cli_ok(&provider, &["emery", "--format", "json", "build", BUILDER]).await;
     let envelope: Value = serde_json::from_slice(&resp.stdout).expect("one JSON envelope");
     assert_eq!(envelope["revision"], id, "{envelope}");
@@ -255,11 +279,12 @@ async fn build_plan() {
         envelope["slices"],
         json!([
             {"id": "SLICE-001", "name": "authentication", "wave": 1, "covered": ["REQ-001", "REQ-002"], "uncovered": [], "written": ["src/authentication.rs"], "commit": "m:SLICE-001"},
-            {"id": "SLICE-002", "name": "orders", "wave": 2, "covered": ["REQ-003"], "uncovered": ["REQ-004"], "written": ["src/orders.rs", "Cargo.toml"], "commit": "m:SLICE-002"},
+            {"id": "SLICE-002", "name": "orders", "wave": 2, "covered": ["REQ-003"], "uncovered": ["REQ-004"], "written": ["Cargo.toml", "src/lib.rs", "src/orders.rs"], "commit": "m:SLICE-002"},
         ]),
-        "{envelope}"
+        "`written` is the copy's change set, sorted: {envelope}"
     );
     assert_eq!(envelope["verified"], json!([HEAD, HEAD]), "{envelope}");
+    assert!(envelope.get("repaired").is_none(), "no verify changed the tree: {envelope}");
     assert_eq!(envelope["head"], HEAD, "{envelope}");
     assert_eq!(envelope["label"], format!("emery/{id}"), "{envelope}");
     assert!(envelope.get("pushed").is_none(), "no remote, no push: {envelope}");
@@ -279,6 +304,9 @@ async fn build_waves() {
     let (mut provider, id) = wide();
     provider.target.rendezvous = Some(Rendezvous::from_iter(["SLICE-001", "SLICE-003"]));
     provider.vcs.heads.script(".", Ok(BASE.to_owned()));
+    for slice in [AUTHENTICATION, WIDE_ORDERS, WIDE_SESSIONS] {
+        wrote(&provider, slice);
+    }
 
     let resp = cli_ok(&provider, &["emery", "--format", "json", "build", BUILDER]).await;
 
@@ -316,6 +344,9 @@ async fn build_waves() {
     assert_eq!(envelope["verified"], json!([HEAD, HEAD]), "{envelope}");
 
     provider.vcs.heads.script(".", Ok(BASE.to_owned()));
+    for slice in [AUTHENTICATION, WIDE_ORDERS, WIDE_SESSIONS] {
+        wrote(&provider, slice);
+    }
     let resp = cli_ok(&provider, &["emery", "build", BUILDER]).await;
     let stdout = String::from_utf8_lossy(&resp.stdout);
     assert_eq!(
@@ -414,6 +445,9 @@ async fn build_conflict_rebuilt() {
         }),
     );
     provider.vcs.merges.script(INTEGRATION, Ok(conflicted(&["src/orders.rs", "src/lib.rs"])));
+    for slice in [AUTHENTICATION, WIDE_ORDERS, WIDE_SESSIONS, WIDE_ORDERS] {
+        wrote(&provider, slice);
+    }
 
     let resp = cli_ok(&provider, &["emery", "--format", "json", "build", BUILDER]).await;
 
@@ -468,6 +502,9 @@ async fn build_conflict_rebuilt() {
         }),
     );
     provider.vcs.merges.script(INTEGRATION, Ok(conflicted(&["src/orders.rs", "src/lib.rs"])));
+    for slice in [AUTHENTICATION, WIDE_ORDERS, WIDE_SESSIONS, WIDE_ORDERS] {
+        wrote(&provider, slice);
+    }
     let resp = cli_ok(&provider, &["emery", "build", BUILDER]).await;
     let stdout = String::from_utf8_lossy(&resp.stdout);
     assert_eq!(
@@ -484,7 +521,7 @@ async fn build_conflict_rebuilt() {
     provider.vcs.assert_exhausted();
 }
 
-// A slice that conflicts on its second build ends the run as
+// A slice that conflicts on its third build ends the run as
 // `slice-conflict`, naming the slice and the paths; the label stays where
 // the last verified wave left it and the integration working copy stays
 // for inspection.
@@ -502,6 +539,7 @@ async fn build_conflict_persists() {
             conflicts: Vec::new(),
         }),
         Ok(conflicted(&["src/orders.rs"])),
+        Ok(conflicted(&["src/orders.rs"])),
     ] {
         provider.vcs.merges.script(INTEGRATION, answer);
     }
@@ -511,28 +549,37 @@ async fn build_conflict_persists() {
     assert_message(
         &envelope,
         &format!(
-            "slice `SLICE-003` (orders) failed in wave 2; SLICE-001, SLICE-002 merged before it \
-             stay committed in `{INTEGRATION}`: its merge conflicts at src/orders.rs on its build 2"
+            "slice `SLICE-003` (orders) failed in wave 3; SLICE-001, SLICE-002 merged before it \
+             stay committed in `{INTEGRATION}`: its merge conflicts at src/orders.rs on its build 3"
         ),
     );
     assert!(
         envelope["hint"].as_str().is_some_and(|hint| hint.contains("merge rule")),
         "{envelope}"
     );
+    assert_eq!(
+        dispatched(&provider).iter().filter(|(slice, ..)| slice == "SLICE-003").count(),
+        3,
+        "the slice is built once per wave until its last attempt"
+    );
     let calls = provider.vcs.calls();
     let labels: Vec<&String> = calls.iter().filter(|call| call.starts_with("label ")).collect();
     assert_eq!(
         labels,
-        [&format!("label . emery/{id} {HEAD}")],
-        "labelled after the first wave alone"
+        [&format!("label . emery/{id} {HEAD}"), &format!("label . emery/{id} {HEAD}")],
+        "labelled after the two waves that merged a slice"
     );
     assert!(!calls.contains(&format!("remove {INTEGRATION}")), "left for inspection: {calls:?}");
     assert_eq!(
         calls.iter().filter(|call| **call == format!("remove {}", worktree("SLICE-003"))).count(),
-        2,
+        3,
         "the slice's working copy goes after each conflict: {calls:?}"
     );
-    assert_eq!(provider.target.verifies(), [INTEGRATION], "the second wave is never verified");
+    assert_eq!(
+        provider.target.verifies(),
+        [INTEGRATION, INTEGRATION],
+        "the third wave is never verified"
+    );
     provider.vcs.assert_exhausted();
 }
 
@@ -577,22 +624,31 @@ async fn build_verify_failed() {
     assert_eq!(calls.iter().filter(|call| call.starts_with("label ")).count(), 1, "{calls:?}");
 }
 
-// What a verify's checks leave behind in the integrated tree is sealed as
-// the wave's own commit before the head is labelled, so the label points at
-// a sealed tree.
+// What a verify's repairs and checks leave in the integrated tree is sealed
+// as the wave's own commit before the head is labelled, so the label points
+// at a sealed tree, and the wave is reported repaired.
 #[tokio::test]
-async fn build_verify_by_products() {
+async fn build_verify_repairs() {
     let (provider, id) = planned();
-    provider.vcs.pending.script(
-        INTEGRATION,
+    let repaired = || {
         Ok(vec![
-            change("target/report.txt", ChangeKind::Added),
+            change("src/orders.rs", ChangeKind::Modified),
             change("Cargo.lock", ChangeKind::Modified),
-        ]),
+        ])
+    };
+    provider.vcs.pending.script(INTEGRATION, repaired());
+
+    let resp = cli_ok(&provider, &["emery", "build", BUILDER]).await;
+
+    let stdout = String::from_utf8_lossy(&resp.stdout);
+    assert!(
+        stdout.contains(
+            "  wave 1: 1 slice verified at 9f8e7d6c, repaired\n    SLICE-001 authentication: \
+             covered 2/2, written 0 files, merged m:SLICE-001\n  wave 2: 1 slice verified at \
+             9f8e7d6c\n"
+        ),
+        "{stdout}"
     );
-
-    cli_ok(&provider, &["emery", "build", BUILDER]).await;
-
     let calls = provider.vcs.calls();
     let pending =
         calls.iter().position(|call| call == &format!("pending {INTEGRATION}")).expect("a check");
@@ -611,6 +667,12 @@ async fn build_verify_by_products() {
         format!("Wave 1 verified\n\nRevision: {id}\nAdapter: {BUILDER}\nSlices: SLICE-001")
     );
     assert_eq!(provider.vcs.messages().len(), 3, "the two slices' commits and the wave's");
+
+    provider.vcs.pending.script(INTEGRATION, repaired());
+    let resp = cli_ok(&provider, &["emery", "--format", "json", "build", BUILDER]).await;
+    let envelope: Value = serde_json::from_slice(&resp.stdout).expect("one JSON envelope");
+    assert_eq!(envelope["repaired"], json!([1]), "{envelope}");
+    assert_eq!(envelope["verified"], json!([HEAD, HEAD]), "{envelope}");
     provider.vcs.assert_exhausted();
 }
 
@@ -687,6 +749,7 @@ async fn build_resumed() {
             entry("m:SLICE-001", &message(&id, AUTHENTICATION, "REQ-001", "REQ-001", HEAD, 1)),
         ]),
     );
+    wrote(&provider, WIDE_SESSIONS);
     let resp = cli_ok(&provider, &["emery", "build", BUILDER]).await;
     let stdout = String::from_utf8_lossy(&resp.stdout);
     assert_eq!(
@@ -1003,6 +1066,7 @@ async fn build_nothing_changed() {
         .reports
         .insert("SLICE-001".to_string(), Ok(report(&["REQ-001", "REQ-002"], &[])));
     provider.vcs.commits.script(&worktree("SLICE-001"), Ok(None));
+    wrote(&provider, ORDERS);
 
     let resp = cli_ok(&provider, &["emery", "build", BUILDER]).await;
 
@@ -1350,8 +1414,45 @@ async fn build_worktree_head_moved() {
     provider.vcs.assert_exhausted();
 }
 
+// A build that fails upstream is put once more in a fresh working copy,
+// the first removed; the second build is the one sealed, under the same
+// head, and nothing of the first reaches the history.
+#[tokio::test]
+async fn build_retries_bad_gateway() {
+    let (provider, id) = planned();
+    provider.target.fails("SLICE-001", bad_gateway!("the model timed out"));
+    provider.vcs.heads.script(".", Ok(BASE.to_owned()));
+
+    cli_ok(&provider, &["emery", "build", BUILDER]).await;
+
+    assert_eq!(
+        dispatched(&provider),
+        [
+            ("SLICE-001".to_owned(), BASE.to_owned(), worktree("SLICE-001")),
+            ("SLICE-001".to_owned(), BASE.to_owned(), worktree("SLICE-001")),
+            ("SLICE-002".to_owned(), HEAD.to_owned(), worktree("SLICE-002")),
+        ],
+        "the failed build is put again over the same head"
+    );
+    let mut expected = vec![
+        "pending .".to_owned(),
+        "head .".to_owned(),
+        format!("labelled . emery/{id}"),
+        format!("add . {INTEGRATION} {BASE}"),
+        format!("add . {} {BASE}", worktree("SLICE-001")),
+        format!("remove {}", worktree("SLICE-001")),
+    ];
+    expected.extend(wave(".", &id, BASE, &[AUTHENTICATION]));
+    expected.extend(wave(".", &id, HEAD, &[ORDERS]));
+    expected.push(format!("remove {INTEGRATION}"));
+    assert_eq!(provider.vcs.calls(), expected, "the first copy goes before the second is cut");
+    assert_eq!(provider.vcs.messages().len(), 2, "one commit per slice");
+    provider.vcs.assert_exhausted();
+}
+
 // A failure after a wave was verified names what stays merged, and where;
-// the label stays where that wave left it.
+// the label stays where that wave left it. A second upstream failure of
+// one slice is the run's.
 #[tokio::test]
 async fn build_stops_at_failure() {
     let (mut provider, id) = planned();
@@ -1368,9 +1469,14 @@ async fn build_stops_at_failure() {
              committed in `{INTEGRATION}`: the model timed out"
         ),
     );
-    assert_eq!(provider.target.calls().len(), 2);
+    assert_eq!(provider.target.calls().len(), 3, "the failed slice is put twice, no more");
     assert_eq!(provider.vcs.messages().len(), 1, "the first slice's commit stands");
     let calls = provider.vcs.calls();
     assert!(calls.contains(&format!("label . emery/{id} {HEAD}")), "the first wave's label stands");
     assert!(!calls.contains(&format!("remove {INTEGRATION}")), "left for inspection");
+    assert_eq!(
+        calls.iter().filter(|call| **call == format!("remove {}", worktree("SLICE-002"))).count(),
+        1,
+        "the first copy goes, the second stays for inspection: {calls:?}"
+    );
 }
