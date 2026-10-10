@@ -50,10 +50,11 @@ fn summary(diff: &Diff, w: &mut dyn fmt::Write) -> fmt::Result {
 
 /// Writes a [`BuildOutput`] revision line, the plan's shape, the base, the slices resumed, each wave with the slices it merged, and the label.
 ///
-/// A wave line names the head it was verified at. Each slice line beneath
-/// it counts the requirements covered of those it holds, names any left
-/// uncovered, counts the files written, names the merge commit that brought
-/// them in, and the paths an earlier build of it conflicted at.
+/// A wave line names the head it was verified at, and says `repaired` when
+/// its verification changed the tree. Each slice line beneath it counts the
+/// requirements covered of those it holds, names any left uncovered, counts
+/// the paths its build changed, names the merge commit that brought them in,
+/// and the paths an earlier build of it conflicted at.
 pub fn build(output: &BuildOutput, w: &mut dyn fmt::Write) -> fmt::Result {
     writeln!(w, "built revision {}", output.revision)?;
     waves(&output.waves, w)?;
@@ -69,12 +70,16 @@ pub fn build(output: &BuildOutput, w: &mut dyn fmt::Write) -> fmt::Result {
     for (head, wave) in output.verified.iter().zip(numbered) {
         let merged: Vec<&BuiltSlice> =
             output.slices.iter().filter(|slice| slice.wave == wave).collect();
-        writeln!(
+        write!(
             w,
             "  wave {wave}: {} verified at {}",
             counted(merged.len(), "slice"),
             head.get(..8).unwrap_or(head)
         )?;
+        if output.repaired.contains(&wave) {
+            w.write_str(", repaired")?;
+        }
+        writeln!(w)?;
         for slice in merged {
             let total = slice.covered.len() + slice.uncovered.len();
             write!(w, "    {} {}: covered {}/{total}", slice.id, slice.name, slice.covered.len())?;

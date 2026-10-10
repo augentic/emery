@@ -2053,6 +2053,88 @@ async fn oversized_stem() {
     provider.model.assert_exhausted();
 }
 
+// A stem past the cap cut one slice per sub-stem is refused where two of
+// its slices would fit one within the cap, the smallest pair named; the
+// answer merging them commits, the slice sizes it leaves no longer fitting
+// together.
+#[tokio::test]
+async fn oversized_stem_cut_fine() {
+    let cap = emery_engine::specify::SLICE_CAP;
+    let reads = cap / 2;
+    let posts = cap / 2 + 1;
+    let deletes = 2;
+    let verbs: Vec<(&str, usize)> = vec![("get", reads), ("post", posts), ("delete", deletes)];
+    let mut claims = Vec::new();
+    for (verb, count) in &verbs {
+        for index in 0..*count {
+            let statement = format!("`{verb}` does thing {index}.");
+            claims.push(requirement(&format!("orders.{verb}.thing-{index}"), &statement));
+        }
+    }
+    claims.push(requirement("auth.login", "Users sign in with a credential."));
+    let subjects: Vec<String> = claims.iter().filter_map(|claim| claim.id.clone()).collect();
+    let numbered: Vec<String> = (1..=claims.len()).map(|n| format!("REQ-{n:03}")).collect();
+    let ids: Vec<&str> = numbered.iter().map(String::as_str).collect();
+    let (get, others) = ids.split_at(reads);
+    let (post, others) = others.split_at(posts);
+    let (delete, auth) = others.split_at(deletes);
+    let reads_and_deletes: Vec<&str> = get.iter().chain(delete).copied().collect();
+    let grouping = separate_grouping(claims.len());
+    let draft = spec_draft(&subjects, &["Orders in three verbs, and sign-in."]);
+    let refused = separate_slicing(&[
+        ("orders-reading", get),
+        ("orders-posting", post),
+        ("orders-deleting", delete),
+        ("authentication", auth),
+    ]);
+    let accepted = separate_slicing(&[
+        ("orders-reading", &reads_and_deletes),
+        ("orders-posting", post),
+        ("authentication", auth),
+    ]);
+    let mut provider = Provider::answering([
+        grouping.as_str(),
+        draft.as_str(),
+        DESIGN_ANSWER,
+        refused.as_str(),
+        accepted.as_str(),
+    ]);
+    provider.source.evidence.insert("docs".to_string(), Ok(evidence(claims)));
+
+    cli_ok(&provider, &["emery", "--format", "json", "specify", &reference("docs")]).await;
+
+    let request = provider.model.seen()[3].messages.join("\n");
+    assert!(
+        request.contains(
+            "Cut the stem at as few sub-stem boundaries as the cap allows, never one slice per \
+             sub-stem"
+        ),
+        "{request}"
+    );
+    let check = &provider.model.exchanges()[3];
+    assert_eq!(check.tool, "check");
+    let correction = check.outcome.as_ref().expect_err("one slice per sub-stem is rejected");
+    assert!(
+        correction.contains(&format!(
+            "the stem `orders` is cut into 3 slices, yet `orders-deleting` ({deletes} \
+             requirements) and `orders-reading` ({reads}) fit one slice of {} within the cap of \
+             {cap}: merge the stem's slices until no two fit together",
+            reads + deletes
+        )),
+        "{correction}"
+    );
+    assert!(
+        !correction.contains("split across"),
+        "no sub-stem is split, so the cut is the one finding: {correction}"
+    );
+    let id = current(&provider.storage);
+    let plan: Value = serde_json::from_slice(&document(&provider.storage, &id, "plan.json"))
+        .expect("the committed plan is JSON");
+    assert_eq!(plan["slices"][0]["requirements"], serde_json::json!(reads_and_deletes));
+    assert_eq!(plan["slices"].as_array().map(Vec::len), Some(3));
+    provider.model.assert_exhausted();
+}
+
 // The slicing leg is gated as the drafts are, one finding per case.
 #[tokio::test]
 async fn invalid_plan() {

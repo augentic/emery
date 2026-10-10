@@ -133,6 +133,9 @@ impl Rendezvous {
 pub struct TargetScript {
     /// Build outcomes keyed by slice id.
     pub reports: BTreeMap<String, Result<Report, Error>>,
+    /// Failures queued per slice id, each consumed by one build ahead of
+    /// the slice's report.
+    pub failures: Arc<Mutex<BTreeMap<String, VecDeque<Error>>>>,
     /// Verify outcomes, consumed in wave order.
     pub verdicts: Arc<Mutex<VecDeque<Result<Verdict, Error>>>>,
     /// Minimum `emery` versions keyed by adapter id, the guest name each
@@ -168,6 +171,11 @@ impl TargetScript {
     /// Queues `verdict` for the next verify.
     pub fn verdict(&self, verdict: Result<Verdict, Error>) {
         self.verdicts.lock().expect("verdicts").push_back(verdict);
+    }
+
+    /// Queues `error` for the next build of slice `id`, ahead of its report.
+    pub fn fails(&self, id: &str, error: Error) {
+        self.failures.lock().expect("failures").entry(id.to_owned()).or_default().push_back(error);
     }
 }
 
@@ -377,12 +385,22 @@ impl<S: Send + Sync + 'static> Target for Provider<S> {
             slice.clone(),
             workspace.to_string(),
         ));
-        let outcome = self.target.reports.get(&slice.id).cloned().unwrap_or_else(|| {
-            Ok(Report {
-                covered: slice.requirements.clone(),
-                written: vec![format!("src/{}.rs", slice.name)],
-            })
-        });
+        let queued = self
+            .target
+            .failures
+            .lock()
+            .expect("failures")
+            .get_mut(&slice.id)
+            .and_then(VecDeque::pop_front);
+        let outcome = match queued {
+            Some(error) => Err(error),
+            None => self.target.reports.get(&slice.id).cloned().unwrap_or_else(|| {
+                Ok(Report {
+                    covered: slice.requirements.clone(),
+                    written: vec![format!("src/{}.rs", slice.name)],
+                })
+            }),
+        };
         let rendezvous = self.target.rendezvous.clone();
         let key = slice.id.clone();
         async move {
