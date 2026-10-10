@@ -189,7 +189,7 @@ impl Written {
     // The rule the slice cannot hold a report to alone: a `written` path
     // names a regular file under the lent tree. A path the grammar refused
     // is left to that finding.
-    pub(super) fn findings(&self, root: &Path, report: &Report) -> Vec<String> {
+    pub(super) fn findings(root: &Path, report: &Report) -> Vec<String> {
         let mut findings = Vec::new();
         let mut listed = BTreeSet::new();
         for path in &report.written {

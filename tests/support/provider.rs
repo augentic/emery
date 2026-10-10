@@ -392,15 +392,17 @@ impl<S: Send + Sync + 'static> Target for Provider<S> {
             .expect("failures")
             .get_mut(&slice.id)
             .and_then(VecDeque::pop_front);
-        let outcome = match queued {
-            Some(error) => Err(error),
-            None => self.target.reports.get(&slice.id).cloned().unwrap_or_else(|| {
-                Ok(Report {
-                    covered: slice.requirements.clone(),
-                    written: vec![format!("src/{}.rs", slice.name)],
+        let outcome = queued.map_or_else(
+            || {
+                self.target.reports.get(&slice.id).cloned().unwrap_or_else(|| {
+                    Ok(Report {
+                        covered: slice.requirements.clone(),
+                        written: vec![format!("src/{}.rs", slice.name)],
+                    })
                 })
-            }),
-        };
+            },
+            Err,
+        );
         let rendezvous = self.target.rendezvous.clone();
         let key = slice.id.clone();
         async move {

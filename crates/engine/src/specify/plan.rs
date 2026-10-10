@@ -108,6 +108,40 @@ impl<'a> SliceBrief<'a> {
             slices,
         }
     }
+
+    // A stem past the cap cut finer than the cap asks: two of its slices
+    // that would fit one within the cap are a finding, the smallest pair
+    // named.
+    fn verify_cut(
+        &self, answer: &SliceAnswer, placed: &BTreeMap<ReqId, &str>, review: &mut Review,
+    ) {
+        let sizes: BTreeMap<&str, usize> = answer
+            .slices
+            .iter()
+            .map(|draft| (draft.name.as_str(), draft.requirements.len()))
+            .collect();
+        for stem in self.stems.iter().filter(|stem| !stem.substems.is_empty()) {
+            let names: BTreeSet<&str> =
+                stem.requirements.iter().filter_map(|id| placed.get(id).copied()).collect();
+            let mut slices: Vec<(usize, &str)> = names
+                .into_iter()
+                .map(|name| (sizes.get(name).copied().unwrap_or(0), name))
+                .collect();
+            slices.sort_unstable();
+            if let [(first, a), (second, b), ..] = slices[..]
+                && first + second <= SLICE_CAP
+            {
+                review.note(format_args!(
+                    "the stem `{}` is cut into {} slices, yet `{a}` ({first} requirements) and \
+                     `{b}` ({second}) fit one slice of {} within the cap of {SLICE_CAP}: merge \
+                     the stem's slices until no two fit together",
+                    stem.label,
+                    slices.len(),
+                    first + second
+                ));
+            }
+        }
+    }
 }
 
 impl Brief for SliceBrief<'_> {
@@ -184,33 +218,7 @@ impl Brief for SliceBrief<'_> {
             }
         }
 
-        // a stem past the cap cut finer than the cap asks
-        let sizes: BTreeMap<&str, usize> = answer
-            .slices
-            .iter()
-            .map(|draft| (draft.name.as_str(), draft.requirements.len()))
-            .collect();
-        for stem in self.stems.iter().filter(|stem| !stem.substems.is_empty()) {
-            let names: BTreeSet<&str> =
-                stem.requirements.iter().filter_map(|id| placed.get(id).copied()).collect();
-            let mut slices: Vec<(usize, &str)> = names
-                .into_iter()
-                .map(|name| (sizes.get(name).copied().unwrap_or(0), name))
-                .collect();
-            slices.sort_unstable();
-            if let [(first, a), (second, b), ..] = slices[..]
-                && first + second <= SLICE_CAP
-            {
-                review.note(format_args!(
-                    "the stem `{}` is cut into {} slices, yet `{a}` ({first} requirements) and \
-                     `{b}` ({second}) fit one slice of {} within the cap of {SLICE_CAP}: merge \
-                     the stem's slices until no two fit together",
-                    stem.label,
-                    slices.len(),
-                    first + second
-                ));
-            }
-        }
+        self.verify_cut(answer, &placed, review);
 
         // type ownership
         let keys: BTreeSet<&str> = self.types.iter().map(String::as_str).collect();

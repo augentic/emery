@@ -73,7 +73,7 @@ use emery_prose::Doc;
 use omnia_sdk::model::Question;
 use omnia_sdk::{Error, Model};
 
-use self::write::Writer;
+use self::write::{Writer, Written};
 use crate::{BUILD, VERIFY, prompt, reference};
 
 const VERIFY_TURN: &str = "verify";
@@ -219,7 +219,7 @@ pub async fn build<P: Model>(ctx: &Context<'_, P>, docs: &'static [Doc]) -> Resu
     let mut report = question
         .ask(ctx.model, brief.to_string(), Some(tools), |answer| {
             let mut findings = answer.findings(slice);
-            findings.extend(written.findings(root, answer));
+            findings.extend(Written::findings(root, answer));
             if findings.is_empty() {
                 return Ok(());
             }
