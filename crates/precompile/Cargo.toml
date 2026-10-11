@@ -1,0 +1,23 @@
+[package]
+name = "emery-precompile"
+description = "Precompiles the engine guest into the artifact the release emery binary embeds"
+publish = false
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+categories = ["command-line-utilities", "development-tools"]
+keywords = ["emery", "wasm"]
+readme = "../../README.md"
+
+[[bin]]
+name = "emery-precompile"
+path = "src/main.rs"
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+anyhow.workspace = true
+omnia-compile.workspace = true
+
+[lints]
+workspace = true

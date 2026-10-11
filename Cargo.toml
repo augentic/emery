@@ -39,9 +39,6 @@ emery-engine.workspace = true
 omnia-sdk.workspace = true
 wasip3.workspace = true
 
-[build-dependencies]
-omnia.workspace = true
-
 [dev-dependencies]
 emery-sdk.workspace = true
 
@@ -134,6 +131,7 @@ emery-prose = { path = "crates/prose" }
 emery-sdk = { path = "crates/sdk" }
 
 omnia = { version = "0.37.0", default-features = false, features = ["jit", "link", "loader"] }
+omnia-compile = "0.37.0"
 omnia-sdk = { version = "0.37.0", default-features = false, features = ["command"] }
 omnia-test = { version = "0.37.0", default-features = false }
 omnia-wasi-blobstore = "0.37.0"
@@ -148,6 +146,7 @@ omnia-git = "0.31.0"
 
 [patch.crates-io]
 omnia = { git = "https://github.com/augentic/omnia" }
+omnia-compile = { git = "https://github.com/augentic/omnia" }
 omnia-core = { git = "https://github.com/augentic/omnia" }
 omnia-sdk = { git = "https://github.com/augentic/omnia" }
 omnia-guest-macros = { git = "https://github.com/augentic/omnia" }
@@ -160,6 +159,7 @@ omnia-wasi-model = { git = "https://github.com/augentic/omnia" }
 omnia-wasi-otel = { git = "https://github.com/augentic/omnia" }
 omnia-wasi-vcs = { git = "https://github.com/augentic/omnia" }
 # omnia = { path = "../omnia/crates/omnia" }
+# omnia-compile = { path = "../omnia/crates/omnia-compile" }
 # omnia-core = { path = "../omnia/crates/omnia-core" }
 # omnia-sdk = { path = "../omnia/crates/omnia-sdk" }
 # omnia-guest-macros = { path = "../omnia/crates/guest-macros" }
