@@ -2347,7 +2347,7 @@ dependencies = [
 [[package]]
 name = "omnia-confine"
 version = "0.31.0"
-source = "git+https://github.com/augentic/omnia-backends#3fbcec2931331d00da526eb5254fec7c42c0124c"
+source = "git+https://github.com/augentic/omnia-backends#deccf55d802c40ca6b4067da893c7bc5f37db7be"
 dependencies = [
  "anyhow",
  "bytes",
@@ -2394,7 +2394,7 @@ dependencies = [
 [[package]]
 name = "omnia-cursor"
 version = "0.31.0"
-source = "git+https://github.com/augentic/omnia-backends#3fbcec2931331d00da526eb5254fec7c42c0124c"
+source = "git+https://github.com/augentic/omnia-backends#deccf55d802c40ca6b4067da893c7bc5f37db7be"
 dependencies = [
  "anyhow",
  "bytes",
@@ -2409,6 +2409,7 @@ dependencies = [
  "omnia-wasi-model",
  "prost",
  "prost-types",
+ "reqwest 0.13.5",
  "serde",
  "serde_json",
  "serde_repr",
@@ -2421,7 +2422,7 @@ dependencies = [
 [[package]]
 name = "omnia-filesystem"
 version = "0.31.0"
-source = "git+https://github.com/augentic/omnia-backends#3fbcec2931331d00da526eb5254fec7c42c0124c"
+source = "git+https://github.com/augentic/omnia-backends#deccf55d802c40ca6b4067da893c7bc5f37db7be"
 dependencies = [
  "anyhow",
  "fromenv",
@@ -2437,7 +2438,7 @@ dependencies = [
 [[package]]
 name = "omnia-git"
 version = "0.31.0"
-source = "git+https://github.com/augentic/omnia-backends#3fbcec2931331d00da526eb5254fec7c42c0124c"
+source = "git+https://github.com/augentic/omnia-backends#deccf55d802c40ca6b4067da893c7bc5f37db7be"
 dependencies = [
  "anyhow",
  "fromenv",
