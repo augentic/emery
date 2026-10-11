@@ -172,8 +172,9 @@ pub fn metadata(merge_rules: &[MergeRule]) -> TargetMetadata {
 /// through the reference tools. It writes through its `write_files` tool:
 /// one or more files beneath the workspace per call, listed or mapped by
 /// path, each created or replaced whole, at a path [`beneath`](crate::beneath)
-/// accepts, and the files its `delete` names removed; a call naming a path
-/// the rule refuses changes nothing. The answered [`Report`] is held to the
+/// accepts and no symlink stands on, and the files its `delete` names
+/// removed; a call naming a path either rule refuses changes nothing. The
+/// answered [`Report`] is held to the
 /// slice by [`Report::findings`] and to the tree — a `written` path names a
 /// regular file under the workspace; every finding is returned to the model
 /// for one correction round, until the host's round limit is reached. The
@@ -348,9 +349,10 @@ impl Display for Brief<'_> {
              `write_files` tool alone: each call writes one or more files beneath `$WORKSPACE`, \
              each created or replaced whole, the directories above it created, so lay the files \
              you have ready together in one call, and removes the files its `delete` names; a \
-             call naming a path outside the tree, under `.emery/` or `.git/`, or naming a \
-             projection is refused whole and changes nothing. Build the slice into it as the \
-             prompt describes, and change nothing outside it.\n\n\
+             call naming a path outside the tree, under `.emery/` or `.git/`, naming a \
+             projection, or leading through a symlink is refused whole and changes nothing. \
+             Build the slice into it as the prompt describes, and change nothing outside \
+             it.\n\n\
              The slice's entry in the plan:\n\n{plan}\n\n\
              The specification, cut to the slice's requirements:\n\n{spec}\n\n\
              The design, whole:\n\n{design}\n\n",
@@ -398,8 +400,9 @@ impl Display for VerifyBrief<'_> {
              Where a check fails, repair the tree through this call's `write_files` tool alone \
              — each call writes one or more files beneath `$WORKSPACE`, each created or \
              replaced whole, and removes the files its `delete` names; a call naming a path \
-             outside the tree, under `.emery/` or `.git/`, or naming a projection is refused \
-             whole and changes nothing — then run the checks again. Keep each repair to what \
+             outside the tree, under `.emery/` or `.git/`, naming a projection, or leading \
+             through a symlink is refused whole and changes nothing — then run the checks \
+             again. Keep each repair to what \
              the failure shows and the prompt allows, and change nothing a passing check \
              covers. What you write, and what the checks leave behind, is sealed as the wave's \
              own commit.\n\n\

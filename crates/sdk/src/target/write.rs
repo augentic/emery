@@ -3,13 +3,15 @@
 //!
 //! [`Writer`] declares the tool and answers each call by writing the files it
 //! names beneath the workspace root and removing the paths it deletes, every
-//! path held to [`beneath`] before any is touched. [`Written`] is what it
-//! wrote this turn, which the build fills the answered `written` list from
-//! beside the tree itself.
+//! path held to [`beneath`] and to the tree — no symlink anywhere on it —
+//! before any is touched. [`Written`] is what it wrote this turn, which the
+//! build fills the answered `written` list from beside the tree itself.
 
 use std::collections::BTreeSet;
 use std::fmt;
+use std::fs::{self, OpenOptions};
 use std::future::ready;
+use std::io::{self, ErrorKind, Write as _};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
@@ -17,7 +19,7 @@ use emery_adapter::beneath;
 use emery_adapter::target::Report;
 use omnia_sdk::model::{Function, Tool, ToolCall, ToolFuture, Tools};
 use schemars::JsonSchema;
-use serde::de::{MapAccess, SeqAccess, Visitor};
+use serde::de::{self, MapAccess, SeqAccess, Visitor};
 use serde::{Deserialize, Deserializer};
 use serde_json::json;
 
@@ -47,7 +49,8 @@ impl Writer {
             "Write one or more files beneath `$WORKSPACE`, each created or replaced whole, the \
              directories above it created, and remove the files `delete` names. Each path is \
              `/`-separated and relative to `$WORKSPACE`; a call naming a path outside it, under \
-             `.emery/` or `.git/`, or naming a projection, is refused whole and changes nothing.",
+             `.emery/` or `.git/`, naming a projection, or leading through a symlink, is \
+             refused whole and changes nothing.",
         ))
     }
 
@@ -88,8 +91,8 @@ impl Writer {
         })
     }
 
-    // Every path is held to the root before the first write, so a call the
-    // rule refuses anywhere leaves the tree as it was.
+    // Every path is held to the root and to the tree before the first write,
+    // so a call the rule refuses anywhere leaves the tree as it was.
     fn write(&self, call: &ToolCall) -> Result<Done, String> {
         let WriteFiles { files, delete } =
             call.arguments().map_err(|err| format!("{WRITE_FILES}: {err}"))?;
@@ -102,15 +105,15 @@ impl Writer {
         let mut removals = Vec::with_capacity(delete.len());
         let mut refused = Vec::new();
         for WriteFile { path, content } in files {
-            match beneath(&path) {
-                Ok(file) => accepted.push((file, content)),
-                Err(bad) => refused.push(format!("`{path}` {bad}")),
+            match self.held(&path) {
+                Ok((file, held)) => accepted.push((file, held, content)),
+                Err(why) => refused.push(why),
             }
         }
         for path in delete {
-            match beneath(&path) {
-                Ok(file) => removals.push(file),
-                Err(bad) => refused.push(format!("`{path}` {bad}")),
+            match self.held(&path) {
+                Ok((file, held)) => removals.push((file, held)),
+                Err(why) => refused.push(why),
             }
         }
         if !refused.is_empty() {
@@ -119,14 +122,15 @@ impl Writer {
 
         // the files laid in order
         let mut wrote = Vec::with_capacity(accepted.len());
-        for (file, content) in accepted {
-            let full = self.root.join(&file);
-            if let Some(parent) = full.parent() {
-                std::fs::create_dir_all(parent).map_err(|err| {
+        for (file, held, content) in accepted {
+            if held == Held::Absent
+                && let Some((dir, _)) = file.rsplit_once('/')
+            {
+                make_dirs(&self.root, dir).map_err(|err| {
                     format!("{WRITE_FILES}: creating the directories above `{file}`: {err}")
                 })?;
             }
-            std::fs::write(&full, &content)
+            lay(&self.root.join(&file), held, &content)
                 .map_err(|err| format!("{WRITE_FILES}: writing `{file}`: {err}"))?;
             self.written.record(file.clone());
             wrote.push(Wrote {
@@ -137,17 +141,126 @@ impl Writer {
 
         // the files removed; one the tree lacks is already gone
         let mut deleted = Vec::with_capacity(removals.len());
-        for file in removals {
-            match std::fs::remove_file(self.root.join(&file)) {
-                Ok(()) => {}
-                Err(err) if err.kind() == std::io::ErrorKind::NotFound => {}
-                Err(err) => return Err(format!("{WRITE_FILES}: removing `{file}`: {err}")),
+        for (file, held) in removals {
+            if held == Held::File {
+                match fs::remove_file(self.root.join(&file)) {
+                    Ok(()) => {}
+                    Err(err) if err.kind() == ErrorKind::NotFound => {}
+                    Err(err) => return Err(format!("{WRITE_FILES}: removing `{file}`: {err}")),
+                }
             }
             self.written.forget(&file);
             deleted.push(file);
         }
         Ok(Done { wrote, deleted })
     }
+
+    // The path held to `beneath` and to the tree, spelled as the tree does,
+    // or the refusal naming it.
+    fn held(&self, path: &str) -> Result<(String, Held), String> {
+        let file = beneath(path).map_err(|bad| format!("`{path}` {bad}"))?;
+        let held = Held::at(&self.root, &file).map_err(|why| format!("`{path}` {why}"))?;
+        Ok((file, held))
+    }
+}
+
+// What the tree holds at a root-relative path, read without following a
+// link anywhere on it: a regular file, or nothing yet.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Held {
+    Absent,
+    File,
+}
+
+impl Held {
+    // The rule `beneath` cannot hold a path to, reading its spelling alone:
+    // no component is a symlink, each directory on the way is one, and the
+    // file is a regular file or absent. A link would carry a write or a
+    // removal wherever the mount reaches. The clause answered follows the
+    // path as `BadPath`'s do.
+    fn at(root: &Path, file: &str) -> Result<Self, String> {
+        let (dirs, _) = file.rsplit_once('/').unwrap_or(("", file));
+        let mut prefix = String::with_capacity(file.len());
+        for segment in dirs.split('/').filter(|segment| !segment.is_empty()) {
+            if !prefix.is_empty() {
+                prefix.push('/');
+            }
+            prefix.push_str(segment);
+            let Some(kind) = kind_at(root, &prefix)? else {
+                return Ok(Self::Absent);
+            };
+            if kind.is_symlink() {
+                return Err(format!("leads through the symlink `{prefix}`"));
+            }
+            if !kind.is_dir() {
+                return Err(format!("leads through `{prefix}`, which is not a directory"));
+            }
+        }
+
+        let Some(kind) = kind_at(root, file)? else {
+            return Ok(Self::Absent);
+        };
+        if kind.is_symlink() {
+            Err("is a symlink".to_owned())
+        } else if kind.is_dir() {
+            Err("names a directory".to_owned())
+        } else if kind.is_file() {
+            Ok(Self::File)
+        } else {
+            Err("is not a regular file".to_owned())
+        }
+    }
+}
+
+fn holds_file(root: &Path, file: &str) -> bool {
+    matches!(Held::at(root, file), Ok(Held::File))
+}
+
+// The kind of entry at a root-relative path, the link itself where one
+// stands there, or none where the tree holds nothing.
+fn kind_at(root: &Path, path: &str) -> Result<Option<fs::FileType>, String> {
+    match root.join(path).symlink_metadata() {
+        Ok(meta) => Ok(Some(meta.file_type())),
+        Err(err) if err.kind() == ErrorKind::NotFound => Ok(None),
+        Err(err) => Err(format!("cannot be read at `{path}`: {err}")),
+    }
+}
+
+// Makes the directories of a root-relative path one at a time, so a link
+// standing where one is to go is refused rather than followed as
+// `create_dir_all` would follow it.
+fn make_dirs(root: &Path, dirs: &str) -> io::Result<()> {
+    let mut full = root.to_path_buf();
+    for segment in dirs.split('/') {
+        full.push(segment);
+        match fs::create_dir(&full) {
+            Ok(()) => {}
+            Err(err) if err.kind() == ErrorKind::AlreadyExists => {
+                if !full.symlink_metadata()?.file_type().is_dir() {
+                    return Err(io::Error::other(format!(
+                        "`{}` is not a directory",
+                        full.strip_prefix(root).unwrap_or(&full).display()
+                    )));
+                }
+            }
+            Err(err) => return Err(err),
+        }
+    }
+    Ok(())
+}
+
+// Lays one file whole. A file the walk found absent is created and never
+// followed, so a link raced into its place fails the open; one it found is
+// truncated in place, keeping its mode — `std` on `wasm32` has no no-follow
+// open, so that open alone trusts the walk.
+fn lay(full: &Path, held: Held, content: &str) -> io::Result<()> {
+    let mut options = OpenOptions::new();
+    options.write(true);
+    match held {
+        Held::Absent => options.create_new(true),
+        Held::File => options.truncate(true),
+    };
+    options.open(full)?.write_all(content.as_bytes())
 }
 
 // What one call did: the files laid and the files removed.
@@ -187,14 +300,14 @@ impl Written {
     }
 
     // The rule the slice cannot hold a report to alone: a `written` path
-    // names a regular file under the lent tree. A path the grammar refused
-    // is left to that finding.
+    // names a regular file under the lent tree, reached through no link. A
+    // path the grammar refused is left to that finding.
     pub(super) fn findings(root: &Path, report: &Report) -> Vec<String> {
         let mut findings = Vec::new();
         let mut listed = BTreeSet::new();
         for path in &report.written {
             let Ok(file) = beneath(path) else { continue };
-            if listed.insert(file.clone()) && !root.join(&file).is_file() {
+            if listed.insert(file.clone()) && !holds_file(root, &file) {
                 findings
                     .push(format!("- written `{path}` names no regular file under the lent tree"));
             }
@@ -209,7 +322,7 @@ impl Written {
     pub(super) fn fill(&self, root: &Path, report: &mut Report) {
         let mut files: BTreeSet<String> =
             report.written.iter().filter_map(|path| beneath(path).ok()).collect();
-        files.extend(self.lock().iter().filter(|file| root.join(file).is_file()).cloned());
+        files.extend(self.lock().iter().filter(|file| holds_file(root, file)).cloned());
         report.written = files.into_iter().collect();
     }
 
@@ -243,7 +356,8 @@ struct WriteFile {
 
 // The schema asks for a sequence of `{path, content}`; a map from path to
 // content, which a model reaches for as readily, is read all the same, in
-// the order the call spells it.
+// the order the call spells it; and one entry spelled bare — a map with a
+// `path` key — is that entry, not files named `path` and `content`.
 fn files<'de, D: Deserializer<'de>>(deserializer: D) -> Result<Vec<WriteFile>, D::Error> {
     struct Files;
 
@@ -251,7 +365,10 @@ fn files<'de, D: Deserializer<'de>>(deserializer: D) -> Result<Vec<WriteFile>, D
         type Value = Vec<WriteFile>;
 
         fn expecting(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-            f.write_str("a list of `{path, content}` entries or a map from path to content")
+            f.write_str(
+                "a list of `{path, content}` entries, one such entry, or a map from path to \
+                 content",
+            )
         }
 
         fn visit_seq<A: SeqAccess<'de>>(self, mut seq: A) -> Result<Self::Value, A::Error> {
@@ -263,13 +380,34 @@ fn files<'de, D: Deserializer<'de>>(deserializer: D) -> Result<Vec<WriteFile>, D
         }
 
         fn visit_map<A: MapAccess<'de>>(self, mut map: A) -> Result<Self::Value, A::Error> {
-            let mut files = Vec::with_capacity(map.size_hint().unwrap_or(0));
-            while let Some((path, content)) = map.next_entry()? {
-                files.push(WriteFile { path, content });
+            let mut entries: Vec<(String, String)> =
+                Vec::with_capacity(map.size_hint().unwrap_or(0));
+            while let Some(entry) = map.next_entry()? {
+                entries.push(entry);
             }
-            Ok(files)
+            if entries.iter().any(|(key, _)| key == "path") {
+                return single(entries).map(|file| vec![file]);
+            }
+            Ok(entries.into_iter().map(|(path, content)| WriteFile { path, content }).collect())
         }
     }
 
     deserializer.deserialize_any(Files)
+}
+
+// The one entry a bare `{path, content}` spells, held to those two keys as
+// the derived reading of the struct would hold a listed one.
+fn single<E: de::Error>(entries: Vec<(String, String)>) -> Result<WriteFile, E> {
+    let (mut path, mut content) = (None, None);
+    for (key, value) in entries {
+        match key.as_str() {
+            "path" => path = Some(value),
+            "content" => content = Some(value),
+            other => return Err(E::unknown_field(other, &["path", "content"])),
+        }
+    }
+    Ok(WriteFile {
+        path: path.ok_or_else(|| E::missing_field("path"))?,
+        content: content.ok_or_else(|| E::missing_field("content"))?,
+    })
 }

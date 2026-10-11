@@ -3,6 +3,7 @@
 //! model and a scratch tree.
 
 use std::fs;
+use std::os::unix::fs::symlink;
 use std::path::Path;
 
 use emery_sdk::target::{Context, Report, Slice};
@@ -255,6 +256,140 @@ async fn write_map_shape() {
         exchanges[0].outcome.as_deref(),
         Ok(r#"{"written":[{"bytes":18,"path":"src/orders.rs"},{"bytes":10,"path":"Cargo.toml"}]}"#)
     );
+    model.assert_exhausted();
+}
+
+// `files` spelled as one `{path, content}` object, the shape the schema
+// declares for an entry, is that one file, never a map of two files named
+// `path` and `content`; one missing its content, or carrying another key, is
+// malformed as a listed entry would be.
+#[tokio::test]
+async fn write_object_shape() {
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let root = tmp.path().to_str().expect("a UTF-8 scratch root");
+    let model = Scripted::answering([r#"{"covered":["REQ-001"],"written":["src/orders.rs"]}"#])
+        .calling(
+            0,
+            [
+                ToolCall {
+                    id: "1".to_owned(),
+                    name: "write_files".to_owned(),
+                    arguments:
+                        r#"{"files":{"path":"src/orders.rs","content":"pub struct Order;\n"}}"#
+                            .to_owned(),
+                },
+                ToolCall {
+                    id: "2".to_owned(),
+                    name: "write_files".to_owned(),
+                    arguments: r#"{"files":{"path":"src/lib.rs"}}"#.to_owned(),
+                },
+                ToolCall {
+                    id: "3".to_owned(),
+                    name: "write_files".to_owned(),
+                    arguments: r#"{"files":{"path":"src/lib.rs","content":"","mode":"644"}}"#
+                        .to_owned(),
+                },
+            ],
+        );
+
+    let report = ask(&model, &slice(), root).await.expect("accepted");
+    assert_eq!(report.written, ["src/orders.rs"]);
+    assert_eq!(names(tmp.path()), ["src"], "no file named `path` or `content`");
+    assert_eq!(names(&tmp.path().join("src")), ["orders.rs"]);
+
+    let exchanges = model.exchanges();
+    assert_eq!(exchanges.len(), 4, "three calls, then the check");
+    assert_eq!(
+        exchanges[0].outcome.as_deref(),
+        Ok(r#"{"written":[{"bytes":18,"path":"src/orders.rs"}]}"#)
+    );
+    let missing = exchanges[1].outcome.as_deref().expect_err("an entry without content");
+    assert!(missing.contains("missing field `content`"), "{missing}");
+    let unknown = exchanges[2].outcome.as_deref().expect_err("an entry with a stray key");
+    assert!(unknown.contains("unknown field `mode`"), "{unknown}");
+    assert_eq!(exchanges[3].outcome, Ok(String::new()));
+    model.assert_exhausted();
+}
+
+// A path that leads through a symlink — a directory on the way or the file
+// itself — is refused as the lexical rule's refusals are, whatever the link
+// points at, since a write or a removal would follow it wherever the mount
+// reaches; one through a file, or at a directory, is refused beside it; a
+// file under directories not yet made still lands; and a `written` path at
+// a link names no regular file.
+#[tokio::test]
+async fn write_through_symlink() {
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let outside = tmp.path().join("outside");
+    fs::create_dir(&outside).expect("outside dir");
+    fs::write(outside.join("config"), "[core]\n").expect("outside file");
+    let tree = tmp.path().join("tree");
+    seed(&tree, ["src/real.rs"]);
+    symlink("../outside", tree.join("link")).expect("dir symlink");
+    symlink("../../outside/config", tree.join("src/config")).expect("file symlink");
+    let root = tree.to_str().expect("a UTF-8 scratch root");
+    let model = Scripted::answering([
+        r#"{"covered":["REQ-001"],"written":["src/config"]}"#,
+        r#"{"covered":["REQ-001"],"written":["src/new/mod.rs"]}"#,
+    ])
+    .calling(
+        0,
+        [
+            write_files(
+                "1",
+                &[
+                    ("link/hook", "#!/bin/sh\n"),
+                    ("src/config", "[core]\n\thooksPath = hooks\n"),
+                    ("src/real.rs/x.rs", ""),
+                    ("src", ""),
+                ],
+            ),
+            ToolCall {
+                id: "2".to_owned(),
+                name: "write_files".to_owned(),
+                arguments: r#"{"delete":["link/config","src/config"]}"#.to_owned(),
+            },
+            write_files("3", &[("src/new/mod.rs", "pub mod new;\n")]),
+        ],
+    );
+
+    let report = ask(&model, &slice(), root).await.expect("corrected");
+    assert_eq!(report.written, ["src/new/mod.rs"]);
+    assert_eq!(fs::read_to_string(outside.join("config")).expect("untouched"), "[core]\n");
+    assert_eq!(names(&outside), ["config"], "nothing landed outside the tree");
+    assert!(
+        tree.join("src/config")
+            .symlink_metadata()
+            .expect("the link stands")
+            .file_type()
+            .is_symlink()
+    );
+
+    let exchanges = model.exchanges();
+    assert_eq!(exchanges.len(), 5, "three calls, the refused check, the accepted check");
+    assert_eq!(
+        exchanges[0].outcome,
+        Err("write_files: nothing written: `link/hook` leads through the symlink `link`; \
+             `src/config` is a symlink; `src/real.rs/x.rs` leads through `src/real.rs`, which \
+             is not a directory; `src` names a directory"
+            .to_owned())
+    );
+    assert_eq!(
+        exchanges[1].outcome,
+        Err("write_files: nothing written: `link/config` leads through the symlink `link`; \
+             `src/config` is a symlink"
+            .to_owned())
+    );
+    assert_eq!(
+        exchanges[2].outcome.as_deref(),
+        Ok(r#"{"written":[{"bytes":13,"path":"src/new/mod.rs"}]}"#)
+    );
+    let correction = exchanges[3].outcome.as_ref().expect_err("a link is no regular file");
+    assert!(
+        correction.contains("- written `src/config` names no regular file under the lent tree"),
+        "{correction}"
+    );
+    assert_eq!(exchanges[4].outcome, Ok(String::new()));
     model.assert_exhausted();
 }
 
