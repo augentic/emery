@@ -63,6 +63,14 @@ jobs:
         shell: bash
         run: cargo build --release --locked --target ${{ matrix.target }} --bin emery
 
+      # The first load of the precompiled engine: a compile-option or
+      # wasmtime-version mismatch fails here, not in a shipped binary. Run
+      # outside the checkout, since a run lays `.emery/` in its directory.
+      - name: Boot the embedded engine
+        shell: bash
+        working-directory: ${{ runner.temp }}
+        run: ${{ github.workspace }}/target/${{ matrix.target }}/release/emery --help
+
       - name: Package archive
         id: archive
         shell: bash
