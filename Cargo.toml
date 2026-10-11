@@ -35,6 +35,7 @@ toml.workspace = true
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 emery-adapter.workspace = true
 emery-cli.workspace = true
+emery-engine.workspace = true
 omnia-sdk.workspace = true
 wasip3.workspace = true
 

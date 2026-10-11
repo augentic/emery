@@ -1,7 +1,7 @@
 //! Scripts every capability of a provider and drives the command façade over it.
 //!
-//! Model, source, target, storage, and version-control capabilities use
-//! strict scripts. Each scenario must consume exactly the expected
+//! Model, source, target, storage, version-control, and file capabilities
+//! use strict scripts. Each scenario must consume exactly the expected
 //! operations, so an unexercised or unexpected path fails immediately. The
 //! plugin capability is a constant: every load lands, so the synthesis
 //! suites assert nothing of a load and the adapter boundary is the runtime
@@ -17,7 +17,7 @@ use emery_adapter::source::{
     AdapterMetadata, Backing, Claim, ClaimKind, Evidence, Source, SourceInput, SourceKind,
 };
 use emery_adapter::target::{MergeRule, Report, Slice, Target, TargetMetadata, Verdict};
-use emery_engine::Axis;
+use emery_engine::{Axis, Files};
 use omnia_sdk::api::command::Response;
 use omnia_sdk::plugins::{self, Digest, Location, Plugin};
 use omnia_sdk::{
@@ -28,6 +28,7 @@ use omnia_test::guest::{Memory, Scripted};
 use serde_json::Value;
 use tokio::sync::Barrier;
 
+use super::files::FilesScript;
 use super::vcs::VcsScript;
 
 const GREETING: &str = "GET /greeting returns the static string 'hello'.";
@@ -133,6 +134,9 @@ impl Rendezvous {
 pub struct TargetScript {
     /// Build outcomes keyed by slice id.
     pub reports: BTreeMap<String, Result<Report, Error>>,
+    /// Failures queued per slice id, each consumed by one build ahead of
+    /// the slice's report.
+    pub failures: Arc<Mutex<BTreeMap<String, VecDeque<Error>>>>,
     /// Verify outcomes, consumed in wave order.
     pub verdicts: Arc<Mutex<VecDeque<Result<Verdict, Error>>>>,
     /// Minimum `emery` versions keyed by adapter id, the guest name each
@@ -169,6 +173,11 @@ impl TargetScript {
     pub fn verdict(&self, verdict: Result<Verdict, Error>) {
         self.verdicts.lock().expect("verdicts").push_back(verdict);
     }
+
+    /// Queues `error` for the next build of slice `id`, ahead of its report.
+    pub fn fails(&self, id: &str, error: Error) {
+        self.failures.lock().expect("failures").entry(id.to_owned()).or_default().push_back(error);
+    }
 }
 
 /// The scripted provider behind every root scenario.
@@ -182,6 +191,8 @@ pub struct Provider<S = Memory> {
     pub target: TargetScript,
     /// The scripted `Vcs`.
     pub vcs: VcsScript,
+    /// The scripted `Files`.
+    pub files: FilesScript,
     /// The scripted storage pair.
     pub storage: Arc<S>,
 }
@@ -206,6 +217,7 @@ impl<S> Provider<S> {
             source: SourceScript::default(),
             target: TargetScript::default(),
             vcs: VcsScript::default(),
+            files: FilesScript::default(),
             storage,
         }
     }
@@ -218,6 +230,7 @@ impl<S> Clone for Provider<S> {
             source: self.source.clone(),
             target: self.target.clone(),
             vcs: self.vcs.clone(),
+            files: self.files.clone(),
             storage: Arc::clone(&self.storage),
         }
     }
@@ -377,12 +390,24 @@ impl<S: Send + Sync + 'static> Target for Provider<S> {
             slice.clone(),
             workspace.to_string(),
         ));
-        let outcome = self.target.reports.get(&slice.id).cloned().unwrap_or_else(|| {
-            Ok(Report {
-                covered: slice.requirements.clone(),
-                written: vec![format!("src/{}.rs", slice.name)],
-            })
-        });
+        let queued = self
+            .target
+            .failures
+            .lock()
+            .expect("failures")
+            .get_mut(&slice.id)
+            .and_then(VecDeque::pop_front);
+        let outcome = queued.map_or_else(
+            || {
+                self.target.reports.get(&slice.id).cloned().unwrap_or_else(|| {
+                    Ok(Report {
+                        covered: slice.requirements.clone(),
+                        written: vec![format!("src/{}.rs", slice.name)],
+                    })
+                })
+            },
+            Err,
+        );
         let rendezvous = self.target.rendezvous.clone();
         let key = slice.id.clone();
         async move {
@@ -505,6 +530,12 @@ impl<S: Send + Sync + 'static> Vcs for Provider<S> {
         &self, repo: &str, remote: &str, label: &str,
     ) -> impl Future<Output = Result<(), vcs::Error>> + Send {
         Vcs::push(&self.vcs, repo, remote, label)
+    }
+}
+
+impl<S: Send + Sync + 'static> Files for Provider<S> {
+    fn read(&self, at: &str, path: &str) -> impl Future<Output = Result<Vec<u8>, Error>> + Send {
+        Files::read(&self.files, at, path)
     }
 }
 

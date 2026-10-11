@@ -50,14 +50,16 @@ const BUILD_DESC: &str = "Build the current plan through a target adapter.\n\n\
     resumed: the slices it records are not built again. The rest go in waves: every slice \
     whose dependencies are merged is \
     built at once, up to `--jobs` concurrently, each in its own working copy under \
-    `.emery/vcs/worktrees/<id>` cut at the wave's head; what each wrote is sealed as one \
-    commit and merged in id order into `.emery/vcs/integration` under the adapter's merge \
-    rules. The adapter then verifies the integrated tree, and the wave is labelled; the \
-    label is pushed, never forced, when `[target] remote` names where (`label-diverged` \
-    when the remote's holds commits this build does not). A slice whose merge conflicts is \
-    built again in the next wave; a second conflict ends the run (`slice-conflict`), as a \
-    wave the adapter does not verify does (`verify-failed`), the label where the last \
-    verified wave left it and the integration working copy left for inspection. The \
+    `.emery/vcs/worktrees/<id>` cut at the wave's head; what each changed is sealed as \
+    one commit and merged in id order into `.emery/vcs/integration` under the adapter's \
+    merge rules. The adapter then verifies the integrated tree, repairing what its checks \
+    find, and the wave is labelled; the label is pushed, never forced, when `[target] \
+    remote` names where (`label-diverged` when the remote's holds commits this build does \
+    not). A build that fails upstream is put once more in a fresh copy. A slice whose \
+    merge conflicts is built again in the next wave; a third conflict ends the run \
+    (`slice-conflict`), as a wave the adapter does not verify does (`verify-failed`), the \
+    label where the last verified wave left it and the integration working copy left for \
+    inspection. The \
     adapter is an exact package reference, `namespace:name@version`, read from the store \
     `~/.emery/adapters` and fetched through the `emery` namespace's registry when the \
     store lacks it, as for `specify`.";
@@ -187,7 +189,7 @@ struct BuildArgs {
     /// Operator-owned config; the omitted value selects emery.toml.
     #[arg(long, short = 'c', num_args = 0..=1, default_missing_value = config::CONFIG_FILE)]
     config: Option<PathBuf>,
-    /// How many slices of a wave to build at once; unset builds every slice of a wave at once.
+    /// How many slices of a wave to build at once; unset builds every slice of a wave at once, within the model backend's own agent cap.
     #[arg(long, short = 'j', env = "EMERY_JOBS", value_name = "N")]
     jobs: Option<NonZeroUsize>,
 }
@@ -262,6 +264,9 @@ fn hint(code: &str) -> Option<Cow<'static, str>> {
         }
         "slice-conflict" => {
             "two slices rewrite the same files: declare a merge rule in the adapter, or re-run `emery specify` for a plan that keeps them in one slice"
+        }
+        "secret-detected" => {
+            "inspect the named path in `.emery/vcs/worktrees/<slice>` or `.emery/vcs/integration`, remove the credential from where the build read it (the sources, the environment, a file the model reached), and re-run `emery build`; nothing of the change set was sealed and the label stands at the last verified wave"
         }
         "label-diverged" => {
             "another build of this revision pushed `emery/<revision>` first, or the branch was moved by hand: read it with `git log --first-parent <remote>/emery/<revision>` in the repository the build reads (the checkout, or its clone under `.emery/vcs/repos/`); to replace it, delete the remote branch (`git push <remote> --delete emery/<revision>`) and re-run `emery build`, which resumes from the local label and pushes it; to keep it, leave this build"

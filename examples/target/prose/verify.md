@@ -4,7 +4,7 @@ Verify the integrated project tree after a wave of slices has merged into it, an
 
 ## Inputs
 
-- `$WORKSPACE` — the integrated tree, lent with the shell. Read it through the workspace tools and run the checks below in it. Write nothing you mean to keep: the tree is the build's, and a check's by-products are discarded or sealed by the engine, never by you.
+- `$WORKSPACE` — the integrated tree, lent writable with the shell. Read it through the workspace tools, run the checks below in it, and repair what they find through this call's `write_files` tool, then run them again. A repair stays within `build/`: an `index.md` line added for a requirement file it leaves out, a requirement file removed through `delete` when nothing names it. What you write is sealed as the wave's own commit by the engine, never by you.
 
 Nothing outside `$WORKSPACE` is reachable.
 
@@ -15,16 +15,15 @@ The tree holds a Markdown stand-in for code: one directory `build/<slice-name>/`
 1. **Every slice directory has an index.** For each directory under `build/`, `index.md` exists and is not empty.
 2. **Every index lists files the directory holds.** Each `REQ-NNN` an `index.md` names has a `REQ-NNN.md` beside it.
 3. **No requirement file is orphaned.** Each `REQ-NNN.md` under `build/<slice-name>/` is named in that directory's `index.md`.
-4. **Nothing was written outside `build/`.** `git status --porcelain` in `$WORKSPACE` shows no path outside `build/`.
 
-A shell loop over `build/*/` with `test`, `grep`, and `ls` is enough for the first three; the fourth is one `git status` call.
+A shell loop over `build/*/` with `test`, `grep`, and `ls` is enough for all three. The tree's history is not yours to read: what the wave changed, the engine reads itself.
 
 ## Verdict
 
 Answer with one JSON object:
 
-- `passed` — true when every check passed, false otherwise.
-- `failures` — one entry per check that failed, naming the check and quoting the tail of what it printed; empty when `passed` is true.
+- `passed` — true when every check passed on its last run, false otherwise.
+- `failures` — one entry per check that still failed, naming the check and quoting the tail of what it printed; empty when `passed` is true.
 
 ```json
 {

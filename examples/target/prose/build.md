@@ -25,7 +25,7 @@ Write them through `write_files`, the whole directory in one call; it is created
 Answer with one JSON object:
 
 - `covered` — each requirement id the specification above holds that `build/<slice-name>/` now implements, once each. Leave an id out rather than claim what the tree does not hold.
-- `written` — each file `write_files` wrote, once each, as a `/`-separated path relative to `$WORKSPACE`, and no file the tree does not hold.
+- `written` — the files `write_files` wrote, once each, as a `/`-separated path relative to `$WORKSPACE`, and no file the tree does not hold; one you leave out is added for you.
 
 ```json
 {

@@ -13,7 +13,7 @@
 #![cfg(not(target_arch = "wasm32"))]
 
 use std::fs;
-use std::os::unix::fs::PermissionsExt as _;
+use std::os::unix::fs::{PermissionsExt as _, symlink};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
@@ -63,6 +63,16 @@ const WRITE_GREETING: &str =
     r##"{"files": [{"path": "build/greeting.md", "content": "# Greeting\n"}]}"##;
 const REPORT_ANSWER: &str = r#"{"covered": ["REQ-001"], "written": ["build/greeting.md"]}"#;
 const VERDICT_ANSWER: &str = r#"{"passed": true, "failures": []}"#;
+// A build that lays a private key beside the greeting, and reports both.
+const WRITE_LEAK: &str = r##"{"files": [
+    {"path": "build/greeting.md", "content": "# Greeting\n"},
+    {"path": "build/leak.pem", "content": "-----BEGIN RSA PRIVATE KEY-----\nMIIEowIBAAKCAQEA\n-----END RSA PRIVATE KEY-----\n"}]}"##;
+const REPORT_LEAK: &str =
+    r#"{"covered": ["REQ-001"], "written": ["build/greeting.md", "build/leak.pem"]}"#;
+// A build whose turn laid nothing through `write_files`.
+const REPORT_BARE: &str = r#"{"covered": ["REQ-001"], "written": []}"#;
+// A token spelled as a symbolic link's target: the text a commit stores of the link.
+const TOKEN: &str = "ghp_ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
 
 // Git under a scratch configuration: a wrapper exporting `GIT_CONFIG_GLOBAL`
 // and `GIT_CONFIG_NOSYSTEM` before handing over to the `git` on `PATH`, so
@@ -168,6 +178,11 @@ impl Git {
             args.extend(["-p", parent]);
         }
         self.run(at, &args)
+    }
+
+    // The wrapper itself, for a scenario that runs git where `run` cannot reach.
+    fn binary(&self) -> PathBuf {
+        self.root.path().join("git")
     }
 
     // The branches a repository holds, names in order, spelled the same
@@ -351,10 +366,19 @@ fn building() -> ScriptedModel {
         .calling(0, [("write_files", WRITE_GREETING)])
 }
 
-// The greenfield journey through its first build: both mocks stored, the
-// project specified and sealed, the plan built and labelled. Returns the
-// roots, the backends, the revision, and the base the build started from.
-async fn built() -> (Roots, Bundle, String, String) {
+// A build turn that leaves `copy` as `shell` left it and reports no file
+// written: what the model's shell leaves in a working copy, which no scripted
+// tool lays, is laid by host code as the turn is put.
+fn shelled(copy: PathBuf, shell: impl Fn(&Path) + Send + Sync + 'static) -> ScriptedModel {
+    ScriptedModel::default().then(move || {
+        shell(&copy);
+        REPORT_BARE.to_owned()
+    })
+}
+
+// The one-slice journey up to its build: both mocks stored, the project
+// specified and sealed. Returns the roots, the backends, and the base.
+async fn specified() -> (Roots, Bundle, String) {
     let roots = Roots::new();
     roots.stored(SOURCE, MOCK_SOURCE);
     roots.stored(TARGET, MOCK_TARGET);
@@ -363,6 +387,14 @@ async fn built() -> (Roots, Bundle, String, String) {
     assert_ok(&emery(roots.deployment(&["specify", SOURCE]), &backends, &model).await);
     model.assert_exhausted();
     let base = roots.sealed();
+    (roots, backends, base)
+}
+
+// The greenfield journey through its first build: both mocks stored, the
+// project specified and sealed, the plan built and labelled. Returns the
+// roots, the backends, the revision, and the base the build started from.
+async fn built() -> (Roots, Bundle, String, String) {
+    let (roots, backends, base) = specified().await;
     let model = building();
     let run = emery(roots.deployment(&["build", TARGET]), &backends, &model).await;
     assert_ok(&run);
@@ -518,6 +550,130 @@ async fn build_resumed() {
     assert_eq!(roots.git.run(project, &["rev-parse", "HEAD"]), base);
     assert!(!project.join(".emery/vcs/integration").exists(), "the working copy is removed");
     assert_eq!(roots.git.branches(project), [label, "main".to_owned()]);
+}
+
+// A credential in what the build's turn wrote is read from the slice's
+// working copy through the engine's own file capability, and refuses the
+// slice before anything is sealed: no label is set, no verify turn is put,
+// and the copy stays under `worktrees/` with the file as it was written.
+#[tokio::test]
+async fn build_secret_refused() {
+    let roots = Roots::new();
+    roots.stored(SOURCE, MOCK_SOURCE);
+    roots.stored(TARGET, MOCK_TARGET);
+    let backends = roots.backends().await;
+    let model = specifying();
+    assert_ok(&emery(roots.deployment(&["specify", SOURCE]), &backends, &model).await);
+    model.assert_exhausted();
+    let base = roots.sealed();
+
+    let model = ScriptedModel::answering([REPORT_LEAK]).calling(0, [("write_files", WRITE_LEAK)]);
+    let run =
+        emery(roots.deployment(&["--format", "json", "build", TARGET]), &backends, &model).await;
+
+    let envelope = refused(&run, 1, "secret-detected");
+    model.assert_exhausted();
+    assert_message(
+        &envelope,
+        "slice `SLICE-001` (greeting) failed in wave 1: what the build wrote carries a credential, \
+         so none of it is sealed:\n- build/leak.pem: a PEM private key block",
+    );
+    assert!(
+        envelope["hint"].as_str().is_some_and(|hint| hint.contains(".emery/vcs/worktrees/<slice>")),
+        "{envelope}"
+    );
+    let project = roots.project.path();
+    assert_eq!(roots.git.branches(project), ["main"], "no label is set");
+    assert_eq!(roots.git.run(project, &["rev-parse", "HEAD"]), base);
+    let copy = project.join(".emery/vcs/worktrees/SLICE-001");
+    assert!(copy.join("build/leak.pem").exists(), "the copy stays as it was written");
+    assert_eq!(
+        roots.git.run(&copy, &["status", "--porcelain", "--untracked-files=all"]),
+        "?? build/greeting.md\n?? build/leak.pem",
+        "nothing of the change set is sealed"
+    );
+    assert!(project.join(".emery/vcs/integration").exists(), "left for inspection");
+    assert!(roots.project.read("build/leak.pem").is_none(), "nothing lands in the checkout");
+}
+
+// A symbolic link the build's shell laid in the slice's working copy is read
+// as the target it names, the text a commit would store of it, never as what
+// it leads to: a token spelled there refuses the slice as a file holding it
+// would, though the link leads nowhere, and the link stays in the copy.
+#[tokio::test]
+async fn build_secret_in_link() {
+    let (roots, backends, base) = specified().await;
+    let project = roots.project.path();
+    let copy = project.join(".emery/vcs/worktrees/SLICE-001");
+
+    let model = shelled(copy.clone(), |copy| {
+        fs::create_dir_all(copy.join("src")).expect("creating the directory");
+        symlink(TOKEN, copy.join("src/hook")).expect("laying the link");
+    });
+    let run =
+        emery(roots.deployment(&["--format", "json", "build", TARGET]), &backends, &model).await;
+
+    let envelope = refused(&run, 1, "secret-detected");
+    assert_eq!(model.seen().len(), 1, "the build turn alone: no verify turn is put");
+    assert_message(
+        &envelope,
+        "slice `SLICE-001` (greeting) failed in wave 1: what the build wrote carries a credential, \
+         so none of it is sealed:\n- src/hook: a GitHub token",
+    );
+    assert_eq!(roots.git.branches(project), ["main"], "no label is set");
+    assert_eq!(roots.git.run(project, &["rev-parse", "HEAD"]), base);
+    assert_eq!(
+        fs::read_link(copy.join("src/hook")).expect("the link stays").to_str(),
+        Some(TOKEN),
+        "the copy stays as it was left"
+    );
+    assert_eq!(
+        roots.git.run(&copy, &["status", "--porcelain", "--untracked-files=all"]),
+        "?? src/hook",
+        "nothing of the change set is sealed"
+    );
+}
+
+// A changed path that is neither a file nor a link — a repository the
+// build's shell initialised inside the copy, which git lists by its
+// directory — is nothing the gate can read and nothing it passes: the run
+// ends as the read failed, nothing is sealed, and no label is set.
+#[tokio::test]
+async fn build_change_unreadable() {
+    let (roots, backends, base) = specified().await;
+    let project = roots.project.path();
+    let copy = project.join(".emery/vcs/worktrees/SLICE-001");
+
+    let git = roots.git.binary();
+    let model = shelled(copy.clone(), move |copy| {
+        let nested = copy.join("vendor");
+        fs::create_dir_all(&nested).expect("creating the directory");
+        let status = Command::new(&git)
+            .arg("-C")
+            .arg(&nested)
+            .args(["init", "--quiet"])
+            .status()
+            .expect("running git");
+        assert!(status.success(), "initialising the nested repository");
+    });
+    let run =
+        emery(roots.deployment(&["--format", "json", "build", TARGET]), &backends, &model).await;
+
+    let envelope = refused(&run, 3, "server_error");
+    assert_eq!(model.seen().len(), 1, "the build turn alone: no verify turn is put");
+    assert_message(
+        &envelope,
+        "slice `SLICE-001` (greeting) failed in wave 1: reading `vendor/` under \
+         `./.emery/vcs/worktrees/SLICE-001`: ",
+    );
+    assert_eq!(roots.git.branches(project), ["main"], "no label is set");
+    assert_eq!(roots.git.run(project, &["rev-parse", "HEAD"]), base);
+    assert!(copy.join("vendor/.git").is_dir(), "the copy stays as it was left");
+    assert_eq!(
+        roots.git.run(&copy, &["status", "--porcelain", "--untracked-files=all"]),
+        "?? vendor/",
+        "nothing of the change set is sealed"
+    );
 }
 
 // A checkout with a change the operator has not committed is no base: the
