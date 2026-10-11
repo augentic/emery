@@ -1653,3 +1653,40 @@ async fn build_secret_deleted() {
     assert_eq!(provider.vcs.messages().len(), 2, "one commit per slice");
     provider.vcs.assert_exhausted();
 }
+
+// A changed path the gate cannot read is never taken as clean: the slice
+// fails as the read did, nothing of it is sealed, and the copy stays for
+// inspection.
+#[tokio::test]
+async fn build_change_unreadable() {
+    let (provider, _) = planned();
+    let copy = worktree("SLICE-001");
+    changed(
+        &provider,
+        "SLICE-001",
+        &[("src/auth.rs", ChangeKind::Added), ("src/hook", ChangeKind::Added)],
+    );
+    provider.files.holds(&copy, "src/auth.rs", "pub fn sign_in() {}\n");
+    provider.files.unreadable(&copy, "src/hook");
+
+    let envelope = fail(&provider, &["emery", "build", BUILDER], 3, "server_error").await;
+
+    assert_message(
+        &envelope,
+        &format!(
+            "slice `SLICE-001` (authentication) failed in wave 1: reading `src/hook` under \
+             `{copy}`"
+        ),
+    );
+    assert_eq!(
+        provider.files.reads(),
+        [(copy.clone(), "src/auth.rs".to_owned()), (copy.clone(), "src/hook".to_owned())],
+        "the gate stops at the read it cannot make"
+    );
+    assert!(provider.vcs.messages().is_empty(), "nothing is sealed");
+    let calls = provider.vcs.calls();
+    assert_eq!(calls.last().cloned(), Some(format!("pending {copy}")), "{calls:?}");
+    assert!(!calls.contains(&format!("remove {copy}")), "left for inspection: {calls:?}");
+    assert!(!calls.iter().any(|call| call.starts_with("label ")), "no label: {calls:?}");
+    provider.vcs.assert_exhausted();
+}

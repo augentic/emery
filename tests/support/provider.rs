@@ -534,9 +534,7 @@ impl<S: Send + Sync + 'static> Vcs for Provider<S> {
 }
 
 impl<S: Send + Sync + 'static> Files for Provider<S> {
-    fn read(
-        &self, at: &str, path: &str,
-    ) -> impl Future<Output = Result<Option<Vec<u8>>, Error>> + Send {
+    fn read(&self, at: &str, path: &str) -> impl Future<Output = Result<Vec<u8>, Error>> + Send {
         Files::read(&self.files, at, path)
     }
 }

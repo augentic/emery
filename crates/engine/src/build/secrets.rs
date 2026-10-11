@@ -1,11 +1,13 @@
 //! The secret gate: names every changed path that carries a credential.
 //!
 //! What a build or a verification left changed is held to two rules before
-//! it is sealed. A file is a credential carrier by name — a private key file,
-//! a `.npmrc`, a `.env` — whatever it holds. Any other file is read and
+//! it is sealed. A path is a credential carrier by name — a private key file,
+//! a `.npmrc`, a `.env` — whatever it holds. Any other path is read as a
+//! commit would carry it, a file's bytes or a symbolic link's target, and
 //! searched for the shapes well-known credentials take: a PEM private-key
 //! block, and the fixed prefix and run of a provider's token. A deleted path
-//! carries nothing and is passed over.
+//! carries nothing and is passed over; one that cannot be read fails the
+//! gate rather than passing it.
 
 use omnia_sdk::Error;
 use omnia_sdk::vcs::{Change, ChangeKind};
@@ -173,7 +175,7 @@ const AUTH_TOKEN: Shape = Shape {
 };
 
 // Names every change under `at` that carries a credential, `<path>: <what>`,
-// reading only the files the name rule passes.
+// reading only the paths the name rule passes.
 pub(super) async fn findings<F: Files>(
     files: &F, at: &str, changes: &[Change],
 ) -> Result<Vec<String>, Error> {
@@ -184,7 +186,7 @@ pub(super) async fn findings<F: Files>(
         }
         let what = match named(&change.path) {
             Some(what) => Some(what),
-            None => files.read(at, &change.path).await?.as_deref().and_then(carried),
+            None => carried(&files.read(at, &change.path).await?),
         };
         if let Some(what) = what {
             findings.push(format!("{}: {what}", change.path));

@@ -46,21 +46,24 @@ use emery_adapter::target::Target;
 use omnia_sdk::{BlobStore, Error, Model, Plugins, StateStore, Vcs, bad_request};
 pub use store::{CONTAINER, REVISION_KEY};
 
-/// Reads the files of a working copy the engine cut, by path beneath it.
+/// Reads what a commit would carry at a path beneath a working copy the engine cut.
 ///
 /// `at` is a working copy relative to the project root, as the engine names
 /// it to [`Vcs`], and `path` a path relative to that copy, as
 /// [`Vcs::pending`] lists it. A build reads what it is about to seal through
 /// this capability alone.
 pub trait Files: Send + Sync {
-    /// Reads the file at `path` beneath `at`; `None` when no file is there.
+    /// Reads what a commit would carry at `path` beneath `at`.
+    ///
+    /// A regular file reads as its bytes. A symbolic link reads as the
+    /// target it names, never followed, since that text is what a commit
+    /// stores of it.
     ///
     /// # Errors
     ///
-    /// Returns [`Error::ServerError`] when a file that is there cannot be read.
-    fn read(
-        &self, at: &str, path: &str,
-    ) -> impl Future<Output = Result<Option<Vec<u8>>, Error>> + Send;
+    /// Returns [`Error::ServerError`] when `path` holds neither, a directory
+    /// or nothing at all, or what it holds cannot be read.
+    fn read(&self, at: &str, path: &str) -> impl Future<Output = Result<Vec<u8>, Error>> + Send;
 }
 
 /// Normalises an operator path to a path beneath the `.` project preopen.
