@@ -265,6 +265,9 @@ fn hint(code: &str) -> Option<Cow<'static, str>> {
         "slice-conflict" => {
             "two slices rewrite the same files: declare a merge rule in the adapter, or re-run `emery specify` for a plan that keeps them in one slice"
         }
+        "secret-detected" => {
+            "inspect the named path in `.emery/vcs/worktrees/<slice>` or `.emery/vcs/integration`, remove the credential from where the build read it (the sources, the environment, a file the model reached), and re-run `emery build`; nothing of the change set was sealed and the label stands at the last verified wave"
+        }
         "label-diverged" => {
             "another build of this revision pushed `emery/<revision>` first, or the branch was moved by hand: read it with `git log --first-parent <remote>/emery/<revision>` in the repository the build reads (the checkout, or its clone under `.emery/vcs/repos/`); to replace it, delete the remote branch (`git push <remote> --delete emery/<revision>`) and re-run `emery build`, which resumes from the local label and pushes it; to keep it, leave this build"
         }

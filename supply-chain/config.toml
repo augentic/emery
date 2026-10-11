@@ -337,6 +337,14 @@ criteria = "safe-to-deploy"
 version = "1.19.0"
 criteria = "safe-to-deploy"
 
+[[exemptions.enumflags2]]
+version = "0.7.12"
+criteria = "safe-to-deploy"
+
+[[exemptions.enumflags2_derive]]
+version = "0.7.12"
+criteria = "safe-to-deploy"
+
 [[exemptions.etcetera]]
 version = "0.11.0"
 criteria = "safe-to-deploy"
@@ -571,6 +579,10 @@ criteria = "safe-to-deploy"
 
 [[exemptions.konst_macro_rules]]
 version = "0.2.19"
+criteria = "safe-to-deploy"
+
+[[exemptions.landlock]]
+version = "0.4.7"
 criteria = "safe-to-deploy"
 
 [[exemptions.lazy_static]]
@@ -839,6 +851,10 @@ criteria = "safe-to-deploy"
 
 [[exemptions.schemars_derive]]
 version = "1.2.2"
+criteria = "safe-to-deploy"
+
+[[exemptions.seccompiler]]
+version = "0.5.0"
 criteria = "safe-to-deploy"
 
 [[exemptions.secrecy]]

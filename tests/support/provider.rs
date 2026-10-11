@@ -1,7 +1,7 @@
 //! Scripts every capability of a provider and drives the command façade over it.
 //!
-//! Model, source, target, storage, and version-control capabilities use
-//! strict scripts. Each scenario must consume exactly the expected
+//! Model, source, target, storage, version-control, and file capabilities
+//! use strict scripts. Each scenario must consume exactly the expected
 //! operations, so an unexercised or unexpected path fails immediately. The
 //! plugin capability is a constant: every load lands, so the synthesis
 //! suites assert nothing of a load and the adapter boundary is the runtime
@@ -17,7 +17,7 @@ use emery_adapter::source::{
     AdapterMetadata, Backing, Claim, ClaimKind, Evidence, Source, SourceInput, SourceKind,
 };
 use emery_adapter::target::{MergeRule, Report, Slice, Target, TargetMetadata, Verdict};
-use emery_engine::Axis;
+use emery_engine::{Axis, Files};
 use omnia_sdk::api::command::Response;
 use omnia_sdk::plugins::{self, Digest, Location, Plugin};
 use omnia_sdk::{
@@ -28,6 +28,7 @@ use omnia_test::guest::{Memory, Scripted};
 use serde_json::Value;
 use tokio::sync::Barrier;
 
+use super::files::FilesScript;
 use super::vcs::VcsScript;
 
 const GREETING: &str = "GET /greeting returns the static string 'hello'.";
@@ -190,6 +191,8 @@ pub struct Provider<S = Memory> {
     pub target: TargetScript,
     /// The scripted `Vcs`.
     pub vcs: VcsScript,
+    /// The scripted `Files`.
+    pub files: FilesScript,
     /// The scripted storage pair.
     pub storage: Arc<S>,
 }
@@ -214,6 +217,7 @@ impl<S> Provider<S> {
             source: SourceScript::default(),
             target: TargetScript::default(),
             vcs: VcsScript::default(),
+            files: FilesScript::default(),
             storage,
         }
     }
@@ -226,6 +230,7 @@ impl<S> Clone for Provider<S> {
             source: self.source.clone(),
             target: self.target.clone(),
             vcs: self.vcs.clone(),
+            files: self.files.clone(),
             storage: Arc::clone(&self.storage),
         }
     }
@@ -525,6 +530,14 @@ impl<S: Send + Sync + 'static> Vcs for Provider<S> {
         &self, repo: &str, remote: &str, label: &str,
     ) -> impl Future<Output = Result<(), vcs::Error>> + Send {
         Vcs::push(&self.vcs, repo, remote, label)
+    }
+}
+
+impl<S: Send + Sync + 'static> Files for Provider<S> {
+    fn read(
+        &self, at: &str, path: &str,
+    ) -> impl Future<Output = Result<Option<Vec<u8>>, Error>> + Send {
+        Files::read(&self.files, at, path)
     }
 }
 

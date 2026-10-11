@@ -1,17 +1,19 @@
 //! Provides the scripted provider and the runners the root suites share.
 //!
 //! The provider and its runner are in [`provider`], the scripted version
-//! control in [`vcs`], the project scratch in [`scratch`], and the seeded
-//! revision in [`store`]. The runners here assert on the response, a success
-//! or the typed failure envelope.
+//! control in [`vcs`], the scripted files in [`files`], the project scratch
+//! in [`scratch`], and the seeded revision in [`store`]. The runners here
+//! assert on the response, a success or the typed failure envelope.
 
 #![allow(dead_code, unused_imports, reason = "shared by suites that each use a subset")]
 
+mod files;
 mod provider;
 mod scratch;
 mod store;
 mod vcs;
 
+pub use files::*;
 use omnia_sdk::api::command::Response;
 use omnia_sdk::{BlobStore, StateStore};
 pub use provider::*;

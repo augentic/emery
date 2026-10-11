@@ -1480,3 +1480,176 @@ async fn build_stops_at_failure() {
         "the first copy goes, the second stays for inspection: {calls:?}"
     );
 }
+
+// --- the secret gate ---
+
+const PEM: &str = "const key = `\n-----BEGIN RSA PRIVATE KEY-----\nMIIEowIBAAKCAQEA\n-----END RSA \
+                   PRIVATE KEY-----\n`;\n";
+
+// A file a slice's build left changed that carries a credential refuses the
+// slice before anything of it is sealed: each path is named with what it
+// carries, the copy stays as it was written for inspection, nothing is
+// merged or labelled, and every changed file was read from the copy.
+#[tokio::test]
+async fn build_secret_in_slice() {
+    let (provider, _) = planned();
+    let copy = worktree("SLICE-001");
+    changed(
+        &provider,
+        "SLICE-001",
+        &[
+            ("src/auth.rs", ChangeKind::Added),
+            ("src/session.rs", ChangeKind::Added),
+            ("config/deploy.yaml", ChangeKind::Modified),
+        ],
+    );
+    provider.files.holds(&copy, "src/auth.rs", PEM);
+    provider.files.holds(&copy, "src/session.rs", "pub fn issue() {}\n");
+    provider.files.holds(
+        &copy,
+        "config/deploy.yaml",
+        "aws:\n  access_key_id: AKIAIOSFODNN7EXAMPLE\n  token: ${AWS_TOKEN}\n",
+    );
+
+    let envelope = fail(&provider, &["emery", "build", BUILDER], 1, "secret-detected").await;
+
+    assert_message(
+        &envelope,
+        "slice `SLICE-001` (authentication) failed in wave 1: what the build wrote carries a \
+         credential, so none of it is sealed:\n- src/auth.rs: a PEM private key block\n- \
+         config/deploy.yaml: an AWS access key id",
+    );
+    assert!(
+        envelope["hint"].as_str().is_some_and(|hint| hint.contains(".emery/vcs/worktrees/<slice>")),
+        "{envelope}"
+    );
+    assert_eq!(
+        provider.files.reads(),
+        [
+            (copy.clone(), "src/auth.rs".to_owned()),
+            (copy.clone(), "src/session.rs".to_owned()),
+            (copy.clone(), "config/deploy.yaml".to_owned()),
+        ],
+        "every changed file is read, in the order the copy lists them"
+    );
+    assert!(provider.vcs.messages().is_empty(), "nothing is sealed");
+    assert!(provider.vcs.merged().is_empty(), "nothing is merged");
+    let calls = provider.vcs.calls();
+    assert_eq!(calls.last().cloned(), Some(format!("pending {copy}")), "{calls:?}");
+    assert!(!calls.contains(&format!("remove {copy}")), "left for inspection: {calls:?}");
+    assert!(!calls.iter().any(|call| call.starts_with("label ")), "no label: {calls:?}");
+    assert!(provider.target.verifies().is_empty(), "a wave that did not integrate is not verified");
+    assert_eq!(provider.target.calls().len(), 1, "the run stops at the first");
+    provider.vcs.assert_exhausted();
+}
+
+// A file that carries a credential by name is refused unread, whatever it
+// holds; a public key beside it is read and passes.
+#[tokio::test]
+async fn build_secret_file() {
+    let (provider, _) = planned();
+    let copy = worktree("SLICE-001");
+    changed(
+        &provider,
+        "SLICE-001",
+        &[
+            ("deploy/.npmrc", ChangeKind::Added),
+            ("deploy/id_rsa.pub", ChangeKind::Added),
+            ("ops/.aws/credentials", ChangeKind::Added),
+        ],
+    );
+    provider.files.holds(&copy, "deploy/.npmrc", "registry=https://registry.npmjs.org/\n");
+    provider.files.holds(&copy, "deploy/id_rsa.pub", "ssh-rsa AAAAB3NzaC1yc2E deploy@example\n");
+
+    let envelope = fail(&provider, &["emery", "build", BUILDER], 1, "secret-detected").await;
+
+    assert_message(
+        &envelope,
+        "- deploy/.npmrc: a file that carries a credential by name\n- ops/.aws/credentials: a file \
+         that carries a credential by name",
+    );
+    assert!(!envelope["message"].as_str().unwrap_or("").contains("id_rsa.pub"), "{envelope}");
+    assert_eq!(
+        provider.files.reads(),
+        [(copy.clone(), "deploy/id_rsa.pub".to_owned())],
+        "a file refused by name is never read"
+    );
+    assert!(provider.vcs.messages().is_empty(), "nothing is sealed");
+    assert!(!provider.vcs.calls().contains(&format!("remove {copy}")), "left for inspection");
+    provider.vcs.assert_exhausted();
+}
+
+// A credential a verification's repairs leave in the integrated tree refuses
+// the wave before its changes are sealed: the slices merged in it stay
+// committed, the wave's commit is never made, and the label stands where the
+// last verified wave left it.
+#[tokio::test]
+async fn build_secret_in_repair() {
+    let (provider, id) = planned();
+    provider.vcs.pending.script(
+        INTEGRATION,
+        Ok(vec![
+            change("src/orders.rs", ChangeKind::Modified),
+            change(".github/publish.sh", ChangeKind::Added),
+        ]),
+    );
+    provider.files.holds(INTEGRATION, "src/orders.rs", "pub fn place() {}\n");
+    provider.files.holds(
+        INTEGRATION,
+        ".github/publish.sh",
+        "npm config set //registry.npmjs.org/:_authToken=npm_a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8\n",
+    );
+
+    let envelope = fail(&provider, &["emery", "build", BUILDER], 1, "secret-detected").await;
+
+    assert_message(
+        &envelope,
+        &format!(
+            "wave 1 failed; SLICE-001 merged in it stays committed in `{INTEGRATION}`; \
+             `emery/{id}` is not set: what the verification wrote carries a credential, so none \
+             of it is sealed:\n- .github/publish.sh: an npm token"
+        ),
+    );
+    assert_eq!(
+        provider.files.reads(),
+        [
+            (INTEGRATION.to_owned(), "src/orders.rs".to_owned()),
+            (INTEGRATION.to_owned(), ".github/publish.sh".to_owned()),
+        ]
+    );
+    assert_eq!(provider.vcs.messages().len(), 1, "the slice's commit alone; no wave commit");
+    let calls = provider.vcs.calls();
+    assert_eq!(calls.last().cloned(), Some(format!("pending {INTEGRATION}")), "{calls:?}");
+    assert!(!calls.iter().any(|call| call.starts_with("label ")), "no label: {calls:?}");
+    assert!(!calls.contains(&format!("remove {INTEGRATION}")), "left for inspection: {calls:?}");
+    assert_eq!(provider.target.calls().len(), 1, "the second wave is never built");
+    provider.vcs.assert_exhausted();
+}
+
+// A credential file the build removed carries nothing: a deleted path is
+// passed over unread, the rest is read, and the slice seals as any other.
+#[tokio::test]
+async fn build_secret_deleted() {
+    let (provider, _) = planned();
+    let copy = worktree("SLICE-001");
+    changed(
+        &provider,
+        "SLICE-001",
+        &[(".env", ChangeKind::Deleted), ("src/auth.rs", ChangeKind::Added)],
+    );
+    provider.files.holds(&copy, "src/auth.rs", "pub fn sign_in() {}\n");
+    wrote(&provider, ORDERS);
+    provider.files.holds(&worktree("SLICE-002"), "src/orders.rs", "pub fn place() {}\n");
+
+    let resp = cli_ok(&provider, &["emery", "--format", "json", "build", BUILDER]).await;
+
+    let envelope: Value = serde_json::from_slice(&resp.stdout).expect("one JSON envelope");
+    assert_eq!(envelope["slices"][0]["written"], json!([".env", "src/auth.rs"]), "{envelope}");
+    assert_eq!(
+        provider.files.reads(),
+        [(copy, "src/auth.rs".to_owned()), (worktree("SLICE-002"), "src/orders.rs".to_owned()),],
+        "the deleted path is never read"
+    );
+    assert_eq!(provider.vcs.messages().len(), 2, "one commit per slice");
+    provider.vcs.assert_exhausted();
+}

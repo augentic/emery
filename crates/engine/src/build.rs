@@ -21,6 +21,12 @@
 //! adapter does not verify ends the run with the label where the last
 //! verified wave left it. Either way the integration working copy is left
 //! for inspection and removed by the next run.
+//!
+//! Nothing is sealed unread: every path a slice's build or a wave's
+//! verification left changed is held to the secret gate first, and a
+//! credential among them ends the run with the copy left as it was written.
+
+mod secrets;
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::num::NonZeroUsize;
@@ -37,7 +43,7 @@ use crate::adapter::{self, AdapterRef, Loaded};
 pub use crate::revision::{ReqId, SliceId, Waves};
 use crate::revision::{Slice, Spec};
 use crate::vcs::{INTEGRATION, Message, Repo, Repository, WorkingCopy};
-use crate::{store, vcs};
+use crate::{Files, store, vcs};
 
 /// How many times a slice is built before a conflict at its merge ends the run.
 pub const ATTEMPTS: usize = 3;
@@ -84,6 +90,10 @@ const RETRIES: usize = 2;
 ///     no rule resolves on its [`ATTEMPTS`]th build, the paths listed;
 ///   - with code `verify-failed`, when the adapter does not verify a wave,
 ///     each failing check listed;
+///   - with code `secret-detected`, when a path a slice's build or a wave's
+///     verification changed carries a credential, each listed with what it
+///     carries; nothing of the change set is sealed, and the copy stays as
+///     it was written;
 ///   - a slice the adapter refuses, or answers no acceptable report for.
 /// - Returns [`Error::ServerError`] when a report breaks the report gate, a
 ///   verdict breaks [`Verdict::findings`](emery_adapter::target::Verdict::findings),
@@ -98,7 +108,7 @@ const RETRIES: usize = 2;
 /// names the slice, its wave, and the slices merged before it. A failure at a
 /// wave's verification names the wave, the slices merged in it, and where
 /// the label stands.
-pub async fn build<P: Target + StateStore + BlobStore + Plugins + Vcs>(
+pub async fn build<P: Target + StateStore + BlobStore + Plugins + Vcs + Files>(
     input: BuildInput, context: Context<P>,
 ) -> Result<BuildOutput, Error> {
     let provider = context.provider();
@@ -364,7 +374,7 @@ enum Integrated {
 
 impl Run<'_> {
     #[tracing::instrument(skip_all, fields(wave))]
-    async fn wave<P: Target + Vcs>(
+    async fn wave<P: Target + Vcs + Files>(
         &self, provider: &P, progress: &mut Progress, wave: usize, ready: &[&Slice],
     ) -> Result<(), Error> {
         let jobs = self.jobs.map_or(ready.len(), NonZeroUsize::get).min(ready.len());
@@ -471,7 +481,7 @@ impl Run<'_> {
     // `true` when it merged, `false` when a conflict leaves it for the next
     // wave. The slice's working copy is removed either way, and left for
     // inspection when the slice fails.
-    async fn integrate<P: Vcs>(
+    async fn integrate<P: Vcs + Files>(
         &self, provider: &P, progress: &mut Progress, built: Built<'_>, wave: usize,
     ) -> Result<bool, Error> {
         let slice = built.slice;
@@ -487,9 +497,13 @@ impl Run<'_> {
         }
 
         // what the build changed, as the copy holds it rather than as the
-        // report lists it
-        let mut written: Vec<String> =
-            built.worktree.pending(provider).await?.into_iter().map(|change| change.path).collect();
+        // report lists it, held to the secret gate before any of it is sealed
+        let pending = built.worktree.pending(provider).await?;
+        let leaks = secrets::findings(provider, built.worktree.path(), &pending).await?;
+        if !leaks.is_empty() {
+            return Err(secret_detected("the build", &leaks));
+        }
+        let mut written: Vec<String> = pending.into_iter().map(|change| change.path).collect();
         written.sort_unstable();
 
         let message = Message {
@@ -562,7 +576,7 @@ impl Run<'_> {
 
     // Has the adapter verify the integrated tree, seals what its checks and
     // repairs left behind, and labels the head the wave reached.
-    async fn verify<P: Target + Vcs>(
+    async fn verify<P: Target + Vcs + Files>(
         &self, provider: &P, progress: &mut Progress, wave: usize, merged: &[SliceId],
     ) -> Result<(), Error> {
         let verdict = Target::verify(provider, self.adapter, self.integration.path()).await?;
@@ -583,10 +597,14 @@ impl Run<'_> {
             });
         }
 
-        // what the checks and their repairs left behind, sealed as the wave's
-        // own commit
+        // what the checks and their repairs left behind, held to the secret
+        // gate and sealed as the wave's own commit
         let pending = self.integration.pending(provider).await?;
         if !pending.is_empty() {
+            let leaks = secrets::findings(provider, self.integration.path(), &pending).await?;
+            if !leaks.is_empty() {
+                return Err(secret_detected("the verification", &leaks));
+            }
             let ids: Vec<String> = merged.iter().map(ToString::to_string).collect();
             let message = format!(
                 "Wave {wave} verified\n\nRevision: {}\nAdapter: {}\nSlices: {}",
@@ -610,6 +628,19 @@ impl Run<'_> {
         progress.labelled = Some(head.clone());
         progress.head = head;
         Ok(())
+    }
+}
+
+// The gate's refusal: what `wrote` left changed carries the credentials
+// listed, and none of it is sealed.
+fn secret_detected(wrote: &str, leaks: &[String]) -> Error {
+    let listed: Vec<String> = leaks.iter().map(|leak| format!("- {leak}")).collect();
+    Error::BadRequest {
+        code: "secret-detected".into(),
+        description: format!(
+            "what {wrote} wrote carries a credential, so none of it is sealed:\n{}",
+            listed.join("\n")
+        ),
     }
 }
 

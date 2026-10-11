@@ -15,9 +15,8 @@ The tree holds a Markdown stand-in for code: one directory `build/<slice-name>/`
 1. **Every slice directory has an index.** For each directory under `build/`, `index.md` exists and is not empty.
 2. **Every index lists files the directory holds.** Each `REQ-NNN` an `index.md` names has a `REQ-NNN.md` beside it.
 3. **No requirement file is orphaned.** Each `REQ-NNN.md` under `build/<slice-name>/` is named in that directory's `index.md`.
-4. **Nothing was written outside `build/`.** `git status --porcelain` in `$WORKSPACE` shows no path outside `build/`.
 
-A shell loop over `build/*/` with `test`, `grep`, and `ls` is enough for the first three; the fourth is one `git status` call.
+A shell loop over `build/*/` with `test`, `grep`, and `ls` is enough for all three. The tree's history is not yours to read: what the wave changed, the engine reads itself.
 
 ## Verdict
 

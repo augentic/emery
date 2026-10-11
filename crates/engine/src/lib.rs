@@ -7,7 +7,7 @@
 //! every slice of the current plan to a target adapter, in dependency order.
 //!
 //! Every operation uses a [`Provider`] of model, adapter, storage,
-//! version-control, and plugin capabilities. Command-line parsing and
+//! version-control, file, and plugin capabilities. Command-line parsing and
 //! presentation are handled outside this crate.
 //!
 //! # Vocabulary
@@ -36,6 +36,7 @@ pub mod specify;
 mod store;
 pub mod vcs;
 
+use std::future::Future;
 use std::path::{Component, Path, PathBuf};
 
 pub use adapter::{AdapterRef, Axis};
@@ -44,6 +45,23 @@ use emery_adapter::source::Source;
 use emery_adapter::target::Target;
 use omnia_sdk::{BlobStore, Error, Model, Plugins, StateStore, Vcs, bad_request};
 pub use store::{CONTAINER, REVISION_KEY};
+
+/// Reads the files of a working copy the engine cut, by path beneath it.
+///
+/// `at` is a working copy relative to the project root, as the engine names
+/// it to [`Vcs`], and `path` a path relative to that copy, as
+/// [`Vcs::pending`] lists it. A build reads what it is about to seal through
+/// this capability alone.
+pub trait Files: Send + Sync {
+    /// Reads the file at `path` beneath `at`; `None` when no file is there.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::ServerError`] when a file that is there cannot be read.
+    fn read(
+        &self, at: &str, path: &str,
+    ) -> impl Future<Output = Result<Option<Vec<u8>>, Error>> + Send;
+}
 
 /// Normalises an operator path to a path beneath the `.` project preopen.
 ///
@@ -98,14 +116,24 @@ pub fn preopen_join(base: &Path, relative: &Path) -> Result<PathBuf, Error> {
 /// A bundle of every capability an engine operation may require.
 ///
 /// Any type implementing the required model, source, target, storage,
-/// version-control, and plugin capabilities implements this trait
+/// version-control, file, and plugin capabilities implements this trait
 /// automatically.
 pub trait Provider:
-    Model + Source + Target + StateStore + BlobStore + Plugins + Vcs + Send + Sync + 'static
+    Model + Source + Target + StateStore + BlobStore + Plugins + Vcs + Files + Send + Sync + 'static
 {
 }
 
 impl<P> Provider for P where
-    P: Model + Source + Target + StateStore + BlobStore + Plugins + Vcs + Send + Sync + 'static
+    P: Model
+        + Source
+        + Target
+        + StateStore
+        + BlobStore
+        + Plugins
+        + Vcs
+        + Files
+        + Send
+        + Sync
+        + 'static
 {
 }
