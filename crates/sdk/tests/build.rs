@@ -448,6 +448,45 @@ async fn write_delete() {
     model.assert_exhausted();
 }
 
+// A path one call names more than once is met as the call left it, not as
+// the tree stood before it: one in `files` and `delete` is written, then
+// removed, so the tree lacks it as the answer says; one twice in `files`
+// holds the later content.
+#[tokio::test]
+async fn write_path_twice() {
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let root = tmp.path().to_str().expect("a UTF-8 scratch root");
+    let model = Scripted::answering([r#"{"covered":["REQ-001"],"written":[]}"#]).calling(
+        0,
+        [ToolCall {
+            id: "1".to_owned(),
+            name: "write_files".to_owned(),
+            arguments: r#"{"files":[{"path":"src/scratch.rs","content":"// scratch\n"},{"path":"src/orders.rs","content":"pub struct Draft;\n"},{"path":"src/orders.rs","content":"pub struct Order;\n"}],"delete":["src/scratch.rs"]}"#
+                .to_owned(),
+        }],
+    );
+
+    let report = ask(&model, &slice(), root).await.expect("accepted");
+    assert_eq!(report.written, ["src/orders.rs"], "the file written and kept");
+    assert_eq!(names(&tmp.path().join("src")), ["orders.rs"], "written then removed is gone");
+    assert_eq!(
+        fs::read_to_string(tmp.path().join("src/orders.rs")).expect("written"),
+        "pub struct Order;\n",
+        "the later entry replaces the earlier"
+    );
+
+    let exchanges = model.exchanges();
+    assert_eq!(exchanges.len(), 2, "one call, then the check");
+    assert_eq!(
+        exchanges[0].outcome.as_deref(),
+        Ok(
+            r#"{"deleted":["src/scratch.rs"],"written":[{"bytes":11,"path":"src/scratch.rs"},{"bytes":18,"path":"src/orders.rs"},{"bytes":18,"path":"src/orders.rs"}]}"#
+        )
+    );
+    assert_eq!(exchanges[1].outcome, Ok(String::new()));
+    model.assert_exhausted();
+}
+
 // A `written` path the tree does not hold is a finding; a file `write_files`
 // wrote that `written` leaves out is none, since the accepted report is
 // filled in with it, every path spelled as the tree does, and the write

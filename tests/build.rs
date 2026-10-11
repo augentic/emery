@@ -1543,6 +1543,39 @@ async fn build_secret_in_slice() {
     provider.vcs.assert_exhausted();
 }
 
+// A key pasted into a string literal keeps its header on one line with the
+// escaped newline and the rest of the key after it, and is refused as the
+// block form is; a certificate spelled the same way beside it passes.
+#[tokio::test]
+async fn build_secret_in_literal() {
+    let (provider, _) = planned();
+    let copy = worktree("SLICE-001");
+    changed(
+        &provider,
+        "SLICE-001",
+        &[("src/key.ts", ChangeKind::Added), ("src/cert.ts", ChangeKind::Added)],
+    );
+    provider.files.holds(
+        &copy,
+        "src/key.ts",
+        "const key = \"-----BEGIN RSA PRIVATE KEY-----\\nMIIEowIBAAKCAQEA\\n-----END RSA PRIVATE \
+         KEY-----\\n\";\n",
+    );
+    provider.files.holds(
+        &copy,
+        "src/cert.ts",
+        "const cert = \"-----BEGIN CERTIFICATE-----\\nMIICljCCAX4C\\n-----END \
+         CERTIFICATE-----\\n\";\n",
+    );
+
+    let envelope = fail(&provider, &["emery", "build", BUILDER], 1, "secret-detected").await;
+
+    assert_message(&envelope, "so none of it is sealed:\n- src/key.ts: a PEM private key block");
+    assert!(!envelope["message"].as_str().unwrap_or("").contains("src/cert.ts"), "{envelope}");
+    assert!(provider.vcs.messages().is_empty(), "nothing is sealed");
+    provider.vcs.assert_exhausted();
+}
+
 // A file that carries a credential by name is refused unread, whatever it
 // holds; a public key beside it is read and passes.
 #[tokio::test]

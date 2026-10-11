@@ -7,7 +7,7 @@
 //! before any is touched. [`Written`] is what it wrote this turn, which the
 //! build fills the answered `written` list from beside the tree itself.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 use std::fs::{self, OpenOptions};
 use std::future::ready;
@@ -92,7 +92,10 @@ impl Writer {
     }
 
     // Every path is held to the root and to the tree before the first write,
-    // so a call the rule refuses anywhere leaves the tree as it was.
+    // so a call the rule refuses anywhere leaves the tree as it was. What the
+    // tree holds at each is read once and moved with every write, so a later
+    // entry naming a path, or its removal, meets what the call laid there
+    // rather than what stood before it.
     fn write(&self, call: &ToolCall) -> Result<Done, String> {
         let WriteFiles { files, delete } =
             call.arguments().map_err(|err| format!("{WRITE_FILES}: {err}"))?;
@@ -101,18 +104,19 @@ impl Writer {
         }
 
         // the paths held to the rule
+        let mut tree = BTreeMap::new();
         let mut accepted = Vec::with_capacity(files.len());
         let mut removals = Vec::with_capacity(delete.len());
         let mut refused = Vec::new();
         for WriteFile { path, content } in files {
-            match self.held(&path) {
-                Ok((file, held)) => accepted.push((file, held, content)),
+            match self.held(&path, &mut tree) {
+                Ok(file) => accepted.push((file, content)),
                 Err(why) => refused.push(why),
             }
         }
         for path in delete {
-            match self.held(&path) {
-                Ok((file, held)) => removals.push((file, held)),
+            match self.held(&path, &mut tree) {
+                Ok(file) => removals.push(file),
                 Err(why) => refused.push(why),
             }
         }
@@ -122,7 +126,8 @@ impl Writer {
 
         // the files laid in order
         let mut wrote = Vec::with_capacity(accepted.len());
-        for (file, held, content) in accepted {
+        for (file, content) in accepted {
+            let held = tree[&file];
             if held == Held::Absent
                 && let Some((dir, _)) = file.rsplit_once('/')
             {
@@ -132,6 +137,7 @@ impl Writer {
             }
             lay(&self.root.join(&file), held, &content)
                 .map_err(|err| format!("{WRITE_FILES}: writing `{file}`: {err}"))?;
+            tree.insert(file.clone(), Held::File);
             self.written.record(file.clone());
             wrote.push(Wrote {
                 file,
@@ -139,10 +145,11 @@ impl Writer {
             });
         }
 
-        // the files removed; one the tree lacks is already gone
+        // the files removed, one this call laid among them; one the tree
+        // lacks is already gone
         let mut deleted = Vec::with_capacity(removals.len());
-        for (file, held) in removals {
-            if held == Held::File {
+        for file in removals {
+            if tree[&file] == Held::File {
                 match fs::remove_file(self.root.join(&file)) {
                     Ok(()) => {}
                     Err(err) if err.kind() == ErrorKind::NotFound => {}
@@ -156,11 +163,15 @@ impl Writer {
     }
 
     // The path held to `beneath` and to the tree, spelled as the tree does,
-    // or the refusal naming it.
-    fn held(&self, path: &str) -> Result<(String, Held), String> {
+    // what the tree holds there noted in `tree` the first time the call names
+    // it, or the refusal naming it.
+    fn held(&self, path: &str, tree: &mut BTreeMap<String, Held>) -> Result<String, String> {
         let file = beneath(path).map_err(|bad| format!("`{path}` {bad}"))?;
-        let held = Held::at(&self.root, &file).map_err(|why| format!("`{path}` {why}"))?;
-        Ok((file, held))
+        if !tree.contains_key(&file) {
+            let held = Held::at(&self.root, &file).map_err(|why| format!("`{path}` {why}"))?;
+            tree.insert(file.clone(), held);
+        }
+        Ok(file)
     }
 }
 
@@ -340,7 +351,8 @@ struct WriteFiles {
     #[serde(default, deserialize_with = "files")]
     files: Vec<WriteFile>,
     /// The paths of files to remove, each `/`-separated and relative to
-    /// `$WORKSPACE`; one the tree lacks is already removed.
+    /// `$WORKSPACE`; one the tree lacks is already removed, and one `files`
+    /// also names is written, then removed.
     #[serde(default)]
     delete: Vec<String>,
 }

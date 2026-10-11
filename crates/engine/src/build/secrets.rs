@@ -29,7 +29,8 @@ const CARRIERS: [&str; 10] = [
 ];
 
 const PEM_HEAD: &[u8] = b"-----BEGIN ";
-const PEM_PRIVATE: &[u8] = b"PRIVATE KEY-----";
+const PEM_DASHES: &[u8] = b"-----";
+const PEM_PRIVATE: &[u8] = b"PRIVATE KEY";
 
 // The bytes a token's run may hold after its prefix.
 #[derive(Clone, Copy)]
@@ -211,12 +212,16 @@ fn carried(bytes: &[u8]) -> Option<&'static str> {
     SHAPES.iter().chain([&AUTH_TOKEN]).find(|shape| shape.matches(bytes)).map(|shape| shape.what)
 }
 
-// A `-----BEGIN …-----` line whose label ends in `PRIVATE KEY`.
+// A `-----BEGIN <label>-----` header whose label ends in `PRIVATE KEY`,
+// wherever on its line it stands: a key pasted into a string literal keeps
+// the header and the escaped newline after it on one line.
 fn pem_private_key(bytes: &[u8]) -> bool {
     occurrences(bytes, PEM_HEAD).any(|start| {
         let rest = &bytes[start + PEM_HEAD.len()..];
-        let line = rest.split(|byte| *byte == b'\n').next().unwrap_or_default();
-        line.strip_suffix(b"\r").unwrap_or(line).ends_with(PEM_PRIVATE)
+        occurrences(rest, PEM_DASHES).next().is_some_and(|end| {
+            let label = &rest[..end];
+            label.ends_with(PEM_PRIVATE) && !label.contains(&b'\n')
+        })
     })
 }
 
