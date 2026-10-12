@@ -111,15 +111,15 @@ anyhow = "1.0.104"
 clap = { version = "4.6.7", features = ["derive", "env"] }
 futures = "0.3.34"
 hex = "0.4.3"
-schemars = "1.2.2"
+schemars = "1.2.3"
 semver = { version = "1.0.28", features = ["serde"] }
 serde = { version = "1.0.229", features = ["derive"] }
-serde_json = "1.0.151"
+serde_json = "1.0.154"
 sha2 = "0.11"
 strum = { version = "0.28", features = ["derive"] }
 tempfile = "3.27.0"
 tokio = { version = "1.53.2", features = ["fs", "io-util", "rt"] }
-toml = "1.1.7"
+toml = "1.1.8"
 tracing = "0.1.44"
 wasip3 = "0.9.0"
 wit-bindgen = { version = "0.62.0", features = ["async-spawn"] }
