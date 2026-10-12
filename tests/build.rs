@@ -626,10 +626,16 @@ async fn build_verify_failed() {
 
 // What a verify's repairs and checks leave in the integrated tree is sealed
 // as the wave's own commit before the head is labelled, so the label points
-// at a sealed tree, and the wave is reported repaired.
+// at a sealed tree; the seal is reported with its paths, and the wave as
+// repaired when one of them lies outside the adapter's `ours` rules, since
+// a lockfile a check regenerated under one is no repair.
 #[tokio::test]
 async fn build_verify_repairs() {
-    let (provider, id) = planned();
+    let (mut provider, id) = planned();
+    provider.target.rules = vec![MergeRule {
+        paths: Cow::Borrowed("Cargo.lock"),
+        strategy: MergeStrategy::Ours,
+    }];
     let repaired = || {
         Ok(vec![
             change("src/orders.rs", ChangeKind::Modified),
@@ -672,8 +678,61 @@ async fn build_verify_repairs() {
     let resp = cli_ok(&provider, &["emery", "--format", "json", "build", BUILDER]).await;
     let envelope: Value = serde_json::from_slice(&resp.stdout).expect("one JSON envelope");
     assert_eq!(envelope["repaired"], json!([1]), "{envelope}");
+    assert_eq!(
+        envelope["sealed"],
+        json!([{"wave": 1, "commit": "Wave-commit", "paths": ["Cargo.lock", "src/orders.rs"]}]),
+        "{envelope}"
+    );
     assert_eq!(envelope["verified"], json!([HEAD, HEAD]), "{envelope}");
+
+    // a seal of regenerated paths alone is reported, and is no repair
+    provider.vcs.pending.script(
+        INTEGRATION,
+        Ok(vec![
+            change("Cargo.lock", ChangeKind::Modified),
+            change("crates/orders/Cargo.lock", ChangeKind::Added),
+        ]),
+    );
+    let resp = cli_ok(&provider, &["emery", "build", BUILDER]).await;
+    let stdout = String::from_utf8_lossy(&resp.stdout);
+    assert!(stdout.contains("  wave 1: 1 slice verified at 9f8e7d6c, sealed\n"), "{stdout}");
+    provider.vcs.pending.script(INTEGRATION, Ok(vec![change("Cargo.lock", ChangeKind::Modified)]));
+    let resp = cli_ok(&provider, &["emery", "--format", "json", "build", BUILDER]).await;
+    let envelope: Value = serde_json::from_slice(&resp.stdout).expect("one JSON envelope");
+    assert!(envelope.get("repaired").is_none(), "{envelope}");
+    assert_eq!(envelope["sealed"][0]["paths"], json!(["Cargo.lock"]), "{envelope}");
+    assert_eq!(
+        provider.vcs.messages().len(),
+        3 * 4,
+        "the two slices' commits and the wave's, each run"
+    );
     provider.vcs.assert_exhausted();
+}
+
+// A verify that fails upstream is put once more over the same integration
+// copy, since nothing of it is sealed until the verdict; the run lands.
+#[tokio::test]
+async fn build_verify_retries_bad_gateway() {
+    let (provider, id) = planned();
+    provider.target.verdict(Err(bad_gateway!("the model timed out")));
+
+    let resp = cli_ok(&provider, &["emery", "--format", "json", "build", BUILDER]).await;
+
+    let envelope: Value = serde_json::from_slice(&resp.stdout).expect("one JSON envelope");
+    assert_eq!(envelope["label"], json!(format!("emery/{id}")), "{envelope}");
+    assert_eq!(envelope["verified"], json!([HEAD, HEAD]), "{envelope}");
+    assert_eq!(
+        provider.target.verifies(),
+        [INTEGRATION, INTEGRATION, INTEGRATION],
+        "the first wave verified twice, the second once"
+    );
+    let calls = provider.vcs.calls();
+    assert_eq!(calls.iter().filter(|call| call.starts_with("label ")).count(), 2, "{calls:?}");
+    assert_eq!(
+        calls.iter().filter(|call| call.starts_with(&format!("add . {INTEGRATION}"))).count(),
+        1,
+        "the copy is cut once: {calls:?}"
+    );
 }
 
 // A verdict the gate refuses is the adapter's defect, named; a verify the
@@ -688,10 +747,13 @@ async fn build_bad_verdict() {
     assert_message(&envelope, "- `passed` is true, yet 1 failure is listed");
     assert!(!provider.vcs.calls().iter().any(|call| call.starts_with("label ")));
 
+    // the second upstream failure is the run's
     provider.target.verdict(Err(bad_gateway!("the model timed out")));
+    provider.target.verdict(Err(bad_gateway!("the model timed out again")));
     let envelope = fail(&provider, &["emery", "build", BUILDER], 4, "bad_gateway").await;
     assert_message(&envelope, "wave 1 failed; SLICE-001 merged in it stays committed in");
-    assert_message(&envelope, ": the model timed out");
+    assert_message(&envelope, ": the model timed out again");
+    assert_eq!(provider.target.verifies().len(), 3, "one for the first run, two for the second");
 }
 
 // A label the repository holds for the revision is resumed once it is read

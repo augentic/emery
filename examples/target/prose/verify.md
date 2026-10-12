@@ -4,7 +4,7 @@ Verify the integrated project tree after a wave of slices has merged into it, an
 
 ## Inputs
 
-- `$WORKSPACE` — the integrated tree, lent writable with the shell. Read it through the workspace tools, run the checks below in it, and repair what they find through this call's `write_files` tool, then run them again. A repair stays within `build/`: an `index.md` line added for a requirement file it leaves out, a requirement file removed through `delete` when nothing names it. What you write is sealed as the wave's own commit by the engine, never by you.
+- `$WORKSPACE` — the integrated tree, lent writable with the shell. Read it through the workspace tools, run the checks below in it, and repair what they find through this call's `edit_files` tool for a change within a file and `write_files` for a file whole, then run them again. A repair stays within `build/`: an `index.md` line added for a requirement file it leaves out, a requirement file removed through `delete` when nothing names it. What you write is sealed as the wave's own commit by the engine, never by you.
 
 Nothing outside `$WORKSPACE` is reachable.
 

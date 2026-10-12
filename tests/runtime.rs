@@ -502,8 +502,8 @@ async fn build_merged_labelled() {
     assert!(run.stdout.contains(&format!("\n  base {base}\n")), "{}", run.stdout);
     assert!(
         run.stdout.contains(&format!(
-            "\n  wave 1: 1 slice verified at {}\n    SLICE-001 greeting: covered 1/1, written 1 \
-             file, merged {head}\n",
+            "\n  wave 1: 1 slice verified at {}\n    SLICE-001 greeting: covered 1/1, written 2 \
+             files, merged {head}\n",
             &head[..8]
         )),
         "{}",
@@ -520,6 +520,13 @@ async fn build_merged_labelled() {
         roots.git.run(project, &["show", &format!("{label}:build/greeting.md")]),
         "# Greeting",
         "the target wrote the working copy through the turn"
+    );
+    assert!(
+        roots
+            .git
+            .run(project, &["show", &format!("{label}:build/README.md")])
+            .starts_with("# Build\n"),
+        "the target's seed, laid through the lend before the turn, is the slice's too"
     );
     assert_eq!(
         roots
@@ -623,7 +630,7 @@ async fn build_secret_refused() {
     assert!(copy.join("build/leak.pem").exists(), "the copy stays as it was written");
     assert_eq!(
         roots.git.run(&copy, &["status", "--porcelain", "--untracked-files=all"]),
-        "?? build/greeting.md\n?? build/leak.pem",
+        "?? build/README.md\n?? build/greeting.md\n?? build/leak.pem",
         "nothing of the change set is sealed"
     );
     assert!(project.join(".emery/vcs/integration").exists(), "left for inspection");
@@ -663,7 +670,7 @@ async fn build_secret_in_link() {
     );
     assert_eq!(
         roots.git.run(&copy, &["status", "--porcelain", "--untracked-files=all"]),
-        "?? src/hook",
+        "?? build/README.md\n?? src/hook",
         "nothing of the change set is sealed"
     );
 }
@@ -705,7 +712,7 @@ async fn build_change_unreadable() {
     assert!(copy.join("vendor/.git").is_dir(), "the copy stays as it was left");
     assert_eq!(
         roots.git.run(&copy, &["status", "--porcelain", "--untracked-files=all"]),
-        "?? vendor/",
+        "?? build/README.md\n?? vendor/",
         "nothing of the change set is sealed"
     );
 }

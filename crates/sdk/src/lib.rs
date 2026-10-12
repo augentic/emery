@@ -105,8 +105,9 @@
 //! - **Context**: the adapter identifier, source input, and model available to
 //!   one extraction call. See [`Context`].
 //! - **Lend**: the workspace directory made readable to the model for a seam,
-//!   or handed to it to build into for a build, written through the build
-//!   turn's `write_files` tool; whether it may be written is the
+//!   or handed to it to build into for a build, seeded with the target's
+//!   [`target::Seed`] files before the turn and written through the turn's
+//!   `write_files` and `edit_files` tools; whether it may be written is the
 //!   deployment's grant.
 //! - **Finding**: a validation problem returned to the model for correction.
 //!   The host limits how many correction rounds are available.

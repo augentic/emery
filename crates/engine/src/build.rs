@@ -15,8 +15,9 @@
 //! engine writes no state of its own: the labelled history is the output,
 //! pushed when the target names a remote.
 //!
-//! A slice whose build fails upstream is built once more in a fresh copy. A
-//! slice whose merge conflicts is left for the next wave and built again
+//! A slice whose build fails upstream is built once more in a fresh copy,
+//! and a wave whose verification fails upstream is verified once more over
+//! the same one. A slice whose merge conflicts is left for the next wave and built again
 //! over the merged head; its [`ATTEMPTS`]th conflict ends the run. A wave the
 //! adapter does not verify ends the run with the label where the last
 //! verified wave left it. Either way the integration working copy is left
@@ -35,7 +36,7 @@ use emery_adapter::target::{Slice as SliceInput, Target};
 use futures::{StreamExt as _, TryFutureExt as _, TryStreamExt as _, stream};
 use omnia_sdk::api::Context;
 use omnia_sdk::plugins::Digest;
-use omnia_sdk::vcs::Rule;
+use omnia_sdk::vcs::{Rule, Strategy};
 use omnia_sdk::{BlobStore, Error, Plugins, StateStore, Vcs, server_error};
 use serde::{Deserialize, Serialize};
 
@@ -48,8 +49,9 @@ use crate::{Files, store, vcs};
 /// How many times a slice is built before a conflict at its merge ends the run.
 pub const ATTEMPTS: usize = 3;
 
-// How many times a slice's build is put to the adapter when it fails
-// upstream, each in a fresh working copy.
+// How many times a slice's build, each in a fresh working copy, or a
+// wave's verification, over the same copy, is put to the adapter when it
+// fails upstream.
 const RETRIES: usize = 2;
 
 /// Builds every slice of the current plan through the target adapter `input` names.
@@ -62,7 +64,7 @@ const RETRIES: usize = 2;
 /// copy changed sealed as its commit and merged in id order under the
 /// adapter's merge rules, and the wave verified by the adapter and labelled,
 /// what its checks changed sealed first. A build that fails upstream is put
-/// once more in a fresh copy. A slice whose merge conflicts is built again in
+/// once more in a fresh copy, a verification once more over the same one. A slice whose merge conflicts is built again in
 /// the next wave, over the merged head; the first failure ends the run, and
 /// what was merged before it stays committed in the integration working
 /// copy, the verified waves labelled.
@@ -97,12 +99,12 @@ const RETRIES: usize = 2;
 ///   - a slice the adapter refuses, or answers no acceptable report for.
 /// - Returns [`Error::ServerError`] when a report breaks the report gate, a
 ///   verdict breaks [`Verdict::findings`](emery_adapter::target::Verdict::findings),
-///   a slice's working copy no longer sits on the head it was cut at, the
-///   slices left to build wait on one another, or storage or version
-///   control fails.
+///   a slice's working copy no longer sits on the head it was cut at, a
+///   verification's changes seal as no commit, the slices left to build
+///   wait on one another, or storage or version control fails.
 /// - Returns [`Error::BadGateway`] when the adapter, its acquisition, the
-///   model, or the repository's remote fails upstream; a slice's build is
-///   put twice before it does.
+///   model, or the repository's remote fails upstream; a slice's build, or
+///   a wave's verification, is put twice before it does.
 ///
 /// A failure at a slice keeps the adapter's class and code; its description
 /// names the slice, its wave, and the slices merged before it. A failure at a
@@ -137,19 +139,19 @@ pub async fn build<P: Target + StateStore + BlobStore + Plugins + Vcs + Files>(
     };
     let label = format!("emery/{revision_id}");
     let labelled = repo.merged_under(provider, &label, &base, &revision_id).await?;
-    let (head, merged) = labelled.clone().unwrap_or_else(|| (base.clone(), BTreeSet::new()));
-    let integration = WorkingCopy::cut(provider, &repo.path(), INTEGRATION, &head).await?;
+    let mut progress = Progress::start(&base, labelled);
+    let integration = WorkingCopy::cut(provider, &repo.path(), INTEGRATION, &progress.head).await?;
 
     let waves = revision.plan.waves();
     tracing::info!(
         revision = %revision_id,
         adapter = %adapter,
         %base,
-        %head,
+        head = %progress.head,
         slices = revision.plan.slices.len(),
         waves = waves.len(),
         widest = waves.widest(),
-        resumed = merged.len(),
+        resumed = progress.resumed.len(),
         "building"
     );
 
@@ -168,17 +170,6 @@ pub async fn build<P: Target + StateStore + BlobStore + Plugins + Vcs + Files>(
         integration: &integration,
         policy: &policy,
         jobs: input.jobs,
-    };
-    let mut progress = Progress {
-        resumed: merged.iter().copied().collect(),
-        head,
-        labelled: labelled.map(|(head, _)| head),
-        merged,
-        built: Vec::new(),
-        tries: BTreeMap::new(),
-        conflicts: BTreeMap::new(),
-        verified: Vec::new(),
-        repaired: Vec::new(),
     };
 
     // wave by wave, until every slice is merged
@@ -217,6 +208,7 @@ pub async fn build<P: Target + StateStore + BlobStore + Plugins + Vcs + Files>(
         resumed: progress.resumed,
         slices: progress.built,
         verified: progress.verified,
+        sealed: progress.sealed,
         repaired: progress.repaired,
         head: progress.head,
         label,
@@ -289,9 +281,14 @@ pub struct BuildOutput {
     /// The integrated head each wave was verified and labelled at, in wave order.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub verified: Vec<String>,
-    /// The waves whose verification changed the integrated tree, from one,
-    /// each change sealed as `Wave <k> verified` before the head was
-    /// labelled.
+    /// What each wave's verification left in the integrated tree, sealed as
+    /// `Wave <k> verified` before the head was labelled, in wave order.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub sealed: Vec<Seal>,
+    /// The waves whose verification repaired the integrated tree, from one:
+    /// those whose seal carries a path the adapter's `ours` rules do not
+    /// cover, since what a check regenerates under one, a lockfile, is no
+    /// repair.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub repaired: Vec<usize>,
     /// The integrated commit the label points at.
@@ -330,6 +327,18 @@ pub struct BuiltSlice {
     pub conflicts: Vec<String>,
 }
 
+/// What one wave's verification left in the integrated tree, sealed as the wave's commit.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub struct Seal {
+    /// The wave, from one.
+    pub wave: usize,
+    /// The `Wave <k> verified` commit the changes were sealed as.
+    pub commit: String,
+    /// The paths the verification changed, relative to the tree root and sorted.
+    pub paths: Vec<String>,
+}
+
 // What every wave of one build shares.
 struct Run<'a> {
     adapter: &'a str,
@@ -356,7 +365,28 @@ struct Progress {
     tries: BTreeMap<SliceId, usize>,
     conflicts: BTreeMap<SliceId, Vec<String>>,
     verified: Vec<String>,
+    sealed: Vec<Seal>,
     repaired: Vec<usize>,
+}
+
+impl Progress {
+    // `labelled` is the head the label stands at and the slices its chain names;
+    // `None` starts a fresh build from the base.
+    fn start(base: &str, labelled: Option<(String, BTreeSet<SliceId>)>) -> Self {
+        let (head, merged) = labelled.clone().unwrap_or_else(|| (base.to_owned(), BTreeSet::new()));
+        Self {
+            resumed: merged.iter().copied().collect(),
+            head,
+            labelled: labelled.map(|(head, _)| head),
+            merged,
+            built: Vec::new(),
+            tries: BTreeMap::new(),
+            conflicts: BTreeMap::new(),
+            verified: Vec::new(),
+            sealed: Vec::new(),
+            repaired: Vec::new(),
+        }
+    }
 }
 
 // One slice built in its working copy, not yet merged.
@@ -579,7 +609,20 @@ impl Run<'_> {
     async fn verify<P: Target + Vcs + Files>(
         &self, provider: &P, progress: &mut Progress, wave: usize, merged: &[SliceId],
     ) -> Result<(), Error> {
-        let verdict = Target::verify(provider, self.adapter, self.integration.path()).await?;
+        // a verify that fails upstream is put again over the same copy, since
+        // nothing of it is sealed until the verdict and a repair it left
+        // stands as the shell would have left it
+        let mut attempt = 0;
+        let verdict = loop {
+            attempt += 1;
+            match Target::verify(provider, self.adapter, self.integration.path()).await {
+                Ok(verdict) => break verdict,
+                Err(Error::BadGateway { description, .. }) if attempt < RETRIES => {
+                    tracing::warn!(attempt, %description, "verify failed upstream; verifying again");
+                }
+                Err(error) => return Err(error),
+            }
+        };
         let findings = verdict.findings();
         if !findings.is_empty() {
             return Err(server_error!(
@@ -612,13 +655,24 @@ impl Run<'_> {
                 self.reference,
                 ids.join(", ")
             );
-            let sealed = self.integration.commit(provider, &message).await?;
-            tracing::info!(
-                changed = pending.len(),
-                commit = sealed.as_deref().unwrap_or("none"),
-                "verification changes sealed"
-            );
-            progress.repaired.push(wave);
+            let Some(commit) = self.integration.commit(provider, &message).await? else {
+                return Err(server_error!(
+                    "the verification left {} paths pending, yet sealing them made no commit",
+                    pending.len()
+                ));
+            };
+            let mut paths: Vec<String> = pending.into_iter().map(|change| change.path).collect();
+            paths.sort_unstable();
+
+            // a path a check regenerates under `ours`, a lockfile, is no repair
+            let repaired = paths
+                .iter()
+                .any(|path| vcs::strategy_for(self.policy, path) != Some(Strategy::Ours));
+            tracing::info!(changed = paths.len(), %commit, repaired, "verification changes sealed");
+            if repaired {
+                progress.repaired.push(wave);
+            }
+            progress.sealed.push(Seal { wave, commit, paths });
         }
 
         let head = self.integration.head(provider).await?;
