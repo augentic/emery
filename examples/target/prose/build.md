@@ -4,7 +4,7 @@ Build one slice of the plan into the lent project tree, as a Markdown stand-in f
 
 ## Inputs
 
-- `$WORKSPACE` — the project tree, lent writable. Read it through the workspace tools; write it through this call's `write_files` tool, one or more files per call, each created or replaced whole, at a `/`-separated path relative to `$WORKSPACE`. Every file you write goes beneath it.
+- `$WORKSPACE` — the project tree, lent writable. Read it through the workspace tools; write it through this call's `write_files` tool, one or more files per call, each created or replaced whole, at a `/`-separated path relative to `$WORKSPACE`, and change within a file you wrote through `edit_files`. Every file you write goes beneath it. `build/README.md` is in the tree before you start, laid by the adapter when the tree lacked it; it is not yours to write.
 - **The slice's plan entry** — its id, name, requirements, the design types it owns, and the slices built before it.
 - **The specification, cut to the slice** — the requirements to implement, each with its acceptance scenarios.
 - **The design, whole** — the types and sections every slice shares.

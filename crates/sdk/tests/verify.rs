@@ -54,8 +54,8 @@ async fn request_shape() {
     assert_eq!(request.workspace.as_deref(), Some(root), "the integrated tree is lent");
     assert_eq!(
         request.tools,
-        ["list_docs", "read_doc", "write_files"],
-        "a verify turn repairs through the build's tool"
+        ["list_docs", "read_doc", "write_files", "edit_files"],
+        "a verify turn repairs through the build's tools"
     );
     assert!(request.check, "acceptance is the check");
     let SeenFormat::Schema { name, schema } = &request.format else {
@@ -77,11 +77,13 @@ async fn request_shape() {
     );
     assert!(
         user.contains(
-            "Where a check fails, repair the tree through this call's `write_files` tool alone"
+            "Where a check fails, repair the tree through this call's two tools alone, then run \
+             the checks again: `write_files` writes one or more files beneath `$WORKSPACE` per \
+             call"
         ),
         "{user}"
     );
-    assert!(user.contains("then run the checks again"), "{user}");
+    assert!(user.contains("A repair within a file is an `edit_files` call."), "{user}");
     assert!(
         user.contains("`failures` names each check that still failed, with the tail of its output"),
         "{user}"
@@ -125,6 +127,60 @@ async fn repairs() {
     );
     assert_eq!(exchanges[1].tool, "check");
     assert_eq!(exchanges[1].outcome, Ok(String::new()));
+    model.assert_exhausted();
+}
+
+// A repair within a file lands through `edit_files` as a build's edit does,
+// the rest of the file as it was, and a whole-file rewrite that would halve
+// the file is refused as a build's is.
+#[tokio::test]
+async fn repairs_by_edit() {
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let root = tmp.path().to_str().expect("a UTF-8 scratch root");
+    std::fs::create_dir_all(tmp.path().join("src")).expect("src dir");
+    let before = "pub struct Order;\npub fn total(&token: &str) {}\npub struct Line;\n";
+    std::fs::write(tmp.path().join("src/orders.rs"), before).expect("seed");
+    let model = Scripted::answering([PASSED]).calling(
+        0,
+        [
+            ToolCall {
+                id: "1".to_owned(),
+                name: "write_files".to_owned(),
+                arguments:
+                    r#"{"files":[{"path":"src/orders.rs","content":"pub struct Order;\n"}]}"#
+                        .to_owned(),
+            },
+            ToolCall {
+                id: "2".to_owned(),
+                name: "edit_files".to_owned(),
+                arguments:
+                    r#"{"edits":[{"path":"src/orders.rs","find":"&token","replace":"token"}]}"#
+                        .to_owned(),
+            },
+        ],
+    );
+
+    let verdict = ask(&model, root).await.expect("accepted");
+    assert!(verdict.passed);
+    assert_eq!(
+        std::fs::read_to_string(tmp.path().join("src/orders.rs")).expect("repaired"),
+        "pub struct Order;\npub fn total(token: &str) {}\npub struct Line;\n"
+    );
+
+    let exchanges = model.exchanges();
+    assert_eq!(exchanges.len(), 3, "the refused rewrite, the edit, then the check");
+    assert_eq!(
+        exchanges[0].outcome,
+        Err("write_files: nothing written: `src/orders.rs` would shrink from 65 to 18 bytes; a \
+             file is replaced whole, so send the whole file, use `edit_files` for a change \
+             within it, or set `shrink: true` if that is meant"
+            .to_owned())
+    );
+    assert_eq!(
+        exchanges[1].outcome.as_deref(),
+        Ok(r#"{"edited":[{"bytes":64,"path":"src/orders.rs"}]}"#)
+    );
+    assert_eq!(exchanges[2].tool, "check");
     model.assert_exhausted();
 }
 

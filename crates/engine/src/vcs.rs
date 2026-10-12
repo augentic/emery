@@ -65,6 +65,54 @@ pub fn rules(declared: &[MergeRule]) -> Vec<Rule> {
         .collect()
 }
 
+/// The strategy the first of `rules` matching `path` declares, in the capability's reading.
+///
+/// A pattern with no `/` matches the path's final component at any depth;
+/// one with a `/` is anchored to the root, a leading `/` dropped. `?` and
+/// `*` stay within a component, `**/` crosses whole components, and any
+/// other `**` crosses anything. `None` when no rule matches.
+#[must_use]
+pub fn strategy_for(rules: &[Rule], path: &str) -> Option<Strategy> {
+    rules.iter().find(|rule| matches(&rule.paths, path)).map(|rule| rule.strategy)
+}
+
+fn matches(pattern: &str, path: &str) -> bool {
+    if pattern.contains('/') {
+        glob(pattern.strip_prefix('/').unwrap_or(pattern).as_bytes(), path.as_bytes())
+    } else {
+        glob(pattern.as_bytes(), path.rsplit('/').next().unwrap_or(path).as_bytes())
+    }
+}
+
+// Whether `pattern` matches `text` whole; the patterns are an adapter's
+// few short globs, so backtracking costs nothing worth a table.
+fn glob(pattern: &[u8], text: &[u8]) -> bool {
+    match pattern {
+        [] => text.is_empty(),
+        [b'*', b'*', b'/', rest @ ..] => {
+            glob(rest, text)
+                || text
+                    .iter()
+                    .enumerate()
+                    .filter(|&(_, &byte)| byte == b'/')
+                    .any(|(at, _)| glob(rest, &text[at + 1..]))
+        }
+        [b'*', b'*', rest @ ..] => (0..=text.len()).any(|at| glob(rest, &text[at..])),
+        [b'*', rest @ ..] => {
+            let component = text.iter().position(|&byte| byte == b'/').unwrap_or(text.len());
+            (0..=component).any(|at| glob(rest, &text[at..]))
+        }
+        [b'?', rest @ ..] => match text {
+            [byte, after @ ..] if *byte != b'/' => glob(rest, after),
+            _ => false,
+        },
+        [want, rest @ ..] => match text {
+            [byte, after @ ..] if byte == want => glob(rest, after),
+            _ => false,
+        },
+    }
+}
+
 /// The message a build seals one slice under, in its working copy and as its merge.
 ///
 /// The first line is `<id> <name>`; the trailers tie the commit to its

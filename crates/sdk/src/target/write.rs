@@ -1,12 +1,17 @@
-//! Serves the `write_files` tool a build or verify turn writes the lent tree
-//! through.
+//! Serves the `write_files` and `edit_files` tools a build or verify turn
+//! writes the lent tree through, and lays a build's seed before its turn.
 //!
-//! [`Writer`] declares the tool and answers each call by writing the files it
-//! names beneath the workspace root and removing the paths it deletes, every
-//! path held to [`beneath`] and to the tree — no symlink anywhere on it —
-//! before any is touched. [`Written`] is what it wrote this turn, which the
-//! build fills the answered `written` list from beside the tree itself.
+//! [`Writer`] declares the two tools and answers each call beneath the
+//! workspace root: `write_files` lays the files it names whole and removes
+//! the paths it deletes; `edit_files` replaces the one place each `find`
+//! matches within a file the tree holds. Every path is held to [`beneath`]
+//! and to the tree — no symlink anywhere on it — before any is touched, and
+//! a write that would empty a file or cut it below half its size is refused
+//! unless the entry says so. [`Written`] is what the turn seeded, wrote, or
+//! edited, which the build fills the answered `written` list from beside the
+//! tree itself.
 
+use std::borrow::Cow;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 use std::fs::{self, OpenOptions};
@@ -18,15 +23,44 @@ use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use emery_adapter::beneath;
 use emery_adapter::target::Report;
 use omnia_sdk::model::{Function, Tool, ToolCall, ToolFuture, Tools};
+use omnia_sdk::{Error, bad_request, server_error};
 use schemars::JsonSchema;
 use serde::de::{self, MapAccess, SeqAccess, Visitor};
 use serde::{Deserialize, Deserializer};
 use serde_json::json;
 
 const WRITE_FILES: &str = "write_files";
+const EDIT_FILES: &str = "edit_files";
 
-// The write tool of one turn: the root it writes beneath, the turn its
-// events name, and the files it has written.
+/// A file a target lays in the tree before a slice's turn when the tree lacks it.
+///
+/// A target declares the files every tree of its layout starts from — a
+/// root manifest, an entry, a list a slice adds its line to — and hands them
+/// to [`build`](super::build) as its seed. One the tree lacks is laid before
+/// the turn and counts as written by the slice; one the tree holds is left as
+/// it stands, so a later wave or a resumed build lays nothing.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Seed {
+    /// The `/`-separated path of the file, relative to the workspace root,
+    /// which [`beneath`](crate::beneath) must accept.
+    pub path: Cow<'static, str>,
+    /// The whole content the file holds when the seed lays it.
+    pub content: Cow<'static, str>,
+}
+
+impl Seed {
+    /// Returns the seed laying `content` at `path`.
+    #[must_use]
+    pub const fn new(path: &'static str, content: &'static str) -> Self {
+        Self {
+            path: Cow::Borrowed(path),
+            content: Cow::Borrowed(content),
+        }
+    }
+}
+
+// The write tools of one turn: the root they write beneath, the turn their
+// events name, and the files they have written.
 pub(super) struct Writer {
     root: PathBuf,
     turn: String,
@@ -43,15 +77,28 @@ impl Writer {
     }
 
     #[must_use]
-    pub(super) fn tool() -> Tool {
-        Tool::Function(Function::of::<WriteFiles>(
-            WRITE_FILES,
-            "Write one or more files beneath `$WORKSPACE`, each created or replaced whole, the \
-             directories above it created, and remove the files `delete` names. Each path is \
-             `/`-separated and relative to `$WORKSPACE`; a call naming a path outside it, under \
-             `.emery/` or `.git/`, naming a projection, or leading through a symlink, is \
-             refused whole and changes nothing.",
-        ))
+    pub(super) fn tools() -> [Tool; 2] {
+        [
+            Tool::Function(Function::of::<WriteFiles>(
+                WRITE_FILES,
+                "Write one or more files beneath `$WORKSPACE`, each created or replaced whole, \
+                 the directories above it created, and remove the files `delete` names. Each \
+                 path is `/`-separated and relative to `$WORKSPACE`; a call naming a path \
+                 outside it, under `.emery/` or `.git/`, naming a projection, or leading \
+                 through a symlink, is refused whole and changes nothing, as is one whose \
+                 entry would leave a file empty or under half its size without `shrink` set. \
+                 For a change within a file, use `edit_files`.",
+            )),
+            Tool::Function(Function::of::<EditFiles>(
+                EDIT_FILES,
+                "Edit within one or more files beneath `$WORKSPACE`: each edit replaces the one \
+                 place `find` matches in the file at `path` with `replace`, and the file is \
+                 otherwise as it was. Every edit is held before any is applied: a `find` \
+                 matching nowhere or more than once, a path the tree holds no file at, or a \
+                 path `write_files` would refuse, refuses the call whole and changes nothing. \
+                 To create or replace a file whole, use `write_files`.",
+            )),
+        ]
     }
 
     #[must_use]
@@ -59,43 +106,85 @@ impl Writer {
         self.written.clone()
     }
 
-    // Answers `write_files` here and hands every other call to `rest`.
+    // Lays every seed file the tree lacks and answers their paths, spelled
+    // as the tree does, in the order declared. A path the rule refuses, or
+    // one declared twice, is the adapter's defect; a symlink or directory
+    // standing where a seed file goes is the tree's refusal, since nothing
+    // is laid over it.
+    pub(super) fn seed(&self, seed: &[Seed]) -> Result<Vec<String>, Error> {
+        let mut tree = BTreeMap::new();
+        let mut laid = Vec::new();
+        for Seed { path, content } in seed {
+            let file = beneath(path).map_err(|bad| server_error!("seed `{path}` {bad}"))?;
+            if tree.contains_key(&file) {
+                return Err(server_error!("seed `{path}` is declared twice"));
+            }
+            let held = Held::at(&self.root, &file).map_err(|why| {
+                bad_request!("seed `{path}` {why}, so the tree cannot hold the layout's file")
+            })?;
+            tree.insert(file.clone(), held);
+            if held == Held::File {
+                continue;
+            }
+            if let Some((dir, _)) = file.rsplit_once('/') {
+                make_dirs(&self.root, dir).map_err(|err| {
+                    server_error!("seed `{path}`: creating the directories above it: {err}")
+                })?;
+            }
+            lay(&self.root.join(&file), Held::Absent, content)
+                .map_err(|err| server_error!("seed `{path}`: writing it: {err}"))?;
+            self.written.record(file.clone());
+            laid.push(file);
+        }
+        Ok(laid)
+    }
+
+    // Answers `write_files` and `edit_files` here and hands every other call
+    // to `rest`.
     pub(super) fn serve(self, mut rest: Tools) -> Tools {
         Box::new(move |call: ToolCall| -> ToolFuture {
-            if call.name != WRITE_FILES {
-                return rest(call);
-            }
-            let outcome = self.write(&call);
-            tracing::debug!(
-                turn = %self.turn,
-                tool = WRITE_FILES,
-                files = ?outcome.as_ref().ok().map(|done| done.files()),
-                deleted = ?outcome.as_ref().ok().map(|done| done.deleted.as_slice()),
-                bytes = outcome.as_ref().ok().map(Done::bytes),
-                error = outcome.as_ref().err().map(String::as_str),
-                "responded"
-            );
-            let response = outcome.map(|done| {
-                let written = done
-                    .wrote
-                    .iter()
-                    .map(|wrote| json!({ "path": wrote.file, "bytes": wrote.bytes }))
-                    .collect::<Vec<_>>();
-                let mut response = json!({ "written": written });
-                if !done.deleted.is_empty() {
-                    response["deleted"] = json!(done.deleted);
+            let response = match call.name.as_str() {
+                WRITE_FILES => {
+                    let outcome = self.write(&call);
+                    tracing::debug!(
+                        turn = %self.turn,
+                        tool = WRITE_FILES,
+                        wrote = ?outcome.as_ref().ok().map(|done| done.wrote.as_slice()),
+                        deleted = ?outcome.as_ref().ok().map(|done| done.deleted.as_slice()),
+                        error = outcome.as_ref().err().map(String::as_str),
+                        "responded"
+                    );
+                    outcome.map(|done| {
+                        let mut response = json!({ "written": json_of(&done.wrote) });
+                        if !done.deleted.is_empty() {
+                            response["deleted"] = json!(done.deleted);
+                        }
+                        response.to_string()
+                    })
                 }
-                response.to_string()
-            });
+                EDIT_FILES => {
+                    let outcome = self.edit(&call);
+                    tracing::debug!(
+                        turn = %self.turn,
+                        tool = EDIT_FILES,
+                        edited = ?outcome.as_ref().ok().map(Vec::as_slice),
+                        error = outcome.as_ref().err().map(String::as_str),
+                        "responded"
+                    );
+                    outcome.map(|edited| json!({ "edited": json_of(&edited) }).to_string())
+                }
+                _ => return rest(call),
+            };
             Box::pin(ready(response))
         })
     }
 
     // Every path is held to the root and to the tree before the first write,
-    // so a call the rule refuses anywhere leaves the tree as it was. What the
-    // tree holds at each is read once and moved with every write, so a later
-    // entry naming a path, or its removal, meets what the call laid there
-    // rather than what stood before it.
+    // and every entry replacing a held file to the shrink rule, so a call
+    // refused anywhere leaves the tree as it was. What the tree holds at each
+    // is read once and moved with every write, so a later entry naming a
+    // path, or its removal, meets what the call laid there rather than what
+    // stood before it.
     fn write(&self, call: &ToolCall) -> Result<Done, String> {
         let WriteFiles { files, delete } =
             call.arguments().map_err(|err| format!("{WRITE_FILES}: {err}"))?;
@@ -103,14 +192,24 @@ impl Writer {
             return Err(format!("{WRITE_FILES}: `files` names no file and `delete` no path"));
         }
 
-        // the paths held to the rule
+        // the paths held to the rule, and a replacement to the shrink rule
         let mut tree = BTreeMap::new();
         let mut accepted = Vec::with_capacity(files.len());
         let mut removals = Vec::with_capacity(delete.len());
         let mut refused = Vec::new();
-        for WriteFile { path, content } in files {
+        for WriteFile {
+            path,
+            content,
+            shrink,
+        } in files
+        {
             match self.held(&path, &mut tree) {
-                Ok(file) => accepted.push((file, content)),
+                Ok(file) => {
+                    if !shrink && let Some(why) = self.shrinks(&file, tree[&file], &content) {
+                        refused.push(why);
+                    }
+                    accepted.push((file, content));
+                }
                 Err(why) => refused.push(why),
             }
         }
@@ -162,6 +261,72 @@ impl Writer {
         Ok(Done { wrote, deleted })
     }
 
+    // Every path is held to the rule and to a file the tree holds, and every
+    // `find` to one match in the file as the call's earlier edits leave it,
+    // before any file is written, so a call refused anywhere leaves the tree
+    // as it was; a file edited more than once is written once.
+    fn edit(&self, call: &ToolCall) -> Result<Vec<Wrote>, String> {
+        let EditFiles { edits } = call.arguments().map_err(|err| format!("{EDIT_FILES}: {err}"))?;
+        if edits.is_empty() {
+            return Err(format!("{EDIT_FILES}: `edits` names no edit"));
+        }
+
+        // the edits applied in memory, in order
+        let mut tree = BTreeMap::new();
+        let mut contents: BTreeMap<String, String> = BTreeMap::new();
+        let mut refused = Vec::new();
+        for Edit { path, find, replace } in edits {
+            let file = match self.held(&path, &mut tree) {
+                Ok(file) => file,
+                Err(why) => {
+                    refused.push(why);
+                    continue;
+                }
+            };
+            if tree[&file] == Held::Absent {
+                refused.push(format!("`{path}` names no file in the tree"));
+                continue;
+            }
+            if find.is_empty() {
+                refused.push(format!("`{path}`: `find` is empty"));
+                continue;
+            }
+            let content = match contents.entry(file.clone()) {
+                std::collections::btree_map::Entry::Occupied(entry) => entry.into_mut(),
+                std::collections::btree_map::Entry::Vacant(entry) => {
+                    match fs::read_to_string(self.root.join(&file)) {
+                        Ok(content) => entry.insert(content),
+                        Err(err) => {
+                            refused.push(format!("`{path}` cannot be read: {err}"));
+                            continue;
+                        }
+                    }
+                }
+            };
+            match content.matches(find.as_str()).count() {
+                1 => *content = content.replacen(find.as_str(), &replace, 1),
+                0 => refused.push(format!("`{path}`: `find` matches nothing in the file")),
+                n => refused.push(format!("`{path}`: `find` matches {n} places in the file")),
+            }
+        }
+        if !refused.is_empty() {
+            return Err(format!("{EDIT_FILES}: nothing edited: {}", refused.join("; ")));
+        }
+
+        // the edited files written whole
+        let mut edited = Vec::with_capacity(contents.len());
+        for (file, content) in contents {
+            lay(&self.root.join(&file), Held::File, &content)
+                .map_err(|err| format!("{EDIT_FILES}: writing `{file}`: {err}"))?;
+            self.written.record(file.clone());
+            edited.push(Wrote {
+                file,
+                bytes: content.len(),
+            });
+        }
+        Ok(edited)
+    }
+
     // The path held to `beneath` and to the tree, spelled as the tree does,
     // what the tree holds there noted in `tree` the first time the call names
     // it, or the refusal naming it.
@@ -173,6 +338,29 @@ impl Writer {
         }
         Ok(file)
     }
+
+    // The shrink rule: a file the tree holds is not left empty, or under half
+    // its size, by an entry that does not say so, since a model that sends a
+    // fragment of a file it means to edit loses the rest. A new file, or one
+    // already empty, is under no rule.
+    fn shrinks(&self, file: &str, held: Held, content: &str) -> Option<String> {
+        if held != Held::File {
+            return None;
+        }
+        let current = fs::metadata(self.root.join(file)).ok()?.len();
+        let after = content.len() as u64;
+        (current > 0 && (after == 0 || after * 2 < current)).then(|| {
+            format!(
+                "`{file}` would shrink from {current} to {after} bytes; a file is replaced \
+                 whole, so send the whole file, use `{EDIT_FILES}` for a change within it, or \
+                 set `shrink: true` if that is meant"
+            )
+        })
+    }
+}
+
+fn json_of(wrote: &[Wrote]) -> Vec<serde_json::Value> {
+    wrote.iter().map(|wrote| json!({ "path": wrote.file, "bytes": wrote.bytes })).collect()
 }
 
 // What the tree holds at a root-relative path, read without following a
@@ -274,25 +462,23 @@ fn lay(full: &Path, held: Held, content: &str) -> io::Result<()> {
     options.open(full)?.write_all(content.as_bytes())
 }
 
-// What one call did: the files laid and the files removed.
+// What one `write_files` call did: the files laid and the files removed.
 struct Done {
     wrote: Vec<Wrote>,
     deleted: Vec<String>,
 }
 
-impl Done {
-    fn files(&self) -> Vec<&str> {
-        self.wrote.iter().map(|wrote| wrote.file.as_str()).collect()
-    }
-
-    fn bytes(&self) -> usize {
-        self.wrote.iter().map(|wrote| wrote.bytes).sum()
-    }
-}
-
 struct Wrote {
     file: String,
     bytes: usize,
+}
+
+// Logged as `"path"=bytes`, so a reader of the turn's events has each
+// file's size beside its path.
+impl fmt::Debug for Wrote {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{:?}={}", self.file, self.bytes)
+    }
 }
 
 // The files `write_files` wrote this turn and has not removed since, shared
@@ -364,6 +550,32 @@ struct WriteFile {
     path: String,
     /// The whole content the file holds afterwards.
     content: String,
+    /// Set when the file is meant to become empty or less than half its
+    /// current size; without it, such a write is refused, since it is
+    /// usually a fragment sent in place of the whole file.
+    #[serde(default)]
+    shrink: bool,
+}
+
+/// The edits one `edit_files` call makes within files the tree holds.
+// The `///` lines are the `JsonSchema` descriptions the model reads.
+#[derive(Debug, Deserialize, JsonSchema)]
+struct EditFiles {
+    /// The edits, in order; a later edit of a file meets it as the earlier
+    /// ones left it.
+    edits: Vec<Edit>,
+}
+
+/// One edit: the one place `find` matches in a file, replaced.
+#[derive(Debug, Deserialize, JsonSchema)]
+struct Edit {
+    /// The `/`-separated path of the file, relative to `$WORKSPACE`, which
+    /// the tree must hold.
+    path: String,
+    /// The text to replace, which must occur exactly once in the file.
+    find: String,
+    /// The text put in its place; empty removes the match.
+    replace: String,
 }
 
 // The schema asks for a sequence of `{path, content}`; a map from path to
@@ -392,7 +604,7 @@ fn files<'de, D: Deserializer<'de>>(deserializer: D) -> Result<Vec<WriteFile>, D
         }
 
         fn visit_map<A: MapAccess<'de>>(self, mut map: A) -> Result<Self::Value, A::Error> {
-            let mut entries: Vec<(String, String)> =
+            let mut entries: Vec<(String, serde_json::Value)> =
                 Vec::with_capacity(map.size_hint().unwrap_or(0));
             while let Some(entry) = map.next_entry()? {
                 entries.push(entry);
@@ -400,26 +612,57 @@ fn files<'de, D: Deserializer<'de>>(deserializer: D) -> Result<Vec<WriteFile>, D
             if entries.iter().any(|(key, _)| key == "path") {
                 return single(entries).map(|file| vec![file]);
             }
-            Ok(entries.into_iter().map(|(path, content)| WriteFile { path, content }).collect())
+            entries
+                .into_iter()
+                .map(|(path, content)| {
+                    let content = text(content, &path)?;
+                    Ok(WriteFile {
+                        path,
+                        content,
+                        shrink: false,
+                    })
+                })
+                .collect()
         }
     }
 
     deserializer.deserialize_any(Files)
 }
 
-// The one entry a bare `{path, content}` spells, held to those two keys as
-// the derived reading of the struct would hold a listed one.
-fn single<E: de::Error>(entries: Vec<(String, String)>) -> Result<WriteFile, E> {
-    let (mut path, mut content) = (None, None);
+// The one entry a bare `{path, content, shrink}` spells, held to those keys
+// as the derived reading of the struct would hold a listed one.
+fn single<E: de::Error>(entries: Vec<(String, serde_json::Value)>) -> Result<WriteFile, E> {
+    let (mut path, mut content, mut shrink) = (None, None, false);
     for (key, value) in entries {
         match key.as_str() {
-            "path" => path = Some(value),
-            "content" => content = Some(value),
-            other => return Err(E::unknown_field(other, &["path", "content"])),
+            "path" => path = Some(text(value, "path")?),
+            "content" => content = Some(text(value, "content")?),
+            "shrink" => {
+                shrink = value
+                    .as_bool()
+                    .ok_or_else(|| E::custom("`shrink` holds a non-boolean, not true or false"))?;
+            }
+            other => return Err(E::unknown_field(other, &["path", "content", "shrink"])),
         }
     }
     Ok(WriteFile {
         path: path.ok_or_else(|| E::missing_field("path"))?,
         content: content.ok_or_else(|| E::missing_field("content"))?,
+        shrink,
     })
+}
+
+fn text<E: de::Error>(value: serde_json::Value, at: &str) -> Result<String, E> {
+    match value {
+        serde_json::Value::String(text) => Ok(text),
+        serde_json::Value::Null => Err(E::custom(format!("`{at}` holds null, not a string"))),
+        serde_json::Value::Bool(_) => {
+            Err(E::custom(format!("`{at}` holds a boolean, not a string")))
+        }
+        serde_json::Value::Number(_) => {
+            Err(E::custom(format!("`{at}` holds a number, not a string")))
+        }
+        serde_json::Value::Array(_) => Err(E::custom(format!("`{at}` holds a list, not a string"))),
+        serde_json::Value::Object(_) => Err(E::custom(format!("`{at}` holds a map, not a string"))),
+    }
 }
