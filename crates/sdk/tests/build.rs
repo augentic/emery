@@ -6,11 +6,11 @@ use std::fs;
 use std::os::unix::fs::symlink;
 use std::path::Path;
 
-use emery_sdk::target::{Context, Report, Seed, Slice};
+use emery_sdk::target::{Context, Report, Seed, Slice, Worker};
 use emery_sdk::{Doc, Error};
 use omnia_sdk::model::ToolCall;
 use omnia_test::guest::Scripted;
-use omnia_test::{Seen, SeenFormat};
+use omnia_test::{Seen, SeenFormat, SeenWorker};
 
 const PROSE: &[Doc] = &[
     Doc {
@@ -49,10 +49,17 @@ async fn ask(model: &Scripted, slice: &Slice, workspace: &str) -> Result<Report,
 async fn ask_seeded(
     model: &Scripted, slice: &Slice, workspace: &str, seed: &[Seed],
 ) -> Result<Report, Error> {
+    ask_as(model, slice, workspace, seed, &Worker::NONE).await
+}
+
+async fn ask_as(
+    model: &Scripted, slice: &Slice, workspace: &str, seed: &[Seed], worker: &Worker,
+) -> Result<Report, Error> {
     let ctx = Context {
         adapter_id: "target:probe",
         slice,
         workspace,
+        worker,
         model,
     };
     emery_sdk::target::build(&ctx, PROSE, seed).await
@@ -128,6 +135,7 @@ async fn request_shape() {
     let request = &seen[0];
     assert_eq!(request.system.as_deref(), Some("BUILD"));
     assert_eq!(request.workspace.as_deref(), Some(root), "the tree is lent");
+    assert_eq!(request.worker, None, "a worker reaching nothing puts no grant");
     assert_eq!(request.tools, ["list_docs", "read_doc", "write_files", "edit_files"]);
     assert!(request.check, "acceptance is the check");
     let SeenFormat::Schema { name, schema } = &request.format else {
@@ -195,6 +203,39 @@ async fn request_shape() {
     );
     assert!(!user.contains(root), "the lend carries the root, not the brief: {user}");
     assert!(user.ends_with("rather than claim what the tree does not hold."), "{user}");
+    model.assert_exhausted();
+}
+
+// The adapter's worker rides the turn as the completion's grant, each list
+// as spelled, beside the lend it reaches beyond; the brief says nothing of
+// it, since the grant is the host's to lay.
+#[tokio::test]
+async fn worker_grant() {
+    const WORKER: Worker = Worker {
+        egress: &["index.crates.io", "static.crates.io"],
+        read: &["~/.rustup", "~/.cargo/bin"],
+        env: &[("RUSTUP_HOME", "~/.rustup")],
+    };
+    let tmp = tempfile::tempdir().expect("tempdir");
+    seed(tmp.path(), ["src/orders.rs", "Cargo.toml"]);
+    let root = tmp.path().to_str().expect("a UTF-8 scratch root");
+    let model = Scripted::answering([VALID]);
+    let slice = slice();
+
+    ask_as(&model, &slice, root, &[], &WORKER).await.expect("accepted");
+
+    let seen = model.seen();
+    assert_eq!(seen.len(), 1);
+    assert_eq!(seen[0].workspace.as_deref(), Some(root));
+    assert_eq!(
+        seen[0].worker,
+        Some(SeenWorker {
+            egress: vec!["index.crates.io".to_owned(), "static.crates.io".to_owned()],
+            read: vec!["~/.rustup".to_owned(), "~/.cargo/bin".to_owned()],
+            env: vec![("RUSTUP_HOME".to_owned(), "~/.rustup".to_owned())],
+        })
+    );
+    assert!(!seen[0].messages[0].contains("rustup"), "{}", seen[0].messages[0]);
     model.assert_exhausted();
 }
 
@@ -1006,6 +1047,7 @@ async fn missing_prompt() {
         adapter_id: "target:mute",
         slice: &slice,
         workspace: root,
+        worker: &Worker::NONE,
         model: &model,
     };
 

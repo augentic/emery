@@ -22,10 +22,10 @@
 //! the backend's proxy alone. The shell runs on a build's working copies
 //! alone — `.emery/vcs/worktrees` and `.emery/vcs/integration`, compiled in
 //! here — so a source adapter's lend is read-only. What a worker may reach
-//! beside that is the operator's environment: `CURSOR_READ_ROOTS` for a
-//! toolchain outside the system's own, `CURSOR_EGRESS` for the hosts an
-//! install fetches from, `CURSOR_WORKER_ENV` for the variables it carries.
-//! Nothing in the environment turns the boundary off.
+//! beside that is the target adapter's to spell, per turn, as its worker
+//! grant: the hosts an install fetches from, the `~/` roots a toolchain is
+//! installed under, the variables it reads. Nothing in the environment
+//! widens it or turns the boundary off.
 //!
 //! The binary is host-only; on `wasm32` it compiles to an empty `main` so the
 //! workspace-wide wasm32 clippy pass can include it.
