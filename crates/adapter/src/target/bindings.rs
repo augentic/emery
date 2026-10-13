@@ -28,13 +28,14 @@ mod generated {
 }
 
 use crate::source::bindings::wit;
-use crate::target::{MergeRule, MergeStrategy, Report, Slice, TargetMetadata, Verdict};
+use crate::target::{Base, MergeRule, MergeStrategy, Report, Slice, TargetMetadata, Verdict};
 
 impl From<TargetMetadata> for wit::TargetMetadata {
     fn from(metadata: TargetMetadata) -> Self {
         Self {
             emery_version: metadata.emery_version,
             merge_rules: metadata.merge_rules.into_iter().map(Into::into).collect(),
+            base: metadata.base.into(),
         }
     }
 }
@@ -44,6 +45,25 @@ impl From<wit::TargetMetadata> for TargetMetadata {
         Self {
             emery_version: metadata.emery_version,
             merge_rules: metadata.merge_rules.into_iter().map(Into::into).collect(),
+            base: metadata.base.into(),
+        }
+    }
+}
+
+impl From<Base> for wit::BaseKind {
+    fn from(base: Base) -> Self {
+        match base {
+            Base::Any => Self::Any,
+            Base::Fresh => Self::Fresh,
+        }
+    }
+}
+
+impl From<wit::BaseKind> for Base {
+    fn from(base: wit::BaseKind) -> Self {
+        match base {
+            wit::BaseKind::Any => Self::Any,
+            wit::BaseKind::Fresh => Self::Fresh,
         }
     }
 }

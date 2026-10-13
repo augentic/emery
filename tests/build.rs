@@ -13,7 +13,8 @@ mod support;
 use std::borrow::Cow;
 use std::fs;
 
-use emery_adapter::target::{MergeRule, MergeStrategy, Report, Verdict};
+use emery_adapter::target::{Base, MergeRule, MergeStrategy, Report, Verdict};
+use emery_engine::EntryKind;
 use omnia_sdk::vcs::{Change, ChangeKind, Entry, Error, Merged, Rule, Strategy};
 use omnia_sdk::{bad_gateway, bad_request};
 use serde_json::{Value, json};
@@ -1352,6 +1353,120 @@ async fn build_not_repository() {
         "{envelope}"
     );
     assert!(provider.target.calls().is_empty(), "no slice is dispatched");
+}
+
+// An adapter that builds into a fresh tree is refused a base whose root
+// holds a directory: the integration copy is cut and read, the directories
+// named outside the engine's own, and no slice dispatched. The project
+// checkout is what such a base usually is.
+#[tokio::test]
+async fn build_fresh_base_held() {
+    let (mut provider, id) = planned();
+    provider.target.base = Base::Fresh;
+    provider.vcs.heads.script(".", Ok(BASE.to_owned()));
+    provider.files.lists(
+        INTEGRATION,
+        ".",
+        &[
+            ("src", EntryKind::Directory),
+            ("README.md", EntryKind::File),
+            (".git", EntryKind::Directory),
+            ("adapters", EntryKind::Directory),
+            (".emery", EntryKind::Directory),
+            ("Cargo.toml", EntryKind::File),
+        ],
+    );
+
+    let envelope = fail(&provider, &["emery", "build", BUILDER], 1, "base-not-fresh").await;
+
+    assert_message(
+        &envelope,
+        &format!(
+            "`{BUILDER_ID}` builds into a fresh tree, and the base `{BASE}` holds directories: \
+             adapters, src"
+        ),
+    );
+    assert!(
+        envelope["hint"].as_str().is_some_and(|hint| hint.contains("[target] repository")),
+        "{envelope}"
+    );
+    assert_eq!(provider.files.listed(), [(INTEGRATION.to_owned(), ".".to_owned())]);
+    assert_eq!(
+        provider.vcs.calls(),
+        [
+            "pending .".to_owned(),
+            "head .".to_owned(),
+            format!("labelled . emery/{id}"),
+            format!("add . {INTEGRATION} {BASE}"),
+        ],
+        "the copy is cut and left, nothing built"
+    );
+    assert!(provider.target.calls().is_empty(), "no slice is dispatched");
+    assert!(provider.target.verifies().is_empty(), "no wave is verified");
+    provider.vcs.assert_exhausted();
+}
+
+// A base whose root holds files alone, or links, beside the engine's own
+// directories is fresh enough: the build runs as any other. An adapter
+// building over any base never reads the root.
+#[tokio::test]
+async fn build_fresh_base_files_only() {
+    let (mut provider, _) = planned();
+    provider.target.base = Base::Fresh;
+    provider.vcs.heads.script(".", Ok(BASE.to_owned()));
+    provider.files.lists(
+        INTEGRATION,
+        ".",
+        &[
+            ("README.md", EntryKind::File),
+            (".gitignore", EntryKind::File),
+            ("LICENSE", EntryKind::Link),
+            (".git", EntryKind::Directory),
+            (".emery", EntryKind::Directory),
+        ],
+    );
+
+    cli_ok(&provider, &["emery", "build", BUILDER]).await;
+
+    assert_eq!(provider.files.listed(), [(INTEGRATION.to_owned(), ".".to_owned())]);
+    assert_eq!(provider.target.calls().len(), 2, "every slice builds");
+
+    provider.target.base = Base::Any;
+    provider.vcs.heads.script(".", Ok(BASE.to_owned()));
+    provider.files.lists(INTEGRATION, ".", &[("src", EntryKind::Directory)]);
+    cli_ok(&provider, &["emery", "build", BUILDER]).await;
+    assert_eq!(provider.files.listed().len(), 1, "an adapter over any base reads no root");
+    assert_eq!(provider.target.calls().len(), 4);
+    provider.vcs.assert_exhausted();
+}
+
+// A build resumed from a label over the base was admitted when the label
+// was set, so the root is not read again, whatever the integrated tree now
+// holds.
+#[tokio::test]
+async fn build_fresh_resumed() {
+    let (mut provider, id) = planned();
+    provider.target.base = Base::Fresh;
+    provider.vcs.labelleds.script(".", Ok(LABELLED.to_owned()));
+    provider.vcs.logs.script(
+        ".",
+        Ok(vec![entry(
+            "m:SLICE-001",
+            &message(&id, AUTHENTICATION, "REQ-001, REQ-002", "REQ-001, REQ-002", HEAD, 1),
+        )]),
+    );
+    provider.files.lists(INTEGRATION, ".", &[("src", EntryKind::Directory)]);
+
+    let resp = cli_ok(&provider, &["emery", "--format", "json", "build", BUILDER]).await;
+
+    let envelope: Value = serde_json::from_slice(&resp.stdout).expect("one JSON envelope");
+    assert_eq!(envelope["resumed"], json!(["SLICE-001"]), "{envelope}");
+    assert!(provider.files.listed().is_empty(), "a resumed build reads no root");
+    assert_eq!(
+        dispatched(&provider),
+        [("SLICE-002".to_owned(), LABELLED.to_owned(), worktree("SLICE-002"))]
+    );
+    provider.vcs.assert_exhausted();
 }
 
 // A branch the repository lacks, or a repository the URL does not name, is

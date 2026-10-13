@@ -151,8 +151,20 @@ interface types {
     strategy: merge-strategy,
   }
 
+  /// The tree a target adapter builds over: the commit a build starts
+  /// from, as the adapter's layout needs it.
+  enum base-kind {
+    /// Any commit: the adapter builds into whatever tree the base holds.
+    any,
+    /// A fresh tree: a root holding files alone, which the adapter lays
+    /// its own layout into. The engine refuses a base whose root holds a
+    /// directory before any slice builds.
+    fresh,
+  }
+
   /// What a target adapter declares about itself, as compiled-in
-  /// constants: the host version requirement and its merge rules.
+  /// constants: the host version requirement, its merge rules, and the
+  /// base it builds over.
   record target-metadata {
     /// The minimum `emery` version this adapter needs, as an exact semver
     /// like Cargo's `rust-version`. The host refuses the adapter when the
@@ -162,6 +174,9 @@ interface types {
     /// alone knows which files its builds regenerate and which they
     /// extend. Empty leaves every conflict unresolved.
     merge-rules: list<merge-rule>,
+    /// The base the adapter builds over, since the adapter alone knows
+    /// whether its layout is laid into a fresh tree or over a held one.
+    base: base-kind,
   }
 
   /// One slice of the build plan, as `emery show` renders the revision it

@@ -4,7 +4,9 @@
 //! names, settles the base — the project checkout's sealed head, or a branch
 //! of the repository the target names — and reads what the label
 //! `emery/<revision>` already holds over it, so a run resumes where the last
-//! verified wave left off. The slices still to build go in waves: every slice
+//! verified wave left off. A base no label stands over is held to the tree
+//! the adapter builds over: one that lays a whole tree is refused a base
+//! whose root holds a directory. The slices still to build go in waves: every slice
 //! whose dependencies are merged is built at once, each in a working copy of
 //! its own cut at the wave's head, with its plan entry, its cut of the
 //! specification, and the whole design. What each changed is sealed as its
@@ -32,7 +34,8 @@ mod secrets;
 use std::collections::{BTreeMap, BTreeSet};
 use std::num::NonZeroUsize;
 
-use emery_adapter::target::{Slice as SliceInput, Target};
+use emery_adapter::SKIP_DIRS;
+use emery_adapter::target::{Base, Slice as SliceInput, Target};
 use futures::{StreamExt as _, TryFutureExt as _, TryStreamExt as _, stream};
 use omnia_sdk::api::Context;
 use omnia_sdk::plugins::Digest;
@@ -44,7 +47,7 @@ use crate::adapter::{self, AdapterRef, Loaded};
 pub use crate::revision::{ReqId, SliceId, Waves};
 use crate::revision::{Slice, Spec};
 use crate::vcs::{INTEGRATION, Message, Repo, Repository, WorkingCopy};
-use crate::{Files, store, vcs};
+use crate::{EntryKind, Files, store, vcs};
 
 /// How many times a slice is built before a conflict at its merge ends the run.
 pub const ATTEMPTS: usize = 3;
@@ -88,6 +91,9 @@ const RETRIES: usize = 2;
 ///     and the project is none;
 ///   - with code `base-not-sealed`, when the project checkout holds pending
 ///     changes outside `.emery/`, listed, or no commit;
+///   - with code `base-not-fresh`, when the adapter builds into a fresh
+///     tree ([`Base::Fresh`]) and the root of a base no label stands over
+///     holds a directory outside `.emery/` and `.git/`, each listed;
 ///   - with code `slice-conflict`, when a slice's merge conflicts at paths
 ///     no rule resolves on its [`ATTEMPTS`]th build, the paths listed;
 ///   - with code `verify-failed`, when the adapter does not verify a wave,
@@ -141,6 +147,12 @@ pub async fn build<P: Target + StateStore + BlobStore + Plugins + Vcs + Files>(
     let labelled = repo.merged_under(provider, &label, &base, &revision_id).await?;
     let mut progress = Progress::start(&base, labelled);
     let integration = WorkingCopy::cut(provider, &repo.path(), INTEGRATION, &progress.head).await?;
+
+    // a fresh build is held to the base the adapter builds over; a resumed
+    // one was admitted by the run that set the label
+    if progress.labelled.is_none() && metadata.base == Base::Fresh {
+        require_fresh(provider, &integration, &base, &adapter).await?;
+    }
 
     let waves = revision.plan.waves();
     tracing::info!(
@@ -683,6 +695,33 @@ impl Run<'_> {
         progress.head = head;
         Ok(())
     }
+}
+
+// A fresh base holds files alone at its root: a directory outside the
+// engine's own refuses the build before any slice is dispatched, since the
+// adapter lays a whole tree and would rewrite what stands there.
+async fn require_fresh<P: Files>(
+    provider: &P, integration: &WorkingCopy, base: &str, adapter: &str,
+) -> Result<(), Error> {
+    let mut directories: Vec<String> = provider
+        .list(integration.path(), ".")
+        .await?
+        .into_iter()
+        .filter(|entry| entry.kind == EntryKind::Directory)
+        .filter(|entry| !SKIP_DIRS.contains(&entry.name.as_str()))
+        .map(|entry| entry.name)
+        .collect();
+    if directories.is_empty() {
+        return Ok(());
+    }
+    directories.sort_unstable();
+    Err(Error::BadRequest {
+        code: "base-not-fresh".into(),
+        description: format!(
+            "`{adapter}` builds into a fresh tree, and the base `{base}` holds directories: {}",
+            directories.join(", ")
+        ),
+    })
 }
 
 // The gate's refusal: what `wrote` left changed carries the credentials

@@ -45,7 +45,8 @@ const BUILD_DESC: &str = "Build the current plan through a target adapter.\n\n\
     Config and a command-line adapter cannot be combined.\n\n\
     The build starts from a sealed commit — the project checkout's head, which must hold \
     no pending change outside `.emery/`, or the `branch` of the `[target] repository` the \
-    config names, cloned under `.emery/vcs/` — never in the checkout. A label \
+    config names, cloned under `.emery/vcs/` — never in the checkout. An adapter that lays \
+    a whole tree is refused a base whose root holds a directory (`base-not-fresh`). A label \
     `emery/<revision>` the repository already holds, descending from that commit, is \
     resumed: the slices it records are not built again. The rest go in waves: every slice \
     whose dependencies are merged is \
@@ -255,6 +256,9 @@ fn hint(code: &str) -> Option<Cow<'static, str>> {
         }
         "base-not-sealed" => {
             "commit or stash the pending changes so the build starts from a sealed commit; `.emery/` is never counted, so add it to `.gitignore`"
+        }
+        "base-not-fresh" => {
+            "this adapter lays a whole tree: name an empty repository with `[target] repository` and `branch` in `emery.toml` (one whose root holds files alone, a README and a `.gitignore`), or run `emery build` from a checkout of one"
         }
         "revision-not-found" => {
             "check the `repository`, `revision`, `branch`, or `remote` in `emery.toml` against what the repository holds"

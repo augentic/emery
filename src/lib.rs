@@ -5,7 +5,7 @@
 //! capabilities, so every external effect stays subject to the runtime's
 //! grants. The one capability it answers itself, the engine's `Files`, reads
 //! what a working copy holds at a path through the `.` preopen: a file's
-//! bytes, or the target a symbolic link names.
+//! bytes, or the target a symbolic link names, and what a directory holds.
 
 #![cfg(target_arch = "wasm32")]
 
@@ -13,7 +13,7 @@ use std::future::Future;
 use std::path::Path;
 use std::{fs, io};
 
-use emery_engine::Files;
+use emery_engine::{Entry, EntryKind, Files};
 use omnia_sdk::api::command::{self, Response};
 use omnia_sdk::{BlobStore, Error, Model, Plugins, StateStore, Vcs, server_error};
 use wasip3::cli::environment;
@@ -36,6 +36,34 @@ impl Files for Provider {
             .map_err(|error| server_error!("reading `{path}` under `{at}`: {error}"));
         async move { outcome }
     }
+
+    fn list(&self, at: &str, path: &str) -> impl Future<Output = Result<Vec<Entry>, Error>> + Send {
+        let outcome = listed(&Path::new(at).join(path))
+            .map_err(|error| server_error!("listing `{path}` under `{at}`: {error}"));
+        async move { outcome }
+    }
+}
+
+// What a commit stores at each entry of the directory at `full`, a link
+// told from what it leads to by the entry's own metadata.
+fn listed(full: &Path) -> io::Result<Vec<Entry>> {
+    let mut entries = Vec::new();
+    for entry in fs::read_dir(full)? {
+        let entry = entry?;
+        let kind = fs::symlink_metadata(entry.path())?.file_type();
+        let kind = if kind.is_symlink() {
+            EntryKind::Link
+        } else if kind.is_dir() {
+            EntryKind::Directory
+        } else {
+            EntryKind::File
+        };
+        entries.push(Entry {
+            name: entry.file_name().to_string_lossy().into_owned(),
+            kind,
+        });
+    }
+    Ok(entries)
 }
 
 // What a commit stores at `full`: a symbolic link's target, never followed,
