@@ -2,11 +2,11 @@
 //! adapter answers; every scenario here puts one over a scripted model and a
 //! scratch tree.
 
-use emery_sdk::target::{Verdict, VerifyContext};
+use emery_sdk::target::{Verdict, VerifyContext, Worker};
 use emery_sdk::{Doc, Error};
 use omnia_sdk::model::ToolCall;
 use omnia_test::guest::Scripted;
-use omnia_test::{Seen, SeenFormat};
+use omnia_test::{Seen, SeenFormat, SeenWorker};
 
 const PROSE: &[Doc] = &[
     Doc {
@@ -26,9 +26,14 @@ const PROSE: &[Doc] = &[
 const PASSED: &str = r#"{"passed":true,"failures":[]}"#;
 
 async fn ask(model: &Scripted, workspace: &str) -> Result<Verdict, Error> {
+    ask_as(model, workspace, &Worker::NONE).await
+}
+
+async fn ask_as(model: &Scripted, workspace: &str, worker: &Worker) -> Result<Verdict, Error> {
     let ctx = VerifyContext {
         adapter_id: "target:probe",
         workspace,
+        worker,
         model,
     };
     emery_sdk::target::verify(&ctx, PROSE).await
@@ -52,6 +57,7 @@ async fn request_shape() {
     let request = &seen[0];
     assert_eq!(request.system.as_deref(), Some("VERIFY"));
     assert_eq!(request.workspace.as_deref(), Some(root), "the integrated tree is lent");
+    assert_eq!(request.worker, None, "a worker reaching nothing puts no grant");
     assert_eq!(
         request.tools,
         ["list_docs", "read_doc", "write_files", "edit_files"],
@@ -263,6 +269,35 @@ async fn doc_refs() {
     model.assert_exhausted();
 }
 
+// The adapter's worker rides the verify turn as it rides a build's: the
+// checks run the same toolchain over the integrated tree.
+#[tokio::test]
+async fn worker_grant() {
+    const WORKER: Worker = Worker {
+        egress: &["registry.npmjs.org"],
+        read: &["~/.nvm/versions/node"],
+        env: &[],
+    };
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let root = tmp.path().to_str().expect("a UTF-8 scratch root");
+    let model = Scripted::answering([PASSED]);
+
+    ask_as(&model, root, &WORKER).await.expect("accepted");
+
+    let seen = model.seen();
+    assert_eq!(seen.len(), 1);
+    assert_eq!(seen[0].workspace.as_deref(), Some(root));
+    assert_eq!(
+        seen[0].worker,
+        Some(SeenWorker {
+            egress: vec!["registry.npmjs.org".to_owned()],
+            read: vec!["~/.nvm/versions/node".to_owned()],
+            env: vec![],
+        })
+    );
+    model.assert_exhausted();
+}
+
 // A corpus without `verify.md` is the adapter build's own defect, reported
 // before a turn is spent.
 #[tokio::test]
@@ -273,6 +308,7 @@ async fn missing_prompt() {
     let ctx = VerifyContext {
         adapter_id: "target:mute",
         workspace: root,
+        worker: &Worker::NONE,
         model: &model,
     };
 
