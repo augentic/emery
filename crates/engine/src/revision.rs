@@ -23,7 +23,7 @@ use serde_json::Value;
 use sha2::{Digest, Sha256};
 
 use self::design::TYPE;
-pub use self::design::{Block, Design, Section, SectionKind, citations};
+pub use self::design::{Block, Design, Role, Section, SectionKind, citations};
 pub use self::diff::{Changed, DesignDiff, Diff, Entry, PlanDiff, SliceEntry, SpecDiff};
 pub use self::id::{ReqId, SliceId, stem, substem};
 use self::plan::{DEPENDS_ON, REQUIREMENTS, TYPES};
@@ -34,7 +34,7 @@ use self::spec::{ID, NOTE, SOURCES, STATUS};
 /// The revision grammar written and accepted by this engine.
 ///
 /// A stored revision stamped with another grammar is outdated.
-pub const EMERY: u32 = 5;
+pub const EMERY: u32 = 6;
 
 /// Line prefixes reserved for engine-generated Markdown.
 ///

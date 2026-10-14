@@ -44,11 +44,11 @@ mod guest {
         }];
 
         async fn build<P: Model>(ctx: &Context<'_, P>) -> Result<Report, Error> {
-            emery_sdk::target::build(ctx, super::PROSE, super::SEED).await
+            emery_sdk::target::build(ctx, super::PROSE, super::SEED, |_| Ok(Vec::new())).await
         }
 
         async fn verify<P: Model>(ctx: &VerifyContext<'_, P>) -> Result<Verdict, Error> {
-            emery_sdk::target::verify(ctx, super::PROSE).await
+            emery_sdk::target::verify(ctx, super::PROSE, |_| Ok(Vec::new())).await
         }
     }
 }

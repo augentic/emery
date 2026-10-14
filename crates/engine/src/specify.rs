@@ -6,9 +6,10 @@
 //! once every source has answered. Sources are extracted concurrently, and
 //! the first failure among them ends the run; their claims are then
 //! reconciled by authority into requirement bases, from which `spec.md` — in
-//! chunks of at most [`SPEC_CHUNK`] requirements, grouped by stem —
-//! `design.md`, and the `plan.md` slicing — the stem the slice floor, or its
-//! sub-stems past [`SLICE_CAP`] requirements — are drafted together.
+//! chunks of at most [`SPEC_CHUNK`] requirements, grouped by stem — and
+//! `design.md` are drafted together, and the `plan.md` slicing — the stem the
+//! slice floor, or its sub-stems past [`SLICE_CAP`] requirements, owning the
+//! design's [`Role::Data`] types — follows the design.
 //!
 //! The three documents are committed as one content-addressed revision. An
 //! earlier revision contributes only the returned [`Diff`]; it is never used
@@ -43,8 +44,8 @@ use self::spec::SpecBrief;
 use crate::adapter::{self, AdapterRef, Loaded};
 use crate::revision::Revision;
 pub use crate::revision::{
-    Changed, DesignDiff, Diff, Entry, PlanDiff, ReqId, SectionKind, SliceEntry, SliceId, SpecDiff,
-    Waves,
+    Changed, DesignDiff, Diff, Entry, PlanDiff, ReqId, Role, SectionKind, SliceEntry, SliceId,
+    SpecDiff, Waves,
 };
 use crate::vcs::{Repository, WorkingCopy};
 use crate::{Rank, preopen_path, store, vcs};
@@ -103,13 +104,16 @@ pub async fn specify<P: Model + Source + StateStore + BlobStore + Plugins + Vcs>
     let repositories = removed?;
 
     let bases = GroupingBrief::new(&extracts).derive(provider).await?;
-    let design = DesignBrief::new(&extracts, &bases);
-    let plan = SliceBrief::new(&bases, design.types());
     let chunks = SpecBrief::chunked(&extracts, &bases);
-    let (drafts, design, plan) = future::try_join3(
+
+    // the slicing owns the design's data types alone, so it follows the design
+    let (drafts, (design, plan)) = future::try_join(
         future::try_join_all(chunks.into_iter().map(|chunk| chunk.judge(provider))),
-        design.judge(provider),
-        plan.derive(provider),
+        async {
+            let design = DesignBrief::new(&extracts, &bases).judge(provider).await?;
+            let plan = SliceBrief::new(&bases, design.data_types()).derive(provider).await?;
+            Ok::<_, Error>((design, plan))
+        },
     )
     .await?;
     let spec = SpecBrief::assemble(drafts);

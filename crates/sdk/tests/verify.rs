@@ -30,13 +30,20 @@ async fn ask(model: &Scripted, workspace: &str) -> Result<Verdict, Error> {
 }
 
 async fn ask_as(model: &Scripted, workspace: &str, worker: &Worker) -> Result<Verdict, Error> {
+    ask_checked(model, workspace, worker, |_| Ok(Vec::new())).await
+}
+
+async fn ask_checked(
+    model: &Scripted, workspace: &str, worker: &Worker,
+    check: impl FnMut(&Verdict) -> Result<Vec<String>, Error> + Send,
+) -> Result<Verdict, Error> {
     let ctx = VerifyContext {
         adapter_id: "target:probe",
         workspace,
         worker,
         model,
     };
-    emery_sdk::target::verify(&ctx, PROSE).await
+    emery_sdk::target::verify(&ctx, PROSE, check).await
 }
 
 // The turn carries the verify prompt as its system, lends the integrated
@@ -312,8 +319,77 @@ async fn missing_prompt() {
         model: &model,
     };
 
-    let error = emery_sdk::target::verify(&ctx, &PROSE[..1]).await.expect_err("no prompt");
+    let error = emery_sdk::target::verify(&ctx, &PROSE[..1], |_| Ok(Vec::new()))
+        .await
+        .expect_err("no prompt");
     assert_eq!(error.code(), "server_error");
     assert!(error.description().contains("`verify.md` is not embedded"), "{error}");
     assert_eq!(model.seen(), [] as [Seen; 0]);
+}
+
+// The adapter's check reads the tree as the repairs left it: a passing
+// verdict over a tree that breaks the adapter's rule is refused with the
+// finding, and the candidate after the repair is accepted.
+#[tokio::test]
+async fn check_findings() {
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let root = tmp.path().to_str().expect("a UTF-8 scratch root");
+    std::fs::write(tmp.path().join("Cargo.toml"), "[workspace]\nmembers = []\n").expect("seed");
+    let model = Scripted::answering([PASSED, PASSED]).calling(
+        1,
+        [ToolCall {
+            id: "1".to_owned(),
+            name: "edit_files".to_owned(),
+            arguments: r#"{"edits":[{"path":"Cargo.toml","find":"members = []","replace":"members = [\"crates/*\"]"}]}"#
+                .to_owned(),
+        }],
+    );
+    let mut seen = 0;
+
+    let verdict = ask_checked(&model, root, &Worker::NONE, |verdict| {
+        seen += 1;
+        let manifest = std::fs::read_to_string(tmp.path().join("Cargo.toml"))
+            .map_err(|err| omnia_sdk::server_error!("reading `Cargo.toml`: {err}"))?;
+        let drifted = verdict.passed && !manifest.contains("crates/*");
+        Ok(drifted
+            .then(|| "- `Cargo.toml` lacks the members list; put it back".to_owned())
+            .into_iter()
+            .collect())
+    })
+    .await
+    .expect("corrected");
+
+    assert!(verdict.passed);
+    assert_eq!(seen, 2, "the check saw each candidate");
+    let exchanges = model.exchanges();
+    let correction = exchanges[0].outcome.as_ref().expect_err("the first verdict is refused");
+    assert!(
+        correction.contains("- `Cargo.toml` lacks the members list; put it back"),
+        "{correction}"
+    );
+    assert_eq!(exchanges[1].tool, "edit_files", "the repair follows the correction");
+    assert_eq!(exchanges[2].outcome, Ok(String::new()), "the repaired tree passes");
+    model.assert_exhausted();
+}
+
+// A check that fails ends the turn with the adapter's error, one candidate
+// seen and no correction put.
+#[tokio::test]
+async fn check_error() {
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let root = tmp.path().to_str().expect("a UTF-8 scratch root");
+    let model = Scripted::answering([PASSED]);
+
+    let error = ask_checked(&model, root, &Worker::NONE, |_| {
+        Err(omnia_sdk::bad_request!("a directory stands at `Cargo.toml`"))
+    })
+    .await
+    .expect_err("the check's error is the call's");
+
+    assert_eq!(error.code(), "bad_request", "{error}");
+    assert!(error.to_string().contains("a directory stands at"), "{error}");
+    let exchanges = model.exchanges();
+    assert_eq!(exchanges.len(), 1, "one candidate, no correction: {exchanges:?}");
+    assert!(exchanges[0].outcome.is_ok(), "the candidate ends the turn: {exchanges:?}");
+    model.assert_exhausted();
 }

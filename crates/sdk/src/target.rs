@@ -7,14 +7,15 @@
 //! adapter's [`Seed`] laid where the tree lacks it, the slice's documents
 //! under the adapter's `build.md`, the workspace lent and written through
 //! the turn's `write_files` and `edit_files` tools, and the answered report
-//! held to the slice by [`Report::findings`] and to the tree until it
-//! passes, its `written` filled in from what the seed and the tools wrote.
-//! [`verify`] puts the one gated verify turn: the integrated tree lent under
-//! the adapter's `verify.md`, the checks it names run through the model's
-//! shell, what they find repaired through the same two tools, and the
-//! answered verdict held to [`Verdict::findings`]. Both turns carry the
-//! adapter's [`Worker`], what the model's worker reaches beyond the tree
-//! for the toolchain the prompts run. [`TargetAdapter`] is what a target
+//! held to the slice by [`Report::findings`], to the tree, and to the
+//! adapter's own check until it passes, its `written` filled in from what
+//! the seed and the tools wrote. [`verify`] puts the one gated verify turn:
+//! the integrated tree lent under the adapter's `verify.md`, the checks it
+//! names run through the model's shell, what they find repaired through the
+//! same two tools, and the answered verdict held to [`Verdict::findings`]
+//! and the adapter's check. Both turns carry the adapter's [`Worker`], what
+//! the model's worker reaches beyond the tree for the toolchain the prompts
+//! run. [`TargetAdapter`] is what a target
 //! adapter implements, and [`export_target!`](crate::export_target) exports
 //! a type implementing it, answering the component's `metadata` through
 //! [`metadata`] over the type's [`MERGE_RULES`](TargetAdapter::MERGE_RULES)
@@ -23,7 +24,8 @@
 //! # Examples
 //!
 //! This adapter seeds every tree with one manifest, builds every slice, and
-//! verifies every wave through the SDK's turns:
+//! verifies every wave through the SDK's turns, holding each report to one
+//! rule of its layout's own:
 //!
 //! ```
 //! use emery_sdk::Doc;
@@ -63,11 +65,15 @@
 //!         };
 //!
 //!         async fn build<P: Model>(ctx: &Context<'_, P>) -> Result<Report, Error> {
-//!             emery_sdk::target::build(ctx, super::PROSE, super::SEED).await
+//!             emery_sdk::target::build(ctx, super::PROSE, super::SEED, |report| {
+//!                 let stray = report.written.iter().filter(|path| !path.starts_with("crates/"));
+//!                 Ok(stray.map(|path| format!("`{path}` lies outside `crates/`")).collect())
+//!             })
+//!             .await
 //!         }
 //!
 //!         async fn verify<P: Model>(ctx: &VerifyContext<'_, P>) -> Result<Verdict, Error> {
-//!             emery_sdk::target::verify(ctx, super::PROSE).await
+//!             emery_sdk::target::verify(ctx, super::PROSE, |_| Ok(Vec::new())).await
 //!         }
 //!     }
 //! }
@@ -280,12 +286,17 @@ pub fn metadata(merge_rules: &[MergeRule], base: Base) -> TargetMetadata {
 /// `shrink`. `edit_files` replaces the one place each edit's `find` matches
 /// within a file the workspace holds. A call either tool refuses anywhere
 /// changes nothing. The answered [`Report`] is held to the slice by
-/// [`Report::findings`] and to the tree — a `written` path names a regular
-/// file under the workspace; every finding is returned to the model for one
-/// correction round, until the host's round limit is reached. The accepted
-/// report's `written` is filled in: every path it lists, spelled
-/// root-relative, and every file the seed or a tool wrote that the tree
-/// still holds, once each and sorted.
+/// [`Report::findings`], to the tree — a `written` path names a regular
+/// file under the workspace — and to `check`, the adapter's own rule over
+/// the report and the tree as the model left it; every finding, the
+/// adapter's among the rest, is returned to the model for one correction
+/// round, until the host's round limit is reached. A finding is an
+/// instruction the model repairs by, so it names the repair, not the
+/// difference alone. `check` runs on every candidate, so it reads what one
+/// gate reads and runs nothing. An adapter with no rule passes
+/// `|_| Ok(Vec::new())`. The accepted report's `written` is filled in:
+/// every path it lists, spelled root-relative, and every file the seed or a
+/// tool wrote that the tree still holds, once each and sorted.
 ///
 /// A failure upstream is not put again here: the turn writes the tree as it
 /// goes, so a second turn would start over what the first left. The caller
@@ -300,8 +311,12 @@ pub fn metadata(merge_rules: &[MergeRule], base: Base) -> TargetMetadata {
 ///   when a seed path is one [`beneath`](crate::beneath) refuses or is
 ///   declared twice, or when a seed file cannot be written.
 /// - Returns [`Error::BadGateway`] when a model tool or transport fails.
+/// - Returns the error `check` fails with, whatever its class: the
+///   candidate it failed on ends the turn, since a tree the adapter cannot
+///   read is the run's failure and not the model's to repair.
 pub async fn build<P: Model>(
     ctx: &Context<'_, P>, docs: &'static [Doc], seed: &[Seed],
+    mut check: impl FnMut(&Report) -> Result<Vec<String>, Error> + Send,
 ) -> Result<Report, Error> {
     let slice = ctx.slice;
     let id = &slice.id;
@@ -335,10 +350,18 @@ pub async fn build<P: Model>(
         "building"
     );
     let tools = writer.serve(reference::serve(docs, id, None));
-    let mut report = question
+    let mut failed = None;
+    let report = question
         .ask(ctx.model, brief.to_string(), Some(tools), |answer| {
             let mut findings = answer.findings(slice);
             findings.extend(Written::findings(root, answer));
+            match check(answer) {
+                Ok(more) => findings.extend(more),
+                Err(error) => {
+                    stash(&mut failed, error);
+                    return Ok(());
+                }
+            }
             if findings.is_empty() {
                 return Ok(());
             }
@@ -346,7 +369,11 @@ pub async fn build<P: Model>(
             Err(findings)
         })
         .await
-        .map_err(Error::from)?;
+        .map_err(Error::from);
+    if let Some(error) = failed {
+        return Err(error);
+    }
+    let mut report = report?;
     written.fill(root, &mut report);
 
     let uncovered = report.uncovered(slice);
@@ -370,12 +397,14 @@ pub async fn build<P: Model>(
 /// `write_files` and `edit_files` a build has: the model
 /// runs the checks the prompt names through its shell, repairs what they
 /// find in the tree, runs them again, and answers what they finally found.
-/// The answered
-/// [`Verdict`] is held to [`Verdict::findings`]; every finding is returned
-/// to the model for one correction round, until the host's round limit is
-/// reached. A verdict that fails is an answer, not an error: the caller
-/// decides what a failed wave means, and what the repairs left in the tree
-/// is the caller's to seal.
+/// The answered [`Verdict`] is held to [`Verdict::findings`] and to `check`,
+/// the adapter's own rule over the verdict and the tree as the model left
+/// it; every finding is returned to the model for one correction round,
+/// until the host's round limit is reached, so a verdict cannot pass over a
+/// tree that breaks the adapter's rule. An adapter with no rule passes
+/// `|_| Ok(Vec::new())`. A verdict that fails is an answer, not an error:
+/// the caller decides what a failed wave means, and what the repairs left
+/// in the tree is the caller's to seal.
 ///
 /// # Errors
 ///
@@ -384,8 +413,11 @@ pub async fn build<P: Model>(
 ///   time budget.
 /// - Returns [`Error::ServerError`] when `docs` does not contain `verify.md`.
 /// - Returns [`Error::BadGateway`] when a model tool or transport fails.
+/// - Returns the error `check` fails with, whatever its class, the
+///   candidate it failed on ending the turn.
 pub async fn verify<P: Model>(
     ctx: &VerifyContext<'_, P>, docs: &'static [Doc],
+    mut check: impl FnMut(&Verdict) -> Result<Vec<String>, Error> + Send,
 ) -> Result<Verdict, Error> {
     let writer = Writer::new(ctx.workspace, VERIFY_TURN);
     let mut tools = reference::tools();
@@ -403,9 +435,17 @@ pub async fn verify<P: Model>(
 
     tracing::info!("verifying");
     let tools = writer.serve(reference::serve(docs, VERIFY_TURN, None));
+    let mut failed = None;
     let verdict = question
         .ask(ctx.model, brief.to_string(), Some(tools), |answer| {
-            let findings = answer.findings();
+            let mut findings = answer.findings();
+            match check(answer) {
+                Ok(more) => findings.extend(more),
+                Err(error) => {
+                    stash(&mut failed, error);
+                    return Ok(());
+                }
+            }
             if findings.is_empty() {
                 return Ok(());
             }
@@ -413,7 +453,11 @@ pub async fn verify<P: Model>(
             Err(findings)
         })
         .await
-        .map_err(Error::from)?;
+        .map_err(Error::from);
+    if let Some(error) = failed {
+        return Err(error);
+    }
+    let verdict = verdict?;
 
     tracing::info!(passed = verdict.passed, failures = verdict.failures.len(), "verified");
     tracing::debug!(failures = ?verdict.failures, "the verdict");
@@ -453,6 +497,14 @@ pub async fn verify_call<A: TargetAdapter>(
         model: &crate::Provider,
     };
     Ok(A::verify(&ctx).await?.into())
+}
+
+// A host error the adapter's check met is the run's, not the model's: the
+// caller accepts the candidate to end the completion and carries the error
+// out after `ask` returns.
+fn stash(failed: &mut Option<Error>, error: Error) {
+    tracing::warn!(%error, "the adapter's check failed; ending the turn");
+    *failed = Some(error);
 }
 
 // `question` carrying the worker's grant, when it has one.

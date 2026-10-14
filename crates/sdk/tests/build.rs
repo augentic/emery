@@ -55,6 +55,13 @@ async fn ask_seeded(
 async fn ask_as(
     model: &Scripted, slice: &Slice, workspace: &str, seed: &[Seed], worker: &Worker,
 ) -> Result<Report, Error> {
+    ask_checked(model, slice, workspace, seed, worker, |_| Ok(Vec::new())).await
+}
+
+async fn ask_checked(
+    model: &Scripted, slice: &Slice, workspace: &str, seed: &[Seed], worker: &Worker,
+    check: impl FnMut(&Report) -> Result<Vec<String>, Error> + Send,
+) -> Result<Report, Error> {
     let ctx = Context {
         adapter_id: "target:probe",
         slice,
@@ -62,7 +69,7 @@ async fn ask_as(
         worker,
         model,
     };
-    emery_sdk::target::build(&ctx, PROSE, seed).await
+    emery_sdk::target::build(&ctx, PROSE, seed, check).await
 }
 
 // Lays files beneath `root` with the content given, so a report naming them
@@ -1051,7 +1058,9 @@ async fn missing_prompt() {
         model: &model,
     };
 
-    let error = emery_sdk::target::build(&ctx, &[], SEED).await.expect_err("no prompt to ask with");
+    let error = emery_sdk::target::build(&ctx, &[], SEED, |_| Ok(Vec::new()))
+        .await
+        .expect_err("no prompt to ask with");
     assert!(!tmp.path().join("Cargo.toml").exists(), "a defect lays no seed");
     assert_eq!(error.code(), "server_error");
     assert!(error.description().contains("`build.md` is not embedded"), "{error}");
@@ -1105,5 +1114,72 @@ async fn rounds_exhausted() {
 
     let error = ask(&model, &slice(), root).await.expect_err("never accepted");
     assert_eq!(error.code(), "bad_request", "{error}");
+    model.assert_exhausted();
+}
+
+// The adapter's check reads the tree as the model left it: its finding
+// joins the gate's under the one correction, and the candidate that
+// repaired the tree is accepted, the check having seen each.
+#[tokio::test]
+async fn check_findings() {
+    let tmp = tempfile::tempdir().expect("tempdir");
+    seed(tmp.path(), ["src/orders.rs"]);
+    let root = tmp.path().to_str().expect("a UTF-8 scratch root");
+    let model = Scripted::answering([
+        r#"{"covered":["REQ-001","REQ-009"],"written":["src/orders.rs"]}"#,
+        r#"{"covered":["REQ-001"],"written":["src/orders.rs","Cargo.toml"]}"#,
+    ])
+    .calling(1, [write_files("w1", &[("Cargo.toml", "[workspace]\n")])]);
+    let slice = slice();
+    let mut seen = Vec::new();
+
+    let report = ask_checked(&model, &slice, root, &[], &Worker::NONE, |report| {
+        seen.push(report.written.clone());
+        let held = Path::new(root).join("Cargo.toml").is_file();
+        Ok((!held)
+            .then(|| "- the tree lacks `Cargo.toml`; lay it".to_owned())
+            .into_iter()
+            .collect())
+    })
+    .await
+    .expect("corrected");
+
+    assert_eq!(report.written, ["Cargo.toml", "src/orders.rs"]);
+    assert_eq!(seen.len(), 2, "the check saw each candidate");
+    let exchanges = model.exchanges();
+    let correction = exchanges[0].outcome.as_ref().expect_err("the first report is refused");
+    assert!(
+        correction.contains("- covered `REQ-009` is not a requirement of slice `SLICE-001`"),
+        "the gate's finding: {correction}"
+    );
+    assert!(
+        correction.contains("- the tree lacks `Cargo.toml`; lay it"),
+        "the adapter's finding under the same correction: {correction}"
+    );
+    assert!(exchanges[2].outcome.is_ok(), "the repaired candidate is accepted");
+    model.assert_exhausted();
+}
+
+// A check that fails is the run's error as the adapter put it, the
+// candidate it failed on ending the turn: one candidate seen, no correction
+// put, and the error carried out whole.
+#[tokio::test]
+async fn check_error() {
+    let tmp = tempfile::tempdir().expect("tempdir");
+    seed(tmp.path(), ["src/orders.rs"]);
+    let root = tmp.path().to_str().expect("a UTF-8 scratch root");
+    let model = Scripted::answering([r#"{"covered":["REQ-001"],"written":["src/orders.rs"]}"#]);
+
+    let error = ask_checked(&model, &slice(), root, &[], &Worker::NONE, |_| {
+        Err(omnia_sdk::server_error!("reading `Cargo.toml`: permission denied"))
+    })
+    .await
+    .expect_err("the check's error is the call's");
+
+    assert_eq!(error.code(), "server_error", "{error}");
+    assert!(error.to_string().contains("permission denied"), "{error}");
+    let exchanges = model.exchanges();
+    assert_eq!(exchanges.len(), 1, "one candidate, no correction: {exchanges:?}");
+    assert!(exchanges[0].outcome.is_ok(), "the candidate ends the turn: {exchanges:?}");
     model.assert_exhausted();
 }

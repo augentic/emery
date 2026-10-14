@@ -2,8 +2,9 @@
 //!
 //! A [`Design`] contains introductory paragraphs and a fixed vocabulary of
 //! sections. Section blocks contain drafted prose or verbatim type
-//! signatures.
+//! signatures, each signature labelled with the [`Role`] its type plays.
 
+use std::collections::BTreeSet;
 use std::fmt::{self, Display, Formatter};
 
 use schemars::JsonSchema;
@@ -33,6 +34,28 @@ impl Design {
     #[must_use]
     pub fn section(&self, kind: SectionKind) -> Option<&Section> {
         self.sections.iter().find(|section| section.kind == kind)
+    }
+
+    /// Returns the keys of the [`Role::Data`] types, in key order.
+    ///
+    /// These are the types a build plan assigns to slices. A
+    /// [`Role::Mechanism`] type is owned by no slice.
+    #[must_use]
+    pub fn data_types(&self) -> Vec<String> {
+        let keys: BTreeSet<&str> = self
+            .sections
+            .iter()
+            .flat_map(|section| &section.blocks)
+            .filter_map(|block| match block {
+                Block::Type {
+                    key,
+                    role: Role::Data,
+                    ..
+                } => Some(key.as_str()),
+                Block::Text(_) | Block::Type { .. } => None,
+            })
+            .collect();
+        keys.into_iter().map(str::to_owned).collect()
     }
 }
 
@@ -82,6 +105,8 @@ pub enum Block {
         key: String,
         /// The claim's signature.
         signature: String,
+        /// What the type stands for.
+        role: Role,
     },
 }
 
@@ -89,9 +114,35 @@ impl Display for Block {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         match self {
             Self::Text(text) => f.write_str(text),
-            Self::Type { key, signature } => write!(f, "{TYPE} {key}\n```\n{signature}\n```"),
+            Self::Type {
+                key,
+                signature,
+                role: Role::Data,
+            } => write!(f, "{TYPE} {key}\n```\n{signature}\n```"),
+            Self::Type {
+                key,
+                signature,
+                role: Role::Mechanism,
+            } => write!(f, "{TYPE} {key} (mechanism)\n```\n{signature}\n```"),
         }
     }
+}
+
+/// What a type in the domain model stands for.
+///
+/// A target lays a [`Data`](Role::Data) type as a shape its code reads or
+/// produces. It lays nothing for a [`Mechanism`](Role::Mechanism): the
+/// behaviour its requirements state is built through the target's own
+/// platform, and no slice owns the type.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "kebab-case")]
+pub enum Role {
+    /// A shape that crosses a boundary or is stored: a message, a record, a
+    /// response, an enumeration.
+    Data,
+    /// A class that is a client, a retriever, a bootstrap, a settings
+    /// carrier, or another part of the source's own machinery.
+    Mechanism,
 }
 
 /// A section in the rebuild design.
