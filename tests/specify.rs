@@ -1631,6 +1631,42 @@ async fn dishonest_design() {
     provider.source.evidence.insert("docs".to_string(), evidence());
     cli_ok(&provider, &["emery", "specify", &reference("docs")]).await;
 
+    let id = current(&provider.storage);
+    let rendered = format!(
+        "---\nemery: 6\nrevision: {id}\n---\n\n# Design\n\n## Overview\n\n\
+         Requests arrive (from the browser) and (from docs) they route.\n\n\
+         ## Domain model\n\nThe greeting payload is one string field.\n\n\
+         Type: greeting.type\n```\n{signature}\n```\n"
+    );
+    assert_eq!(
+        shown(&provider, "design").await,
+        rendered,
+        "the signature is rendered verbatim, labelled by its key, where the draft placed it"
+    );
+    provider.model.assert_exhausted();
+}
+
+// The section kinds are an inline enumeration, the type block names its key
+// among the evidence's `type` claims and its role among the two, so the model
+// cannot answer a kind, a key, or a role the gate would refuse.
+#[tokio::test]
+async fn design_schema() {
+    let signature = "interface Greeting { text: string }";
+    let design = r#"{"preamble": [], "sections": [
+        {"kind": "overview", "blocks": [{"text": "The greeting is one static endpoint."}]},
+        {"kind": "domain-model", "blocks": [{"type": {"key": "greeting.type", "role": "data"}}]}
+    ]}"#;
+
+    let mut provider = Provider::answering([SPEC_ANSWER, design]);
+    provider.source.evidence.insert(
+        "docs".to_string(),
+        Ok(evidence(vec![
+            requirement("greeting.behaviour", "GET /greeting returns the static string 'hello'."),
+            claim(ClaimKind::Type, "greeting.type", ("signature", signature)),
+        ])),
+    );
+    cli_ok(&provider, &["emery", "specify", &reference("docs")]).await;
+
     let draft = &provider.model.seen()[1];
     let SeenFormat::Schema { name, schema } = &draft.format else {
         panic!("the design is steered by schema");
@@ -1660,19 +1696,6 @@ async fn dishonest_design() {
         .map(|role| &role["const"])
         .collect();
     assert_eq!(roles, [&serde_json::json!("data"), &serde_json::json!("mechanism")]);
-
-    let id = current(&provider.storage);
-    let rendered = format!(
-        "---\nemery: 6\nrevision: {id}\n---\n\n# Design\n\n## Overview\n\n\
-         Requests arrive (from the browser) and (from docs) they route.\n\n\
-         ## Domain model\n\nThe greeting payload is one string field.\n\n\
-         Type: greeting.type\n```\n{signature}\n```\n"
-    );
-    assert_eq!(
-        shown(&provider, "design").await,
-        rendered,
-        "the signature is rendered verbatim, labelled by its key, where the draft placed it"
-    );
     provider.model.assert_exhausted();
 }
 
