@@ -357,7 +357,10 @@ pub async fn build<P: Model>(
             findings.extend(Written::findings(root, answer));
             match check(answer) {
                 Ok(more) => findings.extend(more),
-                Err(error) => return stash(&mut failed, error),
+                Err(error) => {
+                    stash(&mut failed, error);
+                    return Ok(());
+                }
             }
             if findings.is_empty() {
                 return Ok(());
@@ -438,7 +441,10 @@ pub async fn verify<P: Model>(
             let mut findings = answer.findings();
             match check(answer) {
                 Ok(more) => findings.extend(more),
-                Err(error) => return stash(&mut failed, error),
+                Err(error) => {
+                    stash(&mut failed, error);
+                    return Ok(());
+                }
             }
             if findings.is_empty() {
                 return Ok(());
@@ -494,12 +500,11 @@ pub async fn verify_call<A: TargetAdapter>(
 }
 
 // A host error the adapter's check met is the run's, not the model's: the
-// candidate is accepted to end the completion, and the error carried out
-// after `ask` returns.
-fn stash(failed: &mut Option<Error>, error: Error) -> Result<(), Vec<String>> {
+// caller accepts the candidate to end the completion and carries the error
+// out after `ask` returns.
+fn stash(failed: &mut Option<Error>, error: Error) {
     tracing::warn!(%error, "the adapter's check failed; ending the turn");
     *failed = Some(error);
-    Ok(())
 }
 
 // `question` carrying the worker's grant, when it has one.
