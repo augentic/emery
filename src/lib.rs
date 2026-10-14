@@ -5,7 +5,8 @@
 //! capabilities, so every external effect stays subject to the runtime's
 //! grants. The one capability it answers itself, the engine's `Files`, reads
 //! what a working copy holds at a path through the `.` preopen: a file's
-//! bytes, or the target a symbolic link names, and what a directory holds.
+//! bytes, or the target a symbolic link names, and what a directory holds;
+//! and writes a file there.
 
 #![cfg(target_arch = "wasm32")]
 
@@ -40,6 +41,14 @@ impl Files for Provider {
     fn list(&self, at: &str, path: &str) -> impl Future<Output = Result<Vec<Entry>, Error>> + Send {
         let outcome = listed(&Path::new(at).join(path))
             .map_err(|error| server_error!("listing `{path}` under `{at}`: {error}"));
+        async move { outcome }
+    }
+
+    fn write(
+        &self, at: &str, path: &str, bytes: &[u8],
+    ) -> impl Future<Output = Result<(), Error>> + Send {
+        let outcome = fs::write(Path::new(at).join(path), bytes)
+            .map_err(|error| server_error!("writing `{path}` under `{at}`: {error}"));
         async move { outcome }
     }
 }

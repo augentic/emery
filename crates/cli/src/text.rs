@@ -50,17 +50,21 @@ fn summary(diff: &Diff, w: &mut dyn fmt::Write) -> fmt::Result {
 
 /// Writes a [`BuildOutput`] revision line, the plan's shape, the base, the slices resumed, each wave with the slices it merged, and the label.
 ///
-/// A wave line names the head it was verified at, and says `repaired` when
-/// its verification repaired the tree, `sealed` when what it left was a
-/// regenerated path under the adapter's `ours` rules alone, a lockfile.
-/// Each slice line beneath it counts the
-/// requirements covered of those it holds, names any left uncovered, counts
-/// the paths its build changed, names the merge commit that brought them in,
-/// and the paths an earlier build of it conflicted at.
+/// The base line is followed by the repository the label stands in when it
+/// is not the project's own checkout. A wave line names the head it was
+/// verified at, and says `repaired` when its verification repaired the
+/// tree, `sealed` when what it left was a regenerated path under the
+/// adapter's `ours` rules alone, a lockfile. Each slice line beneath it
+/// counts the requirements covered of those it holds, names any left
+/// uncovered, counts the paths its build changed, names the merge commit
+/// that brought them in, and the paths an earlier build of it conflicted at.
 pub fn build(output: &BuildOutput, w: &mut dyn fmt::Write) -> fmt::Result {
     writeln!(w, "built revision {}", output.revision)?;
     waves(&output.waves, w)?;
     writeln!(w, "  base {}", output.base)?;
+    if output.repository != "." {
+        writeln!(w, "  repository {}", output.repository)?;
+    }
     if !output.resumed.is_empty() {
         let ids: Vec<String> = output.resumed.iter().map(ToString::to_string).collect();
         writeln!(w, "  resumed: {}", ids.join(", "))?;
@@ -102,11 +106,7 @@ pub fn build(output: &BuildOutput, w: &mut dyn fmt::Write) -> fmt::Result {
             writeln!(w)?;
         }
     }
-    writeln!(w, "  labelled {} at {}", output.label, output.head)?;
-    if let Some(remote) = &output.pushed {
-        writeln!(w, "  pushed to {remote}")?;
-    }
-    Ok(())
+    writeln!(w, "  labelled {} at {}", output.label, output.head)
 }
 
 // `  plan: 4 slices in 3 waves, widest 2`: how many slices the plan holds,

@@ -10,7 +10,7 @@ use std::path::{Path, PathBuf};
 use std::str::FromStr as _;
 
 use anyhow::Context;
-use emery_engine::build::{BuildInput, TargetRepository};
+use emery_engine::build::BuildInput;
 use emery_engine::specify::{SourceConfig, SourceContent, SourceRepository, SpecifyInput};
 use emery_engine::{AdapterRef, Rank, preopen_join, preopen_path};
 use omnia_sdk::plugins::Digest;
@@ -91,11 +91,12 @@ impl TryFrom<TargetCarriers<'_>> for BuildInput {
                 return Err(bad_request!("--config cannot be combined with `<adapter>`"));
             }
             (Some(reference), None) => {
+                let adapter = AdapterRef::from_str(reference)?;
                 let input = Self {
-                    adapter: AdapterRef::from_str(reference)?,
+                    name: adapter.name().to_owned(),
+                    adapter,
                     digest: None,
                     repository: None,
-                    remote: None,
                     jobs: None,
                 };
                 ("argv".to_string(), input)
@@ -136,7 +137,7 @@ fn target_from(path: &Path) -> Result<BuildInput, Error> {
     let Some(target) = file.target else {
         return Err(target_required(&format!("{} has no `[target]` table", path.display())));
     };
-    target.into_input()
+    Ok(target.into_input())
 }
 
 fn target_required(description: &str) -> Error {
@@ -267,34 +268,22 @@ impl SourceEntry {
 #[derive(Debug, serde::Deserialize)]
 #[serde(deny_unknown_fields, rename_all = "kebab-case")]
 struct TargetEntry {
+    // Omitted, the adapter's package name, as on the command line.
+    name: Option<String>,
     adapter: AdapterRef,
     digest: Option<Digest>,
     repository: Option<String>,
-    branch: Option<String>,
-    remote: Option<String>,
 }
 
 impl TargetEntry {
-    fn into_input(self) -> Result<BuildInput, Error> {
-        let repository = match (self.repository, self.branch) {
-            (Some(url), Some(branch)) => Some(TargetRepository { url, branch }),
-            (Some(_), None) => {
-                return Err(bad_request!(
-                    "the target sets `repository` without `branch`; a build starts from the \
-                     branch's commit"
-                ));
-            }
-            (None, Some(_)) => {
-                return Err(bad_request!("the target sets `branch` without `repository`"));
-            }
-            (None, None) => None,
-        };
-        Ok(BuildInput {
-            adapter: self.adapter,
+    fn into_input(self) -> BuildInput {
+        let adapter = self.adapter;
+        BuildInput {
+            name: self.name.unwrap_or_else(|| adapter.name().to_owned()),
+            adapter,
             digest: self.digest,
-            repository,
-            remote: self.remote,
+            repository: self.repository,
             jobs: None,
-        })
+        }
     }
 }

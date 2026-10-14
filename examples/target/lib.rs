@@ -9,6 +9,8 @@
 //! - A seed: the one file every tree of its layout starts from, laid before
 //!   a slice's turn when the tree lacks it.
 //! - A merge rule: both slices' lines kept when two write one `index.md`.
+//! - A base: the commits the adapter builds over, any by default, a fresh
+//!   one when `EMERY_MOCK_FRESH` was set as the adapter compiled.
 //! - A WebAssembly guest: an `emery_sdk::target::TargetAdapter` exported
 //!   with `emery_sdk::export_target!`.
 
@@ -20,7 +22,7 @@ mod guest {
     use std::borrow::Cow;
 
     use emery_sdk::target::{
-        Context, MergeRule, MergeStrategy, Report, TargetAdapter, Verdict, VerifyContext,
+        Base, Context, MergeRule, MergeStrategy, Report, TargetAdapter, Verdict, VerifyContext,
     };
     use emery_sdk::{Error, Model};
 
@@ -29,6 +31,12 @@ mod guest {
     emery_sdk::export_target!(Adapter);
 
     impl TargetAdapter for Adapter {
+        // one source, two components: the runtime suite builds the mock once
+        // over any base and once over a fresh one
+        const BASE: Base = match option_env!("EMERY_MOCK_FRESH") {
+            Some(_) => Base::Fresh,
+            None => Base::Any,
+        };
         // two slices that list requirements in one index keep both lists
         const MERGE_RULES: &'static [MergeRule] = &[MergeRule {
             paths: Cow::Borrowed("build/*/index.md"),

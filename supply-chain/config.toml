@@ -348,6 +348,10 @@ criteria = "safe-to-deploy"
 version = "0.7.12"
 criteria = "safe-to-deploy"
 
+[[exemptions.equivalent]]
+version = "1.0.3"
+criteria = "safe-to-deploy"
+
 [[exemptions.etcetera]]
 version = "0.11.0"
 criteria = "safe-to-deploy"
@@ -825,7 +829,7 @@ version = "0.23.45"
 criteria = "safe-to-deploy"
 
 [[exemptions.rustls-native-certs]]
-version = "0.8.4"
+version = "0.8.5"
 criteria = "safe-to-deploy"
 
 [[exemptions.rustls-pki-types]]
@@ -1005,7 +1009,7 @@ version = "0.4.2"
 criteria = "safe-to-deploy"
 
 [[exemptions.tokio]]
-version = "1.53.2"
+version = "1.53.3"
 criteria = "safe-to-deploy"
 
 [[exemptions.tokio-macros]]
@@ -1189,11 +1193,11 @@ version = "0.8.4"
 criteria = "safe-to-deploy"
 
 [[exemptions.zerocopy]]
-version = "0.8.62"
+version = "0.8.63"
 criteria = "safe-to-deploy"
 
 [[exemptions.zerocopy-derive]]
-version = "0.8.62"
+version = "0.8.63"
 criteria = "safe-to-deploy"
 
 [[exemptions.zerofrom]]

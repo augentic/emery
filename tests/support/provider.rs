@@ -544,6 +544,12 @@ impl<S: Send + Sync + 'static> Files for Provider<S> {
     fn list(&self, at: &str, path: &str) -> impl Future<Output = Result<Vec<Entry>, Error>> + Send {
         Files::list(&self.files, at, path)
     }
+
+    fn write(
+        &self, at: &str, path: &str, bytes: &[u8],
+    ) -> impl Future<Output = Result<(), Error>> + Send {
+        Files::write(&self.files, at, path, bytes)
+    }
 }
 
 /// Runs one CLI invocation in-process, returning the raw response.

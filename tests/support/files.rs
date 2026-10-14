@@ -1,10 +1,10 @@
-//! Scripts the `Files` capability and records every read and listing the engine makes.
+//! Scripts the `Files` capability and records every read, listing, and write the engine makes.
 //!
 //! Content is scripted per working copy and path; an unscripted path reads as
 //! an empty file, so a scenario scripts only the paths it wants the gate to
 //! see, and a path scripted `unreadable` fails its read. A listing is
 //! scripted per working copy and directory; an unscripted directory lists
-//! nothing.
+//! nothing. Every write succeeds and is recorded.
 
 use std::collections::BTreeMap;
 use std::future::Future;
@@ -16,8 +16,9 @@ use omnia_sdk::{Error, server_error};
 // `None` scripts a path the read fails at.
 type Keyed = BTreeMap<(String, String), Option<Vec<u8>>>;
 type Listings = BTreeMap<(String, String), Vec<Entry>>;
+type Write = (String, String, Vec<u8>);
 
-/// A scripted `Files` with a record of every read and listing.
+/// A scripted `Files` with a record of every read, listing, and write.
 #[derive(Clone, Debug, Default)]
 pub struct FilesScript {
     /// What each path beneath a working copy reads as, keyed by both.
@@ -28,6 +29,8 @@ pub struct FilesScript {
     pub reads: Arc<Mutex<Vec<(String, String)>>>,
     /// Every listing, in order: the working copy and the directory.
     pub listed: Arc<Mutex<Vec<(String, String)>>>,
+    /// Every write, in order: the working copy, the path, and the bytes.
+    pub writes: Arc<Mutex<Vec<Write>>>,
 }
 
 impl FilesScript {
@@ -63,6 +66,11 @@ impl FilesScript {
         self.listed.lock().expect("listed").clone()
     }
 
+    /// Returns every write so far, in order.
+    pub fn writes(&self) -> Vec<Write> {
+        self.writes.lock().expect("writes").clone()
+    }
+
     fn script(&self, at: &str, path: &str, content: Option<Vec<u8>>) {
         self.contents.lock().expect("contents").insert((at.to_owned(), path.to_owned()), content);
     }
@@ -91,5 +99,12 @@ impl Files for FilesScript {
             .cloned()
             .unwrap_or_default();
         async move { Ok(entries) }
+    }
+
+    fn write(
+        &self, at: &str, path: &str, bytes: &[u8],
+    ) -> impl Future<Output = Result<(), Error>> + Send {
+        self.writes.lock().expect("writes").push((at.to_owned(), path.to_owned(), bytes.to_vec()));
+        async move { Ok(()) }
     }
 }
