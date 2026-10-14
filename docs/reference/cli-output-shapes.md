@@ -120,9 +120,9 @@ The success body carries the revision id, the Markdown projection, and the typed
 ```json
 {
   "revision": "9f8e7d6c…",
-  "body": "---\nemery: 5\nrevision: 9f8e7d6c…\n---\n\n# Specification\n…",
+  "body": "---\nemery: 6\nrevision: 9f8e7d6c…\n---\n\n# Specification\n…",
   "document": {
-    "emery": 5,
+    "emery": 6,
     "preamble": ["…"],
     "requirements": [
       {
@@ -140,9 +140,9 @@ The success body carries the revision id, the Markdown projection, and the typed
 }
 ```
 
-`document` is the revision document exactly as stored: for `spec`, `emery` (the grammar stamp), `preamble`, and `requirements`; for `design`, `emery`, `preamble`, and `sections` (each a `kind` and its `blocks`, `{ "text": "<paragraph>" }` or `{ "type": { "key", "signature" } }`); for `plan`, `emery`, `preamble`, and `slices` (each an `id`, `name`, `requirements`, `types`, `depends-on`, and `brief`). The revision's serde shape is pinned by `emery-engine`'s `revision` types; its canonical bytes hash to `revision`.
+`document` is the revision document exactly as stored: for `spec`, `emery` (the grammar stamp), `preamble`, and `requirements`; for `design`, `emery`, `preamble`, and `sections` (each a `kind` and its `blocks`, `{ "text": "<paragraph>" }` or `{ "type": { "key", "signature", "role" } }`, `role` being `data`, a shape a build lays and one slice owns, or `mechanism`, a class of the source's machinery that no slice owns); for `plan`, `emery`, `preamble`, and `slices` (each an `id`, `name`, `requirements`, `types`, `depends-on`, and `brief`). The revision's serde shape is pinned by `emery-engine`'s `revision` types; its canonical bytes hash to `revision`.
 
-`plan.md` renders each slice as a `## Slice: <name>` block: its `ID:` and `Requirements:` lines, a `Types:` line where the slice owns a design type, a `Depends on:` line where it is built after another slice, then the brief's paragraphs.
+`plan.md` renders each slice as a `## Slice: <name>` block: its `ID:` and `Requirements:` lines, a `Types:` line where the slice owns a design type (a `data` type; a `mechanism` type is owned by no slice), a `Depends on:` line where it is built after another slice, then the brief's paragraphs.
 
 Before any revision is committed the verb fails with `error: "spec-not-generated"` (exit 2); a current revision id naming missing documents fails with `error: "server_error"` (exit 3); a stored revision under an older grammar fails with `error: "spec-outdated"` (exit 1). The `spec-not-generated` hint names both ways out: ``run `emery specify <adapter>...` to commit a revision, then re-run show or build``.
 

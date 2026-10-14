@@ -93,7 +93,9 @@ where
 
     let client = Client::new(NAME, provider);
     let metadata = Metadata::from_env("EMERY");
-    let command = Command::new(&client, &metadata, app.format).hints(|error| hint(&error.code()));
+    let building = matches!(app.verb, Verb::Build(_));
+    let command = Command::new(&client, &metadata, app.format)
+        .hints(move |error| hint(&error.code(), building));
 
     match app.verb {
         Verb::Completions { shell } => completions::<App>(shell, NAME),
@@ -235,9 +237,14 @@ fn artifacts() -> impl TypedValueParser<Value = Artifact> {
     .try_map(|value: String| value.parse::<Artifact>())
 }
 
-// Flag and verb vocabulary stays at the CLI boundary.
-fn hint(code: &str) -> Option<Cow<'static, str>> {
+// Flag and verb vocabulary stays at the CLI boundary. `building` tells a
+// build's upstream failure, which a re-run resumes, from a specify's, which
+// a re-run starts over.
+fn hint(code: &str, building: bool) -> Option<Cow<'static, str>> {
     let hint = match code {
+        "bad_gateway" if building => {
+            "the model backend failed twice upstream, or the repository's remote refused; re-run `emery build` once it answers: the label `emery/<revision>` stands at the last verified wave, so the slices it records are not built again"
+        }
         "unsupported-version" => {
             "update emery: `brew upgrade emery`, or `cargo install --git https://github.com/augentic/emery --locked`"
         }

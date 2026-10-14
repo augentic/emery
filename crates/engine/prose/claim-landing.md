@@ -12,7 +12,7 @@ Where each closed claim kind's content belongs across the two artifacts. Groupin
 | `decision` | `design.md` under the section it informs; cite `(from <source>)` | none |
 | `section` | `design.md` relevant section | none |
 | `excerpt` | `design.md` `technical-logic` | optional `id` |
-| `type` | `design.md` `domain-model` — one `type` block per claim; the engine renders a `Type: <key>` line and the `signature` verbatim beneath it | optional `id` |
+| `type` | `design.md` `domain-model` — one `type` block per claim, labelled `data` or `mechanism`; the engine renders a `Type: <key>` line, `(mechanism)` after the key for one, and the `signature` verbatim beneath it | optional `id` |
 | `call` | `design.md` `apis` (the section plan requires it); internal delegation may also inform `technical-logic` | optional `id` |
 | `example` | `spec.md` scenario via matching `id` prefix; `design.md` references keep `path` | required `id` |
 | `region` / `container` / `leaf` | `design.md` `ui-layout` tree; never `spec.md` requirements | none (positional) |

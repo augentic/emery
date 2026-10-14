@@ -1,5 +1,5 @@
 {
-  "emery": 5,
+  "emery": 6,
   "preamble": [],
   "sections": [
     {
@@ -16,13 +16,15 @@
         {
           "type": {
             "key": "orders.order",
-            "signature": "interface Order { id: string }"
+            "signature": "interface Order { id: string }",
+            "role": "data"
           }
         },
         {
           "type": {
             "key": "orders.line",
-            "signature": "interface Line { sku: string }"
+            "signature": "interface Line { sku: string }",
+            "role": "data"
           }
         }
       ]

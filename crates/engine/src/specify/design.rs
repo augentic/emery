@@ -1,9 +1,9 @@
 //! Synthesises the drafted content of `design.md`.
 //!
 //! Extracted claim kinds determine which design sections are required,
-//! permitted, or omitted. The model supplies introductory paragraphs and
-//! section prose. The engine validates source citations and inserts type
-//! signatures verbatim from evidence.
+//! permitted, or omitted. The model supplies introductory paragraphs,
+//! section prose, and the role each type plays. The engine validates source
+//! citations and inserts type signatures verbatim from evidence.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::{self, Display, Formatter};
@@ -15,7 +15,7 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 use strum::VariantArray as _;
 
-use crate::revision::{self, Design, EMERY, Section, SectionKind, citations};
+use crate::revision::{self, Design, EMERY, Role, Section, SectionKind, citations};
 use crate::specify::basis::Basis;
 use crate::specify::brief::{BasesSection, Brief, ClaimsSection, Review};
 use crate::specify::{Extract, shape};
@@ -41,16 +41,6 @@ impl<'a> DesignBrief<'a> {
             bases,
             outline: Outline::new(extracts),
         }
-    }
-
-    /// Returns the type keys the design offers, in key order.
-    ///
-    /// Every key is referenced exactly once by an accepted design, so the
-    /// accepted [`Design`]'s types are these as a set; the slicing brief takes
-    /// them before the design is drafted.
-    #[must_use]
-    pub fn types(&self) -> Vec<String> {
-        self.outline.keys().map(str::to_owned).collect()
     }
 }
 
@@ -79,12 +69,12 @@ impl Brief for DesignBrief<'_> {
             defs.remove("SectionKind");
         }
 
-        // restrict the `{"type": …}` arm to this run's type keys
+        // restrict a type block's key to this run's type keys
         if self.outline.types.is_empty() {
             return;
         }
-        if let Some(block) = type_block(schema) {
-            block["properties"]["type"]["enum"] = json!(self.outline.keys().collect::<Vec<_>>());
+        if let Some(key) = schema.pointer_mut("/$defs/TypeRef/properties/key") {
+            key["enum"] = json!(self.outline.keys().collect::<Vec<_>>());
         }
     }
 
@@ -117,7 +107,7 @@ impl Brief for DesignBrief<'_> {
                             ));
                         }
                     }
-                    Block::Type(key) => {
+                    Block::Type(TypeRef { key, .. }) => {
                         if kind != SectionKind::DomainModel {
                             review.note(format_args!(
                                 "{label} references type `{key}`; type blocks belong under \
@@ -157,7 +147,7 @@ impl Brief for DesignBrief<'_> {
             for block in section.blocks {
                 blocks.push(match block {
                     Block::Text(text) => revision::Block::Text(text),
-                    Block::Type(key) => {
+                    Block::Type(TypeRef { key, role }) => {
                         let signature =
                             self.outline.types.get(key.as_str()).copied().ok_or_else(|| {
                                 server_error!("type `{key}` was accepted without a type claim")
@@ -165,6 +155,7 @@ impl Brief for DesignBrief<'_> {
                         revision::Block::Type {
                             key,
                             signature: signature.to_string(),
+                            role,
                         }
                     }
                 });
@@ -209,8 +200,11 @@ impl Display for DesignBrief<'_> {
         if !self.outline.types.is_empty() {
             f.write_str(
                 "\n## Type blocks\n\nReference each `type` claim exactly once under \
-                 `domain-model` as a `{\"type\": \"<key>\"}` block; the engine inserts its \
-                 signature verbatim.\n\n",
+                 `domain-model` as a `{\"type\": {\"key\": \"<key>\", \"role\": \"data\" | \
+                 \"mechanism\"}}` block; the engine inserts its signature verbatim. A `data` \
+                 type is a shape the program reads, stores, or produces; a `mechanism` is a \
+                 class that is a client, a retriever, a bootstrap, or a settings carrier, which \
+                 a build lays nothing for and no slice owns.\n\n",
             )?;
             for key in self.outline.keys() {
                 writeln!(f, "- `{key}`")?;
@@ -246,8 +240,18 @@ pub struct DesignAnswer {
 pub enum Block {
     /// One Markdown paragraph; inline `(from <source>)` citations allowed.
     Text(String),
-    /// The key of a `type` claim.
-    Type(String),
+    /// A `type` claim by its key, with the role its type plays.
+    Type(TypeRef),
+}
+
+/// A design draft's reference to one `type` claim.
+#[derive(Debug, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct TypeRef {
+    /// The claim's key: its declared name, else its id, else its path.
+    pub key: String,
+    /// What the type stands for.
+    pub role: Role,
 }
 
 // What the evidence lets the design say: the claim kinds present, the source
@@ -327,11 +331,6 @@ fn type_key(taken: &BTreeMap<String, &str>, name: &str, path: Option<&str>) -> S
         .map(|n| format!("{name} ({anchor}, {n})"))
         .find(|key| !taken.contains_key(key))
         .unwrap_or(anchored)
-}
-
-fn type_block(schema: &mut Value) -> Option<&mut Value> {
-    let variants = schema.pointer_mut("/$defs/Block/oneOf")?.as_array_mut()?;
-    variants.iter_mut().find(|variant| variant["required"] == json!(["type"]))
 }
 
 // The declared name of a `type` claim: its `name` extra — the identifier the

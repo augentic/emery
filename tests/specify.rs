@@ -844,7 +844,7 @@ async fn diff_envelope() {
     ]}"#;
     let second_design = r#"{"preamble": [], "sections": [
         {"kind": "overview", "blocks": [{"text": "One static `GET /greeting` endpoint returning `'howdy'`."}]},
-        {"kind": "domain-model", "blocks": [{"type": "greeting.type"}]}
+        {"kind": "domain-model", "blocks": [{"type": {"key": "greeting.type", "role": "data"}}]}
     ]}"#;
     let second_grouping = separate_grouping(2);
     let second_slicing = r#"{"preamble": [], "slices": [
@@ -1179,6 +1179,7 @@ async fn extract_fails() {
     ] {
         let envelope = fail(&provider, argv, 4, "bad_gateway").await;
         assert_eq!(envelope["message"], "source `docs`: the adapter exploded", "{argv:?}");
+        assert!(envelope.get("hint").is_none(), "a specify resumes nothing: {envelope}");
     }
 }
 
@@ -1572,7 +1573,10 @@ async fn dishonest_design() {
 
     // `(from the browser)` is prose: a citation key is one token
     let overview = r#"{"kind": "overview", "blocks": [{"text": "Requests arrive (from the browser) and (from docs) they route."}]}"#;
-    let domain = r#"{"kind": "domain-model", "blocks": [{"text": "The greeting payload is one string field."}, {"type": "greeting.type"}]}"#;
+    let typed = r#"{"type": {"key": "greeting.type", "role": "data"}}"#;
+    let domain = format!(
+        r#"{{"kind": "domain-model", "blocks": [{{"text": "The greeting payload is one string field."}}, {typed}]}}"#
+    );
     let honest = draft(&format!("{overview}, {domain}"));
     let cases: Vec<(String, &str)> = vec![
         (draft(overview), "`## Domain model` is required but absent"),
@@ -1590,15 +1594,27 @@ async fn dishonest_design() {
         ),
         (
             draft(&format!(
-                r#"{overview}, {{"kind": "domain-model", "blocks": [{{"type": "greeting.type"}}, {{"type": "greeting.type"}}]}}"#
+                r#"{overview}, {{"kind": "domain-model", "blocks": [{typed}, {typed}]}}"#
             )),
             "type `greeting.type` is referenced 2 times",
         ),
         (
             draft(&format!(
-                r#"{{"kind": "overview", "blocks": [{{"type": "greeting.other"}}]}}, {domain}"#
+                r#"{{"kind": "overview", "blocks": [{{"type": {{"key": "greeting.other", "role": "data"}}}}]}}, {domain}"#
             )),
             "type blocks belong under `## Domain model`",
+        ),
+        (
+            draft(&format!(
+                r#"{overview}, {{"kind": "domain-model", "blocks": [{{"type": "greeting.type"}}]}}"#
+            )),
+            "schema and answer type disagree",
+        ),
+        (
+            draft(&format!(
+                r#"{overview}, {{"kind": "domain-model", "blocks": [{{"type": {{"key": "greeting.type"}}}}]}}"#
+            )),
+            "schema and answer type disagree",
         ),
     ];
     for (answer, fragment) in cases {
@@ -1630,15 +1646,24 @@ async fn dishonest_design() {
     assert_eq!(kind["type"], "string");
     assert!(kind.get("$ref").is_none() && schema["$defs"].get("SectionKind").is_none());
     let variants = schema["$defs"]["Block"]["oneOf"].as_array().expect("Block is a oneOf");
-    let block = variants
+    assert!(
+        variants.iter().any(|variant| variant["required"] == serde_json::json!(["type"])),
+        "the type block variant: {variants:?}"
+    );
+    let reference = &schema["$defs"]["TypeRef"];
+    assert_eq!(reference["properties"]["key"]["enum"], serde_json::json!(["greeting.type"]));
+    assert_eq!(reference["required"], serde_json::json!(["key", "role"]), "{reference}");
+    let roles: Vec<&Value> = schema["$defs"]["Role"]["oneOf"]
+        .as_array()
+        .expect("the role is a documented enumeration")
         .iter()
-        .find(|variant| variant["required"] == serde_json::json!(["type"]))
-        .expect("the type block variant");
-    assert_eq!(block["properties"]["type"]["enum"], serde_json::json!(["greeting.type"]));
+        .map(|role| &role["const"])
+        .collect();
+    assert_eq!(roles, [&serde_json::json!("data"), &serde_json::json!("mechanism")]);
 
     let id = current(&provider.storage);
     let rendered = format!(
-        "---\nemery: 5\nrevision: {id}\n---\n\n# Design\n\n## Overview\n\n\
+        "---\nemery: 6\nrevision: {id}\n---\n\n# Design\n\n## Overview\n\n\
          Requests arrive (from the browser) and (from docs) they route.\n\n\
          ## Domain model\n\nThe greeting payload is one string field.\n\n\
          Type: greeting.type\n```\n{signature}\n```\n"
@@ -1668,7 +1693,7 @@ async fn type_reanchored() {
     };
     let design = r#"{"preamble": [], "sections": [
         {"kind": "overview", "blocks": [{"text": "The greeting is one static endpoint."}]},
-        {"kind": "domain-model", "blocks": [{"type": "src/greeting.ts"}]}
+        {"kind": "domain-model", "blocks": [{"type": {"key": "src/greeting.ts", "role": "data"}}]}
     ]}"#;
 
     let mut provider = Provider::answering([SPEC_ANSWER, design]);
@@ -1710,9 +1735,9 @@ async fn type_collisions() {
         r#"{"preamble": [], "sections": [
             {"kind": "overview", "blocks": [{"text": "The greeting is one static endpoint."}]},
             {"kind": "domain-model", "blocks": [
-                {"type": "greeting.type"},
-                {"type": "greeting.type (src/greeting.ts#L1)"},
-                {"type": "greeting.type (src/greeting.ts#L1, 2)"}
+                {"type": {"key": "greeting.type", "role": "data"}},
+                {"type": {"key": "greeting.type (src/greeting.ts#L1)", "role": "data"}},
+                {"type": {"key": "greeting.type (src/greeting.ts#L1, 2)", "role": "data"}}
             ]}
         ]}"#,
     ]);
@@ -1732,14 +1757,8 @@ async fn type_collisions() {
         panic!("the design is steered by schema");
     };
     let schema: Value = serde_json::from_str(schema).expect("the steering schema is JSON");
-    let block = schema["$defs"]["Block"]["oneOf"]
-        .as_array()
-        .and_then(|variants| {
-            variants.iter().find(|variant| variant["required"] == serde_json::json!(["type"]))
-        })
-        .expect("the type block variant");
     assert_eq!(
-        block["properties"]["type"]["enum"],
+        schema["$defs"]["TypeRef"]["properties"]["key"]["enum"],
         serde_json::json!([
             "greeting.type",
             "greeting.type (src/greeting.ts#L1)",
@@ -1776,7 +1795,10 @@ async fn type_named() {
         SPEC_ANSWER,
         r#"{"preamble": [], "sections": [
             {"kind": "overview", "blocks": [{"text": "The greeting is one static endpoint."}]},
-            {"kind": "domain-model", "blocks": [{"type": "Greeting"}, {"type": "Salutation"}]}
+            {"kind": "domain-model", "blocks": [
+                {"type": {"key": "Greeting", "role": "data"}},
+                {"type": {"key": "Salutation", "role": "data"}}
+            ]}
         ]}"#,
     ]);
     provider.source.evidence.insert(
@@ -1794,15 +1816,87 @@ async fn type_named() {
         panic!("the design is steered by schema");
     };
     let schema: Value = serde_json::from_str(schema).expect("the steering schema is JSON");
-    let block = schema["$defs"]["Block"]["oneOf"]
-        .as_array()
-        .and_then(|variants| {
-            variants.iter().find(|variant| variant["required"] == serde_json::json!(["type"]))
-        })
-        .expect("the type block variant");
-    assert_eq!(block["properties"]["type"]["enum"], serde_json::json!(["Greeting", "Salutation"]));
+    assert_eq!(
+        schema["$defs"]["TypeRef"]["properties"]["key"]["enum"],
+        serde_json::json!(["Greeting", "Salutation"])
+    );
     let plan = shown(&provider, "plan").await;
     assert!(plan.contains("Types: [Greeting, Salutation]"), "{plan}");
+    provider.model.assert_exhausted();
+}
+
+// A `type` the design labels a mechanism is rendered so, and is no slice's:
+// the one-stem plan owns the data type alone, and the slicing turn over
+// three stems is offered the data keys alone.
+#[tokio::test]
+async fn type_mechanism() {
+    let typed = |name: &str, signature: &str| {
+        let mut typed = claim(ClaimKind::Type, "greeting.type", ("signature", signature));
+        typed.extras.insert("name".to_string(), Value::String(name.to_string()));
+        typed
+    };
+    let mut provider = Provider::answering([
+        SPEC_ANSWER,
+        r#"{"preamble": [], "sections": [
+            {"kind": "overview", "blocks": [{"text": "The greeting is one static endpoint."}]},
+            {"kind": "domain-model", "blocks": [
+                {"type": {"key": "Greeting", "role": "data"}},
+                {"type": {"key": "GreetingClient", "role": "mechanism"}}
+            ]}
+        ]}"#,
+    ]);
+    provider.source.evidence.insert(
+        "docs".to_string(),
+        Ok(evidence(vec![
+            requirement("greeting.behaviour", "GET /greeting returns the static string 'hello'."),
+            typed("Greeting", "interface Greeting { text: string }"),
+            typed("GreetingClient", "class GreetingClient { fetch(): Promise<Greeting> }"),
+        ])),
+    );
+
+    cli_ok(&provider, &["emery", "specify", &reference("docs")]).await;
+
+    let design = shown(&provider, "design").await;
+    assert!(design.contains("Type: Greeting\n```\n"), "{design}");
+    assert!(design.contains("Type: GreetingClient (mechanism)\n```\n"), "{design}");
+    let plan = shown(&provider, "plan").await;
+    assert!(plan.contains("Types: [Greeting]\n"), "the mechanism is owned by no slice: {plan}");
+    provider.model.assert_exhausted();
+
+    // three stems: the slicing is asked, and offered the data keys alone
+    let design = r#"{"preamble": [], "sections": [
+        {"kind": "overview", "blocks": [{"text": "Sign-in issues a session; orders are placed and cancelled under it."}]},
+        {"kind": "domain-model", "blocks": [
+            {"type": {"key": "orders.order", "role": "data"}},
+            {"type": {"key": "orders.line", "role": "mechanism"}}
+        ]}
+    ]}"#;
+    let slicing = r#"{"preamble": [], "slices": [
+        {"name": "authentication", "requirements": ["REQ-001", "REQ-002"]},
+        {"name": "orders", "requirements": ["REQ-003", "REQ-004"], "types": ["orders.order"], "depends-on": ["authentication"]}
+    ]}"#;
+    let grouping = separate_grouping(4);
+    let mut provider = Provider::answering([grouping.as_str(), SLICED_SPEC, design, slicing]);
+    provider.source.evidence.insert("docs".to_string(), Ok(sliced_evidence()));
+
+    cli_ok(&provider, &["emery", "specify", &reference("docs")]).await;
+
+    let slicing = &provider.model.seen()[3];
+    let SeenFormat::Schema { name, schema } = &slicing.format else {
+        panic!("the slicing is steered by schema");
+    };
+    assert_eq!(name, "slicing");
+    let schema: Value = serde_json::from_str(schema).expect("the steering schema is JSON");
+    assert_eq!(
+        schema["$defs"]["Draft"]["properties"]["types"]["items"]["enum"],
+        serde_json::json!(["orders.order"]),
+        "the mechanism key is not offered"
+    );
+    let request = slicing.messages.join("\n");
+    assert!(request.contains("- `orders.order`\n"), "{request}");
+    assert!(!request.contains("orders.line"), "the mechanism key is not listed: {request}");
+    let plan = shown(&provider, "plan").await;
+    assert!(plan.contains("Types: [orders.order]\n"), "{plan}");
     provider.model.assert_exhausted();
 }
 
@@ -1850,8 +1944,9 @@ async fn model_recovers() {
 // the draft that leaves a requirement out, then numbers the corrected slices by
 // their lowest requirement and writes every list in canonical order — the
 // requirements the answer listed backwards in id order, the types in key
-// order. The slicing runs beside the two drafts from the bases, so its request
-// carries the requirement outline and the type keys, never a rendered document.
+// order. The slicing follows the design and runs from the bases, so its
+// request carries the requirement outline and the design's data type keys,
+// never a rendered document.
 #[tokio::test]
 async fn sliced() {
     let refused = r#"{"preamble": [], "slices": [
@@ -2262,7 +2357,10 @@ const SLICED_SPEC: &str = r#"{"preamble": ["Sign-in, its session, and orders ove
 
 const SLICED_DESIGN: &str = r#"{"preamble": [], "sections": [
     {"kind": "overview", "blocks": [{"text": "Sign-in issues a session; orders are placed and cancelled under it."}]},
-    {"kind": "domain-model", "blocks": [{"type": "orders.order"}, {"type": "orders.line"}]}
+    {"kind": "domain-model", "blocks": [
+        {"type": {"key": "orders.order", "role": "data"}},
+        {"type": {"key": "orders.line", "role": "data"}}
+    ]}
 ]}"#;
 
 // --- config file ---

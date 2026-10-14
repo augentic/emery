@@ -1675,6 +1675,10 @@ async fn build_stops_at_failure() {
              committed in `{INTEGRATION}`: the model timed out"
         ),
     );
+    assert!(
+        envelope["hint"].as_str().is_some_and(|hint| hint.contains("re-run `emery build`")),
+        "the hint names the resume: {envelope}"
+    );
     assert_eq!(provider.target.calls().len(), 3, "the failed slice is put twice, no more");
     assert_eq!(provider.vcs.messages().len(), 1, "the first slice's commit stands");
     let calls = provider.vcs.calls();

@@ -1,5 +1,5 @@
 //! Synthesises the build plan over the requirement bases and the design's
-//! type keys.
+//! data type keys.
 //!
 //! Requirements sharing a stem — the first segment of their subject's dotted
 //! id — are one slice at the least. A stem of more than [`SLICE_CAP`]
@@ -10,8 +10,8 @@
 //! The engine validates that partition, numbers the slices by their lowest
 //! requirement, and writes every list in canonical order. A specification
 //! under one floor is one slice and no call is spent. The brief runs from the
-//! bases and the keys the design will reference, so it is derived beside the
-//! specification and design drafts rather than after them.
+//! bases and the accepted design's [`Role::Data`](crate::revision::Role) keys,
+//! so it follows the design and runs beside the specification drafts.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::{self, Display, Formatter};
@@ -37,7 +37,7 @@ pub const SLICE_CAP: usize = 12;
 /// A synthesis brief for the build plan.
 ///
 /// The brief contains the requirement bases, the stems they fall under, and
-/// the design's type keys.
+/// the design's data type keys.
 pub struct SliceBrief<'a> {
     bases: &'a [Basis<'a>],
     types: Vec<String>,
@@ -45,7 +45,10 @@ pub struct SliceBrief<'a> {
 }
 
 impl<'a> SliceBrief<'a> {
-    /// Returns a slicing brief for `bases` and the design's `types`, in key order.
+    /// Returns a slicing brief for `bases` and the design's data `types`, in key order.
+    ///
+    /// `types` are the keys slices own: the accepted design's
+    /// [`Design::data_types`](crate::revision::Design::data_types).
     #[must_use]
     pub fn new(bases: &'a [Basis<'a>], types: Vec<String>) -> Self {
         let mut stems: Vec<Stem<'a>> = Vec::new();
@@ -356,12 +359,14 @@ impl Display for SliceBrief<'_> {
 
         if self.types.is_empty() {
             f.write_str(
-                "\n## Type keys\n\nThe design has no type; answer every `types` list empty.\n",
+                "\n## Type keys\n\nThe design has no data type; answer every `types` list \
+                 empty.\n",
             )?;
         } else {
             f.write_str(
-                "\n## Type keys\n\nEach key is owned by exactly one slice, the one that builds \
-                 the requirements defining it.\n\n",
+                "\n## Type keys\n\nThe design's data types. Each key is owned by exactly one \
+                 slice, the one that builds the requirements reading or producing it, whatever \
+                 module declared it in the source.\n\n",
             )?;
             for key in &self.types {
                 writeln!(f, "- `{key}`")?;
