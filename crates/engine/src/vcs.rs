@@ -1,12 +1,15 @@
 //! Names the repositories a run reads from and builds into.
 //!
-//! A repository a run names by URL — a source's or the target's — is one
-//! [`Repository`]: a clone beneath the project's [`ROOT`], keyed by the URL,
-//! kept across runs and refreshed by a fetch. The project's own checkout is
-//! the `.` mount, never written: a source is read, and the plan built, in a
-//! [`WorkingCopy`] cut from a [`Repo`] and removed when the run is done with
-//! it. A build seals each slice under a [`Message`], which it reads back
-//! from the labelled history to resume.
+//! A repository a source names by URL is one [`Repository`]: a clone
+//! beneath the project's [`ROOT`], keyed by the URL, kept across runs and
+//! refreshed by a fetch. The repository a build lands in is a [`Repo`]: the
+//! project's own checkout, the `.` mount, never written; or the target's
+//! own, kept under the target's name, a clone of the URL the target names
+//! or one the engine lays for an adapter that builds into a fresh tree. A
+//! source is read, and the plan built, in a [`WorkingCopy`] cut from one of
+//! them and removed when the run is done with it. A build seals each slice
+//! under a [`Message`], which it reads back from the labelled history to
+//! resume.
 //!
 //! Every path here is deployment-local, as the [`Vcs`] capability takes it:
 //! `.` is the project mount and `./.emery/vcs/...` lies beneath it.
@@ -20,6 +23,7 @@ use omnia_sdk::vcs::{self, Change, CloneOptions, Merged, Rule, Strategy};
 use omnia_sdk::{Error, Vcs, bad_gateway, server_error};
 use sha2::{Digest as _, Sha256};
 
+use crate::Files;
 use crate::revision::{ReqId, SliceId};
 
 /// The directory beneath the project root that holds every clone and working copy.
@@ -34,13 +38,30 @@ pub const WORKTREES: &str = "./.emery/vcs/worktrees";
 /// The remote a clone fetches from: the URL it was cloned from.
 pub const ORIGIN: &str = "origin";
 
+/// The commit a build into a cloned repository starts from: the origin's default branch, as the last fetch left it.
+pub const DEFAULT_BRANCH: &str = "origin/HEAD";
+
+/// The message of the one commit the engine lays a target repository with.
+pub const INITIALISE: &str = "Initialise";
+
 // The project's own checkout, as the capability names it.
 const PROJECT: &str = ".";
+
+// The one file a laid repository's root commit holds, so that the commit
+// exists and the engine's own directory is ignored wherever the result is
+// checked out.
+const IGNORE: (&str, &[u8]) = (".gitignore", b".emery/\n");
 
 /// The working copy a repository source is read from, by source name.
 #[must_use]
 pub fn source_checkout(name: &str) -> String {
     format!("./{ROOT}/sources/{name}")
+}
+
+/// The repository a build lands in when the target is not the project, by target name.
+#[must_use]
+pub fn target_path(name: &str) -> String {
+    format!("./{ROOT}/repos/{name}")
 }
 
 /// The working copy a slice builds in, by slice id.
@@ -241,20 +262,7 @@ impl Repository {
     ///   reached, or wants credentials.
     /// - Returns [`Error::ServerError`] when the capability fails otherwise.
     pub async fn ensure<V: Vcs>(&self, vcs: &V) -> Result<(), Error> {
-        // the clone is the one operation that creates its location: a read
-        // or a fetch at a path the run does not hold yet is refused there
-        let at = self.path();
-        match vcs.clone_repo(&self.url, &at, CloneOptions { depth: None }).await {
-            Ok(()) => {
-                tracing::info!(repository = %self.url, clone = %at, "cloned");
-                Ok(())
-            }
-            Err(vcs::Error::Exists(_)) => {
-                tracing::info!(repository = %self.url, clone = %at, "fetching");
-                vcs.fetch(&at, ORIGIN).await.map_err(|error| self.subject().refusal(error))
-            }
-            Err(error) => Err(self.subject().refusal(error)),
-        }
+        ensure(vcs, &self.url, &self.path()).await.map_err(|error| self.subject().refusal(error))
     }
 
     /// The commit `revision` names in the clone.
@@ -278,8 +286,14 @@ impl Repository {
 pub enum Repo {
     /// The project's own repository, read through the `.` mount.
     Project,
-    /// A clone of the repository the target names.
-    Clone(Repository),
+    /// The target's own repository, at [`target_path`] of its name: a clone
+    /// of `url`, or, with none, the one the engine lays and keeps.
+    Target {
+        /// The target's name, which the repository is kept under.
+        name: String,
+        /// The URL the repository is cloned from, when the target names one.
+        url: Option<String>,
+    },
 }
 
 impl Repo {
@@ -288,7 +302,45 @@ impl Repo {
     pub fn path(&self) -> String {
         match self {
             Self::Project => PROJECT.to_owned(),
-            Self::Clone(repository) => repository.path(),
+            Self::Target { name, .. } => target_path(name),
+        }
+    }
+
+    /// The commit a build starts from, with the repository brought to where it can be read.
+    ///
+    /// - The project's is the sealed commit its checkout sits on. Pending
+    ///   changes beneath the engine's own [`SKIP_DIRS`] are never counted.
+    /// - A clone's is [`DEFAULT_BRANCH`], the origin's default branch:
+    ///   cloned when the run has no clone, fetched when it has one.
+    /// - A laid repository's is its root commit, [`INITIALISE`], holding a
+    ///   `.gitignore` of the engine's own directory and nothing else. It is
+    ///   laid when no run has laid it yet, through `init` and
+    ///   [`Files::write`], and kept, so a later run starts from the same
+    ///   commit and resumes the label set over it. One laid but never
+    ///   sealed is sealed now.
+    ///
+    /// # Errors
+    ///
+    /// - Returns [`Error::BadRequest`] with code `repository-required` when
+    ///   the project is no repository, and with code `base-not-sealed` when
+    ///   its checkout holds pending changes, listed, or no commit yet.
+    /// - Returns [`Error::NotFound`] with code `revision-not-found` when the
+    ///   URL names no repository, the clone has no default branch, or what
+    ///   sits at the path was laid or cloned under no such origin.
+    /// - Returns [`Error::BadGateway`] when the remote refuses, cannot be
+    ///   reached, or wants credentials.
+    /// - Returns [`Error::ServerError`] when the capability fails otherwise,
+    ///   or a laid repository seals nothing.
+    pub async fn base<P: Vcs + Files>(&self, provider: &P) -> Result<String, Error> {
+        match self {
+            Self::Project => project_base(provider).await,
+            Self::Target { name, url: Some(url) } => {
+                let at = target_path(name);
+                let subject = Subject::Repository(url);
+                ensure(provider, url, &at).await.map_err(|error| subject.refusal(error))?;
+                provider.resolve(&at, DEFAULT_BRANCH).await.map_err(|error| subject.refusal(error))
+            }
+            Self::Target { name, url: None } => lay(provider, name).await,
         }
     }
 
@@ -364,27 +416,11 @@ impl Repo {
         Ok(())
     }
 
-    /// Sends `label` and the commits it reaches to `remote`; nothing is forced.
-    ///
-    /// # Errors
-    ///
-    /// Returns [`Error::NotFound`] with code `revision-not-found` when the
-    /// repository has no such remote, [`Error::BadRequest`] with code
-    /// `label-diverged` when the remote's label holds commits this one does
-    /// not, [`Error::BadGateway`] when the remote cannot be reached, and
-    /// [`Error::ServerError`] otherwise.
-    pub async fn push<V: Vcs>(&self, vcs: &V, label: &str, remote: &str) -> Result<(), Error> {
-        vcs.push(&self.path(), remote, label)
-            .await
-            .map_err(|error| self.subject().refusal(error))?;
-        tracing::info!(label, remote, "pushed");
-        Ok(())
-    }
-
     fn subject(&self) -> Subject<'_> {
         match self {
             Self::Project => Subject::Project,
-            Self::Clone(repository) => repository.subject(),
+            Self::Target { url: Some(url), .. } => Subject::Repository(url),
+            Self::Target { name, url: None } => Subject::Target(name),
         }
     }
 }
@@ -484,17 +520,51 @@ impl WorkingCopy {
     }
 }
 
-/// The sealed commit the project's own checkout sits on.
-///
-/// Pending changes beneath the engine's own [`SKIP_DIRS`] are never counted.
-///
-/// # Errors
-///
-/// - Returns [`Error::BadRequest`] with code `repository-required` when the
-///   project is no repository, and with code `base-not-sealed` when its
-///   checkout holds pending changes, listed, or no commit yet.
-/// - Returns [`Error::ServerError`] when the capability fails otherwise.
-pub async fn project_base<V: Vcs>(vcs: &V) -> Result<String, Error> {
+// Clones `url` at `at`, or fetches its origin when a run already cloned it:
+// the clone is the one operation that creates its location, so a read or a
+// fetch at a path the run does not hold yet is refused there.
+async fn ensure<V: Vcs>(vcs: &V, url: &str, at: &str) -> Result<(), vcs::Error> {
+    match vcs.clone_repo(url, at, CloneOptions { depth: None }).await {
+        Ok(()) => {
+            tracing::info!(repository = url, clone = at, "cloned");
+            Ok(())
+        }
+        Err(vcs::Error::Exists(_)) => {
+            tracing::info!(repository = url, clone = at, "fetching");
+            vcs.fetch(at, ORIGIN).await
+        }
+        Err(error) => Err(error),
+    }
+}
+
+// The root commit of the repository laid under `name`, laid when no run has
+// laid it yet: `init` answers `Exists` for one a run already holds, whose
+// head is the base, or `NotFound` under it for one laid and never sealed.
+async fn lay<P: Vcs + Files>(provider: &P, name: &str) -> Result<String, Error> {
+    let at = target_path(name);
+    let subject = Subject::Target(name);
+    match provider.init(&at).await {
+        Ok(()) => {}
+        Err(vcs::Error::Exists(_)) => match provider.head(&at).await {
+            Ok(head) => return Ok(head),
+            Err(vcs::Error::NotFound(_)) => {}
+            Err(error) => return Err(subject.refusal(error)),
+        },
+        Err(error) => return Err(subject.refusal(error)),
+    }
+
+    let (path, content) = IGNORE;
+    provider.write(&at, path, content).await?;
+    let commit = provider
+        .commit(&at, INITIALISE)
+        .await
+        .map_err(|error| subject.refusal(error))?
+        .ok_or_else(|| server_error!("{subject} sealed nothing as its root commit"))?;
+    tracing::info!(repository = %at, %commit, "laid the target repository");
+    Ok(commit)
+}
+
+async fn project_base<V: Vcs>(vcs: &V) -> Result<String, Error> {
     let pending = vcs.pending(PROJECT).await.map_err(|error| Subject::Project.refusal(error))?;
     let unsealed: Vec<String> = pending
         .into_iter()
@@ -527,6 +597,7 @@ pub async fn project_base<V: Vcs>(vcs: &V) -> Result<String, Error> {
 enum Subject<'a> {
     Project,
     Repository(&'a str),
+    Target(&'a str),
     WorkingCopy(&'a str),
 }
 
@@ -542,7 +613,7 @@ impl Subject<'_> {
                     code: "repository-required".into(),
                     description: "the project directory is not a repository".into(),
                 },
-                Self::Repository(_) | Self::WorkingCopy(_) => {
+                Self::Repository(_) | Self::Target(_) | Self::WorkingCopy(_) => {
                     server_error!("{self} is not a repository")
                 }
             },
@@ -551,12 +622,7 @@ impl Subject<'_> {
                 description: format!("{self} holds pending changes: {}", paths.join(", ")),
             },
             vcs::Error::Access(detail) => bad_gateway!("{self}: {detail}"),
-            vcs::Error::Diverged(label) => Error::BadRequest {
-                code: "label-diverged".into(),
-                description: format!(
-                    "{self}: the remote's `{label}` holds commits this build does not"
-                ),
-            },
+            vcs::Error::Diverged(what) => server_error!("{self}: `{what}` diverged"),
             vcs::Error::Exists(what) => server_error!("{self}: `{what}` already exists"),
             vcs::Error::Other(detail) => server_error!("{self}: {detail}"),
         }
@@ -568,6 +634,7 @@ impl fmt::Display for Subject<'_> {
         match self {
             Self::Project => f.write_str("the project repository"),
             Self::Repository(url) => write!(f, "repository `{url}`"),
+            Self::Target(name) => write!(f, "the target repository `{}`", target_path(name)),
             Self::WorkingCopy(at) => write!(f, "working copy `{at}`"),
         }
     }

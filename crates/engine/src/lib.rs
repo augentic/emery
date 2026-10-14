@@ -46,12 +46,13 @@ use emery_adapter::target::Target;
 use omnia_sdk::{BlobStore, Error, Model, Plugins, StateStore, Vcs, bad_request};
 pub use store::{CONTAINER, REVISION_KEY};
 
-/// Reads what a commit would carry at a path beneath a working copy the engine cut.
+/// Reads and writes what a commit would carry at a path beneath a working copy the engine cut.
 ///
 /// `at` is a working copy relative to the project root, as the engine names
 /// it to [`Vcs`], and `path` a path relative to that copy, as
-/// [`Vcs::pending`] lists it. A build reads what it is about to seal through
-/// this capability alone.
+/// [`Vcs::pending`] lists it. A build reads what it is about to seal, and
+/// what the tree it starts from holds, through this capability alone, and
+/// lays the one file its own repository starts from through it.
 pub trait Files: Send + Sync {
     /// Reads what a commit would carry at `path` beneath `at`.
     ///
@@ -64,6 +65,47 @@ pub trait Files: Send + Sync {
     /// Returns [`Error::ServerError`] when `path` holds neither, a directory
     /// or nothing at all, or what it holds cannot be read.
     fn read(&self, at: &str, path: &str) -> impl Future<Output = Result<Vec<u8>, Error>> + Send;
+
+    /// Lists what the directory at `path` beneath `at` holds, each entry by
+    /// name and kind, in no particular order.
+    ///
+    /// A symbolic link is listed as a link whatever it leads to, never
+    /// followed, since a link is what a commit stores of it.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::ServerError`] when `path` is no directory or cannot
+    /// be read.
+    fn list(&self, at: &str, path: &str) -> impl Future<Output = Result<Vec<Entry>, Error>> + Send;
+
+    /// Writes `bytes` as the whole file at `path` beneath `at`, creating or replacing it.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::ServerError`] when the file cannot be written.
+    fn write(
+        &self, at: &str, path: &str, bytes: &[u8],
+    ) -> impl Future<Output = Result<(), Error>> + Send;
+}
+
+/// One entry of a directory a build reads through [`Files::list`].
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Entry {
+    /// The entry's name within its directory.
+    pub name: String,
+    /// What stands at the entry.
+    pub kind: EntryKind,
+}
+
+/// What stands at an [`Entry`] of a directory.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum EntryKind {
+    /// A regular file.
+    File,
+    /// A directory.
+    Directory,
+    /// A symbolic link, wherever it leads.
+    Link,
 }
 
 /// Normalises an operator path to a path beneath the `.` project preopen.

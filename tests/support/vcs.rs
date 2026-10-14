@@ -2,8 +2,9 @@
 //!
 //! Answers are queued per location and consumed in order; an unqueued call
 //! answers a default that lets a journey through, so a scenario scripts the
-//! exchanges it bends and asserts the whole sequence it consumed. The one
-//! operation the engine never makes, `init`, fails the scenario.
+//! exchanges it bends and asserts the whole sequence it consumed. The two
+//! operations the engine never makes, `fetched` and `push`, fail the
+//! scenario.
 
 use std::collections::{BTreeMap, VecDeque};
 use std::future::Future;
@@ -49,7 +50,6 @@ impl<T> Queue<T> {
 ///   a merge lands there; [`HEAD`] otherwise;
 /// - `resolve` is `<revision>-commit`;
 /// - `labelled` is `NotFound`: a fresh build;
-/// - `fetched` is `NotFound`: nothing fetched from the remote yet;
 /// - `descends` holds;
 /// - `log` holds nothing;
 /// - `commit` seals `<first word of the message>-commit`;
@@ -65,8 +65,6 @@ pub struct VcsScript {
     pub resolves: Queue<String>,
     /// `labelled` answers by repository.
     pub labelleds: Queue<String>,
-    /// `fetched` answers by repository.
-    pub fetcheds: Queue<String>,
     /// `descends` answers by repository.
     pub descends: Queue<bool>,
     /// `log` answers by repository.
@@ -77,6 +75,8 @@ pub struct VcsScript {
     pub merges: Queue<Merged>,
     /// `fetch` answers by repository.
     pub fetches: Queue<()>,
+    /// `init` answers by repository.
+    pub inits: Queue<()>,
     /// `clone` answers by clone location.
     pub clones: Queue<()>,
     /// `add` answers by working copy.
@@ -85,8 +85,6 @@ pub struct VcsScript {
     pub removes: Queue<()>,
     /// `label` answers by repository.
     pub labels: Queue<()>,
-    /// `push` answers by repository.
-    pub pushes: Queue<()>,
     /// Every call, in order, spelled `<operation> <arguments>`; a commit or
     /// merge carries its message's first line.
     pub calls: Arc<Mutex<Vec<String>>>,
@@ -121,17 +119,16 @@ impl VcsScript {
             ("head", self.heads.drained()),
             ("resolve", self.resolves.drained()),
             ("labelled", self.labelleds.drained()),
-            ("fetched", self.fetcheds.drained()),
             ("descends", self.descends.drained()),
             ("log", self.logs.drained()),
             ("commit", self.commits.drained()),
             ("merge", self.merges.drained()),
             ("fetch", self.fetches.drained()),
+            ("init", self.inits.drained()),
             ("clone", self.clones.drained()),
             ("add", self.adds.drained()),
             ("remove", self.removes.drained()),
             ("label", self.labels.drained()),
-            ("push", self.pushes.drained()),
         ]
         .into_iter()
         .flat_map(|(op, ats)| ats.into_iter().map(move |at| format!("{op} {at}")))
@@ -218,8 +215,9 @@ impl Vcs for VcsScript {
     }
 
     fn init(&self, at: &str) -> impl Future<Output = Result<(), Error>> + Send {
-        let call = format!("initialised `{at}`");
-        async move { panic!("the engine never inits, yet {call}") }
+        self.record(format!("init {at}"));
+        let answer = self.inits.take(at).unwrap_or(Ok(()));
+        async move { answer }
     }
 
     fn add(
@@ -281,17 +279,14 @@ impl Vcs for VcsScript {
     fn fetched(
         &self, repo: &str, remote: &str, name: &str,
     ) -> impl Future<Output = Result<String, Error>> + Send {
-        self.record(format!("fetched {repo} {remote} {name}"));
-        let answer =
-            self.fetcheds.take(repo).unwrap_or_else(|| Err(Error::NotFound(name.to_owned())));
-        async move { answer }
+        let call = format!("read `{remote}`'s `{name}` in `{repo}`");
+        async move { panic!("the engine never reads a remote's label, yet {call}") }
     }
 
     fn push(
         &self, repo: &str, remote: &str, label: &str,
     ) -> impl Future<Output = Result<(), Error>> + Send {
-        self.record(format!("push {repo} {remote} {label}"));
-        let answer = self.pushes.take(repo).unwrap_or(Ok(()));
-        async move { answer }
+        let call = format!("pushed `{label}` to `{remote}` from `{repo}`");
+        async move { panic!("the engine never pushes, yet {call}") }
     }
 }

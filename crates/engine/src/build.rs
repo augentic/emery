@@ -1,10 +1,15 @@
 //! Builds the current plan through a target adapter, into a labelled commit.
 //!
 //! [`build`] reads the current revision, loads the one target adapter the run
-//! names, settles the base — the project checkout's sealed head, or a branch
-//! of the repository the target names — and reads what the label
-//! `emery/<revision>` already holds over it, so a run resumes where the last
-//! verified wave left off. The slices still to build go in waves: every slice
+//! names, settles the repository and the base — the default branch of the
+//! repository the target names, cloned under the target's name; the root
+//! commit of the one the engine lays under that name for an adapter that
+//! builds into a fresh tree; or the project checkout's sealed head — and
+//! reads what the label `emery/<revision>` already holds over it, so a run
+//! resumes where the last verified wave left off. A base no label stands
+//! over is held to the tree the adapter builds over: one that lays a whole
+//! tree is refused a base whose root holds a directory. The slices still to
+//! build go in waves: every slice
 //! whose dependencies are merged is built at once, each in a working copy of
 //! its own cut at the wave's head, with its plan entry, its cut of the
 //! specification, and the whole design. What each changed is sealed as its
@@ -13,7 +18,7 @@
 //! rules. The adapter verifies the integrated tree, repairing what its
 //! checks find, the wave is labelled, and the next wave is cut from it. The
 //! engine writes no state of its own: the labelled history is the output,
-//! pushed when the target names a remote.
+//! standing in the repository the build landed in.
 //!
 //! A slice whose build fails upstream is built once more in a fresh copy,
 //! and a wave whose verification fails upstream is verified once more over
@@ -32,19 +37,20 @@ mod secrets;
 use std::collections::{BTreeMap, BTreeSet};
 use std::num::NonZeroUsize;
 
-use emery_adapter::target::{Slice as SliceInput, Target};
+use emery_adapter::target::{Base, Slice as SliceInput, Target};
+use emery_adapter::{SKIP_DIRS, is_kebab};
 use futures::{StreamExt as _, TryFutureExt as _, TryStreamExt as _, stream};
 use omnia_sdk::api::Context;
 use omnia_sdk::plugins::Digest;
 use omnia_sdk::vcs::{Rule, Strategy};
-use omnia_sdk::{BlobStore, Error, Plugins, StateStore, Vcs, server_error};
-use serde::{Deserialize, Serialize};
+use omnia_sdk::{BlobStore, Error, Plugins, StateStore, Vcs, bad_request, server_error};
+use serde::Serialize;
 
 use crate::adapter::{self, AdapterRef, Loaded};
 pub use crate::revision::{ReqId, SliceId, Waves};
 use crate::revision::{Slice, Spec};
-use crate::vcs::{INTEGRATION, Message, Repo, Repository, WorkingCopy};
-use crate::{Files, store, vcs};
+use crate::vcs::{INTEGRATION, Message, Repo, WorkingCopy};
+use crate::{EntryKind, Files, store, vcs};
 
 /// How many times a slice is built before a conflict at its merge ends the run.
 pub const ATTEMPTS: usize = 3;
@@ -73,9 +79,12 @@ const RETRIES: usize = 2;
 ///
 /// - Returns [`Error::NotFound`]:
 ///   - with code `spec-not-generated`, when no revision has been committed;
-///   - with code `revision-not-found`, when the repository the target names,
-///     its branch, or its remote does not exist.
+///   - with code `revision-not-found`, when the repository the target names
+///     does not exist or has no default branch, or what the run already
+///     holds under the target's name was cloned or laid under another
+///     origin.
 /// - Returns [`Error::BadRequest`] when the run is refused:
+///   - when the target's name is not kebab-case;
 ///   - with code `spec-outdated`, when the stored revision uses another
 ///     grammar;
 ///   - an adapter [`specify`](crate::specify::specify) would refuse: one that
@@ -84,10 +93,16 @@ const RETRIES: usize = 2;
 ///     lacks whose namespace the deployment routes nowhere, a pre-compiled
 ///     artifact, or one resolving to other bytes than its pin (code
 ///     `refused`);
-///   - with code `repository-required`, when the target names no repository
-///     and the project is none;
+///   - with code `repository-required`, when the target names no
+///     repository, the adapter builds over any base ([`Base::Any`]), and
+///     the project is none;
 ///   - with code `base-not-sealed`, when the project checkout holds pending
 ///     changes outside `.emery/`, listed, or no commit;
+///   - with code `base-not-fresh`, when the adapter builds into a fresh
+///     tree ([`Base::Fresh`]) and the root of a base no label stands over
+///     holds a directory outside `.emery/` and `.git/`, each listed; such
+///     an adapter named with no repository builds into the one the engine
+///     lays, whose root holds a `.gitignore` alone;
 ///   - with code `slice-conflict`, when a slice's merge conflicts at paths
 ///     no rule resolves on its [`ATTEMPTS`]th build, the paths listed;
 ///   - with code `verify-failed`, when the adapter does not verify a wave,
@@ -114,6 +129,10 @@ pub async fn build<P: Target + StateStore + BlobStore + Plugins + Vcs + Files>(
     input: BuildInput, context: Context<P>,
 ) -> Result<BuildOutput, Error> {
     let provider = context.provider();
+    let name = &input.name;
+    if !is_kebab(name) {
+        return Err(bad_request!("target `{name}` is not a kebab-case name"));
+    }
 
     let Some((revision_id, revision)) = store::current(provider).await? else {
         return Err(Error::NotFound {
@@ -127,20 +146,31 @@ pub async fn build<P: Target + StateStore + BlobStore + Plugins + Vcs + Files>(
         metadata,
     } = adapter::load_target(provider, &input.adapter, input.digest.as_ref()).await?;
 
-    // the base, and what the label already holds over it
-    let (repo, base) = match &input.repository {
-        Some(target) => {
-            let repository = Repository::new(&target.url);
-            repository.ensure(provider).await?;
-            let base = repository.resolve(provider, &target.branch).await?;
-            (Repo::Clone(repository), base)
-        }
-        None => (Repo::Project, vcs::project_base(provider).await?),
+    // the repository the build lands in: the one the target names, the
+    // engine's own for an adapter that lays a whole tree, else the project's;
+    // then the base, and what the label already holds over it
+    let repo = match (input.repository, metadata.base) {
+        (Some(url), _) => Repo::Target {
+            name: input.name,
+            url: Some(url),
+        },
+        (None, Base::Fresh) => Repo::Target {
+            name: input.name,
+            url: None,
+        },
+        (None, Base::Any) => Repo::Project,
     };
+    let base = repo.base(provider).await?;
     let label = format!("emery/{revision_id}");
     let labelled = repo.merged_under(provider, &label, &base, &revision_id).await?;
     let mut progress = Progress::start(&base, labelled);
     let integration = WorkingCopy::cut(provider, &repo.path(), INTEGRATION, &progress.head).await?;
+
+    // a fresh build is held to the base the adapter builds over; a resumed
+    // one was admitted by the run that set the label
+    if progress.labelled.is_none() && metadata.base == Base::Fresh {
+        require_fresh(provider, &integration, &base, &adapter).await?;
+    }
 
     let waves = revision.plan.waves();
     tracing::info!(
@@ -193,18 +223,13 @@ pub async fn build<P: Target + StateStore + BlobStore + Plugins + Vcs + Files>(
         run.wave(provider, &mut progress, wave, &ready).await?;
     }
 
-    // the label stands at the last verified head; sent on when the target names where
-    if let Some(remote) = &input.remote {
-        repo.push(provider, &label, remote)
-            .await
-            .map_err(|error| at_push(error, &label, progress.labelled.as_deref(), remote))?;
-    }
     integration.remove(provider).await?;
 
     Ok(BuildOutput {
         revision: revision_id,
         waves,
         base,
+        repository: repo.path(),
         resumed: progress.resumed,
         slices: progress.built,
         verified: progress.verified,
@@ -212,7 +237,6 @@ pub async fn build<P: Target + StateStore + BlobStore + Plugins + Vcs + Files>(
         repaired: progress.repaired,
         head: progress.head,
         label,
-        pushed: input.remote,
     })
 }
 
@@ -220,6 +244,12 @@ pub async fn build<P: Target + StateStore + BlobStore + Plugins + Vcs + Files>(
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "kebab-case")]
 pub struct BuildInput {
+    /// The kebab-case name the target's repository is kept under.
+    ///
+    /// The caller's own name for the target, or the adapter's
+    /// ([`AdapterRef::name`]) when the caller gives none. The repository a
+    /// build clones or lays sits at [`vcs::target_path`] of it.
+    pub name: String,
     /// The target adapter every slice is built through.
     pub adapter: AdapterRef,
     /// The `sha256:` digest the adapter's component must resolve to.
@@ -229,17 +259,14 @@ pub struct BuildInput {
     /// resolves.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub digest: Option<Digest>,
-    /// The repository the plan is built into, at a branch.
+    /// The URL of the repository the plan is built into.
     ///
+    /// The build starts from its default branch as the remote holds it.
     /// `None` builds into the project's own repository, from the sealed
-    /// commit its checkout sits on.
+    /// commit its checkout sits on, or, through an adapter that builds into
+    /// a fresh tree, into the one the engine lays under the name.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub repository: Option<TargetRepository>,
-    /// The remote the label is pushed to once the build integrates.
-    ///
-    /// `None` leaves the label local.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub remote: Option<String>,
+    pub repository: Option<String>,
     /// How many slices of a wave are built at once.
     ///
     /// `None` builds every slice of a wave at once. The cap bounds
@@ -247,16 +274,6 @@ pub struct BuildInput {
     /// whatever it is, so a cap of one yields the same history.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub jobs: Option<NonZeroUsize>,
-}
-
-/// A repository a plan is built into, at the branch the build starts from.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "kebab-case")]
-pub struct TargetRepository {
-    /// The URL the repository is cloned from.
-    pub url: String,
-    /// The branch whose commit the build starts from, resolved each run.
-    pub branch: String,
 }
 
 /// What a successful [`build`] built.
@@ -273,6 +290,10 @@ pub struct BuildOutput {
     pub waves: Waves,
     /// The commit the build started from.
     pub base: String,
+    /// The repository the label stands in, as a path beneath the project
+    /// root: `.` for the project's own, or [`vcs::target_path`] of the
+    /// target's name for the one it names or the engine laid.
+    pub repository: String,
     /// The slices the label already held, not built again, in id order.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub resumed: Vec<SliceId>,
@@ -295,9 +316,6 @@ pub struct BuildOutput {
     pub head: String,
     /// The label set on the head, `emery/<revision>`.
     pub label: String,
-    /// The remote the label was pushed to, when the target names one.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub pushed: Option<String>,
 }
 
 /// One slice as its build reported it.
@@ -685,6 +703,33 @@ impl Run<'_> {
     }
 }
 
+// A fresh base holds files alone at its root: a directory outside the
+// engine's own refuses the build before any slice is dispatched, since the
+// adapter lays a whole tree and would rewrite what stands there.
+async fn require_fresh<P: Files>(
+    provider: &P, integration: &WorkingCopy, base: &str, adapter: &str,
+) -> Result<(), Error> {
+    let mut directories: Vec<String> = provider
+        .list(integration.path(), ".")
+        .await?
+        .into_iter()
+        .filter(|entry| entry.kind == EntryKind::Directory)
+        .filter(|entry| !SKIP_DIRS.contains(&entry.name.as_str()))
+        .map(|entry| entry.name)
+        .collect();
+    if directories.is_empty() {
+        return Ok(());
+    }
+    directories.sort_unstable();
+    Err(Error::BadRequest {
+        code: "base-not-fresh".into(),
+        description: format!(
+            "`{adapter}` builds into a fresh tree, and the base `{base}` holds directories: {}",
+            directories.join(", ")
+        ),
+    })
+}
+
 // The gate's refusal: what `wrote` left changed carries the credentials
 // listed, and none of it is sealed.
 fn secret_detected(wrote: &str, leaks: &[String]) -> Error {
@@ -729,28 +774,11 @@ fn at_wave(
         [one] => format!("; {one} merged in it stays committed in `{INTEGRATION}`"),
         many => format!("; {} merged in it stay committed in `{INTEGRATION}`", many.join(", ")),
     };
-    let standing = standing(label, labelled);
-    describe(error, |description| format!("wave {wave} failed{merged}; {standing}: {description}"))
-}
-
-// The push's failure keeps its class and code; the description gains the
-// remote and where the label stands, since every slice is merged and
-// labelled by then and the next build resumes from it.
-fn at_push(error: Error, label: &str, labelled: Option<&str>, remote: &str) -> Error {
-    let standing = standing(label, labelled);
-    describe(error, |description| {
-        format!(
-            "pushing `{label}` to `{remote}` failed; {standing} and nothing was forced: \
-             {description}"
-        )
-    })
-}
-
-fn standing(label: &str, labelled: Option<&str>) -> String {
-    labelled.map_or_else(
+    let standing = labelled.map_or_else(
         || format!("`{label}` is not set"),
         |head| format!("`{label}` stays at `{head}`"),
-    )
+    );
+    describe(error, |description| format!("wave {wave} failed{merged}; {standing}: {description}"))
 }
 
 fn describe(error: Error, describe: impl FnOnce(String) -> String) -> Error {

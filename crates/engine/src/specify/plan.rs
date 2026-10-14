@@ -30,8 +30,9 @@ use crate::specify::brief::{BasesSection, Brief, Review};
 ///
 /// A stem within the cap is one slice at the least. Past it, the floor is the
 /// sub-stem — the first two segments of the subject's dotted id — so the model
-/// may split the stem along its sub-stems and never through one.
-pub const SLICE_CAP: usize = 20;
+/// may split the stem along its sub-stems and never through one. The cap is
+/// sized to what one build turn implements and verifies within its budget.
+pub const SLICE_CAP: usize = 12;
 
 /// A synthesis brief for the build plan.
 ///

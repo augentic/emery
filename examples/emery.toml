@@ -17,10 +17,13 @@
 #    behaviour 3). Equal ranks tie.
 #
 # The [target] table names the one adapter `emery build` builds every slice
-# of the plan through: `adapter` and `digest`, as above; `repository` and
-# `branch`, together, to build into a clone of another repository from that
-# branch's commit instead of the project's own sealed head; `remote` to push
-# the label `emery/<revision>` there once every slice is sealed.
+# of the plan through: `adapter` and `digest`, as above; `name`, the
+# directory the build's repository is kept under, `.emery/vcs/repos/<name>`,
+# the package's name when omitted; `repository`, a URL to build into a clone
+# of, from its default branch, instead of the project's own sealed head. An
+# adapter that lays a whole tree and names no repository builds into one the
+# engine lays under that name. The label `emery/<revision>` stands in that
+# repository; nothing is pushed.
 #
 # The `emery` namespace is fetched from augentic.io; any other namespace is
 # put in the store by hand, `wkg get <reference> -o ~/.emery/adapters/` or a
@@ -37,9 +40,8 @@ path = "docs/"
 # store, building into the project repository from its sealed head.
 [target]
 adapter = "example:target@0.1.0"
+# name = "shop"
 # repository = "git@github.com:acme/shop.git"
-# branch = "main"
-# remote = "origin"
 
 # # A first-party package over the invocation directory, named `documentation`.
 # [[source]]

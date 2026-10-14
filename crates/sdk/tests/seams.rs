@@ -272,6 +272,144 @@ async fn facts_laid() {
     model.assert_exhausted();
 }
 
+// A module only the bootstrap reaches that registers nothing, decorates
+// nothing, and imports a package is listed as a service module with its
+// exports and packages; a module the facts locate a surface in, one that
+// module reaches too, one importing no package, one exporting nothing, and
+// the bootstrap itself are not, and a tree with no bootstrap lists none.
+#[tokio::test]
+async fn services_listed() {
+    for bootstrap in [Some(Runs::Load), None] {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let root = tmp.path();
+        write(root, "package.json", "{\"name\":\"svc\"}\n");
+        let modules = [
+            "src/main.ts",
+            "src/routes/orders.ts",
+            "src/gateway.ts",
+            "src/store.ts",
+            "src/config.ts",
+            "src/log.ts",
+        ];
+        for path in modules {
+            write(root, path, &pad(4));
+        }
+        let listing = Listing {
+            modules: modules.map(str::to_owned).to_vec(),
+            data: Vec::new(),
+            tests: Vec::new(),
+        };
+        let started = bootstrap.is_some();
+        let parsed = Parsed::read(root, &TYPESCRIPT, listing, |path, _| service_module(path));
+        let tree = parsed.settle(Stub {
+            manifest: Manifest {
+                name: Some("svc".to_owned()),
+                says: vec!["names the package `svc`".to_owned()],
+                entries: vec!["src/main.ts".to_owned()],
+            },
+            bootstrap: bootstrap.map(|runs| ("src/main.ts".to_owned(), runs)),
+            mounts: BTreeMap::new(),
+        });
+        let input = SourceInput::workspace("svc", root.to_str().expect("a UTF-8 scratch root"));
+        let unreached = if started { "" } else { "\"src/main.ts\"" };
+        let answer = format!(
+            r#"{{"surfaces":[{{"name":"GET /orders","anchor":"src/routes/orders.ts#L3","stem":"orders"}}],"unreached":[{unreached}]}}"#
+        );
+        let model = Scripted::answering([answer.as_str()]);
+
+        run(&model, &input, &tree).await.expect("surveyed");
+
+        let user = &model.seen()[0].messages[0];
+        let heading = "Modules only the bootstrap reaches: no module that registers or decorates \
+                       a surface imports them";
+        let gateway = "- `src/gateway.ts` exports `Gateway` (class) L1–L3, through `axios`, \
+                       `p-retry`\n";
+        if started {
+            assert!(user.contains(heading), "{user}");
+            let section = user.split(heading).nth(1).expect("the section").split("\n\n").nth(1);
+            assert_eq!(
+                section,
+                Some(gateway.trim_end()),
+                "the one service module, the store the route module reaches left out: {user}"
+            );
+        } else {
+            assert!(!user.contains(heading), "no bootstrap, no service modules: {user}");
+            assert!(!user.contains(gateway), "{user}");
+        }
+        model.assert_exhausted();
+    }
+}
+
+// The `services_listed` tree: a bootstrap reaching a route module, a client
+// over two packages, a store the route module reaches too, a settings
+// module over no package, and a logger exporting nothing.
+fn service_module(path: &str) -> Plain {
+    let mut m = module(path, 4);
+    match path {
+        "src/main.ts" => {
+            m.0.imports = vec![
+                from_module("orders", "src/routes/orders.ts"),
+                from_module("Gateway", "src/gateway.ts"),
+                from_module("Store", "src/store.ts"),
+                from_module("config", "src/config.ts"),
+                from_module("log", "src/log.ts"),
+            ];
+            m.0.references = vec![
+                reference("orders", 1),
+                reference("Gateway", 2),
+                reference("Store", 2),
+                reference("config", 3),
+                reference("log", 4),
+            ];
+        }
+        "src/routes/orders.ts" => {
+            m.0.imports =
+                vec![from_package("express", "express"), from_module("Store", "src/store.ts")];
+            m.0.references = vec![reference("Store", 3)];
+            m.0.bindings = vec![
+                value("app", Some(&["express"]), Some(0), None, Init::Construction, line(2)),
+                function("list", span(3, 4)),
+            ];
+            m.0.calls = vec![call(
+                callee("app", &["get"]),
+                vec![literal("/orders", line(3)), name(&["list"], line(3))],
+                Use::Discarded,
+                line(3),
+            )];
+            m.0.exports = vec![export("list", ExportKind::Function, span(3, 4))];
+        }
+        "src/gateway.ts" => {
+            m.0.imports = vec![
+                from_package("axios", "axios"),
+                from_package("retry", "p-retry"),
+                from_package("axios", "axios"),
+            ];
+            m.0.bindings = vec![class("Gateway", &[], span(1, 3))];
+            m.0.exports = vec![export("Gateway", ExportKind::Class, span(1, 3))];
+            m.0.classes = vec![class_decl(
+                "Gateway",
+                "export class Gateway",
+                span(1, 3),
+                vec![member("fetch", MemberKind::Method, "fetch(): Stop[]", line(2))],
+            )];
+        }
+        "src/store.ts" => {
+            m.0.imports = vec![from_package("pg", "pg")];
+            m.0.bindings = vec![class("Store", &[], span(1, 3))];
+            m.0.exports = vec![export("Store", ExportKind::Class, span(1, 3))];
+            m.0.classes = vec![class_decl("Store", "export class Store", span(1, 3), Vec::new())];
+        }
+        "src/config.ts" => {
+            m.0.exports = vec![export("config", ExportKind::Value, line(1))];
+        }
+        "src/log.ts" => {
+            m.0.imports = vec![from_package("pino", "pino")];
+        }
+        _ => {}
+    }
+    m
+}
+
 // A tree within the budget is one seam over every module, the surfaces'
 // closures first, its data files and tests among them; the brief lists the
 // surfaces with the ids and closures the code derived, then what the modules

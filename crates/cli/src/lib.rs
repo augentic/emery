@@ -43,20 +43,23 @@ const BUILD_DESC: &str = "Build the current plan through a target adapter.\n\n\
     Name the adapter, or use `--config [<path>]` (default: `emery.toml`) to read its \
     `[target]` table. With no adapter, Emery looks for `emery.toml` in the project root. \
     Config and a command-line adapter cannot be combined.\n\n\
-    The build starts from a sealed commit — the project checkout's head, which must hold \
-    no pending change outside `.emery/`, or the `branch` of the `[target] repository` the \
-    config names, cloned under `.emery/vcs/` — never in the checkout. A label \
-    `emery/<revision>` the repository already holds, descending from that commit, is \
-    resumed: the slices it records are not built again. The rest go in waves: every slice \
-    whose dependencies are merged is \
+    The build lands as commits in one repository, never in the checkout: the `[target] \
+    repository` URL the config names, cloned under `.emery/vcs/repos/<name>` and built \
+    from its default branch; with none, for an adapter that lays a whole tree, a \
+    repository the build lays once at `.emery/vcs/repos/<name>` and keeps; otherwise the \
+    project checkout, from its head, which must hold no pending change outside `.emery/`. \
+    `<name>` is the `[target] name`, the adapter's package name when the config gives \
+    none. An adapter that lays a whole tree is refused a named repository whose root holds \
+    a directory (`base-not-fresh`). A label `emery/<revision>` the repository already \
+    holds, descending from that commit, is resumed: the slices it records are not built \
+    again. The rest go in waves: every slice whose dependencies are merged is \
     built at once, up to `--jobs` concurrently, each in its own working copy under \
     `.emery/vcs/worktrees/<id>` cut at the wave's head; what each changed is sealed as \
     one commit and merged in id order into `.emery/vcs/integration` under the adapter's \
     merge rules. The adapter then verifies the integrated tree, repairing what its checks \
-    find, and the wave is labelled; the label is pushed, never forced, when `[target] \
-    remote` names where (`label-diverged` when the remote's holds commits this build does \
-    not). A build that fails upstream is put once more in a fresh copy. A slice whose \
-    merge conflicts is built again in the next wave; a third conflict ends the run \
+    find, and the wave is labelled; the label stands in the repository for the operator to \
+    read or push. A build that fails upstream is put once more in a fresh copy. A slice \
+    whose merge conflicts is built again in the next wave; a third conflict ends the run \
     (`slice-conflict`), as a wave the adapter does not verify does (`verify-failed`), the \
     label where the last verified wave left it and the integration working copy left for \
     inspection. The \
@@ -251,13 +254,16 @@ fn hint(code: &str) -> Option<Cow<'static, str>> {
             "the revision predates this emery's grammar: re-run `emery specify <adapter>...` to regenerate it"
         }
         "repository-required" => {
-            "a build lands as a commit: run `emery build` from a repository checkout, or name one with `[target] repository` and `branch` in `emery.toml`"
+            "a build lands as a commit: run `emery build` from a repository checkout, or name one with `[target] repository` in `emery.toml`"
         }
         "base-not-sealed" => {
             "commit or stash the pending changes so the build starts from a sealed commit; `.emery/` is never counted, so add it to `.gitignore`"
         }
+        "base-not-fresh" => {
+            "this adapter lays a whole tree: drop `[target] repository` from `emery.toml` so the build lays a repository of its own under `.emery/vcs/repos/<name>`, or name an empty one (whose root holds files alone, a README and a `.gitignore`)"
+        }
         "revision-not-found" => {
-            "check the `repository`, `revision`, `branch`, or `remote` in `emery.toml` against what the repository holds"
+            "check the `repository` or `revision` in `emery.toml` against what the repository holds; a target's clone under `.emery/vcs/repos/<name>` keeps the origin it was first cloned or laid with, so remove it, or name the target otherwise, to point the name at another repository"
         }
         "verify-failed" => {
             "inspect `.emery/vcs/integration`; the next run rebuilds the wave from the last verified head, and `git bisect` over `emery/<revision>` attributes a failure to a slice"
@@ -267,9 +273,6 @@ fn hint(code: &str) -> Option<Cow<'static, str>> {
         }
         "secret-detected" => {
             "inspect the named path in `.emery/vcs/worktrees/<slice>` or `.emery/vcs/integration`, remove the credential from where the build read it (the sources, the environment, a file the model reached), and re-run `emery build`; nothing of the change set was sealed and the label stands at the last verified wave"
-        }
-        "label-diverged" => {
-            "another build of this revision pushed `emery/<revision>` first, or the branch was moved by hand: read it with `git log --first-parent <remote>/emery/<revision>` in the repository the build reads (the checkout, or its clone under `.emery/vcs/repos/`); to replace it, delete the remote branch (`git push <remote> --delete emery/<revision>`) and re-run `emery build`, which resumes from the local label and pushes it; to keep it, leave this build"
         }
         "adapter-reference" => "an adapter is an exact package reference, `namespace:name@version`",
         "refused" => {

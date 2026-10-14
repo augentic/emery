@@ -13,7 +13,8 @@ mod support;
 use std::borrow::Cow;
 use std::fs;
 
-use emery_adapter::target::{MergeRule, MergeStrategy, Report, Verdict};
+use emery_adapter::target::{Base, MergeRule, MergeStrategy, Report, Verdict};
+use emery_engine::EntryKind;
 use omnia_sdk::vcs::{Change, ChangeKind, Entry, Error, Merged, Rule, Strategy};
 use omnia_sdk::{bad_gateway, bad_request};
 use serde_json::{Value, json};
@@ -30,8 +31,9 @@ const LABELLED: &str = "e1f2a3b4c5d6e7f8091a2b3c4d5e6f708192a3b4";
 const INTEGRATION: &str = "./.emery/vcs/integration";
 const WORKTREES: &str = "./.emery/vcs/worktrees";
 const REMOTE_URL: &str = "https://example.com/acme/shop.git";
-// `REMOTE_URL` normalised and hashed, the clone every run of it shares.
-const REMOTE_CLONE: &str = "./.emery/vcs/repos/f4c82940a714c3c5";
+// The target's repository, under its name: `builder`, the adapter's, when
+// the config gives none. A clone of `REMOTE_URL`, or the one the engine lays.
+const TARGET_REPO: &str = "./.emery/vcs/repos/builder";
 const USAGE_EXIT: u8 = 64;
 
 const SPEC: &[u8] = include_bytes!("build/spec.json");
@@ -287,7 +289,7 @@ async fn build_plan() {
     assert!(envelope.get("repaired").is_none(), "no verify changed the tree: {envelope}");
     assert_eq!(envelope["head"], HEAD, "{envelope}");
     assert_eq!(envelope["label"], format!("emery/{id}"), "{envelope}");
-    assert!(envelope.get("pushed").is_none(), "no remote, no push: {envelope}");
+    assert_eq!(envelope["repository"], ".", "the project's own: {envelope}");
 
     assert_eq!(provider.storage.snapshot(), before, "a build writes no engine state");
     provider.model.assert_exhausted();
@@ -988,134 +990,98 @@ async fn build_discovered() {
     assert_eq!(provider.target.calls().len(), 2);
 }
 
-// A `[target] repository` builds into a clone of it, from its branch's
-// commit: cloned when the run has none, fetched when it has one, the label
-// set in the clone and pushed nowhere.
+// A `[target] repository` builds into a clone of it under the target's
+// name, from its default branch as the origin holds it: cloned when the run
+// has none, fetched when it has one, the label set in the clone and the
+// clone named beside the base.
 #[tokio::test]
 async fn build_repository() {
     let scratch = Scratch::new();
-    let config = scratch.config(&format!(
-        "[target]\nadapter = \"{BUILDER}\"\nrepository = \"{REMOTE_URL}\"\nbranch = \"main\"\n"
-    ));
+    let config = scratch
+        .config(&format!("[target]\nadapter = \"{BUILDER}\"\nrepository = \"{REMOTE_URL}\"\n"));
     let (provider, id) = planned();
 
     let resp = cli_ok(&provider, &["emery", "build", "--config", &config]).await;
 
     let stdout = String::from_utf8_lossy(&resp.stdout);
-    assert!(stdout.contains("\n  base main-commit\n"), "{stdout}");
+    assert!(
+        stdout.contains(&format!("\n  base origin/HEAD-commit\n  repository {TARGET_REPO}\n")),
+        "{stdout}"
+    );
     assert!(stdout.ends_with(&format!("  labelled emery/{id} at {HEAD}\n")), "{stdout}");
-    let mut expected =
-        vec![format!("clone {REMOTE_URL} {REMOTE_CLONE}"), format!("resolve {REMOTE_CLONE} main")];
-    expected.extend(integrated(REMOTE_CLONE, "main-commit", &id));
-    assert_eq!(provider.vcs.calls(), expected, "cloned, then built from the branch");
+    let mut expected = vec![
+        format!("clone {REMOTE_URL} {TARGET_REPO}"),
+        format!("resolve {TARGET_REPO} origin/HEAD"),
+    ];
+    expected.extend(integrated(TARGET_REPO, "origin/HEAD-commit", &id));
+    assert_eq!(provider.vcs.calls(), expected, "cloned, then built from the default branch");
     let roots: Vec<String> = provider.target.calls().into_iter().map(|(_, _, root)| root).collect();
     assert_eq!(roots, [worktree("SLICE-001"), worktree("SLICE-002")]);
 
     // the next run finds the clone and fetches
-    provider.vcs.clones.script(REMOTE_CLONE, Err(Error::Exists(REMOTE_CLONE.to_owned())));
+    provider.vcs.clones.script(TARGET_REPO, Err(Error::Exists(TARGET_REPO.to_owned())));
     cli_ok(&provider, &["emery", "build", "--config", &config]).await;
     let calls = provider.vcs.calls();
-    assert_eq!(calls[expected.len()], format!("clone {REMOTE_URL} {REMOTE_CLONE}"));
-    assert_eq!(calls[expected.len() + 1], format!("fetch {REMOTE_CLONE} origin"));
-    assert_eq!(calls[expected.len() + 2], format!("resolve {REMOTE_CLONE} main"));
+    assert_eq!(calls[expected.len()], format!("clone {REMOTE_URL} {TARGET_REPO}"));
+    assert_eq!(calls[expected.len() + 1], format!("fetch {TARGET_REPO} origin"));
+    assert_eq!(calls[expected.len() + 2], format!("resolve {TARGET_REPO} origin/HEAD"));
+    assert!(!calls.iter().any(|call| call.starts_with("push ")), "nothing is pushed: {calls:?}");
     provider.vcs.assert_exhausted();
 }
 
-// A `[target] remote` pushes the label once every wave is verified, to the
-// repository's remote, whether the repository is the project's or a clone.
+// A `[target] name` is the directory the repository is kept under, cloned
+// or laid; one that is not kebab-case is refused before anything is read.
 #[tokio::test]
-async fn build_pushed() {
+async fn build_named() {
     let scratch = Scratch::new();
     let config = scratch.config(&format!(
-        "[target]\nadapter = \"{BUILDER}\"\nrepository = \"{REMOTE_URL}\"\nbranch = \
-         \"main\"\nremote = \"origin\"\n"
+        "[target]\nname = \"shop\"\nadapter = \"{BUILDER}\"\nrepository = \"{REMOTE_URL}\"\n"
     ));
-    let (provider, id) = planned();
+    let (mut provider, id) = planned();
 
     let resp =
         cli_ok(&provider, &["emery", "--format", "json", "build", "--config", &config]).await;
 
     let envelope: Value = serde_json::from_slice(&resp.stdout).expect("one JSON envelope");
-    assert_eq!(envelope["pushed"], "origin", "{envelope}");
-    let calls = provider.vcs.calls();
-    let label = calls.iter().rposition(|call| call.starts_with("label ")).expect("a label");
-    assert_eq!(
-        calls[label..],
-        [
-            format!("label {REMOTE_CLONE} emery/{id} {HEAD}"),
-            format!("push {REMOTE_CLONE} origin emery/{id}"),
-            format!("remove {INTEGRATION}"),
-        ],
-        "pushed once after the last wave's label, before the working copy goes"
-    );
-    assert_eq!(calls.iter().filter(|call| call.starts_with("push ")).count(), 1);
-
-    let resp = cli_ok(&provider, &["emery", "build", "--config", &config]).await;
-    let stdout = String::from_utf8_lossy(&resp.stdout);
+    assert_eq!(envelope["repository"], "./.emery/vcs/repos/shop", "{envelope}");
+    assert_eq!(provider.vcs.calls()[0], format!("clone {REMOTE_URL} ./.emery/vcs/repos/shop"));
     assert!(
-        stdout.ends_with(&format!("  labelled emery/{id} at {HEAD}\n  pushed to origin\n")),
-        "{stdout}"
+        provider.vcs.calls().contains(&format!("label ./.emery/vcs/repos/shop emery/{id} {HEAD}"))
     );
-}
 
-// A `remote` alone pushes the project repository's label: a greenfield
-// project whose checkout has a remote and no `[target] repository`.
-#[tokio::test]
-async fn build_remote_greenfield() {
-    let scratch = Scratch::new();
-    let config =
-        scratch.config(&format!("[target]\nadapter = \"{BUILDER}\"\nremote = \"origin\"\n"));
-    let (provider, id) = planned();
-
+    // the engine's own repository is kept under the same name
+    provider.target.base = Base::Fresh;
+    let config = scratch.config(&format!("[target]\nname = \"shop\"\nadapter = \"{BUILDER}\"\n"));
     cli_ok(&provider, &["emery", "build", "--config", &config]).await;
+    assert!(provider.vcs.calls().contains(&"init ./.emery/vcs/repos/shop".to_owned()));
 
-    let calls = provider.vcs.calls();
-    assert_eq!(calls[0], "pending .");
-    assert!(calls.contains(&format!("push . origin emery/{id}")), "{calls:?}");
-    assert!(!calls.iter().any(|call| call.starts_with("fetch ")), "no clone: {calls:?}");
-
-    // a remote the repository lacks is the operator's to name
-    provider.vcs.pushes.script(".", Err(Error::NotFound("origin".to_owned())));
+    let config = scratch.config(&format!("[target]\nname = \"Shop\"\nadapter = \"{BUILDER}\"\n"));
+    let before = provider.vcs.calls().len();
     let envelope =
-        fail(&provider, &["emery", "build", "--config", &config], 2, "revision-not-found").await;
-    assert_message(&envelope, &format!("pushing `emery/{id}` to `origin` failed"));
-    assert_message(&envelope, "the project repository has no `origin`");
-    assert!(envelope["hint"].as_str().is_some_and(|hint| hint.contains("`remote`")), "{envelope}");
+        fail(&provider, &["emery", "build", "--config", &config], 1, "bad_request").await;
+    assert_message(&envelope, "target `Shop` is not a kebab-case name");
+    assert_eq!(provider.vcs.calls().len(), before, "nothing is read for a refused name");
+    provider.vcs.assert_exhausted();
 }
 
-// A push the remote's label has moved past is refused, never forced: the
-// build stays labelled where its last wave was verified, every slice
-// merged, and the operator is told where the label stands and what to do.
+// The grammar names the target's repository alone: a `branch` or a `remote`
+// in `[target]` is no field of it, refused at the file before anything loads.
 #[tokio::test]
-async fn build_push_diverged() {
+async fn build_target_grammar() {
     let scratch = Scratch::new();
-    let config =
-        scratch.config(&format!("[target]\nadapter = \"{BUILDER}\"\nremote = \"origin\"\n"));
-    let (provider, id) = planned();
-    let label = format!("emery/{id}");
-    provider.vcs.pushes.script(".", Err(Error::Diverged(label.clone())));
+    let (provider, _) = planned();
 
-    let envelope =
-        fail(&provider, &["emery", "build", "--config", &config], 1, "label-diverged").await;
-
-    assert_message(
-        &envelope,
-        &format!(
-            "pushing `{label}` to `origin` failed; `{label}` stays at `{HEAD}` and nothing was \
-             forced: the project repository: the remote's `{label}` holds commits this build does \
-             not"
-        ),
-    );
-    assert!(envelope["hint"].as_str().is_some_and(|hint| hint.contains("--delete")), "{envelope}");
-    let calls = provider.vcs.calls();
-    assert_eq!(
-        calls[calls.len() - 2..],
-        [format!("label . {label} {HEAD}"), format!("push . origin {label}")],
-        "the label stands, set before the push, and the working copy stays"
-    );
-    assert_eq!(calls.iter().filter(|call| call.starts_with("push ")).count(), 1, "{calls:?}");
-    assert_eq!(provider.target.verifies().len(), 2, "every wave was verified before the push");
-    provider.vcs.assert_exhausted();
+    for (key, value) in [("branch", "main"), ("remote", "origin")] {
+        let config = scratch.config(&format!(
+            "[target]\nadapter = \"{BUILDER}\"\nrepository = \"{REMOTE_URL}\"\n{key} = \
+             \"{value}\"\n"
+        ));
+        let envelope =
+            fail(&provider, &["emery", "build", "--config", &config], 1, "bad_request").await;
+        assert_message(&envelope, &format!("unknown field `{key}`"));
+    }
+    assert!(provider.target.metadata.lock().expect("metadata").is_empty(), "nothing loads");
+    assert!(provider.vcs.calls().is_empty(), "nothing is asked of version control");
 }
 
 // A slice that changed nothing seals no commit and merges nothing, and the
@@ -1205,28 +1171,6 @@ async fn build_no_target() {
     let envelope =
         fail(&provider, &["emery", "build", "--config", &config], 1, "bad_request").await;
     assert_message(&envelope, "adapter `builder` names no version");
-    assert!(provider.target.metadata.lock().expect("metadata").is_empty(), "nothing loads");
-    assert!(provider.vcs.calls().is_empty(), "nothing is asked of version control");
-}
-
-// A repository is built from a branch, so one without a `branch`, or a
-// `branch` without a repository, is refused at the file.
-#[tokio::test]
-async fn build_config() {
-    let scratch = Scratch::new();
-    let (provider, _) = planned();
-
-    let config = scratch
-        .config(&format!("[target]\nadapter = \"{BUILDER}\"\nrepository = \"{REMOTE_URL}\"\n"));
-    let envelope =
-        fail(&provider, &["emery", "build", "--config", &config], 1, "bad_request").await;
-    assert_message(&envelope, "the target sets `repository` without `branch`");
-
-    let config = scratch.config(&format!("[target]\nadapter = \"{BUILDER}\"\nbranch = \"main\"\n"));
-    let envelope =
-        fail(&provider, &["emery", "build", "--config", &config], 1, "bad_request").await;
-    assert_message(&envelope, "the target sets `branch` without `repository`");
-
     assert!(provider.target.metadata.lock().expect("metadata").is_empty(), "nothing loads");
     assert!(provider.vcs.calls().is_empty(), "nothing is asked of version control");
 }
@@ -1354,24 +1298,224 @@ async fn build_not_repository() {
     assert!(provider.target.calls().is_empty(), "no slice is dispatched");
 }
 
-// A branch the repository lacks, or a repository the URL does not name, is
+// An adapter that builds into a fresh tree, named with no repository, builds
+// into one the engine lays under the target's name: initialised, given a
+// `.gitignore` of the engine's own directory, sealed as `Initialise`, and
+// built from that commit, the project directory never read. The envelope
+// names the repository beside the base.
+#[tokio::test]
+async fn build_fresh_laid() {
+    let (mut provider, id) = planned();
+    provider.target.base = Base::Fresh;
+
+    let resp = cli_ok(&provider, &["emery", "--format", "json", "build", BUILDER]).await;
+
+    let envelope: Value = serde_json::from_slice(&resp.stdout).expect("one JSON envelope");
+    assert_eq!(envelope["base"], "Initialise-commit", "{envelope}");
+    assert_eq!(envelope["repository"], TARGET_REPO, "{envelope}");
+    assert_eq!(
+        provider.files.writes(),
+        [(TARGET_REPO.to_owned(), ".gitignore".to_owned(), b".emery/\n".to_vec())],
+        "the one file the root commit holds"
+    );
+    assert_eq!(provider.vcs.messages()[0], "Initialise");
+    let mut expected =
+        vec![format!("init {TARGET_REPO}"), format!("commit {TARGET_REPO} Initialise")];
+    expected.extend(integrated(TARGET_REPO, "Initialise-commit", &id));
+    assert_eq!(provider.vcs.calls(), expected, "laid, sealed, then built as any repository");
+    assert_eq!(
+        provider.files.listed(),
+        [(INTEGRATION.to_owned(), ".".to_owned())],
+        "held to the fresh base as a named one is"
+    );
+    assert_eq!(provider.target.calls().len(), 2, "every slice builds");
+    provider.vcs.assert_exhausted();
+}
+
+// The repository the engine laid is kept, so the next run starts from the
+// same root commit, writing and sealing nothing; one initialised but never
+// sealed, a run that failed between the two, is sealed now.
+#[tokio::test]
+async fn build_fresh_reused() {
+    let (mut provider, id) = planned();
+    provider.target.base = Base::Fresh;
+    provider.vcs.inits.script(TARGET_REPO, Err(Error::Exists(TARGET_REPO.to_owned())));
+    provider.vcs.heads.script(TARGET_REPO, Ok(BASE.to_owned()));
+
+    let resp = cli_ok(&provider, &["emery", "build", BUILDER]).await;
+
+    let stdout = String::from_utf8_lossy(&resp.stdout);
+    assert!(stdout.contains(&format!("\n  base {BASE}\n  repository {TARGET_REPO}\n")), "{stdout}");
+    assert!(provider.files.writes().is_empty(), "nothing laid again");
+    let mut expected = vec![format!("init {TARGET_REPO}"), format!("head {TARGET_REPO}")];
+    expected.extend(integrated(TARGET_REPO, BASE, &id));
+    assert_eq!(provider.vcs.calls(), expected);
+    assert!(!provider.vcs.calls().contains(&"pending .".to_owned()), "the project is never read");
+
+    provider.vcs.inits.script(TARGET_REPO, Err(Error::Exists(TARGET_REPO.to_owned())));
+    provider.vcs.heads.script(TARGET_REPO, Err(Error::NotFound("HEAD".to_owned())));
+    cli_ok(&provider, &["emery", "build", BUILDER]).await;
+    let calls = provider.vcs.calls();
+    assert_eq!(
+        calls[expected.len()..expected.len() + 3],
+        [
+            format!("init {TARGET_REPO}"),
+            format!("head {TARGET_REPO}"),
+            format!("commit {TARGET_REPO} Initialise")
+        ],
+        "an unborn repository is sealed"
+    );
+    assert_eq!(provider.files.writes().len(), 1);
+    provider.vcs.assert_exhausted();
+}
+
+// An adapter that builds into a fresh tree is refused a named repository
+// whose default branch's root holds a directory: the integration copy is
+// cut and read, the directories named outside the engine's own, and no
+// slice dispatched.
+#[tokio::test]
+async fn build_fresh_base_held() {
+    let scratch = Scratch::new();
+    let config = scratch
+        .config(&format!("[target]\nadapter = \"{BUILDER}\"\nrepository = \"{REMOTE_URL}\"\n"));
+    let (mut provider, id) = planned();
+    provider.target.base = Base::Fresh;
+    provider.vcs.resolves.script(TARGET_REPO, Ok(BASE.to_owned()));
+    provider.files.lists(
+        INTEGRATION,
+        ".",
+        &[
+            ("src", EntryKind::Directory),
+            ("README.md", EntryKind::File),
+            (".git", EntryKind::Directory),
+            ("adapters", EntryKind::Directory),
+            (".emery", EntryKind::Directory),
+            ("Cargo.toml", EntryKind::File),
+        ],
+    );
+
+    let envelope =
+        fail(&provider, &["emery", "build", "--config", &config], 1, "base-not-fresh").await;
+
+    assert_message(
+        &envelope,
+        &format!(
+            "`{BUILDER_ID}` builds into a fresh tree, and the base `{BASE}` holds directories: \
+             adapters, src"
+        ),
+    );
+    assert!(
+        envelope["hint"].as_str().is_some_and(|hint| hint.contains("drop `[target] repository`")),
+        "{envelope}"
+    );
+    assert_eq!(provider.files.listed(), [(INTEGRATION.to_owned(), ".".to_owned())]);
+    assert_eq!(
+        provider.vcs.calls(),
+        [
+            format!("clone {REMOTE_URL} {TARGET_REPO}"),
+            format!("resolve {TARGET_REPO} origin/HEAD"),
+            format!("labelled {TARGET_REPO} emery/{id}"),
+            format!("add {TARGET_REPO} {INTEGRATION} {BASE}"),
+        ],
+        "the copy is cut and left, nothing built"
+    );
+    assert!(provider.target.calls().is_empty(), "no slice is dispatched");
+    assert!(provider.target.verifies().is_empty(), "no wave is verified");
+    provider.vcs.assert_exhausted();
+}
+
+// A named repository whose root holds files alone, or links, beside the
+// engine's own directories is fresh enough: the build runs as any other. An
+// adapter building over any base never reads the root.
+#[tokio::test]
+async fn build_fresh_base_files_only() {
+    let scratch = Scratch::new();
+    let config = scratch
+        .config(&format!("[target]\nadapter = \"{BUILDER}\"\nrepository = \"{REMOTE_URL}\"\n"));
+    let (mut provider, _) = planned();
+    provider.target.base = Base::Fresh;
+    provider.files.lists(
+        INTEGRATION,
+        ".",
+        &[
+            ("README.md", EntryKind::File),
+            (".gitignore", EntryKind::File),
+            ("LICENSE", EntryKind::Link),
+            (".git", EntryKind::Directory),
+            (".emery", EntryKind::Directory),
+        ],
+    );
+
+    cli_ok(&provider, &["emery", "build", "--config", &config]).await;
+
+    assert_eq!(provider.files.listed(), [(INTEGRATION.to_owned(), ".".to_owned())]);
+    assert_eq!(provider.target.calls().len(), 2, "every slice builds");
+
+    provider.target.base = Base::Any;
+    provider.vcs.heads.script(".", Ok(BASE.to_owned()));
+    provider.files.lists(INTEGRATION, ".", &[("src", EntryKind::Directory)]);
+    cli_ok(&provider, &["emery", "build", BUILDER]).await;
+    assert_eq!(provider.files.listed().len(), 1, "an adapter over any base reads no root");
+    assert_eq!(provider.target.calls().len(), 4);
+    provider.vcs.assert_exhausted();
+}
+
+// A build resumed from a label over the base was admitted when the label
+// was set, so the root is not read again, whatever the integrated tree now
+// holds; the label stands in the repository the engine laid.
+#[tokio::test]
+async fn build_fresh_resumed() {
+    let (mut provider, id) = planned();
+    provider.target.base = Base::Fresh;
+    provider.vcs.inits.script(TARGET_REPO, Err(Error::Exists(TARGET_REPO.to_owned())));
+    provider.vcs.heads.script(TARGET_REPO, Ok(BASE.to_owned()));
+    provider.vcs.labelleds.script(TARGET_REPO, Ok(LABELLED.to_owned()));
+    provider.vcs.logs.script(
+        TARGET_REPO,
+        Ok(vec![entry(
+            "m:SLICE-001",
+            &message(&id, AUTHENTICATION, "REQ-001, REQ-002", "REQ-001, REQ-002", HEAD, 1),
+        )]),
+    );
+    provider.files.lists(INTEGRATION, ".", &[("src", EntryKind::Directory)]);
+
+    let resp = cli_ok(&provider, &["emery", "--format", "json", "build", BUILDER]).await;
+
+    let envelope: Value = serde_json::from_slice(&resp.stdout).expect("one JSON envelope");
+    assert_eq!(envelope["resumed"], json!(["SLICE-001"]), "{envelope}");
+    assert!(provider.files.listed().is_empty(), "a resumed build reads no root");
+    assert_eq!(
+        dispatched(&provider),
+        [("SLICE-002".to_owned(), LABELLED.to_owned(), worktree("SLICE-002"))]
+    );
+    assert!(
+        provider.vcs.calls().contains(&format!("descends {TARGET_REPO} {BASE} {LABELLED}")),
+        "the label is read in the laid repository"
+    );
+    provider.vcs.assert_exhausted();
+}
+
+// A repository the URL does not name, or one with no default branch, is
 // `revision-not-found`; a remote that cannot be reached is the gateway's.
 #[tokio::test]
 async fn build_repository_missing() {
     let scratch = Scratch::new();
-    let config = scratch.config(&format!(
-        "[target]\nadapter = \"{BUILDER}\"\nrepository = \"{REMOTE_URL}\"\nbranch = \"release\"\n"
-    ));
+    let config = scratch
+        .config(&format!("[target]\nadapter = \"{BUILDER}\"\nrepository = \"{REMOTE_URL}\"\n"));
     let (provider, _) = planned();
 
-    provider.vcs.resolves.script(REMOTE_CLONE, Err(Error::NotFound("release".to_owned())));
+    provider.vcs.resolves.script(TARGET_REPO, Err(Error::NotFound("origin/HEAD".to_owned())));
     let envelope =
         fail(&provider, &["emery", "build", "--config", &config], 2, "revision-not-found").await;
-    assert_message(&envelope, &format!("repository `{REMOTE_URL}` has no `release`"));
+    assert_message(&envelope, &format!("repository `{REMOTE_URL}` has no `origin/HEAD`"));
+    assert!(
+        envelope["hint"].as_str().is_some_and(|hint| hint.contains(".emery/vcs/repos/<name>")),
+        "{envelope}"
+    );
     assert!(provider.target.calls().is_empty(), "no slice is dispatched");
 
     provider.vcs.clones.script(
-        REMOTE_CLONE,
+        TARGET_REPO,
         Err(Error::Access("could not read from remote repository".to_owned())),
     );
     let envelope =
