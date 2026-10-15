@@ -345,6 +345,7 @@ pub fn value(
             string: string.map(str::to_owned),
             init,
             head: Some(format!("{name} = ..")),
+            table: None,
         },
         lines,
     )

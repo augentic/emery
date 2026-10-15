@@ -9,7 +9,8 @@ use std::collections::BTreeMap;
 
 use emery_sdk::survey::Survey;
 use emery_sdk::survey::code::{
-    EnvRead, ExportKind, Init, Listing, Manifest, MemberKind, Parsed, Runs, Tree, Use,
+    BindingKind, EnvRead, ExportKind, Init, Listing, Manifest, MemberKind, Parsed, Runs, Scope,
+    Tree, Use,
 };
 use emery_sdk::survey::resolve::Target;
 use emery_sdk::{Context, Doc, Error, SourceInput};
@@ -1053,4 +1054,63 @@ fn types_with_tables() {
         "export class Config {\n  static ZONES: { [key: string]: number } = {\n      EU: 3,\n      \
          US: 1,\n  };\n  static LONG: number[];\n  name: string;\n}"
     );
+}
+
+// An exported module-level value with a table is a `type` claim of its own,
+// the declaration whole less its blank lines; one the module does not
+// export, one bound in a function, and one past `TABLE_LINES` are none.
+#[test]
+fn types_with_constant_tables() {
+    let mut m = module("src/rates.ts", 20);
+    let mut rates = value("RATES", None, None, None, Init::Literal, span(1, 5));
+    let mut hidden = value("DRAFT", None, None, None, Init::Literal, span(6, 8));
+    let mut long = value("LONG", None, None, None, Init::Literal, span(9, 12));
+    let mut local = value("LOCAL", None, None, None, Init::Literal, span(13, 15));
+    local.scope = Scope::Function(1);
+    for (binding, table) in [
+        (&mut rates, "const RATES = {\n  EU: 3,\n\n  US: 1,\n}".to_owned()),
+        (&mut hidden, "const DRAFT = [1, 2]".to_owned()),
+        (
+            &mut long,
+            format!(
+                "const LONG = [\n{}\n]",
+                (0..emery_sdk::survey::TABLE_LINES)
+                    .map(|n| format!("  {n},"))
+                    .collect::<Vec<_>>()
+                    .join("\n")
+            ),
+        ),
+        (&mut local, "const LOCAL = { a: 1 }".to_owned()),
+    ] {
+        let BindingKind::Value { table: slot, .. } = &mut binding.kind else { unreachable!() };
+        *slot = Some(table);
+    }
+    m.0.bindings = vec![rates, hidden, long, local];
+    m.0.exports = vec![
+        export("RATES", ExportKind::Value, span(1, 5)),
+        export("LONG", ExportKind::Value, span(9, 12)),
+        export("LOCAL", ExportKind::Value, span(13, 15)),
+    ];
+
+    let claims = emery_sdk::survey::types(&TYPESCRIPT, [&*m], true);
+    let rendered: Vec<(Option<String>, Option<String>, String)> = claims
+        .iter()
+        .map(|claim| {
+            (
+                claim.path.clone(),
+                claim.synopsis.clone(),
+                claim.extras["signature"].as_str().expect("signature").to_owned(),
+            )
+        })
+        .collect();
+
+    assert_eq!(
+        rendered,
+        [(
+            Some("src/rates.ts#L1-L5".to_owned()),
+            Some("exported table".to_owned()),
+            "const RATES = {\n  EU: 3,\n  US: 1,\n}".to_owned()
+        )]
+    );
+    assert_eq!(claims[0].extras["name"], "RATES");
 }

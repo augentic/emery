@@ -200,6 +200,7 @@ fn receiver_traced() {
                 string: None,
                 init: Init::Construction,
                 head: None,
+                table: None,
             },
             line(2),
         ),
