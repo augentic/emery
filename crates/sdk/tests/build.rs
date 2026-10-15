@@ -992,9 +992,11 @@ async fn written_unheld() {
 }
 
 // The build turn offers the adapter's references and the runtime's through
-// the same tools a mining turn has; no system document is listed — `build.md`
-// rides this turn's system, and the claim rules teach a build nothing — and a
-// read still answers each.
+// the same tools a mining turn has, over the adapter's references alone: no
+// system document is listed — `build.md` rides this turn's system — and the
+// runtime references a source's turns import are neither listed nor read,
+// since the claim rules and the reconciliation teach a build nothing; a read
+// still answers an unlisted document of the adapter's.
 #[tokio::test]
 async fn doc_refs() {
     let tmp = tempfile::tempdir().expect("tempdir");
@@ -1018,16 +1020,21 @@ async fn doc_refs() {
                 name: "read_doc".to_string(),
                 arguments: r#"{"path":"build.md"}"#.to_string(),
             },
+            ToolCall {
+                id: "4".to_string(),
+                name: "read_doc".to_string(),
+                arguments: r#"{"path":"reconciliation.md"}"#.to_string(),
+            },
         ],
     );
 
     ask(&model, &slice(), root).await.expect("accepted");
     let exchanges = model.exchanges();
-    assert_eq!(exchanges.len(), 4, "three reference calls, then the check");
+    assert_eq!(exchanges.len(), 5, "four reference calls, then the check");
     assert_eq!(
         exchanges[0].outcome.as_deref(),
-        Ok(r#"{"paths":["references/layout.md","reconciliation.md"]}"#),
-        "`list_docs` lists no system document"
+        Ok(r#"{"paths":["references/layout.md"]}"#),
+        "`list_docs` lists the adapter's references alone"
     );
     assert_eq!(
         exchanges[1].outcome.as_deref(),
@@ -1038,8 +1045,13 @@ async fn doc_refs() {
         Ok(r#"{"body":"BUILD","path":"build.md"}"#),
         "`read_doc` still answers an unlisted document"
     );
-    assert_eq!(exchanges[3].tool, "check");
-    assert_eq!(exchanges[3].outcome, Ok(String::new()));
+    assert_eq!(
+        exchanges[3].outcome.as_ref().map(String::as_str).map_err(String::as_str),
+        Err("no document `reconciliation.md`"),
+        "a source's runtime reference is no build's to read"
+    );
+    assert_eq!(exchanges[4].tool, "check");
+    assert_eq!(exchanges[4].outcome, Ok(String::new()));
     model.assert_exhausted();
 }
 

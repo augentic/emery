@@ -28,6 +28,9 @@ const BUILDER_ID: &str = "acme:builder";
 const BASE: &str = "1a2b3c4d5e6f708192a3b4c5d6e7f8091a2b3c4d";
 // The head an earlier run's label points at, where a scenario resumes.
 const LABELLED: &str = "e1f2a3b4c5d6e7f8091a2b3c4d5e6f708192a3b4";
+// The head the integration working copy an earlier run left sits on, where a
+// scenario resumes the slices that run merged before its wave was verified.
+const STAGED: &str = "5a6b7c8d9e0f1a2b3c4d5e6f708192a3b4c5d6e7";
 const INTEGRATION: &str = "./.emery/vcs/integration";
 const WORKTREES: &str = "./.emery/vcs/worktrees";
 const REMOTE_URL: &str = "https://example.com/acme/shop.git";
@@ -138,6 +141,17 @@ fn message(
 fn assert_message(envelope: &Value, fragment: &str) {
     let message = envelope["message"].as_str().unwrap_or("");
     assert!(message.contains(fragment), "expected `{fragment}` in: {envelope}");
+}
+
+// The `verified` entries of an envelope: each wave with the slices merged
+// in it, every one verified at the unscripted head.
+fn verified(waves: &[(usize, &[&str])]) -> Value {
+    Value::Array(
+        waves
+            .iter()
+            .map(|(wave, slices)| json!({"wave": wave, "slices": slices, "head": HEAD}))
+            .collect(),
+    )
 }
 
 // What the target was asked to build, in dispatch order: the slice, the head
@@ -285,7 +299,11 @@ async fn build_plan() {
         ]),
         "`written` is the copy's change set, sorted: {envelope}"
     );
-    assert_eq!(envelope["verified"], json!([HEAD, HEAD]), "{envelope}");
+    assert_eq!(
+        envelope["verified"],
+        verified(&[(1, &["SLICE-001"]), (2, &["SLICE-002"])]),
+        "{envelope}"
+    );
     assert!(envelope.get("repaired").is_none(), "no verify changed the tree: {envelope}");
     assert_eq!(envelope["head"], HEAD, "{envelope}");
     assert_eq!(envelope["label"], format!("emery/{id}"), "{envelope}");
@@ -343,7 +361,11 @@ async fn build_waves() {
         ]),
         "{envelope}"
     );
-    assert_eq!(envelope["verified"], json!([HEAD, HEAD]), "{envelope}");
+    assert_eq!(
+        envelope["verified"],
+        verified(&[(1, &["SLICE-001", "SLICE-003"]), (2, &["SLICE-002"])]),
+        "{envelope}"
+    );
 
     provider.vcs.heads.script(".", Ok(BASE.to_owned()));
     for slice in [AUTHENTICATION, WIDE_ORDERS, WIDE_SESSIONS] {
@@ -685,7 +707,11 @@ async fn build_verify_repairs() {
         json!([{"wave": 1, "commit": "Wave-commit", "paths": ["Cargo.lock", "src/orders.rs"]}]),
         "{envelope}"
     );
-    assert_eq!(envelope["verified"], json!([HEAD, HEAD]), "{envelope}");
+    assert_eq!(
+        envelope["verified"],
+        verified(&[(1, &["SLICE-001"]), (2, &["SLICE-002"])]),
+        "{envelope}"
+    );
 
     // a seal of regenerated paths alone is reported, and is no repair
     provider.vcs.pending.script(
@@ -722,7 +748,11 @@ async fn build_verify_retries_bad_gateway() {
 
     let envelope: Value = serde_json::from_slice(&resp.stdout).expect("one JSON envelope");
     assert_eq!(envelope["label"], json!(format!("emery/{id}")), "{envelope}");
-    assert_eq!(envelope["verified"], json!([HEAD, HEAD]), "{envelope}");
+    assert_eq!(
+        envelope["verified"],
+        verified(&[(1, &["SLICE-001"]), (2, &["SLICE-002"])]),
+        "{envelope}"
+    );
     assert_eq!(
         provider.target.verifies(),
         [INTEGRATION, INTEGRATION, INTEGRATION],
@@ -952,6 +982,270 @@ async fn build_resumed_empty() {
     provider.vcs.assert_exhausted();
 }
 
+// Scripts the integration working copy an earlier run left sitting on
+// `STAGED`, its first-parent chain back to the head holding `entries`.
+fn staged(provider: &Provider, entries: Vec<Entry>) {
+    provider.vcs.adds.script(INTEGRATION, Err(Error::Exists(INTEGRATION.to_owned())));
+    provider.vcs.heads.script(INTEGRATION, Ok(STAGED.to_owned()));
+    provider.vcs.logs.script(".", Ok(entries));
+}
+
+// The exchange that reads the integration copy an earlier run left and cuts
+// it again at `at`: its head, whether it descends from the head, its chain,
+// and the cut.
+fn restaged(id: &str, at: &str) -> Vec<String> {
+    vec![
+        format!("labelled . emery/{id}"),
+        format!("add . {INTEGRATION} {HEAD}"),
+        format!("head {INTEGRATION}"),
+        format!("descends . {HEAD} {STAGED}"),
+        format!("log . {STAGED} {HEAD}"),
+        format!("remove {INTEGRATION}"),
+        format!("add . {INTEGRATION} {at}"),
+    ]
+}
+
+// The integration working copy a run left after its wave failed to verify
+// holds the wave's slices merged over the head: they are not built again,
+// the copy is cut again at its head so what the verify left uncommitted
+// goes and the merges stay, the wave is verified from there with no turn
+// spent on a build, and the rest of the plan builds over it.
+#[tokio::test]
+async fn build_resumed_staged() {
+    let (provider, id) = wide();
+    let chain = || {
+        vec![
+            entry(
+                "m:SLICE-003",
+                &message(&id, WIDE_ORDERS, "REQ-003, REQ-004", "REQ-003, REQ-004", HEAD, 1),
+            ),
+            entry("m:SLICE-001", &message(&id, AUTHENTICATION, "REQ-001", "REQ-001", HEAD, 1)),
+        ]
+    };
+    staged(&provider, chain());
+    wrote(&provider, WIDE_SESSIONS);
+
+    let resp = cli_ok(&provider, &["emery", "--format", "json", "build", BUILDER]).await;
+
+    assert_eq!(
+        dispatched(&provider),
+        [("SLICE-002".to_owned(), STAGED.to_owned(), worktree("SLICE-002"))],
+        "the staged slices are not built again; the rest build over the staged head"
+    );
+    assert_eq!(
+        provider.target.verifies(),
+        [INTEGRATION, INTEGRATION],
+        "the staged wave is verified"
+    );
+    let mut expected = vec!["pending .".to_owned(), "head .".to_owned()];
+    expected.extend(restaged(&id, STAGED));
+    expected.extend([
+        format!("pending {INTEGRATION}"),
+        format!("head {INTEGRATION}"),
+        format!("label . emery/{id} {STAGED}"),
+    ]);
+    expected.extend(wave(".", &id, STAGED, &[WIDE_SESSIONS]));
+    expected.push(format!("remove {INTEGRATION}"));
+    assert_eq!(provider.vcs.calls(), expected);
+    assert_eq!(
+        provider.vcs.messages(),
+        [message(&id, WIDE_SESSIONS, "REQ-002", "REQ-002", STAGED, 2)],
+        "the one slice built is sealed over the staged head"
+    );
+    let envelope: Value = serde_json::from_slice(&resp.stdout).expect("one JSON envelope");
+    assert_eq!(envelope["base"], HEAD, "{envelope}");
+    assert_eq!(envelope["resumed"], json!(["SLICE-001", "SLICE-003"]), "{envelope}");
+    assert_eq!(
+        envelope["slices"],
+        json!([{"id": "SLICE-002", "name": "sessions", "wave": 2, "covered": ["REQ-002"], "uncovered": [], "written": ["src/sessions.rs"], "commit": "m:SLICE-002"}]),
+        "{envelope}"
+    );
+    assert_eq!(
+        envelope["verified"],
+        json!([
+            {"wave": 1, "slices": ["SLICE-001", "SLICE-003"], "head": STAGED},
+            {"wave": 2, "slices": ["SLICE-002"], "head": HEAD},
+        ]),
+        "the staged wave is verified at the staged head: {envelope}"
+    );
+    assert_eq!(envelope["head"], HEAD, "{envelope}");
+
+    staged(&provider, chain());
+    wrote(&provider, WIDE_SESSIONS);
+    let resp = cli_ok(&provider, &["emery", "build", BUILDER]).await;
+    let stdout = String::from_utf8_lossy(&resp.stdout);
+    assert_eq!(
+        stdout,
+        format!(
+            "built revision {id}\n  plan: 3 slices in 2 waves, widest 2\n  base {HEAD}\n  resumed: \
+             SLICE-001, SLICE-003\n  wave 1: 2 slices verified at 5a6b7c8d\n    SLICE-001: staged \
+             by an earlier run, not built again\n    SLICE-003: staged by an earlier run, not \
+             built again\n  wave 2: 1 slice verified at 9f8e7d6c\n    SLICE-002 sessions: covered \
+             1/1, written 1 file, merged m:SLICE-002\n  labelled emery/{id} at {HEAD}\n"
+        )
+    );
+    provider.vcs.assert_exhausted();
+}
+
+// A slice whose build fails for good ends the run only once the slices
+// built beside it are merged, so they stay committed in the integration
+// working copy and are named as such; the next run finds them staged there,
+// builds the failed slice alone over the staged head, and verifies the wave
+// whole.
+#[tokio::test]
+async fn build_resumed_staged_sibling() {
+    let (provider, id) = wide();
+    provider.target.fails("SLICE-003", bad_gateway!("the model timed out"));
+    provider.target.fails("SLICE-003", bad_gateway!("the model timed out again"));
+
+    let envelope = fail(&provider, &["emery", "build", BUILDER], 4, "bad_gateway").await;
+
+    assert_message(
+        &envelope,
+        &format!(
+            "slice `SLICE-003` (orders) failed in wave 1; SLICE-001 merged before it stays \
+             committed in `{INTEGRATION}`: the model timed out again"
+        ),
+    );
+    assert_eq!(
+        provider.vcs.messages(),
+        [message(&id, AUTHENTICATION, "REQ-001", "REQ-001", HEAD, 1)],
+        "the sibling is sealed before the failure ends the run"
+    );
+    let merged: Vec<String> =
+        provider.vcs.merged().into_iter().map(|(message, _)| message).collect();
+    assert_eq!(merged, provider.vcs.messages(), "and merged");
+    assert!(provider.target.verifies().is_empty(), "a wave left unbuilt is not verified");
+    let calls = provider.vcs.calls();
+    assert!(!calls.iter().any(|call| call.starts_with("label ")), "no label: {calls:?}");
+    assert!(!calls.contains(&format!("remove {INTEGRATION}")), "left to resume: {calls:?}");
+
+    // the next run builds the failed slice alone, over the staged sibling
+    staged(
+        &provider,
+        vec![entry("m:SLICE-001", &message(&id, AUTHENTICATION, "REQ-001", "REQ-001", HEAD, 1))],
+    );
+    wrote(&provider, WIDE_ORDERS);
+    wrote(&provider, WIDE_SESSIONS);
+    let resp = cli_ok(&provider, &["emery", "--format", "json", "build", BUILDER]).await;
+    let envelope: Value = serde_json::from_slice(&resp.stdout).expect("one JSON envelope");
+    assert_eq!(
+        dispatched(&provider)[3..],
+        [
+            ("SLICE-003".to_owned(), STAGED.to_owned(), worktree("SLICE-003")),
+            ("SLICE-002".to_owned(), HEAD.to_owned(), worktree("SLICE-002")),
+        ],
+        "the failed slice builds over the staged head, the next wave over the verified one"
+    );
+    let mut expected = vec!["pending .".to_owned(), "head .".to_owned()];
+    expected.extend(restaged(&id, STAGED));
+    expected.extend(wave(".", &id, STAGED, &[WIDE_ORDERS]));
+    expected.extend(wave(".", &id, HEAD, &[WIDE_SESSIONS]));
+    expected.push(format!("remove {INTEGRATION}"));
+    assert_eq!(calls_since(&provider, calls.len()), expected);
+    assert_eq!(
+        provider.vcs.messages()[1],
+        message(&id, WIDE_ORDERS, "REQ-003, REQ-004", "REQ-003, REQ-004", STAGED, 1),
+        "the failed slice is sealed over the staged head, in the wave it was staged for"
+    );
+    assert_eq!(envelope["resumed"], json!(["SLICE-001"]), "{envelope}");
+    assert_eq!(
+        envelope["verified"],
+        verified(&[(1, &["SLICE-001", "SLICE-003"]), (2, &["SLICE-002"])]),
+        "the wave is verified whole: {envelope}"
+    );
+    assert_eq!(envelope["slices"][0]["id"], "SLICE-003", "{envelope}");
+    assert_eq!(envelope["slices"][0]["wave"], 1, "{envelope}");
+    provider.vcs.assert_exhausted();
+}
+
+// An integration working copy whose head does not descend from the head
+// holds another base's work: its chain is never read, and it is cut again
+// at the head with nothing resumed.
+#[tokio::test]
+async fn build_stale_integration_off_head() {
+    let (provider, id) = planned();
+    provider.vcs.adds.script(INTEGRATION, Err(Error::Exists(INTEGRATION.to_owned())));
+    provider.vcs.heads.script(INTEGRATION, Ok(STAGED.to_owned()));
+    provider.vcs.descends.script(".", Ok(false));
+
+    let resp = cli_ok(&provider, &["emery", "--format", "json", "build", BUILDER]).await;
+
+    let envelope: Value = serde_json::from_slice(&resp.stdout).expect("one JSON envelope");
+    assert!(envelope.get("resumed").is_none(), "{envelope}");
+    assert_eq!(envelope["slices"].as_array().map(Vec::len), Some(2), "{envelope}");
+    let calls = provider.vcs.calls();
+    assert_eq!(
+        calls[2..8],
+        [
+            format!("labelled . emery/{id}"),
+            format!("add . {INTEGRATION} {HEAD}"),
+            format!("head {INTEGRATION}"),
+            format!("descends . {HEAD} {STAGED}"),
+            format!("remove {INTEGRATION}"),
+            format!("add . {INTEGRATION} {HEAD}"),
+        ],
+        "{calls:?}"
+    );
+    assert_eq!(
+        dispatched(&provider)[0],
+        ("SLICE-001".to_owned(), HEAD.to_owned(), worktree("SLICE-001")),
+        "every slice builds over the head"
+    );
+    provider.vcs.assert_exhausted();
+}
+
+// An integration working copy holding a slice of another revision over the
+// head is another plan's work, and one whose chain names no slice holds
+// nothing to resume: each is cut again at the head with nothing resumed.
+#[tokio::test]
+async fn build_stale_integration_other_revision() {
+    let (provider, id) = planned();
+    staged(
+        &provider,
+        vec![
+            entry("m:SLICE-002", &message(&id, ORDERS, "REQ-003, REQ-004", "REQ-003", HEAD, 2)),
+            entry(
+                "m:SLICE-001",
+                &message("other-revision", AUTHENTICATION, "REQ-001, REQ-002", "REQ-001", HEAD, 1),
+            ),
+        ],
+    );
+
+    let resp = cli_ok(&provider, &["emery", "--format", "json", "build", BUILDER]).await;
+
+    let envelope: Value = serde_json::from_slice(&resp.stdout).expect("one JSON envelope");
+    assert!(envelope.get("resumed").is_none(), "{envelope}");
+    assert_eq!(envelope["slices"].as_array().map(Vec::len), Some(2), "{envelope}");
+    let calls = provider.vcs.calls();
+    assert_eq!(calls[2..9], restaged(&id, HEAD), "{calls:?}");
+    assert_eq!(
+        dispatched(&provider)[0],
+        ("SLICE-001".to_owned(), HEAD.to_owned(), worktree("SLICE-001")),
+        "every slice builds over the head"
+    );
+
+    // a chain that seals no slice
+    staged(
+        &provider,
+        vec![entry(
+            "w1",
+            &format!("Wave 1 verified\n\nRevision: {id}\nAdapter: {BUILDER}\nSlices: SLICE-001"),
+        )],
+    );
+    let resp = cli_ok(&provider, &["emery", "--format", "json", "build", BUILDER]).await;
+    let envelope: Value = serde_json::from_slice(&resp.stdout).expect("one JSON envelope");
+    assert!(envelope.get("resumed").is_none(), "{envelope}");
+    assert_eq!(calls_since(&provider, calls.len())[2..9], restaged(&id, HEAD));
+    assert_eq!(dispatched(&provider).len(), 4, "every slice builds, each run");
+    provider.vcs.assert_exhausted();
+}
+
+// The `Vcs` calls a run made after the first `skip`.
+fn calls_since(provider: &Provider, skip: usize) -> Vec<String> {
+    provider.vcs.calls().into_iter().skip(skip).collect()
+}
+
 // The `[target]` table names the adapter and its pin, whether the file is
 // named or discovered; the `[[source]]` entries beside it stay out.
 #[tokio::test]
@@ -1119,7 +1413,9 @@ async fn build_nothing_changed() {
 }
 
 // The working copy a failed run left is removed and cut again, so a build
-// never resumes from what an earlier one wrote outside the label.
+// never resumes from what an earlier one wrote outside the label: an
+// integration copy still sitting on the head holds nothing to resume, and
+// its chain is never read; a slice's copy is never read at all.
 #[tokio::test]
 async fn build_stale_integration() {
     let (provider, _) = planned();
@@ -1130,9 +1426,10 @@ async fn build_stale_integration() {
 
     let calls = provider.vcs.calls();
     assert_eq!(
-        calls[3..9],
+        calls[3..10],
         [
             format!("add . {INTEGRATION} {HEAD}"),
+            format!("head {INTEGRATION}"),
             format!("remove {INTEGRATION}"),
             format!("add . {INTEGRATION} {HEAD}"),
             format!("add . {} {HEAD}", worktree("SLICE-001")),
@@ -1653,6 +1950,142 @@ async fn build_retries_bad_gateway() {
     expected.push(format!("remove {INTEGRATION}"));
     assert_eq!(provider.vcs.calls(), expected, "the first copy goes before the second is cut");
     assert_eq!(provider.vcs.messages().len(), 2, "one commit per slice");
+    provider.vcs.assert_exhausted();
+}
+
+// How the model backend reports a turn its time budget ended: a refusal,
+// not an upstream failure, yet one the engine puts once more.
+const TIMED_OUT: &str = "adapter `acme:builder`: budget exhausted: cursor run timed out after 600s \
+                         (absolute cap exceeded while still active)";
+// A refusal of the same class the engine never puts again.
+const SPENT: &str = "adapter `acme:builder`: budget exhausted: the correction rounds are spent";
+
+// A build the backend's time budget ended is put once more in a fresh copy,
+// as one that failed upstream is, and the run lands; a refusal of the same
+// class that is no timeout is the run's at once, and the hint names the
+// resume for the second timeout alone.
+#[tokio::test]
+async fn build_retries_timeout() {
+    let (provider, id) = planned();
+    provider.target.fails("SLICE-001", bad_request!("{TIMED_OUT}"));
+    provider.vcs.heads.script(".", Ok(BASE.to_owned()));
+
+    cli_ok(&provider, &["emery", "build", BUILDER]).await;
+
+    assert_eq!(
+        dispatched(&provider),
+        [
+            ("SLICE-001".to_owned(), BASE.to_owned(), worktree("SLICE-001")),
+            ("SLICE-001".to_owned(), BASE.to_owned(), worktree("SLICE-001")),
+            ("SLICE-002".to_owned(), HEAD.to_owned(), worktree("SLICE-002")),
+        ],
+        "the timed-out build is put again over the same head"
+    );
+    let calls = provider.vcs.calls();
+    assert_eq!(
+        calls[4..6],
+        [
+            format!("add . {} {BASE}", worktree("SLICE-001")),
+            format!("remove {}", worktree("SLICE-001"))
+        ],
+        "the first copy goes before the second is cut: {calls:?}"
+    );
+    assert_eq!(provider.vcs.messages().len(), 2, "one commit per slice");
+
+    // a refusal that is no timeout is not put again
+    provider.target.fails("SLICE-001", bad_request!("{SPENT}"));
+    let envelope = fail(&provider, &["emery", "build", BUILDER], 1, "bad_request").await;
+    assert_message(
+        &envelope,
+        &format!("slice `SLICE-001` (authentication) failed in wave 1: {SPENT}"),
+    );
+    assert!(envelope.get("hint").is_none(), "{envelope}");
+    assert_eq!(provider.target.calls().len(), 4, "put once");
+
+    // the second timeout is the run's, hinted
+    provider.target.fails("SLICE-001", bad_request!("{TIMED_OUT}"));
+    provider.target.fails("SLICE-001", bad_request!("{TIMED_OUT}"));
+    let envelope = fail(&provider, &["emery", "build", BUILDER], 1, "bad_request").await;
+    assert_message(
+        &envelope,
+        &format!("slice `SLICE-001` (authentication) failed in wave 1: {TIMED_OUT}"),
+    );
+    assert!(
+        envelope["hint"].as_str().is_some_and(|hint| hint.contains("time budget")
+            && hint.contains("re-run `emery build`")
+            && hint.contains("`.emery/vcs/integration`")),
+        "the hint names the resume: {envelope}"
+    );
+    assert_eq!(provider.target.calls().len(), 6, "put twice, no more");
+    assert_eq!(provider.vcs.messages().len(), 2, "nothing more is sealed");
+    assert_eq!(
+        calls_since(&provider, calls.len())
+            .iter()
+            .filter(|call| call.starts_with("label "))
+            .count(),
+        0,
+        "no label after either refusal"
+    );
+    let label = format!("label . emery/{id} {HEAD}");
+    assert_eq!(calls.iter().filter(|call| **call == label).count(), 2, "the first run's two");
+    provider.vcs.assert_exhausted();
+}
+
+// A verify the backend's time budget ended is put once more over the same
+// integration copy, as one that failed upstream is, so what the first
+// attempt built under `target/` and repaired stands; a refusal of the same
+// class that is no timeout is the wave's at once.
+#[tokio::test]
+async fn build_verify_retries_timeout() {
+    let (provider, id) = planned();
+    provider.target.verdict(Err(bad_request!("{TIMED_OUT}")));
+
+    let resp = cli_ok(&provider, &["emery", "--format", "json", "build", BUILDER]).await;
+
+    let envelope: Value = serde_json::from_slice(&resp.stdout).expect("one JSON envelope");
+    assert_eq!(envelope["label"], json!(format!("emery/{id}")), "{envelope}");
+    assert_eq!(
+        envelope["verified"],
+        verified(&[(1, &["SLICE-001"]), (2, &["SLICE-002"])]),
+        "{envelope}"
+    );
+    assert_eq!(
+        provider.target.verifies(),
+        [INTEGRATION, INTEGRATION, INTEGRATION],
+        "the first wave verified twice, the second once"
+    );
+    let calls = provider.vcs.calls();
+    assert_eq!(
+        calls.iter().filter(|call| call.starts_with(&format!("add . {INTEGRATION}"))).count(),
+        1,
+        "the copy is cut once: {calls:?}"
+    );
+
+    // a refusal that is no timeout is the wave's at once
+    provider.target.verdict(Err(bad_request!("{SPENT}")));
+    let envelope = fail(&provider, &["emery", "build", BUILDER], 1, "bad_request").await;
+    assert_message(
+        &envelope,
+        &format!(
+            "wave 1 failed; SLICE-001 merged in it stays committed in `{INTEGRATION}`; \
+             `emery/{id}` is not set: {SPENT}"
+        ),
+    );
+    assert_eq!(provider.target.verifies().len(), 4, "put once");
+
+    // the second timeout is the wave's
+    provider.target.verdict(Err(bad_request!("{TIMED_OUT}")));
+    provider.target.verdict(Err(bad_request!("{TIMED_OUT}")));
+    let envelope = fail(&provider, &["emery", "build", BUILDER], 1, "bad_request").await;
+    assert_message(
+        &envelope,
+        &format!("wave 1 failed; SLICE-001 merged in it stays committed in `{INTEGRATION}`"),
+    );
+    assert!(
+        envelope["hint"].as_str().is_some_and(|hint| hint.contains("time budget")),
+        "{envelope}"
+    );
+    assert_eq!(provider.target.verifies().len(), 6, "put twice, no more");
     provider.vcs.assert_exhausted();
 }
 

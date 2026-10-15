@@ -236,9 +236,10 @@ async fn gate_findings() {
     model.assert_exhausted();
 }
 
-// The verify turn offers the adapter's references and the runtime's through
-// the reference tools; neither prompt is listed, and a read still answers
-// each.
+// The verify turn offers the adapter's references alone through the
+// reference tools: neither prompt is listed, a read still answers each, and
+// the runtime references a source's turns import are neither listed nor
+// read.
 #[tokio::test]
 async fn doc_refs() {
     let tmp = tempfile::tempdir().expect("tempdir");
@@ -256,23 +257,33 @@ async fn doc_refs() {
                 name: "read_doc".to_string(),
                 arguments: r#"{"path":"verify.md"}"#.to_string(),
             },
+            ToolCall {
+                id: "3".to_string(),
+                name: "read_doc".to_string(),
+                arguments: r#"{"path":"claims.md"}"#.to_string(),
+            },
         ],
     );
 
     ask(&model, root).await.expect("accepted");
     let exchanges = model.exchanges();
-    assert_eq!(exchanges.len(), 3, "two reference calls, then the check");
+    assert_eq!(exchanges.len(), 4, "three reference calls, then the check");
     assert_eq!(
         exchanges[0].outcome.as_deref(),
-        Ok(r#"{"paths":["references/checks.md","reconciliation.md"]}"#),
-        "`list_docs` lists neither prompt"
+        Ok(r#"{"paths":["references/checks.md"]}"#),
+        "`list_docs` lists the adapter's references alone"
     );
     assert_eq!(
         exchanges[1].outcome.as_deref(),
         Ok(r#"{"body":"VERIFY","path":"verify.md"}"#),
         "`read_doc` still answers an unlisted document"
     );
-    assert_eq!(exchanges[2].tool, "check");
+    assert_eq!(
+        exchanges[2].outcome.as_ref().map(String::as_str).map_err(String::as_str),
+        Err("no document `claims.md`"),
+        "a source's runtime reference is no verify's to read"
+    );
+    assert_eq!(exchanges[3].tool, "check");
     model.assert_exhausted();
 }
 

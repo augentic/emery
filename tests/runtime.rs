@@ -610,6 +610,67 @@ async fn build_resumed() {
     assert_eq!(roots.git.branches(project), [label, "main".to_owned()]);
 }
 
+// A run whose wave the adapter does not verify leaves the slice merged in
+// the integration working copy and sets no label; the next run reads the
+// slice from that copy's history, puts no build turn, verifies the wave
+// from where the copy stands, and labels it there.
+#[tokio::test]
+async fn build_resumed_staged() {
+    let (roots, backends, base) = specified().await;
+    let project = roots.project.path();
+    let model = ScriptedModel::answering([
+        REPORT_ANSWER,
+        r#"{"passed": false, "failures": ["the greeting is not yet signed"]}"#,
+    ])
+    .calling(0, [("write_files", WRITE_GREETING)]);
+
+    let run =
+        emery(roots.deployment(&["--format", "json", "build", TARGET]), &backends, &model).await;
+
+    let envelope = refused(&run, 1, "verify-failed");
+    assert_message(
+        &envelope,
+        "SLICE-001 merged in it stays committed in `./.emery/vcs/integration`",
+    );
+    model.assert_exhausted();
+    let integration = project.join(".emery/vcs/integration");
+    let staged = roots.git.run(&integration, &["rev-parse", "HEAD"]);
+    assert_eq!(roots.git.run(project, &["rev-parse", &format!("{staged}~1")]), base);
+    assert_eq!(roots.git.branches(project), ["main"], "no label is set");
+
+    let model = ScriptedModel::answering([VERDICT_ANSWER]);
+    let run = emery(roots.deployment(&["build", TARGET]), &backends, &model).await;
+
+    assert_ok(&run);
+    model.assert_exhausted();
+    let lent = model.lent();
+    let [Some(verify)] = lent.as_slice() else {
+        panic!("one verify turn over the integration working copy, no build: {lent:?}");
+    };
+    assert!(verify.ends_with(".emery/vcs/integration"), "{lent:?}");
+    let revision = revision_of(&run);
+    let label = format!("emery/{revision}");
+    assert_eq!(
+        run.stdout,
+        format!(
+            "built revision {revision}\n  plan: 1 slice in 1 wave, widest 1\n  base {base}\n  \
+             resumed: SLICE-001\n  wave 1: 1 slice verified at {}\n    SLICE-001: staged by an \
+             earlier run, not built again\n  labelled {label} at {staged}\n",
+            &staged[..8]
+        )
+    );
+    assert_eq!(
+        roots.git.run(project, &["rev-parse", &label]),
+        staged,
+        "the label is set where the first run left the slice merged"
+    );
+    assert_eq!(roots.git.run(project, &["rev-parse", "HEAD"]), base);
+    assert!(!integration.exists(), "the working copy is removed once every slice is merged");
+    let listed = roots.git.run(project, &["worktree", "list", "--porcelain"]);
+    assert_eq!(listed.matches("worktree ").count(), 1, "{listed}");
+    assert_eq!(roots.git.branches(project), [label, "main".to_owned()]);
+}
+
 // A credential in what the build's turn wrote is read from the slice's
 // working copy through the engine's own file capability, and refuses the
 // slice before anything is sealed: no label is set, no verify turn is put,

@@ -34,7 +34,7 @@ use self::code::{Recogniser, Tree};
 use self::lead::Lead;
 use self::located::Located;
 use crate::extract::{INLINE_BYTES, Laid, Seam, lay, line_count};
-use crate::{Context, SURVEY, beneath, prompt, push_unique, reference, unique};
+use crate::{Context, RUNTIME, SURVEY, beneath, prompt, push_unique, reference, unique};
 
 pub mod code;
 mod dialect;
@@ -204,17 +204,22 @@ pub async fn surfaces<P: Model>(
 
     tracing::info!(%source, modules = facts.modules.len(), "surveying by model");
     let inventory = question
-        .ask(ctx.model, brief.to_string(), Some(reference::serve(docs, source, None)), |answer| {
-            // the gate and the adapter's check read one spelling of every path
-            let answer = answer.normalised();
-            let mut findings = answer.findings(root, facts.modules);
-            findings.extend(check(&answer));
-            if findings.is_empty() {
-                return Ok(());
-            }
-            tracing::debug!(%source, ?findings, "candidate rejected");
-            Err(findings)
-        })
+        .ask(
+            ctx.model,
+            brief.to_string(),
+            Some(reference::serve(docs, RUNTIME, source, None)),
+            |answer| {
+                // the gate and the adapter's check read one spelling of every path
+                let answer = answer.normalised();
+                let mut findings = answer.findings(root, facts.modules);
+                findings.extend(check(&answer));
+                if findings.is_empty() {
+                    return Ok(());
+                }
+                tracing::debug!(%source, ?findings, "candidate rejected");
+                Err(findings)
+            },
+        )
         .await
         .map_err(Error::from)?
         .normalised();

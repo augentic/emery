@@ -8,8 +8,9 @@
 //! or one the engine lays for an adapter that builds into a fresh tree. A
 //! source is read, and the plan built, in a [`WorkingCopy`] cut from one of
 //! them and removed when the run is done with it. A build seals each slice
-//! under a [`Message`], which it reads back from the labelled history to
-//! resume.
+//! under a [`Message`], which it reads back from the labelled history, and
+//! from the [`Integration`] copy a run left before its wave was verified,
+//! to resume.
 //!
 //! Every path here is deployment-local, as the [`Vcs`] capability takes it:
 //! `.` is the project mount and `./.emery/vcs/...` lies beneath it.
@@ -401,6 +402,118 @@ impl Repo {
         Ok(Some((head, merged)))
     }
 
+    /// Cuts the integration working copy for a build of `revision` over `head`, resuming what an earlier run staged in it.
+    ///
+    /// A copy no run left is cut at `head`. One an earlier run left is read
+    /// before it is removed: where its head descends from `head` and every
+    /// slice sealed along the first-parent chain between them is this
+    /// revision's, those slices are staged — merged by a run that ended
+    /// before their wave was verified — and the copy is cut again at that
+    /// head, so what it held uncommitted goes and the merges stay. A copy
+    /// sitting on `head`, off it, or holding a slice of another revision is
+    /// cut again at `head`, nothing staged.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::NotFound`] with code `revision-not-found` when the
+    /// repository holds no `head`, and [`Error::ServerError`] when the
+    /// capability fails otherwise.
+    pub async fn cut_integration<V: Vcs>(
+        &self, vcs: &V, head: &str, revision: &str,
+    ) -> Result<Integration, Error> {
+        let repo = self.path();
+        let copy = WorkingCopy {
+            at: INTEGRATION.to_owned(),
+        };
+        match vcs.add(&repo, INTEGRATION, head).await {
+            Ok(()) => {
+                return Ok(Integration {
+                    copy,
+                    head: head.to_owned(),
+                    staged: BTreeSet::new(),
+                });
+            }
+            Err(vcs::Error::Exists(_)) => {}
+            Err(error) => return Err(copy.subject().refusal(error)),
+        }
+
+        // what the copy an earlier run left holds over the head, read
+        // before the copy goes
+        let (at, staged) = if let Some((at, staged)) = self.staged(vcs, head, revision).await? {
+            tracing::info!(
+                head = %at,
+                staged = staged.len(),
+                "resuming the integration working copy an earlier run left unverified"
+            );
+            (at, staged)
+        } else {
+            tracing::info!(at = INTEGRATION, "removing the working copy an earlier run left");
+            (head.to_owned(), BTreeSet::new())
+        };
+        vcs.remove(INTEGRATION).await.map_err(|error| copy.subject().refusal(error))?;
+        vcs.add(&repo, INTEGRATION, &at).await.map_err(|error| copy.subject().refusal(error))?;
+        Ok(Integration {
+            copy,
+            head: at,
+            staged,
+        })
+    }
+
+    // The head of the integration copy an earlier run left and the slices
+    // it merged over `head` for `revision`; `None` when there is nothing
+    // to resume from. A head the repository does not know is a copy of
+    // another repository, which is nothing to resume from either.
+    async fn staged<V: Vcs>(
+        &self, vcs: &V, head: &str, revision: &str,
+    ) -> Result<Option<(String, BTreeSet<SliceId>)>, Error> {
+        let repo = self.path();
+        let subject = Subject::WorkingCopy(INTEGRATION);
+        let staged = match vcs.head(INTEGRATION).await {
+            Ok(staged) => staged,
+            Err(vcs::Error::NotFound(_)) => return Ok(None),
+            Err(error) => return Err(subject.refusal(error)),
+        };
+        if staged == head {
+            return Ok(None);
+        }
+        let descends = match vcs.descends(&repo, head, &staged).await {
+            Ok(descends) => descends,
+            Err(vcs::Error::NotFound(_)) => false,
+            Err(error) => return Err(self.subject().refusal(error)),
+        };
+        if !descends {
+            tracing::warn!(
+                head,
+                staged,
+                "the integration working copy does not descend from the head; building from the \
+                 head"
+            );
+            return Ok(None);
+        }
+
+        // every slice sealed over the head is this revision's, or none is
+        let entries =
+            vcs.log(&repo, &staged, head).await.map_err(|error| self.subject().refusal(error))?;
+        let mut slices = BTreeSet::new();
+        for message in entries.iter().filter_map(|entry| Message::parse(&entry.message)) {
+            if message.revision != revision {
+                tracing::warn!(
+                    staged,
+                    slice = %message.slice,
+                    revision = message.revision,
+                    "the integration working copy holds a slice of another revision; building \
+                     from the head"
+                );
+                return Ok(None);
+            }
+            slices.insert(message.slice);
+        }
+        if slices.is_empty() {
+            return Ok(None);
+        }
+        Ok(Some((staged, slices)))
+    }
+
     /// Points `label` at `commit`, creating or moving it.
     ///
     /// # Errors
@@ -423,6 +536,24 @@ impl Repo {
             Self::Target { name, url: None } => Subject::Target(name),
         }
     }
+}
+
+/// The integration working copy a build runs over, and what it was found holding.
+///
+/// Cut by [`Repo::cut_integration`]: at the head the build starts from,
+/// or, where an earlier run of the revision left slices merged in it
+/// before their wave was verified, at that run's head with those slices
+/// staged.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Integration {
+    /// The working copy, at [`INTEGRATION`].
+    pub copy: WorkingCopy,
+    /// The commit the copy sits on: the staged head, or the head the build
+    /// starts from.
+    pub head: String,
+    /// The slices an earlier run merged over the build's head and never
+    /// verified, in id order; empty when the copy was cut at that head.
+    pub staged: BTreeSet<SliceId>,
 }
 
 /// A working copy cut from a repository for one run, on no label.

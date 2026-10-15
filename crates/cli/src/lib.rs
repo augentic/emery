@@ -52,18 +52,20 @@ const BUILD_DESC: &str = "Build the current plan through a target adapter.\n\n\
     none. An adapter that lays a whole tree is refused a named repository whose root holds \
     a directory (`base-not-fresh`). A label `emery/<revision>` the repository already \
     holds, descending from that commit, is resumed: the slices it records are not built \
-    again. The rest go in waves: every slice whose dependencies are merged is \
-    built at once, up to `--jobs` concurrently, each in its own working copy under \
-    `.emery/vcs/worktrees/<id>` cut at the wave's head; what each changed is sealed as \
-    one commit and merged in id order into `.emery/vcs/integration` under the adapter's \
-    merge rules. The adapter then verifies the integrated tree, repairing what its checks \
-    find, and the wave is labelled; the label stands in the repository for the operator to \
-    read or push. A build that fails upstream is put once more in a fresh copy. A slice \
-    whose merge conflicts is built again in the next wave; a third conflict ends the run \
-    (`slice-conflict`), as a wave the adapter does not verify does (`verify-failed`), the \
-    label where the last verified wave left it and the integration working copy left for \
-    inspection. The \
-    adapter is an exact package reference, `namespace:name@version`, read from the store \
+    again, and neither are the slices `.emery/vcs/integration` holds merged over it from a \
+    run that ended before their wave was verified, which are verified instead. The rest go \
+    in waves: every slice whose dependencies are merged is built at once, up to `--jobs` \
+    concurrently, each in its own working copy under `.emery/vcs/worktrees/<id>` cut at \
+    the wave's head; what each changed is sealed as one commit and merged in id order into \
+    `.emery/vcs/integration` under the adapter's merge rules. The adapter then verifies the \
+    integrated tree, repairing what its checks find, and the wave is labelled; the label \
+    stands in the repository for the operator to read or push. A build that fails upstream \
+    or runs out of the model's time is put once more in a fresh copy, a verification once \
+    more over the same one. A slice whose merge conflicts is built again in the next wave; \
+    a third conflict ends the run (`slice-conflict`), as a wave the adapter does not verify \
+    does (`verify-failed`), the label where the last verified wave left it and the \
+    integration working copy left for the next run to resume from. The adapter is an \
+    exact package reference, `namespace:name@version`, read from the store \
     `~/.emery/adapters` and fetched through the `emery` namespace's registry when the \
     store lacks it, as for `specify`.";
 const SHOW_DESC: &str = "Print an artifact from the current revision.\n\n\
@@ -94,8 +96,8 @@ where
     let client = Client::new(NAME, provider);
     let metadata = Metadata::from_env("EMERY");
     let building = matches!(app.verb, Verb::Build(_));
-    let command = Command::new(&client, &metadata, app.format)
-        .hints(move |error| hint(&error.code(), building));
+    let command =
+        Command::new(&client, &metadata, app.format).hints(move |error| hint(error, building));
 
     match app.verb {
         Verb::Completions { shell } => completions::<App>(shell, NAME),
@@ -238,12 +240,16 @@ fn artifacts() -> impl TypedValueParser<Value = Artifact> {
 }
 
 // Flag and verb vocabulary stays at the CLI boundary. `building` tells a
-// build's upstream failure, which a re-run resumes, from a specify's, which
-// a re-run starts over.
-fn hint(code: &str, building: bool) -> Option<Cow<'static, str>> {
-    let hint = match code {
+// build's upstream failure, or a turn of its the model's time budget ended,
+// which a re-run resumes, from a specify's, which a re-run starts over.
+fn hint(error: &Error, building: bool) -> Option<Cow<'static, str>> {
+    let code = error.code();
+    let hint = match code.as_str() {
         "bad_gateway" if building => {
-            "the model backend failed twice upstream, or the repository's remote refused; re-run `emery build` once it answers: the label `emery/<revision>` stands at the last verified wave, so the slices it records are not built again"
+            "the model backend failed twice upstream, or the repository's remote refused; re-run `emery build` once it answers: the label `emery/<revision>` stands at the last verified wave, and `.emery/vcs/integration` holds the slices merged since, so neither is built again"
+        }
+        "bad_request" if building && timed_out(&error.description()) => {
+            "the model ran out of its time budget on both tries of one turn; re-run `emery build` to put it again: the label `emery/<revision>` stands at the last verified wave, and `.emery/vcs/integration` holds the slices merged since, so neither is built again"
         }
         "unsupported-version" => {
             "update emery: `brew upgrade emery`, or `cargo install --git https://github.com/augentic/emery --locked`"
@@ -273,7 +279,7 @@ fn hint(code: &str, building: bool) -> Option<Cow<'static, str>> {
             "check the `repository` or `revision` in `emery.toml` against what the repository holds; a target's clone under `.emery/vcs/repos/<name>` keeps the origin it was first cloned or laid with, so remove it, or name the target otherwise, to point the name at another repository"
         }
         "verify-failed" => {
-            "inspect `.emery/vcs/integration`; the next run rebuilds the wave from the last verified head, and `git bisect` over `emery/<revision>` attributes a failure to a slice"
+            "inspect `.emery/vcs/integration`, which holds the wave's slices merged; re-run `emery build` to verify them again with nothing built again, or `git worktree remove --force` the copy from the repository the label stands in to rebuild the wave from the last verified head; `git bisect` over `emery/<revision>` attributes a failure to a slice"
         }
         "slice-conflict" => {
             "two slices rewrite the same files: declare a merge rule in the adapter, or re-run `emery specify` for a plan that keeps them in one slice"
@@ -291,4 +297,10 @@ fn hint(code: &str, building: bool) -> Option<Cow<'static, str>> {
         _ => return None,
     };
     Some(Cow::Borrowed(hint))
+}
+
+// How the model backend reports a turn its time budget ended, which the
+// engine puts once more before the failure is the run's.
+fn timed_out(description: &str) -> bool {
+    description.contains("budget exhausted") && description.contains("timed out")
 }
