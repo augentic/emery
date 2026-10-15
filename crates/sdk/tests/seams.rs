@@ -453,6 +453,11 @@ async fn whole_tree() {
         assert!(seam.anchors.contains(&anchor.to_owned()), "{anchor}: {:?}", seam.anchors);
     }
     assert!(!seam.anchors.iter().any(|anchor| anchor.starts_with("tests/")), "a test is no anchor");
+    assert_eq!(
+        seam.terms,
+        ["nestjs"],
+        "the scope of `@nestjs/common`; `express` is a plain word and `@alias/x` no package"
+    );
 
     assert!(
         seam.text.starts_with(
@@ -883,6 +888,12 @@ async fn by_stem_widened() {
         !survey.seams[1].anchors.iter().any(|anchor| anchor.starts_with("src/ctl.ts")),
         "a seam's anchors are its own files': {:?}",
         survey.seams[1].anchors
+    );
+    let terms: Vec<&[String]> = survey.seams.iter().map(|seam| seam.terms.as_slice()).collect();
+    assert_eq!(
+        terms,
+        [&[] as &[String], &[], &["nestjs".to_owned()]],
+        "a seam's terms are its own modules' packages'"
     );
     let types: Vec<&str> =
         survey.types.iter().map(|claim| claim.extras["name"].as_str().expect("name")).collect();
