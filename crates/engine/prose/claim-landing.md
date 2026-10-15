@@ -8,8 +8,8 @@ Where each closed claim kind's content belongs across the two artifacts. Groupin
 | ---- | -------- | --- |
 | `requirement` | `spec.md` — one requirement per group of claims | `id` (required) |
 | `criterion` | the requirement whose contributing ids it equals or extends → `#### Scenario:` | `id` (required) |
-| `intent` | `spec.md` headline requirement when it names a behaviour; also the `design.md` overview | none |
-| `decision` | `design.md` under the section it informs; cite `(from <source>)` | none |
+| `intent` | `spec.md` headline requirement when it names a behaviour; also the `design.md` overview. A technology directive within it — the broker, the vault, the framework the brief prescribes — is the design's, never a requirement's words | none |
+| `decision` | `design.md` `apis` for the technology it prescribes (the section plan requires it), else the section it informs; cite `(from <source>)` | none |
 | `section` | `design.md` relevant section | none |
 | `excerpt` | `design.md` `technical-logic` | optional `id` |
 | `type` | `design.md` `domain-model` — one `type` block per claim, labelled `data` or `mechanism`; the engine renders a `Type: <key>` line, `(mechanism)` after the key for one, and the `signature` verbatim beneath it | optional `id` |

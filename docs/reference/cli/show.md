@@ -12,7 +12,7 @@ emery show plan
 
 ## Description
 
-The one read verb: renders the named artifact of the current revision — a verifiable, non-authoritative projection of the store, never a second authority. `spec`, `design`, and `plan` are the whole revision; there is no `show sources` or `show receipts`.
+The one read verb: renders the named artifact of the current revision — a verifiable, non-authoritative projection of the store, never a second authority. `spec`, `design`, and `plan` are the whole revision; there is no `show sources` or `show receipts`. The specification states what the system does by the role each thing it reaches plays, and names no product, protocol, framework, or host; the design's `## APIs and integrations` is where the technology behind each role is read — what the source ran against, and what a brief or decision record prescribes — so a target maps the role onto its own platform from the design alone.
 
 Text output is the Markdown projection alone — a deliberate exception to the result-line convention so `emery show spec > spec.md` is the document byte for byte. The projection opens with two lines of front matter, `emery: <grammar>` and `revision: <id>`, then the body rendered from the stored revision. The JSON envelope carries the revision id, the projection, and the typed revision itself (`document`).
 

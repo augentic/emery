@@ -11,6 +11,7 @@
 use std::borrow::Borrow;
 use std::fmt::{self, Display, Formatter};
 
+use emery_adapter::Lexicon;
 use emery_adapter::source::Claim;
 use omnia_sdk::model::{Error as ModelError, Findings, Question};
 use omnia_sdk::{Error, Model, server_error};
@@ -161,6 +162,23 @@ impl Review {
         } else if text.contains('\n') {
             self.note(format_args!("{label} spans more than one line"));
         }
+    }
+
+    /// Checks that `text` names no technology of `lexicon`.
+    ///
+    /// A specification states what the system reaches by its role; the
+    /// product, protocol, library, framework, or host behind it is the
+    /// design's. A text naming one is a finding listing the names.
+    pub fn technology(&mut self, lexicon: &Lexicon, text: &str, label: impl Display) {
+        let named = lexicon.names(text);
+        if named.is_empty() {
+            return;
+        }
+        let quoted = named.iter().map(|name| format!("`{name}`")).collect::<Vec<_>>().join(", ");
+        self.note(format_args!(
+            "{label} names the technology {quoted}; name what the system reaches by its role, \
+             since the design holds the product"
+        ));
     }
 }
 
