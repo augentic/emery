@@ -543,7 +543,7 @@ async fn turn<P: Model>(
             .ask(
                 ctx.model,
                 brief.to_string(),
-                Some(reference::serve(docs, source, Some(index))),
+                Some(reference::serve(docs, RUNTIME, source, Some(index))),
                 |answer| {
                     let mut findings = answer.findings();
                     findings.extend(plan.findings(&ctx.input.content, answer));

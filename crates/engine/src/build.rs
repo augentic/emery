@@ -6,10 +6,12 @@
 //! commit of the one the engine lays under that name for an adapter that
 //! builds into a fresh tree; or the project checkout's sealed head — and
 //! reads what the label `emery/<revision>` already holds over it, so a run
-//! resumes where the last verified wave left off. A base no label stands
-//! over is held to the tree the adapter builds over: one that lays a whole
-//! tree is refused a base whose root holds a directory. The slices still to
-//! build go in waves: every slice
+//! resumes where the last verified wave left off, and what the integration
+//! working copy an earlier run left holds merged over that head, so the
+//! slices of a wave that never verified are verified rather than built
+//! again. A base neither stands over is held to the tree the adapter
+//! builds over: one that lays a whole tree is refused a base whose root
+//! holds a directory. The slices still to build go in waves: every slice
 //! whose dependencies are merged is built at once, each in a working copy of
 //! its own cut at the wave's head, with its plan entry, its cut of the
 //! specification, and the whole design. What each changed is sealed as its
@@ -20,13 +22,15 @@
 //! engine writes no state of its own: the labelled history is the output,
 //! standing in the repository the build landed in.
 //!
-//! A slice whose build fails upstream is built once more in a fresh copy,
-//! and a wave whose verification fails upstream is verified once more over
-//! the same one. A slice whose merge conflicts is left for the next wave and built again
-//! over the merged head; its [`ATTEMPTS`]th conflict ends the run. A wave the
-//! adapter does not verify ends the run with the label where the last
-//! verified wave left it. Either way the integration working copy is left
-//! for inspection and removed by the next run.
+//! A slice whose build fails upstream, or runs out of the backend's time,
+//! is built once more in a fresh copy, and a wave whose verification does is
+//! verified once more over the same one. A slice whose build fails for good
+//! ends the run once the slices built beside it are merged, so they stay
+//! for the next run. A slice whose merge conflicts is left for the next
+//! wave and built again over the merged head; its [`ATTEMPTS`]th conflict
+//! ends the run. A wave the adapter does not verify ends the run with the
+//! label where the last verified wave left it. Either way the integration
+//! working copy is left for the next run to resume from.
 //!
 //! Nothing is sealed unread: every path a slice's build or a wave's
 //! verification left changed is held to the secret gate first, and a
@@ -39,7 +43,7 @@ use std::num::NonZeroUsize;
 
 use emery_adapter::target::{Base, Slice as SliceInput, Target};
 use emery_adapter::{SKIP_DIRS, is_kebab};
-use futures::{StreamExt as _, TryFutureExt as _, TryStreamExt as _, stream};
+use futures::{FutureExt as _, StreamExt as _, stream};
 use omnia_sdk::api::Context;
 use omnia_sdk::plugins::Digest;
 use omnia_sdk::vcs::{Rule, Strategy};
@@ -47,9 +51,9 @@ use omnia_sdk::{BlobStore, Error, Plugins, StateStore, Vcs, bad_request, server_
 use serde::Serialize;
 
 use crate::adapter::{self, AdapterRef, Loaded};
+use crate::revision::{Plan, Slice, Spec};
 pub use crate::revision::{ReqId, SliceId, Waves};
-use crate::revision::{Slice, Spec};
-use crate::vcs::{INTEGRATION, Message, Repo, WorkingCopy};
+use crate::vcs::{INTEGRATION, Integration, Message, Repo, WorkingCopy};
 use crate::{EntryKind, Files, store, vcs};
 
 /// How many times a slice is built before a conflict at its merge ends the run.
@@ -57,23 +61,28 @@ pub const ATTEMPTS: usize = 3;
 
 // How many times a slice's build, each in a fresh working copy, or a
 // wave's verification, over the same copy, is put to the adapter when it
-// fails upstream.
+// fails upstream or runs out of the backend's time.
 const RETRIES: usize = 2;
 
 /// Builds every slice of the current plan through the target adapter `input` names.
 ///
 /// The slices the label `emery/<revision>` already holds are not built
-/// again. The rest go in waves: every slice whose dependencies are merged is
-/// built at once, up to `jobs` concurrently, in a working copy cut at the
-/// wave's head; each report is held to its slice by
+/// again, and neither are those the integration working copy holds merged
+/// over the labelled head from a run that ended before their wave was
+/// verified: they are verified in their wave instead. The rest go in waves:
+/// every slice whose dependencies are merged is built at once, up to `jobs`
+/// concurrently, in a working copy cut at the wave's head; each report is
+/// held to its slice by
 /// [`Report::findings`](emery_adapter::target::Report::findings), what each
 /// copy changed sealed as its commit and merged in id order under the
 /// adapter's merge rules, and the wave verified by the adapter and labelled,
-/// what its checks changed sealed first. A build that fails upstream is put
-/// once more in a fresh copy, a verification once more over the same one. A slice whose merge conflicts is built again in
-/// the next wave, over the merged head; the first failure ends the run, and
-/// what was merged before it stays committed in the integration working
-/// copy, the verified waves labelled.
+/// what its checks changed sealed first. A build that fails upstream or runs
+/// out of the backend's time is put once more in a fresh copy, a
+/// verification once more over the same one. A slice whose merge conflicts
+/// is built again in the next wave, over the merged head. The first failure
+/// ends the run once the slices built beside it are merged, and what was
+/// merged before it stays committed in the integration working copy, the
+/// verified waves labelled, for the next run to resume from.
 ///
 /// # Errors
 ///
@@ -119,12 +128,13 @@ const RETRIES: usize = 2;
 ///   wait on one another, or storage or version control fails.
 /// - Returns [`Error::BadGateway`] when the adapter, its acquisition, the
 ///   model, or the repository's remote fails upstream; a slice's build, or
-///   a wave's verification, is put twice before it does.
+///   a wave's verification, is put twice before it does, as one the
+///   backend's time budget ended is.
 ///
 /// A failure at a slice keeps the adapter's class and code; its description
-/// names the slice, its wave, and the slices merged before it. A failure at a
-/// wave's verification names the wave, the slices merged in it, and where
-/// the label stands.
+/// names the slice, its wave, and the slices merged before it, those built
+/// beside it in its wave included. A failure at a wave's verification names
+/// the wave, the slices merged in it, and where the label stands.
 pub async fn build<P: Target + StateStore + BlobStore + Plugins + Vcs + Files>(
     input: BuildInput, context: Context<P>,
 ) -> Result<BuildOutput, Error> {
@@ -164,11 +174,17 @@ pub async fn build<P: Target + StateStore + BlobStore + Plugins + Vcs + Files>(
     let label = format!("emery/{revision_id}");
     let labelled = repo.merged_under(provider, &label, &base, &revision_id).await?;
     let mut progress = Progress::start(&base, labelled);
-    let integration = WorkingCopy::cut(provider, &repo.path(), INTEGRATION, &progress.head).await?;
+    let Integration {
+        copy: integration,
+        head,
+        staged,
+    } = repo.cut_integration(provider, &progress.head, &revision_id).await?;
+    progress.stage(head, staged);
 
-    // a fresh build is held to the base the adapter builds over; a resumed
-    // one was admitted by the run that set the label
-    if progress.labelled.is_none() && metadata.base == Base::Fresh {
+    // a fresh build is held to the base the adapter builds over; one resumed
+    // from the label, or from what a run staged over it, was admitted by
+    // that run
+    if progress.labelled.is_none() && progress.staged.is_empty() && metadata.base == Base::Fresh {
         require_fresh(provider, &integration, &base, &adapter).await?;
     }
 
@@ -182,6 +198,7 @@ pub async fn build<P: Target + StateStore + BlobStore + Plugins + Vcs + Files>(
         waves = waves.len(),
         widest = waves.widest(),
         resumed = progress.resumed.len(),
+        staged = progress.staged.len(),
         "building"
     );
 
@@ -202,27 +219,7 @@ pub async fn build<P: Target + StateStore + BlobStore + Plugins + Vcs + Files>(
         jobs: input.jobs,
     };
 
-    // wave by wave, until every slice is merged
-    let mut wave = 0;
-    while progress.merged.len() < revision.plan.slices.len() {
-        let ready = revision.plan.ready(&progress.merged);
-        if ready.is_empty() {
-            let left: Vec<String> = revision
-                .plan
-                .slices
-                .iter()
-                .filter(|slice| !progress.merged.contains(&slice.id))
-                .map(|slice| slice.id.to_string())
-                .collect();
-            return Err(server_error!(
-                "the slices left to build wait on one another: {}",
-                left.join(", ")
-            ));
-        }
-        wave += 1;
-        run.wave(provider, &mut progress, wave, &ready).await?;
-    }
-
+    run.waves(provider, &mut progress, &revision.plan).await?;
     integration.remove(provider).await?;
 
     Ok(BuildOutput {
@@ -294,14 +291,19 @@ pub struct BuildOutput {
     /// root: `.` for the project's own, or [`vcs::target_path`] of the
     /// target's name for the one it names or the engine laid.
     pub repository: String,
-    /// The slices the label already held, not built again, in id order.
+    /// The slices not built again, in id order.
+    ///
+    /// Those the label already held, and those the integration working
+    /// copy held merged over the labelled head from a run that ended before
+    /// their wave was verified, which this run verified in their wave; each
+    /// [`Verified`] names the latter among its slices.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub resumed: Vec<SliceId>,
     /// Every slice this run built, in build order, as its build reported it.
     pub slices: Vec<BuiltSlice>,
-    /// The integrated head each wave was verified and labelled at, in wave order.
+    /// Each wave this run verified and labelled, in wave order.
     #[serde(skip_serializing_if = "Vec::is_empty")]
-    pub verified: Vec<String>,
+    pub verified: Vec<Verified>,
     /// What each wave's verification left in the integrated tree, sealed as
     /// `Wave <k> verified` before the head was labelled, in wave order.
     #[serde(skip_serializing_if = "Vec::is_empty")]
@@ -345,6 +347,21 @@ pub struct BuiltSlice {
     pub conflicts: Vec<String>,
 }
 
+/// One wave verified and labelled, with the slices it merged.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub struct Verified {
+    /// The wave, from one.
+    pub wave: usize,
+    /// The slices merged in the wave, in id order: those this run built,
+    /// and those an earlier run staged in the integration working copy,
+    /// which [`BuildOutput::resumed`] lists and [`BuildOutput::slices`]
+    /// does not.
+    pub slices: Vec<SliceId>,
+    /// The integrated head the wave was verified and labelled at.
+    pub head: String,
+}
+
 /// What one wave's verification left in the integrated tree, sealed as the wave's commit.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "kebab-case")]
@@ -378,11 +395,14 @@ struct Progress {
     // where the label stands; `None` until a wave of a fresh build verifies
     labelled: Option<String>,
     merged: BTreeSet<SliceId>,
+    // merged over the head by an earlier run and never verified: each is
+    // this run's in the wave it is ready in, with no build
+    staged: BTreeSet<SliceId>,
     resumed: Vec<SliceId>,
     built: Vec<BuiltSlice>,
     tries: BTreeMap<SliceId, usize>,
     conflicts: BTreeMap<SliceId, Vec<String>>,
-    verified: Vec<String>,
+    verified: Vec<Verified>,
     sealed: Vec<Seal>,
     repaired: Vec<usize>,
 }
@@ -397,6 +417,7 @@ impl Progress {
             head,
             labelled: labelled.map(|(head, _)| head),
             merged,
+            staged: BTreeSet::new(),
             built: Vec::new(),
             tries: BTreeMap::new(),
             conflicts: BTreeMap::new(),
@@ -404,6 +425,20 @@ impl Progress {
             sealed: Vec::new(),
             repaired: Vec::new(),
         }
+    }
+
+    // `head` is where the integration copy was cut and `staged` the slices
+    // an earlier run merged over the labelled head beneath it; the build
+    // runs over `head` and verifies them in their wave.
+    fn stage(&mut self, head: String, staged: BTreeSet<SliceId>) {
+        if staged.is_empty() {
+            return;
+        }
+        self.head = head;
+        self.resumed.extend(staged.iter().copied());
+        self.resumed.sort_unstable();
+        self.resumed.dedup();
+        self.staged = staged;
     }
 }
 
@@ -421,39 +456,89 @@ enum Integrated {
 }
 
 impl Run<'_> {
+    // Wave by wave, until every slice is merged.
+    async fn waves<P: Target + Vcs + Files>(
+        &self, provider: &P, progress: &mut Progress, plan: &Plan,
+    ) -> Result<(), Error> {
+        let mut wave = 0;
+        while progress.merged.len() < plan.slices.len() {
+            let ready = plan.ready(&progress.merged);
+            if ready.is_empty() {
+                let left: Vec<String> = plan
+                    .slices
+                    .iter()
+                    .filter(|slice| !progress.merged.contains(&slice.id))
+                    .map(|slice| slice.id.to_string())
+                    .collect();
+                return Err(server_error!(
+                    "the slices left to build wait on one another: {}",
+                    left.join(", ")
+                ));
+            }
+            wave += 1;
+            self.wave(provider, progress, wave, &ready).await?;
+        }
+        Ok(())
+    }
+
     #[tracing::instrument(skip_all, fields(wave))]
     async fn wave<P: Target + Vcs + Files>(
         &self, provider: &P, progress: &mut Progress, wave: usize, ready: &[&Slice],
     ) -> Result<(), Error> {
-        let jobs = self.jobs.map_or(ready.len(), NonZeroUsize::get).min(ready.len());
-        tracing::info!(slices = ready.len(), jobs, head = %progress.head, "building wave");
-        for slice in ready {
-            *progress.tries.entry(slice.id).or_default() += 1;
-        }
-
-        // every ready slice, built at once in a working copy of its own
-        let head = &progress.head;
-        let before = &progress.built;
-        let mut builds = Vec::with_capacity(ready.len());
+        // a slice an earlier run staged is merged already; the rest build
+        let mut merged = Vec::with_capacity(ready.len());
+        let mut pending = Vec::with_capacity(ready.len());
         for slice in ready.iter().copied() {
-            let build = self
-                .build(provider, slice, head, wave)
-                .map_err(move |error| at_slice(error, slice, wave, before));
-            builds.push(build);
-        }
-        let mut built: Vec<Built<'_>> =
-            stream::iter(builds).buffer_unordered(jobs).try_collect().await?;
-
-        // merged in id order, whatever order they finished in
-        built.sort_by_key(|built| built.slice.id);
-        let mut merged = Vec::with_capacity(built.len());
-        for built in built {
-            let slice = built.slice;
-            match self.integrate(provider, progress, built, wave).await {
-                Ok(true) => merged.push(slice.id),
-                Ok(false) => {}
-                Err(error) => return Err(at_slice(error, slice, wave, &progress.built)),
+            if progress.staged.remove(&slice.id) {
+                tracing::info!(slice = %slice.id, "slice staged by an earlier run; not built again");
+                progress.merged.insert(slice.id);
+                merged.push(slice.id);
+            } else {
+                *progress.tries.entry(slice.id).or_default() += 1;
+                pending.push(slice);
             }
+        }
+        let jobs = self.jobs.map_or(pending.len(), NonZeroUsize::get).min(pending.len());
+        tracing::info!(
+            slices = ready.len(),
+            staged = merged.len(),
+            jobs,
+            head = %progress.head,
+            "building wave"
+        );
+
+        // every slice still to build, built at once in a working copy of its
+        // own, every outcome waited for; a buffer of none would never poll
+        let head = progress.head.clone();
+        let mut builds = Vec::with_capacity(pending.len());
+        for slice in pending.iter().copied() {
+            builds.push(self.build(provider, slice, &head, wave).map(move |built| (slice, built)));
+        }
+        let mut outcomes: Vec<(&Slice, Result<Built<'_>, Error>)> = if builds.is_empty() {
+            Vec::new()
+        } else {
+            stream::iter(builds).buffer_unordered(jobs).collect().await
+        };
+        outcomes.sort_by_key(|(slice, _)| slice.id);
+
+        // what built is merged in id order, whatever order the builds
+        // finished in, before a failed build ends the run, so it stays for
+        // the next run to resume from
+        let mut failed = None;
+        for (slice, outcome) in outcomes {
+            match outcome {
+                Ok(built) => match self.integrate(provider, progress, built, wave).await {
+                    Ok(true) => merged.push(slice.id),
+                    Ok(false) => {}
+                    Err(error) => return Err(at_slice(error, slice, wave, &progress.built)),
+                },
+                Err(error) => {
+                    failed.get_or_insert((slice, error));
+                }
+            }
+        }
+        if let Some((slice, error)) = failed {
+            return Err(at_slice(error, slice, wave, &progress.built));
         }
         if merged.is_empty() {
             tracing::info!("nothing merged; the wave leaves the integrated head as it was");
@@ -461,6 +546,7 @@ impl Run<'_> {
         }
 
         // the integrated tree, verified by the adapter and labelled
+        merged.sort_unstable();
         if let Err(error) = self.verify(provider, progress, wave, &merged).await {
             return Err(at_wave(error, wave, &merged, self.label, progress.labelled.as_deref()));
         }
@@ -483,16 +569,20 @@ impl Run<'_> {
         };
         tracing::info!(requirements = input.requirements.len(), wave, "building slice");
 
-        // a build that fails upstream is put again in a fresh copy, since the
-        // first may have written part of the tree before it failed
+        // a build that fails upstream or runs out of time is put again in a
+        // fresh copy, since the first may have written part of the tree
         let mut attempt = 0;
         let (worktree, report) = loop {
             attempt += 1;
             let worktree = WorkingCopy::cut(provider, &self.repo.path(), &at, head).await?;
             match Target::build(provider, self.adapter, &input, worktree.path()).await {
                 Ok(report) => break (worktree, report),
-                Err(Error::BadGateway { description, .. }) if attempt < RETRIES => {
-                    tracing::warn!(attempt, %description, "build failed upstream; building again");
+                Err(error) if attempt < RETRIES && is_retryable(&error) => {
+                    tracing::warn!(
+                        attempt,
+                        description = %error.description(),
+                        "build failed upstream or timed out; building again"
+                    );
                     worktree.remove(provider).await?;
                 }
                 Err(error) => return Err(error),
@@ -627,16 +717,20 @@ impl Run<'_> {
     async fn verify<P: Target + Vcs + Files>(
         &self, provider: &P, progress: &mut Progress, wave: usize, merged: &[SliceId],
     ) -> Result<(), Error> {
-        // a verify that fails upstream is put again over the same copy, since
-        // nothing of it is sealed until the verdict and a repair it left
-        // stands as the shell would have left it
+        // a verify that fails upstream or runs out of time is put again over
+        // the same copy, since nothing of it is sealed until the verdict and
+        // a repair it left stands as the shell would have left it
         let mut attempt = 0;
         let verdict = loop {
             attempt += 1;
             match Target::verify(provider, self.adapter, self.integration.path()).await {
                 Ok(verdict) => break verdict,
-                Err(Error::BadGateway { description, .. }) if attempt < RETRIES => {
-                    tracing::warn!(attempt, %description, "verify failed upstream; verifying again");
+                Err(error) if attempt < RETRIES && is_retryable(&error) => {
+                    tracing::warn!(
+                        attempt,
+                        description = %error.description(),
+                        "verify failed upstream or timed out; verifying again"
+                    );
                 }
                 Err(error) => return Err(error),
             }
@@ -696,10 +790,27 @@ impl Run<'_> {
         let head = self.integration.head(provider).await?;
         self.repo.label(provider, self.label, &head).await?;
         tracing::info!(merged = merged.len(), %head, "wave verified");
-        progress.verified.push(head.clone());
+        progress.verified.push(Verified {
+            wave,
+            slices: merged.to_vec(),
+            head: head.clone(),
+        });
         progress.labelled = Some(head.clone());
         progress.head = head;
         Ok(())
+    }
+}
+
+// An upstream failure is put once more, and so is a turn the backend's time
+// budget ended: the model's work is not the same twice, and a verify put
+// again over the same copy starts from what the first left built.
+fn is_retryable(error: &Error) -> bool {
+    match error {
+        Error::BadGateway { .. } => true,
+        Error::BadRequest { description, .. } => {
+            description.contains("budget exhausted") && description.contains("timed out")
+        }
+        Error::NotFound { .. } | Error::ServerError { .. } => false,
     }
 }
 

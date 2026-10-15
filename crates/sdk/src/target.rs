@@ -349,7 +349,7 @@ pub async fn build<P: Model>(
         requirements = slice.requirements.len(),
         "building"
     );
-    let tools = writer.serve(reference::serve(docs, id, None));
+    let tools = writer.serve(reference::serve(docs, &[], id, None));
     let mut failed = None;
     let report = question
         .ask(ctx.model, brief.to_string(), Some(tools), |answer| {
@@ -434,7 +434,7 @@ pub async fn verify<P: Model>(
     };
 
     tracing::info!("verifying");
-    let tools = writer.serve(reference::serve(docs, VERIFY_TURN, None));
+    let tools = writer.serve(reference::serve(docs, &[], VERIFY_TURN, None));
     let mut failed = None;
     let verdict = question
         .ask(ctx.model, brief.to_string(), Some(tools), |answer| {

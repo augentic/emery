@@ -2,7 +2,8 @@
 //!
 //! [`tools`] declares `list_docs` and `read_doc`; [`serve`] fields each call
 //! the model makes to them, answering from an adapter's [`Doc`] table and
-//! then [`RUNTIME`], and reports every call at DEBUG.
+//! then the imports the turn offers — [`crate::RUNTIME`] for a source's
+//! turns, nothing for a target's — and reports every call at DEBUG.
 
 use std::future::ready;
 
@@ -12,7 +13,7 @@ use schemars::JsonSchema;
 use serde::Deserialize;
 use serde_json::json;
 
-use crate::{BUILD, CLAIMS, EXTRACT, RUNTIME, SURVEY, VERIFY};
+use crate::{BUILD, CLAIMS, EXTRACT, SURVEY, VERIFY};
 
 const LIST_DOCS: &str = "list_docs";
 const READ_DOC: &str = "read_doc";
@@ -27,8 +28,7 @@ pub fn tools() -> Vec<Tool> {
     vec![
         Tool::Function(Function::of::<ListDocs>(
             LIST_DOCS,
-            "List the further reference documents this call can read: the adapter's own, then \
-             Emery's shared ones.",
+            "List the further reference documents this call can read, by path.",
         )),
         Tool::Function(Function::of::<ReadDoc>(
             READ_DOC,
@@ -37,18 +37,22 @@ pub fn tools() -> Vec<Tool> {
     ]
 }
 
-/// Returns the handler that serves the reference tools from `docs` and then [`RUNTIME`].
+/// Returns the handler that serves the reference tools from `docs` and then `imports`.
 ///
-/// `list_docs` lists the adapter's references and the runtime references. It
-/// never lists a system document (`extract.md`, `claims.md`, `survey.md`,
+/// `imports` are the documents a turn offers beyond the adapter's own:
+/// [`crate::RUNTIME`] for a source's turns, whose prompts link them, and
+/// nothing for a target's, which they would only distract. `list_docs` lists
+/// both and never a system document (`extract.md`, `claims.md`, `survey.md`,
 /// `build.md`, `verify.md`), since a turn either carries it already or has
-/// nothing to learn from it. `read_doc` still answers every document, so a
-/// followed link never fails.
+/// nothing to learn from it. `read_doc` still answers every document of
+/// either table, so a followed link never fails.
 ///
 /// Each call is reported at DEBUG with its arguments as the model sent them,
 /// under the turn's `subject` — the source name, the slice id of a build, or
 /// `verify` — and, for a mining turn, its `seam`.
-pub fn serve(docs: &'static [Doc], subject: &str, seam: Option<usize>) -> Tools {
+pub fn serve(
+    docs: &'static [Doc], imports: &'static [Doc], subject: &str, seam: Option<usize>,
+) -> Tools {
     let subject = subject.to_owned();
 
     Box::new(move |call: ToolCall| -> ToolFuture {
@@ -56,7 +60,7 @@ pub fn serve(docs: &'static [Doc], subject: &str, seam: Option<usize>) -> Tools 
             LIST_DOCS => {
                 let paths: Vec<&str> = docs
                     .iter()
-                    .chain(RUNTIME)
+                    .chain(imports)
                     .map(|doc| doc.path)
                     .filter(|path| !SYSTEM.contains(path))
                     .collect();
@@ -65,7 +69,7 @@ pub fn serve(docs: &'static [Doc], subject: &str, seam: Option<usize>) -> Tools 
             READ_DOC => call.arguments().map_err(|err| format!("{READ_DOC}: {err}")).and_then(
                 |ReadDoc { path }| {
                     emery_prose::find(docs, &path)
-                        .or_else(|| emery_prose::find(RUNTIME, &path))
+                        .or_else(|| emery_prose::find(imports, &path))
                         .map(|doc| json!({ "path": path, "body": doc.body }).to_string())
                         .ok_or_else(|| format!("no document `{path}`"))
                 },
@@ -101,6 +105,6 @@ struct ListDocs {}
 // The `///` lines are the `JsonSchema` descriptions the model reads.
 #[derive(Debug, Deserialize, JsonSchema)]
 struct ReadDoc {
-    /// The document path as `list_docs` lists it, such as `reconciliation.md`.
+    /// The document path as `list_docs` lists it.
     path: String,
 }

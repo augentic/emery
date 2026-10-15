@@ -57,7 +57,9 @@ fn summary(diff: &Diff, w: &mut dyn fmt::Write) -> fmt::Result {
 /// adapter's `ours` rules alone, a lockfile. Each slice line beneath it
 /// counts the requirements covered of those it holds, names any left
 /// uncovered, counts the paths its build changed, names the merge commit
-/// that brought them in, and the paths an earlier build of it conflicted at.
+/// that brought them in, and the paths an earlier build of it conflicted
+/// at; a slice an earlier run staged in the integration working copy says
+/// so instead, since this run verified it and built nothing.
 pub fn build(output: &BuildOutput, w: &mut dyn fmt::Write) -> fmt::Result {
     writeln!(w, "built revision {}", output.revision)?;
     waves(&output.waves, w)?;
@@ -69,18 +71,13 @@ pub fn build(output: &BuildOutput, w: &mut dyn fmt::Write) -> fmt::Result {
         let ids: Vec<String> = output.resumed.iter().map(ToString::to_string).collect();
         writeln!(w, "  resumed: {}", ids.join(", "))?;
     }
-    // a wave is verified when it integrated any slice, so the heads pair with
-    // the waves the slices record, in order
-    let mut numbered: Vec<usize> = output.slices.iter().map(|slice| slice.wave).collect();
-    numbered.dedup();
-    for (head, wave) in output.verified.iter().zip(numbered) {
-        let merged: Vec<&BuiltSlice> =
-            output.slices.iter().filter(|slice| slice.wave == wave).collect();
+    for verified in &output.verified {
+        let wave = verified.wave;
         write!(
             w,
             "  wave {wave}: {} verified at {}",
-            counted(merged.len(), "slice"),
-            head.get(..8).unwrap_or(head)
+            counted(verified.slices.len(), "slice"),
+            verified.head.get(..8).unwrap_or(&verified.head)
         )?;
         if output.repaired.contains(&wave) {
             w.write_str(", repaired")?;
@@ -88,25 +85,32 @@ pub fn build(output: &BuildOutput, w: &mut dyn fmt::Write) -> fmt::Result {
             w.write_str(", sealed")?;
         }
         writeln!(w)?;
-        for slice in merged {
-            let total = slice.covered.len() + slice.uncovered.len();
-            write!(w, "    {} {}: covered {}/{total}", slice.id, slice.name, slice.covered.len())?;
-            if !slice.uncovered.is_empty() {
-                let ids: Vec<String> = slice.uncovered.iter().map(ToString::to_string).collect();
-                write!(w, " (uncovered {})", ids.join(", "))?;
+        for id in &verified.slices {
+            match output.slices.iter().find(|slice| slice.id == *id && slice.wave == wave) {
+                Some(slice) => built(slice, w)?,
+                None => writeln!(w, "    {id}: staged by an earlier run, not built again")?,
             }
-            write!(w, ", written {}", counted(slice.written.len(), "file"))?;
-            match &slice.commit {
-                Some(commit) => write!(w, ", merged {commit}")?,
-                None => write!(w, ", nothing to merge")?,
-            }
-            if !slice.conflicts.is_empty() {
-                write!(w, ", conflicted ({})", slice.conflicts.join(", "))?;
-            }
-            writeln!(w)?;
         }
     }
     writeln!(w, "  labelled {} at {}", output.label, output.head)
+}
+
+fn built(slice: &BuiltSlice, w: &mut dyn fmt::Write) -> fmt::Result {
+    let total = slice.covered.len() + slice.uncovered.len();
+    write!(w, "    {} {}: covered {}/{total}", slice.id, slice.name, slice.covered.len())?;
+    if !slice.uncovered.is_empty() {
+        let ids: Vec<String> = slice.uncovered.iter().map(ToString::to_string).collect();
+        write!(w, " (uncovered {})", ids.join(", "))?;
+    }
+    write!(w, ", written {}", counted(slice.written.len(), "file"))?;
+    match &slice.commit {
+        Some(commit) => write!(w, ", merged {commit}")?,
+        None => write!(w, ", nothing to merge")?,
+    }
+    if !slice.conflicts.is_empty() {
+        write!(w, ", conflicted ({})", slice.conflicts.join(", "))?;
+    }
+    writeln!(w)
 }
 
 // `  plan: 4 slices in 3 waves, widest 2`: how many slices the plan holds,

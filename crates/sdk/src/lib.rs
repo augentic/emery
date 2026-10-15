@@ -19,7 +19,7 @@
 //!   laying a seam's files into its turn whole when they fit within
 //!   [`INLINE_BYTES`].
 //! - [`Doc`], [`prose!`], [`body`], and [`find`] embed and read adapter
-//!   guidance; [`RUNTIME`] is the guidance every adapter shares, and
+//!   guidance; [`RUNTIME`] is the guidance every source adapter shares, and
 //!   [`check`] holds an adapter's list to its tree.
 //! - [`workspace::list`] traverses workspace input under an adapter-defined
 //!   filter.
@@ -160,11 +160,14 @@ pub use tracing;
 
 pub use self::extract::{CONCURRENT, INLINE_BYTES, Seam, extract};
 
-/// The runtime references every adapter prompt may link.
+/// The runtime references every source adapter prompt may link.
 ///
 /// `claims.md` defines claims and their gate; `reconciliation.md` explains
 /// where accepted claims land. Prompts link these paths without listing them
-/// in their own table; pass [`RUNTIME`] to [`check`] as imports.
+/// in their own table; pass [`RUNTIME`] to [`check`] as imports. A source's
+/// turns offer them through the reference tools beside the adapter's own; a
+/// target's turns, which lay code and never claims, offer the adapter's
+/// alone.
 pub static RUNTIME: &[Doc] = prose!["../prose/claims.md", "../prose/reconciliation.md"];
 
 // The documents a turn's system prompt is built from: the adapter's prompt,
