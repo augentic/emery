@@ -1154,3 +1154,39 @@ fn types_by_dialect() {
         "unanchored for an inline value; a body with no member holds `...`"
     );
 }
+
+// A field with a table is spelled with it, its later lines re-indented under
+// the syntax and its blank lines dropped; one past `TABLE_LINES` is spelled
+// by its signature alone.
+#[test]
+fn types_with_tables() {
+    let mut m = module("src/config.ts", 12);
+    let mut zones =
+        member("ZONES", MemberKind::Field, "static ZONES: { [key: string]: number }", span(2, 6));
+    zones.table = Some(
+        "static ZONES: { [key: string]: number } = {\n        EU: 3,\n\n        US: 1,\n    }"
+            .to_owned(),
+    );
+    let mut long = member("LONG", MemberKind::Field, "static LONG: number[]", span(7, 11));
+    long.table = Some(format!(
+        "static LONG: number[] = [\n{}\n    ]",
+        (0..emery_sdk::survey::TABLE_LINES)
+            .map(|n| format!("        {n},"))
+            .collect::<Vec<_>>()
+            .join("\n")
+    ));
+    m.0.classes = vec![class_decl(
+        "Config",
+        "export class Config",
+        span(1, 12),
+        vec![zones, long, member("name", MemberKind::Field, "name: string", line(12))],
+    )];
+
+    let claims = emery_sdk::survey::types(&TYPESCRIPT, [&*m], false);
+
+    assert_eq!(
+        claims[0].extras["signature"].as_str().expect("signature"),
+        "export class Config {\n  static ZONES: { [key: string]: number } = {\n      EU: 3,\n      \
+         US: 1,\n  };\n  static LONG: number[];\n  name: string;\n}"
+    );
+}

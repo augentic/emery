@@ -770,6 +770,13 @@ pub struct Member {
     pub lines: Lines,
     /// The declaration up to its body or initializer.
     pub signature: String,
+    /// The declaration whole, where a field's initializer is a table.
+    ///
+    /// A table is an object, array, or mapping written out in place as data:
+    /// every entry a literal, a name, a member path, or a table again. The
+    /// `type` claim spells the field with it, so a build reads the entries
+    /// rather than inventing them.
+    pub table: Option<String>,
 }
 
 /// What kind of member a class member is.
