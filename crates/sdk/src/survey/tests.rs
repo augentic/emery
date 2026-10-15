@@ -94,9 +94,10 @@ pub fn stated<'t>(tests: impl IntoIterator<Item = &'t Test>, described: &str) ->
     Some(format!(
         "Behaviours the tree's own tests state, each at its line — {described}, a scenario's \
          under its feature's. One the laid code confirms is a `requirement` anchored at the code \
-         that exhibits it, named for that code, its statement the test's made present tense; one \
-         the code does not hold is not invented. A test is read for what it states and the values \
-         it asserts, and is no `requirement`'s or `criterion`'s anchor:\n\n{}",
+         that exhibits it, named for that code, the test's sentence leading its statement with \
+         the code's identifiers standing nowhere in it; one the code does not hold is not \
+         invented. A test is read for what it states and the values it asserts, and is no \
+         `requirement`'s or `criterion`'s anchor:\n\n{}",
         lines.join("\n")
     ))
 }

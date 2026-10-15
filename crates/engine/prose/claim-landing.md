@@ -11,9 +11,9 @@ Where each closed claim kind's content belongs across the two artifacts. Groupin
 | `intent` | `spec.md` headline requirement when it names a behaviour; also the `design.md` overview | none |
 | `decision` | `design.md` under the section it informs; cite `(from <source>)` | none |
 | `section` | `design.md` relevant section | none |
-| `excerpt` | `design.md` `technical-logic` | optional `id` |
+| `excerpt` | `design.md` `technical-logic` — the literal values a behaviour reads, and the program's readiness and lifecycle (what it loads or obtains before serving, credential rotation, scheduled refreshes, delivery acknowledgement, shutdown), which no requirement states; one carrying an endpoint, a response field, or a refresh interval informs `apis` too | optional `id` |
 | `type` | `design.md` `domain-model` — one `type` block per claim, labelled `data` or `mechanism`; the engine renders a `Type: <key>` line, `(mechanism)` after the key for one, and the `signature` verbatim beneath it | optional `id` |
-| `call` | `design.md` `apis` (the section plan requires it); internal delegation may also inform `technical-logic` | optional `id` |
+| `call` | `design.md` `apis` (the section plan requires it) — every outbound and reference-data call with its path or URL template, query parameters, response fields, authentication, timeout, retry rule, fallback, and refresh interval or TTL, whether or not a requirement cites it; internal delegation may also inform `technical-logic` | optional `id` |
 | `example` | `spec.md` scenario via matching `id` prefix; `design.md` references keep `path` | required `id` |
 | `region` / `container` / `leaf` | `design.md` `ui-layout` tree; never `spec.md` requirements | none (positional) |
 | `diagram` / `contract` | `design.md` relevant section | none |

@@ -58,10 +58,9 @@ pub(super) fn decisions<'m>(modules: impl IntoIterator<Item = &'m Module>) -> Op
          line that applies a named constant, at a step the function takes into the tree (a \
          write, a delete, a publish, a lookup it awaits or binds), at the code a stated \
          behaviour names, \
-         or at a surface's registration or handler lines; a line that only wires or assigns — \
-         a value passed on, a field set, a value computed from the ones in hand — is no \
-         requirement's anchor, and what `start` constructs with a boundary's value is one \
-         requirement at that construction:\n\n{}",
+         or at a surface's registration or handler lines; a line that only wires, assigns, or \
+         constructs a client or a connection — a value passed on, a field set, a value computed \
+         from the ones in hand — is no requirement's anchor:\n\n{}",
         lines.join("\n")
     ))
 }
@@ -595,7 +594,8 @@ pub(super) fn calls<R: Recogniser>(tree: &Tree<R>, files: &[String]) -> Option<S
          `call` is drawn from this list, its `callee` spelled as listed: a store, a broker, an HTTP \
          client, a cache, an identity provider, or a metric emission leaves the process; a \
          validator, a logger, or a framework helper does not, unless its emission is the surface's \
-         contract. Every listed call that leaves the process has a requirement beside it:\n\n{}",
+         contract. Every listed call that leaves the process is a `call` claim, with a \
+         `requirement` beside it where what the caller observes depends on it:\n\n{}",
         lines.join("\n")
     ))
 }
