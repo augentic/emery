@@ -16,7 +16,7 @@ A stem cut along its sub-stems often holds one entry and the stages it runs: a c
 
 The stages share types: the input one stage decodes, the others take, and the entry hands along. A type several slices of one stem read goes to the slice built first among them — the stage that decodes or validates it, its `depends-on` empty — and every later stage whose functions take or return it `depends-on` that slice, so it imports the type rather than declaring a copy of its own; the entry, built last, owns none of them. A shared type given to the entry, or to a stage built beside the one that takes it, is a type that slice cannot import, so it redeclares it, and the stem ends with two shapes for one thing.
 
-Where `start` states a table fetched at start-up that a stage reads — a rate table, a region mapping — the stage's slice owns the read: it looks the table up in its own cache and fetches it on a miss, and its brief says so, since the bootstrap's slice lays no loader for another stem and the stage never assumes the table was put there before it ran.
+Where a stage reads a table the program fetches from another system — a rate table, a region mapping — the stage's slice owns the read, whether a `start` requirement states the fetch or the design alone holds it: it looks the table up in its own cache and fetches it on a miss, and its brief says so, since the bootstrap's slice lays no loader for another stem and the stage never assumes the table was put there before it ran.
 
 ## Contract
 
@@ -94,7 +94,7 @@ type keys: auth.credential, session.token, orders.order, catalog.item
 ## Worked example: a pipeline stem
 
 ```text
-start          REQ-001, REQ-002   (the settings, and the rate table fetched at start-up)
+start          REQ-001, REQ-002   (the settings the program refuses to run without)
 shipments      21 requirements, past the cap of 12, so its sub-stems are the floor:
   shipments.inbound      REQ-003 … REQ-009   (the consumer: receive a notice, run the stages, publish the quote)
   shipments.validation   REQ-010 … REQ-014   (the notice decoded and its items validated)
@@ -115,7 +115,7 @@ type keys: shipments.notice, shipments.item, shipments.quote
       "types": [],
       "depends-on": [],
       "brief": [
-        "Delivers the settings the stages read; the rate table fetched at start-up is `shipments-pricing`'s to read and load, so nothing of the consumer or the table is wired here."
+        "Delivers the settings the stages read; the rate table the pricing reads is `shipments-pricing`'s to load and read, so nothing of the consumer or the table is wired here."
       ]
     },
     {
@@ -151,4 +151,4 @@ type keys: shipments.notice, shipments.item, shipments.quote
 }
 ```
 
-The consumer is the entry, so `shipments-inbound` depends on the two stage slices and is built last, though its ids come first; the engine still numbers it `SLICE-002` from `REQ-003`, and the waves follow the dependencies: the validation alone, then the pricing, then the consumer. The stem is cut at two sub-stem boundaries. The consumer and the validation, 7 and 5, would fit one slice of 12, yet the pricing stands between them — the consumer depends on the pricing, which depends on the validation — so merging them would leave the pricing depending on a slice that depends on it, and the pair stays apart; no other two fit together (5 and 9 is 14, 7 and 9 is 16). Had the consumer and the pricing fit, the consumer would have joined the pricing, the stage run last. Each type goes to the slice built first among those that read or produce it: the notice and the item to the validation that decodes them, since the pricing and the consumer take them after it; the quote to the pricing that produces it; the consumer, handing them along, owns none. `shipments-pricing` depends on `shipments-validation` for the item it takes rather than redeclaring one, and reads the rate table through its own cache, since the bootstrap's slice lays no loader for it. Had the design listed the source's `NoticeConsumer` or `RatesClient` class, it would have labelled them mechanisms and they would not be in the request's keys.
+The consumer is the entry, so `shipments-inbound` depends on the two stage slices and is built last, though its ids come first; the engine still numbers it `SLICE-002` from `REQ-003`, and the waves follow the dependencies: `start` and the validation, then the pricing, then the consumer. The stem is cut at two sub-stem boundaries. The consumer and the validation, 7 and 5, would fit one slice of 12, yet the pricing stands between them — the consumer depends on the pricing, which depends on the validation — so merging them would leave the pricing depending on a slice that depends on it, and the pair stays apart; no other two fit together (5 and 9 is 14, 7 and 9 is 16). Had the consumer and the pricing fit, the consumer would have joined the pricing, the stage run last. Each type goes to the slice built first among those that read or produce it: the notice and the item to the validation that decodes them, since the pricing and the consumer take them after it; the quote to the pricing that produces it; the consumer, handing them along, owns none. `shipments-pricing` depends on `shipments-validation` for the item it takes rather than redeclaring one, and reads the rate table through its own cache, since no requirement states its fetch and the bootstrap's slice lays no loader for it. Had the design listed the source's `NoticeConsumer` or `RatesClient` class, it would have labelled them mechanisms and they would not be in the request's keys.
