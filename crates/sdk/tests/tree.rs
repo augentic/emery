@@ -491,13 +491,11 @@ fn start_surface() {
     );
     assert_eq!(
         start.detail,
-        [
-            "the process bootstrap, run by the console script `svc`, which calls `main()`: claimed \
+        ["the process bootstrap, run by the console script `svc`, which calls `main()`: claimed \
           for what those the program serves observe of it as a whole — a rule applied to every \
           request, a health or status answer, a setting it refuses to run without; how it \
           readies itself, reaches other systems, and shuts down is the design's, in `excerpt` \
-          and `call` claims"
-        ]
+          and `call` claims"]
     );
     assert_eq!(Runs::Guard.clone(), Runs::Guard);
 }
