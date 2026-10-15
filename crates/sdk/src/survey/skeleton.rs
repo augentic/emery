@@ -58,10 +58,9 @@ pub(super) fn decisions<'m>(modules: impl IntoIterator<Item = &'m Module>) -> Op
          line that applies a named constant, at a step the function takes into the tree (a \
          write, a delete, a publish, a lookup it awaits or binds), at the code a stated \
          behaviour names, \
-         or at a surface's registration or handler lines; a line that only wires or assigns — \
-         a value passed on, a field set, a value computed from the ones in hand — is no \
-         requirement's anchor, and what `start` constructs with a boundary's value is one \
-         requirement at that construction:\n\n{}",
+         or at a surface's registration or handler lines; a line that only wires, assigns, or \
+         constructs a client or a connection — a value passed on, a field set, a value computed \
+         from the ones in hand — is no requirement's anchor:\n\n{}",
         lines.join("\n")
     ))
 }
@@ -150,8 +149,10 @@ fn named(dir: &str) -> String {
 /// bodies elided.
 ///
 /// A class is spelled under `dialect`'s [`ClassSyntax`](super::ClassSyntax)
-/// and is an `enum` where its bases say so. `anchored` is false for an
-/// inline value, which has no path to cite.
+/// and is an `enum` where its bases say so. A field with a
+/// [`table`](super::code::Member::table) of at most [`TABLE_LINES`] lines is spelled with
+/// it, re-indented under the syntax. `anchored` is false for an inline
+/// value, which has no path to cite.
 pub fn types<'m>(
     dialect: &Dialect, modules: impl IntoIterator<Item = &'m Module>, anchored: bool,
 ) -> Vec<Claim> {
@@ -181,7 +182,10 @@ pub fn types<'m>(
                 };
                 signature.push('\n');
                 signature.push_str(syntax.indent);
-                signature.push_str(&member.signature);
+                match member.table.as_deref().filter(|table| table.lines().count() <= TABLE_LINES) {
+                    Some(table) => signature.push_str(&indented(table, syntax.indent)),
+                    None => signature.push_str(&member.signature),
+                }
                 signature.push_str(terminator);
             }
             if class.members.is_empty() {
@@ -193,6 +197,30 @@ pub fn types<'m>(
         }
     }
     claims
+}
+
+/// The most lines a field's table runs to before the `type` claim elides it.
+pub const TABLE_LINES: usize = 120;
+
+// A declaration over several lines under `indent`: its first line as
+// written, every other less the whitespace they share and behind the
+// indent, blank lines dropped.
+fn indented(text: &str, indent: &str) -> String {
+    let mut lines = text.lines().filter(|line| !line.trim().is_empty());
+    let Some(first) = lines.next() else { return String::new() };
+    let rest: Vec<&str> = lines.collect();
+    let shared = rest
+        .iter()
+        .map(|line| line.chars().take_while(|ch| ch.is_whitespace()).count())
+        .min()
+        .unwrap_or_default();
+    let mut out = first.to_owned();
+    for line in rest {
+        out.push('\n');
+        out.push_str(indent);
+        out.push_str(line.char_indices().nth(shared).map_or("", |(at, _)| &line[at..]));
+    }
+    out
 }
 
 fn claim(name: &str, signature: &str, path: Option<String>, what: &str) -> Claim {
@@ -566,7 +594,8 @@ pub(super) fn calls<R: Recogniser>(tree: &Tree<R>, files: &[String]) -> Option<S
          `call` is drawn from this list, its `callee` spelled as listed: a store, a broker, an HTTP \
          client, a cache, an identity provider, or a metric emission leaves the process; a \
          validator, a logger, or a framework helper does not, unless its emission is the surface's \
-         contract. Every listed call that leaves the process has a requirement beside it:\n\n{}",
+         contract. Every listed call that leaves the process is a `call` claim, with a \
+         `requirement` beside it where what the caller observes depends on it:\n\n{}",
         lines.join("\n")
     ))
 }

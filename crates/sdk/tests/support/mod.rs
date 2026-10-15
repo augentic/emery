@@ -449,6 +449,7 @@ pub fn member(name: &str, kind: MemberKind, signature: &str, lines: Lines) -> Me
         private: false,
         lines,
         signature: signature.to_owned(),
+        table: None,
     }
 }
 

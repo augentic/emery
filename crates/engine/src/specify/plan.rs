@@ -115,7 +115,8 @@ impl<'a> SliceBrief<'a> {
 
     // A stem past the cap cut finer than the cap asks: two of its slices
     // that would fit one within the cap are a finding, the smallest pair
-    // named.
+    // named. A pair a third slice stands between in `depends-on` cannot
+    // merge without closing a cycle, so it is no finding.
     fn verify_cut(
         &self, answer: &SliceAnswer, placed: &BTreeMap<ReqId, &str>, review: &mut Review,
     ) {
@@ -124,6 +125,11 @@ impl<'a> SliceBrief<'a> {
             .iter()
             .map(|draft| (draft.name.as_str(), draft.requirements.len()))
             .collect();
+        let indirect = answer.indirect();
+        let apart = |a: &str, b: &str| {
+            indirect.get(a).is_some_and(|reached| reached.contains(b))
+                || indirect.get(b).is_some_and(|reached| reached.contains(a))
+        };
         for stem in self.stems.iter().filter(|stem| !stem.substems.is_empty()) {
             let names: BTreeSet<&str> =
                 stem.requirements.iter().filter_map(|id| placed.get(id).copied()).collect();
@@ -132,13 +138,19 @@ impl<'a> SliceBrief<'a> {
                 .map(|name| (sizes.get(name).copied().unwrap_or(0), name))
                 .collect();
             slices.sort_unstable();
-            if let [(first, a), (second, b), ..] = slices[..]
-                && first + second <= SLICE_CAP
-            {
+            let pair = slices
+                .iter()
+                .enumerate()
+                .flat_map(|(index, x)| slices[index + 1..].iter().map(move |y| (x, y)))
+                .filter(|((first, a), (second, b))| first + second <= SLICE_CAP && !apart(a, b))
+                .min_by_key(|((first, _), (second, _))| first + second);
+            if let Some(((first, a), (second, b))) = pair {
                 review.note(format_args!(
                     "the stem `{}` is cut into {} slices, yet `{a}` ({first} requirements) and \
                      `{b}` ({second}) fit one slice of {} within the cap of {SLICE_CAP}: merge \
-                     the stem's slices until no two fit together",
+                     the stem's slices until no two that could merge fit together; two a third \
+                     slice stands between in `depends-on`, an entry and the first stage it \
+                     runs, stay apart",
                     stem.label,
                     slices.len(),
                     first + second
@@ -353,7 +365,9 @@ impl Display for SliceBrief<'_> {
                  slices of up to {SLICE_CAP} requirements by what builds and verifies together. \
                  Cut the stem at as few sub-stem boundaries as the cap allows, never one slice \
                  per sub-stem: an answer leaving two of a stem's slices that would fit one \
-                 slice within the cap is refused."
+                 slice within the cap is refused, unless a third slice stands between them in \
+                 `depends-on`, as the last stage stands between an entry and the first, since \
+                 merging those would close a cycle; such a pair stays apart."
             )?;
         }
 
@@ -412,6 +426,41 @@ impl SliceAnswer {
 
         let (_, cyclic) = ranks(pending);
         cyclic
+    }
+
+    // The slices each one depends on through another slice: the dependencies
+    // of its dependencies, and theirs. Merging a slice with one it reaches so
+    // would leave the slice between them depending on itself.
+    fn indirect(&self) -> BTreeMap<&str, BTreeSet<&str>> {
+        let names: BTreeSet<&str> = self.slices.iter().map(|draft| draft.name.as_str()).collect();
+        let direct: BTreeMap<&str, Vec<&str>> = self
+            .slices
+            .iter()
+            .map(|draft| {
+                let dependencies = draft
+                    .depends_on
+                    .iter()
+                    .map(String::as_str)
+                    .filter(|dependency| names.contains(dependency) && *dependency != draft.name)
+                    .collect();
+                (draft.name.as_str(), dependencies)
+            })
+            .collect();
+        let step = |name: &str| direct.get(name).into_iter().flatten().copied();
+
+        direct
+            .keys()
+            .map(|&name| {
+                let mut reached = BTreeSet::new();
+                let mut pending: Vec<&str> = step(name).flat_map(step).collect();
+                while let Some(next) = pending.pop() {
+                    if reached.insert(next) {
+                        pending.extend(step(next));
+                    }
+                }
+                (name, reached)
+            })
+            .collect()
     }
 }
 
