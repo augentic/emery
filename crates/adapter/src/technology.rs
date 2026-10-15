@@ -3,8 +3,7 @@
 //! A specification states behaviour by the role a thing plays. Design is
 //! responsible for naming the product, protocol, library, framework, or host
 //! that implements the behaviour. A [`Lexicon`] holds the names a text is
-//! held against, and [`package_terms`] reads the names a run adds to it from
-//! the packages a source imports.
+//! held against: the fixed ones, and those of the packages a source imports.
 
 // The fixed names of vendors, products, protocols, frameworks, and hosts.
 //
@@ -245,11 +244,11 @@ const COINED_PARTS: &[&str] = &["sql"];
 /// The technology names a text is held against.
 ///
 /// The fixed names of vendors, products, protocols, frameworks, and hosts
-/// are every lexicon's; a run adds the `terms` it derives from the packages
-/// its source imports, through [`package_terms`]. A name that is also a
-/// plain word of a domain (`express`, `vault`) is not among the fixed names,
-/// so a text in the domain's own words names nothing. The default is the
-/// fixed names alone.
+/// are every lexicon's; a run adds the terms of the packages its source
+/// imports through [`Lexicon::from_packages`]. A name that is also a plain
+/// word of a domain (`express`, `vault`) is not among the fixed names, so a
+/// text in the domain's own words names nothing. The default is the fixed
+/// names alone.
 ///
 /// # Examples
 ///
@@ -263,7 +262,7 @@ const COINED_PARTS: &[&str] = &["sql"];
 /// );
 /// assert!(fixed.names("POST /orders creates an order.").is_empty());
 ///
-/// let run = Lexicon::with(["keyvaultsecrets"]);
+/// let run = Lexicon::from_packages(["@azure/keyvault-secrets"]);
 /// assert_eq!(run.names("the keyvault-secrets client"), ["keyvaultsecrets"]);
 /// ```
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
@@ -274,12 +273,53 @@ pub struct Lexicon {
 impl Lexicon {
     /// Returns the lexicon with `terms` beside the fixed names.
     ///
-    /// Each term is spelled as [`package_terms`] spells one, lowercase
-    /// letters and digits with no separator.
+    /// Each term is spelled as a fixed name is, lowercase letters and digits
+    /// with no separator; [`Lexicon::from_packages`] spells them from a
+    /// source's packages.
     pub fn with(terms: impl IntoIterator<Item = impl Into<String>>) -> Self {
         Self {
             terms: terms.into_iter().map(Into::into).collect(),
         }
+    }
+
+    /// Returns the lexicon with the terms of the package `specifiers` beside the fixed names.
+    ///
+    /// A specifier yields the names a text could spell only on purpose, each
+    /// once:
+    ///
+    /// - the scope of a scoped package, which always names a vendor or a
+    ///   product: `@azure`, `@aws-sdk`, `@nestjs`
+    /// - a compound name, joined: `keyvault-secrets`, `confluent_kafka`,
+    ///   `socket.io`, which a text names only by spelling both parts
+    /// - a lone name that is coined rather than plain: one holding a digit,
+    ///   led by `py`, ending in `js`, `db`, or `mq`, or holding `sql`
+    ///
+    /// A lone plain word (`requests`, `events`, `express`) yields nothing,
+    /// since it would make the domain's own words findings; the fixed names
+    /// hold the products among them. A path beneath the package
+    /// (`lodash/fp`) is not read.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use emery_adapter::Lexicon;
+    ///
+    /// assert_eq!(
+    ///     Lexicon::from_packages(["@azure/keyvault-secrets", "@nestjs/common", "boto3"]),
+    ///     Lexicon::with(["azure", "keyvaultsecrets", "nestjs", "boto3"])
+    /// );
+    /// assert_eq!(Lexicon::from_packages(["kafkajs"]), Lexicon::with(["kafkajs"]));
+    /// assert_eq!(Lexicon::from_packages(["confluent_kafka"]), Lexicon::with(["confluentkafka"]));
+    /// assert_eq!(Lexicon::from_packages(["requests", "express"]), Lexicon::default());
+    /// ```
+    pub fn from_packages<'s>(specifiers: impl IntoIterator<Item = &'s str>) -> Self {
+        let mut terms: Vec<String> = Vec::new();
+        for term in specifiers.into_iter().flat_map(package_terms) {
+            if !terms.contains(&term) {
+                terms.push(term);
+            }
+        }
+        Self { terms }
     }
 
     /// Returns the technology `text` names, once each, in the order the text reaches them.
@@ -343,39 +383,9 @@ impl Lexicon {
     }
 }
 
-/// Returns the technology terms a package `specifier` adds to a [`Lexicon`].
-///
-/// A term is spelled as a fixed name is, lowercase letters and digits with
-/// no separator, so [`Lexicon::names`] reads it the same way. The specifier
-/// yields:
-///
-/// - the scope of a scoped package, which always names a vendor or a
-///   product: `@azure`, `@aws-sdk`, `@nestjs`
-/// - a compound name, joined: `keyvault-secrets`, `confluent_kafka`,
-///   `socket.io`, which a text names only by spelling both parts
-/// - a lone name that is coined rather than plain: one holding a digit, led
-///   by `py`, ending in `js`, `db`, or `mq`, or holding `sql`
-///
-/// A lone plain word (`requests`, `events`, `express`) yields nothing, since
-/// it would make the domain's own words findings; the lexicon names the
-/// products among them. A path beneath the package (`lodash/fp`) is not
-/// read.
-///
-/// # Examples
-///
-/// ```
-/// use emery_adapter::package_terms;
-///
-/// assert_eq!(package_terms("@azure/keyvault-secrets"), ["azure", "keyvaultsecrets"]);
-/// assert_eq!(package_terms("@nestjs/common"), ["nestjs"]);
-/// assert_eq!(package_terms("kafkajs"), ["kafkajs"]);
-/// assert_eq!(package_terms("confluent_kafka"), ["confluentkafka"]);
-/// assert_eq!(package_terms("boto3"), ["boto3"]);
-/// assert!(package_terms("requests").is_empty());
-/// assert!(package_terms("express").is_empty());
-/// ```
-#[must_use]
-pub fn package_terms(specifier: &str) -> Vec<String> {
+// The terms of one package specifier, spelled as a fixed name is, under the
+// rules `Lexicon::from_packages` states.
+fn package_terms(specifier: &str) -> Vec<String> {
     let mut terms = Vec::new();
     let (scope, name) = specifier.strip_prefix('@').map_or((None, specifier), |scoped| {
         let (scope, name) = scoped.split_once('/').unwrap_or((scoped, ""));

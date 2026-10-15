@@ -51,8 +51,8 @@
 //!   lends, which both gates hold to [`beneath`].
 //! - **Technology**: a vendor, product, protocol, framework, or host a
 //!   requirement names in place of the role it plays, which a [`Lexicon`]
-//!   reads a text for, over its fixed names and the terms [`package_terms`]
-//!   derives from a source's packages.
+//!   reads a text for, over its fixed names and those of a source's
+//!   packages.
 
 mod path;
 pub mod source;
@@ -60,7 +60,7 @@ pub mod target;
 mod technology;
 
 pub use path::{BadPath, SKIP_DIRS, SKIP_FILES, beneath};
-pub use technology::{Lexicon, package_terms};
+pub use technology::Lexicon;
 
 /// Returns whether `value` is lowercase kebab-case.
 ///

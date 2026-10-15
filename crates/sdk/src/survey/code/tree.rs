@@ -7,6 +7,7 @@ use std::path::{Path, PathBuf};
 use super::recogniser::{Listing, Manifest, Recogniser};
 use super::surface::{Receiver, Surface};
 use super::{Arg, BindingKind, Call, Imported, Module};
+use crate::survey::resolve::Target;
 use crate::survey::tests::{Test, scenarios};
 use crate::survey::{Dialect, Lines};
 use crate::{kebab, push_unique};
@@ -246,6 +247,24 @@ impl<R: Recogniser> Tree<R> {
             .filter(|(path, module)| !files.contains(path) && scopes.contains(module.directory()))
             .map(|(path, _)| path.clone())
             .collect()
+    }
+
+    /// Returns the specifiers `files` import a package under, once each, in import order.
+    ///
+    /// A type-only import runs nothing and is left out, as is a path `files`
+    /// holds no module at.
+    #[must_use]
+    pub fn packages(&self, files: &[String]) -> Vec<&str> {
+        let mut packages: Vec<&str> = Vec::new();
+        for module in files.iter().filter_map(|path| self.modules.get(path)) {
+            for import in &module.imports {
+                if import.type_only || import.target.as_ref().and_then(Target::package).is_none() {
+                    continue;
+                }
+                push_unique(&mut packages, import.specifier.as_str());
+            }
+        }
+        packages
     }
 
     /// Returns the modules no other module imports, each in path order.

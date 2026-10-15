@@ -317,10 +317,10 @@ impl Survey {
 ///
 /// Each seam lays the data files its modules name among them and the
 /// tree's own tests after them, each test's statements in the brief of
-/// every seam whose modules it imports, and carries as `terms` the
-/// technology its modules import a package under, through
-/// [`package_terms`](crate::package_terms). The `type` claims are those of
-/// the modules the seams reach.
+/// every seam whose modules it imports, and carries as its `lexicon` the
+/// technology of the packages its modules import, through
+/// [`Lexicon::from_packages`]. The `type` claims are those of the modules
+/// the seams reach.
 ///
 /// # Errors
 ///

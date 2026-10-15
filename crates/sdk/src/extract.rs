@@ -54,9 +54,8 @@ const NEAREST: usize = 16;
 /// within the seam's `files` when it names any, with a line range the file
 /// holds; on an inline value no claim carries a `path`; a `requirement` or
 /// `criterion` id leads with one of the seam's `stems` when it has them; a
-/// `requirement` or `criterion` names no technology in its id or its body,
-/// over the [`Lexicon`] of the seam's `terms`; a
-/// `requirement`'s `path` overlaps one of the seam's `anchors` when it has
+/// `requirement` or `criterion` names no technology of the seam's `lexicon`
+/// in its id or its body; a `requirement`'s `path` overlaps one of the seam's `anchors` when it has
 /// them. Rejected responses may be corrected until the host's round limit is
 /// reached.
 ///
@@ -141,18 +140,17 @@ pub async fn extract<P: Model>(
 ///   file named, so the model re-anchors it or leaves it out. Other kinds
 ///   are not held to them. Empty leaves the anchors to the model; anchors
 ///   over an inline value are the adapter's own defect.
-/// - `terms` are the technology names the seam's modules import a package
-///   under, each spelled as [`package_terms`](crate::package_terms) spells
-///   one, which the turn's [`Lexicon`] holds beside its
-///   fixed names: a `requirement` or `criterion` whose id or statement names
-///   one is refused, so the behaviour is stated by the role the technology
-///   plays and the technology carried in a `call` or `excerpt`. The fixed
-///   names hold whether the seam names terms or none.
+/// - `lexicon` is the technology the seam's claims are held against:
+///   [`Lexicon::from_packages`] over the packages the seam's modules
+///   import, or the fixed names alone by default. A `requirement` or
+///   `criterion` whose id or statement names one is refused, so the
+///   behaviour is stated by the role the technology plays and the
+///   technology carried in a `call` or `excerpt`.
 ///
 /// # Examples
 ///
 /// ```
-/// use emery_sdk::Seam;
+/// use emery_sdk::{Lexicon, Seam};
 ///
 /// let brief = Seam::whole();
 /// let module = Seam::files(["src/orders.ts", "src/lib/pricing.ts"]);
@@ -162,7 +160,7 @@ pub async fn extract<P: Model>(
 ///     files: vec!["src/routes.ts".to_owned(), "src/lib/pricing.ts".to_owned()],
 ///     stems: vec!["orders".to_owned()],
 ///     anchors: vec!["src/routes.ts#L6-L9".to_owned(), "src/lib/pricing.ts#L12".to_owned()],
-///     terms: vec!["azure".to_owned(), "keyvaultsecrets".to_owned()],
+///     lexicon: Lexicon::from_packages(["@azure/keyvault-secrets"]),
 /// };
 /// # let _ = (brief, module, anchored, surface);
 /// ```
@@ -176,8 +174,8 @@ pub struct Seam {
     pub stems: Vec<String>,
     /// The lines a `requirement` anchors at, in the `path` grammar; empty for any.
     pub anchors: Vec<String>,
-    /// The technology names the seam's packages add to the lexicon; empty for none.
-    pub terms: Vec<String>,
+    /// The technology the seam's claims are held against; the fixed names by default.
+    pub lexicon: Lexicon,
 }
 
 impl Seam {
@@ -221,7 +219,7 @@ struct Plan<'a> {
     stems: Vec<&'a str>,
     lend: Lend<'a>,
     anchors: Vec<Anchored>,
-    lexicon: Lexicon,
+    lexicon: &'a Lexicon,
 }
 
 // One line span a `requirement` may anchor at, root-relative; no lines is
@@ -310,7 +308,7 @@ impl<'a> Plan<'a> {
             stems,
             lend,
             anchors,
-            lexicon: Lexicon::with(&seam.terms),
+            lexicon: &seam.lexicon,
         })
     }
 

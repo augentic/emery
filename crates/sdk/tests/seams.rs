@@ -12,7 +12,7 @@ use emery_sdk::survey::code::{
     EnvRead, ExportKind, Init, Listing, Manifest, MemberKind, Parsed, Runs, Tree, Use,
 };
 use emery_sdk::survey::resolve::Target;
-use emery_sdk::{Context, Doc, Error, SourceInput};
+use emery_sdk::{Context, Doc, Error, Lexicon, SourceInput};
 use omnia_test::guest::Scripted;
 use support::{
     PYTHON, Plain, Stub, TYPESCRIPT, call, callee, class, class_decl, decorated, dynamic, export,
@@ -454,8 +454,8 @@ async fn whole_tree() {
     }
     assert!(!seam.anchors.iter().any(|anchor| anchor.starts_with("tests/")), "a test is no anchor");
     assert_eq!(
-        seam.terms,
-        ["nestjs"],
+        seam.lexicon,
+        Lexicon::with(["nestjs"]),
         "the scope of `@nestjs/common`; `express` is a plain word and `@alias/x` no package"
     );
 
@@ -889,11 +889,11 @@ async fn by_stem_widened() {
         "a seam's anchors are its own files': {:?}",
         survey.seams[1].anchors
     );
-    let terms: Vec<&[String]> = survey.seams.iter().map(|seam| seam.terms.as_slice()).collect();
+    let lexicons: Vec<&Lexicon> = survey.seams.iter().map(|seam| &seam.lexicon).collect();
     assert_eq!(
-        terms,
-        [&[] as &[String], &[], &["nestjs".to_owned()]],
-        "a seam's terms are its own modules' packages'"
+        lexicons,
+        [&Lexicon::default(), &Lexicon::default(), &Lexicon::with(["nestjs"])],
+        "a seam's lexicon is its own modules' packages'"
     );
     let types: Vec<&str> =
         survey.types.iter().map(|claim| claim.extras["name"].as_str().expect("name")).collect();

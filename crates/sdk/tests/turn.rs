@@ -1,7 +1,7 @@
 //! Every call here mines one seam, so each is one turn and its outcome passes
 //! through unchanged; the fan-out and join over several are `extract.rs`'s.
 
-use emery_sdk::{Context, Doc, Error, Evidence, Seam, SourceInput};
+use emery_sdk::{Context, Doc, Error, Evidence, Lexicon, Seam, SourceInput};
 use omnia_sdk::model::{Error as ModelError, ToolCall};
 use omnia_test::SeenFormat;
 use omnia_test::guest::Scripted;
@@ -310,7 +310,7 @@ async fn files_stems() {
         files: vec!["src/routes.ts".to_string()],
         stems: vec!["password-reset".to_string()],
         anchors: Vec::new(),
-        terms: Vec::new(),
+        lexicon: Lexicon::default(),
     };
 
     ask(&model, &SourceInput::workspace("code", root), seam).await.expect("accepted");
@@ -382,9 +382,9 @@ async fn stem_findings() {
 }
 
 // A `requirement` or `criterion` naming a technology in its id or its body
-// is a finding, over the lexicon and the seam's terms alike, each name
-// listed; a `call` or `excerpt` carries the technology and is not held, and
-// a statement by role passes however many packages the seam imports.
+// is a finding, over the fixed names and the seam's packages alike, each
+// name listed; a `call` or `excerpt` carries the technology and is not held,
+// and a statement by role passes however many packages the seam imports.
 #[tokio::test]
 async fn technology_findings() {
     let model = Scripted::answering([
@@ -403,7 +403,7 @@ async fn technology_findings() {
         ]}"#,
     ]);
     let seam = Seam {
-        terms: vec!["keyvaultsecrets".to_owned()],
+        lexicon: Lexicon::from_packages(["@azure/keyvault-secrets"]),
         ..Seam::note("Mine.")
     };
 
