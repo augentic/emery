@@ -151,7 +151,7 @@ fn named(dir: &str) -> String {
 ///
 /// A class is spelled under `dialect`'s [`ClassSyntax`](super::ClassSyntax)
 /// and is an `enum` where its bases say so. A field with a
-/// [`table`](Member::table) of at most [`TABLE_LINES`] lines is spelled with
+/// [`table`](super::code::Member::table) of at most [`TABLE_LINES`] lines is spelled with
 /// it, re-indented under the syntax. `anchored` is false for an inline
 /// value, which has no path to cite.
 pub fn types<'m>(

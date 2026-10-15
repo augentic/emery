@@ -2236,7 +2236,7 @@ async fn oversized_stem_cut_fine() {
         correction.contains(&format!(
             "the stem `orders` is cut into 3 slices, yet `orders-deleting` ({deletes} \
              requirements) and `orders-reading` ({reads}) fit one slice of {} within the cap of \
-             {cap}: merge the stem's slices until no two fit together",
+             {cap}: merge the stem's slices until no two that could merge fit together",
             reads + deletes
         )),
         "{correction}"
@@ -2250,6 +2250,118 @@ async fn oversized_stem_cut_fine() {
         .expect("the committed plan is JSON");
     assert_eq!(plan["slices"][0]["requirements"], serde_json::json!(reads_and_deletes));
     assert_eq!(plan["slices"].as_array().map(Vec::len), Some(3));
+    provider.model.assert_exhausted();
+}
+
+// A pipeline stem past the cap: the entry and the first stage would fit one
+// slice, so three slices depending on nothing are refused for that pair; the
+// same three with the entry depending on the last stage and the last on the
+// first commit, since merging a pair the last stage stands between would
+// close a cycle, and the waves follow the dependencies.
+#[tokio::test]
+async fn oversized_stem_pipeline() {
+    let cap = emery_engine::specify::SLICE_CAP;
+    // the entry and the first stage fit the cap together; no other pair does
+    let inbound = cap / 2 + 1;
+    let validation = cap / 2 - 1;
+    let pricing = cap / 2 + 3;
+    let parts: Vec<(&str, usize)> =
+        vec![("inbound", inbound), ("validation", validation), ("pricing", pricing)];
+    let mut claims = Vec::new();
+    for (part, count) in &parts {
+        for index in 0..*count {
+            let statement = format!("`{part}` does thing {index}.");
+            claims.push(requirement(&format!("shipments.{part}.thing-{index}"), &statement));
+        }
+    }
+    claims.push(requirement("auth.login", "Users sign in with a credential."));
+    let subjects: Vec<String> = claims.iter().filter_map(|claim| claim.id.clone()).collect();
+    let numbered: Vec<String> = (1..=claims.len()).map(|n| format!("REQ-{n:03}")).collect();
+    let ids: Vec<&str> = numbered.iter().map(String::as_str).collect();
+    let (entry, others) = ids.split_at(inbound);
+    let (first, others) = others.split_at(validation);
+    let (last, auth) = others.split_at(pricing);
+    let grouping = separate_grouping(claims.len());
+    let draft = spec_draft(&subjects, &["Shipments quoted through two stages, and sign-in."]);
+    let refused = separate_slicing(&[
+        ("shipments-inbound", entry),
+        ("shipments-validation", first),
+        ("shipments-pricing", last),
+        ("authentication", auth),
+    ]);
+    let accepted = serde_json::json!({"preamble": [], "slices": [
+        {"name": "shipments-inbound", "requirements": entry, "depends-on": ["shipments-pricing", "shipments-validation"]},
+        {"name": "shipments-validation", "requirements": first},
+        {"name": "shipments-pricing", "requirements": last, "depends-on": ["shipments-validation"]},
+        {"name": "authentication", "requirements": auth},
+    ]})
+    .to_string();
+    let mut provider = Provider::answering([
+        grouping.as_str(),
+        draft.as_str(),
+        DESIGN_ANSWER,
+        refused.as_str(),
+        accepted.as_str(),
+    ]);
+    provider.source.evidence.insert("docs".to_string(), Ok(evidence(claims)));
+
+    let resp =
+        cli_ok(&provider, &["emery", "--format", "json", "specify", &reference("docs")]).await;
+
+    // the brief states the exemption beside the cut rule
+    let request = provider.model.seen()[3].messages.join("\n");
+    assert!(
+        request.contains(
+            "is refused, unless a third slice stands between them in `depends-on`, as the last \
+             stage stands between an entry and the first"
+        ),
+        "{request}"
+    );
+
+    // with no dependency the entry and the first stage are the pair named
+    let check = &provider.model.exchanges()[3];
+    assert_eq!(check.tool, "check");
+    let correction = check.outcome.as_ref().expect_err("the unordered cut is rejected");
+    assert!(
+        correction.contains(&format!(
+            "the stem `shipments` is cut into 3 slices, yet `shipments-validation` ({validation} \
+             requirements) and `shipments-inbound` ({inbound}) fit one slice of {} within the \
+             cap of {cap}",
+            inbound + validation
+        )),
+        "{correction}"
+    );
+    assert!(
+        correction.contains("two a third slice stands between in `depends-on`"),
+        "{correction}"
+    );
+
+    // the same cut under the pipeline's dependencies commits, the entry built last
+    let committed: Value = serde_json::from_slice(&resp.stdout).expect("one JSON envelope");
+    assert_eq!(
+        committed["waves"],
+        serde_json::json!([["SLICE-002", "SLICE-004"], ["SLICE-003"], ["SLICE-001"]]),
+        "the validation and sign-in, then the pricing, then the consumer: {committed}"
+    );
+    let id = current(&provider.storage);
+    let plan: Value = serde_json::from_slice(&document(&provider.storage, &id, "plan.json"))
+        .expect("the committed plan is JSON");
+    let slices: Vec<(&str, &str)> = plan["slices"]
+        .as_array()
+        .expect("slices")
+        .iter()
+        .map(|slice| (slice["id"].as_str().expect("id"), slice["name"].as_str().expect("name")))
+        .collect();
+    assert_eq!(
+        slices,
+        vec![
+            ("SLICE-001", "shipments-inbound"),
+            ("SLICE-002", "shipments-validation"),
+            ("SLICE-003", "shipments-pricing"),
+            ("SLICE-004", "authentication"),
+        ]
+    );
+    assert_eq!(plan["slices"][0]["depends-on"], serde_json::json!(["SLICE-002", "SLICE-003"]));
     provider.model.assert_exhausted();
 }
 
