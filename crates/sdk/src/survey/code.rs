@@ -398,6 +398,13 @@ pub enum BindingKind {
         init: Init,
         /// The initializer's first line, cut as the walker cuts it.
         head: Option<String>,
+        /// The declaration whole, where the initializer is a table.
+        ///
+        /// A table is what [`Member::table`] has it: an object, array, or
+        /// mapping written out in place as data. The `type` claim spells an
+        /// exported module-level value with it, so a build reads the entries
+        /// rather than inventing them.
+        table: Option<String>,
     },
     /// A class field.
     Field {

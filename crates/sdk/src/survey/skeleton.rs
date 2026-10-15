@@ -1,8 +1,8 @@
 //! Renders what a parsed tree states on its own, copied rather than restated.
 //!
 //! The briefs carry what the code spells, so the model draws from it rather
-//! than paraphrase: every exported class and type as a `type` claim, every
-//! value the code spells as its own as a boundary, every package imported
+//! than paraphrase: every exported class, type, and table as a `type` claim,
+//! every value the code spells as its own as a boundary, every package imported
 //! and every call made through one, every point where the code decides,
 //! and every behaviour the tree's own tests state. The decision points, the
 //! `return`s, the heads of functions and methods, the calls through
@@ -16,8 +16,8 @@ use emery_adapter::source::{Claim, ClaimKind};
 use serde_json::{Map, Value};
 
 use super::code::{
-    BindingKind, Call, Imported, Init, MemberKind, Module, Recogniser, Scope, Surface, TRACE, Tree,
-    TypeKind, Use,
+    BindingKind, Call, ExportKind, Imported, Init, MemberKind, Module, Recogniser, Scope, Surface,
+    TRACE, Tree, TypeKind, Use,
 };
 use super::resolve::Target;
 use super::{Dialect, Lines, grouped, push_unique, unique};
@@ -144,15 +144,17 @@ fn named(dir: &str) -> String {
     if dir.is_empty() { "the root".to_owned() } else { format!("`{dir}`") }
 }
 
-/// Returns a `type` claim for every exported class, type alias, and
-/// functional type `modules` declare, each its declaration verbatim with
+/// Returns a `type` claim for every exported class, type alias, functional
+/// type, and table `modules` declare, each its declaration verbatim with
 /// bodies elided.
 ///
 /// A class is spelled under `dialect`'s [`ClassSyntax`](super::ClassSyntax)
 /// and is an `enum` where its bases say so. A field with a
 /// [`table`](super::code::Member::table) of at most [`TABLE_LINES`] lines is spelled with
-/// it, re-indented under the syntax. `anchored` is false for an inline
-/// value, which has no path to cite.
+/// it, re-indented under the syntax. An exported module-level value with a
+/// [`table`](BindingKind::Value::table) within the same cap is a claim of its
+/// own, the declaration whole with its blank lines dropped. `anchored` is
+/// false for an inline value, which has no path to cite.
 pub fn types<'m>(
     dialect: &Dialect, modules: impl IntoIterator<Item = &'m Module>, anchored: bool,
 ) -> Vec<Claim> {
@@ -195,11 +197,24 @@ pub fn types<'m>(
             let what = if dialect.enumerates(&class.bases) { "enum" } else { "class" };
             claims.push(claim(&class.name, &signature, anchor(class.lines), what));
         }
+        for export in module.exports.iter().filter(|export| export.kind == ExportKind::Value) {
+            let Some(binding) = module.exported_binding(&export.name) else { continue };
+            let BindingKind::Value {
+                table: Some(table), ..
+            } = &binding.kind
+            else {
+                continue;
+            };
+            if binding.scope != Scope::Module || table.lines().count() > TABLE_LINES {
+                continue;
+            }
+            claims.push(claim(&export.name, &indented(table, ""), anchor(binding.lines), "table"));
+        }
     }
     claims
 }
 
-/// The most lines a field's table runs to before the `type` claim elides it.
+/// The most lines a table runs to before the `type` claim elides it.
 pub const TABLE_LINES: usize = 120;
 
 // A declaration over several lines under `indent`: its first line as

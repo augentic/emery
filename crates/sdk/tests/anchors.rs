@@ -42,6 +42,7 @@ fn local(name: &str, root: &[&str], index: usize, at: Lines) -> Binding {
             string: None,
             init: Init::Construction,
             head: Some(format!("{name} = ..")),
+            table: None,
         },
         at,
     )
