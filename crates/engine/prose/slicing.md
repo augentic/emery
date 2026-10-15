@@ -14,11 +14,15 @@ A stem of more requirements than the request's cap is too large for one build, s
 
 A stem cut along its sub-stems often holds one entry and the stages it runs: a consumer or a route whose requirements receive the input and call what the other sub-stems state — validating it, enriching it from a lookup, converting it, publishing the result. The entry's code composes the stages' functions, so it cannot compile without them: the entry's slice `depends-on` every stage slice, and is built last, whatever its ids. Inverting this — the stages depending on the entry, or the entry built first — leaves the stage functions reached by nothing, since the slice that should have called them was sealed before they existed. Read which sub-stem receives the input and which are called from it, and point the dependencies from the entry to its stages. The entry's brief names the stage functions it composes, in the order the requirements run them, so the builder wires them rather than rewriting them.
 
+The stages share types: the input one stage decodes, the others take, and the entry hands along. A type several slices of one stem read goes to the slice built first among them — the stage that decodes or validates it, its `depends-on` empty — and every later stage whose functions take or return it `depends-on` that slice, so it imports the type rather than declaring a copy of its own; the entry, built last, owns none of them. A shared type given to the entry, or to a stage built beside the one that takes it, is a type that slice cannot import, so it redeclares it, and the stem ends with two shapes for one thing.
+
+Where `start` states a table fetched at start-up that a stage reads — a rate table, a region mapping — the stage's slice owns the read: it looks the table up in its own cache and fetches it on a miss, and its brief says so, since the bootstrap's slice lays no loader for another stem and the stage never assumes the table was put there before it ran.
+
 ## Contract
 
 - Every `REQ-` id of the specification appears in exactly one slice; every slice has at least one requirement; no id appears that is not in the specification.
 - Each slice has a kebab-case `name` unique within the plan: the noun the slice builds (`authentication`, `order-notifications`), never a number. A slice of one stem may take the stem's name; a slice of merged stems names what they build together.
-- Each design type key is owned by exactly one slice: the slice building the requirements that read or produce it — the consumer that decodes a message owns the message's type, the converter that builds an event owns the event's type — whatever module declared it in the source. A type the source declared beside its bootstrap or its client is still owned by the slice whose behaviour uses it, never by a `start` slice that only constructed something. Answer `types` from the request's keys alone; when the request lists none, every `types` list is empty.
+- Each design type key is owned by exactly one slice: the slice building the requirements that read or produce it — the consumer that decodes a message owns the message's type, the converter that builds an event owns the event's type — whatever module declared it in the source. A type the source declared beside its bootstrap or its client is still owned by the slice whose behaviour uses it, never by a `start` slice that only constructed something; a type several slices of one stem use is owned by the one built first among them, and the others depend on it. Answer `types` from the request's keys alone; when the request lists none, every `types` list is empty.
 - `depends-on` names the slices that must be built before this one, by `name`: build dependencies alone, never a related slice built later. A build dependency is a slice whose code this slice's code cannot compile or test without: one whose design types this slice's code uses, or whose files it edits. What a slice assumes of the running system is no dependency — a client another slice constructs, a consumer already subscribed, a server listening, an event another slice publishes — since a builder verifies against a fake of it and the slices build at once; such an assumption goes in the brief. Every slice of a wave builds in parallel, so each dependency named serialises a build: name the ones the code needs and no other. A slice never depends on itself, and the edges never form a cycle.
 - `brief` is a list of Markdown paragraphs for the builder taking the slice up: what it delivers, what it assumes of the rest of the system, and how it is verified. Say nothing the requirements already say; `[unknown]` where they leave a gap.
 - `preamble` is a list of Markdown paragraphs introducing the plan: how the specification divides and why, in a few sentences. It may be empty.
@@ -90,19 +94,19 @@ type keys: auth.credential, session.token, orders.order, catalog.item
 ## Worked example: a pipeline stem
 
 ```text
-start          REQ-001, REQ-002
-positions      21 requirements, past the cap of 12, so its sub-stems are the floor:
-  positions.inbound    REQ-003 … REQ-010   (the consumer: decode, validate, discard the stale)
-  positions.enrich     REQ-011 … REQ-015   (the stop and the vehicles looked up for a position)
-  positions.outbound   REQ-016 … REQ-023   (the event built from a position and published)
+start          REQ-001, REQ-002   (the settings, and the rate table fetched at start-up)
+shipments      21 requirements, past the cap of 12, so its sub-stems are the floor:
+  shipments.inbound      REQ-003 … REQ-010   (the consumer: receive a notice, run the stages, publish the quote)
+  shipments.validation   REQ-011 … REQ-015   (the notice decoded and its items validated)
+  shipments.pricing      REQ-016 … REQ-023   (a quote priced from the validated items and the rate table)
 
-type keys: positions.message, positions.position, positions.stop, positions.event
+type keys: shipments.notice, shipments.item, shipments.quote
 ```
 
 ```json
 {
   "preamble": [
-    "Three slices: the bootstrap, the two stages a position runs through, and the consumer that runs them."
+    "Four slices: the bootstrap, the two stages a notice runs through, and the consumer that runs them."
   ],
   "slices": [
     {
@@ -110,38 +114,41 @@ type keys: positions.message, positions.position, positions.stop, positions.even
       "requirements": ["REQ-001", "REQ-002"],
       "types": [],
       "depends-on": [],
-      "brief": ["Delivers the settings the stages read; nothing of the consumer is wired here."]
+      "brief": [
+        "Delivers the settings the stages read; the rate table fetched at start-up is `shipments-pricing`'s to read and load, so nothing of the consumer or the table is wired here."
+      ]
     },
     {
-      "name": "positions-enrichment",
+      "name": "shipments-validation",
       "requirements": ["REQ-011", "REQ-012", "REQ-013", "REQ-014", "REQ-015"],
-      "types": ["positions.stop"],
+      "types": ["shipments.notice", "shipments.item"],
       "depends-on": [],
       "brief": [
-        "Delivers `stop_for(station)` and `vehicles_for(train)`, each a function over a position's fields; verified against a fake of the lookups."
+        "Delivers `decode(message)` producing a notice and `validate(notice)` refusing one with no items or a negative weight; owns the notice and the item, which every later stage takes. Verified over notices built in the test."
       ]
     },
     {
-      "name": "positions-outbound",
+      "name": "shipments-pricing",
       "requirements": ["REQ-016", "REQ-017", "REQ-018", "REQ-019", "REQ-020", "REQ-021", "REQ-022", "REQ-023"],
-      "types": ["positions.event"],
-      "depends-on": [],
+      "types": ["shipments.quote"],
+      "depends-on": ["shipments-validation"],
       "brief": [
-        "Delivers `convert(position, stop, vehicles)` producing the events and `publish(events)` sending them; verified by converting a position and asserting the events sent to a fake stream."
+        "Delivers `price(items)` producing a quote from the validated items and the rate table; takes `shipments.item` from the validation slice, so it compiles against it and declares no item of its own.",
+        "Reads the rate table from its own cache and fetches it on a miss, since the bootstrap lays no table for it; verified over items built in the test and a fake of the rate lookup."
       ]
     },
     {
-      "name": "positions-inbound",
+      "name": "shipments-inbound",
       "requirements": ["REQ-003", "REQ-004", "REQ-005", "REQ-006", "REQ-007", "REQ-008", "REQ-009", "REQ-010"],
-      "types": ["positions.message", "positions.position"],
-      "depends-on": ["positions-enrichment", "positions-outbound"],
+      "types": [],
+      "depends-on": ["shipments-validation", "shipments-pricing"],
       "brief": [
-        "Delivers the consumer: decodes a message, validates the position and discards a stale one, then composes `stop_for`, `vehicles_for`, `convert`, and `publish` from the stage slices in that order, so it compiles against both.",
-        "Verified by consuming a message and asserting the events published."
+        "Delivers the consumer: receives a message, then composes `decode`, `validate`, and `price` from the stage slices in that order and publishes the quote, so it compiles against both.",
+        "Verified by consuming a message and asserting the quote published."
       ]
     }
   ]
 }
 ```
 
-The consumer is the entry, so `positions-inbound` depends on the two stage slices and is built last, though its ids come first; the engine still numbers it `SLICE-002` from `REQ-003`, and the waves follow the dependencies. The stem is cut at two sub-stem boundaries because no two of its slices fit one slice within the cap (the smallest pair, 5 and 8, is 13). Each type goes to the slice that reads or produces it: the message and the position to the consumer that decodes them, the stop to the enrichment, the event to the outbound stage. Had the design listed the source's `PositionConsumer` or `StopClient` class, it would have labelled them mechanisms and they would not be in the request's keys.
+The consumer is the entry, so `shipments-inbound` depends on the two stage slices and is built last, though its ids come first; the engine still numbers it `SLICE-002` from `REQ-003`, and the waves follow the dependencies: the validation alone, then the pricing, then the consumer. The stem is cut at two sub-stem boundaries because no two of its slices fit one slice within the cap (the smallest pair, 5 and 8, is 13). Each type goes to the slice built first among those that read or produce it: the notice and the item to the validation that decodes them, since the pricing and the consumer take them after it; the quote to the pricing that produces it; the consumer, handing them along, owns none. `shipments-pricing` depends on `shipments-validation` for the item it takes rather than redeclaring one, and reads the rate table through its own cache, since the bootstrap's slice lays no loader for it. Had the design listed the source's `NoticeConsumer` or `RatesClient` class, it would have labelled them mechanisms and they would not be in the request's keys.
