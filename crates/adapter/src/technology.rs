@@ -1,21 +1,20 @@
 //! Reads a text for the technology it names.
 //!
-//! A specification states behaviour by the role a thing plays, and the
-//! design holds the product, protocol, library, framework, or host that plays
-//! it. [`TECHNOLOGY`] is the fixed lexicon of such names, [`package_terms`]
-//! reads the names a run adds to it from the packages a source imports, and
-//! [`names_technology`] is the one rule every gate over a specification's
-//! words applies.
+//! A specification states behaviour by the role a thing plays. Design is
+//! responsible for naming the product, protocol, library, framework, or host
+//! that implements the behaviour. A [`Lexicon`] holds the names a text is
+//! held against, and [`package_terms`] reads the names a run adds to it from
+//! the packages a source imports.
 
-/// The fixed names of vendors, products, protocols, frameworks, and hosts.
-///
-/// Every entry is lowercase letters and digits with no separator, so a text
-/// spelling one with a space, a hyphen, or a case change still names it:
-/// `Key Vault`, `key-vault`, and `KeyVault` all spell `keyvault`. A name that
-/// is also a plain word of a domain (`express`, `spring`, `rabbit`, `vault`)
-/// is left out, and its product spelled in full (`expressjs`, `springboot`,
-/// `rabbitmq`, `hashicorp`), so the domain's own words are never findings.
-pub const TECHNOLOGY: &[&str] = &[
+// The fixed names of vendors, products, protocols, frameworks, and hosts.
+//
+// Every entry is lowercase letters and digits with no separator.
+// `Key Vault`, `key-vault`, and `KeyVault` all spell `keyvault`.
+//
+// A name that can also be a plain word of a domain (`express`, `spring`,
+// `rabbit`, `vault`) is left out.  Where applicable,  product spelled in full
+// (`expressjs`, `springboot`, `rabbitmq`, `hashicorp`).
+const TECHNOLOGY: &[&str] = &[
     // clouds and their services
     "aws",
     "amazon",
@@ -243,79 +242,112 @@ const COINED_LEADS: &[&str] = &["py"];
 const COINED_TAILS: &[&str] = &["js", "db", "mq"];
 const COINED_PARTS: &[&str] = &["sql"];
 
-/// Returns the technology `text` names, from [`TECHNOLOGY`] and `terms`.
+/// The technology names a text is held against.
 ///
-/// `text` is read as words: runs of letters and digits, split again at a
-/// camel-case boundary and lowercased, so `useConfluentKafkaConfig`,
-/// `KEYVAULT_HOST`, and `key-vault.refuse-empty` read as the words they
-/// join. A word, or the words of up to three in a row joined, that equals an
-/// entry of the lexicon or one of `terms` names that entry; each entry is
-/// returned once, in the order the text reaches it, spelled as the lexicon
-/// spells it. Nothing is returned for a text naming none.
-///
-/// `terms` are the names a run derives from the packages a source imports,
-/// through [`package_terms`], each spelled as an entry is.
+/// The fixed names of vendors, products, protocols, frameworks, and hosts
+/// are every lexicon's; a run adds the `terms` it derives from the packages
+/// its source imports, through [`package_terms`]. A name that is also a
+/// plain word of a domain (`express`, `vault`) is not among the fixed names,
+/// so a text in the domain's own words names nothing. The default is the
+/// fixed names alone.
 ///
 /// # Examples
 ///
 /// ```
-/// use emery_adapter::names_technology;
+/// use emery_adapter::Lexicon;
 ///
-/// let terms = vec!["keyvaultsecrets".to_owned()];
+/// let fixed = Lexicon::default();
 /// assert_eq!(
-///     names_technology(
-///         "Credentials are read from Key Vault before the Kafka clients start.",
-///         &[]
-///     ),
+///     fixed.names("Credentials are read from Key Vault before the Kafka clients start."),
 ///     ["keyvault", "kafka"]
 /// );
-/// assert_eq!(names_technology("useConfluentKafkaConfig", &[]), ["confluent", "kafka"]);
-/// assert_eq!(names_technology("KEYVAULT_HOST", &[]), ["keyvault"]);
-/// assert_eq!(names_technology("key-vault.refuse-empty", &[]), ["keyvault"]);
-/// assert_eq!(names_technology("the keyvault-secrets client", &terms), ["keyvaultsecrets"]);
-/// assert!(names_technology("POST /orders creates an order.", &[]).is_empty());
-/// assert!(
-///     names_technology("Each converted event is published to the outbound stream.", &[])
-///         .is_empty()
-/// );
+/// assert!(fixed.names("POST /orders creates an order.").is_empty());
+///
+/// let run = Lexicon::with(["keyvaultsecrets"]);
+/// assert_eq!(run.names("the keyvault-secrets client"), ["keyvaultsecrets"]);
 /// ```
-#[must_use]
-pub fn names_technology(text: &str, terms: &[String]) -> Vec<String> {
-    let words = words(text);
-    let mut named: Vec<String> = Vec::new();
-    let mut start = 0;
-    while start < words.len() {
-        // the longest run from here that spells an entry
-        let mut joined = String::new();
-        let mut hit: Option<(usize, &str)> = None;
-        for (length, word) in (1..).zip(words.iter().skip(start).take(RUN)) {
-            if length > 1 && word.len() < 2 {
-                break;
-            }
-            joined.push_str(word);
-            if let Some(entry) = entry(&joined, terms) {
-                hit = Some((length, entry));
-            }
-        }
-
-        match hit {
-            Some((length, entry)) => {
-                if !named.iter().any(|named| named == entry) {
-                    named.push(entry.to_owned());
-                }
-                start += length;
-            }
-            None => start += 1,
-        }
-    }
-    named
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct Lexicon {
+    terms: Vec<String>,
 }
 
-/// Returns the technology terms a package `specifier` adds to the lexicon.
+impl Lexicon {
+    /// Returns the lexicon with `terms` beside the fixed names.
+    ///
+    /// Each term is spelled as [`package_terms`] spells one, lowercase
+    /// letters and digits with no separator.
+    pub fn with(terms: impl IntoIterator<Item = impl Into<String>>) -> Self {
+        Self {
+            terms: terms.into_iter().map(Into::into).collect(),
+        }
+    }
+
+    /// Returns the technology `text` names, once each, in the order the text reaches them.
+    ///
+    /// `text` is read as words: runs of letters and digits, split again at a
+    /// camel-case boundary and lowercased, so `useConfluentKafkaConfig`,
+    /// `KEYVAULT_HOST`, and `key-vault.refuse-empty` read as the words they
+    /// join. A word, or the words of up to three in a row joined, that
+    /// equals a name of the lexicon names it, spelled as the lexicon spells
+    /// it. Nothing is returned for a text naming none.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use emery_adapter::Lexicon;
+    ///
+    /// let lexicon = Lexicon::default();
+    /// assert_eq!(lexicon.names("useConfluentKafkaConfig"), ["confluent", "kafka"]);
+    /// assert_eq!(lexicon.names("KEYVAULT_HOST"), ["keyvault"]);
+    /// assert_eq!(lexicon.names("key-vault.refuse-empty"), ["keyvault"]);
+    /// assert!(lexicon.names("Each converted event is published to the outbound stream.").is_empty());
+    /// ```
+    #[must_use]
+    pub fn names(&self, text: &str) -> Vec<String> {
+        let words = words(text);
+        let mut named: Vec<String> = Vec::new();
+        let mut start = 0;
+        while start < words.len() {
+            // the longest run from here that spells a name
+            let mut joined = String::new();
+            let mut hit: Option<(usize, &str)> = None;
+            for (length, word) in (1..).zip(words.iter().skip(start).take(RUN)) {
+                if length > 1 && word.len() < 2 {
+                    break;
+                }
+                joined.push_str(word);
+                if let Some(name) = self.name(&joined) {
+                    hit = Some((length, name));
+                }
+            }
+
+            match hit {
+                Some((length, name)) => {
+                    if !named.iter().any(|named| named == name) {
+                        named.push(name.to_owned());
+                    }
+                    start += length;
+                }
+                None => start += 1,
+            }
+        }
+        named
+    }
+
+    fn name(&self, joined: &str) -> Option<&str> {
+        TECHNOLOGY
+            .iter()
+            .copied()
+            .find(|name| *name == joined)
+            .or_else(|| self.terms.iter().map(String::as_str).find(|term| *term == joined))
+    }
+}
+
+/// Returns the technology terms a package `specifier` adds to a [`Lexicon`].
 ///
-/// A term is spelled as a lexicon entry is, lowercase letters and digits
-/// with no separator, so [`names_technology`] reads it the same way. The
-/// specifier yields:
+/// A term is spelled as a fixed name is, lowercase letters and digits with
+/// no separator, so [`Lexicon::names`] reads it the same way. The specifier
+/// yields:
 ///
 /// - the scope of a scoped package, which always names a vendor or a
 ///   product: `@azure`, `@aws-sdk`, `@nestjs`
@@ -421,12 +453,4 @@ fn words(text: &str) -> Vec<String> {
         words.push(word);
     }
     words
-}
-
-fn entry<'t>(joined: &str, terms: &'t [String]) -> Option<&'t str> {
-    TECHNOLOGY
-        .iter()
-        .copied()
-        .find(|entry| *entry == joined)
-        .or_else(|| terms.iter().map(String::as_str).find(|term| *term == joined))
 }

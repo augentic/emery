@@ -12,7 +12,7 @@ use std::fmt::{self, Display, Formatter};
 use std::path::Path;
 
 use emery_adapter::source::{Anchor, Claim, ClaimKind, Evidence, SourceContent, SourceInput};
-use emery_adapter::{is_kebab, names_technology};
+use emery_adapter::{Lexicon, is_kebab};
 use emery_prose::Doc;
 use futures::stream::{self, StreamExt as _};
 use futures::{FutureExt as _, TryFutureExt as _};
@@ -55,9 +55,10 @@ const NEAREST: usize = 16;
 /// holds; on an inline value no claim carries a `path`; a `requirement` or
 /// `criterion` id leads with one of the seam's `stems` when it has them; a
 /// `requirement` or `criterion` names no technology in its id or its body,
-/// over [`TECHNOLOGY`](crate::TECHNOLOGY) and the seam's `terms`; a `requirement`'s `path`
-/// overlaps one of the seam's `anchors` when it has them. Rejected responses
-/// may be corrected until the host's round limit is reached.
+/// over the [`Lexicon`] of the seam's `terms`; a
+/// `requirement`'s `path` overlaps one of the seam's `anchors` when it has
+/// them. Rejected responses may be corrected until the host's round limit is
+/// reached.
 ///
 /// Up to [`CONCURRENT`] requests run concurrently, largest first. A seam
 /// naming files is sized by their count; one over the whole input has no
@@ -142,11 +143,11 @@ pub async fn extract<P: Model>(
 ///   over an inline value are the adapter's own defect.
 /// - `terms` are the technology names the seam's modules import a package
 ///   under, each spelled as [`package_terms`](crate::package_terms) spells
-///   one, read beside the fixed [`TECHNOLOGY`](crate::TECHNOLOGY) lexicon: a
-///   `requirement` or `criterion` whose id
-///   or statement names one is refused, so the behaviour is stated by the
-///   role the technology plays and the technology carried in a `call` or
-///   `excerpt`. The lexicon holds whether the seam names terms or none.
+///   one, which the turn's [`Lexicon`] holds beside its
+///   fixed names: a `requirement` or `criterion` whose id or statement names
+///   one is refused, so the behaviour is stated by the role the technology
+///   plays and the technology carried in a `call` or `excerpt`. The fixed
+///   names hold whether the seam names terms or none.
 ///
 /// # Examples
 ///
@@ -220,7 +221,7 @@ struct Plan<'a> {
     stems: Vec<&'a str>,
     lend: Lend<'a>,
     anchors: Vec<Anchored>,
-    terms: &'a [String],
+    lexicon: Lexicon,
 }
 
 // One line span a `requirement` may anchor at, root-relative; no lines is
@@ -309,7 +310,7 @@ impl<'a> Plan<'a> {
             stems,
             lend,
             anchors,
-            terms: &seam.terms,
+            lexicon: Lexicon::with(&seam.terms),
         })
     }
 
@@ -437,13 +438,12 @@ impl<'a> Plan<'a> {
         findings
     }
 
-    // A `requirement` or `criterion` whose id or body names a technology,
-    // over the lexicon and the seam's terms; every name is listed so one
-    // correction lands.
+    // A `requirement` or `criterion` whose id or body names a technology;
+    // every name is listed so one correction lands.
     fn technology(&self, index: usize, claim: &Claim) -> Vec<String> {
         let mut findings = Vec::new();
         if let Some(id) = claim.id.as_deref() {
-            let named = names_technology(id, self.terms);
+            let named = self.lexicon.names(id);
             if !named.is_empty() {
                 findings.push(format!(
                     "- claim {index}: id `{id}` names the technology {}; name the surface and the \
@@ -459,7 +459,7 @@ impl<'a> Plan<'a> {
                 serde_json::Value::String(text) => text.clone(),
                 other => other.to_string(),
             };
-            let named = names_technology(&text, self.terms);
+            let named = self.lexicon.names(&text);
             if !named.is_empty() {
                 findings.push(format!(
                     "- claim {index}: `{key}` names the technology {}; state what the system does \

@@ -23,7 +23,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::{self, Display, Formatter};
 
 use emery_adapter::source::{Anchor, BadAnchor, Claim, ClaimKind, Evidence, SourceContent};
-use emery_adapter::{is_kebab, names_technology};
+use emery_adapter::{Lexicon, is_kebab};
 use emery_prose::Doc;
 use omnia_sdk::model::Question;
 use omnia_sdk::{Error, Model, server_error};
@@ -158,7 +158,7 @@ pub struct Facts<'a> {
 /// Each answered surface is held to the tree before it is returned: its
 /// `anchor` parses under the claim `path` grammar, names one of
 /// `facts.modules`, and cites lines the file holds; its `stem` is lowercase
-/// kebab-case and names no technology over [`TECHNOLOGY`](crate::TECHNOLOGY),
+/// kebab-case and names no technology of the fixed [`Lexicon`],
 /// since every id under it leads with it; its `name` is non-empty and
 /// unique. Each `unreached` module is
 /// one of `facts.modules` and no surface's entry. `check` then holds the
@@ -510,6 +510,7 @@ impl Inventory {
         let mut names = BTreeSet::new();
         let mut entries = BTreeSet::new();
         let mut lines: BTreeMap<&str, Option<u64>> = BTreeMap::new();
+        let lexicon = Lexicon::default();
         for (index, surface) in self.surfaces.iter().enumerate() {
             let label = if surface.name.trim().is_empty() {
                 findings.push(format!("- surface {index}: has no name"));
@@ -560,7 +561,7 @@ impl Inventory {
                     surface.stem
                 ));
             }
-            let technology = names_technology(&surface.stem, &[]);
+            let technology = lexicon.names(&surface.stem);
             if !technology.is_empty() {
                 let quoted: Vec<String> = technology.iter().map(|t| format!("`{t}`")).collect();
                 findings.push(format!(

@@ -50,9 +50,9 @@
 //! - **Root-relative path**: a `/`-separated path beneath the root a run
 //!   lends, which both gates hold to [`beneath`].
 //! - **Technology**: a vendor, product, protocol, framework, or host a
-//!   requirement names in place of the role it plays, which
-//!   [`names_technology`] reads a text for over [`TECHNOLOGY`] and the terms
-//!   [`package_terms`] derives from a source's packages.
+//!   requirement names in place of the role it plays, which a [`Lexicon`]
+//!   reads a text for, over its fixed names and the terms [`package_terms`]
+//!   derives from a source's packages.
 
 mod path;
 pub mod source;
@@ -60,7 +60,7 @@ pub mod target;
 mod technology;
 
 pub use path::{BadPath, SKIP_DIRS, SKIP_FILES, beneath};
-pub use technology::{TECHNOLOGY, names_technology, package_terms};
+pub use technology::{Lexicon, package_terms};
 
 /// Returns whether `value` is lowercase kebab-case.
 ///
