@@ -312,6 +312,44 @@ async fn gate_findings() {
     model.assert_exhausted();
 }
 
+// A stem naming a technology is a finding before extraction locks every id
+// to it; the renamed stem is accepted.
+#[tokio::test]
+async fn technology_stem() {
+    let (_tmp, input, modules) = tree();
+    let model = Scripted::answering([
+        r#"{"surfaces":[
+            {"name":"secret retriever","anchor":"src/cli.ts#L1","stem":"key-vault"},
+            {"name":"POST /orders","anchor":"src/routes/orders.ts#L2","stem":"orders"}
+        ]}"#,
+        r#"{"surfaces":[
+            {"name":"secret retriever","anchor":"src/cli.ts#L1","stem":"secrets"},
+            {"name":"POST /orders","anchor":"src/routes/orders.ts#L2","stem":"orders"}
+        ]}"#,
+    ]);
+    let facts = Facts {
+        modules: &modules,
+        text: "",
+        files: &[],
+    };
+
+    let inventory = ask(&model, &input, &facts, |_| Vec::new()).await.expect("corrected");
+    assert_eq!(inventory.surfaces[0].stem, "secrets");
+
+    let exchanges = model.exchanges();
+    let correction = exchanges[0].outcome.as_ref().expect_err("the stem is refused");
+    assert!(
+        correction.contains(
+            "- surface `secret retriever`: stem `key-vault` names the technology `keyvault`; name \
+             it for what the surface handles or does, since every id under it leads with it"
+        ),
+        "{correction}"
+    );
+    assert!(!correction.contains("surface `POST /orders`"), "{correction}");
+    assert!(exchanges[1].outcome.is_ok(), "the renamed stem is accepted");
+    model.assert_exhausted();
+}
+
 // The adapter's check runs on an answer the tree accepts, and its findings
 // alone drive the correction.
 #[tokio::test]

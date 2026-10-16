@@ -44,7 +44,7 @@
 //! Contract types and [`Error`] are re-exported, allowing an adapter to depend
 //! on this crate alone: the claim types, [`Anchor`] and [`BadAnchor`] for the
 //! `path` grammar a survey spells anchors in, [`is_kebab`] for the stems it
-//! derives, and the [`serde_json`] and [`tracing`] crates for claims of its
+//! derives, [`Lexicon`] for the technology a text names, and the [`serde_json`] and [`tracing`] crates for claims of its
 //! own and events beside this crate's. [`Source`] is among them for a host
 //! program that calls an adapter the way the engine does; an adapter
 //! implements [`SourceAdapter`], exported through [`export_source!`], and
@@ -149,7 +149,7 @@ pub use emery_adapter::source::{
     AdapterMetadata, Anchor, Backing, BadAnchor, Claim, ClaimKind, Evidence, Source, SourceContent,
     SourceInput, SourceKind,
 };
-pub use emery_adapter::{BadPath, beneath, is_kebab};
+pub use emery_adapter::{BadPath, Lexicon, beneath, is_kebab};
 pub use emery_prose::{Doc, body, check, find, prose};
 pub use omnia_sdk::{Error, Model, bad_gateway, bad_request, not_found, server_error};
 /// The JSON crate a [`Claim`]'s `extras` are built from, for an adapter that

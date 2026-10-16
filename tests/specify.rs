@@ -91,6 +91,18 @@ fn spec_draft(subjects: &[String], preamble: &[&str]) -> String {
     serde_json::json!({"preamble": preamble, "requirements": requirements}).to_string()
 }
 
+// `DESIGN_ANSWER` with the `## APIs and integrations` section a `call`,
+// `contract`, or `decision` claim requires.
+fn design_with_apis() -> String {
+    let mut answer: Value =
+        serde_json::from_str(DESIGN_ANSWER).expect("the design fixture is JSON");
+    let sections = answer["sections"].as_array_mut().expect("sections");
+    sections.push(serde_json::json!({"kind": "apis", "blocks": [{
+        "text": "The system reaches one upstream service, as the claims spell it."
+    }]}));
+    answer.to_string()
+}
+
 // The slicing a run over several stems expects when every stem stays its own
 // slice, named for it, owning nothing and depending on nothing.
 fn separate_slicing(stems: &[(&str, &[&str])]) -> String {
@@ -343,8 +355,13 @@ async fn description_source() {
 #[tokio::test]
 async fn authority_precedence() {
     let slicing = separate_slicing(&[("login", &["REQ-001"]), ("session", &["REQ-002"])]);
-    let mut provider =
-        Provider::answering([GROUPING_ANSWER, PRECEDENCE_ANSWER, DESIGN_ANSWER, slicing.as_str()]);
+    let design = design_with_apis();
+    let mut provider = Provider::answering([
+        GROUPING_ANSWER,
+        PRECEDENCE_ANSWER,
+        design.as_str(),
+        slicing.as_str(),
+    ]);
 
     // rank each adapter by its metadata; the unscripted ones read documentation
     provider.source.kinds.insert(guest("code"), SourceKind::Behaviour);
@@ -618,7 +635,8 @@ async fn no_claims() {
 // so no grouping turn is spent.
 #[tokio::test]
 async fn one_claims_source() {
-    let mut provider = Provider::answering([SPEC_ANSWER, DESIGN_ANSWER]);
+    let design = design_with_apis();
+    let mut provider = Provider::answering([SPEC_ANSWER, design.as_str()]);
     provider.source.kinds.insert(guest("code"), SourceKind::Behaviour);
     provider.source.evidence.insert(
         "code".to_string(),
@@ -1529,6 +1547,54 @@ async fn repaired_draft() {
     provider.model.assert_exhausted();
 }
 
+// A scenario line or a preamble paragraph naming a technology is a finding:
+// a fixed name however the line spells it, or a term of a package the run's
+// `call` claims spell. The correction states the role, and commits.
+#[tokio::test]
+async fn technology_named() {
+    let patched = |from: &str, to: &str| {
+        let patched = SPEC_ANSWER.replace(from, to);
+        assert_ne!(patched, SPEC_ANSWER, "the fixture carries the patched line");
+        patched
+    };
+    let then = r#""then": "the response is `hello`""#;
+    let scenario = patched(then, r#""then": "the KafkaProducer sends `hello`""#);
+    let preamble = patched("reconciled with no disagreement", "read from Confluent Cloud");
+    let derived = patched(then, r#""then": "the ledger client answers `hello`""#);
+    let evidence = || {
+        Ok(evidence(vec![
+            requirement("greeting.behaviour", "GET /greeting returns the static string 'hello'."),
+            claim(ClaimKind::Call, "greeting.post", ("callee", "@acme-cloud/ledger-client:post")),
+        ]))
+    };
+    let cases: Vec<(String, &str)> = vec![
+        (scenario.clone(), "`greeting.behaviour` scenario `then` names the technology `kafka`"),
+        (preamble, "preamble names the technology `confluent`"),
+        (derived, "scenario `then` names the technology `ledgerclient`"),
+    ];
+    for (answer, fragment) in cases {
+        let mut provider = Provider::answering([answer.as_str(), answer.as_str(), answer.as_str()]);
+        provider.source.evidence.insert("docs".to_string(), evidence());
+        let envelope =
+            fail(&provider, &["emery", "specify", &reference("docs")], 1, "bad_request").await;
+        assert_message(&envelope, fragment);
+        provider.model.assert_exhausted();
+    }
+
+    // the finding rides the correction, and the corrected draft commits
+    let provider = Provider::answering([scenario.as_str(), SPEC_ANSWER, DESIGN_ANSWER]);
+    cli_ok(&provider, &["emery", "specify", &reference("source")]).await;
+    let check = &provider.model.exchanges()[0];
+    assert_eq!(check.tool, "check");
+    let correction = check.outcome.as_ref().expect_err("the first draft is rejected");
+    assert!(correction.contains("names the technology `kafka`"), "{correction}");
+    assert!(correction.contains("since the design holds the product"), "{correction}");
+    let id = current(&provider.storage);
+    let spec = document(&provider.storage, &id, "spec.json");
+    assert_eq!(String::from_utf8_lossy(&spec), SPEC_REVISION, "the corrected draft is committed");
+    provider.model.assert_exhausted();
+}
+
 // The design leg is gated as the spec leg is, one finding per case.
 #[tokio::test]
 async fn invalid_design() {
@@ -1643,6 +1709,39 @@ async fn dishonest_design() {
         rendered,
         "the signature is rendered verbatim, labelled by its key, where the draft placed it"
     );
+    provider.model.assert_exhausted();
+}
+
+// A `decision` alone requires `## APIs and integrations`: the technology a
+// prose source prescribes lands there, since no requirement carries it.
+#[tokio::test]
+async fn decision_informs_apis() {
+    let evidence = || {
+        Ok(evidence(vec![
+            requirement("greeting.behaviour", "GET /greeting returns the static string 'hello'."),
+            claim(ClaimKind::Decision, "greeting.broker", ("body", "Events go through Kafka.")),
+        ]))
+    };
+
+    let mut provider =
+        Provider::answering([SPEC_ANSWER, DESIGN_ANSWER, DESIGN_ANSWER, DESIGN_ANSWER]);
+    provider.source.evidence.insert("docs".to_string(), evidence());
+    let envelope =
+        fail(&provider, &["emery", "specify", &reference("docs")], 1, "bad_request").await;
+    assert_message(&envelope, "`## APIs and integrations` is required but absent");
+    let request = provider.model.seen()[1].messages.join("\n");
+    assert!(
+        request.contains("`apis` (`## APIs and integrations`) — required: `call` / `contract` / `decision` claims are present"),
+        "{request}"
+    );
+    provider.model.assert_exhausted();
+
+    let design = design_with_apis();
+    let mut provider = Provider::answering([SPEC_ANSWER, design.as_str()]);
+    provider.source.evidence.insert("docs".to_string(), evidence());
+    cli_ok(&provider, &["emery", "specify", &reference("docs")]).await;
+    let shown = shown(&provider, "design").await;
+    assert!(shown.contains("## APIs and integrations"), "{shown}");
     provider.model.assert_exhausted();
 }
 

@@ -22,8 +22,8 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::{self, Display, Formatter};
 
-use emery_adapter::is_kebab;
 use emery_adapter::source::{Anchor, BadAnchor, Claim, ClaimKind, Evidence, SourceContent};
+use emery_adapter::{Lexicon, is_kebab};
 use emery_prose::Doc;
 use omnia_sdk::model::Question;
 use omnia_sdk::{Error, Model, server_error};
@@ -158,7 +158,9 @@ pub struct Facts<'a> {
 /// Each answered surface is held to the tree before it is returned: its
 /// `anchor` parses under the claim `path` grammar, names one of
 /// `facts.modules`, and cites lines the file holds; its `stem` is lowercase
-/// kebab-case; its `name` is non-empty and unique. Each `unreached` module is
+/// kebab-case and names no technology of the fixed [`Lexicon`],
+/// since every id under it leads with it; its `name` is non-empty and
+/// unique. Each `unreached` module is
 /// one of `facts.modules` and no surface's entry. `check` then holds the
 /// answer to what the adapter alone can know — which modules the named
 /// entries reach — and returns its own findings, empty for none. Every
@@ -315,8 +317,10 @@ impl Survey {
 ///
 /// Each seam lays the data files its modules name among them and the
 /// tree's own tests after them, each test's statements in the brief of
-/// every seam whose modules it imports. The `type` claims are those of the
-/// modules the seams reach.
+/// every seam whose modules it imports, and carries as its `lexicon` the
+/// technology of the packages its modules import, through
+/// [`Lexicon::from_packages`]. The `type` claims are those of the modules
+/// the seams reach.
 ///
 /// # Errors
 ///
@@ -497,14 +501,16 @@ impl Inventory {
     }
 
     // What the tree alone can hold a normalised answer to: each anchor a
-    // module of the list with lines its file holds, each stem in the grammar,
-    // each name once, each unreached module of the list and no surface's
-    // entry. A file's lines are counted once however many anchors cite it.
+    // module of the list with lines its file holds, each stem in the grammar
+    // and naming no technology, each name once, each unreached module of the
+    // list and no surface's entry. A file's lines are counted once however
+    // many anchors cite it.
     fn findings(&self, root: &str, modules: &[String]) -> Vec<String> {
         let mut findings = Vec::new();
         let mut names = BTreeSet::new();
         let mut entries = BTreeSet::new();
         let mut lines: BTreeMap<&str, Option<u64>> = BTreeMap::new();
+        let lexicon = Lexicon::default();
         for (index, surface) in self.surfaces.iter().enumerate() {
             let label = if surface.name.trim().is_empty() {
                 findings.push(format!("- surface {index}: has no name"));
@@ -553,6 +559,16 @@ impl Inventory {
                 findings.push(format!(
                     "- {label}: stem `{}` is not lowercase kebab-case",
                     surface.stem
+                ));
+            }
+            let technology = lexicon.names(&surface.stem);
+            if !technology.is_empty() {
+                let quoted: Vec<String> = technology.iter().map(|t| format!("`{t}`")).collect();
+                findings.push(format!(
+                    "- {label}: stem `{}` names the technology {}; name it for what the surface \
+                     handles or does, since every id under it leads with it",
+                    surface.stem,
+                    quoted.join(", ")
                 ));
             }
         }

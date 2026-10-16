@@ -359,12 +359,14 @@ enum Presence {
 impl SectionKind {
     // The claim kinds whose presence requires this section. `Overview` and
     // `Observability` have none: the first is always required, the second
-    // only ever permitted.
+    // only ever permitted. A `decision` requires `Apis` because the
+    // technology a prose source prescribes lands there, and nowhere in the
+    // specification.
     const fn informants(self) -> &'static [ClaimKind] {
         match self {
             Self::Overview | Self::Observability => &[],
             Self::DomainModel => &[ClaimKind::Type],
-            Self::Apis => &[ClaimKind::Call, ClaimKind::Contract],
+            Self::Apis => &[ClaimKind::Call, ClaimKind::Contract, ClaimKind::Decision],
             Self::TechnicalLogic => &[ClaimKind::Excerpt],
             Self::UiLayout => &[ClaimKind::Region, ClaimKind::Container, ClaimKind::Leaf],
         }

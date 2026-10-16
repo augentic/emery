@@ -1,7 +1,7 @@
 //! Every call here mines one seam, so each is one turn and its outcome passes
 //! through unchanged; the fan-out and join over several are `extract.rs`'s.
 
-use emery_sdk::{Context, Doc, Error, Evidence, Seam, SourceInput};
+use emery_sdk::{Context, Doc, Error, Evidence, Lexicon, Seam, SourceInput};
 use omnia_sdk::model::{Error as ModelError, ToolCall};
 use omnia_test::SeenFormat;
 use omnia_test::guest::Scripted;
@@ -310,6 +310,7 @@ async fn files_stems() {
         files: vec!["src/routes.ts".to_string()],
         stems: vec!["password-reset".to_string()],
         anchors: Vec::new(),
+        lexicon: Lexicon::default(),
     };
 
     ask(&model, &SourceInput::workspace("code", root), seam).await.expect("accepted");
@@ -377,6 +378,57 @@ async fn stem_findings() {
     let findings = correction.split("## Findings").nth(1).expect("a findings section");
     assert!(!findings.contains("claim 2:"), "an example is not held: {findings}");
     assert!(findings.contains("claims require an id"), "the gate's findings ride too");
+    model.assert_exhausted();
+}
+
+// A `requirement` or `criterion` naming a technology in its id or its body
+// is a finding, over the fixed names and the seam's packages alike, each
+// name listed; a `call` or `excerpt` carries the technology and is not held,
+// and a statement by role passes however many packages the seam imports.
+#[tokio::test]
+async fn technology_findings() {
+    let model = Scripted::answering([
+        r#"{"claims":[
+            {"kind":"requirement","id":"start.credentials","statement":"useConfluentKafkaConfig reads the credentials from Key Vault before the Kafka clients are constructed."},
+            {"kind":"requirement","id":"key-vault.refuse-empty","statement":"Refuses to start when the secret is empty."},
+            {"kind":"criterion","id":"start.credentials.host","criterion":"KEYVAULT_HOST names the vault the credentials are read from."},
+            {"kind":"criterion","id":"start.credentials.client","criterion":"The keyvault-secrets client is constructed once."},
+            {"kind":"call","callee":"kafkajs:Kafka","synopsis":"Constructs the Kafka client."},
+            {"kind":"excerpt","synopsis":"KAFKA_HOSTS, the broker list."},
+            {"kind":"requirement","id":"start.ready","statement":"Each converted event is published to the outbound stream."}
+        ]}"#,
+        r#"{"claims":[
+            {"kind":"requirement","id":"start.credentials","statement":"Credentials are obtained before the message clients are constructed."},
+            {"kind":"requirement","id":"secrets.refuse-empty","statement":"Refuses to start when the secret is empty."}
+        ]}"#,
+    ]);
+    let seam = Seam {
+        lexicon: Lexicon::from_packages(["@azure/keyvault-secrets"]),
+        ..Seam::note("Mine.")
+    };
+
+    let accepted =
+        ask(&model, &SourceInput::value("brief", "Ship it."), seam).await.expect("corrected");
+    assert_eq!(accepted.claims.len(), 2);
+
+    let exchanges = model.exchanges();
+    let correction = exchanges[0].outcome.as_ref().expect_err("the technology is refused");
+    for finding in [
+        "- claim 0: `statement` names the technology `confluent`, `kafka`, `keyvault`; state what \
+         the system does by the role the technology plays, and carry the technology in a `call` \
+         or `excerpt`",
+        "- claim 1: id `key-vault.refuse-empty` names the technology `keyvault`; name the surface \
+         and the behaviour for the role they play, and carry the technology in a `call` or \
+         `excerpt`",
+        "- claim 2: `criterion` names the technology `keyvault`;",
+        "- claim 3: `criterion` names the technology `keyvaultsecrets`;",
+    ] {
+        assert!(correction.contains(finding), "{finding}: {correction}");
+    }
+    for held in ["claim 4:", "claim 5:", "claim 6:"] {
+        assert!(!correction.contains(held), "{held} is no finding: {correction}");
+    }
+    assert!(exchanges[1].outcome.is_ok(), "the corrected answer is accepted");
     model.assert_exhausted();
 }
 

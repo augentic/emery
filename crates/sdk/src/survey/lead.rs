@@ -10,7 +10,10 @@
 //! package's or the root directory's name within the budget, one per
 //! top-level directory past it. A seam's data files sit among its modules
 //! and the tree's own tests follow those, each listed in the brief of every
-//! seam whose modules it imports.
+//! seam whose modules it imports; its lexicon is the technology of the
+//! packages its modules import.
+
+use emery_adapter::Lexicon;
 
 use super::code::{Recogniser, Surface, Tree};
 use super::tests::{Test, stated};
@@ -193,6 +196,7 @@ impl Lead {
             })
             .collect();
         let text = self.brief(tree, &attached);
+        let lexicon = Lexicon::from_packages(tree.packages(files));
         let Seam { files, stems, .. } = self.seam;
         let mut files = with_data(tree, files);
         files.extend(attached.iter().map(|test| test.path.clone()));
@@ -201,6 +205,7 @@ impl Lead {
             files,
             stems,
             anchors,
+            lexicon,
         }
     }
 

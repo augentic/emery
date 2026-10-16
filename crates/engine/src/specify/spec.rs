@@ -7,11 +7,14 @@
 //! contain exactly one draft for each requirement subject of its chunk, and
 //! only the first chunk's carries the preamble. The first chunk is briefed
 //! with every claim; each later one with the claims under its own stems and
-//! the detail anchored beside them.
+//! the detail anchored beside them. The preamble and every scenario line
+//! are held to the run's [`Lexicon`]: the fixed technology names, and the
+//! packages the `call` claims spell.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::{self, Display, Formatter};
 
+use emery_adapter::Lexicon;
 use emery_adapter::source::{CLAIM_ID_REGEX, Claim, ClaimKind};
 use omnia_sdk::{Error, server_error};
 use schemars::JsonSchema;
@@ -42,15 +45,19 @@ pub struct SpecBrief<'a> {
     bases: Vec<&'a Basis<'a>>,
     // whether this chunk's answer carries the preamble: the first's alone
     preamble: bool,
+    lexicon: Lexicon,
 }
 
 impl<'a> SpecBrief<'a> {
     /// Returns the briefs `bases` are drafted under, in requirement order:
     /// one per chunk of at most [`SPEC_CHUNK`] requirements, grouped by
     /// stem — a stem past the cap split, smaller ones merged up to it — the
-    /// first alone asking for the preamble.
+    /// first alone asking for the preamble. Every chunk holds its draft to
+    /// one [`Lexicon`]: the fixed names, and the packages the run's `call`
+    /// claims spell.
     #[must_use]
     pub fn chunked(extracts: &'a [Extract], bases: &'a [Basis<'a>]) -> Vec<Self> {
+        let lexicon = Lexicon::from_packages(packages(extracts));
         let mut stems: Vec<(&str, Vec<&'a Basis<'a>>)> = Vec::new();
         for basis in bases {
             let stem = basis.stem();
@@ -86,6 +93,7 @@ impl<'a> SpecBrief<'a> {
                 extracts,
                 bases,
                 preamble: index == 0,
+                lexicon: lexicon.clone(),
             })
             .collect()
     }
@@ -139,6 +147,9 @@ impl Brief for SpecBrief<'_> {
     fn verify(&self, answer: &SpecAnswer, review: &mut Review) {
         if self.preamble {
             review.paragraphs(&answer.preamble, "preamble");
+            for text in &answer.preamble {
+                review.technology(&self.lexicon, text, "preamble");
+            }
         } else if !answer.preamble.is_empty() {
             review.note("the preamble is drafted with the first requirements; leave it empty here");
         }
@@ -158,7 +169,7 @@ impl Brief for SpecBrief<'_> {
                 review.note(format_args!("`{subject}` is not a requirement"));
                 continue;
             };
-            for outcome in draft.verify(basis, review) {
+            for outcome in draft.verify(basis, &self.lexicon, review) {
                 outcomes.entry(outcome).or_default().insert(subject);
             }
         }
@@ -197,6 +208,19 @@ impl Brief for SpecBrief<'_> {
 
         Ok((answer.preamble, requirements))
     }
+}
+
+// The packages the run's `call` claims spell: the part of each `callee`
+// before its first `:`. A bare global (`fetch`) spells none, and a wrapper
+// of the tree (`src/lib/http.ts:HttpClient.post`) spells a path the lexicon
+// reads as a plain word and keeps nothing of.
+fn packages(extracts: &[Extract]) -> impl Iterator<Item = &str> {
+    extracts
+        .iter()
+        .flat_map(|extract| &extract.evidence.claims)
+        .filter(|claim| claim.kind == ClaimKind::Call)
+        .filter_map(|claim| claim.extras.get("callee")?.as_str())
+        .filter_map(|callee| callee.split_once(':').map(|(package, _)| package))
 }
 
 // Whitespace collapsed, trailing punctuation dropped, lowercased: the shape
@@ -298,7 +322,7 @@ pub struct Draft {
 impl Draft {
     // Returns each evidenced `then` outcome the scenarios state, normalised,
     // for the check across requirements.
-    fn verify(&self, basis: &Basis<'_>, review: &mut Review) -> Vec<String> {
+    fn verify(&self, basis: &Basis<'_>, lexicon: &Lexicon, review: &mut Review) -> Vec<String> {
         let label = format!("`{}`", self.subject);
         if self.scenarios.is_empty() {
             review.note(format_args!("{label} has no scenario"));
@@ -311,8 +335,10 @@ impl Draft {
         let mut outcomes = Vec::new();
         for scenario in &self.scenarios {
             review.line(&scenario.name, format_args!("{label} scenario `name`"));
+            review.technology(lexicon, &scenario.name, format_args!("{label} scenario `name`"));
             for (field, text) in scenario.lines() {
                 review.line(text, format_args!("{label} scenario `{field}`"));
+                review.technology(lexicon, text, format_args!("{label} scenario `{field}`"));
             }
 
             let when = normalised(&scenario.when);

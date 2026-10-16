@@ -11,8 +11,8 @@ use std::collections::BTreeMap;
 use std::fmt::{self, Display, Formatter};
 use std::path::Path;
 
-use emery_adapter::is_kebab;
-use emery_adapter::source::{Anchor, ClaimKind, Evidence, SourceContent, SourceInput};
+use emery_adapter::source::{Anchor, Claim, ClaimKind, Evidence, SourceContent, SourceInput};
+use emery_adapter::{Lexicon, is_kebab};
 use emery_prose::Doc;
 use futures::stream::{self, StreamExt as _};
 use futures::{FutureExt as _, TryFutureExt as _};
@@ -54,7 +54,8 @@ const NEAREST: usize = 16;
 /// within the seam's `files` when it names any, with a line range the file
 /// holds; on an inline value no claim carries a `path`; a `requirement` or
 /// `criterion` id leads with one of the seam's `stems` when it has them; a
-/// `requirement`'s `path` overlaps one of the seam's `anchors` when it has
+/// `requirement` or `criterion` names no technology of the seam's `lexicon`
+/// in its id or its body; a `requirement`'s `path` overlaps one of the seam's `anchors` when it has
 /// them. Rejected responses may be corrected until the host's round limit is
 /// reached.
 ///
@@ -139,11 +140,17 @@ pub async fn extract<P: Model>(
 ///   file named, so the model re-anchors it or leaves it out. Other kinds
 ///   are not held to them. Empty leaves the anchors to the model; anchors
 ///   over an inline value are the adapter's own defect.
+/// - `lexicon` is the technology the seam's claims are held against:
+///   [`Lexicon::from_packages`] over the packages the seam's modules
+///   import, or the fixed names alone by default. A `requirement` or
+///   `criterion` whose id or statement names one is refused, so the
+///   behaviour is stated by the role the technology plays and the
+///   technology carried in a `call` or `excerpt`.
 ///
 /// # Examples
 ///
 /// ```
-/// use emery_sdk::Seam;
+/// use emery_sdk::{Lexicon, Seam};
 ///
 /// let brief = Seam::whole();
 /// let module = Seam::files(["src/orders.ts", "src/lib/pricing.ts"]);
@@ -153,6 +160,7 @@ pub async fn extract<P: Model>(
 ///     files: vec!["src/routes.ts".to_owned(), "src/lib/pricing.ts".to_owned()],
 ///     stems: vec!["orders".to_owned()],
 ///     anchors: vec!["src/routes.ts#L6-L9".to_owned(), "src/lib/pricing.ts#L12".to_owned()],
+///     lexicon: Lexicon::from_packages(["@azure/keyvault-secrets"]),
 /// };
 /// # let _ = (brief, module, anchored, surface);
 /// ```
@@ -166,6 +174,8 @@ pub struct Seam {
     pub stems: Vec<String>,
     /// The lines a `requirement` anchors at, in the `path` grammar; empty for any.
     pub anchors: Vec<String>,
+    /// The technology the seam's claims are held against; the fixed names by default.
+    pub lexicon: Lexicon,
 }
 
 impl Seam {
@@ -209,6 +219,7 @@ struct Plan<'a> {
     stems: Vec<&'a str>,
     lend: Lend<'a>,
     anchors: Vec<Anchored>,
+    lexicon: &'a Lexicon,
 }
 
 // One line span a `requirement` may anchor at, root-relative; no lines is
@@ -297,6 +308,7 @@ impl<'a> Plan<'a> {
             stems,
             lend,
             anchors,
+            lexicon: &seam.lexicon,
         })
     }
 
@@ -329,7 +341,9 @@ impl<'a> Plan<'a> {
 
     // The rules the claim gate cannot hold an answer to alone: a `path` within
     // the lend and the seam's files, with lines the file holds, an id under
-    // the seam's stems, and a `requirement` at one of the seam's anchors.
+    // the seam's stems and naming no technology, a `requirement` or
+    // `criterion` stated by role, and a `requirement` at one of the seam's
+    // anchors.
     fn findings(&self, content: &SourceContent, evidence: &Evidence) -> Vec<String> {
         let mut findings = Vec::new();
         let mut lines: BTreeMap<String, Option<u64>> = BTreeMap::new();
@@ -341,13 +355,17 @@ impl<'a> Plan<'a> {
             {
                 let stem = id.split('.').next().unwrap_or(id);
                 if !self.stems.contains(&stem) {
-                    let listed = self.stems.iter().map(|s| format!("`{s}`")).collect::<Vec<_>>();
                     findings.push(format!(
                         "- claim {index}: id `{id}` leads with `{stem}`, not a stem of this seam \
                          ({})",
-                        listed.join(", ")
+                        quoted(self.stems.iter().copied())
                     ));
                 }
+            }
+
+            // the technology
+            if matches!(claim.kind, ClaimKind::Requirement | ClaimKind::Criterion) {
+                findings.extend(self.technology(index, claim));
             }
 
             // the anchor: a malformed one is the gate's finding already
@@ -418,6 +436,40 @@ impl<'a> Plan<'a> {
         findings
     }
 
+    // A `requirement` or `criterion` whose id or body names a technology;
+    // every name is listed so one correction lands.
+    fn technology(&self, index: usize, claim: &Claim) -> Vec<String> {
+        let mut findings = Vec::new();
+        if let Some(id) = claim.id.as_deref() {
+            let named = self.lexicon.names(id);
+            if !named.is_empty() {
+                findings.push(format!(
+                    "- claim {index}: id `{id}` names the technology {}; name the surface and the \
+                     behaviour for the role they play, and carry the technology in a `call` or \
+                     `excerpt`",
+                    quoted(named.iter().map(String::as_str))
+                ));
+            }
+        }
+        for key in claim.kind.required_extras() {
+            let Some(value) = claim.extras.get(*key) else { continue };
+            let text = match value {
+                serde_json::Value::String(text) => text.clone(),
+                other => other.to_string(),
+            };
+            let named = self.lexicon.names(&text);
+            if !named.is_empty() {
+                findings.push(format!(
+                    "- claim {index}: `{key}` names the technology {}; state what the system does \
+                     by the role the technology plays, and carry the technology in a `call` or \
+                     `excerpt`",
+                    quoted(named.iter().map(String::as_str))
+                ));
+            }
+        }
+        findings
+    }
+
     // The seam's anchors in `path` nearest to `lines` — up to `NEAREST`, in
     // file order — each as `L<n>` or `L<n>-L<n>`.
     fn nearest(&self, path: &str, lines: Option<(u64, u64)>) -> Vec<String> {
@@ -446,6 +498,11 @@ impl<'a> Plan<'a> {
             )
             .collect()
     }
+}
+
+// Each item in backticks, comma-separated.
+fn quoted<'s>(items: impl IntoIterator<Item = &'s str>) -> String {
+    items.into_iter().map(|item| format!("`{item}`")).collect::<Vec<_>>().join(", ")
 }
 
 // The lines a regular file holds; `None` for anything else at the path. A
@@ -671,12 +728,11 @@ impl Display for Brief<'_> {
                  first dotted segment; an id under another stem is refused."
             )?,
             stems => {
-                let listed = stems.iter().map(|s| format!("`{s}`")).collect::<Vec<_>>();
                 write!(
                     f,
                     "\n\nLead every `requirement` and `criterion` id with one of the stems {} as \
                      its first dotted segment; an id under another stem is refused.",
-                    listed.join(", ")
+                    quoted(stems.iter().copied())
                 )?;
             }
         }
