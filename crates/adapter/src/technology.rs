@@ -11,8 +11,8 @@
 // `Key Vault`, `key-vault`, and `KeyVault` all spell `keyvault`.
 //
 // A name that can also be a plain word of a domain (`express`, `spring`,
-// `rabbit`, `vault`) is left out.  Where applicable,  product spelled in full
-// (`expressjs`, `springboot`, `rabbitmq`, `hashicorp`).
+// `rabbit`, `vault`) is left out; where the product has a fuller spelling,
+// that is the entry (`expressjs`, `springboot`, `rabbitmq`, `hashicorp`).
 const TECHNOLOGY: &[&str] = &[
     // clouds and their services
     "aws",
@@ -232,7 +232,8 @@ const TECHNOLOGY: &[&str] = &[
 ];
 
 // The most words a lexicon entry or a term may be spelled across: `Key
-// Vault`, `Cosmos DB`, `Google Cloud Pub Sub`.
+// Vault`, `Cosmos DB`, and the term `Key Vault Secrets` a run adds from
+// `@azure/keyvault-secrets`.
 const RUN: usize = 3;
 
 // What marks a lone word of a package name as coined rather than plain:
