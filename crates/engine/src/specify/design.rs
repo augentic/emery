@@ -49,7 +49,8 @@ impl Brief for DesignBrief<'_> {
     type Output = Design;
 
     const NAME: &'static str = "design-draft";
-    const PROSE: &'static [&'static str] = &["synthesise.md", "design-format.md"];
+    const PROSE: &'static [&'static str] =
+        &["synthesise.md", "design-format.md", "claim-landing.md"];
 
     fn tighten(&self, schema: &mut Value) {
         schema["properties"]["sections"]["minItems"] = json!(self.outline.required().count());

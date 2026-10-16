@@ -4,9 +4,8 @@
 //! The parser reads; the model decides what is a surface. The facts laid
 //! before it are the manifest, the bootstrap, every call that hands a
 //! function to something a package provides, every function, method, and
-//! class under a package's decorator, what the entry modules export, the
-//! service modules the bootstrap reaches, and the packages imported. Code
-//! holds the answer to the tree and derives the
+//! class under a package's decorator, what the entry modules export, and
+//! the packages imported. Code holds the answer to the tree and derives the
 //! rest from the accepted anchors, never from the model's names, so two
 //! runs that accept the same anchors cut the same seams. The bootstrap's
 //! `start` is the code's own surface, never the model's.
@@ -130,11 +129,10 @@ impl<'t, R: Recogniser> Located<'t, R> {
             },
         ));
 
-        // list the registrations, decorations, exports, services, and what could not be followed
+        // list the registrations, decorations, exports, and what could not be followed
         sections.extend(self.registrations());
         sections.extend(self.decorated());
         sections.extend(self.exports());
-        sections.extend(self.services());
         sections.extend(skeleton::packages(tree.modules.values().map(|module| &**module)));
         sections.extend(skeleton::unfollowed(tree.modules.values().map(|module| &**module), &[]));
 
@@ -270,75 +268,6 @@ impl<'t, R: Recogniser> Located<'t, R> {
              imports — export, each with its kind and lines, and what a barrel among them \
              re-exports at the module that declares it. In a tree with no bootstrap, or under a \
              framework that routes by file, these are where a caller enters:\n\n{}",
-            lines.join("\n")
-        ))
-    }
-
-    // A module the bootstrap reaches, as `start`'s closure will — stopping
-    // at the modules that locate a surface — that no locating module
-    // reaches, in which the facts locate nothing, yet that imports a
-    // package: a client, a retriever, a gateway the bootstrap constructs
-    // and hands on, which `start` swallows whole unless the survey names
-    // it. A module a locating module reaches is some surface's already,
-    // and an entry is listed with the exports.
-    fn services(&self) -> Option<String> {
-        let tree = self.tree;
-        let bootstrap = self.bootstrap.as_ref()?;
-        let locating: Vec<String> = self.locating.iter().map(|path| (*path).to_owned()).collect();
-        let surfaced: BTreeSet<String> = tree
-            .closure(&locating, std::slice::from_ref(&bootstrap.module.path))
-            .into_iter()
-            .collect();
-        let entries: BTreeSet<&str> =
-            self.entries.iter().chain(&self.roots).map(String::as_str).collect();
-        let mut lines: Vec<String> = Vec::new();
-        for path in tree.closure(std::slice::from_ref(&bootstrap.module.path), &locating) {
-            if path == bootstrap.module.path
-                || self.locating.contains(path.as_str())
-                || entries.contains(path.as_str())
-                || surfaced.contains(&path)
-            {
-                continue;
-            }
-            let Some(module) = tree.modules.get(&path) else { continue };
-            let packages = unique(
-                module
-                    .imports
-                    .iter()
-                    .filter(|import| {
-                        !import.type_only && matches!(import.target, Some(Target::Package(_)))
-                    })
-                    .map(|import| import.specifier.as_str()),
-            );
-            if packages.is_empty() {
-                continue;
-            }
-            let exported = declared(module, module.exports.iter(), |class| {
-                tree.recogniser.declares_data(class)
-            });
-            if exported.is_empty() {
-                continue;
-            }
-            let packages: Vec<String> = packages.iter().map(|p| format!("`{p}`")).collect();
-            lines.push(format!(
-                "- `{path}` exports {}, through {}",
-                exported.join(", "),
-                packages.join(", ")
-            ));
-        }
-        if lines.is_empty() {
-            return None;
-        }
-        Some(format!(
-            "Modules only the bootstrap reaches: no module that registers or decorates a \
-             surface imports them, nothing in them is registered or decorated, and each imports \
-             a package. This is where a process talks to something outside itself — an API \
-             client, a secret retriever, a gateway, a store — and where it reads its settings. \
-             Each is listed with what it exports and the packages it imports. One reached by no \
-             surface you name is `start`'s, and everything it does is mined as the bootstrap's; \
-             where what it exports is a service of its own — a system reached, a protocol \
-             spoken — name it as a surface anchored at the export, and leave what only reads \
-             settings or constructs and hands on a client to `start`:\n\n{}",
             lines.join("\n")
         ))
     }

@@ -200,6 +200,7 @@ fn receiver_traced() {
                 string: None,
                 init: Init::Construction,
                 head: None,
+                table: None,
             },
             line(2),
         ),
@@ -491,11 +492,11 @@ fn start_surface() {
     );
     assert_eq!(
         start.detail,
-        [
-            "the process bootstrap, run by the console script `svc`, which calls `main()`: what runs \
-          before each handler is registered, what it awaits before serving, and at shutdown — \
-          `stop` and what a signal handler calls, wherever declared"
-        ]
+        ["the process bootstrap, run by the console script `svc`, which calls `main()`: claimed \
+          for what those the program serves observe of it as a whole — a rule applied to every \
+          request, a health or status answer, a setting it refuses to run without; how it \
+          readies itself, reaches other systems, and shuts down is the design's, in `excerpt` \
+          and `call` claims"]
     );
     assert_eq!(Runs::Guard.clone(), Runs::Guard);
 }

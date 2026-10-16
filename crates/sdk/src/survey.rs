@@ -46,7 +46,7 @@ mod skeleton;
 pub mod tests;
 
 pub use self::dialect::{ClassSyntax, Dialect};
-pub use self::skeleton::types;
+pub use self::skeleton::{TABLE_LINES, types};
 
 // Each key's values together, the keys in first-occurrence order.
 pub(crate) fn grouped<K: PartialEq, V>(

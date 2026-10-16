@@ -398,6 +398,13 @@ pub enum BindingKind {
         init: Init,
         /// The initializer's first line, cut as the walker cuts it.
         head: Option<String>,
+        /// The declaration whole, where the initializer is a table.
+        ///
+        /// A table is what [`Member::table`] has it: an object, array, or
+        /// mapping written out in place as data. The `type` claim spells an
+        /// exported module-level value with it, so a build reads the entries
+        /// rather than inventing them.
+        table: Option<String>,
     },
     /// A class field.
     Field {
@@ -770,6 +777,13 @@ pub struct Member {
     pub lines: Lines,
     /// The declaration up to its body or initializer.
     pub signature: String,
+    /// The declaration whole, where a field's initializer is a table.
+    ///
+    /// A table is an object, array, or mapping written out in place as data:
+    /// every entry a literal, a name, a member path, or a table again. The
+    /// `type` claim spells the field with it, so a build reads the entries
+    /// rather than inventing them.
+    pub table: Option<String>,
 }
 
 /// What kind of member a class member is.

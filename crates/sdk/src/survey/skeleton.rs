@@ -1,8 +1,8 @@
 //! Renders what a parsed tree states on its own, copied rather than restated.
 //!
 //! The briefs carry what the code spells, so the model draws from it rather
-//! than paraphrase: every exported class and type as a `type` claim, every
-//! value the code spells as its own as a boundary, every package imported
+//! than paraphrase: every exported class, type, and table as a `type` claim,
+//! every value the code spells as its own as a boundary, every package imported
 //! and every call made through one, every point where the code decides,
 //! and every behaviour the tree's own tests state. The decision points, the
 //! `return`s, the heads of functions and methods, the calls through
@@ -16,8 +16,8 @@ use emery_adapter::source::{Claim, ClaimKind};
 use serde_json::{Map, Value};
 
 use super::code::{
-    BindingKind, Call, Imported, Init, MemberKind, Module, Recogniser, Scope, Surface, TRACE, Tree,
-    TypeKind, Use,
+    BindingKind, Call, ExportKind, Imported, Init, MemberKind, Module, Recogniser, Scope, Surface,
+    TRACE, Tree, TypeKind, Use,
 };
 use super::resolve::Target;
 use super::{Dialect, Lines, grouped, push_unique, unique};
@@ -58,10 +58,9 @@ pub(super) fn decisions<'m>(modules: impl IntoIterator<Item = &'m Module>) -> Op
          line that applies a named constant, at a step the function takes into the tree (a \
          write, a delete, a publish, a lookup it awaits or binds), at the code a stated \
          behaviour names, \
-         or at a surface's registration or handler lines; a line that only wires or assigns — \
-         a value passed on, a field set, a value computed from the ones in hand — is no \
-         requirement's anchor, and what `start` constructs with a boundary's value is one \
-         requirement at that construction:\n\n{}",
+         or at a surface's registration or handler lines; a line that only wires, assigns, or \
+         constructs a client or a connection — a value passed on, a field set, a value computed \
+         from the ones in hand — is no requirement's anchor:\n\n{}",
         lines.join("\n")
     ))
 }
@@ -145,13 +144,17 @@ fn named(dir: &str) -> String {
     if dir.is_empty() { "the root".to_owned() } else { format!("`{dir}`") }
 }
 
-/// Returns a `type` claim for every exported class, type alias, and
-/// functional type `modules` declare, each its declaration verbatim with
+/// Returns a `type` claim for every exported class, type alias, functional
+/// type, and table `modules` declare, each its declaration verbatim with
 /// bodies elided.
 ///
 /// A class is spelled under `dialect`'s [`ClassSyntax`](super::ClassSyntax)
-/// and is an `enum` where its bases say so. `anchored` is false for an
-/// inline value, which has no path to cite.
+/// and is an `enum` where its bases say so. A field with a
+/// [`table`](super::code::Member::table) of at most [`TABLE_LINES`] lines is spelled with
+/// it, re-indented under the syntax. An exported module-level value with a
+/// [`table`](BindingKind::Value::table) within the same cap is a claim of its
+/// own, the declaration whole with its blank lines dropped. `anchored` is
+/// false for an inline value, which has no path to cite.
 pub fn types<'m>(
     dialect: &Dialect, modules: impl IntoIterator<Item = &'m Module>, anchored: bool,
 ) -> Vec<Claim> {
@@ -181,7 +184,10 @@ pub fn types<'m>(
                 };
                 signature.push('\n');
                 signature.push_str(syntax.indent);
-                signature.push_str(&member.signature);
+                match member.table.as_deref().filter(|table| table.lines().count() <= TABLE_LINES) {
+                    Some(table) => signature.push_str(&indented(table, syntax.indent)),
+                    None => signature.push_str(&member.signature),
+                }
                 signature.push_str(terminator);
             }
             if class.members.is_empty() {
@@ -191,8 +197,45 @@ pub fn types<'m>(
             let what = if dialect.enumerates(&class.bases) { "enum" } else { "class" };
             claims.push(claim(&class.name, &signature, anchor(class.lines), what));
         }
+        for export in module.exports.iter().filter(|export| export.kind == ExportKind::Value) {
+            let Some(binding) = module.exported_binding(&export.name) else { continue };
+            let BindingKind::Value {
+                table: Some(table), ..
+            } = &binding.kind
+            else {
+                continue;
+            };
+            if binding.scope != Scope::Module || table.lines().count() > TABLE_LINES {
+                continue;
+            }
+            claims.push(claim(&export.name, &indented(table, ""), anchor(binding.lines), "table"));
+        }
     }
     claims
+}
+
+/// The most lines a table runs to before the `type` claim elides it.
+pub const TABLE_LINES: usize = 120;
+
+// A declaration over several lines under `indent`: its first line as
+// written, every other less the whitespace they share and behind the
+// indent, blank lines dropped.
+fn indented(text: &str, indent: &str) -> String {
+    let mut lines = text.lines().filter(|line| !line.trim().is_empty());
+    let Some(first) = lines.next() else { return String::new() };
+    let rest: Vec<&str> = lines.collect();
+    let shared = rest
+        .iter()
+        .map(|line| line.chars().take_while(|ch| ch.is_whitespace()).count())
+        .min()
+        .unwrap_or_default();
+    let mut out = first.to_owned();
+    for line in rest {
+        out.push('\n');
+        out.push_str(indent);
+        out.push_str(line.char_indices().nth(shared).map_or("", |(at, _)| &line[at..]));
+    }
+    out
 }
 
 fn claim(name: &str, signature: &str, path: Option<String>, what: &str) -> Claim {
@@ -566,7 +609,8 @@ pub(super) fn calls<R: Recogniser>(tree: &Tree<R>, files: &[String]) -> Option<S
          `call` is drawn from this list, its `callee` spelled as listed: a store, a broker, an HTTP \
          client, a cache, an identity provider, or a metric emission leaves the process; a \
          validator, a logger, or a framework helper does not, unless its emission is the surface's \
-         contract. Every listed call that leaves the process has a requirement beside it:\n\n{}",
+         contract. Every listed call that leaves the process is a `call` claim, with a \
+         `requirement` beside it where what the caller observes depends on it:\n\n{}",
         lines.join("\n")
     ))
 }

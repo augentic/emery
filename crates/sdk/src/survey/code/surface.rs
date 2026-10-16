@@ -79,9 +79,10 @@ impl Surface {
             stem: "start".to_owned(),
             lines: module.span,
             detail: vec![format!(
-                "the process bootstrap, {}: what runs before each handler is registered, what it \
-                 awaits before serving, and at shutdown — `stop` and what a signal handler calls, \
-                 wherever declared",
+                "the process bootstrap, {}: claimed for what those the program serves observe of \
+                 it as a whole — a rule applied to every request, a health or status answer, a \
+                 setting it refuses to run without; how it readies itself, reaches other systems, \
+                 and shuts down is the design's, in `excerpt` and `call` claims",
                 bootstrap.runs.how()
             )],
             closure: tree.closure(&seeds, &entries),

@@ -9,7 +9,8 @@ use std::collections::BTreeMap;
 
 use emery_sdk::survey::Survey;
 use emery_sdk::survey::code::{
-    EnvRead, ExportKind, Init, Listing, Manifest, MemberKind, Parsed, Runs, Tree, Use,
+    BindingKind, EnvRead, ExportKind, Init, Listing, Manifest, MemberKind, Parsed, Runs, Scope,
+    Tree, Use,
 };
 use emery_sdk::survey::resolve::Target;
 use emery_sdk::{Context, Doc, Error, Lexicon, SourceInput};
@@ -272,144 +273,6 @@ async fn facts_laid() {
     model.assert_exhausted();
 }
 
-// A module only the bootstrap reaches that registers nothing, decorates
-// nothing, and imports a package is listed as a service module with its
-// exports and packages; a module the facts locate a surface in, one that
-// module reaches too, one importing no package, one exporting nothing, and
-// the bootstrap itself are not, and a tree with no bootstrap lists none.
-#[tokio::test]
-async fn services_listed() {
-    for bootstrap in [Some(Runs::Load), None] {
-        let tmp = tempfile::tempdir().expect("tempdir");
-        let root = tmp.path();
-        write(root, "package.json", "{\"name\":\"svc\"}\n");
-        let modules = [
-            "src/main.ts",
-            "src/routes/orders.ts",
-            "src/gateway.ts",
-            "src/store.ts",
-            "src/config.ts",
-            "src/log.ts",
-        ];
-        for path in modules {
-            write(root, path, &pad(4));
-        }
-        let listing = Listing {
-            modules: modules.map(str::to_owned).to_vec(),
-            data: Vec::new(),
-            tests: Vec::new(),
-        };
-        let started = bootstrap.is_some();
-        let parsed = Parsed::read(root, &TYPESCRIPT, listing, |path, _| service_module(path));
-        let tree = parsed.settle(Stub {
-            manifest: Manifest {
-                name: Some("svc".to_owned()),
-                says: vec!["names the package `svc`".to_owned()],
-                entries: vec!["src/main.ts".to_owned()],
-            },
-            bootstrap: bootstrap.map(|runs| ("src/main.ts".to_owned(), runs)),
-            mounts: BTreeMap::new(),
-        });
-        let input = SourceInput::workspace("svc", root.to_str().expect("a UTF-8 scratch root"));
-        let unreached = if started { "" } else { "\"src/main.ts\"" };
-        let answer = format!(
-            r#"{{"surfaces":[{{"name":"GET /orders","anchor":"src/routes/orders.ts#L3","stem":"orders"}}],"unreached":[{unreached}]}}"#
-        );
-        let model = Scripted::answering([answer.as_str()]);
-
-        run(&model, &input, &tree).await.expect("surveyed");
-
-        let user = &model.seen()[0].messages[0];
-        let heading = "Modules only the bootstrap reaches: no module that registers or decorates \
-                       a surface imports them";
-        let gateway = "- `src/gateway.ts` exports `Gateway` (class) L1–L3, through `axios`, \
-                       `p-retry`\n";
-        if started {
-            assert!(user.contains(heading), "{user}");
-            let section = user.split(heading).nth(1).expect("the section").split("\n\n").nth(1);
-            assert_eq!(
-                section,
-                Some(gateway.trim_end()),
-                "the one service module, the store the route module reaches left out: {user}"
-            );
-        } else {
-            assert!(!user.contains(heading), "no bootstrap, no service modules: {user}");
-            assert!(!user.contains(gateway), "{user}");
-        }
-        model.assert_exhausted();
-    }
-}
-
-// The `services_listed` tree: a bootstrap reaching a route module, a client
-// over two packages, a store the route module reaches too, a settings
-// module over no package, and a logger exporting nothing.
-fn service_module(path: &str) -> Plain {
-    let mut m = module(path, 4);
-    match path {
-        "src/main.ts" => {
-            m.0.imports = vec![
-                from_module("orders", "src/routes/orders.ts"),
-                from_module("Gateway", "src/gateway.ts"),
-                from_module("Store", "src/store.ts"),
-                from_module("config", "src/config.ts"),
-                from_module("log", "src/log.ts"),
-            ];
-            m.0.references = vec![
-                reference("orders", 1),
-                reference("Gateway", 2),
-                reference("Store", 2),
-                reference("config", 3),
-                reference("log", 4),
-            ];
-        }
-        "src/routes/orders.ts" => {
-            m.0.imports =
-                vec![from_package("express", "express"), from_module("Store", "src/store.ts")];
-            m.0.references = vec![reference("Store", 3)];
-            m.0.bindings = vec![
-                value("app", Some(&["express"]), Some(0), None, Init::Construction, line(2)),
-                function("list", span(3, 4)),
-            ];
-            m.0.calls = vec![call(
-                callee("app", &["get"]),
-                vec![literal("/orders", line(3)), name(&["list"], line(3))],
-                Use::Discarded,
-                line(3),
-            )];
-            m.0.exports = vec![export("list", ExportKind::Function, span(3, 4))];
-        }
-        "src/gateway.ts" => {
-            m.0.imports = vec![
-                from_package("axios", "axios"),
-                from_package("retry", "p-retry"),
-                from_package("axios", "axios"),
-            ];
-            m.0.bindings = vec![class("Gateway", &[], span(1, 3))];
-            m.0.exports = vec![export("Gateway", ExportKind::Class, span(1, 3))];
-            m.0.classes = vec![class_decl(
-                "Gateway",
-                "export class Gateway",
-                span(1, 3),
-                vec![member("fetch", MemberKind::Method, "fetch(): Stop[]", line(2))],
-            )];
-        }
-        "src/store.ts" => {
-            m.0.imports = vec![from_package("pg", "pg")];
-            m.0.bindings = vec![class("Store", &[], span(1, 3))];
-            m.0.exports = vec![export("Store", ExportKind::Class, span(1, 3))];
-            m.0.classes = vec![class_decl("Store", "export class Store", span(1, 3), Vec::new())];
-        }
-        "src/config.ts" => {
-            m.0.exports = vec![export("config", ExportKind::Value, line(1))];
-        }
-        "src/log.ts" => {
-            m.0.imports = vec![from_package("pino", "pino")];
-        }
-        _ => {}
-    }
-    m
-}
-
 // A tree within the budget is one seam over every module, the surfaces'
 // closures first, its data files and tests among them; the brief lists the
 // surfaces with the ids and closures the code derived, then what the modules
@@ -463,9 +326,11 @@ async fn whole_tree() {
         seam.text.starts_with(
             "The surfaces of this source, found by reading its code — where control enters it \
              from outside the process:\n\n- Surface `start` — entry `src/main.ts` — stem `start`: \
-             the process bootstrap, run at load: what runs before each handler is registered, \
-             what it awaits before serving, and at shutdown — `stop` and what a signal handler \
-             calls, wherever declared; id `start`; reaches `src/routes/orders.ts`, \
+             the process bootstrap, run at load: claimed for what those the program serves \
+             observe of it as a whole — a rule applied to every request, a health or status \
+             answer, a setting it refuses to run without; how it readies itself, reaches other \
+             systems, and shuts down is the design's, in `excerpt` and `call` claims; id \
+             `start`; reaches `src/routes/orders.ts`, \
              `src/config.ts`.\n- Surface `GET /orders` — entry `src/routes/orders.ts` — stem \
              `orders`: registered L3; through `express`; id `orders`; reaches `src/store.ts`.\n- \
              Surface `GET /items` — entry `src/ctl.ts` — stem `items`: named by the survey at \
@@ -565,7 +430,7 @@ async fn bootstrap_runs() {
         let sentence = format!("is `src/main.ts`: {said}. It is the caller's `start` surface");
         assert!(user.contains(&sentence), "{sentence}\n---\n{user}");
         assert_eq!(survey.seams[0].stems, ["start", "orders", "items"]);
-        let note = format!("stem `start`: the process bootstrap, {how}: what runs");
+        let note = format!("stem `start`: the process bootstrap, {how}: claimed for what");
         assert!(survey.seams[0].text.contains(&note), "{note}\n---\n{}", survey.seams[0].text);
         model.assert_exhausted();
     }
@@ -1164,4 +1029,99 @@ fn types_by_dialect() {
         ],
         "unanchored for an inline value; a body with no member holds `...`"
     );
+}
+
+// A field with a table is spelled with it, its later lines re-indented under
+// the syntax and its blank lines dropped; one past `TABLE_LINES` is spelled
+// by its signature alone.
+#[test]
+fn types_with_tables() {
+    let mut m = module("src/config.ts", 12);
+    let mut zones =
+        member("ZONES", MemberKind::Field, "static ZONES: { [key: string]: number }", span(2, 6));
+    zones.table = Some(
+        "static ZONES: { [key: string]: number } = {\n        EU: 3,\n\n        US: 1,\n    }"
+            .to_owned(),
+    );
+    let mut long = member("LONG", MemberKind::Field, "static LONG: number[]", span(7, 11));
+    long.table = Some(format!(
+        "static LONG: number[] = [\n{}\n    ]",
+        (0..emery_sdk::survey::TABLE_LINES)
+            .map(|n| format!("        {n},"))
+            .collect::<Vec<_>>()
+            .join("\n")
+    ));
+    m.0.classes = vec![class_decl(
+        "Config",
+        "export class Config",
+        span(1, 12),
+        vec![zones, long, member("name", MemberKind::Field, "name: string", line(12))],
+    )];
+
+    let claims = emery_sdk::survey::types(&TYPESCRIPT, [&*m], false);
+
+    assert_eq!(
+        claims[0].extras["signature"].as_str().expect("signature"),
+        "export class Config {\n  static ZONES: { [key: string]: number } = {\n      EU: 3,\n      \
+         US: 1,\n  };\n  static LONG: number[];\n  name: string;\n}"
+    );
+}
+
+// An exported module-level value with a table is a `type` claim of its own,
+// the declaration whole less its blank lines; one the module does not
+// export, one bound in a function, and one past `TABLE_LINES` are none.
+#[test]
+fn types_with_constant_tables() {
+    let mut m = module("src/rates.ts", 20);
+    let mut rates = value("RATES", None, None, None, Init::Literal, span(1, 5));
+    let mut hidden = value("DRAFT", None, None, None, Init::Literal, span(6, 8));
+    let mut long = value("LONG", None, None, None, Init::Literal, span(9, 12));
+    let mut local = value("LOCAL", None, None, None, Init::Literal, span(13, 15));
+    local.scope = Scope::Function(1);
+    for (binding, table) in [
+        (&mut rates, "const RATES = {\n  EU: 3,\n\n  US: 1,\n}".to_owned()),
+        (&mut hidden, "const DRAFT = [1, 2]".to_owned()),
+        (
+            &mut long,
+            format!(
+                "const LONG = [\n{}\n]",
+                (0..emery_sdk::survey::TABLE_LINES)
+                    .map(|n| format!("  {n},"))
+                    .collect::<Vec<_>>()
+                    .join("\n")
+            ),
+        ),
+        (&mut local, "const LOCAL = { a: 1 }".to_owned()),
+    ] {
+        let BindingKind::Value { table: slot, .. } = &mut binding.kind else { unreachable!() };
+        *slot = Some(table);
+    }
+    m.0.bindings = vec![rates, hidden, long, local];
+    m.0.exports = vec![
+        export("RATES", ExportKind::Value, span(1, 5)),
+        export("LONG", ExportKind::Value, span(9, 12)),
+        export("LOCAL", ExportKind::Value, span(13, 15)),
+    ];
+
+    let claims = emery_sdk::survey::types(&TYPESCRIPT, [&*m], true);
+    let rendered: Vec<(Option<String>, Option<String>, String)> = claims
+        .iter()
+        .map(|claim| {
+            (
+                claim.path.clone(),
+                claim.synopsis.clone(),
+                claim.extras["signature"].as_str().expect("signature").to_owned(),
+            )
+        })
+        .collect();
+
+    assert_eq!(
+        rendered,
+        [(
+            Some("src/rates.ts#L1-L5".to_owned()),
+            Some("exported table".to_owned()),
+            "const RATES = {\n  EU: 3,\n  US: 1,\n}".to_owned()
+        )]
+    );
+    assert_eq!(claims[0].extras["name"], "RATES");
 }

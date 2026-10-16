@@ -345,6 +345,7 @@ pub fn value(
             string: string.map(str::to_owned),
             init,
             head: Some(format!("{name} = ..")),
+            table: None,
         },
         lines,
     )
@@ -449,6 +450,7 @@ pub fn member(name: &str, kind: MemberKind, signature: &str, lines: Lines) -> Me
         private: false,
         lines,
         signature: signature.to_owned(),
+        table: None,
     }
 }
 

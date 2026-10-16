@@ -33,7 +33,9 @@ The engine refuses a draft that omits a listed requirement, drafts a subject tha
 
 ## Scenario conventions
 
-- **Verbatim source language where possible.** Draw the trigger and the outcome from the `criterion` and `requirement` claims; do not paraphrase behaviour into a different behaviour.
+The body is the winning claim's statement verbatim and is never yours; these conventions govern the scenarios alone.
+
+- **The domain's words, never the code's.** A scenario's `name`, `given`, `when`, `then`, and `and` are written in the words of the domain the requirement serves — the order, the invoice, the customer, the overdue threshold — and never spell an accessor, a field path, a method, a parameter, or a constant that only the implementation knows (`Config.useTls`, `fetchRates`, `orderRow.createdAt`, `req.body.customerId`). A name is the domain's where a documentation source would spell it — `OVERDUE_DAYS`, `MAX_ITEMS`, `YYYY-MM-DD`, `Europe/London`, `invalid-email`, an `Order` — and the implementation's where only the code does; a setting is named by what it configures, or by its key where the key is the domain's. Draw the behaviour from the `criterion` and `requirement` claims and do not paraphrase it into a different behaviour; the identifiers a `criterion` or `excerpt` carries stay in the design.
 - **A trigger, not a restatement.** The `when` names the event or input that starts the scenario. The engine refuses the requirement's statement itself as a `when`; a paraphrase of it passes the gate and is no better, so do not draft one.
 - **An outcome, not a refrain.** The `then` states what this scenario observes once the trigger has run — the response, the record, the error. The engine refuses the statement itself as a `then`; a paraphrase of the statement passes the gate and is no better, and so does one fixed phrase repeated across requirements, which the gate lets through and the reader cannot use — two requirements share a `then` only when they observe one outcome.
 - **No commentary about provenance.** Winners, losers, and gaps are the engine's notes; a scenario never restates them.

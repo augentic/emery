@@ -114,6 +114,7 @@ const fn value(root: Option<Vec<String>>, type_path: Option<Vec<String>>) -> Bin
         string: None,
         init: Init::Construction,
         head: None,
+        table: None,
     }
 }
 
