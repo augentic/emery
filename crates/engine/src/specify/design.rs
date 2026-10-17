@@ -204,8 +204,8 @@ impl Display for DesignBrief<'_> {
                  `domain-model` as a `{\"type\": {\"key\": \"<key>\", \"role\": \"data\" | \
                  \"mechanism\"}}` block; the engine inserts its signature verbatim. A `data` \
                  type is a shape the program reads, stores, or produces; a `mechanism` is a \
-                 class that is a client, a retriever, a bootstrap, or a settings carrier, which \
-                 a build lays nothing for and no slice owns.\n\n",
+                 class that is a client, a retriever, a bootstrap, a settings carrier, or an \
+                 error or exception class, which a build lays nothing for and no slice owns.\n\n",
             )?;
             for key in self.outline.keys() {
                 writeln!(f, "- `{key}`")?;
