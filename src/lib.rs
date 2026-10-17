@@ -6,11 +6,13 @@
 //! grants. The one capability it answers itself, the engine's `Files`, reads
 //! what a working copy holds at a path through the `.` preopen: a file's
 //! bytes, or the target a symbolic link names, and what a directory holds;
-//! and writes a file there.
+//! and writes a file there, following no symbolic link on the way.
 
 #![cfg(target_arch = "wasm32")]
 
+use std::fs::OpenOptions;
 use std::future::Future;
+use std::io::{ErrorKind, Write as _};
 use std::path::Path;
 use std::{fs, io};
 
@@ -47,10 +49,50 @@ impl Files for Provider {
     fn write(
         &self, at: &str, path: &str, bytes: &[u8],
     ) -> impl Future<Output = Result<(), Error>> + Send {
-        let outcome = fs::write(Path::new(at).join(path), bytes)
+        let outcome = laid(Path::new(at), path, bytes)
             .map_err(|error| server_error!("writing `{path}` under `{at}`: {error}"));
         async move { outcome }
     }
+}
+
+// Lays `bytes` whole at `path` beneath `root`, the directories on the way
+// made one at a time, so a link standing where one is to go, or at the path
+// itself, is refused rather than followed as `create_dir_all` and `write`
+// would follow it. `std` on `wasm32` has no no-follow open, so a file the
+// walk found is truncated in place and one it found absent is created and
+// never followed, as the SDK's writer does.
+fn laid(root: &Path, path: &str, bytes: &[u8]) -> io::Result<()> {
+    let mut full = root.to_path_buf();
+    let mut segments = path.split('/').filter(|segment| !segment.is_empty()).peekable();
+    while let Some(segment) = segments.next() {
+        full.push(segment);
+        let kind = match fs::symlink_metadata(&full) {
+            Ok(meta) => Some(meta.file_type()),
+            Err(err) if err.kind() == ErrorKind::NotFound => None,
+            Err(err) => return Err(err),
+        };
+        if kind.is_some_and(|kind| kind.is_symlink()) {
+            return Err(io::Error::other(format!("a symbolic link stands at `{segment}`")));
+        }
+        if segments.peek().is_none() {
+            let mut options = OpenOptions::new();
+            options.write(true);
+            match kind {
+                None => options.create_new(true),
+                Some(kind) if kind.is_file() => options.truncate(true),
+                Some(_) => {
+                    return Err(io::Error::other(format!("a directory stands at `{segment}`")));
+                }
+            };
+            return options.open(&full)?.write_all(bytes);
+        }
+        match kind {
+            None => fs::create_dir(&full)?,
+            Some(kind) if kind.is_dir() => {}
+            Some(_) => return Err(io::Error::other(format!("a file stands at `{segment}`"))),
+        }
+    }
+    Err(io::Error::other("the path names no file"))
 }
 
 // What a commit stores at each entry of the directory at `full`, a link

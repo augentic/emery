@@ -172,21 +172,20 @@ pub enum Base {
 
 /// One rule for merging a slice into the integrated tree.
 ///
-/// An adapter spells its rules as a `const` slice, so `paths` borrows a
-/// literal there and owns what the contract carries across.
+/// An adapter spells its rules as a `const` slice through [`MergeRule::union`],
+/// [`MergeRule::ours`], and [`MergeRule::theirs`], so `paths` borrows a
+/// literal there and owns what the contract carries across. A conflict no
+/// rule resolves is the engine's to resolve with the model.
 ///
 /// # Examples
 ///
 /// ```
-/// use std::borrow::Cow;
-///
 /// use emery_adapter::target::{MergeRule, MergeStrategy};
 ///
-/// const RULES: &[MergeRule] = &[MergeRule {
-///     paths: Cow::Borrowed("src/*/index.ts"),
-///     strategy: MergeStrategy::Union,
-/// }];
-/// assert_eq!(RULES[0].paths, "src/*/index.ts");
+/// const RULES: &[MergeRule] =
+///     &[MergeRule::ours("Cargo.lock"), MergeRule::union("src/*/index.ts")];
+/// assert_eq!(RULES[1].paths, "src/*/index.ts");
+/// assert_eq!(RULES[1].strategy, MergeStrategy::Union);
 /// ```
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct MergeRule {
@@ -194,6 +193,33 @@ pub struct MergeRule {
     pub paths: Cow<'static, str>,
     /// How a conflict at a matching path is resolved.
     pub strategy: MergeStrategy,
+}
+
+impl MergeRule {
+    /// Returns a rule keeping both sides' lines at the paths `paths` matches.
+    #[must_use]
+    pub const fn union(paths: &'static str) -> Self {
+        Self::new(paths, MergeStrategy::Union)
+    }
+
+    /// Returns a rule keeping the integrated tree's side at the paths `paths` matches.
+    #[must_use]
+    pub const fn ours(paths: &'static str) -> Self {
+        Self::new(paths, MergeStrategy::Ours)
+    }
+
+    /// Returns a rule keeping the slice's side at the paths `paths` matches.
+    #[must_use]
+    pub const fn theirs(paths: &'static str) -> Self {
+        Self::new(paths, MergeStrategy::Theirs)
+    }
+
+    const fn new(paths: &'static str, strategy: MergeStrategy) -> Self {
+        Self {
+            paths: Cow::Borrowed(paths),
+            strategy,
+        }
+    }
 }
 
 /// How a merge resolves a conflict at a path a [`MergeRule`] matches.

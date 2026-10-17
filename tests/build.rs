@@ -10,15 +10,21 @@
 
 mod support;
 
-use std::borrow::Cow;
 use std::fs;
 
-use emery_adapter::target::{Base, MergeRule, MergeStrategy, Report, Verdict};
+use emery_adapter::target::{Base, MergeRule, Report, Verdict};
 use emery_engine::EntryKind;
+use omnia_sdk::model::{Error as ModelError, Reply};
 use omnia_sdk::vcs::{Change, ChangeKind, Entry, Error, Merged, Rule, Strategy};
 use omnia_sdk::{bad_gateway, bad_request};
+use omnia_test::SeenFormat;
+use omnia_test::guest::Scripted;
 use serde_json::{Value, json};
 use support::{HEAD, Provider, Rendezvous, Scratch, cli, cli_ok, digest, fail, seed};
+
+const MERGE_MD: &str = include_str!("../crates/engine/prose/merge.md");
+// The resolution of `src/lib.rs` between `authentication` and `orders`.
+const RESOLVED_LIB: &str = r#"{"files": [{"path": "src/lib.rs", "content": "pub mod authentication;\npub mod orders;\n"}]}"#;
 
 // The target every scenario names, and the guest it loads and dispatches as.
 const BUILDER: &str = "acme:builder@2.1.0";
@@ -425,16 +431,7 @@ async fn build_jobs_one() {
 #[tokio::test]
 async fn build_merge_rules() {
     let (mut provider, _) = planned();
-    provider.target.rules = vec![
-        MergeRule {
-            paths: Cow::Borrowed("src/*/mod.rs"),
-            strategy: MergeStrategy::Union,
-        },
-        MergeRule {
-            paths: Cow::Borrowed("Cargo.lock"),
-            strategy: MergeStrategy::Ours,
-        },
-    ];
+    provider.target.rules = vec![MergeRule::union("src/*/mod.rs"), MergeRule::ours("Cargo.lock")];
 
     cli_ok(&provider, &["emery", "build", BUILDER]).await;
 
@@ -453,70 +450,408 @@ async fn build_merge_rules() {
     assert_eq!(policies, [expected.clone(), expected]);
 }
 
-// A slice whose merge conflicts is left unmerged, its working copy removed,
-// and built again in the next wave over the verified head, beside whatever
-// else is ready then; its merge then lands and the paths it conflicted at
-// are recorded.
+// The paths a slice's merge leaves conflicted under the adapter's rules are
+// put to the model as one question: the prompt, both sides of each path
+// read from the two working copies, and the plan entries of the slice and
+// of the wave's slices that wrote them, steered to the conflicted paths; a
+// resolution the gate refuses comes back for correction.
 #[tokio::test]
-async fn build_conflict_rebuilt() {
-    let (provider, id) = wide();
-    provider.vcs.heads.script(".", Ok(BASE.to_owned()));
-    provider.vcs.merges.script(
-        INTEGRATION,
-        Ok(Merged {
-            commit: Some("m:SLICE-001".to_owned()),
-            conflicts: Vec::new(),
-        }),
+async fn build_conflict_resolved() {
+    let (provider, _) = conflicted_at_lib(&[
+        r#"{"files": [{"path": "src/lib.rs", "content": "<<<<<<< HEAD\npub mod authentication;\n=======\npub mod orders;\n>>>>>>> SLICE-003\n"}]}"#,
+        RESOLVED_LIB,
+    ]);
+    let copy = worktree("SLICE-003");
+    changed(&provider, "SLICE-003", &[("src/lib.rs", ChangeKind::Modified)]);
+    changed(&provider, "SLICE-003", &[("src/lib.rs", ChangeKind::Modified)]);
+    wrote(&provider, WIDE_SESSIONS);
+
+    cli_ok(&provider, &["emery", "build", BUILDER]).await;
+
+    let seen = provider.model.seen();
+    assert_eq!(seen.len(), 2, "one question, two candidates");
+    let turn = &seen[0];
+    assert_eq!(turn.system.as_deref(), Some(MERGE_MD), "the merge prompt leads the turn");
+    let SeenFormat::Schema { name, schema } = &turn.format else {
+        panic!("the resolution is steered by schema");
+    };
+    assert_eq!(name, "merge-SLICE-003");
+    let schema: Value = serde_json::from_str(schema).expect("the steering schema is JSON");
+    assert_eq!(schema["properties"]["files"]["minItems"], 1);
+    assert_eq!(schema["properties"]["files"]["maxItems"], 1);
+    assert_eq!(schema["$defs"]["Resolution"]["properties"]["path"]["enum"], json!(["src/lib.rs"]));
+    let brief = &turn.messages[0];
+    assert_eq!(
+        brief,
+        "# Slice being merged\n\n## Slice: orders\n\nID: SLICE-003\nRequirements: [REQ-003, \
+         REQ-004]\nTypes: [orders.line, orders.order]\n\nDelivers order creation and \
+         cancellation; it waits on nothing.\n\n# Merged before it in the wave\n\n## Slice: \
+         authentication\n\nID: SLICE-001\nRequirements: [REQ-001]\n\nDelivers sign-in.\n\n# \
+         Conflicts\n\n## `src/lib.rs`\n\n### Integrated tree\n\n```\npub mod \
+         authentication;\n```\n\n### Slice\n\n```\npub mod orders;\n```\n\n"
     );
-    provider.vcs.merges.script(INTEGRATION, Ok(conflicted(&["src/orders.rs", "src/lib.rs"])));
-    for slice in [AUTHENTICATION, WIDE_ORDERS, WIDE_SESSIONS, WIDE_ORDERS] {
-        wrote(&provider, slice);
-    }
+    let exchanges = provider.model.exchanges();
+    assert_eq!(exchanges.len(), 2);
+    assert!(
+        exchanges[0].outcome.as_ref().is_err_and(|c| c.contains("still carries conflict markers")),
+        "{exchanges:?}"
+    );
+    assert!(exchanges[1].outcome.is_ok(), "{exchanges:?}");
+    assert_eq!(
+        provider.files.listed(),
+        [
+            (INTEGRATION.to_owned(), ".".to_owned()),
+            (INTEGRATION.to_owned(), "src".to_owned()),
+            (copy.clone(), ".".to_owned()),
+            (copy.clone(), "src".to_owned()),
+        ],
+        "each side is walked for what stands at the path"
+    );
+    assert_eq!(
+        provider.files.reads().iter().filter(|read| read.0 == copy).count(),
+        3,
+        "the slice's side is read for the gate, the brief, and the gate again: {:?}",
+        provider.files.reads()
+    );
+    provider.model.assert_exhausted();
+    provider.vcs.assert_exhausted();
+}
+
+// The accepted resolution is written into the slice's working copy, held
+// to the secret gate, sealed over the slice's commit, and merged again with
+// each resolved path taken whole ahead of the adapter's rules, so the slice
+// lands as one merge commit in its wave and the paths are reported.
+#[tokio::test]
+async fn build_conflict_resolved_merged() {
+    let (mut provider, id) = conflicted_at_lib(&[RESOLVED_LIB]);
+    provider.target.rules = vec![MergeRule::ours("Cargo.lock")];
+    let copy = worktree("SLICE-003");
+    provider.vcs.commits.script(&copy, Ok(Some("SLICE-003-commit".to_owned())));
+    provider.vcs.commits.script(&copy, Ok(Some("SLICE-003-resolved".to_owned())));
+    // what the build changed, then what the resolution left pending
+    changed(&provider, "SLICE-003", &[("src/lib.rs", ChangeKind::Modified)]);
+    changed(&provider, "SLICE-003", &[("src/lib.rs", ChangeKind::Modified)]);
+    wrote(&provider, WIDE_SESSIONS);
 
     let resp = cli_ok(&provider, &["emery", "--format", "json", "build", BUILDER]).await;
 
     assert_eq!(
-        dispatched(&provider),
-        [
-            ("SLICE-001".to_owned(), BASE.to_owned(), worktree("SLICE-001")),
-            ("SLICE-003".to_owned(), BASE.to_owned(), worktree("SLICE-003")),
-            ("SLICE-002".to_owned(), HEAD.to_owned(), worktree("SLICE-002")),
-            ("SLICE-003".to_owned(), HEAD.to_owned(), worktree("SLICE-003")),
-        ],
-        "the conflicted slice is built again over the verified head"
+        provider.files.writes(),
+        [(
+            copy.clone(),
+            "src/lib.rs".to_owned(),
+            b"pub mod authentication;\npub mod orders;\n".to_vec()
+        )],
+        "the resolution is written into the slice's working copy alone"
     );
     let mut expected = vec![
         "pending .".to_owned(),
         "head .".to_owned(),
         format!("labelled . emery/{id}"),
         format!("add . {INTEGRATION} {BASE}"),
+        format!("add . {} {BASE}", worktree("SLICE-001")),
+        format!("add . {copy} {BASE}"),
     ];
-    expected.extend(wave(".", &id, BASE, &[AUTHENTICATION, WIDE_ORDERS]));
-    expected.extend(wave(".", &id, HEAD, &[WIDE_SESSIONS, WIDE_ORDERS]));
+    expected.extend(sealed(AUTHENTICATION));
+    expected.extend([
+        format!("head {copy}"),
+        format!("pending {copy}"),
+        format!("commit {copy} SLICE-003 orders"),
+        format!("merge {INTEGRATION} SLICE-003-commit SLICE-003 orders"),
+        format!("pending {copy}"),
+        format!("commit {copy} SLICE-003 orders resolved at src/lib.rs"),
+        format!("merge {INTEGRATION} SLICE-003-resolved SLICE-003 orders"),
+        format!("remove {copy}"),
+        format!("pending {INTEGRATION}"),
+        format!("head {INTEGRATION}"),
+        format!("label . emery/{id} {HEAD}"),
+    ]);
+    expected.extend(wave(".", &id, HEAD, &[WIDE_SESSIONS]));
     expected.push(format!("remove {INTEGRATION}"));
     assert_eq!(provider.vcs.calls(), expected);
+    let orders = message(&id, WIDE_ORDERS, "REQ-003, REQ-004", "REQ-003, REQ-004", BASE, 1);
     assert_eq!(
         provider.vcs.messages(),
         [
             message(&id, AUTHENTICATION, "REQ-001", "REQ-001", BASE, 1),
-            message(&id, WIDE_ORDERS, "REQ-003, REQ-004", "REQ-003, REQ-004", BASE, 1),
+            orders.clone(),
+            "SLICE-003 orders resolved at src/lib.rs".to_owned(),
             message(&id, WIDE_SESSIONS, "REQ-002", "REQ-002", HEAD, 2),
-            message(&id, WIDE_ORDERS, "REQ-003, REQ-004", "REQ-003, REQ-004", HEAD, 2),
         ],
-        "the second build is sealed under the wave it merged in"
+        "the resolution is sealed over the slice's commit"
+    );
+    let ours = Rule {
+        paths: "Cargo.lock".to_owned(),
+        strategy: Strategy::Ours,
+    };
+    let theirs = Rule {
+        paths: "/src/lib.rs".to_owned(),
+        strategy: Strategy::Theirs,
+    };
+    assert_eq!(
+        provider.vcs.merged()[1..3],
+        [(orders.clone(), vec![ours.clone()]), (orders, vec![theirs, ours])],
+        "the second merge carries the slice's message and takes each resolution whole"
     );
 
     let envelope: Value = serde_json::from_slice(&resp.stdout).expect("one JSON envelope");
     assert_eq!(
         envelope["slices"],
         json!([
-            {"id": "SLICE-001", "name": "authentication", "wave": 1, "covered": ["REQ-001"], "uncovered": [], "written": ["src/authentication.rs"], "commit": "m:SLICE-001"},
+            {"id": "SLICE-001", "name": "authentication", "wave": 1, "covered": ["REQ-001"], "uncovered": [], "written": ["src/authentication.rs", "src/lib.rs"], "commit": "m:SLICE-001"},
+            {"id": "SLICE-003", "name": "orders", "wave": 1, "covered": ["REQ-003", "REQ-004"], "uncovered": [], "written": ["src/lib.rs"], "resolved": ["src/lib.rs"], "commit": "m:SLICE-003"},
             {"id": "SLICE-002", "name": "sessions", "wave": 2, "covered": ["REQ-002"], "uncovered": [], "written": ["src/sessions.rs"], "commit": "m:SLICE-002"},
-            {"id": "SLICE-003", "name": "orders", "wave": 2, "covered": ["REQ-003", "REQ-004"], "uncovered": [], "written": ["src/orders.rs"], "commit": "m:SLICE-003", "conflicts": ["src/orders.rs", "src/lib.rs"]},
         ]),
         "{envelope}"
     );
+    assert_eq!(
+        envelope["verified"],
+        verified(&[(1, &["SLICE-001", "SLICE-003"]), (2, &["SLICE-002"])]),
+        "{envelope}"
+    );
+    provider.model.assert_exhausted();
+    provider.vcs.assert_exhausted();
+}
 
+// A resolution that keeps the slice's own side changes nothing in its
+// working copy, so nothing is sealed over the slice's commit and that commit
+// is merged again with the path taken whole; the text names the paths
+// resolved beside the merge.
+#[tokio::test]
+async fn build_conflict_resolved_as_written() {
+    let (provider, id) = conflicted_at_lib(&[
+        r#"{"files": [{"path": "src/lib.rs", "content": "pub mod orders;\n"}]}"#,
+    ]);
+    let copy = worktree("SLICE-003");
+    changed(&provider, "SLICE-003", &[("src/lib.rs", ChangeKind::Modified)]);
+    wrote(&provider, WIDE_SESSIONS);
+    provider.vcs.commits.script(&copy, Ok(Some("SLICE-003-commit".to_owned())));
+    provider.vcs.commits.script(&copy, Ok(None));
+
+    let resp = cli_ok(&provider, &["emery", "build", BUILDER]).await;
+
+    let calls = provider.vcs.calls();
+    let merges: Vec<&String> = calls
+        .iter()
+        .filter(|call| call.starts_with(&format!("merge {INTEGRATION} SLICE-003")))
+        .collect();
+    assert_eq!(
+        merges,
+        [
+            &format!("merge {INTEGRATION} SLICE-003-commit SLICE-003 orders"),
+            &format!("merge {INTEGRATION} SLICE-003-commit SLICE-003 orders"),
+        ],
+        "the slice's own commit is merged again: {calls:?}"
+    );
+    assert_eq!(
+        provider.vcs.merged()[2].1,
+        [Rule {
+            paths: "/src/lib.rs".to_owned(),
+            strategy: Strategy::Theirs,
+        }],
+        "with the path taken whole"
+    );
+    assert_eq!(
+        provider.vcs.messages(),
+        [
+            message(&id, AUTHENTICATION, "REQ-001", "REQ-001", BASE, 1),
+            message(&id, WIDE_ORDERS, "REQ-003, REQ-004", "REQ-003, REQ-004", BASE, 1),
+            "SLICE-003 orders resolved at src/lib.rs".to_owned(),
+            message(&id, WIDE_SESSIONS, "REQ-002", "REQ-002", HEAD, 2),
+        ],
+        "sealing the resolution makes no commit"
+    );
+    assert_eq!(
+        String::from_utf8_lossy(&resp.stdout),
+        format!(
+            "built revision {id}\n  plan: 3 slices in 2 waves, widest 2\n  base {BASE}\n  wave 1: \
+             2 slices verified at 9f8e7d6c\n    SLICE-001 authentication: covered 1/1, written 2 \
+             files, merged m:SLICE-001\n    SLICE-003 orders: covered 2/2, written 1 file, merged \
+             m:SLICE-003, resolved (src/lib.rs)\n  wave 2: 1 slice verified at 9f8e7d6c\n    \
+             SLICE-002 sessions: covered 1/1, written 1 file, merged m:SLICE-002\n  labelled \
+             emery/{id} at {HEAD}\n"
+        )
+    );
+    provider.model.assert_exhausted();
+    provider.vcs.assert_exhausted();
+}
+
+// A resolution refused within the available rounds ends the run at the
+// slice as `merge-unresolved`, naming the paths and the findings, with
+// nothing written, both working copies left for inspection, and the wave
+// neither verified nor labelled.
+#[tokio::test]
+async fn build_conflict_unresolved() {
+    let (provider, _) = conflicted_at_lib(&[r#"{"files": []}"#, r#"{"files": []}"#]);
+    changed(&provider, "SLICE-003", &[("src/lib.rs", ChangeKind::Modified)]);
+
+    let envelope = fail(&provider, &["emery", "build", BUILDER], 1, "merge-unresolved").await;
+
+    assert_message(
+        &envelope,
+        &format!(
+            "slice `SLICE-003` (orders) failed in wave 1; SLICE-001 merged before it stays \
+             committed in `{INTEGRATION}`: its merge conflicts at src/lib.rs, and the conflict \
+             cannot be resolved: the model's resolution was refused within the available rounds: \
+             - `src/lib.rs` is not answered"
+        ),
+    );
+    assert!(
+        envelope["message"].as_str().is_some_and(|m| !m.contains("## Previous answer")),
+        "the rejected candidate is not spelled back: {envelope}"
+    );
+    assert!(
+        envelope["hint"].as_str().is_some_and(|hint| hint.contains("merge rule")),
+        "{envelope}"
+    );
+    assert!(provider.files.writes().is_empty(), "nothing is written on a refusal");
+    left_for_inspection(&provider);
+    provider.model.assert_exhausted();
+    provider.vcs.assert_exhausted();
+}
+
+// A conflicted path the slice removed is nothing the model can combine, so
+// the slice is refused as `merge-unresolved` before any turn is spent.
+#[tokio::test]
+async fn build_conflict_deleted_slice() {
+    let (provider, _) = conflicted_at_lib(&[]);
+    changed(&provider, "SLICE-003", &[("src/lib.rs", ChangeKind::Deleted)]);
+
+    let envelope = fail(&provider, &["emery", "build", BUILDER], 1, "merge-unresolved").await;
+
+    assert_message(
+        &envelope,
+        "its merge conflicts at src/lib.rs, and the conflict cannot be resolved: the slice \
+         removed `src/lib.rs`",
+    );
+    left_for_inspection(&provider);
+    provider.vcs.assert_exhausted();
+}
+
+// A conflicted path the integrated tree no longer holds as a regular file,
+// one a slice merged before it removed, is refused the same way.
+#[tokio::test]
+async fn build_conflict_deleted_integrated() {
+    let (provider, _) = conflicted_at_lib(&[]);
+    changed(&provider, "SLICE-003", &[("src/lib.rs", ChangeKind::Modified)]);
+    provider.files.lists(INTEGRATION, "src", &[("orders.rs", EntryKind::File)]);
+
+    let envelope = fail(&provider, &["emery", "build", BUILDER], 1, "merge-unresolved").await;
+
+    assert_message(
+        &envelope,
+        "its merge conflicts at src/lib.rs, and the conflict cannot be resolved: the integrated \
+         tree does not hold `src/lib.rs`",
+    );
+    left_for_inspection(&provider);
+    provider.vcs.assert_exhausted();
+}
+
+// A symbolic link at a conflicted path, on either side, is refused the same
+// way, since the model is handed text and a commit stores the link's target.
+#[tokio::test]
+async fn build_conflict_symlink() {
+    let (provider, _) = conflicted_at_lib(&[]);
+    changed(&provider, "SLICE-003", &[("src/lib.rs", ChangeKind::Modified)]);
+    provider.files.lists(&worktree("SLICE-003"), "src", &[("lib.rs", EntryKind::Link)]);
+
+    let envelope = fail(&provider, &["emery", "build", BUILDER], 1, "merge-unresolved").await;
+
+    assert_message(
+        &envelope,
+        "its merge conflicts at src/lib.rs, and the conflict cannot be resolved: a symbolic link \
+         stands at `src/lib.rs` in the slice",
+    );
+    left_for_inspection(&provider);
+    provider.vcs.assert_exhausted();
+}
+
+// A conflicted path that is not text on one side is refused the same way.
+#[tokio::test]
+async fn build_conflict_binary() {
+    let (provider, _) = conflicted_at_lib(&[]);
+    changed(&provider, "SLICE-003", &[("src/lib.rs", ChangeKind::Modified)]);
+    provider.files.holds_bytes(INTEGRATION, "src/lib.rs", &[0xff, 0xfe, 0x00, 0x01]);
+
+    let envelope = fail(&provider, &["emery", "build", BUILDER], 1, "merge-unresolved").await;
+
+    assert_message(
+        &envelope,
+        "its merge conflicts at src/lib.rs, and the conflict cannot be resolved: `src/lib.rs` is \
+         not text in the integrated tree",
+    );
+    assert!(
+        provider.files.reads().contains(&(INTEGRATION.to_owned(), "src/lib.rs".to_owned())),
+        "{:?}",
+        provider.files.reads()
+    );
+    left_for_inspection(&provider);
+    provider.vcs.assert_exhausted();
+}
+
+// A resolution turn that fails upstream is put once more before the failure
+// is the run's, as a slice's build is.
+#[tokio::test]
+async fn build_conflict_retried() {
+    let (mut provider, _) = conflicted_at_lib(&[]);
+    changed(&provider, "SLICE-003", &[("src/lib.rs", ChangeKind::Modified)]);
+    changed(&provider, "SLICE-003", &[("src/lib.rs", ChangeKind::Modified)]);
+    wrote(&provider, WIDE_SESSIONS);
+    provider.model = Scripted::new([
+        Err(ModelError::Backend("the bridge went away".to_owned())),
+        Ok(Reply {
+            answer: RESOLVED_LIB.to_owned(),
+            usage: None,
+        }),
+    ]);
+
+    cli_ok(&provider, &["emery", "build", BUILDER]).await;
+
+    assert_eq!(provider.model.seen().len(), 2, "the question is put twice");
+    assert_eq!(provider.files.writes().len(), 1, "and the second answer lands");
+    provider.model.assert_exhausted();
+    provider.vcs.assert_exhausted();
+}
+
+// A resolution that carries a credential is refused before it is sealed,
+// as what a build or a verification writes is.
+#[tokio::test]
+async fn build_conflict_secret() {
+    let (provider, _) = conflicted_at_lib(&[
+        r#"{"files": [{"path": "src/lib.rs", "content": "pub mod authentication;\npub mod orders;\npub const KEY: &str = \"AKIAIOSFODNN7EXAMPLE\";\n"}]}"#,
+    ]);
+    let copy = worktree("SLICE-003");
+    changed(&provider, "SLICE-003", &[("src/lib.rs", ChangeKind::Modified)]);
+    changed(&provider, "SLICE-003", &[("src/lib.rs", ChangeKind::Modified)]);
+
+    let envelope = fail(&provider, &["emery", "build", BUILDER], 1, "secret-detected").await;
+
+    assert_message(
+        &envelope,
+        "slice `SLICE-003` (orders) failed in wave 1; SLICE-001 merged before it stays committed \
+         in `./.emery/vcs/integration`: what the merge's resolution wrote carries a credential, so \
+         none of it is sealed:\n- src/lib.rs: an AWS access key id",
+    );
+    assert_eq!(provider.files.writes().len(), 1, "the resolution was written, and read back");
+    let calls = provider.vcs.calls();
+    assert!(
+        !calls.contains(&format!("commit {copy} SLICE-003 orders resolved at src/lib.rs")),
+        "nothing of it is sealed: {calls:?}"
+    );
+    left_for_inspection(&provider);
+    provider.model.assert_exhausted();
+    provider.vcs.assert_exhausted();
+}
+
+// A wide build whose `orders` slice conflicts with `authentication` at
+// `src/lib.rs`, both copies holding it as a text file: `authentication`
+// changed it beside its own module, and the model answers `answers`. What
+// `orders` left changed, and what `sessions` writes in the wave after, is
+// the scenario's to script.
+fn conflicted_at_lib(answers: &[&str]) -> (Provider, String) {
+    let provider = Provider::answering(answers.iter().copied());
+    let id = seed(&provider.storage, SPEC, DESIGN, WIDE_PLAN);
+    let copy = worktree("SLICE-003");
     provider.vcs.heads.script(".", Ok(BASE.to_owned()));
     provider.vcs.merges.script(
         INTEGRATION,
@@ -525,86 +860,44 @@ async fn build_conflict_rebuilt() {
             conflicts: Vec::new(),
         }),
     );
-    provider.vcs.merges.script(INTEGRATION, Ok(conflicted(&["src/orders.rs", "src/lib.rs"])));
-    for slice in [AUTHENTICATION, WIDE_ORDERS, WIDE_SESSIONS, WIDE_ORDERS] {
-        wrote(&provider, slice);
-    }
-    let resp = cli_ok(&provider, &["emery", "build", BUILDER]).await;
-    let stdout = String::from_utf8_lossy(&resp.stdout);
-    assert_eq!(
-        stdout,
-        format!(
-            "built revision {id}\n  plan: 3 slices in 2 waves, widest 2\n  base {BASE}\n  wave 1: \
-             1 slice verified at 9f8e7d6c\n    SLICE-001 authentication: covered 1/1, written 1 \
-             file, merged m:SLICE-001\n  wave 2: 2 slices verified at 9f8e7d6c\n    SLICE-002 \
-             sessions: covered 1/1, written 1 file, merged m:SLICE-002\n    SLICE-003 orders: \
-             covered 2/2, written 1 file, merged m:SLICE-003, conflicted (src/orders.rs, \
-             src/lib.rs)\n  labelled emery/{id} at {HEAD}\n"
-        )
+    provider.vcs.merges.script(INTEGRATION, Ok(conflicted(&["src/lib.rs"])));
+    changed(
+        &provider,
+        "SLICE-001",
+        &[("src/authentication.rs", ChangeKind::Added), ("src/lib.rs", ChangeKind::Modified)],
     );
-    provider.vcs.assert_exhausted();
+    for at in [INTEGRATION, copy.as_str()] {
+        provider.files.lists(at, ".", &[("src", EntryKind::Directory)]);
+        provider.files.lists(at, "src", &[("lib.rs", EntryKind::File)]);
+    }
+    provider.files.holds(INTEGRATION, "src/lib.rs", "pub mod authentication;\n");
+    provider.files.holds(&copy, "src/lib.rs", "pub mod orders;\n");
+    (provider, id)
 }
 
-// A slice that conflicts on its third build ends the run as
-// `slice-conflict`, naming the slice and the paths; the label stays where
-// the last verified wave left it and the integration working copy stays
-// for inspection.
-#[tokio::test]
-async fn build_conflict_persists() {
-    let (provider, id) = wide();
-    for answer in [
-        Ok(Merged {
-            commit: Some("m:SLICE-001".to_owned()),
-            conflicts: Vec::new(),
-        }),
-        Ok(conflicted(&["src/orders.rs"])),
-        Ok(Merged {
-            commit: Some("m:SLICE-002".to_owned()),
-            conflicts: Vec::new(),
-        }),
-        Ok(conflicted(&["src/orders.rs"])),
-        Ok(conflicted(&["src/orders.rs"])),
-    ] {
-        provider.vcs.merges.script(INTEGRATION, answer);
-    }
+// The calls one slice's integration makes once its copy is cut: found where
+// it was cut, its changes read, sealed, merged, and removed.
+fn sealed((slice, name): (&str, &str)) -> Vec<String> {
+    vec![
+        format!("head {}", worktree(slice)),
+        format!("pending {}", worktree(slice)),
+        format!("commit {} {slice} {name}", worktree(slice)),
+        format!("merge {INTEGRATION} {slice}-commit {slice} {name}"),
+        format!("remove {}", worktree(slice)),
+    ]
+}
 
-    let envelope = fail(&provider, &["emery", "build", BUILDER], 1, "slice-conflict").await;
-
-    assert_message(
-        &envelope,
-        &format!(
-            "slice `SLICE-003` (orders) failed in wave 3; SLICE-001, SLICE-002 merged before it \
-             stay committed in `{INTEGRATION}`: its merge conflicts at src/orders.rs on its build 3"
-        ),
-    );
-    assert!(
-        envelope["hint"].as_str().is_some_and(|hint| hint.contains("merge rule")),
-        "{envelope}"
-    );
-    assert_eq!(
-        dispatched(&provider).iter().filter(|(slice, ..)| slice == "SLICE-003").count(),
-        3,
-        "the slice is built once per wave until its last attempt"
-    );
+// A failed `orders` leaves its copy and the integration copy, with the wave
+// neither verified nor labelled.
+fn left_for_inspection(provider: &Provider) {
     let calls = provider.vcs.calls();
-    let labels: Vec<&String> = calls.iter().filter(|call| call.starts_with("label ")).collect();
-    assert_eq!(
-        labels,
-        [&format!("label . emery/{id} {HEAD}"), &format!("label . emery/{id} {HEAD}")],
-        "labelled after the two waves that merged a slice"
-    );
     assert!(!calls.contains(&format!("remove {INTEGRATION}")), "left for inspection: {calls:?}");
-    assert_eq!(
-        calls.iter().filter(|call| **call == format!("remove {}", worktree("SLICE-003"))).count(),
-        3,
-        "the slice's working copy goes after each conflict: {calls:?}"
+    assert!(
+        !calls.contains(&format!("remove {}", worktree("SLICE-003"))),
+        "the slice's working copy stays for inspection: {calls:?}"
     );
-    assert_eq!(
-        provider.target.verifies(),
-        [INTEGRATION, INTEGRATION],
-        "the third wave is never verified"
-    );
-    provider.vcs.assert_exhausted();
+    assert!(!calls.iter().any(|call| call.starts_with("label ")), "no label: {calls:?}");
+    assert!(provider.target.verifies().is_empty(), "a wave that did not integrate is not verified");
 }
 
 // A wave the adapter does not verify ends the run as `verify-failed`,
@@ -656,10 +949,7 @@ async fn build_verify_failed() {
 #[tokio::test]
 async fn build_verify_repairs() {
     let (mut provider, id) = planned();
-    provider.target.rules = vec![MergeRule {
-        paths: Cow::Borrowed("Cargo.lock"),
-        strategy: MergeStrategy::Ours,
-    }];
+    provider.target.rules = vec![MergeRule::ours("Cargo.lock")];
     let repaired = || {
         Ok(vec![
             change("src/orders.rs", ChangeKind::Modified),

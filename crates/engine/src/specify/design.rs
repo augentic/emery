@@ -15,9 +15,10 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 use strum::VariantArray as _;
 
+use crate::brief::{Brief, Review};
 use crate::revision::{self, Design, EMERY, Role, Section, SectionKind, citations};
 use crate::specify::basis::Basis;
-use crate::specify::brief::{BasesSection, Brief, ClaimsSection, Review};
+use crate::specify::sections::{BasesSection, ClaimsSection};
 use crate::specify::{Extract, shape};
 
 /// A synthesis brief for the drafted portions of `design.md`.

@@ -19,10 +19,8 @@ use emery_sdk::target::Seed;
 
 #[cfg(target_arch = "wasm32")]
 mod guest {
-    use std::borrow::Cow;
-
     use emery_sdk::target::{
-        Base, Context, MergeRule, MergeStrategy, Report, TargetAdapter, Verdict, VerifyContext,
+        Base, Context, MergeRule, Report, TargetAdapter, Verdict, VerifyContext,
     };
     use emery_sdk::{Error, Model};
 
@@ -38,10 +36,7 @@ mod guest {
             None => Base::Any,
         };
         // two slices that list requirements in one index keep both lists
-        const MERGE_RULES: &'static [MergeRule] = &[MergeRule {
-            paths: Cow::Borrowed("build/*/index.md"),
-            strategy: MergeStrategy::Union,
-        }];
+        const MERGE_RULES: &'static [MergeRule] = &[MergeRule::union("build/*/index.md")];
 
         async fn build<P: Model>(ctx: &Context<'_, P>) -> Result<Report, Error> {
             emery_sdk::target::build(ctx, super::PROSE, super::SEED, |_| Ok(Vec::new())).await

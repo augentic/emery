@@ -206,9 +206,10 @@ pub trait TargetAdapter {
     /// under, since the adapter alone knows which files its builds
     /// regenerate and which they extend.
     ///
-    /// The first rule matching a conflicting path applies; none leaves every
-    /// conflict unresolved, which the engine reports and rebuilds over the
-    /// merged head.
+    /// The first rule matching a conflicting path applies. A conflict no
+    /// rule resolves is the engine's: it resolves the file with the model
+    /// and merges the resolution, so the rules spare a turn where a list or
+    /// a regenerated file decides the outcome. None by default.
     const MERGE_RULES: &'static [MergeRule] = &[];
 
     /// What the model's worker reaches beyond the tree in every build and
@@ -255,10 +256,11 @@ pub trait TargetAdapter {
 /// [`export_target!`](crate::export_target) answers the component's
 /// `metadata` with it over the adapter's
 /// [`MERGE_RULES`](TargetAdapter::MERGE_RULES) and
-/// [`BASE`](TargetAdapter::BASE). The `emery-version` pin is this SDK's own
-/// version, identifying the contract the adapter compiled against. Build a
-/// [`TargetMetadata`] directly only when the adapter must loosen or tighten
-/// that pin.
+/// [`BASE`](TargetAdapter::BASE). The engine merges every slice under the
+/// rules first and resolves what they leave with the model. The
+/// `emery-version` pin is this SDK's own version, identifying the contract
+/// the adapter compiled against. Build a [`TargetMetadata`] directly only
+/// when the adapter must loosen or tighten that pin.
 #[must_use]
 pub fn metadata(merge_rules: &[MergeRule], base: Base) -> TargetMetadata {
     TargetMetadata {

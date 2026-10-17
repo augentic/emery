@@ -57,9 +57,9 @@ fn summary(diff: &Diff, w: &mut dyn fmt::Write) -> fmt::Result {
 /// adapter's `ours` rules alone, a lockfile. Each slice line beneath it
 /// counts the requirements covered of those it holds, names any left
 /// uncovered, counts the paths its build changed, names the merge commit
-/// that brought them in, and the paths an earlier build of it conflicted
-/// at; a slice an earlier run staged in the integration working copy says
-/// so instead, since this run verified it and built nothing.
+/// that brought them in, and the paths the model resolved its merge at; a
+/// slice an earlier run staged in the integration working copy says so
+/// instead, since this run verified it and built nothing.
 pub fn build(output: &BuildOutput, w: &mut dyn fmt::Write) -> fmt::Result {
     writeln!(w, "built revision {}", output.revision)?;
     waves(&output.waves, w)?;
@@ -107,8 +107,8 @@ fn built(slice: &BuiltSlice, w: &mut dyn fmt::Write) -> fmt::Result {
         Some(commit) => write!(w, ", merged {commit}")?,
         None => write!(w, ", nothing to merge")?,
     }
-    if !slice.conflicts.is_empty() {
-        write!(w, ", conflicted ({})", slice.conflicts.join(", "))?;
+    if !slice.resolved.is_empty() {
+        write!(w, ", resolved ({})", slice.resolved.join(", "))?;
     }
     writeln!(w)
 }

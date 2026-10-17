@@ -1,29 +1,28 @@
-//! Defines the shared workflow for typed synthesis requests.
+//! Defines the shared workflow for typed model questions.
 //!
 //! A [`Brief`] combines engine facts, prompt documents, an answer schema, and
 //! validation. Only a response that passes both deserialisation and
 //! fact-based checks can produce engine output.
 //!
-//! Synthesis may use briefs for claim grouping, specification drafting,
-//! design drafting, and slicing. Facts already known to the engine are
-//! validated or inserted directly rather than requested from the model.
+//! Synthesis uses briefs for claim grouping, specification drafting, design
+//! drafting, and slicing; a build uses one for the conflicts a slice's merge
+//! leaves. Facts already known to the engine are validated or inserted
+//! directly rather than requested from the model.
 
-use std::borrow::Borrow;
-use std::fmt::{self, Display, Formatter};
+use std::borrow::Cow;
+use std::fmt::Display;
 
 use emery_adapter::Lexicon;
-use emery_adapter::source::Claim;
-use omnia_sdk::model::{Error as ModelError, Findings, Question};
+use omnia_sdk::model::{Findings, Question};
 use omnia_sdk::{Error, Model, server_error};
 use schemars::JsonSchema;
 use serde::de::DeserializeOwned;
 use serde_json::Value;
 
-use crate::revision::{RESERVED, Status};
-use crate::specify::basis::Basis;
-use crate::specify::{Extract, PROSE};
+use crate::revision::RESERVED;
+use crate::{RETRIES, is_retryable};
 
-/// A typed synthesis question and the checks its answer must satisfy.
+/// A typed question to the model and the checks its answer must satisfy.
 // `Sync`: the verify closure `Question::ask` takes is `Send`, and it
 // borrows the brief.
 pub trait Brief: Display + Sync + Sized {
@@ -38,6 +37,14 @@ pub trait Brief: Display + Sync + Sized {
 
     /// Paths of prompt documents, in assembly order.
     const PROSE: &'static [&'static str];
+
+    /// The name this question is put under.
+    ///
+    /// [`Self::NAME`] unless a run puts the brief more than once, when each
+    /// question carries what tells it apart.
+    fn label(&self) -> Cow<'static, str> {
+        Cow::Borrowed(Self::NAME)
+    }
 
     /// Restricts the derived `schema` using facts from this run.
     ///
@@ -64,21 +71,22 @@ pub trait Brief: Display + Sync + Sized {
     /// # Errors
     ///
     /// - Returns [`Error::BadRequest`] when no valid answer is produced within
-    ///   the available rounds.
+    ///   the available rounds, or the backend's time budget ends the
+    ///   question twice over.
     /// - Returns [`Error::ServerError`] when a required prompt document is not
     ///   embedded or an accepted answer cannot be converted.
     /// - Returns [`Error::BadGateway`] when the model operation fails twice
     ///   over: a first failure is put once more before it is reported.
-    #[tracing::instrument(skip_all, fields(question = Self::NAME))]
+    #[tracing::instrument(skip_all, fields(question = %self.label()))]
     async fn judge<M: Model>(self, model: &M) -> Result<Self::Output, Error> {
-        tracing::info!(question = Self::NAME, "asking the model");
+        tracing::info!("asking the model");
         let mut system = Vec::with_capacity(Self::PROSE.len());
         for path in Self::PROSE {
             let prose = emery_prose::body(PROSE, path)
                 .ok_or_else(|| server_error!("synthesis prose `{path}` is not embedded"))?;
             system.push(prose);
         }
-        let question = Question::<Self::Answer>::new(Self::NAME)
+        let question = Question::<Self::Answer>::new(&self.label())
             .system(system.join("\n\n---\n\n"))
             .schema(|schema| self.tighten(schema));
         let check = |answer: &Self::Answer| {
@@ -86,17 +94,30 @@ pub trait Brief: Display + Sync + Sized {
             self.verify(answer, &mut review);
             review.verdict()
         };
-        let answer = match question.ask(model, self.to_string(), None, check).await {
-            // the transport or a tool failed, not the answer — the failures the
-            // run would report as `bad_gateway` — so the question is put once
-            // more, fresh, before the run is given up
-            Err(failure @ (ModelError::Backend(_) | ModelError::ToolFailed(_))) => {
-                tracing::warn!(question = Self::NAME, %failure, "the model failed; asking once more");
-                question.ask(model, self.to_string(), None, check).await?
+
+        // a failure of the transport or the backend's time, not of the
+        // answer, is put once more, fresh, before the run is given up
+        let turn = self.to_string();
+        let mut attempt = 0;
+        let answer = loop {
+            attempt += 1;
+            match question.ask(model, &turn, None, check).await {
+                Ok(answer) => break answer,
+                Err(failure) => {
+                    let error = Error::from(failure);
+                    if attempt < RETRIES && is_retryable(&error) {
+                        tracing::warn!(
+                            attempt,
+                            description = %error.description(),
+                            "the model failed upstream or timed out; asking once more"
+                        );
+                        continue;
+                    }
+                    return Err(error);
+                }
             }
-            outcome => outcome?,
         };
-        tracing::info!(question = Self::NAME, "answered");
+        tracing::info!("answered");
 
         self.into_output(answer)
     }
@@ -182,107 +203,39 @@ impl Review {
     }
 }
 
-/// The requirement outline of a document brief's turn, one entry per basis.
-///
-/// Each entry carries the engine's facts about the requirement: its id,
-/// subject, status, sources, whether a criterion covers it, and every
-/// contributing claim with its role. The three drafts run from it together,
-/// so none waits on another's answer. The bases are owned or borrowed, so a
-/// brief over a chunk of the run's bases lists them as one over all of them
-/// does.
-pub struct BasesSection<'a, B>(pub &'a [B]);
+static PROSE: &[emery_prose::Doc] = emery_prose::prose![
+    "../prose/authority.md",
+    "../prose/claim-landing.md",
+    "../prose/design-format.md",
+    "../prose/grouping.md",
+    "../prose/merge.md",
+    "../prose/requirement-block.md",
+    "../prose/slicing.md",
+    "../prose/spec-format.md",
+    "../prose/synthesise.md",
+    "../prose/tags.md",
+];
 
-impl<'a, B: Borrow<Basis<'a>>> Display for BasesSection<'a, B> {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        for basis in self.0 {
-            let basis: &Basis<'a> = basis.borrow();
-            let coverage = if basis.covered {
-                "evidenced"
-            } else {
-                "not evidenced — `then` is the outcome the statements name, else `[unknown]`"
-            };
-            write!(
-                f,
-                "- {id} `{subject}` — Status: {status} — Sources: [",
-                id = basis.id,
-                subject = basis.subject,
-                status = basis.status,
-            )?;
-            for (position, member) in basis.contributors().enumerate() {
-                if position > 0 {
-                    f.write_str(", ")?;
-                }
-                write!(f, "{}:{}", member.source, member.id)?;
-            }
-            writeln!(f, "] — acceptance criteria {coverage}")?;
+#[cfg(test)]
+mod tests {
+    use std::path::Path;
 
-            for (position, class) in basis.classes.iter().enumerate() {
-                let role = match (basis.status, position) {
-                    (Status::Divergence, 0) => "winner",
-                    (Status::Divergence, _) => "loser",
-                    _ => "contributor",
-                };
+    use super::Brief as _;
+    use crate::build::merge::MergeBrief;
+    use crate::specify::{DesignBrief, GroupingBrief, SliceBrief, SpecBrief};
 
-                for member in class {
-                    writeln!(
-                        f,
-                        "  - {role}: {source} ({kind}, rank {rank}, `{claim}`): {statement}",
-                        source = member.source,
-                        kind = member.kind,
-                        rank = member.rank,
-                        claim = member.id,
-                        statement = member.statement,
-                    )?;
-                }
-            }
-        }
-
-        Ok(())
+    #[test]
+    fn corpus() {
+        let tree = Path::new(env!("CARGO_MANIFEST_DIR")).join("prose");
+        let prompts = [
+            GroupingBrief::PROSE,
+            SpecBrief::PROSE,
+            DesignBrief::PROSE,
+            SliceBrief::PROSE,
+            MergeBrief::PROSE,
+        ]
+        .concat();
+        let findings = emery_prose::check(super::PROSE, &tree, &prompts, &[]);
+        assert!(findings.is_empty(), "{}", findings.join("\n"));
     }
-}
-
-/// The `## Claims` section of a document brief's turn.
-///
-/// Every claim of every extract is listed under its source name and kind.
-pub struct ClaimsSection<'a>(pub &'a [Extract]);
-
-impl Display for ClaimsSection<'_> {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        claims(f, self.0, |_| true)
-    }
-}
-
-/// Writes the `## Claims` section over the claims of `extracts` that `keep`
-/// admits, each under its source's name and kind; a source none of whose
-/// claims is kept is listed with none.
-///
-/// # Errors
-///
-/// Returns the formatter's error.
-pub fn claims(
-    f: &mut Formatter<'_>, extracts: &[Extract], keep: impl Fn(&Claim) -> bool,
-) -> fmt::Result {
-    f.write_str("## Claims\n")?;
-
-    for extract in extracts {
-        write!(
-            f,
-            "\n### source `{source}` ({kind})\n\n",
-            source = extract.source,
-            kind = extract.kind
-        )?;
-
-        for claim in extract.evidence.claims.iter().filter(|claim| keep(claim)) {
-            let id = claim.id.as_deref().unwrap_or("-");
-            let synopsis = claim.synopsis.as_deref().unwrap_or("");
-            writeln!(
-                f,
-                "- {kind} `{id}` — {synopsis} — {extras}",
-                kind = claim.kind,
-                extras = Value::Object(claim.extras.clone()),
-            )?;
-        }
-    }
-
-    Ok(())
 }

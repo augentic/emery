@@ -16,53 +16,51 @@
 //! its own cut at the wave's head, with its plan entry, its cut of the
 //! specification, and the whole design. What each changed is sealed as its
 //! commit, once its copy is found still sitting where it was cut, and merged
-//! into the integration working copy in id order under the adapter's merge
-//! rules. The adapter verifies the integrated tree, repairing what its
-//! checks find, the wave is labelled, and the next wave is cut from it. The
-//! engine writes no state of its own: the labelled history is the output,
-//! standing in the repository the build landed in.
+//! into the integration working copy in id order under the rules the
+//! adapter declares; a path the rules leave conflicted is resolved with the
+//! model, the resolution sealed in the slice's copy and merged in its place,
+//! so every slice lands as one merge commit. The adapter verifies the
+//! integrated tree, repairing what its checks find, the wave is labelled, and
+//! the next wave is cut from it. The engine writes no state of its own: the
+//! labelled history is the output, standing in the repository the build
+//! landed in.
 //!
 //! A slice whose build fails upstream, or runs out of the backend's time,
 //! is built once more in a fresh copy, and a wave whose verification does is
-//! verified once more over the same one. A slice whose build fails for good
-//! ends the run once the slices built beside it are merged, so they stay
-//! for the next run. A slice whose merge conflicts is left for the next
-//! wave and built again over the merged head; its [`ATTEMPTS`]th conflict
-//! ends the run. A wave the adapter does not verify ends the run with the
-//! label where the last verified wave left it. Either way the integration
-//! working copy is left for the next run to resume from.
+//! verified once more over the same one. A slice whose build or merge
+//! fails for good ends the run once the slices built beside it are merged,
+//! so they stay for the next run. A wave the adapter does not verify ends
+//! the run with the label where the last verified wave left it. Either way
+//! the integration working copy is left for the next run to resume from.
 //!
-//! Nothing is sealed unread: every path a slice's build or a wave's
-//! verification left changed is held to the secret gate first, and a
-//! credential among them ends the run with the copy left as it was written.
+//! Nothing is sealed unread: every path a slice's build, a conflict's
+//! resolution, or a wave's verification left changed is held to the secret
+//! gate first, and a credential among them ends the run with the copy left
+//! as it was written.
 
+pub(crate) mod merge;
 mod secrets;
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeSet;
+use std::fmt::{self, Display};
 use std::num::NonZeroUsize;
 
 use emery_adapter::target::{Base, Slice as SliceInput, Target};
-use emery_adapter::{SKIP_DIRS, is_kebab};
+use emery_adapter::{SKIP_DIRS, beneath, is_kebab};
 use futures::{FutureExt as _, StreamExt as _, stream};
 use omnia_sdk::api::Context;
 use omnia_sdk::plugins::Digest;
-use omnia_sdk::vcs::{Rule, Strategy};
-use omnia_sdk::{BlobStore, Error, Plugins, StateStore, Vcs, bad_request, server_error};
+use omnia_sdk::vcs::{Change, ChangeKind, Rule, Strategy};
+use omnia_sdk::{BlobStore, Error, Model, Plugins, StateStore, Vcs, bad_request, server_error};
 use serde::Serialize;
 
+use self::merge::{Conflict, MergeBrief};
 use crate::adapter::{self, AdapterRef, Loaded};
+use crate::brief::Brief as _;
 use crate::revision::{Plan, Slice, Spec};
 pub use crate::revision::{ReqId, SliceId, Waves};
 use crate::vcs::{INTEGRATION, Integration, Message, Repo, WorkingCopy};
-use crate::{EntryKind, Files, store, vcs};
-
-/// How many times a slice is built before a conflict at its merge ends the run.
-pub const ATTEMPTS: usize = 3;
-
-// How many times a slice's build, each in a fresh working copy, or a
-// wave's verification, over the same copy, is put to the adapter when it
-// fails upstream or runs out of the backend's time.
-const RETRIES: usize = 2;
+use crate::{EntryKind, Files, RETRIES, is_retryable, store, vcs};
 
 /// Builds every slice of the current plan through the target adapter `input` names.
 ///
@@ -74,15 +72,16 @@ const RETRIES: usize = 2;
 /// concurrently, in a working copy cut at the wave's head; each report is
 /// held to its slice by
 /// [`Report::findings`](emery_adapter::target::Report::findings), what each
-/// copy changed sealed as its commit and merged in id order under the
-/// adapter's merge rules, and the wave verified by the adapter and labelled,
-/// what its checks changed sealed first. A build that fails upstream or runs
-/// out of the backend's time is put once more in a fresh copy, a
-/// verification once more over the same one. A slice whose merge conflicts
-/// is built again in the next wave, over the merged head. The first failure
-/// ends the run once the slices built beside it are merged, and what was
-/// merged before it stays committed in the integration working copy, the
-/// verified waves labelled, for the next run to resume from.
+/// copy changed sealed as its commit and merged in id order into the
+/// integration working copy under the adapter's merge rules, a path the
+/// rules leave conflicted resolved with the model and merged in its place,
+/// and the wave verified by the adapter and labelled, what its checks
+/// changed sealed first. A build that fails upstream or runs out of the
+/// backend's time is put once more in a fresh copy, a conflict's resolution
+/// or a verification once more over the same one. The first failure ends
+/// the run once the slices built beside it are merged, and what was merged
+/// before it stays committed in the integration working copy, the verified
+/// waves labelled, for the next run to resume from.
 ///
 /// # Errors
 ///
@@ -112,30 +111,34 @@ const RETRIES: usize = 2;
 ///     holds a directory outside `.emery/` and `.git/`, each listed; such
 ///     an adapter named with no repository builds into the one the engine
 ///     lays, whose root holds a `.gitignore` alone;
-///   - with code `slice-conflict`, when a slice's merge conflicts at paths
-///     no rule resolves on its [`ATTEMPTS`]th build, the paths listed;
 ///   - with code `verify-failed`, when the adapter does not verify a wave,
 ///     each failing check listed;
-///   - with code `secret-detected`, when a path a slice's build or a wave's
-///     verification changed carries a credential, each listed with what it
-///     carries; nothing of the change set is sealed, and the copy stays as
-///     it was written;
-///   - a slice the adapter refuses, or answers no acceptable report for.
+///   - with code `secret-detected`, when a path a slice's build, a
+///     conflict's resolution, or a wave's verification changed carries a
+///     credential, each listed with what it carries; nothing of the change
+///     set is sealed, and the copy stays as it was written;
+///   - with code `merge-unresolved`, when a path the adapter's rules leave
+///     conflicted cannot be put to the model — one side does not hold it
+///     as a text file, or the path is one the engine never writes — or the
+///     model's resolution is refused within the available rounds; the
+///     slice's copy and the integration copy stay for inspection;
+///   - a slice the adapter refuses or answers no acceptable report for.
 /// - Returns [`Error::ServerError`] when a report breaks the report gate, a
 ///   verdict breaks [`Verdict::findings`](emery_adapter::target::Verdict::findings),
 ///   a slice's working copy no longer sits on the head it was cut at, a
+///   slice merged again with its resolutions still conflicts, a
 ///   verification's changes seal as no commit, the slices left to build
 ///   wait on one another, or storage or version control fails.
 /// - Returns [`Error::BadGateway`] when the adapter, its acquisition, the
-///   model, or the repository's remote fails upstream; a slice's build, or
-///   a wave's verification, is put twice before it does, as one the
-///   backend's time budget ended is.
+///   model, or the repository's remote fails upstream; a slice's build, a
+///   conflict's resolution, or a wave's verification is put twice before it
+///   does, as one the backend's time budget ended is.
 ///
 /// A failure at a slice keeps the adapter's class and code; its description
 /// names the slice, its wave, and the slices merged before it, those built
 /// beside it in its wave included. A failure at a wave's verification names
 /// the wave, the slices merged in it, and where the label stands.
-pub async fn build<P: Target + StateStore + BlobStore + Plugins + Vcs + Files>(
+pub async fn build<P: Model + Target + StateStore + BlobStore + Plugins + Vcs + Files>(
     input: BuildInput, context: Context<P>,
 ) -> Result<BuildOutput, Error> {
     let provider = context.provider();
@@ -213,13 +216,14 @@ pub async fn build<P: Target + StateStore + BlobStore + Plugins + Vcs + Files>(
         label: &label,
         spec: &revision.spec,
         design: &design,
+        plan: &revision.plan,
         repo: &repo,
         integration: &integration,
         policy: &policy,
         jobs: input.jobs,
     };
 
-    run.waves(provider, &mut progress, &revision.plan).await?;
+    run.waves(provider, &mut progress).await?;
     integration.remove(provider).await?;
 
     Ok(BuildOutput {
@@ -282,8 +286,7 @@ pub struct BuildOutput {
     /// The plan's slices grouped into the sets ready to build at once.
     ///
     /// The plan's own projection: what the waves would be were every slice
-    /// built from the base. A conflicted slice moves to a later wave of the
-    /// run, which each [`BuiltSlice::wave`] records.
+    /// built from the base.
     pub waves: Waves,
     /// The commit the build started from.
     pub base: String,
@@ -310,8 +313,7 @@ pub struct BuildOutput {
     pub sealed: Vec<Seal>,
     /// The waves whose verification repaired the integrated tree, from one:
     /// those whose seal carries a path the adapter's `ours` rules do not
-    /// cover, since what a check regenerates under one, a lockfile, is no
-    /// repair.
+    /// cover, so not a lockfile the checks regenerated.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub repaired: Vec<usize>,
     /// The integrated commit the label points at.
@@ -338,13 +340,13 @@ pub struct BuiltSlice {
     /// edited, or removed — relative to its root and sorted: what its commit
     /// records, read from the copy rather than the adapter's report.
     pub written: Vec<String>,
-    /// The merge commit that brought what the slice wrote into the
-    /// integrated head; `None` when it changed nothing.
-    pub commit: Option<String>,
-    /// The paths an earlier build of the slice conflicted at, before it was
-    /// built again over the merged head.
+    /// The paths the adapter's merge rules left conflicted and the model
+    /// resolved, sorted; empty when the rules left none.
     #[serde(skip_serializing_if = "Vec::is_empty")]
-    pub conflicts: Vec<String>,
+    pub resolved: Vec<String>,
+    /// The commit that brought what the slice wrote into the integrated
+    /// head; `None` when it changed nothing.
+    pub commit: Option<String>,
 }
 
 /// One wave verified and labelled, with the slices it merged.
@@ -382,8 +384,10 @@ struct Run<'a> {
     label: &'a str,
     spec: &'a Spec,
     design: &'a str,
+    plan: &'a Plan,
     repo: &'a Repo,
     integration: &'a WorkingCopy,
+    // the adapter's merge rules, in the capability's reading
     policy: &'a [Rule],
     jobs: Option<NonZeroUsize>,
 }
@@ -400,8 +404,6 @@ struct Progress {
     staged: BTreeSet<SliceId>,
     resumed: Vec<SliceId>,
     built: Vec<BuiltSlice>,
-    tries: BTreeMap<SliceId, usize>,
-    conflicts: BTreeMap<SliceId, Vec<String>>,
     verified: Vec<Verified>,
     sealed: Vec<Seal>,
     repaired: Vec<usize>,
@@ -419,8 +421,6 @@ impl Progress {
             merged,
             staged: BTreeSet::new(),
             built: Vec::new(),
-            tries: BTreeMap::new(),
-            conflicts: BTreeMap::new(),
             verified: Vec::new(),
             sealed: Vec::new(),
             repaired: Vec::new(),
@@ -450,16 +450,26 @@ struct Built<'a> {
     uncovered: Vec<ReqId>,
 }
 
-enum Integrated {
-    Merged(Option<String>),
-    Conflicted(Vec<String>),
+// A slice's merge under the adapter's rules, left at the paths no rule
+// resolved: what this slice and one merged before it in the wave both
+// rewrote.
+struct Residue<'a> {
+    built: &'a Built<'a>,
+    // what the slice's build changed, as its working copy holds it
+    pending: &'a [Change],
+    // the slice's sealed commit, and the message it and its merge carry
+    commit: String,
+    message: &'a str,
+    wave: usize,
+    paths: Vec<String>,
 }
 
 impl Run<'_> {
     // Wave by wave, until every slice is merged.
-    async fn waves<P: Target + Vcs + Files>(
-        &self, provider: &P, progress: &mut Progress, plan: &Plan,
+    async fn waves<P: Model + Target + Vcs + Files>(
+        &self, provider: &P, progress: &mut Progress,
     ) -> Result<(), Error> {
+        let plan = self.plan;
         let mut wave = 0;
         while progress.merged.len() < plan.slices.len() {
             let ready = plan.ready(&progress.merged);
@@ -482,7 +492,7 @@ impl Run<'_> {
     }
 
     #[tracing::instrument(skip_all, fields(wave))]
-    async fn wave<P: Target + Vcs + Files>(
+    async fn wave<P: Model + Target + Vcs + Files>(
         &self, provider: &P, progress: &mut Progress, wave: usize, ready: &[&Slice],
     ) -> Result<(), Error> {
         // a slice an earlier run staged is merged already; the rest build
@@ -494,7 +504,6 @@ impl Run<'_> {
                 progress.merged.insert(slice.id);
                 merged.push(slice.id);
             } else {
-                *progress.tries.entry(slice.id).or_default() += 1;
                 pending.push(slice);
             }
         }
@@ -528,8 +537,7 @@ impl Run<'_> {
         for (slice, outcome) in outcomes {
             match outcome {
                 Ok(built) => match self.integrate(provider, progress, built, wave).await {
-                    Ok(true) => merged.push(slice.id),
-                    Ok(false) => {}
+                    Ok(()) => merged.push(slice.id),
                     Err(error) => return Err(at_slice(error, slice, wave, &progress.built)),
                 },
                 Err(error) => {
@@ -615,13 +623,13 @@ impl Run<'_> {
         })
     }
 
-    // Seals what the slice changed and merges it into the integrated head;
-    // `true` when it merged, `false` when a conflict leaves it for the next
-    // wave. The slice's working copy is removed either way, and left for
-    // inspection when the slice fails.
-    async fn integrate<P: Vcs + Files>(
+    // Seals what the slice changed and merges it into the integrated head
+    // under the adapter's rules, the paths they leave conflicted resolved
+    // with the model and merged in their place. The slice's working copy is
+    // removed once merged, and left for inspection when the slice fails.
+    async fn integrate<P: Model + Vcs + Files>(
         &self, provider: &P, progress: &mut Progress, built: Built<'_>, wave: usize,
-    ) -> Result<bool, Error> {
+    ) -> Result<(), Error> {
         let slice = built.slice;
 
         // the copy still sits where it was cut
@@ -641,7 +649,7 @@ impl Run<'_> {
         if !leaks.is_empty() {
             return Err(secret_detected("the build", &leaks));
         }
-        let mut written: Vec<String> = pending.into_iter().map(|change| change.path).collect();
+        let mut written: Vec<String> = pending.iter().map(|change| change.path.clone()).collect();
         written.sort_unstable();
 
         let message = Message {
@@ -656,60 +664,50 @@ impl Run<'_> {
         }
         .to_string();
 
-        let integrated = match built.worktree.commit(provider, &message).await? {
-            None => Integrated::Merged(None),
+        // the slice's commit merged under the rules; what they leave
+        // conflicted is resolved with the model and merged in its place
+        let (commit, resolved) = match built.worktree.commit(provider, &message).await? {
+            None => (None, Vec::new()),
             Some(commit) => {
                 let merged =
                     self.integration.merge(provider, &commit, &message, self.policy).await?;
-                match merged.commit {
-                    Some(commit) => Integrated::Merged(Some(commit)),
-                    None => Integrated::Conflicted(merged.conflicts),
+                if let Some(commit) = merged.commit {
+                    (Some(commit), Vec::new())
+                } else {
+                    let residue = Residue {
+                        built: &built,
+                        pending: &pending,
+                        commit,
+                        message: &message,
+                        wave,
+                        paths: merged.conflicts,
+                    };
+                    let (commit, resolved) =
+                        residue.resolve(self, provider, &progress.built).await?;
+                    (Some(commit), resolved)
                 }
             }
         };
         built.worktree.remove(provider).await?;
 
-        match integrated {
-            Integrated::Merged(commit) => {
-                let conflicts = progress.conflicts.remove(&slice.id).unwrap_or_default();
-                tracing::info!(
-                    slice = %slice.id,
-                    commit = commit.as_deref().unwrap_or("none"),
-                    "slice merged"
-                );
-                progress.merged.insert(slice.id);
-                progress.built.push(BuiltSlice {
-                    id: slice.id,
-                    name: slice.name.clone(),
-                    wave,
-                    covered: built.covered,
-                    uncovered: built.uncovered,
-                    written,
-                    commit,
-                    conflicts,
-                });
-                Ok(true)
-            }
-            Integrated::Conflicted(paths) => {
-                let tries = progress.tries.get(&slice.id).copied().unwrap_or(1);
-                if tries >= ATTEMPTS {
-                    return Err(Error::BadRequest {
-                        code: "slice-conflict".into(),
-                        description: format!(
-                            "its merge conflicts at {} on its build {tries}",
-                            paths.join(", ")
-                        ),
-                    });
-                }
-                tracing::warn!(
-                    slice = %slice.id,
-                    conflicts = paths.join(", "),
-                    "slice conflicted; it builds again over the merged head"
-                );
-                progress.conflicts.entry(slice.id).or_default().extend(paths);
-                Ok(false)
-            }
-        }
+        tracing::info!(
+            slice = %slice.id,
+            commit = commit.as_deref().unwrap_or("none"),
+            resolved = resolved.len(),
+            "slice merged"
+        );
+        progress.merged.insert(slice.id);
+        progress.built.push(BuiltSlice {
+            id: slice.id,
+            name: slice.name.clone(),
+            wave,
+            covered: built.covered,
+            uncovered: built.uncovered,
+            written,
+            resolved,
+            commit,
+        });
+        Ok(())
     }
 
     // Has the adapter verify the integrated tree, seals what its checks and
@@ -801,17 +799,186 @@ impl Run<'_> {
     }
 }
 
-// An upstream failure is put once more, and so is a turn the backend's time
-// budget ended: the model's work is not the same twice, and a verify put
-// again over the same copy starts from what the first left built.
-fn is_retryable(error: &Error) -> bool {
-    match error {
-        Error::BadGateway { .. } => true,
-        Error::BadRequest { description, .. } => {
-            description.contains("budget exhausted") && description.contains("timed out")
+impl Residue<'_> {
+    // Resolves every path with the model, seals the resolutions in the
+    // slice's working copy over its commit, and merges the slice again with
+    // each resolution taken whole: the merge commit, and the paths resolved.
+    async fn resolve<P: Model + Vcs + Files>(
+        self, run: &Run<'_>, provider: &P, built: &[BuiltSlice],
+    ) -> Result<(String, Vec<String>), Error> {
+        let slice = self.built.slice;
+        let worktree = &self.built.worktree;
+        tracing::info!(
+            slice = %slice.id,
+            conflicts = self.paths.join(", "),
+            "the rules left conflicts; resolving them with the model"
+        );
+
+        // each path a text file on both sides, read before any turn is spent
+        let mut conflicts = Vec::with_capacity(self.paths.len());
+        for path in &self.paths {
+            let integrated = self.side(provider, run.integration, path, Side::Integrated).await?;
+            let slice = self.side(provider, worktree, path, Side::Slice).await?;
+            conflicts.push(Conflict {
+                path: path.clone(),
+                integrated,
+                slice,
+            });
         }
-        Error::NotFound { .. } | Error::ServerError { .. } => false,
+
+        // the wave's slices merged before this one that wrote a conflicted
+        // path, whose plan entries say what their side is for
+        let merged: Vec<&Slice> = built
+            .iter()
+            .filter(|other| other.wave == self.wave)
+            .filter(|other| other.written.iter().any(|path| self.paths.contains(path)))
+            .filter_map(|other| run.plan.slices.iter().find(|slice| slice.id == other.id))
+            .collect();
+        let brief = MergeBrief {
+            slice,
+            merged,
+            conflicts,
+        };
+        let resolutions = match brief.judge(provider).await {
+            Ok(resolutions) => resolutions,
+            Err(error @ Error::BadRequest { .. }) if !is_retryable(&error) => {
+                return Err(self.unresolved(format_args!(
+                    "the model's resolution was refused within the available rounds: {}",
+                    findings_of(&error.description())
+                )));
+            }
+            Err(error) => return Err(error),
+        };
+
+        // the resolutions laid in the slice's copy, held to the secret gate,
+        // and sealed over its commit; one that keeps the slice's own side
+        // changes nothing, and the slice's commit stands
+        for file in &resolutions {
+            let path = beneath(&file.path)
+                .map_err(|bad| server_error!("the resolution at `{}` {bad}", file.path))?;
+            provider.write(worktree.path(), &path, file.content.as_bytes()).await?;
+        }
+        let pending = worktree.pending(provider).await?;
+        let leaks = secrets::findings(provider, worktree.path(), &pending).await?;
+        if !leaks.is_empty() {
+            return Err(secret_detected("the merge's resolution", &leaks));
+        }
+        let mut resolved: Vec<String> = resolutions.into_iter().map(|file| file.path).collect();
+        resolved.sort_unstable();
+        let subject = format!("{} {} resolved at {}", slice.id, slice.name, resolved.join(", "));
+        let commit = worktree.commit(provider, &subject).await?.unwrap_or(self.commit);
+
+        // merged again, each resolution taken whole and the rules as before
+        let policy: Vec<Rule> = resolved
+            .iter()
+            .map(|path| Rule {
+                paths: format!("/{path}"),
+                strategy: Strategy::Theirs,
+            })
+            .chain(run.policy.iter().cloned())
+            .collect();
+        let merged = run.integration.merge(provider, &commit, self.message, &policy).await?;
+        match merged.commit {
+            Some(commit) => Ok((commit, resolved)),
+            None => Err(server_error!(
+                "its merge still conflicts at {} once the model resolved {}",
+                merged.conflicts.join(", "),
+                resolved.join(", ")
+            )),
+        }
     }
+
+    // One side of a conflicted path as text, or the refusal: a path the
+    // engine never writes, one the slice removed, one `side` does not hold
+    // as a regular file, or one that is not text is nothing the model can
+    // resolve, so no turn is spent on it.
+    async fn side<P: Files>(
+        &self, provider: &P, copy: &WorkingCopy, path: &str, side: Side,
+    ) -> Result<String, Error> {
+        if let Err(bad) = beneath(path) {
+            return Err(self.unresolved(format_args!("`{path}` {bad}")));
+        }
+        let removed = side == Side::Slice
+            && self.pending.iter().any(|c| c.path == path && c.kind == ChangeKind::Deleted);
+        if removed {
+            return Err(self.unresolved(format_args!("the slice removed `{path}`")));
+        }
+        match kind_at(provider, copy.path(), path).await? {
+            Some(EntryKind::File) => {}
+            Some(EntryKind::Link) => {
+                return Err(
+                    self.unresolved(format_args!("a symbolic link stands at `{path}` in {side}"))
+                );
+            }
+            Some(EntryKind::Directory) => {
+                return Err(
+                    self.unresolved(format_args!("a directory stands at `{path}` in {side}"))
+                );
+            }
+            None => {
+                return Err(self.unresolved(format_args!("{side} does not hold `{path}`")));
+            }
+        }
+        String::from_utf8(provider.read(copy.path(), path).await?)
+            .map_err(|_bytes| self.unresolved(format_args!("`{path}` is not text in {side}")))
+    }
+
+    fn unresolved(&self, why: impl Display) -> Error {
+        Error::BadRequest {
+            code: "merge-unresolved".into(),
+            description: format!(
+                "its merge conflicts at {}, and the conflict cannot be resolved: {why}",
+                self.paths.join(", ")
+            ),
+        }
+    }
+}
+
+// The findings a refused question's description carries, without the
+// candidate they were found against, which here spells whole files; a
+// description in another shape is kept whole.
+fn findings_of(description: &str) -> &str {
+    description.split_once("## Findings\n\n").map_or(description, |(_, findings)| {
+        findings.split("\n\nProduce a ").next().unwrap_or(findings)
+    })
+}
+
+// The two sides of a conflicted path.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Side {
+    Integrated,
+    Slice,
+}
+
+impl Display for Side {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(match self {
+            Self::Integrated => "the integrated tree",
+            Self::Slice => "the slice",
+        })
+    }
+}
+
+// What stands at `path` beneath the working copy at `at`, walked a directory
+// at a time so no link on the way is followed; `None` when nothing does, or
+// something on the way is no directory.
+async fn kind_at<P: Files>(provider: &P, at: &str, path: &str) -> Result<Option<EntryKind>, Error> {
+    let segments: Vec<&str> = path.split('/').filter(|segment| !segment.is_empty()).collect();
+    let Some((file, directories)) = segments.split_last() else {
+        return Ok(None);
+    };
+    let mut directory = String::from(".");
+    for segment in directories {
+        let entries = provider.list(at, &directory).await?;
+        match entries.iter().find(|entry| entry.name == *segment) {
+            Some(entry) if entry.kind == EntryKind::Directory => {}
+            _ => return Ok(None),
+        }
+        directory =
+            if directory == "." { (*segment).to_owned() } else { format!("{directory}/{segment}") };
+    }
+    let entries = provider.list(at, &directory).await?;
+    Ok(entries.into_iter().find(|entry| entry.name == *file).map(|entry| entry.kind))
 }
 
 // A fresh base holds files alone at its root: a directory outside the

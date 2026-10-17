@@ -19,9 +19,9 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 
 use crate::Rank;
+use crate::brief::{Brief, Review};
 use crate::revision::{self, Cited, Loser, ReqId, Requirement, Scenario, Status};
 use crate::specify::Extract;
-use crate::specify::brief::{Brief, Review};
 
 /// A synthesis brief for grouping requirement claims.
 ///

@@ -57,17 +57,17 @@ const BUILD_DESC: &str = "Build the current plan through a target adapter.\n\n\
     in waves: every slice whose dependencies are merged is built at once, up to `--jobs` \
     concurrently, each in its own working copy under `.emery/vcs/worktrees/<id>` cut at \
     the wave's head; what each changed is sealed as one commit and merged in id order into \
-    `.emery/vcs/integration` under the adapter's merge rules. The adapter then verifies the \
-    integrated tree, repairing what its checks find, and the wave is labelled; the label \
-    stands in the repository for the operator to read or push. A build that fails upstream \
-    or runs out of the model's time is put once more in a fresh copy, a verification once \
-    more over the same one. A slice whose merge conflicts is built again in the next wave; \
-    a third conflict ends the run (`slice-conflict`), as a wave the adapter does not verify \
-    does (`verify-failed`), the label where the last verified wave left it and the \
-    integration working copy left for the next run to resume from. The adapter is an \
-    exact package reference, `namespace:name@version`, read from the store \
-    `~/.emery/adapters` and fetched through the `emery` namespace's registry when the \
-    store lacks it, as for `specify`.";
+    `.emery/vcs/integration` under the adapter's merge rules, a path the rules leave \
+    conflicted resolved with the model and merged in its place. The adapter then verifies \
+    the integrated tree, repairing what its checks find, and the wave is labelled; the \
+    label stands in the repository for the operator to read or push. A build that fails \
+    upstream or runs out of the model's time is put once more in a fresh copy, a \
+    verification once more over the same one. A conflict the model cannot resolve ends the \
+    run (`merge-unresolved`), as a wave the adapter does not verify does (`verify-failed`), \
+    the label where the last verified wave left it and the integration working copy left \
+    for the next run to resume from. The adapter is an exact package reference, \
+    `namespace:name@version`, read from the store `~/.emery/adapters` and fetched through \
+    the `emery` namespace's registry when the store lacks it, as for `specify`.";
 const SHOW_DESC: &str = "Print an artifact from the current revision.\n\n\
     Text output contains only the artifact body. `--format json` also includes the \
     revision id and the typed document.";
@@ -281,8 +281,8 @@ fn hint(error: &Error, building: bool) -> Option<Cow<'static, str>> {
         "verify-failed" => {
             "inspect `.emery/vcs/integration`, which holds the wave's slices merged; re-run `emery build` to verify them again with nothing built again, or `git worktree remove --force` the copy from the repository the label stands in to rebuild the wave from the last verified head; `git bisect` over `emery/<revision>` attributes a failure to a slice"
         }
-        "slice-conflict" => {
-            "two slices rewrite the same files: declare a merge rule in the adapter, or re-run `emery specify` for a plan that keeps them in one slice"
+        "merge-unresolved" => {
+            "two slices rewrite the same files and the model could not combine them: inspect the named paths in `.emery/vcs/worktrees/<slice>` and `.emery/vcs/integration`; re-run `emery build` to build the slice again over the merged head, which holds the slices merged before it; declare a merge rule in the adapter for a list file or a generated one; or re-run `emery specify` for a plan that keeps the two in one slice"
         }
         "secret-detected" => {
             "inspect the named path in `.emery/vcs/worktrees/<slice>` or `.emery/vcs/integration`, remove the credential from where the build read it (the sources, the environment, a file the model reached), and re-run `emery build`; nothing of the change set was sealed and the label stands at the last verified wave"
@@ -300,7 +300,10 @@ fn hint(error: &Error, building: bool) -> Option<Cow<'static, str>> {
 }
 
 // How the model backend reports a turn its time budget ended, which the
-// engine puts once more before the failure is the run's.
+// engine puts once more before the failure is the run's. A turn refused on a
+// rejected candidate carries that candidate whole, whatever it spells.
 fn timed_out(description: &str) -> bool {
-    description.contains("budget exhausted") && description.contains("timed out")
+    description.contains("budget exhausted")
+        && description.contains("timed out")
+        && !description.contains("## Previous answer (rejected)")
 }

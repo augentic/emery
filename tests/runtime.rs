@@ -81,6 +81,36 @@ const REPORT_BARE: &str = r#"{"covered": ["REQ-001"], "written": []}"#;
 // A token spelled as a symbolic link's target: the text a commit stores of the link.
 const TOKEN: &str = "ghp_ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
 
+// A two-stem journey: a greeting and a farewell, grouped apart, drafted in
+// one chunk, and sliced one stem apiece, so the plan is one wave of two.
+const EXTRACT_PAIR: &str = r#"{"claims": [
+    {"kind": "requirement", "id": "greeting.behaviour", "path": "docs/greeting.md#L3",
+     "statement": "GET /greeting returns the static string 'hello'."},
+    {"kind": "requirement", "id": "farewell.behaviour", "path": "docs/greeting.md#L7",
+     "statement": "GET /farewell returns the static string 'bye'."}]}"#;
+const GROUPING_PAIR: &str =
+    r#"{"groups": [{"claims": [0], "classes": [[0]]}, {"claims": [1], "classes": [[1]]}]}"#;
+const SPEC_PAIR: &str = r#"{"preamble": ["Two surfaces: a greeting and a farewell."],
+    "requirements": [
+    {"subject": "greeting.behaviour", "scenarios": [{"name": "Greeting requested",
+     "given": ["the greeting surface is bound"], "when": "`/greeting` is requested",
+     "then": "the response is `hello`"}]},
+    {"subject": "farewell.behaviour", "scenarios": [{"name": "Farewell requested",
+     "given": ["the farewell surface is bound"], "when": "`/farewell` is requested",
+     "then": "the response is `bye`"}]}]}"#;
+const SLICING_PAIR: &str = r#"{"preamble": [], "slices": [
+    {"name": "greeting", "requirements": ["REQ-001"]},
+    {"name": "farewell", "requirements": ["REQ-002"]}]}"#;
+// Both slices lay `build/index.md`, each with its own line.
+const WRITE_INDEX_GREETING: &str =
+    r##"{"files": [{"path": "build/index.md", "content": "# Index\n\n- greeting\n"}]}"##;
+const WRITE_INDEX_FAREWELL: &str =
+    r##"{"files": [{"path": "build/index.md", "content": "# Index\n\n- farewell\n"}]}"##;
+const REPORT_INDEX_GREETING: &str = r#"{"covered": ["REQ-001"], "written": ["build/index.md"]}"#;
+const REPORT_INDEX_FAREWELL: &str = r#"{"covered": ["REQ-002"], "written": ["build/index.md"]}"#;
+const RESOLVED_INDEX: &str = "# Index\n\n- greeting\n- farewell\n";
+const MERGE_INDEX: &str = r##"{"files": [{"path": "build/index.md", "content": "# Index\n\n- greeting\n- farewell\n"}]}"##;
+
 // Git under a scratch configuration: a wrapper exporting `GIT_CONFIG_GLOBAL`
 // and `GIT_CONFIG_NOSYSTEM` before handing over to the `git` on `PATH`, so
 // nothing of the developer's identity, signing, hooks, or default branch
@@ -668,6 +698,121 @@ async fn build_resumed_staged() {
     assert!(!integration.exists(), "the working copy is removed once every slice is merged");
     let listed = roots.git.run(project, &["worktree", "list", "--porcelain"]);
     assert_eq!(listed.matches("worktree ").count(), 1, "{listed}");
+    assert_eq!(roots.git.branches(project), [label, "main".to_owned()]);
+}
+
+// Two slices of one wave lay one file: the second's merge conflicts at it,
+// so both sides are read from the working copies through the engine's own
+// file capability and put to the model, whose resolution is written into
+// the slice's copy, sealed over the slice's commit, and merged again with
+// the path taken whole; the label holds one merge per slice along the
+// first-parent chain and the resolved file, and the slice's merge brings in
+// the resolution over the slice's own commit.
+#[tokio::test]
+async fn build_conflict_resolved() {
+    let roots = Roots::new();
+    roots.stored(SOURCE, MOCK_SOURCE);
+    roots.stored(TARGET, MOCK_TARGET);
+    let backends = roots.backends().await;
+    let model = ScriptedModel::answering([
+        EXTRACT_PAIR,
+        GROUPING_PAIR,
+        SPEC_PAIR,
+        DESIGN_ANSWER,
+        SLICING_PAIR,
+    ]);
+    assert_ok(&emery(roots.deployment(&["specify", SOURCE]), &backends, &model).await);
+    model.assert_exhausted();
+    let base = roots.sealed();
+
+    // one build at a time, so the turns arrive in slice order
+    let model = ScriptedModel::answering([
+        REPORT_INDEX_GREETING,
+        REPORT_INDEX_FAREWELL,
+        MERGE_INDEX,
+        VERDICT_ANSWER,
+    ])
+    .calling(0, [("write_files", WRITE_INDEX_GREETING)])
+    .calling(1, [("write_files", WRITE_INDEX_FAREWELL)]);
+    let run = emery(roots.deployment(&["build", "--jobs", "1", TARGET]), &backends, &model).await;
+
+    assert_ok(&run);
+    model.assert_exhausted();
+    let lent = model.lent();
+    let [Some(first), Some(second), None, Some(verify)] = lent.as_slice() else {
+        panic!("two build turns, the merge turn lending nothing, then the verify: {lent:?}");
+    };
+    assert!(first.ends_with(".emery/vcs/worktrees/SLICE-001"), "{lent:?}");
+    assert!(second.ends_with(".emery/vcs/worktrees/SLICE-002"), "{lent:?}");
+    assert!(verify.ends_with(".emery/vcs/integration"), "{lent:?}");
+    let merge = &model.seen()[2];
+    assert!(
+        merge.messages[0].contains(
+            "## `build/index.md`\n\n### Integrated tree\n\n```\n# Index\n\n- \
+         greeting\n```\n\n### Slice\n\n```\n# Index\n\n- farewell\n```\n"
+        ),
+        "both sides are read from the working copies: {}",
+        merge.messages[0]
+    );
+    assert!(
+        merge.messages[0].contains("# Merged before it in the wave\n\n## Slice: greeting\n"),
+        "{}",
+        merge.messages[0]
+    );
+    let revision = revision_of(&run);
+    let label = format!("emery/{revision}");
+    let project = roots.project.path();
+    let head = roots.git.run(project, &["rev-parse", &label]);
+    assert!(
+        run.stdout.contains(&format!(
+            "    SLICE-002 farewell: covered 1/1, written 2 files, merged {head}, resolved \
+             (build/index.md)\n"
+        )),
+        "{}",
+        run.stdout
+    );
+
+    // one merge per slice along the first-parent chain, the resolved file at the label
+    assert_eq!(
+        roots
+            .git
+            .run(project, &["log", "--first-parent", "--format=%s", &format!("{base}..{label}")]),
+        "SLICE-002 farewell\nSLICE-001 greeting"
+    );
+    assert_eq!(
+        roots.git.run(project, &["show", &format!("{label}:build/index.md")]),
+        RESOLVED_INDEX.trim_end()
+    );
+    assert_eq!(
+        roots.git.run(project, &["show", &format!("{label}~1:build/index.md")]),
+        "# Index\n\n- greeting",
+        "the first slice's merge holds its own side"
+    );
+
+    // the second slice's merge brings in the resolution sealed over its commit
+    let resolution = roots.git.run(project, &["rev-parse", &format!("{label}^2")]);
+    assert_eq!(
+        roots.git.run(project, &["log", "-1", "--format=%s", &resolution]),
+        "SLICE-002 farewell resolved at build/index.md"
+    );
+    let commit = roots.git.run(project, &["rev-parse", &format!("{resolution}~1")]);
+    assert_eq!(
+        roots.git.run(project, &["log", "-1", "--format=%s", &commit]),
+        "SLICE-002 farewell"
+    );
+    assert_eq!(roots.git.run(project, &["rev-parse", &format!("{commit}~1")]), base);
+    assert_eq!(
+        roots.git.run(project, &["show", &format!("{commit}:build/index.md")]),
+        "# Index\n\n- farewell",
+        "the slice's own commit holds what its build wrote"
+    );
+    assert_eq!(
+        roots.git.run(project, &["diff", "--name-only", &commit, &resolution]),
+        "build/index.md",
+        "the resolution changes the resolved path alone"
+    );
+    assert!(!project.join(".emery/vcs/integration").exists(), "the working copy is removed");
+    assert!(!project.join(".emery/vcs/worktrees/SLICE-002").exists(), "the slice's too");
     assert_eq!(roots.git.branches(project), [label, "main".to_owned()]);
 }
 

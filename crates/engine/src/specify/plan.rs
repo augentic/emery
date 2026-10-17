@@ -22,9 +22,10 @@ use schemars::JsonSchema;
 use serde::Deserialize;
 use serde_json::{Value, json};
 
+use crate::brief::{Brief, Review};
 use crate::revision::{EMERY, Plan, ReqId, Slice, SliceId, ranks};
 use crate::specify::basis::Basis;
-use crate::specify::brief::{BasesSection, Brief, Review};
+use crate::specify::sections::BasesSection;
 
 /// The most requirements a stem holds before its sub-stems are the slice floor.
 ///
