@@ -1,17 +1,8 @@
-//! Synthesises the build plan over the requirement bases and the design's
-//! data type keys.
+//! Synthesises the build plan from requirement bases and design data types.
 //!
-//! Requirements sharing a stem — the first segment of their subject's dotted
-//! id — are one slice at the least. A stem of more than [`SLICE_CAP`]
-//! requirements is floored at its sub-stems instead — the first two segments
-//! — so the model may split it along them and never through one. The model
-//! may merge floors into one slice; it names each slice, assigns it the
-//! design types it owns, orders slices by build dependency, and briefs each.
-//! The engine validates that partition, numbers the slices by their lowest
-//! requirement, and writes every list in canonical order. A specification
-//! under one floor is one slice and no call is spent. The brief runs from the
-//! bases and the accepted design's [`Role::Data`](crate::revision::Role) keys,
-//! so it follows the design and runs beside the specification drafts.
+//! Partitions requirements into dependency-ordered slices floored by stem (or
+//! sub-stem past [`SLICE_CAP`]) and assigns each [`Role::Data`](crate::revision::Role)
+//! type key to one slice.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::{self, Display, Formatter};

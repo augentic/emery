@@ -1,26 +1,14 @@
 //! Provides the types and functions a target adapter is written with.
 //!
-//! A target adapter runs one [`Task`] at a time in a tree the engine lends
-//! it and answers an [`Outcome`]: an init lays the layout's initial files
-//! the tree lacks, once per repository a build lands in and before any
-//! slice, with no model turn; a build lays one [`Slice`] of the plan and
-//! answers a [`Report`]; a verify runs the checks over the integrated tree
-//! once a wave of slices has merged and answers a [`Verdict`]. [`build`]
-//! puts the one gated build turn: the slice's documents under the adapter's
-//! `build.md`, the workspace lent and written through the turn's
-//! `write_files` and `edit_files` tools, and the answered report held to
-//! the slice by [`Report::findings`], to the tree, and to the adapter's own
-//! check until it passes, its `written` filled in from what the tools
-//! wrote. [`verify`] puts the one gated verify turn: the integrated tree
-//! lent under the adapter's `verify.md`, the checks it names run through
-//! the model's shell, what they find repaired through the same two tools,
-//! and the answered verdict held to [`Verdict::findings`] and the adapter's
-//! check. Both turns carry the adapter's [`Worker`], what the model's worker
-//! reaches beyond the tree for the toolchain the prompts run.
-//! [`TargetAdapter`] is what a target adapter implements, and
-//! [`export_target!`](crate::export_target) exports a type implementing it,
-//! answering the component's `metadata` through [`metadata`] over the
-//! type's [`MERGE_RULES`](TargetAdapter::MERGE_RULES).
+//! A target adapter implements [`TargetAdapter`] and exports it with
+//! [`export_target!`](crate::export_target). Each [`Task`] answers an
+//! [`Outcome`]:
+//!
+//! - [`Task::Init`] lays initial layout files without a model turn.
+//! - [`Task::Build`] runs [`build`] to implement one [`Slice`] and return a
+//!   validated [`Report`].
+//! - [`Task::Verify`] runs [`verify`] to check and repair the integrated tree
+//!   and return a validated [`Verdict`].
 //!
 //! # Examples
 //!

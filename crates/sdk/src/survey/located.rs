@@ -1,14 +1,4 @@
-//! Reads a tree once for the facts the survey turn lays, and holds the
-//! answer to them.
-//!
-//! The parser reads; the model decides what is a surface. The facts laid
-//! before it are the manifest, the bootstrap, every call that hands a
-//! function to something a package provides, every function, method, and
-//! class under a package's decorator, what the entry modules export, and
-//! the packages imported. Code holds the answer to the tree and derives the
-//! rest from the accepted anchors, never from the model's names, so two
-//! runs that accept the same anchors cut the same seams. The bootstrap's
-//! `start` is the code's own surface, never the model's.
+//! Collects surface-locating facts from a parsed tree and validates surveyed anchors.
 
 use std::collections::BTreeSet;
 

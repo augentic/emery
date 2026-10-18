@@ -1,5 +1,4 @@
-//! Every call here mines one seam, so each is one turn and its outcome passes
-//! through unchanged; the fan-out and join over several are `extract.rs`'s.
+//! Tests single-seam extraction turns, tool calls, and claim validation.
 
 use emery_sdk::{Context, Doc, Error, Evidence, Lexicon, Seam, SourceInput};
 use omnia_sdk::model::{Error as ModelError, ToolCall};

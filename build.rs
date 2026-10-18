@@ -1,28 +1,8 @@
-//! Builds the engine component and the two mock adapters, and names them for the crate.
+//! Builds the engine guest and mock adapters for `wasm32-wasip2`.
 //!
-//! The engine guest is compiled for `wasm32-wasip2` and its path is emitted as
-//! `EMERY_GUEST`, which the `runtime!` invocation in `src/main.rs` embeds and
-//! the runtime suite deploys.
-//! A debug build names the raw `emery.wasm`, which the runtime compiles at
-//! startup. A release build precompiles it to `emery.cwasm` for the binary's
-//! own target through the `emery-precompile` member, built here in the dev
-//! profile and run under the runtime's default compile settings, so the build
-//! shell's environment steers neither. The compiler is linked into that tool
-//! alone, never into this script, so a check or a test of the workspace
-//! compiles none of it. The runtime loads either format.
-//!
-//! The mock source and target under `examples/` are built beside it, raw wasm
-//! in every profile, and named `EMERY_MOCK_SOURCE` and `EMERY_MOCK_TARGET` for
-//! the runtime suite to stage in its scratch store and registry.
-//!
-//! A check-only invocation builds no guest at all: under clippy, which cargo
-//! names through `RUSTC_WORKSPACE_WRAPPER`, or wherever `EMERY_SKIP_GUEST` is
-//! set non-empty, all three names point at one empty file, since nothing a
-//! check compiles is ever run. The script re-runs when either variable
-//! changes, so the build that follows a check embeds the real guests again.
-//!
-//! The `emery` binary is self-contained and never loads its engine from disk.
-//! Nothing of an adapter is fetched or embedded.
+//! Emits `EMERY_GUEST` (precompiled in release builds via `emery-precompile`),
+//! `EMERY_MOCK_SOURCE`, and `EMERY_MOCK_TARGET`. Check-only runs emit empty
+//! stand-ins instead of spawning nested builds.
 
 use std::path::{Path, PathBuf};
 use std::process::Command;

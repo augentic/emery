@@ -1,11 +1,4 @@
-//! Scripts the `Files` capability and records every read, listing, and write the engine makes.
-//!
-//! Content is scripted per working copy and path; an unscripted path reads as
-//! an empty file, so a scenario scripts only the paths it wants the gate to
-//! see, and a path scripted `unreadable` fails its read. A listing is
-//! scripted per working copy and directory; an unscripted directory lists
-//! nothing. Every write succeeds, is recorded, and is what the path reads
-//! as from then on.
+//! Scripted `Files` capability recording working-copy reads, listings, and writes.
 
 use std::collections::BTreeMap;
 use std::future::Future;

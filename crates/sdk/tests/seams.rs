@@ -1,7 +1,4 @@
-//! `survey::seams` lays the facts a tree holds, has the model name the
-//! surfaces, holds the answer to the tree, and cuts the seams from what the
-//! code derives at the accepted anchors; every scenario here runs it over a
-//! hand-built tree under a scripted model.
+//! Tests `survey::seams` surface discovery and seam cutting over hand-built trees.
 
 mod support;
 

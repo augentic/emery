@@ -1,12 +1,7 @@
-//! Demonstrates a minimal Emery source adapter.
+//! Minimal example source adapter.
 //!
-//! The adapter extracts greeting claims from inline text or a workspace. It
-//! shows the three parts of an adapter:
-//!
-//! - An embedded prompt and its references.
-//! - A survey that selects mining seams.
-//! - A WebAssembly guest: an `emery_sdk::SourceAdapter` exported with
-//!   `emery_sdk::export_source!`.
+//! Treats inline text or a workspace as a single mining seam and extracts
+//! claims under the embedded `extract.md` prompt.
 
 use emery_sdk::{
     Context, Doc, Error, Evidence, Model, Seam, SourceAdapter, SourceContent, SourceInput,

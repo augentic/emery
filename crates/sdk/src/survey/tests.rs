@@ -1,11 +1,7 @@
-//! Reads the behaviours a tree's own tests state.
+//! Extracts stated behaviours from workspace test files and Gherkin features.
 //!
-//! A test is never a module to mine. It is read for what it states, and its
-//! statements are listed in the brief of the seam whose modules it imports,
-//! so a behaviour the laid code confirms is claimed at the code and one it
-//! does not hold is not invented. A feature file's scenarios are read here;
-//! a test module's cases are spelled in the adapter's language, so the
-//! adapter reads them into the same [`Statement`]s.
+//! [`Test`] and [`Statement`] record test titles alongside the modules a test
+//! imports so [`stated`] can include them in seam briefs.
 
 /// One test file of the tree: what it imports, and what it states.
 #[derive(Clone, Debug, Eq, PartialEq)]

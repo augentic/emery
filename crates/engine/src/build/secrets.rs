@@ -1,13 +1,8 @@
-//! The secret gate: names every changed path that carries a credential.
+//! Scans pending working-copy changes for credentials before commit.
 //!
-//! What a build or a verification left changed is held to two rules before
-//! it is sealed. A path is a credential carrier by name — a private key file,
-//! a `.npmrc`, a `.env` — whatever it holds. Any other path is read as a
-//! commit would carry it, a file's bytes or a symbolic link's target, and
-//! searched for the shapes well-known credentials take: a PEM private-key
-//! block, and the fixed prefix and run of a provider's token. A deleted path
-//! carries nothing and is passed over; one that cannot be read fails the
-//! gate rather than passing it.
+//! Flags known credential filenames (such as private keys, `.env`, and
+//! `.npmrc`) and scans remaining file contents or symlink targets for private
+//! key blocks and token prefixes.
 
 use omnia_sdk::Error;
 use omnia_sdk::vcs::{Change, ChangeKind};

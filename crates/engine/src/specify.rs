@@ -1,19 +1,8 @@
 //! Generates specification revisions from configured sources.
 //!
-//! [`specify`] validates the complete source list before loading adapters.
-//! A source read from a repository is checked out at its revision first, in
-//! a working copy of the project's clone, and the working copy is removed
-//! once every source has answered. Sources are extracted concurrently, and
-//! the first failure among them ends the run; their claims are then
-//! reconciled by authority into requirement bases, from which `spec.md` — in
-//! chunks of at most [`SPEC_CHUNK`] requirements, grouped by stem — and
-//! `design.md` are drafted together, and the `plan.md` slicing — the stem the
-//! slice floor, or its sub-stems past [`SLICE_CAP`] requirements, owning the
-//! design's [`Role::Data`] types — follows the design.
-//!
-//! The three documents are committed as one content-addressed revision. An
-//! earlier revision contributes only the returned [`Diff`]; it is never used
-//! as synthesis input.
+//! [`specify`] extracts claims from each source adapter, reconciles
+//! requirements by authority rank, synthesises the specification, design, and
+//! build plan, and commits them as one content-addressed revision.
 
 mod basis;
 mod design;

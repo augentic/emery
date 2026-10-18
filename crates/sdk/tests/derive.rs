@@ -1,5 +1,4 @@
-//! What a survey derives by code alone is spelled with helpers pure over
-//! strings; every scenario here runs with no model and no tree.
+//! Tests pure string, span, route, and test-statement survey helpers.
 
 use emery_sdk::kebab;
 use emery_sdk::survey::Lines;

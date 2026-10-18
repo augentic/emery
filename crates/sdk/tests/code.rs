@@ -1,6 +1,4 @@
-//! The module an adapter's parser fills is read through its lookups alone;
-//! every scenario here builds one by hand, with no parser, no model, and no
-//! tree, and reads it under a dialect shaped like each adapter's.
+//! Tests `survey::code::Module` lookups across dialects.
 
 use emery_sdk::survey::code::{
     Arg, Binding, BindingKind, Call, Callee, ClassDecl, Decorated, Export, ExportKind, Import,

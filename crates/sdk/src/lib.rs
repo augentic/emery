@@ -2,55 +2,16 @@
 
 //! Provides the types and functions an adapter is written with.
 //!
-//! A source adapter reads a [`SourceInput`] and returns typed [`Evidence`];
-//! a target adapter runs a [`target::Task`] in a workspace — initialising
-//! it with its layout, building a [`target::Slice`] of the plan into it, or
-//! verifying it — and returns the [`target::Outcome`]. The crate root holds
-//! what every source adapter uses, [`target`] what a target adapter uses,
-//! and the other modules what some source adapters use:
+//! A source adapter implements [`SourceAdapter`] and exports it with
+//! [`export_source!`], surveying a [`SourceInput`] into [`Seam`]s and calling
+//! [`extract`](fn@extract) to return validated [`Evidence`]. A target adapter
+//! implements [`target::TargetAdapter`] and exports it with [`export_target!`],
+//! handling each [`target::Task`] through [`target::build`] and
+//! [`target::verify`].
 //!
-//! - [`SourceAdapter`] is what a source adapter implements: the kind of
-//!   source it reads and its `extract`. [`export_source!`] exports a type
-//!   implementing it as a WebAssembly component, answering the component's
-//!   `metadata` through [`metadata`]. [`target::TargetAdapter`] and
-//!   [`export_target!`] do the same for a target adapter, with
-//!   [`target::metadata`], [`target::build`], and [`target::verify`] behind
-//!   them.
-//! - [`Context`], [`Seam`], and [`extract`](fn@extract) run extraction over
-//!   the boundaries selected by an adapter, at most [`CONCURRENT`] at a time,
-//!   laying a seam's files into its turn whole when they fit within
-//!   [`INLINE_BYTES`].
-//! - [`Doc`], [`prose!`], [`body`], and [`find`] embed and read adapter
-//!   guidance; [`RUNTIME`] is the guidance every source adapter shares, and
-//!   [`check`] holds an adapter's list to its tree.
-//! - [`workspace::list`] traverses workspace input under an adapter-defined
-//!   filter.
-//! - [`survey::seams`] is the shared survey pipeline for an adapter that
-//!   parses its source: a [`survey::code::Tree`] read through the adapter's
-//!   [`survey::code::Recogniser`] in, the facts laid, one turn put for the
-//!   surfaces, the answer held to the tree, and the seams and `type` claims
-//!   of a [`survey::Survey`] out. [`survey::surfaces`] beneath it puts the
-//!   one turn over the [`survey::Facts`] an adapter renders itself and holds
-//!   the [`survey::Inventory`] it answers to the tree.
-//! - [`kebab`], [`unique`], [`push_unique`], [`survey::Lines`],
-//!   [`survey::resolve`], [`survey::route`], and [`survey::tests`] are what
-//!   a survey spells stems, once-each lists, line spans, import targets,
-//!   routes, and stated behaviours with, each pure over strings and
-//!   iterators and reading no parsed module.
-//! - [`survey::code`] is the module an adapter's parser fills and the
-//!   lookups every rule reads it through, and the tree over every module
-//!   with the lookups that read it whole; [`survey::Dialect`] carries the
-//!   names and spellings those lookups read of a language, one `static` per
-//!   adapter.
-//!
-//! Contract types and [`Error`] are re-exported, allowing an adapter to depend
-//! on this crate alone: the claim types, [`Anchor`] and [`BadAnchor`] for the
-//! `path` grammar a survey spells anchors in, [`is_kebab`] for the stems it
-//! derives, [`Lexicon`] for the technology a text names, and the [`serde_json`] and [`tracing`] crates for claims of its
-//! own and events beside this crate's. [`Source`] is among them for a host
-//! program that calls an adapter the way the engine does; an adapter
-//! implements [`SourceAdapter`], exported through [`export_source!`], and
-//! never [`Source`].
+//! Contract types, [`Doc`] / [`prose!`] prompt helpers, [`Error`],
+//! [`serde_json`], and [`tracing`] are re-exported so an adapter can depend on
+//! this crate alone.
 //!
 //! # Examples
 //!
@@ -88,52 +49,16 @@
 //!
 //! # Vocabulary
 //!
-//! - **Seam**: the portion of a source handled by one model request. See
-//!   [`Seam`].
-//! - **Survey**: the adapter-specific step that divides an input into seams
-//!   before extraction. It is a plain function over the input where the
-//!   source alone decides the cut, or, where its surfaces are the model's to
-//!   name, a parsed tree handed to [`survey::seams`], which puts one turn
-//!   and derives the seams from the anchors it accepted; either way the
-//!   stems, the closures, and the ids are code's.
-//! - **Recogniser**: what an adapter recognises of its own language that
-//!   the shared pipeline cannot — the bootstrap, a handler, a mount, what
-//!   the code says at an anchor. See [`survey::code::Recogniser`].
-//! - **Mine**: to put one seam to the model under the adapter's `extract.md`
-//!   and gate its answer. [`extract`](fn@extract) mines every seam of a source.
-//! - **Context**: the adapter identifier, source input, and model available to
-//!   one extraction call. See [`Context`].
-//! - **Lend**: the workspace directory made readable to the model for a seam,
-//!   or handed to it to build into for a build, written through the turn's
-//!   `write_files` and `edit_files` tools; whether it may be written is the
-//!   deployment's grant. A target's init writes the same tree through its
-//!   own code, with no turn put.
-//! - **Finding**: a validation problem returned to the model for correction.
-//!   The host limits how many correction rounds are available.
-//! - **Slice**: the unit a target adapter builds, one entry of the plan with
-//!   its cut of the specification and the design. See [`target::Slice`].
-//! - **Report**: what a build answers, the requirements it covered and the
-//!   files it wrote, held to its slice by the report gate. See
-//!   [`target::Report`].
-//! - **Stem**: the first dotted segment of a claim id, `orders` in
-//!   `orders.create`. A [`Seam`]'s `stems` hold its `requirement` and
-//!   `criterion` ids to them, and the engine slices its plan by stem.
-//! - **Anchor**: a claim's `path`, a file and its lines. A [`Seam`]'s
-//!   `anchors` are the spans its survey found a behaviour can start at, and
-//!   hold every `requirement`'s anchor to one of them.
-//!
-//! Fallible APIs return [`Error`]. Use [`bad_request!`] when an adapter rejects
-//! unusable input.
-//!
-//! Progress is emitted through `tracing`. Every event names the source and,
-//! within a seam, its index, or the slice a build is of. An adapter opens at
-//! its guest environment's
-//! `RUST_LOG`, which the Omnia runtime sets from the run's one tracing level:
-//!
-//! - `info` on a bare `emery` run, so this crate's progress reaches stderr.
-//! - One step up per `-v` and one step down per `-q`.
-//! - The operator's own `RUST_LOG` (`emery_sdk=debug`, `off`) when no flag is
-//!   passed.
+//! - **Seam**: the portion of a source handled by one model request ([`Seam`]).
+//! - **Survey**: the adapter step that divides an input into seams, either by
+//!   code alone or through [`survey::seams`] / [`survey::surfaces`].
+//! - **Recogniser**: language-specific rules for a parsed [`survey::code::Tree`]
+//!   ([`survey::code::Recogniser`]).
+//! - **Mine**: to run [`extract`](fn@extract) over a source's seams under
+//!   `extract.md` and gate the returned claims.
+//! - **Slice**: one plan entry built by [`target::build`] ([`target::Slice`]).
+//! - **Report**: the covered requirements and written paths returned by a build
+//!   ([`target::Report`]).
 
 mod extract;
 mod reference;

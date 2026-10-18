@@ -1,19 +1,9 @@
-//! Names the repositories a run reads from and builds into.
+//! Version-control paths, repositories, working copies, and commit trailers.
 //!
-//! A repository a source names by URL is one [`Repository`]: a clone
-//! beneath the project's [`ROOT`], keyed by the URL, kept across runs and
-//! refreshed by a fetch. The repository a build lands in is a [`Repo`]: the
-//! project's own checkout, the `.` mount, never written; or the target's
-//! own, kept under the target's name, a clone of the URL the target names
-//! or one the engine lays when the target names none. A
-//! source is read, and the plan built, in a [`WorkingCopy`] cut from one of
-//! them and removed when the run is done with it. A build seals each slice
-//! under a [`Message`], which it reads back from the labelled history, and
-//! from the [`Integration`] copy a run left before its wave was verified,
-//! to resume.
-//!
-//! Every path here is deployment-local, as the [`Vcs`] capability takes it:
-//! `.` is the project mount and `./.emery/vcs/...` lies beneath it.
+//! Wraps the [`Vcs`] capability over deployment-local paths beneath [`ROOT`]:
+//! [`Repository`] manages cached source clones, [`Repo`] resolves the target
+//! repository a build lands in, [`WorkingCopy`] manages isolated worktrees,
+//! and [`Message`] formats and parses slice commit trailers.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;

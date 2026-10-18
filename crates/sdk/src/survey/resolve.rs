@@ -1,12 +1,7 @@
-//! Names what an import leads to, and spells the path a specifier reaches.
+//! Import resolution targets and relative path normalisation.
 //!
-//! An adapter's resolver follows each import the way its language's loader
-//! would and settles the outcome as a [`Target`]: a module of the tree, a
-//! package outside it, a data file, a file the survey set aside, or nothing
-//! the tree answers. A survey reads the targets to close over a surface's
-//! modules, to list the packages a seam calls through, and to say what it
-//! could not follow. [`normalize`] spells the root-relative path a relative
-//! specifier reaches.
+//! An adapter's resolver maps each import specifier to a [`Target`] and uses
+//! [`normalize`] to resolve relative paths beneath the workspace root.
 
 /// What one import leads to, as the adapter's resolver settled it.
 ///

@@ -1,13 +1,7 @@
 //! Defines the shared workflow for typed model questions.
 //!
 //! A [`Brief`] combines engine facts, prompt documents, an answer schema, and
-//! validation. Only a response that passes both deserialisation and
-//! fact-based checks can produce engine output.
-//!
-//! Synthesis uses briefs for claim grouping, specification drafting, design
-//! drafting, and slicing; a build uses one for the conflicts a slice's merge
-//! leaves. Facts already known to the engine are validated or inserted
-//! directly rather than requested from the model.
+//! fact-based validation to produce verified engine output.
 
 use std::borrow::Cow;
 use std::fmt::Display;

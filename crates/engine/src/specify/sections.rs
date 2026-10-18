@@ -1,8 +1,4 @@
-//! Renders the sections every document brief's turn shares.
-//!
-//! The requirement outline and the claim listing are facts the engine lays
-//! before the model, the same for the specification, the design, and the
-//! plan, so each brief writes them through one renderer.
+//! Renders the shared requirement basis and claim sections for synthesis briefs.
 
 use std::borrow::Borrow;
 use std::fmt::{self, Display, Formatter};

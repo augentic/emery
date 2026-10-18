@@ -1,10 +1,4 @@
-//! Decodes a run's sources and target from its carriers.
-//!
-//! The carriers are argv — positional adapters and `--description` values
-//! for `specify`, one positional adapter for `build` — and an operator-owned
-//! `emery.toml`, never both. The file is read whole, so every table it holds
-//! must parse; a run naming its adapters on the command line reads no file.
-//! A repository, as a source's or the target's, is the file's alone.
+//! Resolves `specify` sources and `build` targets from CLI arguments or `emery.toml`.
 
 use std::path::{Path, PathBuf};
 use std::str::FromStr as _;

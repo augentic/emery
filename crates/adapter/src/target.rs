@@ -1,12 +1,8 @@
 //! Defines target-adapter inputs, outputs, and the engine-facing capability.
 //!
-//! The engine puts a [`Task`] to a target through [`Target`]: an init over
-//! a tree a build lands in, a [`Slice`] to build, or a verify over the
-//! integrated tree, each answered by its [`Outcome`]. A build answers a
-//! [`Report`], which [`Report::findings`] holds to the slice, and a verify a
-//! [`Verdict`], which [`Verdict::findings`] holds to itself. The engine
-//! merges every slice under the [`MergeRule`]s the adapter's
-//! [`TargetMetadata`] declares.
+//! The engine invokes a target through [`Target`], running a [`Task`] and
+//! validating the returned [`Outcome`] with [`Report::findings`] or
+//! [`Verdict::findings`].
 //!
 //! On WebAssembly targets, `export` contains the guest interface implemented
 //! by an adapter.

@@ -1,15 +1,4 @@
-//! Serves the `write_files` and `edit_files` tools a build or verify turn
-//! writes the lent tree through.
-//!
-//! [`Writer`] declares the two tools and answers each call beneath the
-//! workspace root: `write_files` lays the files it names whole and removes
-//! the paths it deletes; `edit_files` replaces the one place each `find`
-//! matches within a file the tree holds. Every path is held to [`beneath`]
-//! and to the tree — no symlink anywhere on it — before any is touched, and
-//! a write that would empty a file or cut it below half its size is refused
-//! unless the entry says so. [`Written`] is what the turn wrote or edited,
-//! which the build fills the answered `written` list from beside the tree
-//! itself.
+//! Serves the `write_files` and `edit_files` tools for build and verify turns.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;

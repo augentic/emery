@@ -1,15 +1,8 @@
-//! Precompiles the engine guest into the artifact the release `emery` binary embeds.
+//! Precompiles a `wasm32-wasip2` component for the release `emery` binary.
 //!
-//! `emery-precompile <wasm> <output> --target <triple>` compiles the
-//! `wasm32-wasip2` component at `<wasm>` for `<triple>` under the runtime's
-//! default compile settings, so the build shell's environment steers nothing,
-//! and writes it to `<output>`. The crate's build script builds and runs this
-//! tool in a release build alone: it depends on the compiler and nothing of
-//! the runtime, and no check or test of the workspace links either through
-//! it.
-//!
-//! The binary is host-only; on `wasm32` it compiles to an empty `main` so the
-//! workspace-wide wasm32 clippy pass can include it.
+//! Invoked by the root build script as
+//! `emery-precompile <wasm> <output> --target <triple>` using default runtime
+//! compile options.
 
 cfg_select! {
     not(target_arch = "wasm32") => {

@@ -1,7 +1,4 @@
-//! Verifies the SDK's runtime references against their tree.
-//!
-//! The table is held to `crates/sdk/prose/` the way an adapter's is held to
-//! its own tree, with no imports of its own.
+//! Verifies the SDK's embedded runtime reference documents.
 
 use std::path::Path;
 

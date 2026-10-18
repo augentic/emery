@@ -1,6 +1,4 @@
-//! A verification is one turn whose verdict is held to itself before the
-//! adapter answers; every scenario here puts one over a scripted model and a
-//! scratch tree.
+//! Tests `target::verify` verdict gating and workspace repairs.
 
 use emery_sdk::target::{Reach, Verdict, VerifyContext, Worker};
 use emery_sdk::{Doc, Error};

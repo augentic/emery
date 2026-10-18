@@ -1,10 +1,4 @@
-//! Verifies the operator journey from a committed plan through `build`.
-//!
-//! Each scenario seeds a revision, drives the real command façade over a
-//! scripted target and scripted version control, and asserts the slices
-//! dispatched, the working copies cut, the commits sealed and merged, the
-//! waves verified and labelled, the envelope, the exit code, and that the
-//! engine wrote nothing of its own.
+//! Verifies `emery build` over scripted target, file, and version-control capabilities.
 
 #![cfg(not(target_arch = "wasm32"))]
 

@@ -1,12 +1,7 @@
-//! Spells the stems and discriminators a route or a literal carries.
+//! Extracts resource stems and discriminators from route paths and literals.
 //!
-//! A surface registered at a route takes its stem from the first segment
-//! that names a resource, `orders` in `/api/v1/orders/{id}`, and is told
-//! from the others under that stem by its verb and the segments past the
-//! resource, `get-id`. One led by a literal — a command, a queue, an event —
-//! takes the literal's first word. How a language's frameworks spell a
-//! parameter or a pattern is the one per-language input, carried as a
-//! [`Spelling`].
+//! [`Spelling`] configures framework parameter syntax, and [`literal_stem`]
+//! extracts a stem from a non-path registration literal.
 
 use crate::kebab;
 
