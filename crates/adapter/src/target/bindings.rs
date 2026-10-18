@@ -32,7 +32,7 @@ mod generated {
 
 use self::generated::emery::adapter::target as wit;
 use crate::target::{
-    Base, MergeRule, MergeStrategy, Outcome, Report, Slice, TargetMetadata, Task, Verdict,
+    MergeRule, MergeStrategy, Outcome, Report, Slice, TargetMetadata, Task, Verdict,
 };
 
 impl From<TargetMetadata> for wit::TargetMetadata {
@@ -40,7 +40,6 @@ impl From<TargetMetadata> for wit::TargetMetadata {
         Self {
             emery_version: metadata.emery_version,
             merge_rules: metadata.merge_rules.into_iter().map(Into::into).collect(),
-            base: metadata.base.into(),
         }
     }
 }
@@ -50,25 +49,6 @@ impl From<wit::TargetMetadata> for TargetMetadata {
         Self {
             emery_version: metadata.emery_version,
             merge_rules: metadata.merge_rules.into_iter().map(Into::into).collect(),
-            base: metadata.base.into(),
-        }
-    }
-}
-
-impl From<Base> for wit::Base {
-    fn from(base: Base) -> Self {
-        match base {
-            Base::Any => Self::Any,
-            Base::Fresh => Self::Fresh,
-        }
-    }
-}
-
-impl From<wit::Base> for Base {
-    fn from(base: wit::Base) -> Self {
-        match base {
-            wit::Base::Any => Self::Any,
-            wit::Base::Fresh => Self::Fresh,
         }
     }
 }

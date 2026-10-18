@@ -1,21 +1,20 @@
 //! Builds the current plan through a target adapter, into a labelled commit.
 //!
 //! [`build`] reads the current revision, loads the one target adapter the run
-//! names, settles the repository and the base — the default branch of the
-//! repository the target names, cloned under the target's name; the root
-//! commit of the one the engine lays under that name for an adapter that
-//! builds into a fresh tree; or the project checkout's sealed head — and
-//! reads what the label `emery/<revision>` already holds over it, so a run
-//! resumes where the last verified wave left off, and what the integration
-//! working copy an earlier run left holds merged over that head, so the
-//! slices of a wave that never verified are verified rather than built
-//! again. A base neither stands over is held to the tree the adapter
-//! builds over — one that lays a whole tree is refused a base whose root
-//! holds a directory — and then initialised: the adapter lays the layout's
-//! initial files the tree lacks, with no model turn, and what it laid is
-//! sealed as the `Initialise` commit every slice builds over, so no slice
-//! lays or reports the layout; a repository the engine lays holds that
-//! commit as its root. The slices still to build go in waves: every slice
+//! names, settles the repository and the base by the `repository` the
+//! target names — the default branch of a URL's clone, kept under the
+//! target's name; the project checkout's sealed head for `.`; or the root
+//! commit of the repository the engine lays under that name when the
+//! target names none — and reads what the label `emery/<revision>` already
+//! holds over it, so a run resumes where the last verified wave left off,
+//! and what the integration working copy an earlier run left holds merged
+//! over that head, so the slices of a wave that never verified are verified
+//! rather than built again. A base neither stands over is initialised: the
+//! adapter lays the layout's initial files the tree lacks, with no model
+//! turn, and what it laid is sealed as the `Initialise` commit every slice
+//! builds over, so no slice lays or reports the layout; a repository the
+//! engine lays holds that commit as its root. The slices still to build go
+//! in waves: every slice
 //! whose dependencies are merged is built at once, each in a working copy of
 //! its own cut at the wave's head, with its plan entry, its cut of the
 //! specification, and the whole design. What each changed is sealed as its
@@ -49,8 +48,8 @@ use std::collections::BTreeSet;
 use std::fmt::{self, Display};
 use std::num::NonZeroUsize;
 
-use emery_adapter::target::{Base, Outcome, Slice as SliceInput, Target, Task};
-use emery_adapter::{SKIP_DIRS, beneath, is_kebab};
+use emery_adapter::target::{Outcome, Slice as SliceInput, Target, Task};
+use emery_adapter::{beneath, is_kebab};
 use futures::{FutureExt as _, StreamExt as _, stream};
 use omnia_sdk::api::Context;
 use omnia_sdk::plugins::Digest;
@@ -109,17 +108,11 @@ use crate::{EntryKind, Files, RETRIES, is_retryable, store, vcs};
 ///     lacks whose namespace the deployment routes nowhere, a pre-compiled
 ///     artifact, or one resolving to other bytes than its pin (code
 ///     `refused`);
-///   - with code `repository-required`, when the target names no
-///     repository, the adapter builds over any base ([`Base::Any`]), and
-///     the project is none;
+///   - with code `repository-required`, when the target names the project
+///     checkout as its repository ([`vcs::PROJECT`]) and the project is no
+///     repository;
 ///   - with code `base-not-sealed`, when the project checkout holds pending
 ///     changes outside `.emery/`, listed, or no commit;
-///   - with code `base-not-fresh`, when the adapter builds into a fresh
-///     tree ([`Base::Fresh`]) and the root of a base no label stands over
-///     holds a directory outside `.emery/` and `.git/`, each listed; such
-///     an adapter named with no repository builds into the one the engine
-///     lays, whose root commit holds the adapter's layout and is never
-///     held to this;
 ///   - with code `verify-failed`, when the adapter does not verify a wave,
 ///     each failing check listed;
 ///   - with code `secret-detected`, when a path the initialisation, a
@@ -174,20 +167,16 @@ pub async fn build<P: Model + Target + StateStore + BlobStore + Plugins + Vcs + 
         metadata,
     } = adapter::load_target(provider, &input.adapter, input.digest.as_ref()).await?;
 
-    // the repository the build lands in: the one the target names, the
-    // engine's own for an adapter that lays a whole tree, else the project's;
-    // then the base, the adapter's layout laid into a repository the engine
-    // lays, and what the label already holds over it
-    let repo = match (input.repository, metadata.base) {
-        (Some(url), _) => Repo::Target {
+    // the repository the build lands in: the project's for `.`, else the
+    // target's own, a clone of the URL or the one the engine lays; then the
+    // base, the adapter's layout laid into a repository the engine lays, and
+    // what the label already holds over it
+    let repo = match input.repository.as_deref() {
+        Some(vcs::PROJECT) => Repo::Project,
+        url => Repo::Target {
             name: input.name,
-            url: Some(url),
+            url: url.map(ToOwned::to_owned),
         },
-        (None, Base::Fresh) => Repo::Target {
-            name: input.name,
-            url: None,
-        },
-        (None, Base::Any) => Repo::Project,
     };
     let laid = matches!(repo, Repo::Target { url: None, .. });
     let base = repo.base(provider, async |at| initialise(provider, &adapter, at).await).await?;
@@ -202,12 +191,9 @@ pub async fn build<P: Model + Target + StateStore + BlobStore + Plugins + Vcs + 
     progress.stage(head, staged);
 
     // a laid repository's base is its initialisation; any other base is
-    // admitted and initialised on a fresh build
-    let initialised = if laid {
-        None
-    } else {
-        progress.initialise(provider, &integration, &adapter, metadata.base).await?
-    };
+    // initialised on a fresh build
+    let initialised =
+        if laid { None } else { progress.initialise(provider, &integration, &adapter).await? };
 
     let waves = revision.plan.waves();
     tracing::info!(
@@ -279,12 +265,12 @@ pub struct BuildInput {
     /// resolves.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub digest: Option<Digest>,
-    /// The URL of the repository the plan is built into.
+    /// The repository the plan is built into.
     ///
-    /// The build starts from its default branch as the remote holds it.
-    /// `None` builds into the project's own repository, from the sealed
-    /// commit its checkout sits on, or, through an adapter that builds into
-    /// a fresh tree, into the one the engine lays under the name.
+    /// A URL builds into a clone of it, from its default branch as the
+    /// remote holds it. [`vcs::PROJECT`] builds into the project's own
+    /// repository, from the sealed commit its checkout sits on. `None`
+    /// builds into the repository the engine lays under the name and keeps.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub repository: Option<String>,
     /// How many slices of a wave are built at once.
@@ -478,19 +464,15 @@ impl Progress {
         self.staged = staged;
     }
 
-    // A fresh build is held to the base the adapter builds over, then
-    // initialised with its layout, what it laid sealed in the integration
-    // copy as the commit the slices build over. One resumed from the label,
-    // or from what a run staged over it, was admitted and initialised by
-    // that run.
+    // A fresh build is initialised with the adapter's layout, what it laid
+    // sealed in the integration copy as the commit the slices build over.
+    // One resumed from the label, or from what a run staged over it, was
+    // initialised by that run.
     async fn initialise<P: Target + Vcs + Files>(
-        &mut self, provider: &P, integration: &WorkingCopy, adapter: &str, base: Base,
+        &mut self, provider: &P, integration: &WorkingCopy, adapter: &str,
     ) -> Result<Option<Initialised>, Error> {
         if self.labelled.is_some() || !self.staged.is_empty() {
             return Ok(None);
-        }
-        if base == Base::Fresh {
-            require_fresh(provider, integration, &self.head, adapter).await?;
         }
         let changes = initialise(provider, adapter, integration.path()).await?;
         if changes.is_empty() {
@@ -1087,34 +1069,6 @@ async fn initialise<P: Target + Vcs + Files>(
     }
     tracing::info!(laid = pending.len(), "initialised");
     Ok(pending)
-}
-
-// A fresh base holds files alone at its root: a directory outside the
-// engine's own refuses the build before any slice is dispatched, since the
-// adapter lays a whole tree and would rewrite what stands there. A base
-// the engine laid is never held to this: its root commit is the layout.
-async fn require_fresh<P: Files>(
-    provider: &P, integration: &WorkingCopy, base: &str, adapter: &str,
-) -> Result<(), Error> {
-    let mut directories: Vec<String> = provider
-        .list(integration.path(), ".")
-        .await?
-        .into_iter()
-        .filter(|entry| entry.kind == EntryKind::Directory)
-        .filter(|entry| !SKIP_DIRS.contains(&entry.name.as_str()))
-        .map(|entry| entry.name)
-        .collect();
-    if directories.is_empty() {
-        return Ok(());
-    }
-    directories.sort_unstable();
-    Err(Error::BadRequest {
-        code: "base-not-fresh".into(),
-        description: format!(
-            "`{adapter}` builds into a fresh tree, and the base `{base}` holds directories: {}",
-            directories.join(", ")
-        ),
-    })
 }
 
 // The gate's refusal: what `wrote` left changed carries the credentials

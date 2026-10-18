@@ -43,18 +43,16 @@ const BUILD_DESC: &str = "Build the current plan through a target adapter.\n\n\
     Name the adapter, or use `--config [<path>]` (default: `emery.toml`) to read its \
     `[target]` table. With no adapter, Emery looks for `emery.toml` in the project root. \
     Config and a command-line adapter cannot be combined.\n\n\
-    The build lands as commits in one repository, never in the checkout: the `[target] \
-    repository` URL the config names, cloned under `.emery/vcs/repos/<name>` and built \
-    from its default branch; with none, for an adapter that lays a whole tree, a \
-    repository the build lays once at `.emery/vcs/repos/<name>` and keeps, its root commit \
-    the adapter's layout; otherwise the project checkout, from its head, which must hold \
-    no pending change outside `.emery/`. `<name>` is the `[target] name`, the adapter's \
-    package name when the config gives none. An adapter that lays a whole tree is refused \
-    a named repository whose root holds a directory (`base-not-fresh`). A build no label \
-    resumes first has the adapter initialise the tree — lay the files of its layout the \
-    tree lacks, with no model turn — and seals them as the `Initialise` commit every slice \
-    builds over. A label `emery/<revision>` the repository already \
-    holds, descending from that commit, is resumed: the slices it records are not built \
+    The build lands as commits in one repository, never in the checkout, the one the \
+    `[target] repository` names: a URL, cloned under `.emery/vcs/repos/<name>` and built \
+    from its default branch; `.`, the project checkout, from its head, which must hold no \
+    pending change outside `.emery/`; or, with none named, a repository the build lays \
+    once at `.emery/vcs/repos/<name>` and keeps, its root commit the adapter's layout. \
+    `<name>` is the `[target] name`, the adapter's package name when the config gives \
+    none. A build no label resumes first has the adapter initialise the tree — lay the \
+    files of its layout the tree lacks, with no model turn — and seals them as the \
+    `Initialise` commit every slice builds over. A label `emery/<revision>` the repository \
+    already holds, descending from that commit, is resumed: the slices it records are not built \
     again, and neither are the slices `.emery/vcs/integration` holds merged over it from a \
     run that ended before their wave was verified, which are verified instead. The rest go \
     in waves: every slice whose dependencies are merged is built at once, up to `--jobs` \
@@ -270,13 +268,10 @@ fn hint(error: &Error, building: bool) -> Option<Cow<'static, str>> {
             "the revision predates this emery's grammar: re-run `emery specify <adapter>...` to regenerate it"
         }
         "repository-required" => {
-            "a build lands as a commit: run `emery build` from a repository checkout, or name one with `[target] repository` in `emery.toml`"
+            "`[target] repository = \".\"` builds into the project checkout, which must be a repository: initialise and seal it, name a repository URL instead, or drop the key so the build lays a repository of its own under `.emery/vcs/repos/<name>`"
         }
         "base-not-sealed" => {
             "commit or stash the pending changes so the build starts from a sealed commit; `.emery/` is never counted, so add it to `.gitignore`"
-        }
-        "base-not-fresh" => {
-            "this adapter lays a whole tree: drop `[target] repository` from `emery.toml` so the build lays a repository of its own under `.emery/vcs/repos/<name>`, or name an empty one (whose root holds files alone, a README and a `.gitignore`)"
         }
         "revision-not-found" => {
             "check the `repository` or `revision` in `emery.toml` against what the repository holds; a target's clone under `.emery/vcs/repos/<name>` keeps the origin it was first cloned or laid with, so remove it, or name the target otherwise, to point the name at another repository"

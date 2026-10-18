@@ -5,7 +5,7 @@
 //! refreshed by a fetch. The repository a build lands in is a [`Repo`]: the
 //! project's own checkout, the `.` mount, never written; or the target's
 //! own, kept under the target's name, a clone of the URL the target names
-//! or one the engine lays for an adapter that builds into a fresh tree. A
+//! or one the engine lays when the target names none. A
 //! source is read, and the plan built, in a [`WorkingCopy`] cut from one of
 //! them and removed when the run is done with it. A build seals each slice
 //! under a [`Message`], which it reads back from the labelled history, and
@@ -45,8 +45,8 @@ pub const DEFAULT_BRANCH: &str = "origin/HEAD";
 /// The message of the one commit the engine lays a target repository with.
 pub const INITIALISE: &str = "Initialise";
 
-// The project's own checkout, as the capability names it.
-const PROJECT: &str = ".";
+/// The project's own checkout, as the capability names it and as a target's `repository` names it to build into.
+pub const PROJECT: &str = ".";
 
 // The file a laid repository's root commit holds beside what the adapter's
 // init laid, when the init laid no ignore file of its own, so that the

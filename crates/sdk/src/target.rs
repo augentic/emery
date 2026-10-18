@@ -20,8 +20,7 @@
 //! [`TargetAdapter`] is what a target adapter implements, and
 //! [`export_target!`](crate::export_target) exports a type implementing it,
 //! answering the component's `metadata` through [`metadata`] over the
-//! type's [`MERGE_RULES`](TargetAdapter::MERGE_RULES) and
-//! [`BASE`](TargetAdapter::BASE).
+//! type's [`MERGE_RULES`](TargetAdapter::MERGE_RULES).
 //!
 //! # Examples
 //!
@@ -34,7 +33,7 @@
 //! use std::io::{ErrorKind, Write as _};
 //! use std::path::Path;
 //!
-//! use emery_sdk::target::{Base, Outcome, Reach, TargetAdapter, Task, Worker};
+//! use emery_sdk::target::{Outcome, Reach, TargetAdapter, Task, Worker};
 //! use emery_sdk::{Doc, Error, Model, server_error};
 //!
 //! // cargo fetches from crates.io's sparse index and its download host
@@ -55,7 +54,6 @@
 //! pub struct Adapter;
 //!
 //! impl TargetAdapter for Adapter {
-//!     const BASE: Base = Base::Fresh;
 //!     const WORKER: Worker = Worker::of(&[CARGO, RUSTUP]);
 //!
 //!     async fn run<P: Model>(task: Task<'_, P>) -> Result<Outcome, Error> {
@@ -110,7 +108,7 @@ use std::path::Path;
 #[doc(inline)]
 pub use emery_adapter::target::export;
 pub use emery_adapter::target::{
-    Base, MergeRule, MergeStrategy, Outcome, Report, Slice, TargetMetadata, Verdict,
+    MergeRule, MergeStrategy, Outcome, Report, Slice, TargetMetadata, Verdict,
 };
 use emery_prose::Doc;
 use omnia_sdk::model::{Question, WorkerGrant};
@@ -373,15 +371,6 @@ pub trait TargetAdapter {
     /// that reaches beyond the tree.
     const WORKER: Worker = Worker::NONE;
 
-    /// The base the engine admits a build of this adapter over, since the
-    /// adapter alone knows whether its layout is laid into a fresh tree or
-    /// stands beside what a project already holds.
-    ///
-    /// [`Base::Any`] by default. [`Base::Fresh`] has the engine refuse a
-    /// base whose root holds a directory before any slice builds, so an
-    /// adapter that lays a whole repository never rewrites a held one.
-    const BASE: Base = Base::Any;
-
     /// Runs `task` in the tree its context names and answers the outcome of
     /// its kind.
     ///
@@ -401,22 +390,20 @@ pub trait TargetAdapter {
     fn run<P: Model>(task: Task<'_, P>) -> impl Future<Output = Result<Outcome, Error>>;
 }
 
-/// Returns the `metadata` answer for a target adapter merging under `merge_rules` and building over `base`.
+/// Returns the `metadata` answer for a target adapter merging under `merge_rules`.
 ///
 /// [`export_target!`](crate::export_target) answers the component's
 /// `metadata` with it over the adapter's
-/// [`MERGE_RULES`](TargetAdapter::MERGE_RULES) and
-/// [`BASE`](TargetAdapter::BASE). The engine merges every slice under the
-/// rules first and resolves what they leave with the model. The
-/// `emery-version` pin is this SDK's own version, identifying the contract
-/// the adapter compiled against. Build a [`TargetMetadata`] directly only
-/// when the adapter must loosen or tighten that pin.
+/// [`MERGE_RULES`](TargetAdapter::MERGE_RULES). The engine merges every
+/// slice under the rules first and resolves what they leave with the model.
+/// The `emery-version` pin is this SDK's own version, identifying the
+/// contract the adapter compiled against. Build a [`TargetMetadata`]
+/// directly only when the adapter must loosen or tighten that pin.
 #[must_use]
-pub fn metadata(merge_rules: &[MergeRule], base: Base) -> TargetMetadata {
+pub fn metadata(merge_rules: &[MergeRule]) -> TargetMetadata {
     TargetMetadata {
         emery_version: Some(env!("CARGO_PKG_VERSION").to_string()),
         merge_rules: merge_rules.to_vec(),
-        base,
     }
 }
 

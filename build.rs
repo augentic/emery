@@ -13,13 +13,11 @@
 //!
 //! The mock source and target under `examples/` are built beside it, raw wasm
 //! in every profile, and named `EMERY_MOCK_SOURCE` and `EMERY_MOCK_TARGET` for
-//! the runtime suite to stage in its scratch store and registry. The target is
-//! built once more with `EMERY_MOCK_FRESH` set, so it declares a fresh base,
-//! and that component is named `EMERY_MOCK_FRESH_TARGET`.
+//! the runtime suite to stage in its scratch store and registry.
 //!
 //! A check-only invocation builds no guest at all: under clippy, which cargo
 //! names through `RUSTC_WORKSPACE_WRAPPER`, or wherever `EMERY_SKIP_GUEST` is
-//! set non-empty, all four names point at one empty file, since nothing a
+//! set non-empty, all three names point at one empty file, since nothing a
 //! check compiles is ever run. The script re-runs when either variable
 //! changes, so the build that follows a check embeds the real guests again.
 //!
@@ -51,9 +49,7 @@ fn main() {
         let skipped = out_dir.join("emery-guest-skipped.wasm");
         std::fs::write(&skipped, [])
             .unwrap_or_else(|err| panic!("failed to write {}: {err}", skipped.display()));
-        for name in
-            ["EMERY_GUEST", "EMERY_MOCK_SOURCE", "EMERY_MOCK_TARGET", "EMERY_MOCK_FRESH_TARGET"]
-        {
+        for name in ["EMERY_GUEST", "EMERY_MOCK_SOURCE", "EMERY_MOCK_TARGET"] {
             println!("cargo:rustc-env={name}={}", skipped.display());
         }
         return;
@@ -68,45 +64,22 @@ fn main() {
         &target_dir,
         Nested::Wasm32 { release },
         &["rustc", "--lib", "--crate-type", "cdylib"],
-        &[],
     );
     let wasm = built.join("emery.wasm");
     let guest =
         if release { precompile(&manifest_dir, &target_dir, &wasm, &out_dir) } else { wasm };
     println!("cargo:rustc-env=EMERY_GUEST={}", guest.display());
 
-    // the mocks: the source, and the target over any base
+    // the mocks
     nested(
         &manifest_dir,
         &target_dir,
         Nested::Wasm32 { release },
         &["build", "--example", "source", "--example", "target"],
-        &[],
     );
     let examples = built.join("examples");
     println!("cargo:rustc-env=EMERY_MOCK_SOURCE={}", examples.join("source.wasm").display());
-    let any = kept(&examples.join("target.wasm"), &out_dir.join("target-any.wasm"));
-    println!("cargo:rustc-env=EMERY_MOCK_TARGET={}", any.display());
-
-    // the target once more over a fresh base, the first copied out of its way
-    nested(
-        &manifest_dir,
-        &target_dir,
-        Nested::Wasm32 { release },
-        &["build", "--example", "target"],
-        &[("EMERY_MOCK_FRESH", "1")],
-    );
-    let fresh = kept(&examples.join("target.wasm"), &out_dir.join("target-fresh.wasm"));
-    println!("cargo:rustc-env=EMERY_MOCK_FRESH_TARGET={}", fresh.display());
-}
-
-// Copies a built component out of the nested target directory, where the
-// next build of the same example would overwrite it.
-fn kept(built: &Path, to: &Path) -> PathBuf {
-    std::fs::copy(built, to).unwrap_or_else(|err| {
-        panic!("failed to copy {} to {}: {err}", built.display(), to.display())
-    });
-    to.to_path_buf()
+    println!("cargo:rustc-env=EMERY_MOCK_TARGET={}", examples.join("target.wasm").display());
 }
 
 // A check never runs what it compiles, so the guests it embeds may be empty:
@@ -128,7 +101,7 @@ fn precompile(manifest_dir: &Path, target_dir: &Path, wasm: &Path, out_dir: &Pat
     let target = std::env::var("TARGET").expect("cargo env");
     let compiled = out_dir.join("emery.cwasm");
 
-    nested(manifest_dir, target_dir, Nested::Host, &["build", "-p", "emery-precompile"], &[]);
+    nested(manifest_dir, target_dir, Nested::Host, &["build", "-p", "emery-precompile"]);
     let tool = target_dir.join("debug").join("emery-precompile");
     let status = Command::new(&tool)
         .arg(wasm)
@@ -149,11 +122,7 @@ enum Nested {
     Host,
 }
 
-// `env` is what the compiled code reads through `option_env!`, set over the
-// sanitised environment.
-fn nested(
-    manifest_dir: &Path, target_dir: &Path, build: Nested, args: &[&str], env: &[(&str, &str)],
-) {
+fn nested(manifest_dir: &Path, target_dir: &Path, build: Nested, args: &[&str]) {
     let cargo = std::env::var_os("CARGO").expect("cargo env");
 
     let mut child = Command::new(cargo);
@@ -170,7 +139,6 @@ fn nested(
     child.env("CARGO_TARGET_DIR", target_dir);
     child.env("CARGO_PROFILE_DEV_DEBUG", "0");
     child.env("CARGO_PROFILE_DEV_OPT_LEVEL", "1");
-    child.envs(env.iter().copied());
 
     let status = child.status().unwrap_or_else(|err| panic!("failed to spawn nested build: {err}"));
     assert!(status.success(), "nested build `cargo {}` failed: {status}", args.join(" "));

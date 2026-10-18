@@ -28,7 +28,7 @@ use crate::target::{Report, Verdict};
 /// ```
 /// use std::future::{Future, ready};
 ///
-/// use emery_adapter::target::{Base, Outcome, Report, Target, TargetMetadata, Task, Verdict};
+/// use emery_adapter::target::{Outcome, Report, Target, TargetMetadata, Task, Verdict};
 /// use omnia_sdk::Error;
 ///
 /// struct Host;
@@ -54,7 +54,6 @@ use crate::target::{Report, Verdict};
 ///         TargetMetadata {
 ///             emery_version: None,
 ///             merge_rules: Vec::new(),
-///             base: Base::Any,
 ///         }
 ///     }
 /// }
@@ -198,23 +197,6 @@ pub struct TargetMetadata {
     /// The rules every slice is merged into the integrated tree under; the
     /// first rule matching a conflicting path applies.
     pub merge_rules: Vec<MergeRule>,
-    /// The base the adapter builds over.
-    pub base: Base,
-}
-
-/// The tree a target adapter builds over: what the commit a build starts from may hold.
-///
-/// An adapter lays its layout into the tree, so it alone knows whether that
-/// layout stands beside what a project already holds or needs a tree of its
-/// own. The engine holds the base to the kind before any slice builds.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub enum Base {
-    /// Any commit: the adapter builds into whatever tree the base holds.
-    #[default]
-    Any,
-    /// A fresh tree: a root holding files alone. A base whose root holds a
-    /// directory is refused.
-    Fresh,
 }
 
 /// One rule for merging a slice into the integrated tree.

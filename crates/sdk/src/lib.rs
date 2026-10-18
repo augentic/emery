@@ -221,8 +221,7 @@ macro_rules! export_source {
 ///
 /// The argument is a type implementing [`target::TargetAdapter`]. The
 /// component's `metadata` answers [`target::metadata`] over the type's
-/// [`MERGE_RULES`](target::TargetAdapter::MERGE_RULES) and
-/// [`BASE`](target::TargetAdapter::BASE). Its `run` lifts the imported task
+/// [`MERGE_RULES`](target::TargetAdapter::MERGE_RULES). Its `run` lifts the imported task
 /// into a [`target::Task`] over the workspace root and the host model — a
 /// [`target::InitContext`], a [`target::BuildContext`], or a
 /// [`target::VerifyContext`] — puts it to the type's
@@ -247,7 +246,6 @@ macro_rules! export_target {
                 ) -> $crate::target::export::TargetMetadata {
                     $crate::target::export::TargetMetadata::from($crate::target::metadata(
                         <$adapter as $crate::target::TargetAdapter>::MERGE_RULES,
-                        <$adapter as $crate::target::TargetAdapter>::BASE,
                     ))
                 }
 

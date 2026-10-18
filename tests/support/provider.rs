@@ -17,7 +17,7 @@ use emery_adapter::source::{
     AdapterMetadata, Backing, Claim, ClaimKind, Evidence, Source, SourceInput, SourceKind,
 };
 use emery_adapter::target::{
-    Base, MergeRule, Outcome, Report, Slice, Target, TargetMetadata, Task, Verdict,
+    MergeRule, Outcome, Report, Slice, Target, TargetMetadata, Task, Verdict,
 };
 use emery_engine::{Axis, Entry, Files};
 use omnia_sdk::api::command::Response;
@@ -125,7 +125,7 @@ impl Rendezvous {
 /// A scripted `Target` with a record of every dispatch.
 ///
 /// Reports are scripted per slice id, verdicts in wave order, the minimum
-/// `emery` version, the merge rules, and the base per adapter.
+/// `emery` version and the merge rules per adapter.
 ///
 /// - An init answers at once; what it lays is the scripted `Vcs`'s
 ///   `pending` to say.
@@ -148,8 +148,6 @@ pub struct TargetScript {
     pub versions: BTreeMap<String, String>,
     /// The merge rules every adapter declares.
     pub rules: Vec<MergeRule>,
-    /// The base every adapter declares it builds over; any by default.
-    pub base: Base,
     /// Every init dispatch, recorded in dispatch order: the workspace root.
     pub inits: Arc<Mutex<Vec<String>>>,
     /// Every build dispatch, recorded in dispatch order: the adapter id, the
@@ -464,7 +462,6 @@ impl<S: Send + Sync + 'static> Target for Provider<S> {
         TargetMetadata {
             emery_version: self.target.versions.get(id).cloned(),
             merge_rules: self.target.rules.clone(),
-            base: self.target.base,
         }
     }
 }
