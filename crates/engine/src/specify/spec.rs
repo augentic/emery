@@ -1,15 +1,8 @@
 //! Synthesises the drafted content of `spec.md`.
 //!
-//! The model supplies introductory paragraphs and acceptance scenarios. The
-//! engine retains ownership of requirement identifiers, provenance, status,
-//! and body text. A run is drafted in chunks of at most [`SPEC_CHUNK`]
-//! requirements, grouped by stem, each its own turn; every response must
-//! contain exactly one draft for each requirement subject of its chunk, and
-//! only the first chunk's carries the preamble. The first chunk is briefed
-//! with every claim; each later one with the claims under its own stems and
-//! the detail anchored beside them. The preamble and every scenario line
-//! are held to the run's [`Lexicon`]: the fixed technology names, and the
-//! packages the `call` claims spell.
+//! Drafts introductory paragraphs and acceptance scenarios in chunks of at
+//! most [`SPEC_CHUNK`] requirements, holding all drafted prose against the
+//! run's technology [`Lexicon`].
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::{self, Display, Formatter};

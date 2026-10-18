@@ -1,15 +1,7 @@
-//! Verifies the adapter boundary under the omnia runtime.
+//! End-to-end runtime integration tests for the engine guest, plugin loader, and git VCS.
 //!
-//! Each scenario deploys the engine guest the binary embeds, compiled for
-//! this host once per build and shared by every process, over scratch
-//! roots — the project mounted writable as `.`, the package store, and a
-//! wasm-pkg `local` registry — under the hosts the engine imports, and
-//! drives it over in-memory backends, a scripted model, and git behind
-//! `omnia:vcs`, hermetic under a scratch configuration. omnia's real store
-//! and loader answer every load, so what a reference resolves to is asserted
-//! here and nowhere natively; what a build commits and labels, and the
-//! repository it lays or clones to hold them, is read back with git as the
-//! oracle; and the operator's `$HOME` and the network are never touched.
+//! Deploys `EMERY_GUEST` under `omnia_test::host` over scratch mounts, a local
+//! package registry, a hermetic git client, and a scripted model.
 
 #![cfg(not(target_arch = "wasm32"))]
 

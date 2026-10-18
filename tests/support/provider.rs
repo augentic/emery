@@ -1,11 +1,4 @@
-//! Scripts every capability of a provider and drives the command façade over it.
-//!
-//! Model, source, target, storage, version-control, and file capabilities
-//! use strict scripts. Each scenario must consume exactly the expected
-//! operations, so an unexercised or unexpected path fails immediately. The
-//! plugin capability is a constant: every load lands, so the synthesis
-//! suites assert nothing of a load and the adapter boundary is the runtime
-//! suite's.
+//! Scripted capability provider for in-process CLI tests.
 
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::future::Future;

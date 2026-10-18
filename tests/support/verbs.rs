@@ -1,8 +1,4 @@
-//! Reads the verb names out of `emery --help`.
-//!
-//! A suite that needs to know which commands exist learns it from the shipped
-//! surface rather than from a list that would have to be kept in step by
-//! hand.
+//! Extracts subcommand names from `emery --help` output.
 
 use emery_adapter::is_kebab;
 

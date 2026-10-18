@@ -2,18 +2,10 @@
 
 //! Defines the contract between the Emery engine and its adapters.
 //!
-//! A source adapter receives a [`source::SourceInput`] and returns
-//! [`source::Evidence`] containing typed [`source::Claim`]s. The
-//! [`source::Source`] capability is the engine-facing side of that exchange.
-//! A target adapter runs a [`target::Task`] in a workspace: an init of its
-//! layout, a build of one [`target::Slice`] of the plan answered by a
-//! [`target::Report`], or a verify of the integrated tree answered by a
-//! [`target::Verdict`], each an [`target::Outcome`]; [`target::Target`] is
-//! the engine-facing side.
-//!
-//! This crate supplies the shared Rust types for the `emery:adapter` WIT
-//! package. On WebAssembly targets, `source::export` and `target::export`
-//! also expose the guest interfaces implemented by adapters.
+//! Supplies the shared Rust types and `wasm32` guest bindings for the
+//! `emery:adapter` WIT package: [`source`] for claim extraction and
+//! [`target`] for workspace initialisation, slice builds, and wave
+//! verification.
 //!
 //! # Examples
 //!
@@ -40,22 +32,15 @@
 //!
 //! # Vocabulary
 //!
-//! - **Source adapter**: a component that extracts claims from one source.
-//! - **Evidence**: the complete set of [`source::Claim`]s returned for one
-//!   input.
-//! - **Claim gate**: the validation performed by
-//!   [`source::Evidence::findings`] before evidence is accepted.
-//! - **Target adapter**: a component that initialises a workspace with its
-//!   layout, builds one slice of the plan into it, and verifies the
-//!   integrated tree.
-//! - **Report gate**: the validation performed by
-//!   [`target::Report::findings`] before a report is accepted.
-//! - **Root-relative path**: a `/`-separated path beneath the root a run
-//!   lends, which both gates hold to [`beneath`].
-//! - **Technology**: a vendor, product, protocol, framework, or host a
-//!   requirement names in place of the role it plays, which a [`Lexicon`]
-//!   reads a text for, over its fixed names and those of a source's
-//!   packages.
+//! - **Source adapter**: a component that extracts [`source::Evidence`] from a
+//!   [`source::SourceInput`].
+//! - **Claim gate**: validation performed by [`source::Evidence::findings`].
+//! - **Target adapter**: a component that runs [`target::Task`]s and returns
+//!   [`target::Outcome`]s.
+//! - **Report gate**: validation performed by [`target::Report::findings`].
+//! - **Root-relative path**: a `/`-separated path validated by [`beneath`].
+//! - **Technology**: a vendor, product, protocol, framework, or host detected
+//!   by [`Lexicon`].
 
 mod path;
 pub mod source;

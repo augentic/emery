@@ -1,8 +1,4 @@
-//! Verifies the operator journey from `specify` through `show` and regeneration.
-//!
-//! Each scenario drives the real command façade over scripted capabilities,
-//! asserting the exact envelope, exit code, storage operations, and Markdown
-//! projection an operator would observe.
+//! Verifies `emery specify` and `emery show` over scripted capabilities.
 
 #![cfg(not(target_arch = "wasm32"))]
 

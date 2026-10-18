@@ -1,13 +1,8 @@
 //! Reconciles requirement claims into deterministic requirement bases.
 //!
-//! Claims sharing an identifier are grouped before any model request. When
-//! requirement claims come from several sources, or from one source whose
-//! requirement ids span several stems, the model may group the remaining
-//! claims by meaning and agreement, except that one source's distinct ids
-//! under one stem stay distinct requirements. The engine validates that
-//! partition, applies source authority, and derives status, coverage,
-//! winners, and losing statements. A run in which no source contributes a
-//! requirement claim is refused before any request.
+//! Groups claims by identifier and model-assisted semantic matching, then
+//! applies source authority to derive each requirement's winning statement,
+//! status, and coverage.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::{self, Display, Formatter};

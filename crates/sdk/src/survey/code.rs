@@ -1,20 +1,8 @@
-//! Holds what an adapter's parser reads of one module, for every rule beneath to read.
+//! Language-neutral module and workspace AST summary for source surveys.
 //!
-//! A [`Module`] is plain data. The adapter's walker fills it, its resolver
-//! settles where each import leads, and the lookups here answer what a
-//! survey asks of it: which binding a name resolves to, what a module
-//! reaches, which calls are structure and which decorators register. A
-//! module the parser cannot read is still a `Module`, read as far as the
-//! parser got with `parsed` false, so one broken file never fails a run.
-//!
-//! What a lookup reads of the language — the methods that are structure,
-//! the decorators that shape, the stems that name a role — comes from the
-//! adapter's [`Dialect`], passed to each lookup that reads one.
-//!
-//! A [`Tree`] holds every module of a workspace, settled through the
-//! adapter's [`Recogniser`], and answers what a survey asks of the tree as
-//! a whole; a [`Surface`] is what the code says of each place the survey
-//! named.
+//! An adapter's parser populates a [`Module`] per file, and [`Parsed::settle`]
+//! settles imports and workspace metadata through [`Recogniser`] into a
+//! [`Tree`] queried using the language's [`Dialect`].
 
 mod recogniser;
 mod surface;

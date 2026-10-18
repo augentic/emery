@@ -1,12 +1,7 @@
-//! Parses adapter references and loads the adapters a run names.
+//! Parses `namespace:name@version` adapter references and loads components.
 //!
-//! An adapter is an exact package reference, `namespace:name@version`, and
-//! nothing else. Every load goes through the deployment loader at the
-//! registry location the reference names, and the deployment's grant bounds
-//! it: the package store answers a release it holds, and the registry the
-//! deployment routes the namespace to answers one it lacks. The engine names
-//! no registry on a load, so a project file chooses which package and, by
-//! its pin, which bytes, and never where from.
+//! Resolves each reference through the deployment plugin loader, verifies its
+//! exported [`Axis`] interface and metadata version, and enforces digest pins.
 
 use std::collections::BTreeMap;
 use std::collections::btree_map::Entry;

@@ -1,8 +1,4 @@
-//! Verifies Emery's command-line contract independently of engine behaviour.
-//!
-//! Every scenario finishes before the engine touches a model or a source, so
-//! the scripted provider remains idle. End-to-end product behaviour is covered
-//! by `specify.rs`.
+//! Verifies CLI argument parsing, help output, and shell completions.
 
 #![cfg(not(target_arch = "wasm32"))]
 

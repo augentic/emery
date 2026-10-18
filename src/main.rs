@@ -1,34 +1,9 @@
-//! Defines the shipped `emery` runtime: the engine over the operator's package store.
+//! Defines the shipped `emery` runtime binary.
 //!
-//! The runtime embeds the engine guest under grants fixed at compile time.
-//! The invocation directory is mounted as `.`, writable: the tree a run reads
-//! its sources from and the repository a build starts from, its working
-//! copies cut beneath `.emery/vcs`. Every adapter is a package, read from
-//! the store `~/.emery/adapters` before anything is fetched — the file
-//! `namespace_name@version.wasm` there is that release on this machine — and
-//! fetched through the one route compiled in here otherwise: the `emery`
-//! namespace to `augentic.io`. A release the binary routes nowhere arrives by
-//! `wkg get <reference> -o ~/.emery/adapters/`. The store lies apart from the
-//! project, so a component is never loaded from a tree a run can write, and
-//! a run from the operator's home is refused at startup.
-//!
-//! Version control is the operator's own `git`, run by the git backend at
-//! the paths the engine lends beneath `.`: the repository a build labels and
-//! the clones a repository source or target is read from under `.emery/vcs`.
-//!
-//! Cursor answers the model, and every worker it runs for a lent tree is
-//! confined by the kernel: it reads the system, the tree, and its own
-//! scratch, writes the tree and the scratch, and reaches the network through
-//! the backend's proxy alone. The shell runs on a build's working copies
-//! alone — `.emery/vcs/worktrees` and `.emery/vcs/integration`, compiled in
-//! here — so a source adapter's lend is read-only. What a worker may reach
-//! beside that is the target adapter's to spell, per turn, as its worker
-//! grant: the hosts an install fetches from, the `~/` roots a toolchain is
-//! installed under, the variables it reads. Nothing in the environment
-//! widens it or turns the boundary off.
-//!
-//! The binary is host-only; on `wasm32` it compiles to an empty `main` so the
-//! workspace-wide wasm32 clippy pass can include it.
+//! Embeds `EMERY_GUEST` with the current directory mounted writable as `.`,
+//! adapters loaded from `~/.emery/adapters` or fetched from `augentic.io`,
+//! state under `.emery/storage`, version control via host `git`, and model
+//! workers confined to `.emery/vcs/worktrees` and `.emery/vcs/integration`.
 
 cfg_select! {
     not(target_arch = "wasm32") => {

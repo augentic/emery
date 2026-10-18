@@ -1,5 +1,4 @@
-//! A tree answers what a survey asks of it as a whole, by code alone; every
-//! scenario here builds one by hand and reads it with no model and no parser.
+//! Tests `survey::code::Tree` closure and registration lookups.
 
 mod support;
 

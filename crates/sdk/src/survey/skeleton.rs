@@ -1,14 +1,4 @@
-//! Renders what a parsed tree states on its own, copied rather than restated.
-//!
-//! The briefs carry what the code spells, so the model draws from it rather
-//! than paraphrase: every exported class, type, and table as a `type` claim,
-//! every value the code spells as its own as a boundary, every package imported
-//! and every call made through one, every point where the code decides,
-//! and every behaviour the tree's own tests state. The decision points, the
-//! `return`s, the heads of functions and methods, the calls through
-//! packages, the boundaries, and the surfaces' own lines are the seam's
-//! anchors. Each section renderer answers `None` where it has nothing to
-//! list.
+//! Renders seam briefs, anchors, and `type` claims from parsed modules.
 
 use std::collections::{BTreeMap, BTreeSet};
 

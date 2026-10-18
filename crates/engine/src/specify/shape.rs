@@ -1,9 +1,4 @@
-//! Reads the shape of one source's evidence: its summary for the `extracted`
-//! log line, and the file a claim's `path` names.
-//!
-//! The summary is how many claims of each kind, and the id stems its
-//! requirements fall under, so a run's log shows what a source yielded
-//! without the document.
+//! Summarises extracted evidence by claim kind, requirement stem, and cited file.
 
 use std::collections::BTreeMap;
 

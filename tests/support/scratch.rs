@@ -1,8 +1,4 @@
-//! Lays a config file under the project root the guest's preopen answers for.
-//!
-//! The CLI reads `emery.toml` through the filesystem, so a scenario naming
-//! one writes it beneath the project root and hands the CLI the
-//! project-relative path.
+//! Temporary project-root config files for CLI tests.
 
 use std::fs;
 use std::path::Path;

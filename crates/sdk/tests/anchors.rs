@@ -1,6 +1,4 @@
-//! A seam's anchors are where its survey found a behaviour can start or its
-//! result is decided; every scenario here reads them off `survey::seams`
-//! over a hand-built tree under a scripted model, with no parser.
+//! Tests seam anchor derivation over hand-built module trees.
 
 mod support;
 

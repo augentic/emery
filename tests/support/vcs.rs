@@ -1,10 +1,4 @@
-//! Scripts the `Vcs` capability and records every call the engine makes.
-//!
-//! Answers are queued per location and consumed in order; an unqueued call
-//! answers a default that lets a journey through, so a scenario scripts the
-//! exchanges it bends and asserts the whole sequence it consumed. The two
-//! operations the engine never makes, `fetched` and `push`, fail the
-//! scenario.
+//! Scripted `Vcs` capability recording version-control operations.
 
 use std::collections::{BTreeMap, VecDeque};
 use std::future::Future;

@@ -1,23 +1,10 @@
-//! Asks the model which surfaces a source exposes, from what an adapter's
-//! code read of it, and cuts the seams from the answer.
+//! Model-assisted surface discovery and seam cutting for source adapters.
 //!
-//! An adapter's survey is a plain fn over the input; this module is the one
-//! way a survey may put a turn to the model instead. An adapter that parses
-//! its source reads the tree into a [`code::Tree`] through its
-//! [`code::Recogniser`] and hands both to [`seams`], which lays the facts
-//! the tree holds, has the model name each surface at the anchor where it
-//! is registered or declared, holds the answer to the tree, derives the
-//! stems, ids, and closures from the accepted anchors, and cuts the seams.
-//! Beneath it, [`surfaces`] is the one turn, over the [`Facts`] an adapter
-//! renders itself, for a survey that cuts its own seams.
-//!
-//! What a survey derives by code alone is spelled with the helpers beneath:
-//! [`Lines`] for a span of a file, [`resolve`] for what an import leads to,
-//! [`route`] for the stems and discriminators a route or literal spells, and
-//! [`tests`] for the behaviours a tree's own tests state. A survey that
-//! parses its source fills a [`code::Module`] per file and reads it through
-//! the lookups there, each reading the language from the adapter's
-//! [`Dialect`].
+//! [`seams`] surveys a parsed [`code::Tree`] through the adapter's
+//! [`code::Recogniser`], asking the model to anchor each surface and deriving
+//! stems, closures, and [`Survey`] seams from the accepted anchors.
+//! [`surfaces`] runs the surface-discovery turn alone over adapter-supplied
+//! [`Facts`].
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::{self, Display, Formatter};

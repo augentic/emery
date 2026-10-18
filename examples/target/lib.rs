@@ -1,17 +1,8 @@
-//! Demonstrates a minimal Emery target adapter.
+//! Minimal example target adapter.
 //!
-//! The adapter initialises the repository a build lands in with the one root
-//! file of its layout, builds each slice of the plan into the lent working
-//! copy through the SDK's one gated turn, verifies each integrated wave
-//! through another, and declares how two slices' writes to one file merge.
-//! It shows the parts of a target adapter:
-//!
-//! - An embedded build prompt and an embedded verify prompt.
-//! - An init: the one file every tree of its layout starts from, laid when
-//!   the engine initialises the repository and the tree lacks it.
-//! - A merge rule: both slices' lines kept when two write one `index.md`.
-//! - A WebAssembly guest: an `emery_sdk::target::TargetAdapter` exported
-//!   with `emery_sdk::export_target!`.
+//! Initialises the workspace with `build/README.md`, builds slices and
+//! verifies waves through [`emery_sdk::target`], and union-merges
+//! `build/*/index.md`.
 
 use std::fs::{self, OpenOptions};
 use std::io::{ErrorKind, Write as _};

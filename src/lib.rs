@@ -1,12 +1,8 @@
 //! Implements the WebAssembly engine guest the shipped runtime embeds.
 //!
-//! The guest passes process arguments to the command interface and supplies
-//! host-provided model, storage, version-control, source, target, and plugin
-//! capabilities, so every external effect stays subject to the runtime's
-//! grants. The one capability it answers itself, the engine's `Files`, reads
-//! what a working copy holds at a path through the `.` preopen: a file's
-//! bytes, or the target a symbolic link names, and what a directory holds;
-//! and writes a file there, following no symbolic link on the way.
+//! Bridges `wasip3::exports::cli::run` to `emery_cli::run`, delegating
+//! capabilities to WASI host imports and answering `Files` against the `.`
+//! preopen.
 
 #![cfg(target_arch = "wasm32")]
 

@@ -1,7 +1,4 @@
-//! Verifies that the Cursor plugin describes Emery's current command surface.
-//!
-//! Plugin prose is checked against live help output so deleted or renamed
-//! commands, flags, and skills cannot remain documented silently.
+//! Verifies that the Cursor plugin matches the current CLI help output.
 
 #![cfg(not(target_arch = "wasm32"))]
 

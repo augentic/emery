@@ -1,6 +1,4 @@
-//! A build is one turn whose report is held to the slice and to the tree
-//! before the adapter answers; every scenario here puts one over a scripted
-//! model and a scratch tree.
+//! Tests `target::build` report gating and file writing over a scripted model.
 
 use std::fs;
 use std::os::unix::fs::symlink;

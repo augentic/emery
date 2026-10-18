@@ -1,12 +1,8 @@
-//! Resolves the conflicts a slice's merge leaves under the adapter's rules.
+//! Model-assisted conflict resolution for slice merges.
 //!
-//! A slice's commit is merged into the integrated tree under the rules the
-//! target adapter declares. A path no rule resolves is one this slice and
-//! one merged before it in the wave both rewrote: the [`MergeBrief`] puts
-//! both sides whole to the model, with the slices' plan entries, and holds
-//! the one file it answers per path to the path list and to the absence of
-//! conflict markers. What it answers is sealed in the slice's working copy
-//! and merged in its place.
+//! [`MergeBrief`] presents both sides of each conflicted file and the
+//! relevant slice plans to the model, validating that every conflicted path is
+//! answered once without conflict markers.
 
 use std::borrow::Cow;
 use std::collections::BTreeMap;

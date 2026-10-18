@@ -1,5 +1,4 @@
-//! A survey by model is one turn whose answer is held to the tree before the
-//! adapter derives anything from it; every scenario here puts one.
+//! Tests `survey::surfaces` inventory validation and correction rounds.
 
 use emery_sdk::survey::{Facts, Inventory, Surface};
 use emery_sdk::{Context, Doc, Error, SourceInput};

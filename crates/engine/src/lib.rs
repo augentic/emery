@@ -1,31 +1,14 @@
 //! Provides transport-independent operations for creating, reading, and building Emery revisions.
 //!
 //! [`specify`] extracts source claims, reconciles requirements by authority,
-//! synthesises a specification and design, slices the specification into a
-//! plan, and commits the three as one content-addressed revision. [`show`]
-//! renders any one document from the current revision. [`build`] dispatches
-//! every slice of the current plan to a target adapter, in dependency order.
+//! synthesises a specification, design, and build plan, and commits them as
+//! one content-addressed revision. [`show`] renders any one document from the
+//! current revision. [`build`] builds every slice of the current plan through
+//! a target adapter in dependency waves.
 //!
 //! Every operation uses a [`Provider`] of model, adapter, storage,
 //! version-control, file, and plugin capabilities. Command-line parsing and
 //! presentation are handled outside this crate.
-//!
-//! # Vocabulary
-//!
-//! - **Revision**: a typed specification, design, and plan identified by the
-//!   digest of their canonical JSON. Markdown output is a projection of this
-//!   data.
-//! - **Brief**: a typed synthesis question and the checks its answer must
-//!   satisfy.
-//! - **Basis**: the reconciled claims, authority, and coverage from which a
-//!   requirement is built.
-//! - **Plan**: the specification divided into slices, each owning the design
-//!   types it defines and naming the slices built before it.
-//! - **Slice**: a subset of the specification a builder can implement and
-//!   verify on its own. Requirements sharing a stem — the first segment of
-//!   their subject's dotted id — are never split across slices.
-//! - **Round**: one attempt to answer a brief. Rejected answers may be returned
-//!   to the model for correction until the host's limit is reached.
 
 mod adapter;
 mod authority;

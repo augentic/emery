@@ -1,45 +1,10 @@
-//! Builds the current plan through a target adapter, into a labelled commit.
+//! Builds the current plan through a target adapter into a labelled commit.
 //!
-//! [`build`] reads the current revision, loads the one target adapter the run
-//! names, settles the repository and the base by the `repository` the
-//! target names — the default branch of a URL's clone, kept under the
-//! target's name; the project checkout's sealed head for `.`; or the root
-//! commit of the repository the engine lays under that name when the
-//! target names none — and reads what the label `emery/<revision>` already
-//! holds over it, so a run resumes where the last verified wave left off,
-//! and what the integration working copy an earlier run left holds merged
-//! over that head, so the slices of a wave that never verified are verified
-//! rather than built again. A base neither stands over is initialised: the
-//! adapter lays the layout's initial files the tree lacks, with no model
-//! turn, and what it laid is sealed as the `Initialise` commit every slice
-//! builds over, so no slice lays or reports the layout; a repository the
-//! engine lays holds that commit as its root. The slices still to build go
-//! in waves: every slice
-//! whose dependencies are merged is built at once, each in a working copy of
-//! its own cut at the wave's head, with its plan entry, its cut of the
-//! specification, and the whole design. What each changed is sealed as its
-//! commit, once its copy is found still sitting where it was cut, and merged
-//! into the integration working copy in id order under the rules the
-//! adapter declares; a path the rules leave conflicted is resolved with the
-//! model, the resolution sealed in the slice's copy and merged in its place,
-//! so every slice lands as one merge commit. The adapter verifies the
-//! integrated tree, repairing what its checks find, the wave is labelled, and
-//! the next wave is cut from it. The engine writes no state of its own: the
-//! labelled history is the output, standing in the repository the build
-//! landed in.
-//!
-//! A slice whose build fails upstream, or runs out of the backend's time,
-//! is built once more in a fresh copy, and a wave whose verification does is
-//! verified once more over the same one. A slice whose build or merge
-//! fails for good ends the run once the slices built beside it are merged,
-//! so they stay for the next run. A wave the adapter does not verify ends
-//! the run with the label where the last verified wave left it. Either way
-//! the integration working copy is left for the next run to resume from.
-//!
-//! Nothing is sealed unread: every path the initialisation, a slice's
-//! build, a conflict's resolution, or a wave's verification left changed is
-//! held to the secret gate first, and a credential among them ends the run
-//! with the copy left as it was written.
+//! [`build`] initialises the target repository when needed, builds ready
+//! slices in waves across isolated working copies, merges their commits under
+//! the adapter's rules (resolving conflicts with the model), verifies each
+//! wave, and labels the verified head `emery/<revision>`. Interrupted runs
+//! resume from the existing label and integration working copy.
 
 pub(crate) mod merge;
 mod secrets;
