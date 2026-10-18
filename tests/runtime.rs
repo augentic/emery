@@ -243,6 +243,18 @@ impl Git {
             .map(|name| name.strip_prefix("refs/heads/").unwrap_or(name).to_owned())
             .collect()
     }
+
+    // The commit a fresh build's first wave stands on beneath the adapter's
+    // `Initialise`: `head`'s grandparent along the first parent, its parent
+    // asserted to be that commit.
+    fn beneath_initialise(&self, at: &Path, head: &str) -> String {
+        assert_eq!(
+            self.run(at, &["log", "-1", "--format=%s", &format!("{head}~1")]),
+            "Initialise",
+            "a fresh build seals the adapter's layout before its first wave"
+        );
+        self.run(at, &["rev-parse", &format!("{head}~2")])
+    }
 }
 
 // The three roots a scenario lays — the project the run reads and builds
@@ -509,11 +521,13 @@ async fn specify_stored() {
     assert!(shown.stdout.contains("### Requirement: greeting.behaviour"), "{}", shown.stdout);
 }
 
-// A stored target builds the committed plan's one slice through its turn's
-// `write_files` into a working copy of its own cut from the project's sealed
-// head, verifies the integrated tree through a second turn, and the label
-// `emery/<revision>` holds one merge commit over the base whose message
-// carries the trailers a later run reads; the checkout itself is untouched.
+// A stored target initialises the integration working copy with its layout,
+// sealed as `Initialise` over the project's sealed head, builds the
+// committed plan's one slice through its turn's `write_files` into a working
+// copy of its own cut from that commit, verifies the integrated tree through
+// a second turn, and the label `emery/<revision>` holds one merge commit
+// over the initialised tree whose message carries the trailers a later run
+// reads; the checkout itself is untouched.
 #[tokio::test]
 async fn build_merged_labelled() {
     let roots = Roots::new();
@@ -546,11 +560,12 @@ async fn build_merged_labelled() {
     let label = format!("emery/{revision}");
     let project = roots.project.path();
     let head = roots.git.run(project, &["rev-parse", &label]);
-    assert!(run.stdout.contains(&format!("\n  base {base}\n")), "{}", run.stdout);
+    let initialised = roots.git.run(project, &["rev-parse", &format!("{label}~1")]);
     assert!(
         run.stdout.contains(&format!(
-            "\n  wave 1: 1 slice verified at {}\n    SLICE-001 greeting: covered 1/1, written 2 \
-             files, merged {head}\n",
+            "\n  base {base}\n  initialised {}, 1 file\n  wave 1: 1 slice verified at {}\n    \
+             SLICE-001 greeting: covered 1/1, written 1 file, merged {head}\n",
+            &initialised[..8],
             &head[..8]
         )),
         "{}",
@@ -558,11 +573,18 @@ async fn build_merged_labelled() {
     );
     assert!(run.stdout.ends_with(&format!("  labelled {label} at {head}\n")), "{}", run.stdout);
 
-    // the label holds one merge over the base, bringing in the slice's own
-    // commit, which was built over the base too
-    assert_eq!(roots.git.run(project, &["rev-parse", &format!("{label}~1")]), base);
+    // the label holds one merge over the initialised tree, which stands
+    // over the base, bringing in the slice's own commit, which was built
+    // over the initialised tree too
+    assert_eq!(roots.git.run(project, &["log", "-1", "--format=%s", &initialised]), "Initialise");
+    assert_eq!(roots.git.run(project, &["rev-parse", &format!("{initialised}~1")]), base);
+    assert_eq!(
+        roots.git.run(project, &["diff", "--name-only", &base, &initialised]),
+        "build/README.md",
+        "the initialisation seals what the adapter's layout laid"
+    );
     let side = roots.git.run(project, &["rev-parse", &format!("{label}^2")]);
-    assert_eq!(roots.git.run(project, &["rev-parse", &format!("{side}~1")]), base);
+    assert_eq!(roots.git.run(project, &["rev-parse", &format!("{side}~1")]), initialised);
     assert_eq!(
         roots.git.run(project, &["show", &format!("{label}:build/greeting.md")]),
         "# Greeting",
@@ -571,16 +593,16 @@ async fn build_merged_labelled() {
     assert!(
         roots
             .git
-            .run(project, &["show", &format!("{label}:build/README.md")])
+            .run(project, &["show", &format!("{initialised}:build/README.md")])
             .starts_with("# Build\n"),
-        "the target's seed, laid through the lend before the turn, is the slice's too"
+        "the target's layout, laid by its initialisation before any slice"
     );
     assert_eq!(
         roots
             .git
             .run(project, &["log", "--first-parent", "--format=%s", &format!("{base}..{label}")]),
-        "SLICE-001 greeting",
-        "one merge per slice along the first-parent chain"
+        "SLICE-001 greeting\nInitialise",
+        "the initialisation, then one merge per slice along the first-parent chain"
     );
     let message = roots.git.run(project, &["log", "-1", "--format=%B", &label]);
     assert!(message.starts_with("SLICE-001 greeting\n\n"), "{message}");
@@ -590,7 +612,7 @@ async fn build_merged_labelled() {
         "Requirements: REQ-001".to_owned(),
         "Covered: REQ-001".to_owned(),
         format!("Adapter: {TARGET}"),
-        format!("Base: {base}"),
+        format!("Base: {initialised}"),
         "Wave: 1".to_owned(),
     ] {
         assert!(message.contains(&trailer), "`{trailer}` in: {message}");
@@ -665,7 +687,13 @@ async fn build_resumed_staged() {
     model.assert_exhausted();
     let integration = project.join(".emery/vcs/integration");
     let staged = roots.git.run(&integration, &["rev-parse", "HEAD"]);
-    assert_eq!(roots.git.run(project, &["rev-parse", &format!("{staged}~1")]), base);
+    assert_eq!(
+        roots
+            .git
+            .run(project, &["log", "--first-parent", "--format=%s", &format!("{base}..{staged}")]),
+        "SLICE-001 greeting\nInitialise",
+        "the slice merged over the initialised tree"
+    );
     assert_eq!(roots.git.branches(project), ["main"], "no label is set");
 
     let model = ScriptedModel::answering([VERDICT_ANSWER]);
@@ -765,20 +793,22 @@ async fn build_conflict_resolved() {
     let head = roots.git.run(project, &["rev-parse", &label]);
     assert!(
         run.stdout.contains(&format!(
-            "    SLICE-002 farewell: covered 1/1, written 2 files, merged {head}, resolved \
+            "    SLICE-002 farewell: covered 1/1, written 1 file, merged {head}, resolved \
              (build/index.md)\n"
         )),
         "{}",
         run.stdout
     );
 
-    // one merge per slice along the first-parent chain, the resolved file at the label
+    // one merge per slice along the first-parent chain over the initialised
+    // tree, the resolved file at the label
     assert_eq!(
         roots
             .git
             .run(project, &["log", "--first-parent", "--format=%s", &format!("{base}..{label}")]),
-        "SLICE-002 farewell\nSLICE-001 greeting"
+        "SLICE-002 farewell\nSLICE-001 greeting\nInitialise"
     );
+    let initialised = roots.git.run(project, &["rev-parse", &format!("{label}~2")]);
     assert_eq!(
         roots.git.run(project, &["show", &format!("{label}:build/index.md")]),
         RESOLVED_INDEX.trim_end()
@@ -800,7 +830,7 @@ async fn build_conflict_resolved() {
         roots.git.run(project, &["log", "-1", "--format=%s", &commit]),
         "SLICE-002 farewell"
     );
-    assert_eq!(roots.git.run(project, &["rev-parse", &format!("{commit}~1")]), base);
+    assert_eq!(roots.git.run(project, &["rev-parse", &format!("{commit}~1")]), initialised);
     assert_eq!(
         roots.git.run(project, &["show", &format!("{commit}:build/index.md")]),
         "# Index\n\n- farewell",
@@ -853,7 +883,7 @@ async fn build_secret_refused() {
     assert!(copy.join("build/leak.pem").exists(), "the copy stays as it was written");
     assert_eq!(
         roots.git.run(&copy, &["status", "--porcelain", "--untracked-files=all"]),
-        "?? build/README.md\n?? build/greeting.md\n?? build/leak.pem",
+        "?? build/greeting.md\n?? build/leak.pem",
         "nothing of the change set is sealed"
     );
     assert!(project.join(".emery/vcs/integration").exists(), "left for inspection");
@@ -893,7 +923,7 @@ async fn build_secret_in_link() {
     );
     assert_eq!(
         roots.git.run(&copy, &["status", "--porcelain", "--untracked-files=all"]),
-        "?? build/README.md\n?? src/hook",
+        "?? src/hook",
         "nothing of the change set is sealed"
     );
 }
@@ -935,7 +965,7 @@ async fn build_change_unreadable() {
     assert!(copy.join("vendor/.git").is_dir(), "the copy stays as it was left");
     assert_eq!(
         roots.git.run(&copy, &["status", "--porcelain", "--untracked-files=all"]),
-        "?? build/README.md\n?? vendor/",
+        "?? vendor/",
         "nothing of the change set is sealed"
     );
 }
@@ -1023,18 +1053,19 @@ async fn build_brownfield() {
     );
     assert!(!run.stdout.contains("pushed"), "{}", run.stdout);
 
-    // the clone holds the label over main: one merge along the first-parent
-    // chain, the slice's commit beneath it; the origin holds main alone
+    // the clone holds the label over main: the initialisation and one merge
+    // along the first-parent chain, the slice's commit beneath it; the
+    // origin holds main alone
     let clone = roots.project.path().join(TARGET_REPO);
     assert_eq!(roots.git.branches(&clone), [label.clone(), "main".to_owned()]);
-    assert_eq!(roots.git.run(&clone, &["rev-parse", &format!("{label}~1")]), main);
+    assert_eq!(roots.git.beneath_initialise(&clone, &label), main);
     assert_eq!(
         roots
             .git
             .run(&clone, &["rev-list", "--count", "--first-parent", &format!("main..{label}")]),
-        "1"
+        "2"
     );
-    assert_eq!(roots.git.run(&clone, &["rev-list", "--count", &format!("main..{label}")]), "2");
+    assert_eq!(roots.git.run(&clone, &["rev-list", "--count", &format!("main..{label}")]), "3");
     assert_eq!(
         roots.git.run(&clone, &["show", &format!("{label}:build/greeting.md")]),
         "# Greeting"
@@ -1063,16 +1094,17 @@ async fn build_brownfield() {
     model.assert_exhausted();
     assert!(run.stdout.contains(&format!("\n  base {moved}\n")), "{}", run.stdout);
     assert!(!run.stdout.contains("resumed:"), "{}", run.stdout);
-    assert_eq!(roots.git.run(&clone, &["rev-parse", &format!("{label}~1")]), moved);
+    assert_eq!(roots.git.beneath_initialise(&clone, &label), moved);
     assert_eq!(roots.git.run(&clone, &["show", &format!("{label}:README.md")]), "# Shop, next");
     assert_eq!(roots.git.branches(&origin), ["main"], "still nothing is pushed");
 }
 
 // An adapter that lays a whole tree, named with no repository, builds into
 // one the engine lays under the target's name: a root commit `Initialise`
-// holding a `.gitignore` of the engine's own directory, the slice merged
-// over it and labelled, the project directory never a repository. The next
-// run finds the repository and resumes from its label.
+// holding the adapter's layout and a `.gitignore` of the engine's own
+// directory, the slice merged over it and labelled, the project directory
+// never a repository. The next run finds the repository and resumes from
+// its label.
 #[tokio::test]
 async fn build_fresh_laid() {
     let roots = Roots::new();
@@ -1099,11 +1131,20 @@ async fn build_fresh_laid() {
     );
     let head = roots.git.run(&repo, &["rev-parse", &label]);
     assert!(run.stdout.ends_with(&format!("  labelled {label} at {head}\n")), "{}", run.stdout);
+    assert!(!run.stdout.contains("initialised "), "the root commit is the layout: {}", run.stdout);
 
-    // the root commit is the engine's, and the one the slice was built over
+    // the root commit is the adapter's layout beside the engine's ignore
+    // file, and the one the slice was built over, initialised again nowhere
     assert_eq!(roots.git.run(&repo, &["log", "-1", "--format=%s", &root]), "Initialise");
-    assert_eq!(roots.git.run(&repo, &["ls-tree", "--name-only", &root]), ".gitignore");
+    assert_eq!(roots.git.run(&repo, &["ls-tree", "--name-only", &root]), ".gitignore\nbuild");
     assert_eq!(roots.git.run(&repo, &["show", &format!("{root}:.gitignore")]), ".emery/");
+    assert!(
+        roots
+            .git
+            .run(&repo, &["show", &format!("{root}:build/README.md")])
+            .starts_with("# Build\n"),
+        "the adapter laid its layout into the root commit"
+    );
     assert_eq!(roots.git.run(&repo, &["rev-parse", &format!("{label}~1")]), root);
     assert_eq!(
         roots.git.run(&repo, &["show", &format!("{label}:build/greeting.md")]),
@@ -1182,7 +1223,7 @@ async fn build_resumed_shadowed() {
     let head = roots.git.run(project, &["rev-parse", &format!("refs/heads/{label}")]);
     assert!(run.stdout.ends_with(&format!("  labelled {label} at {head}\n")), "{}", run.stdout);
     assert_ne!(head, forged, "the branch is the build's");
-    assert_eq!(roots.git.run(project, &["rev-parse", &format!("{head}~1")]), base);
+    assert_eq!(roots.git.beneath_initialise(project, &head), base);
     assert_eq!(roots.git.run(project, &["rev-parse", &format!("refs/tags/{label}")]), forged);
     assert_eq!(
         roots.git.run(project, &["rev-parse", &label]),
@@ -1214,7 +1255,7 @@ async fn build_resumed_off_base() {
     let head = roots.git.run(project, &["rev-parse", &format!("refs/heads/{label}")]);
     assert!(run.stdout.ends_with(&format!("  labelled {label} at {head}\n")), "{}", run.stdout);
     assert_ne!(head, forged);
-    assert_eq!(roots.git.run(project, &["rev-parse", &format!("{head}~1")]), base);
+    assert_eq!(roots.git.beneath_initialise(project, &head), base);
     assert_eq!(
         roots.git.run(project, &["branch", "--contains", &forged, "--format=%(refname:short)"]),
         "",
@@ -1261,7 +1302,7 @@ async fn build_brownfield_shadowed() {
     let head = roots.git.run(&clone, &["rev-parse", &format!("refs/heads/{label}")]);
     assert!(run.stdout.ends_with(&format!("  labelled {label} at {head}\n")), "{}", run.stdout);
     assert_ne!(head, forged, "the branch is the build's");
-    assert_eq!(roots.git.run(&clone, &["rev-parse", &format!("{head}~1")]), main);
+    assert_eq!(roots.git.beneath_initialise(&clone, &head), main);
     assert_eq!(roots.git.run(&clone, &["rev-parse", &format!("refs/tags/{label}")]), forged);
     assert_eq!(roots.git.branches(&clone), [label, "main".to_owned()]);
     assert_eq!(roots.git.branches(&origin), ["main"], "nothing is pushed");
@@ -1305,7 +1346,7 @@ async fn build_brownfield_remote_label() {
     let clone = roots.project.path().join(TARGET_REPO);
     let head = roots.git.run(&clone, &["rev-parse", &format!("refs/heads/{label}")]);
     assert_ne!(head, forged, "the local label is the build's");
-    assert_eq!(roots.git.run(&clone, &["rev-parse", &format!("{head}~1")]), main);
+    assert_eq!(roots.git.beneath_initialise(&clone, &head), main);
     assert_eq!(
         roots.git.run(&clone, &["rev-parse", &format!("refs/remotes/origin/{label}")]),
         forged,

@@ -3,17 +3,19 @@
 //! Provides the types and functions an adapter is written with.
 //!
 //! A source adapter reads a [`SourceInput`] and returns typed [`Evidence`];
-//! a target adapter builds a [`target::Slice`] of the plan into a workspace
-//! and returns a [`target::Report`]. The crate root holds what every source
-//! adapter uses, [`target`] what a target adapter uses, and the other modules
-//! what some source adapters use:
+//! a target adapter runs a [`target::Task`] in a workspace — initialising
+//! it with its layout, building a [`target::Slice`] of the plan into it, or
+//! verifying it — and returns the [`target::Outcome`]. The crate root holds
+//! what every source adapter uses, [`target`] what a target adapter uses,
+//! and the other modules what some source adapters use:
 //!
 //! - [`SourceAdapter`] is what a source adapter implements: the kind of
 //!   source it reads and its `extract`. [`export_source!`] exports a type
 //!   implementing it as a WebAssembly component, answering the component's
 //!   `metadata` through [`metadata`]. [`target::TargetAdapter`] and
 //!   [`export_target!`] do the same for a target adapter, with
-//!   [`target::metadata`] and [`target::build`] behind them.
+//!   [`target::metadata`], [`target::build`], and [`target::verify`] behind
+//!   them.
 //! - [`Context`], [`Seam`], and [`extract`](fn@extract) run extraction over
 //!   the boundaries selected by an adapter, at most [`CONCURRENT`] at a time,
 //!   laying a seam's files into its turn whole when they fit within
@@ -55,35 +57,32 @@
 //! This adapter treats its input as a single mining seam:
 //!
 //! ```
-//! use emery_sdk::{Doc, Error, Seam, SourceInput};
+//! use emery_sdk::{
+//!     Context, Doc, Error, Evidence, Model, Seam, SourceAdapter, SourceInput, SourceKind,
+//! };
+//!
+//! pub struct Adapter;
+//!
+//! impl SourceAdapter for Adapter {
+//!     const KIND: SourceKind = SourceKind::Intent;
+//!
+//!     async fn extract<P: Model>(ctx: &Context<'_, P>) -> Result<Evidence, Error> {
+//!         let seams = survey(ctx.input)?;
+//!         emery_sdk::extract(ctx, PROSE, &seams).await
+//!     }
+//! }
 //!
 //! pub static PROSE: &[Doc] = &[Doc {
 //!     path: "extract.md",
 //!     body: "Extract every requirement the brief states as a `requirement` claim.",
 //! }];
 //!
-//! /// Returns the input as a single mining seam.
-//! pub fn survey(_input: &SourceInput) -> Result<Vec<Seam>, Error> {
+//! fn survey(_input: &SourceInput) -> Result<Vec<Seam>, Error> {
 //!     Ok(vec![Seam::whole()])
 //! }
 //!
 //! #[cfg(target_arch = "wasm32")]
-//! mod guest {
-//!     use emery_sdk::{Context, Error, Evidence, Model, SourceAdapter, SourceKind};
-//!
-//!     struct Adapter;
-//!
-//!     emery_sdk::export_source!(Adapter);
-//!
-//!     impl SourceAdapter for Adapter {
-//!         const KIND: SourceKind = SourceKind::Intent;
-//!
-//!         async fn extract<P: Model>(ctx: &Context<'_, P>) -> Result<Evidence, Error> {
-//!             let seams = super::survey(ctx.input)?;
-//!             emery_sdk::extract(ctx, super::PROSE, &seams).await
-//!         }
-//!     }
-//! }
+//! emery_sdk::export_source!(Adapter);
 //! # fn main() {}
 //! ```
 //!
@@ -105,10 +104,10 @@
 //! - **Context**: the adapter identifier, source input, and model available to
 //!   one extraction call. See [`Context`].
 //! - **Lend**: the workspace directory made readable to the model for a seam,
-//!   or handed to it to build into for a build, seeded with the target's
-//!   [`target::Seed`] files before the turn and written through the turn's
+//!   or handed to it to build into for a build, written through the turn's
 //!   `write_files` and `edit_files` tools; whether it may be written is the
-//!   deployment's grant.
+//!   deployment's grant. A target's init writes the same tree through its
+//!   own code, with no turn put.
 //! - **Finding**: a validation problem returned to the model for correction.
 //!   The host limits how many correction rounds are available.
 //! - **Slice**: the unit a target adapter builds, one entry of the plan with
@@ -190,9 +189,10 @@ const VERIFY: &str = "verify.md";
 /// [`extract`](SourceAdapter::extract), and converts the returned evidence or
 /// error into the WIT records.
 ///
-/// Invoke this macro inside a `#[cfg(target_arch = "wasm32")]` module because
-/// the export interface exists only on WebAssembly targets. Adapters needing
-/// custom guest behaviour may implement `export::Guest` directly.
+/// Invoke this macro under `#[cfg(target_arch = "wasm32")]`, since the export
+/// interface exists only on WebAssembly targets; the type and its impl need
+/// no gate, so a native test can call them as the component does. Adapters
+/// needing custom guest behaviour may implement `export::Guest` directly.
 #[macro_export]
 macro_rules! export_source {
     ($adapter:ty $(,)?) => {
@@ -222,16 +222,18 @@ macro_rules! export_source {
 /// The argument is a type implementing [`target::TargetAdapter`]. The
 /// component's `metadata` answers [`target::metadata`] over the type's
 /// [`MERGE_RULES`](target::TargetAdapter::MERGE_RULES) and
-/// [`BASE`](target::TargetAdapter::BASE). Its `build` builds a
-/// [`target::Context`] from the imported slice, the workspace root, and the
-/// host model, puts it to the type's [`build`](target::TargetAdapter::build),
-/// and converts the returned report or error into the WIT records; its
-/// `verify` does the same over a [`target::VerifyContext`] and the type's
-/// [`verify`](target::TargetAdapter::verify).
+/// [`BASE`](target::TargetAdapter::BASE). Its `run` lifts the imported task
+/// into a [`target::Task`] over the workspace root and the host model — a
+/// [`target::InitContext`], a [`target::BuildContext`], or a
+/// [`target::VerifyContext`] — puts it to the type's
+/// [`run`](target::TargetAdapter::run), holds the outcome to the task's
+/// kind, and converts it or the error into the WIT records.
 ///
-/// Invoke this macro inside a `#[cfg(target_arch = "wasm32")]` module because
-/// the export interface exists only on WebAssembly targets. Adapters needing
-/// custom guest behaviour may implement `target::export::Guest` directly.
+/// Invoke this macro under `#[cfg(target_arch = "wasm32")]`, since the export
+/// interface exists only on WebAssembly targets; the type and its impl need
+/// no gate, so a native test can call them as the component does. Adapters
+/// needing custom guest behaviour may implement `target::export::Guest`
+/// directly.
 #[macro_export]
 macro_rules! export_target {
     ($adapter:ty $(,)?) => {
@@ -249,18 +251,12 @@ macro_rules! export_target {
                     ))
                 }
 
-                async fn build(
-                    id: $crate::target::export::AdapterId, slice: $crate::target::export::Slice,
-                    workspace: String,
-                ) -> Result<$crate::target::export::Report, $crate::target::export::Error> {
-                    $crate::target::call::<$adapter>(id, slice, workspace).await
-                }
-
-                async fn verify(
+                async fn run(
                     id: $crate::target::export::AdapterId, workspace: String,
-                ) -> Result<$crate::target::export::Verdict, $crate::target::export::Error>
+                    task: $crate::target::export::Task,
+                ) -> Result<$crate::target::export::Outcome, $crate::target::export::Error>
                 {
-                    $crate::target::verify_call::<$adapter>(id, workspace).await
+                    $crate::target::call::<$adapter>(id, workspace, task).await
                 }
             }
         };

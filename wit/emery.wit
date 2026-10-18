@@ -6,10 +6,11 @@
 /// `adapter-id` first argument.
 package emery:adapter@0.1.0;
 
-/// The records both sides of the contract exchange.
+/// The types both axes of the contract share.
 ///
-/// They are declared apart from the operations so that a world importing
-/// and exporting an axis binds them once, and both sides share one type.
+/// Each axis interface declares its own records beside its operations, so
+/// a guest of one axis binds nothing of the other. What both exchange is
+/// declared here once.
 interface types {
   /// The error an operation returns.
   variant error {
@@ -25,6 +26,11 @@ interface types {
   /// `custom.wasm`), and a registry package its reference without the
   /// version (`emery:intent`).
   type adapter-id = string;
+}
+
+/// The source adapter contract: its records, `metadata`, and `extract`.
+interface source {
+  use types.{ adapter-id, error };
 
   /// The content a source is read from: a read-only view or an inline
   /// value. Never a revision-store path.
@@ -129,6 +135,28 @@ interface types {
     kind: source-kind,
   }
 
+  /// Reports the adapter's metadata. The host asks once per run, after the
+  /// load and before any extract. Effect-free and answerable from
+  /// compiled-in constants: no model call, no filesystem access.
+  metadata: func(id: adapter-id) -> adapter-metadata;
+
+  /// Extracts the source's claim set, the one judgment operation. Returns
+  /// `invalid-request` when the adapter refuses its input and `internal`
+  /// when it fails on its own account.
+  extract: async func(id: adapter-id, input: input) -> result<evidence, error>;
+}
+
+/// A source adapter component. The interface is imported as well as
+/// exported, so one binding generation carries the caller side too.
+world source-adapter {
+  import source;
+  export source;
+}
+
+/// The target adapter contract: its records, `metadata`, and `run`.
+interface target {
+  use types.{ adapter-id, error };
+
   /// How a merge resolves a conflict at a path a `merge-rule` matches,
   /// before the conflict is reported.
   enum merge-strategy {
@@ -153,7 +181,7 @@ interface types {
 
   /// The tree a target adapter builds over: the commit a build starts
   /// from, as the adapter's layout needs it.
-  enum base-kind {
+  enum base {
     /// Any commit: the adapter builds into whatever tree the base holds.
     any,
     /// A fresh tree: a root holding files alone, which the adapter lays
@@ -176,7 +204,7 @@ interface types {
     merge-rules: list<merge-rule>,
     /// The base the adapter builds over, since the adapter alone knows
     /// whether its layout is laid into a fresh tree or over a held one.
-    base: base-kind,
+    base: base,
   }
 
   /// One slice of the build plan, as `emery show` renders the revision it
@@ -221,51 +249,40 @@ interface types {
     /// Each check that failed, named with the tail of its output.
     failures: list<string>,
   }
-}
 
-/// The source adapter operations: `metadata` and `extract`.
-interface source {
-  use types.{ adapter-id, adapter-metadata, error, evidence, input };
+  /// What the engine asks a target adapter to do in the lent tree.
+  variant task {
+    /// Lay the layout's initial files the tree lacks; a held file stands.
+    /// Put once per tree the build lands in, before any slice, with no
+    /// model turn expected: the engine seals what it finds as `Initialise`.
+    init,
+    /// Build one slice of the plan into the tree.
+    build(slice),
+    /// Run the checks over the integrated tree once a wave has merged into
+    /// it, repair what they find, and answer a verdict.
+    verify,
+  }
 
-  /// Reports the adapter's metadata. The host asks once per run, after the
-  /// load and before any extract. Effect-free and answerable from
-  /// compiled-in constants: no model call, no filesystem access.
-  metadata: func(id: adapter-id) -> adapter-metadata;
-
-  /// Extracts the source's claim set, the one judgment operation. Returns
-  /// `invalid-request` when the adapter refuses its input and `internal`
-  /// when it fails on its own account.
-  extract: async func(id: adapter-id, input: input) -> result<evidence, error>;
-}
-
-/// A source adapter component. The interface is imported as well as
-/// exported, so one binding generation carries the caller side too.
-world source-adapter {
-  import source;
-  export source;
-}
-
-/// The target adapter operations: `metadata`, `build`, and `verify`.
-interface target {
-  use types.{ adapter-id, error, report, slice, target-metadata, verdict };
+  /// The answer to a task: `initialised` to `init`, `built` to `build`,
+  /// `verified` to `verify`. Any other pairing is the adapter's defect.
+  variant outcome {
+    initialised,
+    built(report),
+    verified(verdict),
+  }
 
   /// Reports the adapter's metadata. The host asks once per run, after the
-  /// load and before any build. Effect-free and answerable from
-  /// compiled-in constants: no model call, no filesystem access.
+  /// load and before any task. Effect-free and answerable from compiled-in
+  /// constants: no model call, no filesystem access.
   metadata: func(id: adapter-id) -> target-metadata;
 
-  /// Builds `slice` into the writable tree at `workspace`, the judgment
-  /// operation over one slice. `workspace` is the deployment-local path of
-  /// the tree root, which the adapter lends to its model. Returns
-  /// `invalid-request` when the adapter refuses its input and `internal`
-  /// when it fails on its own account.
-  build: async func(id: adapter-id, slice: slice, workspace: string) -> result<report, error>;
-
-  /// Verifies the integrated tree at `workspace` once a wave of slices has
-  /// merged into it: the adapter runs its checks over the tree and answers
-  /// a `verdict`, writing nothing the engine keeps. Returns `internal` when
-  /// it fails on its own account.
-  verify: async func(id: adapter-id, workspace: string) -> result<verdict, error>;
+  /// Runs `task` in the writable tree at `workspace`, the one judgment
+  /// operation. `workspace` is the deployment-local path of the tree root,
+  /// which the adapter lends to its model for a build or a verify and lays
+  /// its layout into for an init. Returns `invalid-request` when the
+  /// adapter refuses its input and `internal` when it fails on its own
+  /// account.
+  run: async func(id: adapter-id, workspace: string, task: task) -> result<outcome, error>;
 }
 
 /// A target adapter component. The interface is imported as well as

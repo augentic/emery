@@ -8,39 +8,28 @@
 //! - A WebAssembly guest: an `emery_sdk::SourceAdapter` exported with
 //!   `emery_sdk::export_source!`.
 
-use emery_sdk::{Doc, Error, Seam, SourceContent, SourceInput, bad_request};
+use emery_sdk::{
+    Context, Doc, Error, Evidence, Model, Seam, SourceAdapter, SourceContent, SourceInput,
+    SourceKind, bad_request,
+};
 
-#[cfg(target_arch = "wasm32")]
-mod guest {
-    use emery_sdk::{Context, Error, Evidence, Model, SourceAdapter, SourceKind};
+/// The adapter implementation.
+pub struct Adapter;
 
-    struct Adapter;
+impl SourceAdapter for Adapter {
+    const KIND: SourceKind = SourceKind::Documentation;
 
-    emery_sdk::export_source!(Adapter);
-
-    impl SourceAdapter for Adapter {
-        const KIND: SourceKind = SourceKind::Documentation;
-
-        async fn extract<P: Model>(ctx: &Context<'_, P>) -> Result<Evidence, Error> {
-            let seams = super::survey(ctx.input)?;
-            emery_sdk::extract(ctx, super::PROSE, &seams).await
-        }
+    async fn extract<P: Model>(ctx: &Context<'_, P>) -> Result<Evidence, Error> {
+        let seams = survey(ctx.input)?;
+        emery_sdk::extract(ctx, PROSE, &seams).await
     }
 }
 
-// The crate is a `cdylib` whose one caller is the `wasm32` guest above.
-#[cfg_attr(
-    not(target_arch = "wasm32"),
-    expect(dead_code, reason = "read by the guest module alone")
-)]
-static PROSE: &[Doc] = emery_sdk::prose!["prose/extract.md", "prose/references/greeting.md"];
+/// The prompt and its reference embedded in the adapter.
+pub static PROSE: &[Doc] = emery_sdk::prose!["prose/extract.md", "prose/references/greeting.md"];
 
 // The greeting source is one seam however it arrives; an empty brief is
 // refused before a turn is spent.
-#[cfg_attr(
-    not(target_arch = "wasm32"),
-    expect(dead_code, reason = "called by the guest module alone")
-)]
 fn survey(input: &SourceInput) -> Result<Vec<Seam>, Error> {
     if let SourceContent::Value(value) = &input.content
         && value.trim().is_empty()
@@ -49,3 +38,6 @@ fn survey(input: &SourceInput) -> Result<Vec<Seam>, Error> {
     }
     Ok(vec![Seam::whole()])
 }
+
+#[cfg(target_arch = "wasm32")]
+emery_sdk::export_source!(Adapter);

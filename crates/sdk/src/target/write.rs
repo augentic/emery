@@ -1,5 +1,5 @@
 //! Serves the `write_files` and `edit_files` tools a build or verify turn
-//! writes the lent tree through, and lays a build's seed before its turn.
+//! writes the lent tree through.
 //!
 //! [`Writer`] declares the two tools and answers each call beneath the
 //! workspace root: `write_files` lays the files it names whole and removes
@@ -7,11 +7,10 @@
 //! matches within a file the tree holds. Every path is held to [`beneath`]
 //! and to the tree — no symlink anywhere on it — before any is touched, and
 //! a write that would empty a file or cut it below half its size is refused
-//! unless the entry says so. [`Written`] is what the turn seeded, wrote, or
-//! edited, which the build fills the answered `written` list from beside the
-//! tree itself.
+//! unless the entry says so. [`Written`] is what the turn wrote or edited,
+//! which the build fills the answered `written` list from beside the tree
+//! itself.
 
-use std::borrow::Cow;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 use std::fs::{self, OpenOptions};
@@ -23,7 +22,6 @@ use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use emery_adapter::beneath;
 use emery_adapter::target::Report;
 use omnia_sdk::model::{Function, Tool, ToolCall, ToolFuture, Tools};
-use omnia_sdk::{Error, bad_request, server_error};
 use schemars::JsonSchema;
 use serde::de::{self, MapAccess, SeqAccess, Visitor};
 use serde::{Deserialize, Deserializer};
@@ -31,33 +29,6 @@ use serde_json::json;
 
 const WRITE_FILES: &str = "write_files";
 const EDIT_FILES: &str = "edit_files";
-
-/// A file a target lays in the tree before a slice's turn when the tree lacks it.
-///
-/// A target declares the files every tree of its layout starts from — a
-/// root manifest, an entry, a list a slice adds its line to — and hands them
-/// to [`build`](super::build) as its seed. One the tree lacks is laid before
-/// the turn and counts as written by the slice; one the tree holds is left as
-/// it stands, so a later wave or a resumed build lays nothing.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct Seed {
-    /// The `/`-separated path of the file, relative to the workspace root,
-    /// which [`beneath`](crate::beneath) must accept.
-    pub path: Cow<'static, str>,
-    /// The whole content the file holds when the seed lays it.
-    pub content: Cow<'static, str>,
-}
-
-impl Seed {
-    /// Returns the seed laying `content` at `path`.
-    #[must_use]
-    pub const fn new(path: &'static str, content: &'static str) -> Self {
-        Self {
-            path: Cow::Borrowed(path),
-            content: Cow::Borrowed(content),
-        }
-    }
-}
 
 // The write tools of one turn: the root they write beneath, the turn their
 // events name, and the files they have written.
@@ -104,39 +75,6 @@ impl Writer {
     #[must_use]
     pub(super) fn written(&self) -> Written {
         self.written.clone()
-    }
-
-    // Lays every seed file the tree lacks and answers their paths, spelled
-    // as the tree does, in the order declared. A path the rule refuses, or
-    // one declared twice, is the adapter's defect; a symlink or directory
-    // standing where a seed file goes is the tree's refusal, since nothing
-    // is laid over it.
-    pub(super) fn seed(&self, seed: &[Seed]) -> Result<Vec<String>, Error> {
-        let mut tree = BTreeMap::new();
-        let mut laid = Vec::new();
-        for Seed { path, content } in seed {
-            let file = beneath(path).map_err(|bad| server_error!("seed `{path}` {bad}"))?;
-            if tree.contains_key(&file) {
-                return Err(server_error!("seed `{path}` is declared twice"));
-            }
-            let held = Held::at(&self.root, &file).map_err(|why| {
-                bad_request!("seed `{path}` {why}, so the tree cannot hold the layout's file")
-            })?;
-            tree.insert(file.clone(), held);
-            if held == Held::File {
-                continue;
-            }
-            if let Some((dir, _)) = file.rsplit_once('/') {
-                make_dirs(&self.root, dir).map_err(|err| {
-                    server_error!("seed `{path}`: creating the directories above it: {err}")
-                })?;
-            }
-            lay(&self.root.join(&file), Held::Absent, content)
-                .map_err(|err| server_error!("seed `{path}`: writing it: {err}"))?;
-            self.written.record(file.clone());
-            laid.push(file);
-        }
-        Ok(laid)
     }
 
     // Answers `write_files` and `edit_files` here and hands every other call

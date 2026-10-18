@@ -10,8 +10,12 @@
 //! working copy an earlier run left holds merged over that head, so the
 //! slices of a wave that never verified are verified rather than built
 //! again. A base neither stands over is held to the tree the adapter
-//! builds over: one that lays a whole tree is refused a base whose root
-//! holds a directory. The slices still to build go in waves: every slice
+//! builds over — one that lays a whole tree is refused a base whose root
+//! holds a directory — and then initialised: the adapter lays the layout's
+//! initial files the tree lacks, with no model turn, and what it laid is
+//! sealed as the `Initialise` commit every slice builds over, so no slice
+//! lays or reports the layout; a repository the engine lays holds that
+//! commit as its root. The slices still to build go in waves: every slice
 //! whose dependencies are merged is built at once, each in a working copy of
 //! its own cut at the wave's head, with its plan entry, its cut of the
 //! specification, and the whole design. What each changed is sealed as its
@@ -33,10 +37,10 @@
 //! the run with the label where the last verified wave left it. Either way
 //! the integration working copy is left for the next run to resume from.
 //!
-//! Nothing is sealed unread: every path a slice's build, a conflict's
-//! resolution, or a wave's verification left changed is held to the secret
-//! gate first, and a credential among them ends the run with the copy left
-//! as it was written.
+//! Nothing is sealed unread: every path the initialisation, a slice's
+//! build, a conflict's resolution, or a wave's verification left changed is
+//! held to the secret gate first, and a credential among them ends the run
+//! with the copy left as it was written.
 
 pub(crate) mod merge;
 mod secrets;
@@ -45,7 +49,7 @@ use std::collections::BTreeSet;
 use std::fmt::{self, Display};
 use std::num::NonZeroUsize;
 
-use emery_adapter::target::{Base, Slice as SliceInput, Target};
+use emery_adapter::target::{Base, Outcome, Slice as SliceInput, Target, Task};
 use emery_adapter::{SKIP_DIRS, beneath, is_kebab};
 use futures::{FutureExt as _, StreamExt as _, stream};
 use omnia_sdk::api::Context;
@@ -67,7 +71,11 @@ use crate::{EntryKind, Files, RETRIES, is_retryable, store, vcs};
 /// The slices the label `emery/<revision>` already holds are not built
 /// again, and neither are those the integration working copy holds merged
 /// over the labelled head from a run that ended before their wave was
-/// verified: they are verified in their wave instead. The rest go in waves:
+/// verified: they are verified in their wave instead. A build neither
+/// resumes first has the adapter initialise the tree — lay the layout's
+/// initial files it lacks, with no model turn — and seals what it laid as
+/// the `Initialise` commit the slices build over; a repository the engine
+/// lays holds that commit as its root. The rest go in waves:
 /// every slice whose dependencies are merged is built at once, up to `jobs`
 /// concurrently, in a working copy cut at the wave's head; each report is
 /// held to its slice by
@@ -110,29 +118,36 @@ use crate::{EntryKind, Files, RETRIES, is_retryable, store, vcs};
 ///     tree ([`Base::Fresh`]) and the root of a base no label stands over
 ///     holds a directory outside `.emery/` and `.git/`, each listed; such
 ///     an adapter named with no repository builds into the one the engine
-///     lays, whose root holds a `.gitignore` alone;
+///     lays, whose root commit holds the adapter's layout and is never
+///     held to this;
 ///   - with code `verify-failed`, when the adapter does not verify a wave,
 ///     each failing check listed;
-///   - with code `secret-detected`, when a path a slice's build, a
-///     conflict's resolution, or a wave's verification changed carries a
-///     credential, each listed with what it carries; nothing of the change
-///     set is sealed, and the copy stays as it was written;
+///   - with code `secret-detected`, when a path the initialisation, a
+///     slice's build, a conflict's resolution, or a wave's verification
+///     changed carries a credential, each listed with what it carries;
+///     nothing of the change set is sealed, and the copy stays as it was
+///     written;
+///   - the initialisation, when the adapter refuses the tree, as when a
+///     directory stands where a file of its layout goes;
 ///   - with code `merge-unresolved`, when a path the adapter's rules leave
 ///     conflicted cannot be put to the model — one side does not hold it
 ///     as a text file, or the path is one the engine never writes — or the
 ///     model's resolution is refused within the available rounds; the
 ///     slice's copy and the integration copy stay for inspection;
 ///   - a slice the adapter refuses or answers no acceptable report for.
-/// - Returns [`Error::ServerError`] when a report breaks the report gate, a
+/// - Returns [`Error::ServerError`] when the adapter answers a task with
+///   an outcome of another kind, a report breaks the report gate, a
 ///   verdict breaks [`Verdict::findings`](emery_adapter::target::Verdict::findings),
 ///   a slice's working copy no longer sits on the head it was cut at, a
-///   slice merged again with its resolutions still conflicts, a
-///   verification's changes seal as no commit, the slices left to build
-///   wait on one another, or storage or version control fails.
+///   slice merged again with its resolutions still conflicts, the
+///   initialisation's or a verification's changes seal as no commit, the
+///   slices left to build wait on one another, or storage or version
+///   control fails.
 /// - Returns [`Error::BadGateway`] when the adapter, its acquisition, the
 ///   model, or the repository's remote fails upstream; a slice's build, a
 ///   conflict's resolution, or a wave's verification is put twice before it
-///   does, as one the backend's time budget ended is.
+///   does, as one the backend's time budget ended is; the initialisation,
+///   which puts no turn, once.
 ///
 /// A failure at a slice keeps the adapter's class and code; its description
 /// names the slice, its wave, and the slices merged before it, those built
@@ -161,7 +176,8 @@ pub async fn build<P: Model + Target + StateStore + BlobStore + Plugins + Vcs + 
 
     // the repository the build lands in: the one the target names, the
     // engine's own for an adapter that lays a whole tree, else the project's;
-    // then the base, and what the label already holds over it
+    // then the base, the adapter's layout laid into a repository the engine
+    // lays, and what the label already holds over it
     let repo = match (input.repository, metadata.base) {
         (Some(url), _) => Repo::Target {
             name: input.name,
@@ -173,7 +189,8 @@ pub async fn build<P: Model + Target + StateStore + BlobStore + Plugins + Vcs + 
         },
         (None, Base::Any) => Repo::Project,
     };
-    let base = repo.base(provider).await?;
+    let laid = matches!(repo, Repo::Target { url: None, .. });
+    let base = repo.base(provider, async |at| initialise(provider, &adapter, at).await).await?;
     let label = format!("emery/{revision_id}");
     let labelled = repo.merged_under(provider, &label, &base, &revision_id).await?;
     let mut progress = Progress::start(&base, labelled);
@@ -184,12 +201,13 @@ pub async fn build<P: Model + Target + StateStore + BlobStore + Plugins + Vcs + 
     } = repo.cut_integration(provider, &progress.head, &revision_id).await?;
     progress.stage(head, staged);
 
-    // a fresh build is held to the base the adapter builds over; one resumed
-    // from the label, or from what a run staged over it, was admitted by
-    // that run
-    if progress.labelled.is_none() && progress.staged.is_empty() && metadata.base == Base::Fresh {
-        require_fresh(provider, &integration, &base, &adapter).await?;
-    }
+    // a laid repository's base is its initialisation; any other base is
+    // admitted and initialised on a fresh build
+    let initialised = if laid {
+        None
+    } else {
+        progress.initialise(provider, &integration, &adapter, metadata.base).await?
+    };
 
     let waves = revision.plan.waves();
     tracing::info!(
@@ -231,6 +249,7 @@ pub async fn build<P: Model + Target + StateStore + BlobStore + Plugins + Vcs + 
         waves,
         base,
         repository: repo.path(),
+        initialised,
         resumed: progress.resumed,
         slices: progress.built,
         verified: progress.verified,
@@ -294,6 +313,14 @@ pub struct BuildOutput {
     /// root: `.` for the project's own, or [`vcs::target_path`] of the
     /// target's name for the one it names or the engine laid.
     pub repository: String,
+    /// The `Initialise` commit this run sealed over the base with the
+    /// layout the adapter laid, when it laid any.
+    ///
+    /// `None` for a build resumed from the label or from staged slices,
+    /// for a repository the engine laid, whose base is that commit, and
+    /// for a tree the initialisation added nothing to.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub initialised: Option<Initialised>,
     /// The slices not built again, in id order.
     ///
     /// Those the label already held, and those the integration working
@@ -320,6 +347,16 @@ pub struct BuildOutput {
     pub head: String,
     /// The label set on the head, `emery/<revision>`.
     pub label: String,
+}
+
+/// The layout the adapter laid into the tree before any slice, sealed as the `Initialise` commit.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub struct Initialised {
+    /// The commit the laid files were sealed as, which the slices build over.
+    pub commit: String,
+    /// The paths the initialisation laid, relative to the tree root and sorted.
+    pub paths: Vec<String>,
 }
 
 /// One slice as its build reported it.
@@ -439,6 +476,37 @@ impl Progress {
         self.resumed.sort_unstable();
         self.resumed.dedup();
         self.staged = staged;
+    }
+
+    // A fresh build is held to the base the adapter builds over, then
+    // initialised with its layout, what it laid sealed in the integration
+    // copy as the commit the slices build over. One resumed from the label,
+    // or from what a run staged over it, was admitted and initialised by
+    // that run.
+    async fn initialise<P: Target + Vcs + Files>(
+        &mut self, provider: &P, integration: &WorkingCopy, adapter: &str, base: Base,
+    ) -> Result<Option<Initialised>, Error> {
+        if self.labelled.is_some() || !self.staged.is_empty() {
+            return Ok(None);
+        }
+        if base == Base::Fresh {
+            require_fresh(provider, integration, &self.head, adapter).await?;
+        }
+        let changes = initialise(provider, adapter, integration.path()).await?;
+        if changes.is_empty() {
+            return Ok(None);
+        }
+        let Some(commit) = integration.commit(provider, vcs::INITIALISE).await? else {
+            return Err(server_error!(
+                "the initialisation left {} paths pending, yet sealing them made no commit",
+                changes.len()
+            ));
+        };
+        let mut paths: Vec<String> = changes.into_iter().map(|change| change.path).collect();
+        paths.sort_unstable();
+        tracing::info!(laid = paths.len(), %commit, "initialisation sealed");
+        self.head.clone_from(&commit);
+        Ok(Some(Initialised { commit, paths }))
     }
 }
 
@@ -579,12 +647,13 @@ impl Run<'_> {
 
         // a build that fails upstream or runs out of time is put again in a
         // fresh copy, since the first may have written part of the tree
+        let task = Task::Build(input);
         let mut attempt = 0;
-        let (worktree, report) = loop {
+        let (worktree, outcome) = loop {
             attempt += 1;
             let worktree = WorkingCopy::cut(provider, &self.repo.path(), &at, head).await?;
-            match Target::build(provider, self.adapter, &input, worktree.path()).await {
-                Ok(report) => break (worktree, report),
+            match Target::run(provider, self.adapter, worktree.path(), &task).await {
+                Ok(outcome) => break (worktree, outcome),
                 Err(error) if attempt < RETRIES && is_retryable(&error) => {
                     tracing::warn!(
                         attempt,
@@ -596,8 +665,14 @@ impl Run<'_> {
                 Err(error) => return Err(error),
             }
         };
+        let (input, report) = match (&task, outcome) {
+            (Task::Build(input), Outcome::Built(report)) => (input, report),
+            (_, outcome) => {
+                return Err(server_error!("`{}` answered {outcome} to {task}", self.adapter));
+            }
+        };
 
-        let findings = report.findings(&input);
+        let findings = report.findings(input);
         if !findings.is_empty() {
             return Err(server_error!(
                 "`{}` returned an invalid report:\n{}",
@@ -719,10 +794,11 @@ impl Run<'_> {
         // the same copy, since nothing of it is sealed until the verdict and
         // a repair it left stands as the shell would have left it
         let mut attempt = 0;
-        let verdict = loop {
+        let outcome = loop {
             attempt += 1;
-            match Target::verify(provider, self.adapter, self.integration.path()).await {
-                Ok(verdict) => break verdict,
+            match Target::run(provider, self.adapter, self.integration.path(), &Task::Verify).await
+            {
+                Ok(outcome) => break outcome,
                 Err(error) if attempt < RETRIES && is_retryable(&error) => {
                     tracing::warn!(
                         attempt,
@@ -732,6 +808,9 @@ impl Run<'_> {
                 }
                 Err(error) => return Err(error),
             }
+        };
+        let Outcome::Verified(verdict) = outcome else {
+            return Err(server_error!("`{}` answered {outcome} to {}", self.adapter, Task::Verify));
         };
         let findings = verdict.findings();
         if !findings.is_empty() {
@@ -981,9 +1060,30 @@ async fn kind_at<P: Files>(provider: &P, at: &str, path: &str) -> Result<Option<
     Ok(entries.into_iter().find(|entry| entry.name == *file).map(|entry| entry.kind))
 }
 
+// Has the adapter lay its layout into the tree at `at` and answers what it
+// left pending, held to the secret gate. Not put again on a failure
+// upstream: an init puts no turn, so a failure is the adapter's.
+async fn initialise<P: Target + Vcs + Files>(
+    provider: &P, adapter: &str, at: &str,
+) -> Result<Vec<Change>, Error> {
+    tracing::info!(tree = at, "initialising");
+    let outcome = Target::run(provider, adapter, at, &Task::Init).await?;
+    if outcome != Outcome::Initialised {
+        return Err(server_error!("`{adapter}` answered {outcome} to {}", Task::Init));
+    }
+    let pending = vcs::pending(provider, at).await?;
+    let leaks = secrets::findings(provider, at, &pending).await?;
+    if !leaks.is_empty() {
+        return Err(secret_detected("the initialisation", &leaks));
+    }
+    tracing::info!(laid = pending.len(), "initialised");
+    Ok(pending)
+}
+
 // A fresh base holds files alone at its root: a directory outside the
 // engine's own refuses the build before any slice is dispatched, since the
-// adapter lays a whole tree and would rewrite what stands there.
+// adapter lays a whole tree and would rewrite what stands there. A base
+// the engine laid is never held to this: its root commit is the layout.
 async fn require_fresh<P: Files>(
     provider: &P, integration: &WorkingCopy, base: &str, adapter: &str,
 ) -> Result<(), Error> {

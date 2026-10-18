@@ -16,19 +16,24 @@ mod generated {
     wit_bindgen::generate!({
         world: "target-adapter",
         path: "../../wit",
-        // `build` and `verify` are `async func` in the WIT, so no `async:` list is needed
+        // `run` alone is `async func` in the WIT, so no `async:` list is needed
         generate_all,
         pub_export_macro: true,
         // the shared `types` are the source generation's, so one Rust type
-        // stands for each record on both axes
+        // stands for each of them on both axes
         with: {
-            "emery:adapter/types@0.1.0": crate::source::bindings::wit,
+            "emery:adapter/types@0.1.0": crate::source::bindings::types,
         },
+        // the world imports and exports one interface, so the export's
+        // records alias the import's and one Rust type stands for each
+        merge_structurally_equal_types: true,
     });
 }
 
-use crate::source::bindings::wit;
-use crate::target::{Base, MergeRule, MergeStrategy, Report, Slice, TargetMetadata, Verdict};
+use self::generated::emery::adapter::target as wit;
+use crate::target::{
+    Base, MergeRule, MergeStrategy, Outcome, Report, Slice, TargetMetadata, Task, Verdict,
+};
 
 impl From<TargetMetadata> for wit::TargetMetadata {
     fn from(metadata: TargetMetadata) -> Self {
@@ -50,7 +55,7 @@ impl From<wit::TargetMetadata> for TargetMetadata {
     }
 }
 
-impl From<Base> for wit::BaseKind {
+impl From<Base> for wit::Base {
     fn from(base: Base) -> Self {
         match base {
             Base::Any => Self::Any,
@@ -59,11 +64,11 @@ impl From<Base> for wit::BaseKind {
     }
 }
 
-impl From<wit::BaseKind> for Base {
-    fn from(base: wit::BaseKind) -> Self {
+impl From<wit::Base> for Base {
+    fn from(base: wit::Base) -> Self {
         match base {
-            wit::BaseKind::Any => Self::Any,
-            wit::BaseKind::Fresh => Self::Fresh,
+            wit::Base::Any => Self::Any,
+            wit::Base::Fresh => Self::Fresh,
         }
     }
 }
@@ -170,6 +175,46 @@ impl From<wit::Report> for Report {
     }
 }
 
+impl From<Task> for wit::Task {
+    fn from(task: Task) -> Self {
+        match task {
+            Task::Init => Self::Init,
+            Task::Build(slice) => Self::Build(slice.into()),
+            Task::Verify => Self::Verify,
+        }
+    }
+}
+
+impl From<wit::Task> for Task {
+    fn from(task: wit::Task) -> Self {
+        match task {
+            wit::Task::Init => Self::Init,
+            wit::Task::Build(slice) => Self::Build(slice.into()),
+            wit::Task::Verify => Self::Verify,
+        }
+    }
+}
+
+impl From<Outcome> for wit::Outcome {
+    fn from(outcome: Outcome) -> Self {
+        match outcome {
+            Outcome::Initialised => Self::Initialised,
+            Outcome::Built(report) => Self::Built(report.into()),
+            Outcome::Verified(verdict) => Self::Verified(verdict.into()),
+        }
+    }
+}
+
+impl From<wit::Outcome> for Outcome {
+    fn from(outcome: wit::Outcome) -> Self {
+        match outcome {
+            wit::Outcome::Initialised => Self::Initialised,
+            wit::Outcome::Built(report) => Self::Built(report.into()),
+            wit::Outcome::Verified(verdict) => Self::Verified(verdict.into()),
+        }
+    }
+}
+
 /// The WebAssembly guest interface implemented by a target adapter.
 ///
 /// This module exposes the generated `Guest` trait, its records, and the
@@ -185,9 +230,9 @@ pub mod export {
 pub mod import {
     use omnia_sdk::{Error, bad_gateway, bad_request};
 
-    use super::generated::emery::adapter::target as imported;
-    use crate::source::bindings::wit;
-    use crate::target::{Report, Slice, TargetMetadata, Verdict};
+    use super::wit as imported;
+    use crate::source::bindings::types;
+    use crate::target::{Outcome, TargetMetadata, Task};
 
     /// Returns the metadata the adapter registered as `id` declares.
     #[must_use]
@@ -195,42 +240,22 @@ pub mod import {
         imported::metadata(id).into()
     }
 
-    /// Builds `slice` into the tree at `workspace` using the adapter registered as `id`.
+    /// Runs `task` in the tree at `workspace` using the adapter registered as `id`.
     ///
-    /// A failure names the adapter; the caller, which dispatches slice by
-    /// slice, names the slice.
-    ///
-    /// # Errors
-    ///
-    /// - Returns [`Error::BadRequest`] when the adapter rejects its input.
-    /// - Returns [`Error::BadGateway`] when the adapter fails internally.
-    pub async fn build(id: &str, slice: &Slice, workspace: &str) -> Result<Report, Error> {
-        let report = imported::build(id.to_string(), slice.clone().into(), workspace.to_string())
-            .await
-            .map_err(|err| lower(id, err))?;
-        Ok(report.into())
-    }
-
-    /// Verifies the integrated tree at `workspace` using the adapter registered as `id`.
-    ///
-    /// A failure names the adapter; the caller, which verifies wave by
-    /// wave, names the wave.
+    /// A failure names the adapter; the caller, which dispatches task by
+    /// task, names the slice or the wave.
     ///
     /// # Errors
     ///
     /// - Returns [`Error::BadRequest`] when the adapter rejects its input.
     /// - Returns [`Error::BadGateway`] when the adapter fails internally.
-    pub async fn verify(id: &str, workspace: &str) -> Result<Verdict, Error> {
-        let verdict = imported::verify(id.to_string(), workspace.to_string())
+    pub async fn run(id: &str, workspace: &str, task: &Task) -> Result<Outcome, Error> {
+        let outcome = imported::run(id.to_string(), workspace.to_string(), task.clone().into())
             .await
-            .map_err(|err| lower(id, err))?;
-        Ok(verdict.into())
-    }
-
-    fn lower(id: &str, err: wit::Error) -> Error {
-        match err {
-            wit::Error::InvalidRequest(detail) => bad_request!("adapter `{id}`: {detail}"),
-            wit::Error::Internal(detail) => bad_gateway!("adapter `{id}`: {detail}"),
-        }
+            .map_err(|err| match err {
+                types::Error::InvalidRequest(detail) => bad_request!("adapter `{id}`: {detail}"),
+                types::Error::Internal(detail) => bad_gateway!("adapter `{id}`: {detail}"),
+            })?;
+        Ok(outcome.into())
     }
 }

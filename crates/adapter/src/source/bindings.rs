@@ -19,12 +19,16 @@ mod generated {
         // `extract` alone is `async func` in the WIT, so no `async:` list is needed
         generate_all,
         pub_export_macro: true,
+        // the world imports and exports one interface, so the export's
+        // records alias the import's and one Rust type stands for each
+        merge_structurally_equal_types: true,
     });
 }
 
 // The shared `types` interface, which the target axis binds through this
 // generation rather than its own.
-pub use self::generated::emery::adapter::types as wit;
+use self::generated::emery::adapter::source as wit;
+pub use self::generated::emery::adapter::types;
 use crate::source::{
     AdapterMetadata, Backing, Claim, ClaimKind, Evidence, SourceContent, SourceInput, SourceKind,
 };
@@ -220,8 +224,8 @@ impl TryFrom<wit::Evidence> for Evidence {
 }
 
 // The WIT variant carries the description alone; the lifts in
-// `Source::extract` and `Target::build` restore the class.
-impl From<omnia_sdk::Error> for wit::Error {
+// `Source::extract` and `Target::run` restore the class.
+impl From<omnia_sdk::Error> for types::Error {
     fn from(error: omnia_sdk::Error) -> Self {
         let description = error.description();
         match error {
@@ -250,8 +254,7 @@ pub mod export {
 pub mod import {
     use omnia_sdk::{Error, bad_gateway, bad_request};
 
-    use super::generated::emery::adapter::source as imported;
-    use super::wit;
+    use super::{types, wit as imported};
     use crate::source::{AdapterMetadata, Evidence, SourceInput};
 
     /// Returns the metadata the adapter registered as `id` declares.
@@ -271,10 +274,10 @@ pub mod import {
         let name = &input.name;
         let answer = imported::extract(id.to_string(), input.clone().into()).await.map_err(
             |err| match err {
-                wit::Error::InvalidRequest(detail) => {
+                types::Error::InvalidRequest(detail) => {
                     bad_request!("adapter `{id}` for source `{name}`: {detail}")
                 }
-                wit::Error::Internal(detail) => {
+                types::Error::Internal(detail) => {
                     bad_gateway!("adapter `{id}` for source `{name}`: {detail}")
                 }
             },

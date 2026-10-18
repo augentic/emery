@@ -51,7 +51,9 @@ fn summary(diff: &Diff, w: &mut dyn fmt::Write) -> fmt::Result {
 /// Writes a [`BuildOutput`] revision line, the plan's shape, the base, the slices resumed, each wave with the slices it merged, and the label.
 ///
 /// The base line is followed by the repository the label stands in when it
-/// is not the project's own checkout. A wave line names the head it was
+/// is not the project's own checkout, and by the `Initialise` commit the
+/// run sealed the adapter's layout as, with its file count, when it sealed
+/// one. A wave line names the head it was
 /// verified at, and says `repaired` when its verification repaired the
 /// tree, `sealed` when what it left was a regenerated path under the
 /// adapter's `ours` rules alone, a lockfile. Each slice line beneath it
@@ -66,6 +68,14 @@ pub fn build(output: &BuildOutput, w: &mut dyn fmt::Write) -> fmt::Result {
     writeln!(w, "  base {}", output.base)?;
     if output.repository != "." {
         writeln!(w, "  repository {}", output.repository)?;
+    }
+    if let Some(initialised) = &output.initialised {
+        writeln!(
+            w,
+            "  initialised {}, {}",
+            initialised.commit.get(..8).unwrap_or(&initialised.commit),
+            counted(initialised.paths.len(), "file")
+        )?;
     }
     if !output.resumed.is_empty() {
         let ids: Vec<String> = output.resumed.iter().map(ToString::to_string).collect();

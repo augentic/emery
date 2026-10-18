@@ -48,9 +48,10 @@ pub const INITIALISE: &str = "Initialise";
 // The project's own checkout, as the capability names it.
 const PROJECT: &str = ".";
 
-// The one file a laid repository's root commit holds, so that the commit
-// exists and the engine's own directory is ignored wherever the result is
-// checked out.
+// The file a laid repository's root commit holds beside what the adapter's
+// init laid, when the init laid no ignore file of its own, so that the
+// commit exists and the engine's own directory is ignored wherever the
+// result is checked out.
 const IGNORE: (&str, &[u8]) = (".gitignore", b".emery/\n");
 
 /// The working copy a repository source is read from, by source name.
@@ -313,12 +314,15 @@ impl Repo {
     ///   changes beneath the engine's own [`SKIP_DIRS`] are never counted.
     /// - A clone's is [`DEFAULT_BRANCH`], the origin's default branch:
     ///   cloned when the run has no clone, fetched when it has one.
-    /// - A laid repository's is its root commit, [`INITIALISE`], holding a
-    ///   `.gitignore` of the engine's own directory and nothing else. It is
-    ///   laid when no run has laid it yet, through `init` and
-    ///   [`Files::write`], and kept, so a later run starts from the same
-    ///   commit and resumes the label set over it. One laid but never
-    ///   sealed is sealed now.
+    /// - A laid repository's is its root commit, [`INITIALISE`], holding
+    ///   what `init` laid in the tree — the adapter's layout, given the
+    ///   repository's path and answering what it left pending — and a
+    ///   `.gitignore` of the engine's own directory beside it when `init`
+    ///   laid none. It is laid when no run has laid it yet, through `init`
+    ///   and [`Files::write`], and kept, so a later run starts from the
+    ///   same commit and resumes the label set over it. One laid but never
+    ///   sealed is sealed now, `init` run over it again. The other two
+    ///   bases never run `init`.
     ///
     /// # Errors
     ///
@@ -332,7 +336,10 @@ impl Repo {
     ///   reached, or wants credentials.
     /// - Returns [`Error::ServerError`] when the capability fails otherwise,
     ///   or a laid repository seals nothing.
-    pub async fn base<P: Vcs + Files>(&self, provider: &P) -> Result<String, Error> {
+    /// - Returns what `init` fails with.
+    pub async fn base<P: Vcs + Files>(
+        &self, provider: &P, init: impl AsyncFnOnce(&str) -> Result<Vec<Change>, Error>,
+    ) -> Result<String, Error> {
         match self {
             Self::Project => project_base(provider).await,
             Self::Target { name, url: Some(url) } => {
@@ -341,7 +348,7 @@ impl Repo {
                 ensure(provider, url, &at).await.map_err(|error| subject.refusal(error))?;
                 provider.resolve(&at, DEFAULT_BRANCH).await.map_err(|error| subject.refusal(error))
             }
-            Self::Target { name, url: None } => lay(provider, name).await,
+            Self::Target { name, url: None } => lay(provider, name, init).await,
         }
     }
 
@@ -598,7 +605,7 @@ impl WorkingCopy {
     ///
     /// Returns [`Error::ServerError`] when the capability fails.
     pub async fn pending<V: Vcs>(&self, vcs: &V) -> Result<Vec<Change>, Error> {
-        vcs.pending(&self.at).await.map_err(|error| self.subject().refusal(error))
+        pending(vcs, &self.at).await
     }
 
     /// Seals every pending change as one commit under `message`; `None` when there is nothing to seal.
@@ -651,6 +658,15 @@ impl WorkingCopy {
     }
 }
 
+/// What the tree at `at`, a working copy or a repository's own checkout, holds that its head does not.
+///
+/// # Errors
+///
+/// Returns [`Error::ServerError`] when the capability fails.
+pub async fn pending<V: Vcs>(vcs: &V, at: &str) -> Result<Vec<Change>, Error> {
+    vcs.pending(at).await.map_err(|error| Subject::WorkingCopy(at).refusal(error))
+}
+
 // Clones `url` at `at`, or fetches its origin when a run already cloned it:
 // the clone is the one operation that creates its location, so a read or a
 // fetch at a path the run does not hold yet is refused there.
@@ -671,7 +687,9 @@ async fn ensure<V: Vcs>(vcs: &V, url: &str, at: &str) -> Result<(), vcs::Error> 
 // The root commit of the repository laid under `name`, laid when no run has
 // laid it yet: `init` answers `Exists` for one a run already holds, whose
 // head is the base, or `NotFound` under it for one laid and never sealed.
-async fn lay<P: Vcs + Files>(provider: &P, name: &str) -> Result<String, Error> {
+async fn lay<P: Vcs + Files>(
+    provider: &P, name: &str, init: impl AsyncFnOnce(&str) -> Result<Vec<Change>, Error>,
+) -> Result<String, Error> {
     let at = target_path(name);
     let subject = Subject::Target(name);
     match provider.init(&at).await {
@@ -684,8 +702,12 @@ async fn lay<P: Vcs + Files>(provider: &P, name: &str) -> Result<String, Error> 
         Err(error) => return Err(subject.refusal(error)),
     }
 
+    // the adapter's layout, and the engine's ignore file where it laid none
+    let laid = init(&at).await?;
     let (path, content) = IGNORE;
-    provider.write(&at, path, content).await?;
+    if !laid.iter().any(|change| change.path == path) {
+        provider.write(&at, path, content).await?;
+    }
     let commit = provider
         .commit(&at, INITIALISE)
         .await
