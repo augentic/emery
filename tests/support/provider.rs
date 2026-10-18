@@ -16,7 +16,9 @@ use anyhow::Result;
 use emery_adapter::source::{
     AdapterMetadata, Backing, Claim, ClaimKind, Evidence, Source, SourceInput, SourceKind,
 };
-use emery_adapter::target::{Base, MergeRule, Report, Slice, Target, TargetMetadata, Verdict};
+use emery_adapter::target::{
+    MergeRule, Outcome, Report, Slice, Target, TargetMetadata, Task, Verdict,
+};
 use emery_engine::{Axis, Entry, Files};
 use omnia_sdk::api::command::Response;
 use omnia_sdk::plugins::{self, Digest, Location, Plugin};
@@ -123,8 +125,10 @@ impl Rendezvous {
 /// A scripted `Target` with a record of every dispatch.
 ///
 /// Reports are scripted per slice id, verdicts in wave order, the minimum
-/// `emery` version, the merge rules, and the base per adapter.
+/// `emery` version and the merge rules per adapter.
 ///
+/// - An init answers at once; what it lays is the scripted `Vcs`'s
+///   `pending` to say.
 /// - An unscripted slice reports every requirement covered and one file
 ///   written, `src/<name>.rs`.
 /// - An unscripted verify passes.
@@ -144,8 +148,8 @@ pub struct TargetScript {
     pub versions: BTreeMap<String, String>,
     /// The merge rules every adapter declares.
     pub rules: Vec<MergeRule>,
-    /// The base every adapter declares it builds over; any by default.
-    pub base: Base,
+    /// Every init dispatch, recorded in dispatch order: the workspace root.
+    pub inits: Arc<Mutex<Vec<String>>>,
     /// Every build dispatch, recorded in dispatch order: the adapter id, the
     /// slice, and the workspace root.
     pub calls: Arc<Mutex<Vec<(String, Slice, String)>>>,
@@ -160,6 +164,11 @@ pub struct TargetScript {
 }
 
 impl TargetScript {
+    /// Returns the workspace root of every init dispatch so far, in dispatch order.
+    pub fn inits(&self) -> Vec<String> {
+        self.inits.lock().expect("inits").clone()
+    }
+
     /// Returns every build dispatch so far: the adapter id, the slice, and the
     /// workspace root, in dispatch order.
     pub fn calls(&self) -> Vec<(String, Slice, String)> {
@@ -384,54 +393,68 @@ impl<S: Send + Sync + 'static> Source for Provider<S> {
 }
 
 impl<S: Send + Sync + 'static> Target for Provider<S> {
-    fn build(
-        &self, id: &str, slice: &Slice, workspace: &str,
-    ) -> impl Future<Output = Result<Report, Error>> + Send {
-        self.target.calls.lock().expect("calls").push((
-            id.to_string(),
-            slice.clone(),
-            workspace.to_string(),
-        ));
-        let queued = self
-            .target
-            .failures
-            .lock()
-            .expect("failures")
-            .get_mut(&slice.id)
-            .and_then(VecDeque::pop_front);
-        let outcome = queued.map_or_else(
-            || {
-                self.target.reports.get(&slice.id).cloned().unwrap_or_else(|| {
-                    Ok(Report {
-                        covered: slice.requirements.clone(),
-                        written: vec![format!("src/{}.rs", slice.name)],
+    fn run(
+        &self, id: &str, workspace: &str, task: &Task,
+    ) -> impl Future<Output = Result<Outcome, Error>> + Send {
+        // the slice a build waits at the rendezvous for; an init and a
+        // verify answer at once
+        let mut held = None;
+        let outcome = match task {
+            Task::Init => {
+                self.target.inits.lock().expect("inits").push(workspace.to_string());
+                Ok(Outcome::Initialised)
+            }
+            Task::Build(slice) => {
+                self.target.calls.lock().expect("calls").push((
+                    id.to_string(),
+                    slice.clone(),
+                    workspace.to_string(),
+                ));
+                let queued = self
+                    .target
+                    .failures
+                    .lock()
+                    .expect("failures")
+                    .get_mut(&slice.id)
+                    .and_then(VecDeque::pop_front);
+                held = Some(slice.id.clone());
+                queued
+                    .map_or_else(
+                        || {
+                            self.target.reports.get(&slice.id).cloned().unwrap_or_else(|| {
+                                Ok(Report {
+                                    covered: slice.requirements.clone(),
+                                    written: vec![format!("src/{}.rs", slice.name)],
+                                })
+                            })
+                        },
+                        Err,
+                    )
+                    .map(Outcome::Built)
+            }
+            Task::Verify => {
+                self.target.verifies.lock().expect("verifies").push(workspace.to_string());
+                self.target
+                    .verdicts
+                    .lock()
+                    .expect("verdicts")
+                    .pop_front()
+                    .unwrap_or_else(|| {
+                        Ok(Verdict {
+                            passed: true,
+                            failures: Vec::new(),
+                        })
                     })
-                })
-            },
-            Err,
-        );
+                    .map(Outcome::Verified)
+            }
+        };
         let rendezvous = self.target.rendezvous.clone();
-        let key = slice.id.clone();
         async move {
-            if let Some(rendezvous) = rendezvous {
+            if let (Some(rendezvous), Some(key)) = (rendezvous, held) {
                 rendezvous.wait(&key).await;
             }
             outcome
         }
-    }
-
-    fn verify(
-        &self, _id: &str, workspace: &str,
-    ) -> impl Future<Output = Result<Verdict, Error>> + Send {
-        self.target.verifies.lock().expect("verifies").push(workspace.to_string());
-        let outcome =
-            self.target.verdicts.lock().expect("verdicts").pop_front().unwrap_or_else(|| {
-                Ok(Verdict {
-                    passed: true,
-                    failures: Vec::new(),
-                })
-            });
-        async move { outcome }
     }
 
     fn metadata(&self, id: &str) -> TargetMetadata {
@@ -439,7 +462,6 @@ impl<S: Send + Sync + 'static> Target for Provider<S> {
         TargetMetadata {
             emery_version: self.target.versions.get(id).cloned(),
             merge_rules: self.target.rules.clone(),
-            base: self.target.base,
         }
     }
 }

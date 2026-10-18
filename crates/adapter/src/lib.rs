@@ -5,9 +5,11 @@
 //! A source adapter receives a [`source::SourceInput`] and returns
 //! [`source::Evidence`] containing typed [`source::Claim`]s. The
 //! [`source::Source`] capability is the engine-facing side of that exchange.
-//! A target adapter receives a [`target::Slice`] of the build plan and
-//! returns a [`target::Report`] of what it built; [`target::Target`] is the
-//! engine-facing side.
+//! A target adapter runs a [`target::Task`] in a workspace: an init of its
+//! layout, a build of one [`target::Slice`] of the plan answered by a
+//! [`target::Report`], or a verify of the integrated tree answered by a
+//! [`target::Verdict`], each an [`target::Outcome`]; [`target::Target`] is
+//! the engine-facing side.
 //!
 //! This crate supplies the shared Rust types for the `emery:adapter` WIT
 //! package. On WebAssembly targets, `source::export` and `target::export`
@@ -43,8 +45,9 @@
 //!   input.
 //! - **Claim gate**: the validation performed by
 //!   [`source::Evidence::findings`] before evidence is accepted.
-//! - **Target adapter**: a component that builds one slice of the plan into
-//!   a workspace.
+//! - **Target adapter**: a component that initialises a workspace with its
+//!   layout, builds one slice of the plan into it, and verifies the
+//!   integrated tree.
 //! - **Report gate**: the validation performed by
 //!   [`target::Report::findings`] before a report is accepted.
 //! - **Root-relative path**: a `/`-separated path beneath the root a run

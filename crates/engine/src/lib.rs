@@ -29,6 +29,7 @@
 
 mod adapter;
 mod authority;
+mod brief;
 pub mod build;
 mod revision;
 pub mod show;
@@ -46,13 +47,40 @@ use emery_adapter::target::Target;
 use omnia_sdk::{BlobStore, Error, Model, Plugins, StateStore, Vcs, bad_request};
 pub use store::{CONTAINER, REVISION_KEY};
 
+// How many times a question to the model, a slice's build, or a wave's
+// verification is put when it fails upstream or runs out of the backend's
+// time: the first failure is put once more, the second is the run's.
+const RETRIES: usize = 2;
+
+// The heading the backend's correction turn opens with, which a question
+// that spent its rounds on a rejected candidate carries whole.
+const REJECTED: &str = "## Previous answer (rejected)";
+
+// An upstream failure is put once more, and so is a turn the backend's time
+// budget ended: the model's work is not the same twice, and a turn put again
+// over the same tree starts from what the first left. A question refused on
+// a rejected candidate is not: its description carries that candidate, whose
+// text may spell a timeout of its own.
+fn is_retryable(error: &Error) -> bool {
+    match error {
+        Error::BadGateway { .. } => true,
+        Error::BadRequest { description, .. } => {
+            description.contains("budget exhausted")
+                && description.contains("timed out")
+                && !description.contains(REJECTED)
+        }
+        Error::NotFound { .. } | Error::ServerError { .. } => false,
+    }
+}
+
 /// Reads and writes what a commit would carry at a path beneath a working copy the engine cut.
 ///
 /// `at` is a working copy relative to the project root, as the engine names
 /// it to [`Vcs`], and `path` a path relative to that copy, as
 /// [`Vcs::pending`] lists it. A build reads what it is about to seal, and
 /// what the tree it starts from holds, through this capability alone, and
-/// lays the one file its own repository starts from through it.
+/// writes through it alone: the one file its own repository starts from, and
+/// the files the model resolves a slice's merge conflicts to.
 pub trait Files: Send + Sync {
     /// Reads what a commit would carry at `path` beneath `at`.
     ///
@@ -80,9 +108,16 @@ pub trait Files: Send + Sync {
 
     /// Writes `bytes` as the whole file at `path` beneath `at`, creating or replacing it.
     ///
+    /// The directories on the way are created where they are missing. No
+    /// symbolic link is followed: one standing at the path or on the way to
+    /// it refuses the write, so what the write lays is what the commit will
+    /// carry at `path` and nothing outside the copy is reached.
+    ///
     /// # Errors
     ///
-    /// Returns [`Error::ServerError`] when the file cannot be written.
+    /// Returns [`Error::ServerError`] when a link stands at the path or on
+    /// the way to it, a file stands where a directory is needed, or the
+    /// file cannot be written.
     fn write(
         &self, at: &str, path: &str, bytes: &[u8],
     ) -> impl Future<Output = Result<(), Error>> + Send;

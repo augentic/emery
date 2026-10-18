@@ -1,11 +1,13 @@
 //! Defines the [`Target`] capability and the records supplied to an adapter.
 //!
-//! The engine uses [`Target`] to query a loaded adapter's metadata, build a
-//! slice into a workspace, and verify the integrated tree. WebAssembly builds
-//! dispatch through the imported adapter interface; native builds require an
+//! The engine uses [`Target`] to query a loaded adapter's metadata and to
+//! run one [`Task`] in a workspace: an init, a slice's build, or a wave's
+//! verify, each answered by its [`Outcome`]. WebAssembly builds dispatch
+//! through the imported adapter interface; native builds require an
 //! implementation.
 
 use std::borrow::Cow;
+use std::fmt::{self, Display, Formatter};
 use std::future::Future;
 
 use omnia_sdk::Error;
@@ -26,27 +28,25 @@ use crate::target::{Report, Verdict};
 /// ```
 /// use std::future::{Future, ready};
 ///
-/// use emery_adapter::target::{Base, Report, Slice, Target, TargetMetadata, Verdict};
+/// use emery_adapter::target::{Outcome, Report, Target, TargetMetadata, Task, Verdict};
 /// use omnia_sdk::Error;
 ///
 /// struct Host;
 ///
 /// impl Target for Host {
-///     fn build(
-///         &self, _id: &str, slice: &Slice, _workspace: &str,
-///     ) -> impl Future<Output = Result<Report, Error>> + Send {
-///         ready(Ok(Report {
-///             covered: slice.requirements.clone(),
-///             written: vec!["src/lib.rs".to_string()],
-///         }))
-///     }
-///
-///     fn verify(
-///         &self, _id: &str, _workspace: &str,
-///     ) -> impl Future<Output = Result<Verdict, Error>> + Send {
-///         ready(Ok(Verdict {
-///             passed: true,
-///             failures: Vec::new(),
+///     fn run(
+///         &self, _id: &str, _workspace: &str, task: &Task,
+///     ) -> impl Future<Output = Result<Outcome, Error>> + Send {
+///         ready(Ok(match task {
+///             Task::Init => Outcome::Initialised,
+///             Task::Build(slice) => Outcome::Built(Report {
+///                 covered: slice.requirements.clone(),
+///                 written: vec!["src/lib.rs".to_string()],
+///             }),
+///             Task::Verify => Outcome::Verified(Verdict {
+///                 passed: true,
+///                 failures: Vec::new(),
+///             }),
 ///         }))
 ///     }
 ///
@@ -54,58 +54,39 @@ use crate::target::{Report, Verdict};
 ///         TargetMetadata {
 ///             emery_version: None,
 ///             merge_rules: Vec::new(),
-///             base: Base::Any,
 ///         }
 ///     }
 /// }
 /// ```
 pub trait Target: Send + Sync {
-    /// Builds `slice` into the tree at `workspace` using the adapter registered as `id`.
+    /// Runs `task` in the tree at `workspace` using the adapter registered as `id`.
+    ///
+    /// The outcome answers the task, [`Outcome::answers`]; one that does
+    /// not is the adapter's defect, which the caller refuses.
     ///
     /// # Errors
     ///
     /// - Returns [`Error::BadRequest`] when the adapter rejects its input.
     /// - Returns [`Error::BadGateway`] for any other adapter failure.
     #[cfg(not(target_arch = "wasm32"))]
-    fn build(
-        &self, id: &str, slice: &Slice, workspace: &str,
-    ) -> impl Future<Output = Result<Report, Error>> + Send;
+    fn run(
+        &self, id: &str, workspace: &str, task: &Task,
+    ) -> impl Future<Output = Result<Outcome, Error>> + Send;
 
-    /// Builds `slice` into the tree at `workspace` using the adapter registered as `id`.
+    /// Runs `task` in the tree at `workspace` using the adapter registered as `id`.
+    ///
+    /// The outcome answers the task, [`Outcome::answers`]; one that does
+    /// not is the adapter's defect, which the caller refuses.
     ///
     /// # Errors
     ///
     /// - Returns [`Error::BadRequest`] when the adapter rejects its input.
     /// - Returns [`Error::BadGateway`] for any other adapter failure.
     #[cfg(target_arch = "wasm32")]
-    fn build(
-        &self, id: &str, slice: &Slice, workspace: &str,
-    ) -> impl Future<Output = Result<Report, Error>> + Send {
-        crate::target::bindings::import::build(id, slice, workspace)
-    }
-
-    /// Verifies the integrated tree at `workspace` using the adapter registered as `id`.
-    ///
-    /// # Errors
-    ///
-    /// - Returns [`Error::BadRequest`] when the adapter rejects its input.
-    /// - Returns [`Error::BadGateway`] for any other adapter failure.
-    #[cfg(not(target_arch = "wasm32"))]
-    fn verify(
-        &self, id: &str, workspace: &str,
-    ) -> impl Future<Output = Result<Verdict, Error>> + Send;
-
-    /// Verifies the integrated tree at `workspace` using the adapter registered as `id`.
-    ///
-    /// # Errors
-    ///
-    /// - Returns [`Error::BadRequest`] when the adapter rejects its input.
-    /// - Returns [`Error::BadGateway`] for any other adapter failure.
-    #[cfg(target_arch = "wasm32")]
-    fn verify(
-        &self, id: &str, workspace: &str,
-    ) -> impl Future<Output = Result<Verdict, Error>> + Send {
-        crate::target::bindings::import::verify(id, workspace)
+    fn run(
+        &self, id: &str, workspace: &str, task: &Task,
+    ) -> impl Future<Output = Result<Outcome, Error>> + Send {
+        crate::target::bindings::import::run(id, workspace, task)
     }
 
     /// Returns the metadata the adapter registered as `id` declares.
@@ -116,6 +97,71 @@ pub trait Target: Send + Sync {
     #[cfg(target_arch = "wasm32")]
     fn metadata(&self, id: &str) -> TargetMetadata {
         crate::target::bindings::import::metadata(id)
+    }
+}
+
+/// What the engine asks a target adapter to do in the lent tree.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Task {
+    /// Lay the layout's initial files the tree lacks; a held file stands.
+    ///
+    /// Put once per tree a build lands in, before any slice, with no model
+    /// turn expected: the engine seals what the tree then holds as its
+    /// `Initialise` commit.
+    Init,
+    /// Build one slice of the plan into the tree.
+    Build(Slice),
+    /// Run the checks over the integrated tree once a wave has merged into
+    /// it, repair what they find, and answer a verdict.
+    Verify,
+}
+
+impl Display for Task {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Init => f.write_str("init"),
+            Self::Build(slice) => write!(f, "slice `{}`", slice.id),
+            Self::Verify => f.write_str("verify"),
+        }
+    }
+}
+
+/// The answer to a [`Task`].
+///
+/// [`Initialised`](Self::Initialised) answers [`Task::Init`],
+/// [`Built`](Self::Built) answers [`Task::Build`], and
+/// [`Verified`](Self::Verified) answers [`Task::Verify`]; any other pairing
+/// is the adapter's defect, which [`answers`](Self::answers) tells.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Outcome {
+    /// The tree holds the layout's initial files.
+    Initialised,
+    /// The slice is built, and this is what the build reports beyond the tree.
+    Built(Report),
+    /// The tree is verified, and this is what the checks found.
+    Verified(Verdict),
+}
+
+impl Outcome {
+    /// Returns whether this outcome is the one `task` is answered by.
+    #[must_use]
+    pub const fn answers(&self, task: &Task) -> bool {
+        matches!(
+            (self, task),
+            (Self::Initialised, Task::Init)
+                | (Self::Built(_), Task::Build(_))
+                | (Self::Verified(_), Task::Verify)
+        )
+    }
+}
+
+impl Display for Outcome {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        f.write_str(match self {
+            Self::Initialised => "an initialised tree",
+            Self::Built(_) => "a report",
+            Self::Verified(_) => "a verdict",
+        })
     }
 }
 
@@ -151,42 +197,24 @@ pub struct TargetMetadata {
     /// The rules every slice is merged into the integrated tree under; the
     /// first rule matching a conflicting path applies.
     pub merge_rules: Vec<MergeRule>,
-    /// The base the adapter builds over.
-    pub base: Base,
-}
-
-/// The tree a target adapter builds over: what the commit a build starts from may hold.
-///
-/// An adapter lays its layout into the tree, so it alone knows whether that
-/// layout stands beside what a project already holds or needs a tree of its
-/// own. The engine holds the base to the kind before any slice builds.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub enum Base {
-    /// Any commit: the adapter builds into whatever tree the base holds.
-    #[default]
-    Any,
-    /// A fresh tree: a root holding files alone. A base whose root holds a
-    /// directory is refused.
-    Fresh,
 }
 
 /// One rule for merging a slice into the integrated tree.
 ///
-/// An adapter spells its rules as a `const` slice, so `paths` borrows a
-/// literal there and owns what the contract carries across.
+/// An adapter spells its rules as a `const` slice through [`MergeRule::union`],
+/// [`MergeRule::ours`], and [`MergeRule::theirs`], so `paths` borrows a
+/// literal there and owns what the contract carries across. A conflict no
+/// rule resolves is the engine's to resolve with the model.
 ///
 /// # Examples
 ///
 /// ```
-/// use std::borrow::Cow;
-///
 /// use emery_adapter::target::{MergeRule, MergeStrategy};
 ///
-/// const RULES: &[MergeRule] = &[MergeRule {
-///     paths: Cow::Borrowed("src/*/index.ts"),
-///     strategy: MergeStrategy::Union,
-/// }];
-/// assert_eq!(RULES[0].paths, "src/*/index.ts");
+/// const RULES: &[MergeRule] =
+///     &[MergeRule::ours("Cargo.lock"), MergeRule::union("src/*/index.ts")];
+/// assert_eq!(RULES[1].paths, "src/*/index.ts");
+/// assert_eq!(RULES[1].strategy, MergeStrategy::Union);
 /// ```
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct MergeRule {
@@ -194,6 +222,33 @@ pub struct MergeRule {
     pub paths: Cow<'static, str>,
     /// How a conflict at a matching path is resolved.
     pub strategy: MergeStrategy,
+}
+
+impl MergeRule {
+    /// Returns a rule keeping both sides' lines at the paths `paths` matches.
+    #[must_use]
+    pub const fn union(paths: &'static str) -> Self {
+        Self::new(paths, MergeStrategy::Union)
+    }
+
+    /// Returns a rule keeping the integrated tree's side at the paths `paths` matches.
+    #[must_use]
+    pub const fn ours(paths: &'static str) -> Self {
+        Self::new(paths, MergeStrategy::Ours)
+    }
+
+    /// Returns a rule keeping the slice's side at the paths `paths` matches.
+    #[must_use]
+    pub const fn theirs(paths: &'static str) -> Self {
+        Self::new(paths, MergeStrategy::Theirs)
+    }
+
+    const fn new(paths: &'static str, strategy: MergeStrategy) -> Self {
+        Self {
+            paths: Cow::Borrowed(paths),
+            strategy,
+        }
+    }
 }
 
 /// How a merge resolves a conflict at a path a [`MergeRule`] matches.

@@ -6,7 +6,7 @@ use std::fs;
 use std::os::unix::fs::symlink;
 use std::path::Path;
 
-use emery_sdk::target::{Context, Report, Seed, Slice, Worker};
+use emery_sdk::target::{BuildContext, Reach, Report, Slice, Worker};
 use emery_sdk::{Doc, Error};
 use omnia_sdk::model::ToolCall;
 use omnia_test::guest::Scripted;
@@ -25,11 +25,6 @@ const PROSE: &[Doc] = &[
 
 const VALID: &str = r#"{"covered":["REQ-001","REQ-002"],"written":["src/orders.rs","Cargo.toml"]}"#;
 
-const SEED: &[Seed] = &[
-    Seed::new("Cargo.toml", "[workspace]\nmembers = [\"crates/*\"]\n"),
-    Seed::new("src/lib.rs", "// the module list\n"),
-];
-
 fn slice() -> Slice {
     Slice {
         id: "SLICE-001".to_owned(),
@@ -43,33 +38,27 @@ fn slice() -> Slice {
 }
 
 async fn ask(model: &Scripted, slice: &Slice, workspace: &str) -> Result<Report, Error> {
-    ask_seeded(model, slice, workspace, &[]).await
-}
-
-async fn ask_seeded(
-    model: &Scripted, slice: &Slice, workspace: &str, seed: &[Seed],
-) -> Result<Report, Error> {
-    ask_as(model, slice, workspace, seed, &Worker::NONE).await
+    ask_as(model, slice, workspace, &Worker::NONE).await
 }
 
 async fn ask_as(
-    model: &Scripted, slice: &Slice, workspace: &str, seed: &[Seed], worker: &Worker,
+    model: &Scripted, slice: &Slice, workspace: &str, worker: &Worker,
 ) -> Result<Report, Error> {
-    ask_checked(model, slice, workspace, seed, worker, |_| Ok(Vec::new())).await
+    ask_checked(model, slice, workspace, worker, |_| Ok(Vec::new())).await
 }
 
 async fn ask_checked(
-    model: &Scripted, slice: &Slice, workspace: &str, seed: &[Seed], worker: &Worker,
+    model: &Scripted, slice: &Slice, workspace: &str, worker: &Worker,
     check: impl FnMut(&Report) -> Result<Vec<String>, Error> + Send,
 ) -> Result<Report, Error> {
-    let ctx = Context {
+    let ctx = BuildContext {
         adapter_id: "target:probe",
         slice,
         workspace,
         worker,
         model,
     };
-    emery_sdk::target::build(&ctx, PROSE, seed, check).await
+    emery_sdk::target::build(&ctx, PROSE, check).await
 }
 
 // Lays files beneath `root` with the content given, so a report naming them
@@ -198,7 +187,6 @@ async fn request_shape() {
         ),
         "{user}"
     );
-    assert!(!user.contains("laid before this turn"), "no seed, nothing laid: {user}");
     assert!(user.contains("— `REQ-001`, `REQ-002` — and no other."), "{user}");
     assert!(
         user.contains(
@@ -213,23 +201,30 @@ async fn request_shape() {
     model.assert_exhausted();
 }
 
-// The adapter's worker rides the turn as the completion's grant, each list
-// as spelled, beside the lend it reaches beyond; the brief says nothing of
-// it, since the grant is the host's to lay.
+// The adapter's worker rides the turn as the completion's grant, the reaches
+// united with a root two of them spell carried once, beside the lend it
+// reaches beyond; the brief says nothing of it, since the grant is the
+// host's to lay.
 #[tokio::test]
 async fn worker_grant() {
-    const WORKER: Worker = Worker {
+    const CARGO: Reach = Reach {
         egress: &["index.crates.io", "static.crates.io"],
+        read: &["~/.cargo/bin"],
+        env: &[],
+    };
+    const RUSTUP: Reach = Reach {
+        egress: &[],
         read: &["~/.rustup", "~/.cargo/bin"],
         env: &[("RUSTUP_HOME", "~/.rustup")],
     };
+    const WORKER: Worker = Worker::of(&[CARGO, RUSTUP]);
     let tmp = tempfile::tempdir().expect("tempdir");
     seed(tmp.path(), ["src/orders.rs", "Cargo.toml"]);
     let root = tmp.path().to_str().expect("a UTF-8 scratch root");
     let model = Scripted::answering([VALID]);
     let slice = slice();
 
-    ask_as(&model, &slice, root, &[], &WORKER).await.expect("accepted");
+    ask_as(&model, &slice, root, &WORKER).await.expect("accepted");
 
     let seen = model.seen();
     assert_eq!(seen.len(), 1);
@@ -238,122 +233,11 @@ async fn worker_grant() {
         seen[0].worker,
         Some(SeenWorker {
             egress: vec!["index.crates.io".to_owned(), "static.crates.io".to_owned()],
-            read: vec!["~/.rustup".to_owned(), "~/.cargo/bin".to_owned()],
+            read: vec!["~/.cargo/bin".to_owned(), "~/.rustup".to_owned()],
             env: vec![("RUSTUP_HOME".to_owned(), "~/.rustup".to_owned())],
         })
     );
     assert!(!seen[0].messages[0].contains("rustup"), "{}", seen[0].messages[0]);
-    model.assert_exhausted();
-}
-
-// A seed file the tree lacks is laid before the turn, counted as written,
-// and named in the brief, so the model knows what this slice laid; the
-// directories above it are made as a write's are.
-#[tokio::test]
-async fn seed_laid() {
-    let tmp = tempfile::tempdir().expect("tempdir");
-    let root = tmp.path().to_str().expect("a UTF-8 scratch root");
-    let model = Scripted::answering([r#"{"covered":["REQ-001"],"written":[]}"#]);
-
-    let report = ask_seeded(&model, &slice(), root, SEED).await.expect("accepted");
-    assert_eq!(report.written, ["Cargo.toml", "src/lib.rs"], "the seed is the slice's writing");
-    assert_eq!(
-        fs::read_to_string(tmp.path().join("Cargo.toml")).expect("laid"),
-        "[workspace]\nmembers = [\"crates/*\"]\n"
-    );
-    assert_eq!(
-        fs::read_to_string(tmp.path().join("src/lib.rs")).expect("laid"),
-        "// the module list\n"
-    );
-
-    let seen = model.seen();
-    let user = &seen[0].messages[0];
-    assert!(
-        user.contains(
-            "The tree lacked these files of the layout, laid before this turn and counted as \
-             written by this slice: `Cargo.toml`, `src/lib.rs`.\n\nThe slice's entry in the plan:"
-        ),
-        "{user}"
-    );
-    model.assert_exhausted();
-}
-
-// A seed file the tree holds is left as it stands, whatever it holds, and is
-// neither named in the brief nor counted as written; the files the tree
-// lacks are still laid.
-#[tokio::test]
-async fn seed_kept() {
-    let tmp = tempfile::tempdir().expect("tempdir");
-    lay(tmp.path(), [("Cargo.toml", "[workspace]\nmembers = [\"app\"]\n")]);
-    let root = tmp.path().to_str().expect("a UTF-8 scratch root");
-    let model = Scripted::answering([r#"{"covered":["REQ-001"],"written":[]}"#]);
-
-    let report = ask_seeded(&model, &slice(), root, SEED).await.expect("accepted");
-    assert_eq!(report.written, ["src/lib.rs"]);
-    assert_eq!(
-        fs::read_to_string(tmp.path().join("Cargo.toml")).expect("kept"),
-        "[workspace]\nmembers = [\"app\"]\n",
-        "a held file is never laid over"
-    );
-
-    let seen = model.seen();
-    let user = &seen[0].messages[0];
-    assert!(
-        user.contains("laid before this turn and counted as written by this slice: `src/lib.rs`."),
-        "{user}"
-    );
-    model.assert_exhausted();
-}
-
-// A symlink or a directory standing at a seed path refuses the slice before
-// any turn, naming the path, and nothing of the seed is laid past it; a seed
-// path the root rule refuses is the adapter's defect.
-#[tokio::test]
-async fn seed_refused() {
-    let tmp = tempfile::tempdir().expect("tempdir");
-    let outside = tmp.path().join("outside");
-    fs::write(&outside, "[workspace]\n").expect("outside file");
-    let tree = tmp.path().join("tree");
-    fs::create_dir(&tree).expect("tree");
-    symlink("../outside", tree.join("Cargo.toml")).expect("file symlink");
-    let root = tree.to_str().expect("a UTF-8 scratch root");
-    let model = Scripted::default();
-
-    let error = ask_seeded(&model, &slice(), root, SEED).await.expect_err("a link at the seed");
-    assert_eq!(error.code(), "bad_request", "{error}");
-    assert!(error.description().contains("seed `Cargo.toml` is a symlink"), "{error}");
-    assert!(!tree.join("src").exists(), "nothing past the refusal is laid");
-    assert_eq!(fs::read_to_string(&outside).expect("untouched"), "[workspace]\n");
-    assert_eq!(model.seen(), [] as [Seen; 0], "no turn is spent");
-
-    let directory = tmp.path().join("directory");
-    fs::create_dir_all(directory.join("Cargo.toml")).expect("a directory at the path");
-    let root = directory.to_str().expect("a UTF-8 scratch root");
-    let error = ask_seeded(&model, &slice(), root, SEED).await.expect_err("a directory");
-    assert_eq!(error.code(), "bad_request", "{error}");
-    assert!(error.description().contains("seed `Cargo.toml` names a directory"), "{error}");
-
-    let escaping = [Seed::new("../escape.toml", "")];
-    let error = ask_seeded(&model, &slice(), root, &escaping).await.expect_err("escapes");
-    assert_eq!(error.code(), "server_error", "{error}");
-    assert!(error.description().contains("seed `../escape.toml` escapes the root"), "{error}");
-    assert_eq!(model.seen(), [] as [Seen; 0]);
-}
-
-// A seed file the model never names is in the accepted report all the same,
-// beside what it wrote, and the model's own report of the seed file as
-// written is no finding, since the tree holds it.
-#[tokio::test]
-async fn seed_in_written() {
-    let tmp = tempfile::tempdir().expect("tempdir");
-    let root = tmp.path().to_str().expect("a UTF-8 scratch root");
-    let model = Scripted::answering([
-        r#"{"covered":["REQ-001"],"written":["src/orders.rs","Cargo.toml"]}"#,
-    ])
-    .calling(0, [write_files("1", &[("src/orders.rs", "pub struct Order;\n")])]);
-
-    let report = ask_seeded(&model, &slice(), root, SEED).await.expect("accepted");
-    assert_eq!(report.written, ["Cargo.toml", "src/lib.rs", "src/orders.rs"]);
     model.assert_exhausted();
 }
 
@@ -1062,7 +946,7 @@ async fn missing_prompt() {
     let root = tmp.path().to_str().expect("a UTF-8 scratch root");
     let model = Scripted::default();
     let slice = slice();
-    let ctx = Context {
+    let ctx = BuildContext {
         adapter_id: "target:mute",
         slice: &slice,
         workspace: root,
@@ -1070,10 +954,9 @@ async fn missing_prompt() {
         model: &model,
     };
 
-    let error = emery_sdk::target::build(&ctx, &[], SEED, |_| Ok(Vec::new()))
+    let error = emery_sdk::target::build(&ctx, &[], |_| Ok(Vec::new()))
         .await
         .expect_err("no prompt to ask with");
-    assert!(!tmp.path().join("Cargo.toml").exists(), "a defect lays no seed");
     assert_eq!(error.code(), "server_error");
     assert!(error.description().contains("`build.md` is not embedded"), "{error}");
     assert_eq!(model.seen(), [] as [Seen; 0]);
@@ -1145,7 +1028,7 @@ async fn check_findings() {
     let slice = slice();
     let mut seen = Vec::new();
 
-    let report = ask_checked(&model, &slice, root, &[], &Worker::NONE, |report| {
+    let report = ask_checked(&model, &slice, root, &Worker::NONE, |report| {
         seen.push(report.written.clone());
         let held = Path::new(root).join("Cargo.toml").is_file();
         Ok((!held)
@@ -1182,7 +1065,7 @@ async fn check_error() {
     let root = tmp.path().to_str().expect("a UTF-8 scratch root");
     let model = Scripted::answering([r#"{"covered":["REQ-001"],"written":["src/orders.rs"]}"#]);
 
-    let error = ask_checked(&model, &slice(), root, &[], &Worker::NONE, |_| {
+    let error = ask_checked(&model, &slice(), root, &Worker::NONE, |_| {
         Err(omnia_sdk::server_error!("reading `Cargo.toml`: permission denied"))
     })
     .await

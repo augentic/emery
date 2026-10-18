@@ -4,7 +4,8 @@
 //! an empty file, so a scenario scripts only the paths it wants the gate to
 //! see, and a path scripted `unreadable` fails its read. A listing is
 //! scripted per working copy and directory; an unscripted directory lists
-//! nothing. Every write succeeds and is recorded.
+//! nothing. Every write succeeds, is recorded, and is what the path reads
+//! as from then on.
 
 use std::collections::BTreeMap;
 use std::future::Future;
@@ -36,7 +37,12 @@ pub struct FilesScript {
 impl FilesScript {
     /// Scripts what `path` beneath `at` reads as.
     pub fn holds(&self, at: &str, path: &str, content: &str) {
-        self.script(at, path, Some(content.as_bytes().to_vec()));
+        self.holds_bytes(at, path, content.as_bytes());
+    }
+
+    /// Scripts what `path` beneath `at` reads as, byte for byte.
+    pub fn holds_bytes(&self, at: &str, path: &str, content: &[u8]) {
+        self.script(at, path, Some(content.to_vec()));
     }
 
     /// Scripts `path` beneath `at` as one whose read fails.
@@ -105,6 +111,7 @@ impl Files for FilesScript {
         &self, at: &str, path: &str, bytes: &[u8],
     ) -> impl Future<Output = Result<(), Error>> + Send {
         self.writes.lock().expect("writes").push((at.to_owned(), path.to_owned(), bytes.to_vec()));
+        self.script(at, path, Some(bytes.to_vec()));
         async move { Ok(()) }
     }
 }

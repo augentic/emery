@@ -16,9 +16,9 @@
 //! as synthesis input.
 
 mod basis;
-mod brief;
 mod design;
 mod plan;
+mod sections;
 mod shape;
 mod spec;
 
@@ -34,14 +34,14 @@ use omnia_sdk::plugins::Digest;
 use omnia_sdk::{BlobStore, Error, Model, Plugins, StateStore, Vcs, bad_request, server_error};
 use serde::{Deserialize, Serialize};
 
-use self::basis::GroupingBrief;
-use self::brief::Brief as _;
-use self::design::DesignBrief;
+pub(crate) use self::basis::GroupingBrief;
+pub(crate) use self::design::DesignBrief;
 pub use self::plan::SLICE_CAP;
-use self::plan::SliceBrief;
+pub(crate) use self::plan::SliceBrief;
 pub use self::spec::SPEC_CHUNK;
-use self::spec::SpecBrief;
+pub(crate) use self::spec::SpecBrief;
 use crate::adapter::{self, AdapterRef, Loaded};
+use crate::brief::Brief as _;
 use crate::revision::Revision;
 pub use crate::revision::{
     Changed, DesignDiff, Diff, Entry, PlanDiff, ReqId, Role, SectionKind, SliceEntry, SliceId,
@@ -340,8 +340,10 @@ impl<'a> Bound<'a> {
     }
 }
 
+// `pub(crate)`: the briefs over it are named by the corpus check at the
+// crate root.
 #[derive(Debug)]
-struct Extract {
+pub(crate) struct Extract {
     source: String,
     kind: SourceKind,
     rank: Rank,
@@ -392,35 +394,5 @@ impl Checkouts {
             copy.remove(vcs).await?;
         }
         Ok(self.read)
-    }
-}
-
-static PROSE: &[emery_prose::Doc] = emery_prose::prose![
-    "../prose/authority.md",
-    "../prose/claim-landing.md",
-    "../prose/design-format.md",
-    "../prose/grouping.md",
-    "../prose/requirement-block.md",
-    "../prose/slicing.md",
-    "../prose/spec-format.md",
-    "../prose/synthesise.md",
-    "../prose/tags.md",
-];
-
-#[cfg(test)]
-mod tests {
-    use std::path::Path;
-
-    use super::brief::Brief as _;
-    use super::{DesignBrief, GroupingBrief, SliceBrief, SpecBrief};
-
-    #[test]
-    fn corpus() {
-        let tree = Path::new(env!("CARGO_MANIFEST_DIR")).join("prose");
-        let prompts =
-            [GroupingBrief::PROSE, SpecBrief::PROSE, DesignBrief::PROSE, SliceBrief::PROSE]
-                .concat();
-        let findings = emery_prose::check(super::PROSE, &tree, &prompts, &[]);
-        assert!(findings.is_empty(), "{}", findings.join("\n"));
     }
 }

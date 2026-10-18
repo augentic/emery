@@ -43,31 +43,32 @@ const BUILD_DESC: &str = "Build the current plan through a target adapter.\n\n\
     Name the adapter, or use `--config [<path>]` (default: `emery.toml`) to read its \
     `[target]` table. With no adapter, Emery looks for `emery.toml` in the project root. \
     Config and a command-line adapter cannot be combined.\n\n\
-    The build lands as commits in one repository, never in the checkout: the `[target] \
-    repository` URL the config names, cloned under `.emery/vcs/repos/<name>` and built \
-    from its default branch; with none, for an adapter that lays a whole tree, a \
-    repository the build lays once at `.emery/vcs/repos/<name>` and keeps; otherwise the \
-    project checkout, from its head, which must hold no pending change outside `.emery/`. \
+    The build lands as commits in one repository, never in the checkout, the one the \
+    `[target] repository` names: a URL, cloned under `.emery/vcs/repos/<name>` and built \
+    from its default branch; `.`, the project checkout, from its head, which must hold no \
+    pending change outside `.emery/`; or, with none named, a repository the build lays \
+    once at `.emery/vcs/repos/<name>` and keeps, its root commit the adapter's layout. \
     `<name>` is the `[target] name`, the adapter's package name when the config gives \
-    none. An adapter that lays a whole tree is refused a named repository whose root holds \
-    a directory (`base-not-fresh`). A label `emery/<revision>` the repository already \
-    holds, descending from that commit, is resumed: the slices it records are not built \
+    none. A build no label resumes first has the adapter initialise the tree — lay the \
+    files of its layout the tree lacks, with no model turn — and seals them as the \
+    `Initialise` commit every slice builds over. A label `emery/<revision>` the repository \
+    already holds, descending from that commit, is resumed: the slices it records are not built \
     again, and neither are the slices `.emery/vcs/integration` holds merged over it from a \
     run that ended before their wave was verified, which are verified instead. The rest go \
     in waves: every slice whose dependencies are merged is built at once, up to `--jobs` \
     concurrently, each in its own working copy under `.emery/vcs/worktrees/<id>` cut at \
     the wave's head; what each changed is sealed as one commit and merged in id order into \
-    `.emery/vcs/integration` under the adapter's merge rules. The adapter then verifies the \
-    integrated tree, repairing what its checks find, and the wave is labelled; the label \
-    stands in the repository for the operator to read or push. A build that fails upstream \
-    or runs out of the model's time is put once more in a fresh copy, a verification once \
-    more over the same one. A slice whose merge conflicts is built again in the next wave; \
-    a third conflict ends the run (`slice-conflict`), as a wave the adapter does not verify \
-    does (`verify-failed`), the label where the last verified wave left it and the \
-    integration working copy left for the next run to resume from. The adapter is an \
-    exact package reference, `namespace:name@version`, read from the store \
-    `~/.emery/adapters` and fetched through the `emery` namespace's registry when the \
-    store lacks it, as for `specify`.";
+    `.emery/vcs/integration` under the adapter's merge rules, a path the rules leave \
+    conflicted resolved with the model and merged in its place. The adapter then verifies \
+    the integrated tree, repairing what its checks find, and the wave is labelled; the \
+    label stands in the repository for the operator to read or push. A build that fails \
+    upstream or runs out of the model's time is put once more in a fresh copy, a \
+    verification once more over the same one. A conflict the model cannot resolve ends the \
+    run (`merge-unresolved`), as a wave the adapter does not verify does (`verify-failed`), \
+    the label where the last verified wave left it and the integration working copy left \
+    for the next run to resume from. The adapter is an exact package reference, \
+    `namespace:name@version`, read from the store `~/.emery/adapters` and fetched through \
+    the `emery` namespace's registry when the store lacks it, as for `specify`.";
 const SHOW_DESC: &str = "Print an artifact from the current revision.\n\n\
     Text output contains only the artifact body. `--format json` also includes the \
     revision id and the typed document.";
@@ -267,13 +268,10 @@ fn hint(error: &Error, building: bool) -> Option<Cow<'static, str>> {
             "the revision predates this emery's grammar: re-run `emery specify <adapter>...` to regenerate it"
         }
         "repository-required" => {
-            "a build lands as a commit: run `emery build` from a repository checkout, or name one with `[target] repository` in `emery.toml`"
+            "`[target] repository = \".\"` builds into the project checkout, which must be a repository: initialise and seal it, name a repository URL instead, or drop the key so the build lays a repository of its own under `.emery/vcs/repos/<name>`"
         }
         "base-not-sealed" => {
             "commit or stash the pending changes so the build starts from a sealed commit; `.emery/` is never counted, so add it to `.gitignore`"
-        }
-        "base-not-fresh" => {
-            "this adapter lays a whole tree: drop `[target] repository` from `emery.toml` so the build lays a repository of its own under `.emery/vcs/repos/<name>`, or name an empty one (whose root holds files alone, a README and a `.gitignore`)"
         }
         "revision-not-found" => {
             "check the `repository` or `revision` in `emery.toml` against what the repository holds; a target's clone under `.emery/vcs/repos/<name>` keeps the origin it was first cloned or laid with, so remove it, or name the target otherwise, to point the name at another repository"
@@ -281,8 +279,8 @@ fn hint(error: &Error, building: bool) -> Option<Cow<'static, str>> {
         "verify-failed" => {
             "inspect `.emery/vcs/integration`, which holds the wave's slices merged; re-run `emery build` to verify them again with nothing built again, or `git worktree remove --force` the copy from the repository the label stands in to rebuild the wave from the last verified head; `git bisect` over `emery/<revision>` attributes a failure to a slice"
         }
-        "slice-conflict" => {
-            "two slices rewrite the same files: declare a merge rule in the adapter, or re-run `emery specify` for a plan that keeps them in one slice"
+        "merge-unresolved" => {
+            "two slices rewrite the same files and the model could not combine them: inspect the named paths in `.emery/vcs/worktrees/<slice>` and `.emery/vcs/integration`; re-run `emery build` to build the slice again over the merged head, which holds the slices merged before it; declare a merge rule in the adapter for a list file or a generated one; or re-run `emery specify` for a plan that keeps the two in one slice"
         }
         "secret-detected" => {
             "inspect the named path in `.emery/vcs/worktrees/<slice>` or `.emery/vcs/integration`, remove the credential from where the build read it (the sources, the environment, a file the model reached), and re-run `emery build`; nothing of the change set was sealed and the label stands at the last verified wave"
@@ -300,7 +298,10 @@ fn hint(error: &Error, building: bool) -> Option<Cow<'static, str>> {
 }
 
 // How the model backend reports a turn its time budget ended, which the
-// engine puts once more before the failure is the run's.
+// engine puts once more before the failure is the run's. A turn refused on a
+// rejected candidate carries that candidate whole, whatever it spells.
 fn timed_out(description: &str) -> bool {
-    description.contains("budget exhausted") && description.contains("timed out")
+    description.contains("budget exhausted")
+        && description.contains("timed out")
+        && !description.contains("## Previous answer (rejected)")
 }

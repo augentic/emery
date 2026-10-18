@@ -21,9 +21,10 @@ use schemars::JsonSchema;
 use serde::Deserialize;
 use serde_json::{Value, json};
 
+use crate::brief::{Brief, Review};
 use crate::revision::{self, EMERY, Requirement, Scenario, Spec};
 use crate::specify::basis::{Basis, Contributor};
-use crate::specify::brief::{self, BasesSection, Brief, ClaimsSection, Review};
+use crate::specify::sections::{self, BasesSection, ClaimsSection};
 use crate::specify::{Extract, shape};
 
 // The outcome a scenario states where no criterion evidences one.
@@ -284,7 +285,7 @@ impl Display for SpecBrief<'_> {
                  them; the source's other claims are other chunks' to draft from.\n\n",
             )?;
             let scope = Scope::of(self.extracts, &self.bases);
-            brief::claims(f, self.extracts, |claim| scope.keeps(claim))?;
+            sections::claims(f, self.extracts, |claim| scope.keeps(claim))?;
         }
 
         write!(

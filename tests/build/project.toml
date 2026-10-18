@@ -1,0 +1,4 @@
+# The target every scenario builds through, into the project checkout.
+[target]
+adapter = "acme:builder@2.1.0"
+repository = "."

@@ -1,35 +1,87 @@
 //! Provides the types and functions a target adapter is written with.
 //!
-//! A target adapter receives a [`Slice`] of the build plan and the workspace
-//! to build into, and returns a [`Report`] of what it built; once a wave of
-//! slices has merged, it receives the integrated tree and returns a
-//! [`Verdict`] over it. [`build`] puts the one gated build turn: the
-//! adapter's [`Seed`] laid where the tree lacks it, the slice's documents
-//! under the adapter's `build.md`, the workspace lent and written through
-//! the turn's `write_files` and `edit_files` tools, and the answered report
-//! held to the slice by [`Report::findings`], to the tree, and to the
-//! adapter's own check until it passes, its `written` filled in from what
-//! the seed and the tools wrote. [`verify`] puts the one gated verify turn:
-//! the integrated tree lent under the adapter's `verify.md`, the checks it
-//! names run through the model's shell, what they find repaired through the
-//! same two tools, and the answered verdict held to [`Verdict::findings`]
-//! and the adapter's check. Both turns carry the adapter's [`Worker`], what
-//! the model's worker reaches beyond the tree for the toolchain the prompts
-//! run. [`TargetAdapter`] is what a target
-//! adapter implements, and [`export_target!`](crate::export_target) exports
-//! a type implementing it, answering the component's `metadata` through
-//! [`metadata`] over the type's [`MERGE_RULES`](TargetAdapter::MERGE_RULES)
-//! and [`BASE`](TargetAdapter::BASE).
+//! A target adapter runs one [`Task`] at a time in a tree the engine lends
+//! it and answers an [`Outcome`]: an init lays the layout's initial files
+//! the tree lacks, once per repository a build lands in and before any
+//! slice, with no model turn; a build lays one [`Slice`] of the plan and
+//! answers a [`Report`]; a verify runs the checks over the integrated tree
+//! once a wave of slices has merged and answers a [`Verdict`]. [`build`]
+//! puts the one gated build turn: the slice's documents under the adapter's
+//! `build.md`, the workspace lent and written through the turn's
+//! `write_files` and `edit_files` tools, and the answered report held to
+//! the slice by [`Report::findings`], to the tree, and to the adapter's own
+//! check until it passes, its `written` filled in from what the tools
+//! wrote. [`verify`] puts the one gated verify turn: the integrated tree
+//! lent under the adapter's `verify.md`, the checks it names run through
+//! the model's shell, what they find repaired through the same two tools,
+//! and the answered verdict held to [`Verdict::findings`] and the adapter's
+//! check. Both turns carry the adapter's [`Worker`], what the model's worker
+//! reaches beyond the tree for the toolchain the prompts run.
+//! [`TargetAdapter`] is what a target adapter implements, and
+//! [`export_target!`](crate::export_target) exports a type implementing it,
+//! answering the component's `metadata` through [`metadata`] over the
+//! type's [`MERGE_RULES`](TargetAdapter::MERGE_RULES).
 //!
 //! # Examples
 //!
-//! This adapter seeds every tree with one manifest, builds every slice, and
-//! verifies every wave through the SDK's turns, holding each report to one
-//! rule of its layout's own:
+//! This adapter initialises every repository with one manifest, builds every
+//! slice, and verifies every wave through the SDK's turns, holding each
+//! report to one rule of its layout's own:
 //!
 //! ```
-//! use emery_sdk::Doc;
-//! use emery_sdk::target::Seed;
+//! use std::fs::OpenOptions;
+//! use std::io::{ErrorKind, Write as _};
+//! use std::path::Path;
+//!
+//! use emery_sdk::target::{Outcome, Reach, TargetAdapter, Task, Worker};
+//! use emery_sdk::{Doc, Error, Model, server_error};
+//!
+//! // cargo fetches from crates.io's sparse index and its download host
+//! const CARGO: Reach = Reach {
+//!     egress: &["index.crates.io", "static.crates.io"],
+//!     read: &[],
+//!     env: &[],
+//! };
+//!
+//! // rustup finds its toolchains under `RUSTUP_HOME`, which the worker's
+//! // private `HOME` would otherwise hide
+//! const RUSTUP: Reach = Reach {
+//!     egress: &[],
+//!     read: &["~/.rustup", "~/.cargo/bin"],
+//!     env: &[("RUSTUP_HOME", "~/.rustup")],
+//! };
+//!
+//! pub struct Adapter;
+//!
+//! impl TargetAdapter for Adapter {
+//!     const WORKER: Worker = Worker::of(&[CARGO, RUSTUP]);
+//!
+//!     async fn run<P: Model>(task: Task<'_, P>) -> Result<Outcome, Error> {
+//!         match task {
+//!             Task::Init(ctx) => {
+//!                 // a held manifest stands; the tree lacking one gets the layout's
+//!                 let manifest = Path::new(ctx.workspace).join("Cargo.toml");
+//!                 match OpenOptions::new().write(true).create_new(true).open(manifest) {
+//!                     Ok(mut file) => file
+//!                         .write_all(b"[workspace]\nmembers = [\"crates/*\"]\n")
+//!                         .map_err(|err| server_error!("laying `Cargo.toml`: {err}"))?,
+//!                     Err(err) if err.kind() == ErrorKind::AlreadyExists => {}
+//!                     Err(err) => return Err(server_error!("laying `Cargo.toml`: {err}")),
+//!                 }
+//!                 Ok(Outcome::Initialised)
+//!             }
+//!             Task::Build(ctx) => emery_sdk::target::build(&ctx, PROSE, |report| {
+//!                 let stray = report.written.iter().filter(|path| !path.starts_with("crates/"));
+//!                 Ok(stray.map(|path| format!("`{path}` lies outside `crates/`")).collect())
+//!             })
+//!             .await
+//!             .map(Outcome::Built),
+//!             Task::Verify(ctx) => emery_sdk::target::verify(&ctx, PROSE, |_| Ok(Vec::new()))
+//!                 .await
+//!                 .map(Outcome::Verified),
+//!         }
+//!     }
+//! }
 //!
 //! pub static PROSE: &[Doc] = &[
 //!     Doc {
@@ -42,41 +94,8 @@
 //!     },
 //! ];
 //!
-//! pub static SEED: &[Seed] =
-//!     &[Seed::new("Cargo.toml", "[workspace]\nmembers = [\"crates/*\"]\n")];
-//!
 //! #[cfg(target_arch = "wasm32")]
-//! mod guest {
-//!     use emery_sdk::target::{
-//!         Base, Context, Report, TargetAdapter, Verdict, VerifyContext, Worker,
-//!     };
-//!     use emery_sdk::{Error, Model};
-//!
-//!     struct Adapter;
-//!
-//!     emery_sdk::export_target!(Adapter);
-//!
-//!     impl TargetAdapter for Adapter {
-//!         const BASE: Base = Base::Fresh;
-//!         const WORKER: Worker = Worker {
-//!             egress: &["index.crates.io", "static.crates.io"],
-//!             read: &["~/.rustup", "~/.cargo/bin"],
-//!             env: &[("RUSTUP_HOME", "~/.rustup")],
-//!         };
-//!
-//!         async fn build<P: Model>(ctx: &Context<'_, P>) -> Result<Report, Error> {
-//!             emery_sdk::target::build(ctx, super::PROSE, super::SEED, |report| {
-//!                 let stray = report.written.iter().filter(|path| !path.starts_with("crates/"));
-//!                 Ok(stray.map(|path| format!("`{path}` lies outside `crates/`")).collect())
-//!             })
-//!             .await
-//!         }
-//!
-//!         async fn verify<P: Model>(ctx: &VerifyContext<'_, P>) -> Result<Verdict, Error> {
-//!             emery_sdk::target::verify(ctx, super::PROSE, |_| Ok(Vec::new())).await
-//!         }
-//!     }
-//! }
+//! emery_sdk::export_target!(Adapter);
 //! # fn main() {}
 //! ```
 
@@ -89,71 +108,180 @@ use std::path::Path;
 #[doc(inline)]
 pub use emery_adapter::target::export;
 pub use emery_adapter::target::{
-    Base, MergeRule, MergeStrategy, Report, Slice, Target, TargetMetadata, Verdict,
+    MergeRule, MergeStrategy, Outcome, Report, Slice, TargetMetadata, Verdict,
 };
 use emery_prose::Doc;
 use omnia_sdk::model::{Question, WorkerGrant};
-use omnia_sdk::{Error, Model};
+use omnia_sdk::{Error, Model, server_error};
 
-pub use self::write::Seed;
 use self::write::{Writer, Written};
-use crate::{BUILD, VERIFY, prompt, reference};
+use crate::{BUILD, VERIFY, prompt, reference, unique};
+
+/// The engine's side of the contract, for a guest that dispatches to a target adapter.
+///
+/// [`Target`](capability::Target) is the capability the engine puts a
+/// [`Task`](capability::Task) through, `init`, `build(slice)`, or `verify`,
+/// each answered by the [`Outcome`] of its kind. On `wasm32` its methods
+/// dispatch through the component's import, so a guest implements it on a
+/// unit type to call the adapter the host registered under an id.
+pub mod capability {
+    pub use emery_adapter::target::{Target, Task};
+}
 
 const VERIFY_TURN: &str = "verify";
 
-/// What the model's worker reaches beyond the tree, for the toolchain the adapter's prompts run.
+/// What one program of the worker's toolchain reaches beyond the lent tree.
 ///
-/// A target adapter spells it once as
-/// [`WORKER`](TargetAdapter::WORKER), and [`build`] and [`verify`] carry it
-/// with every turn as the completion's worker grant; the host holds each
-/// entry to its shape and the backend lays what exists on its machine. The
-/// adapter is trusted by its digest, so what it spells is what the
-/// deployment granted when it pinned it. [`Worker::NONE`] reaches nothing
-/// beyond the tree and puts no grant.
+/// A target adapter spells one per program its prompts run, as that
+/// program's own documentation states its reach, and composes them into its
+/// [`Worker`] through [`Worker::of`]. The host holds each entry to its shape
+/// and the backend lays what exists on its machine.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct Worker {
-    /// Host names the worker's commands may reach through the backend's
+pub struct Reach {
+    /// Host names the program's commands may reach through the backend's
     /// egress proxy: a name whole, or `*.suffix` for a domain and every
     /// host beneath it. Never an IP literal, a port, a scheme, or a path.
     pub egress: &'static [&'static str],
-    /// Directories the worker may read beside its lend and the system,
+    /// Directories the program may read beside the lend and the system,
     /// each `~/<path>`: beneath the operator's home, never `~/` itself and
     /// never holding `..`. One the machine lacks grants nothing.
     pub read: &'static [&'static str],
-    /// Environment variables set for the worker, each a name of the shape
+    /// Environment variables set for the program, each a name of the shape
     /// `[A-Za-z_][A-Za-z0-9_]*` and a value whose leading `~/` the backend
     /// expands to the operator's home.
     pub env: &'static [(&'static str, &'static str)],
 }
 
+/// What the model's worker reaches beyond the tree: the reaches of the programs the prompts run, united.
+///
+/// A target adapter composes it once as
+/// [`WORKER`](TargetAdapter::WORKER), one [`Reach`] per program, and
+/// [`build`] and [`verify`] carry it with every turn as the completion's
+/// worker grant, each entry once however many reaches spell it. The adapter
+/// is trusted by its digest, so what it spells is what the deployment
+/// granted when it pinned it. [`Worker::NONE`] reaches nothing beyond the
+/// tree and puts no grant.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Worker {
+    reaches: &'static [Reach],
+}
+
 impl Worker {
     /// A worker reaching nothing beyond the tree: no grant is put.
-    pub const NONE: Self = Self {
-        egress: &[],
-        read: &[],
-        env: &[],
-    };
+    pub const NONE: Self = Self::of(&[]);
 
-    /// Returns the grant a turn carries for this worker: `None` for
-    /// [`Worker::NONE`], the lists as spelled otherwise.
+    /// Returns the worker composed of `reaches`, one per program the
+    /// adapter's prompts run.
+    #[must_use]
+    pub const fn of(reaches: &'static [Reach]) -> Self {
+        Self { reaches }
+    }
+
+    /// Returns the grant a turn carries for this worker: `None` when its
+    /// reaches unite to nothing, every entry once otherwise, in
+    /// first-occurrence order.
     #[must_use]
     pub fn grant(&self) -> Option<WorkerGrant> {
-        (*self != Self::NONE).then(|| WorkerGrant::from(*self))
+        let grant = WorkerGrant::from(*self);
+        (grant != WorkerGrant::default()).then_some(grant)
+    }
+
+    /// Returns the entries that break the grant's shape, each named; empty
+    /// for a worker the host holds to nothing.
+    ///
+    /// The shape is the grant's grammar: an `egress` entry is a host name,
+    /// a `read` entry is `~/<path>` over a plain relative path, an `env`
+    /// name is `[A-Za-z_][A-Za-z0-9_]*`, and no variable is set to two
+    /// values. What the backend refuses beyond the shape, a credential
+    /// store or an address, is its own rule and not read here. [`build`]
+    /// and [`verify`] refuse a worker with findings before any turn.
+    #[must_use]
+    pub fn findings(&self) -> Vec<String> {
+        let mut findings = Vec::new();
+        for reach in self.reaches {
+            for host in reach.egress {
+                if !is_host_name(host) {
+                    findings.push(format!(
+                        "egress `{host}` is not a host name: a name whole or `*.suffix`, never a \
+                         scheme, a port, or a path"
+                    ));
+                }
+            }
+            for root in reach.read {
+                if !is_home_root(root) {
+                    findings.push(format!(
+                        "read root `{root}` is not `~/<path>` over a plain relative path"
+                    ));
+                }
+            }
+            for (name, _) in reach.env {
+                if !is_variable_name(name) {
+                    findings.push(format!(
+                        "variable `{name}` is not a name of the shape `[A-Za-z_][A-Za-z0-9_]*`"
+                    ));
+                }
+            }
+        }
+
+        // one value per variable across the reaches
+        let env = unique(self.reaches.iter().flat_map(|reach| reach.env.iter().copied()));
+        for (index, (name, value)) in env.iter().enumerate() {
+            let earlier = env[..index].iter().find(|(other, _)| other == name);
+            if let Some((_, other)) = earlier {
+                findings.push(format!("variable `{name}` is set to `{other}` and to `{value}`"));
+            }
+        }
+        unique(findings)
     }
 }
 
 impl From<Worker> for WorkerGrant {
     fn from(worker: Worker) -> Self {
+        let reaches = worker.reaches;
         Self {
-            egress: worker.egress.iter().map(|host| (*host).to_owned()).collect(),
-            read: worker.read.iter().map(|root| (*root).to_owned()).collect(),
-            env: worker
-                .env
-                .iter()
-                .map(|(name, value)| ((*name).to_owned(), (*value).to_owned()))
-                .collect(),
+            egress: unique(
+                reaches.iter().flat_map(|reach| reach.egress.iter().map(|host| (*host).to_owned())),
+            ),
+            read: unique(
+                reaches.iter().flat_map(|reach| reach.read.iter().map(|root| (*root).to_owned())),
+            ),
+            env: unique(reaches.iter().flat_map(|reach| {
+                reach.env.iter().map(|(name, value)| ((*name).to_owned(), (*value).to_owned()))
+            })),
         }
     }
+}
+
+fn is_host_name(host: &str) -> bool {
+    !host.is_empty() && !host.contains(['/', ':']) && !host.chars().any(char::is_whitespace)
+}
+
+fn is_home_root(root: &str) -> bool {
+    root.strip_prefix("~/").is_some_and(|path| {
+        !path.is_empty()
+            && !path.contains('\\')
+            && path.split('/').all(|segment| !matches!(segment, "" | "." | ".."))
+    })
+}
+
+fn is_variable_name(name: &str) -> bool {
+    let mut chars = name.chars();
+    chars.next().is_some_and(|first| first.is_ascii_alphabetic() || first == '_')
+        && chars.all(|c| c.is_ascii_alphanumeric() || c == '_')
+}
+
+/// The adapter addressed and the tree it initialises.
+///
+/// An init carries no model: it is the adapter's own code laying the
+/// layout's initial files where the tree lacks them, so two inits over one
+/// tree lay the same files.
+#[derive(Debug)]
+pub struct InitContext<'a> {
+    /// The identifier used to address the adapter.
+    pub adapter_id: &'a str,
+    /// The deployment-local path of the tree root the layout is laid
+    /// beneath. The deployment's grant decides whether it may be written.
+    pub workspace: &'a str,
 }
 
 /// The adapter addressed, the slice it builds, the tree it builds into, and the model.
@@ -161,7 +289,7 @@ impl From<Worker> for WorkerGrant {
 /// [`build`] takes it, so the one turn of a call is put to the one model the
 /// host bound.
 #[derive(Debug)]
-pub struct Context<'a, P> {
+pub struct BuildContext<'a, P> {
     /// The identifier used to address the adapter.
     pub adapter_id: &'a str,
     /// The [`Slice`] to build.
@@ -196,7 +324,28 @@ pub struct VerifyContext<'a, P> {
     pub model: &'a P,
 }
 
-/// A target adapter: how it builds one slice of the plan into the project tree, and verifies the tree.
+/// The task a target adapter is asked, each with the context its turn needs.
+///
+/// [`TargetAdapter::run`] takes one and answers the [`Outcome`] of its
+/// kind: [`Outcome::Initialised`] to [`Init`](Self::Init),
+/// [`Outcome::Built`] to [`Build`](Self::Build), [`Outcome::Verified`] to
+/// [`Verify`](Self::Verify).
+#[derive(Debug)]
+pub enum Task<'a, P> {
+    /// Lay the layout's initial files the tree lacks, a held file left as
+    /// it stands. Put once per repository a build lands in, before any
+    /// slice; the engine seals what the tree then holds as its
+    /// `Initialise` commit.
+    Init(InitContext<'a>),
+    /// Build one slice of the plan into the tree, through
+    /// [`build`](fn@build).
+    Build(BuildContext<'a, P>),
+    /// Run the checks over the integrated tree, repair what they find, and
+    /// answer a verdict, through [`verify`](fn@verify).
+    Verify(VerifyContext<'a, P>),
+}
+
+/// A target adapter: how it initialises a repository with its layout, builds one slice of the plan into the tree, and verifies the tree.
 ///
 /// Implement it on a unit struct and hand that type to
 /// [`export_target!`](crate::export_target), which exports the
@@ -206,78 +355,64 @@ pub trait TargetAdapter {
     /// under, since the adapter alone knows which files its builds
     /// regenerate and which they extend.
     ///
-    /// The first rule matching a conflicting path applies; none leaves every
-    /// conflict unresolved, which the engine reports and rebuilds over the
-    /// merged head.
+    /// The first rule matching a conflicting path applies. A conflict no
+    /// rule resolves is the engine's: it resolves the file with the model
+    /// and merges the resolution, so the rules spare a turn where a list or
+    /// a regenerated file decides the outcome. None by default.
     const MERGE_RULES: &'static [MergeRule] = &[];
 
     /// What the model's worker reaches beyond the tree in every build and
     /// verify turn, since the adapter alone knows the toolchain its prompts
-    /// run: the registries its installs fetch from, the `~/` roots a
-    /// toolchain is installed under, the variables it reads.
+    /// run: one [`Reach`] per program, composed through [`Worker::of`],
+    /// each spelling the registries that program fetches from, the `~/`
+    /// roots it is installed under, and the variables it reads.
     ///
     /// [`Worker::NONE`] by default, for an adapter whose turns run nothing
     /// that reaches beyond the tree.
     const WORKER: Worker = Worker::NONE;
 
-    /// The base the engine admits a build of this adapter over, since the
-    /// adapter alone knows whether its layout is laid into a fresh tree or
-    /// stands beside what a project already holds.
+    /// Runs `task` in the tree its context names and answers the outcome of
+    /// its kind.
     ///
-    /// [`Base::Any`] by default. [`Base::Fresh`] has the engine refuse a
-    /// base whose root holds a directory before any slice builds, so an
-    /// adapter that lays a whole repository never rewrites a held one.
-    const BASE: Base = Base::Any;
-
-    /// Builds the slice `ctx` carries into its workspace and reports what it
-    /// covered and wrote.
-    ///
-    /// The one turn goes through [`build`](fn@build).
+    /// An init lays the layout's initial files the tree lacks through the
+    /// adapter's own code and answers [`Outcome::Initialised`]; a build's
+    /// one turn goes through [`build`](fn@build) and answers
+    /// [`Outcome::Built`]; a verify's through [`verify`](fn@verify) and
+    /// answers [`Outcome::Verified`]. An outcome of another kind is the
+    /// adapter's defect, which the export refuses as `internal`.
     ///
     /// # Errors
     ///
-    /// Returns what [`build`](fn@build) returns.
-    fn build<P: Model>(ctx: &Context<'_, P>) -> impl Future<Output = Result<Report, Error>>;
-
-    /// Verifies the integrated tree `ctx` carries and reports what failed.
-    ///
-    /// The one turn goes through [`verify`](fn@verify).
-    ///
-    /// # Errors
-    ///
-    /// Returns what [`verify`](fn@verify) returns.
-    fn verify<P: Model>(ctx: &VerifyContext<'_, P>)
-    -> impl Future<Output = Result<Verdict, Error>>;
+    /// - Returns [`Error::BadRequest`] when the tree refuses the init, as
+    ///   when a directory or a link stands where a file of the layout goes.
+    /// - Returns [`Error::ServerError`] when the init cannot write the tree.
+    /// - Returns what [`build`](fn@build) or [`verify`](fn@verify) returns.
+    fn run<P: Model>(task: Task<'_, P>) -> impl Future<Output = Result<Outcome, Error>>;
 }
 
-/// Returns the `metadata` answer for a target adapter merging under `merge_rules` and building over `base`.
+/// Returns the `metadata` answer for a target adapter merging under `merge_rules`.
 ///
 /// [`export_target!`](crate::export_target) answers the component's
 /// `metadata` with it over the adapter's
-/// [`MERGE_RULES`](TargetAdapter::MERGE_RULES) and
-/// [`BASE`](TargetAdapter::BASE). The `emery-version` pin is this SDK's own
-/// version, identifying the contract the adapter compiled against. Build a
-/// [`TargetMetadata`] directly only when the adapter must loosen or tighten
-/// that pin.
+/// [`MERGE_RULES`](TargetAdapter::MERGE_RULES). The engine merges every
+/// slice under the rules first and resolves what they leave with the model.
+/// The `emery-version` pin is this SDK's own version, identifying the
+/// contract the adapter compiled against. Build a [`TargetMetadata`]
+/// directly only when the adapter must loosen or tighten that pin.
 #[must_use]
-pub fn metadata(merge_rules: &[MergeRule], base: Base) -> TargetMetadata {
+pub fn metadata(merge_rules: &[MergeRule]) -> TargetMetadata {
     TargetMetadata {
         emery_version: Some(env!("CARGO_PKG_VERSION").to_string()),
         merge_rules: merge_rules.to_vec(),
-        base,
     }
 }
 
 /// Builds the slice of `ctx` into its workspace through one gated turn.
 ///
-/// `docs` must contain `build.md`, which becomes the system prompt. Before
-/// the turn, every file of `seed` the workspace lacks is laid at its path
-/// and counts as written; one the workspace holds is left as it stands,
-/// and a symlink or directory standing at one refuses the slice. The turn
+/// `docs` must contain `build.md`, which becomes the system prompt. The turn
 /// carries the slice's plan entry, its cut of the specification, and the
-/// whole design, names the seed files it laid, lends the workspace with the
-/// grant of `ctx`'s [`Worker`], and offers the embedded references through
-/// the reference tools. It writes
+/// whole design, lends the workspace with the grant of `ctx`'s [`Worker`],
+/// and offers the embedded references through the reference tools. It writes
 /// through two tools. `write_files` writes one or more files beneath the
 /// workspace per call, listed or mapped by path, each created or replaced
 /// whole, at a path [`beneath`](crate::beneath) accepts and no symlink
@@ -295,8 +430,8 @@ pub fn metadata(merge_rules: &[MergeRule], base: Base) -> TargetMetadata {
 /// difference alone. `check` runs on every candidate, so it reads what one
 /// gate reads and runs nothing. An adapter with no rule passes
 /// `|_| Ok(Vec::new())`. The accepted report's `written` is filled in:
-/// every path it lists, spelled root-relative, and every file the seed or a
-/// tool wrote that the tree still holds, once each and sorted.
+/// every path it lists, spelled root-relative, and every file a tool wrote
+/// that the tree still holds, once each and sorted.
 ///
 /// A failure upstream is not put again here: the turn writes the tree as it
 /// goes, so a second turn would start over what the first left. The caller
@@ -304,18 +439,18 @@ pub fn metadata(merge_rules: &[MergeRule], base: Base) -> TargetMetadata {
 ///
 /// # Errors
 ///
-/// - Returns [`Error::BadRequest`] when a symlink or directory stands at a
-///   seed path, when the model rejects the request, or when no valid report
-///   is produced within the available rounds or the backend's time budget.
+/// - Returns [`Error::BadRequest`] when the model rejects the request, or
+///   when no valid report is produced within the available rounds or the
+///   backend's time budget.
 /// - Returns [`Error::ServerError`] when `docs` does not contain `build.md`,
-///   when a seed path is one [`beneath`](crate::beneath) refuses or is
-///   declared twice, or when a seed file cannot be written.
+///   or when `ctx`'s [`Worker`] has [`findings`](Worker::findings), before
+///   any turn.
 /// - Returns [`Error::BadGateway`] when a model tool or transport fails.
 /// - Returns the error `check` fails with, whatever its class: the
 ///   candidate it failed on ends the turn, since a tree the adapter cannot
 ///   read is the run's failure and not the model's to repair.
 pub async fn build<P: Model>(
-    ctx: &Context<'_, P>, docs: &'static [Doc], seed: &[Seed],
+    ctx: &BuildContext<'_, P>, docs: &'static [Doc],
     mut check: impl FnMut(&Report) -> Result<Vec<String>, Error> + Send,
 ) -> Result<Report, Error> {
     let slice = ctx.slice;
@@ -331,16 +466,10 @@ pub async fn build<P: Model>(
             .tools(tools)
             .workspace(ctx.workspace),
         ctx.worker,
-    );
-    let seeded = writer.seed(seed)?;
-    if !seeded.is_empty() {
-        tracing::info!(slice = %id, seeded = seeded.len(), "seeded");
-        tracing::debug!(slice = %id, ?seeded, "the files the tree lacked");
-    }
+    )?;
     let brief = Brief {
         adapter_id: ctx.adapter_id,
         slice,
-        seeded: &seeded,
     };
 
     tracing::info!(
@@ -411,7 +540,9 @@ pub async fn build<P: Model>(
 /// - Returns [`Error::BadRequest`] when the model rejects the request or no
 ///   valid verdict is produced within the available rounds or the backend's
 ///   time budget.
-/// - Returns [`Error::ServerError`] when `docs` does not contain `verify.md`.
+/// - Returns [`Error::ServerError`] when `docs` does not contain
+///   `verify.md`, or when `ctx`'s [`Worker`] has
+///   [`findings`](Worker::findings), before any turn.
 /// - Returns [`Error::BadGateway`] when a model tool or transport fails.
 /// - Returns the error `check` fails with, whatever its class, the
 ///   candidate it failed on ending the turn.
@@ -428,7 +559,7 @@ pub async fn verify<P: Model>(
             .tools(tools)
             .workspace(ctx.workspace),
         ctx.worker,
-    );
+    )?;
     let brief = VerifyBrief {
         adapter_id: ctx.adapter_id,
     };
@@ -465,38 +596,38 @@ pub async fn verify<P: Model>(
     Ok(verdict)
 }
 
-/// The `build` arm of [`export_target!`](crate::export_target), reached through the macro alone.
+/// The `run` arm of [`export_target!`](crate::export_target), reached through the macro alone.
 #[cfg(target_arch = "wasm32")]
 #[doc(hidden)]
-#[omnia_wasi_otel::instrument(name = "target_adapter_build")]
+#[omnia_wasi_otel::instrument(name = "target_adapter_run")]
 pub async fn call<A: TargetAdapter>(
-    id: export::AdapterId, slice: export::Slice, workspace: String,
-) -> Result<export::Report, export::Error> {
-    let slice = Slice::from(slice);
-    let ctx = Context {
-        adapter_id: &id,
-        slice: &slice,
-        workspace: &workspace,
-        worker: &A::WORKER,
-        model: &crate::Provider,
+    id: export::AdapterId, workspace: String, task: export::Task,
+) -> Result<export::Outcome, export::Error> {
+    let asked = emery_adapter::target::Task::from(task);
+    let task = match &asked {
+        emery_adapter::target::Task::Init => Task::Init(InitContext {
+            adapter_id: &id,
+            workspace: &workspace,
+        }),
+        emery_adapter::target::Task::Build(slice) => Task::Build(BuildContext {
+            adapter_id: &id,
+            slice,
+            workspace: &workspace,
+            worker: &A::WORKER,
+            model: &crate::Provider,
+        }),
+        emery_adapter::target::Task::Verify => Task::Verify(VerifyContext {
+            adapter_id: &id,
+            workspace: &workspace,
+            worker: &A::WORKER,
+            model: &crate::Provider,
+        }),
     };
-    Ok(A::build(&ctx).await?.into())
-}
-
-/// The `verify` arm of [`export_target!`](crate::export_target), reached through the macro alone.
-#[cfg(target_arch = "wasm32")]
-#[doc(hidden)]
-#[omnia_wasi_otel::instrument(name = "target_adapter_verify")]
-pub async fn verify_call<A: TargetAdapter>(
-    id: export::AdapterId, workspace: String,
-) -> Result<export::Verdict, export::Error> {
-    let ctx = VerifyContext {
-        adapter_id: &id,
-        workspace: &workspace,
-        worker: &A::WORKER,
-        model: &crate::Provider,
-    };
-    Ok(A::verify(&ctx).await?.into())
+    let outcome = A::run(task).await?;
+    if !outcome.answers(&asked) {
+        return Err(export::Error::Internal(format!("answered {outcome} to {asked}")));
+    }
+    Ok(outcome.into())
 }
 
 // A host error the adapter's check met is the run's, not the model's: the
@@ -507,15 +638,24 @@ fn stash(failed: &mut Option<Error>, error: Error) {
     *failed = Some(error);
 }
 
-// `question` carrying the worker's grant, when it has one.
-fn granted<T>(question: Question<T>, worker: &Worker) -> Question<T>
+// `question` carrying the worker's grant, when it has one. A worker that
+// breaks the grant's shape is the adapter build's own defect, reported
+// before a turn is spent as a missing prompt is.
+fn granted<T>(question: Question<T>, worker: &Worker) -> Result<Question<T>, Error>
 where
     T: schemars::JsonSchema + serde::de::DeserializeOwned + Send,
 {
-    match worker.grant() {
+    let findings = worker.findings();
+    if !findings.is_empty() {
+        return Err(server_error!(
+            "the adapter's worker breaks the grant's shape: {}",
+            findings.join("; ")
+        ));
+    }
+    Ok(match worker.grant() {
         Some(grant) => question.worker(grant),
         None => question,
-    }
+    })
 }
 
 // The two tools' rules, stated once in both briefs: a build's and a
@@ -535,7 +675,6 @@ const TOOLS_RULE: &str = "`write_files` writes one or more files beneath `$WORKS
 struct Brief<'a> {
     adapter_id: &'a str,
     slice: &'a Slice,
-    seeded: &'a [String],
 }
 
 impl Display for Brief<'_> {
@@ -556,17 +695,6 @@ impl Display for Brief<'_> {
             adapter = self.adapter_id,
             base = slice.base,
         )?;
-
-        // the seed this call laid, when the tree lacked any of it
-        if !self.seeded.is_empty() {
-            let seeded = self.seeded.iter().map(|file| format!("`{file}`")).collect::<Vec<_>>();
-            write!(
-                f,
-                "The tree lacked these files of the layout, laid before this turn and counted \
-                 as written by this slice: {seeded}.\n\n",
-                seeded = seeded.join(", "),
-            )?;
-        }
 
         write!(
             f,
