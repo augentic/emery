@@ -908,10 +908,7 @@ impl Residue<'_> {
         // in id order, so the wave comes from the plan rather than this run's
         // wave counter, which restarts on a resume
         let waves = run.plan.waves();
-        let wave_slices = waves
-            .iter()
-            .find(|wave| wave.contains(&slice.id))
-            .unwrap_or(&[]);
+        let wave_slices = waves.iter().find(|wave| wave.contains(&slice.id)).unwrap_or(&[]);
         let merged: Vec<&Slice> = wave_slices
             .iter()
             .filter(|&&id| id != slice.id)
