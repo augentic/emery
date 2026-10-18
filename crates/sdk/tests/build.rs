@@ -615,44 +615,59 @@ async fn write_map_shape() {
 
 // `files` spelled as one `{path, content}` object, the shape the schema
 // declares for an entry, is that one file, never a map of two files named
-// `path` and `content`; one missing its content, or carrying another key, is
-// malformed as a listed entry would be.
+// `path` and `content`, and so is that object spelled bare at the root of
+// the call, `delete` riding beside it; one missing its content, or carrying
+// another key, is malformed as a listed entry would be, and a call spelling
+// `files` and a bare entry is refused whole.
 #[tokio::test]
 async fn write_object_shape() {
     let tmp = tempfile::tempdir().expect("tempdir");
     let root = tmp.path().to_str().expect("a UTF-8 scratch root");
     let model = Scripted::answering([r#"{"covered":["REQ-001"],"written":["src/orders.rs"]}"#])
         .calling(
-            0,
-            [
-                ToolCall {
-                    id: "1".to_owned(),
-                    name: "write_files".to_owned(),
-                    arguments:
-                        r#"{"files":{"path":"src/orders.rs","content":"pub struct Order;\n"}}"#
-                            .to_owned(),
-                },
-                ToolCall {
-                    id: "2".to_owned(),
-                    name: "write_files".to_owned(),
-                    arguments: r#"{"files":{"path":"src/lib.rs"}}"#.to_owned(),
-                },
-                ToolCall {
-                    id: "3".to_owned(),
-                    name: "write_files".to_owned(),
-                    arguments: r#"{"files":{"path":"src/lib.rs","content":"","mode":"644"}}"#
+        0,
+        [
+            ToolCall {
+                id: "1".to_owned(),
+                name: "write_files".to_owned(),
+                arguments: r#"{"files":{"path":"src/orders.rs","content":"pub struct Order;\n"}}"#
+                    .to_owned(),
+            },
+            ToolCall {
+                id: "2".to_owned(),
+                name: "write_files".to_owned(),
+                arguments: r#"{"files":{"path":"src/lib.rs"}}"#.to_owned(),
+            },
+            ToolCall {
+                id: "3".to_owned(),
+                name: "write_files".to_owned(),
+                arguments: r#"{"files":{"path":"src/lib.rs","content":"","mode":"644"}}"#
+                    .to_owned(),
+            },
+            ToolCall {
+                id: "4".to_owned(),
+                name: "write_files".to_owned(),
+                arguments:
+                    r#"{"path":"src/lib.rs","content":"pub mod orders;\n","delete":["src/old.rs"]}"#
                         .to_owned(),
-                },
-            ],
-        );
+            },
+            ToolCall {
+                id: "5".to_owned(),
+                name: "write_files".to_owned(),
+                arguments:
+                    r#"{"files":[{"path":"src/a.rs","content":""}],"path":"src/b.rs","content":""}"#
+                        .to_owned(),
+            },
+        ],
+    );
 
     let report = ask(&model, &slice(), root).await.expect("accepted");
-    assert_eq!(report.written, ["src/orders.rs"]);
+    assert_eq!(report.written, ["src/lib.rs", "src/orders.rs"]);
     assert_eq!(names(tmp.path()), ["src"], "no file named `path` or `content`");
-    assert_eq!(names(&tmp.path().join("src")), ["orders.rs"]);
+    assert_eq!(names(&tmp.path().join("src")), ["lib.rs", "orders.rs"]);
 
     let exchanges = model.exchanges();
-    assert_eq!(exchanges.len(), 4, "three calls, then the check");
+    assert_eq!(exchanges.len(), 6, "five calls, then the check");
     assert_eq!(
         exchanges[0].outcome.as_deref(),
         Ok(r#"{"written":[{"bytes":18,"path":"src/orders.rs"}]}"#)
@@ -661,7 +676,91 @@ async fn write_object_shape() {
     assert!(missing.contains("missing field `content`"), "{missing}");
     let unknown = exchanges[2].outcome.as_deref().expect_err("an entry with a stray key");
     assert!(unknown.contains("unknown field `mode`"), "{unknown}");
-    assert_eq!(exchanges[3].outcome, Ok(String::new()));
+    assert_eq!(
+        exchanges[3].outcome.as_deref(),
+        Ok(r#"{"deleted":["src/old.rs"],"written":[{"bytes":16,"path":"src/lib.rs"}]}"#),
+        "the bare entry is the one file, and `delete` rides beside it"
+    );
+    let both = exchanges[4].outcome.as_deref().expect_err("`files` beside a bare entry");
+    assert!(both.contains("cannot both be given"), "{both}");
+    assert_eq!(exchanges[5].outcome, Ok(String::new()));
+    model.assert_exhausted();
+}
+
+// `edits` spelled as one `{path, find, replace}` object, or that object
+// spelled bare at the root of the call, is that one edit, as a write's
+// one file is; one missing its `find`, or carrying another key, is
+// malformed as a listed edit would be, and a call spelling `edits` and a
+// bare edit is refused whole.
+#[tokio::test]
+async fn edit_object_shape() {
+    let tmp = tempfile::tempdir().expect("tempdir");
+    lay(tmp.path(), [("src/orders.rs", "pub struct Order;\npub struct Line;\n")]);
+    let root = tmp.path().to_str().expect("a UTF-8 scratch root");
+    let model = Scripted::answering([r#"{"covered":["REQ-001"],"written":["src/orders.rs"]}"#])
+        .calling(
+            0,
+            [
+                ToolCall {
+                    id: "1".to_owned(),
+                    name: "edit_files".to_owned(),
+                    arguments:
+                        r#"{"edits":{"path":"src/orders.rs","find":"Order","replace":"Purchase"}}"#
+                            .to_owned(),
+                },
+                ToolCall {
+                    id: "2".to_owned(),
+                    name: "edit_files".to_owned(),
+                    arguments: r#"{"path":"src/orders.rs","find":"Line","replace":"Item"}"#
+                        .to_owned(),
+                },
+                ToolCall {
+                    id: "3".to_owned(),
+                    name: "edit_files".to_owned(),
+                    arguments: r#"{"edits":{"path":"src/orders.rs","replace":"Row"}}"#.to_owned(),
+                },
+                ToolCall {
+                    id: "4".to_owned(),
+                    name: "edit_files".to_owned(),
+                    arguments:
+                        r#"{"path":"src/orders.rs","find":"Item","replace":"Row","mode":"644"}"#
+                            .to_owned(),
+                },
+                ToolCall {
+                    id: "5".to_owned(),
+                    name: "edit_files".to_owned(),
+                    arguments:
+                        r#"{"edits":[],"path":"src/orders.rs","find":"Item","replace":"Row"}"#
+                            .to_owned(),
+                },
+            ],
+        );
+
+    let report = ask(&model, &slice(), root).await.expect("accepted");
+    assert_eq!(report.written, ["src/orders.rs"]);
+    assert_eq!(
+        fs::read_to_string(tmp.path().join("src/orders.rs")).expect("edited"),
+        "pub struct Purchase;\npub struct Item;\n",
+        "the two bare edits landed and the three refused calls changed nothing"
+    );
+
+    let exchanges = model.exchanges();
+    assert_eq!(exchanges.len(), 6, "five calls, then the check");
+    assert_eq!(
+        exchanges[0].outcome.as_deref(),
+        Ok(r#"{"edited":[{"bytes":38,"path":"src/orders.rs"}]}"#)
+    );
+    assert_eq!(
+        exchanges[1].outcome.as_deref(),
+        Ok(r#"{"edited":[{"bytes":38,"path":"src/orders.rs"}]}"#)
+    );
+    let missing = exchanges[2].outcome.as_deref().expect_err("an edit without `find`");
+    assert!(missing.contains("missing field `find`"), "{missing}");
+    let unknown = exchanges[3].outcome.as_deref().expect_err("an edit with a stray key");
+    assert!(unknown.contains("unknown field `mode`"), "{unknown}");
+    let both = exchanges[4].outcome.as_deref().expect_err("`edits` beside a bare edit");
+    assert!(both.contains("cannot both be given"), "{both}");
+    assert_eq!(exchanges[5].outcome, Ok(String::new()));
     model.assert_exhausted();
 }
 
