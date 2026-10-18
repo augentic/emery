@@ -110,7 +110,7 @@ impl Writer {
     // and every entry replacing a held file to the shrink rule, so a call
     // refused anywhere leaves the tree as it was. What the tree holds at each
     // is read once and moved with every write, so a later entry naming a
-    // path, or its removal, meets what the call laid there rather than what
+    // path, or its removal, meets what the call wrote there rather than what
     // stood before it.
     fn write(&self, call: &ToolCall) -> Result<Done, String> {
         let WriteFiles { files, delete } =
@@ -150,7 +150,7 @@ impl Writer {
             return Err(format!("{WRITE_FILES}: nothing written: {}", refused.join("; ")));
         }
 
-        // the files laid in order
+        // the files written in order
         let mut wrote = Vec::with_capacity(accepted.len());
         for (file, content) in accepted {
             let held = tree[&file];
@@ -161,7 +161,7 @@ impl Writer {
                     format!("{WRITE_FILES}: creating the directories above `{file}`: {err}")
                 })?;
             }
-            lay(&self.root.join(&file), held, &content)
+            write_whole(&self.root.join(&file), held, &content)
                 .map_err(|err| format!("{WRITE_FILES}: writing `{file}`: {err}"))?;
             tree.insert(file.clone(), Held::File);
             self.written.record(file.clone());
@@ -171,7 +171,7 @@ impl Writer {
             });
         }
 
-        // the files removed, one this call laid among them; one the tree
+        // the files removed, one this call wrote among them; one the tree
         // lacks is already gone
         let mut deleted = Vec::with_capacity(removals.len());
         for file in removals {
@@ -243,7 +243,7 @@ impl Writer {
         // the edited files written whole
         let mut edited = Vec::with_capacity(contents.len());
         for (file, content) in contents {
-            lay(&self.root.join(&file), Held::File, &content)
+            write_whole(&self.root.join(&file), Held::File, &content)
                 .map_err(|err| format!("{EDIT_FILES}: writing `{file}`: {err}"))?;
             self.written.record(file.clone());
             edited.push(Wrote {
@@ -375,11 +375,11 @@ fn make_dirs(root: &Path, dirs: &str) -> io::Result<()> {
     Ok(())
 }
 
-// Lays one file whole. A file the walk found absent is created and never
+// Writes one file whole. A file the walk found absent is created and never
 // followed, so a link raced into its place fails the open; one it found is
 // truncated in place, keeping its mode — `std` on `wasm32` has no no-follow
 // open, so that open alone trusts the walk.
-fn lay(full: &Path, held: Held, content: &str) -> io::Result<()> {
+fn write_whole(full: &Path, held: Held, content: &str) -> io::Result<()> {
     let mut options = OpenOptions::new();
     options.write(true);
     match held {
@@ -389,7 +389,7 @@ fn lay(full: &Path, held: Held, content: &str) -> io::Result<()> {
     options.open(full)?.write_all(content.as_bytes())
 }
 
-// What one `write_files` call did: the files laid and the files removed.
+// What one `write_files` call did: the files written and the files removed.
 struct Done {
     wrote: Vec<Wrote>,
     deleted: Vec<String>,

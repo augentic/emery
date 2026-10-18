@@ -220,7 +220,7 @@ impl<R: Recogniser> Tree<R> {
         order
     }
 
-    /// Returns the modules laid after a seam's `files` for what one of them
+    /// Returns the modules placed after a seam's `files` for what one of them
     /// imports but the resolver could not follow, or loads by a computed
     /// name: the modules of each directory an unfollowed import leads into,
     /// in path order.

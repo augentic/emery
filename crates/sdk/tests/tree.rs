@@ -326,7 +326,7 @@ fn identify_ids() {
 // the directory the load spells, or the loader's own where it spells none.
 // A directory's modules are those directly beneath it, the root's own at
 // the root; a file the survey set aside widens nothing, and what the seam
-// lays already is not laid again.
+// mines already is not placed again.
 #[test]
 fn widening() {
     let mut aliased = module("src/api/a.ts", 3);
@@ -383,7 +383,7 @@ fn widening() {
     assert_eq!(
         widening(&["src/jobs/b.ts", "src/jobs/c.ts"]),
         ["src/jobs/d.ts", "src/plugins/p.ts", "src/plugins/q.ts"],
-        "both directories in path order, less what the seam lays"
+        "both directories in path order, less what the seam mines"
     );
     assert_eq!(widening(&["main.ts"]), ["index.ts"], "the root's own at the root");
     assert_eq!(widening(&["src/api/d.ts"]), [] as [String; 0], "a file set aside widens nothing");

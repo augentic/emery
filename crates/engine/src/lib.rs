@@ -93,7 +93,7 @@ pub trait Files: Send + Sync {
     ///
     /// The directories on the way are created where they are missing. No
     /// symbolic link is followed: one standing at the path or on the way to
-    /// it refuses the write, so what the write lays is what the commit will
+    /// it refuses the write, so what the write puts is what the commit will
     /// carry at `path` and nothing outside the copy is reached.
     ///
     /// # Errors

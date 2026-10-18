@@ -262,9 +262,9 @@ impl<'t, R: Recogniser> Located<'t, R> {
         ))
     }
 
-    // Ordered so a tree past the budget lays what locates its surfaces before
-    // what does not.
-    pub(super) fn laid(&self) -> Vec<String> {
+    // Ordered so a tree past the budget inlines what locates its surfaces
+    // before what does not.
+    pub(super) fn inlined(&self) -> Vec<String> {
         let tree = self.tree;
         let mut files: Vec<String> = Vec::new();
         for manifest in tree.dialect.manifests {

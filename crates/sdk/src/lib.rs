@@ -95,7 +95,7 @@ pub use self::extract::{CONCURRENT, INLINE_BYTES, Seam, extract};
 /// where accepted claims land. Prompts link these paths without listing them
 /// in their own table; pass [`RUNTIME`] to [`check`] as imports. A source's
 /// turns offer them through the reference tools beside the adapter's own; a
-/// target's turns, which lay code and never claims, offer the adapter's
+/// target's turns, which write code and never claims, offer the adapter's
 /// alone.
 pub static RUNTIME: &[Doc] = prose!["../prose/claims.md", "../prose/reconciliation.md"];
 

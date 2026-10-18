@@ -29,14 +29,14 @@ use crate::{CLAIMS, Context, EXTRACT, RUNTIME, beneath, prompt, reference};
 /// though no more than this many are answered at once.
 pub const CONCURRENT: usize = 4;
 
-/// The most bytes of a seam's files that [`extract`] lays into its turn whole.
+/// The most bytes of a seam's files that [`extract`] inlines into its turn whole.
 ///
-/// A [`Seam`]'s `files` are laid into the brief in order, every line numbered
-/// so the model cites `path` anchors without reading the lend, for as long as
-/// they fit within this together; the first that does not, or that is not
-/// UTF-8 text, and every file after it are listed by path instead. An adapter
-/// that cuts a tree by size reads it as its threshold for one seam, and one
-/// that lays a closure puts the entry first.
+/// A [`Seam`]'s `files` are inlined into the brief in order, every line
+/// numbered so the model cites `path` anchors without reading the lend, for
+/// as long as they fit within this together; the first that does not, or that
+/// is not UTF-8 text, and every file after it are listed by path instead. An
+/// adapter that cuts a tree by size reads it as its threshold for one seam,
+/// and one that inlines a closure puts the entry first.
 pub const INLINE_BYTES: u64 = 64 * 1024;
 
 // How many of a seam's anchors in a claim's file a finding names.
@@ -125,7 +125,7 @@ pub async fn extract<P: Model>(
 ///   after.
 /// - `files` are the files mined beneath a workspace root, relative to it;
 ///   empty mines the whole lend. They keep their order, deduplicated, and the
-///   leading ones are laid into the turn whole for as long as they fit within
+///   leading ones are inlined into the turn whole for as long as they fit within
 ///   [`INLINE_BYTES`] together, the rest listed, so an entry comes first; a
 ///   claim's `path` must name one of them. A path that escapes the root is
 ///   rejected; files over an inline value are the adapter's own defect.
@@ -523,7 +523,7 @@ pub fn line_count(root: &str, path: &str) -> Option<u64> {
 #[derive(Debug)]
 struct Scope {
     files: Vec<String>,
-    laid: Vec<String>,
+    inlined: Vec<String>,
 }
 
 impl Scope {
@@ -537,23 +537,23 @@ impl Scope {
             }
         }
 
-        let laid = lay(root, &files);
-        Ok(Self { files, laid })
+        let inlined = inline(root, &files);
+        Ok(Self { files, inlined })
     }
 
-    // The files past the laid ones.
+    // The files past the inlined ones.
     fn listed(&self) -> &[String] {
-        &self.files[self.laid.len()..]
+        &self.files[self.inlined.len()..]
     }
 }
 
 // The bodies of the leading files of `files`, in order, for as long as each
 // is a UTF-8 regular file and they fit within `INLINE_BYTES` together; the
 // first that is not, or does not, ends the run and is listed with the rest.
-pub fn lay(root: &str, files: &[String]) -> Vec<String> {
+pub fn inline(root: &str, files: &[String]) -> Vec<String> {
     let root = Path::new(root);
     let mut total = 0u64;
-    let mut laid = Vec::new();
+    let mut inlined = Vec::new();
 
     for file in files {
         let path = root.join(file);
@@ -567,10 +567,10 @@ pub fn lay(root: &str, files: &[String]) -> Vec<String> {
         }
         let Ok(body) = std::fs::read_to_string(path) else { break };
         total = sum;
-        laid.push(body);
+        inlined.push(body);
     }
 
-    laid
+    inlined
 }
 
 // The turn is one of several in flight, so its events and its question name
@@ -671,7 +671,7 @@ impl Display for Brief<'_> {
 
         // the lend
         match &self.plan.lend {
-            Lend::Files(scope) if scope.laid.is_empty() => {
+            Lend::Files(scope) if scope.inlined.is_empty() => {
                 f.write_str(
                     "`$SOURCE_DIR` is the bound source tree, lent read-only: the root of every \
                      file you can read. Mine these files beneath it and nothing else:\n",
@@ -687,22 +687,23 @@ impl Display for Brief<'_> {
                      laid out here whole, every line led by its number, so cite `#L<n>` from the \
                      numbers shown rather than reading it again:\n\n",
                 )?;
-                Laid(&scope.files, &scope.laid).fmt(f)?;
+                Inlined(&scope.files, &scope.inlined).fmt(f)?;
             }
             Lend::Files(scope) => {
-                let (laid, those) = match scope.laid.len() {
+                let (inlined, those) = match scope.inlined.len() {
                     1 => ("The first is".to_owned(), "it"),
                     n => (format!("The first {n} are"), "them"),
                 };
                 write!(
                     f,
                     "`$SOURCE_DIR` is the bound source tree, lent read-only: the root every \
-                     `path` is relative to. Mine these files beneath it and nothing else. {laid} \
-                     laid out here whole, every line led by its number, so cite `#L<n>` from the \
-                     numbers shown rather than reading {those} again; the rest are listed after \
-                     {those}, to read from `$SOURCE_DIR` as the seam reaches them:\n\n"
+                     `path` is relative to. Mine these files beneath it and nothing else. \
+                     {inlined} laid out here whole, every line led by its number, so cite \
+                     `#L<n>` from the numbers shown rather than reading {those} again; the rest \
+                     are listed after {those}, to read from `$SOURCE_DIR` as the seam reaches \
+                     them:\n\n"
                 )?;
-                Laid(&scope.files, &scope.laid).fmt(f)?;
+                Inlined(&scope.files, &scope.inlined).fmt(f)?;
                 f.write_str("\n\nThe rest of this seam's files:\n")?;
                 for file in scope.listed() {
                     write!(f, "\n- `{file}`")?;
@@ -770,9 +771,9 @@ impl Display for Brief<'_> {
 
 // The files of a scope whole: a heading per file, then its lines in a fence
 // no run of backticks inside can close, each led by its number.
-pub struct Laid<'a>(pub &'a [String], pub &'a [String]);
+pub struct Inlined<'a>(pub &'a [String], pub &'a [String]);
 
-impl Display for Laid<'_> {
+impl Display for Inlined<'_> {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         for (position, (file, body)) in self.0.iter().zip(self.1).enumerate() {
             if position > 0 {

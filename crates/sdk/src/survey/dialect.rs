@@ -100,7 +100,7 @@ pub struct Dialect {
     /// `default` keyword is a boundary: `add_argument`, `option`. Empty
     /// where a default is handed by position.
     pub options: &'static [&'static str],
-    /// The manifest files a tree may carry at its root, laid before any
+    /// The manifest files a tree may carry at its root, placed before any
     /// module: `package.json`; `pyproject.toml`, `setup.cfg`.
     pub manifests: &'static [&'static str],
     /// The file stems whose module makes its directory importable as one:

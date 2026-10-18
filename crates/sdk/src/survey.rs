@@ -20,7 +20,7 @@ use serde::{Deserialize, Serialize};
 use self::code::{Recogniser, Tree};
 use self::lead::Lead;
 use self::located::Located;
-use crate::extract::{INLINE_BYTES, Laid, Seam, lay, line_count};
+use crate::extract::{INLINE_BYTES, Inlined, Seam, inline, line_count};
 use crate::{Context, RUNTIME, SURVEY, beneath, prompt, push_unique, reference, unique};
 
 pub mod code;
@@ -124,15 +124,15 @@ impl Display for Lines {
 ///
 /// The model is told how to read what code found, never how to find it: the
 /// adapter lists every production module, renders what locates the surfaces
-/// among them as `text`, and names the files worth laying into the turn whole.
+/// among them as `text`, and names the files worth inlining into the turn whole.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct Facts<'a> {
     /// Every production module of the tree, root-relative; an anchor names one of these.
     pub modules: &'a [String],
     /// What the adapter's code read: the manifest, the bootstrap, the registration sites.
     pub text: &'a str,
-    /// The files laid into the turn whole, in order, for as long as they fit
-    /// within [`INLINE_BYTES`] together; the rest are left to the lend.
+    /// The files inlined into the turn whole, in order, for as long as they
+    /// fit within [`INLINE_BYTES`] together; the rest are left to the lend.
     pub files: &'a [String],
 }
 
@@ -183,12 +183,12 @@ pub async fn surfaces<P: Model>(
         .system(prompt(docs, SURVEY)?)
         .tools(reference::tools())
         .workspace(root);
-    let laid = lay(root, facts.files);
+    let inlined = inline(root, facts.files);
     let brief = Brief {
         adapter_id: ctx.adapter_id,
         source,
         facts,
-        laid: &laid,
+        inlined: &inlined,
     };
 
     tracing::info!(%source, modules = facts.modules.len(), "surveying by model");
@@ -282,7 +282,7 @@ impl Survey {
 /// Returns the seams of a parsed workspace tree, its surfaces named by the model.
 ///
 /// One survey turn is put through [`surfaces`] under `docs`'s `survey.md`,
-/// laying the facts the tree holds: the manifest, the bootstrap, every call
+/// carrying the facts the tree holds: the manifest, the bootstrap, every call
 /// that hands a function to a package, every function, method, and class
 /// under a package's decorator, what the entry modules export, and the
 /// packages imported. The answer is held to the tree — a module the facts
@@ -302,7 +302,7 @@ impl Survey {
 ///   under the package's or the root directory's name within the budget,
 ///   one per top-level directory past it
 ///
-/// Each seam lays the data files its modules name among them and the
+/// Each seam inlines the data files its modules name among them and the
 /// tree's own tests after them, each test's statements in the brief of
 /// every seam whose modules it imports, and carries as its `lexicon` the
 /// technology of the packages its modules import, through
@@ -324,7 +324,7 @@ pub async fn seams<P: Model, R: Recogniser>(
     let located = Located::new(tree);
     let modules: Vec<String> = tree.modules.keys().cloned().collect();
     let text = located.facts();
-    let files = located.laid();
+    let files = located.inlined();
 
     // trace the facts for a host reading them without a turn
     if tracing::enabled!(tracing::Level::TRACE) {
@@ -580,7 +580,7 @@ struct Brief<'a> {
     adapter_id: &'a str,
     source: &'a str,
     facts: &'a Facts<'a>,
-    laid: &'a [String],
+    inlined: &'a [String],
 }
 
 impl Display for Brief<'_> {
@@ -608,9 +608,9 @@ impl Display for Brief<'_> {
             write!(f, "\n- `{module}`")?;
         }
 
-        // the laid files
-        if !self.laid.is_empty() {
-            let (these, them) = match self.laid.len() {
+        // the inlined files
+        if !self.inlined.is_empty() {
+            let (these, them) = match self.inlined.len() {
                 1 => ("This file is", "it"),
                 _ => ("These files are", "them"),
             };
@@ -619,7 +619,7 @@ impl Display for Brief<'_> {
                 "\n\n{these} laid out here whole, every line led by its number, so cite `#L<n>` \
                  from the numbers shown rather than reading {them} again:\n\n"
             )?;
-            Laid(&self.facts.files[..self.laid.len()], self.laid).fmt(f)?;
+            Inlined(&self.facts.files[..self.inlined.len()], self.inlined).fmt(f)?;
         }
 
         f.write_str(

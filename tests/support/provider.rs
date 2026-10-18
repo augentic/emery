@@ -120,7 +120,7 @@ impl Rendezvous {
 /// Reports are scripted per slice id, verdicts in wave order, the minimum
 /// `emery` version and the merge rules per adapter.
 ///
-/// - An init answers at once; what it lays is the scripted `Vcs`'s
+/// - An init answers at once; what it scaffolds is the scripted `Vcs`'s
 ///   `pending` to say.
 /// - An unscripted slice reports every requirement covered and one file
 ///   written, `src/<name>.rs`.

@@ -241,7 +241,7 @@ impl Module {
 
     /// Returns each specifier the resolver could not follow, once, in import order.
     ///
-    /// A type-only import never counts: it reaches nothing a seam lays.
+    /// A type-only import never counts: it reaches nothing a seam mines.
     #[must_use]
     pub fn unresolved(&self) -> Vec<&str> {
         unique(self.settled(false).filter_map(Target::unresolved))

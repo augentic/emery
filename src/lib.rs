@@ -45,19 +45,19 @@ impl Files for Provider {
     fn write(
         &self, at: &str, path: &str, bytes: &[u8],
     ) -> impl Future<Output = Result<(), Error>> + Send {
-        let outcome = laid(Path::new(at), path, bytes)
+        let outcome = written(Path::new(at), path, bytes)
             .map_err(|error| server_error!("writing `{path}` under `{at}`: {error}"));
         async move { outcome }
     }
 }
 
-// Lays `bytes` whole at `path` beneath `root`, the directories on the way
+// Writes `bytes` whole at `path` beneath `root`, the directories on the way
 // made one at a time, so a link standing where one is to go, or at the path
 // itself, is refused rather than followed as `create_dir_all` and `write`
 // would follow it. `std` on `wasm32` has no no-follow open, so a file the
 // walk found is truncated in place and one it found absent is created and
 // never followed, as the SDK's writer does.
-fn laid(root: &Path, path: &str, bytes: &[u8]) -> io::Result<()> {
+fn written(root: &Path, path: &str, bytes: &[u8]) -> io::Result<()> {
     let mut full = root.to_path_buf();
     let mut segments = path.split('/').filter(|segment| !segment.is_empty()).peekable();
     while let Some(segment) = segments.next() {

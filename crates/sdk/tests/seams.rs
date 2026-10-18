@@ -221,8 +221,8 @@ fn files(survey: &Survey, index: usize) -> Vec<&str> {
 
 // The one survey turn carries what the tree holds — the manifest, the
 // bootstrap, the registration, the registering decorator alone, the entry
-// modules' exports, the packages, and the import nothing answered — and lays
-// the manifest and the bootstrap first.
+// modules' exports, the packages, and the import nothing answered — and
+// inlines the manifest and the bootstrap first.
 #[tokio::test]
 async fn facts_laid() {
     let (_tmp, input, tree) = service(false, Some(Runs::Load));
@@ -258,13 +258,13 @@ async fn facts_laid() {
         assert!(user.contains(fact), "{fact}\n---\n{user}");
     }
     assert!(!user.contains("@UseGuards"), "a shaping decorator is not listed: {user}");
-    let laid = user.find("### `package.json`").expect("laid");
-    let main = user.find("### `src/main.ts`").expect("laid");
-    let ctl = user.find("### `src/ctl.ts`").expect("laid");
-    let orders = user.find("### `src/routes/orders.ts`").expect("laid");
-    let config = user.find("### `src/config.ts`").expect("laid");
+    let manifest = user.find("### `package.json`").expect("inlined");
+    let main = user.find("### `src/main.ts`").expect("inlined");
+    let ctl = user.find("### `src/ctl.ts`").expect("inlined");
+    let orders = user.find("### `src/routes/orders.ts`").expect("inlined");
+    let config = user.find("### `src/config.ts`").expect("inlined");
     assert!(
-        laid < main && main < ctl && ctl < orders && orders < config,
+        manifest < main && main < ctl && ctl < orders && orders < config,
         "manifest, bootstrap, locating, the rest"
     );
     model.assert_exhausted();
@@ -342,9 +342,9 @@ async fn whole_tree() {
         "- `src/config.ts#L3-L5` — `LIMITS = { pageSize: 20, }`",
         "- `src/config.ts#L1` — `process.env.PORT` in `const PORT = process.env.PORT;`",
         "Packages these modules import, with the names bound to them.",
-        "Data files these modules name by path, each with the modules reading it, laid after the \
-         first module naming it — a large one after every module:\n\n- `data/small.json` — named \
-         by `src/data.ts`\n- `data/big.json` — named by `src/data.ts`",
+        "Data files these modules name by path, each with the modules reading it, placed after \
+         the first module naming it — a large one after every module:\n\n- `data/small.json` — \
+         named by `src/data.ts`\n- `data/big.json` — named by `src/data.ts`",
         "Behaviours the tree's own tests state, each at its line — a case's title under its \
          suites', a scenario's under its feature's.",
         "- `tests/orders.test.ts#L1` — states lists_orders\n- `tests/loose.test.ts#L1` — states runs",
@@ -678,7 +678,7 @@ async fn exports_declared() {
 }
 
 // A tree past the budget is one seam per stem over what its surfaces reach;
-// the seam whose modules import what no module answers lays the importer's
+// the seam whose modules import what no module answers places the importer's
 // own directory after its closure — nothing beneath it — and says so, and
 // each test follows the seams whose files it imports.
 #[tokio::test]
@@ -739,7 +739,7 @@ async fn by_stem_widened() {
         survey.seams[2].text.contains(
             "The caller could not follow every import: `@alias/x` from `src/ctl.ts` names no \
              module of the tree. What these name is in none of the lists above. The modules after \
-             the closure are the rest of `src`, laid so what these name is still within reach; \
+             the closure are the rest of `src`, placed so what these name is still within reach; \
              read them for that alone."
         ),
         "{}",
@@ -763,10 +763,10 @@ async fn by_stem_widened() {
     model.assert_exhausted();
 }
 
-// A seam widened past a load by a computed name lays the directory the load
-// spells, and the loader's own where it spells none, each named in the brief
-// beside the load; one widened from a module at the root lays the root's own
-// modules and says so.
+// A seam widened past a load by a computed name places the directory the
+// load spells, and the loader's own where it spells none, each named in the
+// brief beside the load; one widened from a module at the root places the
+// root's own modules and says so.
 #[tokio::test]
 async fn by_stem_loaded() {
     let tmp = tempfile::tempdir().expect("tempdir");
@@ -803,7 +803,7 @@ async fn by_stem_loaded() {
         survey.seams[0].text.contains(
             "The caller could not follow every import: `./gone` from `main.ts` names no module of \
              the tree. What these name is in none of the lists above. The modules after the \
-             closure are the rest of the root, laid so what these name is still within reach; \
+             closure are the rest of the root, placed so what these name is still within reach; \
              read them for that alone."
         ),
         "{}",
@@ -819,8 +819,8 @@ async fn by_stem_loaded() {
             "The caller could not follow every import: `src/jobs/loader.ts` loads a module of \
              `src/plugins` by a computed name at L2; `src/jobs/loader.ts` loads a module by a \
              computed name at L3. What these name is in none of the lists above. The modules \
-             after the closure are the rest of `src/jobs` and `src/plugins`, laid so what these \
-             name is still within reach; read them for that alone."
+             after the closure are the rest of `src/jobs` and `src/plugins`, placed so what \
+             these name is still within reach; read them for that alone."
         ),
         "{}",
         survey.seams[1].text

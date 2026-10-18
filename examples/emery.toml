@@ -22,7 +22,7 @@
 # the package's name when omitted; `repository`, where the build lands: a
 # URL to build into a clone of, from its default branch; "." for the
 # project's own repository, from its sealed head; omitted, a repository the
-# engine lays under that name and keeps. The label `emery/<revision>` stands
+# engine creates under that name and keeps. The label `emery/<revision>` stands
 # in that repository; nothing is pushed.
 #
 # The `emery` namespace is fetched from augentic.io; any other namespace is

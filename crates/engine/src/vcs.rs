@@ -32,16 +32,16 @@ pub const ORIGIN: &str = "origin";
 /// The commit a build into a cloned repository starts from: the origin's default branch, as the last fetch left it.
 pub const DEFAULT_BRANCH: &str = "origin/HEAD";
 
-/// The message of the one commit the engine lays a target repository with.
+/// The message of the one commit the engine creates a target repository with.
 pub const INITIALISE: &str = "Initialise";
 
 /// The project's own checkout, as the capability names it and as a target's `repository` names it to build into.
 pub const PROJECT: &str = ".";
 
-// The file a laid repository's root commit holds beside what the adapter's
-// init laid, when the init laid no ignore file of its own, so that the
-// commit exists and the engine's own directory is ignored wherever the
-// result is checked out.
+// The file a created repository's root commit holds beside what the
+// adapter's init scaffolded, when the init scaffolded no ignore file of its
+// own, so that the commit exists and the engine's own directory is ignored
+// wherever the result is checked out.
 const IGNORE: (&str, &[u8]) = (".gitignore", b".emery/\n");
 
 /// The working copy a repository source is read from, by source name.
@@ -279,7 +279,7 @@ pub enum Repo {
     /// The project's own repository, read through the `.` mount.
     Project,
     /// The target's own repository, at [`target_path`] of its name: a clone
-    /// of `url`, or, with none, the one the engine lays and keeps.
+    /// of `url`, or, with none, the one the engine creates and keeps.
     Target {
         /// The target's name, which the repository is kept under.
         name: String,
@@ -304,15 +304,15 @@ impl Repo {
     ///   changes beneath the engine's own [`SKIP_DIRS`] are never counted.
     /// - A clone's is [`DEFAULT_BRANCH`], the origin's default branch:
     ///   cloned when the run has no clone, fetched when it has one.
-    /// - A laid repository's is its root commit, [`INITIALISE`], holding
-    ///   what `init` laid in the tree — the adapter's layout, given the
-    ///   repository's path and answering what it left pending — and a
+    /// - A created repository's is its root commit, [`INITIALISE`], holding
+    ///   what `init` scaffolded in the tree — the adapter's layout, given
+    ///   the repository's path and answering what it left pending — and a
     ///   `.gitignore` of the engine's own directory beside it when `init`
-    ///   laid none. It is laid when no run has laid it yet, through `init`
-    ///   and [`Files::write`], and kept, so a later run starts from the
-    ///   same commit and resumes the label set over it. One laid but never
-    ///   sealed is sealed now, `init` run over it again. The other two
-    ///   bases never run `init`.
+    ///   scaffolded none. It is created when no run has created it yet,
+    ///   through `init` and [`Files::write`], and kept, so a later run
+    ///   starts from the same commit and resumes the label set over it. One
+    ///   created but never sealed is sealed now, `init` run over it again.
+    ///   The other two bases never run `init`.
     ///
     /// # Errors
     ///
@@ -321,11 +321,11 @@ impl Repo {
     ///   its checkout holds pending changes, listed, or no commit yet.
     /// - Returns [`Error::NotFound`] with code `revision-not-found` when the
     ///   URL names no repository, the clone has no default branch, or what
-    ///   sits at the path was laid or cloned under no such origin.
+    ///   sits at the path was created or cloned under no such origin.
     /// - Returns [`Error::BadGateway`] when the remote refuses, cannot be
     ///   reached, or wants credentials.
     /// - Returns [`Error::ServerError`] when the capability fails otherwise,
-    ///   or a laid repository seals nothing.
+    ///   or a created repository seals nothing.
     /// - Returns what `init` fails with.
     pub async fn base<P: Vcs + Files>(
         &self, provider: &P, init: impl AsyncFnOnce(&str) -> Result<Vec<Change>, Error>,
@@ -338,7 +338,7 @@ impl Repo {
                 ensure(provider, url, &at).await.map_err(|error| subject.refusal(error))?;
                 provider.resolve(&at, DEFAULT_BRANCH).await.map_err(|error| subject.refusal(error))
             }
-            Self::Target { name, url: None } => lay(provider, name, init).await,
+            Self::Target { name, url: None } => create(provider, name, init).await,
         }
     }
 
@@ -674,10 +674,11 @@ async fn ensure<V: Vcs>(vcs: &V, url: &str, at: &str) -> Result<(), vcs::Error> 
     }
 }
 
-// The root commit of the repository laid under `name`, laid when no run has
-// laid it yet: `init` answers `Exists` for one a run already holds, whose
-// head is the base, or `NotFound` under it for one laid and never sealed.
-async fn lay<P: Vcs + Files>(
+// The root commit of the repository created under `name`, created when no
+// run has created it yet: `init` answers `Exists` for one a run already
+// holds, whose head is the base, or `NotFound` under it for one created and
+// never sealed.
+async fn create<P: Vcs + Files>(
     provider: &P, name: &str, init: impl AsyncFnOnce(&str) -> Result<Vec<Change>, Error>,
 ) -> Result<String, Error> {
     let at = target_path(name);
@@ -692,10 +693,10 @@ async fn lay<P: Vcs + Files>(
         Err(error) => return Err(subject.refusal(error)),
     }
 
-    // the adapter's layout, and the engine's ignore file where it laid none
-    let laid = init(&at).await?;
+    // the adapter's layout, and the engine's ignore file where it scaffolded none
+    let scaffolded = init(&at).await?;
     let (path, content) = IGNORE;
-    if !laid.iter().any(|change| change.path == path) {
+    if !scaffolded.iter().any(|change| change.path == path) {
         provider.write(&at, path, content).await?;
     }
     let commit = provider
@@ -703,7 +704,7 @@ async fn lay<P: Vcs + Files>(
         .await
         .map_err(|error| subject.refusal(error))?
         .ok_or_else(|| server_error!("{subject} sealed nothing as its root commit"))?;
-    tracing::info!(repository = %at, %commit, "laid the target repository");
+    tracing::info!(repository = %at, %commit, "created the target repository");
     Ok(commit)
 }
 

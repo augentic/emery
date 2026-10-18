@@ -36,10 +36,10 @@ use crate::{EntryKind, Files, RETRIES, is_retryable, store, vcs};
 /// again, and neither are those the integration working copy holds merged
 /// over the labelled head from a run that ended before their wave was
 /// verified: they are verified in their wave instead. A build neither
-/// resumes first has the adapter initialise the tree — lay the layout's
-/// initial files it lacks, with no model turn — and seals what it laid as
-/// the `Initialise` commit the slices build over; a repository the engine
-/// lays holds that commit as its root. The rest go in waves:
+/// resumes first has the adapter initialise the tree — scaffold the
+/// layout's initial files it lacks, with no model turn — and seals what it
+/// scaffolded as the `Initialise` commit the slices build over; a repository
+/// the engine creates holds that commit as its root. The rest go in waves:
 /// every slice whose dependencies are merged is built at once, up to `jobs`
 /// concurrently, in a working copy cut at the wave's head; each report is
 /// held to its slice by
@@ -61,7 +61,7 @@ use crate::{EntryKind, Files, RETRIES, is_retryable, store, vcs};
 ///   - with code `spec-not-generated`, when no revision has been committed;
 ///   - with code `revision-not-found`, when the repository the target names
 ///     does not exist or has no default branch, or what the run already
-///     holds under the target's name was cloned or laid under another
+///     holds under the target's name was cloned or created under another
 ///     origin.
 /// - Returns [`Error::BadRequest`] when the run is refused:
 ///   - when the target's name is not kebab-case;
@@ -133,9 +133,9 @@ pub async fn build<P: Model + Target + StateStore + BlobStore + Plugins + Vcs + 
     } = adapter::load_target(provider, &input.adapter, input.digest.as_ref()).await?;
 
     // the repository the build lands in: the project's for `.`, else the
-    // target's own, a clone of the URL or the one the engine lays; then the
-    // base, the adapter's layout laid into a repository the engine lays, and
-    // what the label already holds over it
+    // target's own, a clone of the URL or the one the engine creates; then
+    // the base, the adapter's layout scaffolded into a repository the engine
+    // creates, and what the label already holds over it
     let repo = match input.repository.as_deref() {
         Some(vcs::PROJECT) => Repo::Project,
         url => Repo::Target {
@@ -143,7 +143,7 @@ pub async fn build<P: Model + Target + StateStore + BlobStore + Plugins + Vcs + 
             url: url.map(ToOwned::to_owned),
         },
     };
-    let laid = matches!(repo, Repo::Target { url: None, .. });
+    let created = matches!(repo, Repo::Target { url: None, .. });
     let base = repo.base(provider, async |at| initialise(provider, &adapter, at).await).await?;
     let label = format!("emery/{revision_id}");
     let labelled = repo.merged_under(provider, &label, &base, &revision_id).await?;
@@ -155,10 +155,10 @@ pub async fn build<P: Model + Target + StateStore + BlobStore + Plugins + Vcs + 
     } = repo.cut_integration(provider, &progress.head, &revision_id).await?;
     progress.stage(head, staged);
 
-    // a laid repository's base is its initialisation; any other base is
+    // a created repository's base is its initialisation; any other base is
     // initialised on a fresh build
     let initialised =
-        if laid { None } else { progress.initialise(provider, &integration, &adapter).await? };
+        if created { None } else { progress.initialise(provider, &integration, &adapter).await? };
 
     let waves = revision.plan.waves();
     tracing::info!(
@@ -220,7 +220,7 @@ pub struct BuildInput {
     ///
     /// The caller's own name for the target, or the adapter's
     /// ([`AdapterRef::name`]) when the caller gives none. The repository a
-    /// build clones or lays sits at [`vcs::target_path`] of it.
+    /// build clones or creates sits at [`vcs::target_path`] of it.
     pub name: String,
     /// The target adapter every slice is built through.
     pub adapter: AdapterRef,
@@ -236,7 +236,7 @@ pub struct BuildInput {
     /// A URL builds into a clone of it, from its default branch as the
     /// remote holds it. [`vcs::PROJECT`] builds into the project's own
     /// repository, from the sealed commit its checkout sits on. `None`
-    /// builds into the repository the engine lays under the name and keeps.
+    /// builds into the repository the engine creates under the name and keeps.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub repository: Option<String>,
     /// How many slices of a wave are built at once.
@@ -263,13 +263,13 @@ pub struct BuildOutput {
     pub base: String,
     /// The repository the label stands in, as a path beneath the project
     /// root: `.` for the project's own, or [`vcs::target_path`] of the
-    /// target's name for the one it names or the engine laid.
+    /// target's name for the one it names or the engine created.
     pub repository: String,
     /// The `Initialise` commit this run sealed over the base with the
-    /// layout the adapter laid, when it laid any.
+    /// layout the adapter scaffolded, when it scaffolded any.
     ///
     /// `None` for a build resumed from the label or from staged slices,
-    /// for a repository the engine laid, whose base is that commit, and
+    /// for a repository the engine created, whose base is that commit, and
     /// for a tree the initialisation added nothing to.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub initialised: Option<Initialised>,
@@ -301,13 +301,13 @@ pub struct BuildOutput {
     pub label: String,
 }
 
-/// The layout the adapter laid into the tree before any slice, sealed as the `Initialise` commit.
+/// The layout the adapter scaffolded into the tree before any slice, sealed as the `Initialise` commit.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "kebab-case")]
 pub struct Initialised {
-    /// The commit the laid files were sealed as, which the slices build over.
+    /// The commit the scaffolded files were sealed as, which the slices build over.
     pub commit: String,
-    /// The paths the initialisation laid, relative to the tree root and sorted.
+    /// The paths the initialisation scaffolded, relative to the tree root and sorted.
     pub paths: Vec<String>,
 }
 
@@ -432,8 +432,9 @@ impl Progress {
         self.staged = staged;
     }
 
-    // A fresh build is initialised with the adapter's layout, what it laid
-    // sealed in the integration copy as the commit the slices build over.
+    // A fresh build is initialised with the adapter's layout, what it
+    // scaffolded sealed in the integration copy as the commit the slices
+    // build over.
     // One resumed from the label, or from what a run staged over it, was
     // initialised by that run.
     async fn initialise<P: Target + Vcs + Files>(
@@ -454,7 +455,7 @@ impl Progress {
         };
         let mut paths: Vec<String> = changes.into_iter().map(|change| change.path).collect();
         paths.sort_unstable();
-        tracing::info!(laid = paths.len(), %commit, "initialisation sealed");
+        tracing::info!(scaffolded = paths.len(), %commit, "initialisation sealed");
         self.head.clone_from(&commit);
         Ok(Some(Initialised { commit, paths }))
     }
@@ -904,7 +905,7 @@ impl Residue<'_> {
             Err(error) => return Err(error),
         };
 
-        // the resolutions laid in the slice's copy, held to the secret gate,
+        // the resolutions written in the slice's copy, held to the secret gate,
         // and sealed over its commit; one that keeps the slice's own side
         // changes nothing, and the slice's commit stands
         for file in &resolutions {
@@ -1035,8 +1036,8 @@ async fn kind_at<P: Files>(provider: &P, at: &str, path: &str) -> Result<Option<
     Ok(entries.into_iter().find(|entry| entry.name == *file).map(|entry| entry.kind))
 }
 
-// Has the adapter lay its layout into the tree at `at` and answers what it
-// left pending, held to the secret gate. Not put again on a failure
+// Has the adapter scaffold its layout into the tree at `at` and answers what
+// it left pending, held to the secret gate. Not put again on a failure
 // upstream: an init puts no turn, so a failure is the adapter's.
 async fn initialise<P: Target + Vcs + Files>(
     provider: &P, adapter: &str, at: &str,
@@ -1051,7 +1052,7 @@ async fn initialise<P: Target + Vcs + Files>(
     if !leaks.is_empty() {
         return Err(secret_detected("the initialisation", &leaks));
     }
-    tracing::info!(laid = pending.len(), "initialised");
+    tracing::info!(scaffolded = pending.len(), "initialised");
     Ok(pending)
 }
 

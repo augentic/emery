@@ -141,8 +141,8 @@ impl Display for Block {
 
 /// What a type in the domain model stands for.
 ///
-/// A target lays a [`Data`](Role::Data) type as a shape its code reads or
-/// produces. It lays nothing for a [`Mechanism`](Role::Mechanism): the
+/// A target declares a [`Data`](Role::Data) type as a shape its code reads
+/// or produces. It declares nothing for a [`Mechanism`](Role::Mechanism): the
 /// behaviour its requirements state is built through the target's own
 /// platform, and no slice owns the type.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]

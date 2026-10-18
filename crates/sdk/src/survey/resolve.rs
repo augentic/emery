@@ -7,7 +7,7 @@
 ///
 /// An import the tree does not answer is [`Target::Unresolved`], never
 /// dropped, so a survey can say what it could not follow and widen what it
-/// lays. One the resolver followed to a file the survey set aside is
+/// mines. One the resolver followed to a file the survey set aside is
 /// [`Target::Skipped`]: known, so it widens nothing, and no module's, so it
 /// reaches nothing. Each accessor answers for its own variant alone.
 #[derive(Clone, Debug, Eq, PartialEq)]

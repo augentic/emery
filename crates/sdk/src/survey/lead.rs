@@ -7,10 +7,10 @@ use super::tests::{Test, stated};
 use super::{skeleton, unique};
 use crate::{Seam, kebab};
 
-// A data file within this many bytes is laid directly after the first module
-// naming it, a larger one after every module. Laid after a long module such
-// as a generated table, a small file could fall past where the laid run
-// ends, and a `criterion` could not cite its value.
+// A data file within this many bytes is placed directly after the first
+// module naming it, a larger one after every module. Placed after a long
+// module such as a generated table, a small file could fall past where the
+// inlined run ends, and a `criterion` could not cite its value.
 const DATA_BESIDE_BYTES: u64 = 8 * 1024;
 
 const NO_SURFACE: &str = "No surface was found in this source: its survey named no route, command, \
@@ -22,7 +22,7 @@ const NO_SURFACE: &str = "No surface was found in this source: its survey named 
 
 pub(super) struct Lead {
     seam: Seam,
-    // The modules laid past the surfaces' closures, in the directories their
+    // The modules placed past the surfaces' closures, in the directories their
     // unfollowed imports lead into. Only the cut by stem fills it.
     widened: Vec<String>,
 }

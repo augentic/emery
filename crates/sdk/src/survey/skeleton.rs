@@ -70,13 +70,13 @@ pub(super) fn data<'m>(modules: impl IntoIterator<Item = &'m Module>) -> Option<
         })
         .collect();
     Some(format!(
-        "Data files these modules name by path, each with the modules reading it, laid after the \
-         first module naming it — a large one after every module:\n\n{}",
+        "Data files these modules name by path, each with the modules reading it, placed after \
+         the first module naming it — a large one after every module:\n\n{}",
         lines.join("\n")
     ))
 }
 
-// `widened` are the modules laid after the closure for what these imports
+// `widened` are the modules placed after the closure for what these imports
 // name; empty where the seam was not widened.
 pub(super) fn unfollowed<'m>(
     modules: impl IntoIterator<Item = &'m Module>, widened: &[String],
@@ -107,17 +107,17 @@ pub(super) fn unfollowed<'m>(
         return None;
     }
 
-    // name the directories laid past the closure
-    let laid: Vec<String> =
+    // name the directories placed past the closure
+    let placed: Vec<String> =
         unique(widened.iter().map(|path| named(path.rsplit_once('/').map_or("", |(dir, _)| dir))));
-    let consequence = match laid.as_slice() {
+    let consequence = match placed.as_slice() {
         [] => String::new(),
         [one] => format!(
-            " The modules after the closure are the rest of {one}, laid so what these name is \
+            " The modules after the closure are the rest of {one}, placed so what these name is \
              still within reach; read them for that alone."
         ),
         [most @ .., last] => format!(
-            " The modules after the closure are the rest of {} and {last}, laid so what these \
+            " The modules after the closure are the rest of {} and {last}, placed so what these \
              name is still within reach; read them for that alone.",
             most.join(", ")
         ),

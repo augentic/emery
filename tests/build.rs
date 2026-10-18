@@ -24,7 +24,7 @@ const RESOLVED_LIB: &str = r#"{"files": [{"path": "src/lib.rs", "content": "pub 
 const BUILDER: &str = "acme:builder@2.1.0";
 const BUILDER_ID: &str = "acme:builder";
 // The config building `BUILDER` into the project checkout, `repository = "."`;
-// a run naming it on the command line lays a repository of its own instead.
+// a run naming it on the command line creates a repository of its own instead.
 const PROJECT_CONFIG: &str = "tests/build/project.toml";
 
 // The commit the project checkout sits on, where a scenario tells it from the head.
@@ -38,7 +38,7 @@ const INTEGRATION: &str = "./.emery/vcs/integration";
 const WORKTREES: &str = "./.emery/vcs/worktrees";
 const REMOTE_URL: &str = "https://example.com/acme/shop.git";
 // The target's repository, under its name: `builder`, the adapter's, when
-// the config gives none. A clone of `REMOTE_URL`, or the one the engine lays.
+// the config gives none. A clone of `REMOTE_URL`, or the one the engine creates.
 const TARGET_REPO: &str = "./.emery/vcs/repos/builder";
 const USAGE_EXIT: u8 = 64;
 
@@ -281,9 +281,9 @@ fn integrated(repo: &str, base: &str, id: &str) -> Vec<String> {
 }
 
 // The exchange a fresh two-slice build makes over the repository the engine
-// laid, whose root commit the adapter initialised, so the integration copy
-// is not initialised again.
-fn integrated_laid(base: &str, id: &str) -> Vec<String> {
+// created, whose root commit the adapter initialised, so the integration
+// copy is not initialised again.
+fn integrated_created(base: &str, id: &str) -> Vec<String> {
     let mut calls = vec![
         format!("labelled {TARGET_REPO} emery/{id}"),
         format!("add {TARGET_REPO} {INTEGRATION} {base}"),
@@ -419,7 +419,7 @@ async fn build_plan() {
     assert_eq!(envelope["waves"], json!([["SLICE-001"], ["SLICE-002"]]), "{envelope}");
     assert_eq!(envelope["base"], BASE, "{envelope}");
     assert!(envelope.get("resumed").is_none(), "a fresh build resumes nothing: {envelope}");
-    assert!(envelope.get("initialised").is_none(), "an init laying nothing seals nothing");
+    assert!(envelope.get("initialised").is_none(), "an init scaffolding nothing seals nothing");
     assert_eq!(
         envelope["slices"],
         json!([
@@ -1875,7 +1875,7 @@ async fn build_repository() {
 }
 
 // A `[target] name` is the directory the repository is kept under, cloned
-// or laid; one that is not kebab-case is refused before anything is read.
+// or created; one that is not kebab-case is refused before anything is read.
 #[tokio::test]
 async fn build_named() {
     let scratch = Scratch::new();
@@ -2164,9 +2164,9 @@ async fn build_not_repository() {
 }
 
 // A build naming no repository, as one naming its adapter on the command
-// line does, builds into one the engine lays under the target's name:
+// line does, builds into one the engine creates under the target's name:
 // initialised by the adapter, given a `.gitignore` of the engine's own
-// directory where the adapter laid none, sealed as `Initialise`, and built
+// directory where the adapter scaffolded none, sealed as `Initialise`, and built
 // from that commit, the project directory never read. The envelope names
 // the repository beside the base.
 #[tokio::test]
@@ -2184,15 +2184,15 @@ async fn build_laid() {
         [(TARGET_REPO.to_owned(), ".gitignore".to_owned(), b".emery/\n".to_vec())],
         "the one file the engine adds to the root commit"
     );
-    assert_eq!(provider.target.inits(), [TARGET_REPO], "the adapter lays the root commit");
+    assert_eq!(provider.target.inits(), [TARGET_REPO], "the adapter scaffolds the root commit");
     assert_eq!(provider.vcs.messages()[0], "Initialise");
     let mut expected = vec![
         format!("init {TARGET_REPO}"),
         format!("pending {TARGET_REPO}"),
         format!("commit {TARGET_REPO} Initialise"),
     ];
-    expected.extend(integrated_laid("Initialise-commit", &id));
-    assert_eq!(provider.vcs.calls(), expected, "laid, sealed, then built as any repository");
+    expected.extend(integrated_created("Initialise-commit", &id));
+    assert_eq!(provider.vcs.calls(), expected, "created, sealed, then built as any repository");
     assert_eq!(provider.target.calls().len(), 2, "every slice builds");
 
     // an adapter whose layout holds a `.gitignore` is given none
@@ -2206,7 +2206,7 @@ async fn build_laid() {
     provider.vcs.assert_exhausted();
 }
 
-// The repository the engine laid is kept, so the next run starts from the
+// The repository the engine created is kept, so the next run starts from the
 // same root commit, initialising, writing, and sealing nothing; one
 // initialised but never sealed, a run that failed between the two, is
 // initialised and sealed now.
@@ -2220,10 +2220,10 @@ async fn build_laid_reused() {
 
     let stdout = String::from_utf8_lossy(&resp.stdout);
     assert!(stdout.contains(&format!("\n  base {BASE}\n  repository {TARGET_REPO}\n")), "{stdout}");
-    assert!(provider.files.writes().is_empty(), "nothing laid again");
+    assert!(provider.files.writes().is_empty(), "nothing scaffolded again");
     assert!(provider.target.inits().is_empty(), "nothing initialised again");
     let mut expected = vec![format!("init {TARGET_REPO}"), format!("head {TARGET_REPO}")];
-    expected.extend(integrated_laid(BASE, &id));
+    expected.extend(integrated_created(BASE, &id));
     assert_eq!(provider.vcs.calls(), expected);
     assert!(!provider.vcs.calls().contains(&"pending .".to_owned()), "the project is never read");
 
@@ -2246,11 +2246,11 @@ async fn build_laid_reused() {
     provider.vcs.assert_exhausted();
 }
 
-// A fresh build over a base the engine did not lay has the adapter
+// A fresh build over a base the engine did not create has the adapter
 // initialise the integration copy before any slice: what the layout adds is
 // sealed as `Initialise`, the commit every slice builds over, and reported
 // with its paths. The base is never read for what it holds, since the
-// adapter lays what the tree lacks.
+// adapter scaffolds what the tree lacks.
 #[tokio::test]
 async fn build_initialised() {
     let scratch = Scratch::new();
@@ -2296,7 +2296,7 @@ async fn build_initialised() {
             (INTEGRATION.to_owned(), "src/lib.rs".to_owned()),
             (INTEGRATION.to_owned(), "Cargo.toml".to_owned()),
         ],
-        "what the layout laid is held to the secret gate"
+        "what the layout scaffolded is held to the secret gate"
     );
     assert_eq!(
         provider.vcs.messages()[..2],
@@ -2312,7 +2312,10 @@ async fn build_initialised() {
             ),
         ]
     );
-    assert!(provider.files.writes().is_empty(), "the engine lays nothing in a repository it holds");
+    assert!(
+        provider.files.writes().is_empty(),
+        "the engine writes nothing in a repository it holds"
+    );
 
     provider.vcs.clones.script(TARGET_REPO, Err(Error::Exists(TARGET_REPO.to_owned())));
     provider.vcs.resolves.script(TARGET_REPO, Ok(BASE.to_owned()));
@@ -2328,7 +2331,7 @@ async fn build_initialised() {
     provider.vcs.assert_exhausted();
 }
 
-// A credential the adapter's initialisation lays refuses the build before
+// A credential the adapter's initialisation scaffolds refuses the build before
 // anything is sealed or any slice dispatched, naming the initialisation.
 #[tokio::test]
 async fn build_init_secret() {
@@ -2353,7 +2356,7 @@ async fn build_init_secret() {
     provider.vcs.assert_exhausted();
 }
 
-// A build resumed from a label in the repository the engine laid reads the
+// A build resumed from a label in the repository the engine created reads the
 // label there and starts from it, the slices its chain names not built
 // again and nothing initialised again.
 #[tokio::test]
@@ -2381,7 +2384,7 @@ async fn build_laid_resumed() {
     );
     assert!(
         provider.vcs.calls().contains(&format!("descends {TARGET_REPO} {BASE} {LABELLED}")),
-        "the label is read in the laid repository"
+        "the label is read in the created repository"
     );
     provider.vcs.assert_exhausted();
 }

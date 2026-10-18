@@ -84,11 +84,11 @@ async fn ask_checked(
     model: &Scripted, slice: &Slice, workspace: &str, grants: &[Grant],
     check: impl FnMut(&Report) -> Result<Vec<String>, Error> + Send,
 ) -> Result<Report, Error> {
-    ask_laid(model, slice, workspace, grants, None, check).await
+    ask_scaffolded(model, slice, workspace, grants, None, check).await
 }
 
-async fn ask_laid(
-    model: &Scripted, slice: &Slice, workspace: &str, grants: &[Grant], laid: Option<&str>,
+async fn ask_scaffolded(
+    model: &Scripted, slice: &Slice, workspace: &str, grants: &[Grant], scaffold: Option<&str>,
     check: impl FnMut(&Report) -> Result<Vec<String>, Error> + Send,
 ) -> Result<Report, Error> {
     let ctx = BuildContext {
@@ -97,28 +97,28 @@ async fn ask_laid(
         workspace,
         grants,
         model,
-        laid: None,
+        scaffold: None,
     };
-    let ctx = match laid {
-        Some(text) => ctx.with_laid(text),
+    let ctx = match scaffold {
+        Some(text) => ctx.with_scaffold(text),
         None => ctx,
     };
     emery_sdk::target::build(&ctx, PROSE, check).await
 }
 
-// Lays files beneath `root` with the content given, so a report naming them
-// passes the tree rule and a write over them meets what they hold.
-fn lay<'a>(root: &Path, files: impl IntoIterator<Item = (&'a str, &'a str)>) {
+// Writes files beneath `root` with the content given, so a report naming
+// them passes the tree rule and a write over them meets what they hold.
+fn write<'a>(root: &Path, files: impl IntoIterator<Item = (&'a str, &'a str)>) {
     for (file, content) in files {
         let path = root.join(file);
-        fs::create_dir_all(path.parent().expect("a file has a parent")).expect("laid dir");
-        fs::write(path, content).expect("laid file");
+        fs::create_dir_all(path.parent().expect("a file has a parent")).expect("written dir");
+        fs::write(path, content).expect("written file");
     }
 }
 
-// Lays empty files beneath `root`.
+// Writes empty files beneath `root`.
 fn seed<'a>(root: &Path, files: impl IntoIterator<Item = &'a str>) {
-    lay(root, files.into_iter().map(|file| (file, "")));
+    write(root, files.into_iter().map(|file| (file, "")));
 }
 
 fn write_files(id: &str, files: &[(&str, &str)]) -> ToolCall {
@@ -209,7 +209,7 @@ async fn request_shape() {
              REQ-001\n\nOrders are created.\n\n## REQ-002\n\nOrders are listed.\n\nThe design, \
              whole:\n\n## Types\n\n`Order`\n\nImplement every requirement"
         ),
-        "nothing laid puts no section between the design and the rules: {user}"
+        "nothing scaffolded puts no section between the design and the rules: {user}"
     );
     assert!(
         user.contains(
@@ -246,19 +246,21 @@ async fn request_shape() {
     model.assert_exhausted();
 }
 
-// What the adapter laid before the turn is carried verbatim, after the
-// design and before the rules, so the model edits the files it names
+// What the adapter scaffolded before the turn is carried verbatim, after
+// the design and before the rules, so the model edits the files it names
 // rather than writing them over; the tools and the lend are the same.
 #[tokio::test]
-async fn build_laid() {
+async fn build_scaffolded() {
     let tmp = tempfile::tempdir().expect("tempdir");
     seed(tmp.path(), ["src/orders.rs", "Cargo.toml"]);
     let root = tmp.path().to_str().expect("a UTF-8 scratch root");
     let model = Scripted::answering([VALID]);
-    let laid = "- `src/orders.rs`: laid; fill `todo!(\"REQ-001 orders.create: the handler\")`\n\
-                - `Cargo.toml`: held\n\n";
+    let scaffold = "- `src/orders.rs`: scaffolded; fill `todo!(\"REQ-001 orders.create: the \
+                    handler\")`\n- `Cargo.toml`: held\n\n";
 
-    ask_laid(&model, &slice(), root, &[], Some(laid), |_| Ok(Vec::new())).await.expect("accepted");
+    ask_scaffolded(&model, &slice(), root, &[], Some(scaffold), |_| Ok(Vec::new()))
+        .await
+        .expect("accepted");
 
     let seen = model.seen();
     assert_eq!(seen.len(), 1);
@@ -266,9 +268,9 @@ async fn build_laid() {
     let user = &seen[0].messages[0];
     assert!(
         user.contains(
-            "The design, whole:\n\n## Types\n\n`Order`\n\nWhat the adapter laid for this slice \
-             before this turn:\n\n- `src/orders.rs`: laid; fill `todo!(\"REQ-001 orders.create: \
-             the handler\")`\n- `Cargo.toml`: held\n\nImplement every requirement"
+            "The design, whole:\n\n## Types\n\n`Order`\n\nWhat the adapter scaffolded for this \
+             slice before this turn:\n\n- `src/orders.rs`: scaffolded; fill `todo!(\"REQ-001 \
+             orders.create: the handler\")`\n- `Cargo.toml`: held\n\nImplement every requirement"
         ),
         "{user}"
     );
@@ -278,7 +280,7 @@ async fn build_laid() {
 // The adapter's grants ride the turn as the completion's worker grant,
 // united with a root two of them spell carried once, beside the lend it
 // reaches beyond; the brief says nothing of it, since the grant is the
-// host's to lay.
+// host's to apply.
 #[tokio::test]
 async fn worker_grant() {
     const CARGO: Grant = Grant {
@@ -323,7 +325,7 @@ async fn worker_grant() {
 async fn write_shrink_refused() {
     let tmp = tempfile::tempdir().expect("tempdir");
     let whole = "pub struct Order;\npub struct Line;\npub struct Total;\n";
-    lay(tmp.path(), [("src/orders.rs", whole), ("src/empty.rs", "")]);
+    write(tmp.path(), [("src/orders.rs", whole), ("src/empty.rs", "")]);
     let root = tmp.path().to_str().expect("a UTF-8 scratch root");
     let model = Scripted::answering([r#"{"covered":["REQ-001"],"written":["src/orders.rs"]}"#])
         .calling(
@@ -389,7 +391,7 @@ async fn write_shrink_refused() {
 #[tokio::test]
 async fn write_shrink_allowed() {
     let tmp = tempfile::tempdir().expect("tempdir");
-    lay(tmp.path(), [("src/orders.rs", "pub struct Order;\npub struct Line;\n")]);
+    write(tmp.path(), [("src/orders.rs", "pub struct Order;\npub struct Line;\n")]);
     let root = tmp.path().to_str().expect("a UTF-8 scratch root");
     let model = Scripted::answering([r#"{"covered":["REQ-001"],"written":["src/orders.rs"]}"#])
         .calling(0, [write_files("1", &[("src/orders.rs", "pub struct Order;\n")])]);
@@ -412,7 +414,7 @@ async fn write_shrink_allowed() {
 }
 
 // A new file written empty is no shrink: the rule reads a file the tree
-// holds, and a file the call itself laid earlier is met as the tree stood
+// holds, and a file the call itself wrote earlier is met as the tree stood
 // before the call.
 #[tokio::test]
 async fn write_empty_new_file() {
@@ -453,7 +455,7 @@ async fn write_empty_new_file() {
 #[tokio::test]
 async fn edit_tool() {
     let tmp = tempfile::tempdir().expect("tempdir");
-    lay(
+    write(
         tmp.path(),
         [
             ("src/orders.rs", "pub struct Order;\npub fn total(&token: &str) {}\n"),
@@ -503,7 +505,7 @@ async fn edit_tool() {
 async fn edit_ambiguous() {
     let tmp = tempfile::tempdir().expect("tempdir");
     let before = "pub struct Order;\npub struct Line;\n";
-    lay(tmp.path(), [("src/orders.rs", before)]);
+    write(tmp.path(), [("src/orders.rs", before)]);
     let root = tmp.path().to_str().expect("a UTF-8 scratch root");
     let model = Scripted::answering([r#"{"covered":["REQ-001"],"written":[]}"#]).calling(
         0,
@@ -547,7 +549,7 @@ async fn edit_ambiguous() {
 #[tokio::test]
 async fn edit_unheld() {
     let tmp = tempfile::tempdir().expect("tempdir");
-    lay(tmp.path(), [("src/orders.rs", "pub struct Order;\n")]);
+    write(tmp.path(), [("src/orders.rs", "pub struct Order;\n")]);
     symlink("orders.rs", tmp.path().join("src/link.rs")).expect("file symlink");
     let root = tmp.path().to_str().expect("a UTF-8 scratch root");
     let model = Scripted::answering([r#"{"covered":["REQ-001"],"written":[]}"#]).calling(
@@ -771,7 +773,7 @@ async fn write_object_shape() {
 #[tokio::test]
 async fn edit_object_shape() {
     let tmp = tempfile::tempdir().expect("tempdir");
-    lay(tmp.path(), [("src/orders.rs", "pub struct Order;\npub struct Line;\n")]);
+    write(tmp.path(), [("src/orders.rs", "pub struct Order;\npub struct Line;\n")]);
     let root = tmp.path().to_str().expect("a UTF-8 scratch root");
     let model = Scripted::answering([r#"{"covered":["REQ-001"],"written":["src/orders.rs"]}"#])
         .calling(
@@ -1125,7 +1127,7 @@ async fn missing_prompt() {
         workspace: root,
         grants: &[],
         model: &model,
-        laid: None,
+        scaffold: None,
     };
 
     let error = emery_sdk::target::build(&ctx, &[], |_| Ok(Vec::new()))
@@ -1206,7 +1208,7 @@ async fn check_findings() {
         seen.push(report.written.clone());
         let held = Path::new(root).join("Cargo.toml").is_file();
         Ok((!held)
-            .then(|| "- the tree lacks `Cargo.toml`; lay it".to_owned())
+            .then(|| "- the tree lacks `Cargo.toml`; write it".to_owned())
             .into_iter()
             .collect())
     })
@@ -1222,7 +1224,7 @@ async fn check_findings() {
         "the gate's finding: {correction}"
     );
     assert!(
-        correction.contains("- the tree lacks `Cargo.toml`; lay it"),
+        correction.contains("- the tree lacks `Cargo.toml`; write it"),
         "the adapter's finding under the same correction: {correction}"
     );
     assert!(exchanges[2].outcome.is_ok(), "the repaired candidate is accepted");

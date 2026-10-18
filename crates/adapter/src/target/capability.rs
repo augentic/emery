@@ -116,7 +116,7 @@ pub trait Target: Send + Sync {
     )
 )]
 pub enum Task {
-    /// Lay the layout's initial files the tree lacks; a held file stands.
+    /// Scaffold the layout's initial files the tree lacks; a held file stands.
     ///
     /// Put once per tree a build lands in, before any slice, with no model
     /// turn expected: the engine seals what the tree then holds as its

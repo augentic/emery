@@ -281,7 +281,7 @@ interface target {
 
   /// What the engine asks a target adapter to do in the lent tree.
   variant task {
-    /// Lay the layout's initial files the tree lacks; a held file stands.
+    /// Scaffold the layout's initial files the tree lacks; a held file stands.
     /// Put once per tree the build lands in, before any slice, with no
     /// model turn expected: the engine seals what it finds as `Initialise`.
     init,
@@ -307,8 +307,8 @@ interface target {
 
   /// Runs `task` in the writable tree at `workspace`, the one judgment
   /// operation. `workspace` is the deployment-local path of the tree root,
-  /// which the adapter lends to its model for a build or a verify and lays
-  /// its layout into for an init. Returns `invalid-request` when the
+  /// which the adapter lends to its model for a build or a verify and
+  /// scaffolds its layout into for an init. Returns `invalid-request` when the
   /// adapter refuses its input and `internal` when it fails on its own
   /// account.
   run: async func(id: adapter-id, workspace: string, task: task) -> result<outcome, error>;

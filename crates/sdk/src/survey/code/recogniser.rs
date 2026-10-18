@@ -124,7 +124,7 @@ pub struct Listing {
     /// Every production module.
     pub modules: Vec<String>,
     /// Every file a module may name as data; only one a module names is
-    /// ever laid.
+    /// ever mined.
     pub data: Vec<String>,
     /// Every test file: a test module, or a `.feature` file.
     pub tests: Vec<String>,

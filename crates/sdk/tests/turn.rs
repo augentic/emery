@@ -203,7 +203,7 @@ async fn files_laid() {
     model.assert_exhausted();
 }
 
-// The leading files are laid for as long as they fit within INLINE_BYTES
+// The leading files are inlined for as long as they fit within INLINE_BYTES
 // together; the first past it, or one that is not text, and every file after
 // it are listed. A first file that does not fit leaves every file listed.
 #[tokio::test]
@@ -296,8 +296,8 @@ async fn note_stems() {
     model.assert_exhausted();
 }
 
-// Files and stems together: the stem rule sits between the laid files and the
-// anchor rule, so the model reads what to mine before what to call it.
+// Files and stems together: the stem rule sits between the inlined files and
+// the anchor rule, so the model reads what to mine before what to call it.
 #[tokio::test]
 async fn files_stems() {
     let model = Scripted::answering([VALID]);
