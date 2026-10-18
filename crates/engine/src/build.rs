@@ -528,7 +528,6 @@ struct Residue<'a> {
     // the slice's sealed commit, and the message it and its merge carry
     commit: String,
     message: &'a str,
-    wave: usize,
     paths: Vec<String>,
 }
 
@@ -754,7 +753,6 @@ impl Run<'_> {
                         pending: &pending,
                         commit,
                         message: &message,
-                        wave,
                         paths: merged.conflicts,
                     };
                     let (commit, resolved) = residue.resolve(self, provider, progress).await?;
@@ -904,18 +902,22 @@ impl Residue<'_> {
             });
         }
 
-        // the wave's slices merged before this one that wrote a conflicted
-        // path, whose plan entries say what their side is for; staged slices
-        // are merged already and sit outside `built`, so read the wave in id
-        // order from the plan rather than from what this run built
+        // the plan wave's other merged slices that wrote a conflicted path,
+        // whose plan entries say what their side is for; staged slices are
+        // merged already and sit outside `built`, and may sit after this one
+        // in id order, so the wave comes from the plan rather than this run's
+        // wave counter, which restarts on a resume
         let waves = run.plan.waves();
-        let wave_slices = waves.iter().nth(self.wave.saturating_sub(1)).unwrap_or(&[]);
+        let wave_slices = waves
+            .iter()
+            .find(|wave| wave.contains(&slice.id))
+            .unwrap_or(&[]);
         let merged: Vec<&Slice> = wave_slices
             .iter()
-            .take_while(|id| **id != slice.id)
+            .filter(|&&id| id != slice.id)
             .filter(|id| progress.merged.contains(id))
             .filter_map(|id| {
-                let plan_slice = run.plan.slices.iter().find(|slice| slice.id == *id)?;
+                let plan_slice = run.plan.slice(*id)?;
                 let touches =
                     progress.built.iter().find(|built| built.id == *id).is_none_or(|built| {
                         built.written.iter().any(|path| self.paths.contains(path))

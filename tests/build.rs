@@ -549,6 +549,105 @@ async fn build_conflict_resolved() {
     provider.vcs.assert_exhausted();
 }
 
+// A merge conflict on a slice resumed in the run's first wave but the plan's
+// second names no slice from the plan's first wave in the brief: the wave
+// counter restarted at one, not the plan wave being merged.
+#[tokio::test]
+async fn build_conflict_resolved_resumed_plan_wave() {
+    let provider = Provider::answering([RESOLVED_LIB]);
+    let id = seed(&provider.storage, SPEC, DESIGN, WIDE_PLAN);
+    let copy = worktree("SLICE-002");
+    provider.vcs.labelleds.script(".", Ok(LABELLED.to_owned()));
+    provider.vcs.logs.script(
+        ".",
+        Ok(vec![
+            entry(
+                "w1",
+                &format!(
+                    "Wave 1 verified\n\nRevision: {id}\nAdapter: {BUILDER}\nSlices: SLICE-001, \
+                     SLICE-003"
+                ),
+            ),
+            entry(
+                "m:SLICE-003",
+                &message(&id, WIDE_ORDERS, "REQ-003, REQ-004", "REQ-003, REQ-004", HEAD, 1),
+            ),
+            entry("m:SLICE-001", &message(&id, AUTHENTICATION, "REQ-001", "REQ-001", HEAD, 1)),
+        ]),
+    );
+    provider.vcs.merges.script(INTEGRATION, Ok(conflicted(&["src/lib.rs"])));
+    changed(&provider, "SLICE-002", &[("src/lib.rs", ChangeKind::Modified)]);
+    changed(&provider, "SLICE-002", &[("src/lib.rs", ChangeKind::Modified)]);
+    wrote(&provider, WIDE_SESSIONS);
+    provider.vcs.commits.script(&copy, Ok(Some("SLICE-002-commit".to_owned())));
+    provider.vcs.commits.script(&copy, Ok(Some("SLICE-002-resolved".to_owned())));
+    for at in [INTEGRATION, copy.as_str()] {
+        provider.files.lists(at, ".", &[("src", EntryKind::Directory)]);
+        provider.files.lists(at, "src", &[("lib.rs", EntryKind::File)]);
+    }
+    provider.files.holds(INTEGRATION, "src/lib.rs", "pub mod authentication;\npub mod orders;\n");
+    provider.files.holds(&copy, "src/lib.rs", "pub mod sessions;\n");
+
+    cli_ok(&provider, &["emery", "build", BUILDER]).await;
+
+    let brief = &provider.model.seen()[0].messages[0];
+    assert!(
+        !brief.contains("# Merged before it in the wave"),
+        "plan wave two has no merged siblings yet: {brief}"
+    );
+    provider.model.assert_exhausted();
+}
+
+// A higher-id slice already merged in the integration copy is named in the
+// merge brief when a lower-id sibling of the same plan wave conflicts with
+// it, even though id order would place it after the slice being merged.
+#[tokio::test]
+async fn build_conflict_resolved_staged_higher_id() {
+    let provider = Provider::answering([RESOLVED_LIB]);
+    let id = seed(&provider.storage, SPEC, DESIGN, WIDE_PLAN);
+    let copy = worktree("SLICE-001");
+    provider.target.fails("SLICE-001", bad_gateway!("the model timed out"));
+    provider.target.fails("SLICE-001", bad_gateway!("the model timed out again"));
+    provider.vcs.heads.script(".", Ok(BASE.to_owned()));
+    wrote(&provider, WIDE_ORDERS);
+
+    fail(&provider, &["emery", "build", BUILDER], 4, "bad_gateway").await;
+
+    staged(
+        &provider,
+        vec![entry(
+            "m:SLICE-003",
+            &message(&id, WIDE_ORDERS, "REQ-003, REQ-004", "REQ-003, REQ-004", HEAD, 1),
+        )],
+    );
+    provider.vcs.labelleds.script(".", Ok(LABELLED.to_owned()));
+    provider.vcs.logs.script(".", Ok(vec![]));
+    provider.vcs.merges.script(INTEGRATION, Ok(conflicted(&["src/lib.rs"])));
+    changed(
+        &provider,
+        "SLICE-001",
+        &[("src/authentication.rs", ChangeKind::Added), ("src/lib.rs", ChangeKind::Modified)],
+    );
+    changed(&provider, "SLICE-001", &[("src/lib.rs", ChangeKind::Modified)]);
+    provider.vcs.commits.script(&copy, Ok(Some("SLICE-001-commit".to_owned())));
+    provider.vcs.commits.script(&copy, Ok(Some("SLICE-001-resolved".to_owned())));
+    for at in [INTEGRATION, copy.as_str()] {
+        provider.files.lists(at, ".", &[("src", EntryKind::Directory)]);
+        provider.files.lists(at, "src", &[("lib.rs", EntryKind::File)]);
+    }
+    provider.files.holds(INTEGRATION, "src/lib.rs", "pub mod orders;\n");
+    provider.files.holds(&copy, "src/lib.rs", "pub mod authentication;\n");
+
+    cli_ok(&provider, &["emery", "build", BUILDER]).await;
+
+    let brief = &provider.model.seen()[0].messages[0];
+    assert!(
+        brief.contains("# Merged before it in the wave\n\n## Slice: orders\n\nID: SLICE-003"),
+        "the staged higher-id sibling is named in the brief: {brief}"
+    );
+    provider.model.assert_exhausted();
+}
+
 // The accepted resolution is written into the slice's working copy, held
 // to the secret gate, sealed over the slice's commit, and merged again with
 // each resolved path taken whole ahead of the adapter's rules, so the slice
