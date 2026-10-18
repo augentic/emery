@@ -2,7 +2,7 @@
 //! adapter answers; every scenario here puts one over a scripted model and a
 //! scratch tree.
 
-use emery_sdk::target::{Verdict, VerifyContext, Worker};
+use emery_sdk::target::{Reach, Verdict, VerifyContext, Worker};
 use emery_sdk::{Doc, Error};
 use omnia_sdk::model::ToolCall;
 use omnia_test::guest::Scripted;
@@ -291,11 +291,17 @@ async fn doc_refs() {
 // checks run the same toolchain over the integrated tree.
 #[tokio::test]
 async fn worker_grant() {
-    const WORKER: Worker = Worker {
+    const NPM: Reach = Reach {
         egress: &["registry.npmjs.org"],
+        read: &[],
+        env: &[],
+    };
+    const NVM: Reach = Reach {
+        egress: &[],
         read: &["~/.nvm/versions/node"],
         env: &[],
     };
+    const WORKER: Worker = Worker::of(&[NPM, NVM]);
     let tmp = tempfile::tempdir().expect("tempdir");
     let root = tmp.path().to_str().expect("a UTF-8 scratch root");
     let model = Scripted::answering([PASSED]);
@@ -336,6 +342,66 @@ async fn missing_prompt() {
     assert_eq!(error.code(), "server_error");
     assert!(error.description().contains("`verify.md` is not embedded"), "{error}");
     assert_eq!(model.seen(), [] as [Seen; 0]);
+}
+
+// A worker that breaks the grant's shape is the adapter build's own defect,
+// every broken entry named and the call ended before a turn is spent, so a
+// grant the host would refuse never reaches it.
+#[tokio::test]
+async fn worker_refused() {
+    const BROKEN: Reach = Reach {
+        egress: &["https://registry.npmjs.org", "registry.npmjs.org"],
+        read: &["/opt/node", "~/", "~/a/../b", "~/.volta"],
+        env: &[("VOLTA-HOME", "~/.volta"), ("NODE_ENV", "test")],
+    };
+    const OTHER: Reach = Reach {
+        egress: &[],
+        read: &[],
+        env: &[("NODE_ENV", "production")],
+    };
+    const WORKER: Worker = Worker::of(&[BROKEN, OTHER]);
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let root = tmp.path().to_str().expect("a UTF-8 scratch root");
+    let model = Scripted::default();
+
+    let error = ask_as(&model, root, &WORKER).await.expect_err("refused");
+
+    assert_eq!(error.code(), "server_error");
+    let description = error.description();
+    for finding in [
+        "egress `https://registry.npmjs.org` is not a host name",
+        "read root `/opt/node` is not `~/<path>`",
+        "read root `~/` is not `~/<path>`",
+        "read root `~/a/../b` is not `~/<path>`",
+        "variable `VOLTA-HOME` is not a name",
+        "variable `NODE_ENV` is set to `test` and to `production`",
+    ] {
+        assert!(description.contains(finding), "{description}");
+    }
+    assert!(!description.contains("`registry.npmjs.org` is not"), "{description}");
+    assert!(!description.contains("`~/.volta` is not"), "{description}");
+    assert_eq!(model.seen(), [] as [Seen; 0]);
+}
+
+// A reach of empty lists reaches nothing, so a worker composed of it puts no
+// grant, as `NONE` puts none.
+#[tokio::test]
+async fn worker_reaching_nothing() {
+    const WORKER: Worker = Worker::of(&[Reach {
+        egress: &[],
+        read: &[],
+        env: &[],
+    }]);
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let root = tmp.path().to_str().expect("a UTF-8 scratch root");
+    let model = Scripted::answering([PASSED]);
+
+    ask_as(&model, root, &WORKER).await.expect("accepted");
+
+    let seen = model.seen();
+    assert_eq!(seen.len(), 1);
+    assert_eq!(seen[0].worker, None);
+    model.assert_exhausted();
 }
 
 // The adapter's check reads the tree as the repairs left it: a passing

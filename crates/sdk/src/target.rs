@@ -34,18 +34,29 @@
 //! use std::io::{ErrorKind, Write as _};
 //! use std::path::Path;
 //!
-//! use emery_sdk::target::{Base, Outcome, TargetAdapter, Task, Worker};
+//! use emery_sdk::target::{Base, Outcome, Reach, TargetAdapter, Task, Worker};
 //! use emery_sdk::{Doc, Error, Model, server_error};
+//!
+//! // cargo fetches from crates.io's sparse index and its download host
+//! const CARGO: Reach = Reach {
+//!     egress: &["index.crates.io", "static.crates.io"],
+//!     read: &[],
+//!     env: &[],
+//! };
+//!
+//! // rustup finds its toolchains under `RUSTUP_HOME`, which the worker's
+//! // private `HOME` would otherwise hide
+//! const RUSTUP: Reach = Reach {
+//!     egress: &[],
+//!     read: &["~/.rustup", "~/.cargo/bin"],
+//!     env: &[("RUSTUP_HOME", "~/.rustup")],
+//! };
 //!
 //! pub struct Adapter;
 //!
 //! impl TargetAdapter for Adapter {
 //!     const BASE: Base = Base::Fresh;
-//!     const WORKER: Worker = Worker {
-//!         egress: &["index.crates.io", "static.crates.io"],
-//!         read: &["~/.rustup", "~/.cargo/bin"],
-//!         env: &[("RUSTUP_HOME", "~/.rustup")],
-//!     };
+//!     const WORKER: Worker = Worker::of(&[CARGO, RUSTUP]);
 //!
 //!     async fn run<P: Model>(task: Task<'_, P>) -> Result<Outcome, Error> {
 //!         match task {
@@ -103,10 +114,10 @@ pub use emery_adapter::target::{
 };
 use emery_prose::Doc;
 use omnia_sdk::model::{Question, WorkerGrant};
-use omnia_sdk::{Error, Model};
+use omnia_sdk::{Error, Model, server_error};
 
 use self::write::{Writer, Written};
-use crate::{BUILD, VERIFY, prompt, reference};
+use crate::{BUILD, VERIFY, prompt, reference, unique};
 
 /// The engine's side of the contract, for a guest that dispatches to a target adapter.
 ///
@@ -121,59 +132,144 @@ pub mod capability {
 
 const VERIFY_TURN: &str = "verify";
 
-/// What the model's worker reaches beyond the tree, for the toolchain the adapter's prompts run.
+/// What one program of the worker's toolchain reaches beyond the lent tree.
 ///
-/// A target adapter spells it once as
-/// [`WORKER`](TargetAdapter::WORKER), and [`build`] and [`verify`] carry it
-/// with every turn as the completion's worker grant; the host holds each
-/// entry to its shape and the backend lays what exists on its machine. The
-/// adapter is trusted by its digest, so what it spells is what the
-/// deployment granted when it pinned it. [`Worker::NONE`] reaches nothing
-/// beyond the tree and puts no grant.
+/// A target adapter spells one per program its prompts run, as that
+/// program's own documentation states its reach, and composes them into its
+/// [`Worker`] through [`Worker::of`]. The host holds each entry to its shape
+/// and the backend lays what exists on its machine.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct Worker {
-    /// Host names the worker's commands may reach through the backend's
+pub struct Reach {
+    /// Host names the program's commands may reach through the backend's
     /// egress proxy: a name whole, or `*.suffix` for a domain and every
     /// host beneath it. Never an IP literal, a port, a scheme, or a path.
     pub egress: &'static [&'static str],
-    /// Directories the worker may read beside its lend and the system,
+    /// Directories the program may read beside the lend and the system,
     /// each `~/<path>`: beneath the operator's home, never `~/` itself and
     /// never holding `..`. One the machine lacks grants nothing.
     pub read: &'static [&'static str],
-    /// Environment variables set for the worker, each a name of the shape
+    /// Environment variables set for the program, each a name of the shape
     /// `[A-Za-z_][A-Za-z0-9_]*` and a value whose leading `~/` the backend
     /// expands to the operator's home.
     pub env: &'static [(&'static str, &'static str)],
 }
 
+/// What the model's worker reaches beyond the tree: the reaches of the programs the prompts run, united.
+///
+/// A target adapter composes it once as
+/// [`WORKER`](TargetAdapter::WORKER), one [`Reach`] per program, and
+/// [`build`] and [`verify`] carry it with every turn as the completion's
+/// worker grant, each entry once however many reaches spell it. The adapter
+/// is trusted by its digest, so what it spells is what the deployment
+/// granted when it pinned it. [`Worker::NONE`] reaches nothing beyond the
+/// tree and puts no grant.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Worker {
+    reaches: &'static [Reach],
+}
+
 impl Worker {
     /// A worker reaching nothing beyond the tree: no grant is put.
-    pub const NONE: Self = Self {
-        egress: &[],
-        read: &[],
-        env: &[],
-    };
+    pub const NONE: Self = Self::of(&[]);
 
-    /// Returns the grant a turn carries for this worker: `None` for
-    /// [`Worker::NONE`], the lists as spelled otherwise.
+    /// Returns the worker composed of `reaches`, one per program the
+    /// adapter's prompts run.
+    #[must_use]
+    pub const fn of(reaches: &'static [Reach]) -> Self {
+        Self { reaches }
+    }
+
+    /// Returns the grant a turn carries for this worker: `None` when its
+    /// reaches unite to nothing, every entry once otherwise, in
+    /// first-occurrence order.
     #[must_use]
     pub fn grant(&self) -> Option<WorkerGrant> {
-        (*self != Self::NONE).then(|| WorkerGrant::from(*self))
+        let grant = WorkerGrant::from(*self);
+        (grant != WorkerGrant::default()).then_some(grant)
+    }
+
+    /// Returns the entries that break the grant's shape, each named; empty
+    /// for a worker the host holds to nothing.
+    ///
+    /// The shape is the grant's grammar: an `egress` entry is a host name,
+    /// a `read` entry is `~/<path>` over a plain relative path, an `env`
+    /// name is `[A-Za-z_][A-Za-z0-9_]*`, and no variable is set to two
+    /// values. What the backend refuses beyond the shape, a credential
+    /// store or an address, is its own rule and not read here. [`build`]
+    /// and [`verify`] refuse a worker with findings before any turn.
+    #[must_use]
+    pub fn findings(&self) -> Vec<String> {
+        let mut findings = Vec::new();
+        for reach in self.reaches {
+            for host in reach.egress {
+                if !is_host_name(host) {
+                    findings.push(format!(
+                        "egress `{host}` is not a host name: a name whole or `*.suffix`, never a \
+                         scheme, a port, or a path"
+                    ));
+                }
+            }
+            for root in reach.read {
+                if !is_home_root(root) {
+                    findings.push(format!(
+                        "read root `{root}` is not `~/<path>` over a plain relative path"
+                    ));
+                }
+            }
+            for (name, _) in reach.env {
+                if !is_variable_name(name) {
+                    findings.push(format!(
+                        "variable `{name}` is not a name of the shape `[A-Za-z_][A-Za-z0-9_]*`"
+                    ));
+                }
+            }
+        }
+
+        // one value per variable across the reaches
+        let env = unique(self.reaches.iter().flat_map(|reach| reach.env.iter().copied()));
+        for (index, (name, value)) in env.iter().enumerate() {
+            let earlier = env[..index].iter().find(|(other, _)| other == name);
+            if let Some((_, other)) = earlier {
+                findings.push(format!("variable `{name}` is set to `{other}` and to `{value}`"));
+            }
+        }
+        unique(findings)
     }
 }
 
 impl From<Worker> for WorkerGrant {
     fn from(worker: Worker) -> Self {
+        let reaches = worker.reaches;
         Self {
-            egress: worker.egress.iter().map(|host| (*host).to_owned()).collect(),
-            read: worker.read.iter().map(|root| (*root).to_owned()).collect(),
-            env: worker
-                .env
-                .iter()
-                .map(|(name, value)| ((*name).to_owned(), (*value).to_owned()))
-                .collect(),
+            egress: unique(
+                reaches.iter().flat_map(|reach| reach.egress.iter().map(|host| (*host).to_owned())),
+            ),
+            read: unique(
+                reaches.iter().flat_map(|reach| reach.read.iter().map(|root| (*root).to_owned())),
+            ),
+            env: unique(reaches.iter().flat_map(|reach| {
+                reach.env.iter().map(|(name, value)| ((*name).to_owned(), (*value).to_owned()))
+            })),
         }
     }
+}
+
+fn is_host_name(host: &str) -> bool {
+    !host.is_empty() && !host.contains(['/', ':']) && !host.chars().any(char::is_whitespace)
+}
+
+fn is_home_root(root: &str) -> bool {
+    root.strip_prefix("~/").is_some_and(|path| {
+        !path.is_empty()
+            && !path.contains('\\')
+            && path.split('/').all(|segment| !matches!(segment, "" | "." | ".."))
+    })
+}
+
+fn is_variable_name(name: &str) -> bool {
+    let mut chars = name.chars();
+    chars.next().is_some_and(|first| first.is_ascii_alphabetic() || first == '_')
+        && chars.all(|c| c.is_ascii_alphanumeric() || c == '_')
 }
 
 /// The adapter addressed and the tree it initialises.
@@ -269,8 +365,9 @@ pub trait TargetAdapter {
 
     /// What the model's worker reaches beyond the tree in every build and
     /// verify turn, since the adapter alone knows the toolchain its prompts
-    /// run: the registries its installs fetch from, the `~/` roots a
-    /// toolchain is installed under, the variables it reads.
+    /// run: one [`Reach`] per program, composed through [`Worker::of`],
+    /// each spelling the registries that program fetches from, the `~/`
+    /// roots it is installed under, and the variables it reads.
     ///
     /// [`Worker::NONE`] by default, for an adapter whose turns run nothing
     /// that reaches beyond the tree.
@@ -358,7 +455,9 @@ pub fn metadata(merge_rules: &[MergeRule], base: Base) -> TargetMetadata {
 /// - Returns [`Error::BadRequest`] when the model rejects the request, or
 ///   when no valid report is produced within the available rounds or the
 ///   backend's time budget.
-/// - Returns [`Error::ServerError`] when `docs` does not contain `build.md`.
+/// - Returns [`Error::ServerError`] when `docs` does not contain `build.md`,
+///   or when `ctx`'s [`Worker`] has [`findings`](Worker::findings), before
+///   any turn.
 /// - Returns [`Error::BadGateway`] when a model tool or transport fails.
 /// - Returns the error `check` fails with, whatever its class: the
 ///   candidate it failed on ends the turn, since a tree the adapter cannot
@@ -380,7 +479,7 @@ pub async fn build<P: Model>(
             .tools(tools)
             .workspace(ctx.workspace),
         ctx.worker,
-    );
+    )?;
     let brief = Brief {
         adapter_id: ctx.adapter_id,
         slice,
@@ -454,7 +553,9 @@ pub async fn build<P: Model>(
 /// - Returns [`Error::BadRequest`] when the model rejects the request or no
 ///   valid verdict is produced within the available rounds or the backend's
 ///   time budget.
-/// - Returns [`Error::ServerError`] when `docs` does not contain `verify.md`.
+/// - Returns [`Error::ServerError`] when `docs` does not contain
+///   `verify.md`, or when `ctx`'s [`Worker`] has
+///   [`findings`](Worker::findings), before any turn.
 /// - Returns [`Error::BadGateway`] when a model tool or transport fails.
 /// - Returns the error `check` fails with, whatever its class, the
 ///   candidate it failed on ending the turn.
@@ -471,7 +572,7 @@ pub async fn verify<P: Model>(
             .tools(tools)
             .workspace(ctx.workspace),
         ctx.worker,
-    );
+    )?;
     let brief = VerifyBrief {
         adapter_id: ctx.adapter_id,
     };
@@ -550,15 +651,24 @@ fn stash(failed: &mut Option<Error>, error: Error) {
     *failed = Some(error);
 }
 
-// `question` carrying the worker's grant, when it has one.
-fn granted<T>(question: Question<T>, worker: &Worker) -> Question<T>
+// `question` carrying the worker's grant, when it has one. A worker that
+// breaks the grant's shape is the adapter build's own defect, reported
+// before a turn is spent as a missing prompt is.
+fn granted<T>(question: Question<T>, worker: &Worker) -> Result<Question<T>, Error>
 where
     T: schemars::JsonSchema + serde::de::DeserializeOwned + Send,
 {
-    match worker.grant() {
+    let findings = worker.findings();
+    if !findings.is_empty() {
+        return Err(server_error!(
+            "the adapter's worker breaks the grant's shape: {}",
+            findings.join("; ")
+        ));
+    }
+    Ok(match worker.grant() {
         Some(grant) => question.worker(grant),
         None => question,
-    }
+    })
 }
 
 // The two tools' rules, stated once in both briefs: a build's and a

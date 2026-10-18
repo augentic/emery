@@ -6,7 +6,7 @@ use std::fs;
 use std::os::unix::fs::symlink;
 use std::path::Path;
 
-use emery_sdk::target::{BuildContext, Report, Slice, Worker};
+use emery_sdk::target::{BuildContext, Reach, Report, Slice, Worker};
 use emery_sdk::{Doc, Error};
 use omnia_sdk::model::ToolCall;
 use omnia_test::guest::Scripted;
@@ -201,16 +201,23 @@ async fn request_shape() {
     model.assert_exhausted();
 }
 
-// The adapter's worker rides the turn as the completion's grant, each list
-// as spelled, beside the lend it reaches beyond; the brief says nothing of
-// it, since the grant is the host's to lay.
+// The adapter's worker rides the turn as the completion's grant, the reaches
+// united with a root two of them spell carried once, beside the lend it
+// reaches beyond; the brief says nothing of it, since the grant is the
+// host's to lay.
 #[tokio::test]
 async fn worker_grant() {
-    const WORKER: Worker = Worker {
+    const CARGO: Reach = Reach {
         egress: &["index.crates.io", "static.crates.io"],
+        read: &["~/.cargo/bin"],
+        env: &[],
+    };
+    const RUSTUP: Reach = Reach {
+        egress: &[],
         read: &["~/.rustup", "~/.cargo/bin"],
         env: &[("RUSTUP_HOME", "~/.rustup")],
     };
+    const WORKER: Worker = Worker::of(&[CARGO, RUSTUP]);
     let tmp = tempfile::tempdir().expect("tempdir");
     seed(tmp.path(), ["src/orders.rs", "Cargo.toml"]);
     let root = tmp.path().to_str().expect("a UTF-8 scratch root");
@@ -226,7 +233,7 @@ async fn worker_grant() {
         seen[0].worker,
         Some(SeenWorker {
             egress: vec!["index.crates.io".to_owned(), "static.crates.io".to_owned()],
-            read: vec!["~/.rustup".to_owned(), "~/.cargo/bin".to_owned()],
+            read: vec!["~/.cargo/bin".to_owned(), "~/.rustup".to_owned()],
             env: vec![("RUSTUP_HOME".to_owned(), "~/.rustup".to_owned())],
         })
     );
