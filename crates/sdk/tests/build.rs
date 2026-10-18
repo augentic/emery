@@ -28,8 +28,6 @@ fn requirement(id: &str, subject: &str, statement: &str, when: &str, then: &str)
         id: id.to_owned(),
         subject: subject.to_owned(),
         statement: vec![statement.to_owned()],
-        route: None,
-        topic: None,
         scenarios: vec![Scenario {
             name: subject.rsplit('.').next().unwrap_or(subject).to_owned(),
             given: Vec::new(),
@@ -99,8 +97,13 @@ async fn ask_laid(
         workspace,
         grants,
         model,
+        laid: None,
     };
-    emery_sdk::target::build(&ctx, PROSE, laid, check).await
+    let ctx = match laid {
+        Some(text) => ctx.with_laid(text),
+        None => ctx,
+    };
+    emery_sdk::target::build(&ctx, PROSE, check).await
 }
 
 // Lays files beneath `root` with the content given, so a report naming them
@@ -1122,9 +1125,10 @@ async fn missing_prompt() {
         workspace: root,
         grants: &[],
         model: &model,
+        laid: None,
     };
 
-    let error = emery_sdk::target::build(&ctx, &[], None, |_| Ok(Vec::new()))
+    let error = emery_sdk::target::build(&ctx, &[], |_| Ok(Vec::new()))
         .await
         .expect_err("no prompt to ask with");
     assert_eq!(error.code(), "server_error");

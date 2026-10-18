@@ -40,7 +40,11 @@ use crate::target::{Report, Verdict};
 ///         ready(Ok(match task {
 ///             Task::Init => Outcome::Initialised,
 ///             Task::Build(slice) => Outcome::Built(Report {
-///                 covered: slice.requirement_ids().map(str::to_owned).collect(),
+///                 covered: slice
+///                     .requirements
+///                     .iter()
+///                     .map(|requirement| requirement.id.clone())
+///                     .collect(),
 ///                 written: vec!["src/lib.rs".to_string()],
 ///             }),
 ///             Task::Verify => Outcome::Verified(Verdict {
@@ -204,19 +208,6 @@ pub struct Slice {
     pub plan: String,
 }
 
-impl Slice {
-    /// Returns the ids of the slice's requirements, in the slice's order.
-    pub fn requirement_ids(&self) -> impl Iterator<Item = &str> {
-        self.requirements.iter().map(|requirement| requirement.id.as_str())
-    }
-
-    /// Returns the requirement `id` names, if the slice holds one.
-    #[must_use]
-    pub fn requirement(&self, id: &str) -> Option<&Requirement> {
-        self.requirements.iter().find(|requirement| requirement.id == id)
-    }
-}
-
 /// One requirement a slice builds, typed beside its rendering in the
 /// specification.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -228,12 +219,6 @@ pub struct Requirement {
     /// The statement's paragraphs, in order; empty for a requirement in
     /// conflict.
     pub statement: Vec<String>,
-    /// The route the requirement states, where the specification carries
-    /// one typed.
-    pub route: Option<Route>,
-    /// The topic the requirement consumes, where the specification carries
-    /// one typed.
-    pub topic: Option<String>,
     /// The acceptance scenarios, in the specification's order.
     pub scenarios: Vec<Scenario>,
 }
@@ -244,15 +229,6 @@ impl Requirement {
     pub fn stem(&self) -> &str {
         self.subject.split('.').next().unwrap_or(&self.subject)
     }
-}
-
-/// The HTTP surface a requirement states.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct Route {
-    /// The method, upper-case: `GET`, `POST`.
-    pub method: String,
-    /// The path, with each parameter in braces: `/orders/{id}`.
-    pub path: String,
 }
 
 /// One acceptance scenario of a requirement.

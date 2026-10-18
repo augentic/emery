@@ -192,15 +192,6 @@ interface target {
     merge-rules: list<merge-rule>,
   }
 
-  /// The HTTP surface a requirement states, where the specification
-  /// spells one.
-  record route {
-    /// The method, upper-case: `GET`, `POST`.
-    method: string,
-    /// The path, with each parameter in braces: `/orders/{id}`.
-    path: string,
-  }
-
   /// One acceptance scenario of a requirement, as the specification
   /// drafts it.
   record scenario {
@@ -227,12 +218,6 @@ interface target {
     /// The statement's paragraphs, in order; empty for a requirement in
     /// conflict.
     statement: list<string>,
-    /// The route the requirement states, once the specification carries
-    /// one typed; absent until then, and for a requirement with no route.
-    route: option<route>,
-    /// The topic the requirement consumes, once the specification carries
-    /// one typed; absent until then, and for a requirement with no topic.
-    topic: option<string>,
     /// The acceptance scenarios, in the specification's order.
     scenarios: list<scenario>,
   }

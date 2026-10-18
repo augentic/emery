@@ -28,9 +28,9 @@ impl TargetAdapter for Adapter {
     async fn run<P: Model>(task: Task<'_, P>) -> Result<Outcome, Error> {
         match task {
             Task::Init(ctx) => init(&ctx).map(|()| Outcome::Initialised),
-            Task::Build(ctx) => emery_sdk::target::build(&ctx, PROSE, None, |_| Ok(Vec::new()))
-                .await
-                .map(Outcome::Built),
+            Task::Build(ctx) => {
+                emery_sdk::target::build(&ctx, PROSE, |_| Ok(Vec::new())).await.map(Outcome::Built)
+            }
             Task::Verify(ctx) => emery_sdk::target::verify(&ctx, PROSE, |_| Ok(Vec::new()))
                 .await
                 .map(Outcome::Verified),

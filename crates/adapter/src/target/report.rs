@@ -46,8 +46,6 @@ impl Report {
     ///         id: "REQ-001".into(),
     ///         subject: "orders.create".into(),
     ///         statement: vec!["An order is created from at least one item.".into()],
-    ///         route: None,
-    ///         topic: None,
     ///         scenarios: Vec::new(),
     ///     }],
     ///     types: Vec::new(),
@@ -69,13 +67,15 @@ impl Report {
         let mut findings = Vec::new();
 
         // covered ids: the slice's, each once
+        let ids: Vec<&str> =
+            slice.requirements.iter().map(|requirement| requirement.id.as_str()).collect();
         let mut seen = BTreeSet::new();
         for id in &self.covered {
-            if slice.requirement(id).is_none() {
+            if !ids.contains(&id.as_str()) {
                 findings.push(format!(
                     "- covered `{id}` is not a requirement of slice `{}`; its requirements are {}",
                     slice.id,
-                    slice.requirement_ids().collect::<Vec<_>>().join(", ")
+                    ids.join(", ")
                 ));
             } else if !seen.insert(id) {
                 findings.push(format!("- covered `{id}` is listed twice"));
@@ -107,6 +107,11 @@ impl Report {
     /// Returns the requirements of `slice` the report does not cover, in the slice's order.
     #[must_use]
     pub fn uncovered<'a>(&self, slice: &'a Slice) -> Vec<&'a str> {
-        slice.requirement_ids().filter(|id| !self.covers(id)).collect()
+        slice
+            .requirements
+            .iter()
+            .map(|requirement| requirement.id.as_str())
+            .filter(|id| !self.covers(id))
+            .collect()
     }
 }

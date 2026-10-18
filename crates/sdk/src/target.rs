@@ -65,7 +65,7 @@
 //!                 }
 //!                 Ok(Outcome::Initialised)
 //!             }
-//!             Task::Build(ctx) => emery_sdk::target::build(&ctx, PROSE, None, |report| {
+//!             Task::Build(ctx) => emery_sdk::target::build(&ctx, PROSE, |report| {
 //!                 let stray = report.written.iter().filter(|path| !path.starts_with("crates/"));
 //!                 Ok(stray.map(|path| format!("`{path}` lies outside `crates/`")).collect())
 //!             })
@@ -103,7 +103,7 @@ use std::path::Path;
 #[doc(inline)]
 pub use emery_adapter::target::export;
 pub use emery_adapter::target::{
-    DesignType, MergeRule, MergeStrategy, Outcome, Report, Requirement, Route, Scenario, Slice,
+    DesignType, MergeRule, MergeStrategy, Outcome, Report, Requirement, Scenario, Slice,
     TargetMetadata, Verdict,
 };
 use emery_prose::Doc;
@@ -298,6 +298,22 @@ pub struct BuildContext<'a, P> {
     pub grants: &'a [Grant],
     /// The [`Model`] the turn is put to.
     pub model: &'a P,
+    /// What the adapter's own code laid into the workspace for the slice
+    /// before the turn, where it laid anything: the files and the markers
+    /// the model fills, which the brief names after the design so the turn
+    /// edits them rather than writing them over. The host lifts the context
+    /// with `None`; an adapter that lays a skeleton sets it through
+    /// [`with_laid`](Self::with_laid). An empty text puts no section.
+    pub laid: Option<&'a str>,
+}
+
+impl<'a, P> BuildContext<'a, P> {
+    /// Returns the context with [`laid`](Self::laid) set to `text`.
+    #[must_use]
+    pub const fn with_laid(mut self, text: &'a str) -> Self {
+        self.laid = Some(text);
+        self
+    }
 }
 
 /// The adapter addressed, the integrated tree it verifies, and the model.
@@ -398,12 +414,11 @@ pub fn metadata(rules: &[MergeRule]) -> TargetMetadata {
 ///
 /// `docs` must contain `build.md`, which becomes the system prompt. The turn
 /// carries the slice's plan entry, its cut of the specification, the whole
-/// design, and `laid`, what the adapter's own code laid into the workspace
-/// for the slice before the turn, where it laid anything: the files and the
-/// markers the model fills, stated so the turn edits them rather than
-/// writing them over. It lends the workspace with the worker grant `ctx`'s
-/// [`grants`](BuildContext::grants) unite to, and offers the embedded
-/// references through the reference tools. It writes
+/// design, and `ctx`'s [`laid`](BuildContext::laid), where the adapter set
+/// one: the files and the markers the model fills, stated so the turn edits
+/// them rather than writing them over. It lends the workspace with the
+/// worker grant `ctx`'s [`grants`](BuildContext::grants) unite to, and
+/// offers the embedded references through the reference tools. It writes
 /// through two tools. `write_files` writes one or more files beneath the
 /// workspace per call, listed or mapped by path, each created or replaced
 /// whole, at a path [`beneath`](crate::beneath) accepts and no symlink
@@ -441,7 +456,7 @@ pub fn metadata(rules: &[MergeRule]) -> TargetMetadata {
 ///   candidate it failed on ends the turn, since a tree the adapter cannot
 ///   read is the run's failure and not the model's to repair.
 pub async fn build<P: Model>(
-    ctx: &BuildContext<'_, P>, docs: &'static [Doc], laid: Option<&str>,
+    ctx: &BuildContext<'_, P>, docs: &'static [Doc],
     mut check: impl FnMut(&Report) -> Result<Vec<String>, Error> + Send,
 ) -> Result<Report, Error> {
     let slice = ctx.slice;
@@ -461,14 +476,14 @@ pub async fn build<P: Model>(
     let brief = Brief {
         adapter_id: ctx.adapter_id,
         slice,
-        laid,
+        laid: ctx.laid,
     };
 
     tracing::info!(
         slice = %id,
         name = %slice.name,
         requirements = slice.requirements.len(),
-        laid = laid.is_some(),
+        laid = ctx.laid.is_some(),
         "building"
     );
     let tools = writer.serve(reference::serve(docs, &[], id, None));
@@ -610,6 +625,7 @@ pub async fn call<A: TargetAdapter>(
             workspace: &workspace,
             grants: metadata.grants,
             model: &crate::Provider,
+            laid: None,
         }),
         emery_adapter::target::Task::Verify => Task::Verify(VerifyContext {
             adapter_id: &id,
@@ -708,7 +724,11 @@ impl Display for Brief<'_> {
         }
 
         // the requirements and the report rules
-        let ids = slice.requirement_ids().map(|id| format!("`{id}`")).collect::<Vec<_>>();
+        let ids = slice
+            .requirements
+            .iter()
+            .map(|requirement| format!("`{}`", requirement.id))
+            .collect::<Vec<_>>();
         write!(
             f,
             "Implement every requirement the specification above holds — {ids} — and no \

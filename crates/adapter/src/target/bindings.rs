@@ -32,7 +32,7 @@ mod generated {
 
 use self::generated::emery::adapter::target as wit;
 use crate::target::{
-    DesignType, MergeRule, MergeStrategy, Outcome, Report, Requirement, Route, Scenario, Slice,
+    DesignType, MergeRule, MergeStrategy, Outcome, Report, Requirement, Scenario, Slice,
     TargetMetadata, Task, Verdict,
 };
 
@@ -130,8 +130,6 @@ impl From<Requirement> for wit::Requirement {
             id: requirement.id,
             subject: requirement.subject,
             statement: requirement.statement,
-            route: requirement.route.map(Into::into),
-            topic: requirement.topic,
             scenarios: requirement.scenarios.into_iter().map(Into::into).collect(),
         }
     }
@@ -143,27 +141,7 @@ impl From<wit::Requirement> for Requirement {
             id: requirement.id,
             subject: requirement.subject,
             statement: requirement.statement,
-            route: requirement.route.map(Into::into),
-            topic: requirement.topic,
             scenarios: requirement.scenarios.into_iter().map(Into::into).collect(),
-        }
-    }
-}
-
-impl From<Route> for wit::Route {
-    fn from(route: Route) -> Self {
-        Self {
-            method: route.method,
-            path: route.path,
-        }
-    }
-}
-
-impl From<wit::Route> for Route {
-    fn from(route: wit::Route) -> Self {
-        Self {
-            method: route.method,
-            path: route.path,
         }
     }
 }

@@ -155,6 +155,17 @@ impl Display for Requirement {
     }
 }
 
+impl From<&Requirement> for emery_adapter::target::Requirement {
+    fn from(requirement: &Requirement) -> Self {
+        Self {
+            id: requirement.id.to_string(),
+            subject: requirement.subject.clone(),
+            statement: requirement.body.clone(),
+            scenarios: requirement.scenarios.iter().map(Into::into).collect(),
+        }
+    }
+}
+
 /// A claim cited by a requirement.
 #[derive(Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -306,6 +317,18 @@ impl Display for Scenario {
             write!(f, "\n- **{}** {text}", field.to_ascii_uppercase())?;
         }
         Ok(())
+    }
+}
+
+impl From<&Scenario> for emery_adapter::target::Scenario {
+    fn from(scenario: &Scenario) -> Self {
+        Self {
+            name: scenario.name.clone(),
+            given: scenario.given.clone(),
+            when: scenario.when.clone(),
+            then: scenario.then.clone(),
+            and: scenario.and.clone(),
+        }
     }
 }
 
