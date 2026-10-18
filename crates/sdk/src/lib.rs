@@ -19,13 +19,18 @@
 //!
 //! ```
 //! use emery_sdk::{
-//!     Context, Doc, Error, Evidence, Model, Seam, SourceAdapter, SourceInput, SourceKind,
+//!     Context, Doc, Error, Evidence, Metadata, Model, Seam, SourceAdapter, SourceInput,
+//!     SourceKind,
 //! };
+//!
+//! const KIND: SourceKind = SourceKind::Intent;
 //!
 //! pub struct Adapter;
 //!
 //! impl SourceAdapter for Adapter {
-//!     const KIND: SourceKind = SourceKind::Intent;
+//!     fn metadata() -> Metadata {
+//!         Metadata { kind: KIND }
+//!     }
 //!
 //!     async fn extract<P: Model>(ctx: &Context<'_, P>) -> Result<Evidence, Error> {
 //!         let seams = survey(ctx.input)?;
@@ -109,7 +114,7 @@ const VERIFY: &str = "verify.md";
 ///
 /// The argument is a type implementing [`SourceAdapter`]. The component's
 /// `metadata` answers [`metadata`](fn@metadata) over the type's
-/// [`KIND`](SourceAdapter::KIND). Its `extract` builds a [`Context`] from the
+/// [`Metadata::kind`]. Its `extract` builds a [`Context`] from the
 /// imported source input and the host model, puts it to the type's
 /// [`extract`](SourceAdapter::extract), and converts the returned evidence or
 /// error into the WIT records.
@@ -128,7 +133,7 @@ macro_rules! export_source {
             impl $crate::export::Guest for Exported {
                 fn metadata(_id: $crate::export::AdapterId) -> $crate::export::AdapterMetadata {
                     $crate::export::AdapterMetadata::from($crate::metadata(
-                        <$adapter as $crate::SourceAdapter>::KIND,
+                        <$adapter as $crate::SourceAdapter>::metadata().kind,
                     ))
                 }
 
@@ -146,10 +151,11 @@ macro_rules! export_source {
 ///
 /// The argument is a type implementing [`target::TargetAdapter`]. The
 /// component's `metadata` answers [`target::metadata`] over the type's
-/// [`MERGE_RULES`](target::TargetAdapter::MERGE_RULES). Its `run` lifts the imported task
+/// [`rules`](target::Metadata::rules). Its `run` lifts the imported task
 /// into a [`target::Task`] over the workspace root and the host model — a
 /// [`target::InitContext`], a [`target::BuildContext`], or a
-/// [`target::VerifyContext`] — puts it to the type's
+/// [`target::VerifyContext`], the last two carrying the type's
+/// [`grants`](target::Metadata::grants) — puts it to the type's
 /// [`run`](target::TargetAdapter::run), holds the outcome to the task's
 /// kind, and converts it or the error into the WIT records.
 ///
@@ -170,7 +176,7 @@ macro_rules! export_target {
                     _id: $crate::target::export::AdapterId,
                 ) -> $crate::target::export::TargetMetadata {
                     $crate::target::export::TargetMetadata::from($crate::target::metadata(
-                        <$adapter as $crate::target::TargetAdapter>::MERGE_RULES,
+                        <$adapter as $crate::target::TargetAdapter>::metadata().rules,
                     ))
                 }
 
@@ -217,10 +223,10 @@ pub async fn call<A: SourceAdapter>(
 /// Returns the `metadata` answer for an adapter reading `kind` sources.
 ///
 /// [`export_source!`] answers the component's `metadata` with it over the
-/// adapter's [`KIND`](SourceAdapter::KIND). The `emery-version` pin is this
-/// SDK's own version, identifying the contract the adapter compiled against.
-/// Build an [`AdapterMetadata`] directly only when the adapter must loosen or
-/// tighten that pin.
+/// adapter's [`Metadata::kind`]. The `emery-version` pin is this SDK's own
+/// version, identifying the contract the adapter compiled against. Build an
+/// [`AdapterMetadata`] directly only when the adapter must loosen or tighten
+/// that pin.
 #[must_use]
 pub fn metadata(kind: SourceKind) -> AdapterMetadata {
     AdapterMetadata {
@@ -308,14 +314,30 @@ pub struct Context<'a, P> {
     pub model: &'a P,
 }
 
+/// What a source adapter declares about itself: the kind of source it reads.
+///
+/// [`SourceAdapter::metadata`] answers it from the adapter's compiled-in
+/// constants, and [`export_source!`] answers the component's `metadata`
+/// over its [`kind`](Self::kind).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Metadata {
+    /// The kind of source the adapter reads, which ranks its evidence against
+    /// other sources'.
+    pub kind: SourceKind,
+}
+
 /// A source adapter: the kind of source it reads and how it extracts one.
 ///
 /// Implement it on a unit struct and hand that type to [`export_source!`],
 /// which exports the `source-adapter` world over it.
 pub trait SourceAdapter {
-    /// The kind of source the adapter reads, which ranks its evidence against
-    /// other sources'.
-    const KIND: SourceKind;
+    /// Returns what the adapter declares about itself: the kind of source it
+    /// reads.
+    ///
+    /// Answered from compiled-in constants, with no model call and no
+    /// filesystem access.
+    #[must_use]
+    fn metadata() -> Metadata;
 
     /// Extracts the evidence of the source `ctx` carries.
     ///

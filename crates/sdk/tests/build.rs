@@ -4,7 +4,7 @@ use std::fs;
 use std::os::unix::fs::symlink;
 use std::path::Path;
 
-use emery_sdk::target::{BuildContext, Reach, Report, Slice, Worker};
+use emery_sdk::target::{BuildContext, Grant, Report, Slice};
 use emery_sdk::{Doc, Error};
 use omnia_sdk::model::ToolCall;
 use omnia_test::guest::Scripted;
@@ -36,24 +36,24 @@ fn slice() -> Slice {
 }
 
 async fn ask(model: &Scripted, slice: &Slice, workspace: &str) -> Result<Report, Error> {
-    ask_as(model, slice, workspace, &Worker::NONE).await
+    ask_as(model, slice, workspace, &[]).await
 }
 
 async fn ask_as(
-    model: &Scripted, slice: &Slice, workspace: &str, worker: &Worker,
+    model: &Scripted, slice: &Slice, workspace: &str, grants: &[Grant],
 ) -> Result<Report, Error> {
-    ask_checked(model, slice, workspace, worker, |_| Ok(Vec::new())).await
+    ask_checked(model, slice, workspace, grants, |_| Ok(Vec::new())).await
 }
 
 async fn ask_checked(
-    model: &Scripted, slice: &Slice, workspace: &str, worker: &Worker,
+    model: &Scripted, slice: &Slice, workspace: &str, grants: &[Grant],
     check: impl FnMut(&Report) -> Result<Vec<String>, Error> + Send,
 ) -> Result<Report, Error> {
     let ctx = BuildContext {
         adapter_id: "target:probe",
         slice,
         workspace,
-        worker,
+        grants,
         model,
     };
     emery_sdk::target::build(&ctx, PROSE, check).await
@@ -129,7 +129,7 @@ async fn request_shape() {
     let request = &seen[0];
     assert_eq!(request.system.as_deref(), Some("BUILD"));
     assert_eq!(request.workspace.as_deref(), Some(root), "the tree is lent");
-    assert_eq!(request.worker, None, "a worker reaching nothing puts no grant");
+    assert_eq!(request.worker, None, "no grants put no worker grant");
     assert_eq!(request.tools, ["list_docs", "read_doc", "write_files", "edit_files"]);
     assert!(request.check, "acceptance is the check");
     let SeenFormat::Schema { name, schema } = &request.format else {
@@ -199,30 +199,30 @@ async fn request_shape() {
     model.assert_exhausted();
 }
 
-// The adapter's worker rides the turn as the completion's grant, the reaches
+// The adapter's grants ride the turn as the completion's worker grant,
 // united with a root two of them spell carried once, beside the lend it
 // reaches beyond; the brief says nothing of it, since the grant is the
 // host's to lay.
 #[tokio::test]
 async fn worker_grant() {
-    const CARGO: Reach = Reach {
+    const CARGO: Grant = Grant {
         egress: &["index.crates.io", "static.crates.io"],
         read: &["~/.cargo/bin"],
         env: &[],
     };
-    const RUSTUP: Reach = Reach {
+    const RUSTUP: Grant = Grant {
         egress: &[],
         read: &["~/.rustup", "~/.cargo/bin"],
         env: &[("RUSTUP_HOME", "~/.rustup")],
     };
-    const WORKER: Worker = Worker::of(&[CARGO, RUSTUP]);
+    const GRANTS: &[Grant] = &[CARGO, RUSTUP];
     let tmp = tempfile::tempdir().expect("tempdir");
     seed(tmp.path(), ["src/orders.rs", "Cargo.toml"]);
     let root = tmp.path().to_str().expect("a UTF-8 scratch root");
     let model = Scripted::answering([VALID]);
     let slice = slice();
 
-    ask_as(&model, &slice, root, &WORKER).await.expect("accepted");
+    ask_as(&model, &slice, root, GRANTS).await.expect("accepted");
 
     let seen = model.seen();
     assert_eq!(seen.len(), 1);
@@ -1047,7 +1047,7 @@ async fn missing_prompt() {
         adapter_id: "target:mute",
         slice: &slice,
         workspace: root,
-        worker: &Worker::NONE,
+        grants: &[],
         model: &model,
     };
 
@@ -1125,7 +1125,7 @@ async fn check_findings() {
     let slice = slice();
     let mut seen = Vec::new();
 
-    let report = ask_checked(&model, &slice, root, &Worker::NONE, |report| {
+    let report = ask_checked(&model, &slice, root, &[], |report| {
         seen.push(report.written.clone());
         let held = Path::new(root).join("Cargo.toml").is_file();
         Ok((!held)
@@ -1162,7 +1162,7 @@ async fn check_error() {
     let root = tmp.path().to_str().expect("a UTF-8 scratch root");
     let model = Scripted::answering([r#"{"covered":["REQ-001"],"written":["src/orders.rs"]}"#]);
 
-    let error = ask_checked(&model, &slice(), root, &Worker::NONE, |_| {
+    let error = ask_checked(&model, &slice(), root, &[], |_| {
         Err(omnia_sdk::server_error!("reading `Cargo.toml`: permission denied"))
     })
     .await

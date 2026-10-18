@@ -7,12 +7,16 @@ A source adapter is a WebAssembly component that reads one kind of source — an
 ```rust
 mod survey;
 
-use emery_sdk::{Context, Doc, Error, Evidence, Model, SourceAdapter, SourceKind};
+use emery_sdk::{Context, Doc, Error, Evidence, Metadata, Model, SourceAdapter, SourceKind};
+
+const KIND: SourceKind = SourceKind::Documentation;
 
 pub struct Adapter;
 
 impl SourceAdapter for Adapter {
-    const KIND: SourceKind = SourceKind::Documentation;
+    fn metadata() -> Metadata {
+        Metadata { kind: KIND }
+    }
 
     async fn extract<P: Model>(ctx: &Context<'_, P>) -> Result<Evidence, Error> {
         let seams = survey::survey(ctx.input)?;
