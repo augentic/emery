@@ -1597,7 +1597,7 @@ async fn two_versions_one_run() {
     let run = emery(roots.deployment(&["--format", "json", "specify"]), &backends, &model).await;
 
     let envelope = refused(&run, 1, "bad_request");
-    assert_message(&envelope, "adapters `acme:source@0.1.0` and `acme:source@0.1.0-dev`");
+    assert_message(&envelope, "adapters `acme:source@0.1.0-dev` and `acme:source@0.1.0`");
     assert_message(&envelope, "would both register as `acme:source`");
     model.assert_exhausted();
 }
