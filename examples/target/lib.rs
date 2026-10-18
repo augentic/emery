@@ -8,15 +8,22 @@ use std::fs::{self, OpenOptions};
 use std::io::{ErrorKind, Write as _};
 use std::path::Path;
 
-use emery_sdk::target::{InitContext, MergeRule, Outcome, TargetAdapter, Task};
+use emery_sdk::target::{InitContext, MergeRule, Metadata, Outcome, TargetAdapter, Task};
 use emery_sdk::{Doc, Error, Model, server_error};
+
+// two slices that list requirements in one index keep both lists
+const RULES: &[MergeRule] = &[MergeRule::union("build/*/index.md")];
 
 /// The adapter implementation.
 pub struct Adapter;
 
 impl TargetAdapter for Adapter {
-    // two slices that list requirements in one index keep both lists
-    const MERGE_RULES: &'static [MergeRule] = &[MergeRule::union("build/*/index.md")];
+    fn metadata() -> Metadata {
+        Metadata {
+            rules: RULES,
+            ..Metadata::default()
+        }
+    }
 
     async fn run<P: Model>(task: Task<'_, P>) -> Result<Outcome, Error> {
         match task {

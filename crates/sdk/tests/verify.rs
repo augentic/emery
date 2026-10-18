@@ -1,6 +1,6 @@
 //! Tests `target::verify` verdict gating and workspace repairs.
 
-use emery_sdk::target::{Reach, Verdict, VerifyContext, Worker};
+use emery_sdk::target::{Grant, Verdict, VerifyContext};
 use emery_sdk::{Doc, Error};
 use omnia_sdk::model::ToolCall;
 use omnia_test::guest::Scripted;
@@ -24,21 +24,21 @@ const PROSE: &[Doc] = &[
 const PASSED: &str = r#"{"passed":true,"failures":[]}"#;
 
 async fn ask(model: &Scripted, workspace: &str) -> Result<Verdict, Error> {
-    ask_as(model, workspace, &Worker::NONE).await
+    ask_as(model, workspace, &[]).await
 }
 
-async fn ask_as(model: &Scripted, workspace: &str, worker: &Worker) -> Result<Verdict, Error> {
-    ask_checked(model, workspace, worker, |_| Ok(Vec::new())).await
+async fn ask_as(model: &Scripted, workspace: &str, grants: &[Grant]) -> Result<Verdict, Error> {
+    ask_checked(model, workspace, grants, |_| Ok(Vec::new())).await
 }
 
 async fn ask_checked(
-    model: &Scripted, workspace: &str, worker: &Worker,
+    model: &Scripted, workspace: &str, grants: &[Grant],
     check: impl FnMut(&Verdict) -> Result<Vec<String>, Error> + Send,
 ) -> Result<Verdict, Error> {
     let ctx = VerifyContext {
         adapter_id: "target:probe",
         workspace,
-        worker,
+        grants,
         model,
     };
     emery_sdk::target::verify(&ctx, PROSE, check).await
@@ -62,7 +62,7 @@ async fn request_shape() {
     let request = &seen[0];
     assert_eq!(request.system.as_deref(), Some("VERIFY"));
     assert_eq!(request.workspace.as_deref(), Some(root), "the integrated tree is lent");
-    assert_eq!(request.worker, None, "a worker reaching nothing puts no grant");
+    assert_eq!(request.worker, None, "no grants put no worker grant");
     assert_eq!(
         request.tools,
         ["list_docs", "read_doc", "write_files", "edit_files"],
@@ -285,26 +285,26 @@ async fn doc_refs() {
     model.assert_exhausted();
 }
 
-// The adapter's worker rides the verify turn as it rides a build's: the
+// The adapter's grants ride the verify turn as they ride a build's: the
 // checks run the same toolchain over the integrated tree.
 #[tokio::test]
 async fn worker_grant() {
-    const NPM: Reach = Reach {
+    const NPM: Grant = Grant {
         egress: &["registry.npmjs.org"],
         read: &[],
         env: &[],
     };
-    const NVM: Reach = Reach {
+    const NVM: Grant = Grant {
         egress: &[],
         read: &["~/.nvm/versions/node"],
         env: &[],
     };
-    const WORKER: Worker = Worker::of(&[NPM, NVM]);
+    const GRANTS: &[Grant] = &[NPM, NVM];
     let tmp = tempfile::tempdir().expect("tempdir");
     let root = tmp.path().to_str().expect("a UTF-8 scratch root");
     let model = Scripted::answering([PASSED]);
 
-    ask_as(&model, root, &WORKER).await.expect("accepted");
+    ask_as(&model, root, GRANTS).await.expect("accepted");
 
     let seen = model.seen();
     assert_eq!(seen.len(), 1);
@@ -330,7 +330,7 @@ async fn missing_prompt() {
     let ctx = VerifyContext {
         adapter_id: "target:mute",
         workspace: root,
-        worker: &Worker::NONE,
+        grants: &[],
         model: &model,
     };
 
@@ -342,27 +342,27 @@ async fn missing_prompt() {
     assert_eq!(model.seen(), [] as [Seen; 0]);
 }
 
-// A worker that breaks the grant's shape is the adapter build's own defect,
-// every broken entry named and the call ended before a turn is spent, so a
-// grant the host would refuse never reaches it.
+// A grant that breaks the shape is the adapter build's own defect, every
+// broken entry named and the call ended before a turn is spent, so a grant
+// the host would refuse never reaches it.
 #[tokio::test]
 async fn worker_refused() {
-    const BROKEN: Reach = Reach {
+    const BROKEN: Grant = Grant {
         egress: &["https://registry.npmjs.org", "registry.npmjs.org"],
         read: &["/opt/node", "~/", "~/a/../b", "~/.volta"],
         env: &[("VOLTA-HOME", "~/.volta"), ("NODE_ENV", "test")],
     };
-    const OTHER: Reach = Reach {
+    const OTHER: Grant = Grant {
         egress: &[],
         read: &[],
         env: &[("NODE_ENV", "production")],
     };
-    const WORKER: Worker = Worker::of(&[BROKEN, OTHER]);
+    const GRANTS: &[Grant] = &[BROKEN, OTHER];
     let tmp = tempfile::tempdir().expect("tempdir");
     let root = tmp.path().to_str().expect("a UTF-8 scratch root");
     let model = Scripted::default();
 
-    let error = ask_as(&model, root, &WORKER).await.expect_err("refused");
+    let error = ask_as(&model, root, GRANTS).await.expect_err("refused");
 
     assert_eq!(error.code(), "server_error");
     let description = error.description();
@@ -381,20 +381,20 @@ async fn worker_refused() {
     assert_eq!(model.seen(), [] as [Seen; 0]);
 }
 
-// A reach of empty lists reaches nothing, so a worker composed of it puts no
-// grant, as `NONE` puts none.
+// A grant of empty lists grants nothing, so a list of it puts no worker
+// grant, as no grants put none.
 #[tokio::test]
 async fn worker_reaching_nothing() {
-    const WORKER: Worker = Worker::of(&[Reach {
+    const GRANTS: &[Grant] = &[Grant {
         egress: &[],
         read: &[],
         env: &[],
-    }]);
+    }];
     let tmp = tempfile::tempdir().expect("tempdir");
     let root = tmp.path().to_str().expect("a UTF-8 scratch root");
     let model = Scripted::answering([PASSED]);
 
-    ask_as(&model, root, &WORKER).await.expect("accepted");
+    ask_as(&model, root, GRANTS).await.expect("accepted");
 
     let seen = model.seen();
     assert_eq!(seen.len(), 1);
@@ -421,7 +421,7 @@ async fn check_findings() {
     );
     let mut seen = 0;
 
-    let verdict = ask_checked(&model, root, &Worker::NONE, |verdict| {
+    let verdict = ask_checked(&model, root, &[], |verdict| {
         seen += 1;
         let manifest = std::fs::read_to_string(tmp.path().join("Cargo.toml"))
             .map_err(|err| omnia_sdk::server_error!("reading `Cargo.toml`: {err}"))?;
@@ -455,7 +455,7 @@ async fn check_error() {
     let root = tmp.path().to_str().expect("a UTF-8 scratch root");
     let model = Scripted::answering([PASSED]);
 
-    let error = ask_checked(&model, root, &Worker::NONE, |_| {
+    let error = ask_checked(&model, root, &[], |_| {
         Err(omnia_sdk::bad_request!("a directory stands at `Cargo.toml`"))
     })
     .await
