@@ -36,13 +36,22 @@ impl Report {
     /// # Examples
     ///
     /// ```
-    /// use emery_adapter::target::{Report, Slice};
+    /// use emery_adapter::target::{Report, Requirement, Slice};
     ///
     /// let slice = Slice {
     ///     id: "SLICE-001".into(),
     ///     name: "orders".into(),
     ///     base: "1a2b3c4d".into(),
-    ///     requirements: vec!["REQ-001".into()],
+    ///     requirements: vec![Requirement {
+    ///         id: "REQ-001".into(),
+    ///         subject: "orders.create".into(),
+    ///         statement: vec!["An order is created from at least one item.".into()],
+    ///         route: None,
+    ///         topic: None,
+    ///         scenarios: Vec::new(),
+    ///     }],
+    ///     types: Vec::new(),
+    ///     brief: Vec::new(),
     ///     spec: String::new(),
     ///     design: String::new(),
     ///     plan: String::new(),
@@ -62,11 +71,11 @@ impl Report {
         // covered ids: the slice's, each once
         let mut seen = BTreeSet::new();
         for id in &self.covered {
-            if !slice.requirements.contains(id) {
+            if slice.requirement(id).is_none() {
                 findings.push(format!(
                     "- covered `{id}` is not a requirement of slice `{}`; its requirements are {}",
                     slice.id,
-                    slice.requirements.join(", ")
+                    slice.requirement_ids().collect::<Vec<_>>().join(", ")
                 ));
             } else if !seen.insert(id) {
                 findings.push(format!("- covered `{id}` is listed twice"));
@@ -98,6 +107,6 @@ impl Report {
     /// Returns the requirements of `slice` the report does not cover, in the slice's order.
     #[must_use]
     pub fn uncovered<'a>(&self, slice: &'a Slice) -> Vec<&'a str> {
-        slice.requirements.iter().filter(|id| !self.covers(id)).map(String::as_str).collect()
+        slice.requirement_ids().filter(|id| !self.covers(id)).collect()
     }
 }

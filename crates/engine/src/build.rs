@@ -13,7 +13,10 @@ use std::collections::BTreeSet;
 use std::fmt::{self, Display};
 use std::num::NonZeroUsize;
 
-use emery_adapter::target::{Outcome, Slice as SliceInput, Target, Task};
+use emery_adapter::target::{
+    DesignType, Outcome, Requirement as RequirementInput, Scenario as ScenarioInput,
+    Slice as SliceInput, Target, Task,
+};
 use emery_adapter::{beneath, is_kebab};
 use futures::{FutureExt as _, StreamExt as _, stream};
 use omnia_sdk::api::Context;
@@ -25,7 +28,7 @@ use serde::Serialize;
 use self::merge::{Conflict, MergeBrief};
 use crate::adapter::{self, AdapterRef, Loaded};
 use crate::brief::Brief as _;
-use crate::revision::{Plan, Slice, Spec};
+use crate::revision::{Design, Plan, Requirement, Slice, Spec};
 pub use crate::revision::{ReqId, SliceId, Waves};
 use crate::vcs::{INTEGRATION, Integration, Message, Repo, WorkingCopy};
 use crate::{EntryKind, Files, RETRIES, is_retryable, store, vcs};
@@ -176,7 +179,7 @@ pub async fn build<P: Model + Target + StateStore + BlobStore + Plugins + Vcs + 
 
     // every slice carries the whole design, rendered once, and every merge
     // the adapter's rules
-    let design = revision.design.to_string();
+    let rendered = revision.design.to_string();
     let policy = vcs::rules(&metadata.merge_rules);
     let run = Run {
         adapter: &adapter,
@@ -184,7 +187,8 @@ pub async fn build<P: Model + Target + StateStore + BlobStore + Plugins + Vcs + 
         revision: &revision_id,
         label: &label,
         spec: &revision.spec,
-        design: &design,
+        design: &revision.design,
+        rendered: &rendered,
         plan: &revision.plan,
         repo: &repo,
         integration: &integration,
@@ -371,7 +375,9 @@ struct Run<'a> {
     revision: &'a str,
     label: &'a str,
     spec: &'a Spec,
-    design: &'a str,
+    design: &'a Design,
+    // the design as every slice carries it
+    rendered: &'a str,
     plan: &'a Plan,
     repo: &'a Repo,
     integration: &'a WorkingCopy,
@@ -583,9 +589,25 @@ impl Run<'_> {
         let input = SliceInput {
             id: slice.id.to_string(),
             name: slice.name.clone(),
-            requirements: slice.requirements.iter().map(ToString::to_string).collect(),
+            requirements: slice
+                .requirements
+                .iter()
+                .filter_map(|id| self.spec.requirement(*id))
+                .map(lower)
+                .collect(),
+            types: slice
+                .types
+                .iter()
+                .filter_map(|key| {
+                    self.design.signature(key).map(|signature| DesignType {
+                        key: key.clone(),
+                        signature: signature.to_owned(),
+                    })
+                })
+                .collect(),
+            brief: slice.brief.clone(),
             spec: self.spec.cut(&slice.requirements),
-            design: self.design.to_owned(),
+            design: self.rendered.to_owned(),
             plan: slice.to_string(),
             base: head.to_owned(),
         };
@@ -1034,6 +1056,29 @@ async fn initialise<P: Target + Vcs + Files>(
     }
     tracing::info!(laid = pending.len(), "initialised");
     Ok(pending)
+}
+
+// The requirement as a target reads it. The route and the topic are lowered
+// absent until the specification carries them typed.
+fn lower(requirement: &Requirement) -> RequirementInput {
+    RequirementInput {
+        id: requirement.id.to_string(),
+        subject: requirement.subject.clone(),
+        statement: requirement.body.clone(),
+        route: None,
+        topic: None,
+        scenarios: requirement
+            .scenarios
+            .iter()
+            .map(|scenario| ScenarioInput {
+                name: scenario.name.clone(),
+                given: scenario.given.clone(),
+                when: scenario.when.clone(),
+                then: scenario.then.clone(),
+                and: scenario.and.clone(),
+            })
+            .collect(),
+    }
 }
 
 // The gate's refusal: what `wrote` left changed carries the credentials

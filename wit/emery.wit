@@ -192,6 +192,60 @@ interface target {
     merge-rules: list<merge-rule>,
   }
 
+  /// The HTTP surface a requirement states, where the specification
+  /// spells one.
+  record route {
+    /// The method, upper-case: `GET`, `POST`.
+    method: string,
+    /// The path, with each parameter in braces: `/orders/{id}`.
+    path: string,
+  }
+
+  /// One acceptance scenario of a requirement, as the specification
+  /// drafts it.
+  record scenario {
+    /// The scenario's heading.
+    name: string,
+    /// The `GIVEN` conditions, one each; may be empty.
+    given: list<string>,
+    /// The `WHEN` trigger.
+    when: string,
+    /// The `THEN` outcome, `[unknown]` where the sources evidence none.
+    then: string,
+    /// The further `AND` outcomes, one each; may be empty.
+    and: list<string>,
+  }
+
+  /// One requirement the slice builds, typed beside its rendering in
+  /// `spec`, so an adapter reads its parts without parsing the Markdown.
+  record requirement {
+    /// The stable requirement identifier, `REQ-001`. A report's `covered`
+    /// is held to these.
+    id: string,
+    /// The dotted subject, `orders.pay`, whose first segment is the stem.
+    subject: string,
+    /// The statement's paragraphs, in order; empty for a requirement in
+    /// conflict.
+    statement: list<string>,
+    /// The route the requirement states, once the specification carries
+    /// one typed; absent until then, and for a requirement with no route.
+    route: option<route>,
+    /// The topic the requirement consumes, once the specification carries
+    /// one typed; absent until then, and for a requirement with no topic.
+    topic: option<string>,
+    /// The acceptance scenarios, in the specification's order.
+    scenarios: list<scenario>,
+  }
+
+  /// One design type the slice owns: a data shape its code reads or
+  /// produces, as the design carries it.
+  record design-type {
+    /// The type's key, as the plan entry names it.
+    key: string,
+    /// The source's signature, verbatim.
+    signature: string,
+  }
+
   /// One slice of the build plan, as `emery show` renders the revision it
   /// comes from. A target is value-in; it never reads the revision store.
   record slice {
@@ -202,10 +256,15 @@ interface target {
     /// The commit the lent tree sits on: the integrated head the slice
     /// builds over, so a worker elsewhere can materialise the same tree.
     base: string,
-    /// The ids of the requirements the slice builds, `REQ-001`, each one
-    /// `spec` renders. A report's `covered` is held to them, so neither
-    /// side reads them back out of the Markdown.
-    requirements: list<string>,
+    /// The requirements the slice builds, typed, each one `spec` renders.
+    /// A report's `covered` is held to their ids, so neither side reads
+    /// them back out of the Markdown.
+    requirements: list<requirement>,
+    /// The design types the slice owns, each one `design` renders.
+    types: list<design-type>,
+    /// The plan's brief for the slice: the paragraphs a builder reads
+    /// before taking it up.
+    brief: list<string>,
     /// The specification cut to the slice: its preamble and the slice's
     /// requirements, as `emery show spec` renders them.
     spec: string,

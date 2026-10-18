@@ -65,7 +65,7 @@
 //!                 }
 //!                 Ok(Outcome::Initialised)
 //!             }
-//!             Task::Build(ctx) => emery_sdk::target::build(&ctx, PROSE, |report| {
+//!             Task::Build(ctx) => emery_sdk::target::build(&ctx, PROSE, None, |report| {
 //!                 let stray = report.written.iter().filter(|path| !path.starts_with("crates/"));
 //!                 Ok(stray.map(|path| format!("`{path}` lies outside `crates/`")).collect())
 //!             })
@@ -103,7 +103,8 @@ use std::path::Path;
 #[doc(inline)]
 pub use emery_adapter::target::export;
 pub use emery_adapter::target::{
-    MergeRule, MergeStrategy, Outcome, Report, Slice, TargetMetadata, Verdict,
+    DesignType, MergeRule, MergeStrategy, Outcome, Report, Requirement, Route, Scenario, Slice,
+    TargetMetadata, Verdict,
 };
 use emery_prose::Doc;
 use omnia_sdk::model::{Question, WorkerGrant};
@@ -396,8 +397,11 @@ pub fn metadata(rules: &[MergeRule]) -> TargetMetadata {
 /// Builds the slice of `ctx` into its workspace through one gated turn.
 ///
 /// `docs` must contain `build.md`, which becomes the system prompt. The turn
-/// carries the slice's plan entry, its cut of the specification, and the
-/// whole design, lends the workspace with the worker grant `ctx`'s
+/// carries the slice's plan entry, its cut of the specification, the whole
+/// design, and `laid`, what the adapter's own code laid into the workspace
+/// for the slice before the turn, where it laid anything: the files and the
+/// markers the model fills, stated so the turn edits them rather than
+/// writing them over. It lends the workspace with the worker grant `ctx`'s
 /// [`grants`](BuildContext::grants) unite to, and offers the embedded
 /// references through the reference tools. It writes
 /// through two tools. `write_files` writes one or more files beneath the
@@ -437,7 +441,7 @@ pub fn metadata(rules: &[MergeRule]) -> TargetMetadata {
 ///   candidate it failed on ends the turn, since a tree the adapter cannot
 ///   read is the run's failure and not the model's to repair.
 pub async fn build<P: Model>(
-    ctx: &BuildContext<'_, P>, docs: &'static [Doc],
+    ctx: &BuildContext<'_, P>, docs: &'static [Doc], laid: Option<&str>,
     mut check: impl FnMut(&Report) -> Result<Vec<String>, Error> + Send,
 ) -> Result<Report, Error> {
     let slice = ctx.slice;
@@ -457,12 +461,14 @@ pub async fn build<P: Model>(
     let brief = Brief {
         adapter_id: ctx.adapter_id,
         slice,
+        laid,
     };
 
     tracing::info!(
         slice = %id,
         name = %slice.name,
         requirements = slice.requirements.len(),
+        laid = laid.is_some(),
         "building"
     );
     let tools = writer.serve(reference::serve(docs, &[], id, None));
@@ -664,6 +670,7 @@ const TOOLS_RULE: &str = "`write_files` writes one or more files beneath `$WORKS
 struct Brief<'a> {
     adapter_id: &'a str,
     slice: &'a Slice,
+    laid: Option<&'a str>,
 }
 
 impl Display for Brief<'_> {
@@ -695,8 +702,13 @@ impl Display for Brief<'_> {
             design = slice.design.trim_end(),
         )?;
 
+        // what the adapter laid before the turn, where it laid anything
+        if let Some(laid) = self.laid.map(str::trim_end).filter(|laid| !laid.is_empty()) {
+            write!(f, "What the adapter laid for this slice before this turn:\n\n{laid}\n\n")?;
+        }
+
         // the requirements and the report rules
-        let ids = slice.requirements.iter().map(|id| format!("`{id}`")).collect::<Vec<_>>();
+        let ids = slice.requirement_ids().map(|id| format!("`{id}`")).collect::<Vec<_>>();
         write!(
             f,
             "Implement every requirement the specification above holds — {ids} — and no \

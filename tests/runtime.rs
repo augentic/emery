@@ -1583,12 +1583,12 @@ async fn precompiled_in_store() {
 async fn two_versions_one_run() {
     let roots = Roots::new();
     roots.stored(SOURCE, MOCK_SOURCE);
-    roots.stored("acme:source@0.2.0-dev", MOCK_SOURCE);
+    roots.stored("acme:source@0.1.0-dev", MOCK_SOURCE);
     roots.project.write(
         "emery.toml",
         format!(
             "[[source]]\nname = \"docs\"\nadapter = \"{SOURCE}\"\n\n\
-             [[source]]\nname = \"api\"\nadapter = \"acme:source@0.2.0-dev\"\n"
+             [[source]]\nname = \"api\"\nadapter = \"acme:source@0.1.0-dev\"\n"
         ),
     );
     let backends = roots.backends().await;
@@ -1597,7 +1597,7 @@ async fn two_versions_one_run() {
     let run = emery(roots.deployment(&["--format", "json", "specify"]), &backends, &model).await;
 
     let envelope = refused(&run, 1, "bad_request");
-    assert_message(&envelope, "adapters `acme:source@0.1.0` and `acme:source@0.2.0-dev`");
+    assert_message(&envelope, "adapters `acme:source@0.1.0` and `acme:source@0.1.0-dev`");
     assert_message(&envelope, "would both register as `acme:source`");
     model.assert_exhausted();
 }

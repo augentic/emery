@@ -416,7 +416,7 @@ impl<S: Send + Sync + 'static> Target for Provider<S> {
                         || {
                             self.target.reports.get(&slice.id).cloned().unwrap_or_else(|| {
                                 Ok(Report {
-                                    covered: slice.requirements.clone(),
+                                    covered: slice.requirement_ids().map(str::to_owned).collect(),
                                     written: vec![format!("src/{}.rs", slice.name)],
                                 })
                             })

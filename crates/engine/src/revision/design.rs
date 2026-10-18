@@ -57,6 +57,17 @@ impl Design {
             .collect();
         keys.into_iter().map(str::to_owned).collect()
     }
+
+    /// Returns the signature of the type `key` names, if the design has one.
+    #[must_use]
+    pub fn signature(&self, key: &str) -> Option<&str> {
+        self.sections.iter().flat_map(|section| &section.blocks).find_map(|block| match block {
+            Block::Type {
+                key: held, signature, ..
+            } if held == key => Some(signature.as_str()),
+            Block::Text(_) | Block::Type { .. } => None,
+        })
+    }
 }
 
 impl revision::Document for Design {

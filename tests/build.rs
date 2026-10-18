@@ -6,7 +6,7 @@ mod support;
 
 use std::fs;
 
-use emery_adapter::target::{MergeRule, Report, Verdict};
+use emery_adapter::target::{DesignType, MergeRule, Report, Scenario, Slice, Verdict};
 use emery_engine::EntryKind;
 use omnia_sdk::model::{Error as ModelError, Reply};
 use omnia_sdk::vcs::{Change, ChangeKind, Entry, Error, Merged, Rule, Strategy};
@@ -115,6 +115,49 @@ fn entry(id: &str, message: &str) -> Entry {
 
 fn worktree(slice: &str) -> String {
     format!("{WORKTREES}/{slice}")
+}
+
+// The requirements, the owned types, and the brief the two-slice plan's
+// slices carry typed beside their renderings, as lowered from the fixtures.
+fn typed(first: &Slice, second: &Slice) {
+    let login = first.requirement("REQ-001").expect("the slice's own");
+    assert_eq!(login.subject, "auth.login");
+    assert_eq!(login.statement, ["Users sign in with a credential."]);
+    assert_eq!(
+        (&login.route, &login.topic),
+        (&None, &None),
+        "none typed until specify lowers them"
+    );
+    assert_eq!(
+        login.scenarios,
+        [Scenario {
+            name: "Login".to_owned(),
+            given: Vec::new(),
+            when: "a valid credential is presented".to_owned(),
+            then: "the caller is signed in".to_owned(),
+            and: Vec::new(),
+        }]
+    );
+    assert_eq!(first.types, [], "authentication owns no type");
+    assert_eq!(
+        first.brief,
+        ["Delivers sign-in and the session it issues; a session cannot be verified without a \
+             sign-in to issue it, so the two stems are one build."]
+    );
+    assert_eq!(
+        second.types,
+        [
+            DesignType {
+                key: "orders.line".to_owned(),
+                signature: "interface Line { sku: string }".to_owned(),
+            },
+            DesignType {
+                key: "orders.order".to_owned(),
+                signature: "interface Order { id: string }".to_owned(),
+            },
+        ],
+        "each owned key with the design's signature, in the plan's order"
+    );
 }
 
 // Scripts what the next build of `slice` leaves changed in its working copy.
@@ -295,18 +338,19 @@ async fn build_plan() {
     // each slice carries its own documents and the head it builds over
     assert_eq!(first.id, "SLICE-001");
     assert_eq!(first.name, "authentication");
-    assert_eq!(first.requirements, ["REQ-001", "REQ-002"]);
+    assert_eq!(first.requirement_ids().collect::<Vec<_>>(), ["REQ-001", "REQ-002"]);
     assert_eq!(first.spec, SPEC_001, "the specification is cut to the slice");
     assert_eq!(first.design, DESIGN_MD, "the design is whole");
     assert_eq!(first.plan, PLAN_001, "the plan entry is the slice's own");
     assert_eq!(first.base, BASE, "the first wave builds over the base");
     assert_eq!(second.id, "SLICE-002");
     assert_eq!(second.name, "orders");
-    assert_eq!(second.requirements, ["REQ-003", "REQ-004"]);
+    assert_eq!(second.requirement_ids().collect::<Vec<_>>(), ["REQ-003", "REQ-004"]);
     assert_eq!(second.spec, SPEC_002);
     assert_eq!(second.design, DESIGN_MD);
     assert_eq!(second.plan, PLAN_002);
     assert_eq!(second.base, HEAD, "the second wave builds over the verified head");
+    typed(first, second);
     assert_eq!(provider.target.verifies(), [INTEGRATION, INTEGRATION], "one verify per wave");
     assert_eq!(provider.target.inits(), [INTEGRATION], "one init, before any slice");
 

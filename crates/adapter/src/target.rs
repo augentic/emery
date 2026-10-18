@@ -15,6 +15,9 @@ mod verdict;
 
 #[cfg(target_arch = "wasm32")]
 pub use bindings::export;
-pub use capability::{MergeRule, MergeStrategy, Outcome, Slice, Target, TargetMetadata, Task};
+pub use capability::{
+    DesignType, MergeRule, MergeStrategy, Outcome, Requirement, Route, Scenario, Slice, Target,
+    TargetMetadata, Task,
+};
 pub use report::Report;
 pub use verdict::Verdict;

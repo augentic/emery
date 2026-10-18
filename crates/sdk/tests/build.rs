@@ -4,7 +4,7 @@ use std::fs;
 use std::os::unix::fs::symlink;
 use std::path::Path;
 
-use emery_sdk::target::{BuildContext, Grant, Report, Slice};
+use emery_sdk::target::{BuildContext, DesignType, Grant, Report, Requirement, Scenario, Slice};
 use emery_sdk::{Doc, Error};
 use omnia_sdk::model::ToolCall;
 use omnia_test::guest::Scripted;
@@ -23,12 +23,49 @@ const PROSE: &[Doc] = &[
 
 const VALID: &str = r#"{"covered":["REQ-001","REQ-002"],"written":["src/orders.rs","Cargo.toml"]}"#;
 
+fn requirement(id: &str, subject: &str, statement: &str, when: &str, then: &str) -> Requirement {
+    Requirement {
+        id: id.to_owned(),
+        subject: subject.to_owned(),
+        statement: vec![statement.to_owned()],
+        route: None,
+        topic: None,
+        scenarios: vec![Scenario {
+            name: subject.rsplit('.').next().unwrap_or(subject).to_owned(),
+            given: Vec::new(),
+            when: when.to_owned(),
+            then: then.to_owned(),
+            and: Vec::new(),
+        }],
+    }
+}
+
 fn slice() -> Slice {
     Slice {
         id: "SLICE-001".to_owned(),
         name: "orders".to_owned(),
         base: "1a2b3c4d5e6f708192a3b4c5d6e7f8091a2b3c4d".to_owned(),
-        requirements: vec!["REQ-001".to_owned(), "REQ-002".to_owned()],
+        requirements: vec![
+            requirement(
+                "REQ-001",
+                "orders.create",
+                "Orders are created.",
+                "an order is placed",
+                "it is created",
+            ),
+            requirement(
+                "REQ-002",
+                "orders.list",
+                "Orders are listed.",
+                "the orders are asked for",
+                "each is listed",
+            ),
+        ],
+        types: vec![DesignType {
+            key: "orders.order".to_owned(),
+            signature: "interface Order { id: string }".to_owned(),
+        }],
+        brief: vec!["Build the orders module.".to_owned()],
         spec: "## REQ-001\n\nOrders are created.\n\n## REQ-002\n\nOrders are listed.\n".to_owned(),
         design: "## Types\n\n`Order`\n".to_owned(),
         plan: "## SLICE-001 orders\n\nBuild the orders module.\n".to_owned(),
@@ -49,6 +86,13 @@ async fn ask_checked(
     model: &Scripted, slice: &Slice, workspace: &str, grants: &[Grant],
     check: impl FnMut(&Report) -> Result<Vec<String>, Error> + Send,
 ) -> Result<Report, Error> {
+    ask_laid(model, slice, workspace, grants, None, check).await
+}
+
+async fn ask_laid(
+    model: &Scripted, slice: &Slice, workspace: &str, grants: &[Grant], laid: Option<&str>,
+    check: impl FnMut(&Report) -> Result<Vec<String>, Error> + Send,
+) -> Result<Report, Error> {
     let ctx = BuildContext {
         adapter_id: "target:probe",
         slice,
@@ -56,7 +100,7 @@ async fn ask_checked(
         grants,
         model,
     };
-    emery_sdk::target::build(&ctx, PROSE, check).await
+    emery_sdk::target::build(&ctx, PROSE, laid, check).await
 }
 
 // Lays files beneath `root` with the content given, so a report naming them
@@ -160,9 +204,9 @@ async fn request_shape() {
             "The slice's entry in the plan:\n\n## SLICE-001 orders\n\nBuild the orders \
              module.\n\nThe specification, cut to the slice's requirements:\n\n## \
              REQ-001\n\nOrders are created.\n\n## REQ-002\n\nOrders are listed.\n\nThe design, \
-             whole:\n\n## Types\n\n`Order`\n\n"
+             whole:\n\n## Types\n\n`Order`\n\nImplement every requirement"
         ),
-        "{user}"
+        "nothing laid puts no section between the design and the rules: {user}"
     );
     assert!(
         user.contains(
@@ -196,6 +240,35 @@ async fn request_shape() {
     );
     assert!(!user.contains(root), "the lend carries the root, not the brief: {user}");
     assert!(user.ends_with("rather than claim what the tree does not hold."), "{user}");
+    model.assert_exhausted();
+}
+
+// What the adapter laid before the turn is carried verbatim, after the
+// design and before the rules, so the model edits the files it names
+// rather than writing them over; the tools and the lend are the same.
+#[tokio::test]
+async fn build_laid() {
+    let tmp = tempfile::tempdir().expect("tempdir");
+    seed(tmp.path(), ["src/orders.rs", "Cargo.toml"]);
+    let root = tmp.path().to_str().expect("a UTF-8 scratch root");
+    let model = Scripted::answering([VALID]);
+    let laid = "- `src/orders.rs`: laid; fill `todo!(\"REQ-001 orders.create: the handler\")`\n\
+                - `Cargo.toml`: held\n\n";
+
+    ask_laid(&model, &slice(), root, &[], Some(laid), |_| Ok(Vec::new())).await.expect("accepted");
+
+    let seen = model.seen();
+    assert_eq!(seen.len(), 1);
+    assert_eq!(seen[0].tools, ["list_docs", "read_doc", "write_files", "edit_files"]);
+    let user = &seen[0].messages[0];
+    assert!(
+        user.contains(
+            "The design, whole:\n\n## Types\n\n`Order`\n\nWhat the adapter laid for this slice \
+             before this turn:\n\n- `src/orders.rs`: laid; fill `todo!(\"REQ-001 orders.create: \
+             the handler\")`\n- `Cargo.toml`: held\n\nImplement every requirement"
+        ),
+        "{user}"
+    );
     model.assert_exhausted();
 }
 
@@ -1051,7 +1124,7 @@ async fn missing_prompt() {
         model: &model,
     };
 
-    let error = emery_sdk::target::build(&ctx, &[], |_| Ok(Vec::new()))
+    let error = emery_sdk::target::build(&ctx, &[], None, |_| Ok(Vec::new()))
         .await
         .expect_err("no prompt to ask with");
     assert_eq!(error.code(), "server_error");
