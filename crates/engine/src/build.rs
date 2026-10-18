@@ -757,8 +757,7 @@ impl Run<'_> {
                         wave,
                         paths: merged.conflicts,
                     };
-                    let (commit, resolved) =
-                        residue.resolve(self, provider, progress).await?;
+                    let (commit, resolved) = residue.resolve(self, provider, progress).await?;
                     (Some(commit), resolved)
                 }
             }
@@ -910,21 +909,15 @@ impl Residue<'_> {
         // are merged already and sit outside `built`, so read the wave in id
         // order from the plan rather than from what this run built
         let waves = run.plan.waves();
-        let wave_slices = waves
-            .iter()
-            .nth(self.wave.saturating_sub(1))
-            .unwrap_or(&[]);
+        let wave_slices = waves.iter().nth(self.wave.saturating_sub(1)).unwrap_or(&[]);
         let merged: Vec<&Slice> = wave_slices
             .iter()
             .take_while(|id| **id != slice.id)
             .filter(|id| progress.merged.contains(id))
             .filter_map(|id| {
                 let plan_slice = run.plan.slices.iter().find(|slice| slice.id == *id)?;
-                let touches = progress
-                    .built
-                    .iter()
-                    .find(|built| built.id == *id)
-                    .is_none_or(|built| {
+                let touches =
+                    progress.built.iter().find(|built| built.id == *id).is_none_or(|built| {
                         built.written.iter().any(|path| self.paths.contains(path))
                     });
                 touches.then_some(plan_slice)
