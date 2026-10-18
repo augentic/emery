@@ -758,7 +758,7 @@ impl Run<'_> {
                         paths: merged.conflicts,
                     };
                     let (commit, resolved) =
-                        residue.resolve(self, provider, &progress.built).await?;
+                        residue.resolve(self, provider, progress).await?;
                     (Some(commit), resolved)
                 }
             }
@@ -883,7 +883,7 @@ impl Residue<'_> {
     // slice's working copy over its commit, and merges the slice again with
     // each resolution taken whole: the merge commit, and the paths resolved.
     async fn resolve<P: Model + Vcs + Files>(
-        self, run: &Run<'_>, provider: &P, built: &[BuiltSlice],
+        self, run: &Run<'_>, provider: &P, progress: &Progress,
     ) -> Result<(String, Vec<String>), Error> {
         let slice = self.built.slice;
         let worktree = &self.built.worktree;
@@ -906,12 +906,29 @@ impl Residue<'_> {
         }
 
         // the wave's slices merged before this one that wrote a conflicted
-        // path, whose plan entries say what their side is for
-        let merged: Vec<&Slice> = built
+        // path, whose plan entries say what their side is for; staged slices
+        // are merged already and sit outside `built`, so read the wave in id
+        // order from the plan rather than from what this run built
+        let waves = run.plan.waves();
+        let wave_slices = waves
             .iter()
-            .filter(|other| other.wave == self.wave)
-            .filter(|other| other.written.iter().any(|path| self.paths.contains(path)))
-            .filter_map(|other| run.plan.slices.iter().find(|slice| slice.id == other.id))
+            .nth(self.wave.saturating_sub(1))
+            .unwrap_or(&[]);
+        let merged: Vec<&Slice> = wave_slices
+            .iter()
+            .take_while(|id| **id != slice.id)
+            .filter(|id| progress.merged.contains(id))
+            .filter_map(|id| {
+                let plan_slice = run.plan.slices.iter().find(|slice| slice.id == *id)?;
+                let touches = progress
+                    .built
+                    .iter()
+                    .find(|built| built.id == *id)
+                    .is_none_or(|built| {
+                        built.written.iter().any(|path| self.paths.contains(path))
+                    });
+                touches.then_some(plan_slice)
+            })
             .collect();
         let brief = MergeBrief {
             slice,

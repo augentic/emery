@@ -19,8 +19,8 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use emery_engine::vcs::Message;
-use omnia::{CompileOptions, Digest, ExitStatus, RuntimeOptions, StoreCtx};
-use omnia_git::Client;
+use omnia::{Backend as _, CompileOptions, Digest, ExitStatus, RuntimeOptions, StoreCtx};
+use omnia_git::{Client, ConnectOptions};
 use omnia_test::host::{Backends, Deployment, Run, Scratch, ScriptedModel, scratch};
 use omnia_wasi_blobstore::WasiBlobstore;
 use omnia_wasi_keyvalue::WasiKeyValue;
@@ -146,9 +146,11 @@ impl Git {
 
     // The backends over this git, the model set per run.
     async fn backends(&self) -> Bundle {
-        let client = Client::connect(self.root.path().join("git"))
-            .await
-            .expect("connecting over the hermetic git");
+        let client = Client::connect_with(ConnectOptions {
+            binary: self.binary().to_str().expect("scratch path is UTF-8").to_owned(),
+        })
+        .await
+        .expect("connecting over the hermetic git");
         Backends::defaults().await.vcs(client).model(ScriptedModel::default())
     }
 
