@@ -99,24 +99,25 @@ impl Display for Route {
 // spelling as `{name}`, a wildcard as `{*name}`, a literal as written;
 // `None` for a segment outside the grammar.
 fn parameter(segment: &str) -> Option<String> {
-    let name = |text: &str| {
-        let name: String = text.chars().take_while(|ch| is_name_char(*ch)).collect();
-        (!name.is_empty()).then_some(name)
-    };
     if let Some(rest) = segment.strip_prefix(':') {
-        return name(rest).map(|name| format!("{{{name}}}"));
+        return param_name_whole(rest).map(|name| format!("{{{name}}}"));
     }
     if let Some(inner) = segment.strip_prefix('<').and_then(|rest| rest.strip_suffix('>')) {
         let last = inner.rsplit(':').next().unwrap_or(inner);
-        return name(last).map(|name| format!("{{{name}}}"));
+        return param_name_whole(last).map(|name| format!("{{{name}}}"));
     }
     if let Some(inner) = segment.strip_prefix('{').and_then(|rest| rest.strip_suffix('}')) {
         let (star, inner) = inner.strip_prefix('*').map_or(("", inner), |rest| ("*", rest));
         let first = inner.split(':').next().unwrap_or(inner);
-        return name(first).map(|name| format!("{{{star}{name}}}"));
+        return param_name_whole(first).map(|name| format!("{{{star}{name}}}"));
     }
     if let Some(rest) = segment.strip_prefix('*') {
-        return Some(format!("{{*{}}}", name(rest).unwrap_or_else(|| "rest".to_owned())));
+        let name = if rest.is_empty() {
+            "rest".to_owned()
+        } else {
+            param_name_whole(rest)?
+        };
+        return Some(format!("{{*{name}}}"));
     }
     segment
         .chars()
@@ -126,6 +127,12 @@ fn parameter(segment: &str) -> Option<String> {
 
 const fn is_name_char(ch: char) -> bool {
     ch.is_ascii_alphanumeric() || ch == '_'
+}
+
+fn param_name_whole(text: &str) -> Option<String> {
+    let name: String = text.chars().take_while(|ch| is_name_char(*ch)).collect();
+    let rest = text.get(name.len()..)?;
+    rest.is_empty().then_some(name).filter(|name| !name.is_empty())
 }
 
 /// The rule a route breaks.
@@ -156,3 +163,26 @@ impl Display for BadRoute {
 }
 
 impl std::error::Error for BadRoute {}
+
+#[cfg(test)]
+mod tests {
+    use super::Route;
+
+    #[test]
+    fn parameter_suffix_refused() {
+        for text in [
+            "GET /items/:id.json",
+            "GET /users/{user-id}",
+            "GET /orders/:id-pay",
+        ] {
+            assert!(Route::parse(text).is_err(), "{text}");
+        }
+    }
+
+    #[test]
+    fn distinct_parameter_routes() {
+        let id = Route::parse("GET /items/:id").expect("parameter");
+        let id_json = Route::parse("GET /items/id.json").expect("literal");
+        assert_ne!(id.path, id_json.path);
+    }
+}
