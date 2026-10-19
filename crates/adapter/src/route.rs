@@ -112,11 +112,7 @@ fn parameter(segment: &str) -> Option<String> {
         return param_name_whole(first).map(|name| format!("{{{star}{name}}}"));
     }
     if let Some(rest) = segment.strip_prefix('*') {
-        let name = if rest.is_empty() {
-            "rest".to_owned()
-        } else {
-            param_name_whole(rest)?
-        };
+        let name = if rest.is_empty() { "rest".to_owned() } else { param_name_whole(rest)? };
         return Some(format!("{{*{name}}}"));
     }
     segment
@@ -170,11 +166,7 @@ mod tests {
 
     #[test]
     fn parameter_suffix_refused() {
-        for text in [
-            "GET /items/:id.json",
-            "GET /users/{user-id}",
-            "GET /orders/:id-pay",
-        ] {
+        for text in ["GET /items/:id.json", "GET /users/{user-id}", "GET /orders/:id-pay"] {
             assert!(Route::parse(text).is_err(), "{text}");
         }
     }
