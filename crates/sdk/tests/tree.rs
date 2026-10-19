@@ -170,7 +170,7 @@ fn constant_led() {
     let routes = &tree.modules["src/routes.ts"];
 
     let led: Vec<Option<String>> =
-        routes.calls[1..].iter().map(|call| tree.led(routes, call)).collect();
+        routes.calls[1..].iter().map(|call| tree.leading_literal(routes, call)).collect();
     assert_eq!(
         led,
         [Some("/local".to_owned()), Some("/orders".to_owned()), Some("/lit".to_owned()), None]
@@ -497,13 +497,13 @@ fn hands_and_registers() {
     let m = &tree.modules["src/m.ts"];
 
     assert!(tree.registers(m, &m.calls[1]));
-    assert_eq!(tree.handed(m, &m.calls[1]).map(|r| r.package), Some("express".to_owned()));
-    assert!(!tree.hands(m, &m.calls[2]), "`use` is structure");
+    assert_eq!(tree.handed_to(m, &m.calls[1]).map(|r| r.package), Some("express".to_owned()));
+    assert!(!tree.hands_handler(m, &m.calls[2]), "`use` is structure");
     assert!(tree.registers(m, &m.calls[3]), "at any depth");
-    assert_eq!(tree.handed(m, &m.calls[3]), None, "`handed` is for a call outside any handler");
-    assert!(tree.hands(m, &m.calls[4]));
+    assert_eq!(tree.handed_to(m, &m.calls[3]), None, "`handed` is for a call outside any handler");
+    assert!(tree.hands_handler(m, &m.calls[4]));
     assert!(!tree.registers(m, &m.calls[4]), "a wrapper taken for its value registers nothing");
-    assert!(!tree.hands(m, &m.calls[5]), "nothing handed");
+    assert!(!tree.hands_handler(m, &m.calls[5]), "nothing handed");
     assert_eq!(tree.registration_at(m, span(1, 3)).map(|c| c.lines), Some(line(3)));
     assert_eq!(tree.registration_enclosing(m, line(5)).map(|c| c.lines), Some(line(5)));
     assert_eq!(tree.registration_at(m, line(6)), None);

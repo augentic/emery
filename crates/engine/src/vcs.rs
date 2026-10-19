@@ -1,9 +1,9 @@
 //! Version-control paths, repositories, working copies, and commit trailers.
 //!
 //! Wraps the [`Vcs`] capability over deployment-local paths beneath [`ROOT`]:
-//! [`Repository`] manages cached source clones, [`Repo`] resolves the target
-//! repository a build lands in, [`WorkingCopy`] manages isolated worktrees,
-//! and [`Message`] formats and parses slice commit trailers.
+//! [`SourceClone`] manages cached source clones, [`BuildRepo`] resolves the
+//! target repository a build lands in, [`WorkingCopy`] manages isolated
+//! worktrees, and [`Message`] formats and parses slice commit trailers.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
@@ -209,18 +209,18 @@ impl fmt::Display for Message {
     }
 }
 
-/// A repository named by URL, cloned once beneath [`ROOT`].
+/// A source's repository named by URL, cloned once beneath [`ROOT`].
 ///
 /// Two URLs that spell one repository — differing in case of scheme or
 /// host, a trailing `/` or `.git`, or the `git@host:path` form of an SSH
 /// URL — share one clone.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Repository {
+pub struct SourceClone {
     url: String,
     key: String,
 }
 
-impl Repository {
+impl SourceClone {
     /// Names the repository at `url`.
     #[must_use]
     pub fn new(url: &str) -> Self {
@@ -275,7 +275,7 @@ impl Repository {
 
 /// The repository a build's base comes from and its label goes to.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum Repo {
+pub enum BuildRepo {
     /// The project's own repository, read through the `.` mount.
     Project,
     /// The target's own repository, at [`target_path`] of its name: a clone
@@ -288,7 +288,7 @@ pub enum Repo {
     },
 }
 
-impl Repo {
+impl BuildRepo {
     /// The deployment-local path a working copy is cut from.
     #[must_use]
     pub fn path(&self) -> String {
@@ -537,7 +537,7 @@ impl Repo {
 
 /// The integration working copy a build runs over, and what it was found holding.
 ///
-/// Cut by [`Repo::cut_integration`]: at the head the build starts from,
+/// Cut by [`BuildRepo::cut_integration`]: at the head the build starts from,
 /// or, where an earlier run of the revision left slices merged in it
 /// before their wave was verified, at that run's head with those slices
 /// staged.

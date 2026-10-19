@@ -11,8 +11,9 @@ use std::collections::BTreeMap;
 use std::fmt::{self, Display, Formatter};
 use std::path::Path;
 
+use emery_adapter::is_kebab;
 use emery_adapter::source::{Anchor, Claim, ClaimKind, Evidence, SourceContent, SourceInput};
-use emery_adapter::{Lexicon, is_kebab};
+use emery_lexicon::Lexicon;
 use emery_prose::Doc;
 use futures::stream::{self, StreamExt as _};
 use futures::{FutureExt as _, TryFutureExt as _};

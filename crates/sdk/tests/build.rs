@@ -4,7 +4,9 @@ use std::fs;
 use std::os::unix::fs::symlink;
 use std::path::Path;
 
-use emery_sdk::target::{BuildContext, DesignType, Grant, Report, Requirement, Scenario, Slice};
+use emery_sdk::target::{
+    BuildContext, DesignType, Grant, Report, Requirement, Scaffold, Scenario, Slice,
+};
 use emery_sdk::{Doc, Error};
 use omnia_sdk::model::ToolCall;
 use omnia_test::guest::Scripted;
@@ -89,15 +91,17 @@ async fn ask_checked(
 }
 
 async fn ask_scaffolded(
-    model: &Scripted, slice: &Slice, workspace: &str, grants: &[Grant], scaffold: Option<&str>,
+    model: &Scripted, slice: &Slice, workspace: &str, grants: &[Grant], brief: Option<&str>,
     check: impl FnMut(&Report) -> Result<Vec<String>, Error> + Send,
 ) -> Result<Report, Error> {
-    ask_guarded(model, slice, workspace, grants, scaffold, &[], check).await
+    let scaffold = brief.map(|brief| Scaffold { brief, paths: &[] });
+    ask_guarded(model, slice, workspace, grants, scaffold, check).await
 }
 
 async fn ask_guarded(
-    model: &Scripted, slice: &Slice, workspace: &str, grants: &[Grant], scaffold: Option<&str>,
-    scaffolded: &[String], check: impl FnMut(&Report) -> Result<Vec<String>, Error> + Send,
+    model: &Scripted, slice: &Slice, workspace: &str, grants: &[Grant],
+    scaffold: Option<Scaffold<'_>>,
+    check: impl FnMut(&Report) -> Result<Vec<String>, Error> + Send,
 ) -> Result<Report, Error> {
     let ctx = BuildContext {
         adapter_id: "target:probe",
@@ -106,13 +110,11 @@ async fn ask_guarded(
         grants,
         model,
         scaffold: None,
-        scaffolded: &[],
     };
     let ctx = match scaffold {
-        Some(text) => ctx.with_scaffold(text),
+        Some(scaffold) => ctx.with_scaffold(scaffold),
         None => ctx,
     };
-    let ctx = ctx.with_scaffolded(scaffolded);
     emery_sdk::target::build(&ctx, PROSE, check).await
 }
 
@@ -325,13 +327,15 @@ async fn write_scaffolded_refused() {
                 write_files("4", &[("src/lib.rs", "pub mod orders;\n")]),
             ],
         );
-    let scaffolded = ["src/orders.rs".to_owned(), "Cargo.toml".to_owned()];
-    let scaffold = "- `src/orders.rs`: scaffolded\n- `Cargo.toml`: held\n";
+    let paths = ["src/orders.rs".to_owned(), "Cargo.toml".to_owned()];
+    let scaffold = Scaffold {
+        brief: "- `src/orders.rs`: scaffolded\n- `Cargo.toml`: held\n",
+        paths: &paths,
+    };
 
-    let report =
-        ask_guarded(&model, &slice(), root, &[], Some(scaffold), &scaffolded, |_| Ok(Vec::new()))
-            .await
-            .expect("accepted");
+    let report = ask_guarded(&model, &slice(), root, &[], Some(scaffold), |_| Ok(Vec::new()))
+        .await
+        .expect("accepted");
     assert_eq!(report.written, ["src/lib.rs", "src/orders.rs"]);
     assert_eq!(
         fs::read_to_string(tmp.path().join("src/orders.rs")).expect("edited"),
@@ -1222,7 +1226,6 @@ async fn missing_prompt() {
         grants: &[],
         model: &model,
         scaffold: None,
-        scaffolded: &[],
     };
 
     let error = emery_sdk::target::build(&ctx, &[], |_| Ok(Vec::new()))

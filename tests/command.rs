@@ -83,19 +83,6 @@ async fn default_config() {
     );
 }
 
-#[tokio::test]
-async fn mixed_sources() {
-    let provider = Provider::idle();
-
-    for argv in [
-        &["emery", "specify", "acme:docs@1.0.0", "--config", "emery.toml"][..],
-        &["emery", "specify", "--description", "acme:intent@1.0.0=text", "--config", "emery.toml"]
-            [..],
-    ] {
-        fail(&provider, argv, 1, "bad_request").await;
-    }
-}
-
 // A repeated key is refused whichever carrier repeats it.
 #[tokio::test]
 async fn duplicate() {
@@ -170,21 +157,7 @@ async fn no_revision() {
     fail(&provider, &["emery", "build", "acme:builder@1.0.0"], 2, "spec-not-generated").await;
 }
 
-// A target is named on the command line or in the file, never both, and a
-// run naming none is refused typed.
-#[tokio::test]
-async fn mixed_targets() {
-    let provider = Provider::idle();
-
-    fail(
-        &provider,
-        &["emery", "build", "acme:builder@1.0.0", "--config", "emery.toml"],
-        1,
-        "bad_request",
-    )
-    .await;
-}
-
+// A run naming no target on the command line or in a file is refused typed.
 // The CWD move is hermetic under nextest's process-per-test isolation.
 #[tokio::test]
 async fn no_target() {

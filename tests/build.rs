@@ -1920,6 +1920,65 @@ async fn build_named() {
     provider.vcs.assert_exhausted();
 }
 
+// A command-line adapter layers over the `[target]` table: it takes the
+// place of the file's `adapter` under the file's `name` and `repository`,
+// the `digest` that pinned the file's release going with the adapter it
+// pinned.
+#[tokio::test]
+async fn layered_target() {
+    let scratch = Scratch::new();
+    let pin = digest("cd");
+    let config = scratch.config(&format!(
+        "[target]\nname = \"shop\"\nadapter = \"acme:other@1.0.0\"\ndigest = \"{pin}\"\n\
+         repository = \"{REMOTE_URL}\"\n"
+    ));
+    let (provider, id) = planned();
+
+    let resp =
+        cli_ok(&provider, &["emery", "--format", "json", "build", BUILDER, "--config", &config])
+            .await;
+
+    let envelope: Value = serde_json::from_slice(&resp.stdout).expect("one JSON envelope");
+    assert_eq!(envelope["repository"], "./.emery/vcs/repos/shop", "{envelope}");
+    assert_eq!(
+        *provider.target.metadata.lock().expect("metadata"),
+        [BUILDER_ID],
+        "the command-line adapter is the one gated"
+    );
+    assert_eq!(provider.vcs.calls()[0], format!("clone {REMOTE_URL} ./.emery/vcs/repos/shop"));
+    assert!(
+        provider.vcs.calls().contains(&format!("label ./.emery/vcs/repos/shop emery/{id} {HEAD}"))
+    );
+    provider.vcs.assert_exhausted();
+}
+
+// `--repository` names where the build lands: the project checkout for a run
+// naming its adapter on the command line, which would otherwise create a
+// repository of its own, and the clone in place of the one the file names.
+#[tokio::test]
+async fn repository_flag() {
+    let (provider, id) = planned();
+    provider.vcs.heads.script(".", Ok(BASE.to_owned()));
+
+    let resp = cli_ok(&provider, &["emery", "build", BUILDER, "--repository", "."]).await;
+
+    let stdout = String::from_utf8_lossy(&resp.stdout);
+    assert!(stdout.contains(&format!("\n  base {BASE}\n  wave 1:")), "{stdout}");
+    let mut expected = vec!["pending .".to_owned(), "head .".to_owned()];
+    expected.extend(integrated(".", BASE, &id));
+    assert_eq!(provider.vcs.calls(), expected, "built into the project checkout, nothing created");
+
+    // over a file, the flag's URL is cloned in place of the file's
+    let scratch = Scratch::new();
+    let config = scratch.config(&format!(
+        "[target]\nadapter = \"{BUILDER}\"\nrepository = \"https://example.com/acme/old.git\"\n"
+    ));
+    let before = provider.vcs.calls().len();
+    cli_ok(&provider, &["emery", "build", "--config", &config, "--repository", REMOTE_URL]).await;
+    assert_eq!(provider.vcs.calls()[before], format!("clone {REMOTE_URL} {TARGET_REPO}"));
+    provider.vcs.assert_exhausted();
+}
+
 // The grammar names the target's repository alone: a `branch` or a `remote`
 // in `[target]` is no field of it, refused at the file before anything loads.
 #[tokio::test]

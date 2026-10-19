@@ -13,7 +13,7 @@ use crate::kebab;
 
 // Read once before the model is asked and held through every correction
 // round.
-pub(super) struct Located<'t, R: Recogniser> {
+pub(super) struct SurfaceLocator<'t, R: Recogniser> {
     pub(super) tree: &'t Tree<R>,
     pub(super) bootstrap: Option<Bootstrap<'t, R::Module>>,
     entries: Vec<String>,
@@ -22,7 +22,7 @@ pub(super) struct Located<'t, R: Recogniser> {
     locating: BTreeSet<&'t str>,
 }
 
-impl<'t, R: Recogniser> Located<'t, R> {
+impl<'t, R: Recogniser> SurfaceLocator<'t, R> {
     pub(super) fn new(tree: &'t Tree<R>) -> Self {
         let handed = tree.handed_classes();
         let locating = tree
@@ -48,7 +48,7 @@ impl<'t, R: Recogniser> Located<'t, R> {
         module
             .calls
             .iter()
-            .any(|call| tree.handed(module, call).is_some() && tree.registers(module, call))
+            .any(|call| tree.handed_to(module, call).is_some() && tree.registers(module, call))
             || module
                 .decorated
                 .iter()
@@ -134,8 +134,8 @@ impl<'t, R: Recogniser> Located<'t, R> {
         let mut lines: Vec<String> = Vec::new();
         for module in tree.modules.values() {
             for call in &module.calls {
-                let Some(receiver) = tree.handed(module, call) else { continue };
-                let (_, literal) = call.registered(tree.led(module, call));
+                let Some(receiver) = tree.handed_to(module, call) else { continue };
+                let (_, literal) = call.registered(tree.leading_literal(module, call));
                 let led =
                     literal.map(|literal| format!(" led by `\"{literal}\"`")).unwrap_or_default();
                 let spelled = match tree.dialect.constructs {

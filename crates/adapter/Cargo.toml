@@ -22,3 +22,6 @@ strum.workspace = true
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 wit-bindgen.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true

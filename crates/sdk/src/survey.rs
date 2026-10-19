@@ -9,8 +9,9 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::{self, Display, Formatter};
 
+use emery_adapter::is_kebab;
 use emery_adapter::source::{Anchor, BadAnchor, Claim, ClaimKind, Evidence, SourceContent};
-use emery_adapter::{Lexicon, is_kebab};
+use emery_lexicon::Lexicon;
 use emery_prose::Doc;
 use omnia_sdk::model::Question;
 use omnia_sdk::{Error, Model, server_error};
@@ -18,15 +19,15 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use self::code::{Recogniser, Tree};
-use self::lead::Lead;
-use self::located::Located;
+use self::cut::Cut;
+use self::locator::SurfaceLocator;
 use crate::extract::{INLINE_BYTES, Inlined, Seam, inline, line_count};
 use crate::{Context, RUNTIME, SURVEY, beneath, prompt, push_unique, reference, unique};
 
 pub mod code;
+mod cut;
 mod dialect;
-mod lead;
-mod located;
+mod locator;
 pub mod resolve;
 pub mod route;
 mod skeleton;
@@ -333,10 +334,10 @@ pub async fn seams<P: Model, R: Recogniser>(
     ctx: &Context<'_, P>, docs: &'static [Doc], tree: &Tree<R>,
 ) -> Result<Survey, Error> {
     let source = &ctx.input.name;
-    let located = Located::new(tree);
+    let locator = SurfaceLocator::new(tree);
     let modules: Vec<String> = tree.modules.keys().cloned().collect();
-    let text = located.facts();
-    let files = located.inlined();
+    let text = locator.facts();
+    let files = locator.inlined();
 
     // trace the facts for a host reading them without a turn
     if tracing::enabled!(tracing::Level::TRACE) {
@@ -349,9 +350,9 @@ pub async fn seams<P: Model, R: Recogniser>(
         files: &files,
     };
 
-    let inventory = surfaces(ctx, docs, &facts, |answer| located.check(answer)).await?;
+    let inventory = surfaces(ctx, docs, &facts, |answer| locator.check(answer)).await?;
 
-    let surfaces = located.build(&inventory);
+    let surfaces = locator.build(&inventory);
     let restemmed: Vec<String> = inventory
         .surfaces
         .iter()
@@ -381,13 +382,13 @@ pub async fn seams<P: Model, R: Recogniser>(
     // choose the cut by size and by whether any surface was named
     let size: usize = tree.modules.values().map(|module| module.text.len()).sum();
     let fits = tree.modules.len() == 1 || u64::try_from(size).unwrap_or(u64::MAX) <= INLINE_BYTES;
-    let leads = match (surfaces.is_empty(), fits) {
-        (false, true) => vec![Lead::whole(tree, &surfaces)],
-        (false, false) => Lead::by_stem(tree, &surfaces),
-        (true, true) => vec![Lead::unsurfaced(tree)],
-        (true, false) => Lead::by_directory(tree),
+    let cuts = match (surfaces.is_empty(), fits) {
+        (false, true) => vec![Cut::whole(tree, &surfaces)],
+        (false, false) => Cut::by_stem(tree, &surfaces),
+        (true, true) => vec![Cut::unsurfaced(tree)],
+        (true, false) => Cut::by_directory(tree),
     };
-    let seams: Vec<Seam> = leads.into_iter().map(|lead| lead.finish(tree, &surfaces)).collect();
+    let seams: Vec<Seam> = cuts.into_iter().map(|cut| cut.seam(tree, &surfaces)).collect();
 
     let reached = unique(seams.iter().flat_map(|seam| seam.files.iter().map(String::as_str)));
     let types = types(

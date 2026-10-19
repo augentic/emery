@@ -137,6 +137,7 @@ wit-bindgen = { version = "0.63.0", features = ["async-spawn"] }
 emery-adapter = { path = "crates/adapter" }
 emery-cli = { path = "crates/cli" }
 emery-engine = { path = "crates/engine" }
+emery-lexicon = { path = "crates/lexicon" }
 emery-prose = { path = "crates/prose" }
 emery-sdk = { path = "crates/sdk" }
 

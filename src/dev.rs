@@ -35,35 +35,12 @@
 
 cfg_select! {
     not(target_arch = "wasm32") => {
-        use omnia::FromEnv as _;
-        use omnia_filesystem::{Client as Filesystem, ConnectOptions};
-        use omnia_genai::{Client as GenAi, ConnectOptions as GenAiOptions};
-        use omnia_git::Client as Git;
-        use omnia_wasi_blobstore::WasiBlobstore;
-        use omnia_wasi_keyvalue::WasiKeyValue;
-        use omnia_wasi_model::WasiModel;
-        use omnia_wasi_otel::{OtelDefault, WasiOtel};
-        use omnia_wasi_vcs::WasiVcs;
+        #[path = "deployment.rs"]
+        mod deployment;
 
-        omnia::runtime!({
-            mode: command,
-            guests: [{ path: env!("EMERY_GUEST") }],
-            plugins: {
-                store: "~/.emery/adapters",
-                registries: include_str!("wasm-pkg.toml"),
-            },
-            mounts: [{ name: ".", path: ".", writable: true }],
-            hosts: {
-                WasiOtel: OtelDefault,
-                WasiModel: GenAi(GenAiOptions {
-                    shell_roots: vec![".emery/vcs/worktrees".into(), ".emery/vcs/integration".into()],
-                    ..GenAiOptions::load_env()?
-                }),
-                WasiKeyValue: Filesystem(ConnectOptions { root: ".emery/storage".into() }),
-                WasiBlobstore: Filesystem(ConnectOptions { root: ".emery/storage".into() }),
-                WasiVcs: Git,
-            },
-        });
+        use omnia_genai::{Client as GenAi, ConnectOptions as GenAiOptions};
+
+        deployment::runtime!(GenAi, GenAiOptions);
     }
     _ => {
         fn main() {}

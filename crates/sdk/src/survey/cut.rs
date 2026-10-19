@@ -1,6 +1,6 @@
 //! Cuts a surveyed tree into mining seams.
 
-use emery_adapter::Lexicon;
+use emery_lexicon::Lexicon;
 
 use super::code::{Recogniser, Surface, Tree};
 use super::tests::{Test, stated};
@@ -20,14 +20,16 @@ const NO_SURFACE: &str = "No surface was found in this source: its survey named 
                           a library is read — for what its exports do for a caller — and claim \
                           what the code exhibits.";
 
-pub(super) struct Lead {
+// One seam as the cut decided it, before the anchors, the tests, and the
+// brief are derived for it.
+pub(super) struct Cut {
     seam: Seam,
     // The modules placed past the surfaces' closures, in the directories their
     // unfollowed imports lead into. Only the cut by stem fills it.
     widened: Vec<String>,
 }
 
-impl Lead {
+impl Cut {
     fn new(text: String, files: Vec<String>, stems: Vec<String>) -> Self {
         Self {
             seam: Seam {
@@ -166,7 +168,7 @@ impl Lead {
     // A tree with no surface has no anchors, so its exports are read for what
     // they do. Neither a data file nor a test is an anchor. A test importing
     // no module of the tree follows every seam.
-    pub(super) fn finish<R: Recogniser>(self, tree: &Tree<R>, surfaces: &[Surface]) -> Seam {
+    pub(super) fn seam<R: Recogniser>(self, tree: &Tree<R>, surfaces: &[Surface]) -> Seam {
         let files = &self.seam.files;
         let under: Vec<&Surface> =
             surfaces.iter().filter(|surface| self.seam.stems.contains(&surface.stem)).collect();

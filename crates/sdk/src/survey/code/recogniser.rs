@@ -22,8 +22,8 @@ use crate::survey::tests::Statement;
 ///
 /// The methods with a default answer are for a language that has no
 /// such thing: one that hands no class to a registration leaves
-/// [`class_handed`](Self::class_handed) and
-/// [`handed_class`](Self::handed_class) alone.
+/// [`hands_bare_class`](Self::hands_bare_class) and
+/// [`class_run_by`](Self::class_run_by) alone.
 ///
 /// [`Parsed`]: super::Parsed
 /// [`Parsed::settle`]: super::Parsed::settle
@@ -63,21 +63,21 @@ pub trait Recogniser: Sized + Sync {
     /// or an instance.
     ///
     /// A class handed straight to a package's own function is queried or
-    /// typed by it, not run, so [`Tree::hands`] discounts it. The default
-    /// hands none.
-    fn class_handed(
+    /// typed by it, not run, so [`Tree::hands_handler`] discounts it. The
+    /// default hands none.
+    fn hands_bare_class(
         &self, tree: &Tree<Self>, module: &Self::Module, arg: &Arg, frames: &[u32],
     ) -> bool {
         let _ = (tree, module, arg, frames);
         false
     }
 
-    /// Returns the class `call` hands to be run, with the module declaring it.
+    /// Returns the class `call` registers to be run, with the module declaring it.
     ///
     /// A view handed by its `as_view()`, a view set registered on a router,
     /// a worker class: its methods are ids of the registration, and what
     /// its module references is reached. The default hands none.
-    fn handed_class<'t>(
+    fn class_run_by<'t>(
         &self, tree: &'t Tree<Self>, module: &'t Self::Module, call: &Call,
     ) -> Option<(&'t Self::Module, String)> {
         let _ = (tree, module, call);

@@ -27,7 +27,7 @@ use crate::adapter::{self, AdapterRef, Loaded};
 use crate::brief::Brief as _;
 use crate::revision::{Design, Plan, Slice, Spec};
 pub use crate::revision::{ReqId, SliceId, Waves};
-use crate::vcs::{INTEGRATION, Integration, Message, Repo, WorkingCopy};
+use crate::vcs::{BuildRepo, INTEGRATION, Integration, Message, WorkingCopy};
 use crate::{EntryKind, Files, RETRIES, is_retryable, store, vcs};
 
 /// Builds every slice of the current plan through the target adapter `input` names.
@@ -137,13 +137,13 @@ pub async fn build<P: Model + Target + StateStore + BlobStore + Plugins + Vcs + 
     // the base, the adapter's layout scaffolded into a repository the engine
     // creates, and what the label already holds over it
     let repo = match input.repository.as_deref() {
-        Some(vcs::PROJECT) => Repo::Project,
-        url => Repo::Target {
+        Some(vcs::PROJECT) => BuildRepo::Project,
+        url => BuildRepo::Target {
             name: input.name,
             url: url.map(ToOwned::to_owned),
         },
     };
-    let created = matches!(repo, Repo::Target { url: None, .. });
+    let created = matches!(repo, BuildRepo::Target { url: None, .. });
     let base = repo.base(provider, async |at| initialise(provider, &adapter, at).await).await?;
     let label = format!("emery/{revision_id}");
     let labelled = repo.merged_under(provider, &label, &base, &revision_id).await?;
@@ -376,7 +376,7 @@ struct Run<'a> {
     // the design as every slice carries it
     rendered: &'a str,
     plan: &'a Plan,
-    repo: &'a Repo,
+    repo: &'a BuildRepo,
     integration: &'a WorkingCopy,
     // the adapter's merge rules, in the capability's reading
     policy: &'a [Rule],
@@ -472,7 +472,7 @@ struct Built<'a> {
 // A slice's merge under the adapter's rules, left at the paths no rule
 // resolved: what this slice and one merged before it in the wave both
 // rewrote.
-struct Residue<'a> {
+struct UnresolvedMerge<'a> {
     built: &'a Built<'a>,
     // what the slice's build changed, as its working copy holds it
     pending: &'a [Change],
@@ -715,14 +715,14 @@ impl Run<'_> {
                 if let Some(commit) = merged.commit {
                     (Some(commit), Vec::new())
                 } else {
-                    let residue = Residue {
+                    let unresolved = UnresolvedMerge {
                         built: &built,
                         pending: &pending,
                         commit,
                         message: &message,
                         paths: merged.conflicts,
                     };
-                    let (commit, resolved) = residue.resolve(self, provider, progress).await?;
+                    let (commit, resolved) = unresolved.resolve(self, provider, progress).await?;
                     (Some(commit), resolved)
                 }
             }
@@ -842,7 +842,7 @@ impl Run<'_> {
     }
 }
 
-impl Residue<'_> {
+impl UnresolvedMerge<'_> {
     // Resolves every path with the model, seals the resolutions in the
     // slice's working copy over its commit, and merges the slice again with
     // each resolution taken whole: the merge commit, and the paths resolved.

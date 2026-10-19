@@ -30,11 +30,11 @@ mod generated {
 use self::generated::emery::adapter::source as wit;
 pub use self::generated::emery::adapter::types;
 use crate::source::{
-    AdapterMetadata, Backing, Claim, ClaimKind, Evidence, SourceContent, SourceInput, SourceKind,
+    Backing, Claim, ClaimKind, Evidence, SourceContent, SourceInput, SourceKind, SourceMetadata,
 };
 
-impl From<AdapterMetadata> for wit::AdapterMetadata {
-    fn from(metadata: AdapterMetadata) -> Self {
+impl From<SourceMetadata> for wit::AdapterMetadata {
+    fn from(metadata: SourceMetadata) -> Self {
         Self {
             emery_version: metadata.emery_version,
             kind: metadata.kind.into(),
@@ -42,7 +42,7 @@ impl From<AdapterMetadata> for wit::AdapterMetadata {
     }
 }
 
-impl From<wit::AdapterMetadata> for AdapterMetadata {
+impl From<wit::AdapterMetadata> for SourceMetadata {
     fn from(metadata: wit::AdapterMetadata) -> Self {
         Self {
             emery_version: metadata.emery_version,
@@ -255,11 +255,11 @@ pub mod import {
     use omnia_sdk::{Error, bad_gateway, bad_request};
 
     use super::{types, wit as imported};
-    use crate::source::{AdapterMetadata, Evidence, SourceInput};
+    use crate::source::{Evidence, SourceInput, SourceMetadata};
 
     /// Returns the metadata the adapter registered as `id` declares.
     #[must_use]
-    pub fn metadata(id: &str) -> AdapterMetadata {
+    pub fn metadata(id: &str) -> SourceMetadata {
         imported::metadata(id).into()
     }
 

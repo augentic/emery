@@ -325,7 +325,7 @@ impl<R: Recogniser> Tree<R> {
     /// Returns the string literal leading `call`'s positional arguments, or
     /// the constant the first of them is bound to.
     #[must_use]
-    pub fn led(&self, module: &R::Module, call: &Call) -> Option<String> {
+    pub fn leading_literal(&self, module: &R::Module, call: &Call) -> Option<String> {
         call.args
             .iter()
             .find(|arg| arg.keyword.is_none())
@@ -519,7 +519,7 @@ impl<R: Recogniser> Tree<R> {
     /// function or constructor is queried or typed by it, not run; one
     /// handed to a receiver the code constructs is run.
     #[must_use]
-    pub fn hands(&self, module: &R::Module, call: &Call) -> bool {
+    pub fn hands_handler(&self, module: &R::Module, call: &Call) -> bool {
         if call.structural(self.dialect) {
             return false;
         }
@@ -528,16 +528,18 @@ impl<R: Recogniser> Tree<R> {
             !arg.is_hook(self.dialect)
                 && self.recogniser.handler(self, module, arg, &call.frames)
                 && !(through_package
-                    && self.recogniser.class_handed(self, module, arg, &call.frames))
+                    && self.recogniser.hands_bare_class(self, module, arg, &call.frames))
         })
     }
 
-    /// Returns the package `call` hands a handler to, for a call outside any handler.
+    /// Returns the receiver `call` hands a handler to, for a call outside any handler.
     ///
-    /// Where a framework, a queue, a scheduler, or a CLI is told what to run.
+    /// Where a framework, a queue, a scheduler, or a CLI is told what to
+    /// run: the package the receiver comes from and the type it is known as.
     #[must_use]
-    pub fn handed(&self, module: &R::Module, call: &Call) -> Option<Receiver> {
-        (call.depth == 0 && self.hands(module, call)).then(|| self.receiver(module, call))?
+    pub fn handed_to(&self, module: &R::Module, call: &Call) -> Option<Receiver> {
+        (call.depth == 0 && self.hands_handler(module, call))
+            .then(|| self.receiver(module, call))?
     }
 
     /// Returns whether `call` registers the handler it hands.
@@ -547,8 +549,8 @@ impl<R: Recogniser> Tree<R> {
     /// handed a function for its value defines and registers nothing.
     #[must_use]
     pub fn registers(&self, module: &R::Module, call: &Call) -> bool {
-        self.hands(module, call)
-            && (call.discarded() || call.constructs || self.led(module, call).is_some())
+        self.hands_handler(module, call)
+            && (call.discarded() || call.constructs || self.leading_literal(module, call).is_some())
     }
 
     /// Returns the first registration starting within `lines` of `module`.
@@ -580,9 +582,9 @@ impl<R: Recogniser> Tree<R> {
             .values()
             .flat_map(|module| module.calls.iter().map(move |call| (module, call)))
             .filter(|(module, call)| {
-                self.handed(module, call).is_some() && self.registers(module, call)
+                self.handed_to(module, call).is_some() && self.registers(module, call)
             })
-            .filter_map(|(module, call)| self.recogniser.handed_class(self, module, call))
+            .filter_map(|(module, call)| self.recogniser.class_run_by(self, module, call))
             .map(|(target, class)| (target.path.clone(), class))
             .collect()
     }

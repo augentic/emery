@@ -1557,6 +1557,36 @@ async fn pin_mismatch() {
     model.assert_exhausted();
 }
 
+// A command-line adapter takes the place of the file's entry of its name,
+// and the `digest` that pinned the file's release goes with it: a pin the
+// stored bytes miss refuses nothing once the reference it pinned is replaced.
+#[tokio::test]
+async fn pin_layered() {
+    let roots = Roots::new();
+    roots.stored(SOURCE, MOCK_SOURCE);
+    roots.stored(TARGET, MOCK_TARGET);
+    let pin = Digest::of(b"other bytes");
+    roots.project.write(
+        "emery.toml",
+        format!(
+            "[[source]]\nadapter = \"{SOURCE}\"\ndigest = \"{pin}\"\npath = \"docs\"\n\n\
+             [target]\nadapter = \"{TARGET}\"\ndigest = \"{pin}\"\nrepository = \".\"\n"
+        ),
+    );
+    let backends = roots.backends().await;
+
+    let model = specifying();
+    let run = emery(roots.deployment(&["specify", SOURCE, "--config"]), &backends, &model).await;
+    assert_ok(&run);
+    model.assert_exhausted();
+
+    roots.git.seal(roots.project.path(), "project");
+    let model = building();
+    let run = emery(roots.deployment(&["build", TARGET, "--config"]), &backends, &model).await;
+    assert_ok(&run);
+    model.assert_exhausted();
+}
+
 // A pre-compiled artifact copied into the store is refused however it hashes:
 // the store is raw wasm alone.
 #[tokio::test]

@@ -16,10 +16,10 @@ use std::path::PathBuf;
 
 use clap::builder::{PossibleValue, PossibleValuesParser, TypedValueParser};
 use clap::{Parser, Subcommand};
-use emery_engine::Provider;
 use emery_engine::build::{BuildInput, build};
 use emery_engine::show::{Artifact, ShowInput, show};
 use emery_engine::specify::{SpecifyInput, specify};
+use emery_engine::{Provider, is_retryable};
 use omnia_sdk::Error;
 use omnia_sdk::api::command::{Command, Parsed, Response, Shell, Verbosity, completions, parse};
 use omnia_sdk::api::{Client, Format, Metadata};
@@ -29,8 +29,9 @@ const ABOUT: &str = "Deterministic primitives for spec-driven development";
 const SPECIFY_DESC: &str = "Generate spec.md, design.md, and plan.md from source adapters.\n\n\
     Name one or more adapters, use `--description <adapter>=<text>` for inline input, \
     or use `--config [<path>]` (default: `emery.toml`). With no sources, Emery looks \
-    for `emery.toml` in the project root. Config and command-line sources cannot be \
-    combined.\n\n\
+    for `emery.toml` in the project root. Command-line sources layer over the config: \
+    one named as a `[[source]]` is — by its adapter's package name — takes that entry's \
+    place, keeping its `rank`; any other is appended.\n\n\
     An adapter is an exact package reference, `namespace:name@version`. Emery reads it \
     from its store, `~/.emery/adapters`, where the file `namespace_name@version.wasm` is \
     that release on this machine, and fetches a release the store lacks through the \
@@ -42,14 +43,16 @@ const SPECIFY_DESC: &str = "Generate spec.md, design.md, and plan.md from source
 const BUILD_DESC: &str = "Build the current plan through a target adapter.\n\n\
     Name the adapter, or use `--config [<path>]` (default: `emery.toml`) to read its \
     `[target]` table. With no adapter, Emery looks for `emery.toml` in the project root. \
-    Config and a command-line adapter cannot be combined.\n\n\
-    The build lands as commits in one repository, never in the checkout, the one the \
-    `[target] repository` names: a URL, cloned under `.emery/vcs/repos/<name>` and built \
-    from its default branch; `.`, the project checkout, from its head, which must hold no \
-    pending change outside `.emery/`; or, with none named, a repository the build creates \
-    once at `.emery/vcs/repos/<name>` and keeps, its root commit the adapter's layout. \
-    `<name>` is the `[target] name`, the adapter's package name when the config gives \
-    none. A build no label resumes first has the adapter initialise the tree — scaffold \
+    A command-line adapter layers over the config, taking the place of its `adapter` \
+    under its `name` and dropping its `digest`; `--repository` takes the place of its \
+    `repository`.\n\n\
+    The build lands as commits in one repository, never in the checkout, the one \
+    `--repository` or the `[target] repository` names: a URL, cloned under \
+    `.emery/vcs/repos/<name>` and built from its default branch; `.`, the project \
+    checkout, from its head, which must hold no pending change outside `.emery/`; or, \
+    with none named, a repository the build creates once at `.emery/vcs/repos/<name>` \
+    and keeps, its root commit the adapter's layout. `<name>` is the `[target] name`, \
+    the adapter's package name when the config gives none. A build no label resumes first has the adapter initialise the tree — scaffold \
     the files of its layout the tree lacks, with no model turn — and seals them as the \
     `Initialise` commit every slice builds over. A label `emery/<revision>` the repository \
     already holds, descending from that commit, is resumed: the slices it records are not built \
@@ -162,7 +165,7 @@ enum Verb {
 struct SpecifyArgs {
     /// Workspace-backed source adapters, each an exact package reference
     /// `namespace:name@version`. Each source is named for its adapter's
-    /// package name.
+    /// package name; over `--config`, it replaces the `[[source]]` of that name.
     adapters: Vec<String>,
     /// Bind an inline source as `<adapter>=<text>`; repeatable.
     #[arg(long = "description", short = 'd')]
@@ -192,8 +195,11 @@ impl TryFrom<SpecifyArgs> for SpecifyInput {
 
 #[derive(Debug, clap::Args)]
 struct BuildArgs {
-    /// The target adapter, an exact package reference `namespace:name@version`.
+    /// The target adapter, an exact package reference `namespace:name@version`; over `--config`, it replaces the `[target] adapter`.
     adapter: Option<String>,
+    /// The repository the build lands in: a URL, cloned under .emery/vcs/repos/<name>, or `.` for the project checkout; over `--config`, it replaces the `[target] repository`.
+    #[arg(long, value_name = "URL|.")]
+    repository: Option<String>,
     /// Operator-owned config; the omitted value selects emery.toml.
     #[arg(long, short = 'c', num_args = 0..=1, default_missing_value = config::CONFIG_FILE)]
     config: Option<PathBuf>,
@@ -208,11 +214,13 @@ impl TryFrom<BuildArgs> for BuildInput {
     fn try_from(args: BuildArgs) -> Result<Self, Error> {
         let BuildArgs {
             adapter,
+            repository,
             config,
             jobs,
         } = args;
         let mut input: Self = config::TargetCarriers {
             adapter: adapter.as_deref(),
+            repository: repository.as_deref(),
             config: config.as_deref(),
         }
         .try_into()?;
@@ -249,7 +257,7 @@ fn hint(error: &Error, building: bool) -> Option<Cow<'static, str>> {
         "bad_gateway" if building => {
             "the model backend failed twice upstream, or the repository's remote refused; re-run `emery build` once it answers: the label `emery/<revision>` stands at the last verified wave, and `.emery/vcs/integration` holds the slices merged since, so neither is built again"
         }
-        "bad_request" if building && timed_out(&error.description()) => {
+        "bad_request" if building && is_retryable(error) => {
             "the model ran out of its time budget on both tries of one turn; re-run `emery build` to put it again: the label `emery/<revision>` stands at the last verified wave, and `.emery/vcs/integration` holds the slices merged since, so neither is built again"
         }
         "unsupported-version" => {
@@ -295,13 +303,4 @@ fn hint(error: &Error, building: bool) -> Option<Cow<'static, str>> {
         _ => return None,
     };
     Some(Cow::Borrowed(hint))
-}
-
-// How the model backend reports a turn its time budget ended, which the
-// engine puts once more before the failure is the run's. A turn refused on a
-// rejected candidate carries that candidate whole, whatever it spells.
-fn timed_out(description: &str) -> bool {
-    description.contains("budget exhausted")
-        && description.contains("timed out")
-        && !description.contains("## Previous answer (rejected)")
 }

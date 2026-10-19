@@ -119,7 +119,7 @@ impl<'a> SliceBrief<'a> {
         let slices = stems
             .into_iter()
             .map(|stem| Slice {
-                id: SliceId::new(1),
+                id: SliceId::FIRST,
                 name: stem.label.to_owned(),
                 requirements: stem.requirements,
                 types: types.clone(),
@@ -189,20 +189,25 @@ impl Brief for SliceBrief<'_> {
     const NAME: &'static str = "slicing";
     const PROSE: &'static [&'static str] = &["slicing.md"];
 
-    fn tighten(&self, schema: &mut Value) {
-        schema["properties"]["slices"]["minItems"] = json!(1);
-        schema["properties"]["slices"]["maxItems"] = json!(self.floors().count());
+    fn tighten(&self, schema: &mut Value) -> Result<(), Error> {
+        let slices = Self::at(schema, "/properties/slices")?;
+        slices.insert("minItems".to_owned(), json!(1));
+        slices.insert("maxItems".to_owned(), json!(self.floors().count()));
 
         // restrict each list to this run's requirement ids and type keys
-        let draft = &mut schema["$defs"]["Draft"]["properties"];
-        draft["requirements"]["minItems"] = json!(1);
-        draft["requirements"]["items"]["enum"] =
-            json!(self.bases.iter().map(|basis| basis.id).collect::<Vec<_>>());
+        let ids = json!(self.bases.iter().map(|basis| basis.id).collect::<Vec<_>>());
+        Self::at(schema, "/$defs/Draft/properties/requirements")?
+            .insert("minItems".to_owned(), json!(1));
+        Self::at(schema, "/$defs/Draft/properties/requirements/items")?
+            .insert("enum".to_owned(), ids);
         if self.types.is_empty() {
-            draft["types"]["maxItems"] = json!(0);
+            Self::at(schema, "/$defs/Draft/properties/types")?
+                .insert("maxItems".to_owned(), json!(0));
         } else {
-            draft["types"]["items"]["enum"] = json!(self.types);
+            Self::at(schema, "/$defs/Draft/properties/types/items")?
+                .insert("enum".to_owned(), json!(self.types));
         }
+        Ok(())
     }
 
     fn verify(&self, answer: &SliceAnswer, review: &mut Review) {
@@ -318,12 +323,12 @@ impl Brief for SliceBrief<'_> {
         drafts.sort_by_key(|draft| draft.requirements.iter().min().copied());
         let ids: BTreeMap<String, SliceId> = drafts
             .iter()
-            .zip(1..)
-            .map(|(draft, number)| (draft.name.clone(), SliceId::new(number)))
+            .zip(SliceId::sequence())
+            .map(|(draft, id)| (draft.name.clone(), id))
             .collect();
 
         let mut slices = Vec::with_capacity(drafts.len());
-        for (mut draft, number) in drafts.into_iter().zip(1..) {
+        for (mut draft, id) in drafts.into_iter().zip(SliceId::sequence()) {
             draft.requirements.sort_unstable();
             let types =
                 self.types.iter().filter(|key| draft.types.contains(key)).cloned().collect();
@@ -343,7 +348,7 @@ impl Brief for SliceBrief<'_> {
             depends_on.dedup();
 
             slices.push(Slice {
-                id: SliceId::new(number),
+                id,
                 name: draft.name,
                 requirements: draft.requirements,
                 types,

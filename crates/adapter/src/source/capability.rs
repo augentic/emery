@@ -26,7 +26,7 @@ use crate::source::{Evidence, SourceKind};
 /// use std::future::{Future, ready};
 ///
 /// use emery_adapter::source::{
-///     AdapterMetadata, Claim, ClaimKind, Evidence, Source, SourceInput, SourceKind,
+///     Claim, ClaimKind, Evidence, Source, SourceInput, SourceKind, SourceMetadata,
 /// };
 /// use omnia_sdk::Error;
 ///
@@ -48,8 +48,8 @@ use crate::source::{Evidence, SourceKind};
 ///         }))
 ///     }
 ///
-///     fn metadata(&self, _id: &str) -> AdapterMetadata {
-///         AdapterMetadata {
+///     fn metadata(&self, _id: &str) -> SourceMetadata {
+///         SourceMetadata {
 ///             emery_version: None,
 ///             kind: SourceKind::Documentation,
 ///         }
@@ -83,11 +83,11 @@ pub trait Source: Send + Sync {
 
     /// Returns the metadata the adapter registered as `id` declares.
     #[cfg(not(target_arch = "wasm32"))]
-    fn metadata(&self, id: &str) -> AdapterMetadata;
+    fn metadata(&self, id: &str) -> SourceMetadata;
 
     /// Returns the metadata the adapter registered as `id` declares.
     #[cfg(target_arch = "wasm32")]
-    fn metadata(&self, id: &str) -> AdapterMetadata {
+    fn metadata(&self, id: &str) -> SourceMetadata {
         crate::source::bindings::import::metadata(id)
     }
 }
@@ -137,7 +137,7 @@ pub enum SourceContent {
 
 /// Metadata declared by a source adapter.
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct AdapterMetadata {
+pub struct SourceMetadata {
     /// The minimum compatible Emery version, if the adapter declares one.
     pub emery_version: Option<String>,
     /// The source kind used to rank this adapter's evidence.

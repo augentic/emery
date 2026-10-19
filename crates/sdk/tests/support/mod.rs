@@ -161,7 +161,9 @@ impl Recogniser for Stub {
         }
     }
 
-    fn class_handed(&self, _tree: &Tree<Self>, module: &Plain, arg: &Arg, frames: &[u32]) -> bool {
+    fn hands_bare_class(
+        &self, _tree: &Tree<Self>, module: &Plain, arg: &Arg, frames: &[u32],
+    ) -> bool {
         match arg.root.as_deref() {
             Some([name]) if !arg.called => module
                 .binding(name, frames)
@@ -170,7 +172,7 @@ impl Recogniser for Stub {
         }
     }
 
-    fn handed_class<'t>(
+    fn class_run_by<'t>(
         &self, _tree: &'t Tree<Self>, module: &'t Plain, call: &Call,
     ) -> Option<(&'t Plain, String)> {
         call.args.iter().find_map(|arg| match arg.root.as_deref() {
@@ -199,7 +201,7 @@ impl Recogniser for Stub {
         let Some(call) = tree.registration_at(module, lines) else {
             return Derived::named(tree, module, lines, name, stem);
         };
-        let led = tree.led(module, call);
+        let led = tree.leading_literal(module, call);
         let mount = tree.mount(&module.path);
         let trigger = led.as_deref().and_then(|literal| {
             if literal.starts_with('/') {
@@ -225,7 +227,7 @@ impl Recogniser for Stub {
             .filter(|arg| arg.root.is_some() && !arg.is_hook(tree.dialect))
             .find(|arg| self.handler(tree, module, arg, &call.frames))
             .and_then(|arg| arg.root.as_ref()?.last().and_then(|last| kebab(last)));
-        let (methods, handed) = match self.handed_class(tree, module, call) {
+        let (methods, handed) = match self.class_run_by(tree, module, call) {
             Some((declaring, class)) => {
                 let methods = declaring
                     .class(&class)

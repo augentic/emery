@@ -7,7 +7,7 @@ use std::time::Duration;
 
 use anyhow::Result;
 use emery_adapter::source::{
-    AdapterMetadata, Backing, Claim, ClaimKind, Evidence, Source, SourceInput, SourceKind,
+    Backing, Claim, ClaimKind, Evidence, Source, SourceInput, SourceKind, SourceMetadata,
 };
 use emery_adapter::target::{
     MergeRule, Outcome, Report, Slice, Target, TargetMetadata, Task, Verdict,
@@ -376,9 +376,9 @@ impl<S: Send + Sync + 'static> Source for Provider<S> {
         }
     }
 
-    fn metadata(&self, id: &str) -> AdapterMetadata {
+    fn metadata(&self, id: &str) -> SourceMetadata {
         self.source.metadata.lock().expect("metadata").push(id.to_string());
-        AdapterMetadata {
+        SourceMetadata {
             emery_version: self.source.versions.get(id).cloned(),
             kind: self.source.kinds.get(id).copied().unwrap_or(SourceKind::Documentation),
         }

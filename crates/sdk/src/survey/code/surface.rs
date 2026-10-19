@@ -1,8 +1,7 @@
 //! Carries what the code says of each surface the survey named.
 
 use emery_adapter::Trigger;
-use emery_adapter::source::{Claim, ClaimKind};
-use serde_json::{Map, Value};
+use emery_adapter::source::Claim;
 
 use super::recogniser::{Bootstrap, Recogniser};
 use super::tree::{Tree, seed};
@@ -63,17 +62,11 @@ impl Surface {
     #[must_use]
     pub fn contract(&self) -> Option<Claim> {
         let trigger = self.trigger.as_ref()?;
-        let key = match trigger {
-            Trigger::Http(_) => "route",
-            Trigger::Message(_) => "message",
-        };
         Some(Claim {
-            kind: ClaimKind::Contract,
             id: self.id().map(str::to_owned),
-            path: Some(format!("{}#{}", self.entry, self.lines.anchor())),
-            synopsis: Some(self.name.clone()),
-            backing: None,
-            extras: Map::from_iter([(key.to_owned(), Value::String(trigger.to_string()))]),
+            ..Claim::contract(trigger)
+                .at(format!("{}#{}", self.entry, self.lines.anchor()))
+                .with_synopsis(self.name.clone())
         })
     }
 

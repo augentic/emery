@@ -20,7 +20,7 @@ fn main() {
     for tracked in ["src", "crates", "examples", "wit", "Cargo.toml", "Cargo.lock"] {
         println!("cargo::rerun-if-changed={}", manifest_dir.join(tracked).display());
     }
-    for var in ["EMERY_SKIP_GUEST", "RUSTC_WORKSPACE_WRAPPER"] {
+    for var in ["EMERY_SKIP_GUEST", "RUSTC_WORKSPACE_WRAPPER", "RA_RUSTC_WRAPPER"] {
         println!("cargo::rerun-if-env-changed={var}");
     }
 
@@ -63,14 +63,16 @@ fn main() {
 }
 
 // A check never runs what it compiles, so the guests it embeds may be empty:
-// under clippy, which cargo names through `RUSTC_WORKSPACE_WRAPPER`, or
-// wherever `EMERY_SKIP_GUEST` is set.
+// under clippy, which cargo names through `RUSTC_WORKSPACE_WRAPPER`, under
+// rust-analyzer's check, which sets `RA_RUSTC_WRAPPER`, or wherever
+// `EMERY_SKIP_GUEST` is set.
 fn check_only() -> bool {
     let skipped = std::env::var_os("EMERY_SKIP_GUEST").is_some_and(|value| !value.is_empty());
     let clippy = std::env::var_os("RUSTC_WORKSPACE_WRAPPER").is_some_and(|wrapper| {
         Path::new(&wrapper).file_stem().is_some_and(|stem| stem == "clippy-driver")
     });
-    skipped || clippy
+    let analyzer = std::env::var_os("RA_RUSTC_WRAPPER").is_some();
+    skipped || clippy || analyzer
 }
 
 // Compiles the engine guest for the binary's own target through the

@@ -75,12 +75,13 @@ pub mod workspace;
 #[doc(inline)]
 pub use emery_adapter::source::export;
 pub use emery_adapter::source::{
-    AdapterMetadata, Anchor, Backing, BadAnchor, Claim, ClaimKind, Evidence, Source, SourceContent,
-    SourceInput, SourceKind,
+    Anchor, Backing, BadAnchor, Claim, ClaimKind, Evidence, Source, SourceContent, SourceInput,
+    SourceKind, SourceMetadata,
 };
 pub use emery_adapter::{
-    BadMessage, BadPath, BadRoute, BadTrigger, Lexicon, METHODS, Route, Trigger, beneath, is_kebab,
+    BadMessage, BadPath, BadRoute, BadTrigger, METHODS, Route, Trigger, beneath, is_kebab,
 };
+pub use emery_lexicon::Lexicon;
 pub use emery_prose::{Doc, body, check, find, prose};
 pub use omnia_sdk::{Error, Model, bad_gateway, bad_request, not_found, server_error};
 /// The JSON crate a [`Claim`]'s `extras` are built from, for an adapter that
@@ -227,11 +228,11 @@ pub async fn call<A: SourceAdapter>(
 /// [`export_source!`] answers the component's `metadata` with it over the
 /// adapter's [`Metadata::kind`]. The `emery-version` pin is this SDK's own
 /// version, identifying the contract the adapter compiled against. Build an
-/// [`AdapterMetadata`] directly only when the adapter must loosen or tighten
+/// [`SourceMetadata`] directly only when the adapter must loosen or tighten
 /// that pin.
 #[must_use]
-pub fn metadata(kind: SourceKind) -> AdapterMetadata {
-    AdapterMetadata {
+pub fn metadata(kind: SourceKind) -> SourceMetadata {
+    SourceMetadata {
         emery_version: Some(env!("CARGO_PKG_VERSION").to_string()),
         kind,
     }
@@ -286,6 +287,9 @@ pub fn push_unique<T: PartialEq>(into: &mut Vec<T>, item: T) {
 
 /// Returns `items` with each equal item kept once, in first-occurrence order.
 ///
+/// Runs in `O(n log n)`, so a survey's anchors or a tree's paths pass
+/// through it whole.
+///
 /// # Examples
 ///
 /// ```
@@ -294,12 +298,23 @@ pub fn push_unique<T: PartialEq>(into: &mut Vec<T>, item: T) {
 /// assert_eq!(unique(["b", "a", "b", "c", "a"]), ["b", "a", "c"]);
 /// ```
 #[must_use]
-pub fn unique<T: PartialEq>(items: impl IntoIterator<Item = T>) -> Vec<T> {
-    let mut list = Vec::new();
-    for item in items {
-        push_unique(&mut list, item);
+pub fn unique<T: Ord>(items: impl IntoIterator<Item = T>) -> Vec<T> {
+    let items: Vec<T> = items.into_iter().collect();
+
+    // the positions ordered by value, so equal items are adjacent and the
+    // first of each run is the earliest occurrence
+    let mut order: Vec<usize> = (0..items.len()).collect();
+    order.sort_unstable_by(|&a, &b| items[a].cmp(&items[b]).then(a.cmp(&b)));
+    let mut kept = vec![false; items.len()];
+    let mut previous: Option<usize> = None;
+    for &index in &order {
+        if previous.is_none_or(|previous| items[previous] != items[index]) {
+            kept[index] = true;
+        }
+        previous = Some(index);
     }
-    list
+
+    items.into_iter().zip(kept).filter_map(|(item, kept)| kept.then_some(item)).collect()
 }
 
 /// The adapter addressed, its input, and the model available to one extraction call.

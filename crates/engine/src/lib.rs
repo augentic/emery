@@ -39,12 +39,16 @@ const RETRIES: usize = 2;
 // that spent its rounds on a rejected candidate carries whole.
 const REJECTED: &str = "## Previous answer (rejected)";
 
-// An upstream failure is put once more, and so is a turn the backend's time
-// budget ended: the model's work is not the same twice, and a turn put again
-// over the same tree starts from what the first left. A question refused on
-// a rejected candidate is not: its description carries that candidate, whose
-// text may spell a timeout of its own.
-fn is_retryable(error: &Error) -> bool {
+/// Returns whether a failed model turn is one the engine puts once more.
+///
+/// An upstream failure is, and so is a turn the model backend's time budget
+/// ended: the model's work is not the same twice, and a turn put again over
+/// the same tree starts from what the first left. A question refused on a
+/// rejected candidate is not, since its description carries that candidate,
+/// whose text may spell a timeout of its own. The engine reads this once per
+/// retried dispatch and brief, and the CLI once more to hint at the resume.
+#[must_use]
+pub fn is_retryable(error: &Error) -> bool {
     match error {
         Error::BadGateway { .. } => true,
         Error::BadRequest { description, .. } => {
@@ -130,6 +134,12 @@ pub enum EntryKind {
 ///
 /// `.` components are dropped and `..` steps back over the segment before it.
 /// An empty result is `.`, the project root itself.
+///
+/// This is the operator's rule, over a path typed at the command line or in
+/// `emery.toml`, where `..` is a step back as a shell reads it. The
+/// adapter's rule for a path a claim or a tool names,
+/// [`emery_adapter::beneath`], refuses `..` outright, since a model's path is
+/// held to the spelling the tree holds.
 ///
 /// # Examples
 ///

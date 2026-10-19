@@ -256,6 +256,132 @@ pub struct Claim {
 }
 
 impl Claim {
+    /// The extra a `call` names what it reaches in, as `<package>:<member>`.
+    pub const CALLEE: &'static str = "callee";
+    /// The extra a `criterion` states its condition in.
+    pub const CRITERION: &'static str = "criterion";
+    /// The extra a `decision` carries its directive in.
+    pub const DECISION: &'static str = "decision";
+    /// The extra a `contract` carries its inbound message's name in.
+    pub const MESSAGE: &'static str = "message";
+    /// The extra a `type` carries its declared identifier in.
+    pub const NAME: &'static str = "name";
+    /// The extra an `example` carries the digest of its capture in.
+    pub const REPLAY_DIGEST: &'static str = "replay-digest";
+    /// The extra a `contract` carries its route in, as `METHOD /path`.
+    pub const ROUTE: &'static str = "route";
+    /// The extra a `type` carries its declaration in.
+    pub const SIGNATURE: &'static str = "signature";
+    /// The extra a `requirement` states its behaviour in.
+    pub const STATEMENT: &'static str = "statement";
+
+    /// Returns a claim of `kind` carrying nothing else.
+    ///
+    /// The common fields are set through [`with_id`](Self::with_id),
+    /// [`at`](Self::at), and [`with_synopsis`](Self::with_synopsis), and an
+    /// extra through [`with_extra`](Self::with_extra).
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use emery_adapter::source::{Claim, ClaimKind};
+    ///
+    /// let claim = Claim::new(ClaimKind::Requirement)
+    ///     .with_id("orders.create")
+    ///     .at("src/orders.ts#L12")
+    ///     .with_extra(Claim::STATEMENT, "Creates an order.");
+    ///
+    /// assert_eq!(claim.id.as_deref(), Some("orders.create"));
+    /// assert_eq!(claim.statement(), "Creates an order.");
+    /// ```
+    #[must_use]
+    pub fn new(kind: ClaimKind) -> Self {
+        Self {
+            kind,
+            id: None,
+            path: None,
+            synopsis: None,
+            backing: None,
+            extras: serde_json::Map::new(),
+        }
+    }
+
+    /// Returns a `type` claim declaring `name` with `signature`.
+    ///
+    /// The claim carries [`NAME`](Self::NAME) and
+    /// [`SIGNATURE`](Self::SIGNATURE) and nothing else.
+    #[must_use]
+    pub fn type_decl(name: &str, signature: &str) -> Self {
+        Self::new(ClaimKind::Type)
+            .with_extra(Self::NAME, name)
+            .with_extra(Self::SIGNATURE, signature)
+    }
+
+    /// Returns a `contract` claim reached through `trigger`.
+    ///
+    /// The claim carries the extra of the trigger's kind,
+    /// [`ROUTE`](Self::ROUTE) or [`MESSAGE`](Self::MESSAGE), spelled as
+    /// [`Trigger`] displays it, so [`trigger`](Self::trigger) reads it back.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use emery_adapter::source::Claim;
+    /// use emery_adapter::{Route, Trigger};
+    ///
+    /// let trigger = Trigger::Http(Route::parse("post /orders/:id/pay")?);
+    /// let claim = Claim::contract(&trigger).with_id("orders");
+    ///
+    /// assert_eq!(claim.extra(Claim::ROUTE), Some("POST /orders/{id}/pay"));
+    /// assert_eq!(claim.trigger(), Some(Ok(trigger)));
+    /// # Ok::<(), emery_adapter::BadRoute>(())
+    /// ```
+    #[must_use]
+    pub fn contract(trigger: &Trigger) -> Self {
+        let key = match trigger {
+            Trigger::Http(_) => Self::ROUTE,
+            Trigger::Message(_) => Self::MESSAGE,
+        };
+        Self::new(ClaimKind::Contract).with_extra(key, trigger.to_string())
+    }
+
+    /// Returns the claim with its `id` set.
+    #[must_use]
+    pub fn with_id(mut self, id: impl Into<String>) -> Self {
+        self.id = Some(id.into());
+        self
+    }
+
+    /// Returns the claim anchored at `path`, in the grammar of [`Anchor`].
+    #[must_use]
+    pub fn at(mut self, path: impl Into<String>) -> Self {
+        self.path = Some(path.into());
+        self
+    }
+
+    /// Returns the claim with its `synopsis` set.
+    #[must_use]
+    pub fn with_synopsis(mut self, synopsis: impl Into<String>) -> Self {
+        self.synopsis = Some(synopsis.into());
+        self
+    }
+
+    /// Returns the claim with the extra `key` set to `value`.
+    #[must_use]
+    pub fn with_extra(mut self, key: &str, value: impl Into<serde_json::Value>) -> Self {
+        self.extras.insert(key.to_owned(), value.into());
+        self
+    }
+
+    /// Returns the extra `key` as text.
+    ///
+    /// `None` when the claim carries no such extra, or one that is not a
+    /// string.
+    #[must_use]
+    pub fn extra(&self, key: &str) -> Option<&str> {
+        self.extras.get(key)?.as_str()
+    }
+
     /// Returns the `statement` extra as text, with whitespace collapsed.
     ///
     /// Runs of whitespace become one space, so a reflowed statement still
@@ -281,11 +407,41 @@ impl Claim {
     #[must_use]
     pub fn statement(&self) -> String {
         let normalise = |text: &str| text.split_whitespace().collect::<Vec<_>>().join(" ");
-        match self.extras.get("statement") {
+        match self.extras.get(Self::STATEMENT) {
             Some(serde_json::Value::String(text)) => normalise(text),
             Some(other) => normalise(&other.to_string()),
             None => String::new(),
         }
+    }
+
+    /// Returns the `criterion` extra as text, a `criterion`'s condition.
+    #[must_use]
+    pub fn criterion(&self) -> Option<&str> {
+        self.extra(Self::CRITERION)
+    }
+
+    /// Returns the `callee` extra as text, what a `call` reaches as `<package>:<member>`.
+    #[must_use]
+    pub fn callee(&self) -> Option<&str> {
+        self.extra(Self::CALLEE)
+    }
+
+    /// Returns the `signature` extra as text, a `type`'s declaration.
+    #[must_use]
+    pub fn signature(&self) -> Option<&str> {
+        self.extra(Self::SIGNATURE)
+    }
+
+    /// Returns the `name` extra as text, a `type`'s declared identifier.
+    #[must_use]
+    pub fn type_name(&self) -> Option<&str> {
+        self.extra(Self::NAME)
+    }
+
+    /// Returns the `decision` extra as text, a `decision`'s directive.
+    #[must_use]
+    pub fn decision(&self) -> Option<&str> {
+        self.extra(Self::DECISION)
     }
 
     fn findings(&self, index: usize) -> Vec<String> {
@@ -328,10 +484,10 @@ impl Claim {
                 |key: &str| self.extras.get(key).map(ToString::to_string).unwrap_or_default();
             findings.push(match &bad {
                 BadTrigger::Route(_) => {
-                    format!("- claim {index}: route {} {bad}", spelled("route"))
+                    format!("- claim {index}: route {} {bad}", spelled(Self::ROUTE))
                 }
                 BadTrigger::Message(_) => {
-                    format!("- claim {index}: message {} {bad}", spelled("message"))
+                    format!("- claim {index}: message {} {bad}", spelled(Self::MESSAGE))
                 }
                 BadTrigger::Both => format!("- claim {index}: {bad}"),
             });
@@ -356,8 +512,8 @@ impl Claim {
     /// [`Evidence::findings`] reports for a `contract`.
     #[must_use]
     pub fn trigger(&self) -> Option<Result<Trigger, BadTrigger>> {
-        let route = self.extras.get("route");
-        let message = self.extras.get("message");
+        let route = self.extras.get(Self::ROUTE);
+        let message = self.extras.get(Self::MESSAGE);
         Some(match (route, message) {
             (None, None) => return None,
             (Some(_), Some(_)) => Err(BadTrigger::Both),
@@ -434,14 +590,15 @@ impl ClaimKind {
 
     /// Returns the extras a complete claim of this kind must carry.
     ///
-    /// Requirements need `statement`, criteria need `criterion`, examples
-    /// need `replay-digest`, and other kinds need none.
+    /// Requirements need [`Claim::STATEMENT`], criteria
+    /// [`Claim::CRITERION`], examples [`Claim::REPLAY_DIGEST`], and other
+    /// kinds none.
     #[must_use]
     pub const fn required_extras(self) -> &'static [&'static str] {
         match self {
-            Self::Requirement => &["statement"],
-            Self::Criterion => &["criterion"],
-            Self::Example => &["replay-digest"],
+            Self::Requirement => &[Claim::STATEMENT],
+            Self::Criterion => &[Claim::CRITERION],
+            Self::Example => &[Claim::REPLAY_DIGEST],
             _ => &[],
         }
     }

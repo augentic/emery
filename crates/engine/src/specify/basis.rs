@@ -133,14 +133,15 @@ impl<'a> Brief for GroupingBrief<'a> {
     const NAME: &'static str = "grouping";
     const PROSE: &'static [&'static str] = &["grouping.md"];
 
-    fn tighten(&self, schema: &mut Value) {
+    fn tighten(&self, schema: &mut Value) -> Result<(), Error> {
         let last = self.contributors.len().saturating_sub(1);
-        for pointer in ["/properties/claims/items", "/properties/classes/items/items"] {
-            if let Some(index) = schema.pointer_mut(&format!("/$defs/Group{pointer}")) {
-                index["maximum"] = json!(last);
-            }
+        for pointer in
+            ["/$defs/Group/properties/claims/items", "/$defs/Group/properties/classes/items/items"]
+        {
+            Self::at(schema, pointer)?.insert("maximum".to_owned(), json!(last));
         }
-        schema["properties"]["groups"]["minItems"] = json!(1);
+        Self::at(schema, "/properties/groups")?.insert("minItems".to_owned(), json!(1));
+        Ok(())
     }
 
     fn verify(&self, answer: &Grouping, review: &mut Review) {
@@ -372,10 +373,8 @@ impl Grouping {
         groups.sort_by_key(|(first, _)| *first);
         groups
             .into_iter()
-            .zip(1..)
-            .map(|((_, classes), number)| {
-                Basis::of(ReqId::new(number), classes, criteria, contracts)
-            })
+            .zip(ReqId::sequence())
+            .map(|((_, classes), id)| Basis::of(id, classes, criteria, contracts))
             .collect()
     }
 }

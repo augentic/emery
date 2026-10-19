@@ -20,12 +20,13 @@ brew install emery
 
 Then run `emery --version` and stop on failure.
 
-2. **Elicit every required input and pass it as a flag** — the CLI has no interactive prompt mode: no source at all — and no project-root `emery.toml` to discover — fails typed (`specify-source-required`). Gather conversationally: the source adapters to extract (each positional `<adapter>` is a workspace-backed source; each `--description <adapter>=<text>` is an inline source such as an operator directive). An adapter is an exact package reference with a version — `emery:typescript@0.13.0`, never `emery:typescript`, `typescript`, or a path; one without a version or a namespace fails typed (`adapter-reference`, exit 1) before anything loads, so ask for the version when the operator names none. An operator who keeps a config file selects it instead with `--config [<path>]`; omit the value only for the project-relative `emery.toml`, and a run naming no sources at all discovers that file on its own. Never combine the file carrier with positional adapters or `--description` (mixing fails typed, exit 1). Local paths must stay relative to the project and must not escape it.
+2. **Elicit every required input and pass it as a flag** — the CLI has no interactive prompt mode: no source at all — and no project-root `emery.toml` to discover — fails typed (`specify-source-required`). Gather conversationally: the source adapters to extract (each positional `<adapter>` is a workspace-backed source; each `--description <adapter>=<text>` is an inline source such as an operator directive). An adapter is an exact package reference with a version — `emery:typescript@0.13.0`, never `emery:typescript`, `typescript`, or a path; one without a version or a namespace fails typed (`adapter-reference`, exit 1) before anything loads, so ask for the version when the operator names none. An operator who keeps a config file selects it with `--config [<path>]`; omit the value only for the project-relative `emery.toml`, and a run naming no sources at all discovers that file on its own. Positional adapters and `--description` beside `--config` layer over the file: one named as a `[[source]]` is — by its adapter's package name — takes that entry's place whole, and any other is appended, so pass both when the operator wants one entry swapped for another adapter or a source added for the run and the rest kept as the file has them. Local paths must stay relative to the project and must not escape it.
 3. **Invoke**:
 
 ```bash
 emery specify <adapter>... [--description <adapter>=<text>]
 # or: emery specify --config [<path>]
+# or: emery specify <adapter>... --config [<path>]   # layered over the file's sources
 ```
 
 Specify dispatches model judgment and can take a while on large workspaces. Tracing follows the plugin rule's *Tracing and output* contract (a bare run is `info`; pass `-v` when the operator asks for debug).

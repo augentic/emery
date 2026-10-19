@@ -6,12 +6,12 @@
 use std::borrow::Cow;
 use std::fmt::Display;
 
-use emery_adapter::Lexicon;
+use emery_lexicon::Lexicon;
 use omnia_sdk::model::{Findings, Question};
 use omnia_sdk::{Error, Model, server_error};
 use schemars::JsonSchema;
 use serde::de::DeserializeOwned;
-use serde_json::Value;
+use serde_json::{Map, Value};
 
 use crate::revision::RESERVED;
 use crate::{RETRIES, is_retryable};
@@ -44,7 +44,25 @@ pub trait Brief: Display + Sync + Sized {
     ///
     /// Schema changes guide generation; [`Self::verify`] remains the
     /// authoritative check.
-    fn tighten(&self, schema: &mut Value);
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::ServerError`] when the derived schema lacks a node the
+    /// brief steers, since the shape is the answer type's own.
+    fn tighten(&self, schema: &mut Value) -> Result<(), Error>;
+
+    /// Returns the object of `schema` at `pointer`, a JSON pointer.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::ServerError`] when nothing stands at `pointer`, or
+    /// what stands there is no object.
+    fn at<'s>(schema: &'s mut Value, pointer: &str) -> Result<&'s mut Map<String, Value>, Error> {
+        schema
+            .pointer_mut(pointer)
+            .and_then(Value::as_object_mut)
+            .ok_or_else(|| server_error!("the `{}` answer schema has no `{pointer}`", Self::NAME))
+    }
 
     /// Validates a candidate answer against facts from this run.
     ///
@@ -80,9 +98,11 @@ pub trait Brief: Display + Sync + Sized {
                 .ok_or_else(|| server_error!("synthesis prose `{path}` is not embedded"))?;
             system.push(prose);
         }
+        let mut tightened = Ok(());
         let question = Question::<Self::Answer>::new(&self.label())
             .system(system.join("\n\n---\n\n"))
-            .schema(|schema| self.tighten(schema));
+            .schema(|schema| tightened = self.tighten(schema));
+        tightened?;
         let check = |answer: &Self::Answer| {
             let mut review = Review::default();
             self.verify(answer, &mut review);

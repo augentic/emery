@@ -278,6 +278,60 @@ async fn shared_roots() {
     provider.model.assert_exhausted();
 }
 
+// Command-line sources layer over the file's: one named as a `[[source]]`
+// is, by its package name, takes that entry's place whole, and any other is
+// appended after the file's, in argv order.
+#[tokio::test]
+async fn layered_sources() {
+    let scratch = Scratch::new();
+    let config = scratch.config(&format!(
+        "[[source]]\nadapter = \"emery:docs@1.2.0\"\npath = \"docs\"\nrank = 4\n\n\
+         [[source]]\nname = \"api\"\nadapter = \"{}\"\npath = \"api\"\n",
+        reference("api")
+    ));
+    let grouping = baseline_grouping(3);
+    let provider = Provider::answering([grouping.as_str(), SPEC_ANSWER, DESIGN_ANSWER]);
+
+    cli_ok(
+        &provider,
+        &[
+            "emery",
+            "specify",
+            &reference("docs"),
+            "--description",
+            &describing("intent", "Ship it."),
+            "--config",
+            &config,
+        ],
+    )
+    .await;
+
+    let calls = provider.source.calls();
+    let names: Vec<&str> = calls.iter().map(|(_, input)| input.name.as_str()).collect();
+    assert_eq!(names, ["docs", "api", "intent"], "the file's order, the appended source last");
+    assert_eq!(calls[0].0, guest("docs"), "the command-line adapter stands in the file's place");
+    assert_eq!(
+        calls[0].1.content,
+        SourceContent::Workspace(".".into()),
+        "the entry's `path` goes with it"
+    );
+    assert_eq!(calls[1].0, guest("api"), "an entry no argument names is read as the file has it");
+    assert_eq!(calls[2].1.content, SourceContent::Value("Ship it.".into()));
+    let gated = provider.source.metadata.lock().expect("metadata").clone();
+    assert!(
+        !gated.contains(&"emery:docs".to_owned()),
+        "the replaced adapter never loads: {gated:?}"
+    );
+    drop(calls);
+    assert!(
+        shown(&provider, "spec").await.contains(
+            "Sources: [docs:greeting.behaviour, api:greeting.behaviour, intent:greeting.behaviour]"
+        ),
+        "the specification cites the layered list in its order"
+    );
+    provider.model.assert_exhausted();
+}
+
 // The rendezvous holds each extract until the other is requested, so an engine
 // extracting one source at a time fails naming the one that never came.
 #[tokio::test]
@@ -2128,6 +2182,47 @@ async fn contract_message() {
     provider.model.assert_exhausted();
 }
 
+// The second run binds the same requirement to a message where the first
+// bound a route, and nothing else moves: the diff names the trigger alone.
+#[tokio::test]
+async fn diff_trigger() {
+    let apis = design_with_apis();
+    let mut provider =
+        Provider::answering([SPEC_ANSWER, apis.as_str(), SPEC_ANSWER, apis.as_str()]);
+    provider.source.evidence.insert(
+        "docs".to_string(),
+        Ok(evidence(vec![
+            requirement("greeting.behaviour", "GET /greeting returns the static string 'hello'."),
+            claim(ClaimKind::Contract, "greeting", ("route", "GET /greeting")),
+        ])),
+    );
+    cli_ok(&provider, &["emery", "specify", &reference("docs")]).await;
+    let first = current(&provider.storage);
+
+    provider.source.evidence.insert(
+        "docs".to_string(),
+        Ok(evidence(vec![
+            requirement("greeting.behaviour", "GET /greeting returns the static string 'hello'."),
+            claim(ClaimKind::Contract, "greeting", ("message", "greeting.requested")),
+        ])),
+    );
+    let resp =
+        cli_ok(&provider, &["emery", "--format", "json", "specify", &reference("docs")]).await;
+
+    let envelope: Value = serde_json::from_slice(&resp.stdout).expect("one JSON envelope");
+    let diff = &envelope["diff"];
+    assert_eq!(diff["from"], first, "{envelope}");
+    assert_eq!(diff["spec"]["added"], serde_json::json!([]), "{envelope}");
+    assert_eq!(diff["spec"]["removed"], serde_json::json!([]), "{envelope}");
+    assert_eq!(
+        diff["spec"]["changed"],
+        serde_json::json!([{"id": "REQ-001", "subject": "greeting.behaviour", "fields": ["trigger"]}]),
+        "{envelope}"
+    );
+    assert_eq!(diff["plan"]["changed"], serde_json::json!([]), "{envelope}");
+    provider.model.assert_exhausted();
+}
+
 // A `contract` claim is reached through one trigger: a message holding
 // whitespace, or a claim carrying both a route and a message, is the
 // adapter's defect, named by the claim gate before any turn.
@@ -2863,12 +2958,14 @@ async fn config_file() {
             "bad_request",
             "unknown field `registry`",
         ),
+        // `path` is relative to the file, which the scratch holds two
+        // directories below the project root
         (
             "[[source]]\nname = \"docs\"\nadapter = \"emery:documentation@1.2.0\"\npath = \
-             \"../../outside\"\n",
+             \"../../../outside\"\n",
             1,
             "bad_request",
-            "../../outside",
+            "../../../outside",
         ),
     ];
     for (body, exit, code, fragment) in cases {

@@ -2,8 +2,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use emery_adapter::source::{Claim, ClaimKind};
-use serde_json::{Map, Value};
+use emery_adapter::source::Claim;
 
 use super::code::{
     BindingKind, Call, ExportKind, Imported, Init, MemberKind, Module, Recogniser, Scope, Surface,
@@ -230,15 +229,8 @@ fn indented(text: &str, indent: &str) -> String {
 
 fn claim(name: &str, signature: &str, path: Option<String>, what: &str) -> Claim {
     Claim {
-        kind: ClaimKind::Type,
-        id: None,
         path,
-        synopsis: Some(format!("exported {what}")),
-        backing: None,
-        extras: Map::from_iter([
-            ("name".to_owned(), Value::String(name.to_owned())),
-            ("signature".to_owned(), Value::String(signature.to_owned())),
-        ]),
+        ..Claim::type_decl(name, signature).with_synopsis(format!("exported {what}"))
     }
 }
 
@@ -317,8 +309,7 @@ pub(super) fn anchors<'s, R: Recogniser>(
 ) -> Vec<String> {
     let dialect = tree.dialect;
     let mut anchors: Vec<String> = Vec::new();
-    let mut push =
-        |path: &str, lines: Lines| push_unique(&mut anchors, format!("{path}#{}", lines.anchor()));
+    let mut push = |path: &str, lines: Lines| anchors.push(format!("{path}#{}", lines.anchor()));
     let head = |lines: Lines| Lines {
         start: lines.start,
         end: lines.start,
@@ -382,7 +373,7 @@ pub(super) fn anchors<'s, R: Recogniser>(
             push(&module.path, read.lines);
         }
     }
-    anchors
+    unique(anchors)
 }
 
 // A call for its effect alone, awaited, or bound to a name, into the tree or

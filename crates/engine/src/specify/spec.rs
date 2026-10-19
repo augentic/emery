@@ -7,8 +7,8 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::{self, Display, Formatter};
 
-use emery_adapter::Lexicon;
 use emery_adapter::source::{CLAIM_ID_REGEX, Claim, ClaimKind};
+use emery_lexicon::Lexicon;
 use omnia_sdk::{Error, server_error};
 use schemars::JsonSchema;
 use serde::Deserialize;
@@ -126,16 +126,19 @@ impl Brief for SpecBrief<'_> {
         "tags.md",
     ];
 
-    fn tighten(&self, schema: &mut Value) {
+    fn tighten(&self, schema: &mut Value) -> Result<(), Error> {
         let count = self.bases.len();
-        schema["properties"]["requirements"]["minItems"] = json!(count);
-        schema["properties"]["requirements"]["maxItems"] = json!(count);
-        schema["$defs"]["Draft"]["properties"]["subject"]["enum"] =
-            json!(self.bases.iter().map(|basis| &basis.subject).collect::<Vec<_>>());
-        schema["$defs"]["Draft"]["properties"]["scenarios"]["minItems"] = json!(1);
+        let requirements = Self::at(schema, "/properties/requirements")?;
+        requirements.insert("minItems".to_owned(), json!(count));
+        requirements.insert("maxItems".to_owned(), json!(count));
+        let subjects = json!(self.bases.iter().map(|basis| &basis.subject).collect::<Vec<_>>());
+        Self::at(schema, "/$defs/Draft/properties/subject")?.insert("enum".to_owned(), subjects);
+        Self::at(schema, "/$defs/Draft/properties/scenarios")?
+            .insert("minItems".to_owned(), json!(1));
         if !self.preamble {
-            schema["properties"]["preamble"]["maxItems"] = json!(0);
+            Self::at(schema, "/properties/preamble")?.insert("maxItems".to_owned(), json!(0));
         }
+        Ok(())
     }
 
     fn verify(&self, answer: &SpecAnswer, review: &mut Review) {
@@ -214,7 +217,7 @@ fn packages(extracts: &[Extract]) -> impl Iterator<Item = &str> {
         .iter()
         .flat_map(|extract| &extract.evidence.claims)
         .filter(|claim| claim.kind == ClaimKind::Call)
-        .filter_map(|claim| claim.extras.get("callee")?.as_str())
+        .filter_map(Claim::callee)
         .filter_map(|callee| callee.split_once(':').map(|(package, _)| package))
 }
 

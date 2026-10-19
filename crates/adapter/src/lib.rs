@@ -43,19 +43,17 @@
 //!   registered it at: an HTTP [`Route`], `POST /orders/{id}`, in the one
 //!   grammar [`Route::parse`] reads, or a message by name, a broker topic or
 //!   a socket event, as [`Trigger`] carries either.
-//! - **Technology**: a vendor, product, protocol, framework, or host detected
-//!   by [`Lexicon`].
 
 mod path;
 mod route;
 pub mod source;
 pub mod target;
-mod technology;
 mod trigger;
 
-pub use path::{BadPath, SKIP_DIRS, SKIP_FILES, beneath};
+pub use path::{
+    BadPath, NoFollow, SKIP_DIRS, SKIP_FILES, Standing, beneath, make_dirs, standing, write_whole,
+};
 pub use route::{BadRoute, METHODS, Route};
-pub use technology::Lexicon;
 pub use trigger::{BadMessage, BadTrigger, Trigger};
 
 /// Returns whether `value` is lowercase kebab-case.
