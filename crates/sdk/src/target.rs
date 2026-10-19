@@ -332,7 +332,7 @@ pub struct Scaffold<'a> {
 }
 
 impl Scaffold<'_> {
-    fn brief(&self) -> Option<&str> {
+    fn section(&self) -> Option<&str> {
         Some(self.brief.trim_end()).filter(|brief| !brief.is_empty())
     }
 }
@@ -747,7 +747,7 @@ impl Display for Brief<'_> {
 
         // what the adapter scaffolded before the turn, where it scaffolded anything
         if let Some(scaffold) = &self.scaffold {
-            if let Some(brief) = scaffold.brief() {
+            if let Some(brief) = scaffold.section() {
                 write!(
                     f,
                     "What the adapter scaffolded for this slice before this turn:\n\n{brief}\n\n"

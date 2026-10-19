@@ -457,7 +457,7 @@ fn widening() {
 
 // A call registers when it hands a handler and is discarded, constructs, or
 // is led by a literal, whatever its depth; a structural call or a wrapper
-// taken for its value registers nothing; `handed` names the package at
+// taken for its value registers nothing; `handed_to` names the package at
 // depth zero alone.
 #[test]
 fn hands_and_registers() {
@@ -500,7 +500,11 @@ fn hands_and_registers() {
     assert_eq!(tree.handed_to(m, &m.calls[1]).map(|r| r.package), Some("express".to_owned()));
     assert!(!tree.hands_handler(m, &m.calls[2]), "`use` is structure");
     assert!(tree.registers(m, &m.calls[3]), "at any depth");
-    assert_eq!(tree.handed_to(m, &m.calls[3]), None, "`handed` is for a call outside any handler");
+    assert_eq!(
+        tree.handed_to(m, &m.calls[3]),
+        None,
+        "`handed_to` is for a call outside any handler"
+    );
     assert!(tree.hands_handler(m, &m.calls[4]));
     assert!(!tree.registers(m, &m.calls[4]), "a wrapper taken for its value registers nothing");
     assert!(!tree.hands_handler(m, &m.calls[5]), "nothing handed");
