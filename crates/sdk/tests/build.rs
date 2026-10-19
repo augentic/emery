@@ -4,7 +4,9 @@ use std::fs;
 use std::os::unix::fs::symlink;
 use std::path::Path;
 
-use emery_sdk::target::{BuildContext, Grant, Report, Slice};
+use emery_sdk::target::{
+    BuildContext, DesignType, Grant, Report, Requirement, Scaffold, Scenario, Slice,
+};
 use emery_sdk::{Doc, Error};
 use omnia_sdk::model::ToolCall;
 use omnia_test::guest::Scripted;
@@ -23,12 +25,48 @@ const PROSE: &[Doc] = &[
 
 const VALID: &str = r#"{"covered":["REQ-001","REQ-002"],"written":["src/orders.rs","Cargo.toml"]}"#;
 
+fn requirement(id: &str, subject: &str, statement: &str, when: &str, then: &str) -> Requirement {
+    Requirement {
+        id: id.to_owned(),
+        subject: subject.to_owned(),
+        statement: vec![statement.to_owned()],
+        scenarios: vec![Scenario {
+            name: subject.rsplit('.').next().unwrap_or(subject).to_owned(),
+            given: Vec::new(),
+            when: when.to_owned(),
+            then: then.to_owned(),
+            and: Vec::new(),
+        }],
+        trigger: None,
+    }
+}
+
 fn slice() -> Slice {
     Slice {
         id: "SLICE-001".to_owned(),
         name: "orders".to_owned(),
         base: "1a2b3c4d5e6f708192a3b4c5d6e7f8091a2b3c4d".to_owned(),
-        requirements: vec!["REQ-001".to_owned(), "REQ-002".to_owned()],
+        requirements: vec![
+            requirement(
+                "REQ-001",
+                "orders.create",
+                "Orders are created.",
+                "an order is placed",
+                "it is created",
+            ),
+            requirement(
+                "REQ-002",
+                "orders.list",
+                "Orders are listed.",
+                "the orders are asked for",
+                "each is listed",
+            ),
+        ],
+        types: vec![DesignType {
+            key: "orders.order".to_owned(),
+            signature: "interface Order { id: string }".to_owned(),
+        }],
+        brief: vec!["Build the orders module.".to_owned()],
         spec: "## REQ-001\n\nOrders are created.\n\n## REQ-002\n\nOrders are listed.\n".to_owned(),
         design: "## Types\n\n`Order`\n".to_owned(),
         plan: "## SLICE-001 orders\n\nBuild the orders module.\n".to_owned(),
@@ -49,29 +87,50 @@ async fn ask_checked(
     model: &Scripted, slice: &Slice, workspace: &str, grants: &[Grant],
     check: impl FnMut(&Report) -> Result<Vec<String>, Error> + Send,
 ) -> Result<Report, Error> {
+    ask_scaffolded(model, slice, workspace, grants, None, check).await
+}
+
+async fn ask_scaffolded(
+    model: &Scripted, slice: &Slice, workspace: &str, grants: &[Grant], brief: Option<&str>,
+    check: impl FnMut(&Report) -> Result<Vec<String>, Error> + Send,
+) -> Result<Report, Error> {
+    let scaffold = brief.map(|brief| Scaffold { brief, paths: &[] });
+    ask_guarded(model, slice, workspace, grants, scaffold, check).await
+}
+
+async fn ask_guarded(
+    model: &Scripted, slice: &Slice, workspace: &str, grants: &[Grant],
+    scaffold: Option<Scaffold<'_>>,
+    check: impl FnMut(&Report) -> Result<Vec<String>, Error> + Send,
+) -> Result<Report, Error> {
     let ctx = BuildContext {
         adapter_id: "target:probe",
         slice,
         workspace,
         grants,
         model,
+        scaffold: None,
+    };
+    let ctx = match scaffold {
+        Some(scaffold) => ctx.with_scaffold(scaffold),
+        None => ctx,
     };
     emery_sdk::target::build(&ctx, PROSE, check).await
 }
 
-// Lays files beneath `root` with the content given, so a report naming them
-// passes the tree rule and a write over them meets what they hold.
-fn lay<'a>(root: &Path, files: impl IntoIterator<Item = (&'a str, &'a str)>) {
+// Writes files beneath `root` with the content given, so a report naming
+// them passes the tree rule and a write over them meets what they hold.
+fn write<'a>(root: &Path, files: impl IntoIterator<Item = (&'a str, &'a str)>) {
     for (file, content) in files {
         let path = root.join(file);
-        fs::create_dir_all(path.parent().expect("a file has a parent")).expect("laid dir");
-        fs::write(path, content).expect("laid file");
+        fs::create_dir_all(path.parent().expect("a file has a parent")).expect("written dir");
+        fs::write(path, content).expect("written file");
     }
 }
 
-// Lays empty files beneath `root`.
+// Writes empty files beneath `root`.
 fn seed<'a>(root: &Path, files: impl IntoIterator<Item = &'a str>) {
-    lay(root, files.into_iter().map(|file| (file, "")));
+    write(root, files.into_iter().map(|file| (file, "")));
 }
 
 fn write_files(id: &str, files: &[(&str, &str)]) -> ToolCall {
@@ -160,9 +219,9 @@ async fn request_shape() {
             "The slice's entry in the plan:\n\n## SLICE-001 orders\n\nBuild the orders \
              module.\n\nThe specification, cut to the slice's requirements:\n\n## \
              REQ-001\n\nOrders are created.\n\n## REQ-002\n\nOrders are listed.\n\nThe design, \
-             whole:\n\n## Types\n\n`Order`\n\n"
+             whole:\n\n## Types\n\n`Order`\n\nImplement every requirement"
         ),
-        "{user}"
+        "nothing scaffolded puts no section between the design and the rules: {user}"
     );
     assert!(
         user.contains(
@@ -199,10 +258,127 @@ async fn request_shape() {
     model.assert_exhausted();
 }
 
+// What the adapter scaffolded before the turn is carried verbatim, after
+// the design and before the rules, so the model edits the files it names
+// rather than writing them over; the tools and the lend are the same.
+#[tokio::test]
+async fn build_scaffolded() {
+    let tmp = tempfile::tempdir().expect("tempdir");
+    seed(tmp.path(), ["src/orders.rs", "Cargo.toml"]);
+    let root = tmp.path().to_str().expect("a UTF-8 scratch root");
+    let model = Scripted::answering([VALID]);
+    let scaffold = "- `src/orders.rs`: scaffolded; fill `todo!(\"REQ-001 orders.create: the \
+                    handler\")`\n- `Cargo.toml`: held\n\n";
+
+    ask_scaffolded(&model, &slice(), root, &[], Some(scaffold), |_| Ok(Vec::new()))
+        .await
+        .expect("accepted");
+
+    let seen = model.seen();
+    assert_eq!(seen.len(), 1);
+    assert_eq!(seen[0].tools, ["list_docs", "read_doc", "write_files", "edit_files"]);
+    let user = &seen[0].messages[0];
+    assert!(
+        user.contains(
+            "The design, whole:\n\n## Types\n\n`Order`\n\nWhat the adapter scaffolded for this \
+             slice before this turn:\n\n- `src/orders.rs`: scaffolded; fill `todo!(\"REQ-001 \
+             orders.create: the handler\")`\n- `Cargo.toml`: held\n\nImplement every requirement"
+        ),
+        "{user}"
+    );
+    assert!(
+        !user.contains("filled through `edit_files` alone"),
+        "no scaffolded path puts no guard sentence: {user}"
+    );
+    model.assert_exhausted();
+}
+
+// A `write_files` entry or `delete` naming a file the adapter scaffolded is
+// refused with the call, naming the file and `edit_files` as the way, and
+// the call lands nothing; an edit within the file, and a write beside it,
+// land as they would. The brief says so in one sentence after the
+// scaffold section.
+#[tokio::test]
+async fn write_scaffolded_refused() {
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let skeleton = "pub fn create() {\n    todo!(\"REQ-001 orders.create: the handler\")\n}\n";
+    write(tmp.path(), [("src/orders.rs", skeleton), ("Cargo.toml", "[package]\n")]);
+    let root = tmp.path().to_str().expect("a UTF-8 scratch root");
+    let model = Scripted::answering([r#"{"covered":["REQ-001"],"written":["src/orders.rs"]}"#])
+        .calling(
+            0,
+            [
+                write_files(
+                    "1",
+                    &[
+                        ("src/orders.rs", "pub fn create() {}\n"),
+                        ("src/lib.rs", "pub mod orders;\n"),
+                    ],
+                ),
+                ToolCall {
+                    id: "2".to_owned(),
+                    name: "write_files".to_owned(),
+                    arguments: r#"{"delete":["./src/orders.rs"]}"#.to_owned(),
+                },
+                edit_files(
+                    "3",
+                    &[("src/orders.rs", "todo!(\"REQ-001 orders.create: the handler\")", "Ok(())")],
+                ),
+                write_files("4", &[("src/lib.rs", "pub mod orders;\n")]),
+            ],
+        );
+    let paths = ["src/orders.rs".to_owned(), "Cargo.toml".to_owned()];
+    let scaffold = Scaffold {
+        brief: "- `src/orders.rs`: scaffolded\n- `Cargo.toml`: held\n",
+        paths: &paths,
+    };
+
+    let report = ask_guarded(&model, &slice(), root, &[], Some(scaffold), |_| Ok(Vec::new()))
+        .await
+        .expect("accepted");
+    assert_eq!(report.written, ["src/lib.rs", "src/orders.rs"]);
+    assert_eq!(
+        fs::read_to_string(tmp.path().join("src/orders.rs")).expect("edited"),
+        "pub fn create() {\n    Ok(())\n}\n",
+        "the skeleton is edited, never written over"
+    );
+
+    let exchanges = model.exchanges();
+    assert_eq!(exchanges.len(), 5, "four calls, then the check");
+    assert_eq!(
+        exchanges[0].outcome,
+        Err("write_files: nothing written: `src/orders.rs` was scaffolded before this turn; \
+             change it through `edit_files`, which keeps what the skeleton holds"
+            .to_owned())
+    );
+    assert_eq!(
+        exchanges[1].outcome,
+        Err("write_files: nothing written: `src/orders.rs` was scaffolded before this turn; \
+             change it through `edit_files`, which keeps what the skeleton holds"
+            .to_owned()),
+        "a `delete` is held to the guard as the tree spells the path"
+    );
+    assert!(exchanges[2].outcome.is_ok(), "the edit lands: {:?}", exchanges[2].outcome);
+    assert!(exchanges[3].outcome.is_ok(), "a write beside lands: {:?}", exchanges[3].outcome);
+
+    let user = &model.seen()[0].messages[0];
+    assert!(
+        user.contains(
+            "What the adapter scaffolded for this slice before this turn:\n\n- `src/orders.rs`: \
+             scaffolded\n- `Cargo.toml`: held\n\nThe files the adapter scaffolded for this slice \
+             are filled through `edit_files` alone: a `write_files` entry or `delete` naming one \
+             of them is refused whole, since a skeleton written over loses its \
+             markers.\n\nImplement every requirement"
+        ),
+        "{user}"
+    );
+    model.assert_exhausted();
+}
+
 // The adapter's grants ride the turn as the completion's worker grant,
 // united with a root two of them spell carried once, beside the lend it
 // reaches beyond; the brief says nothing of it, since the grant is the
-// host's to lay.
+// host's to apply.
 #[tokio::test]
 async fn worker_grant() {
     const CARGO: Grant = Grant {
@@ -247,7 +423,7 @@ async fn worker_grant() {
 async fn write_shrink_refused() {
     let tmp = tempfile::tempdir().expect("tempdir");
     let whole = "pub struct Order;\npub struct Line;\npub struct Total;\n";
-    lay(tmp.path(), [("src/orders.rs", whole), ("src/empty.rs", "")]);
+    write(tmp.path(), [("src/orders.rs", whole), ("src/empty.rs", "")]);
     let root = tmp.path().to_str().expect("a UTF-8 scratch root");
     let model = Scripted::answering([r#"{"covered":["REQ-001"],"written":["src/orders.rs"]}"#])
         .calling(
@@ -313,7 +489,7 @@ async fn write_shrink_refused() {
 #[tokio::test]
 async fn write_shrink_allowed() {
     let tmp = tempfile::tempdir().expect("tempdir");
-    lay(tmp.path(), [("src/orders.rs", "pub struct Order;\npub struct Line;\n")]);
+    write(tmp.path(), [("src/orders.rs", "pub struct Order;\npub struct Line;\n")]);
     let root = tmp.path().to_str().expect("a UTF-8 scratch root");
     let model = Scripted::answering([r#"{"covered":["REQ-001"],"written":["src/orders.rs"]}"#])
         .calling(0, [write_files("1", &[("src/orders.rs", "pub struct Order;\n")])]);
@@ -336,7 +512,7 @@ async fn write_shrink_allowed() {
 }
 
 // A new file written empty is no shrink: the rule reads a file the tree
-// holds, and a file the call itself laid earlier is met as the tree stood
+// holds, and a file the call itself wrote earlier is met as the tree stood
 // before the call.
 #[tokio::test]
 async fn write_empty_new_file() {
@@ -377,7 +553,7 @@ async fn write_empty_new_file() {
 #[tokio::test]
 async fn edit_tool() {
     let tmp = tempfile::tempdir().expect("tempdir");
-    lay(
+    write(
         tmp.path(),
         [
             ("src/orders.rs", "pub struct Order;\npub fn total(&token: &str) {}\n"),
@@ -427,7 +603,7 @@ async fn edit_tool() {
 async fn edit_ambiguous() {
     let tmp = tempfile::tempdir().expect("tempdir");
     let before = "pub struct Order;\npub struct Line;\n";
-    lay(tmp.path(), [("src/orders.rs", before)]);
+    write(tmp.path(), [("src/orders.rs", before)]);
     let root = tmp.path().to_str().expect("a UTF-8 scratch root");
     let model = Scripted::answering([r#"{"covered":["REQ-001"],"written":[]}"#]).calling(
         0,
@@ -471,7 +647,7 @@ async fn edit_ambiguous() {
 #[tokio::test]
 async fn edit_unheld() {
     let tmp = tempfile::tempdir().expect("tempdir");
-    lay(tmp.path(), [("src/orders.rs", "pub struct Order;\n")]);
+    write(tmp.path(), [("src/orders.rs", "pub struct Order;\n")]);
     symlink("orders.rs", tmp.path().join("src/link.rs")).expect("file symlink");
     let root = tmp.path().to_str().expect("a UTF-8 scratch root");
     let model = Scripted::answering([r#"{"covered":["REQ-001"],"written":[]}"#]).calling(
@@ -695,7 +871,7 @@ async fn write_object_shape() {
 #[tokio::test]
 async fn edit_object_shape() {
     let tmp = tempfile::tempdir().expect("tempdir");
-    lay(tmp.path(), [("src/orders.rs", "pub struct Order;\npub struct Line;\n")]);
+    write(tmp.path(), [("src/orders.rs", "pub struct Order;\npub struct Line;\n")]);
     let root = tmp.path().to_str().expect("a UTF-8 scratch root");
     let model = Scripted::answering([r#"{"covered":["REQ-001"],"written":["src/orders.rs"]}"#])
         .calling(
@@ -1049,6 +1225,7 @@ async fn missing_prompt() {
         workspace: root,
         grants: &[],
         model: &model,
+        scaffold: None,
     };
 
     let error = emery_sdk::target::build(&ctx, &[], |_| Ok(Vec::new()))
@@ -1129,7 +1306,7 @@ async fn check_findings() {
         seen.push(report.written.clone());
         let held = Path::new(root).join("Cargo.toml").is_file();
         Ok((!held)
-            .then(|| "- the tree lacks `Cargo.toml`; lay it".to_owned())
+            .then(|| "- the tree lacks `Cargo.toml`; write it".to_owned())
             .into_iter()
             .collect())
     })
@@ -1145,7 +1322,7 @@ async fn check_findings() {
         "the gate's finding: {correction}"
     );
     assert!(
-        correction.contains("- the tree lacks `Cargo.toml`; lay it"),
+        correction.contains("- the tree lacks `Cargo.toml`; write it"),
         "the adapter's finding under the same correction: {correction}"
     );
     assert!(exchanges[2].outcome.is_ok(), "the repaired candidate is accepted");

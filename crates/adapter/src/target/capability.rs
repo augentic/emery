@@ -12,6 +12,7 @@ use std::future::Future;
 
 use omnia_sdk::Error;
 
+use crate::Trigger;
 use crate::target::{Report, Verdict};
 
 /// The engine capability for querying and invoking target adapters.
@@ -40,7 +41,11 @@ use crate::target::{Report, Verdict};
 ///         ready(Ok(match task {
 ///             Task::Init => Outcome::Initialised,
 ///             Task::Build(slice) => Outcome::Built(Report {
-///                 covered: slice.requirements.clone(),
+///                 covered: slice
+///                     .requirements
+///                     .iter()
+///                     .map(|requirement| requirement.id.clone())
+///                     .collect(),
 ///                 written: vec!["src/lib.rs".to_string()],
 ///             }),
 ///             Task::Verify => Outcome::Verified(Verdict {
@@ -102,8 +107,17 @@ pub trait Target: Send + Sync {
 
 /// What the engine asks a target adapter to do in the lent tree.
 #[derive(Clone, Debug, PartialEq, Eq)]
+#[cfg_attr(
+    target_pointer_width = "64",
+    expect(
+        clippy::large_enum_variant,
+        reason = "a task is built once per dispatch and crosses the contract by value; the \
+                  slice's documents dominate its size on the heap, so boxing the record saves \
+                  nothing"
+    )
+)]
 pub enum Task {
-    /// Lay the layout's initial files the tree lacks; a held file stands.
+    /// Scaffold the layout's initial files the tree lacks; a held file stands.
     ///
     /// Put once per tree a build lands in, before any slice, with no model
     /// turn expected: the engine seals what the tree then holds as its
@@ -168,8 +182,10 @@ impl Display for Outcome {
 /// One slice of the build plan, as the engine renders it for a target.
 ///
 /// The documents are the Markdown `emery show` prints, the specification cut
-/// to the slice's requirements. `requirements` carries their ids typed, so a
-/// [`Report`]'s `covered` is held to them without reading the Markdown back.
+/// to the slice's requirements. `requirements`, `types`, and `brief` carry
+/// the same typed, so an adapter reads a requirement's scenarios or an owned
+/// type's signature without parsing the Markdown, and a [`Report`]'s
+/// `covered` is held to the requirement ids.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Slice {
     /// The stable slice identifier, `SLICE-001`.
@@ -179,14 +195,68 @@ pub struct Slice {
     /// The commit the lent tree sits on: the integrated head the slice
     /// builds over.
     pub base: String,
-    /// The ids of the requirements the slice builds, `REQ-001`.
-    pub requirements: Vec<String>,
+    /// The requirements the slice builds, in id order.
+    pub requirements: Vec<Requirement>,
+    /// The design types the slice owns, in the design's order.
+    pub types: Vec<DesignType>,
+    /// The plan's brief for the slice, one paragraph each.
+    pub brief: Vec<String>,
     /// The specification, cut to the slice.
     pub spec: String,
     /// The whole design.
     pub design: String,
     /// The slice's own plan entry.
     pub plan: String,
+}
+
+/// One requirement a slice builds, typed beside its rendering in the
+/// specification.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Requirement {
+    /// The stable requirement identifier, `REQ-001`.
+    pub id: String,
+    /// The dotted subject, `orders.pay`.
+    pub subject: String,
+    /// The statement's paragraphs, in order; empty for a requirement in
+    /// conflict.
+    pub statement: Vec<String>,
+    /// The acceptance scenarios, in the specification's order.
+    pub scenarios: Vec<Scenario>,
+    /// What reaches the requirement, where the source's surface registered
+    /// it: the specification's `Route:` or `Message:` line.
+    pub trigger: Option<Trigger>,
+}
+
+impl Requirement {
+    /// Returns the stem of the subject: the first segment of its dotted id.
+    #[must_use]
+    pub fn stem(&self) -> &str {
+        self.subject.split('.').next().unwrap_or(&self.subject)
+    }
+}
+
+/// One acceptance scenario of a requirement.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Scenario {
+    /// The scenario's heading.
+    pub name: String,
+    /// The `GIVEN` conditions, one each.
+    pub given: Vec<String>,
+    /// The `WHEN` trigger.
+    pub when: String,
+    /// The `THEN` outcome, `[unknown]` where the sources evidence none.
+    pub then: String,
+    /// The further `AND` outcomes, one each.
+    pub and: Vec<String>,
+}
+
+/// One design type a slice owns, as the design carries it.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct DesignType {
+    /// The type's key, as the plan entry names it.
+    pub key: String,
+    /// The source's signature, verbatim.
+    pub signature: String,
 }
 
 /// Metadata declared by a target adapter.

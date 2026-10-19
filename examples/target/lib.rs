@@ -41,29 +41,30 @@ impl TargetAdapter for Adapter {
 /// The build prompt and the verify prompt embedded in the adapter.
 pub static PROSE: &[Doc] = emery_sdk::prose!["prose/build.md", "prose/verify.md"];
 
-// The layout's one root file, laid when the repository is initialised and
-// found by every slice.
+// The layout's one root file, scaffolded when the repository is initialised
+// and found by every slice.
 const FILES: &[(&str, &str)] = &[(
     "build/README.md",
     "# Build\n\nOne directory per slice, each with an `index.md` naming the requirements it \
      implements and one file per requirement.\n",
 )];
 
-// Lays each file of the layout the tree lacks; one the tree holds stands.
+// Scaffolds each file of the layout the tree lacks; one the tree holds stands.
 fn init(ctx: &InitContext<'_>) -> Result<(), Error> {
     let root = Path::new(ctx.workspace);
     for (path, content) in FILES {
         let file = root.join(path);
         if let Some(dir) = file.parent() {
-            fs::create_dir_all(dir)
-                .map_err(|err| server_error!("laying `{path}`: creating its directory: {err}"))?;
+            fs::create_dir_all(dir).map_err(|err| {
+                server_error!("scaffolding `{path}`: creating its directory: {err}")
+            })?;
         }
         match OpenOptions::new().write(true).create_new(true).open(&file) {
             Ok(mut file) => file
                 .write_all(content.as_bytes())
-                .map_err(|err| server_error!("laying `{path}`: {err}"))?,
+                .map_err(|err| server_error!("scaffolding `{path}`: {err}"))?,
             Err(err) if err.kind() == ErrorKind::AlreadyExists => {}
-            Err(err) => return Err(server_error!("laying `{path}`: {err}")),
+            Err(err) => return Err(server_error!("scaffolding `{path}`: {err}")),
         }
     }
     Ok(())

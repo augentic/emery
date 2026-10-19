@@ -6,6 +6,7 @@
 
 use std::fmt::{self, Display, Formatter};
 
+use emery_adapter::Trigger;
 use emery_adapter::source::{Anchor, SourceKind};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -19,6 +20,10 @@ pub const ID: &str = "ID:";
 pub const SOURCES: &str = "Sources:";
 /// The `Status:` provenance key.
 pub const STATUS: &str = "Status:";
+/// The `Route:` key written below a requirement an HTTP route reaches.
+pub const ROUTE: &str = "Route:";
+/// The `Message:` key written below a requirement a message reaches.
+pub const MESSAGE: &str = "Message:";
 /// The `Note:` key used for generated requirement notes.
 pub const NOTE: &str = "Note:";
 
@@ -80,6 +85,9 @@ pub struct Requirement {
     pub status: Status,
     /// Whether an acceptance criterion covers the requirement.
     pub covered: bool,
+    /// What reaches the requirement, where a source's `contract` claim binds
+    /// it; rendered as its `Route:` or `Message:` line.
+    pub trigger: Option<Trigger>,
     /// Contributing claims in descending authority order.
     pub sources: Vec<Cited>,
     /// Markdown body paragraphs, empty when the requirement is in conflict.
@@ -127,6 +135,11 @@ impl Display for Requirement {
             write!(f, "{source}")?;
         }
         write!(f, "]\n{STATUS} {}", self.status)?;
+        match &self.trigger {
+            Some(Trigger::Http(route)) => write!(f, "\n{ROUTE} {route}")?,
+            Some(Trigger::Message(name)) => write!(f, "\n{MESSAGE} {name}")?,
+            None => {}
+        }
 
         // body
         for paragraph in &self.body {
@@ -152,6 +165,18 @@ impl Display for Requirement {
             write!(f, "\n\n{scenario}")?;
         }
         Ok(())
+    }
+}
+
+impl From<&Requirement> for emery_adapter::target::Requirement {
+    fn from(requirement: &Requirement) -> Self {
+        Self {
+            id: requirement.id.to_string(),
+            subject: requirement.subject.clone(),
+            statement: requirement.body.clone(),
+            scenarios: requirement.scenarios.iter().map(Into::into).collect(),
+            trigger: requirement.trigger.clone(),
+        }
     }
 }
 
@@ -306,6 +331,18 @@ impl Display for Scenario {
             write!(f, "\n- **{}** {text}", field.to_ascii_uppercase())?;
         }
         Ok(())
+    }
+}
+
+impl From<&Scenario> for emery_adapter::target::Scenario {
+    fn from(scenario: &Scenario) -> Self {
+        Self {
+            name: scenario.name.clone(),
+            given: scenario.given.clone(),
+            when: scenario.when.clone(),
+            then: scenario.then.clone(),
+            and: scenario.and.clone(),
+        }
     }
 }
 

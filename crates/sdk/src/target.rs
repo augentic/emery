@@ -4,7 +4,7 @@
 //! [`export_target!`](crate::export_target). Each [`Task`] answers an
 //! [`Outcome`]:
 //!
-//! - [`Task::Init`] lays initial layout files without a model turn.
+//! - [`Task::Init`] scaffolds the layout's initial files without a model turn.
 //! - [`Task::Build`] runs [`build`] to implement one [`Slice`] and return a
 //!   validated [`Report`].
 //! - [`Task::Verify`] runs [`verify`] to check and repair the integrated tree
@@ -59,9 +59,9 @@
 //!                 match OpenOptions::new().write(true).create_new(true).open(manifest) {
 //!                     Ok(mut file) => file
 //!                         .write_all(b"[workspace]\nmembers = [\"crates/*\"]\n")
-//!                         .map_err(|err| server_error!("laying `Cargo.toml`: {err}"))?,
+//!                         .map_err(|err| server_error!("scaffolding `Cargo.toml`: {err}"))?,
 //!                     Err(err) if err.kind() == ErrorKind::AlreadyExists => {}
-//!                     Err(err) => return Err(server_error!("laying `Cargo.toml`: {err}")),
+//!                     Err(err) => return Err(server_error!("scaffolding `Cargo.toml`: {err}")),
 //!                 }
 //!                 Ok(Outcome::Initialised)
 //!             }
@@ -103,7 +103,8 @@ use std::path::Path;
 #[doc(inline)]
 pub use emery_adapter::target::export;
 pub use emery_adapter::target::{
-    MergeRule, MergeStrategy, Outcome, Report, Slice, TargetMetadata, Verdict,
+    DesignType, MergeRule, MergeStrategy, Outcome, Report, Requirement, Scenario, Slice,
+    TargetMetadata, Verdict,
 };
 use emery_prose::Doc;
 use omnia_sdk::model::{Question, WorkerGrant};
@@ -132,7 +133,7 @@ const VERIFY_TURN: &str = "verify";
 /// [`Metadata::grants`]. [`build`] and [`verify`] carry the list with every
 /// turn as the completion's worker grant, their [`union`](Self::union), each
 /// entry once however many grants spell it. The host holds each entry to
-/// its shape and the backend lays what exists on its machine. The adapter
+/// its shape and the backend applies what exists on its machine. The adapter
 /// is trusted by its digest, so what it spells is what the deployment
 /// granted when it pinned it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -266,14 +267,14 @@ fn is_variable_name(name: &str) -> bool {
 
 /// The adapter addressed and the tree it initialises.
 ///
-/// An init carries no model: it is the adapter's own code laying the
+/// An init carries no model: it is the adapter's own code scaffolding the
 /// layout's initial files where the tree lacks them, so two inits over one
-/// tree lay the same files.
+/// tree scaffold the same files.
 #[derive(Debug)]
 pub struct InitContext<'a> {
     /// The identifier used to address the adapter.
     pub adapter_id: &'a str,
-    /// The deployment-local path of the tree root the layout is laid
+    /// The deployment-local path of the tree root the layout is scaffolded
     /// beneath. The deployment's grant decides whether it may be written.
     pub workspace: &'a str,
 }
@@ -297,6 +298,43 @@ pub struct BuildContext<'a, P> {
     pub grants: &'a [Grant],
     /// The [`Model`] the turn is put to.
     pub model: &'a P,
+    /// What the adapter's own code scaffolded into the workspace for the
+    /// slice before the turn, where it scaffolded anything. The host lifts
+    /// the context with `None`; an adapter that scaffolds a skeleton sets it
+    /// through [`with_scaffold`](Self::with_scaffold).
+    pub scaffold: Option<Scaffold<'a>>,
+}
+
+impl<'a, P> BuildContext<'a, P> {
+    /// Returns the context with [`scaffold`](Self::scaffold) set.
+    #[must_use]
+    pub const fn with_scaffold(mut self, scaffold: Scaffold<'a>) -> Self {
+        self.scaffold = Some(scaffold);
+        self
+    }
+}
+
+/// What an adapter's own code scaffolded into the workspace for a slice before its turn.
+///
+/// [`build`] renders `brief` after the design, under `What the adapter
+/// scaffolded for this slice before this turn:`, so the turn fills the
+/// files and the markers it names rather than writing them over; an empty
+/// text puts no section. `paths` are those files, root-relative, which the
+/// turn changes through `edit_files` alone: a `write_files` entry or
+/// `delete` naming one is refused as a correction, since a skeleton written
+/// over loses its markers.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Scaffold<'a> {
+    /// The files and the markers, as the brief states them to the model.
+    pub brief: &'a str,
+    /// The root-relative paths of the scaffolded files.
+    pub paths: &'a [String],
+}
+
+impl Scaffold<'_> {
+    fn section(&self) -> Option<&str> {
+        Some(self.brief.trim_end()).filter(|brief| !brief.is_empty())
+    }
 }
 
 /// The adapter addressed, the integrated tree it verifies, and the model.
@@ -326,8 +364,8 @@ pub struct VerifyContext<'a, P> {
 /// [`Verify`](Self::Verify).
 #[derive(Debug)]
 pub enum Task<'a, P> {
-    /// Lay the layout's initial files the tree lacks, a held file left as
-    /// it stands. Put once per repository a build lands in, before any
+    /// Scaffold the layout's initial files the tree lacks, a held file left
+    /// as it stands. Put once per repository a build lands in, before any
     /// slice; the engine seals what the tree then holds as its
     /// `Initialise` commit.
     Init(InitContext<'a>),
@@ -360,7 +398,7 @@ pub trait TargetAdapter {
     /// Runs `task` in the tree its context names and answers the outcome of
     /// its kind.
     ///
-    /// An init lays the layout's initial files the tree lacks through the
+    /// An init scaffolds the layout's initial files the tree lacks through the
     /// adapter's own code and answers [`Outcome::Initialised`]; a build's
     /// one turn goes through [`build`](fn@build) and answers
     /// [`Outcome::Built`]; a verify's through [`verify`](fn@verify) and
@@ -396,18 +434,24 @@ pub fn metadata(rules: &[MergeRule]) -> TargetMetadata {
 /// Builds the slice of `ctx` into its workspace through one gated turn.
 ///
 /// `docs` must contain `build.md`, which becomes the system prompt. The turn
-/// carries the slice's plan entry, its cut of the specification, and the
-/// whole design, lends the workspace with the worker grant `ctx`'s
-/// [`grants`](BuildContext::grants) unite to, and offers the embedded
-/// references through the reference tools. It writes
+/// carries the slice's plan entry, its cut of the specification, the whole
+/// design, and the [`brief`](Scaffold::brief) of `ctx`'s
+/// [`scaffold`](BuildContext::scaffold), where the adapter set one: the
+/// files and the markers the model fills, stated so the turn edits them
+/// rather than writing them over. It lends the workspace with the
+/// worker grant `ctx`'s [`grants`](BuildContext::grants) unite to, and
+/// offers the embedded references through the reference tools. It writes
 /// through two tools. `write_files` writes one or more files beneath the
 /// workspace per call, listed or mapped by path, each created or replaced
 /// whole, at a path [`beneath`](crate::beneath) accepts and no symlink
 /// stands on, and removes the files its `delete` names; an entry that would
 /// leave a held file empty or under half its size is refused unless it sets
-/// `shrink`. `edit_files` replaces the one place each edit's `find` matches
-/// within a file the workspace holds. A call either tool refuses anywhere
-/// changes nothing. The answered [`Report`] is held to the slice by
+/// `shrink`, and an entry or a `delete` naming one of the scaffold's
+/// [`paths`](Scaffold::paths) is refused, telling the model to change the
+/// file through `edit_files`. `edit_files` replaces the one
+/// place each edit's `find` matches within a file the workspace holds. A
+/// call either tool refuses anywhere changes nothing. The answered
+/// [`Report`] is held to the slice by
 /// [`Report::findings`], to the tree — a `written` path names a regular
 /// file under the workspace — and to `check`, the adapter's own rule over
 /// the report and the tree as the model left it; every finding, the
@@ -443,7 +487,8 @@ pub async fn build<P: Model>(
     let slice = ctx.slice;
     let id = &slice.id;
     let root = Path::new(ctx.workspace);
-    let writer = Writer::new(ctx.workspace, id);
+    let scaffolded = ctx.scaffold.map_or(&[][..], |scaffold| scaffold.paths);
+    let writer = Writer::new(ctx.workspace, id).guarding(scaffolded);
     let written = writer.written();
     let mut tools = reference::tools();
     tools.extend(Writer::tools());
@@ -457,12 +502,15 @@ pub async fn build<P: Model>(
     let brief = Brief {
         adapter_id: ctx.adapter_id,
         slice,
+        scaffold: ctx.scaffold,
     };
 
     tracing::info!(
         slice = %id,
         name = %slice.name,
         requirements = slice.requirements.len(),
+        scaffold = ctx.scaffold.is_some(),
+        scaffolded = scaffolded.len(),
         "building"
     );
     let tools = writer.serve(reference::serve(docs, &[], id, None));
@@ -604,6 +652,7 @@ pub async fn call<A: TargetAdapter>(
             workspace: &workspace,
             grants: metadata.grants,
             model: &crate::Provider,
+            scaffold: None,
         }),
         emery_adapter::target::Task::Verify => Task::Verify(VerifyContext {
             adapter_id: &id,
@@ -664,6 +713,7 @@ const TOOLS_RULE: &str = "`write_files` writes one or more files beneath `$WORKS
 struct Brief<'a> {
     adapter_id: &'a str,
     slice: &'a Slice,
+    scaffold: Option<Scaffold<'a>>,
 }
 
 impl Display for Brief<'_> {
@@ -675,7 +725,7 @@ impl Display for Brief<'_> {
              `$WORKSPACE` is the project tree, lent writable: the root of every file you can \
              read, and the root every `written` path is relative to. The tree sits on commit \
              `{base}`, the integrated head this slice builds over. Write through this call's \
-             two tools alone: {TOOLS_RULE} Lay the files you have ready together in one \
+             two tools alone: {TOOLS_RULE} Write the files you have ready together in one \
              `write_files` call, and make a change within a file through `edit_files`. Build \
              the slice into the tree as the prompt describes, and change nothing outside \
              it.\n\n",
@@ -695,8 +745,32 @@ impl Display for Brief<'_> {
             design = slice.design.trim_end(),
         )?;
 
+        // what the adapter scaffolded before the turn, where it scaffolded anything
+        if let Some(scaffold) = &self.scaffold {
+            if let Some(brief) = scaffold.section() {
+                write!(
+                    f,
+                    "What the adapter scaffolded for this slice before this turn:\n\n{brief}\n\n"
+                )?;
+            }
+            if !scaffold.paths.is_empty() {
+                write!(
+                    f,
+                    "The {count} the adapter scaffolded for this slice {are} filled through \
+                     `edit_files` alone: a `write_files` entry or `delete` naming one of them \
+                     is refused whole, since a skeleton written over loses its markers.\n\n",
+                    count = if scaffold.paths.len() == 1 { "file" } else { "files" },
+                    are = if scaffold.paths.len() == 1 { "is" } else { "are" },
+                )?;
+            }
+        }
+
         // the requirements and the report rules
-        let ids = slice.requirements.iter().map(|id| format!("`{id}`")).collect::<Vec<_>>();
+        let ids = slice
+            .requirements
+            .iter()
+            .map(|requirement| format!("`{}`", requirement.id))
+            .collect::<Vec<_>>();
         write!(
             f,
             "Implement every requirement the specification above holds — {ids} — and no \

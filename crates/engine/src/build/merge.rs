@@ -69,13 +69,14 @@ impl Brief for MergeBrief<'_> {
         Cow::Owned(format!("merge-{}", self.slice.id))
     }
 
-    fn tighten(&self, schema: &mut Value) {
-        schema["properties"]["files"]["minItems"] = json!(self.conflicts.len());
-        schema["properties"]["files"]["maxItems"] = json!(self.conflicts.len());
-        if let Some(path) = schema.pointer_mut("/$defs/Resolution/properties/path") {
-            let paths: Vec<&str> = self.conflicts.iter().map(|c| c.path.as_str()).collect();
-            path["enum"] = json!(paths);
-        }
+    fn tighten(&self, schema: &mut Value) -> Result<(), Error> {
+        let files = Self::at(schema, "/properties/files")?;
+        files.insert("minItems".to_owned(), json!(self.conflicts.len()));
+        files.insert("maxItems".to_owned(), json!(self.conflicts.len()));
+        let paths: Vec<&str> = self.conflicts.iter().map(|c| c.path.as_str()).collect();
+        Self::at(schema, "/$defs/Resolution/properties/path")?
+            .insert("enum".to_owned(), json!(paths));
+        Ok(())
     }
 
     fn verify(&self, answer: &MergeAnswer, review: &mut Review) {

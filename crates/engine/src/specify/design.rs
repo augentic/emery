@@ -53,8 +53,9 @@ impl Brief for DesignBrief<'_> {
     const PROSE: &'static [&'static str] =
         &["synthesise.md", "design-format.md", "claim-landing.md"];
 
-    fn tighten(&self, schema: &mut Value) {
-        schema["properties"]["sections"]["minItems"] = json!(self.outline.required().count());
+    fn tighten(&self, schema: &mut Value) -> Result<(), Error> {
+        Self::at(schema, "/properties/sections")?
+            .insert("minItems".to_owned(), json!(self.outline.required().count()));
 
         // replace the derived `kind` reference with this run's subset
         let kinds = SectionKind::VARIANTS
@@ -62,22 +63,18 @@ impl Brief for DesignBrief<'_> {
             .filter(|kind| self.outline.presence(**kind) != Presence::Omitted)
             .map(AsRef::as_ref)
             .collect::<Vec<_>>();
-        if let Some(kind) = schema["$defs"]["Section"]["properties"]["kind"].as_object_mut() {
-            kind.remove("$ref");
-            kind.insert("type".to_string(), json!("string"));
-            kind.insert("enum".to_string(), json!(kinds));
-        }
-        if let Some(defs) = schema["$defs"].as_object_mut() {
-            defs.remove("SectionKind");
-        }
+        let kind = Self::at(schema, "/$defs/Section/properties/kind")?;
+        kind.remove("$ref");
+        kind.insert("type".to_owned(), json!("string"));
+        kind.insert("enum".to_owned(), json!(kinds));
+        Self::at(schema, "/$defs")?.remove("SectionKind");
 
         // restrict a type block's key to this run's type keys
-        if self.outline.types.is_empty() {
-            return;
+        if !self.outline.types.is_empty() {
+            let keys = json!(self.outline.keys().collect::<Vec<_>>());
+            Self::at(schema, "/$defs/TypeRef/properties/key")?.insert("enum".to_owned(), keys);
         }
-        if let Some(key) = schema.pointer_mut("/$defs/TypeRef/properties/key") {
-            key["enum"] = json!(self.outline.keys().collect::<Vec<_>>());
-        }
+        Ok(())
     }
 
     fn verify(&self, answer: &DesignAnswer, review: &mut Review) {
@@ -206,7 +203,8 @@ impl Display for DesignBrief<'_> {
                  \"mechanism\"}}` block; the engine inserts its signature verbatim. A `data` \
                  type is a shape the program reads, stores, or produces; a `mechanism` is a \
                  class that is a client, a retriever, a bootstrap, a settings carrier, or an \
-                 error or exception class, which a build lays nothing for and no slice owns.\n\n",
+                 error or exception class, which a build declares nothing for and no slice \
+                 owns.\n\n",
             )?;
             for key in self.outline.keys() {
                 writeln!(f, "- `{key}`")?;
@@ -273,7 +271,7 @@ impl<'a> Outline<'a> {
         let mut types: BTreeMap<String, &'a str> = BTreeMap::new();
 
         for claim in claims().filter(|claim| claim.kind == ClaimKind::Type) {
-            let Some(Value::String(signature)) = claim.extras.get("signature") else { continue };
+            let Some(signature) = claim.signature() else { continue };
             let Some(name) = declared(claim) else { continue };
 
             let key = type_key(&types, name, claim.path.as_deref());
@@ -340,13 +338,7 @@ fn type_key(taken: &BTreeMap<String, &str>, name: &str, path: Option<&str>) -> S
 // its id, then its path with any `#L…` anchor stripped, so a re-anchored claim
 // keeps its key.
 fn declared(claim: &Claim) -> Option<&str> {
-    if let Some(Value::String(name)) = claim.extras.get("name") {
-        return Some(name);
-    }
-    if let Some(id) = claim.id.as_deref() {
-        return Some(id);
-    }
-    claim.path.as_deref().map(shape::file)
+    claim.type_name().or(claim.id.as_deref()).or_else(|| claim.path.as_deref().map(shape::file))
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, strum::Display)]

@@ -57,6 +57,17 @@ impl Design {
             .collect();
         keys.into_iter().map(str::to_owned).collect()
     }
+
+    /// Returns the signature of the type `key` names, if the design has one.
+    #[must_use]
+    pub fn signature(&self, key: &str) -> Option<&str> {
+        self.sections.iter().flat_map(|section| &section.blocks).find_map(|block| match block {
+            Block::Type {
+                key: held, signature, ..
+            } if held == key => Some(signature.as_str()),
+            Block::Text(_) | Block::Type { .. } => None,
+        })
+    }
 }
 
 impl revision::Document for Design {
@@ -130,8 +141,8 @@ impl Display for Block {
 
 /// What a type in the domain model stands for.
 ///
-/// A target lays a [`Data`](Role::Data) type as a shape its code reads or
-/// produces. It lays nothing for a [`Mechanism`](Role::Mechanism): the
+/// A target declares a [`Data`](Role::Data) type as a shape its code reads
+/// or produces. It declares nothing for a [`Mechanism`](Role::Mechanism): the
 /// behaviour its requirements state is built through the target's own
 /// platform, and no slice owns the type.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]

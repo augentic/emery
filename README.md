@@ -42,6 +42,8 @@ make ci      # exactly the CI gate: fmt-check, lint (host + wasm32), tests, doct
 make check   # local advisories: audit, fmt (rewrites), lint, outdated, deps
 ```
 
+`cargo build --release --features genai --bin emery-dev` builds `emery-dev`, the same runtime over a local model through [omnia-genai](https://github.com/augentic/omnia-backends/tree/main/crates/genai) (`GENAI_MODEL`, `GENAI_ENDPOINT`; the recipe is in [src/dev.rs](src/dev.rs)); it is never released.
+
 Preview the working-tree Cursor skill against a local CLI:
 
 ```bash

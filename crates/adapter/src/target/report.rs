@@ -36,13 +36,21 @@ impl Report {
     /// # Examples
     ///
     /// ```
-    /// use emery_adapter::target::{Report, Slice};
+    /// use emery_adapter::target::{Report, Requirement, Slice};
     ///
     /// let slice = Slice {
     ///     id: "SLICE-001".into(),
     ///     name: "orders".into(),
     ///     base: "1a2b3c4d".into(),
-    ///     requirements: vec!["REQ-001".into()],
+    ///     requirements: vec![Requirement {
+    ///         id: "REQ-001".into(),
+    ///         subject: "orders.create".into(),
+    ///         statement: vec!["An order is created from at least one item.".into()],
+    ///         scenarios: Vec::new(),
+    ///         trigger: None,
+    ///     }],
+    ///     types: Vec::new(),
+    ///     brief: Vec::new(),
     ///     spec: String::new(),
     ///     design: String::new(),
     ///     plan: String::new(),
@@ -60,13 +68,15 @@ impl Report {
         let mut findings = Vec::new();
 
         // covered ids: the slice's, each once
+        let ids: Vec<&str> =
+            slice.requirements.iter().map(|requirement| requirement.id.as_str()).collect();
         let mut seen = BTreeSet::new();
         for id in &self.covered {
-            if !slice.requirements.contains(id) {
+            if !ids.contains(&id.as_str()) {
                 findings.push(format!(
                     "- covered `{id}` is not a requirement of slice `{}`; its requirements are {}",
                     slice.id,
-                    slice.requirements.join(", ")
+                    ids.join(", ")
                 ));
             } else if !seen.insert(id) {
                 findings.push(format!("- covered `{id}` is listed twice"));
@@ -98,6 +108,11 @@ impl Report {
     /// Returns the requirements of `slice` the report does not cover, in the slice's order.
     #[must_use]
     pub fn uncovered<'a>(&self, slice: &'a Slice) -> Vec<&'a str> {
-        slice.requirements.iter().filter(|id| !self.covers(id)).map(String::as_str).collect()
+        slice
+            .requirements
+            .iter()
+            .map(|requirement| requirement.id.as_str())
+            .filter(|id| !self.covers(id))
+            .collect()
     }
 }

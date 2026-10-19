@@ -10,7 +10,7 @@ use std::str::FromStr;
 
 use anyhow::Context;
 use emery_adapter::is_kebab;
-use emery_adapter::source::{AdapterMetadata, Source};
+use emery_adapter::source::{Source, SourceMetadata};
 use emery_adapter::target::{Target, TargetMetadata};
 use futures::future;
 use omnia_sdk::plugins::{Digest, Location};
@@ -73,7 +73,7 @@ pub struct Loaded<M> {
     /// dispatch names.
     pub id: String,
     /// The metadata the adapter declares for its axis: an
-    /// [`AdapterMetadata`], whose kind of source ranks a source adapter's
+    /// [`SourceMetadata`], whose kind of source ranks a source adapter's
     /// claims, or a [`TargetMetadata`].
     pub metadata: M,
 }
@@ -106,7 +106,7 @@ pub struct Loaded<M> {
 /// adapter that failed.
 pub async fn load<'a, P: Source + Plugins>(
     provider: &P, adapters: impl IntoIterator<Item = (&'a AdapterRef, Option<&'a Digest>)>,
-) -> Result<BTreeMap<AdapterRef, Loaded<AdapterMetadata>>, Error> {
+) -> Result<BTreeMap<AdapterRef, Loaded<SourceMetadata>>, Error> {
     load_axis(provider, Axis::Source, adapters, |id| Source::metadata(provider, id)).await
 }
 
@@ -134,7 +134,7 @@ trait Declared {
     fn emery_version(&self) -> Option<&str>;
 }
 
-impl Declared for AdapterMetadata {
+impl Declared for SourceMetadata {
     fn emery_version(&self) -> Option<&str> {
         self.emery_version.as_deref()
     }

@@ -64,7 +64,7 @@ async fn ask(
     emery_sdk::survey::surfaces(&ctx, PROSE, facts, check).await
 }
 
-// The turn carries the adapter's facts, the module list, the laid files, and
+// The turn carries the adapter's facts, the module list, the inlined files, and
 // the lend; the answer is steered by the inventory schema.
 #[tokio::test]
 async fn request_shape() {
@@ -120,7 +120,7 @@ async fn request_shape() {
     model.assert_exhausted();
 }
 
-// With nothing to lay and no facts text, the brief is the module list alone
+// With nothing to inline and no facts text, the brief is the module list alone
 // between the opening and the instructions.
 #[tokio::test]
 async fn bare_facts() {

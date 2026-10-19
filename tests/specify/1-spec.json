@@ -1,5 +1,5 @@
 {
-  "emery": 6,
+  "emery": 7,
   "preamble": [
     "One bound source: the mock component's minimal greeting profile, reconciled with no disagreement and one acceptance gap."
   ],
@@ -9,6 +9,7 @@
       "subject": "greeting.behaviour",
       "status": "unknown",
       "covered": false,
+      "trigger": null,
       "sources": [
         {
           "source": "source",

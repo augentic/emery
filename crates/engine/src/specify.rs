@@ -16,7 +16,7 @@ use std::path::Path;
 
 use emery_adapter::is_kebab;
 pub use emery_adapter::source::SourceContent;
-use emery_adapter::source::{AdapterMetadata, Evidence, Source, SourceInput, SourceKind};
+use emery_adapter::source::{Evidence, Source, SourceInput, SourceKind, SourceMetadata};
 use futures::future;
 use omnia_sdk::api::Context;
 use omnia_sdk::plugins::Digest;
@@ -33,10 +33,10 @@ use crate::adapter::{self, AdapterRef, Loaded};
 use crate::brief::Brief as _;
 use crate::revision::Revision;
 pub use crate::revision::{
-    Changed, DesignDiff, Diff, Entry, PlanDiff, ReqId, Role, SectionKind, SliceEntry, SliceId,
-    SpecDiff, Waves,
+    BadId, Changed, DesignDiff, Diff, Entry, PlanDiff, ReqId, Role, SectionKind, SliceEntry,
+    SliceId, SpecDiff, Waves,
 };
-use crate::vcs::{Repository, WorkingCopy};
+use crate::vcs::{SourceClone, WorkingCopy};
 use crate::{Rank, preopen_path, store, vcs};
 
 /// Generates and commits a specification revision from `input`.
@@ -292,7 +292,7 @@ impl<'a> Bound<'a> {
 
     #[tracing::instrument(skip_all, fields(source = %self.input.name, adapter = %self.adapter))]
     async fn extract<S: Source>(
-        &self, provider: &S, loaded: &BTreeMap<AdapterRef, Loaded<AdapterMetadata>>,
+        &self, provider: &S, loaded: &BTreeMap<AdapterRef, Loaded<SourceMetadata>>,
     ) -> Result<Extract, Error> {
         let source = &self.input.name;
         let adapter = self.adapter;
@@ -354,7 +354,7 @@ impl Checkouts {
         for source in bound {
             let Some(repository) = source.repository else { continue };
             let name = &source.input.name;
-            let repo = Repository::new(&repository.url);
+            let repo = SourceClone::new(&repository.url);
             if ensured.insert(repo.path()) {
                 repo.ensure(vcs).await?;
             }

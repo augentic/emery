@@ -9,8 +9,9 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::{self, Display, Formatter};
 
+use emery_adapter::is_kebab;
 use emery_adapter::source::{Anchor, BadAnchor, Claim, ClaimKind, Evidence, SourceContent};
-use emery_adapter::{Lexicon, is_kebab};
+use emery_lexicon::Lexicon;
 use emery_prose::Doc;
 use omnia_sdk::model::Question;
 use omnia_sdk::{Error, Model, server_error};
@@ -18,15 +19,15 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use self::code::{Recogniser, Tree};
-use self::lead::Lead;
-use self::located::Located;
-use crate::extract::{INLINE_BYTES, Laid, Seam, lay, line_count};
+use self::cut::Cut;
+use self::locator::SurfaceLocator;
+use crate::extract::{INLINE_BYTES, Inlined, Seam, inline, line_count};
 use crate::{Context, RUNTIME, SURVEY, beneath, prompt, push_unique, reference, unique};
 
 pub mod code;
+mod cut;
 mod dialect;
-mod lead;
-mod located;
+mod locator;
 pub mod resolve;
 pub mod route;
 mod skeleton;
@@ -124,15 +125,15 @@ impl Display for Lines {
 ///
 /// The model is told how to read what code found, never how to find it: the
 /// adapter lists every production module, renders what locates the surfaces
-/// among them as `text`, and names the files worth laying into the turn whole.
+/// among them as `text`, and names the files worth inlining into the turn whole.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct Facts<'a> {
     /// Every production module of the tree, root-relative; an anchor names one of these.
     pub modules: &'a [String],
     /// What the adapter's code read: the manifest, the bootstrap, the registration sites.
     pub text: &'a str,
-    /// The files laid into the turn whole, in order, for as long as they fit
-    /// within [`INLINE_BYTES`] together; the rest are left to the lend.
+    /// The files inlined into the turn whole, in order, for as long as they
+    /// fit within [`INLINE_BYTES`] together; the rest are left to the lend.
     pub files: &'a [String],
 }
 
@@ -183,12 +184,12 @@ pub async fn surfaces<P: Model>(
         .system(prompt(docs, SURVEY)?)
         .tools(reference::tools())
         .workspace(root);
-    let laid = lay(root, facts.files);
+    let inlined = inline(root, facts.files);
     let brief = Brief {
         adapter_id: ctx.adapter_id,
         source,
         facts,
-        laid: &laid,
+        inlined: &inlined,
     };
 
     tracing::info!(%source, modules = facts.modules.len(), "surveying by model");
@@ -231,11 +232,11 @@ pub async fn surfaces<P: Model>(
     Ok(inventory)
 }
 
-/// The seams of a surveyed source, and the `type` claims its code declares.
+/// The seams of a surveyed source, and the claims its code states by itself.
 ///
 /// [`seams`] returns one for a parsed workspace tree and [`Survey::value`]
-/// for an inline value; [`Survey::join`] puts the `type` claims into the
-/// evidence the seams were mined to.
+/// for an inline value; [`Survey::join`] puts the `type` and `contract`
+/// claims into the evidence the seams were mined to.
 #[derive(Clone, Debug, Default)]
 pub struct Survey {
     /// One seam per cut, each carrying its brief, files, stems, and anchors.
@@ -243,38 +244,49 @@ pub struct Survey {
     /// The `type` claims the modules the seams reach declare, for
     /// [`Survey::join`] to put in place of the model's.
     pub types: Vec<Claim>,
+    /// The `contract` claims of the surfaces with a trigger, one each
+    /// through [`Surface::contract`](code::Surface::contract), for
+    /// [`Survey::join`] to put in place of the model's.
+    pub contracts: Vec<Claim>,
 }
 
 impl Survey {
     /// Returns the survey of an inline value parsed as `module`.
     ///
-    /// One seam over the whole input, with no survey turn, and the `type`
-    /// claims `module` declares, unanchored.
+    /// One seam over the whole input, with no survey turn, the `type`
+    /// claims `module` declares, unanchored, and no `contract`, since no
+    /// surface was named to carry a trigger.
     #[must_use]
     pub fn value(dialect: &Dialect, module: &code::Module) -> Self {
         Self {
             seams: vec![Seam::whole()],
             types: types(dialect, [module], false),
+            contracts: Vec::new(),
         }
     }
 
-    /// Returns `evidence` with this survey's `type` claims in place of the model's.
+    /// Returns `evidence` with this survey's `type` and `contract` claims in
+    /// place of the model's.
     ///
-    /// The declarations are the code's to state: every `type` claim the
-    /// model answered is dropped, logged at DEBUG, and the parsed ones
-    /// follow the claims kept, in their order.
+    /// The declarations and the triggers are the code's to state: every
+    /// `type` and `contract` claim the model answered is dropped, logged at
+    /// DEBUG, and the parsed ones follow the claims kept, the contracts
+    /// after the types, each in its order.
     #[must_use]
     pub fn join(self, mut evidence: Evidence) -> Evidence {
         let answered = evidence.claims.len();
-        evidence.claims.retain(|claim| claim.kind != ClaimKind::Type);
+        evidence
+            .claims
+            .retain(|claim| !matches!(claim.kind, ClaimKind::Type | ClaimKind::Contract));
         let dropped = answered - evidence.claims.len();
         if dropped > 0 {
             tracing::debug!(
                 dropped,
-                "type claims the model answered give way to the parsed declarations"
+                "type and contract claims the model answered give way to the code's"
             );
         }
         evidence.claims.extend(self.types);
+        evidence.claims.extend(self.contracts);
         evidence
     }
 }
@@ -282,7 +294,7 @@ impl Survey {
 /// Returns the seams of a parsed workspace tree, its surfaces named by the model.
 ///
 /// One survey turn is put through [`surfaces`] under `docs`'s `survey.md`,
-/// laying the facts the tree holds: the manifest, the bootstrap, every call
+/// carrying the facts the tree holds: the manifest, the bootstrap, every call
 /// that hands a function to a package, every function, method, and class
 /// under a package's decorator, what the entry modules export, and the
 /// packages imported. The answer is held to the tree — a module the facts
@@ -302,12 +314,13 @@ impl Survey {
 ///   under the package's or the root directory's name within the budget,
 ///   one per top-level directory past it
 ///
-/// Each seam lays the data files its modules name among them and the
+/// Each seam inlines the data files its modules name among them and the
 /// tree's own tests after them, each test's statements in the brief of
 /// every seam whose modules it imports, and carries as its `lexicon` the
 /// technology of the packages its modules import, through
 /// [`Lexicon::from_packages`]. The `type` claims are those of the modules
-/// the seams reach.
+/// the seams reach, and the `contract` claims one per surface whose
+/// registration or decorator spells a trigger: a route, or a message.
 ///
 /// # Errors
 ///
@@ -321,10 +334,10 @@ pub async fn seams<P: Model, R: Recogniser>(
     ctx: &Context<'_, P>, docs: &'static [Doc], tree: &Tree<R>,
 ) -> Result<Survey, Error> {
     let source = &ctx.input.name;
-    let located = Located::new(tree);
+    let locator = SurfaceLocator::new(tree);
     let modules: Vec<String> = tree.modules.keys().cloned().collect();
-    let text = located.facts();
-    let files = located.laid();
+    let text = locator.facts();
+    let files = locator.inlined();
 
     // trace the facts for a host reading them without a turn
     if tracing::enabled!(tracing::Level::TRACE) {
@@ -337,9 +350,9 @@ pub async fn seams<P: Model, R: Recogniser>(
         files: &files,
     };
 
-    let inventory = surfaces(ctx, docs, &facts, |answer| located.check(answer)).await?;
+    let inventory = surfaces(ctx, docs, &facts, |answer| locator.check(answer)).await?;
 
-    let surfaces = located.build(&inventory);
+    let surfaces = locator.build(&inventory);
     let restemmed: Vec<String> = inventory
         .surfaces
         .iter()
@@ -369,13 +382,13 @@ pub async fn seams<P: Model, R: Recogniser>(
     // choose the cut by size and by whether any surface was named
     let size: usize = tree.modules.values().map(|module| module.text.len()).sum();
     let fits = tree.modules.len() == 1 || u64::try_from(size).unwrap_or(u64::MAX) <= INLINE_BYTES;
-    let leads = match (surfaces.is_empty(), fits) {
-        (false, true) => vec![Lead::whole(tree, &surfaces)],
-        (false, false) => Lead::by_stem(tree, &surfaces),
-        (true, true) => vec![Lead::unsurfaced(tree)],
-        (true, false) => Lead::by_directory(tree),
+    let cuts = match (surfaces.is_empty(), fits) {
+        (false, true) => vec![Cut::whole(tree, &surfaces)],
+        (false, false) => Cut::by_stem(tree, &surfaces),
+        (true, true) => vec![Cut::unsurfaced(tree)],
+        (true, false) => Cut::by_directory(tree),
     };
-    let seams: Vec<Seam> = leads.into_iter().map(|lead| lead.finish(tree, &surfaces)).collect();
+    let seams: Vec<Seam> = cuts.into_iter().map(|cut| cut.seam(tree, &surfaces)).collect();
 
     let reached = unique(seams.iter().flat_map(|seam| seam.files.iter().map(String::as_str)));
     let types = types(
@@ -383,8 +396,14 @@ pub async fn seams<P: Model, R: Recogniser>(
         reached.iter().filter_map(|path| tree.modules.get(*path)).map(|module| &**module),
         true,
     );
+    let contracts: Vec<Claim> = surfaces.iter().filter_map(code::Surface::contract).collect();
+    tracing::debug!(%source, contracts = contracts.len(), "surfaces with a trigger");
 
-    Ok(Survey { seams, types })
+    Ok(Survey {
+        seams,
+        types,
+        contracts,
+    })
 }
 
 fn logged(source: &str, what: &str, surfaces: &[code::Surface]) {
@@ -580,7 +599,7 @@ struct Brief<'a> {
     adapter_id: &'a str,
     source: &'a str,
     facts: &'a Facts<'a>,
-    laid: &'a [String],
+    inlined: &'a [String],
 }
 
 impl Display for Brief<'_> {
@@ -608,9 +627,9 @@ impl Display for Brief<'_> {
             write!(f, "\n- `{module}`")?;
         }
 
-        // the laid files
-        if !self.laid.is_empty() {
-            let (these, them) = match self.laid.len() {
+        // the inlined files
+        if !self.inlined.is_empty() {
+            let (these, them) = match self.inlined.len() {
                 1 => ("This file is", "it"),
                 _ => ("These files are", "them"),
             };
@@ -619,7 +638,7 @@ impl Display for Brief<'_> {
                 "\n\n{these} laid out here whole, every line led by its number, so cite `#L<n>` \
                  from the numbers shown rather than reading {them} again:\n\n"
             )?;
-            Laid(&self.facts.files[..self.laid.len()], self.laid).fmt(f)?;
+            Inlined(&self.facts.files[..self.inlined.len()], self.inlined).fmt(f)?;
         }
 
         f.write_str(

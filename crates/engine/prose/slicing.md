@@ -1,6 +1,6 @@
 # Slice the specification
 
-You are the Emery spec generator's slicing judgement. The request carries the requirements of one revision — each with its `REQ-NNN` id, subject, status, sources, and every contributing claim's statement — the stems they fall under — the first segment of each requirement subject's dotted `id`, with the `REQ-` ids sharing it, a stem past the request's cap listed by its sub-stems — and the data type keys the design defines: the types a build lays, its mechanism types left out. The specification is drafted beside this plan from the same requirements, so the request carries no rendered document. Answer one build plan: which requirements are built together, what each slice owns, what it is built after, and what a builder reads before taking it up.
+You are the Emery spec generator's slicing judgement. The request carries the requirements of one revision — each with its `REQ-NNN` id, subject, status, sources, the trigger that reaches it where a source's code registered one — a route, or a message — and every contributing claim's statement — the stems they fall under — the first segment of each requirement subject's dotted `id`, with the `REQ-` ids sharing it and the triggers that reach them, a stem past the request's cap listed by its sub-stems — and the data type keys the design defines: the types a build declares, its mechanism types left out. The specification is drafted beside this plan from the same requirements, so the request carries no rendered document. Answer one build plan: which requirements are built together, what each slice owns, what it is built after, and what a builder reads before taking it up.
 
 A slice is a subset of the specification a builder can implement and verify on its own, given the slices it depends on. Slice by what can be built and shown working apart, not by wording.
 
@@ -8,7 +8,9 @@ A slice is a subset of the specification a builder can implement and verify on i
 
 Requirements sharing a stem are one slice at the least, and the request lists them. An answer that splits a stem across slices is refused. Merge two stems into one slice only when neither can be built and verified apart from the other — a request that fails without its session, a job that only exists to serve one endpoint. When in doubt, keep stems apart: a slice that turns out small is a short build, a slice that swallows two builds hides the seam between them.
 
-A stem of more requirements than the request's cap is too large for one build, so the request lists it by its sub-stems — the first two segments of its ids, `orders.get`, `orders.post-id-pay` — and each sub-stem is the floor in the stem's place: an answer that splits a sub-stem across slices is refused. Cut the stem at as few sub-stem boundaries as the cap allows, never one slice per sub-stem: merge its sub-stems into slices of up to the cap by what builds and verifies together — a resource's reads with its writes, a handler with the guard that fronts it, and two sub-stems whose requirements state one HTTP route, the same method and path, which build together and go in one slice — until no two of the stem's slices would fit one slice within the cap, and name each slice for what it builds (`orders-reading`, `orders-payment`). An answer that leaves two such slices is refused: a stem of thirty requirements in six sub-stems of five is two slices, not six. The one pair left apart is one a third slice stands between in `depends-on`, which cannot merge without closing a cycle; Pipelines says where that arises.
+A trigger is one handler, so the requirements reached through one trigger — the same route, the same method and path, or the same message, listed after the floor's requirements as `triggers:` — are built by one slice, whichever stems or sub-stems they fall under: an answer that splits a trigger's requirements across slices is refused.
+
+A stem of more requirements than the request's cap is too large for one build, so the request lists it by its sub-stems — the first two segments of its ids, `orders.get`, `orders.post-id-pay` — and each sub-stem is the floor in the stem's place: an answer that splits a sub-stem across slices is refused. Cut the stem at as few sub-stem boundaries as the cap allows, never one slice per sub-stem: merge its sub-stems into slices of up to the cap by what builds and verifies together — a resource's reads with its writes, a handler with the guard that fronts it, and two sub-stems served at one route, which build together and go in one slice — until no two of the stem's slices would fit one slice within the cap, and name each slice for what it builds (`orders-reading`, `orders-payment`). An answer that leaves two such slices is refused: a stem of thirty requirements in six sub-stems of five is two slices, not six. The one pair left apart is one a third slice stands between in `depends-on`, which cannot merge without closing a cycle; Pipelines says where that arises.
 
 ## Pipelines
 
@@ -16,7 +18,7 @@ A stem cut along its sub-stems often holds one entry and the stages it runs: a c
 
 The stages share types: the input one stage decodes, the others take, and the entry hands along. A type several slices of one stem read goes to the slice built first among them — the stage that decodes or validates it, its `depends-on` empty — and every later stage whose functions take or return it `depends-on` that slice, so it imports the type rather than declaring a copy of its own; the entry, built last, owns none of them. A shared type given to the entry, or to a stage built beside the one that takes it, is a type that slice cannot import, so it redeclares it, and the stem ends with two shapes for one thing. A type's constituents go with it: the enumeration a field holds, the struct nested in another, the kind a variant carries belong to the slice that owns the enclosing type, or to one that slice `depends-on`, never to a later stage or the entry. A struct the first stage owns whose field names an enumeration given to a later stage cannot compile until that stage exists, so the first stage declares an enumeration of its own, and the stem ends with two spellings of one kind.
 
-Where a stage reads a table the program fetches from another system — a rate table, a region mapping — the stage's slice owns the read, whether a `start` requirement states the fetch or the design alone holds it: it looks the table up in its own cache and fetches it on a miss, and its brief says so, since the bootstrap's slice lays no loader for another stem and the stage never assumes the table was put there before it ran.
+Where a stage reads a table the program fetches from another system — a rate table, a region mapping — the stage's slice owns the read, whether a `start` requirement states the fetch or the design alone holds it: it looks the table up in its own cache and fetches it on a miss, and its brief says so, since the bootstrap's slice writes no loader for another stem and the stage never assumes the table was put there before it ran.
 
 ## Contract
 
@@ -27,17 +29,17 @@ Where a stage reads a table the program fetches from another system — a rate t
 - `brief` is a list of Markdown paragraphs for the builder taking the slice up: what it delivers, what it assumes of the rest of the system, and how it is verified. Say nothing the requirements already say; `[unknown]` where they leave a gap.
 - `preamble` is a list of Markdown paragraphs introducing the plan: how the specification divides and why, in a few sentences. It may be empty.
 - The engine numbers the slices `SLICE-001`, `SLICE-002`, … by each slice's lowest requirement, and sorts every list; do not number, order, or sort for it.
-- No line of a paragraph opens with `#`, `ID:`, `Requirements:`, `Types:`, `Depends on:`, `Sources:`, `Status:`, `Note:`, or `Type:` — those markers are the engine's.
+- No line of a paragraph opens with `#`, `ID:`, `Requirements:`, `Types:`, `Depends on:`, `Sources:`, `Status:`, `Route:`, `Message:`, `Note:`, or `Type:` — those markers are the engine's.
 - Answer with the JSON object alone. The same requirements and type keys answered twice should slice the same way.
 
 ## Worked example
 
 ```text
-auth      REQ-001, REQ-002
+auth      REQ-001, REQ-002   triggers: POST /login
 session   REQ-003
-orders    REQ-004, REQ-005
-catalog   REQ-006
-notify    REQ-007
+orders    REQ-004, REQ-005   triggers: POST /orders, DELETE /orders/{id}
+catalog   REQ-006            triggers: GET /items
+notify    REQ-007            triggers: orders.placed
 
 type keys: auth.credential, session.token, orders.order, catalog.item
 ```
@@ -89,7 +91,7 @@ type keys: auth.credential, session.token, orders.order, catalog.item
 }
 ```
 
-`auth` and `session` merge because a session is only verifiable through a sign-in. `orders` depends on `authentication` and `catalog` because its code uses their types; `order-notifications` depends on nothing, since it reads an event and uses no type of `orders`, so an order being created before anything is sent about it is what it assumes at run time, stated in its brief, and the two build at once. The engine numbers `authentication` first, its lowest requirement being `REQ-001`, then `orders` from `REQ-004`, `catalog` from `REQ-006`, and `order-notifications` from `REQ-007`.
+`auth` and `session` merge because a session is only verifiable through a sign-in. `orders` depends on `authentication` and `catalog` because its code uses their types; `order-notifications` depends on nothing, since it reads an event and uses no type of `orders`, so an order being created before anything is sent about it is what it assumes at run time, stated in its brief, and the two build at once. `REQ-001` and `REQ-002` are both served at `POST /login`, so they could not have been split however the stems were cut. The engine numbers `authentication` first, its lowest requirement being `REQ-001`, then `orders` from `REQ-004`, `catalog` from `REQ-006`, and `order-notifications` from `REQ-007`.
 
 ## Worked example: a pipeline stem
 
@@ -134,7 +136,7 @@ type keys: shipments.notice, shipments.item, shipments.quote
       "depends-on": ["shipments-validation"],
       "brief": [
         "Delivers `price(items)` producing a quote from the validated items and the rate table; takes `shipments.item` from the validation slice, so it compiles against it and declares no item of its own.",
-        "Reads the rate table from its own cache and fetches it on a miss, since the bootstrap lays no table for it; verified over items built in the test and a fake of the rate lookup."
+        "Reads the rate table from its own cache and fetches it on a miss, since the bootstrap loads no table for it; verified over items built in the test and a fake of the rate lookup."
       ]
     },
     {
@@ -151,4 +153,4 @@ type keys: shipments.notice, shipments.item, shipments.quote
 }
 ```
 
-The consumer is the entry, so `shipments-inbound` depends on the two stage slices and is built last, though its ids come first; the engine still numbers it `SLICE-002` from `REQ-003`, and the waves follow the dependencies: `start` and the validation, then the pricing, then the consumer. The stem is cut at two sub-stem boundaries. The consumer and the validation, 7 and 5, would fit one slice of 12, yet the pricing stands between them — the consumer depends on the pricing, which depends on the validation — so merging them would leave the pricing depending on a slice that depends on it, and the pair stays apart; no other two fit together (5 and 9 is 14, 7 and 9 is 16). Had the consumer and the pricing fit, the consumer would have joined the pricing, the stage run last. Each type goes to the slice built first among those that read or produce it: the notice and the item to the validation that decodes them, since the pricing and the consumer take them after it, and the item could go no later in any case, since a notice holds items and a notice declared without its item is a notice that does not compile; the quote to the pricing that produces it; the consumer, handing them along, owns none. `shipments-pricing` depends on `shipments-validation` for the item it takes rather than redeclaring one, and reads the rate table through its own cache, since no requirement states its fetch and the bootstrap's slice lays no loader for it. Had the design listed the source's `NoticeConsumer` or `RatesClient` class, it would have labelled them mechanisms and they would not be in the request's keys.
+The consumer is the entry, so `shipments-inbound` depends on the two stage slices and is built last, though its ids come first; the engine still numbers it `SLICE-002` from `REQ-003`, and the waves follow the dependencies: `start` and the validation, then the pricing, then the consumer. The stem is cut at two sub-stem boundaries. The consumer and the validation, 7 and 5, would fit one slice of 12, yet the pricing stands between them — the consumer depends on the pricing, which depends on the validation — so merging them would leave the pricing depending on a slice that depends on it, and the pair stays apart; no other two fit together (5 and 9 is 14, 7 and 9 is 16). Had the consumer and the pricing fit, the consumer would have joined the pricing, the stage run last. Each type goes to the slice built first among those that read or produce it: the notice and the item to the validation that decodes them, since the pricing and the consumer take them after it, and the item could go no later in any case, since a notice holds items and a notice declared without its item is a notice that does not compile; the quote to the pricing that produces it; the consumer, handing them along, owns none. `shipments-pricing` depends on `shipments-validation` for the item it takes rather than redeclaring one, and reads the rate table through its own cache, since no requirement states its fetch and the bootstrap's slice writes no loader for it. Had the design listed the source's `NoticeConsumer` or `RatesClient` class, it would have labelled them mechanisms and they would not be in the request's keys.

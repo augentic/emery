@@ -60,13 +60,13 @@ const WRITE_GREETING: &str =
     r##"{"files": [{"path": "build/greeting.md", "content": "# Greeting\n"}]}"##;
 const REPORT_ANSWER: &str = r#"{"covered": ["REQ-001"], "written": ["build/greeting.md"]}"#;
 const VERDICT_ANSWER: &str = r#"{"passed": true, "failures": []}"#;
-// A build that lays a private key beside the greeting, and reports both.
+// A build that writes a private key beside the greeting, and reports both.
 const WRITE_LEAK: &str = r##"{"files": [
     {"path": "build/greeting.md", "content": "# Greeting\n"},
     {"path": "build/leak.pem", "content": "-----BEGIN RSA PRIVATE KEY-----\nMIIEowIBAAKCAQEA\n-----END RSA PRIVATE KEY-----\n"}]}"##;
 const REPORT_LEAK: &str =
     r#"{"covered": ["REQ-001"], "written": ["build/greeting.md", "build/leak.pem"]}"#;
-// A build whose turn laid nothing through `write_files`.
+// A build whose turn wrote nothing through `write_files`.
 const REPORT_BARE: &str = r#"{"covered": ["REQ-001"], "written": []}"#;
 // A token spelled as a symbolic link's target: the text a commit stores of the link.
 const TOKEN: &str = "ghp_ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
@@ -91,7 +91,7 @@ const SPEC_PAIR: &str = r#"{"preamble": ["Two surfaces: a greeting and a farewel
 const SLICING_PAIR: &str = r#"{"preamble": [], "slices": [
     {"name": "greeting", "requirements": ["REQ-001"]},
     {"name": "farewell", "requirements": ["REQ-002"]}]}"#;
-// Both slices lay `build/index.md`, each with its own line.
+// Both slices write `build/index.md`, each with its own line.
 const WRITE_INDEX_GREETING: &str =
     r##"{"files": [{"path": "build/index.md", "content": "# Index\n\n- greeting\n"}]}"##;
 const WRITE_INDEX_FAREWELL: &str =
@@ -197,7 +197,7 @@ impl Git {
         (at, url)
     }
 
-    // Advances the `main` of the repository at `url` by one commit laying
+    // Advances the `main` of the repository at `url` by one commit writing
     // `files`, through a clone of its own, and returns that commit.
     fn advanced(&self, name: &str, url: &str, files: &[(&str, &str)]) -> String {
         let work = self.root.path().join(name);
@@ -249,7 +249,7 @@ impl Git {
     }
 }
 
-// The three roots a scenario lays — the project the run reads and builds
+// The three roots a scenario creates — the project the run reads and builds
 // into, the store a release is kept in, and the registry one is fetched
 // from — and the git behind the runs over them.
 struct Roots {
@@ -306,7 +306,7 @@ impl Roots {
             .args(args.iter().copied())
     }
 
-    // A release copied into the store, as `cp` or `wkg get -o` lays it.
+    // A release copied into the store, as `cp` or `wkg get -o` writes it.
     fn stored(&self, reference: &str, wasm: impl AsRef<Path>) -> PathBuf {
         let target = self.store.path().join(stored_name(reference));
         fs::copy(wasm, &target).expect("copying the release into the store");
@@ -463,7 +463,7 @@ fn building() -> ScriptedModel {
 
 // A build turn that leaves `copy` as `shell` left it and reports no file
 // written: what the model's shell leaves in a working copy, which no scripted
-// tool lays, is laid by host code as the turn is put.
+// tool writes, is written by host code as the turn is put.
 fn shelled(copy: PathBuf, shell: impl Fn(&Path) + Send + Sync + 'static) -> ScriptedModel {
     ScriptedModel::default().then(move || {
         shell(&copy);
@@ -584,7 +584,7 @@ async fn build_merged_labelled() {
     assert_eq!(
         roots.git.run(project, &["diff", "--name-only", &base, &initialised]),
         "build/README.md",
-        "the initialisation seals what the adapter's layout laid"
+        "the initialisation seals what the adapter's layout scaffolded"
     );
     let side = roots.git.run(project, &["rev-parse", &format!("{label}^2")]);
     assert_eq!(roots.git.run(project, &["rev-parse", &format!("{side}~1")]), initialised);
@@ -598,7 +598,7 @@ async fn build_merged_labelled() {
             .git
             .run(project, &["show", &format!("{initialised}:build/README.md")])
             .starts_with("# Build\n"),
-        "the target's layout, laid by its initialisation before any slice"
+        "the target's layout, scaffolded by its initialisation before any slice"
     );
     assert_eq!(
         roots
@@ -731,7 +731,7 @@ async fn build_resumed_staged() {
     assert_eq!(roots.git.branches(project), [label, "main".to_owned()]);
 }
 
-// Two slices of one wave lay one file: the second's merge conflicts at it,
+// Two slices of one wave write one file: the second's merge conflicts at it,
 // so both sides are read from the working copies through the engine's own
 // file capability and put to the model, whose resolution is written into
 // the slice's copy, sealed over the slice's commit, and merged again with
@@ -891,7 +891,7 @@ async fn build_secret_refused() {
     assert!(roots.project.read("build/leak.pem").is_none(), "nothing lands in the checkout");
 }
 
-// A symbolic link the build's shell laid in the slice's working copy is read
+// A symbolic link the build's shell planted in the slice's working copy is read
 // as the target it names, the text a commit would store of it, never as what
 // it leads to: a token spelled there refuses the slice as a file holding it
 // would, though the link leads nowhere, and the link stays in the copy.
@@ -903,7 +903,7 @@ async fn build_secret_in_link() {
 
     let model = shelled(copy.clone(), |copy| {
         fs::create_dir_all(copy.join("src")).expect("creating the directory");
-        symlink(TOKEN, copy.join("src/hook")).expect("laying the link");
+        symlink(TOKEN, copy.join("src/hook")).expect("planting the link");
     });
     let run = emery(roots.deployment(&["--format", "json", "build"]), &backends, &model).await;
 
@@ -1103,7 +1103,7 @@ async fn build_brownfield() {
 }
 
 // A build naming no repository, as one naming its adapter on the command
-// line does, builds into one the engine lays under the target's name: a
+// line does, builds into one the engine creates under the target's name: a
 // root commit `Initialise` holding the adapter's layout and a `.gitignore`
 // of the engine's own directory, the slice merged over it and labelled, the
 // project directory never a repository. The next run finds the repository
@@ -1146,7 +1146,7 @@ async fn build_laid() {
             .git
             .run(&repo, &["show", &format!("{root}:build/README.md")])
             .starts_with("# Build\n"),
-        "the adapter laid its layout into the root commit"
+        "the adapter scaffolded its layout into the root commit"
     );
     assert_eq!(roots.git.run(&repo, &["rev-parse", &format!("{label}~1")]), root);
     assert_eq!(
@@ -1557,6 +1557,36 @@ async fn pin_mismatch() {
     model.assert_exhausted();
 }
 
+// A command-line adapter takes the place of the file's entry of its name,
+// and the `digest` that pinned the file's release goes with it: a pin the
+// stored bytes miss refuses nothing once the reference it pinned is replaced.
+#[tokio::test]
+async fn pin_layered() {
+    let roots = Roots::new();
+    roots.stored(SOURCE, MOCK_SOURCE);
+    roots.stored(TARGET, MOCK_TARGET);
+    let pin = Digest::of(b"other bytes");
+    roots.project.write(
+        "emery.toml",
+        format!(
+            "[[source]]\nadapter = \"{SOURCE}\"\ndigest = \"{pin}\"\npath = \"docs\"\n\n\
+             [target]\nadapter = \"{TARGET}\"\ndigest = \"{pin}\"\nrepository = \".\"\n"
+        ),
+    );
+    let backends = roots.backends().await;
+
+    let model = specifying();
+    let run = emery(roots.deployment(&["specify", SOURCE, "--config"]), &backends, &model).await;
+    assert_ok(&run);
+    model.assert_exhausted();
+
+    roots.git.seal(roots.project.path(), "project");
+    let model = building();
+    let run = emery(roots.deployment(&["build", TARGET, "--config"]), &backends, &model).await;
+    assert_ok(&run);
+    model.assert_exhausted();
+}
+
 // A pre-compiled artifact copied into the store is refused however it hashes:
 // the store is raw wasm alone.
 #[tokio::test]
@@ -1583,12 +1613,12 @@ async fn precompiled_in_store() {
 async fn two_versions_one_run() {
     let roots = Roots::new();
     roots.stored(SOURCE, MOCK_SOURCE);
-    roots.stored("acme:source@0.2.0-dev", MOCK_SOURCE);
+    roots.stored("acme:source@0.1.0-dev", MOCK_SOURCE);
     roots.project.write(
         "emery.toml",
         format!(
             "[[source]]\nname = \"docs\"\nadapter = \"{SOURCE}\"\n\n\
-             [[source]]\nname = \"api\"\nadapter = \"acme:source@0.2.0-dev\"\n"
+             [[source]]\nname = \"api\"\nadapter = \"acme:source@0.1.0-dev\"\n"
         ),
     );
     let backends = roots.backends().await;
@@ -1597,7 +1627,7 @@ async fn two_versions_one_run() {
     let run = emery(roots.deployment(&["--format", "json", "specify"]), &backends, &model).await;
 
     let envelope = refused(&run, 1, "bad_request");
-    assert_message(&envelope, "adapters `acme:source@0.1.0` and `acme:source@0.2.0-dev`");
+    assert_message(&envelope, "adapters `acme:source@0.1.0-dev` and `acme:source@0.1.0`");
     assert_message(&envelope, "would both register as `acme:source`");
     model.assert_exhausted();
 }

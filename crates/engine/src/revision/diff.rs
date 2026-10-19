@@ -316,16 +316,30 @@ impl From<&Slice> for SliceEntry {
     }
 }
 
+// Destructured whole, so a field added to the record is compared here or
+// fails to compile.
 fn differences(before: &Requirement, after: &Requirement) -> Vec<&'static str> {
+    let Requirement {
+        id,
+        subject,
+        status,
+        covered,
+        trigger,
+        sources,
+        body,
+        losers,
+        scenarios,
+    } = before;
     [
-        ("id", before.id != after.id),
-        ("subject", before.subject != after.subject),
-        ("status", before.status != after.status),
-        ("covered", before.covered != after.covered),
-        ("sources", before.sources != after.sources),
-        ("body", before.body != after.body),
-        ("losers", before.losers != after.losers),
-        ("scenarios", before.scenarios != after.scenarios),
+        ("id", *id != after.id),
+        ("subject", *subject != after.subject),
+        ("status", *status != after.status),
+        ("covered", *covered != after.covered),
+        ("trigger", *trigger != after.trigger),
+        ("sources", *sources != after.sources),
+        ("body", *body != after.body),
+        ("losers", *losers != after.losers),
+        ("scenarios", *scenarios != after.scenarios),
     ]
     .into_iter()
     .filter_map(|(name, differs)| differs.then_some(name))
@@ -333,12 +347,20 @@ fn differences(before: &Requirement, after: &Requirement) -> Vec<&'static str> {
 }
 
 fn slice_differences(before: &Slice, after: &Slice) -> Vec<&'static str> {
+    let Slice {
+        id: _,
+        name,
+        requirements,
+        types,
+        depends_on,
+        brief,
+    } = before;
     [
-        ("name", before.name != after.name),
-        ("requirements", before.requirements != after.requirements),
-        ("types", before.types != after.types),
-        ("depends-on", before.depends_on != after.depends_on),
-        ("brief", before.brief != after.brief),
+        ("name", *name != after.name),
+        ("requirements", *requirements != after.requirements),
+        ("types", *types != after.types),
+        ("depends-on", *depends_on != after.depends_on),
+        ("brief", *brief != after.brief),
     ]
     .into_iter()
     .filter_map(|(name, differs)| differs.then_some(name))

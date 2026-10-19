@@ -5,42 +5,71 @@
 //! and stored as that rendering. A requirement's subject is a dotted claim
 //! id, and its stem is the first segment.
 
+use std::error::Error;
 use std::fmt::{self, Display, Formatter};
+use std::num::NonZeroU32;
 use std::str::FromStr;
 
 use serde::{Deserialize, Serialize};
 
-// One identifier type over a `u32` behind a fixed prefix: rendered padded to
-// three digits, parsed only from that rendering, and stored as the string.
+/// The error of parsing a requirement or slice id outside its grammar.
+///
+/// An id is well formed exactly when it renders back to itself: the prefix,
+/// then a positive number padded to at least three digits.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BadId(String);
+
+impl Display for BadId {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        write!(f, "malformed id `{}`", self.0)
+    }
+}
+
+impl Error for BadId {}
+
+// One identifier type over a `NonZeroU32` behind a fixed prefix: rendered
+// padded to three digits, parsed only from that rendering, and stored as the
+// string.
 macro_rules! numbered {
     ($(#[$doc:meta])* $name:ident, $prefix:literal) => {
         $(#[$doc])*
         #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
         #[serde(try_from = "String", into = "String")]
-        pub struct $name(u32);
+        pub struct $name(NonZeroU32);
 
         impl $name {
             const PREFIX: &str = $prefix;
 
+            /// The first id, numbered one.
+            pub const FIRST: Self = Self(NonZeroU32::MIN);
+
             /// Returns the id numbered `number`.
-            ///
-            /// Numbers produced by the engine begin at one.
             #[must_use]
-            pub const fn new(number: u32) -> Self {
+            pub const fn new(number: NonZeroU32) -> Self {
                 Self(number)
+            }
+
+            /// Returns the id's number.
+            #[must_use]
+            pub const fn number(self) -> NonZeroU32 {
+                self.0
+            }
+
+            /// Returns the ids in order from [`FIRST`](Self::FIRST), one per record.
+            pub fn sequence() -> impl Iterator<Item = Self> {
+                std::iter::successors(Some(Self::FIRST), |id| id.0.checked_add(1).map(Self))
             }
         }
 
         impl FromStr for $name {
-            type Err = String;
+            type Err = BadId;
 
-            // An id is well formed exactly when it renders back to itself.
-            fn from_str(text: &str) -> Result<Self, String> {
-                let malformed = || format!("malformed id `{text}`");
+            fn from_str(text: &str) -> Result<Self, BadId> {
+                let malformed = || BadId(text.to_owned());
                 let digits = text.strip_prefix(Self::PREFIX).ok_or_else(malformed)?;
-                let number: u32 = digits.parse().ok().ok_or_else(malformed)?;
+                let number: NonZeroU32 = digits.parse().ok().ok_or_else(malformed)?;
                 let id = Self(number);
-                if number == 0 || id.to_string() != text {
+                if id.to_string() != text {
                     return Err(malformed());
                 }
                 Ok(id)
@@ -48,9 +77,9 @@ macro_rules! numbered {
         }
 
         impl TryFrom<String> for $name {
-            type Error = String;
+            type Error = BadId;
 
-            fn try_from(text: String) -> Result<Self, String> {
+            fn try_from(text: String) -> Result<Self, BadId> {
                 text.parse()
             }
         }
@@ -80,10 +109,13 @@ numbered! {
     /// ```
     /// use emery_engine::specify::ReqId;
     ///
-    /// assert_eq!(ReqId::new(7).to_string(), "REQ-007");
-    /// assert_eq!("REQ-007".parse::<ReqId>()?, ReqId::new(7));
+    /// let seventh = ReqId::sequence().nth(6).expect("ids run on");
+    /// assert_eq!(seventh.to_string(), "REQ-007");
+    /// assert_eq!("REQ-007".parse::<ReqId>()?, seventh);
+    /// assert_eq!(ReqId::FIRST.to_string(), "REQ-001");
     /// assert!("REQ-7".parse::<ReqId>().is_err());
-    /// # Ok::<(), String>(())
+    /// assert!("REQ-000".parse::<ReqId>().is_err());
+    /// # Ok::<(), emery_engine::specify::BadId>(())
     /// ```
     ReqId, "REQ-"
 }
@@ -99,10 +131,11 @@ numbered! {
     /// ```
     /// use emery_engine::specify::SliceId;
     ///
-    /// assert_eq!(SliceId::new(2).to_string(), "SLICE-002");
-    /// assert_eq!("SLICE-002".parse::<SliceId>()?, SliceId::new(2));
+    /// let second = SliceId::sequence().nth(1).expect("ids run on");
+    /// assert_eq!(second.to_string(), "SLICE-002");
+    /// assert_eq!("SLICE-002".parse::<SliceId>()?, second);
     /// assert!("SLICE-2".parse::<SliceId>().is_err());
-    /// # Ok::<(), String>(())
+    /// # Ok::<(), emery_engine::specify::BadId>(())
     /// ```
     SliceId, "SLICE-"
 }

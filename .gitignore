@@ -7,3 +7,4 @@ rustc-ice-*
 docs/book/
 .emery/
 /build/
+/.scratch/

@@ -6,7 +6,8 @@ mod support;
 
 use std::fs;
 
-use emery_adapter::target::{MergeRule, Report, Verdict};
+use emery_adapter::target::{DesignType, MergeRule, Report, Requirement, Scenario, Slice, Verdict};
+use emery_adapter::{Route, Trigger};
 use emery_engine::EntryKind;
 use omnia_sdk::model::{Error as ModelError, Reply};
 use omnia_sdk::vcs::{Change, ChangeKind, Entry, Error, Merged, Rule, Strategy};
@@ -24,7 +25,7 @@ const RESOLVED_LIB: &str = r#"{"files": [{"path": "src/lib.rs", "content": "pub 
 const BUILDER: &str = "acme:builder@2.1.0";
 const BUILDER_ID: &str = "acme:builder";
 // The config building `BUILDER` into the project checkout, `repository = "."`;
-// a run naming it on the command line lays a repository of its own instead.
+// a run naming it on the command line creates a repository of its own instead.
 const PROJECT_CONFIG: &str = "tests/build/project.toml";
 
 // The commit the project checkout sits on, where a scenario tells it from the head.
@@ -38,7 +39,7 @@ const INTEGRATION: &str = "./.emery/vcs/integration";
 const WORKTREES: &str = "./.emery/vcs/worktrees";
 const REMOTE_URL: &str = "https://example.com/acme/shop.git";
 // The target's repository, under its name: `builder`, the adapter's, when
-// the config gives none. A clone of `REMOTE_URL`, or the one the engine lays.
+// the config gives none. A clone of `REMOTE_URL`, or the one the engine creates.
 const TARGET_REPO: &str = "./.emery/vcs/repos/builder";
 const USAGE_EXIT: u8 = 64;
 
@@ -115,6 +116,101 @@ fn entry(id: &str, message: &str) -> Entry {
 
 fn worktree(slice: &str) -> String {
     format!("{WORKTREES}/{slice}")
+}
+
+// A requirement as the fixture lowers it: one scenario with no `given` and no `and`.
+fn requirement(
+    id: &str, subject: &str, statement: &str, (name, when, then): (&str, &str, &str),
+) -> Requirement {
+    Requirement {
+        id: id.to_owned(),
+        subject: subject.to_owned(),
+        statement: vec![statement.to_owned()],
+        scenarios: vec![Scenario {
+            name: name.to_owned(),
+            given: Vec::new(),
+            when: when.to_owned(),
+            then: then.to_owned(),
+            and: Vec::new(),
+        }],
+        trigger: None,
+    }
+}
+
+// The requirements, the owned types, and the brief the two-slice plan's
+// slices carry typed beside their renderings, each whole as lowered from
+// the fixtures.
+fn typed(first: &Slice, second: &Slice) {
+    assert_eq!(
+        first.requirements,
+        [
+            requirement(
+                "REQ-001",
+                "auth.login",
+                "Users sign in with a credential.",
+                ("Login", "a valid credential is presented", "the caller is signed in"),
+            ),
+            requirement(
+                "REQ-002",
+                "session.timeout",
+                "Sessions expire after an hour of inactivity.",
+                ("Timeout", "a session is idle for an hour", "it times out"),
+            ),
+        ],
+        "the requirements are lowered from the specification, in id order"
+    );
+    assert_eq!(first.types, [], "authentication owns no type");
+    assert_eq!(
+        first.brief,
+        ["Delivers sign-in and the session it issues; a session cannot be verified without a \
+          sign-in to issue it, so the two stems are one build."]
+    );
+    assert_eq!(
+        second.requirements,
+        [
+            Requirement {
+                trigger: Some(Trigger::Http(Route {
+                    method: "POST".to_owned(),
+                    path: "/orders".to_owned(),
+                })),
+                ..requirement(
+                    "REQ-003",
+                    "orders.create",
+                    "A signed-in user places an order.",
+                    ("Create", "a signed-in caller places an order", "the order is created"),
+                )
+            },
+            Requirement {
+                trigger: Some(Trigger::Message("orders.cancel-requested".to_owned())),
+                ..requirement(
+                    "REQ-004",
+                    "orders.cancel",
+                    "A signed-in user cancels an open order.",
+                    ("Cancel", "a signed-in caller cancels an order", "the order is cancelled"),
+                )
+            },
+        ],
+        "a requirement's trigger is lowered typed beside its rendering"
+    );
+    assert_eq!(
+        second.types,
+        [
+            DesignType {
+                key: "orders.line".to_owned(),
+                signature: "interface Line { sku: string }".to_owned(),
+            },
+            DesignType {
+                key: "orders.order".to_owned(),
+                signature: "interface Order { id: string }".to_owned(),
+            },
+        ],
+        "each owned key with the design's signature, in the plan's order"
+    );
+    assert_eq!(
+        second.brief,
+        ["Delivers order creation and cancellation for a signed-in caller; verified by placing \
+          and cancelling an order under a session from `authentication`."]
+    );
 }
 
 // Scripts what the next build of `slice` leaves changed in its working copy.
@@ -197,9 +293,9 @@ fn integrated(repo: &str, base: &str, id: &str) -> Vec<String> {
 }
 
 // The exchange a fresh two-slice build makes over the repository the engine
-// laid, whose root commit the adapter initialised, so the integration copy
-// is not initialised again.
-fn integrated_laid(base: &str, id: &str) -> Vec<String> {
+// created, whose root commit the adapter initialised, so the integration
+// copy is not initialised again.
+fn integrated_created(base: &str, id: &str) -> Vec<String> {
     let mut calls = vec![
         format!("labelled {TARGET_REPO} emery/{id}"),
         format!("add {TARGET_REPO} {INTEGRATION} {base}"),
@@ -292,21 +388,21 @@ async fn build_plan() {
         "a working copy per slice, never the checkout"
     );
 
-    // each slice carries its own documents and the head it builds over
+    // each slice carries its own documents, typed beside the renderings, and
+    // the head it builds over
     assert_eq!(first.id, "SLICE-001");
     assert_eq!(first.name, "authentication");
-    assert_eq!(first.requirements, ["REQ-001", "REQ-002"]);
     assert_eq!(first.spec, SPEC_001, "the specification is cut to the slice");
     assert_eq!(first.design, DESIGN_MD, "the design is whole");
     assert_eq!(first.plan, PLAN_001, "the plan entry is the slice's own");
     assert_eq!(first.base, BASE, "the first wave builds over the base");
     assert_eq!(second.id, "SLICE-002");
     assert_eq!(second.name, "orders");
-    assert_eq!(second.requirements, ["REQ-003", "REQ-004"]);
     assert_eq!(second.spec, SPEC_002);
     assert_eq!(second.design, DESIGN_MD);
     assert_eq!(second.plan, PLAN_002);
     assert_eq!(second.base, HEAD, "the second wave builds over the verified head");
+    typed(first, second);
     assert_eq!(provider.target.verifies(), [INTEGRATION, INTEGRATION], "one verify per wave");
     assert_eq!(provider.target.inits(), [INTEGRATION], "one init, before any slice");
 
@@ -335,7 +431,7 @@ async fn build_plan() {
     assert_eq!(envelope["waves"], json!([["SLICE-001"], ["SLICE-002"]]), "{envelope}");
     assert_eq!(envelope["base"], BASE, "{envelope}");
     assert!(envelope.get("resumed").is_none(), "a fresh build resumes nothing: {envelope}");
-    assert!(envelope.get("initialised").is_none(), "an init laying nothing seals nothing");
+    assert!(envelope.get("initialised").is_none(), "an init scaffolding nothing seals nothing");
     assert_eq!(
         envelope["slices"],
         json!([
@@ -1791,7 +1887,7 @@ async fn build_repository() {
 }
 
 // A `[target] name` is the directory the repository is kept under, cloned
-// or laid; one that is not kebab-case is refused before anything is read.
+// or created; one that is not kebab-case is refused before anything is read.
 #[tokio::test]
 async fn build_named() {
     let scratch = Scratch::new();
@@ -1821,6 +1917,65 @@ async fn build_named() {
         fail(&provider, &["emery", "build", "--config", &config], 1, "bad_request").await;
     assert_message(&envelope, "target `Shop` is not a kebab-case name");
     assert_eq!(provider.vcs.calls().len(), before, "nothing is read for a refused name");
+    provider.vcs.assert_exhausted();
+}
+
+// A command-line adapter layers over the `[target]` table: it takes the
+// place of the file's `adapter` under the file's `name` and `repository`,
+// the `digest` that pinned the file's release going with the adapter it
+// pinned.
+#[tokio::test]
+async fn layered_target() {
+    let scratch = Scratch::new();
+    let pin = digest("cd");
+    let config = scratch.config(&format!(
+        "[target]\nname = \"shop\"\nadapter = \"acme:other@1.0.0\"\ndigest = \"{pin}\"\n\
+         repository = \"{REMOTE_URL}\"\n"
+    ));
+    let (provider, id) = planned();
+
+    let resp =
+        cli_ok(&provider, &["emery", "--format", "json", "build", BUILDER, "--config", &config])
+            .await;
+
+    let envelope: Value = serde_json::from_slice(&resp.stdout).expect("one JSON envelope");
+    assert_eq!(envelope["repository"], "./.emery/vcs/repos/shop", "{envelope}");
+    assert_eq!(
+        *provider.target.metadata.lock().expect("metadata"),
+        [BUILDER_ID],
+        "the command-line adapter is the one gated"
+    );
+    assert_eq!(provider.vcs.calls()[0], format!("clone {REMOTE_URL} ./.emery/vcs/repos/shop"));
+    assert!(
+        provider.vcs.calls().contains(&format!("label ./.emery/vcs/repos/shop emery/{id} {HEAD}"))
+    );
+    provider.vcs.assert_exhausted();
+}
+
+// `--repository` names where the build lands: the project checkout for a run
+// naming its adapter on the command line, which would otherwise create a
+// repository of its own, and the clone in place of the one the file names.
+#[tokio::test]
+async fn repository_flag() {
+    let (provider, id) = planned();
+    provider.vcs.heads.script(".", Ok(BASE.to_owned()));
+
+    let resp = cli_ok(&provider, &["emery", "build", BUILDER, "--repository", "."]).await;
+
+    let stdout = String::from_utf8_lossy(&resp.stdout);
+    assert!(stdout.contains(&format!("\n  base {BASE}\n  wave 1:")), "{stdout}");
+    let mut expected = vec!["pending .".to_owned(), "head .".to_owned()];
+    expected.extend(integrated(".", BASE, &id));
+    assert_eq!(provider.vcs.calls(), expected, "built into the project checkout, nothing created");
+
+    // over a file, the flag's URL is cloned in place of the file's
+    let scratch = Scratch::new();
+    let config = scratch.config(&format!(
+        "[target]\nadapter = \"{BUILDER}\"\nrepository = \"https://example.com/acme/old.git\"\n"
+    ));
+    let before = provider.vcs.calls().len();
+    cli_ok(&provider, &["emery", "build", "--config", &config, "--repository", REMOTE_URL]).await;
+    assert_eq!(provider.vcs.calls()[before], format!("clone {REMOTE_URL} {TARGET_REPO}"));
     provider.vcs.assert_exhausted();
 }
 
@@ -2080,9 +2235,9 @@ async fn build_not_repository() {
 }
 
 // A build naming no repository, as one naming its adapter on the command
-// line does, builds into one the engine lays under the target's name:
+// line does, builds into one the engine creates under the target's name:
 // initialised by the adapter, given a `.gitignore` of the engine's own
-// directory where the adapter laid none, sealed as `Initialise`, and built
+// directory where the adapter scaffolded none, sealed as `Initialise`, and built
 // from that commit, the project directory never read. The envelope names
 // the repository beside the base.
 #[tokio::test]
@@ -2100,15 +2255,15 @@ async fn build_laid() {
         [(TARGET_REPO.to_owned(), ".gitignore".to_owned(), b".emery/\n".to_vec())],
         "the one file the engine adds to the root commit"
     );
-    assert_eq!(provider.target.inits(), [TARGET_REPO], "the adapter lays the root commit");
+    assert_eq!(provider.target.inits(), [TARGET_REPO], "the adapter scaffolds the root commit");
     assert_eq!(provider.vcs.messages()[0], "Initialise");
     let mut expected = vec![
         format!("init {TARGET_REPO}"),
         format!("pending {TARGET_REPO}"),
         format!("commit {TARGET_REPO} Initialise"),
     ];
-    expected.extend(integrated_laid("Initialise-commit", &id));
-    assert_eq!(provider.vcs.calls(), expected, "laid, sealed, then built as any repository");
+    expected.extend(integrated_created("Initialise-commit", &id));
+    assert_eq!(provider.vcs.calls(), expected, "created, sealed, then built as any repository");
     assert_eq!(provider.target.calls().len(), 2, "every slice builds");
 
     // an adapter whose layout holds a `.gitignore` is given none
@@ -2122,7 +2277,7 @@ async fn build_laid() {
     provider.vcs.assert_exhausted();
 }
 
-// The repository the engine laid is kept, so the next run starts from the
+// The repository the engine created is kept, so the next run starts from the
 // same root commit, initialising, writing, and sealing nothing; one
 // initialised but never sealed, a run that failed between the two, is
 // initialised and sealed now.
@@ -2136,10 +2291,10 @@ async fn build_laid_reused() {
 
     let stdout = String::from_utf8_lossy(&resp.stdout);
     assert!(stdout.contains(&format!("\n  base {BASE}\n  repository {TARGET_REPO}\n")), "{stdout}");
-    assert!(provider.files.writes().is_empty(), "nothing laid again");
+    assert!(provider.files.writes().is_empty(), "nothing scaffolded again");
     assert!(provider.target.inits().is_empty(), "nothing initialised again");
     let mut expected = vec![format!("init {TARGET_REPO}"), format!("head {TARGET_REPO}")];
-    expected.extend(integrated_laid(BASE, &id));
+    expected.extend(integrated_created(BASE, &id));
     assert_eq!(provider.vcs.calls(), expected);
     assert!(!provider.vcs.calls().contains(&"pending .".to_owned()), "the project is never read");
 
@@ -2162,11 +2317,11 @@ async fn build_laid_reused() {
     provider.vcs.assert_exhausted();
 }
 
-// A fresh build over a base the engine did not lay has the adapter
+// A fresh build over a base the engine did not create has the adapter
 // initialise the integration copy before any slice: what the layout adds is
 // sealed as `Initialise`, the commit every slice builds over, and reported
 // with its paths. The base is never read for what it holds, since the
-// adapter lays what the tree lacks.
+// adapter scaffolds what the tree lacks.
 #[tokio::test]
 async fn build_initialised() {
     let scratch = Scratch::new();
@@ -2212,7 +2367,7 @@ async fn build_initialised() {
             (INTEGRATION.to_owned(), "src/lib.rs".to_owned()),
             (INTEGRATION.to_owned(), "Cargo.toml".to_owned()),
         ],
-        "what the layout laid is held to the secret gate"
+        "what the layout scaffolded is held to the secret gate"
     );
     assert_eq!(
         provider.vcs.messages()[..2],
@@ -2228,7 +2383,10 @@ async fn build_initialised() {
             ),
         ]
     );
-    assert!(provider.files.writes().is_empty(), "the engine lays nothing in a repository it holds");
+    assert!(
+        provider.files.writes().is_empty(),
+        "the engine writes nothing in a repository it holds"
+    );
 
     provider.vcs.clones.script(TARGET_REPO, Err(Error::Exists(TARGET_REPO.to_owned())));
     provider.vcs.resolves.script(TARGET_REPO, Ok(BASE.to_owned()));
@@ -2244,7 +2402,7 @@ async fn build_initialised() {
     provider.vcs.assert_exhausted();
 }
 
-// A credential the adapter's initialisation lays refuses the build before
+// A credential the adapter's initialisation scaffolds refuses the build before
 // anything is sealed or any slice dispatched, naming the initialisation.
 #[tokio::test]
 async fn build_init_secret() {
@@ -2269,7 +2427,7 @@ async fn build_init_secret() {
     provider.vcs.assert_exhausted();
 }
 
-// A build resumed from a label in the repository the engine laid reads the
+// A build resumed from a label in the repository the engine created reads the
 // label there and starts from it, the slices its chain names not built
 // again and nothing initialised again.
 #[tokio::test]
@@ -2297,7 +2455,7 @@ async fn build_laid_resumed() {
     );
     assert!(
         provider.vcs.calls().contains(&format!("descends {TARGET_REPO} {BASE} {LABELLED}")),
-        "the label is read in the laid repository"
+        "the label is read in the created repository"
     );
     provider.vcs.assert_exhausted();
 }

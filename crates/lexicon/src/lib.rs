@@ -1,9 +1,24 @@
+#![warn(missing_docs, clippy::missing_errors_doc)]
+
 //! Reads a text for the technology it names.
 //!
 //! A specification states behaviour by the role a thing plays. Design is
 //! responsible for naming the product, protocol, library, framework, or host
 //! that implements the behaviour. A [`Lexicon`] holds the names a text is
 //! held against: the fixed ones, and those of the packages a source imports.
+//!
+//! # Examples
+//!
+//! ```
+//! use emery_lexicon::Lexicon;
+//!
+//! let lexicon = Lexicon::from_packages(["@azure/keyvault-secrets"]);
+//! assert_eq!(
+//!     lexicon.names("Secrets are read from Key Vault before the Kafka clients start."),
+//!     ["keyvault", "kafka"]
+//! );
+//! assert!(lexicon.names("POST /orders creates an order.").is_empty());
+//! ```
 
 // The fixed names of vendors, products, protocols, frameworks, and hosts.
 //
@@ -254,7 +269,7 @@ const COINED_PARTS: &[&str] = &["sql"];
 /// # Examples
 ///
 /// ```
-/// use emery_adapter::Lexicon;
+/// use emery_lexicon::Lexicon;
 ///
 /// let fixed = Lexicon::default();
 /// assert_eq!(
@@ -303,7 +318,7 @@ impl Lexicon {
     /// # Examples
     ///
     /// ```
-    /// use emery_adapter::Lexicon;
+    /// use emery_lexicon::Lexicon;
     ///
     /// assert_eq!(
     ///     Lexicon::from_packages(["@azure/keyvault-secrets", "@nestjs/common", "boto3"]),
@@ -335,7 +350,7 @@ impl Lexicon {
     /// # Examples
     ///
     /// ```
-    /// use emery_adapter::Lexicon;
+    /// use emery_lexicon::Lexicon;
     ///
     /// let lexicon = Lexicon::default();
     /// assert_eq!(lexicon.names("useConfluentKafkaConfig"), ["confluent", "kafka"]);

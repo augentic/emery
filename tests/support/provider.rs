@@ -7,7 +7,7 @@ use std::time::Duration;
 
 use anyhow::Result;
 use emery_adapter::source::{
-    AdapterMetadata, Backing, Claim, ClaimKind, Evidence, Source, SourceInput, SourceKind,
+    Backing, Claim, ClaimKind, Evidence, Source, SourceInput, SourceKind, SourceMetadata,
 };
 use emery_adapter::target::{
     MergeRule, Outcome, Report, Slice, Target, TargetMetadata, Task, Verdict,
@@ -120,7 +120,7 @@ impl Rendezvous {
 /// Reports are scripted per slice id, verdicts in wave order, the minimum
 /// `emery` version and the merge rules per adapter.
 ///
-/// - An init answers at once; what it lays is the scripted `Vcs`'s
+/// - An init answers at once; what it scaffolds is the scripted `Vcs`'s
 ///   `pending` to say.
 /// - An unscripted slice reports every requirement covered and one file
 ///   written, `src/<name>.rs`.
@@ -376,9 +376,9 @@ impl<S: Send + Sync + 'static> Source for Provider<S> {
         }
     }
 
-    fn metadata(&self, id: &str) -> AdapterMetadata {
+    fn metadata(&self, id: &str) -> SourceMetadata {
         self.source.metadata.lock().expect("metadata").push(id.to_string());
-        AdapterMetadata {
+        SourceMetadata {
             emery_version: self.source.versions.get(id).cloned(),
             kind: self.source.kinds.get(id).copied().unwrap_or(SourceKind::Documentation),
         }
@@ -416,7 +416,11 @@ impl<S: Send + Sync + 'static> Target for Provider<S> {
                         || {
                             self.target.reports.get(&slice.id).cloned().unwrap_or_else(|| {
                                 Ok(Report {
-                                    covered: slice.requirements.clone(),
+                                    covered: slice
+                                        .requirements
+                                        .iter()
+                                        .map(|requirement| requirement.id.clone())
+                                        .collect(),
                                     written: vec![format!("src/{}.rs", slice.name)],
                                 })
                             })

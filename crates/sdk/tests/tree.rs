@@ -11,6 +11,7 @@ use emery_sdk::survey::code::{
 };
 use emery_sdk::survey::resolve::Target;
 use emery_sdk::survey::tests::Statement;
+use emery_sdk::{Claim, ClaimKind, Evidence, Route, Trigger};
 use support::{
     PYTHON, Plain, Stub, TYPESCRIPT, binding, call, callee, class, class_decl, dynamic, export,
     from_module, from_package, function, import, inline, line, literal, member, module, name,
@@ -35,6 +36,7 @@ fn surface(name: &str, entry: &str, stem: &str, discriminator: Option<&str>) -> 
         discriminator: discriminator.map(str::to_owned),
         methods: Vec::new(),
         ids: Vec::new(),
+        trigger: None,
     }
 }
 
@@ -168,7 +170,7 @@ fn constant_led() {
     let routes = &tree.modules["src/routes.ts"];
 
     let led: Vec<Option<String>> =
-        routes.calls[1..].iter().map(|call| tree.led(routes, call)).collect();
+        routes.calls[1..].iter().map(|call| tree.leading_literal(routes, call)).collect();
     assert_eq!(
         led,
         [Some("/local".to_owned()), Some("/orders".to_owned()), Some("/lit".to_owned()), None]
@@ -321,12 +323,75 @@ fn identify_ids() {
     );
 }
 
+// A surface's `contract` carries its trigger under the one extra of its
+// kind, which the claim gate reads back as the same trigger; a surface with
+// none carries no contract.
+#[test]
+fn contract_of_a_trigger() {
+    let tree = tree(
+        Path::new("/svc"),
+        &TYPESCRIPT,
+        vec![module("src/orders.ts", 4), module("src/events.ts", 4)],
+        Stub::default(),
+    );
+    let mut surfaces = vec![
+        Surface {
+            trigger: Some(Trigger::Http(Route::parse("POST /orders").expect("a route"))),
+            ..surface("POST /orders", "src/orders.ts", "orders", None)
+        },
+        Surface {
+            trigger: Trigger::message("orders.cancel-requested").ok(),
+            lines: span(2, 3),
+            ..surface("cancel requested", "src/events.ts", "cancel", None)
+        },
+        surface("files", "src/orders.ts", "files", None),
+    ];
+    tree.identify(&mut surfaces);
+
+    let contracts: Vec<Claim> = surfaces.iter().filter_map(Surface::contract).collect();
+    let extras: Vec<Vec<(&str, &str)>> = contracts
+        .iter()
+        .map(|claim| {
+            assert_eq!(claim.kind, ClaimKind::Contract);
+            claim
+                .extras
+                .iter()
+                .map(|(key, value)| (key.as_str(), value.as_str().unwrap_or("")))
+                .collect()
+        })
+        .collect();
+    assert_eq!(
+        extras,
+        [vec![("route", "POST /orders")], vec![("message", "orders.cancel-requested")]]
+    );
+    assert_eq!(
+        contracts
+            .iter()
+            .map(|claim| (claim.id.as_deref(), claim.path.as_deref()))
+            .collect::<Vec<_>>(),
+        [(Some("orders"), Some("src/orders.ts#L1")), (Some("cancel"), Some("src/events.ts#L2-L3"))]
+    );
+    let triggers: Vec<Trigger> = contracts
+        .iter()
+        .map(|claim| claim.trigger().expect("a trigger").expect("in its grammar"))
+        .collect();
+    assert_eq!(
+        triggers,
+        [
+            Trigger::Http(Route::parse("POST /orders").expect("a route")),
+            Trigger::Message("orders.cancel-requested".to_owned())
+        ]
+    );
+    let evidence = Evidence { claims: contracts };
+    assert!(evidence.findings().is_empty(), "{:?}", evidence.findings());
+}
+
 // A seam widens past an import the resolver could not follow to the
 // importing module's own directory, and past a load by a computed name to
 // the directory the load spells, or the loader's own where it spells none.
 // A directory's modules are those directly beneath it, the root's own at
 // the root; a file the survey set aside widens nothing, and what the seam
-// lays already is not laid again.
+// mines already is not placed again.
 #[test]
 fn widening() {
     let mut aliased = module("src/api/a.ts", 3);
@@ -383,7 +448,7 @@ fn widening() {
     assert_eq!(
         widening(&["src/jobs/b.ts", "src/jobs/c.ts"]),
         ["src/jobs/d.ts", "src/plugins/p.ts", "src/plugins/q.ts"],
-        "both directories in path order, less what the seam lays"
+        "both directories in path order, less what the seam mines"
     );
     assert_eq!(widening(&["main.ts"]), ["index.ts"], "the root's own at the root");
     assert_eq!(widening(&["src/api/d.ts"]), [] as [String; 0], "a file set aside widens nothing");
@@ -392,7 +457,7 @@ fn widening() {
 
 // A call registers when it hands a handler and is discarded, constructs, or
 // is led by a literal, whatever its depth; a structural call or a wrapper
-// taken for its value registers nothing; `handed` names the package at
+// taken for its value registers nothing; `handed_to` names the package at
 // depth zero alone.
 #[test]
 fn hands_and_registers() {
@@ -432,13 +497,17 @@ fn hands_and_registers() {
     let m = &tree.modules["src/m.ts"];
 
     assert!(tree.registers(m, &m.calls[1]));
-    assert_eq!(tree.handed(m, &m.calls[1]).map(|r| r.package), Some("express".to_owned()));
-    assert!(!tree.hands(m, &m.calls[2]), "`use` is structure");
+    assert_eq!(tree.handed_to(m, &m.calls[1]).map(|r| r.package), Some("express".to_owned()));
+    assert!(!tree.hands_handler(m, &m.calls[2]), "`use` is structure");
     assert!(tree.registers(m, &m.calls[3]), "at any depth");
-    assert_eq!(tree.handed(m, &m.calls[3]), None, "`handed` is for a call outside any handler");
-    assert!(tree.hands(m, &m.calls[4]));
+    assert_eq!(
+        tree.handed_to(m, &m.calls[3]),
+        None,
+        "`handed_to` is for a call outside any handler"
+    );
+    assert!(tree.hands_handler(m, &m.calls[4]));
     assert!(!tree.registers(m, &m.calls[4]), "a wrapper taken for its value registers nothing");
-    assert!(!tree.hands(m, &m.calls[5]), "nothing handed");
+    assert!(!tree.hands_handler(m, &m.calls[5]), "nothing handed");
     assert_eq!(tree.registration_at(m, span(1, 3)).map(|c| c.lines), Some(line(3)));
     assert_eq!(tree.registration_enclosing(m, line(5)).map(|c| c.lines), Some(line(5)));
     assert_eq!(tree.registration_at(m, line(6)), None);

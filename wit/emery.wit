@@ -192,6 +192,67 @@ interface target {
     merge-rules: list<merge-rule>,
   }
 
+  /// One acceptance scenario of a requirement, as the specification
+  /// drafts it.
+  record scenario {
+    /// The scenario's heading.
+    name: string,
+    /// The `GIVEN` conditions, one each; may be empty.
+    given: list<string>,
+    /// The `WHEN` trigger.
+    when: string,
+    /// The `THEN` outcome, `[unknown]` where the sources evidence none.
+    then: string,
+    /// The further `AND` outcomes, one each; may be empty.
+    and: list<string>,
+  }
+
+  /// An HTTP route: a method, uppercase, and a path template led by `/`
+  /// with each parameter spelled `{name}`.
+  record route {
+    /// The method: `GET`, `POST`, `PUT`, `PATCH`, `DELETE`, `HEAD`, or
+    /// `OPTIONS`.
+    method: string,
+    /// The path template, `/orders/{id}/pay`.
+    path: string,
+  }
+
+  /// What reaches a requirement: the surface the source registered its
+  /// behaviour at. Which wire carries a message is the design's to say.
+  variant trigger {
+    /// An HTTP route.
+    http(route),
+    /// An inbound message by name: a broker topic, a socket event.
+    message(string),
+  }
+
+  /// One requirement the slice builds, typed beside its rendering in
+  /// `spec`, so an adapter reads its parts without parsing the Markdown.
+  record requirement {
+    /// The stable requirement identifier, `REQ-001`. A report's `covered`
+    /// is held to these.
+    id: string,
+    /// The dotted subject, `orders.pay`, whose first segment is the stem.
+    subject: string,
+    /// The statement's paragraphs, in order; empty for a requirement in
+    /// conflict.
+    statement: list<string>,
+    /// The acceptance scenarios, in the specification's order.
+    scenarios: list<scenario>,
+    /// What reaches the requirement, where the source's surface registered
+    /// it; the specification's `Route:` or `Message:` line.
+    trigger: option<trigger>,
+  }
+
+  /// One design type the slice owns: a data shape its code reads or
+  /// produces, as the design carries it.
+  record design-type {
+    /// The type's key, as the plan entry names it.
+    key: string,
+    /// The source's signature, verbatim.
+    signature: string,
+  }
+
   /// One slice of the build plan, as `emery show` renders the revision it
   /// comes from. A target is value-in; it never reads the revision store.
   record slice {
@@ -202,10 +263,15 @@ interface target {
     /// The commit the lent tree sits on: the integrated head the slice
     /// builds over, so a worker elsewhere can materialise the same tree.
     base: string,
-    /// The ids of the requirements the slice builds, `REQ-001`, each one
-    /// `spec` renders. A report's `covered` is held to them, so neither
-    /// side reads them back out of the Markdown.
-    requirements: list<string>,
+    /// The requirements the slice builds, typed, each one `spec` renders.
+    /// A report's `covered` is held to their ids, so neither side reads
+    /// them back out of the Markdown.
+    requirements: list<requirement>,
+    /// The design types the slice owns, each one `design` renders.
+    types: list<design-type>,
+    /// The plan's brief for the slice: the paragraphs a builder reads
+    /// before taking it up.
+    brief: list<string>,
     /// The specification cut to the slice: its preamble and the slice's
     /// requirements, as `emery show spec` renders them.
     spec: string,
@@ -237,7 +303,7 @@ interface target {
 
   /// What the engine asks a target adapter to do in the lent tree.
   variant task {
-    /// Lay the layout's initial files the tree lacks; a held file stands.
+    /// Scaffold the layout's initial files the tree lacks; a held file stands.
     /// Put once per tree the build lands in, before any slice, with no
     /// model turn expected: the engine seals what it finds as `Initialise`.
     init,
@@ -263,8 +329,8 @@ interface target {
 
   /// Runs `task` in the writable tree at `workspace`, the one judgment
   /// operation. `workspace` is the deployment-local path of the tree root,
-  /// which the adapter lends to its model for a build or a verify and lays
-  /// its layout into for an init. Returns `invalid-request` when the
+  /// which the adapter lends to its model for a build or a verify and
+  /// scaffolds its layout into for an init. Returns `invalid-request` when the
   /// adapter refuses its input and `internal` when it fails on its own
   /// account.
   run: async func(id: adapter-id, workspace: string, task: task) -> result<outcome, error>;
