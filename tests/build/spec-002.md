@@ -7,6 +7,7 @@ Sign-in, its session, and orders over both.
 ID: REQ-003
 Sources: [docs:orders.create]
 Status: unknown
+Route: POST /orders
 
 A signed-in user places an order.
 
@@ -22,6 +23,7 @@ Note: acceptance criteria not evidenced.
 ID: REQ-004
 Sources: [docs:orders.cancel]
 Status: unknown
+Message: orders.cancel-requested
 
 A signed-in user cancels an open order.
 

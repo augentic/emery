@@ -47,6 +47,7 @@ impl Report {
     ///         subject: "orders.create".into(),
     ///         statement: vec!["An order is created from at least one item.".into()],
     ///         scenarios: Vec::new(),
+    ///         trigger: None,
     ///     }],
     ///     types: Vec::new(),
     ///     brief: Vec::new(),

@@ -7,6 +7,7 @@ mod support;
 use std::fs;
 
 use emery_adapter::target::{DesignType, MergeRule, Report, Requirement, Scenario, Slice, Verdict};
+use emery_adapter::{Route, Trigger};
 use emery_engine::EntryKind;
 use omnia_sdk::model::{Error as ModelError, Reply};
 use omnia_sdk::vcs::{Change, ChangeKind, Entry, Error, Merged, Rule, Strategy};
@@ -132,6 +133,7 @@ fn requirement(
             then: then.to_owned(),
             and: Vec::new(),
         }],
+        trigger: None,
     }
 }
 
@@ -166,19 +168,29 @@ fn typed(first: &Slice, second: &Slice) {
     assert_eq!(
         second.requirements,
         [
-            requirement(
-                "REQ-003",
-                "orders.create",
-                "A signed-in user places an order.",
-                ("Create", "a signed-in caller places an order", "the order is created"),
-            ),
-            requirement(
-                "REQ-004",
-                "orders.cancel",
-                "A signed-in user cancels an open order.",
-                ("Cancel", "a signed-in caller cancels an order", "the order is cancelled"),
-            ),
-        ]
+            Requirement {
+                trigger: Some(Trigger::Http(Route {
+                    method: "POST".to_owned(),
+                    path: "/orders".to_owned(),
+                })),
+                ..requirement(
+                    "REQ-003",
+                    "orders.create",
+                    "A signed-in user places an order.",
+                    ("Create", "a signed-in caller places an order", "the order is created"),
+                )
+            },
+            Requirement {
+                trigger: Some(Trigger::Message("orders.cancel-requested".to_owned())),
+                ..requirement(
+                    "REQ-004",
+                    "orders.cancel",
+                    "A signed-in user cancels an open order.",
+                    ("Cancel", "a signed-in caller cancels an order", "the order is cancelled"),
+                )
+            },
+        ],
+        "a requirement's trigger is lowered typed beside its rendering"
     );
     assert_eq!(
         second.types,

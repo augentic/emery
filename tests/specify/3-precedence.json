@@ -1,5 +1,5 @@
 {
-  "emery": 6,
+  "emery": 7,
   "preamble": [
     "Four bound sources disagree; authority resolves what it can, tied peers surface as [conflict] for the operator, and the uncovered acceptance gap is preserved, never guessed."
   ],
@@ -9,6 +9,7 @@
       "subject": "login.flow",
       "status": "conflict",
       "covered": true,
+      "trigger": null,
       "sources": [
         {
           "source": "docs",
@@ -71,6 +72,7 @@
       "subject": "session.timeout",
       "status": "divergence",
       "covered": false,
+      "trigger": null,
       "sources": [
         {
           "source": "intent",

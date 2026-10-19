@@ -1,5 +1,9 @@
 //! Carries what the code says of each surface the survey named.
 
+use emery_adapter::Trigger;
+use emery_adapter::source::{Claim, ClaimKind};
+use serde_json::{Map, Value};
+
 use super::recogniser::{Bootstrap, Recogniser};
 use super::tree::{Tree, seed};
 use crate::survey::{Lines, unique};
@@ -34,9 +38,45 @@ pub struct Surface {
     /// otherwise, and one more per method of a class; set by
     /// [`Tree::identify`].
     pub ids: Vec<String>,
+    /// What reaches the surface, where its registration or decorator spells
+    /// it: a route under its module's mount, or a message by name.
+    pub trigger: Option<Trigger>,
 }
 
 impl Surface {
+    /// Returns the surface's own id: the first of [`ids`](Self::ids), the
+    /// methods' following it.
+    ///
+    /// `None` before [`Tree::identify`] has run.
+    #[must_use]
+    pub fn id(&self) -> Option<&str> {
+        self.ids.first().map(String::as_str)
+    }
+
+    /// Returns the `contract` claim for the surface's trigger, where it has one.
+    ///
+    /// The claim's `id` is the surface's own, its `path` the surface's
+    /// lines in its entry, its `synopsis` the surface's name, and its one
+    /// extra the trigger as [`Trigger`] spells it: `route` for a route,
+    /// `message` for a message. The engine binds the trigger to every
+    /// requirement whose id leads with the surface's.
+    #[must_use]
+    pub fn contract(&self) -> Option<Claim> {
+        let trigger = self.trigger.as_ref()?;
+        let key = match trigger {
+            Trigger::Http(_) => "route",
+            Trigger::Message(_) => "message",
+        };
+        Some(Claim {
+            kind: ClaimKind::Contract,
+            id: self.id().map(str::to_owned),
+            path: Some(format!("{}#{}", self.entry, self.lines.anchor())),
+            synopsis: Some(self.name.clone()),
+            backing: None,
+            extras: Map::from_iter([(key.to_owned(), Value::String(trigger.to_string()))]),
+        })
+    }
+
     /// Returns the bootstrap's `start` surface: what its module does outside
     /// the handlers it registers.
     ///
@@ -89,6 +129,7 @@ impl Surface {
             discriminator: None,
             methods: Vec::new(),
             ids: vec!["start".to_owned()],
+            trigger: None,
         }
     }
 }
@@ -124,6 +165,10 @@ pub struct Derived {
     pub detail: Vec<String>,
     /// The modules reached, the anchor's module first.
     pub closure: Vec<String>,
+    /// What reaches the surface the registration or decorator at the anchor
+    /// spells: a route under its module's mount, or a message by name;
+    /// `None` where the anchor spells neither.
+    pub trigger: Option<Trigger>,
 }
 
 impl Derived {
@@ -142,6 +187,7 @@ impl Derived {
             lines,
             detail: vec![format!("named by the survey at {lines}")],
             closure: tree.reaches(module, lines, &[], None),
+            trigger: None,
         }
     }
 }

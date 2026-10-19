@@ -29,20 +29,20 @@ pub use self::id::{ReqId, SliceId, stem, substem};
 use self::plan::{DEPENDS_ON, REQUIREMENTS, TYPES};
 pub use self::plan::{Plan, Slice, Waves, ranks};
 pub use self::spec::{Cited, Loser, Requirement, Scenario, Spec, Status};
-use self::spec::{ID, NOTE, SOURCES, STATUS};
+use self::spec::{ID, MESSAGE, NOTE, ROUTE, SOURCES, STATUS};
 
 /// The revision grammar written and accepted by this engine.
 ///
 /// A stored revision stamped with another grammar is outdated.
-pub const EMERY: u32 = 6;
+pub const EMERY: u32 = 7;
 
 /// Line prefixes reserved for engine-generated Markdown.
 ///
 /// `#`, so no draft line reads as a heading, and the engine's own line keys,
-/// so no draft line passes as provenance, a note, a type label, or a slice's
-/// lists.
+/// so no draft line passes as provenance, a trigger, a note, a type label,
+/// or a slice's lists.
 pub const RESERVED: &[&str] =
-    &["#", ID, SOURCES, STATUS, NOTE, TYPE, REQUIREMENTS, TYPES, DEPENDS_ON];
+    &["#", ID, SOURCES, STATUS, ROUTE, MESSAGE, NOTE, TYPE, REQUIREMENTS, TYPES, DEPENDS_ON];
 
 /// A typed revision document stored as JSON and rendered as Markdown.
 pub trait Document: Serialize + DeserializeOwned + Display {

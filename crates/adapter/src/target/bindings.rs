@@ -31,6 +31,7 @@ mod generated {
 }
 
 use self::generated::emery::adapter::target as wit;
+use crate::{Route, Trigger};
 use crate::target::{
     DesignType, MergeRule, MergeStrategy, Outcome, Report, Requirement, Scenario, Slice,
     TargetMetadata, Task, Verdict,
@@ -131,6 +132,7 @@ impl From<Requirement> for wit::Requirement {
             subject: requirement.subject,
             statement: requirement.statement,
             scenarios: requirement.scenarios.into_iter().map(Into::into).collect(),
+            trigger: requirement.trigger.map(Into::into),
         }
     }
 }
@@ -142,6 +144,43 @@ impl From<wit::Requirement> for Requirement {
             subject: requirement.subject,
             statement: requirement.statement,
             scenarios: requirement.scenarios.into_iter().map(Into::into).collect(),
+            trigger: requirement.trigger.map(Into::into),
+        }
+    }
+}
+
+impl From<Trigger> for wit::Trigger {
+    fn from(trigger: Trigger) -> Self {
+        match trigger {
+            Trigger::Http(route) => Self::Http(route.into()),
+            Trigger::Message(name) => Self::Message(name),
+        }
+    }
+}
+
+impl From<wit::Trigger> for Trigger {
+    fn from(trigger: wit::Trigger) -> Self {
+        match trigger {
+            wit::Trigger::Http(route) => Self::Http(route.into()),
+            wit::Trigger::Message(name) => Self::Message(name),
+        }
+    }
+}
+
+impl From<Route> for wit::Route {
+    fn from(route: Route) -> Self {
+        Self {
+            method: route.method,
+            path: route.path,
+        }
+    }
+}
+
+impl From<wit::Route> for Route {
+    fn from(route: wit::Route) -> Self {
+        Self {
+            method: route.method,
+            path: route.path,
         }
     }
 }

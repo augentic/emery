@@ -7,7 +7,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::{self, Display, Formatter};
 
-use emery_adapter::is_kebab;
+use emery_adapter::{Trigger, is_kebab};
 use omnia_sdk::{Error, Model, server_error};
 use schemars::JsonSchema;
 use serde::Deserialize;
@@ -28,12 +28,13 @@ pub const SLICE_CAP: usize = 12;
 
 /// A synthesis brief for the build plan.
 ///
-/// The brief contains the requirement bases, the stems they fall under, and
-/// the design's data type keys.
+/// The brief contains the requirement bases, the stems they fall under, the
+/// triggers that reach them, and the design's data type keys.
 pub struct SliceBrief<'a> {
     bases: &'a [Basis<'a>],
     types: Vec<String>,
     stems: Vec<Stem<'a>>,
+    triggers: Vec<(&'a Trigger, Vec<ReqId>)>,
 }
 
 impl<'a> SliceBrief<'a> {
@@ -55,7 +56,36 @@ impl<'a> SliceBrief<'a> {
             }
         }
 
-        Self { bases, types, stems }
+        // the requirements each trigger reaches, in first-occurrence order
+        let mut triggers: Vec<(&'a Trigger, Vec<ReqId>)> = Vec::new();
+        for basis in bases {
+            let Some(trigger) = &basis.trigger else { continue };
+            match triggers.iter_mut().find(|(known, _)| *known == trigger) {
+                Some((_, ids)) => ids.push(basis.id),
+                None => triggers.push((trigger, vec![basis.id])),
+            }
+        }
+
+        Self {
+            bases,
+            types,
+            stems,
+            triggers,
+        }
+    }
+
+    // The triggers that reach the requirements of `floor`, each once, in
+    // the requirements' order.
+    fn triggers_of(&self, floor: &Stem<'a>) -> Vec<&'a Trigger> {
+        let mut triggers: Vec<&'a Trigger> = Vec::new();
+        for id in &floor.requirements {
+            if let Some((trigger, _)) = self.triggers.iter().find(|(_, ids)| ids.contains(id))
+                && !triggers.contains(trigger)
+            {
+                triggers.push(trigger);
+            }
+        }
+        triggers
     }
 
     /// Derives the build plan.
@@ -226,6 +256,20 @@ impl Brief for SliceBrief<'_> {
             }
         }
 
+        // triggers split across slices
+        for (trigger, ids) in &self.triggers {
+            let slices: BTreeSet<&str> =
+                ids.iter().filter_map(|id| placed.get(id).copied()).collect();
+            if slices.len() > 1 {
+                review.note(format_args!(
+                    "requirements reached through `{trigger}` ({}) are split across {}: one \
+                     trigger is one handler, built by one slice",
+                    listed(ids),
+                    quoted(slices)
+                ));
+            }
+        }
+
         self.verify_cut(answer, &placed, review);
 
         // type ownership
@@ -324,12 +368,30 @@ fn listed(ids: &[ReqId]) -> String {
     ids.iter().map(ToString::to_string).collect::<Vec<_>>().join(", ")
 }
 
+// The triggers that reach a floor, as the baseline lists them after its
+// requirements; nothing for a floor nothing reaches.
+fn triggered(triggers: &[&Trigger]) -> String {
+    if triggers.is_empty() {
+        return String::new();
+    }
+    format!(
+        " — triggers: {}",
+        triggers.iter().map(|trigger| format!("`{trigger}`")).collect::<Vec<_>>().join(", ")
+    )
+}
+
 impl Display for SliceBrief<'_> {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         f.write_str("Slice the specification into a build plan.\n\n## Baseline\n\n")?;
         for stem in &self.stems {
             if stem.substems.is_empty() {
-                writeln!(f, "- `{}` — {}", stem.label, listed(&stem.requirements))?;
+                writeln!(
+                    f,
+                    "- `{}` — {}{}",
+                    stem.label,
+                    listed(&stem.requirements),
+                    triggered(&self.triggers_of(stem))
+                )?;
                 continue;
             }
             writeln!(
@@ -340,7 +402,13 @@ impl Display for SliceBrief<'_> {
                 stem.requirements.len()
             )?;
             for substem in &stem.substems {
-                writeln!(f, "  - `{}` — {}", substem.label, listed(&substem.requirements))?;
+                writeln!(
+                    f,
+                    "  - `{}` — {}{}",
+                    substem.label,
+                    listed(&substem.requirements),
+                    triggered(&self.triggers_of(substem))
+                )?;
             }
         }
         f.write_str(
@@ -348,6 +416,14 @@ impl Display for SliceBrief<'_> {
              them across slices is refused. Merge two stems into one slice only when neither \
              can be built and verified apart from the other.\n",
         )?;
+        if !self.triggers.is_empty() {
+            f.write_str(
+                "The triggers that reach a floor — a route, or a message — are listed after its \
+                 requirements. Requirements reached through one trigger are one handler, built \
+                 by one slice: an answer that splits a trigger's requirements across slices is \
+                 refused.\n",
+            )?;
+        }
         if self.stems.iter().any(|stem| !stem.substems.is_empty()) {
             writeln!(
                 f,

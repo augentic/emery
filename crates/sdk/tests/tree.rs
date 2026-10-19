@@ -11,6 +11,7 @@ use emery_sdk::survey::code::{
 };
 use emery_sdk::survey::resolve::Target;
 use emery_sdk::survey::tests::Statement;
+use emery_sdk::{Claim, ClaimKind, Evidence, Route, Trigger};
 use support::{
     PYTHON, Plain, Stub, TYPESCRIPT, binding, call, callee, class, class_decl, dynamic, export,
     from_module, from_package, function, import, inline, line, literal, member, module, name,
@@ -35,6 +36,7 @@ fn surface(name: &str, entry: &str, stem: &str, discriminator: Option<&str>) -> 
         discriminator: discriminator.map(str::to_owned),
         methods: Vec::new(),
         ids: Vec::new(),
+        trigger: None,
     }
 }
 
@@ -319,6 +321,59 @@ fn identify_ids() {
             vec!["users".to_owned(), "users.find".to_owned(), "users.save".to_owned()],
         ]
     );
+}
+
+// A surface's `contract` carries its trigger under the one extra of its
+// kind, which the claim gate reads back as the same trigger; a surface with
+// none carries no contract.
+#[test]
+fn contract_of_a_trigger() {
+    let tree = tree(
+        Path::new("/svc"),
+        &TYPESCRIPT,
+        vec![module("src/orders.ts", 4), module("src/events.ts", 4)],
+        Stub::default(),
+    );
+    let mut surfaces = vec![
+        Surface {
+            trigger: Some(Trigger::Http(Route::parse("POST /orders").expect("a route"))),
+            ..surface("POST /orders", "src/orders.ts", "orders", None)
+        },
+        Surface {
+            trigger: Trigger::message("orders.cancel-requested").ok(),
+            lines: span(2, 3),
+            ..surface("cancel requested", "src/events.ts", "cancel", None)
+        },
+        surface("files", "src/orders.ts", "files", None),
+    ];
+    tree.identify(&mut surfaces);
+
+    let contracts: Vec<Claim> = surfaces.iter().filter_map(Surface::contract).collect();
+    let extras: Vec<Vec<(&str, &str)>> = contracts
+        .iter()
+        .map(|claim| {
+            assert_eq!(claim.kind, ClaimKind::Contract);
+            claim.extras.iter().map(|(key, value)| (key.as_str(), value.as_str().unwrap_or(""))).collect()
+        })
+        .collect();
+    assert_eq!(extras, [vec![("route", "POST /orders")], vec![("message", "orders.cancel-requested")]]);
+    assert_eq!(
+        contracts.iter().map(|claim| (claim.id.as_deref(), claim.path.as_deref())).collect::<Vec<_>>(),
+        [(Some("orders"), Some("src/orders.ts#L1")), (Some("cancel"), Some("src/events.ts#L2-L3"))]
+    );
+    let triggers: Vec<Trigger> = contracts
+        .iter()
+        .map(|claim| claim.trigger().expect("a trigger").expect("in its grammar"))
+        .collect();
+    assert_eq!(
+        triggers,
+        [
+            Trigger::Http(Route::parse("POST /orders").expect("a route")),
+            Trigger::Message("orders.cancel-requested".to_owned())
+        ]
+    );
+    let evidence = Evidence { claims: contracts };
+    assert!(evidence.findings().is_empty(), "{:?}", evidence.findings());
 }
 
 // A seam widens past an import the resolver could not follow to the

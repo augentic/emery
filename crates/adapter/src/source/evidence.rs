@@ -13,7 +13,7 @@ use std::fmt::{self, Display, Formatter};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-use crate::{BadPath, beneath, is_kebab};
+use crate::{BadMessage, BadPath, BadRoute, BadTrigger, Route, Trigger, beneath, is_kebab};
 
 /// The regular expression for dotted, kebab-case claim identifiers.
 ///
@@ -168,8 +168,9 @@ impl Evidence {
     ///
     /// Findings come in claim order and name the claim by its index. An empty
     /// result means the document passes the claim gate: every id is in the
-    /// grammar, every required extra is present, and every `path` parses as
-    /// an [`Anchor`].
+    /// grammar, every required extra is present, every `path` parses as an
+    /// [`Anchor`], and every `contract`'s `route` or `message` extra parses
+    /// as a [`Trigger`], one of the two apiece.
     ///
     /// # Examples
     ///
@@ -319,6 +320,20 @@ impl Claim {
             findings.push(format!("- claim {index}: path `{path}` {bad}"));
         }
 
+        // the trigger grammar
+        if kind == ClaimKind::Contract
+            && let Some(Err(bad)) = self.trigger()
+        {
+            let spelled = |key: &str| self.extras.get(key).map(ToString::to_string).unwrap_or_default();
+            findings.push(match &bad {
+                BadTrigger::Route(_) => format!("- claim {index}: route {} {bad}", spelled("route")),
+                BadTrigger::Message(_) => {
+                    format!("- claim {index}: message {} {bad}", spelled("message"))
+                }
+                BadTrigger::Both => format!("- claim {index}: {bad}"),
+            });
+        }
+
         findings
     }
 
@@ -329,6 +344,29 @@ impl Claim {
     #[must_use]
     pub fn anchor(&self) -> Option<Result<Anchor<'_>, BadAnchor>> {
         self.path.as_deref().map(Anchor::parse)
+    }
+
+    /// Returns the claim's `route` or `message` extra parsed as a [`Trigger`].
+    ///
+    /// `None` when the claim carries neither; `Some(Err(_))` when it carries
+    /// both, or one outside its grammar or that is not a string, which
+    /// [`Evidence::findings`] reports for a `contract`.
+    #[must_use]
+    pub fn trigger(&self) -> Option<Result<Trigger, BadTrigger>> {
+        let route = self.extras.get("route");
+        let message = self.extras.get("message");
+        Some(match (route, message) {
+            (None, None) => return None,
+            (Some(_), Some(_)) => Err(BadTrigger::Both),
+            (Some(serde_json::Value::String(text)), None) => {
+                Route::parse(text).map(Trigger::Http).map_err(BadTrigger::Route)
+            }
+            (Some(_), None) => Err(BadTrigger::Route(BadRoute::Grammar)),
+            (None, Some(serde_json::Value::String(text))) => {
+                Trigger::message(text).map_err(BadTrigger::Message)
+            }
+            (None, Some(_)) => Err(BadTrigger::Message(BadMessage::Empty)),
+        })
     }
 }
 

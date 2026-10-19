@@ -107,13 +107,13 @@ end = "2027-10-03"
 
 [[trusted.derive_more]]
 criteria = "safe-to-deploy"
-user-id = 3797
+user-id = 3797 # Jelte Fennema-Nio (JelteF)
 start = "2019-05-25"
 end = "2027-10-03"
 
 [[trusted.derive_more-impl]]
 criteria = "safe-to-deploy"
-user-id = 3797
+user-id = 3797 # Jelte Fennema-Nio (JelteF)
 start = "2023-07-23"
 end = "2026-12-06"
 

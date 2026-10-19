@@ -385,6 +385,7 @@ impl<'t, R: Recogniser> Located<'t, R> {
                     discriminator: derived.discriminator,
                     methods: derived.methods.iter().filter_map(|(name, _)| kebab(name)).collect(),
                     ids: Vec::new(),
+                    trigger: derived.trigger,
                 })
             })
             .collect()

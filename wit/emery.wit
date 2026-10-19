@@ -207,6 +207,25 @@ interface target {
     and: list<string>,
   }
 
+  /// An HTTP route: a method, uppercase, and a path template led by `/`
+  /// with each parameter spelled `{name}`.
+  record route {
+    /// The method: `GET`, `POST`, `PUT`, `PATCH`, `DELETE`, `HEAD`, or
+    /// `OPTIONS`.
+    method: string,
+    /// The path template, `/orders/{id}/pay`.
+    path: string,
+  }
+
+  /// What reaches a requirement: the surface the source registered its
+  /// behaviour at. Which wire carries a message is the design's to say.
+  variant trigger {
+    /// An HTTP route.
+    http(route),
+    /// An inbound message by name: a broker topic, a socket event.
+    message(string),
+  }
+
   /// One requirement the slice builds, typed beside its rendering in
   /// `spec`, so an adapter reads its parts without parsing the Markdown.
   record requirement {
@@ -220,6 +239,9 @@ interface target {
     statement: list<string>,
     /// The acceptance scenarios, in the specification's order.
     scenarios: list<scenario>,
+    /// What reaches the requirement, where the source's surface registered
+    /// it; the specification's `Route:` or `Message:` line.
+    trigger: option<trigger>,
   }
 
   /// One design type the slice owns: a data shape its code reads or

@@ -3,6 +3,7 @@
 use std::borrow::Borrow;
 use std::fmt::{self, Display, Formatter};
 
+use emery_adapter::Trigger;
 use emery_adapter::source::Claim;
 use serde_json::Value;
 
@@ -13,8 +14,9 @@ use crate::specify::basis::Basis;
 /// The requirement outline of a document brief's turn, one entry per basis.
 ///
 /// Each entry carries the engine's facts about the requirement: its id,
-/// subject, status, sources, whether a criterion covers it, and every
-/// contributing claim with its role. The three drafts run from it together,
+/// subject, status, sources, whether a criterion covers it, the trigger a
+/// contract binds to it, and every contributing claim with its role. The
+/// three drafts run from it together,
 /// so none waits on another's answer. The bases are owned or borrowed, so a
 /// brief over a chunk of the run's bases lists them as one over all of them
 /// does.
@@ -42,7 +44,13 @@ impl<'a, B: Borrow<Basis<'a>>> Display for BasesSection<'a, B> {
                 }
                 write!(f, "{}:{}", member.source, member.id)?;
             }
-            writeln!(f, "] — acceptance criteria {coverage}")?;
+            write!(f, "] — acceptance criteria {coverage}")?;
+            match &basis.trigger {
+                Some(Trigger::Http(route)) => write!(f, " — Route: {route}")?,
+                Some(Trigger::Message(name)) => write!(f, " — Message: {name}")?,
+                None => {}
+            }
+            f.write_str("\n")?;
 
             for (position, class) in basis.classes.iter().enumerate() {
                 let role = match (basis.status, position) {

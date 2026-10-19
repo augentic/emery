@@ -189,7 +189,8 @@ impl Brief for SpecBrief<'_> {
             .requirements
             .into_iter()
             .map(|draft| {
-                (draft.subject, draft.scenarios.into_iter().map(Scenario::trimmed).collect())
+                let scenarios = draft.scenarios.into_iter().map(Scenario::trimmed).collect();
+                (draft.subject, scenarios)
             })
             .collect();
         let mut requirements = Vec::with_capacity(self.bases.len());

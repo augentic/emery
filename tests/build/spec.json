@@ -1,5 +1,5 @@
 {
-  "emery": 6,
+  "emery": 7,
   "preamble": [
     "Sign-in, its session, and orders over both."
   ],
@@ -9,6 +9,7 @@
       "subject": "auth.login",
       "status": "unknown",
       "covered": false,
+      "trigger": null,
       "sources": [
         {
           "source": "docs",
@@ -35,6 +36,7 @@
       "subject": "session.timeout",
       "status": "unknown",
       "covered": false,
+      "trigger": null,
       "sources": [
         {
           "source": "docs",
@@ -61,6 +63,12 @@
       "subject": "orders.create",
       "status": "unknown",
       "covered": false,
+      "trigger": {
+        "http": {
+          "method": "POST",
+          "path": "/orders"
+        }
+      },
       "sources": [
         {
           "source": "docs",
@@ -87,6 +95,9 @@
       "subject": "orders.cancel",
       "status": "unknown",
       "covered": false,
+      "trigger": {
+        "message": "orders.cancel-requested"
+      },
       "sources": [
         {
           "source": "docs",

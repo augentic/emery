@@ -20,10 +20,20 @@ crate-type = ["rlib"]
 name = "emery"
 path = "src/main.rs"
 
+# The development runtime over a local model; never released.
+[[bin]]
+name = "emery-dev"
+path = "src/dev.rs"
+required-features = ["genai"]
+
+[features]
+genai = ["dep:omnia-genai"]
+
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 omnia.workspace = true
 omnia-cursor.workspace = true
 omnia-filesystem.workspace = true
+omnia-genai = { workspace = true, optional = true }
 omnia-git.workspace = true
 omnia-wasi-blobstore.workspace = true
 omnia-wasi-keyvalue.workspace = true
@@ -78,7 +88,7 @@ homepage = "https://augentic.io"
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/augentic/emery"
 rust-version = "1.99"
-version = "0.38.0"
+version = "0.39.0"
 
 [workspace.lints.rust]
 meta_variable_misuse = "warn"
@@ -142,6 +152,7 @@ omnia-wasi-vcs = "0.37.0"
 
 omnia-cursor = "0.31.0"
 omnia-filesystem = "0.31.0"
+omnia-genai = "0.31.0"
 omnia-git = "0.31.0"
 
 [patch.crates-io]
@@ -174,9 +185,11 @@ omnia-wasi-vcs = { git = "https://github.com/augentic/omnia" }
 
 omnia-cursor = { git = "https://github.com/augentic/omnia-backends" }
 omnia-filesystem = { git = "https://github.com/augentic/omnia-backends" }
+omnia-genai = { git = "https://github.com/augentic/omnia-backends" }
 omnia-git = { git = "https://github.com/augentic/omnia-backends" }
 # omnia-cursor = { path = "../omnia-backends/crates/cursor" }
 # omnia-filesystem = { path = "../omnia-backends/crates/filesystem" }
+# omnia-genai = { path = "../omnia-backends/crates/genai" }
 # omnia-git = { path = "../omnia-backends/crates/git" }
 
 [profile.release]

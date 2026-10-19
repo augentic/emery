@@ -306,6 +306,13 @@ pub struct BuildContext<'a, P> {
     /// through [`with_scaffold`](Self::with_scaffold). An empty text puts no
     /// section.
     pub scaffold: Option<&'a str>,
+    /// The root-relative paths the adapter's own code scaffolded for the
+    /// slice before the turn, which the turn changes through `edit_files`
+    /// alone: a `write_files` entry or `delete` naming one is refused as a
+    /// correction, since a file written whole over a skeleton loses it. The
+    /// host lifts the context with none; an adapter sets them through
+    /// [`with_scaffolded`](Self::with_scaffolded).
+    pub scaffolded: &'a [String],
 }
 
 impl<'a, P> BuildContext<'a, P> {
@@ -313,6 +320,13 @@ impl<'a, P> BuildContext<'a, P> {
     #[must_use]
     pub const fn with_scaffold(mut self, text: &'a str) -> Self {
         self.scaffold = Some(text);
+        self
+    }
+
+    /// Returns the context with [`scaffolded`](Self::scaffolded) set to `paths`.
+    #[must_use]
+    pub const fn with_scaffolded(mut self, paths: &'a [String]) -> Self {
+        self.scaffolded = paths;
         self
     }
 }
@@ -426,9 +440,12 @@ pub fn metadata(rules: &[MergeRule]) -> TargetMetadata {
 /// whole, at a path [`beneath`](crate::beneath) accepts and no symlink
 /// stands on, and removes the files its `delete` names; an entry that would
 /// leave a held file empty or under half its size is refused unless it sets
-/// `shrink`. `edit_files` replaces the one place each edit's `find` matches
-/// within a file the workspace holds. A call either tool refuses anywhere
-/// changes nothing. The answered [`Report`] is held to the slice by
+/// `shrink`, and an entry or a `delete` naming a path of `ctx`'s
+/// [`scaffolded`](BuildContext::scaffolded) is refused, telling the model to
+/// change the file through `edit_files`. `edit_files` replaces the one
+/// place each edit's `find` matches within a file the workspace holds. A
+/// call either tool refuses anywhere changes nothing. The answered
+/// [`Report`] is held to the slice by
 /// [`Report::findings`], to the tree — a `written` path names a regular
 /// file under the workspace — and to `check`, the adapter's own rule over
 /// the report and the tree as the model left it; every finding, the
@@ -464,7 +481,7 @@ pub async fn build<P: Model>(
     let slice = ctx.slice;
     let id = &slice.id;
     let root = Path::new(ctx.workspace);
-    let writer = Writer::new(ctx.workspace, id);
+    let writer = Writer::new(ctx.workspace, id).guarding(ctx.scaffolded);
     let written = writer.written();
     let mut tools = reference::tools();
     tools.extend(Writer::tools());
@@ -479,6 +496,7 @@ pub async fn build<P: Model>(
         adapter_id: ctx.adapter_id,
         slice,
         scaffold: ctx.scaffold,
+        scaffolded: ctx.scaffolded,
     };
 
     tracing::info!(
@@ -486,6 +504,7 @@ pub async fn build<P: Model>(
         name = %slice.name,
         requirements = slice.requirements.len(),
         scaffold = ctx.scaffold.is_some(),
+        scaffolded = ctx.scaffolded.len(),
         "building"
     );
     let tools = writer.serve(reference::serve(docs, &[], id, None));
@@ -628,6 +647,7 @@ pub async fn call<A: TargetAdapter>(
             grants: metadata.grants,
             model: &crate::Provider,
             scaffold: None,
+            scaffolded: &[],
         }),
         emery_adapter::target::Task::Verify => Task::Verify(VerifyContext {
             adapter_id: &id,
@@ -689,6 +709,7 @@ struct Brief<'a> {
     adapter_id: &'a str,
     slice: &'a Slice,
     scaffold: Option<&'a str>,
+    scaffolded: &'a [String],
 }
 
 impl Display for Brief<'_> {
@@ -727,6 +748,16 @@ impl Display for Brief<'_> {
             write!(
                 f,
                 "What the adapter scaffolded for this slice before this turn:\n\n{scaffold}\n\n"
+            )?;
+        }
+        if !self.scaffolded.is_empty() {
+            write!(
+                f,
+                "The {count} the adapter scaffolded for this slice {are} filled through \
+                 `edit_files` alone: a `write_files` entry or `delete` naming one of them is \
+                 refused whole, since a skeleton written over loses its markers.\n\n",
+                count = if self.scaffolded.len() == 1 { "file" } else { "files" },
+                are = if self.scaffolded.len() == 1 { "is" } else { "are" },
             )?;
         }
 

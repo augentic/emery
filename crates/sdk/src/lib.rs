@@ -78,7 +78,9 @@ pub use emery_adapter::source::{
     AdapterMetadata, Anchor, Backing, BadAnchor, Claim, ClaimKind, Evidence, Source, SourceContent,
     SourceInput, SourceKind,
 };
-pub use emery_adapter::{BadPath, Lexicon, beneath, is_kebab};
+pub use emery_adapter::{
+    BadMessage, BadPath, BadRoute, BadTrigger, Lexicon, METHODS, Route, Trigger, beneath, is_kebab,
+};
 pub use emery_prose::{Doc, body, check, find, prose};
 pub use omnia_sdk::{Error, Model, bad_gateway, bad_request, not_found, server_error};
 /// The JSON crate a [`Claim`]'s `extras` are built from, for an adapter that

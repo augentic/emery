@@ -10,7 +10,9 @@ use emery_sdk::survey::code::{
     Tree, Use,
 };
 use emery_sdk::survey::resolve::Target;
-use emery_sdk::{Context, Doc, Error, Lexicon, SourceInput};
+use emery_sdk::{
+    ClaimKind, Context, Doc, Error, Evidence, Lexicon, Route, SourceInput, Trigger,
+};
 use omnia_test::guest::Scripted;
 use support::{
     PYTHON, Plain, Stub, TYPESCRIPT, call, callee, class, class_decl, decorated, dynamic, export,
@@ -399,6 +401,71 @@ async fn types_anchored() {
         "in the files' order, spelled under the dialect's class syntax"
     );
     assert_eq!(survey.types[0].synopsis.as_deref(), Some("exported class"));
+    model.assert_exhausted();
+}
+
+// A `contract` claim stands for each surface whose registration spells a
+// route, under the surface's own id and at its lines; a decorated surface
+// the recogniser derives no route for, and the bootstrap's `start`, carry
+// none. `join` puts them after the parsed types and drops the model's.
+#[tokio::test]
+async fn contracts_routed() {
+    let (_tmp, input, tree) = service(false, Some(Runs::Load));
+    let model = Scripted::answering([BOTH]);
+
+    let survey = run(&model, &input, &tree).await.expect("surveyed");
+
+    let contracts: Vec<[Option<&str>; 4]> = survey
+        .contracts
+        .iter()
+        .map(|claim| {
+            assert_eq!(claim.kind, ClaimKind::Contract);
+            [
+                claim.id.as_deref(),
+                claim.path.as_deref(),
+                claim.synopsis.as_deref(),
+                claim.extras["route"].as_str(),
+            ]
+        })
+        .collect();
+    assert_eq!(
+        contracts,
+        [[
+            Some("orders"),
+            Some("src/routes/orders.ts#L3"),
+            Some("GET /orders"),
+            Some("GET /orders")
+        ]],
+        "one per routed surface, under the surface's id"
+    );
+    assert_eq!(
+        survey.contracts[0].trigger().expect("a trigger").expect("in the grammar"),
+        Trigger::Http(Route::parse("GET /orders").expect("in the grammar"))
+    );
+
+    let evidence: Evidence = serde_json::from_str(
+        r#"{"claims":[
+            {"kind":"requirement","id":"orders.list","statement":"Orders are listed."},
+            {"kind":"contract","id":"orders","route":"GET /v9/orders"},
+            {"kind":"type","name":"Gone","signature":"class Gone {}"}
+        ]}"#,
+    )
+    .expect("evidence");
+    let joined = survey.join(evidence);
+    let kinds: Vec<(ClaimKind, Option<&str>)> =
+        joined.claims.iter().map(|claim| (claim.kind, claim.id.as_deref())).collect();
+    assert_eq!(
+        kinds,
+        [
+            (ClaimKind::Requirement, Some("orders.list")),
+            (ClaimKind::Type, None),
+            (ClaimKind::Type, None),
+            (ClaimKind::Contract, Some("orders")),
+        ],
+        "the model's type and contract claims give way to the code's"
+    );
+    assert_eq!(joined.claims[3].extras["route"], "GET /orders");
+    assert!(joined.findings().is_empty(), "{:?}", joined.findings());
     model.assert_exhausted();
 }
 

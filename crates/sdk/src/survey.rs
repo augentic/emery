@@ -231,11 +231,11 @@ pub async fn surfaces<P: Model>(
     Ok(inventory)
 }
 
-/// The seams of a surveyed source, and the `type` claims its code declares.
+/// The seams of a surveyed source, and the claims its code states by itself.
 ///
 /// [`seams`] returns one for a parsed workspace tree and [`Survey::value`]
-/// for an inline value; [`Survey::join`] puts the `type` claims into the
-/// evidence the seams were mined to.
+/// for an inline value; [`Survey::join`] puts the `type` and `contract`
+/// claims into the evidence the seams were mined to.
 #[derive(Clone, Debug, Default)]
 pub struct Survey {
     /// One seam per cut, each carrying its brief, files, stems, and anchors.
@@ -243,38 +243,49 @@ pub struct Survey {
     /// The `type` claims the modules the seams reach declare, for
     /// [`Survey::join`] to put in place of the model's.
     pub types: Vec<Claim>,
+    /// The `contract` claims of the surfaces with a trigger, one each
+    /// through [`Surface::contract`](code::Surface::contract), for
+    /// [`Survey::join`] to put in place of the model's.
+    pub contracts: Vec<Claim>,
 }
 
 impl Survey {
     /// Returns the survey of an inline value parsed as `module`.
     ///
-    /// One seam over the whole input, with no survey turn, and the `type`
-    /// claims `module` declares, unanchored.
+    /// One seam over the whole input, with no survey turn, the `type`
+    /// claims `module` declares, unanchored, and no `contract`, since no
+    /// surface was named to carry a trigger.
     #[must_use]
     pub fn value(dialect: &Dialect, module: &code::Module) -> Self {
         Self {
             seams: vec![Seam::whole()],
             types: types(dialect, [module], false),
+            contracts: Vec::new(),
         }
     }
 
-    /// Returns `evidence` with this survey's `type` claims in place of the model's.
+    /// Returns `evidence` with this survey's `type` and `contract` claims in
+    /// place of the model's.
     ///
-    /// The declarations are the code's to state: every `type` claim the
-    /// model answered is dropped, logged at DEBUG, and the parsed ones
-    /// follow the claims kept, in their order.
+    /// The declarations and the triggers are the code's to state: every
+    /// `type` and `contract` claim the model answered is dropped, logged at
+    /// DEBUG, and the parsed ones follow the claims kept, the contracts
+    /// after the types, each in its order.
     #[must_use]
     pub fn join(self, mut evidence: Evidence) -> Evidence {
         let answered = evidence.claims.len();
-        evidence.claims.retain(|claim| claim.kind != ClaimKind::Type);
+        evidence
+            .claims
+            .retain(|claim| !matches!(claim.kind, ClaimKind::Type | ClaimKind::Contract));
         let dropped = answered - evidence.claims.len();
         if dropped > 0 {
             tracing::debug!(
                 dropped,
-                "type claims the model answered give way to the parsed declarations"
+                "type and contract claims the model answered give way to the code's"
             );
         }
         evidence.claims.extend(self.types);
+        evidence.claims.extend(self.contracts);
         evidence
     }
 }
@@ -307,7 +318,8 @@ impl Survey {
 /// every seam whose modules it imports, and carries as its `lexicon` the
 /// technology of the packages its modules import, through
 /// [`Lexicon::from_packages`]. The `type` claims are those of the modules
-/// the seams reach.
+/// the seams reach, and the `contract` claims one per surface whose
+/// registration or decorator spells a trigger: a route, or a message.
 ///
 /// # Errors
 ///
@@ -383,8 +395,14 @@ pub async fn seams<P: Model, R: Recogniser>(
         reached.iter().filter_map(|path| tree.modules.get(*path)).map(|module| &**module),
         true,
     );
+    let contracts: Vec<Claim> = surfaces.iter().filter_map(code::Surface::contract).collect();
+    tracing::debug!(%source, contracts = contracts.len(), "surfaces with a trigger");
 
-    Ok(Survey { seams, types })
+    Ok(Survey {
+        seams,
+        types,
+        contracts,
+    })
 }
 
 fn logged(source: &str, what: &str, surfaces: &[code::Surface]) {

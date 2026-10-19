@@ -7,6 +7,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::{self, Display, Formatter};
 
+use emery_adapter::Trigger;
 use emery_adapter::source::{ClaimKind, SourceKind};
 use omnia_sdk::{Error, Model, bad_request, server_error};
 use schemars::JsonSchema;
@@ -25,6 +26,7 @@ use crate::specify::Extract;
 pub struct GroupingBrief<'a> {
     contributors: Vec<Contributor<'a>>,
     criteria: Vec<&'a str>,
+    contracts: Vec<Contract<'a>>,
     sources: usize,
     baseline: Grouping,
 }
@@ -35,9 +37,25 @@ impl<'a> GroupingBrief<'a> {
     pub fn new(extracts: &'a [Extract]) -> Self {
         let mut contributors: Vec<Contributor<'a>> = Vec::new();
         let mut criteria = Vec::new();
+        let mut contracts = Vec::new();
 
         for extract in extracts {
             for claim in &extract.evidence.claims {
+                // a contract binds by its id or its anchor, so it needs no id
+                if claim.kind == ClaimKind::Contract {
+                    if let Some(Ok(trigger)) = claim.trigger() {
+                        contracts.push(Contract {
+                            cited: Cited {
+                                source: extract.source.clone(),
+                                claim: claim.id.clone().unwrap_or_default(),
+                                path: claim.path.clone(),
+                            },
+                            id: claim.id.as_deref(),
+                            trigger,
+                        });
+                    }
+                    continue;
+                }
                 let Some(id) = claim.id.as_deref() else { continue };
 
                 match claim.kind {
@@ -64,6 +82,7 @@ impl<'a> GroupingBrief<'a> {
         Self {
             contributors,
             criteria,
+            contracts,
             sources,
             baseline,
         }
@@ -94,7 +113,7 @@ impl<'a> GroupingBrief<'a> {
         }
 
         if self.sources < 2 && self.stems() < 2 {
-            self.baseline.bases(self.contributors, &self.criteria)
+            self.baseline.bases(self.contributors, &self.criteria, &self.contracts)
         } else {
             self.judge(model).await
         }
@@ -182,7 +201,7 @@ impl<'a> Brief for GroupingBrief<'a> {
     }
 
     fn into_output(self, answer: Grouping) -> Result<Vec<Basis<'a>>, Error> {
-        answer.split(&self.contributors).bases(self.contributors, &self.criteria)
+        answer.split(&self.contributors).bases(self.contributors, &self.criteria, &self.contracts)
     }
 }
 
@@ -325,7 +344,7 @@ impl Grouping {
     // that order. The grouping was verified to place every contributor exactly
     // once, so an index it misses or repeats is the engine's own defect.
     fn bases<'a>(
-        &self, contributors: Vec<Contributor<'a>>, criteria: &[&str],
+        &self, contributors: Vec<Contributor<'a>>, criteria: &[&str], contracts: &[Contract<'a>],
     ) -> Result<Vec<Basis<'a>>, Error> {
         let mut contributors: Vec<Option<Contributor<'a>>> =
             contributors.into_iter().map(Some).collect();
@@ -354,8 +373,29 @@ impl Grouping {
         groups
             .into_iter()
             .zip(1..)
-            .map(|((_, classes), number)| Basis::of(ReqId::new(number), classes, criteria))
+            .map(|((_, classes), number)| {
+                Basis::of(ReqId::new(number), classes, criteria, contracts)
+            })
             .collect()
+    }
+}
+
+// A `contract` claim carrying a trigger: what binds it to a requirement is
+// its id, which the requirement's subject leads with, or its anchor, which a
+// contributor's citation meets.
+#[derive(Debug)]
+struct Contract<'a> {
+    cited: Cited,
+    id: Option<&'a str>,
+    trigger: Trigger,
+}
+
+impl Contract<'_> {
+    // Whether `id` is this contract's id or a dotted child of it.
+    fn leads(&self, id: &str) -> bool {
+        self.id.is_some_and(|own| {
+            id.strip_prefix(own).is_some_and(|rest| rest.is_empty() || rest.starts_with('.'))
+        })
     }
 }
 
@@ -382,6 +422,8 @@ pub struct Basis<'a> {
     pub status: Status,
     /// Whether any criterion claim covers the requirement.
     pub covered: bool,
+    /// What reaches the requirement, where a `contract` claim binds it.
+    pub trigger: Option<Trigger>,
     /// Agreement classes, with the winning class first.
     pub classes: Vec<Vec<Contributor<'a>>>,
 }
@@ -389,6 +431,7 @@ pub struct Basis<'a> {
 impl<'a> Basis<'a> {
     fn of(
         id: ReqId, mut classes: Vec<Vec<Contributor<'a>>>, criteria: &[&str],
+        contracts: &[Contract<'a>],
     ) -> Result<Self, Error> {
         // refuse an empty class, so every class below has a lead
         if classes.is_empty() || classes.iter().any(Vec::is_empty) {
@@ -414,14 +457,39 @@ impl<'a> Basis<'a> {
             _ if classes.iter().skip(1).all(|class| class[0].rank != top) => Status::Divergence,
             _ => Status::Conflict,
         };
+        let trigger = Self::trigger_of(&classes, contracts);
 
         Ok(Self {
             id,
             subject: classes[0][0].id,
             status,
             covered,
+            trigger,
             classes,
         })
+    }
+
+    // The trigger a contract binds to the requirement: by id first, the
+    // contract whose id the member's leads with, the longest such id for
+    // the member highest in authority; else by anchor, the contract whose
+    // citation the member's meets, in the same order.
+    fn trigger_of(classes: &[Vec<Contributor<'a>>], contracts: &[Contract<'a>]) -> Option<Trigger> {
+        let mut members: Vec<&Contributor<'a>> = classes.iter().flatten().collect();
+        members.sort_by_key(|member| (member.rank, member.index));
+        let by_id = members.iter().find_map(|member| {
+            contracts
+                .iter()
+                .filter(|contract| contract.leads(member.id))
+                .max_by_key(|contract| contract.id.map_or(0, str::len))
+        });
+        by_id
+            .or_else(|| {
+                members.iter().find_map(|member| {
+                    let cited = Cited::from(*member);
+                    contracts.iter().find(|contract| cited.overlaps(&contract.cited))
+                })
+            })
+            .map(|contract| contract.trigger.clone())
     }
 
     /// Returns the stem of the subject: the first segment of its dotted id.
@@ -447,7 +515,8 @@ impl<'a> Basis<'a> {
     /// Returns the requirement produced from this basis and `scenarios`.
     ///
     /// The body is the winning statement, or none for a conflict. The losing
-    /// classes become notes.
+    /// classes become notes. The trigger is the basis's own, bound from the
+    /// sources' `contract` claims.
     #[must_use]
     pub fn requirement(&self, scenarios: Vec<Scenario>) -> Requirement {
         let winner = &self.classes[0][0].statement;
@@ -475,6 +544,7 @@ impl<'a> Basis<'a> {
             subject: self.subject.to_string(),
             status: self.status,
             covered: self.covered,
+            trigger: self.trigger.clone(),
             sources: self.contributors().map(Cited::from).collect(),
             body,
             losers,

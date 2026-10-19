@@ -12,6 +12,7 @@ use std::future::Future;
 
 use omnia_sdk::Error;
 
+use crate::Trigger;
 use crate::target::{Report, Verdict};
 
 /// The engine capability for querying and invoking target adapters.
@@ -221,6 +222,9 @@ pub struct Requirement {
     pub statement: Vec<String>,
     /// The acceptance scenarios, in the specification's order.
     pub scenarios: Vec<Scenario>,
+    /// What reaches the requirement, where the source's surface registered
+    /// it: the specification's `Route:` or `Message:` line.
+    pub trigger: Option<Trigger>,
 }
 
 impl Requirement {

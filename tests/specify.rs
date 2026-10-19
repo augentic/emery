@@ -1695,7 +1695,7 @@ async fn dishonest_design() {
 
     let id = current(&provider.storage);
     let rendered = format!(
-        "---\nemery: 6\nrevision: {id}\n---\n\n# Design\n\n## Overview\n\n\
+        "---\nemery: 7\nrevision: {id}\n---\n\n# Design\n\n## Overview\n\n\
          Requests arrive (from the browser) and (from docs) they route.\n\n\
          ## Domain model\n\nThe greeting payload is one string field.\n\n\
          Type: greeting.type\n```\n{signature}\n```\n"
@@ -2053,6 +2053,201 @@ async fn model_recovers() {
     let seen = provider.model.seen();
     assert_eq!(seen.len(), 3, "the failed ask and the two answered ones");
     assert_eq!(seen[0].messages, seen[1].messages, "the retry puts the same question");
+    provider.model.assert_exhausted();
+}
+
+// --- triggers ---
+
+// A `contract` claim's route binds to every requirement whose id leads with
+// the contract's id, read in the one route grammar: the stored requirement
+// carries it as its typed trigger, the projection renders it as its `Route:`
+// line, and the drafting turns see it in the requirement outline.
+#[tokio::test]
+async fn contract_route() {
+    let apis = design_with_apis();
+    let mut provider = Provider::answering([SPEC_ANSWER, apis.as_str()]);
+    let mut contract = claim(ClaimKind::Contract, "greeting", ("route", "get /greeting/"));
+    contract.path = Some("src/greeting.ts#L3-L9".to_string());
+    provider.source.evidence.insert(
+        "docs".to_string(),
+        Ok(evidence(vec![
+            requirement("greeting.behaviour", "GET /greeting returns the static string 'hello'."),
+            contract,
+        ])),
+    );
+
+    cli_ok(&provider, &["emery", "specify", &reference("docs")]).await;
+
+    let id = current(&provider.storage);
+    let spec: Value = serde_json::from_slice(&document(&provider.storage, &id, "spec.json"))
+        .expect("the committed spec is JSON");
+    assert_eq!(
+        spec["requirements"][0]["trigger"],
+        serde_json::json!({"http": {"method": "GET", "path": "/greeting"}}),
+        "the route is stored as the typed trigger, normalised: {spec}"
+    );
+    let shown = shown(&provider, "spec").await;
+    assert!(shown.contains("Status: unknown\nRoute: GET /greeting\n\nGET /greeting"), "{shown}");
+    let draft = provider.model.seen()[0].messages.join("\n");
+    assert!(draft.contains("— Route: GET /greeting\n"), "the outline carries the route: {draft}");
+    provider.model.assert_exhausted();
+}
+
+// A `contract` claim's message binds the same way, so a consumer's handler
+// is laid at the message the source registered it for: stored typed,
+// rendered as the `Message:` line, and shown to the drafting turns.
+#[tokio::test]
+async fn contract_message() {
+    let apis = design_with_apis();
+    let mut provider = Provider::answering([SPEC_ANSWER, apis.as_str()]);
+    provider.source.evidence.insert(
+        "docs".to_string(),
+        Ok(evidence(vec![
+            requirement("greeting.behaviour", "GET /greeting returns the static string 'hello'."),
+            claim(ClaimKind::Contract, "greeting", ("message", " greeting.requested ")),
+        ])),
+    );
+
+    cli_ok(&provider, &["emery", "specify", &reference("docs")]).await;
+
+    let id = current(&provider.storage);
+    let spec: Value = serde_json::from_slice(&document(&provider.storage, &id, "spec.json"))
+        .expect("the committed spec is JSON");
+    assert_eq!(
+        spec["requirements"][0]["trigger"],
+        serde_json::json!({"message": "greeting.requested"}),
+        "the message is stored as the typed trigger, trimmed: {spec}"
+    );
+    let shown = shown(&provider, "spec").await;
+    assert!(shown.contains("Status: unknown\nMessage: greeting.requested\n\n"), "{shown}");
+    let draft = provider.model.seen()[0].messages.join("\n");
+    assert!(
+        draft.contains("— Message: greeting.requested\n"),
+        "the outline carries the message: {draft}"
+    );
+    provider.model.assert_exhausted();
+}
+
+// A `contract` claim is reached through one trigger: a message holding
+// whitespace, or a claim carrying both a route and a message, is the
+// adapter's defect, named by the claim gate before any turn.
+#[tokio::test]
+async fn contract_trigger_malformed() {
+    let mut provider = Provider::idle();
+    provider.source.evidence.insert(
+        "docs".to_string(),
+        Ok(evidence(vec![
+            requirement("greeting.behaviour", "GET /greeting returns the static string 'hello'."),
+            claim(ClaimKind::Contract, "greeting", ("message", "greeting requested")),
+        ])),
+    );
+    let envelope =
+        fail(&provider, &["emery", "specify", &reference("docs")], 3, "server_error").await;
+    assert_message(
+        &envelope,
+        "- claim 1: message \"greeting requested\" names the message `greeting requested`, which \
+         holds whitespace; a message is one word",
+    );
+
+    let mut provider = Provider::idle();
+    let mut both = claim(ClaimKind::Contract, "greeting", ("route", "GET /greeting"));
+    both.extras.insert("message".to_string(), Value::String("greeting.requested".to_string()));
+    provider.source.evidence.insert(
+        "docs".to_string(),
+        Ok(evidence(vec![
+            requirement("greeting.behaviour", "GET /greeting returns the static string 'hello'."),
+            both,
+        ])),
+    );
+    let envelope =
+        fail(&provider, &["emery", "specify", &reference("docs")], 3, "server_error").await;
+    assert_message(
+        &envelope,
+        "- claim 1: carries both `route` and `message`; a surface is reached through one",
+    );
+}
+
+// A `contract` claim whose route the grammar refuses is the adapter's
+// defect, named by the claim gate before any turn.
+#[tokio::test]
+async fn contract_route_malformed() {
+    let mut provider = Provider::idle();
+    provider.source.evidence.insert(
+        "docs".to_string(),
+        Ok(evidence(vec![
+            requirement("greeting.behaviour", "GET /greeting returns the static string 'hello'."),
+            claim(ClaimKind::Contract, "greeting", ("route", "FETCH greeting")),
+        ])),
+    );
+
+    let envelope =
+        fail(&provider, &["emery", "specify", &reference("docs")], 3, "server_error").await;
+    assert_message(
+        &envelope,
+        "- claim 1: route \"FETCH greeting\" names the method `FETCH`, which is none of GET, \
+         POST, PUT, PATCH, DELETE, HEAD, OPTIONS",
+    );
+}
+
+// Requirements under two stems reached through one route are one slice: the
+// one not under the contract's id binds where it anchors within the
+// contract's lines, the baseline lists the trigger under each stem, and a
+// slicing that puts the two apart is refused and corrected.
+#[tokio::test]
+async fn trigger_split_refused() {
+    let split = r#"{"preamble": [], "slices": [
+        {"name": "health", "requirements": ["REQ-001"]},
+        {"name": "start", "requirements": ["REQ-002"]}
+    ]}"#;
+    let merged = r#"{"preamble": [], "slices": [
+        {"name": "health", "requirements": ["REQ-001", "REQ-002"]}
+    ]}"#;
+    let subjects = ["health.ready".to_string(), "start.ready-probe".to_string()];
+    let spec = spec_draft(&subjects, &["Readiness, stated twice."]);
+    let design = design_with_apis();
+    let grouping = separate_grouping(2);
+    let mut provider =
+        Provider::answering([grouping.as_str(), spec.as_str(), design.as_str(), split, merged]);
+    let mut contract = claim(ClaimKind::Contract, "health", ("route", "GET /health/ready"));
+    contract.path = Some("src/health.ts#L2-L8".to_string());
+    let mut probe = requirement("start.ready-probe", "The process reports ready once it listens.");
+    probe.path = Some("src/health.ts#L5".to_string());
+    provider.source.evidence.insert(
+        "docs".to_string(),
+        Ok(evidence(vec![
+            requirement("health.ready", "GET /health/ready answers 200 once the process listens."),
+            probe,
+            contract,
+        ])),
+    );
+
+    cli_ok(&provider, &["emery", "specify", &reference("docs")]).await;
+
+    let slicing = &provider.model.seen()[3];
+    let request = slicing.messages.join("\n");
+    assert!(
+        request.contains("- `health` — REQ-001 — triggers: `GET /health/ready`\n"),
+        "{request}"
+    );
+    assert!(request.contains("- `start` — REQ-002 — triggers: `GET /health/ready`\n"), "{request}");
+    assert!(
+        request.contains("Requirements reached through one trigger are one handler"),
+        "{request}"
+    );
+    let check = &provider.model.exchanges()[3];
+    assert_eq!(check.tool, "check");
+    let correction = check.outcome.as_ref().expect_err("the split slicing is rejected");
+    assert!(
+        correction.contains(
+            "requirements reached through `GET /health/ready` (REQ-001, REQ-002) are split \
+             across `health`, `start`: one trigger is one handler, built by one slice"
+        ),
+        "{correction}"
+    );
+    let spec = shown(&provider, "spec").await;
+    assert_eq!(spec.matches("Route: GET /health/ready\n").count(), 2, "{spec}");
+    let plan = shown(&provider, "plan").await;
+    assert!(plan.contains("Requirements: [REQ-001, REQ-002]\n"), "{plan}");
     provider.model.assert_exhausted();
 }
 

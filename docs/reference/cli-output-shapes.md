@@ -124,9 +124,9 @@ The success body carries the revision id, the Markdown projection, and the typed
 ```json
 {
   "revision": "9f8e7d6c…",
-  "body": "---\nemery: 6\nrevision: 9f8e7d6c…\n---\n\n# Specification\n…",
+  "body": "---\nemery: 7\nrevision: 9f8e7d6c…\n---\n\n# Specification\n…",
   "document": {
-    "emery": 6,
+    "emery": 7,
     "preamble": ["…"],
     "requirements": [
       {
@@ -134,6 +134,7 @@ The success body carries the revision id, the Markdown projection, and the typed
         "subject": "session.timeout",
         "status": "divergence",
         "covered": true,
+        "trigger": { "http": { "method": "POST", "path": "/sessions/{id}/refresh" } },
         "sources": [{ "source": "intent", "claim": "session.timeout", "path": null }, { "source": "code", "claim": "session-expiry", "path": "src/session.ts#L12-L30" }],
         "body": ["Sessions must expire after 30 minutes of inactivity."],
         "losers": [{ "sources": ["code"], "kind": "behaviour", "rank": 3, "claim": "session-expiry", "statement": "…" }],
@@ -144,7 +145,7 @@ The success body carries the revision id, the Markdown projection, and the typed
 }
 ```
 
-`document` is the revision document exactly as stored: for `spec`, `emery` (the grammar stamp), `preamble`, and `requirements`; for `design`, `emery`, `preamble`, and `sections` (each a `kind` and its `blocks`, `{ "text": "<paragraph>" }` or `{ "type": { "key", "signature", "role" } }`, `role` being `data`, a shape a build declares and one slice owns, or `mechanism`, a class of the source's machinery that no slice owns); for `plan`, `emery`, `preamble`, and `slices` (each an `id`, `name`, `requirements`, `types`, `depends-on`, and `brief`). The revision's serde shape is pinned by `emery-engine`'s `revision` types; its canonical bytes hash to `revision`.
+`document` is the revision document exactly as stored: for `spec`, `emery` (the grammar stamp), `preamble`, and `requirements` — each requirement's `trigger`, what a source's `contract` claim bound to it: `{ "http": { "method", "path" } }` for a route (the method uppercase, each path parameter `{name}`), `{ "message": "<name>" }` for an inbound message, `null` where it has none, rendered in `spec.md` as the `Route:` or `Message:` line after `Status:`; for `design`, `emery`, `preamble`, and `sections` (each a `kind` and its `blocks`, `{ "text": "<paragraph>" }` or `{ "type": { "key", "signature", "role" } }`, `role` being `data`, a shape a build declares and one slice owns, or `mechanism`, a class of the source's machinery that no slice owns); for `plan`, `emery`, `preamble`, and `slices` (each an `id`, `name`, `requirements`, `types`, `depends-on`, and `brief`). The revision's serde shape is pinned by `emery-engine`'s `revision` types; its canonical bytes hash to `revision`.
 
 `plan.md` renders each slice as a `## Slice: <name>` block: its `ID:` and `Requirements:` lines, a `Types:` line where the slice owns a design type (a `data` type; a `mechanism` type is owned by no slice), a `Depends on:` line where it is built after another slice, then the brief's paragraphs.
 

@@ -20,11 +20,13 @@ const WRITE_FILES: &str = "write_files";
 const EDIT_FILES: &str = "edit_files";
 
 // The write tools of one turn: the root they write beneath, the turn their
-// events name, and the files they have written.
+// events name, the files they have written, and the files `write_files`
+// may not replace or remove.
 pub(super) struct Writer {
     root: PathBuf,
     turn: String,
     written: Written,
+    guarded: BTreeSet<String>,
 }
 
 impl Writer {
@@ -33,7 +35,16 @@ impl Writer {
             root: PathBuf::from(root),
             turn: turn.to_owned(),
             written: Written::default(),
+            guarded: BTreeSet::new(),
         }
+    }
+
+    // The writer refusing a `write_files` entry or `delete` over `paths`,
+    // each spelled as the tree does; a path the rule refuses guards nothing,
+    // since no call can name it either.
+    pub(super) fn guarding(mut self, paths: &[String]) -> Self {
+        self.guarded = paths.iter().filter_map(|path| beneath(path).ok()).collect();
+        self
     }
 
     #[must_use]
@@ -46,8 +57,9 @@ impl Writer {
                  path is `/`-separated and relative to `$WORKSPACE`; a call naming a path \
                  outside it, under `.emery/` or `.git/`, naming a projection, or leading \
                  through a symlink, is refused whole and changes nothing, as is one whose \
-                 entry would leave a file empty or under half its size without `shrink` set. \
-                 For a change within a file, use `edit_files`.",
+                 entry would leave a file empty or under half its size without `shrink` set, \
+                 or one naming a file the brief says was scaffolded before this turn. For a \
+                 change within a file, use `edit_files`.",
             )),
             Tool::Function(Function::of::<EditFiles>(
                 EDIT_FILES,
@@ -119,7 +131,8 @@ impl Writer {
             return Err(format!("{WRITE_FILES}: `files` names no file and `delete` no path"));
         }
 
-        // the paths held to the rule, and a replacement to the shrink rule
+        // the paths held to the rule, a replacement to the shrink rule, and
+        // every path to the guard
         let mut tree = BTreeMap::new();
         let mut accepted = Vec::with_capacity(files.len());
         let mut removals = Vec::with_capacity(delete.len());
@@ -132,7 +145,10 @@ impl Writer {
         {
             match self.held(&path, &mut tree) {
                 Ok(file) => {
-                    if !shrink && let Some(why) = self.shrinks(&file, tree[&file], &content) {
+                    if let Some(why) = self.guards(&file) {
+                        refused.push(why);
+                    } else if !shrink && let Some(why) = self.shrinks(&file, tree[&file], &content)
+                    {
                         refused.push(why);
                     }
                     accepted.push((file, content));
@@ -142,7 +158,12 @@ impl Writer {
         }
         for path in delete {
             match self.held(&path, &mut tree) {
-                Ok(file) => removals.push(file),
+                Ok(file) => {
+                    if let Some(why) = self.guards(&file) {
+                        refused.push(why);
+                    }
+                    removals.push(file);
+                }
                 Err(why) => refused.push(why),
             }
         }
@@ -264,6 +285,18 @@ impl Writer {
             tree.insert(file.clone(), held);
         }
         Ok(file)
+    }
+
+    // The guard: a file the adapter scaffolded before the turn is changed
+    // through `edit_files` alone, since one written whole loses the markers
+    // the adapter laid in it.
+    fn guards(&self, file: &str) -> Option<String> {
+        self.guarded.contains(file).then(|| {
+            format!(
+                "`{file}` was scaffolded before this turn; change it through `{EDIT_FILES}`, \
+                 which keeps what the skeleton holds"
+            )
+        })
     }
 
     // The shrink rule: a file the tree holds is not left empty, or under half

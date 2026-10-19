@@ -35,6 +35,7 @@ fn requirement(id: &str, subject: &str, statement: &str, when: &str, then: &str)
             then: then.to_owned(),
             and: Vec::new(),
         }],
+        trigger: None,
     }
 }
 
@@ -91,6 +92,13 @@ async fn ask_scaffolded(
     model: &Scripted, slice: &Slice, workspace: &str, grants: &[Grant], scaffold: Option<&str>,
     check: impl FnMut(&Report) -> Result<Vec<String>, Error> + Send,
 ) -> Result<Report, Error> {
+    ask_guarded(model, slice, workspace, grants, scaffold, &[], check).await
+}
+
+async fn ask_guarded(
+    model: &Scripted, slice: &Slice, workspace: &str, grants: &[Grant], scaffold: Option<&str>,
+    scaffolded: &[String], check: impl FnMut(&Report) -> Result<Vec<String>, Error> + Send,
+) -> Result<Report, Error> {
     let ctx = BuildContext {
         adapter_id: "target:probe",
         slice,
@@ -98,11 +106,13 @@ async fn ask_scaffolded(
         grants,
         model,
         scaffold: None,
+        scaffolded: &[],
     };
     let ctx = match scaffold {
         Some(text) => ctx.with_scaffold(text),
         None => ctx,
     };
+    let ctx = ctx.with_scaffolded(scaffolded);
     emery_sdk::target::build(&ctx, PROSE, check).await
 }
 
@@ -271,6 +281,90 @@ async fn build_scaffolded() {
             "The design, whole:\n\n## Types\n\n`Order`\n\nWhat the adapter scaffolded for this \
              slice before this turn:\n\n- `src/orders.rs`: scaffolded; fill `todo!(\"REQ-001 \
              orders.create: the handler\")`\n- `Cargo.toml`: held\n\nImplement every requirement"
+        ),
+        "{user}"
+    );
+    assert!(
+        !user.contains("filled through `edit_files` alone"),
+        "no scaffolded path puts no guard sentence: {user}"
+    );
+    model.assert_exhausted();
+}
+
+// A `write_files` entry or `delete` naming a file the adapter scaffolded is
+// refused with the call, naming the file and `edit_files` as the way, and
+// the call lands nothing; an edit within the file, and a write beside it,
+// land as they would. The brief says so in one sentence after the
+// scaffold section.
+#[tokio::test]
+async fn write_scaffolded_refused() {
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let skeleton = "pub fn create() {\n    todo!(\"REQ-001 orders.create: the handler\")\n}\n";
+    write(tmp.path(), [("src/orders.rs", skeleton), ("Cargo.toml", "[package]\n")]);
+    let root = tmp.path().to_str().expect("a UTF-8 scratch root");
+    let model = Scripted::answering([r#"{"covered":["REQ-001"],"written":["src/orders.rs"]}"#])
+        .calling(
+            0,
+            [
+                write_files(
+                    "1",
+                    &[
+                        ("src/orders.rs", "pub fn create() {}\n"),
+                        ("src/lib.rs", "pub mod orders;\n"),
+                    ],
+                ),
+                ToolCall {
+                    id: "2".to_owned(),
+                    name: "write_files".to_owned(),
+                    arguments: r#"{"delete":["./src/orders.rs"]}"#.to_owned(),
+                },
+                edit_files(
+                    "3",
+                    &[("src/orders.rs", "todo!(\"REQ-001 orders.create: the handler\")", "Ok(())")],
+                ),
+                write_files("4", &[("src/lib.rs", "pub mod orders;\n")]),
+            ],
+        );
+    let scaffolded = ["src/orders.rs".to_owned(), "Cargo.toml".to_owned()];
+    let scaffold = "- `src/orders.rs`: scaffolded\n- `Cargo.toml`: held\n";
+
+    let report =
+        ask_guarded(&model, &slice(), root, &[], Some(scaffold), &scaffolded, |_| Ok(Vec::new()))
+            .await
+            .expect("accepted");
+    assert_eq!(report.written, ["src/lib.rs", "src/orders.rs"]);
+    assert_eq!(
+        fs::read_to_string(tmp.path().join("src/orders.rs")).expect("edited"),
+        "pub fn create() {\n    Ok(())\n}\n",
+        "the skeleton is edited, never written over"
+    );
+
+    let exchanges = model.exchanges();
+    assert_eq!(exchanges.len(), 5, "four calls, then the check");
+    assert_eq!(
+        exchanges[0].outcome,
+        Err("write_files: nothing written: `src/orders.rs` was scaffolded before this turn; \
+             change it through `edit_files`, which keeps what the skeleton holds"
+            .to_owned())
+    );
+    assert_eq!(
+        exchanges[1].outcome,
+        Err("write_files: nothing written: `src/orders.rs` was scaffolded before this turn; \
+             change it through `edit_files`, which keeps what the skeleton holds"
+            .to_owned()),
+        "a `delete` is held to the guard as the tree spells the path"
+    );
+    assert!(exchanges[2].outcome.is_ok(), "the edit lands: {:?}", exchanges[2].outcome);
+    assert!(exchanges[3].outcome.is_ok(), "a write beside lands: {:?}", exchanges[3].outcome);
+
+    let user = &model.seen()[0].messages[0];
+    assert!(
+        user.contains(
+            "What the adapter scaffolded for this slice before this turn:\n\n- `src/orders.rs`: \
+             scaffolded\n- `Cargo.toml`: held\n\nThe files the adapter scaffolded for this slice \
+             are filled through `edit_files` alone: a `write_files` entry or `delete` naming one \
+             of them is refused whole, since a skeleton written over loses its \
+             markers.\n\nImplement every requirement"
         ),
         "{user}"
     );
@@ -1128,6 +1222,7 @@ async fn missing_prompt() {
         grants: &[],
         model: &model,
         scaffold: None,
+        scaffolded: &[],
     };
 
     let error = emery_sdk::target::build(&ctx, &[], |_| Ok(Vec::new()))

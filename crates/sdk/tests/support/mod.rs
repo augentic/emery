@@ -6,7 +6,6 @@ use std::collections::BTreeMap;
 use std::ops::Deref;
 use std::path::Path;
 
-use emery_sdk::kebab;
 use emery_sdk::survey::code::{
     Arg, Binding, BindingKind, Bootstrap, Call, Callee, ClassDecl, Decorated, Derived, Dynamic,
     Export, ExportKind, Import, Imported, Init, Link, Manifest, Member, MemberKind, Module,
@@ -16,6 +15,7 @@ use emery_sdk::survey::resolve::Target;
 use emery_sdk::survey::route::{self, Spelling};
 use emery_sdk::survey::tests::Statement;
 use emery_sdk::survey::{ClassSyntax, Dialect, Lines};
+use emery_sdk::{Route, Trigger, kebab};
 
 pub static TYPESCRIPT: Dialect = Dialect {
     self_name: "this",
@@ -201,6 +201,17 @@ impl Recogniser for Stub {
         };
         let led = tree.led(module, call);
         let mount = tree.mount(&module.path);
+        let trigger = led.as_deref().and_then(|literal| {
+            if literal.starts_with('/') {
+                Route::parse(&format!("{} {}", call.method(), route::join(mount, literal)))
+                    .ok()
+                    .map(Trigger::Http)
+            } else if call.method() == "on" {
+                Trigger::message(literal).ok()
+            } else {
+                None
+            }
+        });
         let derived = led.as_deref().and_then(|literal| {
             if literal.starts_with('/') {
                 tree.dialect.route.stem(&route::join(mount, literal))
@@ -250,6 +261,7 @@ impl Recogniser for Stub {
             lines: call.lines,
             detail,
             closure,
+            trigger,
         }
     }
 }
