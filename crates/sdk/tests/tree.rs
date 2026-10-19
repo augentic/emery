@@ -353,12 +353,22 @@ fn contract_of_a_trigger() {
         .iter()
         .map(|claim| {
             assert_eq!(claim.kind, ClaimKind::Contract);
-            claim.extras.iter().map(|(key, value)| (key.as_str(), value.as_str().unwrap_or(""))).collect()
+            claim
+                .extras
+                .iter()
+                .map(|(key, value)| (key.as_str(), value.as_str().unwrap_or("")))
+                .collect()
         })
         .collect();
-    assert_eq!(extras, [vec![("route", "POST /orders")], vec![("message", "orders.cancel-requested")]]);
     assert_eq!(
-        contracts.iter().map(|claim| (claim.id.as_deref(), claim.path.as_deref())).collect::<Vec<_>>(),
+        extras,
+        [vec![("route", "POST /orders")], vec![("message", "orders.cancel-requested")]]
+    );
+    assert_eq!(
+        contracts
+            .iter()
+            .map(|claim| (claim.id.as_deref(), claim.path.as_deref()))
+            .collect::<Vec<_>>(),
         [(Some("orders"), Some("src/orders.ts#L1")), (Some("cancel"), Some("src/events.ts#L2-L3"))]
     );
     let triggers: Vec<Trigger> = contracts

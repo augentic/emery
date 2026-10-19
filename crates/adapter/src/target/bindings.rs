@@ -31,11 +31,11 @@ mod generated {
 }
 
 use self::generated::emery::adapter::target as wit;
-use crate::{Route, Trigger};
 use crate::target::{
     DesignType, MergeRule, MergeStrategy, Outcome, Report, Requirement, Scenario, Slice,
     TargetMetadata, Task, Verdict,
 };
+use crate::{Route, Trigger};
 
 impl From<TargetMetadata> for wit::TargetMetadata {
     fn from(metadata: TargetMetadata) -> Self {

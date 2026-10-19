@@ -10,9 +10,7 @@ use emery_sdk::survey::code::{
     Tree, Use,
 };
 use emery_sdk::survey::resolve::Target;
-use emery_sdk::{
-    ClaimKind, Context, Doc, Error, Evidence, Lexicon, Route, SourceInput, Trigger,
-};
+use emery_sdk::{ClaimKind, Context, Doc, Error, Evidence, Lexicon, Route, SourceInput, Trigger};
 use omnia_test::guest::Scripted;
 use support::{
     PYTHON, Plain, Stub, TYPESCRIPT, call, callee, class, class_decl, decorated, dynamic, export,

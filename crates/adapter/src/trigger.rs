@@ -80,7 +80,10 @@ impl Display for BadMessage {
         match self {
             Self::Empty => f.write_str("names no message"),
             Self::Spaced(name) => {
-                write!(f, "names the message `{name}`, which holds whitespace; a message is one word")
+                write!(
+                    f,
+                    "names the message `{name}`, which holds whitespace; a message is one word"
+                )
             }
         }
     }

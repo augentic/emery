@@ -324,9 +324,12 @@ impl Claim {
         if kind == ClaimKind::Contract
             && let Some(Err(bad)) = self.trigger()
         {
-            let spelled = |key: &str| self.extras.get(key).map(ToString::to_string).unwrap_or_default();
+            let spelled =
+                |key: &str| self.extras.get(key).map(ToString::to_string).unwrap_or_default();
             findings.push(match &bad {
-                BadTrigger::Route(_) => format!("- claim {index}: route {} {bad}", spelled("route")),
+                BadTrigger::Route(_) => {
+                    format!("- claim {index}: route {} {bad}", spelled("route"))
+                }
                 BadTrigger::Message(_) => {
                     format!("- claim {index}: message {} {bad}", spelled("message"))
                 }
