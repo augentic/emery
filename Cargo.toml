@@ -184,14 +184,14 @@ omnia-wasi-vcs = { git = "https://github.com/augentic/omnia" }
 # omnia-wasi-otel = { path = "../omnia/crates/wasi-otel" }
 # omnia-wasi-vcs = { path = "../omnia/crates/wasi-vcs" }
 
-omnia-cursor = { git = "https://github.com/augentic/omnia-backends" }
-omnia-filesystem = { git = "https://github.com/augentic/omnia-backends" }
-omnia-genai = { git = "https://github.com/augentic/omnia-backends" }
-omnia-git = { git = "https://github.com/augentic/omnia-backends" }
-# omnia-cursor = { path = "../omnia-backends/crates/cursor" }
-# omnia-filesystem = { path = "../omnia-backends/crates/filesystem" }
-# omnia-genai = { path = "../omnia-backends/crates/genai" }
-# omnia-git = { path = "../omnia-backends/crates/git" }
+# omnia-cursor = { git = "https://github.com/augentic/omnia-backends" }
+# omnia-filesystem = { git = "https://github.com/augentic/omnia-backends" }
+# omnia-genai = { git = "https://github.com/augentic/omnia-backends" }
+# omnia-git = { git = "https://github.com/augentic/omnia-backends" }
+omnia-cursor = { path = "../omnia-backends/crates/cursor" }
+omnia-filesystem = { path = "../omnia-backends/crates/filesystem" }
+omnia-genai = { path = "../omnia-backends/crates/genai" }
+omnia-git = { path = "../omnia-backends/crates/git" }
 
 [profile.release]
 lto = true

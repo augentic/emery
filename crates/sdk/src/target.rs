@@ -442,15 +442,19 @@ pub fn metadata(rules: &[MergeRule]) -> TargetMetadata {
 /// worker grant `ctx`'s [`grants`](BuildContext::grants) unite to, and
 /// offers the embedded references through the reference tools. It writes
 /// through two tools. `write_files` writes one or more files beneath the
-/// workspace per call, listed or mapped by path, each created or replaced
-/// whole, at a path [`beneath`](crate::beneath) accepts and no symlink
-/// stands on, and removes the files its `delete` names; an entry that would
-/// leave a held file empty or under half its size is refused unless it sets
-/// `shrink`, and an entry or a `delete` naming one of the scaffold's
-/// [`paths`](Scaffold::paths) is refused, telling the model to change the
-/// file through `edit_files`. `edit_files` replaces the one
-/// place each edit's `find` matches within a file the workspace holds. A
-/// call either tool refuses anywhere changes nothing. The answered
+/// workspace per call, listed or mapped by path, or that shape sent as JSON
+/// text, each created or replaced whole, at a path
+/// [`beneath`](crate::beneath) accepts and no symlink stands on, and removes
+/// the files its `delete` names; an entry that would leave a held file empty
+/// or under half its size is refused unless it sets `shrink`, and an entry
+/// or a `delete` naming one of the scaffold's [`paths`](Scaffold::paths) is
+/// refused, telling the model to change the file through `edit_files`.
+/// `edit_files` replaces the one place each edit's `find` matches within a
+/// file the workspace holds, the list of edits sent as JSON text read the
+/// same; a `find` matching nothing is refused with the line of the file its
+/// first line is on and the line after it, or the file's opening line, so
+/// the refusal carries the text to copy. A call either tool refuses
+/// anywhere changes nothing. The answered
 /// [`Report`] is held to the slice by
 /// [`Report::findings`], to the tree — a `written` path names a regular
 /// file under the workspace — and to `check`, the adapter's own rule over

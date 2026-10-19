@@ -634,11 +634,62 @@ async fn edit_ambiguous() {
     assert_eq!(
         exchanges[0].outcome,
         Err("edit_files: nothing edited: `src/orders.rs`: `find` matches 2 places in the file; \
-             `src/orders.rs`: `find` matches nothing in the file; `src/orders.rs`: `find` is \
-             empty"
+             `src/orders.rs`: `find` matches nothing in the file; no line holds its first line; \
+             the file has 2 lines and opens with `pub struct Purchase;`; `src/orders.rs`: `find` \
+             is empty"
             .to_owned())
     );
     assert_eq!(exchanges[1].outcome, Err("edit_files: `edits` names no edit".to_owned()));
+    model.assert_exhausted();
+}
+
+// A `find` matching nothing is refused with what the file holds nearest it:
+// the line its first line is found on and the line after, where a `find`
+// over a doc comment's blank `//!` parts from the file; the found line
+// alone when it is the last; the file's opening line and length when no
+// line holds it; and the file's emptiness.
+#[tokio::test]
+async fn edit_nearest_line() {
+    let tmp = tempfile::tempdir().expect("tempdir");
+    write(
+        tmp.path(),
+        [
+            ("src/lib.rs", "//! Orders.\n//!\n//! The crate.\npub mod orders;\n"),
+            ("src/last.rs", "pub struct A;\n    pub struct B;\n"),
+            ("src/one.rs", "pub struct One;\n"),
+            ("src/empty.rs", ""),
+        ],
+    );
+    let root = tmp.path().to_str().expect("a UTF-8 scratch root");
+    let model = Scripted::answering([r#"{"covered":["REQ-001"],"written":[]}"#]).calling(
+        0,
+        [edit_files(
+            "1",
+            &[
+                ("src/lib.rs", "//! Orders.\n\n//! The crate.", "//! Orders.\n//!\n//! A crate."),
+                ("src/last.rs", "  pub struct B;\n}", "pub struct B;"),
+                ("src/one.rs", "pub struct Uno;", "pub struct One;"),
+                ("src/empty.rs", "x", "y"),
+            ],
+        )],
+    );
+
+    let report = ask(&model, &slice(), root).await.expect("accepted");
+    assert_eq!(report.written, Vec::<String>::new());
+
+    let exchanges = model.exchanges();
+    assert_eq!(
+        exchanges[0].outcome,
+        Err("edit_files: nothing edited: \
+             `src/lib.rs`: `find` matches nothing in the file; its first line is on line 1 of 4, \
+             `//! Orders.`, and line 2 is `//!`; \
+             `src/last.rs`: `find` matches nothing in the file; its first line is on line 2 of \
+             2, `    pub struct B;`, the last; \
+             `src/one.rs`: `find` matches nothing in the file; no line holds its first line; the \
+             file's one line is `pub struct One;`; \
+             `src/empty.rs`: `find` matches nothing in the file; the file is empty"
+            .to_owned())
+    );
     model.assert_exhausted();
 }
 
@@ -786,6 +837,89 @@ async fn write_map_shape() {
         exchanges[0].outcome.as_deref(),
         Ok(r#"{"written":[{"bytes":18,"path":"src/orders.rs"},{"bytes":10,"path":"Cargo.toml"}]}"#)
     );
+    model.assert_exhausted();
+}
+
+// `files` sent as a JSON string — the list, the map, or one entry,
+// serialised before the call — is read as the shape it spells; a string
+// spelling no JSON is refused naming the shapes expected.
+#[tokio::test]
+async fn write_string_shape() {
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let root = tmp.path().to_str().expect("a UTF-8 scratch root");
+    let model = Scripted::answering([
+        r#"{"covered":["REQ-001"],"written":["src/orders.rs","Cargo.toml","src/lib.rs"]}"#,
+    ])
+    .calling(
+        0,
+        [
+            ToolCall {
+                id: "1".to_owned(),
+                name: "write_files".to_owned(),
+                arguments: serde_json::json!({
+                    "files": r#"[{"path":"src/orders.rs","content":"pub struct Order;\n"}]"#
+                })
+                .to_string(),
+            },
+            ToolCall {
+                id: "2".to_owned(),
+                name: "write_files".to_owned(),
+                arguments: serde_json::json!({ "files": r#"{"Cargo.toml":"[package]\n"}"# })
+                    .to_string(),
+            },
+            ToolCall {
+                id: "3".to_owned(),
+                name: "write_files".to_owned(),
+                arguments: serde_json::json!({
+                    "files": r#"{"path":"src/lib.rs","content":"pub mod orders;\n"}"#
+                })
+                .to_string(),
+            },
+            ToolCall {
+                id: "4".to_owned(),
+                name: "write_files".to_owned(),
+                arguments: serde_json::json!({ "files": "src/lib.rs: pub mod orders;" })
+                    .to_string(),
+            },
+        ],
+    );
+
+    let report = ask(&model, &slice(), root).await.expect("accepted");
+    assert_eq!(report.written, ["Cargo.toml", "src/lib.rs", "src/orders.rs"]);
+    assert_eq!(
+        fs::read_to_string(tmp.path().join("src/orders.rs")).expect("written"),
+        "pub struct Order;\n"
+    );
+    assert_eq!(fs::read_to_string(tmp.path().join("Cargo.toml")).expect("written"), "[package]\n");
+    assert_eq!(
+        fs::read_to_string(tmp.path().join("src/lib.rs")).expect("written"),
+        "pub mod orders;\n"
+    );
+
+    let exchanges = model.exchanges();
+    assert_eq!(exchanges.len(), 5, "four calls, then the check");
+    assert_eq!(
+        exchanges[0].outcome.as_deref(),
+        Ok(r#"{"written":[{"bytes":18,"path":"src/orders.rs"}]}"#)
+    );
+    assert_eq!(
+        exchanges[1].outcome.as_deref(),
+        Ok(r#"{"written":[{"bytes":10,"path":"Cargo.toml"}]}"#)
+    );
+    assert_eq!(
+        exchanges[2].outcome.as_deref(),
+        Ok(r#"{"written":[{"bytes":16,"path":"src/lib.rs"}]}"#)
+    );
+    let prose = exchanges[3].outcome.as_deref().expect_err("a string that is not JSON");
+    assert!(prose.starts_with("write_files: invalid arguments"), "{prose}");
+    assert!(
+        prose.contains(
+            "a string that is not JSON (expected value at line 1 column 1), where a list of \
+             `{path, content}` entries, one such entry, or a map from path to content is expected"
+        ),
+        "{prose}"
+    );
+    assert_eq!(exchanges[4].outcome, Ok(String::new()));
     model.assert_exhausted();
 }
 
@@ -937,6 +1071,72 @@ async fn edit_object_shape() {
     let both = exchanges[4].outcome.as_deref().expect_err("`edits` beside a bare edit");
     assert!(both.contains("cannot both be given"), "{both}");
     assert_eq!(exchanges[5].outcome, Ok(String::new()));
+    model.assert_exhausted();
+}
+
+// `edits` sent as a JSON string — the list, or one edit — is read as the
+// shape it spells; a string spelling no JSON is refused naming the shapes
+// expected.
+#[tokio::test]
+async fn edit_string_shape() {
+    let tmp = tempfile::tempdir().expect("tempdir");
+    write(tmp.path(), [("src/orders.rs", "pub struct Order;\npub struct Line;\n")]);
+    let root = tmp.path().to_str().expect("a UTF-8 scratch root");
+    let model = Scripted::answering([r#"{"covered":["REQ-001"],"written":["src/orders.rs"]}"#])
+        .calling(
+            0,
+            [
+                ToolCall {
+                    id: "1".to_owned(),
+                    name: "edit_files".to_owned(),
+                    arguments: serde_json::json!({
+                        "edits": r#"[{"path":"src/orders.rs","find":"Order","replace":"Purchase"}]"#
+                    })
+                    .to_string(),
+                },
+                ToolCall {
+                    id: "2".to_owned(),
+                    name: "edit_files".to_owned(),
+                    arguments: serde_json::json!({
+                        "edits": r#"{"path":"src/orders.rs","find":"Line","replace":"Item"}"#
+                    })
+                    .to_string(),
+                },
+                ToolCall {
+                    id: "3".to_owned(),
+                    name: "edit_files".to_owned(),
+                    arguments: serde_json::json!({ "edits": "replace Item with Row" }).to_string(),
+                },
+            ],
+        );
+
+    let report = ask(&model, &slice(), root).await.expect("accepted");
+    assert_eq!(report.written, ["src/orders.rs"]);
+    assert_eq!(
+        fs::read_to_string(tmp.path().join("src/orders.rs")).expect("edited"),
+        "pub struct Purchase;\npub struct Item;\n"
+    );
+
+    let exchanges = model.exchanges();
+    assert_eq!(exchanges.len(), 4, "three calls, then the check");
+    assert_eq!(
+        exchanges[0].outcome.as_deref(),
+        Ok(r#"{"edited":[{"bytes":38,"path":"src/orders.rs"}]}"#)
+    );
+    assert_eq!(
+        exchanges[1].outcome.as_deref(),
+        Ok(r#"{"edited":[{"bytes":38,"path":"src/orders.rs"}]}"#)
+    );
+    let prose = exchanges[2].outcome.as_deref().expect_err("a string that is not JSON");
+    assert!(prose.starts_with("edit_files: invalid arguments"), "{prose}");
+    assert!(
+        prose.contains(
+            "a string that is not JSON (expected value at line 1 column 1), where a list of \
+             `{path, find, replace}` edits, or one such edit is expected"
+        ),
+        "{prose}"
+    );
+    assert_eq!(exchanges[3].outcome, Ok(String::new()));
     model.assert_exhausted();
 }
 

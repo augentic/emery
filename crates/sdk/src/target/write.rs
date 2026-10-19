@@ -244,7 +244,10 @@ impl Writer {
             };
             match content.matches(find.as_str()).count() {
                 1 => *content = content.replacen(find.as_str(), &replace, 1),
-                0 => refused.push(format!("`{path}`: `find` matches nothing in the file")),
+                0 => refused.push(format!(
+                    "`{path}`: `find` matches nothing in the file; {}",
+                    nearest(content, &find)
+                )),
                 n => refused.push(format!("`{path}`: `find` matches {n} places in the file")),
             }
         }
@@ -553,8 +556,9 @@ struct Edit {
 
 // The schema asks for a sequence of `{path, content}`; a map from path to
 // content, which a model reaches for as readily, is read all the same, in
-// the order the call spells it; and one entry spelled bare — a map with a
-// `path` key — is that entry, not files named `path` and `content`.
+// the order the call spells it; one entry spelled bare — a map with a
+// `path` key — is that entry, not files named `path` and `content`; and
+// the shape sent as JSON text is the shape.
 struct Files;
 
 impl<'de> DeserializeSeed<'de> for Files {
@@ -599,10 +603,15 @@ impl<'de> Visitor<'de> for Files {
             })
             .collect()
     }
+
+    fn visit_str<E: de::Error>(self, text: &str) -> Result<Self::Value, E> {
+        spelled(text, self)
+    }
 }
 
 // The schema asks for a sequence of `{path, find, replace}`; one edit
-// spelled bare — a map in place of the list — is that edit.
+// spelled bare — a map in place of the list — is that edit; and the shape
+// sent as JSON text is the shape.
 struct Edits;
 
 impl<'de> DeserializeSeed<'de> for Edits {
@@ -631,6 +640,30 @@ impl<'de> Visitor<'de> for Edits {
     fn visit_map<A: MapAccess<'de>>(self, map: A) -> Result<Self::Value, A::Error> {
         single_edit(entries(map)?).map(|edit| vec![edit])
     }
+
+    fn visit_str<E: de::Error>(self, text: &str) -> Result<Self::Value, E> {
+        spelled(text, self)
+    }
+}
+
+// A model that serialises the list before it sends it puts the shape in a
+// string; the string is read as the JSON it spells, through the same seed,
+// and one that spells no JSON is refused as the seed expects.
+fn spelled<'de, S, E>(text: &str, seed: S) -> Result<<S as DeserializeSeed<'de>>::Value, E>
+where
+    S: DeserializeSeed<'de> + Visitor<'de>,
+    E: de::Error,
+{
+    let value: serde_json::Value = match serde_json::from_str(text) {
+        Ok(value) => value,
+        Err(err) => {
+            return Err(E::custom(format!(
+                "a string that is not JSON ({err}), where {} is expected",
+                &seed as &dyn de::Expected
+            )));
+        }
+    };
+    DeserializeSeed::deserialize(seed, value).map_err(E::custom)
 }
 
 // A map's entries in the order the call spells them, which a
@@ -685,6 +718,38 @@ fn single_file<E: de::Error>(entries: Vec<(String, serde_json::Value)>) -> Resul
         content: content.ok_or_else(|| E::missing_field("content"))?,
         shrink,
     })
+}
+
+// What the file holds nearest a `find` that matched nothing: the line its
+// first line is found on and the one after it, where the two usually part,
+// or the file's opening line and length when no line holds it, so the
+// refusal carries the text to copy.
+fn nearest(content: &str, find: &str) -> String {
+    let lines: Vec<&str> = content.lines().collect();
+    let total = lines.len();
+    let Some(opening) = lines.first() else {
+        return "the file is empty".to_owned();
+    };
+    let first = find.lines().map(str::trim).find(|line| !line.is_empty());
+    let Some(index) = first.and_then(|first| lines.iter().position(|line| line.contains(first)))
+    else {
+        return if total == 1 {
+            format!("no line holds its first line; the file's one line is `{opening}`")
+        } else {
+            format!(
+                "no line holds its first line; the file has {total} lines and opens with \
+                 `{opening}`"
+            )
+        };
+    };
+    let (line, number) = (lines[index], index + 1);
+    let Some(next) = lines.get(index + 1) else {
+        return format!("its first line is on line {number} of {total}, `{line}`, the last");
+    };
+    format!(
+        "its first line is on line {number} of {total}, `{line}`, and line {} is `{next}`",
+        number + 1
+    )
 }
 
 fn text<E: de::Error>(value: serde_json::Value, at: &str) -> Result<String, E> {
