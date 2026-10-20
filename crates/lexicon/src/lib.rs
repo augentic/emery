@@ -449,10 +449,25 @@ fn parts(name: &str) -> Vec<String> {
         .collect()
 }
 
-// The words of a text: runs of letters and digits, split again where a
-// lowercase letter or a digit meets an uppercase one, or an uppercase run
-// meets its last letter's lowercase successor (`IORedis` is `io`, `redis`).
-fn words(text: &str) -> Vec<String> {
+/// Returns the words of `text`, lowercased, split at its separators and camel-case boundaries.
+///
+/// A word is a run of ASCII letters and digits. A run splits again where a
+/// lowercase letter or a digit meets an uppercase one, and where an uppercase
+/// run meets its last letter's lowercase successor, so `IORedis` is `io`,
+/// `redis`. Nothing is returned for a text of separators alone.
+///
+/// # Examples
+///
+/// ```
+/// use emery_lexicon::words;
+///
+/// assert_eq!(words("useConfluentKafkaConfig"), ["use", "confluent", "kafka", "config"]);
+/// assert_eq!(words("KEYVAULT_HOST"), ["keyvault", "host"]);
+/// assert_eq!(words("HTTPServer v2"), ["http", "server", "v2"]);
+/// assert!(words("--").is_empty());
+/// ```
+#[must_use]
+pub fn words(text: &str) -> Vec<String> {
     let mut words = Vec::new();
     let mut word = String::new();
     let chars: Vec<char> = text.chars().collect();
