@@ -1,18 +1,50 @@
 //! Defines the shipped `emery` runtime binary.
 //!
-//! The shared deployment of `deployment.rs` with Cursor answering the model:
-//! every worker it runs for a lent tree is confined to the tree and the
-//! shell roots, and reaches beyond them what the target adapter's grants
-//! name.
+//! Embeds `EMERY_GUEST` with the current directory mounted writable as `.`,
+//! adapters loaded from `~/.emery/adapters` or fetched from `augentic.io`,
+//! state under `.emery/storage`, version control via host `git`, and model
+//! workers confined to `.emery/vcs/worktrees` and `.emery/vcs/integration`.
 
 cfg_select! {
     not(target_arch = "wasm32") => {
-        #[path = "deployment.rs"]
-        mod deployment;
+        use omnia::FromEnv as _;
+        use omnia_filesystem::{Client as Filesystem, ConnectOptions};
+        use omnia_git::Client as Git;
+        use omnia_wasi_blobstore::WasiBlobstore;
+        use omnia_wasi_keyvalue::WasiKeyValue;
+        use omnia_wasi_model::WasiModel;
+        use omnia_wasi_otel::{OtelDefault, WasiOtel};
+        use omnia_wasi_vcs::WasiVcs;
 
-        use omnia_cursor::{Client as Cursor, ConnectOptions as CursorOptions};
+        // select model backend
+        cfg_select! {
+            feature = "genai" => {
+                use omnia_genai::{Client as Model, ConnectOptions as ModelOptions};
+            }
+            not(feature = "genai") => {
+                use omnia_cursor::{Client as Model, ConnectOptions as ModelOptions};
+            }
+        }
 
-        deployment::runtime!(Cursor, CursorOptions);
+        omnia::runtime!({
+            mode: command,
+            guests: [{ path: env!("EMERY_GUEST") }],
+            plugins: {
+                store: "~/.emery/adapters",
+                registries: include_str!("wasm-pkg.toml"),
+            },
+            mounts: [{ name: ".", path: ".", writable: true }],
+            hosts: {
+                WasiOtel: OtelDefault,
+                WasiModel: Model(ModelOptions {
+                    shell_roots: vec![".emery/vcs/worktrees".into(), ".emery/vcs/integration".into()],
+                    ..ModelOptions::load_env()?
+                }),
+                WasiKeyValue: Filesystem(ConnectOptions { root: ".emery/storage".into() }),
+                WasiBlobstore: Filesystem(ConnectOptions { root: ".emery/storage".into() }),
+                WasiVcs: Git,
+            },
+        });
     }
     _ => {
         fn main() {}
