@@ -73,6 +73,7 @@ The runtime mounts the invocation directory as `.`, writable: the tree `specify`
 | A reference the registry cannot supply | `unavailable` (exit `4`); a copy in the store stands in. |
 | A `digest` the bytes do not hash to | `refused` (exit `1`), naming the digest resolved and the one declared. |
 | A pre-compiled artifact, stored or fetched | `refused` (exit `1`): raw wasm alone. |
+| A component whose export signature differs from the contract | `refused` (exit `1`), naming the function and the parameter or result that differs. |
 | A reference without a version or a namespace, a path, a bare name | `bad_request` (exit `1`) before any load. |
 | Two versions of one package in one run | `bad_request` (exit `1`) before any load: one guest per package per run. |
 | One reference pinned to two digests | `bad_request` (exit `1`) before any load. |

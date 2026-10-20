@@ -295,7 +295,7 @@ fn hint(error: &Error, building: bool) -> Option<Cow<'static, str>> {
         }
         "adapter-reference" => "an adapter is an exact package reference, `namespace:name@version`",
         "refused" => {
-            "the loader refused the component; the message above names why: an invalid artifact, a pre-compiled artifact where raw wasm is required, a mismatched digest, or a release the binary routes nowhere, which is fetched with `wkg get <reference> -o ~/.emery/adapters/`"
+            "the loader refused the component; the message above names why: an invalid artifact, a pre-compiled artifact where raw wasm is required, a mismatched digest, an export whose signature does not match this emery's contract (rebuild or update the copy in `~/.emery/adapters/`), or a release the binary routes nowhere, which is fetched with `wkg get <reference> -o ~/.emery/adapters/`"
         }
         "unavailable" => {
             "the registry could not supply the release: check the network and that the exact version is published under its namespace; a copy at `~/.emery/adapters/<namespace>_<name>@<version>.wasm` stands in for it"
