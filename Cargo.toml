@@ -20,12 +20,6 @@ crate-type = ["rlib"]
 name = "emery"
 path = "src/main.rs"
 
-# The development runtime over a local model; never released.
-[[bin]]
-name = "emery-dev"
-path = "src/dev.rs"
-required-features = ["genai"]
-
 [features]
 genai = ["dep:omnia-genai"]
 
