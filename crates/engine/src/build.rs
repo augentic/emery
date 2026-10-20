@@ -7,7 +7,6 @@
 //! resume from the existing label and integration working copy.
 
 pub(crate) mod merge;
-mod secrets;
 
 use std::collections::BTreeSet;
 use std::fmt::{self, Display};
@@ -28,7 +27,7 @@ use crate::brief::Brief as _;
 use crate::revision::{Design, Plan, Slice, Spec};
 pub use crate::revision::{ReqId, SliceId, Waves};
 use crate::vcs::{BuildRepo, INTEGRATION, Integration, Message, WorkingCopy};
-use crate::{EntryKind, Files, RETRIES, is_retryable, store, vcs};
+use crate::{EntryKind, Files, RETRIES, is_retryable, secrets, store, vcs};
 
 /// Builds every slice of the current plan through the target adapter `input` names.
 ///
@@ -58,7 +57,8 @@ use crate::{EntryKind, Files, RETRIES, is_retryable, store, vcs};
 /// # Errors
 ///
 /// - Returns [`Error::NotFound`]:
-///   - with code `spec-not-generated`, when no revision has been committed;
+///   - with code `spec-not-generated`, when no revision has been committed,
+///     naming a staged candidate where one stands;
 ///   - with code `revision-not-found`, when the repository the target names
 ///     does not exist or has no default branch, or what the run already
 ///     holds under the target's name was cloned or created under another
@@ -121,11 +121,9 @@ pub async fn build<P: Model + Target + StateStore + BlobStore + Plugins + Vcs + 
     }
 
     let Some((revision_id, revision)) = store::current(provider).await? else {
-        return Err(Error::NotFound {
-            code: "spec-not-generated".into(),
-            description: "no specification revision has been committed".into(),
-        });
+        return Err(store::not_generated(provider).await);
     };
+    let candidate = store::staged_id(provider).await?.filter(|staged| *staged != revision_id);
 
     let Loaded {
         id: adapter,
@@ -198,6 +196,7 @@ pub async fn build<P: Model + Target + StateStore + BlobStore + Plugins + Vcs + 
 
     Ok(BuildOutput {
         revision: revision_id,
+        candidate,
         waves,
         base,
         repository: repo.path(),
@@ -254,6 +253,10 @@ pub struct BuildInput {
 pub struct BuildOutput {
     /// The identifier of the revision whose plan was built.
     pub revision: String,
+    /// A candidate staged and not sealed, by id, which the build did not
+    /// read: `emery apply` seals it for the next build.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub candidate: Option<String>,
     /// The plan's slices grouped into the sets ready to build at once.
     ///
     /// The plan's own projection: what the waves would be were every slice

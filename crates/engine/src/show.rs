@@ -1,4 +1,4 @@
-//! Reads documents from the current specification revision.
+//! Reads documents from the current specification revision, or the staged candidate.
 //!
 //! [`show`] returns the selected document as Markdown and structured JSON,
 //! together with the revision identifier. Storage details remain private to
@@ -14,12 +14,14 @@ use strum::{AsRefStr, EnumString, VariantArray};
 use crate::revision::Document;
 use crate::store;
 
-/// Returns one document from the current revision.
+/// Returns one document from the current revision, or from the staged candidate.
 ///
 /// # Errors
 ///
 /// - Returns [`Error::NotFound`] with code `spec-not-generated` when no
-///   revision has been committed.
+///   revision has been committed, naming a staged candidate where one
+///   stands, and with code `nothing-staged` when [`ShowInput::staged`] is
+///   set and no candidate is staged.
 /// - Returns [`Error::BadRequest`] with code `spec-outdated` when the stored
 ///   revision uses a different grammar.
 /// - Returns [`Error::ServerError`] when storage, validation, or serialisation
@@ -27,13 +29,22 @@ use crate::store;
 pub async fn show<P: StateStore + BlobStore>(
     input: ShowInput, context: Context<P>,
 ) -> Result<ShowOutput, Error> {
-    let Some((id, revision)) = store::current(context.provider()).await? else {
-        return Err(Error::NotFound {
-            code: "spec-not-generated".into(),
-            description: "no specification revision has been committed".into(),
-        });
+    let store = context.provider();
+    let (id, revision) = if input.staged {
+        let candidate = store::staged(store).await?.ok_or_else(store::nothing_staged)?;
+        (candidate.id, candidate.revision)
+    } else {
+        let Some(current) = store::current(store).await? else {
+            return Err(store::not_generated(store).await);
+        };
+        current
     };
-    tracing::debug!(revision = %id, artifact = input.artifact.as_ref(), "revision read");
+    tracing::debug!(
+        revision = %id,
+        staged = input.staged,
+        artifact = input.artifact.as_ref(),
+        "revision read"
+    );
 
     match input.artifact {
         Artifact::Spec => ShowOutput::new(&revision.spec, id),
@@ -48,6 +59,9 @@ pub async fn show<P: StateStore + BlobStore>(
 pub struct ShowInput {
     /// The revision artifact projected as Markdown and structured JSON.
     pub artifact: Artifact,
+    /// Whether to read the staged candidate in place of the current revision.
+    #[serde(default)]
+    pub staged: bool,
 }
 
 /// A document available from a specification revision.
@@ -82,7 +96,7 @@ pub enum Artifact {
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "kebab-case")]
 pub struct ShowOutput {
-    /// The identifier of the current revision.
+    /// The identifier of the revision read: the current one, or the staged candidate.
     pub revision: String,
     /// The Markdown projection, including revision front matter.
     pub body: String,

@@ -15,7 +15,7 @@ use omnia_sdk::{bad_gateway, bad_request};
 use omnia_test::SeenFormat;
 use omnia_test::guest::Scripted;
 use serde_json::{Value, json};
-use support::{HEAD, Provider, Rendezvous, Scratch, cli, cli_ok, digest, fail, seed};
+use support::{HEAD, Provider, Rendezvous, Scratch, cli, cli_ok, digest, fail, seed, stage};
 
 const MERGE_MD: &str = include_str!("../crates/engine/prose/merge.md");
 // The resolution of `src/lib.rs` between `authentication` and `orders`.
@@ -1450,6 +1450,54 @@ async fn build_resumed_complete() {
     provider.vcs.assert_exhausted();
 }
 
+// A build reads the current revision and never the candidate `specify`
+// staged beside it: the candidate's plan is not built, the output names it
+// as staged and not sealed, and both slots stand as they were.
+#[tokio::test]
+async fn build_candidate_staged() {
+    let (provider, id) = planned();
+    let candidate = stage(&provider.storage, SPEC, DESIGN, WIDE_PLAN);
+    assert_ne!(candidate, id);
+    // two runs, text then JSON, each resumed complete
+    for _ in 0..2 {
+        provider.vcs.labelleds.script(".", Ok(LABELLED.to_owned()));
+        provider.vcs.logs.script(
+            ".",
+            Ok(vec![
+                entry("m:SLICE-002", &message(&id, ORDERS, "REQ-003, REQ-004", "REQ-003", HEAD, 2)),
+                entry(
+                    "m:SLICE-001",
+                    &message(&id, AUTHENTICATION, "REQ-001, REQ-002", "REQ-001, REQ-002", HEAD, 1),
+                ),
+            ]),
+        );
+    }
+    let before = provider.storage.snapshot();
+
+    let resp = cli_ok(&provider, &["emery", "build", "--config", PROJECT_CONFIG]).await;
+
+    let stdout = String::from_utf8_lossy(&resp.stdout);
+    assert_eq!(
+        stdout,
+        format!(
+            "built revision {id}\n  plan: 2 slices in 2 waves, widest 1\n  candidate {candidate} \
+             is staged and not sealed; `emery apply` seals it\n  base {HEAD}\n  resumed: \
+             SLICE-001, SLICE-002\n  labelled emery/{id} at {LABELLED}\n"
+        ),
+        "the two-slice revision is built, not the three-slice candidate"
+    );
+    assert_eq!(provider.storage.snapshot(), before, "a build writes nothing to either slot");
+
+    let resp =
+        cli_ok(&provider, &["emery", "--format", "json", "build", "--config", PROJECT_CONFIG])
+            .await;
+    let envelope: Value = serde_json::from_slice(&resp.stdout).expect("one JSON envelope");
+    assert_eq!(envelope["revision"], id, "{envelope}");
+    assert_eq!(envelope["candidate"], candidate, "{envelope}");
+    assert!(provider.target.calls().is_empty(), "nothing to build");
+    provider.vcs.assert_exhausted();
+}
+
 // A label that does not descend from the base is not this base's history:
 // its chain is never read, and the build starts fresh from the base, every
 // slice built and the label moved onto the new head.
@@ -2136,6 +2184,18 @@ async fn build_no_revision() {
     assert!(provider.target.metadata.lock().expect("metadata").is_empty(), "nothing loads");
     assert!(provider.target.calls().is_empty(), "no slice is dispatched");
     assert!(provider.vcs.calls().is_empty(), "nothing is asked of version control");
+
+    // a candidate staged and not sealed is no revision: the refusal names it
+    let candidate = stage(&provider.storage, SPEC, DESIGN, PLAN);
+    let envelope =
+        fail(&provider, &["emery", "build", "--config", PROJECT_CONFIG], 2, "spec-not-generated")
+            .await;
+    assert_message(&envelope, &format!("candidate `{candidate}` is staged and not sealed"));
+    assert!(
+        envelope["hint"].as_str().is_some_and(|hint| hint.contains("emery apply")),
+        "the hint names the seal: {envelope}"
+    );
+    assert!(provider.target.metadata.lock().expect("metadata").is_empty(), "nothing loads");
 }
 
 #[tokio::test]

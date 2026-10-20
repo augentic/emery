@@ -44,7 +44,7 @@ async fn route_budget() {
     let help = cli(&provider, &["emery", "--help"]).await;
     assert_eq!(help.exit, 0);
     let help = String::from_utf8_lossy(&help.stdout);
-    assert_eq!(verbs(&help), ["build", "completions", "show", "specify"]);
+    assert_eq!(verbs(&help), ["apply", "build", "completions", "show", "specify"]);
     for gone in ["init", "plan", "slice", "system", "journal", "debt", "adapter"] {
         assert!(
             !help.lines().any(|line| line.trim_start().starts_with(gone)),
@@ -155,6 +155,35 @@ async fn no_revision() {
     fail(&provider, &["emery", "show", "design"], 2, "spec-not-generated").await;
     fail(&provider, &["emery", "show", "plan"], 2, "spec-not-generated").await;
     fail(&provider, &["emery", "build", "acme:builder@1.0.0"], 2, "spec-not-generated").await;
+
+    // nothing staged is the other slot's refusal
+    fail(&provider, &["emery", "show", "spec", "--staged"], 2, "nothing-staged").await;
+    fail(&provider, &["emery", "apply"], 2, "nothing-staged").await;
+}
+
+// `apply` takes no argument and `--staged` belongs to `show` alone.
+#[tokio::test]
+async fn apply_grammar() {
+    let provider = Provider::idle();
+    assert_eq!(cli(&provider, &["emery", "apply", "spec"]).await.exit, USAGE_EXIT);
+    assert_eq!(cli(&provider, &["emery", "apply", "--staged"]).await.exit, USAGE_EXIT);
+    assert_eq!(cli(&provider, &["emery", "build", "--staged"]).await.exit, USAGE_EXIT);
+    assert_eq!(cli(&provider, &["emery", "build", "--apply"]).await.exit, USAGE_EXIT);
+
+    let help = cli_ok(&provider, &["emery", "apply", "--help"]).await;
+    let help = String::from_utf8_lossy(&help.stdout);
+    assert!(help.contains("nothing-staged"), "{help}");
+    let help = cli_ok(&provider, &["emery", "show", "--help"]).await;
+    let help = String::from_utf8_lossy(&help.stdout);
+    assert!(help.contains("--staged"), "{help}");
+    let help = cli_ok(&provider, &["emery", "specify", "--help"]).await;
+    let help = String::from_utf8_lossy(&help.stdout);
+    assert!(help.contains("--apply"), "{help}");
+
+    let completions = cli_ok(&provider, &["emery", "completions", "zsh"]).await;
+    let completions = String::from_utf8_lossy(&completions.stdout);
+    assert!(completions.contains("apply"), "{completions}");
+    assert!(completions.contains("--staged"), "{completions}");
 }
 
 // A run naming no target on the command line or in a file is refused typed.

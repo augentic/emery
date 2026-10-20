@@ -3,7 +3,8 @@
 //! Wraps the [`Vcs`] capability over deployment-local paths beneath [`ROOT`]:
 //! [`SourceClone`] manages cached source clones, [`BuildRepo`] resolves the
 //! target repository a build lands in, [`WorkingCopy`] manages isolated
-//! worktrees, and [`Message`] formats and parses slice commit trailers.
+//! worktrees, and [`Message`] and [`RevisionMessage`] format and parse the
+//! trailers of a slice's commit and a revision's.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
@@ -210,6 +211,69 @@ impl fmt::Display for Message {
     }
 }
 
+/// The message a revision is sealed under in the repository its specification lives in.
+///
+/// The first line is `Revision <id>`; the trailers tie the commit to the
+/// revision, the revision it amends, and the commit it was sealed over, so
+/// a later run reads back from the history which revision a tree holds.
+/// [`Display`](fmt::Display) writes it and [`parse`](RevisionMessage::parse)
+/// reads it back. [`Message::parse`] passes it over, since its first word
+/// is no slice id.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RevisionMessage {
+    /// The revision sealed.
+    pub revision: String,
+    /// The revision it amends, by id; `None` for one drafted from the sources alone.
+    pub parent: Option<String>,
+    /// The commit the revision was sealed over; `None` for a repository's root commit.
+    pub base: Option<String>,
+}
+
+impl RevisionMessage {
+    /// Reads a message back from a commit's text; `None` when a seal did not write it.
+    ///
+    /// The first line and the `Revision:` trailer must agree; `Parent:` and
+    /// `Base:` are read where present, so a commit of any other shape in
+    /// the history is passed over.
+    #[must_use]
+    pub fn parse(text: &str) -> Option<Self> {
+        let mut lines = text.lines();
+        let revision = lines.next()?.strip_prefix("Revision ")?.trim();
+        if revision.is_empty() {
+            return None;
+        }
+        let trailers: BTreeMap<&str, &str> = lines
+            .filter_map(|line| line.split_once(':'))
+            .map(|(key, value)| (key, value.trim()))
+            .collect();
+        if *trailers.get("Revision")? != revision {
+            return None;
+        }
+        Some(Self {
+            revision: revision.to_owned(),
+            parent: trailers
+                .get("Parent")
+                .copied()
+                .filter(|parent| !parent.is_empty())
+                .map(str::to_owned),
+            base: trailers.get("Base").copied().filter(|base| !base.is_empty()).map(str::to_owned),
+        })
+    }
+}
+
+impl fmt::Display for RevisionMessage {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "Revision {revision}\n\nRevision: {revision}", revision = self.revision)?;
+        if let Some(parent) = &self.parent {
+            write!(f, "\nParent: {parent}")?;
+        }
+        if let Some(base) = &self.base {
+            write!(f, "\nBase: {base}")?;
+        }
+        Ok(())
+    }
+}
+
 /// A source's repository named by URL, cloned once beneath [`ROOT`].
 ///
 /// Two URLs that spell one repository — differing in case of scheme or
@@ -299,12 +363,57 @@ impl BuildRepo {
         }
     }
 
-    /// The commit a build starts from, with the repository brought to where it can be read.
+    /// The commit the repository stands at, with the repository brought to where it can be read.
     ///
-    /// - The project's is the sealed commit its checkout sits on. Pending
-    ///   changes beneath the engine's own [`SKIP_DIRS`] are never counted.
+    /// - The project's is the commit its checkout sits on, whatever it
+    ///   holds pending.
     /// - A clone's is [`DEFAULT_BRANCH`], the origin's default branch:
     ///   cloned when the run has no clone, fetched when it has one.
+    /// - A created repository's is its head.
+    ///
+    /// `None` when the project checkout has no commit yet, or no run has
+    /// created the created repository, or created it and sealed nothing.
+    ///
+    /// # Errors
+    ///
+    /// - Returns [`Error::BadRequest`] with code `repository-required` when
+    ///   the project is no repository.
+    /// - Returns [`Error::NotFound`] with code `revision-not-found` when the
+    ///   URL names no repository or the clone has no default branch.
+    /// - Returns [`Error::BadGateway`] when the remote refuses, cannot be
+    ///   reached, or wants credentials.
+    /// - Returns [`Error::ServerError`] when the capability fails otherwise.
+    pub async fn head<V: Vcs>(&self, vcs: &V) -> Result<Option<String>, Error> {
+        match self {
+            Self::Project => match vcs.head(PROJECT).await {
+                Ok(head) => Ok(Some(head)),
+                Err(vcs::Error::NotFound(_)) => Ok(None),
+                Err(error) => Err(Subject::Project.refusal(error)),
+            },
+            Self::Target { name, url: Some(url) } => {
+                let at = target_path(name);
+                let subject = Subject::Repository(url);
+                ensure(vcs, url, &at).await.map_err(|error| subject.refusal(error))?;
+                vcs.resolve(&at, DEFAULT_BRANCH)
+                    .await
+                    .map(Some)
+                    .map_err(|error| subject.refusal(error))
+            }
+            Self::Target { name, url: None } => match vcs.head(&target_path(name)).await {
+                Ok(head) => Ok(Some(head)),
+                Err(vcs::Error::NotFound(_) | vcs::Error::NotARepository) => Ok(None),
+                Err(error) => Err(self.subject().refusal(error)),
+            },
+        }
+    }
+
+    /// The commit a build starts from, with the repository brought to where it can be read.
+    ///
+    /// - The project's is the sealed commit its checkout sits on, its
+    ///   [`head`](Self::head) once the checkout holds nothing pending.
+    ///   Pending changes beneath the engine's own [`SKIP_DIRS`] are never
+    ///   counted.
+    /// - A clone's is its [`head`](Self::head), [`DEFAULT_BRANCH`].
     /// - A created repository's is its root commit, [`INITIALISE`], holding
     ///   what `init` scaffolded in the tree — the adapter's layout, given
     ///   the repository's path and answering what it left pending — and a
@@ -332,13 +441,17 @@ impl BuildRepo {
         &self, provider: &P, init: impl AsyncFnOnce(&str) -> Result<Vec<Change>, Error>,
     ) -> Result<String, Error> {
         match self {
-            Self::Project => project_base(provider).await,
-            Self::Target { name, url: Some(url) } => {
-                let at = target_path(name);
-                let subject = Subject::Repository(url);
-                ensure(provider, url, &at).await.map_err(|error| subject.refusal(error))?;
-                provider.resolve(&at, DEFAULT_BRANCH).await.map_err(|error| subject.refusal(error))
+            Self::Project => {
+                project_clean(provider).await?;
+                self.head(provider).await?.ok_or_else(|| Error::BadRequest {
+                    code: "base-not-sealed".into(),
+                    description: "the project repository has no commit to build from".into(),
+                })
             }
+            Self::Target { url: Some(url), .. } => self
+                .head(provider)
+                .await?
+                .ok_or_else(|| server_error!("repository `{url}` answered no default branch")),
             Self::Target { name, url: None } => create(provider, name, init).await,
         }
     }
@@ -709,7 +822,9 @@ async fn create<P: Vcs + Files>(
     Ok(commit)
 }
 
-async fn project_base<V: Vcs>(vcs: &V) -> Result<String, Error> {
+// Holds the project checkout to nothing pending outside the engine's own
+// directories, so a build starts from a sealed tree.
+async fn project_clean<V: Vcs>(vcs: &V) -> Result<(), Error> {
     let pending = vcs.pending(PROJECT).await.map_err(|error| Subject::Project.refusal(error))?;
     let unsealed: Vec<String> = pending
         .into_iter()
@@ -725,15 +840,7 @@ async fn project_base<V: Vcs>(vcs: &V) -> Result<String, Error> {
             ),
         });
     }
-
-    match vcs.head(PROJECT).await {
-        Ok(head) => Ok(head),
-        Err(vcs::Error::NotFound(_)) => Err(Error::BadRequest {
-            code: "base-not-sealed".into(),
-            description: "the project repository has no commit to build from".into(),
-        }),
-        Err(error) => Err(Subject::Project.refusal(error)),
-    }
+    Ok(())
 }
 
 // What a run addressed when the capability refused, which decides the
@@ -815,4 +922,52 @@ fn scp_like(url: &str) -> Option<(&str, &str)> {
     let (authority, path) = url.split_once(':')?;
     (!authority.is_empty() && !authority.contains('/') && !path.starts_with("//"))
         .then_some((authority, path))
+}
+
+// No verb seals a revision's commit yet, so the two messages' reading of
+// one another is held here until the repository store writes one.
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn revision_message_round_trip() {
+        let sealed = RevisionMessage {
+            revision: "abc123".to_owned(),
+            parent: Some("def456".to_owned()),
+            base: Some("0123abcd".to_owned()),
+        };
+        let text = sealed.to_string();
+        assert_eq!(text, "Revision abc123\n\nRevision: abc123\nParent: def456\nBase: 0123abcd");
+        assert_eq!(RevisionMessage::parse(&text), Some(sealed));
+        assert!(Message::parse(&text).is_none(), "a slice's reading passes a revision's over");
+
+        let root = RevisionMessage {
+            revision: "abc123".to_owned(),
+            parent: None,
+            base: None,
+        };
+        let text = root.to_string();
+        assert_eq!(text, "Revision abc123\n\nRevision: abc123");
+        assert_eq!(RevisionMessage::parse(&text), Some(root));
+    }
+
+    #[test]
+    fn revision_message_passes_over_others() {
+        let slice = Message {
+            slice: SliceId::FIRST,
+            name: "authentication".to_owned(),
+            revision: "abc123".to_owned(),
+            requirements: vec![ReqId::FIRST],
+            covered: vec![ReqId::FIRST],
+            adapter: "acme:builder@1.0.0".to_owned(),
+            base: "0123abcd".to_owned(),
+            wave: 1,
+        }
+        .to_string();
+        assert!(RevisionMessage::parse(&slice).is_none());
+        assert!(RevisionMessage::parse("Revision abc123\n\nRevision: other").is_none());
+        assert!(RevisionMessage::parse("Revision \n\nRevision: ").is_none());
+        assert!(RevisionMessage::parse(INITIALISE).is_none());
+    }
 }

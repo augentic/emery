@@ -412,11 +412,12 @@ fn link(deployment: &mut omnia::Deployment<StoreCtx<Bundle>>) -> anyhow::Result<
     Ok(())
 }
 
-// The revision id a `specify` or `build` run reports on its first line.
+// The revision id a `specify`, `apply`, or `build` run reports on its first line.
 fn revision_of(run: &Run) -> String {
     let first = run.stdout.lines().next().unwrap_or_default();
     first
-        .strip_prefix("committed revision ")
+        .strip_prefix("staged candidate ")
+        .or_else(|| first.strip_prefix("sealed revision "))
         .or_else(|| first.strip_prefix("built revision "))
         .unwrap_or_else(|| panic!("no revision line: {}", run.stdout))
         .to_owned()
@@ -472,14 +473,15 @@ fn shelled(copy: PathBuf, shell: impl Fn(&Path) + Send + Sync + 'static) -> Scri
 }
 
 // The one-slice journey up to its build: both mocks stored, the project
-// specified and sealed. Returns the roots, the backends, and the base.
+// specified with its revision sealed, and the checkout sealed. Returns the
+// roots, the backends, and the base.
 async fn specified() -> (Roots, Bundle, String) {
     let roots = Roots::new();
     roots.stored(SOURCE, MOCK_SOURCE);
     roots.stored(TARGET, MOCK_TARGET);
     let backends = roots.backends().await;
     let model = specifying();
-    assert_ok(&emery(roots.deployment(&["specify", SOURCE]), &backends, &model).await);
+    assert_ok(&emery(roots.deployment(&["specify", SOURCE, "--apply"]), &backends, &model).await);
     model.assert_exhausted();
     let base = roots.sealed();
     (roots, backends, base)
@@ -501,7 +503,8 @@ async fn built() -> (Roots, Bundle, String, String) {
 // --- the store ---
 
 // A release the store holds is the adapter: nothing is fetched, the file is
-// read, and the run proceeds through every turn to a revision.
+// read, and the run proceeds through every turn to a staged candidate, which
+// `show --staged` reads and `apply` seals as the revision `show` reads.
 #[tokio::test]
 async fn specify_stored() {
     let roots = Roots::new();
@@ -512,15 +515,36 @@ async fn specify_stored() {
     let run = emery(roots.deployment(&["specify", SOURCE]), &backends, &model).await;
 
     assert_ok(&run);
-    assert!(run.stdout.starts_with("committed revision "), "{}", run.stdout);
+    assert!(run.stdout.starts_with("staged candidate "), "{}", run.stdout);
+    assert!(run.stdout.ends_with("nothing sealed; `emery apply` seals it\n"), "{}", run.stdout);
     model.assert_exhausted();
     assert_eq!(roots.stored_files(), [stored_name(SOURCE)], "the store is read, never written");
+    let candidate = revision_of(&run);
 
-    // the revision is the one the next verb reads
-    let shown =
-        emery(roots.deployment(&["show", "spec"]), &backends, &ScriptedModel::default()).await;
+    // the candidate is what `show --staged` reads; nothing is sealed yet
+    let idle = ScriptedModel::default();
+    let shown = emery(roots.deployment(&["show", "spec", "--staged"]), &backends, &idle).await;
     assert_ok(&shown);
     assert!(shown.stdout.contains("### Requirement: greeting.behaviour"), "{}", shown.stdout);
+    let run =
+        emery(roots.deployment(&["--format", "json", "show", "spec"]), &backends, &idle).await;
+    let envelope = refused(&run, 2, "spec-not-generated");
+    assert_message(&envelope, &format!("candidate `{candidate}` is staged and not sealed"));
+
+    // apply seals it as the revision the next verb reads
+    let run = emery(roots.deployment(&["apply"]), &backends, &idle).await;
+    assert_ok(&run);
+    assert_eq!(run.stdout, format!("sealed revision {candidate}\n"));
+    let shown = emery(roots.deployment(&["show", "spec"]), &backends, &idle).await;
+    assert_ok(&shown);
+    assert!(shown.stdout.contains("### Requirement: greeting.behaviour"), "{}", shown.stdout);
+    let run = emery(
+        roots.deployment(&["--format", "json", "show", "spec", "--staged"]),
+        &backends,
+        &idle,
+    )
+    .await;
+    refused(&run, 2, "nothing-staged");
 }
 
 // A stored target named `repository = "."` initialises the integration
@@ -538,7 +562,7 @@ async fn build_merged_labelled() {
     roots.stored(TARGET, MOCK_TARGET);
     let backends = roots.backends().await;
     let model = specifying();
-    assert_ok(&emery(roots.deployment(&["specify", SOURCE]), &backends, &model).await);
+    assert_ok(&emery(roots.deployment(&["specify", SOURCE, "--apply"]), &backends, &model).await);
     model.assert_exhausted();
     let base = roots.sealed();
 
@@ -751,7 +775,7 @@ async fn build_conflict_resolved() {
         DESIGN_ANSWER,
         SLICING_PAIR,
     ]);
-    assert_ok(&emery(roots.deployment(&["specify", SOURCE]), &backends, &model).await);
+    assert_ok(&emery(roots.deployment(&["specify", SOURCE, "--apply"]), &backends, &model).await);
     model.assert_exhausted();
     let base = roots.sealed();
 
@@ -859,7 +883,7 @@ async fn build_secret_refused() {
     roots.stored(TARGET, MOCK_TARGET);
     let backends = roots.backends().await;
     let model = specifying();
-    assert_ok(&emery(roots.deployment(&["specify", SOURCE]), &backends, &model).await);
+    assert_ok(&emery(roots.deployment(&["specify", SOURCE, "--apply"]), &backends, &model).await);
     model.assert_exhausted();
     let base = roots.sealed();
 
@@ -978,7 +1002,7 @@ async fn build_dirty_refused() {
     roots.stored(TARGET, MOCK_TARGET);
     let backends = roots.backends().await;
     let model = specifying();
-    assert_ok(&emery(roots.deployment(&["specify", SOURCE]), &backends, &model).await);
+    assert_ok(&emery(roots.deployment(&["specify", SOURCE, "--apply"]), &backends, &model).await);
     model.assert_exhausted();
     roots.sealed();
     roots.project.write("notes.md", "later\n");
@@ -1003,7 +1027,7 @@ async fn build_dirty_refused() {
     roots.stored(TARGET, MOCK_TARGET);
     let backends = roots.backends().await;
     let model = specifying();
-    assert_ok(&emery(roots.deployment(&["specify", SOURCE]), &backends, &model).await);
+    assert_ok(&emery(roots.deployment(&["specify", SOURCE, "--apply"]), &backends, &model).await);
     roots.targeted();
     let run = emery(
         roots.deployment(&["--format", "json", "build"]),
@@ -1040,7 +1064,7 @@ async fn build_brownfield() {
     );
     let backends = roots.backends().await;
     let model = specifying();
-    assert_ok(&emery(roots.deployment(&["specify"]), &backends, &model).await);
+    assert_ok(&emery(roots.deployment(&["specify", "--apply"]), &backends, &model).await);
     model.assert_exhausted();
 
     let model = building();
@@ -1115,7 +1139,7 @@ async fn build_laid() {
     roots.stored(TARGET, MOCK_TARGET);
     let backends = roots.backends().await;
     let model = specifying();
-    assert_ok(&emery(roots.deployment(&["specify", SOURCE]), &backends, &model).await);
+    assert_ok(&emery(roots.deployment(&["specify", SOURCE, "--apply"]), &backends, &model).await);
     model.assert_exhausted();
 
     let model = building();
@@ -1206,7 +1230,7 @@ async fn build_resumed_shadowed() {
     roots.stored(TARGET, MOCK_TARGET);
     let backends = roots.backends().await;
     let model = specifying();
-    let run = emery(roots.deployment(&["specify", SOURCE]), &backends, &model).await;
+    let run = emery(roots.deployment(&["specify", SOURCE, "--apply"]), &backends, &model).await;
     assert_ok(&run);
     model.assert_exhausted();
     let revision = revision_of(&run);
@@ -1286,7 +1310,7 @@ async fn build_brownfield_shadowed() {
     );
     let backends = roots.backends().await;
     let model = specifying();
-    let run = emery(roots.deployment(&["specify"]), &backends, &model).await;
+    let run = emery(roots.deployment(&["specify", "--apply"]), &backends, &model).await;
     assert_ok(&run);
     model.assert_exhausted();
     let revision = revision_of(&run);
@@ -1331,7 +1355,7 @@ async fn build_brownfield_remote_label() {
     );
     let backends = roots.backends().await;
     let model = specifying();
-    let run = emery(roots.deployment(&["specify"]), &backends, &model).await;
+    let run = emery(roots.deployment(&["specify", "--apply"]), &backends, &model).await;
     assert_ok(&run);
     model.assert_exhausted();
     let revision = revision_of(&run);
@@ -1427,7 +1451,7 @@ async fn specify_fetched() {
     let backends = roots.backends().await;
     let model = specifying();
 
-    let run = emery(roots.deployment(&["specify", SOURCE]), &backends, &model).await;
+    let run = emery(roots.deployment(&["specify", SOURCE, "--apply"]), &backends, &model).await;
 
     assert_ok(&run);
     model.assert_exhausted();
@@ -1576,7 +1600,9 @@ async fn pin_layered() {
     let backends = roots.backends().await;
 
     let model = specifying();
-    let run = emery(roots.deployment(&["specify", SOURCE, "--config"]), &backends, &model).await;
+    let run =
+        emery(roots.deployment(&["specify", SOURCE, "--config", "--apply"]), &backends, &model)
+            .await;
     assert_ok(&run);
     model.assert_exhausted();
 
@@ -1640,7 +1666,7 @@ async fn build_source_only() {
     roots.stored(SOURCE, MOCK_SOURCE);
     let backends = roots.backends().await;
     let model = specifying();
-    assert_ok(&emery(roots.deployment(&["specify", SOURCE]), &backends, &model).await);
+    assert_ok(&emery(roots.deployment(&["specify", SOURCE, "--apply"]), &backends, &model).await);
     model.assert_exhausted();
 
     let model = ScriptedModel::default();

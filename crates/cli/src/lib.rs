@@ -16,6 +16,7 @@ use std::path::PathBuf;
 
 use clap::builder::{PossibleValue, PossibleValuesParser, TypedValueParser};
 use clap::{Parser, Subcommand};
+use emery_engine::apply::{ApplyInput, apply};
 use emery_engine::build::{BuildInput, build};
 use emery_engine::show::{Artifact, ShowInput, show};
 use emery_engine::specify::{SpecifyInput, specify};
@@ -26,7 +27,7 @@ use omnia_sdk::api::{Client, Format, Metadata};
 use strum::VariantArray as _;
 
 const ABOUT: &str = "Deterministic primitives for spec-driven development";
-const SPECIFY_DESC: &str = "Generate spec.md, design.md, and plan.md from source adapters.\n\n\
+const SPECIFY_DESC: &str = "Stage spec.md, design.md, and plan.md from source adapters.\n\n\
     Name one or more adapters, use `--description <adapter>=<text>` for inline input, \
     or use `--config [<path>]` (default: `emery.toml`). With no sources, Emery looks \
     for `emery.toml` in the project root. Command-line sources layer over the config: \
@@ -39,7 +40,14 @@ const SPECIFY_DESC: &str = "Generate spec.md, design.md, and plan.md from source
     fetched by `wkg get <reference> -o ~/.emery/adapters/`. A `[[source]]` naming a \
     `repository` and `revision` is read from a clone kept under `.emery/vcs/`, checked out \
     at the revision for the run. Each run loads its adapters, reconciles their claims, and \
-    atomically commits a new revision.";
+    stages the drafted revision as the one candidate, replacing any staged before it, for \
+    `emery show <artifact> --staged` to review and `emery apply` to seal; `--apply` seals \
+    it in the same run. The diff reported is against the current revision, which a seal \
+    displaces.";
+const APPLY_DESC: &str = "Seal the staged candidate as the current revision.\n\n\
+    The candidate `emery specify` staged becomes the revision `emery show` and `emery \
+    build` read, the one it displaces is pruned, and the staging slot is cleared. With \
+    nothing staged the verb fails with `nothing-staged`.";
 const BUILD_DESC: &str = "Build the current plan through a target adapter.\n\n\
     Name the adapter, or use `--config [<path>]` (default: `emery.toml`) to read its \
     `[target]` table. With no adapter, Emery looks for `emery.toml` in the project root. \
@@ -73,8 +81,9 @@ const BUILD_DESC: &str = "Build the current plan through a target adapter.\n\n\
     `namespace:name@version`, read from the store `~/.emery/adapters` and fetched through \
     the `emery` namespace's registry when the store lacks it, as for `specify`.";
 const SHOW_DESC: &str = "Print an artifact from the current revision.\n\n\
-    Text output contains only the artifact body. `--format json` also includes the \
-    revision id and the typed document.";
+    `--staged` prints it from the candidate `emery specify` staged and `emery apply` has \
+    not sealed. Text output contains only the artifact body. `--format json` also \
+    includes the revision id and the typed document.";
 const COMPLETIONS_DESC: &str = "Generate shell completions.\n\n\
     Pipe into your shell's completion directory. Example: \
     `emery completions zsh > ~/.zsh/_emery`";
@@ -99,20 +108,23 @@ where
 
     let client = Client::new(NAME, provider);
     let metadata = Metadata::from_env("EMERY");
-    let building = matches!(app.verb, Verb::Build(_));
+    let invoked = Invoked::from(&app.verb);
     let command =
-        Command::new(&client, &metadata, app.format).hints(move |error| hint(error, building));
+        Command::new(&client, &metadata, app.format).hints(move |error| hint(error, invoked));
 
     match app.verb {
         Verb::Completions { shell } => completions::<App>(shell, NAME),
         Verb::Specify(arguments) => {
             command.call(specify, || SpecifyInput::try_from(arguments), text::specify).await
         }
+        Verb::Apply(ApplyArgs {}) => {
+            command.call(apply, || Ok(ApplyInput::default()), text::apply).await
+        }
         Verb::Build(arguments) => {
             command.call(build, || BuildInput::try_from(arguments), text::build).await
         }
-        Verb::Show(ShowArgs { artifact }) => {
-            command.call(show, || Ok(ShowInput { artifact }), text::show).await
+        Verb::Show(ShowArgs { artifact, staged }) => {
+            command.call(show, || Ok(ShowInput { artifact, staged }), text::show).await
         }
     }
 }
@@ -144,13 +156,16 @@ struct App {
 
 #[derive(Debug, Subcommand)]
 enum Verb {
-    /// Generate spec.md, design.md, and plan.md from the named sources
+    /// Stage spec.md, design.md, and plan.md from the named sources as a candidate
     #[command(long_about = SPECIFY_DESC)]
     Specify(SpecifyArgs),
+    /// Seal the staged candidate as the current revision
+    #[command(long_about = APPLY_DESC)]
+    Apply(ApplyArgs),
     /// Build every slice of the current plan through a target adapter
     #[command(long_about = BUILD_DESC)]
     Build(BuildArgs),
-    /// Print a reviewable artifact of the current revision to stdout
+    /// Print a reviewable artifact of the current revision, or the staged candidate, to stdout
     #[command(long_about = SHOW_DESC)]
     Show(ShowArgs),
     /// Print a shell-completion script for `<shell>` to stdout
@@ -173,6 +188,9 @@ struct SpecifyArgs {
     /// Operator-owned config; the omitted value selects emery.toml.
     #[arg(long, short = 'c', num_args = 0..=1, default_missing_value = config::CONFIG_FILE)]
     config: Option<PathBuf>,
+    /// Seal the staged candidate as the current revision in the same run, as `emery apply` would.
+    #[arg(long)]
+    apply: bool,
 }
 
 impl TryFrom<SpecifyArgs> for SpecifyInput {
@@ -183,15 +201,22 @@ impl TryFrom<SpecifyArgs> for SpecifyInput {
             adapters,
             descriptions,
             config,
+            apply,
         } = args;
-        config::SourceCarriers {
+        let mut input: Self = config::SourceCarriers {
             adapters: &adapters,
             descriptions: &descriptions,
             config: config.as_deref(),
         }
-        .try_into()
+        .try_into()?;
+        input.apply = apply;
+        Ok(input)
     }
 }
+
+// No argument yet: the candidate is the one `specify` staged.
+#[derive(Debug, clap::Args)]
+struct ApplyArgs {}
 
 #[derive(Debug, clap::Args)]
 struct BuildArgs {
@@ -234,6 +259,9 @@ struct ShowArgs {
     /// Reviewable artifact of the current revision.
     #[arg(value_parser = artifacts())]
     artifact: Artifact,
+    /// Read the staged candidate in place of the current revision.
+    #[arg(long)]
+    staged: bool,
 }
 
 fn artifacts() -> impl TypedValueParser<Value = Artifact> {
@@ -248,16 +276,37 @@ fn artifacts() -> impl TypedValueParser<Value = Artifact> {
     .try_map(|value: String| value.parse::<Artifact>())
 }
 
-// Flag and verb vocabulary stays at the CLI boundary. `building` tells a
+// Flag and verb vocabulary stays at the CLI boundary. `Invoked::Build` tells a
 // build's upstream failure, or a turn of its the model's time budget ended,
 // which a re-run resumes, from a specify's, which a re-run starts over.
-fn hint(error: &Error, building: bool) -> Option<Cow<'static, str>> {
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Invoked {
+    Specify,
+    Apply,
+    Build,
+    Show,
+    Completions,
+}
+
+impl From<&Verb> for Invoked {
+    fn from(verb: &Verb) -> Self {
+        match verb {
+            Verb::Specify(_) => Self::Specify,
+            Verb::Apply(_) => Self::Apply,
+            Verb::Build(_) => Self::Build,
+            Verb::Show(_) => Self::Show,
+            Verb::Completions { .. } => Self::Completions,
+        }
+    }
+}
+
+fn hint(error: &Error, invoked: Invoked) -> Option<Cow<'static, str>> {
     let code = error.code();
     let hint = match code.as_str() {
-        "bad_gateway" if building => {
+        "bad_gateway" if invoked == Invoked::Build => {
             "the model backend failed twice upstream, or the repository's remote refused; re-run `emery build` once it answers: the label `emery/<revision>` stands at the last verified wave, and `.emery/vcs/integration` holds the slices merged since, so neither is built again"
         }
-        "bad_request" if building && is_retryable(error) => {
+        "bad_request" if invoked == Invoked::Build && is_retryable(error) => {
             "the model ran out of its time budget on both tries of one turn; re-run `emery build` to put it again: the label `emery/<revision>` stands at the last verified wave, and `.emery/vcs/integration` holds the slices merged since, so neither is built again"
         }
         "unsupported-version" => {
@@ -269,8 +318,14 @@ fn hint(error: &Error, building: bool) -> Option<Cow<'static, str>> {
         "build-target-required" => {
             "pass a target adapter to `emery build`, or add a `[target]` table to `emery.toml` at the project root"
         }
+        "spec-not-generated" if error.description().contains("is staged") => {
+            "run `emery apply` to seal the staged candidate as the current revision, then re-run show or build; `emery show <artifact> --staged` reviews it first"
+        }
         "spec-not-generated" => {
-            "run `emery specify <adapter>...` to commit a revision, then re-run show or build"
+            "run `emery specify <adapter>...` to stage a candidate and `emery apply` to seal it (or `emery specify --apply` for both), then re-run show or build"
+        }
+        "nothing-staged" => {
+            "run `emery specify <adapter>...` to stage a candidate, then re-run `emery apply` or `emery show <artifact> --staged`"
         }
         "spec-outdated" => {
             "the revision predates this emery's grammar: re-run `emery specify <adapter>...` to regenerate it"

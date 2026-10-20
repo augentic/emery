@@ -1,20 +1,23 @@
 //! Provides transport-independent operations for creating, reading, and building Emery revisions.
 //!
 //! [`specify`] extracts source claims, reconciles requirements by authority,
-//! synthesises a specification, design, and build plan, and commits them as
-//! one content-addressed revision. [`show`] renders any one document from the
-//! current revision. [`build`] builds every slice of the current plan through
-//! a target adapter in dependency waves.
+//! synthesises a specification, design, and build plan, and stages them as
+//! one content-addressed candidate. [`apply`] seals the staged candidate as
+//! the current revision. [`show`] renders any one document from the current
+//! revision, or from the staged candidate. [`build`] builds every slice of
+//! the current plan through a target adapter in dependency waves.
 //!
 //! Every operation uses a [`Provider`] of model, adapter, storage,
 //! version-control, file, and plugin capabilities. Command-line parsing and
 //! presentation are handled outside this crate.
 
 mod adapter;
+pub mod apply;
 mod authority;
 mod brief;
 pub mod build;
 mod revision;
+mod secrets;
 pub mod show;
 pub mod specify;
 mod store;
@@ -28,7 +31,7 @@ pub use authority::Rank;
 use emery_adapter::source::Source;
 use emery_adapter::target::Target;
 use omnia_sdk::{BlobStore, Error, Model, Plugins, StateStore, Vcs, bad_request};
-pub use store::{CONTAINER, REVISION_KEY};
+pub use store::{CONTAINER, REVISION_KEY, STAGED_CONTAINER, STAGED_KEY};
 
 // How many times a question to the model, a slice's build, or a wave's
 // verification is put when it fails upstream or runs out of the backend's

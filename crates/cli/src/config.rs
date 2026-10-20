@@ -76,7 +76,10 @@ impl TryFrom<SourceCarriers<'_>> for SpecifyInput {
         let label = file.as_ref().map_or("argv", |carrier| carrier.label.as_str());
         tracing::debug!(carrier = %label, sources = sources.len(), "sources decoded");
 
-        Ok(Self { sources })
+        Ok(Self {
+            sources,
+            apply: false,
+        })
     }
 }
 
