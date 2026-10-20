@@ -25,12 +25,19 @@ pub const SKIP_DIRS: &[&str] = &[".emery", ".git"];
 /// occur under a root.
 pub const SKIP_FILES: &[&str] = &["spec.md", "design.md", "plan.md"];
 
+/// The root-level directory the committed specification lives in.
+///
+/// Reserved at the root alone, so a project's `src/spec/` is any other
+/// directory.
+pub const SPECIFICATION: &str = "spec";
+
 /// Returns `path` as a `/`-separated path beneath a root, or the rule it breaks.
 ///
 /// The result drops empty and `.` segments, so two spellings of one file
 /// compare equal. A path passes when it is relative, climbs no higher than
 /// the root, names a file beneath it, and names nothing reserved: no segment
-/// of [`SKIP_DIRS`] and no final segment of [`SKIP_FILES`].
+/// of [`SKIP_DIRS`], no first segment of [`SPECIFICATION`], and no final
+/// segment of [`SKIP_FILES`].
 ///
 /// A `..` segment is refused wherever it stands, even where it would resolve
 /// beneath the root, since a path a model or an adapter names is held to the
@@ -51,6 +58,8 @@ pub const SKIP_FILES: &[&str] = &["spec.md", "design.md", "plan.md"];
 /// assert_eq!(beneath("./"), Err(BadPath::NoFile));
 /// assert_eq!(beneath(".emery/storage/x"), Err(BadPath::SkipDir(".emery".to_owned())));
 /// assert_eq!(beneath("docs/spec.md"), Err(BadPath::SkipFile("spec.md".to_owned())));
+/// assert_eq!(beneath("spec/spec.json"), Err(BadPath::Specification));
+/// assert_eq!(beneath("src/spec/cases.rs"), Ok("src/spec/cases.rs".to_owned()));
 /// ```
 pub fn beneath(path: &str) -> Result<String, BadPath> {
     if path.is_empty() || path.starts_with('/') || path.split('/').any(|segment| segment == "..") {
@@ -64,6 +73,9 @@ pub fn beneath(path: &str) -> Result<String, BadPath> {
     };
     if let Some(dir) = segments.iter().find(|segment| SKIP_DIRS.contains(segment)) {
         return Err(BadPath::SkipDir((*dir).to_owned()));
+    }
+    if segments[0] == SPECIFICATION {
+        return Err(BadPath::Specification);
     }
     if SKIP_FILES.contains(file) {
         return Err(BadPath::SkipFile((*file).to_owned()));
@@ -83,6 +95,8 @@ pub enum BadPath {
     SkipDir(String),
     /// The path names a file of [`SKIP_FILES`].
     SkipFile(String),
+    /// The path leads with the root-level [`SPECIFICATION`] directory.
+    Specification,
 }
 
 impl Display for BadPath {
@@ -92,6 +106,9 @@ impl Display for BadPath {
             Self::NoFile => f.write_str("names no file"),
             Self::SkipDir(dir) => write!(f, "is under the reserved `{dir}/`"),
             Self::SkipFile(file) => write!(f, "names the engine's own `{file}`"),
+            Self::Specification => {
+                write!(f, "is under `{SPECIFICATION}/`, where the specification lives")
+            }
         }
     }
 }

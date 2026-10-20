@@ -140,6 +140,7 @@ fn anchors() {
     assert_eq!(Anchor::parse("a/.emery.md").map(|anchor| anchor.path), Ok("a/.emery.md"));
     assert_eq!(Anchor::parse("a/.gitignore").map(|anchor| anchor.path), Ok("a/.gitignore"));
     assert_eq!(Anchor::parse("a/spec.md.bak").map(|anchor| anchor.path), Ok("a/spec.md.bak"));
+    assert_eq!(Anchor::parse("src/spec/x.ts#L1").map(|anchor| anchor.path), Ok("src/spec/x.ts"));
 
     for (anchor, expected) in [
         ("src/orders.ts#12", BadAnchor::Grammar),
@@ -161,6 +162,10 @@ fn anchors() {
         ("a/.git/x#L1", BadAnchor::Path(BadPath::SkipDir(".git".to_string()))),
         ("spec.md", BadAnchor::Path(BadPath::SkipFile("spec.md".to_string()))),
         ("docs/plan.md#L3", BadAnchor::Path(BadPath::SkipFile("plan.md".to_string()))),
+        ("spec", BadAnchor::Path(BadPath::Specification)),
+        ("spec/spec.json", BadAnchor::Path(BadPath::Specification)),
+        ("spec/spec.md", BadAnchor::Path(BadPath::Specification)),
+        ("./spec/design.json#L1", BadAnchor::Path(BadPath::Specification)),
         ("src/orders.ts#L34-L12", BadAnchor::Reversed { start: 34, end: 12 }),
     ] {
         assert_eq!(Anchor::parse(anchor), Err(expected), "{anchor}");

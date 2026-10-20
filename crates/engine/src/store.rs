@@ -210,16 +210,19 @@ mod tests {
         Revision {
             spec: Spec {
                 emery: EMERY,
+                parent: None,
                 preamble: vec![preamble.to_string()],
                 requirements: vec![],
             },
             design: Design {
                 emery: EMERY,
+                parent: None,
                 preamble: vec![],
                 sections: vec![],
             },
             plan: Plan {
                 emery: EMERY,
+                parent: None,
                 preamble: vec![],
                 slices: vec![],
             },

@@ -9,6 +9,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 
 use emery_adapter::SKIP_DIRS;
+pub use emery_adapter::SPECIFICATION;
 use emery_adapter::target::{MergeRule, MergeStrategy};
 use omnia_sdk::vcs::{self, Change, CloneOptions, Merged, Rule, Strategy};
 use omnia_sdk::{Error, Vcs, bad_gateway, server_error};

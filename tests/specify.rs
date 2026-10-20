@@ -1749,7 +1749,7 @@ async fn dishonest_design() {
 
     let id = current(&provider.storage);
     let rendered = format!(
-        "---\nemery: 7\nrevision: {id}\n---\n\n# Design\n\n## Overview\n\n\
+        "---\nemery: 8\nrevision: {id}\n---\n\n# Design\n\n## Overview\n\n\
          Requests arrive (from the browser) and (from docs) they route.\n\n\
          ## Domain model\n\nThe greeting payload is one string field.\n\n\
          Type: greeting.type\n```\n{signature}\n```\n"

@@ -168,6 +168,7 @@ impl Brief for DesignBrief<'_> {
 
         Ok(Design {
             emery: EMERY,
+            parent: None,
             preamble: answer.preamble,
             sections,
         })

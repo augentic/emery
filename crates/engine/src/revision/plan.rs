@@ -26,6 +26,8 @@ const HEADING: &str = "## Slice:";
 pub struct Plan {
     /// The grammar the document was written under.
     pub emery: u32,
+    /// The revision this one amends, or `None` when drafted from sources alone.
+    pub parent: Option<String>,
     /// Markdown paragraphs preceding the first slice.
     pub preamble: Vec<String>,
     /// The slices, in id order.
