@@ -1,0 +1,660 @@
+@font-face {
+  font-family: 'Brockmann';
+  src: url('/fonts/Brockmann-Regular.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Brockmann';
+  src: url('/fonts/Brockmann-Medium.woff2') format('woff2');
+  font-weight: 500;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Brockmann';
+  src: url('/fonts/Brockmann-SemiBold.woff2') format('woff2');
+  font-weight: 600;
+  font-style: normal;
+  font-display: swap;
+}
+
+:root {
+  --phl-bg-void: #0a0710;
+  --phl-bg-navy: #0d1030;
+  --phl-bg-indigo: #151946;
+  --phl-text: #ffffff;
+  --phl-muted: #c3c4cf;
+  --phl-dim: rgba(255, 255, 255, 0.58);
+  --phl-cyan: #16b4e2;
+  --phl-cyan-soft: #78d8f2;
+  --phl-magenta: #d63ad6;
+  --phl-coral: #ff3b6b;
+  --phl-hairline: rgba(255, 255, 255, 0.15);
+  --phl-rule-gradient: linear-gradient(90deg, #16b4e2 0%, #d63ad6 100%);
+  --phl-brand-gradient:
+    radial-gradient(120% 140% at 8% 120%, #ff3b6b 0%, rgba(255, 59, 107, 0) 48%),
+    radial-gradient(120% 130% at 100% 15%, #6d3bff 0%, rgba(109, 59, 255, 0) 52%),
+    linear-gradient(115deg, #1a1140 0%, #4a1d8f 42%, #a4238f 78%, #d8305f 100%);
+}
+
+.slidev-layout {
+  background-color: var(--phl-bg-navy);
+  background-image:
+    radial-gradient(circle at 92% 8%, rgba(214, 58, 214, 0.14), transparent 34%),
+    radial-gradient(circle at 8% 95%, rgba(22, 180, 226, 0.1), transparent 32%);
+  color: var(--phl-text);
+  font-family: 'Brockmann', -apple-system, BlinkMacSystemFont, sans-serif;
+  padding: 48px 64px 44px;
+  height: 100%;
+  width: 100%;
+  box-sizing: border-box;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Background image slides */
+.slidev-layout.slide-hero {
+  background-color: var(--phl-bg-void);
+  background-image:
+    linear-gradient(180deg, rgba(10, 7, 16, 0.55) 0%, rgba(10, 7, 16, 0.78) 65%, rgba(10, 7, 16, 0.92) 100%),
+    url('/images/bg-hero.jpg');
+  background-size: cover;
+  background-position: center;
+}
+
+.slidev-layout.slide-sandbox {
+  background-color: var(--phl-bg-void);
+  background-image:
+    linear-gradient(180deg, rgba(10, 7, 16, 0.72) 0%, rgba(13, 16, 48, 0.86) 100%),
+    url('/images/bg-sandbox.jpg');
+  background-size: cover;
+  background-position: center;
+}
+
+/* Brand Eyebrow / Kicker (h6) */
+.slidev-layout h6 {
+  font-family: 'Brockmann', sans-serif;
+  font-weight: 500;
+  font-size: 13px;
+  line-height: 1.2;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.78);
+  opacity: 1 !important;
+  margin: 0 0 14px 0;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.slidev-layout h6::before {
+  content: '';
+  display: inline-block;
+  width: 18px;
+  height: 18px;
+  background-image: url('/images/phl-icon.svg');
+  background-size: contain;
+  background-repeat: no-repeat;
+  background-position: center;
+  flex-shrink: 0;
+}
+
+/* Main Heading (h1) + Propellerhead Cyan-to-Magenta Gradient Rule */
+.slidev-layout h1 {
+  color: var(--phl-text);
+  font-family: 'Brockmann', sans-serif;
+  font-weight: 500;
+  font-size: 46px;
+  line-height: 1.03;
+  letter-spacing: -0.03em;
+  margin: 0;
+  padding: 0;
+}
+
+.slidev-layout h1::after {
+  content: '';
+  display: block;
+  width: 240px;
+  height: 2px;
+  background: var(--phl-rule-gradient);
+  margin-top: 18px;
+  margin-bottom: 18px;
+}
+
+.slidev-layout.short-bar h1::after {
+  width: 160px;
+}
+
+/* Lead subtitle under H1 */
+.slide-lead {
+  font-size: 18px;
+  line-height: 1.45;
+  color: rgba(255, 255, 255, 0.82);
+  max-width: 880px;
+  margin: -4px 0 18px 0;
+  font-weight: 400;
+}
+
+/* Slide 1: Hero Layout */
+.hero-body {
+  margin-top: auto;
+  margin-bottom: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+.hero-display {
+  font-size: 62px !important;
+  line-height: 0.98 !important;
+  letter-spacing: -0.035em !important;
+  background: linear-gradient(100deg, #ffffff 0%, #e1e1ee 28%, #ffffff 55%, rgba(255, 255, 255, 0.88) 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent !important;
+}
+
+.hero-subheadline {
+  font-size: 26px;
+  font-weight: 400;
+  line-height: 1.22;
+  letter-spacing: -0.02em;
+  color: rgba(255, 255, 255, 0.92);
+  margin: -4px 0 4px 0;
+}
+
+.phl-tagline-box {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 32px;
+  padding-left: 22px;
+  border-left: 2px solid transparent;
+  border-image: linear-gradient(180deg, #16b4e2 0%, #d63ad6 100%) 1;
+  max-width: 1060px;
+}
+
+.phl-tagline-box p {
+  margin: 0;
+  font-size: 17px;
+  line-height: 1.48;
+  color: rgba(255, 255, 255, 0.82);
+}
+
+.phl-tagline-box strong {
+  color: #ffffff;
+  font-weight: 500;
+}
+
+.hero-pillars {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 24px;
+  padding-top: 16px;
+  border-top: 1px solid var(--phl-hairline);
+}
+
+.hero-pillar {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  font-size: 14.5px;
+  color: rgba(255, 255, 255, 0.82);
+}
+
+.hero-pillar-num {
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--phl-cyan-soft);
+  letter-spacing: 0.04em;
+}
+
+/* Base Propellerhead Card (.cc-card) */
+.cc-card {
+  position: relative;
+  background:
+    radial-gradient(circle at 100% 0%, rgba(214, 58, 214, 0.13), transparent 14rem),
+    rgba(21, 25, 70, 0.72);
+  border: 1px solid var(--phl-hairline);
+  border-radius: 16px;
+  padding: 24px 26px;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-start;
+  backdrop-filter: blur(12px);
+}
+
+.cc-card.accent-border {
+  background: var(--phl-brand-gradient);
+  border: 1px solid rgba(255, 255, 255, 0.28);
+}
+
+.card-eyebrow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 11.5px;
+  font-weight: 500;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.55);
+  margin-bottom: 10px;
+}
+
+.card-num {
+  color: var(--phl-cyan-soft);
+  font-weight: 500;
+}
+
+.card-status {
+  color: var(--phl-cyan-soft);
+}
+
+.cc-card h3 {
+  font-family: 'Brockmann', sans-serif;
+  font-weight: 500;
+  font-size: 22px;
+  line-height: 1.15;
+  letter-spacing: -0.02em;
+  color: var(--phl-text);
+  margin: 0 0 8px 0;
+}
+
+.cc-card p {
+  font-family: 'Brockmann', sans-serif;
+  font-weight: 400;
+  font-size: 15.5px;
+  line-height: 1.45;
+  color: rgba(255, 255, 255, 0.78);
+  margin: 0;
+}
+
+.cc-card p + p {
+  margin-top: 8px;
+}
+
+/* Slide 2: Opportunity Two-Column Layout (No stock photos of people) */
+.opportunity-grid {
+  display: grid;
+  grid-template-columns: 640px 476px;
+  justify-content: space-between;
+  align-items: stretch;
+  gap: 36px;
+  flex: 1;
+  margin-top: 4px;
+}
+
+.opportunity-left {
+  display: flex;
+  flex-direction: column;
+}
+
+.opportunity-rows {
+  display: flex;
+  flex-direction: column;
+  margin-top: 6px;
+}
+
+.opportunity-row {
+  display: grid;
+  grid-template-columns: 38px 1fr;
+  gap: 12px;
+  padding: 13px 0;
+  border-top: 1px solid var(--phl-hairline);
+}
+
+.opportunity-row-num {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--phl-cyan-soft);
+  padding-top: 2px;
+}
+
+.opportunity-row h4 {
+  margin: 0 0 3px 0;
+  font-size: 17.5px;
+  font-weight: 500;
+  letter-spacing: -0.015em;
+  color: #ffffff;
+}
+
+.opportunity-row p {
+  margin: 0;
+  font-size: 15px;
+  line-height: 1.42;
+  color: rgba(255, 255, 255, 0.74);
+}
+
+.opportunity-contrast {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  justify-content: center;
+}
+
+.contrast-box {
+  border-radius: 16px;
+  padding: 22px 24px;
+  border: 1px solid var(--phl-hairline);
+  background: rgba(10, 7, 16, 0.55);
+}
+
+.contrast-box.governed {
+  background: var(--phl-brand-gradient);
+  border-color: rgba(255, 255, 255, 0.28);
+}
+
+.contrast-tag {
+  display: inline-block;
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.1);
+  color: rgba(255, 255, 255, 0.85);
+  margin-bottom: 10px;
+}
+
+.contrast-box.governed .contrast-tag {
+  background: rgba(255, 255, 255, 0.18);
+  color: #ffffff;
+}
+
+.contrast-box h3 {
+  margin: 0 0 8px 0;
+  font-size: 21px;
+  font-weight: 500;
+  letter-spacing: -0.02em;
+  color: #ffffff;
+}
+
+.contrast-box p {
+  margin: 0;
+  font-size: 15px;
+  line-height: 1.45;
+  color: rgba(255, 255, 255, 0.82);
+}
+
+.contrast-pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 14px;
+}
+
+.contrast-pill {
+  font-size: 12px;
+  font-weight: 500;
+  padding: 4px 11px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  background: rgba(10, 7, 16, 0.28);
+  color: #ffffff;
+}
+
+/* Slide 3: 2x2 Exposure Grid */
+.exposure-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  grid-template-rows: 196px 196px;
+  gap: 22px;
+  margin-top: 4px;
+}
+
+/* Slide 4: 3-Column Governed Sandbox Grid */
+.sandbox-grid {
+  display: grid;
+  grid-template-columns: 276px 548px 276px;
+  gap: 26px;
+  height: 416px;
+  margin-top: 6px;
+}
+
+.sandbox-side-card {
+  justify-content: space-between;
+  padding: 26px 24px;
+}
+
+.sandbox-stack {
+  display: grid;
+  grid-template-rows: repeat(3, 128px);
+  gap: 16px;
+}
+
+.sandbox-stack .cc-card {
+  padding: 18px 24px;
+  border-radius: 14px;
+  justify-content: center;
+}
+
+.sandbox-arrow-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--phl-cyan-soft);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+/* Slide 5: 2x2 Delivery Loop with Emery & Omnia Icons */
+.delivery-grid {
+  display: grid;
+  grid-template-columns: 520px 112px 520px;
+  grid-template-rows: 196px 40px 196px;
+  align-items: center;
+  justify-items: center;
+  margin-top: 2px;
+}
+
+.delivery-grid .cc-card {
+  width: 100%;
+  height: 100%;
+  padding: 20px 24px;
+}
+
+.product-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+
+.product-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11.5px;
+  font-weight: 500;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.65);
+}
+
+.product-badge img {
+  width: 18px;
+  height: 18px;
+}
+
+.block-arrow {
+  color: var(--phl-cyan-soft);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0.85;
+}
+
+/* Slide 6: Legacy Modernisation Split Layout */
+.modernisation-grid {
+  display: grid;
+  grid-template-columns: 650px 466px;
+  justify-content: space-between;
+  align-items: center;
+  gap: 36px;
+  flex: 1;
+}
+
+.modernisation-steps {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.modernisation-step {
+  padding: 18px 22px;
+  border-radius: 14px;
+  border: 1px solid var(--phl-hairline);
+  background:
+    radial-gradient(circle at 100% 0%, rgba(214, 58, 214, 0.14), transparent 12rem),
+    rgba(21, 25, 70, 0.68);
+}
+
+.modernisation-step h4 {
+  margin: 4px 0 4px 0;
+  font-size: 18px;
+  font-weight: 500;
+  color: #ffffff;
+}
+
+.modernisation-step p {
+  margin: 0;
+  font-size: 14.5px;
+  line-height: 1.42;
+  color: rgba(255, 255, 255, 0.76);
+}
+
+/* Slide 7: Full-Bleed Split Layout */
+.slidev-layout.slide-split {
+  padding: 0;
+  display: grid;
+  grid-template-columns: 480px 800px;
+}
+
+.split-image-pane {
+  position: relative;
+  width: 480px;
+  height: 720px;
+  background-color: var(--phl-bg-void);
+  overflow: hidden;
+}
+
+.split-image-pane img.split-bg {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.split-brand-overlay {
+  position: absolute;
+  left: 44px;
+  bottom: 44px;
+  right: 44px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.split-brand-overlay img {
+  width: 190px;
+  height: auto;
+}
+
+.split-brand-overlay p {
+  margin: 0;
+  font-size: 13.5px;
+  line-height: 1.45;
+  color: rgba(255, 255, 255, 0.72);
+}
+
+.split-content-pane {
+  width: 800px;
+  height: 720px;
+  background-color: var(--phl-bg-navy);
+  background-image:
+    radial-gradient(circle at 95% 10%, rgba(214, 58, 214, 0.15), transparent 35%);
+  padding: 52px 64px;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+}
+
+.split-content-pane h1 {
+  font-size: 50px;
+  line-height: 1.02;
+}
+
+.cta-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 20px 26px;
+  border-radius: 16px;
+  background: var(--phl-brand-gradient);
+  border: 1px solid rgba(255, 255, 255, 0.25);
+}
+
+.cta-card-label {
+  font-size: 11.5px;
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.78);
+  margin-bottom: 4px;
+}
+
+.cta-card-title {
+  font-size: 21px;
+  font-weight: 500;
+  letter-spacing: -0.02em;
+  color: #ffffff;
+}
+
+.cta-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 16px 8px 10px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.45);
+  background: rgba(10, 7, 16, 0.35);
+  font-size: 14px;
+  font-weight: 500;
+  color: #ffffff;
+}
+
+.cta-pill-dot {
+  width: 24px;
+  height: 24px;
+  border-radius: 999px;
+  background: #ffffff;
+  color: #0a0710;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+/* Slide Number */
+.slide-number {
+  position: absolute;
+  bottom: 20px;
+  right: 28px;
+  font-family: 'Brockmann', sans-serif;
+  font-size: 12.5px;
+  font-weight: 500;
+  letter-spacing: 0.06em;
+  color: rgba(255, 255, 255, 0.42);
+}
