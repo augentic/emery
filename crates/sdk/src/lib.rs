@@ -79,9 +79,10 @@ pub use emery_adapter::source::{
     SourceKind, SourceMetadata,
 };
 pub use emery_adapter::{
-    BadMessage, BadPath, BadRoute, BadTrigger, METHODS, Route, Trigger, beneath, is_kebab,
+    BadMessage, BadPath, BadRoute, BadTrigger, METHODS, NoFollow, Route, Standing, Trigger,
+    beneath, is_kebab, make_dirs, standing, write_whole,
 };
-pub use emery_lexicon::Lexicon;
+pub use emery_lexicon::{Lexicon, words};
 pub use emery_prose::{Doc, body, check, find, prose};
 pub use omnia_sdk::{Error, Model, bad_gateway, bad_request, not_found, server_error};
 /// The JSON crate a [`Claim`]'s `extras` are built from, for an adapter that
@@ -255,27 +256,8 @@ pub fn metadata(kind: SourceKind) -> SourceMetadata {
 /// ```
 #[must_use]
 pub fn kebab(text: &str) -> Option<String> {
-    let mut out = String::with_capacity(text.len() + 4);
-    let chars: Vec<char> = text.chars().collect();
-    for (i, &c) in chars.iter().enumerate() {
-        if c.is_ascii_alphanumeric() {
-            if c.is_ascii_uppercase() && i > 0 {
-                let prev = chars[i - 1];
-                let next = chars.get(i + 1).copied();
-                let hump = prev.is_ascii_lowercase()
-                    || prev.is_ascii_digit()
-                    || (prev.is_ascii_uppercase() && next.is_some_and(|n| n.is_ascii_lowercase()));
-                if hump && !out.ends_with('-') && !out.is_empty() {
-                    out.push('-');
-                }
-            }
-            out.push(c.to_ascii_lowercase());
-        } else if !out.is_empty() && !out.ends_with('-') {
-            out.push('-');
-        }
-    }
-    let trimmed = out.trim_matches('-');
-    is_kebab(trimmed).then(|| trimmed.to_owned())
+    let joined = words(text).join("-");
+    is_kebab(&joined).then_some(joined)
 }
 
 /// Pushes `item` onto `into` unless an equal item is already there.
