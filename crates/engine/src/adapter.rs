@@ -97,8 +97,9 @@ pub struct Loaded<M> {
 ///   - malformed version metadata;
 ///   - an incompatible adapter, with code `unsupported-version`;
 ///   - a release the store lacks whose namespace the deployment routes
-///     nowhere, a pre-compiled artifact, or an adapter that resolves to other
-///     bytes than its pin, with the loader's code `refused`.
+///     nowhere, a pre-compiled artifact, an adapter that resolves to other
+///     bytes than its pin, or an adapter whose export signature does not
+///     match the contract, with the loader's code `refused`.
 /// - Returns [`Error::BadGateway`] when the registry cannot supply a release
 ///   the store lacks, with the loader's code `unavailable`.
 ///
