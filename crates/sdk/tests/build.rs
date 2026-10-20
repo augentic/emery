@@ -94,7 +94,11 @@ async fn ask_scaffolded(
     model: &Scripted, slice: &Slice, workspace: &str, grants: &[Grant], brief: Option<&str>,
     check: impl FnMut(&Report) -> Result<Vec<String>, Error> + Send,
 ) -> Result<Report, Error> {
-    let scaffold = brief.map(|brief| Scaffold { brief, paths: &[] });
+    let scaffold = brief.map(|brief| Scaffold {
+        brief,
+        paths: &[],
+        types: &[],
+    });
     ask_guarded(model, slice, workspace, grants, scaffold, check).await
 }
 
@@ -219,7 +223,7 @@ async fn request_shape() {
             "The slice's entry in the plan:\n\n## SLICE-001 orders\n\nBuild the orders \
              module.\n\nThe specification, cut to the slice's requirements:\n\n## \
              REQ-001\n\nOrders are created.\n\n## REQ-002\n\nOrders are listed.\n\nThe design, \
-             whole:\n\n## Types\n\n`Order`\n\nImplement every requirement"
+             cut to this slice:\n\n## Types\n\n`Order`\n\nImplement every requirement"
         ),
         "nothing scaffolded puts no section between the design and the rules: {user}"
     );
@@ -280,9 +284,10 @@ async fn build_scaffolded() {
     let user = &seen[0].messages[0];
     assert!(
         user.contains(
-            "The design, whole:\n\n## Types\n\n`Order`\n\nWhat the adapter scaffolded for this \
-             slice before this turn:\n\n- `src/orders.rs`: scaffolded; fill `todo!(\"REQ-001 \
-             orders.create: the handler\")`\n- `Cargo.toml`: held\n\nImplement every requirement"
+            "The design, cut to this slice:\n\n## Types\n\n`Order`\n\nWhat the adapter scaffolded \
+             for this slice before this turn:\n\n- `src/orders.rs`: scaffolded; fill \
+             `todo!(\"REQ-001 orders.create: the handler\")`\n- `Cargo.toml`: held\n\nImplement \
+             every requirement"
         ),
         "{user}"
     );
@@ -290,6 +295,96 @@ async fn build_scaffolded() {
         !user.contains("filled through `edit_files` alone"),
         "no scaffolded path puts no guard sentence: {user}"
     );
+    model.assert_exhausted();
+}
+
+// The design the engine renders, with a data type per role the brief's cut
+// decides over: one the slice owns, one another slice owns that the
+// slice's text names, one nothing of the slice names, and a mechanism.
+const DESIGN: &str = "# Design\n\n## Domain model\n\nThe shapes the system stores.\n\nType: \
+                      orders.order\n```\ninterface Order {\n  id: string;\n\n  lines: \
+                      OrderLine[];\n}\n```\n\nType: orders.order-line\n```\ninterface OrderLine \
+                      {\n  sku: string;\n}\n```\n\nType: billing.Invoice (src/billing.ts#L3)\n\
+                      ```\ninterface Invoice {\n  total: number;\n}\n```\n\nType: start.Config \
+                      (mechanism)\n```\nclass Config {\n  readonly port: number;\n}\n```\n\n## \
+                      APIs and integrations\n\nThe store holds every order.\n";
+
+// The slice over `DESIGN`, owning `orders.order` with the design's
+// signature, whose `lines` field spells the `order-line` type.
+fn designed() -> Slice {
+    let mut slice = slice();
+    DESIGN.clone_into(&mut slice.design);
+    "interface Order {\n  id: string;\n\n  lines: OrderLine[];\n}"
+        .clone_into(&mut slice.types[0].signature);
+    slice
+}
+
+// With nothing scaffolded, the design keeps every paragraph, the owned type
+// whole, the type the owned signature names whole, and the mechanism, and
+// leaves out the type nothing of the slice spells, listing it by key.
+#[tokio::test]
+async fn build_design_cut() {
+    let tmp = tempfile::tempdir().expect("tempdir");
+    seed(tmp.path(), ["src/orders.rs", "Cargo.toml"]);
+    let root = tmp.path().to_str().expect("a UTF-8 scratch root");
+    let model = Scripted::answering([VALID]);
+    let slice = designed();
+
+    ask(&model, &slice, root).await.expect("accepted");
+
+    let seen = model.seen();
+    let user = &seen[0].messages[0];
+    assert!(
+        user.contains(
+            "The design, cut to this slice:\n\n# Design\n\n## Domain model\n\nThe shapes the \
+             system stores.\n\nType: orders.order\n```\ninterface Order {\n  id: string;\n\n  \
+             lines: OrderLine[];\n}\n```\n\nType: orders.order-line\n```\ninterface OrderLine \
+             {\n  sku: string;\n}\n```\n\nType: start.Config (mechanism)\n```\nclass Config {\n  \
+             readonly port: number;\n}\n```\n\n## APIs and integrations\n\nThe store holds every \
+             order.\n\nDesign types left out, owned by other slices and named by none of this \
+             slice's text: `billing.Invoice (src/billing.ts#L3)`.\n\nImplement every requirement"
+        ),
+        "{user}"
+    );
+    model.assert_exhausted();
+}
+
+// A type among the scaffold's `types` is one line pointing at the scaffold
+// section, whatever the slice spells; the scaffold's brief is text of the
+// slice, so a type it names stays whole.
+#[tokio::test]
+async fn build_design_cut_scaffolded() {
+    let tmp = tempfile::tempdir().expect("tempdir");
+    seed(tmp.path(), ["src/orders.rs", "Cargo.toml"]);
+    let root = tmp.path().to_str().expect("a UTF-8 scratch root");
+    let model = Scripted::answering([VALID]);
+    let slice = designed();
+    let types = ["orders.order".to_owned()];
+    let scaffold = Scaffold {
+        brief: "- `src/orders.rs`: scaffolded, `Order` laid; an `Invoice` is read as a value.\n",
+        paths: &[],
+        types: &types,
+    };
+
+    ask_guarded(&model, &slice, root, &[], Some(scaffold), |_| Ok(Vec::new()))
+        .await
+        .expect("accepted");
+
+    let seen = model.seen();
+    let user = &seen[0].messages[0];
+    assert!(
+        user.contains(
+            "The shapes the system stores.\n\nType: orders.order — laid in the tree by the \
+             adapter before this turn, as the scaffold section says.\n\nType: \
+             orders.order-line\n```\ninterface OrderLine {\n  sku: string;\n}\n```\n\nType: \
+             billing.Invoice (src/billing.ts#L3)\n```\ninterface Invoice {\n  total: \
+             number;\n}\n```\n\nType: start.Config (mechanism)\n```\nclass Config {\n  readonly \
+             port: number;\n}\n```\n\n## APIs and integrations\n\nThe store holds every \
+             order.\n\nWhat the adapter scaffolded for this slice before this turn:"
+        ),
+        "{user}"
+    );
+    assert!(!user.contains("Design types left out"), "{user}");
     model.assert_exhausted();
 }
 
@@ -331,6 +426,7 @@ async fn write_scaffolded_refused() {
     let scaffold = Scaffold {
         brief: "- `src/orders.rs`: scaffolded\n- `Cargo.toml`: held\n",
         paths: &paths,
+        types: &[],
     };
 
     let report = ask_guarded(&model, &slice(), root, &[], Some(scaffold), |_| Ok(Vec::new()))

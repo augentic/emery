@@ -94,6 +94,7 @@
 //! # fn main() {}
 //! ```
 
+mod design;
 mod write;
 
 use std::fmt::{self, Display, Formatter};
@@ -322,13 +323,18 @@ impl<'a, P> BuildContext<'a, P> {
 /// text puts no section. `paths` are those files, root-relative, which the
 /// turn changes through `edit_files` alone: a `write_files` entry or
 /// `delete` naming one is refused as a correction, since a skeleton written
-/// over loses its markers.
+/// over loses its markers. `types` are the design keys of the types the
+/// adapter laid into those files, each of whose `Type:` blocks the brief's
+/// design reduces to one line pointing at the scaffold section, since the
+/// signature stands in the tree.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Scaffold<'a> {
     /// The files and the markers, as the brief states them to the model.
     pub brief: &'a str,
     /// The root-relative paths of the scaffolded files.
     pub paths: &'a [String],
+    /// The design keys of the types laid into the scaffolded files.
+    pub types: &'a [String],
 }
 
 impl Scaffold<'_> {
@@ -434,11 +440,17 @@ pub fn metadata(rules: &[MergeRule]) -> TargetMetadata {
 /// Builds the slice of `ctx` into its workspace through one gated turn.
 ///
 /// `docs` must contain `build.md`, which becomes the system prompt. The turn
-/// carries the slice's plan entry, its cut of the specification, the whole
-/// design, and the [`brief`](Scaffold::brief) of `ctx`'s
+/// carries the slice's plan entry, its cut of the specification, the design
+/// cut to the slice, and the [`brief`](Scaffold::brief) of `ctx`'s
 /// [`scaffold`](BuildContext::scaffold), where the adapter set one: the
 /// files and the markers the model fills, stated so the turn edits them
-/// rather than writing them over. It lends the workspace with the
+/// rather than writing them over. The design's cut keeps every paragraph
+/// and every mechanism type; a data type among the scaffold's
+/// [`types`](Scaffold::types) is one line pointing at the scaffold section,
+/// and one the slice's [`types`](Slice::types) do not own and none of its
+/// text spells — the plan entry, the specification cut, the owned
+/// signatures, the scaffold's brief — is left out and listed at the end by
+/// key. It lends the workspace with the
 /// worker grant `ctx`'s [`grants`](BuildContext::grants) unite to, and
 /// offers the embedded references through the reference tools. It writes
 /// through two tools. `write_files` writes one or more files beneath the
@@ -743,10 +755,10 @@ impl Display for Brief<'_> {
             f,
             "The slice's entry in the plan:\n\n{plan}\n\n\
              The specification, cut to the slice's requirements:\n\n{spec}\n\n\
-             The design, whole:\n\n{design}\n\n",
+             The design, cut to this slice:\n\n{design}\n\n",
             plan = slice.plan.trim_end(),
             spec = slice.spec.trim_end(),
-            design = slice.design.trim_end(),
+            design = design::cut(slice, self.scaffold.as_ref()),
         )?;
 
         // what the adapter scaffolded before the turn, where it scaffolded anything
