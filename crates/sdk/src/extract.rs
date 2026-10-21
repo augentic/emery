@@ -53,10 +53,11 @@ const NEAREST: usize = 16;
 /// embedded references. Responses are checked with [`Evidence::findings`] and
 /// then held to the seam: a `path` names a regular file under the lent root,
 /// within the seam's `files` when it names any, with a line range the file
-/// holds; on an inline value no claim carries a `path`; a `requirement` or
-/// `criterion` id leads with one of the seam's `stems` when it has them; a
-/// `requirement` or `criterion` names no technology of the seam's `lexicon`
-/// in its id or its body; a `requirement`'s `path` overlaps one of the seam's `anchors` when it has
+/// holds; on an inline value no claim carries a `path`; a `requirement`,
+/// `criterion`, or `retire` id leads with one of the seam's `stems` when it
+/// has them; a `requirement`, `criterion`, or `retire` names no technology of
+/// the seam's `lexicon` in its id or its body; a `requirement`'s `path`
+/// overlaps one of the seam's `anchors` when it has
 /// them. Rejected responses may be corrected until the host's round limit is
 /// reached.
 ///
@@ -130,9 +131,9 @@ pub async fn extract<P: Model>(
 ///   [`INLINE_BYTES`] together, the rest listed, so an entry comes first; a
 ///   claim's `path` must name one of them. A path that escapes the root is
 ///   rejected; files over an inline value are the adapter's own defect.
-/// - `stems` are the first dotted segments the seam's `requirement` and
-///   `criterion` ids lead with, each lowercase kebab-case; a claim under
-///   another stem is refused. Empty leaves the ids to the model.
+/// - `stems` are the first dotted segments the seam's `requirement`,
+///   `criterion`, and `retire` ids lead with, each lowercase kebab-case; a
+///   claim under another stem is refused. Empty leaves the ids to the model.
 /// - `anchors` are the lines a `requirement` may anchor at, each in the
 ///   `path` grammar (`<path>#L<n>`, `<path>#L<start>-L<end>`, or a bare
 ///   `<path>` for the whole file) relative to the workspace root — where an
@@ -143,9 +144,9 @@ pub async fn extract<P: Model>(
 ///   over an inline value are the adapter's own defect.
 /// - `lexicon` is the technology the seam's claims are held against:
 ///   [`Lexicon::from_packages`] over the packages the seam's modules
-///   import, or the fixed names alone by default. A `requirement` or
-///   `criterion` whose id or statement names one is refused, so the
-///   behaviour is stated by the role the technology plays and the
+///   import, or the fixed names alone by default. A `requirement`,
+///   `criterion`, or `retire` whose id or statement names one is refused,
+///   so the behaviour is stated by the role the technology plays and the
 ///   technology carried in a `call` or `excerpt`.
 ///
 /// # Examples
@@ -171,7 +172,7 @@ pub struct Seam {
     pub text: String,
     /// The files mined, relative to the workspace root; empty for the whole lend.
     pub files: Vec<String>,
-    /// The stems the seam's `requirement` and `criterion` ids lead with; empty for any.
+    /// The stems the seam's `requirement`, `criterion`, and `retire` ids lead with; empty for any.
     pub stems: Vec<String>,
     /// The lines a `requirement` anchors at, in the `path` grammar; empty for any.
     pub anchors: Vec<String>,
@@ -342,8 +343,8 @@ impl<'a> Plan<'a> {
 
     // The rules the claim gate cannot hold an answer to alone: a `path` within
     // the lend and the seam's files, with lines the file holds, an id under
-    // the seam's stems and naming no technology, a `requirement` or
-    // `criterion` stated by role, and a `requirement` at one of the seam's
+    // the seam's stems and naming no technology, a `requirement`, `criterion`,
+    // or `retire` stated by role, and a `requirement` at one of the seam's
     // anchors.
     fn findings(&self, content: &SourceContent, evidence: &Evidence) -> Vec<String> {
         let mut findings = Vec::new();
@@ -351,7 +352,7 @@ impl<'a> Plan<'a> {
         for (index, claim) in evidence.claims.iter().enumerate() {
             // the stem
             if !self.stems.is_empty()
-                && matches!(claim.kind, ClaimKind::Requirement | ClaimKind::Criterion)
+                && claim.kind.is_subject()
                 && let Some(id) = claim.id.as_deref()
             {
                 let stem = id.split('.').next().unwrap_or(id);
@@ -365,7 +366,7 @@ impl<'a> Plan<'a> {
             }
 
             // the technology
-            if matches!(claim.kind, ClaimKind::Requirement | ClaimKind::Criterion) {
+            if claim.kind.is_subject() {
                 findings.extend(self.technology(index, claim));
             }
 
@@ -437,8 +438,8 @@ impl<'a> Plan<'a> {
         findings
     }
 
-    // A `requirement` or `criterion` whose id or body names a technology;
-    // every name is listed so one correction lands.
+    // A `requirement`, `criterion`, or `retire` whose id or body names a
+    // technology; every name is listed so one correction lands.
     fn technology(&self, index: usize, claim: &Claim) -> Vec<String> {
         let mut findings = Vec::new();
         if let Some(id) = claim.id.as_deref() {
@@ -726,14 +727,14 @@ impl Display for Brief<'_> {
             [] => {}
             [stem] => write!(
                 f,
-                "\n\nLead every `requirement` and `criterion` id with the stem `{stem}` as its \
-                 first dotted segment; an id under another stem is refused."
+                "\n\nLead every `requirement`, `criterion`, and `retire` id with the stem \
+                 `{stem}` as its first dotted segment; an id under another stem is refused."
             )?,
             stems => {
                 write!(
                     f,
-                    "\n\nLead every `requirement` and `criterion` id with one of the stems {} as \
-                     its first dotted segment; an id under another stem is refused.",
+                    "\n\nLead every `requirement`, `criterion`, and `retire` id with one of the \
+                     stems {} as its first dotted segment; an id under another stem is refused.",
                     quoted(stems.iter().copied())
                 )?;
             }

@@ -16,8 +16,8 @@ use omnia_test::SeenFormat;
 use omnia_test::guest::{Memory, Scripted};
 use serde_json::Value;
 use support::{
-    Provider, Rendezvous, Scratch, carry, claim, cli_ok, digest, evidence, fail, requirement, seed,
-    written,
+    Provider, Rendezvous, Scratch, carry, claim, cli_ok, digest, evidence, fail, requirement,
+    retire, seed, written,
 };
 
 // The one-source reference most scenarios name; the scripted loader lands
@@ -738,6 +738,37 @@ async fn one_claims_source() {
     assert_eq!(name, "spec-draft", "the baseline stands with no grouping turn");
     let spec = shown(&provider, "spec").await;
     assert!(spec.contains("### Requirement: greeting.behaviour"), "{spec}");
+    provider.model.assert_exhausted();
+}
+
+// A source may answer `retire` claims beside its requirements; synthesis
+// drafts from the requirements alone, so the staged candidate is the one the
+// run without them stages.
+#[tokio::test]
+async fn retire_ignored() {
+    let mut provider = Provider::answering([SPEC_ANSWER, DESIGN_ANSWER]);
+    provider.source.evidence.insert(
+        "source".to_string(),
+        Ok(evidence(vec![
+            requirement("greeting.behaviour", "GET /greeting returns the static string 'hello'."),
+            retire("greeting.farewell", "The farewell greeting is withdrawn."),
+        ])),
+    );
+
+    cli_ok(&provider, &["emery", "specify", SOURCE]).await;
+
+    let id = staged(&provider.storage);
+    for (name, fixture) in [
+        ("spec.json", SPEC_REVISION),
+        ("design.json", DESIGN_REVISION),
+        ("plan.json", PLAN_REVISION),
+    ] {
+        assert_eq!(
+            String::from_utf8_lossy(&staged_document(&provider.storage, &id, name)),
+            fixture,
+            "{name} is byte-identical to the run without the retire"
+        );
+    }
     provider.model.assert_exhausted();
 }
 

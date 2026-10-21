@@ -85,11 +85,48 @@ fn clean_evidence() {
         r#"{"claims":[
             {"kind":"requirement","id":"password-reset.request","statement":"Users reset by email."},
             {"kind":"criterion","id":"password-reset.expiry","criterion":"Links expire in 30m."},
+            {"kind":"retire","id":"password-reset.by-post","path":"docs/reset.md#L40","statement":"Resetting by postal letter is withdrawn."},
             {"kind":"example","id":"password-reset.stale","replay-digest":"sha256:00"},
             {"kind":"decision"}
         ]}"#,
     );
     assert!(clean.findings().is_empty(), "clean evidence passes the gate");
+}
+
+// A retire requires an id and a statement; an extra of another kind riding
+// it — a criterion's condition or a code kind's callee, signature, route, or
+// message — is a finding apiece, so the withdrawal stays one claim.
+#[test]
+fn retire_gate() {
+    let bare = evidence(r#"{"claims":[{"kind":"retire","statement":"Withdrawn."}]}"#);
+    let findings = bare.findings();
+    assert_eq!(findings.len(), 1, "{findings:?}");
+    assert!(findings[0].contains("`retire` claims require an id"), "{findings:?}");
+
+    let unstated = evidence(r#"{"claims":[{"kind":"retire","id":"orders.export"}]}"#);
+    let findings = unstated.findings();
+    assert_eq!(findings.len(), 1, "{findings:?}");
+    assert!(findings[0].contains("`orders.export` is missing extra `statement`"), "{findings:?}");
+
+    let laden = evidence(
+        r#"{"claims":[
+            {"kind":"retire","id":"orders.export","statement":"Withdrawn.","criterion":"No export link."},
+            {"kind":"retire","id":"orders.notify","statement":"Withdrawn.","callee":"mailer:send","signature":"fn notify()"},
+            {"kind":"retire","id":"orders.create","statement":"Withdrawn.","route":"POST /orders","message":"orders.created"}
+        ]}"#,
+    );
+    let findings = laden.findings();
+    assert_eq!(findings.len(), 5, "one finding per refused extra: {findings:?}");
+    for (finding, expected) in findings.iter().zip([
+        "claim 0: `retire` `orders.export` carries extra `criterion`, which belongs to another \
+         kind",
+        "claim 1: `retire` `orders.notify` carries extra `callee`",
+        "claim 1: `retire` `orders.notify` carries extra `signature`",
+        "claim 2: `retire` `orders.create` carries extra `route`",
+        "claim 2: `retire` `orders.create` carries extra `message`",
+    ]) {
+        assert!(finding.contains(expected), "{expected}: {findings:?}");
+    }
 }
 
 #[test]

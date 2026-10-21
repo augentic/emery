@@ -603,6 +603,11 @@ pub fn requirement(id: &str, statement: &str) -> Claim {
     claim(ClaimKind::Requirement, id, ("statement", statement))
 }
 
+/// Builds a retirement claim carrying its required `statement` extra.
+pub fn retire(id: &str, statement: &str) -> Claim {
+    claim(ClaimKind::Retire, id, ("statement", statement))
+}
+
 /// Builds an evidence document over `claims`.
 pub const fn evidence(claims: Vec<Claim>) -> Evidence {
     Evidence { claims }

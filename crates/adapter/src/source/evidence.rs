@@ -168,9 +168,9 @@ impl Evidence {
     ///
     /// Findings come in claim order and name the claim by its index. An empty
     /// result means the document passes the claim gate: every id is in the
-    /// grammar, every required extra is present, every `path` parses as an
-    /// [`Anchor`], and every `contract`'s `route` or `message` extra parses
-    /// as a [`Trigger`], one of the two apiece.
+    /// grammar, every required extra is present, no refused extra is carried,
+    /// every `path` parses as an [`Anchor`], and every `contract`'s `route`
+    /// or `message` extra parses as a [`Trigger`], one of the two apiece.
     ///
     /// # Examples
     ///
@@ -233,7 +233,8 @@ pub struct Claim {
     pub kind: ClaimKind,
     /// A stable dotted, kebab-case identifier.
     ///
-    /// Requirements, criteria, and examples require an identifier.
+    /// Requirements, criteria, retirements, and examples require an
+    /// identifier.
     #[schemars(regex(pattern = CLAIM_ID_REGEX))]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub id: Option<String>,
@@ -249,8 +250,8 @@ pub struct Claim {
     pub backing: Option<Backing>,
     /// Additional fields specific to the claim's [`ClaimKind`].
     ///
-    /// [`ClaimKind::required_extras`] lists the fields required by the claim
-    /// gate.
+    /// [`ClaimKind::required_extras`] and [`ClaimKind::refused_extras`] list
+    /// the fields the claim gate requires and refuses.
     #[serde(flatten)]
     pub extras: serde_json::Map<String, serde_json::Value>,
 }
@@ -272,7 +273,7 @@ impl Claim {
     pub const ROUTE: &'static str = "route";
     /// The extra a `type` carries its declaration in.
     pub const SIGNATURE: &'static str = "signature";
-    /// The extra a `requirement` states its behaviour in.
+    /// The extra a `requirement` or `retire` states its behaviour or withdrawal in.
     pub const STATEMENT: &'static str = "statement";
 
     /// Returns a claim of `kind` carrying nothing else.
@@ -469,6 +470,16 @@ impl Claim {
             }
         }
 
+        // the extras the kind refuses
+        for key in kind.refused_extras() {
+            if self.extras.contains_key(*key) {
+                findings.push(format!(
+                    "- claim {index}: `{kind}` `{label}` carries extra `{key}`, which belongs to \
+                     another kind"
+                ));
+            }
+        }
+
         // the anchor grammar
         if let Some(path) = self.path.as_deref()
             && let Err(bad) = Anchor::parse(path)
@@ -554,6 +565,8 @@ pub enum ClaimKind {
     Requirement,
     /// Acceptance criterion.
     Criterion,
+    /// Withdrawal of a behaviour.
+    Retire,
     /// Recorded decision.
     Decision,
     /// Document section.
@@ -581,24 +594,51 @@ pub enum ClaimKind {
 impl ClaimKind {
     /// Returns whether claims of this kind require an identifier.
     ///
-    /// Requirements, criteria, and examples must: they are the kinds a
-    /// specification cites by id.
+    /// Requirements, criteria, retirements, and examples require one. Each
+    /// names the subject it states, checks, or withdraws, or the capture it
+    /// records.
     #[must_use]
     pub const fn requires_id(self) -> bool {
-        matches!(self, Self::Requirement | Self::Criterion | Self::Example)
+        matches!(self, Self::Requirement | Self::Criterion | Self::Retire | Self::Example)
+    }
+
+    /// Returns whether claims of this kind state, check, or withdraw a subject's behaviour.
+    ///
+    /// Requirements, criteria, and retirements carry a subject's `<stem>.<leaf>`
+    /// identifier and a body stated by role. The SDK holds them to a seam's
+    /// stems and lexicon.
+    #[must_use]
+    pub const fn is_subject(self) -> bool {
+        matches!(self, Self::Requirement | Self::Criterion | Self::Retire)
     }
 
     /// Returns the extras a complete claim of this kind must carry.
     ///
-    /// Requirements need [`Claim::STATEMENT`], criteria
+    /// Requirements and retirements need [`Claim::STATEMENT`], criteria
     /// [`Claim::CRITERION`], examples [`Claim::REPLAY_DIGEST`], and other
     /// kinds none.
     #[must_use]
     pub const fn required_extras(self) -> &'static [&'static str] {
         match self {
-            Self::Requirement => &[Claim::STATEMENT],
+            Self::Requirement | Self::Retire => &[Claim::STATEMENT],
             Self::Criterion => &[Claim::CRITERION],
             Self::Example => &[Claim::REPLAY_DIGEST],
+            _ => &[],
+        }
+    }
+
+    /// Returns the extras a claim of this kind must not carry.
+    ///
+    /// A retirement withdraws a behaviour and carries its `statement` alone:
+    /// a [`Claim::CRITERION`], [`Claim::CALLEE`], [`Claim::SIGNATURE`],
+    /// [`Claim::ROUTE`], or [`Claim::MESSAGE`] extra on it is another kind's
+    /// claim. Other kinds refuse none.
+    #[must_use]
+    pub const fn refused_extras(self) -> &'static [&'static str] {
+        match self {
+            Self::Retire => {
+                &[Claim::CRITERION, Claim::CALLEE, Claim::SIGNATURE, Claim::ROUTE, Claim::MESSAGE]
+            }
             _ => &[],
         }
     }
