@@ -8,7 +8,8 @@ use std::fs;
 
 use emery_adapter::target::{DesignType, MergeRule, Report, Requirement, Scenario, Slice, Verdict};
 use emery_adapter::{Route, Trigger};
-use emery_engine::EntryKind;
+use emery_engine::vcs::REVISION;
+use emery_engine::{EntryKind, REVISION_KEY};
 use omnia_sdk::model::{Error as ModelError, Reply};
 use omnia_sdk::vcs::{Change, ChangeKind, Entry, Error, Merged, Rule, Strategy};
 use omnia_sdk::{bad_gateway, bad_request};
@@ -68,14 +69,14 @@ const WIDE_ORDERS: (&str, &str) = ("SLICE-003", "orders");
 // A provider over the two-slice revision, its model never dispatched.
 fn planned() -> (Provider, String) {
     let provider = Provider::idle();
-    let id = seed(&provider.storage, SPEC, DESIGN, PLAN);
+    let id = seed(&provider.files, SPEC, DESIGN, PLAN);
     (provider, id)
 }
 
 // A provider over the wide revision: two slices ready at once, one after.
 fn wide() -> (Provider, String) {
     let provider = Provider::idle();
-    let id = seed(&provider.storage, SPEC, DESIGN, WIDE_PLAN);
+    let id = seed(&provider.files, SPEC, DESIGN, WIDE_PLAN);
     (provider, id)
 }
 
@@ -116,6 +117,31 @@ fn entry(id: &str, message: &str) -> Entry {
 
 fn worktree(slice: &str) -> String {
     format!("{WORKTREES}/{slice}")
+}
+
+// The exchange that reads the revision from `repo` at `commit`: a working
+// copy cut there for the three documents, and removed.
+fn read_revision(repo: &str, commit: &str) -> Vec<String> {
+    vec![format!("add {repo} {REVISION} {commit}"), format!("remove {REVISION}")]
+}
+
+// The exchange that opens a build into the project checkout standing at
+// `base`: the head, the revision read from it, then the checkout held clean.
+fn project(base: &str) -> Vec<String> {
+    let mut calls = vec!["head .".to_owned()];
+    calls.extend(read_revision(".", base));
+    calls.push("pending .".to_owned());
+    calls
+}
+
+// What the run read through `Files` beyond the revision's own documents.
+fn reads(provider: &Provider) -> Vec<(String, String)> {
+    provider.files.reads().into_iter().filter(|(at, _)| at != REVISION).collect()
+}
+
+// What the run listed through `Files` beyond the revision's own tree.
+fn listed(provider: &Provider) -> Vec<(String, String)> {
+    provider.files.listed().into_iter().filter(|(at, _)| at != REVISION).collect()
 }
 
 // A requirement as the fixture lowers it: one scenario with no `given` and no `and`.
@@ -292,18 +318,6 @@ fn integrated(repo: &str, base: &str, id: &str) -> Vec<String> {
     calls
 }
 
-// The exchange a fresh two-slice build makes over the repository the engine
-// created, whose root commit the adapter initialised, so the integration
-// copy is not initialised again.
-fn integrated_created(base: &str, id: &str) -> Vec<String> {
-    let mut calls = vec![
-        format!("labelled {TARGET_REPO} emery/{id}"),
-        format!("add {TARGET_REPO} {INTEGRATION} {base}"),
-    ];
-    calls.extend(built(TARGET_REPO, base, id));
-    calls
-}
-
 // The two waves of a two-slice build over `repo`, one slice each, then the
 // integration copy removed once every slice is merged.
 fn built(repo: &str, base: &str, id: &str) -> Vec<String> {
@@ -407,7 +421,7 @@ async fn build_plan() {
     assert_eq!(provider.target.inits(), [INTEGRATION], "one init, before any slice");
 
     // the sealed base, one commit and merge per slice, the label after each wave
-    let mut expected = vec!["pending .".to_owned(), "head .".to_owned()];
+    let mut expected = project(BASE);
     expected.extend(integrated(".", BASE, &id));
     assert_eq!(provider.vcs.calls(), expected);
     let messages = [
@@ -484,7 +498,7 @@ async fn build_waves() {
         ],
         "the first wave over the base, the second over its verified head"
     );
-    let mut expected = vec!["pending .".to_owned(), "head .".to_owned()];
+    let mut expected = project(BASE);
     expected.extend(opened(".", BASE, &id));
     expected.extend(wave(".", &id, BASE, &[AUTHENTICATION, WIDE_ORDERS]));
     expected.extend(wave(".", &id, HEAD, &[WIDE_SESSIONS]));
@@ -544,7 +558,7 @@ async fn build_jobs_one() {
             ("SLICE-002".to_owned(), HEAD.to_owned(), worktree("SLICE-002")),
         ]
     );
-    let mut expected = vec!["pending .".to_owned(), "head .".to_owned()];
+    let mut expected = project(BASE);
     expected.extend(opened(".", BASE, &id));
     expected.extend(wave(".", &id, BASE, &[AUTHENTICATION, WIDE_ORDERS]));
     expected.extend(wave(".", &id, HEAD, &[WIDE_SESSIONS]));
@@ -627,7 +641,7 @@ async fn build_conflict_resolved() {
     );
     assert!(exchanges[1].outcome.is_ok(), "{exchanges:?}");
     assert_eq!(
-        provider.files.listed(),
+        listed(&provider),
         [
             (INTEGRATION.to_owned(), ".".to_owned()),
             (INTEGRATION.to_owned(), "src".to_owned()),
@@ -637,10 +651,10 @@ async fn build_conflict_resolved() {
         "each side is walked for what stands at the path"
     );
     assert_eq!(
-        provider.files.reads().iter().filter(|read| read.0 == copy).count(),
+        reads(&provider).iter().filter(|read| read.0 == copy).count(),
         3,
         "the slice's side is read for the gate, the brief, and the gate again: {:?}",
-        provider.files.reads()
+        reads(&provider)
     );
     provider.model.assert_exhausted();
     provider.vcs.assert_exhausted();
@@ -652,7 +666,7 @@ async fn build_conflict_resolved() {
 #[tokio::test]
 async fn build_conflict_resolved_resumed_plan_wave() {
     let provider = Provider::answering([RESOLVED_LIB]);
-    let id = seed(&provider.storage, SPEC, DESIGN, WIDE_PLAN);
+    let id = seed(&provider.files, SPEC, DESIGN, WIDE_PLAN);
     let copy = worktree("SLICE-002");
     provider.vcs.labelleds.script(".", Ok(LABELLED.to_owned()));
     provider.vcs.logs.script(
@@ -701,7 +715,7 @@ async fn build_conflict_resolved_resumed_plan_wave() {
 #[tokio::test]
 async fn build_conflict_resolved_staged_higher_id() {
     let provider = Provider::answering([RESOLVED_LIB]);
-    let id = seed(&provider.storage, SPEC, DESIGN, WIDE_PLAN);
+    let id = seed(&provider.files, SPEC, DESIGN, WIDE_PLAN);
     let copy = worktree("SLICE-001");
     provider.target.fails("SLICE-001", bad_gateway!("the model timed out"));
     provider.target.fails("SLICE-001", bad_gateway!("the model timed out again"));
@@ -774,7 +788,7 @@ async fn build_conflict_resolved_merged() {
         )],
         "the resolution is written into the slice's working copy alone"
     );
-    let mut expected = vec!["pending .".to_owned(), "head .".to_owned()];
+    let mut expected = project(BASE);
     expected.extend(opened(".", BASE, &id));
     expected.extend([
         format!("add . {} {BASE}", worktree("SLICE-001")),
@@ -1019,9 +1033,9 @@ async fn build_conflict_binary() {
          not text in the integrated tree",
     );
     assert!(
-        provider.files.reads().contains(&(INTEGRATION.to_owned(), "src/lib.rs".to_owned())),
+        reads(&provider).contains(&(INTEGRATION.to_owned(), "src/lib.rs".to_owned())),
         "{:?}",
-        provider.files.reads()
+        reads(&provider)
     );
     left_for_inspection(&provider);
     provider.vcs.assert_exhausted();
@@ -1090,7 +1104,7 @@ async fn build_conflict_secret() {
 // the scenario's to script.
 fn conflicted_at_lib(answers: &[&str]) -> (Provider, String) {
     let provider = Provider::answering(answers.iter().copied());
-    let id = seed(&provider.storage, SPEC, DESIGN, WIDE_PLAN);
+    let id = seed(&provider.files, SPEC, DESIGN, WIDE_PLAN);
     let copy = worktree("SLICE-003");
     provider.vcs.heads.script(".", Ok(BASE.to_owned()));
     provider.vcs.merges.script(
@@ -1362,14 +1376,13 @@ async fn build_resumed() {
         [("SLICE-002".to_owned(), LABELLED.to_owned(), worktree("SLICE-002"))],
         "the labelled slices are not built again; the rest build over the labelled head"
     );
-    let mut expected = vec![
-        "pending .".to_owned(),
-        "head .".to_owned(),
+    let mut expected = project(HEAD);
+    expected.extend([
         format!("labelled . emery/{id}"),
         format!("descends . {HEAD} {LABELLED}"),
         format!("log . {LABELLED} {HEAD}"),
         format!("add . {INTEGRATION} {LABELLED}"),
-    ];
+    ]);
     expected.extend(wave(".", &id, LABELLED, &[WIDE_SESSIONS]));
     expected.push(format!("remove {INTEGRATION}"));
     assert_eq!(provider.vcs.calls(), expected);
@@ -1435,18 +1448,15 @@ async fn build_resumed_complete() {
     );
     assert!(provider.target.calls().is_empty(), "nothing to build");
     assert!(provider.target.verifies().is_empty(), "nothing to verify");
-    assert_eq!(
-        provider.vcs.calls(),
-        [
-            "pending .".to_owned(),
-            "head .".to_owned(),
-            format!("labelled . emery/{id}"),
-            format!("descends . {HEAD} {LABELLED}"),
-            format!("log . {LABELLED} {HEAD}"),
-            format!("add . {INTEGRATION} {LABELLED}"),
-            format!("remove {INTEGRATION}"),
-        ]
-    );
+    let mut expected = project(HEAD);
+    expected.extend([
+        format!("labelled . emery/{id}"),
+        format!("descends . {HEAD} {LABELLED}"),
+        format!("log . {LABELLED} {HEAD}"),
+        format!("add . {INTEGRATION} {LABELLED}"),
+        format!("remove {INTEGRATION}"),
+    ]);
+    assert_eq!(provider.vcs.calls(), expected);
     provider.vcs.assert_exhausted();
 }
 
@@ -1523,14 +1533,13 @@ async fn build_resumed_off_base() {
         ],
         "every slice builds, the first over the base"
     );
-    let mut expected = vec![
-        "pending .".to_owned(),
-        "head .".to_owned(),
+    let mut expected = project(HEAD);
+    expected.extend([
         format!("labelled . emery/{id}"),
         format!("descends . {HEAD} {LABELLED}"),
         format!("add . {INTEGRATION} {HEAD}"),
         format!("pending {INTEGRATION}"),
-    ];
+    ]);
     expected.extend(built(".", HEAD, &id));
     assert_eq!(provider.vcs.calls(), expected, "no log over a label off the base");
     assert_eq!(provider.target.inits(), [INTEGRATION], "a fresh build initialises the tree");
@@ -1567,18 +1576,19 @@ async fn build_resumed_empty() {
         ("SLICE-001".to_owned(), LABELLED.to_owned(), worktree("SLICE-001")),
         "the first wave builds over the labelled head"
     );
-    let mut expected = vec![
-        "pending .".to_owned(),
-        "head .".to_owned(),
+    let mut expected = project(HEAD);
+    expected.extend([
         format!("labelled . emery/{id}"),
         format!("descends . {HEAD} {LABELLED}"),
         format!("log . {LABELLED} {HEAD}"),
         format!("add . {INTEGRATION} {LABELLED}"),
-    ];
+        format!("pending {INTEGRATION}"),
+    ]);
     expected.extend(wave(".", &id, LABELLED, &[AUTHENTICATION]));
     expected.extend(wave(".", &id, HEAD, &[ORDERS]));
     expected.push(format!("remove {INTEGRATION}"));
     assert_eq!(provider.vcs.calls(), expected);
+    assert_eq!(provider.target.inits(), [INTEGRATION], "a label naming no slice is initialised");
     provider.vcs.assert_exhausted();
 }
 
@@ -1639,7 +1649,7 @@ async fn build_resumed_staged() {
         [INTEGRATION, INTEGRATION],
         "the staged wave is verified"
     );
-    let mut expected = vec!["pending .".to_owned(), "head .".to_owned()];
+    let mut expected = project(HEAD);
     expected.extend(restaged(&id, STAGED));
     expected.extend([
         format!("pending {INTEGRATION}"),
@@ -1742,7 +1752,7 @@ async fn build_resumed_staged_sibling() {
         ],
         "the failed slice builds over the staged head, the next wave over the verified one"
     );
-    let mut expected = vec!["pending .".to_owned(), "head .".to_owned()];
+    let mut expected = project(HEAD);
     expected.extend(restaged(&id, STAGED));
     expected.extend(wave(".", &id, STAGED, &[WIDE_ORDERS]));
     expected.extend(wave(".", &id, HEAD, &[WIDE_SESSIONS]));
@@ -1783,7 +1793,7 @@ async fn build_stale_integration_off_head() {
     assert_eq!(envelope["slices"].as_array().map(Vec::len), Some(2), "{envelope}");
     let calls = provider.vcs.calls();
     assert_eq!(
-        calls[2..8],
+        calls[4..10],
         [
             format!("labelled . emery/{id}"),
             format!("add . {INTEGRATION} {HEAD}"),
@@ -1827,7 +1837,7 @@ async fn build_stale_integration_other_revision() {
     assert!(envelope.get("resumed").is_none(), "{envelope}");
     assert_eq!(envelope["slices"].as_array().map(Vec::len), Some(2), "{envelope}");
     let calls = provider.vcs.calls();
-    assert_eq!(calls[2..9], restaged(&id, HEAD), "{calls:?}");
+    assert_eq!(calls[4..11], restaged(&id, HEAD), "{calls:?}");
     assert_eq!(
         dispatched(&provider)[0],
         ("SLICE-001".to_owned(), HEAD.to_owned(), worktree("SLICE-001")),
@@ -1847,7 +1857,7 @@ async fn build_stale_integration_other_revision() {
             .await;
     let envelope: Value = serde_json::from_slice(&resp.stdout).expect("one JSON envelope");
     assert!(envelope.get("resumed").is_none(), "{envelope}");
-    assert_eq!(calls_since(&provider, calls.len())[2..9], restaged(&id, HEAD));
+    assert_eq!(calls_since(&provider, calls.len())[4..11], restaged(&id, HEAD));
     assert_eq!(dispatched(&provider).len(), 4, "every slice builds, each run");
     provider.vcs.assert_exhausted();
 }
@@ -1918,8 +1928,13 @@ async fn build_repository() {
         format!("clone {REMOTE_URL} {TARGET_REPO}"),
         format!("resolve {TARGET_REPO} origin/HEAD"),
     ];
+    expected.extend(read_revision(TARGET_REPO, "origin/HEAD-commit"));
     expected.extend(integrated(TARGET_REPO, "origin/HEAD-commit", &id));
-    assert_eq!(provider.vcs.calls(), expected, "cloned, then built from the default branch");
+    assert_eq!(
+        provider.vcs.calls(),
+        expected,
+        "cloned, the revision read from the default branch, then built from it"
+    );
     let roots: Vec<String> = provider.target.calls().into_iter().map(|(_, _, root)| root).collect();
     assert_eq!(roots, [worktree("SLICE-001"), worktree("SLICE-002")]);
 
@@ -1954,10 +1969,11 @@ async fn build_named() {
         provider.vcs.calls().contains(&format!("label ./.emery/vcs/repos/shop emery/{id} {HEAD}"))
     );
 
-    // the engine's own repository is kept under the same name
+    // the repository `apply` created is read under the same name, never created here
     let config = scratch.config(&format!("[target]\nname = \"shop\"\nadapter = \"{BUILDER}\"\n"));
     cli_ok(&provider, &["emery", "build", "--config", &config]).await;
-    assert!(provider.vcs.calls().contains(&"init ./.emery/vcs/repos/shop".to_owned()));
+    assert!(provider.vcs.calls().contains(&"head ./.emery/vcs/repos/shop".to_owned()));
+    assert!(!provider.vcs.calls().iter().any(|call| call.starts_with("init ")), "nothing created");
 
     let config = scratch.config(&format!("[target]\nname = \"Shop\"\nadapter = \"{BUILDER}\"\n"));
     let before = provider.vcs.calls().len();
@@ -2012,7 +2028,7 @@ async fn repository_flag() {
 
     let stdout = String::from_utf8_lossy(&resp.stdout);
     assert!(stdout.contains(&format!("\n  base {BASE}\n  wave 1:")), "{stdout}");
-    let mut expected = vec!["pending .".to_owned(), "head .".to_owned()];
+    let mut expected = project(BASE);
     expected.extend(integrated(".", BASE, &id));
     assert_eq!(provider.vcs.calls(), expected, "built into the project checkout, nothing created");
 
@@ -2097,7 +2113,7 @@ async fn build_stale_integration() {
 
     let calls = provider.vcs.calls();
     assert_eq!(
-        calls[3..11],
+        calls[5..13],
         [
             format!("add . {INTEGRATION} {HEAD}"),
             format!("head {INTEGRATION}"),
@@ -2168,8 +2184,10 @@ async fn build_malformed_reference() {
     assert!(provider.target.metadata.lock().expect("metadata").is_empty(), "nothing loads");
 }
 
-// The revision is read before the adapter loads, so a project with none
-// refuses typed and nothing is asked of the loader.
+// The revision is read from the repository before the adapter loads, so a
+// repository holding none refuses typed and nothing is asked of the loader:
+// the head's tree is read in a working copy cut for it and removed, and
+// nothing else is touched.
 #[tokio::test]
 async fn build_no_revision() {
     let provider = Provider::idle();
@@ -2177,13 +2195,23 @@ async fn build_no_revision() {
     let envelope =
         fail(&provider, &["emery", "build", "--config", PROJECT_CONFIG], 2, "spec-not-generated")
             .await;
+    assert_message(&envelope, "no specification revision is sealed in the repository");
     assert!(
         envelope["hint"].as_str().is_some_and(|hint| hint.contains("build")),
         "the hint names the way out: {envelope}"
     );
     assert!(provider.target.metadata.lock().expect("metadata").is_empty(), "nothing loads");
     assert!(provider.target.calls().is_empty(), "no slice is dispatched");
-    assert!(provider.vcs.calls().is_empty(), "nothing is asked of version control");
+    assert_eq!(
+        provider.vcs.calls(),
+        project(HEAD)[..3],
+        "the head's tree is read and nothing else"
+    );
+    assert_eq!(
+        provider.files.listed(),
+        [(REVISION.to_owned(), ".".to_owned())],
+        "a tree with no `spec/` is read no further"
+    );
 
     // a candidate staged and not sealed is no revision: the refusal names it
     let candidate = stage(&provider.storage, SPEC, DESIGN, PLAN);
@@ -2196,13 +2224,129 @@ async fn build_no_revision() {
         "the hint names the seal: {envelope}"
     );
     assert!(provider.target.metadata.lock().expect("metadata").is_empty(), "nothing loads");
+
+    // a repository `apply` has not created yet holds none either, and the
+    // build creates nothing
+    provider.vcs.heads.script(TARGET_REPO, Err(Error::NotARepository));
+    let envelope = fail(&provider, &["emery", "build", BUILDER], 2, "spec-not-generated").await;
+    assert_message(&envelope, "no specification revision is sealed in the repository");
+    assert!(!provider.vcs.calls().iter().any(|call| call.starts_with("init ")), "nothing created");
+    provider.vcs.assert_exhausted();
+}
+
+// The pointer the engine keeps names a label; one that no longer descends
+// from the head, the branch having moved on without it, is no revision, and
+// the refusal names the label so the operator merges or rebases it.
+#[tokio::test]
+async fn build_label_behind() {
+    let (provider, id) = planned();
+    provider.storage.insert_state(REVISION_KEY, id.as_bytes());
+    provider.vcs.labelleds.script(".", Ok(LABELLED.to_owned()));
+    provider.vcs.descends.script(".", Ok(false));
+    provider.files.lists(REVISION, ".", &[]);
+
+    let envelope =
+        fail(&provider, &["emery", "build", "--config", PROJECT_CONFIG], 2, "spec-not-generated")
+            .await;
+
+    assert_message(&envelope, &format!("label `emery/{id}` does not stand over its head"));
+    assert!(
+        envelope["hint"].as_str().is_some_and(|hint| hint.contains("merge or rebase")),
+        "{envelope}"
+    );
+    let mut expected = vec![
+        "head .".to_owned(),
+        format!("labelled . emery/{id}"),
+        format!("descends . {HEAD} {LABELLED}"),
+    ];
+    expected.extend(read_revision(".", HEAD));
+    assert_eq!(provider.vcs.calls(), expected, "the label passed over, the head's tree read");
+    provider.vcs.assert_exhausted();
+}
+
+// The pointer names a label standing over the head: the revision is read at
+// the label's commit, which is the build's resumed head, and never from the
+// head's own tree.
+#[tokio::test]
+async fn build_labelled_revision() {
+    let (provider, id) = planned();
+    provider.storage.insert_state(REVISION_KEY, id.as_bytes());
+    provider.vcs.labelleds.script(".", Ok(LABELLED.to_owned()));
+    provider.vcs.labelleds.script(".", Ok(LABELLED.to_owned()));
+    let before = provider.storage.snapshot();
+
+    let resp =
+        cli_ok(&provider, &["emery", "--format", "json", "build", "--config", PROJECT_CONFIG])
+            .await;
+
+    let envelope: Value = serde_json::from_slice(&resp.stdout).expect("one JSON envelope");
+    assert_eq!(envelope["base"], HEAD, "the base is the head, not the label");
+    assert!(envelope.get("resumed").is_none(), "the label's chain names no slice: {envelope}");
+    let mut expected = vec![
+        "head .".to_owned(),
+        format!("labelled . emery/{id}"),
+        format!("descends . {HEAD} {LABELLED}"),
+        format!("add . {REVISION} {LABELLED}"),
+        format!("remove {REVISION}"),
+        "pending .".to_owned(),
+        format!("labelled . emery/{id}"),
+        format!("descends . {HEAD} {LABELLED}"),
+        format!("log . {LABELLED} {HEAD}"),
+        format!("add . {INTEGRATION} {LABELLED}"),
+        format!("pending {INTEGRATION}"),
+    ];
+    expected.extend(wave(".", &id, LABELLED, &[AUTHENTICATION]));
+    expected.extend(wave(".", &id, HEAD, &[ORDERS]));
+    expected.push(format!("remove {INTEGRATION}"));
+    assert_eq!(provider.vcs.calls(), expected, "read at the label, built over it");
+    assert_eq!(provider.target.inits(), [INTEGRATION], "a label naming no slice is initialised");
+    assert_eq!(provider.storage.snapshot(), before, "the pointer stands");
+    provider.vcs.assert_exhausted();
+}
+
+// A `spec/` the label's tree holds that is not the revision the label
+// names, a document edited by hand, is refused rather than served; so is a
+// `spec/` of the operator's own in a repository holding no label.
+#[tokio::test]
+async fn build_spec_mismatch() {
+    let (provider, id) = planned();
+    provider.storage.insert_state(REVISION_KEY, id.as_bytes());
+    provider.vcs.labelleds.script(".", Ok(LABELLED.to_owned()));
+    provider.files.holds(REVISION, "spec/plan.json", "{}\n");
+
+    let envelope =
+        fail(&provider, &["emery", "build", "--config", PROJECT_CONFIG], 1, "spec-mismatch").await;
+    assert_message(
+        &envelope,
+        &format!(
+            "`spec/` at commit `{LABELLED}`, labelled `emery/{id}`, does not match revision `{id}`"
+        ),
+    );
+    assert!(
+        envelope["hint"].as_str().is_some_and(|hint| hint.contains("git checkout emery/")),
+        "{envelope}"
+    );
+    assert!(provider.target.metadata.lock().expect("metadata").is_empty(), "nothing loads");
+    assert_eq!(provider.vcs.calls().last(), Some(&format!("remove {REVISION}")), "the copy goes");
+
+    // the operator's own `spec/`, in a repository with no label
+    let provider = Provider::idle();
+    provider.files.lists(REVISION, ".", &[("spec", EntryKind::Directory)]);
+    provider.files.lists(REVISION, "spec", &[("openapi.yaml", EntryKind::File)]);
+    let envelope =
+        fail(&provider, &["emery", "build", "--config", PROJECT_CONFIG], 1, "spec-mismatch").await;
+    assert_message(
+        &envelope,
+        &format!("`spec/` at commit `{HEAD}` holds `openapi.yaml`, where the three documents"),
+    );
+    provider.vcs.assert_exhausted();
 }
 
 #[tokio::test]
 async fn build_outdated() {
     let provider = Provider::idle();
     seed(
-        &provider.storage,
+        &provider.files,
         br#"{"emery": 1, "requirements": []}"#,
         br#"{"emery": 1, "sections": []}"#,
         br#"{"emery": 1, "slices": []}"#,
@@ -2215,7 +2359,8 @@ async fn build_outdated() {
 }
 
 // The target's `emery-version` pin is gated as a source adapter's is, before
-// any slice is dispatched and before the base is settled.
+// any slice is dispatched and before the base is settled: the revision is
+// read, and nothing else is asked of version control.
 #[tokio::test]
 async fn build_unsupported_version() {
     let (mut provider, _) = planned();
@@ -2226,7 +2371,7 @@ async fn build_unsupported_version() {
             .await;
     assert_message(&envelope, "adapter `acme:builder` requires emery 99.0.0 or newer");
     assert!(provider.target.calls().is_empty(), "no slice is dispatched");
-    assert!(provider.vcs.calls().is_empty(), "nothing is asked of version control");
+    assert_eq!(provider.vcs.calls(), project(HEAD)[..3], "the base is not settled");
 }
 
 // A checkout with pending changes is no base: every path is named, those
@@ -2252,7 +2397,7 @@ async fn build_base_not_sealed() {
         envelope["hint"].as_str().is_some_and(|hint| hint.contains("`.gitignore`")),
         "{envelope}"
     );
-    assert_eq!(provider.vcs.calls(), ["pending ."], "nothing past the check");
+    assert_eq!(provider.vcs.calls(), project(HEAD), "nothing past the check");
     assert!(provider.target.calls().is_empty(), "no slice is dispatched");
 
     // pending changes beneath `.emery/` alone leave the base sealed
@@ -2263,12 +2408,16 @@ async fn build_base_not_sealed() {
     cli_ok(&provider, &["emery", "build", "--config", PROJECT_CONFIG]).await;
     assert_eq!(provider.target.calls().len(), 2);
 
-    // a repository with no commit yet has no base either
+    // a repository with no commit yet holds no revision either
     provider.vcs.heads.script(".", Err(Error::NotFound("HEAD".to_owned())));
     let envelope =
-        fail(&provider, &["emery", "build", "--config", PROJECT_CONFIG], 1, "base-not-sealed")
+        fail(&provider, &["emery", "build", "--config", PROJECT_CONFIG], 2, "spec-not-generated")
             .await;
-    assert_message(&envelope, "the project repository has no commit to build from");
+    assert_message(
+        &envelope,
+        "no specification revision is sealed in the repository, which has no commit",
+    );
+    assert_eq!(provider.vcs.calls().last(), Some(&"head .".to_owned()), "nothing is cut");
     provider.vcs.assert_exhausted();
 }
 
@@ -2278,7 +2427,7 @@ async fn build_base_not_sealed() {
 #[tokio::test]
 async fn build_not_repository() {
     let (provider, _) = planned();
-    provider.vcs.pending.script(".", Err(Error::NotARepository));
+    provider.vcs.heads.script(".", Err(Error::NotARepository));
 
     let envelope =
         fail(&provider, &["emery", "build", "--config", PROJECT_CONFIG], 1, "repository-required")
@@ -2295,85 +2444,62 @@ async fn build_not_repository() {
 }
 
 // A build naming no repository, as one naming its adapter on the command
-// line does, builds into one the engine creates under the target's name:
-// initialised by the adapter, given a `.gitignore` of the engine's own
-// directory where the adapter scaffolded none, sealed as `Initialise`, and built
-// from that commit, the project directory never read. The envelope names
-// the repository beside the base.
+// line does, builds into the one `apply` created under the target's name
+// and sealed the revision in: read from its head, the project directory
+// never read, nothing created. The adapter initialises the tree over that
+// commit, given a `.gitignore` of the engine's own directory where the
+// adapter scaffolded none, since the repository is the engine's, and the
+// envelope names the repository beside the base.
 #[tokio::test]
 async fn build_laid() {
     let (provider, id) = planned();
+    provider.vcs.heads.script(TARGET_REPO, Ok(BASE.to_owned()));
+    initialised(&provider, &["Cargo.toml"]);
 
     let resp = cli_ok(&provider, &["emery", "--format", "json", "build", BUILDER]).await;
 
     let envelope: Value = serde_json::from_slice(&resp.stdout).expect("one JSON envelope");
-    assert_eq!(envelope["base"], "Initialise-commit", "{envelope}");
+    assert_eq!(envelope["base"], BASE, "{envelope}");
     assert_eq!(envelope["repository"], TARGET_REPO, "{envelope}");
-    assert!(envelope.get("initialised").is_none(), "the root commit is the layout: {envelope}");
+    assert_eq!(
+        envelope["initialised"],
+        json!({"commit": "Initialise-commit", "paths": [".gitignore", "Cargo.toml"]}),
+        "the layout and the engine's ignore file are sealed together: {envelope}"
+    );
     assert_eq!(
         provider.files.writes(),
-        [(TARGET_REPO.to_owned(), ".gitignore".to_owned(), b".emery/\n".to_vec())],
-        "the one file the engine adds to the root commit"
+        [(INTEGRATION.to_owned(), ".gitignore".to_owned(), b".emery/\n".to_vec())],
+        "the one file the engine adds to the initialisation"
     );
-    assert_eq!(provider.target.inits(), [TARGET_REPO], "the adapter scaffolds the root commit");
+    assert_eq!(provider.target.inits(), [INTEGRATION], "the adapter scaffolds its layout");
     assert_eq!(provider.vcs.messages()[0], "Initialise");
-    let mut expected = vec![
-        format!("init {TARGET_REPO}"),
-        format!("pending {TARGET_REPO}"),
-        format!("commit {TARGET_REPO} Initialise"),
-    ];
-    expected.extend(integrated_created("Initialise-commit", &id));
-    assert_eq!(provider.vcs.calls(), expected, "created, sealed, then built as any repository");
+    let mut expected = vec![format!("head {TARGET_REPO}")];
+    expected.extend(read_revision(TARGET_REPO, BASE));
+    expected.extend([
+        format!("labelled {TARGET_REPO} emery/{id}"),
+        format!("add {TARGET_REPO} {INTEGRATION} {BASE}"),
+        format!("pending {INTEGRATION}"),
+        format!("commit {INTEGRATION} Initialise"),
+    ]);
+    expected.extend(built(TARGET_REPO, "Initialise-commit", &id));
+    assert_eq!(provider.vcs.calls(), expected, "read, initialised, then built as any repository");
+    assert!(!provider.vcs.calls().iter().any(|call| call.starts_with("init ")), "nothing created");
+    assert!(!provider.vcs.calls().contains(&"pending .".to_owned()), "the project is never read");
     assert_eq!(provider.target.calls().len(), 2, "every slice builds");
 
     // an adapter whose layout holds a `.gitignore` is given none
-    provider.vcs.pending.script(
-        TARGET_REPO,
-        Ok(vec![change(".gitignore", ChangeKind::Added), change("Cargo.toml", ChangeKind::Added)]),
-    );
+    provider.vcs.heads.script(TARGET_REPO, Ok(BASE.to_owned()));
+    initialised(&provider, &[".gitignore", "Cargo.toml"]);
     cli_ok(&provider, &["emery", "build", BUILDER]).await;
     assert_eq!(provider.files.writes().len(), 1, "the adapter's `.gitignore` stands");
     assert_eq!(provider.vcs.messages()[3], "Initialise");
-    provider.vcs.assert_exhausted();
-}
 
-// The repository the engine created is kept, so the next run starts from the
-// same root commit, initialising, writing, and sealing nothing; one
-// initialised but never sealed, a run that failed between the two, is
-// initialised and sealed now.
-#[tokio::test]
-async fn build_laid_reused() {
-    let (provider, id) = planned();
-    provider.vcs.inits.script(TARGET_REPO, Err(Error::Exists(TARGET_REPO.to_owned())));
+    // so is one whose tree already holds one
     provider.vcs.heads.script(TARGET_REPO, Ok(BASE.to_owned()));
-
-    let resp = cli_ok(&provider, &["emery", "build", BUILDER]).await;
-
-    let stdout = String::from_utf8_lossy(&resp.stdout);
-    assert!(stdout.contains(&format!("\n  base {BASE}\n  repository {TARGET_REPO}\n")), "{stdout}");
-    assert!(provider.files.writes().is_empty(), "nothing scaffolded again");
-    assert!(provider.target.inits().is_empty(), "nothing initialised again");
-    let mut expected = vec![format!("init {TARGET_REPO}"), format!("head {TARGET_REPO}")];
-    expected.extend(integrated_created(BASE, &id));
-    assert_eq!(provider.vcs.calls(), expected);
-    assert!(!provider.vcs.calls().contains(&"pending .".to_owned()), "the project is never read");
-
-    provider.vcs.inits.script(TARGET_REPO, Err(Error::Exists(TARGET_REPO.to_owned())));
-    provider.vcs.heads.script(TARGET_REPO, Err(Error::NotFound("HEAD".to_owned())));
+    provider.files.lists(INTEGRATION, ".", &[(".gitignore", EntryKind::File)]);
+    initialised(&provider, &["Cargo.toml"]);
     cli_ok(&provider, &["emery", "build", BUILDER]).await;
-    let calls = provider.vcs.calls();
-    assert_eq!(
-        calls[expected.len()..expected.len() + 4],
-        [
-            format!("init {TARGET_REPO}"),
-            format!("head {TARGET_REPO}"),
-            format!("pending {TARGET_REPO}"),
-            format!("commit {TARGET_REPO} Initialise")
-        ],
-        "an unborn repository is initialised and sealed"
-    );
-    assert_eq!(provider.target.inits(), [TARGET_REPO]);
-    assert_eq!(provider.files.writes().len(), 1);
+    assert_eq!(provider.files.writes().len(), 1, "the held `.gitignore` stands");
     provider.vcs.assert_exhausted();
 }
 
@@ -2413,16 +2539,19 @@ async fn build_initialised() {
     let mut expected = vec![
         format!("clone {REMOTE_URL} {TARGET_REPO}"),
         format!("resolve {TARGET_REPO} origin/HEAD"),
+    ];
+    expected.extend(read_revision(TARGET_REPO, BASE));
+    expected.extend([
         format!("labelled {TARGET_REPO} emery/{id}"),
         format!("add {TARGET_REPO} {INTEGRATION} {BASE}"),
         format!("pending {INTEGRATION}"),
         format!("commit {INTEGRATION} Initialise"),
-    ];
+    ]);
     expected.extend(built(TARGET_REPO, "Initialise-commit", &id));
     assert_eq!(provider.vcs.calls(), expected, "initialised, sealed, then built");
-    assert!(provider.files.listed().is_empty(), "the base is not read for what it holds");
+    assert!(listed(&provider).is_empty(), "the base is read for the revision alone");
     assert_eq!(
-        provider.files.reads(),
+        reads(&provider),
         [
             (INTEGRATION.to_owned(), "src/lib.rs".to_owned()),
             (INTEGRATION.to_owned(), "Cargo.toml".to_owned()),
@@ -2493,7 +2622,6 @@ async fn build_init_secret() {
 #[tokio::test]
 async fn build_laid_resumed() {
     let (provider, id) = planned();
-    provider.vcs.inits.script(TARGET_REPO, Err(Error::Exists(TARGET_REPO.to_owned())));
     provider.vcs.heads.script(TARGET_REPO, Ok(BASE.to_owned()));
     provider.vcs.labelleds.script(TARGET_REPO, Ok(LABELLED.to_owned()));
     provider.vcs.logs.script(
@@ -2517,6 +2645,7 @@ async fn build_laid_resumed() {
         provider.vcs.calls().contains(&format!("descends {TARGET_REPO} {BASE} {LABELLED}")),
         "the label is read in the created repository"
     );
+    assert!(provider.files.writes().is_empty(), "nothing written to a resumed tree");
     provider.vcs.assert_exhausted();
 }
 
@@ -2556,7 +2685,7 @@ async fn build_cycle() {
     let mut plan: Value = serde_json::from_slice(PLAN).expect("the plan fixture");
     plan["slices"][0]["depends-on"] = json!(["SLICE-002"]);
     let provider = Provider::idle();
-    seed(&provider.storage, SPEC, DESIGN, &serde_json::to_vec(&plan).expect("a plan"));
+    seed(&provider.files, SPEC, DESIGN, &serde_json::to_vec(&plan).expect("a plan"));
 
     let envelope =
         fail(&provider, &["emery", "build", "--config", PROJECT_CONFIG], 3, "server_error").await;
@@ -2669,7 +2798,7 @@ async fn build_retries_bad_gateway() {
         ],
         "the failed build is put again over the same head"
     );
-    let mut expected = vec!["pending .".to_owned(), "head .".to_owned()];
+    let mut expected = project(BASE);
     expected.extend(opened(".", BASE, &id));
     expected.extend([
         format!("add . {} {BASE}", worktree("SLICE-001")),
@@ -2711,7 +2840,7 @@ async fn build_retries_timeout() {
     );
     let calls = provider.vcs.calls();
     assert_eq!(
-        calls[5..7],
+        calls[7..9],
         [
             format!("add . {} {BASE}", worktree("SLICE-001")),
             format!("remove {}", worktree("SLICE-001"))
@@ -2904,7 +3033,7 @@ async fn build_secret_in_slice() {
         "{envelope}"
     );
     assert_eq!(
-        provider.files.reads(),
+        reads(&provider),
         [
             (copy.clone(), "src/auth.rs".to_owned()),
             (copy.clone(), "src/session.rs".to_owned()),
@@ -2987,7 +3116,7 @@ async fn build_secret_file() {
     );
     assert!(!envelope["message"].as_str().unwrap_or("").contains("id_rsa.pub"), "{envelope}");
     assert_eq!(
-        provider.files.reads(),
+        reads(&provider),
         [(copy.clone(), "deploy/id_rsa.pub".to_owned())],
         "a file refused by name is never read"
     );
@@ -3031,7 +3160,7 @@ async fn build_secret_in_repair() {
         ),
     );
     assert_eq!(
-        provider.files.reads(),
+        reads(&provider),
         [
             (INTEGRATION.to_owned(), "src/orders.rs".to_owned()),
             (INTEGRATION.to_owned(), ".github/publish.sh".to_owned()),
@@ -3068,7 +3197,7 @@ async fn build_secret_deleted() {
     let envelope: Value = serde_json::from_slice(&resp.stdout).expect("one JSON envelope");
     assert_eq!(envelope["slices"][0]["written"], json!([".env", "src/auth.rs"]), "{envelope}");
     assert_eq!(
-        provider.files.reads(),
+        reads(&provider),
         [(copy, "src/auth.rs".to_owned()), (worktree("SLICE-002"), "src/orders.rs".to_owned()),],
         "the deleted path is never read"
     );
@@ -3102,7 +3231,7 @@ async fn build_change_unreadable() {
         ),
     );
     assert_eq!(
-        provider.files.reads(),
+        reads(&provider),
         [(copy.clone(), "src/auth.rs".to_owned()), (copy.clone(), "src/hook".to_owned())],
         "the gate stops at the read it cannot make"
     );

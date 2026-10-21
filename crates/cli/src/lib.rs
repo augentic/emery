@@ -42,12 +42,19 @@ const SPECIFY_DESC: &str = "Stage spec.md, design.md, and plan.md from source ad
     at the revision for the run. Each run loads its adapters, reconciles their claims, and \
     stages the drafted revision as the one candidate, replacing any staged before it, for \
     `emery show <artifact> --staged` to review and `emery apply` to seal; `--apply` seals \
-    it in the same run. The diff reported is against the current revision, which a seal \
-    displaces.";
+    it in the same run. The `[target]` table of the config, named or discovered, says \
+    which repository the specification lives in: the diff reported is against the \
+    revision it holds, which a seal displaces, and `--apply` needs one.";
 const APPLY_DESC: &str = "Seal the staged candidate as the current revision.\n\n\
-    The candidate `emery specify` staged becomes the revision `emery show` and `emery \
-    build` read, the one it displaces is pruned, and the staging slot is cleared. With \
-    nothing staged the verb fails with `nothing-staged`.";
+    The candidate `emery specify` staged is sealed in the repository the `[target]` table \
+    of `--config [<path>]` (default: `emery.toml`) names — a URL, cloned under \
+    `.emery/vcs/repos/<name>`; `.`, the project checkout; or, with none, a repository \
+    created once at `.emery/vcs/repos/<name>` and kept — as one commit over the head, \
+    holding `spec/spec.json`, `spec/design.json`, and `spec/plan.json`, labelled \
+    `emery/<revision>`; `--repository` takes the place of the table's. The checkout is \
+    never touched: merge or rebase the label to carry the specification on the branch. \
+    `emery show` and `emery build` read the sealed revision from then on, and the staging \
+    slot is cleared. With nothing staged the verb fails with `nothing-staged`.";
 const BUILD_DESC: &str = "Build the current plan through a target adapter.\n\n\
     Name the adapter, or use `--config [<path>]` (default: `emery.toml`) to read its \
     `[target]` table. With no adapter, Emery looks for `emery.toml` in the project root. \
@@ -55,17 +62,19 @@ const BUILD_DESC: &str = "Build the current plan through a target adapter.\n\n\
     under its `name` and dropping its `digest`; `--repository` takes the place of its \
     `repository`.\n\n\
     The build lands as commits in one repository, never in the checkout, the one \
-    `--repository` or the `[target] repository` names: a URL, cloned under \
+    `--repository` or the `[target] repository` names, which also holds the revision it \
+    builds, sealed by `emery apply` under `emery/<revision>`: a URL, cloned under \
     `.emery/vcs/repos/<name>` and built from its default branch; `.`, the project \
     checkout, from its head, which must hold no pending change outside `.emery/`; or, \
-    with none named, a repository the build creates once at `.emery/vcs/repos/<name>` \
-    and keeps, its root commit the adapter's layout. `<name>` is the `[target] name`, \
-    the adapter's package name when the config gives none. A build no label resumes first has the adapter initialise the tree — scaffold \
-    the files of its layout the tree lacks, with no model turn — and seals them as the \
-    `Initialise` commit every slice builds over. A label `emery/<revision>` the repository \
-    already holds, descending from that commit, is resumed: the slices it records are not built \
-    again, and neither are the slices `.emery/vcs/integration` holds merged over it from a \
-    run that ended before their wave was verified, which are verified instead. The rest go \
+    with none named, the repository `emery apply` created at `.emery/vcs/repos/<name>`. \
+    `<name>` is the `[target] name`, the adapter's package name when the config gives \
+    none. A build in which no slice is merged yet first has the adapter initialise the \
+    tree — scaffold the files of its layout the tree lacks, with no model turn — and \
+    seals them as the `Initialise` commit every slice builds over. A label \
+    `emery/<revision>` the repository already holds, descending from the head, is \
+    resumed: the slices it records are not built again, and neither are the slices \
+    `.emery/vcs/integration` holds merged over it from a run that ended before their wave \
+    was verified, which are verified instead. The rest go \
     in waves: every slice whose dependencies are merged is built at once, up to `--jobs` \
     concurrently, each in its own working copy under `.emery/vcs/worktrees/<id>` cut at \
     the wave's head; what each changed is sealed as one commit and merged in id order into \
@@ -81,8 +90,10 @@ const BUILD_DESC: &str = "Build the current plan through a target adapter.\n\n\
     `namespace:name@version`, read from the store `~/.emery/adapters` and fetched through \
     the `emery` namespace's registry when the store lacks it, as for `specify`.";
 const SHOW_DESC: &str = "Print an artifact from the current revision.\n\n\
-    `--staged` prints it from the candidate `emery specify` staged and `emery apply` has \
-    not sealed. Text output contains only the artifact body. `--format json` also \
+    The revision is read from the repository the `[target]` table of `--config [<path>]` \
+    (default: `emery.toml`) names, where `emery apply` sealed it. `--staged` prints it \
+    from the candidate `emery specify` staged and `emery apply` has not sealed, and \
+    needs no target. Text output contains only the artifact body. `--format json` also \
     includes the revision id and the typed document.";
 const COMPLETIONS_DESC: &str = "Generate shell completions.\n\n\
     Pipe into your shell's completion directory. Example: \
@@ -117,14 +128,14 @@ where
         Verb::Specify(arguments) => {
             command.call(specify, || SpecifyInput::try_from(arguments), text::specify).await
         }
-        Verb::Apply(ApplyArgs {}) => {
-            command.call(apply, || Ok(ApplyInput::default()), text::apply).await
+        Verb::Apply(arguments) => {
+            command.call(apply, || ApplyInput::try_from(arguments), text::apply).await
         }
         Verb::Build(arguments) => {
             command.call(build, || BuildInput::try_from(arguments), text::build).await
         }
-        Verb::Show(ShowArgs { artifact, staged }) => {
-            command.call(show, || Ok(ShowInput { artifact, staged }), text::show).await
+        Verb::Show(arguments) => {
+            command.call(show, || ShowInput::try_from(arguments), text::show).await
         }
     }
 }
@@ -214,9 +225,26 @@ impl TryFrom<SpecifyArgs> for SpecifyInput {
     }
 }
 
-// No argument yet: the candidate is the one `specify` staged.
 #[derive(Debug, clap::Args)]
-struct ApplyArgs {}
+struct ApplyArgs {
+    /// The repository the revision is sealed in: a URL, cloned under .emery/vcs/repos/<name>, or `.` for the project checkout; over `--config`, it replaces the `[target] repository`.
+    #[arg(long, value_name = "URL|.")]
+    repository: Option<String>,
+    /// Operator-owned config; the omitted value selects emery.toml.
+    #[arg(long, short = 'c', num_args = 0..=1, default_missing_value = config::CONFIG_FILE)]
+    config: Option<PathBuf>,
+}
+
+impl TryFrom<ApplyArgs> for ApplyInput {
+    type Error = Error;
+
+    fn try_from(args: ApplyArgs) -> Result<Self, Error> {
+        let ApplyArgs { repository, config } = args;
+        let target = config::target(config.as_deref(), repository.as_deref())?
+            .ok_or_else(|| config::missing_target("`emery apply`"))?;
+        Ok(Self { target })
+    }
+}
 
 #[derive(Debug, clap::Args)]
 struct BuildArgs {
@@ -262,6 +290,27 @@ struct ShowArgs {
     /// Read the staged candidate in place of the current revision.
     #[arg(long)]
     staged: bool,
+    /// Operator-owned config naming the repository the revision lives in; the omitted value selects emery.toml.
+    #[arg(long, short = 'c', num_args = 0..=1, default_missing_value = config::CONFIG_FILE)]
+    config: Option<PathBuf>,
+}
+
+impl TryFrom<ShowArgs> for ShowInput {
+    type Error = Error;
+
+    fn try_from(args: ShowArgs) -> Result<Self, Error> {
+        let ShowArgs {
+            artifact,
+            staged,
+            config,
+        } = args;
+        let target = if staged { None } else { config::target(config.as_deref(), None)? };
+        Ok(Self {
+            artifact,
+            staged,
+            target,
+        })
+    }
 }
 
 fn artifacts() -> impl TypedValueParser<Value = Artifact> {
@@ -315,14 +364,23 @@ fn hint(error: &Error, invoked: Invoked) -> Option<Cow<'static, str>> {
         "specify-source-required" => {
             "pass one or more adapters to `emery specify`, or add an `emery.toml` at the project root"
         }
-        "build-target-required" => {
+        "build-target-required" if invoked == Invoked::Build => {
             "pass a target adapter to `emery build`, or add a `[target]` table to `emery.toml` at the project root"
+        }
+        "build-target-required" => {
+            "add a `[target]` table to `emery.toml` at the project root, or name one with `--config <path>`: its `repository` is where the specification is sealed, a URL, `.` for the project checkout, or none for a repository kept under `.emery/vcs/repos/<name>`"
+        }
+        "spec-not-generated" if error.description().contains("does not stand over its head") => {
+            "the repository's head moved on without the label: merge or rebase `emery/<revision>` onto the head, or re-run `emery specify --apply` to seal a fresh revision over it"
         }
         "spec-not-generated" if error.description().contains("is staged") => {
             "run `emery apply` to seal the staged candidate as the current revision, then re-run show or build; `emery show <artifact> --staged` reviews it first"
         }
         "spec-not-generated" => {
             "run `emery specify <adapter>...` to stage a candidate and `emery apply` to seal it (or `emery specify --apply` for both), then re-run show or build"
+        }
+        "spec-mismatch" => {
+            "`spec/` in the target repository is the engine's: restore the labelled commit's documents (`git checkout emery/<revision> -- spec/`), or move the directory aside, and re-run; `emery show` prints the specification, never edit the files"
         }
         "nothing-staged" => {
             "run `emery specify <adapter>...` to stage a candidate, then re-run `emery apply` or `emery show <artifact> --staged`"

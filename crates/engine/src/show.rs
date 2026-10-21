@@ -1,32 +1,41 @@
 //! Reads documents from the current specification revision, or the staged candidate.
 //!
 //! [`show`] returns the selected document as Markdown and structured JSON,
-//! together with the revision identifier. Storage details remain private to
-//! the engine.
+//! together with the revision identifier. The current revision is read from
+//! the target's repository, the staged candidate from the engine's own
+//! storage.
 
 use anyhow::Context as _;
 use omnia_sdk::api::Context;
-use omnia_sdk::{BlobStore, Error, StateStore};
+use omnia_sdk::{BlobStore, Error, StateStore, Vcs};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use strum::{AsRefStr, EnumString, VariantArray};
 
 use crate::revision::Document;
-use crate::store;
+use crate::vcs::TargetRef;
+use crate::{Files, store};
 
 /// Returns one document from the current revision, or from the staged candidate.
 ///
+/// The current revision is read from the repository [`ShowInput::target`]
+/// names, as [`apply`](crate::apply::apply) sealed it; the staged candidate
+/// needs no target.
+///
 /// # Errors
 ///
-/// - Returns [`Error::NotFound`] with code `spec-not-generated` when no
-///   revision has been committed, naming a staged candidate where one
+/// - Returns [`Error::NotFound`] with code `spec-not-generated` when the
+///   repository holds no revision, naming a staged candidate where one
 ///   stands, and with code `nothing-staged` when [`ShowInput::staged`] is
 ///   set and no candidate is staged.
-/// - Returns [`Error::BadRequest`] with code `spec-outdated` when the stored
-///   revision uses a different grammar.
+/// - Returns [`Error::BadRequest`] with code `build-target-required` when
+///   no target names the repository and the candidate is not asked for, and
+///   with code `spec-outdated` when the revision read uses a different
+///   grammar, and the classes [`apply`](crate::apply::apply) reads the
+///   repository under otherwise.
 /// - Returns [`Error::ServerError`] when storage, validation, or serialisation
 ///   fails.
-pub async fn show<P: StateStore + BlobStore>(
+pub async fn show<P: StateStore + BlobStore + Vcs + Files>(
     input: ShowInput, context: Context<P>,
 ) -> Result<ShowOutput, Error> {
     let store = context.provider();
@@ -34,10 +43,13 @@ pub async fn show<P: StateStore + BlobStore>(
         let candidate = store::staged(store).await?.ok_or_else(store::nothing_staged)?;
         (candidate.id, candidate.revision)
     } else {
-        let Some(current) = store::current(store).await? else {
-            return Err(store::not_generated(store).await);
+        let target = input.target.ok_or_else(|| store::target_required("`emery show`"))?;
+        let repo = target.repo()?;
+        let standing = store::current(store, &repo).await?;
+        let Some(current) = standing.current else {
+            return Err(store::not_generated(store, &standing).await);
         };
-        current
+        (current.id, current.revision?)
     };
     tracing::debug!(
         revision = %id,
@@ -62,6 +74,11 @@ pub struct ShowInput {
     /// Whether to read the staged candidate in place of the current revision.
     #[serde(default)]
     pub staged: bool,
+    /// The target whose repository the current revision is read from.
+    ///
+    /// Required unless [`staged`](Self::staged) is set.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub target: Option<TargetRef>,
 }
 
 /// A document available from a specification revision.

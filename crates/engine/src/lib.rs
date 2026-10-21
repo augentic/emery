@@ -31,7 +31,7 @@ pub use authority::Rank;
 use emery_adapter::source::Source;
 use emery_adapter::target::Target;
 use omnia_sdk::{BlobStore, Error, Model, Plugins, StateStore, Vcs, bad_request};
-pub use store::{CONTAINER, REVISION_KEY, STAGED_CONTAINER, STAGED_KEY};
+pub use store::{REVISION_KEY, STAGED_CONTAINER, STAGED_KEY};
 
 // How many times a question to the model, a slice's build, or a wave's
 // verification is put when it fails upstream or runs out of the backend's

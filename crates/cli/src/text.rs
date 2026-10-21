@@ -24,15 +24,34 @@ pub fn specify(output: &SpecifyOutput, w: &mut dyn fmt::Write) -> fmt::Result {
     }
     diff(output.diff.as_ref(), w)?;
     match &output.applied {
-        Some(applied) => writeln!(w, "  sealed revision {}", applied.revision),
+        Some(applied) => {
+            write!(w, "  ")?;
+            sealed(applied, w)
+        }
         None => writeln!(w, "  nothing sealed; `emery apply` seals it"),
     }
 }
 
-/// Writes an [`ApplyOutput`] revision line, the revision it displaced, and a one-line diff summary.
+/// Writes an [`ApplyOutput`] revision line, the repository it was sealed in, and a one-line diff summary.
+///
+/// The first line names the revision, its label, and the commit it stands
+/// at. The repository follows when it is not the project's own checkout.
 pub fn apply(output: &ApplyOutput, w: &mut dyn fmt::Write) -> fmt::Result {
-    writeln!(w, "sealed revision {}", output.revision)?;
+    sealed(output, w)?;
+    if output.repository != "." {
+        writeln!(w, "  repository {}", output.repository)?;
+    }
     diff(output.diff.as_ref(), w)
+}
+
+fn sealed(output: &ApplyOutput, w: &mut dyn fmt::Write) -> fmt::Result {
+    writeln!(
+        w,
+        "sealed revision {} as {} at {}",
+        output.revision,
+        output.label,
+        output.commit.get(..8).unwrap_or(&output.commit)
+    )
 }
 
 fn diff(diff: Option<&Diff>, w: &mut dyn fmt::Write) -> fmt::Result {

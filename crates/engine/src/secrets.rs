@@ -191,6 +191,19 @@ pub async fn findings<F: Files>(
     Ok(findings)
 }
 
+// The gate's refusal: what `wrote` left changed carries the credentials
+// listed, and none of it is sealed.
+pub fn refusal(wrote: &str, leaks: &[String]) -> Error {
+    let listed: Vec<String> = leaks.iter().map(|leak| format!("- {leak}")).collect();
+    Error::BadRequest {
+        code: "secret-detected".into(),
+        description: format!(
+            "what {wrote} wrote carries a credential, so none of it is sealed:\n{}",
+            listed.join("\n")
+        ),
+    }
+}
+
 fn named(path: &str) -> Option<&'static str> {
     let mut segments = path.rsplit('/');
     let name = segments.next()?;

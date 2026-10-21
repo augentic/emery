@@ -1,6 +1,7 @@
 //! Builds the current plan through a target adapter into a labelled commit.
 //!
-//! [`build`] initialises the target repository when needed, builds ready
+//! [`build`] reads the revision from the target repository, has the adapter
+//! initialise the tree when no slice of it is merged yet, builds ready
 //! slices in waves across isolated working copies, merges their commits under
 //! the adapter's rules (resolving conflicts with the model), verifies each
 //! wave, and labels the verified head `emery/<revision>`. Interrupted runs
@@ -12,13 +13,13 @@ use std::collections::BTreeSet;
 use std::fmt::{self, Display};
 use std::num::NonZeroUsize;
 
+use emery_adapter::beneath;
 use emery_adapter::target::{DesignType, Outcome, Slice as SliceInput, Target, Task};
-use emery_adapter::{beneath, is_kebab};
 use futures::{FutureExt as _, StreamExt as _, stream};
 use omnia_sdk::api::Context;
 use omnia_sdk::plugins::Digest;
 use omnia_sdk::vcs::{Change, ChangeKind, Rule, Strategy};
-use omnia_sdk::{BlobStore, Error, Model, Plugins, StateStore, Vcs, bad_request, server_error};
+use omnia_sdk::{BlobStore, Error, Model, Plugins, StateStore, Vcs, server_error};
 use serde::Serialize;
 
 use self::merge::{Conflict, MergeBrief};
@@ -31,14 +32,18 @@ use crate::{EntryKind, Files, RETRIES, is_retryable, secrets, store, vcs};
 
 /// Builds every slice of the current plan through the target adapter `input` names.
 ///
-/// The slices the label `emery/<revision>` already holds are not built
-/// again, and neither are those the integration working copy holds merged
-/// over the labelled head from a run that ended before their wave was
-/// verified: they are verified in their wave instead. A build neither
-/// resumes first has the adapter initialise the tree — scaffold the
-/// layout's initial files it lacks, with no model turn — and seals what it
-/// scaffolded as the `Initialise` commit the slices build over; a repository
-/// the engine creates holds that commit as its root. The rest go in waves:
+/// The revision is read from the repository the target names, where
+/// [`apply`](crate::apply::apply) sealed it under its label; the base is
+/// that repository's head. The slices the label `emery/<revision>` already
+/// holds are not built again, and neither are those the integration working
+/// copy holds merged over the labelled head from a run that ended before
+/// their wave was verified: they are verified in their wave instead. A
+/// build in which no slice stands merged yet first has the adapter
+/// initialise the tree — scaffold the layout's initial files it lacks, with
+/// no model turn — and seals what it scaffolded as the `Initialise` commit
+/// the slices build over, a `.gitignore` of the engine's own directory
+/// beside it in a repository the engine created whose layout holds none.
+/// The rest go in waves:
 /// every slice whose dependencies are merged is built at once, up to `jobs`
 /// concurrently, in a working copy cut at the wave's head; each report is
 /// held to its slice by
@@ -57,8 +62,9 @@ use crate::{EntryKind, Files, RETRIES, is_retryable, secrets, store, vcs};
 /// # Errors
 ///
 /// - Returns [`Error::NotFound`]:
-///   - with code `spec-not-generated`, when no revision has been committed,
-///     naming a staged candidate where one stands;
+///   - with code `spec-not-generated`, when the repository holds no sealed
+///     revision, naming a label that fell behind the head and a staged
+///     candidate where either stands;
 ///   - with code `revision-not-found`, when the repository the target names
 ///     does not exist or has no default branch, or what the run already
 ///     holds under the target's name was cloned or created under another
@@ -67,6 +73,9 @@ use crate::{EntryKind, Files, RETRIES, is_retryable, secrets, store, vcs};
 ///   - when the target's name is not kebab-case;
 ///   - with code `spec-outdated`, when the stored revision uses another
 ///     grammar;
+///   - with code `spec-mismatch`, when `spec/` in the repository is not the
+///     three documents of a revision, or does not match the revision its
+///     label names;
 ///   - an adapter [`specify`](crate::specify::specify) would refuse: one that
 ///     is not a target adapter ([`Axis::Target`](crate::Axis)), an
 ///     incompatible one (code `unsupported-version`), a release the store
@@ -115,14 +124,15 @@ pub async fn build<P: Model + Target + StateStore + BlobStore + Plugins + Vcs + 
     input: BuildInput, context: Context<P>,
 ) -> Result<BuildOutput, Error> {
     let provider = context.provider();
-    let name = &input.name;
-    if !is_kebab(name) {
-        return Err(bad_request!("target `{name}` is not a kebab-case name"));
-    }
 
-    let Some((revision_id, revision)) = store::current(provider).await? else {
-        return Err(store::not_generated(provider).await);
+    // the repository the build lands in, which holds the revision it builds
+    let repo = BuildRepo::settle(&input.name, input.repository.as_deref())?;
+    let mut standing = store::current(provider, &repo).await?;
+    let Some(current) = standing.current.take() else {
+        return Err(store::not_generated(provider, &standing).await);
     };
+    let revision_id = current.id;
+    let revision = current.revision?;
     let candidate = store::staged_id(provider).await?.filter(|staged| *staged != revision_id);
 
     let Loaded {
@@ -130,20 +140,10 @@ pub async fn build<P: Model + Target + StateStore + BlobStore + Plugins + Vcs + 
         metadata,
     } = adapter::load_target(provider, &input.adapter, input.digest.as_ref()).await?;
 
-    // the repository the build lands in: the project's for `.`, else the
-    // target's own, a clone of the URL or the one the engine creates; then
-    // the base, the adapter's layout scaffolded into a repository the engine
-    // creates, and what the label already holds over it
-    let repo = match input.repository.as_deref() {
-        Some(vcs::PROJECT) => BuildRepo::Project,
-        url => BuildRepo::Target {
-            name: input.name,
-            url: url.map(ToOwned::to_owned),
-        },
-    };
-    let created = matches!(repo, BuildRepo::Target { url: None, .. });
-    let base = repo.base(provider, async |at| initialise(provider, &adapter, at).await).await?;
-    let label = format!("emery/{revision_id}");
+    // the base, and what the label already holds over it
+    let head = standing.head.as_deref().unwrap_or(&current.commit);
+    let base = repo.base(provider, head).await?;
+    let label = store::label(&revision_id);
     let labelled = repo.merged_under(provider, &label, &base, &revision_id).await?;
     let mut progress = Progress::start(&base, labelled);
     let Integration {
@@ -152,11 +152,7 @@ pub async fn build<P: Model + Target + StateStore + BlobStore + Plugins + Vcs + 
         staged,
     } = repo.cut_integration(provider, &progress.head, &revision_id).await?;
     progress.stage(head, staged);
-
-    // a created repository's base is its initialisation; any other base is
-    // initialised on a fresh build
-    let initialised =
-        if created { None } else { progress.initialise(provider, &integration, &adapter).await? };
+    let initialised = progress.initialise(provider, &repo, &integration, &adapter).await?;
 
     let waves = revision.plan.waves();
     tracing::info!(
@@ -235,7 +231,8 @@ pub struct BuildInput {
     /// A URL builds into a clone of it, from its default branch as the
     /// remote holds it. [`vcs::PROJECT`] builds into the project's own
     /// repository, from the sealed commit its checkout sits on. `None`
-    /// builds into the repository the engine creates under the name and keeps.
+    /// builds into the repository [`apply`](crate::apply::apply) created
+    /// under the name and keeps.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub repository: Option<String>,
     /// How many slices of a wave are built at once.
@@ -271,9 +268,9 @@ pub struct BuildOutput {
     /// The `Initialise` commit this run sealed over the base with the
     /// layout the adapter scaffolded, when it scaffolded any.
     ///
-    /// `None` for a build resumed from the label or from staged slices,
-    /// for a repository the engine created, whose base is that commit, and
-    /// for a tree the initialisation added nothing to.
+    /// `None` for a build resumed from a slice the label's chain names or
+    /// one staged in the integration copy, and for a tree the
+    /// initialisation added nothing to.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub initialised: Option<Initialised>,
     /// The slices not built again, in id order.
@@ -368,6 +365,12 @@ pub struct Seal {
     pub paths: Vec<String>,
 }
 
+// The file a created repository's `Initialise` commit holds beside what the
+// adapter's init scaffolded, when the layout holds no ignore file of its
+// own, so that the engine's own directory is ignored wherever the result is
+// checked out.
+const IGNORE: (&str, &[u8]) = (".gitignore", b".emery/\n");
+
 // What every wave of one build shares.
 struct Run<'a> {
     adapter: &'a str,
@@ -407,11 +410,14 @@ impl Progress {
     // `labelled` is the head the label stands at and the slices its chain names;
     // `None` starts a fresh build from the base.
     fn start(base: &str, labelled: Option<(String, BTreeSet<SliceId>)>) -> Self {
-        let (head, merged) = labelled.clone().unwrap_or_else(|| (base.to_owned(), BTreeSet::new()));
+        let (head, labelled, merged) = match labelled {
+            Some((head, merged)) => (head.clone(), Some(head), merged),
+            None => (base.to_owned(), None, BTreeSet::new()),
+        };
         Self {
             resumed: merged.iter().copied().collect(),
             head,
-            labelled: labelled.map(|(head, _)| head),
+            labelled,
             merged,
             staged: BTreeSet::new(),
             built: Vec::new(),
@@ -435,18 +441,31 @@ impl Progress {
         self.staged = staged;
     }
 
-    // A fresh build is initialised with the adapter's layout, what it
-    // scaffolded sealed in the integration copy as the commit the slices
-    // build over.
-    // One resumed from the label, or from what a run staged over it, was
-    // initialised by that run.
+    // A build no slice of the revision stands merged in, by the label's
+    // chain or staged in the copy, is initialised with the adapter's layout,
+    // what it scaffolded sealed in the integration copy as the commit the
+    // slices build over; a repository the engine created is given a
+    // `.gitignore` of the engine's own directory beside it where the layout
+    // holds none, so a checkout of the result ignores `.emery/`. One
+    // resumed from a slice was initialised by the run that merged it.
     async fn initialise<P: Target + Vcs + Files>(
-        &mut self, provider: &P, integration: &WorkingCopy, adapter: &str,
+        &mut self, provider: &P, repo: &BuildRepo, integration: &WorkingCopy, adapter: &str,
     ) -> Result<Option<Initialised>, Error> {
-        if self.labelled.is_some() || !self.staged.is_empty() {
+        if !self.merged.is_empty() || !self.staged.is_empty() {
             return Ok(None);
         }
-        let changes = initialise(provider, adapter, integration.path()).await?;
+        let mut changes = initialise(provider, adapter, integration.path()).await?;
+        let (path, content) = IGNORE;
+        if repo.is_created()
+            && !changes.iter().any(|change| change.path == path)
+            && kind_at(provider, integration.path(), path).await?.is_none()
+        {
+            provider.write(integration.path(), path, content).await?;
+            changes.push(Change {
+                path: path.to_owned(),
+                kind: ChangeKind::Added,
+            });
+        }
         if changes.is_empty() {
             return Ok(None);
         }
@@ -691,7 +710,7 @@ impl Run<'_> {
         let pending = built.worktree.pending(provider).await?;
         let leaks = secrets::findings(provider, built.worktree.path(), &pending).await?;
         if !leaks.is_empty() {
-            return Err(secret_detected("the build", &leaks));
+            return Err(secrets::refusal("the build", &leaks));
         }
         let mut written: Vec<String> = pending.iter().map(|change| change.path.clone()).collect();
         written.sort_unstable();
@@ -802,7 +821,7 @@ impl Run<'_> {
         if !pending.is_empty() {
             let leaks = secrets::findings(provider, self.integration.path(), &pending).await?;
             if !leaks.is_empty() {
-                return Err(secret_detected("the verification", &leaks));
+                return Err(secrets::refusal("the verification", &leaks));
             }
             let ids: Vec<String> = merged.iter().map(ToString::to_string).collect();
             let message = format!(
@@ -919,7 +938,7 @@ impl UnresolvedMerge<'_> {
         let pending = worktree.pending(provider).await?;
         let leaks = secrets::findings(provider, worktree.path(), &pending).await?;
         if !leaks.is_empty() {
-            return Err(secret_detected("the merge's resolution", &leaks));
+            return Err(secrets::refusal("the merge's resolution", &leaks));
         }
         let mut resolved: Vec<String> = resolutions.into_iter().map(|file| file.path).collect();
         resolved.sort_unstable();
@@ -1053,23 +1072,10 @@ async fn initialise<P: Target + Vcs + Files>(
     let pending = vcs::pending(provider, at).await?;
     let leaks = secrets::findings(provider, at, &pending).await?;
     if !leaks.is_empty() {
-        return Err(secret_detected("the initialisation", &leaks));
+        return Err(secrets::refusal("the initialisation", &leaks));
     }
     tracing::info!(scaffolded = pending.len(), "initialised");
     Ok(pending)
-}
-
-// The gate's refusal: what `wrote` left changed carries the credentials
-// listed, and none of it is sealed.
-fn secret_detected(wrote: &str, leaks: &[String]) -> Error {
-    let listed: Vec<String> = leaks.iter().map(|leak| format!("- {leak}")).collect();
-    Error::BadRequest {
-        code: "secret-detected".into(),
-        description: format!(
-            "what {wrote} wrote carries a credential, so none of it is sealed:\n{}",
-            listed.join("\n")
-        ),
-    }
 }
 
 // A slice's failure keeps its class and code; the description gains the

@@ -237,15 +237,31 @@ impl Git {
     }
 
     // The commit a fresh build's first wave stands on beneath the adapter's
-    // `Initialise`: `head`'s grandparent along the first parent, its parent
-    // asserted to be that commit.
+    // `Initialise` and the sealed revision: `head`'s great-grandparent along
+    // the first parent, the two between asserted to be those commits.
     fn beneath_initialise(&self, at: &Path, head: &str) -> String {
         assert_eq!(
             self.run(at, &["log", "-1", "--format=%s", &format!("{head}~1")]),
             "Initialise",
             "a fresh build seals the adapter's layout before its first wave"
         );
-        self.run(at, &["rev-parse", &format!("{head}~2")])
+        assert!(
+            self.subject(at, &format!("{head}~2")).starts_with("Revision "),
+            "the layout is sealed over the revision `apply` sealed"
+        );
+        self.run(at, &["rev-parse", &format!("{head}~3")])
+    }
+
+    // The subject line of `commit`.
+    fn subject(&self, at: &Path, commit: &str) -> String {
+        self.run(at, &["log", "-1", "--format=%s", commit])
+    }
+
+    // The commit the one `emery/<revision>` branch stands at.
+    fn labelled(&self, at: &Path) -> String {
+        let labels = self.run(at, &["for-each-ref", "--format=%(objectname)", "refs/heads/emery/"]);
+        assert_eq!(labels.lines().count(), 1, "one label: {labels}");
+        labels
     }
 }
 
@@ -288,6 +304,17 @@ impl Roots {
     fn sealed(&self) -> String {
         self.targeted();
         self.git.seal(self.project.path(), "project")
+    }
+
+    // The `specify --apply` run over the mock source under `model`, the
+    // project's `emery.toml` read for the `[target]` the seal lands in.
+    async fn applied(&self, backends: &Bundle, model: &ScriptedModel) -> Run {
+        let run =
+            emery(self.deployment(&["specify", SOURCE, "--config", "--apply"]), backends, model)
+                .await;
+        assert_ok(&run);
+        model.assert_exhausted();
+        run
     }
 
     // The engine over these roots, the `acme` namespace routed to the
@@ -419,6 +446,7 @@ fn revision_of(run: &Run) -> String {
         .strip_prefix("staged candidate ")
         .or_else(|| first.strip_prefix("sealed revision "))
         .or_else(|| first.strip_prefix("built revision "))
+        .and_then(|rest| rest.split_whitespace().next())
         .unwrap_or_else(|| panic!("no revision line: {}", run.stdout))
         .to_owned()
 }
@@ -472,18 +500,16 @@ fn shelled(copy: PathBuf, shell: impl Fn(&Path) + Send + Sync + 'static) -> Scri
     })
 }
 
-// The one-slice journey up to its build: both mocks stored, the project
-// specified with its revision sealed, and the checkout sealed. Returns the
-// roots, the backends, and the base.
+// The one-slice journey up to its build: both mocks stored, the checkout
+// sealed, and the project specified with its revision sealed over that
+// commit. Returns the roots, the backends, and the base.
 async fn specified() -> (Roots, Bundle, String) {
     let roots = Roots::new();
     roots.stored(SOURCE, MOCK_SOURCE);
     roots.stored(TARGET, MOCK_TARGET);
     let backends = roots.backends().await;
-    let model = specifying();
-    assert_ok(&emery(roots.deployment(&["specify", SOURCE, "--apply"]), &backends, &model).await);
-    model.assert_exhausted();
     let base = roots.sealed();
+    roots.applied(&backends, &specifying()).await;
     (roots, backends, base)
 }
 
@@ -504,7 +530,8 @@ async fn built() -> (Roots, Bundle, String, String) {
 
 // A release the store holds is the adapter: nothing is fetched, the file is
 // read, and the run proceeds through every turn to a staged candidate, which
-// `show --staged` reads and `apply` seals as the revision `show` reads.
+// `show --staged` reads with no repository named and `apply` seals into the
+// project's repository under `spec/`, labelled, as the revision `show` reads.
 #[tokio::test]
 async fn specify_stored() {
     let roots = Roots::new();
@@ -526,15 +553,28 @@ async fn specify_stored() {
     let shown = emery(roots.deployment(&["show", "spec", "--staged"]), &backends, &idle).await;
     assert_ok(&shown);
     assert!(shown.stdout.contains("### Requirement: greeting.behaviour"), "{}", shown.stdout);
+    let base = roots.sealed();
     let run =
         emery(roots.deployment(&["--format", "json", "show", "spec"]), &backends, &idle).await;
     let envelope = refused(&run, 2, "spec-not-generated");
     assert_message(&envelope, &format!("candidate `{candidate}` is staged and not sealed"));
 
-    // apply seals it as the revision the next verb reads
+    // apply seals it over the project's head as the revision the next verb reads
     let run = emery(roots.deployment(&["apply"]), &backends, &idle).await;
     assert_ok(&run);
-    assert_eq!(run.stdout, format!("sealed revision {candidate}\n"));
+    let project = roots.project.path();
+    let label = format!("emery/{candidate}");
+    let sealed = roots.git.run(project, &["rev-parse", &label]);
+    assert_eq!(run.stdout, format!("sealed revision {candidate} as {label} at {}\n", &sealed[..8]));
+    assert_eq!(roots.git.subject(project, &sealed), format!("Revision {candidate}"));
+    assert_eq!(roots.git.run(project, &["rev-parse", &format!("{sealed}~1")]), base);
+    assert_eq!(
+        roots.git.run(project, &["diff", "--name-only", &base, &sealed]),
+        "spec/design.json\nspec/plan.json\nspec/spec.json",
+        "the three documents and nothing else"
+    );
+    assert_eq!(roots.git.run(project, &["rev-parse", "HEAD"]), base, "the checkout is untouched");
+    assert!(roots.project.read("spec/spec.json").is_none(), "nothing lands in the checkout");
     let shown = emery(roots.deployment(&["show", "spec"]), &backends, &idle).await;
     assert_ok(&shown);
     assert!(shown.stdout.contains("### Requirement: greeting.behaviour"), "{}", shown.stdout);
@@ -548,23 +588,18 @@ async fn specify_stored() {
 }
 
 // A stored target named `repository = "."` initialises the integration
-// working copy with its layout, sealed as `Initialise` over the project's
-// sealed head, builds the committed plan's one slice through its turn's
-// `write_files` into a working copy of its own cut from that commit,
-// verifies the integrated tree through a second turn, and the label
-// `emery/<revision>` holds one merge commit over the initialised tree whose
-// message carries the trailers a later run reads; the checkout itself is
-// untouched.
+// working copy with its layout, sealed as `Initialise` over the revision
+// `apply` sealed over the project's head, builds the committed plan's one
+// slice through its turn's `write_files` into a working copy of its own cut
+// from that commit, verifies the integrated tree through a second turn, and
+// the label `emery/<revision>` holds one merge commit over the initialised
+// tree whose message carries the trailers a later run reads; the checkout
+// itself is untouched.
 #[tokio::test]
 async fn build_merged_labelled() {
-    let roots = Roots::new();
-    roots.stored(SOURCE, MOCK_SOURCE);
-    roots.stored(TARGET, MOCK_TARGET);
-    let backends = roots.backends().await;
-    let model = specifying();
-    assert_ok(&emery(roots.deployment(&["specify", SOURCE, "--apply"]), &backends, &model).await);
-    model.assert_exhausted();
-    let base = roots.sealed();
+    let (roots, backends, base) = specified().await;
+    let project = roots.project.path();
+    let sealed = roots.git.labelled(project);
 
     let model = building();
     let run = emery(roots.deployment(&["build"]), &backends, &model).await;
@@ -585,7 +620,6 @@ async fn build_merged_labelled() {
     );
     let revision = revision_of(&run);
     let label = format!("emery/{revision}");
-    let project = roots.project.path();
     let head = roots.git.run(project, &["rev-parse", &label]);
     let initialised = roots.git.run(project, &["rev-parse", &format!("{label}~1")]);
     assert!(
@@ -601,14 +635,21 @@ async fn build_merged_labelled() {
     assert!(run.stdout.ends_with(&format!("  labelled {label} at {head}\n")), "{}", run.stdout);
 
     // the label holds one merge over the initialised tree, which stands
-    // over the base, bringing in the slice's own commit, which was built
-    // over the initialised tree too
-    assert_eq!(roots.git.run(project, &["log", "-1", "--format=%s", &initialised]), "Initialise");
-    assert_eq!(roots.git.run(project, &["rev-parse", &format!("{initialised}~1")]), base);
+    // over the sealed revision over the base, bringing in the slice's own
+    // commit, which was built over the initialised tree too
+    assert_eq!(roots.git.subject(project, &initialised), "Initialise");
+    assert_eq!(roots.git.run(project, &["rev-parse", &format!("{initialised}~1")]), sealed);
+    assert_eq!(roots.git.subject(project, &sealed), format!("Revision {revision}"));
+    assert_eq!(roots.git.run(project, &["rev-parse", &format!("{sealed}~1")]), base);
     assert_eq!(
-        roots.git.run(project, &["diff", "--name-only", &base, &initialised]),
+        roots.git.run(project, &["diff", "--name-only", &sealed, &initialised]),
         "build/README.md",
         "the initialisation seals what the adapter's layout scaffolded"
+    );
+    assert_eq!(
+        roots.git.run(project, &["ls-tree", "--name-only", &format!("{label}:spec")]),
+        "design.json\nplan.json\nspec.json",
+        "the labelled tree still holds the specification"
     );
     let side = roots.git.run(project, &["rev-parse", &format!("{label}^2")]);
     assert_eq!(roots.git.run(project, &["rev-parse", &format!("{side}~1")]), initialised);
@@ -628,8 +669,8 @@ async fn build_merged_labelled() {
         roots
             .git
             .run(project, &["log", "--first-parent", "--format=%s", &format!("{base}..{label}")]),
-        "SLICE-001 greeting\nInitialise",
-        "the initialisation, then one merge per slice along the first-parent chain"
+        format!("SLICE-001 greeting\nInitialise\nRevision {revision}"),
+        "the revision, the initialisation, then one merge per slice along the first-parent chain"
     );
     let message = roots.git.run(project, &["log", "-1", "--format=%B", &label]);
     assert!(message.starts_with("SLICE-001 greeting\n\n"), "{message}");
@@ -713,14 +754,19 @@ async fn build_resumed_staged() {
     model.assert_exhausted();
     let integration = project.join(".emery/vcs/integration");
     let staged = roots.git.run(&integration, &["rev-parse", "HEAD"]);
+    let sealed = roots.git.labelled(project);
     assert_eq!(
-        roots
-            .git
-            .run(project, &["log", "--first-parent", "--format=%s", &format!("{base}..{staged}")]),
+        roots.git.run(
+            project,
+            &["log", "--first-parent", "--format=%s", &format!("{sealed}..{staged}")]
+        ),
         "SLICE-001 greeting\nInitialise",
-        "the slice merged over the initialised tree"
+        "the slice merged over the initialised tree over the sealed revision"
     );
-    assert_eq!(roots.git.branches(project), ["main"], "no label is set");
+    assert!(
+        roots.git.subject(project, &sealed).starts_with("Revision "),
+        "the label stands where `apply` left it"
+    );
 
     let model = ScriptedModel::answering([VERDICT_ANSWER]);
     let run = emery(roots.deployment(&["build"]), &backends, &model).await;
@@ -768,6 +814,7 @@ async fn build_conflict_resolved() {
     roots.stored(SOURCE, MOCK_SOURCE);
     roots.stored(TARGET, MOCK_TARGET);
     let backends = roots.backends().await;
+    let base = roots.sealed();
     let model = ScriptedModel::answering([
         EXTRACT_PAIR,
         GROUPING_PAIR,
@@ -775,9 +822,7 @@ async fn build_conflict_resolved() {
         DESIGN_ANSWER,
         SLICING_PAIR,
     ]);
-    assert_ok(&emery(roots.deployment(&["specify", SOURCE, "--apply"]), &backends, &model).await);
-    model.assert_exhausted();
-    let base = roots.sealed();
+    roots.applied(&backends, &model).await;
 
     // one build at a time, so the turns arrive in slice order
     let model = ScriptedModel::answering([
@@ -832,7 +877,7 @@ async fn build_conflict_resolved() {
         roots
             .git
             .run(project, &["log", "--first-parent", "--format=%s", &format!("{base}..{label}")]),
-        "SLICE-002 farewell\nSLICE-001 greeting\nInitialise"
+        format!("SLICE-002 farewell\nSLICE-001 greeting\nInitialise\nRevision {revision}")
     );
     let initialised = roots.git.run(project, &["rev-parse", &format!("{label}~2")]);
     assert_eq!(
@@ -878,14 +923,9 @@ async fn build_conflict_resolved() {
 // and the copy stays under `worktrees/` with the file as it was written.
 #[tokio::test]
 async fn build_secret_refused() {
-    let roots = Roots::new();
-    roots.stored(SOURCE, MOCK_SOURCE);
-    roots.stored(TARGET, MOCK_TARGET);
-    let backends = roots.backends().await;
-    let model = specifying();
-    assert_ok(&emery(roots.deployment(&["specify", SOURCE, "--apply"]), &backends, &model).await);
-    model.assert_exhausted();
-    let base = roots.sealed();
+    let (roots, backends, base) = specified().await;
+    let project = roots.project.path();
+    let sealed = roots.git.labelled(project);
 
     let model = ScriptedModel::answering([REPORT_LEAK]).calling(0, [("write_files", WRITE_LEAK)]);
     let run = emery(roots.deployment(&["--format", "json", "build"]), &backends, &model).await;
@@ -901,8 +941,7 @@ async fn build_secret_refused() {
         envelope["hint"].as_str().is_some_and(|hint| hint.contains(".emery/vcs/worktrees/<slice>")),
         "{envelope}"
     );
-    let project = roots.project.path();
-    assert_eq!(roots.git.branches(project), ["main"], "no label is set");
+    assert_eq!(roots.git.labelled(project), sealed, "the label stands where `apply` left it");
     assert_eq!(roots.git.run(project, &["rev-parse", "HEAD"]), base);
     let copy = project.join(".emery/vcs/worktrees/SLICE-001");
     assert!(copy.join("build/leak.pem").exists(), "the copy stays as it was written");
@@ -923,6 +962,7 @@ async fn build_secret_refused() {
 async fn build_secret_in_link() {
     let (roots, backends, base) = specified().await;
     let project = roots.project.path();
+    let sealed = roots.git.labelled(project);
     let copy = project.join(".emery/vcs/worktrees/SLICE-001");
 
     let model = shelled(copy.clone(), |copy| {
@@ -938,7 +978,7 @@ async fn build_secret_in_link() {
         "slice `SLICE-001` (greeting) failed in wave 1: what the build wrote carries a credential, \
          so none of it is sealed:\n- src/hook: a GitHub token",
     );
-    assert_eq!(roots.git.branches(project), ["main"], "no label is set");
+    assert_eq!(roots.git.labelled(project), sealed, "the label stands where `apply` left it");
     assert_eq!(roots.git.run(project, &["rev-parse", "HEAD"]), base);
     assert_eq!(
         fs::read_link(copy.join("src/hook")).expect("the link stays").to_str(),
@@ -960,6 +1000,7 @@ async fn build_secret_in_link() {
 async fn build_change_unreadable() {
     let (roots, backends, base) = specified().await;
     let project = roots.project.path();
+    let sealed = roots.git.labelled(project);
     let copy = project.join(".emery/vcs/worktrees/SLICE-001");
 
     let git = roots.git.binary();
@@ -983,7 +1024,7 @@ async fn build_change_unreadable() {
         "slice `SLICE-001` (greeting) failed in wave 1: reading `vendor/` under \
          `./.emery/vcs/worktrees/SLICE-001`: ",
     );
-    assert_eq!(roots.git.branches(project), ["main"], "no label is set");
+    assert_eq!(roots.git.labelled(project), sealed, "the label stands where `apply` left it");
     assert_eq!(roots.git.run(project, &["rev-parse", "HEAD"]), base);
     assert!(copy.join("vendor/.git").is_dir(), "the copy stays as it was left");
     assert_eq!(
@@ -997,14 +1038,9 @@ async fn build_change_unreadable() {
 // path is named, the engine's own `.emery/` is not, and nothing is built.
 #[tokio::test]
 async fn build_dirty_refused() {
-    let roots = Roots::new();
-    roots.stored(SOURCE, MOCK_SOURCE);
-    roots.stored(TARGET, MOCK_TARGET);
-    let backends = roots.backends().await;
-    let model = specifying();
-    assert_ok(&emery(roots.deployment(&["specify", SOURCE, "--apply"]), &backends, &model).await);
-    model.assert_exhausted();
-    roots.sealed();
+    let (roots, backends, _) = specified().await;
+    let project = roots.project.path();
+    let sealed = roots.git.labelled(project);
     roots.project.write("notes.md", "later\n");
     roots.project.write(".emery/scratch.txt", "the engine's own\n");
 
@@ -1018,7 +1054,7 @@ async fn build_dirty_refused() {
         envelope["hint"].as_str().is_some_and(|hint| hint.contains("commit or stash")),
         "{envelope}"
     );
-    assert_eq!(roots.git.branches(roots.project.path()), ["main"], "no label is set");
+    assert_eq!(roots.git.labelled(project), sealed, "the label stands where `apply` left it");
     model.assert_exhausted();
 
     // a project that is no repository at all is told what a build into it needs
@@ -1027,7 +1063,7 @@ async fn build_dirty_refused() {
     roots.stored(TARGET, MOCK_TARGET);
     let backends = roots.backends().await;
     let model = specifying();
-    assert_ok(&emery(roots.deployment(&["specify", SOURCE, "--apply"]), &backends, &model).await);
+    assert_ok(&emery(roots.deployment(&["specify", SOURCE]), &backends, &model).await);
     roots.targeted();
     let run = emery(
         roots.deployment(&["--format", "json", "build"]),
@@ -1043,11 +1079,13 @@ async fn build_dirty_refused() {
     );
 }
 
-// A `[target] repository` builds into a clone of it kept under the target's
-// name, from the default branch as the origin holds it: the clone gains
-// `emery/<revision>` over `main`, the origin is never written, and the
-// project directory need not be a repository at all. The next run fetches,
-// so a `main` the origin moved is the new base and the label moves over it.
+// A `[target] repository` seals the revision into a clone of it kept under
+// the target's name and builds there, from the default branch as the origin
+// holds it: the clone gains `emery/<revision>` over `main`, the origin is
+// never written, and the project directory need not be a repository at
+// all. The next run fetches, so a `main` the origin moved leaves the label
+// behind it and the build refused until the revision is sealed over the
+// new head, which `specify --apply` does; the label then moves over it.
 #[tokio::test]
 async fn build_brownfield() {
     let roots = Roots::new();
@@ -1080,9 +1118,9 @@ async fn build_brownfield() {
     );
     assert!(!run.stdout.contains("pushed"), "{}", run.stdout);
 
-    // the clone holds the label over main: the initialisation and one merge
-    // along the first-parent chain, the slice's commit beneath it; the
-    // origin holds main alone
+    // the clone holds the label over main: the revision, the initialisation,
+    // and one merge along the first-parent chain, the slice's commit beneath
+    // it; the origin holds main alone
     let clone = roots.project.path().join(TARGET_REPO);
     assert_eq!(roots.git.branches(&clone), [label.clone(), "main".to_owned()]);
     assert_eq!(roots.git.beneath_initialise(&clone, &label), main);
@@ -1090,9 +1128,9 @@ async fn build_brownfield() {
         roots
             .git
             .run(&clone, &["rev-list", "--count", "--first-parent", &format!("main..{label}")]),
-        "2"
+        "3"
     );
-    assert_eq!(roots.git.run(&clone, &["rev-list", "--count", &format!("main..{label}")]), "3");
+    assert_eq!(roots.git.run(&clone, &["rev-list", "--count", &format!("main..{label}")]), "4");
     assert_eq!(
         roots.git.run(&clone, &["show", &format!("{label}:build/greeting.md")]),
         "# Greeting"
@@ -1112,9 +1150,26 @@ async fn build_brownfield() {
     assert!(roots.project.read("build/greeting.md").is_none(), "nothing lands in the project");
     assert!(!roots.project.path().join(".git").exists(), "the project is no repository");
 
-    // the origin's main moves on; the next run fetches and builds over it
+    // the origin's main moves on; the next run fetches and finds the label
+    // behind the new head, which holds no revision
     let moved = roots.git.advanced("shop-next", &url, &[("README.md", "# Shop, next\n")]);
     assert_eq!(roots.git.run(&origin, &["rev-parse", "main"]), moved);
+    let idle = ScriptedModel::default();
+    let run = emery(roots.deployment(&["--format", "json", "build"]), &backends, &idle).await;
+    let envelope = refused(&run, 2, "spec-not-generated");
+    assert_message(&envelope, &format!("label `{label}` does not stand over its head"));
+    assert!(
+        envelope["hint"].as_str().is_some_and(|hint| hint.contains("merge or rebase")),
+        "{envelope}"
+    );
+    idle.assert_exhausted();
+
+    // sealed again over the new head, the next build starts there
+    let model = specifying();
+    let run = emery(roots.deployment(&["specify", "--apply"]), &backends, &model).await;
+    assert_ok(&run);
+    model.assert_exhausted();
+    assert_eq!(roots.git.run(&clone, &["rev-parse", &format!("{label}~1")]), moved);
     let model = building();
     let run = emery(roots.deployment(&["build"]), &backends, &model).await;
     assert_ok(&run);
@@ -1126,53 +1181,69 @@ async fn build_brownfield() {
     assert_eq!(roots.git.branches(&origin), ["main"], "still nothing is pushed");
 }
 
-// A build naming no repository, as one naming its adapter on the command
-// line does, builds into one the engine creates under the target's name: a
-// root commit `Initialise` holding the adapter's layout and a `.gitignore`
-// of the engine's own directory, the slice merged over it and labelled, the
-// project directory never a repository. The next run finds the repository
-// and resumes from its label.
+// A `[target]` naming no repository seals the revision into one the engine
+// creates under the target's name, as its root commit, and a build naming
+// its adapter on the command line builds there: `Initialise` over the root
+// holds the adapter's layout and a `.gitignore` of the engine's own
+// directory, the slice is merged over it and labelled, and the project
+// directory is never a repository. The next run finds the repository and
+// resumes from its label.
 #[tokio::test]
 async fn build_laid() {
     let roots = Roots::new();
     roots.stored(SOURCE, MOCK_SOURCE);
     roots.stored(TARGET, MOCK_TARGET);
+    roots.project.write("emery.toml", format!("[target]\nadapter = \"{TARGET}\"\n"));
     let backends = roots.backends().await;
-    let model = specifying();
-    assert_ok(&emery(roots.deployment(&["specify", SOURCE, "--apply"]), &backends, &model).await);
-    model.assert_exhausted();
+    let run = roots.applied(&backends, &specifying()).await;
+    let revision = revision_of(&run);
+    let label = format!("emery/{revision}");
+    let repo = roots.project.path().join(TARGET_REPO);
+    let root = roots.git.run(&repo, &["rev-parse", &label]);
+    assert!(
+        run.stdout
+            .ends_with(&format!("  sealed revision {revision} as {label} at {}\n", &root[..8])),
+        "{}",
+        run.stdout
+    );
+    assert_eq!(roots.git.subject(&repo, &root), format!("Revision {revision}"));
+    assert_eq!(roots.git.run(&repo, &["rev-list", "--max-parents=0", &label]), root);
+    assert_eq!(roots.git.run(&repo, &["ls-tree", "--name-only", &root]), "spec");
 
     let model = building();
     let run = emery(roots.deployment(&["build", TARGET]), &backends, &model).await;
 
     assert_ok(&run);
     model.assert_exhausted();
-    let revision = revision_of(&run);
-    let label = format!("emery/{revision}");
-    let repo = roots.project.path().join(TARGET_REPO);
-    let root = roots.git.run(&repo, &["rev-list", "--max-parents=0", &label]);
+    assert_eq!(revision_of(&run), revision);
+    let head = roots.git.run(&repo, &["rev-parse", &label]);
+    let initialised = roots.git.run(&repo, &["rev-parse", &format!("{label}~1")]);
     assert!(
-        run.stdout.contains(&format!("\n  base {root}\n  repository ./{TARGET_REPO}\n")),
+        run.stdout.contains(&format!(
+            "\n  base {root}\n  repository ./{TARGET_REPO}\n  initialised {}, 2 files\n",
+            &initialised[..8]
+        )),
         "{}",
         run.stdout
     );
-    let head = roots.git.run(&repo, &["rev-parse", &label]);
     assert!(run.stdout.ends_with(&format!("  labelled {label} at {head}\n")), "{}", run.stdout);
-    assert!(!run.stdout.contains("initialised "), "the root commit is the layout: {}", run.stdout);
 
-    // the root commit is the adapter's layout beside the engine's ignore
-    // file, and the one the slice was built over, initialised again nowhere
-    assert_eq!(roots.git.run(&repo, &["log", "-1", "--format=%s", &root]), "Initialise");
-    assert_eq!(roots.git.run(&repo, &["ls-tree", "--name-only", &root]), ".gitignore\nbuild");
-    assert_eq!(roots.git.run(&repo, &["show", &format!("{root}:.gitignore")]), ".emery/");
+    // the initialisation over the root commit is the adapter's layout beside
+    // the engine's ignore file, and the one the slice was built over
+    assert_eq!(roots.git.subject(&repo, &initialised), "Initialise");
+    assert_eq!(roots.git.run(&repo, &["rev-parse", &format!("{initialised}~1")]), root);
+    assert_eq!(
+        roots.git.run(&repo, &["diff", "--name-only", &root, &initialised]),
+        ".gitignore\nbuild/README.md"
+    );
+    assert_eq!(roots.git.run(&repo, &["show", &format!("{initialised}:.gitignore")]), ".emery/");
     assert!(
         roots
             .git
-            .run(&repo, &["show", &format!("{root}:build/README.md")])
+            .run(&repo, &["show", &format!("{initialised}:build/README.md")])
             .starts_with("# Build\n"),
-        "the adapter scaffolded its layout into the root commit"
+        "the adapter scaffolded its layout at the initialisation"
     );
-    assert_eq!(roots.git.run(&repo, &["rev-parse", &format!("{label}~1")]), root);
     assert_eq!(
         roots.git.run(&repo, &["show", &format!("{label}:build/greeting.md")]),
         "# Greeting"
@@ -1229,14 +1300,11 @@ async fn build_resumed_shadowed() {
     roots.stored(SOURCE, MOCK_SOURCE);
     roots.stored(TARGET, MOCK_TARGET);
     let backends = roots.backends().await;
-    let model = specifying();
-    let run = emery(roots.deployment(&["specify", SOURCE, "--apply"]), &backends, &model).await;
-    assert_ok(&run);
-    model.assert_exhausted();
+    let base = roots.sealed();
+    let run = roots.applied(&backends, &specifying()).await;
     let revision = revision_of(&run);
     let label = format!("emery/{revision}");
     let project = roots.project.path();
-    let base = roots.sealed();
     let forged = roots.git.forged(project, Some(&base), &forged_message(&revision, &base));
     roots.git.run(project, &["tag", &label, &forged]);
 
@@ -1260,9 +1328,10 @@ async fn build_resumed_shadowed() {
     assert_eq!(roots.git.branches(project), [label, "main".to_owned()]);
 }
 
-// A label moved onto a history that does not descend from the base records
-// nothing for this base: the run builds every slice from the base and the
-// label moves back over it.
+// A label moved onto a history that does not descend from the base holds
+// no revision for this base: the build is refused naming the label, and
+// once `specify --apply` seals the revision over the base again the run
+// builds every slice from there and the label moves back over it.
 #[tokio::test]
 async fn build_resumed_off_base() {
     let (roots, backends, revision, base) = built().await;
@@ -1271,6 +1340,17 @@ async fn build_resumed_off_base() {
     let forged = roots.git.forged(project, None, &forged_message(&revision, &base));
     roots.git.run(project, &["branch", "--force", &label, &forged]);
 
+    let idle = ScriptedModel::default();
+    let run = emery(roots.deployment(&["--format", "json", "build"]), &backends, &idle).await;
+
+    let envelope = refused(&run, 2, "spec-not-generated");
+    assert_message(&envelope, &format!("label `{label}` does not stand over its head"));
+    idle.assert_exhausted();
+    assert_eq!(roots.git.run(project, &["rev-parse", &format!("refs/heads/{label}")]), forged);
+
+    let run = roots.applied(&backends, &specifying()).await;
+    assert_eq!(revision_of(&run), revision);
+    assert_eq!(roots.git.run(project, &["rev-parse", &format!("{label}~1")]), base);
     let model = building();
     let run = emery(roots.deployment(&["build"]), &backends, &model).await;
 
@@ -1291,9 +1371,9 @@ async fn build_resumed_off_base() {
     assert_eq!(roots.git.run(project, &["rev-parse", "HEAD"]), base, "the checkout is untouched");
 }
 
-// A tag a remote holds under the label's spelling arrives with the clone
-// and is no label there either: the build is fresh, the branch is set
-// beside the tag in the clone, and the tag stands.
+// A tag a remote holds under the label's spelling, fetched into the clone
+// `apply` seals into, is no label there either: the build is fresh, the
+// branch is set beside the tag in the clone, and the tag stands.
 #[tokio::test]
 async fn build_brownfield_shadowed() {
     let roots = Roots::new();
@@ -1310,13 +1390,17 @@ async fn build_brownfield_shadowed() {
     );
     let backends = roots.backends().await;
     let model = specifying();
-    let run = emery(roots.deployment(&["specify", "--apply"]), &backends, &model).await;
+    let run = emery(roots.deployment(&["specify"]), &backends, &model).await;
     assert_ok(&run);
     model.assert_exhausted();
     let revision = revision_of(&run);
     let label = format!("emery/{revision}");
     let forged = roots.git.forged(&origin, Some(&main), &forged_message(&revision, &main));
     roots.git.run(&origin, &["tag", &label, &forged]);
+    let clone = roots.project.path().join(TARGET_REPO);
+    roots.git.run(&clone, &["fetch", "--quiet", "--tags", "origin"]);
+    let idle = ScriptedModel::default();
+    assert_ok(&emery(roots.deployment(&["apply"]), &backends, &idle).await);
 
     let model = building();
     let run = emery(roots.deployment(&["build"]), &backends, &model).await;
@@ -1325,7 +1409,6 @@ async fn build_brownfield_shadowed() {
     model.assert_exhausted();
     assert_eq!(model.lent().len(), 2, "the slice is built and verified: {:?}", model.lent());
     assert!(!run.stdout.contains("resumed:"), "{}", run.stdout);
-    let clone = roots.project.path().join(TARGET_REPO);
     let head = roots.git.run(&clone, &["rev-parse", &format!("refs/heads/{label}")]);
     assert!(run.stdout.ends_with(&format!("  labelled {label} at {head}\n")), "{}", run.stdout);
     assert_ne!(head, forged, "the branch is the build's");
@@ -1336,9 +1419,9 @@ async fn build_brownfield_shadowed() {
 }
 
 // A branch a remote holds under the label, built elsewhere, is no label in
-// the clone, which holds it as the remote's: the build is fresh, the local
-// label the build's, the remote's standing untouched; the next run resumes
-// from the local label.
+// the clone `apply` seals into, which holds it as the remote's: the build
+// is fresh, the local label the build's, the remote's standing untouched;
+// the next run resumes from the local label.
 #[tokio::test]
 async fn build_brownfield_remote_label() {
     let roots = Roots::new();
@@ -1355,13 +1438,15 @@ async fn build_brownfield_remote_label() {
     );
     let backends = roots.backends().await;
     let model = specifying();
-    let run = emery(roots.deployment(&["specify", "--apply"]), &backends, &model).await;
+    let run = emery(roots.deployment(&["specify"]), &backends, &model).await;
     assert_ok(&run);
     model.assert_exhausted();
     let revision = revision_of(&run);
     let label = format!("emery/{revision}");
     let forged = roots.git.forged(&origin, Some(&main), &forged_message(&revision, &main));
     roots.git.run(&origin, &["branch", &label, &forged]);
+    let idle = ScriptedModel::default();
+    assert_ok(&emery(roots.deployment(&["apply"]), &backends, &idle).await);
 
     let model = building();
     let run = emery(roots.deployment(&["build"]), &backends, &model).await;
@@ -1451,10 +1536,11 @@ async fn specify_fetched() {
     let backends = roots.backends().await;
     let model = specifying();
 
-    let run = emery(roots.deployment(&["specify", SOURCE, "--apply"]), &backends, &model).await;
+    let run = emery(roots.deployment(&["specify", SOURCE]), &backends, &model).await;
 
     assert_ok(&run);
     model.assert_exhausted();
+    let candidate = revision_of(&run);
     assert_eq!(roots.stored_files(), [stored_name(SOURCE)], "the fetched release is kept");
     assert_eq!(
         roots.store.read(&stored_name(SOURCE)),
@@ -1467,7 +1553,7 @@ async fn specify_fetched() {
     let model = specifying();
     let run = emery(roots.deployment(&["specify", SOURCE]), &backends, &model).await;
     assert_ok(&run);
-    assert!(run.stdout.contains("none (byte-stable)"), "{}", run.stdout);
+    assert_eq!(revision_of(&run), candidate, "the same release drafts the same candidate");
     model.assert_exhausted();
 }
 
@@ -1598,6 +1684,7 @@ async fn pin_layered() {
         ),
     );
     let backends = roots.backends().await;
+    roots.git.seal(roots.project.path(), "project");
 
     let model = specifying();
     let run =
@@ -1606,7 +1693,6 @@ async fn pin_layered() {
     assert_ok(&run);
     model.assert_exhausted();
 
-    roots.git.seal(roots.project.path(), "project");
     let model = building();
     let run = emery(roots.deployment(&["build", TARGET, "--config"]), &backends, &model).await;
     assert_ok(&run);
@@ -1665,13 +1751,16 @@ async fn build_source_only() {
     let roots = Roots::new();
     roots.stored(SOURCE, MOCK_SOURCE);
     let backends = roots.backends().await;
-    let model = specifying();
-    assert_ok(&emery(roots.deployment(&["specify", SOURCE, "--apply"]), &backends, &model).await);
-    model.assert_exhausted();
+    roots.sealed();
+    roots.applied(&backends, &specifying()).await;
 
     let model = ScriptedModel::default();
-    let run =
-        emery(roots.deployment(&["--format", "json", "build", SOURCE]), &backends, &model).await;
+    let run = emery(
+        roots.deployment(&["--format", "json", "build", SOURCE, "--config"]),
+        &backends,
+        &model,
+    )
+    .await;
 
     let envelope = refused(&run, 1, "bad_request");
     assert_message(

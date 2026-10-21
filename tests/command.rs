@@ -8,6 +8,9 @@ mod verbs;
 
 use omnia_sdk::api::command::USAGE_EXIT;
 use support::{Provider, cli, cli_ok, fail};
+
+// The target naming the project checkout as the repository the revision lives in.
+const PROJECT_CONFIG: &str = "tests/build/project.toml";
 use verbs::verbs;
 
 // A usage error exits `USAGE_EXIT`, so exit 2 always means a `NotFound` envelope.
@@ -119,18 +122,21 @@ async fn old_flags() {
 async fn verbosity_flags() {
     let provider = Provider::idle();
     for argv in [
-        &["emery", "-v", "show", "spec"][..],
-        &["emery", "-vv", "show", "spec"][..],
-        &["emery", "--verbose", "show", "spec"][..],
-        &["emery", "show", "spec", "-v"][..],
-        &["emery", "-q", "show", "spec"][..],
-        &["emery", "-qq", "show", "spec"][..],
-        &["emery", "show", "spec", "--quiet"][..],
+        &["emery", "-v", "show", "spec", "--staged"][..],
+        &["emery", "-vv", "show", "spec", "--staged"][..],
+        &["emery", "--verbose", "show", "spec", "--staged"][..],
+        &["emery", "show", "spec", "--staged", "-v"][..],
+        &["emery", "-q", "show", "spec", "--staged"][..],
+        &["emery", "-qq", "show", "spec", "--staged"][..],
+        &["emery", "show", "spec", "--staged", "--quiet"][..],
     ] {
-        fail(&provider, argv, 2, "spec-not-generated").await;
+        fail(&provider, argv, 2, "nothing-staged").await;
     }
 
-    assert_eq!(cli(&provider, &["emery", "-v", "-q", "show", "spec"]).await.exit, USAGE_EXIT);
+    assert_eq!(
+        cli(&provider, &["emery", "-v", "-q", "show", "spec", "--staged"]).await.exit,
+        USAGE_EXIT
+    );
 
     let help = cli_ok(&provider, &["emery", "--help"]).await;
     let help = String::from_utf8_lossy(&help.stdout);
@@ -143,25 +149,41 @@ async fn verbosity_flags() {
     assert_eq!(help.lines().next(), short.lines().next(), "{help}");
 }
 
+// A repository holding no revision refuses every reader of the current
+// revision typed, under the target naming the repository.
 #[tokio::test]
 async fn no_revision() {
     let provider = Provider::idle();
 
-    let response = cli(&provider, &["emery", "show", "spec"]).await;
+    let response = cli(&provider, &["emery", "show", "spec", "--config", PROJECT_CONFIG]).await;
     assert_eq!(response.exit, 2);
     let stderr = String::from_utf8_lossy(&response.stderr);
     assert!(stderr.contains("spec-not-generated"), "{stderr}");
 
-    fail(&provider, &["emery", "show", "design"], 2, "spec-not-generated").await;
-    fail(&provider, &["emery", "show", "plan"], 2, "spec-not-generated").await;
+    fail(
+        &provider,
+        &["emery", "show", "design", "--config", PROJECT_CONFIG],
+        2,
+        "spec-not-generated",
+    )
+    .await;
+    fail(
+        &provider,
+        &["emery", "show", "plan", "--config", PROJECT_CONFIG],
+        2,
+        "spec-not-generated",
+    )
+    .await;
     fail(&provider, &["emery", "build", "acme:builder@1.0.0"], 2, "spec-not-generated").await;
 
     // nothing staged is the other slot's refusal
     fail(&provider, &["emery", "show", "spec", "--staged"], 2, "nothing-staged").await;
-    fail(&provider, &["emery", "apply"], 2, "nothing-staged").await;
+    fail(&provider, &["emery", "apply", "--config", PROJECT_CONFIG], 2, "nothing-staged").await;
 }
 
-// `apply` takes no argument and `--staged` belongs to `show` alone.
+// `apply` takes no argument and `--staged` belongs to `show` alone; `apply`
+// and `show` take the `--config` and `apply` the `--repository` that name
+// the repository the revision lives in.
 #[tokio::test]
 async fn apply_grammar() {
     let provider = Provider::idle();
@@ -169,13 +191,20 @@ async fn apply_grammar() {
     assert_eq!(cli(&provider, &["emery", "apply", "--staged"]).await.exit, USAGE_EXIT);
     assert_eq!(cli(&provider, &["emery", "build", "--staged"]).await.exit, USAGE_EXIT);
     assert_eq!(cli(&provider, &["emery", "build", "--apply"]).await.exit, USAGE_EXIT);
+    assert_eq!(
+        cli(&provider, &["emery", "show", "spec", "--repository", "."]).await.exit,
+        USAGE_EXIT
+    );
 
     let help = cli_ok(&provider, &["emery", "apply", "--help"]).await;
     let help = String::from_utf8_lossy(&help.stdout);
     assert!(help.contains("nothing-staged"), "{help}");
+    assert!(help.contains("--config"), "{help}");
+    assert!(help.contains("--repository"), "{help}");
     let help = cli_ok(&provider, &["emery", "show", "--help"]).await;
     let help = String::from_utf8_lossy(&help.stdout);
     assert!(help.contains("--staged"), "{help}");
+    assert!(help.contains("--config"), "{help}");
     let help = cli_ok(&provider, &["emery", "specify", "--help"]).await;
     let help = String::from_utf8_lossy(&help.stdout);
     assert!(help.contains("--apply"), "{help}");
@@ -184,6 +213,7 @@ async fn apply_grammar() {
     let completions = String::from_utf8_lossy(&completions.stdout);
     assert!(completions.contains("apply"), "{completions}");
     assert!(completions.contains("--staged"), "{completions}");
+    assert!(completions.contains("--repository"), "{completions}");
 }
 
 // A run naming no target on the command line or in a file is refused typed.

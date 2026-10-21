@@ -119,6 +119,9 @@ pub struct Revision {
 }
 
 impl Revision {
+    /// The storage names of the three documents, in digest order.
+    pub const DOCUMENTS: [&str; 3] = [Spec::NAME, Design::NAME, Plan::NAME];
+
     /// Reads and validates the revision stored under `id`.
     ///
     /// The content digest is checked before any document is deserialised.
@@ -130,7 +133,7 @@ impl Revision {
     /// - Returns [`Error::ServerError`] when the content does not match `id`,
     ///   is not valid JSON, or does not match the current document shape.
     pub fn read(id: &str, spec: &[u8], design: &[u8], plan: &[u8]) -> Result<Self, Error> {
-        if digest([spec, design, plan]) != id {
+        if Self::identify(spec, design, plan) != id {
             return Err(server_error!("revision `{id}` does not match its content"));
         }
 
@@ -141,17 +144,33 @@ impl Revision {
         })
     }
 
+    /// Serialises the three documents to canonical JSON, in digest order.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::ServerError`] when a document does not serialise.
+    pub fn documents(&self) -> Result<[(&'static str, String); 3], Error> {
+        Ok([
+            (Spec::NAME, self.spec.to_json()?),
+            (Design::NAME, self.design.to_json()?),
+            (Plan::NAME, self.plan.to_json()?),
+        ])
+    }
+
     /// Returns the content identifier for this revision.
     ///
     /// # Errors
     ///
     /// Returns [`Error::ServerError`] when a document does not serialise.
     pub fn id(&self) -> Result<String, Error> {
-        Ok(digest([
-            self.spec.to_json()?.as_bytes(),
-            self.design.to_json()?.as_bytes(),
-            self.plan.to_json()?.as_bytes(),
-        ]))
+        let [(_, spec), (_, design), (_, plan)] = self.documents()?;
+        Ok(Self::identify(spec.as_bytes(), design.as_bytes(), plan.as_bytes()))
+    }
+
+    /// The content identifier of the three documents as stored.
+    #[must_use]
+    pub fn identify(spec: &[u8], design: &[u8], plan: &[u8]) -> String {
+        digest([spec, design, plan])
     }
 }
 

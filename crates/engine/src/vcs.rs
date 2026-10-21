@@ -2,21 +2,22 @@
 //!
 //! Wraps the [`Vcs`] capability over deployment-local paths beneath [`ROOT`]:
 //! [`SourceClone`] manages cached source clones, [`BuildRepo`] resolves the
-//! target repository a build lands in, [`WorkingCopy`] manages isolated
-//! worktrees, and [`Message`] and [`RevisionMessage`] format and parse the
-//! trailers of a slice's commit and a revision's.
+//! target repository a specification lives in and a build lands in,
+//! [`WorkingCopy`] manages isolated worktrees, and [`Message`] and
+//! [`RevisionMessage`] format and parse the trailers of a slice's commit and
+//! a revision's.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 
-use emery_adapter::SKIP_DIRS;
 pub use emery_adapter::SPECIFICATION;
 use emery_adapter::target::{MergeRule, MergeStrategy};
+use emery_adapter::{SKIP_DIRS, is_kebab};
 use omnia_sdk::vcs::{self, Change, CloneOptions, Merged, Rule, Strategy};
-use omnia_sdk::{Error, Vcs, bad_gateway, server_error};
+use omnia_sdk::{Error, Vcs, bad_gateway, bad_request, server_error};
+use serde::{Deserialize, Serialize};
 use sha2::{Digest as _, Sha256};
 
-use crate::Files;
 use crate::revision::{ReqId, SliceId};
 
 /// The directory beneath the project root that holds every clone and working copy.
@@ -24,6 +25,9 @@ pub const ROOT: &str = ".emery/vcs";
 
 /// The working copy a build integrates its slices in.
 pub const INTEGRATION: &str = "./.emery/vcs/integration";
+
+/// The working copy a revision is read from and sealed in.
+pub const REVISION: &str = "./.emery/vcs/revision";
 
 /// The directory beneath the project root that holds the working copy each slice builds in.
 pub const WORKTREES: &str = "./.emery/vcs/worktrees";
@@ -39,12 +43,6 @@ pub const INITIALISE: &str = "Initialise";
 
 /// The project's own checkout, as the capability names it and as a target's `repository` names it to build into.
 pub const PROJECT: &str = ".";
-
-// The file a created repository's root commit holds beside what the
-// adapter's init scaffolded, when the init scaffolded no ignore file of its
-// own, so that the commit exists and the engine's own directory is ignored
-// wherever the result is checked out.
-const IGNORE: (&str, &[u8]) = (".gitignore", b".emery/\n");
 
 /// The working copy a repository source is read from, by source name.
 #[must_use]
@@ -338,7 +336,31 @@ impl SourceClone {
     }
 }
 
-/// The repository a build's base comes from and its label goes to.
+/// The target as a run names it: the name its repository is kept under and where that repository is.
+///
+/// A run's `[target]` table, or its command line, carries one; a verb
+/// settles it into a [`BuildRepo`] through [`repo`](TargetRef::repo).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct TargetRef {
+    /// The target's name, kebab-case, which its repository is kept under.
+    pub name: String,
+    /// Where the repository is: [`PROJECT`] for the project checkout, a URL
+    /// for a clone, `None` for a repository the engine creates and keeps.
+    pub repository: Option<String>,
+}
+
+impl TargetRef {
+    /// The repository the target names.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::BadRequest`] when the name is not kebab-case.
+    pub fn repo(&self) -> Result<BuildRepo, Error> {
+        BuildRepo::settle(&self.name, self.repository.as_deref())
+    }
+}
+
+/// The repository a specification lives in, a build's base comes from, and its label goes to.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum BuildRepo {
     /// The project's own repository, read through the `.` mount.
@@ -354,6 +376,28 @@ pub enum BuildRepo {
 }
 
 impl BuildRepo {
+    /// The repository a target named `name` keeps at `repository`: the project for [`PROJECT`], a clone for a URL, a created one for none.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::BadRequest`] when `name` is not kebab-case.
+    pub fn settle(name: &str, repository: Option<&str>) -> Result<Self, Error> {
+        if !is_kebab(name) {
+            return Err(bad_request!("target `{name}` is not a kebab-case name"));
+        }
+        Ok(match repository {
+            Some(PROJECT) => Self::Project,
+            Some(url) => Self::Target {
+                name: name.to_owned(),
+                url: Some(url.to_owned()),
+            },
+            None => Self::Target {
+                name: name.to_owned(),
+                url: None,
+            },
+        })
+    }
+
     /// The deployment-local path a working copy is cut from.
     #[must_use]
     pub fn path(&self) -> String {
@@ -361,6 +405,12 @@ impl BuildRepo {
             Self::Project => PROJECT.to_owned(),
             Self::Target { name, .. } => target_path(name),
         }
+    }
+
+    /// Whether the repository is one the engine creates and keeps.
+    #[must_use]
+    pub const fn is_created(&self) -> bool {
+        matches!(self, Self::Target { url: None, .. })
     }
 
     /// The commit the repository stands at, with the repository brought to where it can be read.
@@ -407,52 +457,44 @@ impl BuildRepo {
         }
     }
 
-    /// The commit a build starts from, with the repository brought to where it can be read.
+    /// Holds `head`, the commit the repository stands at, as the one a build starts from.
     ///
-    /// - The project's is the sealed commit its checkout sits on, its
-    ///   [`head`](Self::head) once the checkout holds nothing pending.
-    ///   Pending changes beneath the engine's own [`SKIP_DIRS`] are never
-    ///   counted.
-    /// - A clone's is its [`head`](Self::head), [`DEFAULT_BRANCH`].
-    /// - A created repository's is its root commit, [`INITIALISE`], holding
-    ///   what `init` scaffolded in the tree — the adapter's layout, given
-    ///   the repository's path and answering what it left pending — and a
-    ///   `.gitignore` of the engine's own directory beside it when `init`
-    ///   scaffolded none. It is created when no run has created it yet,
-    ///   through `init` and [`Files::write`], and kept, so a later run
-    ///   starts from the same commit and resumes the label set over it. One
-    ///   created but never sealed is sealed now, `init` run over it again.
-    ///   The other two bases never run `init`.
+    /// The project's checkout must hold nothing pending outside the
+    /// engine's own [`SKIP_DIRS`], so a build starts from a sealed tree; a
+    /// clone's and a created repository's head is its base as it stands.
     ///
     /// # Errors
     ///
     /// - Returns [`Error::BadRequest`] with code `repository-required` when
     ///   the project is no repository, and with code `base-not-sealed` when
-    ///   its checkout holds pending changes, listed, or no commit yet.
-    /// - Returns [`Error::NotFound`] with code `revision-not-found` when the
-    ///   URL names no repository, the clone has no default branch, or what
-    ///   sits at the path was created or cloned under no such origin.
-    /// - Returns [`Error::BadGateway`] when the remote refuses, cannot be
-    ///   reached, or wants credentials.
-    /// - Returns [`Error::ServerError`] when the capability fails otherwise,
-    ///   or a created repository seals nothing.
-    /// - Returns what `init` fails with.
-    pub async fn base<P: Vcs + Files>(
-        &self, provider: &P, init: impl AsyncFnOnce(&str) -> Result<Vec<Change>, Error>,
-    ) -> Result<String, Error> {
-        match self {
-            Self::Project => {
-                project_clean(provider).await?;
-                self.head(provider).await?.ok_or_else(|| Error::BadRequest {
-                    code: "base-not-sealed".into(),
-                    description: "the project repository has no commit to build from".into(),
-                })
+    ///   its checkout holds pending changes, listed.
+    /// - Returns [`Error::ServerError`] when the capability fails otherwise.
+    pub async fn base<V: Vcs>(&self, vcs: &V, head: &str) -> Result<String, Error> {
+        if matches!(self, Self::Project) {
+            project_clean(vcs).await?;
+        }
+        Ok(head.to_owned())
+    }
+
+    /// Creates the repository the engine keeps, or finds the one a run already created.
+    ///
+    /// The other two kinds are never created: the project is the
+    /// operator's and a clone is its origin's.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::ServerError`] when the capability fails.
+    pub async fn init<V: Vcs>(&self, vcs: &V) -> Result<(), Error> {
+        let Self::Target { name, url: None } = self else {
+            return Ok(());
+        };
+        match vcs.init(&target_path(name)).await {
+            Ok(()) => {
+                tracing::info!(repository = %target_path(name), "created the target repository");
+                Ok(())
             }
-            Self::Target { url: Some(url), .. } => self
-                .head(provider)
-                .await?
-                .ok_or_else(|| server_error!("repository `{url}` answered no default branch")),
-            Self::Target { name, url: None } => create(provider, name, init).await,
+            Err(vcs::Error::Exists(_)) => Ok(()),
+            Err(error) => Err(self.subject().refusal(error)),
         }
     }
 
@@ -477,16 +519,10 @@ impl BuildRepo {
         &self, vcs: &V, label: &str, base: &str, revision: &str,
     ) -> Result<Option<(String, BTreeSet<SliceId>)>, Error> {
         let repo = self.path();
-        let head = match vcs.labelled(&repo, label).await {
-            Ok(head) => head,
-            Err(vcs::Error::NotFound(_)) => return Ok(None),
-            Err(error) => return Err(self.subject().refusal(error)),
+        let Some(head) = self.labelled(vcs, label).await? else {
+            return Ok(None);
         };
-        let descends = vcs
-            .descends(&repo, base, &head)
-            .await
-            .map_err(|error| self.subject().refusal(error))?;
-        if !descends {
+        if !self.descends(vcs, base, &head).await? {
             tracing::warn!(
                 label,
                 base,
@@ -625,6 +661,34 @@ impl BuildRepo {
         Ok(Some((staged, slices)))
     }
 
+    /// The commit `label` stands at, read back as a label alone; `None` when the repository has no such label.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::ServerError`] when the capability fails.
+    pub async fn labelled<V: Vcs>(&self, vcs: &V, label: &str) -> Result<Option<String>, Error> {
+        match vcs.labelled(&self.path(), label).await {
+            Ok(commit) => Ok(Some(commit)),
+            Err(vcs::Error::NotFound(_)) => Ok(None),
+            Err(error) => Err(self.subject().refusal(error)),
+        }
+    }
+
+    /// Whether `descendant` descends from `ancestor` in the repository.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::NotFound`] with code `revision-not-found` when the
+    /// repository holds neither commit, and [`Error::ServerError`] when the
+    /// capability fails otherwise.
+    pub async fn descends<V: Vcs>(
+        &self, vcs: &V, ancestor: &str, descendant: &str,
+    ) -> Result<bool, Error> {
+        vcs.descends(&self.path(), ancestor, descendant)
+            .await
+            .map_err(|error| self.subject().refusal(error))
+    }
+
     /// Points `label` at `commit`, creating or moving it.
     ///
     /// # Errors
@@ -695,6 +759,12 @@ impl WorkingCopy {
             }
             Err(error) => Err(copy.subject().refusal(error)),
         }
+    }
+
+    /// A repository's own checkout at `at`, addressed as a working copy that is never removed.
+    #[must_use]
+    pub fn checkout(at: &str) -> Self {
+        Self { at: at.to_owned() }
     }
 
     /// The deployment-local path of the working copy.
@@ -786,40 +856,6 @@ async fn ensure<V: Vcs>(vcs: &V, url: &str, at: &str) -> Result<(), vcs::Error> 
         }
         Err(error) => Err(error),
     }
-}
-
-// The root commit of the repository created under `name`, created when no
-// run has created it yet: `init` answers `Exists` for one a run already
-// holds, whose head is the base, or `NotFound` under it for one created and
-// never sealed.
-async fn create<P: Vcs + Files>(
-    provider: &P, name: &str, init: impl AsyncFnOnce(&str) -> Result<Vec<Change>, Error>,
-) -> Result<String, Error> {
-    let at = target_path(name);
-    let subject = Subject::Target(name);
-    match provider.init(&at).await {
-        Ok(()) => {}
-        Err(vcs::Error::Exists(_)) => match provider.head(&at).await {
-            Ok(head) => return Ok(head),
-            Err(vcs::Error::NotFound(_)) => {}
-            Err(error) => return Err(subject.refusal(error)),
-        },
-        Err(error) => return Err(subject.refusal(error)),
-    }
-
-    // the adapter's layout, and the engine's ignore file where it scaffolded none
-    let scaffolded = init(&at).await?;
-    let (path, content) = IGNORE;
-    if !scaffolded.iter().any(|change| change.path == path) {
-        provider.write(&at, path, content).await?;
-    }
-    let commit = provider
-        .commit(&at, INITIALISE)
-        .await
-        .map_err(|error| subject.refusal(error))?
-        .ok_or_else(|| server_error!("{subject} sealed nothing as its root commit"))?;
-    tracing::info!(repository = %at, %commit, "created the target repository");
-    Ok(commit)
 }
 
 // Holds the project checkout to nothing pending outside the engine's own
@@ -924,8 +960,6 @@ fn scp_like(url: &str) -> Option<(&str, &str)> {
         .then_some((authority, path))
 }
 
-// No verb seals a revision's commit yet, so the two messages' reading of
-// one another is held here until the repository store writes one.
 #[cfg(test)]
 mod tests {
     use super::*;

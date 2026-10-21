@@ -105,6 +105,34 @@ impl Files for FilesScript {
     ) -> impl Future<Output = Result<(), Error>> + Send {
         self.writes.lock().expect("writes").push((at.to_owned(), path.to_owned(), bytes.to_vec()));
         self.script(at, path, Some(bytes.to_vec()));
+        self.place(at, path);
         async move { Ok(()) }
+    }
+}
+
+impl FilesScript {
+    // Lists a written file under its directory and each directory on the way
+    // under its parent, so a listing after the write sees what it wrote.
+    fn place(&self, at: &str, path: &str) {
+        let mut directory = String::from(".");
+        let segments: Vec<&str> = path.split('/').filter(|segment| !segment.is_empty()).collect();
+        for (position, segment) in segments.iter().enumerate() {
+            let kind =
+                if position + 1 == segments.len() { EntryKind::File } else { EntryKind::Directory };
+            let mut listings = self.listings.lock().expect("listings");
+            let entries = listings.entry((at.to_owned(), directory.clone())).or_default();
+            if !entries.iter().any(|entry| entry.name == *segment) {
+                entries.push(Entry {
+                    name: (*segment).to_owned(),
+                    kind,
+                });
+            }
+            drop(listings);
+            directory = if directory == "." {
+                (*segment).to_owned()
+            } else {
+                format!("{directory}/{segment}")
+            };
+        }
     }
 }

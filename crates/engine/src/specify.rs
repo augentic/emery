@@ -38,8 +38,8 @@ pub use crate::revision::{
     BadId, Changed, DesignDiff, Diff, Entry, PlanDiff, ReqId, Role, SectionKind, SliceEntry,
     SliceId, SpecDiff, Waves,
 };
-use crate::vcs::{SourceClone, WorkingCopy};
-use crate::{Rank, apply, preopen_path, store, vcs};
+use crate::vcs::{SourceClone, TargetRef, WorkingCopy};
+use crate::{Files, Rank, apply, preopen_path, store, vcs};
 
 /// Generates and stages a specification candidate from `input`, sealing it when asked.
 ///
@@ -51,15 +51,20 @@ use crate::{Rank, apply, preopen_path, store, vcs};
 /// failure among them ends the run.
 ///
 /// The drafted revision is staged as the candidate `emery apply` seals,
-/// replacing any staged before it; the current revision is read only to
-/// report the diff against it. Under [`SpecifyInput::apply`] the candidate
-/// is staged first and sealed in the same run, so a seal that fails leaves
-/// it staged.
+/// replacing any staged before it. Where [`SpecifyInput::target`] names the
+/// repository the specification lives in, the current revision is read
+/// from it before any adapter loads, to report the diff against it; a run
+/// naming no target reads no repository and reports no diff. Under
+/// [`SpecifyInput::apply`] the candidate is staged first and sealed in the
+/// same run over what was read, so a seal that fails leaves it staged.
 ///
 /// # Errors
 ///
 /// - Returns [`Error::BadRequest`] when the run is refused:
 ///   - an empty source list, with code `specify-source-required`;
+///   - [`SpecifyInput::apply`] with no target, with code
+///     `build-target-required`;
+///   - a target whose name is not kebab-case;
 ///   - a malformed or repeated source name;
 ///   - a workspace path outside the project, or outside the repository a
 ///     source names;
@@ -80,16 +85,30 @@ use crate::{Rank, apply, preopen_path, store, vcs};
 ///   or serialisation, storage, or version control fails.
 /// - Returns [`Error::BadGateway`] when an adapter, its acquisition, the
 ///   model, or a repository's remote fails upstream.
-/// - Returns what [`apply`](crate::apply::apply) fails with under
-///   [`SpecifyInput::apply`], the candidate left staged.
+/// - Returns what [`apply`](crate::apply::apply) fails with reading the
+///   target's repository, before any adapter loads, and sealing the
+///   candidate under [`SpecifyInput::apply`], the candidate left staged.
 ///
 /// A loader's or a source's error keeps its own class and code.
-pub async fn specify<P: Model + Source + StateStore + BlobStore + Plugins + Vcs>(
+pub async fn specify<P: Model + Source + StateStore + BlobStore + Plugins + Vcs + Files>(
     input: SpecifyInput, context: Context<P>,
 ) -> Result<SpecifyOutput, Error> {
     let provider = context.provider();
 
     let bound = Bound::all(&input.sources)?;
+
+    // the repository the specification lives in, read before any load so
+    // the diff and the seal land over what it holds
+    let repo = match &input.target {
+        Some(target) => Some(target.repo()?),
+        None if input.apply => return Err(store::target_required("`emery specify --apply`")),
+        None => None,
+    };
+    let standing = match &repo {
+        Some(repo) => Some(store::current(provider, repo).await?),
+        None => None,
+    };
+
     let loaded =
         &adapter::load(provider, bound.iter().map(|source| (source.adapter, source.digest)))
             .await?;
@@ -121,10 +140,13 @@ pub async fn specify<P: Model + Source + StateStore + BlobStore + Plugins + Vcs>
     // the candidate staged for review, with the diff against the revision a
     // seal would displace; sealed in the same run when asked
     let candidate = Revision { spec, design, plan };
-    let diff = store::diff(provider, &candidate).await;
+    let diff = standing.as_ref().and_then(|standing| standing.diff(&candidate));
     let revision = store::stage(provider, &candidate).await?;
     tracing::info!(candidate = %revision, slices = candidate.plan.slices.len(), "staged");
-    let applied = if input.apply { Some(apply::seal(provider).await?) } else { None };
+    let applied = match (input.apply, repo, standing) {
+        (true, Some(repo), Some(standing)) => Some(apply::seal(provider, &repo, standing).await?),
+        _ => None,
+    };
 
     Ok(SpecifyOutput {
         revision,
@@ -147,6 +169,12 @@ pub struct SpecifyInput {
     /// same run, as [`apply`](crate::apply::apply) would.
     #[serde(default)]
     pub apply: bool,
+    /// The target whose repository the specification lives in.
+    ///
+    /// Read for the diff where given, and required under
+    /// [`apply`](Self::apply).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub target: Option<TargetRef>,
 }
 
 /// Configuration for one source used by [`specify`].
@@ -253,8 +281,8 @@ pub struct SpecifyOutput {
     pub waves: Waves,
     /// Changes from the current revision, which sealing the candidate would displace.
     ///
-    /// Absent when no revision is current, and when the current one is
-    /// unreadable or outdated.
+    /// Absent when the run names no target, and when the target's
+    /// repository holds no revision.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub diff: Option<Diff>,
     /// The sources read from a repository, in declaration order, each at the
