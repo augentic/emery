@@ -24,7 +24,8 @@ enum Mention<'a> {
 const GLOBAL_FLAGS: &[&str] = &["--format", "--help", "--version"];
 
 // Each skill's flags validate against the one verb it wraps.
-const SKILL_VERBS: &[(&str, &str)] = &[("specify", "specify"), ("build", "build")];
+const SKILL_VERBS: &[(&str, &str)] =
+    &[("specify", "specify"), ("apply", "apply"), ("build", "build")];
 
 async fn grammar(argv: &[&str]) -> Response {
     cli(&Provider::idle(), argv).await

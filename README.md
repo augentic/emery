@@ -6,19 +6,21 @@
 
 Emery reconciles intent, documentation, existing code, and captured behaviour into reviewable specifications — durable artifacts, not chat history.
 
-> The v1 delivery workflow (survey/extract, plan/refine/execute/finalize) is archived at git tag `v1`; retrieve it with `git worktree add ../emery-v1 v1`. This tree carries the spec generator and its build step: `emery specify` synthesises the reviewable set from the sources named on the invocation, `emery build` hands its plan to a target adapter wave by wave, `emery show` renders it.
+> The v1 delivery workflow (survey/extract, plan/refine/execute/finalize) is archived at git tag `v1`; retrieve it with `git worktree add ../emery-v1 v1`. This tree carries the spec generator and its build step: `emery specify` synthesises the reviewable set from the sources named on the invocation and stages it, `emery apply` seals it in the target's repository under `spec/`, `emery build` hands its plan to a target adapter wave by wave, `emery show` renders it.
 
 ## The live surface
 
 ```bash
-emery specify <adapter>...  # extract, group, synthesise the spec + design, slice the plan
-emery build <adapter>       # build the plan in waves through a target adapter, one merge each under emery/<revision>, verified wave by wave
+emery specify <adapter>...  # extract, group, synthesise the spec + design, slice the plan; stage the candidate
+emery specify --config --apply  # the same, sealed in the [target] repository in one run
+emery apply                 # seal the staged candidate as the current revision: spec/ at one commit labelled emery/<revision>
+emery build <adapter>       # build the sealed plan in waves through a target adapter, one merge each under emery/<revision>, verified wave by wave
 emery show spec             # render spec.md from the current revision (--format json: the revision)
-emery show plan             # render plan.md: the spec sliced into buildable pieces
+emery show plan --staged    # render plan.md from the staged candidate: the spec sliced into buildable pieces
 emery completions <sh>      # shell completions
 ```
 
-In Cursor, `/emery:specify` wraps `emery specify`. Everything else was deleted from the grammar, not hidden — see the [CLI reference](docs/reference/cli/index.md).
+In Cursor, `/emery:specify` wraps `emery specify`, `/emery:apply` wraps `emery apply`, and `/emery:build` wraps `emery build`. Everything else was deleted from the grammar, not hidden — see the [CLI reference](docs/reference/cli/index.md).
 
 Install from source:
 
@@ -42,7 +44,7 @@ make ci      # exactly the CI gate: fmt-check, lint (host + wasm32), tests, doct
 make check   # local advisories: audit, fmt (rewrites), lint, outdated, deps
 ```
 
-`cargo build --release --features genai --bin emery-dev` builds `emery-dev`, the same runtime over a local model through [omnia-genai](https://github.com/augentic/omnia-backends/tree/main/crates/genai) (`GENAI_MODEL`, `GENAI_ENDPOINT`; the recipe is in [src/dev.rs](src/dev.rs)); it is never released.
+`cargo build --release --features genai` builds the same binary over a local model through [omnia-genai](https://github.com/augentic/omnia-backends/tree/main/crates/genai) in place of Cursor (`GENAI_MODEL`, `GENAI_ENDPOINT`; the feature selects the backend in [src/main.rs](src/main.rs)); the release ships without it.
 
 Preview the working-tree Cursor skill against a local CLI:
 
