@@ -1,4 +1,5 @@
-//! Serves the `write_files` and `edit_files` tools for build and verify turns.
+//! Serves the `write_files`, `edit_files`, and `restore_files` tools for
+//! build and verify turns.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::future::ready;
@@ -10,22 +11,32 @@ use std::{fmt, fs};
 use emery_adapter::target::Report;
 use emery_adapter::{Standing, beneath, standing, write_whole};
 use omnia_sdk::model::{Function, Tool, ToolCall, ToolFuture, Tools};
+use omnia_sdk::{Error, server_error};
 use schemars::JsonSchema;
 use serde::de::{self, DeserializeSeed, MapAccess, SeqAccess, Visitor};
 use serde::{Deserialize, Deserializer};
 use serde_json::json;
 
+use super::Guarded;
+
 const WRITE_FILES: &str = "write_files";
 const EDIT_FILES: &str = "edit_files";
+const RESTORE_FILES: &str = "restore_files";
+
+// The most dropped tokens a refusal names, so a skeleton wiped whole comes
+// back with what to keep and not with its every identifier.
+const NAMED_TOKENS: usize = 10;
 
 // The write tools of one turn: the root they write beneath, the turn their
-// events name, the files they have written, and the files `write_files`
-// may not replace or remove.
+// events name, the files they have written, the files `write_files` may
+// not remove or write short of their tokens, and what those files held
+// when the turn began.
 pub(super) struct Writer {
     root: PathBuf,
     turn: String,
     written: Written,
-    guarded: BTreeSet<String>,
+    guarded: BTreeMap<String, Vec<String>>,
+    snapshots: BTreeMap<String, Vec<u8>>,
 }
 
 impl Writer {
@@ -34,21 +45,33 @@ impl Writer {
             root: PathBuf::from(root),
             turn: turn.to_owned(),
             written: Written::default(),
-            guarded: BTreeSet::new(),
+            guarded: BTreeMap::new(),
+            snapshots: BTreeMap::new(),
         }
     }
 
-    // The writer refusing a `write_files` entry or `delete` over `paths`,
-    // each spelled as the tree does; a path the rule refuses guards nothing,
-    // since no call can name it either.
-    pub(super) fn guarding(mut self, paths: &[String]) -> Self {
-        self.guarded = paths.iter().filter_map(|path| beneath(path).ok()).collect();
-        self
+    // The writer guarding `files`, each spelled as the tree does, what the
+    // tree holds at each read now for `restore_files`; a path the rule
+    // refuses guards nothing, since no call can name it either, and a path
+    // the tree lacks is guarded with nothing to restore.
+    pub(super) fn guarding(mut self, files: &[Guarded]) -> Result<Self, Error> {
+        for guarded in files {
+            let Ok(file) = beneath(&guarded.path) else { continue };
+            if holds_file(&self.root, &file) {
+                let bytes = fs::read(self.root.join(&file)).map_err(|err| {
+                    server_error!("reading the scaffolded `{file}` before the turn: {err}")
+                })?;
+                self.snapshots.insert(file.clone(), bytes);
+            }
+            self.guarded.insert(file, guarded.keeps.clone());
+        }
+        Ok(self)
     }
 
+    // The two write tools, and `restore_files` where a file is guarded.
     #[must_use]
-    pub(super) fn tools() -> [Tool; 2] {
-        [
+    pub(super) fn tools(&self) -> Vec<Tool> {
+        let mut tools = vec![
             Tool::Function(Function::of::<WriteFiles>(
                 WRITE_FILES,
                 "Write one or more files beneath `$WORKSPACE`, each created or replaced whole, \
@@ -57,8 +80,9 @@ impl Writer {
                  outside it, under `.emery/` or `.git/`, naming a projection, or leading \
                  through a symlink, is refused whole and changes nothing, as is one whose \
                  entry would leave a file empty or under half its size without `shrink` set, \
-                 or one naming a file the brief says was scaffolded before this turn. For a \
-                 change within a file, use `edit_files`.",
+                 one whose entry names a file the brief says was scaffolded before this turn \
+                 without every marker and name the skeleton holds, or one deleting such a \
+                 file. For a change within a file, use `edit_files`.",
             )),
             Tool::Function(Function::of::<EditFiles>(
                 EDIT_FILES,
@@ -69,7 +93,18 @@ impl Writer {
                  path `write_files` would refuse, refuses the call whole and changes nothing. \
                  To create or replace a file whole, use `write_files`.",
             )),
-        ]
+        ];
+        if !self.guarded.is_empty() {
+            tools.push(Tool::Function(Function::of::<RestoreFiles>(
+                RESTORE_FILES,
+                "Put one or more files the brief says were scaffolded before this turn back as \
+                 they were scaffolded, each path `/`-separated and relative to `$WORKSPACE`, \
+                 so a skeleton written wrong is recovered whole and filled again. A path that \
+                 was not scaffolded, or that the tree lacked before this turn, refuses the \
+                 call whole and changes nothing.",
+            )));
+        }
+        tools
     }
 
     #[must_use]
@@ -77,8 +112,8 @@ impl Writer {
         self.written.clone()
     }
 
-    // Answers `write_files` and `edit_files` here and hands every other call
-    // to `rest`.
+    // Answers `write_files`, `edit_files`, and `restore_files` here and
+    // hands every other call to `rest`.
     pub(super) fn serve(self, mut rest: Tools) -> Tools {
         Box::new(move |call: ToolCall| -> ToolFuture {
             let response = match call.name.as_str() {
@@ -111,6 +146,17 @@ impl Writer {
                     );
                     outcome.map(|edited| json!({ "edited": json_of(&edited) }).to_string())
                 }
+                RESTORE_FILES if !self.guarded.is_empty() => {
+                    let outcome = self.restore(&call);
+                    tracing::debug!(
+                        turn = %self.turn,
+                        tool = RESTORE_FILES,
+                        restored = ?outcome.as_ref().ok().map(Vec::as_slice),
+                        error = outcome.as_ref().err().map(String::as_str),
+                        "responded"
+                    );
+                    outcome.map(|restored| json!({ "restored": json_of(&restored) }).to_string())
+                }
                 _ => return rest(call),
             };
             Box::pin(ready(response))
@@ -118,11 +164,11 @@ impl Writer {
     }
 
     // Every path is held to the root and to the tree before the first write,
-    // and every entry replacing a held file to the shrink rule, so a call
-    // refused anywhere leaves the tree as it was. What the tree holds at each
-    // is read once and moved with every write, so a later entry naming a
-    // path, or its removal, meets what the call wrote there rather than what
-    // stood before it.
+    // every entry replacing a held file to the shrink rule and to the guard,
+    // and every removal to the guard, so a call refused anywhere leaves the
+    // tree as it was. What the tree holds at each is read once and moved
+    // with every write, so a later entry naming a path, or its removal,
+    // meets what the call wrote there rather than what stood before it.
     fn write(&self, call: &ToolCall) -> Result<Done, String> {
         let WriteFiles { files, delete } =
             call.arguments().map_err(|err| format!("{WRITE_FILES}: {err}"))?;
@@ -144,7 +190,7 @@ impl Writer {
         {
             match self.held(&path, &mut tree) {
                 Ok(file) => {
-                    if let Some(why) = self.guards(&file) {
+                    if let Some(why) = self.guards(&file, tree[&file], &content) {
                         refused.push(why);
                     } else if !shrink && let Some(why) = self.shrinks(&file, tree[&file], &content)
                     {
@@ -158,7 +204,7 @@ impl Writer {
         for path in delete {
             match self.held(&path, &mut tree) {
                 Ok(file) => {
-                    if let Some(why) = self.guards(&file) {
+                    if let Some(why) = self.guards_removal(&file) {
                         refused.push(why);
                     }
                     removals.push(file);
@@ -282,16 +328,97 @@ impl Writer {
         Ok(file)
     }
 
-    // The guard: a file the adapter scaffolded before the turn is changed
-    // through `edit_files` alone, since one written whole loses the markers
-    // the adapter laid in it.
-    fn guards(&self, file: &str) -> Option<String> {
-        self.guarded.contains(file).then(|| {
+    // The guard over a whole write: a file the adapter scaffolded before the
+    // turn, and the tree still holds, keeps every token its guard names,
+    // since one written short of them loses the markers the adapter laid in
+    // it. A path the tree no longer holds is written as any other.
+    fn guards(&self, file: &str, held: Standing, content: &str) -> Option<String> {
+        let keeps = self.guarded.get(file)?;
+        if held != Standing::File {
+            return None;
+        }
+        let missing: Vec<&str> = keeps
+            .iter()
+            .map(String::as_str)
+            .filter(|token| !token.is_empty() && !content.contains(token))
+            .collect();
+        if missing.is_empty() {
+            return None;
+        }
+        let named: Vec<String> =
+            missing.iter().take(NAMED_TOKENS).map(|token| format!("`{token}`")).collect();
+        let more = missing.len().saturating_sub(NAMED_TOKENS);
+        let more = if more == 0 { String::new() } else { format!(", and {more} more") };
+        Some(format!(
+            "`{file}` was scaffolded before this turn and this content drops what the skeleton \
+             holds: {}{more}; change the file through `{EDIT_FILES}`, send the whole file with \
+             those kept, or put it back as scaffolded through `{RESTORE_FILES}`",
+            named.join(", ")
+        ))
+    }
+
+    // The guard over a removal: a file the adapter scaffolded before the
+    // turn is never deleted, whatever it keeps.
+    fn guards_removal(&self, file: &str) -> Option<String> {
+        self.guarded.contains_key(file).then(|| {
             format!(
-                "`{file}` was scaffolded before this turn; change it through `{EDIT_FILES}`, \
-                 which keeps what the skeleton holds"
+                "`{file}` was scaffolded before this turn and is not deleted; change it through \
+                 `{EDIT_FILES}`, which keeps what the skeleton holds"
             )
         })
+    }
+
+    // Every path is held to the rule and to a snapshot before any file is
+    // written, so a call refused anywhere leaves the tree as it was; a
+    // restored file is as the turn found it, so the turn no longer counts
+    // as having written it.
+    fn restore(&self, call: &ToolCall) -> Result<Vec<Wrote>, String> {
+        let RestoreFiles { paths } =
+            call.arguments().map_err(|err| format!("{RESTORE_FILES}: {err}"))?;
+        if paths.is_empty() {
+            return Err(format!("{RESTORE_FILES}: `paths` names no file"));
+        }
+
+        // every path to a snapshot
+        let mut tree = BTreeMap::new();
+        let mut accepted = Vec::with_capacity(paths.len());
+        let mut refused = Vec::new();
+        for path in paths {
+            let file = match self.held(&path, &mut tree) {
+                Ok(file) => file,
+                Err(why) => {
+                    refused.push(why);
+                    continue;
+                }
+            };
+            match self.snapshots.get(&file) {
+                Some(bytes) => accepted.push((file, bytes)),
+                None if self.guarded.contains_key(&file) => refused.push(format!(
+                    "`{path}` was scaffolded for this slice but the tree lacked it before this \
+                     turn; there is nothing to put back"
+                )),
+                None => refused.push(format!(
+                    "`{path}` was not scaffolded before this turn; `{RESTORE_FILES}` puts back \
+                     the files the brief names as scaffolded"
+                )),
+            }
+        }
+        if !refused.is_empty() {
+            return Err(format!("{RESTORE_FILES}: nothing restored: {}", refused.join("; ")));
+        }
+
+        // the files put back
+        let mut restored = Vec::with_capacity(accepted.len());
+        for (file, bytes) in accepted {
+            write_whole(&self.root, &file, tree[&file], bytes)
+                .map_err(|err| format!("{RESTORE_FILES}: writing `{file}`: {err}"))?;
+            self.written.forget(&file);
+            restored.push(Wrote {
+                file,
+                bytes: bytes.len(),
+            });
+        }
+        Ok(restored)
     }
 
     // The shrink rule: a file the tree holds is not left empty, or under half
@@ -477,6 +604,16 @@ struct WriteFile {
     /// usually a fragment sent in place of the whole file.
     #[serde(default)]
     shrink: bool,
+}
+
+/// The scaffolded files one `restore_files` call puts back.
+// The `///` lines are the `JsonSchema` descriptions the model reads.
+#[derive(Debug, Deserialize, JsonSchema)]
+struct RestoreFiles {
+    /// The `/`-separated paths of the files to put back as they were
+    /// scaffolded, each relative to `$WORKSPACE` and named by the brief as
+    /// scaffolded before this turn.
+    paths: Vec<String>,
 }
 
 /// The edits one `edit_files` call makes within files the tree holds.

@@ -320,26 +320,65 @@ impl<'a, P> BuildContext<'a, P> {
 /// [`build`] renders `brief` after the design, under `What the adapter
 /// scaffolded for this slice before this turn:`, so the turn fills the
 /// files and the markers it names rather than writing them over; an empty
-/// text puts no section. `paths` are those files, root-relative, which the
-/// turn changes through `edit_files` alone: a `write_files` entry or
-/// `delete` naming one is refused as a correction, since a skeleton written
-/// over loses its markers. `types` are the design keys of the types the
-/// adapter laid into those files, each of whose `Type:` blocks the brief's
-/// design reduces to one line pointing at the scaffold section, since the
-/// signature stands in the tree.
+/// text puts no section. `passages` follows it verbatim: what the adapter
+/// quotes for the turn from its own references, read by no gate, so a type
+/// a passage alone names is not kept in the design's cut for it; an empty
+/// text puts nothing. `files` are those files, each a [`Guarded`] naming
+/// what a whole write of it must keep: the turn changes one through
+/// `edit_files`, or through a `write_files` entry carrying every token it
+/// [`keeps`](Guarded::keeps), and puts one back as scaffolded through
+/// `restore_files`; an entry dropping a token, or a `delete`, is refused as
+/// a correction, since a skeleton written over loses its markers. `types`
+/// are the design keys of the types the adapter laid into those files, each
+/// of whose `Type:` blocks the brief's design reduces to one line pointing
+/// at the scaffold section, since the signature stands in the tree.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Scaffold<'a> {
     /// The files and the markers, as the brief states them to the model.
     pub brief: &'a str,
-    /// The root-relative paths of the scaffolded files.
-    pub paths: &'a [String],
+    /// What the adapter quotes from its references after the scaffold section.
+    pub passages: &'a str,
+    /// The scaffolded files, each with what a whole write of it must keep.
+    pub files: &'a [Guarded],
     /// The design keys of the types laid into the scaffolded files.
     pub types: &'a [String],
+}
+
+/// One file an adapter scaffolded for a slice, and what a whole write of it must keep.
+///
+/// A `write_files` entry naming the file is admitted when its content
+/// carries every token of `keeps`, and refused naming the tokens it drops
+/// otherwise; an empty `keeps` admits any whole write. A `delete` naming
+/// the file is refused whatever it keeps. A path the tree no longer holds
+/// is written as any other, since there is nothing left to keep.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Guarded {
+    /// The root-relative path of the file.
+    pub path: String,
+    /// The tokens a whole write must carry: the marker ids, the identifiers
+    /// the adapter laid, a list's anchored lines.
+    pub keeps: Vec<String>,
+}
+
+impl Guarded {
+    /// Returns a guard over `path` keeping `keeps`.
+    pub fn new(
+        path: impl Into<String>, keeps: impl IntoIterator<Item = impl Into<String>>,
+    ) -> Self {
+        Self {
+            path: path.into(),
+            keeps: keeps.into_iter().map(Into::into).collect(),
+        }
+    }
 }
 
 impl Scaffold<'_> {
     fn section(&self) -> Option<&str> {
         Some(self.brief.trim_end()).filter(|brief| !brief.is_empty())
+    }
+
+    fn quoted(&self) -> Option<&str> {
+        Some(self.passages.trim_end()).filter(|passages| !passages.is_empty())
     }
 }
 
@@ -444,29 +483,37 @@ pub fn metadata(rules: &[MergeRule]) -> TargetMetadata {
 /// cut to the slice, and the [`brief`](Scaffold::brief) of `ctx`'s
 /// [`scaffold`](BuildContext::scaffold), where the adapter set one: the
 /// files and the markers the model fills, stated so the turn edits them
-/// rather than writing them over. The design's cut keeps every paragraph
-/// and every mechanism type; a data type among the scaffold's
+/// rather than writing them over, with the scaffold's
+/// [`passages`](Scaffold::passages) after it. The design's cut keeps every
+/// paragraph and every mechanism type; a data type among the scaffold's
 /// [`types`](Scaffold::types) is one line pointing at the scaffold section,
 /// and one the slice's [`types`](Slice::types) do not own and none of its
 /// text spells — the plan entry, the specification cut, the owned
-/// signatures, the scaffold's brief — is left out and listed at the end by
-/// key. It lends the workspace with the
+/// signatures, the scaffold's brief, never its passages — is left out and
+/// listed at the end by key; a key of several words is spelled only where
+/// the text runs them together, `order line` and not `order` here and
+/// `line` there. It lends the workspace with the
 /// worker grant `ctx`'s [`grants`](BuildContext::grants) unite to, and
 /// offers the embedded references through the reference tools. It writes
-/// through two tools. `write_files` writes one or more files beneath the
-/// workspace per call, listed or mapped by path, or that shape sent as JSON
-/// text, each created or replaced whole, at a path
-/// [`beneath`](crate::beneath) accepts and no symlink stands on, and removes
-/// the files its `delete` names; an entry that would leave a held file empty
-/// or under half its size is refused unless it sets `shrink`, and an entry
-/// or a `delete` naming one of the scaffold's [`paths`](Scaffold::paths) is
-/// refused, telling the model to change the file through `edit_files`.
-/// `edit_files` replaces the one place each edit's `find` matches within a
-/// file the workspace holds, the list of edits sent as JSON text read the
-/// same; a `find` matching nothing is refused with the line of the file its
-/// first line is on and the line after it, or the file's opening line, so
-/// the refusal carries the text to copy. A call either tool refuses
-/// anywhere changes nothing. The answered
+/// through two tools, and a third where the adapter scaffolded files.
+/// `write_files` writes one or more files beneath the workspace per call,
+/// listed or mapped by path, or that shape sent as JSON text, each created
+/// or replaced whole, at a path [`beneath`](crate::beneath) accepts and no
+/// symlink stands on, and removes the files its `delete` names; an entry
+/// that would leave a held file empty or under half its size is refused
+/// unless it sets `shrink`, and an entry naming one of the scaffold's
+/// [`files`](Scaffold::files) the tree still holds is refused unless its
+/// content carries every token the file [`keeps`](Guarded::keeps), the
+/// refusal naming the tokens it drops, as a `delete` naming one is refused
+/// whatever it keeps. `edit_files` replaces the one place each edit's
+/// `find` matches within a file the workspace holds, the list of edits sent
+/// as JSON text read the same; a `find` matching nothing is refused with
+/// the line of the file its first line is on and the line after it, or the
+/// file's opening line, so the refusal carries the text to copy.
+/// `restore_files` puts the scaffolded files it names back as they stood
+/// when the turn began, a path that was not scaffolded or that the tree
+/// lacked then refused. A call any tool refuses anywhere changes nothing.
+/// The answered
 /// [`Report`] is held to the slice by
 /// [`Report::findings`], to the tree — a `written` path names a regular
 /// file under the workspace — and to `check`, the adapter's own rule over
@@ -490,8 +537,9 @@ pub fn metadata(rules: &[MergeRule]) -> TargetMetadata {
 ///   when no valid report is produced within the available rounds or the
 ///   backend's time budget.
 /// - Returns [`Error::ServerError`] when `docs` does not contain `build.md`,
-///   or when `ctx`'s [`grants`](BuildContext::grants) have
-///   [`findings`](Grant::findings), before any turn.
+///   when `ctx`'s [`grants`](BuildContext::grants) have
+///   [`findings`](Grant::findings), or when a scaffolded file the tree
+///   holds cannot be read, before any turn.
 /// - Returns [`Error::BadGateway`] when a model tool or transport fails.
 /// - Returns the error `check` fails with, whatever its class: the
 ///   candidate it failed on ends the turn, since a tree the adapter cannot
@@ -503,11 +551,11 @@ pub async fn build<P: Model>(
     let slice = ctx.slice;
     let id = &slice.id;
     let root = Path::new(ctx.workspace);
-    let scaffolded = ctx.scaffold.map_or(&[][..], |scaffold| scaffold.paths);
-    let writer = Writer::new(ctx.workspace, id).guarding(scaffolded);
+    let scaffolded = ctx.scaffold.map_or(&[][..], |scaffold| scaffold.files);
+    let writer = Writer::new(ctx.workspace, id).guarding(scaffolded)?;
     let written = writer.written();
     let mut tools = reference::tools();
-    tools.extend(Writer::tools());
+    tools.extend(writer.tools());
     let question = granted(
         Question::<Report>::new(&format!("build-{id}"))
             .system(prompt(docs, BUILD)?)
@@ -604,7 +652,7 @@ pub async fn verify<P: Model>(
 ) -> Result<Verdict, Error> {
     let writer = Writer::new(ctx.workspace, VERIFY_TURN);
     let mut tools = reference::tools();
-    tools.extend(Writer::tools());
+    tools.extend(writer.tools());
     let question = granted(
         Question::<Verdict>::new(VERIFY_TURN)
             .system(prompt(docs, VERIFY)?)
@@ -735,13 +783,14 @@ struct Brief<'a> {
 impl Display for Brief<'_> {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         let slice = self.slice;
+        let guarded = self.scaffold.is_some_and(|scaffold| !scaffold.files.is_empty());
         write!(
             f,
             "Build the slice `{name}` ({id}) of the plan, bound to adapter `{adapter}`.\n\n\
              `$WORKSPACE` is the project tree, lent writable: the root of every file you can \
              read, and the root every `written` path is relative to. The tree sits on commit \
              `{base}`, the integrated head this slice builds over. Write through this call's \
-             two tools alone: {TOOLS_RULE} Write the files you have ready together in one \
+             {count} tools alone: {TOOLS_RULE} Write the files you have ready together in one \
              `write_files` call, and make a change within a file through `edit_files`. Build \
              the slice into the tree as the prompt describes, and change nothing outside \
              it.\n\n",
@@ -749,6 +798,7 @@ impl Display for Brief<'_> {
             id = slice.id,
             adapter = self.adapter_id,
             base = slice.base,
+            count = if guarded { "three" } else { "two" },
         )?;
 
         write!(
@@ -761,7 +811,8 @@ impl Display for Brief<'_> {
             design = design::cut(slice, self.scaffold.as_ref()),
         )?;
 
-        // what the adapter scaffolded before the turn, where it scaffolded anything
+        // what the adapter scaffolded before the turn, where it scaffolded
+        // anything, and what it quotes for the turn
         if let Some(scaffold) = &self.scaffold {
             if let Some(brief) = scaffold.section() {
                 write!(
@@ -769,15 +820,22 @@ impl Display for Brief<'_> {
                     "What the adapter scaffolded for this slice before this turn:\n\n{brief}\n\n"
                 )?;
             }
-            if !scaffold.paths.is_empty() {
+            if !scaffold.files.is_empty() {
                 write!(
                     f,
-                    "The {count} the adapter scaffolded for this slice {are} filled through \
-                     `edit_files` alone: a `write_files` entry or `delete` naming one of them \
-                     is refused whole, since a skeleton written over loses its markers.\n\n",
-                    count = if scaffold.paths.len() == 1 { "file" } else { "files" },
-                    are = if scaffold.paths.len() == 1 { "is" } else { "are" },
+                    "The {count} the adapter scaffolded for this slice {are} filled in place: \
+                     change {one} through `edit_files`, or send the whole file through \
+                     `write_files` with every marker and name the skeleton holds still in it; \
+                     an entry that drops one is refused whole naming what it dropped, as a \
+                     `delete` naming one of them is. `restore_files` puts {one} back as it was \
+                     scaffolded.\n\n",
+                    count = if scaffold.files.len() == 1 { "file" } else { "files" },
+                    are = if scaffold.files.len() == 1 { "is" } else { "are" },
+                    one = if scaffold.files.len() == 1 { "it" } else { "one" },
                 )?;
+            }
+            if let Some(passages) = scaffold.quoted() {
+                write!(f, "{passages}\n\n")?;
             }
         }
 

@@ -2,7 +2,6 @@
 //! reduced to a pointer, a type no text of the slice speaks of left out.
 
 use std::borrow::Cow;
-use std::collections::BTreeSet;
 use std::fmt::Write as _;
 
 use emery_adapter::target::Slice;
@@ -55,30 +54,37 @@ pub(super) fn cut(slice: &Slice, scaffold: Option<&Scaffold<'_>>) -> String {
     text
 }
 
-// Every word the slice's text spells: its plan entry, its cut of the
-// specification, the signatures of the types it owns, and the scaffold's
-// brief.
-fn spelled(slice: &Slice, scaffold: Option<&Scaffold<'_>>) -> BTreeSet<String> {
-    let texts = [slice.plan.as_str(), slice.spec.as_str()]
+// The words of each text of the slice in their order: its plan entry, its
+// cut of the specification, the signatures of the types it owns, and the
+// scaffold's brief, never its passages, since a reference quoted for the
+// turn speaks of no type of this design.
+fn spelled(slice: &Slice, scaffold: Option<&Scaffold<'_>>) -> Vec<Vec<String>> {
+    [slice.plan.as_str(), slice.spec.as_str()]
         .into_iter()
         .chain(slice.types.iter().map(|owned| owned.signature.as_str()))
-        .chain(scaffold.map(|scaffold| scaffold.brief));
-    texts.flat_map(words).collect()
+        .chain(scaffold.map(|scaffold| scaffold.brief))
+        .map(words)
+        .collect()
 }
 
-// Whether the slice's text spells the type: every word of the key's
-// identifier, its stem and its anchor set aside, among the text's words, a
-// plural matching its singular.
-fn names(key: &str, spelled: &BTreeSet<String>) -> bool {
+// Whether the slice's text spells the type: the words of the key's
+// identifier, its stem and its anchor set aside, run together somewhere in
+// one text, each matching a plural as its singular, so `order line` is
+// named by `OrderLine` or `order lines` and not by `order` here and `line`
+// there.
+fn names(key: &str, spelled: &[Vec<String>]) -> bool {
     let identifier = key.split(" (").next().unwrap_or(key);
     let identifier = identifier.rsplit('.').next().unwrap_or(identifier);
     let words = words(identifier);
     !words.is_empty()
-        && words.iter().all(|word| {
-            spelled.contains(word)
-                || spelled.contains(&format!("{word}s"))
-                || word.strip_suffix('s').is_some_and(|singular| spelled.contains(singular))
+        && spelled.iter().any(|text| {
+            text.windows(words.len())
+                .any(|run| run.iter().zip(&words).all(|(spelt, word)| same(spelt, word)))
         })
+}
+
+fn same(spelt: &str, word: &str) -> bool {
+    spelt == word || spelt.strip_suffix('s') == Some(word) || word.strip_suffix('s') == Some(spelt)
 }
 
 // The key of a `Type:` block and whether the design labels it a mechanism;
