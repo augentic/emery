@@ -406,6 +406,9 @@ fn hint(error: &Error, invoked: Invoked) -> Option<Cow<'static, str>> {
         "secret-detected" => {
             "inspect the named path in `.emery/vcs/worktrees/<slice>` or `.emery/vcs/integration`, remove the credential from where the build read it (the sources, the environment, a file the model reached), and re-run `emery build`; nothing of the change set was sealed and the label stands at the last verified wave"
         }
+        "spec-rewritten" => {
+            "`spec/` in the target repository holds the sealed revision and no build writes there: inspect the named paths in `.emery/vcs/worktrees/<slice>` or `.emery/vcs/integration`, stop what wrote them (the adapter's layout, or a command the model ran through its shell), and re-run `emery build`; nothing of the change set was sealed and the label stands at the last verified wave"
+        }
         "adapter-reference" => "an adapter is an exact package reference, `namespace:name@version`",
         "refused" => {
             "the loader refused the component; the message above names why: an invalid artifact, a pre-compiled artifact where raw wasm is required, a mismatched digest, an export whose signature does not match this emery's contract (rebuild or update the copy in `~/.emery/adapters/`), or a release the binary routes nowhere, which is fetched with `wkg get <reference> -o ~/.emery/adapters/`"

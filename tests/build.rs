@@ -3242,3 +3242,176 @@ async fn build_change_unreadable() {
     assert!(!calls.iter().any(|call| call.starts_with("label ")), "no label: {calls:?}");
     provider.vcs.assert_exhausted();
 }
+
+// --- the specification guard ---
+
+// A slice's build that left a path under `spec/` changed — written, or
+// removed — is refused before anything of it is sealed: every such path is
+// named, no file is read for a credential, nothing is merged or labelled,
+// and the copy stays for inspection.
+#[tokio::test]
+async fn build_spec_rewritten_in_slice() {
+    let (provider, _) = planned();
+    let copy = worktree("SLICE-001");
+    changed(
+        &provider,
+        "SLICE-001",
+        &[
+            ("src/auth.rs", ChangeKind::Added),
+            ("spec/spec.json", ChangeKind::Modified),
+            ("spec/plan.json", ChangeKind::Deleted),
+        ],
+    );
+    provider.files.holds(&copy, "src/auth.rs", PEM);
+
+    let envelope =
+        fail(&provider, &["emery", "build", "--config", PROJECT_CONFIG], 1, "spec-rewritten").await;
+
+    assert_message(
+        &envelope,
+        "slice `SLICE-001` (authentication) failed in wave 1: what the build wrote touches \
+         `spec/`, where the sealed specification lives, so none of it is sealed:\n- \
+         spec/spec.json\n- spec/plan.json",
+    );
+    assert!(
+        envelope["hint"].as_str().is_some_and(|hint| hint.contains(".emery/vcs/worktrees/<slice>")),
+        "{envelope}"
+    );
+    assert!(reads(&provider).is_empty(), "refused before any path is read for a credential");
+    assert!(provider.vcs.messages().is_empty(), "nothing is sealed");
+    assert!(provider.vcs.merged().is_empty(), "nothing is merged");
+    let calls = provider.vcs.calls();
+    assert_eq!(calls.last().cloned(), Some(format!("pending {copy}")), "{calls:?}");
+    assert!(!calls.contains(&format!("remove {copy}")), "left for inspection: {calls:?}");
+    assert!(!calls.iter().any(|call| call.starts_with("label ")), "no label: {calls:?}");
+    assert!(provider.target.verifies().is_empty(), "a wave that did not integrate is not verified");
+    assert_eq!(provider.target.calls().len(), 1, "the run stops at the first");
+    provider.vcs.assert_exhausted();
+}
+
+// A layout the adapter's initialisation scaffolds under `spec/` refuses the
+// build before anything is sealed or any slice dispatched, naming the
+// initialisation.
+#[tokio::test]
+async fn build_init_spec_rewritten() {
+    let (provider, _) = planned();
+    initialised(&provider, &["spec/design.json", "package.json"]);
+
+    let envelope =
+        fail(&provider, &["emery", "build", "--config", PROJECT_CONFIG], 1, "spec-rewritten").await;
+
+    assert_message(
+        &envelope,
+        "what the initialisation wrote touches `spec/`, where the sealed specification lives, so \
+         none of it is sealed:\n- spec/design.json",
+    );
+    assert_eq!(provider.target.inits(), [INTEGRATION]);
+    assert!(provider.target.calls().is_empty(), "no slice is dispatched");
+    assert!(reads(&provider).is_empty(), "refused before any path is read for a credential");
+    assert!(provider.vcs.messages().is_empty(), "nothing is sealed");
+    let calls = provider.vcs.calls();
+    assert_eq!(calls.last().cloned(), Some(format!("pending {INTEGRATION}")), "{calls:?}");
+    assert!(!calls.contains(&format!("remove {INTEGRATION}")), "left for inspection: {calls:?}");
+    provider.vcs.assert_exhausted();
+}
+
+// A merge's resolution that leaves a path under `spec/` changed in the
+// slice's copy is refused before it is sealed, as a build's or a
+// verification's change set is.
+#[tokio::test]
+async fn build_conflict_spec_rewritten() {
+    let (provider, _) = conflicted_at_lib(&[RESOLVED_LIB]);
+    let copy = worktree("SLICE-003");
+    changed(&provider, "SLICE-003", &[("src/lib.rs", ChangeKind::Modified)]);
+    changed(
+        &provider,
+        "SLICE-003",
+        &[("src/lib.rs", ChangeKind::Modified), ("spec/spec.json", ChangeKind::Modified)],
+    );
+
+    let envelope =
+        fail(&provider, &["emery", "build", "--config", PROJECT_CONFIG], 1, "spec-rewritten").await;
+
+    assert_message(
+        &envelope,
+        "slice `SLICE-003` (orders) failed in wave 1; SLICE-001 merged before it stays committed \
+         in `./.emery/vcs/integration`: what the merge's resolution wrote touches `spec/`, where \
+         the sealed specification lives, so none of it is sealed:\n- spec/spec.json",
+    );
+    assert_eq!(provider.files.writes().len(), 1, "the resolution was written");
+    let calls = provider.vcs.calls();
+    assert!(
+        !calls.contains(&format!("commit {copy} SLICE-003 orders resolved at src/lib.rs")),
+        "nothing of it is sealed: {calls:?}"
+    );
+    left_for_inspection(&provider);
+    provider.model.assert_exhausted();
+    provider.vcs.assert_exhausted();
+}
+
+// A path under `spec/` a verification's repairs leave changed refuses the
+// wave before its changes are sealed: the slices merged in it stay
+// committed, the wave's commit is never made, and the label stands where
+// the last verified wave left it.
+#[tokio::test]
+async fn build_spec_rewritten_in_repair() {
+    let (provider, id) = planned();
+    initialised(&provider, &[]);
+    provider.vcs.pending.script(
+        INTEGRATION,
+        Ok(vec![
+            change("src/orders.rs", ChangeKind::Modified),
+            change("spec/spec.json", ChangeKind::Modified),
+        ]),
+    );
+
+    let envelope =
+        fail(&provider, &["emery", "build", "--config", PROJECT_CONFIG], 1, "spec-rewritten").await;
+
+    assert_message(
+        &envelope,
+        &format!(
+            "wave 1 failed; SLICE-001 merged in it stays committed in `{INTEGRATION}`; \
+             `emery/{id}` is not set: what the verification wrote touches `spec/`, where the \
+             sealed specification lives, so none of it is sealed:\n- spec/spec.json"
+        ),
+    );
+    assert!(reads(&provider).is_empty(), "refused before any path is read for a credential");
+    assert_eq!(provider.vcs.messages().len(), 1, "the slice's commit alone; no wave commit");
+    let calls = provider.vcs.calls();
+    assert_eq!(calls.last().cloned(), Some(format!("pending {INTEGRATION}")), "{calls:?}");
+    assert!(!calls.iter().any(|call| call.starts_with("label ")), "no label: {calls:?}");
+    assert!(!calls.contains(&format!("remove {INTEGRATION}")), "left for inspection: {calls:?}");
+    assert_eq!(provider.target.calls().len(), 1, "the second wave is never built");
+    provider.vcs.assert_exhausted();
+}
+
+// A merge the rules leave conflicted under `spec/` is nothing the model is
+// handed: the slice is refused as `merge-unresolved` naming the reserved
+// directory, before any side is read or any turn is spent.
+#[tokio::test]
+async fn build_conflict_at_spec() {
+    let (provider, _) = planned();
+    let copy = worktree("SLICE-001");
+    wrote(&provider, AUTHENTICATION);
+    provider.vcs.merges.script(INTEGRATION, Ok(conflicted(&["spec/spec.json"])));
+
+    let envelope =
+        fail(&provider, &["emery", "build", "--config", PROJECT_CONFIG], 1, "merge-unresolved")
+            .await;
+
+    assert_message(
+        &envelope,
+        "slice `SLICE-001` (authentication) failed in wave 1: its merge conflicts at \
+         spec/spec.json, and the conflict cannot be resolved: `spec/spec.json` is under `spec/`, \
+         where the specification lives",
+    );
+    assert!(listed(&provider).is_empty(), "neither side is read");
+    assert!(provider.files.writes().is_empty(), "nothing is written");
+    let calls = provider.vcs.calls();
+    assert!(!calls.contains(&format!("remove {copy}")), "left for inspection: {calls:?}");
+    assert!(!calls.contains(&format!("remove {INTEGRATION}")), "left for inspection: {calls:?}");
+    assert!(!calls.iter().any(|call| call.starts_with("label ")), "no label: {calls:?}");
+    assert!(provider.target.verifies().is_empty(), "a wave that did not integrate is not verified");
+    provider.vcs.assert_exhausted();
+}

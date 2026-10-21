@@ -1034,6 +1034,55 @@ async fn build_change_unreadable() {
     );
 }
 
+// The sealed specification a slice's working copy carries under `spec/` is
+// the store's alone to write: the SDK's tools refuse the path, so the model's
+// shell is the one way to it, and a document it rewrote there refuses the
+// slice before anything is sealed, the labelled commit still holding the
+// document as `apply` sealed it and the copy as the shell left it.
+#[tokio::test]
+async fn build_spec_rewritten() {
+    let (roots, backends, base) = specified().await;
+    let project = roots.project.path();
+    let sealed = roots.git.labelled(project);
+    let document = roots.git.run(project, &["show", &format!("{sealed}:spec/spec.json")]);
+    let copy = project.join(".emery/vcs/worktrees/SLICE-001");
+
+    let model = shelled(copy.clone(), |copy| {
+        fs::write(copy.join("spec/spec.json"), "{}\n").expect("rewriting the specification");
+    });
+    let run = emery(roots.deployment(&["--format", "json", "build"]), &backends, &model).await;
+
+    let envelope = refused(&run, 1, "spec-rewritten");
+    assert_eq!(model.seen().len(), 1, "the build turn alone: no verify turn is put");
+    assert_message(
+        &envelope,
+        "slice `SLICE-001` (greeting) failed in wave 1: what the build wrote touches `spec/`, \
+         where the sealed specification lives, so none of it is sealed:\n- spec/spec.json",
+    );
+    assert!(
+        envelope["hint"].as_str().is_some_and(|hint| hint.contains(".emery/vcs/worktrees/<slice>")),
+        "{envelope}"
+    );
+    assert_eq!(roots.git.labelled(project), sealed, "the label stands where `apply` left it");
+    assert_eq!(roots.git.run(project, &["rev-parse", "HEAD"]), base);
+    assert_eq!(
+        roots.git.run(project, &["show", &format!("{sealed}:spec/spec.json")]),
+        document,
+        "the labelled commit holds the document as it was sealed"
+    );
+    assert_eq!(
+        fs::read_to_string(copy.join("spec/spec.json")).expect("the copy stays"),
+        "{}\n",
+        "the copy stays as the shell left it"
+    );
+    assert_eq!(
+        roots.git.run(&copy, &["status", "--porcelain", "--untracked-files=all"]),
+        "M spec/spec.json",
+        "nothing of the change set is sealed"
+    );
+    assert!(project.join(".emery/vcs/integration").exists(), "left for inspection");
+}
+
 // A checkout with a change the operator has not committed is no base: the
 // path is named, the engine's own `.emery/` is not, and nothing is built.
 #[tokio::test]

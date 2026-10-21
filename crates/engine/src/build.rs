@@ -13,8 +13,8 @@ use std::collections::BTreeSet;
 use std::fmt::{self, Display};
 use std::num::NonZeroUsize;
 
-use emery_adapter::beneath;
 use emery_adapter::target::{DesignType, Outcome, Slice as SliceInput, Target, Task};
+use emery_adapter::{BadPath, SPECIFICATION, beneath};
 use futures::{FutureExt as _, StreamExt as _, stream};
 use omnia_sdk::api::Context;
 use omnia_sdk::plugins::Digest;
@@ -89,11 +89,14 @@ use crate::{EntryKind, Files, RETRIES, is_retryable, secrets, store, vcs};
 ///     changes outside `.emery/`, listed, or no commit;
 ///   - with code `verify-failed`, when the adapter does not verify a wave,
 ///     each failing check listed;
-///   - with code `secret-detected`, when a path the initialisation, a
+///   - with code `spec-rewritten`, when a path the initialisation, a
 ///     slice's build, a conflict's resolution, or a wave's verification
-///     changed carries a credential, each listed with what it carries;
-///     nothing of the change set is sealed, and the copy stays as it was
-///     written;
+///     changed lies under `spec/`, where the sealed specification lives,
+///     each listed; nothing of the change set is sealed, and the copy stays
+///     as it was written;
+///   - with code `secret-detected`, when such a path carries a credential,
+///     each listed with what it carries; nothing of the change set is
+///     sealed, and the copy stays as it was written;
 ///   - the initialisation, when the adapter refuses the tree, as when a
 ///     directory stands where a file of its layout goes;
 ///   - with code `merge-unresolved`, when a path the adapter's rules leave
@@ -706,12 +709,9 @@ impl Run<'_> {
         }
 
         // what the build changed, as the copy holds it rather than as the
-        // report lists it, held to the secret gate before any of it is sealed
+        // report lists it, held to the seal gates before any of it is sealed
         let pending = built.worktree.pending(provider).await?;
-        let leaks = secrets::findings(provider, built.worktree.path(), &pending).await?;
-        if !leaks.is_empty() {
-            return Err(secrets::refusal("the build", &leaks));
-        }
+        gated(provider, built.worktree.path(), "the build", &pending).await?;
         let mut written: Vec<String> = pending.iter().map(|change| change.path.clone()).collect();
         written.sort_unstable();
 
@@ -815,14 +815,11 @@ impl Run<'_> {
             });
         }
 
-        // what the checks and their repairs left behind, held to the secret
-        // gate and sealed as the wave's own commit
+        // what the checks and their repairs left behind, held to the seal
+        // gates and sealed as the wave's own commit
         let pending = self.integration.pending(provider).await?;
         if !pending.is_empty() {
-            let leaks = secrets::findings(provider, self.integration.path(), &pending).await?;
-            if !leaks.is_empty() {
-                return Err(secrets::refusal("the verification", &leaks));
-            }
+            gated(provider, self.integration.path(), "the verification", &pending).await?;
             let ids: Vec<String> = merged.iter().map(ToString::to_string).collect();
             let message = format!(
                 "Wave {wave} verified\n\nRevision: {}\nAdapter: {}\nSlices: {}",
@@ -927,7 +924,7 @@ impl UnresolvedMerge<'_> {
             Err(error) => return Err(error),
         };
 
-        // the resolutions written in the slice's copy, held to the secret gate,
+        // the resolutions written in the slice's copy, held to the seal gates,
         // and sealed over its commit; one that keeps the slice's own side
         // changes nothing, and the slice's commit stands
         for file in &resolutions {
@@ -936,10 +933,7 @@ impl UnresolvedMerge<'_> {
             provider.write(worktree.path(), &path, file.content.as_bytes()).await?;
         }
         let pending = worktree.pending(provider).await?;
-        let leaks = secrets::findings(provider, worktree.path(), &pending).await?;
-        if !leaks.is_empty() {
-            return Err(secrets::refusal("the merge's resolution", &leaks));
-        }
+        gated(provider, worktree.path(), "the merge's resolution", &pending).await?;
         let mut resolved: Vec<String> = resolutions.into_iter().map(|file| file.path).collect();
         resolved.sort_unstable();
         let subject = format!("{} {} resolved at {}", slice.id, slice.name, resolved.join(", "));
@@ -1059,7 +1053,7 @@ async fn kind_at<P: Files>(provider: &P, at: &str, path: &str) -> Result<Option<
 }
 
 // Has the adapter scaffold its layout into the tree at `at` and answers what
-// it left pending, held to the secret gate. Not put again on a failure
+// it left pending, held to the seal gates. Not put again on a failure
 // upstream: an init puts no turn, so a failure is the adapter's.
 async fn initialise<P: Target + Vcs + Files>(
     provider: &P, adapter: &str, at: &str,
@@ -1070,12 +1064,39 @@ async fn initialise<P: Target + Vcs + Files>(
         return Err(server_error!("`{adapter}` answered {outcome} to {}", Task::Init));
     }
     let pending = vcs::pending(provider, at).await?;
-    let leaks = secrets::findings(provider, at, &pending).await?;
-    if !leaks.is_empty() {
-        return Err(secrets::refusal("the initialisation", &leaks));
-    }
+    gated(provider, at, "the initialisation", &pending).await?;
     tracing::info!(scaffolded = pending.len(), "initialised");
     Ok(pending)
+}
+
+// Holds what `wrote` left pending at `at` to the two gates every seal of a
+// build passes: no path under `spec/`, since the sealed specification is the
+// store's alone to write and a commit carrying one would rewrite the revision
+// its label names, then the secret gate. The specification guard reads
+// nothing, so it runs first and a refusal reads no file.
+async fn gated<P: Files>(
+    provider: &P, at: &str, wrote: &str, pending: &[Change],
+) -> Result<(), Error> {
+    let rewritten: Vec<String> = pending
+        .iter()
+        .filter(|change| matches!(beneath(&change.path), Err(BadPath::Specification)))
+        .map(|change| format!("- {}", change.path))
+        .collect();
+    if !rewritten.is_empty() {
+        return Err(Error::BadRequest {
+            code: "spec-rewritten".into(),
+            description: format!(
+                "what {wrote} wrote touches `{SPECIFICATION}/`, where the sealed specification \
+                 lives, so none of it is sealed:\n{}",
+                rewritten.join("\n")
+            ),
+        });
+    }
+    let leaks = secrets::findings(provider, at, pending).await?;
+    if !leaks.is_empty() {
+        return Err(secrets::refusal(wrote, &leaks));
+    }
+    Ok(())
 }
 
 // A slice's failure keeps its class and code; the description gains the
