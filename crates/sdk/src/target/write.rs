@@ -98,10 +98,13 @@ impl Writer {
             tools.push(Tool::Function(Function::of::<RestoreFiles>(
                 RESTORE_FILES,
                 "Put one or more files the brief says were scaffolded before this turn back as \
-                 they were scaffolded, each path `/`-separated and relative to `$WORKSPACE`, \
-                 so a skeleton written wrong is recovered whole and filled again. A path that \
-                 was not scaffolded, or that the tree lacked before this turn, refuses the \
-                 call whole and changes nothing.",
+                 they were scaffolded, each path `/`-separated and relative to `$WORKSPACE`. \
+                 This is recovery for a skeleton a refused or mistaken write left wrong: every \
+                 edit made to the file this turn is discarded with it and the file is filled \
+                 again from its skeleton, so a file whose edits stand is not restored, and a \
+                 turn with no refusal before it has no call for this tool. A path that was not \
+                 scaffolded, or that the tree lacked before this turn, refuses the call whole \
+                 and changes nothing.",
             )));
         }
         tools

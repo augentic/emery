@@ -173,15 +173,17 @@ impl Grant {
         (union != WorkerGrant::default()).then_some(union)
     }
 
-    /// Returns the entries of `grants` that break the grant's shape, each
-    /// named; empty for a list the host holds to nothing.
+    /// Returns the entries of `grants` that violate the grant grammar.
     ///
-    /// The shape is the grant's grammar: an `egress` entry is a host name,
-    /// a `read` entry is `~/<path>` over a plain relative path, an `env`
-    /// name is `[A-Za-z_][A-Za-z0-9_]*`, and no variable is set to two
-    /// values. What the backend refuses beyond the shape, a credential
-    /// store or an address, is its own rule and not read here. [`build`]
-    /// and [`verify`] refuse grants with findings before any turn.
+    /// An empty vector means `grants` is valid. [`build`] and [`verify`]
+    /// reject invalid grants before starting a turn.
+    ///
+    /// Every grant must satisfy four rules:
+    ///
+    /// - Each `egress` entry is a host name (`example.com` or `*.example.com`).
+    /// - Each `read` entry is `~/<path>` over a plain relative path.
+    /// - Each `env` name matches `[A-Za-z_][A-Za-z0-9_]*`.
+    /// - No environment variable is assigned two different values.
     #[must_use]
     pub fn findings(grants: &[Self]) -> Vec<String> {
         let mut findings = Vec::new();
@@ -222,29 +224,21 @@ impl Grant {
     }
 }
 
-/// What a target adapter declares about itself: the rules it merges under and the grants its worker carries.
+/// Static configuration a target adapter declares for merge rules and worker grants.
 ///
-/// [`TargetAdapter::metadata`] answers it from the adapter's compiled-in
-/// constants. [`export_target!`](crate::export_target) answers the
-/// component's `metadata` over its [`rules`](Self::rules), and [`build`]
-/// and [`verify`] carry its [`grants`](Self::grants) with every turn. The
-/// default declares no rule and no grant.
+/// Returned by [`TargetAdapter::metadata`]. [`export_target!`](crate::export_target)
+/// exposes [`rules`](Self::rules) through the component's `metadata` export,
+/// and [`build`] and [`verify`] attach [`grants`](Self::grants) to every turn.
+/// The default declares no rules and no grants.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct Metadata {
-    /// The rules the engine merges every slice into the integrated tree
-    /// under, since the adapter alone knows which files its builds
-    /// regenerate and which they extend.
+    /// Merge rules applied when integrating each slice into the tree.
     ///
-    /// The first rule matching a conflicting path applies. A conflict no
-    /// rule resolves is the engine's: it resolves the file with the model
-    /// and merges the resolution, so the rules spare a turn where a list or
-    /// a regenerated file decides the outcome.
+    /// The first rule matching a conflicting path applies; paths matched by no
+    /// rule are resolved by the engine through a merge turn.
     pub rules: &'static [MergeRule],
-    /// What the model's worker reaches beyond the tree in every build and
-    /// verify turn, since the adapter alone knows the toolchain its prompts
-    /// run: one [`Grant`] per program, each spelling the registries that
-    /// program fetches from, the `~/` roots it is installed under, and the
-    /// variables it reads.
+    /// Toolchain access granted to the model's worker in [`build`] and
+    /// [`verify`] turns, one [`Grant`] per program the prompts run.
     pub grants: &'static [Grant],
 }
 
@@ -315,48 +309,49 @@ impl<'a, P> BuildContext<'a, P> {
     }
 }
 
-/// What an adapter's own code scaffolded into the workspace for a slice before its turn.
+/// Files and prompt context an adapter scaffolds into the workspace before a [`build`] turn.
 ///
-/// [`build`] renders `brief` after the design, under `What the adapter
-/// scaffolded for this slice before this turn:`, so the turn fills the
-/// files and the markers it names rather than writing them over; an empty
-/// text puts no section. `passages` follows it verbatim: what the adapter
-/// quotes for the turn from its own references, read by no gate, so a type
-/// a passage alone names is not kept in the design's cut for it; an empty
-/// text puts nothing. `files` are those files, each a [`Guarded`] naming
-/// what a whole write of it must keep: the turn changes one through
-/// `edit_files`, or through a `write_files` entry carrying every token it
-/// [`keeps`](Guarded::keeps), and puts one back as scaffolded through
-/// `restore_files`; an entry dropping a token, or a `delete`, is refused as
-/// a correction, since a skeleton written over loses its markers. `types`
-/// are the design keys of the types the adapter laid into those files, each
-/// of whose `Type:` blocks the brief's design reduces to one line pointing
-/// at the scaffold section, since the signature stands in the tree.
+/// Attach a scaffold to [`BuildContext`] with [`BuildContext::with_scaffold`]
+/// when the adapter generates skeleton files from the typed [`Slice`] for the
+/// model to fill in place.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Scaffold<'a> {
-    /// The files and the markers, as the brief states them to the model.
+    /// Markdown rendered after the design under `What the adapter scaffolded
+    /// for this slice before this turn:`.
+    ///
+    /// Names the scaffolded files and the markers to fill. An empty string
+    /// omits the section.
     pub brief: &'a str,
-    /// What the adapter quotes from its references after the scaffold section.
+    /// Reference passages appended verbatim after the scaffold section.
+    ///
+    /// Ignored when cutting the design to the slice, so types mentioned only
+    /// in quoted examples are not retained. An empty string appends nothing.
     pub passages: &'a str,
-    /// The scaffolded files, each with what a whole write of it must keep.
+    /// Guarded files that `write_files` may not delete or overwrite without
+    /// their [`Guarded::keeps`] tokens.
+    ///
+    /// When non-empty, [`build`] also exposes `restore_files` so the model can
+    /// reset a guarded file to its initial state.
     pub files: &'a [Guarded],
-    /// The design keys of the types laid into the scaffolded files.
+    /// Keys of design `Type:` blocks already laid into the scaffolded files.
+    ///
+    /// [`build`] replaces each matching data-type block in the brief's design
+    /// with a pointer to the scaffold section.
     pub types: &'a [String],
 }
 
-/// One file an adapter scaffolded for a slice, and what a whole write of it must keep.
+/// A scaffolded file protected against accidental overwrite or deletion during [`build`].
 ///
-/// A `write_files` entry naming the file is admitted when its content
-/// carries every token of `keeps`, and refused naming the tokens it drops
-/// otherwise; an empty `keeps` admits any whole write. A `delete` naming
-/// the file is refused whatever it keeps. A path the tree no longer holds
-/// is written as any other, since there is nothing left to keep.
+/// `write_files` rejects any `delete` of `path`, and rejects any whole-file
+/// write to `path` while it exists in the workspace unless the new content
+/// contains every token in [`keeps`](Self::keeps). An empty `keeps` list
+/// allows any whole-file write while still preventing deletion.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Guarded {
-    /// The root-relative path of the file.
+    /// Root-relative path of the scaffolded file.
     pub path: String,
-    /// The tokens a whole write must carry: the marker ids, the identifiers
-    /// the adapter laid, a list's anchored lines.
+    /// Substrings that any whole-file write to `path` must preserve, such as
+    /// requirement markers, item declarations, or anchored list lines.
     pub keeps: Vec<String>,
 }
 
@@ -440,21 +435,16 @@ pub trait TargetAdapter {
         Metadata::default()
     }
 
-    /// Runs `task` in the tree its context names and answers the outcome of
-    /// its kind.
+    /// Runs `task` in the tree its context names and returns the matching [`Outcome`].
     ///
-    /// An init scaffolds the layout's initial files the tree lacks through the
-    /// adapter's own code and answers [`Outcome::Initialised`]; a build's
-    /// one turn goes through [`build`](fn@build) and answers
-    /// [`Outcome::Built`]; a verify's through [`verify`](fn@verify) and
-    /// answers [`Outcome::Verified`]. An outcome of another kind is the
-    /// adapter's defect, which the export refuses as `internal`.
+    /// Returning an [`Outcome`] that does not match `task` is an adapter defect
+    /// and is rejected by the component export as `internal`.
     ///
     /// # Errors
     ///
-    /// - Returns [`Error::BadRequest`] when the tree refuses the init, as
-    ///   when a directory or a link stands where a file of the layout goes.
-    /// - Returns [`Error::ServerError`] when the init cannot write the tree.
+    /// - Returns [`Error::BadRequest`] when the tree refuses [`Task::Init`], such
+    ///   as when a directory or symlink occupies a layout file's path.
+    /// - Returns [`Error::ServerError`] when [`Task::Init`] cannot write the tree.
     /// - Returns what [`build`](fn@build) or [`verify`](fn@verify) returns.
     fn run<P: Model>(task: Task<'_, P>) -> impl Future<Output = Result<Outcome, Error>>;
 }
@@ -476,75 +466,56 @@ pub fn metadata(rules: &[MergeRule]) -> TargetMetadata {
     }
 }
 
-/// Builds the slice of `ctx` into its workspace through one gated turn.
+/// Builds the slice of `ctx` into its workspace through one gated model turn.
 ///
-/// `docs` must contain `build.md`, which becomes the system prompt. The turn
-/// carries the slice's plan entry, its cut of the specification, the design
-/// cut to the slice, and the [`brief`](Scaffold::brief) of `ctx`'s
-/// [`scaffold`](BuildContext::scaffold), where the adapter set one: the
-/// files and the markers the model fills, stated so the turn edits them
-/// rather than writing them over, with the scaffold's
-/// [`passages`](Scaffold::passages) after it. The design's cut keeps every
-/// paragraph and every mechanism type; a data type among the scaffold's
-/// [`types`](Scaffold::types) is one line pointing at the scaffold section,
-/// and one the slice's [`types`](Slice::types) do not own and none of its
-/// text spells — the plan entry, the specification cut, the owned
-/// signatures, the scaffold's brief, never its passages — is left out and
-/// listed at the end by key; a key of several words is spelled only where
-/// the text runs them together, `order line` and not `order` here and
-/// `line` there. It lends the workspace with the
-/// worker grant `ctx`'s [`grants`](BuildContext::grants) unite to, and
-/// offers the embedded references through the reference tools. It writes
-/// through two tools, and a third where the adapter scaffolded files.
-/// `write_files` writes one or more files beneath the workspace per call,
-/// listed or mapped by path, or that shape sent as JSON text, each created
-/// or replaced whole, at a path [`beneath`](crate::beneath) accepts and no
-/// symlink stands on, and removes the files its `delete` names; an entry
-/// that would leave a held file empty or under half its size is refused
-/// unless it sets `shrink`, and an entry naming one of the scaffold's
-/// [`files`](Scaffold::files) the tree still holds is refused unless its
-/// content carries every token the file [`keeps`](Guarded::keeps), the
-/// refusal naming the tokens it drops, as a `delete` naming one is refused
-/// whatever it keeps. `edit_files` replaces the one place each edit's
-/// `find` matches within a file the workspace holds, the list of edits sent
-/// as JSON text read the same; a `find` matching nothing is refused with
-/// the line of the file its first line is on and the line where the file
-/// parts from it, or the file's opening line, so the refusal carries the
-/// text to copy.
-/// `restore_files` puts the scaffolded files it names back as they stood
-/// when the turn began, a path that was not scaffolded or that the tree
-/// lacked then refused. A call any tool refuses anywhere changes nothing.
-/// The answered
-/// [`Report`] is held to the slice by
-/// [`Report::findings`], to the tree — a `written` path names a regular
-/// file under the workspace — and to `check`, the adapter's own rule over
-/// the report and the tree as the model left it; every finding, the
-/// adapter's among the rest, is returned to the model for one correction
-/// round, until the host's round limit is reached. A finding is an
-/// instruction the model repairs by, so it names the repair, not the
-/// difference alone. `check` runs on every candidate, so it reads what one
-/// gate reads and runs nothing. An adapter with no rule passes
-/// `|_| Ok(Vec::new())`. The accepted report's `written` is filled in:
-/// every path it lists, spelled root-relative, and every file a tool wrote
-/// that the tree still holds, once each and sorted.
+/// `docs` must contain `build.md`, which becomes the system prompt. The brief
+/// carries the slice's plan entry, its specification cut, the design cut to the
+/// slice (omitting data types owned by other slices that the slice's text does
+/// not mention), and any [`Scaffold`] set on `ctx`. The workspace is lent with
+/// the [`Grant::union`] of `ctx`'s [`grants`](BuildContext::grants).
 ///
-/// A failure upstream is not put again here: the turn writes the tree as it
-/// goes, so a second turn would start over what the first left. The caller
-/// that owns the tree may cut a fresh one and ask again.
+/// The turn serves `docs` through `list_docs` and `read_doc`, and modifies the
+/// workspace through up to three tools:
+///
+/// - `write_files` creates or replaces files whole at paths
+///   [`beneath`](crate::beneath) accepts (following no symlink) and removes
+///   files listed in `delete`. It refuses writes that empty an existing file or
+///   halve its size without `shrink: true`, and refuses writes or deletions
+///   that violate a [`Guarded`] file in [`Scaffold::files`].
+/// - `edit_files` replaces the single occurrence of each edit's `find` string
+///   in an existing file.
+/// - `restore_files`, registered when [`Scaffold::files`] is non-empty, resets
+///   named scaffolded files to their contents at the start of the turn.
+///
+/// Any tool call that fails a check is rejected as a whole without changing the
+/// workspace.
+///
+/// Each candidate [`Report`] must pass three checks before the turn completes:
+///
+/// - [`Report::findings`] verifies that `covered` names only the slice's
+///   requirements and `written` contains valid root-relative paths.
+/// - Every `written` path must name a regular file in the workspace.
+/// - `check` runs the adapter's own validation over the candidate report and
+///   workspace; pass `|_| Ok(Vec::new())` when none is needed.
+///
+/// Findings from all three checks are returned to the model for correction
+/// until a candidate passes or the round limit is reached. The accepted
+/// report's `written` list is normalised and augmented with every file the
+/// tools wrote that still stands in the workspace.
+///
+/// Upstream failures are not retried because the turn mutates the workspace in
+/// place. The caller may cut a fresh working copy and call `build` again.
 ///
 /// # Errors
 ///
-/// - Returns [`Error::BadRequest`] when the model rejects the request, or
-///   when no valid report is produced within the available rounds or the
-///   backend's time budget.
-/// - Returns [`Error::ServerError`] when `docs` does not contain `build.md`,
-///   when `ctx`'s [`grants`](BuildContext::grants) have
-///   [`findings`](Grant::findings), or when a scaffolded file the tree
-///   holds cannot be read, before any turn.
+/// - Returns [`Error::BadRequest`] when the model rejects the request or
+///   produces no valid report within the round limit or time budget.
+/// - Returns [`Error::ServerError`] before any turn when `docs` lacks
+///   `build.md`, `ctx`'s [`grants`](BuildContext::grants) have
+///   [`findings`](Grant::findings), or a guarded file in the workspace cannot
+///   be read.
 /// - Returns [`Error::BadGateway`] when a model tool or transport fails.
-/// - Returns the error `check` fails with, whatever its class: the
-///   candidate it failed on ends the turn, since a tree the adapter cannot
-///   read is the run's failure and not the model's to repair.
+/// - Returns the [`Error`] returned by `check`, ending the turn immediately.
 pub async fn build<P: Model>(
     ctx: &BuildContext<'_, P>, docs: &'static [Doc],
     mut check: impl FnMut(&Report) -> Result<Vec<String>, Error> + Send,
@@ -618,35 +589,30 @@ pub async fn build<P: Model>(
     Ok(report)
 }
 
-/// Verifies the integrated tree of `ctx` through one gated turn.
+/// Verifies the integrated tree of `ctx` through one gated model turn.
 ///
 /// `docs` must contain `verify.md`, which becomes the system prompt. The turn
-/// lends the tree with the worker grant `ctx`'s
-/// [`grants`](VerifyContext::grants) unite to and offers the embedded
-/// references through the reference tools and the same
-/// `write_files` and `edit_files` a build has: the model
-/// runs the checks the prompt names through its shell, repairs what they
-/// find in the tree, runs them again, and answers what they finally found.
-/// The answered [`Verdict`] is held to [`Verdict::findings`] and to `check`,
-/// the adapter's own rule over the verdict and the tree as the model left
-/// it; every finding is returned to the model for one correction round,
-/// until the host's round limit is reached, so a verdict cannot pass over a
-/// tree that breaks the adapter's rule. An adapter with no rule passes
-/// `|_| Ok(Vec::new())`. A verdict that fails is an answer, not an error:
-/// the caller decides what a failed wave means, and what the repairs left
-/// in the tree is the caller's to seal.
+/// lends `ctx.workspace` with the [`Grant::union`] of `ctx`'s
+/// [`grants`](VerifyContext::grants), serves `docs` through `list_docs` and
+/// `read_doc`, and provides `write_files` and `edit_files` so the model can
+/// run the prompt's checks in its shell and repair any failures in place.
+///
+/// Each candidate [`Verdict`] is checked with [`Verdict::findings`] and passed
+/// to `check` (use `|_| Ok(Vec::new())` when the adapter has no extra rules).
+/// Findings are returned to the model for correction until a candidate passes
+/// or the round limit is reached. A verdict with `passed: false` is returned
+/// as `Ok`, leaving the caller to handle the failed wave and any repairs left
+/// in the workspace.
 ///
 /// # Errors
 ///
-/// - Returns [`Error::BadRequest`] when the model rejects the request or no
-///   valid verdict is produced within the available rounds or the backend's
-///   time budget.
-/// - Returns [`Error::ServerError`] when `docs` does not contain
-///   `verify.md`, or when `ctx`'s [`grants`](VerifyContext::grants) have
-///   [`findings`](Grant::findings), before any turn.
+/// - Returns [`Error::BadRequest`] when the model rejects the request or
+///   produces no valid verdict within the round limit or time budget.
+/// - Returns [`Error::ServerError`] before any turn when `docs` lacks
+///   `verify.md` or `ctx`'s [`grants`](VerifyContext::grants) have
+///   [`findings`](Grant::findings).
 /// - Returns [`Error::BadGateway`] when a model tool or transport fails.
-/// - Returns the error `check` fails with, whatever its class, the
-///   candidate it failed on ending the turn.
+/// - Returns the [`Error`] returned by `check`, ending the turn immediately.
 pub async fn verify<P: Model>(
     ctx: &VerifyContext<'_, P>, docs: &'static [Doc],
     mut check: impl FnMut(&Verdict) -> Result<Vec<String>, Error> + Send,
@@ -829,7 +795,8 @@ impl Display for Brief<'_> {
                      `write_files` with every marker and name the skeleton holds still in it; \
                      an entry that drops one is refused whole naming what it dropped, as a \
                      `delete` naming one of them is. `restore_files` puts {one} back as it was \
-                     scaffolded.\n\n",
+                     scaffolded, the turn's edits to it discarded: recovery after a refusal, \
+                     not a step.\n\n",
                     count = if scaffold.files.len() == 1 { "file" } else { "files" },
                     are = if scaffold.files.len() == 1 { "is" } else { "are" },
                     one = if scaffold.files.len() == 1 { "it" } else { "one" },
