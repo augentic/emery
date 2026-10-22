@@ -123,38 +123,56 @@ class: slide-light
 
 <Eyebrow text="HOW TO READ THE MODEL · WHAT IT IS NOT" />
 
-# What it is not.
+<div class="ed-split">
+<div class="ed-prose-col">
 
-<p class="slide-lead">Four things people hear when they first see a model like this, and why none of them is true here.</p>
+# What it<br>is not.
 
-<div class="not-grid">
-<div class="not-item">
-<span class="not-item-num">01</span>
-<div>
-<h3>Not a <s>ban</s></h3>
-<p>Tier 0 is where every app starts, and it is discovery. Nobody is punished for building. <strong>The invitation is to bring it into the workspace, where it is safer and easier to build.</strong></p>
+<p class="ed-prose">When people first see a governance framework, they brace for four familiar traps: a ban on building, a slow review committee, a maturity ladder everyone is forced to climb, or a disguised tool mandate.</p>
+<p class="ed-prose"><strong>None of those is true here.</strong> The moment builders think Tier 0 is forbidden, they hide and your inventory becomes fiction. The Trust Model replaces every gatekeeping reflex with an open workspace and proportionate clearances.</p>
 </div>
-</div>
-<div class="not-item">
-<span class="not-item-num">02</span>
-<div>
-<h3>Not a <s>review board</s></h3>
-<p>The first clearance is automated and self-service. A person signs once for live data and once for production. <strong>Nothing waits in a queue.</strong></p>
-</div>
-</div>
-<div class="not-item">
-<span class="not-item-num">03</span>
-<div>
-<h3>Not a <s>ladder everyone climbs</s></h3>
-<p>Roughly three in four apps belong at Tier 1 for life. <strong>Graduation is for the one in twenty that fails the Monday 9am test</strong>, where operations stall if it stops.</p>
-</div>
-</div>
-<div class="not-item">
-<span class="not-item-num">04</span>
-<div>
-<h3>Not a <s>technology decision</s></h3>
-<p>The model is about earned trust and ownership. <strong>Omnia and Emery make two of the clearances cheaper; the tiers stand without them.</strong></p>
-</div>
+<div class="ed-diagram-pane">
+<svg viewBox="0 0 640 440" aria-hidden="true">
+  <!-- Column Headers -->
+  <text x="20" y="34" class="svg-kicker" fill="#b4234e">WHAT PEOPLE BRACE FOR</text>
+  <text x="296" y="34" class="svg-kicker" fill="#0c7fa3">WHAT THE TRUST MODEL ACTUALLY IS</text>
+  <line x1="20" y1="48" x2="620" y2="48" stroke="rgba(13,16,48,0.16)" stroke-width="1.2" />
+
+  <!-- Row 01 -->
+  <text x="20" y="92" class="svg-kicker" fill="#b4234e">01 · NOT A BAN</text>
+  <text x="20" y="114" class="svg-h3" fill="rgba(13,16,48,0.42)" text-decoration="line-through">Punish Tier 0 shadow IT</text>
+  <line x1="226" y1="108" x2="278" y2="108" stroke="#0c7fa3" stroke-width="1.6" />
+  <polygon points="272,103 282,108 272,113" fill="#0c7fa3" />
+  <text x="296" y="102" class="svg-h3" fill="#0d1030">An invitation into the workspace</text>
+  <text x="296" y="122" class="svg-caption" fill="rgba(13,16,48,0.6)">Tier 0 is discovery — bring it into The Codex where it is safer &amp; easier</text>
+  <line x1="20" y1="146" x2="620" y2="146" stroke="rgba(13,16,48,0.1)" stroke-width="1" />
+
+  <!-- Row 02 -->
+  <text x="20" y="186" class="svg-kicker" fill="#b4234e">02 · NOT A REVIEW BOARD</text>
+  <text x="20" y="208" class="svg-h3" fill="rgba(13,16,48,0.42)" text-decoration="line-through">Wait in a committee queue</text>
+  <line x1="226" y1="202" x2="278" y2="202" stroke="#0c7fa3" stroke-width="1.6" />
+  <polygon points="272,197 282,202 272,207" fill="#0c7fa3" />
+  <text x="296" y="196" class="svg-h3" fill="#0d1030">Automated first; two sign-offs in life</text>
+  <text x="296" y="216" class="svg-caption" fill="rgba(13,16,48,0.6)">Pipeline clears T1; one contract sign-off at T2; one production sign-off at T3</text>
+  <line x1="20" y1="240" x2="620" y2="240" stroke="rgba(13,16,48,0.1)" stroke-width="1" />
+
+  <!-- Row 03 -->
+  <text x="20" y="280" class="svg-kicker" fill="#b4234e">03 · NOT A LADDER</text>
+  <text x="20" y="302" class="svg-h3" fill="rgba(13,16,48,0.42)" text-decoration="line-through">Every app must reach T3</text>
+  <line x1="226" y1="296" x2="278" y2="296" stroke="#0c7fa3" stroke-width="1.6" />
+  <polygon points="272,291 282,296 272,301" fill="#0c7fa3" />
+  <text x="296" y="290" class="svg-h3" fill="#0d1030">~75% belong at Tier 1 for life</text>
+  <text x="296" y="310" class="svg-caption" fill="rgba(13,16,48,0.6)">Graduation is only for the ~5% that fail the Monday 9am test</text>
+  <line x1="20" y1="334" x2="620" y2="334" stroke="rgba(13,16,48,0.1)" stroke-width="1" />
+
+  <!-- Row 04 -->
+  <text x="20" y="374" class="svg-kicker" fill="#b4234e">04 · NOT A TOOL MANDATE</text>
+  <text x="20" y="396" class="svg-h3" fill="rgba(13,16,48,0.42)" text-decoration="line-through">Locked into one stack</text>
+  <line x1="226" y1="390" x2="278" y2="390" stroke="#0c7fa3" stroke-width="1.6" />
+  <polygon points="272,385 282,390 272,395" fill="#0c7fa3" />
+  <text x="296" y="384" class="svg-h3" fill="#0d1030">Earned trust and clear ownership</text>
+  <text x="296" y="404" class="svg-caption" fill="rgba(13,16,48,0.6)">Omnia and Emery make T2 &amp; T3 cheap; the model stands without them</text>
+</svg>
 </div>
 </div>
 

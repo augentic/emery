@@ -9,7 +9,7 @@ class: slide-hero
 
 <AmbientVideo src="/videos/hero-video-3.mp4" variant="hero" />
 
-<h6 class="slide-eyebrow">PROPELLERHEAD · SPEC-DRIVEN DELIVERY <span class="eyebrow-num">01 / 07</span></h6>
+<Eyebrow text="PROPELLERHEAD · SPEC-DRIVEN DELIVERY" />
 
 # Code is cheap.<br>Delivery is hard.
 
@@ -39,7 +39,7 @@ title: Give your domain experts a safe lane
 class: slide-light
 ---
 
-<h6 class="slide-eyebrow">PROPELLERHEAD · THE TRUST MODEL IN PRACTICE <span class="eyebrow-num">02 / 07</span></h6>
+<Eyebrow text="PROPELLERHEAD · THE TRUST MODEL IN PRACTICE" />
 
 <div class="ed-split">
 <div class="ed-prose-col">
@@ -89,7 +89,7 @@ title: One engineering problem, two disguises
 class: slide-light
 ---
 
-<h6 class="slide-eyebrow">PROPELLERHEAD · THE REWRITE TAX <span class="eyebrow-num">03 / 07</span></h6>
+<Eyebrow text="PROPELLERHEAD · THE REWRITE TAX" />
 
 <div class="ed-band">
 <div class="ed-band-top">
@@ -149,7 +149,7 @@ class: slide-sandbox
 
 <AmbientVideo src="/videos/approach-video.mp4" variant="approach" />
 
-<h6 class="slide-eyebrow">PROPELLERHEAD · TIERS 1 &amp; 2 ARCHITECTURE <span class="eyebrow-num">04 / 07</span></h6>
+<Eyebrow text="PROPELLERHEAD · TIERS 1 & 2 ARCHITECTURE" />
 
 <div class="chapter-grid">
 <div class="chapter-left">
@@ -217,7 +217,7 @@ title: A repeatable path from prototype to production
 class: slide-light
 ---
 
-<h6 class="slide-eyebrow">PROPELLERHEAD · TIER 3 GRADUATION LOOP <span class="eyebrow-num">05 / 07</span></h6>
+<Eyebrow text="PROPELLERHEAD · TIER 3 GRADUATION LOOP" />
 
 <div class="ed-split is-reversed">
 <div class="ed-diagram-pane">
@@ -284,7 +284,7 @@ title: AI makes rewriting cheap enough to be dangerous
 class: slide-light
 ---
 
-<h6 class="slide-eyebrow">PROPELLERHEAD · LEGACY MODERNISATION <span class="eyebrow-num">06 / 07</span></h6>
+<Eyebrow text="PROPELLERHEAD · LEGACY MODERNISATION" />
 
 <div class="ed-bottom-split">
 <div class="ed-bottom-canvas">
@@ -366,7 +366,7 @@ class: slide-split short-bar
 
 <div class="split-content-pane">
 <div>
-<h6 class="slide-eyebrow">PROPELLERHEAD · NEXT STEPS <span class="eyebrow-num">07 / 07</span></h6>
+<Eyebrow text="PROPELLERHEAD · NEXT STEPS" />
 
 # Start small.<br>Prove the loop.
 
