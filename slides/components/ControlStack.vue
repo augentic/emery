@@ -14,111 +14,129 @@ withDefaults(defineProps<{
 
 type LaneKey = 'build' | 'check' | 'data' | 'run'
 
-const LANES: { key: LaneKey, name: string, ask: string, icon: string }[] = [
-  { key: 'build', name: 'Build', ask: 'Who builds it, where, with what', icon: 'M4 17l6-5-6-5M12 19h8' },
-  { key: 'check', name: 'Check', ask: 'What runs on every change', icon: 'M12 3l8 3v6c0 4.5-3.4 8-8 9-4.6-1-8-4.5-8-9V6l8-3zM8.5 12l2.5 2.5 4.5-5' },
-  { key: 'data', name: 'Data', ask: 'What it can touch', icon: 'M12 3c4.4 0 8 1.3 8 3s-3.6 3-8 3-8-1.3-8-3 3.6-3 8-3zM4 6v12c0 1.7 3.6 3 8 3s8-1.3 8-3V6M4 12c0 1.7 3.6 3 8 3s8-1.3 8-3' },
-  { key: 'run', name: 'Run', ask: 'Who answers when it breaks', icon: 'M3 12h4l2.5-6 4 12 2.5-6h5' },
+const LANES: { key: LaneKey, name: string, y: number }[] = [
+  { key: 'build', name: '01 · BUILD', y: 120 },
+  { key: 'check', name: '02 · CHECK', y: 196 },
+  { key: 'data', name: '03 · DATA', y: 272 },
+  { key: 'run', name: '04 · RUN', y: 348 },
 ]
 
 const TIERS: {
   code: string
   name: string
-  via?: string
-  cells: Record<LaneKey, string>
-  chips?: Partial<Record<LaneKey, string>>
+  via: string
+  x: number
+  cells: Record<LaneKey, [string, string]>
 }[] = [
   {
     code: 'T0',
     name: 'Unmanaged',
+    via: 'Discovery',
+    x: 110,
     cells: {
-      build: 'Personal laptop, consumer AI chat',
-      check: 'Nothing runs',
-      data: 'Pasted extracts, personal keys',
-      run: 'Runs when the builder runs it',
+      build: ['Personal laptop & AI chat', 'No shared repo'],
+      check: ['Nothing runs', 'Zero automated checks'],
+      data: ['Pasted extracts', 'Spreadsheet copies'],
+      run: ['Runs on builder laptop', 'Off when closed'],
     },
   },
   {
     code: 'T1',
     name: 'Governed',
     via: 'Cleared to share',
+    x: 275,
     cells: {
-      build: 'Approved AI editor, one template, Enterprise GitHub',
-      check: 'Secret scan, dependency audit, tests on every change',
-      data: 'Synthetic or local data only',
-      run: 'Isolated sandbox, best effort',
+      build: ['Approved AI editor + template', 'The Codex · Enterprise Git'],
+      check: ['Secret scan, dep audit & tests', 'The Codex · Every push'],
+      data: ['Synthetic or local data only', 'Air-gapped from live systems'],
+      run: ['Isolated team sandbox', 'Best-effort uptime'],
     },
-    chips: { build: 'The Codex', check: 'The Codex' },
   },
   {
     code: 'T2',
     name: 'Connected',
     via: 'Cleared for live data',
+    x: 440,
     cells: {
-      build: 'Same workspace; data asked for by contract',
-      check: 'Plus contract and schema checks',
-      data: 'Live data through scoped, audited capabilities',
-      run: 'Platform-hosted, named business owner',
+      build: ['Same workspace + data contract', 'No raw credentials'],
+      check: ['Plus contract & schema checks', 'Verified in pipeline'],
+      data: ['Live data via scoped contract', 'Omnia · Audited per caller'],
+      run: ['Platform-hosted runtime', 'Named business owner'],
     },
-    chips: { data: 'Omnia' },
   },
   {
     code: 'T3',
     name: 'Supported',
     via: 'Cleared for production',
+    x: 605,
     cells: {
-      build: 'Engineers rebuild from the specification',
-      check: 'Plus every requirement verified before merge',
-      data: 'Least-privilege grants; regulated data allowed',
-      run: 'Production runtime, engineering on call',
+      build: ['Rebuilt from specification', 'Emery · Keep criteria, drop code'],
+      check: ['Every requirement verified', 'Emery · Wave verification'],
+      data: ['Least-privilege + regulated', 'Omnia · Explicit grants'],
+      run: ['Production runtime & SLA', 'Omnia · Engineers on call'],
     },
-    chips: { build: 'Emery', check: 'Emery', run: 'Omnia' },
   },
 ]
-
-function state(index: number, tier: number, focus: boolean) {
-  if (!focus)
-    return 'is-plain'
-  if (index === tier)
-    return 'is-current'
-  return index < tier ? 'is-passed' : 'is-ahead'
-}
 </script>
 
 <template>
-  <div class="stack" :class="{ 'is-dark': dark, 'is-compact': compact }">
-    <div class="stack-corner" />
-    <div
-      v-for="(t, i) in TIERS"
-      :key="t.code"
-      class="stack-head"
-      :class="[state(i, tier, focus), `is-t${i}`]"
-    >
-      <span class="stack-head-code">{{ t.code }}</span>
-      <span class="stack-head-name">{{ t.name }}</span>
-      <span v-if="t.via" class="stack-head-via">{{ t.via }}</span>
-      <span v-else class="stack-head-via">Where every app starts</span>
-    </div>
+  <div class="ed-diagram-pane">
+    <svg viewBox="0 0 720 410" aria-hidden="true">
+      <!-- Top Progression Track (T0 -> T1 -> T2 -> T3) -->
+      <line x1="110" y1="38" x2="605" y2="38" stroke="rgba(255,255,255,0.2)" stroke-width="2" />
+      <line v-if="tier > 0" x1="110" y1="38" :x2="TIERS[tier].x" y2="38" stroke="#78d8f2" stroke-width="2.5" />
 
-    <template v-for="lane in LANES" :key="lane.key">
-      <div class="stack-lane">
-        <svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true">
-          <path :d="lane.icon" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" />
-        </svg>
-        <div>
-          <span class="stack-lane-name">{{ lane.name }}</span>
-          <span v-if="!compact" class="stack-lane-ask">{{ lane.ask }}</span>
-        </div>
-      </div>
-      <div
-        v-for="(t, i) in TIERS"
-        :key="t.code + lane.key"
-        class="stack-cell"
-        :class="[state(i, tier, focus), `is-t${i}`]"
-      >
-        <span class="stack-cell-text">{{ t.cells[lane.key] }}</span>
-        <span v-if="chips && t.chips?.[lane.key]" class="stack-chip">{{ t.chips[lane.key] }}</span>
-      </div>
-    </template>
+      <template v-for="(t, i) in TIERS" :key="t.code">
+        <circle
+          :cx="t.x"
+          cy="38"
+          :r="i === tier ? 18 : 11"
+          :fill="i === tier ? '#78d8f2' : (i < tier ? '#0d1030' : 'rgba(10,7,16,0.6)')"
+          :stroke="i <= tier ? '#78d8f2' : 'rgba(255,255,255,0.28)'"
+          stroke-width="2"
+        />
+        <text
+          :x="t.x"
+          y="42"
+          text-anchor="middle"
+          class="svg-pill"
+          :fill="i === tier ? '#0d1030' : (i < tier ? '#78d8f2' : 'rgba(255,255,255,0.45)')"
+        >
+          {{ t.code }}
+        </text>
+        <text
+          :x="t.x"
+          y="72"
+          text-anchor="middle"
+          class="svg-label"
+          :fill="i === tier ? '#ffffff' : 'rgba(255,255,255,0.45)'"
+        >
+          {{ t.name }}
+        </text>
+      </template>
+
+      <!-- Four Horizontal Control Lanes for the Active Tier -->
+      <template v-for="lane in LANES" :key="lane.key">
+        <line x1="20" :y1="lane.y" x2="690" :y2="lane.y" stroke="rgba(255,255,255,0.14)" stroke-width="1" />
+        <text x="20" :y="lane.y + 30" class="svg-kicker" fill="#78d8f2">{{ lane.name }}</text>
+
+        <!-- Active Tier Setting -->
+        <circle cx="156" :cy="lane.y + 32" r="5" fill="#78d8f2" />
+        <text x="176" :y="lane.y + 28" class="svg-h3" fill="#ffffff">{{ TIERS[tier].cells[lane.key][0] }}</text>
+        <text x="176" :y="lane.y + 48" class="svg-caption" fill="rgba(255,255,255,0.65)">{{ TIERS[tier].cells[lane.key][1] }}</text>
+
+        <!-- Previous Tier Baseline (if tier > 0) -->
+        <text
+          v-if="tier > 0"
+          x="690"
+          :y="lane.y + 36"
+          text-anchor="end"
+          class="svg-caption"
+          fill="rgba(255,255,255,0.42)"
+        >
+          ← T{{ tier - 1 }}: {{ TIERS[tier - 1].cells[lane.key][0] }}
+        </text>
+      </template>
+    </svg>
   </div>
 </template>

@@ -81,34 +81,49 @@ class: slide-light
 
 <Eyebrow text="WHAT WE'VE LEARNED · WORKING WITH CLIENTS" />
 
-# The same three gaps, every time.
+<div class="ed-split">
+<div class="ed-prose-col">
 
-<p class="slide-lead">In every organisation we have helped with citizen coding, the builders were capable. What was missing was the system around them.</p>
+# The same three gaps,<br>every time.
 
-<div class="gaps-grid">
-<div class="cc-card">
-<div class="card-eyebrow"><span class="card-num">01 · WORKSPACE</span><span>MISSING</span></div>
-<h3>No governed place to build</h3>
-<p>Building happens on personal devices or straight inside production tenants. No sandbox, no repository, no record of what exists.</p>
-<div class="gap-then"><strong>So</strong> nobody can say how many apps there are, or what they touch.</div>
+<p class="ed-prose">In every organisation we have assessed for citizen coding, the domain builders were capable and well-intentioned. What was missing was the system around them — and in the absence of a system, people build quietly on personal laptops or straight inside production tenants.</p>
+<p class="ed-prose"><strong>The issue was never capability.</strong> When there is no sanctioned workspace, no approved toolkit, and no shared pipeline assurance, the careful builders end up carrying the risk created by the rest. A missing system is something you can design.</p>
 </div>
-<div class="cc-card">
-<div class="card-eyebrow"><span class="card-num">02 · TOOLKIT</span><span>UNDECIDED</span></div>
-<h3>No approved toolkit</h3>
-<p>Teams cannot tell which assistants, models, and entry paths are sanctioned. So they choose for themselves, and keep quiet about it.</p>
-<div class="gap-then"><strong>So</strong> every app is built differently, and assurance cannot be reused.</div>
+<div class="ed-diagram-pane">
+<svg viewBox="0 0 640 440" aria-hidden="true">
+  <!-- Three Left Root-Cause Nodes -->
+  <circle cx="28" cy="96" r="5" fill="#b4234e" />
+  <text x="44" y="84" class="svg-kicker" fill="#b4234e">01 · WORKSPACE MISSING</text>
+  <text x="44" y="104" class="svg-h3" fill="#0d1030">No Governed Place to Build</text>
+  <text x="44" y="122" class="svg-caption" fill="rgba(13,16,48,0.58)">Personal laptops &amp; live tenants · No repo</text>
+  <circle cx="28" cy="220" r="5" fill="#b4234e" />
+  <text x="44" y="208" class="svg-kicker" fill="#b4234e">02 · TOOLKIT UNDECIDED</text>
+  <text x="44" y="228" class="svg-h3" fill="#0d1030">No Approved AI Stack</text>
+  <text x="44" y="246" class="svg-caption" fill="rgba(13,16,48,0.58)">Teams pick their own tools and keep quiet</text>
+  <circle cx="28" cy="344" r="5" fill="#b4234e" />
+  <text x="44" y="332" class="svg-kicker" fill="#b4234e">03 · ASSURANCE PERSONAL</text>
+  <text x="44" y="352" class="svg-h3" fill="#0d1030">Safety Depends on Who Built It</text>
+  <text x="44" y="370" class="svg-caption" fill="rgba(13,16,48,0.58)">No automated secret scan, audit, or test gate</text>
+  <!-- Connecting causal curves to Consequences on the right -->
+  <path d="M 310 96 L 408 96" fill="none" stroke="rgba(180,35,78,0.45)" stroke-width="1.5" stroke-dasharray="4 4" />
+  <polygon points="402,91 412,96 402,101" fill="#b4234e" />
+  <path d="M 310 220 L 408 220" fill="none" stroke="rgba(180,35,78,0.45)" stroke-width="1.5" stroke-dasharray="4 4" />
+  <polygon points="402,215 412,220 402,225" fill="#b4234e" />
+  <path d="M 310 344 L 408 344" fill="none" stroke="rgba(180,35,78,0.45)" stroke-width="1.5" stroke-dasharray="4 4" />
+  <polygon points="402,339 412,344 402,349" fill="#b4234e" />
+  <!-- Right Consequence Column (Vertical Hairline Bar) -->
+  <line x1="426" y1="62" x2="426" y2="386" stroke="#0d1030" stroke-width="2" />
+  <text x="446" y="84" class="svg-kicker" fill="#0d1030">SO · VISIBILITY LOST</text>
+  <text x="446" y="104" class="svg-label" fill="#0d1030">Zero inventory of apps</text>
+  <text x="446" y="120" class="svg-caption" fill="rgba(13,16,48,0.58)">Nobody knows what exists</text>
+  <text x="446" y="208" class="svg-kicker" fill="#0d1030">SO · REUSE LOST</text>
+  <text x="446" y="228" class="svg-label" fill="#0d1030">Every app built differently</text>
+  <text x="446" y="244" class="svg-caption" fill="rgba(13,16,48,0.58)">Assurance cannot be shared</text>
+  <text x="446" y="332" class="svg-kicker" fill="#0d1030">SO · EXPOSURE SHARED</text>
+  <text x="446" y="352" class="svg-label" fill="#0d1030">Careful builders carry the risk</text>
+  <text x="446" y="368" class="svg-caption" fill="rgba(13,16,48,0.58)">Created by the ungoverned rest</text>
+</svg>
 </div>
-<div class="cc-card">
-<div class="card-eyebrow"><span class="card-num">03 · ASSURANCE</span><span>PERSONAL</span></div>
-<h3>No consistent assurance</h3>
-<p>Security and quality depend on the individual. The same app is safe or unsafe depending on who happened to build it.</p>
-<div class="gap-then"><strong>So</strong> the careful builders carry the risk created by the rest.</div>
-</div>
-</div>
-
-<div class="punchline-bar">
-<span class="punchline-tag">The lesson</span>
-<p>The issue was never capability. <strong>It was the missing system, and a system can be designed.</strong></p>
 </div>
 
 <!--
@@ -200,11 +215,17 @@ class: slide-light
 
 <Eyebrow text="THE ANSWER · TRUST MODEL" />
 
-# Four tiers of earned trust. Three clearances.
+<div class="ed-band">
+<div class="ed-band-top">
+<div>
 
-<p class="slide-lead">Each tier is a complete, safe place for an app to be. An app moves up only when a signal says it must, and only once the next clearance is in place.</p>
+# Four tiers of earned trust.<br>Three clearances.
 
+</div>
+<p class="ed-band-prose">Each tier is a complete, safe place for an app to live. Rather than grading the builder, <strong>the Trust Model matches control to the app's reach</strong> — moving up only when a real adoption signal says it must, and keeping every layer beneath it.</p>
+</div>
 <TrustLadder />
+</div>
 
 <!--
 The model on one slide. Read it left to right.
@@ -383,13 +404,17 @@ class: slide-light
 
 <Eyebrow text="THE OPERATING MODEL · WHO OWNS WHAT" />
 
-# Engineering time goes where the risk is.
+<div class="ed-band">
+<div class="ed-band-top">
+<div>
 
-<p class="slide-lead">The template is built once. Data contracts are published per domain. Hands-on engineering starts only at Tier 3, which is exactly why the other tiers stay fast.</p>
+# Engineering time goes<br>where the risk is.
 
+</div>
+<p class="ed-band-prose">The template is built once. Data contracts are published per domain. <strong>Hands-on engineering starts only at Tier 3</strong>, which is why Tiers 1 and 2 stay fast. Shell scaled citizen development past 4,000 builders under a three-zone model where embedded coaches — not review committees — made it work.</p>
+</div>
 <OwnersGrid />
-
-<div class="foot-note">Shell planned for 500 citizen developers and now runs more than 4,000, under a three-zone model with volunteer coaches embedded in every community. <strong>The coaches, not the controls, are what made it scale.</strong></div>
+</div>
 
 <!--
 The question every CIO asks next: how much engineering time does this consume?
@@ -406,11 +431,17 @@ class: slide-light
 
 <Eyebrow text="THE SCORECARD · FOUR QUESTIONS" />
 
-# Score any app in five minutes.
+<div class="ed-band">
+<div class="ed-band-top">
+<div>
 
-<p class="slide-lead">Four questions about the app, never about the builder. Here is the shift planner at month nine.</p>
+# Score any app<br>in five minutes.
 
+</div>
+<p class="ed-band-prose">Four questions about the app, never about the builder. <strong>The highest column any answer reaches sets the tier.</strong> Here is the shift planner at month nine: three sites and Monday-morning criticality place it at Tier 3, so the conversation is about funding the production clearance.</p>
+</div>
 <Scorecard :mark="{ reach: 3, data: 2, criticality: 3, continuity: 2 }" subject="The shift planner, month 9" />
+</div>
 
 <!--
 This is the tool you take away. Score the planner live.
