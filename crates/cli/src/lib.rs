@@ -93,8 +93,9 @@ const SHOW_DESC: &str = "Print an artifact from the current revision.\n\n\
     The revision is read from the repository the `[target]` table of `--config [<path>]` \
     (default: `emery.toml`) names, where `emery apply` sealed it. `--staged` prints it \
     from the candidate `emery specify` staged and `emery apply` has not sealed, and \
-    needs no target. Text output contains only the artifact body. `--format json` also \
-    includes the revision id and the typed document.";
+    needs no target. `amendment` prints the staged amendment, which stands staged alone \
+    until it is sealed, and needs neither. Text output contains only the artifact body. \
+    `--format json` also includes the revision id and the typed document.";
 const COMPLETIONS_DESC: &str = "Generate shell completions.\n\n\
     Pipe into your shell's completion directory. Example: \
     `emery completions zsh > ~/.zsh/_emery`";
@@ -176,7 +177,7 @@ enum Verb {
     /// Build every slice of the current plan through a target adapter
     #[command(long_about = BUILD_DESC)]
     Build(BuildArgs),
-    /// Print a reviewable artifact of the current revision, or the staged candidate, to stdout
+    /// Print a reviewable artifact of the current revision, the staged candidate, or the staged amendment to stdout
     #[command(long_about = SHOW_DESC)]
     Show(ShowArgs),
     /// Print a shell-completion script for `<shell>` to stdout
@@ -284,10 +285,10 @@ impl TryFrom<BuildArgs> for BuildInput {
 
 #[derive(Debug, clap::Args)]
 struct ShowArgs {
-    /// Reviewable artifact of the current revision.
+    /// Reviewable artifact of the current revision, or the staged amendment.
     #[arg(value_parser = artifacts())]
     artifact: Artifact,
-    /// Read the staged candidate in place of the current revision.
+    /// Read the staged candidate in place of the current revision; the amendment is staged or nothing.
     #[arg(long)]
     staged: bool,
     /// Operator-owned config naming the repository the revision lives in; the omitted value selects emery.toml.
@@ -304,7 +305,11 @@ impl TryFrom<ShowArgs> for ShowInput {
             staged,
             config,
         } = args;
-        let target = if staged { None } else { config::target(config.as_deref(), None)? };
+        let target = if staged || matches!(artifact, Artifact::Amendment) {
+            None
+        } else {
+            config::target(config.as_deref(), None)?
+        };
         Ok(Self {
             artifact,
             staged,
@@ -319,6 +324,7 @@ fn artifacts() -> impl TypedValueParser<Value = Artifact> {
             Artifact::Spec => "The behavioural specification artifact.",
             Artifact::Design => "The rebuild design artifact.",
             Artifact::Plan => "The build plan artifact.",
+            Artifact::Amendment => "The staged amendment, awaiting its seal.",
         };
         PossibleValue::new(artifact.as_ref()).help(help)
     }))
@@ -373,8 +379,11 @@ fn hint(error: &Error, invoked: Invoked) -> Option<Cow<'static, str>> {
         "spec-not-generated" if error.description().contains("does not stand over its head") => {
             "the repository's head moved on without the label: merge or rebase `emery/<revision>` onto the head, or re-run `emery specify --apply` to seal a fresh revision over it"
         }
-        "spec-not-generated" if error.description().contains("is staged") => {
+        "spec-not-generated" if error.description().contains("candidate `") => {
             "run `emery apply` to seal the staged candidate as the current revision, then re-run show or build; `emery show <artifact> --staged` reviews it first"
+        }
+        "spec-not-generated" if error.description().contains("amendment `") => {
+            "review the staged amendment with `emery show amendment`"
         }
         "spec-not-generated" => {
             "run `emery specify <adapter>...` to stage a candidate and `emery apply` to seal it (or `emery specify --apply` for both), then re-run show or build"
@@ -382,9 +391,19 @@ fn hint(error: &Error, invoked: Invoked) -> Option<Cow<'static, str>> {
         "spec-mismatch" => {
             "`spec/` in the target repository is the engine's: restore the labelled commit's documents (`git checkout emery/<revision> -- spec/`), or move the directory aside, and re-run; `emery show` prints the specification, never edit the files"
         }
+        "nothing-staged" if error.description().contains("amendment") => {
+            "run `emery amend --config <path>` to stage an amendment against the current revision, then re-run `emery show amendment`"
+        }
         "nothing-staged" => {
             "run `emery specify <adapter>...` to stage a candidate, then re-run `emery apply` or `emery show <artifact> --staged`"
         }
+        "amendment-pending" if invoked == Invoked::Apply => {
+            "this emery does not seal an amendment yet: `emery show amendment` reviews the one staged, and re-running `emery amend` prepares it again"
+        }
+        "amendment-pending" if invoked == Invoked::Specify => {
+            "an amendment is staged where the candidate would go: review it with `emery show amendment`, or re-run `emery amend` to prepare it again; a specify never displaces it"
+        }
+        "amendment-pending" => "review the staged amendment with `emery show amendment`",
         "spec-outdated" => {
             "the revision predates this emery's grammar: re-run `emery specify <adapter>...` to regenerate it"
         }

@@ -5,8 +5,10 @@
 //! on demand and is never parsed back into revision data.
 //!
 //! [`Document`] defines shared serialisation and rendering behaviour.
-//! [`Diff`] describes changes between revisions.
+//! [`Diff`] describes changes between revisions, and [`Amendment`] a change
+//! staged against the current one.
 
+mod amendment;
 mod design;
 mod diff;
 mod id;
@@ -22,6 +24,7 @@ use serde::de::DeserializeOwned;
 use serde_json::Value;
 use sha2::{Digest, Sha256};
 
+pub use self::amendment::{Amendment, AmendmentBase, Change, ChangeClass};
 use self::design::TYPE;
 pub use self::design::{Block, Design, Role, Section, SectionKind, citations};
 pub use self::diff::{Changed, DesignDiff, Diff, Entry, PlanDiff, SliceEntry, SpecDiff};
@@ -29,7 +32,7 @@ pub use self::id::{BadId, ReqId, SliceId, stem, substem};
 use self::plan::{DEPENDS_ON, REQUIREMENTS, TYPES};
 pub use self::plan::{Plan, Slice, Waves, ranks};
 pub use self::spec::{Cited, Loser, Requirement, Scenario, Spec, Status};
-use self::spec::{ID, MESSAGE, NOTE, ROUTE, SOURCES, STATUS};
+use self::spec::{HEADING, ID, MESSAGE, NOTE, ROUTE, SOURCES, STATUS};
 
 /// The revision grammar written and accepted by this engine.
 ///
@@ -170,11 +173,13 @@ impl Revision {
     /// The content identifier of the three documents as stored.
     #[must_use]
     pub fn identify(spec: &[u8], design: &[u8], plan: &[u8]) -> String {
-        digest([spec, design, plan])
+        digest(&[spec, design, plan])
     }
 }
 
-fn digest(bodies: [&[u8]; 3]) -> String {
+// The content id of one or more document bodies: SHA-256 over each body
+// behind its length, so no boundary between bodies is ambiguous.
+fn digest(bodies: &[&[u8]]) -> String {
     let mut hasher = Sha256::new();
     for body in bodies {
         hasher.update((body.len() as u64).to_be_bytes());

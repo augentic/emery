@@ -4,8 +4,9 @@
 //! synthesises a specification, design, and build plan, and stages them as
 //! one content-addressed candidate. [`apply`] seals the staged candidate as
 //! the current revision. [`show`] renders any one document from the current
-//! revision, or from the staged candidate. [`build`] builds every slice of
-//! the current plan through a target adapter in dependency waves.
+//! revision, or from the staged candidate, or the staged amendment. [`build`]
+//! builds every slice of the current plan through a target adapter in
+//! dependency waves.
 //!
 //! Every operation uses a [`Provider`] of model, adapter, storage,
 //! version-control, file, and plugin capabilities. Command-line parsing and

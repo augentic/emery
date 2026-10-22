@@ -51,7 +51,9 @@ use crate::{Files, Rank, apply, preopen_path, store, vcs};
 /// failure among them ends the run.
 ///
 /// The drafted revision is staged as the candidate `emery apply` seals,
-/// replacing any staged before it. Where [`SpecifyInput::target`] names the
+/// replacing any revision staged before it; a staged amendment is never
+/// replaced, and the run is refused before any adapter loads while one
+/// stands. Where [`SpecifyInput::target`] names the
 /// repository the specification lives in, the current revision is read
 /// from it before any adapter loads, to report the diff against it; a run
 /// naming no target reads no repository and reports no diff. Under
@@ -62,6 +64,7 @@ use crate::{Files, Rank, apply, preopen_path, store, vcs};
 ///
 /// - Returns [`Error::BadRequest`] when the run is refused:
 ///   - an empty source list, with code `specify-source-required`;
+///   - an amendment standing staged, with code `amendment-pending`;
 ///   - [`SpecifyInput::apply`] with no target, with code
 ///     `build-target-required`;
 ///   - a target whose name is not kebab-case;
@@ -96,6 +99,7 @@ pub async fn specify<P: Model + Source + StateStore + BlobStore + Plugins + Vcs 
     let provider = context.provider();
 
     let bound = Bound::all(&input.sources)?;
+    store::no_amendment(provider).await?;
 
     // the repository the specification lives in, read before any load so
     // the diff and the seal land over what it holds

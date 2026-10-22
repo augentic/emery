@@ -26,8 +26,9 @@ pub const ROUTE: &str = "Route:";
 pub const MESSAGE: &str = "Message:";
 /// The `Note:` key used for generated requirement notes.
 pub const NOTE: &str = "Note:";
+/// The `### Requirement:` heading prefix.
+pub const HEADING: &str = "### Requirement:";
 
-const HEADING: &str = "### Requirement:";
 const SCENARIO: &str = "#### Scenario:";
 
 /// A behavioural specification in its stored form.

@@ -1,0 +1,83 @@
+{
+  "emery": 8,
+  "base": {
+    "revision": "3f2a9c0e7d1b4a6f8e5c2d9b0a7f4e1c3b6d8a2f5e9c1b4d7a0f3e6c9b2d5a8f",
+    "commit": "9e267c3a1b4d7f0a2c5e8b1d4f7a0c3e6b9d2f5a"
+  },
+  "changes": [
+    {
+      "id": "REQ-001",
+      "subject": "greeting.behaviour",
+      "class": "changed",
+      "before": "GET /greeting returns the static string 'hello'.",
+      "after": "GET /greeting returns the caller's name after 'hello', or 'hello' alone with none.",
+      "sources": [
+        {
+          "source": "brief",
+          "claim": "greeting.behaviour",
+          "path": null
+        }
+      ]
+    },
+    {
+      "id": "REQ-002",
+      "subject": "greeting.refuse-empty",
+      "class": "unchanged",
+      "before": "A greeting request naming an empty caller is refused.",
+      "after": "A greeting request naming an empty caller is refused.",
+      "sources": []
+    },
+    {
+      "id": "REQ-003",
+      "subject": "greeting.farewell",
+      "class": "retired",
+      "before": "GET /farewell returns the static string 'goodbye'.",
+      "after": null,
+      "sources": [
+        {
+          "source": "brief",
+          "claim": "greeting.farewell",
+          "path": "brief.md#L12-L13"
+        }
+      ]
+    },
+    {
+      "id": "REQ-004",
+      "subject": "greeting.locale",
+      "class": "added",
+      "before": null,
+      "after": "A greeting request naming a locale is answered in that locale's greeting word.",
+      "sources": [
+        {
+          "source": "brief",
+          "claim": "greeting.locale",
+          "path": "brief.md#L15-L17"
+        },
+        {
+          "source": "source",
+          "claim": "greeting.locale",
+          "path": "src/greeting.ts#L20-L31"
+        }
+      ]
+    },
+    {
+      "id": "REQ-005",
+      "subject": "greeting.rate-limit",
+      "class": "conflict",
+      "before": null,
+      "after": null,
+      "sources": [
+        {
+          "source": "brief",
+          "claim": "greeting.rate-limit",
+          "path": "brief.md#L19"
+        },
+        {
+          "source": "notes",
+          "claim": "greeting.rate-limit",
+          "path": "notes.md#L4"
+        }
+      ]
+    }
+  ]
+}

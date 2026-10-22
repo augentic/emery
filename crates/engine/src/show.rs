@@ -1,9 +1,9 @@
-//! Reads documents from the current specification revision, or the staged candidate.
+//! Reads documents from the current specification revision, the staged candidate, or the staged amendment.
 //!
 //! [`show`] returns the selected document as Markdown and structured JSON,
-//! together with the revision identifier. The current revision is read from
-//! the target's repository, the staged candidate from the engine's own
-//! storage.
+//! together with the identifier of what it was read from. The current
+//! revision is read from the target's repository, the staged candidate and
+//! the staged amendment from the engine's own storage.
 
 use anyhow::Context as _;
 use omnia_sdk::api::Context;
@@ -12,33 +12,66 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use strum::{AsRefStr, EnumString, VariantArray};
 
-use crate::revision::Document;
+pub use crate::revision::{Amendment, AmendmentBase, Change, ChangeClass};
+use crate::revision::{Document, Revision};
 use crate::vcs::TargetRef;
 use crate::{Files, store};
 
-/// Returns one document from the current revision, or from the staged candidate.
+/// Returns one document from the current revision, the staged candidate, or the staged amendment.
 ///
 /// The current revision is read from the repository [`ShowInput::target`]
 /// names, as [`apply`](crate::apply::apply) sealed it; the staged candidate
-/// needs no target.
+/// needs no target, and neither does the [`Amendment`](Artifact::Amendment),
+/// which stands staged alone until it is sealed.
 ///
 /// # Errors
 ///
 /// - Returns [`Error::NotFound`] with code `spec-not-generated` when the
 ///   repository holds no revision, naming a staged candidate where one
 ///   stands, and with code `nothing-staged` when [`ShowInput::staged`] is
-///   set and no candidate is staged.
+///   set and no candidate is staged, or the amendment is asked for and none
+///   is staged.
 /// - Returns [`Error::BadRequest`] with code `build-target-required` when
-///   no target names the repository and the candidate is not asked for, and
-///   with code `spec-outdated` when the revision read uses a different
-///   grammar, and the classes [`apply`](crate::apply::apply) reads the
-///   repository under otherwise.
+///   no target names the repository and the candidate is not asked for,
+///   with code `amendment-pending` when a revision document is asked for
+///   from the staging slot and an amendment stands there, with code
+///   `spec-outdated` when the document read uses a different grammar, and
+///   the classes [`apply`](crate::apply::apply) reads the repository under
+///   otherwise.
 /// - Returns [`Error::ServerError`] when storage, validation, or serialisation
 ///   fails.
 pub async fn show<P: StateStore + BlobStore + Vcs + Files>(
     input: ShowInput, context: Context<P>,
 ) -> Result<ShowOutput, Error> {
     let store = context.provider();
+    match input.artifact {
+        Artifact::Amendment => {
+            let staged =
+                store::staged_amendment(store).await?.ok_or_else(store::no_amendment_staged)?;
+            tracing::debug!(amendment = %staged.id, "amendment read");
+            ShowOutput::new(&staged.amendment, staged.id)
+        }
+        Artifact::Spec => {
+            let (id, revision) = revision(store, input).await?;
+            ShowOutput::new(&revision.spec, id)
+        }
+        Artifact::Design => {
+            let (id, revision) = revision(store, input).await?;
+            ShowOutput::new(&revision.design, id)
+        }
+        Artifact::Plan => {
+            let (id, revision) = revision(store, input).await?;
+            ShowOutput::new(&revision.plan, id)
+        }
+    }
+}
+
+// The revision a document of `input.artifact` is read from, with its id:
+// the staged candidate, or the current revision of `input.target`'s
+// repository.
+async fn revision<P: StateStore + BlobStore + Vcs + Files>(
+    store: &P, input: ShowInput,
+) -> Result<(String, Revision), Error> {
     let (id, revision) = if input.staged {
         let candidate = store::staged(store).await?.ok_or_else(store::nothing_staged)?;
         (candidate.id, candidate.revision)
@@ -57,34 +90,33 @@ pub async fn show<P: StateStore + BlobStore + Vcs + Files>(
         artifact = input.artifact.as_ref(),
         "revision read"
     );
-
-    match input.artifact {
-        Artifact::Spec => ShowOutput::new(&revision.spec, id),
-        Artifact::Design => ShowOutput::new(&revision.design, id),
-        Artifact::Plan => ShowOutput::new(&revision.plan, id),
-    }
+    Ok((id, revision))
 }
 
 /// Selects the document returned by [`show`].
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub struct ShowInput {
-    /// The revision artifact projected as Markdown and structured JSON.
+    /// The artifact projected as Markdown and structured JSON.
     pub artifact: Artifact,
     /// Whether to read the staged candidate in place of the current revision.
+    ///
+    /// Not read for the [`Amendment`](Artifact::Amendment), which is staged
+    /// or nothing.
     #[serde(default)]
     pub staged: bool,
     /// The target whose repository the current revision is read from.
     ///
-    /// Required unless [`staged`](Self::staged) is set.
+    /// Required unless [`staged`](Self::staged) is set or the artifact is
+    /// the [`Amendment`](Artifact::Amendment).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub target: Option<TargetRef>,
 }
 
-/// A document available from a specification revision.
+/// A document available from a specification revision, or the staged amendment.
 ///
 /// String parsing, [`AsRef::as_ref`], and Serde use the lowercase names `spec`,
-/// `design`, and `plan`.
+/// `design`, `plan`, and `amendment`.
 ///
 /// # Examples
 ///
@@ -95,6 +127,7 @@ pub struct ShowInput {
 /// assert!(matches!(artifact, Artifact::Spec));
 /// assert_eq!(Artifact::Design.as_ref(), "design");
 /// assert_eq!(Artifact::Plan.as_ref(), "plan");
+/// assert_eq!(Artifact::Amendment.as_ref(), "amendment");
 /// # Ok::<(), strum::ParseError>(())
 /// ```
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, AsRefStr, EnumString, VariantArray)]
@@ -107,13 +140,18 @@ pub enum Artifact {
     Design,
     /// The build plan, rendered as `plan.md`.
     Plan,
+    /// The staged [`Amendment`], rendered as `amendment.md`.
+    ///
+    /// Read from the staging slot alone: an amendment is never current.
+    Amendment,
 }
 
-/// A rendered revision document and its structured representation.
+/// A rendered document and its structured representation.
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "kebab-case")]
 pub struct ShowOutput {
-    /// The identifier of the revision read: the current one, or the staged candidate.
+    /// The identifier of what was read: the current revision, the staged
+    /// candidate, or the staged amendment.
     pub revision: String,
     /// The Markdown projection, including revision front matter.
     pub body: String,

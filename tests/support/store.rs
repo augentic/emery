@@ -45,6 +45,27 @@ pub fn stage(storage: &Memory, spec: &[u8], design: &[u8], plan: &[u8]) -> Strin
     id
 }
 
+/// Stores the amendment document under its content id and stages it, as `emery amend` does.
+///
+/// The staged slot holds the record the engine writes for an amendment: the
+/// id, the kind, and the base the document names. Returns the amendment's id.
+pub fn stage_amendment(storage: &Memory, amendment: &[u8]) -> String {
+    let id = digest(&[amendment]);
+    storage.insert_object(STAGED_CONTAINER, &format!("{id}/amendment.json"), amendment);
+    let document: Value = serde_json::from_slice(amendment).expect("amendment JSON");
+    let record = serde_json::json!({
+        "id": id,
+        "kind": "amendment",
+        "base": {
+            "revision": document["base"]["revision"],
+            "commit": document["base"]["commit"],
+        },
+    })
+    .to_string();
+    storage.insert_state(STAGED_KEY, record.as_bytes());
+    id
+}
+
 /// The staged revision candidate's id, read from the record at `STAGED_KEY`.
 pub fn staged(storage: &Memory) -> String {
     staged_at(storage, STAGED_KEY)
@@ -85,8 +106,12 @@ pub fn document(name: &str) -> String {
 
 /// The engine's content id: SHA-256 over the length-prefixed bodies, spec, design, then plan.
 pub fn revision(spec: &[u8], design: &[u8], plan: &[u8]) -> String {
+    digest(&[spec, design, plan])
+}
+
+fn digest(bodies: &[&[u8]]) -> String {
     let mut hasher = Sha256::new();
-    for body in [spec, design, plan] {
+    for body in bodies {
         hasher.update((body.len() as u64).to_be_bytes());
         hasher.update(body);
     }
