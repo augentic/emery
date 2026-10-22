@@ -490,10 +490,12 @@ async fn build_design_cut_phrase() {
 
 // A `write_files` entry naming a file the adapter scaffolded is refused with
 // the call when its content drops a token the file keeps, naming the tokens
-// and the three ways out, and a `delete` naming one is refused whatever it
-// keeps; the call lands nothing. An edit within the file, and a write
-// beside it, land as they would. The brief says so after the scaffold
-// section, and the turn declares `restore_files` beside the two tools.
+// and the two ways to change it, never `restore_files`, since a model
+// offered the way back takes it and loses its edits; a `delete` naming one
+// is refused whatever it keeps; the call lands nothing. An edit within the
+// file, and a write beside it, land as they would. The brief says so after
+// the scaffold section, and the turn declares `restore_files` beside the
+// two tools.
 #[tokio::test]
 async fn write_scaffolded_refused() {
     let tmp = tempfile::tempdir().expect("tempdir");
@@ -550,8 +552,7 @@ async fn write_scaffolded_refused() {
         exchanges[0].outcome,
         Err("write_files: nothing written: `src/orders.rs` was scaffolded before this turn and \
              this content drops what the skeleton holds: `REQ-001 orders.create`; change the \
-             file through `edit_files`, send the whole file with those kept, or put it back as \
-             scaffolded through `restore_files`"
+             file through `edit_files`, or send the whole file with those kept"
             .to_owned()),
         "the token the content keeps is not named"
     );
@@ -659,9 +660,81 @@ async fn write_scaffolded_kept() {
         Err("write_files: nothing written: `src/lib.rs` was scaffolded before this turn and this \
              content drops what the skeleton holds: `token1`, `token2`, `token3`, `token4`, \
              `token5`, `token6`, `token7`, `token8`, `token9`, `token10`, and 2 more; change the \
-             file through `edit_files`, send the whole file with those kept, or put it back as \
-             scaffolded through `restore_files`"
+             file through `edit_files`, or send the whole file with those kept"
             .to_owned())
+    );
+    model.assert_exhausted();
+}
+
+// A scaffolded file named in `files` and `delete` of one call is replaced
+// by the entry, the guard over its content holding and the guard over its
+// removal never asked, since a model spells a whole write that way; one
+// whose entry drops a token is refused for the content alone.
+#[tokio::test]
+async fn write_scaffolded_replaced() {
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let skeleton = "pub fn create() {\n    todo!(\"REQ-001 orders.create: the handler\")\n}\n";
+    write(tmp.path(), [("src/orders.rs", skeleton)]);
+    let root = tmp.path().to_str().expect("a UTF-8 scratch root");
+    let filled = "//! Orders.\n\npub fn create() -> Result<(), Error> {\n    // REQ-001 \
+                  orders.create: the handler\n    Ok(())\n}\n";
+    let model = Scripted::answering([r#"{"covered":["REQ-001"],"written":["src/orders.rs"]}"#])
+        .calling(
+            0,
+            [
+                ToolCall {
+                    id: "1".to_owned(),
+                    name: "write_files".to_owned(),
+                    arguments: serde_json::json!({
+                        "files": [{ "path": "src/orders.rs", "content": "pub fn create() {}\n" }],
+                        "delete": ["src/orders.rs"],
+                    })
+                    .to_string(),
+                },
+                ToolCall {
+                    id: "2".to_owned(),
+                    name: "write_files".to_owned(),
+                    arguments: serde_json::json!({
+                        "files": [{ "path": "src/orders.rs", "content": filled }],
+                        "delete": ["./src/orders.rs"],
+                    })
+                    .to_string(),
+                },
+            ],
+        );
+    let files = [Guarded::new("src/orders.rs", ["pub fn create", "REQ-001 orders.create"])];
+    let scaffold = Scaffold {
+        brief: "- `src/orders.rs`: scaffolded\n",
+        passages: "",
+        files: &files,
+        types: &[],
+    };
+
+    let report = ask_guarded(&model, &slice(), root, &[], Some(scaffold), |_| Ok(Vec::new()))
+        .await
+        .expect("accepted");
+    assert_eq!(report.written, ["src/orders.rs"]);
+    assert_eq!(
+        fs::read_to_string(tmp.path().join("src/orders.rs")).expect("replaced"),
+        filled,
+        "the entry replaces the file, and the delete removes nothing"
+    );
+
+    let exchanges = model.exchanges();
+    assert_eq!(exchanges.len(), 3, "two calls, then the check");
+    assert_eq!(
+        exchanges[0].outcome,
+        Err("write_files: nothing written: `src/orders.rs` was scaffolded before this turn and \
+             this content drops what the skeleton holds: `REQ-001 orders.create`; change the \
+             file through `edit_files`, or send the whole file with those kept"
+            .to_owned()),
+        "the content guard alone refuses the replacement"
+    );
+    assert_eq!(
+        exchanges[1].outcome.as_deref(),
+        Ok(format!(r#"{{"written":[{{"bytes":{},"path":"src/orders.rs"}}]}}"#, filled.len())
+            .as_str()),
+        "a replacement reports no deletion"
     );
     model.assert_exhausted();
 }
@@ -1016,17 +1089,27 @@ async fn edit_ambiguous() {
 
 // A `find` matching nothing is refused with what the file holds nearest it:
 // the line its first line is found on and the line after, where a `find`
-// over a doc comment's blank `//!` parts from the file; the found line
-// alone when it is the last; the file's opening line and length when no
-// line holds it; and the file's emptiness.
+// over a doc comment's blank `//!` parts from the file; the lines after the
+// first that match, and the line where the file parts from the `find`
+// after them, so a `find` of a function whose one line differs comes back
+// with that line; the occurrence of the first line the most lines follow,
+// where it is found more than once; the found line alone when it is the
+// last; a `find` the file ends within; the file's opening line and length
+// when no line holds it; and the file's emptiness.
 #[tokio::test]
 async fn edit_nearest_line() {
     let tmp = tempfile::tempdir().expect("tempdir");
+    let create = "pub fn create() {\n    let order = Order::new();\n    order.save()?;\n    \
+                  Ok(())\n}\n";
+    let twice = "fn a() {\n    x();\n}\nfn b() {\n    x();\n    y();\n}\n";
     write(
         tmp.path(),
         [
             ("src/lib.rs", "//! Orders.\n//!\n//! The crate.\npub mod orders;\n"),
+            ("src/create.rs", create),
+            ("src/twice.rs", twice),
             ("src/last.rs", "pub struct A;\n    pub struct B;\n"),
+            ("src/ends.rs", "pub struct A;\npub struct B;\n"),
             ("src/one.rs", "pub struct One;\n"),
             ("src/empty.rs", ""),
         ],
@@ -1038,7 +1121,15 @@ async fn edit_nearest_line() {
             "1",
             &[
                 ("src/lib.rs", "//! Orders.\n\n//! The crate.", "//! Orders.\n//!\n//! A crate."),
+                (
+                    "src/create.rs",
+                    "pub fn create() {\n    let order = Order::new();\n    order.save();\n    \
+                     Ok(())\n}",
+                    "pub fn create() {}",
+                ),
+                ("src/twice.rs", "    x();\n    y();\n    z();", "    z();"),
                 ("src/last.rs", "  pub struct B;\n}", "pub struct B;"),
+                ("src/ends.rs", "pub struct A;\npub struct B;\npub struct C;", "pub struct C;"),
                 ("src/one.rs", "pub struct Uno;", "pub struct One;"),
                 ("src/empty.rs", "x", "y"),
             ],
@@ -1054,8 +1145,14 @@ async fn edit_nearest_line() {
         Err("edit_files: nothing edited: \
              `src/lib.rs`: `find` matches nothing in the file; its first line is on line 1 of 4, \
              `//! Orders.`, and line 2 is `//!`; \
+             `src/create.rs`: `find` matches nothing in the file; its first line is on line 1 \
+             of 5, `pub fn create() {`, line 2 matches, and line 3 is `    order.save()?;`; \
+             `src/twice.rs`: `find` matches nothing in the file; its first line is on line 5 of \
+             7, `    x();`, line 6 matches, and line 7 is `}`; \
              `src/last.rs`: `find` matches nothing in the file; its first line is on line 2 of \
              2, `    pub struct B;`, the last; \
+             `src/ends.rs`: `find` matches nothing in the file; its first line is on line 1 of \
+             2, `pub struct A;`, line 2 matches, and the file ends there; \
              `src/one.rs`: `find` matches nothing in the file; no line holds its first line; the \
              file's one line is `pub struct One;`; \
              `src/empty.rs`: `find` matches nothing in the file; the file is empty"
@@ -1649,30 +1746,38 @@ async fn write_delete() {
 }
 
 // A path one call names more than once is met as the call left it, not as
-// the tree stood before it: one in `files` and `delete` is written, then
-// removed, so the tree lacks it as the answer says; one twice in `files`
-// holds the later content.
+// the tree stood before it: one twice in `files` holds the later content,
+// and one in `files` and `delete` is the entry's, written and kept, since a
+// model spells a whole write as a removal and a write of the path; the
+// answer lists it written and not deleted, and a path `delete` alone names
+// is removed beside it.
 #[tokio::test]
 async fn write_path_twice() {
     let tmp = tempfile::tempdir().expect("tempdir");
+    seed(tmp.path(), ["src/scratch.rs", "src/stale.rs"]);
     let root = tmp.path().to_str().expect("a UTF-8 scratch root");
     let model = Scripted::answering([r#"{"covered":["REQ-001"],"written":[]}"#]).calling(
         0,
         [ToolCall {
             id: "1".to_owned(),
             name: "write_files".to_owned(),
-            arguments: r#"{"files":[{"path":"src/scratch.rs","content":"// scratch\n"},{"path":"src/orders.rs","content":"pub struct Draft;\n"},{"path":"src/orders.rs","content":"pub struct Order;\n"}],"delete":["src/scratch.rs"]}"#
+            arguments: r#"{"files":[{"path":"src/scratch.rs","content":"// scratch\n"},{"path":"src/orders.rs","content":"pub struct Draft;\n"},{"path":"src/orders.rs","content":"pub struct Order;\n"}],"delete":["src/scratch.rs","src/stale.rs"]}"#
                 .to_owned(),
         }],
     );
 
     let report = ask(&model, &slice(), root).await.expect("accepted");
-    assert_eq!(report.written, ["src/orders.rs"], "the file written and kept");
-    assert_eq!(names(&tmp.path().join("src")), ["orders.rs"], "written then removed is gone");
+    assert_eq!(report.written, ["src/orders.rs", "src/scratch.rs"], "the files written and kept");
+    assert_eq!(names(&tmp.path().join("src")), ["orders.rs", "scratch.rs"]);
     assert_eq!(
         fs::read_to_string(tmp.path().join("src/orders.rs")).expect("written"),
         "pub struct Order;\n",
         "the later entry replaces the earlier"
+    );
+    assert_eq!(
+        fs::read_to_string(tmp.path().join("src/scratch.rs")).expect("written"),
+        "// scratch\n",
+        "the entry replaces the file the delete also names"
     );
 
     let exchanges = model.exchanges();
@@ -1680,7 +1785,7 @@ async fn write_path_twice() {
     assert_eq!(
         exchanges[0].outcome.as_deref(),
         Ok(
-            r#"{"deleted":["src/scratch.rs"],"written":[{"bytes":11,"path":"src/scratch.rs"},{"bytes":18,"path":"src/orders.rs"},{"bytes":18,"path":"src/orders.rs"}]}"#
+            r#"{"deleted":["src/stale.rs"],"written":[{"bytes":11,"path":"src/scratch.rs"},{"bytes":18,"path":"src/orders.rs"},{"bytes":18,"path":"src/orders.rs"}]}"#
         )
     );
     assert_eq!(exchanges[1].outcome, Ok(String::new()));

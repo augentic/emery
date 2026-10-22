@@ -508,8 +508,9 @@ pub fn metadata(rules: &[MergeRule]) -> TargetMetadata {
 /// whatever it keeps. `edit_files` replaces the one place each edit's
 /// `find` matches within a file the workspace holds, the list of edits sent
 /// as JSON text read the same; a `find` matching nothing is refused with
-/// the line of the file its first line is on and the line after it, or the
-/// file's opening line, so the refusal carries the text to copy.
+/// the line of the file its first line is on and the line where the file
+/// parts from it, or the file's opening line, so the refusal carries the
+/// text to copy.
 /// `restore_files` puts the scaffolded files it names back as they stood
 /// when the turn began, a path that was not scaffolded or that the tree
 /// lacked then refused. A call any tool refuses anywhere changes nothing.

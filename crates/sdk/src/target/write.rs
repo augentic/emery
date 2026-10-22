@@ -167,8 +167,10 @@ impl Writer {
     // every entry replacing a held file to the shrink rule and to the guard,
     // and every removal to the guard, so a call refused anywhere leaves the
     // tree as it was. What the tree holds at each is read once and moved
-    // with every write, so a later entry naming a path, or its removal,
-    // meets what the call wrote there rather than what stood before it.
+    // with every write, so a later entry naming a path meets what the call
+    // wrote there rather than what stood before it; a removal naming a path
+    // an entry writes is the entry's replacement spelled out, and removes
+    // nothing.
     fn write(&self, call: &ToolCall) -> Result<Done, String> {
         let WriteFiles { files, delete } =
             call.arguments().map_err(|err| format!("{WRITE_FILES}: {err}"))?;
@@ -203,6 +205,7 @@ impl Writer {
         }
         for path in delete {
             match self.held(&path, &mut tree) {
+                Ok(file) if accepted.iter().any(|(written, _)| *written == file) => {}
                 Ok(file) => {
                     if let Some(why) = self.guards_removal(&file) {
                         refused.push(why);
@@ -351,8 +354,8 @@ impl Writer {
         let more = if more == 0 { String::new() } else { format!(", and {more} more") };
         Some(format!(
             "`{file}` was scaffolded before this turn and this content drops what the skeleton \
-             holds: {}{more}; change the file through `{EDIT_FILES}`, send the whole file with \
-             those kept, or put it back as scaffolded through `{RESTORE_FILES}`",
+             holds: {}{more}; change the file through `{EDIT_FILES}`, or send the whole file \
+             with those kept",
             named.join(", ")
         ))
     }
@@ -525,7 +528,7 @@ struct WriteFiles {
     files: Vec<WriteFile>,
     /// The paths of files to remove, each `/`-separated and relative to
     /// `$WORKSPACE`; one the tree lacks is already removed, and one `files`
-    /// also names is written, then removed.
+    /// also names is replaced by that entry, not removed.
     #[serde(default)]
     delete: Vec<String>,
 }
@@ -858,18 +861,27 @@ fn single_file<E: de::Error>(entries: Vec<(String, serde_json::Value)>) -> Resul
 }
 
 // What the file holds nearest a `find` that matched nothing: the line its
-// first line is found on and the one after it, where the two usually part,
-// or the file's opening line and length when no line holds it, so the
-// refusal carries the text to copy.
+// first line is found on, the occurrence the most lines of `find` follow
+// where it is found more than once, and the line where the file parts from
+// `find` after them, or the file's opening line and length when no line
+// holds it, so the refusal carries the text to copy.
 fn nearest(content: &str, find: &str) -> String {
     let lines: Vec<&str> = content.lines().collect();
     let total = lines.len();
     let Some(opening) = lines.first() else {
         return "the file is empty".to_owned();
     };
-    let first = find.lines().map(str::trim).find(|line| !line.is_empty());
-    let Some(index) = first.and_then(|first| lines.iter().position(|line| line.contains(first)))
-    else {
+    let sought: Vec<&str> = find.lines().skip_while(|line| line.trim().is_empty()).collect();
+    let first = sought.first().map(|line| line.trim());
+    let found = first.and_then(|first| {
+        lines
+            .iter()
+            .enumerate()
+            .filter(|(_, line)| line.contains(first))
+            .map(|(index, _)| (index, matched(&lines[index + 1..], &sought[1..])))
+            .min_by_key(|&(index, followed)| (std::cmp::Reverse(followed), index))
+    });
+    let Some((index, followed)) = found else {
         return if total == 1 {
             format!("no line holds its first line; the file's one line is `{opening}`")
         } else {
@@ -880,13 +892,29 @@ fn nearest(content: &str, find: &str) -> String {
         };
     };
     let (line, number) = (lines[index], index + 1);
-    let Some(next) = lines.get(index + 1) else {
-        return format!("its first line is on line {number} of {total}, `{line}`, the last");
+    let parted = index + 1 + followed;
+    let following = match followed {
+        0 => String::new(),
+        1 => format!(", line {} matches", number + 1),
+        _ => format!(", lines {} to {} match", number + 1, number + followed),
     };
-    format!(
-        "its first line is on line {number} of {total}, `{line}`, and line {} is `{next}`",
-        number + 1
-    )
+    match (followed, lines.get(parted)) {
+        (0, None) => format!("its first line is on line {number} of {total}, `{line}`, the last"),
+        (_, None) => format!(
+            "its first line is on line {number} of {total}, `{line}`{following}, and the file \
+             ends there"
+        ),
+        (_, Some(next)) => format!(
+            "its first line is on line {number} of {total}, `{line}`{following}, and line {} is \
+             `{next}`",
+            parted + 1
+        ),
+    }
+}
+
+// How many lines of `sought` the `lines` open with, each equal to its own.
+fn matched(lines: &[&str], sought: &[&str]) -> usize {
+    lines.iter().zip(sought).take_while(|(line, want)| line == want).count()
 }
 
 fn text<E: de::Error>(value: serde_json::Value, at: &str) -> Result<String, E> {

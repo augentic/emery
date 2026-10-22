@@ -122,7 +122,7 @@ serde_json = "1.0.154"
 sha2 = "0.11"
 strum = { version = "0.28", features = ["derive"] }
 tempfile = "3.27.0"
-tokio = { version = "1.53.3", features = ["fs", "io-util", "rt"] }
+tokio = { version = "1.54.1", features = ["fs", "io-util", "rt"] }
 toml = "1.1.8"
 tracing = "0.1.44"
 wasip3 = "0.9.0"
@@ -145,25 +145,25 @@ omnia-wasi-model = "0.37.0"
 omnia-wasi-otel = "0.37.0"
 omnia-wasi-vcs = "0.37.0"
 
-omnia-cursor = "0.31.0"
-omnia-filesystem = "0.31.0"
-omnia-genai = "0.31.0"
-omnia-git = "0.31.0"
+omnia-cursor = "0.32.0"
+omnia-filesystem = "0.32.0"
+omnia-genai = "0.32.0"
+omnia-git = "0.32.0"
 
 [patch.crates-io]
-omnia = { git = "https://github.com/augentic/omnia" }
-omnia-compile = { git = "https://github.com/augentic/omnia" }
-omnia-core = { git = "https://github.com/augentic/omnia" }
-omnia-sdk = { git = "https://github.com/augentic/omnia" }
-omnia-guest-macros = { git = "https://github.com/augentic/omnia" }
-omnia-host-macros = { git = "https://github.com/augentic/omnia" }
-omnia-plugin = { git = "https://github.com/augentic/omnia" }
-omnia-test = { git = "https://github.com/augentic/omnia" }
-omnia-wasi-blobstore = { git = "https://github.com/augentic/omnia" }
-omnia-wasi-keyvalue = { git = "https://github.com/augentic/omnia" }
-omnia-wasi-model = { git = "https://github.com/augentic/omnia" }
-omnia-wasi-otel = { git = "https://github.com/augentic/omnia" }
-omnia-wasi-vcs = { git = "https://github.com/augentic/omnia" }
+# omnia = { git = "https://github.com/augentic/omnia" }
+# omnia-compile = { git = "https://github.com/augentic/omnia" }
+# omnia-core = { git = "https://github.com/augentic/omnia" }
+# omnia-sdk = { git = "https://github.com/augentic/omnia" }
+# omnia-guest-macros = { git = "https://github.com/augentic/omnia" }
+# omnia-host-macros = { git = "https://github.com/augentic/omnia" }
+# omnia-plugin = { git = "https://github.com/augentic/omnia" }
+# omnia-test = { git = "https://github.com/augentic/omnia" }
+# omnia-wasi-blobstore = { git = "https://github.com/augentic/omnia" }
+# omnia-wasi-keyvalue = { git = "https://github.com/augentic/omnia" }
+# omnia-wasi-model = { git = "https://github.com/augentic/omnia" }
+# omnia-wasi-otel = { git = "https://github.com/augentic/omnia" }
+# omnia-wasi-vcs = { git = "https://github.com/augentic/omnia" }
 # omnia = { path = "../omnia/crates/omnia" }
 # omnia-compile = { path = "../omnia/crates/omnia-compile" }
 # omnia-core = { path = "../omnia/crates/omnia-core" }
