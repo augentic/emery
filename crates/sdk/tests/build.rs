@@ -5,7 +5,8 @@ use std::os::unix::fs::symlink;
 use std::path::Path;
 
 use emery_sdk::target::{
-    BuildContext, DesignType, Grant, Guarded, Report, Requirement, Scaffold, Scenario, Slice,
+    BuildContext, DesignType, Grant, Guarded, Marker, Report, Requirement, Scaffold, Scenario,
+    Slice,
 };
 use emery_sdk::{Doc, Error};
 use omnia_sdk::model::ToolCall;
@@ -1159,6 +1160,310 @@ async fn edit_nearest_line() {
              file's one line is `pub struct One;`; \
              `src/empty.rs`: `find` matches nothing in the file; the file is empty"
             .to_owned())
+    );
+    model.assert_exhausted();
+}
+
+// A `find` that matches nowhere as written matches with its layout
+// whitespace read past: a one-line `todo!("…")` meets the three lines the
+// formatter broke it over, the indentation before the opening line is
+// replaced with it, a `find` ending in a line break and the next line's
+// indentation leaves an empty next line as it stands, a comment line and a
+// string literal match as written, and a kept space between two words is
+// not read past; a literal whose spaces differ, or a `find` matching two
+// places modulo layout, is refused as one as written is.
+#[tokio::test]
+async fn edit_relaid() {
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let module = "pub(crate) async fn read(input: ReadInput) -> Output {\n    \
+                  let _ = (&input, &context);\n    \
+                  todo!(\n        \"REQ-001 orders.read: the handler\"\n    )\n}\n\n\
+                  // REQ-002 orders.list: the statement\n\
+                  pub fn list() {\n    let store_up = probe(\"SELECT 1\")\n        .await;\n\n    \
+                  let _ = store_up;\n}\n";
+    let twice = "fn a() {\n    todo!(\n        \"x\"\n    )\n}\nfn b() {\n    todo!(\n        \"x\"\n    \
+                 )\n}\n";
+    let literal = "fn c() {\n    say(\"two  spaces\")\n}\n";
+    let words = "pub struct Order;\npubstruct Line;\n";
+    write(
+        tmp.path(),
+        [
+            ("src/orders.rs", module),
+            ("src/twice.rs", twice),
+            ("src/literal.rs", literal),
+            ("src/words.rs", words),
+        ],
+    );
+    let root = tmp.path().to_str().expect("a UTF-8 scratch root");
+    let model = Scripted::answering([r#"{"covered":["REQ-001"],"written":[]}"#]).calling(
+        0,
+        [
+            edit_files(
+                "1",
+                &[
+                    (
+                        "src/orders.rs",
+                        "    let _ = (&input, &context);\n    todo!(\"REQ-001 orders.read: the \
+                         handler\")",
+                        "    let _ = &context;\n    Ok(Output::from(input))",
+                    ),
+                    (
+                        "src/orders.rs",
+                        "// REQ-002 orders.list: the statement\npub fn list() {\n    let \
+                         store_up = probe(\"SELECT 1\").await;\n    ",
+                        "// REQ-002 orders.list: the statement\npub fn list() {\n    let \
+                         store_up = probe(\"SELECT 1\").await.is_ok();\n    ",
+                    ),
+                ],
+            ),
+            edit_files("2", &[("src/twice.rs", "todo!(\"x\")", "x()")]),
+            edit_files("3", &[("src/literal.rs", "say(\"two spaces\")", "say(\"two\")")]),
+            edit_files("4", &[("src/words.rs", "pub struct Line;", "pub struct Row;")]),
+        ],
+    );
+
+    let report = ask(&model, &slice(), root).await.expect("accepted");
+    assert_eq!(report.written, ["src/orders.rs"]);
+    assert_eq!(
+        fs::read_to_string(tmp.path().join("src/orders.rs")).expect("edited"),
+        "pub(crate) async fn read(input: ReadInput) -> Output {\n    \
+         let _ = &context;\n    Ok(Output::from(input))\n}\n\n\
+         // REQ-002 orders.list: the statement\n\
+         pub fn list() {\n    let store_up = probe(\"SELECT 1\").await.is_ok();\n    \n    \
+         let _ = store_up;\n}\n",
+        "the marker's three lines and the statement's two are replaced, the empty line kept"
+    );
+    for untouched in [("src/twice.rs", twice), ("src/literal.rs", literal), ("src/words.rs", words)]
+    {
+        assert_eq!(
+            fs::read_to_string(tmp.path().join(untouched.0)).expect("as it was"),
+            untouched.1
+        );
+    }
+
+    let exchanges = model.exchanges();
+    assert_eq!(exchanges.len(), 5, "four calls, then the check");
+    assert!(exchanges[0].outcome.is_ok(), "{:?}", exchanges[0].outcome);
+    assert_eq!(
+        exchanges[1].outcome,
+        Err("edit_files: nothing edited: `src/twice.rs`: `find` matches 2 places in the file"
+            .to_owned())
+    );
+    assert_eq!(
+        exchanges[2].outcome,
+        Err("edit_files: nothing edited: `src/literal.rs`: `find` matches nothing in the file; \
+             no line holds its first line; the file has 3 lines and opens with `fn c() {`"
+            .to_owned()),
+        "a literal's spaces are its own"
+    );
+    assert_eq!(
+        exchanges[3].outcome,
+        Err("edit_files: nothing edited: `src/words.rs`: `find` matches nothing in the file; no \
+             line holds its first line; the file has 2 lines and opens with `pub struct Order;`"
+            .to_owned()),
+        "the space between two words is kept"
+    );
+    model.assert_exhausted();
+}
+
+// A `find` matching nothing whose first line is a call the formatter broke
+// after its opener is refused naming the opener's line and the line after
+// it, the occurrence whose next line shares the most of the call where
+// several are broken; and the lines after a found first line match with
+// their indentation read past.
+#[tokio::test]
+async fn edit_nearest_broken() {
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let module = "fn a() {\n    todo!(\n        \"REQ-001 orders.create: the handler\"\n    \
+                  )\n}\nfn b() {\n    todo!(\n        \"REQ-002 orders.list: the handler\"\n    \
+                  )\n}\n";
+    let indented = "fn c() {\n        let x = 1;\n        let y = 2;\n}\n";
+    write(tmp.path(), [("src/orders.rs", module), ("src/indented.rs", indented)]);
+    let root = tmp.path().to_str().expect("a UTF-8 scratch root");
+    let model = Scripted::answering([r#"{"covered":["REQ-001"],"written":[]}"#]).calling(
+        0,
+        [edit_files(
+            "1",
+            &[
+                ("src/orders.rs", "todo!(\"REQ-002 orders.list: the hander\")", "Ok(())"),
+                ("src/indented.rs", "fn c() {\n    let x = 1;\n    let y = 3;", "fn c() {}"),
+            ],
+        )],
+    );
+
+    let report = ask(&model, &slice(), root).await.expect("accepted");
+    assert_eq!(report.written, Vec::<String>::new());
+
+    let exchanges = model.exchanges();
+    assert_eq!(
+        exchanges[0].outcome,
+        Err("edit_files: nothing edited: \
+             `src/orders.rs`: `find` matches nothing in the file; no line holds its first line \
+             whole; its opener `todo!(` is line 7 of 10, the call broken over lines after it, \
+             and line 8 is `        \"REQ-002 orders.list: the handler\"`; \
+             `src/indented.rs`: `find` matches nothing in the file; its first line is on line 1 \
+             of 4, `fn c() {`, line 2 matches, and line 3 is `        let y = 2;`"
+            .to_owned())
+    );
+    model.assert_exhausted();
+}
+
+// A marker a guarded file names is filled by an edit whose `find` is the
+// marker's key alone, the block the scaffold laid replaced whole where the
+// file holds it as written or re-laid by the formatter, never the key's
+// own text inside it; a key named again once its block is gone is refused
+// naming the marker.
+#[tokio::test]
+async fn edit_marker_key() {
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let module = "pub(crate) async fn create(input: CreateInput) -> Output {\n    \
+                  let _ = (&input, &context);\n    \
+                  todo!(\n        \"REQ-001 orders.create: the handler\"\n    )\n}\n\n\
+                  pub fn total() {\n    todo!(\"REQ-002 orders.list: the behaviour\")\n}\n";
+    let tests = "#[tokio::test]\n#[ignore = \"REQ-001 create: unfilled\"]\nasync fn create() {\n    \
+                 let provider = provider();\n    let _ = &provider;\n    \
+                 todo!(\"REQ-001 create: arrange, act, assert\")\n}\n";
+    write(tmp.path(), [("src/orders.rs", module), ("tests/orders.rs", tests)]);
+    let root = tmp.path().to_str().expect("a UTF-8 scratch root");
+    let model = Scripted::answering([r#"{"covered":["REQ-001"],"written":["src/orders.rs"]}"#])
+        .calling(
+            0,
+            [
+                edit_files(
+                    "1",
+                    &[
+                        (
+                            "src/orders.rs",
+                            "REQ-001 orders.create: the handler",
+                            "    let _ = &context;\n    Ok(Output::from(input))",
+                        ),
+                        ("src/orders.rs", " REQ-002 orders.list: the behaviour ", "    Ok(())"),
+                        (
+                            "tests/orders.rs",
+                            "REQ-001 create: unfilled",
+                            "async fn create() {\n    let (status, _) = send(provider()).await;\n    \
+                             assert_eq!(status, 201);\n}",
+                        ),
+                    ],
+                ),
+                edit_files("2", &[("src/orders.rs", "REQ-001 orders.create: the handler", "")]),
+            ],
+        );
+    let files = [
+        Guarded::new("src/orders.rs", ["REQ-001 orders.create", "REQ-002 orders.list"])
+            .with_markers([
+                Marker::new(
+                    "REQ-001 orders.create: the handler",
+                    "    let _ = (&input, &context);\n    todo!(\"REQ-001 orders.create: the \
+                     handler\")",
+                ),
+                Marker::new(
+                    "REQ-002 orders.list: the behaviour",
+                    "    todo!(\"REQ-002 orders.list: the behaviour\")",
+                ),
+            ]),
+        Guarded::new("tests/orders.rs", ["REQ-001 create"]).with_markers([Marker::new(
+            "REQ-001 create: unfilled",
+            "#[ignore = \"REQ-001 create: unfilled\"]\nasync fn create() {\n    let provider = \
+             provider();\n    let _ = &provider;\n    todo!(\"REQ-001 create: arrange, act, \
+             assert\")\n}",
+        )]),
+    ];
+    let scaffold = Scaffold {
+        brief: "- `src/orders.rs`: scaffolded\n- `tests/orders.rs`: scaffolded\n",
+        passages: "",
+        files: &files,
+        types: &[],
+    };
+
+    let report = ask_guarded(&model, &slice(), root, &[], Some(scaffold), |_| Ok(Vec::new()))
+        .await
+        .expect("accepted");
+    assert_eq!(report.written, ["src/orders.rs", "tests/orders.rs"]);
+    assert_eq!(
+        fs::read_to_string(tmp.path().join("src/orders.rs")).expect("edited"),
+        "pub(crate) async fn create(input: CreateInput) -> Output {\n    \
+         let _ = &context;\n    Ok(Output::from(input))\n}\n\n\
+         pub fn total() {\n    Ok(())\n}\n",
+        "each block is replaced whole, the re-laid one included"
+    );
+    assert_eq!(
+        fs::read_to_string(tmp.path().join("tests/orders.rs")).expect("edited"),
+        "#[tokio::test]\nasync fn create() {\n    let (status, _) = send(provider()).await;\n    \
+         assert_eq!(status, 201);\n}\n",
+        "the test's block is replaced from its `#[ignore]` line"
+    );
+
+    let exchanges = model.exchanges();
+    assert_eq!(exchanges.len(), 3, "two calls, then the check");
+    assert!(exchanges[0].outcome.is_ok(), "{:?}", exchanges[0].outcome);
+    assert_eq!(
+        exchanges[1].outcome,
+        Err("edit_files: nothing edited: `src/orders.rs`: `find` names the marker `REQ-001 \
+             orders.create: the handler`, but the file no longer holds the block the scaffold \
+             laid for it; copy what stands there into `find`"
+            .to_owned())
+    );
+    model.assert_exhausted();
+}
+
+// A key is a marker of the file it guards alone, plain text in any other;
+// and the brief says how a key is used where any scaffolded file carries
+// one.
+#[tokio::test]
+async fn edit_marker_scoped() {
+    let tmp = tempfile::tempdir().expect("tempdir");
+    write(
+        tmp.path(),
+        [
+            (
+                "src/orders.rs",
+                "pub fn total() {\n    todo!(\"REQ-002 orders.list: the behaviour\")\n}\n",
+            ),
+            ("tests/orders.rs", "#[tokio::test]\nasync fn create() {}\n"),
+        ],
+    );
+    let root = tmp.path().to_str().expect("a UTF-8 scratch root");
+    let model = Scripted::answering([r#"{"covered":["REQ-001"],"written":[]}"#]).calling(
+        0,
+        [edit_files("1", &[("tests/orders.rs", "REQ-002 orders.list: the behaviour", "")])],
+    );
+    let files = [
+        Guarded::new("src/orders.rs", ["REQ-002 orders.list"]).with_markers([Marker::new(
+            "REQ-002 orders.list: the behaviour",
+            "    todo!(\"REQ-002 orders.list: the behaviour\")",
+        )]),
+        Guarded::new("tests/orders.rs", Vec::<String>::new()),
+    ];
+    let scaffold = Scaffold {
+        brief: "- `src/orders.rs`: scaffolded\n- `tests/orders.rs`: scaffolded\n",
+        passages: "",
+        files: &files,
+        types: &[],
+    };
+
+    let report = ask_guarded(&model, &slice(), root, &[], Some(scaffold), |_| Ok(Vec::new()))
+        .await
+        .expect("accepted");
+    assert_eq!(report.written, Vec::<String>::new());
+
+    let exchanges = model.exchanges();
+    assert_eq!(
+        exchanges[0].outcome,
+        Err("edit_files: nothing edited: `tests/orders.rs`: `find` matches nothing in the file; \
+             no line holds its first line; the file has 2 lines and opens with `#[tokio::test]`"
+            .to_owned())
+    );
+    let user = &model.seen()[0].messages[0];
+    assert!(
+        user.contains(
+            "recovery after a refusal, not a step. A marker the brief quotes a key for is filled \
+             by one `edit_files` edit whose `find` is that key alone and whose `replace` is the \
+             text that takes the block's place, so its lines are never copied; a `find` copied \
+             from the brief matches where the formatter has broken its lines or moved its \
+             indentation.\n\nImplement every requirement"
+        ),
+        "{user}"
     );
     model.assert_exhausted();
 }

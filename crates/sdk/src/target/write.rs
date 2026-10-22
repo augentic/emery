@@ -4,6 +4,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::future::ready;
 use std::io::ErrorKind;
+use std::ops::Range;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::{fmt, fs};
@@ -17,7 +18,7 @@ use serde::de::{self, DeserializeSeed, MapAccess, SeqAccess, Visitor};
 use serde::{Deserialize, Deserializer};
 use serde_json::json;
 
-use super::Guarded;
+use super::{Guarded, Marker};
 
 const WRITE_FILES: &str = "write_files";
 const EDIT_FILES: &str = "edit_files";
@@ -35,8 +36,15 @@ pub(super) struct Writer {
     root: PathBuf,
     turn: String,
     written: Written,
-    guarded: BTreeMap<String, Vec<String>>,
+    guarded: BTreeMap<String, Guard>,
     snapshots: BTreeMap<String, Vec<u8>>,
+}
+
+// What one guarded file holds for the tools: the tokens a whole write
+// keeps and the markers an edit fills by key.
+struct Guard {
+    keeps: Vec<String>,
+    markers: Vec<Marker>,
 }
 
 impl Writer {
@@ -63,7 +71,13 @@ impl Writer {
                 })?;
                 self.snapshots.insert(file.clone(), bytes);
             }
-            self.guarded.insert(file, guarded.keeps.clone());
+            self.guarded.insert(
+                file,
+                Guard {
+                    keeps: guarded.keeps.clone(),
+                    markers: guarded.markers.clone(),
+                },
+            );
         }
         Ok(self)
     }
@@ -71,6 +85,23 @@ impl Writer {
     // The two write tools, and `restore_files` where a file is guarded.
     #[must_use]
     pub(super) fn tools(&self) -> Vec<Tool> {
+        let keyed = if self.guarded.values().any(|guard| !guard.markers.is_empty()) {
+            " A `find` that is the key of a marker the brief quotes, alone, replaces the block \
+             the scaffold laid for that marker, so its lines are never copied."
+        } else {
+            ""
+        };
+        let edit = format!(
+            "Edit within one or more files beneath `$WORKSPACE`: each edit replaces the one \
+             place `find` matches in the file at `path` with `replace`, and the file is \
+             otherwise as it was. A `find` matches as written, or with its line breaks and \
+             indentation read past outside string literals and comments, so a block quoted \
+             in the brief matches where the formatter has re-laid it.{keyed} Every edit is \
+             held before any is applied: a `find` matching nowhere or more than once, a path \
+             the tree holds no file at, or a path `write_files` would refuse, refuses the \
+             call whole and changes nothing. To create or replace a file whole, use \
+             `write_files`."
+        );
         let mut tools = vec![
             Tool::Function(Function::of::<WriteFiles>(
                 WRITE_FILES,
@@ -84,25 +115,17 @@ impl Writer {
                  without every marker and name the skeleton holds, or one deleting such a \
                  file. For a change within a file, use `edit_files`.",
             )),
-            Tool::Function(Function::of::<EditFiles>(
-                EDIT_FILES,
-                "Edit within one or more files beneath `$WORKSPACE`: each edit replaces the one \
-                 place `find` matches in the file at `path` with `replace`, and the file is \
-                 otherwise as it was. Every edit is held before any is applied: a `find` \
-                 matching nowhere or more than once, a path the tree holds no file at, or a \
-                 path `write_files` would refuse, refuses the call whole and changes nothing. \
-                 To create or replace a file whole, use `write_files`.",
-            )),
+            Tool::Function(Function::of::<EditFiles>(EDIT_FILES, &edit)),
         ];
         if !self.guarded.is_empty() {
             tools.push(Tool::Function(Function::of::<RestoreFiles>(
                 RESTORE_FILES,
                 "Put one or more files the brief says were scaffolded before this turn back as \
                  they were scaffolded, each path `/`-separated and relative to `$WORKSPACE`. \
-                 This is recovery for a skeleton a refused or mistaken write left wrong: every \
+                 This is recovery for a skeleton a refused `write_files` call left wrong: every \
                  edit made to the file this turn is discarded with it and the file is filled \
-                 again from its skeleton, so a file whose edits stand is not restored, and a \
-                 turn with no refusal before it has no call for this tool. A path that was not \
+                 again from its skeleton, so a file whose edits stand is not restored, and it \
+                 is never called after `edit_files` or a failed check. A path that was not \
                  scaffolded, or that the tree lacked before this turn, refuses the call whole \
                  and changes nothing.",
             )));
@@ -253,7 +276,7 @@ impl Writer {
     }
 
     // Every path is held to the rule and to a file the tree holds, and every
-    // `find` to one match in the file as the call's earlier edits leave it,
+    // `find` to one place in the file as the call's earlier edits leave it,
     // before any file is written, so a call refused anywhere leaves the tree
     // as it was; a file edited more than once is written once.
     fn edit(&self, call: &ToolCall) -> Result<Vec<Wrote>, String> {
@@ -294,13 +317,20 @@ impl Writer {
                     }
                 }
             };
-            match content.matches(find.as_str()).count() {
-                1 => *content = content.replacen(find.as_str(), &replace, 1),
-                0 => refused.push(format!(
+            let markers = self.guarded.get(&file).map_or(&[][..], |guard| guard.markers.as_slice());
+            match place(content, &find, markers) {
+                Ok(range) => content.replace_range(range, &replace),
+                Err(Miss::Nothing) => refused.push(format!(
                     "`{path}`: `find` matches nothing in the file; {}",
                     nearest(content, &find)
                 )),
-                n => refused.push(format!("`{path}`: `find` matches {n} places in the file")),
+                Err(Miss::Several(n)) => {
+                    refused.push(format!("`{path}`: `find` matches {n} places in the file"));
+                }
+                Err(Miss::Filled(key)) => refused.push(format!(
+                    "`{path}`: `find` names the marker `{key}`, but the file no longer holds the \
+                     block the scaffold laid for it; copy what stands there into `find`"
+                )),
             }
         }
         if !refused.is_empty() {
@@ -339,7 +369,7 @@ impl Writer {
     // since one written short of them loses the markers the adapter laid in
     // it. A path the tree no longer holds is written as any other.
     fn guards(&self, file: &str, held: Standing, content: &str) -> Option<String> {
-        let keeps = self.guarded.get(file)?;
+        let keeps = &self.guarded.get(file)?.keeps;
         if held != Standing::File {
             return None;
         }
@@ -863,11 +893,190 @@ fn single_file<E: de::Error>(entries: Vec<(String, serde_json::Value)>) -> Resul
     })
 }
 
+// Why an edit's `find` placed nothing: no place, several, or a marker named
+// by its key whose block the file no longer holds.
+enum Miss {
+    Nothing,
+    Several(usize),
+    Filled(String),
+}
+
+// Where `find` stands in `content`: the block of the marker whose key
+// `find` is, else the one place `find` matches as written, else the one
+// place it matches with its layout whitespace read past — so a key names a
+// block without its lines, and a block quoted in the brief matches where
+// the formatter has re-laid it.
+fn place(content: &str, find: &str, markers: &[Marker]) -> Result<Range<usize>, Miss> {
+    if let Some(marker) = markers.iter().find(|marker| marker.key == find.trim()) {
+        return match span(content, &marker.block) {
+            Err(Miss::Nothing) => Err(Miss::Filled(marker.key.clone())),
+            placed => placed,
+        };
+    }
+    span(content, find)
+}
+
+// The one place `text` stands in `content`, as written or modulo layout.
+fn span(content: &str, text: &str) -> Result<Range<usize>, Miss> {
+    let mut exact = content.match_indices(text).map(|(start, _)| start..start + text.len());
+    match (exact.next(), exact.count()) {
+        (Some(range), 0) => Ok(range),
+        (Some(_), more) => Err(Miss::Several(more + 1)),
+        (None, _) => Canonical::of(content).find(content, text),
+    }
+}
+
+// A text with its layout whitespace read past: outside string literals and
+// line comments, each whitespace run dropped, or kept as one space where it
+// parts two identifier characters, and every kept byte mapped to where it
+// stands in the text. Literals and comments are kept as written, since
+// their whitespace is theirs.
+struct Canonical {
+    text: Vec<u8>,
+    origin: Vec<usize>,
+}
+
+impl Canonical {
+    fn of(content: &str) -> Self {
+        let bytes = content.as_bytes();
+        let mut canonical = Self {
+            text: Vec::with_capacity(bytes.len()),
+            origin: Vec::with_capacity(bytes.len()),
+        };
+        let mut pending = None;
+        let mut verbatim = Verbatim::None;
+        let mut at = 0;
+        while at < bytes.len() {
+            let byte = bytes[at];
+            match verbatim {
+                Verbatim::Literal => {
+                    canonical.keep(byte, at);
+                    if byte == b'\\' && at + 1 < bytes.len() {
+                        canonical.keep(bytes[at + 1], at + 1);
+                        at += 1;
+                    } else if byte == b'"' {
+                        verbatim = Verbatim::None;
+                    }
+                }
+                Verbatim::Comment => {
+                    canonical.keep(byte, at);
+                    if byte == b'\n' {
+                        verbatim = Verbatim::None;
+                    }
+                }
+                Verbatim::None if byte.is_ascii_whitespace() => {
+                    pending.get_or_insert(at);
+                }
+                Verbatim::None => {
+                    if let Some(run) = pending.take()
+                        && is_identifier(byte)
+                        && canonical.text.last().is_some_and(|&last| is_identifier(last))
+                    {
+                        canonical.keep(b' ', run);
+                    }
+                    canonical.keep(byte, at);
+                    // HACK: a quote in a char literal, `'"'`, would open a
+                    // literal that never closes, so it is kept whole here
+                    if byte == b'\'' && bytes[at + 1..].starts_with(b"\"'") {
+                        canonical.keep(bytes[at + 1], at + 1);
+                        canonical.keep(bytes[at + 2], at + 2);
+                        at += 2;
+                    } else if byte == b'"' {
+                        verbatim = Verbatim::Literal;
+                    } else if byte == b'/' && bytes.get(at + 1) == Some(&b'/') {
+                        verbatim = Verbatim::Comment;
+                    }
+                }
+            }
+            at += 1;
+        }
+        canonical
+    }
+
+    fn keep(&mut self, byte: u8, at: usize) {
+        self.text.push(byte);
+        self.origin.push(at);
+    }
+
+    // The one place `text` stands in the canonical content, as the bytes of
+    // `content` it spans: the indentation before it taken where `text` opens
+    // with whitespace, and the whitespace after it taken as `text`'s own
+    // trailing whitespace has it, line end for line end and space for space,
+    // so a block copied with the indentation of the line after it still
+    // leaves that line as the file holds it.
+    fn find(&self, content: &str, text: &str) -> Result<Range<usize>, Miss> {
+        let sought = Self::of(text).text;
+        if sought.is_empty() {
+            return Err(Miss::Nothing);
+        }
+        let hits = occurrences(&self.text, &sought);
+        let &[hit] = hits.as_slice() else {
+            return Err(if hits.is_empty() { Miss::Nothing } else { Miss::Several(hits.len()) });
+        };
+        let bytes = content.as_bytes();
+        let mut start = self.origin[hit];
+        let mut end = self.origin[hit + sought.len() - 1] + 1;
+
+        // the indentation before the opening line
+        if text.starts_with(|c: char| c.is_whitespace()) {
+            while start > 0 && matches!(bytes[start - 1], b' ' | b'\t') {
+                start -= 1;
+            }
+        }
+
+        // the whitespace after, as `text` has it
+        for byte in text[text.trim_end().len()..].bytes() {
+            if byte == b'\n' {
+                let mut probe = end;
+                while probe < bytes.len() && matches!(bytes[probe], b' ' | b'\t' | b'\r') {
+                    probe += 1;
+                }
+                if probe < bytes.len() && bytes[probe] == b'\n' {
+                    end = probe + 1;
+                } else {
+                    break;
+                }
+            } else if end < bytes.len() && matches!(bytes[end], b' ' | b'\t') {
+                end += 1;
+            }
+        }
+        Ok(start..end)
+    }
+}
+
+// What the canonical reading keeps as written: a string literal to its
+// closing quote, a line comment to its line end, or nothing.
+#[derive(Clone, Copy)]
+enum Verbatim {
+    None,
+    Literal,
+    Comment,
+}
+
+const fn is_identifier(byte: u8) -> bool {
+    byte.is_ascii_alphanumeric() || byte == b'_'
+}
+
+// Where `sought` stands in `text`, each occurrence once and none
+// overlapping, as `str::matches` counts them.
+fn occurrences(text: &[u8], sought: &[u8]) -> Vec<usize> {
+    let mut hits = Vec::new();
+    let mut from = 0;
+    while let Some(offset) = text[from..].windows(sought.len()).position(|window| window == sought)
+    {
+        hits.push(from + offset);
+        from += offset + sought.len();
+    }
+    hits
+}
+
 // What the file holds nearest a `find` that matched nothing: the line its
 // first line is found on, the occurrence the most lines of `find` follow
 // where it is found more than once, and the line where the file parts from
-// `find` after them, or the file's opening line and length when no line
-// holds it, so the refusal carries the text to copy.
+// `find` after them; the opener of a call the formatter broke after it,
+// `todo!(`, and the line after that, where no line holds the first line
+// whole; or the file's opening line and length when no line holds it, so
+// the refusal carries the text to copy.
 fn nearest(content: &str, find: &str) -> String {
     let lines: Vec<&str> = content.lines().collect();
     let total = lines.len();
@@ -885,6 +1094,16 @@ fn nearest(content: &str, find: &str) -> String {
             .min_by_key(|&(index, followed)| (std::cmp::Reverse(followed), index))
     });
     let Some((index, followed)) = found else {
+        if let Some((index, opener)) = first.and_then(|first| broken(&lines, first)) {
+            let next = lines
+                .get(index + 1)
+                .map_or_else(String::new, |next| format!(", and line {} is `{next}`", index + 2));
+            return format!(
+                "no line holds its first line whole; its opener `{opener}` is line {} of \
+                 {total}, the call broken over lines after it{next}",
+                index + 1
+            );
+        }
         return if total == 1 {
             format!("no line holds its first line; the file's one line is `{opening}`")
         } else {
@@ -915,9 +1134,30 @@ fn nearest(content: &str, find: &str) -> String {
     }
 }
 
-// How many lines of `sought` the `lines` open with, each equal to its own.
+// How many lines of `sought` the `lines` open with, each equal to its own
+// but for the whitespace around it.
 fn matched(lines: &[&str], sought: &[&str]) -> usize {
-    lines.iter().zip(sought).take_while(|(line, want)| line == want).count()
+    lines.iter().zip(sought).take_while(|(line, want)| line.trim() == want.trim()).count()
+}
+
+// The line a call `first` opens, `todo!("…")`, stands on as its opener
+// alone, `todo!(`, where the formatter broke the call after it: the one
+// whose next line shares the most of what follows the opener in `first`,
+// so the right marker is quoted where several are broken.
+fn broken<'a>(lines: &[&'a str], first: &str) -> Option<(usize, &'a str)> {
+    let opener = &first[..=first.find('(')?];
+    let rest = first[opener.len()..].trim();
+    lines
+        .iter()
+        .enumerate()
+        .filter(|(_, line)| line.trim() == opener)
+        .map(|(index, line)| {
+            let next = lines.get(index + 1).map_or("", |next| next.trim());
+            let shared = next.bytes().zip(rest.bytes()).take_while(|(a, b)| a == b).count();
+            (index, line.trim(), shared)
+        })
+        .max_by_key(|&(index, _, shared)| (shared, std::cmp::Reverse(index)))
+        .map(|(index, line, _)| (index, line))
 }
 
 fn text<E: de::Error>(value: serde_json::Value, at: &str) -> Result<String, E> {

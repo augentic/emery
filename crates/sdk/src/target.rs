@@ -346,6 +346,10 @@ pub struct Scaffold<'a> {
 /// write to `path` while it exists in the workspace unless the new content
 /// contains every token in [`keeps`](Self::keeps). An empty `keeps` list
 /// allows any whole-file write while still preventing deletion.
+///
+/// `edit_files` fills a [`Marker`] in [`markers`](Self::markers) when an
+/// edit's `find` is the marker's key alone, replacing the block the scaffold
+/// laid for it without the model copying the block's lines.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Guarded {
     /// Root-relative path of the scaffolded file.
@@ -353,16 +357,51 @@ pub struct Guarded {
     /// Substrings that any whole-file write to `path` must preserve, such as
     /// requirement markers, item declarations, or anchored list lines.
     pub keeps: Vec<String>,
+    /// Markers in `path` that `edit_files` addresses by key.
+    pub markers: Vec<Marker>,
 }
 
 impl Guarded {
-    /// Returns a guard over `path` keeping `keeps`.
+    /// Returns a guard over `path` keeping `keeps`, with no markers.
     pub fn new(
         path: impl Into<String>, keeps: impl IntoIterator<Item = impl Into<String>>,
     ) -> Self {
         Self {
             path: path.into(),
             keeps: keeps.into_iter().map(Into::into).collect(),
+            markers: Vec::new(),
+        }
+    }
+
+    /// Returns the guard with `markers` appended to [`markers`](Self::markers).
+    #[must_use]
+    pub fn with_markers(mut self, markers: impl IntoIterator<Item = Marker>) -> Self {
+        self.markers.extend(markers);
+        self
+    }
+}
+
+/// A scaffolded block in a [`Guarded`] file that `edit_files` fills by key.
+///
+/// An edit whose `find` equals [`key`](Self::key), trimmed, replaces the one
+/// place the file holds [`block`](Self::block), as written or with its line
+/// breaks and indentation read past, so the model names the marker rather
+/// than copying its lines.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Marker {
+    /// The key an edit's `find` names the marker by, such as
+    /// `REQ-001 orders.read: the handler`.
+    pub key: String,
+    /// The block the scaffold laid for the marker, as the file holds it.
+    pub block: String,
+}
+
+impl Marker {
+    /// Returns a marker addressed by `key` standing for `block`.
+    pub fn new(key: impl Into<String>, block: impl Into<String>) -> Self {
+        Self {
+            key: key.into(),
+            block: block.into(),
         }
     }
 }
@@ -796,10 +835,19 @@ impl Display for Brief<'_> {
                      an entry that drops one is refused whole naming what it dropped, as a \
                      `delete` naming one of them is. `restore_files` puts {one} back as it was \
                      scaffolded, the turn's edits to it discarded: recovery after a refusal, \
-                     not a step.\n\n",
+                     not a step.{keyed}\n\n",
                     count = if scaffold.files.len() == 1 { "file" } else { "files" },
                     are = if scaffold.files.len() == 1 { "is" } else { "are" },
                     one = if scaffold.files.len() == 1 { "it" } else { "one" },
+                    keyed = if scaffold.files.iter().any(|file| !file.markers.is_empty()) {
+                        " A marker the brief quotes a key for is filled by one `edit_files` \
+                         edit whose `find` is that key alone and whose `replace` is the text \
+                         that takes the block's place, so its lines are never copied; a `find` \
+                         copied from the brief matches where the formatter has broken its lines \
+                         or moved its indentation."
+                    } else {
+                        ""
+                    },
                 )?;
             }
             if let Some(passages) = scaffold.quoted() {
