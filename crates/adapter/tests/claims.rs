@@ -85,11 +85,48 @@ fn clean_evidence() {
         r#"{"claims":[
             {"kind":"requirement","id":"password-reset.request","statement":"Users reset by email."},
             {"kind":"criterion","id":"password-reset.expiry","criterion":"Links expire in 30m."},
+            {"kind":"retire","id":"password-reset.by-post","path":"docs/reset.md#L40","statement":"Resetting by postal letter is withdrawn."},
             {"kind":"example","id":"password-reset.stale","replay-digest":"sha256:00"},
             {"kind":"decision"}
         ]}"#,
     );
     assert!(clean.findings().is_empty(), "clean evidence passes the gate");
+}
+
+// A retire requires an id and a statement; an extra of another kind riding
+// it — a criterion's condition or a code kind's callee, signature, route, or
+// message — is a finding apiece, so the withdrawal stays one claim.
+#[test]
+fn retire_gate() {
+    let bare = evidence(r#"{"claims":[{"kind":"retire","statement":"Withdrawn."}]}"#);
+    let findings = bare.findings();
+    assert_eq!(findings.len(), 1, "{findings:?}");
+    assert!(findings[0].contains("`retire` claims require an id"), "{findings:?}");
+
+    let unstated = evidence(r#"{"claims":[{"kind":"retire","id":"orders.export"}]}"#);
+    let findings = unstated.findings();
+    assert_eq!(findings.len(), 1, "{findings:?}");
+    assert!(findings[0].contains("`orders.export` is missing extra `statement`"), "{findings:?}");
+
+    let laden = evidence(
+        r#"{"claims":[
+            {"kind":"retire","id":"orders.export","statement":"Withdrawn.","criterion":"No export link."},
+            {"kind":"retire","id":"orders.notify","statement":"Withdrawn.","callee":"mailer:send","signature":"fn notify()"},
+            {"kind":"retire","id":"orders.create","statement":"Withdrawn.","route":"POST /orders","message":"orders.created"}
+        ]}"#,
+    );
+    let findings = laden.findings();
+    assert_eq!(findings.len(), 5, "one finding per refused extra: {findings:?}");
+    for (finding, expected) in findings.iter().zip([
+        "claim 0: `retire` `orders.export` carries extra `criterion`, which belongs to another \
+         kind",
+        "claim 1: `retire` `orders.notify` carries extra `callee`",
+        "claim 1: `retire` `orders.notify` carries extra `signature`",
+        "claim 2: `retire` `orders.create` carries extra `route`",
+        "claim 2: `retire` `orders.create` carries extra `message`",
+    ]) {
+        assert!(finding.contains(expected), "{expected}: {findings:?}");
+    }
 }
 
 #[test]
@@ -140,6 +177,7 @@ fn anchors() {
     assert_eq!(Anchor::parse("a/.emery.md").map(|anchor| anchor.path), Ok("a/.emery.md"));
     assert_eq!(Anchor::parse("a/.gitignore").map(|anchor| anchor.path), Ok("a/.gitignore"));
     assert_eq!(Anchor::parse("a/spec.md.bak").map(|anchor| anchor.path), Ok("a/spec.md.bak"));
+    assert_eq!(Anchor::parse("src/spec/x.ts#L1").map(|anchor| anchor.path), Ok("src/spec/x.ts"));
 
     for (anchor, expected) in [
         ("src/orders.ts#12", BadAnchor::Grammar),
@@ -161,6 +199,10 @@ fn anchors() {
         ("a/.git/x#L1", BadAnchor::Path(BadPath::SkipDir(".git".to_string()))),
         ("spec.md", BadAnchor::Path(BadPath::SkipFile("spec.md".to_string()))),
         ("docs/plan.md#L3", BadAnchor::Path(BadPath::SkipFile("plan.md".to_string()))),
+        ("spec", BadAnchor::Path(BadPath::Specification)),
+        ("spec/spec.json", BadAnchor::Path(BadPath::Specification)),
+        ("spec/spec.md", BadAnchor::Path(BadPath::Specification)),
+        ("./spec/design.json#L1", BadAnchor::Path(BadPath::Specification)),
         ("src/orders.ts#L34-L12", BadAnchor::Reversed { start: 34, end: 12 }),
     ] {
         assert_eq!(Anchor::parse(anchor), Err(expected), "{anchor}");

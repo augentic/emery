@@ -23,6 +23,8 @@ pub const TYPE: &str = "Type:";
 pub struct Design {
     /// The grammar the document was written under.
     pub emery: u32,
+    /// The revision this one amends, or `None` when drafted from sources alone.
+    pub parent: Option<String>,
     /// Markdown paragraphs preceding the first section.
     pub preamble: Vec<String>,
     /// The sections, in vocabulary order.

@@ -64,6 +64,21 @@ fn skip_roots() {
     assert_eq!(files, ["nested/keep.md", "readme.md"]);
 }
 
+// The specification lives in the root-level `spec/`; a `spec/` deeper in the
+// tree is the project's own.
+#[test]
+fn skip_specification() {
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let root = tree(
+        tmp.path(),
+        &["readme.md", "spec/spec.json", "spec/design.json", "src/spec/cases.rs", "nested/spec"],
+    );
+
+    let files = workspace::list(root, |_| true).expect("walk");
+
+    assert_eq!(files, ["nested/spec", "readme.md", "src/spec/cases.rs"]);
+}
+
 // A working copy linked to a repository holds `.git` as a file naming it.
 #[test]
 fn skip_git_file() {

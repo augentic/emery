@@ -172,7 +172,7 @@ const AUTH_TOKEN: Shape = Shape {
 
 // Names every change under `at` that carries a credential, `<path>: <what>`,
 // reading only the paths the name rule passes.
-pub(super) async fn findings<F: Files>(
+pub async fn findings<F: Files>(
     files: &F, at: &str, changes: &[Change],
 ) -> Result<Vec<String>, Error> {
     let mut findings = Vec::new();
@@ -189,6 +189,19 @@ pub(super) async fn findings<F: Files>(
         }
     }
     Ok(findings)
+}
+
+// The gate's refusal: what `wrote` left changed carries the credentials
+// listed, and none of it is sealed.
+pub fn refusal(wrote: &str, leaks: &[String]) -> Error {
+    let listed: Vec<String> = leaks.iter().map(|leak| format!("- {leak}")).collect();
+    Error::BadRequest {
+        code: "secret-detected".into(),
+        description: format!(
+            "what {wrote} wrote carries a credential, so none of it is sealed:\n{}",
+            listed.join("\n")
+        ),
+    }
 }
 
 fn named(path: &str) -> Option<&'static str> {

@@ -1,4 +1,4 @@
-//! Resolves `specify` sources and `build` targets from CLI arguments or `emery.toml`.
+//! Resolves `specify` sources and the target from CLI arguments or `emery.toml`.
 
 use std::path::{Path, PathBuf};
 use std::str::FromStr as _;
@@ -6,6 +6,7 @@ use std::str::FromStr as _;
 use anyhow::Context;
 use emery_engine::build::BuildInput;
 use emery_engine::specify::{SourceConfig, SourceContent, SourceRepository, SpecifyInput};
+use emery_engine::vcs::TargetRef;
 use emery_engine::{AdapterRef, Rank, preopen_join, preopen_path};
 use omnia_sdk::plugins::Digest;
 use omnia_sdk::{Error, bad_request};
@@ -18,8 +19,10 @@ pub const CONFIG_FILE: &str = "emery.toml";
 /// The file's `[[source]]` tables are the base and the argv sources layer
 /// over them: an argv source takes the place of the file source of its
 /// name, whole, and is appended otherwise, in argv order. A run naming
-/// sources and no file reads none; one naming neither discovers the
-/// project-root file.
+/// sources and no file reads no file; one naming neither discovers the
+/// project-root file. The `[target]` table of the file read is the run's
+/// target, the repository the specification lives in, so a run naming its
+/// sources on the command line knows it only under `--config`.
 pub struct SourceCarriers<'a> {
     /// Workspace-backed adapter references from argv.
     pub adapters: &'a [String],
@@ -40,15 +43,11 @@ impl TryFrom<SourceCarriers<'_>> for SpecifyInput {
         } = carriers;
         let argv = !adapters.is_empty() || !descriptions.is_empty();
 
-        // the file, named or discovered, and the sources it states
-        let file = match (config, argv) {
-            (Some(path), _) => Some(Carrier::named(path)?),
-            (None, false) => discover()?.map(Carrier::discovered),
-            (None, true) => None,
-        };
-        let mut sources = match &file {
-            Some(carrier) => sources_from(&carrier.path)?,
-            None => Vec::new(),
+        // the file, named or discovered, and the sources and target it states
+        let file = if config.is_none() && argv { None } else { Carrier::resolve(config)? };
+        let (mut sources, target) = match &file {
+            Some(carrier) => ConfigFile::read(&carrier.path)?.into_parts(&carrier.path)?,
+            None => (Vec::new(), None),
         };
         let held = sources.len();
 
@@ -76,8 +75,43 @@ impl TryFrom<SourceCarriers<'_>> for SpecifyInput {
         let label = file.as_ref().map_or("argv", |carrier| carrier.label.as_str());
         tracing::debug!(carrier = %label, sources = sources.len(), "sources decoded");
 
-        Ok(Self { sources })
+        Ok(Self {
+            sources,
+            apply: false,
+            target,
+        })
     }
+}
+
+/// The target whose repository the specification lives in, as `apply`, `show`, and `specify` read it.
+///
+/// The `[target]` table of `config`, or of the discovered project-root file
+/// when `config` names none; `repository` takes the place of its
+/// `repository`. `None` when no file states a target, so the verb decides
+/// whether it needs one.
+///
+/// # Errors
+///
+/// Returns [`Error::BadRequest`] when the file cannot be read or decoded.
+pub fn target(config: Option<&Path>, repository: Option<&str>) -> Result<Option<TargetRef>, Error> {
+    let Some(carrier) = Carrier::resolve(config)? else {
+        return Ok(None);
+    };
+    let Some(mut entry) = ConfigFile::read(&carrier.path)?.target else {
+        return Ok(None);
+    };
+    if let Some(repository) = repository {
+        entry.repository = Some(repository.to_owned());
+    }
+    Ok(Some(entry.into_ref()))
+}
+
+/// The `build-target-required` refusal of `verb`, which reads or seals the current revision and was handed no `[target]`.
+pub fn missing_target(verb: &str) -> Error {
+    target_required(&format!(
+        "the specification has no repository to live in: {verb} needs a `[target]` table \
+         naming one"
+    ))
 }
 
 /// A positional target adapter, a `--repository`, and an optional `--config` path.
@@ -108,21 +142,13 @@ impl TryFrom<TargetCarriers<'_>> for BuildInput {
         } = carriers;
 
         // the file, named or discovered, and the target it states
-        let (file, mut target) = match (config, adapter) {
-            (Some(path), _) => {
-                let carrier = Carrier::named(path)?;
-                let target = target_from(&carrier.path)?;
-                (Some(carrier), target)
-            }
-            (None, Some(reference)) => (None, TargetEntry::argv(reference)?),
-            (None, None) => {
-                let Some(path) = discover()? else {
-                    return Err(target_required("no target adapter"));
-                };
-                let carrier = Carrier::discovered(path);
-                let target = target_from(&carrier.path)?;
-                (Some(carrier), target)
-            }
+        let (file, mut target) = if let (None, Some(reference)) = (config, adapter) {
+            (None, TargetEntry::argv(reference)?)
+        } else {
+            let carrier =
+                Carrier::resolve(config)?.ok_or_else(|| target_required("no target adapter"))?;
+            let target = target_from(&carrier.path)?;
+            (Some(carrier), target)
         };
 
         // the flags, each in the place of the file's key
@@ -149,6 +175,13 @@ struct Carrier {
 }
 
 impl Carrier {
+    fn resolve(config: Option<&Path>) -> Result<Option<Self>, Error> {
+        match config {
+            Some(path) => Self::named(path).map(Some),
+            None => Ok(discover()?.map(Self::discovered)),
+        }
+    }
+
     fn named(path: &Path) -> Result<Self, Error> {
         let path = config_path(path)?;
         Ok(Self {
@@ -163,15 +196,6 @@ impl Carrier {
             label: CONFIG_FILE.to_owned(),
         }
     }
-}
-
-fn sources_from(path: &Path) -> Result<Vec<SourceConfig>, Error> {
-    let file = ConfigFile::read(path)?;
-    let base = path
-        .parent()
-        .filter(|parent| !parent.as_os_str().is_empty())
-        .unwrap_or_else(|| Path::new("."));
-    file.source.into_iter().map(|entry| entry.into_config(base)).collect()
 }
 
 fn target_from(path: &Path) -> Result<TargetEntry, Error> {
@@ -233,6 +257,19 @@ impl ConfigFile {
             let path = path.display();
             bad_request!("{path}: {err}")
         })
+    }
+
+    fn into_parts(self, path: &Path) -> Result<(Vec<SourceConfig>, Option<TargetRef>), Error> {
+        let base = path
+            .parent()
+            .filter(|parent| !parent.as_os_str().is_empty())
+            .unwrap_or_else(|| Path::new("."));
+        let sources = self
+            .source
+            .into_iter()
+            .map(|entry| entry.into_config(base))
+            .collect::<Result<_, _>>()?;
+        Ok((sources, self.target.map(TargetEntry::into_ref)))
     }
 }
 
@@ -333,6 +370,13 @@ impl TargetEntry {
             digest: self.digest,
             repository: self.repository,
             jobs: None,
+        }
+    }
+
+    fn into_ref(self) -> TargetRef {
+        TargetRef {
+            name: self.name.unwrap_or_else(|| self.adapter.name().to_owned()),
+            repository: self.repository,
         }
     }
 }

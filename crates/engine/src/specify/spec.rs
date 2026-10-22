@@ -106,6 +106,7 @@ impl<'a> SpecBrief<'a> {
 
         Spec {
             emery: EMERY,
+            parent: None,
             preamble,
             requirements,
         }

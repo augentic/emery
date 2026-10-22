@@ -758,6 +758,7 @@ async fn write_tool() {
                     ("../escape.rs", ""),
                     (".emery/storage/x", ""),
                     ("docs/spec.md", ""),
+                    ("spec/spec.json", ""),
                 ],
             ),
             ToolCall {
@@ -789,7 +790,8 @@ async fn write_tool() {
     assert_eq!(
         exchanges[1].outcome,
         Err("write_files: nothing written: `../escape.rs` escapes the root; `.emery/storage/x` \
-             is under the reserved `.emery/`; `docs/spec.md` names the engine's own `spec.md`"
+             is under the reserved `.emery/`; `docs/spec.md` names the engine's own `spec.md`; \
+             `spec/spec.json` is under `spec/`, where the specification lives"
             .to_owned())
     );
     let malformed = exchanges[2].outcome.as_deref().expect_err("a file without content");

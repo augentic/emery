@@ -9,19 +9,22 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use emery_adapter::source::{Claim, ClaimKind, Evidence, SourceContent, SourceKind};
-use emery_engine::{CONTAINER, REVISION_KEY};
+use emery_engine::{REVISION_KEY, STAGED_CONTAINER, STAGED_KEY};
 use omnia_sdk::model::{Error as ModelError, Reply};
 use omnia_sdk::{BlobStore, StateStore, bad_gateway, bad_request};
 use omnia_test::SeenFormat;
 use omnia_test::guest::{Memory, Scripted};
 use serde_json::Value;
 use support::{
-    Provider, Rendezvous, Scratch, claim, cli_ok, digest, evidence, fail, requirement, seed,
+    Provider, Rendezvous, Scratch, carry, claim, cli_ok, digest, evidence, fail, requirement,
+    retire, seed, written,
 };
 
 // The one-source reference most scenarios name; the scripted loader lands
 // any exact package reference, so the namespace and version are nominal.
 const SOURCE: &str = "acme:source@1.0.0";
+// The target whose repository every sealed revision lives in: the project checkout.
+const PROJECT_CONFIG: &str = "tests/build/project.toml";
 
 // The reference an adapter `name` is named by, and the source it binds.
 fn reference(name: &str) -> String {
@@ -117,10 +120,20 @@ fn separate_slicing(stems: &[(&str, &[&str])]) -> String {
 async fn gen_spec() {
     let provider = Provider::answering([SPEC_ANSWER, DESIGN_ANSWER, SPEC_ANSWER, DESIGN_ANSWER]);
 
-    // the first specify
-    cli_ok(&provider, &["emery", "specify", SOURCE]).await;
+    // the first specify stages a candidate and seals nothing
+    let resp = cli_ok(&provider, &["emery", "specify", SOURCE]).await;
+    let id = staged(&provider.storage);
+    assert_eq!(
+        String::from_utf8_lossy(&resp.stdout),
+        format!(
+            "staged candidate {id}\n  plan: 1 slice in 1 wave, widest 1\n  nothing sealed; `emery \
+             apply` seals it\n"
+        ),
+        "a first run has no revision to diff against"
+    );
+    assert!(provider.storage.state(REVISION_KEY).is_none(), "nothing is committed yet");
 
-    // observe the gate, the current id, and the revision
+    // observe the gate and that nothing else lands
     assert_eq!(
         *provider.source.metadata.lock().expect("metadata"),
         [guest("source")],
@@ -131,66 +144,85 @@ async fn gen_spec() {
         "nothing of an adapter mirrors into engine storage"
     );
     assert!(provider.storage.state("project.yaml").is_none(), "no project record exists");
-    let id = current(&provider.storage);
 
-    // the committed documents are canonical JSON of the engine's facts
-    let spec = document(&provider.storage, &id, "spec.json");
-    assert_eq!(
-        String::from_utf8_lossy(&spec),
-        SPEC_REVISION,
-        "spec.json is the canonical revision"
-    );
-    let design = document(&provider.storage, &id, "design.json");
-    assert_eq!(
-        String::from_utf8_lossy(&design),
-        DESIGN_REVISION,
-        "design.json is the canonical revision"
-    );
-    let plan = document(&provider.storage, &id, "plan.json");
-    assert_eq!(
-        String::from_utf8_lossy(&plan),
-        PLAN_REVISION,
-        "one stem is one slice, planned with no turn spent"
-    );
+    // the staged documents are canonical JSON of the engine's facts; one
+    // stem is one slice, planned with no turn spent
+    let spec = staged_document(&provider.storage, &id, "spec.json");
+    let design = staged_document(&provider.storage, &id, "design.json");
+    let plan = staged_document(&provider.storage, &id, "plan.json");
+    assert_eq!(String::from_utf8_lossy(&spec), SPEC_REVISION, "spec.json is canonical");
+    assert_eq!(String::from_utf8_lossy(&design), DESIGN_REVISION, "design.json is canonical");
+    assert_eq!(String::from_utf8_lossy(&plan), PLAN_REVISION, "plan.json is canonical");
 
-    // review through show
+    // review the candidate through show --staged; the sealed slot is empty
     assert_eq!(
         shown(&provider, "spec").await,
         projection(SPEC_RENDERED, &id),
-        "show renders spec.md"
+        "show --staged renders spec.md"
     );
     assert_eq!(
         shown(&provider, "design").await,
         projection(DESIGN_RENDERED, &id),
-        "show renders design.md"
+        "show --staged renders design.md"
     );
     assert_eq!(
         shown(&provider, "plan").await,
         projection(PLAN_RENDERED, &id),
-        "show renders plan.md"
+        "show --staged renders plan.md"
+    );
+    let envelope = fail(
+        &provider,
+        &["emery", "show", "spec", "--config", PROJECT_CONFIG],
+        2,
+        "spec-not-generated",
+    )
+    .await;
+    assert_message(&envelope, &format!("candidate `{id}` is staged"));
+    assert!(
+        envelope["hint"].as_str().unwrap_or("").contains("emery apply"),
+        "the hint names the seal: {envelope}"
     );
 
+    // apply seals it: the documents land under `spec/` in the repository and the slot clears
+    let resp = cli_ok(&provider, &["emery", "apply", "--config", PROJECT_CONFIG]).await;
+    assert_eq!(
+        String::from_utf8_lossy(&resp.stdout),
+        format!("sealed revision {id} as emery/{id} at Revision\n")
+    );
+    assert_eq!(committed(&provider.storage), id, "the candidate is the current revision");
+    assert_eq!(committed_document(&provider, "spec"), spec);
+    assert_eq!(committed_document(&provider, "design"), design);
+    assert_eq!(committed_document(&provider, "plan"), plan);
+    assert!(provider.storage.state(STAGED_KEY).is_none(), "the staging slot is cleared");
+    assert!(provider.storage.objects(STAGED_CONTAINER).is_empty(), "the candidate is pruned");
+
     // the JSON envelope carries the revision, the projection, and the document
-    let resp = cli_ok(&provider, &["emery", "--format", "json", "show", "spec"]).await;
+    let resp = cli_ok(
+        &provider,
+        &["emery", "--format", "json", "show", "spec", "--config", PROJECT_CONFIG],
+    )
+    .await;
     let envelope: Value = serde_json::from_slice(&resp.stdout).expect("one JSON envelope");
     assert_eq!(envelope["revision"], id, "{envelope}");
     assert_eq!(envelope["body"], projection(SPEC_RENDERED, &id), "{envelope}");
     let document: Value =
         serde_json::from_str(SPEC_REVISION).expect("the revision fixture is JSON");
     assert_eq!(envelope["document"], document, "the envelope carries the typed document");
+    fail(&provider, &["emery", "show", "spec", "--staged"], 2, "nothing-staged").await;
 
-    // an identical re-run drafts again and commits the same bytes
-    let resp = cli_ok(&provider, &["emery", "specify", SOURCE]).await;
+    // an identical re-run drafts again and stages the same bytes beside the revision
+    let resp = cli_ok(&provider, &["emery", "specify", SOURCE, "--config", PROJECT_CONFIG]).await;
     let stdout = String::from_utf8_lossy(&resp.stdout);
     assert_eq!(
         stdout,
         format!(
-            "committed revision {id}\n  plan: 1 slice in 1 wave, widest 1\n  diff vs {id}: none \
-             (byte-stable)\n"
+            "staged candidate {id}\n  plan: 1 slice in 1 wave, widest 1\n  diff vs {id}: none \
+             (byte-stable)\n  nothing sealed; `emery apply` seals it\n"
         ),
         "the one-stem plan is one slice in one wave"
     );
-    assert_eq!(current(&provider.storage), id, "the same revision keeps its id");
+    assert_eq!(staged(&provider.storage), id, "the same revision keeps its id");
+    assert_eq!(committed(&provider.storage), id, "the sealed revision stands");
 
     provider.model.assert_exhausted();
 }
@@ -210,9 +242,9 @@ async fn padded_lines() {
 
     cli_ok(&provider, &["emery", "specify", SOURCE]).await;
 
-    let id = current(&provider.storage);
+    let id = staged(&provider.storage);
     assert_eq!(
-        String::from_utf8_lossy(&document(&provider.storage, &id, "spec.json")),
+        String::from_utf8_lossy(&staged_document(&provider.storage, &id, "spec.json")),
         SPEC_REVISION,
         "the stored lines carry none of the padding"
     );
@@ -233,8 +265,8 @@ async fn lines_as_strings() {
 
     cli_ok(&provider, &["emery", "specify", SOURCE]).await;
 
-    let id = current(&provider.storage);
-    let spec: Value = serde_json::from_slice(&document(&provider.storage, &id, "spec.json"))
+    let id = staged(&provider.storage);
+    let spec: Value = serde_json::from_slice(&staged_document(&provider.storage, &id, "spec.json"))
         .expect("the stored spec is JSON");
     let stored = &spec["requirements"][0]["scenarios"][0];
     assert_eq!(stored["given"], serde_json::json!(["the greeting surface is bound"]), "{spec}");
@@ -483,8 +515,8 @@ async fn authority_precedence() {
     assert_eq!(group["claims"]["items"]["type"], "integer", "the derive is intact");
     assert_eq!(group["classes"]["items"]["items"]["maximum"], 5);
 
-    let id = current(&provider.storage);
-    let spec = document(&provider.storage, &id, "spec.json");
+    let id = staged(&provider.storage);
+    let spec = staged_document(&provider.storage, &id, "spec.json");
     assert_eq!(
         String::from_utf8_lossy(&spec),
         PRECEDENCE_REVISION,
@@ -531,9 +563,10 @@ async fn configured_rank() {
     bind(&mut provider);
     cli_ok(&provider, &["emery", "specify", "--config", &path]).await;
 
-    let id = current(&provider.storage);
-    let stored: Value = serde_json::from_slice(&document(&provider.storage, &id, "spec.json"))
-        .expect("the stored spec is JSON");
+    let id = staged(&provider.storage);
+    let stored: Value =
+        serde_json::from_slice(&staged_document(&provider.storage, &id, "spec.json"))
+            .expect("the stored spec is JSON");
     let requirement = &stored["requirements"][0];
     assert_eq!(requirement["status"], "divergence", "{stored}");
     assert_eq!(requirement["body"], serde_json::json!(["Sessions expire after 15 minutes."]));
@@ -708,6 +741,37 @@ async fn one_claims_source() {
     provider.model.assert_exhausted();
 }
 
+// A source may answer `retire` claims beside its requirements; synthesis
+// drafts from the requirements alone, so the staged candidate is the one the
+// run without them stages.
+#[tokio::test]
+async fn retire_ignored() {
+    let mut provider = Provider::answering([SPEC_ANSWER, DESIGN_ANSWER]);
+    provider.source.evidence.insert(
+        "source".to_string(),
+        Ok(evidence(vec![
+            requirement("greeting.behaviour", "GET /greeting returns the static string 'hello'."),
+            retire("greeting.farewell", "The farewell greeting is withdrawn."),
+        ])),
+    );
+
+    cli_ok(&provider, &["emery", "specify", SOURCE]).await;
+
+    let id = staged(&provider.storage);
+    for (name, fixture) in [
+        ("spec.json", SPEC_REVISION),
+        ("design.json", DESIGN_REVISION),
+        ("plan.json", PLAN_REVISION),
+    ] {
+        assert_eq!(
+            String::from_utf8_lossy(&staged_document(&provider.storage, &id, name)),
+            fixture,
+            "{name} is byte-identical to the run without the retire"
+        );
+    }
+    provider.model.assert_exhausted();
+}
+
 // One source whose seams describe one behaviour under two nouns is grouped
 // by the model, and the merged requirement cites both claims.
 #[tokio::test]
@@ -738,8 +802,8 @@ async fn seams_grouped() {
         "{request}"
     );
 
-    let id = current(&provider.storage);
-    let spec: Value = serde_json::from_slice(&document(&provider.storage, &id, "spec.json"))
+    let id = staged(&provider.storage);
+    let spec: Value = serde_json::from_slice(&staged_document(&provider.storage, &id, "spec.json"))
         .expect("the committed spec is JSON");
     assert_eq!(spec["requirements"].as_array().map(Vec::len), Some(1), "{spec}");
     let requirement = &spec["requirements"][0];
@@ -791,8 +855,8 @@ async fn same_stem_split() {
     let request = provider.model.seen()[0].messages.join("\n");
     assert!(request.contains("a group that merges them is split"), "{request}");
 
-    let id = current(&provider.storage);
-    let spec: Value = serde_json::from_slice(&document(&provider.storage, &id, "spec.json"))
+    let id = staged(&provider.storage);
+    let spec: Value = serde_json::from_slice(&staged_document(&provider.storage, &id, "spec.json"))
         .expect("the committed spec is JSON");
     assert_eq!(spec["requirements"].as_array().map(Vec::len), Some(2), "{spec}");
     assert_eq!(
@@ -839,17 +903,23 @@ async fn remine_supersedes() {
             ("legacy.export", "Exports ship nightly."),
         ])),
     );
-    cli_ok(&provider, &["emery", "specify", &reference("docs")]).await;
-    let first = current(&provider.storage);
+    cli_ok(
+        &provider,
+        &["emery", "specify", &reference("docs"), "--apply", "--config", PROJECT_CONFIG],
+    )
+    .await;
+    let first = committed(&provider.storage);
 
     // second run: the greeting changed, the export gone, the overview following it
     let second_design = DESIGN_ANSWER.replace("hello", "howdy");
     let second_grouping = separate_grouping(2);
     let second_slicing = separate_slicing(&[("greeting", &["REQ-001"]), ("session", &["REQ-002"])]);
+    let sealed = provider;
     let mut provider = Provider::over(
-        Arc::clone(&provider.storage),
+        Arc::clone(&sealed.storage),
         [second_grouping.as_str(), REMINE_SECOND, second_design.as_str(), second_slicing.as_str()],
     );
+    carry(&sealed.files, &provider.files);
     provider.source.evidence.insert(
         "docs".to_string(),
         Ok(docs_evidence(&[
@@ -857,14 +927,19 @@ async fn remine_supersedes() {
             ("session.timeout", "Sessions time out after an hour."),
         ])),
     );
-    let resp = cli_ok(&provider, &["emery", "specify", &reference("docs")]).await;
+    let resp = cli_ok(
+        &provider,
+        &["emery", "specify", &reference("docs"), "--apply", "--config", PROJECT_CONFIG],
+    )
+    .await;
 
     // observe the summary, the swap, and the prune
     let stdout = String::from_utf8_lossy(&resp.stdout);
     assert_eq!(
         stdout.lines().count(),
-        3,
-        "a changed run prints the revision, the plan's shape, and one summary line: {stdout}"
+        4,
+        "a changed run prints the candidate, the plan's shape, one summary line, and the seal: \
+         {stdout}"
     );
     assert!(
         stdout.contains("  plan: 2 slices in 1 wave, widest 2\n"),
@@ -889,13 +964,11 @@ async fn remine_supersedes() {
     assert!(request.contains("- REQ-002 `session.timeout`"), "{request}");
     assert!(!request.contains("Unchanged"), "nothing stands in from the outgoing run: {request}");
 
-    let second = current(&provider.storage);
+    let second = committed(&provider.storage);
     assert_ne!(first, second, "changed documents commit a new revision");
-    assert!(
-        provider.storage.object(CONTAINER, &format!("{first}/spec.json")).is_none(),
-        "the superseded revision is pruned"
-    );
-    let spec = shown(&provider, "spec").await;
+    assert!(stdout.contains(&format!("  sealed revision {second} as emery/{second}")), "{stdout}");
+    assert!(provider.storage.state(STAGED_KEY).is_none(), "the seal clears the slot");
+    let spec = shown_sealed(&provider, "spec").await;
     assert!(spec.contains("howdy"), "{spec}");
     assert!(spec.contains("ID: REQ-002\n") && spec.contains("it times out"), "{spec}");
     assert!(!spec.contains("REQ-003"), "{spec}");
@@ -927,8 +1000,12 @@ async fn diff_envelope() {
         second_design,
         second_slicing,
     ]);
-    cli_ok(&provider, &["emery", "specify", &reference("docs")]).await;
-    let first = current(&provider.storage);
+    cli_ok(
+        &provider,
+        &["emery", "specify", &reference("docs"), "--apply", "--config", PROJECT_CONFIG],
+    )
+    .await;
+    let first = committed(&provider.storage);
 
     provider.source.evidence.insert(
         "docs".to_string(),
@@ -942,8 +1019,11 @@ async fn diff_envelope() {
             ),
         ])),
     );
-    let resp =
-        cli_ok(&provider, &["emery", "--format", "json", "specify", &reference("docs")]).await;
+    let resp = cli_ok(
+        &provider,
+        &["emery", "--format", "json", "specify", &reference("docs"), "--config", PROJECT_CONFIG],
+    )
+    .await;
     let envelope: Value = serde_json::from_slice(&resp.stdout).expect("one JSON envelope");
     let diff = &envelope["diff"];
     assert_eq!(diff["from"], first, "{envelope}");
@@ -1009,14 +1089,20 @@ async fn remine_reordered() {
             anchored("session.timeout", "Sessions time out after an hour.", "src/session.ts#L4-L8"),
         ])),
     );
-    cli_ok(&provider, &["emery", "specify", &reference("docs")]).await;
-    let first = current(&provider.storage);
+    cli_ok(
+        &provider,
+        &["emery", "specify", &reference("docs"), "--apply", "--config", PROJECT_CONFIG],
+    )
+    .await;
+    let first = committed(&provider.storage);
 
     let second_slicing = separate_slicing(&[("session", &["REQ-001"]), ("greeting", &["REQ-002"])]);
+    let sealed = provider;
     let mut provider = Provider::over(
-        Arc::clone(&provider.storage),
+        Arc::clone(&sealed.storage),
         [grouping.as_str(), REMINE_SECOND, DESIGN_ANSWER, second_slicing.as_str()],
     );
+    carry(&sealed.files, &provider.files);
     provider.source.evidence.insert(
         "docs".to_string(),
         Ok(evidence(vec![
@@ -1028,8 +1114,11 @@ async fn remine_reordered() {
             ),
         ])),
     );
-    let resp =
-        cli_ok(&provider, &["emery", "--format", "json", "specify", &reference("docs")]).await;
+    let resp = cli_ok(
+        &provider,
+        &["emery", "--format", "json", "specify", &reference("docs"), "--config", PROJECT_CONFIG],
+    )
+    .await;
 
     let envelope: Value = serde_json::from_slice(&resp.stdout).expect("one JSON envelope");
     let diff = &envelope["diff"];
@@ -1044,12 +1133,12 @@ async fn remine_reordered() {
         ]),
         "each requirement is matched where it anchors and reads as a moved id: {envelope}"
     );
-    let spec: Value = serde_json::from_slice(&document(
+    let spec: Value = serde_json::from_slice(&staged_document(
         &provider.storage,
-        &current(&provider.storage),
+        &staged(&provider.storage),
         "spec.json",
     ))
-    .expect("the committed spec is JSON");
+    .expect("the staged spec is JSON");
     assert_eq!(
         spec["requirements"][0]["sources"],
         serde_json::json!([{"source": "docs", "claim": "session.timeout", "path": "src/session.ts#L5-L9"}]),
@@ -1089,15 +1178,21 @@ async fn remine_contended_anchor() {
             ),
         ])),
     );
-    cli_ok(&provider, &["emery", "specify", &reference("docs")]).await;
-    let first = current(&provider.storage);
+    cli_ok(
+        &provider,
+        &["emery", "specify", &reference("docs"), "--apply", "--config", PROJECT_CONFIG],
+    )
+    .await;
+    let first = committed(&provider.storage);
 
     let second_slicing =
         separate_slicing(&[("greeting", &["REQ-001"]), ("session", &["REQ-002", "REQ-003"])]);
+    let sealed = provider;
     let mut provider = Provider::over(
-        Arc::clone(&provider.storage),
+        Arc::clone(&sealed.storage),
         [grouping.as_str(), REMINE_SESSION, DESIGN_ANSWER, second_slicing.as_str()],
     );
+    carry(&sealed.files, &provider.files);
     provider.source.evidence.insert(
         "docs".to_string(),
         Ok(evidence(vec![
@@ -1114,8 +1209,11 @@ async fn remine_contended_anchor() {
             ),
         ])),
     );
-    let resp =
-        cli_ok(&provider, &["emery", "--format", "json", "specify", &reference("docs")]).await;
+    let resp = cli_ok(
+        &provider,
+        &["emery", "--format", "json", "specify", &reference("docs"), "--config", PROJECT_CONFIG],
+    )
+    .await;
 
     let envelope: Value = serde_json::from_slice(&resp.stdout).expect("one JSON envelope");
     let diff = &envelope["diff"];
@@ -1409,8 +1507,8 @@ async fn shared_then() {
     let check = &provider.model.exchanges()[0];
     assert_eq!(check.tool, "check");
     assert!(check.outcome.is_ok(), "the shared outcome is no finding: {:?}", check.outcome);
-    let id = current(&provider.storage);
-    let spec: Value = serde_json::from_slice(&document(&provider.storage, &id, "spec.json"))
+    let id = staged(&provider.storage);
+    let spec: Value = serde_json::from_slice(&staged_document(&provider.storage, &id, "spec.json"))
         .expect("the committed spec is JSON");
     let outcomes: Vec<&Value> = spec["requirements"]
         .as_array()
@@ -1486,8 +1584,8 @@ async fn chunked_draft() {
     assert!(second_request.contains("- REQ-028 `gamma.thing-0`"), "{second_request}");
 
     // one specification, the preamble from the first chunk, every id in order
-    let id = current(&provider.storage);
-    let spec: Value = serde_json::from_slice(&document(&provider.storage, &id, "spec.json"))
+    let id = staged(&provider.storage);
+    let spec: Value = serde_json::from_slice(&staged_document(&provider.storage, &id, "spec.json"))
         .expect("the committed spec is JSON");
     assert_eq!(spec["preamble"], serde_json::json!(["Many things, drafted in chunks."]));
     let committed: Vec<&str> = spec["requirements"]
@@ -1505,8 +1603,8 @@ mod unknown {
     use serde_json::Value;
 
     use super::{
-        DESIGN_ANSWER, Provider, SPEC_ANSWER, assert_message, cli_ok, current, docs_evidence,
-        document, fail, reference, shown,
+        DESIGN_ANSWER, Provider, SPEC_ANSWER, assert_message, cli_ok, docs_evidence, fail,
+        reference, shown, staged, staged_document,
     };
 
     // `SPEC_ANSWER` with its one outcome left `[unknown]`.
@@ -1525,9 +1623,10 @@ mod unknown {
         let provider = Provider::answering([unknown.as_str(), DESIGN_ANSWER]);
         cli_ok(&provider, &["emery", "specify", &reference("docs")]).await;
 
-        let id = current(&provider.storage);
-        let spec: Value = serde_json::from_slice(&document(&provider.storage, &id, "spec.json"))
-            .expect("the committed spec is JSON");
+        let id = staged(&provider.storage);
+        let spec: Value =
+            serde_json::from_slice(&staged_document(&provider.storage, &id, "spec.json"))
+                .expect("the committed spec is JSON");
         assert_eq!(spec["requirements"][0]["scenarios"][0]["then"], "[unknown]", "{spec}");
         let shown = shown(&provider, "spec").await;
         assert!(shown.contains("- **THEN** [unknown]"), "{shown}");
@@ -1591,8 +1690,8 @@ async fn repaired_draft() {
     assert!(correction.contains("## Previous answer (rejected)"), "{correction}");
     assert!(correction.contains("## Findings"), "{correction}");
     assert!(correction.contains("scenario `then` is blank"), "{correction}");
-    let id = current(&provider.storage);
-    let spec = document(&provider.storage, &id, "spec.json");
+    let id = staged(&provider.storage);
+    let spec = staged_document(&provider.storage, &id, "spec.json");
     assert_eq!(String::from_utf8_lossy(&spec), SPEC_REVISION, "the repaired draft is committed");
     provider.model.assert_exhausted();
 }
@@ -1639,8 +1738,8 @@ async fn technology_named() {
     let correction = check.outcome.as_ref().expect_err("the first draft is rejected");
     assert!(correction.contains("names the technology `kafka`"), "{correction}");
     assert!(correction.contains("since the design holds the product"), "{correction}");
-    let id = current(&provider.storage);
-    let spec = document(&provider.storage, &id, "spec.json");
+    let id = staged(&provider.storage);
+    let spec = staged_document(&provider.storage, &id, "spec.json");
     assert_eq!(String::from_utf8_lossy(&spec), SPEC_REVISION, "the corrected draft is committed");
     provider.model.assert_exhausted();
 }
@@ -1747,9 +1846,9 @@ async fn dishonest_design() {
     provider.source.evidence.insert("docs".to_string(), evidence());
     cli_ok(&provider, &["emery", "specify", &reference("docs")]).await;
 
-    let id = current(&provider.storage);
+    let id = staged(&provider.storage);
     let rendered = format!(
-        "---\nemery: 7\nrevision: {id}\n---\n\n# Design\n\n## Overview\n\n\
+        "---\nemery: 8\nrevision: {id}\n---\n\n# Design\n\n## Overview\n\n\
          Requests arrive (from the browser) and (from docs) they route.\n\n\
          ## Domain model\n\nThe greeting payload is one string field.\n\n\
          Type: greeting.type\n```\n{signature}\n```\n"
@@ -1870,18 +1969,30 @@ async fn type_reanchored() {
 
     let mut provider = Provider::answering([SPEC_ANSWER, design]);
     provider.source.evidence.insert("docs".to_string(), evidence("L1-L4"));
-    cli_ok(&provider, &["emery", "specify", &reference("docs")]).await;
-    let id = current(&provider.storage);
-    let first = document(&provider.storage, &id, "design.json");
+    cli_ok(
+        &provider,
+        &["emery", "specify", &reference("docs"), "--apply", "--config", PROJECT_CONFIG],
+    )
+    .await;
+    let id = committed(&provider.storage);
+    let first = committed_document(&provider, "design");
 
-    let mut provider = Provider::over(Arc::clone(&provider.storage), [SPEC_ANSWER, design]);
+    let sealed = provider;
+    let mut provider = Provider::over(Arc::clone(&sealed.storage), [SPEC_ANSWER, design]);
+    carry(&sealed.files, &provider.files);
     provider.source.evidence.insert("docs".to_string(), evidence("L10-L14"));
-    let resp = cli_ok(&provider, &["emery", "specify", &reference("docs")]).await;
+    let resp =
+        cli_ok(&provider, &["emery", "specify", &reference("docs"), "--config", PROJECT_CONFIG])
+            .await;
 
     let stdout = String::from_utf8_lossy(&resp.stdout);
     assert!(stdout.contains("none (byte-stable)"), "{stdout}");
-    assert_eq!(current(&provider.storage), id, "the re-anchored run keeps its id");
-    assert_eq!(document(&provider.storage, &id, "design.json"), first, "design bytes are stable");
+    assert_eq!(staged(&provider.storage), id, "the re-anchored run keeps its id");
+    assert_eq!(
+        staged_document(&provider.storage, &id, "design.json"),
+        first,
+        "design bytes are stable"
+    );
     let rendered = shown(&provider, "design").await;
     assert!(rendered.contains("Type: src/greeting.ts\n"), "{rendered}");
     provider.model.assert_exhausted();
@@ -2132,8 +2243,8 @@ async fn contract_route() {
 
     cli_ok(&provider, &["emery", "specify", &reference("docs")]).await;
 
-    let id = current(&provider.storage);
-    let spec: Value = serde_json::from_slice(&document(&provider.storage, &id, "spec.json"))
+    let id = staged(&provider.storage);
+    let spec: Value = serde_json::from_slice(&staged_document(&provider.storage, &id, "spec.json"))
         .expect("the committed spec is JSON");
     assert_eq!(
         spec["requirements"][0]["trigger"],
@@ -2164,8 +2275,8 @@ async fn contract_message() {
 
     cli_ok(&provider, &["emery", "specify", &reference("docs")]).await;
 
-    let id = current(&provider.storage);
-    let spec: Value = serde_json::from_slice(&document(&provider.storage, &id, "spec.json"))
+    let id = staged(&provider.storage);
+    let spec: Value = serde_json::from_slice(&staged_document(&provider.storage, &id, "spec.json"))
         .expect("the committed spec is JSON");
     assert_eq!(
         spec["requirements"][0]["trigger"],
@@ -2196,8 +2307,12 @@ async fn diff_trigger() {
             claim(ClaimKind::Contract, "greeting", ("route", "GET /greeting")),
         ])),
     );
-    cli_ok(&provider, &["emery", "specify", &reference("docs")]).await;
-    let first = current(&provider.storage);
+    cli_ok(
+        &provider,
+        &["emery", "specify", &reference("docs"), "--apply", "--config", PROJECT_CONFIG],
+    )
+    .await;
+    let first = committed(&provider.storage);
 
     provider.source.evidence.insert(
         "docs".to_string(),
@@ -2206,8 +2321,11 @@ async fn diff_trigger() {
             claim(ClaimKind::Contract, "greeting", ("message", "greeting.requested")),
         ])),
     );
-    let resp =
-        cli_ok(&provider, &["emery", "--format", "json", "specify", &reference("docs")]).await;
+    let resp = cli_ok(
+        &provider,
+        &["emery", "--format", "json", "specify", &reference("docs"), "--config", PROJECT_CONFIG],
+    )
+    .await;
 
     let envelope: Value = serde_json::from_slice(&resp.stdout).expect("one JSON envelope");
     let diff = &envelope["diff"];
@@ -2424,9 +2542,9 @@ async fn sliced() {
     assert_eq!(check.tool, "check");
     let correction = check.outcome.as_ref().expect_err("the first slicing is rejected");
     assert!(correction.contains("`REQ-004` is in no slice"), "{correction}");
-    let id = current(&provider.storage);
+    let id = staged(&provider.storage);
     assert_eq!(
-        String::from_utf8_lossy(&document(&provider.storage, &id, "plan.json")),
+        String::from_utf8_lossy(&staged_document(&provider.storage, &id, "plan.json")),
         SLICED_REVISION,
         "plan.json is the canonical revision"
     );
@@ -2435,7 +2553,7 @@ async fn sliced() {
         projection(SLICED_RENDERED, &id),
         "show renders plan.md"
     );
-    let resp = cli_ok(&provider, &["emery", "--format", "json", "show", "plan"]).await;
+    let resp = cli_ok(&provider, &["emery", "--format", "json", "show", "plan", "--staged"]).await;
     let envelope: Value = serde_json::from_slice(&resp.stdout).expect("one JSON envelope");
     let document: Value =
         serde_json::from_str(SLICED_REVISION).expect("the revision fixture is JSON");
@@ -2535,8 +2653,8 @@ async fn oversized_stem() {
         serde_json::json!([["SLICE-001", "SLICE-002", "SLICE-003"]]),
         "three slices depending on nothing are one wave: {committed}"
     );
-    let id = current(&provider.storage);
-    let plan: Value = serde_json::from_slice(&document(&provider.storage, &id, "plan.json"))
+    let id = staged(&provider.storage);
+    let plan: Value = serde_json::from_slice(&staged_document(&provider.storage, &id, "plan.json"))
         .expect("the committed plan is JSON");
     let slices: Vec<(&str, &str)> = plan["slices"]
         .as_array()
@@ -2630,8 +2748,8 @@ async fn oversized_stem_cut_fine() {
         !correction.contains("split across"),
         "no sub-stem is split, so the cut is the one finding: {correction}"
     );
-    let id = current(&provider.storage);
-    let plan: Value = serde_json::from_slice(&document(&provider.storage, &id, "plan.json"))
+    let id = staged(&provider.storage);
+    let plan: Value = serde_json::from_slice(&staged_document(&provider.storage, &id, "plan.json"))
         .expect("the committed plan is JSON");
     assert_eq!(plan["slices"][0]["requirements"], serde_json::json!(reads_and_deletes));
     assert_eq!(plan["slices"].as_array().map(Vec::len), Some(3));
@@ -2728,8 +2846,8 @@ async fn oversized_stem_pipeline() {
         serde_json::json!([["SLICE-002", "SLICE-004"], ["SLICE-003"], ["SLICE-001"]]),
         "the validation and sign-in, then the pricing, then the consumer: {committed}"
     );
-    let id = current(&provider.storage);
-    let plan: Value = serde_json::from_slice(&document(&provider.storage, &id, "plan.json"))
+    let id = staged(&provider.storage);
+    let plan: Value = serde_json::from_slice(&staged_document(&provider.storage, &id, "plan.json"))
         .expect("the committed plan is JSON");
     let slices: Vec<(&str, &str)> = plan["slices"]
         .as_array()
@@ -3531,102 +3649,197 @@ mod digest {
 mod store {
     use std::sync::Arc;
 
-    use emery_engine::{CONTAINER, REVISION_KEY};
+    use emery_engine::vcs::{REVISION, SPECIFICATION};
+    use emery_engine::{EntryKind, REVISION_KEY, STAGED_CONTAINER, STAGED_KEY};
     use omnia_test::guest::{Memory, Namespaced};
 
     use super::{
-        DESIGN_ANSWER, Provider, SOURCE, SPEC_ANSWER, SPEC_RENDERED, SPEC_REVISION, assert_message,
-        cli_ok, current, fail, project_current, projection, reference, seed, shown,
+        DESIGN_ANSWER, PROJECT_CONFIG, Provider, SOURCE, SPEC_ANSWER, SPEC_RENDERED, SPEC_REVISION,
+        assert_message, cli_ok, committed, fail, project_staged, projection, reference, seed,
+        shown, shown_sealed, staged,
     };
 
-    // Bytes at the current key that name no revision — a well-formed id with no
-    // documents, or bytes that decode to no id — are corruption: `show` fails
-    // closed, never an empty result, and the next `specify` swaps over them.
+    const LABELLED: &str = "e1f2a3b4c5d6e7f8091a2b3c4d5e6f708192a3b4";
+
+    // The pointer is a cache over the repository: bytes at it that name no
+    // label the repository holds, or that decode to no id, are passed over
+    // and the head's tree read, so `show` refuses typed where that holds no
+    // revision, the next `specify` stages with the diff suppressed, and
+    // `apply` swaps over them.
     #[tokio::test]
     async fn corrupt_current() {
         for bytes in [&b"0123456789abcdef"[..], &b"\xff\xfe"[..]] {
             let provider = Provider::answering([SPEC_ANSWER, DESIGN_ANSWER]);
             provider.storage.insert_state(REVISION_KEY, bytes);
-            fail(&provider, &["emery", "show", "spec"], 3, "server_error").await;
+            fail(
+                &provider,
+                &["emery", "show", "spec", "--config", PROJECT_CONFIG],
+                2,
+                "spec-not-generated",
+            )
+            .await;
 
-            cli_ok(&provider, &["emery", "specify", &reference("docs")]).await;
+            let resp = cli_ok(
+                &provider,
+                &["emery", "specify", &reference("docs"), "--config", PROJECT_CONFIG],
+            )
+            .await;
+            let stdout = String::from_utf8_lossy(&resp.stdout);
+            assert!(!stdout.contains("diff vs"), "a corrupt pointer yields no diff: {stdout}");
+            let id = staged(&provider.storage);
+            assert!(
+                provider.storage.object(STAGED_CONTAINER, &format!("{id}/spec.json")).is_some()
+            );
 
-            let id = current(&provider.storage);
-            assert!(provider.storage.object(CONTAINER, &format!("{id}/spec.json")).is_some());
-            cli_ok(&provider, &["emery", "show", "spec"]).await;
+            cli_ok(&provider, &["emery", "apply", "--config", PROJECT_CONFIG]).await;
+            assert_eq!(committed(&provider.storage), id, "the seal swaps over the corruption");
+            cli_ok(&provider, &["emery", "show", "spec", "--config", PROJECT_CONFIG]).await;
             provider.model.assert_exhausted();
         }
     }
 
-    // A document rewritten under its id no longer hashes to it, so `show` fails
-    // closed; regeneration is the recovery path, with only the advisory diff
-    // suppressed.
+    // Bytes at the staged key that name no candidate are corruption: `show
+    // --staged` and `apply` fail closed, and the next `specify` stages over
+    // them.
+    #[tokio::test]
+    async fn corrupt_staged() {
+        for bytes in [&b"0123456789abcdef"[..], &b"\xff\xfe"[..]] {
+            let provider = Provider::answering([SPEC_ANSWER, DESIGN_ANSWER]);
+            provider.storage.insert_state(STAGED_KEY, bytes);
+            fail(&provider, &["emery", "show", "spec", "--staged"], 3, "server_error").await;
+            fail(&provider, &["emery", "apply", "--config", PROJECT_CONFIG], 3, "server_error")
+                .await;
+
+            cli_ok(&provider, &["emery", "specify", &reference("docs")]).await;
+            let id = staged(&provider.storage);
+            assert_ne!(id.as_bytes(), bytes, "the candidate stands in the slot");
+            cli_ok(&provider, &["emery", "show", "spec", "--staged"]).await;
+            provider.model.assert_exhausted();
+        }
+    }
+
+    // A document edited under the label no longer hashes to the revision the
+    // label names, so every verb that reads the current revision refuses
+    // typed, nothing is staged over it, and the hint names the restore;
+    // once the tree holds the revision again, `show` renders it.
     #[tokio::test]
     async fn tampered_revision() {
-        let second_spec = SPEC_ANSWER.replace("hello", "howdy");
-        let second_design = DESIGN_ANSWER.replace("hello", "howdy");
-        let provider = Provider::answering([
-            SPEC_ANSWER,
-            DESIGN_ANSWER,
-            second_spec.as_str(),
-            second_design.as_str(),
-        ]);
-        cli_ok(&provider, &["emery", "specify", &reference("docs")]).await;
-        let first = current(&provider.storage);
-        provider.storage.insert_object(CONTAINER, &format!("{first}/spec.json"), b"{}\n");
-
-        fail(&provider, &["emery", "show", "spec"], 3, "server_error").await;
-
-        let resp = cli_ok(&provider, &["emery", "specify", &reference("docs")]).await;
-        let stdout = String::from_utf8_lossy(&resp.stdout);
-        assert!(
-            !stdout.contains("diff vs"),
-            "an unreadable outgoing revision yields no diff: {stdout}"
-        );
-        let second = current(&provider.storage);
-        assert_ne!(first, second, "the repaired store names the new revision");
-        for name in ["spec.json", "design.json", "plan.json"] {
-            assert!(
-                provider.storage.object(CONTAINER, &format!("{first}/{name}")).is_none(),
-                "the tampered outgoing revision is pruned: {name}"
-            );
+        let provider = Provider::answering([SPEC_ANSWER, DESIGN_ANSWER]);
+        cli_ok(
+            &provider,
+            &["emery", "specify", &reference("docs"), "--apply", "--config", PROJECT_CONFIG],
+        )
+        .await;
+        let id = committed(&provider.storage);
+        let sealed = super::committed_document(&provider, "spec");
+        provider.files.holds(REVISION, &format!("{SPECIFICATION}/spec.json"), "{}\n");
+        for _ in 0..3 {
+            provider.vcs.labelleds.script(".", Ok(LABELLED.to_owned()));
         }
-        assert!(shown(&provider, "spec").await.contains("howdy"), "show renders the repair");
+
+        let envelope = fail(
+            &provider,
+            &["emery", "show", "spec", "--config", PROJECT_CONFIG],
+            1,
+            "spec-mismatch",
+        )
+        .await;
+        assert_message(
+            &envelope,
+            &format!("labelled `emery/{id}`, does not match revision `{id}`"),
+        );
+        assert!(
+            envelope["hint"]
+                .as_str()
+                .unwrap_or("")
+                .contains("git checkout emery/<revision> -- spec/"),
+            "{envelope}"
+        );
+        fail(
+            &provider,
+            &["emery", "specify", &reference("docs"), "--apply", "--config", PROJECT_CONFIG],
+            1,
+            "spec-mismatch",
+        )
+        .await;
+        assert!(provider.storage.state(STAGED_KEY).is_none(), "nothing is staged over it");
+
+        provider.files.holds_bytes(REVISION, &format!("{SPECIFICATION}/spec.json"), &sealed);
+        assert!(shown_sealed(&provider, "spec").await.contains("hello"), "show renders it again");
+        provider.model.assert_exhausted();
+    }
+
+    // A `spec/` of the operator's own at the head, holding anything but the
+    // three documents, is where the specification cannot live: every verb
+    // over the current revision refuses typed and nothing is sealed there.
+    #[tokio::test]
+    async fn spec_occupied() {
+        let provider = Provider::answering([SPEC_ANSWER, DESIGN_ANSWER]);
+        provider.files.lists(REVISION, ".", &[(SPECIFICATION, EntryKind::Directory)]);
+        provider.files.lists(REVISION, SPECIFICATION, &[("openapi.yaml", EntryKind::File)]);
+
+        let envelope = fail(
+            &provider,
+            &["emery", "show", "spec", "--config", PROJECT_CONFIG],
+            1,
+            "spec-mismatch",
+        )
+        .await;
+        assert_message(&envelope, "holds `openapi.yaml`, where the three documents");
+        fail(
+            &provider,
+            &["emery", "specify", &reference("docs"), "--apply", "--config", PROJECT_CONFIG],
+            1,
+            "spec-mismatch",
+        )
+        .await;
+        assert!(provider.vcs.messages().is_empty(), "nothing is sealed");
+        assert!(provider.files.writes().is_empty(), "nothing is written");
+
+        // a bare specify needs no repository and stages regardless
+        cli_ok(&provider, &["emery", "specify", &reference("docs")]).await;
+        assert!(provider.storage.state(STAGED_KEY).is_some());
         provider.model.assert_exhausted();
     }
 
     // Outdated is not corrupt: `show` refuses typed, and the next `specify`
-    // regenerates over it.
+    // regenerates over it with the diff suppressed.
     #[tokio::test]
     async fn spec_outdated() {
         let provider = Provider::answering([SPEC_ANSWER, DESIGN_ANSWER]);
         let outdated = seed(
-            &provider.storage,
+            &provider.files,
             br#"{"emery": 1, "requirements": []}"#,
             br#"{"emery": 1, "sections": []}"#,
             br#"{"emery": 1, "slices": []}"#,
         );
 
-        let envelope = fail(&provider, &["emery", "show", "spec"], 1, "spec-outdated").await;
+        let envelope = fail(
+            &provider,
+            &["emery", "show", "spec", "--config", PROJECT_CONFIG],
+            1,
+            "spec-outdated",
+        )
+        .await;
         assert_message(&envelope, "grammar 1");
         assert!(
             envelope["hint"].as_str().unwrap_or("").contains("emery specify"),
             "the hint names the way out: {envelope}"
         );
 
-        let resp = cli_ok(&provider, &["emery", "specify", &reference("docs")]).await;
+        let resp = cli_ok(
+            &provider,
+            &["emery", "specify", &reference("docs"), "--apply", "--config", PROJECT_CONFIG],
+        )
+        .await;
         let stdout = String::from_utf8_lossy(&resp.stdout);
         assert!(
             !stdout.contains("diff vs"),
             "an outdated outgoing revision yields no diff: {stdout}"
         );
-        let id = current(&provider.storage);
+        let id = committed(&provider.storage);
         assert_ne!(id, outdated, "the regenerated revision is current");
-        assert!(
-            provider.storage.object(CONTAINER, &format!("{outdated}/spec.json")).is_none(),
-            "the outdated revision is pruned"
-        );
-        cli_ok(&provider, &["emery", "show", "spec"]).await;
+        cli_ok(&provider, &["emery", "show", "spec", "--config", PROJECT_CONFIG]).await;
         provider.model.assert_exhausted();
     }
 
@@ -3650,24 +3863,24 @@ mod store {
         cli_ok(&beta, &["emery", "specify", SOURCE]).await;
 
         // every write landed under its project prefix
-        assert!(shared.state(REVISION_KEY).is_none(), "no unprefixed current id exists");
-        assert!(shared.objects(CONTAINER).is_empty(), "no unprefixed revision exists");
+        assert!(shared.state(STAGED_KEY).is_none(), "no unprefixed staged id exists");
+        assert!(shared.objects(STAGED_CONTAINER).is_empty(), "no unprefixed candidate exists");
 
-        let id_alpha = project_current(&shared, "alpha");
-        let id_beta = project_current(&shared, "beta");
-        assert_ne!(id_alpha, id_beta, "distinct documents commit distinct revisions");
+        let id_alpha = project_staged(&shared, "alpha");
+        let id_beta = project_staged(&shared, "beta");
+        assert_ne!(id_alpha, id_beta, "distinct documents stage distinct candidates");
 
-        // each project shows its own revision
+        // each project shows its own candidate
         let spec_alpha = shared
-            .object(&format!("alpha/{CONTAINER}"), &format!("{id_alpha}/spec.json"))
+            .object(&format!("alpha/{STAGED_CONTAINER}"), &format!("{id_alpha}/spec.json"))
             .expect("spec.json");
         let spec_beta = shared
-            .object(&format!("beta/{CONTAINER}"), &format!("{id_beta}/spec.json"))
+            .object(&format!("beta/{STAGED_CONTAINER}"), &format!("{id_beta}/spec.json"))
             .expect("spec.json");
         assert_eq!(
             String::from_utf8_lossy(&spec_alpha),
             SPEC_REVISION,
-            "alpha committed the revision"
+            "alpha staged the revision"
         );
         assert!(String::from_utf8_lossy(&spec_beta).contains("howdy"));
         assert_eq!(
@@ -3676,6 +3889,16 @@ mod store {
             "alpha shows its own revision"
         );
         assert!(shown(&beta, "spec").await.contains("howdy"), "beta shows its own revision");
+
+        // a seal's pointer lands under its prefix too
+        cli_ok(&alpha, &["emery", "apply", "--config", PROJECT_CONFIG]).await;
+        assert!(shared.state(REVISION_KEY).is_none(), "no unprefixed current id exists");
+        assert_eq!(
+            shared.state(&format!("alpha/{REVISION_KEY}")).as_deref(),
+            Some(id_alpha.as_bytes()),
+            "alpha sealed its own candidate"
+        );
+        assert_eq!(project_staged(&shared, "beta"), id_beta, "beta's candidate stands");
 
         alpha.model.assert_exhausted();
         beta.model.assert_exhausted();
@@ -3689,20 +3912,32 @@ fn assert_message(envelope: &Value, fragment: &str) {
     assert!(message.contains(fragment), "expected `{fragment}` in: {envelope}");
 }
 
-fn current(storage: &Memory) -> String {
+// A bare `specify` stages its candidate, so what a scenario reads back is
+// the staged slot unless it sealed the candidate with `--apply`.
+fn staged(storage: &Memory) -> String {
+    stored_id(storage, STAGED_KEY)
+}
+
+fn committed(storage: &Memory) -> String {
     stored_id(storage, REVISION_KEY)
 }
 
-fn project_current(shared: &Memory, project: &str) -> String {
-    stored_id(shared, &format!("{project}/{REVISION_KEY}"))
+fn project_staged(shared: &Memory, project: &str) -> String {
+    stored_id(shared, &format!("{project}/{STAGED_KEY}"))
 }
 
 fn stored_id(storage: &Memory, key: &str) -> String {
     String::from_utf8(storage.state(key).expect("current")).expect("utf-8 revision id")
 }
 
-fn document(storage: &Memory, id: &str, name: &str) -> Vec<u8> {
-    storage.object(CONTAINER, &format!("{id}/{name}")).unwrap_or_else(|| panic!("{name}"))
+fn staged_document(storage: &Memory, id: &str, name: &str) -> Vec<u8> {
+    storage
+        .object(STAGED_CONTAINER, &format!("{id}/{name}"))
+        .unwrap_or_else(|| panic!("staged {name}"))
+}
+
+fn committed_document(provider: &Provider, name: &str) -> Vec<u8> {
+    written(&provider.files, name)
 }
 
 fn projection(fixture: &str, id: &str) -> String {
@@ -3713,6 +3948,14 @@ async fn shown<S>(provider: &Provider<S>, document: &str) -> String
 where
     S: StateStore + BlobStore + Send + Sync + 'static,
 {
-    let resp = cli_ok(provider, &["emery", "show", document]).await;
+    let resp = cli_ok(provider, &["emery", "show", document, "--staged"]).await;
+    String::from_utf8(resp.stdout).expect("utf-8 document")
+}
+
+async fn shown_sealed<S>(provider: &Provider<S>, document: &str) -> String
+where
+    S: StateStore + BlobStore + Send + Sync + 'static,
+{
+    let resp = cli_ok(provider, &["emery", "show", document, "--config", PROJECT_CONFIG]).await;
     String::from_utf8(resp.stdout).expect("utf-8 document")
 }

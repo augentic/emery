@@ -2,13 +2,14 @@
 //!
 //! [`list`] visits directories and regular files beneath a source root. The
 //! filter receives each [`Entry`] and may prune directories or omit files.
-//! Emery's `.emery/` directories, `.git` entries, and generated documents are
-//! always excluded, as the claim gate refuses a `path` anchored in them.
+//! Emery's `.emery/` directories, `.git` entries, generated documents, and
+//! the root-level `spec/` are always excluded, as the claim gate refuses a
+//! `path` anchored in them.
 
 use std::path::Path;
 
 use anyhow::Context as _;
-use emery_adapter::{SKIP_DIRS, SKIP_FILES};
+use emery_adapter::{SKIP_DIRS, SKIP_FILES, SPECIFICATION};
 use omnia_sdk::{Error, bad_request};
 
 /// A workspace entry passed to an adapter's filter.
@@ -67,12 +68,12 @@ impl<'a> Entry<'a> {
     }
 
     // A linked working copy's root holds `.git` as a file, so the skipped
-    // names are skipped as files too.
+    // directory names are excluded as files too. The specification's
+    // directory is reserved at the root alone, whether directory or file.
     fn excluded(self) -> bool {
-        match self {
-            Self::Dir(_) => SKIP_DIRS.contains(&self.name()),
-            Self::File(_) => SKIP_FILES.contains(&self.name()) || SKIP_DIRS.contains(&self.name()),
-        }
+        self.path() == SPECIFICATION
+            || SKIP_DIRS.contains(&self.name())
+            || matches!(self, Self::File(_)) && SKIP_FILES.contains(&self.name())
     }
 }
 
@@ -80,7 +81,8 @@ impl<'a> Entry<'a> {
 ///
 /// `keep` is asked about every entry; a refused directory is not entered.
 /// `.emery/` and `.git` entries, directory or file, and generated `spec.md`,
-/// `design.md`, and `plan.md` files are never offered, wherever they occur.
+/// `design.md`, and `plan.md` files are never offered, wherever they occur,
+/// and neither is the root-level `spec/`, where the specification lives.
 /// Symlinks and non-regular files are not followed or returned.
 ///
 /// # Examples
