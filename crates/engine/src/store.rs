@@ -13,7 +13,7 @@ use std::fmt;
 
 use anyhow::Context;
 use omnia_sdk::{BlobStore, Error, StateStore, Vcs, server_error};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 use crate::revision::{Design, Diff, Document as _, Plan, Revision, Spec};
 use crate::vcs::{BuildRepo, REVISION, RevisionMessage, SPECIFICATION, WorkingCopy};
@@ -25,25 +25,65 @@ use crate::{EntryKind, Files, secrets};
 /// and a pointer the repository does not bear out is passed over.
 pub const REVISION_KEY: &str = "current-revision";
 
-/// The state-store key containing the staged candidate's identifier.
+/// The state-store key containing the staged candidate record.
 pub const STAGED_KEY: &str = "staged";
 
 /// The blob container containing the staged candidate's documents under `<id>/`.
 pub const STAGED_CONTAINER: &str = "staged";
 
 /// What kind of candidate is staged for `emery apply` to seal.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum StagedKind {
     /// A whole revision, drafted from the sources alone.
     Revision,
+    /// A change against the current revision, prepared on a base.
+    Amendment,
 }
 
 impl fmt::Display for StagedKind {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str(match self {
             Self::Revision => "revision",
+            Self::Amendment => "amendment",
         })
+    }
+}
+
+// The staged record at `STAGED_KEY`.
+#[derive(Serialize, Deserialize)]
+struct Slot {
+    id: String,
+    kind: StagedKind,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    base: Option<StagedBase>,
+}
+
+// The revision an amendment was prepared against, at the commit it was read at.
+#[derive(Serialize, Deserialize)]
+struct StagedBase {
+    revision: String,
+    commit: String,
+}
+
+impl Slot {
+    const fn revision(id: String) -> Self {
+        Self {
+            id,
+            kind: StagedKind::Revision,
+            base: None,
+        }
+    }
+
+    // Fails closed on bytes that decode as no record.
+    async fn read<S: StateStore>(store: &S) -> Result<Option<Self>, Error> {
+        let Some(raw) =
+            StateStore::get(store, STAGED_KEY).await.context("getting the staged record")?
+        else {
+            return Ok(None);
+        };
+        let slot = serde_json::from_slice(&raw).context("decoding the staged record")?;
+        Ok(Some(slot))
     }
 }
 
@@ -144,15 +184,15 @@ impl Occupancy {
 }
 
 // Stages `revision` as the candidate for `emery apply`, replacing any staged
-// before it: every document written under the candidate's id, the staged id
-// swapped by compare-and-swap, and the candidate it displaced pruned.
+// before it: every document written under the candidate's id, the staged
+// record swapped by compare-and-swap, and the candidate it displaced pruned.
 pub async fn stage<S: StateStore + BlobStore>(
     store: &S, revision: &Revision,
 ) -> Result<String, Error> {
     let token = match StateStore::get(store, STAGED_KEY).await {
         Ok(token) => token,
         Err(error) => {
-            tracing::warn!(%error, "the staged id is unreadable");
+            tracing::warn!(%error, "the staged record is unreadable");
             None
         }
     };
@@ -171,37 +211,34 @@ pub async fn stage<S: StateStore + BlobStore>(
             .await
             .context("writing staged candidate document")?;
     }
-    StateStore::cas(store, STAGED_KEY, token.as_deref(), id.as_bytes())
+    let record =
+        serde_json::to_vec(&Slot::revision(id.clone())).context("encoding the staged record")?;
+    StateStore::cas(store, STAGED_KEY, token.as_deref(), &record)
         .await
-        .context("swapping the staged candidate id")?;
+        .context("swapping the staged record")?;
 
-    // prune the candidate displaced
-    if let Some(outgoing) = token
+    // prune the candidate displaced; bytes that decode as no record name none
+    let displaced = token
         .as_deref()
-        .and_then(|token| str::from_utf8(token).ok())
-        .filter(|outgoing| *outgoing != id)
-    {
-        prune(store, outgoing).await;
+        .and_then(|raw| serde_json::from_slice::<Slot>(raw).ok())
+        .map(|slot| slot.id)
+        .filter(|outgoing| *outgoing != id);
+    if let Some(outgoing) = displaced {
+        prune(store, &outgoing).await;
     }
     Ok(id)
 }
 
 // The staged candidate's id alone, or `None` when nothing is staged.
 pub async fn staged_id<S: StateStore>(store: &S) -> Result<Option<String>, Error> {
-    let Some(raw) =
-        StateStore::get(store, STAGED_KEY).await.context("getting the staged candidate id")?
-    else {
-        return Ok(None);
-    };
-    let id = String::from_utf8(raw).context("decoding the staged candidate id")?;
-    Ok(Some(id))
+    Ok(Slot::read(store).await?.map(|slot| slot.id))
 }
 
 // The staged candidate whole, or `None` when nothing is staged: fails closed
 // on a candidate that no longer matches its id, and `spec-outdated` on one
 // under another grammar.
 pub async fn staged<S: StateStore + BlobStore>(store: &S) -> Result<Option<Staged>, Error> {
-    let Some(id) = staged_id(store).await? else {
+    let Some(Slot { id, kind, .. }) = Slot::read(store).await? else {
         return Ok(None);
     };
     let mut bodies = Vec::with_capacity(Revision::DOCUMENTS.len());
@@ -213,11 +250,7 @@ pub async fn staged<S: StateStore + BlobStore>(store: &S) -> Result<Option<Stage
         bodies.push(body);
     }
     let revision = Revision::read(&id, &bodies[0], &bodies[1], &bodies[2])?;
-    Ok(Some(Staged {
-        id,
-        kind: StagedKind::Revision,
-        revision,
-    }))
+    Ok(Some(Staged { id, kind, revision }))
 }
 
 // Removes the staged candidate, documents and id; nothing staged is nothing to remove.
@@ -378,7 +411,7 @@ pub async fn not_generated<S: StateStore>(store: &S, standing: &Standing) -> Err
             clauses.push(format!("candidate `{candidate}` is staged and not sealed"));
         }
         Ok(None) => {}
-        Err(error) => tracing::warn!(%error, "the staged id is unreadable"),
+        Err(error) => tracing::warn!(%error, "the staged record is unreadable"),
     }
     Error::NotFound {
         code: "spec-not-generated".into(),

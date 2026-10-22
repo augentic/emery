@@ -213,6 +213,20 @@ pub struct SourceConfig {
     /// `1`, documentation `2`, behaviour `3`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub rank: Option<Rank>,
+    /// Whether the source states a change alone or its subject whole.
+    #[serde(default)]
+    pub scope: Scope,
+}
+
+/// How much of its subject a [`SourceConfig`] states.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum Scope {
+    /// The source states only what changes, and behaviour it is silent on stands.
+    #[default]
+    Delta,
+    /// The source states its subject's behaviour whole.
+    Whole,
 }
 
 /// A repository a source is read from, at a revision.

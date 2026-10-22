@@ -10,7 +10,7 @@ use emery_engine::vcs::{REVISION, RevisionMessage};
 use emery_engine::{EntryKind, REVISION_KEY, STAGED_CONTAINER, STAGED_KEY};
 use omnia_sdk::vcs::{Change, ChangeKind, Error};
 use serde_json::Value;
-use support::{HEAD, Provider, Scratch, carry, cli, cli_ok, document, fail, seed, stage};
+use support::{HEAD, Provider, Scratch, carry, cli, cli_ok, document, fail, seed, stage, staged};
 
 // The one-source reference `specify` names; the scripted loader lands any
 // exact package reference.
@@ -414,8 +414,7 @@ async fn specify_apply_seal_refused() {
         envelope["message"].as_str().is_some_and(|message| message.contains("index.lock held")),
         "{envelope}"
     );
-    let candidate =
-        String::from_utf8(provider.storage.state(STAGED_KEY).expect("staged")).expect("utf-8 id");
+    let candidate = staged(&provider.storage);
     assert_ne!(candidate, outgoing);
     assert!(
         provider.storage.object(STAGED_CONTAINER, &format!("{candidate}/spec.json")).is_some(),
