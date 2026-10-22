@@ -107,6 +107,10 @@ audit-as-crates-io = false
 version = "0.26.1"
 criteria = "safe-to-deploy"
 
+[[exemptions.ahash]]
+version = "0.8.12"
+criteria = "safe-to-deploy"
+
 [[exemptions.android_system_properties]]
 version = "0.1.6"
 criteria = "safe-to-deploy"
@@ -171,8 +175,16 @@ criteria = "safe-to-deploy"
 version = "3.10.2"
 criteria = "safe-to-deploy"
 
+[[exemptions.borrow-or-share]]
+version = "0.2.4"
+criteria = "safe-to-deploy"
+
 [[exemptions.bs58]]
 version = "0.5.0"
+criteria = "safe-to-deploy"
+
+[[exemptions.bytecount]]
+version = "0.6.9"
 criteria = "safe-to-deploy"
 
 [[exemptions.cap-fs-ext]]
@@ -256,7 +268,7 @@ version = "0.3.1"
 criteria = "safe-to-deploy"
 
 [[exemptions.crc32fast]]
-version = "1.5.2"
+version = "1.5.3"
 criteria = "safe-to-deploy"
 
 [[exemptions.crossbeam-channel]]
@@ -379,6 +391,10 @@ criteria = "safe-to-deploy"
 version = "1.19.0"
 criteria = "safe-to-deploy"
 
+[[exemptions.email_address]]
+version = "0.2.9"
+criteria = "safe-to-deploy"
+
 [[exemptions.enumflags2]]
 version = "0.7.12"
 criteria = "safe-to-deploy"
@@ -395,8 +411,8 @@ criteria = "safe-to-deploy"
 version = "0.11.0"
 criteria = "safe-to-deploy"
 
-[[exemptions.eventsource-stream]]
-version = "0.2.3"
+[[exemptions.fancy-regex]]
+version = "0.19.2"
 criteria = "safe-to-deploy"
 
 [[exemptions.fastrand]]
@@ -413,6 +429,14 @@ criteria = "safe-to-deploy"
 
 [[exemptions.flagset]]
 version = "0.4.7"
+criteria = "safe-to-deploy"
+
+[[exemptions.fluent-uri]]
+version = "0.4.1"
+criteria = "safe-to-deploy"
+
+[[exemptions.fraction]]
+version = "0.17.0"
 criteria = "safe-to-deploy"
 
 [[exemptions.fromenv]]
@@ -464,7 +488,7 @@ version = "0.3.34"
 criteria = "safe-to-deploy"
 
 [[exemptions.genai]]
-version = "0.6.5"
+version = "0.7.0"
 criteria = "safe-to-deploy"
 
 [[exemptions.generic-array]]
@@ -643,6 +667,18 @@ criteria = "safe-to-deploy"
 version = "0.3.106"
 criteria = "safe-to-deploy"
 
+[[exemptions.jsonschema]]
+version = "0.59.0"
+criteria = "safe-to-deploy"
+
+[[exemptions.jsonschema-regex]]
+version = "0.59.0"
+criteria = "safe-to-deploy"
+
+[[exemptions.jsonschema-value]]
+version = "0.59.0"
+criteria = "safe-to-deploy"
+
 [[exemptions.jsonwebtoken]]
 version = "10.4.0"
 criteria = "safe-to-deploy"
@@ -699,16 +735,16 @@ criteria = "safe-to-deploy"
 version = "0.6.6"
 criteria = "safe-to-deploy"
 
+[[exemptions.micromap]]
+version = "0.3.0"
+criteria = "safe-to-deploy"
+
 [[exemptions.mime]]
 version = "0.3.16"
 criteria = "safe-to-deploy"
 
 [[exemptions.mime_guess]]
 version = "2.0.4"
-criteria = "safe-to-deploy"
-
-[[exemptions.minimal-lexical]]
-version = "0.2.1"
 criteria = "safe-to-deploy"
 
 [[exemptions.miniz_oxide]]
@@ -725,6 +761,30 @@ criteria = "safe-to-deploy"
 
 [[exemptions.nix]]
 version = "0.31.3"
+criteria = "safe-to-deploy"
+
+[[exemptions.num]]
+version = "0.4.3"
+criteria = "safe-to-deploy"
+
+[[exemptions.num-bigint]]
+version = "0.4.8"
+criteria = "safe-to-deploy"
+
+[[exemptions.num-cmp]]
+version = "0.1.0"
+criteria = "safe-to-deploy"
+
+[[exemptions.num-complex]]
+version = "0.4.6"
+criteria = "safe-to-deploy"
+
+[[exemptions.num-integer]]
+version = "0.1.47"
+criteria = "safe-to-deploy"
+
+[[exemptions.num-iter]]
+version = "0.1.46"
 criteria = "safe-to-deploy"
 
 [[exemptions.oauth2]]
@@ -751,6 +811,98 @@ criteria = "safe-to-deploy"
 version = "0.1.4"
 criteria = "safe-to-deploy"
 
+[[exemptions.omnia]]
+version = "0.37.0"
+criteria = "safe-to-deploy"
+
+[[exemptions.omnia-cli]]
+version = "0.37.0"
+criteria = "safe-to-deploy"
+
+[[exemptions.omnia-compile]]
+version = "0.37.0"
+criteria = "safe-to-deploy"
+
+[[exemptions.omnia-core]]
+version = "0.37.0"
+criteria = "safe-to-deploy"
+
+[[exemptions.omnia-guest-macros]]
+version = "0.37.0"
+criteria = "safe-to-deploy"
+
+[[exemptions.omnia-host-macros]]
+version = "0.37.0"
+criteria = "safe-to-deploy"
+
+[[exemptions.omnia-link]]
+version = "0.37.0"
+criteria = "safe-to-deploy"
+
+[[exemptions.omnia-plugin]]
+version = "0.37.0"
+criteria = "safe-to-deploy"
+
+[[exemptions.omnia-sdk]]
+version = "0.37.0"
+criteria = "safe-to-deploy"
+
+[[exemptions.omnia-test]]
+version = "0.37.0"
+criteria = "safe-to-run"
+
+[[exemptions.omnia-wasi-blobstore]]
+version = "0.37.0"
+criteria = "safe-to-deploy"
+
+[[exemptions.omnia-wasi-config]]
+version = "0.37.0"
+criteria = "safe-to-deploy"
+
+[[exemptions.omnia-wasi-docstore]]
+version = "0.37.0"
+criteria = "safe-to-deploy"
+
+[[exemptions.omnia-wasi-http]]
+version = "0.37.0"
+criteria = "safe-to-deploy"
+
+[[exemptions.omnia-wasi-identity]]
+version = "0.37.0"
+criteria = "safe-to-deploy"
+
+[[exemptions.omnia-wasi-keyvalue]]
+version = "0.37.0"
+criteria = "safe-to-deploy"
+
+[[exemptions.omnia-wasi-messaging]]
+version = "0.37.0"
+criteria = "safe-to-deploy"
+
+[[exemptions.omnia-wasi-model]]
+version = "0.37.0"
+criteria = "safe-to-deploy"
+
+[[exemptions.omnia-wasi-otel]]
+version = "0.37.0"
+criteria = "safe-to-deploy"
+
+[[exemptions.omnia-wasi-sql]]
+version = "0.37.0"
+criteria = "safe-to-deploy"
+
+[[exemptions.omnia-wasi-vault]]
+version = "0.37.0"
+criteria = "safe-to-run"
+
+[[exemptions.omnia-wasi-vcs]]
+version = "0.37.0"
+criteria = "safe-to-deploy"
+
+[[exemptions.omnia-wasi-websocket]]
+version = "0.37.0"
+criteria = "safe-to-deploy"
+
 [[exemptions.once_cell]]
 version = "1.12.0"
 criteria = "safe-to-deploy"
@@ -775,8 +927,8 @@ criteria = "safe-to-deploy"
 version = "0.33.1"
 criteria = "safe-to-deploy"
 
-[[exemptions.paste]]
-version = "1.0.10"
+[[exemptions.outref]]
+version = "0.5.2"
 criteria = "safe-to-deploy"
 
 [[exemptions.petgraph]]
@@ -885,6 +1037,14 @@ criteria = "safe-to-deploy"
 
 [[exemptions.redox_syscall]]
 version = "0.5.18"
+criteria = "safe-to-deploy"
+
+[[exemptions.redox_syscall]]
+version = "0.9.5"
+criteria = "safe-to-deploy"
+
+[[exemptions.referencing]]
+version = "0.59.0"
 criteria = "safe-to-deploy"
 
 [[exemptions.reqwest]]
@@ -1112,7 +1272,7 @@ version = "0.4.2"
 criteria = "safe-to-deploy"
 
 [[exemptions.tokio]]
-version = "1.54.0"
+version = "1.54.1"
 criteria = "safe-to-deploy"
 
 [[exemptions.tokio-macros]]
@@ -1199,6 +1359,10 @@ criteria = "safe-to-deploy"
 version = "2.10.0"
 criteria = "safe-to-deploy"
 
+[[exemptions.unicode-general-category]]
+version = "1.1.0"
+criteria = "safe-to-deploy"
+
 [[exemptions.untrusted]]
 version = "0.9.0"
 criteria = "safe-to-deploy"
@@ -1207,12 +1371,20 @@ criteria = "safe-to-deploy"
 version = "1.28.0"
 criteria = "safe-to-deploy"
 
+[[exemptions.uuid-simd]]
+version = "0.8.0"
+criteria = "safe-to-deploy"
+
 [[exemptions.value-ext]]
 version = "0.1.5"
 criteria = "safe-to-deploy"
 
 [[exemptions.version_check]]
 version = "0.9.5"
+criteria = "safe-to-deploy"
+
+[[exemptions.vsimd]]
+version = "0.8.0"
 criteria = "safe-to-deploy"
 
 [[exemptions.walkdir]]
