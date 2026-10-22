@@ -40,7 +40,7 @@ class: slide-light
 
 # Everyone is building.
 
-<p class="slide-lead">AI made the first version of an app nearly free. The tools arrived years before the system around them.</p>
+<p class="slide-lead">Code is now cheap; delivery and ownership are still hard. AI made the first version of an app nearly free — years before the system around it arrived.</p>
 
 <div class="stat-grid">
 <div class="stat">
@@ -395,33 +395,6 @@ Month nine. The planner now passes the Monday morning test: if it fails, shifts 
 - The rebuilt planner runs on Omnia with least-privilege grants, so the data story from Tier 2 carries straight through, now including regulated data if it needs it.
 - The handover protects both sides. The operations lead becomes product owner; she keeps the thing she built and gets no pager. Engineering owns the code, the security, and the SLA.
 - The line to remember: keep the criteria, drop the code. The prototype already paid for discovering what the software should do.
--->
-
----
-title: Who owns what
-class: slide-light
----
-
-<Eyebrow text="THE OPERATING MODEL · WHO OWNS WHAT" />
-
-<div class="ed-band">
-<div class="ed-band-top">
-<div>
-
-# Engineering time goes<br>where the risk is.
-
-</div>
-<p class="ed-band-prose">The template is built once. Data contracts are published per domain. <strong>Hands-on engineering starts only at Tier 3</strong>, which is why Tiers 1 and 2 stay fast. Shell scaled citizen development past 4,000 builders under a three-zone model where embedded coaches — not review committees — made it work.</p>
-</div>
-<OwnersGrid />
-</div>
-
-<!--
-The question every CIO asks next: how much engineering time does this consume?
-
-- Read the bottom row. Engineering builds the template once at Tier 1. At Tier 2 it owns the data contracts, not the apps. Only at Tier 3 does it take on an app itself.
-- The middle row is the enabling team and the coaches. In every programme that has scaled, Shell being the best documented, the coaches embedded in business teams mattered more than any control.
-- The top row is the builder. Notice she never loses the app. At Tier 3 she becomes its product owner.
 -->
 
 ---

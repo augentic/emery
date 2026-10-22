@@ -984,7 +984,7 @@ class: slide-light
 # Score any app<br>in five minutes.
 
 </div>
-<p class="ed-band-prose">Four questions about the app, never about the builder. <strong>The highest column any answer reaches sets the tier</strong> — so a one-person script that touches regulated records is a Tier 3 question, however few people use it. Treat the thresholds as starting points for your first workshop.</p>
+<p class="ed-band-prose">Four questions about the app, never about the builder. <strong>The highest column any answer reaches sets the tier</strong> — so a one-person script that touches regulated records is a Tier 3 question, however few people use it. Use this blank scorecard in your first workshop to map what already exists and calibrate your thresholds.</p>
 </div>
 <Scorecard />
 </div>
@@ -995,68 +995,4 @@ The scorecard, blank, for the workshop.
 - Reach, data, the Monday 9am test, continuity. Mark one column per row.
 - The highest column wins. A one-person app that touches regulated data is a Tier 3 question, however few use it.
 - Change the thresholds to fit the organisation; the four questions stay.
--->
-
----
-title: Where to start
-class: slide-split short-bar
----
-
-<div class="split-image-pane">
-<AmbientVideo src="/videos/cta-video.mp4" variant="split" />
-<div class="split-brand-overlay">
-<img src="/images/Propellerhead_Logo.svg" alt="Propellerhead" />
-<p>25 years of building critical software across Aotearoa and the world — combining AI speed with senior engineering judgment.</p>
-</div>
-</div>
-
-<div class="split-content-pane">
-<div>
-<Eyebrow text="PROPELLERHEAD · WHERE TO START" />
-
-# Where to<br>start.
-
-<div class="opportunity-rows" style="margin-top: 8px;">
-<div class="opportunity-row">
-<span class="opportunity-row-num">01</span>
-<div>
-<h4>Map what already exists</h4>
-<p>Two weeks. Find every AI-built tool you can, score each on the four questions, and see the whole estate on one page.</p>
-</div>
-</div>
-<div class="opportunity-row">
-<span class="opportunity-row-num">02</span>
-<div>
-<h4>Open Tiers 1 and 2</h4>
-<p>Days, not months. The governed workspace, the gates, and the first scoped data contract, with one builder and one real use case.</p>
-</div>
-</div>
-<div class="opportunity-row">
-<span class="opportunity-row-num">03</span>
-<div>
-<h4>Graduate one proven winner</h4>
-<p>A funded project. Emery to specify and verify, Omnia to run, our engineers on call, and your builder as product owner.</p>
-</div>
-</div>
-</div>
-</div>
-
-<div class="cta-card">
-<div>
-<div class="cta-card-label">READY WHEN YOU ARE</div>
-<div class="cta-card-title">Let's score your first candidates.</div>
-</div>
-<div class="cta-pill">
-<span class="cta-pill-dot">→</span>
-<span>propellerhead.co.nz</span>
-</div>
-</div>
-</div>
-
-<!--
-The same three steps as the story deck, so the two documents end in one place.
-
-- Map first. It costs two weeks and commits you to nothing.
-- Open Tiers 1 and 2 with one builder and one real use case.
-- Graduate one winner as a funded project once the estate shows you which one.
 -->

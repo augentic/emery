@@ -4,16 +4,16 @@
   "scripts": {
     "dev": "slidev citizen-coding.md --open",
     "dev:story": "slidev trust-story.md --open",
-    "dev:guide": "slidev trust-guide.md --open",
+    "dev:guide": "slidev trust-model.md --open",
     "build": "slidev build citizen-coding.md",
     "build:story": "slidev build trust-story.md",
-    "build:guide": "slidev build trust-guide.md",
+    "build:guide": "slidev build trust-model.md",
     "export": "slidev export citizen-coding.md",
     "export:story": "slidev export trust-story.md",
-    "export:guide": "slidev export trust-guide.md",
+    "export:guide": "slidev export trust-model.md",
     "export:pptx": "slidev export citizen-coding.md --format pptx",
     "export:story:pptx": "slidev export trust-story.md --format pptx",
-    "export:guide:pptx": "slidev export trust-guide.md --format pptx"
+    "export:guide:pptx": "slidev export trust-model.md --format pptx"
   },
   "dependencies": {
     "@slidev/cli": "^51.0.0",
