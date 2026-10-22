@@ -45,9 +45,12 @@ pub struct GroupingBrief<'a> {
 
 impl<'a> GroupingBrief<'a> {
     /// Returns a grouping brief for `extracts`.
+    ///
+    /// A `retire` claim is passed over: with no standing requirements there
+    /// is nothing for it to withdraw.
     #[must_use]
     pub fn new(extracts: &'a [Extract]) -> Self {
-        Self::with_standing(extracts, Vec::new(), Vec::new())
+        Self::assemble(extracts, Vec::new(), Vec::new(), false)
     }
 
     /// Returns a grouping brief for `extracts` matched against `standing`.
@@ -57,10 +60,20 @@ impl<'a> GroupingBrief<'a> {
     /// ids of those the revision holds covered. The model places each claim
     /// in the group of the standing requirement it restates or revises, or
     /// in a group of its own, and never two standing requirements in one
-    /// group.
+    /// group. A `retire` claim is a contributor too, marked as withdrawing
+    /// the behaviour its id names: one at a standing requirement's id is
+    /// pre-merged with it, and the model places any other with the
+    /// standing requirement it withdraws.
     #[must_use]
     pub fn with_standing(
         extracts: &'a [Extract], standing: Vec<Contributor<'a>>, criteria: Vec<&'a str>,
+    ) -> Self {
+        Self::assemble(extracts, standing, criteria, true)
+    }
+
+    fn assemble(
+        extracts: &'a [Extract], standing: Vec<Contributor<'a>>, criteria: Vec<&'a str>,
+        withdrawals: bool,
     ) -> Self {
         let mut contributors: Vec<Contributor<'a>> = Vec::new();
         let mut criteria = criteria;
@@ -85,20 +98,26 @@ impl<'a> GroupingBrief<'a> {
                 }
                 let Some(id) = claim.id.as_deref() else { continue };
 
-                match claim.kind {
-                    ClaimKind::Requirement => contributors.push(Contributor {
-                        source: &extract.source,
-                        kind: extract.kind,
-                        rank: extract.rank,
-                        id,
-                        path: claim.path.as_deref(),
-                        statement: claim.statement(),
-                        synopsis: claim.synopsis.as_deref(),
-                        index: contributors.len(),
-                    }),
-                    ClaimKind::Criterion => criteria.push(id),
-                    _ => {}
-                }
+                let withdraws = match claim.kind {
+                    ClaimKind::Requirement => false,
+                    ClaimKind::Retire if withdrawals => true,
+                    ClaimKind::Criterion => {
+                        criteria.push(id);
+                        continue;
+                    }
+                    _ => continue,
+                };
+                contributors.push(Contributor {
+                    source: &extract.source,
+                    kind: extract.kind,
+                    rank: extract.rank,
+                    id,
+                    path: claim.path.as_deref(),
+                    statement: claim.statement(),
+                    synopsis: claim.synopsis.as_deref(),
+                    withdraws,
+                    index: contributors.len(),
+                });
             }
         }
 
@@ -144,7 +163,7 @@ impl<'a> GroupingBrief<'a> {
     ///   grouping cannot be reconciled with the claims.
     /// - Returns [`Error::BadGateway`] when the model operation fails.
     pub async fn derive<M: Model>(self, model: &M) -> Result<Vec<Basis<'a>>, Error> {
-        if self.changes == 0 {
+        if self.claims().is_empty() {
             return Err(bad_request!("no source contributed a requirement claim"));
         }
 
@@ -159,6 +178,10 @@ impl<'a> GroupingBrief<'a> {
     // with, which differ when one source describes one behaviour twice.
     fn stems(&self) -> usize {
         self.contributors.iter().map(Contributor::stem).collect::<BTreeSet<_>>().len()
+    }
+
+    fn claims(&self) -> &[Contributor<'a>] {
+        &self.contributors[..self.changes]
     }
 
     fn standing(&self) -> &[Contributor<'a>] {
@@ -219,6 +242,22 @@ impl<'a> Brief for GroupingBrief<'a> {
                         ));
                     }
                 }
+
+                // a withdrawal never says the same thing as a statement
+                let withdraws = class
+                    .first()
+                    .and_then(|&index| self.contributors.get(index))
+                    .is_some_and(|member| member.withdraws);
+                if class
+                    .iter()
+                    .filter_map(|&index| self.contributors.get(index))
+                    .any(|member| member.withdraws != withdraws)
+                {
+                    review.note(format_args!(
+                        "group {position}: a `(retire)` claim withdraws a behaviour and cannot \
+                         share a class with a statement"
+                    ));
+                }
             }
 
             for index in members.difference(&classed) {
@@ -271,11 +310,13 @@ impl Display for GroupingBrief<'_> {
         }
         f.write_str("## Requirement claims (index, source, id, statement, synopsis)\n\n")?;
 
-        for (index, claim) in self.contributors.iter().enumerate().take(self.changes) {
+        for claim in self.claims() {
             let synopsis = claim.synopsis.unwrap_or("-");
+            let kind = if claim.withdraws { " (retire)" } else { "" };
             writeln!(
                 f,
-                "- {index} `{source}` `{id}` — {statement} — {synopsis}",
+                "- {index} `{source}` `{id}`{kind} — {statement} — {synopsis}",
+                index = claim.index,
                 source = claim.source,
                 id = claim.id,
                 statement = claim.statement,
@@ -330,7 +371,11 @@ impl Display for GroupingBrief<'_> {
                  an outcome. A claim stating a behaviour no standing requirement covers is a \
                  group of its own. A standing requirement no claim touches is a group of its own \
                  too. Two standing requirements never share a group: an answer that merges them \
-                 is refused.\n",
+                 is refused.\n\nA claim marked `(retire)` withdraws the behaviour its id names \
+                 rather than stating one: it joins the group of the standing requirement that \
+                 states the behaviour, in a class of its own, and is never a group of its own or \
+                 of other claims alone, since a withdrawal of a behaviour the specification does \
+                 not hold is refused after your answer.\n",
             )?;
         }
         Ok(())
@@ -360,10 +405,10 @@ impl Grouping {
             });
             let group = &mut groups[position];
             group.claims.push(index);
-            let class = group
-                .classes
-                .iter_mut()
-                .find(|class| contributors[class[0]].statement == claim.statement);
+            let class = group.classes.iter_mut().find(|class| {
+                let lead = &contributors[class[0]];
+                lead.withdraws == claim.withdraws && lead.statement == claim.statement
+            });
 
             match class {
                 Some(class) => class.push(index),
@@ -595,15 +640,33 @@ impl<'a> Basis<'a> {
         members.into_iter()
     }
 
-    /// Returns the winning statement, or `None` when the contributors are in conflict.
+    /// Returns the winning statement, or `None` when the contributors are in
+    /// conflict or the winning claim withdraws the requirement.
     #[must_use]
     pub fn statement(&self) -> Option<&str> {
         match self.status {
             Status::Conflict => None,
             Status::Agreed | Status::Unknown | Status::Divergence => {
-                Some(&self.classes[0][0].statement)
+                let lead = &self.classes[0][0];
+                (!lead.withdraws).then_some(lead.statement.as_str())
             }
         }
+    }
+
+    /// Returns whether the winning claim withdraws the requirement.
+    ///
+    /// A `retire` claim leading the winning class withdraws the behaviour
+    /// the group's standing requirement states, so the requirement is
+    /// retired rather than restated. A conflict has no winner and answers
+    /// `false`.
+    #[must_use]
+    pub fn withdraws(&self) -> bool {
+        self.status != Status::Conflict && self.classes[0][0].withdraws
+    }
+
+    /// Returns the `retire` claims among the contributors, by descending authority.
+    pub fn withdrawals(&self) -> impl Iterator<Item = &Contributor<'a>> {
+        self.contributors().filter(|member| member.withdraws)
     }
 
     /// Returns the requirement produced from this basis and `scenarios`.
@@ -664,6 +727,9 @@ pub struct Contributor<'a> {
     pub statement: String,
     /// An optional synopsis provided to the grouping model.
     pub synopsis: Option<&'a str>,
+    /// Whether the claim is a `retire`, withdrawing the behaviour its id
+    /// names rather than stating it.
+    pub withdraws: bool,
     /// Position in source order, used to break authority ties.
     pub index: usize,
 }

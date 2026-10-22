@@ -10,7 +10,7 @@ use emery_engine::vcs::REVISION;
 use emery_engine::{STAGED_CONTAINER, STAGED_KEY};
 use serde_json::Value;
 use support::{
-    HEAD, Provider, cli, cli_ok, evidence, fail, requirement, seed, stage, stage_amendment,
+    HEAD, Provider, cli, cli_ok, evidence, fail, requirement, retire, seed, stage, stage_amendment,
 };
 use verbs::verbs;
 
@@ -24,7 +24,10 @@ const SPEC: &[u8] = include_bytes!("build/spec.json");
 const DESIGN: &[u8] = include_bytes!("build/design.json");
 const PLAN: &[u8] = include_bytes!("build/plan.json");
 const CLASSES: &str = include_str!("amend/classes.json");
+const RETIRED: &str = include_str!("amend/retired.json");
 const AMENDMENT: &[u8] = include_bytes!("specify/6-amendment.json");
+
+const WITHDRAWN: &str = "Cancelling an open order is withdrawn.";
 
 // The grouping over the four requirements of `SPEC` and the five change
 // claims `bind` scripts: indices 0..=3 are `docs`, 4 is `wiki`, and 5..=8 the
@@ -140,6 +143,243 @@ async fn amend_classes() {
     assert!(shown.contains("### Requirement: session.timeout\n\nID: REQ-002"), "{shown}");
     assert!(shown.contains("After: Sessions expire after 30 minutes of inactivity."), "{shown}");
     assert!(shown.contains("### Requirement: orders.refund\n\nID: REQ-005"), "{shown}");
+}
+
+// A `retire` beside a source's requirements retires the standing requirement
+// stating the behaviour it withdraws: matched by id, where the grouping
+// pre-merges the two, and else by the model, which places it with the
+// requirement under the id the specification spells; either way the
+// requirement keeps its id and subject, the withdrawal is its one source,
+// and `show amendment` lists it as retired with the statement withdrawn.
+#[tokio::test]
+async fn amend_retired() {
+    // indices 0 and 1 are `docs`, 2..=5 the standing requirements in id order
+    let grouping = r#"{"groups": [
+        {"claims": [0, 4], "classes": [[0, 4]]},
+        {"claims": [1, 5], "classes": [[1], [5]]},
+        {"claims": [2], "classes": [[2]]},
+        {"claims": [3], "classes": [[3]]}
+    ]}"#;
+    let mut provider = Provider::answering([grouping]);
+    provider.source.evidence.insert(
+        "docs".to_owned(),
+        Ok(evidence(vec![
+            requirement("orders.create", "A signed-in user places an order."),
+            retire("orders.cancel", WITHDRAWN),
+        ])),
+    );
+    let revision = seed(&provider.files, SPEC, DESIGN, PLAN);
+
+    let resp = cli_ok(&provider, &["emery", "amend", DOCS, "--config", PROJECT_CONFIG]).await;
+
+    let (id, amendment) = staged_amendment(&provider);
+    assert_eq!(
+        String::from_utf8_lossy(&resp.stdout),
+        format!(
+            "staged amendment {id}\n  base {revision} at {}\n  0 added, 0 changed, 1 retired, 0 \
+             conflict, 3 unchanged\n  stems: orders\n  nothing sealed; `emery show amendment` \
+             reviews it\n",
+            &HEAD[..8]
+        )
+    );
+    let expected: Value = serde_json::from_str(&RETIRED.replace("<revision>", &revision))
+        .expect("the fixture is JSON");
+    assert_eq!(amendment, expected);
+
+    // the retire is listed among the claims, marked, and pre-merged at its id
+    let request = provider.model.seen()[0].messages.join("\n");
+    assert!(
+        request.contains(&format!("- 1 `docs` `orders.cancel` (retire) — {WITHDRAWN}")),
+        "{request}"
+    );
+    assert!(request.contains("claims 1, 5 share the id `orders.cancel`"), "{request}");
+    assert!(request.contains("A claim marked `(retire)`"), "{request}");
+    assert_eq!(provider.vcs.calls(), read_calls());
+
+    let shown = cli_ok(&provider, &["emery", "show", "amendment"]).await;
+    let shown = String::from_utf8_lossy(&shown.stdout);
+    assert!(shown.contains("0 added, 0 changed, 1 retired, 0 conflict, 3 unchanged."), "{shown}");
+    assert!(
+        shown.contains(
+            "## Retired\n\n### Requirement: orders.cancel\n\nID: REQ-004\nSources: \
+             [docs:orders.cancel]\n\nA signed-in user cancels an open order."
+        ),
+        "{shown}"
+    );
+
+    // a retire under another id is matched by the model, and a class mixing
+    // the withdrawal with the standing statement is sent back to separate
+    let mixed = r#"{"groups": [
+        {"claims": [0, 4], "classes": [[0, 4]]},
+        {"claims": [1], "classes": [[1]]},
+        {"claims": [2], "classes": [[2]]},
+        {"claims": [3], "classes": [[3]]}
+    ]}"#;
+    let grouping = r#"{"groups": [
+        {"claims": [0, 4], "classes": [[0], [4]]},
+        {"claims": [1], "classes": [[1]]},
+        {"claims": [2], "classes": [[2]]},
+        {"claims": [3], "classes": [[3]]}
+    ]}"#;
+    let mut provider = Provider::answering([mixed, grouping]);
+    provider
+        .source
+        .evidence
+        .insert("docs".to_owned(), Ok(evidence(vec![retire("orders.cancellation", WITHDRAWN)])));
+    seed(&provider.files, SPEC, DESIGN, PLAN);
+
+    cli_ok(&provider, &["emery", "amend", DOCS, "--config", PROJECT_CONFIG]).await;
+
+    let exchanges = provider.model.exchanges();
+    assert!(
+        exchanges[0].outcome.as_ref().is_err_and(|finding| {
+            finding.contains("a `(retire)` claim withdraws a behaviour and cannot share a class")
+        }),
+        "{exchanges:?}"
+    );
+    let (_, amendment) = staged_amendment(&provider);
+    let retired = &amendment["changes"][3];
+    assert_eq!(retired["id"], "REQ-004", "{amendment}");
+    assert_eq!(retired["subject"], "orders.cancel", "{amendment}");
+    assert_eq!(retired["class"], "retired", "{amendment}");
+    assert_eq!(retired["after"], Value::Null, "{amendment}");
+    assert_eq!(retired["sources"][0]["claim"], "orders.cancellation", "{amendment}");
+    provider.model.assert_exhausted();
+}
+
+// A `retire` the grouping matched to no standing requirement withdraws a
+// behaviour the specification does not hold: the run is refused typed,
+// naming every such claim across groups, with nothing staged, whether a
+// retire stands alone or beside a claim the change adds.
+#[tokio::test]
+async fn amend_retire_unmatched() {
+    let alone = r#"{"groups": [
+        {"claims": [0], "classes": [[0]]},
+        {"claims": [1], "classes": [[1]]},
+        {"claims": [2], "classes": [[2]]},
+        {"claims": [3], "classes": [[3]]},
+        {"claims": [4], "classes": [[4]]}
+    ]}"#;
+    let mut provider = Provider::answering([alone]);
+    provider.source.evidence.insert(
+        "docs".to_owned(),
+        Ok(evidence(vec![retire("orders.export", "Downloading the order book is withdrawn.")])),
+    );
+    seed(&provider.files, SPEC, DESIGN, PLAN);
+
+    let envelope = fail(
+        &provider,
+        &["emery", "amend", DOCS, "--config", PROJECT_CONFIG],
+        1,
+        "retire-unmatched",
+    )
+    .await;
+    assert!(
+        envelope["message"].as_str().is_some_and(|text| {
+            text.contains("retire `orders.export` from `docs` withdraws a behaviour")
+        }),
+        "{envelope}"
+    );
+    assert!(
+        envelope["hint"].as_str().is_some_and(|hint| hint.contains("emery show spec")),
+        "{envelope}"
+    );
+    assert!(provider.storage.state(STAGED_KEY).is_none(), "nothing is staged");
+    assert_eq!(provider.vcs.calls(), read_calls());
+    provider.model.assert_exhausted();
+
+    // a retire beside the added claim it shares an id with, and a second in
+    // another group, are both named at once
+    let added = r#"{"groups": [
+        {"claims": [0, 1], "classes": [[0], [1]]},
+        {"claims": [2], "classes": [[2]]},
+        {"claims": [3], "classes": [[3]]},
+        {"claims": [4], "classes": [[4]]},
+        {"claims": [5], "classes": [[5]]},
+        {"claims": [6], "classes": [[6]]}
+    ]}"#;
+    let mut provider = Provider::answering([added]);
+    provider.source.evidence.insert(
+        "docs".to_owned(),
+        Ok(evidence(vec![
+            requirement("orders.export", "A signed-in user downloads the order book."),
+            retire("orders.export", "Downloading the order book is withdrawn."),
+            retire("orders.import", "Uploading orders from a file is withdrawn."),
+        ])),
+    );
+    seed(&provider.files, SPEC, DESIGN, PLAN);
+
+    let envelope = fail(
+        &provider,
+        &["emery", "amend", DOCS, "--config", PROJECT_CONFIG],
+        1,
+        "retire-unmatched",
+    )
+    .await;
+    assert!(
+        envelope["message"].as_str().is_some_and(|text| {
+            text.contains(
+                "retire `orders.export` from `docs`, `orders.import` from `docs` withdraw \
+                 behaviours",
+            )
+        }),
+        "{envelope}"
+    );
+    assert!(provider.storage.state(STAGED_KEY).is_none(), "nothing is staged");
+}
+
+// A withdrawal and a revision of one requirement from two sources of one
+// rank are a conflict, as two statements are: the requirement is listed in
+// conflict with both claims behind it, and nothing is retired.
+#[tokio::test]
+async fn amend_retire_contested() {
+    // indices 0 is `docs`, 1 `wiki`, 2..=5 the standing requirements in id order
+    let grouping = r#"{"groups": [
+        {"claims": [0, 1, 5], "classes": [[0], [1], [5]]},
+        {"claims": [2], "classes": [[2]]},
+        {"claims": [3], "classes": [[3]]},
+        {"claims": [4], "classes": [[4]]}
+    ]}"#;
+    let mut provider = Provider::answering([grouping]);
+    provider
+        .source
+        .evidence
+        .insert("docs".to_owned(), Ok(evidence(vec![retire("orders.cancel", WITHDRAWN)])));
+    provider.source.evidence.insert(
+        "wiki".to_owned(),
+        Ok(evidence(vec![requirement(
+            "orders.cancel",
+            "A signed-in user cancels an order within an hour of placing it.",
+        )])),
+    );
+    let revision = seed(&provider.files, SPEC, DESIGN, PLAN);
+
+    let resp = cli_ok(&provider, &["emery", "amend", DOCS, WIKI, "--config", PROJECT_CONFIG]).await;
+
+    let (id, amendment) = staged_amendment(&provider);
+    assert_eq!(
+        String::from_utf8_lossy(&resp.stdout),
+        format!(
+            "staged amendment {id}\n  base {revision} at {}\n  0 added, 0 changed, 0 retired, 1 \
+             conflict, 3 unchanged\n  conflicts: orders.cancel\n  stems: orders\n  nothing \
+             sealed; `emery show amendment` reviews it\n",
+            &HEAD[..8]
+        )
+    );
+    let contested = &amendment["changes"][3];
+    assert_eq!(contested["id"], "REQ-004", "{amendment}");
+    assert_eq!(contested["class"], "conflict", "{amendment}");
+    assert_eq!(contested["before"], "A signed-in user cancels an open order.", "{amendment}");
+    assert_eq!(contested["after"], Value::Null, "{amendment}");
+    assert_eq!(
+        contested["sources"],
+        serde_json::json!([
+            {"source": "docs", "claim": "orders.cancel", "path": null},
+            {"source": "wiki", "claim": "orders.cancel", "path": null}
+        ]),
+        "{amendment}"
+    );
+    provider.model.assert_exhausted();
 }
 
 // A grouping that merges two standing requirements is refused as a

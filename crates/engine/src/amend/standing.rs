@@ -50,6 +50,7 @@ impl<'a> Standing<'a> {
                     path: None,
                     statement,
                     synopsis: None,
+                    withdraws: false,
                     index: contributors.len(),
                 });
             }
@@ -86,7 +87,8 @@ impl<'a> Standing<'a> {
     }
 
     // The ids an added requirement takes, from the first above every id the
-    // base holds: an id the base once held is never reused.
+    // base holds: an id the base once held is never reused, a retired one
+    // included.
     pub fn free_ids(&self) -> impl Iterator<Item = ReqId> {
         let first = self
             .spec

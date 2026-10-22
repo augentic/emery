@@ -1,6 +1,6 @@
 # Group requirement claims
 
-You are the Emery spec generator's grouping judgement. The request lists every `requirement` claim extracted from every bound source, indexed from 0, with its source name, its dotted-kebab `id`, its `statement`, and its `synopsis`. Answer one partition at two levels:
+You are the Emery spec generator's grouping judgement. The request lists every `requirement` claim extracted from every bound source, indexed from 0, with its source name, its dotted-kebab `id`, its `statement`, and its `synopsis`; a request that amends a specification lists its `retire` claims among them, each marked `(retire)` after its id. Answer one partition at two levels:
 
 1. **Groups** — which claims describe one requirement. Two sources naming the same behaviour differently (`session.timeout` and `session-expiry`) are one group, as are two seams of one source that led with different stems (`start.persist-queue` and `worker.persist-queue`), and a statement from the documentation and one from the code that state one HTTP route — the same method and path, `POST /auth/login` however each spells it — whatever ids and stems the two sources gave them; two behaviours that happen to share words are two, and two ids of one source under one stem (`orders.create` and `orders.validate`) are always two.
 2. **Classes** — within each group, which claims say the same thing. A paraphrase of the same rule is the same class; a different value, threshold, or outcome is a different class. Do not judge which class is right — that is the engine's, by authority.
@@ -25,8 +25,9 @@ A request that amends a specification lists, after the claims, a `## Standing re
 - A claim that states a behaviour **no standing requirement covers** is a group of its own. The engine adds a requirement under a new id. A behaviour that happens to share a noun, an actor, or a route with a standing requirement but asks for something the standing requirement does not decide — a second step after it, a rule about another thing — is new, not a revision.
 - A standing requirement **no claim touches** is a group of its own, and stands unchanged.
 - **Two standing requirements never share a group.** The specification already holds them apart, and an answer that merges them is refused. Pick the one the claim revises; a claim that seems to revise two is two claims' work, so leave it with the one it revises most directly.
+- A claim marked **`(retire)`** is a `retire` claim: it withdraws the behaviour its id names rather than stating one. It joins the group of the standing requirement that states that behaviour, in a class of its own, since a withdrawal never says the same thing as the statement it withdraws. One at a standing requirement's id is pre-merged with it. A `retire` is never a group of its own or of other claims alone: the engine refuses a withdrawal of a behaviour the specification does not hold after your answer, so place it with the standing requirement it withdraws, however the two spell the behaviour.
 
-The test is the one a reviewer applies reading the amended specification: does the claim replace the sentence the standing requirement states, or does it add a sentence beside it?
+The test is the one a reviewer applies reading the amended specification: does the claim replace the sentence the standing requirement states, does it add a sentence beside it, or does it strike the sentence out?
 
 ### Worked example
 
@@ -35,23 +36,26 @@ The test is the one a reviewer applies reading the amended specification: does t
 1  brief  session.refresh     Activity on a session resets its inactivity clock.
 2  brief  login.lockout       Five failed sign-ins in a row lock the account for an hour.
 3  brief  session.timeout     Sessions expire after fifteen minutes without activity.
+4  brief  export.csv (retire) Downloading the order book as a spreadsheet is withdrawn.
 
-4  REQ-001 session.timeout    Sessions expire after 30 minutes of inactivity.
-5  REQ-002 login.flow         Users sign in with a magic link.
+5  REQ-001 session.timeout    Sessions expire after 30 minutes of inactivity.
+6  REQ-002 login.flow         Users sign in with a magic link.
+7  REQ-003 orders.export      A signed-in user downloads the order book as a spreadsheet.
 ```
 
 ```json
 {
   "groups": [
-    { "claims": [0, 3, 4], "classes": [[0, 3], [4]] },
+    { "claims": [0, 3, 5], "classes": [[0, 3], [5]] },
     { "claims": [1], "classes": [[1]] },
     { "claims": [2], "classes": [[2]] },
-    { "claims": [5], "classes": [[5]] }
+    { "claims": [6], "classes": [[6]] },
+    { "claims": [4, 7], "classes": [[4], [7]] }
   ]
 }
 ```
 
-Claims 0 and 3 revise the standing timeout — the same behaviour with a new value — so they join its group; they agree with each other and disagree with the standing statement, so they are one class and it is another. Claim 1 is about the session's inactivity clock, the thing the timeout measures, but it adds a rule the timeout does not decide, so it is new. Claim 2 shares its stem with the standing `login.flow` and is about sign-in, but a lockout is a behaviour beside the sign-in flow, not a revision of it, so it is new too. The standing `login.flow` is untouched and stands alone. A claim reading "Users sign in with a passkey" would instead have joined claim 5's group, in a class of its own: it replaces the sentence the standing requirement states.
+Claims 0 and 3 revise the standing timeout — the same behaviour with a new value — so they join its group; they agree with each other and disagree with the standing statement, so they are one class and it is another. Claim 1 is about the session's inactivity clock, the thing the timeout measures, but it adds a rule the timeout does not decide, so it is new. Claim 2 shares its stem with the standing `login.flow` and is about sign-in, but a lockout is a behaviour beside the sign-in flow, not a revision of it, so it is new too. The standing `login.flow` is untouched and stands alone. A claim reading "Users sign in with a passkey" would instead have joined claim 6's group, in a class of its own: it replaces the sentence the standing requirement states. Claim 4 withdraws the download the standing `orders.export` states, under another id, so it joins that group in a class of its own; the engine retires the requirement.
 
 ## Worked example
 

@@ -27,10 +27,11 @@ use crate::{Files, store};
 /// names before any adapter loads, and its requirements stand as the
 /// baseline the change is matched against, under the reserved source name
 /// `baseline`: a claim restating or revising one keeps the requirement's
-/// id, a claim no requirement covers is added under the next free id, and
-/// a requirement no claim touches stands unchanged. The sources are
-/// extracted as `specify` extracts them, a repository source read in a
-/// working copy removed once every source answered.
+/// id, a claim no requirement covers is added under the next free id, a
+/// `retire` claim retires the requirement stating the behaviour it
+/// withdraws, and a requirement no claim touches stands unchanged. The
+/// sources are extracted as `specify` extracts them, a repository source
+/// read in a working copy removed once every source answered.
 ///
 /// A change that leaves every requirement as it stands stages nothing. One
 /// that changes anything is staged as the one amendment, replacing an
@@ -44,6 +45,8 @@ use crate::{Files, store};
 ///   - a source named `baseline`, the reserved name;
 ///   - no target, with code `build-target-required`;
 ///   - a revision candidate standing staged, with code `amendment-pending`;
+///   - a `retire` claim withdrawing a behaviour no requirement of the
+///     current revision states, with code `retire-unmatched`;
 ///   - the classes [`specify`](crate::specify::specify) refuses a source
 ///     list, an adapter, or a model answer under;
 ///   - the classes [`apply`](crate::apply::apply) reads the repository

@@ -504,6 +504,9 @@ fn hint(error: &Error, invoked: Invoked) -> Option<Cow<'static, str>> {
             "a revision candidate is staged where the amendment would go: seal it with `emery apply`, or review it with `emery show <artifact> --staged`; an amend never displaces it"
         }
         "amendment-pending" => "review the staged amendment with `emery show amendment`",
+        "retire-unmatched" => {
+            "the change withdraws a behaviour the current revision does not state: compare the named retire claim's id against the requirements `emery show spec` prints, and reword the source to withdraw one of them, or drop the withdrawal; nothing was staged"
+        }
         "spec-outdated" => {
             "the revision predates this emery's grammar: re-run `emery specify <adapter>...` to regenerate it"
         }
