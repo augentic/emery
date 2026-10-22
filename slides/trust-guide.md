@@ -1,6 +1,6 @@
 ---
 theme: default
-title: App Trust Tiers · Field Guide
+title: Trust Model · Field Guide
 aspectRatio: 16/9
 canvasWidth: 1280
 layout: default
@@ -14,7 +14,7 @@ class: slide-hero slide-section
 <div class="section-hero-grid">
 <div class="section-hero-left">
 
-# App Trust Tiers
+# Trust Model
 
 <p class="section-subtitle">A field guide to the software your people build themselves: four tiers, three clearances, one scorecard.</p>
 </div>
@@ -31,15 +31,15 @@ This deck is the reference. It is written to be read, left behind after the stor
 -->
 
 ---
-title: Trust, not maturity
+title: Earned trust, not maturity
 class: slide-light
 ---
 
-<Eyebrow text="HOW TO READ THE MODEL · TRUST, NOT MATURITY" />
+<Eyebrow text="HOW TO READ THE MODEL · EARNED TRUST, NOT MATURITY" />
 
-# Trust, not maturity.
+# Earned trust, not maturity.
 
-<p class="slide-lead">A maturity model grades an organisation. A trust tier describes one app: how far it can be trusted today, and what has to be true before it is trusted further.</p>
+<p class="slide-lead">A maturity model grades an organisation. The Trust Model describes one app: how much trust it has earned today, and what has to be true before it is trusted further.</p>
 
 <div class="about-grid">
 <div class="cc-card">
@@ -127,7 +127,7 @@ class: slide-light
 <span class="not-item-num">04</span>
 <div>
 <h3>Not a <s>technology decision</s></h3>
-<p>The model is about trust and ownership. <strong>Omnia and Emery make two of the clearances cheaper; the tiers stand without them.</strong></p>
+<p>The model is about earned trust and ownership. <strong>Omnia and Emery make two of the clearances cheaper; the tiers stand without them.</strong></p>
 </div>
 </div>
 </div>

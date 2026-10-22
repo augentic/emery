@@ -432,7 +432,8 @@ async fn build_design_cut_passages() {
              `edit_files`, or send the whole file through `write_files` with every marker and \
              name the skeleton holds still in it; an entry that drops one is refused whole \
              naming what it dropped, as a `delete` naming one of them is. `restore_files` puts \
-             it back as it was scaffolded.\n\nFrom the references, for this slice:\n\n## A \
+             it back as it was scaffolded, the turn's edits to it discarded: recovery after a \
+             refusal, not a step.\n\nFrom the references, for this slice:\n\n## A \
              probe\n\nAn `Invoice` is read as a value and answered whole.\n\nImplement every \
              requirement"
         ),
@@ -582,7 +583,8 @@ async fn write_scaffolded_refused() {
              through `write_files` with every marker and name the skeleton holds still in it; \
              an entry that drops one is refused whole naming what it dropped, as a `delete` \
              naming one of them is. `restore_files` puts one back as it was \
-             scaffolded.\n\nImplement every requirement"
+             scaffolded, the turn's edits to it discarded: recovery after a refusal, not a \
+             step.\n\nImplement every requirement"
         ),
         "{user}"
     );

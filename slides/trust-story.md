@@ -9,14 +9,14 @@ class: slide-hero slide-section
 
 <AmbientVideo src="/videos/hero-video-3.mp4" variant="hero" />
 
-<Eyebrow text="PROPELLERHEAD · APP TRUST TIERS" />
+<Eyebrow text="PROPELLERHEAD · TRUST MODEL" />
 
 <div class="section-hero-grid">
 <div class="section-hero-left">
 
 # The riskiest moment is<br>when a prototype succeeds.
 
-<p class="section-subtitle">Four trust tiers for the software your people build themselves — and the three clearances between them.</p>
+<p class="section-subtitle">Earned trust for the software your people build themselves — four tiers and the three clearances between them.</p>
 </div>
 </div>
 
@@ -174,12 +174,12 @@ class: slide-sandbox
 <div class="curve-caption">
 <div class="curve-caption-swap">
 <span v-click.hide="1">The gap between the two lines is the risk. <strong>It opens on the day the app becomes useful.</strong></span>
-<span v-click="1"><strong>Trust tiers step control up as value grows</strong>, at the moments the app earns it, not before.</span>
+<span v-click="1"><strong>The Trust Model steps control up as value grows</strong>, at the moments the app earns it, not before.</span>
 </div>
 <div class="curve-key">
 <span><i style="background: #ffffff;"></i>People depending on it</span>
 <span><i style="background: rgba(255,255,255,0.5);"></i>Controls</span>
-<span><i style="background: #16b4e2;"></i>Trust tiers</span>
+<span><i style="background: #16b4e2;"></i>Earned trust</span>
 </div>
 </div>
 </div>
@@ -189,18 +189,18 @@ One picture. Pause on it before the click.
 
 - The white curve is adoption: how many people depend on the app over time. The dashed line is the control around it, which for a prototype is flat at zero.
 - The shaded gap is the exposure. Notice when it opens: not on day one, but when the thing gets good. The riskiest moment is success.
-- Click. The blue steps are the trust tiers. Control steps up at four points, each one triggered by the app earning more trust: more people, live data, a Monday morning the business cannot afford.
+- Click. The blue steps are the Trust Model. Control steps up at four points, each one triggered by the app earning more trust: more people, live data, a Monday morning the business cannot afford.
 - What is left between the steps and the curve are slivers, not a chasm. That is the whole idea. Proportionate, and timed to value.
 -->
 
 ---
-title: Four trust tiers
+title: The Trust Model
 class: slide-light
 ---
 
-<Eyebrow text="THE ANSWER · APP TRUST TIERS" />
+<Eyebrow text="THE ANSWER · TRUST MODEL" />
 
-# Four trust tiers. Three clearances.
+# Four tiers of earned trust. Three clearances.
 
 <p class="slide-lead">Each tier is a complete, safe place for an app to be. An app moves up only when a signal says it must, and only once the next clearance is in place.</p>
 
