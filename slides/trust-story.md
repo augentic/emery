@@ -228,7 +228,7 @@ class: slide-chapter
 
 <div class="chapter-grid">
 <div class="chapter-left">
-<span class="chapter-when">Week 1 · Trust Tier 0</span>
+<span class="chapter-when">Week 1 · Tier 0</span>
 
 # An operations lead builds a shift planner in a chat window. It works.
 
@@ -267,7 +267,7 @@ class: slide-chapter
 
 <div class="chapter-grid">
 <div class="chapter-left">
-<span class="chapter-when">Week 3 · Trust Tier 1</span>
+<span class="chapter-when">Week 3 · Tier 1</span>
 
 # Two colleagues ask for the link. It moves into the governed workspace.
 
@@ -307,7 +307,7 @@ class: slide-chapter
 
 <div class="chapter-grid">
 <div class="chapter-left">
-<span class="chapter-when">Month 3 · Trust Tier 2</span>
+<span class="chapter-when">Month 3 · Tier 2</span>
 
 # The team wants live roster data. A scoped contract replaces the spreadsheet export.
 
@@ -347,7 +347,7 @@ class: slide-chapter
 
 <div class="chapter-grid">
 <div class="chapter-left">
-<span class="chapter-when">Month 9 · Trust Tier 3</span>
+<span class="chapter-when">Month 9 · Tier 3</span>
 
 # Three sites depend on it. If it fails on Monday morning, shifts go uncovered. It graduates.
 

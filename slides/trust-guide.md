@@ -26,7 +26,7 @@ class: slide-hero slide-section
 This deck is the reference. It is written to be read, left behind after the story has been told, and used in the first workshop.
 
 - Part one: how to read the model, and what it is not.
-- Parts two to five: one section per trust tier, each with an outline, the control stack, what admits an app, and the signals that move it on.
+- Parts two to five: one section per tier, each with an outline, the control stack, what admits an app, and the signals that move it on.
 - Part six: applying it, with the three sign-offs, the owners, the Codex, and the scorecard.
 -->
 
@@ -142,18 +142,18 @@ Say these four out loud early. Each one is an objection that otherwise sits unsp
 -->
 
 ---
-title: Trust Tier 0
+title: Tier 0
 class: slide-hero slide-section
 ---
 
 <AmbientVideo src="/videos/hero-video-3.mp4" variant="hero" />
 
-<Eyebrow text="TRUST TIER 0 · UNMANAGED" />
+<Eyebrow text="TIER 0 · UNMANAGED" />
 
 <div class="section-hero-grid">
 <div class="section-hero-left">
 
-# Trust Tier 0
+# Tier 0
 
 <p class="section-subtitle"><strong>Unmanaged</strong> — one person, one laptop. Discovery.</p>
 </div>
@@ -167,7 +167,7 @@ title: T0 · Outline
 class: slide-light
 ---
 
-<Eyebrow text="TRUST TIER 0 · UNMANAGED · OUTLINE" />
+<Eyebrow text="TIER 0 · UNMANAGED · OUTLINE" />
 
 # One person, one laptop.
 
@@ -224,7 +224,7 @@ title: T0 · Stack and signals
 class: slide-light
 ---
 
-<Eyebrow text="TRUST TIER 0 · UNMANAGED · CONTROLS AND SIGNALS" />
+<Eyebrow text="TIER 0 · UNMANAGED · CONTROLS AND SIGNALS" />
 
 # Nothing is in place. Nothing has gone wrong yet.
 
@@ -254,18 +254,18 @@ The control stack at Tier 0, and the signals that say it is time to move.
 -->
 
 ---
-title: Trust Tier 1
+title: Tier 1
 class: slide-hero slide-section
 ---
 
 <AmbientVideo src="/videos/hero-video-3.mp4" variant="hero" />
 
-<Eyebrow text="TRUST TIER 1 · GOVERNED" />
+<Eyebrow text="TIER 1 · GOVERNED" />
 
 <div class="section-hero-grid">
 <div class="section-hero-left">
 
-# Trust Tier 1
+# Tier 1
 
 <p class="section-subtitle"><strong>Governed</strong> — shared with a team, inside the Codex.</p>
 </div>
@@ -279,7 +279,7 @@ title: T1 · Outline
 class: slide-light
 ---
 
-<Eyebrow text="TRUST TIER 1 · GOVERNED · OUTLINE" />
+<Eyebrow text="TIER 1 · GOVERNED · OUTLINE" />
 
 # Shared with a team, inside the Codex.
 
@@ -338,7 +338,7 @@ title: T1 · Stack and signals
 class: slide-light
 ---
 
-<Eyebrow text="TRUST TIER 1 · GOVERNED · CONTROLS AND SIGNALS" />
+<Eyebrow text="TIER 1 · GOVERNED · CONTROLS AND SIGNALS" />
 
 # The Codex guides. The gates enforce.
 
@@ -373,18 +373,18 @@ Two kinds of control at Tier 1, kept apart on purpose.
 -->
 
 ---
-title: Trust Tier 2
+title: Tier 2
 class: slide-hero slide-section
 ---
 
 <AmbientVideo src="/videos/hero-video-3.mp4" variant="hero" />
 
-<Eyebrow text="TRUST TIER 2 · CONNECTED" />
+<Eyebrow text="TIER 2 · CONNECTED" />
 
 <div class="section-hero-grid">
 <div class="section-hero-left">
 
-# Trust Tier 2
+# Tier 2
 
 <p class="section-subtitle"><strong>Connected</strong> — live data, through scoped contracts.</p>
 </div>
@@ -398,7 +398,7 @@ title: T2 · Outline
 class: slide-light
 ---
 
-<Eyebrow text="TRUST TIER 2 · CONNECTED · OUTLINE" />
+<Eyebrow text="TIER 2 · CONNECTED · OUTLINE" />
 
 # Live data, through scoped contracts.
 
@@ -457,7 +457,7 @@ title: T2 · Stack and signals
 class: slide-light
 ---
 
-<Eyebrow text="TRUST TIER 2 · CONNECTED · CONTROLS AND SIGNALS" />
+<Eyebrow text="TIER 2 · CONNECTED · CONTROLS AND SIGNALS" />
 
 # Every read and write goes through a contract.
 
@@ -491,18 +491,18 @@ The clearance for live data is the one most organisations make too heavy or skip
 -->
 
 ---
-title: Trust Tier 3
+title: Tier 3
 class: slide-hero slide-section
 ---
 
 <AmbientVideo src="/videos/hero-video-3.mp4" variant="hero" />
 
-<Eyebrow text="TRUST TIER 3 · SUPPORTED" />
+<Eyebrow text="TIER 3 · SUPPORTED" />
 
 <div class="section-hero-grid">
 <div class="section-hero-left">
 
-# Trust Tier 3
+# Tier 3
 
 <p class="section-subtitle"><strong>Supported</strong> — production, with engineers on call.</p>
 </div>
@@ -516,7 +516,7 @@ title: T3 · Outline
 class: slide-light
 ---
 
-<Eyebrow text="TRUST TIER 3 · SUPPORTED · OUTLINE" />
+<Eyebrow text="TIER 3 · SUPPORTED · OUTLINE" />
 
 # Production, with engineers on call.
 
@@ -574,7 +574,7 @@ title: T3 · Stack and the rebuild
 class: slide-light
 ---
 
-<Eyebrow text="TRUST TIER 3 · SUPPORTED · CONTROLS AND THE REBUILD" />
+<Eyebrow text="TIER 3 · SUPPORTED · CONTROLS AND THE REBUILD" />
 
 # Keep the criteria. Drop the code.
 
