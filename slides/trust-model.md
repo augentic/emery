@@ -207,11 +207,105 @@ class: slide-hero slide-section
 <TrustLadder variant="strip" :current="0" />
 
 ---
-title: T0 · Outline
+title: T0 · Characteristics
 class: slide-light
 ---
 
-<Eyebrow text="TIER 0 · UNMANAGED · OUTLINE" />
+<Eyebrow text="TIER 0 · UNMANAGED · CHARACTERISTICS" />
+
+<div class="ed-split">
+<div class="ed-prose-col">
+<div class="ed-tier-tag">
+  <span class="ed-tier-glyph">T0</span>
+  <span class="ed-tier-sub" style="color: #b4234e;">Unmanaged · ~0% long-term</span>
+</div>
+
+# Personal discovery,<br>zero footprint.
+
+<p class="ed-prose">Every citizen-built tool starts at Tier 0: one domain expert with an operational problem, a laptop, and an AI assistant. When the laptop closes, the app stops; if it fails on Monday morning, nobody else notices.</p>
+<p class="ed-prose"><strong>Tier 0 is the cheapest product discovery an organisation has.</strong> A personal spreadsheet reconciler, a meeting-notes formatter, or a pricing scratchpad costs nothing to try and nothing to throw away. The one hard boundary is that <strong>no second user and no live credential</strong> ever touches a Tier 0 app.</p>
+</div>
+<div class="ed-diagram-pane">
+<svg viewBox="0 0 640 440" aria-hidden="true">
+  <!-- Top Section: 4-Dimension Profile at T0 -->
+  <text x="20" y="28" class="svg-kicker" fill="#b4234e">TIER 0 PROFILE · FOUR SCORECARD DIMENSIONS</text>
+  <line x1="20" y1="42" x2="620" y2="42" stroke="rgba(13,16,48,0.14)" stroke-width="1.2" />
+
+  <!-- Row 1: Reach -->
+  <text x="20" y="74" class="svg-kicker" fill="#0c7fa3">01 · REACH</text>
+  <text x="165" y="74" class="svg-label" fill="#0d1030">The builder alone (1 person)</text>
+  <circle cx="440" cy="70" r="6" fill="#b4234e" />
+  <circle cx="490" cy="70" r="4" fill="none" stroke="rgba(13,16,48,0.22)" stroke-width="1.5" />
+  <circle cx="540" cy="70" r="4" fill="none" stroke="rgba(13,16,48,0.22)" stroke-width="1.5" />
+  <circle cx="590" cy="70" r="4" fill="none" stroke="rgba(13,16,48,0.22)" stroke-width="1.5" />
+  <line x1="20" y1="92" x2="620" y2="92" stroke="rgba(13,16,48,0.08)" />
+
+  <!-- Row 2: Data -->
+  <text x="20" y="122" class="svg-kicker" fill="#0c7fa3">02 · DATA &amp; STATE</text>
+  <text x="165" y="122" class="svg-label" fill="#0d1030">Personal files &amp; pasted extracts</text>
+  <circle cx="440" cy="118" r="6" fill="#b4234e" />
+  <circle cx="490" cy="118" r="4" fill="none" stroke="rgba(13,16,48,0.22)" stroke-width="1.5" />
+  <circle cx="540" cy="118" r="4" fill="none" stroke="rgba(13,16,48,0.22)" stroke-width="1.5" />
+  <circle cx="590" cy="118" r="4" fill="none" stroke="rgba(13,16,48,0.22)" stroke-width="1.5" />
+  <line x1="20" y1="140" x2="620" y2="140" stroke="rgba(13,16,48,0.08)" />
+
+  <!-- Row 3: Monday 9am -->
+  <text x="20" y="170" class="svg-kicker" fill="#0c7fa3">03 · MONDAY 9AM</text>
+  <text x="165" y="170" class="svg-label" fill="#0d1030">Nobody notices if it stops</text>
+  <circle cx="440" cy="166" r="6" fill="#b4234e" />
+  <circle cx="490" cy="166" r="4" fill="none" stroke="rgba(13,16,48,0.22)" stroke-width="1.5" />
+  <circle cx="540" cy="166" r="4" fill="none" stroke="rgba(13,16,48,0.22)" stroke-width="1.5" />
+  <circle cx="590" cy="166" r="4" fill="none" stroke="rgba(13,16,48,0.22)" stroke-width="1.5" />
+  <line x1="20" y1="188" x2="620" y2="188" stroke="rgba(13,16,48,0.08)" />
+
+  <!-- Row 4: Continuity -->
+  <text x="20" y="218" class="svg-kicker" fill="#0c7fa3">04 · CONTINUITY</text>
+  <text x="165" y="218" class="svg-label" fill="#0d1030">None — one laptop, no repo history</text>
+  <circle cx="440" cy="214" r="6" fill="#b4234e" />
+  <circle cx="490" cy="214" r="4" fill="none" stroke="rgba(13,16,48,0.22)" stroke-width="1.5" />
+  <circle cx="540" cy="214" r="4" fill="none" stroke="rgba(13,16,48,0.22)" stroke-width="1.5" />
+  <circle cx="590" cy="214" r="4" fill="none" stroke="rgba(13,16,48,0.22)" stroke-width="1.5" />
+  <text x="440" y="240" text-anchor="middle" class="svg-pill" fill="#b4234e">T0</text>
+  <text x="490" y="240" text-anchor="middle" class="svg-pill" fill="rgba(13,16,48,0.35)">T1</text>
+  <text x="540" y="240" text-anchor="middle" class="svg-pill" fill="rgba(13,16,48,0.35)">T2</text>
+  <text x="590" y="240" text-anchor="middle" class="svg-pill" fill="rgba(13,16,48,0.35)">T3</text>
+
+  <!-- Bottom Section: Typical Archetypes vs Out-of-Bounds -->
+  <text x="20" y="286" class="svg-kicker" fill="#0d1030">TYPICAL TIER 0 EXPERIMENTS</text>
+  <line x1="20" y1="300" x2="300" y2="300" stroke="rgba(13,16,48,0.16)" />
+  <circle cx="28" cy="324" r="3.5" fill="#0c7fa3" />
+  <text x="42" y="328" class="svg-body" fill="#0d1030">CSV / spreadsheet reconciler script</text>
+  <circle cx="28" cy="354" r="3.5" fill="#0c7fa3" />
+  <text x="42" y="358" class="svg-body" fill="#0d1030">Personal meeting-notes formatter</text>
+  <circle cx="28" cy="384" r="3.5" fill="#0c7fa3" />
+  <text x="42" y="388" class="svg-body" fill="#0d1030">UI mockup or calculation scratchpad</text>
+
+  <text x="340" y="286" class="svg-kicker" fill="#b4234e">OUT OF BOUNDS AT TIER 0</text>
+  <line x1="340" y1="300" x2="620" y2="300" stroke="rgba(180,35,78,0.3)" />
+  <circle cx="348" cy="324" r="3.5" fill="#b4234e" />
+  <text x="362" y="328" class="svg-body" fill="#0d1030">Sharing a link with a second person</text>
+  <circle cx="348" cy="354" r="3.5" fill="#b4234e" />
+  <text x="362" y="358" class="svg-body" fill="#0d1030">Pasting a live API key or DB password</text>
+  <circle cx="348" cy="384" r="3.5" fill="#b4234e" />
+  <text x="362" y="388" class="svg-body" fill="#0d1030">Uploading customer PII to consumer AI</text>
+</svg>
+</div>
+</div>
+
+<!--
+What a Tier 0 app actually looks like in the wild.
+
+- Reach is strictly one person; data is personal extracts; Monday morning impact is zero; continuity is zero.
+- Healthy examples: a quick CSV script, a personal formatter, a clickable UI idea.
+- The moment someone shares a link or pastes a live key, it is no longer a Tier 0 experiment.
+-->
+
+---
+title: T0 · Architecture
+class: slide-light
+---
+
+<Eyebrow text="TIER 0 · UNMANAGED · ARCHITECTURE" />
 
 <div class="ed-split is-reversed">
 <div class="ed-diagram-pane">
@@ -360,11 +454,103 @@ class: slide-hero slide-section
 <TrustLadder variant="strip" :current="1" />
 
 ---
-title: T1 · Outline
+title: T1 · Characteristics
 class: slide-light
 ---
 
-<Eyebrow text="TIER 1 · GOVERNED · OUTLINE" />
+<Eyebrow text="TIER 1 · GOVERNED · CHARACTERISTICS" />
+
+<div class="ed-band">
+<div class="ed-band-top">
+<div>
+<div class="ed-tier-tag" style="margin-bottom: 4px;">
+  <span class="ed-tier-glyph">T1</span>
+  <span class="ed-tier-sub">Governed · ~75% of apps</span>
+</div>
+
+# Why three in four apps<br>stay here for life.
+
+</div>
+<p class="ed-band-prose">Most internal tools only ever need to help a small team of <strong>2 to 4 colleagues</strong> automate a local workflow, and never need direct access to live production databases. Keeping them at Tier 1 inside <strong>The Codex</strong> gives the team a shared, tested tool in days — with <strong>zero data-breach radius</strong> and <strong>zero per-app engineering cost</strong>.</p>
+</div>
+<div class="ed-band-canvas">
+<svg viewBox="0 0 1140 340" aria-hidden="true">
+  <!-- Left Half: 4-Dimension Profile at T1 -->
+  <text x="16" y="26" class="svg-kicker" fill="#0c7fa3">TIER 1 PROFILE · FOUR SCORECARD DIMENSIONS</text>
+  <line x1="16" y1="40" x2="530" y2="40" stroke="rgba(13,16,48,0.14)" stroke-width="1.2" />
+
+  <text x="16" y="76" class="svg-kicker" fill="#0c7fa3">01 · REACH</text>
+  <text x="155" y="76" class="svg-label" fill="#0d1030">2–4 people (a team trial)</text>
+  <circle cx="410" cy="72" r="4" fill="none" stroke="rgba(13,16,48,0.22)" stroke-width="1.5" />
+  <circle cx="448" cy="72" r="6" fill="#0c7fa3" />
+  <circle cx="486" cy="72" r="4" fill="none" stroke="rgba(13,16,48,0.22)" stroke-width="1.5" />
+  <circle cx="524" cy="72" r="4" fill="none" stroke="rgba(13,16,48,0.22)" stroke-width="1.5" />
+  <line x1="16" y1="96" x2="530" y2="96" stroke="rgba(13,16,48,0.08)" />
+
+  <text x="16" y="130" class="svg-kicker" fill="#0c7fa3">02 · DATA &amp; STATE</text>
+  <text x="155" y="130" class="svg-label" fill="#0d1030">Synthetic or local state only</text>
+  <circle cx="410" cy="126" r="4" fill="none" stroke="rgba(13,16,48,0.22)" stroke-width="1.5" />
+  <circle cx="448" cy="126" r="6" fill="#0c7fa3" />
+  <circle cx="486" cy="126" r="4" fill="none" stroke="rgba(13,16,48,0.22)" stroke-width="1.5" />
+  <circle cx="524" cy="126" r="4" fill="none" stroke="rgba(13,16,48,0.22)" stroke-width="1.5" />
+  <line x1="16" y1="150" x2="530" y2="150" stroke="rgba(13,16,48,0.08)" />
+
+  <text x="16" y="184" class="svg-kicker" fill="#0c7fa3">03 · MONDAY 9AM</text>
+  <text x="155" y="184" class="svg-label" fill="#0d1030">A mild annoyance; wait for builder</text>
+  <circle cx="410" cy="180" r="4" fill="none" stroke="rgba(13,16,48,0.22)" stroke-width="1.5" />
+  <circle cx="448" cy="180" r="6" fill="#0c7fa3" />
+  <circle cx="486" cy="180" r="4" fill="none" stroke="rgba(13,16,48,0.22)" stroke-width="1.5" />
+  <circle cx="524" cy="180" r="4" fill="none" stroke="rgba(13,16,48,0.22)" stroke-width="1.5" />
+  <line x1="16" y1="204" x2="530" y2="204" stroke="rgba(13,16,48,0.08)" />
+
+  <text x="16" y="238" class="svg-kicker" fill="#0c7fa3">04 · CONTINUITY</text>
+  <text x="155" y="238" class="svg-label" fill="#0d1030">Enterprise GitHub + automated CI</text>
+  <circle cx="410" cy="234" r="4" fill="none" stroke="rgba(13,16,48,0.22)" stroke-width="1.5" />
+  <circle cx="448" cy="234" r="6" fill="#0c7fa3" />
+  <circle cx="486" cy="234" r="4" fill="none" stroke="rgba(13,16,48,0.22)" stroke-width="1.5" />
+  <circle cx="524" cy="234" r="4" fill="none" stroke="rgba(13,16,48,0.22)" stroke-width="1.5" />
+  <text x="410" y="262" text-anchor="middle" class="svg-pill" fill="rgba(13,16,48,0.35)">T0</text>
+  <text x="448" y="262" text-anchor="middle" class="svg-pill" fill="#0c7fa3">T1</text>
+  <text x="486" y="262" text-anchor="middle" class="svg-pill" fill="rgba(13,16,48,0.35)">T2</text>
+  <text x="524" y="262" text-anchor="middle" class="svg-pill" fill="rgba(13,16,48,0.35)">T3</text>
+
+  <!-- Right Half: Three Archetypes that belong at Tier 1 for life -->
+  <text x="590" y="26" class="svg-kicker" fill="#0d1030">TYPICAL APPS THAT LIVE AT TIER 1 FOR LIFE</text>
+  <line x1="590" y1="40" x2="1124" y2="40" stroke="rgba(13,16,48,0.14)" stroke-width="1.2" />
+
+  <circle cx="604" cy="82" r="5" fill="#0c7fa3" />
+  <text x="624" y="78" class="svg-h3" fill="#0d1030">Team Roster &amp; Handover Planner</text>
+  <text x="624" y="98" class="svg-caption" fill="rgba(13,16,48,0.6)">Used by 3 shift leads over uploaded weekly CSVs · No live HR integration needed</text>
+
+  <circle cx="604" cy="152" r="5" fill="#0c7fa3" />
+  <text x="624" y="148" class="svg-h3" fill="#0d1030">RFP &amp; Policy Response Drafter</text>
+  <text x="624" y="168" class="svg-caption" fill="rgba(13,16,48,0.6)">Queries published product docs inside the sandbox · Zero customer PII</text>
+
+  <circle cx="604" cy="222" r="5" fill="#0c7fa3" />
+  <text x="624" y="218" class="svg-h3" fill="#0d1030">Sprint Capacity &amp; Scenario Calculator</text>
+  <text x="624" y="238" class="svg-caption" fill="rgba(13,16,48,0.6)">Shared across one squad · Versioned in GitHub so anyone on the team can tweak it</text>
+
+  <!-- Bottom Bar: Operating Agreement -->
+  <rect x="16" y="286" width="1108" height="44" rx="10" fill="rgba(22,180,226,0.08)" stroke="rgba(12,127,163,0.28)" />
+  <text x="36" y="313" class="svg-kicker" fill="#0c7fa3">OPERATING AGREEMENT</text>
+  <text x="210" y="313" class="svg-label" fill="#0d1030">Builder owns the trial · Coaches answer in hours · Automated CI blocks secrets &amp; CVEs · Zero per-app engineering time</text>
+</svg>
+</div>
+</div>
+
+<!--
+Why Tier 1 is the destination for 75% of apps.
+
+- Look at the profile on the left: 2–4 people, synthetic or local state, mild annoyance if it stops, versioned in Enterprise GitHub.
+- Most internal tools fit this shape permanently. They never need to climb to Tier 2 or Tier 3.
+-->
+
+---
+title: T1 · Architecture
+class: slide-light
+---
+
+<Eyebrow text="TIER 1 · GOVERNED · ARCHITECTURE" />
 
 <div class="ed-bottom-split">
 <div class="ed-bottom-canvas">
@@ -517,11 +703,111 @@ class: slide-hero slide-section
 <TrustLadder variant="strip" :current="2" />
 
 ---
-title: T2 · Outline
+title: T2 · Characteristics
 class: slide-light
 ---
 
-<Eyebrow text="TIER 2 · CONNECTED · OUTLINE" />
+<Eyebrow text="TIER 2 · CONNECTED · CHARACTERISTICS" />
+
+<div class="ed-bottom-split">
+<div class="ed-bottom-canvas">
+<svg viewBox="0 0 1140 285" aria-hidden="true">
+  <!-- Left Column: 4-Dimension Profile at T2 -->
+  <text x="16" y="22" class="svg-kicker" fill="#0c7fa3">TIER 2 PROFILE · FOUR DIMENSIONS</text>
+  <line x1="16" y1="34" x2="480" y2="34" stroke="rgba(13,16,48,0.14)" stroke-width="1.2" />
+
+  <text x="16" y="68" class="svg-kicker" fill="#0c7fa3">01 · REACH</text>
+  <text x="148" y="68" class="svg-label" fill="#0d1030">5–24 people (a department)</text>
+  <circle cx="384" cy="64" r="3.5" fill="none" stroke="rgba(13,16,48,0.22)" stroke-width="1.5" />
+  <circle cx="414" cy="64" r="3.5" fill="none" stroke="rgba(13,16,48,0.22)" stroke-width="1.5" />
+  <circle cx="444" cy="64" r="6" fill="#0d1030" />
+  <circle cx="474" cy="64" r="3.5" fill="none" stroke="rgba(13,16,48,0.22)" stroke-width="1.5" />
+  <line x1="16" y1="86" x2="480" y2="86" stroke="rgba(13,16,48,0.08)" />
+
+  <text x="16" y="120" class="svg-kicker" fill="#0c7fa3">02 · DATA</text>
+  <text x="148" y="120" class="svg-label" fill="#0d1030">Live internal data via contract</text>
+  <circle cx="384" cy="116" r="3.5" fill="none" stroke="rgba(13,16,48,0.22)" stroke-width="1.5" />
+  <circle cx="414" cy="116" r="3.5" fill="none" stroke="rgba(13,16,48,0.22)" stroke-width="1.5" />
+  <circle cx="444" cy="116" r="6" fill="#0d1030" />
+  <circle cx="474" cy="116" r="3.5" fill="none" stroke="rgba(13,16,48,0.22)" stroke-width="1.5" />
+  <line x1="16" y1="138" x2="480" y2="138" stroke="rgba(13,16,48,0.08)" />
+
+  <text x="16" y="172" class="svg-kicker" fill="#0c7fa3">03 · MONDAY 9AM</text>
+  <text x="148" y="172" class="svg-label" fill="#0d1030">Slow day; manual fallback</text>
+  <circle cx="384" cy="168" r="3.5" fill="none" stroke="rgba(13,16,48,0.22)" stroke-width="1.5" />
+  <circle cx="414" cy="168" r="3.5" fill="none" stroke="rgba(13,16,48,0.22)" stroke-width="1.5" />
+  <circle cx="444" cy="168" r="6" fill="#0d1030" />
+  <circle cx="474" cy="168" r="3.5" fill="none" stroke="rgba(13,16,48,0.22)" stroke-width="1.5" />
+  <line x1="16" y1="190" x2="480" y2="190" stroke="rgba(13,16,48,0.08)" />
+
+  <text x="16" y="224" class="svg-kicker" fill="#0c7fa3">04 · CONTINUITY</text>
+  <text x="148" y="224" class="svg-label" fill="#0d1030">Named business owner + backup</text>
+  <circle cx="384" cy="220" r="3.5" fill="none" stroke="rgba(13,16,48,0.22)" stroke-width="1.5" />
+  <circle cx="414" cy="220" r="3.5" fill="none" stroke="rgba(13,16,48,0.22)" stroke-width="1.5" />
+  <circle cx="444" cy="220" r="6" fill="#0d1030" />
+  <circle cx="474" cy="220" r="3.5" fill="none" stroke="rgba(13,16,48,0.22)" stroke-width="1.5" />
+  <text x="444" y="250" text-anchor="middle" class="svg-pill" fill="#0d1030">T2</text>
+
+  <!-- Right Column: Three-Party Responsibility Split & Archetypes -->
+  <text x="536" y="22" class="svg-kicker" fill="#0d1030">THE TIER 2 OWNERSHIP SPLIT (WHY ENGINEERING DOESN'T BOTTLENECK)</text>
+  <line x1="536" y1="34" x2="1124" y2="34" stroke="rgba(13,16,48,0.14)" stroke-width="1.2" />
+
+  <rect x="536" y="52" width="184" height="114" rx="10" fill="rgba(22,180,226,0.06)" stroke="rgba(12,127,163,0.28)" />
+  <text x="554" y="76" class="svg-kicker" fill="#0c7fa3">01 · BUILDER</text>
+  <text x="554" y="98" class="svg-label" fill="#0d1030">Iterates the workflow</text>
+  <text x="554" y="118" class="svg-caption" fill="rgba(13,16,48,0.62)">Keeps shipping UI &amp; logic</text>
+  <text x="554" y="134" class="svg-caption" fill="rgba(13,16,48,0.62)">changes inside The Codex</text>
+
+  <rect x="734" y="52" width="184" height="114" rx="10" fill="#ffffff" stroke="rgba(13,16,48,0.2)" />
+  <text x="752" y="76" class="svg-kicker" fill="#0d1030">02 · BUSINESS OWNER</text>
+  <text x="752" y="98" class="svg-label" fill="#0d1030">Answers for the tool</text>
+  <text x="752" y="118" class="svg-caption" fill="rgba(13,16,48,0.62)">Named owner + backup;</text>
+  <text x="752" y="134" class="svg-caption" fill="rgba(13,16,48,0.62)">owns manual fallback</text>
+
+  <rect x="932" y="52" width="192" height="114" rx="10" fill="#0d1030" />
+  <text x="950" y="76" class="svg-kicker" fill="#78d8f2">03 · ENGINEERING</text>
+  <text x="950" y="98" class="svg-label" fill="#ffffff">Owns contracts only</text>
+  <text x="950" y="118" class="svg-caption" fill="rgba(255,255,255,0.7)">Publishes reusable Omnia</text>
+  <text x="950" y="134" class="svg-caption" fill="rgba(255,255,255,0.7)">contracts — not the app</text>
+
+  <text x="536" y="198" class="svg-kicker" fill="#0c7fa3">TYPICAL TIER 2 DEPARTMENT TOOLS (~20% OF ESTATE)</text>
+  <circle cx="544" cy="222" r="4" fill="#0d1030" />
+  <text x="558" y="226" class="svg-body" fill="#0d1030">Regional shift planner reading live rosters</text>
+  <circle cx="848" cy="222" r="4" fill="#0d1030" />
+  <text x="862" y="226" class="svg-body" fill="#0d1030">Finance variance &amp; commentary workbench</text>
+  <circle cx="544" cy="250" r="4" fill="#0d1030" />
+  <text x="558" y="254" class="svg-body" fill="#0d1030">Supplier onboarding &amp; compliance tracker</text>
+  <circle cx="848" cy="250" r="4" fill="#0d1030" />
+  <text x="862" y="254" class="svg-body" fill="#0d1030">Field inventory exception dashboard</text>
+</svg>
+</div>
+<div class="ed-bottom-prose-row">
+<div>
+
+# Departmental reach,<br>business-owned.
+
+</div>
+<div>
+<p class="ed-prose">At Tier 2, an app serves a department of <strong>5 to 24 people</strong> and connects to live internal data. If it stops on Monday morning, the team has a slow day with a manual spreadsheet fallback, so it does not yet need 24/7 engineering on-call.</p>
+<p class="ed-prose">Instead, continuity is anchored in the business: a <strong>named business owner and backup</strong> stand behind the workflow, while engineering publishes reusable <strong>Omnia data contracts</strong> once per domain rather than maintaining individual department apps.</p>
+</div>
+<div></div>
+</div>
+</div>
+
+<!--
+What a Tier 2 app looks like in practice.
+
+- 5 to 24 users across a department, connected to live internal data, with a manual fallback if it has a bad Monday morning.
+- The key operating insight: engineering owns the domain data contracts, never the app itself, while a named business owner and backup stand behind the tool.
+-->
+
+---
+title: T2 · Architecture
+class: slide-light
+---
+
+<Eyebrow text="TIER 2 · CONNECTED · ARCHITECTURE" />
 
 <div class="ed-split">
 <div class="ed-prose-col">
@@ -671,11 +957,94 @@ class: slide-hero slide-section
 <TrustLadder variant="strip" :current="3" />
 
 ---
-title: T3 · Outline
+title: T3 · Characteristics
 class: slide-light
 ---
 
-<Eyebrow text="TIER 3 · SUPPORTED · OUTLINE" />
+<Eyebrow text="TIER 3 · SUPPORTED · CHARACTERISTICS" />
+
+<div class="ed-split">
+<div class="ed-prose-col">
+<div class="ed-tier-tag">
+  <span class="ed-tier-glyph">T3</span>
+  <span class="ed-tier-sub" style="color: #a4238f;">Supported · ~5% of apps</span>
+</div>
+
+# When operations<br>stall without it.
+
+<p class="ed-prose">Tier 3 is for the one app in twenty that crosses a criticality threshold: <strong>25 or more users</strong> (or any external customer), touching <strong>regulated records</strong> (PII, finance, safety), or failing the <strong>Monday 9am test</strong> where operations or revenue stall if it stops.</p>
+<p class="ed-prose">At Tier 3, the operating contract changes completely. The domain expert who proved the workflow becomes <strong>Product Owner</strong> — keeping control of priorities and scenarios without ever carrying a pager — while senior engineering takes ownership of the rebuilt codebase and 24/7 SLA.</p>
+</div>
+<div class="ed-diagram-pane">
+<svg viewBox="0 0 640 440" aria-hidden="true">
+  <!-- Top Half: 4-Dimension Profile at T3 -->
+  <text x="20" y="26" class="svg-kicker" fill="#a4238f">TIER 3 PROFILE · ANY ONE THRESHOLD TRIGGERS GRADUATION</text>
+  <line x1="20" y1="40" x2="620" y2="40" stroke="rgba(13,16,48,0.14)" stroke-width="1.2" />
+
+  <text x="20" y="72" class="svg-kicker" fill="#a4238f">01 · REACH</text>
+  <text x="165" y="72" class="svg-label" fill="#0d1030">25+ staff across teams, or external users</text>
+  <circle cx="455" cy="68" r="3.5" fill="none" stroke="rgba(13,16,48,0.22)" stroke-width="1.5" />
+  <circle cx="500" cy="68" r="3.5" fill="none" stroke="rgba(13,16,48,0.22)" stroke-width="1.5" />
+  <circle cx="545" cy="68" r="3.5" fill="none" stroke="rgba(13,16,48,0.22)" stroke-width="1.5" />
+  <circle cx="590" cy="68" r="6.5" fill="#a4238f" />
+  <line x1="20" y1="90" x2="620" y2="90" stroke="rgba(13,16,48,0.08)" />
+
+  <text x="20" y="120" class="svg-kicker" fill="#a4238f">02 · DATA &amp; STATE</text>
+  <text x="165" y="120" class="svg-label" fill="#0d1030">Regulated or core records (PII, finance, safety)</text>
+  <circle cx="455" cy="116" r="3.5" fill="none" stroke="rgba(13,16,48,0.22)" stroke-width="1.5" />
+  <circle cx="500" cy="116" r="3.5" fill="none" stroke="rgba(13,16,48,0.22)" stroke-width="1.5" />
+  <circle cx="545" cy="116" r="3.5" fill="none" stroke="rgba(13,16,48,0.22)" stroke-width="1.5" />
+  <circle cx="590" cy="116" r="6.5" fill="#a4238f" />
+  <line x1="20" y1="138" x2="620" y2="138" stroke="rgba(13,16,48,0.08)" />
+
+  <text x="20" y="168" class="svg-kicker" fill="#a4238f">03 · MONDAY 9AM</text>
+  <text x="165" y="168" class="svg-label" fill="#0d1030">Operations stall — revenue, safety, or SLA hit</text>
+  <circle cx="455" cy="164" r="3.5" fill="none" stroke="rgba(13,16,48,0.22)" stroke-width="1.5" />
+  <circle cx="500" cy="164" r="3.5" fill="none" stroke="rgba(13,16,48,0.22)" stroke-width="1.5" />
+  <circle cx="545" cy="164" r="3.5" fill="none" stroke="rgba(13,16,48,0.22)" stroke-width="1.5" />
+  <circle cx="590" cy="164" r="6.5" fill="#a4238f" />
+  <line x1="20" y1="186" x2="620" y2="186" stroke="rgba(13,16,48,0.08)" />
+
+  <text x="20" y="216" class="svg-kicker" fill="#a4238f">04 · CONTINUITY</text>
+  <text x="165" y="216" class="svg-label" fill="#0d1030">Senior engineering on call under formal SLA</text>
+  <circle cx="455" cy="212" r="3.5" fill="none" stroke="rgba(13,16,48,0.22)" stroke-width="1.5" />
+  <circle cx="500" cy="212" r="3.5" fill="none" stroke="rgba(13,16,48,0.22)" stroke-width="1.5" />
+  <circle cx="545" cy="212" r="3.5" fill="none" stroke="rgba(13,16,48,0.22)" stroke-width="1.5" />
+  <circle cx="590" cy="212" r="6.5" fill="#a4238f" />
+  <text x="590" y="236" text-anchor="middle" class="svg-pill" fill="#a4238f">T3</text>
+
+  <!-- Bottom Half: The Handover Contract -->
+  <text x="20" y="274" class="svg-kicker" fill="#0d1030">THE GRADUATION HANDOVER · BOTH SIDES PROTECTED</text>
+  <line x1="20" y1="288" x2="620" y2="288" stroke="rgba(13,16,48,0.14)" stroke-width="1.2" />
+
+  <rect x="20" y="306" width="286" height="114" rx="12" fill="rgba(22,180,226,0.06)" stroke="rgba(12,127,163,0.3)" />
+  <text x="40" y="332" class="svg-kicker" fill="#0c7fa3">DOMAIN BUILDER → PRODUCT OWNER</text>
+  <text x="40" y="356" class="svg-h3" fill="#0d1030">Keeps the product</text>
+  <text x="40" y="378" class="svg-caption" fill="rgba(13,16,48,0.65)">Owns the backlog, domain rules, and</text>
+  <text x="40" y="394" class="svg-caption" fill="rgba(13,16,48,0.65)">acceptance scenarios — zero 2am pages</text>
+
+  <rect x="334" y="306" width="286" height="114" rx="12" fill="#0d1030" />
+  <text x="354" y="332" class="svg-kicker" fill="#f59ef5">SENIOR ENGINEERING → ON CALL</text>
+  <text x="354" y="356" class="svg-h3" fill="#ffffff">Owns the code &amp; SLA</text>
+  <text x="354" y="378" class="svg-caption" fill="rgba(255,255,255,0.72)">Clean Emery wave rebuild, security</text>
+  <text x="354" y="394" class="svg-caption" fill="rgba(255,255,255,0.72)">sign-off, and Omnia production rota</text>
+</svg>
+</div>
+</div>
+
+<!--
+What defines a Tier 3 app and how the handover protects both the builder and engineering.
+
+- Any one of the four thresholds is enough: 25+ or external users, regulated records, or Monday 9am criticality.
+- The builder never loses their creation — they become Product Owner without a pager, while engineering gets a clean codebase rebuilt from a specification.
+-->
+
+---
+title: T3 · Architecture
+class: slide-light
+---
+
+<Eyebrow text="TIER 3 · SUPPORTED · ARCHITECTURE" />
 
 <div class="ed-band">
 <div class="ed-band-top">
