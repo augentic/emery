@@ -1,11 +1,15 @@
 {
-  "name": "citizen-coding-slides",
+  "name": "slides",
   "private": true,
   "scripts": {
-    "dev": "slidev --open",
-    "build": "slidev build",
-    "export": "slidev export",
-    "export:pptx": "slidev export --format pptx"
+    "dev": "slidev citizen-coding.md --open",
+    "dev:maturity": "slidev maturity-model.md --open",
+    "build": "slidev build citizen-coding.md",
+    "build:maturity": "slidev build maturity-model.md",
+    "export": "slidev export citizen-coding.md",
+    "export:maturity": "slidev export maturity-model.md",
+    "export:pptx": "slidev export citizen-coding.md --format pptx",
+    "export:maturity:pptx": "slidev export maturity-model.md --format pptx"
   },
   "dependencies": {
     "@slidev/cli": "^51.0.0",
