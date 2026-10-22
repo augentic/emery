@@ -55,6 +55,9 @@ git switch emery/<revision>          # or: git merge emery/<revision>
 
 # a second run has nothing left to build: the label records every slice
 "$emery" build
+
+# done: leave the scratch project and remove it, run and all
+cd - && rm -rf "$project"
 ```
 
 Without `.env`:
