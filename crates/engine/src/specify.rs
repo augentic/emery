@@ -24,7 +24,7 @@ use omnia_sdk::plugins::Digest;
 use omnia_sdk::{BlobStore, Error, Model, Plugins, StateStore, Vcs, bad_request, server_error};
 use serde::{Deserialize, Serialize};
 
-pub(crate) use self::basis::GroupingBrief;
+pub(crate) use self::basis::{BASELINE, Basis, Contributor, GroupingBrief};
 pub(crate) use self::design::DesignBrief;
 pub use self::plan::SLICE_CAP;
 pub(crate) use self::plan::SliceBrief;
@@ -113,17 +113,10 @@ pub async fn specify<P: Model + Source + StateStore + BlobStore + Plugins + Vcs 
         None => None,
     };
 
-    let loaded =
-        &adapter::load(provider, bound.iter().map(|source| (source.adapter, source.digest)))
-            .await?;
-
-    // every repository source is read in a working copy that lasts the extraction
-    let checkouts = Checkouts::prepare(provider, &bound).await?;
-    let extracted =
-        future::try_join_all(bound.iter().map(|source| source.extract(provider, loaded))).await;
-    let removed = checkouts.remove(provider).await;
-    let extracts = extracted?;
-    let repositories = removed?;
+    let Extracted {
+        extracts,
+        repositories,
+    } = Bound::extract_all(provider, &bound).await?;
 
     let bases = GroupingBrief::new(&extracts).derive(provider).await?;
     let chunks = SpecBrief::chunked(&extracts, &bases);
@@ -329,7 +322,10 @@ pub struct RepositorySource {
     pub commit: String,
 }
 
-struct Bound<'a> {
+// A source as a run binds it: checked, its input prepared, and ready to
+// extract once its adapter is loaded. `pub(crate)`: `amend` binds its change
+// sources the same way.
+pub(crate) struct Bound<'a> {
     adapter: &'a AdapterRef,
     digest: Option<&'a Digest>,
     repository: Option<&'a SourceRepository>,
@@ -338,7 +334,7 @@ struct Bound<'a> {
 }
 
 impl<'a> Bound<'a> {
-    fn all(sources: &'a [SourceConfig]) -> Result<Vec<Self>, Error> {
+    pub(crate) fn all(sources: &'a [SourceConfig]) -> Result<Vec<Self>, Error> {
         if sources.is_empty() {
             return Err(Error::BadRequest {
                 code: "specify-source-required".into(),
@@ -363,6 +359,31 @@ impl<'a> Bound<'a> {
         }
 
         Ok(bound)
+    }
+
+    // The name the run binds the source under.
+    pub(crate) fn name(&self) -> &str {
+        &self.input.name
+    }
+
+    // Loads every source's adapter, reads each repository source in a
+    // working copy that lasts the extraction, and extracts every source at
+    // once; the first failure ends the run and the copies go whether or not
+    // extraction succeeded.
+    pub(crate) async fn extract_all<P: Source + Plugins + Vcs>(
+        provider: &P, bound: &[Self],
+    ) -> Result<Extracted, Error> {
+        let loaded =
+            &adapter::load(provider, bound.iter().map(|source| (source.adapter, source.digest)))
+                .await?;
+        let checkouts = Checkouts::prepare(provider, bound).await?;
+        let extracted =
+            future::try_join_all(bound.iter().map(|source| source.extract(provider, loaded))).await;
+        let removed = checkouts.remove(provider).await;
+        Ok(Extracted {
+            extracts: extracted?,
+            repositories: removed?,
+        })
     }
 
     #[tracing::instrument(skip_all, fields(source = %self.input.name, adapter = %self.adapter))]
@@ -404,14 +425,22 @@ impl<'a> Bound<'a> {
     }
 }
 
+// What the run extracted from `bound`: every source's evidence in
+// declaration order, and the repository sources read.
+pub(crate) struct Extracted {
+    pub(crate) extracts: Vec<Extract>,
+    pub(crate) repositories: Vec<RepositorySource>,
+}
+
 // `pub(crate)`: the briefs over it are named by the corpus check at the
-// crate root.
+// crate root, and `amend` reads the ranks the standing requirements sit
+// beneath.
 #[derive(Debug)]
 pub(crate) struct Extract {
-    source: String,
-    kind: SourceKind,
-    rank: Rank,
-    evidence: Evidence,
+    pub(crate) source: String,
+    pub(crate) kind: SourceKind,
+    pub(crate) rank: Rank,
+    pub(crate) evidence: Evidence,
 }
 
 // The working copies the repository sources are read in, one per source,

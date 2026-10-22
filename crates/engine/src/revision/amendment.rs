@@ -55,6 +55,41 @@ impl Amendment {
     pub fn count(&self, class: ChangeClass) -> usize {
         self.changes.iter().filter(|change| change.class == class).count()
     }
+
+    /// Returns whether the amendment changes anything of the base.
+    ///
+    /// An amendment every entry of which is [`ChangeClass::Unchanged`] does
+    /// not, and is nothing to stage.
+    #[must_use]
+    pub fn is_change(&self) -> bool {
+        self.changes.iter().any(|change| change.class != ChangeClass::Unchanged)
+    }
+
+    /// Returns the stems of the requirements the amendment touches, once each, sorted.
+    ///
+    /// The stem is the first segment of a requirement's dotted subject, the
+    /// floor a slice is cut at, so these are the slices the change reaches.
+    /// An unchanged requirement counts for nothing.
+    #[must_use]
+    pub fn stems(&self) -> Vec<&str> {
+        let mut stems: Vec<&str> = self
+            .changes
+            .iter()
+            .filter(|change| change.class != ChangeClass::Unchanged)
+            .map(|change| revision::stem(&change.subject))
+            .collect();
+        stems.sort_unstable();
+        stems.dedup();
+        stems
+    }
+
+    /// Returns the subjects of the requirements the change sources disagree over, in id order.
+    pub fn conflicts(&self) -> impl Iterator<Item = &str> {
+        self.changes
+            .iter()
+            .filter(|change| change.class == ChangeClass::Conflict)
+            .map(|change| change.subject.as_str())
+    }
 }
 
 impl revision::Document for Amendment {
@@ -110,7 +145,7 @@ pub struct Change {
     /// What the change did to the requirement.
     pub class: ChangeClass,
     /// The statement the base revision holds; `None` for a requirement it
-    /// does not.
+    /// does not, and for one it holds in conflict, which states none.
     pub before: Option<String>,
     /// The statement the change states; `None` for a retired requirement,
     /// and for a conflict, whose competing claims [`sources`](Self::sources)
@@ -140,8 +175,11 @@ impl Display for Change {
             (ChangeClass::Added | ChangeClass::Unchanged, _, Some(after)) => {
                 write!(f, "\n\n{after}")?;
             }
-            (ChangeClass::Changed, Some(before), Some(after)) => {
-                write!(f, "\n\nBefore: {before}\n\nAfter: {after}")?;
+            (ChangeClass::Changed, before, Some(after)) => {
+                if let Some(before) = before {
+                    write!(f, "\n\nBefore: {before}")?;
+                }
+                write!(f, "\n\nAfter: {after}")?;
             }
             (ChangeClass::Retired, Some(before), _) => {
                 write!(f, "\n\n{before}")?;

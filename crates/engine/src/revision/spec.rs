@@ -112,6 +112,18 @@ impl Requirement {
         revision::stem(&self.subject)
     }
 
+    /// Returns the requirement's statement: its [`body`](Self::body) paragraphs
+    /// joined, or `None` when it is in conflict.
+    #[must_use]
+    pub fn statement(&self) -> Option<String> {
+        match self.status {
+            Status::Conflict => None,
+            Status::Agreed | Status::Unknown | Status::Divergence => {
+                Some(self.body.join("\n\n")).filter(|body| !body.is_empty())
+            }
+        }
+    }
+
     /// Returns how many anchors this requirement and `other` cite in common:
     /// the pairs of their citations that [overlap](Cited::overlaps).
     #[must_use]

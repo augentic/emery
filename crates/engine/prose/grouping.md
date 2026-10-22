@@ -17,6 +17,42 @@ Claims that share a byte-equal `id` are pre-merged into one group and the reques
 - Judge agreement on meaning: same behaviour, same values, same conditions. Whitespace, casing, and phrasing differences are not disagreement; a changed number, actor, or outcome is.
 - Answer with the JSON object alone.
 
+## Standing requirements
+
+A request that amends a specification lists, after the claims, a `## Standing requirements` section: every requirement the current specification holds, indexed on from the claims, with its id and its statement. The claims are a change against that specification, and your grouping decides which requirement each claim lands on:
+
+- A claim that **restates, revises, or narrows** a standing requirement joins that requirement's group — the same behaviour with a new value, a new condition, a new outcome, or a tighter scope. It shares the standing requirement's class when it says the same thing and takes a class of its own when it does not. The engine keeps the requirement's id and records what changed.
+- A claim that states a behaviour **no standing requirement covers** is a group of its own. The engine adds a requirement under a new id. A behaviour that happens to share a noun, an actor, or a route with a standing requirement but asks for something the standing requirement does not decide — a second step after it, a rule about another thing — is new, not a revision.
+- A standing requirement **no claim touches** is a group of its own, and stands unchanged.
+- **Two standing requirements never share a group.** The specification already holds them apart, and an answer that merges them is refused. Pick the one the claim revises; a claim that seems to revise two is two claims' work, so leave it with the one it revises most directly.
+
+The test is the one a reviewer applies reading the amended specification: does the claim replace the sentence the standing requirement states, or does it add a sentence beside it?
+
+### Worked example
+
+```text
+0  brief  session.timeout     Sessions expire after 15 minutes of inactivity.
+1  brief  session.refresh     Activity on a session resets its inactivity clock.
+2  brief  login.lockout       Five failed sign-ins in a row lock the account for an hour.
+3  brief  session.timeout     Sessions expire after fifteen minutes without activity.
+
+4  REQ-001 session.timeout    Sessions expire after 30 minutes of inactivity.
+5  REQ-002 login.flow         Users sign in with a magic link.
+```
+
+```json
+{
+  "groups": [
+    { "claims": [0, 3, 4], "classes": [[0, 3], [4]] },
+    { "claims": [1], "classes": [[1]] },
+    { "claims": [2], "classes": [[2]] },
+    { "claims": [5], "classes": [[5]] }
+  ]
+}
+```
+
+Claims 0 and 3 revise the standing timeout — the same behaviour with a new value — so they join its group; they agree with each other and disagree with the standing statement, so they are one class and it is another. Claim 1 is about the session's inactivity clock, the thing the timeout measures, but it adds a rule the timeout does not decide, so it is new. Claim 2 shares its stem with the standing `login.flow` and is about sign-in, but a lockout is a behaviour beside the sign-in flow, not a revision of it, so it is new too. The standing `login.flow` is untouched and stands alone. A claim reading "Users sign in with a passkey" would instead have joined claim 5's group, in a class of its own: it replaces the sentence the standing requirement states.
+
 ## Worked example
 
 ```text

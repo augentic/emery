@@ -33,6 +33,27 @@ use serde::{Deserialize, Serialize};
 #[serde(transparent)]
 pub struct Rank(NonZeroU32);
 
+impl Rank {
+    /// Returns the rank one step below this one, the highest that loses to it.
+    ///
+    /// The lowest rank there is answers itself.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use emery_adapter::source::SourceKind;
+    /// use emery_engine::Rank;
+    ///
+    /// let behaviour = Rank::from(SourceKind::Behaviour);
+    /// assert!(behaviour < behaviour.below());
+    /// assert_eq!(behaviour.below().to_string(), "4");
+    /// ```
+    #[must_use]
+    pub const fn below(self) -> Self {
+        Self(self.0.saturating_add(1))
+    }
+}
+
 impl From<SourceKind> for Rank {
     fn from(value: SourceKind) -> Self {
         Self(match value {

@@ -3,8 +3,9 @@
 //! A candidate stands in the engine's own storage: `stage` writes a revision
 //! for review and `stage_amendment` an amendment, `staged` and
 //! `staged_amendment` read each back, and `clear` removes whichever stands.
-//! The slot holds one at a time, and a revision never stages over an
-//! amendment, which awaits its own seal or another `amend`. The current
+//! The slot holds one at a time: a revision never stages over an amendment,
+//! which awaits its own seal or another `amend`, and an amendment never
+//! stages over a revision candidate, which awaits `apply`. The current
 //! revision lives in the repository the target names, under `spec/` at the
 //! commit labelled `emery/<id>`: `current` reads it from the label the
 //! `current-revision` pointer names, or from the head's tree, and `commit`
@@ -109,6 +110,13 @@ impl Slot {
     fn no_amendment(token: Option<&[u8]>) -> Result<(), Error> {
         match Self::from_token(token) {
             Some(slot) if slot.kind == StagedKind::Amendment => Err(amendment_pending(&slot.id)),
+            Some(_) | None => Ok(()),
+        }
+    }
+
+    fn no_candidate(token: Option<&[u8]>) -> Result<(), Error> {
+        match Self::from_token(token) {
+            Some(slot) if slot.kind == StagedKind::Revision => Err(candidate_pending(&slot.id)),
             Some(_) | None => Ok(()),
         }
     }
@@ -254,15 +262,18 @@ pub async fn stage<S: StateStore + BlobStore>(
     Ok(id)
 }
 
-// Stages `amendment` for review, replacing whatever is staged before it:
+// Stages `amendment` for review, replacing any amendment staged before it:
 // the document written under the amendment's id, the staged record swapped
 // by compare-and-swap with the base it was prepared against, and the
-// candidate it displaced pruned.
-#[expect(dead_code, reason = "staged by `amend`, the verb the next chunk adds")]
+// amendment it displaced pruned. A staged revision candidate is never
+// displaced: it is `amendment-pending`, read before any document is
+// written.
 pub async fn stage_amendment<S: StateStore + BlobStore>(
     store: &S, amendment: &Amendment,
 ) -> Result<String, Error> {
     let token = token(store).await;
+    Slot::no_candidate(token.as_deref())?;
+
     let body = amendment.to_json()?;
     let id = Amendment::identify(body.as_bytes());
     put(store, &id, &[(Amendment::NAME, body.as_str())]).await?;
@@ -343,6 +354,13 @@ pub async fn staged_amendment<S: StateStore + BlobStore>(
 // swaps over, never a refusal.
 pub async fn no_amendment<S: StateStore>(store: &S) -> Result<(), Error> {
     Slot::no_amendment(token(store).await.as_deref())
+}
+
+// Refuses `amendment-pending` when a revision candidate is staged, so a verb
+// that stages an amendment refuses before it spends a turn on one; the slot
+// is read as `no_amendment` reads it.
+pub async fn no_candidate<S: StateStore>(store: &S) -> Result<(), Error> {
+    Slot::no_candidate(token(store).await.as_deref())
 }
 
 async fn document<S: BlobStore>(store: &S, id: &str, name: &str) -> Result<Vec<u8>, Error> {
@@ -554,6 +572,17 @@ pub fn amendment_pending(id: &str) -> Error {
     Error::BadRequest {
         code: "amendment-pending".into(),
         description: format!("amendment `{id}` is staged in place of a revision candidate"),
+    }
+}
+
+// The `amendment-pending` refusal of a verb that stages an amendment while a
+// revision candidate stands in the slot, awaiting its seal.
+pub fn candidate_pending(id: &str) -> Error {
+    Error::BadRequest {
+        code: "amendment-pending".into(),
+        description: format!(
+            "candidate `{id}` is staged and not sealed, where the amendment would go"
+        ),
     }
 }
 

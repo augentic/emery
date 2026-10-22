@@ -1,0 +1,78 @@
+{
+  "emery": 8,
+  "base": {
+    "revision": "<revision>",
+    "commit": "9f8e7d6c5b4a39281706f5e4d3c2b1a0f9e8d7c6"
+  },
+  "changes": [
+    {
+      "id": "REQ-001",
+      "subject": "auth.login",
+      "class": "conflict",
+      "before": "Users sign in with a credential.",
+      "after": null,
+      "sources": [
+        {
+          "source": "docs",
+          "claim": "auth.login",
+          "path": null
+        },
+        {
+          "source": "wiki",
+          "claim": "auth.login",
+          "path": null
+        }
+      ]
+    },
+    {
+      "id": "REQ-002",
+      "subject": "session.timeout",
+      "class": "changed",
+      "before": "Sessions expire after an hour of inactivity.",
+      "after": "Sessions expire after 30 minutes of inactivity.",
+      "sources": [
+        {
+          "source": "docs",
+          "claim": "session.timeout",
+          "path": null
+        }
+      ]
+    },
+    {
+      "id": "REQ-003",
+      "subject": "orders.create",
+      "class": "unchanged",
+      "before": "A signed-in user places an order.",
+      "after": "A signed-in user places an order.",
+      "sources": [
+        {
+          "source": "docs",
+          "claim": "orders.create",
+          "path": null
+        }
+      ]
+    },
+    {
+      "id": "REQ-004",
+      "subject": "orders.cancel",
+      "class": "unchanged",
+      "before": "A signed-in user cancels an open order.",
+      "after": "A signed-in user cancels an open order.",
+      "sources": []
+    },
+    {
+      "id": "REQ-005",
+      "subject": "orders.refund",
+      "class": "added",
+      "before": null,
+      "after": "A signed-in user requests a refund of a delivered order.",
+      "sources": [
+        {
+          "source": "docs",
+          "claim": "orders.refund",
+          "path": null
+        }
+      ]
+    }
+  ]
+}

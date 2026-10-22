@@ -19,24 +19,51 @@ use crate::brief::{Brief, Review};
 use crate::revision::{self, Cited, Loser, ReqId, Requirement, Scenario, Status};
 use crate::specify::Extract;
 
+/// The reserved source name the current revision's requirements contribute under.
+///
+/// An amend run reconciles its change sources against the requirements the
+/// current revision holds, each a [`Contributor`] from this source, so no
+/// operator source may take the name.
+pub const BASELINE: &str = "baseline";
+
 /// A synthesis brief for grouping requirement claims.
 ///
 /// The brief contains requirement claims in source order and every acceptance
-/// criterion identifier. Source authority is withheld from the model.
+/// criterion identifier. Source authority is withheld from the model. An
+/// amend run's brief carries the current revision's requirements after the
+/// claims, as the standing requirements the claims are matched against.
 pub struct GroupingBrief<'a> {
     contributors: Vec<Contributor<'a>>,
     criteria: Vec<&'a str>,
     contracts: Vec<Contract<'a>>,
     sources: usize,
     baseline: Grouping,
+    // How many contributors the run's sources contributed; the rest are
+    // the standing requirements.
+    changes: usize,
 }
 
 impl<'a> GroupingBrief<'a> {
     /// Returns a grouping brief for `extracts`.
     #[must_use]
     pub fn new(extracts: &'a [Extract]) -> Self {
+        Self::with_standing(extracts, Vec::new(), Vec::new())
+    }
+
+    /// Returns a grouping brief for `extracts` matched against `standing`.
+    ///
+    /// `standing` is the current revision's requirements as contributors
+    /// from [`BASELINE`], each indexed after the claims, and `criteria` the
+    /// ids of those the revision holds covered. The model places each claim
+    /// in the group of the standing requirement it restates or revises, or
+    /// in a group of its own, and never two standing requirements in one
+    /// group.
+    #[must_use]
+    pub fn with_standing(
+        extracts: &'a [Extract], standing: Vec<Contributor<'a>>, criteria: Vec<&'a str>,
+    ) -> Self {
         let mut contributors: Vec<Contributor<'a>> = Vec::new();
-        let mut criteria = Vec::new();
+        let mut criteria = criteria;
         let mut contracts = Vec::new();
 
         for extract in extracts {
@@ -75,6 +102,13 @@ impl<'a> GroupingBrief<'a> {
             }
         }
 
+        // the standing requirements after the claims, indexed in place
+        let changes = contributors.len();
+        contributors.extend(standing.into_iter().enumerate().map(|(offset, member)| Contributor {
+            index: changes + offset,
+            ..member
+        }));
+
         // count the sources that contribute a requirement claim
         let sources = contributors.iter().map(|claim| claim.source).collect::<BTreeSet<_>>().len();
         let baseline = Grouping::baseline(&contributors);
@@ -85,13 +119,15 @@ impl<'a> GroupingBrief<'a> {
             contracts,
             sources,
             baseline,
+            changes,
         }
     }
 
     /// Derives every requirement basis.
     ///
     /// A run whose requirement claims come from two or more sources asks the
-    /// model to group them. So does a run over one contributing source whose
+    /// model to group them, as does one matching claims against standing
+    /// requirements. So does a run over one contributing source whose
     /// requirement ids span two or more stems, since its seams may describe
     /// one behaviour under different nouns. Otherwise the baseline stands alone
     /// and no call is spent. Whatever the model answers, claims sharing an id
@@ -108,7 +144,7 @@ impl<'a> GroupingBrief<'a> {
     ///   grouping cannot be reconciled with the claims.
     /// - Returns [`Error::BadGateway`] when the model operation fails.
     pub async fn derive<M: Model>(self, model: &M) -> Result<Vec<Basis<'a>>, Error> {
-        if self.contributors.is_empty() {
+        if self.changes == 0 {
             return Err(bad_request!("no source contributed a requirement claim"));
         }
 
@@ -123,6 +159,10 @@ impl<'a> GroupingBrief<'a> {
     // with, which differ when one source describes one behaviour twice.
     fn stems(&self) -> usize {
         self.contributors.iter().map(Contributor::stem).collect::<BTreeSet<_>>().len()
+    }
+
+    fn standing(&self) -> &[Contributor<'a>] {
+        &self.contributors[self.changes..]
     }
 }
 
@@ -184,6 +224,21 @@ impl<'a> Brief for GroupingBrief<'a> {
             for index in members.difference(&classed) {
                 review.note(format_args!("group {position}: claim {index} is in no class"));
             }
+
+            // two standing requirements are two requirements already
+            let standing: BTreeSet<&str> = members
+                .iter()
+                .filter(|&&index| index >= self.changes)
+                .filter_map(|&index| self.contributors.get(index).map(|member| member.id))
+                .collect();
+            if standing.len() > 1 {
+                let ids =
+                    standing.iter().map(|id| format!("`{id}`")).collect::<Vec<_>>().join(", ");
+                review.note(format_args!(
+                    "group {position} merges the standing requirements {ids}, which the current \
+                     specification holds as distinct requirements"
+                ));
+            }
         }
 
         for index in (0..count).filter(|index| !placed.contains_key(index)) {
@@ -208,12 +263,15 @@ impl<'a> Brief for GroupingBrief<'a> {
 
 impl Display for GroupingBrief<'_> {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        f.write_str(
-            "Group the requirement claims.\n\n\
-             ## Requirement claims (index, source, id, statement, synopsis)\n\n",
-        )?;
+        let standing = self.standing();
+        if standing.is_empty() {
+            f.write_str("Group the requirement claims.\n\n")?;
+        } else {
+            f.write_str("Group the requirement claims against the standing requirements.\n\n")?;
+        }
+        f.write_str("## Requirement claims (index, source, id, statement, synopsis)\n\n")?;
 
-        for (index, claim) in self.contributors.iter().enumerate() {
+        for (index, claim) in self.contributors.iter().enumerate().take(self.changes) {
             let synopsis = claim.synopsis.unwrap_or("-");
             writeln!(
                 f,
@@ -222,6 +280,19 @@ impl Display for GroupingBrief<'_> {
                 id = claim.id,
                 statement = claim.statement,
             )?;
+        }
+
+        if !standing.is_empty() {
+            f.write_str("\n## Standing requirements (index, id, statement)\n\n")?;
+            for claim in standing {
+                writeln!(
+                    f,
+                    "- {index} `{id}` — {statement}",
+                    index = claim.index,
+                    id = claim.id,
+                    statement = claim.statement,
+                )?;
+            }
         }
 
         f.write_str("\n## Baseline\n\n")?;
@@ -249,7 +320,20 @@ impl Display for GroupingBrief<'_> {
              their seams gave them. Two claims of one source with different ids under one stem \
              are distinct requirements: the call that minted them under one noun told them \
              apart, and a group that merges them is split, each id its own requirement.\n",
-        )
+        )?;
+        if !standing.is_empty() {
+            f.write_str(
+                "\nEach standing requirement is one requirement of the current specification. A \
+                 claim that restates, revises, or narrows the behaviour a standing requirement \
+                 states joins its group, in the standing requirement's class when it says the \
+                 same thing and in a class of its own when it changes a value, a condition, or \
+                 an outcome. A claim stating a behaviour no standing requirement covers is a \
+                 group of its own. A standing requirement no claim touches is a group of its own \
+                 too. Two standing requirements never share a group: an answer that merges them \
+                 is refused.\n",
+            )?;
+        }
+        Ok(())
     }
 }
 
@@ -511,6 +595,17 @@ impl<'a> Basis<'a> {
         members.into_iter()
     }
 
+    /// Returns the winning statement, or `None` when the contributors are in conflict.
+    #[must_use]
+    pub fn statement(&self) -> Option<&str> {
+        match self.status {
+            Status::Conflict => None,
+            Status::Agreed | Status::Unknown | Status::Divergence => {
+                Some(&self.classes[0][0].statement)
+            }
+        }
+    }
+
     /// Returns the requirement produced from this basis and `scenarios`.
     ///
     /// The body is the winning statement, or none for a conflict. The losing
@@ -518,11 +613,11 @@ impl<'a> Basis<'a> {
     /// sources' `contract` claims.
     #[must_use]
     pub fn requirement(&self, scenarios: Vec<Scenario>) -> Requirement {
-        let winner = &self.classes[0][0].statement;
-        let (body, noted): (Vec<String>, &[Vec<Contributor<'a>>]) = match self.status {
-            Status::Agreed | Status::Unknown => (vec![winner.clone()], &[]),
-            Status::Divergence => (vec![winner.clone()], &self.classes[1..]),
-            Status::Conflict => (Vec::new(), &self.classes),
+        let body = self.statement().map(|statement| vec![statement.to_owned()]).unwrap_or_default();
+        let noted: &[Vec<Contributor<'a>>] = match self.status {
+            Status::Agreed | Status::Unknown => &[],
+            Status::Divergence => &self.classes[1..],
+            Status::Conflict => &self.classes,
         };
         let losers = noted
             .iter()

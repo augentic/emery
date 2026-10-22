@@ -2,6 +2,7 @@
 
 use std::fmt;
 
+use emery_engine::amend::AmendOutput;
 use emery_engine::apply::ApplyOutput;
 use emery_engine::build::{BuildOutput, BuiltSlice};
 use emery_engine::show::ShowOutput;
@@ -42,6 +43,49 @@ pub fn apply(output: &ApplyOutput, w: &mut dyn fmt::Write) -> fmt::Result {
         writeln!(w, "  repository {}", output.repository)?;
     }
     diff(output.diff.as_ref(), w)
+}
+
+/// Writes an [`AmendOutput`] amendment line, the base, the counts by class, the conflicts, the stems touched, and one line per repository source.
+///
+/// The first line names the staged amendment, or says no change was found
+/// against the base and nothing staged. The counts line is the one
+/// `amendment.md` opens with. The conflicts and stems lines appear when
+/// there are any, and the last line names `emery show amendment` as the way
+/// to review what was staged.
+pub fn amend(output: &AmendOutput, w: &mut dyn fmt::Write) -> fmt::Result {
+    match &output.amendment {
+        Some(id) => writeln!(w, "staged amendment {id}")?,
+        None => writeln!(w, "nothing staged: no change against the current revision")?,
+    }
+    writeln!(
+        w,
+        "  base {} at {}",
+        output.base.revision,
+        output.base.commit.get(..8).unwrap_or(&output.base.commit)
+    )?;
+    let tally = &output.tally;
+    writeln!(
+        w,
+        "  {} added, {} changed, {} retired, {} conflict, {} unchanged",
+        tally.added, tally.changed, tally.retired, tally.conflict, tally.unchanged
+    )?;
+    if !output.conflicts.is_empty() {
+        writeln!(w, "  conflicts: {}", output.conflicts.join(", "))?;
+    }
+    if !output.stems.is_empty() {
+        writeln!(w, "  stems: {}", output.stems.join(", "))?;
+    }
+    for read in &output.repositories {
+        writeln!(
+            w,
+            "  {} read from {} at {}: {}",
+            read.source, read.repository, read.revision, read.commit
+        )?;
+    }
+    if output.amendment.is_some() {
+        writeln!(w, "  nothing sealed; `emery show amendment` reviews it")?;
+    }
+    Ok(())
 }
 
 fn sealed(output: &ApplyOutput, w: &mut dyn fmt::Write) -> fmt::Result {

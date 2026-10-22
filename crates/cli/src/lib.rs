@@ -16,6 +16,7 @@ use std::path::PathBuf;
 
 use clap::builder::{PossibleValue, PossibleValuesParser, TypedValueParser};
 use clap::{Parser, Subcommand};
+use emery_engine::amend::{AmendInput, amend};
 use emery_engine::apply::{ApplyInput, apply};
 use emery_engine::build::{BuildInput, build};
 use emery_engine::show::{Artifact, ShowInput, show};
@@ -89,6 +90,18 @@ const BUILD_DESC: &str = "Build the current plan through a target adapter.\n\n\
     for the next run to resume from. The adapter is an exact package reference, \
     `namespace:name@version`, read from the store `~/.emery/adapters` and fetched through \
     the `emery` namespace's registry when the store lacks it, as for `specify`.";
+const AMEND_DESC: &str = "Stage an amendment against the current revision.\n\n\
+    Name one or more adapters, use `--description <adapter>=<text>` for inline input, or \
+    use `--config <path>` for the `[[source]]` tables of a change file, read and layered \
+    as `emery specify` reads them. The current revision is read from the repository the \
+    `[target]` table of that file names, or of the project-root `emery.toml` when the file \
+    names none, and its requirements stand as the baseline the change is matched against: \
+    a claim restating or revising one keeps the requirement's id, a claim no requirement \
+    covers is added under a new id, and a requirement no claim touches stands unchanged. \
+    No source may be named `baseline`. A change that leaves every requirement as it \
+    stands stages nothing. Otherwise the amendment is staged for `emery show amendment` to \
+    review, replacing any amendment staged before it; a staged revision candidate is never \
+    replaced, so seal it with `emery apply` first. Nothing is sealed.";
 const SHOW_DESC: &str = "Print an artifact from the current revision.\n\n\
     The revision is read from the repository the `[target]` table of `--config [<path>]` \
     (default: `emery.toml`) names, where `emery apply` sealed it. `--staged` prints it \
@@ -125,12 +138,15 @@ where
         Command::new(&client, &metadata, app.format).hints(move |error| hint(error, invoked));
 
     match app.verb {
-        Verb::Completions { shell } => completions::<App>(shell, NAME),
+        Verb::Completions { shell } => completions::<Shown>(shell, NAME),
         Verb::Specify(arguments) => {
             command.call(specify, || SpecifyInput::try_from(arguments), text::specify).await
         }
         Verb::Apply(arguments) => {
             command.call(apply, || ApplyInput::try_from(arguments), text::apply).await
+        }
+        Verb::Amend(arguments) => {
+            command.call(amend, || AmendInput::try_from(arguments), text::amend).await
         }
         Verb::Build(arguments) => {
             command.call(build, || BuildInput::try_from(arguments), text::build).await
@@ -138,6 +154,29 @@ where
         Verb::Show(arguments) => {
             command.call(show, || ShowInput::try_from(arguments), text::show).await
         }
+    }
+}
+
+// The grammar the completions are generated over: `App` less its hidden
+// verbs, since the generator lists every subcommand whatever its `hide`.
+struct Shown;
+
+impl clap::CommandFactory for Shown {
+    fn command() -> clap::Command {
+        let app = App::command();
+        clap::Command::new(NAME)
+            .bin_name(NAME)
+            .version(env!("CARGO_PKG_VERSION"))
+            .about(ABOUT)
+            .disable_help_subcommand(true)
+            .subcommand_required(true)
+            .arg_required_else_help(true)
+            .args(app.get_arguments().cloned())
+            .subcommands(app.get_subcommands().filter(|verb| !verb.is_hide_set()).cloned())
+    }
+
+    fn command_for_update() -> clap::Command {
+        Self::command()
     }
 }
 
@@ -174,6 +213,11 @@ enum Verb {
     /// Seal the staged candidate as the current revision
     #[command(long_about = APPLY_DESC)]
     Apply(ApplyArgs),
+    // Hidden while the amendment it stages seals nothing: out of `--help`
+    // and the completions until the journey closes.
+    /// Stage an amendment against the current revision from the named sources
+    #[command(long_about = AMEND_DESC, hide = true)]
+    Amend(AmendArgs),
     /// Build every slice of the current plan through a target adapter
     #[command(long_about = BUILD_DESC)]
     Build(BuildArgs),
@@ -244,6 +288,46 @@ impl TryFrom<ApplyArgs> for ApplyInput {
         let target = config::target(config.as_deref(), repository.as_deref())?
             .ok_or_else(|| config::missing_target("`emery apply`"))?;
         Ok(Self { target })
+    }
+}
+
+#[derive(Debug, clap::Args)]
+struct AmendArgs {
+    /// Workspace-backed change source adapters, each an exact package reference
+    /// `namespace:name@version`. Each source is named for its adapter's
+    /// package name; over `--config`, it replaces the `[[source]]` of that name.
+    adapters: Vec<String>,
+    /// Bind an inline change source as `<adapter>=<text>`; repeatable.
+    #[arg(long = "description", short = 'd')]
+    descriptions: Vec<String>,
+    /// The change file whose `[[source]]` tables state the change; the omitted value selects emery.toml.
+    #[arg(long, short = 'c', num_args = 0..=1, default_missing_value = config::CONFIG_FILE)]
+    config: Option<PathBuf>,
+}
+
+impl TryFrom<AmendArgs> for AmendInput {
+    type Error = Error;
+
+    fn try_from(args: AmendArgs) -> Result<Self, Error> {
+        let AmendArgs {
+            adapters,
+            descriptions,
+            config,
+        } = args;
+        let SpecifyInput { sources, target, .. } = config::SourceCarriers {
+            adapters: &adapters,
+            descriptions: &descriptions,
+            config: config.as_deref(),
+        }
+        .try_into()?;
+
+        // a change file naming no target reads the project's
+        let target = match (target, &config) {
+            (Some(target), _) => Some(target),
+            (None, Some(_)) => config::target(None, None)?,
+            (None, None) => None,
+        };
+        Ok(Self { sources, target })
     }
 }
 
@@ -338,6 +422,7 @@ fn artifacts() -> impl TypedValueParser<Value = Artifact> {
 enum Invoked {
     Specify,
     Apply,
+    Amend,
     Build,
     Show,
     Completions,
@@ -348,6 +433,7 @@ impl From<&Verb> for Invoked {
         match verb {
             Verb::Specify(_) => Self::Specify,
             Verb::Apply(_) => Self::Apply,
+            Verb::Amend(_) => Self::Amend,
             Verb::Build(_) => Self::Build,
             Verb::Show(_) => Self::Show,
             Verb::Completions { .. } => Self::Completions,
@@ -367,6 +453,9 @@ fn hint(error: &Error, invoked: Invoked) -> Option<Cow<'static, str>> {
         "unsupported-version" => {
             "update emery: `brew upgrade emery`, or `cargo install --git https://github.com/augentic/emery --locked`"
         }
+        "specify-source-required" if invoked == Invoked::Amend => {
+            "pass one or more adapters to `emery amend`, or name a change file with `--config <path>`"
+        }
         "specify-source-required" => {
             "pass one or more adapters to `emery specify`, or add an `emery.toml` at the project root"
         }
@@ -379,11 +468,19 @@ fn hint(error: &Error, invoked: Invoked) -> Option<Cow<'static, str>> {
         "spec-not-generated" if error.description().contains("does not stand over its head") => {
             "the repository's head moved on without the label: merge or rebase `emery/<revision>` onto the head, or re-run `emery specify --apply` to seal a fresh revision over it"
         }
+        "spec-not-generated"
+            if invoked == Invoked::Amend && error.description().contains("candidate `") =>
+        {
+            "an amendment is prepared against a sealed revision: run `emery apply` to seal the staged candidate, then re-run `emery amend`"
+        }
         "spec-not-generated" if error.description().contains("candidate `") => {
             "run `emery apply` to seal the staged candidate as the current revision, then re-run show or build; `emery show <artifact> --staged` reviews it first"
         }
         "spec-not-generated" if error.description().contains("amendment `") => {
             "review the staged amendment with `emery show amendment`"
+        }
+        "spec-not-generated" if invoked == Invoked::Amend => {
+            "an amendment is prepared against a sealed revision: run `emery specify <adapter>... --apply` to seal one, then re-run `emery amend`"
         }
         "spec-not-generated" => {
             "run `emery specify <adapter>...` to stage a candidate and `emery apply` to seal it (or `emery specify --apply` for both), then re-run show or build"
@@ -402,6 +499,9 @@ fn hint(error: &Error, invoked: Invoked) -> Option<Cow<'static, str>> {
         }
         "amendment-pending" if invoked == Invoked::Specify => {
             "an amendment is staged where the candidate would go: review it with `emery show amendment`, or re-run `emery amend` to prepare it again; a specify never displaces it"
+        }
+        "amendment-pending" if invoked == Invoked::Amend => {
+            "a revision candidate is staged where the amendment would go: seal it with `emery apply`, or review it with `emery show <artifact> --staged`; an amend never displaces it"
         }
         "amendment-pending" => "review the staged amendment with `emery show amendment`",
         "spec-outdated" => {
