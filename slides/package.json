@@ -3,13 +3,17 @@
   "private": true,
   "scripts": {
     "dev": "slidev citizen-coding.md --open",
-    "dev:maturity": "slidev maturity-model.md --open",
+    "dev:story": "slidev trust-story.md --open",
+    "dev:guide": "slidev trust-guide.md --open",
     "build": "slidev build citizen-coding.md",
-    "build:maturity": "slidev build maturity-model.md",
+    "build:story": "slidev build trust-story.md",
+    "build:guide": "slidev build trust-guide.md",
     "export": "slidev export citizen-coding.md",
-    "export:maturity": "slidev export maturity-model.md",
+    "export:story": "slidev export trust-story.md",
+    "export:guide": "slidev export trust-guide.md",
     "export:pptx": "slidev export citizen-coding.md --format pptx",
-    "export:maturity:pptx": "slidev export maturity-model.md --format pptx"
+    "export:story:pptx": "slidev export trust-story.md --format pptx",
+    "export:guide:pptx": "slidev export trust-guide.md --format pptx"
   },
   "dependencies": {
     "@slidev/cli": "^51.0.0",
