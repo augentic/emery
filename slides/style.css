@@ -604,11 +604,11 @@
 }
 
 .section-hero-grid {
-  margin-top: auto;
+  margin-top: 116px;
   margin-bottom: auto;
   display: grid;
   grid-template-columns: 1fr auto;
-  align-items: center;
+  align-items: start;
   gap: 40px;
 }
 

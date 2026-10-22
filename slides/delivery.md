@@ -4,25 +4,24 @@ title: Code is cheap. Delivery is hard.
 aspectRatio: 16/9
 canvasWidth: 1280
 layout: default
-class: slide-hero
+class: slide-hero slide-section
 ---
 
 <AmbientVideo src="/videos/hero-video-3.mp4" variant="hero" />
 
 <Eyebrow text="PROPELLERHEAD · SPEC-DRIVEN DELIVERY" />
 
+<div class="section-hero-grid">
+<div class="section-hero-left">
+
 # Code is cheap.<br>Delivery is hard.
 
-<div class="hero-body">
-<p class="hero-subheadline">How <strong>Emery</strong> and <strong>Omnia</strong> turn citizen-coded prototypes and legacy systems into verified production software.</p>
-<div class="phl-tagline-box">
-<p>Every team now has access to tools that generate working code in minutes. <strong>Writing code is no longer the bottleneck.</strong></p>
-<p>The hard problem is what comes next: graduating the prototypes your business comes to rely on — and modernising the legacy systems you already own — <strong>without inheriting opaque code or losing business rules.</strong></p>
+<p class="section-subtitle">How <strong>The Codex</strong>, <strong>Emery</strong>, and <strong>Omnia</strong> carry software from a Friday prototype or legacy service into verified production.</p>
 </div>
 </div>
 
 <div class="hero-pillars">
-<div class="hero-pillar"><span class="hero-pillar-num">01</span><span>The Codex · Tier 1 governed sandbox</span></div>
+<div class="hero-pillar"><span class="hero-pillar-num">01</span><span>The Codex · Governed AI workspace</span></div>
 <div class="hero-pillar"><span class="hero-pillar-num">02</span><span>Emery · Durable specifications &amp; verified waves</span></div>
 <div class="hero-pillar"><span class="hero-pillar-num">03</span><span>Omnia · Capability-scoped WebAssembly runtime</span></div>
 </div>
@@ -31,23 +30,23 @@ class: slide-hero
 Opening framing:
 - Start with the shift everyone in the room has already felt: generating code used to be expensive and slow; today anyone with a prompt can produce a working screen or script in minutes.
 - That hasn't made software delivery easy — it has moved the bottleneck from writing code to governing, integrating, and owning what gets built.
-- This deck is the technical companion to the Trust Model: how we use The Codex, Emery, and Omnia to keep experiments safe at Tiers 1 and 2, and rebuild proven winners and legacy services cleanly at Tier 3.
+- This deck shows the engineering architecture behind our Trust Model: how The Codex, Emery, and Omnia let domain experts move fast while giving engineering verified, maintainable production systems.
 -->
 
 ---
-title: Give your domain experts a safe lane
+title: Give domain experts a safe lane
 class: slide-light
 ---
 
-<Eyebrow text="PROPELLERHEAD · THE TRUST MODEL IN PRACTICE" />
+<Eyebrow text="PROPELLERHEAD · THE FALSE BINARY" />
 
 <div class="ed-split">
 <div class="ed-prose-col">
 
 # Give domain experts<br>a safe lane.
 
-<p class="ed-prose">Operations, finance, and product teams already use AI to solve real problems. Blocking them drives shadow IT onto personal laptops (<strong>Tier 0</strong>); waving everything into production creates unmaintainable risk.</p>
-<p class="ed-prose">Our answer is a proportionate <strong>Trust Model</strong>: let frontline staff explore freely inside <strong>The Codex</strong> at <strong>Tier 1</strong> (~75% of apps), connect department tools to live data through <strong>Omnia</strong> contracts at <strong>Tier 2</strong> (~20%), and invest senior engineering only in the <strong>~5% of proven winners</strong> that graduate to <strong>Tier 3</strong>.</p>
+<p class="ed-prose">Every team now has access to tools that generate working code in minutes. Operations, finance, and product staff are already using them to solve real problems — because waiting six months in an engineering backlog is slower than building a prototype on Friday afternoon.</p>
+<p class="ed-prose">Organisations usually react in one of two broken ways: <strong>ban it</strong> (which drives builders underground onto personal laptops) or <strong>wave prototypes into production</strong> (which leaves engineering supporting brittle code and raw credentials). The alternative is a <strong>safe lane</strong> where controls scale with the app.</p>
 </div>
 <div class="ed-diagram-pane">
 <svg viewBox="0 0 640 440" aria-hidden="true">
@@ -55,91 +54,61 @@ class: slide-light
   <path d="M 36 86 L 604 86" fill="none" stroke="rgba(180,35,78,0.35)" stroke-width="1.5" stroke-dasharray="4 4" />
   <circle cx="36" cy="86" r="4.5" fill="#b4234e" />
   <text x="52" y="70" class="svg-kicker" fill="#b4234e">FALSE CHOICE 01 · BAN OR QUEUE IT</text>
-  <text x="52" y="110" class="svg-body" fill="rgba(13,16,48,0.65)">Builders hide on personal laptops at Tier 0 → Shadow IT grows unseen</text>
+  <text x="52" y="110" class="svg-body" fill="rgba(13,16,48,0.65)">Builders hide on personal laptops → Shadow IT grows unseen</text>
   <!-- Lower Bad Path: Wave it into production -->
   <path d="M 36 354 L 604 354" fill="none" stroke="rgba(180,35,78,0.35)" stroke-width="1.5" stroke-dasharray="4 4" />
   <circle cx="36" cy="354" r="4.5" fill="#b4234e" />
   <text x="52" y="338" class="svg-kicker" fill="#b4234e">FALSE CHOICE 02 · TRUST THE PROTOTYPE IN PRODUCTION</text>
   <text x="52" y="378" class="svg-body" fill="rgba(13,16,48,0.65)">Raw database keys &amp; brittle prompt code land in live operations</text>
-  <!-- Center Safe Lane: The Propellerhead Trust Model -->
+  <!-- Center Safe Lane -->
   <rect x="20" y="146" width="600" height="142" rx="16" fill="rgba(22,180,226,0.06)" stroke="#0c7fa3" stroke-width="1.8" />
-  <text x="44" y="174" class="svg-kicker" fill="#0c7fa3">THE PROPELLERHEAD SAFE LANE · EARNED TRUST</text>
-  <line x1="96" y1="222" x2="544" y2="222" stroke="#0d1030" stroke-width="2" />
-  <circle cx="96" cy="222" r="24" fill="#ffffff" stroke="#0c7fa3" stroke-width="2" />
-  <text x="96" y="227" text-anchor="middle" class="svg-label" fill="#0c7fa3">T1</text>
-  <text x="96" y="266" text-anchor="middle" class="svg-caption" fill="#0d1030">The Codex (~75%)</text>
-  <circle cx="320" cy="222" r="24" fill="#ffffff" stroke="#0d1030" stroke-width="2" />
-  <text x="320" y="227" text-anchor="middle" class="svg-label" fill="#0d1030">T2</text>
-  <text x="320" y="266" text-anchor="middle" class="svg-caption" fill="#0d1030">Omnia Contracts (~20%)</text>
-  <circle cx="544" cy="222" r="24" fill="#a4238f" />
-  <text x="544" y="227" text-anchor="middle" class="svg-label" fill="#ffffff">T3</text>
-  <text x="544" y="266" text-anchor="middle" class="svg-caption" fill="#a4238f">Emery + Omnia SLA (~5%)</text>
+  <text x="44" y="174" class="svg-kicker" fill="#0c7fa3">THE PROPELLERHEAD SAFE LANE · PROPORTIONATE CONTROL</text>
+  <line x1="104" y1="222" x2="536" y2="222" stroke="#0d1030" stroke-width="2" />
+  <circle cx="104" cy="222" r="22" fill="#ffffff" stroke="#0c7fa3" stroke-width="2" />
+  <text x="104" y="227" text-anchor="middle" class="svg-kicker" fill="#0c7fa3">01</text>
+  <text x="104" y="266" text-anchor="middle" class="svg-caption" fill="#0d1030">Explore in a sandbox</text>
+  <circle cx="320" cy="222" r="22" fill="#ffffff" stroke="#0d1030" stroke-width="2" />
+  <text x="320" y="227" text-anchor="middle" class="svg-kicker" fill="#0d1030">02</text>
+  <text x="320" y="266" text-anchor="middle" class="svg-caption" fill="#0d1030">Connect by contract</text>
+  <circle cx="536" cy="222" r="22" fill="#a4238f" />
+  <text x="536" y="227" text-anchor="middle" class="svg-kicker" fill="#ffffff">03</text>
+  <text x="536" y="266" text-anchor="middle" class="svg-caption" fill="#a4238f">Rebuild the winners</text>
 </svg>
 </div>
 </div>
 
 <!--
 Key message:
-- Every organisation currently faces a false binary with citizen coding: either block it via policy (which drives it underground at Tier 0) or look the other way (which creates a wave of unmaintainable shadow IT).
-- Our safe lane maps directly to the Trust Model: Tier 1 in The Codex for team trials, Tier 2 on Omnia for live data by contract, and Tier 3 with Emery + Omnia for the 5% of winners that become critical.
+- Every organisation currently faces a false binary with citizen coding: either block it via policy (which drives it underground) or look the other way (which creates a wave of unmaintainable shadow IT).
+- The safe lane gives domain experts a fast place to explore, scoped contracts when they need live data, and an engineering rebuild only for the winners that prove critical.
 -->
 
 ---
-title: One engineering problem, two disguises
+title: The Trust Model
 class: slide-light
 ---
 
-<Eyebrow text="PROPELLERHEAD · THE REWRITE TAX" />
+<Eyebrow text="PROPELLERHEAD · THE TRUST MODEL" />
 
 <div class="ed-band">
 <div class="ed-band-top">
 <div>
 
-# One problem,<br>two disguises.
+# Four tiers of earned trust.<br>Three clearances.
 
 </div>
-<p class="ed-band-prose">A nine-month vibe-coded prototype that operations now depend on and a twenty-year-old legacy service that nobody dares touch fail in the <strong>exact same four ways</strong>. In both cases, critical business behaviour is trapped inside code that engineering cannot safely maintain.</p>
+<p class="ed-band-prose">We govern that safe lane through a four-tier <strong>Trust Model</strong>. Every app starts at <strong>Tier 0</strong> on one laptop. Moving into <strong>Tier 1</strong> (~75% of apps) takes days via automated gates. Moving to <strong>Tier 2</strong> (~20%) adds a scoped data contract. Only the <strong>~5% of apps</strong> that become business-critical graduate to <strong>Tier 3</strong> for a verified engineering rebuild.</p>
 </div>
-<div class="ed-band-canvas">
-<svg viewBox="0 0 1140 355" aria-hidden="true">
-  <!-- Two Left Sources converging on the same 4 failure modes -->
-  <circle cx="96" cy="108" r="54" fill="rgba(255,59,107,0.06)" stroke="#b4234e" stroke-width="1.8" stroke-dasharray="5 4" />
-  <text x="96" y="96" text-anchor="middle" class="svg-kicker" fill="#b4234e">SOURCE 01</text>
-  <text x="96" y="116" text-anchor="middle" class="svg-label" fill="#0d1030">Succeeded</text>
-  <text x="96" y="132" text-anchor="middle" class="svg-caption" fill="rgba(13,16,48,0.62)">AI Prototype</text>
-  <circle cx="96" cy="252" r="54" fill="rgba(13,16,48,0.04)" stroke="#0d1030" stroke-width="1.8" />
-  <text x="96" y="240" text-anchor="middle" class="svg-kicker" fill="#0d1030">SOURCE 02</text>
-  <text x="96" y="260" text-anchor="middle" class="svg-label" fill="#0d1030">20-Year-Old</text>
-  <text x="96" y="276" text-anchor="middle" class="svg-caption" fill="rgba(13,16,48,0.62)">Legacy Service</text>
-  <!-- Converging node -->
-  <path d="M 150 108 C 220 108, 230 180, 290 180" fill="none" stroke="#0d1030" stroke-width="1.8" />
-  <path d="M 150 252 C 220 252, 230 180, 290 180" fill="none" stroke="#0d1030" stroke-width="1.8" />
-  <circle cx="290" cy="180" r="6" fill="#b4234e" />
-  <!-- Four Horizontal Failure Branches -->
-  <path d="M 290 180 C 370 180, 380 48, 460 48" fill="none" stroke="rgba(180,35,78,0.45)" stroke-width="1.5" />
-  <path d="M 290 180 C 370 180, 380 136, 460 136" fill="none" stroke="rgba(180,35,78,0.45)" stroke-width="1.5" />
-  <path d="M 290 180 C 370 180, 380 224, 460 224" fill="none" stroke="rgba(180,35,78,0.45)" stroke-width="1.5" />
-  <path d="M 290 180 C 370 180, 380 312, 460 312" fill="none" stroke="rgba(180,35,78,0.45)" stroke-width="1.5" />
-  <circle cx="460" cy="48" r="4.5" fill="#b4234e" />
-  <text x="480" y="42" class="svg-kicker" fill="#b4234e">01 · CONTINUITY · ORPHANED OWNERSHIP</text>
-  <text x="480" y="62" class="svg-h3" fill="#0d1030">The author moved on — and nobody else knows how to fix it safely when it breaks</text>
-  <circle cx="460" cy="136" r="4.5" fill="#b4234e" />
-  <text x="480" y="130" class="svg-kicker" fill="#b4234e">02 · INTENT · EVAPORATED KNOWLEDGE</text>
-  <text x="480" y="150" class="svg-h3" fill="#0d1030">Chat logs and old commits don't separate deliberate business rules from accidents</text>
-  <circle cx="460" cy="224" r="4.5" fill="#b4234e" />
-  <text x="480" y="218" class="svg-kicker" fill="#b4234e">03 · SECURITY · AMBIENT AUTHORITY</text>
-  <text x="480" y="238" class="svg-h3" fill="#0d1030">Broad database credentials, unvetted packages, and un-audited network reach</text>
-  <circle cx="460" cy="312" r="4.5" fill="#b4234e" />
-  <text x="480" y="306" class="svg-kicker" fill="#b4234e">04 · ECONOMICS · THE REWRITE TAX</text>
-  <text x="480" y="326" class="svg-h3" fill="#0d1030">Paying twice: once to discover what the business needs, and again for an emergency rescue</text>
-</svg>
-</div>
+<TrustLadder />
 </div>
 
 <!--
 Key message:
-- Why do we treat citizen-coding graduation (Tier 3) and legacy modernisation with the exact same platform?
-- Because a 9-month prompt-built tool and a 20-year-old service fail in the exact same four ways: orphaned ownership, evaporated intent, ambient credentials, and the rewrite tax.
+- Before looking at the tooling, here is the operating model it serves.
+- Tier 0 (Unmanaged): one person, one laptop. Discovery, not a violation — but nothing shared stays here.
+- Tier 1 (Governed, ~75% of apps): shared with a small team inside The Codex, using synthetic or local data. Most apps live their whole lives here.
+- Tier 2 (Connected, ~20% of apps): department tools reading live internal data through scoped Omnia contracts.
+- Tier 3 (Supported, ~5% of apps): critical systems where operations stall if they stop on Monday morning — rebuilt from an Emery specification and run on Omnia under an engineering SLA.
 -->
 
 ---
@@ -153,7 +122,7 @@ class: slide-sandbox
 
 <div class="chapter-grid">
 <div class="chapter-left">
-<span class="chapter-when">Tiers 1 &amp; 2 · The Codex + Omnia</span>
+<span class="chapter-when">Tiers 1 &amp; 2 · 95% of the Estate</span>
 
 # Design the boundary, not a review committee.
 
@@ -207,9 +176,67 @@ class: slide-sandbox
 
 <!--
 Key message:
-- Governance doesn't work when it's a PDF policy document that people have to remember to follow. It works when it's built into the workspace and the runtime.
+- How do we keep Tiers 1 and 2 fast without consuming per-app engineering time?
 - At Tier 1, The Codex gives builders an approved AI editor, a pre-wired template, and automated CI gates running in an isolated sandbox.
 - At Tier 2, Omnia connects proven department tools to live data through scoped capability contracts rather than raw database credentials.
+-->
+
+---
+title: One engineering problem, two disguises
+class: slide-light
+---
+
+<Eyebrow text="PROPELLERHEAD · WHY TIER 3 REBUILDS" />
+
+<div class="ed-band">
+<div class="ed-band-top">
+<div>
+
+# One problem,<br>two disguises.
+
+</div>
+<p class="ed-band-prose">What happens when an app crosses into <strong>Tier 3</strong> — or when engineering faces a twenty-year-old legacy service? A nine-month vibe-coded prototype that operations now depend on and an ageing legacy codebase fail in the <strong>exact same four ways</strong>: critical behaviour trapped inside code nobody can safely maintain.</p>
+</div>
+<div class="ed-band-canvas">
+<svg viewBox="0 0 1140 355" aria-hidden="true">
+  <!-- Two Left Sources converging on the same 4 failure modes -->
+  <circle cx="96" cy="108" r="54" fill="rgba(255,59,107,0.06)" stroke="#b4234e" stroke-width="1.8" stroke-dasharray="5 4" />
+  <text x="96" y="96" text-anchor="middle" class="svg-kicker" fill="#b4234e">SOURCE 01 · TIER 2 → 3</text>
+  <text x="96" y="116" text-anchor="middle" class="svg-label" fill="#0d1030">Succeeded</text>
+  <text x="96" y="132" text-anchor="middle" class="svg-caption" fill="rgba(13,16,48,0.62)">AI Prototype</text>
+  <circle cx="96" cy="252" r="54" fill="rgba(13,16,48,0.04)" stroke="#0d1030" stroke-width="1.8" />
+  <text x="96" y="240" text-anchor="middle" class="svg-kicker" fill="#0d1030">SOURCE 02 · CORE</text>
+  <text x="96" y="260" text-anchor="middle" class="svg-label" fill="#0d1030">20-Year-Old</text>
+  <text x="96" y="276" text-anchor="middle" class="svg-caption" fill="rgba(13,16,48,0.62)">Legacy Service</text>
+  <!-- Converging node -->
+  <path d="M 150 108 C 220 108, 230 180, 290 180" fill="none" stroke="#0d1030" stroke-width="1.8" />
+  <path d="M 150 252 C 220 252, 230 180, 290 180" fill="none" stroke="#0d1030" stroke-width="1.8" />
+  <circle cx="290" cy="180" r="6" fill="#b4234e" />
+  <!-- Four Horizontal Failure Branches -->
+  <path d="M 290 180 C 370 180, 380 48, 460 48" fill="none" stroke="rgba(180,35,78,0.45)" stroke-width="1.5" />
+  <path d="M 290 180 C 370 180, 380 136, 460 136" fill="none" stroke="rgba(180,35,78,0.45)" stroke-width="1.5" />
+  <path d="M 290 180 C 370 180, 380 224, 460 224" fill="none" stroke="rgba(180,35,78,0.45)" stroke-width="1.5" />
+  <path d="M 290 180 C 370 180, 380 312, 460 312" fill="none" stroke="rgba(180,35,78,0.45)" stroke-width="1.5" />
+  <circle cx="460" cy="48" r="4.5" fill="#b4234e" />
+  <text x="480" y="42" class="svg-kicker" fill="#b4234e">01 · CONTINUITY · ORPHANED OWNERSHIP</text>
+  <text x="480" y="62" class="svg-h3" fill="#0d1030">The author moved on — and nobody else knows how to fix it safely when it breaks</text>
+  <circle cx="460" cy="136" r="4.5" fill="#b4234e" />
+  <text x="480" y="130" class="svg-kicker" fill="#b4234e">02 · INTENT · EVAPORATED KNOWLEDGE</text>
+  <text x="480" y="150" class="svg-h3" fill="#0d1030">Chat logs and old commits don't separate deliberate business rules from accidents</text>
+  <circle cx="460" cy="224" r="4.5" fill="#b4234e" />
+  <text x="480" y="218" class="svg-kicker" fill="#b4234e">03 · SECURITY · AMBIENT AUTHORITY</text>
+  <text x="480" y="238" class="svg-h3" fill="#0d1030">Broad database credentials, unvetted packages, and un-audited network reach</text>
+  <circle cx="460" cy="312" r="4.5" fill="#b4234e" />
+  <text x="480" y="306" class="svg-kicker" fill="#b4234e">04 · ECONOMICS · THE REWRITE TAX</text>
+  <text x="480" y="326" class="svg-h3" fill="#0d1030">Paying twice: once to discover what the business needs, and again for an emergency rescue</text>
+</svg>
+</div>
+</div>
+
+<!--
+Key message:
+- Why does Tier 3 require a specification-driven rebuild rather than hardening the prototype in place?
+- Because a 9-month prompt-built tool and a 20-year-old legacy service fail in the exact same four ways: orphaned ownership, evaporated intent, ambient credentials, and the rewrite tax.
 -->
 
 ---
