@@ -35,6 +35,8 @@ use crate::vcs::{BuildRepo, TargetRef};
 ///     already holds under the target's name was cloned or created under
 ///     another origin.
 /// - Returns [`Error::BadRequest`]:
+///   - with code `amendment-pending`, when an amendment is staged in place
+///     of a revision candidate, which this verb does not seal yet;
 ///   - when the target's name is not kebab-case;
 ///   - with code `spec-outdated`, when the candidate or the revision the
 ///     repository holds uses a different grammar;
@@ -65,13 +67,14 @@ pub(crate) async fn seal<P: StateStore + BlobStore + Vcs + Files>(
     provider: &P, repo: &BuildRepo, standing: Standing,
 ) -> Result<ApplyOutput, Error> {
     let candidate = store::staged(provider).await?.ok_or_else(store::nothing_staged)?;
+    let kind = StagedKind::Revision;
     let sealed = store::commit(provider, repo, &candidate.revision, standing).await?;
     tracing::info!(
         revision = %sealed.id,
         parent = sealed.parent.as_deref().unwrap_or("none"),
         commit = %sealed.commit,
         label = %sealed.label,
-        kind = %candidate.kind,
+        %kind,
         "sealed"
     );
 
@@ -81,7 +84,7 @@ pub(crate) async fn seal<P: StateStore + BlobStore + Vcs + Files>(
         commit: sealed.commit,
         label: sealed.label,
         repository: repo.path(),
-        kind: candidate.kind,
+        kind,
         diff: sealed.diff,
     })
 }

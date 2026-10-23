@@ -24,7 +24,7 @@ use omnia_sdk::plugins::Digest;
 use omnia_sdk::{BlobStore, Error, Model, Plugins, StateStore, Vcs, bad_request, server_error};
 use serde::{Deserialize, Serialize};
 
-pub(crate) use self::basis::GroupingBrief;
+pub(crate) use self::basis::{BASELINE, Basis, Contributor, GroupingBrief};
 pub(crate) use self::design::DesignBrief;
 pub use self::plan::SLICE_CAP;
 pub(crate) use self::plan::SliceBrief;
@@ -35,8 +35,8 @@ pub use crate::apply::ApplyOutput;
 use crate::brief::Brief as _;
 use crate::revision::Revision;
 pub use crate::revision::{
-    BadId, Changed, DesignDiff, Diff, Entry, PlanDiff, ReqId, Role, SectionKind, SliceEntry,
-    SliceId, SpecDiff, Waves,
+    BadId, Changed, DesignDiff, Diff, Entry, PlanDiff, ReqId, Retired, Role, SectionKind,
+    SliceEntry, SliceId, SpecDiff, Waves,
 };
 use crate::vcs::{SourceClone, TargetRef, WorkingCopy};
 use crate::{Files, Rank, apply, preopen_path, store, vcs};
@@ -51,7 +51,9 @@ use crate::{Files, Rank, apply, preopen_path, store, vcs};
 /// failure among them ends the run.
 ///
 /// The drafted revision is staged as the candidate `emery apply` seals,
-/// replacing any staged before it. Where [`SpecifyInput::target`] names the
+/// replacing any revision staged before it; a staged amendment is never
+/// replaced, and the run is refused before any adapter loads while one
+/// stands. Where [`SpecifyInput::target`] names the
 /// repository the specification lives in, the current revision is read
 /// from it before any adapter loads, to report the diff against it; a run
 /// naming no target reads no repository and reports no diff. Under
@@ -62,6 +64,7 @@ use crate::{Files, Rank, apply, preopen_path, store, vcs};
 ///
 /// - Returns [`Error::BadRequest`] when the run is refused:
 ///   - an empty source list, with code `specify-source-required`;
+///   - an amendment standing staged, with code `amendment-pending`;
 ///   - [`SpecifyInput::apply`] with no target, with code
 ///     `build-target-required`;
 ///   - a target whose name is not kebab-case;
@@ -96,6 +99,7 @@ pub async fn specify<P: Model + Source + StateStore + BlobStore + Plugins + Vcs 
     let provider = context.provider();
 
     let bound = Bound::all(&input.sources)?;
+    store::no_amendment(provider).await?;
 
     // the repository the specification lives in, read before any load so
     // the diff and the seal land over what it holds
@@ -109,17 +113,10 @@ pub async fn specify<P: Model + Source + StateStore + BlobStore + Plugins + Vcs 
         None => None,
     };
 
-    let loaded =
-        &adapter::load(provider, bound.iter().map(|source| (source.adapter, source.digest)))
-            .await?;
-
-    // every repository source is read in a working copy that lasts the extraction
-    let checkouts = Checkouts::prepare(provider, &bound).await?;
-    let extracted =
-        future::try_join_all(bound.iter().map(|source| source.extract(provider, loaded))).await;
-    let removed = checkouts.remove(provider).await;
-    let extracts = extracted?;
-    let repositories = removed?;
+    let Extracted {
+        extracts,
+        repositories,
+    } = Bound::extract_all(provider, &bound).await?;
 
     let bases = GroupingBrief::new(&extracts).derive(provider).await?;
     let chunks = SpecBrief::chunked(&extracts, &bases);
@@ -213,6 +210,20 @@ pub struct SourceConfig {
     /// `1`, documentation `2`, behaviour `3`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub rank: Option<Rank>,
+    /// Whether the source states a change alone or its subject whole.
+    #[serde(default)]
+    pub scope: Scope,
+}
+
+/// How much of its subject a [`SourceConfig`] states.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum Scope {
+    /// The source states only what changes, and behaviour it is silent on stands.
+    #[default]
+    Delta,
+    /// The source states its subject's behaviour whole.
+    Whole,
 }
 
 /// A repository a source is read from, at a revision.
@@ -311,7 +322,10 @@ pub struct RepositorySource {
     pub commit: String,
 }
 
-struct Bound<'a> {
+// A source as a run binds it: checked, its input prepared, and ready to
+// extract once its adapter is loaded. `pub(crate)`: `amend` binds its change
+// sources the same way.
+pub(crate) struct Bound<'a> {
     adapter: &'a AdapterRef,
     digest: Option<&'a Digest>,
     repository: Option<&'a SourceRepository>,
@@ -320,7 +334,7 @@ struct Bound<'a> {
 }
 
 impl<'a> Bound<'a> {
-    fn all(sources: &'a [SourceConfig]) -> Result<Vec<Self>, Error> {
+    pub(crate) fn all(sources: &'a [SourceConfig]) -> Result<Vec<Self>, Error> {
         if sources.is_empty() {
             return Err(Error::BadRequest {
                 code: "specify-source-required".into(),
@@ -345,6 +359,31 @@ impl<'a> Bound<'a> {
         }
 
         Ok(bound)
+    }
+
+    // The name the run binds the source under.
+    pub(crate) fn name(&self) -> &str {
+        &self.input.name
+    }
+
+    // Loads every source's adapter, reads each repository source in a
+    // working copy that lasts the extraction, and extracts every source at
+    // once; the first failure ends the run and the copies go whether or not
+    // extraction succeeded.
+    pub(crate) async fn extract_all<P: Source + Plugins + Vcs>(
+        provider: &P, bound: &[Self],
+    ) -> Result<Extracted, Error> {
+        let loaded =
+            &adapter::load(provider, bound.iter().map(|source| (source.adapter, source.digest)))
+                .await?;
+        let checkouts = Checkouts::prepare(provider, bound).await?;
+        let extracted =
+            future::try_join_all(bound.iter().map(|source| source.extract(provider, loaded))).await;
+        let removed = checkouts.remove(provider).await;
+        Ok(Extracted {
+            extracts: extracted?,
+            repositories: removed?,
+        })
     }
 
     #[tracing::instrument(skip_all, fields(source = %self.input.name, adapter = %self.adapter))]
@@ -386,14 +425,22 @@ impl<'a> Bound<'a> {
     }
 }
 
+// What the run extracted from `bound`: every source's evidence in
+// declaration order, and the repository sources read.
+pub(crate) struct Extracted {
+    pub(crate) extracts: Vec<Extract>,
+    pub(crate) repositories: Vec<RepositorySource>,
+}
+
 // `pub(crate)`: the briefs over it are named by the corpus check at the
-// crate root.
+// crate root, and `amend` reads the ranks the standing requirements sit
+// beneath.
 #[derive(Debug)]
 pub(crate) struct Extract {
-    source: String,
-    kind: SourceKind,
-    rank: Rank,
-    evidence: Evidence,
+    pub(crate) source: String,
+    pub(crate) kind: SourceKind,
+    pub(crate) rank: Rank,
+    pub(crate) evidence: Evidence,
 }
 
 // The working copies the repository sources are read in, one per source,

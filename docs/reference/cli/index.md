@@ -26,5 +26,5 @@ brew install emery
 | [emery specify](specify.md) | Generate the specification, design, and build plan from the sources named on the invocation and stage them as one candidate; `--apply` seals it in the same run |
 | [emery apply](apply.md) | Seal the staged candidate as the current revision in the target's repository, under `spec/` at one commit labelled `emery/<revision>` |
 | [emery build](build.md) | Build the sealed plan through a target adapter in waves, each slice merged into the label `emery/<revision>` and each wave verified; a re-run resumes from the label |
-| [emery show](show.md) | Print a reviewable artifact of the current revision, or of the staged candidate under `--staged`, to stdout; `--format json` carries the typed document |
+| [emery show](show.md) | Print a reviewable artifact of the current revision, of the staged candidate under `--staged`, or the staged amendment (`amendment`), to stdout; `--format json` carries the typed document |
 | `emery completions <shell>` | Print a shell-completion script; auto-derived from the live clap surface |

@@ -5,7 +5,7 @@ use std::str::FromStr as _;
 
 use anyhow::Context;
 use emery_engine::build::BuildInput;
-use emery_engine::specify::{SourceConfig, SourceContent, SourceRepository, SpecifyInput};
+use emery_engine::specify::{Scope, SourceConfig, SourceContent, SourceRepository, SpecifyInput};
 use emery_engine::vcs::TargetRef;
 use emery_engine::{AdapterRef, Rank, preopen_join, preopen_path};
 use omnia_sdk::plugins::Digest;
@@ -233,6 +233,7 @@ fn argv_source(reference: &str, content: SourceContent) -> Result<SourceConfig, 
         repository: None,
         digest: None,
         rank: None,
+        scope: Scope::default(),
     })
 }
 
@@ -285,6 +286,8 @@ struct SourceEntry {
     revision: Option<String>,
     digest: Option<Digest>,
     rank: Option<Rank>,
+    #[serde(default)]
+    scope: Scope,
 }
 
 impl SourceEntry {
@@ -338,6 +341,7 @@ impl SourceEntry {
             repository,
             digest: self.digest,
             rank: self.rank,
+            scope: self.scope,
         })
     }
 }

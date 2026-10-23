@@ -26,8 +26,9 @@ pub const ROUTE: &str = "Route:";
 pub const MESSAGE: &str = "Message:";
 /// The `Note:` key used for generated requirement notes.
 pub const NOTE: &str = "Note:";
+/// The `### Requirement:` heading prefix.
+pub const HEADING: &str = "### Requirement:";
 
-const HEADING: &str = "### Requirement:";
 const SCENARIO: &str = "#### Scenario:";
 
 /// A behavioural specification in its stored form.
@@ -109,6 +110,18 @@ impl Requirement {
     #[must_use]
     pub fn stem(&self) -> &str {
         revision::stem(&self.subject)
+    }
+
+    /// Returns the requirement's statement: its [`body`](Self::body) paragraphs
+    /// joined, or `None` when it is in conflict.
+    #[must_use]
+    pub fn statement(&self) -> Option<String> {
+        match self.status {
+            Status::Conflict => None,
+            Status::Agreed | Status::Unknown | Status::Divergence => {
+                Some(self.body.join("\n\n")).filter(|body| !body.is_empty())
+            }
+        }
     }
 
     /// Returns how many anchors this requirement and `other` cite in common:

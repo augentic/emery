@@ -55,9 +55,18 @@ macro_rules! numbered {
                 self.0
             }
 
+            /// Returns the id after this one, or `None` at [`u32::MAX`].
+            #[must_use]
+            pub const fn next(self) -> Option<Self> {
+                match self.0.checked_add(1) {
+                    Some(next) => Some(Self(next)),
+                    None => None,
+                }
+            }
+
             /// Returns the ids in order from [`FIRST`](Self::FIRST), one per record.
             pub fn sequence() -> impl Iterator<Item = Self> {
-                std::iter::successors(Some(Self::FIRST), |id| id.0.checked_add(1).map(Self))
+                std::iter::successors(Some(Self::FIRST), |&id| id.next())
             }
         }
 

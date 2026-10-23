@@ -1,0 +1,148 @@
+{
+  "emery": 8,
+  "base": {
+    "revision": "<revision>",
+    "commit": "9f8e7d6c5b4a39281706f5e4d3c2b1a0f9e8d7c6"
+  },
+  "changes": [
+    {
+      "id": "REQ-001",
+      "subject": "auth.login",
+      "class": "unchanged",
+      "before": "Users sign in with a credential.",
+      "after": "Users sign in with a credential.",
+      "sources": []
+    },
+    {
+      "id": "REQ-002",
+      "subject": "session.timeout",
+      "class": "unchanged",
+      "before": "Sessions expire after an hour of inactivity.",
+      "after": "Sessions expire after an hour of inactivity.",
+      "sources": []
+    },
+    {
+      "id": "REQ-003",
+      "subject": "orders.create",
+      "class": "unchanged",
+      "before": "A signed-in user places an order.",
+      "after": "A signed-in user places an order.",
+      "sources": [
+        {
+          "source": "docs",
+          "claim": "orders.create",
+          "path": null
+        }
+      ]
+    },
+    {
+      "id": "REQ-004",
+      "subject": "orders.cancel",
+      "class": "retired",
+      "before": "A signed-in user cancels an open order.",
+      "after": null,
+      "sources": [
+        {
+          "source": "docs",
+          "claim": "orders.cancel",
+          "path": null
+        }
+      ]
+    }
+  ],
+  "spec": {
+    "emery": 8,
+    "parent": "<revision>",
+    "preamble": [
+      "Sign-in, its session, and orders over both."
+    ],
+    "requirements": [
+      {
+        "id": "REQ-001",
+        "subject": "auth.login",
+        "status": "unknown",
+        "covered": false,
+        "trigger": null,
+        "sources": [
+          {
+            "source": "docs",
+            "claim": "auth.login",
+            "path": null
+          }
+        ],
+        "body": [
+          "Users sign in with a credential."
+        ],
+        "losers": [],
+        "scenarios": [
+          {
+            "name": "Login",
+            "given": [],
+            "when": "a valid credential is presented",
+            "then": "the caller is signed in",
+            "and": []
+          }
+        ]
+      },
+      {
+        "id": "REQ-002",
+        "subject": "session.timeout",
+        "status": "unknown",
+        "covered": false,
+        "trigger": null,
+        "sources": [
+          {
+            "source": "docs",
+            "claim": "session.timeout",
+            "path": null
+          }
+        ],
+        "body": [
+          "Sessions expire after an hour of inactivity."
+        ],
+        "losers": [],
+        "scenarios": [
+          {
+            "name": "Timeout",
+            "given": [],
+            "when": "a session is idle for an hour",
+            "then": "it times out",
+            "and": []
+          }
+        ]
+      },
+      {
+        "id": "REQ-003",
+        "subject": "orders.create",
+        "status": "unknown",
+        "covered": false,
+        "trigger": {
+          "http": {
+            "method": "POST",
+            "path": "/orders"
+          }
+        },
+        "sources": [
+          {
+            "source": "docs",
+            "claim": "orders.create",
+            "path": null
+          }
+        ],
+        "body": [
+          "A signed-in user places an order."
+        ],
+        "losers": [],
+        "scenarios": [
+          {
+            "name": "Create",
+            "given": [],
+            "when": "a signed-in caller places an order",
+            "then": "the order is created",
+            "and": []
+          }
+        ]
+      }
+    ]
+  }
+}

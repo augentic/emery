@@ -176,8 +176,9 @@ async fn no_revision() {
     .await;
     fail(&provider, &["emery", "build", "acme:builder@1.0.0"], 2, "spec-not-generated").await;
 
-    // nothing staged is the other slot's refusal
+    // nothing staged is the other slot's refusal, for either kind
     fail(&provider, &["emery", "show", "spec", "--staged"], 2, "nothing-staged").await;
+    fail(&provider, &["emery", "show", "amendment"], 2, "nothing-staged").await;
     fail(&provider, &["emery", "apply", "--config", PROJECT_CONFIG], 2, "nothing-staged").await;
 }
 
@@ -205,6 +206,7 @@ async fn apply_grammar() {
     let help = String::from_utf8_lossy(&help.stdout);
     assert!(help.contains("--staged"), "{help}");
     assert!(help.contains("--config"), "{help}");
+    assert!(help.contains("amendment"), "{help}");
     let help = cli_ok(&provider, &["emery", "specify", "--help"]).await;
     let help = String::from_utf8_lossy(&help.stdout);
     assert!(help.contains("--apply"), "{help}");
