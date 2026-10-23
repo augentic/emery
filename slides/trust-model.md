@@ -26,7 +26,7 @@ class: slide-hero slide-section
 This deck is the reference. It is written to be read, left behind after the story has been told, and used in the first workshop.
 
 - Part one: how to read the model, and what it is not.
-- Parts two to five: one section per tier, each with an outline, the control stack, what admits an app, and the signals that move it on.
+- Parts two to five: one section per tier. Each answers three questions in turn: what belongs here, how it is bounded, and how it enters and leaves.
 - Part six: applying it, with the three clearances, the owners, the Codex, and the scorecard.
 -->
 
@@ -42,8 +42,8 @@ class: slide-light
 
 # Earned trust,<br>not maturity.
 
-<p class="ed-prose">A maturity model grades an organisation. <strong>The Trust Model describes one app</strong> — measured by who depends on it, what it touches, what happens on Monday morning if it stops, and who sustains it. The same builder may own a throwaway script at Tier 0 and a department tool at Tier 2 on the same day.</p>
-<p class="ed-prose"><strong>Higher is not better.</strong> Each tier is a complete, proportionate operating state, and roughly three in four apps should stay at Tier 1 for life. An app expands its radius only when a real signal says it must — keeping every layer inside it and adding the next clearance.</p>
+<p class="ed-prose">A maturity model grades an organisation. <strong>The Trust Model describes one app</strong> — by who depends on it, what it touches, what happens on Monday morning if it stops, and who sustains it.</p>
+<p class="ed-prose"><strong>Higher is not better.</strong> Each tier is a complete operating state, and roughly three in four apps should stay at Tier 1 for life. An app expands its radius only when a real signal says it must, keeping every layer inside it.</p>
 <p class="ed-footnote">Lineage: <strong>Agile Fluency</strong> (zones as destinations) · <strong>CMMI</strong> (cumulative layers) · <strong>NASA TRL</strong> (readiness) · <strong>Shell</strong> (citizen development at scale).</p>
 </div>
 <div class="ed-diagram-pane">
@@ -103,7 +103,7 @@ class: slide-light
 # The model<br>at a glance.
 
 </div>
-<p class="ed-band-prose">Four tiers, three clearances between them, and the share of a healthy estate at each. Rather than isolated silos, <strong>each tier extends a continuous foundation</strong>: every control established at Tier 1 stays in place through Tier 3, and three quarters of all apps never need to move past Tier 1.</p>
+<p class="ed-band-prose">Four tiers, three clearances between them, and the share of a healthy estate at each. <strong>Each tier extends the foundation beneath it</strong>: every control established at Tier 1 stays in place through Tier 3, and three quarters of all apps never need to move past Tier 1.</p>
 </div>
 <TrustLadder />
 </div>
@@ -111,8 +111,8 @@ class: slide-light
 <!--
 The one diagram that recurs through both decks.
 
-- Read left to right: each column adds one layer, and each gap between columns is a clearance with an indicative cost in time.
-- The bottom row is what a healthy estate looks like after a year: nothing left at Tier 0 for long, three quarters at Tier 1, a fifth at Tier 2, one in twenty supported.
+- Read left to right: each column adds one band, and each gap between columns is a clearance with an indicative cost in time.
+- The bands are cumulative: the builder and AI assistant run through every tier, the Codex from Tier 1, the runtime boundary from Tier 2, the specification and SLA at Tier 3.
 - If the estate is inverted, with most apps at Tier 0, the gap is the workspace. If nothing reaches Tier 3, the gap is usually funding for graduation.
 -->
 
@@ -128,8 +128,8 @@ class: slide-light
 
 # What it<br>is not.
 
-<p class="ed-prose">When people first see a governance framework, they brace for four familiar traps: a ban on building, a slow review committee, a maturity ladder everyone is forced to climb, or a disguised tool mandate.</p>
-<p class="ed-prose"><strong>None of those is true here.</strong> The moment builders think Tier 0 is forbidden, they hide and your inventory becomes fiction. The Trust Model replaces every gatekeeping reflex with an open workspace and proportionate clearances.</p>
+<p class="ed-prose">People brace for four familiar traps: a ban on building, a slow review committee, a maturity ladder everyone must climb, or a disguised tool mandate.</p>
+<p class="ed-prose"><strong>None applies here.</strong> The moment builders think Tier 0 is forbidden, they hide and your inventory becomes fiction. The Trust Model replaces every gatekeeping reflex with an open workspace and proportionate clearances.</p>
 </div>
 <div class="ed-diagram-pane">
 <svg viewBox="0 0 640 440" aria-hidden="true">
@@ -144,7 +144,7 @@ class: slide-light
   <line x1="226" y1="108" x2="278" y2="108" stroke="#0c7fa3" stroke-width="1.6" />
   <polygon points="272,103 282,108 272,113" fill="#0c7fa3" />
   <text x="296" y="102" class="svg-h3" fill="#0d1030">An invitation into the workspace</text>
-  <text x="296" y="122" class="svg-caption" fill="rgba(13,16,48,0.6)">Tier 0 is discovery — bring it into The Codex where it is safer &amp; easier</text>
+  <text x="296" y="122" class="svg-caption" fill="rgba(13,16,48,0.6)">Tier 0 is discovery; The Codex makes it safer &amp; easier</text>
   <line x1="20" y1="146" x2="620" y2="146" stroke="rgba(13,16,48,0.1)" stroke-width="1" />
 
   <!-- Row 02 -->
@@ -153,7 +153,7 @@ class: slide-light
   <line x1="226" y1="202" x2="278" y2="202" stroke="#0c7fa3" stroke-width="1.6" />
   <polygon points="272,197 282,202 272,207" fill="#0c7fa3" />
   <text x="296" y="196" class="svg-h3" fill="#0d1030">Automated first; two planned decisions</text>
-  <text x="296" y="216" class="svg-caption" fill="rgba(13,16,48,0.6)">Pipeline clears T1; data access at T2; production ownership at T3</text>
+  <text x="296" y="216" class="svg-caption" fill="rgba(13,16,48,0.6)">Pipeline clears T1 · owners decide T2 · engineers T3</text>
   <line x1="20" y1="240" x2="620" y2="240" stroke="rgba(13,16,48,0.1)" stroke-width="1" />
 
   <!-- Row 03 -->
@@ -162,7 +162,7 @@ class: slide-light
   <line x1="226" y1="296" x2="278" y2="296" stroke="#0c7fa3" stroke-width="1.6" />
   <polygon points="272,291 282,296 272,301" fill="#0c7fa3" />
   <text x="296" y="290" class="svg-h3" fill="#0d1030">~75% belong at Tier 1 for life</text>
-  <text x="296" y="310" class="svg-caption" fill="rgba(13,16,48,0.6)">Graduation is only for the ~5% that fail the Monday 9am test</text>
+  <text x="296" y="310" class="svg-caption" fill="rgba(13,16,48,0.6)">Only the ~5% failing the Monday 9am test graduate</text>
   <line x1="20" y1="334" x2="620" y2="334" stroke="rgba(13,16,48,0.1)" stroke-width="1" />
 
   <!-- Row 04 -->
@@ -171,7 +171,7 @@ class: slide-light
   <line x1="226" y1="390" x2="278" y2="390" stroke="#0c7fa3" stroke-width="1.6" />
   <polygon points="272,385 282,390 272,395" fill="#0c7fa3" />
   <text x="296" y="384" class="svg-h3" fill="#0d1030">Earned trust and clear ownership</text>
-  <text x="296" y="404" class="svg-caption" fill="rgba(13,16,48,0.6)">Omnia and Emery make T2 &amp; T3 cheap; the model stands without them</text>
+  <text x="296" y="404" class="svg-caption" fill="rgba(13,16,48,0.6)">Tooling makes T2 &amp; T3 cheap; the model stands without it</text>
 </svg>
 </div>
 </div>
@@ -182,7 +182,7 @@ Say these four out loud early. Each one is an objection that otherwise sits unsp
 - Not a ban: the moment builders think Tier 0 is forbidden, they hide, and the inventory becomes fiction.
 - Not a review board: the model has two planned human decisions, each with a defined owner and evidence.
 - Not a ladder: three quarters of apps stay at Tier 1, and that is the model working.
-- Not a technology decision: Omnia and Emery are how we make Tiers 2 and 3 cheap. The model holds with other tools.
+- Not a technology decision: a WASI runtime and spec-driven delivery are how we make Tiers 2 and 3 cheap. The model holds with other tools.
 -->
 
 ---
@@ -211,7 +211,7 @@ title: T0 · Characteristics
 class: slide-light
 ---
 
-<Eyebrow text="TIER 0 · UNMANAGED · CHARACTERISTICS" />
+<Eyebrow text="TIER 0 · UNMANAGED · WHAT BELONGS HERE" />
 
 <div class="ed-split">
 <div class="ed-prose-col">
@@ -222,53 +222,29 @@ class: slide-light
 
 # Personal discovery,<br>limited footprint.
 
-<p class="ed-prose">Every citizen-built tool starts at Tier 0: one domain expert with an operational problem, a laptop, and an AI assistant. When the laptop closes, the app stops; if it fails on Monday morning, nobody else notices.</p>
-<p class="ed-prose"><strong>Tier 0 is the cheapest product discovery an organisation has.</strong> A personal spreadsheet reconciler, a meeting-notes formatter, or a pricing scratchpad is inexpensive to try and discard. While it remains Tier 0, the hard boundary is <strong>one user and no live credentials</strong>.</p>
+<p class="ed-prose">Every citizen-built tool starts here: one domain expert, a laptop, and an AI assistant. When the laptop closes, the app stops.</p>
+<p class="ed-prose"><strong>Tier 0 is the cheapest product discovery an organisation has.</strong> A spreadsheet reconciler or a pricing scratchpad costs almost nothing to try and discard. The one hard boundary: <strong>one user, no live credentials</strong>.</p>
 </div>
 <div class="ed-diagram-pane">
 <svg viewBox="0 0 640 440" aria-hidden="true">
-  <!-- Top Section: 4-Dimension Profile at T0 -->
-  <text x="20" y="28" class="svg-kicker" fill="#b4234e">TIER 0 PROFILE · FOUR SCORECARD DIMENSIONS</text>
+  <!-- Top Section: The four scorecard questions answered at T0 -->
+  <text x="20" y="28" class="svg-kicker" fill="#b4234e">TIER 0 PROFILE · THE FOUR SCORECARD QUESTIONS</text>
   <line x1="20" y1="42" x2="620" y2="42" stroke="rgba(13,16,48,0.14)" stroke-width="1.2" />
 
-  <!-- Row 1: Reach -->
   <text x="20" y="74" class="svg-kicker" fill="#0c7fa3">01 · REACH</text>
-  <text x="165" y="74" class="svg-label" fill="#0d1030">The builder alone (1 person)</text>
-  <circle cx="440" cy="70" r="6" fill="#b4234e" />
-  <circle cx="490" cy="70" r="4" fill="none" stroke="rgba(13,16,48,0.22)" stroke-width="1.5" />
-  <circle cx="540" cy="70" r="4" fill="none" stroke="rgba(13,16,48,0.22)" stroke-width="1.5" />
-  <circle cx="590" cy="70" r="4" fill="none" stroke="rgba(13,16,48,0.22)" stroke-width="1.5" />
+  <text x="200" y="74" class="svg-label" fill="#0d1030">The builder alone</text>
   <line x1="20" y1="92" x2="620" y2="92" stroke="rgba(13,16,48,0.08)" />
 
-  <!-- Row 2: Data -->
   <text x="20" y="122" class="svg-kicker" fill="#0c7fa3">02 · DATA &amp; STATE</text>
-  <text x="165" y="122" class="svg-label" fill="#0d1030">Personal files &amp; pasted extracts</text>
-  <circle cx="440" cy="118" r="6" fill="#b4234e" />
-  <circle cx="490" cy="118" r="4" fill="none" stroke="rgba(13,16,48,0.22)" stroke-width="1.5" />
-  <circle cx="540" cy="118" r="4" fill="none" stroke="rgba(13,16,48,0.22)" stroke-width="1.5" />
-  <circle cx="590" cy="118" r="4" fill="none" stroke="rgba(13,16,48,0.22)" stroke-width="1.5" />
+  <text x="200" y="122" class="svg-label" fill="#0d1030">Personal files and pasted extracts</text>
   <line x1="20" y1="140" x2="620" y2="140" stroke="rgba(13,16,48,0.08)" />
 
-  <!-- Row 3: Monday 9am -->
   <text x="20" y="170" class="svg-kicker" fill="#0c7fa3">03 · MONDAY 9AM</text>
-  <text x="165" y="170" class="svg-label" fill="#0d1030">Nobody notices if it stops</text>
-  <circle cx="440" cy="166" r="6" fill="#b4234e" />
-  <circle cx="490" cy="166" r="4" fill="none" stroke="rgba(13,16,48,0.22)" stroke-width="1.5" />
-  <circle cx="540" cy="166" r="4" fill="none" stroke="rgba(13,16,48,0.22)" stroke-width="1.5" />
-  <circle cx="590" cy="166" r="4" fill="none" stroke="rgba(13,16,48,0.22)" stroke-width="1.5" />
+  <text x="200" y="170" class="svg-label" fill="#0d1030">Nobody notices if it stops</text>
   <line x1="20" y1="188" x2="620" y2="188" stroke="rgba(13,16,48,0.08)" />
 
-  <!-- Row 4: Continuity -->
   <text x="20" y="218" class="svg-kicker" fill="#0c7fa3">04 · CONTINUITY</text>
-  <text x="165" y="218" class="svg-label" fill="#0d1030">None — one laptop, no repo history</text>
-  <circle cx="440" cy="214" r="6" fill="#b4234e" />
-  <circle cx="490" cy="214" r="4" fill="none" stroke="rgba(13,16,48,0.22)" stroke-width="1.5" />
-  <circle cx="540" cy="214" r="4" fill="none" stroke="rgba(13,16,48,0.22)" stroke-width="1.5" />
-  <circle cx="590" cy="214" r="4" fill="none" stroke="rgba(13,16,48,0.22)" stroke-width="1.5" />
-  <text x="440" y="240" text-anchor="middle" class="svg-pill" fill="#b4234e">T0</text>
-  <text x="490" y="240" text-anchor="middle" class="svg-pill" fill="rgba(13,16,48,0.35)">T1</text>
-  <text x="540" y="240" text-anchor="middle" class="svg-pill" fill="rgba(13,16,48,0.35)">T2</text>
-  <text x="590" y="240" text-anchor="middle" class="svg-pill" fill="rgba(13,16,48,0.35)">T3</text>
+  <text x="200" y="218" class="svg-label" fill="#0d1030">None — one laptop, no repository history</text>
 
   <!-- Bottom Section: Typical Archetypes vs Out-of-Bounds -->
   <text x="20" y="286" class="svg-kicker" fill="#0d1030">TYPICAL TIER 0 EXPERIMENTS</text>
@@ -293,7 +269,7 @@ class: slide-light
 </div>
 
 <!--
-What a Tier 0 app actually looks like in the wild.
+What a Tier 0 app looks like in the wild.
 
 - Reach is strictly one person; data is personal extracts; Monday morning impact and continuity are deliberately minimal.
 - Healthy examples: a quick CSV script, a personal formatter, a clickable UI idea.
@@ -305,7 +281,7 @@ title: T0 · Architecture
 class: slide-light
 ---
 
-<Eyebrow text="TIER 0 · UNMANAGED · ARCHITECTURE" />
+<Eyebrow text="TIER 0 · UNMANAGED · HOW IT IS BOUNDED" />
 
 <div class="ed-split is-reversed">
 <div class="ed-diagram-pane">
@@ -336,7 +312,7 @@ class: slide-light
   <circle cx="152" cy="372" r="8" fill="#ffffff" stroke="rgba(13,16,48,0.3)" stroke-width="1.5" stroke-dasharray="2 2" />
   <text x="132" y="362" text-anchor="end" class="svg-kicker" fill="#b4234e">DATA · ABSENT</text>
   <text x="132" y="380" text-anchor="end" class="svg-label" fill="#0d1030">Pasted Extracts</text>
-  <text x="132" y="396" text-anchor="end" class="svg-caption" fill="rgba(13,16,48,0.55)">Spreadsheet copies or personal keys</text>
+  <text x="132" y="396" text-anchor="end" class="svg-caption" fill="rgba(13,16,48,0.55)">Personal exports and keys</text>
   <!-- Bottom-Right Absence: RUN -->
   <circle cx="488" cy="372" r="8" fill="#ffffff" stroke="rgba(13,16,48,0.3)" stroke-width="1.5" stroke-dasharray="2 2" />
   <text x="508" y="362" class="svg-kicker" fill="#b4234e">RUN · ABSENT</text>
@@ -352,16 +328,16 @@ class: slide-light
 
 # One person,<br>one laptop.
 
-<p class="ed-prose">Every app begins here, and that is fine. Tier 0 is an outline of absences — no governed repo, no automated checks, pasted spreadsheet extracts, and no deployment beyond the builder's own machine. If it stops on Monday morning, nobody notices.</p>
-<p class="ed-prose"><strong>Tier 0 is the cheapest product discovery an organisation has.</strong> Nothing needs to be in place while the tool stays personal. The one rule is that nothing shared and nothing connected to live systems stays here.</p>
+<p class="ed-prose">Tier 0 is an outline of absences: no governed repository, no automated checks, pasted extracts in place of live data, and no deployment beyond the builder's own machine.</p>
+<p class="ed-prose"><strong>Nothing needs to be in place while the tool stays personal.</strong> The moment it is shared or connected, it has left Tier 0 — whether or not anyone has noticed yet.</p>
 </div>
 </div>
 
 <!--
 The outline of Tier 0 is an outline of absences, which is the point: nothing is in place, and nothing needs to be, as long as the app stays personal.
 
-- The four boxes are the four lanes of the control stack, dashed because each is empty here.
-- The profile card's four lines are the scorecard's four questions, answered for a typical Tier 0 app.
+- The four dashed nodes are the four lanes of the control stack: build, check, data, run. Each is empty here.
+- The spokes stop short of the centre because nothing connects the builder's laptop to anything the organisation runs.
 -->
 
 ---
@@ -369,26 +345,26 @@ title: T0 · Stack and signals
 class: slide-light
 ---
 
-<Eyebrow text="TIER 0 · UNMANAGED · CONTROLS AND SIGNALS" />
+<Eyebrow text="TIER 0 · UNMANAGED · HOW IT ENTERS AND LEAVES" />
 
 <div class="ed-band">
 <div class="ed-band-top">
 <div>
 
-# Nothing is in place.<br>Nothing has gone wrong.
+# Nothing in place.<br>Nothing wrong.
 
 </div>
-<p class="ed-band-prose">Tier 0 has no entry gate: an app exists here before anyone but its builder knows about it. <strong>A healthy estate leaves no useful app unmanaged for long</strong> — once a prototype proves useful, it moves into the governed workspace or is discarded while the investment is still small.</p>
+<p class="ed-band-prose">Tier 0 has no entry gate: an app exists here before anyone but its builder knows. <strong>A healthy estate leaves no useful app unmanaged for long</strong> — once a prototype proves useful it moves into the governed workspace, or is discarded while the investment is still small.</p>
 </div>
 <div class="ed-band-canvas">
 <svg viewBox="0 0 1140 350" aria-hidden="true">
   <!-- Left Entry: Spontaneous Creation -->
-  <circle cx="96" cy="175" r="54" fill="rgba(255,59,107,0.06)" stroke="#b4234e" stroke-width="1.8" stroke-dasharray="5 4" />
+  <circle cx="96" cy="175" r="62" fill="rgba(255,59,107,0.06)" stroke="#b4234e" stroke-width="1.8" stroke-dasharray="5 4" />
   <text x="96" y="162" text-anchor="middle" class="svg-kicker" fill="#b4234e">NO ENTRY GATE</text>
-  <text x="96" y="182" text-anchor="middle" class="svg-h3" fill="#0d1030">T0 Prototype</text>
-  <text x="96" y="198" text-anchor="middle" class="svg-caption" fill="rgba(13,16,48,0.58)">Afternoon experiment</text>
+  <text x="96" y="182" text-anchor="middle" class="svg-h3" fill="#0d1030">Prototype</text>
+  <text x="96" y="198" text-anchor="middle" class="svg-caption" fill="rgba(13,16,48,0.58)">One afternoon</text>
   <!-- Timeline to Fork -->
-  <line x1="150" y1="175" x2="340" y2="175" stroke="rgba(13,16,48,0.3)" stroke-width="1.8" />
+  <line x1="158" y1="175" x2="340" y2="175" stroke="rgba(13,16,48,0.3)" stroke-width="1.8" />
   <circle cx="340" cy="175" r="5" fill="#0d1030" />
   <text x="245" y="158" text-anchor="middle" class="svg-kicker" fill="rgba(13,16,48,0.55)">DAYS 1 – 7</text>
   <!-- Lower Branch: Discarded (Healthy throwaway) -->
@@ -425,10 +401,10 @@ class: slide-light
 </div>
 
 <!--
-The control stack at Tier 0, and the signals that say it is time to move.
+How an app leaves Tier 0.
 
-- The lit column is the only one that matters for this app today: personal laptop, nothing runs, pasted extracts, runs when the builder runs it.
-- No clearance admits an app to Tier 0; it simply exists. The estate rule is that nothing stays here for long.
+- No clearance admits an app to Tier 0; it simply exists. The estate rule is that nothing useful stays here for long.
+- The fork after the first week: discarded cheaply, or carried into the Codex.
 - Three signals, any one of which is enough: someone else wants it, it has become a habit, or it holds something you would miss.
 -->
 
@@ -458,7 +434,7 @@ title: T1 · Characteristics
 class: slide-light
 ---
 
-<Eyebrow text="TIER 1 · GOVERNED · CHARACTERISTICS" />
+<Eyebrow text="TIER 1 · GOVERNED · WHAT BELONGS HERE" />
 
 <div class="ed-band">
 <div class="ed-band-top">
@@ -468,51 +444,31 @@ class: slide-light
   <span class="ed-tier-sub">Governed · ~75% of apps</span>
 </div>
 
-# Why three in four apps<br>stay here for life.
+# Most apps stay<br>here for life.
 
 </div>
-<p class="ed-band-prose">Most internal tools only need to help a small team of <strong>2 to 4 colleagues</strong> automate a local workflow, without direct access to live production systems. Keeping them at Tier 1 inside <strong>The Codex</strong> gives the team a shared, tested tool quickly — with <strong>bounded exposure</strong> and <strong>low marginal engineering effort</strong>.</p>
+<p class="ed-band-prose">Most internal tools help a team of <strong>2 to 4 colleagues</strong> automate a local workflow with no access to live production systems. Inside <strong>The Codex</strong> they get a shared, tested tool in days — with <strong>bounded exposure</strong> and <strong>low marginal engineering effort</strong>.</p>
 </div>
 <div class="ed-band-canvas">
 <svg viewBox="0 0 1140 340" aria-hidden="true">
-  <!-- Left Half: 4-Dimension Profile at T1 -->
-  <text x="16" y="26" class="svg-kicker" fill="#0c7fa3">TIER 1 PROFILE · FOUR SCORECARD DIMENSIONS</text>
+  <!-- Left Half: The four scorecard questions answered at T1 -->
+  <text x="16" y="26" class="svg-kicker" fill="#0c7fa3">TIER 1 PROFILE · THE FOUR SCORECARD QUESTIONS</text>
   <line x1="16" y1="40" x2="530" y2="40" stroke="rgba(13,16,48,0.14)" stroke-width="1.2" />
 
   <text x="16" y="76" class="svg-kicker" fill="#0c7fa3">01 · REACH</text>
-  <text x="155" y="76" class="svg-label" fill="#0d1030">2–4 people (a team trial)</text>
-  <circle cx="410" cy="72" r="4" fill="none" stroke="rgba(13,16,48,0.22)" stroke-width="1.5" />
-  <circle cx="448" cy="72" r="6" fill="#0c7fa3" />
-  <circle cx="486" cy="72" r="4" fill="none" stroke="rgba(13,16,48,0.22)" stroke-width="1.5" />
-  <circle cx="524" cy="72" r="4" fill="none" stroke="rgba(13,16,48,0.22)" stroke-width="1.5" />
+  <text x="180" y="76" class="svg-label" fill="#0d1030">2–4 people · a team trial</text>
   <line x1="16" y1="96" x2="530" y2="96" stroke="rgba(13,16,48,0.08)" />
 
   <text x="16" y="130" class="svg-kicker" fill="#0c7fa3">02 · DATA &amp; STATE</text>
-  <text x="155" y="130" class="svg-label" fill="#0d1030">Synthetic or local state only</text>
-  <circle cx="410" cy="126" r="4" fill="none" stroke="rgba(13,16,48,0.22)" stroke-width="1.5" />
-  <circle cx="448" cy="126" r="6" fill="#0c7fa3" />
-  <circle cx="486" cy="126" r="4" fill="none" stroke="rgba(13,16,48,0.22)" stroke-width="1.5" />
-  <circle cx="524" cy="126" r="4" fill="none" stroke="rgba(13,16,48,0.22)" stroke-width="1.5" />
+  <text x="180" y="130" class="svg-label" fill="#0d1030">Synthetic or local state only</text>
   <line x1="16" y1="150" x2="530" y2="150" stroke="rgba(13,16,48,0.08)" />
 
   <text x="16" y="184" class="svg-kicker" fill="#0c7fa3">03 · MONDAY 9AM</text>
-  <text x="155" y="184" class="svg-label" fill="#0d1030">A mild annoyance; wait for builder</text>
-  <circle cx="410" cy="180" r="4" fill="none" stroke="rgba(13,16,48,0.22)" stroke-width="1.5" />
-  <circle cx="448" cy="180" r="6" fill="#0c7fa3" />
-  <circle cx="486" cy="180" r="4" fill="none" stroke="rgba(13,16,48,0.22)" stroke-width="1.5" />
-  <circle cx="524" cy="180" r="4" fill="none" stroke="rgba(13,16,48,0.22)" stroke-width="1.5" />
+  <text x="180" y="184" class="svg-label" fill="#0d1030">A mild annoyance · wait for the builder</text>
   <line x1="16" y1="204" x2="530" y2="204" stroke="rgba(13,16,48,0.08)" />
 
   <text x="16" y="238" class="svg-kicker" fill="#0c7fa3">04 · CONTINUITY</text>
-  <text x="155" y="238" class="svg-label" fill="#0d1030">Enterprise GitHub + automated CI</text>
-  <circle cx="410" cy="234" r="4" fill="none" stroke="rgba(13,16,48,0.22)" stroke-width="1.5" />
-  <circle cx="448" cy="234" r="6" fill="#0c7fa3" />
-  <circle cx="486" cy="234" r="4" fill="none" stroke="rgba(13,16,48,0.22)" stroke-width="1.5" />
-  <circle cx="524" cy="234" r="4" fill="none" stroke="rgba(13,16,48,0.22)" stroke-width="1.5" />
-  <text x="410" y="262" text-anchor="middle" class="svg-pill" fill="rgba(13,16,48,0.35)">T0</text>
-  <text x="448" y="262" text-anchor="middle" class="svg-pill" fill="#0c7fa3">T1</text>
-  <text x="486" y="262" text-anchor="middle" class="svg-pill" fill="rgba(13,16,48,0.35)">T2</text>
-  <text x="524" y="262" text-anchor="middle" class="svg-pill" fill="rgba(13,16,48,0.35)">T3</text>
+  <text x="180" y="238" class="svg-label" fill="#0d1030">Enterprise GitHub + automated CI</text>
 
   <!-- Right Half: Three Archetypes that belong at Tier 1 for life -->
   <text x="590" y="26" class="svg-kicker" fill="#0d1030">TYPICAL APPS THAT LIVE AT TIER 1 FOR LIFE</text>
@@ -541,8 +497,8 @@ class: slide-light
 <!--
 Why Tier 1 is the destination for 75% of apps.
 
-- Look at the profile on the left: 2–4 people, synthetic or local state, mild annoyance if it stops, versioned in Enterprise GitHub.
-- Most internal tools fit this shape permanently. They never need to climb to Tier 2 or Tier 3.
+- The profile on the left: 2–4 people, synthetic or local state, mild annoyance if it stops, versioned in Enterprise GitHub.
+- Most internal tools fit this shape permanently. They never need Tier 2 or Tier 3.
 -->
 
 ---
@@ -550,7 +506,7 @@ title: T1 · Architecture
 class: slide-light
 ---
 
-<Eyebrow text="TIER 1 · GOVERNED · ARCHITECTURE" />
+<Eyebrow text="TIER 1 · GOVERNED · HOW IT IS BOUNDED" />
 
 <div class="ed-bottom-split">
 <div class="ed-bottom-canvas">
@@ -606,20 +562,19 @@ class: slide-light
 
 </div>
 <div>
-<p class="ed-prose">Tier 1 is the destination for roughly three in four apps. A small team of two to four colleagues can trial the tool together while the builder's day stays effortless: one approved AI editor, one starter template, and one repository in Enterprise GitHub with automated checks on every push.</p>
-<p class="ed-prose">Because the sandbox holds <strong>synthetic or local data only</strong> and has no path to production systems, exposure is deliberately limited. If it stops on Monday morning, it is only a mild annoyance. That is why the clearance can stay lightweight.</p>
+<p class="ed-prose">One approved AI editor, one starter template, one Enterprise GitHub repository with automated checks on every push. The builder's day looks the same; only the location changed.</p>
+<p class="ed-prose"><strong>The sandbox holds synthetic or local data and has no path to live systems.</strong> That air gap is what keeps the first clearance self-service and the exposure deliberately small.</p>
 </div>
-<div></div>
 </div>
 </div>
 
 <!--
 Tier 1 is the workspace, and the workspace is what we call the Codex.
 
-- Build: one approved editor, one template, Enterprise GitHub. The builder's day looks the same; the location changed.
+- Build: one approved editor, one template, Enterprise GitHub.
 - Check: the gates. These are the automated controls that make the first clearance self-service.
-- Data: nothing live, on purpose. This is what makes the clearance cheap.
 - Run: a sandbox with no path to production, best effort. The builder keeps it alive.
+- The air gap on the right is the whole reason the clearance can be cheap.
 -->
 
 ---
@@ -627,15 +582,15 @@ title: T1 · Stack and signals
 class: slide-light
 ---
 
-<Eyebrow text="TIER 1 · GOVERNED · CONTROLS AND SIGNALS" />
+<Eyebrow text="TIER 1 · GOVERNED · HOW IT ENTERS AND LEAVES" />
 
 <div class="ed-split">
 <div class="ed-prose-col">
 
 # Inside Tier 1 — and<br>when to leave it.
 
-<p class="ed-prose">An app enters Tier 1 the moment a colleague asks for the link or the prototype becomes a weekly habit. Admission is <strong>pipeline-first and self-service</strong>: moving the code into the approved Enterprise GitHub template turns on secret scanning, dependency audits, and tests automatically.</p>
-<p class="ed-prose">Three quarters of apps stay right here. An app only seeks the next clearance when <strong>manual exports go stale</strong>, <strong>five or more people</strong> rely on it across a department, or a missed Monday morning would slow the team down.</p>
+<p class="ed-prose">Admission is <strong>pipeline-first and self-service</strong>: moving the code into the approved template turns on secret scanning, dependency audits, and tests automatically. No meeting.</p>
+<p class="ed-prose">An app leaves only when <strong>manual exports go stale</strong>, <strong>five or more people</strong> rely on it, or a missed Monday morning would slow the team down.</p>
 </div>
 <div class="ed-diagram-pane">
 <svg viewBox="0 0 640 440" aria-hidden="true">
@@ -675,7 +630,7 @@ class: slide-light
 <!--
 Two kinds of control at Tier 1, kept apart on purpose.
 
-- The Codex guides: rules the AI editor follows, a template that starts from a safe shape, coaches who answer in hours. Advisory, and cheap to follow.
+- The Codex guides: rules the AI editor follows, a template that starts from a safe shape, coaches who answer in hours.
 - The gates enforce: secret scan, dependency audit, and tests on protected changes.
 - The clearance is three pieces of evidence the pipeline produces by itself. No meeting.
 - The signals to move up all say the same thing: the app has started to matter beyond a trial.
@@ -707,49 +662,32 @@ title: T2 · Characteristics
 class: slide-light
 ---
 
-<Eyebrow text="TIER 2 · CONNECTED · CHARACTERISTICS" />
+<Eyebrow text="TIER 2 · CONNECTED · WHAT BELONGS HERE" />
 
 <div class="ed-bottom-split">
 <div class="ed-bottom-canvas">
 <svg viewBox="0 0 1140 285" aria-hidden="true">
-  <!-- Left Column: 4-Dimension Profile at T2 -->
-  <text x="16" y="22" class="svg-kicker" fill="#0c7fa3">TIER 2 PROFILE · FOUR DIMENSIONS</text>
+  <!-- Left Column: The four scorecard questions answered at T2 -->
+  <text x="16" y="22" class="svg-kicker" fill="#0c7fa3">TIER 2 PROFILE · THE FOUR SCORECARD QUESTIONS</text>
   <line x1="16" y1="34" x2="480" y2="34" stroke="rgba(13,16,48,0.14)" stroke-width="1.2" />
 
   <text x="16" y="68" class="svg-kicker" fill="#0c7fa3">01 · REACH</text>
-  <text x="148" y="68" class="svg-label" fill="#0d1030">5–24 people (a department)</text>
-  <circle cx="384" cy="64" r="3.5" fill="none" stroke="rgba(13,16,48,0.22)" stroke-width="1.5" />
-  <circle cx="414" cy="64" r="3.5" fill="none" stroke="rgba(13,16,48,0.22)" stroke-width="1.5" />
-  <circle cx="444" cy="64" r="6" fill="#0d1030" />
-  <circle cx="474" cy="64" r="3.5" fill="none" stroke="rgba(13,16,48,0.22)" stroke-width="1.5" />
+  <text x="170" y="68" class="svg-label" fill="#0d1030">5–24 people · a department</text>
   <line x1="16" y1="86" x2="480" y2="86" stroke="rgba(13,16,48,0.08)" />
 
   <text x="16" y="120" class="svg-kicker" fill="#0c7fa3">02 · DATA</text>
-  <text x="148" y="120" class="svg-label" fill="#0d1030">Live internal data via contract</text>
-  <circle cx="384" cy="116" r="3.5" fill="none" stroke="rgba(13,16,48,0.22)" stroke-width="1.5" />
-  <circle cx="414" cy="116" r="3.5" fill="none" stroke="rgba(13,16,48,0.22)" stroke-width="1.5" />
-  <circle cx="444" cy="116" r="6" fill="#0d1030" />
-  <circle cx="474" cy="116" r="3.5" fill="none" stroke="rgba(13,16,48,0.22)" stroke-width="1.5" />
+  <text x="170" y="120" class="svg-label" fill="#0d1030">Live internal data via contract</text>
   <line x1="16" y1="138" x2="480" y2="138" stroke="rgba(13,16,48,0.08)" />
 
   <text x="16" y="172" class="svg-kicker" fill="#0c7fa3">03 · MONDAY 9AM</text>
-  <text x="148" y="172" class="svg-label" fill="#0d1030">Slow day; manual fallback</text>
-  <circle cx="384" cy="168" r="3.5" fill="none" stroke="rgba(13,16,48,0.22)" stroke-width="1.5" />
-  <circle cx="414" cy="168" r="3.5" fill="none" stroke="rgba(13,16,48,0.22)" stroke-width="1.5" />
-  <circle cx="444" cy="168" r="6" fill="#0d1030" />
-  <circle cx="474" cy="168" r="3.5" fill="none" stroke="rgba(13,16,48,0.22)" stroke-width="1.5" />
+  <text x="170" y="172" class="svg-label" fill="#0d1030">A slow day · manual fallback</text>
   <line x1="16" y1="190" x2="480" y2="190" stroke="rgba(13,16,48,0.08)" />
 
   <text x="16" y="224" class="svg-kicker" fill="#0c7fa3">04 · CONTINUITY</text>
-  <text x="148" y="224" class="svg-label" fill="#0d1030">Named business owner + backup</text>
-  <circle cx="384" cy="220" r="3.5" fill="none" stroke="rgba(13,16,48,0.22)" stroke-width="1.5" />
-  <circle cx="414" cy="220" r="3.5" fill="none" stroke="rgba(13,16,48,0.22)" stroke-width="1.5" />
-  <circle cx="444" cy="220" r="6" fill="#0d1030" />
-  <circle cx="474" cy="220" r="3.5" fill="none" stroke="rgba(13,16,48,0.22)" stroke-width="1.5" />
-  <text x="444" y="250" text-anchor="middle" class="svg-pill" fill="#0d1030">T2</text>
+  <text x="170" y="224" class="svg-label" fill="#0d1030">Named business owner + backup</text>
 
   <!-- Right Column: Three-Party Responsibility Split & Archetypes -->
-  <text x="536" y="22" class="svg-kicker" fill="#0d1030">THE TIER 2 OWNERSHIP SPLIT (WHY ENGINEERING DOESN'T BOTTLENECK)</text>
+  <text x="536" y="22" class="svg-kicker" fill="#0d1030">THE TIER 2 OWNERSHIP SPLIT · WHY ENGINEERING DOESN'T BOTTLENECK</text>
   <line x1="536" y1="34" x2="1124" y2="34" stroke="rgba(13,16,48,0.14)" stroke-width="1.2" />
 
   <rect x="536" y="52" width="184" height="114" rx="10" fill="rgba(22,180,226,0.06)" stroke="rgba(12,127,163,0.28)" />
@@ -762,12 +700,12 @@ class: slide-light
   <text x="752" y="76" class="svg-kicker" fill="#0d1030">02 · BUSINESS OWNER</text>
   <text x="752" y="98" class="svg-label" fill="#0d1030">Answers for the tool</text>
   <text x="752" y="118" class="svg-caption" fill="rgba(13,16,48,0.62)">Named owner + backup;</text>
-  <text x="752" y="134" class="svg-caption" fill="rgba(13,16,48,0.62)">owns manual fallback</text>
+  <text x="752" y="134" class="svg-caption" fill="rgba(13,16,48,0.62)">owns the manual fallback</text>
 
   <rect x="932" y="52" width="192" height="114" rx="10" fill="#0d1030" />
   <text x="950" y="76" class="svg-kicker" fill="#78d8f2">03 · ENGINEERING</text>
   <text x="950" y="98" class="svg-label" fill="#ffffff">Owns contracts only</text>
-  <text x="950" y="118" class="svg-caption" fill="rgba(255,255,255,0.7)">Publishes reusable Omnia</text>
+  <text x="950" y="118" class="svg-caption" fill="rgba(255,255,255,0.7)">Publishes reusable capability</text>
   <text x="950" y="134" class="svg-caption" fill="rgba(255,255,255,0.7)">contracts — not the app</text>
 
   <text x="536" y="198" class="svg-kicker" fill="#0c7fa3">TYPICAL TIER 2 DEPARTMENT TOOLS (~20% OF ESTATE)</text>
@@ -788,10 +726,9 @@ class: slide-light
 
 </div>
 <div>
-<p class="ed-prose">At Tier 2, an app serves a department of <strong>5 to 24 people</strong> and connects to live internal data. If it stops on Monday morning, the team has a slow day with a manual spreadsheet fallback, so it does not yet need formal engineering on-call.</p>
-<p class="ed-prose">Instead, continuity is anchored in the business: a <strong>named business owner and backup</strong> stand behind the workflow, while engineering publishes reusable <strong>Omnia capability boundaries</strong> rather than maintaining individual department apps.</p>
+<p class="ed-prose">A department of <strong>5 to 24 people</strong>, connected to live internal data. If it stops on Monday morning, the team has a slow day with a manual fallback — not an outage.</p>
+<p class="ed-prose"><strong>Continuity is anchored in the business</strong>: a named owner and backup stand behind the workflow, while engineering publishes reusable capability contracts once per domain rather than maintaining each app.</p>
 </div>
-<div></div>
 </div>
 </div>
 
@@ -799,7 +736,7 @@ class: slide-light
 What a Tier 2 app looks like in practice.
 
 - 5 to 24 users across a department, connected to live internal data, with a manual fallback if it has a bad Monday morning.
-- The key operating insight: engineering owns reusable platform boundaries while a named business owner and backup stand behind the tool.
+- The key operating insight: engineering owns reusable capability contracts while a named business owner and backup stand behind the tool.
 -->
 
 ---
@@ -807,7 +744,7 @@ title: T2 · Architecture
 class: slide-light
 ---
 
-<Eyebrow text="TIER 2 · CONNECTED · ARCHITECTURE" />
+<Eyebrow text="TIER 2 · CONNECTED · HOW IT IS BOUNDED" />
 
 <div class="ed-split">
 <div class="ed-prose-col">
@@ -816,10 +753,10 @@ class: slide-light
   <span class="ed-tier-sub">Connected · ~20% of apps</span>
 </div>
 
-# Live systems, through<br>an explicit boundary.
+# Live systems,<br>one boundary.
 
-<p class="ed-prose">Tier 2 is where departmental value starts (5 to 24 people), and where most programmes stumble — either by handing out infrastructure credentials or by saying no. The answer is a <strong>capability contract</strong>: the application names the role it needs, while backend choice, credentials, and access policy stay outside its code.</p>
-<p class="ed-prose">The app runs on <strong>Omnia</strong> with a named business owner and backup behind it. If it stops on Monday morning, the team has a slow day with a manual fallback — while platform and data owners maintain reusable boundaries instead of taking over every department app.</p>
+<p class="ed-prose">Tier 2 is where most programmes stumble — by handing out infrastructure credentials, or by saying no. The answer is a <strong>capability contract</strong>: the app names the role it needs; backend, credentials, and access policy stay outside its code.</p>
+<p class="ed-prose"><strong>The WASI runtime enforces that contract at run time.</strong> Platform and data owners maintain reusable boundaries instead of taking over every department app.</p>
 </div>
 <div class="ed-diagram-pane">
 <svg viewBox="0 0 640 440" aria-hidden="true">
@@ -829,37 +766,37 @@ class: slide-light
   <text x="96" y="178" text-anchor="middle" class="svg-h3" fill="#0d1030">Department</text>
   <text x="96" y="196" text-anchor="middle" class="svg-caption" fill="rgba(13,16,48,0.62)">5–24 users</text>
   <text x="96" y="212" text-anchor="middle" class="svg-caption" fill="#0c7fa3">Named owner</text>
-  <!-- Connector to Omnia Contract Gate -->
-  <line x1="164" y1="180" x2="246" y2="180" stroke="#0d1030" stroke-width="1.8" />
-  <polygon points="240,175 250,180 240,185" fill="#0d1030" />
-  <text x="205" y="168" text-anchor="middle" class="svg-caption" fill="#0d1030">No raw keys</text>
-  <!-- Center Gate: Omnia Capability Contract Plane -->
-  <line x1="256" y1="44" x2="256" y2="316" stroke="#0d1030" stroke-width="2.5" />
-  <line x1="396" y1="44" x2="396" y2="316" stroke="#0d1030" stroke-width="2.5" />
-  <rect x="256" y="56" width="140" height="248" fill="rgba(13,16,48,0.04)" />
-  <text x="326" y="34" text-anchor="middle" class="svg-kicker" fill="#0d1030">OMNIA · CAPABILITY BOUNDARY</text>
+  <!-- Connector to the Capability Gate -->
+  <line x1="164" y1="180" x2="236" y2="180" stroke="#0d1030" stroke-width="1.8" />
+  <polygon points="230,175 240,180 230,185" fill="#0d1030" />
+  <text x="200" y="168" text-anchor="middle" class="svg-caption" fill="#0d1030">No raw keys</text>
+  <!-- Center Gate: Capability Contract Plane -->
+  <line x1="246" y1="44" x2="246" y2="316" stroke="#0d1030" stroke-width="2.5" />
+  <line x1="406" y1="44" x2="406" y2="316" stroke="#0d1030" stroke-width="2.5" />
+  <rect x="246" y="56" width="160" height="248" fill="rgba(13,16,48,0.04)" />
+  <text x="326" y="34" text-anchor="middle" class="svg-kicker" fill="#0d1030">WASI RUNTIME · CAPABILITY BOUNDARY</text>
   <circle cx="326" cy="108" r="4" fill="#0c7fa3" />
   <text x="326" y="128" text-anchor="middle" class="svg-label" fill="#0d1030">Declared Purpose</text>
-  <text x="326" y="144" text-anchor="middle" class="svg-caption" fill="rgba(13,16,48,0.58)">Typed interface and policy</text>
+  <text x="326" y="144" text-anchor="middle" class="svg-caption" fill="rgba(13,16,48,0.58)">Typed interface &amp; policy</text>
   <circle cx="326" cy="180" r="4" fill="#0c7fa3" />
   <text x="326" y="200" text-anchor="middle" class="svg-label" fill="#0d1030">Host Authority</text>
   <text x="326" y="216" text-anchor="middle" class="svg-caption" fill="rgba(13,16,48,0.58)">Credentials stay outside</text>
   <circle cx="326" cy="252" r="4" fill="#0c7fa3" />
   <text x="326" y="272" text-anchor="middle" class="svg-label" fill="#0d1030">Observable Boundary</text>
   <text x="326" y="288" text-anchor="middle" class="svg-caption" fill="rgba(13,16,48,0.58)">Contracts checked in CI</text>
-  <!-- Connector from Omnia to Live Internal Data -->
-  <line x1="396" y1="180" x2="478" y2="180" stroke="#0c7fa3" stroke-width="1.8" />
+  <!-- Connector from the Gate to Live Internal Data -->
+  <line x1="406" y1="180" x2="478" y2="180" stroke="#0c7fa3" stroke-width="1.8" />
   <polygon points="472,175 482,180 472,185" fill="#0c7fa3" />
-  <text x="437" y="168" text-anchor="middle" class="svg-caption" fill="#0c7fa3">Granted only</text>
+  <text x="442" y="168" text-anchor="middle" class="svg-caption" fill="#0c7fa3">Granted only</text>
   <!-- Right Node: Live Internal Data -->
   <circle cx="548" cy="180" r="64" fill="#ffffff" stroke="#0d1030" stroke-width="2" />
   <text x="548" y="164" text-anchor="middle" class="svg-kicker" fill="#0c7fa3">CONNECTED</text>
   <text x="548" y="184" text-anchor="middle" class="svg-h3" fill="#0d1030">Live Internal</text>
-  <text x="548" y="202" text-anchor="middle" class="svg-caption" fill="rgba(13,16,48,0.62)">Operational APIs &amp; DBs</text>
+  <text x="548" y="202" text-anchor="middle" class="svg-caption" fill="rgba(13,16,48,0.62)">APIs &amp; databases</text>
   <!-- Bottom Boundary: Regulated / Core Records blocked until Tier 3 -->
   <line x1="40" y1="358" x2="610" y2="358" stroke="#a4238f" stroke-width="1.5" stroke-dasharray="5 5" />
   <text x="326" y="384" text-anchor="middle" class="svg-kicker" fill="#a4238f">TIER 3 BOUNDARY · REGULATED PII, FINANCE &amp; SAFETY RECORDS</text>
-  <text x="326" y="404" text-anchor="middle" class="svg-caption" fill="rgba(13,16,48,0.58)">Admitted only after an Emery specification, verified rebuild, and security sign-off</text>
+  <text x="326" y="404" text-anchor="middle" class="svg-caption" fill="rgba(13,16,48,0.58)">Admitted only after a recovered specification, verified rebuild, and security sign-off</text>
 </svg>
 </div>
 </div>
@@ -869,7 +806,7 @@ Tier 2 is the step that decides whether a programme delivers value or just gover
 
 - Build: nothing changes for the builder except how data is asked for.
 - Check: the pipeline checks capability contracts and compatible shapes before promotion.
-- Data: Omnia mediates the interface while deployment policy sets the concrete reach.
+- Data: the WASI runtime mediates the interface while deployment policy sets the concrete reach.
 - Run: hosted on the platform, with a named business owner. Platform and data teams own reusable boundaries, not each app.
 -->
 
@@ -878,7 +815,7 @@ title: T2 · Stack and signals
 class: slide-light
 ---
 
-<Eyebrow text="TIER 2 · CONNECTED · CONTROLS AND SIGNALS" />
+<Eyebrow text="TIER 2 · CONNECTED · HOW IT ENTERS AND LEAVES" />
 
 <div class="ed-split is-reversed">
 <div class="ed-diagram-pane">
@@ -888,7 +825,7 @@ class: slide-light
   <text x="16" y="124" class="svg-label" fill="#0d1030">Named Owner + Backup</text>
   <text x="16" y="140" class="svg-caption" fill="rgba(13,16,48,0.55)">In the business unit</text>
   <text x="16" y="196" class="svg-label" fill="#0d1030">Capability Contract</text>
-  <text x="16" y="212" class="svg-caption" fill="rgba(13,16,48,0.55)">Purpose, interface &amp; access policy</text>
+  <text x="16" y="212" class="svg-caption" fill="rgba(13,16,48,0.55)">Purpose, interface, policy</text>
   <text x="16" y="268" class="svg-label" fill="#0d1030">Access Review</text>
   <text x="16" y="284" class="svg-caption" fill="rgba(13,16,48,0.55)">Business and data owners</text>
   <path d="M 184 128 C 216 128, 220 204, 248 204" fill="none" stroke="#0c7fa3" stroke-width="1.5" />
@@ -897,7 +834,7 @@ class: slide-light
   <!-- Center Node: T2 Connected -->
   <circle cx="336" cy="204" r="84" fill="#ffffff" stroke="#0d1030" stroke-width="2" />
   <text x="336" y="162" text-anchor="middle" class="svg-kicker" fill="#0c7fa3">T2 · CONNECTED</text>
-  <text x="336" y="186" text-anchor="middle" class="svg-h3" fill="#0d1030">Omnia Runtime</text>
+  <text x="336" y="186" text-anchor="middle" class="svg-h3" fill="#0d1030">WASI Runtime</text>
   <line x1="278" y1="198" x2="394" y2="198" stroke="rgba(13,16,48,0.12)" />
   <text x="336" y="218" text-anchor="middle" class="svg-caption" fill="#0d1030">Contract &amp; schema CI</text>
   <text x="336" y="236" text-anchor="middle" class="svg-caption" fill="#0d1030">Capability telemetry</text>
@@ -920,10 +857,10 @@ class: slide-light
 </div>
 <div class="ed-prose-col">
 
-# Live access crosses<br>an explicit boundary.
+# Live access crosses<br>one boundary.
 
-<p class="ed-prose">The clearance for live data is the one most organisations make too heavy or skip altogether. Here it requires three pieces of evidence: a named business owner with a backup, a declared capability contract, and an <strong>appropriate review of purpose and access policy</strong>.</p>
-<p class="ed-prose">The app stays at Tier 2 unless it crosses one of the three criticality thresholds: <strong>25 or more users</strong> (or anyone external), failing the <strong>Monday 9am test</strong> where operations stall without it, or touching <strong>regulated records</strong>.</p>
+<p class="ed-prose">The live-data clearance is the one most organisations make too heavy or skip altogether. Here it is three pieces of evidence: a named owner with a backup, a declared capability contract, and one <strong>review of purpose and access</strong> by the data owner.</p>
+<p class="ed-prose">The app stays at Tier 2 unless it crosses a criticality threshold: <strong>25 or more users</strong> (or anyone external), <strong>operations stall</strong> on Monday morning without it, or it touches <strong>regulated records</strong>.</p>
 </div>
 </div>
 
@@ -961,7 +898,7 @@ title: T3 · Characteristics
 class: slide-light
 ---
 
-<Eyebrow text="TIER 3 · SUPPORTED · CHARACTERISTICS" />
+<Eyebrow text="TIER 3 · SUPPORTED · WHAT BELONGS HERE" />
 
 <div class="ed-split">
 <div class="ed-prose-col">
@@ -972,46 +909,29 @@ class: slide-light
 
 # When operations<br>stall without it.
 
-<p class="ed-prose">Tier 3 is for the one app in twenty that crosses a criticality threshold: <strong>25 or more users</strong> (or any external customer), touching <strong>regulated records</strong> (PII, finance, safety), or failing the <strong>Monday 9am test</strong> where operations or revenue stall if it stops.</p>
-<p class="ed-prose">At Tier 3, the operating contract changes completely. The domain expert who proved the workflow becomes <strong>Product Owner</strong> — keeping control of priorities and scenarios without carrying a pager — while senior engineering takes ownership of the rebuilt codebase and its formal service level.</p>
+<p class="ed-prose">Tier 3 is for the one app in twenty that crosses a criticality threshold: <strong>25 or more users</strong> or any external customer, <strong>regulated records</strong>, or <strong>operations stall</strong> on Monday morning without it.</p>
+<p class="ed-prose"><strong>The operating contract changes completely.</strong> The domain expert becomes Product Owner — priorities and scenarios, no pager — while senior engineering owns the rebuilt code and its service level.</p>
 </div>
 <div class="ed-diagram-pane">
 <svg viewBox="0 0 640 440" aria-hidden="true">
-  <!-- Top Half: 4-Dimension Profile at T3 -->
+  <!-- Top Half: The four scorecard questions answered at T3 -->
   <text x="20" y="26" class="svg-kicker" fill="#a4238f">TIER 3 PROFILE · ANY ONE THRESHOLD TRIGGERS GRADUATION</text>
   <line x1="20" y1="40" x2="620" y2="40" stroke="rgba(13,16,48,0.14)" stroke-width="1.2" />
 
   <text x="20" y="72" class="svg-kicker" fill="#a4238f">01 · REACH</text>
-  <text x="165" y="72" class="svg-label" fill="#0d1030">25+ staff across teams, or external users</text>
-  <circle cx="455" cy="68" r="3.5" fill="none" stroke="rgba(13,16,48,0.22)" stroke-width="1.5" />
-  <circle cx="500" cy="68" r="3.5" fill="none" stroke="rgba(13,16,48,0.22)" stroke-width="1.5" />
-  <circle cx="545" cy="68" r="3.5" fill="none" stroke="rgba(13,16,48,0.22)" stroke-width="1.5" />
-  <circle cx="590" cy="68" r="6.5" fill="#a4238f" />
+  <text x="200" y="72" class="svg-label" fill="#0d1030">25+ staff across teams, or external users</text>
   <line x1="20" y1="90" x2="620" y2="90" stroke="rgba(13,16,48,0.08)" />
 
   <text x="20" y="120" class="svg-kicker" fill="#a4238f">02 · DATA &amp; STATE</text>
-  <text x="165" y="120" class="svg-label" fill="#0d1030">Regulated or core records (PII, finance, safety)</text>
-  <circle cx="455" cy="116" r="3.5" fill="none" stroke="rgba(13,16,48,0.22)" stroke-width="1.5" />
-  <circle cx="500" cy="116" r="3.5" fill="none" stroke="rgba(13,16,48,0.22)" stroke-width="1.5" />
-  <circle cx="545" cy="116" r="3.5" fill="none" stroke="rgba(13,16,48,0.22)" stroke-width="1.5" />
-  <circle cx="590" cy="116" r="6.5" fill="#a4238f" />
+  <text x="200" y="120" class="svg-label" fill="#0d1030">Regulated or core records (PII, finance, safety)</text>
   <line x1="20" y1="138" x2="620" y2="138" stroke="rgba(13,16,48,0.08)" />
 
   <text x="20" y="168" class="svg-kicker" fill="#a4238f">03 · MONDAY 9AM</text>
-  <text x="165" y="168" class="svg-label" fill="#0d1030">Operations stall — revenue, safety, or SLA hit</text>
-  <circle cx="455" cy="164" r="3.5" fill="none" stroke="rgba(13,16,48,0.22)" stroke-width="1.5" />
-  <circle cx="500" cy="164" r="3.5" fill="none" stroke="rgba(13,16,48,0.22)" stroke-width="1.5" />
-  <circle cx="545" cy="164" r="3.5" fill="none" stroke="rgba(13,16,48,0.22)" stroke-width="1.5" />
-  <circle cx="590" cy="164" r="6.5" fill="#a4238f" />
+  <text x="200" y="168" class="svg-label" fill="#0d1030">Operations stall — revenue, safety, or SLA hit</text>
   <line x1="20" y1="186" x2="620" y2="186" stroke="rgba(13,16,48,0.08)" />
 
   <text x="20" y="216" class="svg-kicker" fill="#a4238f">04 · CONTINUITY</text>
-  <text x="165" y="216" class="svg-label" fill="#0d1030">Senior engineering on call under formal SLA</text>
-  <circle cx="455" cy="212" r="3.5" fill="none" stroke="rgba(13,16,48,0.22)" stroke-width="1.5" />
-  <circle cx="500" cy="212" r="3.5" fill="none" stroke="rgba(13,16,48,0.22)" stroke-width="1.5" />
-  <circle cx="545" cy="212" r="3.5" fill="none" stroke="rgba(13,16,48,0.22)" stroke-width="1.5" />
-  <circle cx="590" cy="212" r="6.5" fill="#a4238f" />
-  <text x="590" y="236" text-anchor="middle" class="svg-pill" fill="#a4238f">T3</text>
+  <text x="200" y="216" class="svg-label" fill="#0d1030">Senior engineering on call under a formal SLA</text>
 
   <!-- Bottom Half: The Handover Contract -->
   <text x="20" y="274" class="svg-kicker" fill="#0d1030">THE GRADUATION HANDOVER · BOTH SIDES PROTECTED</text>
@@ -1026,8 +946,8 @@ class: slide-light
   <rect x="334" y="306" width="286" height="114" rx="12" fill="#0d1030" />
   <text x="354" y="332" class="svg-kicker" fill="#f59ef5">SENIOR ENGINEERING → ON CALL</text>
   <text x="354" y="356" class="svg-h3" fill="#ffffff">Owns the code &amp; SLA</text>
-  <text x="354" y="378" class="svg-caption" fill="rgba(255,255,255,0.72)">Clean Emery wave rebuild, security</text>
-  <text x="354" y="394" class="svg-caption" fill="rgba(255,255,255,0.72)">sign-off, and Omnia production rota</text>
+  <text x="354" y="378" class="svg-caption" fill="rgba(255,255,255,0.72)">Spec-driven wave rebuild, security</text>
+  <text x="354" y="394" class="svg-caption" fill="rgba(255,255,255,0.72)">sign-off, and the production on-call rota</text>
 </svg>
 </div>
 </div>
@@ -1036,7 +956,7 @@ class: slide-light
 What defines a Tier 3 app and how the handover protects both the builder and engineering.
 
 - Any one of the three criticality triggers is enough: 25+ or external users, regulated records, or Monday 9am criticality.
-- The builder never loses their creation — they become Product Owner without a pager, while engineering gets a clean codebase rebuilt from a specification.
+- The builder never loses their creation: they become Product Owner without a pager, while engineering gets a clean codebase rebuilt from a specification.
 -->
 
 ---
@@ -1044,7 +964,7 @@ title: T3 · Architecture
 class: slide-light
 ---
 
-<Eyebrow text="TIER 3 · SUPPORTED · ARCHITECTURE" />
+<Eyebrow text="TIER 3 · SUPPORTED · HOW IT IS BOUNDED" />
 
 <div class="ed-band">
 <div class="ed-band-top">
@@ -1057,7 +977,7 @@ class: slide-light
 # Production, with<br>engineers on call.
 
 </div>
-<p class="ed-band-prose">For the one app in twenty that fails the Monday 9am test, reaches 25+ or external users, or touches regulated data. Graduation is a funded project that protects both sides: <strong>Emery</strong> extracts a durable specification from the working prototype so engineers can rebuild it in verified waves on <strong>Omnia</strong>, while the domain builder becomes Product Owner without ever carrying a pager.</p>
+<p class="ed-band-prose">Graduation is a funded project that protects both sides. The working prototype's rules and scenarios are recovered into a <strong>durable specification</strong>, engineers rebuild it in <strong>verified waves on the WASI runtime</strong>, and the domain builder becomes Product Owner without ever carrying a pager.</p>
 </div>
 <div class="ed-band-canvas">
 <svg viewBox="0 0 1140 340" aria-hidden="true">
@@ -1065,38 +985,38 @@ class: slide-light
   <circle cx="88" cy="175" r="56" fill="#ffffff" stroke="#0d1030" stroke-width="2" />
   <text x="88" y="158" text-anchor="middle" class="svg-kicker" fill="#0c7fa3">PROVEN WINNER</text>
   <text x="88" y="178" text-anchor="middle" class="svg-h3" fill="#0d1030">T2 App</text>
-  <text x="88" y="196" text-anchor="middle" class="svg-caption" fill="rgba(13,16,48,0.58)">9 months of discovery</text>
+  <text x="88" y="196" text-anchor="middle" class="svg-caption" fill="rgba(13,16,48,0.58)">9 months in use</text>
   <!-- Split into Upper Track (Product Ownership) and Lower Track (Engineering & Runtime) -->
   <path d="M 144 155 C 220 155, 230 78, 320 78" fill="none" stroke="#0c7fa3" stroke-width="1.8" />
   <line x1="320" y1="78" x2="940" y2="78" stroke="#0c7fa3" stroke-width="1.8" stroke-dasharray="5 5" />
   <polygon points="934,73 944,78 934,83" fill="#0c7fa3" />
   <circle cx="320" cy="78" r="5" fill="#0c7fa3" />
-  <text x="340" y="54" class="svg-kicker" fill="#0c7fa3">TRACK 01 · CONTINUITY OF INTENT (THE BUILDER)</text>
-  <text x="340" y="72" class="svg-label" fill="#0d1030">Domain Builder becomes Product Owner — owns priorities &amp; scenarios, never the pager</text>
-  <!-- Lower Track: Emery Specify -> Verified Wave Rebuild -> Omnia Production -->
+  <text x="340" y="46" class="svg-kicker" fill="#0c7fa3">TRACK 01 · CONTINUITY OF INTENT (THE BUILDER)</text>
+  <text x="340" y="65" class="svg-label" fill="#0d1030">Domain Builder becomes Product Owner — owns priorities &amp; scenarios, never the pager</text>
+  <!-- Lower Track: Recover -> Verified Wave Rebuild -> Production Runtime -->
   <path d="M 144 195 C 220 195, 230 236, 310 236" fill="none" stroke="#a4238f" stroke-width="2" />
-  <text x="310" y="146" class="svg-kicker" fill="#a4238f">TRACK 02 · PRODUCTION ENGINEERING (EMERY + OMNIA)</text>
-  <!-- Station A: Emery Specify -->
+  <text x="310" y="146" class="svg-kicker" fill="#a4238f">TRACK 02 · PRODUCTION ENGINEERING (SPEC-DRIVEN REBUILD ON THE WASI RUNTIME)</text>
+  <!-- Station A: Recover the specification -->
   <circle cx="360" cy="236" r="50" fill="rgba(164,35,143,0.08)" stroke="#a4238f" stroke-width="2" />
-  <text x="360" y="224" text-anchor="middle" class="svg-kicker" fill="#a4238f">EMERY</text>
-  <text x="360" y="244" text-anchor="middle" class="svg-label" fill="#0d1030">Specify</text>
+  <text x="360" y="224" text-anchor="middle" class="svg-kicker" fill="#a4238f">RECOVER</text>
+  <text x="360" y="244" text-anchor="middle" class="svg-label" fill="#0d1030">Specification</text>
   <text x="360" y="308" text-anchor="middle" class="svg-body" fill="#0d1030">Extracts rules &amp; scenarios</text>
   <text x="360" y="325" text-anchor="middle" class="svg-caption" fill="rgba(13,16,48,0.55)">From the working prototype</text>
   <line x1="410" y1="236" x2="596" y2="236" stroke="#a4238f" stroke-width="2" />
   <polygon points="590,231 600,236 590,241" fill="#a4238f" />
   <text x="503" y="222" text-anchor="middle" class="svg-caption" fill="#a4238f">Drop prototype code</text>
-  <!-- Station B: Emery Verified Build -->
+  <!-- Station B: Verified Wave Rebuild -->
   <circle cx="650" cy="236" r="50" fill="#0d1030" />
-  <text x="650" y="224" text-anchor="middle" class="svg-kicker" fill="#78d8f2">EMERY</text>
-  <text x="650" y="244" text-anchor="middle" class="svg-label" fill="#ffffff">Verify &amp; Build</text>
+  <text x="650" y="224" text-anchor="middle" class="svg-kicker" fill="#78d8f2">VERIFY</text>
+  <text x="650" y="244" text-anchor="middle" class="svg-label" fill="#ffffff">Wave Rebuild</text>
   <text x="650" y="308" text-anchor="middle" class="svg-body" fill="#0d1030">Rebuilt in verified waves</text>
   <text x="650" y="325" text-anchor="middle" class="svg-caption" fill="rgba(13,16,48,0.55)">Coverage traced to requirements</text>
   <line x1="700" y1="236" x2="886" y2="236" stroke="#0d1030" stroke-width="2" />
   <polygon points="880,231 890,236 880,241" fill="#0d1030" />
   <text x="793" y="222" text-anchor="middle" class="svg-caption" fill="#0d1030">Explicit capability policy</text>
-  <!-- Station C: Omnia Production SLA -->
+  <!-- Station C: Production Runtime under SLA -->
   <circle cx="995" cy="175" r="68" fill="#a4238f" />
-  <text x="995" y="152" text-anchor="middle" class="svg-kicker" fill="rgba(255,255,255,0.85)">T3 · OMNIA</text>
+  <text x="995" y="152" text-anchor="middle" class="svg-kicker" fill="rgba(255,255,255,0.85)">T3 · WASI RUNTIME</text>
   <text x="995" y="175" text-anchor="middle" class="svg-h3" fill="#ffffff">Supported</text>
   <text x="995" y="195" text-anchor="middle" class="svg-caption" fill="rgba(255,255,255,0.85)">Engineers on call · SLA</text>
   <text x="995" y="266" text-anchor="middle" class="svg-body" fill="#0d1030">Regulated data admitted explicitly</text>
@@ -1107,8 +1027,8 @@ class: slide-light
 <!--
 Tier 3 is production, and it is rare by design.
 
-- Build and check are Emery's role: recover a specification, build bounded slices, then verify each integrated wave before promotion.
-- Data and run are Omnia's: explicit capability boundaries, deployment policy, and a production runtime with engineering on call.
+- Build and check are spec-driven development's role: recover a specification, build bounded slices, then verify each integrated wave before promotion.
+- Data and run are the WASI runtime's: explicit capability boundaries, deployment policy, and a production runtime with engineering on call.
 - The handover is the point. The builder keeps the product as its owner. Engineering owns the code and the pager.
 -->
 
@@ -1117,33 +1037,35 @@ title: T3 · Stack and the rebuild
 class: slide-light
 ---
 
-<Eyebrow text="TIER 3 · SUPPORTED · CONTROLS AND THE REBUILD" />
+<Eyebrow text="TIER 3 · SUPPORTED · HOW IT ENTERS" />
 
 <div class="ed-bottom-split">
 <div class="ed-bottom-canvas">
 <svg viewBox="0 0 1140 285" aria-hidden="true">
   <!-- Origin: Month 9 Prototype -->
-  <circle cx="92" cy="142" r="52" fill="#ffffff" stroke="#0d1030" stroke-width="2" />
-  <text x="92" y="130" text-anchor="middle" class="svg-kicker" fill="#0c7fa3">CRITICAL SIGNAL</text>
+  <circle cx="92" cy="142" r="56" fill="#ffffff" stroke="#0d1030" stroke-width="2" />
+  <text x="92" y="130" text-anchor="middle" class="svg-kicker" fill="#0c7fa3">T2 · CRITICAL</text>
   <text x="92" y="150" text-anchor="middle" class="svg-label" fill="#0d1030">Proven App</text>
   <text x="92" y="166" text-anchor="middle" class="svg-caption" fill="rgba(13,16,48,0.55)">Monday 9am test</text>
   <!-- Top Dead-End Path: Harden in place -->
-  <path d="M 144 120 C 230 120, 250 42, 360 42 L 690 42" fill="none" stroke="rgba(180,35,78,0.4)" stroke-width="1.5" stroke-dasharray="4 4" />
+  <path d="M 148 120 C 230 120, 250 42, 360 42 L 690 42" fill="none" stroke="rgba(180,35,78,0.4)" stroke-width="1.5" stroke-dasharray="4 4" />
   <line x1="684" y1="34" x2="698" y2="50" stroke="#b4234e" stroke-width="2" />
   <line x1="698" y1="34" x2="684" y2="50" stroke="#b4234e" stroke-width="2" />
   <text x="370" y="28" class="svg-kicker" fill="#b4234e">BAD OPTION 01 · HARDEN IN PLACE</text>
-  <text x="716" y="46" class="svg-body" fill="rgba(13,16,48,0.62)">Engineers inherit months of opaque prompt-generated code nobody can safely maintain</text>
+  <text x="716" y="38" class="svg-body" fill="rgba(13,16,48,0.62)">Engineers inherit months of opaque</text>
+  <text x="716" y="54" class="svg-body" fill="rgba(13,16,48,0.62)">generated code nobody can maintain</text>
   <!-- Bottom Dead-End Path: Blank-page rewrite -->
-  <path d="M 144 164 C 230 164, 250 242, 360 242 L 690 242" fill="none" stroke="rgba(180,35,78,0.4)" stroke-width="1.5" stroke-dasharray="4 4" />
+  <path d="M 148 164 C 230 164, 250 242, 360 242 L 690 242" fill="none" stroke="rgba(180,35,78,0.4)" stroke-width="1.5" stroke-dasharray="4 4" />
   <line x1="684" y1="234" x2="698" y2="250" stroke="#b4234e" stroke-width="2" />
   <line x1="698" y1="234" x2="684" y2="250" stroke="#b4234e" stroke-width="2" />
   <text x="370" y="228" class="svg-kicker" fill="#b4234e">BAD OPTION 02 · START FROM A BLANK PAGE</text>
-  <text x="716" y="246" class="svg-body" fill="rgba(13,16,48,0.62)">Throws away the rules, edge cases, and workflows the prototype already paid to discover</text>
+  <text x="716" y="238" class="svg-body" fill="rgba(13,16,48,0.62)">Throws away the rules and edge cases</text>
+  <text x="716" y="254" class="svg-body" fill="rgba(13,16,48,0.62)">the prototype already paid to discover</text>
   <!-- Center Winning Spine: The Third Option (Specification + Verified Rebuild) -->
-  <line x1="144" y1="142" x2="352" y2="142" stroke="#0c7fa3" stroke-width="2.5" />
+  <line x1="148" y1="142" x2="352" y2="142" stroke="#0c7fa3" stroke-width="2.5" />
   <polygon points="346,137 356,142 346,147" fill="#0c7fa3" />
   <rect x="358" y="108" width="236" height="68" rx="12" fill="#0d1030" />
-  <text x="476" y="134" text-anchor="middle" class="svg-kicker" fill="#78d8f2">THE THIRD OPTION · EMERY</text>
+  <text x="476" y="134" text-anchor="middle" class="svg-kicker" fill="#78d8f2">THE THIRD OPTION · SPEC-DRIVEN</text>
   <text x="476" y="156" text-anchor="middle" class="svg-h3" fill="#ffffff">Durable Specification</text>
   <line x1="594" y1="142" x2="736" y2="142" stroke="#a4238f" stroke-width="2.5" />
   <polygon points="730,137 740,142 730,147" fill="#a4238f" />
@@ -1152,9 +1074,10 @@ class: slide-light
   <text x="850" y="156" text-anchor="middle" class="svg-h3" fill="#0d1030">Clean Rebuild</text>
   <line x1="958" y1="142" x2="1022" y2="142" stroke="#a4238f" stroke-width="2.5" />
   <polygon points="1016,137 1026,142 1016,147" fill="#a4238f" />
-  <circle cx="1076" cy="142" r="46" fill="#a4238f" />
-  <text x="1076" y="136" text-anchor="middle" class="svg-kicker" fill="rgba(255,255,255,0.85)">T3 SLA</text>
-  <text x="1076" y="154" text-anchor="middle" class="svg-label" fill="#ffffff">Omnia</text>
+  <circle cx="1076" cy="142" r="50" fill="#a4238f" />
+  <text x="1076" y="130" text-anchor="middle" class="svg-kicker" fill="rgba(255,255,255,0.85)">T3 · WASI</text>
+  <text x="1076" y="148" text-anchor="middle" class="svg-label" fill="#ffffff">Runtime</text>
+  <text x="1076" y="164" text-anchor="middle" class="svg-caption" fill="rgba(255,255,255,0.85)">+ SLA</text>
 </svg>
 </div>
 <div class="ed-bottom-prose-row">
@@ -1164,10 +1087,9 @@ class: slide-light
 
 </div>
 <div>
-<p class="ed-prose">Hardening a prototype in place forces engineers to own months of generated code nobody understands. Starting over from a blank page loses everything the prototype discovered. <strong>The specification is the third option</strong>: Emery reads the working app's behaviour and scenarios into a versioned spec, and engineers rebuild from it cleanly.</p>
-<p class="ed-prose">Admission to Tier 3 requires three pieces of evidence: the <strong>durable specification</strong>, a <strong>verified rebuild</strong> with requirement coverage and integrated-wave checks visible, and an <strong>engineering SLA</strong> with the builder named as Product Owner.</p>
+<p class="ed-prose">Hardening a prototype in place saddles engineers with months of generated code nobody understands. A blank-page rewrite loses everything the prototype discovered. <strong>The specification is the third option.</strong></p>
+<p class="ed-prose">Admission to Tier 3 is three pieces of evidence: the <strong>durable specification</strong>, a <strong>verified rebuild</strong> with requirement coverage visible, and an <strong>engineering SLA</strong> naming the builder as Product Owner.</p>
 </div>
-<div></div>
 </div>
 </div>
 
@@ -1176,7 +1098,7 @@ The production clearance, and the argument for rebuilding from a specification r
 
 - Three pieces of evidence: the specification, the verified rebuild, and the operating agreement with an SLA and a product owner.
 - Hardening in place inherits code nobody understands. Starting over loses the discovery the prototype paid for. The specification keeps the second and avoids the first.
-- Emery's role is to make that specification cheap to derive and the rebuild cheap to verify.
+- Spec-driven tooling makes that specification cheap to derive and the rebuild cheap to verify.
 -->
 
 ---
@@ -1209,51 +1131,93 @@ class: slide-light
 <div class="ed-split is-reversed">
 <div class="ed-diagram-pane">
 <svg viewBox="0 0 680 440" aria-hidden="true">
-  <!-- Diagonal rising spine from T0 to T3 -->
-  <line x1="64" y1="364" x2="616" y2="76" stroke="rgba(13,16,48,0.16)" stroke-width="2" />
-  <!-- Tier Circles along the diagonal -->
-  <circle cx="64" cy="364" r="24" fill="#ffffff" stroke="#b4234e" stroke-width="1.5" stroke-dasharray="4 4" />
-  <text x="64" y="368" text-anchor="middle" class="svg-label" fill="#b4234e">T0</text>
-  <circle cx="248" cy="268" r="26" fill="#e8f6fb" stroke="#0c7fa3" stroke-width="2" />
-  <text x="248" y="273" text-anchor="middle" class="svg-label" fill="#0c7fa3">T1</text>
-  <circle cx="432" cy="172" r="26" fill="#ffffff" stroke="#0d1030" stroke-width="2" />
-  <text x="432" y="177" text-anchor="middle" class="svg-label" fill="#0d1030">T2</text>
-  <circle cx="616" cy="76" r="26" fill="#a4238f" />
-  <text x="616" y="81" text-anchor="middle" class="svg-label" fill="#ffffff">T3</text>
-  <!-- Gate 01 Diamond + vertical leader down -->
-  <polygon points="156,306 166,316 156,326 146,316" fill="#0c7fa3" />
-  <line x1="156" y1="326" x2="156" y2="378" stroke="#0c7fa3" stroke-width="1.2" />
-  <text x="156" y="396" text-anchor="middle" class="svg-kicker" fill="#0c7fa3">01 · CLEARED TO SHARE (DAYS)</text>
-  <text x="156" y="414" text-anchor="middle" class="svg-body" fill="#0d1030">Pipeline self-service · No planned sign-off</text>
-  <text x="156" y="430" text-anchor="middle" class="svg-caption" fill="rgba(13,16,48,0.55)">Template, secret scan, dependency audit &amp; onboarding</text>
-  <!-- Gate 02 Diamond + vertical leader up/down -->
-  <polygon points="340,210 350,220 340,230 330,220" fill="#0d1030" />
-  <line x1="340" y1="112" x2="340" y2="210" stroke="#0d1030" stroke-width="1.2" />
-  <text x="340" y="64" text-anchor="middle" class="svg-kicker" fill="#0d1030">02 · CLEARED FOR LIVE DATA (WEEKS)</text>
-  <text x="340" y="82" text-anchor="middle" class="svg-body" fill="#0d1030">Human decision #1 — Purpose &amp; data access</text>
-  <text x="340" y="98" text-anchor="middle" class="svg-caption" fill="rgba(13,16,48,0.55)">Named owner + explicit capability contract</text>
-  <!-- Gate 03 Diamond + vertical leader down -->
-  <polygon points="524,114 534,124 524,134 514,124" fill="#a4238f" />
-  <line x1="524" y1="134" x2="524" y2="236" stroke="#a4238f" stroke-width="1.2" />
-  <text x="524" y="256" text-anchor="middle" class="svg-kicker" fill="#a4238f">03 · CLEARED FOR PRODUCTION (FUNDED)</text>
-  <text x="524" y="274" text-anchor="middle" class="svg-body" fill="#0d1030">Human decision #2 — Production ownership</text>
-  <text x="524" y="290" text-anchor="middle" class="svg-caption" fill="rgba(13,16,48,0.55)">Sealed spec, verified rebuild, risk controls &amp; SLA</text>
+  <!-- Transition labels above each card -->
+  <text x="114" y="22" text-anchor="middle" class="svg-kicker" fill="rgba(13,16,48,0.55)">T0 → T1</text>
+  <text x="340" y="22" text-anchor="middle" class="svg-kicker" fill="rgba(13,16,48,0.55)">T1 → T2</text>
+  <text x="566" y="22" text-anchor="middle" class="svg-kicker" fill="rgba(13,16,48,0.55)">T2 → T3</text>
+
+  <!-- Card 01: Cleared to share -->
+  <rect x="10" y="40" width="208" height="380" rx="14" fill="#ffffff" stroke="#0c7fa3" stroke-width="1.8" />
+  <text x="26" y="66" class="svg-kicker" fill="#0c7fa3">01 · CLEARED TO SHARE</text>
+  <text x="26" y="88" class="svg-h3" fill="#0d1030">Days · Self-service</text>
+  <line x1="26" y1="102" x2="202" y2="102" stroke="rgba(13,16,48,0.12)" />
+
+  <text x="26" y="130" class="svg-kicker" fill="rgba(13,16,48,0.5)">TRIGGER</text>
+  <text x="26" y="150" class="svg-body" fill="#0d1030">A colleague asks for</text>
+  <text x="26" y="166" class="svg-body" fill="#0d1030">the link, or it becomes a habit</text>
+
+  <text x="26" y="198" class="svg-kicker" fill="rgba(13,16,48,0.5)">AUTOMATED EVIDENCE</text>
+  <text x="26" y="218" class="svg-body" fill="#0d1030">Template adopted</text>
+  <text x="26" y="234" class="svg-body" fill="#0d1030">Secret scan, audit, tests</text>
+
+  <text x="26" y="266" class="svg-kicker" fill="rgba(13,16,48,0.5)">HUMAN DECISION</text>
+  <text x="26" y="286" class="svg-body" fill="#0d1030">None planned</text>
+  <text x="26" y="302" class="svg-body" fill="#0d1030">Pipeline evidence clears it</text>
+
+  <rect x="26" y="340" width="176" height="36" rx="8" fill="rgba(22,180,226,0.1)" stroke="rgba(12,127,163,0.3)" />
+  <text x="114" y="357" text-anchor="middle" class="svg-pill" fill="#0c7fa3">ENABLED BY</text>
+  <text x="114" y="370" text-anchor="middle" class="svg-caption" fill="#0d1030">The Codex</text>
+
+  <!-- Card 02: Cleared for live data -->
+  <rect x="236" y="40" width="208" height="380" rx="14" fill="#ffffff" stroke="#0d1030" stroke-width="1.8" />
+  <text x="252" y="66" class="svg-kicker" fill="#0d1030">02 · CLEARED FOR LIVE DATA</text>
+  <text x="252" y="88" class="svg-h3" fill="#0d1030">Weeks · One review</text>
+  <line x1="252" y1="102" x2="428" y2="102" stroke="rgba(13,16,48,0.12)" />
+
+  <text x="252" y="130" class="svg-kicker" fill="rgba(13,16,48,0.5)">TRIGGER</text>
+  <text x="252" y="150" class="svg-body" fill="#0d1030">Live data needed, or</text>
+  <text x="252" y="166" class="svg-body" fill="#0d1030">5+ people rely on it</text>
+
+  <text x="252" y="198" class="svg-kicker" fill="rgba(13,16,48,0.5)">AUTOMATED EVIDENCE</text>
+  <text x="252" y="218" class="svg-body" fill="#0d1030">Declared capability contract</text>
+  <text x="252" y="234" class="svg-body" fill="#0d1030">Contract checks pass in CI</text>
+
+  <text x="252" y="266" class="svg-kicker" fill="rgba(13,16,48,0.5)">HUMAN DECISION #1</text>
+  <text x="252" y="286" class="svg-body" fill="#0d1030">Business and data owners</text>
+  <text x="252" y="302" class="svg-body" fill="#0d1030">accept purpose and access</text>
+
+  <rect x="252" y="340" width="176" height="36" rx="8" fill="#0d1030" />
+  <text x="340" y="357" text-anchor="middle" class="svg-pill" fill="#78d8f2">ENABLED BY</text>
+  <text x="340" y="370" text-anchor="middle" class="svg-caption" fill="#ffffff">WASI runtime boundary</text>
+
+  <!-- Card 03: Cleared for production -->
+  <rect x="462" y="40" width="208" height="380" rx="14" fill="rgba(164,35,143,0.06)" stroke="#a4238f" stroke-width="1.8" />
+  <text x="478" y="66" class="svg-kicker" fill="#a4238f">03 · CLEARED FOR PRODUCTION</text>
+  <text x="478" y="88" class="svg-h3" fill="#0d1030">A funded project</text>
+  <line x1="478" y1="102" x2="654" y2="102" stroke="rgba(13,16,48,0.12)" />
+
+  <text x="478" y="130" class="svg-kicker" fill="rgba(13,16,48,0.5)">TRIGGER</text>
+  <text x="478" y="150" class="svg-body" fill="#0d1030">25+ or external users,</text>
+  <text x="478" y="166" class="svg-body" fill="#0d1030">regulated data, or stalls</text>
+
+  <text x="478" y="198" class="svg-kicker" fill="rgba(13,16,48,0.5)">AUTOMATED EVIDENCE</text>
+  <text x="478" y="218" class="svg-body" fill="#0d1030">Recovered specification</text>
+  <text x="478" y="234" class="svg-body" fill="#0d1030">Verified wave rebuild</text>
+
+  <text x="478" y="266" class="svg-kicker" fill="rgba(13,16,48,0.5)">HUMAN DECISION #2</text>
+  <text x="478" y="286" class="svg-body" fill="#0d1030">Engineering accepts</text>
+  <text x="478" y="302" class="svg-body" fill="#0d1030">ownership, risk and the SLA</text>
+
+  <rect x="478" y="340" width="176" height="36" rx="8" fill="#a4238f" />
+  <text x="566" y="357" text-anchor="middle" class="svg-pill" fill="rgba(255,255,255,0.85)">ENABLED BY</text>
+  <text x="566" y="370" text-anchor="middle" class="svg-caption" fill="#ffffff">Spec-driven delivery + recipe</text>
 </svg>
 </div>
 <div class="ed-prose-col">
 
 # Three clearances.<br>Two planned decisions.
 
-<p class="ed-prose">A clearance is evidence, not a committee. The first clearance is designed to be produced by the pipeline, so moving a prototype into the governed workspace is self-service.</p>
-<p class="ed-prose">The model introduces <strong>two planned human decisions</strong>: at Tier 2, the accountable owners accept the purpose and live access; at Tier 3, engineering accepts production ownership, risk controls, and the service level.</p>
+<p class="ed-prose">A clearance is evidence, not a committee. The first is produced by the pipeline alone, so moving a prototype into the governed workspace is self-service.</p>
+<p class="ed-prose">The model has <strong>two planned human decisions</strong>: at Tier 2 the accountable owners accept purpose and live access; at Tier 3 engineering accepts production ownership and the service level. One architectural layer makes each clearance cheap.</p>
 </div>
 </div>
 
 <!--
 The three clearances as a sign-off sheet. This is the slide the first workshop edits.
 
-- Blue tags are evidence the pipeline or platform produces by itself. Grey tags are a person signing.
-- Count the explicit human decision points: one for live access and one for production ownership. Local policy may add approvers without changing the shape.
+- Each card reads top to bottom: what triggers it, what the pipeline or platform produces by itself, and whether a person signs.
+- Count the human decisions: one for live access and one for production ownership. Local policy may add approvers without changing the shape.
+- The bottom row names the layer that makes the clearance cheap: the Codex, the runtime boundary, spec-driven delivery with a service recipe.
 - The thresholds, the owners, and the wording are starting points. Change them in the workshop; keep the shape.
 -->
 
@@ -1271,7 +1235,7 @@ class: slide-light
 # Who owns<br>what.
 
 </div>
-<p class="ed-band-prose">The template is built once. Data contracts are published per domain. <strong>Hands-on engineering starts only at Tier 3</strong>, which is why Tiers 1 and 2 stay fast. Shell scaled citizen development past 4,000 builders under a three-zone model where embedded coaches — not review committees — did the enabling work.</p>
+<p class="ed-band-prose">The template is built once. Capability contracts are published per domain. <strong>Hands-on engineering starts only at Tier 3</strong>, which is why Tiers 1 and 2 stay fast. Shell scaled citizen development past 4,000 builders with embedded coaches, not review committees, doing the enabling work.</p>
 </div>
 <OwnersGrid />
 </div>
@@ -1298,7 +1262,7 @@ class: slide-light
 # The Codex guides.<br>The gates enforce.
 
 </div>
-<p class="ed-band-prose">In every assessment we have run, advice and enforcement had been mixed together — so either everything blocked in a review queue, or nothing did. <strong>Guidance belongs in the editor</strong>, where it is cheap to follow and free to ignore. <strong>Enforcement belongs in the pipeline</strong>, where three deterministic gates block what matters before merge.</p>
+<p class="ed-band-prose">In every assessment, advice and enforcement were mixed together — so either everything blocked in a review queue, or nothing did. <strong>Guidance belongs in the editor</strong>, cheap to follow and free to ignore. <strong>Enforcement belongs in the pipeline</strong>, where deterministic gates block what matters before merge.</p>
 </div>
 <div class="ed-band-canvas">
 <svg viewBox="0 0 1140 360" aria-hidden="true">
@@ -1309,13 +1273,13 @@ class: slide-light
   <path d="M 280 274 C 390 274, 410 185, 500 185" fill="none" stroke="#0c7fa3" stroke-width="1.5" stroke-dasharray="4 4" />
   <circle cx="280" cy="96" r="4" fill="#0c7fa3" />
   <text x="40" y="92" class="svg-label" fill="#0d1030">AI Assistant Rules</text>
-  <text x="40" y="110" class="svg-caption" fill="rgba(13,16,48,0.58)">Conventions &amp; forbidden patterns on every prompt</text>
+  <text x="40" y="110" class="svg-caption" fill="rgba(13,16,48,0.58)">Conventions &amp; forbidden patterns</text>
   <circle cx="280" cy="185" r="4" fill="#0c7fa3" />
   <text x="40" y="181" class="svg-label" fill="#0d1030">Pre-Wired Starter Skeleton</text>
-  <text x="40" y="199" class="svg-caption" fill="rgba(13,16,48,0.58)">Auth, logging, config &amp; test harness ready on day one</text>
+  <text x="40" y="199" class="svg-caption" fill="rgba(13,16,48,0.58)">Auth, logging, config &amp; tests on day one</text>
   <circle cx="280" cy="274" r="4" fill="#0c7fa3" />
   <text x="40" y="270" class="svg-label" fill="#0d1030">Embedded Business Coaches</text>
-  <text x="40" y="288" class="svg-caption" fill="rgba(13,16,48,0.58)">Volunteers who answer in hours, not committees</text>
+  <text x="40" y="288" class="svg-caption" fill="rgba(13,16,48,0.58)">Answers in hours, not committees</text>
   <!-- Commit / Push convergence point -->
   <circle cx="500" cy="185" r="7" fill="#0d1030" />
   <text x="500" y="164" text-anchor="middle" class="svg-kicker" fill="#0d1030">GIT PUSH</text>
@@ -1328,19 +1292,19 @@ class: slide-light
   <circle cx="610" cy="185" r="6" fill="#ffffff" stroke="#0d1030" stroke-width="2.5" />
   <text x="610" y="286" text-anchor="middle" class="svg-kicker" fill="#0d1030">GATE 01 · EVERY PUSH</text>
   <text x="610" y="305" text-anchor="middle" class="svg-label" fill="#0d1030">Secret Scan</text>
-  <text x="610" y="322" text-anchor="middle" class="svg-caption" fill="rgba(13,16,48,0.58)">Flags known credential patterns</text>
+  <text x="610" y="322" text-anchor="middle" class="svg-caption" fill="rgba(13,16,48,0.58)">Credential patterns</text>
   <!-- Gate Plane 2 -->
   <line x1="775" y1="68" x2="775" y2="260" stroke="#0d1030" stroke-width="2" />
   <circle cx="775" cy="185" r="6" fill="#ffffff" stroke="#0d1030" stroke-width="2.5" />
   <text x="775" y="286" text-anchor="middle" class="svg-kicker" fill="#0d1030">GATE 02 · EVERY PUSH</text>
   <text x="775" y="305" text-anchor="middle" class="svg-label" fill="#0d1030">Audit &amp; Tests</text>
-  <text x="775" y="322" text-anchor="middle" class="svg-caption" fill="rgba(13,16,48,0.58)">Known vulnerabilities &amp; failed tests</text>
+  <text x="775" y="322" text-anchor="middle" class="svg-caption" fill="rgba(13,16,48,0.58)">CVEs &amp; failing tests</text>
   <!-- Gate Plane 3 -->
   <line x1="940" y1="68" x2="940" y2="260" stroke="#a4238f" stroke-width="2" />
   <circle cx="940" cy="185" r="6" fill="#ffffff" stroke="#a4238f" stroke-width="2.5" />
   <text x="940" y="286" text-anchor="middle" class="svg-kicker" fill="#a4238f">GATE 03 · TIER 2+</text>
   <text x="940" y="305" text-anchor="middle" class="svg-label" fill="#0d1030">Capability Contract</text>
-  <text x="940" y="322" text-anchor="middle" class="svg-caption" fill="rgba(13,16,48,0.58)">Declared interfaces &amp; policy</text>
+  <text x="940" y="322" text-anchor="middle" class="svg-caption" fill="rgba(13,16,48,0.58)">Interfaces &amp; policy</text>
   <!-- Final Merge / Deploy node -->
   <circle cx="1076" cy="185" r="34" fill="rgba(22,180,226,0.12)" stroke="#0c7fa3" stroke-width="2" />
   <text x="1076" y="182" text-anchor="middle" class="svg-kicker" fill="#0c7fa3">MERGE</text>
@@ -1371,7 +1335,7 @@ class: slide-light
 # Score any app<br>in five minutes.
 
 </div>
-<p class="ed-band-prose">Four questions about the app, never about the builder. <strong>The highest column any answer reaches sets the tier</strong> — so a one-person script that touches regulated records is a Tier 3 question, however few people use it. Use this blank scorecard in your first workshop to map what already exists and calibrate your thresholds.</p>
+<p class="ed-band-prose">Four questions about the app, never about the builder. <strong>The highest column any answer reaches sets the tier</strong> — so a one-person script that touches regulated records is a Tier 3 question, however few people use it. Use the blank scorecard in your first workshop to map what already exists and calibrate the thresholds.</p>
 </div>
 <Scorecard />
 </div>

@@ -58,10 +58,10 @@ const TIERS: {
     via: 'Cleared for live data',
     x: 440,
     cells: {
-      build: ['Same workspace + data contract', 'No raw credentials'],
+      build: ['Same workspace + capability contract', 'No raw credentials in code'],
       check: ['Plus contract & schema checks', 'Verified in pipeline'],
-      data: ['Live systems via capability contract', 'Omnia · Host policy & telemetry'],
-      run: ['Platform-hosted runtime', 'Named business owner'],
+      data: ['Live systems via capability contract', 'WASI runtime · Host policy & telemetry'],
+      run: ['WASI runtime on shared platform', 'Named business owner + backup'],
     },
   },
   {
@@ -70,10 +70,10 @@ const TIERS: {
     via: 'Cleared for production',
     x: 605,
     cells: {
-      build: ['Rebuilt from specification', 'Emery · Keep criteria, drop code'],
-      check: ['Requirement coverage traced', 'Emery · Integrated-wave verification'],
-      data: ['Regulated data by policy', 'Omnia · Host-selected capabilities'],
-      run: ['Production runtime & SLA', 'Omnia · Engineers on call'],
+      build: ['Spec-driven wave rebuild', 'Keep the criteria · Drop the code'],
+      check: ['Requirement coverage traced', 'Integrated-wave verification'],
+      data: ['Regulated data by host policy', 'WASI runtime · Explicit capabilities'],
+      run: ['Production WASI runtime & SLA', 'Service recipe · Engineers on call'],
     },
   },
 ]

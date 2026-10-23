@@ -1005,36 +1005,6 @@
   font-weight: 500;
 }
 
-.enabler {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  vertical-align: middle;
-  font-size: 10px;
-  font-weight: 600;
-  letter-spacing: 0.07em;
-  text-transform: uppercase;
-  padding: 2px 8px;
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.12);
-  color: #ffffff;
-  margin-left: 4px;
-}
-
-.enabler img {
-  width: 12px;
-  height: 12px;
-}
-
-.slide-light .enabler {
-  background: rgba(13, 16, 48, 0.07);
-  color: var(--phl-ink);
-}
-
-.slide-light .enabler img {
-  filter: brightness(0.45);
-}
-
 /* ==========================================================================
    Layout Variations — High-whitespace editorial + diagram archetypes
    ========================================================================== */
@@ -1085,8 +1055,8 @@
 
 .ed-bottom-prose-row {
   display: grid;
-  grid-template-columns: 380px 560px 1fr;
-  gap: 56px;
+  grid-template-columns: 440px 1fr;
+  gap: 64px;
   align-items: start;
   padding-top: 22px;
   border-top: 1px solid var(--phl-ink-hairline);

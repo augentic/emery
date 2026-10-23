@@ -25,10 +25,9 @@ class: slide-hero slide-section
 <!--
 Open on the title and let it sit for a moment.
 
-- Everyone in this room has seen it: someone in operations or finance builds something useful with an AI assistant, in an afternoon, and it works.
+- Everyone in this room has seen it: someone in operations or finance builds something useful with an AI assistant in an afternoon, and it works.
 - Nothing goes wrong on that day. The trouble starts later, when it succeeds: colleagues depend on it, it quietly reaches real data, and nobody owns it.
 - This deck is about that moment, and about a simple way to handle it: four trust tiers, three clearances, one scorecard.
-- The four tiers are on the strip at the bottom. We will walk one real-shaped app through all four.
 -->
 
 ---
@@ -40,7 +39,7 @@ class: slide-light
 
 # Code is abundant.<br>Responsibility is not.
 
-<p class="slide-lead">Generative AI collapsed the cost of a first implementation. It did not collapse the cost of deciding what should be true, bounding what software may touch, proving what changed, or owning it on Monday morning.</p>
+<p class="slide-lead">Generative AI collapsed the cost of a first implementation. It did not collapse the cost of deciding what should be true, bounding what software may touch, or owning it on Monday morning.</p>
 
 <div class="stat-grid">
 <div class="stat">
@@ -66,12 +65,10 @@ class: slide-light
 </div>
 
 <!--
-The economics slide. The numbers support the shift; the argument does not depend on any one forecast.
-
+The economics slide.
 - Generative AI changes who can make software and how much software an organisation can produce.
 - It does not transfer accountability to the model. Intent, access, evidence, and operations remain the organisation's.
-- The old services model optimised the increasingly cheap part: translating requirements into lines of code.
-- Our role has moved to the system around implementation.
+- Our role has moved from typing lines of code to designing the system around implementation.
 -->
 
 ---
@@ -84,10 +81,10 @@ class: slide-light
 <div class="ed-split">
 <div class="ed-prose-col">
 
-# We assume every<br>implementation can be wrong.
+# Any implementation<br>can be wrong.
 
-<p class="ed-prose">We do not trust software because a senior engineer typed it, or distrust it because a model generated it. <strong>Authorship is not assurance.</strong> The same revision needs the same evidence, boundaries, and accountable owner.</p>
-<p class="ed-prose">A model may propose behaviour and implementation. It does not decide which source is authoritative, grant itself access, choose its production infrastructure, or promote its own output.</p>
+<p class="ed-prose">We do not trust software because a senior engineer typed it, or distrust it because a model generated it. <strong>Authorship is not assurance.</strong></p>
+<p class="ed-prose">A model may propose behaviour and write code. It never decides which source is authoritative, grants itself live access, or promotes its own output.</p>
 </div>
 <div class="ed-diagram-pane">
 <svg viewBox="0 0 640 440" aria-hidden="true">
@@ -95,46 +92,44 @@ class: slide-light
 
   <rect x="20" y="64" width="220" height="78" rx="12" fill="#ffffff" stroke="rgba(13,16,48,0.24)" stroke-width="1.5" />
   <text x="40" y="92" class="svg-kicker" fill="#0d1030">HUMAN-WRITTEN</text>
-  <text x="40" y="118" class="svg-h3" fill="#0d1030">A plausible implementation</text>
+  <text x="40" y="118" class="svg-h3" fill="#0d1030">Looks plausible</text>
 
   <rect x="20" y="168" width="220" height="78" rx="12" fill="rgba(164,35,143,0.06)" stroke="#a4238f" stroke-width="1.5" />
   <text x="40" y="196" class="svg-kicker" fill="#a4238f">MODEL-GENERATED</text>
-  <text x="40" y="222" class="svg-h3" fill="#0d1030">A plausible implementation</text>
+  <text x="40" y="222" class="svg-h3" fill="#0d1030">Looks plausible</text>
 
-  <path d="M 240 103 C 286 103, 286 155, 326 155" fill="none" stroke="#0d1030" stroke-width="1.7" />
-  <path d="M 240 207 C 286 207, 286 155, 326 155" fill="none" stroke="#a4238f" stroke-width="1.7" />
-  <polygon points="320,150 330,155 320,160" fill="#0d1030" />
+  <path d="M 240 103 C 282 103, 282 155, 318 155" fill="none" stroke="#0d1030" stroke-width="1.7" />
+  <path d="M 240 207 C 282 207, 282 155, 318 155" fill="none" stroke="#a4238f" stroke-width="1.7" />
+  <polygon points="312,150 322,155 312,160" fill="#0d1030" />
 
-  <rect x="334" y="64" width="286" height="286" rx="16" fill="#0d1030" />
-  <text x="362" y="96" class="svg-kicker" fill="#78d8f2">TRUST COMES FROM THE SYSTEM AROUND IT</text>
+  <rect x="326" y="64" width="294" height="286" rx="16" fill="#0d1030" />
+  <text x="354" y="96" class="svg-kicker" fill="#78d8f2">TRUST COMES FROM THE SYSTEM</text>
 
-  <circle cx="374" cy="138" r="16" fill="rgba(255,255,255,0.1)" stroke="#78d8f2" stroke-width="1.5" />
-  <text x="374" y="143" text-anchor="middle" class="svg-pill" fill="#78d8f2">01</text>
-  <text x="404" y="134" class="svg-label" fill="#ffffff">Intent is explicit</text>
-  <text x="404" y="152" class="svg-caption" fill="rgba(255,255,255,0.66)">Reviewed specification and source authority</text>
+  <circle cx="366" cy="138" r="16" fill="rgba(255,255,255,0.1)" stroke="#78d8f2" stroke-width="1.5" />
+  <text x="366" y="143" text-anchor="middle" class="svg-pill" fill="#78d8f2">01</text>
+  <text x="396" y="134" class="svg-label" fill="#ffffff">Intent is explicit</text>
+  <text x="396" y="152" class="svg-caption" fill="rgba(255,255,255,0.66)">Reviewed spec and source authority</text>
 
-  <circle cx="374" cy="207" r="16" fill="rgba(255,255,255,0.1)" stroke="#78d8f2" stroke-width="1.5" />
-  <text x="374" y="212" text-anchor="middle" class="svg-pill" fill="#78d8f2">02</text>
-  <text x="404" y="203" class="svg-label" fill="#ffffff">Authority is bounded</text>
-  <text x="404" y="221" class="svg-caption" fill="rgba(255,255,255,0.66)">Explicit capabilities outside application code</text>
+  <circle cx="366" cy="207" r="16" fill="rgba(255,255,255,0.1)" stroke="#78d8f2" stroke-width="1.5" />
+  <text x="366" y="212" text-anchor="middle" class="svg-pill" fill="#78d8f2">02</text>
+  <text x="396" y="203" class="svg-label" fill="#ffffff">Authority is bounded</text>
+  <text x="396" y="221" class="svg-caption" fill="rgba(255,255,255,0.66)">WASI capabilities outside the code</text>
 
-  <circle cx="374" cy="276" r="16" fill="rgba(255,255,255,0.1)" stroke="#f59ef5" stroke-width="1.5" />
-  <text x="374" y="281" text-anchor="middle" class="svg-pill" fill="#f59ef5">03</text>
-  <text x="404" y="272" class="svg-label" fill="#ffffff">Promotion is evidenced</text>
-  <text x="404" y="290" class="svg-caption" fill="rgba(255,255,255,0.66)">Checks pass and an accountable owner accepts</text>
+  <circle cx="366" cy="276" r="16" fill="rgba(255,255,255,0.1)" stroke="#f59ef5" stroke-width="1.5" />
+  <text x="366" y="281" text-anchor="middle" class="svg-pill" fill="#f59ef5">03</text>
+  <text x="396" y="272" class="svg-label" fill="#ffffff">Promotion is evidenced</text>
+  <text x="396" y="290" class="svg-caption" fill="rgba(255,255,255,0.66)">Checks pass; an owner accepts</text>
 
-  <text x="477" y="326" text-anchor="middle" class="svg-caption" fill="#78d8f2">The author never becomes the control boundary.</text>
+  <text x="473" y="326" text-anchor="middle" class="svg-caption" fill="#78d8f2">The author never becomes the control boundary.</text>
 </svg>
 </div>
 </div>
 
 <!--
 This is the worldview in one slide.
-
 - Human authorship was never proof of correctness; it was a proxy supported by scarce expertise and review.
 - AI removes the scarcity and breaks that proxy.
-- We replace trust in authorship with trust in evidence, bounded authority, and accountable promotion.
-- This applies to citizen builders, professional engineers, dependencies, and models alike.
+- We replace trust in authorship with trust in evidence, bounded runtime authority, and accountable promotion.
 -->
 
 ---
@@ -147,56 +142,61 @@ class: slide-light
 <div class="ed-split">
 <div class="ed-prose-col">
 
-# The same three gaps,<br>every time.
+# Three gaps,<br>every time.
 
-<p class="ed-prose">In every organisation we have assessed for citizen coding, the domain builders were capable and well-intentioned. What was missing was the system around them — and in the absence of a system, people build quietly on personal laptops or straight inside production tenants.</p>
-<p class="ed-prose"><strong>The issue was never capability.</strong> When there is no sanctioned workspace, no approved toolkit, and no shared pipeline assurance, the careful builders end up carrying the risk created by the rest. A missing system is something you can design.</p>
+<p class="ed-prose">In every client assessment we have run, the domain builders were capable and well-intentioned. What was missing was the system around them.</p>
+<p class="ed-prose"><strong>The issue is never capability.</strong> Without a governed workspace, an approved AI stack, and automated gates, most tools stay hidden on laptops while engineering bottlenecks on the rest.</p>
 </div>
 <div class="ed-diagram-pane">
 <svg viewBox="0 0 640 440" aria-hidden="true">
   <!-- Three Left Root-Cause Nodes -->
-  <circle cx="28" cy="96" r="5" fill="#b4234e" />
-  <text x="44" y="84" class="svg-kicker" fill="#b4234e">01 · WORKSPACE MISSING</text>
-  <text x="44" y="104" class="svg-h3" fill="#0d1030">No Governed Place to Build</text>
-  <text x="44" y="122" class="svg-caption" fill="rgba(13,16,48,0.58)">Personal laptops &amp; live tenants · No repo</text>
-  <circle cx="28" cy="220" r="5" fill="#b4234e" />
-  <text x="44" y="208" class="svg-kicker" fill="#b4234e">02 · TOOLKIT UNDECIDED</text>
-  <text x="44" y="228" class="svg-h3" fill="#0d1030">No Approved AI Stack</text>
-  <text x="44" y="246" class="svg-caption" fill="rgba(13,16,48,0.58)">Teams pick their own tools and keep quiet</text>
-  <circle cx="28" cy="344" r="5" fill="#b4234e" />
-  <text x="44" y="332" class="svg-kicker" fill="#b4234e">03 · ASSURANCE PERSONAL</text>
-  <text x="44" y="352" class="svg-h3" fill="#0d1030">Safety Depends on Who Built It</text>
-  <text x="44" y="370" class="svg-caption" fill="rgba(13,16,48,0.58)">No automated secret scan, audit, or test gate</text>
+  <circle cx="28" cy="66" r="5" fill="#b4234e" />
+  <text x="44" y="54" class="svg-kicker" fill="#b4234e">01 · WORKSPACE MISSING</text>
+  <text x="44" y="74" class="svg-h3" fill="#0d1030">No Governed Place to Build</text>
+  <text x="44" y="92" class="svg-caption" fill="rgba(13,16,48,0.58)">Personal laptops &amp; live tenants · No repo</text>
+
+  <circle cx="28" cy="166" r="5" fill="#b4234e" />
+  <text x="44" y="154" class="svg-kicker" fill="#b4234e">02 · TOOLKIT UNDECIDED</text>
+  <text x="44" y="174" class="svg-h3" fill="#0d1030">No Approved AI Stack</text>
+  <text x="44" y="192" class="svg-caption" fill="rgba(13,16,48,0.58)">Teams pick their own tools and keep quiet</text>
+
+  <circle cx="28" cy="266" r="5" fill="#b4234e" />
+  <text x="44" y="254" class="svg-kicker" fill="#b4234e">03 · ASSURANCE PERSONAL</text>
+  <text x="44" y="274" class="svg-h3" fill="#0d1030">Safety Depends on Who Built It</text>
+  <text x="44" y="292" class="svg-caption" fill="rgba(13,16,48,0.58)">No automated secret scan, audit, or test gate</text>
+
   <!-- Connecting causal curves to Consequences on the right -->
-  <path d="M 310 96 L 408 96" fill="none" stroke="rgba(180,35,78,0.45)" stroke-width="1.5" stroke-dasharray="4 4" />
-  <polygon points="402,91 412,96 402,101" fill="#b4234e" />
-  <path d="M 310 220 L 408 220" fill="none" stroke="rgba(180,35,78,0.45)" stroke-width="1.5" stroke-dasharray="4 4" />
-  <polygon points="402,215 412,220 402,225" fill="#b4234e" />
-  <path d="M 310 344 L 408 344" fill="none" stroke="rgba(180,35,78,0.45)" stroke-width="1.5" stroke-dasharray="4 4" />
-  <polygon points="402,339 412,344 402,349" fill="#b4234e" />
-  <!-- Right Consequence Column (Vertical Hairline Bar) -->
-  <line x1="426" y1="62" x2="426" y2="386" stroke="#0d1030" stroke-width="2" />
-  <text x="446" y="84" class="svg-kicker" fill="#0d1030">SO · VISIBILITY LOST</text>
-  <text x="446" y="104" class="svg-label" fill="#0d1030">No reliable inventory of apps</text>
-  <text x="446" y="120" class="svg-caption" fill="rgba(13,16,48,0.58)">Nobody knows what exists</text>
-  <text x="446" y="208" class="svg-kicker" fill="#0d1030">SO · REUSE LOST</text>
-  <text x="446" y="228" class="svg-label" fill="#0d1030">Every app built differently</text>
-  <text x="446" y="244" class="svg-caption" fill="rgba(13,16,48,0.58)">Assurance cannot be shared</text>
-  <text x="446" y="332" class="svg-kicker" fill="#0d1030">SO · EXPOSURE SHARED</text>
-  <text x="446" y="352" class="svg-label" fill="#0d1030">Careful builders carry the risk</text>
-  <text x="446" y="368" class="svg-caption" fill="rgba(13,16,48,0.58)">Created by the ungoverned rest</text>
+  <path d="M 310 66 L 408 66" fill="none" stroke="rgba(180,35,78,0.45)" stroke-width="1.5" stroke-dasharray="4 4" />
+  <polygon points="402,61 412,66 402,71" fill="#b4234e" />
+  <path d="M 310 166 L 408 166" fill="none" stroke="rgba(180,35,78,0.45)" stroke-width="1.5" stroke-dasharray="4 4" />
+  <polygon points="402,161 412,166 402,171" fill="#b4234e" />
+  <path d="M 310 266 L 408 266" fill="none" stroke="rgba(180,35,78,0.45)" stroke-width="1.5" stroke-dasharray="4 4" />
+  <polygon points="402,261 412,266 402,271" fill="#b4234e" />
+
+  <!-- Right Consequence Column -->
+  <line x1="426" y1="38" x2="426" y2="302" stroke="#0d1030" stroke-width="2" />
+  <text x="446" y="54" class="svg-kicker" fill="#0d1030">SO · VISIBILITY LOST</text>
+  <text x="446" y="74" class="svg-label" fill="#0d1030">No inventory of what exists</text>
+  <text x="446" y="154" class="svg-kicker" fill="#0d1030">SO · REUSE LOST</text>
+  <text x="446" y="174" class="svg-label" fill="#0d1030">Every app wired differently</text>
+  <text x="446" y="254" class="svg-kicker" fill="#0d1030">SO · EXPOSURE SHARED</text>
+  <text x="446" y="274" class="svg-label" fill="#0d1030">Careful builders carry the risk</text>
+
+  <!-- Bottom Contrast Card: Inverted Estate vs Target Estate -->
+  <rect x="20" y="334" width="600" height="84" rx="12" fill="#f5f6fa" stroke="rgba(13,16,48,0.14)" />
+  <text x="40" y="362" class="svg-kicker" fill="#b4234e">THE INVERTED ESTATE WE FIND</text>
+  <text x="40" y="382" class="svg-body" fill="#0d1030">Most apps hidden at Tier 0 · No governed middle · The rest queued for engineering</text>
+  <text x="40" y="402" class="svg-kicker" fill="#0c7fa3">A HEALTHY ESTATE → ~0% T0 · ~75% T1 · ~20% T2 · ~5% T3</text>
 </svg>
 </div>
 </div>
 
 <!--
-This is the credibility slide. Speak from experience, not from the cards.
-
-- We have now done this assessment several times, in different sectors, and the findings are almost interchangeable.
-- Gap one: there is nowhere sanctioned to build, so building happens on laptops and in production tenants, and nobody has an inventory.
-- Gap two: nobody has said which tools are approved, so people pick their own and do not mention it. That is not defiance; it is the absence of an answer.
-- Gap three: whether an app is safe depends entirely on who built it. The organisation has no assurance of its own.
-- The conclusion we reached every time: the people are not the problem. The missing piece is a system, and a system is something you can design. That is what the next slides are.
+This is the credibility slide.
+- Gap one: nowhere sanctioned to build, so building happens on laptops and in production tenants.
+- Gap two: nobody has said which AI tools are approved, so people pick their own quietly.
+- Gap three: whether an app is safe depends on who built it rather than shared pipeline checks.
+- The result is an inverted estate: most apps hidden at Tier 0 and no middle tier between shadow IT and a full engineering handover.
 -->
 
 ---
@@ -263,12 +263,9 @@ class: slide-sandbox
 </div>
 
 <!--
-One picture. Pause on it before the click.
-
-- The white curve is adoption: how many people depend on the app over time. The dashed line is the control around it, which for a prototype is flat at zero.
-- The shaded gap is the exposure. Notice when it opens: not on day one, but when the thing gets good. The riskiest moment is success.
+Pause on this before the click.
+- The white curve is adoption: how many people depend on the app over time. The dashed line is the control around it, flat at zero.
 - Click. The blue steps are the Trust Model. Control rises through four levels as reach, live access, and business criticality change.
-- What is left between the steps and the curve are slivers, not a chasm. That is the whole idea. Proportionate, and timed to value.
 -->
 
 ---
@@ -282,7 +279,7 @@ class: slide-light
 <div class="ed-band-top">
 <div>
 
-# Four tiers of earned trust.<br>Three clearances.
+# Four tiers.<br>Three clearances.
 
 </div>
 <p class="ed-band-prose">Each tier is a complete, proportionate operating state. Rather than grading the builder, <strong>the Trust Model matches control to the app's reach</strong> — moving up only when a real adoption signal says it must, and keeping every layer beneath it.</p>
@@ -292,13 +289,10 @@ class: slide-light
 
 <!--
 The model on one slide. Read it left to right.
-
-- Tier 0, Unmanaged: one person, one laptop. This is where every app starts, and it is discovery, not a violation.
-- Cleared to share, in days: a repository, the approved template, automated gates. That takes you to Tier 1, Governed. The Codex is the name we give that workspace, and about three quarters of apps should live and die here, happily.
-- Cleared for live systems, in weeks: a named owner and an explicit capability contract. Tier 2, Connected. Real access, bounded authority.
-- Cleared for production, a funded project: a specification, a verified rebuild, an SLA. Tier 3, Supported. Perhaps one app in twenty.
-- Two things to say out loud. Higher is not better; Tier 1 is a destination, not a waiting room. And a tier is a property of the app, not the person who built it.
-- The lineage, if asked: Agile Fluency's zones, Carnegie Mellon's maturity levels, NASA's technology readiness levels, and Shell's green-amber-red governance.
+- Tier 0, Unmanaged: one person, one laptop. Discovery, not a violation.
+- Cleared to share, in days: a repository, the approved template, automated gates. Tier 1, Governed (~75% of apps live here happily).
+- Cleared for live data, in weeks: a named owner and an explicit capability contract on the WASI runtime. Tier 2, Connected (~20%).
+- Cleared for production, a funded project: a recovered specification, a verified rebuild, an SLA. Tier 3, Supported (~5%).
 -->
 
 ---
@@ -332,12 +326,9 @@ class: slide-chapter
 </div>
 
 <!--
-Now one app, four chapters. The picture on the right stays the same; only the lit column moves.
-
-- Week one. An operations lead is tired of building the roster in a spreadsheet, describes the problem to an AI assistant, and has a working planner by Friday.
-- Look at the four lanes: built on a personal laptop, nothing checks it, it reads a pasted export, and it runs only when she runs it.
-- Nothing is wrong yet. If we punished this, we would lose the best product discovery the organisation has.
-- The signal is small and specific: a colleague asks for the link. That is the moment it stops being personal.
+Now one app across four chapters. The top track advances from T0 to T3 while the four control lanes show what changes at each step.
+- Week one: built on a personal laptop, nothing checks it, reads a pasted export, runs only when she runs it.
+- Signal to move: a colleague asks for the link.
 -->
 
 ---
@@ -358,7 +349,7 @@ class: slide-chapter
 <div class="chapter-notes">
 <div class="chapter-note is-clearance">
 <div class="chapter-note-head"><span>Cleared to share</span><em>Days</em></div>
-<p>A repository, the approved template, automated gates on every change. <strong>The Codex guides the builder; the gates enforce.</strong> Nothing live can be reached from here.</p>
+<p>A repository, the approved template, automated gates on every push. <strong>The Codex guides the builder; the gates enforce.</strong> Nothing live can be reached from here.</p>
 </div>
 <div class="chapter-note">
 <div class="chapter-note-head"><span>The next signal</span><em>→ Tier 2</em></div>
@@ -371,13 +362,10 @@ class: slide-chapter
 </div>
 
 <!--
-Week three. The lit column moves one step right.
-
-- The builder keeps building; what changes is where. The code lives in Enterprise GitHub, in the approved template, with an AI editor that follows the organisation's rules.
-- Two kinds of control, and the distinction matters: the workspace guides, with rules the editor follows, and the pipeline enforces, with gates that block secrets, bad dependencies, and failing tests. Advice in the editor, enforcement in the pipeline.
-- The data lane is deliberately boring: synthetic or local only, with no path to live systems. Exposure stays intentionally limited.
-- This takes days to set up, once, and then every app gets it for free. Most apps should stay here for their whole lives.
-- The next signal: the team wants the live roster.
+Week three: Tier 1.
+- The builder keeps building; what changes is where. Enterprise GitHub, the approved template, automated secret and dependency scans.
+- Synthetic or local data only, air-gapped from live systems. Most internal apps stay right here for life.
+- Signal to move: the team wants the live roster.
 -->
 
 ---
@@ -393,12 +381,12 @@ class: slide-chapter
 <div class="chapter-left">
 <span class="chapter-when">Month 3 · Tier 2</span>
 
-# The team wants live roster data. An explicit capability contract replaces the spreadsheet export.
+# The team wants live roster data. A capability contract replaces the spreadsheet export.
 
 <div class="chapter-notes">
 <div class="chapter-note is-clearance">
 <div class="chapter-note-head"><span>Cleared for live data</span><em>Weeks</em></div>
-<p>A named owner and a backup. An explicit capability contract for what the planner needs. One review. <strong>The component carries business logic, never infrastructure credentials; Omnia mediates its effects through the host.</strong> <span class="enabler"><img src="/images/omnia-icon.svg" alt="" />Omnia</span></p>
+<p>A named business owner and backup, an explicit capability contract, and one access review. <strong>The component carries business logic, never credentials; the WASI runtime mediates its effects through the host.</strong></p>
 </div>
 <div class="chapter-note">
 <div class="chapter-note-head"><span>The next signal</span><em>→ Tier 3</em></div>
@@ -411,14 +399,157 @@ class: slide-chapter
 </div>
 
 <!--
-Month three. This is the step most organisations get wrong, in one of two ways: they hand out database credentials, or they say no.
+Month three: Tier 2.
+- Instead of handing out raw database credentials or saying no, the planner declares a capability contract.
+- The WASI runtime mediates every call through the host, keeping credentials, telemetry, and policy outside generated code.
+- Next signal: twenty-five users, regulated data, or a Monday morning the business cannot afford.
+-->
 
-- The answer is an explicit capability contract. The planner asks for the roster by business role rather than importing a cloud SDK or carrying a connection string.
-- That is what Omnia is for. Application effects cross one host-mediated boundary, where credentials, observability, resource limits, and progressively tighter policy can live outside generated code.
-- The architecture does not make wrong logic correct. It makes its authority explicit and gives the platform one place to bound and observe its consequences.
-- The clearance is light: a named owner with a backup, a contract, one review that takes hours. Weeks end to end, mostly waiting for the data owner.
-- The builder's loop does not change. She still iterates the planner herself.
-- The next signal is reach or criticality: twenty-five people, or a Monday morning the business cannot afford.
+---
+title: Month 9 · Supported
+class: slide-chapter
+---
+
+<AmbientVideo src="/videos/approach-video.mp4" variant="approach" />
+
+<Eyebrow text="ONE APP, FOUR TIERS · THE SHIFT PLANNER" />
+
+<div class="chapter-grid">
+<div class="chapter-left">
+<span class="chapter-when">Month 9 · Tier 3</span>
+
+# Three sites depend on it. If it fails on Monday morning, shifts go uncovered. It graduates.
+
+<div class="chapter-notes">
+<div class="chapter-note is-clearance">
+<div class="chapter-note-head"><span>Cleared for production</span><em>A funded project</em></div>
+<p><strong>Spec-driven development</strong> reconciles intent, docs, tests, and observed behaviour into a reviewable specification. Once sealed, the app is rebuilt in verified waves and runs on the <strong>WASI runtime</strong> under an engineering SLA.</p>
+</div>
+<div class="chapter-note">
+<div class="chapter-note-head"><span>The handover</span><em>Both sides protected</em></div>
+<p>The operations lead becomes Product Owner. Engineering takes the pager. <strong>Keep the criteria. Drop the code.</strong></p>
+</div>
+</div>
+</div>
+
+<ControlStack :tier="3" dark compact />
+</div>
+
+<!--
+Month nine: Tier 3 graduation.
+- Graduation avoids two bad options: forcing engineers to maintain nine months of prompt-generated code, or rewriting from a blank page and losing the domain rules.
+- Spec-driven recovery extracts the rules and scenarios into a reviewable specification, then rebuilds the WASI component in verified waves.
+- The operations lead becomes Product Owner without a pager; engineering owns the rebuilt code and the SLA.
+-->
+
+---
+title: Score any app
+class: slide-light
+---
+
+<Eyebrow text="THE SCORECARD · FOUR QUESTIONS" />
+
+<div class="ed-band">
+<div class="ed-band-top">
+<div>
+
+# Score any app<br>in five minutes.
+
+</div>
+<p class="ed-band-prose">Four questions about the app, never about the builder. <strong>The highest column any answer reaches sets the tier.</strong> At month nine, three sites and Monday-morning criticality place the shift planner at Tier 3 — making graduation a clear funding decision.</p>
+</div>
+<Scorecard :mark="{ reach: 3, data: 2, criticality: 3, continuity: 2 }" subject="The shift planner, month 9" />
+</div>
+
+<!--
+Score the shift planner right at the end of its four-chapter journey.
+- Reach: three sites, 25+ people -> Tier 3.
+- Data: live internal roster via capability contract -> Tier 2.
+- Monday 9am: shifts go uncovered -> Tier 3.
+- Continuity: named business owner + backup -> Tier 2.
+- Highest column wins: Tier 3.
+-->
+
+---
+title: The model cannot confer authority
+class: slide-light
+---
+
+<Eyebrow text="SPEC-DRIVEN DEVELOPMENT · PROPOSAL IS NOT PROMOTION" />
+
+<div class="ed-split is-reversed">
+<div class="ed-diagram-pane">
+<svg viewBox="0 0 660 440" aria-hidden="true">
+  <!-- Top Promotion Pipeline -->
+  <line x1="88" y1="66" x2="572" y2="66" stroke="rgba(13,16,48,0.16)" stroke-width="2" />
+
+  <circle cx="88" cy="66" r="34" fill="#ffffff" stroke="#0c7fa3" stroke-width="1.8" />
+  <text x="88" y="62" text-anchor="middle" class="svg-kicker" fill="#0c7fa3">SOURCES</text>
+  <text x="88" y="79" text-anchor="middle" class="svg-caption" fill="#0d1030">Evidence</text>
+
+  <line x1="122" y1="66" x2="212" y2="66" stroke="#0c7fa3" stroke-width="1.8" />
+  <polygon points="206,61 216,66 206,71" fill="#0c7fa3" />
+
+  <circle cx="250" cy="66" r="34" fill="rgba(22,180,226,0.08)" stroke="#0c7fa3" stroke-width="1.8" />
+  <text x="250" y="62" text-anchor="middle" class="svg-kicker" fill="#0c7fa3">STAGED</text>
+  <text x="250" y="79" text-anchor="middle" class="svg-caption" fill="#0d1030">Candidate</text>
+
+  <line x1="284" y1="66" x2="374" y2="66" stroke="#a4238f" stroke-width="1.8" />
+  <polygon points="368,61 378,66 368,71" fill="#a4238f" />
+  <rect x="301" y="38" width="58" height="20" rx="10" fill="#a4238f" />
+  <text x="330" y="52" text-anchor="middle" class="svg-pill" fill="#ffffff">SEAL</text>
+
+  <circle cx="412" cy="66" r="34" fill="#0d1030" />
+  <text x="412" y="62" text-anchor="middle" class="svg-kicker" fill="#78d8f2">SEALED</text>
+  <text x="412" y="79" text-anchor="middle" class="svg-caption" fill="#ffffff">Revision</text>
+
+  <line x1="446" y1="66" x2="536" y2="66" stroke="#0d1030" stroke-width="1.8" />
+  <polygon points="530,61 540,66 530,71" fill="#0d1030" />
+
+  <circle cx="572" cy="66" r="34" fill="#a4238f" />
+  <text x="572" y="62" text-anchor="middle" class="svg-kicker" fill="#ffffff">LABELLED</text>
+  <text x="572" y="79" text-anchor="middle" class="svg-caption" fill="#ffffff">Verified</text>
+
+  <!-- Concrete Recovered Spec Excerpt -->
+  <rect x="36" y="116" width="588" height="96" rx="12" fill="rgba(22,180,226,0.06)" stroke="#0c7fa3" stroke-width="1.5" />
+  <text x="56" y="138" class="svg-kicker" fill="#0c7fa3">A RECOVERED SHIFT PLANNER REQUIREMENT · AUTHORITY AND CONFLICT MADE VISIBLE</text>
+  <text x="56" y="158" class="svg-label" fill="#0d1030">REQ-014 shifts.assign-cover · Route: POST /shifts · Status: divergence</text>
+  <text x="56" y="175" class="svg-caption" fill="rgba(13,16,48,0.68)">Given an open shift · When the lead assigns cover · Then cap weekly hours at 40</text>
+  <text x="56" y="190" class="svg-caption" fill="#b4234e">Divergence: the product brief's 40h cap outranks the prototype's 48h</text>
+
+  <!-- Three Bounded Model Jobs -->
+  <rect x="36" y="224" width="588" height="196" rx="16" fill="#0d1030" />
+  <text x="64" y="252" class="svg-kicker" fill="#78d8f2">THE MODEL MAY PROPOSE INSIDE THREE BOUNDED JOBS</text>
+
+  <circle cx="78" cy="288" r="15" fill="rgba(255,255,255,0.1)" stroke="#78d8f2" stroke-width="1.5" />
+  <text x="78" y="293" text-anchor="middle" class="svg-pill" fill="#78d8f2">01</text>
+  <text x="108" y="284" class="svg-label" fill="#ffffff">Extract evidence into typed claims</text>
+  <text x="108" y="301" class="svg-caption" fill="rgba(255,255,255,0.66)">Source authority rank and [unknown] gaps stay outside the model</text>
+
+  <circle cx="78" cy="340" r="15" fill="rgba(255,255,255,0.1)" stroke="#78d8f2" stroke-width="1.5" />
+  <text x="78" y="345" text-anchor="middle" class="svg-pill" fill="#78d8f2">02</text>
+  <text x="108" y="336" class="svg-label" fill="#ffffff">Implement one planned slice in an isolated worktree</text>
+  <text x="108" y="353" class="svg-caption" fill="rgba(255,255,255,0.66)">Deterministic scaffold, worker grants, and lint checks bound the turn</text>
+
+  <circle cx="78" cy="392" r="15" fill="rgba(255,255,255,0.1)" stroke="#f59ef5" stroke-width="1.5" />
+  <text x="78" y="397" text-anchor="middle" class="svg-pill" fill="#f59ef5">03</text>
+  <text x="108" y="388" class="svg-label" fill="#ffffff">Repair what integrated wave verification finds</text>
+  <text x="108" y="405" class="svg-caption" fill="rgba(255,255,255,0.66)">Only passing verification advances the production revision label</text>
+</svg>
+</div>
+<div class="ed-prose-col">
+
+# Models propose.<br>People authorise.
+
+<p class="ed-prose"><strong>Prompts are not governance and repo access is not authority.</strong> Spec-driven development separates proposal from acceptance: source authority, the sealed specification, and runtime capabilities all sit outside the model turn.</p>
+<p class="ed-prose">A candidate specification is staged for human review before it is sealed. Code is built in isolated slices, and the production label advances only when the integrated wave passes verification.</p>
+</div>
+</div>
+
+<!--
+How spec-driven graduation works under the hood.
+- The model is valuable because it extracts and implements quickly, but it is never its own source of truth or release gate.
+- Disagreements between the product brief and the prototype's code are surfaced explicitly for human review before sealing.
 -->
 
 ---
@@ -426,22 +557,22 @@ title: Standardise everything beneath it
 class: slide-light
 ---
 
-<Eyebrow text="OUR NEXT PRODUCT LAYER · BUY AN OUTCOME, NOT A TOPOLOGY" />
+<Eyebrow text="REPEATABLE INFRASTRUCTURE · BUY AN OUTCOME, NOT A TOPOLOGY" />
 
 <div class="ed-band">
 <div class="ed-band-top">
 <div>
 
-# Customise what differentiates<br>the business. Standardise<br>everything beneath it.
+# Unique on top.<br>Standard beneath.
 
 </div>
-<p class="ed-band-prose">The shift planner's behaviour is unique. Its network, identity, data, messaging, telemetry, deployment, and recovery patterns usually are not. Our next product layer lets a customer choose a <strong>service envelope</strong>, then uses versioned Omnia and Terraform recipes to provision and operate the stack that meets it.</p>
+<p class="ed-band-prose">The shift planner's workflow is unique; its networking, identity, state, messaging, and recovery patterns are not. Customers select a <strong>service envelope</strong>, and versioned WASI runtime and Terraform recipes provision and operate the stack that meets it.</p>
 </div>
 <div class="ed-band-canvas">
 <svg viewBox="0 0 1140 350" aria-hidden="true">
   <rect x="356" y="10" width="428" height="62" rx="12" fill="#0d1030" />
   <text x="570" y="35" text-anchor="middle" class="svg-kicker" fill="#78d8f2">CUSTOMER-SPECIFIC · THE DIFFERENTIATOR</text>
-  <text x="570" y="57" text-anchor="middle" class="svg-h3" fill="#ffffff">Specification + portable WASI component</text>
+  <text x="570" y="57" text-anchor="middle" class="svg-h3" fill="#ffffff">Reviewed specification + portable WASI component</text>
 
   <line x1="570" y1="72" x2="570" y2="112" stroke="#0c7fa3" stroke-width="2" />
   <polygon points="565,106 575,106 570,116" fill="#0c7fa3" />
@@ -471,167 +602,16 @@ class: slide-light
   <text x="818" y="286" class="svg-label" fill="#0d1030">Largest capacity and resilience profile</text>
   <text x="818" y="304" class="svg-caption" fill="rgba(13,16,48,0.58)">Strongest recovery and operating response</text>
 
-  <text x="570" y="342" text-anchor="middle" class="svg-kicker" fill="#a4238f">THE DIRECTION · ONE SAFETY BASELINE · TERRAFORM PROVISIONS · OMNIA BINDS · WE OPERATE</text>
+  <text x="570" y="342" text-anchor="middle" class="svg-kicker" fill="#a4238f">ONE SECURITY BASELINE · TERRAFORM PROVISIONS · WASI RUNTIME BINDS · WE OPERATE</text>
 </svg>
 </div>
 </div>
 
 <!--
-This is the commercial and architectural pivot.
-
-- The customer owns the outcomes and constraints: workload, SLOs, recovery, residency, connectivity, compliance, and cost.
-- We are productising the implementation that satisfies them through a small catalogue of versioned recipes.
-- The plans are service envelopes, not VM sizes. Capacity, resilience, and jurisdiction remain separate dimensions underneath the simple bundles.
-- Security is never a premium feature. The same baseline applies to every plan.
-- Full architecture remains transparent and auditable; it simply stops being a bespoke design exercise.
-- The customer should not need to care because we care obsessively once, in the recipe.
--->
-
----
-title: Month 9 · Supported
-class: slide-chapter
----
-
-<AmbientVideo src="/videos/approach-video.mp4" variant="approach" />
-
-<Eyebrow text="ONE APP, FOUR TIERS · THE SHIFT PLANNER" />
-
-<div class="chapter-grid">
-<div class="chapter-left">
-<span class="chapter-when">Month 9 · Tier 3</span>
-
-# Three sites depend on it. If it fails on Monday morning, shifts go uncovered. It graduates.
-
-<div class="chapter-notes">
-<div class="chapter-note is-clearance">
-<div class="chapter-note-head"><span>Cleared for production</span><em>A funded project</em></div>
-<p><strong>Emery</strong> reconciles intent, documentation, tests, and observed behaviour into a staged specification. Once accepted, its plan is built in constrained waves and runs on <strong>Omnia</strong> under an engineering SLA. <span class="enabler"><img src="/images/emery-icon.svg" alt="" />Emery</span><span class="enabler"><img src="/images/omnia-icon.svg" alt="" />Omnia</span></p>
-</div>
-<div class="chapter-note">
-<div class="chapter-note-head"><span>The handover</span><em>Both sides protected</em></div>
-<p>The operations lead becomes product owner. Engineering takes the pager. <strong>Keep the criteria. Drop the code.</strong></p>
-</div>
-</div>
-</div>
-
-<ControlStack :tier="3" dark compact />
-</div>
-
-<!--
-Month nine. The planner now passes the Monday morning test: if it fails, shifts go uncovered at three sites. It has to graduate.
-
-- Graduation used to mean one of two bad options: engineers inherit nine months of prompt-generated code, or they start again from a blank page and lose everything the planner learned.
-- Emery is the third option. It reads intent, documentation, tests, and observed behaviour into one reviewable candidate. Where the sources disagree, the disagreement remains visible; where no source answers, the gap stays unknown.
-- The candidate becomes authoritative only through an explicit seal. Its plan is then implemented in bounded slices, integrated, verified, and promoted wave by wave.
-- The rebuilt planner keeps the same Omnia capability boundary, with production policy set outside the component for any regulated data it needs.
-- The handover protects both sides. The operations lead becomes product owner; she keeps the thing she built and gets no pager. Engineering owns the code, the security, and the SLA.
-- The line to remember: keep the criteria, drop the code. The prototype already paid for discovering what the software should do.
--->
-
----
-title: The model cannot confer authority
-class: slide-light
----
-
-<Eyebrow text="SPEC-DRIVEN DELIVERY · PROPOSAL IS NOT PROMOTION" />
-
-<div class="ed-split is-reversed">
-<div class="ed-diagram-pane">
-<svg viewBox="0 0 660 440" aria-hidden="true">
-  <line x1="88" y1="86" x2="572" y2="86" stroke="rgba(13,16,48,0.16)" stroke-width="2" />
-
-  <circle cx="88" cy="86" r="30" fill="#ffffff" stroke="#0c7fa3" stroke-width="1.8" />
-  <text x="88" y="82" text-anchor="middle" class="svg-kicker" fill="#0c7fa3">SOURCES</text>
-  <text x="88" y="100" text-anchor="middle" class="svg-caption" fill="#0d1030">Evidence</text>
-
-  <line x1="118" y1="86" x2="216" y2="86" stroke="#0c7fa3" stroke-width="1.8" />
-  <polygon points="210,81 220,86 210,91" fill="#0c7fa3" />
-
-  <circle cx="250" cy="86" r="30" fill="rgba(22,180,226,0.08)" stroke="#0c7fa3" stroke-width="1.8" />
-  <text x="250" y="82" text-anchor="middle" class="svg-kicker" fill="#0c7fa3">STAGED</text>
-  <text x="250" y="100" text-anchor="middle" class="svg-caption" fill="#0d1030">Candidate</text>
-
-  <line x1="280" y1="86" x2="378" y2="86" stroke="#a4238f" stroke-width="1.8" />
-  <polygon points="372,81 382,86 372,91" fill="#a4238f" />
-  <rect x="302" y="58" width="56" height="22" rx="11" fill="#a4238f" />
-  <text x="330" y="73" text-anchor="middle" class="svg-pill" fill="#ffffff">ACCEPT</text>
-
-  <circle cx="412" cy="86" r="30" fill="#0d1030" />
-  <text x="412" y="82" text-anchor="middle" class="svg-kicker" fill="#78d8f2">SEALED</text>
-  <text x="412" y="100" text-anchor="middle" class="svg-caption" fill="#ffffff">Revision</text>
-
-  <line x1="442" y1="86" x2="540" y2="86" stroke="#0d1030" stroke-width="1.8" />
-  <polygon points="534,81 544,86 534,91" fill="#0d1030" />
-
-  <circle cx="572" cy="86" r="30" fill="#a4238f" />
-  <text x="572" y="82" text-anchor="middle" class="svg-kicker" fill="#ffffff">LABELLED</text>
-  <text x="572" y="100" text-anchor="middle" class="svg-caption" fill="#ffffff">Verified</text>
-
-  <rect x="36" y="162" width="588" height="218" rx="16" fill="#0d1030" />
-  <text x="64" y="194" class="svg-kicker" fill="#78d8f2">THE MODEL MAY PROPOSE INSIDE THREE BOUNDED JOBS</text>
-
-  <circle cx="78" cy="238" r="16" fill="rgba(255,255,255,0.1)" stroke="#78d8f2" stroke-width="1.5" />
-  <text x="78" y="243" text-anchor="middle" class="svg-pill" fill="#78d8f2">01</text>
-  <text x="108" y="234" class="svg-label" fill="#ffffff">Interpret evidence into typed claims</text>
-  <text x="108" y="252" class="svg-caption" fill="rgba(255,255,255,0.66)">Source authority and unresolved gaps stay outside the answer</text>
-
-  <circle cx="78" cy="300" r="16" fill="rgba(255,255,255,0.1)" stroke="#78d8f2" stroke-width="1.5" />
-  <text x="78" y="305" text-anchor="middle" class="svg-pill" fill="#78d8f2">02</text>
-  <text x="108" y="296" class="svg-label" fill="#ffffff">Implement one planned slice in an isolated tree</text>
-  <text x="108" y="314" class="svg-caption" fill="rgba(255,255,255,0.66)">The specification, scaffold, grants, and checks bound the turn</text>
-
-  <circle cx="78" cy="352" r="16" fill="rgba(255,255,255,0.1)" stroke="#f59ef5" stroke-width="1.5" />
-  <text x="78" y="357" text-anchor="middle" class="svg-pill" fill="#f59ef5">03</text>
-  <text x="108" y="348" class="svg-label" fill="#ffffff">Repair what integrated verification finds</text>
-  <text x="108" y="366" class="svg-caption" fill="rgba(255,255,255,0.66)">Only the engine advances the verified revision label</text>
-</svg>
-</div>
-<div class="ed-prose-col">
-
-# The model can write code.<br>It cannot confer authority.
-
-<p class="ed-prose"><strong>Prompts are not governance and repository access is not authority.</strong> Emery separates proposal from acceptance: source rankings, the current specification, worker grants, runtime capabilities, and the deployment recipe all live outside the model turn.</p>
-<p class="ed-prose">A candidate is staged before it is current. Implementation occurs against one sealed plan in isolated slices. The production label advances only after the integrated tree passes its checks.</p>
-</div>
-</div>
-
-<!--
-The distinction between spec-driven development and an unconstrained coding agent.
-
-- The model is valuable precisely because it can interpret and implement quickly.
-- It is never asked to be its own source of truth, security boundary, or release authority.
-- The stage/apply seam is where the client's approval policy belongs.
-- Coverage gaps, conflicts, and unknowns must be visible and either closed or explicitly accepted under that policy.
--->
-
----
-title: Score any app
-class: slide-light
----
-
-<Eyebrow text="THE SCORECARD · FOUR QUESTIONS" />
-
-<div class="ed-band">
-<div class="ed-band-top">
-<div>
-
-# Score any app<br>in five minutes.
-
-</div>
-<p class="ed-band-prose">Four questions about the app, never about the builder. <strong>The highest column any answer reaches sets the tier.</strong> Here is the shift planner at month nine: three sites and Monday-morning criticality place it at Tier 3, so the conversation is about funding the production clearance.</p>
-</div>
-<Scorecard :mark="{ reach: 3, data: 2, criticality: 3, continuity: 2 }" subject="The shift planner, month 9" />
-</div>
-
-<!--
-This is the tool you take away. Score the planner live.
-
-- Reach: three sites, well over twenty-five people. Tier 3.
-- Data: live roster data through contracts, nothing regulated. Tier 2.
-- Monday morning: shifts go uncovered. Tier 3.
-- Continuity: a named owner and a backup. Tier 2.
-- The highest column wins, so the planner belongs at Tier 3, and the conversation is about the production clearance, not about whether.
-- The thresholds are starting points, not law; set yours in the first workshop. The four questions do not change.
+The commercial and architectural pivot:
+- The customer owns outcomes and constraints: workload, SLOs, recovery, residency, connectivity, and cost.
+- Versioned recipes satisfy them without a bespoke cloud design exercise for every app.
+- Security is never a premium feature: the same boundary applies across S, M, and L.
 -->
 
 ---
@@ -645,10 +625,10 @@ class: slide-light
 <div class="ed-band-top">
 <div>
 
-# We build the system<br>that makes abundant<br>software governable.
+# Abundant code,<br>made governable.
 
 </div>
-<p class="ed-band-prose">Our value is no longer proportional to the amount of code we type. We establish the operating model around abundant implementation: <strong>how applications earn trust, how intent becomes durable, how authority is bounded, how infrastructure is standardised, and who owns the result in production.</strong></p>
+<p class="ed-band-prose">Our value is no longer proportional to the lines of code we type. We establish the operating system around abundant implementation: <strong>how apps earn trust, how intent becomes durable, how runtime authority is bounded, and who owns the result in production.</strong></p>
 </div>
 <div class="ed-band-canvas">
 <svg viewBox="0 0 1140 350" aria-hidden="true">
@@ -658,25 +638,25 @@ class: slide-light
   <text x="142" y="138" text-anchor="middle" class="svg-kicker" fill="#0c7fa3">01 · MODEL</text>
   <text x="142" y="160" text-anchor="middle" class="svg-h3" fill="#0d1030">Earned trust</text>
   <text x="142" y="180" text-anchor="middle" class="svg-caption" fill="rgba(13,16,48,0.58)">Estate scorecards</text>
-  <text x="142" y="196" text-anchor="middle" class="svg-caption" fill="rgba(13,16,48,0.58)">Clearances and ownership</text>
+  <text x="142" y="196" text-anchor="middle" class="svg-caption" fill="rgba(13,16,48,0.58)">Clearances, owners</text>
 
   <circle cx="428" cy="156" r="66" fill="rgba(22,180,226,0.07)" stroke="#0c7fa3" stroke-width="1.8" />
   <text x="428" y="138" text-anchor="middle" class="svg-kicker" fill="#0c7fa3">02 · ENABLE</text>
   <text x="428" y="160" text-anchor="middle" class="svg-h3" fill="#0d1030">Open creation</text>
-  <text x="428" y="180" text-anchor="middle" class="svg-caption" fill="rgba(13,16,48,0.58)">The Codex and coaches</text>
+  <text x="428" y="180" text-anchor="middle" class="svg-caption" fill="rgba(13,16,48,0.58)">Codex and coaches</text>
   <text x="428" y="196" text-anchor="middle" class="svg-caption" fill="rgba(13,16,48,0.58)">Reusable contracts</text>
 
   <circle cx="714" cy="156" r="66" fill="#0d1030" />
   <text x="714" y="138" text-anchor="middle" class="svg-kicker" fill="#78d8f2">03 · STANDARDISE</text>
   <text x="714" y="160" text-anchor="middle" class="svg-h3" fill="#ffffff">The boundaries</text>
-  <text x="714" y="180" text-anchor="middle" class="svg-caption" fill="rgba(255,255,255,0.68)">Specifications and capabilities</text>
-  <text x="714" y="196" text-anchor="middle" class="svg-caption" fill="rgba(255,255,255,0.68)">Omnia + Terraform recipes</text>
+  <text x="714" y="180" text-anchor="middle" class="svg-caption" fill="rgba(255,255,255,0.68)">Spec-driven delivery</text>
+  <text x="714" y="196" text-anchor="middle" class="svg-caption" fill="rgba(255,255,255,0.68)">Runtime + recipes</text>
 
   <circle cx="998" cy="156" r="72" fill="#a4238f" />
   <text x="998" y="136" text-anchor="middle" class="svg-kicker" fill="#ffffff">04 · OPERATE</text>
-  <text x="998" y="160" text-anchor="middle" class="svg-h3" fill="#ffffff">Critical services</text>
+  <text x="998" y="160" text-anchor="middle" class="svg-h3" fill="#ffffff">Critical apps</text>
   <text x="998" y="182" text-anchor="middle" class="svg-caption" fill="rgba(255,255,255,0.78)">Verified graduation</text>
-  <text x="998" y="198" text-anchor="middle" class="svg-caption" fill="rgba(255,255,255,0.78)">Engineering SLA and pager</text>
+  <text x="998" y="198" text-anchor="middle" class="svg-caption" fill="rgba(255,255,255,0.78)">SLA and the pager</text>
 
   <rect x="70" y="274" width="1000" height="48" rx="12" fill="rgba(22,180,226,0.07)" stroke="rgba(12,127,163,0.28)" />
   <text x="570" y="304" text-anchor="middle" class="svg-h3" fill="#0d1030">Domain experts discover · AI implements · the system constrains · accountable people own</text>
@@ -685,12 +665,8 @@ class: slide-light
 </div>
 
 <!--
-This is the reinvented Propellerhead.
-
-- We are not withdrawing engineering. We are concentrating senior engineering where it compounds: the shared boundaries, recipes, and critical services.
-- Domain builders retain product ownership. The platform makes their work visible and gives proven winners a safe route forward.
-- A standard recipe is reviewed, benchmarked, costed, patched, and improved once, then reused.
-- Bespoke architecture becomes the exception with a product case, never the default promise of a sales engagement.
+This is the reinvented Propellerhead:
+- Concentrating senior engineering where it compounds: shared capability boundaries, service recipes, and critical Tier 3 operations.
 -->
 
 ---
@@ -730,8 +706,8 @@ class: slide-split short-bar
 <div class="opportunity-row">
 <span class="opportunity-row-num">03</span>
 <div>
-<h4>Prove the plan and the boundary</h4>
-<p>Map its capabilities to a standard service envelope and demonstrate the evidence required to graduate it safely.</p>
+<h4>Prove the boundary and service envelope</h4>
+<p>Map its capabilities to a standard WASI + Terraform recipe and demonstrate the evidence required to graduate it safely.</p>
 </div>
 </div>
 </div>
@@ -750,10 +726,7 @@ class: slide-split short-bar
 </div>
 
 <!--
-Close with one concrete ask.
-
+Close with one concrete ask:
 - Bring one useful application that has begun to matter and one live capability it needs.
-- We score it, recover a candidate specification, make uncertainty visible, and map it to a standard service envelope.
-- The client sees the whole loop without first funding a bespoke platform.
-- The domain builder keeps the product. The organisation gains a clear path to accountable production ownership.
+- Score it, recover a candidate specification, and map it to a standard service envelope.
 -->

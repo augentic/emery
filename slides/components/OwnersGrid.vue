@@ -66,8 +66,8 @@ withDefaults(defineProps<{
       <text x="820" y="242" text-anchor="middle" class="svg-caption" fill="rgba(13,16,48,0.55)">Publishes domain contracts</text>
 
       <circle cx="1085" cy="200" r="4.5" fill="#0d1030" />
-      <text x="1085" y="226" text-anchor="middle" class="svg-label" fill="#0d1030">Runs Omnia platform</text>
-      <text x="1085" y="242" text-anchor="middle" class="svg-caption" fill="rgba(13,16,48,0.55)">Runtime &amp; audit plane</text>
+      <text x="1085" y="226" text-anchor="middle" class="svg-label" fill="#0d1030">Runs WASI runtime</text>
+      <text x="1085" y="242" text-anchor="middle" class="svg-caption" fill="rgba(13,16,48,0.55)">Capabilities &amp; service recipes</text>
 
       <!-- Swimlane 03: Senior Engineering (Stepped Effort Wedge) -->
       <text x="12" y="300" class="svg-kicker" fill="#a4238f">03 · SENIOR ENGINEERING</text>
@@ -84,12 +84,12 @@ withDefaults(defineProps<{
       <text x="555" y="350" text-anchor="middle" class="svg-caption" fill="rgba(13,16,48,0.55)">Low marginal effort</text>
 
       <circle cx="820" cy="298" r="5.5" fill="#0d1030" />
-      <text x="820" y="334" text-anchor="middle" class="svg-label" fill="#0d1030">Owns data contracts</text>
+      <text x="820" y="334" text-anchor="middle" class="svg-label" fill="#0d1030">Owns capability contracts</text>
       <text x="820" y="350" text-anchor="middle" class="svg-caption" fill="rgba(13,16,48,0.55)">Once per domain, not per app</text>
 
       <circle cx="1085" cy="272" r="8" fill="#a4238f" />
       <text x="1085" y="334" text-anchor="middle" class="svg-label" fill="#a4238f">Rebuilds &amp; takes pager</text>
-      <text x="1085" y="350" text-anchor="middle" class="svg-caption" fill="#0d1030">Verified Emery build + SLA</text>
+      <text x="1085" y="350" text-anchor="middle" class="svg-caption" fill="#0d1030">Spec-driven rebuild + SLA</text>
     </svg>
   </div>
 </template>
