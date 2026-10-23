@@ -21,12 +21,12 @@ use crate::specify::basis::Basis;
 use crate::specify::sections::{BasesSection, ClaimsSection};
 use crate::specify::{Extract, shape};
 
-/// A synthesis brief for the drafted portions of `design.md`.
-///
-/// The brief contains extracted claims, the requirement bases the
-/// specification is drafted from, and the section outline derived from
-/// evidence. It runs from the bases rather than the drafted specification, so
-/// the design and the specification are drafted together.
+// A synthesis brief for the drafted portions of `design.md`.
+//
+// The brief contains extracted claims, the requirement bases the
+// specification is drafted from, and the section outline derived from
+// evidence. It runs from the bases rather than the drafted specification, so
+// the design and the specification are drafted together.
 pub struct DesignBrief<'a> {
     extracts: &'a [Extract],
     bases: &'a [Basis<'a>],
@@ -34,7 +34,7 @@ pub struct DesignBrief<'a> {
 }
 
 impl<'a> DesignBrief<'a> {
-    /// Returns a design brief for `extracts` and `bases`.
+    // Returns a design brief for `extracts` and `bases`.
     #[must_use]
     pub fn new(extracts: &'a [Extract], bases: &'a [Basis<'a>]) -> Self {
         Self {

@@ -85,10 +85,10 @@ pub use emery_adapter::{
 pub use emery_lexicon::{Lexicon, words};
 pub use emery_prose::{Doc, body, check, find, prose};
 pub use omnia_sdk::{Error, Model, bad_gateway, bad_request, not_found, server_error};
-/// The JSON crate a [`Claim`]'s `extras` are built from, for an adapter that
-/// joins claims of its own to what the model answered.
+// The JSON crate a `Claim`'s `extras` are built from, for an adapter that
+// joins claims of its own to what the model answered.
 pub use serde_json;
-/// The tracing crate, for an adapter's own events beside this crate's.
+// The tracing crate, for an adapter's own events beside this crate's.
 pub use tracing;
 
 pub use self::extract::{CONCURRENT, INLINE_BYTES, Seam, extract};

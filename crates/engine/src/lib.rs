@@ -66,6 +66,29 @@ pub fn is_retryable(error: &Error) -> bool {
     }
 }
 
+// The error with its description rewritten and its class and code kept, so
+// a failure gains where it happened without losing what it was.
+fn describe(error: Error, describe: impl FnOnce(String) -> String) -> Error {
+    match error {
+        Error::BadRequest { code, description } => Error::BadRequest {
+            code,
+            description: describe(description),
+        },
+        Error::NotFound { code, description } => Error::NotFound {
+            code,
+            description: describe(description),
+        },
+        Error::ServerError { code, description } => Error::ServerError {
+            code,
+            description: describe(description),
+        },
+        Error::BadGateway { code, description } => Error::BadGateway {
+            code,
+            description: describe(description),
+        },
+    }
+}
+
 /// Reads and writes what a commit would carry at a path beneath a working copy the engine cut.
 ///
 /// `at` is a working copy relative to the project root, as the engine names

@@ -37,9 +37,7 @@ pub use self::dialect::{ClassSyntax, Dialect};
 pub use self::skeleton::{TABLE_LINES, types};
 
 // Each key's values together, the keys in first-occurrence order.
-pub(crate) fn grouped<K: PartialEq, V>(
-    items: impl IntoIterator<Item = (K, V)>,
-) -> Vec<(K, Vec<V>)> {
+fn grouped<K: PartialEq, V>(items: impl IntoIterator<Item = (K, V)>) -> Vec<(K, Vec<V>)> {
     let mut groups: Vec<(K, Vec<V>)> = Vec::new();
     for (key, value) in items {
         match groups.iter_mut().find(|(known, _)| *known == key) {

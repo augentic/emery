@@ -1,23 +1,20 @@
 //! Shared test harness and scripted capabilities for the CLI suites.
 
-#![allow(dead_code, unused_imports, reason = "shared by suites that each use a subset")]
+#![expect(dead_code, reason = "shared by suites that each use a subset")]
 
-mod files;
-mod provider;
-mod scratch;
-mod store;
-mod vcs;
+pub mod files;
+pub mod provider;
+pub mod scratch;
+pub mod store;
+pub mod vcs;
 
-pub use files::*;
 use omnia_sdk::api::command::Response;
 use omnia_sdk::{BlobStore, StateStore};
-pub use provider::*;
-pub use scratch::*;
 use serde_json::Value;
-pub use store::*;
-pub use vcs::*;
 
-/// Runs one CLI invocation and asserts success.
+use self::provider::{Provider, cli};
+
+// Runs one CLI invocation and asserts success.
 pub async fn cli_ok<S>(provider: &Provider<S>, argv: &[&str]) -> Response
 where
     S: StateStore + BlobStore + Send + Sync + 'static,
@@ -27,11 +24,11 @@ where
     resp
 }
 
-/// Runs `argv` in JSON mode and asserts the typed failure envelope.
-///
-/// A failure writes the envelope to stderr alone, so stdout is asserted empty.
-/// Also asserts that the refused run left storage exactly as it found it: a
-/// refusal never commits, prunes, or writes.
+// Runs `argv` in JSON mode and asserts the typed failure envelope.
+//
+// A failure writes the envelope to stderr alone, so stdout is asserted empty.
+// Also asserts that the refused run left storage exactly as it found it: a
+// refusal never commits, prunes, or writes.
 pub async fn fail(provider: &Provider, argv: &[&str], exit: u8, code: &str) -> Value {
     let before = provider.storage.snapshot();
     let mut json = vec!["emery", "--format", "json"];

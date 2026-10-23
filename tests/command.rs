@@ -7,7 +7,8 @@ mod support;
 mod verbs;
 
 use omnia_sdk::api::command::USAGE_EXIT;
-use support::{Provider, cli, cli_ok, fail};
+use support::provider::{Provider, cli};
+use support::{cli_ok, fail};
 
 // The target naming the project checkout as the repository the revision lives in.
 const PROJECT_CONFIG: &str = "tests/build/project.toml";

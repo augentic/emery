@@ -13,9 +13,9 @@ use crate::kebab;
 
 // Read once before the model is asked and held through every correction
 // round.
-pub(super) struct SurfaceLocator<'t, R: Recogniser> {
-    pub(super) tree: &'t Tree<R>,
-    pub(super) bootstrap: Option<Bootstrap<'t, R::Module>>,
+pub struct SurfaceLocator<'t, R: Recogniser> {
+    pub tree: &'t Tree<R>,
+    pub bootstrap: Option<Bootstrap<'t, R::Module>>,
     entries: Vec<String>,
     roots: Vec<String>,
     handed: BTreeSet<(String, String)>,
@@ -23,7 +23,7 @@ pub(super) struct SurfaceLocator<'t, R: Recogniser> {
 }
 
 impl<'t, R: Recogniser> SurfaceLocator<'t, R> {
-    pub(super) fn new(tree: &'t Tree<R>) -> Self {
+    pub fn new(tree: &'t Tree<R>) -> Self {
         let handed = tree.handed_classes();
         let locating = tree
             .modules
@@ -82,7 +82,7 @@ impl<'t, R: Recogniser> SurfaceLocator<'t, R> {
         }
     }
 
-    pub(super) fn facts(&self) -> String {
+    pub fn facts(&self) -> String {
         let tree = self.tree;
         let mut sections: Vec<String> = Vec::new();
 
@@ -264,7 +264,7 @@ impl<'t, R: Recogniser> SurfaceLocator<'t, R> {
 
     // Ordered so a tree past the budget inlines what locates its surfaces
     // before what does not.
-    pub(super) fn inlined(&self) -> Vec<String> {
+    pub fn inlined(&self) -> Vec<String> {
         let tree = self.tree;
         let mut files: Vec<String> = Vec::new();
         for manifest in tree.dialect.manifests {
@@ -291,7 +291,7 @@ impl<'t, R: Recogniser> SurfaceLocator<'t, R> {
     // A module the facts say nothing of is not asked after: a framework may
     // load it by a setting's name, and a model made to account for every such
     // module invents surfaces to cover them.
-    pub(super) fn check(&self, answer: &Inventory) -> Vec<String> {
+    pub fn check(&self, answer: &Inventory) -> Vec<String> {
         let tree = self.tree;
         let mut findings: Vec<String> = Vec::new();
         if self.bootstrap.is_some() {
@@ -348,7 +348,7 @@ impl<'t, R: Recogniser> SurfaceLocator<'t, R> {
     // `start` sets the bootstrap's own behaviour apart from the surfaces it
     // mounts; where the answer names none, there is nothing to set it apart
     // from, and the tree is cut as one with no surface.
-    pub(super) fn build(&self, answer: &Inventory) -> Vec<Surface> {
+    pub fn build(&self, answer: &Inventory) -> Vec<Surface> {
         let tree = self.tree;
         let mut surfaces = self.named(answer);
         if surfaces.is_empty() {

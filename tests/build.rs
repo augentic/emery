@@ -16,7 +16,11 @@ use omnia_sdk::{bad_gateway, bad_request};
 use omnia_test::SeenFormat;
 use omnia_test::guest::Scripted;
 use serde_json::{Value, json};
-use support::{HEAD, Provider, Rendezvous, Scratch, cli, cli_ok, digest, fail, seed, stage};
+use support::provider::{Provider, Rendezvous, cli, digest};
+use support::scratch::Scratch;
+use support::store::{seed, stage};
+use support::vcs::HEAD;
+use support::{cli_ok, fail};
 
 const MERGE_MD: &str = include_str!("../crates/engine/prose/merge.md");
 // The resolution of `src/lib.rs` between `authentication` and `orders`.

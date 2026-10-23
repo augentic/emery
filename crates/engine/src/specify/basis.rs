@@ -19,19 +19,19 @@ use crate::brief::{Brief, Review};
 use crate::revision::{self, Cited, Loser, ReqId, Requirement, Scenario, Status};
 use crate::specify::Extract;
 
-/// The reserved source name the current revision's requirements contribute under.
-///
-/// An amend run reconciles its change sources against the requirements the
-/// current revision holds, each a [`Contributor`] from this source, so no
-/// operator source may take the name.
+// The reserved source name the current revision's requirements contribute under.
+//
+// An amend run reconciles its change sources against the requirements the
+// current revision holds, each a `Contributor` from this source, so no
+// operator source may take the name.
 pub const BASELINE: &str = "baseline";
 
-/// A synthesis brief for grouping requirement claims.
-///
-/// The brief contains requirement claims in source order and every acceptance
-/// criterion identifier. Source authority is withheld from the model. An
-/// amend run's brief carries the current revision's requirements after the
-/// claims, as the standing requirements the claims are matched against.
+// A synthesis brief for grouping requirement claims.
+//
+// The brief contains requirement claims in source order and every acceptance
+// criterion identifier. Source authority is withheld from the model. An
+// amend run's brief carries the current revision's requirements after the
+// claims, as the standing requirements the claims are matched against.
 pub struct GroupingBrief<'a> {
     contributors: Vec<Contributor<'a>>,
     criteria: Vec<&'a str>,
@@ -44,26 +44,26 @@ pub struct GroupingBrief<'a> {
 }
 
 impl<'a> GroupingBrief<'a> {
-    /// Returns a grouping brief for `extracts`.
-    ///
-    /// A `retire` claim is passed over: with no standing requirements there
-    /// is nothing for it to withdraw.
+    // Returns a grouping brief for `extracts`.
+    //
+    // A `retire` claim is passed over: with no standing requirements there
+    // is nothing for it to withdraw.
     #[must_use]
     pub fn new(extracts: &'a [Extract]) -> Self {
         Self::assemble(extracts, Vec::new(), Vec::new(), false)
     }
 
-    /// Returns a grouping brief for `extracts` matched against `standing`.
-    ///
-    /// `standing` is the current revision's requirements as contributors
-    /// from [`BASELINE`], each indexed after the claims, and `criteria` the
-    /// ids of those the revision holds covered. The model places each claim
-    /// in the group of the standing requirement it restates or revises, or
-    /// in a group of its own, and never two standing requirements in one
-    /// group. A `retire` claim is a contributor too, marked as withdrawing
-    /// the behaviour its id names: one at a standing requirement's id is
-    /// pre-merged with it, and the model places any other with the
-    /// standing requirement it withdraws.
+    // Returns a grouping brief for `extracts` matched against `standing`.
+    //
+    // `standing` is the current revision's requirements as contributors
+    // from `BASELINE`, each indexed after the claims, and `criteria` the
+    // ids of those the revision holds covered. The model places each claim
+    // in the group of the standing requirement it restates or revises, or
+    // in a group of its own, and never two standing requirements in one
+    // group. A `retire` claim is a contributor too, marked as withdrawing
+    // the behaviour its id names: one at a standing requirement's id is
+    // pre-merged with it, and the model places any other with the
+    // standing requirement it withdraws.
     #[must_use]
     pub fn with_standing(
         extracts: &'a [Extract], standing: Vec<Contributor<'a>>, criteria: Vec<&'a str>,
@@ -142,26 +142,24 @@ impl<'a> GroupingBrief<'a> {
         }
     }
 
-    /// Derives every requirement basis.
-    ///
-    /// A run whose requirement claims come from two or more sources asks the
-    /// model to group them, as does one matching claims against standing
-    /// requirements. So does a run over one contributing source whose
-    /// requirement ids span two or more stems, since its seams may describe
-    /// one behaviour under different nouns. Otherwise the baseline stands alone
-    /// and no call is spent. Whatever the model answers, claims sharing an id
-    /// stay one group, and one source's distinct ids under one stem stay
-    /// distinct groups — a group that merges them is split, with no round
-    /// spent.
-    ///
-    /// # Errors
-    ///
-    /// - Returns [`Error::BadRequest`] when no source contributed a requirement
-    ///   claim, or when the model cannot produce a valid grouping within the
-    ///   available rounds.
-    /// - Returns [`Error::ServerError`] when required prose is missing or a
-    ///   grouping cannot be reconciled with the claims.
-    /// - Returns [`Error::BadGateway`] when the model operation fails.
+    // Derives every requirement basis.
+    //
+    // A run whose requirement claims come from two or more sources asks the
+    // model to group them, as does one matching claims against standing
+    // requirements. So does a run over one contributing source whose
+    // requirement ids span two or more stems, since its seams may describe
+    // one behaviour under different nouns. Otherwise the baseline stands alone
+    // and no call is spent. Whatever the model answers, claims sharing an id
+    // stay one group, and one source's distinct ids under one stem stay
+    // distinct groups — a group that merges them is split, with no round
+    // spent.
+    //
+    // - Returns `Error::BadRequest` when no source contributed a requirement
+    //   claim, or when the model cannot produce a valid grouping within the
+    //   available rounds.
+    // - Returns `Error::ServerError` when required prose is missing or a
+    //   grouping cannot be reconciled with the claims.
+    // - Returns `Error::BadGateway` when the model operation fails.
     pub async fn derive<M: Model>(self, model: &M) -> Result<Vec<Basis<'a>>, Error> {
         if self.claims().is_empty() {
             return Err(bad_request!("no source contributed a requirement claim"));
@@ -537,22 +535,22 @@ pub struct Group {
     pub classes: Vec<Vec<usize>>,
 }
 
-/// Reconciled facts used to construct one requirement.
-///
-/// Contributors are grouped by agreement, with the winning class first.
+// Reconciled facts used to construct one requirement.
+//
+// Contributors are grouped by agreement, with the winning class first.
 #[derive(Debug)]
 pub struct Basis<'a> {
-    /// The requirement identifier, assigned from `REQ-001`.
+    // The requirement identifier, assigned from `REQ-001`.
     pub id: ReqId,
-    /// The heading derived from the highest-authority claim identifier.
+    // The heading derived from the highest-authority claim identifier.
     pub subject: &'a str,
-    /// The reconciliation outcome.
+    // The reconciliation outcome.
     pub status: Status,
-    /// Whether any criterion claim covers the requirement.
+    // Whether any criterion claim covers the requirement.
     pub covered: bool,
-    /// What reaches the requirement, where a `contract` claim binds it.
+    // What reaches the requirement, where a `contract` claim binds it.
     pub trigger: Option<Trigger>,
-    /// Agreement classes, with the winning class first.
+    // Agreement classes, with the winning class first.
     pub classes: Vec<Vec<Contributor<'a>>>,
 }
 
@@ -604,14 +602,14 @@ impl<'a> Basis<'a> {
         }
     }
 
-    /// Returns the basis as an amendment drafts its requirement from it.
-    ///
-    /// The requirement takes `id`, `subject` (the base's where it revises
-    /// one), and `trigger`. The [`BASELINE`] contributors are left out, since
-    /// the standing requirement is what the change revises and not a source
-    /// of it. Status is settled over the change sources alone, while coverage
-    /// stands as the grouping settled it. Returns `None` when only the
-    /// baseline contributed.
+    // Returns the basis as an amendment drafts its requirement from it.
+    //
+    // The requirement takes `id`, `subject` (the base's where it revises
+    // one), and `trigger`. The `BASELINE` contributors are left out, since
+    // the standing requirement is what the change revises and not a source
+    // of it. Status is settled over the change sources alone, while coverage
+    // stands as the grouping settled it. Returns `None` when only the
+    // baseline contributed.
     #[must_use]
     pub fn amended(
         mut self, id: ReqId, subject: &'a str, trigger: Option<Trigger>,
@@ -656,28 +654,28 @@ impl<'a> Basis<'a> {
             .map(|contract| contract.trigger.clone())
     }
 
-    /// Returns the stem of the subject: the first segment of its dotted id.
+    // Returns the stem of the subject: the first segment of its dotted id.
     #[must_use]
     pub fn stem(&self) -> &'a str {
         revision::stem(self.subject)
     }
 
-    /// Returns the sub-stem of the subject: the first two segments of its
-    /// dotted id, the slice floor under a stem past the cap.
+    // Returns the sub-stem of the subject: the first two segments of its
+    // dotted id, the slice floor under a stem past the cap.
     #[must_use]
     pub fn substem(&self) -> &'a str {
         revision::substem(self.subject)
     }
 
-    /// Returns contributors by descending authority and then source order.
+    // Returns contributors by descending authority and then source order.
     pub fn contributors(&self) -> impl Iterator<Item = &Contributor<'a>> {
         let mut members: Vec<&Contributor<'a>> = self.classes.iter().flatten().collect();
         members.sort_by_key(|member| (member.rank, member.index));
         members.into_iter()
     }
 
-    /// Returns the winning statement, or `None` when the contributors are in
-    /// conflict or the winning claim withdraws the requirement.
+    // Returns the winning statement, or `None` when the contributors are in
+    // conflict or the winning claim withdraws the requirement.
     #[must_use]
     pub fn statement(&self) -> Option<&str> {
         match self.status {
@@ -689,27 +687,27 @@ impl<'a> Basis<'a> {
         }
     }
 
-    /// Returns whether the winning claim withdraws the requirement.
-    ///
-    /// A `retire` claim leading the winning class withdraws the behaviour
-    /// the group's standing requirement states, so the requirement is
-    /// retired rather than restated. A conflict has no winner and answers
-    /// `false`.
+    // Returns whether the winning claim withdraws the requirement.
+    //
+    // A `retire` claim leading the winning class withdraws the behaviour
+    // the group's standing requirement states, so the requirement is
+    // retired rather than restated. A conflict has no winner and answers
+    // `false`.
     #[must_use]
     pub fn withdraws(&self) -> bool {
         self.status != Status::Conflict && self.classes[0][0].withdraws
     }
 
-    /// Returns the `retire` claims among the contributors, by descending authority.
+    // Returns the `retire` claims among the contributors, by descending authority.
     pub fn withdrawals(&self) -> impl Iterator<Item = &Contributor<'a>> {
         self.contributors().filter(|member| member.withdraws)
     }
 
-    /// Returns the requirement produced from this basis and `scenarios`.
-    ///
-    /// The body is the winning statement, or none for a conflict. The losing
-    /// classes become notes. The trigger is the basis's own, bound from the
-    /// sources' `contract` claims.
+    // Returns the requirement produced from this basis and `scenarios`.
+    //
+    // The body is the winning statement, or none for a conflict. The losing
+    // classes become notes. The trigger is the basis's own, bound from the
+    // sources' `contract` claims.
     #[must_use]
     pub fn requirement(&self, scenarios: Vec<Scenario>) -> Requirement {
         let body = self.statement().map(|statement| vec![statement.to_owned()]).unwrap_or_default();
@@ -746,32 +744,32 @@ impl<'a> Basis<'a> {
     }
 }
 
-/// A source claim contributing to a requirement.
+// A source claim contributing to a requirement.
 #[derive(Debug)]
 pub struct Contributor<'a> {
-    /// The name of the source the claim was extracted from.
+    // The name of the source the claim was extracted from.
     pub source: &'a str,
-    /// The kind of source the claim was extracted from.
+    // The kind of source the claim was extracted from.
     pub kind: SourceKind,
-    /// The authority rank the contributor is ordered by.
+    // The authority rank the contributor is ordered by.
     pub rank: Rank,
-    /// The claim identifier, which may differ from the requirement subject.
+    // The claim identifier, which may differ from the requirement subject.
     pub id: &'a str,
-    /// Where in the source the claim anchors, when it carries a `path`.
+    // Where in the source the claim anchors, when it carries a `path`.
     pub path: Option<&'a str>,
-    /// The claim statement with whitespace normalised.
+    // The claim statement with whitespace normalised.
     pub statement: String,
-    /// An optional synopsis provided to the grouping model.
+    // An optional synopsis provided to the grouping model.
     pub synopsis: Option<&'a str>,
-    /// Whether the claim is a `retire`, withdrawing the behaviour its id
-    /// names rather than stating it.
+    // Whether the claim is a `retire`, withdrawing the behaviour its id
+    // names rather than stating it.
     pub withdraws: bool,
-    /// Position in source order, used to break authority ties.
+    // Position in source order, used to break authority ties.
     pub index: usize,
 }
 
 impl<'a> Contributor<'a> {
-    /// Returns the stem of the claim id: the first segment of its dotted id.
+    // Returns the stem of the claim id: the first segment of its dotted id.
     #[must_use]
     pub fn stem(&self) -> &'a str {
         revision::stem(self.id)

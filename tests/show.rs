@@ -6,7 +6,9 @@ mod support;
 
 use emery_engine::{STAGED_CONTAINER, STAGED_KEY};
 use serde_json::Value;
-use support::{Provider, cli_ok, fail, stage, stage_amendment};
+use support::provider::Provider;
+use support::store::{stage, stage_amendment};
+use support::{cli_ok, fail};
 
 // The one-source reference `specify` names; the scripted loader lands any
 // exact package reference.

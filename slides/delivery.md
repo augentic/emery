@@ -1,6 +1,6 @@
 ---
 theme: default
-title: Explicit Intent · Bounded Authority · Repeatable Infrastructure
+title: Give AI Less Technology to Invent
 aspectRatio: 16/9
 canvasWidth: 1280
 layout: default
@@ -9,14 +9,14 @@ class: slide-hero slide-section
 
 <AmbientVideo src="/videos/hero-video-3.mp4" variant="hero" />
 
-<Eyebrow text="PROPELLERHEAD · DELIVERY ARCHITECTURE" />
+<Eyebrow text="PROPELLERHEAD · HOW WE DELIVER" />
 
 <div class="section-hero-grid">
 <div class="section-hero-left">
 
-# Explicit intent.<br>Bounded authority.<br>Repeatable infrastructure.
+# Give AI less<br>technology to invent.
 
-<p class="section-subtitle">The Trust Model, expressed in architecture: a WASI runtime bounds what code may touch, service recipes standardise how platforms run, and spec-driven development keeps business intent durable.</p>
+<p class="section-subtitle">The business problem should be distinctive.<br>The technology underneath it usually should not.</p>
 </div>
 </div>
 
@@ -28,10 +28,85 @@ class: slide-hero slide-section
 
 <!--
 Opening framing:
-- The Trust Model says when an application earns more authority and ownership. This deck explains how the architecture enforces that worldview.
+- This is the architecture behind the Trust Model, and the reason AI-generated code can meet a production bar here: explicit intent, bounded authority, repeatable infrastructure.
 - The WASI runtime separates application logic from infrastructure authority.
 - Service recipes combine the runtime with Terraform so the customer chooses an outcome and constraints, not a bespoke topology.
 - Spec-driven development separates durable intent from replaceable implementation.
+- Every layer narrows what an agent must decide. The less technology it invents, the more of its output can be verified.
+-->
+
+---
+title: Built for People · Ready for Generation
+class: slide-light
+---
+
+<Eyebrow text="THE ORIGIN · WHY THIS BET, AND NOT ANOTHER" />
+
+<div class="ed-split">
+<div class="ed-prose-col">
+
+# Built for people.<br>Ready for<br>generation.
+
+<p class="ed-prose">We built our runtime, in Rust on Wasmtime, so our engineers could stop selecting stacks. In October 2025, AI-generated code met our production bar. <strong>The decision that paid off had been made years earlier, for people.</strong></p>
+<p class="ed-prose">Containers, governed frameworks, and serverless each reduce repeated decisions, but they rely on discipline. <strong>The component model enforces its boundary by construction</strong>, and construction is what holds as code arrives faster and in greater volume.</p>
+</div>
+<div class="ed-diagram-pane">
+<svg viewBox="0 0 640 440" aria-hidden="true">
+  <!-- Alternatives -->
+  <text x="0" y="22" class="svg-kicker" fill="rgba(13,16,48,0.55)">OTHER WAYS TO REDUCE REPEATED DECISIONS</text>
+
+  <rect x="0" y="36" width="204" height="62" rx="10" fill="#f5f6fa" stroke="rgba(13,16,48,0.14)" stroke-width="1.2" />
+  <text x="102" y="62" text-anchor="middle" class="svg-label" fill="rgba(13,16,48,0.72)">Containers and</text>
+  <text x="102" y="80" text-anchor="middle" class="svg-label" fill="rgba(13,16,48,0.72)">a service mesh</text>
+
+  <rect x="218" y="36" width="204" height="62" rx="10" fill="#f5f6fa" stroke="rgba(13,16,48,0.14)" stroke-width="1.2" />
+  <text x="320" y="62" text-anchor="middle" class="svg-label" fill="rgba(13,16,48,0.72)">A governed</text>
+  <text x="320" y="80" text-anchor="middle" class="svg-label" fill="rgba(13,16,48,0.72)">application framework</text>
+
+  <rect x="436" y="36" width="204" height="62" rx="10" fill="#f5f6fa" stroke="rgba(13,16,48,0.14)" stroke-width="1.2" />
+  <text x="538" y="62" text-anchor="middle" class="svg-label" fill="rgba(13,16,48,0.72)">Serverless and</text>
+  <text x="538" y="80" text-anchor="middle" class="svg-label" fill="rgba(13,16,48,0.72)">shared libraries</text>
+
+  <path d="M 12 108 L 12 116 L 628 116 L 628 108" fill="none" stroke="rgba(180,35,78,0.45)" stroke-width="1.2" />
+  <text x="320" y="140" text-anchor="middle" class="svg-kicker" fill="#b4234e">HELD BY DISCIPLINE</text>
+  <text x="320" y="158" text-anchor="middle" class="svg-caption" fill="rgba(13,16,48,0.58)">Conventions narrow the choices. The code inside keeps its ambient access.</text>
+
+  <!-- The component model -->
+  <rect x="0" y="178" width="640" height="254" rx="14" fill="#0d1030" />
+  <text x="28" y="206" class="svg-kicker" fill="#78d8f2">HELD BY CONSTRUCTION · THE WEBASSEMBLY COMPONENT MODEL</text>
+
+  <text x="28" y="240" class="svg-label" fill="#ffffff">Sandboxed by default</text>
+  <text x="28" y="259" class="svg-caption" fill="rgba(255,255,255,0.68)">No ambient filesystem, network, process,</text>
+  <text x="28" y="275" class="svg-caption" fill="rgba(255,255,255,0.68)">or environment access</text>
+
+  <text x="336" y="240" class="svg-label" fill="#ffffff">Typed, narrow interfaces</text>
+  <text x="336" y="259" class="svg-caption" fill="rgba(255,255,255,0.68)">Generated code satisfies the interface</text>
+  <text x="336" y="275" class="svg-caption" fill="rgba(255,255,255,0.68)">or does not compile</text>
+
+  <line x1="28" y1="296" x2="612" y2="296" stroke="rgba(255,255,255,0.12)" />
+
+  <text x="28" y="326" class="svg-label" fill="#ffffff">A small generation problem</text>
+  <text x="28" y="345" class="svg-caption" fill="rgba(255,255,255,0.68)">No frameworks to select, provider SDKs</text>
+  <text x="28" y="361" class="svg-caption" fill="rgba(255,255,255,0.68)">to import, or deployment to design</text>
+
+  <text x="336" y="326" class="svg-label" fill="#ffffff">Every grant is visible</text>
+  <text x="336" y="345" class="svg-caption" fill="rgba(255,255,255,0.68)">What it can touch is enumerable</text>
+  <text x="336" y="361" class="svg-caption" fill="rgba(255,255,255,0.68)">from its host configuration</text>
+
+  <line x1="28" y1="384" x2="612" y2="384" stroke="rgba(255,255,255,0.12)" />
+  <text x="28" y="412" class="svg-caption" fill="#f59ef5">An agent's mistake or a poisoned dependency cannot reach what the host did not grant.</text>
+</svg>
+</div>
+</div>
+
+<!--
+Where this came from, and why it holds:
+- We did not design this for AI. We designed it so engineers could stop selecting stacks: one runtime, one set of capability interfaces, recipes for the platform.
+- When AI-generated code met our production bar in October 2025, that earlier constraint was why. Given a reviewed specification, the agent implements the declared behaviour. It does not design the universe.
+- The constraint is the leverage: fewer architectural choices to invent, less provider-specific code tangled into business behaviour, and one target for generation, testing, and review.
+- Why not containers, a governed framework, or serverless? Each reduces repeated decisions, but the code inside still reaches whatever its environment holds. The component model removes that ambient access whatever the code does.
+- Typed interfaces move a whole class of review from human vigilance to the toolchain, and an enumerable set of grants gives security review a concrete artefact instead of an archaeology exercise.
+- The boundary: the sandbox does not replace infrastructure security. Every linked capability or writable mount is a real grant, and is reviewed as one.
 -->
 
 ---
@@ -39,7 +114,7 @@ title: Born from the Trust Model
 class: slide-light
 ---
 
-<Eyebrow text="THE ORIGIN · FROM WORLDVIEW TO ARCHITECTURE" />
+<Eyebrow text="THE TRUST MODEL · ONE LAYER PER QUESTION" />
 
 <div class="ed-band">
 <div class="ed-band-top">
@@ -97,8 +172,8 @@ class: slide-light
   <path d="M 670 322 L 778 322" fill="none" stroke="#a4238f" stroke-width="2" />
   <polygon points="772,317 782,322 772,327" fill="#a4238f" />
   <circle cx="670" cy="322" r="4.5" fill="#a4238f" />
-  <text x="654" y="316" text-anchor="end" class="svg-kicker" fill="#a4238f">T2 PROTOTYPE OR LEGACY REPO</text>
-  <text x="654" y="334" text-anchor="end" class="svg-caption" fill="rgba(13,16,48,0.58)">Rules trapped in brittle code</text>
+  <text x="654" y="316" text-anchor="end" class="svg-kicker" fill="#a4238f">LEGACY SYSTEM OR T2 PROTOTYPE</text>
+  <text x="654" y="334" text-anchor="end" class="svg-caption" fill="rgba(13,16,48,0.58)">Rules trapped in code nobody can safely change</text>
 
   <rect x="788" y="284" width="332" height="78" rx="12" fill="rgba(164,35,143,0.08)" stroke="#a4238f" stroke-width="2" />
   <text x="812" y="308" class="svg-kicker" fill="#a4238f">03 · SPEC-DRIVEN DEVELOPMENT · TIER 3</text>
@@ -109,11 +184,12 @@ class: slide-light
 </div>
 
 <!--
-How the architecture follows from the Trust Model:
+How the layers map to the Trust Model:
 - Tier 1 needs a governed workspace (The Codex) because nothing live is reachable.
 - Tier 2 needs a structural boundary (WASI runtime) between variable application code and live systems.
 - Tiers 2 and 3 share repeatable Terraform + runtime service recipes instead of bespoke cloud builds.
 - Tier 3 needs durable intent (spec-driven development), explicit promotion, and accountable operation.
+- The same path serves a critical legacy system: Tier 3 by dependence, often Tier 0 by evidence. Its rules are recovered into a specification and rebuilt in verified waves.
 -->
 
 ---
@@ -190,7 +266,7 @@ class: slide-light
   <text x="454" y="124" text-anchor="middle" class="svg-kicker" fill="#78d8f2">WASI APPLICATION COMPONENT</text>
   <text x="454" y="148" text-anchor="middle" class="svg-h3" fill="#ffffff">Differentiating Logic</text>
   <text x="454" y="170" text-anchor="middle" class="svg-caption" fill="rgba(255,255,255,0.72)">Portable sandbox · Explicit WIT interfaces</text>
-  <text x="454" y="190" text-anchor="middle" class="svg-caption" fill="#78d8f2">Zero infrastructure credentials in code</text>
+  <text x="454" y="190" text-anchor="middle" class="svg-caption" fill="#78d8f2">Declares the capabilities it needs</text>
 
   <!-- Explicit WIT Capability Links -->
   <line x1="368" y1="208" x2="368" y2="256" stroke="#78d8f2" stroke-width="1.8" />
@@ -240,10 +316,10 @@ class: slide-light
 # Name the role.<br>Bind it later.
 
 </div>
-<p class="ed-band-prose">Application code asks for durable roles — state, messaging, identity, secrets, outbound calls — through stable WASI capability interfaces. The environment recipe binds those interfaces to local doubles, managed cloud services, or sovereign infrastructure without changing the component.</p>
+<p class="ed-band-prose">Application code asks for durable roles — state, messaging, identity, secrets, outbound calls — through stable WASI capability interfaces. Where a conforming backend exists, the recipe binds it without changing or recompiling the component. <strong>Move off one platform without locking into the next.</strong></p>
 </div>
 <div class="ed-band-canvas">
-<svg viewBox="0 0 1140 355" aria-hidden="true">
+<svg viewBox="0 0 1140 375" aria-hidden="true">
   <!-- Top Layer: Portable Guest Component -->
   <rect x="290" y="12" width="560" height="72" rx="12" fill="#0d1030" />
   <text x="570" y="38" text-anchor="middle" class="svg-kicker" fill="#78d8f2">PORTABLE WASI COMPONENT</text>
@@ -289,6 +365,8 @@ class: slide-light
   <text x="804" y="280" class="svg-body" fill="rgba(13,16,48,0.72)">• Local identity and telemetry</text>
   <text x="804" y="302" class="svg-body" fill="rgba(13,16,48,0.72)">• Residency and air-gapped constraints</text>
   <text x="804" y="322" class="svg-caption" fill="#a4238f">Optimised for control and locality</text>
+
+  <text x="570" y="366" text-anchor="middle" class="svg-caption" fill="rgba(13,16,48,0.55)">Narrow by design: data migration, provider semantics, performance, and cost are still planned and verified per move.</text>
 </svg>
 </div>
 </div>
@@ -296,8 +374,9 @@ class: slide-light
 <!--
 Runtime slide 2 of 3 — infrastructure as a replaceable implementation:
 - The application expresses stable capability needs instead of importing a provider architecture.
-- The recipe layer selects the concrete services for the environment.
-- This separates the long-lived business contract from infrastructure choices that will change.
+- The recipe layer selects the concrete services for the environment: local doubles, managed cloud, or sovereign infrastructure.
+- This separates the long-lived business contract from infrastructure choices that will change, so leaving one platform does not mean locking into the next.
+- The promise is narrow and useful. Where the runtime has a conforming backend, the host substitutes it without changing or recompiling guest logic. Data migration, provider-specific semantics, performance, cost, and operational equivalence still need explicit work and verification.
 -->
 
 ---
@@ -390,6 +469,7 @@ Runtime slide 3 of 3 — repeatable service envelopes:
 - Customers buy a service outcome, not a one-off infrastructure architecture.
 - Small, medium, and large plans express measurable demand and constraints. Security remains the same baseline across all three.
 - A versioned recipe combines Terraform-provisioned resources with the WASI runtime host and application component.
+- This is where "customise what differentiates the business, standardise everything beneath it" becomes a contract the customer can buy.
 -->
 
 ---
@@ -414,10 +494,11 @@ class: slide-hero slide-section
 <TrustLadder variant="strip" :current="3" />
 
 <!--
-Part Two: Three slides on spec-driven development (Tier 3).
+Part Two: Three slides on spec-driven development (Tier 3), then the evidence.
 1. Specifications, not code, as the durable source of truth.
-2. Recovering intent from citizen-built applications and legacy systems.
+2. Recovering intent from existing systems: critical legacy code and citizen-built prototypes.
 3. Bounded, wave-by-wave implementation and verification.
+4. What a real rebuild exposed, and where each fix landed.
 -->
 
 ---
@@ -432,7 +513,7 @@ class: slide-light
 
 # Intent is the asset.<br>Code is replaceable.
 
-<p class="ed-prose">In both vibe-coded prototypes and legacy systems, business rules are tangled inside framework plumbing. Prompts vanish when the chat window closes.</p>
+<p class="ed-prose">In vibe-coded prototypes and long-lived critical systems alike, business rules are tangled inside framework plumbing. Prompts vanish when the chat window closes, and chat history is not an audit trail.</p>
 <p class="ed-prose"><strong>Spec-driven development flips the hierarchy:</strong> a versioned contract holds a technology-neutral <strong>Specification</strong>, a technology-aware <strong>Design</strong>, and a dependency-ordered <strong>Build Plan</strong> — so implementation can be cleanly rebuilt for any target.</p>
 </div>
 <div class="ed-diagram-pane">
@@ -498,7 +579,7 @@ title: Specifications · Recovery
 class: slide-light
 ---
 
-<Eyebrow text="SPECIFICATION 02 / 03 · RECOVER INTENT FROM CITIZEN & LEGACY SYSTEMS" />
+<Eyebrow text="SPECIFICATION 02 / 03 · RECOVER INTENT FROM EXISTING SYSTEMS" />
 
 <div class="ed-band">
 <div class="ed-band-top">
@@ -507,7 +588,7 @@ class: slide-light
 # Recover intent.<br>Expose the gaps.
 
 </div>
-<p class="ed-band-prose">Graduating a prototype or replacing a legacy system usually forces a bad choice: inherit brittle code nobody understands, or rewrite from a blank page and lose hard-won rules. <strong>Specification recovery is the third option</strong> — reconciling intent, docs, tests, and code under explicit source authority while keeping every conflict visible.</p>
+<p class="ed-band-prose">Replacing a critical system nobody fully understands, or graduating a prototype, usually forces a bad choice: keep patching code nobody can safely change, or let AI translate it and reproduce its problems in a new language. <strong>Specification recovery is the third option</strong>: reconciling intent, docs, tests, and code under explicit source authority while keeping every conflict visible.</p>
 </div>
 <div class="ed-band-canvas">
 <svg viewBox="0 0 1140 355" aria-hidden="true">
@@ -524,7 +605,7 @@ class: slide-light
 
   <rect x="16" y="192" width="256" height="92" rx="10" fill="rgba(164,35,143,0.06)" stroke="#a4238f" stroke-width="1.6" />
   <text x="34" y="216" class="svg-kicker" fill="#a4238f">RANK 3 · OBSERVED BEHAVIOUR</text>
-  <text x="34" y="236" class="svg-label" fill="#0d1030">T2 Prototype or Legacy Code</text>
+  <text x="34" y="236" class="svg-label" fill="#0d1030">Legacy System or Prototype</text>
   <text x="34" y="256" class="svg-caption" fill="rgba(13,16,48,0.65)">Routes, decisions, data shapes,</text>
   <text x="34" y="272" class="svg-caption" fill="rgba(13,16,48,0.65)">and tests extracted as claims</text>
 
@@ -548,7 +629,7 @@ class: slide-light
 
   <circle cx="436" cy="236" r="4.5" fill="#ff7597" />
   <text x="452" y="240" class="svg-label" fill="#ffffff">Conflicts &amp; [unknown] Preserved</text>
-  <text x="452" y="258" class="svg-caption" fill="rgba(255,255,255,0.68)">Never guessed or silently flattened</text>
+  <text x="452" y="258" class="svg-caption" fill="rgba(255,255,255,0.68)">Not silently flattened into a guess</text>
 
   <!-- Connector to Output -->
   <line x1="720" y1="166" x2="796" y2="166" stroke="#a4238f" stroke-width="2.2" />
@@ -563,25 +644,25 @@ class: slide-light
   <text x="836" y="176" class="svg-body" fill="#0d1030">• Routes and triggers bound from code</text>
   <text x="836" y="202" class="svg-body" fill="#0d1030">• Domain data separated from plumbing</text>
   <text x="836" y="228" class="svg-body" fill="#0d1030">• Staged for human review before sealing</text>
-  <text x="836" y="258" class="svg-caption" fill="#0c7fa3">Zero silent assumptions</text>
+  <text x="836" y="258" class="svg-caption" fill="#0c7fa3">Your people settle what survives</text>
 
   <!-- Bottom Comparison Strip: Avoiding the Two Graduation Traps -->
   <rect x="16" y="302" width="540" height="40" rx="8" fill="rgba(255,59,107,0.05)" stroke="rgba(180,35,78,0.28)" stroke-dasharray="4 4" />
-  <text x="34" y="326" class="svg-kicker" fill="#b4234e">TRAP 01 · HARDEN IN PLACE</text>
-  <text x="230" y="326" class="svg-caption" fill="rgba(13,16,48,0.68)">Engineers inherit months of opaque generated code</text>
+  <text x="34" y="326" class="svg-kicker" fill="#b4234e">TRAP 01 · KEEP PATCHING IT</text>
+  <text x="240" y="326" class="svg-caption" fill="rgba(13,16,48,0.68)">Keeps paying for code nobody can safely change</text>
 
   <rect x="580" y="302" width="540" height="40" rx="8" fill="rgba(255,59,107,0.05)" stroke="rgba(180,35,78,0.28)" stroke-dasharray="4 4" />
-  <text x="598" y="326" class="svg-kicker" fill="#b4234e">TRAP 02 · BLANK-PAGE REWRITE</text>
-  <text x="812" y="326" class="svg-caption" fill="rgba(13,16,48,0.68)">Throws away the rules the prototype paid to discover</text>
+  <text x="598" y="326" class="svg-kicker" fill="#b4234e">TRAP 02 · TRANSLATE IT WITH AI</text>
+  <text x="830" y="326" class="svg-caption" fill="rgba(13,16,48,0.68)">Reproduces old problems in a new language</text>
 </svg>
 </div>
 </div>
 
 <!--
 Specification slide 2 of 3 — specification recovery:
-- A direct AI rewrite confuses historical implementation with intended behaviour.
+- A direct AI translation confuses historical implementation with intended behaviour. AI can survey source material quickly; it cannot decide what should survive.
 - Evidence adapters recover structured claims from each authoritative input.
-- Authority is explicit and configurable; divergence, conflict, and unknowns remain visible for human review.
+- Authority is explicit and configurable; divergence, conflict, and unknowns remain visible for human review. Where sources disagree, the client's accountable people decide.
 -->
 
 ---
@@ -645,7 +726,7 @@ class: slide-light
 </div>
 <div class="ed-prose-col">
 
-# Built in waves.<br>Promoted on proof.
+# Built in waves.<br>Promoted on evidence.
 
 <p class="ed-prose">Once a specification is sealed, the build engine delivers its plan in dependency-ordered waves. Deterministic code scaffolds the crate layout, typed interfaces, and test markers first; the model fills only the bounded slice.</p>
 <p class="ed-prose">Slices merge in order and the integrated wave is verified as a whole. <strong>The model may implement and repair, but only passing verification advances the production label.</strong></p>
@@ -657,6 +738,74 @@ Specification slide 3 of 3 — bounded delivery:
 - The model receives one slice: its requirements, relevant design, owned types, and plan brief.
 - Code lays down the target structure and markers first; the model fills bounded gaps.
 - Promotion follows evidence. The model may implement and repair, but it cannot approve its own work.
+-->
+
+---
+title: Evidence · A Live Service, Rebuilt
+class: slide-light
+---
+
+<Eyebrow text="EVIDENCE · AN AI-ASSISTED REBUILD OF A LIVE SERVICE" />
+
+<div class="ed-split">
+<div class="ed-prose-col">
+
+# Fix the system,<br>not the output.
+
+<p class="ed-prose">We recovered a specification from a live rail service's TypeScript — train-control messages in, vehicle positions out — rebuilt it as a WASI component, and drove it through the 22 recorded cases its hand-written version is tested against.</p>
+<p class="ed-prose">An early build passed none. <strong>Every defect went back into the delivery system, never into a hand edit.</strong> The latest build passes 21 of 22, including all 12 recorded production messages.</p>
+<p class="ed-footnote">Propellerhead evaluation, October 2026; client anonymised. The one open case mistakes an empty upstream answer for an outage.</p>
+</div>
+<div class="ed-diagram-pane">
+<svg viewBox="0 0 640 440" aria-hidden="true">
+  <!-- Three builds over the same cases -->
+  <text x="0" y="18" class="svg-kicker" fill="rgba(13,16,48,0.55)">THE SAME 22 RECORDED CASES · THREE BUILDS</text>
+  <line x1="0" y1="52" x2="640" y2="52" stroke="rgba(13,16,48,0.18)" stroke-dasharray="4 4" />
+  <text x="640" y="44" text-anchor="end" class="svg-caption" fill="rgba(13,16,48,0.5)">All 22</text>
+  <line x1="0" y1="176" x2="640" y2="176" stroke="rgba(13,16,48,0.28)" />
+
+  <rect x="62" y="173" width="116" height="3" fill="#b4234e" />
+  <rect x="262" y="136.5" width="116" height="39.5" rx="3" fill="rgba(12,127,163,0.4)" />
+  <rect x="462" y="57.6" width="116" height="118.4" rx="3" fill="#a4238f" />
+
+  <text x="120" y="204" text-anchor="middle" class="svg-h2" fill="#b4234e">0 / 22</text>
+  <text x="320" y="204" text-anchor="middle" class="svg-h2" fill="#0c7fa3">7 / 22</text>
+  <text x="520" y="204" text-anchor="middle" class="svg-h2" fill="#a4238f">21 / 22</text>
+
+  <text x="120" y="222" text-anchor="middle" class="svg-kicker" fill="#0d1030">AN EARLY BUILD</text>
+  <text x="320" y="222" text-anchor="middle" class="svg-kicker" fill="#0d1030">SYSTEM FIXED</text>
+  <text x="520" y="222" text-anchor="middle" class="svg-kicker" fill="#0d1030">TOOLING FIXED</text>
+
+  <text x="120" y="238" text-anchor="middle" class="svg-caption" fill="rgba(13,16,48,0.58)">No message reached the handler</text>
+  <text x="320" y="238" text-anchor="middle" class="svg-caption" fill="rgba(13,16,48,0.58)">Checks, guidance, extraction</text>
+  <text x="520" y="238" text-anchor="middle" class="svg-caption" fill="rgba(13,16,48,0.58)">A type reader repaired</text>
+
+  <!-- Defects and where each fix landed -->
+  <rect x="0" y="258" width="640" height="174" rx="14" fill="#0d1030" />
+  <text x="28" y="284" class="svg-kicker" fill="#78d8f2">WHAT THE CASES EXPOSED</text>
+  <text x="330" y="284" class="svg-kicker" fill="#f59ef5">WHERE THE FIX LANDED</text>
+
+  <text x="28" y="312" class="svg-body" fill="rgba(255,255,255,0.88)">Consumer never registered</text>
+  <text x="330" y="312" class="svg-caption" fill="#78d8f2">A check refuses a publisher nothing reaches</text>
+  <text x="28" y="336" class="svg-body" fill="rgba(255,255,255,0.88)">Rejections answered as processed</text>
+  <text x="330" y="336" class="svg-caption" fill="#78d8f2">A check refuses swallowed rejections</text>
+  <text x="28" y="360" class="svg-body" fill="rgba(255,255,255,0.88)">Delay computed with its sign inverted</text>
+  <text x="330" y="360" class="svg-caption" fill="#78d8f2">Extraction keeps a formula's grouping</text>
+  <text x="28" y="384" class="svg-body" fill="rgba(255,255,255,0.88)">True/false flags typed as numbers</text>
+  <text x="330" y="384" class="svg-caption" fill="#78d8f2">Guidance types them as booleans</text>
+  <text x="28" y="408" class="svg-body" fill="rgba(255,255,255,0.88)">A type laid empty by a stray comment</text>
+  <text x="330" y="408" class="svg-caption" fill="#78d8f2">The design-type reader repaired</text>
+</svg>
+</div>
+</div>
+
+<!--
+Evidence from a real rebuild:
+- An internal evaluation, described at the level achieved. The client and system are anonymised, and the recorded data is theirs.
+- The early build looked reasonable line by line. The recorded cases showed that no message ever reached the handler. Behind that sat a boolean typed as a number, a delay with its sign inverted, rejections answered as processed, a date format treated as configuration, and a query on both train identifiers.
+- No hand edits. Each defect became a check the build must pass, guidance the model follows, or a rule for reading the source. That took the rebuild to 7 of 22. Repairing the reader that lays out design types took it to 21 of 22: 9 of 10 recorded cases and all 12 recorded production messages.
+- The rebuild ran as two slices in two waves, each wave verified, with all 23 of its own tests passing.
+- The open case: an empty upstream stops list is answered as an outage rather than as zero events. We report it rather than hide it.
 -->
 
 ---
@@ -677,7 +826,7 @@ class: slide-light
   <circle cx="60" cy="120" r="18" fill="#ffffff" stroke="#a4238f" stroke-width="1.8" />
   <text x="60" y="125" text-anchor="middle" class="svg-kicker" fill="#a4238f">01</text>
   <text x="92" y="116" class="svg-label" fill="#0d1030">Recovers &amp; reconciles intent</text>
-  <text x="92" y="134" class="svg-caption" fill="rgba(13,16,48,0.6)">From T2 prototypes, legacy repos, docs &amp; briefs</text>
+  <text x="92" y="134" class="svg-caption" fill="rgba(13,16,48,0.6)">From existing systems, prototypes, docs &amp; briefs</text>
 
   <circle cx="60" cy="174" r="18" fill="#ffffff" stroke="#a4238f" stroke-width="1.8" />
   <text x="60" y="179" text-anchor="middle" class="svg-kicker" fill="#a4238f">02</text>
@@ -735,10 +884,75 @@ Synthesis slide:
 - WebAssembly governs what application code may do.
 - Terraform recipes govern how the service runs in a particular environment.
 - Propellerhead owns the coherence of all three planes and operates the resulting service.
+- The runtime is the constant. Specifications are how each service, new or recovered, reaches it safely.
 -->
 
 ---
-title: Prove One Complete Service
+title: Open Source · What We Do Not Claim
+class: slide-light
+---
+
+<Eyebrow text="OPEN SOURCE · MIT / APACHE-2.0" />
+
+<div class="ed-split is-reversed">
+<div class="ed-diagram-pane">
+<svg viewBox="0 0 640 440" aria-hidden="true">
+  <!-- The two public halves -->
+  <rect x="0" y="20" width="312" height="148" rx="14" fill="rgba(22,180,226,0.06)" stroke="#0c7fa3" stroke-width="1.6" />
+  <text x="22" y="48" class="svg-kicker" fill="#0c7fa3">THE RUNTIME · RUST ON WASMTIME</text>
+  <text x="22" y="80" class="svg-h2" fill="#0d1030">Omnia</text>
+  <text x="22" y="104" class="svg-caption" fill="rgba(13,16,48,0.68)">Sandboxed components, typed capabilities,</text>
+  <text x="22" y="120" class="svg-caption" fill="rgba(13,16,48,0.68)">and infrastructure supplied by the host</text>
+  <text x="22" y="150" class="svg-label" fill="#0c7fa3">github.com/augentic/omnia</text>
+
+  <rect x="328" y="20" width="312" height="148" rx="14" fill="rgba(164,35,143,0.06)" stroke="#a4238f" stroke-width="1.6" />
+  <text x="350" y="48" class="svg-kicker" fill="#a4238f">DELIVERY ENGINE · MODEL-AGNOSTIC</text>
+  <text x="350" y="80" class="svg-h2" fill="#0d1030">Emery</text>
+  <text x="350" y="104" class="svg-caption" fill="rgba(13,16,48,0.68)">Reviewed intent, specifications, inputs,</text>
+  <text x="350" y="120" class="svg-caption" fill="rgba(13,16,48,0.68)">visible gaps, and verification results</text>
+  <text x="350" y="150" class="svg-label" fill="#a4238f">github.com/augentic/emery</text>
+
+  <!-- The boundary -->
+  <rect x="0" y="188" width="640" height="248" rx="14" fill="#0d1030" />
+  <text x="28" y="216" class="svg-kicker" fill="#78d8f2">WHAT WE DO NOT CLAIM</text>
+
+  <text x="28" y="250" class="svg-label" fill="#ffffff">Not a managed platform</text>
+  <text x="290" y="250" class="svg-caption" fill="rgba(255,255,255,0.7)">Backends are named and verified per engagement</text>
+  <line x1="28" y1="264" x2="612" y2="264" stroke="rgba(255,255,255,0.1)" />
+  <text x="28" y="284" class="svg-label" fill="#ffffff">Portability is narrow</text>
+  <text x="290" y="284" class="svg-caption" fill="rgba(255,255,255,0.7)">Data migration and equivalence are still planned</text>
+  <line x1="28" y1="298" x2="612" y2="298" stroke="rgba(255,255,255,0.1)" />
+  <text x="28" y="318" class="svg-label" fill="#ffffff">Not infrastructure security</text>
+  <text x="290" y="318" class="svg-caption" fill="rgba(255,255,255,0.7)">Every capability or writable mount is a real grant</text>
+  <line x1="28" y1="332" x2="612" y2="332" stroke="rgba(255,255,255,0.1)" />
+  <text x="28" y="352" class="svg-label" fill="#ffffff">Not unattended delivery</text>
+  <text x="290" y="352" class="svg-caption" fill="rgba(255,255,255,0.7)">People authorise execution, publication, and release</text>
+  <line x1="28" y1="366" x2="612" y2="366" stroke="rgba(255,255,255,0.1)" />
+  <text x="28" y="386" class="svg-label" fill="#ffffff">Model review is not proof</text>
+  <text x="290" y="386" class="svg-caption" fill="rgba(255,255,255,0.7)">Verification is stated at the level achieved</text>
+
+  <text x="28" y="420" class="svg-caption" fill="#f59ef5">If a claim ever seems larger than this list allows, the list wins.</text>
+</svg>
+</div>
+<div class="ed-prose-col">
+
+# Read the code.<br>Check the<br>boundary.
+
+<p class="ed-prose">Both halves are public. Agents and model providers are becoming interchangeable; <strong>the record of why the software exists, and the evidence for accepting it, is not.</strong></p>
+<p class="ed-prose">Most tooling overclaims. We would rather state the boundary precisely, because the boundary is where your risk assessment actually happens.</p>
+</div>
+</div>
+
+<!--
+Open source, and the boundary:
+- Both halves are public under MIT / Apache-2.0: Omnia, the runtime, and Emery, the spec-driven delivery engine, with its source and target adapters. We would rather you read the code than take our word for it.
+- Emery sits on top of coding agents rather than competing with them. What is not interchangeable is the record of why the software exists, what it was specified to do, and what evidence supported accepting it.
+- The list on the left is the boundary. The sandbox complements infrastructure security; it does not replace it. Credentials still need scope, network policy still applies, and host configuration is part of the security boundary.
+- If a claim anywhere in these decks ever seems larger than this list allows, the list wins.
+-->
+
+---
+title: Start With One System
 class: slide-split short-bar
 ---
 
@@ -746,7 +960,7 @@ class: slide-split short-bar
 <AmbientVideo src="/videos/cta-video.mp4" variant="split" />
 <div class="split-brand-overlay">
 <img src="/images/Propellerhead_Logo.svg" alt="Propellerhead" />
-<p>25 years of building critical software across Aotearoa and the world — combining AI speed with senior engineering judgment.</p>
+<p>25 years of critical-software judgment, now turned into a repeatable system for abundant software creation.</p>
 </div>
 </div>
 
@@ -754,28 +968,28 @@ class: slide-split short-bar
 <div>
 <Eyebrow text="PROPELLERHEAD · NEXT STEPS" />
 
-# Start with one<br>proven winner.
+# Start with one system<br>that already matters.
 
 <div class="opportunity-rows" style="margin-top: 8px;">
 <div class="opportunity-row">
 <span class="opportunity-row-num">01</span>
 <div>
-<h4>Choose an application that already matters</h4>
-<p>Bring a citizen-built tool ready to graduate or a bounded legacy service whose business value and pain are already visible.</p>
+<h4>Trace one real change to production</h4>
+<p>A short, paid readiness engagement on a critical service or a citizen-built tool. It ends in a decision: proceed, fix a foundation, or stop.</p>
 </div>
 </div>
 <div class="opportunity-row">
 <span class="opportunity-row-num">02</span>
 <div>
-<h4>Recover and review its durable contract</h4>
-<p>We reconcile intent, documentation, tests, and behaviour into a versioned specification your domain owners and engineers can challenge together.</p>
+<h4>Recover and review its specification</h4>
+<p>We reconcile intent, documentation, tests, and code into a versioned specification your domain owners and engineers can challenge together.</p>
 </div>
 </div>
 <div class="opportunity-row">
 <span class="opportunity-row-num">03</span>
 <div>
-<h4>Prove the boundary and service envelope</h4>
-<p>We rebuild the verified WASI component, bind its capabilities through the runtime, and prove a recipe sized to your operating outcome.</p>
+<h4>Rebuild it on the standard runtime</h4>
+<p>We rebuild it in verified waves as a WASI component and bind its capabilities through a recipe sized to your plan, with every grant visible.</p>
 </div>
 </div>
 </div>
@@ -783,8 +997,8 @@ class: slide-split short-bar
 
 <div class="cta-card">
 <div>
-<div class="cta-card-label">READY TO PROVE THE FULL TRUST LOOP?</div>
-<div class="cta-card-title">Bring one application that already matters.</div>
+<div class="cta-card-label">AI DELIVERY READINESS</div>
+<div class="cta-card-title">Leave knowing what to do next.</div>
 </div>
 <div class="cta-pill">
 <span class="cta-pill-dot">→</span>
@@ -795,6 +1009,7 @@ class: slide-split short-bar
 
 <!--
 Closing call to action:
-- Pick one application with known value and a bounded surface.
-- Recover its specification, prove bounded delivery, and select a service envelope.
+- Start where the value and the pain are already visible: a critical service nobody can safely change, or a citizen-built tool that has earned graduation.
+- Readiness comes first. It traces one real change from idea to production and ends in a decision. You own the outputs either way.
+- Then recover its specification, rebuild it in verified waves on the standard runtime, and choose a service plan.
 -->

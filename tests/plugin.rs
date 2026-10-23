@@ -11,7 +11,7 @@ use std::path::{Path, PathBuf};
 
 use emery_adapter::is_kebab;
 use omnia_sdk::api::command::Response;
-use support::{Provider, cli};
+use support::provider::{Provider, cli};
 
 #[derive(Debug)]
 enum Mention<'a> {

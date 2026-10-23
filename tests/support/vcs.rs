@@ -7,20 +7,20 @@ use std::sync::{Arc, Mutex};
 use omnia_sdk::Vcs;
 use omnia_sdk::vcs::{Change, CloneOptions, Entry, Error, Merged, Rule};
 
-/// The commit every unscripted `head` answers.
+// The commit every unscripted `head` answers.
 pub const HEAD: &str = "9f8e7d6c5b4a39281706f5e4d3c2b1a0f9e8d7c6";
 
 type Queued<T> = BTreeMap<String, VecDeque<Result<T, Error>>>;
 
-/// One merge as the script saw it: the message whole and the policy it rode.
+// One merge as the script saw it: the message whole and the policy it rode.
 pub type Merge = (String, Vec<Rule>);
 
-/// Answers queued per location, consumed in call order.
+// Answers queued per location, consumed in call order.
 #[derive(Clone, Debug, Default)]
 pub struct Queue<T>(Arc<Mutex<Queued<T>>>);
 
 impl<T> Queue<T> {
-    /// Queues `answer` for the next call at `location`.
+    // Queues `answer` for the next call at `location`.
     pub fn script(&self, location: &str, answer: Result<T, Error>) {
         self.0.lock().expect("queue").entry(location.to_owned()).or_default().push_back(answer);
     }
@@ -35,78 +35,78 @@ impl<T> Queue<T> {
     }
 }
 
-/// A scripted `Vcs` with a record of every call.
-///
-/// Unscripted answers:
-///
-/// - `pending` holds nothing;
-/// - `head` is the revision `add` cut the working copy at, until a commit or
-///   a merge lands there; [`HEAD`] otherwise;
-/// - `resolve` is `<revision>-commit`;
-/// - `labelled` is `NotFound`: a fresh build;
-/// - `descends` holds;
-/// - `log` holds nothing;
-/// - `commit` seals `<first word of the message>-commit`;
-/// - `merge` merges as `m:<first word of the message>`;
-/// - every other operation succeeds.
+// A scripted `Vcs` with a record of every call.
+//
+// Unscripted answers:
+//
+// - `pending` holds nothing;
+// - `head` is the revision `add` cut the working copy at, until a commit or
+//   a merge lands there; `HEAD` otherwise;
+// - `resolve` is `<revision>-commit`;
+// - `labelled` is `NotFound`: a fresh build;
+// - `descends` holds;
+// - `log` holds nothing;
+// - `commit` seals `<first word of the message>-commit`;
+// - `merge` merges as `m:<first word of the message>`;
+// - every other operation succeeds.
 #[derive(Clone, Debug, Default)]
 pub struct VcsScript {
-    /// `pending` answers by working copy.
+    // `pending` answers by working copy.
     pub pending: Queue<Vec<Change>>,
-    /// `head` answers by working copy.
+    // `head` answers by working copy.
     pub heads: Queue<String>,
-    /// `resolve` answers by repository.
+    // `resolve` answers by repository.
     pub resolves: Queue<String>,
-    /// `labelled` answers by repository.
+    // `labelled` answers by repository.
     pub labelleds: Queue<String>,
-    /// `descends` answers by repository.
+    // `descends` answers by repository.
     pub descends: Queue<bool>,
-    /// `log` answers by repository.
+    // `log` answers by repository.
     pub logs: Queue<Vec<Entry>>,
-    /// `commit` answers by working copy.
+    // `commit` answers by working copy.
     pub commits: Queue<Option<String>>,
-    /// `merge` answers by working copy.
+    // `merge` answers by working copy.
     pub merges: Queue<Merged>,
-    /// `fetch` answers by repository.
+    // `fetch` answers by repository.
     pub fetches: Queue<()>,
-    /// `init` answers by repository.
+    // `init` answers by repository.
     pub inits: Queue<()>,
-    /// `clone` answers by clone location.
+    // `clone` answers by clone location.
     pub clones: Queue<()>,
-    /// `add` answers by working copy.
+    // `add` answers by working copy.
     pub adds: Queue<()>,
-    /// `remove` answers by working copy.
+    // `remove` answers by working copy.
     pub removes: Queue<()>,
-    /// `label` answers by repository.
+    // `label` answers by repository.
     pub labels: Queue<()>,
-    /// Every call, in order, spelled `<operation> <arguments>`; a commit or
-    /// merge carries its message's first line.
+    // Every call, in order, spelled `<operation> <arguments>`; a commit or
+    // merge carries its message's first line.
     pub calls: Arc<Mutex<Vec<String>>>,
-    /// Every commit message whole, in order.
+    // Every commit message whole, in order.
     pub messages: Arc<Mutex<Vec<String>>>,
-    /// Every merge, in order.
+    // Every merge, in order.
     pub merged: Arc<Mutex<Vec<Merge>>>,
     // the revision each working copy was cut at, while nothing has landed there
     cut: Arc<Mutex<BTreeMap<String, String>>>,
 }
 
 impl VcsScript {
-    /// Returns every call so far, in order.
+    // Returns every call so far, in order.
     pub fn calls(&self) -> Vec<String> {
         self.calls.lock().expect("calls").clone()
     }
 
-    /// Returns every commit message so far, in order.
+    // Returns every commit message so far, in order.
     pub fn messages(&self) -> Vec<String> {
         self.messages.lock().expect("messages").clone()
     }
 
-    /// Returns every merge so far, in order.
+    // Returns every merge so far, in order.
     pub fn merged(&self) -> Vec<Merge> {
         self.merged.lock().expect("merged").clone()
     }
 
-    /// Asserts that every queued answer was consumed.
+    // Asserts that every queued answer was consumed.
     pub fn assert_exhausted(&self) {
         let left: Vec<String> = [
             ("pending", self.pending.drained()),

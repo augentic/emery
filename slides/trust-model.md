@@ -27,7 +27,7 @@ This deck is the reference. It is written to be read, left behind after the stor
 
 - Part one: how to read the model, and what it is not.
 - Parts two to five: one section per tier. Each answers three questions in turn: what belongs here, how it is bounded, and how it enters and leaves.
-- Part six: applying it, with the three clearances, the owners, the Codex, and the scorecard.
+- Part six: applying it, with the three clearances, the owners, the Codex, the scorecard, and the systems the organisation already runs.
 -->
 
 ---
@@ -1099,6 +1099,7 @@ The production clearance, and the argument for rebuilding from a specification r
 - Three pieces of evidence: the specification, the verified rebuild, and the operating agreement with an SLA and a product owner.
 - Hardening in place inherits code nobody understands. Starting over loses the discovery the prototype paid for. The specification keeps the second and avoids the first.
 - Spec-driven tooling makes that specification cheap to derive and the rebuild cheap to verify.
+- The same path admits a long-lived system that everyone depends on and nobody can safely change. The last section shows how to score one.
 -->
 
 ---
@@ -1115,7 +1116,7 @@ class: slide-hero slide-section
 
 # Applying the model
 
-<p class="section-subtitle">Three clearances, who owns what, the Codex, and the scorecard.</p>
+<p class="section-subtitle">Three clearances, who owns what, the Codex, the scorecard, and the systems you already run.</p>
 </div>
 </div>
 
@@ -1346,4 +1347,183 @@ The scorecard, blank, for the workshop.
 - Reach, data, the Monday 9am test, continuity. Mark one column per row.
 - The highest column wins. A one-person app that touches regulated data is a Tier 3 question, however few use it.
 - Change the thresholds to fit the organisation; the four questions stay.
+-->
+
+---
+title: Existing systems
+class: slide-light
+---
+
+<Eyebrow text="APPLYING THE MODEL · THE SYSTEMS YOU ALREADY RUN" />
+
+<div class="ed-band">
+<div class="ed-band-top">
+<div>
+
+# Score the systems<br>you already run.
+
+</div>
+<p class="ed-band-prose">The scorecard is not only for new apps. Run it over a system that has worked for years, and the answer is often Tier 3 by dependence and Tier 0 by evidence. <strong>The gap is the risk, and the widest gap is the place to start.</strong> Close it the way any app enters Tier 3: recover the specification, rebuild in verified waves, and land it under an SLA.</p>
+</div>
+<div class="ed-band-canvas">
+<svg viewBox="0 0 1140 372" aria-hidden="true">
+  <text x="0" y="14" class="svg-kicker" fill="rgba(13,16,48,0.5)">WORKED EXAMPLE · A FIFTEEN-YEAR-OLD ROSTER SYSTEM</text>
+
+  <!-- By dependence: the scorecard's four questions -->
+  <text x="0" y="74" class="svg-kicker" fill="#a4238f">BY DEPENDENCE</text>
+  <text x="0" y="98" class="svg-h3" fill="#0d1030">The four questions</text>
+  <text x="0" y="118" class="svg-caption" fill="rgba(13,16,48,0.58)">The scorecard, unchanged</text>
+
+  <rect x="220" y="40" width="170" height="98" rx="12" fill="#ffffff" stroke="rgba(164,35,143,0.35)" stroke-width="1.5" />
+  <text x="240" y="66" class="svg-kicker" fill="#0c7fa3">01 · REACH</text>
+  <text x="240" y="92" class="svg-label" fill="#0d1030">25+ or external</text>
+  <rect x="240" y="108" width="34" height="18" rx="9" fill="#a4238f" />
+  <text x="257" y="121" text-anchor="middle" class="svg-pill" fill="#ffffff">T3</text>
+
+  <rect x="405" y="40" width="170" height="98" rx="12" fill="#ffffff" stroke="rgba(164,35,143,0.35)" stroke-width="1.5" />
+  <text x="425" y="66" class="svg-kicker" fill="#0c7fa3">02 · DATA &amp; STATE</text>
+  <text x="425" y="92" class="svg-label" fill="#0d1030">Regulated records</text>
+  <rect x="425" y="108" width="34" height="18" rx="9" fill="#a4238f" />
+  <text x="442" y="121" text-anchor="middle" class="svg-pill" fill="#ffffff">T3</text>
+
+  <rect x="590" y="40" width="170" height="98" rx="12" fill="#ffffff" stroke="rgba(164,35,143,0.35)" stroke-width="1.5" />
+  <text x="610" y="66" class="svg-kicker" fill="#0c7fa3">03 · MONDAY 9AM TEST</text>
+  <text x="610" y="92" class="svg-label" fill="#0d1030">Operations stall</text>
+  <rect x="610" y="108" width="34" height="18" rx="9" fill="#a4238f" />
+  <text x="627" y="121" text-anchor="middle" class="svg-pill" fill="#ffffff">T3</text>
+
+  <rect x="775" y="40" width="170" height="98" rx="12" fill="#ffffff" stroke="rgba(164,35,143,0.35)" stroke-width="1.5" />
+  <text x="795" y="66" class="svg-kicker" fill="#0c7fa3">04 · CONTINUITY</text>
+  <text x="795" y="92" class="svg-label" fill="#0d1030">Engineers on call</text>
+  <rect x="795" y="108" width="34" height="18" rx="9" fill="#a4238f" />
+  <text x="812" y="121" text-anchor="middle" class="svg-pill" fill="#ffffff">T3</text>
+
+  <line x1="952" y1="89" x2="998" y2="89" stroke="#a4238f" stroke-width="2" />
+  <polygon points="992,84 1002,89 992,94" fill="#a4238f" />
+  <circle cx="1060" cy="89" r="50" fill="#a4238f" />
+  <text x="1060" y="88" text-anchor="middle" class="svg-h2" fill="#ffffff">T3</text>
+  <text x="1060" y="106" text-anchor="middle" class="svg-caption" fill="rgba(255,255,255,0.85)">Needs Tier 3</text>
+
+  <!-- The gap -->
+  <line x1="1060" y1="145" x2="1060" y2="183" stroke="#b4234e" stroke-width="1.5" stroke-dasharray="4 4" />
+  <text x="1044" y="168" text-anchor="end" class="svg-kicker" fill="#b4234e">THE GAP</text>
+
+  <!-- By evidence: what Tier 3 admission asks -->
+  <text x="0" y="224" class="svg-kicker" fill="#b4234e">BY EVIDENCE</text>
+  <text x="0" y="248" class="svg-h3" fill="#0d1030">Tier 3 admission</text>
+  <text x="0" y="268" class="svg-caption" fill="rgba(13,16,48,0.58)">Three pieces of evidence</text>
+
+  <rect x="220" y="190" width="231" height="98" rx="12" fill="rgba(255,59,107,0.04)" stroke="rgba(180,35,78,0.35)" stroke-width="1.5" stroke-dasharray="5 4" />
+  <text x="240" y="216" class="svg-kicker" fill="#b4234e">DURABLE SPECIFICATION</text>
+  <text x="240" y="242" class="svg-label" fill="#0d1030">Only the code</text>
+  <text x="240" y="268" class="svg-caption" fill="#b4234e">Missing</text>
+
+  <rect x="467" y="190" width="231" height="98" rx="12" fill="rgba(255,59,107,0.04)" stroke="rgba(180,35,78,0.35)" stroke-width="1.5" stroke-dasharray="5 4" />
+  <text x="487" y="216" class="svg-kicker" fill="#b4234e">VERIFIED REBUILD</text>
+  <text x="487" y="242" class="svg-label" fill="#0d1030">Nothing to verify against</text>
+  <text x="487" y="268" class="svg-caption" fill="#b4234e">Missing</text>
+
+  <rect x="714" y="190" width="231" height="98" rx="12" fill="rgba(255,59,107,0.04)" stroke="rgba(180,35,78,0.35)" stroke-width="1.5" stroke-dasharray="5 4" />
+  <text x="734" y="216" class="svg-kicker" fill="#b4234e">OWNER AND SLA</text>
+  <text x="734" y="242" class="svg-label" fill="#0d1030">An SLA, but no owner of its rules</text>
+  <text x="734" y="268" class="svg-caption" fill="rgba(13,16,48,0.58)">Partial</text>
+
+  <line x1="952" y1="239" x2="998" y2="239" stroke="#b4234e" stroke-width="2" stroke-dasharray="4 4" />
+  <polygon points="992,234 1002,239 992,244" fill="#b4234e" />
+  <circle cx="1060" cy="239" r="50" fill="#ffffff" stroke="#b4234e" stroke-width="1.8" stroke-dasharray="5 4" />
+  <text x="1060" y="238" text-anchor="middle" class="svg-h2" fill="#b4234e">T0</text>
+  <text x="1060" y="256" text-anchor="middle" class="svg-caption" fill="rgba(13,16,48,0.58)">Tier 0 evidence</text>
+
+  <!-- Closing the gap: the Tier 3 path -->
+  <text x="0" y="332" class="svg-kicker" fill="#0c7fa3">CLOSE THE GAP</text>
+  <text x="0" y="354" class="svg-h3" fill="#0d1030">The Tier 3 path</text>
+
+  <rect x="220" y="316" width="725" height="42" rx="12" fill="#0d1030" />
+  <text x="314" y="342" text-anchor="middle" class="svg-body" fill="#ffffff">Recover the specification</text>
+  <text x="414" y="342" text-anchor="middle" class="svg-body" fill="#78d8f2">→</text>
+  <text x="506" y="342" text-anchor="middle" class="svg-body" fill="#ffffff">Owners settle conflicts</text>
+  <text x="598" y="342" text-anchor="middle" class="svg-body" fill="#78d8f2">→</text>
+  <text x="695" y="342" text-anchor="middle" class="svg-body" fill="#ffffff">Rebuild in verified waves</text>
+  <text x="792" y="342" text-anchor="middle" class="svg-body" fill="#78d8f2">→</text>
+  <text x="872" y="342" text-anchor="middle" class="svg-body" fill="#ffffff">Land under an SLA</text>
+
+  <line x1="952" y1="337" x2="1022" y2="337" stroke="#a4238f" stroke-width="2" />
+  <polygon points="1016,332 1026,337 1016,342" fill="#a4238f" />
+  <circle cx="1060" cy="337" r="30" fill="#ffffff" stroke="#a4238f" stroke-width="2" />
+  <text x="1060" y="342" text-anchor="middle" class="svg-label" fill="#a4238f">T3</text>
+</svg>
+</div>
+</div>
+
+<!--
+The same four questions, applied to a system the organisation already runs.
+
+- Long-lived systems usually score Tier 3 on dependence: reach, data, the Monday 9am test, continuity. They rarely hold Tier 3's evidence: a durable specification, a verified rebuild, and an owner who knows the rules, not only an SLA that keeps it running.
+- By evidence of what it does, such a system is no further along than a prototype on a laptop: nothing but its code says what it does.
+- The gap between the two rows is the risk. Ranked across the estate, it is also the modernisation backlog: the widest gap first.
+- The path is the same as any Tier 3 admission. Recover the specification from code, documents, tests, and the people who operate it; let accountable owners settle the conflicts; rebuild in verified waves; land it behind the contract its consumers already use.
+- Data migration needs its own plan. The specification says what must survive; it does not move the data.
+-->
+
+---
+title: Start with what you already run
+class: slide-split short-bar
+---
+
+<div class="split-image-pane">
+<AmbientVideo src="/videos/cta-video.mp4" variant="split" />
+<div class="split-brand-overlay">
+<img src="/images/Propellerhead_Logo.svg" alt="Propellerhead" />
+<p>25 years of critical-software judgment, now turned into a repeatable system for abundant software creation.</p>
+</div>
+</div>
+
+<div class="split-content-pane">
+<div>
+<Eyebrow text="PROPELLERHEAD · NEXT STEPS" />
+
+# Start with what<br>you already run.
+
+<div class="opportunity-rows" style="margin-top: 8px;">
+<div class="opportunity-row">
+<span class="opportunity-row-num">01</span>
+<div>
+<h4>Score the estate in one workshop</h4>
+<p>Place every citizen-built app, and every system nobody can safely change, on the same four questions.</p>
+</div>
+</div>
+<div class="opportunity-row">
+<span class="opportunity-row-num">02</span>
+<div>
+<h4>Stand up the Codex</h4>
+<p>The template, the rules, the coaches, and the gates, so Tier 1 is self-service and Tier 2 takes one review.</p>
+</div>
+</div>
+<div class="opportunity-row">
+<span class="opportunity-row-num">03</span>
+<div>
+<h4>Graduate what has earned it</h4>
+<p>Readiness traces one real change to production and ends in a decision: proceed, fix a foundation, or stop.</p>
+</div>
+</div>
+</div>
+</div>
+
+<div class="cta-card">
+<div>
+<div class="cta-card-label">AI DELIVERY READINESS</div>
+<div class="cta-card-title">Leave knowing what to do next.</div>
+</div>
+<div class="cta-pill">
+<span class="cta-pill-dot">→</span>
+<span>propellerhead.co.nz</span>
+</div>
+</div>
+</div>
+
+<!--
+Putting the guide to work:
+- Start by scoring what exists, citizen-built and long-lived alike. The first workshop edits the thresholds and the owners; it keeps the shape.
+- The Codex makes Tier 1 self-service. The runtime boundary makes Tier 2 one review. Spec-driven delivery makes Tier 3 a funded project rather than a rewrite.
+- Readiness is the first engagement: a short, paid piece of work that traces one real change to production and ends in a decision. You own the outputs either way.
 -->

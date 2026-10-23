@@ -10,7 +10,11 @@ use emery_engine::vcs::{REVISION, RevisionMessage};
 use emery_engine::{EntryKind, REVISION_KEY, STAGED_CONTAINER, STAGED_KEY};
 use omnia_sdk::vcs::{Change, ChangeKind, Error};
 use serde_json::Value;
-use support::{HEAD, Provider, Scratch, carry, cli, cli_ok, document, fail, seed, stage, staged};
+use support::provider::{Provider, cli};
+use support::scratch::Scratch;
+use support::store::{carry, document, seed, stage, staged};
+use support::vcs::HEAD;
+use support::{cli_ok, fail};
 
 // The one-source reference `specify` names; the scripted loader lands any
 // exact package reference.

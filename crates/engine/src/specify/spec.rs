@@ -42,10 +42,10 @@ enum Lead {
 /// chunk's regeneration rather than the whole draft's.
 pub const SPEC_CHUNK: usize = 25;
 
-/// A synthesis brief for the drafted portions of `spec.md`.
-///
-/// The brief combines extracted claims with one chunk of their reconciled
-/// requirement bases.
+// A synthesis brief for the drafted portions of `spec.md`.
+//
+// The brief combines extracted claims with one chunk of their reconciled
+// requirement bases.
 pub struct SpecBrief<'a> {
     extracts: &'a [Extract],
     bases: Vec<&'a Basis<'a>>,
@@ -54,24 +54,24 @@ pub struct SpecBrief<'a> {
 }
 
 impl<'a> SpecBrief<'a> {
-    /// Returns the briefs `bases` are drafted under, in requirement order:
-    /// one per chunk of at most [`SPEC_CHUNK`] requirements, grouped by
-    /// stem — a stem past the cap split, smaller ones merged up to it — the
-    /// first alone asking for the preamble. Every chunk holds its draft to
-    /// one [`Lexicon`]: the fixed names, and the packages the run's `call`
-    /// claims spell.
+    // Returns the briefs `bases` are drafted under, in requirement order:
+    // one per chunk of at most `SPEC_CHUNK` requirements, grouped by
+    // stem — a stem past the cap split, smaller ones merged up to it — the
+    // first alone asking for the preamble. Every chunk holds its draft to
+    // one `Lexicon`: the fixed names, and the packages the run's `call`
+    // claims spell.
     #[must_use]
     pub fn chunked(extracts: &'a [Extract], bases: &'a [Basis<'a>]) -> Vec<Self> {
         Self::cut(extracts, bases, false)
     }
 
-    /// Returns the briefs an amendment drafts `bases` under, in requirement order.
-    ///
-    /// `bases` are the requirements the change adds, revises, or leaves in
-    /// conflict, each under the id it keeps, chunked as
-    /// [`chunked`](Self::chunked) chunks them. No chunk drafts a preamble,
-    /// since the base's stands, and each is told it amends the current
-    /// specification. An empty slice yields no brief and spends no turn.
+    // Returns the briefs an amendment drafts `bases` under, in requirement order.
+    //
+    // `bases` are the requirements the change adds, revises, or leaves in
+    // conflict, each under the id it keeps, chunked as
+    // `chunked` chunks them. No chunk drafts a preamble,
+    // since the base's stands, and each is told it amends the current
+    // specification. An empty slice yields no brief and spends no turn.
     #[must_use]
     pub fn amending(extracts: &'a [Extract], bases: &'a [Basis<'a>]) -> Vec<Self> {
         Self::cut(extracts, bases, true)
@@ -123,8 +123,8 @@ impl<'a> SpecBrief<'a> {
             .collect()
     }
 
-    /// Returns the specification the chunks' accepted answers make together:
-    /// the preamble the first carried, and every requirement in id order.
+    // Returns the specification the chunks' accepted answers make together:
+    // the preamble the first carried, and every requirement in id order.
     #[must_use]
     pub fn assemble(drafts: Vec<(Vec<String>, Vec<Requirement>)>) -> Spec {
         let mut preamble = Vec::new();
@@ -143,13 +143,13 @@ impl<'a> SpecBrief<'a> {
         }
     }
 
-    /// Returns the specification `base` amended by `changes` and `drafts`.
-    ///
-    /// The preamble is the base's. Each [unchanged](ChangeClass::Unchanged)
-    /// requirement is the base's as it stands, each
-    /// [retired](ChangeClass::Retired) one is left out, and every other is the
-    /// one `drafts` drafted under its id. The requirements are ordered by id,
-    /// and [`parent`](Spec::parent) names the base revision.
+    // Returns the specification `base` amended by `changes` and `drafts`.
+    //
+    // The preamble is the base's. Each unchanged
+    // requirement is the base's as it stands, each
+    // retired one is left out, and every other is the
+    // one `drafts` drafted under its id. The requirements are ordered by id,
+    // and `parent` names the base revision.
     #[must_use]
     pub fn amend(
         base: Spec, parent: String, changes: &[Change],

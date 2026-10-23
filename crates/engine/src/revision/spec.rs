@@ -14,49 +14,49 @@ use serde::{Deserialize, Serialize};
 use crate::Rank;
 use crate::revision::{self, ReqId};
 
-/// The `ID:` provenance key written below a requirement or slice heading.
+// The `ID:` provenance key written below a requirement or slice heading.
 pub const ID: &str = "ID:";
-/// The `Sources:` provenance key.
+// The `Sources:` provenance key.
 pub const SOURCES: &str = "Sources:";
-/// The `Status:` provenance key.
+// The `Status:` provenance key.
 pub const STATUS: &str = "Status:";
-/// The `Route:` key written below a requirement an HTTP route reaches.
+// The `Route:` key written below a requirement an HTTP route reaches.
 pub const ROUTE: &str = "Route:";
-/// The `Message:` key written below a requirement a message reaches.
+// The `Message:` key written below a requirement a message reaches.
 pub const MESSAGE: &str = "Message:";
-/// The `Note:` key used for generated requirement notes.
+// The `Note:` key used for generated requirement notes.
 pub const NOTE: &str = "Note:";
-/// The `### Requirement:` heading prefix.
+// The `### Requirement:` heading prefix.
 pub const HEADING: &str = "### Requirement:";
 
 const SCENARIO: &str = "#### Scenario:";
 
-/// A behavioural specification in its stored form.
+// A behavioural specification in its stored form.
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Spec {
-    /// The grammar the document was written under.
+    // The grammar the document was written under.
     pub emery: u32,
-    /// The revision this one amends, or `None` when drafted from sources alone.
+    // The revision this one amends, or `None` when drafted from sources alone.
     pub parent: Option<String>,
-    /// Markdown paragraphs preceding the first requirement.
+    // Markdown paragraphs preceding the first requirement.
     pub preamble: Vec<String>,
-    /// The requirements, in id order.
+    // The requirements, in id order.
     pub requirements: Vec<Requirement>,
 }
 
 impl Spec {
-    /// Returns the requirement `id` names, if the specification has one.
+    // Returns the requirement `id` names, if the specification has one.
     #[must_use]
     pub fn requirement(&self, id: ReqId) -> Option<&Requirement> {
         self.requirements.iter().find(|requirement| requirement.id == id)
     }
 
-    /// Returns the specification cut to `ids`, as Markdown.
-    ///
-    /// The preamble, then the requirements `ids` name in the specification's
-    /// order, rendered as [`Display`] renders the whole. An id the
-    /// specification does not hold is left out.
+    // Returns the specification cut to `ids`, as Markdown.
+    //
+    // The preamble, then the requirements `ids` name in the specification's
+    // order, rendered as `Display` renders the whole. An id the
+    // specification does not hold is left out.
     #[must_use]
     pub fn cut(&self, ids: &[ReqId]) -> String {
         let requirements: Vec<&Requirement> =
@@ -76,44 +76,44 @@ impl Display for Spec {
     }
 }
 
-/// A reconciled requirement and its drafted acceptance scenarios.
+// A reconciled requirement and its drafted acceptance scenarios.
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Requirement {
-    /// The stable requirement identifier.
+    // The stable requirement identifier.
     pub id: ReqId,
-    /// The heading derived from the highest-authority contributing claim.
+    // The heading derived from the highest-authority contributing claim.
     pub subject: String,
-    /// The reconciliation outcome for contributing claims.
+    // The reconciliation outcome for contributing claims.
     pub status: Status,
-    /// Whether an acceptance criterion covers the requirement.
+    // Whether an acceptance criterion covers the requirement.
     pub covered: bool,
-    /// What reaches the requirement, where a source's `contract` claim binds
-    /// it; rendered as its `Route:` or `Message:` line.
+    // What reaches the requirement, where a source's `contract` claim binds
+    // it; rendered as its `Route:` or `Message:` line.
     pub trigger: Option<Trigger>,
-    /// Contributing claims in descending authority order.
+    // Contributing claims in descending authority order.
     pub sources: Vec<Cited>,
-    /// Markdown body paragraphs, empty when the requirement is in conflict.
+    // Markdown body paragraphs, empty when the requirement is in conflict.
     pub body: Vec<String>,
-    /// Contributor classes rendered as notes.
-    ///
-    /// This contains losing classes for a divergence and every class for a
-    /// conflict.
+    // Contributor classes rendered as notes.
+    //
+    // This contains losing classes for a divergence and every class for a
+    // conflict.
     pub losers: Vec<Loser>,
-    /// The acceptance scenarios.
+    // The acceptance scenarios.
     pub scenarios: Vec<Scenario>,
 }
 
 impl Requirement {
-    /// Returns the stem of the subject: the first segment of its dotted id,
-    /// the slice floor every requirement under it shares.
+    // Returns the stem of the subject: the first segment of its dotted id,
+    // the slice floor every requirement under it shares.
     #[must_use]
     pub fn stem(&self) -> &str {
         revision::stem(&self.subject)
     }
 
-    /// Returns the requirement's statement: its [`body`](Self::body) paragraphs
-    /// joined, or `None` when it is in conflict.
+    // Returns the requirement's statement: its `body` paragraphs
+    // joined, or `None` when it is in conflict.
     #[must_use]
     pub fn statement(&self) -> Option<String> {
         match self.status {
@@ -124,8 +124,8 @@ impl Requirement {
         }
     }
 
-    /// Returns how many anchors this requirement and `other` cite in common:
-    /// the pairs of their citations that [overlap](Cited::overlaps).
+    // Returns how many anchors this requirement and `other` cite in common:
+    // the pairs of their citations that overlap.
     #[must_use]
     pub fn shared_anchors(&self, other: &Self) -> usize {
         self.sources
@@ -195,23 +195,23 @@ impl From<&Requirement> for emery_adapter::target::Requirement {
     }
 }
 
-/// A claim cited by a requirement.
+// A claim cited by a requirement.
 #[derive(Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Cited {
-    /// The name of the source the claim was extracted from.
+    // The name of the source the claim was extracted from.
     pub source: String,
-    /// The claim id within that source.
+    // The claim id within that source.
     pub claim: String,
-    /// Where in the source the claim anchors, in the claim `path` grammar
-    /// (`src/orders.ts#L12-L34`), when the claim carries one.
+    // Where in the source the claim anchors, in the claim `path` grammar
+    // (`src/orders.ts#L12-L34`), when the claim carries one.
     pub path: Option<String>,
 }
 
 impl Cited {
-    /// Returns whether this citation and `other` anchor at one place: the
-    /// same source and the same file, with line ranges that meet, or neither
-    /// naming lines. A citation without a `path` anchors nowhere.
+    // Returns whether this citation and `other` anchor at one place: the
+    // same source and the same file, with line ranges that meet, or neither
+    // naming lines. A citation without a `path` anchors nowhere.
     #[must_use]
     pub fn overlaps(&self, other: &Self) -> bool {
         if self.source != other.source {
@@ -240,19 +240,19 @@ impl Display for Cited {
     }
 }
 
-/// A contributor class rendered as a requirement note.
+// A contributor class rendered as a requirement note.
 #[derive(Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Loser {
-    /// Every member's source name, in authority order.
+    // Every member's source name, in authority order.
     pub sources: Vec<String>,
-    /// The kind of source the leading contributor was extracted from.
+    // The kind of source the leading contributor was extracted from.
     pub kind: SourceKind,
-    /// The authority rank the leading contributor lost under.
+    // The authority rank the leading contributor lost under.
     pub rank: Rank,
-    /// The leading contributor's claim identifier.
+    // The leading contributor's claim identifier.
     pub claim: String,
-    /// The leading contributor's normalised statement.
+    // The leading contributor's normalised statement.
     pub statement: String,
 }
 
@@ -310,9 +310,9 @@ fn lines<'de, D: serde::Deserializer<'de>>(deserializer: D) -> Result<Vec<String
 }
 
 impl Scenario {
-    /// Returns the scenario's lines in document order, each with its field name.
-    ///
-    /// Every `given`, then the `when`, the `then`, and every `and`.
+    // Returns the scenario's lines in document order, each with its field name.
+    //
+    // Every `given`, then the `when`, the `then`, and every `and`.
     pub fn lines(&self) -> impl Iterator<Item = (&'static str, &str)> {
         self.given
             .iter()
@@ -321,10 +321,10 @@ impl Scenario {
             .chain(self.and.iter().map(|text| ("and", text.as_str())))
     }
 
-    /// Returns the scenario with the whitespace around each line dropped.
-    ///
-    /// A revision stores lines in this form, so two drafts that differ only
-    /// in padding commit as one revision.
+    // Returns the scenario with the whitespace around each line dropped.
+    //
+    // A revision stores lines in this form, so two drafts that differ only
+    // in padding commit as one revision.
     #[must_use]
     pub fn trimmed(self) -> Self {
         let line = |text: String| text.trim().to_owned();
@@ -361,20 +361,20 @@ impl From<&Scenario> for emery_adapter::target::Scenario {
     }
 }
 
-/// The reconciliation status of a requirement.
-///
-/// Every status except [`Status::Agreed`] is also rendered as a tag on the
-/// requirement heading.
+// The reconciliation status of a requirement.
+//
+// Every status except `Status::Agreed` is also rendered as a tag on the
+// requirement heading.
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Serialize, Deserialize, strum::Display)]
 #[serde(rename_all = "kebab-case")]
 #[strum(serialize_all = "kebab-case")]
 pub enum Status {
-    /// All contributors agree and acceptance criteria provide coverage.
+    // All contributors agree and acceptance criteria provide coverage.
     Agreed,
-    /// All contributors agree but no acceptance criterion provides coverage.
+    // All contributors agree but no acceptance criterion provides coverage.
     Unknown,
-    /// Highest-authority contributors disagree and require reconciliation.
+    // Highest-authority contributors disagree and require reconciliation.
     Conflict,
-    /// A higher-authority contributor resolves the disagreement.
+    // A higher-authority contributor resolves the disagreement.
     Divergence,
 }

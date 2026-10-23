@@ -9,14 +9,14 @@ class: slide-hero slide-section
 
 <AmbientVideo src="/videos/hero-video-3.mp4" variant="hero" />
 
-<Eyebrow text="PROPELLERHEAD · TRUST MODEL" />
+<Eyebrow text="PROPELLERHEAD · SOFTWARE DELIVERY IN THE AGE OF AI" />
 
 <div class="section-hero-grid">
 <div class="section-hero-left">
 
 # The riskiest moment is<br>when a prototype succeeds.
 
-<p class="section-subtitle">An operating model for software created by domain experts, engineers, and AI — four tiers and three evidence-backed clearances.</p>
+<p class="section-subtitle">We help organisations build and modernise critical software safely, now that anyone — or anything — can write the code.</p>
 </div>
 </div>
 
@@ -27,7 +27,8 @@ Open on the title and let it sit for a moment.
 
 - Everyone in this room has seen it: someone in operations or finance builds something useful with an AI assistant in an afternoon, and it works.
 - Nothing goes wrong on that day. The trouble starts later, when it succeeds: colleagues depend on it, it quietly reaches real data, and nobody owns it.
-- This deck is about that moment, and about a simple way to handle it: four trust tiers, three clearances, one scorecard.
+- Hold back the title's second meaning. The same moment arrived years ago for the systems this organisation already runs; the turn comes back to it.
+- This deck is about delivering software safely through that moment.
 -->
 
 ---
@@ -83,44 +84,49 @@ class: slide-light
 
 # Any implementation<br>can be wrong.
 
-<p class="ed-prose">We do not trust software because a senior engineer typed it, or distrust it because a model generated it. <strong>Authorship is not assurance.</strong></p>
+<p class="ed-prose">We do not trust software because a senior engineer typed it, distrust it because a model generated it, or trust it because it has run for twenty years. <strong>Authorship is not assurance.</strong></p>
 <p class="ed-prose">A model may propose behaviour and write code. It never decides which source is authoritative, grants itself live access, or promotes its own output.</p>
 </div>
 <div class="ed-diagram-pane">
-<svg viewBox="0 0 640 440" aria-hidden="true">
-  <text x="20" y="30" class="svg-kicker" fill="#0c7fa3">TWO AUTHORS · ONE ASSURANCE SYSTEM</text>
+<svg viewBox="0 0 640 340" aria-hidden="true">
+  <text x="20" y="26" class="svg-kicker" fill="#0c7fa3">THREE AUTHORS · ONE ASSURANCE SYSTEM</text>
 
-  <rect x="20" y="64" width="220" height="78" rx="12" fill="#ffffff" stroke="rgba(13,16,48,0.24)" stroke-width="1.5" />
-  <text x="40" y="92" class="svg-kicker" fill="#0d1030">HUMAN-WRITTEN</text>
-  <text x="40" y="118" class="svg-h3" fill="#0d1030">Looks plausible</text>
+  <rect x="20" y="52" width="220" height="74" rx="12" fill="#ffffff" stroke="rgba(13,16,48,0.24)" stroke-width="1.5" />
+  <text x="40" y="79" class="svg-kicker" fill="#0d1030">HUMAN-WRITTEN</text>
+  <text x="40" y="105" class="svg-h3" fill="#0d1030">Looks plausible</text>
 
-  <rect x="20" y="168" width="220" height="78" rx="12" fill="rgba(164,35,143,0.06)" stroke="#a4238f" stroke-width="1.5" />
-  <text x="40" y="196" class="svg-kicker" fill="#a4238f">MODEL-GENERATED</text>
-  <text x="40" y="222" class="svg-h3" fill="#0d1030">Looks plausible</text>
+  <rect x="20" y="146" width="220" height="74" rx="12" fill="rgba(164,35,143,0.06)" stroke="#a4238f" stroke-width="1.5" />
+  <text x="40" y="173" class="svg-kicker" fill="#a4238f">MODEL-GENERATED</text>
+  <text x="40" y="199" class="svg-h3" fill="#0d1030">Looks plausible</text>
 
-  <path d="M 240 103 C 282 103, 282 155, 318 155" fill="none" stroke="#0d1030" stroke-width="1.7" />
-  <path d="M 240 207 C 282 207, 282 155, 318 155" fill="none" stroke="#a4238f" stroke-width="1.7" />
-  <polygon points="312,150 322,155 312,160" fill="#0d1030" />
+  <rect x="20" y="240" width="220" height="74" rx="12" fill="#f5f6fa" stroke="rgba(13,16,48,0.34)" stroke-width="1.5" stroke-dasharray="5 4" />
+  <text x="40" y="267" class="svg-kicker" fill="rgba(13,16,48,0.62)">INHERITED</text>
+  <text x="40" y="293" class="svg-h3" fill="#0d1030">Has always worked</text>
 
-  <rect x="326" y="64" width="294" height="286" rx="16" fill="#0d1030" />
-  <text x="354" y="96" class="svg-kicker" fill="#78d8f2">TRUST COMES FROM THE SYSTEM</text>
+  <path d="M 240 89 C 282 89, 282 183, 318 183" fill="none" stroke="#0d1030" stroke-width="1.7" />
+  <path d="M 240 183 L 318 183" fill="none" stroke="#a4238f" stroke-width="1.7" />
+  <path d="M 240 277 C 282 277, 282 183, 318 183" fill="none" stroke="rgba(13,16,48,0.5)" stroke-width="1.7" stroke-dasharray="5 4" />
+  <polygon points="312,178 322,183 312,188" fill="#0d1030" />
 
-  <circle cx="366" cy="138" r="16" fill="rgba(255,255,255,0.1)" stroke="#78d8f2" stroke-width="1.5" />
-  <text x="366" y="143" text-anchor="middle" class="svg-pill" fill="#78d8f2">01</text>
-  <text x="396" y="134" class="svg-label" fill="#ffffff">Intent is explicit</text>
-  <text x="396" y="152" class="svg-caption" fill="rgba(255,255,255,0.66)">Reviewed spec and source authority</text>
+  <rect x="326" y="52" width="294" height="262" rx="16" fill="#0d1030" />
+  <text x="354" y="84" class="svg-kicker" fill="#78d8f2">TRUST COMES FROM THE SYSTEM</text>
 
-  <circle cx="366" cy="207" r="16" fill="rgba(255,255,255,0.1)" stroke="#78d8f2" stroke-width="1.5" />
-  <text x="366" y="212" text-anchor="middle" class="svg-pill" fill="#78d8f2">02</text>
-  <text x="396" y="203" class="svg-label" fill="#ffffff">Authority is bounded</text>
-  <text x="396" y="221" class="svg-caption" fill="rgba(255,255,255,0.66)">WASI capabilities outside the code</text>
+  <circle cx="366" cy="124" r="16" fill="rgba(255,255,255,0.1)" stroke="#78d8f2" stroke-width="1.5" />
+  <text x="366" y="129" text-anchor="middle" class="svg-pill" fill="#78d8f2">01</text>
+  <text x="396" y="120" class="svg-label" fill="#ffffff">Intent is explicit</text>
+  <text x="396" y="138" class="svg-caption" fill="rgba(255,255,255,0.66)">Reviewed spec and source authority</text>
 
-  <circle cx="366" cy="276" r="16" fill="rgba(255,255,255,0.1)" stroke="#f59ef5" stroke-width="1.5" />
-  <text x="366" y="281" text-anchor="middle" class="svg-pill" fill="#f59ef5">03</text>
-  <text x="396" y="272" class="svg-label" fill="#ffffff">Promotion is evidenced</text>
-  <text x="396" y="290" class="svg-caption" fill="rgba(255,255,255,0.66)">Checks pass; an owner accepts</text>
+  <circle cx="366" cy="184" r="16" fill="rgba(255,255,255,0.1)" stroke="#78d8f2" stroke-width="1.5" />
+  <text x="366" y="189" text-anchor="middle" class="svg-pill" fill="#78d8f2">02</text>
+  <text x="396" y="180" class="svg-label" fill="#ffffff">Authority is bounded</text>
+  <text x="396" y="198" class="svg-caption" fill="rgba(255,255,255,0.66)">WASI capabilities outside the code</text>
 
-  <text x="473" y="326" text-anchor="middle" class="svg-caption" fill="#78d8f2">The author never becomes the control boundary.</text>
+  <circle cx="366" cy="244" r="16" fill="rgba(255,255,255,0.1)" stroke="#f59ef5" stroke-width="1.5" />
+  <text x="366" y="249" text-anchor="middle" class="svg-pill" fill="#f59ef5">03</text>
+  <text x="396" y="240" class="svg-label" fill="#ffffff">Promotion is evidenced</text>
+  <text x="396" y="258" class="svg-caption" fill="rgba(255,255,255,0.66)">Checks pass; an owner accepts</text>
+
+  <text x="473" y="292" text-anchor="middle" class="svg-caption" fill="#78d8f2">The author never becomes the control boundary.</text>
 </svg>
 </div>
 </div>
@@ -129,6 +135,7 @@ class: slide-light
 This is the worldview in one slide.
 - Human authorship was never proof of correctness; it was a proxy supported by scarce expertise and review.
 - AI removes the scarcity and breaks that proxy.
+- Long-running code is the third author. Familiar is not the same as understood: it has always worked, until someone needs to change it.
 - We replace trust in authorship with trust in evidence, bounded runtime authority, and accountable promotion.
 -->
 
@@ -302,7 +309,7 @@ class: slide-chapter
 
 <AmbientVideo src="/videos/approach-video.mp4" variant="approach" />
 
-<Eyebrow text="ONE APP, FOUR TIERS · THE SHIFT PLANNER" />
+<Eyebrow text="ONE APP, FOUR TIERS · AN ILLUSTRATIVE SHIFT PLANNER" />
 
 <div class="chapter-grid">
 <div class="chapter-left">
@@ -338,7 +345,7 @@ class: slide-chapter
 
 <AmbientVideo src="/videos/approach-video.mp4" variant="approach" />
 
-<Eyebrow text="ONE APP, FOUR TIERS · THE SHIFT PLANNER" />
+<Eyebrow text="ONE APP, FOUR TIERS · AN ILLUSTRATIVE SHIFT PLANNER" />
 
 <div class="chapter-grid">
 <div class="chapter-left">
@@ -375,7 +382,7 @@ class: slide-chapter
 
 <AmbientVideo src="/videos/approach-video.mp4" variant="approach" />
 
-<Eyebrow text="ONE APP, FOUR TIERS · THE SHIFT PLANNER" />
+<Eyebrow text="ONE APP, FOUR TIERS · AN ILLUSTRATIVE SHIFT PLANNER" />
 
 <div class="chapter-grid">
 <div class="chapter-left">
@@ -386,7 +393,7 @@ class: slide-chapter
 <div class="chapter-notes">
 <div class="chapter-note is-clearance">
 <div class="chapter-note-head"><span>Cleared for live data</span><em>Weeks</em></div>
-<p>A named business owner and backup, an explicit capability contract, and one access review. <strong>The component carries business logic, never credentials; the WASI runtime mediates its effects through the host.</strong></p>
+<p>A named business owner and backup, an explicit capability contract with the roster system, and one access review. <strong>The component carries business logic, never credentials; the WASI runtime mediates its effects through the host.</strong></p>
 </div>
 <div class="chapter-note">
 <div class="chapter-note-head"><span>The next signal</span><em>→ Tier 3</em></div>
@@ -402,6 +409,7 @@ class: slide-chapter
 Month three: Tier 2.
 - Instead of handing out raw database credentials or saying no, the planner declares a capability contract.
 - The WASI runtime mediates every call through the host, keeping credentials, telemetry, and policy outside generated code.
+- Remember the roster system behind that contract. We come back to it at the turn.
 - Next signal: twenty-five users, regulated data, or a Monday morning the business cannot afford.
 -->
 
@@ -412,7 +420,7 @@ class: slide-chapter
 
 <AmbientVideo src="/videos/approach-video.mp4" variant="approach" />
 
-<Eyebrow text="ONE APP, FOUR TIERS · THE SHIFT PLANNER" />
+<Eyebrow text="ONE APP, FOUR TIERS · AN ILLUSTRATIVE SHIFT PLANNER" />
 
 <div class="chapter-grid">
 <div class="chapter-left">
@@ -443,39 +451,11 @@ Month nine: Tier 3 graduation.
 -->
 
 ---
-title: Score any app
-class: slide-light
----
-
-<Eyebrow text="THE SCORECARD · FOUR QUESTIONS" />
-
-<div class="ed-band">
-<div class="ed-band-top">
-<div>
-
-# Score any app<br>in five minutes.
-
-</div>
-<p class="ed-band-prose">Four questions about the app, never about the builder. <strong>The highest column any answer reaches sets the tier.</strong> At month nine, three sites and Monday-morning criticality place the shift planner at Tier 3 — making graduation a clear funding decision.</p>
-</div>
-<Scorecard :mark="{ reach: 3, data: 2, criticality: 3, continuity: 2 }" subject="The shift planner, month 9" />
-</div>
-
-<!--
-Score the shift planner right at the end of its four-chapter journey.
-- Reach: three sites, 25+ people -> Tier 3.
-- Data: live internal roster via capability contract -> Tier 2.
-- Monday 9am: shifts go uncovered -> Tier 3.
-- Continuity: named business owner + backup -> Tier 2.
-- Highest column wins: Tier 3.
--->
-
----
 title: The model cannot confer authority
 class: slide-light
 ---
 
-<Eyebrow text="SPEC-DRIVEN DEVELOPMENT · PROPOSAL IS NOT PROMOTION" />
+<Eyebrow text="HOW IT GRADUATES · SPEC-DRIVEN DEVELOPMENT" />
 
 <div class="ed-split is-reversed">
 <div class="ed-diagram-pane">
@@ -547,27 +527,124 @@ class: slide-light
 </div>
 
 <!--
-How spec-driven graduation works under the hood.
+How graduation works under the hood.
 - The model is valuable because it extracts and implements quickly, but it is never its own source of truth or release gate.
 - Disagreements between the product brief and the prototype's code are surfaced explicitly for human review before sealing.
+- That review is delivery work, not friction: it is where accountable people decide what the software should do.
 -->
 
 ---
-title: Standardise everything beneath it
+title: Every legacy system was once a prototype
+class: slide-hero slide-section
+---
+
+<AmbientVideo src="/videos/hero-video-3.mp4" variant="hero" />
+
+<Eyebrow text="THE SAME MOMENT, YEARS LATER" />
+
+<div class="section-hero-grid">
+<div class="section-hero-left">
+
+# Every legacy system was once<br>a prototype that succeeded.
+
+<p class="section-subtitle">Its authors have moved on. Its rules live only in the code.<br>AI now makes rewriting it look cheap.</p>
+</div>
+</div>
+
+<TrustLadder variant="strip" :current="[0, 3]" />
+
+<!--
+The turn. Let the title land before you speak.
+- Every critical system in the estate started as somebody's useful prototype. It succeeded, people came to depend on it, and nobody wrote down what it must do.
+- It is the shift planner's moment, years on: it started at Tier 0, and now the business stands on it.
+- AI makes rewriting it feel cheap. That is exactly what makes it dangerous.
+-->
+
+---
+title: Tier 3 by dependence
 class: slide-light
 ---
 
-<Eyebrow text="REPEATABLE INFRASTRUCTURE · BUY AN OUTCOME, NOT A TOPOLOGY" />
+<Eyebrow text="MODERNISATION · RECOVER THE PRODUCT, NOT JUST THE CODE" />
 
-<div class="ed-band">
-<div class="ed-band-top">
+<div class="ed-bottom-split">
+<div class="ed-bottom-canvas">
+<svg viewBox="0 0 1140 285" aria-hidden="true">
+  <circle cx="92" cy="142" r="56" fill="#f5f6fa" stroke="#0d1030" stroke-width="1.8" stroke-dasharray="6 4" />
+  <text x="92" y="128" text-anchor="middle" class="svg-kicker" fill="#0c7fa3">15 YEARS OLD</text>
+  <text x="92" y="148" text-anchor="middle" class="svg-label" fill="#0d1030">Roster System</text>
+  <text x="92" y="164" text-anchor="middle" class="svg-caption" fill="rgba(13,16,48,0.55)">No written spec</text>
+
+  <path d="M 148 120 C 230 120, 250 42, 360 42 L 690 42" fill="none" stroke="rgba(180,35,78,0.4)" stroke-width="1.5" stroke-dasharray="4 4" />
+  <line x1="684" y1="34" x2="698" y2="50" stroke="#b4234e" stroke-width="2" />
+  <line x1="698" y1="34" x2="684" y2="50" stroke="#b4234e" stroke-width="2" />
+  <text x="370" y="28" class="svg-kicker" fill="#b4234e">TRAP 01 · KEEP PATCHING IT</text>
+  <text x="716" y="38" class="svg-body" fill="rgba(13,16,48,0.62)">Every change is a gamble, while the</text>
+  <text x="716" y="54" class="svg-body" fill="rgba(13,16,48,0.62)">people who understand it move on</text>
+
+  <path d="M 148 164 C 230 164, 250 242, 360 242 L 690 242" fill="none" stroke="rgba(180,35,78,0.4)" stroke-width="1.5" stroke-dasharray="4 4" />
+  <line x1="684" y1="234" x2="698" y2="250" stroke="#b4234e" stroke-width="2" />
+  <line x1="698" y1="234" x2="684" y2="250" stroke="#b4234e" stroke-width="2" />
+  <text x="370" y="228" class="svg-kicker" fill="#b4234e">TRAP 02 · TRANSLATE IT WITH AI</text>
+  <text x="716" y="238" class="svg-body" fill="rgba(13,16,48,0.62)">Reproduces the old problems in a</text>
+  <text x="716" y="254" class="svg-body" fill="rgba(13,16,48,0.62)">new language, only faster</text>
+
+  <line x1="148" y1="142" x2="352" y2="142" stroke="#0c7fa3" stroke-width="2.5" />
+  <polygon points="346,137 356,142 346,147" fill="#0c7fa3" />
+  <rect x="358" y="108" width="236" height="68" rx="12" fill="#0d1030" />
+  <text x="476" y="134" text-anchor="middle" class="svg-kicker" fill="#78d8f2">THIRD OPTION · RECOVER INTENT</text>
+  <text x="476" y="156" text-anchor="middle" class="svg-h3" fill="#ffffff">Reviewed Specification</text>
+  <line x1="594" y1="142" x2="736" y2="142" stroke="#a4238f" stroke-width="2.5" />
+  <polygon points="730,137 740,142 730,147" fill="#a4238f" />
+  <rect x="742" y="108" width="216" height="68" rx="12" fill="rgba(164,35,143,0.1)" stroke="#a4238f" stroke-width="1.8" />
+  <text x="850" y="134" text-anchor="middle" class="svg-kicker" fill="#a4238f">VERIFIED WAVES</text>
+  <text x="850" y="156" text-anchor="middle" class="svg-h3" fill="#0d1030">Clean Rebuild</text>
+  <line x1="958" y1="142" x2="1022" y2="142" stroke="#a4238f" stroke-width="2.5" />
+  <polygon points="1016,137 1026,142 1016,147" fill="#a4238f" />
+  <circle cx="1076" cy="142" r="50" fill="#a4238f" />
+  <text x="1076" y="130" text-anchor="middle" class="svg-kicker" fill="rgba(255,255,255,0.85)">T3 · WASI</text>
+  <text x="1076" y="148" text-anchor="middle" class="svg-label" fill="#ffffff">Runtime</text>
+  <text x="1076" y="164" text-anchor="middle" class="svg-caption" fill="rgba(255,255,255,0.85)">+ SLA</text>
+
+  <line x1="1076" y1="192" x2="1076" y2="228" stroke="#0c7fa3" stroke-width="1.6" stroke-dasharray="3 3" />
+  <rect x="1012" y="230" width="128" height="44" rx="10" fill="rgba(22,180,226,0.08)" stroke="#0c7fa3" stroke-width="1.4" />
+  <text x="1076" y="248" text-anchor="middle" class="svg-pill" fill="#0c7fa3">SHIFT PLANNER</text>
+  <text x="1076" y="264" text-anchor="middle" class="svg-caption" fill="#0d1030">Same contract</text>
+</svg>
+</div>
+<div class="ed-bottom-prose-row">
 <div>
 
-# Unique on top.<br>Standard beneath.
+# Tier 3 by dependence.<br>Tier 0 by evidence.
 
 </div>
-<p class="ed-band-prose">The shift planner's workflow is unique; its networking, identity, state, messaging, and recovery patterns are not. Customers select a <strong>service envelope</strong>, and versioned WASI runtime and Terraform recipes provision and operate the stack that meets it.</p>
+<div>
+<p class="ed-prose">The roster system behind the planner's contract is fifteen years old. Every shift depends on it, yet its only specification is its code, like a prototype on a laptop. <strong>AI makes rewriting it cheap enough to be dangerous.</strong></p>
+<p class="ed-prose">The answer is the planner's own path: recover what must survive, let accountable people settle the conflicts, rebuild in verified waves, and land it behind the contract the planner already uses.</p>
 </div>
+</div>
+</div>
+
+<!--
+The second door: the systems the organisation already runs.
+- Remember the roster data at month three. The system behind that contract is fifteen years old. Every shift depends on it, and nobody can say with confidence what all of it does.
+- That is Tier 3 by dependence and Tier 0 by evidence: the position of a prototype on a laptop, with far more riding on it.
+- Two traps. Keep patching it while the people who understand it leave, or let AI translate it and copy its problems into a new language, faster. AI can generate a new implementation quickly; it cannot decide what should survive.
+- The third option is the graduation path again: recover intent from code, documents, tests, and people. Where they disagree, the client's accountable people decide. Then rebuild in verified waves.
+- The contract is the seam. Where the rebuilt service keeps it, the planner is untouched. Data migration still needs its own plan.
+-->
+
+---
+title: Customise what differentiates
+class: slide-light
+---
+
+<Eyebrow text="THE FOUNDATION · BUY AN OUTCOME, NOT A TOPOLOGY" />
+
+# Customise what differentiates the business.<br>Standardise everything beneath it.
+
+<p class="slide-lead">The planner's workflow and the roster's rules are unique; their networking, identity, state, messaging, and recovery are not. Every service lands on one runtime, chosen as a plan. <strong>A standard target also gives AI less technology to invent.</strong></p>
+
 <div class="ed-band-canvas">
 <svg viewBox="0 0 1140 350" aria-hidden="true">
   <rect x="356" y="10" width="428" height="62" rx="12" fill="#0d1030" />
@@ -605,72 +682,185 @@ class: slide-light
   <text x="570" y="342" text-anchor="middle" class="svg-kicker" fill="#a4238f">ONE SECURITY BASELINE · TERRAFORM PROVISIONS · WASI RUNTIME BINDS · WE OPERATE</text>
 </svg>
 </div>
-</div>
 
 <!--
-The commercial and architectural pivot:
-- The customer owns outcomes and constraints: workload, SLOs, recovery, residency, connectivity, and cost.
+The commercial and architectural pivot.
+- The customer owns outcomes and constraints: workload, service levels, recovery, residency, connectivity, and cost.
 - Versioned recipes satisfy them without a bespoke cloud design exercise for every app.
 - Security is never a premium feature: the same boundary applies across S, M, and L.
+- The standard target is also why generated code can meet a production bar: the model has less technology to invent, and every grant is visible.
 -->
 
 ---
-title: A reinvented Propellerhead
+title: We made this bet before AI made it obvious
 class: slide-light
 ---
 
-<Eyebrow text="OUR ROLE · FROM CODE SUPPLIER TO TRUSTED SOFTWARE PRODUCTION" />
+<Eyebrow text="WHY BELIEVE US · BUILT FOR PEOPLE, READY FOR GENERATION" />
 
-<div class="ed-band">
-<div class="ed-band-top">
-<div>
+<div class="ed-split">
+<div class="ed-prose-col">
 
-# Abundant code,<br>made governable.
+# We made this bet<br>before AI made<br>it obvious.
 
+<p class="ed-prose">We built our WebAssembly runtime so our engineers could stop selecting stacks. In October 2025, AI-generated code met our production bar: <strong>the same review and verification bar we hold hand-written code to.</strong></p>
+<p class="ed-prose">The design decision that paid off had been made years earlier, for people.</p>
+<p class="ed-footnote">Open source under MIT / Apache-2.0: <strong>Omnia</strong>, the runtime, and <strong>Emery</strong>, the delivery engine. We would rather you read the code than take our word for it.</p>
 </div>
-<p class="ed-band-prose">Our value is no longer proportional to the lines of code we type. We establish the operating system around abundant implementation: <strong>how apps earn trust, how intent becomes durable, how runtime authority is bounded, and who owns the result in production.</strong></p>
-</div>
-<div class="ed-band-canvas">
-<svg viewBox="0 0 1140 350" aria-hidden="true">
-  <line x1="142" y1="156" x2="998" y2="156" stroke="rgba(13,16,48,0.18)" stroke-width="2" />
+<div class="ed-diagram-pane">
+<svg viewBox="0 0 640 440" aria-hidden="true">
+  <text x="20" y="26" class="svg-kicker" fill="#0c7fa3">THE ORIGIN · THREE BEATS</text>
 
-  <circle cx="142" cy="156" r="66" fill="#ffffff" stroke="#0c7fa3" stroke-width="1.8" />
-  <text x="142" y="138" text-anchor="middle" class="svg-kicker" fill="#0c7fa3">01 · MODEL</text>
-  <text x="142" y="160" text-anchor="middle" class="svg-h3" fill="#0d1030">Earned trust</text>
-  <text x="142" y="180" text-anchor="middle" class="svg-caption" fill="rgba(13,16,48,0.58)">Estate scorecards</text>
-  <text x="142" y="196" text-anchor="middle" class="svg-caption" fill="rgba(13,16,48,0.58)">Clearances, owners</text>
+  <line x1="40" y1="70" x2="40" y2="230" stroke="rgba(13,16,48,0.16)" stroke-width="2" />
 
-  <circle cx="428" cy="156" r="66" fill="rgba(22,180,226,0.07)" stroke="#0c7fa3" stroke-width="1.8" />
-  <text x="428" y="138" text-anchor="middle" class="svg-kicker" fill="#0c7fa3">02 · ENABLE</text>
-  <text x="428" y="160" text-anchor="middle" class="svg-h3" fill="#0d1030">Open creation</text>
-  <text x="428" y="180" text-anchor="middle" class="svg-caption" fill="rgba(13,16,48,0.58)">Codex and coaches</text>
-  <text x="428" y="196" text-anchor="middle" class="svg-caption" fill="rgba(13,16,48,0.58)">Reusable contracts</text>
+  <circle cx="40" cy="70" r="15" fill="#ffffff" stroke="#0c7fa3" stroke-width="1.8" />
+  <text x="40" y="74" text-anchor="middle" class="svg-pill" fill="#0c7fa3">01</text>
+  <text x="72" y="62" class="svg-kicker" fill="#0c7fa3">YEARS AGO · BUILT FOR PEOPLE</text>
+  <text x="72" y="84" class="svg-h3" fill="#0d1030">A runtime so engineers stop selecting stacks</text>
+  <text x="72" y="102" class="svg-caption" fill="rgba(13,16,48,0.58)">Rust on Wasmtime · business behaviour against typed capabilities</text>
 
-  <circle cx="714" cy="156" r="66" fill="#0d1030" />
-  <text x="714" y="138" text-anchor="middle" class="svg-kicker" fill="#78d8f2">03 · STANDARDISE</text>
-  <text x="714" y="160" text-anchor="middle" class="svg-h3" fill="#ffffff">The boundaries</text>
-  <text x="714" y="180" text-anchor="middle" class="svg-caption" fill="rgba(255,255,255,0.68)">Spec-driven delivery</text>
-  <text x="714" y="196" text-anchor="middle" class="svg-caption" fill="rgba(255,255,255,0.68)">Runtime + recipes</text>
+  <circle cx="40" cy="150" r="15" fill="#ffffff" stroke="#a4238f" stroke-width="1.8" />
+  <text x="40" y="154" text-anchor="middle" class="svg-pill" fill="#a4238f">02</text>
+  <text x="72" y="142" class="svg-kicker" fill="#a4238f">OCTOBER 2025 · READY FOR GENERATION</text>
+  <text x="72" y="164" class="svg-h3" fill="#0d1030">Generated code meets our production bar</text>
+  <text x="72" y="182" class="svg-caption" fill="rgba(13,16,48,0.58)">Held to the same review and verification as hand-written code</text>
 
-  <circle cx="998" cy="156" r="72" fill="#a4238f" />
-  <text x="998" y="136" text-anchor="middle" class="svg-kicker" fill="#ffffff">04 · OPERATE</text>
-  <text x="998" y="160" text-anchor="middle" class="svg-h3" fill="#ffffff">Critical apps</text>
-  <text x="998" y="182" text-anchor="middle" class="svg-caption" fill="rgba(255,255,255,0.78)">Verified graduation</text>
-  <text x="998" y="198" text-anchor="middle" class="svg-caption" fill="rgba(255,255,255,0.78)">SLA and the pager</text>
+  <circle cx="40" cy="230" r="15" fill="#0d1030" />
+  <text x="40" y="234" text-anchor="middle" class="svg-pill" fill="#78d8f2">03</text>
+  <text x="72" y="222" class="svg-kicker" fill="#0d1030">NOW · CONSTRAINT AS LEVERAGE</text>
+  <text x="72" y="244" class="svg-h3" fill="#0d1030">Less technology for AI to invent</text>
+  <text x="72" y="262" class="svg-caption" fill="rgba(13,16,48,0.58)">The agent implements a reviewed specification. It does not design the universe.</text>
 
-  <rect x="70" y="274" width="1000" height="48" rx="12" fill="rgba(22,180,226,0.07)" stroke="rgba(12,127,163,0.28)" />
-  <text x="570" y="304" text-anchor="middle" class="svg-h3" fill="#0d1030">Domain experts discover · AI implements · the system constrains · accountable people own</text>
+  <rect x="20" y="294" width="600" height="138" rx="16" fill="#0d1030" />
+  <text x="44" y="322" class="svg-kicker" fill="#78d8f2">WHY IT HOLDS AT AI SPEED · ENFORCED BY CONSTRUCTION</text>
+  <text x="44" y="352" class="svg-label" fill="#ffffff">Sandboxed by default</text>
+  <text x="44" y="370" class="svg-caption" fill="rgba(255,255,255,0.66)">Nothing reachable the host did not grant</text>
+  <text x="332" y="352" class="svg-label" fill="#ffffff">Typed, narrow interfaces</text>
+  <text x="332" y="370" class="svg-caption" fill="rgba(255,255,255,0.66)">Satisfies the interface or does not compile</text>
+  <text x="44" y="400" class="svg-label" fill="#ffffff">A small generation problem</text>
+  <text x="44" y="418" class="svg-caption" fill="rgba(255,255,255,0.66)">No frameworks, SDKs, or architecture to choose</text>
+  <text x="332" y="400" class="svg-label" fill="#ffffff">Every grant is visible</text>
+  <text x="332" y="418" class="svg-caption" fill="rgba(255,255,255,0.66)">What it can touch is enumerable from host config</text>
 </svg>
 </div>
 </div>
 
 <!--
-This is the reinvented Propellerhead:
-- Concentrating senior engineering where it compounds: shared capability boundaries, service recipes, and critical Tier 3 operations.
+Why believe us, part one: we did not pivot to AI. AI arrived at a design we had already made.
+- We built the runtime so our own engineers could stop choosing frameworks, importing provider SDKs, and wiring infrastructure into application code.
+- Generated code met our production bar in October 2025, held to the same review and verification as hand-written code. We were not surprised by the direction, only by the date.
+- A governed framework can approximate some of this by discipline. The component model enforces it by construction, and construction is what holds as the volume and speed of code keep increasing.
+- Both halves are open source. Invite the room to read the code rather than take our word for it.
 -->
 
 ---
-title: Start with one app
+title: Plausible is not correct
+class: slide-light
+---
+
+<Eyebrow text="WHY BELIEVE US · EVIDENCE, NOT AUTHORSHIP" />
+
+# Plausible is not correct.
+
+<p class="slide-lead">In an AI-assisted rebuild of a live real-time rail service — train-control messages in, vehicle positions out — we recovered a specification from its code, then held the result to the 22 recorded cases its hand-written counterpart is tested against.</p>
+
+<div class="stat-grid">
+<div class="stat">
+<div class="stat-num">0<span>/ 22</span></div>
+<p class="stat-label">cases passed by an early build. Behind it: a delay with its sign inverted, and rejected messages reported as processed.</p>
+<span class="stat-src">Propellerhead evaluation, October 2026</span>
+</div>
+<div class="stat">
+<div class="stat-num">21<span>/ 22</span></div>
+<p class="stat-label">cases passed by the latest build, after we fixed the delivery system rather than patching the generated code.</p>
+<span class="stat-src">The same 22 recorded cases</span>
+</div>
+<div class="stat">
+<div class="stat-num">12<span>/ 12</span></div>
+<p class="stat-label">recorded production messages passed. Every one of them.</p>
+<span class="stat-src">Client and system anonymised</span>
+</div>
+</div>
+
+<div class="punchline-bar">
+<span class="punchline-tag">Fix the system, not the output</span>
+<p>Each defect went back into our checks, prompts, and tooling, <strong>so every future rebuild inherits the fix.</strong></p>
+</div>
+
+<!--
+Why believe us, part two: evidence on a real system, not a demo.
+- The service consumes train-control messages and publishes vehicle positions. We recovered its specification from the code and rebuilt it as a WebAssembly service.
+- The early build looked reasonable line by line. The recorded cases exposed what review would likely have missed: a delay computed with its sign inverted, true-or-false flags read as numbers, rejected messages reported as processed.
+- We did not hand-patch the output. Each defect went back into the delivery system: a check the build must pass, guidance the model follows, a rule for reading the source, or a fix to the tooling that lays out the code. The latest rebuild passes 21 of the 22 cases, including all 12 recorded production messages.
+- This is an internal evaluation on an anonymised client system, described at the level achieved. It is the premise in action: plausible is not correct; evidence decides.
+-->
+
+---
+title: From code for hire to delivery you can trust
+class: slide-light
+---
+
+<Eyebrow text="OUR ROLE · FROM CODE SUPPLIER TO TRUSTED DELIVERY" />
+
+<div class="ed-split is-reversed">
+<div class="ed-diagram-pane">
+<svg viewBox="0 0 640 420" aria-hidden="true">
+  <text x="20" y="34" class="svg-kicker" fill="rgba(13,16,48,0.5)">CODE FOR HIRE</text>
+  <text x="296" y="34" class="svg-kicker" fill="#a4238f">DELIVERY YOU CAN TRUST</text>
+  <line x1="20" y1="48" x2="620" y2="48" stroke="rgba(13,16,48,0.16)" stroke-width="1.2" />
+
+  <text x="20" y="92" class="svg-kicker" fill="#0c7fa3">01 · WHO BUILDS</text>
+  <text x="20" y="114" class="svg-h3" fill="rgba(13,16,48,0.42)" text-decoration="line-through">Our engineers build it</text>
+  <line x1="226" y1="108" x2="278" y2="108" stroke="#0c7fa3" stroke-width="1.6" />
+  <polygon points="272,103 282,108 272,113" fill="#0c7fa3" />
+  <text x="296" y="102" class="svg-h3" fill="#0d1030">Your people build too, safely</text>
+  <text x="296" y="122" class="svg-caption" fill="rgba(13,16,48,0.6)">The Codex, coaching, and clearances; winners graduate</text>
+  <line x1="20" y1="146" x2="620" y2="146" stroke="rgba(13,16,48,0.1)" stroke-width="1" />
+
+  <text x="20" y="186" class="svg-kicker" fill="#0c7fa3">02 · WHAT IT RUNS ON</text>
+  <text x="20" y="208" class="svg-h3" fill="rgba(13,16,48,0.42)" text-decoration="line-through">A platform per project</text>
+  <line x1="226" y1="202" x2="278" y2="202" stroke="#0c7fa3" stroke-width="1.6" />
+  <polygon points="272,197 282,202 272,207" fill="#0c7fa3" />
+  <text x="296" y="196" class="svg-h3" fill="#0d1030">One standard runtime, as a plan</text>
+  <text x="296" y="216" class="svg-caption" fill="rgba(13,16,48,0.6)">Plans S, M, and L on one security baseline</text>
+  <line x1="20" y1="240" x2="620" y2="240" stroke="rgba(13,16,48,0.1)" stroke-width="1" />
+
+  <text x="20" y="280" class="svg-kicker" fill="#0c7fa3">03 · WHAT YOU KEEP</text>
+  <text x="20" y="302" class="svg-h3" fill="rgba(13,16,48,0.42)" text-decoration="line-through">Code as the deliverable</text>
+  <line x1="226" y1="296" x2="278" y2="296" stroke="#0c7fa3" stroke-width="1.6" />
+  <polygon points="272,291 282,296 272,301" fill="#0c7fa3" />
+  <text x="296" y="290" class="svg-h3" fill="#0d1030">A specification you own</text>
+  <text x="296" y="310" class="svg-caption" fill="rgba(13,16,48,0.6)">The code becomes replaceable; the intent stays yours</text>
+  <line x1="20" y1="334" x2="620" y2="334" stroke="rgba(13,16,48,0.1)" stroke-width="1" />
+
+  <text x="20" y="374" class="svg-kicker" fill="#0c7fa3">04 · HOW YOU PAY</text>
+  <text x="20" y="396" class="svg-h3" fill="rgba(13,16,48,0.42)" text-decoration="line-through">Hours, then a handover</text>
+  <line x1="226" y1="390" x2="278" y2="390" stroke="#0c7fa3" stroke-width="1.6" />
+  <polygon points="272,385 282,390 272,395" fill="#0c7fa3" />
+  <text x="296" y="384" class="svg-h3" fill="#0d1030">Bounded outcomes, assured</text>
+  <text x="296" y="404" class="svg-caption" fill="rgba(13,16,48,0.6)">Outcome-priced where readiness has bounded the work</text>
+</svg>
+</div>
+<div class="ed-prose-col">
+
+# From code for hire<br>to delivery<br>you can trust.
+
+<p class="ed-prose">Generative AI made code abundant, so <strong>our value is no longer the lines we type.</strong> It is the system around them: how your people build safely, how intent stays durable, how authority stays bounded, and who answers for the result in production.</p>
+<p class="ed-prose">Every engagement starts with readiness, delivers in bounded waves, and continues as assurance, <strong>outcome-priced where the evidence supports it.</strong></p>
+</div>
+</div>
+
+<!--
+This is the reinvented Propellerhead.
+- We used to sell engineering time and hand over code. Code is now abundant, so the value moves to the system around it.
+- Your people can build too. The Codex, coaching, and clearances make that safe, and the winners graduate to us.
+- Every service lands on one standard runtime, chosen as a plan, so we stop designing a new platform for every project.
+- The asset you keep is the reviewed specification. The code becomes replaceable.
+- We price outcomes once readiness has bounded the work, never before.
+-->
+
+---
+title: Bring one prototype that succeeded
 class: slide-split short-bar
 ---
 
@@ -686,28 +876,28 @@ class: slide-split short-bar
 <div>
 <Eyebrow text="PROPELLERHEAD · NEXT STEPS" />
 
-# Start with one<br>proven winner.
+# Bring one prototype<br>that succeeded.
 
 <div class="opportunity-rows" style="margin-top: 8px;">
 <div class="opportunity-row">
 <span class="opportunity-row-num">01</span>
 <div>
-<h4>Score the app and its constraints</h4>
-<p>Establish its trust tier, owner, workload, recovery, residency, connectivity, and operating needs.</p>
+<h4>One that succeeded last month</h4>
+<p>A citizen-built tool people now depend on. We score your estate, stand up the Codex, and graduate what has earned it.</p>
 </div>
 </div>
 <div class="opportunity-row">
 <span class="opportunity-row-num">02</span>
 <div>
-<h4>Recover a reviewable specification</h4>
-<p>Reconcile intent, documentation, tests, and observed behaviour; make every disagreement and gap visible before production.</p>
+<h4>One that succeeded twenty years ago</h4>
+<p>A critical system nobody can safely change. We recover what it must keep doing and help your people decide what survives.</p>
 </div>
 </div>
 <div class="opportunity-row">
 <span class="opportunity-row-num">03</span>
 <div>
-<h4>Prove the boundary and service envelope</h4>
-<p>Map its capabilities to a standard WASI + Terraform recipe and demonstrate the evidence required to graduate it safely.</p>
+<h4>Either way, start with readiness</h4>
+<p>A short, paid engagement that traces one real change to production and ends in a decision: proceed, fix a foundation, or stop.</p>
 </div>
 </div>
 </div>
@@ -715,8 +905,8 @@ class: slide-split short-bar
 
 <div class="cta-card">
 <div>
-<div class="cta-card-label">BRING ONE APP THAT ALREADY MATTERS</div>
-<div class="cta-card-title">Let's prove the full trust loop.</div>
+<div class="cta-card-label">AI DELIVERY READINESS</div>
+<div class="cta-card-title">Leave knowing what to do next.</div>
 </div>
 <div class="cta-pill">
 <span class="cta-pill-dot">→</span>
@@ -726,7 +916,8 @@ class: slide-split short-bar
 </div>
 
 <!--
-Close with one concrete ask:
-- Bring one useful application that has begun to matter and one live capability it needs.
-- Score it, recover a candidate specification, and map it to a standard service envelope.
+Close with one ask and two ways in.
+- Bring one prototype that succeeded. It might have succeeded last month, in a chat window, or twenty years ago, in the system every shift depends on.
+- Either way, the first step is the same: AI Delivery Readiness, a short, paid engagement that traces one real change from idea to production.
+- Sometimes the responsible answer is to fix a specific foundation first, reframe the work, or stop it. The client owns the outputs either way.
 -->

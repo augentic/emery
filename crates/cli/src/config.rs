@@ -11,24 +11,24 @@ use emery_engine::{AdapterRef, Rank, preopen_join, preopen_path};
 use omnia_sdk::plugins::Digest;
 use omnia_sdk::{Error, bad_request};
 
-/// The config file a run naming no adapters looks for at the project root.
+// The config file a run naming no adapters looks for at the project root.
 pub const CONFIG_FILE: &str = "emery.toml";
 
-/// Positional adapters, `--description` values, and an optional `--config` path.
-///
-/// The file's `[[source]]` tables are the base and the argv sources layer
-/// over them: an argv source takes the place of the file source of its
-/// name, whole, and is appended otherwise, in argv order. A run naming
-/// sources and no file reads no file; one naming neither discovers the
-/// project-root file. The `[target]` table of the file read is the run's
-/// target, the repository the specification lives in, so a run naming its
-/// sources on the command line knows it only under `--config`.
+// Positional adapters, `--description` values, and an optional `--config` path.
+//
+// The file's `[[source]]` tables are the base and the argv sources layer
+// over them: an argv source takes the place of the file source of its
+// name, whole, and is appended otherwise, in argv order. A run naming
+// sources and no file reads no file; one naming neither discovers the
+// project-root file. The `[target]` table of the file read is the run's
+// target, the repository the specification lives in, so a run naming its
+// sources on the command line knows it only under `--config`.
 pub struct SourceCarriers<'a> {
-    /// Workspace-backed adapter references from argv.
+    // Workspace-backed adapter references from argv.
     pub adapters: &'a [String],
-    /// Inline `--description <adapter>=<text>` entries.
+    // Inline `--description <adapter>=<text>` entries.
     pub descriptions: &'a [String],
-    /// When set, names the config file the argv sources layer over.
+    // When set, names the config file the argv sources layer over.
     pub config: Option<&'a Path>,
 }
 
@@ -83,16 +83,14 @@ impl TryFrom<SourceCarriers<'_>> for SpecifyInput {
     }
 }
 
-/// The target whose repository the specification lives in, as `apply`, `show`, and `specify` read it.
-///
-/// The `[target]` table of `config`, or of the discovered project-root file
-/// when `config` names none; `repository` takes the place of its
-/// `repository`. `None` when no file states a target, so the verb decides
-/// whether it needs one.
-///
-/// # Errors
-///
-/// Returns [`Error::BadRequest`] when the file cannot be read or decoded.
+// The target whose repository the specification lives in, as `apply`, `show`, and `specify` read it.
+//
+// The `[target]` table of `config`, or of the discovered project-root file
+// when `config` names none; `repository` takes the place of its
+// `repository`. `None` when no file states a target, so the verb decides
+// whether it needs one.
+//
+// Returns `Error::BadRequest` when the file cannot be read or decoded.
 pub fn target(config: Option<&Path>, repository: Option<&str>) -> Result<Option<TargetRef>, Error> {
     let Some(carrier) = Carrier::resolve(config)? else {
         return Ok(None);
@@ -106,7 +104,7 @@ pub fn target(config: Option<&Path>, repository: Option<&str>) -> Result<Option<
     Ok(Some(entry.into_ref()))
 }
 
-/// The `build-target-required` refusal of `verb`, which reads or seals the current revision and was handed no `[target]`.
+// The `build-target-required` refusal of `verb`, which reads or seals the current revision and was handed no `[target]`.
 pub fn missing_target(verb: &str) -> Error {
     target_required(&format!(
         "the specification has no repository to live in: {verb} needs a `[target]` table \
@@ -114,20 +112,20 @@ pub fn missing_target(verb: &str) -> Error {
     ))
 }
 
-/// A positional target adapter, a `--repository`, and an optional `--config` path.
-///
-/// The file's `[target]` table is the base and the flags layer over it: an
-/// argv adapter takes the place of its `adapter`, dropping the `digest` that
-/// pinned the file's, under the file's `name` where it states one; a
-/// `--repository` takes the place of its `repository`. A run naming an
-/// adapter and no file reads none; one naming no adapter discovers the
-/// project-root file.
+// A positional target adapter, a `--repository`, and an optional `--config` path.
+//
+// The file's `[target]` table is the base and the flags layer over it: an
+// argv adapter takes the place of its `adapter`, dropping the `digest` that
+// pinned the file's, under the file's `name` where it states one; a
+// `--repository` takes the place of its `repository`. A run naming an
+// adapter and no file reads none; one naming no adapter discovers the
+// project-root file.
 pub struct TargetCarriers<'a> {
-    /// The target adapter reference from argv.
+    // The target adapter reference from argv.
     pub adapter: Option<&'a str>,
-    /// The `--repository` the build lands in: a URL, or `.` for the project checkout.
+    // The `--repository` the build lands in: a URL, or `.` for the project checkout.
     pub repository: Option<&'a str>,
-    /// When set, names the config file the flags layer over.
+    // When set, names the config file the flags layer over.
     pub config: Option<&'a Path>,
 }
 
