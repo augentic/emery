@@ -488,7 +488,7 @@ class: slide-hero slide-section
 
 <p class="section-subtitle">Durable specifications, bounded AI implementation, explicit human review, and evidence before promotion.</p>
 </div>
-<div class="section-big-glyph">SPEC</div>
+<div class="section-big-glyph">SDD</div>
 </div>
 
 <TrustLadder variant="strip" :current="3" />
