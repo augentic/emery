@@ -38,9 +38,9 @@ The test is the one a reviewer applies reading the amended specification: does t
 3  brief  session.timeout     Sessions expire after fifteen minutes without activity.
 4  brief  export.csv (retire) Downloading the order book as a spreadsheet is withdrawn.
 
-5  REQ-001 session.timeout    Sessions expire after 30 minutes of inactivity.
-6  REQ-002 login.flow         Users sign in with a magic link.
-7  REQ-003 orders.export      A signed-in user downloads the order book as a spreadsheet.
+5  session.timeout     Sessions expire after 30 minutes of inactivity.
+6  login.flow          Users sign in with a magic link.
+7  orders.export       A signed-in user downloads the order book as a spreadsheet.
 ```
 
 ```json
