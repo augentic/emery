@@ -1,9 +1,11 @@
 //! Describes changes between two specification revisions.
 //!
-//! Requirements are matched by where they anchor in the sources — the same
-//! stem and an overlapping cited `path` — then by identifier; slices are
-//! matched by identifier and design sections by kind. Comparisons use typed
-//! revision data rather than rendered Markdown.
+//! Comparisons read typed revision data rather than rendered Markdown:
+//!
+//! - Requirements pair by identifier within one history, and by shared source
+//!   anchors then identifier across histories.
+//! - Design sections pair by kind.
+//! - Plan slices pair by identifier.
 
 use std::cmp::Reverse;
 use std::collections::{BTreeMap, BTreeSet};
@@ -29,14 +31,16 @@ pub struct Diff {
 impl Diff {
     /// Returns the changes from `outgoing` to `incoming`.
     ///
-    /// `from` must identify `outgoing`. Preambles are compared as complete
-    /// values, requirements by the stem and the cited anchors they share and
-    /// then by identifier, slices by identifier, and design sections by kind.
+    /// `from` must identify `outgoing`. When `incoming`'s specification names
+    /// `from` as its `parent`, requirements pair by identifier alone and any
+    /// `outgoing` requirement left out is [`retired`](SpecDiff::retired).
+    /// Across histories they pair by stem and shared anchors before
+    /// identifier, and any left out is [`removed`](SpecDiff::removed).
     #[must_use]
     pub fn between(from: &str, outgoing: &Revision, incoming: &Revision) -> Self {
         Self {
             from: from.to_string(),
-            spec: SpecDiff::between(&outgoing.spec, &incoming.spec),
+            spec: SpecDiff::between(from, &outgoing.spec, &incoming.spec),
             design: DesignDiff::between(&outgoing.design, &incoming.design),
             plan: PlanDiff::between(&outgoing.plan, &incoming.plan),
         }
@@ -57,8 +61,12 @@ pub struct SpecDiff {
     pub preamble: bool,
     /// Requirements present only in the new revision.
     pub added: Vec<Entry>,
-    /// Requirements present only in the displaced revision.
+    /// Requirements present only in the displaced revision, where the new
+    /// one was drafted from the sources alone.
     pub removed: Vec<Entry>,
+    /// Requirements the new revision withdraws from the displaced one it
+    /// amends, each with the statement withdrawn.
+    pub retired: Vec<Retired>,
     /// Requirements present in both revisions with differing content.
     pub changed: Vec<Changed>,
 }
@@ -70,17 +78,19 @@ impl SpecDiff {
         !self.preamble
             && self.added.is_empty()
             && self.removed.is_empty()
+            && self.retired.is_empty()
             && self.changed.is_empty()
     }
 
     // A requirement paired under another id reads as a change of `id`, with
     // `was` naming the one it carried.
-    fn between(outgoing: &Spec, incoming: &Spec) -> Self {
-        let pairing = Pairing::between(outgoing, incoming);
+    fn between(from: &str, outgoing: &Spec, incoming: &Spec) -> Self {
+        let pairing = Pairing::between(from, outgoing, incoming);
         Self {
             preamble: outgoing.preamble != incoming.preamble,
             added: pairing.added.into_iter().map(Entry::from).collect(),
             removed: pairing.removed.into_iter().map(Entry::from).collect(),
+            retired: pairing.retired.into_iter().map(Retired::from).collect(),
             changed: pairing
                 .paired
                 .into_iter()
@@ -99,47 +109,41 @@ impl SpecDiff {
     }
 }
 
-// The one-to-one pairing of an outgoing specification's requirements with an
-// incoming one's, and what each side leaves unpaired.
 struct Pairing<'a> {
     paired: Vec<(&'a Requirement, &'a Requirement)>,
     added: Vec<&'a Requirement>,
     removed: Vec<&'a Requirement>,
+    retired: Vec<&'a Requirement>,
 }
 
 impl<'a> Pairing<'a> {
-    // Requirements pair first by where they anchor — under one stem, citing
-    // a place in common — since the anchors are the code's and hold across
-    // runs where the ids, the position each run numbers in source order, do
-    // not: the pair sharing the most places is taken first, ties in id order,
-    // so the pairing is the same whenever the two specifications are. What no
-    // anchor pairs then pairs by id. `paired` and `added` are in `incoming`'s
-    // id order, `removed` in `outgoing`'s.
-    fn between(outgoing: &'a Spec, incoming: &'a Spec) -> Self {
-        let mut anchored: Vec<(usize, &Requirement, &Requirement)> = outgoing
-            .requirements
-            .iter()
-            .flat_map(|before| incoming.requirements.iter().map(move |after| (before, after)))
-            .filter(|(before, after)| before.stem() == after.stem())
-            .map(|(before, after)| (before.shared_anchors(after), before, after))
-            .filter(|&(shared, ..)| shared > 0)
-            .collect();
-        anchored.sort_by_key(|&(shared, before, after)| (Reverse(shared), before.id, after.id));
+    // Within one history an amendment keeps each requirement's id and numbers
+    // additions past the base, so shared anchors say nothing. Across
+    // histories ids are positional in source order, so the pair sharing the
+    // most anchors under one stem is taken first, ties broken in id order.
+    fn between(from: &str, outgoing: &'a Spec, incoming: &'a Spec) -> Self {
+        let amends = incoming.parent.as_deref() == Some(from);
+        let anchored = if amends { Vec::new() } else { Self::anchored(outgoing, incoming) };
         let by_id = incoming
             .requirements
             .iter()
             .filter_map(|after| outgoing.requirement(after.id).map(|before| (before, after)));
-        let candidates =
-            anchored.into_iter().map(|(_, before, after)| (before, after)).chain(by_id);
 
         let mut taken = BTreeSet::new();
         let mut paired = BTreeMap::new();
-        for (before, after) in candidates {
+        for (before, after) in anchored.into_iter().chain(by_id) {
             if !taken.contains(&before.id) && !paired.contains_key(&after.id) {
                 taken.insert(before.id);
                 paired.insert(after.id, (before, after));
             }
         }
+
+        let unpaired = outgoing.requirements.iter().filter(|before| !taken.contains(&before.id));
+        let (removed, retired) = if amends {
+            (Vec::new(), unpaired.collect())
+        } else {
+            (unpaired.collect(), Vec::new())
+        };
 
         Self {
             added: incoming
@@ -147,12 +151,43 @@ impl<'a> Pairing<'a> {
                 .iter()
                 .filter(|after| !paired.contains_key(&after.id))
                 .collect(),
-            removed: outgoing
-                .requirements
-                .iter()
-                .filter(|before| !taken.contains(&before.id))
-                .collect(),
+            removed,
+            retired,
             paired: paired.into_values().collect(),
+        }
+    }
+
+    fn anchored(outgoing: &'a Spec, incoming: &'a Spec) -> Vec<(&'a Requirement, &'a Requirement)> {
+        let mut pairs: Vec<(usize, &Requirement, &Requirement)> = outgoing
+            .requirements
+            .iter()
+            .flat_map(|before| incoming.requirements.iter().map(move |after| (before, after)))
+            .filter(|(before, after)| before.stem() == after.stem())
+            .map(|(before, after)| (before.shared_anchors(after), before, after))
+            .filter(|&(shared, ..)| shared > 0)
+            .collect();
+        pairs.sort_by_key(|&(shared, before, after)| (Reverse(shared), before.id, after.id));
+        pairs.into_iter().map(|(_, before, after)| (before, after)).collect()
+    }
+}
+
+/// A requirement the new revision withdraws from the one it amends.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub struct Retired {
+    /// The requirement's identity in the displaced revision.
+    #[serde(flatten)]
+    pub entry: Entry,
+    /// The statement withdrawn: the displaced revision's body paragraphs
+    /// joined, or `None` where it held the requirement in conflict.
+    pub statement: Option<String>,
+}
+
+impl From<&Requirement> for Retired {
+    fn from(requirement: &Requirement) -> Self {
+        Self {
+            entry: Entry::from(requirement),
+            statement: requirement.statement(),
         }
     }
 }

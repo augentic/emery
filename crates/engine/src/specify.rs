@@ -35,8 +35,8 @@ pub use crate::apply::ApplyOutput;
 use crate::brief::Brief as _;
 use crate::revision::Revision;
 pub use crate::revision::{
-    BadId, Changed, DesignDiff, Diff, Entry, PlanDiff, ReqId, Role, SectionKind, SliceEntry,
-    SliceId, SpecDiff, Waves,
+    BadId, Changed, DesignDiff, Diff, Entry, PlanDiff, ReqId, Retired, Role, SectionKind,
+    SliceEntry, SliceId, SpecDiff, Waves,
 };
 use crate::vcs::{SourceClone, TargetRef, WorkingCopy};
 use crate::{Files, Rank, apply, preopen_path, store, vcs};

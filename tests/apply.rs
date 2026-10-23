@@ -166,6 +166,100 @@ async fn apply_same_revision() {
     provider.vcs.assert_exhausted();
 }
 
+// A candidate that amends the current revision, its specification's parent
+// naming it, is diffed within one history: requirements pair by id alone, so
+// an added one anchoring where a withdrawn one did is an addition and not
+// the withdrawn one under another id, and what the candidate leaves out is
+// retired with the statement withdrawn rather than removed. The same two
+// specifications drafted apart, the parent unset, pair by anchor as before.
+#[tokio::test]
+async fn apply_amends() {
+    let spec = std::str::from_utf8(SPEC).expect("spec.json is UTF-8");
+    let base = spec.replace(
+        "\"claim\": \"orders.cancel\",\n          \"path\": null",
+        "\"claim\": \"orders.cancel\",\n          \"path\": \"docs/orders.md#L20-L30\"",
+    );
+    let provider = Provider::idle();
+    let outgoing = seed(&provider.files, base.as_bytes(), DESIGN, PLAN);
+
+    // the timeout revised, the cancellation withdrawn, a refund added at the
+    // cancellation's anchor, under the current revision as parent
+    let apart = base
+        .replace(
+            "Sessions expire after an hour of inactivity.",
+            "Sessions expire after 30 minutes of inactivity.",
+        )
+        .replace("\"id\": \"REQ-004\"", "\"id\": \"REQ-005\"")
+        .replace("\"subject\": \"orders.cancel\"", "\"subject\": \"orders.refund\"")
+        .replace("A signed-in user cancels an open order.", "A signed-in user requests a refund.");
+    let amended = apart.replace("\"parent\": null", &format!("\"parent\": \"{outgoing}\""));
+    let candidate = stage(&provider.storage, amended.as_bytes(), DESIGN, PLAN);
+
+    let resp =
+        cli_ok(&provider, &["emery", "--format", "json", "apply", "--config", PROJECT_CONFIG])
+            .await;
+
+    let envelope: Value = serde_json::from_slice(&resp.stdout).expect("one JSON envelope");
+    assert_eq!(envelope["revision"], candidate, "{envelope}");
+    assert_eq!(envelope["parent"], outgoing, "{envelope}");
+    let spec = &envelope["diff"]["spec"];
+    assert_eq!(
+        spec["added"],
+        serde_json::json!([{"id": "REQ-005", "subject": "orders.refund"}]),
+        "the refund is added, not the cancellation under another id: {envelope}"
+    );
+    assert_eq!(spec["removed"], serde_json::json!([]), "{envelope}");
+    assert_eq!(
+        spec["retired"],
+        serde_json::json!([{
+            "id": "REQ-004",
+            "subject": "orders.cancel",
+            "statement": "A signed-in user cancels an open order.",
+        }]),
+        "{envelope}"
+    );
+    assert_eq!(
+        spec["changed"],
+        serde_json::json!([{"id": "REQ-002", "subject": "session.timeout", "fields": ["body"]}]),
+        "{envelope}"
+    );
+
+    // the text render counts the retired beside the rest
+    let provider = Provider::idle();
+    seed(&provider.files, base.as_bytes(), DESIGN, PLAN);
+    stage(&provider.storage, amended.as_bytes(), DESIGN, PLAN);
+    let resp = cli_ok(&provider, &["emery", "apply", "--config", PROJECT_CONFIG]).await;
+    assert_eq!(
+        String::from_utf8_lossy(&resp.stdout),
+        format!(
+            "sealed revision {candidate} as emery/{candidate} at Revision\n  diff vs {outgoing}: \
+             spec +1 -0 ~1 retired 1, design +0 -0 ~0, plan +0 -0 ~0\n"
+        )
+    );
+
+    // the same candidate drafted apart pairs by anchor: the refund is the
+    // cancellation under another id, and nothing is retired
+    let provider = Provider::idle();
+    seed(&provider.files, base.as_bytes(), DESIGN, PLAN);
+    stage(&provider.storage, apart.as_bytes(), DESIGN, PLAN);
+    let resp =
+        cli_ok(&provider, &["emery", "--format", "json", "apply", "--config", PROJECT_CONFIG])
+            .await;
+    let envelope: Value = serde_json::from_slice(&resp.stdout).expect("one JSON envelope");
+    let spec = &envelope["diff"]["spec"];
+    assert_eq!(spec["added"], serde_json::json!([]), "{envelope}");
+    assert_eq!(spec["removed"], serde_json::json!([]), "{envelope}");
+    assert_eq!(spec["retired"], serde_json::json!([]), "{envelope}");
+    assert_eq!(
+        spec["changed"],
+        serde_json::json!([
+            {"id": "REQ-002", "subject": "session.timeout", "fields": ["body"]},
+            {"id": "REQ-005", "subject": "orders.refund", "was": "REQ-004", "fields": ["id", "subject", "body"]},
+        ]),
+        "{envelope}"
+    );
+}
+
 // A target naming no repository seals into one the engine creates under the
 // target's name: created now, the revision its root commit, the envelope
 // naming the repository. A later seal finds it and lands over its head.

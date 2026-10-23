@@ -1036,6 +1036,11 @@ async fn diff_envelope() {
     );
     assert_eq!(diff["spec"]["removed"], serde_json::json!([]), "{envelope}");
     assert_eq!(
+        diff["spec"]["retired"],
+        serde_json::json!([]),
+        "a candidate drafted apart retires nothing: {envelope}"
+    );
+    assert_eq!(
         diff["spec"]["changed"],
         serde_json::json!([{
             "id": "REQ-001",

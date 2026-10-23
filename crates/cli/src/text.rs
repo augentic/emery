@@ -111,18 +111,40 @@ fn diff(diff: Option<&Diff>, w: &mut dyn fmt::Write) -> fmt::Result {
     }
 }
 
+// `spec +1 -0 ~1 retired 1 preamble, design +0 -0 ~1, plan +1 -0 ~1`: the
+// counts per document, `retired` after the specification's when any
+// requirement was withdrawn, `preamble` when a document's changed.
 fn summary(diff: &Diff, w: &mut dyn fmt::Write) -> fmt::Result {
     let (spec, design, plan) = (&diff.spec, &diff.design, &diff.plan);
     let documents = [
-        ("spec", spec.added.len(), spec.removed.len(), spec.changed.len(), spec.preamble),
-        ("design", design.added.len(), design.removed.len(), design.changed.len(), design.preamble),
-        ("plan", plan.added.len(), plan.removed.len(), plan.changed.len(), plan.preamble),
+        (
+            "spec",
+            spec.added.len(),
+            spec.removed.len(),
+            spec.changed.len(),
+            spec.retired.len(),
+            spec.preamble,
+        ),
+        (
+            "design",
+            design.added.len(),
+            design.removed.len(),
+            design.changed.len(),
+            0,
+            design.preamble,
+        ),
+        ("plan", plan.added.len(), plan.removed.len(), plan.changed.len(), 0, plan.preamble),
     ];
-    for (position, (name, added, removed, changed, preamble)) in documents.into_iter().enumerate() {
+    for (position, (name, added, removed, changed, retired, preamble)) in
+        documents.into_iter().enumerate()
+    {
         if position > 0 {
             w.write_str(", ")?;
         }
         write!(w, "{name} +{added} -{removed} ~{changed}")?;
+        if retired > 0 {
+            write!(w, " retired {retired}")?;
+        }
         if preamble {
             w.write_str(" preamble")?;
         }
