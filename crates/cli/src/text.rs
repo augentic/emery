@@ -2,13 +2,18 @@
 
 use std::fmt;
 
+use emery_engine::apply::ApplyOutput;
 use emery_engine::build::{BuildOutput, BuiltSlice};
 use emery_engine::show::ShowOutput;
 use emery_engine::specify::{Diff, SpecifyOutput, Waves};
 
-/// Writes a [`SpecifyOutput`] revision line, the plan's shape, one line per repository source, and a one-line diff summary.
+/// Writes a [`SpecifyOutput`] candidate line, the plan's shape, one line per repository source, a one-line diff summary, and what the run sealed.
+///
+/// The first line names the staged candidate. The last says `nothing
+/// sealed` and names `emery apply` as the way to seal it, or, under
+/// `--apply`, is the [`apply`] line for the revision the run sealed.
 pub fn specify(output: &SpecifyOutput, w: &mut dyn fmt::Write) -> fmt::Result {
-    writeln!(w, "committed revision {}", output.revision)?;
+    writeln!(w, "staged candidate {}", output.revision)?;
     waves(&output.waves, w)?;
     for read in &output.repositories {
         writeln!(
@@ -17,16 +22,49 @@ pub fn specify(output: &SpecifyOutput, w: &mut dyn fmt::Write) -> fmt::Result {
             read.source, read.repository, read.revision, read.commit
         )?;
     }
-    if let Some(diff) = &output.diff {
-        if diff.is_empty() {
-            writeln!(w, "  diff vs {}: none (byte-stable)", diff.from)?;
-        } else {
-            write!(w, "  diff vs {}: ", diff.from)?;
-            summary(diff, w)?;
-            writeln!(w)?;
+    diff(output.diff.as_ref(), w)?;
+    match &output.applied {
+        Some(applied) => {
+            write!(w, "  ")?;
+            sealed(applied, w)
         }
+        None => writeln!(w, "  nothing sealed; `emery apply` seals it"),
     }
-    Ok(())
+}
+
+/// Writes an [`ApplyOutput`] revision line, the repository it was sealed in, and a one-line diff summary.
+///
+/// The first line names the revision, its label, and the commit it stands
+/// at. The repository follows when it is not the project's own checkout.
+pub fn apply(output: &ApplyOutput, w: &mut dyn fmt::Write) -> fmt::Result {
+    sealed(output, w)?;
+    if output.repository != "." {
+        writeln!(w, "  repository {}", output.repository)?;
+    }
+    diff(output.diff.as_ref(), w)
+}
+
+fn sealed(output: &ApplyOutput, w: &mut dyn fmt::Write) -> fmt::Result {
+    writeln!(
+        w,
+        "sealed revision {} as {} at {}",
+        output.revision,
+        output.label,
+        output.commit.get(..8).unwrap_or(&output.commit)
+    )
+}
+
+fn diff(diff: Option<&Diff>, w: &mut dyn fmt::Write) -> fmt::Result {
+    let Some(diff) = diff else {
+        return Ok(());
+    };
+    if diff.is_empty() {
+        writeln!(w, "  diff vs {}: none (byte-stable)", diff.from)
+    } else {
+        write!(w, "  diff vs {}: ", diff.from)?;
+        summary(diff, w)?;
+        writeln!(w)
+    }
 }
 
 fn summary(diff: &Diff, w: &mut dyn fmt::Write) -> fmt::Result {
@@ -61,10 +99,15 @@ fn summary(diff: &Diff, w: &mut dyn fmt::Write) -> fmt::Result {
 /// uncovered, counts the paths its build changed, names the merge commit
 /// that brought them in, and the paths the model resolved its merge at; a
 /// slice an earlier run staged in the integration working copy says so
-/// instead, since this run verified it and built nothing.
+/// instead, since this run verified it and built nothing. A candidate
+/// `emery specify` staged and nothing sealed is named after the plan line,
+/// since the build read the current revision and not it.
 pub fn build(output: &BuildOutput, w: &mut dyn fmt::Write) -> fmt::Result {
     writeln!(w, "built revision {}", output.revision)?;
     waves(&output.waves, w)?;
+    if let Some(candidate) = &output.candidate {
+        writeln!(w, "  candidate {candidate} is staged and not sealed; `emery apply` seals it")?;
+    }
     writeln!(w, "  base {}", output.base)?;
     if output.repository != "." {
         writeln!(w, "  repository {}", output.repository)?;

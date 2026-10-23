@@ -51,7 +51,8 @@ pub mod target;
 mod trigger;
 
 pub use path::{
-    BadPath, NoFollow, SKIP_DIRS, SKIP_FILES, Standing, beneath, make_dirs, standing, write_whole,
+    BadPath, NoFollow, SKIP_DIRS, SKIP_FILES, SPECIFICATION, Standing, beneath, make_dirs,
+    standing, write_whole,
 };
 pub use route::{BadRoute, METHODS, Route};
 pub use trigger::{BadMessage, BadTrigger, Trigger};

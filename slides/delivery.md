@@ -1,6 +1,6 @@
 ---
 theme: default
-title: Code is cheap. Delivery is hard.
+title: Omnia & Emery · Spec-Driven Wasm Delivery
 aspectRatio: 16/9
 canvasWidth: 1280
 layout: default
@@ -9,373 +9,703 @@ class: slide-hero slide-section
 
 <AmbientVideo src="/videos/hero-video-3.mp4" variant="hero" />
 
-<Eyebrow text="PROPELLERHEAD · SPEC-DRIVEN DELIVERY" />
+<Eyebrow text="PROPELLERHEAD · OMNIA & EMERY" />
 
 <div class="section-hero-grid">
 <div class="section-hero-left">
 
-# Code is cheap.<br>Delivery is hard.
+# Specs are the truth.<br>Wasm is the boundary.
 
-<p class="section-subtitle">How <strong>The Codex</strong>, <strong>Emery</strong>, and <strong>Omnia</strong> carry software from a Friday prototype or legacy service into verified production.</p>
+<p class="section-subtitle">How <strong>Omnia</strong> and <strong>Emery</strong> emerged from our Trust Model to power Tier 2 connectivity and Tier 3 production delivery.</p>
 </div>
 </div>
 
 <div class="hero-pillars">
-<div class="hero-pillar"><span class="hero-pillar-num">01</span><span>The Codex · Governed AI workspace</span></div>
-<div class="hero-pillar"><span class="hero-pillar-num">02</span><span>Emery · Durable specifications &amp; verified waves</span></div>
-<div class="hero-pillar"><span class="hero-pillar-num">03</span><span>Omnia · Capability-scoped WebAssembly runtime</span></div>
+<div class="hero-pillar"><span class="hero-pillar-num">01</span><span>Born from the Trust Model (Tiers 2 &amp; 3)</span></div>
+<div class="hero-pillar"><span class="hero-pillar-num">02</span><span>Omnia · Capability-scoped WebAssembly platform</span></div>
+<div class="hero-pillar"><span class="hero-pillar-num">03</span><span>Emery · Spec-driven migrator &amp; wave builder</span></div>
 </div>
 
 <!--
 Opening framing:
-- Start with the shift everyone in the room has already felt: generating code used to be expensive and slow; today anyone with a prompt can produce a working screen or script in minutes.
-- That hasn't made software delivery easy — it has moved the bottleneck from writing code to governing, integrating, and owning what gets built.
-- This deck shows the engineering architecture behind our Trust Model: how The Codex, Emery, and Omnia let domain experts move fast while giving engineering verified, maintainable production systems.
+- In our Trust Model decks, we deliberately kept technology secondary to governance.
+- This deck flips the camera onto the two technologies we built to make that model work at scale: Omnia and Emery.
+- Together they answer the two hardest engineering questions in the AI era: how do you safely run code written with AI, and how do you graduate a prototype or legacy service into production without inheriting technical debt?
 -->
 
 ---
-title: Give domain experts a safe lane
+title: Born from the Trust Model
 class: slide-light
 ---
 
-<Eyebrow text="PROPELLERHEAD · THE FALSE BINARY" />
-
-<div class="ed-split">
-<div class="ed-prose-col">
-
-# Give domain experts<br>a safe lane.
-
-<p class="ed-prose">Every team now has access to tools that generate working code in minutes. Operations, finance, and product staff are already using them to solve real problems — because waiting six months in an engineering backlog is slower than building a prototype on Friday afternoon.</p>
-<p class="ed-prose">Organisations usually react in one of two broken ways: <strong>ban it</strong> (which drives builders underground onto personal laptops) or <strong>wave prototypes into production</strong> (which leaves engineering supporting brittle code and raw credentials). The alternative is a <strong>safe lane</strong> where controls scale with the app.</p>
-</div>
-<div class="ed-diagram-pane">
-<svg viewBox="0 0 640 440" aria-hidden="true">
-  <!-- Upper Bad Path: Lock it down -->
-  <path d="M 36 86 L 604 86" fill="none" stroke="rgba(180,35,78,0.35)" stroke-width="1.5" stroke-dasharray="4 4" />
-  <circle cx="36" cy="86" r="4.5" fill="#b4234e" />
-  <text x="52" y="70" class="svg-kicker" fill="#b4234e">FALSE CHOICE 01 · BAN OR QUEUE IT</text>
-  <text x="52" y="110" class="svg-body" fill="rgba(13,16,48,0.65)">Builders hide on personal laptops → Shadow IT grows unseen</text>
-  <!-- Lower Bad Path: Wave it into production -->
-  <path d="M 36 354 L 604 354" fill="none" stroke="rgba(180,35,78,0.35)" stroke-width="1.5" stroke-dasharray="4 4" />
-  <circle cx="36" cy="354" r="4.5" fill="#b4234e" />
-  <text x="52" y="338" class="svg-kicker" fill="#b4234e">FALSE CHOICE 02 · TRUST THE PROTOTYPE IN PRODUCTION</text>
-  <text x="52" y="378" class="svg-body" fill="rgba(13,16,48,0.65)">Raw database keys &amp; brittle prompt code land in live operations</text>
-  <!-- Center Safe Lane -->
-  <rect x="20" y="146" width="600" height="142" rx="16" fill="rgba(22,180,226,0.06)" stroke="#0c7fa3" stroke-width="1.8" />
-  <text x="44" y="174" class="svg-kicker" fill="#0c7fa3">THE PROPELLERHEAD SAFE LANE · PROPORTIONATE CONTROL</text>
-  <line x1="104" y1="222" x2="536" y2="222" stroke="#0d1030" stroke-width="2" />
-  <circle cx="104" cy="222" r="22" fill="#ffffff" stroke="#0c7fa3" stroke-width="2" />
-  <text x="104" y="227" text-anchor="middle" class="svg-kicker" fill="#0c7fa3">01</text>
-  <text x="104" y="266" text-anchor="middle" class="svg-caption" fill="#0d1030">Explore in a sandbox</text>
-  <circle cx="320" cy="222" r="22" fill="#ffffff" stroke="#0d1030" stroke-width="2" />
-  <text x="320" y="227" text-anchor="middle" class="svg-kicker" fill="#0d1030">02</text>
-  <text x="320" y="266" text-anchor="middle" class="svg-caption" fill="#0d1030">Connect by contract</text>
-  <circle cx="536" cy="222" r="22" fill="#a4238f" />
-  <text x="536" y="227" text-anchor="middle" class="svg-kicker" fill="#ffffff">03</text>
-  <text x="536" y="266" text-anchor="middle" class="svg-caption" fill="#a4238f">Rebuild the winners</text>
-</svg>
-</div>
-</div>
-
-<!--
-Key message:
-- Every organisation currently faces a false binary with citizen coding: either block it via policy (which drives it underground) or look the other way (which creates a wave of unmaintainable shadow IT).
-- The safe lane gives domain experts a fast place to explore, scoped contracts when they need live data, and an engineering rebuild only for the winners that prove critical.
--->
-
----
-title: The Trust Model
-class: slide-light
----
-
-<Eyebrow text="PROPELLERHEAD · THE TRUST MODEL" />
+<Eyebrow text="THE ORIGIN · FROM WORLDVIEW TO ARCHITECTURE" />
 
 <div class="ed-band">
 <div class="ed-band-top">
 <div>
 
-# Four tiers of earned trust.<br>Three clearances.
+# Two technologies born<br>from our Trust Model.
 
 </div>
-<p class="ed-band-prose">We govern that safe lane through a four-tier <strong>Trust Model</strong>. Every app starts at <strong>Tier 0</strong> on one laptop. Moving into <strong>Tier 1</strong> (~75% of apps) takes days via automated gates. Moving to <strong>Tier 2</strong> (~20%) adds a scoped data contract. Only the <strong>~5% of apps</strong> that become business-critical graduate to <strong>Tier 3</strong> for a verified engineering rebuild.</p>
+<p class="ed-band-prose">Our Trust Model states that most citizen-built apps stay at <strong>Tier 1</strong>, ~20% connect to live data at <strong>Tier 2</strong>, and ~5% graduate to critical production at <strong>Tier 3</strong>. When we helped clients implement that model, conventional containers and manual rewrites made the final two clearances too expensive — so we built <strong>Omnia</strong> and <strong>Emery</strong>.</p>
 </div>
-<TrustLadder />
+<div class="ed-band-canvas">
+<svg viewBox="0 0 1140 365" aria-hidden="true">
+  <!-- Top Tier Progression Spine -->
+  <line x1="90" y1="54" x2="1050" y2="54" stroke="rgba(13,16,48,0.16)" stroke-width="2" />
+
+  <circle cx="90" cy="54" r="22" fill="#ffffff" stroke="#b4234e" stroke-width="1.5" stroke-dasharray="4 4" />
+  <text x="90" y="59" text-anchor="middle" class="svg-kicker" fill="#b4234e">T0</text>
+  <text x="90" y="94" text-anchor="middle" class="svg-caption" fill="rgba(13,16,48,0.55)">1 laptop · Unmanaged</text>
+
+  <circle cx="370" cy="54" r="22" fill="#ffffff" stroke="#0c7fa3" stroke-width="2" />
+  <text x="370" y="59" text-anchor="middle" class="svg-kicker" fill="#0c7fa3">T1</text>
+  <text x="370" y="94" text-anchor="middle" class="svg-caption" fill="rgba(13,16,48,0.65)">The Codex · Governed (~75%)</text>
+
+  <circle cx="690" cy="54" r="26" fill="#e8f6fb" stroke="#0c7fa3" stroke-width="2.5" />
+  <text x="690" y="59" text-anchor="middle" class="svg-label" fill="#0c7fa3">T2</text>
+  <text x="690" y="94" text-anchor="middle" class="svg-label" fill="#0d1030">Connected (~20%)</text>
+
+  <circle cx="1030" cy="54" r="28" fill="#a4238f" />
+  <text x="1030" y="59" text-anchor="middle" class="svg-label" fill="#ffffff">T3</text>
+  <text x="1030" y="94" text-anchor="middle" class="svg-label" fill="#a4238f">Supported (~5%)</text>
+
+  <!-- Vertical Connectors down to Omnia and Emery -->
+  <line x1="690" y1="108" x2="690" y2="152" stroke="#0c7fa3" stroke-width="1.5" stroke-dasharray="4 4" />
+  <line x1="1030" y1="108" x2="1030" y2="152" stroke="#a4238f" stroke-width="1.5" stroke-dasharray="4 4" />
+
+  <!-- Technology 01: Omnia (Spans Tier 2 and Tier 3) -->
+  <rect x="520" y="156" width="600" height="88" rx="14" fill="#0d1030" />
+  <text x="546" y="184" class="svg-kicker" fill="#78d8f2">OMNIA · RUNTIME &amp; INFRASTRUCTURE ABSTRACTION (TIERS 2 &amp; 3)</text>
+  <text x="546" y="208" class="svg-h3" fill="#ffffff">How can agentic code touch live systems safely — and run anywhere?</text>
+  <text x="546" y="228" class="svg-caption" fill="rgba(255,255,255,0.72)">WebAssembly capability sandbox · Zero ambient credentials · Portable across clouds &amp; self-hosted stacks</text>
+
+  <!-- Technology 02: Emery (Drives the T2 -> T3 Graduation & Legacy Modernisation) -->
+  <path d="M 690 296 L 780 296" fill="none" stroke="#a4238f" stroke-width="2" />
+  <polygon points="774,291 784,296 774,301" fill="#a4238f" />
+  <text x="676" y="292" text-anchor="end" class="svg-kicker" fill="#a4238f">T2 PROTOTYPE OR LEGACY REPO</text>
+  <text x="676" y="310" text-anchor="end" class="svg-caption" fill="rgba(13,16,48,0.58)">Working rules trapped in brittle code</text>
+
+  <rect x="790" y="256" width="330" height="88" rx="14" fill="rgba(164,35,143,0.08)" stroke="#a4238f" stroke-width="2" />
+  <text x="814" y="284" class="svg-kicker" fill="#a4238f">EMERY · SPEC-DRIVEN ENGINE (TIER 3)</text>
+  <text x="814" y="308" class="svg-h3" fill="#0d1030">Specs as truth → Verified Wasm</text>
+  <text x="814" y="328" class="svg-caption" fill="rgba(13,16,48,0.68)">Extracts specs &amp; compiles Omnia-ready guests</text>
+</svg>
+</div>
 </div>
 
 <!--
-Key message:
-- Before looking at the tooling, here is the operating model it serves.
-- Tier 0 (Unmanaged): one person, one laptop. Discovery, not a violation — but nothing shared stays here.
-- Tier 1 (Governed, ~75% of apps): shared with a small team inside The Codex, using synthetic or local data. Most apps live their whole lives here.
-- Tier 2 (Connected, ~20% of apps): department tools reading live internal data through scoped Omnia contracts.
-- Tier 3 (Supported, ~5% of apps): critical systems where operations stall if they stop on Monday morning — rebuilt from an Emery specification and run on Omnia under an engineering SLA.
+How Omnia and Emery relate to the Trust Model:
+- At Tier 1, GitHub + Cursor rules + CI gates (The Codex) are enough because nothing touches live data.
+- At Tier 2 (the 3rd tier, Connected) and Tier 3 (the 4th tier, Supported), two hard problems appear:
+  1. Runtime safety & portability: answered by Omnia across Tiers 2 and 3.
+  2. Graduation without inheriting messy code: answered by Emery at Tier 3.
 -->
 
 ---
-title: Give people and agents clear boundaries
+title: Omnia
+class: slide-hero slide-section
+---
+
+<AmbientVideo src="/videos/hero-video-3.mp4" variant="hero" />
+
+<Eyebrow text="PART ONE · OMNIA RUNTIME PLATFORM" />
+
+<div class="section-hero-grid">
+<div class="section-hero-left">
+
+# Omnia
+
+<p class="section-subtitle"><strong>The WebAssembly runtime for Tiers 2 and 3</strong> — sandboxed agentic execution, cloud portability, and recipe-driven hosting.</p>
+</div>
+<div class="section-big-glyph">WASM</div>
+</div>
+
+<TrustLadder variant="strip" :current="3" />
+
+<!--
+Part One: Three slides on Omnia.
+1. WebAssembly for safer, sandboxed agentic code.
+2. Omnia as an infrastructure abstraction layer for platform portability.
+3. Omnia + recipes to assemble a complete Tier 3 production hosting platform.
+-->
+
+---
+title: Omnia · Sandboxed Agentic Code
+class: slide-light
+---
+
+<Eyebrow text="OMNIA 01 / 03 · SAFER AGENTIC EXECUTION" />
+
+<div class="ed-split">
+<div class="ed-prose-col">
+
+# Sandboxed by construction,<br>not by policy.
+
+<p class="ed-prose">When code is authored by AI assistants or domain builders, running it in a standard container is a gamble: a single imported package or hallucinated call inherits the container's environment variables, filesystem, and network sockets.</p>
+<p class="ed-prose"><strong>Omnia compiles application logic to WebAssembly (WASI) components.</strong> Every request or message spins up a fresh, isolated micro-instance in microseconds with <strong>zero ambient authority</strong>. The guest holds no connection strings and no keys; it can only invoke the exact typed capability interfaces the host links to it.</p>
+</div>
+<div class="ed-diagram-pane">
+<svg viewBox="0 0 640 440" aria-hidden="true">
+  <!-- Left Comparison: Traditional Container (Ambient Access) -->
+  <rect x="16" y="44" width="232" height="352" rx="14" fill="rgba(255,59,107,0.04)" stroke="rgba(180,35,78,0.35)" stroke-width="1.5" stroke-dasharray="5 4" />
+  <text x="132" y="74" text-anchor="middle" class="svg-kicker" fill="#b4234e">TRADITIONAL CONTAINER</text>
+  <text x="132" y="96" text-anchor="middle" class="svg-h3" fill="#0d1030">Ambient Authority</text>
+  <line x1="40" y1="112" x2="224" y2="112" stroke="rgba(180,35,78,0.2)" />
+
+  <circle cx="44" cy="148" r="4" fill="#b4234e" />
+  <text x="58" y="152" class="svg-label" fill="#0d1030">Raw env vars &amp; secrets</text>
+  <text x="58" y="168" class="svg-caption" fill="rgba(13,16,48,0.58)">Any dependency can read process.env</text>
+
+  <circle cx="44" cy="212" r="4" fill="#b4234e" />
+  <text x="58" y="216" class="svg-label" fill="#0d1030">Unrestricted TCP sockets</text>
+  <text x="58" y="232" class="svg-caption" fill="rgba(13,16,48,0.58)">Can phone home or scan internal net</text>
+
+  <circle cx="44" cy="276" r="4" fill="#b4234e" />
+  <text x="58" y="280" class="svg-label" fill="#0d1030">Full DB driver access</text>
+  <text x="58" y="296" class="svg-caption" fill="rgba(13,16,48,0.58)">Connection string grants whole schema</text>
+
+  <text x="132" y="366" text-anchor="middle" class="svg-caption" fill="#b4234e">1 prompt mistake = full exposure</text>
+
+  <!-- Right Architecture: Omnia Wasm Sandbox -->
+  <rect x="284" y="44" width="340" height="352" rx="14" fill="#0d1030" />
+  <text x="454" y="74" text-anchor="middle" class="svg-kicker" fill="#78d8f2">OMNIA HOST · CAPABILITY SANDBOX</text>
+
+  <!-- Inner Wasm Guest Box -->
+  <rect x="312" y="96" width="284" height="112" rx="10" fill="rgba(255,255,255,0.08)" stroke="#78d8f2" stroke-width="1.8" />
+  <text x="454" y="124" text-anchor="middle" class="svg-kicker" fill="#78d8f2">ISOLATED GUEST (app.wasm)</text>
+  <text x="454" y="148" text-anchor="middle" class="svg-h3" fill="#ffffff">Pure Domain Logic</text>
+  <text x="454" y="170" text-anchor="middle" class="svg-caption" fill="rgba(255,255,255,0.72)">No OS · No filesystem · No raw sockets · No keys</text>
+  <text x="454" y="190" text-anchor="middle" class="svg-caption" fill="#78d8f2">Fresh instance per request / message</text>
+
+  <!-- Explicit WIT Capability Links -->
+  <line x1="368" y1="208" x2="368" y2="256" stroke="#78d8f2" stroke-width="1.8" />
+  <polygon points="363,252 373,252 368,260" fill="#78d8f2" />
+  <line x1="454" y1="208" x2="454" y2="256" stroke="#78d8f2" stroke-width="1.8" />
+  <polygon points="449,252 459,252 454,260" fill="#78d8f2" />
+  <line x1="540" y1="208" x2="540" y2="256" stroke="#78d8f2" stroke-width="1.8" />
+  <polygon points="535,252 545,252 540,260" fill="#78d8f2" />
+  <text x="454" y="240" text-anchor="middle" class="svg-pill" fill="#f59ef5">EXPLICIT TYPED WASI GRANTS ONLY</text>
+
+  <!-- Host-Managed Capability Backends -->
+  <rect x="312" y="264" width="84" height="54" rx="8" fill="rgba(255,255,255,0.1)" />
+  <text x="354" y="288" text-anchor="middle" class="svg-kicker" fill="#ffffff">wasi:sql</text>
+  <text x="354" y="304" text-anchor="middle" class="svg-caption" fill="rgba(255,255,255,0.65)">Scoped rows</text>
+
+  <rect x="412" y="264" width="84" height="54" rx="8" fill="rgba(255,255,255,0.1)" />
+  <text x="454" y="288" text-anchor="middle" class="svg-kicker" fill="#ffffff">wasi:msg</text>
+  <text x="454" y="304" text-anchor="middle" class="svg-caption" fill="rgba(255,255,255,0.65)">Named topics</text>
+
+  <rect x="512" y="264" width="84" height="54" rx="8" fill="rgba(255,255,255,0.1)" />
+  <text x="554" y="288" text-anchor="middle" class="svg-kicker" fill="#ffffff">wasi:http</text>
+  <text x="554" y="304" text-anchor="middle" class="svg-caption" fill="rgba(255,255,255,0.65)">Allowed hosts</text>
+
+  <text x="454" y="366" text-anchor="middle" class="svg-caption" fill="#78d8f2">Host retains all credentials, pools &amp; audit logs</text>
+</svg>
+</div>
+</div>
+
+<!--
+Omnia Slide 1 of 3 — WebAssembly for safer, sandboxed agentic code:
+- Why Wasm? Because when AI writes or modifies code, you cannot trust what is inside the binary to police itself.
+- In a Docker container, any library has ambient access to env vars, the filesystem, and raw network sockets.
+- In Omnia, guest logic is compiled to a WASI component. It has zero ambient access: no filesystem, no env vars, no network sockets, no credentials.
+- It can only call the typed WASI capabilities linked by the host (wasi:sql, wasi:messaging, wasi:keyvalue, wasi:http), and the host holds the credentials and audits every call.
+-->
+
+---
+title: Omnia · Infrastructure Portability
+class: slide-light
+---
+
+<Eyebrow text="OMNIA 02 / 03 · INFRASTRUCTURE ABSTRACTION & PORTABILITY" />
+
+<div class="ed-band">
+<div class="ed-band-top">
+<div>
+
+# Change the host,<br>never the application.
+
+</div>
+<p class="ed-band-prose">When application code imports cloud SDKs directly, every infrastructure shift — moving from cloud to on-prem, swapping Redis for NATS, or tightening data residency — becomes an application rewrite. In <strong>Omnia</strong>, the guest WebAssembly component speaks only WASI interfaces; swapping the backing infrastructure is a one-line change in the host runtime with <strong>zero guest recompilation</strong>.</p>
+</div>
+<div class="ed-band-canvas">
+<svg viewBox="0 0 1140 355" aria-hidden="true">
+  <!-- Top Layer: Portable Guest Component (Compiled Once) -->
+  <rect x="290" y="12" width="560" height="72" rx="12" fill="#0d1030" />
+  <text x="570" y="38" text-anchor="middle" class="svg-kicker" fill="#78d8f2">PORTABLE APPLICATION COMPONENT (service.wasm · COMPILED ONCE)</text>
+  <text x="570" y="62" text-anchor="middle" class="svg-h3" fill="#ffffff">Pure Domain Logic — Zero Cloud SDKs or Driver Imports</text>
+
+  <!-- Middle Layer: The 10 WASI Capability Contracts -->
+  <line x1="570" y1="84" x2="570" y2="124" stroke="#0c7fa3" stroke-width="2" />
+  <line x1="80" y1="124" x2="1060" y2="124" stroke="#0c7fa3" stroke-width="2" />
+  <rect x="380" y="108" width="380" height="28" rx="14" fill="#e8f6fb" stroke="#0c7fa3" stroke-width="1.5" />
+  <text x="570" y="126" text-anchor="middle" class="svg-kicker" fill="#0c7fa3">TYPED WASI CAPABILITY BOUNDARY (HTTP · SQL · KV · MSG · BLOB · VAULT · ID · OTEL)</text>
+
+  <!-- Three Vertical Branches to Interchangeable Host Environments -->
+  <line x1="195" y1="124" x2="195" y2="174" stroke="#0c7fa3" stroke-width="1.8" />
+  <polygon points="190,168 200,168 195,176" fill="#0c7fa3" />
+  <line x1="570" y1="136" x2="570" y2="174" stroke="#0c7fa3" stroke-width="1.8" />
+  <polygon points="565,168 575,168 570,176" fill="#0c7fa3" />
+  <line x1="945" y1="124" x2="945" y2="174" stroke="#a4238f" stroke-width="1.8" />
+  <polygon points="940,168 950,168 945,176" fill="#a4238f" />
+
+  <!-- Environment 1: Local / Tier 1 Sandbox -->
+  <rect x="30" y="180" width="330" height="156" rx="14" fill="rgba(22,180,226,0.06)" stroke="rgba(12,127,163,0.3)" stroke-width="1.5" />
+  <text x="54" y="208" class="svg-kicker" fill="#0c7fa3">01 · LOCAL &amp; TIER 1 SANDBOX</text>
+  <text x="54" y="232" class="svg-h3" fill="#0d1030">Zero-Config Defaults</text>
+  <text x="54" y="258" class="svg-body" fill="rgba(13,16,48,0.72)">• In-memory Key-Value, SQL &amp; DocStore</text>
+  <text x="54" y="280" class="svg-body" fill="rgba(13,16,48,0.72)">• In-memory Pub/Sub &amp; WebSockets</text>
+  <text x="54" y="302" class="svg-body" fill="rgba(13,16,48,0.72)">• Deterministic omnia-test doubles</text>
+  <text x="54" y="322" class="svg-caption" fill="#0c7fa3">Runs in milliseconds on any laptop or CI runner</text>
+
+  <!-- Environment 2: Hyperscale Cloud (Azure / AWS / GCP) -->
+  <rect x="405" y="180" width="330" height="156" rx="14" fill="#ffffff" stroke="rgba(13,16,48,0.22)" stroke-width="1.5" />
+  <text x="429" y="208" class="svg-kicker" fill="#0d1030">02 · HYPERSCALE CLOUD (PAAS)</text>
+  <text x="429" y="232" class="svg-h3" fill="#0d1030">Managed Cloud Services</text>
+  <text x="429" y="258" class="svg-body" fill="rgba(13,16,48,0.72)">• Azure Blob, Table Storage &amp; Key Vault</text>
+  <text x="429" y="280" class="svg-body" fill="rgba(13,16,48,0.72)">• Azure Managed Identity / OAuth</text>
+  <text x="429" y="302" class="svg-body" fill="rgba(13,16,48,0.72)">• Managed PostgreSQL, Redis &amp; Kafka</text>
+  <text x="429" y="322" class="svg-caption" fill="rgba(13,16,48,0.55)">Swap clouds without touching guest code</text>
+
+  <!-- Environment 3: Self-Hosted / Sovereign / Air-Gapped -->
+  <rect x="780" y="180" width="330" height="156" rx="14" fill="rgba(164,35,143,0.06)" stroke="rgba(164,35,143,0.35)" stroke-width="1.5" />
+  <text x="804" y="208" class="svg-kicker" fill="#a4238f">03 · SELF-HOSTED / SOVEREIGN</text>
+  <text x="804" y="232" class="svg-h3" fill="#0d1030">On-Premises &amp; Edge</text>
+  <text x="804" y="258" class="svg-body" fill="rgba(13,16,48,0.72)">• Self-hosted PostgreSQL &amp; MongoDB</text>
+  <text x="804" y="280" class="svg-body" fill="rgba(13,16,48,0.72)">• NATS JetStream, Apache Kafka &amp; Redis</text>
+  <text x="804" y="302" class="svg-body" fill="rgba(13,16,48,0.72)">• Local OTLP Collector &amp; local LLMs</text>
+  <text x="804" y="322" class="svg-caption" fill="#a4238f">Full data residency &amp; zero cloud lock-in</text>
+</svg>
+</div>
+</div>
+
+<!--
+Omnia Slide 2 of 3 — Infrastructure abstraction for platform portability:
+- The exact same .wasm binary that runs against in-memory defaults on a developer's laptop runs unchanged against Azure managed services or a self-hosted sovereign stack (Postgres, NATS, Kafka, Redis).
+- Clients retain real bargaining power and deployment optionality over a 10-year system lifecycle.
+-->
+
+---
+title: Omnia · Complete Hosting Platform
 class: slide-sandbox
 ---
 
 <AmbientVideo src="/videos/approach-video.mp4" variant="approach" />
 
-<Eyebrow text="PROPELLERHEAD · TIERS 1 & 2 ARCHITECTURE" />
+<Eyebrow text="OMNIA 03 / 03 · OMNIA + RECIPES FOR TIER 3 HOSTING" />
 
 <div class="chapter-grid">
 <div class="chapter-left">
-<span class="chapter-when">Tiers 1 &amp; 2 · 95% of the Estate</span>
+<span class="chapter-when">Omnia + Recipes · Production Platform</span>
 
-# Design the boundary, not a review committee.
+# One runtime and a recipe build a complete Tier 3 platform.
 
 <div class="chapter-notes">
 <div class="chapter-note is-clearance">
-<div class="chapter-note-head"><span>Tier 1 · The Codex</span><em>Cleared to share</em></div>
-<p>Instead of policing prompts, we encode your architecture rules in the AI editor and enforce secret scans, dependency audits, and tests on every push.</p>
+<div class="chapter-note-head"><span>runtime! + omnia.toml</span><em>Declarative composition</em></div>
+<p>An Omnia host recipe pairs WASI interfaces with production backends in one macro call, while <strong>omnia.toml</strong> routes HTTP paths, messaging topics, and WebSockets across many Wasm guests.</p>
 </div>
 <div class="chapter-note">
-<div class="chapter-note-head"><span>Tier 2 · Omnia Data Plane</span><em>Cleared for live data</em></div>
-<p>When a team needs live data, they never receive a database credential. <strong>Omnia</strong> grants scoped, audited capabilities under the caller's identity. <span class="enabler"><img src="/images/omnia-icon.svg" alt="" />Omnia</span></p>
+<div class="chapter-note-head"><span>Zero-hop guest linking &amp; AOT</span><em>Built for SLA operations</em></div>
+<p>Guests call each other in-memory across typed WIT interfaces with no network serialization, pre-compile to native artifacts for sub-millisecond cold starts, and export unified OpenTelemetry traces.</p>
 </div>
 </div>
 </div>
 
 <div class="ed-diagram-pane">
-<svg viewBox="0 0 700 410" aria-hidden="true">
-  <!-- Left Input: Builder + AI -->
-  <circle cx="78" cy="205" r="52" fill="rgba(10,7,16,0.55)" stroke="#78d8f2" stroke-width="1.8" />
-  <text x="78" y="192" text-anchor="middle" class="svg-kicker" fill="#78d8f2">BUILDER</text>
-  <text x="78" y="212" text-anchor="middle" class="svg-label" fill="#ffffff">Domain Expert</text>
-  <text x="78" y="228" text-anchor="middle" class="svg-caption" fill="rgba(255,255,255,0.62)">+ Approved AI</text>
-  <line x1="130" y1="205" x2="204" y2="205" stroke="#78d8f2" stroke-width="1.8" />
-  <polygon points="198,200 208,205 198,210" fill="#78d8f2" />
-  <!-- Middle Plane: The Codex (T1) -->
-  <rect x="212" y="52" width="216" height="306" rx="14" fill="rgba(255,255,255,0.08)" stroke="rgba(255,255,255,0.24)" stroke-width="1.5" />
-  <text x="320" y="82" text-anchor="middle" class="svg-kicker" fill="#78d8f2">TIER 1 · THE CODEX</text>
-  <line x1="236" y1="98" x2="404" y2="98" stroke="rgba(255,255,255,0.14)" />
-  <text x="320" y="128" text-anchor="middle" class="svg-label" fill="#ffffff">Encoded Editor Rules</text>
-  <text x="320" y="146" text-anchor="middle" class="svg-caption" fill="rgba(255,255,255,0.65)">Starter template &amp; harness</text>
-  <text x="320" y="196" text-anchor="middle" class="svg-label" fill="#ffffff">Deterministic CI Gates</text>
-  <text x="320" y="214" text-anchor="middle" class="svg-caption" fill="rgba(255,255,255,0.65)">Secrets, CVEs &amp; tests</text>
-  <text x="320" y="264" text-anchor="middle" class="svg-label" fill="#ffffff">Isolated Team Sandbox</text>
-  <text x="320" y="282" text-anchor="middle" class="svg-caption" fill="rgba(255,255,255,0.65)">~75% of apps stay here</text>
-  <!-- Connector T1 -> T2 -->
-  <line x1="428" y1="205" x2="502" y2="205" stroke="#f59ef5" stroke-width="1.8" />
-  <polygon points="496,200 506,205 496,210" fill="#f59ef5" />
-  <text x="465" y="190" text-anchor="middle" class="svg-pill" fill="#f59ef5">CONTRACT</text>
-  <!-- Right Plane: Omnia Capability Sandbox (T2) -->
-  <rect x="510" y="88" width="174" height="234" rx="14" fill="rgba(255,255,255,0.12)" stroke="#f59ef5" stroke-width="1.8" />
-  <text x="597" y="118" text-anchor="middle" class="svg-kicker" fill="#f59ef5">TIER 2 · OMNIA</text>
-  <line x1="532" y1="134" x2="662" y2="134" stroke="rgba(255,255,255,0.16)" />
-  <text x="597" y="166" text-anchor="middle" class="svg-label" fill="#ffffff">Scoped Data Plane</text>
-  <text x="597" y="184" text-anchor="middle" class="svg-caption" fill="rgba(255,255,255,0.7)">Exact rows &amp; actions</text>
-  <text x="597" y="226" text-anchor="middle" class="svg-label" fill="#ffffff">Zero Raw Keys</text>
-  <text x="597" y="244" text-anchor="middle" class="svg-caption" fill="rgba(255,255,255,0.7)">Audited caller identity</text>
-  <text x="597" y="292" text-anchor="middle" class="svg-caption" fill="#78d8f2">~20% of apps</text>
+<svg viewBox="0 0 700 420" aria-hidden="true">
+  <!-- Outer Platform Frame -->
+  <rect x="16" y="20" width="668" height="380" rx="16" fill="rgba(10,7,16,0.58)" stroke="rgba(120,216,242,0.35)" stroke-width="1.5" />
+  <text x="42" y="48" class="svg-kicker" fill="#78d8f2">TIER 3 HOSTING RECIPE · omnia.toml + omnia::runtime!</text>
+
+  <!-- Left: Unified Ingress Router -->
+  <rect x="42" y="74" width="144" height="224" rx="10" fill="rgba(255,255,255,0.08)" stroke="rgba(255,255,255,0.2)" />
+  <text x="114" y="102" text-anchor="middle" class="svg-kicker" fill="#78d8f2">INGRESS ROUTER</text>
+  <text x="114" y="136" text-anchor="middle" class="svg-label" fill="#ffffff">HTTP Prefixes</text>
+  <text x="114" y="154" text-anchor="middle" class="svg-caption" fill="rgba(255,255,255,0.6)">/orders, /roster</text>
+  <text x="114" y="196" text-anchor="middle" class="svg-label" fill="#ffffff">Topic Patterns</text>
+  <text x="114" y="214" text-anchor="middle" class="svg-caption" fill="rgba(255,255,255,0.6)">orders.&gt;, shifts.*</text>
+  <text x="114" y="256" text-anchor="middle" class="svg-label" fill="#ffffff">WebSockets</text>
+  <text x="114" y="274" text-anchor="middle" class="svg-caption" fill="rgba(255,255,255,0.6)">Live client streams</text>
+
+  <!-- Arrows from Router to Multi-Guest Fleet -->
+  <line x1="186" y1="112" x2="236" y2="112" stroke="#78d8f2" stroke-width="1.6" />
+  <line x1="186" y1="186" x2="236" y2="186" stroke="#78d8f2" stroke-width="1.6" />
+  <line x1="186" y1="260" x2="236" y2="260" stroke="#78d8f2" stroke-width="1.6" />
+
+  <!-- Center: Multi-Guest Wasm Fleet (with in-memory WIT link) -->
+  <rect x="240" y="74" width="212" height="58" rx="9" fill="rgba(255,255,255,0.12)" stroke="#78d8f2" stroke-width="1.5" />
+  <text x="346" y="100" text-anchor="middle" class="svg-label" fill="#ffffff">Guest A · roster.wasm</text>
+  <text x="346" y="118" text-anchor="middle" class="svg-caption" fill="#78d8f2">AOT pre-compiled · On-demand</text>
+
+  <rect x="240" y="157" width="212" height="58" rx="9" fill="rgba(255,255,255,0.12)" stroke="#78d8f2" stroke-width="1.5" />
+  <text x="346" y="183" text-anchor="middle" class="svg-label" fill="#ffffff">Guest B · orders.wasm</text>
+  <text x="346" y="201" text-anchor="middle" class="svg-caption" fill="#78d8f2">Calls Guest C via in-memory WIT</text>
+
+  <line x1="346" y1="215" x2="346" y2="240" stroke="#f59ef5" stroke-width="1.8" stroke-dasharray="3 3" />
+
+  <rect x="240" y="240" width="212" height="58" rx="9" fill="rgba(255,255,255,0.12)" stroke="#f59ef5" stroke-width="1.5" />
+  <text x="346" y="266" text-anchor="middle" class="svg-label" fill="#ffffff">Guest C · pricing.wasm</text>
+  <text x="346" y="284" text-anchor="middle" class="svg-caption" fill="#f59ef5">Exported WIT service · Zero network hop</text>
+
+  <!-- Right: Production Recipe Backends -->
+  <line x1="452" y1="112" x2="498" y2="112" stroke="rgba(255,255,255,0.35)" stroke-width="1.5" />
+  <line x1="452" y1="186" x2="498" y2="186" stroke="rgba(255,255,255,0.35)" stroke-width="1.5" />
+  <line x1="452" y1="260" x2="498" y2="260" stroke="rgba(255,255,255,0.35)" stroke-width="1.5" />
+
+  <rect x="502" y="74" width="156" height="224" rx="10" fill="rgba(214,58,214,0.14)" stroke="#f59ef5" stroke-width="1.5" />
+  <text x="580" y="102" text-anchor="middle" class="svg-kicker" fill="#f59ef5">RECIPE BACKENDS</text>
+  <text x="580" y="136" text-anchor="middle" class="svg-label" fill="#ffffff">Connection Pools</text>
+  <text x="580" y="154" text-anchor="middle" class="svg-caption" fill="rgba(255,255,255,0.7)">Postgres · Redis · Blob</text>
+  <text x="580" y="196" text-anchor="middle" class="svg-label" fill="#ffffff">Event Brokers</text>
+  <text x="580" y="214" text-anchor="middle" class="svg-caption" fill="rgba(255,255,255,0.7)">Kafka · NATS JetStream</text>
+  <text x="580" y="256" text-anchor="middle" class="svg-label" fill="#ffffff">Vault &amp; Identity</text>
+  <text x="580" y="274" text-anchor="middle" class="svg-caption" fill="rgba(255,255,255,0.7)">Key Vault · Managed ID</text>
+
+  <!-- Bottom Observability & Packaging Bar -->
+  <rect x="42" y="320" width="616" height="54" rx="10" fill="rgba(255,255,255,0.06)" stroke="rgba(255,255,255,0.16)" />
+  <text x="64" y="352" class="svg-kicker" fill="#78d8f2">PLATFORM OPS</text>
+  <text x="190" y="352" class="svg-body" fill="#ffffff">Built-in OTLP traces &amp; pool gauges · Non-root Alpine image · Hot-mount .wasm updates without host rebuild</text>
 </svg>
 </div>
 </div>
 
 <!--
-Key message:
-- How do we keep Tiers 1 and 2 fast without consuming per-app engineering time?
-- At Tier 1, The Codex gives builders an approved AI editor, a pre-wired template, and automated CI gates running in an isolated sandbox.
-- At Tier 2, Omnia connects proven department tools to live data through scoped capability contracts rather than raw database credentials.
+Omnia Slide 3 of 3 — Omnia + recipes to build a complete hosting platform:
+- Omnia is not just a library; paired with a host recipe (omnia::runtime! + omnia.toml), it is a complete multi-tenant, multi-guest hosting platform.
+- One runtime process can host dozens of .wasm components, route HTTP/Messaging/WebSocket traffic to them, link guests to guests in-memory, and ship guest updates as volume mounts without rebuilding the host container.
 -->
 
 ---
-title: One engineering problem, two disguises
+title: Emery
+class: slide-hero slide-section
+---
+
+<AmbientVideo src="/videos/hero-video-3.mp4" variant="hero" />
+
+<Eyebrow text="PART TWO · EMERY SPECIFICATION & BUILD ENGINE" />
+
+<div class="section-hero-grid">
+<div class="section-hero-left">
+
+# Emery
+
+<p class="section-subtitle"><strong>Spec-driven development for Tier 3</strong> — specifications as the source of truth, a migrator for citizen and legacy apps, and verified Omnia guest builds.</p>
+</div>
+<div class="section-big-glyph">SPEC</div>
+</div>
+
+<TrustLadder variant="strip" :current="3" />
+
+<!--
+Part Two: Three slides on Emery.
+1. Specs, not code, as the durable source of truth.
+2. Citizen-coded app & legacy migrator (emery specify).
+3. Wave-by-wave verified builder of Omnia-ready Wasm guests (emery build).
+-->
+
+---
+title: Emery · Specs Not Code as Truth
 class: slide-light
 ---
 
-<Eyebrow text="PROPELLERHEAD · WHY TIER 3 REBUILDS" />
+<Eyebrow text="EMERY 01 / 03 · SPECIFICATIONS AS THE SOURCE OF TRUTH" />
+
+<div class="ed-split">
+<div class="ed-prose-col">
+
+# Specs are the asset.<br>Code is a projection.
+
+<p class="ed-prose">In both vibe-coded prototypes and twenty-year-old legacy systems, business intent is trapped inside code. Prompts vanish when the chat window closes, and code tangles <em>what the business requires</em> with <em>how a framework happened to wire it</em>.</p>
+<p class="ed-prose"><strong>Emery flips the hierarchy:</strong> the content-addressed revision — a pure, technology-free <strong>Specification</strong>, a <strong>Design</strong>, and a sliced <strong>Build Plan</strong> — is the permanent source of truth. Code is a replaceable artifact compiled from that specification for your target runtime.</p>
+</div>
+<div class="ed-diagram-pane">
+<svg viewBox="0 0 640 440" aria-hidden="true">
+  <!-- Center Durable Core: Content-Addressed Revision -->
+  <rect x="44" y="64" width="288" height="312" rx="16" fill="#0d1030" />
+  <text x="188" y="96" text-anchor="middle" class="svg-kicker" fill="#78d8f2">DURABLE SOURCE OF TRUTH (emery/&lt;rev&gt;)</text>
+  <text x="188" y="120" text-anchor="middle" class="svg-h3" fill="#ffffff">Content-Addressed Revision</text>
+
+  <!-- Spec Box -->
+  <rect x="68" y="140" width="240" height="64" rx="10" fill="rgba(255,255,255,0.1)" stroke="#78d8f2" stroke-width="1.5" />
+  <text x="86" y="164" class="svg-kicker" fill="#78d8f2">01 · SPECIFICATION (spec.md)</text>
+  <text x="86" y="184" class="svg-caption" fill="#ffffff">Requirements, Given/When/Then scenarios</text>
+  <text x="86" y="198" class="svg-caption" fill="rgba(255,255,255,0.65)">Lexicon-gated: zero vendor/tech names</text>
+
+  <!-- Design Box -->
+  <rect x="68" y="216" width="240" height="64" rx="10" fill="rgba(255,255,255,0.08)" stroke="rgba(255,255,255,0.18)" />
+  <text x="86" y="240" class="svg-kicker" fill="#f59ef5">02 · DESIGN (design.md)</text>
+  <text x="86" y="260" class="svg-caption" fill="#ffffff">Data types, mechanisms &amp; integrations</text>
+  <text x="86" y="274" class="svg-caption" fill="rgba(255,255,255,0.65)">Holds the technology &amp; wire shapes</text>
+
+  <!-- Plan Box -->
+  <rect x="68" y="292" width="240" height="64" rx="10" fill="rgba(255,255,255,0.08)" stroke="rgba(255,255,255,0.18)" />
+  <text x="86" y="316" class="svg-kicker" fill="#78d8f2">03 · BUILD PLAN (plan.md)</text>
+  <text x="86" y="336" class="svg-caption" fill="#ffffff">Dependency-ordered domain slices</text>
+  <text x="86" y="350" class="svg-caption" fill="rgba(255,255,255,0.65)">One stem or trigger per slice</text>
+
+  <!-- Projection Arrows to Replaceable Target Codebases -->
+  <path d="M 332 180 C 378 180, 384 134, 428 134" fill="none" stroke="#a4238f" stroke-width="2" />
+  <polygon points="422,129 432,134 422,139" fill="#a4238f" />
+  <path d="M 332 260 C 378 260, 384 306, 428 306" fill="none" stroke="#0c7fa3" stroke-width="1.8" stroke-dasharray="4 4" />
+  <polygon points="422,301 432,306 422,311" fill="#0c7fa3" />
+
+  <!-- Primary Target: Omnia Rust/Wasm -->
+  <rect x="436" y="78" width="188" height="116" rx="12" fill="rgba(164,35,143,0.08)" stroke="#a4238f" stroke-width="2" />
+  <text x="530" y="106" text-anchor="middle" class="svg-kicker" fill="#a4238f">TARGET · emery:omnia</text>
+  <text x="530" y="130" text-anchor="middle" class="svg-h3" fill="#0d1030">Omnia Wasm Guest</text>
+  <text x="530" y="152" text-anchor="middle" class="svg-caption" fill="rgba(13,16,48,0.68)">Rust + WASI capabilities</text>
+  <text x="530" y="170" text-anchor="middle" class="svg-caption" fill="#a4238f">Tier 3 Production Standard</text>
+
+  <!-- Secondary Target: Node / Other Targets -->
+  <rect x="436" y="248" width="188" height="116" rx="12" fill="#f5f6fa" stroke="rgba(13,16,48,0.2)" stroke-width="1.5" />
+  <text x="530" y="276" text-anchor="middle" class="svg-kicker" fill="#0c7fa3">TARGET · emery:node</text>
+  <text x="530" y="300" text-anchor="middle" class="svg-h3" fill="#0d1030">Other Runtimes</text>
+  <text x="530" y="322" text-anchor="middle" class="svg-caption" fill="rgba(13,16,48,0.68)">Strict TypeScript / Node</text>
+  <text x="530" y="340" text-anchor="middle" class="svg-caption" fill="rgba(13,16,48,0.52)">Same spec, new target adapter</text>
+</svg>
+</div>
+</div>
+
+<!--
+Emery Slide 1 of 3 — Specifications, not code, as the source of truth:
+- Why is a specification better than code as the long-term asset?
+- Because Emery's lexicon gate strips vendor and framework names out of the Specification (spec.md), keeping requirements expressed purely by domain role and Given/When/Then scenarios.
+- That means the Specification survives framework churn: you can compile it to an Omnia Rust/Wasm guest today, or re-target it tomorrow without re-discovering a single business rule.
+-->
+
+---
+title: Emery · Citizen & Legacy Migrator
+class: slide-light
+---
+
+<Eyebrow text="EMERY 02 / 03 · THE CITIZEN-CODED APP & LEGACY MIGRATOR" />
 
 <div class="ed-band">
 <div class="ed-band-top">
 <div>
 
-# One problem,<br>two disguises.
+# Mine the behaviour.<br>Expose every conflict.
 
 </div>
-<p class="ed-band-prose">What happens when an app crosses into <strong>Tier 3</strong> — or when engineering faces a twenty-year-old legacy service? A nine-month vibe-coded prototype that operations now depend on and an ageing legacy codebase fail in the <strong>exact same four ways</strong>: critical behaviour trapped inside code nobody can safely maintain.</p>
+<p class="ed-band-prose">Whether you are graduating a nine-month citizen-coded prototype from Tier 2 or retiring a twenty-year-old legacy service, <strong>emery specify</strong> acts as an automated migrator. Source adapters parse code, docs, and intent into typed claims, and reconcile them under <strong>authority rank</strong> — surfacing conflicts for humans rather than letting an AI guess.</p>
 </div>
 <div class="ed-band-canvas">
-<svg viewBox="0 0 1140 355" aria-hidden="true">
-  <!-- Two Left Sources converging on the same 4 failure modes -->
-  <circle cx="96" cy="108" r="54" fill="rgba(255,59,107,0.06)" stroke="#b4234e" stroke-width="1.8" stroke-dasharray="5 4" />
-  <text x="96" y="96" text-anchor="middle" class="svg-kicker" fill="#b4234e">SOURCE 01 · TIER 2 → 3</text>
-  <text x="96" y="116" text-anchor="middle" class="svg-label" fill="#0d1030">Succeeded</text>
-  <text x="96" y="132" text-anchor="middle" class="svg-caption" fill="rgba(13,16,48,0.62)">AI Prototype</text>
-  <circle cx="96" cy="252" r="54" fill="rgba(13,16,48,0.04)" stroke="#0d1030" stroke-width="1.8" />
-  <text x="96" y="240" text-anchor="middle" class="svg-kicker" fill="#0d1030">SOURCE 02 · CORE</text>
-  <text x="96" y="260" text-anchor="middle" class="svg-label" fill="#0d1030">20-Year-Old</text>
-  <text x="96" y="276" text-anchor="middle" class="svg-caption" fill="rgba(13,16,48,0.62)">Legacy Service</text>
-  <!-- Converging node -->
-  <path d="M 150 108 C 220 108, 230 180, 290 180" fill="none" stroke="#0d1030" stroke-width="1.8" />
-  <path d="M 150 252 C 220 252, 230 180, 290 180" fill="none" stroke="#0d1030" stroke-width="1.8" />
-  <circle cx="290" cy="180" r="6" fill="#b4234e" />
-  <!-- Four Horizontal Failure Branches -->
-  <path d="M 290 180 C 370 180, 380 48, 460 48" fill="none" stroke="rgba(180,35,78,0.45)" stroke-width="1.5" />
-  <path d="M 290 180 C 370 180, 380 136, 460 136" fill="none" stroke="rgba(180,35,78,0.45)" stroke-width="1.5" />
-  <path d="M 290 180 C 370 180, 380 224, 460 224" fill="none" stroke="rgba(180,35,78,0.45)" stroke-width="1.5" />
-  <path d="M 290 180 C 370 180, 380 312, 460 312" fill="none" stroke="rgba(180,35,78,0.45)" stroke-width="1.5" />
-  <circle cx="460" cy="48" r="4.5" fill="#b4234e" />
-  <text x="480" y="42" class="svg-kicker" fill="#b4234e">01 · CONTINUITY · ORPHANED OWNERSHIP</text>
-  <text x="480" y="62" class="svg-h3" fill="#0d1030">The author moved on — and nobody else knows how to fix it safely when it breaks</text>
-  <circle cx="460" cy="136" r="4.5" fill="#b4234e" />
-  <text x="480" y="130" class="svg-kicker" fill="#b4234e">02 · INTENT · EVAPORATED KNOWLEDGE</text>
-  <text x="480" y="150" class="svg-h3" fill="#0d1030">Chat logs and old commits don't separate deliberate business rules from accidents</text>
-  <circle cx="460" cy="224" r="4.5" fill="#b4234e" />
-  <text x="480" y="218" class="svg-kicker" fill="#b4234e">03 · SECURITY · AMBIENT AUTHORITY</text>
-  <text x="480" y="238" class="svg-h3" fill="#0d1030">Broad database credentials, unvetted packages, and un-audited network reach</text>
-  <circle cx="460" cy="312" r="4.5" fill="#b4234e" />
-  <text x="480" y="306" class="svg-kicker" fill="#b4234e">04 · ECONOMICS · THE REWRITE TAX</text>
-  <text x="480" y="326" class="svg-h3" fill="#0d1030">Paying twice: once to discover what the business needs, and again for an emergency rescue</text>
+<svg viewBox="0 0 1140 350" aria-hidden="true">
+  <!-- Left Column: Multi-Source Inputs with Authority Ranks -->
+  <text x="16" y="26" class="svg-kicker" fill="#0c7fa3">01 · SOURCE ADAPTERS (WASM)</text>
+
+  <rect x="16" y="44" width="256" height="64" rx="10" fill="#ffffff" stroke="#0c7fa3" stroke-width="1.6" />
+  <text x="34" y="68" class="svg-kicker" fill="#0c7fa3">RANK 1 · emery:intent</text>
+  <text x="34" y="90" class="svg-label" fill="#0d1030">Product Briefs &amp; Directives</text>
+
+  <rect x="16" y="124" width="256" height="64" rx="10" fill="#ffffff" stroke="rgba(13,16,48,0.22)" stroke-width="1.5" />
+  <text x="34" y="148" class="svg-kicker" fill="#0d1030">RANK 2 · emery:documentation</text>
+  <text x="34" y="170" class="svg-label" fill="#0d1030">ADRs, Specs &amp; Feature Files</text>
+
+  <rect x="16" y="204" width="256" height="96" rx="10" fill="rgba(164,35,143,0.06)" stroke="#a4238f" stroke-width="1.6" />
+  <text x="34" y="228" class="svg-kicker" fill="#a4238f">RANK 3 · typescript / python</text>
+  <text x="34" y="250" class="svg-label" fill="#0d1030">T2 Prototype or Legacy Code</text>
+  <text x="34" y="270" class="svg-caption" fill="rgba(13,16,48,0.65)">AST parser extracts routes, topics,</text>
+  <text x="34" y="286" class="svg-caption" fill="rgba(13,16,48,0.65)">types, decision points &amp; test cases</text>
+
+  <!-- Connectors to Reconciliation Engine -->
+  <path d="M 272 76 C 330 76, 340 165, 396 165" fill="none" stroke="#0c7fa3" stroke-width="1.6" />
+  <line x1="272" y1="156" x2="396" y2="165" stroke="#0d1030" stroke-width="1.6" />
+  <path d="M 272 252 C 330 252, 340 165, 396 165" fill="none" stroke="#a4238f" stroke-width="1.6" />
+
+  <!-- Middle Column: Evidence & Authority Reconciliation -->
+  <rect x="400" y="54" width="320" height="236" rx="14" fill="#0d1030" />
+  <text x="560" y="84" text-anchor="middle" class="svg-kicker" fill="#78d8f2">02 · EVIDENCE &amp; AUTHORITY RECONCILIATION</text>
+  <line x1="428" y1="100" x2="692" y2="100" stroke="rgba(255,255,255,0.14)" />
+
+  <circle cx="436" cy="130" r="4.5" fill="#78d8f2" />
+  <text x="452" y="134" class="svg-label" fill="#ffffff">Corroborated &amp; Single-Source</text>
+  <text x="452" y="152" class="svg-caption" fill="rgba(255,255,255,0.68)">Anchored to exact file &amp; #L line spans</text>
+
+  <circle cx="436" cy="186" r="4.5" fill="#f59ef5" />
+  <text x="452" y="190" class="svg-label" fill="#ffffff">Divergence (Higher Rank Wins)</text>
+  <text x="452" y="208" class="svg-caption" fill="rgba(255,255,255,0.68)">Intent overrides accidental prototype bugs</text>
+
+  <circle cx="436" cy="242" r="4.5" fill="#ff7597" />
+  <text x="452" y="246" class="svg-label" fill="#ffffff">Conflict &amp; [unknown] Preserved</text>
+  <text x="452" y="264" class="svg-caption" fill="rgba(255,255,255,0.68)">Equal-rank ties surfaced for human sign-off</text>
+
+  <!-- Connector to Output -->
+  <line x1="720" y1="172" x2="796" y2="172" stroke="#a4238f" stroke-width="2.2" />
+  <polygon points="790,167 800,172 790,177" fill="#a4238f" />
+
+  <!-- Right Column: Clean Migration Blueprint -->
+  <rect x="804" y="54" width="316" height="236" rx="14" fill="rgba(22,180,226,0.06)" stroke="#0c7fa3" stroke-width="1.8" />
+  <text x="962" y="84" text-anchor="middle" class="svg-kicker" fill="#0c7fa3">03 · REVIEWABLE MIGRATION BASELINE</text>
+  <text x="962" y="114" text-anchor="middle" class="svg-h3" fill="#0d1030">Keep the criteria.</text>
+  <text x="962" y="136" text-anchor="middle" class="svg-h3" fill="#0d1030">Drop the code.</text>
+  <line x1="836" y1="154" x2="1088" y2="154" stroke="rgba(13,16,48,0.12)" />
+  <text x="836" y="182" class="svg-body" fill="#0d1030">• Every HTTP route &amp; message trigger typed</text>
+  <text x="836" y="208" class="svg-body" fill="#0d1030">• Domain data shapes separated from plumbing</text>
+  <text x="836" y="234" class="svg-body" fill="#0d1030">• Product Owner &amp; engineers review before build</text>
+  <text x="836" y="264" class="svg-caption" fill="#0c7fa3">Zero hallucinated requirements</text>
 </svg>
 </div>
 </div>
 
 <!--
-Key message:
-- Why does Tier 3 require a specification-driven rebuild rather than hardening the prototype in place?
-- Because a 9-month prompt-built tool and a 20-year-old legacy service fail in the exact same four ways: orphaned ownership, evaporated intent, ambient credentials, and the rewrite tax.
+Emery Slide 2 of 3 — Citizen-coded app & legacy migrator:
+- Why naive AI translation fails: if you tell an LLM "port this prototype to Rust", it ports every bug and framework hack along with the business logic.
+- emery specify parses the prototype or legacy repo with deterministic AST surveys (routes, message subscriptions, data types, test assertions), combines it with docs and product intent under authority rank, and produces a human-reviewable specification before a single line of replacement code is written.
 -->
 
 ---
-title: A repeatable path from prototype to production
+title: Emery · Verified Omnia Guest Builder
 class: slide-light
 ---
 
-<Eyebrow text="PROPELLERHEAD · TIER 3 GRADUATION LOOP" />
+<Eyebrow text="EMERY 03 / 03 · DELIVERING OMNIA-READY WASM GUESTS" />
 
 <div class="ed-split is-reversed">
 <div class="ed-diagram-pane">
-<svg viewBox="0 0 640 440" aria-hidden="true">
-  <!-- Circular Loop Track -->
-  <circle cx="320" cy="220" r="142" fill="none" stroke="rgba(13,16,48,0.14)" stroke-width="2" stroke-dasharray="5 5" />
-  <!-- Curved directional arcs around the loop -->
-  <path d="M 368 86 A 142 142 0 0 1 454 172" fill="none" stroke="#0c7fa3" stroke-width="2" />
-  <polygon points="449,170 456,178 459,168" fill="#0c7fa3" />
-  <path d="M 454 268 A 142 142 0 0 1 368 354" fill="none" stroke="#a4238f" stroke-width="2" />
-  <polygon points="370,349 362,356 372,359" fill="#a4238f" />
-  <path d="M 272 354 A 142 142 0 0 1 186 268" fill="none" stroke="#0d1030" stroke-width="2" />
-  <polygon points="191,270 184,262 181,272" fill="#0d1030" />
-  <path d="M 186 172 A 142 142 0 0 1 272 86" fill="none" stroke="rgba(13,16,48,0.35)" stroke-width="1.8" stroke-dasharray="4 4" />
-  <!-- Center Core Thesis -->
-  <text x="320" y="212" text-anchor="middle" class="svg-kicker" fill="#a4238f">TIER 3 · GRADUATION</text>
-  <text x="320" y="234" text-anchor="middle" class="svg-h3" fill="#0d1030">Keep the criteria.</text>
-  <text x="320" y="254" text-anchor="middle" class="svg-h3" fill="#0d1030">Drop the code.</text>
-  <!-- Top Node (12 o'clock): 01 Explore -->
-  <circle cx="320" cy="78" r="46" fill="#ffffff" stroke="#0c7fa3" stroke-width="2" />
-  <text x="320" y="68" text-anchor="middle" class="svg-kicker" fill="#0c7fa3">01 · T1 / T2</text>
-  <text x="320" y="88" text-anchor="middle" class="svg-h3" fill="#0d1030">Explore</text>
-  <text x="320" y="18" text-anchor="middle" class="svg-caption" fill="rgba(13,16,48,0.62)">Validate value in The Codex</text>
-  <!-- Right Node (3 o'clock): 02 Specify (Emery) -->
-  <circle cx="462" cy="220" r="48" fill="rgba(164,35,143,0.08)" stroke="#a4238f" stroke-width="2" />
-  <text x="462" y="210" text-anchor="middle" class="svg-kicker" fill="#a4238f">02 · EMERY</text>
-  <text x="462" y="230" text-anchor="middle" class="svg-h3" fill="#0d1030">Specify</text>
-  <text x="524" y="214" class="svg-label" fill="#0d1030">Extract intent</text>
-  <text x="524" y="230" class="svg-caption" fill="rgba(13,16,48,0.58)">Rules, design &amp; scenarios</text>
-  <!-- Bottom Node (6 o'clock): 03 Build (Emery + Engineers) -->
-  <circle cx="320" cy="362" r="48" fill="#0d1030" />
-  <text x="320" y="352" text-anchor="middle" class="svg-kicker" fill="#78d8f2">03 · EMERY</text>
-  <text x="320" y="372" text-anchor="middle" class="svg-h3" fill="#ffffff">Build</text>
-  <text x="320" y="428" text-anchor="middle" class="svg-caption" fill="rgba(13,16,48,0.62)">Rebuilt in verified waves with senior engineers</text>
-  <!-- Left Node (9 o'clock): 04 Run (Omnia) -->
-  <circle cx="178" cy="220" r="48" fill="#a4238f" />
-  <text x="178" y="210" text-anchor="middle" class="svg-kicker" fill="rgba(255,255,255,0.85)">04 · OMNIA</text>
-  <text x="178" y="230" text-anchor="middle" class="svg-h3" fill="#ffffff">Run</text>
-  <text x="116" y="214" text-anchor="end" class="svg-label" fill="#0d1030">Wasm sandbox</text>
-  <text x="116" y="230" text-anchor="end" class="svg-caption" fill="rgba(13,16,48,0.58)">Explicit capability grants</text>
+<svg viewBox="0 0 660 440" aria-hidden="true">
+  <!-- Step 1: Wave Slicing & Deterministic Scaffold -->
+  <rect x="20" y="32" width="276" height="104" rx="12" fill="#ffffff" stroke="#0c7fa3" stroke-width="1.8" />
+  <text x="40" y="58" class="svg-kicker" fill="#0c7fa3">01 · emery:omnia SCAFFOLD</text>
+  <text x="40" y="82" class="svg-h3" fill="#0d1030">Typed Rust Skeleton</text>
+  <text x="40" y="102" class="svg-caption" fill="rgba(13,16,48,0.65)">Exemplar guest template, typed routes,</text>
+  <text x="40" y="118" class="svg-caption" fill="rgba(13,16,48,0.65)">wire structs &amp; scenario test stubs laid by code</text>
+
+  <line x1="296" y1="84" x2="356" y2="84" stroke="#0c7fa3" stroke-width="1.8" />
+  <polygon points="350,79 360,84 350,89" fill="#0c7fa3" />
+
+  <!-- Step 2: Parallel Slice Worktrees in Kernel Sandbox -->
+  <rect x="364" y="32" width="276" height="104" rx="12" fill="#0d1030" />
+  <text x="384" y="58" class="svg-kicker" fill="#78d8f2">02 · PARALLEL WAVE BUILD</text>
+  <text x="384" y="82" class="svg-h3" fill="#ffffff">Isolated Slice Worktrees</text>
+  <text x="384" y="102" class="svg-caption" fill="rgba(255,255,255,0.7)">Each slice built in .emery/vcs/worktrees/</text>
+  <text x="384" y="118" class="svg-caption" fill="rgba(255,255,255,0.7)">inside a kernel-confined worker grant</text>
+
+  <!-- Downward connector to Verification Gate -->
+  <line x1="502" y1="136" x2="502" y2="180" stroke="#0d1030" stroke-width="1.8" />
+  <polygon points="497,174 507,174 502,182" fill="#0d1030" />
+
+  <!-- Step 3: Deterministic AST & Wave Verification -->
+  <rect x="20" y="186" width="620" height="118" rx="14" fill="rgba(164,35,143,0.06)" stroke="#a4238f" stroke-width="1.8" />
+  <text x="44" y="214" class="svg-kicker" fill="#a4238f">03 · DETERMINISTIC WAVE VERIFICATION (BEFORE ANY SLICE MERGES OR LABELS)</text>
+
+  <circle cx="52" cy="244" r="4" fill="#a4238f" />
+  <text x="68" y="248" class="svg-label" fill="#0d1030">Host-Boundary Lints (clippy.toml)</text>
+  <text x="68" y="266" class="svg-caption" fill="rgba(13,16,48,0.62)">Forbids std::env, std::fs, raw HTTP &amp; timers</text>
+
+  <circle cx="356" cy="244" r="4" fill="#a4238f" />
+  <text x="372" y="248" class="svg-label" fill="#0d1030">Scenario &amp; AST Gate</text>
+  <text x="372" y="266" class="svg-caption" fill="rgba(13,16,48,0.62)">Every REQ-* scenario tested over omnia-test</text>
+
+  <circle cx="52" cy="288" r="4" fill="#a4238f" />
+  <text x="68" y="292" class="svg-label" fill="#0d1030">wasm32-wasip2 Compile Check</text>
+
+  <circle cx="356" cy="288" r="4" fill="#a4238f" />
+  <text x="372" y="292" class="svg-label" fill="#0d1030">Secret Gate on Every Commit</text>
+
+  <!-- Downward connector to Sealed Output -->
+  <line x1="330" y1="304" x2="330" y2="344" stroke="#a4238f" stroke-width="2" />
+  <polygon points="325,338 335,338 330,346" fill="#a4238f" />
+
+  <!-- Step 4: Output -->
+  <rect x="130" y="350" width="400" height="68" rx="12" fill="#a4238f" />
+  <text x="330" y="376" text-anchor="middle" class="svg-kicker" fill="rgba(255,255,255,0.88)">SEALED &amp; LABELLED (emery/&lt;revision&gt;)</text>
+  <text x="330" y="400" text-anchor="middle" class="svg-h3" fill="#ffffff">Verified, Omnia-Ready guest.wasm</text>
 </svg>
 </div>
 <div class="ed-prose-col">
 
-# How a proven winner<br>graduates to Tier 3.
+# Built in waves.<br>Verified before merge.
 
-<p class="ed-prose">When the one prototype in twenty becomes mission-critical, we neither harden its prompt-generated code in place nor start over from a blank page.</p>
-<p class="ed-prose"><strong>Emery</strong> extracts the business rules, scenarios, and design from the working prototype into a versioned specification, then slices and rebuilds it in verified waves alongside senior engineers. <strong>Omnia</strong> runs the resulting WebAssembly component inside strict capability boundaries under an engineering SLA.</p>
+<p class="ed-prose">Once the specification is reviewed, <strong>emery build</strong> compiles it into an Omnia WebAssembly guest wave by wave. Rather than asking a model to invent a repository from scratch, the <strong>emery:omnia</strong> adapter scaffolds the exemplar Rust workspace, typed route and topic handlers, wire structs, and test stubs by code before the model turn begins.</p>
+<p class="ed-prose">Every slice is checked by syntax-tree rules, forbidden-API lints that enforce the Omnia capability boundary, scenario tests over <strong>omnia-test</strong>, and a secret gate before the wave is sealed and labelled <strong>emery/&lt;revision&gt;</strong>.</p>
 </div>
 </div>
 
 <!--
-Key message:
-- How does the 5% of prototypes that reach Tier 3 actually become production software without starting from scratch?
-- Follow the four-step loop clockwise:
-  1. Explore at Tiers 1 & 2: validate the workflow with real users in The Codex.
-  2. Specify with Emery: extract the requirements, edge cases, and contracts into a human-readable, versioned specification.
-  3. Build with Emery + Senior Engineers: rebuild against that specification in verified waves.
-  4. Run on Omnia: deploy as a capability-governed WebAssembly component with zero ambient authority.
+Emery Slide 3 of 3 — Delivering Omnia-ready Wasm guests:
+- emery build doesn't let an LLM freehand an entire codebase.
+- The emery:omnia target adapter deterministically scaffolds the exemplar Wasm guest layout and typed signatures first, then gates the model's implementation against clippy.toml host-boundary lints, syn syntax checks, omnia-test scenario tests, and wasm32-wasip2 compilation.
 -->
 
 ---
-title: AI makes rewriting cheap enough to be dangerous
+title: Omnia + Emery Together
 class: slide-light
 ---
 
-<Eyebrow text="PROPELLERHEAD · LEGACY MODERNISATION" />
+<Eyebrow text="THE COMPLETE SYSTEM · OMNIA + EMERY" />
 
 <div class="ed-bottom-split">
 <div class="ed-bottom-canvas">
 <svg viewBox="0 0 1140 285" aria-hidden="true">
-  <!-- Left Node: Legacy System -->
-  <circle cx="92" cy="145" r="54" fill="rgba(13,16,48,0.04)" stroke="#0d1030" stroke-width="2" />
-  <text x="92" y="132" text-anchor="middle" class="svg-kicker" fill="#0d1030">LEGACY</text>
-  <text x="92" y="152" text-anchor="middle" class="svg-label" fill="#0d1030">20-Year Code</text>
-  <text x="92" y="168" text-anchor="middle" class="svg-caption" fill="rgba(13,16,48,0.58)">Rules + debt mixed</text>
-  <!-- Top Trap Path: Naive 1:1 LLM Translation -->
-  <path d="M 146 122 C 230 122, 250 42, 360 42 L 680 42" fill="none" stroke="rgba(180,35,78,0.45)" stroke-width="1.5" stroke-dasharray="4 4" />
-  <line x1="674" y1="34" x2="688" y2="50" stroke="#b4234e" stroke-width="2" />
-  <line x1="688" y1="34" x2="674" y2="50" stroke="#b4234e" stroke-width="2" />
-  <text x="370" y="26" class="svg-kicker" fill="#b4234e">THE TRAP · NAIVE 1:1 LLM TRANSLATION ("TRANSLATE THIS REPO")</text>
-  <text x="706" y="46" class="svg-body" fill="rgba(13,16,48,0.62)">Copies 20 years of accidental plumbing into a new language &amp; silently drops edge cases</text>
-  <!-- Lower Winning Path: 01 Recover Intent -> 02 Re-express -> 03 Verify & Replace -->
-  <path d="M 146 162 C 210 162, 220 182, 286 182" fill="none" stroke="#0c7fa3" stroke-width="2.2" />
-  <polygon points="280,177 290,182 280,187" fill="#0c7fa3" />
-  <!-- Step 01: Recover Intent -->
-  <circle cx="344" cy="182" r="52" fill="rgba(22,180,226,0.08)" stroke="#0c7fa3" stroke-width="2" />
-  <text x="344" y="168" text-anchor="middle" class="svg-kicker" fill="#0c7fa3">01 · EMERY</text>
-  <text x="344" y="188" text-anchor="middle" class="svg-label" fill="#0d1030">Recover Intent</text>
-  <text x="344" y="254" text-anchor="middle" class="svg-body" fill="#0d1030">Platform-neutral spec</text>
-  <text x="344" y="270" text-anchor="middle" class="svg-caption" fill="rgba(13,16,48,0.55)">Sheds old framework noise</text>
-  <line x1="396" y1="182" x2="588" y2="182" stroke="#0d1030" stroke-width="2.2" />
-  <polygon points="582,177 592,182 582,187" fill="#0d1030" />
-  <text x="492" y="168" text-anchor="middle" class="svg-caption" fill="#0d1030">Pure domain rules</text>
-  <!-- Step 02: Re-express in Waves -->
-  <circle cx="646" cy="182" r="52" fill="#0d1030" />
-  <text x="646" y="168" text-anchor="middle" class="svg-kicker" fill="#78d8f2">02 · EMERY</text>
-  <text x="646" y="188" text-anchor="middle" class="svg-label" fill="#ffffff">Re-Express</text>
-  <text x="646" y="254" text-anchor="middle" class="svg-body" fill="#0d1030">Build slice by slice</text>
-  <text x="646" y="270" text-anchor="middle" class="svg-caption" fill="rgba(13,16,48,0.55)">Leave legacy lock-in behind</text>
-  <line x1="698" y1="182" x2="890" y2="182" stroke="#a4238f" stroke-width="2.2" />
-  <polygon points="884,177 894,182 884,187" fill="#a4238f" />
-  <text x="794" y="168" text-anchor="middle" class="svg-caption" fill="#a4238f">Replay recorded traffic</text>
-  <!-- Step 03: Replace Safely on Omnia -->
-  <circle cx="952" cy="182" r="56" fill="#a4238f" />
-  <text x="952" y="166" text-anchor="middle" class="svg-kicker" fill="rgba(255,255,255,0.85)">03 · OMNIA</text>
-  <text x="952" y="186" text-anchor="middle" class="svg-label" fill="#ffffff">Replace Safely</text>
-  <text x="952" y="202" text-anchor="middle" class="svg-caption" fill="rgba(255,255,255,0.85)">Verified parity</text>
-  <text x="952" y="254" text-anchor="middle" class="svg-body" fill="#0d1030">Proven against live fixtures</text>
-  <text x="952" y="270" text-anchor="middle" class="svg-caption" fill="rgba(13,16,48,0.55)">Before retiring the old system</text>
+  <!-- Left Plane: EMERY (Build-Time Assurance) -->
+  <rect x="20" y="24" width="490" height="236" rx="16" fill="rgba(164,35,143,0.06)" stroke="#a4238f" stroke-width="1.8" />
+  <text x="48" y="54" class="svg-kicker" fill="#a4238f">EMERY · BUILD-TIME ASSURANCE PLANE</text>
+  <text x="48" y="80" class="svg-h2" fill="#0d1030">Preserves why it was built</text>
+
+  <circle cx="60" cy="120" r="18" fill="#ffffff" stroke="#a4238f" stroke-width="1.8" />
+  <text x="60" y="125" text-anchor="middle" class="svg-kicker" fill="#a4238f">01</text>
+  <text x="92" y="116" class="svg-label" fill="#0d1030">Extracts &amp; reconciles intent (emery specify)</text>
+  <text x="92" y="134" class="svg-caption" fill="rgba(13,16,48,0.6)">From T2 prototypes, legacy repos, docs &amp; briefs</text>
+
+  <circle cx="60" cy="174" r="18" fill="#ffffff" stroke="#a4238f" stroke-width="1.8" />
+  <text x="60" y="179" text-anchor="middle" class="svg-kicker" fill="#a4238f">02</text>
+  <text x="92" y="170" class="svg-label" fill="#0d1030">Holds the technology-free specification</text>
+  <text x="92" y="188" class="svg-caption" fill="rgba(13,16,48,0.6)">Human-reviewed scenarios &amp; explicit conflict resolution</text>
+
+  <circle cx="60" cy="228" r="18" fill="#a4238f" />
+  <text x="60" y="233" text-anchor="middle" class="svg-kicker" fill="#ffffff">03</text>
+  <text x="92" y="224" class="svg-label" fill="#0d1030">Compiles verified waves (emery build)</text>
+  <text x="92" y="242" class="svg-caption" fill="rgba(13,16,48,0.6)">Enforces capability lints, scenario tests &amp; secret gates</text>
+
+  <!-- Handoff Bridge: Verified .wasm + Capability Manifest -->
+  <line x1="510" y1="142" x2="630" y2="142" stroke="#0d1030" stroke-width="2.5" />
+  <polygon points="622,136 634,142 622,148" fill="#0d1030" />
+  <rect x="524" y="102" width="92" height="28" rx="14" fill="#0d1030" />
+  <text x="570" y="120" text-anchor="middle" class="svg-pill" fill="#78d8f2">guest.wasm</text>
+  <text x="570" y="166" text-anchor="middle" class="svg-caption" fill="#0d1030">Verified artifact</text>
+
+  <!-- Right Plane: OMNIA (Run-Time Execution) -->
+  <rect x="634" y="24" width="486" height="236" rx="16" fill="#0d1030" />
+  <text x="662" y="54" class="svg-kicker" fill="#78d8f2">OMNIA · RUN-TIME EXECUTION PLANE</text>
+  <text x="662" y="80" class="svg-h2" fill="#ffffff">Decouples where it runs</text>
+
+  <circle cx="674" cy="120" r="18" fill="rgba(255,255,255,0.1)" stroke="#78d8f2" stroke-width="1.8" />
+  <text x="674" y="125" text-anchor="middle" class="svg-kicker" fill="#78d8f2">04</text>
+  <text x="706" y="116" class="svg-label" fill="#ffffff">Executes inside a WASI capability sandbox</text>
+  <text x="706" y="134" class="svg-caption" fill="rgba(255,255,255,0.68)">Zero ambient authority · Audited caller identity</text>
+
+  <circle cx="674" cy="174" r="18" fill="rgba(255,255,255,0.1)" stroke="#78d8f2" stroke-width="1.8" />
+  <text x="674" y="179" text-anchor="middle" class="svg-kicker" fill="#78d8f2">05</text>
+  <text x="706" y="170" class="svg-label" fill="#ffffff">Abstracts cloud &amp; on-prem infrastructure</text>
+  <text x="706" y="188" class="svg-caption" fill="rgba(255,255,255,0.68)">Swap Azure, AWS, Postgres, Kafka, NATS or Redis in the host</text>
+
+  <circle cx="674" cy="228" r="18" fill="#78d8f2" />
+  <text x="674" y="233" text-anchor="middle" class="svg-kicker" fill="#0d1030">06</text>
+  <text x="706" y="224" class="svg-label" fill="#ffffff">Scales via multi-guest hosting recipes</text>
+  <text x="706" y="242" class="svg-caption" fill="rgba(255,255,255,0.68)">Declarative routing, zero-hop WIT links &amp; OTLP telemetry</text>
 </svg>
 </div>
 <div class="ed-bottom-prose-row">
 <div>
 
-# AI makes rewriting<br>cheap enough to be<br>dangerous.
+# Emery preserves the why.<br>Omnia decouples the where.
 
 </div>
 <div>
-<p class="ed-prose">When teams point an LLM directly at a legacy codebase and say <em>"translate this"</em>, they copy twenty years of accidental complexity into a brand-new language — and silently drop the edge cases that actually matter.</p>
-<p class="ed-prose">The exact same <strong>Emery + Omnia</strong> discipline that graduates a Tier 3 prototype solves legacy modernisation: <strong>separate what the system must do from how the old platform happened to do it</strong>, and prove behavioural parity slice by slice before cutover.</p>
+<p class="ed-prose">Together, the two technologies close the loop between fast domain discovery and long-term production ownership. <strong>Emery</strong> ensures you never lose business intent to a chat log or a legacy codebase; <strong>Omnia</strong> ensures that what you build is sandboxed by construction and never locked into a single cloud provider.</p>
+<p class="ed-prose">When business rules change six months later, you update the specification, run a verified build wave, and mount the new <strong>.wasm</strong> guest into the running Omnia host — with zero infrastructure churn.</p>
 </div>
 <div></div>
 </div>
 </div>
 
 <!--
-Key message:
-- The exact same discipline that graduates a Tier 3 prototype also solves one of the biggest traps in enterprise AI right now: naive legacy translation.
-- Pointing an LLM at an old codebase and asking for a 1:1 translation just ports technical debt into a new syntax while losing subtle business rules.
-- With Emery and Omnia, we recover the platform-neutral specification first, re-express cleanly, and verify against recorded traffic before retiring the legacy service.
+Synthesis slide:
+- Emery is the build-time assurance plane: it preserves *why* the system was built and compiles verified .wasm guests.
+- Omnia is the run-time execution plane: it decouples *where* the system runs from *what* it does.
 -->
 
 ---
@@ -401,22 +731,22 @@ class: slide-split short-bar
 <div class="opportunity-row">
 <span class="opportunity-row-num">01</span>
 <div>
-<h4>Pick one proven prototype or legacy service</h4>
-<p>Choose a candidate with clear business value — either a Tier 2 citizen-coded tool ready to graduate or a bounded legacy component.</p>
+<h4>Pick one Tier 2 prototype or legacy service</h4>
+<p>Choose a candidate with clear business value — either a citizen-coded tool ready to graduate to Tier 3 or a bounded legacy component.</p>
 </div>
 </div>
 <div class="opportunity-row">
 <span class="opportunity-row-num">02</span>
 <div>
 <h4>Extract the specification with Emery in days</h4>
-<p>We mine the working rules, contracts, and test scenarios into a versioned specification your domain owners and engineers can read together.</p>
+<p>We mine the working rules, contracts, and test scenarios into a versioned specification your domain owners and engineers can review together.</p>
 </div>
 </div>
 <div class="opportunity-row">
 <span class="opportunity-row-num">03</span>
 <div>
-<h4>Rebuild in verified waves on Omnia</h4>
-<p>You finish with a clean, capability-sandboxed production service, verified requirement by requirement, and a repeatable pattern your team owns.</p>
+<h4>Deploy the verified Wasm guest on Omnia</h4>
+<p>You finish with a capability-sandboxed production service, portable across cloud or self-hosted recipes, and a living specification your team owns.</p>
 </div>
 </div>
 </div>
@@ -436,7 +766,6 @@ class: slide-split short-bar
 
 <!--
 Closing call to action:
-- You don't need a six-month programme to test this.
 - Pick one candidate — either a citizen-coded prototype that has outgrown Tier 2, or a bounded legacy service that needs modernising.
-- In days we extract the Emery specification, run the verified build loop onto Omnia alongside your engineers, and leave you with working production software and a durable specification you own.
+- In days we extract the Emery specification, compile and verify the Wasm guest, and deploy it on an Omnia host recipe alongside your team.
 -->

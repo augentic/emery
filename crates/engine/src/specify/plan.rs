@@ -130,6 +130,7 @@ impl<'a> SliceBrief<'a> {
 
         Plan {
             emery: EMERY,
+            parent: None,
             preamble: vec![],
             slices,
         }
@@ -359,6 +360,7 @@ impl Brief for SliceBrief<'_> {
 
         Ok(Plan {
             emery: EMERY,
+            parent: None,
             preamble: answer.preamble,
             slices,
         })

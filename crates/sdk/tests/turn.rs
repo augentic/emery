@@ -277,18 +277,18 @@ async fn note_stems() {
         seen[0].messages[0].contains(
             "— stem `orders`.\n\n`$SOURCE_DIR` is the bound source tree, lent read-only: the \
              root of every file you can read, and the root every `path` is relative to. Walk it \
-             as the prompt describes.\n\nLead every `requirement` and `criterion` id with the \
-             stem `password-reset` as its first dotted segment; an id under another stem is \
-             refused.\n\nAnchor every `path` relative to `$SOURCE_DIR`. Nothing outside it is \
-             reachable; extract mines only this source.\n\nThe claim rules"
+             as the prompt describes.\n\nLead every `requirement`, `criterion`, and `retire` id \
+             with the stem `password-reset` as its first dotted segment; an id under another \
+             stem is refused.\n\nAnchor every `path` relative to `$SOURCE_DIR`. Nothing outside \
+             it is reachable; extract mines only this source.\n\nThe claim rules"
         ),
         "{}",
         seen[0].messages[0]
     );
     assert!(
         seen[1].messages[0].contains(
-            "as the prompt describes.\n\nLead every `requirement` and `criterion` id with one of \
-             the stems `password-reset`, `reset` as its first dotted segment"
+            "as the prompt describes.\n\nLead every `requirement`, `criterion`, and `retire` id \
+             with one of the stems `password-reset`, `reset` as its first dotted segment"
         ),
         "{}",
         seen[1].messages[0]
@@ -322,8 +322,8 @@ async fn files_stems() {
              root every `path` is relative to. Mine these files beneath it and nothing else. \
              Each is laid out here whole, every line led by its number, so cite `#L<n>` from the \
              numbers shown rather than reading it again:\n\n### `src/routes.ts` (1 \
-             line)\n\n```\n1|export const x = 1;\n```\n\nLead every `requirement` and \
-             `criterion` id with the stem `password-reset` as its first dotted segment; an id \
+             line)\n\n```\n1|export const x = 1;\n```\n\nLead every `requirement`, `criterion`, \
+             and `retire` id with the stem `password-reset` as its first dotted segment; an id \
              under another stem is refused.\n\nAnchor every `path` relative to `$SOURCE_DIR`, \
              within these files. Nothing outside it is reachable; extract mines only this \
              source.\n\nThe claim rules"
@@ -427,6 +427,49 @@ async fn technology_findings() {
     for held in ["claim 4:", "claim 5:", "claim 6:"] {
         assert!(!correction.contains(held), "{held} is no finding: {correction}");
     }
+    assert!(exchanges[1].outcome.is_ok(), "the corrected answer is accepted");
+    model.assert_exhausted();
+}
+
+// A `retire` is held to the seam's stems and lexicon as a `requirement` is:
+// an off-stem id and a statement naming a technology each come back as a
+// finding, and the brief's stem sentence names the kind.
+#[tokio::test]
+async fn retire_findings() {
+    let model = Scripted::answering([
+        r#"{"claims":[
+            {"kind":"requirement","id":"orders.create","statement":"Creates."},
+            {"kind":"retire","id":"exports.csv","statement":"The export is withdrawn."},
+            {"kind":"retire","id":"orders.notify","statement":"Events are no longer sent to the Kafka producer."}
+        ]}"#,
+        r#"{"claims":[
+            {"kind":"requirement","id":"orders.create","statement":"Creates."},
+            {"kind":"retire","id":"orders.export","statement":"The export is withdrawn."},
+            {"kind":"retire","id":"orders.notify","statement":"Events are no longer published to the outbound stream."}
+        ]}"#,
+    ]);
+    let seam = stemmed("Mine.", ["orders"]);
+
+    let accepted =
+        ask(&model, &SourceInput::value("brief", "Ship it."), seam).await.expect("corrected");
+    assert_eq!(accepted.claims.len(), 3);
+
+    let user = &model.seen()[0].messages[0];
+    assert!(
+        user.contains(
+            "Lead every `requirement`, `criterion`, and `retire` id with the stem `orders`"
+        ),
+        "{user}"
+    );
+    let exchanges = model.exchanges();
+    let correction = exchanges[0].outcome.as_ref().expect_err("the retires are refused");
+    for finding in [
+        "- claim 1: id `exports.csv` leads with `exports`, not a stem of this seam (`orders`)",
+        "- claim 2: `statement` names the technology `kafka`;",
+    ] {
+        assert!(correction.contains(finding), "{finding}: {correction}");
+    }
+    assert!(!correction.contains("claim 0:"), "{correction}");
     assert!(exchanges[1].outcome.is_ok(), "the corrected answer is accepted");
     model.assert_exhausted();
 }

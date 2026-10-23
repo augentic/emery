@@ -69,6 +69,9 @@ interface source {
     intent,
     requirement,
     criterion,
+    /// A withdrawal: the behaviour its id names no longer applies. Carries
+    /// a `statement` extra and nothing of another kind's.
+    retire,
     decision,
     section,
     diagram,
@@ -97,7 +100,7 @@ interface source {
     kind: claim-kind,
     /// The stable claim identifier, a dotted kebab slug such as
     /// `password-reset.expiry`. Required when `kind` is `requirement`,
-    /// `criterion`, or `example`; optional on other kinds.
+    /// `criterion`, `retire`, or `example`; optional on other kinds.
     id: option<string>,
     /// The claim's anchor in the source: `<path>`, `<path>#L<n>`, or
     /// `<path>#L<start>-L<end>`.

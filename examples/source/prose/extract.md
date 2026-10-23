@@ -17,8 +17,9 @@ Nothing outside the bound source is reachable. Extract mines this source complet
 |---|---|---|
 | `requirement` | `statement` | The one greeting behaviour the tree (or the reference) states. |
 | `criterion` | `criterion` | Only when the bound tree itself states an acceptance criterion. |
+| `retire` | `statement` | Only when the bound tree itself withdraws a greeting behaviour, the `id` naming the behaviour withdrawn. |
 
-Do not invent a `criterion`. A `requirement` without `statement` fails the run closed.
+Do not invent a `criterion` or a `retire`. A `requirement` without `statement` fails the run closed.
 
 ## `id` derivation
 
