@@ -2,7 +2,9 @@
 //!
 //! Drafts introductory paragraphs and acceptance scenarios in chunks of at
 //! most [`SPEC_CHUNK`] requirements, holding all drafted prose against the
-//! run's technology [`Lexicon`].
+//! run's technology [`Lexicon`]. An amendment drafts the requirements its
+//! change adds or revises alone, each whole under the id it keeps, and
+//! takes the rest of the specification from the base.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::{self, Display, Formatter};
@@ -15,13 +17,23 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 
 use crate::brief::{Brief, Review};
-use crate::revision::{self, EMERY, Requirement, Scenario, Spec};
+use crate::revision::{self, Change, ChangeClass, EMERY, Requirement, Scenario, Spec};
 use crate::specify::basis::{Basis, Contributor};
 use crate::specify::sections::{self, BasesSection, ClaimsSection};
 use crate::specify::{Extract, shape};
 
 // The outcome a scenario states where no criterion evidences one.
 const UNKNOWN: &str = "[unknown]";
+
+// What a chunk opens with: a specify's first chunk drafts the preamble and
+// lists every claim, a later chunk drafts no preamble, and an amendment's
+// chunk drafts none either, since the base's stands.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Lead {
+    Preamble,
+    Chunk,
+    Amendment,
+}
 
 /// How many requirements one `spec-draft` turn drafts at most.
 ///
@@ -37,8 +49,7 @@ pub const SPEC_CHUNK: usize = 25;
 pub struct SpecBrief<'a> {
     extracts: &'a [Extract],
     bases: Vec<&'a Basis<'a>>,
-    // whether this chunk's answer carries the preamble: the first's alone
-    preamble: bool,
+    lead: Lead,
     lexicon: Lexicon,
 }
 
@@ -51,6 +62,22 @@ impl<'a> SpecBrief<'a> {
     /// claims spell.
     #[must_use]
     pub fn chunked(extracts: &'a [Extract], bases: &'a [Basis<'a>]) -> Vec<Self> {
+        Self::cut(extracts, bases, false)
+    }
+
+    /// Returns the briefs an amendment drafts `bases` under, in requirement order.
+    ///
+    /// `bases` are the requirements the change adds, revises, or leaves in
+    /// conflict, each under the id it keeps, chunked as
+    /// [`chunked`](Self::chunked) chunks them. No chunk drafts a preamble,
+    /// since the base's stands, and each is told it amends the current
+    /// specification. An empty slice yields no brief and spends no turn.
+    #[must_use]
+    pub fn amending(extracts: &'a [Extract], bases: &'a [Basis<'a>]) -> Vec<Self> {
+        Self::cut(extracts, bases, true)
+    }
+
+    fn cut(extracts: &'a [Extract], bases: &'a [Basis<'a>], amending: bool) -> Vec<Self> {
         let lexicon = Lexicon::from_packages(packages(extracts));
         let mut stems: Vec<(&str, Vec<&'a Basis<'a>>)> = Vec::new();
         for basis in bases {
@@ -86,7 +113,11 @@ impl<'a> SpecBrief<'a> {
             .map(|(index, bases)| Self {
                 extracts,
                 bases,
-                preamble: index == 0,
+                lead: match (amending, index) {
+                    (true, _) => Lead::Amendment,
+                    (false, 0) => Lead::Preamble,
+                    (false, _) => Lead::Chunk,
+                },
                 lexicon: lexicon.clone(),
             })
             .collect()
@@ -108,6 +139,39 @@ impl<'a> SpecBrief<'a> {
             emery: EMERY,
             parent: None,
             preamble,
+            requirements,
+        }
+    }
+
+    /// Returns the specification `base` amended by `changes` and `drafts`.
+    ///
+    /// The preamble is the base's. Each [unchanged](ChangeClass::Unchanged)
+    /// requirement is the base's as it stands, each
+    /// [retired](ChangeClass::Retired) one is left out, and every other is the
+    /// one `drafts` drafted under its id. The requirements are ordered by id,
+    /// and [`parent`](Spec::parent) names the base revision.
+    #[must_use]
+    pub fn amend(
+        base: Spec, parent: String, changes: &[Change],
+        drafts: Vec<(Vec<String>, Vec<Requirement>)>,
+    ) -> Spec {
+        let kept: BTreeSet<_> = changes
+            .iter()
+            .filter(|change| change.class == ChangeClass::Unchanged)
+            .map(|change| change.id)
+            .collect();
+        let mut requirements: Vec<Requirement> = base
+            .requirements
+            .into_iter()
+            .filter(|requirement| kept.contains(&requirement.id))
+            .chain(drafts.into_iter().flat_map(|(_, drafted)| drafted))
+            .collect();
+        requirements.sort_by_key(|requirement| requirement.id);
+
+        Spec {
+            emery: EMERY,
+            parent: Some(parent),
+            preamble: base.preamble,
             requirements,
         }
     }
@@ -136,20 +200,29 @@ impl Brief for SpecBrief<'_> {
         Self::at(schema, "/$defs/Draft/properties/subject")?.insert("enum".to_owned(), subjects);
         Self::at(schema, "/$defs/Draft/properties/scenarios")?
             .insert("minItems".to_owned(), json!(1));
-        if !self.preamble {
+        if self.lead != Lead::Preamble {
             Self::at(schema, "/properties/preamble")?.insert("maxItems".to_owned(), json!(0));
         }
         Ok(())
     }
 
     fn verify(&self, answer: &SpecAnswer, review: &mut Review) {
-        if self.preamble {
-            review.paragraphs(&answer.preamble, "preamble");
-            for text in &answer.preamble {
-                review.technology(&self.lexicon, text, "preamble");
+        match self.lead {
+            Lead::Preamble => {
+                review.paragraphs(&answer.preamble, "preamble");
+                for text in &answer.preamble {
+                    review.technology(&self.lexicon, text, "preamble");
+                }
             }
-        } else if !answer.preamble.is_empty() {
-            review.note("the preamble is drafted with the first requirements; leave it empty here");
+            Lead::Chunk if !answer.preamble.is_empty() => {
+                review.note(
+                    "the preamble is drafted with the first requirements; leave it empty here",
+                );
+            }
+            Lead::Amendment if !answer.preamble.is_empty() => {
+                review.note("the preamble is the current specification's; leave it empty");
+            }
+            Lead::Chunk | Lead::Amendment => {}
         }
 
         // each draft against its requirement
@@ -247,8 +320,10 @@ impl<'a> Scope<'a> {
     fn of(extracts: &'a [Extract], bases: &[&Basis<'a>]) -> Self {
         let stems: BTreeSet<&str> = bases
             .iter()
-            .flat_map(|basis| basis.classes.iter().flatten())
-            .map(Contributor::stem)
+            .flat_map(|basis| {
+                std::iter::once(basis.stem())
+                    .chain(basis.classes.iter().flatten().map(Contributor::stem))
+            })
             .collect();
         let files = extracts
             .iter()
@@ -273,17 +348,34 @@ impl<'a> Scope<'a> {
 
 impl Display for SpecBrief<'_> {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        if self.preamble {
-            write!(f, "Draft `spec.md`.\n\n{claims}", claims = ClaimsSection(self.extracts))?;
-        } else {
-            f.write_str(
-                "Draft `spec.md`: the requirements below, one chunk of the specification's. \
-                 The preamble is drafted with the first chunk, so leave it empty. The claims \
-                 listed are the ones under this chunk's stems and the detail anchored beside \
-                 them; the source's other claims are other chunks' to draft from.\n\n",
-            )?;
-            let scope = Scope::of(self.extracts, &self.bases);
-            sections::claims(f, self.extracts, |claim| scope.keeps(claim))?;
+        match self.lead {
+            Lead::Preamble => {
+                write!(f, "Draft `spec.md`.\n\n{claims}", claims = ClaimsSection(self.extracts))?;
+            }
+            Lead::Chunk => {
+                f.write_str(
+                    "Draft `spec.md`: the requirements below, one chunk of the specification's. \
+                     The preamble is drafted with the first chunk, so leave it empty. The claims \
+                     listed are the ones under this chunk's stems and the detail anchored beside \
+                     them; the source's other claims are other chunks' to draft from.\n\n",
+                )?;
+                let scope = Scope::of(self.extracts, &self.bases);
+                sections::claims(f, self.extracts, |claim| scope.keeps(claim))?;
+            }
+            Lead::Amendment => {
+                f.write_str(
+                    "Draft `spec.md`: the requirements below, which amend the current \
+                     specification. Each is one the change sources add to it or revise in it, \
+                     drafted whole, scenarios included; the specification's other requirements \
+                     stand as they are and are not listed. The preamble is the current \
+                     specification's and is kept, so leave it empty. The claims listed are the \
+                     ones under this chunk's stems and the detail anchored beside them; the \
+                     sources' other claims are other chunks' to draft from, or restate \
+                     requirements that stand.\n\n",
+                )?;
+                let scope = Scope::of(self.extracts, &self.bases);
+                sections::claims(f, self.extracts, |claim| scope.keeps(claim))?;
+            }
         }
 
         write!(

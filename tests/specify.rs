@@ -17,7 +17,7 @@ use omnia_test::guest::{Memory, Scripted};
 use serde_json::Value;
 use support::{
     Provider, Rendezvous, Scratch, carry, claim, cli_ok, digest, evidence, fail, requirement,
-    retire, seed, written,
+    retire, seed, staged, staged_at, written,
 };
 
 // The one-source reference most scenarios name; the scripted loader lands
@@ -1035,6 +1035,11 @@ async fn diff_envelope() {
         "{envelope}"
     );
     assert_eq!(diff["spec"]["removed"], serde_json::json!([]), "{envelope}");
+    assert_eq!(
+        diff["spec"]["retired"],
+        serde_json::json!([]),
+        "a candidate drafted apart retires nothing: {envelope}"
+    );
     assert_eq!(
         diff["spec"]["changed"],
         serde_json::json!([{
@@ -3167,6 +3172,42 @@ async fn config_rank() {
     }
 }
 
+// A file's `scope` is `delta` or `whole`, `delta` when omitted, refused at
+// the field otherwise. Nothing acts on it yet, so acceptance is the one
+// observable: a stated or omitted scope runs as before.
+#[tokio::test]
+async fn config_scope() {
+    for scope in ["scope = \"delta\"\n", "scope = \"whole\"\n", ""] {
+        let scratch = Scratch::new();
+        let config = scratch.config(&format!(
+            "[[source]]\nname = \"docs\"\nadapter = \"emery:documentation@1.2.0\"\n{scope}"
+        ));
+        let provider = Provider::answering([SPEC_ANSWER, DESIGN_ANSWER]);
+        cli_ok(&provider, &["emery", "specify", "--config", &config]).await;
+        provider.model.assert_exhausted();
+    }
+
+    let cases: &[(&str, &str)] = &[
+        ("\"partial\"", "unknown variant `partial`, expected `delta` or `whole`"),
+        ("1", "wanted string or table"),
+    ];
+    for (scope, fragment) in cases {
+        let scratch = Scratch::new();
+        let config = scratch.config(&format!(
+            "[[source]]\nname = \"docs\"\nadapter = \"emery:documentation@1.2.0\"\nscope = \
+             {scope}\n"
+        ));
+        let provider = Provider::idle();
+        let envelope =
+            fail(&provider, &["emery", "specify", "--config", &config], 1, "bad_request").await;
+        assert_message(&envelope, fragment);
+        assert!(
+            provider.source.metadata.lock().expect("metadata").is_empty(),
+            "a refused scope loads nothing: {scope}"
+        );
+    }
+}
+
 // Path anchoring, inline descriptions, and declaration order, all observed on
 // the `SourceInput` the adapter receives.
 #[tokio::test]
@@ -3912,22 +3953,12 @@ fn assert_message(envelope: &Value, fragment: &str) {
     assert!(message.contains(fragment), "expected `{fragment}` in: {envelope}");
 }
 
-// A bare `specify` stages its candidate, so what a scenario reads back is
-// the staged slot unless it sealed the candidate with `--apply`.
-fn staged(storage: &Memory) -> String {
-    stored_id(storage, STAGED_KEY)
-}
-
 fn committed(storage: &Memory) -> String {
-    stored_id(storage, REVISION_KEY)
+    String::from_utf8(storage.state(REVISION_KEY).expect("current")).expect("utf-8 revision id")
 }
 
 fn project_staged(shared: &Memory, project: &str) -> String {
-    stored_id(shared, &format!("{project}/{STAGED_KEY}"))
-}
-
-fn stored_id(storage: &Memory, key: &str) -> String {
-    String::from_utf8(storage.state(key).expect("current")).expect("utf-8 revision id")
+    staged_at(shared, &format!("{project}/{STAGED_KEY}"))
 }
 
 fn staged_document(storage: &Memory, id: &str, name: &str) -> Vec<u8> {

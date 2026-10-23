@@ -2,6 +2,7 @@
 
 use std::fmt;
 
+use emery_engine::amend::AmendOutput;
 use emery_engine::apply::ApplyOutput;
 use emery_engine::build::{BuildOutput, BuiltSlice};
 use emery_engine::show::ShowOutput;
@@ -44,6 +45,49 @@ pub fn apply(output: &ApplyOutput, w: &mut dyn fmt::Write) -> fmt::Result {
     diff(output.diff.as_ref(), w)
 }
 
+/// Writes an [`AmendOutput`] amendment line, the base, the counts by class, the conflicts, the stems touched, and one line per repository source.
+///
+/// The first line names the staged amendment, or says no change was found
+/// against the base and nothing staged. The counts line is the one
+/// `amendment.md` opens with. The conflicts and stems lines appear when
+/// there are any, and the last line names `emery show amendment` as the way
+/// to review what was staged.
+pub fn amend(output: &AmendOutput, w: &mut dyn fmt::Write) -> fmt::Result {
+    match &output.amendment {
+        Some(id) => writeln!(w, "staged amendment {id}")?,
+        None => writeln!(w, "nothing staged: no change against the current revision")?,
+    }
+    writeln!(
+        w,
+        "  base {} at {}",
+        output.base.revision,
+        output.base.commit.get(..8).unwrap_or(&output.base.commit)
+    )?;
+    let tally = &output.tally;
+    writeln!(
+        w,
+        "  {} added, {} changed, {} retired, {} conflict, {} unchanged",
+        tally.added, tally.changed, tally.retired, tally.conflict, tally.unchanged
+    )?;
+    if !output.conflicts.is_empty() {
+        writeln!(w, "  conflicts: {}", output.conflicts.join(", "))?;
+    }
+    if !output.stems.is_empty() {
+        writeln!(w, "  stems: {}", output.stems.join(", "))?;
+    }
+    for read in &output.repositories {
+        writeln!(
+            w,
+            "  {} read from {} at {}: {}",
+            read.source, read.repository, read.revision, read.commit
+        )?;
+    }
+    if output.amendment.is_some() {
+        writeln!(w, "  nothing sealed; `emery show amendment` reviews it")?;
+    }
+    Ok(())
+}
+
 fn sealed(output: &ApplyOutput, w: &mut dyn fmt::Write) -> fmt::Result {
     writeln!(
         w,
@@ -67,18 +111,40 @@ fn diff(diff: Option<&Diff>, w: &mut dyn fmt::Write) -> fmt::Result {
     }
 }
 
+// `spec +1 -0 ~1 retired 1 preamble, design +0 -0 ~1, plan +1 -0 ~1`: the
+// counts per document, `retired` after the specification's when any
+// requirement was withdrawn, `preamble` when a document's changed.
 fn summary(diff: &Diff, w: &mut dyn fmt::Write) -> fmt::Result {
     let (spec, design, plan) = (&diff.spec, &diff.design, &diff.plan);
     let documents = [
-        ("spec", spec.added.len(), spec.removed.len(), spec.changed.len(), spec.preamble),
-        ("design", design.added.len(), design.removed.len(), design.changed.len(), design.preamble),
-        ("plan", plan.added.len(), plan.removed.len(), plan.changed.len(), plan.preamble),
+        (
+            "spec",
+            spec.added.len(),
+            spec.removed.len(),
+            spec.changed.len(),
+            spec.retired.len(),
+            spec.preamble,
+        ),
+        (
+            "design",
+            design.added.len(),
+            design.removed.len(),
+            design.changed.len(),
+            0,
+            design.preamble,
+        ),
+        ("plan", plan.added.len(), plan.removed.len(), plan.changed.len(), 0, plan.preamble),
     ];
-    for (position, (name, added, removed, changed, preamble)) in documents.into_iter().enumerate() {
+    for (position, (name, added, removed, changed, retired, preamble)) in
+        documents.into_iter().enumerate()
+    {
         if position > 0 {
             w.write_str(", ")?;
         }
         write!(w, "{name} +{added} -{removed} ~{changed}")?;
+        if retired > 0 {
+            write!(w, " retired {retired}")?;
+        }
         if preamble {
             w.write_str(" preamble")?;
         }

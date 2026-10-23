@@ -1,7 +1,11 @@
 //! Persists revisions: the staged candidate in the engine's storage, the current revision in the target repository.
 //!
-//! A candidate stands in the engine's own storage: `stage` writes it for
-//! review, `staged` reads it back, and `clear` removes it. The current
+//! A candidate stands in the engine's own storage: `stage` writes a revision
+//! for review and `stage_amendment` an amendment, `staged` and
+//! `staged_amendment` read each back, and `clear` removes whichever stands.
+//! The slot holds one at a time: a revision never stages over an amendment,
+//! which awaits its own seal or another `amend`, and an amendment never
+//! stages over a revision candidate, which awaits `apply`. The current
 //! revision lives in the repository the target names, under `spec/` at the
 //! commit labelled `emery/<id>`: `current` reads it from the label the
 //! `current-revision` pointer names, or from the head's tree, and `commit`
@@ -9,13 +13,13 @@
 //! is checked against its identifier when read, so a document rewritten
 //! beneath the engine is refused rather than served.
 
-use std::fmt;
-
 use anyhow::Context;
 use omnia_sdk::{BlobStore, Error, StateStore, Vcs, server_error};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
-use crate::revision::{Design, Diff, Document as _, Plan, Revision, Spec};
+use crate::revision::{
+    Amendment, AmendmentBase, Design, Diff, Document as _, Plan, Revision, Spec,
+};
 use crate::vcs::{BuildRepo, REVISION, RevisionMessage, SPECIFICATION, WorkingCopy};
 use crate::{EntryKind, Files, secrets};
 
@@ -25,33 +29,125 @@ use crate::{EntryKind, Files, secrets};
 /// and a pointer the repository does not bear out is passed over.
 pub const REVISION_KEY: &str = "current-revision";
 
-/// The state-store key containing the staged candidate's identifier.
+/// The state-store key containing the staged candidate record.
 pub const STAGED_KEY: &str = "staged";
 
 /// The blob container containing the staged candidate's documents under `<id>/`.
 pub const STAGED_CONTAINER: &str = "staged";
 
 /// What kind of candidate is staged for `emery apply` to seal.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, strum::Display)]
 #[serde(rename_all = "kebab-case")]
+#[strum(serialize_all = "kebab-case")]
 pub enum StagedKind {
     /// A whole revision, drafted from the sources alone.
     Revision,
+    /// A change against the current revision, prepared on a base.
+    Amendment,
 }
 
-impl fmt::Display for StagedKind {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(match self {
-            Self::Revision => "revision",
-        })
+impl StagedKind {
+    // The documents a candidate of this kind is stored as under its id.
+    const fn documents(self) -> &'static [&'static str] {
+        match self {
+            Self::Revision => &Revision::DOCUMENTS,
+            Self::Amendment => &[Amendment::NAME],
+        }
+    }
+
+    const fn noun(self) -> &'static str {
+        match self {
+            Self::Revision => "candidate",
+            Self::Amendment => "amendment",
+        }
     }
 }
 
-// The candidate `stage` left for `apply`, read back whole.
+// The staged record at `STAGED_KEY`.
+#[derive(Serialize, Deserialize)]
+struct Slot {
+    id: String,
+    kind: StagedKind,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    base: Option<AmendmentBase>,
+}
+
+impl Slot {
+    const fn revision(id: String) -> Self {
+        Self {
+            id,
+            kind: StagedKind::Revision,
+            base: None,
+        }
+    }
+
+    const fn amendment(id: String, base: AmendmentBase) -> Self {
+        Self {
+            id,
+            kind: StagedKind::Amendment,
+            base: Some(base),
+        }
+    }
+
+    // Fails closed on bytes that decode as no record.
+    async fn read<S: StateStore>(store: &S) -> Result<Option<Self>, Error> {
+        let Some(raw) =
+            StateStore::get(store, STAGED_KEY).await.context("getting the staged record")?
+        else {
+            return Ok(None);
+        };
+        Self::decode(&raw).map(Some)
+    }
+
+    fn decode(raw: &[u8]) -> Result<Self, Error> {
+        Ok(serde_json::from_slice(raw).context("decoding the staged record")?)
+    }
+
+    fn from_token(token: Option<&[u8]>) -> Option<Self> {
+        token.and_then(|raw| Self::decode(raw).ok())
+    }
+
+    fn no_amendment(token: Option<&[u8]>) -> Result<(), Error> {
+        match Self::from_token(token) {
+            Some(slot) if slot.kind == StagedKind::Amendment => Err(amendment_pending(&slot.id)),
+            Some(_) | None => Ok(()),
+        }
+    }
+
+    fn no_candidate(token: Option<&[u8]>) -> Result<(), Error> {
+        match Self::from_token(token) {
+            Some(slot) if slot.kind == StagedKind::Revision => Err(candidate_pending(&slot.id)),
+            Some(_) | None => Ok(()),
+        }
+    }
+
+    // Swaps this record into the slot over `token`, the record as it was
+    // read, and prunes the candidate it displaced, bytes that decode as no
+    // record naming none.
+    async fn swap<S: StateStore + BlobStore>(
+        self, store: &S, token: Option<&[u8]>,
+    ) -> Result<(), Error> {
+        let record = serde_json::to_vec(&self).context("encoding the staged record")?;
+        StateStore::cas(store, STAGED_KEY, token, &record)
+            .await
+            .context("swapping the staged record")?;
+        if let Some(slot) = Self::from_token(token).filter(|slot| slot.id != self.id) {
+            prune(store, &slot.id, slot.kind).await;
+        }
+        Ok(())
+    }
+}
+
+// The revision candidate `stage` left for `apply`, read back whole.
 pub struct Staged {
     pub id: String,
-    pub kind: StagedKind,
     pub revision: Revision,
+}
+
+// The amendment `stage_amendment` left for review, read back whole.
+pub struct StagedAmendment {
+    pub id: String,
+    pub amendment: Amendment,
 }
 
 // The revision a repository holds, and the commit it was read from. The
@@ -143,22 +239,16 @@ impl Occupancy {
     }
 }
 
-// Stages `revision` as the candidate for `emery apply`, replacing any staged
-// before it: every document written under the candidate's id, the staged id
-// swapped by compare-and-swap, and the candidate it displaced pruned.
+// Stages `revision` as the candidate for `emery apply`, replacing any
+// revision staged before it: every document written under the candidate's
+// id, the staged record swapped by compare-and-swap, and the candidate it
+// displaced pruned. A staged amendment is never displaced: it is
+// `amendment-pending`, read before any document is written.
 pub async fn stage<S: StateStore + BlobStore>(
     store: &S, revision: &Revision,
 ) -> Result<String, Error> {
-    let token = match StateStore::get(store, STAGED_KEY).await {
-        Ok(token) => token,
-        Err(error) => {
-            tracing::warn!(%error, "the staged id is unreadable");
-            None
-        }
-    };
-    if !BlobStore::container_exists(store, STAGED_CONTAINER).await? {
-        BlobStore::create_container(store, STAGED_CONTAINER).await?;
-    }
+    let token = token(store).await;
+    Slot::no_amendment(token.as_deref())?;
 
     let documents = revision.documents()?;
     let id = Revision::identify(
@@ -166,67 +256,128 @@ pub async fn stage<S: StateStore + BlobStore>(
         documents[1].1.as_bytes(),
         documents[2].1.as_bytes(),
     );
-    for (name, body) in &documents {
-        BlobStore::put(store, STAGED_CONTAINER, &key(&id, name), body.as_bytes())
-            .await
-            .context("writing staged candidate document")?;
-    }
-    StateStore::cas(store, STAGED_KEY, token.as_deref(), id.as_bytes())
-        .await
-        .context("swapping the staged candidate id")?;
-
-    // prune the candidate displaced
-    if let Some(outgoing) = token
-        .as_deref()
-        .and_then(|token| str::from_utf8(token).ok())
-        .filter(|outgoing| *outgoing != id)
-    {
-        prune(store, outgoing).await;
-    }
+    let bodies = documents.each_ref().map(|(name, body)| (*name, body.as_str()));
+    put(store, &id, &bodies).await?;
+    Slot::revision(id.clone()).swap(store, token.as_deref()).await?;
     Ok(id)
 }
 
-// The staged candidate's id alone, or `None` when nothing is staged.
-pub async fn staged_id<S: StateStore>(store: &S) -> Result<Option<String>, Error> {
-    let Some(raw) =
-        StateStore::get(store, STAGED_KEY).await.context("getting the staged candidate id")?
-    else {
-        return Ok(None);
-    };
-    let id = String::from_utf8(raw).context("decoding the staged candidate id")?;
-    Ok(Some(id))
+// Stages `amendment` for review, replacing any amendment staged before it:
+// the document written under the amendment's id, the staged record swapped
+// by compare-and-swap with the base it was prepared against, and the
+// amendment it displaced pruned. A staged revision candidate is never
+// displaced: it is `amendment-pending`, read before any document is
+// written.
+pub async fn stage_amendment<S: StateStore + BlobStore>(
+    store: &S, amendment: &Amendment,
+) -> Result<String, Error> {
+    let token = token(store).await;
+    Slot::no_candidate(token.as_deref())?;
+
+    let body = amendment.to_json()?;
+    let id = Amendment::identify(body.as_bytes());
+    put(store, &id, &[(Amendment::NAME, body.as_str())]).await?;
+    Slot::amendment(id.clone(), amendment.base.clone()).swap(store, token.as_deref()).await?;
+    Ok(id)
 }
 
-// The staged candidate whole, or `None` when nothing is staged: fails closed
-// on a candidate that no longer matches its id, and `spec-outdated` on one
-// under another grammar.
+// The staged record as it stands, for the compare-and-swap; unreadable
+// bytes are logged and swapped over as none.
+async fn token<S: StateStore>(store: &S) -> Option<Vec<u8>> {
+    match StateStore::get(store, STAGED_KEY).await {
+        Ok(token) => token,
+        Err(error) => {
+            tracing::warn!(%error, "the staged record is unreadable");
+            None
+        }
+    }
+}
+
+// Writes `documents` under `id` in the staged container, creating it on the first stage.
+async fn put<S: BlobStore>(store: &S, id: &str, documents: &[(&str, &str)]) -> Result<(), Error> {
+    if !BlobStore::container_exists(store, STAGED_CONTAINER).await? {
+        BlobStore::create_container(store, STAGED_CONTAINER).await?;
+    }
+    for (name, body) in documents {
+        BlobStore::put(store, STAGED_CONTAINER, &key(id, name), body.as_bytes())
+            .await
+            .context("writing staged candidate document")?;
+    }
+    Ok(())
+}
+
+// The staged candidate's id alone, whatever its kind, or `None` when nothing is staged.
+pub async fn staged_id<S: StateStore>(store: &S) -> Result<Option<String>, Error> {
+    Ok(Slot::read(store).await?.map(|slot| slot.id))
+}
+
+// The staged revision candidate whole, or `None` when nothing is staged:
+// `amendment-pending` when an amendment stands in the slot instead, failing
+// closed on a candidate that no longer matches its id, and `spec-outdated`
+// on one under another grammar.
 pub async fn staged<S: StateStore + BlobStore>(store: &S) -> Result<Option<Staged>, Error> {
-    let Some(id) = staged_id(store).await? else {
+    let Some(Slot { id, kind, .. }) = Slot::read(store).await? else {
         return Ok(None);
     };
+    if kind == StagedKind::Amendment {
+        return Err(amendment_pending(&id));
+    }
     let mut bodies = Vec::with_capacity(Revision::DOCUMENTS.len());
     for name in Revision::DOCUMENTS {
-        let body = BlobStore::get(store, STAGED_CONTAINER, &key(&id, name))
-            .await
-            .context("reading staged candidate document")?
-            .ok_or_else(|| server_error!("staged candidate `{id}` does not contain `{name}`"))?;
-        bodies.push(body);
+        bodies.push(document(store, &id, name).await?);
     }
     let revision = Revision::read(&id, &bodies[0], &bodies[1], &bodies[2])?;
-    Ok(Some(Staged {
-        id,
-        kind: StagedKind::Revision,
-        revision,
-    }))
+    Ok(Some(Staged { id, revision }))
 }
 
-// Removes the staged candidate, documents and id; nothing staged is nothing to remove.
+// The staged amendment whole, or `None` when nothing is staged or a
+// revision candidate stands in the slot: fails closed on an amendment that
+// no longer matches its id, and `spec-outdated` on one under another
+// grammar.
+pub async fn staged_amendment<S: StateStore + BlobStore>(
+    store: &S,
+) -> Result<Option<StagedAmendment>, Error> {
+    let Some(Slot { id, kind, .. }) = Slot::read(store).await? else {
+        return Ok(None);
+    };
+    if kind == StagedKind::Revision {
+        return Ok(None);
+    }
+    let body = document(store, &id, Amendment::NAME).await?;
+    let amendment = Amendment::read(&id, &body)?;
+    Ok(Some(StagedAmendment { id, amendment }))
+}
+
+// Refuses `amendment-pending` when an amendment is staged, so a verb that
+// stages a revision refuses before it spends a turn on one. Reads the slot
+// as `stage` does: a record that does not decode is corruption the stage
+// swaps over, never a refusal.
+pub async fn no_amendment<S: StateStore>(store: &S) -> Result<(), Error> {
+    Slot::no_amendment(token(store).await.as_deref())
+}
+
+// Refuses `amendment-pending` when a revision candidate is staged, so a verb
+// that stages an amendment refuses before it spends a turn on one; the slot
+// is read as `no_amendment` reads it.
+pub async fn no_candidate<S: StateStore>(store: &S) -> Result<(), Error> {
+    Slot::no_candidate(token(store).await.as_deref())
+}
+
+async fn document<S: BlobStore>(store: &S, id: &str, name: &str) -> Result<Vec<u8>, Error> {
+    BlobStore::get(store, STAGED_CONTAINER, &key(id, name))
+        .await
+        .context("reading staged candidate document")?
+        .ok_or_else(|| server_error!("staged candidate `{id}` does not contain `{name}`"))
+}
+
+// Removes the staged candidate, documents and record, whatever its kind;
+// nothing staged is nothing to remove.
 pub async fn clear<S: StateStore + BlobStore>(store: &S) -> Result<(), Error> {
-    let Some(id) = staged_id(store).await? else {
+    let Some(Slot { id, kind, .. }) = Slot::read(store).await? else {
         return Ok(());
     };
     StateStore::delete(store, STAGED_KEY).await.context("clearing the staged candidate")?;
-    prune(store, &id).await;
+    prune(store, &id, kind).await;
     Ok(())
 }
 
@@ -373,12 +524,12 @@ pub async fn not_generated<S: StateStore>(store: &S, standing: &Standing) -> Err
     if let Some(label) = &standing.behind {
         clauses.push(format!("label `{label}` does not stand over its head"));
     }
-    match staged_id(store).await {
-        Ok(Some(candidate)) => {
-            clauses.push(format!("candidate `{candidate}` is staged and not sealed"));
+    match Slot::read(store).await {
+        Ok(Some(Slot { id, kind, .. })) => {
+            clauses.push(format!("{} `{id}` is staged and not sealed", kind.noun()));
         }
         Ok(None) => {}
-        Err(error) => tracing::warn!(%error, "the staged id is unreadable"),
+        Err(error) => tracing::warn!(%error, "the staged record is unreadable"),
     }
     Error::NotFound {
         code: "spec-not-generated".into(),
@@ -403,6 +554,35 @@ pub fn nothing_staged() -> Error {
     Error::NotFound {
         code: "nothing-staged".into(),
         description: "no candidate is staged".into(),
+    }
+}
+
+// The `nothing-staged` refusal of a verb that reads the staged amendment,
+// which a staged revision candidate does not satisfy.
+pub fn no_amendment_staged() -> Error {
+    Error::NotFound {
+        code: "nothing-staged".into(),
+        description: "no amendment is staged".into(),
+    }
+}
+
+// The `amendment-pending` refusal of a verb that reads or stages a revision
+// candidate while an amendment stands in the slot.
+pub fn amendment_pending(id: &str) -> Error {
+    Error::BadRequest {
+        code: "amendment-pending".into(),
+        description: format!("amendment `{id}` is staged in place of a revision candidate"),
+    }
+}
+
+// The `amendment-pending` refusal of a verb that stages an amendment while a
+// revision candidate stands in the slot, awaiting its seal.
+pub fn candidate_pending(id: &str) -> Error {
+    Error::BadRequest {
+        code: "amendment-pending".into(),
+        description: format!(
+            "candidate `{id}` is staged and not sealed, where the amendment would go"
+        ),
     }
 }
 
@@ -519,8 +699,8 @@ fn key(id: &str, name: &str) -> String {
 
 // A document that will not delete stays as an inert orphan, so the failure
 // is logged rather than raised.
-async fn prune<S: BlobStore>(store: &S, id: &str) {
-    for name in Revision::DOCUMENTS {
+async fn prune<S: BlobStore>(store: &S, id: &str, kind: StagedKind) {
+    for name in kind.documents() {
         if let Err(error) = BlobStore::delete(store, STAGED_CONTAINER, &key(id, name)).await {
             tracing::warn!(%id, name, %error, "a displaced candidate document could not be pruned");
         }
