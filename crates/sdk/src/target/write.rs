@@ -165,13 +165,14 @@ impl Writer {
                     tracing::debug!(
                         turn = %self.turn,
                         tool = EDIT_FILES,
-                        edited = ?outcome.as_ref().ok().map(Vec::as_slice),
+                        edited = ?outcome.as_ref().ok().map(|done| done.wrote.as_slice()),
+                        placed = ?outcome.as_ref().ok().map(|done| done.placed.as_slice()),
                         error = outcome.as_ref().err().map(String::as_str),
                         "responded"
                     );
-                    outcome.map(|edited| {
+                    outcome.map(|done| {
                         serde_json::to_string(&EditResponse {
-                            edited: json_of(&edited),
+                            edited: json_of(&done.wrote),
                         })
                         .expect("edit_files response serialises")
                     })
@@ -288,7 +289,7 @@ impl Writer {
     // `find` to one place in the file as the call's earlier edits leave it,
     // before any file is written, so a call refused anywhere leaves the tree
     // as it was; a file edited more than once is written once.
-    fn edit(&self, call: &ToolCall) -> Result<Vec<Wrote>, String> {
+    fn edit(&self, call: &ToolCall) -> Result<Edited, String> {
         let EditFiles { edits } = call.arguments().map_err(|err| format!("{EDIT_FILES}: {err}"))?;
         if edits.is_empty() {
             return Err(format!("{EDIT_FILES}: `edits` names no edit"));
@@ -297,6 +298,7 @@ impl Writer {
         // the edits applied in memory, in order
         let mut tree = BTreeMap::new();
         let mut contents: BTreeMap<String, String> = BTreeMap::new();
+        let mut placed = Vec::with_capacity(edits.len());
         let mut refused = Vec::new();
         for Edit { path, find, replace } in edits {
             let file = match self.held(&path, &mut tree) {
@@ -328,7 +330,10 @@ impl Writer {
             };
             let markers = self.guarded.get(&file).map_or(&[][..], |guard| guard.markers.as_slice());
             match place(content, &find, markers) {
-                Ok(range) => content.replace_range(range, &replace),
+                Ok((range, step)) => {
+                    content.replace_range(range, &replace);
+                    placed.push(Placed { file, step });
+                }
                 Err(Miss::Nothing) => refused.push(format!(
                     "`{path}`: `find` matches nothing in the file; {}",
                     nearest(content, &find)
@@ -347,17 +352,17 @@ impl Writer {
         }
 
         // the edited files written whole
-        let mut edited = Vec::with_capacity(contents.len());
+        let mut wrote = Vec::with_capacity(contents.len());
         for (file, content) in contents {
             write_whole(&self.root, &file, Standing::File, content.as_bytes())
                 .map_err(|err| format!("{EDIT_FILES}: writing `{file}`: {err}"))?;
             self.written.record(file.clone());
-            edited.push(Wrote {
+            wrote.push(Wrote {
                 file,
                 bytes: content.len(),
             });
         }
-        Ok(edited)
+        Ok(Edited { wrote, placed })
     }
 
     // The path held to `beneath` and to the tree, spelled as the tree does,
@@ -532,6 +537,13 @@ struct Done {
     deleted: Vec<String>,
 }
 
+// What one `edit_files` call did: the files written, and where each edit
+// was placed, in the call's order.
+struct Edited {
+    wrote: Vec<Wrote>,
+    placed: Vec<Placed>,
+}
+
 struct Wrote {
     file: String,
     bytes: usize,
@@ -542,6 +554,40 @@ struct Wrote {
 impl fmt::Debug for Wrote {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{:?}={}", self.file, self.bytes)
+    }
+}
+
+// How one edit's `find` was placed in its file: by the key of a marker the
+// file is guarded with, matching once as written, or matching once with its
+// layout whitespace read past.
+#[derive(Clone, Copy)]
+enum Step {
+    Key,
+    Exact,
+    Layout,
+}
+
+impl Step {
+    const fn as_str(self) -> &'static str {
+        match self {
+            Self::Key => "key",
+            Self::Exact => "exact",
+            Self::Layout => "layout",
+        }
+    }
+}
+
+struct Placed {
+    file: String,
+    step: Step,
+}
+
+// Logged as `"path"=step`, so a reader of the turn's events counts the
+// edits that reached a marker by its key, matched as written, or needed
+// the layout read past.
+impl fmt::Debug for Placed {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{:?}={}", self.file, self.step.as_str())
     }
 }
 
@@ -942,28 +988,29 @@ enum Miss {
     Filled(String),
 }
 
-// Where `find` stands in `content`: the block of the marker whose key
-// `find` is, else the one place `find` matches as written, else the one
-// place it matches with its layout whitespace read past — so a key names a
-// block without its lines, and a block quoted in the brief matches where
-// the formatter has re-laid it.
-fn place(content: &str, find: &str, markers: &[Marker]) -> Result<Range<usize>, Miss> {
+// Where `find` stands in `content`, and the step that placed it: the block
+// of the marker whose key `find` is, else the one place `find` matches as
+// written, else the one place it matches with its layout whitespace read
+// past — so a key names a block without its lines, and a block quoted in
+// the brief matches where the formatter has re-laid it.
+fn place(content: &str, find: &str, markers: &[Marker]) -> Result<(Range<usize>, Step), Miss> {
     if let Some(marker) = markers.iter().find(|marker| marker.key == find.trim()) {
         return match span(content, &marker.block) {
+            Ok((range, _)) => Ok((range, Step::Key)),
             Err(Miss::Nothing) => Err(Miss::Filled(marker.key.clone())),
-            placed => placed,
+            Err(miss) => Err(miss),
         };
     }
     span(content, find)
 }
 
 // The one place `text` stands in `content`, as written or modulo layout.
-fn span(content: &str, text: &str) -> Result<Range<usize>, Miss> {
+fn span(content: &str, text: &str) -> Result<(Range<usize>, Step), Miss> {
     let mut exact = content.match_indices(text).map(|(start, _)| start..start + text.len());
     match (exact.next(), exact.count()) {
-        (Some(range), 0) => Ok(range),
+        (Some(range), 0) => Ok((range, Step::Exact)),
         (Some(_), more) => Err(Miss::Several(more + 1)),
-        (None, _) => Canonical::of(content).find(content, text),
+        (None, _) => Canonical::of(content).find(content, text).map(|range| (range, Step::Layout)),
     }
 }
 
@@ -1213,5 +1260,30 @@ fn text<E: de::Error>(value: serde_json::Value, at: &str) -> Result<String, E> {
         }
         serde_json::Value::Array(_) => Err(E::custom(format!("`{at}` holds a list, not a string"))),
         serde_json::Value::Object(_) => Err(E::custom(format!("`{at}` holds a map, not a string"))),
+    }
+}
+
+// The schema the tools declare reaches no scripted model, which records
+// the tools by name alone.
+#[cfg(test)]
+mod tests {
+    use omnia_sdk::model::Function;
+    use serde_json::{Value, json};
+
+    use super::{EDIT_FILES, EditFiles};
+
+    // A provider holding a call to the schema refuses `{}` before it is
+    // sent, since the one argument is required and its shape is the list.
+    #[test]
+    fn edit_files_schema_requires_edits() {
+        let function = Function::of::<EditFiles>(EDIT_FILES, "");
+        let schema: Value = serde_json::from_str(&function.parameters).expect("the schema is JSON");
+        assert_eq!(schema["required"], json!(["edits"]), "{schema}");
+        assert_eq!(schema["properties"]["edits"]["type"], "array", "{schema}");
+        assert_eq!(
+            schema["$defs"]["Edit"]["required"],
+            json!(["path", "find", "replace"]),
+            "{schema}"
+        );
     }
 }

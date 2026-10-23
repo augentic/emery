@@ -27,7 +27,7 @@ This deck is the reference. It is written to be read, left behind after the stor
 
 - Part one: how to read the model, and what it is not.
 - Parts two to five: one section per tier, each with an outline, the control stack, what admits an app, and the signals that move it on.
-- Part six: applying it, with the three sign-offs, the owners, the Codex, and the scorecard.
+- Part six: applying it, with the three clearances, the owners, the Codex, and the scorecard.
 -->
 
 ---
@@ -43,7 +43,7 @@ class: slide-light
 # Earned trust,<br>not maturity.
 
 <p class="ed-prose">A maturity model grades an organisation. <strong>The Trust Model describes one app</strong> — measured by who depends on it, what it touches, what happens on Monday morning if it stops, and who sustains it. The same builder may own a throwaway script at Tier 0 and a department tool at Tier 2 on the same day.</p>
-<p class="ed-prose"><strong>Higher is not better.</strong> Each tier is a complete, safe place for an app to live, and roughly three in four should stay at Tier 1 for life. An app expands its radius only when a real signal says it must — keeping every layer inside it and adding the next clearance.</p>
+<p class="ed-prose"><strong>Higher is not better.</strong> Each tier is a complete, proportionate operating state, and roughly three in four apps should stay at Tier 1 for life. An app expands its radius only when a real signal says it must — keeping every layer inside it and adding the next clearance.</p>
 <p class="ed-footnote">Lineage: <strong>Agile Fluency</strong> (zones as destinations) · <strong>CMMI</strong> (cumulative layers) · <strong>NASA TRL</strong> (readiness) · <strong>Shell</strong> (citizen development at scale).</p>
 </div>
 <div class="ed-diagram-pane">
@@ -152,8 +152,8 @@ class: slide-light
   <text x="20" y="208" class="svg-h3" fill="rgba(13,16,48,0.42)" text-decoration="line-through">Wait in a committee queue</text>
   <line x1="226" y1="202" x2="278" y2="202" stroke="#0c7fa3" stroke-width="1.6" />
   <polygon points="272,197 282,202 272,207" fill="#0c7fa3" />
-  <text x="296" y="196" class="svg-h3" fill="#0d1030">Automated first; two sign-offs in life</text>
-  <text x="296" y="216" class="svg-caption" fill="rgba(13,16,48,0.6)">Pipeline clears T1; one contract sign-off at T2; one production sign-off at T3</text>
+  <text x="296" y="196" class="svg-h3" fill="#0d1030">Automated first; two planned decisions</text>
+  <text x="296" y="216" class="svg-caption" fill="rgba(13,16,48,0.6)">Pipeline clears T1; data access at T2; production ownership at T3</text>
   <line x1="20" y1="240" x2="620" y2="240" stroke="rgba(13,16,48,0.1)" stroke-width="1" />
 
   <!-- Row 03 -->
@@ -180,7 +180,7 @@ class: slide-light
 Say these four out loud early. Each one is an objection that otherwise sits unspoken in the room.
 
 - Not a ban: the moment builders think Tier 0 is forbidden, they hide, and the inventory becomes fiction.
-- Not a review board: two human sign-offs in an app's whole life, each with a defined owner and a defined piece of evidence.
+- Not a review board: the model has two planned human decisions, each with a defined owner and evidence.
 - Not a ladder: three quarters of apps stay at Tier 1, and that is the model working.
 - Not a technology decision: Omnia and Emery are how we make Tiers 2 and 3 cheap. The model holds with other tools.
 -->
@@ -220,10 +220,10 @@ class: slide-light
   <span class="ed-tier-sub" style="color: #b4234e;">Unmanaged · ~0% long-term</span>
 </div>
 
-# Personal discovery,<br>zero footprint.
+# Personal discovery,<br>limited footprint.
 
 <p class="ed-prose">Every citizen-built tool starts at Tier 0: one domain expert with an operational problem, a laptop, and an AI assistant. When the laptop closes, the app stops; if it fails on Monday morning, nobody else notices.</p>
-<p class="ed-prose"><strong>Tier 0 is the cheapest product discovery an organisation has.</strong> A personal spreadsheet reconciler, a meeting-notes formatter, or a pricing scratchpad costs nothing to try and nothing to throw away. The one hard boundary is that <strong>no second user and no live credential</strong> ever touches a Tier 0 app.</p>
+<p class="ed-prose"><strong>Tier 0 is the cheapest product discovery an organisation has.</strong> A personal spreadsheet reconciler, a meeting-notes formatter, or a pricing scratchpad is inexpensive to try and discard. While it remains Tier 0, the hard boundary is <strong>one user and no live credentials</strong>.</p>
 </div>
 <div class="ed-diagram-pane">
 <svg viewBox="0 0 640 440" aria-hidden="true">
@@ -295,7 +295,7 @@ class: slide-light
 <!--
 What a Tier 0 app actually looks like in the wild.
 
-- Reach is strictly one person; data is personal extracts; Monday morning impact is zero; continuity is zero.
+- Reach is strictly one person; data is personal extracts; Monday morning impact and continuity are deliberately minimal.
 - Healthy examples: a quick CSV script, a personal formatter, a clickable UI idea.
 - The moment someone shares a link or pastes a live key, it is no longer a Tier 0 experiment.
 -->
@@ -378,7 +378,7 @@ class: slide-light
 # Nothing is in place.<br>Nothing has gone wrong.
 
 </div>
-<p class="ed-band-prose">Tier 0 has no entry gate: an app exists here before anyone but its builder knows about it. <strong>A healthy estate holds zero apps at Tier 0 for long</strong> — within days of proving useful, a prototype either moves into the governed workspace or is thrown away at zero cost.</p>
+<p class="ed-band-prose">Tier 0 has no entry gate: an app exists here before anyone but its builder knows about it. <strong>A healthy estate leaves no useful app unmanaged for long</strong> — once a prototype proves useful, it moves into the governed workspace or is discarded while the investment is still small.</p>
 </div>
 <div class="ed-band-canvas">
 <svg viewBox="0 0 1140 350" aria-hidden="true">
@@ -395,7 +395,7 @@ class: slide-light
   <path d="M 340 175 C 400 175, 420 295, 510 295" fill="none" stroke="rgba(13,16,48,0.25)" stroke-width="1.5" stroke-dasharray="4 4" />
   <circle cx="518" cy="295" r="4" fill="rgba(13,16,48,0.35)" />
   <text x="536" y="291" class="svg-label" fill="rgba(13,16,48,0.65)">Discarded after trial</text>
-  <text x="536" y="309" class="svg-caption" fill="rgba(13,16,48,0.48)">Idea tested at near-zero cost · Nothing to clean up</text>
+  <text x="536" y="309" class="svg-caption" fill="rgba(13,16,48,0.48)">Idea tested cheaply · Little operational residue</text>
   <!-- Three Upper Signal Branches converging on T1 Clearance -->
   <path d="M 340 175 C 410 175, 420 65, 500 65" fill="none" stroke="#0c7fa3" stroke-width="1.6" />
   <path d="M 340 175 L 500 140" fill="none" stroke="#0c7fa3" stroke-width="1.6" />
@@ -471,7 +471,7 @@ class: slide-light
 # Why three in four apps<br>stay here for life.
 
 </div>
-<p class="ed-band-prose">Most internal tools only ever need to help a small team of <strong>2 to 4 colleagues</strong> automate a local workflow, and never need direct access to live production databases. Keeping them at Tier 1 inside <strong>The Codex</strong> gives the team a shared, tested tool in days — with <strong>zero data-breach radius</strong> and <strong>zero per-app engineering cost</strong>.</p>
+<p class="ed-band-prose">Most internal tools only need to help a small team of <strong>2 to 4 colleagues</strong> automate a local workflow, without direct access to live production systems. Keeping them at Tier 1 inside <strong>The Codex</strong> gives the team a shared, tested tool quickly — with <strong>bounded exposure</strong> and <strong>low marginal engineering effort</strong>.</p>
 </div>
 <div class="ed-band-canvas">
 <svg viewBox="0 0 1140 340" aria-hidden="true">
@@ -524,7 +524,7 @@ class: slide-light
 
   <circle cx="604" cy="152" r="5" fill="#0c7fa3" />
   <text x="624" y="148" class="svg-h3" fill="#0d1030">RFP &amp; Policy Response Drafter</text>
-  <text x="624" y="168" class="svg-caption" fill="rgba(13,16,48,0.6)">Queries published product docs inside the sandbox · Zero customer PII</text>
+  <text x="624" y="168" class="svg-caption" fill="rgba(13,16,48,0.6)">Queries approved published material · No live customer records</text>
 
   <circle cx="604" cy="222" r="5" fill="#0c7fa3" />
   <text x="624" y="218" class="svg-h3" fill="#0d1030">Sprint Capacity &amp; Scenario Calculator</text>
@@ -533,7 +533,7 @@ class: slide-light
   <!-- Bottom Bar: Operating Agreement -->
   <rect x="16" y="286" width="1108" height="44" rx="10" fill="rgba(22,180,226,0.08)" stroke="rgba(12,127,163,0.28)" />
   <text x="36" y="313" class="svg-kicker" fill="#0c7fa3">OPERATING AGREEMENT</text>
-  <text x="210" y="313" class="svg-label" fill="#0d1030">Builder owns the trial · Coaches answer in hours · Automated CI blocks secrets &amp; CVEs · Zero per-app engineering time</text>
+  <text x="210" y="313" class="svg-label" fill="#0d1030">Builder owns the trial · Coaches unblock · CI checks secrets &amp; dependencies · Low marginal engineering effort</text>
 </svg>
 </div>
 </div>
@@ -580,7 +580,7 @@ class: slide-light
   <text x="420" y="146" text-anchor="middle" class="svg-label" fill="#ffffff">CI Gates</text>
   <text x="420" y="162" text-anchor="middle" class="svg-caption" fill="rgba(255,255,255,0.68)">Automated</text>
   <text x="420" y="220" text-anchor="middle" class="svg-body" fill="rgba(13,16,48,0.68)">Secret scan &amp; dep audit</text>
-  <text x="420" y="238" text-anchor="middle" class="svg-caption" fill="rgba(13,16,48,0.48)">Zero review meetings</text>
+  <text x="420" y="238" text-anchor="middle" class="svg-caption" fill="rgba(13,16,48,0.48)">Pipeline evidence first</text>
   <!-- Station 03 -->
   <circle cx="720" cy="138" r="56" fill="rgba(22,180,226,0.1)" stroke="#0c7fa3" stroke-width="1.8" />
   <text x="720" y="126" text-anchor="middle" class="svg-kicker" fill="#0c7fa3">03 · RUN</text>
@@ -595,7 +595,7 @@ class: slide-light
   <circle cx="1020" cy="138" r="56" fill="none" stroke="rgba(13,16,48,0.22)" stroke-width="1.5" stroke-dasharray="4 4" />
   <text x="1020" y="132" text-anchor="middle" class="svg-kicker" fill="rgba(13,16,48,0.45)">UNREACHABLE</text>
   <text x="1020" y="150" text-anchor="middle" class="svg-label" fill="rgba(13,16,48,0.55)">Live Systems</text>
-  <text x="1020" y="220" text-anchor="middle" class="svg-body" fill="rgba(13,16,48,0.5)">Nothing live to expose</text>
+  <text x="1020" y="220" text-anchor="middle" class="svg-body" fill="rgba(13,16,48,0.5)">No path to live systems</text>
   <text x="1020" y="238" text-anchor="middle" class="svg-caption" fill="#0c7fa3">Requires Tier 2 clearance →</text>
 </svg>
 </div>
@@ -607,7 +607,7 @@ class: slide-light
 </div>
 <div>
 <p class="ed-prose">Tier 1 is the destination for roughly three in four apps. A small team of two to four colleagues can trial the tool together while the builder's day stays effortless: one approved AI editor, one starter template, and one repository in Enterprise GitHub with automated checks on every push.</p>
-<p class="ed-prose">Because the sandbox holds <strong>synthetic or local data only</strong> and is air-gapped from production systems, there is nothing inside it worth stealing — and if it stops on Monday morning, it is only a mild annoyance. That is why the clearance takes days, not months.</p>
+<p class="ed-prose">Because the sandbox holds <strong>synthetic or local data only</strong> and has no path to production systems, exposure is deliberately limited. If it stops on Monday morning, it is only a mild annoyance. That is why the clearance can stay lightweight.</p>
 </div>
 <div></div>
 </div>
@@ -634,7 +634,7 @@ class: slide-light
 
 # Inside Tier 1 — and<br>when to leave it.
 
-<p class="ed-prose">An app enters Tier 1 the moment a colleague asks for the link or the prototype becomes a weekly habit. Admission requires <strong>zero meetings</strong>: moving the code into the approved Enterprise GitHub template turns on secret scanning, dependency audits, and tests automatically.</p>
+<p class="ed-prose">An app enters Tier 1 the moment a colleague asks for the link or the prototype becomes a weekly habit. Admission is <strong>pipeline-first and self-service</strong>: moving the code into the approved Enterprise GitHub template turns on secret scanning, dependency audits, and tests automatically.</p>
 <p class="ed-prose">Three quarters of apps stay right here. An app only seeks the next clearance when <strong>manual exports go stale</strong>, <strong>five or more people</strong> rely on it across a department, or a missed Monday morning would slow the team down.</p>
 </div>
 <div class="ed-diagram-pane">
@@ -676,7 +676,7 @@ class: slide-light
 Two kinds of control at Tier 1, kept apart on purpose.
 
 - The Codex guides: rules the AI editor follows, a template that starts from a safe shape, coaches who answer in hours. Advisory, and cheap to follow.
-- The gates enforce: secret scan, dependency audit, tests, on every change. Mandatory, and impossible to skip.
+- The gates enforce: secret scan, dependency audit, and tests on protected changes.
 - The clearance is three pieces of evidence the pipeline produces by itself. No meeting.
 - The signals to move up all say the same thing: the app has started to matter beyond a trial.
 -->
@@ -695,7 +695,7 @@ class: slide-hero slide-section
 
 # Tier 2
 
-<p class="section-subtitle"><strong>Connected</strong> — live data, through scoped contracts.</p>
+<p class="section-subtitle"><strong>Connected</strong> — live systems through explicit capability contracts.</p>
 </div>
 <div class="section-big-glyph">T2</div>
 </div>
@@ -788,8 +788,8 @@ class: slide-light
 
 </div>
 <div>
-<p class="ed-prose">At Tier 2, an app serves a department of <strong>5 to 24 people</strong> and connects to live internal data. If it stops on Monday morning, the team has a slow day with a manual spreadsheet fallback, so it does not yet need 24/7 engineering on-call.</p>
-<p class="ed-prose">Instead, continuity is anchored in the business: a <strong>named business owner and backup</strong> stand behind the workflow, while engineering publishes reusable <strong>Omnia data contracts</strong> once per domain rather than maintaining individual department apps.</p>
+<p class="ed-prose">At Tier 2, an app serves a department of <strong>5 to 24 people</strong> and connects to live internal data. If it stops on Monday morning, the team has a slow day with a manual spreadsheet fallback, so it does not yet need formal engineering on-call.</p>
+<p class="ed-prose">Instead, continuity is anchored in the business: a <strong>named business owner and backup</strong> stand behind the workflow, while engineering publishes reusable <strong>Omnia capability boundaries</strong> rather than maintaining individual department apps.</p>
 </div>
 <div></div>
 </div>
@@ -799,7 +799,7 @@ class: slide-light
 What a Tier 2 app looks like in practice.
 
 - 5 to 24 users across a department, connected to live internal data, with a manual fallback if it has a bad Monday morning.
-- The key operating insight: engineering owns the domain data contracts, never the app itself, while a named business owner and backup stand behind the tool.
+- The key operating insight: engineering owns reusable platform boundaries while a named business owner and backup stand behind the tool.
 -->
 
 ---
@@ -816,10 +816,10 @@ class: slide-light
   <span class="ed-tier-sub">Connected · ~20% of apps</span>
 </div>
 
-# Live data, through<br>scoped contracts.
+# Live systems, through<br>an explicit boundary.
 
-<p class="ed-prose">Tier 2 is where departmental value starts (5 to 24 people), and where most programmes stumble — either by handing out raw database credentials or by saying no. The answer is a <strong>scoped capability contract</strong>: the builder's workflow inside the Codex does not change, and data is asked for by contract rather than key.</p>
-<p class="ed-prose">The app runs on <strong>Omnia</strong> with a named business owner and backup behind it. If it stops on Monday morning, the team has a slow day with a manual fallback — while engineering owns the reusable data contracts, never the app itself.</p>
+<p class="ed-prose">Tier 2 is where departmental value starts (5 to 24 people), and where most programmes stumble — either by handing out infrastructure credentials or by saying no. The answer is a <strong>capability contract</strong>: the application names the role it needs, while backend choice, credentials, and access policy stay outside its code.</p>
+<p class="ed-prose">The app runs on <strong>Omnia</strong> with a named business owner and backup behind it. If it stops on Monday morning, the team has a slow day with a manual fallback — while platform and data owners maintain reusable boundaries instead of taking over every department app.</p>
 </div>
 <div class="ed-diagram-pane">
 <svg viewBox="0 0 640 440" aria-hidden="true">
@@ -833,20 +833,20 @@ class: slide-light
   <line x1="164" y1="180" x2="246" y2="180" stroke="#0d1030" stroke-width="1.8" />
   <polygon points="240,175 250,180 240,185" fill="#0d1030" />
   <text x="205" y="168" text-anchor="middle" class="svg-caption" fill="#0d1030">No raw keys</text>
-  <!-- Center Gate: Omnia Scoped Contract Plane -->
+  <!-- Center Gate: Omnia Capability Contract Plane -->
   <line x1="256" y1="44" x2="256" y2="316" stroke="#0d1030" stroke-width="2.5" />
   <line x1="396" y1="44" x2="396" y2="316" stroke="#0d1030" stroke-width="2.5" />
   <rect x="256" y="56" width="140" height="248" fill="rgba(13,16,48,0.04)" />
-  <text x="326" y="34" text-anchor="middle" class="svg-kicker" fill="#0d1030">OMNIA · DATA CONTRACT</text>
+  <text x="326" y="34" text-anchor="middle" class="svg-kicker" fill="#0d1030">OMNIA · CAPABILITY BOUNDARY</text>
   <circle cx="326" cy="108" r="4" fill="#0c7fa3" />
-  <text x="326" y="128" text-anchor="middle" class="svg-label" fill="#0d1030">Scoped Rows</text>
-  <text x="326" y="144" text-anchor="middle" class="svg-caption" fill="rgba(13,16,48,0.58)">Exact tables &amp; verbs</text>
+  <text x="326" y="128" text-anchor="middle" class="svg-label" fill="#0d1030">Declared Purpose</text>
+  <text x="326" y="144" text-anchor="middle" class="svg-caption" fill="rgba(13,16,48,0.58)">Typed interface and policy</text>
   <circle cx="326" cy="180" r="4" fill="#0c7fa3" />
-  <text x="326" y="200" text-anchor="middle" class="svg-label" fill="#0d1030">Caller Identity</text>
-  <text x="326" y="216" text-anchor="middle" class="svg-caption" fill="rgba(13,16,48,0.58)">No ambient access</text>
+  <text x="326" y="200" text-anchor="middle" class="svg-label" fill="#0d1030">Host Authority</text>
+  <text x="326" y="216" text-anchor="middle" class="svg-caption" fill="rgba(13,16,48,0.58)">Credentials stay outside</text>
   <circle cx="326" cy="252" r="4" fill="#0c7fa3" />
-  <text x="326" y="272" text-anchor="middle" class="svg-label" fill="#0d1030">Every Call Audited</text>
-  <text x="326" y="288" text-anchor="middle" class="svg-caption" fill="rgba(13,16,48,0.58)">Schema checked in CI</text>
+  <text x="326" y="272" text-anchor="middle" class="svg-label" fill="#0d1030">Observable Boundary</text>
+  <text x="326" y="288" text-anchor="middle" class="svg-caption" fill="rgba(13,16,48,0.58)">Contracts checked in CI</text>
   <!-- Connector from Omnia to Live Internal Data -->
   <line x1="396" y1="180" x2="478" y2="180" stroke="#0c7fa3" stroke-width="1.8" />
   <polygon points="472,175 482,180 472,185" fill="#0c7fa3" />
@@ -868,9 +868,9 @@ class: slide-light
 Tier 2 is the step that decides whether a programme delivers value or just governs toys.
 
 - Build: nothing changes for the builder except how data is asked for.
-- Check: the pipeline adds contract and schema checks, so the app cannot call what it was not granted.
-- Data: this is Omnia's role. A runtime where an app has only the capabilities it was granted, every call under the caller's identity and audited.
-- Run: hosted on the platform, with a named business owner. Engineering owns the contracts, not the app.
+- Check: the pipeline checks capability contracts and compatible shapes before promotion.
+- Data: Omnia mediates the interface while deployment policy sets the concrete reach.
+- Run: hosted on the platform, with a named business owner. Platform and data teams own reusable boundaries, not each app.
 -->
 
 ---
@@ -887,10 +887,10 @@ class: slide-light
   <text x="16" y="96" class="svg-kicker" fill="#0c7fa3">CLEARANCE 02 · WEEKS</text>
   <text x="16" y="124" class="svg-label" fill="#0d1030">Named Owner + Backup</text>
   <text x="16" y="140" class="svg-caption" fill="rgba(13,16,48,0.55)">In the business unit</text>
-  <text x="16" y="196" class="svg-label" fill="#0d1030">Scoped Data Contract</text>
-  <text x="16" y="212" class="svg-caption" fill="rgba(13,16,48,0.55)">Exact rows &amp; actions</text>
-  <text x="16" y="268" class="svg-label" fill="#0d1030">One Contract Review</text>
-  <text x="16" y="284" class="svg-caption" fill="rgba(13,16,48,0.55)">Never a code review</text>
+  <text x="16" y="196" class="svg-label" fill="#0d1030">Capability Contract</text>
+  <text x="16" y="212" class="svg-caption" fill="rgba(13,16,48,0.55)">Purpose, interface &amp; access policy</text>
+  <text x="16" y="268" class="svg-label" fill="#0d1030">Access Review</text>
+  <text x="16" y="284" class="svg-caption" fill="rgba(13,16,48,0.55)">Business and data owners</text>
   <path d="M 184 128 C 216 128, 220 204, 248 204" fill="none" stroke="#0c7fa3" stroke-width="1.5" />
   <line x1="184" y1="204" x2="248" y2="204" stroke="#0c7fa3" stroke-width="1.5" />
   <path d="M 184 276 C 216 276, 220 204, 248 204" fill="none" stroke="#0c7fa3" stroke-width="1.5" />
@@ -900,7 +900,7 @@ class: slide-light
   <text x="336" y="186" text-anchor="middle" class="svg-h3" fill="#0d1030">Omnia Runtime</text>
   <line x1="278" y1="198" x2="394" y2="198" stroke="rgba(13,16,48,0.12)" />
   <text x="336" y="218" text-anchor="middle" class="svg-caption" fill="#0d1030">Contract &amp; schema CI</text>
-  <text x="336" y="236" text-anchor="middle" class="svg-caption" fill="#0d1030">Caller-identity audit</text>
+  <text x="336" y="236" text-anchor="middle" class="svg-caption" fill="#0d1030">Capability telemetry</text>
   <text x="336" y="254" text-anchor="middle" class="svg-caption" fill="#0d1030">Platform-hosted</text>
   <text x="336" y="316" text-anchor="middle" class="svg-body" fill="#0d1030">~20% of estate</text>
   <!-- Right Exit Signals to Tier 3 -->
@@ -920,9 +920,9 @@ class: slide-light
 </div>
 <div class="ed-prose-col">
 
-# Every read and write<br>goes through a contract.
+# Live access crosses<br>an explicit boundary.
 
-<p class="ed-prose">The clearance for live data is the one most organisations make too heavy or skip altogether. Here it requires three pieces of evidence: a named business owner with a backup, a contract scoped to the exact rows and actions needed, and <strong>one lightweight review of that contract — never the code</strong>.</p>
+<p class="ed-prose">The clearance for live data is the one most organisations make too heavy or skip altogether. Here it requires three pieces of evidence: a named business owner with a backup, a declared capability contract, and an <strong>appropriate review of purpose and access policy</strong>.</p>
 <p class="ed-prose">The app stays at Tier 2 unless it crosses one of the three criticality thresholds: <strong>25 or more users</strong> (or anyone external), failing the <strong>Monday 9am test</strong> where operations stall without it, or touching <strong>regulated records</strong>.</p>
 </div>
 </div>
@@ -930,8 +930,8 @@ class: slide-light
 <!--
 The clearance for live data is the one most organisations make too heavy or skip altogether.
 
-- Three pieces of evidence: a named owner with a backup, a contract scoped to what the app needs, and one review of that contract. Hours of work, weeks of elapsed time, mostly waiting for the data owner.
-- The review is of the contract, never the code. The code is the builder's; the data is the organisation's.
+- Three pieces of evidence: a named owner with a backup, a declared capability contract, and review by the people accountable for the data or service.
+- The clearance concerns purpose and authority. Existing engineering controls still apply to code.
 - The signals to move up are the three that make an app critical: reach, the Monday 9am test, and regulated data. Any one is enough.
 -->
 
@@ -973,7 +973,7 @@ class: slide-light
 # When operations<br>stall without it.
 
 <p class="ed-prose">Tier 3 is for the one app in twenty that crosses a criticality threshold: <strong>25 or more users</strong> (or any external customer), touching <strong>regulated records</strong> (PII, finance, safety), or failing the <strong>Monday 9am test</strong> where operations or revenue stall if it stops.</p>
-<p class="ed-prose">At Tier 3, the operating contract changes completely. The domain expert who proved the workflow becomes <strong>Product Owner</strong> — keeping control of priorities and scenarios without ever carrying a pager — while senior engineering takes ownership of the rebuilt codebase and 24/7 SLA.</p>
+<p class="ed-prose">At Tier 3, the operating contract changes completely. The domain expert who proved the workflow becomes <strong>Product Owner</strong> — keeping control of priorities and scenarios without carrying a pager — while senior engineering takes ownership of the rebuilt codebase and its formal service level.</p>
 </div>
 <div class="ed-diagram-pane">
 <svg viewBox="0 0 640 440" aria-hidden="true">
@@ -1021,7 +1021,7 @@ class: slide-light
   <text x="40" y="332" class="svg-kicker" fill="#0c7fa3">DOMAIN BUILDER → PRODUCT OWNER</text>
   <text x="40" y="356" class="svg-h3" fill="#0d1030">Keeps the product</text>
   <text x="40" y="378" class="svg-caption" fill="rgba(13,16,48,0.65)">Owns the backlog, domain rules, and</text>
-  <text x="40" y="394" class="svg-caption" fill="rgba(13,16,48,0.65)">acceptance scenarios — zero 2am pages</text>
+  <text x="40" y="394" class="svg-caption" fill="rgba(13,16,48,0.65)">acceptance scenarios — no pager duty</text>
 
   <rect x="334" y="306" width="286" height="114" rx="12" fill="#0d1030" />
   <text x="354" y="332" class="svg-kicker" fill="#f59ef5">SENIOR ENGINEERING → ON CALL</text>
@@ -1035,7 +1035,7 @@ class: slide-light
 <!--
 What defines a Tier 3 app and how the handover protects both the builder and engineering.
 
-- Any one of the four thresholds is enough: 25+ or external users, regulated records, or Monday 9am criticality.
+- Any one of the three criticality triggers is enough: 25+ or external users, regulated records, or Monday 9am criticality.
 - The builder never loses their creation — they become Product Owner without a pager, while engineering gets a clean codebase rebuilt from a specification.
 -->
 
@@ -1090,10 +1090,10 @@ class: slide-light
   <text x="650" y="224" text-anchor="middle" class="svg-kicker" fill="#78d8f2">EMERY</text>
   <text x="650" y="244" text-anchor="middle" class="svg-label" fill="#ffffff">Verify &amp; Build</text>
   <text x="650" y="308" text-anchor="middle" class="svg-body" fill="#0d1030">Rebuilt in verified waves</text>
-  <text x="650" y="325" text-anchor="middle" class="svg-caption" fill="rgba(13,16,48,0.55)">Every requirement checked</text>
+  <text x="650" y="325" text-anchor="middle" class="svg-caption" fill="rgba(13,16,48,0.55)">Coverage traced to requirements</text>
   <line x1="700" y1="236" x2="886" y2="236" stroke="#0d1030" stroke-width="2" />
   <polygon points="880,231 890,236 880,241" fill="#0d1030" />
-  <text x="793" y="222" text-anchor="middle" class="svg-caption" fill="#0d1030">Least-privilege grants</text>
+  <text x="793" y="222" text-anchor="middle" class="svg-caption" fill="#0d1030">Explicit capability policy</text>
   <!-- Station C: Omnia Production SLA -->
   <circle cx="995" cy="175" r="68" fill="#a4238f" />
   <text x="995" y="152" text-anchor="middle" class="svg-kicker" fill="rgba(255,255,255,0.85)">T3 · OMNIA</text>
@@ -1107,8 +1107,8 @@ class: slide-light
 <!--
 Tier 3 is production, and it is rare by design.
 
-- Build and check are Emery's role: read what the prototype actually does into a specification, rebuild from it in waves, verify every requirement before it merges.
-- Data and run are Omnia's: least-privilege grants, regulated data admitted by name, a production runtime with engineering on call.
+- Build and check are Emery's role: recover a specification, build bounded slices, then verify each integrated wave before promotion.
+- Data and run are Omnia's: explicit capability boundaries, deployment policy, and a production runtime with engineering on call.
 - The handover is the point. The builder keeps the product as its owner. Engineering owns the code and the pager.
 -->
 
@@ -1165,7 +1165,7 @@ class: slide-light
 </div>
 <div>
 <p class="ed-prose">Hardening a prototype in place forces engineers to own months of generated code nobody understands. Starting over from a blank page loses everything the prototype discovered. <strong>The specification is the third option</strong>: Emery reads the working app's behaviour and scenarios into a versioned spec, and engineers rebuild from it cleanly.</p>
-<p class="ed-prose">Admission to Tier 3 requires three pieces of evidence: the <strong>durable specification</strong>, a <strong>verified rebuild</strong> where every requirement is checked before merge, and an <strong>engineering SLA</strong> with the builder named as Product Owner.</p>
+<p class="ed-prose">Admission to Tier 3 requires three pieces of evidence: the <strong>durable specification</strong>, a <strong>verified rebuild</strong> with requirement coverage and integrated-wave checks visible, and an <strong>engineering SLA</strong> with the builder named as Product Owner.</p>
 </div>
 <div></div>
 </div>
@@ -1193,7 +1193,7 @@ class: slide-hero slide-section
 
 # Applying the model
 
-<p class="section-subtitle">Three sign-offs, who owns what, the Codex, and the scorecard.</p>
+<p class="section-subtitle">Three clearances, who owns what, the Codex, and the scorecard.</p>
 </div>
 </div>
 
@@ -1224,28 +1224,28 @@ class: slide-light
   <polygon points="156,306 166,316 156,326 146,316" fill="#0c7fa3" />
   <line x1="156" y1="326" x2="156" y2="378" stroke="#0c7fa3" stroke-width="1.2" />
   <text x="156" y="396" text-anchor="middle" class="svg-kicker" fill="#0c7fa3">01 · CLEARED TO SHARE (DAYS)</text>
-  <text x="156" y="414" text-anchor="middle" class="svg-body" fill="#0d1030">100% pipeline self-service · 0 human sign-offs</text>
-  <text x="156" y="430" text-anchor="middle" class="svg-caption" fill="rgba(13,16,48,0.55)">Template, secret scan, dep audit &amp; 1h onboarding</text>
+  <text x="156" y="414" text-anchor="middle" class="svg-body" fill="#0d1030">Pipeline self-service · No planned sign-off</text>
+  <text x="156" y="430" text-anchor="middle" class="svg-caption" fill="rgba(13,16,48,0.55)">Template, secret scan, dependency audit &amp; onboarding</text>
   <!-- Gate 02 Diamond + vertical leader up/down -->
   <polygon points="340,210 350,220 340,230 330,220" fill="#0d1030" />
   <line x1="340" y1="112" x2="340" y2="210" stroke="#0d1030" stroke-width="1.2" />
   <text x="340" y="64" text-anchor="middle" class="svg-kicker" fill="#0d1030">02 · CLEARED FOR LIVE DATA (WEEKS)</text>
-  <text x="340" y="82" text-anchor="middle" class="svg-body" fill="#0d1030">Human sign-off #1 — Data contract only</text>
-  <text x="340" y="98" text-anchor="middle" class="svg-caption" fill="rgba(13,16,48,0.55)">Named business owner + scoped Omnia contract</text>
+  <text x="340" y="82" text-anchor="middle" class="svg-body" fill="#0d1030">Human decision #1 — Purpose &amp; data access</text>
+  <text x="340" y="98" text-anchor="middle" class="svg-caption" fill="rgba(13,16,48,0.55)">Named owner + explicit capability contract</text>
   <!-- Gate 03 Diamond + vertical leader down -->
   <polygon points="524,114 534,124 524,134 514,124" fill="#a4238f" />
   <line x1="524" y1="134" x2="524" y2="236" stroke="#a4238f" stroke-width="1.2" />
   <text x="524" y="256" text-anchor="middle" class="svg-kicker" fill="#a4238f">03 · CLEARED FOR PRODUCTION (FUNDED)</text>
-  <text x="524" y="274" text-anchor="middle" class="svg-body" fill="#0d1030">Human sign-off #2 — Engineering &amp; security</text>
-  <text x="524" y="290" text-anchor="middle" class="svg-caption" fill="rgba(13,16,48,0.55)">Emery spec, verified rebuild, least-privilege &amp; SLA</text>
+  <text x="524" y="274" text-anchor="middle" class="svg-body" fill="#0d1030">Human decision #2 — Production ownership</text>
+  <text x="524" y="290" text-anchor="middle" class="svg-caption" fill="rgba(13,16,48,0.55)">Sealed spec, verified rebuild, risk controls &amp; SLA</text>
 </svg>
 </div>
 <div class="ed-prose-col">
 
-# Three clearances.<br>Two human sign-offs.
+# Three clearances.<br>Two planned decisions.
 
-<p class="ed-prose">A clearance is evidence, not a committee. The first clearance is produced entirely by the pipeline in days, so moving a prototype into the governed workspace never waits in a queue.</p>
-<p class="ed-prose">Across an app's entire life, <strong>a person signs off at most twice</strong>: once at Tier 2 to approve the scoped data contract (never the code), and once at Tier 3 to accept the verified production rebuild under an engineering SLA.</p>
+<p class="ed-prose">A clearance is evidence, not a committee. The first clearance is designed to be produced by the pipeline, so moving a prototype into the governed workspace is self-service.</p>
+<p class="ed-prose">The model introduces <strong>two planned human decisions</strong>: at Tier 2, the accountable owners accept the purpose and live access; at Tier 3, engineering accepts production ownership, risk controls, and the service level.</p>
 </div>
 </div>
 
@@ -1253,7 +1253,7 @@ class: slide-light
 The three clearances as a sign-off sheet. This is the slide the first workshop edits.
 
 - Blue tags are evidence the pipeline or platform produces by itself. Grey tags are a person signing.
-- Count the grey tags: one builder onboarding, three signatures for live data, three for production. That is every human sign-off in an app's life.
+- Count the explicit human decision points: one for live access and one for production ownership. Local policy may add approvers without changing the shape.
 - The thresholds, the owners, and the wording are starting points. Change them in the workshop; keep the shape.
 -->
 
@@ -1322,25 +1322,25 @@ class: slide-light
   <!-- Pipeline spine through 3 vertical gate planes -->
   <line x1="507" y1="185" x2="1030" y2="185" stroke="#0d1030" stroke-width="2.2" />
   <polygon points="1024,180 1036,185 1024,190" fill="#0d1030" />
-  <text x="570" y="34" class="svg-kicker" fill="#a4238f">IN THE PIPELINE · MANDATORY (IMPOSSIBLE TO SKIP)</text>
+  <text x="570" y="34" class="svg-kicker" fill="#a4238f">IN THE PIPELINE · REQUIRED FOR PROTECTED MERGES</text>
   <!-- Gate Plane 1 -->
   <line x1="610" y1="68" x2="610" y2="260" stroke="#0d1030" stroke-width="2" />
   <circle cx="610" cy="185" r="6" fill="#ffffff" stroke="#0d1030" stroke-width="2.5" />
   <text x="610" y="286" text-anchor="middle" class="svg-kicker" fill="#0d1030">GATE 01 · EVERY PUSH</text>
   <text x="610" y="305" text-anchor="middle" class="svg-label" fill="#0d1030">Secret Scan</text>
-  <text x="610" y="322" text-anchor="middle" class="svg-caption" fill="rgba(13,16,48,0.58)">Blocks any credential</text>
+  <text x="610" y="322" text-anchor="middle" class="svg-caption" fill="rgba(13,16,48,0.58)">Flags known credential patterns</text>
   <!-- Gate Plane 2 -->
   <line x1="775" y1="68" x2="775" y2="260" stroke="#0d1030" stroke-width="2" />
   <circle cx="775" cy="185" r="6" fill="#ffffff" stroke="#0d1030" stroke-width="2.5" />
   <text x="775" y="286" text-anchor="middle" class="svg-kicker" fill="#0d1030">GATE 02 · EVERY PUSH</text>
   <text x="775" y="305" text-anchor="middle" class="svg-label" fill="#0d1030">Audit &amp; Tests</text>
-  <text x="775" y="322" text-anchor="middle" class="svg-caption" fill="rgba(13,16,48,0.58)">Blocks CVEs &amp; broken tests</text>
+  <text x="775" y="322" text-anchor="middle" class="svg-caption" fill="rgba(13,16,48,0.58)">Known vulnerabilities &amp; failed tests</text>
   <!-- Gate Plane 3 -->
   <line x1="940" y1="68" x2="940" y2="260" stroke="#a4238f" stroke-width="2" />
   <circle cx="940" cy="185" r="6" fill="#ffffff" stroke="#a4238f" stroke-width="2.5" />
   <text x="940" y="286" text-anchor="middle" class="svg-kicker" fill="#a4238f">GATE 03 · TIER 2+</text>
-  <text x="940" y="305" text-anchor="middle" class="svg-label" fill="#0d1030">Contract Check</text>
-  <text x="940" y="322" text-anchor="middle" class="svg-caption" fill="rgba(13,16,48,0.58)">Blocks ungranted data calls</text>
+  <text x="940" y="305" text-anchor="middle" class="svg-label" fill="#0d1030">Capability Contract</text>
+  <text x="940" y="322" text-anchor="middle" class="svg-caption" fill="rgba(13,16,48,0.58)">Declared interfaces &amp; policy</text>
   <!-- Final Merge / Deploy node -->
   <circle cx="1076" cy="185" r="34" fill="rgba(22,180,226,0.12)" stroke="#0c7fa3" stroke-width="2" />
   <text x="1076" y="182" text-anchor="middle" class="svg-kicker" fill="#0c7fa3">MERGE</text>
@@ -1353,7 +1353,7 @@ class: slide-light
 The distinction we found missing in every assessment: advice and enforcement had been mixed, so either everything blocked or nothing did.
 
 - Guides: rules the editor reads, a template that starts safe, coaches who answer quickly. Cheap to follow, free to ignore.
-- Enforces: secret scan, dependency audit, tests, and from Tier 2 the contract checks. Nothing merges without them.
+- Enforces: secret scan, dependency audit, tests, and from Tier 2 the capability-contract checks. Protected changes must pass them.
 - Put the expensive-to-ignore things in the pipeline and the cheap-to-follow things in the editor, and the model runs itself.
 -->
 

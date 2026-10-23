@@ -41,7 +41,7 @@ const DIMS: { key: DimKey, num: string, name: string, ask: string, y: number, ce
     cells: [
       ['Personal files', 'Pasted extracts'],
       ['Synthetic or local', 'Nothing live'],
-      ['Live internal data', 'Scoped contracts'],
+      ['Live internal data', 'Capability contract'],
       ['Regulated records', 'PII, finance, safety'],
     ],
   },

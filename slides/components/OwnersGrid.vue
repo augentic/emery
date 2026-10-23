@@ -77,11 +77,11 @@ withDefaults(defineProps<{
       <path d="M 555 308 L 820 298 L 1085 272" fill="none" stroke="#a4238f" stroke-width="2.2" />
 
       <circle cx="290" cy="308" r="3.5" fill="rgba(13,16,48,0.28)" />
-      <text x="290" y="334" text-anchor="middle" class="svg-body" fill="rgba(13,16,48,0.45)">Zero involvement</text>
+      <text x="290" y="334" text-anchor="middle" class="svg-body" fill="rgba(13,16,48,0.45)">Outside managed estate</text>
 
       <circle cx="555" cy="308" r="5" fill="#0c7fa3" />
-      <text x="555" y="334" text-anchor="middle" class="svg-label" fill="#0d1030">Sets template once</text>
-      <text x="555" y="350" text-anchor="middle" class="svg-caption" fill="rgba(13,16,48,0.55)">Zero per-app time</text>
+      <text x="555" y="334" text-anchor="middle" class="svg-label" fill="#0d1030">Maintains shared template</text>
+      <text x="555" y="350" text-anchor="middle" class="svg-caption" fill="rgba(13,16,48,0.55)">Low marginal effort</text>
 
       <circle cx="820" cy="298" r="5.5" fill="#0d1030" />
       <text x="820" y="334" text-anchor="middle" class="svg-label" fill="#0d1030">Owns data contracts</text>

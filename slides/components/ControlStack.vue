@@ -60,7 +60,7 @@ const TIERS: {
     cells: {
       build: ['Same workspace + data contract', 'No raw credentials'],
       check: ['Plus contract & schema checks', 'Verified in pipeline'],
-      data: ['Live data via scoped contract', 'Omnia · Audited per caller'],
+      data: ['Live systems via capability contract', 'Omnia · Host policy & telemetry'],
       run: ['Platform-hosted runtime', 'Named business owner'],
     },
   },
@@ -71,8 +71,8 @@ const TIERS: {
     x: 605,
     cells: {
       build: ['Rebuilt from specification', 'Emery · Keep criteria, drop code'],
-      check: ['Every requirement verified', 'Emery · Wave verification'],
-      data: ['Least-privilege + regulated', 'Omnia · Explicit grants'],
+      check: ['Requirement coverage traced', 'Emery · Integrated-wave verification'],
+      data: ['Regulated data by policy', 'Omnia · Host-selected capabilities'],
       run: ['Production runtime & SLA', 'Omnia · Engineers on call'],
     },
   },

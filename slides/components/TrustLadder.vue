@@ -27,8 +27,8 @@ const TIERS = [
   {
     code: 'T2',
     name: 'Connected',
-    line: 'Live data, through scoped contracts.',
-    layers: ['Builder + AI', 'The Codex', 'Data plane'],
+    line: 'Live systems, through capability contracts.',
+    layers: ['Builder + AI', 'The Codex', 'Capability boundary'],
     share: '~20% of apps',
   },
   {
@@ -87,7 +87,7 @@ function state(index: number, current: number | undefined) {
       <text x="300" y="102" class="svg-body" fill="rgba(13,16,48,0.58)">Team trial inside the Codex</text>
       <text x="585" y="56" class="svg-kicker" fill="#0c7fa3">T2 · ~20% OF ESTATE</text>
       <text x="585" y="82" class="svg-h2" fill="#0d1030">Connected</text>
-      <text x="585" y="102" class="svg-body" fill="rgba(13,16,48,0.58)">Live data by scoped contract</text>
+      <text x="585" y="102" class="svg-body" fill="rgba(13,16,48,0.58)">Live systems by capability contract</text>
       <text x="870" y="56" class="svg-kicker" fill="#a4238f">T3 · ~5% OF ESTATE</text>
       <text x="870" y="82" class="svg-h2" fill="#0d1030">Supported</text>
       <text x="870" y="102" class="svg-body" fill="rgba(13,16,48,0.58)">Verified rebuild &amp; SLA</text>
@@ -96,7 +96,7 @@ function state(index: number, current: number | undefined) {
       <text x="865" y="145" class="svg-label" fill="#a4238f">Specification + Engineering SLA (Emery)</text>
       <line x1="560" y1="229" x2="1130" y2="229" stroke="#0d1030" stroke-width="2" />
       <circle cx="560" cy="229" r="4" fill="#0d1030" />
-      <text x="580" y="219" class="svg-label" fill="#0d1030">Scoped Data Plane &amp; Audited Capabilities (Omnia)</text>
+      <text x="580" y="219" class="svg-label" fill="#0d1030">Host-Mediated Capability Boundary (Omnia)</text>
       <line x1="275" y1="303" x2="1130" y2="303" stroke="#0c7fa3" stroke-width="2" />
       <circle cx="275" cy="303" r="4" fill="#0c7fa3" />
       <text x="295" y="293" class="svg-label" fill="#0c7fa3">The Codex — Approved Template, Enterprise Git &amp; Automated Gates</text>
