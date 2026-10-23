@@ -1,16 +1,7 @@
 <script setup lang="ts">
-withDefaults(defineProps<{
+defineProps<{
   tier: number
-  dark?: boolean
-  compact?: boolean
-  chips?: boolean
-  focus?: boolean
-}>(), {
-  dark: false,
-  compact: false,
-  chips: true,
-  focus: true,
-})
+}>()
 
 type LaneKey = 'build' | 'check' | 'data' | 'run'
 

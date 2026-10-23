@@ -322,7 +322,7 @@ class: slide-chapter
 </div>
 </div>
 
-<ControlStack :tier="0" dark compact />
+<ControlStack :tier="0" />
 </div>
 
 <!--
@@ -358,7 +358,7 @@ class: slide-chapter
 </div>
 </div>
 
-<ControlStack :tier="1" dark compact />
+<ControlStack :tier="1" />
 </div>
 
 <!--
@@ -395,7 +395,7 @@ class: slide-chapter
 </div>
 </div>
 
-<ControlStack :tier="2" dark compact />
+<ControlStack :tier="2" />
 </div>
 
 <!--
@@ -432,7 +432,7 @@ class: slide-chapter
 </div>
 </div>
 
-<ControlStack :tier="3" dark compact />
+<ControlStack :tier="3" />
 </div>
 
 <!--
