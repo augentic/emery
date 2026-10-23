@@ -359,9 +359,11 @@ async fn build_design_cut() {
     model.assert_exhausted();
 }
 
-// A type among the scaffold's `types` is one line pointing at the scaffold
-// section, whatever the slice spells; the scaffold's brief is text of the
-// slice, so a type it names stays whole.
+// A data type among the scaffold's `types` is one line pointing at the
+// scaffold section, whatever the slice spells; a mechanism type listed there
+// stays whole, label and signature, since the cut keeps every mechanism as
+// the design holds it; the scaffold's brief is text of the slice, so a type
+// it names stays whole.
 #[tokio::test]
 async fn build_design_cut_scaffolded() {
     let tmp = tempfile::tempdir().expect("tempdir");
@@ -369,7 +371,7 @@ async fn build_design_cut_scaffolded() {
     let root = tmp.path().to_str().expect("a UTF-8 scratch root");
     let model = Scripted::answering([VALID]);
     let slice = designed();
-    let types = ["orders.order".to_owned()];
+    let types = ["orders.order".to_owned(), "start.Config".to_owned()];
     let scaffold = Scaffold {
         brief: "- `src/orders.rs`: scaffolded, `Order` laid; an `Invoice` is read as a value.\n",
         passages: "",

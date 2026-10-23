@@ -27,15 +27,14 @@ pub(super) fn cut(slice: &Slice, scaffold: Option<&Scaffold<'_>>) -> String {
             kept.push(Cow::Borrowed(block));
             continue;
         };
-        if laid.iter().any(|laid| laid == key) {
+        if mechanism {
+            kept.push(Cow::Borrowed(block));
+        } else if laid.iter().any(|laid| laid == key) {
             kept.push(Cow::Owned(format!(
                 "{TYPE}{key} — laid in the tree by the adapter before this turn, as the scaffold \
                  section says."
             )));
-        } else if mechanism
-            || slice.types.iter().any(|owned| owned.key == key)
-            || names(key, &spelled)
-        {
+        } else if slice.types.iter().any(|owned| owned.key == key) || names(key, &spelled) {
             kept.push(Cow::Borrowed(block));
         } else {
             left_out.push(key);
