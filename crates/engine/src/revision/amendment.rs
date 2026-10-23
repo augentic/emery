@@ -1,9 +1,9 @@
 //! Defines the typed amendment and its Markdown rendering.
 //!
 //! An [`Amendment`] is a change against the current revision, staged for
-//! review: the base it was prepared against and one [`Change`] per
-//! requirement, classed by what the change did to it. It is never sealed as
-//! it stands; the amended specification is drafted from it.
+//! review: the base it was prepared against, one [`Change`] per
+//! requirement, classed by what the change did to it, and the amended
+//! specification. It is never sealed as it stands.
 
 use std::fmt::{self, Display, Formatter};
 
@@ -11,10 +11,10 @@ use omnia_sdk::{Error, server_error};
 use serde::{Deserialize, Serialize};
 use strum::VariantArray;
 
-use crate::revision::{self, Cited, HEADING, ID, NOTE, ReqId, SOURCES};
+use crate::revision::{self, Cited, HEADING, ID, NOTE, ReqId, SOURCES, Spec};
 
 /// A change against the current revision in its staged form.
-#[derive(Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Amendment {
     /// The grammar the document was written under.
@@ -24,6 +24,13 @@ pub struct Amendment {
     /// One entry per requirement of the amended specification, and per
     /// requirement retired from it, in id order.
     pub changes: Vec<Change>,
+    /// The amended specification.
+    ///
+    /// Holds the base's preamble and unchanged requirements as they stand,
+    /// with each added, changed, or conflicting requirement drafted whole
+    /// under its id and each retired one left out. Its
+    /// [`parent`](Spec::parent) is the base revision.
+    pub spec: Spec,
 }
 
 impl Amendment {
@@ -107,7 +114,8 @@ impl Display for Amendment {
         }
         f.write_str(".")?;
 
-        // one section per class with entries, each in id order
+        // one section per class with entries, each in id order, a drafted
+        // entry followed by the scenarios the amended specification drafted
         for class in ChangeClass::VARIANTS {
             let mut changes =
                 self.changes.iter().filter(|change| change.class == *class).peekable();
@@ -117,6 +125,14 @@ impl Display for Amendment {
             write!(f, "\n\n## {}", class.heading())?;
             for change in changes {
                 write!(f, "\n\n{change}")?;
+                if !class.is_drafted() {
+                    continue;
+                }
+                if let Some(requirement) = self.spec.requirement(change.id) {
+                    for scenario in &requirement.scenarios {
+                        write!(f, "\n\n{scenario}")?;
+                    }
+                }
             }
         }
         f.write_str("\n")
@@ -215,6 +231,19 @@ pub enum ChangeClass {
 }
 
 impl ChangeClass {
+    /// Returns whether the amended specification drafts a requirement of this class anew.
+    ///
+    /// An added, changed, or conflicting requirement is drafted whole under
+    /// its id. An unchanged one is the base's as it stands, and a retired one
+    /// is left out.
+    #[must_use]
+    pub const fn is_drafted(self) -> bool {
+        match self {
+            Self::Added | Self::Changed | Self::Conflict => true,
+            Self::Retired | Self::Unchanged => false,
+        }
+    }
+
     const fn heading(self) -> &'static str {
         match self {
             Self::Added => "Added",

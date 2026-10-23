@@ -40,6 +40,20 @@ const CLASSES_GROUPING: &str = r#"{"groups": [
     {"claims": [8], "classes": [[8]]}
 ]}"#;
 
+// The spec draft over the three requirements `CLASSES_GROUPING` drafts anew:
+// the contested login, the revised timeout, and the added refund.
+const CLASSES_DRAFT: &str = r#"{"preamble": [], "requirements": [
+    {"subject": "auth.login", "scenarios": [
+        {"name": "Login", "when": "a caller signs in", "then": "[unknown]"}
+    ]},
+    {"subject": "session.timeout", "scenarios": [
+        {"name": "Timeout", "when": "a session is idle for 30 minutes", "then": "it times out"}
+    ]},
+    {"subject": "orders.refund", "scenarios": [
+        {"name": "Refund", "when": "a signed-in caller requests a refund of a delivered order", "then": "the refund is recorded"}
+    ]}
+]}"#;
+
 // The vcs calls a read of the current revision makes, and the only ones an amend makes.
 fn read_calls() -> [String; 3] {
     ["head .".to_owned(), format!("add . {REVISION} {HEAD}"), format!("remove {REVISION}")]
@@ -81,11 +95,14 @@ fn staged_amendment(provider: &Provider) -> (String, Value) {
 // One change over a sealed revision: the standing requirements are put to the
 // grouping after the claims, each requirement lands in one class decided by
 // code, a revised or restated requirement keeps its id, an added one takes
-// the next free id, and the amendment is staged for `show amendment` with
-// the repository read and never written.
+// the next free id, the amended specification is drafted over the added,
+// revised, and contested requirements alone under those ids with the rest
+// the base's as it stands, and the amendment is staged for `show amendment`
+// with the repository read and never written.
 #[tokio::test]
 async fn amend_classes() {
-    let mut provider = Provider::answering([CLASSES_GROUPING, CLASSES_GROUPING]);
+    let mut provider =
+        Provider::answering([CLASSES_GROUPING, CLASSES_DRAFT, CLASSES_GROUPING, CLASSES_DRAFT]);
     bind(&mut provider);
     let revision = seed(&provider.files, SPEC, DESIGN, PLAN);
 
@@ -116,6 +133,35 @@ async fn amend_classes() {
         "a claim at a standing id is pre-merged with it: {request}"
     );
 
+    // the draft lists the three requirements drafted anew under their ids,
+    // the change sources alone behind each, and none that stands
+    let draft = provider.model.seen()[1].messages.join("\n");
+    assert!(draft.contains("amend the current specification"), "{draft}");
+    assert!(
+        draft.contains("- REQ-001 `auth.login` — Status: conflict — Sources: [docs:auth.login, wiki:auth.login]"),
+        "{draft}"
+    );
+    assert!(
+        draft.contains(
+            "- REQ-002 `session.timeout` — Status: unknown — Sources: [docs:session.timeout]"
+        ),
+        "{draft}"
+    );
+    assert!(draft.contains("- REQ-005 `orders.refund`"), "{draft}");
+    assert!(!draft.contains("- REQ-003"), "a standing requirement is not drafted: {draft}");
+    assert!(!draft.contains("- REQ-004"), "a standing requirement is not drafted: {draft}");
+    assert!(!draft.contains("baseline"), "the base is no source of the draft: {draft}");
+
+    // the unchanged requirements are the base's byte for byte, the retired
+    // none, and the preamble the base's under the base as parent
+    let base: Value = serde_json::from_slice(SPEC).expect("the base is JSON");
+    let spec = &amendment["spec"];
+    assert_eq!(spec["parent"], revision);
+    assert_eq!(spec["preamble"], base["preamble"]);
+    assert_eq!(spec["requirements"][2], base["requirements"][2]);
+    assert_eq!(spec["requirements"][3], base["requirements"][3]);
+    assert_eq!(spec["requirements"].as_array().map(Vec::len), Some(5));
+
     // the repository is read for the revision and nothing more
     assert_eq!(provider.vcs.calls(), read_calls());
     assert!(provider.files.writes().is_empty(), "an amend writes no document");
@@ -137,12 +183,24 @@ async fn amend_classes() {
     assert_eq!(envelope["conflicts"], serde_json::json!(["auth.login"]));
     assert_eq!(envelope["stems"], serde_json::json!(["auth", "orders", "session"]));
 
-    // what was staged is what show renders
+    // what was staged is what show renders: a changed requirement's old and
+    // new statement and its redrafted scenarios, an unchanged one's
+    // statement alone
     let shown = cli_ok(&provider, &["emery", "show", "amendment"]).await;
     let shown = String::from_utf8_lossy(&shown.stdout);
-    assert!(shown.contains("### Requirement: session.timeout\n\nID: REQ-002"), "{shown}");
-    assert!(shown.contains("After: Sessions expire after 30 minutes of inactivity."), "{shown}");
+    assert!(
+        shown.contains(
+            "### Requirement: session.timeout\n\nID: REQ-002\nSources: [docs:session.timeout]\n\n\
+             Before: Sessions expire after an hour of inactivity.\n\nAfter: Sessions expire \
+             after 30 minutes of inactivity.\n\n#### Scenario: Timeout\n\n- **WHEN** a session \
+             is idle for 30 minutes\n- **THEN** it times out\n"
+        ),
+        "{shown}"
+    );
     assert!(shown.contains("### Requirement: orders.refund\n\nID: REQ-005"), "{shown}");
+    assert!(shown.contains("#### Scenario: Refund"), "{shown}");
+    assert!(!shown.contains("#### Scenario: Create"), "a standing scenario is not shown: {shown}");
+    provider.model.assert_exhausted();
 }
 
 // A `retire` beside a source's requirements retires the standing requirement
@@ -150,7 +208,9 @@ async fn amend_classes() {
 // pre-merges the two, and else by the model, which places it with the
 // requirement under the id the specification spells; either way the
 // requirement keeps its id and subject, the withdrawal is its one source,
-// and `show amendment` lists it as retired with the statement withdrawn.
+// `show amendment` lists it as retired with the statement withdrawn, and the
+// amended specification leaves it out with no draft turn spent, since
+// nothing is drafted anew.
 #[tokio::test]
 async fn amend_retired() {
     // indices 0 and 1 are `docs`, 2..=5 the standing requirements in id order
@@ -185,6 +245,7 @@ async fn amend_retired() {
     let expected: Value = serde_json::from_str(&RETIRED.replace("<revision>", &revision))
         .expect("the fixture is JSON");
     assert_eq!(amendment, expected);
+    assert_eq!(provider.model.seen().len(), 1, "the grouping is the one turn");
 
     // the retire is listed among the claims, marked, and pre-merged at its id
     let request = provider.model.seen()[0].messages.join("\n");
@@ -330,7 +391,9 @@ async fn amend_retire_unmatched() {
 
 // A withdrawal and a revision of one requirement from two sources of one
 // rank are a conflict, as two statements are: the requirement is listed in
-// conflict with both claims behind it, and nothing is retired.
+// conflict with both claims behind it, nothing is retired, and the amended
+// specification holds it as a specify holds a conflict, the withdrawal a
+// competing statement among its notes.
 #[tokio::test]
 async fn amend_retire_contested() {
     // indices 0 is `docs`, 1 `wiki`, 2..=5 the standing requirements in id order
@@ -340,7 +403,12 @@ async fn amend_retire_contested() {
         {"claims": [3], "classes": [[3]]},
         {"claims": [4], "classes": [[4]]}
     ]}"#;
-    let mut provider = Provider::answering([grouping]);
+    let draft = r#"{"preamble": [], "requirements": [
+        {"subject": "orders.cancel", "scenarios": [
+            {"name": "Cancel", "when": "a signed-in caller cancels an order", "then": "[unknown]"}
+        ]}
+    ]}"#;
+    let mut provider = Provider::answering([grouping, draft]);
     provider
         .source
         .evidence
@@ -379,6 +447,15 @@ async fn amend_retire_contested() {
         ]),
         "{amendment}"
     );
+    let drafted = &amendment["spec"]["requirements"][3];
+    assert_eq!(drafted["id"], "REQ-004", "{amendment}");
+    assert_eq!(drafted["status"], "conflict", "{amendment}");
+    assert_eq!(drafted["body"], serde_json::json!([]), "{amendment}");
+    assert_eq!(drafted["sources"], contested["sources"], "{amendment}");
+    assert_eq!(drafted["losers"][0]["statement"], WITHDRAWN, "{amendment}");
+    assert_eq!(drafted["losers"][1]["sources"], serde_json::json!(["wiki"]), "{amendment}");
+    assert_eq!(drafted["trigger"], serde_json::json!({"message": "orders.cancel-requested"}));
+    assert_eq!(drafted["scenarios"][0]["name"], "Cancel", "{amendment}");
     provider.model.assert_exhausted();
 }
 
@@ -462,7 +539,7 @@ async fn amend_no_change() {
 // where it is.
 #[tokio::test]
 async fn amend_over_staged() {
-    let mut provider = Provider::answering([CLASSES_GROUPING]);
+    let mut provider = Provider::answering([CLASSES_GROUPING, CLASSES_DRAFT]);
     bind(&mut provider);
     seed(&provider.files, SPEC, DESIGN, PLAN);
     let displaced = stage_amendment(&provider.storage, AMENDMENT);

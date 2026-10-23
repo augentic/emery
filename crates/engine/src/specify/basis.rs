@@ -578,13 +578,7 @@ impl<'a> Basis<'a> {
             })
         });
 
-        let top = classes[0][0].rank;
-        let status = match classes.len() {
-            1 if covered => Status::Agreed,
-            1 => Status::Unknown,
-            _ if classes.iter().skip(1).all(|class| class[0].rank != top) => Status::Divergence,
-            _ => Status::Conflict,
-        };
+        let status = Self::settle(&classes, covered);
         let trigger = Self::trigger_of(&classes, contracts);
 
         Ok(Self {
@@ -594,6 +588,48 @@ impl<'a> Basis<'a> {
             covered,
             trigger,
             classes,
+        })
+    }
+
+    // The status sorted, non-empty `classes` settle to: one class agreed or
+    // unknown by `covered`, a class alone at the top rank a divergence, two
+    // tied there a conflict.
+    fn settle(classes: &[Vec<Contributor<'a>>], covered: bool) -> Status {
+        let top = classes[0][0].rank;
+        match classes.len() {
+            1 if covered => Status::Agreed,
+            1 => Status::Unknown,
+            _ if classes.iter().skip(1).all(|class| class[0].rank != top) => Status::Divergence,
+            _ => Status::Conflict,
+        }
+    }
+
+    /// Returns the basis as an amendment drafts its requirement from it.
+    ///
+    /// The requirement takes `id`, `subject` (the base's where it revises
+    /// one), and `trigger`. The [`BASELINE`] contributors are left out, since
+    /// the standing requirement is what the change revises and not a source
+    /// of it. Status is settled over the change sources alone, while coverage
+    /// stands as the grouping settled it. Returns `None` when only the
+    /// baseline contributed.
+    #[must_use]
+    pub fn amended(
+        mut self, id: ReqId, subject: &'a str, trigger: Option<Trigger>,
+    ) -> Option<Self> {
+        for class in &mut self.classes {
+            class.retain(|member| member.source != BASELINE);
+        }
+        self.classes.retain(|class| !class.is_empty());
+        if self.classes.is_empty() {
+            return None;
+        }
+        Some(Self {
+            id,
+            subject,
+            status: Self::settle(&self.classes, self.covered),
+            covered: self.covered,
+            trigger,
+            classes: self.classes,
         })
     }
 

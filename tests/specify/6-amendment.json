@@ -79,5 +79,163 @@
         }
       ]
     }
-  ]
+  ],
+  "spec": {
+    "emery": 8,
+    "parent": "3f2a9c0e7d1b4a6f8e5c2d9b0a7f4e1c3b6d8a2f5e9c1b4d7a0f3e6c9b2d5a8f",
+    "preamble": [
+      "One greeting surface, and what it answers."
+    ],
+    "requirements": [
+      {
+        "id": "REQ-001",
+        "subject": "greeting.behaviour",
+        "status": "unknown",
+        "covered": false,
+        "trigger": {
+          "http": {
+            "method": "GET",
+            "path": "/greeting"
+          }
+        },
+        "sources": [
+          {
+            "source": "brief",
+            "claim": "greeting.behaviour",
+            "path": null
+          }
+        ],
+        "body": [
+          "GET /greeting returns the caller's name after 'hello', or 'hello' alone with none."
+        ],
+        "losers": [],
+        "scenarios": [
+          {
+            "name": "Greeting with a name",
+            "given": [],
+            "when": "`/greeting?name=Ada` is requested",
+            "then": "the response is `hello Ada`",
+            "and": []
+          },
+          {
+            "name": "Greeting without a name",
+            "given": [],
+            "when": "`/greeting` is requested",
+            "then": "the response is `hello`",
+            "and": []
+          }
+        ]
+      },
+      {
+        "id": "REQ-002",
+        "subject": "greeting.refuse-empty",
+        "status": "unknown",
+        "covered": false,
+        "trigger": null,
+        "sources": [
+          {
+            "source": "brief",
+            "claim": "greeting.refuse-empty",
+            "path": "brief.md#L9"
+          }
+        ],
+        "body": [
+          "A greeting request naming an empty caller is refused."
+        ],
+        "losers": [],
+        "scenarios": [
+          {
+            "name": "Empty caller",
+            "given": [],
+            "when": "`/greeting?name=` is requested",
+            "then": "the request is refused",
+            "and": []
+          }
+        ]
+      },
+      {
+        "id": "REQ-004",
+        "subject": "greeting.locale",
+        "status": "agreed",
+        "covered": true,
+        "trigger": null,
+        "sources": [
+          {
+            "source": "brief",
+            "claim": "greeting.locale",
+            "path": "brief.md#L15-L17"
+          },
+          {
+            "source": "source",
+            "claim": "greeting.locale",
+            "path": "src/greeting.ts#L20-L31"
+          }
+        ],
+        "body": [
+          "A greeting request naming a locale is answered in that locale's greeting word."
+        ],
+        "losers": [],
+        "scenarios": [
+          {
+            "name": "Locale named",
+            "given": [
+              "the locale `fr` is known"
+            ],
+            "when": "`/greeting?locale=fr` is requested",
+            "then": "the response is `bonjour`",
+            "and": []
+          }
+        ]
+      },
+      {
+        "id": "REQ-005",
+        "subject": "greeting.rate-limit",
+        "status": "conflict",
+        "covered": false,
+        "trigger": null,
+        "sources": [
+          {
+            "source": "brief",
+            "claim": "greeting.rate-limit",
+            "path": "brief.md#L19"
+          },
+          {
+            "source": "notes",
+            "claim": "greeting.rate-limit",
+            "path": "notes.md#L4"
+          }
+        ],
+        "body": [],
+        "losers": [
+          {
+            "sources": [
+              "brief"
+            ],
+            "kind": "documentation",
+            "rank": 2,
+            "claim": "greeting.rate-limit",
+            "statement": "A caller is answered at most ten times a minute."
+          },
+          {
+            "sources": [
+              "notes"
+            ],
+            "kind": "documentation",
+            "rank": 2,
+            "claim": "greeting.rate-limit",
+            "statement": "A caller is answered at most a hundred times a minute."
+          }
+        ],
+        "scenarios": [
+          {
+            "name": "Caller over the limit",
+            "given": [],
+            "when": "a caller exceeds the limit within a minute",
+            "then": "[unknown]",
+            "and": []
+          }
+        ]
+      }
+    ]
+  }
 }

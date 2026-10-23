@@ -74,5 +74,178 @@
         }
       ]
     }
-  ]
+  ],
+  "spec": {
+    "emery": 8,
+    "parent": "<revision>",
+    "preamble": [
+      "Sign-in, its session, and orders over both."
+    ],
+    "requirements": [
+      {
+        "id": "REQ-001",
+        "subject": "auth.login",
+        "status": "conflict",
+        "covered": false,
+        "trigger": null,
+        "sources": [
+          {
+            "source": "docs",
+            "claim": "auth.login",
+            "path": null
+          },
+          {
+            "source": "wiki",
+            "claim": "auth.login",
+            "path": null
+          }
+        ],
+        "body": [],
+        "losers": [
+          {
+            "sources": [
+              "docs"
+            ],
+            "kind": "documentation",
+            "rank": 2,
+            "claim": "auth.login",
+            "statement": "Users sign in with a magic link."
+          },
+          {
+            "sources": [
+              "wiki"
+            ],
+            "kind": "documentation",
+            "rank": 2,
+            "claim": "auth.login",
+            "statement": "Users sign in with a passkey."
+          }
+        ],
+        "scenarios": [
+          {
+            "name": "Login",
+            "given": [],
+            "when": "a caller signs in",
+            "then": "[unknown]",
+            "and": []
+          }
+        ]
+      },
+      {
+        "id": "REQ-002",
+        "subject": "session.timeout",
+        "status": "unknown",
+        "covered": false,
+        "trigger": null,
+        "sources": [
+          {
+            "source": "docs",
+            "claim": "session.timeout",
+            "path": null
+          }
+        ],
+        "body": [
+          "Sessions expire after 30 minutes of inactivity."
+        ],
+        "losers": [],
+        "scenarios": [
+          {
+            "name": "Timeout",
+            "given": [],
+            "when": "a session is idle for 30 minutes",
+            "then": "it times out",
+            "and": []
+          }
+        ]
+      },
+      {
+        "id": "REQ-003",
+        "subject": "orders.create",
+        "status": "unknown",
+        "covered": false,
+        "trigger": {
+          "http": {
+            "method": "POST",
+            "path": "/orders"
+          }
+        },
+        "sources": [
+          {
+            "source": "docs",
+            "claim": "orders.create",
+            "path": null
+          }
+        ],
+        "body": [
+          "A signed-in user places an order."
+        ],
+        "losers": [],
+        "scenarios": [
+          {
+            "name": "Create",
+            "given": [],
+            "when": "a signed-in caller places an order",
+            "then": "the order is created",
+            "and": []
+          }
+        ]
+      },
+      {
+        "id": "REQ-004",
+        "subject": "orders.cancel",
+        "status": "unknown",
+        "covered": false,
+        "trigger": {
+          "message": "orders.cancel-requested"
+        },
+        "sources": [
+          {
+            "source": "docs",
+            "claim": "orders.cancel",
+            "path": null
+          }
+        ],
+        "body": [
+          "A signed-in user cancels an open order."
+        ],
+        "losers": [],
+        "scenarios": [
+          {
+            "name": "Cancel",
+            "given": [],
+            "when": "a signed-in caller cancels an order",
+            "then": "the order is cancelled",
+            "and": []
+          }
+        ]
+      },
+      {
+        "id": "REQ-005",
+        "subject": "orders.refund",
+        "status": "unknown",
+        "covered": false,
+        "trigger": null,
+        "sources": [
+          {
+            "source": "docs",
+            "claim": "orders.refund",
+            "path": null
+          }
+        ],
+        "body": [
+          "A signed-in user requests a refund of a delivered order."
+        ],
+        "losers": [],
+        "scenarios": [
+          {
+            "name": "Refund",
+            "given": [],
+            "when": "a signed-in caller requests a refund of a delivered order",
+            "then": "the refund is recorded",
+            "and": []
+          }
+        ]
+      }
+    ]
+  }
 }

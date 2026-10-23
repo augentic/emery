@@ -3,21 +3,27 @@
 //! [`amend`] extracts claims from each change source as
 //! [`specify`](crate::specify::specify) does, matches them against the
 //! requirements the current revision holds, derives what the change did to
-//! each requirement, and stages the result as an [`Amendment`] for review.
-//! Nothing is sealed, and the current revision is read and never moved.
+//! each requirement, drafts the amended specification, and stages the
+//! result as an [`Amendment`] for review. Nothing is sealed, and the
+//! current revision is read and never moved.
 
 mod change;
 mod standing;
 
 use emery_adapter::source::Source;
+use futures::future;
 use omnia_sdk::api::Context;
 use omnia_sdk::{BlobStore, Error, Model, Plugins, StateStore, Vcs, bad_request};
 use serde::Serialize;
 
 use self::change::ChangeSet;
 use self::standing::Standing;
+use crate::brief::Brief as _;
+use crate::revision::EMERY;
 pub use crate::revision::{Amendment, AmendmentBase, Change, ChangeClass};
-use crate::specify::{BASELINE, Bound, Extracted, GroupingBrief, RepositorySource, SourceConfig};
+use crate::specify::{
+    BASELINE, Bound, Extracted, GroupingBrief, RepositorySource, SourceConfig, SpecBrief,
+};
 use crate::vcs::TargetRef;
 use crate::{Files, store};
 
@@ -33,10 +39,16 @@ use crate::{Files, store};
 /// sources are extracted as `specify` extracts them, a repository source
 /// read in a working copy removed once every source answered.
 ///
-/// A change that leaves every requirement as it stands stages nothing. One
-/// that changes anything is staged as the one amendment, replacing an
-/// amendment staged before it; a staged revision candidate is never
-/// replaced, since it awaits `emery apply`.
+/// The amended specification ([`Amendment::spec`]) is drafted from the change
+/// alone, held to the technology lexicon as a `specify` draft is. Each added,
+/// changed, or conflicting requirement is drafted whole under its id,
+/// scenarios included. Each unchanged requirement is the base's as it stands,
+/// each retired one is left out, and the preamble is the base's.
+///
+/// A change that leaves every requirement as it stands drafts nothing and
+/// stages nothing. One that changes anything is staged as the one
+/// amendment, replacing an amendment staged before it; a staged revision
+/// candidate is never replaced, since it awaits `emery apply`.
 ///
 /// # Errors
 ///
@@ -89,11 +101,23 @@ pub async fn amend<P: Model + Source + StateStore + BlobStore + Plugins + Vcs + 
         GroupingBrief::with_standing(&extracts, standing.contributors(), standing.criteria())
             .derive(provider)
             .await?;
-    let base = AmendmentBase {
-        revision: current.id,
-        commit: current.commit,
+    let ChangeSet { changes, drafted } = ChangeSet::derive(&standing, bases)?;
+
+    // the amended specification: the requirements drafted anew under their
+    // ids, the rest the base's
+    let chunks = SpecBrief::amending(&extracts, &drafted);
+    let drafts =
+        future::try_join_all(chunks.into_iter().map(|chunk| chunk.judge(provider))).await?;
+    let spec = SpecBrief::amend(revision.spec, current.id.clone(), &changes, drafts);
+    let amendment = Amendment {
+        emery: EMERY,
+        base: AmendmentBase {
+            revision: current.id,
+            commit: current.commit,
+        },
+        changes,
+        spec,
     };
-    let amendment = ChangeSet::derive(&standing, &bases)?.into_amendment(base);
 
     let tally = Tally::of(&amendment);
     let conflicts = amendment.conflicts().map(str::to_owned).collect();

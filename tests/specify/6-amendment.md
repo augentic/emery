@@ -18,6 +18,12 @@ Sources: [brief:greeting.locale, source:greeting.locale]
 
 A greeting request naming a locale is answered in that locale's greeting word.
 
+#### Scenario: Locale named
+
+- **GIVEN** the locale `fr` is known
+- **WHEN** `/greeting?locale=fr` is requested
+- **THEN** the response is `bonjour`
+
 ## Changed
 
 ### Requirement: greeting.behaviour
@@ -28,6 +34,16 @@ Sources: [brief:greeting.behaviour]
 Before: GET /greeting returns the static string 'hello'.
 
 After: GET /greeting returns the caller's name after 'hello', or 'hello' alone with none.
+
+#### Scenario: Greeting with a name
+
+- **WHEN** `/greeting?name=Ada` is requested
+- **THEN** the response is `hello Ada`
+
+#### Scenario: Greeting without a name
+
+- **WHEN** `/greeting` is requested
+- **THEN** the response is `hello`
 
 ## Retired
 
@@ -46,6 +62,11 @@ ID: REQ-005
 Sources: [brief:greeting.rate-limit, notes:greeting.rate-limit]
 
 Note: Operator reconciliation required.
+
+#### Scenario: Caller over the limit
+
+- **WHEN** a caller exceeds the limit within a minute
+- **THEN** [unknown]
 
 ## Unchanged
 
