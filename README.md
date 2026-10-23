@@ -44,7 +44,7 @@ make ci      # exactly the CI gate: fmt-check, lint (host + wasm32), tests, doct
 make check   # local advisories: audit, fmt (rewrites), lint, outdated, deps
 ```
 
-`cargo build --release --features genai` builds the same binary over a local model through [omnia-genai](https://github.com/augentic/omnia-backends/tree/main/crates/genai) in place of Cursor (`GENAI_MODEL`, `GENAI_ENDPOINT`; the feature selects the backend in [src/main.rs](src/main.rs)); the release ships without it.
+`cargo build --release --features genai` builds the same runtime over a local model through [omnia-genai](https://github.com/augentic/omnia-backends/tree/main/crates/genai) in place of Cursor (`GENAI_MODEL`, `GENAI_ENDPOINT`; the backend arm is in [src/main.rs](src/main.rs)). The feature changes the one `emery` binary, so build it into a target directory of its own (`--target-dir target/genai`) and copy the result under another name, `emery-dev`, to keep the release binary beside it; the release ships without it.
 
 Preview the working-tree Cursor skill against a local CLI:
 

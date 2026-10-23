@@ -5,7 +5,8 @@ use std::os::unix::fs::symlink;
 use std::path::Path;
 
 use emery_sdk::target::{
-    BuildContext, DesignType, Grant, Report, Requirement, Scaffold, Scenario, Slice,
+    BuildContext, DesignType, Grant, Guarded, Marker, Report, Requirement, Scaffold, Scenario,
+    Slice,
 };
 use emery_sdk::{Doc, Error};
 use omnia_sdk::model::ToolCall;
@@ -94,7 +95,12 @@ async fn ask_scaffolded(
     model: &Scripted, slice: &Slice, workspace: &str, grants: &[Grant], brief: Option<&str>,
     check: impl FnMut(&Report) -> Result<Vec<String>, Error> + Send,
 ) -> Result<Report, Error> {
-    let scaffold = brief.map(|brief| Scaffold { brief, paths: &[] });
+    let scaffold = brief.map(|brief| Scaffold {
+        brief,
+        passages: "",
+        files: &[],
+        types: &[],
+    });
     ask_guarded(model, slice, workspace, grants, scaffold, check).await
 }
 
@@ -159,6 +165,14 @@ fn edit_files(id: &str, edits: &[(&str, &str, &str)]) -> ToolCall {
     }
 }
 
+fn restore_files(id: &str, paths: &[&str]) -> ToolCall {
+    ToolCall {
+        id: id.to_owned(),
+        name: "restore_files".to_owned(),
+        arguments: serde_json::json!({ "paths": paths }).to_string(),
+    }
+}
+
 fn names(dir: &Path) -> Vec<String> {
     let mut names: Vec<String> = fs::read_dir(dir)
         .expect("read_dir")
@@ -219,7 +233,7 @@ async fn request_shape() {
             "The slice's entry in the plan:\n\n## SLICE-001 orders\n\nBuild the orders \
              module.\n\nThe specification, cut to the slice's requirements:\n\n## \
              REQ-001\n\nOrders are created.\n\n## REQ-002\n\nOrders are listed.\n\nThe design, \
-             whole:\n\n## Types\n\n`Order`\n\nImplement every requirement"
+             cut to this slice:\n\n## Types\n\n`Order`\n\nImplement every requirement"
         ),
         "nothing scaffolded puts no section between the design and the rules: {user}"
     );
@@ -280,9 +294,10 @@ async fn build_scaffolded() {
     let user = &seen[0].messages[0];
     assert!(
         user.contains(
-            "The design, whole:\n\n## Types\n\n`Order`\n\nWhat the adapter scaffolded for this \
-             slice before this turn:\n\n- `src/orders.rs`: scaffolded; fill `todo!(\"REQ-001 \
-             orders.create: the handler\")`\n- `Cargo.toml`: held\n\nImplement every requirement"
+            "The design, cut to this slice:\n\n## Types\n\n`Order`\n\nWhat the adapter scaffolded \
+             for this slice before this turn:\n\n- `src/orders.rs`: scaffolded; fill \
+             `todo!(\"REQ-001 orders.create: the handler\")`\n- `Cargo.toml`: held\n\nImplement \
+             every requirement"
         ),
         "{user}"
     );
@@ -293,11 +308,198 @@ async fn build_scaffolded() {
     model.assert_exhausted();
 }
 
-// A `write_files` entry or `delete` naming a file the adapter scaffolded is
-// refused with the call, naming the file and `edit_files` as the way, and
-// the call lands nothing; an edit within the file, and a write beside it,
-// land as they would. The brief says so in one sentence after the
-// scaffold section.
+// The design the engine renders, with a data type per role the brief's cut
+// decides over: one the slice owns, one another slice owns that the
+// slice's text names, one nothing of the slice names, and a mechanism.
+const DESIGN: &str = "# Design\n\n## Domain model\n\nThe shapes the system stores.\n\nType: \
+                      orders.order\n```\ninterface Order {\n  id: string;\n\n  lines: \
+                      OrderLine[];\n}\n```\n\nType: orders.order-line\n```\ninterface OrderLine \
+                      {\n  sku: string;\n}\n```\n\nType: billing.Invoice (src/billing.ts#L3)\n\
+                      ```\ninterface Invoice {\n  total: number;\n}\n```\n\nType: start.Config \
+                      (mechanism)\n```\nclass Config {\n  readonly port: number;\n}\n```\n\n## \
+                      APIs and integrations\n\nThe store holds every order.\n";
+
+// The slice over `DESIGN`, owning `orders.order` with the design's
+// signature, whose `lines` field spells the `order-line` type.
+fn designed() -> Slice {
+    let mut slice = slice();
+    DESIGN.clone_into(&mut slice.design);
+    "interface Order {\n  id: string;\n\n  lines: OrderLine[];\n}"
+        .clone_into(&mut slice.types[0].signature);
+    slice
+}
+
+// With nothing scaffolded, the design keeps every paragraph, the owned type
+// whole, the type the owned signature names whole, and the mechanism, and
+// leaves out the type nothing of the slice spells, listing it by key.
+#[tokio::test]
+async fn build_design_cut() {
+    let tmp = tempfile::tempdir().expect("tempdir");
+    seed(tmp.path(), ["src/orders.rs", "Cargo.toml"]);
+    let root = tmp.path().to_str().expect("a UTF-8 scratch root");
+    let model = Scripted::answering([VALID]);
+    let slice = designed();
+
+    ask(&model, &slice, root).await.expect("accepted");
+
+    let seen = model.seen();
+    let user = &seen[0].messages[0];
+    assert!(
+        user.contains(
+            "The design, cut to this slice:\n\n# Design\n\n## Domain model\n\nThe shapes the \
+             system stores.\n\nType: orders.order\n```\ninterface Order {\n  id: string;\n\n  \
+             lines: OrderLine[];\n}\n```\n\nType: orders.order-line\n```\ninterface OrderLine \
+             {\n  sku: string;\n}\n```\n\nType: start.Config (mechanism)\n```\nclass Config {\n  \
+             readonly port: number;\n}\n```\n\n## APIs and integrations\n\nThe store holds every \
+             order.\n\nDesign types left out, owned by other slices and named by none of this \
+             slice's text: `billing.Invoice (src/billing.ts#L3)`.\n\nImplement every requirement"
+        ),
+        "{user}"
+    );
+    model.assert_exhausted();
+}
+
+// A data type among the scaffold's `types` is one line pointing at the
+// scaffold section, whatever the slice spells; a mechanism type listed there
+// stays whole, label and signature, since the cut keeps every mechanism as
+// the design holds it; the scaffold's brief is text of the slice, so a type
+// it names stays whole.
+#[tokio::test]
+async fn build_design_cut_scaffolded() {
+    let tmp = tempfile::tempdir().expect("tempdir");
+    seed(tmp.path(), ["src/orders.rs", "Cargo.toml"]);
+    let root = tmp.path().to_str().expect("a UTF-8 scratch root");
+    let model = Scripted::answering([VALID]);
+    let slice = designed();
+    let types = ["orders.order".to_owned(), "start.Config".to_owned()];
+    let scaffold = Scaffold {
+        brief: "- `src/orders.rs`: scaffolded, `Order` laid; an `Invoice` is read as a value.\n",
+        passages: "",
+        files: &[],
+        types: &types,
+    };
+
+    ask_guarded(&model, &slice, root, &[], Some(scaffold), |_| Ok(Vec::new()))
+        .await
+        .expect("accepted");
+
+    let seen = model.seen();
+    let user = &seen[0].messages[0];
+    assert!(
+        user.contains(
+            "The shapes the system stores.\n\nType: orders.order — laid in the tree by the \
+             adapter before this turn, as the scaffold section says.\n\nType: \
+             orders.order-line\n```\ninterface OrderLine {\n  sku: string;\n}\n```\n\nType: \
+             billing.Invoice (src/billing.ts#L3)\n```\ninterface Invoice {\n  total: \
+             number;\n}\n```\n\nType: start.Config (mechanism)\n```\nclass Config {\n  readonly \
+             port: number;\n}\n```\n\n## APIs and integrations\n\nThe store holds every \
+             order.\n\nWhat the adapter scaffolded for this slice before this turn:"
+        ),
+        "{user}"
+    );
+    assert!(!user.contains("Design types left out"), "{user}");
+    model.assert_exhausted();
+}
+
+// The scaffold's passages stand after the scaffold section and its guard
+// sentence, verbatim, and are no text of the slice: a type a passage alone
+// names is left out of the design's cut as if nothing named it.
+#[tokio::test]
+async fn build_design_cut_passages() {
+    let tmp = tempfile::tempdir().expect("tempdir");
+    seed(tmp.path(), ["src/orders.rs", "Cargo.toml"]);
+    let root = tmp.path().to_str().expect("a UTF-8 scratch root");
+    let model = Scripted::answering([VALID]);
+    let slice = designed();
+    let files = [Guarded::new("src/orders.rs", ["REQ-001"])];
+    let scaffold = Scaffold {
+        brief: "- `src/orders.rs`: scaffolded\n",
+        passages: "From the references, for this slice:\n\n## A probe\n\nAn `Invoice` is read as \
+                   a value and answered whole.\n",
+        files: &files,
+        types: &[],
+    };
+
+    ask_guarded(&model, &slice, root, &[], Some(scaffold), |_| Ok(Vec::new()))
+        .await
+        .expect("accepted");
+
+    let seen = model.seen();
+    let user = &seen[0].messages[0];
+    assert!(
+        user.contains(
+            "Design types left out, owned by other slices and named by none of this slice's \
+             text: `billing.Invoice (src/billing.ts#L3)`.\n\nWhat the adapter scaffolded for \
+             this slice before this turn:\n\n- `src/orders.rs`: scaffolded\n\nThe file the \
+             adapter scaffolded for this slice is filled in place: change it through \
+             `edit_files`, or send the whole file through `write_files` with every marker and \
+             name the skeleton holds still in it; an entry that drops one is refused whole \
+             naming what it dropped, as a `delete` naming one of them is. `restore_files` puts \
+             it back as it was scaffolded, the turn's edits to it discarded: recovery after a \
+             refusal, not a step.\n\nFrom the references, for this slice:\n\n## A \
+             probe\n\nAn `Invoice` is read as a value and answered whole.\n\nImplement every \
+             requirement"
+        ),
+        "{user}"
+    );
+    model.assert_exhausted();
+}
+
+// A key of several words is spelled only where one text of the slice runs
+// them together: `order` in one sentence and `line` in another name no
+// `order-line`, while `order lines` does.
+#[tokio::test]
+async fn build_design_cut_phrase() {
+    let tmp = tempfile::tempdir().expect("tempdir");
+    seed(tmp.path(), ["src/orders.rs", "Cargo.toml"]);
+    let root = tmp.path().to_str().expect("a UTF-8 scratch root");
+    let mut apart = designed();
+    "interface Order {\n  id: string;\n}".clone_into(&mut apart.types[0].signature);
+    "## SLICE-001 orders\n\nBuild the orders module. Each line of the listing is one order.\n"
+        .clone_into(&mut apart.plan);
+    let mut together = apart.clone();
+    "## SLICE-001 orders\n\nBuild the orders module, its order lines included.\n"
+        .clone_into(&mut together.plan);
+
+    let model = Scripted::answering([VALID]);
+    ask(&model, &apart, root).await.expect("accepted");
+    let user = &model.seen()[0].messages[0];
+    assert!(
+        user.contains(
+            "Design types left out, owned by other slices and named by none of this slice's \
+             text: `orders.order-line`, `billing.Invoice (src/billing.ts#L3)`."
+        ),
+        "{user}"
+    );
+    model.assert_exhausted();
+
+    let model = Scripted::answering([VALID]);
+    ask(&model, &together, root).await.expect("accepted");
+    let user = &model.seen()[0].messages[0];
+    assert!(
+        user.contains(
+            "Type: orders.order-line\n```\ninterface OrderLine {\n  sku: string;\n}\n```"
+        ),
+        "{user}"
+    );
+    assert!(
+        user.contains(
+            "Design types left out, owned by other slices and named by none of this slice's \
+             text: `billing.Invoice (src/billing.ts#L3)`."
+        ),
+        "{user}"
+    );
+    model.assert_exhausted();
+}
+
+// A `write_files` entry naming a file the adapter scaffolded is refused with
+// the call when its content drops a token the file keeps, naming the tokens
+// and the two ways to change it, never `restore_files`, since a model
+// offered the way back takes it and loses its edits; a `delete` naming one
+// is refused whatever it keeps; the call lands nothing. An edit within the
+// file, and a write beside it, land as they would. The brief says so after
+// the scaffold section, and the turn declares `restore_files` beside the
+// two tools.
 #[tokio::test]
 async fn write_scaffolded_refused() {
     let tmp = tempfile::tempdir().expect("tempdir");
@@ -327,10 +529,15 @@ async fn write_scaffolded_refused() {
                 write_files("4", &[("src/lib.rs", "pub mod orders;\n")]),
             ],
         );
-    let paths = ["src/orders.rs".to_owned(), "Cargo.toml".to_owned()];
+    let files = [
+        Guarded::new("src/orders.rs", ["pub fn create", "REQ-001 orders.create"]),
+        Guarded::new("Cargo.toml", Vec::<String>::new()),
+    ];
     let scaffold = Scaffold {
         brief: "- `src/orders.rs`: scaffolded\n- `Cargo.toml`: held\n",
-        paths: &paths,
+        passages: "",
+        files: &files,
+        types: &[],
     };
 
     let report = ask_guarded(&model, &slice(), root, &[], Some(scaffold), |_| Ok(Vec::new()))
@@ -347,31 +554,273 @@ async fn write_scaffolded_refused() {
     assert_eq!(exchanges.len(), 5, "four calls, then the check");
     assert_eq!(
         exchanges[0].outcome,
-        Err("write_files: nothing written: `src/orders.rs` was scaffolded before this turn; \
-             change it through `edit_files`, which keeps what the skeleton holds"
-            .to_owned())
+        Err("write_files: nothing written: `src/orders.rs` was scaffolded before this turn and \
+             this content drops what the skeleton holds: `REQ-001 orders.create`; change the \
+             file through `edit_files`, or send the whole file with those kept"
+            .to_owned()),
+        "the token the content keeps is not named"
     );
     assert_eq!(
         exchanges[1].outcome,
-        Err("write_files: nothing written: `src/orders.rs` was scaffolded before this turn; \
-             change it through `edit_files`, which keeps what the skeleton holds"
+        Err("write_files: nothing written: `src/orders.rs` was scaffolded before this turn and \
+             is not deleted; change it through `edit_files`, which keeps what the skeleton holds"
             .to_owned()),
         "a `delete` is held to the guard as the tree spells the path"
     );
     assert!(exchanges[2].outcome.is_ok(), "the edit lands: {:?}", exchanges[2].outcome);
     assert!(exchanges[3].outcome.is_ok(), "a write beside lands: {:?}", exchanges[3].outcome);
 
-    let user = &model.seen()[0].messages[0];
+    let request = &model.seen()[0];
+    assert_eq!(
+        request.tools,
+        ["list_docs", "read_doc", "write_files", "edit_files", "restore_files"],
+        "a scaffold declares the third tool"
+    );
+    let user = &request.messages[0];
+    assert!(user.contains("Write through this call's three tools alone:"), "{user}");
     assert!(
         user.contains(
             "What the adapter scaffolded for this slice before this turn:\n\n- `src/orders.rs`: \
              scaffolded\n- `Cargo.toml`: held\n\nThe files the adapter scaffolded for this slice \
-             are filled through `edit_files` alone: a `write_files` entry or `delete` naming one \
-             of them is refused whole, since a skeleton written over loses its \
-             markers.\n\nImplement every requirement"
+             are filled in place: change one through `edit_files`, or send the whole file \
+             through `write_files` with every marker and name the skeleton holds still in it; \
+             an entry that drops one is refused whole naming what it dropped, as a `delete` \
+             naming one of them is. `restore_files` puts one back as it was \
+             scaffolded, the turn's edits to it discarded: recovery after a refusal, not a \
+             step.\n\nImplement every requirement"
         ),
         "{user}"
     );
+    model.assert_exhausted();
+}
+
+// A whole write of a scaffolded file that keeps every token lands, and so
+// does one of a scaffolded file the tree no longer holds, since nothing is
+// left there to keep; a file guarded with no tokens is written as any
+// other. A refusal names at most ten dropped tokens and counts the rest.
+#[tokio::test]
+async fn write_scaffolded_kept() {
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let skeleton = "pub fn create() {\n    todo!(\"REQ-001 orders.create: the handler\")\n}\n";
+    let listing = "pub mod orders;\n// token1 token2 token3 token4 token5 token6 token7 token8 \
+                   token9 token10 token11 token12\n";
+    write(
+        tmp.path(),
+        [("src/orders.rs", skeleton), ("Cargo.toml", "[package]\n"), ("src/lib.rs", listing)],
+    );
+    let root = tmp.path().to_str().expect("a UTF-8 scratch root");
+    let filled = "//! Orders.\n\npub fn create() -> Result<(), Error> {\n    // REQ-001 \
+                  orders.create: the handler\n    Ok(())\n}\n";
+    let tokens: Vec<String> = (1..=12).map(|n| format!("token{n}")).collect();
+    let model = Scripted::answering([r#"{"covered":["REQ-001"],"written":["src/orders.rs"]}"#])
+        .calling(
+            0,
+            [
+                write_files("1", &[("src/orders.rs", filled)]),
+                write_files("2", &[("src/orders/mod.rs", "pub struct Order;\n")]),
+                write_files("3", &[("Cargo.toml", "[package]\nname = \"orders\"\n")]),
+                write_files("4", &[("src/lib.rs", "pub mod orders;\npub mod billing;\n")]),
+            ],
+        );
+    let files = [
+        Guarded::new("src/orders.rs", ["pub fn create", "REQ-001 orders.create"]),
+        Guarded::new("src/orders/mod.rs", ["pub struct Order"]),
+        Guarded::new("Cargo.toml", Vec::<String>::new()),
+        Guarded::new("src/lib.rs", tokens),
+    ];
+    let scaffold = Scaffold {
+        brief: "- `src/orders.rs`: scaffolded\n",
+        passages: "",
+        files: &files,
+        types: &[],
+    };
+
+    let report = ask_guarded(&model, &slice(), root, &[], Some(scaffold), |_| Ok(Vec::new()))
+        .await
+        .expect("accepted");
+    assert_eq!(report.written, ["Cargo.toml", "src/orders.rs", "src/orders/mod.rs"]);
+    assert_eq!(
+        fs::read_to_string(tmp.path().join("src/orders.rs")).expect("written"),
+        filled,
+        "a whole write keeping the tokens lands"
+    );
+    assert_eq!(
+        fs::read_to_string(tmp.path().join("src/orders/mod.rs")).expect("written"),
+        "pub struct Order;\n",
+        "a guarded path the tree lacked is written"
+    );
+    assert_eq!(
+        fs::read_to_string(tmp.path().join("src/lib.rs")).expect("held"),
+        listing,
+        "the refused write lands nothing"
+    );
+
+    let exchanges = model.exchanges();
+    assert_eq!(exchanges.len(), 5, "four calls, then the check");
+    assert!(exchanges[0].outcome.is_ok(), "{:?}", exchanges[0].outcome);
+    assert!(exchanges[1].outcome.is_ok(), "the tree lacked it: {:?}", exchanges[1].outcome);
+    assert!(exchanges[2].outcome.is_ok(), "no tokens guard nothing: {:?}", exchanges[2].outcome);
+    assert_eq!(
+        exchanges[3].outcome,
+        Err("write_files: nothing written: `src/lib.rs` was scaffolded before this turn and this \
+             content drops what the skeleton holds: `token1`, `token2`, `token3`, `token4`, \
+             `token5`, `token6`, `token7`, `token8`, `token9`, `token10`, and 2 more; change the \
+             file through `edit_files`, or send the whole file with those kept"
+            .to_owned())
+    );
+    model.assert_exhausted();
+}
+
+// A scaffolded file named in `files` and `delete` of one call is replaced
+// by the entry, the guard over its content holding and the guard over its
+// removal never asked, since a model spells a whole write that way; one
+// whose entry drops a token is refused for the content alone.
+#[tokio::test]
+async fn write_scaffolded_replaced() {
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let skeleton = "pub fn create() {\n    todo!(\"REQ-001 orders.create: the handler\")\n}\n";
+    write(tmp.path(), [("src/orders.rs", skeleton)]);
+    let root = tmp.path().to_str().expect("a UTF-8 scratch root");
+    let filled = "//! Orders.\n\npub fn create() -> Result<(), Error> {\n    // REQ-001 \
+                  orders.create: the handler\n    Ok(())\n}\n";
+    let model = Scripted::answering([r#"{"covered":["REQ-001"],"written":["src/orders.rs"]}"#])
+        .calling(
+            0,
+            [
+                ToolCall {
+                    id: "1".to_owned(),
+                    name: "write_files".to_owned(),
+                    arguments: serde_json::json!({
+                        "files": [{ "path": "src/orders.rs", "content": "pub fn create() {}\n" }],
+                        "delete": ["src/orders.rs"],
+                    })
+                    .to_string(),
+                },
+                ToolCall {
+                    id: "2".to_owned(),
+                    name: "write_files".to_owned(),
+                    arguments: serde_json::json!({
+                        "files": [{ "path": "src/orders.rs", "content": filled }],
+                        "delete": ["./src/orders.rs"],
+                    })
+                    .to_string(),
+                },
+            ],
+        );
+    let files = [Guarded::new("src/orders.rs", ["pub fn create", "REQ-001 orders.create"])];
+    let scaffold = Scaffold {
+        brief: "- `src/orders.rs`: scaffolded\n",
+        passages: "",
+        files: &files,
+        types: &[],
+    };
+
+    let report = ask_guarded(&model, &slice(), root, &[], Some(scaffold), |_| Ok(Vec::new()))
+        .await
+        .expect("accepted");
+    assert_eq!(report.written, ["src/orders.rs"]);
+    assert_eq!(
+        fs::read_to_string(tmp.path().join("src/orders.rs")).expect("replaced"),
+        filled,
+        "the entry replaces the file, and the delete removes nothing"
+    );
+
+    let exchanges = model.exchanges();
+    assert_eq!(exchanges.len(), 3, "two calls, then the check");
+    assert_eq!(
+        exchanges[0].outcome,
+        Err("write_files: nothing written: `src/orders.rs` was scaffolded before this turn and \
+             this content drops what the skeleton holds: `REQ-001 orders.create`; change the \
+             file through `edit_files`, or send the whole file with those kept"
+            .to_owned()),
+        "the content guard alone refuses the replacement"
+    );
+    assert_eq!(
+        exchanges[1].outcome.as_deref(),
+        Ok(format!(r#"{{"written":[{{"bytes":{},"path":"src/orders.rs"}}]}}"#, filled.len())
+            .as_str()),
+        "a replacement reports no deletion"
+    );
+    model.assert_exhausted();
+}
+
+// `restore_files` puts a scaffolded file back as the turn found it, so a
+// skeleton edited wrong is recovered whole and the turn no longer counts it
+// as written; a path that was not scaffolded, or that the tree lacked when
+// the turn began, refuses the call whole and restores nothing.
+#[tokio::test]
+async fn restore_scaffolded() {
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let skeleton = "pub fn create() {\n    todo!(\"REQ-001 orders.create: the handler\")\n}\n";
+    write(tmp.path(), [("src/orders.rs", skeleton), ("Cargo.toml", "[package]\n")]);
+    let root = tmp.path().to_str().expect("a UTF-8 scratch root");
+    let model = Scripted::answering([r#"{"covered":["REQ-001"],"written":["Cargo.toml"]}"#])
+        .calling(
+            0,
+            [
+                edit_files("1", &[("src/orders.rs", "the handler", "broken")]),
+                restore_files("2", &["src/orders.rs", "Cargo.toml"]),
+                restore_files("3", &["src/orders.rs", "src/lib.rs"]),
+                restore_files("4", &["src/orders/mod.rs"]),
+                ToolCall {
+                    id: "5".to_owned(),
+                    name: "restore_files".to_owned(),
+                    arguments: r#"{"paths":[]}"#.to_owned(),
+                },
+                restore_files("6", &["./src/orders.rs"]),
+                write_files("7", &[("Cargo.toml", "[package]\nname = \"orders\"\n")]),
+            ],
+        );
+    let files = [
+        Guarded::new("src/orders.rs", ["REQ-001 orders.create"]),
+        Guarded::new("src/orders/mod.rs", ["pub struct Order"]),
+        Guarded::new("Cargo.toml", Vec::<String>::new()),
+    ];
+    let scaffold = Scaffold {
+        brief: "- `src/orders.rs`: scaffolded\n",
+        passages: "",
+        files: &files,
+        types: &[],
+    };
+
+    let report = ask_guarded(&model, &slice(), root, &[], Some(scaffold), |_| Ok(Vec::new()))
+        .await
+        .expect("accepted");
+    assert_eq!(report.written, ["Cargo.toml"], "a restored file is no longer counted as written");
+    assert_eq!(
+        fs::read_to_string(tmp.path().join("src/orders.rs")).expect("restored"),
+        skeleton,
+        "the skeleton is back"
+    );
+
+    let exchanges = model.exchanges();
+    assert_eq!(exchanges.len(), 8, "seven calls, then the check");
+    assert!(exchanges[0].outcome.is_ok(), "{:?}", exchanges[0].outcome);
+    assert_eq!(
+        exchanges[1].outcome,
+        Ok(r#"{"restored":[{"bytes":68,"path":"src/orders.rs"},{"bytes":10,"path":"Cargo.toml"}]}"#
+            .to_owned()),
+        "both scaffolded files are put back, the untouched one included"
+    );
+    assert_eq!(
+        exchanges[2].outcome,
+        Err("restore_files: nothing restored: `src/lib.rs` was not scaffolded before this turn; \
+             `restore_files` puts back the files the brief names as scaffolded"
+            .to_owned())
+    );
+    assert_eq!(
+        exchanges[3].outcome,
+        Err("restore_files: nothing restored: `src/orders/mod.rs` was scaffolded for this slice \
+             but the tree lacked it before this turn; there is nothing to put back"
+            .to_owned())
+    );
+    assert_eq!(exchanges[4].outcome, Err("restore_files: `paths` names no file".to_owned()));
+    assert!(
+        exchanges[5].outcome.is_ok(),
+        "a path is read as the tree spells it: {:?}",
+        exchanges[5].outcome
+    );
+    assert!(exchanges[6].outcome.is_ok(), "{:?}", exchanges[6].outcome);
     model.assert_exhausted();
 }
 
@@ -645,17 +1094,27 @@ async fn edit_ambiguous() {
 
 // A `find` matching nothing is refused with what the file holds nearest it:
 // the line its first line is found on and the line after, where a `find`
-// over a doc comment's blank `//!` parts from the file; the found line
-// alone when it is the last; the file's opening line and length when no
-// line holds it; and the file's emptiness.
+// over a doc comment's blank `//!` parts from the file; the lines after the
+// first that match, and the line where the file parts from the `find`
+// after them, so a `find` of a function whose one line differs comes back
+// with that line; the occurrence of the first line the most lines follow,
+// where it is found more than once; the found line alone when it is the
+// last; a `find` the file ends within; the file's opening line and length
+// when no line holds it; and the file's emptiness.
 #[tokio::test]
 async fn edit_nearest_line() {
     let tmp = tempfile::tempdir().expect("tempdir");
+    let create = "pub fn create() {\n    let order = Order::new();\n    order.save()?;\n    \
+                  Ok(())\n}\n";
+    let twice = "fn a() {\n    x();\n}\nfn b() {\n    x();\n    y();\n}\n";
     write(
         tmp.path(),
         [
             ("src/lib.rs", "//! Orders.\n//!\n//! The crate.\npub mod orders;\n"),
+            ("src/create.rs", create),
+            ("src/twice.rs", twice),
             ("src/last.rs", "pub struct A;\n    pub struct B;\n"),
+            ("src/ends.rs", "pub struct A;\npub struct B;\n"),
             ("src/one.rs", "pub struct One;\n"),
             ("src/empty.rs", ""),
         ],
@@ -667,7 +1126,15 @@ async fn edit_nearest_line() {
             "1",
             &[
                 ("src/lib.rs", "//! Orders.\n\n//! The crate.", "//! Orders.\n//!\n//! A crate."),
+                (
+                    "src/create.rs",
+                    "pub fn create() {\n    let order = Order::new();\n    order.save();\n    \
+                     Ok(())\n}",
+                    "pub fn create() {}",
+                ),
+                ("src/twice.rs", "    x();\n    y();\n    z();", "    z();"),
                 ("src/last.rs", "  pub struct B;\n}", "pub struct B;"),
+                ("src/ends.rs", "pub struct A;\npub struct B;\npub struct C;", "pub struct C;"),
                 ("src/one.rs", "pub struct Uno;", "pub struct One;"),
                 ("src/empty.rs", "x", "y"),
             ],
@@ -683,12 +1150,322 @@ async fn edit_nearest_line() {
         Err("edit_files: nothing edited: \
              `src/lib.rs`: `find` matches nothing in the file; its first line is on line 1 of 4, \
              `//! Orders.`, and line 2 is `//!`; \
+             `src/create.rs`: `find` matches nothing in the file; its first line is on line 1 \
+             of 5, `pub fn create() {`, line 2 matches, and line 3 is `    order.save()?;`; \
+             `src/twice.rs`: `find` matches nothing in the file; its first line is on line 5 of \
+             7, `    x();`, line 6 matches, and line 7 is `}`; \
              `src/last.rs`: `find` matches nothing in the file; its first line is on line 2 of \
              2, `    pub struct B;`, the last; \
+             `src/ends.rs`: `find` matches nothing in the file; its first line is on line 1 of \
+             2, `pub struct A;`, line 2 matches, and the file ends there; \
              `src/one.rs`: `find` matches nothing in the file; no line holds its first line; the \
              file's one line is `pub struct One;`; \
              `src/empty.rs`: `find` matches nothing in the file; the file is empty"
             .to_owned())
+    );
+    model.assert_exhausted();
+}
+
+// A `find` that matches nowhere as written matches with its layout
+// whitespace read past: a one-line `todo!("…")` meets the three lines the
+// formatter broke it over, the indentation before the opening line is
+// replaced with it, a `find` ending in a line break and the next line's
+// indentation leaves an empty next line as it stands, a comment line and a
+// string literal match as written, and a kept space between two words is
+// not read past; a literal whose spaces differ, or a `find` matching two
+// places modulo layout, is refused as one as written is.
+#[tokio::test]
+async fn edit_relaid() {
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let module = "pub(crate) async fn read(input: ReadInput) -> Output {\n    \
+                  let _ = (&input, &context);\n    \
+                  todo!(\n        \"REQ-001 orders.read: the handler\"\n    )\n}\n\n\
+                  // REQ-002 orders.list: the statement\n\
+                  pub fn list() {\n    let store_up = probe(\"SELECT 1\")\n        .await;\n\n    \
+                  let _ = store_up;\n}\n";
+    let twice = "fn a() {\n    todo!(\n        \"x\"\n    )\n}\nfn b() {\n    todo!(\n        \"x\"\n    \
+                 )\n}\n";
+    let literal = "fn c() {\n    say(\"two  spaces\")\n}\n";
+    let words = "pub struct Order;\npubstruct Line;\n";
+    write(
+        tmp.path(),
+        [
+            ("src/orders.rs", module),
+            ("src/twice.rs", twice),
+            ("src/literal.rs", literal),
+            ("src/words.rs", words),
+        ],
+    );
+    let root = tmp.path().to_str().expect("a UTF-8 scratch root");
+    let model = Scripted::answering([r#"{"covered":["REQ-001"],"written":[]}"#]).calling(
+        0,
+        [
+            edit_files(
+                "1",
+                &[
+                    (
+                        "src/orders.rs",
+                        "    let _ = (&input, &context);\n    todo!(\"REQ-001 orders.read: the \
+                         handler\")",
+                        "    let _ = &context;\n    Ok(Output::from(input))",
+                    ),
+                    (
+                        "src/orders.rs",
+                        "// REQ-002 orders.list: the statement\npub fn list() {\n    let \
+                         store_up = probe(\"SELECT 1\").await;\n    ",
+                        "// REQ-002 orders.list: the statement\npub fn list() {\n    let \
+                         store_up = probe(\"SELECT 1\").await.is_ok();\n    ",
+                    ),
+                ],
+            ),
+            edit_files("2", &[("src/twice.rs", "todo!(\"x\")", "x()")]),
+            edit_files("3", &[("src/literal.rs", "say(\"two spaces\")", "say(\"two\")")]),
+            edit_files("4", &[("src/words.rs", "pub struct Line;", "pub struct Row;")]),
+        ],
+    );
+
+    let report = ask(&model, &slice(), root).await.expect("accepted");
+    assert_eq!(report.written, ["src/orders.rs"]);
+    assert_eq!(
+        fs::read_to_string(tmp.path().join("src/orders.rs")).expect("edited"),
+        "pub(crate) async fn read(input: ReadInput) -> Output {\n    \
+         let _ = &context;\n    Ok(Output::from(input))\n}\n\n\
+         // REQ-002 orders.list: the statement\n\
+         pub fn list() {\n    let store_up = probe(\"SELECT 1\").await.is_ok();\n    \n    \
+         let _ = store_up;\n}\n",
+        "the marker's three lines and the statement's two are replaced, the empty line kept"
+    );
+    for untouched in [("src/twice.rs", twice), ("src/literal.rs", literal), ("src/words.rs", words)]
+    {
+        assert_eq!(
+            fs::read_to_string(tmp.path().join(untouched.0)).expect("as it was"),
+            untouched.1
+        );
+    }
+
+    let exchanges = model.exchanges();
+    assert_eq!(exchanges.len(), 5, "four calls, then the check");
+    assert!(exchanges[0].outcome.is_ok(), "{:?}", exchanges[0].outcome);
+    assert_eq!(
+        exchanges[1].outcome,
+        Err("edit_files: nothing edited: `src/twice.rs`: `find` matches 2 places in the file"
+            .to_owned())
+    );
+    assert_eq!(
+        exchanges[2].outcome,
+        Err("edit_files: nothing edited: `src/literal.rs`: `find` matches nothing in the file; \
+             no line holds its first line; the file has 3 lines and opens with `fn c() {`"
+            .to_owned()),
+        "a literal's spaces are its own"
+    );
+    assert_eq!(
+        exchanges[3].outcome,
+        Err("edit_files: nothing edited: `src/words.rs`: `find` matches nothing in the file; no \
+             line holds its first line; the file has 2 lines and opens with `pub struct Order;`"
+            .to_owned()),
+        "the space between two words is kept"
+    );
+    model.assert_exhausted();
+}
+
+// A `find` matching nothing whose first line is a call the formatter broke
+// after its opener is refused naming the opener's line and the line after
+// it, the occurrence whose next line shares the most of the call where
+// several are broken; and the lines after a found first line match with
+// their indentation read past.
+#[tokio::test]
+async fn edit_nearest_broken() {
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let module = "fn a() {\n    todo!(\n        \"REQ-001 orders.create: the handler\"\n    \
+                  )\n}\nfn b() {\n    todo!(\n        \"REQ-002 orders.list: the handler\"\n    \
+                  )\n}\n";
+    let indented = "fn c() {\n        let x = 1;\n        let y = 2;\n}\n";
+    write(tmp.path(), [("src/orders.rs", module), ("src/indented.rs", indented)]);
+    let root = tmp.path().to_str().expect("a UTF-8 scratch root");
+    let model = Scripted::answering([r#"{"covered":["REQ-001"],"written":[]}"#]).calling(
+        0,
+        [edit_files(
+            "1",
+            &[
+                ("src/orders.rs", "todo!(\"REQ-002 orders.list: the hander\")", "Ok(())"),
+                ("src/indented.rs", "fn c() {\n    let x = 1;\n    let y = 3;", "fn c() {}"),
+            ],
+        )],
+    );
+
+    let report = ask(&model, &slice(), root).await.expect("accepted");
+    assert_eq!(report.written, Vec::<String>::new());
+
+    let exchanges = model.exchanges();
+    assert_eq!(
+        exchanges[0].outcome,
+        Err("edit_files: nothing edited: \
+             `src/orders.rs`: `find` matches nothing in the file; no line holds its first line \
+             whole; its opener `todo!(` is line 7 of 10, the call broken over lines after it, \
+             and line 8 is `        \"REQ-002 orders.list: the handler\"`; \
+             `src/indented.rs`: `find` matches nothing in the file; its first line is on line 1 \
+             of 4, `fn c() {`, line 2 matches, and line 3 is `        let y = 2;`"
+            .to_owned())
+    );
+    model.assert_exhausted();
+}
+
+// A marker a guarded file names is filled by an edit whose `find` is the
+// marker's key alone, the block the scaffold laid replaced whole where the
+// file holds it as written or re-laid by the formatter, never the key's
+// own text inside it; a key named again once its block is gone is refused
+// naming the marker.
+#[tokio::test]
+async fn edit_marker_key() {
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let module = "pub(crate) async fn create(input: CreateInput) -> Output {\n    \
+                  let _ = (&input, &context);\n    \
+                  todo!(\n        \"REQ-001 orders.create: the handler\"\n    )\n}\n\n\
+                  pub fn total() {\n    todo!(\"REQ-002 orders.list: the behaviour\")\n}\n";
+    let tests = "#[tokio::test]\n#[ignore = \"REQ-001 create: unfilled\"]\nasync fn create() {\n    \
+                 let provider = provider();\n    let _ = &provider;\n    \
+                 todo!(\"REQ-001 create: arrange, act, assert\")\n}\n";
+    write(tmp.path(), [("src/orders.rs", module), ("tests/orders.rs", tests)]);
+    let root = tmp.path().to_str().expect("a UTF-8 scratch root");
+    let model = Scripted::answering([r#"{"covered":["REQ-001"],"written":["src/orders.rs"]}"#])
+        .calling(
+            0,
+            [
+                edit_files(
+                    "1",
+                    &[
+                        (
+                            "src/orders.rs",
+                            "REQ-001 orders.create: the handler",
+                            "    let _ = &context;\n    Ok(Output::from(input))",
+                        ),
+                        ("src/orders.rs", " REQ-002 orders.list: the behaviour ", "    Ok(())"),
+                        (
+                            "tests/orders.rs",
+                            "REQ-001 create: unfilled",
+                            "async fn create() {\n    let (status, _) = send(provider()).await;\n    \
+                             assert_eq!(status, 201);\n}",
+                        ),
+                    ],
+                ),
+                edit_files("2", &[("src/orders.rs", "REQ-001 orders.create: the handler", "")]),
+            ],
+        );
+    let files = [
+        Guarded::new("src/orders.rs", ["REQ-001 orders.create", "REQ-002 orders.list"])
+            .with_markers([
+                Marker::new(
+                    "REQ-001 orders.create: the handler",
+                    "    let _ = (&input, &context);\n    todo!(\"REQ-001 orders.create: the \
+                     handler\")",
+                ),
+                Marker::new(
+                    "REQ-002 orders.list: the behaviour",
+                    "    todo!(\"REQ-002 orders.list: the behaviour\")",
+                ),
+            ]),
+        Guarded::new("tests/orders.rs", ["REQ-001 create"]).with_markers([Marker::new(
+            "REQ-001 create: unfilled",
+            "#[ignore = \"REQ-001 create: unfilled\"]\nasync fn create() {\n    let provider = \
+             provider();\n    let _ = &provider;\n    todo!(\"REQ-001 create: arrange, act, \
+             assert\")\n}",
+        )]),
+    ];
+    let scaffold = Scaffold {
+        brief: "- `src/orders.rs`: scaffolded\n- `tests/orders.rs`: scaffolded\n",
+        passages: "",
+        files: &files,
+        types: &[],
+    };
+
+    let report = ask_guarded(&model, &slice(), root, &[], Some(scaffold), |_| Ok(Vec::new()))
+        .await
+        .expect("accepted");
+    assert_eq!(report.written, ["src/orders.rs", "tests/orders.rs"]);
+    assert_eq!(
+        fs::read_to_string(tmp.path().join("src/orders.rs")).expect("edited"),
+        "pub(crate) async fn create(input: CreateInput) -> Output {\n    \
+         let _ = &context;\n    Ok(Output::from(input))\n}\n\n\
+         pub fn total() {\n    Ok(())\n}\n",
+        "each block is replaced whole, the re-laid one included"
+    );
+    assert_eq!(
+        fs::read_to_string(tmp.path().join("tests/orders.rs")).expect("edited"),
+        "#[tokio::test]\nasync fn create() {\n    let (status, _) = send(provider()).await;\n    \
+         assert_eq!(status, 201);\n}\n",
+        "the test's block is replaced from its `#[ignore]` line"
+    );
+
+    let exchanges = model.exchanges();
+    assert_eq!(exchanges.len(), 3, "two calls, then the check");
+    assert!(exchanges[0].outcome.is_ok(), "{:?}", exchanges[0].outcome);
+    assert_eq!(
+        exchanges[1].outcome,
+        Err("edit_files: nothing edited: `src/orders.rs`: `find` names the marker `REQ-001 \
+             orders.create: the handler`, but the file no longer holds the block the scaffold \
+             laid for it; copy what stands there into `find`"
+            .to_owned())
+    );
+    model.assert_exhausted();
+}
+
+// A key is a marker of the file it guards alone, plain text in any other;
+// and the brief says how a key is used where any scaffolded file carries
+// one.
+#[tokio::test]
+async fn edit_marker_scoped() {
+    let tmp = tempfile::tempdir().expect("tempdir");
+    write(
+        tmp.path(),
+        [
+            (
+                "src/orders.rs",
+                "pub fn total() {\n    todo!(\"REQ-002 orders.list: the behaviour\")\n}\n",
+            ),
+            ("tests/orders.rs", "#[tokio::test]\nasync fn create() {}\n"),
+        ],
+    );
+    let root = tmp.path().to_str().expect("a UTF-8 scratch root");
+    let model = Scripted::answering([r#"{"covered":["REQ-001"],"written":[]}"#]).calling(
+        0,
+        [edit_files("1", &[("tests/orders.rs", "REQ-002 orders.list: the behaviour", "")])],
+    );
+    let files = [
+        Guarded::new("src/orders.rs", ["REQ-002 orders.list"]).with_markers([Marker::new(
+            "REQ-002 orders.list: the behaviour",
+            "    todo!(\"REQ-002 orders.list: the behaviour\")",
+        )]),
+        Guarded::new("tests/orders.rs", Vec::<String>::new()),
+    ];
+    let scaffold = Scaffold {
+        brief: "- `src/orders.rs`: scaffolded\n- `tests/orders.rs`: scaffolded\n",
+        passages: "",
+        files: &files,
+        types: &[],
+    };
+
+    let report = ask_guarded(&model, &slice(), root, &[], Some(scaffold), |_| Ok(Vec::new()))
+        .await
+        .expect("accepted");
+    assert_eq!(report.written, Vec::<String>::new());
+
+    let exchanges = model.exchanges();
+    assert_eq!(
+        exchanges[0].outcome,
+        Err("edit_files: nothing edited: `tests/orders.rs`: `find` matches nothing in the file; \
+             no line holds its first line; the file has 2 lines and opens with `#[tokio::test]`"
+            .to_owned())
+    );
+    let user = &model.seen()[0].messages[0];
+    assert!(
+        user.contains(
+            "recovery after a refusal, not a step. A marker the brief quotes a key for is filled \
+             by one `edit_files` edit whose `find` is that key alone and whose `replace` is the \
+             text that takes the block's place, so its lines are never copied; a `find` copied \
+             from the brief matches where the formatter has broken its lines or moved its \
+             indentation.\n\nImplement every requirement"
+        ),
+        "{user}"
     );
     model.assert_exhausted();
 }
@@ -1280,30 +2057,38 @@ async fn write_delete() {
 }
 
 // A path one call names more than once is met as the call left it, not as
-// the tree stood before it: one in `files` and `delete` is written, then
-// removed, so the tree lacks it as the answer says; one twice in `files`
-// holds the later content.
+// the tree stood before it: one twice in `files` holds the later content,
+// and one in `files` and `delete` is the entry's, written and kept, since a
+// model spells a whole write as a removal and a write of the path; the
+// answer lists it written and not deleted, and a path `delete` alone names
+// is removed beside it.
 #[tokio::test]
 async fn write_path_twice() {
     let tmp = tempfile::tempdir().expect("tempdir");
+    seed(tmp.path(), ["src/scratch.rs", "src/stale.rs"]);
     let root = tmp.path().to_str().expect("a UTF-8 scratch root");
     let model = Scripted::answering([r#"{"covered":["REQ-001"],"written":[]}"#]).calling(
         0,
         [ToolCall {
             id: "1".to_owned(),
             name: "write_files".to_owned(),
-            arguments: r#"{"files":[{"path":"src/scratch.rs","content":"// scratch\n"},{"path":"src/orders.rs","content":"pub struct Draft;\n"},{"path":"src/orders.rs","content":"pub struct Order;\n"}],"delete":["src/scratch.rs"]}"#
+            arguments: r#"{"files":[{"path":"src/scratch.rs","content":"// scratch\n"},{"path":"src/orders.rs","content":"pub struct Draft;\n"},{"path":"src/orders.rs","content":"pub struct Order;\n"}],"delete":["src/scratch.rs","src/stale.rs"]}"#
                 .to_owned(),
         }],
     );
 
     let report = ask(&model, &slice(), root).await.expect("accepted");
-    assert_eq!(report.written, ["src/orders.rs"], "the file written and kept");
-    assert_eq!(names(&tmp.path().join("src")), ["orders.rs"], "written then removed is gone");
+    assert_eq!(report.written, ["src/orders.rs", "src/scratch.rs"], "the files written and kept");
+    assert_eq!(names(&tmp.path().join("src")), ["orders.rs", "scratch.rs"]);
     assert_eq!(
         fs::read_to_string(tmp.path().join("src/orders.rs")).expect("written"),
         "pub struct Order;\n",
         "the later entry replaces the earlier"
+    );
+    assert_eq!(
+        fs::read_to_string(tmp.path().join("src/scratch.rs")).expect("written"),
+        "// scratch\n",
+        "the entry replaces the file the delete also names"
     );
 
     let exchanges = model.exchanges();
@@ -1311,7 +2096,7 @@ async fn write_path_twice() {
     assert_eq!(
         exchanges[0].outcome.as_deref(),
         Ok(
-            r#"{"deleted":["src/scratch.rs"],"written":[{"bytes":11,"path":"src/scratch.rs"},{"bytes":18,"path":"src/orders.rs"},{"bytes":18,"path":"src/orders.rs"}]}"#
+            r#"{"deleted":["src/stale.rs"],"written":[{"bytes":11,"path":"src/scratch.rs"},{"bytes":18,"path":"src/orders.rs"},{"bytes":18,"path":"src/orders.rs"}]}"#
         )
     );
     assert_eq!(exchanges[1].outcome, Ok(String::new()));
@@ -1397,11 +2182,11 @@ async fn doc_refs() {
     );
     assert_eq!(
         exchanges[1].outcome.as_deref(),
-        Ok(r#"{"body":"One module per requirement.","path":"references/layout.md"}"#)
+        Ok(r#"{"path":"references/layout.md","body":"One module per requirement."}"#)
     );
     assert_eq!(
         exchanges[2].outcome.as_deref(),
-        Ok(r#"{"body":"BUILD","path":"build.md"}"#),
+        Ok(r#"{"path":"build.md","body":"BUILD"}"#),
         "`read_doc` still answers an unlisted document"
     );
     assert_eq!(

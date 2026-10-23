@@ -94,6 +94,7 @@
 //! # fn main() {}
 //! ```
 
+mod design;
 mod write;
 
 use std::fmt::{self, Display, Formatter};
@@ -172,15 +173,17 @@ impl Grant {
         (union != WorkerGrant::default()).then_some(union)
     }
 
-    /// Returns the entries of `grants` that break the grant's shape, each
-    /// named; empty for a list the host holds to nothing.
+    /// Returns the entries of `grants` that violate the grant grammar.
     ///
-    /// The shape is the grant's grammar: an `egress` entry is a host name,
-    /// a `read` entry is `~/<path>` over a plain relative path, an `env`
-    /// name is `[A-Za-z_][A-Za-z0-9_]*`, and no variable is set to two
-    /// values. What the backend refuses beyond the shape, a credential
-    /// store or an address, is its own rule and not read here. [`build`]
-    /// and [`verify`] refuse grants with findings before any turn.
+    /// An empty vector means `grants` is valid. [`build`] and [`verify`]
+    /// reject invalid grants before starting a turn.
+    ///
+    /// Every grant must satisfy four rules:
+    ///
+    /// - Each `egress` entry is a host name (`example.com` or `*.example.com`).
+    /// - Each `read` entry is `~/<path>` over a plain relative path.
+    /// - Each `env` name matches `[A-Za-z_][A-Za-z0-9_]*`.
+    /// - No environment variable is assigned two different values.
     #[must_use]
     pub fn findings(grants: &[Self]) -> Vec<String> {
         let mut findings = Vec::new();
@@ -221,29 +224,21 @@ impl Grant {
     }
 }
 
-/// What a target adapter declares about itself: the rules it merges under and the grants its worker carries.
+/// Static configuration a target adapter declares for merge rules and worker grants.
 ///
-/// [`TargetAdapter::metadata`] answers it from the adapter's compiled-in
-/// constants. [`export_target!`](crate::export_target) answers the
-/// component's `metadata` over its [`rules`](Self::rules), and [`build`]
-/// and [`verify`] carry its [`grants`](Self::grants) with every turn. The
-/// default declares no rule and no grant.
+/// Returned by [`TargetAdapter::metadata`]. [`export_target!`](crate::export_target)
+/// exposes [`rules`](Self::rules) through the component's `metadata` export,
+/// and [`build`] and [`verify`] attach [`grants`](Self::grants) to every turn.
+/// The default declares no rules and no grants.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct Metadata {
-    /// The rules the engine merges every slice into the integrated tree
-    /// under, since the adapter alone knows which files its builds
-    /// regenerate and which they extend.
+    /// Merge rules applied when integrating each slice into the tree.
     ///
-    /// The first rule matching a conflicting path applies. A conflict no
-    /// rule resolves is the engine's: it resolves the file with the model
-    /// and merges the resolution, so the rules spare a turn where a list or
-    /// a regenerated file decides the outcome.
+    /// The first rule matching a conflicting path applies; paths matched by no
+    /// rule are resolved by the engine through a merge turn.
     pub rules: &'static [MergeRule],
-    /// What the model's worker reaches beyond the tree in every build and
-    /// verify turn, since the adapter alone knows the toolchain its prompts
-    /// run: one [`Grant`] per program, each spelling the registries that
-    /// program fetches from, the `~/` roots it is installed under, and the
-    /// variables it reads.
+    /// Toolchain access granted to the model's worker in [`build`] and
+    /// [`verify`] turns, one [`Grant`] per program the prompts run.
     pub grants: &'static [Grant],
 }
 
@@ -314,26 +309,110 @@ impl<'a, P> BuildContext<'a, P> {
     }
 }
 
-/// What an adapter's own code scaffolded into the workspace for a slice before its turn.
+/// Files and prompt context an adapter scaffolds into the workspace before a [`build`] turn.
 ///
-/// [`build`] renders `brief` after the design, under `What the adapter
-/// scaffolded for this slice before this turn:`, so the turn fills the
-/// files and the markers it names rather than writing them over; an empty
-/// text puts no section. `paths` are those files, root-relative, which the
-/// turn changes through `edit_files` alone: a `write_files` entry or
-/// `delete` naming one is refused as a correction, since a skeleton written
-/// over loses its markers.
+/// Attach a scaffold to [`BuildContext`] with [`BuildContext::with_scaffold`]
+/// when the adapter generates skeleton files from the typed [`Slice`] for the
+/// model to fill in place.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Scaffold<'a> {
-    /// The files and the markers, as the brief states them to the model.
+    /// Markdown rendered after the design under `What the adapter scaffolded
+    /// for this slice before this turn:`.
+    ///
+    /// Names the scaffolded files and the markers to fill. An empty string
+    /// omits the section.
     pub brief: &'a str,
-    /// The root-relative paths of the scaffolded files.
-    pub paths: &'a [String],
+    /// Reference passages appended verbatim after the scaffold section.
+    ///
+    /// Ignored when cutting the design to the slice, so types mentioned only
+    /// in quoted examples are not retained. An empty string appends nothing.
+    pub passages: &'a str,
+    /// Guarded files that `write_files` may not delete or overwrite without
+    /// their [`Guarded::keeps`] tokens.
+    ///
+    /// When non-empty, [`build`] also exposes `restore_files` so the model can
+    /// reset a guarded file to its initial state.
+    pub files: &'a [Guarded],
+    /// Keys of design `Type:` blocks already laid into the scaffolded files.
+    ///
+    /// [`build`] replaces each matching data-type block in the brief's design
+    /// with a pointer to the scaffold section.
+    pub types: &'a [String],
+}
+
+/// A scaffolded file protected against accidental overwrite or deletion during [`build`].
+///
+/// `write_files` rejects any `delete` of `path`, and rejects any whole-file
+/// write to `path` while it exists in the workspace unless the new content
+/// contains every token in [`keeps`](Self::keeps). An empty `keeps` list
+/// allows any whole-file write while still preventing deletion.
+///
+/// `edit_files` fills a [`Marker`] in [`markers`](Self::markers) when an
+/// edit's `find` is the marker's key alone, replacing the block the scaffold
+/// laid for it without the model copying the block's lines.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Guarded {
+    /// Root-relative path of the scaffolded file.
+    pub path: String,
+    /// Substrings that any whole-file write to `path` must preserve, such as
+    /// requirement markers, item declarations, or anchored list lines.
+    pub keeps: Vec<String>,
+    /// Markers in `path` that `edit_files` addresses by key.
+    pub markers: Vec<Marker>,
+}
+
+impl Guarded {
+    /// Returns a guard over `path` keeping `keeps`, with no markers.
+    pub fn new(
+        path: impl Into<String>, keeps: impl IntoIterator<Item = impl Into<String>>,
+    ) -> Self {
+        Self {
+            path: path.into(),
+            keeps: keeps.into_iter().map(Into::into).collect(),
+            markers: Vec::new(),
+        }
+    }
+
+    /// Returns the guard with `markers` appended to [`markers`](Self::markers).
+    #[must_use]
+    pub fn with_markers(mut self, markers: impl IntoIterator<Item = Marker>) -> Self {
+        self.markers.extend(markers);
+        self
+    }
+}
+
+/// A scaffolded block in a [`Guarded`] file that `edit_files` fills by key.
+///
+/// An edit whose `find` equals [`key`](Self::key), trimmed, replaces the one
+/// place the file holds [`block`](Self::block), as written or with its line
+/// breaks and indentation read past, so the model names the marker rather
+/// than copying its lines.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Marker {
+    /// The key an edit's `find` names the marker by, such as
+    /// `REQ-001 orders.read: the handler`.
+    pub key: String,
+    /// The block the scaffold laid for the marker, as the file holds it.
+    pub block: String,
+}
+
+impl Marker {
+    /// Returns a marker addressed by `key` standing for `block`.
+    pub fn new(key: impl Into<String>, block: impl Into<String>) -> Self {
+        Self {
+            key: key.into(),
+            block: block.into(),
+        }
+    }
 }
 
 impl Scaffold<'_> {
     fn section(&self) -> Option<&str> {
         Some(self.brief.trim_end()).filter(|brief| !brief.is_empty())
+    }
+
+    fn quoted(&self) -> Option<&str> {
+        Some(self.passages.trim_end()).filter(|passages| !passages.is_empty())
     }
 }
 
@@ -395,21 +474,16 @@ pub trait TargetAdapter {
         Metadata::default()
     }
 
-    /// Runs `task` in the tree its context names and answers the outcome of
-    /// its kind.
+    /// Runs `task` in the tree its context names and returns the matching [`Outcome`].
     ///
-    /// An init scaffolds the layout's initial files the tree lacks through the
-    /// adapter's own code and answers [`Outcome::Initialised`]; a build's
-    /// one turn goes through [`build`](fn@build) and answers
-    /// [`Outcome::Built`]; a verify's through [`verify`](fn@verify) and
-    /// answers [`Outcome::Verified`]. An outcome of another kind is the
-    /// adapter's defect, which the export refuses as `internal`.
+    /// Returning an [`Outcome`] that does not match `task` is an adapter defect
+    /// and is rejected by the component export as `internal`.
     ///
     /// # Errors
     ///
-    /// - Returns [`Error::BadRequest`] when the tree refuses the init, as
-    ///   when a directory or a link stands where a file of the layout goes.
-    /// - Returns [`Error::ServerError`] when the init cannot write the tree.
+    /// - Returns [`Error::BadRequest`] when the tree refuses [`Task::Init`], such
+    ///   as when a directory or symlink occupies a layout file's path.
+    /// - Returns [`Error::ServerError`] when [`Task::Init`] cannot write the tree.
     /// - Returns what [`build`](fn@build) or [`verify`](fn@verify) returns.
     fn run<P: Model>(task: Task<'_, P>) -> impl Future<Output = Result<Outcome, Error>>;
 }
@@ -431,59 +505,56 @@ pub fn metadata(rules: &[MergeRule]) -> TargetMetadata {
     }
 }
 
-/// Builds the slice of `ctx` into its workspace through one gated turn.
+/// Builds the slice of `ctx` into its workspace through one gated model turn.
 ///
-/// `docs` must contain `build.md`, which becomes the system prompt. The turn
-/// carries the slice's plan entry, its cut of the specification, the whole
-/// design, and the [`brief`](Scaffold::brief) of `ctx`'s
-/// [`scaffold`](BuildContext::scaffold), where the adapter set one: the
-/// files and the markers the model fills, stated so the turn edits them
-/// rather than writing them over. It lends the workspace with the
-/// worker grant `ctx`'s [`grants`](BuildContext::grants) unite to, and
-/// offers the embedded references through the reference tools. It writes
-/// through two tools. `write_files` writes one or more files beneath the
-/// workspace per call, listed or mapped by path, or that shape sent as JSON
-/// text, each created or replaced whole, at a path
-/// [`beneath`](crate::beneath) accepts and no symlink stands on, and removes
-/// the files its `delete` names; an entry that would leave a held file empty
-/// or under half its size is refused unless it sets `shrink`, and an entry
-/// or a `delete` naming one of the scaffold's [`paths`](Scaffold::paths) is
-/// refused, telling the model to change the file through `edit_files`.
-/// `edit_files` replaces the one place each edit's `find` matches within a
-/// file the workspace holds, the list of edits sent as JSON text read the
-/// same; a `find` matching nothing is refused with the line of the file its
-/// first line is on and the line after it, or the file's opening line, so
-/// the refusal carries the text to copy. A call either tool refuses
-/// anywhere changes nothing. The answered
-/// [`Report`] is held to the slice by
-/// [`Report::findings`], to the tree — a `written` path names a regular
-/// file under the workspace — and to `check`, the adapter's own rule over
-/// the report and the tree as the model left it; every finding, the
-/// adapter's among the rest, is returned to the model for one correction
-/// round, until the host's round limit is reached. A finding is an
-/// instruction the model repairs by, so it names the repair, not the
-/// difference alone. `check` runs on every candidate, so it reads what one
-/// gate reads and runs nothing. An adapter with no rule passes
-/// `|_| Ok(Vec::new())`. The accepted report's `written` is filled in:
-/// every path it lists, spelled root-relative, and every file a tool wrote
-/// that the tree still holds, once each and sorted.
+/// `docs` must contain `build.md`, which becomes the system prompt. The brief
+/// carries the slice's plan entry, its specification cut, the design cut to the
+/// slice (omitting data types owned by other slices that the slice's text does
+/// not mention), and any [`Scaffold`] set on `ctx`. The workspace is lent with
+/// the [`Grant::union`] of `ctx`'s [`grants`](BuildContext::grants).
 ///
-/// A failure upstream is not put again here: the turn writes the tree as it
-/// goes, so a second turn would start over what the first left. The caller
-/// that owns the tree may cut a fresh one and ask again.
+/// The turn serves `docs` through `list_docs` and `read_doc`, and modifies the
+/// workspace through up to three tools:
+///
+/// - `write_files` creates or replaces files whole at paths
+///   [`beneath`](crate::beneath) accepts (following no symlink) and removes
+///   files listed in `delete`. It refuses writes that empty an existing file or
+///   halve its size without `shrink: true`, and refuses writes or deletions
+///   that violate a [`Guarded`] file in [`Scaffold::files`].
+/// - `edit_files` replaces the single occurrence of each edit's `find` string
+///   in an existing file.
+/// - `restore_files`, registered when [`Scaffold::files`] is non-empty, resets
+///   named scaffolded files to their contents at the start of the turn.
+///
+/// Any tool call that fails a check is rejected as a whole without changing the
+/// workspace.
+///
+/// Each candidate [`Report`] must pass three checks before the turn completes:
+///
+/// - [`Report::findings`] verifies that `covered` names only the slice's
+///   requirements and `written` contains valid root-relative paths.
+/// - Every `written` path must name a regular file in the workspace.
+/// - `check` runs the adapter's own validation over the candidate report and
+///   workspace; pass `|_| Ok(Vec::new())` when none is needed.
+///
+/// Findings from all three checks are returned to the model for correction
+/// until a candidate passes or the round limit is reached. The accepted
+/// report's `written` list is normalised and augmented with every file the
+/// tools wrote that still stands in the workspace.
+///
+/// Upstream failures are not retried because the turn mutates the workspace in
+/// place. The caller may cut a fresh working copy and call `build` again.
 ///
 /// # Errors
 ///
-/// - Returns [`Error::BadRequest`] when the model rejects the request, or
-///   when no valid report is produced within the available rounds or the
-///   backend's time budget.
-/// - Returns [`Error::ServerError`] when `docs` does not contain `build.md`,
-///   or when `ctx`'s [`grants`](BuildContext::grants) have
-///   [`findings`](Grant::findings), before any turn.
+/// - Returns [`Error::BadRequest`] when the model rejects the request or
+///   produces no valid report within the round limit or time budget.
+/// - Returns [`Error::ServerError`] before any turn when `docs` lacks
+///   `build.md`, `ctx`'s [`grants`](BuildContext::grants) have
+///   [`findings`](Grant::findings), or a guarded file in the workspace cannot
+///   be read.
 /// - Returns [`Error::BadGateway`] when a model tool or transport fails.
-/// - Returns the error `check` fails with, whatever its class: the
-///   candidate it failed on ends the turn, since a tree the adapter cannot
-///   read is the run's failure and not the model's to repair.
+/// - Returns the [`Error`] returned by `check`, ending the turn immediately.
 pub async fn build<P: Model>(
     ctx: &BuildContext<'_, P>, docs: &'static [Doc],
     mut check: impl FnMut(&Report) -> Result<Vec<String>, Error> + Send,
@@ -491,11 +562,11 @@ pub async fn build<P: Model>(
     let slice = ctx.slice;
     let id = &slice.id;
     let root = Path::new(ctx.workspace);
-    let scaffolded = ctx.scaffold.map_or(&[][..], |scaffold| scaffold.paths);
-    let writer = Writer::new(ctx.workspace, id).guarding(scaffolded);
+    let scaffolded = ctx.scaffold.map_or(&[][..], |scaffold| scaffold.files);
+    let writer = Writer::new(ctx.workspace, id).guarding(scaffolded)?;
     let written = writer.written();
     let mut tools = reference::tools();
-    tools.extend(Writer::tools());
+    tools.extend(writer.tools());
     let question = granted(
         Question::<Report>::new(&format!("build-{id}"))
             .system(prompt(docs, BUILD)?)
@@ -557,42 +628,37 @@ pub async fn build<P: Model>(
     Ok(report)
 }
 
-/// Verifies the integrated tree of `ctx` through one gated turn.
+/// Verifies the integrated tree of `ctx` through one gated model turn.
 ///
 /// `docs` must contain `verify.md`, which becomes the system prompt. The turn
-/// lends the tree with the worker grant `ctx`'s
-/// [`grants`](VerifyContext::grants) unite to and offers the embedded
-/// references through the reference tools and the same
-/// `write_files` and `edit_files` a build has: the model
-/// runs the checks the prompt names through its shell, repairs what they
-/// find in the tree, runs them again, and answers what they finally found.
-/// The answered [`Verdict`] is held to [`Verdict::findings`] and to `check`,
-/// the adapter's own rule over the verdict and the tree as the model left
-/// it; every finding is returned to the model for one correction round,
-/// until the host's round limit is reached, so a verdict cannot pass over a
-/// tree that breaks the adapter's rule. An adapter with no rule passes
-/// `|_| Ok(Vec::new())`. A verdict that fails is an answer, not an error:
-/// the caller decides what a failed wave means, and what the repairs left
-/// in the tree is the caller's to seal.
+/// lends `ctx.workspace` with the [`Grant::union`] of `ctx`'s
+/// [`grants`](VerifyContext::grants), serves `docs` through `list_docs` and
+/// `read_doc`, and provides `write_files` and `edit_files` so the model can
+/// run the prompt's checks in its shell and repair any failures in place.
+///
+/// Each candidate [`Verdict`] is checked with [`Verdict::findings`] and passed
+/// to `check` (use `|_| Ok(Vec::new())` when the adapter has no extra rules).
+/// Findings are returned to the model for correction until a candidate passes
+/// or the round limit is reached. A verdict with `passed: false` is returned
+/// as `Ok`, leaving the caller to handle the failed wave and any repairs left
+/// in the workspace.
 ///
 /// # Errors
 ///
-/// - Returns [`Error::BadRequest`] when the model rejects the request or no
-///   valid verdict is produced within the available rounds or the backend's
-///   time budget.
-/// - Returns [`Error::ServerError`] when `docs` does not contain
-///   `verify.md`, or when `ctx`'s [`grants`](VerifyContext::grants) have
-///   [`findings`](Grant::findings), before any turn.
+/// - Returns [`Error::BadRequest`] when the model rejects the request or
+///   produces no valid verdict within the round limit or time budget.
+/// - Returns [`Error::ServerError`] before any turn when `docs` lacks
+///   `verify.md` or `ctx`'s [`grants`](VerifyContext::grants) have
+///   [`findings`](Grant::findings).
 /// - Returns [`Error::BadGateway`] when a model tool or transport fails.
-/// - Returns the error `check` fails with, whatever its class, the
-///   candidate it failed on ending the turn.
+/// - Returns the [`Error`] returned by `check`, ending the turn immediately.
 pub async fn verify<P: Model>(
     ctx: &VerifyContext<'_, P>, docs: &'static [Doc],
     mut check: impl FnMut(&Verdict) -> Result<Vec<String>, Error> + Send,
 ) -> Result<Verdict, Error> {
     let writer = Writer::new(ctx.workspace, VERIFY_TURN);
     let mut tools = reference::tools();
-    tools.extend(Writer::tools());
+    tools.extend(writer.tools());
     let question = granted(
         Question::<Verdict>::new(VERIFY_TURN)
             .system(prompt(docs, VERIFY)?)
@@ -723,13 +789,14 @@ struct Brief<'a> {
 impl Display for Brief<'_> {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         let slice = self.slice;
+        let guarded = self.scaffold.is_some_and(|scaffold| !scaffold.files.is_empty());
         write!(
             f,
             "Build the slice `{name}` ({id}) of the plan, bound to adapter `{adapter}`.\n\n\
              `$WORKSPACE` is the project tree, lent writable: the root of every file you can \
              read, and the root every `written` path is relative to. The tree sits on commit \
              `{base}`, the integrated head this slice builds over. Write through this call's \
-             two tools alone: {TOOLS_RULE} Write the files you have ready together in one \
+             {count} tools alone: {TOOLS_RULE} Write the files you have ready together in one \
              `write_files` call, and make a change within a file through `edit_files`. Build \
              the slice into the tree as the prompt describes, and change nothing outside \
              it.\n\n",
@@ -737,19 +804,21 @@ impl Display for Brief<'_> {
             id = slice.id,
             adapter = self.adapter_id,
             base = slice.base,
+            count = if guarded { "three" } else { "two" },
         )?;
 
         write!(
             f,
             "The slice's entry in the plan:\n\n{plan}\n\n\
              The specification, cut to the slice's requirements:\n\n{spec}\n\n\
-             The design, whole:\n\n{design}\n\n",
+             The design, cut to this slice:\n\n{design}\n\n",
             plan = slice.plan.trim_end(),
             spec = slice.spec.trim_end(),
-            design = slice.design.trim_end(),
+            design = design::cut(slice, self.scaffold.as_ref()),
         )?;
 
-        // what the adapter scaffolded before the turn, where it scaffolded anything
+        // what the adapter scaffolded before the turn, where it scaffolded
+        // anything, and what it quotes for the turn
         if let Some(scaffold) = &self.scaffold {
             if let Some(brief) = scaffold.section() {
                 write!(
@@ -757,15 +826,32 @@ impl Display for Brief<'_> {
                     "What the adapter scaffolded for this slice before this turn:\n\n{brief}\n\n"
                 )?;
             }
-            if !scaffold.paths.is_empty() {
+            if !scaffold.files.is_empty() {
                 write!(
                     f,
-                    "The {count} the adapter scaffolded for this slice {are} filled through \
-                     `edit_files` alone: a `write_files` entry or `delete` naming one of them \
-                     is refused whole, since a skeleton written over loses its markers.\n\n",
-                    count = if scaffold.paths.len() == 1 { "file" } else { "files" },
-                    are = if scaffold.paths.len() == 1 { "is" } else { "are" },
+                    "The {count} the adapter scaffolded for this slice {are} filled in place: \
+                     change {one} through `edit_files`, or send the whole file through \
+                     `write_files` with every marker and name the skeleton holds still in it; \
+                     an entry that drops one is refused whole naming what it dropped, as a \
+                     `delete` naming one of them is. `restore_files` puts {one} back as it was \
+                     scaffolded, the turn's edits to it discarded: recovery after a refusal, \
+                     not a step.{keyed}\n\n",
+                    count = if scaffold.files.len() == 1 { "file" } else { "files" },
+                    are = if scaffold.files.len() == 1 { "is" } else { "are" },
+                    one = if scaffold.files.len() == 1 { "it" } else { "one" },
+                    keyed = if scaffold.files.iter().any(|file| !file.markers.is_empty()) {
+                        " A marker the brief quotes a key for is filled by one `edit_files` \
+                         edit whose `find` is that key alone and whose `replace` is the text \
+                         that takes the block's place, so its lines are never copied; a `find` \
+                         copied from the brief matches where the formatter has broken its lines \
+                         or moved its indentation."
+                    } else {
+                        ""
+                    },
                 )?;
+            }
+            if let Some(passages) = scaffold.quoted() {
+                write!(f, "{passages}\n\n")?;
             }
         }
 

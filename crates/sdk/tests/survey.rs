@@ -200,11 +200,11 @@ async fn doc_refs() {
     );
     assert_eq!(
         exchanges[1].outcome.as_deref(),
-        Ok(r#"{"body":"A route is a surface.","path":"references/surfaces.md"}"#)
+        Ok(r#"{"path":"references/surfaces.md","body":"A route is a surface."}"#)
     );
     assert_eq!(
         exchanges[2].outcome.as_deref(),
-        Ok(r#"{"body":"SURVEY","path":"survey.md"}"#),
+        Ok(r#"{"path":"survey.md","body":"SURVEY"}"#),
         "`read_doc` still answers an unlisted document"
     );
     assert_eq!(exchanges[3].tool, "check");

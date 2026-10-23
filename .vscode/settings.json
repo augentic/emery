@@ -3,7 +3,6 @@
         "Cargo.toml"
     ],
     "rust-analyzer.check.command": "clippy",
-    // "rust-analyzer.cargo.features": "all",
     "[markdown]": {
         "editor.wordWrap": "wordWrapColumn",
         "editor.wordWrapColumn": 100

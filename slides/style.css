@@ -1,0 +1,1269 @@
+@font-face {
+  font-family: 'Brockmann';
+  src: url('/fonts/Brockmann-Regular.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Brockmann';
+  src: url('/fonts/Brockmann-Medium.woff2') format('woff2');
+  font-weight: 500;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Brockmann';
+  src: url('/fonts/Brockmann-SemiBold.woff2') format('woff2');
+  font-weight: 600;
+  font-style: normal;
+  font-display: swap;
+}
+
+:root {
+  --phl-bg-void: #0a0710;
+  --phl-bg-navy: #0d1030;
+  --phl-bg-indigo: #151946;
+  --phl-bg-light: #ffffff;
+  --phl-bg-subtle: #f5f6fa;
+  --phl-text: #ffffff;
+  --phl-ink: #0d1030;
+  --phl-ink-body: rgba(13, 16, 48, 0.7);
+  --phl-ink-muted: rgba(13, 16, 48, 0.52);
+  --phl-ink-hairline: rgba(13, 16, 48, 0.12);
+  --phl-card-shadow:
+    0 1px 2px rgba(13, 16, 48, 0.04),
+    0 10px 24px -8px rgba(13, 16, 48, 0.07);
+  --phl-muted: #c3c4cf;
+  --phl-dim: rgba(255, 255, 255, 0.58);
+  --phl-cyan: #16b4e2;
+  --phl-cyan-ink: #0c7fa3;
+  --phl-cyan-soft: #78d8f2;
+  --phl-magenta: #d63ad6;
+  --phl-coral: #ff3b6b;
+  --phl-hairline: rgba(255, 255, 255, 0.15);
+  --phl-rule-gradient: linear-gradient(90deg, #16b4e2 0%, #d63ad6 100%);
+  --phl-brand-gradient:
+    radial-gradient(120% 140% at 8% 120%, #ff3b6b 0%, rgba(255, 59, 107, 0) 48%),
+    radial-gradient(120% 130% at 100% 15%, #6d3bff 0%, rgba(109, 59, 255, 0) 52%),
+    linear-gradient(115deg, #1a1140 0%, #4a1d8f 42%, #a4238f 78%, #d8305f 100%);
+  --phl-proof-dark:
+    radial-gradient(circle at 100% 0%, rgba(214, 58, 214, 0.18), transparent 13rem),
+    #0d1030;
+}
+
+/* Dock Slidev's right slide nav cleanly beside the slide canvas so item 1 is never clipped and slide content is never covered */
+@media screen {
+  #page-root {
+    padding-right: 260px;
+    box-sizing: border-box;
+  }
+
+  :fullscreen #page-root {
+    padding-right: 0;
+  }
+
+  :fullscreen #slidev-goto-dialog.-top-20 {
+    display: none;
+  }
+}
+
+#page-root > #slide-container {
+  min-width: 0;
+  min-height: 0;
+}
+
+#slidev-goto-dialog {
+  top: 0 !important;
+  right: 0 !important;
+  bottom: 0;
+  width: 260px !important;
+  min-width: 260px !important;
+  max-width: 260px !important;
+  background: #0d1030;
+  border-left: 1px solid rgba(255, 255, 255, 0.12);
+  padding: 20px 12px;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  z-index: 50;
+}
+
+#slidev-goto-dialog.-top-20 > div:first-child {
+  display: none;
+}
+
+#slidev-goto-dialog .autocomplete-list {
+  margin-top: 0 !important;
+  max-height: 100% !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  border: none !important;
+  color: #ffffff;
+  font-family: 'Brockmann', -apple-system, BlinkMacSystemFont, sans-serif;
+  font-size: 13px;
+  line-height: 1.35;
+}
+
+#slidev-goto-dialog .autocomplete-list p {
+  margin: 0;
+}
+
+#slidev-goto-dialog .autocomplete-list li {
+  border-radius: 8px;
+  transition: background-color 0.15s ease;
+}
+
+#slidev-goto-dialog .autocomplete-list li:hover {
+  background: rgba(255, 255, 255, 0.08) !important;
+}
+
+.slidev-layout {
+  background-color: var(--phl-bg-navy);
+  background-image:
+    radial-gradient(circle at 92% 8%, rgba(214, 58, 214, 0.14), transparent 34%),
+    radial-gradient(circle at 8% 95%, rgba(22, 180, 226, 0.1), transparent 32%);
+  color: var(--phl-text);
+  font-family: 'Brockmann', -apple-system, BlinkMacSystemFont, sans-serif;
+  padding: 42px 72px 42px 64px;
+  height: 100%;
+  width: 100%;
+  box-sizing: border-box;
+  position: relative;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Light Slide Theme (matches propellerhead.co.nz white editorial sections) */
+.slidev-layout.slide-light {
+  background-color: var(--phl-bg-light);
+  background-image: none;
+  color: var(--phl-ink);
+}
+
+.slidev-layout > *:not(.ambient-video-wrap) {
+  position: relative;
+  z-index: 1;
+}
+
+/* Ambient Background Video Layer (matches propellerhead.co.nz hero/approach/cta videos) */
+.ambient-video-wrap {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.ambient-video-el {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.ambient-video-wrap.is-approach .ambient-video-el {
+  transform: translate(-19%, -12%) scale(1.4);
+  transform-origin: center;
+  filter: blur(8px);
+}
+
+.ambient-video-wrap.is-split .ambient-video-el {
+  transform: scaleX(-1) scale(1.18);
+  filter: blur(3px);
+}
+
+/* The scrims darken the edges where the chrome sits and leave the middle of the video clear, as the site's do */
+.ambient-video-scrim {
+  position: absolute;
+  inset: 0;
+  background:
+    linear-gradient(180deg, rgba(10, 7, 16, 0.45) 0%, rgba(10, 7, 16, 0) 35%),
+    linear-gradient(0deg, rgba(10, 7, 16, 0.4) 0%, rgba(10, 7, 16, 0) 40%);
+}
+
+.ambient-video-wrap.is-approach .ambient-video-scrim {
+  background:
+    linear-gradient(180deg, rgba(10, 7, 16, 0.72) 0%, rgba(10, 7, 16, 0) 30%),
+    linear-gradient(0deg, rgba(10, 7, 16, 0.62) 0%, rgba(10, 7, 16, 0) 26%),
+    radial-gradient(120% 60% at 50% 40%, rgba(10, 7, 16, 0.06) 40%, rgba(10, 7, 16, 0.4) 100%);
+}
+
+.ambient-video-wrap.is-split .ambient-video-scrim {
+  background:
+    linear-gradient(180deg, rgba(10, 7, 16, 0.3) 0%, rgba(10, 7, 16, 0.12) 50%, rgba(10, 7, 16, 0.5) 100%);
+}
+
+/* Static image fallback for PDF/PPTX exports */
+.slidev-layout.slide-hero {
+  background-color: var(--phl-bg-void);
+  background-image:
+    linear-gradient(180deg, rgba(10, 7, 16, 0.5) 0%, rgba(10, 7, 16, 0.25) 45%, rgba(10, 7, 16, 0.6) 100%),
+    url('/images/bg-hero.jpg');
+  background-size: cover;
+  background-position: center;
+}
+
+.slidev-layout.slide-sandbox,
+.slidev-layout.slide-chapter {
+  background-color: var(--phl-bg-void);
+  background-image:
+    linear-gradient(180deg, rgba(10, 7, 16, 0.45) 0%, rgba(13, 16, 48, 0.6) 100%),
+    url('/images/bg-sandbox.jpg');
+  background-size: cover;
+  background-position: center;
+}
+
+/* Brand Eyebrow / Kicker (h6) with right-aligned slide counter */
+.slidev-layout h6 {
+  font-family: 'Brockmann', sans-serif;
+  font-weight: 500;
+  font-size: 12.5px;
+  line-height: 1.2;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.78);
+  opacity: 1 !important;
+  margin: 0 0 12px 0;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+}
+
+.slidev-layout h6::before {
+  content: '';
+  display: inline-block;
+  width: 17px;
+  height: 17px;
+  background-image: url('/images/phl-icon.svg');
+  background-size: contain;
+  background-repeat: no-repeat;
+  background-position: center;
+  flex-shrink: 0;
+}
+
+.eyebrow-num {
+  margin-left: auto;
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0.06em;
+  color: rgba(255, 255, 255, 0.45);
+}
+
+.slide-light h6,
+.split-content-pane h6 {
+  color: var(--phl-ink-muted);
+}
+
+.slide-light h6::before,
+.split-content-pane h6::before {
+  filter: brightness(0);
+  opacity: 0.78;
+}
+
+.slide-light .eyebrow-num,
+.split-content-pane .eyebrow-num {
+  color: rgba(13, 16, 48, 0.4);
+}
+
+/* Main Heading (h1) + Propellerhead Cyan-to-Magenta Gradient Rule */
+.slidev-layout h1 {
+  color: var(--phl-text);
+  font-family: 'Brockmann', sans-serif;
+  font-weight: 500;
+  font-size: 42px;
+  line-height: 1.04;
+  letter-spacing: -0.03em;
+  margin: 0;
+  padding: 0;
+}
+
+.slide-light h1,
+.split-content-pane h1 {
+  color: var(--phl-ink);
+}
+
+.slidev-layout h1::after {
+  content: '';
+  display: block;
+  width: 220px;
+  height: 2px;
+  background: var(--phl-rule-gradient);
+  margin-top: 14px;
+  margin-bottom: 14px;
+}
+
+.slidev-layout.short-bar h1::after {
+  width: 150px;
+}
+
+/* Lead subtitle under H1 */
+.slide-lead {
+  font-size: 17px;
+  line-height: 1.4;
+  color: rgba(255, 255, 255, 0.82);
+  max-width: 1020px;
+  margin: -2px 0 16px 0;
+  font-weight: 400;
+}
+
+.slide-light .slide-lead {
+  color: var(--phl-ink-body);
+}
+
+.slide-light .slide-lead strong {
+  color: var(--phl-ink);
+  font-weight: 500;
+}
+
+/* Slide 1: Hero Layout */
+.hero-body {
+  margin-top: auto;
+  margin-bottom: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+}
+
+.slidev-layout.slide-hero h1 {
+  font-size: 60px;
+  line-height: 0.98;
+  letter-spacing: -0.035em;
+  color: #ffffff;
+}
+
+.hero-subheadline {
+  font-size: 24px;
+  font-weight: 400;
+  line-height: 1.22;
+  letter-spacing: -0.02em;
+  color: rgba(255, 255, 255, 0.92);
+  margin: -2px 0 2px 0;
+}
+
+.phl-tagline-box {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 32px;
+  padding-left: 20px;
+  border-left: 3px solid transparent;
+  border-image: linear-gradient(180deg, #16b4e2 0%, #d63ad6 100%) 1;
+  max-width: 1040px;
+}
+
+.phl-tagline-box p {
+  margin: 0;
+  font-size: 16.5px;
+  line-height: 1.46;
+  color: rgba(255, 255, 255, 0.82);
+}
+
+.phl-tagline-box strong {
+  color: #ffffff;
+  font-weight: 500;
+}
+
+.slide-light .phl-tagline-box p {
+  color: var(--phl-ink-body);
+}
+
+.slide-light .phl-tagline-box p.lead-quote {
+  color: var(--phl-ink);
+  font-weight: 500;
+  font-size: 18px;
+  line-height: 1.38;
+  letter-spacing: -0.01em;
+}
+
+.slide-light .phl-tagline-box strong {
+  color: var(--phl-ink);
+  font-weight: 500;
+}
+
+.hero-pillars {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 24px;
+  padding-top: 16px;
+  border-top: 1px solid var(--phl-hairline);
+}
+
+.hero-pillar {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  font-size: 14px;
+  color: rgba(255, 255, 255, 0.82);
+}
+
+.hero-pillar-num {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--phl-cyan-soft);
+  letter-spacing: 0.04em;
+}
+
+/* Numbered rows used in split closing CTA slides */
+.opportunity-rows {
+  display: flex;
+  flex-direction: column;
+}
+
+.opportunity-row {
+  display: grid;
+  grid-template-columns: 36px 1fr;
+  gap: 12px;
+  padding: 12px 0;
+  border-top: 1px solid var(--phl-hairline);
+}
+
+.slide-light .opportunity-row,
+.split-content-pane .opportunity-row {
+  border-top: 1px solid var(--phl-ink-hairline);
+}
+
+.opportunity-row-num {
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--phl-cyan-soft);
+  padding-top: 2px;
+}
+
+.slide-light .opportunity-row-num,
+.split-content-pane .opportunity-row-num {
+  color: var(--phl-cyan-ink);
+}
+
+.opportunity-row h4 {
+  margin: 0 0 3px 0;
+  font-size: 17px;
+  font-weight: 500;
+  letter-spacing: -0.015em;
+  color: #ffffff;
+}
+
+.slide-light .opportunity-row h4,
+.split-content-pane .opportunity-row h4 {
+  color: var(--phl-ink);
+}
+
+.opportunity-row p {
+  margin: 0;
+  font-size: 14.5px;
+  line-height: 1.4;
+  color: rgba(255, 255, 255, 0.74);
+}
+
+.slide-light .opportunity-row p,
+.split-content-pane .opportunity-row p {
+  color: var(--phl-ink-body);
+}
+
+/* Full-Bleed Split Layout (Dark video left + Crisp white editorial right) */
+.slidev-layout.slide-split {
+  padding: 0;
+  display: grid;
+  grid-template-columns: 460px 820px;
+}
+
+.split-image-pane {
+  position: relative;
+  width: 460px;
+  height: 720px;
+  background-color: var(--phl-bg-void);
+  background-image: url('/images/start-small.jpg');
+  background-size: cover;
+  background-position: center;
+  overflow: hidden;
+}
+
+.split-brand-overlay {
+  position: absolute;
+  left: 44px;
+  bottom: 44px;
+  right: 44px;
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.split-brand-overlay img {
+  width: 185px;
+  height: auto;
+}
+
+.split-brand-overlay p {
+  margin: 0;
+  font-size: 13.5px;
+  line-height: 1.45;
+  color: rgba(255, 255, 255, 0.76);
+}
+
+.split-content-pane {
+  width: 820px;
+  height: 720px;
+  background-color: var(--phl-bg-light);
+  color: var(--phl-ink);
+  padding: 42px 72px 42px 56px;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+}
+
+.split-content-pane h1 {
+  font-size: 44px;
+  line-height: 1.03;
+}
+
+.cta-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 18px 24px;
+  border-radius: 16px;
+  background: var(--phl-brand-gradient);
+  border: 1px solid rgba(255, 255, 255, 0.25);
+}
+
+.cta-card-label {
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.78);
+  margin-bottom: 3px;
+}
+
+.cta-card-title {
+  font-size: 20px;
+  font-weight: 500;
+  letter-spacing: -0.02em;
+  color: #ffffff;
+}
+
+.cta-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 15px 7px 9px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.45);
+  background: rgba(10, 7, 16, 0.35);
+  font-size: 13.5px;
+  font-weight: 500;
+  color: #ffffff;
+}
+
+.cta-pill-dot {
+  width: 22px;
+  height: 22px;
+  border-radius: 999px;
+  background: #ffffff;
+  color: #0a0710;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+/* ==========================================================================
+   Trust Model — shared tokens
+   ========================================================================== */
+
+:root {
+  --trust-coral-ink: #b4234e;
+  --trust-coral-soft: #ff7597;
+  --trust-text-gradient-light: linear-gradient(110deg, #4a1d8f 0%, #a4238f 55%, #d8305f 100%);
+  --trust-text-gradient-dark: linear-gradient(100deg, #78d8f2 0%, #f59ef5 100%);
+  --trust-current-glow: 0 10px 30px -10px rgba(164, 35, 143, 0.35), 0 0 0 1px rgba(164, 35, 143, 0.28);
+}
+
+/* Section slides keep the hero's framing; the strip below the title carries the four tiers */
+.slidev-layout.slide-section {
+  background-color: var(--phl-bg-void);
+  background-image:
+    radial-gradient(90% 90% at 88% 50%, rgba(214, 58, 214, 0.22) 0%, rgba(22, 180, 226, 0.08) 45%, transparent 75%),
+    linear-gradient(180deg, rgba(10, 7, 16, 0.5) 0%, rgba(10, 7, 16, 0.25) 45%, rgba(10, 7, 16, 0.6) 100%),
+    url('/images/bg-hero.jpg');
+  background-size: cover;
+  background-position: center;
+}
+
+.section-hero-grid {
+  margin-top: 116px;
+  margin-bottom: auto;
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: start;
+  gap: 40px;
+}
+
+.section-hero-left {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 18px;
+  max-width: 980px;
+}
+
+.slidev-layout.slide-section h1 {
+  font-size: 64px;
+  line-height: 0.98;
+  letter-spacing: -0.035em;
+  color: #ffffff;
+}
+
+.slidev-layout.slide-section h1::after {
+  width: 160px;
+  height: 3px;
+  margin-top: 20px;
+  margin-bottom: 6px;
+}
+
+/* Slidev's base `.slidev-layout p` outranks a bare class, so paragraph classes are qualified */
+.slidev-layout .section-subtitle {
+  margin: 0;
+  font-size: 25px;
+  font-weight: 400;
+  line-height: 1.3;
+  letter-spacing: -0.02em;
+  color: rgba(255, 255, 255, 0.84);
+  max-width: 780px;
+}
+
+.section-subtitle strong {
+  color: #ffffff;
+  font-weight: 500;
+}
+
+.section-big-glyph {
+  font-family: 'Brockmann', sans-serif;
+  font-size: 168px;
+  font-weight: 600;
+  line-height: 0.85;
+  letter-spacing: -0.05em;
+  color: rgba(120, 216, 242, 0.24);
+  user-select: none;
+  padding-right: 12px;
+}
+
+/* ==========================================================================
+   Trust ladder — strip (title and section slides)
+   ========================================================================== */
+
+.ladder-strip {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding-top: 18px;
+  border-top: 1px solid var(--phl-hairline);
+}
+
+.ladder-pill {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  background: rgba(10, 7, 16, 0.34);
+  color: rgba(255, 255, 255, 0.84);
+  font-size: 14px;
+  transition: opacity 0.2s ease;
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+}
+
+.ladder-pill.is-dim {
+  color: rgba(255, 255, 255, 0.5);
+}
+
+.ladder-pill.is-current {
+  background: var(--phl-brand-gradient);
+  border-color: rgba(255, 255, 255, 0.35);
+  color: #ffffff;
+  font-weight: 500;
+  box-shadow: 0 8px 24px -6px rgba(214, 58, 214, 0.35);
+}
+
+.ladder-pill-code {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  padding: 2px 7px;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--phl-cyan-soft);
+}
+
+.ladder-pill.is-dim .ladder-pill-code {
+  color: rgba(255, 255, 255, 0.45);
+}
+
+.ladder-pill.is-current .ladder-pill-code {
+  background: rgba(10, 7, 16, 0.32);
+}
+
+.ladder-sep {
+  flex-shrink: 0;
+  color: rgba(255, 255, 255, 0.3);
+}
+
+.slide-light .ladder-strip {
+  border-top-color: var(--phl-ink-hairline);
+}
+
+.slide-light .ladder-pill {
+  border-color: var(--phl-ink-hairline);
+  background: var(--phl-bg-subtle);
+  color: var(--phl-ink);
+}
+
+.slide-light .ladder-pill-code {
+  background: rgba(13, 16, 48, 0.07);
+  color: var(--phl-cyan-ink);
+}
+
+.slide-light .ladder-sep {
+  color: rgba(13, 16, 48, 0.3);
+}
+
+/* ==========================================================================
+   Story — big numbers
+   ========================================================================== */
+
+/* The grids before a bottom bar take half the free space, the bar the other half */
+.stat-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 40px;
+  margin-top: auto;
+}
+
+.stat {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding-top: 18px;
+  border-top: 1px solid var(--phl-ink-hairline);
+}
+
+.stat-num {
+  font-size: 116px;
+  font-weight: 600;
+  line-height: 0.9;
+  letter-spacing: -0.05em;
+  color: #a4238f;
+}
+
+.stat-num span {
+  font-size: 44px;
+  letter-spacing: -0.03em;
+}
+
+.slidev-layout .stat-label {
+  margin: 4px 0 0 0;
+  font-size: 17px;
+  line-height: 1.4;
+  color: var(--phl-ink);
+}
+
+.stat-src {
+  font-size: 11px;
+  line-height: 1.35;
+  color: var(--phl-ink-muted);
+}
+
+.punchline-bar {
+  margin-top: auto;
+  display: flex;
+  align-items: baseline;
+  gap: 18px;
+  padding: 18px 0 0 0;
+  border-top: 1.5px solid var(--phl-ink);
+  background: transparent;
+  color: var(--phl-ink-body);
+}
+
+.punchline-bar p {
+  margin: 0;
+  font-size: 18px;
+  line-height: 1.4;
+  letter-spacing: -0.015em;
+}
+
+.punchline-bar strong {
+  color: var(--phl-ink);
+  font-weight: 500;
+}
+
+.punchline-tag {
+  flex-shrink: 0;
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--phl-cyan-ink);
+}
+
+/* ==========================================================================
+   Story — value grows, control doesn't
+   ========================================================================== */
+
+.curve-wrap {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+
+.curve-svg {
+  width: 100%;
+  height: auto;
+  display: block;
+  overflow: visible;
+}
+
+.curve-svg text {
+  font-family: 'Brockmann', sans-serif;
+}
+
+.curve-axis {
+  font-size: 13px;
+  fill: rgba(255, 255, 255, 0.55);
+}
+
+.curve-label {
+  font-size: 15px;
+  font-weight: 500;
+  fill: #ffffff;
+}
+
+.curve-label.is-muted {
+  fill: rgba(255, 255, 255, 0.7);
+  font-weight: 400;
+}
+
+.curve-step-label {
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  fill: var(--phl-cyan-soft);
+}
+
+.curve-caption {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 24px;
+  margin-top: 6px;
+  font-size: 15px;
+  color: rgba(255, 255, 255, 0.82);
+}
+
+.curve-caption strong {
+  color: #ffffff;
+  font-weight: 500;
+}
+
+/* Both captions share one cell so the swap on click moves nothing else */
+.curve-caption-swap {
+  display: grid;
+  flex: 1;
+  min-width: 0;
+}
+
+.curve-caption-swap > span {
+  grid-area: 1 / 1;
+}
+
+.curve-key {
+  display: flex;
+  gap: 18px;
+  font-size: 12.5px;
+  color: rgba(255, 255, 255, 0.7);
+}
+
+.curve-key span {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.curve-key i {
+  display: inline-block;
+  width: 18px;
+  height: 3px;
+  border-radius: 2px;
+}
+
+/* ==========================================================================
+   Story — chapter slides (one app, four tiers)
+   ========================================================================== */
+
+.chapter-grid {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: 400px 1fr;
+  gap: 40px;
+  align-items: center;
+}
+
+.chapter-left {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.chapter-when {
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--phl-cyan-soft);
+}
+
+/* The headline column sits over the video, so the chapter scrim adds a vignette on its side */
+.slide-chapter .ambient-video-wrap.is-approach .ambient-video-scrim {
+  background:
+    linear-gradient(90deg, rgba(10, 7, 16, 0.5) 0%, rgba(10, 7, 16, 0) 48%),
+    linear-gradient(180deg, rgba(10, 7, 16, 0.72) 0%, rgba(10, 7, 16, 0) 30%),
+    linear-gradient(0deg, rgba(10, 7, 16, 0.62) 0%, rgba(10, 7, 16, 0) 26%),
+    radial-gradient(120% 60% at 50% 40%, rgba(10, 7, 16, 0.06) 40%, rgba(10, 7, 16, 0.4) 100%);
+}
+
+.slidev-layout.slide-chapter h1 {
+  font-size: 33px;
+  line-height: 1.12;
+  letter-spacing: -0.025em;
+}
+
+.slidev-layout.slide-chapter h1::after {
+  width: 120px;
+  margin-top: 16px;
+  margin-bottom: 4px;
+}
+
+.chapter-notes {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  margin-top: 6px;
+}
+
+.chapter-note {
+  padding: 14px 0 0 0;
+  border-top: 1px solid rgba(255, 255, 255, 0.18);
+  background: transparent;
+}
+
+.chapter-note.is-clearance {
+  border-top: 1.5px solid rgba(120, 216, 242, 0.55);
+}
+
+.chapter-note-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--phl-cyan-soft);
+  margin-bottom: 6px;
+}
+
+.chapter-note-head em {
+  font-style: normal;
+  color: rgba(255, 255, 255, 0.52);
+}
+
+.chapter-note p {
+  margin: 0;
+  font-size: 14.5px;
+  line-height: 1.48;
+  color: rgba(255, 255, 255, 0.84);
+}
+
+.chapter-note p strong {
+  color: #ffffff;
+  font-weight: 500;
+}
+
+/* ==========================================================================
+   Layout Variations — High-whitespace editorial + diagram archetypes
+   ========================================================================== */
+
+/* Shared asymmetric split: concentrated prose on the left, open diagram on the right */
+.ed-split {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: 390px 1fr;
+  gap: 72px;
+  align-items: center;
+}
+
+/* Reversed asymmetric split: open diagram on the left, concentrated prose on the right */
+.ed-split.is-reversed {
+  grid-template-columns: 1fr 390px;
+  gap: 72px;
+}
+
+/* Bottom-anchored prose layout: open diagram across the top/middle, compact prose block below */
+.ed-bottom-split {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+}
+
+.ed-bottom-canvas {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.ed-bottom-canvas svg {
+  width: 100%;
+  height: auto;
+  max-height: 300px;
+  overflow: visible;
+}
+
+.ed-bottom-canvas svg text {
+  font-family: 'Brockmann', -apple-system, BlinkMacSystemFont, sans-serif;
+}
+
+.ed-bottom-prose-row {
+  display: grid;
+  grid-template-columns: 440px 1fr;
+  gap: 64px;
+  align-items: start;
+  padding-top: 22px;
+  border-top: 1px solid var(--phl-ink-hairline);
+}
+
+.ed-bottom-prose-row h1 {
+  font-size: 38px;
+  line-height: 1.05;
+}
+
+.ed-bottom-prose-row h1::after {
+  width: 110px;
+  margin-top: 14px;
+  margin-bottom: 0;
+}
+
+.ed-prose-col {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+
+.ed-prose-col h1 {
+  font-size: 42px;
+  line-height: 1.04;
+  letter-spacing: -0.032em;
+}
+
+.ed-prose-col h1::after {
+  width: 120px;
+  margin-top: 16px;
+  margin-bottom: 22px;
+}
+
+.slidev-layout .ed-prose {
+  margin: 0 0 16px 0;
+  font-size: 15.5px;
+  line-height: 1.56;
+  color: var(--phl-ink-body);
+}
+
+.slidev-layout .ed-prose:last-of-type {
+  margin-bottom: 0;
+}
+
+.ed-prose strong {
+  color: var(--phl-ink);
+  font-weight: 500;
+}
+
+.ed-footnote {
+  margin-top: 24px;
+  padding-top: 14px;
+  border-top: 1px solid var(--phl-ink-hairline);
+  font-size: 11.5px;
+  line-height: 1.45;
+  color: var(--phl-ink-muted);
+}
+
+.ed-footnote strong {
+  color: var(--phl-ink);
+  font-weight: 500;
+}
+
+.ed-diagram-pane {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  position: relative;
+}
+
+.ed-diagram-pane svg {
+  width: 100%;
+  height: auto;
+  max-height: 500px;
+  overflow: visible;
+}
+
+.ed-diagram-pane svg text {
+  font-family: 'Brockmann', -apple-system, BlinkMacSystemFont, sans-serif;
+}
+
+/* Top-band editorial layout: single compact prose block at top, open diagram canvas below */
+.ed-band {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+}
+
+.ed-band-top {
+  display: grid;
+  grid-template-columns: 380px 1fr;
+  gap: 64px;
+  align-items: start;
+}
+
+.ed-band-top h1 {
+  font-size: 42px;
+  line-height: 1.04;
+}
+
+.ed-band-top h1::after {
+  width: 120px;
+  margin-top: 14px;
+  margin-bottom: 0;
+}
+
+.slidev-layout .ed-band-prose {
+  margin: 4px 0 0 0;
+  font-size: 15.5px;
+  line-height: 1.55;
+  color: var(--phl-ink-body);
+  max-width: 640px;
+}
+
+.ed-band-prose strong {
+  color: var(--phl-ink);
+  font-weight: 500;
+}
+
+.ed-band-canvas {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding-top: 12px;
+}
+
+.ed-band-canvas svg {
+  width: 100%;
+  height: auto;
+  max-height: 410px;
+  overflow: visible;
+}
+
+.ed-band-canvas svg text {
+  font-family: 'Brockmann', -apple-system, BlinkMacSystemFont, sans-serif;
+}
+
+/* SVG text classes (avoids UnoCSS attributify matching font-size="N" as rem) */
+.svg-kicker {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+}
+
+.svg-pill {
+  font-size: 9.5px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+}
+
+.svg-h2 {
+  font-size: 22px;
+  font-weight: 500;
+  letter-spacing: -0.02em;
+}
+
+.svg-h3 {
+  font-size: 16px;
+  font-weight: 500;
+  letter-spacing: -0.015em;
+}
+
+.svg-label {
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.svg-body {
+  font-size: 12px;
+  font-weight: 400;
+}
+
+.svg-caption {
+  font-size: 11px;
+  font-weight: 400;
+}
+
+/* Tier index watermark badge (T0, T1, T2, T3) */
+.ed-tier-tag {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 12px;
+  margin-bottom: 6px;
+}
+
+.ed-tier-glyph {
+  font-size: 54px;
+  font-weight: 600;
+  line-height: 0.9;
+  letter-spacing: -0.04em;
+  color: #a4238f;
+}
+
+.ed-tier-sub {
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--phl-cyan-ink);
+}
+
+
+

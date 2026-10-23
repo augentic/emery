@@ -1,0 +1,26 @@
+{
+  "name": "slides",
+  "private": true,
+  "scripts": {
+    "dev": "slidev delivery.md --open",
+    "dev:story": "slidev trust-story.md --open",
+    "dev:guide": "slidev trust-model.md --open",
+    "build": "slidev build delivery.md",
+    "build:story": "slidev build trust-story.md",
+    "build:guide": "slidev build trust-model.md",
+    "export": "slidev export delivery.md",
+    "export:story": "slidev export trust-story.md",
+    "export:guide": "slidev export trust-model.md",
+    "export:pptx": "slidev export delivery.md --format pptx",
+    "export:story:pptx": "slidev export trust-story.md --format pptx",
+    "export:guide:pptx": "slidev export trust-model.md --format pptx"
+  },
+  "dependencies": {
+    "@slidev/cli": "^51.0.0",
+    "@slidev/theme-default": "latest",
+    "vue": "^3.5.0"
+  },
+  "devDependencies": {
+    "playwright-chromium": "^1.64.1"
+  }
+}

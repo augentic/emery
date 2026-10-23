@@ -725,7 +725,7 @@ async fn doc_refs() {
     );
     assert_eq!(
         exchanges[1].outcome.as_deref(),
-        Ok(r#"{"body":"Greet warmly.","path":"references/greeting.md"}"#)
+        Ok(r#"{"path":"references/greeting.md","body":"Greet warmly."}"#)
     );
     let runtime: serde_json::Value =
         serde_json::from_str(exchanges[2].outcome.as_deref().expect("the runtime table answers"))
@@ -737,7 +737,7 @@ async fn doc_refs() {
     );
     assert_eq!(
         exchanges[3].outcome.as_deref(),
-        Ok(r#"{"body":"SYSTEM","path":"extract.md"}"#),
+        Ok(r#"{"path":"extract.md","body":"SYSTEM"}"#),
         "`read_doc` still answers an unlisted document"
     );
     assert_eq!(exchanges[4].tool, "check");
