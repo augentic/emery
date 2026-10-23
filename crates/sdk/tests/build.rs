@@ -2180,11 +2180,11 @@ async fn doc_refs() {
     );
     assert_eq!(
         exchanges[1].outcome.as_deref(),
-        Ok(r#"{"body":"One module per requirement.","path":"references/layout.md"}"#)
+        Ok(r#"{"path":"references/layout.md","body":"One module per requirement."}"#)
     );
     assert_eq!(
         exchanges[2].outcome.as_deref(),
-        Ok(r#"{"body":"BUILD","path":"build.md"}"#),
+        Ok(r#"{"path":"build.md","body":"BUILD"}"#),
         "`read_doc` still answers an unlisted document"
     );
     assert_eq!(

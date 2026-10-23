@@ -10,7 +10,7 @@ use std::future::ready;
 use emery_prose::Doc;
 use omnia_sdk::model::{Function, Tool, ToolCall, ToolFuture, Tools};
 use schemars::JsonSchema;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde_json::json;
 
 use crate::{BUILD, CLAIMS, EXTRACT, SURVEY, VERIFY};
@@ -70,8 +70,16 @@ pub fn serve(
                 |ReadDoc { path }| {
                     emery_prose::find(docs, &path)
                         .or_else(|| emery_prose::find(imports, &path))
-                        .map(|doc| json!({ "path": path, "body": doc.body }).to_string())
-                        .ok_or_else(|| format!("no document `{path}`"))
+                        .map_or_else(
+                            || Err(format!("no document `{path}`")),
+                            |doc| {
+                                serde_json::to_string(&ReadDocResponse {
+                                    path: &path,
+                                    body: doc.body,
+                                })
+                                .map_err(|err| format!("{READ_DOC}: {err}"))
+                            },
+                        )
                 },
             ),
             other => Err(format!("unknown tool `{other}`")),
@@ -107,4 +115,10 @@ struct ListDocs {}
 struct ReadDoc {
     /// The document path as `list_docs` lists it.
     path: String,
+}
+
+#[derive(Serialize)]
+struct ReadDocResponse<'a> {
+    path: &'a str,
+    body: &'a str,
 }

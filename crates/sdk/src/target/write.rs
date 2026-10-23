@@ -15,8 +15,7 @@ use omnia_sdk::model::{Function, Tool, ToolCall, ToolFuture, Tools};
 use omnia_sdk::{Error, server_error};
 use schemars::JsonSchema;
 use serde::de::{self, DeserializeSeed, MapAccess, SeqAccess, Visitor};
-use serde::{Deserialize, Deserializer};
-use serde_json::json;
+use serde::{Deserialize, Deserializer, Serialize};
 
 use super::{Guarded, Marker};
 
@@ -154,11 +153,11 @@ impl Writer {
                         "responded"
                     );
                     outcome.map(|done| {
-                        let mut response = json!({ "written": json_of(&done.wrote) });
-                        if !done.deleted.is_empty() {
-                            response["deleted"] = json!(done.deleted);
-                        }
-                        response.to_string()
+                        serde_json::to_string(&WriteResponse {
+                            deleted: done.deleted,
+                            written: json_of(&done.wrote),
+                        })
+                        .expect("write_files response serialises")
                     })
                 }
                 EDIT_FILES => {
@@ -170,7 +169,12 @@ impl Writer {
                         error = outcome.as_ref().err().map(String::as_str),
                         "responded"
                     );
-                    outcome.map(|edited| json!({ "edited": json_of(&edited) }).to_string())
+                    outcome.map(|edited| {
+                        serde_json::to_string(&EditResponse {
+                            edited: json_of(&edited),
+                        })
+                        .expect("edit_files response serialises")
+                    })
                 }
                 RESTORE_FILES if !self.guarded.is_empty() => {
                     let outcome = self.restore(&call);
@@ -181,7 +185,12 @@ impl Writer {
                         error = outcome.as_ref().err().map(String::as_str),
                         "responded"
                     );
-                    outcome.map(|restored| json!({ "restored": json_of(&restored) }).to_string())
+                    outcome.map(|restored| {
+                        serde_json::to_string(&RestoreResponse {
+                            restored: json_of(&restored),
+                        })
+                        .expect("restore_files response serialises")
+                    })
                 }
                 _ => return rest(call),
             };
@@ -477,8 +486,40 @@ impl Writer {
     }
 }
 
+#[derive(Serialize)]
+struct PathBytes<'a> {
+    bytes: usize,
+    path: &'a str,
+}
+
+#[derive(Serialize)]
+struct WriteResponse {
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    deleted: Vec<String>,
+    written: Vec<serde_json::Value>,
+}
+
+#[derive(Serialize)]
+struct EditResponse {
+    edited: Vec<serde_json::Value>,
+}
+
+#[derive(Serialize)]
+struct RestoreResponse {
+    restored: Vec<serde_json::Value>,
+}
+
 fn json_of(wrote: &[Wrote]) -> Vec<serde_json::Value> {
-    wrote.iter().map(|wrote| json!({ "path": wrote.file, "bytes": wrote.bytes })).collect()
+    wrote
+        .iter()
+        .map(|wrote| {
+            serde_json::to_value(PathBytes {
+                bytes: wrote.bytes,
+                path: &wrote.file,
+            })
+            .expect("path and byte count serialise")
+        })
+        .collect()
 }
 
 fn holds_file(root: &Path, file: &str) -> bool {

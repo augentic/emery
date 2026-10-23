@@ -273,7 +273,7 @@ async fn doc_refs() {
     );
     assert_eq!(
         exchanges[1].outcome.as_deref(),
-        Ok(r#"{"body":"VERIFY","path":"verify.md"}"#),
+        Ok(r#"{"path":"verify.md","body":"VERIFY"}"#),
         "`read_doc` still answers an unlisted document"
     );
     assert_eq!(
