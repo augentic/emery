@@ -186,7 +186,7 @@ Say these four out loud early. Each one is an objection that otherwise sits unsp
 -->
 
 ---
-title: Tier 0
+title: Tier 0 · Unmanaged
 class: slide-hero slide-section
 ---
 
@@ -197,9 +197,9 @@ class: slide-hero slide-section
 <div class="section-hero-grid">
 <div class="section-hero-left">
 
-# Tier 0
+# Tier 0 · Unmanaged
 
-<p class="section-subtitle"><strong>Unmanaged</strong> — one person, one laptop. Discovery.</p>
+<p class="section-subtitle">One person, one laptop. Discovery.</p>
 </div>
 <div class="section-big-glyph">T0</div>
 </div>
@@ -409,7 +409,7 @@ How an app leaves Tier 0.
 -->
 
 ---
-title: Tier 1
+title: Tier 1 · Governed
 class: slide-hero slide-section
 ---
 
@@ -420,9 +420,9 @@ class: slide-hero slide-section
 <div class="section-hero-grid">
 <div class="section-hero-left">
 
-# Tier 1
+# Tier 1 · Governed
 
-<p class="section-subtitle"><strong>Governed</strong> — shared with a team, inside the Codex.</p>
+<p class="section-subtitle">Shared with a team, inside the Codex.</p>
 </div>
 <div class="section-big-glyph">T1</div>
 </div>
@@ -637,7 +637,7 @@ Two kinds of control at Tier 1, kept apart on purpose.
 -->
 
 ---
-title: Tier 2
+title: Tier 2 · Connected
 class: slide-hero slide-section
 ---
 
@@ -648,9 +648,9 @@ class: slide-hero slide-section
 <div class="section-hero-grid">
 <div class="section-hero-left">
 
-# Tier 2
+# Tier 2 · Connected
 
-<p class="section-subtitle"><strong>Connected</strong> — live systems through explicit capability contracts.</p>
+<p class="section-subtitle">Live systems through explicit capability contracts.</p>
 </div>
 <div class="section-big-glyph">T2</div>
 </div>
@@ -873,7 +873,7 @@ The clearance for live data is the one most organisations make too heavy or skip
 -->
 
 ---
-title: Tier 3
+title: Tier 3 · Supported
 class: slide-hero slide-section
 ---
 
@@ -884,9 +884,9 @@ class: slide-hero slide-section
 <div class="section-hero-grid">
 <div class="section-hero-left">
 
-# Tier 3
+# Tier 3 · Supported
 
-<p class="section-subtitle"><strong>Supported</strong> — production, with engineers on call.</p>
+<p class="section-subtitle">Production, with engineers on call.</p>
 </div>
 <div class="section-big-glyph">T3</div>
 </div>
