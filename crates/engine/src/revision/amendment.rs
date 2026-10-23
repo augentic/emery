@@ -28,8 +28,8 @@ pub struct Amendment {
     ///
     /// Holds the base's preamble and unchanged requirements as they stand,
     /// with each added, changed, or conflicting requirement drafted whole
-    /// under its id and each retired one left out. Its
-    /// [`parent`](Spec::parent) is the base revision.
+    /// under its id and each retired one left out. Its `parent` is the base
+    /// revision.
     pub spec: Spec,
 }
 
