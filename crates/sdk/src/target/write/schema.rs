@@ -99,16 +99,6 @@ pub struct WriteFile {
     pub shrink: bool,
 }
 
-/// The scaffolded files one `restore_files` call puts back.
-// The `///` lines are the `JsonSchema` descriptions the model reads.
-#[derive(Debug, Deserialize, JsonSchema)]
-pub struct RestoreFiles {
-    /// The `/`-separated paths of the files to put back as they were
-    /// scaffolded, each relative to `$WORKSPACE` and named by the brief as
-    /// scaffolded before this turn.
-    pub paths: Vec<String>,
-}
-
 /// The edits one `edit_files` call makes within files the tree holds.
 // The `///` lines are the `JsonSchema` descriptions the model reads.
 #[derive(Debug, JsonSchema)]
@@ -381,11 +371,6 @@ pub struct WriteResponse {
 #[derive(Serialize)]
 pub struct EditResponse {
     pub edited: Vec<serde_json::Value>,
-}
-
-#[derive(Serialize)]
-pub struct RestoreResponse {
-    pub restored: Vec<serde_json::Value>,
 }
 
 pub fn json_of(wrote: &[Wrote]) -> Vec<serde_json::Value> {
