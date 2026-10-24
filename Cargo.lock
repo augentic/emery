@@ -310,18 +310,18 @@ dependencies = [
 
 [[package]]
 name = "bon"
-version = "3.10.2"
+version = "3.10.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "214f5df094ce551a10a30ffb9c70243d61f121a3d985a6495933e181dee6a7d2"
+checksum = "a05442cd7005532d0cfedec676b5b9333d2b4c7c3afabe2b1a9ce2742fbe2ee6"
 dependencies = [
  "bon-macros",
 ]
 
 [[package]]
 name = "bon-macros"
-version = "3.10.2"
+version = "3.10.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2706da6c749998cc555d04184909608956a69ad3f8ab1a076fbc867b4a3c3ce5"
+checksum = "93833e97ac7c46ba97045afcf247238c27057538fcf2f06344662ddd5f567be6"
 dependencies = [
  "darling 0.24.1",
  "ident_case",
@@ -411,9 +411,9 @@ dependencies = [
 
 [[package]]
 name = "cc"
-version = "1.9.0"
+version = "1.10.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "877bf67ac8e52449eb2f9e98a344ea163beb70dd1f9eebe3cc5357dcfeaee4df"
+checksum = "86e055fa6e3e40ad6187ba25b6855eeb635d5271f8e0f0e1e9a5826b8d75bea0"
 dependencies = [
  "find-msvc-tools",
  "jobserver",
@@ -578,9 +578,9 @@ checksum = "a6ef517f0926dd24a1582492c791b6a4818a4d94e789a334894aa15b0d12f55c"
 
 [[package]]
 name = "const_format"
-version = "0.2.36"
+version = "0.2.37"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4481a617ad9a412be3b97c5d403fef8ed023103368908b9c50af598ff467cc1e"
+checksum = "a3decb4d6965448659923544a634a0571ba44cede4e11ef15a5a317126840454"
 dependencies = [
  "const_format_proc_macros",
  "konst",
@@ -588,9 +588,9 @@ dependencies = [
 
 [[package]]
 name = "const_format_proc_macros"
-version = "0.2.34"
+version = "0.2.37"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1d57c2eccfb16dbac1f4e61e206105db5820c9d26c3c472bc17c774259ef7744"
+checksum = "941b570269a642506f08cb5b688c04bfa6cfd41a26f8bcdc49db8fd00c0ab659"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -1609,9 +1609,9 @@ dependencies = [
 
 [[package]]
 name = "genai"
-version = "0.7.0"
+version = "0.7.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "53e68820b008ab7e00fde0474c2cfc81315296a1bb0d014943dd74bfcb062e28"
+checksum = "f031d61ad96cd018f8413af948613b9ec94cc0eff1dee670461aa490e933522c"
 dependencies = [
  "base64 0.23.1",
  "bytes",
@@ -2855,7 +2855,7 @@ dependencies = [
 [[package]]
 name = "omnia-cursor"
 version = "0.32.0"
-source = "git+https://github.com/augentic/omnia-backends#1be025a3fa5fc1c1564ca14a25b6fde88ec2f584"
+source = "git+https://github.com/augentic/omnia-backends#d7ec1306a56d526fd9fffce980809b73b738e9f5"
 dependencies = [
  "anyhow",
  "bytes",
@@ -2883,7 +2883,7 @@ dependencies = [
 [[package]]
 name = "omnia-filesystem"
 version = "0.32.0"
-source = "git+https://github.com/augentic/omnia-backends#1be025a3fa5fc1c1564ca14a25b6fde88ec2f584"
+source = "git+https://github.com/augentic/omnia-backends#d7ec1306a56d526fd9fffce980809b73b738e9f5"
 dependencies = [
  "anyhow",
  "fromenv",
@@ -2899,7 +2899,7 @@ dependencies = [
 [[package]]
 name = "omnia-genai"
 version = "0.32.0"
-source = "git+https://github.com/augentic/omnia-backends#1be025a3fa5fc1c1564ca14a25b6fde88ec2f584"
+source = "git+https://github.com/augentic/omnia-backends#d7ec1306a56d526fd9fffce980809b73b738e9f5"
 dependencies = [
  "anyhow",
  "fromenv",
@@ -2919,7 +2919,7 @@ dependencies = [
 [[package]]
 name = "omnia-git"
 version = "0.32.0"
-source = "git+https://github.com/augentic/omnia-backends#1be025a3fa5fc1c1564ca14a25b6fde88ec2f584"
+source = "git+https://github.com/augentic/omnia-backends#d7ec1306a56d526fd9fffce980809b73b738e9f5"
 dependencies = [
  "anyhow",
  "fromenv",
@@ -2987,7 +2987,7 @@ dependencies = [
 [[package]]
 name = "omnia-sandbox"
 version = "0.32.0"
-source = "git+https://github.com/augentic/omnia-backends#1be025a3fa5fc1c1564ca14a25b6fde88ec2f584"
+source = "git+https://github.com/augentic/omnia-backends#d7ec1306a56d526fd9fffce980809b73b738e9f5"
 dependencies = [
  "anyhow",
  "bytes",
@@ -4541,9 +4541,9 @@ checksum = "0c790de23124f9ab44544d7ac05d60440adc586479ce501c1d6d7da3cd8c9cf5"
 
 [[package]]
 name = "smallvec"
-version = "1.16.3"
+version = "1.16.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5b3dc8af474f516a851ff4bd12db780f948b9250ad37211e4eec0bccea54e01b"
+checksum = "d0d5d4b1981b8bbbb7aed204cae5726d683d5d6ac7e74ec54122ea28f315e7c8"
 dependencies = [
  "serde",
 ]
@@ -5264,9 +5264,9 @@ checksum = "06abde3611657adf66d383f00b093d7faecc7fa57071cce2578660c9f1010821"
 
 [[package]]
 name = "uuid"
-version = "1.28.0"
+version = "1.29.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7cc1186384beb7dd8eedea376413fd654937285ea6c9cfbb928dc3043ea4b606"
+checksum = "4a0e2d11620c50695fe12bbbfde96b3477fe606e7284c22d505c12ce51214514"
 dependencies = [
  "getrandom 0.4.3",
  "js-sys",
@@ -5995,18 +5995,18 @@ dependencies = [
 
 [[package]]
 name = "webpki-root-certs"
-version = "1.0.10"
+version = "1.0.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "58ec80e73fd8baf57bf0d9615554c75348bda990d6d5bbeab964dd068319fecb"
+checksum = "e49d0e65abc00c142e8f9428da991da9f1a250c39be97459901eb12b9b49f62a"
 dependencies = [
  "rustls-pki-types",
 ]
 
 [[package]]
 name = "webpki-roots"
-version = "1.0.10"
+version = "1.0.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1c1c8e20c8a38fc7d65abfe74eb7280e4aa667e8eec8bc84996d2874810748d9"
+checksum = "f5f280bbb2b287bc8e7de7e3852945a0ff50d1bbcb5ed42b6c7a568c546df171"
 dependencies = [
  "rustls-pki-types",
 ]
