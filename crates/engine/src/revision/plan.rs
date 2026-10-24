@@ -11,50 +11,50 @@ use serde::{Deserialize, Serialize};
 
 use crate::revision::{self, ID, ReqId, SliceId};
 
-/// The `Requirements:` key listing a slice's requirement ids.
+// The `Requirements:` key listing a slice's requirement ids.
 pub const REQUIREMENTS: &str = "Requirements:";
-/// The `Types:` key listing the design type keys a slice owns.
+// The `Types:` key listing the design type keys a slice owns.
 pub const TYPES: &str = "Types:";
-/// The `Depends on:` key listing the slices built before a slice.
+// The `Depends on:` key listing the slices built before a slice.
 pub const DEPENDS_ON: &str = "Depends on:";
 
 const HEADING: &str = "## Slice:";
 
-/// A build plan in its stored form.
+// A build plan in its stored form.
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Plan {
-    /// The grammar the document was written under.
+    // The grammar the document was written under.
     pub emery: u32,
-    /// The revision this one amends, or `None` when drafted from sources alone.
+    // The revision this one amends, or `None` when drafted from sources alone.
     pub parent: Option<String>,
-    /// Markdown paragraphs preceding the first slice.
+    // Markdown paragraphs preceding the first slice.
     pub preamble: Vec<String>,
-    /// The slices, in id order.
+    // The slices, in id order.
     pub slices: Vec<Slice>,
 }
 
 impl Plan {
-    /// Returns the slice `id` names, if the plan has one.
+    // Returns the slice `id` names, if the plan has one.
     #[must_use]
     pub fn slice(&self, id: SliceId) -> Option<&Slice> {
         self.slices.iter().find(|slice| slice.id == id)
     }
 
-    /// Returns the slices in build order: the [`waves`](Plan::waves) flattened.
-    ///
-    /// Every slice comes after each slice it depends on; the slices of one
-    /// wave come in id order.
+    // Returns the slices in build order: the `waves` flattened.
+    //
+    // Every slice comes after each slice it depends on; the slices of one
+    // wave come in id order.
     #[must_use]
     pub fn order(&self) -> Vec<&Slice> {
         self.waves().iter().flatten().filter_map(|id| self.slice(*id)).collect()
     }
 
-    /// Returns the slices ready to build once `merged` are built: the unmerged slices whose dependencies are all merged, in id order.
-    ///
-    /// A dependency naming the slice itself or no slice of the plan holds
-    /// nothing back, as [`waves`](Plan::waves) ignores it. An empty result
-    /// with slices left unmerged means the rest wait on one another.
+    // Returns the slices ready to build once `merged` are built: the unmerged slices whose dependencies are all merged, in id order.
+    //
+    // A dependency naming the slice itself or no slice of the plan holds
+    // nothing back, as `waves` ignores it. An empty result
+    // with slices left unmerged means the rest wait on one another.
     #[must_use]
     pub fn ready(&self, merged: &BTreeSet<SliceId>) -> Vec<&Slice> {
         self.slices
@@ -70,12 +70,12 @@ impl Plan {
             .collect()
     }
 
-    /// Returns the slices grouped into waves: the sets ready to build at once.
-    ///
-    /// The first wave holds every slice that depends on nothing; each wave
-    /// after it holds every slice whose dependencies are all in the waves
-    /// before, in id order. The engine writes no cycle; were a stored plan
-    /// to hold one, its slices are one last wave, in id order.
+    // Returns the slices grouped into waves: the sets ready to build at once.
+    //
+    // The first wave holds every slice that depends on nothing; each wave
+    // after it holds every slice whose dependencies are all in the waves
+    // before, in id order. The engine writes no cycle; were a stored plan
+    // to hold one, its slices are one last wave, in id order.
     #[must_use]
     pub fn waves(&self) -> Waves {
         let pending = self
@@ -179,24 +179,24 @@ impl Display for Plan {
     }
 }
 
-/// A buildable subset of the specification.
-///
-/// Every requirement of the specification is in exactly one slice, and
-/// every design type key is owned by exactly one.
+// A buildable subset of the specification.
+//
+// Every requirement of the specification is in exactly one slice, and
+// every design type key is owned by exactly one.
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
 pub struct Slice {
-    /// The stable slice identifier.
+    // The stable slice identifier.
     pub id: SliceId,
-    /// The drafted kebab-case name, unique within the plan.
+    // The drafted kebab-case name, unique within the plan.
     pub name: String,
-    /// The requirements this slice builds, in id order.
+    // The requirements this slice builds, in id order.
     pub requirements: Vec<ReqId>,
-    /// The design type keys this slice owns, in the design's order.
+    // The design type keys this slice owns, in the design's order.
     pub types: Vec<String>,
-    /// The slices this one is built after, in id order; acyclic.
+    // The slices this one is built after, in id order; acyclic.
     pub depends_on: Vec<SliceId>,
-    /// Drafted paragraphs a builder reads before taking the slice up.
+    // Drafted paragraphs a builder reads before taking the slice up.
     pub brief: Vec<String>,
 }
 

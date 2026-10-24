@@ -17,7 +17,7 @@ const MECHANISM: &str = " (mechanism)";
 // to a line naming it, one owned by no entry of the slice's `types` and
 // spelled by none of the slice's text left out and listed once at the end,
 // every mechanism type and every paragraph as the design holds them.
-pub(super) fn cut(slice: &Slice, scaffold: Option<&Scaffold<'_>>) -> String {
+pub fn cut(slice: &Slice, scaffold: Option<&Scaffold<'_>>) -> String {
     let laid = scaffold.map_or(&[][..], |scaffold| scaffold.types);
     let spelled = spelled(slice, scaffold);
     let mut kept: Vec<Cow<'_, str>> = Vec::new();

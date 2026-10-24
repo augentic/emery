@@ -66,60 +66,55 @@ impl Axis {
     }
 }
 
-/// What one adapter loaded as.
+// What one adapter loaded as.
 #[derive(Debug, Clone)]
 pub struct Loaded<M> {
-    /// The identity the loader registered the adapter under, which every
-    /// dispatch names.
+    // The identity the loader registered the adapter under, which every
+    // dispatch names.
     pub id: String,
-    /// The metadata the adapter declares for its axis: an
-    /// [`SourceMetadata`], whose kind of source ranks a source adapter's
-    /// claims, or a [`TargetMetadata`].
+    // The metadata the adapter declares for its axis: an
+    // `SourceMetadata`, whose kind of source ranks a source adapter's
+    // claims, or a `TargetMetadata`.
     pub metadata: M,
 }
 
-/// Loads each referenced source adapter and returns what it loaded as.
-///
-/// Duplicate references are loaded once, under one pin. Every adapter loads
-/// at the registry location its reference names ([`AdapterRef::location`]),
-/// under the guest name that location registers ([`Location::name`]), and
-/// all load before any is held to its axis or asked for metadata. The loader
-/// holds a pinned adapter to its digest, and a declared minimum Emery version
-/// must not exceed the running version.
-///
-/// # Errors
-///
-/// - Returns [`Error::BadRequest`] when a reference is refused:
-///   - two digests on one adapter;
-///   - two references that name one guest — two versions of one package;
-///   - an adapter that does not export the source interface
-///     ([`Axis::Source`]);
-///   - malformed version metadata;
-///   - an incompatible adapter, with code `unsupported-version`;
-///   - a release the store lacks whose namespace the deployment routes
-///     nowhere, a pre-compiled artifact, an adapter that resolves to other
-///     bytes than its pin, or an adapter whose export signature does not
-///     match the contract, with the loader's code `refused`.
-/// - Returns [`Error::BadGateway`] when the registry cannot supply a release
-///   the store lacks, with the loader's code `unavailable`.
-///
-/// A loader's error keeps its class and code; its description names the
-/// adapter that failed.
+// Loads each referenced source adapter and returns what it loaded as.
+//
+// Duplicate references are loaded once, under one pin. Every adapter loads
+// at the registry location its reference names (`AdapterRef::location`),
+// under the guest name that location registers (`Location::name`), and
+// all load before any is held to its axis or asked for metadata. The loader
+// holds a pinned adapter to its digest, and a declared minimum Emery version
+// must not exceed the running version.
+//
+// - Returns `Error::BadRequest` when a reference is refused:
+//   - two digests on one adapter;
+//   - two references that name one guest — two versions of one package;
+//   - an adapter that does not export the source interface
+//     (`Axis::Source`);
+//   - malformed version metadata;
+//   - an incompatible adapter, with code `unsupported-version`;
+//   - a release the store lacks whose namespace the deployment routes
+//     nowhere, a pre-compiled artifact, an adapter that resolves to other
+//     bytes than its pin, or an adapter whose export signature does not
+//     match the contract, with the loader's code `refused`.
+// - Returns `Error::BadGateway` when the registry cannot supply a release
+//   the store lacks, with the loader's code `unavailable`.
+//
+// A loader's error keeps its class and code; its description names the
+// adapter that failed.
 pub async fn load<'a, P: Source + Plugins>(
     provider: &P, adapters: impl IntoIterator<Item = (&'a AdapterRef, Option<&'a Digest>)>,
 ) -> Result<BTreeMap<AdapterRef, Loaded<SourceMetadata>>, Error> {
     load_axis(provider, Axis::Source, adapters, |id| Source::metadata(provider, id)).await
 }
 
-/// Loads the one target adapter a build names and returns what it loaded as.
-///
-/// The reference loads as [`load`] loads a source adapter, under the same
-/// refusals, held to the target interface ([`Axis::Target`]) instead, and
-/// its declared minimum Emery version is gated the same way.
-///
-/// # Errors
-///
-/// As [`load`], over the one reference.
+// Loads the one target adapter a build names and returns what it loaded as.
+//
+// The reference loads as `load` loads a source adapter, under the same
+// refusals, held to the target interface (`Axis::Target`) instead, and
+// its declared minimum Emery version is gated the same way. Its refusals are
+// `load`'s, over the one reference.
 pub async fn load_target<P: Target + Plugins>(
     provider: &P, adapter: &AdapterRef, digest: Option<&Digest>,
 ) -> Result<Loaded<TargetMetadata>, Error> {
@@ -228,25 +223,7 @@ fn distinct<'a>(
 // The loader's refusal, as the entry that failed: class and code kept, the
 // adapter named.
 fn at_adapter(error: Error, adapter: &AdapterRef) -> Error {
-    let describe = |description: String| format!("adapter `{adapter}`: {description}");
-    match error {
-        Error::BadRequest { code, description } => Error::BadRequest {
-            code,
-            description: describe(description),
-        },
-        Error::NotFound { code, description } => Error::NotFound {
-            code,
-            description: describe(description),
-        },
-        Error::ServerError { code, description } => Error::ServerError {
-            code,
-            description: describe(description),
-        },
-        Error::BadGateway { code, description } => Error::BadGateway {
-            code,
-            description: describe(description),
-        },
-    }
+    crate::describe(error, |description| format!("adapter `{adapter}`: {description}"))
 }
 
 fn require_version(id: &str, declared: &str, running: &semver::Version) -> Result<(), Error> {

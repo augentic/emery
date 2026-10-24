@@ -11,15 +11,15 @@ use crate::revision::Status;
 use crate::specify::Extract;
 use crate::specify::basis::Basis;
 
-/// The requirement outline of a document brief's turn, one entry per basis.
-///
-/// Each entry carries the engine's facts about the requirement: its id,
-/// subject, status, sources, whether a criterion covers it, the trigger a
-/// contract binds to it, and every contributing claim with its role. The
-/// three drafts run from it together,
-/// so none waits on another's answer. The bases are owned or borrowed, so a
-/// brief over a chunk of the run's bases lists them as one over all of them
-/// does.
+// The requirement outline of a document brief's turn, one entry per basis.
+//
+// Each entry carries the engine's facts about the requirement: its id,
+// subject, status, sources, whether a criterion covers it, the trigger a
+// contract binds to it, and every contributing claim with its role. The
+// three drafts run from it together,
+// so none waits on another's answer. The bases are owned or borrowed, so a
+// brief over a chunk of the run's bases lists them as one over all of them
+// does.
 pub struct BasesSection<'a, B>(pub &'a [B]);
 
 impl<'a, B: Borrow<Basis<'a>>> Display for BasesSection<'a, B> {
@@ -77,9 +77,9 @@ impl<'a, B: Borrow<Basis<'a>>> Display for BasesSection<'a, B> {
     }
 }
 
-/// The `## Claims` section of a document brief's turn.
-///
-/// Every claim of every extract is listed under its source name and kind.
+// The `## Claims` section of a document brief's turn.
+//
+// Every claim of every extract is listed under its source name and kind.
 pub struct ClaimsSection<'a>(pub &'a [Extract]);
 
 impl Display for ClaimsSection<'_> {
@@ -88,13 +88,11 @@ impl Display for ClaimsSection<'_> {
     }
 }
 
-/// Writes the `## Claims` section over the claims of `extracts` that `keep`
-/// admits, each under its source's name and kind; a source none of whose
-/// claims is kept is listed with none.
-///
-/// # Errors
-///
-/// Returns the formatter's error.
+// Writes the `## Claims` section over the claims of `extracts` that `keep`
+// admits, each under its source's name and kind; a source none of whose
+// claims is kept is listed with none.
+//
+// Returns the formatter's error.
 pub fn claims(
     f: &mut Formatter<'_>, extracts: &[Extract], keep: impl Fn(&Claim) -> bool,
 ) -> fmt::Result {

@@ -1,6 +1,6 @@
 //! A stub recogniser and hand-built modules for the tree and seam suites.
 
-#![allow(dead_code, reason = "each suite reads the part of the support it needs")]
+#![expect(dead_code, reason = "each suite reads the part of the support it needs")]
 
 use std::collections::BTreeMap;
 use std::ops::Deref;
@@ -77,7 +77,7 @@ pub static PYTHON: Dialect = Dialect {
     },
 };
 
-/// The shared module and nothing more, as an adapter with no fields of its own wraps it.
+// The shared module and nothing more, as an adapter with no fields of its own wraps it.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct Plain(pub Module);
 
@@ -89,9 +89,9 @@ impl Deref for Plain {
     }
 }
 
-/// A recogniser scripted by its fields: the manifest, the bootstrap, and the
-/// mounts are what a test says they are, and the lookups follow one plain
-/// rule each.
+// A recogniser scripted by its fields: the manifest, the bootstrap, and the
+// mounts are what a test says they are, and the lookups follow one plain
+// rule each.
 #[derive(Debug, Default)]
 pub struct Stub {
     pub manifest: Manifest,
@@ -276,7 +276,7 @@ pub const fn line(at: u32) -> Lines {
     Lines { start: at, end: at }
 }
 
-/// A parsed module of `lines` placeholder lines at `path`.
+// A parsed module of `lines` placeholder lines at `path`.
 pub fn module(path: &str, lines: u32) -> Plain {
     let text = "line\n".repeat(lines as usize);
     Plain(Module {
@@ -344,7 +344,7 @@ pub fn class(name: &str, bases: &[&str], lines: Lines) -> Binding {
     )
 }
 
-/// A module-level value: `const <name> = <root>(..)`, or a string literal.
+// A module-level value: `const <name> = <root>(..)`, or a string literal.
 pub fn value(
     name: &str, root: Option<&[&str]>, call: Option<usize>, string: Option<&str>, init: Init,
     lines: Lines,
@@ -440,7 +440,7 @@ pub fn inline(lines: Lines) -> Arg {
     }
 }
 
-/// An exported class declaration, `header` as written, over `members`.
+// An exported class declaration, `header` as written, over `members`.
 pub fn class_decl(name: &str, header: &str, lines: Lines, members: Vec<Member>) -> ClassDecl {
     ClassDecl {
         name: name.to_owned(),
@@ -499,7 +499,7 @@ pub fn reference(name: &str, line: u32) -> Reference {
     }
 }
 
-/// A load by a computed name at `lines`, settled to the directory `scope` where it spells one.
+// A load by a computed name at `lines`, settled to the directory `scope` where it spells one.
 pub fn dynamic(lines: Lines, scope: Option<&str>) -> Dynamic {
     Dynamic {
         lines,
@@ -516,7 +516,7 @@ pub fn write(root: &Path, rel: &str, body: &str) {
     std::fs::write(path, body).expect("write");
 }
 
-/// A tree over `modules` at `root`, with no tests and the stub's manifest.
+// A tree over `modules` at `root`, with no tests and the stub's manifest.
 pub fn tree(root: &Path, dialect: &'static Dialect, modules: Vec<Plain>, stub: Stub) -> Tree<Stub> {
     Tree {
         root: root.to_path_buf(),

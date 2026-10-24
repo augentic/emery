@@ -8,11 +8,11 @@ use emery_engine::build::{BuildOutput, BuiltSlice};
 use emery_engine::show::ShowOutput;
 use emery_engine::specify::{Diff, SpecifyOutput, Waves};
 
-/// Writes a [`SpecifyOutput`] candidate line, the plan's shape, one line per repository source, a one-line diff summary, and what the run sealed.
-///
-/// The first line names the staged candidate. The last says `nothing
-/// sealed` and names `emery apply` as the way to seal it, or, under
-/// `--apply`, is the [`apply`] line for the revision the run sealed.
+// Writes a `SpecifyOutput` candidate line, the plan's shape, one line per repository source, a one-line diff summary, and what the run sealed.
+//
+// The first line names the staged candidate. The last says `nothing
+// sealed` and names `emery apply` as the way to seal it, or, under
+// `--apply`, is the `apply` line for the revision the run sealed.
 pub fn specify(output: &SpecifyOutput, w: &mut dyn fmt::Write) -> fmt::Result {
     writeln!(w, "staged candidate {}", output.revision)?;
     waves(&output.waves, w)?;
@@ -33,10 +33,10 @@ pub fn specify(output: &SpecifyOutput, w: &mut dyn fmt::Write) -> fmt::Result {
     }
 }
 
-/// Writes an [`ApplyOutput`] revision line, the repository it was sealed in, and a one-line diff summary.
-///
-/// The first line names the revision, its label, and the commit it stands
-/// at. The repository follows when it is not the project's own checkout.
+// Writes an `ApplyOutput` revision line, the repository it was sealed in, and a one-line diff summary.
+//
+// The first line names the revision, its label, and the commit it stands
+// at. The repository follows when it is not the project's own checkout.
 pub fn apply(output: &ApplyOutput, w: &mut dyn fmt::Write) -> fmt::Result {
     sealed(output, w)?;
     if output.repository != "." {
@@ -45,13 +45,13 @@ pub fn apply(output: &ApplyOutput, w: &mut dyn fmt::Write) -> fmt::Result {
     diff(output.diff.as_ref(), w)
 }
 
-/// Writes an [`AmendOutput`] amendment line, the base, the counts by class, the conflicts, the stems touched, and one line per repository source.
-///
-/// The first line names the staged amendment, or says no change was found
-/// against the base and nothing staged. The counts line is the one
-/// `amendment.md` opens with. The conflicts and stems lines appear when
-/// there are any, and the last line names `emery show amendment` as the way
-/// to review what was staged.
+// Writes an `AmendOutput` amendment line, the base, the counts by class, the conflicts, the stems touched, and one line per repository source.
+//
+// The first line names the staged amendment, or says no change was found
+// against the base and nothing staged. The counts line is the one
+// `amendment.md` opens with. The conflicts and stems lines appear when
+// there are any, and the last line names `emery show amendment` as the way
+// to review what was staged.
 pub fn amend(output: &AmendOutput, w: &mut dyn fmt::Write) -> fmt::Result {
     match &output.amendment {
         Some(id) => writeln!(w, "staged amendment {id}")?,
@@ -152,22 +152,22 @@ fn summary(diff: &Diff, w: &mut dyn fmt::Write) -> fmt::Result {
     Ok(())
 }
 
-/// Writes a [`BuildOutput`] revision line, the plan's shape, the base, the slices resumed, each wave with the slices it merged, and the label.
-///
-/// The base line is followed by the repository the label stands in when it
-/// is not the project's own checkout, and by the `Initialise` commit the
-/// run sealed the adapter's layout as, with its file count, when it sealed
-/// one. A wave line names the head it was
-/// verified at, and says `repaired` when its verification repaired the
-/// tree, `sealed` when what it left was a regenerated path under the
-/// adapter's `ours` rules alone, a lockfile. Each slice line beneath it
-/// counts the requirements covered of those it holds, names any left
-/// uncovered, counts the paths its build changed, names the merge commit
-/// that brought them in, and the paths the model resolved its merge at; a
-/// slice an earlier run staged in the integration working copy says so
-/// instead, since this run verified it and built nothing. A candidate
-/// `emery specify` staged and nothing sealed is named after the plan line,
-/// since the build read the current revision and not it.
+// Writes a `BuildOutput` revision line, the plan's shape, the base, the slices resumed, each wave with the slices it merged, and the label.
+//
+// The base line is followed by the repository the label stands in when it
+// is not the project's own checkout, and by the `Initialise` commit the
+// run sealed the adapter's layout as, with its file count, when it sealed
+// one. A wave line names the head it was
+// verified at, and says `repaired` when its verification repaired the
+// tree, `sealed` when what it left was a regenerated path under the
+// adapter's `ours` rules alone, a lockfile. Each slice line beneath it
+// counts the requirements covered of those it holds, names any left
+// uncovered, counts the paths its build changed, names the merge commit
+// that brought them in, and the paths the model resolved its merge at; a
+// slice an earlier run staged in the integration working copy says so
+// instead, since this run verified it and built nothing. A candidate
+// `emery specify` staged and nothing sealed is named after the plan line,
+// since the build read the current revision and not it.
 pub fn build(output: &BuildOutput, w: &mut dyn fmt::Write) -> fmt::Result {
     writeln!(w, "built revision {}", output.revision)?;
     waves(&output.waves, w)?;
@@ -248,10 +248,10 @@ fn counted(count: usize, noun: &str) -> String {
     if count == 1 { format!("1 {noun}") } else { format!("{count} {noun}s") }
 }
 
-/// Writes a [`ShowOutput`] document body alone.
-///
-/// No status line or revision identifier is added, allowing the Markdown to be
-/// piped directly to another command.
+// Writes a `ShowOutput` document body alone.
+//
+// No status line or revision identifier is added, allowing the Markdown to be
+// piped directly to another command.
 pub fn show(output: &ShowOutput, w: &mut dyn fmt::Write) -> fmt::Result {
     w.write_str(&output.body)
 }

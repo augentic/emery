@@ -22,7 +22,7 @@ const NO_SURFACE: &str = "No surface was found in this source: its survey named 
 
 // One seam as the cut decided it, before the anchors, the tests, and the
 // brief are derived for it.
-pub(super) struct Cut {
+pub struct Cut {
     seam: Seam,
     // The modules placed past the surfaces' closures, in the directories their
     // unfollowed imports lead into. Only the cut by stem fills it.
@@ -43,7 +43,7 @@ impl Cut {
     }
 
     // Every module, the surfaces' closures first.
-    pub(super) fn whole<R: Recogniser>(tree: &Tree<R>, surfaces: &[Surface]) -> Self {
+    pub fn whole<R: Recogniser>(tree: &Tree<R>, surfaces: &[Surface]) -> Self {
         let files = unique(
             surfaces
                 .iter()
@@ -61,7 +61,7 @@ impl Cut {
         Self::new(text, files, stems)
     }
 
-    pub(super) fn by_stem<R: Recogniser>(tree: &Tree<R>, surfaces: &[Surface]) -> Vec<Self> {
+    pub fn by_stem<R: Recogniser>(tree: &Tree<R>, surfaces: &[Surface]) -> Vec<Self> {
         unique(surfaces.iter().map(|surface| surface.stem.as_str()))
             .into_iter()
             .map(|stem| {
@@ -90,7 +90,7 @@ impl Cut {
             .collect()
     }
 
-    pub(super) fn unsurfaced<R: Recogniser>(tree: &Tree<R>) -> Self {
+    pub fn unsurfaced<R: Recogniser>(tree: &Tree<R>) -> Self {
         let files: Vec<String> = tree.modules.keys().cloned().collect();
         let stem = fallback_stem(tree);
         let text = format!(
@@ -101,7 +101,7 @@ impl Cut {
         Self::new(text, files, vec![stem])
     }
 
-    pub(super) fn by_directory<R: Recogniser>(tree: &Tree<R>) -> Vec<Self> {
+    pub fn by_directory<R: Recogniser>(tree: &Tree<R>) -> Vec<Self> {
         // cut beneath `src/` and beneath a lone top-level package, however
         // many barrels declare it
         let packages = unique(
@@ -168,7 +168,7 @@ impl Cut {
     // A tree with no surface has no anchors, so its exports are read for what
     // they do. Neither a data file nor a test is an anchor. A test importing
     // no module of the tree follows every seam.
-    pub(super) fn seam<R: Recogniser>(self, tree: &Tree<R>, surfaces: &[Surface]) -> Seam {
+    pub fn seam<R: Recogniser>(self, tree: &Tree<R>, surfaces: &[Surface]) -> Seam {
         let files = &self.seam.files;
         let under: Vec<&Surface> =
             surfaces.iter().filter(|surface| self.seam.stems.contains(&surface.stem)).collect();

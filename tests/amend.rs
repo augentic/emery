@@ -9,9 +9,10 @@ mod verbs;
 use emery_engine::vcs::REVISION;
 use emery_engine::{STAGED_CONTAINER, STAGED_KEY};
 use serde_json::Value;
-use support::{
-    HEAD, Provider, cli, cli_ok, evidence, fail, requirement, retire, seed, stage, stage_amendment,
-};
+use support::provider::{Provider, cli, evidence, requirement, retire};
+use support::store::{seed, stage, stage_amendment};
+use support::vcs::HEAD;
+use support::{cli_ok, fail};
 use verbs::verbs;
 
 // The target every scenario reads the current revision through: the project checkout.

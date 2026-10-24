@@ -34,50 +34,50 @@ const RENDEZVOUS: Duration = Duration::from_secs(1);
 
 type Recorded = Vec<(String, SourceInput)>;
 
-/// A scripted `Source` with a record of every dispatch.
-///
-/// Evidence is scripted per source name, the minimum `emery` version and the
-/// kind of source per adapter.
-///
-/// - An unscripted source answers the greeting requirement.
-/// - An unscripted adapter reads documentation.
-/// - A scripted failure is the classified error the WIT bindings' lift would
-///   have produced.
-/// - A held source never answers at all.
+// A scripted `Source` with a record of every dispatch.
+//
+// Evidence is scripted per source name, the minimum `emery` version and the
+// kind of source per adapter.
+//
+// - An unscripted source answers the greeting requirement.
+// - An unscripted adapter reads documentation.
+// - A scripted failure is the classified error the WIT bindings' lift would
+//   have produced.
+// - A held source never answers at all.
 #[derive(Clone, Debug, Default)]
 pub struct SourceScript {
-    /// Extract outcomes keyed by source name.
+    // Extract outcomes keyed by source name.
     pub evidence: BTreeMap<String, Result<Evidence, Error>>,
-    /// Source names whose extract never resolves, so a scenario can prove the
-    /// engine does not wait for them.
+    // Source names whose extract never resolves, so a scenario can prove the
+    // engine does not wait for them.
     pub held: BTreeSet<String>,
-    /// Minimum `emery` versions keyed by adapter id, the guest name each
-    /// load registers.
+    // Minimum `emery` versions keyed by adapter id, the guest name each
+    // load registers.
     pub versions: BTreeMap<String, String>,
-    /// Kinds of source by adapter id; an unscripted adapter reads
-    /// documentation.
+    // Kinds of source by adapter id; an unscripted adapter reads
+    // documentation.
     pub kinds: BTreeMap<String, SourceKind>,
-    /// Every extract dispatch, recorded for call assertions.
+    // Every extract dispatch, recorded for call assertions.
     pub calls: Arc<Mutex<Recorded>>,
-    /// Every metadata dispatch, by adapter id, in call order.
+    // Every metadata dispatch, by adapter id, in call order.
     pub metadata: Arc<Mutex<Vec<String>>>,
-    /// When set, every extract is held until each expected source has been
-    /// requested, so a scenario can prove the engine runs its sources
-    /// together.
+    // When set, every extract is held until each expected source has been
+    // requested, so a scenario can prove the engine runs its sources
+    // together.
     pub rendezvous: Option<Rendezvous>,
 }
 
 impl SourceScript {
-    /// Returns every extract dispatch so far: the adapter id and its input, in dispatch order.
+    // Returns every extract dispatch so far: the adapter id and its input, in dispatch order.
     pub fn calls(&self) -> Vec<(String, SourceInput)> {
         self.calls.lock().expect("calls").clone()
     }
 }
 
-/// A barrier that holds a dispatch until every expected one has arrived.
-///
-/// The bounded wait reports the dispatches that never came, allowing a
-/// serialising engine to fail clearly instead of deadlocking the suite.
+// A barrier that holds a dispatch until every expected one has arrived.
+//
+// The bounded wait reports the dispatches that never came, allowing a
+// serialising engine to fail clearly instead of deadlocking the suite.
 #[derive(Clone, Debug)]
 pub struct Rendezvous {
     expected: BTreeSet<String>,
@@ -115,106 +115,106 @@ impl Rendezvous {
     }
 }
 
-/// A scripted `Target` with a record of every dispatch.
-///
-/// Reports are scripted per slice id, verdicts in wave order, the minimum
-/// `emery` version and the merge rules per adapter.
-///
-/// - An init answers at once; what it scaffolds is the scripted `Vcs`'s
-///   `pending` to say.
-/// - An unscripted slice reports every requirement covered and one file
-///   written, `src/<name>.rs`.
-/// - An unscripted verify passes.
-/// - A scripted failure is the classified error the WIT bindings' lift would
-///   have produced.
+// A scripted `Target` with a record of every dispatch.
+//
+// Reports are scripted per slice id, verdicts in wave order, the minimum
+// `emery` version and the merge rules per adapter.
+//
+// - An init answers at once; what it scaffolds is the scripted `Vcs`'s
+//   `pending` to say.
+// - An unscripted slice reports every requirement covered and one file
+//   written, `src/<name>.rs`.
+// - An unscripted verify passes.
+// - A scripted failure is the classified error the WIT bindings' lift would
+//   have produced.
 #[derive(Clone, Debug, Default)]
 pub struct TargetScript {
-    /// Build outcomes keyed by slice id.
+    // Build outcomes keyed by slice id.
     pub reports: BTreeMap<String, Result<Report, Error>>,
-    /// Failures queued per slice id, each consumed by one build ahead of
-    /// the slice's report.
+    // Failures queued per slice id, each consumed by one build ahead of
+    // the slice's report.
     pub failures: Arc<Mutex<BTreeMap<String, VecDeque<Error>>>>,
-    /// Verify outcomes, consumed in wave order.
+    // Verify outcomes, consumed in wave order.
     pub verdicts: Arc<Mutex<VecDeque<Result<Verdict, Error>>>>,
-    /// Minimum `emery` versions keyed by adapter id, the guest name each
-    /// load registers.
+    // Minimum `emery` versions keyed by adapter id, the guest name each
+    // load registers.
     pub versions: BTreeMap<String, String>,
-    /// The merge rules every adapter declares.
+    // The merge rules every adapter declares.
     pub rules: Vec<MergeRule>,
-    /// Every init dispatch, recorded in dispatch order: the workspace root.
+    // Every init dispatch, recorded in dispatch order: the workspace root.
     pub inits: Arc<Mutex<Vec<String>>>,
-    /// Every build dispatch, recorded in dispatch order: the adapter id, the
-    /// slice, and the workspace root.
+    // Every build dispatch, recorded in dispatch order: the adapter id, the
+    // slice, and the workspace root.
     pub calls: Arc<Mutex<Vec<(String, Slice, String)>>>,
-    /// Every verify dispatch, recorded in dispatch order: the workspace root.
+    // Every verify dispatch, recorded in dispatch order: the workspace root.
     pub verifies: Arc<Mutex<Vec<String>>>,
-    /// Every metadata dispatch, by adapter id, in call order.
+    // Every metadata dispatch, by adapter id, in call order.
     pub metadata: Arc<Mutex<Vec<String>>>,
-    /// When set, every build of a slice it names is held until each of them
-    /// has been dispatched, so a scenario can prove the engine builds a wave
-    /// together.
+    // When set, every build of a slice it names is held until each of them
+    // has been dispatched, so a scenario can prove the engine builds a wave
+    // together.
     pub rendezvous: Option<Rendezvous>,
 }
 
 impl TargetScript {
-    /// Returns the workspace root of every init dispatch so far, in dispatch order.
+    // Returns the workspace root of every init dispatch so far, in dispatch order.
     pub fn inits(&self) -> Vec<String> {
         self.inits.lock().expect("inits").clone()
     }
 
-    /// Returns every build dispatch so far: the adapter id, the slice, and the
-    /// workspace root, in dispatch order.
+    // Returns every build dispatch so far: the adapter id, the slice, and the
+    // workspace root, in dispatch order.
     pub fn calls(&self) -> Vec<(String, Slice, String)> {
         self.calls.lock().expect("calls").clone()
     }
 
-    /// Returns the workspace root of every verify dispatch so far, in dispatch order.
+    // Returns the workspace root of every verify dispatch so far, in dispatch order.
     pub fn verifies(&self) -> Vec<String> {
         self.verifies.lock().expect("verifies").clone()
     }
 
-    /// Queues `verdict` for the next verify.
+    // Queues `verdict` for the next verify.
     pub fn verdict(&self, verdict: Result<Verdict, Error>) {
         self.verdicts.lock().expect("verdicts").push_back(verdict);
     }
 
-    /// Queues `error` for the next build of slice `id`, ahead of its report.
+    // Queues `error` for the next build of slice `id`, ahead of its report.
     pub fn fails(&self, id: &str, error: Error) {
         self.failures.lock().expect("failures").entry(id.to_owned()).or_default().push_back(error);
     }
 }
 
-/// The scripted provider behind every root scenario.
+// The scripted provider behind every root scenario.
 #[derive(Debug)]
 pub struct Provider<S = Memory> {
-    /// FIFO-scripted model answers.
+    // FIFO-scripted model answers.
     pub model: Scripted,
-    /// The scripted `Source`.
+    // The scripted `Source`.
     pub source: SourceScript,
-    /// The scripted `Target`.
+    // The scripted `Target`.
     pub target: TargetScript,
-    /// The scripted `Vcs`.
+    // The scripted `Vcs`.
     pub vcs: VcsScript,
-    /// The scripted `Files`.
+    // The scripted `Files`.
     pub files: FilesScript,
-    /// The scripted storage pair.
+    // The scripted storage pair.
     pub storage: Arc<S>,
 }
 
 impl Provider<Memory> {
-    /// Creates a provider answering `answers` over fresh in-memory storage.
+    // Creates a provider answering `answers` over fresh in-memory storage.
     pub fn answering<T: Into<String>>(answers: impl IntoIterator<Item = T>) -> Self {
         Self::over(Arc::new(Memory::default()), answers)
     }
 
-    /// Creates a provider whose model is never dispatched.
+    // Creates a provider whose model is never dispatched.
     pub fn idle() -> Self {
         Self::answering(Vec::<String>::new())
     }
 }
 
 impl<S> Provider<S> {
-    /// Creates a provider answering `answers` over `storage`.
+    // Creates a provider answering `answers` over `storage`.
     pub fn over<T: Into<String>>(storage: Arc<S>, answers: impl IntoIterator<Item = T>) -> Self {
         Self {
             model: Scripted::answering(answers),
@@ -571,7 +571,7 @@ impl<S: Send + Sync + 'static> Files for Provider<S> {
     }
 }
 
-/// Runs one CLI invocation in-process, returning the raw response.
+// Runs one CLI invocation in-process, returning the raw response.
 pub async fn cli<S>(provider: &Provider<S>, argv: &[&str]) -> Response
 where
     S: StateStore + BlobStore + Send + Sync + 'static,
@@ -579,12 +579,12 @@ where
     emery_cli::run(provider.clone(), argv.iter().copied()).await
 }
 
-/// Builds a full-length `sha256:` digest from one repeated hex pair.
+// Builds a full-length `sha256:` digest from one repeated hex pair.
 pub fn digest(pair: &str) -> Digest {
     format!("sha256:{}", pair.repeat(32)).parse().expect("a valid digest")
 }
 
-/// Builds a claim of `kind` carrying one required extra.
+// Builds a claim of `kind` carrying one required extra.
 pub fn claim(kind: ClaimKind, id: &str, extra: (&str, &str)) -> Claim {
     let mut extras = serde_json::Map::new();
     extras.insert(extra.0.to_string(), Value::String(extra.1.to_string()));
@@ -598,17 +598,17 @@ pub fn claim(kind: ClaimKind, id: &str, extra: (&str, &str)) -> Claim {
     }
 }
 
-/// Builds a requirement claim carrying its required `statement` extra.
+// Builds a requirement claim carrying its required `statement` extra.
 pub fn requirement(id: &str, statement: &str) -> Claim {
     claim(ClaimKind::Requirement, id, ("statement", statement))
 }
 
-/// Builds a retirement claim carrying its required `statement` extra.
+// Builds a retirement claim carrying its required `statement` extra.
 pub fn retire(id: &str, statement: &str) -> Claim {
     claim(ClaimKind::Retire, id, ("statement", statement))
 }
 
-/// Builds an evidence document over `claims`.
+// Builds an evidence document over `claims`.
 pub const fn evidence(claims: Vec<Claim>) -> Evidence {
     Evidence { claims }
 }

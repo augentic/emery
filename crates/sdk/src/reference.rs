@@ -22,7 +22,7 @@ const READ_DOC: &str = "read_doc";
 // survey turn's, a build turn's, and a verify turn's.
 const SYSTEM: &[&str] = &[EXTRACT, CLAIMS, SURVEY, BUILD, VERIFY];
 
-/// Returns the reference tools declared to the model on every turn.
+// Returns the reference tools declared to the model on every turn.
 #[must_use]
 pub fn tools() -> Vec<Tool> {
     vec![
@@ -37,19 +37,19 @@ pub fn tools() -> Vec<Tool> {
     ]
 }
 
-/// Returns the handler that serves the reference tools from `docs` and then `imports`.
-///
-/// `imports` are the documents a turn offers beyond the adapter's own:
-/// [`crate::RUNTIME`] for a source's turns, whose prompts link them, and
-/// nothing for a target's, which they would only distract. `list_docs` lists
-/// both and never a system document (`extract.md`, `claims.md`, `survey.md`,
-/// `build.md`, `verify.md`), since a turn either carries it already or has
-/// nothing to learn from it. `read_doc` still answers every document of
-/// either table, so a followed link never fails.
-///
-/// Each call is reported at DEBUG with its arguments as the model sent them,
-/// under the turn's `subject` — the source name, the slice id of a build, or
-/// `verify` — and, for a mining turn, its `seam`.
+// Returns the handler that serves the reference tools from `docs` and then `imports`.
+//
+// `imports` are the documents a turn offers beyond the adapter's own:
+// `crate::RUNTIME` for a source's turns, whose prompts link them, and
+// nothing for a target's, which they would only distract. `list_docs` lists
+// both and never a system document (`extract.md`, `claims.md`, `survey.md`,
+// `build.md`, `verify.md`), since a turn either carries it already or has
+// nothing to learn from it. `read_doc` still answers every document of
+// either table, so a followed link never fails.
+//
+// Each call is reported at DEBUG with its arguments as the model sent them,
+// under the turn's `subject` — the source name, the slice id of a build, or
+// `verify` — and, for a mining turn, its `seam`.
 pub fn serve(
     docs: &'static [Doc], imports: &'static [Doc], subject: &str, seam: Option<usize>,
 ) -> Tools {

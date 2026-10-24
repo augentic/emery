@@ -12,38 +12,38 @@ type Keyed = BTreeMap<(String, String), Option<Vec<u8>>>;
 type Listings = BTreeMap<(String, String), Vec<Entry>>;
 type Write = (String, String, Vec<u8>);
 
-/// A scripted `Files` with a record of every read, listing, and write.
+// A scripted `Files` with a record of every read, listing, and write.
 #[derive(Clone, Debug, Default)]
 pub struct FilesScript {
-    /// What each path beneath a working copy reads as, keyed by both.
+    // What each path beneath a working copy reads as, keyed by both.
     pub contents: Arc<Mutex<Keyed>>,
-    /// What each directory beneath a working copy lists as, keyed by both.
+    // What each directory beneath a working copy lists as, keyed by both.
     pub listings: Arc<Mutex<Listings>>,
-    /// Every read, in order: the working copy and the path.
+    // Every read, in order: the working copy and the path.
     pub reads: Arc<Mutex<Vec<(String, String)>>>,
-    /// Every listing, in order: the working copy and the directory.
+    // Every listing, in order: the working copy and the directory.
     pub listed: Arc<Mutex<Vec<(String, String)>>>,
-    /// Every write, in order: the working copy, the path, and the bytes.
+    // Every write, in order: the working copy, the path, and the bytes.
     pub writes: Arc<Mutex<Vec<Write>>>,
 }
 
 impl FilesScript {
-    /// Scripts what `path` beneath `at` reads as.
+    // Scripts what `path` beneath `at` reads as.
     pub fn holds(&self, at: &str, path: &str, content: &str) {
         self.holds_bytes(at, path, content.as_bytes());
     }
 
-    /// Scripts what `path` beneath `at` reads as, byte for byte.
+    // Scripts what `path` beneath `at` reads as, byte for byte.
     pub fn holds_bytes(&self, at: &str, path: &str, content: &[u8]) {
         self.script(at, path, Some(content.to_vec()));
     }
 
-    /// Scripts `path` beneath `at` as one whose read fails.
+    // Scripts `path` beneath `at` as one whose read fails.
     pub fn unreadable(&self, at: &str, path: &str) {
         self.script(at, path, None);
     }
 
-    /// Scripts what the directory `path` beneath `at` lists as: each entry's name and kind.
+    // Scripts what the directory `path` beneath `at` lists as: each entry's name and kind.
     pub fn lists(&self, at: &str, path: &str, entries: &[(&str, EntryKind)]) {
         let entries = entries
             .iter()
@@ -55,17 +55,17 @@ impl FilesScript {
         self.listings.lock().expect("listings").insert((at.to_owned(), path.to_owned()), entries);
     }
 
-    /// Returns every read so far, in order.
+    // Returns every read so far, in order.
     pub fn reads(&self) -> Vec<(String, String)> {
         self.reads.lock().expect("reads").clone()
     }
 
-    /// Returns every listing so far, in order.
+    // Returns every listing so far, in order.
     pub fn listed(&self) -> Vec<(String, String)> {
         self.listed.lock().expect("listed").clone()
     }
 
-    /// Returns every write so far, in order.
+    // Returns every write so far, in order.
     pub fn writes(&self) -> Vec<Write> {
         self.writes.lock().expect("writes").clone()
     }

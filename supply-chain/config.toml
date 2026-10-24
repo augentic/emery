@@ -168,11 +168,11 @@ version = "0.12.1"
 criteria = "safe-to-deploy"
 
 [[exemptions.bon]]
-version = "3.10.2"
+version = "3.10.3"
 criteria = "safe-to-deploy"
 
 [[exemptions.bon-macros]]
-version = "3.10.2"
+version = "3.10.3"
 criteria = "safe-to-deploy"
 
 [[exemptions.borrow-or-share]]
@@ -200,7 +200,7 @@ version = "4.0.3"
 criteria = "safe-to-deploy"
 
 [[exemptions.cc]]
-version = "1.9.0"
+version = "1.10.0"
 criteria = "safe-to-deploy"
 
 [[exemptions.cfg-if]]
@@ -236,11 +236,11 @@ version = "0.10.2"
 criteria = "safe-to-deploy"
 
 [[exemptions.const_format]]
-version = "0.2.36"
+version = "0.2.37"
 criteria = "safe-to-deploy"
 
 [[exemptions.const_format_proc_macros]]
-version = "0.2.34"
+version = "0.2.37"
 criteria = "safe-to-deploy"
 
 [[exemptions.convert_case]]
@@ -476,7 +476,7 @@ version = "0.3.34"
 criteria = "safe-to-deploy"
 
 [[exemptions.genai]]
-version = "0.7.0"
+version = "0.7.1"
 criteria = "safe-to-deploy"
 
 [[exemptions.generic-array]]
@@ -1140,7 +1140,7 @@ version = "0.4.12"
 criteria = "safe-to-deploy"
 
 [[exemptions.smallvec]]
-version = "1.16.3"
+version = "1.16.4"
 criteria = "safe-to-deploy"
 
 [[exemptions.socket2]]
@@ -1312,7 +1312,7 @@ version = "1.1.0"
 criteria = "safe-to-deploy"
 
 [[exemptions.uuid]]
-version = "1.28.0"
+version = "1.29.0"
 criteria = "safe-to-deploy"
 
 [[exemptions.uuid-simd]]
@@ -1376,11 +1376,11 @@ version = "0.3.106"
 criteria = "safe-to-deploy"
 
 [[exemptions.webpki-root-certs]]
-version = "1.0.10"
+version = "1.0.11"
 criteria = "safe-to-deploy"
 
 [[exemptions.webpki-roots]]
-version = "1.0.10"
+version = "1.0.11"
 criteria = "safe-to-deploy"
 
 [[exemptions.winx]]

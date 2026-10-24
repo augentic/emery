@@ -305,6 +305,11 @@
   width: 150px;
 }
 
+/* The default theme fades the paragraph after an H1; every paragraph class here sets its own colour */
+.slidev-layout h1 + p {
+  opacity: 1;
+}
+
 /* Lead subtitle under H1 */
 .slide-lead {
   font-size: 17px;

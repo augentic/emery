@@ -329,9 +329,6 @@ pub struct Scaffold<'a> {
     pub passages: &'a str,
     /// Guarded files that `write_files` may not delete or overwrite without
     /// their [`Guarded::keeps`] tokens.
-    ///
-    /// When non-empty, [`build`] also exposes `restore_files` so the model can
-    /// reset a guarded file to its initial state.
     pub files: &'a [Guarded],
     /// Keys of design `Type:` blocks already laid into the scaffolded files.
     ///
@@ -514,7 +511,7 @@ pub fn metadata(rules: &[MergeRule]) -> TargetMetadata {
 /// the [`Grant::union`] of `ctx`'s [`grants`](BuildContext::grants).
 ///
 /// The turn serves `docs` through `list_docs` and `read_doc`, and modifies the
-/// workspace through up to three tools:
+/// workspace through two tools:
 ///
 /// - `write_files` creates or replaces files whole at paths
 ///   [`beneath`](crate::beneath) accepts (following no symlink) and removes
@@ -523,8 +520,6 @@ pub fn metadata(rules: &[MergeRule]) -> TargetMetadata {
 ///   that violate a [`Guarded`] file in [`Scaffold::files`].
 /// - `edit_files` replaces the single occurrence of each edit's `find` string
 ///   in an existing file.
-/// - `restore_files`, registered when [`Scaffold::files`] is non-empty, resets
-///   named scaffolded files to their contents at the start of the turn.
 ///
 /// Any tool call that fails a check is rejected as a whole without changing the
 /// workspace.
@@ -550,9 +545,8 @@ pub fn metadata(rules: &[MergeRule]) -> TargetMetadata {
 /// - Returns [`Error::BadRequest`] when the model rejects the request or
 ///   produces no valid report within the round limit or time budget.
 /// - Returns [`Error::ServerError`] before any turn when `docs` lacks
-///   `build.md`, `ctx`'s [`grants`](BuildContext::grants) have
-///   [`findings`](Grant::findings), or a guarded file in the workspace cannot
-///   be read.
+///   `build.md` or `ctx`'s [`grants`](BuildContext::grants) have
+///   [`findings`](Grant::findings).
 /// - Returns [`Error::BadGateway`] when a model tool or transport fails.
 /// - Returns the [`Error`] returned by `check`, ending the turn immediately.
 pub async fn build<P: Model>(
@@ -563,7 +557,7 @@ pub async fn build<P: Model>(
     let id = &slice.id;
     let root = Path::new(ctx.workspace);
     let scaffolded = ctx.scaffold.map_or(&[][..], |scaffold| scaffold.files);
-    let writer = Writer::new(ctx.workspace, id).guarding(scaffolded)?;
+    let writer = Writer::new(ctx.workspace, id).guarding(scaffolded);
     let written = writer.written();
     let mut tools = reference::tools();
     tools.extend(writer.tools());
@@ -789,14 +783,13 @@ struct Brief<'a> {
 impl Display for Brief<'_> {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         let slice = self.slice;
-        let guarded = self.scaffold.is_some_and(|scaffold| !scaffold.files.is_empty());
         write!(
             f,
             "Build the slice `{name}` ({id}) of the plan, bound to adapter `{adapter}`.\n\n\
              `$WORKSPACE` is the project tree, lent writable: the root of every file you can \
              read, and the root every `written` path is relative to. The tree sits on commit \
              `{base}`, the integrated head this slice builds over. Write through this call's \
-             {count} tools alone: {TOOLS_RULE} Write the files you have ready together in one \
+             two tools alone: {TOOLS_RULE} Write the files you have ready together in one \
              `write_files` call, and make a change within a file through `edit_files`. Build \
              the slice into the tree as the prompt describes, and change nothing outside \
              it.\n\n",
@@ -804,7 +797,6 @@ impl Display for Brief<'_> {
             id = slice.id,
             adapter = self.adapter_id,
             base = slice.base,
-            count = if guarded { "three" } else { "two" },
         )?;
 
         write!(
@@ -833,9 +825,7 @@ impl Display for Brief<'_> {
                      change {one} through `edit_files`, or send the whole file through \
                      `write_files` with every marker and name the skeleton holds still in it; \
                      an entry that drops one is refused whole naming what it dropped, as a \
-                     `delete` naming one of them is. `restore_files` puts {one} back as it was \
-                     scaffolded, the turn's edits to it discarded: recovery after a refusal, \
-                     not a step.{keyed}\n\n",
+                     `delete` naming one of them is.{keyed}\n\n",
                     count = if scaffold.files.len() == 1 { "file" } else { "files" },
                     are = if scaffold.files.len() == 1 { "is" } else { "are" },
                     one = if scaffold.files.len() == 1 { "it" } else { "one" },

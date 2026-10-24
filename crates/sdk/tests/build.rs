@@ -165,14 +165,6 @@ fn edit_files(id: &str, edits: &[(&str, &str, &str)]) -> ToolCall {
     }
 }
 
-fn restore_files(id: &str, paths: &[&str]) -> ToolCall {
-    ToolCall {
-        id: id.to_owned(),
-        name: "restore_files".to_owned(),
-        arguments: serde_json::json!({ "paths": paths }).to_string(),
-    }
-}
-
 fn names(dir: &Path) -> Vec<String> {
     let mut names: Vec<String> = fs::read_dir(dir)
         .expect("read_dir")
@@ -434,9 +426,8 @@ async fn build_design_cut_passages() {
              adapter scaffolded for this slice is filled in place: change it through \
              `edit_files`, or send the whole file through `write_files` with every marker and \
              name the skeleton holds still in it; an entry that drops one is refused whole \
-             naming what it dropped, as a `delete` naming one of them is. `restore_files` puts \
-             it back as it was scaffolded, the turn's edits to it discarded: recovery after a \
-             refusal, not a step.\n\nFrom the references, for this slice:\n\n## A \
+             naming what it dropped, as a `delete` naming one of them is.\n\nFrom the \
+             references, for this slice:\n\n## A \
              probe\n\nAn `Invoice` is read as a value and answered whole.\n\nImplement every \
              requirement"
         ),
@@ -494,12 +485,10 @@ async fn build_design_cut_phrase() {
 
 // A `write_files` entry naming a file the adapter scaffolded is refused with
 // the call when its content drops a token the file keeps, naming the tokens
-// and the two ways to change it, never `restore_files`, since a model
-// offered the way back takes it and loses its edits; a `delete` naming one
-// is refused whatever it keeps; the call lands nothing. An edit within the
-// file, and a write beside it, land as they would. The brief says so after
-// the scaffold section, and the turn declares `restore_files` beside the
-// two tools.
+// and the two ways to change it; a `delete` naming one is refused whatever
+// it keeps; the call lands nothing. An edit within the file, and a write
+// beside it, land as they would. The brief says so after the scaffold
+// section.
 #[tokio::test]
 async fn write_scaffolded_refused() {
     let tmp = tempfile::tempdir().expect("tempdir");
@@ -573,11 +562,11 @@ async fn write_scaffolded_refused() {
     let request = &model.seen()[0];
     assert_eq!(
         request.tools,
-        ["list_docs", "read_doc", "write_files", "edit_files", "restore_files"],
-        "a scaffold declares the third tool"
+        ["list_docs", "read_doc", "write_files", "edit_files"],
+        "a scaffold declares the two write tools"
     );
     let user = &request.messages[0];
-    assert!(user.contains("Write through this call's three tools alone:"), "{user}");
+    assert!(user.contains("Write through this call's two tools alone:"), "{user}");
     assert!(
         user.contains(
             "What the adapter scaffolded for this slice before this turn:\n\n- `src/orders.rs`: \
@@ -585,9 +574,7 @@ async fn write_scaffolded_refused() {
              are filled in place: change one through `edit_files`, or send the whole file \
              through `write_files` with every marker and name the skeleton holds still in it; \
              an entry that drops one is refused whole naming what it dropped, as a `delete` \
-             naming one of them is. `restore_files` puts one back as it was \
-             scaffolded, the turn's edits to it discarded: recovery after a refusal, not a \
-             step.\n\nImplement every requirement"
+             naming one of them is.\n\nImplement every requirement"
         ),
         "{user}"
     );
@@ -741,86 +728,6 @@ async fn write_scaffolded_replaced() {
             .as_str()),
         "a replacement reports no deletion"
     );
-    model.assert_exhausted();
-}
-
-// `restore_files` puts a scaffolded file back as the turn found it, so a
-// skeleton edited wrong is recovered whole and the turn no longer counts it
-// as written; a path that was not scaffolded, or that the tree lacked when
-// the turn began, refuses the call whole and restores nothing.
-#[tokio::test]
-async fn restore_scaffolded() {
-    let tmp = tempfile::tempdir().expect("tempdir");
-    let skeleton = "pub fn create() {\n    todo!(\"REQ-001 orders.create: the handler\")\n}\n";
-    write(tmp.path(), [("src/orders.rs", skeleton), ("Cargo.toml", "[package]\n")]);
-    let root = tmp.path().to_str().expect("a UTF-8 scratch root");
-    let model = Scripted::answering([r#"{"covered":["REQ-001"],"written":["Cargo.toml"]}"#])
-        .calling(
-            0,
-            [
-                edit_files("1", &[("src/orders.rs", "the handler", "broken")]),
-                restore_files("2", &["src/orders.rs", "Cargo.toml"]),
-                restore_files("3", &["src/orders.rs", "src/lib.rs"]),
-                restore_files("4", &["src/orders/mod.rs"]),
-                ToolCall {
-                    id: "5".to_owned(),
-                    name: "restore_files".to_owned(),
-                    arguments: r#"{"paths":[]}"#.to_owned(),
-                },
-                restore_files("6", &["./src/orders.rs"]),
-                write_files("7", &[("Cargo.toml", "[package]\nname = \"orders\"\n")]),
-            ],
-        );
-    let files = [
-        Guarded::new("src/orders.rs", ["REQ-001 orders.create"]),
-        Guarded::new("src/orders/mod.rs", ["pub struct Order"]),
-        Guarded::new("Cargo.toml", Vec::<String>::new()),
-    ];
-    let scaffold = Scaffold {
-        brief: "- `src/orders.rs`: scaffolded\n",
-        passages: "",
-        files: &files,
-        types: &[],
-    };
-
-    let report = ask_guarded(&model, &slice(), root, &[], Some(scaffold), |_| Ok(Vec::new()))
-        .await
-        .expect("accepted");
-    assert_eq!(report.written, ["Cargo.toml"], "a restored file is no longer counted as written");
-    assert_eq!(
-        fs::read_to_string(tmp.path().join("src/orders.rs")).expect("restored"),
-        skeleton,
-        "the skeleton is back"
-    );
-
-    let exchanges = model.exchanges();
-    assert_eq!(exchanges.len(), 8, "seven calls, then the check");
-    assert!(exchanges[0].outcome.is_ok(), "{:?}", exchanges[0].outcome);
-    assert_eq!(
-        exchanges[1].outcome,
-        Ok(r#"{"restored":[{"bytes":68,"path":"src/orders.rs"},{"bytes":10,"path":"Cargo.toml"}]}"#
-            .to_owned()),
-        "both scaffolded files are put back, the untouched one included"
-    );
-    assert_eq!(
-        exchanges[2].outcome,
-        Err("restore_files: nothing restored: `src/lib.rs` was not scaffolded before this turn; \
-             `restore_files` puts back the files the brief names as scaffolded"
-            .to_owned())
-    );
-    assert_eq!(
-        exchanges[3].outcome,
-        Err("restore_files: nothing restored: `src/orders/mod.rs` was scaffolded for this slice \
-             but the tree lacked it before this turn; there is nothing to put back"
-            .to_owned())
-    );
-    assert_eq!(exchanges[4].outcome, Err("restore_files: `paths` names no file".to_owned()));
-    assert!(
-        exchanges[5].outcome.is_ok(),
-        "a path is read as the tree spells it: {:?}",
-        exchanges[5].outcome
-    );
-    assert!(exchanges[6].outcome.is_ok(), "{:?}", exchanges[6].outcome);
     model.assert_exhausted();
 }
 
@@ -1459,7 +1366,7 @@ async fn edit_marker_scoped() {
     let user = &model.seen()[0].messages[0];
     assert!(
         user.contains(
-            "recovery after a refusal, not a step. A marker the brief quotes a key for is filled \
+            "as a `delete` naming one of them is. A marker the brief quotes a key for is filled \
              by one `edit_files` edit whose `find` is that key alone and whose `replace` is the \
              text that takes the block's place, so its lines are never copied; a `find` copied \
              from the brief matches where the formatter has broken its lines or moved its \

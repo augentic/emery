@@ -323,8 +323,7 @@ pub struct RepositorySource {
 }
 
 // A source as a run binds it: checked, its input prepared, and ready to
-// extract once its adapter is loaded. `pub(crate)`: `amend` binds its change
-// sources the same way.
+// extract once its adapter is loaded.
 pub(crate) struct Bound<'a> {
     adapter: &'a AdapterRef,
     digest: Option<&'a Digest>,
@@ -432,9 +431,6 @@ pub(crate) struct Extracted {
     pub(crate) repositories: Vec<RepositorySource>,
 }
 
-// `pub(crate)`: the briefs over it are named by the corpus check at the
-// crate root, and `amend` reads the ranks the standing requirements sit
-// beneath.
 #[derive(Debug)]
 pub(crate) struct Extract {
     pub(crate) source: String,

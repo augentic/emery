@@ -26,10 +26,10 @@ use crate::specify::sections::BasesSection;
 /// sized to what one build turn implements and verifies within its budget.
 pub const SLICE_CAP: usize = 12;
 
-/// A synthesis brief for the build plan.
-///
-/// The brief contains the requirement bases, the stems they fall under, the
-/// triggers that reach them, and the design's data type keys.
+// A synthesis brief for the build plan.
+//
+// The brief contains the requirement bases, the stems they fall under, the
+// triggers that reach them, and the design's data type keys.
 pub struct SliceBrief<'a> {
     bases: &'a [Basis<'a>],
     types: Vec<String>,
@@ -38,10 +38,10 @@ pub struct SliceBrief<'a> {
 }
 
 impl<'a> SliceBrief<'a> {
-    /// Returns a slicing brief for `bases` and the design's data `types`, in key order.
-    ///
-    /// `types` are the keys slices own: the accepted design's
-    /// [`Design::data_types`](crate::revision::Design::data_types).
+    // Returns a slicing brief for `bases` and the design's data `types`, in key order.
+    //
+    // `types` are the keys slices own: the accepted design's
+    // `Design::data_types`.
     #[must_use]
     pub fn new(bases: &'a [Basis<'a>], types: Vec<String>) -> Self {
         let mut stems: Vec<Stem<'a>> = Vec::new();
@@ -88,19 +88,17 @@ impl<'a> SliceBrief<'a> {
         triggers
     }
 
-    /// Derives the build plan.
-    ///
-    /// A specification whose requirements span two or more floors — stems, or
-    /// the sub-stems of a stem past [`SLICE_CAP`] — asks the model to slice
-    /// it. Otherwise the one stem is the one slice and no call is spent.
-    ///
-    /// # Errors
-    ///
-    /// - Returns [`Error::BadRequest`] when the model cannot produce a valid
-    ///   plan within the available rounds.
-    /// - Returns [`Error::ServerError`] when required prose is missing or a
-    ///   plan cannot be reconciled with the specification.
-    /// - Returns [`Error::BadGateway`] when the model operation fails.
+    // Derives the build plan.
+    //
+    // A specification whose requirements span two or more floors — stems, or
+    // the sub-stems of a stem past `SLICE_CAP` — asks the model to slice
+    // it. Otherwise the one stem is the one slice and no call is spent.
+    //
+    // - Returns `Error::BadRequest` when the model cannot produce a valid
+    //   plan within the available rounds.
+    // - Returns `Error::ServerError` when required prose is missing or a
+    //   plan cannot be reconciled with the specification.
+    // - Returns `Error::BadGateway` when the model operation fails.
     pub async fn derive<M: Model>(self, model: &M) -> Result<Plan, Error> {
         if self.floors().count() < 2 {
             return Ok(self.whole());

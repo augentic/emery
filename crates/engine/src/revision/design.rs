@@ -14,34 +14,34 @@ use crate::revision;
 
 const CITATION: &str = "(from ";
 
-/// The `Type:` key written before a type-signature fence.
+// The `Type:` key written before a type-signature fence.
 pub const TYPE: &str = "Type:";
 
-/// A rebuild design in its stored form.
+// A rebuild design in its stored form.
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Design {
-    /// The grammar the document was written under.
+    // The grammar the document was written under.
     pub emery: u32,
-    /// The revision this one amends, or `None` when drafted from sources alone.
+    // The revision this one amends, or `None` when drafted from sources alone.
     pub parent: Option<String>,
-    /// Markdown paragraphs preceding the first section.
+    // Markdown paragraphs preceding the first section.
     pub preamble: Vec<String>,
-    /// The sections, in vocabulary order.
+    // The sections, in vocabulary order.
     pub sections: Vec<Section>,
 }
 
 impl Design {
-    /// Returns the section of `kind`, if the design has one.
+    // Returns the section of `kind`, if the design has one.
     #[must_use]
     pub fn section(&self, kind: SectionKind) -> Option<&Section> {
         self.sections.iter().find(|section| section.kind == kind)
     }
 
-    /// Returns the keys of the [`Role::Data`] types, in key order.
-    ///
-    /// These are the types a build plan assigns to slices. A
-    /// [`Role::Mechanism`] type is owned by no slice.
+    // Returns the keys of the `Role::Data` types, in key order.
+    //
+    // These are the types a build plan assigns to slices. A
+    // `Role::Mechanism` type is owned by no slice.
     #[must_use]
     pub fn data_types(&self) -> Vec<String> {
         let keys: BTreeSet<&str> = self
@@ -60,7 +60,7 @@ impl Design {
         keys.into_iter().map(str::to_owned).collect()
     }
 
-    /// Returns the signature of the type `key` names, if the design has one.
+    // Returns the signature of the type `key` names, if the design has one.
     #[must_use]
     pub fn signature(&self, key: &str) -> Option<&str> {
         self.sections.iter().flat_map(|section| &section.blocks).find_map(|block| match block {
@@ -106,19 +106,19 @@ impl Display for Section {
     }
 }
 
-/// A paragraph or type signature in a design section.
+// A paragraph or type signature in a design section.
 #[derive(Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum Block {
-    /// One Markdown paragraph.
+    // One Markdown paragraph.
     Text(String),
-    /// A type claim's verbatim signature.
+    // A type claim's verbatim signature.
     Type {
-        /// The source claim's key.
+        // The source claim's key.
         key: String,
-        /// The claim's signature.
+        // The claim's signature.
         signature: String,
-        /// What the type stands for.
+        // What the type stands for.
         role: Role,
     },
 }
@@ -216,10 +216,10 @@ impl Display for SectionKind {
     }
 }
 
-/// Returns every source name cited as `(from <source>)` in `text`.
-///
-/// The parenthesised text must be one token: a phrase such as `(from the
-/// browser)` is prose, not a citation.
+// Returns every source name cited as `(from <source>)` in `text`.
+//
+// The parenthesised text must be one token: a phrase such as `(from the
+// browser)` is prose, not a citation.
 pub fn citations(text: &str) -> impl Iterator<Item = &str> {
     text.match_indices(CITATION).filter_map(|(at, _)| {
         let (key, _) = text[at + CITATION.len()..].split_once(')')?;

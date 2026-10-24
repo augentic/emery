@@ -6,14 +6,14 @@ use omnia_test::guest::Memory;
 use serde_json::Value;
 use sha2::{Digest as _, Sha256};
 
-use super::FilesScript;
+use super::files::FilesScript;
 
-/// Scripts the three documents under `spec/` in the tree every revision working copy reads.
-///
-/// The scripted `Vcs` cuts every working copy at the head, so the tree reads
-/// as the repository's head holding the revision: the shape a label merged
-/// into the branch leaves, which needs no pointer and no label. Returns the
-/// revision id.
+// Scripts the three documents under `spec/` in the tree every revision working copy reads.
+//
+// The scripted `Vcs` cuts every working copy at the head, so the tree reads
+// as the repository's head holding the revision: the shape a label merged
+// into the branch leaves, which needs no pointer and no label. Returns the
+// revision id.
 pub fn seed(files: &FilesScript, spec: &[u8], design: &[u8], plan: &[u8]) -> String {
     files.lists(REVISION, ".", &[(SPECIFICATION, EntryKind::Directory)]);
     files.lists(
@@ -31,10 +31,10 @@ pub fn seed(files: &FilesScript, spec: &[u8], design: &[u8], plan: &[u8]) -> Str
     revision(spec, design, plan)
 }
 
-/// Stores the three documents under their content id and stages it as the candidate.
-///
-/// The staged slot holds the record the engine writes: the id and the kind.
-/// Returns the candidate's id.
+// Stores the three documents under their content id and stages it as the candidate.
+//
+// The staged slot holds the record the engine writes: the id and the kind.
+// Returns the candidate's id.
 pub fn stage(storage: &Memory, spec: &[u8], design: &[u8], plan: &[u8]) -> String {
     let id = revision(spec, design, plan);
     storage.insert_object(STAGED_CONTAINER, &format!("{id}/spec.json"), spec);
@@ -45,10 +45,10 @@ pub fn stage(storage: &Memory, spec: &[u8], design: &[u8], plan: &[u8]) -> Strin
     id
 }
 
-/// Stores the amendment document under its content id and stages it, as `emery amend` does.
-///
-/// The staged slot holds the record the engine writes for an amendment: the
-/// id, the kind, and the base the document names. Returns the amendment's id.
+// Stores the amendment document under its content id and stages it, as `emery amend` does.
+//
+// The staged slot holds the record the engine writes for an amendment: the
+// id, the kind, and the base the document names. Returns the amendment's id.
 pub fn stage_amendment(storage: &Memory, amendment: &[u8]) -> String {
     let id = digest(&[amendment]);
     storage.insert_object(STAGED_CONTAINER, &format!("{id}/amendment.json"), amendment);
@@ -66,12 +66,12 @@ pub fn stage_amendment(storage: &Memory, amendment: &[u8]) -> String {
     id
 }
 
-/// The staged revision candidate's id, read from the record at `STAGED_KEY`.
+// The staged revision candidate's id, read from the record at `STAGED_KEY`.
 pub fn staged(storage: &Memory) -> String {
     staged_at(storage, STAGED_KEY)
 }
 
-/// The staged revision candidate's id at `key`, for a namespaced store.
+// The staged revision candidate's id at `key`, for a namespaced store.
 pub fn staged_at(storage: &Memory, key: &str) -> String {
     let raw = storage.state(key).expect("staged record");
     let record: Value = serde_json::from_slice(&raw).expect("staged record JSON");
@@ -79,9 +79,9 @@ pub fn staged_at(storage: &Memory, key: &str) -> String {
     record["id"].as_str().expect("staged record id").to_owned()
 }
 
-/// Scripts the revision `from` sealed last into the tree `to` reads, as a repository holding it does.
-///
-/// Returns the revision id, which is the digest of the written bytes.
+// Scripts the revision `from` sealed last into the tree `to` reads, as a repository holding it does.
+//
+// Returns the revision id, which is the digest of the written bytes.
 pub fn carry(from: &FilesScript, to: &FilesScript) -> String {
     let spec = written(from, "spec");
     let design = written(from, "design");
@@ -89,7 +89,7 @@ pub fn carry(from: &FilesScript, to: &FilesScript) -> String {
     seed(to, &spec, &design, &plan)
 }
 
-/// The bytes last written to `spec/<name>.json` in the revision working copy.
+// The bytes last written to `spec/<name>.json` in the revision working copy.
 pub fn written(files: &FilesScript, name: &str) -> Vec<u8> {
     let path = document(name);
     let writes = files.writes();
@@ -99,12 +99,12 @@ pub fn written(files: &FilesScript, name: &str) -> Vec<u8> {
     body
 }
 
-/// The path a revision document lives at in the repository, `spec/<name>.json`.
+// The path a revision document lives at in the repository, `spec/<name>.json`.
 pub fn document(name: &str) -> String {
     format!("{SPECIFICATION}/{name}.json")
 }
 
-/// The engine's content id: SHA-256 over the length-prefixed bodies, spec, design, then plan.
+// The engine's content id: SHA-256 over the length-prefixed bodies, spec, design, then plan.
 pub fn revision(spec: &[u8], design: &[u8], plan: &[u8]) -> String {
     digest(&[spec, design, plan])
 }

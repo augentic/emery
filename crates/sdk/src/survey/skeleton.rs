@@ -14,7 +14,7 @@ use super::{Dialect, Lines, grouped, push_unique, unique};
 // How many sites a callee is listed at before the rest are counted.
 const SITES: usize = 8;
 
-pub(super) fn decisions<'m>(modules: impl IntoIterator<Item = &'m Module>) -> Option<String> {
+pub fn decisions<'m>(modules: impl IntoIterator<Item = &'m Module>) -> Option<String> {
     let mut lines: Vec<String> = Vec::new();
     for module in modules {
         for decision in &module.decisions {
@@ -54,7 +54,7 @@ pub(super) fn decisions<'m>(modules: impl IntoIterator<Item = &'m Module>) -> Op
     ))
 }
 
-pub(super) fn data<'m>(modules: impl IntoIterator<Item = &'m Module>) -> Option<String> {
+pub fn data<'m>(modules: impl IntoIterator<Item = &'m Module>) -> Option<String> {
     let files = grouped(modules.into_iter().flat_map(|module| {
         module.data().into_iter().map(move |path| (path, module.path.as_str()))
     }));
@@ -77,7 +77,7 @@ pub(super) fn data<'m>(modules: impl IntoIterator<Item = &'m Module>) -> Option<
 
 // `widened` are the modules placed after the closure for what these imports
 // name; empty where the seam was not widened.
-pub(super) fn unfollowed<'m>(
+pub fn unfollowed<'m>(
     modules: impl IntoIterator<Item = &'m Module>, widened: &[String],
 ) -> Option<String> {
     let mut items: Vec<String> = Vec::new();
@@ -304,7 +304,7 @@ fn defaulted<'m>(
 // applying one of the tree's constant-named boundaries anchors wherever the
 // constant is spelled, so the constants are read from the whole tree, not
 // the seam's files.
-pub(super) fn anchors<'s, R: Recogniser>(
+pub fn anchors<'s, R: Recogniser>(
     tree: &Tree<R>, files: &[String], surfaces: impl IntoIterator<Item = &'s Surface>,
 ) -> Vec<String> {
     let dialect = tree.dialect;
@@ -427,7 +427,7 @@ fn of_tree(dialect: &Dialect, module: &Module, name: &str, frames: &[u32], budge
     }
 }
 
-pub(super) fn boundaries<'m>(
+pub fn boundaries<'m>(
     dialect: &Dialect, modules: impl IntoIterator<Item = &'m Module>,
 ) -> Option<String> {
     let mut lines: Vec<String> = Vec::new();
@@ -501,7 +501,7 @@ fn collapsed(dialect: &Dialect, text: &str, at: Lines) -> Option<String> {
     })
 }
 
-pub(super) fn packages<'m>(modules: impl IntoIterator<Item = &'m Module>) -> Option<String> {
+pub fn packages<'m>(modules: impl IntoIterator<Item = &'m Module>) -> Option<String> {
     let mut packages: BTreeMap<&str, (Vec<String>, Vec<&str>)> = BTreeMap::new();
     for module in modules {
         for import in module.imports.iter().filter(|import| !import.type_only) {
@@ -547,7 +547,7 @@ pub(super) fn packages<'m>(modules: impl IntoIterator<Item = &'m Module>) -> Opt
 // - a call handed nothing whose value is used in place
 // - a registration or hook handed a handler
 // - a call in a module-level declaration or a class body outside any function
-pub(super) fn calls<R: Recogniser>(tree: &Tree<R>, files: &[String]) -> Option<String> {
+pub fn calls<R: Recogniser>(tree: &Tree<R>, files: &[String]) -> Option<String> {
     let mut lines: Vec<String> = Vec::new();
     for module in files.iter().filter_map(|path| tree.modules.get(path)) {
         let declared = |call: &Call| {

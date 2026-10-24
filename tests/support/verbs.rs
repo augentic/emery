@@ -2,7 +2,7 @@
 
 use emery_adapter::is_kebab;
 
-/// Returns the sorted verb names from the `Commands:` section of `help`.
+// Returns the sorted verb names from the `Commands:` section of `help`.
 pub fn verbs(help: &str) -> Vec<&str> {
     let mut names: Vec<&str> = help
         .lines()

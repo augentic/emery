@@ -15,10 +15,10 @@ use omnia_sdk::{BlobStore, StateStore, bad_gateway, bad_request};
 use omnia_test::SeenFormat;
 use omnia_test::guest::{Memory, Scripted};
 use serde_json::Value;
-use support::{
-    Provider, Rendezvous, Scratch, carry, claim, cli_ok, digest, evidence, fail, requirement,
-    retire, seed, staged, staged_at, written,
-};
+use support::provider::{Provider, Rendezvous, claim, digest, evidence, requirement, retire};
+use support::scratch::Scratch;
+use support::store::{carry, seed, staged, staged_at, written};
+use support::{cli_ok, fail};
 
 // The one-source reference most scenarios name; the scripted loader lands
 // any exact package reference, so the namespace and version are nominal.
