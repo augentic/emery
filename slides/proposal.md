@@ -1,6 +1,6 @@
 ---
 theme: default
-title: From evidence to the next safe move
+title: Proposal
 aspectRatio: 16/9
 canvasWidth: 1280
 layout: default
@@ -23,12 +23,12 @@ class: slide-hero slide-section
 
 <AmbientVideo src="/videos/hero-video-3.mp4" variant="hero" />
 
-<Eyebrow text="PROPELLERHEAD · POST-CONSULTATION RECOMMENDATIONS" />
+<Eyebrow text="PROPELLERHEAD · PROPOSAL" />
 
 <div class="section-hero-grid">
 <div class="section-hero-left">
 
-# From evidence to<br>the next safe move.
+# [Client]<br>[Recommended outcome].
 
 <p class="section-subtitle">[Client] · [Engagement] · [Date]</p>
 
@@ -36,9 +36,9 @@ class: slide-hero slide-section
 </div>
 
 <div class="hero-pillars">
-<div class="hero-pillar"><span class="hero-pillar-num">01</span><span>Observe · State what the evidence supports</span></div>
-<div class="hero-pillar"><span class="hero-pillar-num">02</span><span>Recommend · Bound the smallest useful intervention</span></div>
-<div class="hero-pillar"><span class="hero-pillar-num">03</span><span>Decide · Name the owner, proof, and next commitment</span></div>
+<div class="hero-pillar"><span class="hero-pillar-num">01</span><span>Outcome · [Observable result to protect or create]</span></div>
+<div class="hero-pillar"><span class="hero-pillar-num">02</span><span>Boundary · [What this proposal includes and excludes]</span></div>
+<div class="hero-pillar"><span class="hero-pillar-num">03</span><span>Decision · [Approval or commitment required]</span></div>
 </div>
 
 <!--
@@ -53,51 +53,51 @@ Opening:
 -->
 
 ---
-title: The decision in one page
+title: Intended outcome
 class: slide-light
 ---
 
-<Eyebrow text="EXECUTIVE VIEW · THE RECOMMENDATION BEFORE THE DETAIL" />
+<Eyebrow text="EXECUTIVE VIEW · INTENDED OUTCOME AND RECOMMENDATION" />
 
 <div class="ed-split">
 <div class="ed-prose-col">
 
-# The decision<br>in one page.
+# [Intended client outcome]
 
-<p class="ed-prose">A recommendation should be legible before the evidence is unpacked. State the outcome, the limiting constraint, the first move, and the decision now required.</p>
-<p class="ed-prose"><strong>If the recommendation cannot be made this concrete, the consultation has not yet produced a course of action.</strong></p>
+<p class="ed-prose">[One sentence naming who benefits and what will change for them.]</p>
+<p class="ed-prose"><strong>[Why this outcome matters now, supported by engagement evidence.]</strong></p>
 
 </div>
 <div class="ed-diagram-pane">
 <svg viewBox="0 0 640 440" aria-hidden="true">
   <rect x="18" y="22" width="604" height="394" rx="16" fill="#ffffff" stroke="rgba(13,16,48,0.2)" stroke-width="1.5" />
-  <text x="42" y="54" class="svg-kicker" fill="#0c7fa3">RECOMMENDATION SUMMARY · REPLACE THE BRACKETED CONTENT</text>
+  <text x="42" y="54" class="svg-kicker" fill="#0c7fa3">EXECUTIVE RECOMMENDATION</text>
 
   <rect x="42" y="82" width="260" height="126" rx="12" fill="rgba(22,180,226,0.06)" stroke="#0c7fa3" stroke-width="1.5" />
-  <text x="62" y="110" class="svg-kicker" fill="#0c7fa3">OUTCOME TO PROTECT</text>
+  <text x="62" y="110" class="svg-kicker" fill="#0c7fa3">INTENDED OUTCOME</text>
   <text x="62" y="140" class="svg-h3" fill="#0d1030">[Observable client result]</text>
   <text x="62" y="166" class="svg-caption" fill="rgba(13,16,48,0.62)">For [customer, operator, or business owner]</text>
   <text x="62" y="188" class="svg-caption" fill="#0c7fa3">Measured by [evidence]</text>
 
   <rect x="318" y="82" width="260" height="126" rx="12" fill="rgba(164,35,143,0.06)" stroke="#a4238f" stroke-width="1.5" />
-  <text x="338" y="110" class="svg-kicker" fill="#a4238f">MATERIAL CONSTRAINT</text>
+  <text x="338" y="110" class="svg-kicker" fill="#a4238f">CURRENT CONSTRAINT</text>
   <text x="338" y="140" class="svg-h3" fill="#0d1030">[Primary constraint]</text>
   <text x="338" y="166" class="svg-caption" fill="rgba(13,16,48,0.62)">Consequence: [why it matters now]</text>
-  <text x="338" y="188" class="svg-caption" fill="#a4238f">Confidence: [high · medium · low]</text>
+  <text x="338" y="188" class="svg-caption" fill="#a4238f">Evidence: [source or finding]</text>
 
   <rect x="42" y="224" width="260" height="126" rx="12" fill="#0d1030" />
-  <text x="62" y="252" class="svg-kicker" fill="#78d8f2">FIRST BOUNDED MOVE</text>
+  <text x="62" y="252" class="svg-kicker" fill="#78d8f2">PROPOSED INTERVENTION</text>
   <text x="62" y="282" class="svg-h3" fill="#ffffff">[First bounded delivery]</text>
   <text x="62" y="308" class="svg-caption" fill="rgba(255,255,255,0.72)">Includes [boundary] · Excludes [boundary]</text>
   <text x="62" y="330" class="svg-caption" fill="#f59ef5">Owner: [name or role]</text>
 
   <rect x="318" y="224" width="260" height="126" rx="12" fill="rgba(22,180,226,0.08)" stroke="#0c7fa3" stroke-width="1.8" />
-  <text x="338" y="252" class="svg-kicker" fill="#0c7fa3">DECISION REQUIRED</text>
-  <text x="338" y="282" class="svg-h3" fill="#0d1030">[Recommended path]</text>
-  <text x="338" y="308" class="svg-caption" fill="rgba(13,16,48,0.62)">By [decision owner] · At [decision point]</text>
-  <text x="338" y="330" class="svg-caption" fill="#0c7fa3">Proceed · fix · reframe · stop</text>
+  <text x="338" y="252" class="svg-kicker" fill="#0c7fa3">DECISION REQUESTED</text>
+  <text x="338" y="282" class="svg-h3" fill="#0d1030">[Approve the first move]</text>
+  <text x="338" y="308" class="svg-caption" fill="rgba(13,16,48,0.62)">Owner: [name or role] · By [date]</text>
+  <text x="338" y="330" class="svg-caption" fill="#0c7fa3">Approve · amend · decline</text>
 
-  <text x="320" y="390" text-anchor="middle" class="svg-caption" fill="rgba(13,16,48,0.54)">The rest of this deck must earn these four statements.</text>
+  <text x="320" y="390" text-anchor="middle" class="svg-caption" fill="rgba(13,16,48,0.54)">[Because of the evidence, we recommend this bounded move to achieve this outcome.]</text>
 </svg>
 </div>
 </div>
@@ -113,20 +113,20 @@ Decision prompt:
 -->
 
 ---
-title: Separate fact from inference
+title: What we observed
 class: slide-light
 ---
 
-<Eyebrow text="EVIDENCE LEDGER · WHAT WE KNOW, WHAT IT MEANS, WHAT IS MISSING" />
+<Eyebrow text="EVIDENCE BASE · OBSERVATIONS, IMPLICATIONS, AND UNKNOWNS" />
 
 <div class="ed-band">
 <div class="ed-band-top">
 <div>
 
-# Separate fact<br>from inference.
+# What we observed.
 
 </div>
-<p class="ed-band-prose">A useful review does not turn interview notes into certainty. It keeps <strong>observations, interpretations, and unknowns visibly distinct</strong> so the recommendation can be challenged without relitigating the whole engagement.</p>
+<p class="ed-band-prose">[Scope of the consultation, evidence reviewed, and limits on the review.] <strong>[One sentence summarising the evidence pattern relevant to the intended outcome.]</strong></p>
 </div>
 <div class="ed-band-canvas">
 <svg viewBox="0 0 1140 350" aria-hidden="true">
@@ -134,22 +134,22 @@ class: slide-light
   <text x="42" y="84" class="svg-kicker" fill="#0c7fa3">01 · VERIFIED OBSERVATIONS</text>
   <text x="42" y="116" class="svg-h3" fill="#0d1030">What the evidence directly supports</text>
   <line x1="42" y1="132" x2="342" y2="132" stroke="rgba(13,16,48,0.12)" />
-  <text x="42" y="164" class="svg-label" fill="#0d1030">[Observed fact and source]</text>
-  <text x="42" y="194" class="svg-label" fill="#0d1030">[Observed fact and source]</text>
-  <text x="42" y="224" class="svg-label" fill="#0d1030">[Observed fact and source]</text>
-  <text x="42" y="258" class="svg-caption" fill="#0c7fa3">Name artefact, interview, system, or test</text>
+  <text x="42" y="164" class="svg-label" fill="#0d1030">[Observation · evidence source]</text>
+  <text x="42" y="194" class="svg-label" fill="#0d1030">[Observation · evidence source]</text>
+  <text x="42" y="224" class="svg-label" fill="#0d1030">[Observation · evidence source]</text>
+  <text x="42" y="258" class="svg-caption" fill="#0c7fa3">Evidence reviewed: [artefacts and people]</text>
 
   <line x1="366" y1="166" x2="400" y2="166" stroke="#0d1030" stroke-width="1.8" />
   <polygon points="394,161 404,166 394,171" fill="#0d1030" />
 
   <rect x="402" y="54" width="348" height="224" rx="14" fill="#ffffff" stroke="rgba(13,16,48,0.25)" stroke-width="1.5" />
-  <text x="426" y="84" class="svg-kicker" fill="#0d1030">02 · REASONED INFERENCES</text>
-  <text x="426" y="116" class="svg-h3" fill="#0d1030">What those observations imply</text>
+  <text x="426" y="84" class="svg-kicker" fill="#0d1030">02 · IMPLICATIONS</text>
+  <text x="426" y="116" class="svg-h3" fill="#0d1030">What the observations mean here</text>
   <line x1="426" y1="132" x2="726" y2="132" stroke="rgba(13,16,48,0.12)" />
   <text x="426" y="164" class="svg-label" fill="#0d1030">[Likely delivery consequence]</text>
   <text x="426" y="194" class="svg-label" fill="#0d1030">[Likely control gap]</text>
   <text x="426" y="224" class="svg-label" fill="#0d1030">[Likely dependency]</text>
-  <text x="426" y="258" class="svg-caption" fill="rgba(13,16,48,0.58)">State confidence and plausible alternatives</text>
+  <text x="426" y="258" class="svg-caption" fill="rgba(13,16,48,0.58)">Confidence: [high · medium · low]</text>
 
   <line x1="750" y1="166" x2="784" y2="166" stroke="#a4238f" stroke-width="1.8" />
   <polygon points="778,161 788,166 778,171" fill="#a4238f" />
@@ -161,10 +161,10 @@ class: slide-light
   <text x="810" y="164" class="svg-label" fill="#0d1030">[unknown: decision-critical gap]</text>
   <text x="810" y="194" class="svg-label" fill="#0d1030">[unknown: owner or authority]</text>
   <text x="810" y="224" class="svg-label" fill="#0d1030">[unknown: technical constraint]</text>
-  <text x="810" y="258" class="svg-caption" fill="#a4238f">Resolve, bound, or make a condition of proceeding</text>
+  <text x="810" y="258" class="svg-caption" fill="#a4238f">Decision impact: [resolve · bound · accept]</text>
 
   <rect x="250" y="304" width="640" height="38" rx="19" fill="#0d1030" />
-  <text x="570" y="328" text-anchor="middle" class="svg-label" fill="#ffffff">A recommendation must never outrun the evidence beneath it.</text>
+  <text x="570" y="328" text-anchor="middle" class="svg-label" fill="#ffffff">Evidence supports: [bounded conclusion that informs the proposal]</text>
 </svg>
 </div>
 </div>
@@ -181,17 +181,17 @@ Decision prompt:
 -->
 
 ---
-title: Read the delivery system, not the symptom
+title: Findings across the delivery path
 class: slide-sandbox
 ---
 
 <AmbientVideo src="/videos/approach-video.mp4" variant="approach" />
 
-<Eyebrow text="FINDINGS · THE COMPLETE DELIVERY PATH" />
+<Eyebrow text="FINDINGS · RULES, INTENT, EXECUTION, AND OPERATION" />
 
-# Read the delivery system, not the symptom.
+# Findings across the delivery path.
 
-<p class="slide-lead">A slow or unsafe change is rarely one tool problem. Trace the finding to the control that should carry it.</p>
+<p class="slide-lead">[One-sentence synthesis of how the findings affect the intended outcome.]</p>
 
 <div class="ed-band-canvas" style="padding-top: 4px;">
 <svg viewBox="0 0 1140 400" aria-hidden="true">
@@ -200,43 +200,43 @@ class: slide-sandbox
   <text x="42" y="104" class="svg-h2" fill="#ffffff">Authoring controls</text>
   <line x1="42" y1="120" x2="252" y2="120" stroke="rgba(255,255,255,0.14)" />
   <text x="42" y="150" class="svg-kicker" fill="rgba(255,255,255,0.5)">OBSERVED</text>
-  <text x="42" y="174" class="svg-body" fill="#ffffff">[Tool, data, or policy finding]</text>
+  <text x="42" y="174" class="svg-body" fill="#ffffff">[Finding F-01]</text>
   <text x="42" y="210" class="svg-kicker" fill="rgba(255,255,255,0.5)">CONSEQUENCE</text>
   <text x="42" y="234" class="svg-body" fill="#ffffff">[Why the finding matters]</text>
-  <text x="42" y="276" class="svg-caption" fill="#78d8f2">Control: guidance, grants, or gates</text>
+  <text x="42" y="276" class="svg-caption" fill="#78d8f2">Intervention: [bounded change]</text>
 
   <rect x="300" y="42" width="258" height="258" rx="16" fill="rgba(10,7,16,0.72)" stroke="#f59ef5" stroke-width="1.8" />
   <text x="324" y="72" class="svg-kicker" fill="#f59ef5">02 · RECORD INTENT</text>
   <text x="324" y="104" class="svg-h2" fill="#ffffff">Delivery record</text>
   <line x1="324" y1="120" x2="534" y2="120" stroke="rgba(255,255,255,0.14)" />
   <text x="324" y="150" class="svg-kicker" fill="rgba(255,255,255,0.5)">OBSERVED</text>
-  <text x="324" y="174" class="svg-body" fill="#ffffff">[Intent, evidence, or authority finding]</text>
+  <text x="324" y="174" class="svg-body" fill="#ffffff">[Finding F-02]</text>
   <text x="324" y="210" class="svg-kicker" fill="rgba(255,255,255,0.5)">CONSEQUENCE</text>
   <text x="324" y="234" class="svg-body" fill="#ffffff">[Why the finding matters]</text>
-  <text x="324" y="276" class="svg-caption" fill="#f59ef5">Control: specification, plan, verification</text>
+  <text x="324" y="276" class="svg-caption" fill="#f59ef5">Intervention: [bounded change]</text>
 
   <rect x="582" y="42" width="258" height="258" rx="16" fill="rgba(10,7,16,0.72)" stroke="#78d8f2" stroke-width="1.8" />
   <text x="606" y="72" class="svg-kicker" fill="#78d8f2">03 · CONSTRAIN CODE</text>
   <text x="606" y="104" class="svg-h2" fill="#ffffff">Runtime authority</text>
   <line x1="606" y1="120" x2="816" y2="120" stroke="rgba(255,255,255,0.14)" />
   <text x="606" y="150" class="svg-kicker" fill="rgba(255,255,255,0.5)">OBSERVED</text>
-  <text x="606" y="174" class="svg-body" fill="#ffffff">[Access or isolation finding]</text>
+  <text x="606" y="174" class="svg-body" fill="#ffffff">[Finding F-03]</text>
   <text x="606" y="210" class="svg-kicker" fill="rgba(255,255,255,0.5)">CONSEQUENCE</text>
   <text x="606" y="234" class="svg-body" fill="#ffffff">[Why the finding matters]</text>
-  <text x="606" y="276" class="svg-caption" fill="#78d8f2">Control: capabilities and host policy</text>
+  <text x="606" y="276" class="svg-caption" fill="#78d8f2">Intervention: [bounded change]</text>
 
   <rect x="864" y="42" width="258" height="258" rx="16" fill="rgba(10,7,16,0.72)" stroke="rgba(255,255,255,0.36)" stroke-width="1.6" />
   <text x="888" y="72" class="svg-kicker" fill="rgba(255,255,255,0.7)">04 · CARRY TO OPERATION</text>
   <text x="888" y="104" class="svg-h2" fill="#ffffff">Production rail</text>
   <line x1="888" y1="120" x2="1098" y2="120" stroke="rgba(255,255,255,0.14)" />
   <text x="888" y="150" class="svg-kicker" fill="rgba(255,255,255,0.5)">OBSERVED</text>
-  <text x="888" y="174" class="svg-body" fill="#ffffff">[Release or operational finding]</text>
+  <text x="888" y="174" class="svg-body" fill="#ffffff">[Finding F-04]</text>
   <text x="888" y="210" class="svg-kicker" fill="rgba(255,255,255,0.5)">CONSEQUENCE</text>
   <text x="888" y="234" class="svg-body" fill="#ffffff">[Why the finding matters]</text>
-  <text x="888" y="276" class="svg-caption" fill="rgba(255,255,255,0.7)">Control: deploy, observe, recover, own</text>
+  <text x="888" y="276" class="svg-caption" fill="rgba(255,255,255,0.7)">Intervention: [bounded change]</text>
 
   <rect x="196" y="332" width="748" height="42" rx="21" fill="rgba(255,255,255,0.08)" stroke="rgba(255,255,255,0.25)" />
-  <text x="570" y="358" text-anchor="middle" class="svg-label" fill="#ffffff">Finding = observation → consequence → intervention → owner → completion evidence</text>
+  <text x="570" y="358" text-anchor="middle" class="svg-label" fill="#ffffff">Overall consequence: [what fails or remains exposed if these findings stand]</text>
 </svg>
 </div>
 
@@ -252,25 +252,25 @@ Decision prompt:
 -->
 
 ---
-title: Prioritise by consequence, not novelty
+title: Material constraints and dependencies
 class: slide-light
 ---
 
-<Eyebrow text="PRIORITIES · WHAT MUST CHANGE NOW, DURING DELIVERY, OR LATER" />
+<Eyebrow text="CONSTRAINTS · WHAT MUST CHANGE NOW, DURING DELIVERY, OR LATER" />
 
 <div class="ed-split">
 <div class="ed-prose-col">
 
-# Prioritise by consequence,<br>not novelty.
+# Material constraints<br>and dependencies.
 
-<p class="ed-prose">Sequence findings by the decision they affect. Close blockers before work begins, test uncertain controls inside the first delivery, and defer scale work until the path has been proven.</p>
-<p class="ed-prose"><strong>Confidence matters alongside impact.</strong> A high-consequence unknown is an investigation or a condition—not a confident recommendation.</p>
+<p class="ed-prose">[Constraint that must be resolved before the client can safely commit.]</p>
+<p class="ed-prose"><strong>[Dependency or risk best tested inside the first bounded delivery.]</strong></p>
 
 </div>
 <div class="ed-diagram-pane">
 <svg viewBox="0 0 640 440" aria-hidden="true">
   <rect x="18" y="22" width="604" height="392" rx="16" fill="#ffffff" stroke="rgba(13,16,48,0.2)" stroke-width="1.5" />
-  <text x="42" y="52" class="svg-kicker" fill="#0c7fa3">SEQUENCE EACH FINDING BY THE DECISION IT UNLOCKS</text>
+  <text x="42" y="52" class="svg-kicker" fill="#0c7fa3">PROPOSED SEQUENCE · [WHY THIS ORDER]</text>
 
   <rect x="42" y="82" width="536" height="84" rx="12" fill="rgba(164,35,143,0.06)" stroke="#a4238f" stroke-width="1.6" />
   <text x="62" y="108" class="svg-kicker" fill="#a4238f">NOW · BEFORE COMMITMENT</text>
@@ -293,7 +293,7 @@ class: slide-light
   <text x="62" y="358" class="svg-h3" fill="#ffffff">[Repeatability, wider adoption, or optimisation]</text>
   <text x="62" y="378" class="svg-caption" fill="#f59ef5">Entry: [proven path]</text>
 
-  <text x="320" y="426" text-anchor="middle" class="svg-caption" fill="rgba(13,16,48,0.54)">Priority follows consequence, confidence, and dependency—not enthusiasm.</text>
+  <text x="320" y="426" text-anchor="middle" class="svg-caption" fill="rgba(13,16,48,0.54)">Planning assumption: [the fact or dependency that would change this sequence]</text>
 </svg>
 </div>
 </div>
@@ -310,7 +310,7 @@ Decision prompt:
 -->
 
 ---
-title: Aim for one bounded path
+title: Recommended target state
 class: slide-light
 ---
 
@@ -364,18 +364,18 @@ class: slide-light
   <text x="1038" y="214" text-anchor="middle" class="svg-caption" fill="#f59ef5">Recover · own</text>
 
   <rect x="194" y="262" width="752" height="36" rx="18" fill="rgba(22,180,226,0.06)" stroke="rgba(12,127,163,0.3)" />
-  <text x="570" y="285" text-anchor="middle" class="svg-label" fill="#0d1030">Target only the controls this outcome needs. Earn the right to generalise later.</text>
+  <text x="570" y="285" text-anchor="middle" class="svg-label" fill="#0d1030">Client result: [what this controlled path makes possible]</text>
 </svg>
 </div>
 <div class="ed-bottom-prose-row">
 <div>
 
-# Aim for one bounded path,<br>not a platform programme.
+# Recommended<br>target state.
 
 </div>
 <div>
-<p class="ed-prose"><strong>The target state is observable.</strong> A change enters with evidence and authority, is implemented within explicit limits, and reaches operation through named checks and decisions.</p>
-<p class="ed-prose"><strong>Reuse follows proof.</strong> The first path should expose which controls can become shared assets and which remain specific to the client’s work.</p>
+<p class="ed-prose"><strong>[Smallest controlled path to the intended outcome.]</strong></p>
+<p class="ed-prose">[What stays specific; what becomes reusable after proof.]</p>
 </div>
 </div>
 </div>
@@ -392,7 +392,7 @@ Decision prompt:
 -->
 
 ---
-title: Make the first delivery do diagnostic work
+title: First bounded delivery
 class: slide-sandbox
 ---
 
@@ -401,10 +401,10 @@ class: slide-sandbox
 <div class="ed-split">
 <div class="ed-prose-col">
 
-# Make the first delivery<br>do diagnostic work.
+# [First bounded<br>delivery name]
 
-<p class="ed-prose" style="color: rgba(255,255,255,0.76);">Choose one change that matters enough to expose the real delivery path and is small enough to stop. It should test the recommendation while producing something the client can use.</p>
-<p class="ed-prose" style="color: rgba(255,255,255,0.76);"><strong style="color: #ffffff;">This is not a proof of concept.</strong> It is the first bounded production outcome, with explicit exclusions and a release decision.</p>
+<p class="ed-prose" style="color: rgba(255,255,255,0.76);">[What will be delivered and who will benefit from it.]</p>
+<p class="ed-prose" style="color: rgba(255,255,255,0.76);"><strong style="color: #ffffff;">[Why this is the safest useful first move, tied to the findings and unknowns.]</strong></p>
 
 </div>
 <div class="ed-diagram-pane">
@@ -436,7 +436,7 @@ class: slide-sandbox
   <text x="332" y="308" class="svg-label" fill="#ffffff">[Repeat, revise, or stop]</text>
   <text x="332" y="332" class="svg-caption" fill="rgba(255,255,255,0.7)">Decider: [name or role]</text>
 
-  <text x="320" y="386" text-anchor="middle" class="svg-caption" fill="rgba(255,255,255,0.58)">Useful to the client. Diagnostic of the system. Bounded enough to stop.</text>
+  <text x="320" y="386" text-anchor="middle" class="svg-caption" fill="rgba(255,255,255,0.58)">Proposed duration: [range] · Dependencies: [critical dependencies]</text>
 </svg>
 </div>
 </div>
@@ -453,20 +453,20 @@ Decision prompt:
 -->
 
 ---
-title: Sequence capability behind evidence
+title: Subsequent waves and dependencies
 class: slide-light
 ---
 
-<Eyebrow text="ROADMAP · EACH WAVE EARNS THE NEXT COMMITMENT" />
+<Eyebrow text="ROADMAP · SUBSEQUENT WAVES AND DEPENDENCIES" />
 
 <div class="ed-band">
 <div class="ed-band-top">
 <div>
 
-# Sequence capability<br>behind evidence.
+# Subsequent waves<br>and dependencies.
 
 </div>
-<p class="ed-band-prose">The roadmap is a chain of decisions, not a calendar promise. Each wave has an entry condition, a useful result, and evidence that justifies the next commitment.</p>
+<p class="ed-band-prose">[Why the work is sequenced this way and what must be true before it starts.] <strong>[The dependency or evidence that could change this roadmap.]</strong></p>
 </div>
 <div class="ed-band-canvas">
 <svg viewBox="0 0 1140 350" aria-hidden="true">
@@ -515,7 +515,7 @@ class: slide-light
   <text x="856" y="234" class="svg-kicker" fill="rgba(13,16,48,0.5)">ENTRY EVIDENCE</text>
   <text x="856" y="258" class="svg-caption" fill="#0d1030">[Proven path and funded owner]</text>
 
-  <text x="570" y="332" text-anchor="middle" class="svg-caption" fill="rgba(13,16,48,0.54)">Dates belong in a delivery plan after scope, dependencies, and owners are accepted.</text>
+  <text x="570" y="332" text-anchor="middle" class="svg-caption" fill="rgba(13,16,48,0.54)">Planning basis: [assumptions behind sequence, effort, and timing]</text>
 </svg>
 </div>
 </div>
@@ -532,7 +532,7 @@ Decision prompt:
 -->
 
 ---
-title: Every recommendation needs an owner and proof
+title: Owners and decision rights
 class: slide-light
 ---
 
@@ -587,12 +587,12 @@ class: slide-light
 <div class="ed-bottom-prose-row">
 <div>
 
-# Every recommendation needs<br>an owner and proof.
+# Owners and<br>decision rights.
 
 </div>
 <div>
-<p class="ed-prose"><strong>Ownership is a decision right, not attendance.</strong> Name who may accept trade-offs, grant authority, release the result, and answer when it fails.</p>
-<p class="ed-prose"><strong>Completion is observable.</strong> Every action ends in evidence another person can inspect—not a statement that the work is “done”.</p>
+<p class="ed-prose"><strong>[How decisions will be made across the client and Propellerhead.]</strong></p>
+<p class="ed-prose">[Escalation path, delegated authority, and governance cadence.]</p>
 </div>
 </div>
 </div>
@@ -609,7 +609,82 @@ Decision prompt:
 -->
 
 ---
-title: Approve the boundary, not a programme
+title: Evidence and success measures
+class: slide-light
+---
+
+<Eyebrow text="SUCCESS MEASURES · EVIDENCE REQUIRED TO ACCEPT THE RESULT" />
+
+<div class="ed-band">
+<div class="ed-band-top">
+<div>
+
+# Evidence and<br>success measures.
+
+</div>
+<p class="ed-band-prose">[How the client will know the proposal delivered the intended outcome.] <strong>[Where the evidence will come from and who accepts it.]</strong></p>
+</div>
+<div class="ed-band-canvas">
+<svg viewBox="0 0 1140 350" aria-hidden="true">
+  <rect x="18" y="28" width="1104" height="278" rx="14" fill="#ffffff" stroke="rgba(13,16,48,0.2)" stroke-width="1.5" />
+  <rect x="18" y="28" width="1104" height="48" rx="14" fill="#0d1030" />
+  <text x="42" y="58" class="svg-kicker" fill="#78d8f2">MEASURE</text>
+  <text x="286" y="58" class="svg-kicker" fill="#78d8f2">BASELINE</text>
+  <text x="474" y="58" class="svg-kicker" fill="#78d8f2">SUCCESS THRESHOLD</text>
+  <text x="736" y="58" class="svg-kicker" fill="#78d8f2">EVIDENCE</text>
+  <text x="974" y="58" class="svg-kicker" fill="#78d8f2">OWNER</text>
+
+  <line x1="260" y1="76" x2="260" y2="306" stroke="rgba(13,16,48,0.12)" />
+  <line x1="448" y1="76" x2="448" y2="306" stroke="rgba(13,16,48,0.12)" />
+  <line x1="710" y1="76" x2="710" y2="306" stroke="rgba(13,16,48,0.12)" />
+  <line x1="948" y1="76" x2="948" y2="306" stroke="rgba(13,16,48,0.12)" />
+  <line x1="18" y1="134" x2="1122" y2="134" stroke="rgba(13,16,48,0.12)" />
+  <line x1="18" y1="192" x2="1122" y2="192" stroke="rgba(13,16,48,0.12)" />
+  <line x1="18" y1="250" x2="1122" y2="250" stroke="rgba(13,16,48,0.12)" />
+
+  <text x="42" y="111" class="svg-label" fill="#0d1030">Client outcome</text>
+  <text x="286" y="111" class="svg-body" fill="#0d1030">[Current state]</text>
+  <text x="474" y="111" class="svg-body" fill="#0d1030">[Observable target]</text>
+  <text x="736" y="111" class="svg-caption" fill="#0c7fa3">[Source or test]</text>
+  <text x="974" y="111" class="svg-caption" fill="#0d1030">[Owner]</text>
+
+  <text x="42" y="169" class="svg-label" fill="#0d1030">Delivery path</text>
+  <text x="286" y="169" class="svg-body" fill="#0d1030">[Current state]</text>
+  <text x="474" y="169" class="svg-body" fill="#0d1030">[Observable target]</text>
+  <text x="736" y="169" class="svg-caption" fill="#0c7fa3">[Revision or check]</text>
+  <text x="974" y="169" class="svg-caption" fill="#0d1030">[Owner]</text>
+
+  <text x="42" y="227" class="svg-label" fill="#0d1030">Runtime boundary</text>
+  <text x="286" y="227" class="svg-body" fill="#0d1030">[Current state]</text>
+  <text x="474" y="227" class="svg-body" fill="#0d1030">[Observable target]</text>
+  <text x="736" y="227" class="svg-caption" fill="#a4238f">[Policy or test]</text>
+  <text x="974" y="227" class="svg-caption" fill="#0d1030">[Owner]</text>
+
+  <text x="42" y="285" class="svg-label" fill="#0d1030">Operation</text>
+  <text x="286" y="285" class="svg-body" fill="#0d1030">[Current state]</text>
+  <text x="474" y="285" class="svg-body" fill="#0d1030">[Observable target]</text>
+  <text x="736" y="285" class="svg-caption" fill="#a4238f">[Release or recovery proof]</text>
+  <text x="974" y="285" class="svg-caption" fill="#0d1030">[Owner]</text>
+
+  <rect x="226" y="322" width="688" height="28" rx="14" fill="rgba(22,180,226,0.06)" stroke="rgba(12,127,163,0.3)" />
+  <text x="570" y="341" text-anchor="middle" class="svg-caption" fill="#0d1030">Acceptance authority: [name or role] · Review point: [date or event]</text>
+</svg>
+</div>
+</div>
+
+<!--
+Customisation:
+- Use measures the engagement can baseline or mark the baseline [unknown].
+- Prefer observable evidence over self-reported completion.
+- Tie each measure to the intended outcome, a material finding, or an explicit risk.
+- Name who accepts the evidence, not only who produces it.
+
+Decision prompt:
+- Would this evidence let the client accept or reject the result without relying on our opinion?
+-->
+
+---
+title: Decision requested
 class: slide-split short-bar
 ---
 
@@ -617,7 +692,7 @@ class: slide-split short-bar
 <AmbientVideo src="/videos/cta-video.mp4" variant="split" />
 <div class="split-brand-overlay">
 <img src="/images/Propellerhead_Logo.svg" alt="Propellerhead" />
-<p>Recommendations that preserve uncertainty, make ownership explicit, and earn each next commitment.</p>
+<p>A bounded proposal tied to evidence, ownership, and observable completion.</p>
 </div>
 </div>
 
@@ -625,28 +700,28 @@ class: slide-split short-bar
 <div>
 <Eyebrow text="PROPELLERHEAD · THE DECISION" />
 
-# Approve the boundary,<br>not a programme.
+# [Decision requested]
 
 <div class="opportunity-rows" style="margin-top: 8px;">
 <div class="opportunity-row">
 <span class="opportunity-row-num">01</span>
 <div>
-<h4>Proceed with the bounded first delivery</h4>
-<p>When the outcome, owner, limits, dependencies, and evidence are sufficiently clear.</p>
+<h4>Commitment</h4>
+<p>[Approve the bounded delivery, resolve a prerequisite, reframe the outcome, or stop.]</p>
 </div>
 </div>
 <div class="opportunity-row">
 <span class="opportunity-row-num">02</span>
 <div>
-<h4>Fix a foundation before building</h4>
-<p>When a missing authority, unsafe access path, or unresolved source would make implementation irresponsible.</p>
+<h4>Immediate next action</h4>
+<p>[Action] · Owner: [name or role] · Due: [date or event]</p>
 </div>
 </div>
 <div class="opportunity-row">
 <span class="opportunity-row-num">03</span>
 <div>
-<h4>Reframe—or stop</h4>
-<p>When the outcome does not justify the constraint, or the evidence does not support the proposed intervention.</p>
+<h4>Conditions</h4>
+<p>[Dependencies, exclusions, or evidence required before work begins.]</p>
 </div>
 </div>
 </div>
@@ -654,8 +729,8 @@ class: slide-split short-bar
 
 <div class="cta-card">
 <div>
-<div class="cta-card-label">RECOMMENDED DECISION · [PROCEED / FIX / REFRAME / STOP]</div>
-<div class="cta-card-title">[Decision, owner, and immediate next action]</div>
+<div class="cta-card-label">DECISION REQUESTED · [APPROVE / AMEND / DECLINE]</div>
+<div class="cta-card-title">[Named decision owner] · [Decision date]</div>
 </div>
 <div class="cta-pill">
 <span class="cta-pill-dot">→</span>
@@ -666,7 +741,7 @@ class: slide-split short-bar
 
 <!--
 Customisation:
-- Select one recommended decision. Do not present all four as equivalent options.
+- State one recommended decision, not a menu of equivalent options.
 - State the immediate next action, its owner, and the evidence that closes it.
 - A recommendation to stop can be a successful consultation outcome.
 - Delete every bracket before presenting.

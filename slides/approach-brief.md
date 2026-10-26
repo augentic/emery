@@ -1,6 +1,7 @@
 ---
 theme: default
 title: Code is cheap. Delivery is hard.
+sync: opening
 aspectRatio: 16/9
 canvasWidth: 1280
 layout: default
@@ -19,6 +20,10 @@ class: slide-hero slide-section
 .slidev-layout .slide-eyebrow { position: relative; padding-right: 72px; box-sizing: border-box; }
 .slidev-layout .eyebrow-num { position: absolute; top: 0; right: 0; white-space: nowrap; }
 .slidev-layout.slide-split .eyebrow-num { display: none; }
+.slidev-layout .foundation-progress { position: absolute; top: 28px; right: 160px; z-index: 2; width: 460px; margin: 0; display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.slidev-layout .foundation-progress span { padding: 4px 8px 3px; border-top: 2px solid rgba(13, 16, 48, 0.12); font-size: 9px; line-height: 1.15; font-weight: 600; letter-spacing: 0.07em; text-transform: uppercase; color: var(--phl-ink-muted); }
+.slidev-layout .foundation-progress .is-active { border-color: var(--phl-cyan); background: rgba(22, 180, 226, 0.05); color: var(--phl-cyan-ink); }
+.slidev-layout .foundation-progress .is-active.is-magenta { border-color: var(--phl-magenta); background: rgba(164, 35, 143, 0.05); color: #a4238f; }
 </style>
 
 <AmbientVideo src="/videos/hero-video-3.mp4" variant="hero" />
@@ -53,6 +58,7 @@ Client question:
 
 ---
 title: Implementation changed. Responsibility did not.
+sync: shift
 class: slide-light
 ---
 
@@ -125,6 +131,7 @@ Client question:
 
 ---
 title: Begin with the change
+sync: outcome
 class: slide-light
 ---
 
@@ -206,6 +213,7 @@ Client question:
 
 ---
 title: Set rules. Record intent. Constrain code.
+sync: system
 class: slide-sandbox
 ---
 
@@ -227,8 +235,8 @@ class: slide-sandbox
   <line x1="935" y1="44" x2="935" y2="78" stroke="#78d8f2" stroke-width="1.5" stroke-dasharray="4 4" />
 
   <rect x="12" y="82" width="356" height="208" rx="16" fill="rgba(10,7,16,0.7)" stroke="#78d8f2" stroke-width="1.8" />
-  <text x="38" y="112" class="svg-kicker" fill="#78d8f2">01 · SET RULES · AUTHORING CONTROL</text>
-  <text x="38" y="142" class="svg-h2" fill="#ffffff">Rules-based toolchain</text>
+  <text x="38" y="112" class="svg-kicker" fill="#78d8f2">01 · SET RULES</text>
+  <text x="38" y="142" class="svg-h2" fill="#ffffff">Toolchain controls</text>
   <line x1="38" y1="156" x2="342" y2="156" stroke="rgba(255,255,255,0.12)" />
   <text x="38" y="184" class="svg-body" fill="rgba(255,255,255,0.84)">Approved tools and models</text>
   <text x="38" y="208" class="svg-body" fill="rgba(255,255,255,0.84)">Data, source, and worker boundaries</text>
@@ -236,8 +244,8 @@ class: slide-sandbox
   <text x="38" y="270" class="svg-caption" fill="#78d8f2">Governs how code may be created</text>
 
   <rect x="392" y="82" width="356" height="208" rx="16" fill="rgba(10,7,16,0.7)" stroke="#f59ef5" stroke-width="1.8" />
-  <text x="418" y="112" class="svg-kicker" fill="#f59ef5">02 · RECORD INTENT · DELIVERY CONTROL</text>
-  <text x="418" y="142" class="svg-h2" fill="#ffffff">Emery</text>
+  <text x="418" y="112" class="svg-kicker" fill="#f59ef5">02 · RECORD INTENT</text>
+  <text x="418" y="142" class="svg-h2" fill="#ffffff">Spec-driven delivery</text>
   <line x1="418" y1="156" x2="722" y2="156" stroke="rgba(255,255,255,0.12)" />
   <text x="418" y="184" class="svg-body" fill="rgba(255,255,255,0.84)">Evidence and explicit source authority</text>
   <text x="418" y="208" class="svg-body" fill="rgba(255,255,255,0.84)">Reviewed specification, design, and plan</text>
@@ -245,8 +253,8 @@ class: slide-sandbox
   <text x="418" y="270" class="svg-caption" fill="#f59ef5">Governs what must remain true</text>
 
   <rect x="772" y="82" width="356" height="208" rx="16" fill="rgba(10,7,16,0.7)" stroke="#78d8f2" stroke-width="1.8" />
-  <text x="798" y="112" class="svg-kicker" fill="#78d8f2">03 · CONSTRAIN CODE · RUN-TIME CONTROL</text>
-  <text x="798" y="142" class="svg-h2" fill="#ffffff">Omnia</text>
+  <text x="798" y="112" class="svg-kicker" fill="#78d8f2">03 · CONSTRAIN CODE</text>
+  <text x="798" y="142" class="svg-h2" fill="#ffffff">Sandboxed execution</text>
   <line x1="798" y1="156" x2="1102" y2="156" stroke="rgba(255,255,255,0.12)" />
   <text x="798" y="184" class="svg-body" fill="rgba(255,255,255,0.84)">Sandboxed WebAssembly components</text>
   <text x="798" y="208" class="svg-body" fill="rgba(255,255,255,0.84)">Typed capabilities and explicit grants</text>
@@ -273,16 +281,17 @@ class: slide-sandbox
   <text x="854" y="351" class="svg-caption" fill="rgba(255,255,255,0.46)">→</text>
   <text x="890" y="351" class="svg-label" fill="#ffffff">Recover</text>
   <text x="38" y="372" class="svg-caption" fill="rgba(255,255,255,0.64)">Reusable infrastructure and pipeline assets carry the known shape into operation.</text>
-  <text x="1102" y="372" text-anchor="end" class="svg-caption" fill="#f59ef5">Emery and Omnia are open source.</text>
+  <text x="1102" y="372" text-anchor="end" class="svg-caption" fill="#f59ef5">The delivery engine and runtime are open source.</text>
 </svg>
 </div>
 
 <!--
 The complete system:
+- This is the map for the next three sections. Take each control in turn.
 - These are three different controls over three different questions.
-- The rules-based toolchain governs how people and agents may work.
-- Emery governs what the software must do and what evidence supports accepting it.
-- Omnia governs what the running application may touch.
+- Toolchain controls govern how people and agents may work.
+- Spec-driven delivery governs what the software must do and what evidence supports accepting it.
+- Sandboxed execution governs what the running application may touch.
 - Reusable delivery assets carry the result to production; they are supporting infrastructure, not a substitute fourth foundation.
 
 Boundary:
@@ -290,82 +299,172 @@ Boundary:
 -->
 
 ---
-title: Rules travel with the work
+title: Isolate. Standardise. Automate.
+sync: authoring
 class: slide-light
 ---
 
-<Eyebrow text="FOUNDATION 01 · RULES-BASED AUTHORING" />
+<Eyebrow text="01 · SET RULES · TOOLCHAIN CONTROLS" />
+
+<div class="foundation-progress" aria-label="Delivery foundations">
+<span class="is-active">01 · Set rules</span>
+<span>02 · Record intent</span>
+<span>03 · Constrain code</span>
+</div>
 
 <div class="ed-split">
 <div class="ed-prose-col">
 
-# Rules travel<br>with the work.
+# Isolate.<br>Standardise.<br>Automate.
 
-<p class="ed-prose">A policy document does not govern an agent turn. The agreed controls must appear where work happens: in editor configuration, agent instructions, tool grants, templates, and pipeline checks.</p>
-<p class="ed-prose"><strong>The same boundary applies to every author</strong>—engineer, domain expert, or coding agent.</p>
+<p class="ed-prose">Teams move faster when experimentation happens in a governed place, through an approved path, under checks that apply to every change.</p>
+<p class="ed-prose"><strong>The same engineering codex and controls travel with every builder</strong>—engineer, domain expert, or coding agent.</p>
 
 </div>
 <div class="ed-diagram-pane">
 <svg viewBox="0 0 640 440" aria-hidden="true">
-  <rect x="14" y="26" width="612" height="366" rx="16" fill="#ffffff" stroke="rgba(13,16,48,0.2)" stroke-width="1.5" />
-  <text x="38" y="56" class="svg-kicker" fill="#0c7fa3">THE AUTHORING BOUNDARY · SHARED ENGINEERING CONTROLS</text>
+  <rect x="14" y="24" width="612" height="102" rx="14" fill="rgba(22,180,226,0.06)" stroke="#0c7fa3" stroke-width="1.6" />
+  <circle cx="62" cy="75" r="22" fill="#0c7fa3" />
+  <text x="62" y="80" text-anchor="middle" class="svg-label" fill="#ffffff">01</text>
+  <text x="102" y="58" class="svg-kicker" fill="#0c7fa3">ISOLATE</text>
+  <text x="102" y="84" class="svg-h3" fill="#0d1030">Governed workspaces</text>
+  <text x="102" y="108" class="svg-caption" fill="rgba(13,16,48,0.62)">Non-production environments for people and agents</text>
 
-  <rect x="38" y="82" width="256" height="226" rx="12" fill="rgba(22,180,226,0.06)" stroke="#0c7fa3" stroke-width="1.5" />
-  <text x="58" y="110" class="svg-kicker" fill="#0c7fa3">GUIDANCE · EASY TO FOLLOW</text>
-  <text x="58" y="138" class="svg-label" fill="#0d1030">Approved tools and models</text>
-  <text x="58" y="168" class="svg-label" fill="#0d1030">Editor and agent instructions</text>
-  <text x="58" y="198" class="svg-label" fill="#0d1030">Known project skeletons</text>
-  <text x="58" y="228" class="svg-label" fill="#0d1030">Examples and reference material</text>
-  <line x1="58" y1="252" x2="274" y2="252" stroke="rgba(13,16,48,0.12)" />
-  <text x="58" y="278" class="svg-caption" fill="rgba(13,16,48,0.6)">Makes the safe path the shortest path</text>
+  <rect x="14" y="144" width="612" height="102" rx="14" fill="rgba(164,35,143,0.05)" stroke="#a4238f" stroke-width="1.6" />
+  <circle cx="62" cy="195" r="22" fill="#a4238f" />
+  <text x="62" y="200" text-anchor="middle" class="svg-label" fill="#ffffff">02</text>
+  <text x="102" y="178" class="svg-kicker" fill="#a4238f">STANDARDISE</text>
+  <text x="102" y="204" class="svg-h3" fill="#0d1030">Shared engineering codex</text>
+  <text x="102" y="228" class="svg-caption" fill="rgba(13,16,48,0.62)">Standards, patterns, examples, and templates—written for people and agents</text>
 
-  <line x1="294" y1="195" x2="342" y2="195" stroke="#0d1030" stroke-width="1.8" />
-  <polygon points="336,190 346,195 336,200" fill="#0d1030" />
-  <text x="318" y="181" text-anchor="middle" class="svg-caption" fill="#0d1030">Change</text>
+  <rect x="14" y="264" width="612" height="102" rx="14" fill="#0d1030" />
+  <circle cx="62" cy="315" r="22" fill="rgba(255,255,255,0.1)" stroke="#78d8f2" stroke-width="1.4" />
+  <text x="62" y="320" text-anchor="middle" class="svg-label" fill="#78d8f2">03</text>
+  <text x="102" y="298" class="svg-kicker" fill="#78d8f2">AUTOMATE</text>
+  <text x="102" y="324" class="svg-h3" fill="#ffffff">Compiler-enforced standards</text>
+  <text x="102" y="344" class="svg-caption" fill="rgba(255,255,255,0.7)">Critical coding rules are checked automatically, alongside security,</text>
+  <text x="102" y="360" class="svg-caption" fill="rgba(255,255,255,0.7)">dependency, quality, and test controls</text>
 
-  <rect x="346" y="82" width="256" height="226" rx="12" fill="#0d1030" />
-  <text x="366" y="110" class="svg-kicker" fill="#78d8f2">ENFORCEMENT · MUST PASS</text>
-  <text x="366" y="138" class="svg-label" fill="#ffffff">Explicit tool and worker grants</text>
-  <text x="366" y="168" class="svg-label" fill="#ffffff">Secret, dependency, and test gates</text>
-  <text x="366" y="198" class="svg-label" fill="#ffffff">Protected publication</text>
-  <text x="366" y="228" class="svg-label" fill="#ffffff">Named acceptance and release</text>
-  <line x1="366" y1="252" x2="582" y2="252" stroke="rgba(255,255,255,0.14)" />
-  <text x="366" y="278" class="svg-caption" fill="#78d8f2">Blocks what cannot be discretionary</text>
-
-  <rect x="72" y="330" width="496" height="40" rx="20" fill="rgba(164,35,143,0.07)" stroke="rgba(164,35,143,0.4)" />
-  <text x="320" y="355" text-anchor="middle" class="svg-label" fill="#a4238f">Tool access is granted explicitly. The agent cannot infer or extend it.</text>
-
-  <text x="320" y="424" text-anchor="middle" class="svg-caption" fill="rgba(13,16,48,0.54)">Guidance shapes proposals. Deterministic controls govern acceptance.</text>
+  <rect x="72" y="390" width="496" height="38" rx="19" fill="rgba(164,35,143,0.07)" stroke="rgba(164,35,143,0.4)" />
+  <text x="320" y="414" text-anchor="middle" class="svg-caption" fill="#a4238f">Faster experimentation · Consistent controls · Auditable delivery</text>
 </svg>
 </div>
 </div>
 
 <!--
 Foundation one — how code is authored:
-- Advice and enforcement are kept deliberately separate.
-- Guidance belongs in the editor and the working context, where it is cheap to follow.
-- Non-negotiable controls belong in grants, pipelines, and explicit human decisions.
-- This is how a rule survives a change of developer, agent, or model provider.
+- Isolate work from production while an idea is still changing.
+- Publish one versioned engineering codex so people and agents work from the same standards, patterns, examples, and templates.
+- Enforce critical coding rules as the code compiles, then apply the same security, dependency, quality, and test controls to every change.
 
 Client question:
-- Today, what may a coding agent read, execute, publish, or send—and where is that actually enforced?
+- Where does experimentation currently become inconsistent, risky, or difficult to audit?
 -->
 
 ---
-title: Chat history is not an audit trail
+title: One safe path from build to trial
+sync: authoring-path
 class: slide-light
 ---
 
-<Eyebrow text="FOUNDATION 02 · SPEC-DRIVEN DELIVERY WITH EMERY" />
+<Eyebrow text="01 · SET RULES · THE DELIVERY PATH" />
+
+<div class="foundation-progress" aria-label="Delivery foundations">
+<span class="is-active">01 · Set rules</span>
+<span>02 · Record intent</span>
+<span>03 · Constrain code</span>
+</div>
 
 <div class="ed-band">
 <div class="ed-band-top">
 <div>
 
-# Chat history is<br>not an audit trail.
+# One safe path<br>from build to trial.
 
 </div>
-<p class="ed-band-prose"><strong>Emery sits around coding agents, not in place of them.</strong> It keeps evidence, authority, reviewed intent, exact delivery inputs, and verification outside any model’s conversational context. Swap the model; the record stays.</p>
+<p class="ed-band-prose">A versioned engineering codex, approved tools, policies, and deployment patterns follow every change. <strong>The codex guides people and agents. Gates enforce what cannot be optional.</strong></p>
+</div>
+<div class="ed-band-canvas">
+<svg viewBox="0 0 1140 360" aria-hidden="true">
+  <rect x="180" y="12" width="780" height="40" rx="20" fill="rgba(22,180,226,0.07)" stroke="rgba(12,127,163,0.32)" />
+  <text x="570" y="37" text-anchor="middle" class="svg-kicker" fill="#0c7fa3">APPROVED TOOLCHAIN · ENGINEERING CODEX · TOOLS · POLICIES · DEPLOYMENT PATTERN</text>
+
+  <rect x="16" y="88" width="230" height="154" rx="14" fill="rgba(22,180,226,0.06)" stroke="#0c7fa3" stroke-width="1.6" />
+  <text x="38" y="118" class="svg-kicker" fill="#0c7fa3">01 · CREATE</text>
+  <text x="38" y="150" class="svg-h3" fill="#0d1030">AI-assisted build</text>
+  <line x1="38" y1="166" x2="224" y2="166" stroke="rgba(13,16,48,0.12)" />
+  <text x="38" y="196" class="svg-label" fill="#0d1030">Governed workspace</text>
+  <text x="38" y="220" class="svg-caption" fill="rgba(13,16,48,0.6)">Fast iteration, no production reach</text>
+
+  <line x1="246" y1="165" x2="296" y2="165" stroke="#0d1030" stroke-width="1.8" />
+  <polygon points="290,160 300,165 290,170" fill="#0d1030" />
+
+  <rect x="300" y="88" width="230" height="154" rx="14" fill="#ffffff" stroke="rgba(13,16,48,0.24)" stroke-width="1.5" />
+  <text x="322" y="118" class="svg-kicker" fill="#0d1030">02 · RECORD</text>
+  <text x="322" y="150" class="svg-h3" fill="#0d1030">Enterprise source control</text>
+  <line x1="322" y1="166" x2="508" y2="166" stroke="rgba(13,16,48,0.12)" />
+  <text x="322" y="196" class="svg-label" fill="#0d1030">Traceable change</text>
+  <text x="322" y="220" class="svg-caption" fill="rgba(13,16,48,0.6)">Reviewable history and ownership</text>
+
+  <line x1="530" y1="165" x2="580" y2="165" stroke="#a4238f" stroke-width="1.8" />
+  <polygon points="574,160 584,165 574,170" fill="#a4238f" />
+
+  <rect x="584" y="88" width="230" height="154" rx="14" fill="#0d1030" />
+  <text x="606" y="118" class="svg-kicker" fill="#78d8f2">03 · ASSURE</text>
+  <text x="606" y="150" class="svg-h3" fill="#ffffff">Automated gates</text>
+  <line x1="606" y1="166" x2="792" y2="166" stroke="rgba(255,255,255,0.14)" />
+  <text x="606" y="196" class="svg-label" fill="#ffffff">Compile-time rules · secrets</text>
+  <text x="606" y="220" class="svg-caption" fill="rgba(255,255,255,0.7)">Dependencies · tests</text>
+
+  <line x1="814" y1="165" x2="864" y2="165" stroke="#a4238f" stroke-width="1.8" />
+  <polygon points="858,160 868,165 858,170" fill="#a4238f" />
+
+  <rect x="868" y="88" width="256" height="154" rx="14" fill="rgba(164,35,143,0.06)" stroke="#a4238f" stroke-width="1.6" />
+  <text x="890" y="118" class="svg-kicker" fill="#a4238f">04 · TRIAL</text>
+  <text x="890" y="150" class="svg-h3" fill="#0d1030">Controlled non-production</text>
+  <line x1="890" y1="166" x2="1102" y2="166" stroke="rgba(164,35,143,0.18)" />
+  <text x="890" y="196" class="svg-label" fill="#0d1030">Access and review</text>
+  <text x="890" y="220" class="svg-caption" fill="rgba(13,16,48,0.6)">Evidence before promotion</text>
+
+  <rect x="180" y="286" width="780" height="48" rx="12" fill="#0d1030" />
+  <text x="570" y="316" text-anchor="middle" class="svg-label" fill="#ffffff">The codex guides people and agents. Gates enforce what cannot be optional.</text>
+</svg>
+</div>
+</div>
+
+<!--
+Foundation one — how a change moves:
+- The codex is human-readable and agent-usable: one reviewed source for standards, patterns, examples, and templates.
+- The workspace carries the codex and approved tools into each change.
+- Critical coding standards are enforced as the code compiles; mandatory controls also appear at source control, integration, and deployment boundaries.
+- A change reaches a controlled trial environment before anyone considers production.
+
+Client question:
+- Which step in this path is currently missing, optional, or different for every team?
+-->
+
+---
+title: Chat is not the record
+sync: record
+class: slide-light
+---
+
+<Eyebrow text="02 · RECORD INTENT · SPEC-DRIVEN DELIVERY" />
+
+<div class="foundation-progress" aria-label="Delivery foundations">
+<span>01 · Set rules</span>
+<span class="is-active is-magenta">02 · Record intent</span>
+<span>03 · Constrain code</span>
+</div>
+
+<div class="ed-band">
+<div class="ed-band-top">
+<div>
+
+# Chat is not<br>the record.
+
+</div>
+<p class="ed-band-prose"><strong>A spec-driven delivery process sits around coding agents, not in place of them.</strong> It keeps evidence, authority, reviewed intent, exact delivery inputs, and verification outside any model’s conversational context. Swap the model. The evidence, authority, and reviewed intent remain.</p>
 </div>
 <div class="ed-band-canvas">
 <svg viewBox="0 0 1140 360" aria-hidden="true">
@@ -438,24 +537,31 @@ Client question:
 
 ---
 title: Generated code gets no ambient authority
+sync: runtime
 class: slide-light
 ---
 
-<Eyebrow text="FOUNDATION 03 · SANDBOXED EXECUTION WITH OMNIA" />
+<Eyebrow text="03 · CONSTRAIN CODE · SANDBOXED EXECUTION" />
+
+<div class="foundation-progress" aria-label="Delivery foundations">
+<span>01 · Set rules</span>
+<span>02 · Record intent</span>
+<span class="is-active">03 · Constrain code</span>
+</div>
 
 <div class="ed-split">
 <div class="ed-prose-col">
 
 # Generated code gets<br>no ambient authority.
 
-<p class="ed-prose"><strong>Omnia hosts application logic as a WebAssembly component.</strong> It has no ambient filesystem, network, process, or environment access. The host supplies only the typed capabilities the application was granted.</p>
+<p class="ed-prose"><strong>Application logic runs as a sandboxed WebAssembly component.</strong> It has no ambient filesystem, network, process, or environment access. The host supplies only the typed capabilities the application was granted.</p>
 <p class="ed-prose">Credentials, concrete backends, and infrastructure policy stay outside application code. The boundary complements—not replaces—credential scope, network policy, and backend isolation.</p>
 
 </div>
 <div class="ed-diagram-pane">
 <svg viewBox="0 0 640 440" aria-hidden="true">
   <rect x="18" y="22" width="604" height="390" rx="18" fill="#0d1030" />
-  <text x="42" y="52" class="svg-kicker" fill="#78d8f2">OMNIA HOST · RUST ON WASMTIME</text>
+  <text x="42" y="52" class="svg-kicker" fill="#78d8f2">WEBASSEMBLY RUNTIME · RUST ON WASMTIME</text>
   <text x="598" y="52" text-anchor="end" class="svg-caption" fill="rgba(255,255,255,0.6)">Host owns policy and authority</text>
 
   <rect x="74" y="78" width="492" height="112" rx="12" fill="rgba(255,255,255,0.08)" stroke="#78d8f2" stroke-width="1.8" />
@@ -489,14 +595,14 @@ class: slide-light
   <text x="216" y="354" class="svg-body" fill="#ffffff">Backends · Credentials · Egress · Configuration · Observability</text>
   <text x="320" y="374" text-anchor="middle" class="svg-caption" fill="#f59ef5">No grant means no reach.</text>
 
-  <text x="320" y="432" text-anchor="middle" class="svg-caption" fill="rgba(13,16,48,0.58)">The authoring controls bound the agent. Omnia bounds the application it produced.</text>
+  <text x="320" y="432" text-anchor="middle" class="svg-caption" fill="rgba(13,16,48,0.58)">Authoring controls bound the agent. Sandboxed execution bounds the application.</text>
 </svg>
 </div>
 </div>
 
 <!--
 Foundation three — what the result may touch:
-- Omnia starts from no ambient authority. Access exists only through a typed capability linked by the host.
+- Sandboxed execution starts from no ambient authority. Access exists only through a typed capability linked by the host.
 - The guest asks for a role such as state or messaging. The host chooses the backend and holds its credentials.
 - A poisoned dependency or generated mistake cannot reach something the host did not grant.
 
@@ -509,6 +615,7 @@ Client question:
 
 ---
 title: One delivery system. Two starting points.
+sync: entry
 class: slide-light
 ---
 
@@ -551,7 +658,8 @@ class: slide-light
 
   <circle cx="1038" cy="142" r="78" fill="#a4238f" />
   <text x="1038" y="114" text-anchor="middle" class="svg-kicker" fill="rgba(255,255,255,0.86)">RUNTIME BOUNDARY</text>
-  <text x="1038" y="142" text-anchor="middle" class="svg-h3" fill="#ffffff">Omnia runtime</text>
+  <text x="1038" y="134" text-anchor="middle" class="svg-h3" fill="#ffffff">Sandboxed</text>
+  <text x="1038" y="154" text-anchor="middle" class="svg-h3" fill="#ffffff">execution</text>
   <text x="1038" y="164" text-anchor="middle" class="svg-caption" fill="rgba(255,255,255,0.82)">Explicit capabilities</text>
   <text x="1038" y="182" text-anchor="middle" class="svg-caption" fill="rgba(255,255,255,0.82)">Known path to operation</text>
 </svg>
@@ -580,84 +688,116 @@ Client question:
 -->
 
 ---
-title: Fix the system, not the output
+title: Evidence must be able to say no
+sync: proof-result
 class: slide-light
 ---
 
-<Eyebrow text="EVIDENCE · AN AI-ASSISTED REBUILD OF A LIVE SERVICE" />
+<Eyebrow text="EVIDENCE · FIXED REPLAY SUITE, NOT A MODEL DEMO" />
 
 <div class="ed-split">
 <div class="ed-prose-col">
 
-# Fix the system,<br>not the output.
+# Evidence must be<br>able to say no.
 
 <p class="ed-prose">We recovered a specification from an anonymised real-time rail service, rebuilt it as a WASI component, and held it to the fixed 22-case replay suite used for its hand-written counterpart.</p>
-<p class="ed-prose">An early build passed none. <strong>No defect was hand-patched.</strong> Each one changed the checks, guidance, extraction, or tooling every later build inherits.</p>
+<p class="ed-prose">The early output looked plausible line by line. <strong>The recorded cases showed it was not correct.</strong> Evidence is useful because it can still say no.</p>
 <p class="ed-footnote">Propellerhead internal evaluation, October 2026. Latest result: 21 of 22 cases, including all 12 recorded production messages. One case remains open and reported.</p>
 
 </div>
 <div class="ed-diagram-pane">
 <svg viewBox="0 0 640 440" aria-hidden="true">
-  <text x="14" y="22" class="svg-kicker" fill="rgba(13,16,48,0.52)">THE SAME FIXED REPLAY SUITE · 22 RECORDED CASES</text>
+  <text x="14" y="38" class="svg-kicker" fill="rgba(13,16,48,0.52)">THE SAME FIXED REPLAY SUITE · 22 RECORDED CASES</text>
 
-  <rect x="14" y="42" width="178" height="116" rx="12" fill="rgba(255,59,107,0.05)" stroke="rgba(180,35,78,0.4)" />
-  <text x="103" y="96" text-anchor="middle" class="svg-h2" fill="#b4234e" style="font-size: 36px;">0 / 22</text>
-  <text x="103" y="122" text-anchor="middle" class="svg-kicker" fill="#b4234e">EARLY BUILD</text>
-  <text x="103" y="142" text-anchor="middle" class="svg-caption" fill="rgba(13,16,48,0.58)">Plausible. Wrong.</text>
+  <rect x="14" y="66" width="184" height="154" rx="12" fill="rgba(255,59,107,0.05)" stroke="rgba(180,35,78,0.4)" />
+  <text x="106" y="132" text-anchor="middle" class="svg-h2" fill="#b4234e" style="font-size: 40px;">0 / 22</text>
+  <text x="106" y="164" text-anchor="middle" class="svg-kicker" fill="#b4234e">EARLY BUILD</text>
+  <text x="106" y="194" text-anchor="middle" class="svg-caption" fill="rgba(13,16,48,0.58)">Plausible. Wrong.</text>
 
-  <line x1="192" y1="100" x2="232" y2="100" stroke="#0c7fa3" stroke-width="2" />
-  <polygon points="226,95 236,100 226,105" fill="#0c7fa3" />
+  <line x1="198" y1="143" x2="224" y2="143" stroke="#0c7fa3" stroke-width="2" />
+  <polygon points="218,138 228,143 218,148" fill="#0c7fa3" />
 
-  <rect x="238" y="42" width="178" height="116" rx="12" fill="rgba(22,180,226,0.06)" stroke="#0c7fa3" stroke-width="1.5" />
-  <text x="327" y="96" text-anchor="middle" class="svg-h2" fill="#0c7fa3" style="font-size: 36px;">7 / 22</text>
-  <text x="327" y="122" text-anchor="middle" class="svg-kicker" fill="#0c7fa3">SYSTEM IMPROVED</text>
-  <text x="327" y="142" text-anchor="middle" class="svg-caption" fill="rgba(13,16,48,0.58)">Checks and guidance</text>
+  <rect x="230" y="66" width="184" height="154" rx="12" fill="rgba(22,180,226,0.06)" stroke="#0c7fa3" stroke-width="1.5" />
+  <text x="322" y="132" text-anchor="middle" class="svg-h2" fill="#0c7fa3" style="font-size: 40px;">7 / 22</text>
+  <text x="322" y="164" text-anchor="middle" class="svg-kicker" fill="#0c7fa3">SYSTEM IMPROVED</text>
+  <text x="322" y="194" text-anchor="middle" class="svg-caption" fill="rgba(13,16,48,0.58)">Checks and guidance</text>
 
-  <line x1="416" y1="100" x2="456" y2="100" stroke="#a4238f" stroke-width="2" />
-  <polygon points="450,95 460,100 450,105" fill="#a4238f" />
+  <line x1="414" y1="143" x2="440" y2="143" stroke="#a4238f" stroke-width="2" />
+  <polygon points="434,138 444,143 434,148" fill="#a4238f" />
 
-  <rect x="462" y="42" width="164" height="116" rx="12" fill="#a4238f" />
-  <text x="544" y="96" text-anchor="middle" class="svg-h2" fill="#ffffff" style="font-size: 36px;">21 / 22</text>
-  <text x="544" y="122" text-anchor="middle" class="svg-kicker" fill="rgba(255,255,255,0.86)">LATEST BUILD</text>
-  <text x="544" y="142" text-anchor="middle" class="svg-caption" fill="rgba(255,255,255,0.78)">12 / 12 production messages</text>
+  <rect x="446" y="66" width="180" height="154" rx="12" fill="#a4238f" />
+  <text x="536" y="132" text-anchor="middle" class="svg-h2" fill="#ffffff" style="font-size: 40px;">21 / 22</text>
+  <text x="536" y="164" text-anchor="middle" class="svg-kicker" fill="rgba(255,255,255,0.86)">LATEST BUILD</text>
+  <text x="536" y="194" text-anchor="middle" class="svg-caption" fill="rgba(255,255,255,0.78)">12 / 12 production messages</text>
 
-  <rect x="14" y="190" width="612" height="214" rx="14" fill="#0d1030" />
-  <text x="38" y="220" class="svg-kicker" fill="#78d8f2">A FAILURE BECOMES A SYSTEM CAPABILITY</text>
-
-  <text x="38" y="258" class="svg-label" fill="#ffffff">A consumer never registered</text>
-  <line x1="250" y1="253" x2="324" y2="253" stroke="rgba(255,255,255,0.24)" />
-  <polygon points="318,248 328,253 318,258" fill="#78d8f2" />
-  <text x="344" y="258" class="svg-caption" fill="#78d8f2">A check now refuses unreachable publishers</text>
-
-  <text x="38" y="302" class="svg-label" fill="#ffffff">Rejections looked processed</text>
-  <line x1="250" y1="297" x2="324" y2="297" stroke="rgba(255,255,255,0.24)" />
-  <polygon points="318,292 328,297 318,302" fill="#78d8f2" />
-  <text x="344" y="302" class="svg-caption" fill="#78d8f2">A check now refuses swallowed errors</text>
-
-  <text x="38" y="346" class="svg-label" fill="#ffffff">A type was laid out empty</text>
-  <line x1="250" y1="341" x2="324" y2="341" stroke="rgba(255,255,255,0.24)" />
-  <polygon points="318,336 328,341 318,346" fill="#f59ef5" />
-  <text x="344" y="346" class="svg-caption" fill="#f59ef5">The design-type reader was repaired</text>
-
-  <line x1="38" y1="370" x2="602" y2="370" stroke="rgba(255,255,255,0.12)" />
-  <text x="320" y="390" text-anchor="middle" class="svg-caption" fill="rgba(255,255,255,0.72)">The next build starts with every lesson the previous one paid for.</text>
+  <rect x="78" y="274" width="484" height="92" rx="14" fill="#0d1030" />
+  <text x="320" y="312" text-anchor="middle" class="svg-h3" fill="#ffffff">One case remains open—and reported.</text>
+  <text x="320" y="340" text-anchor="middle" class="svg-caption" fill="#78d8f2">The evidence still says no.</text>
 </svg>
 </div>
 </div>
 
 <!--
 Evidence, stated at the level achieved:
-- The early output looked plausible line by line. The recorded cases showed it was not correct.
-- We did not rescue the demonstration with hand edits.
-- Each defect became a reusable capability in the delivery system: a check, a better extraction rule, clearer guidance, or repaired tooling.
+- The early output looked plausible. The recorded cases showed it was not correct.
+- The same fixed suite was used for the hand-written counterpart.
 - The open case remains visible. Evidence is useful because it can still say no.
+-->
 
-The point:
-- 21 is not the product claim. The compounding delivery system is.
+---
+title: Fix the system, not the output
+sync: proof-learning
+class: slide-light
+---
+
+<Eyebrow text="COMPOUNDING DELIVERY · EVERY FAILURE IMPROVES THE NEXT BUILD" />
+
+<div class="ed-split">
+<div class="ed-prose-col">
+
+# Fix the system,<br>not the output.
+
+<p class="ed-prose"><strong>No defect was hand-patched.</strong> Each failure changed the checks, guidance, extraction, or tooling that every later build inherits.</p>
+<p class="ed-prose">The score is not the product claim. The compounding delivery system is.</p>
+
+</div>
+<div class="ed-diagram-pane">
+<svg viewBox="0 0 640 440" aria-hidden="true">
+  <rect x="14" y="28" width="612" height="360" rx="14" fill="#0d1030" />
+  <text x="38" y="62" class="svg-kicker" fill="#78d8f2">A FAILURE BECOMES A SYSTEM CAPABILITY</text>
+
+  <text x="38" y="122" class="svg-label" fill="#ffffff">A consumer never registered</text>
+  <line x1="250" y1="117" x2="324" y2="117" stroke="rgba(255,255,255,0.24)" />
+  <polygon points="318,112 328,117 318,122" fill="#78d8f2" />
+  <text x="344" y="122" class="svg-caption" fill="#78d8f2">Refuse unreachable publishers</text>
+
+  <text x="38" y="182" class="svg-label" fill="#ffffff">A rejection looked processed</text>
+  <line x1="250" y1="177" x2="324" y2="177" stroke="rgba(255,255,255,0.24)" />
+  <polygon points="318,172 328,177 318,182" fill="#78d8f2" />
+  <text x="344" y="182" class="svg-caption" fill="#78d8f2">Refuse swallowed errors</text>
+
+  <text x="38" y="242" class="svg-label" fill="#ffffff">A type was laid out empty</text>
+  <line x1="250" y1="237" x2="324" y2="237" stroke="rgba(255,255,255,0.24)" />
+  <polygon points="318,232 328,237 318,242" fill="#f59ef5" />
+  <text x="344" y="242" class="svg-caption" fill="#f59ef5">Repair the design-type reader</text>
+
+  <line x1="38" y1="286" x2="602" y2="286" stroke="rgba(255,255,255,0.12)" />
+  <text x="320" y="322" text-anchor="middle" class="svg-label" fill="#ffffff">No defect was hand-patched.</text>
+  <text x="320" y="350" text-anchor="middle" class="svg-caption" fill="rgba(255,255,255,0.72)">Every later build inherits the fix.</text>
+</svg>
+</div>
+</div>
+
+<!--
+Compounding delivery:
+- We did not rescue the demonstration with hand edits.
+- Each defect became a reusable check, extraction rule, instruction, or tooling repair.
+- The next build starts with every lesson the previous one paid for.
 -->
 
 ---
 title: Start with the thing that is stuck
+sync: cta
 class: slide-split short-bar
 ---
 
@@ -686,7 +826,7 @@ class: slide-split short-bar
 <div class="opportunity-row">
 <span class="opportunity-row-num">02</span>
 <div>
-<h4>We trace its full delivery path</h4>
+<h4>Trace its full delivery path</h4>
 <p>Direction, authoring rules, durable intent, verification, runtime authority, infrastructure, release, and ownership.</p>
 </div>
 </div>

@@ -1,0 +1,136 @@
+[
+  {
+    "id": "opening",
+    "title": "Code is cheap. Delivery is hard.",
+    "required": [
+      "Code is cheap. Delivery is hard.",
+      "Put AI inside a delivery system it cannot redefine."
+    ]
+  },
+  {
+    "id": "shift",
+    "title": "Implementation changed. Responsibility did not.",
+    "required": [
+      "Direction",
+      "Authority",
+      "Evidence",
+      "Ownership",
+      "An accepted change, safely in production"
+    ]
+  },
+  {
+    "id": "outcome",
+    "title": "Begin with the change",
+    "required": [
+      "Who benefits?",
+      "What changes?",
+      "How will we know?",
+      "Who decides?"
+    ]
+  },
+  {
+    "id": "system",
+    "title": "Set rules. Record intent. Constrain code.",
+    "required": [
+      "The model works inside the delivery system",
+      "Set rules",
+      "Toolchain controls",
+      "Record intent",
+      "Spec-driven delivery",
+      "Constrain code",
+      "Sandboxed execution",
+      "Build → Test → Provision → Deploy → Release → Observe → Recover"
+    ]
+  },
+  {
+    "id": "authoring",
+    "title": "Isolate. Standardise. Automate.",
+    "required": [
+      "Set rules",
+      "Isolate",
+      "Standardise",
+      "Shared engineering codex",
+      "Automate",
+      "Compiler-enforced standards",
+      "Critical coding rules",
+      "Faster experimentation",
+      "Consistent controls",
+      "Auditable delivery"
+    ]
+  },
+  {
+    "id": "authoring-path",
+    "title": "One safe path from build to trial",
+    "required": [
+      "Set rules",
+      "AI-assisted build",
+      "Enterprise source control",
+      "Automated gates",
+      "Compile-time rules",
+      "Controlled non-production",
+      "versioned engineering codex",
+      "The codex guides people and agents. Gates enforce what cannot be optional."
+    ]
+  },
+  {
+    "id": "record",
+    "title": "Chat is not the record",
+    "required": [
+      "Record intent",
+      "Evidence",
+      "Authority",
+      "Swap the model. The evidence, authority, and reviewed intent remain."
+    ]
+  },
+  {
+    "id": "runtime",
+    "title": "Generated code gets no ambient authority",
+    "required": [
+      "Constrain code",
+      "Typed capability contracts",
+      "No grant means no reach."
+    ]
+  },
+  {
+    "id": "entry",
+    "title": "One delivery system. Two starting points.",
+    "required": [
+      "A useful idea or prototype",
+      "Code nobody can safely change",
+      "Bounded delivery"
+    ]
+  },
+  {
+    "id": "proof-result",
+    "title": "Evidence must be able to say no",
+    "required": [
+      "0 / 22",
+      "7 / 22",
+      "21 / 22",
+      "12 / 12 production messages",
+      "One case remains open"
+    ]
+  },
+  {
+    "id": "proof-learning",
+    "title": "Fix the system, not the output",
+    "required": [
+      "A consumer never registered",
+      "Refuse unreachable publishers",
+      "A rejection looked processed",
+      "Refuse swallowed errors",
+      "A type was laid out empty",
+      "Repair the design-type reader"
+    ]
+  },
+  {
+    "id": "cta",
+    "title": "Start with the thing that is stuck",
+    "required": [
+      "Bring one real change and its owner",
+      "Trace its full delivery path",
+      "Leave with assets and a decision",
+      "Nominate one change. Name its owner."
+    ]
+  }
+]
