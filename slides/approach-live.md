@@ -1471,8 +1471,8 @@ class: slide-light
 
 <div class="live-matrix">
 <div class="live-matrix-axis is-top">Governed</div>
-<div class="live-matrix-axis is-left">Manual coding</div>
-<div class="live-matrix-axis is-right">AI-assisted coding</div>
+<div class="live-matrix-axis is-left">Hand-coded</div>
+<div class="live-matrix-axis is-right">AI-assisted</div>
 <div class="live-matrix-axis is-bottom">Ungoverned</div>
 <div class="live-matrix-grid">
 <div class="live-quadrant">
