@@ -285,6 +285,16 @@
         "brief": [
           "Delivers order creation and cancellation for a signed-in caller; verified by placing and cancelling an order under a session from `authentication`."
         ]
+      },
+      {
+        "id": "SLICE-003",
+        "name": "secrets",
+        "requirements": [
+          "REQ-005"
+        ],
+        "types": [],
+        "depends-on": [],
+        "brief": []
       }
     ]
   },
@@ -298,5 +308,11 @@
       "overview"
     ]
   },
-  "slices": []
+  "slices": [
+    {
+      "id": "SLICE-003",
+      "name": "secrets",
+      "class": "added"
+    }
+  ]
 }

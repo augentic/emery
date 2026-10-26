@@ -604,16 +604,14 @@ impl<'a> Basis<'a> {
 
     // Returns the basis as an amendment drafts its requirement from it.
     //
-    // The requirement takes `id`, `subject` (the base's where it revises
-    // one), and `trigger`. The `BASELINE` contributors are left out, since
-    // the standing requirement is what the change revises and not a source
-    // of it. Status is settled over the change sources alone, while coverage
-    // stands as the grouping settled it. Returns `None` when only the
-    // baseline contributed.
+    // The requirement takes `id` and `trigger`, and keeps the subject, the
+    // change's since the base is ranked below it. The `BASELINE`
+    // contributors are left out, since the standing requirement is what the
+    // change revises and not a source of it. Status is settled over the
+    // change sources alone, while coverage stands as the grouping settled
+    // it. Returns `None` when only the baseline contributed.
     #[must_use]
-    pub fn amended(
-        mut self, id: ReqId, subject: &'a str, trigger: Option<Trigger>,
-    ) -> Option<Self> {
+    pub fn amended(mut self, id: ReqId, trigger: Option<Trigger>) -> Option<Self> {
         for class in &mut self.classes {
             class.retain(|member| member.source != BASELINE);
         }
@@ -623,7 +621,7 @@ impl<'a> Basis<'a> {
         }
         Some(Self {
             id,
-            subject,
+            subject: self.subject,
             status: Self::settle(&self.classes, self.covered),
             covered: self.covered,
             trigger,
@@ -658,13 +656,6 @@ impl<'a> Basis<'a> {
     #[must_use]
     pub fn stem(&self) -> &'a str {
         revision::stem(self.subject)
-    }
-
-    // Returns the sub-stem of the subject: the first two segments of its
-    // dotted id, the slice floor under a stem past the cap.
-    #[must_use]
-    pub fn substem(&self) -> &'a str {
-        revision::substem(self.subject)
     }
 
     // Returns contributors by descending authority and then source order.

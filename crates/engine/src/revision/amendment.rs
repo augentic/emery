@@ -46,9 +46,12 @@ pub struct Amendment {
     /// The amended plan.
     ///
     /// The base's slices under their ids and names, each retired
-    /// requirement taken out, a slice left with none removed and every
-    /// slice that depended on it depending on what it depended on instead.
-    /// Its `parent` is the base revision.
+    /// requirement taken out, each requirement restated under another stem
+    /// moved to the slice of its new stem, each added one in the slice of
+    /// its stem, a stem no slice held in a new slice named for it, a slice
+    /// left with none removed and every slice that depended on it depending
+    /// on what it depended on instead, and the design's data types owned as
+    /// the change leaves them. Its `parent` is the base revision.
     pub plan: Plan,
     /// What the amended design changes against the base's, by section.
     pub sections: DesignDiff,

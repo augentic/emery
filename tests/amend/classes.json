@@ -307,7 +307,8 @@
         "name": "orders",
         "requirements": [
           "REQ-003",
-          "REQ-004"
+          "REQ-004",
+          "REQ-005"
         ],
         "types": [
           "orders.line",
@@ -328,5 +329,11 @@
     "removed": [],
     "changed": []
   },
-  "slices": []
+  "slices": [
+    {
+      "id": "SLICE-002",
+      "name": "orders",
+      "class": "changed"
+    }
+  ]
 }

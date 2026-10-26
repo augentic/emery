@@ -92,27 +92,34 @@ impl<'a> ChangeSet<'a> {
                 let before = requirement.statement();
                 // a requirement no claim touched stands as it is, its own
                 // conflict included; a change silent on the trigger leaves
-                // the base's standing
+                // the base's standing; the subject is the change's, since
+                // the base is ranked below it, so a requirement restated
+                // under another stem moves with it
                 let (class, after) = if sources.is_empty() {
                     (ChangeClass::Unchanged, before.clone())
                 } else {
                     let after = basis.statement().map(str::to_owned);
                     let same_trigger =
                         basis.trigger.is_none() || basis.trigger == requirement.trigger;
+                    let same_subject = basis.subject == requirement.subject;
                     let class = if basis.withdraws() {
                         ChangeClass::Retired
                     } else if after.is_none() {
                         ChangeClass::Conflict
-                    } else if after == before && same_trigger {
+                    } else if after == before && same_trigger && same_subject {
                         ChangeClass::Unchanged
                     } else {
                         ChangeClass::Changed
                     };
                     (class, after)
                 };
+                let subject = match class {
+                    ChangeClass::Retired => requirement.subject.as_str(),
+                    _ => basis.subject,
+                };
                 Change {
                     id: requirement.id,
-                    subject: requirement.subject.clone(),
+                    subject: subject.to_owned(),
                     class,
                     before,
                     after,
@@ -134,13 +141,11 @@ impl<'a> ChangeSet<'a> {
             };
 
             if change.class.is_drafted() {
-                let subject =
-                    matched.map_or(basis.subject, |requirement| requirement.subject.as_str());
                 let trigger = basis
                     .trigger
                     .take()
                     .or_else(|| matched.and_then(|requirement| requirement.trigger.clone()));
-                let amended = basis.amended(change.id, subject, trigger).ok_or_else(|| {
+                let amended = basis.amended(change.id, trigger).ok_or_else(|| {
                     server_error!(
                         "requirement {} is drafted anew with no claim to draft from",
                         change.id
