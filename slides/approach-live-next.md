@@ -1254,14 +1254,14 @@ class: slide-hero slide-section
 </div>
 
 <div class="hero-pillars">
-<div class="hero-pillar"><span class="hero-pillar-num">01</span><span>Standardise delivery · Bound how work is created and shipped</span></div>
+<div class="hero-pillar"><span class="hero-pillar-num">01</span><span>Standardise delivery · One path from change to production</span></div>
 <div class="hero-pillar"><span class="hero-pillar-num">02</span><span>Specify behaviour · Preserve what must remain true</span></div>
-<div class="hero-pillar"><span class="hero-pillar-num">03</span><span>Sandbox execution · Grant nothing by default</span></div>
+<div class="hero-pillar"><span class="hero-pillar-num">03</span><span>Sandbox execution · Limit what running code may access</span></div>
 </div>
 
 <!--
 Opening:
-- Coding and testing are no longer the bottleneck they once were. Generative AI makes code abundant.
+- Generative AI makes code and test generation abundant. Trusted evidence remains scarce.
 - Accountability has not moved to the model. The organisation still owns the outcome, access, evidence, and consequences.
 - Our answer is a delivery system whose rules, record, and runtime boundary sit outside the model.
 -->
@@ -1279,7 +1279,7 @@ class: slide-light
 
 # Coding is no longer<br>the bottleneck.
 
-<p class="live-claim">Generative AI makes code—and tests—abundant.</p>
+<p class="live-claim">Generative AI makes code—and test generation—abundant.</p>
 
 <div class="live-compression">
 <span>Weeks</span>
@@ -1301,8 +1301,9 @@ class: slide-light
 </div>
 
 <!--
-Coding (and testing) is not the bottleneck it once was. Generative AI is making code abundant.
+Coding and test generation are no longer the bottlenecks they once were.
 However, a lot of code does not equal a coherent, well-thought-through, useful business solution.
+Generated tests can repeat the implementation's assumptions. Trusted evidence still has to reject plausible but wrong code.
 In fact, it can exacerbate cognitive load and overwhelm.
 It can also lead to, eventually, an unmanageable application and codebase—no longer fully comprehensible and full of slop.
 -->
@@ -1339,9 +1340,9 @@ class: slide-light
 <IconBadge tone="light"><ph:gear-six /></IconBadge>
 <div class="live-kicker">02 · A reliable delivery system</div>
 </div>
-<h3>Delivering maintainable code</h3>
+<h3>Delivering maintainable software</h3>
 </div>
-<p style="padding-top: 14px; border-top: 1px solid rgba(255, 255, 255, 0.16);">Automated pipelines · spec-driven delivery · sandboxed runtime</p>
+<p style="padding-top: 14px; border-top: 1px solid rgba(255, 255, 255, 0.16);">Standardise delivery · specify behaviour · sandbox execution</p>
 </div>
 </div>
 
@@ -1356,18 +1357,18 @@ While we can help with both, our real expertise is in the second.
 -->
 
 ---
-title: The bottleneck becomes the feature throttle.
+title: A prototype is evidence, not a production commitment.
 sync: outcome
 class: slide-light
 ---
 
-<Eyebrow text="01 · PRODUCT STRATEGY · GOVERN FEATURE DEMAND" />
+<Eyebrow text="PRODUCT STRATEGY · ADMIT WORK DELIBERATELY" />
 
 <div class="live-stage">
 
-# The bottleneck becomes the feature throttle.
+# A prototype is evidence.<br>Production is a commitment.
 
-<p class="live-claim">Faster delivery should increase learning—not feature volume.</p>
+<p class="live-claim">A working prototype earns attention—not production authority.</p>
 
 <div class="live-feature-flow">
 <div class="live-card is-cyan">
@@ -1375,11 +1376,11 @@ class: slide-light
 <IconBadge tone="cyan"><ph:lightbulb /></IconBadge>
 <div class="live-kicker">Signals and experiments</div>
 </div>
-<h3>Learn cheaply</h3>
+<h3>Test the need</h3>
 <div class="live-feature-list">
-<span>Customer needs</span>
-<span>Operational evidence</span>
-<span>Product strategy</span>
+<span>User need</span>
+<span>Operational problem</span>
+<span>Usage evidence</span>
 <span>Rapid prototypes</span>
 </div>
 </div>
@@ -1387,14 +1388,14 @@ class: slide-light
 <div class="live-card is-dark">
 <div class="live-card-head">
 <IconBadge tone="light"><ph:funnel /></IconBadge>
-<div class="live-kicker">Feature throttle</div>
+<div class="live-kicker">Production gate</div>
 </div>
-<h3>Choose deliberately</h3>
+<h3>Decide explicitly</h3>
 <div class="live-feature-list">
-<span>Value</span>
+<span>Named outcome</span>
 <span>Evidence</span>
-<span>Strategic fit</span>
-<span>Ownership</span>
+<span>Product coherence</span>
+<span>Service owner</span>
 </div>
 </div>
 <div class="live-arrow">→</div>
@@ -1403,52 +1404,76 @@ class: slide-light
 <IconBadge tone="magenta"><ph:list-checks /></IconBadge>
 <div class="live-kicker">Production commitment</div>
 </div>
-<h3>Deliberate production backlog</h3>
-<p>Only work with enough evidence and an owner enters the delivery path.</p>
+<h3>Enter the delivery path</h3>
+<p>Only work with an outcome, evidence, fit, and owner proceeds.</p>
 </div>
 </div>
 
-<div class="live-outcome">Prototypes inform the backlog. They do not bypass it.</div>
+<div class="live-outcome">A prototype informs the decision. It does not make it.</div>
 </div>
 
 <!--
-Once implementation and delivery accelerate, production capacity should not be filled with features by default.
-- Customer signals, operational evidence, strategy, and cheap experiments become inputs.
-- Citizen- and vibe-coded proofs of concept are useful because they test assumptions and expose needs quickly.
-- A prototype gains no production authority merely because it works.
-- The feature throttle asks whether there is value, evidence, strategic fit, and an owner.
+Cheap experiments test assumptions. They do not grant production authority.
+Before work enters the delivery path, ask:
+- What outcome does it create?
+- What evidence supports it?
+- Does it strengthen or fragment the product?
+- Who owns and supports it?
 -->
 
 ---
-title: Standardise delivery
-sync: section-rules
+title: Standardise delivery. Specify behaviour. Sandbox execution.
+sync: system
 layout: default
-class: slide-section
+class: slide-sandbox
 ---
 
-<AmbientVideo src="/videos/hero-video-3.mp4" variant="approach" />
+<AmbientVideo src="/videos/approach-video.mp4" variant="approach" />
 
-<Eyebrow text="DELIVERY SYSTEM · FOUNDATION 01" />
+<Eyebrow text="THE DELIVERY SYSTEM · THREE CONTROLS, ONE PATH" />
 
-<div class="section-hero-grid">
-<div class="section-hero-left">
-<div class="section-kicker-pill">01 · Toolchain controls</div>
+<div class="live-stage">
 
-# Standardise delivery.
+# Three pillars of reliable delivery.
 
-<p class="section-subtitle">Govern how people and coding agents create work—<strong>and automate the path from code to production.</strong></p>
+<p class="live-claim">Agents work inside the delivery system. They do not own it.</p>
 
+<div class="live-grid-3" style="margin-top: 24px;">
+<div class="live-card is-glass">
+<div class="live-card-head">
+<IconBadge tone="light"><ph:shield-check /></IconBadge>
+<div class="live-num">01 · Change path</div>
+</div>
+<h3>Standardise delivery</h3>
+<p>How work is created, checked, shipped, and operated.</p>
+</div>
+<div class="live-card is-glass">
+<div class="live-card-head">
+<IconBadge tone="light"><ph:file-text /></IconBadge>
+<div class="live-num">02 · Durable authority</div>
+</div>
+<h3>Specify behaviour</h3>
+<p>What must remain true and how acceptance is proven.</p>
+</div>
+<div class="live-card is-glass">
+<div class="live-card-head">
+<IconBadge tone="light"><ph:lock-key /></IconBadge>
+<div class="live-num">03 · Runtime boundary</div>
+</div>
+<h3>Sandbox execution</h3>
+<p>What running code may access.</p>
 </div>
 </div>
 
-<div class="hero-pillars">
-<div class="hero-pillar"><span class="hero-pillar-num">01</span><span>Isolate · Governed non-production workspaces</span></div>
-<div class="hero-pillar"><span class="hero-pillar-num">02</span><span>Guide &amp; enforce · Shared codex and compiler rules</span></div>
-<div class="hero-pillar"><span class="hero-pillar-num">03</span><span>Automate · Full test, analysis, and deployment pipelines</span></div>
+<div class="live-rail">Specify → Build → Test → Analyse → Deploy → Observe → Recover</div>
 </div>
 
 <!--
-Section 01 divider: Standardise delivery (Toolchain controls and delivery automation).
+This is the map for the next three sections.
+- Standardise delivery controls how a change moves from creation into operation.
+- Specify behaviour controls what must remain true and what evidence accepts the result.
+- Sandbox execution controls what the running application may access.
+- Product judgement, acceptance, and release authority remain with people.
 -->
 
 ---
@@ -1485,7 +1510,7 @@ class: slide-light
 <div class="live-kicker">02 · Guide</div>
 </div>
 <h3>Shared engineering codex</h3>
-<p>Coding standards, approved patterns, examples, and templates—written for people and agents.</p>
+<p>Versioned standards, approved patterns, examples, and templates for people and agents.</p>
 </div>
 
 <div class="live-card is-dark">
@@ -1494,11 +1519,11 @@ class: slide-light
 <div class="live-kicker">03 · Enforce</div>
 </div>
 <h3>Compiler-enforced standards</h3>
-<p>Critical coding rules are checked as the code compiles—before a change reaches review.</p>
+<p>Critical rules fail at compile time, before review.</p>
 </div>
 </div>
 
-<div class="live-outcome">The codex guides people and agents. The compiler enforces what cannot be optional.</div>
+<div class="live-outcome">Guidance is shared. Non-negotiable rules are enforced.</div>
 </div>
 
 <!--
@@ -1528,43 +1553,53 @@ class: slide-light
 
 <p class="live-claim">Faster implementation matters only when evidence and delivery move at the same speed.</p>
 
-<div class="live-pipeline is-three" style="margin-top: 22px;">
+<div class="live-pipeline" style="margin-top: 22px;">
 <div class="live-card is-cyan">
 <div class="live-card-head">
-<IconBadge tone="cyan"><ph:test-tube /></IconBadge>
-<div class="live-kicker">01 · Prove</div>
+<IconBadge tone="cyan"><ph:code /></IconBadge>
+<div class="live-kicker">01 · Build</div>
 </div>
-<h3>Test every change</h3>
-<p>Unit · integration · end-to-end</p>
+<h3>Build once</h3>
+<p>Reproducible artifact</p>
+</div>
+<div class="live-arrow">→</div>
+<div class="live-card">
+<div class="live-card-head">
+<IconBadge tone="ink"><ph:test-tube /></IconBadge>
+<div class="live-kicker">02 · Test</div>
+</div>
+<h3>Test behaviour</h3>
+<p>Unit · integration · replay · end-to-end</p>
 </div>
 <div class="live-arrow">→</div>
 <div class="live-card is-dark">
 <div class="live-card-head">
 <IconBadge tone="light"><ph:shield-check /></IconBadge>
-<div class="live-kicker">02 · Assure</div>
+<div class="live-kicker">03 · Analyse</div>
 </div>
-<h3>Analyse every change</h3>
-<p>Linting · security · dependencies · automated review</p>
+<h3>Gate every change</h3>
+<p>Compiler · security · dependencies · secrets</p>
 </div>
 <div class="live-arrow">→</div>
 <div class="live-card is-magenta">
 <div class="live-card-head">
 <IconBadge tone="magenta"><ph:rocket-launch /></IconBadge>
-<div class="live-kicker">03 · Deliver</div>
+<div class="live-kicker">04 · Deploy</div>
 </div>
-<h3>Deliver every accepted change</h3>
-<p>PR · build · provision · deploy · production</p>
+<h3>Promote the artifact</h3>
+<p>Provision · deploy · release</p>
 </div>
 </div>
 
-<div class="live-outcome">Repeatable evidence and automation replace manual hand-offs.</div>
+<div class="live-outcome">The same accepted artifact moves forward with its evidence.</div>
 </div>
 
 <!--
 These changes predate the current AI wave and make AI-assisted implementation operationally useful.
-- Full test automation runs unit, integration, and end-to-end evidence without manual coordination.
-- Pipeline automation carries an accepted pull request through build, provision, deployment, and production.
-- Automated analysis makes linting, dependency, security, and review controls part of every change. Current examples include Cursor Bugbot, GitHub CodeQL, and Snyk.
+- Build produces one reproducible artifact.
+- Automated tests exercise unit, integration, replay, and end-to-end behaviour.
+- Compiler, dependency, secret, security, and review controls gate every change.
+- The accepted artifact is promoted through provision, deployment, and release.
 -->
 
 ---
@@ -2268,6 +2303,4 @@ class: slide-split short-bar
 <!--
 Close on the same path as the website.
 -->
-
-
 
