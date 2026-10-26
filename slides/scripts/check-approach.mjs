@@ -83,6 +83,12 @@ function normalise(value) {
 
 const errors = []
 const ids = manifest.map(({ id }) => id)
+const bannedTerms = [
+  /\bemery\b/i,
+  /\bomnia\b/i,
+  /\bclippy\.toml\b/i,
+  /\bwasm32-wasip2\b/i,
+]
 
 if (new Set(ids).size !== ids.length)
   errors.push('content/approach.json contains a duplicate slide id')
@@ -125,6 +131,30 @@ for (const [kind, file] of decks) {
         errors.push(
           `${file}:${slide.line}: ${expected.id} is missing shared text "${required}"`,
         )
+      }
+    }
+
+    for (const pattern of bannedTerms) {
+      if (pattern.test(visible)) {
+        errors.push(
+          `${file}:${slide.line}: ${expected.id} contains internal term matching ${pattern}`,
+        )
+      }
+    }
+
+    if (kind === 'live') {
+      const cardParagraphs = [
+        ...slide.body.matchAll(/<div class="live-card\b[\s\S]*?<\/div>\s*<\/div>/g),
+      ]
+      for (const [block] of cardParagraphs) {
+        for (const [, pText] of block.matchAll(/<p>([\s\S]*?)<\/p>/g)) {
+          const words = normalise(pText).split(/\s+/).filter(Boolean)
+          if (words.length > 15) {
+            errors.push(
+              `${file}:${slide.line}: ${expected.id} live-card <p> has ${words.length} words (max 15): "${normalise(pText)}"`,
+            )
+          }
+        }
       }
     }
   }

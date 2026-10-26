@@ -20,10 +20,16 @@ When working on the approach:
 
 Layout and explanatory detail remain specific to each use:
 
-- Live slides answer, “What should the room remember?”
+- Live slides answer, “What should the room remember?” — one headline, at most one short claim, and a visual diagram or sparse cards with short labels ($\le 14$ words per card body; never multi-sentence prose).
 - Brief slides answer, “What must a reader understand without the presenter?”
 - Reference slides answer, “What must a technical reviewer be able to inspect?”
 - Proposal slides answer, “What decision is requested, from whom, and on what evidence?”
+
+Guardrails for `approach-live.md` and `approach-brief.md`:
+
+- **Preserve bespoke visual diagrams:** Only edit slides relevant to the request; never replace bespoke visual structures (`.live-runtime-stack`, `.live-portability`, `.live-sdd-flow`, `.live-durability`, `.live-trust-model`, `.live-stat-grid`, `.live-repairs`, etc.) with text-heavy cards.
+- **No internal product/crate names:** Clients do not know `Emery` or `Omnia`. Use *Spec-driven delivery* (`spec.md`, `design.md`) and *Sandboxed execution* (`WASI Component`, `Wasmtime sandbox`). Reserve `Emery` and `Omnia` for `reference.md` and `proposal.md`.
+- **Talk track vs. slide copy:** Put narrative prose in `<!-- speaker notes -->` and `approach-brief.md`, never inside `.live-card` elements in `approach-live.md`.
 
 For side-by-side review, run the live deck on port 3030 and the brief on another port:
 

@@ -1,0 +1,28 @@
+---
+description: Rules for editing Slidev presentation decks under slides/
+globs: slides/**
+alwaysApply: false
+---
+
+# Slide Decks (`slides/`)
+
+## Roles of Each Deck
+
+- `approach-live.md` — **Live presentation backdrop** for a speaker in the room. Every slide carries one headline (`#`), at most one short claim (`<p class="live-claim">`), and a clean visual structure (diagram, flow, matrix, or sparse cards with 2–8 word labels). Never put multi-sentence prose or paragraphs inside live slide cards.
+- `approach-brief.md` — **Self-reading companion brief**. Carries the fuller prose (`<p class="ed-prose">`, `<p class="ed-band-prose">`) and detailed SVG diagrams (`<svg>`) that explain the slide without a presenter.
+- `reference.md` — **Technical leave-behind** for architecture, security, and platform review (where internal product names `Emery` and `Omnia` are explained).
+- `proposal.md` — **Client-specific decision template** used after an engagement.
+
+## Non-Negotiable Rules for `approach-live.md` and `approach-brief.md`
+
+1. **Preserve existing slides and bespoke visual layouts:**
+   - Only modify the specific slides required by the user's request.
+   - Never replace bespoke visual diagrams in `approach-live.md` (`.live-split`, `.live-pipeline`, `.live-feature-flow`, `.live-sdd-flow`, `.live-durability`, `.live-matrix`, `.live-runtime-stack`, `.live-portability`, `.live-trust-model`, `.live-radius-grid`, `.live-stat-grid`, `.live-repairs`) with generic multi-column text cards.
+2. **Talk track vs. slide copy:**
+   - When the user gives a narrative paragraph, use it to shape the slide sequence, headlines, short visual labels, and `<!-- speaker notes -->` (plus the prose column of `approach-brief.md`). Never paste paragraph prose into `.live-card` elements in `approach-live.md`.
+   - In `approach-live.md`, a `.live-card p` must be a short label or phrase ($\le 14$ words, no multi-sentence paragraphs).
+3. **No internal product or crate names in `approach-*`:**
+   - New clients do not know what `Emery` or `Omnia` are. Never use `Emery`, `Omnia`, `clippy.toml`, `wasm32-wasip2`, or internal Rust function/module names on slides in `approach-live.md` or `approach-brief.md`.
+   - Use **Spec-driven delivery** (`spec.md`, `design.md`), **Sandboxed execution** (`WASI Component`, `Wasm Runtime`, `Wasmtime sandbox`), and **Compiler-enforced standards**.
+4. **Chunk edits to large slide files:**
+   - `approach-live.md` and `approach-brief.md` are 1,200–2,200 lines long. Always use targeted `StrReplace` calls on individual slides rather than rewriting the whole file in one tool call.

@@ -169,9 +169,9 @@
 }
 
 .ambient-video-wrap.is-approach .ambient-video-el {
-  transform: translate(-19%, -12%) scale(1.4);
+  transform: scale(1.1);
   transform-origin: center;
-  filter: blur(8px);
+  filter: blur(6px) brightness(1.15);
 }
 
 .ambient-video-wrap.is-split .ambient-video-el {
@@ -184,15 +184,14 @@
   position: absolute;
   inset: 0;
   background:
-    linear-gradient(180deg, rgba(10, 7, 16, 0.45) 0%, rgba(10, 7, 16, 0) 35%),
-    linear-gradient(0deg, rgba(10, 7, 16, 0.4) 0%, rgba(10, 7, 16, 0) 40%);
+    linear-gradient(180deg, rgba(10, 7, 16, 0.32) 0%, rgba(10, 7, 16, 0) 32%),
+    linear-gradient(0deg, rgba(10, 7, 16, 0.28) 0%, rgba(10, 7, 16, 0) 35%);
 }
 
 .ambient-video-wrap.is-approach .ambient-video-scrim {
   background:
-    linear-gradient(180deg, rgba(10, 7, 16, 0.72) 0%, rgba(10, 7, 16, 0) 30%),
-    linear-gradient(0deg, rgba(10, 7, 16, 0.62) 0%, rgba(10, 7, 16, 0) 26%),
-    radial-gradient(120% 60% at 50% 40%, rgba(10, 7, 16, 0.06) 40%, rgba(10, 7, 16, 0.4) 100%);
+    linear-gradient(180deg, rgba(10, 7, 16, 0.22) 0%, rgba(10, 7, 16, 0) 28%),
+    linear-gradient(0deg, rgba(10, 7, 16, 0.25) 0%, rgba(10, 7, 16, 0) 26%);
 }
 
 .ambient-video-wrap.is-split .ambient-video-scrim {
@@ -552,18 +551,65 @@
   max-width: 980px;
 }
 
-.slidev-layout.slide-section h1 {
+.slidev-layout.slide-section h1,
+.section-hero-left h1,
+.ambient-video-wrap ~ h1,
+.ambient-video-wrap ~ .live-stage h1 {
+  color: #ffffff !important;
+}
+
+.slidev-layout.slide-section h1,
+.section-hero-left h1 {
   font-size: 64px;
   line-height: 0.98;
   letter-spacing: -0.035em;
-  color: #ffffff;
 }
 
-.slidev-layout.slide-section h1::after {
+.ambient-video-wrap ~ .live-stage .live-claim {
+  color: rgba(255, 255, 255, 0.82) !important;
+}
+
+.slidev-layout.slide-section h1::after,
+.section-hero-left h1::after {
   width: 160px;
   height: 3px;
   margin-top: 20px;
   margin-bottom: 6px;
+}
+
+.ambient-video-wrap ~ h6 {
+  color: rgba(255, 255, 255, 0.78) !important;
+}
+
+.ambient-video-wrap ~ h6::before {
+  filter: none !important;
+  opacity: 1 !important;
+}
+
+.ambient-video-wrap ~ h6 .eyebrow-num {
+  color: rgba(255, 255, 255, 0.45) !important;
+}
+
+.section-kicker-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 14px;
+  border-radius: 999px;
+  border: 1px solid rgba(120, 216, 242, 0.45);
+  background: rgba(22, 180, 226, 0.12);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--phl-cyan-soft);
+  margin-bottom: 6px;
+}
+
+.section-kicker-pill.is-magenta {
+  border-color: rgba(245, 158, 245, 0.5);
+  background: rgba(164, 35, 143, 0.2);
+  color: #f59ef5;
 }
 
 /* Slidev's base `.slidev-layout p` outranks a bare class, so paragraph classes are qualified */
