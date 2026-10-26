@@ -802,29 +802,228 @@ class: slide-hero slide-section
   color: var(--phl-ink-body);
 }
 
-.live-converge {
-  margin: 18px auto;
-  text-align: center;
-  font-size: 28px;
-  line-height: 1;
-  color: var(--phl-magenta);
-}
-
-.live-route {
+.live-trust-model {
   display: grid;
-  grid-template-columns: 1fr auto 1fr auto 1fr;
-  gap: 14px;
-  align-items: center;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 12px;
+  margin-top: 18px;
 }
 
-.live-route-step {
-  padding: 20px;
+.live-trust-state {
+  display: grid;
+  grid-template-rows: 39px 63px 112px 58px;
+  overflow: hidden;
+  border: 1.5px solid rgba(13, 16, 48, 0.22);
   border-radius: 12px;
-  background: var(--phl-bg-navy);
-  text-align: center;
-  font-size: 19px;
+  background: #ffffff;
+}
+
+.live-trust-state.is-explore {
+  border-style: dashed;
+}
+
+.live-trust-state.is-govern {
+  border-color: rgba(12, 127, 163, 0.52);
+  background: rgba(22, 180, 226, 0.035);
+}
+
+.live-trust-state.is-connect {
+  border-color: rgba(96, 93, 213, 0.5);
+  background: rgba(96, 93, 213, 0.045);
+}
+
+.live-trust-state.is-support {
+  border-color: rgba(164, 35, 143, 0.48);
+  background: rgba(164, 35, 143, 0.035);
+}
+
+.live-trust-state-head,
+.live-trust-band {
+  padding: 10px 13px;
+}
+
+.live-trust-state-head {
+  border-bottom: 1px solid rgba(13, 16, 48, 0.1);
+  font-size: 11px;
+  line-height: 1;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--phl-ink-muted);
+}
+
+.is-govern .live-trust-state-head {
+  color: #0c7fa3;
+}
+
+.is-connect .live-trust-state-head {
+  color: #605dd5;
+}
+
+.is-support .live-trust-state-head {
+  color: #a4238f;
+}
+
+.live-trust-band {
+  border-bottom: 1px solid rgba(13, 16, 48, 0.09);
+}
+
+.live-trust-band:last-child {
+  border-bottom: 0;
+}
+
+.live-trust-band-label {
+  display: block;
+  margin-bottom: 5px;
+  font-size: 9px;
+  line-height: 1;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--phl-ink-muted);
+}
+
+.live-trust-band strong {
+  display: block;
+  font-size: 16px;
+  line-height: 1.1;
   font-weight: 500;
-  color: #ffffff;
+  color: var(--phl-ink);
+}
+
+.live-trust-band p {
+  margin: 0;
+  font-size: 11.5px;
+  line-height: 1.38;
+  color: var(--phl-ink-body);
+}
+
+.live-trust-band.is-boundary {
+  background: rgba(255, 255, 255, 0.58);
+}
+
+.live-trust-band.is-boundary strong {
+  font-size: 13px;
+}
+
+.live-trust-model-note,
+.live-radius-close {
+  margin-top: 12px;
+  text-align: center;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--phl-ink);
+}
+
+.live-radius-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 12px;
+  margin-top: 18px;
+}
+
+.live-radius-card {
+  min-height: 120px;
+  padding: 14px;
+  border: 1.5px solid rgba(13, 16, 48, 0.22);
+  border-radius: 12px;
+  background: #ffffff;
+}
+
+.live-radius-card:nth-child(1) {
+  border-color: rgba(12, 127, 163, 0.52);
+  background: rgba(22, 180, 226, 0.04);
+}
+
+.live-radius-card:nth-child(2) {
+  border-color: rgba(96, 93, 213, 0.5);
+  background: rgba(96, 93, 213, 0.045);
+}
+
+.live-radius-card:nth-child(3) {
+  border-color: rgba(164, 35, 143, 0.46);
+  background: rgba(164, 35, 143, 0.035);
+}
+
+.live-radius-card:nth-child(4) {
+  border-color: rgba(13, 16, 48, 0.34);
+  background: rgba(13, 16, 48, 0.025);
+}
+
+.live-radius-card h3 {
+  margin: 7px 0 8px;
+  font-size: 18px;
+  line-height: 1.12;
+  font-weight: 500;
+  color: var(--phl-ink);
+}
+
+.live-radius-card p {
+  margin: 0;
+  font-size: 11.5px;
+  line-height: 1.35;
+  color: var(--phl-ink-body);
+}
+
+.live-radius-guide {
+  margin: 13px 0 7px;
+  text-align: center;
+  font-size: 10px;
+  line-height: 1;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--phl-ink-muted);
+}
+
+.live-radius-scale {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  overflow: hidden;
+  width: 86%;
+  margin: 0 auto;
+  border: 1px solid rgba(13, 16, 48, 0.18);
+  border-radius: 10px;
+}
+
+.live-radius-scale div {
+  padding: 10px 8px;
+  border-right: 1px solid rgba(13, 16, 48, 0.12);
+  text-align: center;
+  font-size: 12px;
+  color: var(--phl-ink);
+}
+
+.live-radius-scale div:last-child {
+  border-right: 0;
+}
+
+.live-radius-scale div:nth-child(2) {
+  background: rgba(22, 180, 226, 0.06);
+}
+
+.live-radius-scale div:nth-child(3) {
+  background: rgba(96, 93, 213, 0.07);
+}
+
+.live-radius-scale div:nth-child(4) {
+  background: rgba(164, 35, 143, 0.06);
+}
+
+.live-radius-scale strong {
+  margin-right: 4px;
+  font-weight: 700;
+}
+
+.live-radius-result {
+  width: 62%;
+  margin: 9px auto 0;
+  padding: 9px 14px;
+  border-top: 2px solid var(--phl-magenta);
+  text-align: center;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--phl-ink);
 }
 
 .live-stat-grid {
@@ -1498,47 +1697,175 @@ Client question:
 -->
 
 ---
-title: One delivery system. Two starting points.
-sync: entry
+title: Trust is contextual, not a maturity score.
+sync: trust-model
 class: slide-light
 ---
 
-<Eyebrow text="WHERE IT APPLIES · NEW SYSTEMS AND MODERNISATION" />
+<Eyebrow text="TRUST MODEL · REQUIRED CONTROLS FOLLOW CONSEQUENCE" />
+
+<div class="foundation-progress" aria-label="Delivery foundations">
+<span class="is-active">01 · Set rules</span>
+<span class="is-active is-magenta">02 · Record intent</span>
+<span class="is-active">03 · Constrain code</span>
+</div>
 
 <div class="live-stage">
 
-# One delivery system. Two starting points.
+# Trust is contextual, not a maturity score.
 
-<div class="live-grid-2">
-<div class="live-card is-cyan">
-<div class="live-kicker">New system</div>
-<h3>A useful idea or prototype</h3>
-<p>Do not let a demo become accidental policy.</p>
+<p class="live-claim">Four operational states determine which controls an application requires. Moving right is not progress; it is more consequence to manage.</p>
+
+<div class="live-trust-model">
+<div class="live-trust-state is-explore">
+<div class="live-trust-state-head">State 0 · Explore</div>
+<div class="live-trust-band">
+<span class="live-trust-band-label">Context</span>
+<strong>Local discovery</strong>
 </div>
-<div class="live-card is-magenta">
-<div class="live-kicker">Existing system</div>
-<h3>Code nobody can safely change</h3>
-<p>Recover the product, not just the code.</p>
+<div class="live-trust-band">
+<span class="live-trust-band-label">Evidence + ownership</span>
+<p>One builder<br>Synthetic or local inputs<br>No shared dependence</p>
+</div>
+<div class="live-trust-band is-boundary">
+<span class="live-trust-band-label">Required boundary</span>
+<strong>Isolate and keep local</strong>
 </div>
 </div>
 
-<div class="live-converge">↓</div>
-
-<div class="live-route">
-<div class="live-route-step">Reviewed intent</div>
-<div class="live-arrow">→</div>
-<div class="live-route-step">Bounded delivery</div>
-<div class="live-arrow">→</div>
-<div class="live-route-step">Constrained operation</div>
+<div class="live-trust-state is-govern">
+<div class="live-trust-state-head">State 1 · Govern</div>
+<div class="live-trust-band">
+<span class="live-trust-band-label">Context</span>
+<strong>Shared work</strong>
 </div>
+<div class="live-trust-band">
+<span class="live-trust-band-label">Evidence + ownership</span>
+<p>Named owner<br>Approved workspace and tools<br>Protected changes and checks</p>
+</div>
+<div class="live-trust-band is-boundary">
+<span class="live-trust-band-label">Required boundary</span>
+<strong>Authoring boundary</strong>
+</div>
+</div>
+
+<div class="live-trust-state is-connect">
+<div class="live-trust-state-head">State 2 · Connect</div>
+<div class="live-trust-band">
+<span class="live-trust-band-label">Context</span>
+<strong>Live capability</strong>
+</div>
+<div class="live-trust-band">
+<span class="live-trust-band-label">Evidence + ownership</span>
+<p>Explicit purpose and owner<br>Typed live-system contracts<br>Host policy and observability</p>
+</div>
+<div class="live-trust-band is-boundary">
+<span class="live-trust-band-label">Required boundary</span>
+<strong>Runtime boundary</strong>
+</div>
+</div>
+
+<div class="live-trust-state is-support">
+<div class="live-trust-state-head">State 3 · Support</div>
+<div class="live-trust-band">
+<span class="live-trust-band-label">Context</span>
+<strong>Business dependence</strong>
+</div>
+<div class="live-trust-band">
+<span class="live-trust-band-label">Evidence + ownership</span>
+<p>Durable reviewed intent<br>Release and service ownership<br>Recovery evidence</p>
+</div>
+<div class="live-trust-band is-boundary">
+<span class="live-trust-band-label">Required boundary</span>
+<strong>Full delivery system</strong>
+</div>
+</div>
+</div>
+
+<p class="live-trust-model-note">Keep the application in the least costly state consistent with its actual consequence.</p>
 </div>
 
 <!--
-New systems and modernisation have different starting risks.
-Both converge on reviewed intent, bounded implementation, independent verification, and constrained operation.
+These are operational states, not levels of organisational maturity.
+Explore is local discovery: one builder, local or synthetic inputs, and no shared dependence.
+Govern begins when work is shared. It requires a named owner, an approved authoring environment, and protected changes and checks.
+Connect begins when the application reaches a live capability. Purpose, ownership, typed contracts, host policy, and observability become explicit.
+Support begins when the business depends on the application. Durable intent, release and service ownership, and recovery evidence are then required.
+There is no virtue in moving every application to the right. Keep it in the least costly state consistent with its actual consequence.
+An application can move in either direction as its use, reach, and dependence change.
 
 Client question:
-- Is the immediate pressure a new capability that cannot reach production, or an existing system that cannot safely change?
+- Which applications are carrying controls for a state they are not actually in—and which are missing controls for the state they are?
+-->
+
+---
+title: The highest consequence sets the trust radius.
+sync: trust-radius
+class: slide-light
+---
+
+<Eyebrow text="TRUST RADIUS · ASSESS FOUR DIMENSIONS" />
+
+<div class="foundation-progress" aria-label="Delivery foundations">
+<span class="is-active">01 · Set rules</span>
+<span class="is-active is-magenta">02 · Record intent</span>
+<span class="is-active">03 · Constrain code</span>
+</div>
+
+<div class="live-stage">
+
+# The highest consequence sets the trust radius.
+
+<p class="live-claim">Assess reach, data, dependence, and continuity against the four-state model.</p>
+
+<div class="live-radius-grid">
+<div class="live-radius-card">
+<div class="live-kicker">01 · Reach</div>
+<h3>What can it access?</h3>
+<p>Local environment · shared systems · live capabilities</p>
+</div>
+<div class="live-radius-card">
+<div class="live-kicker">02 · Data</div>
+<h3>What can it read or change?</h3>
+<p>Synthetic data · project data · live or regulated data</p>
+</div>
+<div class="live-radius-card">
+<div class="live-kicker">03 · Dependence</div>
+<h3>Who relies on it?</h3>
+<p>One builder · a team · customers or operations</p>
+</div>
+<div class="live-radius-card">
+<div class="live-kicker">04 · Continuity</div>
+<h3>What must survive failure?</h3>
+<p>Discard · restore · recover within an obligation</p>
+</div>
+</div>
+
+<div class="live-radius-guide">Place every answer on the same operational scale</div>
+<div class="live-radius-scale">
+<div><strong>0</strong> Explore</div>
+<div><strong>1</strong> Govern</div>
+<div><strong>2</strong> Connect</div>
+<div><strong>3</strong> Support</div>
+</div>
+
+<div class="live-radius-result">The furthest answer defines the trust radius—and the controls it requires.</div>
+<p class="live-radius-close">Reassess whenever reach, data, dependence, or continuity changes.</p>
+</div>
+
+<!--
+The Trust Model becomes an assessment method through four dimensions.
+Reach asks what systems, services, and capabilities the application can access.
+Data asks what it can read, retain, produce, or change, including the consequence of disclosure or corruption.
+Dependence asks who or what relies on it and what work stops when it is unavailable or wrong.
+Continuity asks what must survive failure and what recovery obligation exists.
+Place each answer independently in Explore, Govern, Connect, or Support.
+Do not average the answers. The highest-consequence answer sets the application's required state and therefore its controls.
+This is the application's trust radius: the widest consequence it can create or inherit.
+The radius can contract as well as expand. Reassess whenever one of the four dimensions changes.
+
+Client question:
+- Which dimension pushes your application furthest to the right today?
 -->
 
 ---
@@ -1620,7 +1947,7 @@ The score is not the product claim. The compounding delivery system is.
 -->
 
 ---
-title: Start with the thing that is stuck
+title: Start with something real. Make the next thing easier.
 sync: cta
 class: slide-split short-bar
 ---
@@ -1637,28 +1964,28 @@ class: slide-split short-bar
 <div>
 <Eyebrow text="PROPELLERHEAD · THE FIRST MOVE" />
 
-# Start with the thing<br>that is stuck.
+# Start with something real.<br>Make the next thing easier.
 
 <div class="opportunity-rows" style="margin-top: 8px;">
 <div class="opportunity-row">
 <span class="opportunity-row-num">01</span>
 <div>
-<h4>Bring one real change and its owner</h4>
-<p>Useful, consequential, and harder to deliver than it should be.</p>
+<h4>Choose the first move</h4>
+<p>We work out what is really in the way, set the boundaries and shape a first delivery worth doing.</p>
 </div>
 </div>
 <div class="opportunity-row">
 <span class="opportunity-row-num">02</span>
 <div>
-<h4>Trace its full delivery path</h4>
-<p>Direction, authority, evidence, runtime reach, release, and ownership.</p>
+<h4>Get it live</h4>
+<p>New system or old one: we use AI where it helps, senior people where judgement matters and a production path we already know.</p>
 </div>
 </div>
 <div class="opportunity-row">
 <span class="opportunity-row-num">03</span>
 <div>
-<h4>Leave with assets and a decision</h4>
-<p>Deliver, repair a foundation, reframe the work—or stop.</p>
+<h4>Keep the gains</h4>
+<p>You keep the specifications, tests, infrastructure and delivery knowledge. The next change starts ahead, not at zero.</p>
 </div>
 </div>
 </div>
@@ -1666,22 +1993,23 @@ class: slide-split short-bar
 
 <div class="cta-card">
 <div>
-<div class="cta-card-label">AI DELIVERY READINESS · SHORT PAID ENGAGEMENT</div>
-<div class="cta-card-title">Nominate one change. Name its owner.</div>
+<div class="cta-card-label">THE FIRST MOVE</div>
+<div class="cta-card-title">What is really in the way?</div>
 </div>
 <div class="cta-pill">
 <span class="cta-pill-dot">→</span>
-<span>Talk to us</span>
+<span>Find the first move</span>
 </div>
 </div>
 </div>
 
 <!--
-Close with one ask:
-- Bring one real change that matters and is harder to deliver than it should be.
-- Readiness establishes the first useful boundary and ends in an explicit decision.
-- Sometimes the responsible answer is not to build yet.
+Close on the same path as the website:
+- Choose the first move: work out what is really in the way, set the boundaries, and shape a first delivery worth doing.
+- Get it live: use AI where it helps, senior people where judgement matters, and a production path we already know.
+- Keep the gains: retain the specifications, tests, infrastructure, and delivery knowledge so the next change starts ahead.
+- The call to action is direct: find the first move.
 
 Final question:
-- What should be easier, safer, or faster than it is today?
+- What is really in the way?
 -->

@@ -151,12 +151,50 @@
     ]
   },
   {
-    "id": "entry",
-    "title": "One delivery system. Two starting points.",
+    "id": "trust-model",
+    "title": "Trust is contextual, not a maturity score.",
     "required": [
-      "A useful idea or prototype",
-      "Code nobody can safely change",
-      "Bounded delivery"
+      "Set rules",
+      "Record intent",
+      "Constrain code",
+      "Four operational states determine which controls an application requires.",
+      "State 0 · Explore",
+      "Local discovery",
+      "Isolate and keep local",
+      "State 1 · Govern",
+      "Shared work",
+      "Authoring boundary",
+      "State 2 · Connect",
+      "Live capability",
+      "Runtime boundary",
+      "State 3 · Support",
+      "Business dependence",
+      "Full delivery system",
+      "Keep the application in the least costly state consistent with its actual consequence."
+    ]
+  },
+  {
+    "id": "trust-radius",
+    "title": "The highest consequence sets the trust radius.",
+    "required": [
+      "Set rules",
+      "Record intent",
+      "Constrain code",
+      "Assess reach, data, dependence, and continuity against the four-state model.",
+      "Reach",
+      "What can it access?",
+      "Data",
+      "What can it read or change?",
+      "Dependence",
+      "Who relies on it?",
+      "Continuity",
+      "What must survive failure?",
+      "Explore",
+      "Govern",
+      "Connect",
+      "Support",
+      "The furthest answer defines the trust radius—and the controls it requires.",
+      "Reassess whenever reach, data, dependence, or continuity changes."
     ]
   },
   {
@@ -184,12 +222,13 @@
   },
   {
     "id": "cta",
-    "title": "Start with the thing that is stuck",
+    "title": "Start with something real. Make the next thing easier.",
     "required": [
-      "Bring one real change and its owner",
-      "Trace its full delivery path",
-      "Leave with assets and a decision",
-      "Nominate one change. Name its owner."
+      "Choose the first move",
+      "Get it live",
+      "Keep the gains",
+      "What is really in the way?",
+      "Find the first move"
     ]
   }
 ]

@@ -844,77 +844,187 @@ Client question:
 -->
 
 ---
-title: One delivery system. Two starting points.
-sync: entry
+title: Trust is contextual, not a maturity score.
+sync: trust-model
 class: slide-light
 ---
 
-<Eyebrow text="WHERE IT APPLIES · NEW SYSTEMS AND MODERNISATION" />
+<Eyebrow text="TRUST MODEL · REQUIRED CONTROLS FOLLOW CONSEQUENCE" />
 
-<div class="ed-bottom-split">
-<div class="ed-bottom-canvas">
-<svg viewBox="0 0 1140 285" aria-hidden="true">
-  <rect x="18" y="20" width="250" height="100" rx="14" fill="rgba(22,180,226,0.06)" stroke="#0c7fa3" stroke-width="1.6" />
-  <text x="40" y="48" class="svg-kicker" fill="#0c7fa3">NEW SYSTEM · POSSIBILITY</text>
-  <text x="40" y="76" class="svg-h3" fill="#0d1030">A useful idea or prototype</text>
-  <text x="40" y="98" class="svg-caption" fill="rgba(13,16,48,0.62)">Outcome · constraints · early evidence</text>
+<div class="foundation-progress" aria-label="Delivery foundations">
+<span class="is-active">01 · Set rules</span>
+<span class="is-active is-magenta">02 · Record intent</span>
+<span class="is-active">03 · Constrain code</span>
+</div>
 
-  <rect x="18" y="164" width="250" height="100" rx="14" fill="rgba(164,35,143,0.06)" stroke="#a4238f" stroke-width="1.6" />
-  <text x="40" y="192" class="svg-kicker" fill="#a4238f">EXISTING SYSTEM · DEPENDENCE</text>
-  <text x="40" y="220" class="svg-h3" fill="#0d1030">Code nobody can safely change</text>
-  <text x="40" y="242" class="svg-caption" fill="rgba(13,16,48,0.62)">Intent · docs · tests · code · people</text>
+<div class="ed-band">
+<div class="ed-band-top">
+<div>
 
-  <path d="M 268 70 C 330 70, 334 142, 396 142" fill="none" stroke="#0c7fa3" stroke-width="2" />
-  <path d="M 268 214 C 330 214, 334 142, 396 142" fill="none" stroke="#a4238f" stroke-width="2" />
-  <polygon points="390,137 400,142 390,147" fill="#0d1030" />
+# Trust is contextual,<br>not a maturity score.
 
-  <rect x="402" y="82" width="228" height="120" rx="14" fill="#0d1030" />
-  <text x="516" y="110" text-anchor="middle" class="svg-kicker" fill="#78d8f2">REVIEWED SPECIFICATION</text>
-  <text x="516" y="140" text-anchor="middle" class="svg-h3" fill="#ffffff">What must remain true</text>
-  <text x="516" y="164" text-anchor="middle" class="svg-caption" fill="rgba(255,255,255,0.7)">spec.md · design.md</text>
-  <text x="516" y="184" text-anchor="middle" class="svg-caption" fill="#f59ef5">Conflicts and unknowns visible</text>
+</div>
+<p class="ed-band-prose"><strong>Four operational states determine which controls an application requires.</strong> Moving right is not progress; it is more consequence to manage.</p>
+</div>
+<div class="ed-band-canvas" style="padding-top: 4px;">
+<svg viewBox="0 0 1140 350" aria-hidden="true">
+  <rect x="18" y="10" width="267" height="292" rx="13" fill="#ffffff" stroke="rgba(13,16,48,0.28)" stroke-width="1.5" stroke-dasharray="5 4" />
+  <text x="34" y="35" class="svg-kicker" fill="rgba(13,16,48,0.58)">STATE 0 · EXPLORE</text>
+  <line x1="18" y1="51" x2="285" y2="51" stroke="rgba(13,16,48,0.1)" />
+  <text x="34" y="76" class="svg-kicker" fill="rgba(13,16,48,0.48)">CONTEXT</text>
+  <text x="34" y="101" class="svg-h3" fill="#0d1030">Local discovery</text>
+  <line x1="34" y1="117" x2="269" y2="117" stroke="rgba(13,16,48,0.1)" />
+  <text x="34" y="142" class="svg-kicker" fill="rgba(13,16,48,0.48)">EVIDENCE + OWNERSHIP</text>
+  <text x="34" y="168" class="svg-label" fill="#0d1030">One builder</text>
+  <text x="34" y="191" class="svg-label" fill="#0d1030">Synthetic or local inputs</text>
+  <text x="34" y="214" class="svg-label" fill="#0d1030">No shared dependence</text>
+  <line x1="34" y1="232" x2="269" y2="232" stroke="rgba(13,16,48,0.1)" />
+  <text x="34" y="256" class="svg-kicker" fill="rgba(13,16,48,0.48)">REQUIRED BOUNDARY</text>
+  <text x="34" y="282" class="svg-label" fill="#0d1030">Isolate and keep local</text>
 
-  <line x1="630" y1="142" x2="696" y2="142" stroke="#0d1030" stroke-width="2" />
-  <polygon points="690,137 700,142 690,147" fill="#0d1030" />
+  <rect x="297" y="10" width="267" height="292" rx="13" fill="rgba(22,180,226,0.045)" stroke="rgba(12,127,163,0.58)" stroke-width="1.6" />
+  <text x="313" y="35" class="svg-kicker" fill="#0c7fa3">STATE 1 · GOVERN</text>
+  <line x1="297" y1="51" x2="564" y2="51" stroke="rgba(12,127,163,0.13)" />
+  <text x="313" y="76" class="svg-kicker" fill="rgba(12,127,163,0.72)">CONTEXT</text>
+  <text x="313" y="101" class="svg-h3" fill="#0d1030">Shared work</text>
+  <line x1="313" y1="117" x2="548" y2="117" stroke="rgba(12,127,163,0.13)" />
+  <text x="313" y="142" class="svg-kicker" fill="rgba(12,127,163,0.72)">EVIDENCE + OWNERSHIP</text>
+  <text x="313" y="168" class="svg-label" fill="#0d1030">Named owner</text>
+  <text x="313" y="191" class="svg-label" fill="#0d1030">Approved workspace and tools</text>
+  <text x="313" y="214" class="svg-label" fill="#0d1030">Protected changes and checks</text>
+  <line x1="313" y1="232" x2="548" y2="232" stroke="rgba(12,127,163,0.13)" />
+  <text x="313" y="256" class="svg-kicker" fill="rgba(12,127,163,0.72)">REQUIRED BOUNDARY</text>
+  <text x="313" y="282" class="svg-label" fill="#0d1030">Authoring boundary</text>
 
-  <rect x="702" y="82" width="190" height="120" rx="14" fill="rgba(22,180,226,0.07)" stroke="#0c7fa3" stroke-width="1.8" />
-  <text x="797" y="110" text-anchor="middle" class="svg-kicker" fill="#0c7fa3">BOUNDED DELIVERY</text>
-  <text x="797" y="140" text-anchor="middle" class="svg-h3" fill="#0d1030">Verified waves</text>
-  <text x="797" y="164" text-anchor="middle" class="svg-caption" fill="rgba(13,16,48,0.64)">Small changes · clear checks</text>
-  <text x="797" y="184" text-anchor="middle" class="svg-caption" fill="#0c7fa3">Evidence before promotion</text>
+  <rect x="576" y="10" width="267" height="292" rx="13" fill="rgba(96,93,213,0.05)" stroke="rgba(96,93,213,0.58)" stroke-width="1.6" />
+  <text x="592" y="35" class="svg-kicker" fill="#605dd5">STATE 2 · CONNECT</text>
+  <line x1="576" y1="51" x2="843" y2="51" stroke="rgba(96,93,213,0.14)" />
+  <text x="592" y="76" class="svg-kicker" fill="#605dd5">CONTEXT</text>
+  <text x="592" y="101" class="svg-h3" fill="#0d1030">Live capability</text>
+  <line x1="592" y1="117" x2="827" y2="117" stroke="rgba(96,93,213,0.14)" />
+  <text x="592" y="142" class="svg-kicker" fill="#605dd5">EVIDENCE + OWNERSHIP</text>
+  <text x="592" y="168" class="svg-label" fill="#0d1030">Explicit purpose and owner</text>
+  <text x="592" y="191" class="svg-label" fill="#0d1030">Typed live-system contracts</text>
+  <text x="592" y="214" class="svg-label" fill="#0d1030">Host policy and observability</text>
+  <line x1="592" y1="232" x2="827" y2="232" stroke="rgba(96,93,213,0.14)" />
+  <text x="592" y="256" class="svg-kicker" fill="#605dd5">REQUIRED BOUNDARY</text>
+  <text x="592" y="282" class="svg-label" fill="#0d1030">Runtime boundary</text>
 
-  <line x1="892" y1="142" x2="952" y2="142" stroke="#a4238f" stroke-width="2" />
-  <polygon points="946,137 956,142 946,147" fill="#a4238f" />
+  <rect x="855" y="10" width="267" height="292" rx="13" fill="rgba(164,35,143,0.04)" stroke="rgba(164,35,143,0.55)" stroke-width="1.6" />
+  <text x="871" y="35" class="svg-kicker" fill="#a4238f">STATE 3 · SUPPORT</text>
+  <line x1="855" y1="51" x2="1122" y2="51" stroke="rgba(164,35,143,0.13)" />
+  <text x="871" y="76" class="svg-kicker" fill="#a4238f">CONTEXT</text>
+  <text x="871" y="101" class="svg-h3" fill="#0d1030">Business dependence</text>
+  <line x1="871" y1="117" x2="1106" y2="117" stroke="rgba(164,35,143,0.13)" />
+  <text x="871" y="142" class="svg-kicker" fill="#a4238f">EVIDENCE + OWNERSHIP</text>
+  <text x="871" y="168" class="svg-label" fill="#0d1030">Durable reviewed intent</text>
+  <text x="871" y="191" class="svg-label" fill="#0d1030">Release and service ownership</text>
+  <text x="871" y="214" class="svg-label" fill="#0d1030">Recovery evidence</text>
+  <line x1="871" y1="232" x2="1106" y2="232" stroke="rgba(164,35,143,0.13)" />
+  <text x="871" y="256" class="svg-kicker" fill="#a4238f">REQUIRED BOUNDARY</text>
+  <text x="871" y="282" class="svg-label" fill="#0d1030">Full delivery system</text>
 
-  <circle cx="1038" cy="142" r="78" fill="#a4238f" />
-  <text x="1038" y="114" text-anchor="middle" class="svg-kicker" fill="rgba(255,255,255,0.86)">RUNTIME BOUNDARY</text>
-  <text x="1038" y="134" text-anchor="middle" class="svg-h3" fill="#ffffff">Sandboxed</text>
-  <text x="1038" y="154" text-anchor="middle" class="svg-h3" fill="#ffffff">execution</text>
-  <text x="1038" y="164" text-anchor="middle" class="svg-caption" fill="rgba(255,255,255,0.82)">Explicit capabilities</text>
-  <text x="1038" y="182" text-anchor="middle" class="svg-caption" fill="rgba(255,255,255,0.82)">Known path to operation</text>
+  <text x="570" y="335" text-anchor="middle" class="svg-caption" fill="rgba(13,16,48,0.58)">Keep the application in the least costly state consistent with its actual consequence.</text>
 </svg>
-</div>
-<div class="ed-bottom-prose-row">
-<div>
-
-# One delivery system.<br>Two starting points.
-
-</div>
-<div>
-<p class="ed-prose"><strong>A demo proves possibility. Production proves value.</strong> New systems need enough durable direction to reach production without hardening weak assumptions.</p>
-<p class="ed-prose"><strong>Recover the product, not just the code.</strong> Modernisation reconciles what an existing system does with what it should continue to do before anything is rewritten.</p>
-</div>
 </div>
 </div>
 
 <!--
-Two entry paths:
-- For a new system, the danger is turning a plausible demo into accidental architecture and accidental product policy.
-- For an existing system, the danger is translating historical implementation and reproducing its problems in a new language.
-- Both paths converge on reviewed intent, bounded implementation, independent verification, and constrained operation.
+These are operational states, not levels of organisational maturity.
+Explore is local discovery: one builder, local or synthetic inputs, and no shared dependence.
+Govern begins when work is shared. It requires a named owner, an approved authoring environment, and protected changes and checks.
+Connect begins when the application reaches a live capability. Purpose, ownership, typed contracts, host policy, and observability become explicit.
+Support begins when the business depends on the application. Durable intent, release and service ownership, and recovery evidence are then required.
+There is no virtue in moving every application to the right. Keep it in the least costly state consistent with its actual consequence.
+An application can move in either direction as its use, reach, and dependence change.
 
 Client question:
-- Is your immediate pressure a new capability that cannot reach production, or an existing system that cannot safely change?
+- Which applications are carrying controls for a state they are not actually in—and which are missing controls for the state they are?
+-->
+
+---
+title: The highest consequence sets the trust radius.
+sync: trust-radius
+class: slide-light
+---
+
+<Eyebrow text="TRUST RADIUS · ASSESS FOUR DIMENSIONS" />
+
+<div class="foundation-progress" aria-label="Delivery foundations">
+<span class="is-active">01 · Set rules</span>
+<span class="is-active is-magenta">02 · Record intent</span>
+<span class="is-active">03 · Constrain code</span>
+</div>
+
+<div class="ed-band">
+<div class="ed-band-top">
+<div>
+
+# The highest consequence<br>sets the trust radius.
+
+</div>
+<p class="ed-band-prose"><strong>Assess reach, data, dependence, and continuity against the four-state model.</strong></p>
+</div>
+<div class="ed-band-canvas" style="padding-top: 4px;">
+<svg viewBox="0 0 1140 350" aria-hidden="true">
+  <rect x="18" y="10" width="267" height="126" rx="13" fill="rgba(22,180,226,0.045)" stroke="rgba(12,127,163,0.58)" stroke-width="1.6" />
+  <text x="36" y="38" class="svg-kicker" fill="#0c7fa3">01 · REACH</text>
+  <text x="36" y="68" class="svg-h3" fill="#0d1030">What can it access?</text>
+  <text x="36" y="97" class="svg-caption" fill="rgba(13,16,48,0.66)">Local environment · shared systems</text>
+  <text x="36" y="117" class="svg-caption" fill="rgba(13,16,48,0.66)">Live capabilities</text>
+
+  <rect x="297" y="10" width="267" height="126" rx="13" fill="rgba(96,93,213,0.05)" stroke="rgba(96,93,213,0.58)" stroke-width="1.6" />
+  <text x="315" y="38" class="svg-kicker" fill="#605dd5">02 · DATA</text>
+  <text x="315" y="68" class="svg-h3" fill="#0d1030">What can it read or change?</text>
+  <text x="315" y="97" class="svg-caption" fill="rgba(13,16,48,0.66)">Synthetic data · project data</text>
+  <text x="315" y="117" class="svg-caption" fill="rgba(13,16,48,0.66)">Live or regulated data</text>
+
+  <rect x="576" y="10" width="267" height="126" rx="13" fill="rgba(164,35,143,0.04)" stroke="rgba(164,35,143,0.55)" stroke-width="1.6" />
+  <text x="594" y="38" class="svg-kicker" fill="#a4238f">03 · DEPENDENCE</text>
+  <text x="594" y="68" class="svg-h3" fill="#0d1030">Who relies on it?</text>
+  <text x="594" y="97" class="svg-caption" fill="rgba(13,16,48,0.66)">One builder · a team</text>
+  <text x="594" y="117" class="svg-caption" fill="rgba(13,16,48,0.66)">Customers or operations</text>
+
+  <rect x="855" y="10" width="267" height="126" rx="13" fill="rgba(13,16,48,0.025)" stroke="rgba(13,16,48,0.32)" stroke-width="1.5" />
+  <text x="873" y="38" class="svg-kicker" fill="rgba(13,16,48,0.62)">04 · CONTINUITY</text>
+  <text x="873" y="68" class="svg-h3" fill="#0d1030">What must survive failure?</text>
+  <text x="873" y="97" class="svg-caption" fill="rgba(13,16,48,0.66)">Discard · restore</text>
+  <text x="873" y="117" class="svg-caption" fill="rgba(13,16,48,0.66)">Recover within an obligation</text>
+
+  <text x="570" y="165" text-anchor="middle" class="svg-kicker" fill="rgba(13,16,48,0.56)">PLACE EVERY ANSWER ON THE SAME OPERATIONAL SCALE</text>
+
+  <rect x="126" y="184" width="222" height="58" rx="9" fill="#ffffff" stroke="rgba(13,16,48,0.22)" stroke-width="1.4" />
+  <text x="237" y="219" text-anchor="middle" class="svg-label" fill="#0d1030"><tspan font-weight="700">0</tspan> · Explore</text>
+  <rect x="348" y="184" width="222" height="58" fill="rgba(22,180,226,0.06)" stroke="rgba(12,127,163,0.4)" stroke-width="1.4" />
+  <text x="459" y="219" text-anchor="middle" class="svg-label" fill="#0d1030"><tspan font-weight="700">1</tspan> · Govern</text>
+  <rect x="570" y="184" width="222" height="58" fill="rgba(96,93,213,0.07)" stroke="rgba(96,93,213,0.42)" stroke-width="1.4" />
+  <text x="681" y="219" text-anchor="middle" class="svg-label" fill="#0d1030"><tspan font-weight="700">2</tspan> · Connect</text>
+  <rect x="792" y="184" width="222" height="58" rx="9" fill="rgba(164,35,143,0.06)" stroke="rgba(164,35,143,0.42)" stroke-width="1.4" />
+  <text x="903" y="219" text-anchor="middle" class="svg-label" fill="#0d1030"><tspan font-weight="700">3</tspan> · Support</text>
+
+  <line x1="570" y1="242" x2="570" y2="261" stroke="#a4238f" stroke-width="1.8" />
+  <polygon points="565,256 575,256 570,266" fill="#a4238f" />
+  <rect x="330" y="268" width="480" height="48" rx="10" fill="rgba(164,35,143,0.04)" stroke="#a4238f" stroke-width="1.5" />
+  <text x="570" y="298" text-anchor="middle" class="svg-label" fill="#0d1030" style="font-weight: 600;">The furthest answer defines the trust radius—and the controls it requires.</text>
+
+  <text x="570" y="342" text-anchor="middle" class="svg-caption" fill="rgba(13,16,48,0.58)">Reassess whenever reach, data, dependence, or continuity changes.</text>
+</svg>
+</div>
+</div>
+
+<!--
+The Trust Model becomes an assessment method through four dimensions.
+Reach asks what systems, services, and capabilities the application can access.
+Data asks what it can read, retain, produce, or change, including the consequence of disclosure or corruption.
+Dependence asks who or what relies on it and what work stops when it is unavailable or wrong.
+Continuity asks what must survive failure and what recovery obligation exists.
+Place each answer independently in Explore, Govern, Connect, or Support.
+Do not average the answers. The highest-consequence answer sets the application's required state and therefore its controls.
+This is the application's trust radius: the widest consequence it can create or inherit.
+The radius can contract as well as expand. Reassess whenever one of the four dimensions changes.
+
+Client question:
+- Which dimension pushes your application furthest to the right today?
 -->
 
 ---
@@ -1026,7 +1136,7 @@ Compounding delivery:
 -->
 
 ---
-title: Start with the thing that is stuck
+title: Start with something real. Make the next thing easier.
 sync: cta
 class: slide-split short-bar
 ---
@@ -1043,28 +1153,28 @@ class: slide-split short-bar
 <div>
 <Eyebrow text="PROPELLERHEAD · THE FIRST MOVE" />
 
-# Start with the thing<br>that is stuck.
+# Start with something real.<br>Make the next thing easier.
 
 <div class="opportunity-rows" style="margin-top: 8px;">
 <div class="opportunity-row">
 <span class="opportunity-row-num">01</span>
 <div>
-<h4>Bring one real change and its owner</h4>
-<p>Something useful that should be easier, safer, or faster to put into production than it is today.</p>
+<h4>Choose the first move</h4>
+<p>We work out what is really in the way, set the boundaries and shape a first delivery worth doing.</p>
 </div>
 </div>
 <div class="opportunity-row">
 <span class="opportunity-row-num">02</span>
 <div>
-<h4>Trace its full delivery path</h4>
-<p>Direction, authoring rules, durable intent, verification, runtime authority, infrastructure, release, and ownership.</p>
+<h4>Get it live</h4>
+<p>New system or old one: we use AI where it helps, senior people where judgement matters and a production path we already know.</p>
 </div>
 </div>
 <div class="opportunity-row">
 <span class="opportunity-row-num">03</span>
 <div>
-<h4>Leave with assets and a decision</h4>
-<p>A bounded first delivery and its controls—or a clear reason to fix a foundation, reframe the work, or stop.</p>
+<h4>Keep the gains</h4>
+<p>You keep the specifications, tests, infrastructure and delivery knowledge. The next change starts ahead, not at zero.</p>
 </div>
 </div>
 </div>
@@ -1072,23 +1182,23 @@ class: slide-split short-bar
 
 <div class="cta-card">
 <div>
-<div class="cta-card-label">AI DELIVERY READINESS · SHORT PAID ENGAGEMENT</div>
-<div class="cta-card-title">Nominate one change. Name its owner.</div>
+<div class="cta-card-label">THE FIRST MOVE</div>
+<div class="cta-card-title">What is really in the way?</div>
 </div>
 <div class="cta-pill">
 <span class="cta-pill-dot">→</span>
-<span>Talk to us</span>
+<span>Find the first move</span>
 </div>
 </div>
 </div>
 
 <!--
-Close with one ask:
-- Bring one real change that matters and is harder to deliver than it should be.
-- Readiness is a short, paid engagement, not a maturity score or a generic AI programme.
-- It establishes the first useful boundary and ends in an explicit decision.
-- Sometimes the responsible answer is not to build yet. That is still a valuable result.
+Close on the same path as the website:
+- Choose the first move: work out what is really in the way, set the boundaries, and shape a first delivery worth doing.
+- Get it live: use AI where it helps, senior people where judgement matters, and a production path we already know.
+- Keep the gains: retain the specifications, tests, infrastructure, and delivery knowledge so the next change starts ahead.
+- The call to action is direct: find the first move.
 
 Final question:
-- What should be easier, safer, or faster than it is today?
+- What is really in the way?
 -->
