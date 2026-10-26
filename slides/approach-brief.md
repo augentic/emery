@@ -444,8 +444,8 @@ Client question:
 -->
 
 ---
-title: Chat is not the record
-sync: record
+title: AI coding moves right. Governance moves up.
+sync: record-position
 class: slide-light
 ---
 
@@ -461,78 +461,218 @@ class: slide-light
 <div class="ed-band-top">
 <div>
 
-# Chat is not<br>the record.
+# AI coding moves right.<br>Governance moves up.
 
 </div>
-<p class="ed-band-prose"><strong>A spec-driven delivery process sits around coding agents, not in place of them.</strong> It keeps evidence, authority, reviewed intent, exact delivery inputs, and verification outside any model’s conversational context. Swap the model. The evidence, authority, and reviewed intent remain.</p>
+<p class="ed-band-prose"><strong>AI coding changes implementation. It does not create governance.</strong> It does not establish authority, retain intent, or create an audit trail. Spec-driven delivery makes the separate upward move.</p>
 </div>
 <div class="ed-band-canvas">
 <svg viewBox="0 0 1140 360" aria-hidden="true">
-  <text x="16" y="24" class="svg-kicker" fill="#0c7fa3">AUTHORITATIVE INPUTS</text>
-  <rect x="16" y="42" width="190" height="54" rx="9" fill="#ffffff" stroke="#0c7fa3" stroke-width="1.4" />
-  <text x="34" y="64" class="svg-kicker" fill="#0c7fa3">INTENT</text>
-  <text x="34" y="82" class="svg-label" fill="#0d1030">Briefs and directives</text>
-  <rect x="16" y="110" width="190" height="54" rx="9" fill="#ffffff" stroke="rgba(13,16,48,0.24)" stroke-width="1.4" />
-  <text x="34" y="132" class="svg-kicker" fill="#0d1030">EVIDENCE</text>
-  <text x="34" y="150" class="svg-label" fill="#0d1030">Documents and tests</text>
-  <rect x="16" y="178" width="190" height="68" rx="9" fill="rgba(164,35,143,0.05)" stroke="#a4238f" stroke-width="1.4" />
-  <text x="34" y="200" class="svg-kicker" fill="#a4238f">OBSERVED BEHAVIOUR</text>
-  <text x="34" y="218" class="svg-label" fill="#0d1030">Code and runtime facts</text>
-  <text x="34" y="234" class="svg-caption" fill="rgba(13,16,48,0.56)">Anchored to their source</text>
+  <rect x="476" y="8" width="188" height="36" rx="18" fill="rgba(164,35,143,0.07)" stroke="rgba(164,35,143,0.55)" />
+  <text x="570" y="31" text-anchor="middle" class="svg-kicker" fill="#a4238f">GOVERNED</text>
 
-  <path d="M 206 69 C 250 69, 250 144, 286 144" fill="none" stroke="#0c7fa3" stroke-width="1.5" />
-  <line x1="206" y1="137" x2="286" y2="144" stroke="#0d1030" stroke-width="1.5" />
-  <path d="M 206 212 C 250 212, 250 144, 286 144" fill="none" stroke="#a4238f" stroke-width="1.5" />
+  <rect x="170" y="52" width="800" height="248" rx="14" fill="#ffffff" stroke="rgba(13,16,48,0.34)" stroke-width="1.6" />
+  <rect x="570" y="52" width="400" height="124" rx="0" fill="rgba(164,35,143,0.07)" />
+  <rect x="170" y="176" width="800" height="124" rx="0" fill="rgba(13,16,48,0.025)" />
+  <line x1="570" y1="52" x2="570" y2="300" stroke="rgba(13,16,48,0.34)" stroke-width="1.5" />
+  <line x1="170" y1="176" x2="970" y2="176" stroke="rgba(13,16,48,0.34)" stroke-width="1.5" />
+  <rect x="572" y="54" width="396" height="120" fill="none" stroke="#a4238f" stroke-width="2.5" />
 
-  <rect x="290" y="52" width="230" height="194" rx="14" fill="#0d1030" />
-  <text x="405" y="80" text-anchor="middle" class="svg-kicker" fill="#78d8f2">EVIDENCE + SOURCE PRECEDENCE</text>
-  <circle cx="322" cy="114" r="4" fill="#78d8f2" />
-  <text x="338" y="118" class="svg-label" fill="#ffffff">Corroborated evidence</text>
-  <circle cx="322" cy="154" r="4" fill="#f59ef5" />
-  <text x="338" y="158" class="svg-label" fill="#ffffff">Ranked divergence</text>
-  <circle cx="322" cy="194" r="4" fill="#ff7597" />
-  <text x="338" y="198" class="svg-label" fill="#ffffff">Visible conflicts</text>
-  <text x="322" y="226" class="svg-caption" fill="rgba(255,255,255,0.68)">Unknown remains [unknown]</text>
+  <text x="370" y="108" text-anchor="middle" class="svg-h2" fill="#0d1030">Traditional SDLC</text>
+  <text x="370" y="134" text-anchor="middle" class="svg-caption" fill="rgba(13,16,48,0.58)">Governance around human implementation</text>
 
-  <line x1="520" y1="149" x2="578" y2="149" stroke="#a4238f" stroke-width="2" />
-  <polygon points="572,144 582,149 572,154" fill="#a4238f" />
-  <text x="550" y="136" text-anchor="middle" class="svg-pill" fill="#a4238f">SEAL</text>
+  <text x="770" y="108" text-anchor="middle" class="svg-h2" fill="#a4238f">Spec-driven delivery</text>
+  <text x="770" y="134" text-anchor="middle" class="svg-caption" fill="rgba(13,16,48,0.64)">Durable intent around AI implementation</text>
 
-  <rect x="584" y="52" width="238" height="194" rx="14" fill="rgba(164,35,143,0.06)" stroke="#a4238f" stroke-width="1.8" />
-  <text x="703" y="80" text-anchor="middle" class="svg-kicker" fill="#a4238f">VERSIONED DELIVERY REVISION</text>
-  <rect x="606" y="98" width="194" height="36" rx="8" fill="#ffffff" stroke="rgba(164,35,143,0.3)" />
-  <text x="624" y="121" class="svg-label" fill="#0d1030">Specification · behaviour</text>
-  <rect x="606" y="144" width="194" height="36" rx="8" fill="#ffffff" stroke="rgba(164,35,143,0.3)" />
-  <text x="624" y="167" class="svg-label" fill="#0d1030">Design · technology</text>
-  <rect x="606" y="190" width="194" height="36" rx="8" fill="#ffffff" stroke="rgba(164,35,143,0.3)" />
-  <text x="624" y="213" class="svg-label" fill="#0d1030">Build plan · dependencies</text>
+  <text x="370" y="232" text-anchor="middle" class="svg-h2" fill="#0d1030">Ad hoc development</text>
+  <text x="370" y="258" text-anchor="middle" class="svg-caption" fill="rgba(13,16,48,0.58)">Local choices and human memory</text>
 
-  <line x1="822" y1="149" x2="878" y2="149" stroke="#0d1030" stroke-width="2" />
-  <polygon points="872,144 882,149 872,154" fill="#0d1030" />
+  <text x="770" y="232" text-anchor="middle" class="svg-h2" fill="#0d1030">AI-assisted coding alone</text>
+  <text x="770" y="258" text-anchor="middle" class="svg-caption" fill="rgba(13,16,48,0.58)">Conversation-led generation</text>
 
-  <rect x="884" y="52" width="240" height="194" rx="14" fill="rgba(22,180,226,0.06)" stroke="#0c7fa3" stroke-width="1.8" />
-  <text x="1004" y="80" text-anchor="middle" class="svg-kicker" fill="#0c7fa3">BOUNDED IMPLEMENTATION</text>
-  <text x="906" y="112" class="svg-label" fill="#0d1030">Dependency-ordered waves</text>
-  <text x="906" y="140" class="svg-label" fill="#0d1030">Isolated slice workspaces</text>
-  <text x="906" y="168" class="svg-label" fill="#0d1030">Integrated verification</text>
-  <line x1="906" y1="188" x2="1102" y2="188" stroke="rgba(13,16,48,0.12)" />
-  <text x="1004" y="216" text-anchor="middle" class="svg-h3" fill="#0c7fa3">Verified revision</text>
+  <rect x="8" y="154" width="146" height="44" rx="22" fill="#ffffff" stroke="rgba(13,16,48,0.28)" />
+  <text x="81" y="181" text-anchor="middle" class="svg-kicker" fill="#0d1030">MANUAL CODING</text>
+  <rect x="986" y="154" width="146" height="44" rx="22" fill="rgba(22,180,226,0.06)" stroke="rgba(12,127,163,0.55)" />
+  <text x="1059" y="181" text-anchor="middle" class="svg-kicker" fill="#0c7fa3">AI-ASSISTED</text>
 
-  <rect x="180" y="288" width="780" height="48" rx="12" fill="#0d1030" />
-  <text x="570" y="317" text-anchor="middle" class="svg-label" fill="#ffffff">The model may extract, propose, implement, and repair. It never becomes the source of truth.</text>
+  <rect x="476" y="316" width="188" height="36" rx="18" fill="#ffffff" stroke="rgba(13,16,48,0.28)" />
+  <text x="570" y="339" text-anchor="middle" class="svg-kicker" fill="#0d1030">UNGOVERNED</text>
 </svg>
 </div>
 </div>
 
 <!--
-Foundation two — what must remain true:
-- Sources stay distinct and claims stay connected to evidence.
-- Authority is explicit. A product directive can outrank accidental behaviour in old code; equal authority can remain a conflict for people to settle.
-- The model helps synthesise the candidate. A person seals the revision.
-- The sealed revision, not the chat, directs bounded implementation and verification.
+Foundation two — why spec-driven delivery:
+- Most AI adoption begins as a horizontal move: introduce an assistant or agent and produce code faster.
+- That does not create authority, an audit trail, or a durable statement of what must remain true.
+- Spec-driven delivery is the separate upward move. It puts governed intent around AI-assisted implementation.
 
 Client question:
-- If the current model, vendor, and chat history disappeared tomorrow, where would the accepted intent and evidence remain?
+- Has AI changed how code is produced without changing what governs its acceptance?
+-->
+
+---
+title: Intent becomes a reviewed delivery record.
+sync: record-revision
+class: slide-light
+---
+
+<Eyebrow text="02 · RECORD INTENT · FROM EVIDENCE TO REVISION" />
+
+<div class="foundation-progress" aria-label="Delivery foundations">
+<span>01 · Set rules</span>
+<span class="is-active is-magenta">02 · Record intent</span>
+<span>03 · Constrain code</span>
+</div>
+
+<div class="ed-band">
+<div class="ed-band-top">
+<div>
+
+# Intent becomes a reviewed<br>delivery record.
+
+</div>
+<p class="ed-band-prose"><strong>Chat history is not an audit trail.</strong> Intent and observed behaviour become reviewable specifications and a dependency-aware build plan. Explicit source precedence makes disagreement visible before implementation.</p>
+</div>
+<div class="ed-band-canvas">
+<svg viewBox="0 0 1140 360" aria-hidden="true">
+  <text x="16" y="24" class="svg-kicker" fill="#0c7fa3">AUTHORITATIVE INPUTS</text>
+  <rect x="16" y="42" width="250" height="224" rx="14" fill="#ffffff" stroke="#0c7fa3" stroke-width="1.5" />
+  <rect x="38" y="66" width="206" height="38" rx="8" fill="rgba(22,180,226,0.06)" stroke="rgba(12,127,163,0.32)" />
+  <text x="56" y="90" class="svg-label" fill="#0d1030">Intent and directives</text>
+  <rect x="38" y="116" width="206" height="38" rx="8" fill="#ffffff" stroke="rgba(13,16,48,0.2)" />
+  <text x="56" y="140" class="svg-label" fill="#0d1030">Documentation</text>
+  <rect x="38" y="166" width="206" height="38" rx="8" fill="#ffffff" stroke="rgba(13,16,48,0.2)" />
+  <text x="56" y="190" class="svg-label" fill="#0d1030">Tests</text>
+  <rect x="38" y="216" width="206" height="38" rx="8" fill="rgba(164,35,143,0.05)" stroke="rgba(164,35,143,0.35)" />
+  <text x="56" y="240" class="svg-label" fill="#0d1030">Observed code behaviour</text>
+
+  <line x1="266" y1="154" x2="318" y2="154" stroke="#0d1030" stroke-width="1.8" />
+  <polygon points="312,149 322,154 312,159" fill="#0d1030" />
+
+  <text x="326" y="24" class="svg-kicker" fill="#78d8f2">EXPLICIT AUTHORITY</text>
+  <rect x="326" y="42" width="302" height="224" rx="14" fill="#0d1030" />
+  <circle cx="358" cy="88" r="5" fill="#78d8f2" />
+  <text x="376" y="93" class="svg-label" fill="#ffffff">Corroborated agreement</text>
+  <circle cx="358" cy="138" r="5" fill="#f59ef5" />
+  <text x="376" y="143" class="svg-label" fill="#ffffff">Ranked divergence</text>
+  <circle cx="358" cy="188" r="5" fill="#ff7597" />
+  <text x="376" y="193" class="svg-label" fill="#ffffff">Visible conflict</text>
+  <line x1="350" y1="218" x2="604" y2="218" stroke="rgba(255,255,255,0.14)" />
+  <text x="350" y="244" class="svg-caption" fill="rgba(255,255,255,0.68)">Unknown remains [unknown]</text>
+
+  <line x1="628" y1="154" x2="680" y2="154" stroke="#a4238f" stroke-width="2" />
+  <polygon points="674,149 684,154 674,159" fill="#a4238f" />
+  <text x="656" y="139" text-anchor="middle" class="svg-pill" fill="#a4238f">REVIEW</text>
+
+  <text x="688" y="24" class="svg-kicker" fill="#a4238f">REVIEWED REVISION</text>
+  <rect x="688" y="42" width="436" height="224" rx="14" fill="rgba(164,35,143,0.06)" stroke="#a4238f" stroke-width="1.8" />
+  <rect x="714" y="68" width="384" height="46" rx="9" fill="#ffffff" stroke="rgba(164,35,143,0.3)" />
+  <text x="734" y="97" class="svg-label" fill="#0d1030">Specification · observable behaviour</text>
+  <rect x="714" y="128" width="384" height="46" rx="9" fill="#ffffff" stroke="rgba(164,35,143,0.3)" />
+  <text x="734" y="157" class="svg-label" fill="#0d1030">Design · technology and decisions</text>
+  <rect x="714" y="188" width="384" height="52" rx="9" fill="#ffffff" stroke="rgba(164,35,143,0.3)" />
+  <text x="734" y="217" class="svg-label" fill="#0d1030">Build plan · dependency-aware work</text>
+
+  <rect x="148" y="304" width="844" height="42" rx="21" fill="#0d1030" />
+  <text x="570" y="330" text-anchor="middle" class="svg-label" fill="#ffffff">Specifications—not chat history—remain the durable source of intent.</text>
+</svg>
+</div>
+</div>
+
+<!--
+The engine does not ask one prompt to invent the answer.
+- Chat remains useful working context, but the accepted intent and its evidence live outside it.
+- Intent, documentation, tests, and observed code behaviour remain connected to their sources.
+- Explicit source precedence distinguishes agreement, ranked divergence, and genuine conflict.
+- The model helps synthesise a candidate; a person reviews and seals the revision.
+- The revision contains the specification, design, and dependency-aware build plan.
+
+Client question:
+- If the chat disappeared and the sources disagreed, where would the accepted intent and authority remain?
+-->
+
+---
+title: The record directs the build.
+sync: record-build
+class: slide-light
+---
+
+<Eyebrow text="02 · RECORD INTENT · COORDINATED IMPLEMENTATION" />
+
+<div class="foundation-progress" aria-label="Delivery foundations">
+<span>01 · Set rules</span>
+<span class="is-active is-magenta">02 · Record intent</span>
+<span>03 · Constrain code</span>
+</div>
+
+<div class="ed-band">
+<div class="ed-band-top">
+<div>
+
+# The record directs<br>the build.
+
+</div>
+<p class="ed-band-prose">A reviewed revision coordinates implementation. Each unit of work receives exact inputs; results integrate in dependency order and are verified as one system. <strong>The coding agent never becomes the source of truth.</strong></p>
+</div>
+<div class="ed-band-canvas">
+<svg viewBox="0 0 1140 360" aria-hidden="true">
+  <rect x="16" y="54" width="230" height="190" rx="14" fill="rgba(164,35,143,0.06)" stroke="#a4238f" stroke-width="1.7" />
+  <text x="38" y="84" class="svg-kicker" fill="#a4238f">01 · RETAINED</text>
+  <text x="38" y="116" class="svg-h3" fill="#0d1030">Reviewed revision</text>
+  <line x1="38" y1="132" x2="224" y2="132" stroke="rgba(164,35,143,0.18)" />
+  <text x="38" y="164" class="svg-label" fill="#0d1030">Specification</text>
+  <text x="38" y="192" class="svg-label" fill="#0d1030">Design</text>
+  <text x="38" y="220" class="svg-caption" fill="rgba(13,16,48,0.6)">Reviewed intent</text>
+
+  <line x1="246" y1="149" x2="296" y2="149" stroke="#a4238f" stroke-width="1.8" />
+  <polygon points="290,144 300,149 290,154" fill="#a4238f" />
+
+  <rect x="300" y="54" width="230" height="190" rx="14" fill="#ffffff" stroke="rgba(13,16,48,0.25)" stroke-width="1.5" />
+  <text x="322" y="84" class="svg-kicker" fill="#0d1030">02 · COORDINATE</text>
+  <text x="322" y="116" class="svg-h3" fill="#0d1030">Dependency-aware plan</text>
+  <line x1="322" y1="132" x2="508" y2="132" stroke="rgba(13,16,48,0.12)" />
+  <text x="322" y="164" class="svg-label" fill="#0d1030">Ordered units of work</text>
+  <text x="322" y="192" class="svg-label" fill="#0d1030">Ready work together</text>
+  <text x="322" y="220" class="svg-caption" fill="rgba(13,16,48,0.6)">Plan retained with the revision</text>
+
+  <line x1="530" y1="149" x2="580" y2="149" stroke="#0d1030" stroke-width="1.8" />
+  <polygon points="574,144 584,149 574,154" fill="#0d1030" />
+
+  <rect x="584" y="54" width="230" height="190" rx="14" fill="#0d1030" />
+  <text x="606" y="84" class="svg-kicker" fill="#78d8f2">03 · IMPLEMENT</text>
+  <text x="606" y="116" class="svg-h3" fill="#ffffff">Bounded implementation</text>
+  <line x1="606" y1="132" x2="792" y2="132" stroke="rgba(255,255,255,0.14)" />
+  <text x="606" y="164" class="svg-label" fill="#ffffff">Exact execution inputs</text>
+  <text x="606" y="192" class="svg-label" fill="#ffffff">Isolated workspaces</text>
+  <text x="606" y="220" class="svg-caption" fill="rgba(255,255,255,0.68)">Replaceable coding agent</text>
+
+  <line x1="814" y1="149" x2="864" y2="149" stroke="#0c7fa3" stroke-width="1.8" />
+  <polygon points="858,144 868,149 858,154" fill="#0c7fa3" />
+
+  <rect x="868" y="54" width="256" height="190" rx="14" fill="rgba(22,180,226,0.06)" stroke="#0c7fa3" stroke-width="1.7" />
+  <text x="890" y="84" class="svg-kicker" fill="#0c7fa3">04 · PROVE</text>
+  <text x="890" y="116" class="svg-h3" fill="#0d1030">Integrated verification</text>
+  <line x1="890" y1="132" x2="1102" y2="132" stroke="rgba(12,127,163,0.18)" />
+  <text x="890" y="164" class="svg-label" fill="#0d1030">Checks and repairs</text>
+  <text x="890" y="192" class="svg-label" fill="#0d1030">Verification results</text>
+  <text x="890" y="220" class="svg-caption" fill="rgba(13,16,48,0.6)">Evidence retained</text>
+
+  <rect x="180" y="292" width="780" height="48" rx="24" fill="#0d1030" />
+  <text x="570" y="322" text-anchor="middle" class="svg-h3" fill="#ffffff">Swap the model; the record stays.</text>
+</svg>
+</div>
+</div>
+
+<!--
+The reviewed revision coordinates implementation.
+- The dependency-aware plan determines which units of work are ready.
+- Each build receives exact requirements, design, types, and dependencies in an isolated workspace.
+- Results integrate in order and the combined system is verified.
+- Reviewed intent, specifications, execution inputs, and verification results remain regardless of coding agent or model.
+
+This leads to the next boundary:
+- The record constrains what must be built. The runtime constrains what the resulting code may touch.
 -->
 
 ---

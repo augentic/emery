@@ -73,13 +73,41 @@
     ]
   },
   {
-    "id": "record",
-    "title": "Chat is not the record",
+    "id": "record-position",
+    "title": "AI coding moves right. Governance moves up.",
     "required": [
       "Record intent",
-      "Evidence",
-      "Authority",
-      "Swap the model. The evidence, authority, and reviewed intent remain."
+      "Traditional SDLC",
+      "Spec-driven delivery",
+      "Ad hoc development",
+      "AI-assisted coding alone",
+      "AI coding changes implementation. It does not create governance."
+    ]
+  },
+  {
+    "id": "record-revision",
+    "title": "Intent becomes a reviewed delivery record.",
+    "required": [
+      "Record intent",
+      "Chat history is not an audit trail.",
+      "Intent and observed behaviour",
+      "Explicit authority",
+      "Reviewed revision",
+      "Specifications—not chat history—remain the durable source of intent."
+    ]
+  },
+  {
+    "id": "record-build",
+    "title": "The record directs the build.",
+    "required": [
+      "Record intent",
+      "Dependency-aware plan",
+      "Bounded implementation",
+      "Integrated verification",
+      "Reviewed intent",
+      "Execution inputs",
+      "Verification results",
+      "Swap the model; the record stays."
     ]
   },
   {

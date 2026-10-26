@@ -316,6 +316,10 @@ class: slide-hero slide-section
   align-items: center;
 }
 
+.live-pipeline.is-three {
+  grid-template-columns: 1fr 42px 1fr 42px 1fr;
+}
+
 .live-arrow {
   text-align: center;
   font-size: 30px;
@@ -329,6 +333,115 @@ class: slide-hero slide-section
 
 .live-pipeline .live-card h3 {
   font-size: 20px;
+}
+
+.live-matrix {
+  width: min(100%, 1000px);
+  margin: 14px auto 0;
+  display: grid;
+  grid-template-columns: 138px 1fr 138px;
+  grid-template-rows: 38px 300px 38px;
+  align-items: center;
+}
+
+.live-matrix-axis {
+  justify-self: center;
+  padding: 8px 18px;
+  border: 1px solid rgba(13, 16, 48, 0.24);
+  border-radius: 999px;
+  background: #ffffff;
+  font-size: 12px;
+  line-height: 1;
+  font-weight: 600;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--phl-ink);
+  white-space: nowrap;
+}
+
+.live-matrix-axis.is-top {
+  grid-column: 2;
+  grid-row: 1;
+  border-color: rgba(164, 35, 143, 0.48);
+  background: rgba(164, 35, 143, 0.06);
+  color: #a4238f;
+}
+
+.live-matrix-axis.is-bottom {
+  grid-column: 2;
+  grid-row: 3;
+}
+
+.live-matrix-axis.is-left {
+  grid-column: 1;
+  grid-row: 2;
+}
+
+.live-matrix-axis.is-right {
+  grid-column: 3;
+  grid-row: 2;
+  border-color: rgba(12, 127, 163, 0.48);
+  background: rgba(22, 180, 226, 0.06);
+  color: var(--phl-cyan-ink);
+}
+
+.live-matrix-grid {
+  grid-column: 2;
+  grid-row: 2;
+  height: 100%;
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  grid-template-rows: repeat(2, 1fr);
+  border: 1px solid rgba(13, 16, 48, 0.34);
+  border-radius: 14px;
+  overflow: hidden;
+  background: #ffffff;
+  box-shadow: var(--phl-card-shadow);
+}
+
+.live-quadrant {
+  padding: 20px 24px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+}
+
+.live-quadrant:nth-child(odd) {
+  border-right: 1px solid rgba(13, 16, 48, 0.24);
+}
+
+.live-quadrant:nth-child(-n + 2) {
+  border-bottom: 1px solid rgba(13, 16, 48, 0.24);
+}
+
+.live-quadrant:nth-child(n + 3) {
+  background: rgba(13, 16, 48, 0.025);
+}
+
+.live-quadrant.is-target {
+  background: rgba(164, 35, 143, 0.07);
+  box-shadow: inset 0 0 0 2px rgba(164, 35, 143, 0.44);
+}
+
+.live-quadrant h3 {
+  margin: 0;
+  font-size: 25px;
+  line-height: 1.14;
+  font-weight: 500;
+  letter-spacing: -0.02em;
+}
+
+.live-quadrant.is-target h3 {
+  color: #a4238f;
+}
+
+.live-quadrant p {
+  margin: 8px 0 0;
+  font-size: 14px;
+  line-height: 1.3;
+  color: var(--phl-ink-muted);
 }
 
 .live-host {
@@ -753,8 +866,8 @@ Client question:
 -->
 
 ---
-title: Chat is not the record
-sync: record
+title: AI coding moves right. Governance moves up.
+sync: record-position
 class: slide-light
 ---
 
@@ -768,44 +881,158 @@ class: slide-light
 
 <div class="live-stage">
 
-# Chat is not the record.
+# AI coding moves right. Governance moves up.
 
-<div class="live-pipeline">
+<div class="live-matrix">
+<div class="live-matrix-axis is-top">Governed</div>
+<div class="live-matrix-axis is-left">Manual coding</div>
+<div class="live-matrix-axis is-right">AI-assisted coding</div>
+<div class="live-matrix-axis is-bottom">Ungoverned</div>
+<div class="live-matrix-grid">
+<div class="live-quadrant">
+<h3>Traditional SDLC</h3>
+<p>Governance around human implementation</p>
+</div>
+<div class="live-quadrant is-target">
+<h3>Spec-driven delivery</h3>
+<p>Durable intent around AI implementation</p>
+</div>
+<div class="live-quadrant">
+<h3>Ad hoc development</h3>
+<p>Local choices and human memory</p>
+</div>
+<div class="live-quadrant">
+<h3>AI-assisted coding alone</h3>
+<p>Conversation-led generation</p>
+</div>
+</div>
+</div>
+
+<div class="live-outcome">AI coding changes implementation. It does not create governance.</div>
+</div>
+
+<!--
+Most AI adoption begins as a horizontal move: introduce an assistant or agent and produce code faster.
+That does not create authority, an audit trail, or a durable statement of what must remain true.
+Spec-driven delivery is the separate upward move. It puts governed intent around AI-assisted implementation.
+
+Client question:
+- Has AI changed how code is produced without changing what governs its acceptance?
+-->
+
+---
+title: Intent becomes a reviewed delivery record.
+sync: record-revision
+class: slide-light
+---
+
+<Eyebrow text="02 · RECORD INTENT · FROM EVIDENCE TO REVISION" />
+
+<div class="foundation-progress" aria-label="Delivery foundations">
+<span>01 · Set rules</span>
+<span class="is-active is-magenta">02 · Record intent</span>
+<span>03 · Constrain code</span>
+</div>
+
+<div class="live-stage">
+
+# Intent becomes a reviewed delivery record.
+
+<p class="live-claim"><strong>Chat history is not an audit trail.</strong> Intent and observed behaviour become reviewable specifications and a dependency-aware build plan.</p>
+
+<div class="live-pipeline is-three" style="margin-top: 22px;">
 <div class="live-card">
 <div class="live-kicker">Sources</div>
-<h3>Evidence</h3>
-<p>Intent · docs · tests · code</p>
+<h3>Intent &amp; behaviour</h3>
+<p>Briefs · docs · tests · code</p>
 </div>
 <div class="live-arrow">→</div>
 <div class="live-card is-dark">
-<div class="live-kicker">Policy</div>
-<h3>Authority</h3>
+<div class="live-kicker">Reconcile</div>
+<h3>Explicit authority</h3>
 <p>Agreement · divergence · conflict</p>
 </div>
 <div class="live-arrow">→</div>
 <div class="live-card is-magenta">
-<div class="live-kicker">Sealed</div>
-<h3>Revision</h3>
-<p>Specification · design · plan</p>
-</div>
-<div class="live-arrow">→</div>
-<div class="live-card is-cyan">
-<div class="live-kicker">Bounded</div>
-<h3>Build</h3>
-<p>Isolate · integrate · verify</p>
+<div class="live-kicker">Reviewed</div>
+<h3>Reviewed revision</h3>
+<p>Specification · design · dependency-aware plan</p>
 </div>
 </div>
 
-<div class="live-outcome">Swap the model. The evidence, authority, and reviewed intent remain.</div>
+<div class="live-outcome">Specifications—not chat history—remain the durable source of intent.</div>
 </div>
 
 <!--
-A spec-driven delivery process sits around coding agents, not in place of them.
-Sources stay distinct and claims stay anchored. Authority is explicit. Equal authority can remain a conflict.
-A person seals the revision; the sealed revision, not the conversation, directs implementation and verification.
+The engine does not ask one prompt to invent the answer.
+- Chat remains useful working context, but the accepted intent and its evidence live outside it.
+- Intent, documentation, tests, and observed code behaviour remain connected to their sources.
+- Explicit source precedence distinguishes agreement, ranked divergence, and genuine conflict.
+- The model helps synthesise a candidate; a person reviews and seals the revision.
+- The revision contains the specification, design, and dependency-aware build plan.
 
 Client question:
-- If the model, vendor, and chat disappeared tomorrow, where would accepted intent remain?
+- If the chat disappeared and the sources disagreed, where would the accepted intent and authority remain?
+-->
+
+---
+title: The record directs the build.
+sync: record-build
+class: slide-light
+---
+
+<Eyebrow text="02 · RECORD INTENT · COORDINATED IMPLEMENTATION" />
+
+<div class="foundation-progress" aria-label="Delivery foundations">
+<span>01 · Set rules</span>
+<span class="is-active is-magenta">02 · Record intent</span>
+<span>03 · Constrain code</span>
+</div>
+
+<div class="live-stage">
+
+# The record directs the build.
+
+<p class="live-claim">The coding agent receives bounded work from the reviewed revision—not authority to reinterpret the system.</p>
+
+<div class="live-pipeline" style="margin-top: 22px;">
+<div class="live-card is-magenta">
+<div class="live-kicker">Retained</div>
+<h3>Reviewed revision</h3>
+<p>Reviewed intent · specification · design</p>
+</div>
+<div class="live-arrow">→</div>
+<div class="live-card">
+<div class="live-kicker">Coordinate</div>
+<h3>Dependency-aware plan</h3>
+<p>Ordered units of work</p>
+</div>
+<div class="live-arrow">→</div>
+<div class="live-card is-dark">
+<div class="live-kicker">Implement</div>
+<h3>Bounded implementation</h3>
+<p>Exact execution inputs · isolated work</p>
+</div>
+<div class="live-arrow">→</div>
+<div class="live-card is-cyan">
+<div class="live-kicker">Prove</div>
+<h3>Integrated verification</h3>
+<p>Checks · repairs · verification results</p>
+</div>
+</div>
+
+<div class="live-outcome">Swap the model; the record stays.</div>
+</div>
+
+<!--
+The reviewed revision coordinates implementation.
+- The dependency-aware plan determines which units of work are ready.
+- Each build receives exact requirements, design, types, and dependencies in an isolated workspace.
+- Results integrate in order and the combined system is verified.
+- Reviewed intent, specifications, execution inputs, and verification results remain regardless of coding agent or model.
+
+This leads to the next boundary:
+- The record constrains what must be built. The runtime constrains what the resulting code may touch.
 -->
 
 ---
