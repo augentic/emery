@@ -18,7 +18,7 @@ const CITATION: &str = "(from ";
 pub const TYPE: &str = "Type:";
 
 // A rebuild design in its stored form.
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Design {
     // The grammar the document was written under.
@@ -70,6 +70,40 @@ impl Design {
             Block::Text(_) | Block::Type { .. } => None,
         })
     }
+
+    // Returns this design less the type blocks `keys` name.
+    //
+    // A section left with no block goes with them, since a design never
+    // holds an empty section. Every text block and the `parent` stand as
+    // they are.
+    #[must_use]
+    pub fn without_types(&self, keys: &BTreeSet<String>) -> Self {
+        let sections = self
+            .sections
+            .iter()
+            .filter_map(|section| {
+                let blocks: Vec<Block> = section
+                    .blocks
+                    .iter()
+                    .filter(|block| match block {
+                        Block::Type { key, .. } => !keys.contains(key),
+                        Block::Text(_) => true,
+                    })
+                    .cloned()
+                    .collect();
+                (!blocks.is_empty()).then_some(Section {
+                    kind: section.kind,
+                    blocks,
+                })
+            })
+            .collect();
+        Self {
+            emery: self.emery,
+            parent: self.parent.clone(),
+            preamble: self.preamble.clone(),
+            sections,
+        }
+    }
 }
 
 impl revision::Document for Design {
@@ -86,7 +120,7 @@ impl Display for Design {
 ///
 /// `B` allows the same section shape to hold either draft blocks or stored
 /// [`Block`] values.
-#[derive(Debug, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 #[schemars(rename = "Section")]
 pub struct Section<B = Block> {
@@ -107,7 +141,7 @@ impl Display for Section {
 }
 
 // A paragraph or type signature in a design section.
-#[derive(Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum Block {
     // One Markdown paragraph.

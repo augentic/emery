@@ -21,7 +21,7 @@ pub const DEPENDS_ON: &str = "Depends on:";
 const HEADING: &str = "## Slice:";
 
 // A build plan in its stored form.
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Plan {
     // The grammar the document was written under.
@@ -183,7 +183,7 @@ impl Display for Plan {
 //
 // Every requirement of the specification is in exactly one slice, and
 // every design type key is owned by exactly one.
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
 pub struct Slice {
     // The stable slice identifier.
@@ -200,9 +200,11 @@ pub struct Slice {
     pub brief: Vec<String>,
 }
 
-impl Display for Slice {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        write!(f, "{HEADING} {}\n\n{ID} {}\n", self.name, self.id)?;
+impl Slice {
+    // Writes the lists and the brief: everything after the `ID:` line, with
+    // no trailing newline, so a projection under another heading renders
+    // the slice as `plan.md` does.
+    pub fn write_lists(&self, f: &mut Formatter<'_>) -> fmt::Result {
         list(f, REQUIREMENTS, &self.requirements)?;
 
         // ownership and order, where there is any
@@ -220,6 +222,13 @@ impl Display for Slice {
             write!(f, "\n\n{paragraph}")?;
         }
         Ok(())
+    }
+}
+
+impl Display for Slice {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        write!(f, "{HEADING} {}\n\n{ID} {}\n", self.name, self.id)?;
+        self.write_lists(f)
     }
 }
 

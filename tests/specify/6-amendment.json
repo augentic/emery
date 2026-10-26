@@ -237,5 +237,71 @@
         ]
       }
     ]
-  }
+  },
+  "design": {
+    "emery": 8,
+    "parent": "3f2a9c0e7d1b4a6f8e5c2d9b0a7f4e1c3b6d8a2f5e9c1b4d7a0f3e6c9b2d5a8f",
+    "preamble": [],
+    "sections": [
+      {
+        "kind": "overview",
+        "blocks": [
+          {
+            "text": "One greeting surface, answering a name and a locale."
+          }
+        ]
+      },
+      {
+        "kind": "domain-model",
+        "blocks": [
+          {
+            "type": {
+              "key": "greeting.greeting",
+              "signature": "interface Greeting { word: string }",
+              "role": "data"
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "plan": {
+    "emery": 8,
+    "parent": "3f2a9c0e7d1b4a6f8e5c2d9b0a7f4e1c3b6d8a2f5e9c1b4d7a0f3e6c9b2d5a8f",
+    "preamble": [
+      "Two slices: the greeting surface, and the farewell beside it."
+    ],
+    "slices": [
+      {
+        "id": "SLICE-001",
+        "name": "greeting",
+        "requirements": [
+          "REQ-001",
+          "REQ-002"
+        ],
+        "types": [
+          "greeting.greeting"
+        ],
+        "depends-on": [],
+        "brief": [
+          "Delivers the greeting surface; verified by requesting a greeting with and without a name."
+        ]
+      }
+    ]
+  },
+  "sections": {
+    "preamble": false,
+    "added": [],
+    "removed": [],
+    "changed": [
+      "domain-model"
+    ]
+  },
+  "slices": [
+    {
+      "id": "SLICE-002",
+      "name": "farewell",
+      "class": "removed"
+    }
+  ]
 }

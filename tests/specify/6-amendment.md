@@ -76,3 +76,20 @@ ID: REQ-002
 Sources: []
 
 A greeting request naming an empty caller is refused.
+
+## Design
+
+Changed: Domain model.
+
+### Domain model
+
+Type: greeting.greeting
+```
+interface Greeting { word: string }
+```
+
+## Plan
+
+### Slice: farewell [removed]
+
+ID: SLICE-002

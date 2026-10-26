@@ -1,12 +1,13 @@
 //! Renders engine results as `--format text` output.
 
+use std::collections::BTreeSet;
 use std::fmt;
 
-use emery_engine::amend::AmendOutput;
+use emery_engine::amend::{AmendOutput, SliceClass};
 use emery_engine::apply::ApplyOutput;
 use emery_engine::build::{BuildOutput, BuiltSlice};
 use emery_engine::show::ShowOutput;
-use emery_engine::specify::{Diff, SpecifyOutput, Waves};
+use emery_engine::specify::{Diff, SectionKind, SpecifyOutput, Waves};
 
 // Writes a `SpecifyOutput` candidate line, the plan's shape, one line per repository source, a one-line diff summary, and what the run sealed.
 //
@@ -45,13 +46,16 @@ pub fn apply(output: &ApplyOutput, w: &mut dyn fmt::Write) -> fmt::Result {
     diff(output.diff.as_ref(), w)
 }
 
-// Writes an `AmendOutput` amendment line, the base, the counts by class, the conflicts, the stems touched, and one line per repository source.
+// Writes an `AmendOutput` amendment line, the base, the counts by class, the conflicts, the stems touched, the design sections and slices changed, and one line per repository source.
 //
 // The first line names the staged amendment, or says no change was found
 // against the base and nothing staged. The counts line is the one
-// `amendment.md` opens with. The conflicts and stems lines appear when
-// there are any, and the last line names `emery show amendment` as the way
-// to review what was staged.
+// `amendment.md` opens with. The conflicts, stems, design, and slices lines
+// appear when there are any — `design: domain-model, apis` the section
+// kinds in document order, `preamble` first where it changed; `slices:
+// orders, export (removed), rate-limit (new)` the slices in id order — and
+// the last line names `emery show amendment` as the way to review what was
+// staged.
 pub fn amend(output: &AmendOutput, w: &mut dyn fmt::Write) -> fmt::Result {
     match &output.amendment {
         Some(id) => writeln!(w, "staged amendment {id}")?,
@@ -74,6 +78,33 @@ pub fn amend(output: &AmendOutput, w: &mut dyn fmt::Write) -> fmt::Result {
     }
     if !output.stems.is_empty() {
         writeln!(w, "  stems: {}", output.stems.join(", "))?;
+    }
+    if !output.sections.is_empty() {
+        let sections = &output.sections;
+        let kinds: BTreeSet<SectionKind> = [&sections.added, &sections.changed, &sections.removed]
+            .into_iter()
+            .flatten()
+            .copied()
+            .collect();
+        let names: Vec<&str> = sections
+            .preamble
+            .then_some("preamble")
+            .into_iter()
+            .chain(kinds.iter().map(AsRef::as_ref))
+            .collect();
+        writeln!(w, "  design: {}", names.join(", "))?;
+    }
+    if !output.slices.is_empty() {
+        let slices: Vec<String> = output
+            .slices
+            .iter()
+            .map(|slice| match slice.class {
+                SliceClass::Added => format!("{} (new)", slice.name),
+                SliceClass::Changed => slice.name.clone(),
+                SliceClass::Removed => format!("{} (removed)", slice.name),
+            })
+            .collect();
+        writeln!(w, "  slices: {}", slices.join(", "))?;
     }
     for read in &output.repositories {
         writeln!(

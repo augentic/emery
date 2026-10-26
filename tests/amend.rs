@@ -24,6 +24,7 @@ const WIKI: &str = "acme:wiki@1.0.0";
 const SPEC: &[u8] = include_bytes!("build/spec.json");
 const DESIGN: &[u8] = include_bytes!("build/design.json");
 const PLAN: &[u8] = include_bytes!("build/plan.json");
+const CHAIN_PLAN: &[u8] = include_bytes!("amend/chain-plan.json");
 const CLASSES: &str = include_str!("amend/classes.json");
 const RETIRED: &str = include_str!("amend/retired.json");
 const AMENDMENT: &[u8] = include_bytes!("specify/6-amendment.json");
@@ -98,8 +99,9 @@ fn staged_amendment(provider: &Provider) -> (String, Value) {
 // code, a revised or restated requirement keeps its id, an added one takes
 // the next free id, the amended specification is drafted over the added,
 // revised, and contested requirements alone under those ids with the rest
-// the base's as it stands, and the amendment is staged for `show amendment`
-// with the repository read and never written.
+// the base's as it stands, the design and the plan are the base's under it
+// as parent since nothing is retired, and the amendment is staged for
+// `show amendment` with the repository read and never written.
 #[tokio::test]
 async fn amend_classes() {
     let mut provider =
@@ -183,12 +185,16 @@ async fn amend_classes() {
     );
     assert_eq!(envelope["conflicts"], serde_json::json!(["auth.login"]));
     assert_eq!(envelope["stems"], serde_json::json!(["auth", "orders", "session"]));
+    assert_eq!(envelope["sections"], Value::Null, "an unchanged design is elided: {envelope}");
+    assert_eq!(envelope["slices"], Value::Null, "an unchanged plan is elided: {envelope}");
 
     // what was staged is what show renders: a changed requirement's old and
     // new statement and its redrafted scenarios, an unchanged one's
-    // statement alone
+    // statement alone, and no design or plan section
     let shown = cli_ok(&provider, &["emery", "show", "amendment"]).await;
     let shown = String::from_utf8_lossy(&shown.stdout);
+    assert!(!shown.contains("## Design"), "{shown}");
+    assert!(!shown.contains("## Plan"), "{shown}");
     assert!(
         shown.contains(
             "### Requirement: session.timeout\n\nID: REQ-002\nSources: [docs:session.timeout]\n\n\
@@ -211,7 +217,8 @@ async fn amend_classes() {
 // requirement keeps its id and subject, the withdrawal is its one source,
 // `show amendment` lists it as retired with the statement withdrawn, and the
 // amended specification leaves it out with no draft turn spent, since
-// nothing is drafted anew.
+// nothing is drafted anew. The requirement leaves its slice, which shrinks
+// and keeps the types it owns, so the design stands.
 #[tokio::test]
 async fn amend_retired() {
     // indices 0 and 1 are `docs`, 2..=5 the standing requirements in id order
@@ -238,8 +245,8 @@ async fn amend_retired() {
         String::from_utf8_lossy(&resp.stdout),
         format!(
             "staged amendment {id}\n  base {revision} at {}\n  0 added, 0 changed, 1 retired, 0 \
-             conflict, 3 unchanged\n  stems: orders\n  nothing sealed; `emery show amendment` \
-             reviews it\n",
+             conflict, 3 unchanged\n  stems: orders\n  slices: orders\n  nothing sealed; `emery \
+             show amendment` reviews it\n",
             &HEAD[..8]
         )
     );
@@ -265,6 +272,16 @@ async fn amend_retired() {
         shown.contains(
             "## Retired\n\n### Requirement: orders.cancel\n\nID: REQ-004\nSources: \
              [docs:orders.cancel]\n\nA signed-in user cancels an open order."
+        ),
+        "{shown}"
+    );
+    assert!(!shown.contains("## Design"), "the design stands: {shown}");
+    assert!(
+        shown.ends_with(
+            "## Plan\n\n### Slice: orders [changed]\n\nID: SLICE-002\nRequirements: \
+             [REQ-003]\nTypes: [orders.line, orders.order]\nDepends on: [SLICE-001]\n\nDelivers \
+             order creation and cancellation for a signed-in caller; verified by placing and \
+             cancelling an order under a session from `authentication`.\n"
         ),
         "{shown}"
     );
@@ -306,6 +323,148 @@ async fn amend_retired() {
     assert_eq!(retired["class"], "retired", "{amendment}");
     assert_eq!(retired["after"], Value::Null, "{amendment}");
     assert_eq!(retired["sources"][0]["claim"], "orders.cancellation", "{amendment}");
+    provider.model.assert_exhausted();
+}
+
+// Retiring every requirement of a slice removes the slice, and the design
+// types it owned leave the design with it, a section left with no block
+// going too: the amendment lists the slice removed and the section removed,
+// the output names both, `show amendment` renders the two sections, and
+// the grouping is the one turn spent.
+#[tokio::test]
+async fn amend_retired_slice() {
+    // indices 0 and 1 are `docs`, 2..=5 the standing requirements in id order
+    let grouping = r#"{"groups": [
+        {"claims": [0, 4], "classes": [[0], [4]]},
+        {"claims": [1, 5], "classes": [[1], [5]]},
+        {"claims": [2], "classes": [[2]]},
+        {"claims": [3], "classes": [[3]]}
+    ]}"#;
+    let mut provider = Provider::answering([grouping, grouping]);
+    provider.source.evidence.insert(
+        "docs".to_owned(),
+        Ok(evidence(vec![
+            retire("orders.create", "Placing an order is withdrawn."),
+            retire("orders.cancel", WITHDRAWN),
+        ])),
+    );
+    let revision = seed(&provider.files, SPEC, DESIGN, PLAN);
+
+    let resp = cli_ok(&provider, &["emery", "amend", DOCS, "--config", PROJECT_CONFIG]).await;
+
+    let (id, amendment) = staged_amendment(&provider);
+    assert_eq!(
+        String::from_utf8_lossy(&resp.stdout),
+        format!(
+            "staged amendment {id}\n  base {revision} at {}\n  0 added, 0 changed, 2 retired, 0 \
+             conflict, 2 unchanged\n  stems: orders\n  design: domain-model\n  slices: orders \
+             (removed)\n  nothing sealed; `emery show amendment` reviews it\n",
+            &HEAD[..8]
+        )
+    );
+    assert_eq!(provider.model.seen().len(), 1, "the grouping is the one turn");
+
+    // the plan keeps the slice left standing and the preamble, the design
+    // its overview alone, each under the base as parent
+    let plan = &amendment["plan"];
+    assert_eq!(plan["parent"], revision, "{amendment}");
+    let base: Value = serde_json::from_slice(PLAN).expect("the base plan is JSON");
+    assert_eq!(plan["preamble"], base["preamble"], "{amendment}");
+    assert_eq!(plan["slices"].as_array().map(Vec::len), Some(1), "{amendment}");
+    assert_eq!(plan["slices"][0], base["slices"][0], "{amendment}");
+    let design = &amendment["design"];
+    assert_eq!(design["parent"], revision, "{amendment}");
+    assert_eq!(design["sections"].as_array().map(Vec::len), Some(1), "{amendment}");
+    assert_eq!(design["sections"][0]["kind"], "overview", "{amendment}");
+    assert_eq!(
+        amendment["sections"],
+        serde_json::json!({"preamble": false, "added": [], "removed": ["domain-model"], "changed": []}),
+        "{amendment}"
+    );
+    assert_eq!(
+        amendment["slices"],
+        serde_json::json!([{"id": "SLICE-002", "name": "orders", "class": "removed"}]),
+        "{amendment}"
+    );
+
+    let shown = cli_ok(&provider, &["emery", "show", "amendment"]).await;
+    let shown = String::from_utf8_lossy(&shown.stdout);
+    assert!(
+        shown.ends_with(
+            "## Design\n\nRemoved: Domain model.\n\n## Plan\n\n### Slice: orders [removed]\n\nID: \
+             SLICE-002\n"
+        ),
+        "{shown}"
+    );
+
+    // the envelope carries what the design and the plan change
+    let resp = cli_ok(
+        &provider,
+        &["emery", "--format", "json", "amend", DOCS, "--config", PROJECT_CONFIG],
+    )
+    .await;
+    let envelope: Value = serde_json::from_slice(&resp.stdout).expect("one JSON envelope");
+    assert_eq!(envelope["sections"], amendment["sections"], "{envelope}");
+    assert_eq!(envelope["slices"], amendment["slices"], "{envelope}");
+    provider.model.assert_exhausted();
+}
+
+// A removed slice that stood between two others leaves its dependants
+// depending on what it depended on, so the order it held survives it: the
+// slice after it is changed in its dependencies alone, and the design,
+// which the removed slice owned nothing of, stands.
+#[tokio::test]
+async fn amend_retired_chain() {
+    // index 0 is `docs`, 1..=4 the standing requirements in id order
+    let grouping = r#"{"groups": [
+        {"claims": [0, 2], "classes": [[0], [2]]},
+        {"claims": [1], "classes": [[1]]},
+        {"claims": [3], "classes": [[3]]},
+        {"claims": [4], "classes": [[4]]}
+    ]}"#;
+    let mut provider = Provider::answering([grouping]);
+    provider.source.evidence.insert(
+        "docs".to_owned(),
+        Ok(evidence(vec![retire("session.timeout", "Sessions no longer time out.")])),
+    );
+    let revision = seed(&provider.files, SPEC, DESIGN, CHAIN_PLAN);
+
+    let resp = cli_ok(&provider, &["emery", "amend", DOCS, "--config", PROJECT_CONFIG]).await;
+
+    let (id, amendment) = staged_amendment(&provider);
+    assert_eq!(
+        String::from_utf8_lossy(&resp.stdout),
+        format!(
+            "staged amendment {id}\n  base {revision} at {}\n  0 added, 0 changed, 1 retired, 0 \
+             conflict, 3 unchanged\n  stems: session\n  slices: sessions (removed), orders\n  \
+             nothing sealed; `emery show amendment` reviews it\n",
+            &HEAD[..8]
+        )
+    );
+    let base: Value = serde_json::from_slice(CHAIN_PLAN).expect("the base plan is JSON");
+    let slices = amendment["plan"]["slices"].as_array().expect("slices");
+    assert_eq!(slices.len(), 2, "{amendment}");
+    assert_eq!(slices[0], base["slices"][0], "{amendment}");
+    assert_eq!(slices[1]["id"], "SLICE-003", "{amendment}");
+    assert_eq!(slices[1]["depends-on"], serde_json::json!(["SLICE-001"]), "{amendment}");
+    assert_eq!(slices[1]["requirements"], base["slices"][2]["requirements"], "{amendment}");
+    assert_eq!(slices[1]["types"], base["slices"][2]["types"], "{amendment}");
+    assert_eq!(slices[1]["brief"], base["slices"][2]["brief"], "{amendment}");
+    assert_eq!(
+        amendment["slices"],
+        serde_json::json!([
+            {"id": "SLICE-002", "name": "sessions", "class": "removed"},
+            {"id": "SLICE-003", "name": "orders", "class": "changed"}
+        ]),
+        "{amendment}"
+    );
+    assert_eq!(
+        amendment["sections"],
+        serde_json::json!({"preamble": false, "added": [], "removed": [], "changed": []}),
+        "{amendment}"
+    );
+    let design: Value = serde_json::from_slice(DESIGN).expect("the base design is JSON");
+    assert_eq!(amendment["design"]["sections"], design["sections"], "{amendment}");
     provider.model.assert_exhausted();
 }
 

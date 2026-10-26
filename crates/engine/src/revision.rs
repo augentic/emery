@@ -24,7 +24,7 @@ use serde::de::DeserializeOwned;
 use serde_json::Value;
 use sha2::{Digest, Sha256};
 
-pub use self::amendment::{Amendment, AmendmentBase, Change, ChangeClass};
+pub use self::amendment::{Amendment, AmendmentBase, Change, ChangeClass, SliceChange, SliceClass};
 use self::design::TYPE;
 pub use self::design::{Block, Design, Role, Section, SectionKind, citations};
 pub use self::diff::{Changed, DesignDiff, Diff, Entry, PlanDiff, Retired, SliceEntry, SpecDiff};
