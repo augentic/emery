@@ -152,7 +152,7 @@ impl<'a> SpecBrief<'a> {
     // and `parent` names the base revision.
     #[must_use]
     pub fn amend(
-        base: Spec, parent: String, changes: &[Change],
+        base: &Spec, parent: String, changes: &[Change],
         drafts: Vec<(Vec<String>, Vec<Requirement>)>,
     ) -> Spec {
         let kept: BTreeSet<_> = changes
@@ -162,8 +162,9 @@ impl<'a> SpecBrief<'a> {
             .collect();
         let mut requirements: Vec<Requirement> = base
             .requirements
-            .into_iter()
+            .iter()
             .filter(|requirement| kept.contains(&requirement.id))
+            .cloned()
             .chain(drafts.into_iter().flat_map(|(_, drafted)| drafted))
             .collect();
         requirements.sort_by_key(|requirement| requirement.id);
@@ -171,7 +172,7 @@ impl<'a> SpecBrief<'a> {
         Spec {
             emery: EMERY,
             parent: Some(parent),
-            preamble: base.preamble,
+            preamble: base.preamble.clone(),
             requirements,
         }
     }

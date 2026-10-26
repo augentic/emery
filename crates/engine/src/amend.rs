@@ -4,8 +4,9 @@
 //! [`specify`](crate::specify::specify) does, matches them against the
 //! requirements the current revision holds, derives what the change did to
 //! each requirement, drafts the amended specification, redrafts the design
-//! sections the change informs, derives the amended plan by code, and
-//! stages the result as an [`Amendment`] for review. Nothing is sealed, and
+//! sections the change informs, amends the plan by code and one slicing
+//! turn for what code cannot place, and stages the result as an
+//! [`Amendment`] for review. Nothing is sealed, and
 //! the current revision is read and never moved.
 
 mod change;
@@ -19,7 +20,7 @@ use omnia_sdk::{BlobStore, Error, Model, Plugins, StateStore, Vcs, bad_request};
 use serde::Serialize;
 
 use self::change::ChangeSet;
-use self::plan::Pruned;
+use self::plan::{Assembled, Pruned};
 use self::standing::Standing;
 use crate::brief::Brief as _;
 pub use crate::revision::{
@@ -59,13 +60,20 @@ use crate::{Files, store};
 /// `## Overview` are redrafted in one design turn over the current text,
 /// each kept paragraph verbatim or named as revised, every other section
 /// and the preamble kept by code. The amended plan ([`Amendment::plan`])
-/// follows by code, with no model turn: the base's slices keep their ids
+/// follows by code where a rule decides: the base's slices keep their ids
 /// and names, each retired requirement leaves its slice, one restated under
 /// another stem leaves it for the slice of its new stem, an added one joins
-/// the slice of its stem, a stem no slice holds becomes a new slice named
-/// for it, a slice left with none is removed and the slices that depended on
-/// it depend on what it depended on, and a data type the design holds that
-/// no slice owns goes to the one slice the change touched.
+/// the slice holding another its trigger reaches or the slice of its stem,
+/// a slice left with none is removed and the slices that depended on it
+/// depend on what it depended on, and a data type the design holds that no
+/// slice owns goes to the one slice the change touched. What no rule
+/// decides is put to one slicing turn over the current slices: the
+/// requirements of a stem no slice holds, every requirement of a stem left
+/// past [`SLICE_CAP`](crate::specify::SLICE_CAP) once an addition opens a
+/// sub-stem no slice holds, and a type key no slice owns where no slice or
+/// more than one changed; the turn drafts a new slice or joins a current
+/// one, and the whole is held to the plan's rules. A change adding only
+/// under stems the plan holds spends no slicing turn.
 /// [`Amendment::sections`] and [`Amendment::slices`] say what the two change
 /// against the base's.
 ///
@@ -92,10 +100,8 @@ use crate::{Files, store};
 ///   repository holds no revision, naming a staged candidate where one
 ///   stands, and with code `revision-not-found` as `specify` does.
 /// - Returns [`Error::ServerError`] and [`Error::BadGateway`] as `specify`
-///   does, and [`Error::ServerError`] where the amended plan needs the
-///   slicing turn no amendment puts yet: a stem left holding more than
-///   [`SLICE_CAP`](crate::specify::SLICE_CAP) requirements, or a design type
-///   no slice owns where no slice or more than one changed.
+///   does, and [`Error::ServerError`] where a plan settled by code alone
+///   breaks the plan's rules.
 pub async fn amend<P: Model + Source + StateStore + BlobStore + Plugins + Vcs + Files>(
     input: AmendInput, context: Context<P>,
 ) -> Result<AmendOutput, Error> {
@@ -158,12 +164,16 @@ pub async fn amend<P: Model + Source + StateStore + BlobStore + Plugins + Vcs + 
         Some(brief) => future::try_join(drafting, brief.judge(provider)).await?,
         None => (drafting.await?, base_design),
     };
-    let spec = SpecBrief::amend(revision.spec, current.id.clone(), &changes, drafts);
+    let spec = SpecBrief::amend(&revision.spec, current.id.clone(), &changes, drafts);
 
-    // the amended plan by code over the two: what the change adds and moves
-    // placed by stem, the design's data types owned where the amendment
-    // leaves them
-    let plan = pruned.assemble(&spec, &design.data_types())?;
+    // the amended plan over the two: what the change adds and moves placed
+    // by code where a rule decides, and the rest by one slicing turn over
+    // the current slices
+    let types = design.data_types();
+    let plan = match pruned.assemble(&spec, &types, &drafted)? {
+        Assembled::Settled(plan) => plan,
+        Assembled::Open(brief) => brief.judge(provider).await?,
+    };
     let sections = DesignDiff::between(&revision.design, &design);
     let slices = SliceChange::of(&PlanDiff::between(&revision.plan, &plan));
 

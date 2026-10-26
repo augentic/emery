@@ -68,6 +68,15 @@ macro_rules! numbered {
             pub fn sequence() -> impl Iterator<Item = Self> {
                 std::iter::successors(Some(Self::FIRST), |&id| id.next())
             }
+
+            // The ids in order above the highest id `used` holds, or from
+            // `FIRST` when `used` is empty.
+            pub(crate) fn free_after(
+                used: impl IntoIterator<Item = Self>,
+            ) -> impl Iterator<Item = Self> {
+                let first = used.into_iter().max().map_or(Some(Self::FIRST), Self::next);
+                std::iter::successors(first, |&id| id.next())
+            }
         }
 
         impl FromStr for $name {

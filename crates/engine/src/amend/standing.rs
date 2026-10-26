@@ -95,14 +95,7 @@ impl<'a> Standing<'a> {
     // base holds: an id the base once held is never reused, a retired one
     // included.
     pub fn free_ids(&self) -> impl Iterator<Item = ReqId> {
-        let first = self
-            .spec
-            .requirements
-            .iter()
-            .map(|requirement| requirement.id)
-            .max()
-            .map_or(Some(ReqId::FIRST), ReqId::next);
-        std::iter::successors(first, |&id| id.next())
+        ReqId::free_after(self.spec.requirements.iter().map(|requirement| requirement.id))
     }
 }
 

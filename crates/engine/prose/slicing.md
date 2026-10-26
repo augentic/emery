@@ -154,3 +154,44 @@ type keys: shipments.notice, shipments.item, shipments.quote
 ```
 
 The consumer is the entry, so `shipments-inbound` depends on the two stage slices and is built last, though its ids come first; the engine still numbers it `SLICE-002` from `REQ-003`, and the waves follow the dependencies: `start` and the validation, then the pricing, then the consumer. The stem is cut at two sub-stem boundaries. The consumer and the validation, 7 and 5, would fit one slice of 12, yet the pricing stands between them — the consumer depends on the pricing, which depends on the validation — so merging them would leave the pricing depending on a slice that depends on it, and the pair stays apart; no other two fit together (5 and 9 is 14, 7 and 9 is 16). Had the consumer and the pricing fit, the consumer would have joined the pricing, the stage run last. Each type goes to the slice built first among those that read or produce it: the notice and the item to the validation that decodes them, since the pricing and the consumer take them after it, and the item could go no later in any case, since a notice holds items and a notice declared without its item is a notice that does not compile; the quote to the pricing that produces it; the consumer, handing them along, owns none. `shipments-pricing` depends on `shipments-validation` for the item it takes rather than redeclaring one, and reads the rate table through its own cache, since no requirement states its fetch and the bootstrap's slice writes no loader for it. Had the design listed the source's `NoticeConsumer` or `RatesClient` class, it would have labelled them mechanisms and they would not be in the request's keys.
+
+## Amending
+
+A request that opens `Amend the build plan` amends a plan that already stands. `## Current plan` lists its slices by id and name with the requirements each holds, the types it owns, what it depends on, and whether this amendment touched it; those slices are fixed — their ids, names, briefs, and dependencies stand, and what they hold moves only where `## Open` lists it. The engine placed by code what a rule decides: a requirement joined the slice holding another its trigger reaches, or the slice holding its stem, and a type the one slice the change touched. `## Open` lists the rest, and the answer places that and nothing else:
+
+- The requirements of a stem no current slice holds, each stem one slice at the least, with the triggers that reach them. Draft a new slice for it under `slices`, named for what it builds, with its `depends-on` by name over the current slices and the new ones, and its `brief`; or, where neither can be built and verified apart, join it into a current slice under `joins`.
+- A stem the amendment leaves past the cap, listed by its sub-stems with the slice that held it. Every requirement of the stem is open, the current slice keeps its id, and it is cut again as the Baseline cuts one: join the sub-stems that stay into the slice that held them, at least one, and draft a new slice for each other set of sub-stems, cut at as few sub-stem boundaries as the cap allows. The types that slice owned are open with them, each to the slice whose requirements read or produce it.
+- A type key no current slice owns, to be owned by exactly one slice, a new one's `types` or a join's, by the Contract's rule.
+
+`joins` names a current slice by its id, once, with the open requirements and type keys that join it. An answer that moves a requirement or a type `## Open` does not list, names a slice no current id has, lists a join twice, names a new slice as a current one is named, or leaves a current slice with no requirement is refused, as is one the Baseline refuses over the whole plan. `## Requirements` carries the requirements the change drafted beside this plan, and the standing ones the answer places as the specification holds them. The engine numbers each new slice after the current plan's highest id by its lowest requirement, sorts every list, and keeps the preamble; answer no `preamble`.
+
+### Worked example
+
+```text
+current plan
+  SLICE-001 authentication  REQ-001, REQ-002   types: auth.credential
+  SLICE-002 orders          REQ-003, REQ-004   types: orders.order   depends on: authentication   touched by this amendment
+
+open
+  rate-limit   REQ-005, REQ-006   triggers: POST /orders
+```
+
+```json
+{
+  "slices": [
+    {
+      "name": "rate-limit",
+      "requirements": ["REQ-005", "REQ-006"],
+      "types": [],
+      "depends-on": ["orders"],
+      "brief": [
+        "Delivers the per-caller limit on order placement, counted at the order route and refusing the call over it; edits the order handler, so it compiles against `orders`.",
+        "Verified by placing orders past the limit under one caller and asserting the refusal."
+      ]
+    }
+  ],
+  "joins": []
+}
+```
+
+The two requirements fall under a stem no slice holds, so they are a new slice, which the engine numbers `SLICE-003`; it depends on `orders` because it edits the order handler, and `authentication` and `orders` stand as they were. Had the limit been inseparable from placing an order — the route refusing without it — the answer would have been `"slices": [], "joins": [{"slice": "SLICE-002", "requirements": ["REQ-005", "REQ-006"]}]` instead, and `orders` would hold four.

@@ -27,7 +27,7 @@ use serde::{Deserialize, Serialize};
 pub(crate) use self::basis::{BASELINE, Basis, Contributor, GroupingBrief};
 pub(crate) use self::design::{DesignAmend, DesignBrief};
 pub use self::plan::SLICE_CAP;
-pub(crate) use self::plan::{Draft, Floors, SliceBrief};
+pub(crate) use self::plan::{Floors, Open, SliceAmend, SliceBrief, drafts};
 pub use self::spec::SPEC_CHUNK;
 pub(crate) use self::spec::SpecBrief;
 use crate::adapter::{self, AdapterRef, Loaded};

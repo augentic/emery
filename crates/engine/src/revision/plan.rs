@@ -9,7 +9,7 @@ use std::fmt::{self, Display, Formatter};
 
 use serde::{Deserialize, Serialize};
 
-use crate::revision::{self, ID, ReqId, SliceId};
+use crate::revision::{self, ID, ReqId, Requirement, SliceId, Spec};
 
 // The `Requirements:` key listing a slice's requirement ids.
 pub const REQUIREMENTS: &str = "Requirements:";
@@ -39,6 +39,13 @@ impl Plan {
     #[must_use]
     pub fn slice(&self, id: SliceId) -> Option<&Slice> {
         self.slices.iter().find(|slice| slice.id == id)
+    }
+
+    // The ids a new slice takes in an amendment of this plan, from the first
+    // above every id the plan holds: an id a slice once held is never reused,
+    // a removed one included.
+    pub fn free_ids(&self) -> impl Iterator<Item = SliceId> {
+        SliceId::free_after(self.slices.iter().map(|slice| slice.id))
     }
 
     // Returns the slices in build order: the `waves` flattened.
@@ -201,6 +208,12 @@ pub struct Slice {
 }
 
 impl Slice {
+    // Whether `self` holds a requirement of `spec` that `matches`.
+    #[must_use]
+    pub fn holds(&self, spec: &Spec, matches: impl Fn(&Requirement) -> bool) -> bool {
+        self.requirements.iter().any(|id| spec.requirement(*id).is_some_and(&matches))
+    }
+
     // Writes the lists and the brief: everything after the `ID:` line, with
     // no trailing newline, so a projection under another heading renders
     // the slice as `plan.md` does.

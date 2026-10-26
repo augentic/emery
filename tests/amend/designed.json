@@ -294,7 +294,7 @@
         ],
         "types": [],
         "depends-on": [],
-        "brief": []
+        "brief": ["Delivers the secret read every handler makes at use; verified against a fake store."]
       }
     ]
   },

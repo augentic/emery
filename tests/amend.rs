@@ -495,8 +495,10 @@ async fn amend_retired_chain() {
 // A change restating a standing requirement under another stem keeps its id
 // and takes the new subject, so the requirement is changed and moves slice:
 // it leaves the slice of its old stem, which shrinks and keeps its types,
-// for a new slice named for the new stem, numbered after the base's, with
-// the base's trigger carried and no slicing turn spent.
+// for a slice the slicing turn drafts over the current plan, numbered after
+// the base's, with the base's trigger carried. The turn's brief lists the
+// current slices fixed, the open stem with its trigger, and the requirement
+// it places as drafted.
 #[tokio::test]
 async fn amend_moved() {
     // index 0 is `docs`, 1..=4 the standing requirements in id order
@@ -511,7 +513,11 @@ async fn amend_moved() {
             {"name": "Cancel", "when": "a signed-in caller cancels an order", "then": "the cancellation is reported"}
         ]}
     ]}"#;
-    let mut provider = Provider::answering([grouping, draft]);
+    let slicing = r#"{"slices": [
+        {"name": "reporting", "requirements": ["REQ-004"], "types": [], "depends-on": ["orders"],
+         "brief": ["Reports a cancellation; edits the cancel handler, so it compiles against `orders`."]}
+    ], "joins": []}"#;
+    let mut provider = Provider::answering([grouping, draft, slicing]);
     provider.source.evidence.insert(
         "docs".to_owned(),
         Ok(evidence(vec![requirement(
@@ -533,9 +539,29 @@ async fn amend_moved() {
             &HEAD[..8]
         )
     );
-    assert_eq!(provider.model.seen().len(), 2, "the grouping and the draft; no slicing");
+    assert_eq!(provider.model.seen().len(), 3, "the grouping, the draft, and the slicing");
     let draft = provider.model.seen()[1].messages.join("\n");
     assert!(draft.contains("- REQ-004 `reporting.cancel`"), "{draft}");
+
+    // the slicing turn: the current slices fixed, the old one touched, the
+    // open stem with the trigger it carries, and the requirement it places
+    let request = provider.model.seen()[2].messages.join("\n");
+    assert!(request.starts_with("Amend the build plan"), "{request}");
+    assert!(
+        request.contains(
+            "## Current plan\n\n- `SLICE-001` `authentication` — REQ-001, REQ-002\n- `SLICE-002` \
+             `orders` — REQ-003 — types: `orders.line`, `orders.order` — depends on: \
+             `authentication` — touched by this amendment\n\n## Open\n"
+        ),
+        "{request}"
+    );
+    assert!(
+        request.contains("- `reporting` — REQ-004 — triggers: `orders.cancel-requested`\n"),
+        "{request}"
+    );
+    assert!(!request.contains("Type keys the design holds"), "{request}");
+    assert!(request.contains("## Requirements\n\nThe requirements the change adds"), "{request}");
+    assert!(request.contains("- REQ-004 `reporting.cancel` — Status: unknown"), "{request}");
 
     // the change keeps the id under the new subject, with the base's trigger
     let moved = &amendment["changes"][3];
@@ -558,7 +584,8 @@ async fn amend_moved() {
         slices[2],
         serde_json::json!({
             "id": "SLICE-003", "name": "reporting", "requirements": ["REQ-004"],
-            "types": [], "depends-on": [], "brief": []
+            "types": [], "depends-on": ["SLICE-002"],
+            "brief": ["Reports a cancellation; edits the cancel handler, so it compiles against `orders`."]
         }),
         "{amendment}"
     );
@@ -575,8 +602,9 @@ async fn amend_moved() {
 }
 
 // A change restating every requirement of a slice under another stem empties
-// the slice, which is removed, and the types it owned go to the new slice,
-// the one slice the amendment changed, so the design stands.
+// the slice, which is removed, and the types it owned are open with the new
+// stem: the slicing turn's brief lists them, the new slice owns them, and
+// the design stands.
 #[tokio::test]
 async fn amend_moved_slice() {
     // indices 0 and 1 are `docs`, 2..=5 the standing requirements in id order
@@ -594,7 +622,11 @@ async fn amend_moved_slice() {
             {"name": "Cancel", "when": "a signed-in caller cancels an order", "then": "the cancellation is reported"}
         ]}
     ]}"#;
-    let mut provider = Provider::answering([grouping, draft]);
+    let slicing = r#"{"slices": [
+        {"name": "reporting", "requirements": ["REQ-003", "REQ-004"],
+         "types": ["orders.line", "orders.order"], "depends-on": [], "brief": []}
+    ], "joins": []}"#;
+    let mut provider = Provider::answering([grouping, draft, slicing]);
     provider.source.evidence.insert(
         "docs".to_owned(),
         Ok(evidence(vec![
@@ -616,7 +648,22 @@ async fn amend_moved_slice() {
             &HEAD[..8]
         )
     );
-    assert_eq!(provider.model.seen().len(), 2, "the grouping and the draft; no slicing");
+    assert_eq!(provider.model.seen().len(), 3, "the grouping, the draft, and the slicing");
+    let request = provider.model.seen()[2].messages.join("\n");
+    assert!(
+        request
+            .contains("## Current plan\n\n- `SLICE-001` `authentication` — REQ-001, REQ-002\n\n"),
+        "the emptied slice is gone: {request}"
+    );
+    assert!(
+        request.contains(
+            "- `reporting` — REQ-003, REQ-004 — triggers: `POST /orders`, \
+             `orders.cancel-requested`\n"
+        ),
+        "{request}"
+    );
+    assert!(request.contains("Type keys the design holds that no current slice owns"), "{request}");
+    assert!(request.contains("- `orders.line`\n- `orders.order`\n"), "{request}");
     let base: Value = serde_json::from_slice(PLAN).expect("the base plan is JSON");
     let slices = amendment["plan"]["slices"].as_array().expect("slices");
     assert_eq!(slices.len(), 2, "{amendment}");
@@ -646,11 +693,312 @@ async fn amend_moved_slice() {
     provider.model.assert_exhausted();
 }
 
-// A stem the amendment leaves past the slice cap is cut along its sub-stems
-// by the slicing turn, which no amendment puts yet: the run is the engine's
-// refusal naming the stem, with nothing staged.
+// The S1-shaped change: a documentation source stating two requirements
+// under a stem no slice holds. The grouping and the draft run as before,
+// then one slicing turn over the current plan drafts the new slice, which
+// the engine numbers after the base's and whose dependency it maps to the
+// slice's id, the schema holding the answer to the open ids and the current
+// slice ids; no design turn is spent, since a requirement informs no
+// section.
 #[tokio::test]
-async fn amend_past_cap() {
+async fn amend_sliced() {
+    let slicing = r#"{"slices": [
+        {"name": "rate-limit", "requirements": ["REQ-005", "REQ-006"], "types": [], "depends-on": ["orders"],
+         "brief": ["Delivers the per-caller limit on order placement; edits the order handler, so it compiles against `orders`."]}
+    ], "joins": []}"#;
+    let (provider, revision) = limited([slicing]);
+
+    let resp = cli_ok(&provider, &["emery", "amend", DOCS, "--config", PROJECT_CONFIG]).await;
+
+    let (id, amendment) = staged_amendment(&provider);
+    assert_eq!(
+        String::from_utf8_lossy(&resp.stdout),
+        format!(
+            "staged amendment {id}\n  base {revision} at {}\n  2 added, 0 changed, 0 retired, 0 \
+             conflict, 4 unchanged\n  stems: rate-limit\n  slices: rate-limit (new)\n  nothing \
+             sealed; `emery show amendment` reviews it\n",
+            &HEAD[..8]
+        )
+    );
+    assert_eq!(provider.model.seen().len(), 3, "the grouping, the draft, and the slicing");
+    let turn = &provider.model.seen()[2];
+    let request = turn.messages.join("\n");
+    assert!(request.contains("- `rate-limit` — REQ-005, REQ-006\n"), "{request}");
+    assert!(
+        request.contains("- `SLICE-002` `orders` — REQ-003, REQ-004 — types:"),
+        "untouched: {request}"
+    );
+    assert!(!request.contains("touched by this amendment"), "{request}");
+    assert!(request.contains("- REQ-005 `rate-limit.count` — Status: unknown"), "{request}");
+    assert!(request.contains("- REQ-006 `rate-limit.refuse` — Status: unknown"), "{request}");
+    assert!(!request.contains("The standing requirements the answer places"), "{request}");
+    let SeenFormat::Schema { name, schema } = &turn.format else {
+        panic!("the slicing is steered by schema");
+    };
+    assert_eq!(name, "slicing");
+    let schema: Value = serde_json::from_str(schema).expect("the steering schema is JSON");
+    assert_eq!(schema["properties"]["slices"]["maxItems"], 2, "{schema}");
+    assert_eq!(schema["properties"]["joins"]["maxItems"], 2, "{schema}");
+    assert_eq!(
+        schema["$defs"]["Draft"]["properties"]["requirements"]["items"]["enum"],
+        serde_json::json!(["REQ-005", "REQ-006"]),
+        "{schema}"
+    );
+    assert_eq!(schema["$defs"]["Draft"]["properties"]["types"]["maxItems"], 0, "{schema}");
+    assert_eq!(
+        schema["$defs"]["Join"]["properties"]["slice"]["enum"],
+        serde_json::json!(["SLICE-001", "SLICE-002"]),
+        "{schema}"
+    );
+
+    let base: Value = serde_json::from_slice(PLAN).expect("the base plan is JSON");
+    let slices = amendment["plan"]["slices"].as_array().expect("slices");
+    assert_eq!(slices.len(), 3, "{amendment}");
+    assert_eq!(slices[0], base["slices"][0], "{amendment}");
+    assert_eq!(slices[1], base["slices"][1], "{amendment}");
+    assert_eq!(
+        slices[2],
+        serde_json::json!({
+            "id": "SLICE-003", "name": "rate-limit", "requirements": ["REQ-005", "REQ-006"],
+            "types": [], "depends-on": ["SLICE-002"],
+            "brief": ["Delivers the per-caller limit on order placement; edits the order handler, so it compiles against `orders`."]
+        }),
+        "{amendment}"
+    );
+    assert_eq!(amendment["plan"]["preamble"], base["preamble"], "{amendment}");
+    assert_eq!(
+        amendment["slices"],
+        serde_json::json!([{"id": "SLICE-003", "name": "rate-limit", "class": "added"}]),
+        "{amendment}"
+    );
+    assert_eq!(provider.vcs.calls(), read_calls());
+    provider.model.assert_exhausted();
+}
+
+// The same change answered by joining the new stem into a current slice:
+// the slice holds the two beside its own, keeps its id, name, types, and
+// brief, and no slice is added.
+#[tokio::test]
+async fn amend_sliced_joined() {
+    let slicing = r#"{"slices": [], "joins": [{"slice": "SLICE-002", "requirements": ["REQ-005", "REQ-006"]}]}"#;
+    let (provider, _) = limited([slicing]);
+
+    let resp = cli_ok(&provider, &["emery", "amend", DOCS, "--config", PROJECT_CONFIG]).await;
+
+    let (_, amendment) = staged_amendment(&provider);
+    let stdout = String::from_utf8_lossy(&resp.stdout);
+    assert!(stdout.contains("\n  slices: orders\n"), "{stdout}");
+    let base: Value = serde_json::from_slice(PLAN).expect("the base plan is JSON");
+    let slices = amendment["plan"]["slices"].as_array().expect("slices");
+    assert_eq!(slices.len(), 2, "{amendment}");
+    assert_eq!(slices[0], base["slices"][0], "{amendment}");
+    assert_eq!(
+        slices[1]["requirements"],
+        serde_json::json!(["REQ-003", "REQ-004", "REQ-005", "REQ-006"]),
+        "{amendment}"
+    );
+    assert_eq!(slices[1]["types"], base["slices"][1]["types"], "{amendment}");
+    assert_eq!(slices[1]["brief"], base["slices"][1]["brief"], "{amendment}");
+    assert_eq!(
+        amendment["slices"],
+        serde_json::json!([{"id": "SLICE-002", "name": "orders", "class": "changed"}]),
+        "{amendment}"
+    );
+    provider.model.assert_exhausted();
+}
+
+// The slicing answer is held to the open set and the plan's rules: one that
+// moves a requirement the current plan places, places an open one twice, or
+// names a new slice as a current one is refused naming each, and the
+// correction lands.
+#[tokio::test]
+async fn amend_sliced_refused() {
+    let refused = r#"{"slices": [
+        {"name": "orders", "requirements": ["REQ-005"], "types": [], "depends-on": [], "brief": []}
+    ], "joins": [
+        {"slice": "SLICE-001", "requirements": ["REQ-003"]},
+        {"slice": "SLICE-002", "requirements": ["REQ-005", "REQ-006"]}
+    ]}"#;
+    let corrected = r#"{"slices": [], "joins": [{"slice": "SLICE-002", "requirements": ["REQ-005", "REQ-006"]}]}"#;
+    let (provider, _) = limited([refused, corrected]);
+
+    cli_ok(&provider, &["emery", "amend", DOCS, "--config", PROJECT_CONFIG]).await;
+
+    assert_eq!(provider.model.seen().len(), 4, "the grouping, the draft, and two slicing rounds");
+    let exchanges = provider.model.exchanges();
+    let finding = exchanges[2].outcome.as_ref().expect_err("the first answer is refused");
+    for expected in [
+        "`orders` names a current slice; list what joins it under `joins`",
+        "`joins` `SLICE-001`: `REQ-003` is not open to this amendment; the current plan places \
+         it, and it stays",
+        "`REQ-005` appears in more than one slice",
+    ] {
+        assert!(finding.contains(expected), "{expected}: {finding}");
+    }
+    assert!(exchanges[3].outcome.is_ok(), "{exchanges:?}");
+    let (_, amendment) = staged_amendment(&provider);
+    assert_eq!(
+        amendment["plan"]["slices"][1]["requirements"],
+        serde_json::json!(["REQ-003", "REQ-004", "REQ-005", "REQ-006"]),
+        "{amendment}"
+    );
+    provider.model.assert_exhausted();
+}
+
+// The S4-shaped change: two requirements under two new stems beside two
+// `type` claims. The design turn redrafts `## Domain model` with the new
+// keys, which no current slice owns, so they are open with the stems: the
+// slicing turn's brief lists them in the design's order, and each new slice
+// owns the key its requirement reads.
+#[tokio::test]
+async fn amend_sliced_types() {
+    // indices 0 and 1 are `docs`'s requirements, 2..=5 the standing requirements in id order
+    let grouping = r#"{"groups": [
+        {"claims": [0], "classes": [[0]]},
+        {"claims": [1], "classes": [[1]]},
+        {"claims": [2], "classes": [[2]]},
+        {"claims": [3], "classes": [[3]]},
+        {"claims": [4], "classes": [[4]]},
+        {"claims": [5], "classes": [[5]]}
+    ]}"#;
+    let draft = r#"{"preamble": [], "requirements": [
+        {"subject": "rate-limit.count", "scenarios": [
+            {"name": "Count", "when": "a caller places an order", "then": "the caller's count rises"}
+        ]},
+        {"subject": "audit.record", "scenarios": [
+            {"name": "Record", "when": "an order is placed", "then": "an audit entry is recorded"}
+        ]}
+    ]}"#;
+    let design = format!(
+        r#"{{"sections": [
+            {{"kind": "overview", "blocks": [{{"text": "{OVERVIEW}"}}], "revised": []}},
+            {{"kind": "domain-model", "blocks": [
+                {{"type": {{"key": "orders.order", "role": "data"}}}},
+                {{"type": {{"key": "orders.line", "role": "data"}}}},
+                {{"type": {{"key": "rate-limit.counter", "role": "data"}}}},
+                {{"type": {{"key": "audit.entry", "role": "data"}}}}
+            ], "revised": []}}
+        ]}}"#
+    );
+    let slicing = r#"{"slices": [
+        {"name": "rate-limit", "requirements": ["REQ-005"], "types": ["rate-limit.counter"], "depends-on": ["orders"], "brief": []},
+        {"name": "audit", "requirements": ["REQ-006"], "types": ["audit.entry"], "depends-on": [], "brief": []}
+    ], "joins": []}"#;
+    let mut provider = Provider::answering([grouping, draft, design.as_str(), slicing]);
+    provider.source.evidence.insert(
+        "docs".to_owned(),
+        Ok(evidence(vec![
+            requirement("rate-limit.count", "Each caller's order placements are counted."),
+            requirement("audit.record", "Each order placed is recorded for audit."),
+            claim(
+                ClaimKind::Type,
+                "rate-limit.counter",
+                ("signature", "interface Counter { calls: number }"),
+            ),
+            claim(ClaimKind::Type, "audit.entry", ("signature", "interface Entry { at: string }")),
+        ])),
+    );
+    let revision = seed(&provider.files, SPEC, DESIGN, PLAN);
+
+    let resp = cli_ok(&provider, &["emery", "amend", DOCS, "--config", PROJECT_CONFIG]).await;
+
+    let (id, amendment) = staged_amendment(&provider);
+    assert_eq!(
+        String::from_utf8_lossy(&resp.stdout),
+        format!(
+            "staged amendment {id}\n  base {revision} at {}\n  2 added, 0 changed, 0 retired, 0 \
+             conflict, 4 unchanged\n  stems: audit, rate-limit\n  design: domain-model\n  slices: \
+             rate-limit (new), audit (new)\n  nothing sealed; `emery show amendment` reviews it\n",
+            &HEAD[..8]
+        )
+    );
+    assert_eq!(
+        provider.model.seen().len(),
+        4,
+        "the grouping, the draft, the design, and the slicing"
+    );
+    let turn = &provider.model.seen()[3];
+    let request = turn.messages.join("\n");
+    assert!(request.contains("- `rate-limit` — REQ-005\n- `audit` — REQ-006\n"), "{request}");
+    assert!(
+        request.contains(
+            "Type keys the design holds that no current slice owns, each to be owned by \
+             exactly one slice"
+        ),
+        "{request}"
+    );
+    assert!(request.contains("- `audit.entry`\n- `rate-limit.counter`\n"), "{request}");
+    let SeenFormat::Schema { schema, .. } = &turn.format else {
+        panic!("the slicing is steered by schema");
+    };
+    let schema: Value = serde_json::from_str(schema).expect("the steering schema is JSON");
+    assert_eq!(
+        schema["$defs"]["Draft"]["properties"]["types"]["items"]["enum"],
+        serde_json::json!(["audit.entry", "rate-limit.counter"]),
+        "{schema}"
+    );
+    assert_eq!(
+        schema["$defs"]["Join"]["properties"]["types"]["items"]["enum"],
+        serde_json::json!(["audit.entry", "rate-limit.counter"]),
+        "{schema}"
+    );
+
+    let slices = amendment["plan"]["slices"].as_array().expect("slices");
+    assert_eq!(slices.len(), 4, "{amendment}");
+    assert_eq!(slices[2]["id"], "SLICE-003", "{amendment}");
+    assert_eq!(slices[2]["name"], "rate-limit", "{amendment}");
+    assert_eq!(slices[2]["types"], serde_json::json!(["rate-limit.counter"]), "{amendment}");
+    assert_eq!(slices[2]["depends-on"], serde_json::json!(["SLICE-002"]), "{amendment}");
+    assert_eq!(slices[3]["id"], "SLICE-004", "{amendment}");
+    assert_eq!(slices[3]["name"], "audit", "{amendment}");
+    assert_eq!(slices[3]["types"], serde_json::json!(["audit.entry"]), "{amendment}");
+    provider.model.assert_exhausted();
+}
+
+// The S1-shaped change: a documentation source stating two requirements
+// under the stem `rate-limit`, which no slice holds, scripted through the
+// grouping and the draft of those two alone, then `slicing`, the answers
+// of the slicing turn in order, over the seeded revision.
+fn limited<const N: usize>(slicing: [&str; N]) -> (Provider, String) {
+    // indices 0 and 1 are `docs`'s requirements, 2..=5 the standing requirements in id order
+    let grouping = r#"{"groups": [
+        {"claims": [0], "classes": [[0]]},
+        {"claims": [1], "classes": [[1]]},
+        {"claims": [2], "classes": [[2]]},
+        {"claims": [3], "classes": [[3]]},
+        {"claims": [4], "classes": [[4]]},
+        {"claims": [5], "classes": [[5]]}
+    ]}"#;
+    let draft = r#"{"preamble": [], "requirements": [
+        {"subject": "rate-limit.count", "scenarios": [
+            {"name": "Count", "when": "a caller places an order", "then": "the caller's count rises"}
+        ]},
+        {"subject": "rate-limit.refuse", "scenarios": [
+            {"name": "Refuse", "when": "a caller is over the limit", "then": "the order is refused"}
+        ]}
+    ]}"#;
+    let mut answers = vec![grouping, draft];
+    answers.extend(slicing);
+    let mut provider = Provider::answering(answers);
+    provider.source.evidence.insert(
+        "docs".to_owned(),
+        Ok(evidence(vec![
+            requirement("rate-limit.count", "Each caller's order placements are counted."),
+            requirement("rate-limit.refuse", "A caller over the limit is refused."),
+        ])),
+    );
+    let revision = seed(&provider.files, SPEC, DESIGN, PLAN);
+    (provider, revision)
+}
+
+// A stem the amendment leaves past the slice cap is cut again along its
+// sub-stems by the slicing turn: every requirement of the stem is open with
+// the types its slice owned, the current slice keeps its id and takes some
+// back, and the rest become a new slice. An answer cutting the stem finer
+// than the cap asks is refused naming the pair that would fit one slice,
+// and the correction lands.
+#[tokio::test]
+async fn amend_recut() {
     let (spec, plan) = wide(12);
     // index 0 is `docs`, 1..=12 the standing requirements in id order
     let groups: Vec<Value> = (0..=12)
@@ -662,24 +1010,101 @@ async fn amend_past_cap() {
             {"name": "Refund", "when": "a signed-in caller requests a refund", "then": "the refund is recorded"}
         ]}
     ]}"#;
-    let mut provider = Provider::answering([grouping.as_str(), draft]);
+    let fine = r#"{"slices": [
+        {"name": "orders-mid", "requirements": ["REQ-005", "REQ-006", "REQ-007", "REQ-008"], "types": [], "depends-on": [], "brief": []},
+        {"name": "orders-late", "requirements": ["REQ-009", "REQ-010", "REQ-011", "REQ-012", "REQ-013"], "types": [], "depends-on": [], "brief": []}
+    ], "joins": [
+        {"slice": "SLICE-001", "requirements": ["REQ-001", "REQ-002", "REQ-003", "REQ-004"], "types": ["orders.line", "orders.order"]}
+    ]}"#;
+    let cut = r#"{"slices": [
+        {"name": "orders-late", "requirements": ["REQ-007", "REQ-008", "REQ-009", "REQ-010", "REQ-011", "REQ-012", "REQ-013"],
+         "types": [], "depends-on": ["orders"], "brief": ["Delivers the later items and the refund over the order book `orders` keeps."]}
+    ], "joins": [
+        {"slice": "SLICE-001", "requirements": ["REQ-001", "REQ-002", "REQ-003", "REQ-004", "REQ-005", "REQ-006"], "types": ["orders.line", "orders.order"]}
+    ]}"#;
+    let mut provider = Provider::answering([grouping.as_str(), draft, fine, cut]);
     provider.source.evidence.insert(
         "docs".to_owned(),
         Ok(evidence(vec![requirement("orders.refund", "A signed-in user requests a refund.")])),
     );
-    seed(&provider.files, &spec, DESIGN, &plan);
+    let revision = seed(&provider.files, &spec, DESIGN, &plan);
 
-    let envelope =
-        fail(&provider, &["emery", "amend", DOCS, "--config", PROJECT_CONFIG], 3, "server_error")
-            .await;
-    assert!(
-        envelope["message"].as_str().is_some_and(|text| {
-            text.contains("the amendment leaves the stem `orders` with more than 12 requirements")
-                && text.contains("slicing turn")
-        }),
-        "{envelope}"
+    let resp = cli_ok(&provider, &["emery", "amend", DOCS, "--config", PROJECT_CONFIG]).await;
+
+    let (id, amendment) = staged_amendment(&provider);
+    assert_eq!(
+        String::from_utf8_lossy(&resp.stdout),
+        format!(
+            "staged amendment {id}\n  base {revision} at {}\n  1 added, 0 changed, 0 retired, 0 \
+             conflict, 12 unchanged\n  stems: orders\n  slices: orders, orders-late (new)\n  \
+             nothing sealed; `emery show amendment` reviews it\n",
+            &HEAD[..8]
+        )
     );
-    assert!(provider.storage.state(STAGED_KEY).is_none(), "nothing is staged");
+    assert_eq!(provider.model.seen().len(), 4, "the grouping, the draft, and two slicing rounds");
+
+    // the brief: the slice emptied by the recut, the stem by its sub-stems
+    // with the slice that held it, the types open with them
+    let request = provider.model.seen()[2].messages.join("\n");
+    assert!(
+        request.contains(
+            "## Current plan\n\n- `SLICE-001` `orders` — no requirement; every one it held is \
+             open — touched by this amendment\n\n## Open\n"
+        ),
+        "{request}"
+    );
+    assert!(
+        request.contains(
+            "- `orders` — 13 requirements, past the cap of 12, so its sub-stems are the floor; \
+             held by `SLICE-001` `orders`:\n  - `orders.item-1` — REQ-001\n"
+        ),
+        "{request}"
+    );
+    assert!(request.contains("  - `orders.refund` — REQ-013\n"), "{request}");
+    assert!(request.contains("- `orders.line`\n- `orders.order`\n"), "{request}");
+    assert!(request.contains("A stem past the cap is listed by its sub-stems"), "{request}");
+    assert!(
+        request.contains("- REQ-001 `orders.item-1` — Item 1 of the order book is handled.\n"),
+        "{request}"
+    );
+
+    // the fine cut refused naming the pair, the correction accepted
+    let exchanges = provider.model.exchanges();
+    assert!(
+        exchanges[2].outcome.as_ref().is_err_and(|finding| {
+            finding.contains(
+                "the stem `orders` is cut into 3 slices, yet `orders` (4 requirements) and \
+                 `orders-mid` (4) fit one slice of 8 within the cap of 12",
+            )
+        }),
+        "{exchanges:?}"
+    );
+    assert!(exchanges[3].outcome.is_ok(), "{exchanges:?}");
+
+    let slices = amendment["plan"]["slices"].as_array().expect("slices");
+    assert_eq!(slices.len(), 2, "{amendment}");
+    assert_eq!(slices[0]["id"], "SLICE-001", "{amendment}");
+    assert_eq!(slices[0]["name"], "orders", "{amendment}");
+    assert_eq!(
+        slices[0]["requirements"],
+        serde_json::json!(["REQ-001", "REQ-002", "REQ-003", "REQ-004", "REQ-005", "REQ-006"]),
+        "{amendment}"
+    );
+    assert_eq!(
+        slices[0]["types"],
+        serde_json::json!(["orders.line", "orders.order"]),
+        "{amendment}"
+    );
+    assert_eq!(
+        slices[1],
+        serde_json::json!({
+            "id": "SLICE-002", "name": "orders-late",
+            "requirements": ["REQ-007", "REQ-008", "REQ-009", "REQ-010", "REQ-011", "REQ-012", "REQ-013"],
+            "types": [], "depends-on": ["SLICE-001"],
+            "brief": ["Delivers the later items and the refund over the order book `orders` keeps."]
+        }),
+        "{amendment}"
+    );
     provider.model.assert_exhausted();
 }
 
@@ -720,10 +1145,10 @@ fn wide(count: usize) -> (Vec<u8>, Vec<u8>) {
 // `## Domain model` is kept byte for byte with no type block offered. The
 // brief carries the change's claims, the current text numbered, the
 // requirement drafted beside it, and the schema the redrafted kinds alone;
-// the new stem is a new slice named for it by code, numbered after the
-// base's, with no slicing turn; the amendment lists the sections added and
+// the new stem is a new slice the slicing turn drafts after the design,
+// numbered after the base's; the amendment lists the sections added and
 // changed and the slice added, the output and the envelope name them, and
-// `show amendment` renders the new text and the new slice.
+// `show amendment` renders the new text and the new slice with its brief.
 #[tokio::test]
 async fn amend_design() {
     let (provider, revision) = designed();
@@ -743,7 +1168,11 @@ async fn amend_design() {
     let expected: Value = serde_json::from_str(&DESIGNED.replace("<revision>", &revision))
         .expect("the fixture is JSON");
     assert_eq!(amendment, expected);
-    assert_eq!(provider.model.seen().len(), 3, "the grouping, the draft, and the design");
+    assert_eq!(
+        provider.model.seen().len(),
+        4,
+        "the grouping, the draft, the design, and the slicing"
+    );
 
     // the design turn carries the change's claims, the current text of the
     // redrafted sections numbered, the kept-or-named rule, and the
@@ -785,7 +1214,7 @@ async fn amend_design() {
     assert_eq!(provider.vcs.calls(), read_calls());
 
     // the projection carries what the design changed and the slice the new
-    // stem became, its lists alone since nothing drafted a brief
+    // stem became, with the brief the slicing turn drafted
     let shown = cli_ok(&provider, &["emery", "show", "amendment"]).await;
     let shown = String::from_utf8_lossy(&shown.stdout);
     assert!(
@@ -794,7 +1223,8 @@ async fn amend_design() {
              Overview\n\n{OVERVIEW}\n\nHandlers read the secrets they need at use \
              (REQ-005).\n\n### APIs and integrations\n\nSecrets are read from a secret store, \
              the team vault (from docs), by REQ-005 at use.\n\n## Plan\n\n### Slice: secrets \
-             [added]\n\nID: SLICE-003\nRequirements: [REQ-005]\n"
+             [added]\n\nID: SLICE-003\nRequirements: [REQ-005]\n\nDelivers the secret read \
+             every handler makes at use; verified against a fake store.\n"
         )),
         "{shown}"
     );
@@ -850,7 +1280,11 @@ fn designed() -> (Provider, String) {
             ], "revised": []}}
         ]}}"#
     );
-    let mut provider = Provider::answering([grouping, draft, design.as_str()]);
+    let slicing = r#"{"slices": [
+        {"name": "secrets", "requirements": ["REQ-005"], "types": [], "depends-on": [],
+         "brief": ["Delivers the secret read every handler makes at use; verified against a fake store."]}
+    ], "joins": []}"#;
+    let mut provider = Provider::answering([grouping, draft, design.as_str(), slicing]);
     provider.source.evidence.insert(
         "docs".to_owned(),
         Ok(evidence(vec![
