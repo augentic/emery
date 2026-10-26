@@ -58,6 +58,11 @@ impl<'a> Standing<'a> {
         contributors
     }
 
+    // The base's requirements, in id order.
+    pub fn requirements(&self) -> impl Iterator<Item = &'a Requirement> {
+        self.spec.requirements.iter()
+    }
+
     // The subjects of the requirements the base holds covered, as criterion
     // ids, so a requirement the change leaves standing keeps its coverage.
     pub fn criteria(&self) -> Vec<&'a str> {

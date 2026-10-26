@@ -8,13 +8,16 @@
 //! code's over the statements and triggers the grouping settled, and a
 //! `retire` the grouping matched to no standing requirement is refused. The
 //! bases the amended specification drafts from are kept beside the changes,
-//! each under the id its requirement takes.
+//! each under the id its requirement takes. A change that states no
+//! requirement is grouped against nothing and leaves every standing
+//! requirement as it is.
 
+use emery_adapter::source::ClaimKind;
 use omnia_sdk::{Error, server_error};
 
 use crate::amend::standing::Standing;
 use crate::revision::{Change, ChangeClass, Cited};
-use crate::specify::{BASELINE, Basis, Contributor};
+use crate::specify::{BASELINE, Basis, Contributor, Extract};
 
 pub struct ChangeSet<'a> {
     // One per requirement of the amended specification and per requirement
@@ -26,6 +29,40 @@ pub struct ChangeSet<'a> {
 }
 
 impl<'a> ChangeSet<'a> {
+    // Whether any claim of `extracts` states or withdraws a requirement, so
+    // the change is matched against the standing requirements. A change of
+    // other claims alone, a `decision` or a `type`, informs the design and
+    // nothing of the specification.
+    pub fn states(extracts: &[Extract]) -> bool {
+        extracts
+            .iter()
+            .flat_map(|extract| &extract.evidence.claims)
+            .any(|claim| matches!(claim.kind, ClaimKind::Requirement | ClaimKind::Retire))
+    }
+
+    // The change set of a change that states no requirement: every standing
+    // requirement as it is, with no source behind it, and nothing drafted.
+    pub fn unchanged(standing: &Standing<'a>) -> Self {
+        let changes = standing
+            .requirements()
+            .map(|requirement| {
+                let before = requirement.statement();
+                Change {
+                    id: requirement.id,
+                    subject: requirement.subject.clone(),
+                    class: ChangeClass::Unchanged,
+                    before: before.clone(),
+                    after: before,
+                    sources: Vec::new(),
+                }
+            })
+            .collect();
+        Self {
+            changes,
+            drafted: Vec::new(),
+        }
+    }
+
     // A standing contributor in a basis names the base requirement the group
     // revises; its absence is a requirement the base lacks. A `retire` is
     // ranked as a statement is, so a withdrawal and a revision at one rank
