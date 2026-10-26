@@ -219,14 +219,31 @@ class: slide-hero slide-section
 }
 
 .live-word {
-  padding: 18px;
+  padding: 14px;
   border-radius: 10px;
   background: rgba(255, 255, 255, 0.09);
   display: flex;
-  align-items: center;
-  gap: 12px;
-  font-size: 20px;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.live-word-copy {
+  min-width: 0;
+}
+
+.live-word-copy strong {
+  display: block;
+  font-size: 17px;
+  line-height: 1.15;
   font-weight: 500;
+}
+
+.live-word-copy span {
+  display: block;
+  margin-top: 4px;
+  font-size: 11.5px;
+  line-height: 1.28;
+  color: rgba(255, 255, 255, 0.68);
 }
 
 .live-panel-result {
@@ -235,6 +252,17 @@ class: slide-hero slide-section
   border-top: 1px solid rgba(255, 255, 255, 0.16);
   font-size: 21px;
   color: #ffffff;
+}
+
+.live-panel-result-label {
+  display: block;
+  margin-bottom: 5px;
+  font-size: 11px;
+  line-height: 1;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--phl-cyan-soft);
 }
 
 .live-compression {
@@ -1191,14 +1219,14 @@ class: slide-light
 </div>
 
 <div class="live-panel">
-<div class="live-panel-title">Responsibility remains</div>
+<div class="live-panel-title">What AI doesn’t decide</div>
 <div class="live-word-grid">
-<div class="live-word"><IconBadge tone="light" size="small"><ph:compass /></IconBadge><span>Direction</span></div>
-<div class="live-word"><IconBadge tone="light" size="small"><ph:key /></IconBadge><span>Authority</span></div>
-<div class="live-word"><IconBadge tone="light" size="small"><ph:seal-check /></IconBadge><span>Evidence</span></div>
-<div class="live-word"><IconBadge tone="light" size="small"><ph:user-circle /></IconBadge><span>Ownership</span></div>
+<div class="live-word"><IconBadge tone="light" size="small"><ph:compass /></IconBadge><div class="live-word-copy"><strong>Direction</strong><span>What should change?</span></div></div>
+<div class="live-word"><IconBadge tone="light" size="small"><ph:key /></IconBadge><div class="live-word-copy"><strong>Authority</strong><span>Which source or person decides?</span></div></div>
+<div class="live-word"><IconBadge tone="light" size="small"><ph:seal-check /></IconBadge><div class="live-word-copy"><strong>Evidence</strong><span>Is the result safe to accept?</span></div></div>
+<div class="live-word"><IconBadge tone="light" size="small"><ph:user-circle /></IconBadge><div class="live-word-copy"><strong>Ownership</strong><span>Who releases it and responds if it fails?</span></div></div>
 </div>
-<div class="live-panel-result">The bottleneck is an accepted change, safely in production.</div>
+<div class="live-panel-result"><span class="live-panel-result-label">The new bottleneck</span>Accepting a change safely into production.</div>
 </div>
 </div>
 
@@ -1211,45 +1239,47 @@ Client question:
 -->
 
 ---
-title: Begin with the change
+title: Define one accountable change.
 sync: outcome
 class: slide-light
 ---
 
-<Eyebrow text="THE STARTING POINT · OUTCOME BEFORE TECHNOLOGY" />
+<Eyebrow text="THE FIRST MOVE · MAKE RESPONSIBILITY EXPLICIT" />
 
 <div class="live-stage">
 
-# Begin with the change.
+# Define one accountable change.
 
-<div class="live-grid-4">
+<p class="live-claim">Before selecting technology or generating code, people answer the questions AI cannot.</p>
+
+<div class="live-grid-4" style="margin-top: 22px;">
 <div class="live-card is-cyan">
 <div class="live-card-head">
-<IconBadge tone="cyan"><ph:users-three /></IconBadge>
-<div class="live-num">01 · Benefit</div>
+<IconBadge tone="cyan"><ph:compass /></IconBadge>
+<div class="live-num">01 · Direction</div>
 </div>
-<h3>Who benefits?</h3>
-</div>
-<div class="live-card">
-<div class="live-card-head">
-<IconBadge tone="ink"><ph:target /></IconBadge>
-<div class="live-num">02 · Outcome</div>
-</div>
-<h3>What changes?</h3>
+<h3>Who benefits, and what changes?</h3>
 </div>
 <div class="live-card">
 <div class="live-card-head">
-<IconBadge tone="cyan"><ph:check-circle /></IconBadge>
-<div class="live-num">03 · Evidence</div>
+<IconBadge tone="ink"><ph:seal-check /></IconBadge>
+<div class="live-num">02 · Evidence</div>
 </div>
-<h3>How will we know?</h3>
+<h3>How will we know it worked?</h3>
+</div>
+<div class="live-card">
+<div class="live-card-head">
+<IconBadge tone="cyan"><ph:gavel /></IconBadge>
+<div class="live-num">03 · Authority</div>
+</div>
+<h3>Who accepts the trade-offs?</h3>
 </div>
 <div class="live-card is-magenta">
 <div class="live-card-head">
-<IconBadge tone="magenta"><ph:gavel /></IconBadge>
-<div class="live-num">04 · Authority</div>
+<IconBadge tone="magenta"><ph:user-circle /></IconBadge>
+<div class="live-num">04 · Ownership</div>
 </div>
-<h3>Who decides?</h3>
+<h3>Who releases and supports it?</h3>
 </div>
 </div>
 
@@ -1257,11 +1287,15 @@ class: slide-light
 </div>
 
 <!--
-We do not begin with “Where can we use AI?” We begin with a result that should be easier, safer, or faster.
-This is enough direction to stop fast implementation from hardening a weak assumption, not a giant up-front specification.
+Slide 2 established the decisions AI cannot own. This slide turns them into one bounded first move.
+- Direction names who benefits and what changes.
+- Evidence says how people will know it worked.
+- Authority accepts the trade-offs.
+- Ownership releases and supports the result.
+This is not a giant up-front specification. It is enough accountability to stop fast implementation from hardening a weak assumption.
 
 Client question:
-- What is one change that should be easier, safer, or faster than it is today?
+- What is one accountable change worth taking through the delivery system?
 -->
 
 ---

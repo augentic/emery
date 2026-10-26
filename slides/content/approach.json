@@ -15,17 +15,22 @@
       "Authority",
       "Evidence",
       "Ownership",
-      "An accepted change, safely in production"
+      "Accepting a change safely into production"
     ]
   },
   {
     "id": "outcome",
-    "title": "Begin with the change",
+    "title": "Define one accountable change.",
     "required": [
-      "Who benefits?",
-      "What changes?",
-      "How will we know?",
-      "Who decides?"
+      "Direction",
+      "Who benefits, and what changes?",
+      "Evidence",
+      "How will we know it worked?",
+      "Authority",
+      "Who accepts the trade-offs?",
+      "Ownership",
+      "Who releases and supports it?",
+      "One useful production outcome—small enough to learn, meaningful enough to matter."
     ]
   },
   {

@@ -88,7 +88,7 @@ class: slide-light
   <text x="196" y="230" text-anchor="end" class="svg-caption" fill="#0c7fa3">Minutes</text>
   <text x="36" y="286" class="svg-caption" fill="#0c7fa3">More output, sooner</text>
 
-  <text x="272" y="24" class="svg-kicker" fill="#a4238f">WHAT DOES NOT DISAPPEAR</text>
+  <text x="272" y="24" class="svg-kicker" fill="#a4238f">WHAT AI DOESN’T DECIDE</text>
   <rect x="272" y="42" width="352" height="276" rx="14" fill="#0d1030" />
   <circle cx="302" cy="88" r="14" fill="rgba(255,255,255,0.1)" stroke="#78d8f2" stroke-width="1.4" />
   <text x="302" y="93" text-anchor="middle" class="svg-pill" fill="#78d8f2">01</text>
@@ -114,7 +114,7 @@ class: slide-light
   <line x1="448" y1="318" x2="448" y2="352" stroke="#a4238f" stroke-width="1.8" />
   <rect x="78" y="354" width="498" height="66" rx="12" fill="rgba(164,35,143,0.07)" stroke="#a4238f" stroke-width="1.8" />
   <text x="327" y="380" text-anchor="middle" class="svg-kicker" fill="#a4238f">THE NEW DELIVERY BOTTLENECK</text>
-  <text x="327" y="403" text-anchor="middle" class="svg-h3" fill="#0d1030">An accepted change, safely in production</text>
+  <text x="327" y="403" text-anchor="middle" class="svg-h3" fill="#0d1030">Accepting a change safely into production</text>
 </svg>
 </div>
 </div>
@@ -130,85 +130,74 @@ Client question:
 -->
 
 ---
-title: Begin with the change
+title: Define one accountable change.
 sync: outcome
 class: slide-light
 ---
 
-<Eyebrow text="THE STARTING POINT · OUTCOME BEFORE TECHNOLOGY" />
+<Eyebrow text="THE FIRST MOVE · MAKE RESPONSIBILITY EXPLICIT" />
 
 <div class="ed-band">
 <div class="ed-band-top">
 <div>
 
-# Begin with<br>the change.
+# Define one<br>accountable change.
 
 </div>
-<p class="ed-band-prose">We start with the customer, operational, or commercial result—not a model, a backlog, or a target architecture. <strong>Faster implementation makes weak assumptions expensive sooner.</strong> Direction is delivery work.</p>
+<p class="ed-band-prose">Slide 2 names the decisions AI cannot own. <strong>Before selecting technology or generating code, people make them explicit for one bounded change.</strong></p>
 </div>
 <div class="ed-band-canvas">
 <svg viewBox="0 0 1140 350" aria-hidden="true">
-  <rect x="18" y="66" width="206" height="152" rx="14" fill="rgba(22,180,226,0.07)" stroke="#0c7fa3" stroke-width="1.8" />
-  <text x="38" y="96" class="svg-kicker" fill="#0c7fa3">01 · BENEFIT</text>
-  <text x="38" y="128" class="svg-h3" fill="#0d1030">Who benefits?</text>
-  <line x1="38" y1="142" x2="204" y2="142" stroke="rgba(13,16,48,0.12)" />
-  <text x="38" y="170" class="svg-caption" fill="rgba(13,16,48,0.6)">Customer, operator,</text>
-  <text x="38" y="190" class="svg-caption" fill="rgba(13,16,48,0.6)">or business unit</text>
+  <text x="570" y="24" text-anchor="middle" class="svg-kicker" fill="rgba(13,16,48,0.56)">PEOPLE MAKE THE DECISIONS AI CANNOT</text>
 
-  <line x1="224" y1="142" x2="240" y2="142" stroke="#0c7fa3" stroke-width="1.8" />
-  <polygon points="234,137 244,142 234,147" fill="#0c7fa3" />
+  <rect x="18" y="46" width="267" height="190" rx="14" fill="rgba(22,180,226,0.07)" stroke="#0c7fa3" stroke-width="1.8" />
+  <text x="38" y="76" class="svg-kicker" fill="#0c7fa3">01 · DIRECTION</text>
+  <text x="38" y="108" class="svg-h3" fill="#0d1030">Who benefits, and</text>
+  <text x="38" y="132" class="svg-h3" fill="#0d1030">what changes?</text>
+  <line x1="38" y1="150" x2="265" y2="150" stroke="rgba(12,127,163,0.18)" />
+  <text x="38" y="178" class="svg-caption" fill="rgba(13,16,48,0.62)">Set the intended outcome</text>
+  <text x="38" y="198" class="svg-caption" fill="rgba(13,16,48,0.62)">before implementation</text>
 
-  <rect x="242" y="66" width="206" height="152" rx="14" fill="#ffffff" stroke="rgba(13,16,48,0.28)" stroke-width="1.6" />
-  <text x="262" y="96" class="svg-kicker" fill="#0d1030">02 · OUTCOME</text>
-  <text x="262" y="128" class="svg-h3" fill="#0d1030">What changes?</text>
-  <line x1="262" y1="142" x2="428" y2="142" stroke="rgba(13,16,48,0.12)" />
-  <text x="262" y="170" class="svg-caption" fill="rgba(13,16,48,0.6)">Observable behaviour,</text>
-  <text x="262" y="190" class="svg-caption" fill="rgba(13,16,48,0.6)">not feature volume</text>
+  <rect x="297" y="46" width="267" height="190" rx="14" fill="#ffffff" stroke="rgba(13,16,48,0.28)" stroke-width="1.6" />
+  <text x="317" y="76" class="svg-kicker" fill="#0d1030">02 · EVIDENCE</text>
+  <text x="317" y="108" class="svg-h3" fill="#0d1030">How will we know</text>
+  <text x="317" y="132" class="svg-h3" fill="#0d1030">it worked?</text>
+  <line x1="317" y1="150" x2="544" y2="150" stroke="rgba(13,16,48,0.12)" />
+  <text x="317" y="178" class="svg-caption" fill="rgba(13,16,48,0.62)">Define acceptance checks</text>
+  <text x="317" y="198" class="svg-caption" fill="rgba(13,16,48,0.62)">and operational measures</text>
 
-  <line x1="448" y1="142" x2="464" y2="142" stroke="#0d1030" stroke-width="1.8" />
-  <polygon points="458,137 468,142 458,147" fill="#0d1030" />
+  <rect x="576" y="46" width="267" height="190" rx="14" fill="rgba(164,35,143,0.05)" stroke="#a4238f" stroke-width="1.7" />
+  <text x="596" y="76" class="svg-kicker" fill="#a4238f">03 · AUTHORITY</text>
+  <text x="596" y="108" class="svg-h3" fill="#0d1030">Who accepts</text>
+  <text x="596" y="132" class="svg-h3" fill="#0d1030">the trade-offs?</text>
+  <line x1="596" y1="150" x2="823" y2="150" stroke="rgba(164,35,143,0.18)" />
+  <text x="596" y="178" class="svg-caption" fill="rgba(13,16,48,0.62)">Make decision rights</text>
+  <text x="596" y="198" class="svg-caption" fill="rgba(13,16,48,0.62)">explicit</text>
 
-  <rect x="466" y="66" width="206" height="152" rx="14" fill="#ffffff" stroke="rgba(13,16,48,0.28)" stroke-width="1.6" />
-  <text x="486" y="96" class="svg-kicker" fill="#0d1030">03 · EVIDENCE</text>
-  <text x="486" y="128" class="svg-h3" fill="#0d1030">How will we know?</text>
-  <line x1="486" y1="142" x2="652" y2="142" stroke="rgba(13,16,48,0.12)" />
-  <text x="486" y="170" class="svg-caption" fill="rgba(13,16,48,0.6)">Acceptance checks and</text>
-  <text x="486" y="190" class="svg-caption" fill="rgba(13,16,48,0.6)">operational measures</text>
+  <rect x="855" y="46" width="267" height="190" rx="14" fill="#0d1030" />
+  <text x="875" y="76" class="svg-kicker" fill="#78d8f2">04 · OWNERSHIP</text>
+  <text x="875" y="108" class="svg-h3" fill="#ffffff">Who releases</text>
+  <text x="875" y="132" class="svg-h3" fill="#ffffff">and supports it?</text>
+  <line x1="875" y1="150" x2="1102" y2="150" stroke="rgba(255,255,255,0.14)" />
+  <text x="875" y="178" class="svg-caption" fill="rgba(255,255,255,0.72)">Name the owner before</text>
+  <text x="875" y="198" class="svg-caption" fill="rgba(255,255,255,0.72)">the result reaches production</text>
 
-  <line x1="672" y1="142" x2="688" y2="142" stroke="#0d1030" stroke-width="1.8" />
-  <polygon points="682,137 692,142 682,147" fill="#0d1030" />
-
-  <rect x="690" y="66" width="206" height="152" rx="14" fill="rgba(164,35,143,0.06)" stroke="#a4238f" stroke-width="1.8" />
-  <text x="710" y="96" class="svg-kicker" fill="#a4238f">04 · AUTHORITY</text>
-  <text x="710" y="128" class="svg-h3" fill="#0d1030">Who decides?</text>
-  <line x1="710" y1="142" x2="876" y2="142" stroke="rgba(164,35,143,0.18)" />
-  <text x="710" y="170" class="svg-caption" fill="rgba(13,16,48,0.6)">Trade-offs, acceptance,</text>
-  <text x="710" y="190" class="svg-caption" fill="rgba(13,16,48,0.6)">and release</text>
-
-  <line x1="896" y1="142" x2="912" y2="142" stroke="#a4238f" stroke-width="1.8" />
-  <polygon points="906,137 916,142 906,147" fill="#a4238f" />
-
-  <rect x="914" y="66" width="206" height="152" rx="14" fill="#0d1030" />
-  <text x="1017" y="96" text-anchor="middle" class="svg-kicker" fill="#78d8f2">BOUNDED FIRST MOVE</text>
-  <text x="1017" y="128" text-anchor="middle" class="svg-h3" fill="#ffffff">One useful</text>
-  <text x="1017" y="150" text-anchor="middle" class="svg-h3" fill="#ffffff">production outcome</text>
-  <line x1="936" y1="164" x2="1098" y2="164" stroke="rgba(255,255,255,0.14)" />
-  <text x="1017" y="190" text-anchor="middle" class="svg-caption" fill="rgba(255,255,255,0.7)">Small enough to learn</text>
-
-  <rect x="222" y="270" width="696" height="50" rx="12" fill="rgba(22,180,226,0.07)" stroke="rgba(12,127,163,0.3)" />
-  <text x="570" y="300" text-anchor="middle" class="svg-label" fill="#0d1030">What should be easier, safer, or faster than it is today?</text>
+  <rect x="170" y="276" width="800" height="50" rx="25" fill="#0d1030" stroke="#a4238f" stroke-width="1.6" />
+  <text x="570" y="307" text-anchor="middle" class="svg-label" fill="#ffffff">One useful production outcome—small enough to learn, meaningful enough to matter.</text>
 </svg>
 </div>
 </div>
 
 <!--
-The first discipline:
-- We do not begin with “Where can we use AI?” We begin with a result that should be easier, safer, or faster than it is today.
-- The boundary is deliberately small enough to learn from and meaningful enough to expose the real delivery system.
-- This is not a giant up-front specification. It is enough direction to stop fast implementation from hardening a weak assumption.
+Slide 2 established the decisions AI cannot own. This slide turns them into one bounded first move.
+- Direction names who benefits and what changes.
+- Evidence says how people will know it worked.
+- Authority accepts the trade-offs.
+- Ownership releases and supports the result.
+This is not a giant up-front specification. It is enough accountability to stop fast implementation from hardening a weak assumption.
 
 Client question:
-- What is one change that should be easier, safer, or faster than it is today?
+- What is one accountable change worth taking through the delivery system?
 -->
 
 ---
