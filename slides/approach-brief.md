@@ -57,147 +57,198 @@ Client question:
 -->
 
 ---
-title: Implementation changed. Responsibility did not.
+title: Implementation is changing. Responsibility is not.
 sync: shift
 class: slide-light
 ---
 
-<Eyebrow text="THE SHIFT · AI MOVES THE DELIVERY BOTTLENECK" />
+<Eyebrow text="THE SHIFT · IMPLEMENTATION SPEED CHANGES THE SYSTEM" />
 
 <div class="ed-split">
 <div class="ed-prose-col">
 
-# Implementation changed.<br>Responsibility did not.
+# Implementation is changing.<br>Responsibility is not.
 
-<p class="ed-prose">A model can turn a plausible idea into plausible code in minutes. It cannot decide whether the idea is right, which source is authoritative, what it may reach, or who accepts the consequences.</p>
-<p class="ed-prose"><strong>When AI compresses implementation, the bottleneck moves:</strong> from producing code to accepting a change into production with evidence and an owner.</p>
+<p class="ed-prose">AI compresses the work of turning an idea into plausible code.</p>
+<p class="ed-prose"><strong>Direction, authority, evidence, and ownership remain with the organisation.</strong></p>
 
 </div>
 <div class="ed-diagram-pane">
 <svg viewBox="0 0 640 440" aria-hidden="true">
-  <text x="16" y="24" class="svg-kicker" fill="#0c7fa3">WHAT AI COMPRESSES</text>
-  <rect x="16" y="42" width="220" height="276" rx="14" fill="rgba(22,180,226,0.06)" stroke="#0c7fa3" stroke-width="1.6" />
-  <text x="36" y="76" class="svg-h3" fill="#0d1030">Implementation effort</text>
-  <line x1="36" y1="92" x2="216" y2="92" stroke="rgba(13,16,48,0.12)" />
-  <text x="36" y="126" class="svg-label" fill="#0d1030">Research and drafting</text>
-  <text x="36" y="162" class="svg-label" fill="#0d1030">Code and test generation</text>
-  <text x="36" y="198" class="svg-label" fill="#0d1030">Translation and repetition</text>
-  <path d="M 52 242 L 192 242" stroke="rgba(12,127,163,0.35)" stroke-width="2" />
-  <polygon points="186,237 196,242 186,247" fill="#0c7fa3" />
-  <text x="52" y="230" class="svg-caption" fill="rgba(13,16,48,0.58)">Weeks</text>
-  <text x="196" y="230" text-anchor="end" class="svg-caption" fill="#0c7fa3">Minutes</text>
-  <text x="36" y="286" class="svg-caption" fill="#0c7fa3">More output, sooner</text>
+  <rect x="14" y="22" width="612" height="108" rx="14" fill="rgba(22,180,226,0.06)" stroke="#0c7fa3" stroke-width="1.6" />
+  <text x="38" y="52" class="svg-kicker" fill="#0c7fa3">IMPLEMENTATION EFFORT</text>
+  <text x="38" y="88" class="svg-h2" fill="#0d1030">Weeks</text>
+  <line x1="130" y1="81" x2="488" y2="81" stroke="rgba(12,127,163,0.42)" stroke-width="2" />
+  <polygon points="482,76 492,81 482,86" fill="#a4238f" />
+  <text x="602" y="88" text-anchor="end" class="svg-h2" fill="#a4238f">Minutes</text>
+  <text x="38" y="114" class="svg-caption" fill="rgba(13,16,48,0.58)">More plausible code, sooner</text>
 
-  <text x="272" y="24" class="svg-kicker" fill="#a4238f">WHAT AI DOESN’T DECIDE</text>
-  <rect x="272" y="42" width="352" height="276" rx="14" fill="#0d1030" />
-  <circle cx="302" cy="88" r="14" fill="rgba(255,255,255,0.1)" stroke="#78d8f2" stroke-width="1.4" />
-  <text x="302" y="93" text-anchor="middle" class="svg-pill" fill="#78d8f2">01</text>
-  <text x="330" y="84" class="svg-label" fill="#ffffff">Direction</text>
-  <text x="330" y="102" class="svg-caption" fill="rgba(255,255,255,0.68)">What should change, for whom, and why</text>
+  <rect x="14" y="148" width="612" height="224" rx="14" fill="#0d1030" />
+  <text x="38" y="180" class="svg-kicker" fill="#78d8f2">RESPONSIBILITY REMAINS</text>
 
-  <circle cx="302" cy="148" r="14" fill="rgba(255,255,255,0.1)" stroke="#78d8f2" stroke-width="1.4" />
-  <text x="302" y="153" text-anchor="middle" class="svg-pill" fill="#78d8f2">02</text>
-  <text x="330" y="144" class="svg-label" fill="#ffffff">Authority</text>
-  <text x="330" y="162" class="svg-caption" fill="rgba(255,255,255,0.68)">Which evidence wins and what code may reach</text>
+  <rect x="38" y="200" width="270" height="64" rx="9" fill="rgba(255,255,255,0.08)" />
+  <text x="56" y="226" class="svg-label" fill="#ffffff">Direction</text>
+  <text x="56" y="248" class="svg-caption" fill="rgba(255,255,255,0.68)">What should change?</text>
+  <rect x="332" y="200" width="270" height="64" rx="9" fill="rgba(255,255,255,0.08)" />
+  <text x="350" y="226" class="svg-label" fill="#ffffff">Authority</text>
+  <text x="350" y="248" class="svg-caption" fill="rgba(255,255,255,0.68)">Who decides?</text>
 
-  <circle cx="302" cy="208" r="14" fill="rgba(255,255,255,0.1)" stroke="#f59ef5" stroke-width="1.4" />
-  <text x="302" y="213" text-anchor="middle" class="svg-pill" fill="#f59ef5">03</text>
-  <text x="330" y="204" class="svg-label" fill="#ffffff">Evidence</text>
-  <text x="330" y="222" class="svg-caption" fill="rgba(255,255,255,0.68)">Why the result is safe to accept</text>
+  <rect x="38" y="282" width="270" height="64" rx="9" fill="rgba(255,255,255,0.08)" />
+  <text x="56" y="308" class="svg-label" fill="#ffffff">Evidence</text>
+  <text x="56" y="330" class="svg-caption" fill="rgba(255,255,255,0.68)">Is it safe to accept?</text>
+  <rect x="332" y="282" width="270" height="64" rx="9" fill="rgba(255,255,255,0.08)" />
+  <text x="350" y="308" class="svg-label" fill="#ffffff">Ownership</text>
+  <text x="350" y="330" class="svg-caption" fill="rgba(255,255,255,0.68)">Who answers for it?</text>
 
-  <circle cx="302" cy="268" r="14" fill="rgba(255,255,255,0.1)" stroke="#f59ef5" stroke-width="1.4" />
-  <text x="302" y="273" text-anchor="middle" class="svg-pill" fill="#f59ef5">04</text>
-  <text x="330" y="264" class="svg-label" fill="#ffffff">Ownership</text>
-  <text x="330" y="282" class="svg-caption" fill="rgba(255,255,255,0.68)">Who releases it and answers when it fails</text>
-
-  <line x1="126" y1="318" x2="126" y2="352" stroke="#0c7fa3" stroke-width="1.8" />
-  <line x1="448" y1="318" x2="448" y2="352" stroke="#a4238f" stroke-width="1.8" />
-  <rect x="78" y="354" width="498" height="66" rx="12" fill="rgba(164,35,143,0.07)" stroke="#a4238f" stroke-width="1.8" />
-  <text x="327" y="380" text-anchor="middle" class="svg-kicker" fill="#a4238f">THE NEW DELIVERY BOTTLENECK</text>
-  <text x="327" y="403" text-anchor="middle" class="svg-h3" fill="#0d1030">Accepting a change safely into production</text>
+  <rect x="70" y="394" width="500" height="36" rx="18" fill="rgba(164,35,143,0.07)" stroke="rgba(164,35,143,0.42)" />
+  <text x="320" y="417" text-anchor="middle" class="svg-caption" fill="#a4238f">Faster implementation shifts pressure onto the delivery system.</text>
 </svg>
 </div>
 </div>
 
 <!--
-The economic shift:
-- The model has compressed implementation effort, not organisational responsibility.
-- Plausibility is now abundant too. More plausible output increases the need for clear authority and independent evidence.
-- This is why a coding tool alone cannot be the delivery system.
-
-Client question:
-- Which of direction, authority, evidence, or ownership currently slows your changes most?
+AI compresses implementation effort. It does not transfer responsibility to the model.
+Direction, authority, evidence, and ownership remain with the organisation.
+The next slide shows the operational response: automate the path around the code.
 -->
 
 ---
-title: Define one accountable change.
-sync: outcome
+title: Automate the path from code to production.
+sync: delivery-automation
 class: slide-light
 ---
 
-<Eyebrow text="THE FIRST MOVE · MAKE RESPONSIBILITY EXPLICIT" />
+<Eyebrow text="THE DELIVERY SHIFT · AUTOMATE THE MECHANICS" />
 
 <div class="ed-band">
 <div class="ed-band-top">
 <div>
 
-# Define one<br>accountable change.
+# Automate the path<br>from code to production.
 
 </div>
-<p class="ed-band-prose">Slide 2 names the decisions AI cannot own. <strong>Before selecting technology or generating code, people make them explicit for one bounded change.</strong></p>
+<p class="ed-band-prose"><strong>Faster implementation matters only when evidence and delivery move at the same speed.</strong> We removed mechanical delay by automating the path around the code.</p>
 </div>
+
 <div class="ed-band-canvas">
 <svg viewBox="0 0 1140 350" aria-hidden="true">
-  <text x="570" y="24" text-anchor="middle" class="svg-kicker" fill="rgba(13,16,48,0.56)">PEOPLE MAKE THE DECISIONS AI CANNOT</text>
+  <rect x="16" y="36" width="330" height="214" rx="14" fill="rgba(22,180,226,0.06)" stroke="#0c7fa3" stroke-width="1.7" />
+  <text x="38" y="68" class="svg-kicker" fill="#0c7fa3">01 · PROVE</text>
+  <text x="38" y="104" class="svg-h2" fill="#0d1030">Test every change</text>
+  <line x1="38" y1="122" x2="324" y2="122" stroke="rgba(12,127,163,0.18)" />
+  <text x="38" y="158" class="svg-label" fill="#0d1030">Unit · integration · end-to-end</text>
+  <text x="38" y="204" class="svg-caption" fill="rgba(13,16,48,0.62)">Evidence runs without manual coordination</text>
 
-  <rect x="18" y="46" width="267" height="190" rx="14" fill="rgba(22,180,226,0.07)" stroke="#0c7fa3" stroke-width="1.8" />
-  <text x="38" y="76" class="svg-kicker" fill="#0c7fa3">01 · DIRECTION</text>
-  <text x="38" y="108" class="svg-h3" fill="#0d1030">Who benefits, and</text>
-  <text x="38" y="132" class="svg-h3" fill="#0d1030">what changes?</text>
-  <line x1="38" y1="150" x2="265" y2="150" stroke="rgba(12,127,163,0.18)" />
-  <text x="38" y="178" class="svg-caption" fill="rgba(13,16,48,0.62)">Set the intended outcome</text>
-  <text x="38" y="198" class="svg-caption" fill="rgba(13,16,48,0.62)">before implementation</text>
+  <line x1="346" y1="143" x2="392" y2="143" stroke="#0d1030" stroke-width="1.8" />
+  <polygon points="386,138 396,143 386,148" fill="#0d1030" />
 
-  <rect x="297" y="46" width="267" height="190" rx="14" fill="#ffffff" stroke="rgba(13,16,48,0.28)" stroke-width="1.6" />
-  <text x="317" y="76" class="svg-kicker" fill="#0d1030">02 · EVIDENCE</text>
-  <text x="317" y="108" class="svg-h3" fill="#0d1030">How will we know</text>
-  <text x="317" y="132" class="svg-h3" fill="#0d1030">it worked?</text>
-  <line x1="317" y1="150" x2="544" y2="150" stroke="rgba(13,16,48,0.12)" />
-  <text x="317" y="178" class="svg-caption" fill="rgba(13,16,48,0.62)">Define acceptance checks</text>
-  <text x="317" y="198" class="svg-caption" fill="rgba(13,16,48,0.62)">and operational measures</text>
+  <rect x="398" y="36" width="344" height="214" rx="14" fill="#0d1030" />
+  <text x="420" y="68" class="svg-kicker" fill="#78d8f2">02 · ASSURE</text>
+  <text x="420" y="104" class="svg-h2" fill="#ffffff">Analyse every change</text>
+  <line x1="420" y1="122" x2="720" y2="122" stroke="rgba(255,255,255,0.14)" />
+  <text x="420" y="156" class="svg-label" fill="#ffffff">Linting · security ·</text>
+  <text x="420" y="182" class="svg-label" fill="#ffffff">dependencies · automated review</text>
+  <text x="420" y="222" class="svg-caption" fill="rgba(255,255,255,0.7)">Policy is part of every change</text>
 
-  <rect x="576" y="46" width="267" height="190" rx="14" fill="rgba(164,35,143,0.05)" stroke="#a4238f" stroke-width="1.7" />
-  <text x="596" y="76" class="svg-kicker" fill="#a4238f">03 · AUTHORITY</text>
-  <text x="596" y="108" class="svg-h3" fill="#0d1030">Who accepts</text>
-  <text x="596" y="132" class="svg-h3" fill="#0d1030">the trade-offs?</text>
-  <line x1="596" y1="150" x2="823" y2="150" stroke="rgba(164,35,143,0.18)" />
-  <text x="596" y="178" class="svg-caption" fill="rgba(13,16,48,0.62)">Make decision rights</text>
-  <text x="596" y="198" class="svg-caption" fill="rgba(13,16,48,0.62)">explicit</text>
+  <line x1="742" y1="143" x2="788" y2="143" stroke="#a4238f" stroke-width="1.8" />
+  <polygon points="782,138 792,143 782,148" fill="#a4238f" />
 
-  <rect x="855" y="46" width="267" height="190" rx="14" fill="#0d1030" />
-  <text x="875" y="76" class="svg-kicker" fill="#78d8f2">04 · OWNERSHIP</text>
-  <text x="875" y="108" class="svg-h3" fill="#ffffff">Who releases</text>
-  <text x="875" y="132" class="svg-h3" fill="#ffffff">and supports it?</text>
-  <line x1="875" y1="150" x2="1102" y2="150" stroke="rgba(255,255,255,0.14)" />
-  <text x="875" y="178" class="svg-caption" fill="rgba(255,255,255,0.72)">Name the owner before</text>
-  <text x="875" y="198" class="svg-caption" fill="rgba(255,255,255,0.72)">the result reaches production</text>
+  <rect x="794" y="36" width="330" height="214" rx="14" fill="rgba(164,35,143,0.06)" stroke="#a4238f" stroke-width="1.7" />
+  <text x="816" y="68" class="svg-kicker" fill="#a4238f">03 · DELIVER</text>
+  <text x="816" y="104" class="svg-h2" fill="#0d1030">Deliver every accepted change</text>
+  <line x1="816" y1="122" x2="1102" y2="122" stroke="rgba(164,35,143,0.18)" />
+  <text x="816" y="156" class="svg-label" fill="#0d1030">PR · build · provision ·</text>
+  <text x="816" y="182" class="svg-label" fill="#0d1030">deploy · production</text>
+  <text x="816" y="222" class="svg-caption" fill="rgba(13,16,48,0.62)">One repeatable path to production</text>
 
-  <rect x="170" y="276" width="800" height="50" rx="25" fill="#0d1030" stroke="#a4238f" stroke-width="1.6" />
-  <text x="570" y="307" text-anchor="middle" class="svg-label" fill="#ffffff">One useful production outcome—small enough to learn, meaningful enough to matter.</text>
+  <rect x="170" y="282" width="800" height="48" rx="24" fill="#0d1030" />
+  <text x="570" y="312" text-anchor="middle" class="svg-label" fill="#ffffff">Repeatable evidence and automation replace manual hand-offs.</text>
 </svg>
 </div>
 </div>
 
 <!--
-Slide 2 established the decisions AI cannot own. This slide turns them into one bounded first move.
-- Direction names who benefits and what changes.
-- Evidence says how people will know it worked.
-- Authority accepts the trade-offs.
-- Ownership releases and supports the result.
-This is not a giant up-front specification. It is enough accountability to stop fast implementation from hardening a weak assumption.
+These changes predate the current AI wave and make AI-assisted implementation operationally useful.
+- Full test automation runs unit, integration, and end-to-end evidence without manual coordination.
+- Pipeline automation carries an accepted pull request through build, provision, deployment, and production.
+- Automated analysis makes linting, dependency, security, and review controls part of every change. Current examples include Cursor Bugbot, GitHub CodeQL, and Snyk.
+- This required testable systems, reliable suites, standard environments, policy as code, and ownership of pipeline health.
+Automation removes mechanical delay. It does not remove the human decision to accept a change.
 
 Client question:
-- What is one accountable change worth taking through the delivery system?
+- Where does a change still wait for a manual hand-off or bespoke decision?
+-->
+
+---
+title: The bottleneck becomes the feature throttle.
+sync: outcome
+class: slide-light
+---
+
+<Eyebrow text="THE NEW BOTTLENECK · GOVERN FEATURE DEMAND" />
+
+<div class="ed-band">
+<div class="ed-band-top">
+<div>
+
+# The bottleneck becomes<br>the feature throttle.
+
+</div>
+<p class="ed-band-prose"><strong>Faster delivery should increase learning—not feature volume.</strong> Cheap experiments inform a deliberate production backlog rather than bypassing it.</p>
+</div>
+<div class="ed-band-canvas">
+<svg viewBox="0 0 1140 350" aria-hidden="true">
+  <rect x="16" y="36" width="330" height="224" rx="14" fill="rgba(22,180,226,0.06)" stroke="#0c7fa3" stroke-width="1.7" />
+  <text x="38" y="68" class="svg-kicker" fill="#0c7fa3">SIGNALS AND EXPERIMENTS</text>
+  <text x="38" y="104" class="svg-h2" fill="#0d1030">Learn cheaply</text>
+  <line x1="38" y1="122" x2="324" y2="122" stroke="rgba(12,127,163,0.18)" />
+  <text x="38" y="154" class="svg-label" fill="#0d1030">Customer needs</text>
+  <text x="190" y="154" class="svg-label" fill="#0d1030">Operational evidence</text>
+  <text x="38" y="190" class="svg-label" fill="#0d1030">Product strategy</text>
+  <text x="190" y="190" class="svg-label" fill="#0d1030">Rapid prototypes</text>
+  <text x="38" y="232" class="svg-caption" fill="rgba(13,16,48,0.62)">Test assumptions before committing</text>
+
+  <line x1="346" y1="148" x2="392" y2="148" stroke="#0d1030" stroke-width="1.8" />
+  <polygon points="386,143 396,148 386,153" fill="#0d1030" />
+
+  <rect x="398" y="36" width="344" height="224" rx="14" fill="#0d1030" />
+  <text x="420" y="68" class="svg-kicker" fill="#f59ef5">FEATURE THROTTLE</text>
+  <text x="420" y="104" class="svg-h2" fill="#ffffff">Choose deliberately</text>
+  <line x1="420" y1="122" x2="720" y2="122" stroke="rgba(255,255,255,0.14)" />
+  <text x="420" y="154" class="svg-label" fill="#ffffff">Value</text>
+  <text x="582" y="154" class="svg-label" fill="#ffffff">Evidence</text>
+  <text x="420" y="190" class="svg-label" fill="#ffffff">Strategic fit</text>
+  <text x="582" y="190" class="svg-label" fill="#ffffff">Ownership</text>
+  <text x="420" y="232" class="svg-caption" fill="rgba(255,255,255,0.7)">Product judgement—not extra ceremony</text>
+
+  <line x1="742" y1="148" x2="788" y2="148" stroke="#a4238f" stroke-width="1.8" />
+  <polygon points="782,143 792,148 782,153" fill="#a4238f" />
+
+  <rect x="794" y="36" width="330" height="224" rx="14" fill="rgba(164,35,143,0.06)" stroke="#a4238f" stroke-width="1.7" />
+  <text x="816" y="68" class="svg-kicker" fill="#a4238f">PRODUCTION COMMITMENT</text>
+  <text x="816" y="104" class="svg-h2" fill="#0d1030">Deliberate production</text>
+  <text x="816" y="132" class="svg-h2" fill="#0d1030">backlog</text>
+  <line x1="816" y1="150" x2="1102" y2="150" stroke="rgba(164,35,143,0.18)" />
+  <text x="816" y="184" class="svg-caption" fill="rgba(13,16,48,0.66)">Only work with enough evidence</text>
+  <text x="816" y="206" class="svg-caption" fill="rgba(13,16,48,0.66)">and an owner enters delivery</text>
+
+  <rect x="170" y="286" width="800" height="48" rx="24" fill="#0d1030" stroke="#a4238f" stroke-width="1.6" />
+  <text x="570" y="316" text-anchor="middle" class="svg-label" fill="#ffffff">Prototypes inform the backlog. They do not bypass it.</text>
+</svg>
+</div>
+</div>
+
+<!--
+Once implementation and delivery accelerate, production capacity should not be filled with features by default.
+- Customer signals, operational evidence, strategy, and cheap experiments become inputs.
+- Citizen- and vibe-coded proofs of concept are useful because they test assumptions and expose needs quickly.
+- A prototype gains no production authority merely because it works.
+- The feature throttle asks whether there is value, evidence, strategic fit, and an owner.
+- The result may enter the production backlog, return for another experiment, or stop.
+The throttle is product judgement, not extra ceremony. Faster delivery should produce faster learning and fewer weak commitments.
+
+Client question:
+- Which backlog decisions could be informed by a cheap prototype before becoming production commitments?
 -->
 
 ---

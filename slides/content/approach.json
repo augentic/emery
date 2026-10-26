@@ -9,28 +9,47 @@
   },
   {
     "id": "shift",
-    "title": "Implementation changed. Responsibility did not.",
+    "title": "Implementation is changing. Responsibility is not.",
     "required": [
+      "AI compresses the work of turning an idea into plausible code.",
       "Direction",
       "Authority",
       "Evidence",
       "Ownership",
-      "Accepting a change safely into production"
+      "Faster implementation shifts pressure onto the delivery system."
+    ]
+  },
+  {
+    "id": "delivery-automation",
+    "title": "Automate the path from code to production.",
+    "required": [
+      "Faster implementation matters only when evidence and delivery move at the same speed.",
+      "Test every change",
+      "Unit · integration · end-to-end",
+      "Analyse every change",
+      "Linting · security · dependencies · automated review",
+      "Deliver every accepted change",
+      "PR · build · provision · deploy · production",
+      "Repeatable evidence and automation replace manual hand-offs."
     ]
   },
   {
     "id": "outcome",
-    "title": "Define one accountable change.",
+    "title": "The bottleneck becomes the feature throttle.",
     "required": [
-      "Direction",
-      "Who benefits, and what changes?",
+      "Faster delivery should increase learning—not feature volume.",
+      "Signals and experiments",
+      "Customer needs",
+      "Operational evidence",
+      "Product strategy",
+      "Rapid prototypes",
+      "Feature throttle",
+      "Value",
       "Evidence",
-      "How will we know it worked?",
-      "Authority",
-      "Who accepts the trade-offs?",
+      "Strategic fit",
       "Ownership",
-      "Who releases and supports it?",
-      "One useful production outcome—small enough to learn, meaningful enough to matter."
+      "Deliberate production backlog",
+      "Prototypes inform the backlog. They do not bypass it."
     ]
   },
   {

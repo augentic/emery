@@ -363,6 +363,46 @@ class: slide-hero slide-section
   grid-template-columns: 1fr 42px 1fr 42px 1fr;
 }
 
+.live-feature-flow {
+  margin-top: 22px;
+  display: grid;
+  grid-template-columns: 1.15fr 42px 1fr 42px 0.9fr;
+  gap: 10px;
+  align-items: stretch;
+}
+
+.live-feature-flow .live-card {
+  min-height: 190px;
+  padding: 20px;
+}
+
+.live-feature-flow .live-card h3 {
+  font-size: 20px;
+}
+
+.live-feature-list {
+  margin-top: 14px;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.live-feature-list span {
+  padding: 9px 10px;
+  border: 1px solid rgba(13, 16, 48, 0.12);
+  border-radius: 7px;
+  background: rgba(255, 255, 255, 0.72);
+  font-size: 12.5px;
+  line-height: 1.2;
+  color: var(--phl-ink-body);
+}
+
+.live-card.is-dark .live-feature-list span {
+  border-color: rgba(255, 255, 255, 0.14);
+  background: rgba(255, 255, 255, 0.08);
+  color: rgba(255, 255, 255, 0.82);
+}
+
 .live-sdd-flow {
   display: grid;
   grid-template-columns: 1.15fr 92px 0.85fr 24px 1fr;
@@ -1197,17 +1237,17 @@ Opening:
 -->
 
 ---
-title: Implementation changed. Responsibility did not.
+title: Implementation is changing. Responsibility is not.
 sync: shift
 class: slide-light
 ---
 
-<Eyebrow text="THE SHIFT · AI MOVES THE DELIVERY BOTTLENECK" />
+<Eyebrow text="THE SHIFT · IMPLEMENTATION SPEED CHANGES THE SYSTEM" />
 
 <div class="live-split">
 <div class="live-copy">
 
-# Implementation changed.<br>Responsibility did not.
+# Implementation is changing.<br>Responsibility is not.
 
 <p class="live-claim">AI compresses the work of turning an idea into plausible code.</p>
 
@@ -1219,83 +1259,148 @@ class: slide-light
 </div>
 
 <div class="live-panel">
-<div class="live-panel-title">What AI doesn’t decide</div>
+<div class="live-panel-title">Responsibility remains</div>
 <div class="live-word-grid">
 <div class="live-word"><IconBadge tone="light" size="small"><ph:compass /></IconBadge><div class="live-word-copy"><strong>Direction</strong><span>What should change?</span></div></div>
-<div class="live-word"><IconBadge tone="light" size="small"><ph:key /></IconBadge><div class="live-word-copy"><strong>Authority</strong><span>Which source or person decides?</span></div></div>
-<div class="live-word"><IconBadge tone="light" size="small"><ph:seal-check /></IconBadge><div class="live-word-copy"><strong>Evidence</strong><span>Is the result safe to accept?</span></div></div>
-<div class="live-word"><IconBadge tone="light" size="small"><ph:user-circle /></IconBadge><div class="live-word-copy"><strong>Ownership</strong><span>Who releases it and responds if it fails?</span></div></div>
+<div class="live-word"><IconBadge tone="light" size="small"><ph:key /></IconBadge><div class="live-word-copy"><strong>Authority</strong><span>Who decides?</span></div></div>
+<div class="live-word"><IconBadge tone="light" size="small"><ph:seal-check /></IconBadge><div class="live-word-copy"><strong>Evidence</strong><span>Is it safe to accept?</span></div></div>
+<div class="live-word"><IconBadge tone="light" size="small"><ph:user-circle /></IconBadge><div class="live-word-copy"><strong>Ownership</strong><span>Who answers for it?</span></div></div>
 </div>
-<div class="live-panel-result"><span class="live-panel-result-label">The new bottleneck</span>Accepting a change safely into production.</div>
+<div class="live-panel-result"><span class="live-panel-result-label">The first shift</span>Faster implementation shifts pressure onto the delivery system.</div>
 </div>
 </div>
 
 <!--
-The model has compressed implementation effort, not organisational responsibility.
-Plausibility is abundant too. More plausible output increases the need for clear authority and independent evidence.
-
-Client question:
-- Which of direction, authority, evidence, or ownership currently slows your changes most?
+AI compresses implementation effort. It does not transfer responsibility to the model.
+Direction, authority, evidence, and ownership remain with the organisation.
+The next slide shows the operational response: automate the path around the code.
 -->
 
 ---
-title: Define one accountable change.
+title: Automate the path from code to production.
+sync: delivery-automation
+class: slide-light
+---
+
+<Eyebrow text="THE DELIVERY SHIFT · AUTOMATE THE MECHANICS" />
+
+<div class="live-stage">
+
+# Automate the path from code to production.
+
+<p class="live-claim">Faster implementation matters only when evidence and delivery move at the same speed.</p>
+
+<div class="live-pipeline is-three" style="margin-top: 22px;">
+<div class="live-card is-cyan">
+<div class="live-card-head">
+<IconBadge tone="cyan"><ph:test-tube /></IconBadge>
+<div class="live-kicker">01 · Prove</div>
+</div>
+<h3>Test every change</h3>
+<p>Unit · integration · end-to-end</p>
+</div>
+<div class="live-arrow">→</div>
+<div class="live-card is-dark">
+<div class="live-card-head">
+<IconBadge tone="light"><ph:shield-check /></IconBadge>
+<div class="live-kicker">02 · Assure</div>
+</div>
+<h3>Analyse every change</h3>
+<p>Linting · security · dependencies · automated review</p>
+</div>
+<div class="live-arrow">→</div>
+<div class="live-card is-magenta">
+<div class="live-card-head">
+<IconBadge tone="magenta"><ph:rocket-launch /></IconBadge>
+<div class="live-kicker">03 · Deliver</div>
+</div>
+<h3>Deliver every accepted change</h3>
+<p>PR · build · provision · deploy · production</p>
+</div>
+</div>
+
+<div class="live-outcome">Repeatable evidence and automation replace manual hand-offs.</div>
+</div>
+
+<!--
+These changes predate the current AI wave and make AI-assisted implementation operationally useful.
+- Full test automation runs unit, integration, and end-to-end evidence without manual coordination.
+- Pipeline automation carries an accepted pull request through build, provision, deployment, and production.
+- Automated analysis makes linting, dependency, security, and review controls part of every change. Current examples include Cursor Bugbot, GitHub CodeQL, and Snyk.
+- This required testable systems, reliable suites, standard environments, policy as code, and ownership of pipeline health.
+Automation removes mechanical delay. It does not remove the human decision to accept a change.
+
+Client question:
+- Where does a change still wait for a manual hand-off or bespoke decision?
+-->
+
+---
+title: The bottleneck becomes the feature throttle.
 sync: outcome
 class: slide-light
 ---
 
-<Eyebrow text="THE FIRST MOVE · MAKE RESPONSIBILITY EXPLICIT" />
+<Eyebrow text="THE NEW BOTTLENECK · GOVERN FEATURE DEMAND" />
 
 <div class="live-stage">
 
-# Define one accountable change.
+# The bottleneck becomes the feature throttle.
 
-<p class="live-claim">Before selecting technology or generating code, people answer the questions AI cannot.</p>
+<p class="live-claim">Faster delivery should increase learning—not feature volume.</p>
 
-<div class="live-grid-4" style="margin-top: 22px;">
+<div class="live-feature-flow">
 <div class="live-card is-cyan">
 <div class="live-card-head">
-<IconBadge tone="cyan"><ph:compass /></IconBadge>
-<div class="live-num">01 · Direction</div>
+<IconBadge tone="cyan"><ph:lightbulb /></IconBadge>
+<div class="live-kicker">Signals and experiments</div>
 </div>
-<h3>Who benefits, and what changes?</h3>
+<h3>Learn cheaply</h3>
+<div class="live-feature-list">
+<span>Customer needs</span>
+<span>Operational evidence</span>
+<span>Product strategy</span>
+<span>Rapid prototypes</span>
 </div>
-<div class="live-card">
+</div>
+<div class="live-arrow">→</div>
+<div class="live-card is-dark">
 <div class="live-card-head">
-<IconBadge tone="ink"><ph:seal-check /></IconBadge>
-<div class="live-num">02 · Evidence</div>
+<IconBadge tone="light"><ph:funnel /></IconBadge>
+<div class="live-kicker">Feature throttle</div>
 </div>
-<h3>How will we know it worked?</h3>
+<h3>Choose deliberately</h3>
+<div class="live-feature-list">
+<span>Value</span>
+<span>Evidence</span>
+<span>Strategic fit</span>
+<span>Ownership</span>
 </div>
-<div class="live-card">
-<div class="live-card-head">
-<IconBadge tone="cyan"><ph:gavel /></IconBadge>
-<div class="live-num">03 · Authority</div>
 </div>
-<h3>Who accepts the trade-offs?</h3>
-</div>
+<div class="live-arrow">→</div>
 <div class="live-card is-magenta">
 <div class="live-card-head">
-<IconBadge tone="magenta"><ph:user-circle /></IconBadge>
-<div class="live-num">04 · Ownership</div>
+<IconBadge tone="magenta"><ph:list-checks /></IconBadge>
+<div class="live-kicker">Production commitment</div>
 </div>
-<h3>Who releases and supports it?</h3>
+<h3>Deliberate production backlog</h3>
+<p>Only work with enough evidence and an owner enters the delivery path.</p>
 </div>
 </div>
 
-<div class="live-outcome">One useful production outcome—small enough to learn, meaningful enough to matter.</div>
+<div class="live-outcome">Prototypes inform the backlog. They do not bypass it.</div>
 </div>
 
 <!--
-Slide 2 established the decisions AI cannot own. This slide turns them into one bounded first move.
-- Direction names who benefits and what changes.
-- Evidence says how people will know it worked.
-- Authority accepts the trade-offs.
-- Ownership releases and supports the result.
-This is not a giant up-front specification. It is enough accountability to stop fast implementation from hardening a weak assumption.
+Once implementation and delivery accelerate, production capacity should not be filled with features by default.
+- Customer signals, operational evidence, strategy, and cheap experiments become inputs.
+- Citizen- and vibe-coded proofs of concept are useful because they test assumptions and expose needs quickly.
+- A prototype gains no production authority merely because it works.
+- The feature throttle asks whether there is value, evidence, strategic fit, and an owner.
+- The result may enter the production backlog, return for another experiment, or stop.
+The throttle is product judgement, not extra ceremony. Faster delivery should produce faster learning and fewer weak commitments.
 
 Client question:
-- What is one accountable change worth taking through the delivery system?
+- Which backlog decisions could be informed by a cheap prototype before becoming production commitments?
 -->
 
 ---
