@@ -44,7 +44,11 @@ use crate::{Files, store};
 /// `retire` claim retires the requirement stating the behaviour it
 /// withdraws, and a requirement no claim touches stands unchanged. A change
 /// stating no requirement, a `decision` or a `type` alone, is matched
-/// against nothing and leaves every requirement as it stands. The sources
+/// against nothing and leaves every requirement as it stands. A behaviour
+/// source read whole ([`Scope::Whole`](crate::specify::Scope::Whole)) then
+/// retires every standing requirement no claim touched under a stem its
+/// requirement claims cover, the entry naming the source as its
+/// [`Change::scope`]; a prose source's scope retires nothing. The sources
 /// are extracted as `specify` extracts them, a repository source read in a
 /// working copy removed once every source answered.
 ///
@@ -131,9 +135,10 @@ pub async fn amend<P: Model + Source + StateStore + BlobStore + Plugins + Vcs + 
 
     // the change matched against the base, and what it did to each
     // requirement; a change stating none leaves every requirement as it is
-    // with no grouping spent
+    // with no grouping spent, and a behaviour source read whole then retires
+    // what it falls silent on under the stems it covers
     let standing = Standing::new(&revision.spec, &extracts);
-    let ChangeSet { changes, drafted } = if ChangeSet::states(&extracts) {
+    let mut change_set = if ChangeSet::states(&extracts) {
         let bases =
             GroupingBrief::with_standing(&extracts, standing.contributors(), standing.criteria())
                 .derive(provider)
@@ -143,6 +148,8 @@ pub async fn amend<P: Model + Source + StateStore + BlobStore + Plugins + Vcs + 
         tracing::info!("the change states no requirement; the specification stands");
         ChangeSet::unchanged(&standing)
     };
+    change_set.retire_by_scope(&extracts);
+    let ChangeSet { changes, drafted } = change_set;
 
     // the retired requirements leave their slices before the design turn,
     // an emptied slice goes, and the types it owned leave the design with
@@ -277,12 +284,16 @@ pub struct Tally {
     pub added: usize,
     /// Requirements of the base the change restates, their ids kept.
     pub changed: usize,
-    /// Requirements of the base the change withdraws.
+    /// Requirements of the base the change withdraws, those retired by a
+    /// source's scope among them.
     pub retired: usize,
     /// Requirements the change sources state and disagree over.
     pub conflict: usize,
     /// Requirements of the base the change leaves as they stand.
     pub unchanged: usize,
+    /// How many of the [`retired`](Self::retired) a behaviour source read
+    /// whole retired by falling silent on them, rather than a claim.
+    pub by_scope: usize,
 }
 
 impl Tally {
@@ -295,6 +306,7 @@ impl Tally {
             retired: amendment.count(ChangeClass::Retired),
             conflict: amendment.count(ChangeClass::Conflict),
             unchanged: amendment.count(ChangeClass::Unchanged),
+            by_scope: amendment.changes.iter().filter(|change| change.by_scope()).count(),
         }
     }
 }

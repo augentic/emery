@@ -113,7 +113,7 @@ impl Amendment {
             .changes
             .iter()
             .filter(|change| change.class != ChangeClass::Unchanged)
-            .map(|change| revision::stem(&change.subject))
+            .map(Change::stem)
             .collect();
         stems.sort_unstable();
         stems.dedup();
@@ -260,6 +260,28 @@ pub struct Change {
     pub after: Option<String>,
     /// The claims behind the entry, in descending authority order.
     pub sources: Vec<Cited>,
+    /// The behaviour source read whole whose silence retired the
+    /// requirement; `None` for every entry a claim decided.
+    ///
+    /// Set on a [`ChangeClass::Retired`] entry alone, whose
+    /// [`sources`](Self::sources) are then empty: the source covers the
+    /// requirement's stem with its requirement claims and states nothing of
+    /// the requirement.
+    pub scope: Option<String>,
+}
+
+impl Change {
+    /// Returns the first segment of the dotted [`subject`](Self::subject).
+    #[must_use]
+    pub fn stem(&self) -> &str {
+        revision::stem(&self.subject)
+    }
+
+    /// Returns whether the entry was retired by a source's scope rather than by a claim.
+    #[must_use]
+    pub fn by_scope(&self) -> bool {
+        self.class == ChangeClass::Retired && self.scope.is_some()
+    }
 }
 
 impl Display for Change {
@@ -288,8 +310,18 @@ impl Display for Change {
                 }
                 write!(f, "\n\nAfter: {after}")?;
             }
-            (ChangeClass::Retired, Some(before), _) => {
-                write!(f, "\n\n{before}")?;
+            (ChangeClass::Retired, before, _) => {
+                if let Some(before) = before {
+                    write!(f, "\n\n{before}")?;
+                }
+                if let Some(source) = &self.scope {
+                    write!(
+                        f,
+                        "\n\n{NOTE} retired by scope: `{source}` was read whole and states \
+                         nothing under `{}`.",
+                        self.stem()
+                    )?;
+                }
             }
             (ChangeClass::Conflict, _, _) => {
                 write!(f, "\n\n{NOTE} Operator reconciliation required.")?;

@@ -17,9 +17,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use omnia_sdk::{Error, server_error};
 
 use crate::brief::Review;
-use crate::revision::{
-    self, Change, ChangeClass, EMERY, Plan, ReqId, Requirement, Slice, SliceId, Spec,
-};
+use crate::revision::{Change, ChangeClass, EMERY, Plan, ReqId, Requirement, Slice, SliceId, Spec};
 use crate::specify::{Basis, Floors, Open, SLICE_CAP, SliceAmend, drafts};
 
 // The base plan with the requirements that leave their slices taken out and
@@ -57,9 +55,8 @@ impl<'a> Pruned<'a> {
             .iter()
             .filter(|change| change.class == ChangeClass::Changed)
             .filter(|change| {
-                spec.requirement(change.id).is_some_and(|requirement| {
-                    requirement.stem() != revision::stem(&change.subject)
-                })
+                spec.requirement(change.id)
+                    .is_some_and(|requirement| requirement.stem() != change.stem())
             })
             .map(|change| change.id)
             .collect();

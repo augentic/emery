@@ -17,7 +17,8 @@
           "claim": "greeting.behaviour",
           "path": null
         }
-      ]
+      ],
+      "scope": null
     },
     {
       "id": "REQ-002",
@@ -25,7 +26,8 @@
       "class": "unchanged",
       "before": "A greeting request naming an empty caller is refused.",
       "after": "A greeting request naming an empty caller is refused.",
-      "sources": []
+      "sources": [],
+      "scope": null
     },
     {
       "id": "REQ-003",
@@ -39,7 +41,8 @@
           "claim": "greeting.farewell",
           "path": "brief.md#L12-L13"
         }
-      ]
+      ],
+      "scope": null
     },
     {
       "id": "REQ-004",
@@ -58,7 +61,8 @@
           "claim": "greeting.locale",
           "path": "src/greeting.ts#L20-L31"
         }
-      ]
+      ],
+      "scope": null
     },
     {
       "id": "REQ-005",
@@ -77,7 +81,8 @@
           "claim": "greeting.rate-limit",
           "path": "notes.md#L4"
         }
-      ]
+      ],
+      "scope": null
     }
   ],
   "spec": {

@@ -6,12 +6,13 @@ mod support;
 #[path = "support/verbs.rs"]
 mod verbs;
 
-use emery_adapter::source::ClaimKind;
+use emery_adapter::source::{ClaimKind, SourceKind};
 use emery_engine::vcs::REVISION;
 use emery_engine::{STAGED_CONTAINER, STAGED_KEY};
 use omnia_test::SeenFormat;
 use serde_json::Value;
 use support::provider::{Provider, claim, cli, evidence, requirement, retire};
+use support::scratch::Scratch;
 use support::store::{seed, stage, stage_amendment};
 use support::vcs::HEAD;
 use support::{cli_ok, fail};
@@ -22,6 +23,8 @@ const PROJECT_CONFIG: &str = "tests/build/project.toml";
 // The change sources, documentation adapters the scripted loader lands at any version.
 const DOCS: &str = "acme:docs@1.0.0";
 const WIKI: &str = "acme:wiki@1.0.0";
+// A change source read as code: the scenario scripts its kind as behaviour.
+const CODE: &str = "acme:code@1.0.0";
 
 const SPEC: &[u8] = include_bytes!("build/spec.json");
 const DESIGN: &[u8] = include_bytes!("build/design.json");
@@ -29,6 +32,7 @@ const PLAN: &[u8] = include_bytes!("build/plan.json");
 const CHAIN_PLAN: &[u8] = include_bytes!("amend/chain-plan.json");
 const CLASSES: &str = include_str!("amend/classes.json");
 const RETIRED: &str = include_str!("amend/retired.json");
+const SCOPED: &str = include_str!("amend/scoped.json");
 const DESIGNED: &str = include_str!("amend/designed.json");
 const AMENDMENT: &[u8] = include_bytes!("specify/6-amendment.json");
 
@@ -189,10 +193,9 @@ async fn amend_classes() {
     assert_eq!(envelope["amendment"], id);
     assert_eq!(envelope["base"]["revision"], revision);
     assert_eq!(envelope["base"]["commit"], HEAD);
-    assert_eq!(
-        envelope["tally"],
-        serde_json::json!({"added": 1, "changed": 1, "retired": 0, "conflict": 1, "unchanged": 2})
-    );
+    let tally =
+        r#"{"added": 1, "changed": 1, "retired": 0, "conflict": 1, "unchanged": 2, "by-scope": 0}"#;
+    assert_eq!(envelope["tally"], serde_json::from_str::<Value>(tally).expect("JSON"));
     assert_eq!(envelope["conflicts"], serde_json::json!(["auth.login"]));
     assert_eq!(envelope["stems"], serde_json::json!(["auth", "orders", "session"]));
     assert_eq!(envelope["sections"], Value::Null, "an unchanged design is elided: {envelope}");
@@ -489,6 +492,186 @@ async fn amend_retired_chain() {
     );
     let design: Value = serde_json::from_slice(DESIGN).expect("the base design is JSON");
     assert_eq!(amendment["design"]["sections"], design["sections"], "{amendment}");
+    provider.model.assert_exhausted();
+}
+
+// A behaviour source read whole retires what it falls silent on: under the
+// stems its requirement claims cover, a standing requirement no claim of
+// the change touched is retired with the source named in its place, the
+// grouping the one turn spent. The entry is listed apart in the counts and
+// under `## Retired` with a note, and the requirement leaves its slice as
+// one a `retire` claim withdrew does.
+#[tokio::test]
+async fn amend_scoped() {
+    let scratch = Scratch::new();
+    let config = scoped(&scratch, CODE, "whole");
+    let mut provider = Provider::answering([SCOPED_GROUPING, SCOPED_GROUPING]);
+    code(&mut provider);
+    let revision = seed(&provider.files, SPEC, DESIGN, PLAN);
+
+    let resp = cli_ok(&provider, &["emery", "amend", "--config", &config]).await;
+
+    let (id, amendment) = staged_amendment(&provider);
+    assert_eq!(
+        String::from_utf8_lossy(&resp.stdout),
+        format!(
+            "staged amendment {id}\n  base {revision} at {}\n  0 added, 0 changed, 1 retired (1 \
+             by scope), 0 conflict, 3 unchanged\n  stems: orders\n  slices: orders\n  nothing \
+             sealed; `emery show amendment` reviews it\n",
+            &HEAD[..8]
+        )
+    );
+    let expected: Value = serde_json::from_str(&SCOPED.replace("<revision>", &revision))
+        .expect("the fixture is JSON");
+    assert_eq!(amendment, expected);
+    assert_eq!(provider.model.seen().len(), 1, "the grouping is the one turn");
+    assert_eq!(provider.vcs.calls(), read_calls());
+
+    let shown = cli_ok(&provider, &["emery", "show", "amendment"]).await;
+    let shown = String::from_utf8_lossy(&shown.stdout);
+    assert!(
+        shown.contains("0 added, 0 changed, 1 retired, 0 conflict, 3 unchanged."),
+        "the projection counts the class alone: {shown}"
+    );
+    assert!(
+        shown.contains(
+            "## Retired\n\n### Requirement: orders.cancel\n\nID: REQ-004\nSources: []\n\nA \
+             signed-in user cancels an open order.\n\nNote: retired by scope: `code` was read \
+             whole and states nothing under `orders`.\n"
+        ),
+        "{shown}"
+    );
+    assert!(
+        shown.contains("### Slice: orders [changed]\n\nID: SLICE-002\nRequirements: [REQ-003]")
+    );
+
+    // the envelope counts the scope-retired among the retired
+    let resp =
+        cli_ok(&provider, &["emery", "--format", "json", "amend", "--config", &config]).await;
+    let envelope: Value = serde_json::from_slice(&resp.stdout).expect("one JSON envelope");
+    assert_eq!(
+        envelope["tally"],
+        serde_json::json!({
+            "added": 0, "changed": 0, "retired": 1, "conflict": 0, "unchanged": 3, "by-scope": 1
+        }),
+        "{envelope}"
+    );
+    provider.model.assert_exhausted();
+}
+
+// The same source read as a delta retires nothing, since what it is silent
+// on stands; nor does a documentation source read whole, since only a
+// behaviour source's scope says what the code no longer does. Either way
+// the change restates one requirement and nothing is staged.
+#[tokio::test]
+async fn amend_scoped_silent() {
+    let scratch = Scratch::new();
+    let config = scoped(&scratch, CODE, "delta");
+    let mut provider = Provider::answering([SCOPED_GROUPING]);
+    code(&mut provider);
+    let revision = seed(&provider.files, SPEC, DESIGN, PLAN);
+
+    let resp = cli_ok(&provider, &["emery", "amend", "--config", &config]).await;
+
+    let unchanged = format!(
+        "nothing staged: no change against the current revision\n  base {revision} at {}\n  0 \
+         added, 0 changed, 0 retired, 0 conflict, 4 unchanged\n",
+        &HEAD[..8]
+    );
+    assert_eq!(String::from_utf8_lossy(&resp.stdout), unchanged);
+    assert!(provider.storage.state(STAGED_KEY).is_none(), "nothing is staged");
+    provider.model.assert_exhausted();
+
+    let config = scoped(&scratch, DOCS, "whole");
+    let mut provider = Provider::answering([SCOPED_GROUPING]);
+    provider.source.evidence.insert(
+        "docs".to_owned(),
+        Ok(evidence(vec![requirement("orders.create", "A signed-in user places an order.")])),
+    );
+    seed(&provider.files, SPEC, DESIGN, PLAN);
+
+    let resp = cli_ok(&provider, &["emery", "amend", "--config", &config]).await;
+
+    assert_eq!(String::from_utf8_lossy(&resp.stdout), unchanged);
+    assert!(provider.storage.state(STAGED_KEY).is_none(), "nothing is staged");
+    provider.model.assert_exhausted();
+}
+
+// The grouping over `code`'s one claim, `orders.create`, restating the
+// standing requirement of that id: index 0 is `code`, 1..=4 the standing
+// requirements in id order.
+const SCOPED_GROUPING: &str = r#"{"groups": [
+    {"claims": [0, 3], "classes": [[0, 3]]},
+    {"claims": [1], "classes": [[1]]},
+    {"claims": [2], "classes": [[2]]},
+    {"claims": [4], "classes": [[4]]}
+]}"#;
+
+// A behaviour source `code`, its one claim restating `orders.create`.
+fn code(provider: &mut Provider) {
+    provider.source.kinds.insert("acme:code".to_owned(), SourceKind::Behaviour);
+    provider.source.evidence.insert(
+        "code".to_owned(),
+        Ok(evidence(vec![requirement("orders.create", "A signed-in user places an order.")])),
+    );
+}
+
+// A change file naming one source read under `scope`, over the project
+// checkout as its target.
+fn scoped(scratch: &Scratch, adapter: &str, scope: &str) -> String {
+    scratch.config(&format!(
+        "[[source]]\nadapter = \"{adapter}\"\nscope = \"{scope}\"\n\n[target]\nadapter = \
+         \"acme:builder@2.1.0\"\nrepository = \".\"\n"
+    ))
+}
+
+// A change claim anchored where a standing requirement was read, from the
+// same source, is hinted to revise it in the grouping request: a hint, not
+// a pre-merge, so the answer is held to no group for it. Here the model
+// takes the hint, and the requirement keeps its id under the claim's
+// subject.
+#[tokio::test]
+async fn amend_anchored() {
+    let base = String::from_utf8_lossy(SPEC).replace(
+        "\"claim\": \"orders.cancel\",\n          \"path\": null",
+        "\"claim\": \"orders.cancel\",\n          \"path\": \"docs/orders.md#L20-L30\"",
+    );
+    // index 0 is `docs`, 1..=4 the standing requirements in id order
+    let grouping = r#"{"groups": [
+        {"claims": [0, 4], "classes": [[0, 4]]},
+        {"claims": [1], "classes": [[1]]},
+        {"claims": [2], "classes": [[2]]},
+        {"claims": [3], "classes": [[3]]}
+    ]}"#;
+    let draft = r#"{"preamble": [], "requirements": [
+        {"subject": "orders.cancellation", "scenarios": [
+            {"name": "Cancel", "when": "a signed-in caller cancels an order", "then": "the order is cancelled"}
+        ]}
+    ]}"#;
+    let mut provider = Provider::answering([grouping, draft]);
+    let mut anchored =
+        requirement("orders.cancellation", "A signed-in user cancels an open order.");
+    anchored.path = Some("docs/orders.md#L25-L40".to_owned());
+    provider.source.evidence.insert("docs".to_owned(), Ok(evidence(vec![anchored])));
+    seed(&provider.files, base.as_bytes(), DESIGN, PLAN);
+
+    cli_ok(&provider, &["emery", "amend", DOCS, "--config", PROJECT_CONFIG]).await;
+
+    let request = provider.model.seen()[0].messages.join("\n");
+    assert!(
+        request.contains(
+            "## Baseline\n\nNo two claims share an id; every grouping is your judgement.\n- claim \
+             0 anchors at `docs/orders.md#L25-L40`, where standing requirement 4 was read; they \
+             are one requirement unless the code moved.\n"
+        ),
+        "{request}"
+    );
+    let (_, amendment) = staged_amendment(&provider);
+    let changed = &amendment["changes"][3];
+    assert_eq!(changed["id"], "REQ-004", "{amendment}");
+    assert_eq!(changed["subject"], "orders.cancellation", "{amendment}");
+    assert_eq!(changed["class"], "changed", "{amendment}");
+    assert_eq!(changed["sources"][0]["path"], "docs/orders.md#L25-L40", "{amendment}");
     provider.model.assert_exhausted();
 }
 

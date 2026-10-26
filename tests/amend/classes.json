@@ -22,7 +22,8 @@
           "claim": "auth.login",
           "path": null
         }
-      ]
+      ],
+      "scope": null
     },
     {
       "id": "REQ-002",
@@ -36,7 +37,8 @@
           "claim": "session.timeout",
           "path": null
         }
-      ]
+      ],
+      "scope": null
     },
     {
       "id": "REQ-003",
@@ -50,7 +52,8 @@
           "claim": "orders.create",
           "path": null
         }
-      ]
+      ],
+      "scope": null
     },
     {
       "id": "REQ-004",
@@ -58,7 +61,8 @@
       "class": "unchanged",
       "before": "A signed-in user cancels an open order.",
       "after": "A signed-in user cancels an open order.",
-      "sources": []
+      "sources": [],
+      "scope": null
     },
     {
       "id": "REQ-005",
@@ -72,7 +76,8 @@
           "claim": "orders.refund",
           "path": null
         }
-      ]
+      ],
+      "scope": null
     }
   ],
   "spec": {

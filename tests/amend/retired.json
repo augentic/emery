@@ -11,7 +11,8 @@
       "class": "unchanged",
       "before": "Users sign in with a credential.",
       "after": "Users sign in with a credential.",
-      "sources": []
+      "sources": [],
+      "scope": null
     },
     {
       "id": "REQ-002",
@@ -19,7 +20,8 @@
       "class": "unchanged",
       "before": "Sessions expire after an hour of inactivity.",
       "after": "Sessions expire after an hour of inactivity.",
-      "sources": []
+      "sources": [],
+      "scope": null
     },
     {
       "id": "REQ-003",
@@ -33,7 +35,8 @@
           "claim": "orders.create",
           "path": null
         }
-      ]
+      ],
+      "scope": null
     },
     {
       "id": "REQ-004",
@@ -47,7 +50,8 @@
           "claim": "orders.cancel",
           "path": null
         }
-      ]
+      ],
+      "scope": null
     }
   ],
   "spec": {

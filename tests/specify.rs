@@ -3173,8 +3173,9 @@ async fn config_rank() {
 }
 
 // A file's `scope` is `delta` or `whole`, `delta` when omitted, refused at
-// the field otherwise. Nothing acts on it yet, so acceptance is the one
-// observable: a stated or omitted scope runs as before.
+// the field otherwise. A specify reads nothing of it, so acceptance is the
+// one observable here: a stated or omitted scope runs as before. What an
+// amend retires by it is `tests/amend.rs`'s.
 #[tokio::test]
 async fn config_scope() {
     for scope in ["scope = \"delta\"\n", "scope = \"whole\"\n", ""] {

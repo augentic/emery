@@ -216,6 +216,9 @@ pub struct SourceConfig {
 }
 
 /// How much of its subject a [`SourceConfig`] states.
+///
+/// Read by [`amend`](crate::amend::amend) alone: a `specify` drafts from
+/// what its sources state whatever their scope.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum Scope {
@@ -223,6 +226,10 @@ pub enum Scope {
     #[default]
     Delta,
     /// The source states its subject's behaviour whole.
+    ///
+    /// A behaviour source read whole retires every standing requirement
+    /// under a stem its requirement claims cover that no claim of the change
+    /// touches. A prose source's scope is ignored.
     Whole,
 }
 
@@ -329,6 +336,7 @@ pub(crate) struct Bound<'a> {
     digest: Option<&'a Digest>,
     repository: Option<&'a SourceRepository>,
     rank: Option<Rank>,
+    scope: Scope,
     input: SourceInput,
 }
 
@@ -353,6 +361,7 @@ impl<'a> Bound<'a> {
                 digest: source.digest.as_ref(),
                 repository: source.repository.as_ref(),
                 rank: source.rank,
+                scope: source.scope,
                 input,
             });
         }
@@ -419,6 +428,7 @@ impl<'a> Bound<'a> {
             source: source.clone(),
             kind,
             rank,
+            scope: self.scope,
             evidence,
         })
     }
@@ -431,11 +441,14 @@ pub(crate) struct Extracted {
     pub(crate) repositories: Vec<RepositorySource>,
 }
 
+// What one source answered, under the kind, rank, and scope the run read it
+// with; `specify` reads nothing of the scope, which `amend` retires by.
 #[derive(Debug)]
 pub(crate) struct Extract {
     pub(crate) source: String,
     pub(crate) kind: SourceKind,
     pub(crate) rank: Rank,
+    pub(crate) scope: Scope,
     pub(crate) evidence: Evidence,
 }
 

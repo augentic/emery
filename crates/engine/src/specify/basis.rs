@@ -41,6 +41,8 @@ pub struct GroupingBrief<'a> {
     // How many contributors the run's sources contributed; the rest are
     // the standing requirements.
     changes: usize,
+    // The claims anchored where a standing requirement was read.
+    hints: Vec<Hint<'a>>,
 }
 
 impl<'a> GroupingBrief<'a> {
@@ -63,7 +65,9 @@ impl<'a> GroupingBrief<'a> {
     // group. A `retire` claim is a contributor too, marked as withdrawing
     // the behaviour its id names: one at a standing requirement's id is
     // pre-merged with it, and the model places any other with the
-    // standing requirement it withdraws.
+    // standing requirement it withdraws. A claim anchored where a standing
+    // requirement's citation was read, from the same source, is hinted to
+    // revise it under `## Baseline` and pre-merged with nothing.
     #[must_use]
     pub fn with_standing(
         extracts: &'a [Extract], standing: Vec<Contributor<'a>>, criteria: Vec<&'a str>,
@@ -116,6 +120,7 @@ impl<'a> GroupingBrief<'a> {
                     statement: claim.statement(),
                     synopsis: claim.synopsis.as_deref(),
                     withdraws,
+                    citations: &[],
                     index: contributors.len(),
                 });
             }
@@ -131,6 +136,7 @@ impl<'a> GroupingBrief<'a> {
         // count the sources that contribute a requirement claim
         let sources = contributors.iter().map(|claim| claim.source).collect::<BTreeSet<_>>().len();
         let baseline = Grouping::baseline(&contributors);
+        let hints = Hint::all(&contributors[..changes], &contributors[changes..]);
 
         Self {
             contributors,
@@ -139,6 +145,7 @@ impl<'a> GroupingBrief<'a> {
             sources,
             baseline,
             changes,
+            hints,
         }
     }
 
@@ -351,6 +358,9 @@ impl Display for GroupingBrief<'_> {
                  them across groups is refused."
             )?;
         }
+        for hint in &self.hints {
+            writeln!(f, "{hint}")?;
+        }
 
         f.write_str(
             "\nAnswer with every index in exactly one group, and every group's claims in exactly \
@@ -522,6 +532,60 @@ impl Contract<'_> {
         self.id.is_some_and(|own| {
             id.strip_prefix(own).is_some_and(|rest| rest.is_empty() || rest.starts_with('.'))
         })
+    }
+}
+
+// A change claim anchored where a standing requirement was read: the same
+// source and file, lines that meet. A hint to the grouping, never a
+// pre-merge, since line numbers drift as code changes.
+#[derive(Debug)]
+struct Hint<'a> {
+    claim: usize,
+    standing: usize,
+    path: &'a str,
+}
+
+impl<'a> Hint<'a> {
+    // One hint per claim and standing requirement it anchors within. A claim
+    // at a standing requirement's id is pre-merged already, so none is
+    // hinted for it; a conflicted requirement standing as two contributors
+    // is hinted once.
+    fn all(claims: &[Contributor<'a>], standing: &[Contributor<'a>]) -> Vec<Self> {
+        if standing.is_empty() {
+            return Vec::new();
+        }
+        let mut hints = Vec::new();
+        for claim in claims {
+            let Some(path) = claim.path else { continue };
+            if standing.iter().any(|member| member.id == claim.id) {
+                continue;
+            }
+            let cited = Cited::from(claim);
+            let mut seen = BTreeSet::new();
+            for member in standing {
+                if seen.insert(member.id)
+                    && member.citations.iter().any(|read| cited.overlaps(read))
+                {
+                    hints.push(Self {
+                        claim: claim.index,
+                        standing: member.index,
+                        path,
+                    });
+                }
+            }
+        }
+        hints
+    }
+}
+
+impl Display for Hint<'_> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "- claim {} anchors at `{}`, where standing requirement {} was read; they are one \
+             requirement unless the code moved.",
+            self.claim, self.path, self.standing
+        )
     }
 }
 
@@ -755,6 +819,10 @@ pub struct Contributor<'a> {
     // Whether the claim is a `retire`, withdrawing the behaviour its id
     // names rather than stating it.
     pub withdraws: bool,
+    // Where the requirement a standing contributor stands for was read: the
+    // citations of the base requirement, which a change claim anchored at
+    // one of is hinted to revise. Empty for a claim.
+    pub citations: &'a [Cited],
     // Position in source order, used to break authority ties.
     pub index: usize,
 }

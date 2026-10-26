@@ -50,7 +50,8 @@ pub fn apply(output: &ApplyOutput, w: &mut dyn fmt::Write) -> fmt::Result {
 //
 // The first line names the staged amendment, or says no change was found
 // against the base and nothing staged. The counts line is the one
-// `amendment.md` opens with. The conflicts, stems, design, and slices lines
+// `amendment.md` opens with, `1 retired (1 by scope)` counting those a
+// source read whole retired. The conflicts, stems, design, and slices lines
 // appear when there are any — `design: domain-model, apis` the section
 // kinds in document order, `preamble` first where it changed; `slices:
 // orders, export (removed), rate-limit (new)` the slices in id order — and
@@ -68,11 +69,11 @@ pub fn amend(output: &AmendOutput, w: &mut dyn fmt::Write) -> fmt::Result {
         output.base.commit.get(..8).unwrap_or(&output.base.commit)
     )?;
     let tally = &output.tally;
-    writeln!(
-        w,
-        "  {} added, {} changed, {} retired, {} conflict, {} unchanged",
-        tally.added, tally.changed, tally.retired, tally.conflict, tally.unchanged
-    )?;
+    write!(w, "  {} added, {} changed, {} retired", tally.added, tally.changed, tally.retired)?;
+    if tally.by_scope > 0 {
+        write!(w, " ({} by scope)", tally.by_scope)?;
+    }
+    writeln!(w, ", {} conflict, {} unchanged", tally.conflict, tally.unchanged)?;
     if !output.conflicts.is_empty() {
         writeln!(w, "  conflicts: {}", output.conflicts.join(", "))?;
     }

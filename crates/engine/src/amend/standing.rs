@@ -37,7 +37,9 @@ impl<'a> Standing<'a> {
     // requirement with one, each competing statement for a conflict, so the
     // model sees every statement the base reads as the requirement's. The
     // kind is nominal, since no adapter extracted the base; `index` is the
-    // position among the standing alone, which the brief re-indexes.
+    // position among the standing alone, which the brief re-indexes; the
+    // citations are where the requirement was read, for the brief's anchor
+    // hints.
     pub fn contributors(&self) -> Vec<Contributor<'a>> {
         let mut contributors = Vec::with_capacity(self.spec.requirements.len());
         for requirement in &self.spec.requirements {
@@ -51,6 +53,7 @@ impl<'a> Standing<'a> {
                     statement,
                     synopsis: None,
                     withdraws: false,
+                    citations: &requirement.sources,
                     index: contributors.len(),
                 });
             }

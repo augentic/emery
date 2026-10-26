@@ -10,14 +10,17 @@
 //! bases the amended specification drafts from are kept beside the changes,
 //! each under the id its requirement takes. A change that states no
 //! requirement is grouped against nothing and leaves every standing
-//! requirement as it is.
+//! requirement as it is. A behaviour source read whole then retires what it
+//! falls silent on under the stems it covers.
 
-use emery_adapter::source::ClaimKind;
+use std::collections::BTreeSet;
+
+use emery_adapter::source::{ClaimKind, SourceKind};
 use omnia_sdk::{Error, server_error};
 
 use crate::amend::standing::Standing;
-use crate::revision::{Change, ChangeClass, Cited};
-use crate::specify::{BASELINE, Basis, Contributor, Extract};
+use crate::revision::{self, Change, ChangeClass, Cited};
+use crate::specify::{BASELINE, Basis, Contributor, Extract, Scope};
 
 pub struct ChangeSet<'a> {
     // One per requirement of the amended specification and per requirement
@@ -54,12 +57,57 @@ impl<'a> ChangeSet<'a> {
                     before: before.clone(),
                     after: before,
                     sources: Vec::new(),
+                    scope: None,
                 }
             })
             .collect();
         Self {
             changes,
             drafted: Vec::new(),
+        }
+    }
+
+    // Retires every standing requirement a behaviour source read whole falls
+    // silent on: under a stem the source's requirement claims cover, a
+    // requirement no claim of the change touched is withdrawn by the
+    // source's silence and names the source. A prose source's scope is
+    // passed over, since a brief states a change and never its subject
+    // whole, and the first source in declaration order to cover a stem is
+    // the one named.
+    pub fn retire_by_scope(&mut self, extracts: &[Extract]) {
+        for extract in extracts.iter().filter(|extract| extract.scope == Scope::Whole) {
+            if extract.kind != SourceKind::Behaviour {
+                tracing::info!(
+                    source = %extract.source,
+                    kind = %extract.kind,
+                    "the source is read whole, which only a behaviour source's scope says; \
+                     its silence retires nothing"
+                );
+                continue;
+            }
+            let covered: BTreeSet<&str> = extract
+                .evidence
+                .claims
+                .iter()
+                .filter(|claim| claim.kind == ClaimKind::Requirement)
+                .filter_map(|claim| claim.id.as_deref())
+                .map(revision::stem)
+                .collect();
+            for change in &mut self.changes {
+                let silent = change.class == ChangeClass::Unchanged && change.sources.is_empty();
+                if !silent || !covered.contains(change.stem()) {
+                    continue;
+                }
+                tracing::info!(
+                    source = %extract.source,
+                    requirement = %change.id,
+                    subject = %change.subject,
+                    "retired by scope: the source read whole states nothing of it"
+                );
+                change.class = ChangeClass::Retired;
+                change.after = None;
+                change.scope = Some(extract.source.clone());
+            }
         }
     }
 
@@ -124,6 +172,7 @@ impl<'a> ChangeSet<'a> {
                     before,
                     after,
                     sources,
+                    scope: None,
                 }
             } else {
                 let id = free
@@ -137,6 +186,7 @@ impl<'a> ChangeSet<'a> {
                     before: None,
                     after,
                     sources,
+                    scope: None,
                 }
             };
 
