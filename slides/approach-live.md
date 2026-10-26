@@ -320,6 +320,146 @@ class: slide-hero slide-section
   grid-template-columns: 1fr 42px 1fr 42px 1fr;
 }
 
+.live-sdd-flow {
+  display: grid;
+  grid-template-columns: 1.15fr 92px 0.85fr 24px 1fr;
+  gap: 8px;
+  align-items: stretch;
+}
+
+.live-sdd-flow .live-card {
+  min-height: 176px;
+  padding: 18px;
+}
+
+.live-sdd-flow .live-card h3 {
+  margin-top: 8px;
+  font-size: 20px;
+}
+
+.live-sdd-flow .live-card p {
+  font-size: 15px;
+}
+
+.live-sdd-arrow {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 26px;
+  color: var(--phl-magenta);
+}
+
+.live-review-gate {
+  padding: 14px 8px;
+  border-right: 2px solid rgba(164, 35, 143, 0.52);
+  border-left: 2px solid rgba(164, 35, 143, 0.52);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  font-size: 11px;
+  line-height: 1.25;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #a4238f;
+}
+
+.live-review-gate strong {
+  margin-bottom: 6px;
+  font-size: 15px;
+  line-height: 1.15;
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--phl-ink);
+}
+
+.live-title-accent {
+  color: #a4238f;
+}
+
+.live-durability {
+  display: grid;
+  grid-template-columns: 0.72fr 1.28fr;
+  gap: 28px;
+  align-items: stretch;
+}
+
+.live-disposable-card,
+.live-durable-card {
+  min-height: 188px;
+  padding: 22px;
+  border-radius: 16px;
+}
+
+.live-disposable-card {
+  border: 1.5px dashed rgba(13, 16, 48, 0.34);
+  background: rgba(13, 16, 48, 0.025);
+}
+
+.live-durable-card {
+  border: 2px solid rgba(164, 35, 143, 0.72);
+  background: var(--phl-bg-navy);
+  box-shadow: 0 18px 44px rgba(13, 16, 48, 0.16);
+  color: #ffffff;
+}
+
+.live-durability h3 {
+  margin: 8px 0 16px;
+  font-size: 22px;
+  line-height: 1.15;
+}
+
+.live-code-word {
+  margin-top: 20px;
+  text-align: center;
+  font-size: 48px;
+  line-height: 1;
+  font-weight: 600;
+  letter-spacing: -0.025em;
+  color: var(--phl-ink);
+}
+
+.live-code-caption {
+  margin-top: 22px;
+  text-align: center;
+  font-size: 15px;
+  color: var(--phl-ink-muted);
+}
+
+.live-file-row {
+  display: grid;
+  grid-template-columns: 100px 1fr;
+  gap: 16px;
+  align-items: baseline;
+  padding: 13px 15px;
+  border-radius: 9px;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.live-file-row + .live-file-row {
+  margin-top: 10px;
+}
+
+.live-file-row strong {
+  font-size: 18px;
+  color: #ffffff;
+}
+
+.live-file-row span {
+  font-size: 14px;
+  color: rgba(255, 255, 255, 0.72);
+}
+
+.live-outcome.is-punch {
+  border-color: #a4238f;
+  background: var(--phl-bg-navy);
+  box-shadow: 0 14px 36px rgba(13, 16, 48, 0.14);
+  font-weight: 600;
+  color: #ffffff;
+}
+
 .live-arrow {
   text-align: center;
   font-size: 30px;
@@ -444,49 +584,222 @@ class: slide-hero slide-section
   color: var(--phl-ink-muted);
 }
 
-.live-host {
-  padding: 24px 30px;
-  border: 2px solid var(--phl-bg-navy);
-  border-radius: 18px;
-  background: rgba(13, 16, 48, 0.025);
-}
-
-.live-host-head {
+.live-runtime-stack {
+  width: 80%;
+  margin: 34px auto 0;
   display: flex;
-  justify-content: space-between;
-  margin-bottom: 16px;
+  flex-direction: column;
+  gap: 11px;
+  transform: translateY(12px);
 }
 
-.live-component {
-  padding: 18px 24px;
+.live-wasm-runtime {
+  padding: 14px 18px 13px;
+  border: 2px solid rgba(65, 145, 203, 0.72);
   border-radius: 12px;
-  background: var(--phl-bg-navy);
-  text-align: center;
-  color: #ffffff;
+  background: rgba(65, 145, 203, 0.14);
 }
 
-.live-component strong {
+.live-wasi-components {
+  width: 86%;
+  margin: 0 auto;
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 42px;
+}
+
+.live-wasi-component {
+  padding: 11px 12px 10px;
+  border: 2px solid rgba(124, 92, 205, 0.64);
+  border-radius: 9px;
+  background: rgba(124, 92, 205, 0.12);
+  text-align: center;
+  color: var(--phl-ink);
+}
+
+.live-wasi-component strong,
+.live-wasi-component em,
+.live-runtime-name strong,
+.live-runtime-name em,
+.live-infrastructure strong,
+.live-infrastructure em {
   display: block;
-  margin-top: 4px;
-  font-size: 23px;
+}
+
+.live-wasi-component strong {
+  font-size: 15px;
   font-weight: 500;
 }
 
-.live-capability {
-  width: fit-content;
-  margin: 14px auto;
-  padding: 8px 22px;
-  border: 1px solid rgba(164, 35, 143, 0.5);
-  border-radius: 999px;
-  background: rgba(164, 35, 143, 0.08);
-  font-size: 15px;
+.live-wasi-component em {
+  margin-top: 2px;
+  font-size: 13px;
+  color: var(--phl-ink-body);
+}
+
+.live-runtime-name {
+  margin-top: 11px;
+  text-align: center;
+}
+
+.live-runtime-name strong {
+  font-size: 20px;
+  line-height: 1.05;
+  font-weight: 550;
+}
+
+.live-runtime-name em {
+  margin-top: 2px;
+  font-size: 13px;
+  color: var(--phl-ink-body);
+}
+
+.live-capability-row {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 10px;
+}
+
+.live-runtime-capability {
+  padding: 10px 7px;
+  border: 1.8px solid rgba(90, 90, 82, 0.28);
+  border-radius: 8px;
+  background: rgba(248, 248, 245, 0.94);
+  text-align: center;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--phl-ink);
+}
+
+.live-infrastructure {
+  padding: 10px 13px 9px;
+  border: 2px solid rgba(13, 16, 48, 0.48);
+  border-radius: 9px;
+  background: #ffffff;
+  text-align: center;
+  color: var(--phl-ink);
+}
+
+.live-infrastructure strong {
+  font-size: 17px;
+  font-weight: 500;
+}
+
+.live-infrastructure em {
+  margin-top: 1px;
+  font-size: 12px;
+  color: var(--phl-ink-body);
+}
+
+.live-portability {
+  width: 92%;
+  margin: 24px auto 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.live-portable-app {
+  width: 42%;
+  margin: 0 auto;
+  padding: 9px 16px;
+  border: 2px solid rgba(124, 92, 205, 0.64);
+  border-radius: 10px;
+  background: rgba(124, 92, 205, 0.12);
+  text-align: center;
+}
+
+.live-portable-app .live-kicker {
+  color: #7557c7;
+}
+
+.live-portable-app strong {
+  display: block;
+  margin-top: 3px;
+  font-size: 18px;
+  font-weight: 500;
+  color: var(--phl-ink);
+}
+
+.live-portable-link {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  gap: 12px;
+  align-items: center;
+  font-size: 11px;
+  line-height: 1;
   font-weight: 600;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--phl-ink-muted);
+}
+
+.live-portable-link::before,
+.live-portable-link::after {
+  content: '';
+  height: 1px;
+  background: rgba(13, 16, 48, 0.18);
+}
+
+.live-portability .live-capability-row {
+  width: 80%;
+  margin: 0 auto;
+}
+
+.live-recipe-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+}
+
+.live-recipe-card {
+  padding: 12px 12px 13px;
+  border: 1.5px solid rgba(13, 16, 48, 0.2);
+  border-radius: 11px;
+  background: #ffffff;
+}
+
+.live-recipe-card:nth-child(2) {
+  border-color: rgba(12, 127, 163, 0.48);
+  background: rgba(22, 180, 226, 0.05);
+}
+
+.live-recipe-card:nth-child(3) {
+  border-color: rgba(164, 35, 143, 0.42);
+  background: rgba(164, 35, 143, 0.045);
+}
+
+.live-recipe-card:first-child .live-kicker {
+  color: var(--phl-ink-muted);
+}
+
+.live-recipe-card:nth-child(3) .live-kicker {
   color: #a4238f;
 }
 
-.live-host .live-card {
-  padding: 16px 20px;
+.live-recipe-card h3 {
+  margin: 4px 0 9px;
+  font-size: 16px;
+  line-height: 1.12;
+  font-weight: 500;
+  color: var(--phl-ink);
+}
+
+.live-recipe-template {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 5px;
+}
+
+.live-recipe-template span {
+  padding: 6px 4px;
+  border: 1px solid rgba(13, 16, 48, 0.12);
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.78);
   text-align: center;
+  font-size: 10px;
+  line-height: 1.15;
+  color: var(--phl-ink-body);
 }
 
 .live-converge {
@@ -921,12 +1234,12 @@ Client question:
 -->
 
 ---
-title: Intent becomes a reviewed delivery record.
-sync: record-revision
+title: The specification drives development.
+sync: record-development
 class: slide-light
 ---
 
-<Eyebrow text="02 · RECORD INTENT · FROM EVIDENCE TO REVISION" />
+<Eyebrow text="02 · RECORD INTENT · SPEC-DRIVEN DEVELOPMENT" />
 
 <div class="foundation-progress" aria-label="Delivery foundations">
 <span>01 · Set rules</span>
@@ -936,107 +1249,101 @@ class: slide-light
 
 <div class="live-stage">
 
-# Intent becomes a reviewed delivery record.
+# The specification drives development.
 
-<p class="live-claim"><strong>Chat history is not an audit trail.</strong> Intent and observed behaviour become reviewable specifications and a dependency-aware build plan.</p>
+<p class="live-claim">The specification stays in the development loop—from requirements and design through implementation and verification.</p>
 
-<div class="live-pipeline is-three" style="margin-top: 22px;">
-<div class="live-card">
-<div class="live-kicker">Sources</div>
-<h3>Intent &amp; behaviour</h3>
-<p>Briefs · docs · tests · code</p>
-</div>
-<div class="live-arrow">→</div>
-<div class="live-card is-dark">
-<div class="live-kicker">Reconcile</div>
-<h3>Explicit authority</h3>
-<p>Agreement · divergence · conflict</p>
-</div>
-<div class="live-arrow">→</div>
-<div class="live-card is-magenta">
-<div class="live-kicker">Reviewed</div>
-<h3>Reviewed revision</h3>
-<p>Specification · design · dependency-aware plan</p>
-</div>
-</div>
-
-<div class="live-outcome">Specifications—not chat history—remain the durable source of intent.</div>
-</div>
-
-<!--
-The engine does not ask one prompt to invent the answer.
-- Chat remains useful working context, but the accepted intent and its evidence live outside it.
-- Intent, documentation, tests, and observed code behaviour remain connected to their sources.
-- Explicit source precedence distinguishes agreement, ranked divergence, and genuine conflict.
-- The model helps synthesise a candidate; a person reviews and seals the revision.
-- The revision contains the specification, design, and dependency-aware build plan.
-
-Client question:
-- If the chat disappeared and the sources disagreed, where would the accepted intent and authority remain?
--->
-
----
-title: The record directs the build.
-sync: record-build
-class: slide-light
----
-
-<Eyebrow text="02 · RECORD INTENT · COORDINATED IMPLEMENTATION" />
-
-<div class="foundation-progress" aria-label="Delivery foundations">
-<span>01 · Set rules</span>
-<span class="is-active is-magenta">02 · Record intent</span>
-<span>03 · Constrain code</span>
-</div>
-
-<div class="live-stage">
-
-# The record directs the build.
-
-<p class="live-claim">The coding agent receives bounded work from the reviewed revision—not authority to reinterpret the system.</p>
-
-<div class="live-pipeline" style="margin-top: 22px;">
-<div class="live-card is-magenta">
-<div class="live-kicker">Retained</div>
-<h3>Reviewed revision</h3>
-<p>Reviewed intent · specification · design</p>
-</div>
-<div class="live-arrow">→</div>
-<div class="live-card">
-<div class="live-kicker">Coordinate</div>
-<h3>Dependency-aware plan</h3>
-<p>Ordered units of work</p>
-</div>
-<div class="live-arrow">→</div>
-<div class="live-card is-dark">
-<div class="live-kicker">Implement</div>
-<h3>Bounded implementation</h3>
-<p>Exact execution inputs · isolated work</p>
-</div>
-<div class="live-arrow">→</div>
+<div class="live-sdd-flow" style="margin-top: 22px;">
 <div class="live-card is-cyan">
-<div class="live-kicker">Prove</div>
-<h3>Integrated verification</h3>
-<p>Checks · repairs · verification results</p>
+<div class="live-kicker">01 · What + how</div>
+<h3>Specify</h3>
+<p>Intent · docs · tests · legacy source code<br>→ spec.md · design.md</p>
+</div>
+<div class="live-review-gate">
+<strong>Review &amp;<br>seal</strong>
+Versioned in repo
+</div>
+<div class="live-card is-magenta">
+<div class="live-kicker">02 · Derive</div>
+<h3>Plan</h3>
+<p>Ephemeral work and dependencies</p>
+</div>
+<div class="live-sdd-arrow">→</div>
+<div class="live-card is-dark">
+<div class="live-kicker">03 · Build + prove</div>
+<h3>Implement</h3>
+<p>Build · integrate · verify against the specification</p>
 </div>
 </div>
 
-<div class="live-outcome">Swap the model; the record stays.</div>
+<div class="live-outcome">The plan is disposable. The reviewed specification is not.</div>
 </div>
 
 <!--
-The reviewed revision coordinates implementation.
-- The dependency-aware plan determines which units of work are ready.
-- Each build receives exact requirements, design, types, and dependencies in an isolated workspace.
-- Results integrate in order and the combined system is verified.
-- Reviewed intent, specifications, execution inputs, and verification results remain regardless of coding agent or model.
+This is the recognisable spec-driven development loop.
+- Specify reconciles intent, documentation, tests, and, where it exists, legacy source code into `spec.md` and `design.md`. Together, those files are the specification.
+- A person reviews and seals that specification in the repository.
+- Plan derives ephemeral work ordered by dependency from the reviewed specification. It can be discarded and generated again.
+- Implement gives each unit of work the exact specification and plan entry it needs, builds and integrates it, and verifies the combined result against the specification.
+- Verification is part of completing implementation, not a separate downstream activity; only a verified wave advances the revision's label.
+- The coding agent and plan are replaceable. The reviewed specification is not.
 
 This leads to the next boundary:
-- The record constrains what must be built. The runtime constrains what the resulting code may touch.
+- The specification governs what must be built. The runtime governs what the resulting code may touch.
 -->
 
 ---
-title: Generated code gets no ambient authority
+title: Code is disposable. The specification is durable.
+sync: record-truth
+class: slide-light
+---
+
+<Eyebrow text="02 · RECORD INTENT · DURABLE SPECIFICATION" />
+
+<div class="foundation-progress" aria-label="Delivery foundations">
+<span>01 · Set rules</span>
+<span class="is-active is-magenta">02 · Record intent</span>
+<span>03 · Constrain code</span>
+</div>
+
+<div class="live-stage">
+
+# Code is disposable.<br><span class="live-title-accent">The specification is durable.</span>
+
+<p class="live-claim">The implementation can be regenerated. The reviewed specification preserves what the system must do and how it is designed.</p>
+
+<div class="live-durability" style="margin-top: 20px;">
+<div class="live-disposable-card">
+<div class="live-kicker">Disposable implementation</div>
+<div class="live-code-word">Code</div>
+<div class="live-code-caption">Rebuild from the specification</div>
+</div>
+
+<div class="live-durable-card">
+<div class="live-kicker">Versioned · reviewed · in the repository</div>
+<h3>Durable specification</h3>
+<div class="live-file-row"><strong>spec.md</strong><span>Requirements and scenarios</span></div>
+<div class="live-file-row"><strong>design.md</strong><span>Architecture and decisions</span></div>
+</div>
+</div>
+
+<div class="live-outcome is-punch">Regenerate the plan. Rebuild the code. The specification remains.</div>
+</div>
+
+<!--
+This is the deliberate provocation at the end of the section.
+- Disposable does not mean unimportant. It means the implementation is a derived output, not the authority over intent.
+- In modernisation, legacy source code is still valuable input to specification recovery. That role belongs on the preceding slide.
+- The plan can be regenerated and the implementation can be rebuilt. The coding model is interchangeable too, but it is tooling rather than an artefact, so it stays out of the diagram.
+- Only the reviewed `spec.md` and `design.md` remain as the durable specification in the repository.
+- Those two files preserve what the system must do and how it is designed.
+
+Transition:
+- The specification governs what must be built. The runtime governs what the resulting code may touch.
+-->
+
+---
+title: Give generated code less freedom to surprise you.
 sync: runtime
 class: slide-light
 ---
@@ -1051,38 +1358,139 @@ class: slide-light
 
 <div class="live-stage">
 
-# Generated code gets no ambient authority.
+# Give generated code less freedom<br>to surprise you.
 
-<div class="live-host">
-<div class="live-host-head">
-<span class="live-kicker">WebAssembly runtime</span>
-<span class="live-kicker">Rust on Wasmtime</span>
+<p class="live-claim">Code reaches infrastructure only through capabilities supplied by the host.</p>
+
+<div class="live-runtime-stack">
+<div class="live-wasm-runtime">
+<div class="live-wasi-components">
+<div class="live-wasi-component">
+<strong>WASI Component</strong>
+<em>Generated code</em>
 </div>
-
-<div class="live-component">
-Sandboxed WASI component
-<strong>Differentiating business behaviour</strong>
-</div>
-
-<div class="live-capability">Typed capability contracts</div>
-
-<div class="live-grid-3">
-<div class="live-card"><h3>Data &amp; state</h3></div>
-<div class="live-card"><h3>Flow &amp; calls</h3></div>
-<div class="live-card"><h3>Trust &amp; insight</h3></div>
+<div class="live-wasi-component">
+<strong>WASI Component</strong>
+<em>Generated code</em>
 </div>
 </div>
+<div class="live-runtime-name">
+<strong>Wasm Runtime</strong>
+<em>Wasmtime sandbox</em>
+</div>
+</div>
 
-<div class="live-outcome">No grant means no reach.</div>
+<div class="live-capability-row">
+<div class="live-runtime-capability">HTTP</div>
+<div class="live-runtime-capability">Messaging</div>
+<div class="live-runtime-capability">KeyValue</div>
+<div class="live-runtime-capability">BlobStore</div>
+</div>
+
+<div class="live-infrastructure">
+<strong>Infrastructure</strong>
+<em>Cloud/On-premise</em>
+</div>
+</div>
 </div>
 
 <!--
-Application logic has no ambient filesystem, network, process, credential, or environment access.
-The guest asks for a role such as state or messaging. The host chooses the backend, credentials, and policy.
-This complements infrastructure security; it does not replace credential scope or network policy.
+The headline and payoff use the language on the Propellerhead homepage.
+- Generated application code is packaged as one or more WASI components inside a Wasmtime sandbox.
+- The components have no direct route to infrastructure.
+- They reach HTTP, messaging, key-value storage, and blob storage only through capability interfaces supplied by the host.
+- The host chooses the cloud or on-premise implementation behind each capability and retains its credentials and policy.
+- A generated mistake or poisoned dependency cannot reach a capability the host did not supply.
+- This complements infrastructure security; it does not replace credential scope, network policy, or backend isolation.
+- Put simply: the code gets exactly what the host grants—and nothing else.
 
 Client question:
-- If generated code were compromised, what could it reach simply because the process environment can?
+- If this code—or one of its dependencies—were compromised, what could it actually reach?
+-->
+
+---
+title: Different infrastructure. The same application.
+sync: runtime-portability
+class: slide-light
+---
+
+<Eyebrow text="03 · CONSTRAIN CODE · PORTABLE INFRASTRUCTURE" />
+
+<div class="foundation-progress" aria-label="Delivery foundations">
+<span>01 · Set rules</span>
+<span>02 · Record intent</span>
+<span class="is-active">03 · Constrain code</span>
+</div>
+
+<div class="live-stage">
+
+# Different infrastructure.<br>The same application.
+
+<p class="live-claim">The component depends on capabilities, not products. A runtime recipe binds them to approved services in each environment.</p>
+
+<div class="live-portability">
+<div class="live-portable-app">
+<div class="live-kicker">Application unchanged</div>
+<strong>WASI Component</strong>
+</div>
+
+<div class="live-portable-link">Stable capability contract</div>
+
+<div class="live-capability-row">
+<div class="live-runtime-capability">HTTP</div>
+<div class="live-runtime-capability">Messaging</div>
+<div class="live-runtime-capability">KeyValue</div>
+<div class="live-runtime-capability">BlobStore</div>
+</div>
+
+<div class="live-portable-link">Host-selected runtime recipe</div>
+
+<div class="live-recipe-grid">
+<div class="live-recipe-card">
+<div class="live-kicker">Local / trial</div>
+<h3>In-memory + local services</h3>
+<div class="live-recipe-template">
+<span>Runtime</span>
+<span>Capability bindings</span>
+<span>Policy + identity</span>
+<span>Config + observability</span>
+</div>
+</div>
+<div class="live-recipe-card">
+<div class="live-kicker">Cloud</div>
+<h3>Managed services</h3>
+<div class="live-recipe-template">
+<span>Runtime</span>
+<span>Capability bindings</span>
+<span>Policy + identity</span>
+<span>Config + observability</span>
+</div>
+</div>
+<div class="live-recipe-card">
+<div class="live-kicker">On-premise</div>
+<h3>Approved internal services</h3>
+<div class="live-recipe-template">
+<span>Runtime</span>
+<span>Capability bindings</span>
+<span>Policy + identity</span>
+<span>Config + observability</span>
+</div>
+</div>
+</div>
+</div>
+</div>
+
+<!--
+The website calls this host-selected infrastructure.
+- The application component depends on stable capability contracts rather than directly on infrastructure products.
+- Each environment supplies a reviewed runtime recipe: the runtime, capability bindings, identity and policy, configuration, and observability.
+- A local or trial recipe may use in-memory and local services. Cloud and on-premise recipes bind the same contracts to approved managed or internal services.
+- The recipe can be retained as versioned deployment and infrastructure-as-code assets, so the next application starts with a known operating shape.
+- The infrastructure is not literally identical. Its application-facing contract and deployment grammar are.
+- Where the capability semantics remain the same, change the recipe—not the application.
+
+Client question:
+- How much application code currently exists only to accommodate a particular environment or infrastructure product?
 -->
 
 ---

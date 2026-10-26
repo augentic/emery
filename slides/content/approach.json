@@ -85,38 +85,67 @@
     ]
   },
   {
-    "id": "record-revision",
-    "title": "Intent becomes a reviewed delivery record.",
+    "id": "record-development",
+    "title": "The specification drives development.",
     "required": [
       "Record intent",
-      "Chat history is not an audit trail.",
-      "Intent and observed behaviour",
-      "Explicit authority",
-      "Reviewed revision",
-      "Specifications—not chat history—remain the durable source of intent."
+      "Specify",
+      "legacy source code",
+      "spec.md",
+      "design.md",
+      "Review & seal",
+      "Plan",
+      "Ephemeral",
+      "Implement",
+      "Build · integrate · verify",
+      "The plan is disposable. The reviewed specification is not."
     ]
   },
   {
-    "id": "record-build",
-    "title": "The record directs the build.",
+    "id": "record-truth",
+    "title": "Code is disposable. The specification is durable.",
     "required": [
       "Record intent",
-      "Dependency-aware plan",
-      "Bounded implementation",
-      "Integrated verification",
-      "Reviewed intent",
-      "Execution inputs",
-      "Verification results",
-      "Swap the model; the record stays."
+      "Code is disposable.",
+      "The specification is durable.",
+      "Plan",
+      "Code",
+      "spec.md",
+      "design.md",
+      "Regenerate the plan. Rebuild the code. The specification remains."
     ]
   },
   {
     "id": "runtime",
-    "title": "Generated code gets no ambient authority",
+    "title": "Give generated code less freedom to surprise you.",
     "required": [
       "Constrain code",
-      "Typed capability contracts",
-      "No grant means no reach."
+      "WASI Component",
+      "Wasm Runtime",
+      "Wasmtime sandbox",
+      "HTTP",
+      "Messaging",
+      "KeyValue",
+      "BlobStore",
+      "Infrastructure",
+      "Cloud/On-premise"
+    ]
+  },
+  {
+    "id": "runtime-portability",
+    "title": "Different infrastructure. The same application.",
+    "required": [
+      "Constrain code",
+      "The component depends on capabilities, not products.",
+      "WASI Component",
+      "Stable capability contract",
+      "Host-selected runtime recipe",
+      "Local / trial",
+      "Cloud",
+      "On-premise",
+      "Capability bindings",
+      "Policy + identity",
+      "Config + observability"
     ]
   },
   {

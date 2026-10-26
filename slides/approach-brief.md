@@ -248,7 +248,7 @@ class: slide-sandbox
   <text x="418" y="142" class="svg-h2" fill="#ffffff">Spec-driven delivery</text>
   <line x1="418" y1="156" x2="722" y2="156" stroke="rgba(255,255,255,0.12)" />
   <text x="418" y="184" class="svg-body" fill="rgba(255,255,255,0.84)">Evidence and explicit source authority</text>
-  <text x="418" y="208" class="svg-body" fill="rgba(255,255,255,0.84)">Reviewed specification, design, and plan</text>
+  <text x="418" y="208" class="svg-body" fill="rgba(255,255,255,0.84)">Versioned spec.md and design.md</text>
   <text x="418" y="232" class="svg-body" fill="rgba(255,255,255,0.84)">Bounded implementation and verification</text>
   <text x="418" y="270" class="svg-caption" fill="#f59ef5">Governs what must remain true</text>
 
@@ -512,12 +512,12 @@ Client question:
 -->
 
 ---
-title: Intent becomes a reviewed delivery record.
-sync: record-revision
+title: The specification drives development.
+sync: record-development
 class: slide-light
 ---
 
-<Eyebrow text="02 · RECORD INTENT · FROM EVIDENCE TO REVISION" />
+<Eyebrow text="02 · RECORD INTENT · SPEC-DRIVEN DEVELOPMENT" />
 
 <div class="foundation-progress" aria-label="Delivery foundations">
 <span>01 · Set rules</span>
@@ -529,154 +529,143 @@ class: slide-light
 <div class="ed-band-top">
 <div>
 
-# Intent becomes a reviewed<br>delivery record.
+# The specification drives<br>development.
 
 </div>
-<p class="ed-band-prose"><strong>Chat history is not an audit trail.</strong> Intent and observed behaviour become reviewable specifications and a dependency-aware build plan. Explicit source precedence makes disagreement visible before implementation.</p>
+<p class="ed-band-prose"><strong>The specification stays in the development loop.</strong> It is reviewed and versioned as spec.md and design.md. A plan is derived for the delivery run, then implementation builds, integrates, and verifies against the specification.</p>
 </div>
 <div class="ed-band-canvas">
 <svg viewBox="0 0 1140 360" aria-hidden="true">
-  <text x="16" y="24" class="svg-kicker" fill="#0c7fa3">AUTHORITATIVE INPUTS</text>
-  <rect x="16" y="42" width="250" height="224" rx="14" fill="#ffffff" stroke="#0c7fa3" stroke-width="1.5" />
-  <rect x="38" y="66" width="206" height="38" rx="8" fill="rgba(22,180,226,0.06)" stroke="rgba(12,127,163,0.32)" />
-  <text x="56" y="90" class="svg-label" fill="#0d1030">Intent and directives</text>
-  <rect x="38" y="116" width="206" height="38" rx="8" fill="#ffffff" stroke="rgba(13,16,48,0.2)" />
-  <text x="56" y="140" class="svg-label" fill="#0d1030">Documentation</text>
-  <rect x="38" y="166" width="206" height="38" rx="8" fill="#ffffff" stroke="rgba(13,16,48,0.2)" />
-  <text x="56" y="190" class="svg-label" fill="#0d1030">Tests</text>
-  <rect x="38" y="216" width="206" height="38" rx="8" fill="rgba(164,35,143,0.05)" stroke="rgba(164,35,143,0.35)" />
-  <text x="56" y="240" class="svg-label" fill="#0d1030">Observed code behaviour</text>
+  <text x="16" y="24" class="svg-kicker" fill="#a4238f">DURABLE SPECIFICATION</text>
+  <text x="472" y="24" class="svg-kicker" fill="#0c7fa3">EPHEMERAL DELIVERY RUN</text>
 
-  <line x1="266" y1="154" x2="318" y2="154" stroke="#0d1030" stroke-width="1.8" />
-  <polygon points="312,149 322,154 312,159" fill="#0d1030" />
+  <rect x="16" y="54" width="268" height="202" rx="14" fill="rgba(22,180,226,0.06)" stroke="#0c7fa3" stroke-width="1.6" />
+  <text x="38" y="84" class="svg-kicker" fill="#0c7fa3">01 · WHAT + HOW</text>
+  <text x="38" y="116" class="svg-h3" fill="#0d1030">Specify</text>
+  <line x1="38" y1="132" x2="262" y2="132" stroke="rgba(12,127,163,0.18)" />
+  <text x="38" y="158" class="svg-kicker" fill="#0c7fa3">SOURCES</text>
+  <text x="38" y="180" class="svg-label" fill="#0d1030">Intent · docs · tests</text>
+  <text x="38" y="204" class="svg-label" fill="#0d1030">Legacy source code</text>
+  <text x="38" y="228" class="svg-kicker" fill="#a4238f">SPECIFICATION</text>
+  <text x="38" y="246" class="svg-caption" fill="rgba(13,16,48,0.68)">spec.md · design.md</text>
 
-  <text x="326" y="24" class="svg-kicker" fill="#78d8f2">EXPLICIT AUTHORITY</text>
-  <rect x="326" y="42" width="302" height="224" rx="14" fill="#0d1030" />
-  <circle cx="358" cy="88" r="5" fill="#78d8f2" />
-  <text x="376" y="93" class="svg-label" fill="#ffffff">Corroborated agreement</text>
-  <circle cx="358" cy="138" r="5" fill="#f59ef5" />
-  <text x="376" y="143" class="svg-label" fill="#ffffff">Ranked divergence</text>
-  <circle cx="358" cy="188" r="5" fill="#ff7597" />
-  <text x="376" y="193" class="svg-label" fill="#ffffff">Visible conflict</text>
-  <line x1="350" y1="218" x2="604" y2="218" stroke="rgba(255,255,255,0.14)" />
-  <text x="350" y="244" class="svg-caption" fill="rgba(255,255,255,0.68)">Unknown remains [unknown]</text>
+  <line x1="284" y1="155" x2="316" y2="155" stroke="#0d1030" stroke-width="1.7" />
+  <polygon points="310,150 320,155 310,160" fill="#0d1030" />
 
-  <line x1="628" y1="154" x2="680" y2="154" stroke="#a4238f" stroke-width="2" />
-  <polygon points="674,149 684,154 674,159" fill="#a4238f" />
-  <text x="656" y="139" text-anchor="middle" class="svg-pill" fill="#a4238f">REVIEW</text>
+  <rect x="320" y="42" width="120" height="226" rx="14" fill="#0d1030" />
+  <text x="380" y="78" text-anchor="middle" class="svg-kicker" fill="#f59ef5">REVIEW GATE</text>
+  <text x="380" y="118" text-anchor="middle" class="svg-h3" fill="#ffffff">Review</text>
+  <text x="380" y="144" text-anchor="middle" class="svg-h3" fill="#ffffff">&amp; seal</text>
+  <line x1="342" y1="166" x2="418" y2="166" stroke="rgba(255,255,255,0.16)" />
+  <text x="380" y="196" text-anchor="middle" class="svg-caption" fill="rgba(255,255,255,0.68)">Versioned</text>
+  <text x="380" y="216" text-anchor="middle" class="svg-caption" fill="rgba(255,255,255,0.68)">in repo</text>
 
-  <text x="688" y="24" class="svg-kicker" fill="#a4238f">REVIEWED REVISION</text>
-  <rect x="688" y="42" width="436" height="224" rx="14" fill="rgba(164,35,143,0.06)" stroke="#a4238f" stroke-width="1.8" />
-  <rect x="714" y="68" width="384" height="46" rx="9" fill="#ffffff" stroke="rgba(164,35,143,0.3)" />
-  <text x="734" y="97" class="svg-label" fill="#0d1030">Specification · observable behaviour</text>
-  <rect x="714" y="128" width="384" height="46" rx="9" fill="#ffffff" stroke="rgba(164,35,143,0.3)" />
-  <text x="734" y="157" class="svg-label" fill="#0d1030">Design · technology and decisions</text>
-  <rect x="714" y="188" width="384" height="52" rx="9" fill="#ffffff" stroke="rgba(164,35,143,0.3)" />
-  <text x="734" y="217" class="svg-label" fill="#0d1030">Build plan · dependency-aware work</text>
+  <line x1="440" y1="155" x2="468" y2="155" stroke="#a4238f" stroke-width="1.7" />
+  <polygon points="462,150 472,155 462,160" fill="#a4238f" />
 
-  <rect x="148" y="304" width="844" height="42" rx="21" fill="#0d1030" />
-  <text x="570" y="330" text-anchor="middle" class="svg-label" fill="#ffffff">Specifications—not chat history—remain the durable source of intent.</text>
+  <rect x="472" y="54" width="268" height="202" rx="14" fill="rgba(164,35,143,0.06)" stroke="#a4238f" stroke-width="1.6" />
+  <text x="494" y="84" class="svg-kicker" fill="#a4238f">02 · DERIVE</text>
+  <text x="494" y="116" class="svg-h3" fill="#0d1030">Plan</text>
+  <line x1="494" y1="132" x2="718" y2="132" stroke="rgba(164,35,143,0.18)" />
+  <text x="494" y="164" class="svg-label" fill="#0d1030">Ephemeral work</text>
+  <text x="494" y="192" class="svg-label" fill="#0d1030">Dependencies</text>
+  <text x="494" y="226" class="svg-caption" fill="rgba(13,16,48,0.6)">Discard or regenerate</text>
+
+  <line x1="740" y1="155" x2="768" y2="155" stroke="#0d1030" stroke-width="1.7" />
+  <polygon points="762,150 772,155 762,160" fill="#a4238f" />
+
+  <rect x="772" y="54" width="352" height="202" rx="14" fill="#0d1030" />
+  <text x="794" y="84" class="svg-kicker" fill="#78d8f2">03 · BUILD + PROVE</text>
+  <text x="794" y="116" class="svg-h3" fill="#ffffff">Implement</text>
+  <line x1="794" y1="132" x2="1102" y2="132" stroke="rgba(255,255,255,0.14)" />
+  <text x="794" y="170" class="svg-label" fill="#ffffff">Build · integrate · verify</text>
+  <text x="794" y="204" class="svg-label" fill="#ffffff">Against the specification</text>
+  <text x="794" y="238" class="svg-caption" fill="rgba(255,255,255,0.68)">Complete only when verified</text>
+
+  <rect x="148" y="294" width="844" height="48" rx="24" fill="#0d1030" />
+  <text x="570" y="324" text-anchor="middle" class="svg-label" fill="#ffffff">The plan is disposable. The reviewed specification is not.</text>
 </svg>
 </div>
 </div>
 
 <!--
-The engine does not ask one prompt to invent the answer.
-- Chat remains useful working context, but the accepted intent and its evidence live outside it.
-- Intent, documentation, tests, and observed code behaviour remain connected to their sources.
-- Explicit source precedence distinguishes agreement, ranked divergence, and genuine conflict.
-- The model helps synthesise a candidate; a person reviews and seals the revision.
-- The revision contains the specification, design, and dependency-aware build plan.
-
-Client question:
-- If the chat disappeared and the sources disagreed, where would the accepted intent and authority remain?
--->
-
----
-title: The record directs the build.
-sync: record-build
-class: slide-light
----
-
-<Eyebrow text="02 · RECORD INTENT · COORDINATED IMPLEMENTATION" />
-
-<div class="foundation-progress" aria-label="Delivery foundations">
-<span>01 · Set rules</span>
-<span class="is-active is-magenta">02 · Record intent</span>
-<span>03 · Constrain code</span>
-</div>
-
-<div class="ed-band">
-<div class="ed-band-top">
-<div>
-
-# The record directs<br>the build.
-
-</div>
-<p class="ed-band-prose">A reviewed revision coordinates implementation. Each unit of work receives exact inputs; results integrate in dependency order and are verified as one system. <strong>The coding agent never becomes the source of truth.</strong></p>
-</div>
-<div class="ed-band-canvas">
-<svg viewBox="0 0 1140 360" aria-hidden="true">
-  <rect x="16" y="54" width="230" height="190" rx="14" fill="rgba(164,35,143,0.06)" stroke="#a4238f" stroke-width="1.7" />
-  <text x="38" y="84" class="svg-kicker" fill="#a4238f">01 · RETAINED</text>
-  <text x="38" y="116" class="svg-h3" fill="#0d1030">Reviewed revision</text>
-  <line x1="38" y1="132" x2="224" y2="132" stroke="rgba(164,35,143,0.18)" />
-  <text x="38" y="164" class="svg-label" fill="#0d1030">Specification</text>
-  <text x="38" y="192" class="svg-label" fill="#0d1030">Design</text>
-  <text x="38" y="220" class="svg-caption" fill="rgba(13,16,48,0.6)">Reviewed intent</text>
-
-  <line x1="246" y1="149" x2="296" y2="149" stroke="#a4238f" stroke-width="1.8" />
-  <polygon points="290,144 300,149 290,154" fill="#a4238f" />
-
-  <rect x="300" y="54" width="230" height="190" rx="14" fill="#ffffff" stroke="rgba(13,16,48,0.25)" stroke-width="1.5" />
-  <text x="322" y="84" class="svg-kicker" fill="#0d1030">02 · COORDINATE</text>
-  <text x="322" y="116" class="svg-h3" fill="#0d1030">Dependency-aware plan</text>
-  <line x1="322" y1="132" x2="508" y2="132" stroke="rgba(13,16,48,0.12)" />
-  <text x="322" y="164" class="svg-label" fill="#0d1030">Ordered units of work</text>
-  <text x="322" y="192" class="svg-label" fill="#0d1030">Ready work together</text>
-  <text x="322" y="220" class="svg-caption" fill="rgba(13,16,48,0.6)">Plan retained with the revision</text>
-
-  <line x1="530" y1="149" x2="580" y2="149" stroke="#0d1030" stroke-width="1.8" />
-  <polygon points="574,144 584,149 574,154" fill="#0d1030" />
-
-  <rect x="584" y="54" width="230" height="190" rx="14" fill="#0d1030" />
-  <text x="606" y="84" class="svg-kicker" fill="#78d8f2">03 · IMPLEMENT</text>
-  <text x="606" y="116" class="svg-h3" fill="#ffffff">Bounded implementation</text>
-  <line x1="606" y1="132" x2="792" y2="132" stroke="rgba(255,255,255,0.14)" />
-  <text x="606" y="164" class="svg-label" fill="#ffffff">Exact execution inputs</text>
-  <text x="606" y="192" class="svg-label" fill="#ffffff">Isolated workspaces</text>
-  <text x="606" y="220" class="svg-caption" fill="rgba(255,255,255,0.68)">Replaceable coding agent</text>
-
-  <line x1="814" y1="149" x2="864" y2="149" stroke="#0c7fa3" stroke-width="1.8" />
-  <polygon points="858,144 868,149 858,154" fill="#0c7fa3" />
-
-  <rect x="868" y="54" width="256" height="190" rx="14" fill="rgba(22,180,226,0.06)" stroke="#0c7fa3" stroke-width="1.7" />
-  <text x="890" y="84" class="svg-kicker" fill="#0c7fa3">04 · PROVE</text>
-  <text x="890" y="116" class="svg-h3" fill="#0d1030">Integrated verification</text>
-  <line x1="890" y1="132" x2="1102" y2="132" stroke="rgba(12,127,163,0.18)" />
-  <text x="890" y="164" class="svg-label" fill="#0d1030">Checks and repairs</text>
-  <text x="890" y="192" class="svg-label" fill="#0d1030">Verification results</text>
-  <text x="890" y="220" class="svg-caption" fill="rgba(13,16,48,0.6)">Evidence retained</text>
-
-  <rect x="180" y="292" width="780" height="48" rx="24" fill="#0d1030" />
-  <text x="570" y="322" text-anchor="middle" class="svg-h3" fill="#ffffff">Swap the model; the record stays.</text>
-</svg>
-</div>
-</div>
-
-<!--
-The reviewed revision coordinates implementation.
-- The dependency-aware plan determines which units of work are ready.
-- Each build receives exact requirements, design, types, and dependencies in an isolated workspace.
-- Results integrate in order and the combined system is verified.
-- Reviewed intent, specifications, execution inputs, and verification results remain regardless of coding agent or model.
+This is the recognisable spec-driven development loop.
+- Specify reconciles intent, documentation, tests, and, where it exists, legacy source code into `spec.md` and `design.md`. Together, those files are the specification.
+- A person reviews and seals that specification in the repository.
+- Plan derives ephemeral work ordered by dependency from the reviewed specification. It can be discarded and generated again.
+- Implement gives each unit of work the exact specification and plan entry it needs, builds and integrates it, and verifies the combined result against the specification.
+- Verification is part of completing implementation, not a separate downstream activity; only a verified wave advances the revision's label.
+- The coding agent and plan are replaceable. The reviewed specification is not.
 
 This leads to the next boundary:
-- The record constrains what must be built. The runtime constrains what the resulting code may touch.
+- The specification governs what must be built. The runtime governs what the resulting code may touch.
 -->
 
 ---
-title: Generated code gets no ambient authority
+title: Code is disposable. The specification is durable.
+sync: record-truth
+class: slide-light
+---
+
+<Eyebrow text="02 · RECORD INTENT · DURABLE SPECIFICATION" />
+
+<div class="foundation-progress" aria-label="Delivery foundations">
+<span>01 · Set rules</span>
+<span class="is-active is-magenta">02 · Record intent</span>
+<span>03 · Constrain code</span>
+</div>
+
+<div class="ed-band">
+<div class="ed-band-top">
+<div>
+
+# Code is disposable.<br><span style="color:#a4238f">The specification is durable.</span>
+
+</div>
+<p class="ed-band-prose"><strong>The implementation is a derived output.</strong> Regenerate the plan or rebuild the code. The reviewed specification—spec.md and design.md—preserves what the system must do and how it is designed.</p>
+</div>
+<div class="ed-band-canvas">
+<svg viewBox="0 0 1140 360" aria-hidden="true">
+  <text x="16" y="24" class="svg-kicker" fill="#0c7fa3">DISPOSABLE IMPLEMENTATION</text>
+  <rect x="16" y="42" width="360" height="226" rx="16" fill="rgba(13,16,48,0.025)" stroke="rgba(13,16,48,0.34)" stroke-width="1.6" stroke-dasharray="6 5" />
+  <text x="196" y="140" text-anchor="middle" font-size="52" font-weight="600" fill="#0d1030">Code</text>
+  <line x1="72" y1="166" x2="320" y2="166" stroke="rgba(13,16,48,0.12)" />
+  <text x="196" y="202" text-anchor="middle" class="svg-label" fill="rgba(13,16,48,0.68)">Rebuild from the specification</text>
+  <text x="196" y="236" text-anchor="middle" class="svg-caption" fill="rgba(13,16,48,0.52)">A derived output</text>
+
+  <text x="408" y="24" class="svg-kicker" fill="#a4238f">DURABLE AUTHORITY</text>
+  <rect x="408" y="42" width="716" height="226" rx="16" fill="#0d1030" stroke="#a4238f" stroke-width="2" />
+  <text x="434" y="78" class="svg-h2" fill="#ffffff">The specification</text>
+  <text x="1098" y="78" text-anchor="end" class="svg-kicker" fill="#f59ef5">REVIEWED · VERSIONED · IN REPO</text>
+  <line x1="434" y1="96" x2="1098" y2="96" stroke="rgba(255,255,255,0.14)" />
+  <rect x="434" y="116" width="664" height="48" rx="9" fill="rgba(255,255,255,0.08)" />
+  <text x="454" y="146" class="svg-label" fill="#ffffff">spec.md</text>
+  <text x="604" y="146" class="svg-caption" fill="rgba(255,255,255,0.72)">Requirements and scenarios</text>
+  <rect x="434" y="180" width="664" height="48" rx="9" fill="rgba(255,255,255,0.08)" />
+  <text x="454" y="210" class="svg-label" fill="#ffffff">design.md</text>
+  <text x="604" y="210" class="svg-caption" fill="rgba(255,255,255,0.72)">Architecture and decisions</text>
+  <text x="434" y="252" class="svg-caption" fill="#78d8f2">What must remain true—and why</text>
+
+  <rect x="100" y="298" width="940" height="48" rx="24" fill="#0d1030" stroke="#a4238f" stroke-width="1.8" />
+  <text x="570" y="328" text-anchor="middle" class="svg-h3" fill="#ffffff">Regenerate the plan. Rebuild the code. The specification remains.</text>
+</svg>
+</div>
+</div>
+
+<!--
+This is the deliberate provocation at the end of the section.
+- Disposable does not mean unimportant. It means the implementation is a derived output, not the authority over intent.
+- In modernisation, legacy source code is still valuable input to specification recovery. That role belongs on the preceding slide.
+- The plan can be regenerated and the implementation can be rebuilt. The coding model is interchangeable too, but it is tooling rather than an artefact, so it stays out of the diagram.
+- Only the reviewed `spec.md` and `design.md` remain as the durable specification in the repository.
+- Those two files preserve what the system must do and how it is designed.
+
+Transition:
+- The specification governs what must be built. The runtime governs what the resulting code may touch.
+-->
+
+---
+title: Give generated code less freedom to surprise you.
 sync: runtime
 class: slide-light
 ---
@@ -689,68 +678,161 @@ class: slide-light
 <span class="is-active">03 · Constrain code</span>
 </div>
 
-<div class="ed-split">
-<div class="ed-prose-col">
+<div class="ed-band">
+<div class="ed-band-top">
+<div>
 
-# Generated code gets<br>no ambient authority.
-
-<p class="ed-prose"><strong>Application logic runs as a sandboxed WebAssembly component.</strong> It has no ambient filesystem, network, process, or environment access. The host supplies only the typed capabilities the application was granted.</p>
-<p class="ed-prose">Credentials, concrete backends, and infrastructure policy stay outside application code. The boundary complements—not replaces—credential scope, network policy, and backend isolation.</p>
+# Give generated code less freedom<br>to surprise you.
 
 </div>
-<div class="ed-diagram-pane">
-<svg viewBox="0 0 640 440" aria-hidden="true">
-  <rect x="18" y="22" width="604" height="390" rx="18" fill="#0d1030" />
-  <text x="42" y="52" class="svg-kicker" fill="#78d8f2">WEBASSEMBLY RUNTIME · RUST ON WASMTIME</text>
-  <text x="598" y="52" text-anchor="end" class="svg-caption" fill="rgba(255,255,255,0.6)">Host owns policy and authority</text>
+<p class="ed-band-prose"><strong>Code reaches infrastructure only through capabilities supplied by the host.</strong></p>
+</div>
+<div class="ed-band-canvas" style="padding-top: 24px;">
+<svg viewBox="0 0 1140 360" aria-hidden="true">
+  <g transform="translate(114 12) scale(0.8)">
+  <rect x="16" y="0" width="1108" height="178" rx="16" fill="rgba(65,145,203,0.14)" stroke="rgba(65,145,203,0.78)" stroke-width="2.4" />
 
-  <rect x="74" y="78" width="492" height="112" rx="12" fill="rgba(255,255,255,0.08)" stroke="#78d8f2" stroke-width="1.8" />
-  <text x="320" y="106" text-anchor="middle" class="svg-kicker" fill="#78d8f2">SANDBOXED WASI APPLICATION COMPONENT</text>
-  <text x="320" y="136" text-anchor="middle" class="svg-h2" fill="#ffffff">Differentiating business behaviour</text>
-  <text x="320" y="162" text-anchor="middle" class="svg-caption" fill="rgba(255,255,255,0.7)">No provider SDKs · No credentials · No ambient access</text>
+  <rect x="100" y="26" width="390" height="70" rx="10" fill="rgba(124,92,205,0.12)" stroke="rgba(124,92,205,0.7)" stroke-width="2.4" />
+  <text x="295" y="56" text-anchor="middle" class="svg-h3" fill="#0d1030">WASI Component</text>
+  <text x="295" y="80" text-anchor="middle" class="svg-label" font-style="italic" fill="rgba(13,16,48,0.72)">Generated code</text>
 
-  <line x1="158" y1="190" x2="158" y2="232" stroke="#78d8f2" stroke-width="1.8" />
-  <polygon points="153,226 163,226 158,236" fill="#78d8f2" />
-  <line x1="320" y1="190" x2="320" y2="232" stroke="#78d8f2" stroke-width="1.8" />
-  <polygon points="315,226 325,226 320,236" fill="#78d8f2" />
-  <line x1="482" y1="190" x2="482" y2="232" stroke="#78d8f2" stroke-width="1.8" />
-  <polygon points="477,226 487,226 482,236" fill="#78d8f2" />
-  <rect x="206" y="202" width="228" height="26" rx="13" fill="rgba(214,58,214,0.16)" stroke="#f59ef5" />
-  <text x="320" y="219" text-anchor="middle" class="svg-pill" fill="#f59ef5">TYPED CAPABILITY CONTRACTS</text>
+  <rect x="650" y="26" width="390" height="70" rx="10" fill="rgba(124,92,205,0.12)" stroke="rgba(124,92,205,0.7)" stroke-width="2.4" />
+  <text x="845" y="56" text-anchor="middle" class="svg-h3" fill="#0d1030">WASI Component</text>
+  <text x="845" y="80" text-anchor="middle" class="svg-label" font-style="italic" fill="rgba(13,16,48,0.72)">Generated code</text>
 
-  <rect x="74" y="240" width="138" height="68" rx="9" fill="rgba(255,255,255,0.1)" />
-  <text x="143" y="267" text-anchor="middle" class="svg-label" fill="#ffffff">Data &amp; state</text>
-  <text x="143" y="288" text-anchor="middle" class="svg-caption" fill="rgba(255,255,255,0.62)">SQL · key-value · blob</text>
+  <text x="570" y="134" text-anchor="middle" class="svg-h2" fill="#0d1030">Wasm Runtime</text>
+  <text x="570" y="159" text-anchor="middle" class="svg-label" font-style="italic" fill="rgba(13,16,48,0.72)">Wasmtime sandbox</text>
 
-  <rect x="251" y="240" width="138" height="68" rx="9" fill="rgba(255,255,255,0.1)" />
-  <text x="320" y="267" text-anchor="middle" class="svg-label" fill="#ffffff">Flow &amp; calls</text>
-  <text x="320" y="288" text-anchor="middle" class="svg-caption" fill="rgba(255,255,255,0.62)">Messaging · HTTP</text>
+  <rect x="16" y="199" width="259" height="48" rx="9" fill="#f8f8f5" stroke="rgba(90,90,82,0.3)" stroke-width="2.2" />
+  <text x="145.5" y="229" text-anchor="middle" class="svg-label" fill="#0d1030">HTTP</text>
+  <rect x="299" y="199" width="259" height="48" rx="9" fill="#f8f8f5" stroke="rgba(90,90,82,0.3)" stroke-width="2.2" />
+  <text x="428.5" y="229" text-anchor="middle" class="svg-label" fill="#0d1030">Messaging</text>
+  <rect x="582" y="199" width="259" height="48" rx="9" fill="#f8f8f5" stroke="rgba(90,90,82,0.3)" stroke-width="2.2" />
+  <text x="711.5" y="229" text-anchor="middle" class="svg-label" fill="#0d1030">KeyValue</text>
+  <rect x="865" y="199" width="259" height="48" rx="9" fill="#f8f8f5" stroke="rgba(90,90,82,0.3)" stroke-width="2.2" />
+  <text x="994.5" y="229" text-anchor="middle" class="svg-label" fill="#0d1030">BlobStore</text>
 
-  <rect x="428" y="240" width="138" height="68" rx="9" fill="rgba(255,255,255,0.1)" />
-  <text x="497" y="267" text-anchor="middle" class="svg-label" fill="#ffffff">Trust &amp; insight</text>
-  <text x="497" y="288" text-anchor="middle" class="svg-caption" fill="rgba(255,255,255,0.62)">Identity · telemetry</text>
-
-  <rect x="74" y="332" width="492" height="52" rx="10" fill="rgba(255,255,255,0.06)" stroke="rgba(255,255,255,0.18)" />
-  <text x="98" y="354" class="svg-kicker" fill="#78d8f2">HOST-SUPPLIED</text>
-  <text x="216" y="354" class="svg-body" fill="#ffffff">Backends · Credentials · Egress · Configuration · Observability</text>
-  <text x="320" y="374" text-anchor="middle" class="svg-caption" fill="#f59ef5">No grant means no reach.</text>
-
-  <text x="320" y="432" text-anchor="middle" class="svg-caption" fill="rgba(13,16,48,0.58)">Authoring controls bound the agent. Sandboxed execution bounds the application.</text>
+  <rect x="16" y="268" width="1108" height="64" rx="10" fill="#ffffff" stroke="rgba(13,16,48,0.5)" stroke-width="2.4" />
+  <text x="570" y="298" text-anchor="middle" class="svg-h3" fill="#0d1030">Infrastructure</text>
+  <text x="570" y="321" text-anchor="middle" class="svg-label" font-style="italic" fill="rgba(13,16,48,0.7)">Cloud/On-premise</text>
+  </g>
 </svg>
 </div>
 </div>
 
 <!--
-Foundation three — what the result may touch:
-- Sandboxed execution starts from no ambient authority. Access exists only through a typed capability linked by the host.
-- The guest asks for a role such as state or messaging. The host chooses the backend and holds its credentials.
-- A poisoned dependency or generated mistake cannot reach something the host did not grant.
-
-Boundary:
+The headline and payoff use the language on the Propellerhead homepage.
+- Generated application code is packaged as one or more WASI components inside a Wasmtime sandbox.
+- The components have no direct route to infrastructure.
+- They reach HTTP, messaging, key-value storage, and blob storage only through capability interfaces supplied by the host.
+- The host chooses the cloud or on-premise implementation behind each capability and retains its credentials and policy.
+- A generated mistake or poisoned dependency cannot reach a capability the host did not supply.
 - This complements infrastructure security; it does not replace credential scope, network policy, or backend isolation.
+- Put simply: the code gets exactly what the host grants—and nothing else.
 
 Client question:
-- If generated application code were compromised, what could it reach today simply because the process environment can?
+- If this code—or one of its dependencies—were compromised, what could it actually reach?
+-->
+
+---
+title: Different infrastructure. The same application.
+sync: runtime-portability
+class: slide-light
+---
+
+<Eyebrow text="03 · CONSTRAIN CODE · PORTABLE INFRASTRUCTURE" />
+
+<div class="foundation-progress" aria-label="Delivery foundations">
+<span>01 · Set rules</span>
+<span>02 · Record intent</span>
+<span class="is-active">03 · Constrain code</span>
+</div>
+
+<div class="ed-band">
+<div class="ed-band-top">
+<div>
+
+# Different infrastructure.<br>The same application.
+
+</div>
+<p class="ed-band-prose"><strong>The component depends on capabilities, not products.</strong> A runtime recipe binds them to approved services in each environment.</p>
+</div>
+<div class="ed-band-canvas" style="padding-top: 8px;">
+<svg viewBox="0 0 1140 360" aria-hidden="true">
+  <rect x="430" y="2" width="280" height="58" rx="11" fill="rgba(124,92,205,0.12)" stroke="rgba(124,92,205,0.7)" stroke-width="2" />
+  <text x="570" y="24" text-anchor="middle" class="svg-kicker" fill="#7557c7">APPLICATION UNCHANGED</text>
+  <text x="570" y="49" text-anchor="middle" class="svg-h3" fill="#0d1030">WASI Component</text>
+
+  <line x1="570" y1="60" x2="570" y2="76" stroke="rgba(13,16,48,0.46)" stroke-width="1.8" />
+  <polygon points="565,72 575,72 570,82" fill="#0d1030" />
+  <text x="570" y="94" text-anchor="middle" class="svg-kicker" fill="#0c7fa3">STABLE CAPABILITY CONTRACT</text>
+
+  <rect x="196" y="102" width="177" height="42" rx="8" fill="#f8f8f5" stroke="rgba(90,90,82,0.3)" stroke-width="1.8" />
+  <text x="284.5" y="128" text-anchor="middle" class="svg-label" fill="#0d1030">HTTP</text>
+  <rect x="386" y="102" width="177" height="42" rx="8" fill="#f8f8f5" stroke="rgba(90,90,82,0.3)" stroke-width="1.8" />
+  <text x="474.5" y="128" text-anchor="middle" class="svg-label" fill="#0d1030">Messaging</text>
+  <rect x="576" y="102" width="177" height="42" rx="8" fill="#f8f8f5" stroke="rgba(90,90,82,0.3)" stroke-width="1.8" />
+  <text x="664.5" y="128" text-anchor="middle" class="svg-label" fill="#0d1030">KeyValue</text>
+  <rect x="766" y="102" width="177" height="42" rx="8" fill="#f8f8f5" stroke="rgba(90,90,82,0.3)" stroke-width="1.8" />
+  <text x="854.5" y="128" text-anchor="middle" class="svg-label" fill="#0d1030">BlobStore</text>
+
+  <line x1="570" y1="144" x2="570" y2="158" stroke="rgba(13,16,48,0.46)" stroke-width="1.8" />
+  <polygon points="565,154 575,154 570,164" fill="#0d1030" />
+  <text x="570" y="181" text-anchor="middle" class="svg-kicker" fill="#a4238f">HOST-SELECTED RUNTIME RECIPE</text>
+
+  <rect x="16" y="190" width="350" height="154" rx="13" fill="#ffffff" stroke="rgba(13,16,48,0.25)" stroke-width="1.6" />
+  <text x="38" y="216" class="svg-kicker" fill="rgba(13,16,48,0.58)">LOCAL / TRIAL</text>
+  <text x="38" y="245" class="svg-h3" fill="#0d1030">In-memory + local services</text>
+  <line x1="38" y1="258" x2="344" y2="258" stroke="rgba(13,16,48,0.12)" />
+  <rect x="38" y="271" width="145" height="25" rx="6" fill="rgba(13,16,48,0.025)" stroke="rgba(13,16,48,0.1)" />
+  <text x="110.5" y="287" text-anchor="middle" class="svg-pill" fill="#0d1030">Runtime</text>
+  <rect x="199" y="271" width="145" height="25" rx="6" fill="rgba(13,16,48,0.025)" stroke="rgba(13,16,48,0.1)" />
+  <text x="271.5" y="287" text-anchor="middle" class="svg-pill" fill="#0d1030">Capability bindings</text>
+  <rect x="38" y="307" width="145" height="25" rx="6" fill="rgba(13,16,48,0.025)" stroke="rgba(13,16,48,0.1)" />
+  <text x="110.5" y="323" text-anchor="middle" class="svg-pill" fill="#0d1030">Policy + identity</text>
+  <rect x="199" y="307" width="145" height="25" rx="6" fill="rgba(13,16,48,0.025)" stroke="rgba(13,16,48,0.1)" />
+  <text x="271.5" y="323" text-anchor="middle" class="svg-pill" fill="#0d1030">Config + observability</text>
+
+  <rect x="395" y="190" width="350" height="154" rx="13" fill="rgba(22,180,226,0.05)" stroke="rgba(12,127,163,0.5)" stroke-width="1.8" />
+  <text x="417" y="216" class="svg-kicker" fill="#0c7fa3">CLOUD</text>
+  <text x="417" y="245" class="svg-h3" fill="#0d1030">Managed services</text>
+  <line x1="417" y1="258" x2="723" y2="258" stroke="rgba(12,127,163,0.16)" />
+  <rect x="417" y="271" width="145" height="25" rx="6" fill="rgba(255,255,255,0.78)" stroke="rgba(13,16,48,0.1)" />
+  <text x="489.5" y="287" text-anchor="middle" class="svg-pill" fill="#0d1030">Runtime</text>
+  <rect x="578" y="271" width="145" height="25" rx="6" fill="rgba(255,255,255,0.78)" stroke="rgba(13,16,48,0.1)" />
+  <text x="650.5" y="287" text-anchor="middle" class="svg-pill" fill="#0d1030">Capability bindings</text>
+  <rect x="417" y="307" width="145" height="25" rx="6" fill="rgba(255,255,255,0.78)" stroke="rgba(13,16,48,0.1)" />
+  <text x="489.5" y="323" text-anchor="middle" class="svg-pill" fill="#0d1030">Policy + identity</text>
+  <rect x="578" y="307" width="145" height="25" rx="6" fill="rgba(255,255,255,0.78)" stroke="rgba(13,16,48,0.1)" />
+  <text x="650.5" y="323" text-anchor="middle" class="svg-pill" fill="#0d1030">Config + observability</text>
+
+  <rect x="774" y="190" width="350" height="154" rx="13" fill="rgba(164,35,143,0.045)" stroke="rgba(164,35,143,0.44)" stroke-width="1.8" />
+  <text x="796" y="216" class="svg-kicker" fill="#a4238f">ON-PREMISE</text>
+  <text x="796" y="245" class="svg-h3" fill="#0d1030">Approved internal services</text>
+  <line x1="796" y1="258" x2="1102" y2="258" stroke="rgba(164,35,143,0.16)" />
+  <rect x="796" y="271" width="145" height="25" rx="6" fill="rgba(255,255,255,0.78)" stroke="rgba(13,16,48,0.1)" />
+  <text x="868.5" y="287" text-anchor="middle" class="svg-pill" fill="#0d1030">Runtime</text>
+  <rect x="957" y="271" width="145" height="25" rx="6" fill="rgba(255,255,255,0.78)" stroke="rgba(13,16,48,0.1)" />
+  <text x="1029.5" y="287" text-anchor="middle" class="svg-pill" fill="#0d1030">Capability bindings</text>
+  <rect x="796" y="307" width="145" height="25" rx="6" fill="rgba(255,255,255,0.78)" stroke="rgba(13,16,48,0.1)" />
+  <text x="868.5" y="323" text-anchor="middle" class="svg-pill" fill="#0d1030">Policy + identity</text>
+  <rect x="957" y="307" width="145" height="25" rx="6" fill="rgba(255,255,255,0.78)" stroke="rgba(13,16,48,0.1)" />
+  <text x="1029.5" y="323" text-anchor="middle" class="svg-pill" fill="#0d1030">Config + observability</text>
+</svg>
+</div>
+</div>
+
+<!--
+The website calls this host-selected infrastructure.
+- The application component depends on stable capability contracts rather than directly on infrastructure products.
+- Each environment supplies a reviewed runtime recipe: the runtime, capability bindings, identity and policy, configuration, and observability.
+- A local or trial recipe may use in-memory and local services. Cloud and on-premise recipes bind the same contracts to approved managed or internal services.
+- The recipe can be retained as versioned deployment and infrastructure-as-code assets, so the next application starts with a known operating shape.
+- The infrastructure is not literally identical. Its application-facing contract and deployment grammar are.
+- Where the capability semantics remain the same, change the recipe—not the application.
+
+Client question:
+- How much application code currently exists only to accommodate a particular environment or infrastructure product?
 -->
 
 ---
@@ -779,9 +861,9 @@ class: slide-light
   <polygon points="390,137 400,142 390,147" fill="#0d1030" />
 
   <rect x="402" y="82" width="228" height="120" rx="14" fill="#0d1030" />
-  <text x="516" y="110" text-anchor="middle" class="svg-kicker" fill="#78d8f2">REVIEWED DELIVERY REVISION</text>
+  <text x="516" y="110" text-anchor="middle" class="svg-kicker" fill="#78d8f2">REVIEWED SPECIFICATION</text>
   <text x="516" y="140" text-anchor="middle" class="svg-h3" fill="#ffffff">What must remain true</text>
-  <text x="516" y="164" text-anchor="middle" class="svg-caption" fill="rgba(255,255,255,0.7)">Specification · design · plan</text>
+  <text x="516" y="164" text-anchor="middle" class="svg-caption" fill="rgba(255,255,255,0.7)">spec.md · design.md</text>
   <text x="516" y="184" text-anchor="middle" class="svg-caption" fill="#f59ef5">Conflicts and unknowns visible</text>
 
   <line x1="630" y1="142" x2="696" y2="142" stroke="#0d1030" stroke-width="2" />
