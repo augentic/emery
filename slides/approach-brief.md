@@ -1136,7 +1136,7 @@ Compounding delivery:
 -->
 
 ---
-title: Start with something real. Make the next thing easier.
+title: Start with one real change. Make the next one easier.
 sync: cta
 class: slide-split short-bar
 ---
@@ -1153,7 +1153,7 @@ class: slide-split short-bar
 <div>
 <Eyebrow text="PROPELLERHEAD · THE FIRST MOVE" />
 
-# Start with something real.<br>Make the next thing easier.
+# Start with one real change.<br>Make the next one easier.
 
 <div class="opportunity-rows" style="margin-top: 8px;">
 <div class="opportunity-row">
