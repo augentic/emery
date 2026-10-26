@@ -147,6 +147,18 @@ class: slide-hero slide-section
   box-shadow: none;
 }
 
+.live-card-head {
+  min-height: 38px;
+  margin-bottom: 10px;
+  display: flex;
+  align-items: center;
+  gap: 11px;
+}
+
+.live-card-head + h3 {
+  margin-top: 0;
+}
+
 .live-num,
 .live-kicker {
   font-size: 12px;
@@ -210,6 +222,9 @@ class: slide-hero slide-section
   padding: 18px;
   border-radius: 10px;
   background: rgba(255, 255, 255, 0.09);
+  display: flex;
+  align-items: center;
+  gap: 12px;
   font-size: 20px;
   font-weight: 500;
 }
@@ -665,10 +680,27 @@ class: slide-hero slide-section
   border: 1.8px solid rgba(90, 90, 82, 0.28);
   border-radius: 8px;
   background: rgba(248, 248, 245, 0.94);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
   text-align: center;
   font-size: 13px;
   font-weight: 500;
   color: var(--phl-ink);
+}
+
+.live-capability-icon {
+  width: 18px;
+  height: 18px;
+  color: var(--phl-cyan-ink);
+}
+
+.live-kicker-icon {
+  width: 18px;
+  height: 18px;
+  margin-right: 7px;
+  vertical-align: -4px;
 }
 
 .live-infrastructure {
@@ -1161,10 +1193,10 @@ class: slide-light
 <div class="live-panel">
 <div class="live-panel-title">Responsibility remains</div>
 <div class="live-word-grid">
-<div class="live-word">Direction</div>
-<div class="live-word">Authority</div>
-<div class="live-word">Evidence</div>
-<div class="live-word">Ownership</div>
+<div class="live-word"><IconBadge tone="light" size="small"><ph:compass /></IconBadge><span>Direction</span></div>
+<div class="live-word"><IconBadge tone="light" size="small"><ph:key /></IconBadge><span>Authority</span></div>
+<div class="live-word"><IconBadge tone="light" size="small"><ph:seal-check /></IconBadge><span>Evidence</span></div>
+<div class="live-word"><IconBadge tone="light" size="small"><ph:user-circle /></IconBadge><span>Ownership</span></div>
 </div>
 <div class="live-panel-result">The bottleneck is an accepted change, safely in production.</div>
 </div>
@@ -1192,19 +1224,31 @@ class: slide-light
 
 <div class="live-grid-4">
 <div class="live-card is-cyan">
+<div class="live-card-head">
+<IconBadge tone="cyan"><ph:users-three /></IconBadge>
 <div class="live-num">01 · Benefit</div>
+</div>
 <h3>Who benefits?</h3>
 </div>
 <div class="live-card">
+<div class="live-card-head">
+<IconBadge tone="ink"><ph:target /></IconBadge>
 <div class="live-num">02 · Outcome</div>
+</div>
 <h3>What changes?</h3>
 </div>
 <div class="live-card">
+<div class="live-card-head">
+<IconBadge tone="cyan"><ph:check-circle /></IconBadge>
 <div class="live-num">03 · Evidence</div>
+</div>
 <h3>How will we know?</h3>
 </div>
 <div class="live-card is-magenta">
+<div class="live-card-head">
+<IconBadge tone="magenta"><ph:gavel /></IconBadge>
 <div class="live-num">04 · Authority</div>
+</div>
 <h3>Who decides?</h3>
 </div>
 </div>
@@ -1238,17 +1282,26 @@ class: slide-sandbox
 
 <div class="live-grid-3" style="margin-top: 24px;">
 <div class="live-card is-glass">
+<div class="live-card-head">
+<IconBadge tone="light"><ph:shield-check /></IconBadge>
 <div class="live-num">01 · Toolchain controls</div>
+</div>
 <h3>Set rules</h3>
 <p>How work may be created.</p>
 </div>
 <div class="live-card is-glass">
+<div class="live-card-head">
+<IconBadge tone="light"><ph:file-text /></IconBadge>
 <div class="live-num">02 · Spec-driven delivery</div>
+</div>
 <h3>Record intent</h3>
 <p>What must remain true.</p>
 </div>
 <div class="live-card is-glass">
+<div class="live-card-head">
+<IconBadge tone="light"><ph:lock-key /></IconBadge>
 <div class="live-num">03 · Sandboxed execution</div>
+</div>
 <h3>Constrain code</h3>
 <p>What the result may touch.</p>
 </div>
@@ -1286,19 +1339,28 @@ class: slide-light
 
 <div class="live-grid-3">
 <div class="live-card is-cyan">
+<div class="live-card-head">
+<IconBadge tone="cyan"><ph:shield-check /></IconBadge>
 <div class="live-kicker">01 · Isolate</div>
+</div>
 <h3>Governed workspaces</h3>
 <p>Non-production environments for people and agents.</p>
 </div>
 
 <div class="live-card">
+<div class="live-card-head">
+<IconBadge tone="magenta"><ph:book-open /></IconBadge>
 <div class="live-kicker">02 · Standardise</div>
+</div>
 <h3>Shared engineering codex</h3>
 <p>Coding standards, approved patterns, examples, and templates—written for people and agents.</p>
 </div>
 
 <div class="live-card is-dark">
+<div class="live-card-head">
+<IconBadge tone="light"><ph:gear-six /></IconBadge>
 <div class="live-kicker">03 · Automate</div>
+</div>
 <h3>Compiler-enforced standards</h3>
 <p>Critical coding rules are checked automatically, alongside security, dependency, quality, and test controls.</p>
 </div>
@@ -1339,25 +1401,37 @@ class: slide-light
 
 <div class="live-pipeline" style="margin-top: 20px;">
 <div class="live-card is-cyan">
+<div class="live-card-head">
+<IconBadge tone="cyan"><ph:code /></IconBadge>
 <div class="live-kicker">01 · Create</div>
+</div>
 <h3>AI-assisted build</h3>
 <p>Governed workspace</p>
 </div>
 <div class="live-arrow">→</div>
 <div class="live-card">
+<div class="live-card-head">
+<IconBadge tone="ink"><ph:git-branch /></IconBadge>
 <div class="live-kicker">02 · Record</div>
+</div>
 <h3>Enterprise source control</h3>
 <p>Traceable change</p>
 </div>
 <div class="live-arrow">→</div>
 <div class="live-card is-dark">
+<div class="live-card-head">
+<IconBadge tone="light"><ph:shield-check /></IconBadge>
 <div class="live-kicker">03 · Assure</div>
+</div>
 <h3>Automated gates</h3>
 <p>Compile-time rules · secrets · dependencies · tests</p>
 </div>
 <div class="live-arrow">→</div>
 <div class="live-card is-magenta">
+<div class="live-card-head">
+<IconBadge tone="magenta"><ph:flask /></IconBadge>
 <div class="live-kicker">04 · Trial</div>
+</div>
 <h3>Controlled non-production</h3>
 <p>Access and review</p>
 </div>
@@ -1582,10 +1656,10 @@ class: slide-light
 <div class="live-portable-link">Host-granted capabilities</div>
 
 <div class="live-capability-row">
-<div class="live-runtime-capability">HTTP</div>
-<div class="live-runtime-capability">Messaging</div>
-<div class="live-runtime-capability">KeyValue</div>
-<div class="live-runtime-capability">BlobStore</div>
+<div class="live-runtime-capability"><ph:globe class="live-capability-icon" /><span>HTTP</span></div>
+<div class="live-runtime-capability"><ph:chat-circle class="live-capability-icon" /><span>Messaging</span></div>
+<div class="live-runtime-capability"><ph:key class="live-capability-icon" /><span>KeyValue</span></div>
+<div class="live-runtime-capability"><ph:database class="live-capability-icon" /><span>BlobStore</span></div>
 </div>
 
 <div class="live-portable-link">Host-selected infrastructure</div>
@@ -1640,10 +1714,10 @@ class: slide-light
 <div class="live-portable-link">Stable capability contract</div>
 
 <div class="live-capability-row">
-<div class="live-runtime-capability">HTTP</div>
-<div class="live-runtime-capability">Messaging</div>
-<div class="live-runtime-capability">KeyValue</div>
-<div class="live-runtime-capability">BlobStore</div>
+<div class="live-runtime-capability"><ph:globe class="live-capability-icon" /><span>HTTP</span></div>
+<div class="live-runtime-capability"><ph:chat-circle class="live-capability-icon" /><span>Messaging</span></div>
+<div class="live-runtime-capability"><ph:key class="live-capability-icon" /><span>KeyValue</span></div>
+<div class="live-runtime-capability"><ph:database class="live-capability-icon" /><span>BlobStore</span></div>
 </div>
 
 <div class="live-portable-link">Host-selected runtime recipe</div>
@@ -1820,22 +1894,22 @@ class: slide-light
 
 <div class="live-radius-grid">
 <div class="live-radius-card">
-<div class="live-kicker">01 · Reach</div>
+<div class="live-kicker"><ph:globe class="live-kicker-icon" />01 · Reach</div>
 <h3>What can it access?</h3>
 <p>Local environment · shared systems · live capabilities</p>
 </div>
 <div class="live-radius-card">
-<div class="live-kicker">02 · Data</div>
+<div class="live-kicker"><ph:database class="live-kicker-icon" />02 · Data</div>
 <h3>What can it read or change?</h3>
 <p>Synthetic data · project data · live or regulated data</p>
 </div>
 <div class="live-radius-card">
-<div class="live-kicker">03 · Dependence</div>
+<div class="live-kicker"><ph:users-three class="live-kicker-icon" />03 · Dependence</div>
 <h3>Who relies on it?</h3>
 <p>One builder · a team · customers or operations</p>
 </div>
 <div class="live-radius-card">
-<div class="live-kicker">04 · Continuity</div>
+<div class="live-kicker"><ph:lifebuoy class="live-kicker-icon" />04 · Continuity</div>
 <h3>What must survive failure?</h3>
 <p>Discard · restore · recover within an obligation</p>
 </div>
