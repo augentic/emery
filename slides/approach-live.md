@@ -589,15 +589,15 @@ class: slide-hero slide-section
   margin: 34px auto 0;
   display: flex;
   flex-direction: column;
-  gap: 11px;
-  transform: translateY(12px);
+  gap: 5px;
+  transform: translateY(22px);
 }
 
 .live-wasm-runtime {
   padding: 14px 18px 13px;
-  border: 2px solid rgba(65, 145, 203, 0.72);
+  border: 2px solid rgba(65, 145, 203, 0.62);
   border-radius: 12px;
-  background: rgba(65, 145, 203, 0.14);
+  background: rgba(65, 145, 203, 0.08);
 }
 
 .live-wasi-components {
@@ -612,7 +612,7 @@ class: slide-hero slide-section
   padding: 11px 12px 10px;
   border: 2px solid rgba(124, 92, 205, 0.64);
   border-radius: 9px;
-  background: rgba(124, 92, 205, 0.12);
+  background: rgba(124, 92, 205, 0.1);
   text-align: center;
   color: var(--phl-ink);
 }
@@ -1343,7 +1343,7 @@ Transition:
 -->
 
 ---
-title: Give generated code less freedom to surprise you.
+title: Generated code has less freedom to surprise.
 sync: runtime
 class: slide-light
 ---
@@ -1358,7 +1358,7 @@ class: slide-light
 
 <div class="live-stage">
 
-# Give generated code less freedom<br>to surprise you.
+# Generated code has less freedom<br>to surprise.
 
 <p class="live-claim">Code reaches infrastructure only through capabilities supplied by the host.</p>
 
@@ -1380,12 +1380,16 @@ class: slide-light
 </div>
 </div>
 
+<div class="live-portable-link">Host-granted capabilities</div>
+
 <div class="live-capability-row">
 <div class="live-runtime-capability">HTTP</div>
 <div class="live-runtime-capability">Messaging</div>
 <div class="live-runtime-capability">KeyValue</div>
 <div class="live-runtime-capability">BlobStore</div>
 </div>
+
+<div class="live-portable-link">Host-selected infrastructure</div>
 
 <div class="live-infrastructure">
 <strong>Infrastructure</strong>

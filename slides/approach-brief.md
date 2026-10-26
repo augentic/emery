@@ -665,7 +665,7 @@ Transition:
 -->
 
 ---
-title: Give generated code less freedom to surprise you.
+title: Generated code has less freedom to surprise.
 sync: runtime
 class: slide-light
 ---
@@ -682,7 +682,7 @@ class: slide-light
 <div class="ed-band-top">
 <div>
 
-# Give generated code less freedom<br>to surprise you.
+# Generated code has less freedom<br>to surprise.
 
 </div>
 <p class="ed-band-prose"><strong>Code reaches infrastructure only through capabilities supplied by the host.</strong></p>
@@ -690,31 +690,39 @@ class: slide-light
 <div class="ed-band-canvas" style="padding-top: 24px;">
 <svg viewBox="0 0 1140 360" aria-hidden="true">
   <g transform="translate(114 12) scale(0.8)">
-  <rect x="16" y="0" width="1108" height="178" rx="16" fill="rgba(65,145,203,0.14)" stroke="rgba(65,145,203,0.78)" stroke-width="2.4" />
+  <rect x="16" y="0" width="1108" height="178" rx="16" fill="rgba(65,145,203,0.08)" stroke="rgba(65,145,203,0.68)" stroke-width="2.4" />
 
-  <rect x="100" y="26" width="390" height="70" rx="10" fill="rgba(124,92,205,0.12)" stroke="rgba(124,92,205,0.7)" stroke-width="2.4" />
+  <rect x="100" y="26" width="390" height="70" rx="10" fill="rgba(124,92,205,0.1)" stroke="rgba(124,92,205,0.7)" stroke-width="2.4" />
   <text x="295" y="56" text-anchor="middle" class="svg-h3" fill="#0d1030">WASI Component</text>
   <text x="295" y="80" text-anchor="middle" class="svg-label" font-style="italic" fill="rgba(13,16,48,0.72)">Generated code</text>
 
-  <rect x="650" y="26" width="390" height="70" rx="10" fill="rgba(124,92,205,0.12)" stroke="rgba(124,92,205,0.7)" stroke-width="2.4" />
+  <rect x="650" y="26" width="390" height="70" rx="10" fill="rgba(124,92,205,0.1)" stroke="rgba(124,92,205,0.7)" stroke-width="2.4" />
   <text x="845" y="56" text-anchor="middle" class="svg-h3" fill="#0d1030">WASI Component</text>
   <text x="845" y="80" text-anchor="middle" class="svg-label" font-style="italic" fill="rgba(13,16,48,0.72)">Generated code</text>
 
   <text x="570" y="134" text-anchor="middle" class="svg-h2" fill="#0d1030">Wasm Runtime</text>
   <text x="570" y="159" text-anchor="middle" class="svg-label" font-style="italic" fill="rgba(13,16,48,0.72)">Wasmtime sandbox</text>
 
-  <rect x="16" y="199" width="259" height="48" rx="9" fill="#f8f8f5" stroke="rgba(90,90,82,0.3)" stroke-width="2.2" />
-  <text x="145.5" y="229" text-anchor="middle" class="svg-label" fill="#0d1030">HTTP</text>
-  <rect x="299" y="199" width="259" height="48" rx="9" fill="#f8f8f5" stroke="rgba(90,90,82,0.3)" stroke-width="2.2" />
-  <text x="428.5" y="229" text-anchor="middle" class="svg-label" fill="#0d1030">Messaging</text>
-  <rect x="582" y="199" width="259" height="48" rx="9" fill="#f8f8f5" stroke="rgba(90,90,82,0.3)" stroke-width="2.2" />
-  <text x="711.5" y="229" text-anchor="middle" class="svg-label" fill="#0d1030">KeyValue</text>
-  <rect x="865" y="199" width="259" height="48" rx="9" fill="#f8f8f5" stroke="rgba(90,90,82,0.3)" stroke-width="2.2" />
-  <text x="994.5" y="229" text-anchor="middle" class="svg-label" fill="#0d1030">BlobStore</text>
+  <line x1="16" y1="191" x2="404" y2="191" stroke="rgba(13,16,48,0.18)" />
+  <line x1="736" y1="191" x2="1124" y2="191" stroke="rgba(13,16,48,0.18)" />
+  <text x="570" y="195" text-anchor="middle" class="svg-kicker" fill="#0c7fa3">HOST-GRANTED CAPABILITIES</text>
 
-  <rect x="16" y="268" width="1108" height="64" rx="10" fill="#ffffff" stroke="rgba(13,16,48,0.5)" stroke-width="2.4" />
-  <text x="570" y="298" text-anchor="middle" class="svg-h3" fill="#0d1030">Infrastructure</text>
-  <text x="570" y="321" text-anchor="middle" class="svg-label" font-style="italic" fill="rgba(13,16,48,0.7)">Cloud/On-premise</text>
+  <rect x="16" y="207" width="259" height="46" rx="9" fill="#f8f8f5" stroke="rgba(90,90,82,0.3)" stroke-width="2.2" />
+  <text x="145.5" y="236" text-anchor="middle" class="svg-label" fill="#0d1030">HTTP</text>
+  <rect x="299" y="207" width="259" height="46" rx="9" fill="#f8f8f5" stroke="rgba(90,90,82,0.3)" stroke-width="2.2" />
+  <text x="428.5" y="236" text-anchor="middle" class="svg-label" fill="#0d1030">Messaging</text>
+  <rect x="582" y="207" width="259" height="46" rx="9" fill="#f8f8f5" stroke="rgba(90,90,82,0.3)" stroke-width="2.2" />
+  <text x="711.5" y="236" text-anchor="middle" class="svg-label" fill="#0d1030">KeyValue</text>
+  <rect x="865" y="207" width="259" height="46" rx="9" fill="#f8f8f5" stroke="rgba(90,90,82,0.3)" stroke-width="2.2" />
+  <text x="994.5" y="236" text-anchor="middle" class="svg-label" fill="#0d1030">BlobStore</text>
+
+  <line x1="16" y1="271" x2="404" y2="271" stroke="rgba(13,16,48,0.18)" />
+  <line x1="736" y1="271" x2="1124" y2="271" stroke="rgba(13,16,48,0.18)" />
+  <text x="570" y="275" text-anchor="middle" class="svg-kicker" fill="#a4238f">HOST-SELECTED INFRASTRUCTURE</text>
+
+  <rect x="16" y="287" width="1108" height="62" rx="10" fill="#ffffff" stroke="rgba(13,16,48,0.42)" stroke-width="2.2" />
+  <text x="570" y="316" text-anchor="middle" class="svg-h3" fill="#0d1030">Infrastructure</text>
+  <text x="570" y="339" text-anchor="middle" class="svg-label" font-style="italic" fill="rgba(13,16,48,0.7)">Cloud/On-premise</text>
   </g>
 </svg>
 </div>

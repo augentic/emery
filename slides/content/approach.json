@@ -117,16 +117,18 @@
   },
   {
     "id": "runtime",
-    "title": "Give generated code less freedom to surprise you.",
+    "title": "Generated code has less freedom to surprise.",
     "required": [
       "Constrain code",
       "WASI Component",
       "Wasm Runtime",
       "Wasmtime sandbox",
+      "Host-granted capabilities",
       "HTTP",
       "Messaging",
       "KeyValue",
       "BlobStore",
+      "Host-selected infrastructure",
       "Infrastructure",
       "Cloud/On-premise"
     ]
