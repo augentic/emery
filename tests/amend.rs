@@ -721,6 +721,96 @@ async fn amend_retired_overview() {
     provider.model.assert_exhausted();
 }
 
+// A paragraph named `revised` is reworded, never dropped, while it describes
+// a requirement the change keeps: where a paragraph cites a retired and a
+// kept requirement, in `## Overview` as in `## APIs and integrations`, an
+// answer that names it and leaves the kept one described nowhere in the
+// section is a finding naming the requirement, and the next answer rewording
+// it around the kept one is accepted.
+#[tokio::test]
+async fn amend_revised_dropped() {
+    let cited = "Sign-in issues a session; orders are placed (REQ-003) and cancelled (REQ-004) \
+                 under it.";
+    let base = format!(
+        r#"{{"emery": 8, "parent": null, "preamble": [], "sections": [
+            {{"kind": "overview", "blocks": [{{"text": "{cited}"}}]}},
+            {DOMAIN_MODEL},
+            {{"kind": "apis", "blocks": [{{"text": "{STORED}"}}]}}
+        ]}}"#
+    );
+    // indices 0 and 1 are `docs`, 2..=5 the standing requirements in id order
+    let grouping = r#"{"groups": [
+        {"claims": [0, 4], "classes": [[0, 4]]},
+        {"claims": [1, 5], "classes": [[1], [5]]},
+        {"claims": [2], "classes": [[2]]},
+        {"claims": [3], "classes": [[3]]}
+    ]}"#;
+    let dropped = r#"{"sections": [
+        {"kind": "overview", "blocks": [{"text": "Sign-in issues a session."}], "revised": [1]},
+        {"kind": "apis", "blocks": [{"text": "Cancellations no longer reach the order store."}], "revised": [1]}
+    ]}"#;
+    let reworded_overview = "Sign-in issues a session; orders are placed (REQ-003) under it.";
+    let reworded_stored = "Orders are kept in the order store, which REQ-003 writes.";
+    let reworded = format!(
+        r#"{{"sections": [
+            {{"kind": "overview", "blocks": [{{"text": "{reworded_overview}"}}], "revised": [1]}},
+            {{"kind": "apis", "blocks": [{{"text": "{reworded_stored}"}}], "revised": [1]}}
+        ]}}"#
+    );
+    let mut provider = Provider::answering([grouping, dropped, reworded.as_str()]);
+    provider.source.evidence.insert(
+        "docs".to_owned(),
+        Ok(evidence(vec![
+            requirement("orders.create", "A signed-in user places an order."),
+            retire("orders.cancel", WITHDRAWN),
+        ])),
+    );
+    seed(&provider.files, SPEC, base.as_bytes(), PLAN);
+
+    let resp = cli_ok(&provider, &["emery", "amend", DOCS, "--config", PROJECT_CONFIG]).await;
+
+    let stdout = String::from_utf8_lossy(&resp.stdout);
+    assert!(stdout.contains("\n  design: overview, apis\n"), "{stdout}");
+    assert_eq!(provider.model.seen().len(), 3, "the grouping, the design, corrected");
+    let request = provider.model.seen()[1].messages.join("\n");
+    assert!(
+        request.contains("Name a paragraph `revised` to reword it, never to drop it"),
+        "{request}"
+    );
+    let exchanges = provider.model.exchanges();
+    let finding = exchanges[1].outcome.as_ref().expect_err("the first answer is refused");
+    assert!(
+        finding.contains(
+            "`## Overview` [1] is revised and describes REQ-003, which the change keeps, yet no \
+             paragraph of the section describes it now; reword it rather than dropping it"
+        ),
+        "{finding}"
+    );
+    assert!(
+        finding.contains(
+            "`## APIs and integrations` [1] is revised and describes REQ-003, which the change \
+             keeps, yet no paragraph of the section describes it now; reword it rather than \
+             dropping it"
+        ),
+        "{finding}"
+    );
+    let (_, amendment) = staged_amendment(&provider);
+    assert_eq!(
+        amendment["sections"],
+        serde_json::json!({"preamble": false, "added": [], "removed": [], "changed": ["overview", "apis"]}),
+        "{amendment}"
+    );
+    assert_eq!(
+        amendment["design"]["sections"][0]["blocks"][0]["text"], reworded_overview,
+        "{amendment}"
+    );
+    assert_eq!(
+        amendment["design"]["sections"][2]["blocks"][0]["text"], reworded_stored,
+        "{amendment}"
+    );
+    provider.model.assert_exhausted();
+}
+
 // A behaviour source read whole retires what it falls silent on: under the
 // stems its requirement claims cover, a standing requirement no claim of
 // the change touched is retired with the source named in its place, the

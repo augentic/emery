@@ -5,9 +5,10 @@
 //! retires. The turn redrafts those sections and `## Overview` with the
 //! current text in the brief, and the engine copies every other section and
 //! the preamble from the base. The answer is held to the base: a kept
-//! paragraph is verbatim or named `revised`, a paragraph describing retired
-//! requirements alone may go unnamed, and the type blocks are the base's
-//! kept keys and the change's.
+//! paragraph is verbatim or named `revised`, a named one is reworded and
+//! never dropped while it describes a requirement the change keeps, a
+//! paragraph describing retired requirements alone may go unnamed, and the
+//! type blocks are the base's kept keys and the change's.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::{self, Display, Formatter};
@@ -115,15 +116,29 @@ impl<'a> DesignAmend<'a> {
             })
     }
 
-    // The loss check over one redrafted section against the base's: every
-    // paragraph of the base's is kept verbatim or named `revised`, unless it
-    // describes retired requirements alone, a paragraph named `revised` is
-    // not kept verbatim, and a number names a paragraph the base's section
-    // holds. Outside `## Overview`, where the change drafts a requirement, a
-    // revised paragraph that cites requirements the change leaves unchanged,
-    // and no other, describes nothing the change touches; a change that
-    // drafts none carries technology alone, which lands in the paragraphs
-    // describing the behaviour it serves.
+    // Whether a paragraph of `kind` citing `cited` describes unchanged
+    // requirements alone and must stay verbatim: outside `## Overview`, in a
+    // change that drafts a requirement.
+    fn untouched(&self, kind: SectionKind, cited: &BTreeSet<ReqId>) -> bool {
+        kind != SectionKind::Overview
+            && !self.drafted.is_empty()
+            && !cited.is_empty()
+            && cited.is_subset(&self.unchanged)
+    }
+
+    // The loss check over one redrafted section against the base's, three
+    // cases over a base paragraph by what it cites:
+    // - it is kept verbatim or named `revised`, and a named one is reworded,
+    //   never dropped: every id it cites that the change keeps is cited by
+    //   some paragraph of the answered section, and, outside `## Overview`
+    //   where the change drafts a requirement, one citing unchanged
+    //   requirements alone is kept verbatim, since a change that drafts
+    //   none carries technology alone, which lands in the paragraphs
+    //   describing the behaviour it serves;
+    // - citing retired requirements alone, it is withdrawn: dropped or
+    //   reworded, named or not;
+    // - a number naming a verbatim paragraph, a type block, or no block of
+    //   the section is a finding.
     fn loss(&self, section: &Redraft, label: &str, review: &mut Review) {
         let Some(base) = self.base.section(section.kind) else {
             if !section.revised.is_empty() {
@@ -134,14 +149,8 @@ impl<'a> DesignAmend<'a> {
             }
             return;
         };
-        let kept: BTreeSet<String> = section
-            .blocks
-            .iter()
-            .filter_map(|block| match block {
-                Block::Text(text) => Some(verbatim(text)),
-                Block::Type(_) => None,
-            })
-            .collect();
+        let present: BTreeSet<String> = section.texts().map(verbatim).collect();
+        let described: BTreeSet<ReqId> = section.texts().flat_map(cited).collect();
         let revised: BTreeSet<usize> = section.revised.iter().copied().collect();
 
         for (position, block) in base.blocks.iter().enumerate() {
@@ -156,7 +165,7 @@ impl<'a> DesignAmend<'a> {
                 }
                 continue;
             };
-            match (kept.contains(&verbatim(text)), named) {
+            match (present.contains(&verbatim(text)), named) {
                 (true, true) => review.note(format_args!(
                     "{label} [{number}] is named in `revised` but is kept verbatim; drop it from \
                      `revised`"
@@ -165,16 +174,27 @@ impl<'a> DesignAmend<'a> {
                     "{label} [{number}] is dropped or reworded without being named in `revised`; \
                      keep it verbatim, or name it"
                 )),
-                (false, true)
-                    if section.kind != SectionKind::Overview && !self.drafted.is_empty() =>
-                {
+                (false, true) => {
                     let cited = cited(text);
-                    if !cited.is_empty() && cited.is_subset(&self.unchanged) {
-                        let ids =
-                            cited.iter().map(ToString::to_string).collect::<Vec<_>>().join(", ");
+                    if self.untouched(section.kind, &cited) {
                         review.note(format_args!(
-                            "{label} [{number}] describes {ids}, which the change leaves \
-                             unchanged; keep it verbatim"
+                            "{label} [{number}] describes {}, which the change leaves \
+                             unchanged; keep it verbatim",
+                            listed(&cited)
+                        ));
+                        continue;
+                    }
+                    let undescribed: Vec<ReqId> = cited
+                        .into_iter()
+                        .filter(|id| !self.retired.contains_key(id) && !described.contains(id))
+                        .collect();
+                    if !undescribed.is_empty() {
+                        review.note(format_args!(
+                            "{label} [{number}] is revised and describes {}, which the change \
+                             keeps, yet no paragraph of the section describes {} now; reword it \
+                             rather than dropping it",
+                            listed(&undescribed),
+                            if undescribed.len() == 1 { "it" } else { "them" }
                         ));
                     }
                 }
@@ -317,8 +337,12 @@ impl Display for DesignAmend<'_> {
              Keep a paragraph verbatim unless the change touches what it describes, and name \
              every paragraph you reword or drop in that section's `revised` list by its number: \
              a paragraph neither kept verbatim nor named is refused, and so is one named but \
-             kept verbatim. A type block is listed as its `Type:` line and is kept or dropped by \
-             its key under `## Type blocks`, never named in `revised`.\n",
+             kept verbatim. Name a paragraph `revised` to reword it, never to drop it: every \
+             requirement it describes that the change keeps is still described by a paragraph \
+             of the section, so a paragraph you drop describes retired requirements alone, or \
+             none. A type block is \
+             listed as its `Type:` line and is kept or dropped by its key under `## Type \
+             blocks`, never named in `revised`.\n",
         )?;
         if !self.retired.is_empty() {
             f.write_str(
@@ -423,9 +447,23 @@ pub struct Redraft {
     pub revised: Vec<usize>,
 }
 
+impl Redraft {
+    fn texts(&self) -> impl Iterator<Item = &str> {
+        self.blocks.iter().filter_map(|block| match block {
+            Block::Text(text) => Some(text.as_str()),
+            Block::Type(_) => None,
+        })
+    }
+}
+
 // Whitespace collapsed: the shape a kept paragraph is compared in.
 fn verbatim(text: &str) -> String {
     text.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
+// The items spelled in order, comma-separated, as a finding names them.
+fn listed(items: impl IntoIterator<Item: Display>) -> String {
+    items.into_iter().map(|item| item.to_string()).collect::<Vec<_>>().join(", ")
 }
 
 // Whether a paragraph of `base`'s `kind` section cites one of `retired`.

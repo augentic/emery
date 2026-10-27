@@ -17,15 +17,16 @@ Nothing outside the bound source is reachable. Extract mines this source complet
 |---|---|---|
 | `requirement` | `statement` | Each behaviour the tree (or the reference) states, by the role it plays: the greeting, or another concept a brief adds. |
 | `criterion` | `criterion` | Only when the bound tree itself states an acceptance criterion. |
-| `decision` | `decision` | Only when the bound tree prescribes a technology — a store, a broker, a vendor — for a behaviour: the directive verbatim, with no `id`. The behaviour it governs is a `requirement` beside it, stated by role and naming no technology. |
+| `decision` | `decision` | Only when the bound tree prescribes a technology — a store, a broker, a vendor — for a behaviour: the directive verbatim, with no `id`. A `requirement` stands beside it only where the brief states the behaviour itself, what the service does for those it serves, by role and naming no technology; the directive's own content — where a store runs, what holds a counter, how a broker is reached — is the decision's alone and never a `requirement`. |
 | `retire` | `statement` | Only when the bound tree itself withdraws a behaviour, the `id` naming the behaviour withdrawn. |
 
-Do not invent a `criterion`, a `decision`, or a `retire`. A `requirement` without `statement` fails the run closed.
+Do not invent a `criterion`, a `decision`, or a `retire`, and do not invent a `requirement` for a directive: a brief whose whole content is the technology behind a behaviour the service already has — it says so, or states nothing the service does — is a `decision` alone. A `requirement` without `statement` fails the run closed.
 
 ## `id` derivation
 
 - The greeting's requirement id stays `greeting.behaviour`.
-- A brief that states a behaviour of another concept — throttling, an audit log — takes a stem of its own: `<concept>.<behaviour>`, kebab-case (`throttling.limit`, `audit.listing`), naming what the behaviour does and never the technology behind it, which a `decision` carries.
+- A brief that states a behaviour of a concept it introduces — throttling, an audit log the service does not yet keep — takes a stem of its own: `<concept>.<behaviour>`, kebab-case (`throttling.limit`, `audit.listing`), naming what the behaviour does and never the technology behind it, which a `decision` carries.
+- A brief about a concept the service already has — it names the audit log it keeps, the throttling it applies — stays under that concept's stem (`audit`, `throttling`), never a respelling beside it (`audit-log`, `audit-store`).
 - A criterion id equals a requirement's id or extends it with a dotted suffix (`greeting.behaviour.body`).
 - The id grammar, `path` anchors, and the fail-closed gate are [claims.md](claims.md)'s, shared by every adapter.
 
