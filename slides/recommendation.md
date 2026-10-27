@@ -1,6 +1,6 @@
 ---
 theme: default
-title: Proposal
+title: Recommendation
 aspectRatio: 16/9
 canvasWidth: 1280
 layout: default
@@ -23,7 +23,7 @@ class: slide-hero slide-section
 
 <AmbientVideo src="/videos/hero-video-3.mp4" variant="hero" />
 
-<Eyebrow text="PROPELLERHEAD · PROPOSAL" />
+<Eyebrow text="PROPELLERHEAD · RECOMMENDATION" />
 
 <div class="section-hero-grid">
 <div class="section-hero-left">
@@ -37,7 +37,7 @@ class: slide-hero slide-section
 
 <div class="hero-pillars">
 <div class="hero-pillar"><span class="hero-pillar-num">01</span><span>Outcome · [Observable result to protect or create]</span></div>
-<div class="hero-pillar"><span class="hero-pillar-num">02</span><span>Boundary · [What this proposal includes and excludes]</span></div>
+<div class="hero-pillar"><span class="hero-pillar-num">02</span><span>Boundary · [What this recommendation includes and excludes]</span></div>
 <div class="hero-pillar"><span class="hero-pillar-num">03</span><span>Decision · [Approval or commitment required]</span></div>
 </div>
 
@@ -45,7 +45,8 @@ class: slide-hero slide-section
 Template use:
 - Replace every bracketed field before presenting. Preserve a genuine gap as [unknown].
 - Name the engagement precisely: audit, architecture review, delivery review, or consultation.
-- This deck begins with the client's evidence. It is not a second proposition deck.
+- This deck begins with the client's evidence and ends in a decision. It is not a second approach deck.
+- Findings sit under the three mechanisms of the approach: standardise delivery, specify behaviour, sandbox execution. The assessed trust radius sizes every safeguard the recommendation carries.
 
 Opening:
 - We will separate what we observed, what we infer, what remains unknown, and what we recommend.
@@ -164,7 +165,7 @@ class: slide-light
   <text x="810" y="258" class="svg-caption" fill="#a4238f">Decision impact: [resolve · bound · accept]</text>
 
   <rect x="250" y="304" width="640" height="38" rx="19" fill="#0d1030" />
-  <text x="570" y="328" text-anchor="middle" class="svg-label" fill="#ffffff">Evidence supports: [bounded conclusion that informs the proposal]</text>
+  <text x="570" y="328" text-anchor="middle" class="svg-label" fill="#ffffff">Evidence supports: [bounded conclusion that informs the recommendation]</text>
 </svg>
 </div>
 </div>
@@ -181,59 +182,52 @@ Decision prompt:
 -->
 
 ---
-title: Findings across the delivery path
+title: Findings across the delivery system
 class: slide-sandbox
 ---
 
 <AmbientVideo src="/videos/approach-video.mp4" variant="approach" />
 
-<Eyebrow text="FINDINGS · RULES, INTENT, EXECUTION, AND OPERATION" />
+<Eyebrow text="FINDINGS · STANDARDISE DELIVERY, SPECIFY BEHAVIOUR, SANDBOX EXECUTION" />
 
-# Findings across the delivery path.
+# Findings across the delivery system.
 
 <p class="slide-lead">[One-sentence synthesis of how the findings affect the intended outcome.]</p>
 
 <div class="ed-band-canvas" style="padding-top: 4px;">
 <svg viewBox="0 0 1140 400" aria-hidden="true">
-  <rect x="18" y="42" width="258" height="258" rx="16" fill="rgba(10,7,16,0.72)" stroke="#78d8f2" stroke-width="1.8" />
-  <text x="42" y="72" class="svg-kicker" fill="#78d8f2">01 · SET RULES</text>
-  <text x="42" y="104" class="svg-h2" fill="#ffffff">Authoring controls</text>
-  <line x1="42" y1="120" x2="252" y2="120" stroke="rgba(255,255,255,0.14)" />
-  <text x="42" y="150" class="svg-kicker" fill="rgba(255,255,255,0.5)">OBSERVED</text>
-  <text x="42" y="174" class="svg-body" fill="#ffffff">[Finding F-01]</text>
-  <text x="42" y="210" class="svg-kicker" fill="rgba(255,255,255,0.5)">CONSEQUENCE</text>
-  <text x="42" y="234" class="svg-body" fill="#ffffff">[Why the finding matters]</text>
-  <text x="42" y="276" class="svg-caption" fill="#78d8f2">Intervention: [bounded change]</text>
+  <rect x="18" y="42" width="348" height="258" rx="16" fill="rgba(10,7,16,0.72)" stroke="#78d8f2" stroke-width="1.8" />
+  <text x="42" y="72" class="svg-kicker" fill="#78d8f2">01 · STANDARDISE DELIVERY</text>
+  <text x="42" y="104" class="svg-h2" fill="#ffffff">Toolchain and pipeline</text>
+  <line x1="42" y1="120" x2="342" y2="120" stroke="rgba(255,255,255,0.14)" />
+  <text x="42" y="140" class="svg-caption" fill="rgba(255,255,255,0.6)">Workspaces · codex · compiler rules · pipeline</text>
+  <text x="42" y="168" class="svg-kicker" fill="rgba(255,255,255,0.5)">OBSERVED</text>
+  <text x="42" y="192" class="svg-body" fill="#ffffff">[Finding F-01]</text>
+  <text x="42" y="222" class="svg-kicker" fill="rgba(255,255,255,0.5)">CONSEQUENCE</text>
+  <text x="42" y="246" class="svg-body" fill="#ffffff">[Why the finding matters]</text>
+  <text x="42" y="280" class="svg-caption" fill="#78d8f2">Intervention: [bounded change]</text>
 
-  <rect x="300" y="42" width="258" height="258" rx="16" fill="rgba(10,7,16,0.72)" stroke="#f59ef5" stroke-width="1.8" />
-  <text x="324" y="72" class="svg-kicker" fill="#f59ef5">02 · RECORD INTENT</text>
-  <text x="324" y="104" class="svg-h2" fill="#ffffff">Delivery record</text>
-  <line x1="324" y1="120" x2="534" y2="120" stroke="rgba(255,255,255,0.14)" />
-  <text x="324" y="150" class="svg-kicker" fill="rgba(255,255,255,0.5)">OBSERVED</text>
-  <text x="324" y="174" class="svg-body" fill="#ffffff">[Finding F-02]</text>
-  <text x="324" y="210" class="svg-kicker" fill="rgba(255,255,255,0.5)">CONSEQUENCE</text>
-  <text x="324" y="234" class="svg-body" fill="#ffffff">[Why the finding matters]</text>
-  <text x="324" y="276" class="svg-caption" fill="#f59ef5">Intervention: [bounded change]</text>
+  <rect x="396" y="42" width="348" height="258" rx="16" fill="rgba(10,7,16,0.72)" stroke="#f59ef5" stroke-width="1.8" />
+  <text x="420" y="72" class="svg-kicker" fill="#f59ef5">02 · SPECIFY BEHAVIOUR</text>
+  <text x="420" y="104" class="svg-h2" fill="#ffffff">Specification</text>
+  <line x1="420" y1="120" x2="720" y2="120" stroke="rgba(255,255,255,0.14)" />
+  <text x="420" y="140" class="svg-caption" fill="rgba(255,255,255,0.6)">Evidence · precedence · spec, design, plan · build</text>
+  <text x="420" y="168" class="svg-kicker" fill="rgba(255,255,255,0.5)">OBSERVED</text>
+  <text x="420" y="192" class="svg-body" fill="#ffffff">[Finding F-02]</text>
+  <text x="420" y="222" class="svg-kicker" fill="rgba(255,255,255,0.5)">CONSEQUENCE</text>
+  <text x="420" y="246" class="svg-body" fill="#ffffff">[Why the finding matters]</text>
+  <text x="420" y="280" class="svg-caption" fill="#f59ef5">Intervention: [bounded change]</text>
 
-  <rect x="582" y="42" width="258" height="258" rx="16" fill="rgba(10,7,16,0.72)" stroke="#78d8f2" stroke-width="1.8" />
-  <text x="606" y="72" class="svg-kicker" fill="#78d8f2">03 · CONSTRAIN CODE</text>
-  <text x="606" y="104" class="svg-h2" fill="#ffffff">Runtime authority</text>
-  <line x1="606" y1="120" x2="816" y2="120" stroke="rgba(255,255,255,0.14)" />
-  <text x="606" y="150" class="svg-kicker" fill="rgba(255,255,255,0.5)">OBSERVED</text>
-  <text x="606" y="174" class="svg-body" fill="#ffffff">[Finding F-03]</text>
-  <text x="606" y="210" class="svg-kicker" fill="rgba(255,255,255,0.5)">CONSEQUENCE</text>
-  <text x="606" y="234" class="svg-body" fill="#ffffff">[Why the finding matters]</text>
-  <text x="606" y="276" class="svg-caption" fill="#78d8f2">Intervention: [bounded change]</text>
-
-  <rect x="864" y="42" width="258" height="258" rx="16" fill="rgba(10,7,16,0.72)" stroke="rgba(255,255,255,0.36)" stroke-width="1.6" />
-  <text x="888" y="72" class="svg-kicker" fill="rgba(255,255,255,0.7)">04 · CARRY TO OPERATION</text>
-  <text x="888" y="104" class="svg-h2" fill="#ffffff">Production rail</text>
-  <line x1="888" y1="120" x2="1098" y2="120" stroke="rgba(255,255,255,0.14)" />
-  <text x="888" y="150" class="svg-kicker" fill="rgba(255,255,255,0.5)">OBSERVED</text>
-  <text x="888" y="174" class="svg-body" fill="#ffffff">[Finding F-04]</text>
-  <text x="888" y="210" class="svg-kicker" fill="rgba(255,255,255,0.5)">CONSEQUENCE</text>
-  <text x="888" y="234" class="svg-body" fill="#ffffff">[Why the finding matters]</text>
-  <text x="888" y="276" class="svg-caption" fill="rgba(255,255,255,0.7)">Intervention: [bounded change]</text>
+  <rect x="774" y="42" width="348" height="258" rx="16" fill="rgba(10,7,16,0.72)" stroke="#78d8f2" stroke-width="1.8" />
+  <text x="798" y="72" class="svg-kicker" fill="#78d8f2">03 · SANDBOX EXECUTION</text>
+  <text x="798" y="104" class="svg-h2" fill="#ffffff">Runtime authority</text>
+  <line x1="798" y1="120" x2="1098" y2="120" stroke="rgba(255,255,255,0.14)" />
+  <text x="798" y="140" class="svg-caption" fill="rgba(255,255,255,0.6)">Component · capabilities · recipe · host policy</text>
+  <text x="798" y="168" class="svg-kicker" fill="rgba(255,255,255,0.5)">OBSERVED</text>
+  <text x="798" y="192" class="svg-body" fill="#ffffff">[Finding F-03]</text>
+  <text x="798" y="222" class="svg-kicker" fill="rgba(255,255,255,0.5)">CONSEQUENCE</text>
+  <text x="798" y="246" class="svg-body" fill="#ffffff">[Why the finding matters]</text>
+  <text x="798" y="280" class="svg-caption" fill="#78d8f2">Intervention: [bounded change]</text>
 
   <rect x="196" y="332" width="748" height="42" rx="21" fill="rgba(255,255,255,0.08)" stroke="rgba(255,255,255,0.25)" />
   <text x="570" y="358" text-anchor="middle" class="svg-label" fill="#ffffff">Overall consequence: [what fails or remains exposed if these findings stand]</text>
@@ -242,13 +236,87 @@ class: slide-sandbox
 
 <!--
 Customisation:
-- Keep findings in the layer where the control belongs.
-- Do not turn reusable infrastructure into a fourth foundation. It is the rail that carries all three into operation.
-- A finding may span layers. Name the primary control, then show the dependency later.
-- Replace every bracketed line with client evidence; remove empty cards only when a layer was explicitly out of scope.
+- Keep findings in the mechanism where the control belongs.
+- Operation findings—release ownership, observation, recovery—belong to Standardise delivery. Operation is the end of the path, not a fourth mechanism.
+- A finding may span mechanisms. Name the primary control, then show the dependency later.
+- The trust radius on the next slide is not a finding. It is the consequence the findings are measured against.
+- Replace every bracketed line with client evidence; remove an empty card only when a mechanism was explicitly out of scope.
 
 Decision prompt:
 - Which finding changes the safety or usefulness of the first delivery most?
+-->
+
+---
+title: Assessed trust radius
+class: slide-light
+---
+
+<Eyebrow text="TRUST RADIUS · THE HIGHEST CONSEQUENCE SETS THE REQUIRED STATE" />
+
+<div class="ed-bottom-split">
+<div class="ed-bottom-canvas">
+<svg viewBox="0 0 1140 320" aria-hidden="true">
+  <rect x="18" y="18" width="1104" height="236" rx="14" fill="#ffffff" stroke="rgba(13,16,48,0.2)" stroke-width="1.5" />
+  <rect x="18" y="18" width="1104" height="48" rx="14" fill="#0d1030" />
+  <text x="42" y="48" class="svg-kicker" fill="#78d8f2">DIMENSION</text>
+  <text x="196" y="48" class="svg-kicker" fill="#78d8f2">QUESTION</text>
+  <text x="456" y="48" class="svg-kicker" fill="#78d8f2">OBSERVED</text>
+  <text x="864" y="48" class="svg-kicker" fill="#78d8f2">STATE · 0 EXPLORE → 3 SUPPORT</text>
+
+  <line x1="170" y1="66" x2="170" y2="254" stroke="rgba(13,16,48,0.12)" />
+  <line x1="430" y1="66" x2="430" y2="254" stroke="rgba(13,16,48,0.12)" />
+  <line x1="838" y1="66" x2="838" y2="254" stroke="rgba(13,16,48,0.12)" />
+  <line x1="18" y1="113" x2="1122" y2="113" stroke="rgba(13,16,48,0.12)" />
+  <line x1="18" y1="160" x2="1122" y2="160" stroke="rgba(13,16,48,0.12)" />
+  <line x1="18" y1="207" x2="1122" y2="207" stroke="rgba(13,16,48,0.12)" />
+
+  <text x="42" y="95" class="svg-label" fill="#0d1030">Reach</text>
+  <text x="196" y="95" class="svg-body" fill="#0d1030">What can it access?</text>
+  <text x="456" y="95" class="svg-body" fill="#0d1030">[Systems, services, capabilities reached · evidence]</text>
+  <text x="864" y="95" class="svg-label" fill="#0c7fa3">[0–3] · [state]</text>
+
+  <text x="42" y="142" class="svg-label" fill="#0d1030">Data</text>
+  <text x="196" y="142" class="svg-body" fill="#0d1030">What can it read or change?</text>
+  <text x="456" y="142" class="svg-body" fill="#0d1030">[Data read, retained, produced, changed · classification]</text>
+  <text x="864" y="142" class="svg-label" fill="#0c7fa3">[0–3] · [state]</text>
+
+  <text x="42" y="189" class="svg-label" fill="#0d1030">Dependence</text>
+  <text x="196" y="189" class="svg-body" fill="#0d1030">Who relies on it?</text>
+  <text x="456" y="189" class="svg-body" fill="#0d1030">[Who or what stops when it is unavailable or wrong]</text>
+  <text x="864" y="189" class="svg-label" fill="#a4238f">[0–3] · [state]</text>
+
+  <text x="42" y="236" class="svg-label" fill="#0d1030">Continuity</text>
+  <text x="196" y="236" class="svg-body" fill="#0d1030">What must survive failure?</text>
+  <text x="456" y="236" class="svg-body" fill="#0d1030">[Recovery obligation · discarded, restored, or recovered]</text>
+  <text x="864" y="236" class="svg-label" fill="#a4238f">[0–3] · [state]</text>
+
+  <rect x="120" y="270" width="900" height="40" rx="20" fill="#0d1030" />
+  <text x="570" y="295" text-anchor="middle" class="svg-label" fill="#ffffff">Trust radius: State [N] · [furthest dimension] → required boundary: [isolate · authoring · runtime · full system]</text>
+</svg>
+</div>
+<div class="ed-bottom-prose-row">
+<div>
+
+# The trust radius<br>sets the safeguards.
+
+</div>
+<div>
+<p class="ed-prose"><strong>[Which dimension pushes the application furthest, and the evidence for that answer.]</strong></p>
+<p class="ed-prose">[What the required state means for the first delivery, what it does not require, and what would move the state in either direction.]</p>
+</div>
+</div>
+</div>
+
+<!--
+Customisation:
+- Place each dimension independently on the four-state scale. Take the furthest answer, not the average.
+- Choose the least costly state that matches the actual consequence. Do not move the system to the right out of caution; that is cost without safety.
+- Cite the evidence for each answer. An answer the client disputes is a material unknown, not a decision.
+- Record the reassessment trigger: which change in reach, data, dependence, or continuity would move the state.
+- The required boundary sizes the target state and the first delivery that follow.
+
+Decision prompt:
+- Does the client agree with the furthest answer, and who owns reassessing it?
 -->
 
 ---
@@ -327,30 +395,30 @@ class: slide-light
   <line x1="744" y1="50" x2="744" y2="82" stroke="#0c7fa3" stroke-width="1.5" stroke-dasharray="4 4" />
 
   <rect x="18" y="84" width="252" height="150" rx="14" fill="rgba(22,180,226,0.06)" stroke="#0c7fa3" stroke-width="1.6" />
-  <text x="40" y="112" class="svg-kicker" fill="#0c7fa3">SET RULES</text>
-  <text x="40" y="140" class="svg-h3" fill="#0d1030">Authoring boundary</text>
-  <text x="40" y="168" class="svg-caption" fill="rgba(13,16,48,0.64)">[Client controls to retain or add]</text>
-  <text x="40" y="190" class="svg-caption" fill="rgba(13,16,48,0.64)">[Explicit tool and worker grants]</text>
+  <text x="40" y="112" class="svg-kicker" fill="#0c7fa3">STANDARDISE DELIVERY</text>
+  <text x="40" y="140" class="svg-h3" fill="#0d1030">Governed path</text>
+  <text x="40" y="168" class="svg-caption" fill="rgba(13,16,48,0.64)">[Workspaces, codex, compiler rules]</text>
+  <text x="40" y="190" class="svg-caption" fill="rgba(13,16,48,0.64)">[Pipeline gates and worker grants]</text>
   <text x="40" y="218" class="svg-caption" fill="#0c7fa3">Closes [finding id]</text>
 
   <line x1="270" y1="159" x2="324" y2="159" stroke="#0d1030" stroke-width="2" />
   <polygon points="318,154 328,159 318,164" fill="#0d1030" />
 
   <rect x="330" y="84" width="252" height="150" rx="14" fill="rgba(164,35,143,0.06)" stroke="#a4238f" stroke-width="1.6" />
-  <text x="352" y="112" class="svg-kicker" fill="#a4238f">RECORD INTENT · EMERY</text>
-  <text x="352" y="140" class="svg-h3" fill="#0d1030">Reviewed delivery revision</text>
+  <text x="352" y="112" class="svg-kicker" fill="#a4238f">SPECIFY BEHAVIOUR · EMERY</text>
+  <text x="352" y="140" class="svg-h3" fill="#0d1030">Sealed specification</text>
   <text x="352" y="168" class="svg-caption" fill="rgba(13,16,48,0.64)">[Evidence and authority inputs]</text>
-  <text x="352" y="190" class="svg-caption" fill="rgba(13,16,48,0.64)">[Specification, design, and plan]</text>
+  <text x="352" y="190" class="svg-caption" fill="rgba(13,16,48,0.64)">[spec.md, design.md, derived plan]</text>
   <text x="352" y="218" class="svg-caption" fill="#a4238f">Closes [finding id]</text>
 
   <line x1="582" y1="159" x2="636" y2="159" stroke="#0d1030" stroke-width="2" />
   <polygon points="630,154 640,159 630,164" fill="#0d1030" />
 
   <rect x="642" y="84" width="252" height="150" rx="14" fill="rgba(22,180,226,0.06)" stroke="#0c7fa3" stroke-width="1.6" />
-  <text x="664" y="112" class="svg-kicker" fill="#0c7fa3">CONSTRAIN CODE · OMNIA</text>
+  <text x="664" y="112" class="svg-kicker" fill="#0c7fa3">SANDBOX EXECUTION · OMNIA</text>
   <text x="664" y="140" class="svg-h3" fill="#0d1030">Explicit runtime authority</text>
   <text x="664" y="168" class="svg-caption" fill="rgba(13,16,48,0.64)">[Capabilities the change requires]</text>
-  <text x="664" y="190" class="svg-caption" fill="rgba(13,16,48,0.64)">[Host policy and credentials]</text>
+  <text x="664" y="190" class="svg-caption" fill="rgba(13,16,48,0.64)">[Recipe: bindings, policy, credentials]</text>
   <text x="664" y="218" class="svg-caption" fill="#0c7fa3">Closes [finding id]</text>
 
   <line x1="894" y1="159" x2="948" y2="159" stroke="#a4238f" stroke-width="2" />
@@ -382,13 +450,14 @@ class: slide-light
 
 <!--
 Customisation:
-- Replace the bracketed text with the minimum target state implied by the findings.
+- Replace the bracketed text with the minimum target state implied by the findings and the assessed trust radius. A Govern-state system needs the authoring boundary, not the full delivery system.
 - Do not draw a future platform the first delivery cannot exercise.
 - Name each finding this state closes. If a component closes none, remove it.
+- Operate is the end of the path. Its controls—release ownership, observation, recovery—are part of Standardise delivery.
 - Keep release authority outside Emery and runtime infrastructure outside Omnia's component.
 
 Decision prompt:
-- Is this the smallest target state that can produce the intended outcome safely?
+- Is this the smallest target state that can produce the intended outcome safely at the assessed trust radius?
 -->
 
 ---
@@ -421,7 +490,7 @@ class: slide-sandbox
   <rect x="312" y="84" width="266" height="126" rx="12" fill="rgba(255,255,255,0.06)" stroke="rgba(255,255,255,0.22)" />
   <text x="332" y="112" class="svg-kicker" fill="rgba(255,255,255,0.6)">BOUNDARY</text>
   <text x="332" y="142" class="svg-label" fill="#ffffff">Includes: [one useful path]</text>
-  <text x="332" y="168" class="svg-label" fill="#ffffff">Excludes: [tempting adjacent work]</text>
+  <text x="332" y="168" class="svg-label" fill="#ffffff">Excludes: [adjacent work]</text>
   <text x="332" y="190" class="svg-caption" fill="#f59ef5">Stop condition: [condition]</text>
 
   <rect x="42" y="226" width="254" height="126" rx="12" fill="rgba(22,180,226,0.1)" stroke="#78d8f2" stroke-width="1.4" />
@@ -436,7 +505,7 @@ class: slide-sandbox
   <text x="332" y="308" class="svg-label" fill="#ffffff">[Repeat, revise, or stop]</text>
   <text x="332" y="332" class="svg-caption" fill="rgba(255,255,255,0.7)">Decider: [name or role]</text>
 
-  <text x="320" y="386" text-anchor="middle" class="svg-caption" fill="rgba(255,255,255,0.58)">Proposed duration: [range] · Dependencies: [critical dependencies]</text>
+  <text x="320" y="386" text-anchor="middle" class="svg-caption" fill="rgba(255,255,255,0.58)">Duration: [range] · Trust state: [0–3] · Dependencies: [critical dependencies]</text>
 </svg>
 </div>
 </div>
@@ -444,8 +513,9 @@ class: slide-sandbox
 <!--
 Customisation:
 - A first delivery has one outcome, one named owner, and one end decision.
+- Set its safeguards from the assessed trust radius, not from caution. Name the state the delivery runs in and the boundary that state requires.
 - Exclusions should name the adjacent work most likely to dilute the learning.
-- Acceptance evidence tests behaviour. Operational evidence tests the path to production and ownership.
+- Acceptance evidence tests behaviour against the sealed specification. Operational evidence tests the path to production and ownership.
 - Do not promise release; define who makes that decision and on what evidence.
 
 Decision prompt:
@@ -553,35 +623,41 @@ class: slide-light
   <line x1="554" y1="66" x2="554" y2="294" stroke="rgba(13,16,48,0.12)" />
   <line x1="862" y1="66" x2="862" y2="294" stroke="rgba(13,16,48,0.12)" />
 
-  <line x1="18" y1="112" x2="1122" y2="112" stroke="rgba(13,16,48,0.12)" />
-  <line x1="18" y1="158" x2="1122" y2="158" stroke="rgba(13,16,48,0.12)" />
-  <line x1="18" y1="204" x2="1122" y2="204" stroke="rgba(13,16,48,0.12)" />
-  <line x1="18" y1="250" x2="1122" y2="250" stroke="rgba(13,16,48,0.12)" />
+  <line x1="18" y1="104" x2="1122" y2="104" stroke="rgba(13,16,48,0.12)" />
+  <line x1="18" y1="142" x2="1122" y2="142" stroke="rgba(13,16,48,0.12)" />
+  <line x1="18" y1="180" x2="1122" y2="180" stroke="rgba(13,16,48,0.12)" />
+  <line x1="18" y1="218" x2="1122" y2="218" stroke="rgba(13,16,48,0.12)" />
+  <line x1="18" y1="256" x2="1122" y2="256" stroke="rgba(13,16,48,0.12)" />
 
-  <text x="42" y="95" class="svg-label" fill="#0d1030">Direction</text>
-  <text x="330" y="95" class="svg-body" fill="#0d1030">[Outcome owner]</text>
-  <text x="580" y="95" class="svg-body" fill="#0d1030">Accept outcome, scope, and trade-offs</text>
-  <text x="888" y="95" class="svg-caption" fill="#0c7fa3">[Outcome and measures agreed]</text>
+  <text x="42" y="91" class="svg-label" fill="#0d1030">Direction</text>
+  <text x="330" y="91" class="svg-body" fill="#0d1030">[Outcome owner]</text>
+  <text x="580" y="91" class="svg-body" fill="#0d1030">Accept outcome, scope, and trade-offs</text>
+  <text x="888" y="91" class="svg-caption" fill="#0c7fa3">[Outcome and measures agreed]</text>
 
-  <text x="42" y="141" class="svg-label" fill="#0d1030">Authoring rules</text>
-  <text x="330" y="141" class="svg-body" fill="#0d1030">[Engineering or platform owner]</text>
-  <text x="580" y="141" class="svg-body" fill="#0d1030">Approve tools, grants, and required gates</text>
-  <text x="888" y="141" class="svg-caption" fill="#0c7fa3">[Controls enforced in the work]</text>
+  <text x="42" y="129" class="svg-label" fill="#0d1030">Trust radius</text>
+  <text x="330" y="129" class="svg-body" fill="#0d1030">[Outcome and security owners]</text>
+  <text x="580" y="129" class="svg-body" fill="#0d1030">Agree the state and when to reassess</text>
+  <text x="888" y="129" class="svg-caption" fill="#a4238f">[Four dimensions assessed; state set]</text>
 
-  <text x="42" y="187" class="svg-label" fill="#0d1030">Durable intent</text>
-  <text x="330" y="187" class="svg-body" fill="#0d1030">[Domain or product owner]</text>
-  <text x="580" y="187" class="svg-body" fill="#0d1030">Set source precedence and accept revision</text>
-  <text x="888" y="187" class="svg-caption" fill="#a4238f">[Conflicts and unknowns resolved]</text>
+  <text x="42" y="167" class="svg-label" fill="#0d1030">Delivery standards</text>
+  <text x="330" y="167" class="svg-body" fill="#0d1030">[Engineering or platform owner]</text>
+  <text x="580" y="167" class="svg-body" fill="#0d1030">Approve codex, compiler rules, gates</text>
+  <text x="888" y="167" class="svg-caption" fill="#0c7fa3">[Controls enforced in the work]</text>
 
-  <text x="42" y="233" class="svg-label" fill="#0d1030">Runtime authority</text>
-  <text x="330" y="233" class="svg-body" fill="#0d1030">[Security or service owner]</text>
-  <text x="580" y="233" class="svg-body" fill="#0d1030">Approve capabilities and host policy</text>
-  <text x="888" y="233" class="svg-caption" fill="#0c7fa3">[Only declared reach is available]</text>
+  <text x="42" y="205" class="svg-label" fill="#0d1030">Specification</text>
+  <text x="330" y="205" class="svg-body" fill="#0d1030">[Domain or product owner]</text>
+  <text x="580" y="205" class="svg-body" fill="#0d1030">Set source precedence; review and seal</text>
+  <text x="888" y="205" class="svg-caption" fill="#a4238f">[Conflicts resolved; revision sealed]</text>
 
-  <text x="42" y="279" class="svg-label" fill="#0d1030">Release and operation</text>
-  <text x="330" y="279" class="svg-body" fill="#0d1030">[Release and operational owner]</text>
-  <text x="580" y="279" class="svg-body" fill="#0d1030">Authorise release; own observe and recover</text>
-  <text x="888" y="279" class="svg-caption" fill="#a4238f">[Release and recovery evidence]</text>
+  <text x="42" y="243" class="svg-label" fill="#0d1030">Runtime authority</text>
+  <text x="330" y="243" class="svg-body" fill="#0d1030">[Security or service owner]</text>
+  <text x="580" y="243" class="svg-body" fill="#0d1030">Approve capabilities and the runtime recipe</text>
+  <text x="888" y="243" class="svg-caption" fill="#0c7fa3">[Only declared reach is available]</text>
+
+  <text x="42" y="281" class="svg-label" fill="#0d1030">Release and operation</text>
+  <text x="330" y="281" class="svg-body" fill="#0d1030">[Release and operational owner]</text>
+  <text x="580" y="281" class="svg-body" fill="#0d1030">Authorise release; own observe and recover</text>
+  <text x="888" y="281" class="svg-caption" fill="#a4238f">[Release and recovery evidence]</text>
 </svg>
 </div>
 <div class="ed-bottom-prose-row">
@@ -622,7 +698,7 @@ class: slide-light
 # Evidence and<br>success measures.
 
 </div>
-<p class="ed-band-prose">[How the client will know the proposal delivered the intended outcome.] <strong>[Where the evidence will come from and who accepts it.]</strong></p>
+<p class="ed-band-prose">[How the client will know the recommended change delivered the intended outcome.] <strong>[Where the evidence will come from and who accepts it.]</strong></p>
 </div>
 <div class="ed-band-canvas">
 <svg viewBox="0 0 1140 350" aria-hidden="true">
@@ -638,33 +714,40 @@ class: slide-light
   <line x1="448" y1="76" x2="448" y2="306" stroke="rgba(13,16,48,0.12)" />
   <line x1="710" y1="76" x2="710" y2="306" stroke="rgba(13,16,48,0.12)" />
   <line x1="948" y1="76" x2="948" y2="306" stroke="rgba(13,16,48,0.12)" />
-  <line x1="18" y1="134" x2="1122" y2="134" stroke="rgba(13,16,48,0.12)" />
-  <line x1="18" y1="192" x2="1122" y2="192" stroke="rgba(13,16,48,0.12)" />
-  <line x1="18" y1="250" x2="1122" y2="250" stroke="rgba(13,16,48,0.12)" />
+  <line x1="18" y1="122" x2="1122" y2="122" stroke="rgba(13,16,48,0.12)" />
+  <line x1="18" y1="168" x2="1122" y2="168" stroke="rgba(13,16,48,0.12)" />
+  <line x1="18" y1="214" x2="1122" y2="214" stroke="rgba(13,16,48,0.12)" />
+  <line x1="18" y1="260" x2="1122" y2="260" stroke="rgba(13,16,48,0.12)" />
 
-  <text x="42" y="111" class="svg-label" fill="#0d1030">Client outcome</text>
-  <text x="286" y="111" class="svg-body" fill="#0d1030">[Current state]</text>
-  <text x="474" y="111" class="svg-body" fill="#0d1030">[Observable target]</text>
-  <text x="736" y="111" class="svg-caption" fill="#0c7fa3">[Source or test]</text>
-  <text x="974" y="111" class="svg-caption" fill="#0d1030">[Owner]</text>
+  <text x="42" y="105" class="svg-label" fill="#0d1030">Client outcome</text>
+  <text x="286" y="105" class="svg-body" fill="#0d1030">[Current state]</text>
+  <text x="474" y="105" class="svg-body" fill="#0d1030">[Observable target]</text>
+  <text x="736" y="105" class="svg-caption" fill="#0c7fa3">[Source or test]</text>
+  <text x="974" y="105" class="svg-caption" fill="#0d1030">[Owner]</text>
 
-  <text x="42" y="169" class="svg-label" fill="#0d1030">Delivery path</text>
-  <text x="286" y="169" class="svg-body" fill="#0d1030">[Current state]</text>
-  <text x="474" y="169" class="svg-body" fill="#0d1030">[Observable target]</text>
-  <text x="736" y="169" class="svg-caption" fill="#0c7fa3">[Revision or check]</text>
-  <text x="974" y="169" class="svg-caption" fill="#0d1030">[Owner]</text>
+  <text x="42" y="151" class="svg-label" fill="#0d1030">Delivery standards</text>
+  <text x="286" y="151" class="svg-body" fill="#0d1030">[Current state]</text>
+  <text x="474" y="151" class="svg-body" fill="#0d1030">[Observable target]</text>
+  <text x="736" y="151" class="svg-caption" fill="#0c7fa3">[Gate results or pipeline run]</text>
+  <text x="974" y="151" class="svg-caption" fill="#0d1030">[Owner]</text>
 
-  <text x="42" y="227" class="svg-label" fill="#0d1030">Runtime boundary</text>
-  <text x="286" y="227" class="svg-body" fill="#0d1030">[Current state]</text>
-  <text x="474" y="227" class="svg-body" fill="#0d1030">[Observable target]</text>
-  <text x="736" y="227" class="svg-caption" fill="#a4238f">[Policy or test]</text>
-  <text x="974" y="227" class="svg-caption" fill="#0d1030">[Owner]</text>
+  <text x="42" y="197" class="svg-label" fill="#0d1030">Specification</text>
+  <text x="286" y="197" class="svg-body" fill="#0d1030">[Current state]</text>
+  <text x="474" y="197" class="svg-body" fill="#0d1030">[Observable target]</text>
+  <text x="736" y="197" class="svg-caption" fill="#0c7fa3">[Sealed revision or verified wave]</text>
+  <text x="974" y="197" class="svg-caption" fill="#0d1030">[Owner]</text>
 
-  <text x="42" y="285" class="svg-label" fill="#0d1030">Operation</text>
-  <text x="286" y="285" class="svg-body" fill="#0d1030">[Current state]</text>
-  <text x="474" y="285" class="svg-body" fill="#0d1030">[Observable target]</text>
-  <text x="736" y="285" class="svg-caption" fill="#a4238f">[Release or recovery proof]</text>
-  <text x="974" y="285" class="svg-caption" fill="#0d1030">[Owner]</text>
+  <text x="42" y="243" class="svg-label" fill="#0d1030">Runtime boundary</text>
+  <text x="286" y="243" class="svg-body" fill="#0d1030">[Current state]</text>
+  <text x="474" y="243" class="svg-body" fill="#0d1030">[Observable target]</text>
+  <text x="736" y="243" class="svg-caption" fill="#a4238f">[Recipe, policy, or test]</text>
+  <text x="974" y="243" class="svg-caption" fill="#0d1030">[Owner]</text>
+
+  <text x="42" y="289" class="svg-label" fill="#0d1030">Operation</text>
+  <text x="286" y="289" class="svg-body" fill="#0d1030">[Current state]</text>
+  <text x="474" y="289" class="svg-body" fill="#0d1030">[Observable target]</text>
+  <text x="736" y="289" class="svg-caption" fill="#a4238f">[Release or recovery proof]</text>
+  <text x="974" y="289" class="svg-caption" fill="#0d1030">[Owner]</text>
 
   <rect x="226" y="322" width="688" height="28" rx="14" fill="rgba(22,180,226,0.06)" stroke="rgba(12,127,163,0.3)" />
   <text x="570" y="341" text-anchor="middle" class="svg-caption" fill="#0d1030">Acceptance authority: [name or role] · Review point: [date or event]</text>
@@ -692,7 +775,7 @@ class: slide-split short-bar
 <AmbientVideo src="/videos/cta-video.mp4" variant="split" />
 <div class="split-brand-overlay">
 <img src="/images/Propellerhead_Logo.svg" alt="Propellerhead" />
-<p>A bounded proposal tied to evidence, ownership, and observable completion.</p>
+<p>A bounded recommendation tied to evidence, ownership, and observable completion.</p>
 </div>
 </div>
 

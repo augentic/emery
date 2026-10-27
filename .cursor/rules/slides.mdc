@@ -11,7 +11,7 @@ alwaysApply: false
 - `approach-live.md` — **Live presentation backdrop** for a speaker in the room. Every slide carries one headline (`#`), at most one short claim (`<p class="live-claim">`), and a clean visual structure (diagram, flow, matrix, or sparse cards with 2–8 word labels). Never put multi-sentence prose or paragraphs inside live slide cards.
 - `approach-brief.md` — **Self-reading companion brief**. Carries the fuller prose (`<p class="ed-prose">`, `<p class="ed-band-prose">`) and detailed SVG diagrams (`<svg>`) that explain the slide without a presenter.
 - `reference.md` — **Technical leave-behind** for architecture, security, and platform review (where internal product names `Emery` and `Omnia` are explained).
-- `proposal.md` — **Client-specific decision template** used after an engagement.
+- `recommendation.md` — **Client-specific decision template** used after an engagement: findings, assessed trust radius, recommended target state, first bounded delivery, and the decision requested.
 
 ## Non-Negotiable Rules for `approach-live.md` and `approach-brief.md`
 
