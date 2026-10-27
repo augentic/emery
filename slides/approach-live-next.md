@@ -919,15 +919,16 @@ class: slide-hero slide-section
 }
 
 .live-trust-model {
+  width: min(92%, 1020px);
+  margin: 42px auto 0;
   display: grid;
   grid-template-columns: repeat(4, 1fr);
-  gap: 12px;
-  margin-top: 18px;
+  gap: 28px;
 }
 
 .live-trust-state {
   display: grid;
-  grid-template-rows: 39px 63px 112px 58px;
+  grid-template-rows: 39px 54px 60px 54px;
   overflow: hidden;
   border: 1.5px solid rgba(13, 16, 48, 0.22);
   border-radius: 12px;
@@ -988,17 +989,6 @@ class: slide-hero slide-section
   border-bottom: 0;
 }
 
-.live-trust-band-label {
-  display: block;
-  margin-bottom: 5px;
-  font-size: 9px;
-  line-height: 1;
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--phl-ink-muted);
-}
-
 .live-trust-band strong {
   display: block;
   font-size: 16px;
@@ -1009,8 +999,8 @@ class: slide-hero slide-section
 
 .live-trust-band p {
   margin: 0;
-  font-size: 11.5px;
-  line-height: 1.38;
+  font-size: 13px;
+  line-height: 1.35;
   color: var(--phl-ink-body);
 }
 
@@ -1022,8 +1012,7 @@ class: slide-hero slide-section
   font-size: 13px;
 }
 
-.live-trust-model-note,
-.live-radius-close {
+.live-trust-model-note {
   margin-top: 12px;
   text-align: center;
   font-size: 14px;
@@ -1032,10 +1021,11 @@ class: slide-hero slide-section
 }
 
 .live-radius-grid {
+  width: min(92%, 1020px);
+  margin: 32px auto 0;
   display: grid;
   grid-template-columns: repeat(4, 1fr);
-  gap: 12px;
-  margin-top: 18px;
+  gap: 24px;
 }
 
 .live-radius-card {
@@ -1044,26 +1034,6 @@ class: slide-hero slide-section
   border: 1.5px solid rgba(13, 16, 48, 0.22);
   border-radius: 12px;
   background: #ffffff;
-}
-
-.live-radius-card:nth-child(1) {
-  border-color: rgba(12, 127, 163, 0.52);
-  background: rgba(22, 180, 226, 0.04);
-}
-
-.live-radius-card:nth-child(2) {
-  border-color: rgba(96, 93, 213, 0.5);
-  background: rgba(96, 93, 213, 0.045);
-}
-
-.live-radius-card:nth-child(3) {
-  border-color: rgba(164, 35, 143, 0.46);
-  background: rgba(164, 35, 143, 0.035);
-}
-
-.live-radius-card:nth-child(4) {
-  border-color: rgba(13, 16, 48, 0.34);
-  background: rgba(13, 16, 48, 0.025);
 }
 
 .live-radius-card h3 {
@@ -1081,23 +1051,12 @@ class: slide-hero slide-section
   color: var(--phl-ink-body);
 }
 
-.live-radius-guide {
-  margin: 13px 0 7px;
-  text-align: center;
-  font-size: 10px;
-  line-height: 1;
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--phl-ink-muted);
-}
-
 .live-radius-scale {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
   overflow: hidden;
-  width: 86%;
-  margin: 0 auto;
+  width: min(92%, 1020px);
+  margin: 14px auto 0;
   border: 1px solid rgba(13, 16, 48, 0.18);
   border-radius: 10px;
 }
@@ -1129,17 +1088,6 @@ class: slide-hero slide-section
 .live-radius-scale strong {
   margin-right: 4px;
   font-weight: 700;
-}
-
-.live-radius-result {
-  width: 62%;
-  margin: 9px auto 0;
-  padding: 9px 14px;
-  border-top: 2px solid var(--phl-magenta);
-  text-align: center;
-  font-size: 14px;
-  font-weight: 500;
-  color: var(--phl-ink);
 }
 
 .live-stat-grid {
@@ -2012,21 +1960,18 @@ class: slide-light
 
 # Trust is contextual, not a maturity score.
 
-<p class="live-claim">Four operational states determine which controls an application requires. Moving right is not progress; it is more consequence to manage.</p>
+<p class="live-claim">Explore, Govern, Connect, and Support are situations to match—not levels to climb.</p>
 
 <div class="live-trust-model">
 <div class="live-trust-state is-explore">
 <div class="live-trust-state-head">State 0 · Explore</div>
 <div class="live-trust-band">
-<span class="live-trust-band-label">Context</span>
 <strong>Local discovery</strong>
 </div>
 <div class="live-trust-band">
-<span class="live-trust-band-label">Evidence + ownership</span>
-<p>One builder<br>Synthetic or local inputs<br>No shared dependence</p>
+<p>One builder · synthetic inputs</p>
 </div>
 <div class="live-trust-band is-boundary">
-<span class="live-trust-band-label">Required boundary</span>
 <strong>Isolate and keep local</strong>
 </div>
 </div>
@@ -2034,15 +1979,12 @@ class: slide-light
 <div class="live-trust-state is-govern">
 <div class="live-trust-state-head">State 1 · Govern</div>
 <div class="live-trust-band">
-<span class="live-trust-band-label">Context</span>
 <strong>Shared work</strong>
 </div>
 <div class="live-trust-band">
-<span class="live-trust-band-label">Evidence + ownership</span>
-<p>Named owner<br>Approved workspace and tools<br>Protected changes and checks</p>
+<p>Named owner · protected changes</p>
 </div>
 <div class="live-trust-band is-boundary">
-<span class="live-trust-band-label">Required boundary</span>
 <strong>Authoring boundary</strong>
 </div>
 </div>
@@ -2050,15 +1992,12 @@ class: slide-light
 <div class="live-trust-state is-connect">
 <div class="live-trust-state-head">State 2 · Connect</div>
 <div class="live-trust-band">
-<span class="live-trust-band-label">Context</span>
 <strong>Live capability</strong>
 </div>
 <div class="live-trust-band">
-<span class="live-trust-band-label">Evidence + ownership</span>
-<p>Explicit purpose and owner<br>Typed live-system contracts<br>Host policy and observability</p>
+<p>Purpose + owner · live contracts</p>
 </div>
 <div class="live-trust-band is-boundary">
-<span class="live-trust-band-label">Required boundary</span>
 <strong>Runtime boundary</strong>
 </div>
 </div>
@@ -2066,26 +2005,28 @@ class: slide-light
 <div class="live-trust-state is-support">
 <div class="live-trust-state-head">State 3 · Support</div>
 <div class="live-trust-band">
-<span class="live-trust-band-label">Context</span>
 <strong>Business dependence</strong>
 </div>
 <div class="live-trust-band">
-<span class="live-trust-band-label">Evidence + ownership</span>
-<p>Durable reviewed intent<br>Release and service ownership<br>Recovery evidence</p>
+<p>Reviewed intent · recovery evidence</p>
 </div>
 <div class="live-trust-band is-boundary">
-<span class="live-trust-band-label">Required boundary</span>
 <strong>Full delivery system</strong>
 </div>
 </div>
 </div>
 
-<p class="live-trust-model-note">Keep the application in the least costly state consistent with its actual consequence.</p>
+<p class="live-trust-model-note">Choose the least costly state that matches the actual consequence.</p>
 </div>
 
 <!--
 These are operational states, not levels of organisational maturity.
 There is no virtue in moving every application to the right. Keep it in the least costly state consistent with its actual consequence.
+Read each state as its situation, its minimum evidence and ownership, then its required boundary:
+- Explore: one builder, synthetic or local inputs, no shared dependence; isolate and keep local.
+- Govern: named owner, approved workspace and tools, protected changes and checks; authoring boundary.
+- Connect: explicit purpose and owner, typed live-system contracts, host policy and observability; runtime boundary.
+- Support: durable reviewed intent, release and service ownership, recovery evidence; full delivery system.
 -->
 
 ---
@@ -2106,7 +2047,7 @@ class: slide-light
 
 # The highest consequence sets the trust radius.
 
-<p class="live-claim">Assess reach, data, dependence, and continuity against the four-state model.</p>
+<p class="live-claim">Place each dimension on the same four-state scale. Take the furthest answer—not the average—and reassess whenever one changes.</p>
 
 <div class="live-radius-grid">
 <div class="live-radius-card">
@@ -2131,7 +2072,6 @@ class: slide-light
 </div>
 </div>
 
-<div class="live-radius-guide">Place every answer on the same operational scale</div>
 <div class="live-radius-scale">
 <div><strong>0</strong> Explore</div>
 <div><strong>1</strong> Govern</div>
@@ -2139,123 +2079,15 @@ class: slide-light
 <div><strong>3</strong> Support</div>
 </div>
 
-<div class="live-radius-result">The furthest answer defines the trust radius—and the controls it requires.</div>
-<p class="live-radius-close">Reassess whenever reach, data, dependence, or continuity changes.</p>
 </div>
 
 <!--
-Do not average the answers. The highest-consequence answer sets the application's required state and therefore its controls.
+Do not average the answers. The highest-consequence answer sets the application's required state and therefore its safeguards.
+Reassess whenever reach, data, dependence, or continuity changes. The required state can move in either direction as those answers change.
 -->
 
 ---
-title: Proof in practice
-sync: section-proof
-class: slide-section
----
-
-<AmbientVideo src="/videos/hero-video-3.mp4" variant="approach" />
-
-<Eyebrow text="DELIVERY SYSTEM · EVIDENCE AND COMPOUNDING REPAIR" />
-
-<div class="section-hero-grid">
-<div class="section-hero-left">
-<div class="section-kicker-pill is-magenta">Real-world evaluation</div>
-
-# Proof in practice.
-
-<p class="section-subtitle">Plausible AI code failed a real replay suite—<strong>until we improved the delivery system around it.</strong></p>
-
-</div>
-</div>
-
-<div class="hero-pillars">
-<div class="hero-pillar"><span class="hero-pillar-num">01</span><span>Fixed replay suite · 22 recorded cases from a real-time rail service</span></div>
-<div class="hero-pillar"><span class="hero-pillar-num">02</span><span>0 / 22 → 21 / 22 · Plausible code failed until checks caught why</span></div>
-<div class="hero-pillar"><span class="hero-pillar-num">03</span><span>Zero hand-patching · Every defect repaired in the delivery system</span></div>
-</div>
-
-<!--
-Section divider: Proof in practice.
--->
-
----
-title: Evidence must be able to say no
-sync: proof-result
-class: slide-light
----
-
-<Eyebrow text="EVIDENCE · FIXED REPLAY SUITE, NOT A MODEL DEMO" />
-
-<div class="live-stage">
-
-# Evidence must be able to say no.
-
-<div class="live-stat-grid">
-<div class="live-stat">
-<div class="live-stat-value">0 / 22</div>
-<div class="live-stat-label">Early build</div>
-<div class="live-stat-note">Plausible. Wrong.</div>
-</div>
-<div class="live-stat">
-<div class="live-stat-value">7 / 22</div>
-<div class="live-stat-label">System improved</div>
-<div class="live-stat-note">Checks and guidance changed.</div>
-</div>
-<div class="live-stat is-latest">
-<div class="live-stat-value">21 / 22</div>
-<div class="live-stat-label">Latest build</div>
-<div class="live-stat-note">12 / 12 production messages.</div>
-</div>
-</div>
-
-<div class="live-outcome">One case remains open—and reported.</div>
-<div class="live-footnote">Propellerhead internal evaluation, October 2026. Same fixed 22-case suite as the hand-written counterpart.</div>
-</div>
-
-<!--
-We recovered a specification from an anonymised real-time rail service and rebuilt it as a WASI component.
-The early output looked plausible line by line. The recorded cases showed it was not correct.
--->
-
----
-title: Fix the system, not the output
-sync: proof-learning
-class: slide-light
----
-
-<Eyebrow text="COMPOUNDING DELIVERY · EVERY FAILURE IMPROVES THE NEXT BUILD" />
-
-<div class="live-stage">
-
-# Fix the system, not the output.
-
-<div class="live-repairs">
-<div class="live-repair">
-<span>A consumer never registered</span>
-<span class="live-repair-arrow">→</span>
-<strong>Refuse unreachable publishers</strong>
-</div>
-<div class="live-repair">
-<span>A rejection looked processed</span>
-<span class="live-repair-arrow">→</span>
-<strong>Refuse swallowed errors</strong>
-</div>
-<div class="live-repair">
-<span>A type was laid out empty</span>
-<span class="live-repair-arrow">→</span>
-<strong>Repair the design-type reader</strong>
-</div>
-</div>
-
-<div class="live-outcome">No defect was hand-patched. Every later build inherits the fix.</div>
-</div>
-
-<!--
-Each defect became a reusable capability in the delivery system: a check, better extraction, clearer guidance, or repaired tooling.
--->
-
----
-title: Start with one real change. Make the next one easier.
+title: What’s the first change you’d trust AI to deliver?
 sync: cta
 class: slide-split short-bar
 ---
@@ -2268,50 +2100,18 @@ class: slide-split short-bar
 </div>
 </div>
 
-<div class="split-content-pane">
+<div class="split-content-pane" style="justify-content: center;">
 <div>
 <Eyebrow text="PROPELLERHEAD · THE FIRST MOVE" />
 
-# Start with one real change.<br>Make the next one easier.
+# What’s the first change<br>you’d trust AI to deliver?
 
-<div class="opportunity-rows" style="margin-top: 8px;">
-<div class="opportunity-row">
-<span class="opportunity-row-num">01</span>
-<div>
-<h4>Choose the first move</h4>
-<p>We work out what is really in the way, set the boundaries and shape a first delivery worth doing.</p>
-</div>
-</div>
-<div class="opportunity-row">
-<span class="opportunity-row-num">02</span>
-<div>
-<h4>Get it live</h4>
-<p>New system or old one: we use AI where it helps, senior people where judgement matters and a production path we already know.</p>
-</div>
-</div>
-<div class="opportunity-row">
-<span class="opportunity-row-num">03</span>
-<div>
-<h4>Keep the gains</h4>
-<p>You keep the specifications, tests, infrastructure and delivery knowledge. The next change starts ahead, not at zero.</p>
-</div>
-</div>
-</div>
 </div>
 
-<div class="cta-card">
-<div>
-<div class="cta-card-label">THE FIRST MOVE</div>
-<div class="cta-card-title">What is really in the way?</div>
-</div>
-<div class="cta-pill">
-<span class="cta-pill-dot">→</span>
-<span>Find the first move</span>
-</div>
-</div>
 </div>
 
 <!--
-Close on the same path as the website.
+The trust model gives the audience a way to judge how much safeguard a change needs.
+Close by returning to the opening in personal terms: what is the first change they would trust AI to deliver? One change is enough to start; set the safeguards to match its stakes.
 -->
 
