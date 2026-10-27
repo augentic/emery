@@ -40,7 +40,12 @@ const WITHDRAWN: &str = "Cancelling an open order is withdrawn.";
 // The one paragraph of `DESIGN`'s overview.
 const OVERVIEW: &str = "Sign-in issues a session; orders are placed and cancelled under it.";
 // `DESIGN`'s domain model, the two types `PLAN`'s `orders` slice owns, for a
-// base design a scenario spells with sections of its own.
+// base design a scenario spells with sections of its own. Every inline base
+// design must carry it: `Pruned::own` drops from a slice the type keys the
+// design lacks, so a base design without these two blocks makes the amended
+// plan show `orders` as changed with `types: []` and nothing else different.
+// A sealed revision is never in that state, since the slicing gate refuses a
+// key the design lacks, so the rule is the fixture's, not the product's.
 const DOMAIN_MODEL: &str = r#"{"kind": "domain-model", "blocks": [
     {"type": {"key": "orders.order", "signature": "interface Order { id: string }", "role": "data"}},
     {"type": {"key": "orders.line", "signature": "interface Line { sku: string }", "role": "data"}}

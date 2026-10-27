@@ -7,10 +7,12 @@ mod support;
 mod verbs;
 
 use std::collections::BTreeSet;
+use std::fs;
 use std::path::{Path, PathBuf};
 
 use emery_adapter::is_kebab;
 use omnia_sdk::api::command::Response;
+use serde_json::Value;
 use support::provider::{Provider, cli};
 
 #[derive(Debug)]
@@ -34,8 +36,8 @@ async fn grammar(argv: &[&str]) -> Response {
 #[tokio::test]
 async fn rule_mentions() {
     let rule = plugin_dir().join("rules/emery.mdc");
-    let doc = std::fs::read_to_string(&rule)
-        .unwrap_or_else(|err| panic!("reading {}: {err}", rule.display()));
+    let doc =
+        fs::read_to_string(&rule).unwrap_or_else(|err| panic!("reading {}: {err}", rule.display()));
     let help = grammar(&["emery", "--help"]).await;
     assert_eq!(help.exit, 0, "`emery --help` must succeed");
     let help_text = String::from_utf8_lossy(&help.stdout);
@@ -86,8 +88,8 @@ async fn rule_mentions() {
 
 #[test]
 fn every_skill() {
-    let doc = std::fs::read_to_string(plugin_dir().join("rules/emery.mdc")).expect("rule");
-    let skills = std::fs::read_dir(plugin_dir().join("skills")).expect("skills dir");
+    let doc = fs::read_to_string(plugin_dir().join("rules/emery.mdc")).expect("rule");
+    let skills = fs::read_dir(plugin_dir().join("skills")).expect("skills dir");
     for entry in skills {
         let entry = entry.expect("skill entry");
         if !entry.path().join("SKILL.md").is_file() {
@@ -99,6 +101,30 @@ fn every_skill() {
             "shipped skill `{name}` is not mentioned by the always-applied rule"
         );
     }
+}
+
+// The plugin's version moves with its skills, and the marketplace's with it.
+#[test]
+fn versions_agree() {
+    let plugin = manifest(plugin_dir().join(".cursor-plugin/plugin.json"));
+    let marketplace =
+        manifest(Path::new(env!("CARGO_MANIFEST_DIR")).join(".cursor-plugin/marketplace.json"));
+    let plugin_version = plugin["version"].as_str().expect("plugin.json names a version");
+    let marketplace_version = marketplace["metadata"]["version"]
+        .as_str()
+        .expect("marketplace.json names a version under metadata");
+    assert_eq!(
+        plugin_version, marketplace_version,
+        "plugin.json and marketplace.json name different versions; the two move together"
+    );
+}
+
+fn manifest(path: impl AsRef<Path>) -> Value {
+    let path = path.as_ref();
+    let text =
+        fs::read_to_string(path).unwrap_or_else(|err| panic!("reading {}: {err}", path.display()));
+    serde_json::from_str(&text)
+        .unwrap_or_else(|err| panic!("{} is not JSON: {err}", path.display()))
 }
 
 fn plugin_dir() -> PathBuf {

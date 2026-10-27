@@ -287,7 +287,7 @@ impl<'a> Floors<'a> {
                 Some(slices) => review.note(format_args!(
                     "type `{key}` is owned by {} slices: {}",
                     slices.len(),
-                    quoted(slices.iter().copied())
+                    quoted(slices)
                 )),
             }
         }
@@ -417,7 +417,7 @@ impl Brief for SliceBrief<'_> {
     }
 }
 
-fn quoted<'a>(names: impl IntoIterator<Item = &'a str>) -> String {
+fn quoted(names: impl IntoIterator<Item: Display>) -> String {
     names.into_iter().map(|name| format!("`{name}`")).collect::<Vec<_>>().join(", ")
 }
 

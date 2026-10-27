@@ -2,7 +2,7 @@
   "name": "emery",
   "displayName": "Emery Workflow",
   "description": "Emery skills: specify, apply, build. Generate spec.md / design.md / plan.md from the named sources, seal them in the target's repository, and build the plan through a target adapter, over the emery CLI.",
-  "version": "0.31.0",
+  "version": "0.31.1",
   "author": {
     "name": "Augentic",
     "email": "andrew@augentic.io"

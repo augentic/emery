@@ -169,7 +169,7 @@ impl<'a> DesignAmend<'a> {
                     if section.kind != SectionKind::Overview && !self.drafted.is_empty() =>
                 {
                     let cited = cited(text);
-                    if !cited.is_empty() && cited.iter().all(|id| self.unchanged.contains(id)) {
+                    if !cited.is_empty() && cited.is_subset(&self.unchanged) {
                         let ids =
                             cited.iter().map(ToString::to_string).collect::<Vec<_>>().join(", ");
                         review.note(format_args!(

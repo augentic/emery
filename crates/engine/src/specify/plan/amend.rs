@@ -30,8 +30,8 @@ pub struct Open {
     // holds, and every one of a stem cut again.
     pub ids: BTreeSet<ReqId>,
     // The stems the amendment leaves past the cap, every requirement of
-    // which is open, in stem order.
-    pub recut: Vec<String>,
+    // which is open.
+    pub recut: BTreeSet<String>,
     // The design's data type keys no current slice owns, in the design's
     // order.
     pub keys: Vec<String>,
@@ -88,7 +88,11 @@ impl<'a> SliceAmend<'a> {
     // requirements differ, or one of them is drafted anew.
     fn touched(&self, slice: &Slice) -> bool {
         self.base.slice(slice.id).is_none_or(|was| was.requirements != slice.requirements)
-            || slice.requirements.iter().any(|id| self.drafted.iter().any(|basis| basis.id == *id))
+            || slice.requirements.iter().copied().any(|id| self.is_drafted(id))
+    }
+
+    fn is_drafted(&self, id: ReqId) -> bool {
+        self.drafted.iter().any(|basis| basis.id == id)
     }
 
     // The current slices that held `stem` in the base, by id and name.
@@ -161,11 +165,10 @@ impl<'a> SliceAmend<'a> {
                 f.write_str(&listed(&slice.requirements))?;
             }
             if !slice.types.is_empty() {
-                write!(f, " — types: {}", quoted(slice.types.iter().map(String::as_str)))?;
+                write!(f, " — types: {}", quoted(&slice.types))?;
             }
             if !slice.depends_on.is_empty() {
-                let names: Vec<String> = slice.depends_on.iter().map(name).collect();
-                write!(f, " — depends on: {}", quoted(names.iter().map(String::as_str)))?;
+                write!(f, " — depends on: {}", quoted(slice.depends_on.iter().map(name)))?;
             }
             if self.touched(slice) {
                 f.write_str(" — touched by this amendment")?;
@@ -184,7 +187,7 @@ impl<'a> SliceAmend<'a> {
             .stems
             .iter()
             .filter(|stem| stem.requirements.iter().any(|id| self.open.ids.contains(id)))
-            .partition(|stem| self.open.recut.iter().any(|label| label == stem.label));
+            .partition(|stem| self.open.recut.contains(stem.label));
         if !new.is_empty() {
             f.write_str(
                 "Requirements under a stem no current slice holds, each stem one slice at the \
@@ -270,8 +273,9 @@ impl<'a> SliceAmend<'a> {
             .open
             .ids
             .iter()
-            .filter(|id| self.drafted.iter().all(|basis| basis.id != **id))
-            .filter_map(|id| self.spec.requirement(*id))
+            .copied()
+            .filter(|&id| !self.is_drafted(id))
+            .filter_map(|id| self.spec.requirement(id))
             .collect();
         if standing.is_empty() {
             return Ok(());
@@ -286,7 +290,7 @@ impl<'a> SliceAmend<'a> {
                 "- {} `{}` — {}",
                 requirement.id,
                 requirement.subject,
-                requirement.statement().unwrap_or_else(|| "[conflict]".to_owned())
+                requirement.statement().as_deref().unwrap_or("[conflict]")
             )?;
         }
         Ok(())

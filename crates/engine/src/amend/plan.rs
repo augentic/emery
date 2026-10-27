@@ -131,15 +131,15 @@ impl<'a> Pruned<'a> {
         // a stem past the cap is cut again where an addition falls under a
         // sub-stem no slice holds: every requirement of it is open, and a
         // slice it empties gives up its types
-        let mut past: Vec<&str> = Vec::new();
-        for requirement in &placing {
-            let stem = requirement.stem();
-            if !past.contains(&stem)
-                && spec.requirements.iter().filter(|held| held.stem() == stem).count() > SLICE_CAP
-            {
-                past.push(stem);
-            }
-        }
+        let past: BTreeSet<&str> = placing
+            .iter()
+            .map(|requirement| requirement.stem())
+            .collect::<BTreeSet<_>>()
+            .into_iter()
+            .filter(|&stem| {
+                spec.requirements.iter().filter(|held| held.stem() == stem).count() > SLICE_CAP
+            })
+            .collect();
         for &stem in &past {
             let reopened = placing.iter().filter(|requirement| requirement.stem() == stem).any(
                 |requirement| {
@@ -164,7 +164,7 @@ impl<'a> Pruned<'a> {
                 }
             }
             open.ids.extend(ids);
-            open.recut.push(stem.to_owned());
+            open.recut.insert(stem.to_owned());
         }
 
         // the rest by trigger, then by floor
@@ -228,11 +228,9 @@ impl<'a> Pruned<'a> {
                 })
                 .collect();
             if let [slice] = changed.as_mut_slice() {
-                slice.types = types
-                    .iter()
-                    .filter(|key| slice.types.contains(key) || unowned.contains(key))
-                    .cloned()
-                    .collect();
+                slice.types.extend(unowned);
+                slice.types =
+                    types.iter().filter(|key| slice.types.contains(key)).cloned().collect();
                 return;
             }
         }
@@ -240,11 +238,9 @@ impl<'a> Pruned<'a> {
     }
 }
 
-/// What [`Pruned::assemble`] answers: the amended plan, or the turn that settles it.
+// What `Pruned::assemble` answers: the amended plan, or the turn that settles it.
 pub enum Assembled<'a> {
-    /// Every requirement and type key placed by code; the plan is settled.
     Settled(Plan),
-    /// What code left open, to be placed by the slicing turn.
     Open(SliceAmend<'a>),
 }
 
