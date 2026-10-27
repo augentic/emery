@@ -1362,13 +1362,13 @@ sync: outcome
 class: slide-light
 ---
 
-<Eyebrow text="PRODUCT STRATEGY · ADMIT WORK DELIBERATELY" />
+<Eyebrow text="THE DELIVERY SYSTEM · FIRST, ADMIT WORK DELIBERATELY" />
 
 <div class="live-stage">
 
 # A prototype is evidence.<br>Production is a commitment.
 
-<p class="live-claim">A working prototype earns attention—not production authority.</p>
+<p class="live-claim">AI can build a prototype in minutes. Production takes an explicit decision.</p>
 
 <div class="live-feature-flow">
 <div class="live-card is-cyan">
@@ -1413,12 +1413,15 @@ class: slide-light
 </div>
 
 <!--
+This is the front door of the delivery system: the decision that admits work to it.
+AI can build a prototype in minutes, so the decision to make something production software has to be explicit.
 Cheap experiments test assumptions. They do not grant production authority.
 Before work enters the delivery path, ask:
 - What outcome does it create?
 - What evidence supports it?
 - Does it strengthen or fragment the product?
 - Who owns and supports it?
+For work that earns that commitment, it enters one delivery path, governed by the three pillars on the next slide.
 -->
 
 ---
@@ -1436,7 +1439,7 @@ class: slide-sandbox
 
 # Three pillars of reliable delivery.
 
-<p class="live-claim">Agents work inside the delivery system. They do not own it.</p>
+<p class="live-claim">Agents work best inside a delivery system—not in charge of it.</p>
 
 <div class="live-grid-3" style="margin-top: 24px;">
 <div class="live-card is-glass">
@@ -1614,11 +1617,11 @@ class: slide-section
 
 <div class="section-hero-grid">
 <div class="section-hero-left">
-<div class="section-kicker-pill is-magenta">02 · Spec-driven delivery</div>
+<div class="section-kicker-pill is-magenta">02 · Spec-driven development</div>
 
 # Specify behaviour.
 
-<p class="section-subtitle">Keep human comprehension in a durable specification—<strong>so the codebase never becomes the only record of truth.</strong></p>
+<p class="section-subtitle">People and agents share one source of truth: <strong>durable specifications, not code.</strong></p>
 
 </div>
 </div>
@@ -1630,7 +1633,7 @@ class: slide-section
 </div>
 
 <!--
-Section 02 divider: Record intent (Spec-driven delivery).
+Section 02 divider: Record intent (Spec-driven development).
 -->
 
 ---
@@ -1639,7 +1642,7 @@ sync: record-position
 class: slide-light
 ---
 
-<Eyebrow text="02 · SPECIFY BEHAVIOUR · SPEC-DRIVEN DELIVERY" />
+<Eyebrow text="02 · SPECIFY BEHAVIOUR · SPEC-DRIVEN DEVELOPMENT" />
 
 <div class="foundation-progress" aria-label="Delivery foundations">
 <span>01 · Standardise delivery</span>
@@ -1662,7 +1665,7 @@ class: slide-light
 <p>Governance around human implementation</p>
 </div>
 <div class="live-quadrant is-target">
-<h3>Spec-driven delivery</h3>
+<h3>Spec-driven development</h3>
 <p>Durable intent around AI implementation</p>
 </div>
 <div class="live-quadrant">
@@ -1670,23 +1673,23 @@ class: slide-light
 <p>Local choices and human memory</p>
 </div>
 <div class="live-quadrant">
-<h3>AI-assisted coding alone</h3>
+<h3>AI-assisted coding</h3>
 <p>Conversation-led generation</p>
 </div>
 </div>
 </div>
 
-<div class="live-outcome">AI coding changes implementation. It does not create governance.</div>
+<div class="live-outcome" style="width: min(724px, calc(100% - 276px)); margin-inline: auto; box-sizing: border-box;">AI coding changes implementation. It does not create governance.</div>
 </div>
 
 <!--
 Most AI adoption begins as a horizontal move: introduce an assistant or agent and produce code faster.
 That does not create authority, an audit trail, or a durable statement of what must remain true.
-Spec-driven delivery is the separate upward move. It puts governed intent around AI-assisted implementation.
+Spec-driven development is the separate upward move. It puts governed intent around AI-assisted implementation.
 -->
 
 ---
-title: The specification drives development.
+title: Specifications drive development.
 sync: record-development
 class: slide-light
 ---
@@ -1701,7 +1704,7 @@ class: slide-light
 
 <div class="live-stage">
 
-# The specification drives development.
+# Specifications drive development.
 
 <p class="live-claim">The specification stays in the development loop—from requirements and design through implementation and verification.</p>
 
