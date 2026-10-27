@@ -11,7 +11,8 @@
       "class": "unchanged",
       "before": "Users sign in with a credential.",
       "after": "Users sign in with a credential.",
-      "sources": []
+      "sources": [],
+      "scope": null
     },
     {
       "id": "REQ-002",
@@ -19,7 +20,8 @@
       "class": "unchanged",
       "before": "Sessions expire after an hour of inactivity.",
       "after": "Sessions expire after an hour of inactivity.",
-      "sources": []
+      "sources": [],
+      "scope": null
     },
     {
       "id": "REQ-003",
@@ -33,7 +35,8 @@
           "claim": "orders.create",
           "path": null
         }
-      ]
+      ],
+      "scope": null
     },
     {
       "id": "REQ-004",
@@ -47,7 +50,8 @@
           "claim": "orders.cancel",
           "path": null
         }
-      ]
+      ],
+      "scope": null
     }
   ],
   "spec": {
@@ -144,5 +148,91 @@
         ]
       }
     ]
-  }
+  },
+  "design": {
+    "emery": 8,
+    "parent": "<revision>",
+    "preamble": [],
+    "sections": [
+      {
+        "kind": "overview",
+        "blocks": [
+          {
+            "text": "Sign-in issues a session; orders are placed and cancelled under it."
+          }
+        ]
+      },
+      {
+        "kind": "domain-model",
+        "blocks": [
+          {
+            "type": {
+              "key": "orders.order",
+              "signature": "interface Order { id: string }",
+              "role": "data"
+            }
+          },
+          {
+            "type": {
+              "key": "orders.line",
+              "signature": "interface Line { sku: string }",
+              "role": "data"
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "plan": {
+    "emery": 8,
+    "parent": "<revision>",
+    "preamble": [
+      "Two slices: sign-in with its session, and orders over it."
+    ],
+    "slices": [
+      {
+        "id": "SLICE-001",
+        "name": "authentication",
+        "requirements": [
+          "REQ-001",
+          "REQ-002"
+        ],
+        "types": [],
+        "depends-on": [],
+        "brief": [
+          "Delivers sign-in and the session it issues; a session cannot be verified without a sign-in to issue it, so the two stems are one build."
+        ]
+      },
+      {
+        "id": "SLICE-002",
+        "name": "orders",
+        "requirements": [
+          "REQ-003"
+        ],
+        "types": [
+          "orders.line",
+          "orders.order"
+        ],
+        "depends-on": [
+          "SLICE-001"
+        ],
+        "brief": [
+          "Delivers order creation and cancellation for a signed-in caller; verified by placing and cancelling an order under a session from `authentication`."
+        ]
+      }
+    ]
+  },
+  "sections": {
+    "preamble": false,
+    "added": [],
+    "removed": [],
+    "changed": []
+  },
+  "slices": [
+    {
+      "id": "SLICE-002",
+      "name": "orders",
+      "class": "changed"
+    }
+  ]
 }

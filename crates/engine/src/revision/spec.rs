@@ -77,7 +77,7 @@ impl Display for Spec {
 }
 
 // A reconciled requirement and its drafted acceptance scenarios.
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Requirement {
     // The stable requirement identifier.
@@ -110,6 +110,13 @@ impl Requirement {
     #[must_use]
     pub fn stem(&self) -> &str {
         revision::stem(&self.subject)
+    }
+
+    // Returns the sub-stem of the subject: the first two segments of its
+    // dotted id, the floor in a stem past the slice cap.
+    #[must_use]
+    pub fn substem(&self) -> &str {
+        revision::substem(&self.subject)
     }
 
     // Returns the requirement's statement: its `body` paragraphs
@@ -196,7 +203,7 @@ impl From<&Requirement> for emery_adapter::target::Requirement {
 }
 
 // A claim cited by a requirement.
-#[derive(Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Cited {
     // The name of the source the claim was extracted from.
@@ -241,7 +248,7 @@ impl Display for Cited {
 }
 
 // A contributor class rendered as a requirement note.
-#[derive(Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Loser {
     // Every member's source name, in authority order.
@@ -275,7 +282,7 @@ impl Display for Loser {
 /// `given` and `and` are lines; a draft that writes one line as a bare string
 /// where the schema asks for a sequence is read as the one-line sequence, so
 /// the slip costs no correction round. The stored form is always the sequence.
-#[derive(Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct Scenario {
     /// The scenario heading name.

@@ -3,7 +3,12 @@
 //! Extracted claim kinds determine which design sections are required,
 //! permitted, or omitted. The model supplies introductory paragraphs,
 //! section prose, and the role each type plays. The engine validates source
-//! citations and inserts type signatures verbatim from evidence.
+//! citations and inserts type signatures verbatim from evidence. An
+//! amendment redrafts the sections its change touches alone — those its
+//! claims inform or whose paragraphs describe a requirement it retires — over
+//! the current design, through [`DesignAmend`].
+
+mod amend;
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::{self, Display, Formatter};
@@ -15,6 +20,7 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 use strum::VariantArray as _;
 
+pub use self::amend::DesignAmend;
 use crate::brief::{Brief, Review};
 use crate::revision::{self, Design, EMERY, Role, Section, SectionKind, citations};
 use crate::specify::basis::Basis;
@@ -80,7 +86,6 @@ impl Brief for DesignBrief<'_> {
     fn verify(&self, answer: &DesignAnswer, review: &mut Review) {
         review.paragraphs(&answer.preamble, "preamble");
 
-        let sources = &self.outline.sources;
         let mut seen = BTreeSet::new();
         let mut references: BTreeMap<&str, usize> = BTreeMap::new();
         for section in &answer.sections {
@@ -92,48 +97,13 @@ impl Brief for DesignBrief<'_> {
             if self.outline.presence(kind) == Presence::Omitted {
                 review.note(format_args!("{label} is present but no claim informs it"));
             }
-            if section.blocks.is_empty() {
-                review.note(format_args!("{label} has no block"));
-            }
-
-            for block in &section.blocks {
-                match block {
-                    Block::Text(text) => {
-                        review.paragraph(text, &label);
-                        for key in citations(text).filter(|key| !sources.contains(key)) {
-                            review.note(format_args!(
-                                "{label} cites source `{key}`, which is not bound"
-                            ));
-                        }
-                    }
-                    Block::Type(TypeRef { key, .. }) => {
-                        if kind != SectionKind::DomainModel {
-                            review.note(format_args!(
-                                "{label} references type `{key}`; type blocks belong under \
-                                 `## Domain model`"
-                            ));
-                        }
-                        *references.entry(key.as_str()).or_default() += 1;
-                    }
-                }
-            }
+            self.outline.blocks(review, kind, &label, &section.blocks, &mut references);
         }
 
         for kind in self.outline.required().filter(|kind| !seen.contains(kind)) {
             review.note(format_args!("`## {kind}` is required but absent"));
         }
-
-        for key in self.outline.keys() {
-            match references.get(key).copied().unwrap_or_default() {
-                1 => {}
-                0 => review.note(format_args!("type `{key}` is never referenced")),
-                n => review.note(format_args!("type `{key}` is referenced {n} times")),
-            }
-        }
-
-        for key in references.keys().filter(|key| !self.outline.types.contains_key(**key)) {
-            review.note(format_args!("type `{key}` is not a type claim"));
-        }
+        self.outline.references(review, &references);
     }
 
     fn into_output(self, answer: DesignAnswer) -> Result<Design, Error> {
@@ -142,27 +112,9 @@ impl Brief for DesignBrief<'_> {
         let mut sections = Vec::with_capacity(drafted.len());
 
         for section in drafted {
-            let mut blocks = Vec::with_capacity(section.blocks.len());
-            for block in section.blocks {
-                blocks.push(match block {
-                    Block::Text(text) => revision::Block::Text(text),
-                    Block::Type(TypeRef { key, role }) => {
-                        let signature =
-                            self.outline.types.get(key.as_str()).copied().ok_or_else(|| {
-                                server_error!("type `{key}` was accepted without a type claim")
-                            })?;
-                        revision::Block::Type {
-                            key,
-                            signature: signature.to_string(),
-                            role,
-                        }
-                    }
-                });
-            }
-
             sections.push(Section {
                 kind: section.kind,
-                blocks,
+                blocks: self.outline.lower(section.blocks)?,
             });
         }
 
@@ -286,13 +238,36 @@ impl<'a> Outline<'a> {
         }
     }
 
+    // The outline of an amendment's design turn over the change `extracts`
+    // and the current design `base`: the change's claim kinds, so a section
+    // is informed as a specify's is; the change's sources and every source
+    // the base's text cites, so a kept citation is no finding; and the
+    // base's type blocks beneath the change's `type` claims, a key the
+    // change redeclares taking the change's signature.
+    fn amend(extracts: &'a [Extract], base: &'a Design) -> Self {
+        let mut outline = Self::new(extracts);
+        for block in base.sections.iter().flat_map(|section| &section.blocks) {
+            match block {
+                revision::Block::Text(text) => outline.sources.extend(citations(text)),
+                revision::Block::Type { key, signature, .. } => {
+                    outline.types.entry(key.clone()).or_insert(signature.as_str());
+                }
+            }
+        }
+        outline
+    }
+
     fn keys(&self) -> impl Iterator<Item = &str> {
         self.types.keys().map(String::as_str)
     }
 
+    // Whether a claim kind that informs `kind` is present.
+    fn informed(&self, kind: SectionKind) -> bool {
+        kind.informants().iter().any(|claim| self.kinds.contains(claim))
+    }
+
     fn presence(&self, kind: SectionKind) -> Presence {
-        let informed = kind.informants().iter().any(|claim| self.kinds.contains(claim));
-        if informed {
+        if self.informed(kind) {
             return Presence::Required;
         }
 
@@ -308,6 +283,78 @@ impl<'a> Outline<'a> {
             .iter()
             .copied()
             .filter(|kind| self.presence(*kind) == Presence::Required)
+    }
+
+    // Checks the blocks of one drafted section: a section with none, each
+    // paragraph's markup and citations, each type block's place under
+    // `## Domain model`, counting the type keys referenced into
+    // `references`.
+    fn blocks<'b>(
+        &self, review: &mut Review, kind: SectionKind, label: &str, blocks: &'b [Block],
+        references: &mut BTreeMap<&'b str, usize>,
+    ) {
+        if blocks.is_empty() {
+            review.note(format_args!("{label} has no block"));
+        }
+        for block in blocks {
+            match block {
+                Block::Text(text) => {
+                    review.paragraph(text, label);
+                    for key in citations(text).filter(|key| !self.sources.contains(key)) {
+                        review
+                            .note(format_args!("{label} cites source `{key}`, which is not bound"));
+                    }
+                }
+                Block::Type(TypeRef { key, .. }) => {
+                    if kind != SectionKind::DomainModel {
+                        review.note(format_args!(
+                            "{label} references type `{key}`; type blocks belong under `## \
+                             Domain model`"
+                        ));
+                    }
+                    *references.entry(key.as_str()).or_default() += 1;
+                }
+            }
+        }
+    }
+
+    // Checks that `references` names every offered type key exactly once and
+    // no other.
+    fn references(&self, review: &mut Review, references: &BTreeMap<&str, usize>) {
+        for key in self.keys() {
+            match references.get(key).copied().unwrap_or_default() {
+                1 => {}
+                0 => review.note(format_args!("type `{key}` is never referenced")),
+                n => review.note(format_args!("type `{key}` is referenced {n} times")),
+            }
+        }
+        for key in references.keys().filter(|key| !self.types.contains_key(**key)) {
+            review.note(format_args!("type `{key}` is not a type claim"));
+        }
+    }
+
+    // Lowers accepted `blocks` into stored ones, each type reference taking
+    // the signature offered under its key.
+    //
+    // Returns `Error::ServerError` for a key the outline does not offer,
+    // which `references` refused before acceptance.
+    fn lower(&self, blocks: Vec<Block>) -> Result<Vec<revision::Block>, Error> {
+        blocks
+            .into_iter()
+            .map(|block| match block {
+                Block::Text(text) => Ok(revision::Block::Text(text)),
+                Block::Type(TypeRef { key, role }) => {
+                    let signature = self.types.get(key.as_str()).copied().ok_or_else(|| {
+                        server_error!("type `{key}` was accepted without a type claim")
+                    })?;
+                    Ok(revision::Block::Type {
+                        key,
+                        signature: signature.to_string(),
+                        role,
+                    })
+                }
+            })
+            .collect()
     }
 }
 

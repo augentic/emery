@@ -37,7 +37,9 @@ impl<'a> Standing<'a> {
     // requirement with one, each competing statement for a conflict, so the
     // model sees every statement the base reads as the requirement's. The
     // kind is nominal, since no adapter extracted the base; `index` is the
-    // position among the standing alone, which the brief re-indexes.
+    // position among the standing alone, which the brief re-indexes; the
+    // citations are where the requirement was read, for the brief's anchor
+    // hints.
     pub fn contributors(&self) -> Vec<Contributor<'a>> {
         let mut contributors = Vec::with_capacity(self.spec.requirements.len());
         for requirement in &self.spec.requirements {
@@ -51,11 +53,17 @@ impl<'a> Standing<'a> {
                     statement,
                     synopsis: None,
                     withdraws: false,
+                    citations: &requirement.sources,
                     index: contributors.len(),
                 });
             }
         }
         contributors
+    }
+
+    // The base's requirements, in id order.
+    pub fn requirements(&self) -> impl Iterator<Item = &'a Requirement> {
+        self.spec.requirements.iter()
     }
 
     // The subjects of the requirements the base holds covered, as criterion
@@ -90,14 +98,7 @@ impl<'a> Standing<'a> {
     // base holds: an id the base once held is never reused, a retired one
     // included.
     pub fn free_ids(&self) -> impl Iterator<Item = ReqId> {
-        let first = self
-            .spec
-            .requirements
-            .iter()
-            .map(|requirement| requirement.id)
-            .max()
-            .map_or(Some(ReqId::FIRST), ReqId::next);
-        std::iter::successors(first, |&id| id.next())
+        ReqId::free_after(self.spec.requirements.iter().map(|requirement| requirement.id))
     }
 }
 

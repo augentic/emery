@@ -228,7 +228,9 @@ mod tests {
 
     use super::Brief as _;
     use crate::build::merge::MergeBrief;
-    use crate::specify::{DesignBrief, GroupingBrief, SliceBrief, SpecBrief};
+    use crate::specify::{
+        DesignAmend, DesignBrief, GroupingBrief, SliceAmend, SliceBrief, SpecBrief,
+    };
 
     #[test]
     fn corpus() {
@@ -237,7 +239,9 @@ mod tests {
             GroupingBrief::PROSE,
             SpecBrief::PROSE,
             DesignBrief::PROSE,
+            DesignAmend::PROSE,
             SliceBrief::PROSE,
+            SliceAmend::PROSE,
             MergeBrief::PROSE,
         ]
         .concat();

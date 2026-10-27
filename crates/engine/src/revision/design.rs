@@ -18,7 +18,7 @@ const CITATION: &str = "(from ";
 pub const TYPE: &str = "Type:";
 
 // A rebuild design in its stored form.
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Design {
     // The grammar the document was written under.
@@ -60,15 +60,57 @@ impl Design {
         keys.into_iter().map(str::to_owned).collect()
     }
 
+    // Returns the signature and role of the type `key` names, if the design has one.
+    #[must_use]
+    pub fn type_block(&self, key: &str) -> Option<(&str, Role)> {
+        self.sections.iter().flat_map(|section| &section.blocks).find_map(|block| match block {
+            Block::Type {
+                key: held,
+                signature,
+                role,
+            } if held == key => Some((signature.as_str(), *role)),
+            Block::Text(_) | Block::Type { .. } => None,
+        })
+    }
+
     // Returns the signature of the type `key` names, if the design has one.
     #[must_use]
     pub fn signature(&self, key: &str) -> Option<&str> {
-        self.sections.iter().flat_map(|section| &section.blocks).find_map(|block| match block {
-            Block::Type {
-                key: held, signature, ..
-            } if held == key => Some(signature.as_str()),
-            Block::Text(_) | Block::Type { .. } => None,
-        })
+        self.type_block(key).map(|(signature, _)| signature)
+    }
+
+    // Returns this design less the type blocks `keys` name.
+    //
+    // A section left with no block goes with them, since a design never
+    // holds an empty section. Every text block and the `parent` stand as
+    // they are.
+    #[must_use]
+    pub fn without_types(&self, keys: &BTreeSet<String>) -> Self {
+        let sections = self
+            .sections
+            .iter()
+            .filter_map(|section| {
+                let blocks: Vec<Block> = section
+                    .blocks
+                    .iter()
+                    .filter(|block| match block {
+                        Block::Type { key, .. } => !keys.contains(key),
+                        Block::Text(_) => true,
+                    })
+                    .cloned()
+                    .collect();
+                (!blocks.is_empty()).then_some(Section {
+                    kind: section.kind,
+                    blocks,
+                })
+            })
+            .collect();
+        Self {
+            emery: self.emery,
+            parent: self.parent.clone(),
+            preamble: self.preamble.clone(),
+            sections,
+        }
     }
 }
 
@@ -86,7 +128,7 @@ impl Display for Design {
 ///
 /// `B` allows the same section shape to hold either draft blocks or stored
 /// [`Block`] values.
-#[derive(Debug, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 #[schemars(rename = "Section")]
 pub struct Section<B = Block> {
@@ -107,7 +149,7 @@ impl Display for Section {
 }
 
 // A paragraph or type signature in a design section.
-#[derive(Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum Block {
     // One Markdown paragraph.
@@ -147,8 +189,9 @@ impl Display for Block {
 /// or produces. It declares nothing for a [`Mechanism`](Role::Mechanism): the
 /// behaviour its requirements state is built through the target's own
 /// platform, and no slice owns the type.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema, strum::Display)]
 #[serde(rename_all = "kebab-case")]
+#[strum(serialize_all = "kebab-case")]
 pub enum Role {
     /// A shape that crosses a boundary or is stored: a message, a record, a
     /// response, an enumeration.

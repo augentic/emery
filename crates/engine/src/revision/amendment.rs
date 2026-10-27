@@ -2,8 +2,9 @@
 //!
 //! An [`Amendment`] is a change against the current revision, staged for
 //! review: the base it was prepared against, one [`Change`] per
-//! requirement, classed by what the change did to it, and the amended
-//! specification. It is never sealed as it stands.
+//! requirement, classed by what the change did to it, the amended
+//! specification, design, and plan, and what the last two change against
+//! the base's. It is never sealed as it stands.
 
 use std::fmt::{self, Display, Formatter};
 
@@ -11,7 +12,12 @@ use omnia_sdk::{Error, server_error};
 use serde::{Deserialize, Serialize};
 use strum::VariantArray;
 
-use crate::revision::{self, Cited, HEADING, ID, NOTE, ReqId, SOURCES, Spec};
+use crate::revision::{
+    self, Cited, Design, DesignDiff, HEADING, ID, NOTE, Plan, PlanDiff, ReqId, SOURCES, SliceId,
+    Spec,
+};
+
+const SLICE: &str = "### Slice:";
 
 /// A change against the current revision in its staged form.
 #[derive(Debug, Serialize, Deserialize)]
@@ -31,6 +37,27 @@ pub struct Amendment {
     /// under its id and each retired one left out. Its `parent` is the base
     /// revision.
     pub spec: Spec,
+    /// The amended design.
+    ///
+    /// The base's, less the type blocks owned by the slices the change
+    /// emptied, a section left with no block going with them. Its `parent`
+    /// is the base revision.
+    pub design: Design,
+    /// The amended plan.
+    ///
+    /// The base's slices under their ids and names, each retired
+    /// requirement taken out, each requirement restated under another stem
+    /// moved to the slice of its new stem, each added one in the slice of
+    /// its stem, a stem no slice held in a new slice named for it, a slice
+    /// left with none removed and every slice that depended on it depending
+    /// on what it depended on instead, and the design's data types owned as
+    /// the change leaves them. Its `parent` is the base revision.
+    pub plan: Plan,
+    /// What the amended design changes against the base's, by section.
+    pub sections: DesignDiff,
+    /// What the amended plan changes against the base's: one entry per
+    /// slice added, changed, or removed, in id order.
+    pub slices: Vec<SliceChange>,
 }
 
 impl Amendment {
@@ -65,11 +92,14 @@ impl Amendment {
 
     /// Returns whether the amendment changes anything of the base.
     ///
-    /// An amendment every entry of which is [`ChangeClass::Unchanged`] does
-    /// not, and is nothing to stage.
+    /// An amendment every entry of which is [`ChangeClass::Unchanged`] that
+    /// changes no design section and no slice does not, and is nothing to
+    /// stage.
     #[must_use]
     pub fn is_change(&self) -> bool {
         self.changes.iter().any(|change| change.class != ChangeClass::Unchanged)
+            || !self.sections.is_empty()
+            || !self.slices.is_empty()
     }
 
     /// Returns the stems of the requirements the amendment touches, once each, sorted.
@@ -83,7 +113,7 @@ impl Amendment {
             .changes
             .iter()
             .filter(|change| change.class != ChangeClass::Unchanged)
-            .map(|change| revision::stem(&change.subject))
+            .map(Change::stem)
             .collect();
         stems.sort_unstable();
         stems.dedup();
@@ -135,8 +165,69 @@ impl Display for Amendment {
                 }
             }
         }
+
+        // the design sections changed, the new text of each added or changed
+        // one whole, so the reviewer reads what the amendment holds
+        if !self.sections.is_empty() {
+            write!(f, "\n\n## Design\n\n{}", sections_line(&self.sections))?;
+            for section in &self.design.sections {
+                let kind = section.kind;
+                if !self.sections.added.contains(&kind) && !self.sections.changed.contains(&kind) {
+                    continue;
+                }
+                write!(f, "\n\n### {kind}")?;
+                for block in &section.blocks {
+                    write!(f, "\n\n{block}")?;
+                }
+            }
+        }
+
+        // the slices changed, an added or changed one as `plan.md` renders it
+        if !self.slices.is_empty() {
+            f.write_str("\n\n## Plan")?;
+            for change in &self.slices {
+                write!(f, "\n\n{SLICE} {} [{}]\n\n{ID} {}", change.name, change.class, change.id)?;
+                if change.class != SliceClass::Removed
+                    && let Some(slice) = self.plan.slice(change.id)
+                {
+                    f.write_str("\n")?;
+                    slice.write_lists(f)?;
+                }
+            }
+        }
         f.write_str("\n")
     }
+}
+
+// `Changed: the preamble, Domain model; added: APIs and integrations;
+// removed: Observability.`: each part present when it names anything, the
+// sections by heading.
+fn sections_line(diff: &DesignDiff) -> String {
+    let headings = |kinds: &[revision::SectionKind]| -> Vec<String> {
+        kinds.iter().map(ToString::to_string).collect()
+    };
+    let changed: Vec<String> = diff
+        .preamble
+        .then(|| "the preamble".to_owned())
+        .into_iter()
+        .chain(diff.changed.iter().map(ToString::to_string))
+        .collect();
+    let clauses = [
+        ("changed", changed),
+        ("added", headings(&diff.added)),
+        ("removed", headings(&diff.removed)),
+    ];
+    let mut line = clauses
+        .into_iter()
+        .filter(|(_, names)| !names.is_empty())
+        .map(|(verb, names)| format!("{verb}: {}", names.join(", ")))
+        .collect::<Vec<_>>()
+        .join("; ");
+    if let Some(first) = line.get_mut(..1) {
+        first.make_ascii_uppercase();
+    }
+    line.push('.');
+    line
 }
 
 /// The revision an [`Amendment`] was prepared against, at the commit it was read at.
@@ -169,6 +260,28 @@ pub struct Change {
     pub after: Option<String>,
     /// The claims behind the entry, in descending authority order.
     pub sources: Vec<Cited>,
+    /// The behaviour source read whole whose silence retired the
+    /// requirement; `None` for every entry a claim decided.
+    ///
+    /// Set on a [`ChangeClass::Retired`] entry alone, whose
+    /// [`sources`](Self::sources) are then empty: the source covers the
+    /// requirement's stem with its requirement claims and states nothing of
+    /// the requirement.
+    pub scope: Option<String>,
+}
+
+impl Change {
+    /// Returns the first segment of the dotted [`subject`](Self::subject).
+    #[must_use]
+    pub fn stem(&self) -> &str {
+        revision::stem(&self.subject)
+    }
+
+    /// Returns whether the entry was retired by a source's scope rather than by a claim.
+    #[must_use]
+    pub fn by_scope(&self) -> bool {
+        self.class == ChangeClass::Retired && self.scope.is_some()
+    }
 }
 
 impl Display for Change {
@@ -197,8 +310,18 @@ impl Display for Change {
                 }
                 write!(f, "\n\nAfter: {after}")?;
             }
-            (ChangeClass::Retired, Some(before), _) => {
-                write!(f, "\n\n{before}")?;
+            (ChangeClass::Retired, before, _) => {
+                if let Some(before) = before {
+                    write!(f, "\n\n{before}")?;
+                }
+                if let Some(source) = &self.scope {
+                    write!(
+                        f,
+                        "\n\n{NOTE} retired by scope: `{source}` was read whole and states \
+                         nothing under `{}`.",
+                        self.stem()
+                    )?;
+                }
             }
             (ChangeClass::Conflict, _, _) => {
                 write!(f, "\n\n{NOTE} Operator reconciliation required.")?;
@@ -253,4 +376,51 @@ impl ChangeClass {
             Self::Unchanged => "Unchanged",
         }
     }
+}
+
+/// What an [`Amendment`] does to one slice of the plan.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SliceChange {
+    /// The slice's identifier.
+    pub id: SliceId,
+    /// The slice's name.
+    pub name: String,
+    /// What the change did to the slice.
+    pub class: SliceClass,
+}
+
+impl SliceChange {
+    /// Returns one entry per slice `diff` lists as added, changed, or removed, in id order.
+    #[must_use]
+    pub fn of(diff: &PlanDiff) -> Vec<Self> {
+        let entry = |entry: &revision::SliceEntry, class| Self {
+            id: entry.id,
+            name: entry.name.clone(),
+            class,
+        };
+        let mut changes: Vec<Self> = diff
+            .added
+            .iter()
+            .map(|added| entry(added, SliceClass::Added))
+            .chain(diff.changed.iter().map(|changed| entry(&changed.entry, SliceClass::Changed)))
+            .chain(diff.removed.iter().map(|removed| entry(removed, SliceClass::Removed)))
+            .collect();
+        changes.sort_by_key(|change| change.id);
+        changes
+    }
+}
+
+/// What an [`Amendment`] did to a slice of the plan.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, strum::Display)]
+#[serde(rename_all = "kebab-case")]
+#[strum(serialize_all = "kebab-case")]
+pub enum SliceClass {
+    /// A slice the base plan does not hold.
+    Added,
+    /// A slice of the base plan whose requirements, types, dependencies, or
+    /// brief the amendment changes.
+    Changed,
+    /// A slice of the base plan the amendment leaves no requirement in.
+    Removed,
 }

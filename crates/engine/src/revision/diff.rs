@@ -10,7 +10,7 @@
 use std::cmp::Reverse;
 use std::collections::{BTreeMap, BTreeSet};
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 use super::{Design, Plan, ReqId, Requirement, Revision, SectionKind, Slice, SliceId, Spec};
 
@@ -230,8 +230,8 @@ pub struct Changed<E = Entry> {
 }
 
 /// Changes to the design portion of a revision.
-#[derive(Debug, Clone, Default, Serialize)]
-#[serde(rename_all = "kebab-case")]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
 pub struct DesignDiff {
     /// Whether the preamble changed.
     pub preamble: bool,
@@ -253,7 +253,9 @@ impl DesignDiff {
             && self.changed.is_empty()
     }
 
-    fn between(outgoing: &Design, incoming: &Design) -> Self {
+    /// Returns the changes from `outgoing` to `incoming`, sections paired by kind.
+    #[must_use]
+    pub fn between(outgoing: &Design, incoming: &Design) -> Self {
         let mut diff = Self {
             preamble: outgoing.preamble != incoming.preamble,
             ..Self::default()
@@ -300,9 +302,12 @@ impl PlanDiff {
             && self.changed.is_empty()
     }
 
-    // Slices match by id, numbered by each slice's lowest requirement, so a
-    // merge that swallows a stem renumbers the slices after it as changes.
-    fn between(outgoing: &Plan, incoming: &Plan) -> Self {
+    /// Returns the changes from `outgoing` to `incoming`, slices paired by identifier.
+    ///
+    /// Slices are numbered by each slice's lowest requirement, so a merge
+    /// that swallows a stem renumbers the slices after it as changes.
+    #[must_use]
+    pub fn between(outgoing: &Plan, incoming: &Plan) -> Self {
         let mut diff = Self {
             preamble: outgoing.preamble != incoming.preamble,
             ..Self::default()

@@ -1,0 +1,323 @@
+{
+  "emery": 8,
+  "base": {
+    "revision": "<revision>",
+    "commit": "9f8e7d6c5b4a39281706f5e4d3c2b1a0f9e8d7c6"
+  },
+  "changes": [
+    {
+      "id": "REQ-001",
+      "subject": "auth.login",
+      "class": "unchanged",
+      "before": "Users sign in with a credential.",
+      "after": "Users sign in with a credential.",
+      "sources": [],
+      "scope": null
+    },
+    {
+      "id": "REQ-002",
+      "subject": "session.timeout",
+      "class": "unchanged",
+      "before": "Sessions expire after an hour of inactivity.",
+      "after": "Sessions expire after an hour of inactivity.",
+      "sources": [],
+      "scope": null
+    },
+    {
+      "id": "REQ-003",
+      "subject": "orders.create",
+      "class": "unchanged",
+      "before": "A signed-in user places an order.",
+      "after": "A signed-in user places an order.",
+      "sources": [],
+      "scope": null
+    },
+    {
+      "id": "REQ-004",
+      "subject": "orders.cancel",
+      "class": "unchanged",
+      "before": "A signed-in user cancels an open order.",
+      "after": "A signed-in user cancels an open order.",
+      "sources": [],
+      "scope": null
+    },
+    {
+      "id": "REQ-005",
+      "subject": "secrets.read",
+      "class": "added",
+      "before": null,
+      "after": "A handler reads a secret at use.",
+      "sources": [
+        {
+          "source": "docs",
+          "claim": "secrets.read",
+          "path": null
+        }
+      ],
+      "scope": null
+    }
+  ],
+  "spec": {
+    "emery": 8,
+    "parent": "<revision>",
+    "preamble": [
+      "Sign-in, its session, and orders over both."
+    ],
+    "requirements": [
+      {
+        "id": "REQ-001",
+        "subject": "auth.login",
+        "status": "unknown",
+        "covered": false,
+        "trigger": null,
+        "sources": [
+          {
+            "source": "docs",
+            "claim": "auth.login",
+            "path": null
+          }
+        ],
+        "body": [
+          "Users sign in with a credential."
+        ],
+        "losers": [],
+        "scenarios": [
+          {
+            "name": "Login",
+            "given": [],
+            "when": "a valid credential is presented",
+            "then": "the caller is signed in",
+            "and": []
+          }
+        ]
+      },
+      {
+        "id": "REQ-002",
+        "subject": "session.timeout",
+        "status": "unknown",
+        "covered": false,
+        "trigger": null,
+        "sources": [
+          {
+            "source": "docs",
+            "claim": "session.timeout",
+            "path": null
+          }
+        ],
+        "body": [
+          "Sessions expire after an hour of inactivity."
+        ],
+        "losers": [],
+        "scenarios": [
+          {
+            "name": "Timeout",
+            "given": [],
+            "when": "a session is idle for an hour",
+            "then": "it times out",
+            "and": []
+          }
+        ]
+      },
+      {
+        "id": "REQ-003",
+        "subject": "orders.create",
+        "status": "unknown",
+        "covered": false,
+        "trigger": {
+          "http": {
+            "method": "POST",
+            "path": "/orders"
+          }
+        },
+        "sources": [
+          {
+            "source": "docs",
+            "claim": "orders.create",
+            "path": null
+          }
+        ],
+        "body": [
+          "A signed-in user places an order."
+        ],
+        "losers": [],
+        "scenarios": [
+          {
+            "name": "Create",
+            "given": [],
+            "when": "a signed-in caller places an order",
+            "then": "the order is created",
+            "and": []
+          }
+        ]
+      },
+      {
+        "id": "REQ-004",
+        "subject": "orders.cancel",
+        "status": "unknown",
+        "covered": false,
+        "trigger": {
+          "message": "orders.cancel-requested"
+        },
+        "sources": [
+          {
+            "source": "docs",
+            "claim": "orders.cancel",
+            "path": null
+          }
+        ],
+        "body": [
+          "A signed-in user cancels an open order."
+        ],
+        "losers": [],
+        "scenarios": [
+          {
+            "name": "Cancel",
+            "given": [],
+            "when": "a signed-in caller cancels an order",
+            "then": "the order is cancelled",
+            "and": []
+          }
+        ]
+      },
+      {
+        "id": "REQ-005",
+        "subject": "secrets.read",
+        "status": "unknown",
+        "covered": false,
+        "trigger": null,
+        "sources": [
+          {
+            "source": "docs",
+            "claim": "secrets.read",
+            "path": null
+          }
+        ],
+        "body": [
+          "A handler reads a secret at use."
+        ],
+        "losers": [],
+        "scenarios": [
+          {
+            "name": "Read",
+            "given": [],
+            "when": "a handler needs a secret",
+            "then": "it is read at use",
+            "and": []
+          }
+        ]
+      }
+    ]
+  },
+  "design": {
+    "emery": 8,
+    "parent": "<revision>",
+    "preamble": [],
+    "sections": [
+      {
+        "kind": "overview",
+        "blocks": [
+          {
+            "text": "Sign-in issues a session; orders are placed and cancelled under it."
+          },
+          {
+            "text": "Handlers read the secrets they need at use (REQ-005)."
+          }
+        ]
+      },
+      {
+        "kind": "domain-model",
+        "blocks": [
+          {
+            "type": {
+              "key": "orders.order",
+              "signature": "interface Order { id: string }",
+              "role": "data"
+            }
+          },
+          {
+            "type": {
+              "key": "orders.line",
+              "signature": "interface Line { sku: string }",
+              "role": "data"
+            }
+          }
+        ]
+      },
+      {
+        "kind": "apis",
+        "blocks": [
+          {
+            "text": "Secrets are read from a secret store, the team vault (from docs), by REQ-005 at use."
+          }
+        ]
+      }
+    ]
+  },
+  "plan": {
+    "emery": 8,
+    "parent": "<revision>",
+    "preamble": [
+      "Two slices: sign-in with its session, and orders over it."
+    ],
+    "slices": [
+      {
+        "id": "SLICE-001",
+        "name": "authentication",
+        "requirements": [
+          "REQ-001",
+          "REQ-002"
+        ],
+        "types": [],
+        "depends-on": [],
+        "brief": [
+          "Delivers sign-in and the session it issues; a session cannot be verified without a sign-in to issue it, so the two stems are one build."
+        ]
+      },
+      {
+        "id": "SLICE-002",
+        "name": "orders",
+        "requirements": [
+          "REQ-003",
+          "REQ-004"
+        ],
+        "types": [
+          "orders.line",
+          "orders.order"
+        ],
+        "depends-on": [
+          "SLICE-001"
+        ],
+        "brief": [
+          "Delivers order creation and cancellation for a signed-in caller; verified by placing and cancelling an order under a session from `authentication`."
+        ]
+      },
+      {
+        "id": "SLICE-003",
+        "name": "secrets",
+        "requirements": [
+          "REQ-005"
+        ],
+        "types": [],
+        "depends-on": [],
+        "brief": ["Delivers the secret read every handler makes at use; verified against a fake store."]
+      }
+    ]
+  },
+  "sections": {
+    "preamble": false,
+    "added": [
+      "apis"
+    ],
+    "removed": [],
+    "changed": [
+      "overview"
+    ]
+  },
+  "slices": [
+    {
+      "id": "SLICE-003",
+      "name": "secrets",
+      "class": "added"
+    }
+  ]
+}

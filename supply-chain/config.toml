@@ -25,16 +25,13 @@ url = "https://raw.githubusercontent.com/mozilla/supply-chain/main/audits.toml"
 [imports.zcash]
 url = "https://raw.githubusercontent.com/zcash/rust-ecosystem/main/supply-chain/audits.toml"
 
-[policy.omnia]
+[policy."omnia-cli:0.37.0"]
 audit-as-crates-io = false
 
-[policy.omnia-cli]
+[policy."omnia-compile:0.37.0"]
 audit-as-crates-io = false
 
-[policy.omnia-compile]
-audit-as-crates-io = false
-
-[policy.omnia-core]
+[policy."omnia-core:0.37.0"]
 audit-as-crates-io = false
 
 [policy.omnia-cursor]
@@ -49,58 +46,61 @@ audit-as-crates-io = false
 [policy.omnia-git]
 audit-as-crates-io = false
 
-[policy.omnia-guest-macros]
+[policy."omnia-guest-macros:0.37.0"]
 audit-as-crates-io = false
 
-[policy.omnia-host-macros]
+[policy."omnia-host-macros:0.37.0"]
 audit-as-crates-io = false
 
-[policy.omnia-link]
+[policy."omnia-link:0.37.0"]
 audit-as-crates-io = false
 
-[policy.omnia-plugin]
+[policy."omnia-plugin:0.37.0"]
 audit-as-crates-io = false
 
-[policy.omnia-sdk]
+[policy."omnia-sdk:0.37.0"]
 audit-as-crates-io = false
 
-[policy.omnia-test]
+[policy."omnia-test:0.37.0"]
 audit-as-crates-io = false
 
-[policy.omnia-wasi-blobstore]
+[policy."omnia-wasi-blobstore:0.37.0"]
 audit-as-crates-io = false
 
-[policy.omnia-wasi-config]
+[policy."omnia-wasi-config:0.37.0"]
 audit-as-crates-io = false
 
-[policy.omnia-wasi-docstore]
+[policy."omnia-wasi-docstore:0.37.0"]
 audit-as-crates-io = false
 
-[policy.omnia-wasi-http]
+[policy."omnia-wasi-http:0.37.0"]
 audit-as-crates-io = false
 
-[policy.omnia-wasi-identity]
+[policy."omnia-wasi-identity:0.37.0"]
 audit-as-crates-io = false
 
-[policy.omnia-wasi-keyvalue]
+[policy."omnia-wasi-keyvalue:0.37.0"]
 audit-as-crates-io = false
 
-[policy.omnia-wasi-messaging]
+[policy."omnia-wasi-messaging:0.37.0"]
 audit-as-crates-io = false
 
-[policy.omnia-wasi-model]
+[policy."omnia-wasi-model:0.37.0"]
 audit-as-crates-io = false
 
-[policy.omnia-wasi-otel]
+[policy."omnia-wasi-otel:0.37.0"]
 audit-as-crates-io = false
 
-[policy.omnia-wasi-sql]
+[policy."omnia-wasi-sql:0.37.0"]
 audit-as-crates-io = false
 
-[policy.omnia-wasi-vcs]
+[policy."omnia-wasi-vcs:0.37.0"]
 audit-as-crates-io = false
 
-[policy.omnia-wasi-websocket]
+[policy."omnia-wasi-websocket:0.37.0"]
+audit-as-crates-io = false
+
+[policy."omnia:0.37.0"]
 audit-as-crates-io = false
 
 [[exemptions.addr2line]]

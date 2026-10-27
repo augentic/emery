@@ -9,7 +9,7 @@ use std::fmt::{self, Display, Formatter};
 
 use serde::{Deserialize, Serialize};
 
-use crate::revision::{self, ID, ReqId, SliceId};
+use crate::revision::{self, ID, ReqId, Requirement, SliceId, Spec};
 
 // The `Requirements:` key listing a slice's requirement ids.
 pub const REQUIREMENTS: &str = "Requirements:";
@@ -21,7 +21,7 @@ pub const DEPENDS_ON: &str = "Depends on:";
 const HEADING: &str = "## Slice:";
 
 // A build plan in its stored form.
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Plan {
     // The grammar the document was written under.
@@ -39,6 +39,13 @@ impl Plan {
     #[must_use]
     pub fn slice(&self, id: SliceId) -> Option<&Slice> {
         self.slices.iter().find(|slice| slice.id == id)
+    }
+
+    // The ids a new slice takes in an amendment of this plan, from the first
+    // above every id the plan holds: an id a slice once held is never reused,
+    // a removed one included.
+    pub fn free_ids(&self) -> impl Iterator<Item = SliceId> {
+        SliceId::free_after(self.slices.iter().map(|slice| slice.id))
     }
 
     // Returns the slices in build order: the `waves` flattened.
@@ -183,7 +190,7 @@ impl Display for Plan {
 //
 // Every requirement of the specification is in exactly one slice, and
 // every design type key is owned by exactly one.
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
 pub struct Slice {
     // The stable slice identifier.
@@ -200,9 +207,17 @@ pub struct Slice {
     pub brief: Vec<String>,
 }
 
-impl Display for Slice {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        write!(f, "{HEADING} {}\n\n{ID} {}\n", self.name, self.id)?;
+impl Slice {
+    // Whether `self` holds a requirement of `spec` that `matches`.
+    #[must_use]
+    pub fn holds(&self, spec: &Spec, matches: impl Fn(&Requirement) -> bool) -> bool {
+        self.requirements.iter().any(|id| spec.requirement(*id).is_some_and(&matches))
+    }
+
+    // Writes the lists and the brief: everything after the `ID:` line, with
+    // no trailing newline, so a projection under another heading renders
+    // the slice as `plan.md` does.
+    pub fn write_lists(&self, f: &mut Formatter<'_>) -> fmt::Result {
         list(f, REQUIREMENTS, &self.requirements)?;
 
         // ownership and order, where there is any
@@ -220,6 +235,13 @@ impl Display for Slice {
             write!(f, "\n\n{paragraph}")?;
         }
         Ok(())
+    }
+}
+
+impl Display for Slice {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        write!(f, "{HEADING} {}\n\n{ID} {}\n", self.name, self.id)?;
+        self.write_lists(f)
     }
 }
 

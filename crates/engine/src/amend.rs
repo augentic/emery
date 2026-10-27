@@ -3,11 +3,14 @@
 //! [`amend`] extracts claims from each change source as
 //! [`specify`](crate::specify::specify) does, matches them against the
 //! requirements the current revision holds, derives what the change did to
-//! each requirement, drafts the amended specification, and stages the
-//! result as an [`Amendment`] for review. Nothing is sealed, and the
-//! current revision is read and never moved.
+//! each requirement, drafts the amended specification, redrafts the design
+//! sections the change informs, amends the plan by code and one slicing
+//! turn for what code cannot place, and stages the result as an
+//! [`Amendment`] for review. Nothing is sealed, and
+//! the current revision is read and never moved.
 
 mod change;
+mod plan;
 mod standing;
 
 use emery_adapter::source::Source;
@@ -17,12 +20,16 @@ use omnia_sdk::{BlobStore, Error, Model, Plugins, StateStore, Vcs, bad_request};
 use serde::Serialize;
 
 use self::change::ChangeSet;
+use self::plan::{Assembled, Pruned};
 use self::standing::Standing;
 use crate::brief::Brief as _;
-use crate::revision::EMERY;
-pub use crate::revision::{Amendment, AmendmentBase, Change, ChangeClass};
+pub use crate::revision::{
+    Amendment, AmendmentBase, Change, ChangeClass, DesignDiff, PlanDiff, SliceChange, SliceClass,
+};
+use crate::revision::{Design, EMERY};
 use crate::specify::{
-    BASELINE, Bound, Extracted, GroupingBrief, RepositorySource, SourceConfig, SpecBrief,
+    BASELINE, Bound, DesignAmend, Extracted, GroupingBrief, RepositorySource, SourceConfig,
+    SpecBrief,
 };
 use crate::vcs::TargetRef;
 use crate::{Files, store};
@@ -35,9 +42,15 @@ use crate::{Files, store};
 /// `baseline`: a claim restating or revising one keeps the requirement's
 /// id, a claim no requirement covers is added under the next free id, a
 /// `retire` claim retires the requirement stating the behaviour it
-/// withdraws, and a requirement no claim touches stands unchanged. The
-/// sources are extracted as `specify` extracts them, a repository source
-/// read in a working copy removed once every source answered.
+/// withdraws, and a requirement no claim touches stands unchanged. A change
+/// stating no requirement, a `decision` or a `type` alone, is matched
+/// against nothing and leaves every requirement as it stands. A behaviour
+/// source read whole ([`Scope::Whole`](crate::specify::Scope::Whole)) then
+/// retires every standing requirement no claim touched under a stem its
+/// requirement claims cover, the entry naming the source as its
+/// [`Change::scope`]; a prose source's scope retires nothing. The sources
+/// are extracted as `specify` extracts them, a repository source read in a
+/// working copy removed once every source answered.
 ///
 /// The amended specification ([`Amendment::spec`]) is drafted from the change
 /// alone, held to the technology lexicon as a `specify` draft is. Each added,
@@ -45,10 +58,35 @@ use crate::{Files, store};
 /// scenarios included. Each unchanged requirement is the base's as it stands,
 /// each retired one is left out, and the preamble is the base's.
 ///
-/// A change that leaves every requirement as it stands drafts nothing and
-/// stages nothing. One that changes anything is staged as the one
-/// amendment, replacing an amendment staged before it; a staged revision
-/// candidate is never replaced, since it awaits `emery apply`.
+/// The amended design ([`Amendment::design`]) is the base's less the type
+/// blocks owned by the slices the retirements empty, where no claim of the
+/// change informs a section and no paragraph describes a requirement the
+/// change retires; where one does, those sections and `## Overview` are
+/// redrafted in one design turn over the current text, each kept paragraph
+/// verbatim or named as revised, every other section and the preamble kept
+/// by code. The amended plan ([`Amendment::plan`])
+/// follows by code where a rule decides: the base's slices keep their ids
+/// and names, each retired requirement leaves its slice, one restated under
+/// another stem leaves it for the slice of its new stem, an added one joins
+/// the slice holding another its trigger reaches or the slice of its stem,
+/// a slice left with none is removed and the slices that depended on it
+/// depend on what it depended on, and a data type the design holds that no
+/// slice owns goes to the one slice the change touched. What no rule
+/// decides is put to one slicing turn over the current slices: the
+/// requirements of a stem no slice holds, every requirement of a stem left
+/// past [`SLICE_CAP`](crate::specify::SLICE_CAP) once an addition opens a
+/// sub-stem no slice holds, and a type key no slice owns where no slice or
+/// more than one changed; the turn drafts a new slice or joins a current
+/// one, and the whole is held to the plan's rules. A change adding only
+/// under stems the plan holds spends no slicing turn.
+/// [`Amendment::sections`] and [`Amendment::slices`] say what the two change
+/// against the base's.
+///
+/// A change that leaves every requirement as it stands and changes nothing
+/// of the design or the plan stages nothing. One that changes anything is
+/// staged as the one amendment, replacing an amendment staged before it; a
+/// staged revision candidate is never replaced, since it awaits `emery
+/// apply`.
 ///
 /// # Errors
 ///
@@ -67,7 +105,8 @@ use crate::{Files, store};
 ///   repository holds no revision, naming a staged candidate where one
 ///   stands, and with code `revision-not-found` as `specify` does.
 /// - Returns [`Error::ServerError`] and [`Error::BadGateway`] as `specify`
-///   does.
+///   does, and [`Error::ServerError`] where a plan settled by code alone
+///   breaks the plan's rules.
 pub async fn amend<P: Model + Source + StateStore + BlobStore + Plugins + Vcs + Files>(
     input: AmendInput, context: Context<P>,
 ) -> Result<AmendOutput, Error> {
@@ -95,20 +134,57 @@ pub async fn amend<P: Model + Source + StateStore + BlobStore + Plugins + Vcs + 
         repositories,
     } = Bound::extract_all(provider, &bound).await?;
 
-    // the change matched against the base, and what it did to each requirement
+    // the change matched against the base, and what it did to each
+    // requirement; a change stating none leaves every requirement as it is
+    // with no grouping spent, and a behaviour source read whole then retires
+    // what it falls silent on under the stems it covers
     let standing = Standing::new(&revision.spec, &extracts);
-    let bases =
-        GroupingBrief::with_standing(&extracts, standing.contributors(), standing.criteria())
-            .derive(provider)
-            .await?;
-    let ChangeSet { changes, drafted } = ChangeSet::derive(&standing, bases)?;
+    let mut change_set = if ChangeSet::states(&extracts) {
+        let bases =
+            GroupingBrief::with_standing(&extracts, standing.contributors(), standing.criteria())
+                .derive(provider)
+                .await?;
+        ChangeSet::derive(&standing, bases)?
+    } else {
+        tracing::info!("the change states no requirement; the specification stands");
+        ChangeSet::unchanged(&standing)
+    };
+    change_set.retire_by_scope(&extracts);
+    let ChangeSet { changes, drafted } = change_set;
 
-    // the amended specification: the requirements drafted anew under their
-    // ids, the rest the base's
+    // the retired requirements leave their slices before the design turn,
+    // an emptied slice goes, and the types it owned leave the design with
+    // it; a requirement restated under another stem leaves its slice for
+    // the slice of its new stem
+    let pruned = Pruned::new(&revision.plan, &revision.spec, &changes, &current.id);
+    let base_design = Design {
+        parent: Some(current.id.clone()),
+        ..revision.design.without_types(&pruned.orphaned)
+    };
+
+    // the amended specification, the requirements drafted anew under their
+    // ids and the rest the base's, beside the amended design, its informed
+    // sections redrafted over the pruned base where any claim informs one
+    // and the pruned base itself otherwise
     let chunks = SpecBrief::amending(&extracts, &drafted);
-    let drafts =
-        future::try_join_all(chunks.into_iter().map(|chunk| chunk.judge(provider))).await?;
-    let spec = SpecBrief::amend(revision.spec, current.id.clone(), &changes, drafts);
+    let drafting = future::try_join_all(chunks.into_iter().map(|chunk| chunk.judge(provider)));
+    let (drafts, design) = match DesignAmend::new(&extracts, &drafted, &changes, &base_design) {
+        Some(brief) => future::try_join(drafting, brief.judge(provider)).await?,
+        None => (drafting.await?, base_design),
+    };
+    let spec = SpecBrief::amend(&revision.spec, current.id.clone(), &changes, drafts);
+
+    // the amended plan over the two: what the change adds and moves placed
+    // by code where a rule decides, and the rest by one slicing turn over
+    // the current slices
+    let types = design.data_types();
+    let plan = match pruned.assemble(&spec, &types, &drafted)? {
+        Assembled::Settled(plan) => plan,
+        Assembled::Open(brief) => brief.judge(provider).await?,
+    };
+    let sections = DesignDiff::between(&revision.design, &design);
+    let slices = SliceChange::of(&PlanDiff::between(&revision.plan, &plan));
+
     let amendment = Amendment {
         emery: EMERY,
         base: AmendmentBase {
@@ -117,6 +193,10 @@ pub async fn amend<P: Model + Source + StateStore + BlobStore + Plugins + Vcs + 
         },
         changes,
         spec,
+        design,
+        plan,
+        sections,
+        slices,
     };
 
     let tally = Tally::of(&amendment);
@@ -124,7 +204,14 @@ pub async fn amend<P: Model + Source + StateStore + BlobStore + Plugins + Vcs + 
     let stems = amendment.stems().into_iter().map(str::to_owned).collect();
     let staged = if amendment.is_change() {
         let id = store::stage_amendment(provider, &amendment).await?;
-        tracing::info!(amendment = %id, base = %amendment.base.revision, ?tally, "staged");
+        tracing::info!(
+            amendment = %id,
+            base = %amendment.base.revision,
+            ?tally,
+            sections = ?amendment.sections,
+            slices = amendment.slices.len(),
+            "staged"
+        );
         Some(id)
     } else {
         tracing::info!(base = %amendment.base.revision, "no change against the revision");
@@ -137,6 +224,8 @@ pub async fn amend<P: Model + Source + StateStore + BlobStore + Plugins + Vcs + 
         tally,
         conflicts,
         stems,
+        sections: amendment.sections,
+        slices: amendment.slices,
         repositories,
     })
 }
@@ -158,7 +247,8 @@ pub struct AmendInput {
 #[serde(rename_all = "kebab-case")]
 pub struct AmendOutput {
     /// The content identifier of the staged amendment; absent when the
-    /// change left every requirement as it stands, so nothing was staged.
+    /// change changed nothing of the specification, the design, or the
+    /// plan, so nothing was staged.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub amendment: Option<String>,
     /// The revision the amendment was prepared against, at the commit it
@@ -173,6 +263,14 @@ pub struct AmendOutput {
     /// The stems of the requirements the change touches, once each, sorted.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub stems: Vec<String>,
+    /// What the amended design changes against the base's, by section;
+    /// absent when it changes nothing.
+    #[serde(skip_serializing_if = "DesignDiff::is_empty")]
+    pub sections: DesignDiff,
+    /// The slices the amended plan adds, changes, or removes against the
+    /// base's, in id order; absent when none.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub slices: Vec<SliceChange>,
     /// The sources read from a repository, in declaration order, each at the
     /// commit its revision resolved to.
     #[serde(skip_serializing_if = "Vec::is_empty")]
@@ -187,12 +285,16 @@ pub struct Tally {
     pub added: usize,
     /// Requirements of the base the change restates, their ids kept.
     pub changed: usize,
-    /// Requirements of the base the change withdraws.
+    /// Requirements of the base the change withdraws, those retired by a
+    /// source's scope among them.
     pub retired: usize,
     /// Requirements the change sources state and disagree over.
     pub conflict: usize,
     /// Requirements of the base the change leaves as they stand.
     pub unchanged: usize,
+    /// How many of the [`retired`](Self::retired) a behaviour source read
+    /// whole retired by falling silent on them, rather than a claim.
+    pub by_scope: usize,
 }
 
 impl Tally {
@@ -205,6 +307,7 @@ impl Tally {
             retired: amendment.count(ChangeClass::Retired),
             conflict: amendment.count(ChangeClass::Conflict),
             unchanged: amendment.count(ChangeClass::Unchanged),
+            by_scope: amendment.changes.iter().filter(|change| change.by_scope()).count(),
         }
     }
 }
