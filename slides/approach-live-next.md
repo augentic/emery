@@ -412,8 +412,10 @@ class: slide-hero slide-section
 }
 
 .live-sdd-flow {
+  width: min(100%, 1000px);
+  margin-inline: auto;
   display: grid;
-  grid-template-columns: 1.15fr 92px 0.85fr 24px 1fr;
+  grid-template-columns: 1.15fr 92px 0.55fr 24px 1fr;
   gap: 8px;
   align-items: stretch;
 }
@@ -471,6 +473,8 @@ class: slide-hero slide-section
 }
 
 .live-durability {
+  width: min(100%, 1000px);
+  margin-inline: auto;
   display: grid;
   grid-template-columns: 0.72fr 1.28fr;
   gap: 28px;
@@ -676,16 +680,16 @@ class: slide-hero slide-section
 }
 
 .live-runtime-stack {
-  width: 80%;
+  width: 72%;
   margin: 34px auto 0;
   display: flex;
   flex-direction: column;
-  gap: 5px;
-  transform: translateY(22px);
+  gap: 8px;
+  transform: translateY(12px);
 }
 
 .live-wasm-runtime {
-  padding: 14px 18px 13px;
+  padding: 18px 20px 16px;
   border: 2px solid rgba(65, 145, 203, 0.62);
   border-radius: 12px;
   background: rgba(65, 145, 203, 0.08);
@@ -700,7 +704,7 @@ class: slide-hero slide-section
 }
 
 .live-wasi-component {
-  padding: 11px 12px 10px;
+  padding: 15px 12px 14px;
   border: 2px solid rgba(124, 92, 205, 0.64);
   border-radius: 9px;
   background: rgba(124, 92, 205, 0.1);
@@ -766,6 +770,10 @@ class: slide-hero slide-section
   color: var(--phl-ink);
 }
 
+.live-runtime-stack .live-runtime-capability {
+  padding-block: 13px;
+}
+
 .live-capability-icon {
   width: 18px;
   height: 18px;
@@ -780,7 +788,7 @@ class: slide-hero slide-section
 }
 
 .live-infrastructure {
-  padding: 10px 13px 9px;
+  padding: 13px 13px 12px;
   border: 2px solid rgba(13, 16, 48, 0.48);
   border-radius: 9px;
   background: #ffffff;
@@ -1708,7 +1716,7 @@ class: slide-light
 
 <p class="live-claim">The specification stays in the development loop—from requirements and design through implementation and verification.</p>
 
-<div class="live-sdd-flow" style="margin-top: 22px;">
+<div class="live-sdd-flow" style="margin-top: 36px;">
 <div class="live-card is-cyan">
 <div class="live-kicker">01 · What + how</div>
 <h3>Specify</h3>
@@ -1721,17 +1729,17 @@ Versioned in repo
 <div class="live-card is-magenta">
 <div class="live-kicker">02 · Derive</div>
 <h3>Plan</h3>
-<p>Ephemeral work and dependencies</p>
+<p>Units of work, ordered by dependency</p>
 </div>
 <div class="live-sdd-arrow">→</div>
 <div class="live-card is-dark">
-<div class="live-kicker">03 · Build + prove</div>
-<h3>Implement</h3>
+<div class="live-kicker">03 · Code + prove</div>
+<h3>Build</h3>
 <p>Build · integrate · verify against the specification</p>
 </div>
 </div>
 
-<div class="live-outcome">The plan is disposable. The reviewed specification is not.</div>
+<div class="live-outcome" style="width: min(100%, 1000px); margin-inline: auto; box-sizing: border-box;">Each change runs the loop. If the specification changes, it is reviewed and sealed again.</div>
 </div>
 
 <!--
@@ -1758,11 +1766,11 @@ class: slide-light
 
 <div class="live-stage">
 
-# Code is disposable.<br><span class="live-title-accent">The specification is durable.</span>
+# Code is disposable.<br><span class="live-title-accent">Specifications are durable.</span>
 
 <p class="live-claim">The implementation can be regenerated. The reviewed specification preserves what the system must do and how it is designed.</p>
 
-<div class="live-durability" style="margin-top: 20px;">
+<div class="live-durability" style="margin-top: 36px;">
 <div class="live-disposable-card">
 <div class="live-kicker">Disposable implementation</div>
 <div class="live-code-word">Code</div>
@@ -1777,7 +1785,7 @@ class: slide-light
 </div>
 </div>
 
-<div class="live-outcome is-punch">Regenerate the plan. Rebuild the code. The specification remains.</div>
+<div class="live-outcome is-punch" style="width: min(100%, 1000px); margin-inline: auto; box-sizing: border-box;">Regenerate the plan. Rebuild the code. The specification remains.</div>
 </div>
 
 <!--
@@ -1802,7 +1810,7 @@ class: slide-section
 
 # Sandbox execution.
 
-<p class="section-subtitle">Grant generated code nothing by default—<strong>and bind infrastructure through host-supplied capabilities.</strong></p>
+<p class="section-subtitle">Grant generated code nothing by default—<strong>it reaches infrastructure only through host-mediated capabilities.</strong></p>
 
 </div>
 </div>
@@ -1835,7 +1843,7 @@ class: slide-light
 
 # Generated code has less freedom<br>to surprise.
 
-<p class="live-claim">Code reaches infrastructure only through capabilities supplied by the host.</p>
+<p class="live-claim">Code reaches infrastructure through host-provided capabilities.</p>
 
 <div class="live-runtime-stack">
 <div class="live-wasm-runtime">
@@ -1894,7 +1902,7 @@ class: slide-light
 
 <div class="live-stage">
 
-# Different infrastructure.<br>The same application.
+# Different infrastructure.<br>Same application.
 
 <p class="live-claim">The component depends on capabilities, not products. A runtime recipe binds them to approved services in each environment.</p>
 
@@ -1913,7 +1921,7 @@ class: slide-light
 <div class="live-runtime-capability"><ph:database class="live-capability-icon" /><span>BlobStore</span></div>
 </div>
 
-<div class="live-portable-link">Host-selected runtime recipe</div>
+<div class="live-portable-link">Same shape for each environment</div>
 
 <div class="live-recipe-grid">
 <div class="live-recipe-card">
@@ -1956,7 +1964,7 @@ class: slide-light
 -->
 
 ---
-title: Right-size the controls
+title: Right-size the safeguards
 sync: section-trust
 class: slide-section
 ---
@@ -1969,9 +1977,9 @@ class: slide-section
 <div class="section-hero-left">
 <div class="section-kicker-pill">Contextual governance</div>
 
-# Right-size the controls.
+# Match safeguards to the stakes.
 
-<p class="section-subtitle">Not every prototype needs production ceremony—<strong>match the boundary to the actual consequence.</strong></p>
+<p class="section-subtitle">Give prototypes room to learn—<strong>strengthen safeguards as people come to depend on the system.</strong></p>
 
 </div>
 </div>
@@ -1992,7 +2000,7 @@ sync: trust-model
 class: slide-light
 ---
 
-<Eyebrow text="TRUST MODEL · REQUIRED CONTROLS FOLLOW CONSEQUENCE" />
+<Eyebrow text="TRUST MODEL · REQUIRED SAFEGUARDS FOLLOW CONSEQUENCE" />
 
 <div class="foundation-progress" aria-label="Delivery foundations">
 <span class="is-active">01 · Standardise delivery</span>
