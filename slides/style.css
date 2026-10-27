@@ -169,9 +169,9 @@
 }
 
 .ambient-video-wrap.is-approach .ambient-video-el {
-  transform: translate(-19%, -12%) scale(1.4);
+  transform: scale(1.1);
   transform-origin: center;
-  filter: blur(8px);
+  filter: blur(6px) brightness(1.15);
 }
 
 .ambient-video-wrap.is-split .ambient-video-el {
@@ -184,15 +184,14 @@
   position: absolute;
   inset: 0;
   background:
-    linear-gradient(180deg, rgba(10, 7, 16, 0.45) 0%, rgba(10, 7, 16, 0) 35%),
-    linear-gradient(0deg, rgba(10, 7, 16, 0.4) 0%, rgba(10, 7, 16, 0) 40%);
+    linear-gradient(180deg, rgba(10, 7, 16, 0.32) 0%, rgba(10, 7, 16, 0) 32%),
+    linear-gradient(0deg, rgba(10, 7, 16, 0.28) 0%, rgba(10, 7, 16, 0) 35%);
 }
 
 .ambient-video-wrap.is-approach .ambient-video-scrim {
   background:
-    linear-gradient(180deg, rgba(10, 7, 16, 0.72) 0%, rgba(10, 7, 16, 0) 30%),
-    linear-gradient(0deg, rgba(10, 7, 16, 0.62) 0%, rgba(10, 7, 16, 0) 26%),
-    radial-gradient(120% 60% at 50% 40%, rgba(10, 7, 16, 0.06) 40%, rgba(10, 7, 16, 0.4) 100%);
+    linear-gradient(180deg, rgba(10, 7, 16, 0.22) 0%, rgba(10, 7, 16, 0) 28%),
+    linear-gradient(0deg, rgba(10, 7, 16, 0.25) 0%, rgba(10, 7, 16, 0) 26%);
 }
 
 .ambient-video-wrap.is-split .ambient-video-scrim {
@@ -210,8 +209,7 @@
   background-position: center;
 }
 
-.slidev-layout.slide-sandbox,
-.slidev-layout.slide-chapter {
+.slidev-layout.slide-sandbox {
   background-color: var(--phl-bg-void);
   background-image:
     linear-gradient(180deg, rgba(10, 7, 16, 0.45) 0%, rgba(13, 16, 48, 0.6) 100%),
@@ -329,15 +327,6 @@
   font-weight: 500;
 }
 
-/* Slide 1: Hero Layout */
-.hero-body {
-  margin-top: auto;
-  margin-bottom: auto;
-  display: flex;
-  flex-direction: column;
-  gap: 22px;
-}
-
 .slidev-layout.slide-hero h1 {
   font-size: 60px;
   line-height: 0.98;
@@ -345,55 +334,8 @@
   color: #ffffff;
 }
 
-.hero-subheadline {
-  font-size: 24px;
-  font-weight: 400;
-  line-height: 1.22;
-  letter-spacing: -0.02em;
-  color: rgba(255, 255, 255, 0.92);
-  margin: -2px 0 2px 0;
-}
-
-.phl-tagline-box {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 32px;
-  padding-left: 20px;
-  border-left: 3px solid transparent;
-  border-image: linear-gradient(180deg, #16b4e2 0%, #d63ad6 100%) 1;
-  max-width: 1040px;
-}
-
-.phl-tagline-box p {
-  margin: 0;
-  font-size: 16.5px;
-  line-height: 1.46;
-  color: rgba(255, 255, 255, 0.82);
-}
-
-.phl-tagline-box strong {
-  color: #ffffff;
-  font-weight: 500;
-}
-
-.slide-light .phl-tagline-box p {
-  color: var(--phl-ink-body);
-}
-
-.slide-light .phl-tagline-box p.lead-quote {
-  color: var(--phl-ink);
-  font-weight: 500;
-  font-size: 18px;
-  line-height: 1.38;
-  letter-spacing: -0.01em;
-}
-
-.slide-light .phl-tagline-box strong {
-  color: var(--phl-ink);
-  font-weight: 500;
-}
-
-.hero-pillars {
+.hero-pillars,
+.hero-mechanisms {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
   gap: 24px;
@@ -582,19 +524,7 @@
   font-weight: 600;
 }
 
-/* ==========================================================================
-   Trust Model — shared tokens
-   ========================================================================== */
-
-:root {
-  --trust-coral-ink: #b4234e;
-  --trust-coral-soft: #ff7597;
-  --trust-text-gradient-light: linear-gradient(110deg, #4a1d8f 0%, #a4238f 55%, #d8305f 100%);
-  --trust-text-gradient-dark: linear-gradient(100deg, #78d8f2 0%, #f59ef5 100%);
-  --trust-current-glow: 0 10px 30px -10px rgba(164, 35, 143, 0.35), 0 0 0 1px rgba(164, 35, 143, 0.28);
-}
-
-/* Section slides keep the hero's framing; the strip below the title carries the four tiers */
+/* Section slides keep the hero's framing while the lower rail carries the deck's themes. */
 .slidev-layout.slide-section {
   background-color: var(--phl-bg-void);
   background-image:
@@ -622,18 +552,65 @@
   max-width: 980px;
 }
 
-.slidev-layout.slide-section h1 {
+.slidev-layout.slide-section h1,
+.section-hero-left h1,
+.ambient-video-wrap ~ h1,
+.ambient-video-wrap ~ .live-stage h1 {
+  color: #ffffff !important;
+}
+
+.slidev-layout.slide-section h1,
+.section-hero-left h1 {
   font-size: 64px;
   line-height: 0.98;
   letter-spacing: -0.035em;
-  color: #ffffff;
 }
 
-.slidev-layout.slide-section h1::after {
+.ambient-video-wrap ~ .live-stage .live-claim {
+  color: rgba(255, 255, 255, 0.82) !important;
+}
+
+.slidev-layout.slide-section h1::after,
+.section-hero-left h1::after {
   width: 160px;
   height: 3px;
   margin-top: 20px;
   margin-bottom: 6px;
+}
+
+.ambient-video-wrap ~ h6 {
+  color: rgba(255, 255, 255, 0.78) !important;
+}
+
+.ambient-video-wrap ~ h6::before {
+  filter: none !important;
+  opacity: 1 !important;
+}
+
+.ambient-video-wrap ~ h6 .eyebrow-num {
+  color: rgba(255, 255, 255, 0.45) !important;
+}
+
+.section-kicker-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 14px;
+  border-radius: 999px;
+  border: 1px solid rgba(120, 216, 242, 0.45);
+  background: rgba(22, 180, 226, 0.12);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--phl-cyan-soft);
+  margin-bottom: 6px;
+}
+
+.section-kicker-pill.is-magenta {
+  border-color: rgba(245, 158, 245, 0.5);
+  background: rgba(164, 35, 143, 0.2);
+  color: #f59ef5;
 }
 
 /* Slidev's base `.slidev-layout p` outranks a bare class, so paragraph classes are qualified */
@@ -648,364 +625,6 @@
 }
 
 .section-subtitle strong {
-  color: #ffffff;
-  font-weight: 500;
-}
-
-.section-big-glyph {
-  font-family: 'Brockmann', sans-serif;
-  font-size: 168px;
-  font-weight: 600;
-  line-height: 0.85;
-  letter-spacing: -0.05em;
-  color: rgba(120, 216, 242, 0.24);
-  user-select: none;
-  padding-right: 12px;
-}
-
-/* ==========================================================================
-   Trust ladder — strip (title and section slides)
-   ========================================================================== */
-
-.ladder-strip {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding-top: 18px;
-  border-top: 1px solid var(--phl-hairline);
-}
-
-.ladder-pill {
-  flex: 1;
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 10px 14px;
-  border-radius: 12px;
-  border: 1px solid rgba(255, 255, 255, 0.16);
-  background: rgba(10, 7, 16, 0.34);
-  color: rgba(255, 255, 255, 0.84);
-  font-size: 14px;
-  transition: opacity 0.2s ease;
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-}
-
-.ladder-pill.is-dim {
-  color: rgba(255, 255, 255, 0.5);
-}
-
-.ladder-pill.is-current {
-  background: var(--phl-brand-gradient);
-  border-color: rgba(255, 255, 255, 0.35);
-  color: #ffffff;
-  font-weight: 500;
-  box-shadow: 0 8px 24px -6px rgba(214, 58, 214, 0.35);
-}
-
-.ladder-pill-code {
-  font-size: 11px;
-  font-weight: 600;
-  letter-spacing: 0.06em;
-  padding: 2px 7px;
-  border-radius: 6px;
-  background: rgba(255, 255, 255, 0.08);
-  color: var(--phl-cyan-soft);
-}
-
-.ladder-pill.is-dim .ladder-pill-code {
-  color: rgba(255, 255, 255, 0.45);
-}
-
-.ladder-pill.is-current .ladder-pill-code {
-  background: rgba(10, 7, 16, 0.32);
-}
-
-.ladder-sep {
-  flex-shrink: 0;
-  color: rgba(255, 255, 255, 0.3);
-}
-
-.slide-light .ladder-strip {
-  border-top-color: var(--phl-ink-hairline);
-}
-
-.slide-light .ladder-pill {
-  border-color: var(--phl-ink-hairline);
-  background: var(--phl-bg-subtle);
-  color: var(--phl-ink);
-}
-
-.slide-light .ladder-pill-code {
-  background: rgba(13, 16, 48, 0.07);
-  color: var(--phl-cyan-ink);
-}
-
-.slide-light .ladder-sep {
-  color: rgba(13, 16, 48, 0.3);
-}
-
-/* ==========================================================================
-   Story — big numbers
-   ========================================================================== */
-
-/* The grids before a bottom bar take half the free space, the bar the other half */
-.stat-grid {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 40px;
-  margin-top: auto;
-}
-
-.stat {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  padding-top: 18px;
-  border-top: 1px solid var(--phl-ink-hairline);
-}
-
-.stat-num {
-  font-size: 116px;
-  font-weight: 600;
-  line-height: 0.9;
-  letter-spacing: -0.05em;
-  color: #a4238f;
-}
-
-.stat-num span {
-  font-size: 44px;
-  letter-spacing: -0.03em;
-}
-
-.slidev-layout .stat-label {
-  margin: 4px 0 0 0;
-  font-size: 17px;
-  line-height: 1.4;
-  color: var(--phl-ink);
-}
-
-.stat-src {
-  font-size: 11px;
-  line-height: 1.35;
-  color: var(--phl-ink-muted);
-}
-
-.punchline-bar {
-  margin-top: auto;
-  display: flex;
-  align-items: baseline;
-  gap: 18px;
-  padding: 18px 0 0 0;
-  border-top: 1.5px solid var(--phl-ink);
-  background: transparent;
-  color: var(--phl-ink-body);
-}
-
-.punchline-bar p {
-  margin: 0;
-  font-size: 18px;
-  line-height: 1.4;
-  letter-spacing: -0.015em;
-}
-
-.punchline-bar strong {
-  color: var(--phl-ink);
-  font-weight: 500;
-}
-
-.punchline-tag {
-  flex-shrink: 0;
-  font-size: 10.5px;
-  font-weight: 600;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--phl-cyan-ink);
-}
-
-/* ==========================================================================
-   Story — value grows, control doesn't
-   ========================================================================== */
-
-.curve-wrap {
-  flex: 1;
-  min-height: 0;
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-}
-
-.curve-svg {
-  width: 100%;
-  height: auto;
-  display: block;
-  overflow: visible;
-}
-
-.curve-svg text {
-  font-family: 'Brockmann', sans-serif;
-}
-
-.curve-axis {
-  font-size: 13px;
-  fill: rgba(255, 255, 255, 0.55);
-}
-
-.curve-label {
-  font-size: 15px;
-  font-weight: 500;
-  fill: #ffffff;
-}
-
-.curve-label.is-muted {
-  fill: rgba(255, 255, 255, 0.7);
-  font-weight: 400;
-}
-
-.curve-step-label {
-  font-size: 12px;
-  font-weight: 600;
-  letter-spacing: 0.08em;
-  fill: var(--phl-cyan-soft);
-}
-
-.curve-caption {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 24px;
-  margin-top: 6px;
-  font-size: 15px;
-  color: rgba(255, 255, 255, 0.82);
-}
-
-.curve-caption strong {
-  color: #ffffff;
-  font-weight: 500;
-}
-
-/* Both captions share one cell so the swap on click moves nothing else */
-.curve-caption-swap {
-  display: grid;
-  flex: 1;
-  min-width: 0;
-}
-
-.curve-caption-swap > span {
-  grid-area: 1 / 1;
-}
-
-.curve-key {
-  display: flex;
-  gap: 18px;
-  font-size: 12.5px;
-  color: rgba(255, 255, 255, 0.7);
-}
-
-.curve-key span {
-  display: inline-flex;
-  align-items: center;
-  gap: 7px;
-}
-
-.curve-key i {
-  display: inline-block;
-  width: 18px;
-  height: 3px;
-  border-radius: 2px;
-}
-
-/* ==========================================================================
-   Story — chapter slides (one app, four tiers)
-   ========================================================================== */
-
-.chapter-grid {
-  flex: 1;
-  min-height: 0;
-  display: grid;
-  grid-template-columns: 400px 1fr;
-  gap: 40px;
-  align-items: center;
-}
-
-.chapter-left {
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-}
-
-.chapter-when {
-  font-size: 15px;
-  font-weight: 600;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-  color: var(--phl-cyan-soft);
-}
-
-/* The headline column sits over the video, so the chapter scrim adds a vignette on its side */
-.slide-chapter .ambient-video-wrap.is-approach .ambient-video-scrim {
-  background:
-    linear-gradient(90deg, rgba(10, 7, 16, 0.5) 0%, rgba(10, 7, 16, 0) 48%),
-    linear-gradient(180deg, rgba(10, 7, 16, 0.72) 0%, rgba(10, 7, 16, 0) 30%),
-    linear-gradient(0deg, rgba(10, 7, 16, 0.62) 0%, rgba(10, 7, 16, 0) 26%),
-    radial-gradient(120% 60% at 50% 40%, rgba(10, 7, 16, 0.06) 40%, rgba(10, 7, 16, 0.4) 100%);
-}
-
-.slidev-layout.slide-chapter h1 {
-  font-size: 33px;
-  line-height: 1.12;
-  letter-spacing: -0.025em;
-}
-
-.slidev-layout.slide-chapter h1::after {
-  width: 120px;
-  margin-top: 16px;
-  margin-bottom: 4px;
-}
-
-.chapter-notes {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-  margin-top: 6px;
-}
-
-.chapter-note {
-  padding: 14px 0 0 0;
-  border-top: 1px solid rgba(255, 255, 255, 0.18);
-  background: transparent;
-}
-
-.chapter-note.is-clearance {
-  border-top: 1.5px solid rgba(120, 216, 242, 0.55);
-}
-
-.chapter-note-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-  font-size: 10.5px;
-  font-weight: 600;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--phl-cyan-soft);
-  margin-bottom: 6px;
-}
-
-.chapter-note-head em {
-  font-style: normal;
-  color: rgba(255, 255, 255, 0.52);
-}
-
-.chapter-note p {
-  margin: 0;
-  font-size: 14.5px;
-  line-height: 1.48;
-  color: rgba(255, 255, 255, 0.84);
-}
-
-.chapter-note p strong {
   color: #ffffff;
   font-weight: 500;
 }
@@ -1244,30 +863,6 @@
 .svg-caption {
   font-size: 11px;
   font-weight: 400;
-}
-
-/* Tier index watermark badge (T0, T1, T2, T3) */
-.ed-tier-tag {
-  display: inline-flex;
-  align-items: baseline;
-  gap: 12px;
-  margin-bottom: 6px;
-}
-
-.ed-tier-glyph {
-  font-size: 54px;
-  font-weight: 600;
-  line-height: 0.9;
-  letter-spacing: -0.04em;
-  color: #a4238f;
-}
-
-.ed-tier-sub {
-  font-size: 12px;
-  font-weight: 600;
-  letter-spacing: 0.09em;
-  text-transform: uppercase;
-  color: var(--phl-cyan-ink);
 }
 
 

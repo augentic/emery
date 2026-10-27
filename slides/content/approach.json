@@ -1,0 +1,246 @@
+[
+  {
+    "id": "opening",
+    "title": "Code is cheap. Delivery is hard.",
+    "required": [
+      "Code is cheap. Delivery is hard.",
+      "Use a delivery system that lets AI deliver software—not just code.",
+      "Standardise delivery",
+      "Specify behaviour",
+      "Sandbox execution"
+    ]
+  },
+  {
+    "id": "shift",
+    "title": "Coding is no longer the bottleneck.",
+    "required": [
+      "Coding is no longer the bottleneck.",
+      "AI generates code faster than developers can understand and integrate it.",
+      "More code ≠ a coherent solution",
+      "Cognitive load",
+      "Accumulated slop",
+      "An unmanageable application and codebase."
+    ]
+  },
+  {
+    "id": "pivot",
+    "title": "Build the right thing. Build it to last.",
+    "required": [
+      "Build the right thing. Build it to last.",
+      "our real expertise is the second",
+      "Building the right thing",
+      "Delivering maintainable software",
+      "Decide what matters, deliver it safely, and keep it maintainable."
+    ]
+  },
+  {
+    "id": "outcome",
+    "title": "A prototype is evidence, not a production commitment.",
+    "required": [
+      "A prototype is evidence. Production is a commitment.",
+      "AI can build a prototype in minutes. Production takes an explicit decision.",
+      "Enter the delivery path",
+      "A prototype informs the decision. It does not make it."
+    ]
+  },
+  {
+    "id": "system",
+    "title": "Standardise delivery. Specify behaviour. Sandbox execution.",
+    "required": [
+      "Three mechanisms for reliable delivery.",
+      "Agents work best inside a delivery system—not in charge of it.",
+      "Standardise delivery",
+      "How work is created, checked, shipped, and operated.",
+      "Specify behaviour",
+      "Sandbox execution",
+      "What running code may access"
+    ]
+  },
+  {
+    "id": "authoring",
+    "title": "Isolate. Guide. Enforce.",
+    "required": [
+      "Isolate. Guide. Enforce.",
+      "Governed workspaces",
+      "Shared engineering codex",
+      "Compiler-enforced standards",
+      "Critical rules fail at compile time, before review.",
+      "Guidance is shared. Non-negotiable rules are enforced."
+    ]
+  },
+  {
+    "id": "delivery-automation",
+    "title": "Automate the path from code to production.",
+    "required": [
+      "Automate the path from code to production.",
+      "Faster implementation matters only when evidence and delivery move at the same speed.",
+      "Build once",
+      "Test behaviour",
+      "Gate every change",
+      "The same accepted artifact moves forward with its evidence."
+    ]
+  },
+  {
+    "id": "section-intent",
+    "title": "Specify behaviour",
+    "required": [
+      "Specify behaviour.",
+      "People and agents share one source of truth: durable specifications, not code.",
+      "Governed intent",
+      "In the loop",
+      "Durable truth",
+      "Code is disposable; specifications remain"
+    ]
+  },
+  {
+    "id": "record-position",
+    "title": "AI coding moves right. Governance moves up.",
+    "required": [
+      "AI coding moves right. Governance moves up.",
+      "Spec-driven development",
+      "Durable intent around AI implementation",
+      "AI coding changes implementation. It does not create governance."
+    ]
+  },
+  {
+    "id": "record-development",
+    "title": "Specifications drive development.",
+    "required": [
+      "Specifications drive development.",
+      "The specification stays in the development loop",
+      "spec.md",
+      "design.md",
+      "Review & seal",
+      "Units of work, ordered by dependency",
+      "Each change runs the loop. If the specification changes, it is reviewed and sealed again."
+    ]
+  },
+  {
+    "id": "record-truth",
+    "title": "Code is disposable. The specification is durable.",
+    "required": [
+      "Code is disposable.",
+      "Specifications are durable.",
+      "spec.md",
+      "design.md",
+      "Regenerate the plan. Rebuild the code. The specification remains."
+    ]
+  },
+  {
+    "id": "section-constrain",
+    "title": "Sandbox execution",
+    "required": [
+      "Sandbox execution.",
+      "Grant generated code nothing by default",
+      "it reaches infrastructure only through host-mediated capabilities.",
+      "Wasmtime sandbox",
+      "Capability contracts",
+      "Runtime recipes"
+    ]
+  },
+  {
+    "id": "runtime",
+    "title": "Generated code has less freedom to surprise.",
+    "required": [
+      "Generated code has less freedom to surprise.",
+      "Code reaches infrastructure through host-provided capabilities.",
+      "WASI Component",
+      "Wasmtime sandbox",
+      "Host-granted capabilities",
+      "Infrastructure",
+      "Cloud/On-premise"
+    ]
+  },
+  {
+    "id": "runtime-portability",
+    "title": "Different infrastructure. The same application.",
+    "required": [
+      "Different infrastructure. Same application.",
+      "The component depends on capabilities, not products.",
+      "WASI Component",
+      "Stable capability contract",
+      "Local / trial",
+      "Cloud",
+      "On-premise",
+      "Capability bindings",
+      "Policy + identity",
+      "Config + observability"
+    ]
+  },
+  {
+    "id": "section-trust",
+    "title": "Right-size the safeguards",
+    "required": [
+      "Match safeguards to the stakes.",
+      "Give prototypes room to learn",
+      "strengthen safeguards as people come to depend on the system.",
+      "Explore & Govern",
+      "Connect & Support",
+      "Trust radius",
+      "Assess reach, data, dependence, and continuity"
+    ]
+  },
+  {
+    "id": "trust-model",
+    "title": "Trust is contextual, not a maturity score.",
+    "required": [
+      "Trust is contextual, not a maturity score.",
+      "situations to match—not levels to climb",
+      "State 0 · Explore",
+      "Local discovery",
+      "Isolate and keep local",
+      "State 1 · Govern",
+      "Authoring boundary",
+      "State 2 · Connect",
+      "Runtime boundary",
+      "State 3 · Support",
+      "Full delivery system",
+      "Choose the least costly state that matches the actual consequence."
+    ]
+  },
+  {
+    "id": "trust-radius",
+    "title": "The highest consequence sets the trust radius.",
+    "required": [
+      "The highest consequence sets the trust radius.",
+      "Place each dimension on the same four-state scale.",
+      "Take the furthest answer—not the average",
+      "What can it access?",
+      "What can it read or change?",
+      "Who relies on it?",
+      "What must survive failure?",
+      "reassess whenever one changes"
+    ]
+  },
+  {
+    "id": "future-system",
+    "title": "The path becomes a loop.",
+    "required": [
+      "Sense",
+      "Signals from production",
+      "Decide",
+      "Investigate and propose",
+      "Change"
+    ]
+  },
+  {
+    "id": "future-loop",
+    "title": "Feedback drives the next change.",
+    "required": [
+      "Feedback drives the next change.",
+      "Nothing bypasses the path.",
+      "A signal becomes a change; a change becomes new evidence.",
+      "Incident manager",
+      "Specify–Build–Merge",
+      "Infrastructure monitoring"
+    ]
+  },
+  {
+    "id": "cta",
+    "title": "What’s the first change you’d trust AI to deliver?",
+    "required": [
+      "What’s the first change you’d trust AI to deliver?",
+      "25 years of critical-software judgement, now applied to accountable delivery at AI speed."
+    ]
+  }
+]
