@@ -306,9 +306,11 @@ async fn put<S: BlobStore>(store: &S, id: &str, documents: &[(&str, &str)]) -> R
     Ok(())
 }
 
-// The staged candidate's id alone, whatever its kind, or `None` when nothing is staged.
-pub async fn staged_id<S: StateStore>(store: &S) -> Result<Option<String>, Error> {
-    Ok(Slot::read(store).await?.map(|slot| slot.id))
+// The staged item's id and kind, whatever stands, or `None` when nothing is staged.
+pub async fn staged_record<S: StateStore>(
+    store: &S,
+) -> Result<Option<(String, StagedKind)>, Error> {
+    Ok(Slot::read(store).await?.map(|slot| (slot.id, slot.kind)))
 }
 
 // The staged revision candidate whole, or `None` when nothing is staged:

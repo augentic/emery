@@ -5,7 +5,7 @@ use std::fmt;
 
 use emery_engine::amend::{AmendOutput, SliceClass};
 use emery_engine::apply::ApplyOutput;
-use emery_engine::build::{BuildOutput, BuiltSlice};
+use emery_engine::build::{BuildOutput, BuiltSlice, Candidate, StagedKind};
 use emery_engine::show::ShowOutput;
 use emery_engine::specify::{Diff, SectionKind, SpecifyOutput, Waves};
 
@@ -198,13 +198,22 @@ fn summary(diff: &Diff, w: &mut dyn fmt::Write) -> fmt::Result {
 // that brought them in, and the paths the model resolved its merge at; a
 // slice an earlier run staged in the integration working copy says so
 // instead, since this run verified it and built nothing. A candidate
-// `emery specify` staged and nothing sealed is named after the plan line,
-// since the build read the current revision and not it.
+// `emery specify` staged and nothing sealed, or an amendment `emery amend`
+// staged, is named after the plan line, since the build read the current
+// revision and not it.
 pub fn build(output: &BuildOutput, w: &mut dyn fmt::Write) -> fmt::Result {
     writeln!(w, "built revision {}", output.revision)?;
     waves(&output.waves, w)?;
-    if let Some(candidate) = &output.candidate {
-        writeln!(w, "  candidate {candidate} is staged and not sealed; `emery apply` seals it")?;
+    match &output.candidate {
+        Some(Candidate {
+            id,
+            kind: StagedKind::Revision,
+        }) => writeln!(w, "  candidate {id} is staged and not sealed; `emery apply` seals it")?,
+        Some(Candidate {
+            id,
+            kind: StagedKind::Amendment,
+        }) => writeln!(w, "  amendment {id} is staged; `emery show amendment` reviews it")?,
+        None => {}
     }
     writeln!(w, "  base {}", output.base)?;
     if output.repository != "." {

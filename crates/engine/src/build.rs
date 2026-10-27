@@ -25,6 +25,7 @@ use self::merge::UnresolvedMerge;
 use crate::adapter::{self, AdapterRef, Loaded};
 use crate::revision::{Design, Plan, Slice, Spec};
 pub use crate::revision::{ReqId, SliceId, Waves};
+pub use crate::store::StagedKind;
 use crate::vcs::{BuildRepo, INTEGRATION, Integration, Message, WorkingCopy};
 use crate::{EntryKind, Files, RETRIES, describe, is_retryable, secrets, store, vcs};
 
@@ -134,7 +135,10 @@ pub async fn build<P: Model + Target + StateStore + BlobStore + Plugins + Vcs + 
     };
     let revision_id = current.id;
     let revision = current.revision?;
-    let candidate = store::staged_id(provider).await?.filter(|staged| *staged != revision_id);
+    let candidate = store::staged_record(provider)
+        .await?
+        .filter(|(id, _)| *id != revision_id)
+        .map(|(id, kind)| Candidate { id, kind });
 
     let Loaded {
         id: adapter,
@@ -251,10 +255,13 @@ pub struct BuildInput {
 pub struct BuildOutput {
     /// The identifier of the revision whose plan was built.
     pub revision: String,
-    /// A candidate staged and not sealed, by id, which the build did not
-    /// read: `emery apply` seals it for the next build.
+    /// What stands staged and not sealed, which the build did not read.
+    ///
+    /// A revision candidate `emery apply` seals for the next build, or an
+    /// amendment `emery show amendment` reviews; `None` when nothing stands
+    /// or the candidate is the revision built.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub candidate: Option<String>,
+    pub candidate: Option<Candidate>,
     /// The plan's slices grouped into the sets ready to build at once.
     ///
     /// The plan's own projection: what the waves would be were every slice
@@ -300,6 +307,16 @@ pub struct BuildOutput {
     pub head: String,
     /// The label set on the head, `emery/<revision>`.
     pub label: String,
+}
+
+/// What stands in the staging slot beside the revision a build read.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub struct Candidate {
+    /// The staged item's id.
+    pub id: String,
+    /// Whether it is a revision candidate or an amendment.
+    pub kind: StagedKind,
 }
 
 /// The layout the adapter scaffolded into the tree before any slice, sealed as the `Initialise` commit.

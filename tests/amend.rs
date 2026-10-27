@@ -39,6 +39,12 @@ const AMENDMENT: &[u8] = include_bytes!("specify/6-amendment.json");
 const WITHDRAWN: &str = "Cancelling an open order is withdrawn.";
 // The one paragraph of `DESIGN`'s overview.
 const OVERVIEW: &str = "Sign-in issues a session; orders are placed and cancelled under it.";
+// `DESIGN`'s domain model, the two types `PLAN`'s `orders` slice owns, for a
+// base design a scenario spells with sections of its own.
+const DOMAIN_MODEL: &str = r#"{"kind": "domain-model", "blocks": [
+    {"type": {"key": "orders.order", "signature": "interface Order { id: string }", "role": "data"}},
+    {"type": {"key": "orders.line", "signature": "interface Line { sku: string }", "role": "data"}}
+]}"#;
 // The directive a documentation change prescribes a technology with.
 const VAULT: &str = "Secrets live in the team vault.";
 
@@ -492,6 +498,221 @@ async fn amend_retired_chain() {
     );
     let design: Value = serde_json::from_slice(DESIGN).expect("the base design is JSON");
     assert_eq!(amendment["design"]["sections"], design["sections"], "{amendment}");
+    provider.model.assert_exhausted();
+}
+
+// The paragraphs of a base design's `## APIs and integrations` that describe
+// the order requirements.
+const CONSUMED: &str = "Cancellations arrive as a message, which REQ-004 consumes.";
+const STORED: &str =
+    "Orders are kept in the order store, which REQ-003 writes and REQ-004 updates.";
+
+// A base design over `DESIGN`'s overview and domain model whose
+// `## APIs and integrations` holds the paragraphs `apis`.
+fn describing(apis: &[&str]) -> String {
+    let blocks: Vec<String> = apis.iter().map(|text| format!(r#"{{"text": "{text}"}}"#)).collect();
+    format!(
+        r#"{{"emery": 8, "parent": null, "preamble": [], "sections": [
+            {{"kind": "overview", "blocks": [{{"text": "{OVERVIEW}"}}]}},
+            {DOMAIN_MODEL},
+            {{"kind": "apis", "blocks": [{}]}}
+        ]}}"#,
+        blocks.join(", ")
+    )
+}
+
+// A retirement informs the sections that describe it: where a paragraph of
+// the design cites a retired requirement, one design turn is put after the
+// grouping with the section's paragraphs numbered, and a paragraph
+// describing retired requirements alone is dropped unnamed or reworded
+// named; the types the emptied slice owned leave the design by code before
+// the turn, so the domain model is not offered.
+#[tokio::test]
+async fn amend_retired_design() {
+    let base = describing(&[CONSUMED, STORED]);
+    // indices 0 and 1 are `docs`, 2..=5 the standing requirements in id order
+    let grouping = r#"{"groups": [
+        {"claims": [0, 4], "classes": [[0], [4]]},
+        {"claims": [1, 5], "classes": [[1], [5]]},
+        {"claims": [2], "classes": [[2]]},
+        {"claims": [3], "classes": [[3]]}
+    ]}"#;
+    let design = r#"{"sections": [
+        {"kind": "overview", "blocks": [{"text": "Sign-in issues a session."}], "revised": [1]},
+        {"kind": "apis", "blocks": [{"text": "The order store holds nothing now that orders are withdrawn."}], "revised": [2]}
+    ]}"#;
+    let mut provider = Provider::answering([grouping, design]);
+    provider.source.evidence.insert(
+        "docs".to_owned(),
+        Ok(evidence(vec![
+            retire("orders.create", "Placing an order is withdrawn."),
+            retire("orders.cancel", WITHDRAWN),
+        ])),
+    );
+    let revision = seed(&provider.files, SPEC, base.as_bytes(), PLAN);
+
+    let resp = cli_ok(&provider, &["emery", "amend", DOCS, "--config", PROJECT_CONFIG]).await;
+
+    let (id, amendment) = staged_amendment(&provider);
+    assert_eq!(
+        String::from_utf8_lossy(&resp.stdout),
+        format!(
+            "staged amendment {id}\n  base {revision} at {}\n  0 added, 0 changed, 2 retired, 0 \
+             conflict, 2 unchanged\n  stems: orders\n  design: overview, domain-model, apis\n  \
+             slices: orders (removed)\n  nothing sealed; `emery show amendment` reviews it\n",
+            &HEAD[..8]
+        )
+    );
+    assert_eq!(provider.model.seen().len(), 2, "the grouping and the design");
+    assert_eq!(
+        amendment["sections"],
+        serde_json::json!({"preamble": false, "added": [], "removed": ["domain-model"], "changed": ["overview", "apis"]}),
+        "{amendment}"
+    );
+    assert_eq!(
+        amendment["design"]["sections"],
+        serde_json::json!([
+            {"kind": "overview", "blocks": [{"text": "Sign-in issues a session."}]},
+            {"kind": "apis", "blocks": [{"text": "The order store holds nothing now that orders are withdrawn."}]}
+        ]),
+        "{amendment}"
+    );
+
+    // the turn lists the describing section's paragraphs numbered, the
+    // retired requirements, and the rule for a paragraph describing them;
+    // the pruned domain model is offered nowhere
+    let request = provider.model.seen()[1].messages.join("\n");
+    assert!(request.starts_with("Amend `design.md`"), "{request}");
+    assert!(
+        request.contains(&format!("### APIs and integrations\n\n[1] {CONSUMED}\n[2] {STORED}\n")),
+        "{request}"
+    );
+    assert!(
+        request.contains("A paragraph describing requirements the change retires"),
+        "{request}"
+    );
+    assert!(
+        request.contains("- REQ-003 `orders.create`\n- REQ-004 `orders.cancel`\n"),
+        "{request}"
+    );
+    assert!(!request.contains("### Domain model"), "{request}");
+    assert!(!request.contains("\n## Type blocks\n"), "{request}");
+    provider.model.assert_exhausted();
+}
+
+// A retire of one requirement over a section describing it alone: the
+// section is answered with no block and leaves the design, the overview is
+// kept verbatim, and the slice shrinks keeping its types.
+#[tokio::test]
+async fn amend_retired_section() {
+    let base = describing(&[CONSUMED]);
+    // indices 0 and 1 are `docs`, 2..=5 the standing requirements in id order
+    let grouping = r#"{"groups": [
+        {"claims": [0, 4], "classes": [[0, 4]]},
+        {"claims": [1, 5], "classes": [[1], [5]]},
+        {"claims": [2], "classes": [[2]]},
+        {"claims": [3], "classes": [[3]]}
+    ]}"#;
+    let design = format!(
+        r#"{{"sections": [
+            {{"kind": "overview", "blocks": [{{"text": "{OVERVIEW}"}}], "revised": []}},
+            {{"kind": "apis", "blocks": [], "revised": []}}
+        ]}}"#
+    );
+    let mut provider = Provider::answering([grouping, design.as_str()]);
+    provider.source.evidence.insert(
+        "docs".to_owned(),
+        Ok(evidence(vec![
+            requirement("orders.create", "A signed-in user places an order."),
+            retire("orders.cancel", WITHDRAWN),
+        ])),
+    );
+    let revision = seed(&provider.files, SPEC, base.as_bytes(), PLAN);
+
+    let resp = cli_ok(&provider, &["emery", "amend", DOCS, "--config", PROJECT_CONFIG]).await;
+
+    let (id, amendment) = staged_amendment(&provider);
+    assert_eq!(
+        String::from_utf8_lossy(&resp.stdout),
+        format!(
+            "staged amendment {id}\n  base {revision} at {}\n  0 added, 0 changed, 1 retired, 0 \
+             conflict, 3 unchanged\n  stems: orders\n  design: apis\n  slices: orders\n  nothing \
+             sealed; `emery show amendment` reviews it\n",
+            &HEAD[..8]
+        )
+    );
+    assert_eq!(provider.model.seen().len(), 2, "the grouping and the design");
+    assert_eq!(
+        amendment["sections"],
+        serde_json::json!({"preamble": false, "added": [], "removed": ["apis"], "changed": []}),
+        "{amendment}"
+    );
+    let sections = amendment["design"]["sections"].as_array().expect("sections");
+    assert_eq!(sections.len(), 2, "{amendment}");
+    assert_eq!(
+        sections[0],
+        serde_json::json!({"kind": "overview", "blocks": [{"text": OVERVIEW}]})
+    );
+    assert_eq!(sections[1]["kind"], "domain-model", "{amendment}");
+    assert_eq!(
+        amendment["plan"]["slices"][1]["types"],
+        serde_json::json!(["orders.line", "orders.order"]),
+        "{amendment}"
+    );
+    provider.model.assert_exhausted();
+}
+
+// An overview whose paragraph cites a retired requirement opens the turn on
+// its own, where no other section describes it: the overview alone is
+// listed, revised and named, and the amendment stages for it.
+#[tokio::test]
+async fn amend_retired_overview() {
+    let cited = "Sign-in issues a session; orders are placed (REQ-003) and cancelled (REQ-004) \
+                 under it.";
+    let base = format!(
+        r#"{{"emery": 8, "parent": null, "preamble": [], "sections": [
+            {{"kind": "overview", "blocks": [{{"text": "{cited}"}}]}},
+            {DOMAIN_MODEL}
+        ]}}"#
+    );
+    // indices 0 and 1 are `docs`, 2..=5 the standing requirements in id order
+    let grouping = r#"{"groups": [
+        {"claims": [0, 4], "classes": [[0, 4]]},
+        {"claims": [1, 5], "classes": [[1], [5]]},
+        {"claims": [2], "classes": [[2]]},
+        {"claims": [3], "classes": [[3]]}
+    ]}"#;
+    let revised = "Sign-in issues a session; orders are placed (REQ-003) under it.";
+    let design = format!(
+        r#"{{"sections": [
+            {{"kind": "overview", "blocks": [{{"text": "{revised}"}}], "revised": [1]}}
+        ]}}"#
+    );
+    let mut provider = Provider::answering([grouping, design.as_str()]);
+    provider.source.evidence.insert(
+        "docs".to_owned(),
+        Ok(evidence(vec![
+            requirement("orders.create", "A signed-in user places an order."),
+            retire("orders.cancel", WITHDRAWN),
+        ])),
+    );
+    seed(&provider.files, SPEC, base.as_bytes(), PLAN);
+
+    let resp = cli_ok(&provider, &["emery", "amend", DOCS, "--config", PROJECT_CONFIG]).await;
+
+    let stdout = String::from_utf8_lossy(&resp.stdout);
+    assert!(stdout.contains("\n  design: overview\n"), "{stdout}");
+    assert_eq!(provider.model.seen().len(), 2, "the grouping and the design");
+    let request = provider.model.seen()[1].messages.join("\n");
+    assert!(request.contains(&format!("### Overview\n\n[1] {cited}\n")), "{request}");
+    assert!(!request.contains("### APIs and integrations"), "{request}");
+    let (_, amendment) = staged_amendment(&provider);
+    assert_eq!(
+        amendment["sections"],
+        serde_json::json!({"preamble": false, "added": [], "removed": [], "changed": ["overview"]}),
+        "{amendment}"
+    );
+    assert_eq!(amendment["design"]["sections"][0]["blocks"][0]["text"], revised, "{amendment}");
     provider.model.assert_exhausted();
 }
 
@@ -1643,18 +1864,80 @@ async fn amend_design_loss() {
     provider.model.assert_exhausted();
 }
 
-// A paragraph named `revised` that cites requirements the change leaves
-// unchanged, and no other, is a finding the next answer corrects by keeping
-// it verbatim.
+// A change that adds or revises no requirement carries technology alone,
+// which lands in the paragraphs already describing the behaviour it serves:
+// the turn is told so, a revised paragraph citing unchanged requirements is
+// accepted named on the first round, and the amendment stages for the
+// design with every requirement unchanged.
+#[tokio::test]
+async fn amend_design_decision() {
+    let stored = "Orders are kept in the order store, which REQ-003 writes.";
+    let base = describing(&[stored]);
+    let revised = "Orders are kept in the order store, which REQ-003 writes under credentials \
+                   read from the team vault (from docs).";
+    let design = format!(
+        r#"{{"sections": [
+            {{"kind": "overview", "blocks": [{{"text": "{OVERVIEW}"}}, {{"text": "Secrets are read from the vault at use."}}], "revised": []}},
+            {{"kind": "apis", "blocks": [{{"text": "{revised}"}}], "revised": [1]}}
+        ]}}"#
+    );
+    let mut provider = Provider::answering([design.as_str()]);
+    provider.source.evidence.insert(
+        "docs".to_owned(),
+        Ok(evidence(vec![claim(ClaimKind::Decision, "secrets.vault", ("decision", VAULT))])),
+    );
+    let revision = seed(&provider.files, SPEC, base.as_bytes(), PLAN);
+
+    let resp = cli_ok(&provider, &["emery", "amend", DOCS, "--config", PROJECT_CONFIG]).await;
+
+    let (id, amendment) = staged_amendment(&provider);
+    assert_eq!(
+        String::from_utf8_lossy(&resp.stdout),
+        format!(
+            "staged amendment {id}\n  base {revision} at {}\n  0 added, 0 changed, 0 retired, 0 \
+             conflict, 4 unchanged\n  design: overview, apis\n  nothing sealed; `emery show \
+             amendment` reviews it\n",
+            &HEAD[..8]
+        )
+    );
+    assert_eq!(provider.model.seen().len(), 1, "the design alone, accepted at once");
+    let request = provider.model.seen()[0].messages.join("\n");
+    assert!(
+        request.contains(
+            "The change adds or revises no requirement; the specification's stand as they are. \
+             What it carries lands in the paragraphs that already describe the behaviour it \
+             serves, each one you revise named in `revised`."
+        ),
+        "{request}"
+    );
+    assert_eq!(
+        amendment["sections"],
+        serde_json::json!({"preamble": false, "added": [], "removed": [], "changed": ["overview", "apis"]}),
+        "{amendment}"
+    );
+    assert_eq!(amendment["design"]["sections"][2]["blocks"][0]["text"], revised, "{amendment}");
+    provider.model.assert_exhausted();
+}
+
+// Where the change drafts a requirement, a paragraph named `revised` that
+// cites requirements the change leaves unchanged, and no other, is a finding
+// the next answer corrects by keeping it verbatim.
 #[tokio::test]
 async fn amend_design_revised() {
     let stored = "Orders are kept in the order store, which REQ-003 writes.";
-    let base = format!(
-        r#"{{"emery": 8, "parent": null, "preamble": [], "sections": [
-            {{"kind": "overview", "blocks": [{{"text": "{OVERVIEW}"}}]}},
-            {{"kind": "apis", "blocks": [{{"text": "{stored}"}}]}}
-        ]}}"#
-    );
+    let base = describing(&[stored]);
+    // index 0 is `docs`'s requirement, 1..=4 the standing requirements in id order
+    let grouping = r#"{"groups": [
+        {"claims": [0, 2], "classes": [[0], [2]]},
+        {"claims": [1], "classes": [[1]]},
+        {"claims": [3], "classes": [[3]]},
+        {"claims": [4], "classes": [[4]]}
+    ]}"#;
+    let draft = r#"{"preamble": [], "requirements": [
+        {"subject": "session.timeout", "scenarios": [
+            {"name": "Timeout", "when": "a session is idle for 15 minutes", "then": "it times out"}
+        ]}
+    ]}"#;
     let reworded = format!(
         r#"{{"sections": [
             {{"kind": "overview", "blocks": [{{"text": "{OVERVIEW}"}}], "revised": []}},
@@ -1673,18 +1956,22 @@ async fn amend_design_revised() {
             ], "revised": []}}
         ]}}"#
     );
-    let mut provider = Provider::answering([reworded.as_str(), kept.as_str()]);
+    let mut provider = Provider::answering([grouping, draft, reworded.as_str(), kept.as_str()]);
     provider.source.evidence.insert(
         "docs".to_owned(),
-        Ok(evidence(vec![claim(ClaimKind::Decision, "secrets.vault", ("decision", VAULT))])),
+        Ok(evidence(vec![
+            requirement("session.timeout", "Sessions expire after 15 minutes of inactivity."),
+            claim(ClaimKind::Decision, "secrets.vault", ("decision", VAULT)),
+        ])),
     );
     seed(&provider.files, SPEC, base.as_bytes(), PLAN);
 
     cli_ok(&provider, &["emery", "amend", DOCS, "--config", PROJECT_CONFIG]).await;
 
+    assert_eq!(provider.model.seen().len(), 4, "the grouping, the draft, the design, corrected");
     let exchanges = provider.model.exchanges();
     assert!(
-        exchanges[0].outcome.as_ref().is_err_and(|finding| {
+        exchanges[2].outcome.as_ref().is_err_and(|finding| {
             finding.contains(
                 "`## APIs and integrations` [1] describes REQ-003, which the change leaves \
                  unchanged; keep it verbatim",
@@ -1693,12 +1980,13 @@ async fn amend_design_revised() {
         "{exchanges:?}"
     );
     let (_, amendment) = staged_amendment(&provider);
+    assert_eq!(amendment["changes"][1]["class"], "changed", "{amendment}");
     assert_eq!(
         amendment["sections"],
         serde_json::json!({"preamble": false, "added": [], "removed": [], "changed": ["apis"]}),
         "{amendment}"
     );
-    assert_eq!(amendment["design"]["sections"][1]["blocks"][0]["text"], stored, "{amendment}");
+    assert_eq!(amendment["design"]["sections"][2]["blocks"][0]["text"], stored, "{amendment}");
     provider.model.assert_exhausted();
 }
 

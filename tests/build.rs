@@ -18,7 +18,7 @@ use omnia_test::guest::Scripted;
 use serde_json::{Value, json};
 use support::provider::{Provider, Rendezvous, cli, digest};
 use support::scratch::Scratch;
-use support::store::{seed, stage};
+use support::store::{seed, stage, stage_amendment};
 use support::vcs::HEAD;
 use support::{cli_ok, fail};
 
@@ -52,6 +52,8 @@ const SPEC: &[u8] = include_bytes!("build/spec.json");
 const DESIGN: &[u8] = include_bytes!("build/design.json");
 const PLAN: &[u8] = include_bytes!("build/plan.json");
 const WIDE_PLAN: &[u8] = include_bytes!("build/wide-plan.json");
+// An amendment as `emery amend` stages one, read by a build for its kind alone.
+const AMENDMENT: &[u8] = include_bytes!("specify/6-amendment.json");
 const SPEC_001: &str = include_str!("build/spec-001.md");
 const SPEC_002: &str = include_str!("build/spec-002.md");
 const DESIGN_MD: &str = include_str!("build/design.md");
@@ -1507,7 +1509,50 @@ async fn build_candidate_staged() {
             .await;
     let envelope: Value = serde_json::from_slice(&resp.stdout).expect("one JSON envelope");
     assert_eq!(envelope["revision"], id, "{envelope}");
-    assert_eq!(envelope["candidate"], candidate, "{envelope}");
+    assert_eq!(envelope["candidate"], json!({"id": candidate, "kind": "revision"}), "{envelope}");
+    assert!(provider.target.calls().is_empty(), "nothing to build");
+    provider.vcs.assert_exhausted();
+}
+
+// A staged amendment is no candidate `emery apply` seals: a build over one
+// names it as an amendment, for `emery show amendment` to review, and the
+// envelope carries its kind.
+#[tokio::test]
+async fn build_amendment_staged() {
+    let (provider, id) = planned();
+    let amendment = stage_amendment(&provider.storage, AMENDMENT);
+    for _ in 0..2 {
+        provider.vcs.labelleds.script(".", Ok(LABELLED.to_owned()));
+        provider.vcs.logs.script(
+            ".",
+            Ok(vec![
+                entry("m:SLICE-002", &message(&id, ORDERS, "REQ-003, REQ-004", "REQ-003", HEAD, 2)),
+                entry(
+                    "m:SLICE-001",
+                    &message(&id, AUTHENTICATION, "REQ-001, REQ-002", "REQ-001, REQ-002", HEAD, 1),
+                ),
+            ]),
+        );
+    }
+    let before = provider.storage.snapshot();
+
+    let resp = cli_ok(&provider, &["emery", "build", "--config", PROJECT_CONFIG]).await;
+
+    assert_eq!(
+        String::from_utf8_lossy(&resp.stdout),
+        format!(
+            "built revision {id}\n  plan: 2 slices in 2 waves, widest 1\n  amendment {amendment} \
+             is staged; `emery show amendment` reviews it\n  base {HEAD}\n  resumed: SLICE-001, \
+             SLICE-002\n  labelled emery/{id} at {LABELLED}\n"
+        )
+    );
+    assert_eq!(provider.storage.snapshot(), before, "a build writes nothing to either slot");
+
+    let resp =
+        cli_ok(&provider, &["emery", "--format", "json", "build", "--config", PROJECT_CONFIG])
+            .await;
+    let envelope: Value = serde_json::from_slice(&resp.stdout).expect("one JSON envelope");
+    assert_eq!(envelope["candidate"], json!({"id": amendment, "kind": "amendment"}), "{envelope}");
     assert!(provider.target.calls().is_empty(), "nothing to build");
     provider.vcs.assert_exhausted();
 }

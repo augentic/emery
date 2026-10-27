@@ -60,10 +60,11 @@ use crate::{Files, store};
 ///
 /// The amended design ([`Amendment::design`]) is the base's less the type
 /// blocks owned by the slices the retirements empty, where no claim of the
-/// change informs a section; where one does, the sections it informs and
-/// `## Overview` are redrafted in one design turn over the current text,
-/// each kept paragraph verbatim or named as revised, every other section
-/// and the preamble kept by code. The amended plan ([`Amendment::plan`])
+/// change informs a section and no paragraph describes a requirement the
+/// change retires; where one does, those sections and `## Overview` are
+/// redrafted in one design turn over the current text, each kept paragraph
+/// verbatim or named as revised, every other section and the preamble kept
+/// by code. The amended plan ([`Amendment::plan`])
 /// follows by code where a rule decides: the base's slices keep their ids
 /// and names, each retired requirement leaves its slice, one restated under
 /// another stem leaves it for the slice of its new stem, an added one joins

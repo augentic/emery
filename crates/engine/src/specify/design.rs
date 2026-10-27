@@ -4,8 +4,9 @@
 //! permitted, or omitted. The model supplies introductory paragraphs,
 //! section prose, and the role each type plays. The engine validates source
 //! citations and inserts type signatures verbatim from evidence. An
-//! amendment redrafts the sections its change informs alone, over the
-//! current design, through [`DesignAmend`].
+//! amendment redrafts the sections its change touches alone — those its
+//! claims inform or whose paragraphs describe a requirement it retires — over
+//! the current design, through [`DesignAmend`].
 
 mod amend;
 
