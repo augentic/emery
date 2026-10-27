@@ -216,10 +216,10 @@
     "id": "future-system",
     "title": "The path becomes a loop.",
     "required": [
-      "The path becomes a loop.",
-      "Everything the running system learns comes back as a governed change.",
       "Sense",
+      "Signals from production",
       "Decide",
+      "Investigate and propose",
       "Change"
     ]
   },
