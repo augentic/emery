@@ -1439,7 +1439,7 @@ class: slide-sandbox
 
 <AmbientVideo src="/videos/approach-video.mp4" variant="approach" />
 
-<Eyebrow text="THE DELIVERY SYSTEM · THREE CONTROLS, ONE PATH" />
+<Eyebrow text="THE DELIVERY SYSTEM · THREE MECHANISMS, ONE PATH" />
 
 <div class="live-stage">
 

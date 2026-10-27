@@ -334,7 +334,8 @@
   color: #ffffff;
 }
 
-.hero-pillars {
+.hero-pillars,
+.hero-mechanisms {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
   gap: 24px;

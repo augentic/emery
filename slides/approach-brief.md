@@ -39,7 +39,7 @@ class: slide-hero slide-section
 </div>
 </div>
 
-<div class="hero-pillars">
+<div class="hero-mechanisms">
 <div class="hero-pillar"><span class="hero-pillar-num">01</span><span>Standardise delivery · One path from change to production</span></div>
 <div class="hero-pillar"><span class="hero-pillar-num">02</span><span>Specify behaviour · Preserve what must remain true</span></div>
 <div class="hero-pillar"><span class="hero-pillar-num">03</span><span>Sandbox execution · Limit what running code may access</span></div>
@@ -234,9 +234,9 @@ class: slide-sandbox
 ---
 <AmbientVideo src="/videos/approach-video.mp4" variant="approach" />
 
-<Eyebrow text="THE DELIVERY SYSTEM · THREE CONTROLS, ONE PATH" />
+<Eyebrow text="THE DELIVERY SYSTEM · THREE MECHANISMS, ONE PATH" />
 
-# Three pillars of reliable delivery.
+# Three mechanisms for reliable delivery.
 
 <p class="slide-lead">Agents work best inside a delivery system—not in charge of it.</p>
 
@@ -302,8 +302,8 @@ class: slide-sandbox
 
 <!--
 The complete system:
-- This is the map for the next three sections. Take each control in turn.
-- These are three different controls over three different questions.
+- This is the map for the next three sections. Take each mechanism in turn.
+- These are three different mechanisms over three different questions.
 - Standardise delivery governs how work is created, checked, shipped, and operated.
 - Specify behaviour governs what must remain true and what evidence accepts the result.
 - Sandbox execution governs what the running application may access.
@@ -366,7 +366,7 @@ class: slide-light
 </div>
 
 <!--
-Pillar one, first half — how code is authored. Standardising delivery starts before the pipeline: where work is done, what guidance it follows, and which rules are enforced automatically.
+Mechanism one, first half — how code is authored. Standardising delivery starts before the pipeline: where work is done, what guidance it follows, and which rules are enforced automatically.
 - Isolate work from production while an idea is still changing.
 - Publish one versioned engineering codex so people and agents work from the same standards, patterns, examples, and templates.
 - Enforce critical coding rules as the code compiles, then apply the same security, dependency, quality, and test controls to every change.
