@@ -1259,7 +1259,7 @@ class: slide-hero slide-section
 </div>
 </div>
 
-<div class="hero-pillars">
+<div class="hero-mechanisms">
 <div class="hero-pillar"><span class="hero-pillar-num">01</span><span>Standardise delivery · One path from change to production</span></div>
 <div class="hero-pillar"><span class="hero-pillar-num">02</span><span>Specify behaviour · Preserve what must remain true</span></div>
 <div class="hero-pillar"><span class="hero-pillar-num">03</span><span>Sandbox execution · Limit what running code may access</span></div>
@@ -1427,7 +1427,7 @@ Before work enters the delivery path, ask:
 - What evidence supports it?
 - Does it strengthen or fragment the product?
 - Who owns and supports it?
-For work that earns that commitment, it enters one delivery path, governed by the three pillars on the next slide.
+For work that earns that commitment, it enters one delivery path, governed by the three mechanisms on the next slide.
 -->
 
 ---
@@ -1443,7 +1443,7 @@ class: slide-sandbox
 
 <div class="live-stage">
 
-# Three pillars of reliable delivery.
+# Three mechanisms for reliable delivery.
 
 <p class="live-claim">Agents work best inside a delivery system—not in charge of it.</p>
 
@@ -1632,7 +1632,7 @@ class: slide-section
 </div>
 </div>
 
-<div class="hero-pillars">
+<div class="hero-mechanisms">
 <div class="hero-pillar"><span class="hero-pillar-num">01</span><span>Governed intent · Move up from ad hoc prompting</span></div>
 <div class="hero-pillar"><span class="hero-pillar-num">02</span><span>In the loop · Specify, review, plan, implement</span></div>
 <div class="hero-pillar"><span class="hero-pillar-num">03</span><span>Durable truth · Code is disposable; specifications remain</span></div>
@@ -1813,7 +1813,7 @@ class: slide-section
 </div>
 </div>
 
-<div class="hero-pillars">
+<div class="hero-mechanisms">
 <div class="hero-pillar"><span class="hero-pillar-num">01</span><span>Wasmtime sandbox · No direct route to infrastructure</span></div>
 <div class="hero-pillar"><span class="hero-pillar-num">02</span><span>Capability contracts · HTTP, Messaging, KeyValue, BlobStore</span></div>
 <div class="hero-pillar"><span class="hero-pillar-num">03</span><span>Runtime recipes · Local, cloud, and on-premise</span></div>
@@ -1982,7 +1982,7 @@ class: slide-section
 </div>
 </div>
 
-<div class="hero-pillars">
+<div class="hero-mechanisms">
 <div class="hero-pillar"><span class="hero-pillar-num">01</span><span>Explore &amp; Govern · Keep discovery cheap and shared work clean</span></div>
 <div class="hero-pillar"><span class="hero-pillar-num">02</span><span>Connect &amp; Support · Enforce runtime and full delivery boundaries</span></div>
 <div class="hero-pillar"><span class="hero-pillar-num">03</span><span>Trust radius · Assess reach, data, dependence, and continuity</span></div>
@@ -2157,7 +2157,7 @@ class: slide-section
 </div>
 </div>
 
-<div class="hero-pillars">
+<div class="hero-mechanisms">
 <div class="hero-pillar"><span class="hero-pillar-num">01</span><span>Sense · Signals from production</span></div>
 <div class="hero-pillar"><span class="hero-pillar-num">02</span><span>Decide · Investigate and propose</span></div>
 <div class="hero-pillar"><span class="hero-pillar-num">03</span><span>Change · Specify, build, merge — then observe</span></div>
