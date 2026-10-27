@@ -1248,7 +1248,7 @@ class: slide-hero slide-section
 
 # Code is cheap.<br>Delivery is hard.
 
-<p class="section-subtitle">Put AI inside a delivery system<br>it cannot redefine.</p>
+<p class="section-subtitle">Use a delivery system that lets AI<br>deliver software—not just code.</p>
 
 </div>
 </div>
@@ -1279,7 +1279,7 @@ class: slide-light
 
 # Coding is no longer<br>the bottleneck.
 
-<p class="live-claim">Generative AI makes code—and test generation—abundant.</p>
+<p class="live-claim">AI generates code faster than developers can understand and integrate it.</p>
 
 <div class="live-compression">
 <span>Weeks</span>
