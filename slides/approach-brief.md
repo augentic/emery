@@ -7,7 +7,6 @@ canvasWidth: 1280
 layout: default
 class: slide-hero slide-section
 ---
-
 <style>
 .slidev-layout .svg-kicker { font-size: 11px; }
 .slidev-layout .svg-pill { font-size: 10.5px; }
@@ -35,15 +34,15 @@ class: slide-hero slide-section
 
 # Code is cheap.<br>Delivery is hard.
 
-<p class="section-subtitle">Put AI inside a delivery system<br>it cannot redefine.</p>
+<p class="section-subtitle">Use a delivery system that lets AI<br>deliver software—not just code.</p>
 
 </div>
 </div>
 
 <div class="hero-pillars">
-<div class="hero-pillar"><span class="hero-pillar-num">01</span><span>Set rules · Govern how people and agents work</span></div>
-<div class="hero-pillar"><span class="hero-pillar-num">02</span><span>Record intent · Preserve what must remain true</span></div>
-<div class="hero-pillar"><span class="hero-pillar-num">03</span><span>Constrain code · Grant the result nothing by default</span></div>
+<div class="hero-pillar"><span class="hero-pillar-num">01</span><span>Standardise delivery · One path from change to production</span></div>
+<div class="hero-pillar"><span class="hero-pillar-num">02</span><span>Specify behaviour · Preserve what must remain true</span></div>
+<div class="hero-pillar"><span class="hero-pillar-num">03</span><span>Sandbox execution · Limit what running code may access</span></div>
 </div>
 
 <!--
@@ -57,26 +56,25 @@ Client question:
 -->
 
 ---
-title: Implementation is changing. Responsibility is not.
+title: Coding is no longer the bottleneck.
 sync: shift
 class: slide-light
 ---
-
-<Eyebrow text="THE SHIFT · IMPLEMENTATION SPEED CHANGES THE SYSTEM" />
+<Eyebrow text="THE SHIFT · ABUNDANT CODE IS NOT A COHERENT SOLUTION" />
 
 <div class="ed-split">
 <div class="ed-prose-col">
 
-# Implementation is changing.<br>Responsibility is not.
+# Coding is no longer<br>the bottleneck.
 
-<p class="ed-prose">AI compresses the work of turning an idea into plausible code.</p>
-<p class="ed-prose"><strong>Direction, authority, evidence, and ownership remain with the organisation.</strong></p>
+<p class="ed-prose">AI generates code faster than developers can understand and integrate it.</p>
+<p class="ed-prose"><strong>More code ≠ a coherent solution.</strong> The scarce work is now comprehension, coherence, and evidence—deciding what the code should do, and proving that it does it.</p>
 
 </div>
 <div class="ed-diagram-pane">
 <svg viewBox="0 0 640 440" aria-hidden="true">
   <rect x="14" y="22" width="612" height="108" rx="14" fill="rgba(22,180,226,0.06)" stroke="#0c7fa3" stroke-width="1.6" />
-  <text x="38" y="52" class="svg-kicker" fill="#0c7fa3">IMPLEMENTATION EFFORT</text>
+  <text x="38" y="52" class="svg-kicker" fill="#0c7fa3">GENERATION EFFORT</text>
   <text x="38" y="88" class="svg-h2" fill="#0d1030">Weeks</text>
   <line x1="130" y1="81" x2="488" y2="81" stroke="rgba(12,127,163,0.42)" stroke-width="2" />
   <polygon points="482,76 492,81 482,86" fill="#a4238f" />
@@ -84,123 +82,101 @@ class: slide-light
   <text x="38" y="114" class="svg-caption" fill="rgba(13,16,48,0.58)">More plausible code, sooner</text>
 
   <rect x="14" y="148" width="612" height="224" rx="14" fill="#0d1030" />
-  <text x="38" y="180" class="svg-kicker" fill="#78d8f2">RESPONSIBILITY REMAINS</text>
+  <text x="38" y="180" class="svg-kicker" fill="#78d8f2">MORE CODE ≠ A COHERENT SOLUTION</text>
 
   <rect x="38" y="200" width="270" height="64" rx="9" fill="rgba(255,255,255,0.08)" />
-  <text x="56" y="226" class="svg-label" fill="#ffffff">Direction</text>
-  <text x="56" y="248" class="svg-caption" fill="rgba(255,255,255,0.68)">What should change?</text>
+  <text x="56" y="226" class="svg-label" fill="#ffffff">Cognitive load</text>
+  <text x="56" y="248" class="svg-caption" fill="rgba(255,255,255,0.68)">Overwhelms human review</text>
   <rect x="332" y="200" width="270" height="64" rx="9" fill="rgba(255,255,255,0.08)" />
-  <text x="350" y="226" class="svg-label" fill="#ffffff">Authority</text>
-  <text x="350" y="248" class="svg-caption" fill="rgba(255,255,255,0.68)">Who decides?</text>
+  <text x="350" y="226" class="svg-label" fill="#ffffff">Incoherence</text>
+  <text x="350" y="248" class="svg-caption" fill="rgba(255,255,255,0.68)">Plausible parts, broken whole</text>
 
   <rect x="38" y="282" width="270" height="64" rx="9" fill="rgba(255,255,255,0.08)" />
-  <text x="56" y="308" class="svg-label" fill="#ffffff">Evidence</text>
-  <text x="56" y="330" class="svg-caption" fill="rgba(255,255,255,0.68)">Is it safe to accept?</text>
+  <text x="56" y="308" class="svg-label" fill="#ffffff">Lost comprehension</text>
+  <text x="56" y="330" class="svg-caption" fill="rgba(255,255,255,0.68)">No one understands it all</text>
   <rect x="332" y="282" width="270" height="64" rx="9" fill="rgba(255,255,255,0.08)" />
-  <text x="350" y="308" class="svg-label" fill="#ffffff">Ownership</text>
-  <text x="350" y="330" class="svg-caption" fill="rgba(255,255,255,0.68)">Who answers for it?</text>
+  <text x="350" y="308" class="svg-label" fill="#ffffff">Accumulated slop</text>
+  <text x="350" y="330" class="svg-caption" fill="rgba(255,255,255,0.68)">Unmanageable over time</text>
 
   <rect x="70" y="394" width="500" height="36" rx="18" fill="rgba(164,35,143,0.07)" stroke="rgba(164,35,143,0.42)" />
-  <text x="320" y="417" text-anchor="middle" class="svg-caption" fill="#a4238f">Faster implementation shifts pressure onto the delivery system.</text>
+  <text x="320" y="417" text-anchor="middle" class="svg-caption" fill="#a4238f">The risk: An unmanageable application and codebase.</text>
 </svg>
 </div>
 </div>
 
 <!--
-AI compresses implementation effort. It does not transfer responsibility to the model.
-Direction, authority, evidence, and ownership remain with the organisation.
-The next slide shows the operational response: automate the path around the code.
+Coding and test generation are no longer the bottlenecks they once were.
+However, a lot of code does not equal a coherent, well-thought-through, useful business solution.
+Generated tests can repeat the implementation's assumptions. Trusted evidence still has to reject plausible but wrong code.
+It can exacerbate cognitive load and overwhelm, and lead to an unmanageable application and codebase.
 -->
 
 ---
-title: Automate the path from code to production.
-sync: delivery-automation
+title: Build the right thing. Build it to last.
+sync: pivot
 class: slide-light
 ---
-
-<Eyebrow text="THE DELIVERY SHIFT · AUTOMATE THE MECHANICS" />
+<Eyebrow text="THE RESPONSE · STRATEGY AND DELIVERY" />
 
 <div class="ed-band">
 <div class="ed-band-top">
 <div>
 
-# Automate the path<br>from code to production.
+# Build the right thing.<br>Build it to last.
 
 </div>
-<p class="ed-band-prose"><strong>Faster implementation matters only when evidence and delivery move at the same speed.</strong> We removed mechanical delay by automating the path around the code.</p>
+<p class="ed-band-prose"><strong>Two things are increasingly important.</strong> Good product strategy decides what is worth building. A reliable delivery system delivers it as maintainable software. While we can help with both, <strong>our real expertise is the second.</strong></p>
 </div>
-
 <div class="ed-band-canvas">
 <svg viewBox="0 0 1140 350" aria-hidden="true">
-  <rect x="16" y="36" width="330" height="214" rx="14" fill="rgba(22,180,226,0.06)" stroke="#0c7fa3" stroke-width="1.7" />
-  <text x="38" y="68" class="svg-kicker" fill="#0c7fa3">01 · PROVE</text>
-  <text x="38" y="104" class="svg-h2" fill="#0d1030">Test every change</text>
-  <line x1="38" y1="122" x2="324" y2="122" stroke="rgba(12,127,163,0.18)" />
-  <text x="38" y="158" class="svg-label" fill="#0d1030">Unit · integration · end-to-end</text>
-  <text x="38" y="204" class="svg-caption" fill="rgba(13,16,48,0.62)">Evidence runs without manual coordination</text>
+  <rect x="16" y="36" width="550" height="214" rx="14" fill="rgba(22,180,226,0.06)" stroke="#0c7fa3" stroke-width="1.7" />
+  <text x="38" y="68" class="svg-kicker" fill="#0c7fa3">01 · GOOD PRODUCT STRATEGY</text>
+  <text x="38" y="104" class="svg-h2" fill="#0d1030">Building the right thing</text>
+  <line x1="38" y1="122" x2="544" y2="122" stroke="rgba(12,127,163,0.18)" />
+  <text x="38" y="158" class="svg-label" fill="#0d1030">Customer needs · rapid prototypes · deliberate backlog</text>
+  <text x="38" y="204" class="svg-caption" fill="rgba(13,16,48,0.62)">Decide what matters before committing to production</text>
 
-  <line x1="346" y1="143" x2="392" y2="143" stroke="#0d1030" stroke-width="1.8" />
-  <polygon points="386,138 396,143 386,148" fill="#0d1030" />
-
-  <rect x="398" y="36" width="344" height="214" rx="14" fill="#0d1030" />
-  <text x="420" y="68" class="svg-kicker" fill="#78d8f2">02 · ASSURE</text>
-  <text x="420" y="104" class="svg-h2" fill="#ffffff">Analyse every change</text>
-  <line x1="420" y1="122" x2="720" y2="122" stroke="rgba(255,255,255,0.14)" />
-  <text x="420" y="156" class="svg-label" fill="#ffffff">Linting · security ·</text>
-  <text x="420" y="182" class="svg-label" fill="#ffffff">dependencies · automated review</text>
-  <text x="420" y="222" class="svg-caption" fill="rgba(255,255,255,0.7)">Policy is part of every change</text>
-
-  <line x1="742" y1="143" x2="788" y2="143" stroke="#a4238f" stroke-width="1.8" />
-  <polygon points="782,138 792,143 782,148" fill="#a4238f" />
-
-  <rect x="794" y="36" width="330" height="214" rx="14" fill="rgba(164,35,143,0.06)" stroke="#a4238f" stroke-width="1.7" />
-  <text x="816" y="68" class="svg-kicker" fill="#a4238f">03 · DELIVER</text>
-  <text x="816" y="104" class="svg-h2" fill="#0d1030">Deliver every accepted change</text>
-  <line x1="816" y1="122" x2="1102" y2="122" stroke="rgba(164,35,143,0.18)" />
-  <text x="816" y="156" class="svg-label" fill="#0d1030">PR · build · provision ·</text>
-  <text x="816" y="182" class="svg-label" fill="#0d1030">deploy · production</text>
-  <text x="816" y="222" class="svg-caption" fill="rgba(13,16,48,0.62)">One repeatable path to production</text>
+  <rect x="574" y="36" width="550" height="214" rx="14" fill="#0d1030" />
+  <text x="596" y="68" class="svg-kicker" fill="#f59ef5">02 · A RELIABLE DELIVERY SYSTEM</text>
+  <text x="596" y="104" class="svg-h2" fill="#ffffff">Delivering maintainable software</text>
+  <line x1="596" y1="122" x2="1102" y2="122" stroke="rgba(255,255,255,0.14)" />
+  <text x="596" y="158" class="svg-label" fill="#ffffff">Standardise delivery · specify behaviour · sandbox execution</text>
+  <text x="596" y="204" class="svg-caption" fill="rgba(255,255,255,0.7)">Turn intent into coherent, verified software</text>
 
   <rect x="170" y="282" width="800" height="48" rx="24" fill="#0d1030" />
-  <text x="570" y="312" text-anchor="middle" class="svg-label" fill="#ffffff">Repeatable evidence and automation replace manual hand-offs.</text>
+  <text x="570" y="312" text-anchor="middle" class="svg-label" fill="#ffffff">Decide what matters, deliver it safely, and keep it maintainable.</text>
 </svg>
 </div>
 </div>
 
 <!--
-These changes predate the current AI wave and make AI-assisted implementation operationally useful.
-- Full test automation runs unit, integration, and end-to-end evidence without manual coordination.
-- Pipeline automation carries an accepted pull request through build, provision, deployment, and production.
-- Automated analysis makes linting, dependency, security, and review controls part of every change. Current examples include Cursor Bugbot, GitHub CodeQL, and Snyk.
-- This required testable systems, reliable suites, standard environments, policy as code, and ownership of pipeline health.
-Automation removes mechanical delay. It does not remove the human decision to accept a change.
-
-Client question:
-- Where does a change still wait for a manual hand-off or bespoke decision?
+Two things are increasingly important:
+1) Good product strategy—knowing what is worth building and using rapid prototypes to learn without mistaking them for production systems.
+2) A reliable delivery system—turning intent into coherent, comprehensible, verified software without accumulating slop.
+While we can help with both, our real expertise is in the second.
 -->
 
 ---
-title: The bottleneck becomes the feature throttle.
+title: A prototype is evidence, not a production commitment.
 sync: outcome
 class: slide-light
 ---
-
-<Eyebrow text="THE NEW BOTTLENECK · GOVERN FEATURE DEMAND" />
+<Eyebrow text="THE DELIVERY SYSTEM · FIRST, ADMIT WORK DELIBERATELY" />
 
 <div class="ed-band">
 <div class="ed-band-top">
 <div>
 
-# The bottleneck becomes<br>the feature throttle.
+# A prototype is evidence.<br>Production is a commitment.
 
 </div>
-<p class="ed-band-prose"><strong>Faster delivery should increase learning—not feature volume.</strong> Cheap experiments inform a deliberate production backlog rather than bypassing it.</p>
+<p class="ed-band-prose"><strong>A prototype is evidence. Production is a commitment.</strong> AI can build a prototype in minutes. Production takes an explicit decision. It asks for a named outcome, supporting evidence, product coherence, and a service owner. This is the front door of the delivery system: the decision that admits work to it.</p>
 </div>
 <div class="ed-band-canvas">
 <svg viewBox="0 0 1140 350" aria-hidden="true">
   <rect x="16" y="36" width="330" height="224" rx="14" fill="rgba(22,180,226,0.06)" stroke="#0c7fa3" stroke-width="1.7" />
   <text x="38" y="68" class="svg-kicker" fill="#0c7fa3">SIGNALS AND EXPERIMENTS</text>
-  <text x="38" y="104" class="svg-h2" fill="#0d1030">Learn cheaply</text>
+  <text x="38" y="104" class="svg-h2" fill="#0d1030">Test the need</text>
   <line x1="38" y1="122" x2="324" y2="122" stroke="rgba(12,127,163,0.18)" />
   <text x="38" y="154" class="svg-label" fill="#0d1030">Customer needs</text>
   <text x="190" y="154" class="svg-label" fill="#0d1030">Operational evidence</text>
@@ -212,13 +188,13 @@ class: slide-light
   <polygon points="386,143 396,148 386,153" fill="#0d1030" />
 
   <rect x="398" y="36" width="344" height="224" rx="14" fill="#0d1030" />
-  <text x="420" y="68" class="svg-kicker" fill="#f59ef5">FEATURE THROTTLE</text>
-  <text x="420" y="104" class="svg-h2" fill="#ffffff">Choose deliberately</text>
+  <text x="420" y="68" class="svg-kicker" fill="#f59ef5">PRODUCTION GATE</text>
+  <text x="420" y="104" class="svg-h2" fill="#ffffff">Decide explicitly</text>
   <line x1="420" y1="122" x2="720" y2="122" stroke="rgba(255,255,255,0.14)" />
-  <text x="420" y="154" class="svg-label" fill="#ffffff">Value</text>
+  <text x="420" y="154" class="svg-label" fill="#ffffff">Named outcome</text>
   <text x="582" y="154" class="svg-label" fill="#ffffff">Evidence</text>
-  <text x="420" y="190" class="svg-label" fill="#ffffff">Strategic fit</text>
-  <text x="582" y="190" class="svg-label" fill="#ffffff">Ownership</text>
+  <text x="420" y="190" class="svg-label" fill="#ffffff">Product coherence</text>
+  <text x="582" y="190" class="svg-label" fill="#ffffff">Service owner</text>
   <text x="420" y="232" class="svg-caption" fill="rgba(255,255,255,0.7)">Product judgement—not extra ceremony</text>
 
   <line x1="742" y1="148" x2="788" y2="148" stroke="#a4238f" stroke-width="1.8" />
@@ -226,14 +202,14 @@ class: slide-light
 
   <rect x="794" y="36" width="330" height="224" rx="14" fill="rgba(164,35,143,0.06)" stroke="#a4238f" stroke-width="1.7" />
   <text x="816" y="68" class="svg-kicker" fill="#a4238f">PRODUCTION COMMITMENT</text>
-  <text x="816" y="104" class="svg-h2" fill="#0d1030">Deliberate production</text>
-  <text x="816" y="132" class="svg-h2" fill="#0d1030">backlog</text>
+  <text x="816" y="104" class="svg-h2" fill="#0d1030">Enter the delivery</text>
+  <text x="816" y="132" class="svg-h2" fill="#0d1030">path</text>
   <line x1="816" y1="150" x2="1102" y2="150" stroke="rgba(164,35,143,0.18)" />
-  <text x="816" y="184" class="svg-caption" fill="rgba(13,16,48,0.66)">Only work with enough evidence</text>
-  <text x="816" y="206" class="svg-caption" fill="rgba(13,16,48,0.66)">and an owner enters delivery</text>
+  <text x="816" y="184" class="svg-caption" fill="rgba(13,16,48,0.66)">Only work with an outcome, evidence,</text>
+  <text x="816" y="206" class="svg-caption" fill="rgba(13,16,48,0.66)">fit, and owner proceeds</text>
 
   <rect x="170" y="286" width="800" height="48" rx="24" fill="#0d1030" stroke="#a4238f" stroke-width="1.6" />
-  <text x="570" y="316" text-anchor="middle" class="svg-label" fill="#ffffff">Prototypes inform the backlog. They do not bypass it.</text>
+  <text x="570" y="316" text-anchor="middle" class="svg-label" fill="#ffffff">A prototype informs the decision. It does not make it.</text>
 </svg>
 </div>
 </div>
@@ -243,27 +219,26 @@ Once implementation and delivery accelerate, production capacity should not be f
 - Customer signals, operational evidence, strategy, and cheap experiments become inputs.
 - Citizen- and vibe-coded proofs of concept are useful because they test assumptions and expose needs quickly.
 - A prototype gains no production authority merely because it works.
-- The feature throttle asks whether there is value, evidence, strategic fit, and an owner.
+- The production gate asks whether there is a named outcome, evidence, product coherence, and an owner.
 - The result may enter the production backlog, return for another experiment, or stop.
-The throttle is product judgement, not extra ceremony. Faster delivery should produce faster learning and fewer weak commitments.
+The gate is product judgement, not extra ceremony. Faster delivery should produce faster learning and fewer weak commitments.
 
 Client question:
 - Which backlog decisions could be informed by a cheap prototype before becoming production commitments?
 -->
 
 ---
-title: Set rules. Record intent. Constrain code.
+title: Standardise delivery. Specify behaviour. Sandbox execution.
 sync: system
 class: slide-sandbox
 ---
-
 <AmbientVideo src="/videos/approach-video.mp4" variant="approach" />
 
-<Eyebrow text="THE SYSTEM · THREE FOUNDATIONS, ONE PATH TO PRODUCTION" />
+<Eyebrow text="THE DELIVERY SYSTEM · THREE CONTROLS, ONE PATH" />
 
-# Set rules. Record intent. Constrain code.
+# Three pillars of reliable delivery.
 
-<p class="slide-lead">The model works inside the delivery system. The authority to define that system remains outside it.</p>
+<p class="slide-lead">Agents work best inside a delivery system—not in charge of it.</p>
 
 <div class="ed-band-canvas" style="padding-top: 4px;">
 <svg viewBox="0 0 1140 400" aria-hidden="true">
@@ -275,31 +250,31 @@ class: slide-sandbox
   <line x1="935" y1="44" x2="935" y2="78" stroke="#78d8f2" stroke-width="1.5" stroke-dasharray="4 4" />
 
   <rect x="12" y="82" width="356" height="208" rx="16" fill="rgba(10,7,16,0.7)" stroke="#78d8f2" stroke-width="1.8" />
-  <text x="38" y="112" class="svg-kicker" fill="#78d8f2">01 · SET RULES</text>
-  <text x="38" y="142" class="svg-h2" fill="#ffffff">Toolchain controls</text>
+  <text x="38" y="112" class="svg-kicker" fill="#78d8f2">01 · CHANGE PATH</text>
+  <text x="38" y="142" class="svg-h2" fill="#ffffff">Standardise delivery</text>
   <line x1="38" y1="156" x2="342" y2="156" stroke="rgba(255,255,255,0.12)" />
   <text x="38" y="184" class="svg-body" fill="rgba(255,255,255,0.84)">Approved tools and models</text>
   <text x="38" y="208" class="svg-body" fill="rgba(255,255,255,0.84)">Data, source, and worker boundaries</text>
   <text x="38" y="232" class="svg-body" fill="rgba(255,255,255,0.84)">Agent instructions and pipeline gates</text>
-  <text x="38" y="270" class="svg-caption" fill="#78d8f2">Governs how code may be created</text>
+  <text x="38" y="270" class="svg-caption" fill="#78d8f2">How work is created, checked, shipped, and operated.</text>
 
   <rect x="392" y="82" width="356" height="208" rx="16" fill="rgba(10,7,16,0.7)" stroke="#f59ef5" stroke-width="1.8" />
-  <text x="418" y="112" class="svg-kicker" fill="#f59ef5">02 · RECORD INTENT</text>
-  <text x="418" y="142" class="svg-h2" fill="#ffffff">Spec-driven delivery</text>
+  <text x="418" y="112" class="svg-kicker" fill="#f59ef5">02 · DURABLE AUTHORITY</text>
+  <text x="418" y="142" class="svg-h2" fill="#ffffff">Specify behaviour</text>
   <line x1="418" y1="156" x2="722" y2="156" stroke="rgba(255,255,255,0.12)" />
   <text x="418" y="184" class="svg-body" fill="rgba(255,255,255,0.84)">Evidence and explicit source authority</text>
   <text x="418" y="208" class="svg-body" fill="rgba(255,255,255,0.84)">Versioned spec.md and design.md</text>
   <text x="418" y="232" class="svg-body" fill="rgba(255,255,255,0.84)">Bounded implementation and verification</text>
-  <text x="418" y="270" class="svg-caption" fill="#f59ef5">Governs what must remain true</text>
+  <text x="418" y="270" class="svg-caption" fill="#f59ef5">What must remain true and how acceptance is proven</text>
 
   <rect x="772" y="82" width="356" height="208" rx="16" fill="rgba(10,7,16,0.7)" stroke="#78d8f2" stroke-width="1.8" />
-  <text x="798" y="112" class="svg-kicker" fill="#78d8f2">03 · CONSTRAIN CODE</text>
-  <text x="798" y="142" class="svg-h2" fill="#ffffff">Sandboxed execution</text>
+  <text x="798" y="112" class="svg-kicker" fill="#78d8f2">03 · RUNTIME BOUNDARY</text>
+  <text x="798" y="142" class="svg-h2" fill="#ffffff">Sandbox execution</text>
   <line x1="798" y1="156" x2="1102" y2="156" stroke="rgba(255,255,255,0.12)" />
   <text x="798" y="184" class="svg-body" fill="rgba(255,255,255,0.84)">Sandboxed WebAssembly components</text>
   <text x="798" y="208" class="svg-body" fill="rgba(255,255,255,0.84)">Typed capabilities and explicit grants</text>
   <text x="798" y="232" class="svg-body" fill="rgba(255,255,255,0.84)">Credentials and infrastructure in the host</text>
-  <text x="798" y="270" class="svg-caption" fill="#78d8f2">Governs what running code may touch</text>
+  <text x="798" y="270" class="svg-caption" fill="#78d8f2">What running code may access</text>
 
   <line x1="190" y1="290" x2="190" y2="322" stroke="#78d8f2" stroke-width="1.5" />
   <line x1="570" y1="290" x2="570" y2="322" stroke="#f59ef5" stroke-width="1.5" />
@@ -329,9 +304,9 @@ class: slide-sandbox
 The complete system:
 - This is the map for the next three sections. Take each control in turn.
 - These are three different controls over three different questions.
-- Toolchain controls govern how people and agents may work.
-- Spec-driven delivery governs what the software must do and what evidence supports accepting it.
-- Sandboxed execution governs what the running application may touch.
+- Standardise delivery governs how work is created, checked, shipped, and operated.
+- Specify behaviour governs what must remain true and what evidence accepts the result.
+- Sandbox execution governs what the running application may access.
 - Reusable delivery assets carry the result to production; they are supporting infrastructure, not a substitute fourth foundation.
 
 Boundary:
@@ -339,26 +314,25 @@ Boundary:
 -->
 
 ---
-title: Isolate. Standardise. Automate.
+title: Isolate. Guide. Enforce.
 sync: authoring
 class: slide-light
 ---
-
-<Eyebrow text="01 · SET RULES · TOOLCHAIN CONTROLS" />
+<Eyebrow text="01 · STANDARDISE DELIVERY · TOOLCHAIN CONTROLS" />
 
 <div class="foundation-progress" aria-label="Delivery foundations">
-<span class="is-active">01 · Set rules</span>
-<span>02 · Record intent</span>
-<span>03 · Constrain code</span>
+<span class="is-active">01 · Standardise delivery</span>
+<span>02 · Specify behaviour</span>
+<span>03 · Sandbox execution</span>
 </div>
 
 <div class="ed-split">
 <div class="ed-prose-col">
 
-# Isolate.<br>Standardise.<br>Automate.
+# Isolate. Guide. Enforce.
 
 <p class="ed-prose">Teams move faster when experimentation happens in a governed place, through an approved path, under checks that apply to every change.</p>
-<p class="ed-prose"><strong>The same engineering codex and controls travel with every builder</strong>—engineer, domain expert, or coding agent.</p>
+<p class="ed-prose"><strong>Guidance is shared. Non-negotiable rules are enforced.</strong> Critical rules fail at compile time, before review.</p>
 
 </div>
 <div class="ed-diagram-pane">
@@ -373,26 +347,26 @@ class: slide-light
   <rect x="14" y="144" width="612" height="102" rx="14" fill="rgba(164,35,143,0.05)" stroke="#a4238f" stroke-width="1.6" />
   <circle cx="62" cy="195" r="22" fill="#a4238f" />
   <text x="62" y="200" text-anchor="middle" class="svg-label" fill="#ffffff">02</text>
-  <text x="102" y="178" class="svg-kicker" fill="#a4238f">STANDARDISE</text>
+  <text x="102" y="178" class="svg-kicker" fill="#a4238f">GUIDE</text>
   <text x="102" y="204" class="svg-h3" fill="#0d1030">Shared engineering codex</text>
-  <text x="102" y="228" class="svg-caption" fill="rgba(13,16,48,0.62)">Standards, patterns, examples, and templates—written for people and agents</text>
+  <text x="102" y="228" class="svg-caption" fill="rgba(13,16,48,0.62)">Versioned standards, approved patterns, examples, and templates for people and agents</text>
 
   <rect x="14" y="264" width="612" height="102" rx="14" fill="#0d1030" />
   <circle cx="62" cy="315" r="22" fill="rgba(255,255,255,0.1)" stroke="#78d8f2" stroke-width="1.4" />
   <text x="62" y="320" text-anchor="middle" class="svg-label" fill="#78d8f2">03</text>
-  <text x="102" y="298" class="svg-kicker" fill="#78d8f2">AUTOMATE</text>
+  <text x="102" y="298" class="svg-kicker" fill="#78d8f2">ENFORCE</text>
   <text x="102" y="324" class="svg-h3" fill="#ffffff">Compiler-enforced standards</text>
-  <text x="102" y="344" class="svg-caption" fill="rgba(255,255,255,0.7)">Critical coding rules are checked automatically, alongside security,</text>
-  <text x="102" y="360" class="svg-caption" fill="rgba(255,255,255,0.7)">dependency, quality, and test controls</text>
+  <text x="102" y="344" class="svg-caption" fill="rgba(255,255,255,0.7)">Critical rules fail at compile time, before review.</text>
+  <text x="102" y="360" class="svg-caption" fill="rgba(255,255,255,0.7)"></text>
 
   <rect x="72" y="390" width="496" height="38" rx="19" fill="rgba(164,35,143,0.07)" stroke="rgba(164,35,143,0.4)" />
-  <text x="320" y="414" text-anchor="middle" class="svg-caption" fill="#a4238f">Faster experimentation · Consistent controls · Auditable delivery</text>
+  <text x="320" y="414" text-anchor="middle" class="svg-caption" fill="#a4238f">Guidance is shared · Non-negotiable rules are enforced</text>
 </svg>
 </div>
 </div>
 
 <!--
-Foundation one — how code is authored:
+Pillar one, first half — how code is authored. Standardising delivery starts before the pipeline: where work is done, what guidance it follows, and which rules are enforced automatically.
 - Isolate work from production while an idea is still changing.
 - Publish one versioned engineering codex so people and agents work from the same standards, patterns, examples, and templates.
 - Enforce critical coding rules as the code compiles, then apply the same security, dependency, quality, and test controls to every change.
@@ -402,85 +376,116 @@ Client question:
 -->
 
 ---
-title: One safe path from build to trial
-sync: authoring-path
+title: Automate the path from code to production.
+sync: delivery-automation
 class: slide-light
 ---
-
-<Eyebrow text="01 · SET RULES · THE DELIVERY PATH" />
-
-<div class="foundation-progress" aria-label="Delivery foundations">
-<span class="is-active">01 · Set rules</span>
-<span>02 · Record intent</span>
-<span>03 · Constrain code</span>
-</div>
+<Eyebrow text="01 · STANDARDISE DELIVERY · DELIVERY AUTOMATION" />
 
 <div class="ed-band">
 <div class="ed-band-top">
 <div>
 
-# One safe path<br>from build to trial.
+# Automate the path<br>from code to production.
 
 </div>
-<p class="ed-band-prose">A versioned engineering codex, approved tools, policies, and deployment patterns follow every change. <strong>The codex guides people and agents. Gates enforce what cannot be optional.</strong></p>
+<p class="ed-band-prose"><strong>Faster implementation matters only when evidence and delivery move at the same speed.</strong> We removed mechanical delay by automating the path around the code.</p>
 </div>
+
 <div class="ed-band-canvas">
-<svg viewBox="0 0 1140 360" aria-hidden="true">
-  <rect x="180" y="12" width="780" height="40" rx="20" fill="rgba(22,180,226,0.07)" stroke="rgba(12,127,163,0.32)" />
-  <text x="570" y="37" text-anchor="middle" class="svg-kicker" fill="#0c7fa3">APPROVED TOOLCHAIN · ENGINEERING CODEX · TOOLS · POLICIES · DEPLOYMENT PATTERN</text>
+<svg viewBox="0 0 1140 350" aria-hidden="true">
+  <rect x="16" y="36" width="330" height="214" rx="14" fill="rgba(22,180,226,0.06)" stroke="#0c7fa3" stroke-width="1.7" />
+  <text x="38" y="68" class="svg-kicker" fill="#0c7fa3">01 · BUILD</text>
+  <text x="38" y="104" class="svg-h2" fill="#0d1030">Build once</text>
+  <line x1="38" y1="122" x2="324" y2="122" stroke="rgba(12,127,163,0.18)" />
+  <text x="38" y="158" class="svg-label" fill="#0d1030">Reproducible artifact</text>
+  <text x="38" y="204" class="svg-caption" fill="rgba(13,16,48,0.62)">One artifact, built reproducibly</text>
 
-  <rect x="16" y="88" width="230" height="154" rx="14" fill="rgba(22,180,226,0.06)" stroke="#0c7fa3" stroke-width="1.6" />
-  <text x="38" y="118" class="svg-kicker" fill="#0c7fa3">01 · CREATE</text>
-  <text x="38" y="150" class="svg-h3" fill="#0d1030">AI-assisted build</text>
-  <line x1="38" y1="166" x2="224" y2="166" stroke="rgba(13,16,48,0.12)" />
-  <text x="38" y="196" class="svg-label" fill="#0d1030">Governed workspace</text>
-  <text x="38" y="220" class="svg-caption" fill="rgba(13,16,48,0.6)">Fast iteration, no production reach</text>
+  <line x1="346" y1="143" x2="392" y2="143" stroke="#0d1030" stroke-width="1.8" />
+  <polygon points="386,138 396,143 386,148" fill="#0d1030" />
 
-  <line x1="246" y1="165" x2="296" y2="165" stroke="#0d1030" stroke-width="1.8" />
-  <polygon points="290,160 300,165 290,170" fill="#0d1030" />
+  <rect x="398" y="36" width="344" height="214" rx="14" fill="#0d1030" />
+  <text x="420" y="68" class="svg-kicker" fill="#78d8f2">02 · TEST</text>
+  <text x="420" y="104" class="svg-h2" fill="#ffffff">Test behaviour</text>
+  <line x1="420" y1="122" x2="720" y2="122" stroke="rgba(255,255,255,0.14)" />
+  <text x="420" y="156" class="svg-label" fill="#ffffff">Unit · integration ·</text>
+  <text x="420" y="182" class="svg-label" fill="#ffffff">replay · end-to-end</text>
+  <text x="420" y="222" class="svg-caption" fill="rgba(255,255,255,0.7)">Evidence at every level</text>
 
-  <rect x="300" y="88" width="230" height="154" rx="14" fill="#ffffff" stroke="rgba(13,16,48,0.24)" stroke-width="1.5" />
-  <text x="322" y="118" class="svg-kicker" fill="#0d1030">02 · RECORD</text>
-  <text x="322" y="150" class="svg-h3" fill="#0d1030">Enterprise source control</text>
-  <line x1="322" y1="166" x2="508" y2="166" stroke="rgba(13,16,48,0.12)" />
-  <text x="322" y="196" class="svg-label" fill="#0d1030">Traceable change</text>
-  <text x="322" y="220" class="svg-caption" fill="rgba(13,16,48,0.6)">Reviewable history and ownership</text>
+  <line x1="742" y1="143" x2="788" y2="143" stroke="#a4238f" stroke-width="1.8" />
+  <polygon points="782,138 792,143 782,148" fill="#a4238f" />
 
-  <line x1="530" y1="165" x2="580" y2="165" stroke="#a4238f" stroke-width="1.8" />
-  <polygon points="574,160 584,165 574,170" fill="#a4238f" />
+  <rect x="794" y="36" width="330" height="214" rx="14" fill="rgba(164,35,143,0.06)" stroke="#a4238f" stroke-width="1.7" />
+  <text x="816" y="68" class="svg-kicker" fill="#a4238f">03 · GATE + PROMOTE</text>
+  <text x="816" y="104" class="svg-h2" fill="#0d1030">Gate every change</text>
+  <line x1="816" y1="122" x2="1102" y2="122" stroke="rgba(164,35,143,0.18)" />
+  <text x="816" y="156" class="svg-label" fill="#0d1030">Compiler · security ·</text>
+  <text x="816" y="182" class="svg-label" fill="#0d1030">dependencies · secrets</text>
+  <text x="816" y="222" class="svg-caption" fill="rgba(13,16,48,0.62)">Then promote the artifact</text>
 
-  <rect x="584" y="88" width="230" height="154" rx="14" fill="#0d1030" />
-  <text x="606" y="118" class="svg-kicker" fill="#78d8f2">03 · ASSURE</text>
-  <text x="606" y="150" class="svg-h3" fill="#ffffff">Automated gates</text>
-  <line x1="606" y1="166" x2="792" y2="166" stroke="rgba(255,255,255,0.14)" />
-  <text x="606" y="196" class="svg-label" fill="#ffffff">Compile-time rules · secrets</text>
-  <text x="606" y="220" class="svg-caption" fill="rgba(255,255,255,0.7)">Dependencies · tests</text>
-
-  <line x1="814" y1="165" x2="864" y2="165" stroke="#a4238f" stroke-width="1.8" />
-  <polygon points="858,160 868,165 858,170" fill="#a4238f" />
-
-  <rect x="868" y="88" width="256" height="154" rx="14" fill="rgba(164,35,143,0.06)" stroke="#a4238f" stroke-width="1.6" />
-  <text x="890" y="118" class="svg-kicker" fill="#a4238f">04 · TRIAL</text>
-  <text x="890" y="150" class="svg-h3" fill="#0d1030">Controlled non-production</text>
-  <line x1="890" y1="166" x2="1102" y2="166" stroke="rgba(164,35,143,0.18)" />
-  <text x="890" y="196" class="svg-label" fill="#0d1030">Access and review</text>
-  <text x="890" y="220" class="svg-caption" fill="rgba(13,16,48,0.6)">Evidence before promotion</text>
-
-  <rect x="180" y="286" width="780" height="48" rx="12" fill="#0d1030" />
-  <text x="570" y="316" text-anchor="middle" class="svg-label" fill="#ffffff">The codex guides people and agents. Gates enforce what cannot be optional.</text>
+  <rect x="170" y="282" width="800" height="48" rx="24" fill="#0d1030" />
+  <text x="570" y="312" text-anchor="middle" class="svg-label" fill="#ffffff">The same accepted artifact moves forward with its evidence.</text>
 </svg>
 </div>
 </div>
 
 <!--
-Foundation one — how a change moves:
-- The codex is human-readable and agent-usable: one reviewed source for standards, patterns, examples, and templates.
-- The workspace carries the codex and approved tools into each change.
-- Critical coding standards are enforced as the code compiles; mandatory controls also appear at source control, integration, and deployment boundaries.
-- A change reaches a controlled trial environment before anyone considers production.
+These changes predate the current AI wave and make AI-assisted implementation operationally useful.
+- Full test automation runs unit, integration, and end-to-end evidence without manual coordination.
+- Pipeline automation carries an accepted pull request through build, provision, deployment, and production.
+- Automated analysis makes linting, dependency, security, and review controls part of every change. Current examples include Cursor Bugbot, GitHub CodeQL, and Snyk.
+- This required testable systems, reliable suites, standard environments, policy as code, and ownership of pipeline health.
+Automation removes mechanical delay. It does not remove the human decision to accept a change.
 
 Client question:
-- Which step in this path is currently missing, optional, or different for every team?
+- Where does a change still wait for a manual hand-off or bespoke decision?
+-->
+
+---
+title: Specify behaviour
+sync: section-intent
+class: slide-light
+---
+<Eyebrow text="DELIVERY SYSTEM · FOUNDATION 02" />
+
+<div class="ed-band">
+<div class="ed-band-top">
+<div>
+
+# Specify behaviour.
+
+</div>
+<p class="ed-band-prose"><strong>People and agents share one source of truth: durable specifications, not code.</strong> The specification—not the codebase—states what must remain true, and people and agents alike work from it. If the code disagrees with it, the code is wrong: repaired or regenerated, not reinterpreted as a competing truth.</p>
+</div>
+<div class="ed-band-canvas">
+<svg viewBox="0 0 1140 350" aria-hidden="true">
+  <rect x="16" y="36" width="330" height="214" rx="14" fill="rgba(22,180,226,0.06)" stroke="#0c7fa3" stroke-width="1.7" />
+  <text x="38" y="68" class="svg-kicker" fill="#0c7fa3">01 · GOVERNED INTENT</text>
+  <text x="38" y="104" class="svg-h2" fill="#0d1030">Governed intent</text>
+  <line x1="38" y1="122" x2="324" y2="122" stroke="rgba(12,127,163,0.18)" />
+  <text x="38" y="158" class="svg-label" fill="#0d1030">Move up from ad hoc prompting</text>
+  <text x="38" y="190" class="svg-caption" fill="rgba(13,16,48,0.62)">Intent reviewed before implementation</text>
+  <rect x="398" y="36" width="344" height="214" rx="14" fill="#0d1030" />
+  <text x="420" y="68" class="svg-kicker" fill="#f59ef5">02 · IN THE LOOP</text>
+  <text x="420" y="104" class="svg-h2" fill="#ffffff">In the loop</text>
+  <line x1="420" y1="122" x2="720" y2="122" stroke="rgba(255,255,255,0.14)" />
+  <text x="420" y="158" class="svg-label" fill="#ffffff">Specify, review, plan, implement</text>
+  <text x="420" y="190" class="svg-caption" fill="rgba(255,255,255,0.7)">The specification stays in the loop</text>
+  <rect x="794" y="36" width="330" height="214" rx="14" fill="rgba(22,180,226,0.06)" stroke="#0c7fa3" stroke-width="1.7" />
+  <text x="816" y="68" class="svg-kicker" fill="#0c7fa3">03 · DURABLE TRUTH</text>
+  <text x="816" y="104" class="svg-h2" fill="#0d1030">Durable truth</text>
+  <line x1="816" y1="122" x2="1102" y2="122" stroke="rgba(12,127,163,0.18)" />
+  <text x="816" y="158" class="svg-label" fill="#0d1030">Code is disposable; specifications remain</text>
+  <text x="816" y="190" class="svg-caption" fill="rgba(13,16,48,0.62)">The reviewed specification endures</text>
+</svg>
+</div>
+</div>
+
+<!--
+Section 02 divider: Spec-driven development.
+- Governed intent: move up from ad hoc prompting.
+- In the loop: specify, review, plan, implement.
+- Durable truth: code is disposable; specifications remain.
 -->
 
 ---
@@ -488,13 +493,12 @@ title: AI coding moves right. Governance moves up.
 sync: record-position
 class: slide-light
 ---
-
-<Eyebrow text="02 · RECORD INTENT · SPEC-DRIVEN DELIVERY" />
+<Eyebrow text="02 · SPECIFY BEHAVIOUR · SPEC-DRIVEN DEVELOPMENT" />
 
 <div class="foundation-progress" aria-label="Delivery foundations">
-<span>01 · Set rules</span>
-<span class="is-active is-magenta">02 · Record intent</span>
-<span>03 · Constrain code</span>
+<span>01 · Standardise delivery</span>
+<span class="is-active is-magenta">02 · Specify behaviour</span>
+<span>03 · Sandbox execution</span>
 </div>
 
 <div class="ed-band">
@@ -504,7 +508,7 @@ class: slide-light
 # AI coding moves right.<br>Governance moves up.
 
 </div>
-<p class="ed-band-prose"><strong>AI coding changes implementation. It does not create governance.</strong> It does not establish authority, retain intent, or create an audit trail. Spec-driven delivery makes the separate upward move.</p>
+<p class="ed-band-prose"><strong>AI coding changes implementation. It does not create governance.</strong> It does not establish authority, retain intent, or create an audit trail. Spec-driven development makes the separate upward move.</p>
 </div>
 <div class="ed-band-canvas">
 <svg viewBox="0 0 1140 360" aria-hidden="true">
@@ -521,7 +525,7 @@ class: slide-light
   <text x="370" y="108" text-anchor="middle" class="svg-h2" fill="#0d1030">Traditional SDLC</text>
   <text x="370" y="134" text-anchor="middle" class="svg-caption" fill="rgba(13,16,48,0.58)">Governance around human implementation</text>
 
-  <text x="770" y="108" text-anchor="middle" class="svg-h2" fill="#a4238f">Spec-driven delivery</text>
+  <text x="770" y="108" text-anchor="middle" class="svg-h2" fill="#a4238f">Spec-driven development</text>
   <text x="770" y="134" text-anchor="middle" class="svg-caption" fill="rgba(13,16,48,0.64)">Durable intent around AI implementation</text>
 
   <text x="370" y="232" text-anchor="middle" class="svg-h2" fill="#0d1030">Ad hoc development</text>
@@ -545,34 +549,33 @@ class: slide-light
 Foundation two — why spec-driven delivery:
 - Most AI adoption begins as a horizontal move: introduce an assistant or agent and produce code faster.
 - That does not create authority, an audit trail, or a durable statement of what must remain true.
-- Spec-driven delivery is the separate upward move. It puts governed intent around AI-assisted implementation.
+- Spec-driven development is the separate upward move. It puts governed intent around AI-assisted implementation.
 
 Client question:
 - Has AI changed how code is produced without changing what governs its acceptance?
 -->
 
 ---
-title: The specification drives development.
+title: Specifications drive development.
 sync: record-development
 class: slide-light
 ---
-
-<Eyebrow text="02 · RECORD INTENT · SPEC-DRIVEN DEVELOPMENT" />
+<Eyebrow text="02 · SPECIFY BEHAVIOUR · SPEC-DRIVEN DEVELOPMENT" />
 
 <div class="foundation-progress" aria-label="Delivery foundations">
-<span>01 · Set rules</span>
-<span class="is-active is-magenta">02 · Record intent</span>
-<span>03 · Constrain code</span>
+<span>01 · Standardise delivery</span>
+<span class="is-active is-magenta">02 · Specify behaviour</span>
+<span>03 · Sandbox execution</span>
 </div>
 
 <div class="ed-band">
 <div class="ed-band-top">
 <div>
 
-# The specification drives<br>development.
+# Specifications drive<br>development.
 
 </div>
-<p class="ed-band-prose"><strong>The specification stays in the development loop.</strong> It is reviewed and versioned as spec.md and design.md. A plan is derived for the delivery run, then implementation builds, integrates, and verifies against the specification.</p>
+<p class="ed-band-prose"><strong>The specification stays in the development loop</strong>—from requirements and design through implementation and verification. Each change runs the loop. If the specification changes, it is reviewed and sealed again.</p>
 </div>
 <div class="ed-band-canvas">
 <svg viewBox="0 0 1140 360" aria-hidden="true">
@@ -607,8 +610,8 @@ class: slide-light
   <text x="494" y="84" class="svg-kicker" fill="#a4238f">02 · DERIVE</text>
   <text x="494" y="116" class="svg-h3" fill="#0d1030">Plan</text>
   <line x1="494" y1="132" x2="718" y2="132" stroke="rgba(164,35,143,0.18)" />
-  <text x="494" y="164" class="svg-label" fill="#0d1030">Ephemeral work</text>
-  <text x="494" y="192" class="svg-label" fill="#0d1030">Dependencies</text>
+  <text x="494" y="164" class="svg-label" fill="#0d1030">Units of work,</text>
+  <text x="494" y="192" class="svg-label" fill="#0d1030">ordered by dependency</text>
   <text x="494" y="226" class="svg-caption" fill="rgba(13,16,48,0.6)">Discard or regenerate</text>
 
   <line x1="740" y1="155" x2="768" y2="155" stroke="#0d1030" stroke-width="1.7" />
@@ -623,7 +626,7 @@ class: slide-light
   <text x="794" y="238" class="svg-caption" fill="rgba(255,255,255,0.68)">Complete only when verified</text>
 
   <rect x="148" y="294" width="844" height="48" rx="24" fill="#0d1030" />
-  <text x="570" y="324" text-anchor="middle" class="svg-label" fill="#ffffff">The plan is disposable. The reviewed specification is not.</text>
+  <text x="570" y="324" text-anchor="middle" class="svg-label" fill="#ffffff">Each change runs the loop.</text>
 </svg>
 </div>
 </div>
@@ -632,7 +635,7 @@ class: slide-light
 This is the recognisable spec-driven development loop.
 - Specify reconciles intent, documentation, tests, and, where it exists, legacy source code into `spec.md` and `design.md`. Together, those files are the specification.
 - A person reviews and seals that specification in the repository.
-- Plan derives ephemeral work ordered by dependency from the reviewed specification. It can be discarded and generated again.
+- Plan derives units of work, ordered by dependency, from the reviewed specification. It can be discarded and generated again.
 - Implement gives each unit of work the exact specification and plan entry it needs, builds and integrates it, and verifies the combined result against the specification.
 - Verification is part of completing implementation, not a separate downstream activity; only a verified wave advances the revision's label.
 - The coding agent and plan are replaceable. The reviewed specification is not.
@@ -646,20 +649,19 @@ title: Code is disposable. The specification is durable.
 sync: record-truth
 class: slide-light
 ---
-
-<Eyebrow text="02 · RECORD INTENT · DURABLE SPECIFICATION" />
+<Eyebrow text="02 · SPECIFY BEHAVIOUR · DURABLE SPECIFICATION" />
 
 <div class="foundation-progress" aria-label="Delivery foundations">
-<span>01 · Set rules</span>
-<span class="is-active is-magenta">02 · Record intent</span>
-<span>03 · Constrain code</span>
+<span>01 · Standardise delivery</span>
+<span class="is-active is-magenta">02 · Specify behaviour</span>
+<span>03 · Sandbox execution</span>
 </div>
 
 <div class="ed-band">
 <div class="ed-band-top">
 <div>
 
-# Code is disposable.<br><span style="color:#a4238f">The specification is durable.</span>
+# Code is disposable.<br><span style="color:#a4238f">Specifications are durable.</span>
 
 </div>
 <p class="ed-band-prose"><strong>The implementation is a derived output.</strong> Regenerate the plan or rebuild the code. The reviewed specification—spec.md and design.md—preserves what the system must do and how it is designed.</p>
@@ -705,17 +707,63 @@ Transition:
 -->
 
 ---
+title: Sandbox execution
+sync: section-constrain
+class: slide-light
+---
+<Eyebrow text="DELIVERY SYSTEM · FOUNDATION 03" />
+
+<div class="ed-band">
+<div class="ed-band-top">
+<div>
+
+# Sandbox execution.
+
+</div>
+<p class="ed-band-prose"><strong>Grant generated code nothing by default—it reaches infrastructure only through host-mediated capabilities.</strong> The host, not the generated code, decides what can be reached, and grants only the capabilities the work needs.</p>
+</div>
+<div class="ed-band-canvas">
+<svg viewBox="0 0 1140 350" aria-hidden="true">
+  <rect x="16" y="36" width="330" height="214" rx="14" fill="rgba(22,180,226,0.06)" stroke="#0c7fa3" stroke-width="1.7" />
+  <text x="38" y="68" class="svg-kicker" fill="#0c7fa3">01 · WASMTIME SANDBOX</text>
+  <text x="38" y="104" class="svg-h2" fill="#0d1030">Wasmtime sandbox</text>
+  <line x1="38" y1="122" x2="324" y2="122" stroke="rgba(12,127,163,0.18)" />
+  <text x="38" y="158" class="svg-label" fill="#0d1030">No direct route to infrastructure</text>
+  <text x="38" y="190" class="svg-caption" fill="rgba(13,16,48,0.62)">Generated code runs inside the sandbox</text>
+  <rect x="398" y="36" width="344" height="214" rx="14" fill="#0d1030" />
+  <text x="420" y="68" class="svg-kicker" fill="#f59ef5">02 · CAPABILITY CONTRACTS</text>
+  <text x="420" y="104" class="svg-h2" fill="#ffffff">Capability contracts</text>
+  <line x1="420" y1="122" x2="720" y2="122" stroke="rgba(255,255,255,0.14)" />
+  <text x="420" y="158" class="svg-label" fill="#ffffff">HTTP, Messaging, KeyValue, BlobStore</text>
+  <text x="420" y="190" class="svg-caption" fill="rgba(255,255,255,0.7)">Access only through typed contracts</text>
+  <rect x="794" y="36" width="330" height="214" rx="14" fill="rgba(22,180,226,0.06)" stroke="#0c7fa3" stroke-width="1.7" />
+  <text x="816" y="68" class="svg-kicker" fill="#0c7fa3">03 · RUNTIME RECIPES</text>
+  <text x="816" y="104" class="svg-h2" fill="#0d1030">Runtime recipes</text>
+  <line x1="816" y1="122" x2="1102" y2="122" stroke="rgba(12,127,163,0.18)" />
+  <text x="816" y="158" class="svg-label" fill="#0d1030">Local, cloud, and on-premise</text>
+  <text x="816" y="190" class="svg-caption" fill="rgba(13,16,48,0.62)">The same application, bound per environment</text>
+</svg>
+</div>
+</div>
+
+<!--
+Section 03 divider: Sandboxed execution.
+- Grant generated code nothing by default.
+- It reaches infrastructure only through host-mediated capabilities.
+- Runtime recipes bind the same contracts in each environment.
+-->
+
+---
 title: Generated code has less freedom to surprise.
 sync: runtime
 class: slide-light
 ---
-
-<Eyebrow text="03 · CONSTRAIN CODE · SANDBOXED EXECUTION" />
+<Eyebrow text="03 · SANDBOX EXECUTION · SANDBOXED EXECUTION" />
 
 <div class="foundation-progress" aria-label="Delivery foundations">
-<span>01 · Set rules</span>
-<span>02 · Record intent</span>
-<span class="is-active">03 · Constrain code</span>
+<span>01 · Standardise delivery</span>
+<span>02 · Specify behaviour</span>
+<span class="is-active">03 · Sandbox execution</span>
 </div>
 
 <div class="ed-band">
@@ -725,7 +773,7 @@ class: slide-light
 # Generated code has less freedom<br>to surprise.
 
 </div>
-<p class="ed-band-prose"><strong>Code reaches infrastructure only through capabilities supplied by the host.</strong></p>
+<p class="ed-band-prose"><strong>Code reaches infrastructure through host-provided capabilities.</strong> Grant generated code nothing by default; the host grants only the capabilities it needs.</p>
 </div>
 <div class="ed-band-canvas" style="padding-top: 24px;">
 <svg viewBox="0 0 1140 360" aria-hidden="true">
@@ -787,20 +835,19 @@ title: Different infrastructure. The same application.
 sync: runtime-portability
 class: slide-light
 ---
-
-<Eyebrow text="03 · CONSTRAIN CODE · PORTABLE INFRASTRUCTURE" />
+<Eyebrow text="03 · SANDBOX EXECUTION · PORTABLE INFRASTRUCTURE" />
 
 <div class="foundation-progress" aria-label="Delivery foundations">
-<span>01 · Set rules</span>
-<span>02 · Record intent</span>
-<span class="is-active">03 · Constrain code</span>
+<span>01 · Standardise delivery</span>
+<span>02 · Specify behaviour</span>
+<span class="is-active">03 · Sandbox execution</span>
 </div>
 
 <div class="ed-band">
 <div class="ed-band-top">
 <div>
 
-# Different infrastructure.<br>The same application.
+# Different infrastructure.<br>Same application.
 
 </div>
 <p class="ed-band-prose"><strong>The component depends on capabilities, not products.</strong> A runtime recipe binds them to approved services in each environment.</p>
@@ -871,7 +918,7 @@ class: slide-light
 </div>
 
 <!--
-The website calls this host-selected infrastructure.
+Different infrastructure, the same application.
 - The application component depends on stable capability contracts rather than directly on infrastructure products.
 - Each environment supplies a reviewed runtime recipe: the runtime, capability bindings, identity and policy, configuration, and observability.
 - A local or trial recipe may use in-memory and local services. Cloud and on-premise recipes bind the same contracts to approved managed or internal services.
@@ -884,17 +931,62 @@ Client question:
 -->
 
 ---
+title: Right-size the safeguards
+sync: section-trust
+class: slide-light
+---
+<Eyebrow text="DELIVERY SYSTEM · TRUST MODEL" />
+
+<div class="ed-band">
+<div class="ed-band-top">
+<div>
+
+# Match safeguards<br>to the stakes.
+
+</div>
+<p class="ed-band-prose"><strong>Give prototypes room to learn—strengthen safeguards as people come to depend on the system.</strong> Explore while you learn. Govern what becomes shared. Connect with explicit purpose. Support what the business depends on.</p>
+</div>
+<div class="ed-band-canvas">
+<svg viewBox="0 0 1140 350" aria-hidden="true">
+  <rect x="16" y="36" width="330" height="214" rx="14" fill="rgba(22,180,226,0.06)" stroke="#0c7fa3" stroke-width="1.7" />
+  <text x="38" y="68" class="svg-kicker" fill="#0c7fa3">01 · EXPLORE &amp; GOVERN</text>
+  <text x="38" y="104" class="svg-h2" fill="#0d1030">Explore &amp; Govern</text>
+  <line x1="38" y1="122" x2="324" y2="122" stroke="rgba(12,127,163,0.18)" />
+  <text x="38" y="158" class="svg-label" fill="#0d1030">Keep discovery cheap</text>
+  <text x="38" y="190" class="svg-caption" fill="rgba(13,16,48,0.62)">and shared work clean</text>
+  <rect x="398" y="36" width="344" height="214" rx="14" fill="#0d1030" />
+  <text x="420" y="68" class="svg-kicker" fill="#f59ef5">02 · CONNECT &amp; SUPPORT</text>
+  <text x="420" y="104" class="svg-h2" fill="#ffffff">Connect &amp; Support</text>
+  <line x1="420" y1="122" x2="720" y2="122" stroke="rgba(255,255,255,0.14)" />
+  <text x="420" y="158" class="svg-label" fill="#ffffff">Enforce runtime and</text>
+  <text x="420" y="190" class="svg-caption" fill="rgba(255,255,255,0.7)">full delivery boundaries</text>
+  <rect x="794" y="36" width="330" height="214" rx="14" fill="rgba(22,180,226,0.06)" stroke="#0c7fa3" stroke-width="1.7" />
+  <text x="816" y="68" class="svg-kicker" fill="#0c7fa3">03 · TRUST RADIUS</text>
+  <text x="816" y="104" class="svg-h2" fill="#0d1030">Trust radius</text>
+  <line x1="816" y1="122" x2="1102" y2="122" stroke="rgba(12,127,163,0.18)" />
+  <text x="816" y="158" class="svg-label" fill="#0d1030">Assess reach, data,</text>
+  <text x="816" y="190" class="svg-caption" fill="rgba(13,16,48,0.62)">dependence, and continuity</text>
+</svg>
+</div>
+</div>
+
+<!--
+Section divider: Trust Model and Trust Radius.
+- Match safeguards to the stakes.
+- Explore, Govern, Connect, and Support are situations to match—not levels to climb.
+-->
+
+---
 title: Trust is contextual, not a maturity score.
 sync: trust-model
 class: slide-light
 ---
-
-<Eyebrow text="TRUST MODEL · REQUIRED CONTROLS FOLLOW CONSEQUENCE" />
+<Eyebrow text="TRUST MODEL · REQUIRED SAFEGUARDS FOLLOW CONSEQUENCE" />
 
 <div class="foundation-progress" aria-label="Delivery foundations">
-<span class="is-active">01 · Set rules</span>
-<span class="is-active is-magenta">02 · Record intent</span>
-<span class="is-active">03 · Constrain code</span>
+<span class="is-active">01 · Standardise delivery</span>
+<span class="is-active is-magenta">02 · Specify behaviour</span>
+<span class="is-active">03 · Sandbox execution</span>
 </div>
 
 <div class="ed-band">
@@ -904,7 +996,7 @@ class: slide-light
 # Trust is contextual,<br>not a maturity score.
 
 </div>
-<p class="ed-band-prose"><strong>Four operational states determine which controls an application requires.</strong> Moving right is not progress; it is more consequence to manage.</p>
+<p class="ed-band-prose"><strong>Explore, Govern, Connect, and Support are situations to match—not levels to climb.</strong> Choose the least costly state that matches the actual consequence. Read each state as its situation, its minimum evidence and ownership, then its required boundary.</p>
 </div>
 <div class="ed-band-canvas" style="padding-top: 4px;">
 <svg viewBox="0 0 1140 350" aria-hidden="true">
@@ -964,7 +1056,7 @@ class: slide-light
   <text x="871" y="256" class="svg-kicker" fill="#a4238f">REQUIRED BOUNDARY</text>
   <text x="871" y="282" class="svg-label" fill="#0d1030">Full delivery system</text>
 
-  <text x="570" y="335" text-anchor="middle" class="svg-caption" fill="rgba(13,16,48,0.58)">Keep the application in the least costly state consistent with its actual consequence.</text>
+  <text x="570" y="335" text-anchor="middle" class="svg-caption" fill="rgba(13,16,48,0.58)">Choose the least costly state that matches the actual consequence.</text>
 </svg>
 </div>
 </div>
@@ -987,13 +1079,12 @@ title: The highest consequence sets the trust radius.
 sync: trust-radius
 class: slide-light
 ---
-
 <Eyebrow text="TRUST RADIUS · ASSESS FOUR DIMENSIONS" />
 
 <div class="foundation-progress" aria-label="Delivery foundations">
-<span class="is-active">01 · Set rules</span>
-<span class="is-active is-magenta">02 · Record intent</span>
-<span class="is-active">03 · Constrain code</span>
+<span class="is-active">01 · Standardise delivery</span>
+<span class="is-active is-magenta">02 · Specify behaviour</span>
+<span class="is-active">03 · Sandbox execution</span>
 </div>
 
 <div class="ed-band">
@@ -1003,7 +1094,7 @@ class: slide-light
 # The highest consequence<br>sets the trust radius.
 
 </div>
-<p class="ed-band-prose"><strong>Assess reach, data, dependence, and continuity against the four-state model.</strong></p>
+<p class="ed-band-prose"><strong>Place each dimension on the same four-state scale.</strong> Take the furthest answer—not the average—and reassess whenever one changes.</p>
 </div>
 <div class="ed-band-canvas" style="padding-top: 4px;">
 <svg viewBox="0 0 1140 350" aria-hidden="true">
@@ -1045,7 +1136,7 @@ class: slide-light
   <line x1="570" y1="242" x2="570" y2="261" stroke="#a4238f" stroke-width="1.8" />
   <polygon points="565,256 575,256 570,266" fill="#a4238f" />
   <rect x="330" y="268" width="480" height="48" rx="10" fill="rgba(164,35,143,0.04)" stroke="#a4238f" stroke-width="1.5" />
-  <text x="570" y="298" text-anchor="middle" class="svg-label" fill="#0d1030" style="font-weight: 600;">The furthest answer defines the trust radius—and the controls it requires.</text>
+  <text x="570" y="298" text-anchor="middle" class="svg-label" fill="#0d1030" style="font-weight: 600;">The furthest answer defines the trust radius—and the safeguards it requires.</text>
 
   <text x="570" y="342" text-anchor="middle" class="svg-caption" fill="rgba(13,16,48,0.58)">Reassess whenever reach, data, dependence, or continuity changes.</text>
 </svg>
@@ -1059,7 +1150,7 @@ Data asks what it can read, retain, produce, or change, including the consequenc
 Dependence asks who or what relies on it and what work stops when it is unavailable or wrong.
 Continuity asks what must survive failure and what recovery obligation exists.
 Place each answer independently in Explore, Govern, Connect, or Support.
-Do not average the answers. The highest-consequence answer sets the application's required state and therefore its controls.
+Do not average the answers. The highest-consequence answer sets the application's required state and therefore its safeguards.
 This is the application's trust radius: the widest consequence it can create or inherit.
 The radius can contract as well as expand. Reassess whenever one of the four dimensions changes.
 
@@ -1068,119 +1159,190 @@ Client question:
 -->
 
 ---
-title: Evidence must be able to say no
-sync: proof-result
+title: The path becomes a loop.
+sync: future-system
 class: slide-light
 ---
 
-<Eyebrow text="EVIDENCE · FIXED REPLAY SUITE, NOT A MODEL DEMO" />
+<Eyebrow text="DELIVERY SYSTEM · THE FUTURE" />
 
-<div class="ed-split">
-<div class="ed-prose-col">
+<div class="ed-band">
+<div class="ed-band-top">
+<div>
 
-# Evidence must be<br>able to say no.
-
-<p class="ed-prose">We recovered a specification from an anonymised real-time rail service, rebuilt it as a WASI component, and held it to the fixed 22-case replay suite used for its hand-written counterpart.</p>
-<p class="ed-prose">The early output looked plausible line by line. <strong>The recorded cases showed it was not correct.</strong> Evidence is useful because it can still say no.</p>
-<p class="ed-footnote">Propellerhead internal evaluation, October 2026. Latest result: 21 of 22 cases, including all 12 recorded production messages. One case remains open and reported.</p>
+# The path becomes<br>a loop.
 
 </div>
-<div class="ed-diagram-pane">
-<svg viewBox="0 0 640 440" aria-hidden="true">
-  <text x="14" y="38" class="svg-kicker" fill="rgba(13,16,48,0.52)">THE SAME FIXED REPLAY SUITE · 22 RECORDED CASES</text>
+<p class="ed-band-prose"><strong>Everything the running system learns comes back as a governed change.</strong> Sense the signal, decide what it means, and put the change through the same delivery system—then observe what happens.</p>
+</div>
+<div class="ed-band-canvas">
+<svg viewBox="0 0 1140 350" aria-hidden="true">
+  <rect x="16" y="36" width="330" height="214" rx="14" fill="rgba(22,180,226,0.06)" stroke="#0c7fa3" stroke-width="1.7" />
+  <text x="38" y="68" class="svg-kicker" fill="#0c7fa3">01 · SENSE</text>
+  <text x="38" y="104" class="svg-h2" fill="#0d1030">Sense</text>
+  <line x1="38" y1="122" x2="324" y2="122" stroke="rgba(12,127,163,0.18)" />
+  <text x="38" y="158" class="svg-label" fill="#0d1030">Signals from production</text>
+  <text x="38" y="190" class="svg-caption" fill="rgba(13,16,48,0.62)">Monitoring, audits, and incidents</text>
 
-  <rect x="14" y="66" width="184" height="154" rx="12" fill="rgba(255,59,107,0.05)" stroke="rgba(180,35,78,0.4)" />
-  <text x="106" y="132" text-anchor="middle" class="svg-h2" fill="#b4234e" style="font-size: 40px;">0 / 22</text>
-  <text x="106" y="164" text-anchor="middle" class="svg-kicker" fill="#b4234e">EARLY BUILD</text>
-  <text x="106" y="194" text-anchor="middle" class="svg-caption" fill="rgba(13,16,48,0.58)">Plausible. Wrong.</text>
+  <rect x="398" y="36" width="344" height="214" rx="14" fill="#0d1030" />
+  <text x="420" y="68" class="svg-kicker" fill="#f59ef5">02 · DECIDE</text>
+  <text x="420" y="104" class="svg-h2" fill="#ffffff">Decide</text>
+  <line x1="420" y1="122" x2="720" y2="122" stroke="rgba(255,255,255,0.14)" />
+  <text x="420" y="158" class="svg-label" fill="#ffffff">Investigate and propose</text>
+  <text x="420" y="190" class="svg-caption" fill="rgba(255,255,255,0.7)">A proposal is not a shipment</text>
 
-  <line x1="198" y1="143" x2="224" y2="143" stroke="#0c7fa3" stroke-width="2" />
-  <polygon points="218,138 228,143 218,148" fill="#0c7fa3" />
-
-  <rect x="230" y="66" width="184" height="154" rx="12" fill="rgba(22,180,226,0.06)" stroke="#0c7fa3" stroke-width="1.5" />
-  <text x="322" y="132" text-anchor="middle" class="svg-h2" fill="#0c7fa3" style="font-size: 40px;">7 / 22</text>
-  <text x="322" y="164" text-anchor="middle" class="svg-kicker" fill="#0c7fa3">SYSTEM IMPROVED</text>
-  <text x="322" y="194" text-anchor="middle" class="svg-caption" fill="rgba(13,16,48,0.58)">Checks and guidance</text>
-
-  <line x1="414" y1="143" x2="440" y2="143" stroke="#a4238f" stroke-width="2" />
-  <polygon points="434,138 444,143 434,148" fill="#a4238f" />
-
-  <rect x="446" y="66" width="180" height="154" rx="12" fill="#a4238f" />
-  <text x="536" y="132" text-anchor="middle" class="svg-h2" fill="#ffffff" style="font-size: 40px;">21 / 22</text>
-  <text x="536" y="164" text-anchor="middle" class="svg-kicker" fill="rgba(255,255,255,0.86)">LATEST BUILD</text>
-  <text x="536" y="194" text-anchor="middle" class="svg-caption" fill="rgba(255,255,255,0.78)">12 / 12 production messages</text>
-
-  <rect x="78" y="274" width="484" height="92" rx="14" fill="#0d1030" />
-  <text x="320" y="312" text-anchor="middle" class="svg-h3" fill="#ffffff">One case remains open—and reported.</text>
-  <text x="320" y="340" text-anchor="middle" class="svg-caption" fill="#78d8f2">The evidence still says no.</text>
+  <rect x="794" y="36" width="330" height="214" rx="14" fill="rgba(22,180,226,0.06)" stroke="#0c7fa3" stroke-width="1.7" />
+  <text x="816" y="68" class="svg-kicker" fill="#0c7fa3">03 · CHANGE</text>
+  <text x="816" y="104" class="svg-h2" fill="#0d1030">Change</text>
+  <line x1="816" y1="122" x2="1102" y2="122" stroke="rgba(12,127,163,0.18)" />
+  <text x="816" y="158" class="svg-label" fill="#0d1030">Define, build, merge</text>
+  <text x="816" y="190" class="svg-caption" fill="rgba(13,16,48,0.62)">Then observe what the change did</text>
 </svg>
 </div>
 </div>
 
 <!--
-Evidence, stated at the level achieved:
-- The early output looked plausible. The recorded cases showed it was not correct.
-- The same fixed suite was used for the hand-written counterpart.
-- The open case remains visible. Evidence is useful because it can still say no.
+Section divider: The complete system.
+- So far the argument has been a path: intent enters, delivery carries it to production, safeguards are matched to the stakes.
+- The future is that path running as a loop: what the running system learns becomes the next governed change.
 -->
 
 ---
-title: Fix the system, not the output
-sync: proof-learning
+title: Feedback drives the next change.
+sync: future-loop
 class: slide-light
 ---
 
-<Eyebrow text="COMPOUNDING DELIVERY · EVERY FAILURE IMPROVES THE NEXT BUILD" />
+<Eyebrow text="THE FUTURE · THE COMPLETE SYSTEM" />
 
-<div class="ed-split">
-<div class="ed-prose-col">
+<div class="ed-band">
+<div class="ed-band-top">
+<div>
 
-# Fix the system,<br>not the output.
-
-<p class="ed-prose"><strong>No defect was hand-patched.</strong> Each failure changed the checks, guidance, extraction, or tooling that every later build inherits.</p>
-<p class="ed-prose">The score is not the product claim. The compounding delivery system is.</p>
+# Feedback drives<br>the next change.
 
 </div>
-<div class="ed-diagram-pane">
-<svg viewBox="0 0 640 440" aria-hidden="true">
-  <rect x="14" y="28" width="612" height="360" rx="14" fill="#0d1030" />
-  <text x="38" y="62" class="svg-kicker" fill="#78d8f2">A FAILURE BECOMES A SYSTEM CAPABILITY</text>
+<p class="ed-band-prose"><strong>Nothing bypasses the path.</strong> A signal becomes a change; a change becomes new evidence. An incident manager investigates and proposes; the fix is specified, built, and merged in code and infrastructure lanes, deployed, and watched by infrastructure monitoring, which raises the next signal.</p>
+</div>
+<div class="ed-band-canvas">
+<svg viewBox="0 0 1140 480" aria-hidden="true" style="max-height: 430px;">
+  <defs>
+    <marker id="loop-arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0 0L10 5L0 10z" fill="rgba(13,16,48,0.55)" />
+    </marker>
+    <marker id="loop-arrow-magenta" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0 0L10 5L0 10z" fill="#7c5cc9" />
+    </marker>
+    <marker id="loop-arrow-red" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0 0L10 5L0 10z" fill="#ff3b6b" />
+    </marker>
+    <linearGradient id="loop-gradient" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#16b4e2" />
+      <stop offset="100%" stop-color="#d63ad6" />
+    </linearGradient>
+  </defs>
 
-  <text x="38" y="122" class="svg-label" fill="#ffffff">A consumer never registered</text>
-  <line x1="250" y1="117" x2="324" y2="117" stroke="rgba(255,255,255,0.24)" />
-  <polygon points="318,112 328,117 318,122" fill="#78d8f2" />
-  <text x="344" y="122" class="svg-caption" fill="#78d8f2">Refuse unreachable publishers</text>
+  <!-- sources -->
+  <rect x="10" y="36" width="176" height="54" rx="9" fill="#ffffff" stroke="rgba(13,16,48,0.3)" stroke-width="1.5" />
+  <text x="98" y="69" text-anchor="middle" class="svg-label" fill="#0d1030">Security feeds</text>
+  <rect x="10" y="354" width="176" height="54" rx="9" fill="#ffffff" stroke="rgba(13,16,48,0.3)" stroke-width="1.5" />
+  <text x="98" y="387" text-anchor="middle" class="svg-label" fill="#0d1030">Cargo audit</text>
 
-  <text x="38" y="182" class="svg-label" fill="#ffffff">A rejection looked processed</text>
-  <line x1="250" y1="177" x2="324" y2="177" stroke="rgba(255,255,255,0.24)" />
-  <polygon points="318,172 328,177 318,182" fill="#78d8f2" />
-  <text x="344" y="182" class="svg-caption" fill="#78d8f2">Refuse swallowed errors</text>
+  <rect x="10" y="195" width="176" height="54" rx="9" fill="rgba(255,59,107,0.06)" stroke="rgba(255,59,107,0.8)" stroke-width="1.6" />
+  <text x="98" y="215" text-anchor="middle" class="svg-label" fill="#0d1030">Vulnerability</text>
+  <text x="98" y="233" text-anchor="middle" class="svg-label" fill="#0d1030">monitoring</text>
+  <text x="98" y="246" text-anchor="middle" fill="rgba(13,16,48,0.55)" style="font-size: 8px;">Analyse · security, dependencies</text>
 
-  <text x="38" y="242" class="svg-label" fill="#ffffff">A type was laid out empty</text>
-  <line x1="250" y1="237" x2="324" y2="237" stroke="rgba(255,255,255,0.24)" />
-  <polygon points="318,232 328,237 318,242" fill="#f59ef5" />
-  <text x="344" y="242" class="svg-caption" fill="#f59ef5">Repair the design-type reader</text>
+  <line x1="98" y1="90" x2="98" y2="191" stroke="rgba(13,16,48,0.45)" stroke-width="1.6" marker-end="url(#loop-arrow)" />
+  <line x1="98" y1="354" x2="98" y2="253" stroke="rgba(13,16,48,0.45)" stroke-width="1.6" marker-end="url(#loop-arrow)" />
+  <line x1="186" y1="222" x2="228" y2="222" stroke="#ff3b6b" stroke-width="2" marker-end="url(#loop-arrow-red)" />
 
-  <line x1="38" y1="286" x2="602" y2="286" stroke="rgba(255,255,255,0.12)" />
-  <text x="320" y="322" text-anchor="middle" class="svg-label" fill="#ffffff">No defect was hand-patched.</text>
-  <text x="320" y="350" text-anchor="middle" class="svg-caption" fill="rgba(255,255,255,0.72)">Every later build inherits the fix.</text>
+  <!-- incident manager -->
+  <rect x="232" y="150" width="304" height="144" rx="14" fill="#ffffff" stroke="rgba(13,16,48,0.3)" stroke-width="1.6" />
+  <text x="252" y="178" class="svg-kicker" fill="rgba(13,16,48,0.58)">INCIDENT MANAGER</text>
+  <rect x="252" y="196" width="122" height="58" rx="9" fill="#ffffff" stroke="rgba(13,16,48,0.3)" stroke-width="1.5" />
+  <text x="313" y="231" text-anchor="middle" class="svg-label" fill="#0d1030">Investigate</text>
+  <line x1="374" y1="225" x2="390" y2="225" stroke="rgba(13,16,48,0.45)" stroke-width="1.6" marker-end="url(#loop-arrow)" />
+  <rect x="394" y="196" width="122" height="58" rx="9" fill="#ffffff" stroke="rgba(13,16,48,0.3)" stroke-width="1.5" />
+  <text x="455" y="231" text-anchor="middle" class="svg-label" fill="#0d1030">Propose Fix</text>
+  <rect x="399" y="262" width="112" height="24" rx="12" fill="#0d1030" />
+  <text x="455" y="278" text-anchor="middle" fill="#ffffff" style="font-size: 10.5px; font-weight: 600;">Review &amp; seal</text>
+
+  <!-- forks to the two lanes -->
+  <path d="M500 150 C 560 110, 560 92, 592 92" fill="none" stroke="rgba(13,16,48,0.45)" stroke-width="1.6" stroke-dasharray="5 4" marker-end="url(#loop-arrow)" />
+  <path d="M500 294 C 560 334, 560 368, 592 368" fill="none" stroke="rgba(13,16,48,0.45)" stroke-width="1.6" stroke-dasharray="5 4" marker-end="url(#loop-arrow)" />
+  <text x="512" y="118" class="svg-caption" fill="rgba(13,16,48,0.58)">investigate/fix</text>
+  <text x="512" y="352" class="svg-caption" fill="rgba(13,16,48,0.58)">investigate/fix</text>
+
+  <!-- infrastructure lane -->
+  <rect x="596" y="28" width="528" height="142" rx="14" fill="rgba(22,180,226,0.04)" stroke="rgba(12,127,163,0.4)" stroke-width="1.5" />
+  <text x="616" y="54" class="svg-kicker" fill="#0c7fa3">INFRASTRUCTURE</text>
+  <rect x="616" y="59" width="168" height="4" rx="2" fill="url(#loop-gradient)" />
+  <rect x="616" y="66" width="168" height="62" rx="9" fill="rgba(22,180,226,0.08)" stroke="#0c7fa3" stroke-width="1.6" />
+  <text x="700" y="96" text-anchor="middle" class="svg-label" fill="#0d1030">Specify–Build–Merge</text>
+  <text x="700" y="116" text-anchor="middle" class="svg-caption" fill="rgba(13,16,48,0.58)" style="font-size: 8.5px;">Spec → Plan → Build → Merge → Verify</text>
+  <line x1="784" y1="97" x2="808" y2="97" stroke="rgba(13,16,48,0.45)" stroke-width="1.6" marker-start="url(#loop-arrow)" marker-end="url(#loop-arrow)" />
+  <path d="M812 76 a60 10 0 0 0 120 0 v42 a60 10 0 0 1 -120 0 z" fill="#ffffff" stroke="rgba(13,16,48,0.4)" stroke-width="1.5" />
+  <ellipse cx="872" cy="76" rx="60" ry="10" fill="#ffffff" stroke="rgba(13,16,48,0.4)" stroke-width="1.5" />
+  <text x="872" y="102" text-anchor="middle" class="svg-label" fill="#0d1030">GitHub</text>
+  <text x="872" y="119" text-anchor="middle" fill="rgba(13,16,48,0.55)" style="font-size: 8.5px;">spec.md · design.md</text>
+  <rect x="972" y="66" width="136" height="62" rx="9" fill="rgba(124,92,205,0.1)" stroke="rgba(124,92,205,0.7)" stroke-width="1.6" />
+  <text x="1040" y="99" text-anchor="middle" class="svg-label" fill="#0d1030">Terraform</text>
+  <text x="1040" y="117" text-anchor="middle" fill="rgba(13,16,48,0.55)" style="font-size: 9px;">runtime recipe</text>
+  <line x1="972" y1="97" x2="936" y2="97" stroke="rgba(124,92,205,0.8)" stroke-width="1.6" stroke-dasharray="5 4" marker-end="url(#loop-arrow-magenta)" />
+  <line x1="1040" y1="128" x2="1040" y2="198" stroke="rgba(124,92,205,0.9)" stroke-width="2" marker-end="url(#loop-arrow-magenta)" />
+  <text x="1052" y="168" class="svg-caption" fill="rgba(13,16,48,0.58)">update</text>
+
+  <!-- shared infrastructure + monitoring -->
+  <rect x="928" y="202" width="196" height="62" rx="10" fill="rgba(22,180,226,0.1)" stroke="#0c7fa3" stroke-width="1.8" />
+  <text x="1026" y="236" text-anchor="middle" class="svg-h3" fill="#0d1030">Infrastructure</text>
+  <text x="1026" y="255" text-anchor="middle" fill="rgba(13,16,48,0.55)" style="font-size: 9px;">Cloud/On-premise</text>
+  <rect x="596" y="202" width="210" height="62" rx="10" fill="rgba(255,59,107,0.06)" stroke="rgba(255,59,107,0.8)" stroke-width="1.6" />
+  <text x="701" y="228" text-anchor="middle" class="svg-label" fill="#0d1030">Infrastructure</text>
+  <text x="701" y="248" text-anchor="middle" class="svg-label" fill="#0d1030">monitoring</text>
+  <line x1="806" y1="233" x2="924" y2="233" stroke="#ff3b6b" stroke-width="2" marker-end="url(#loop-arrow-red)" />
+  <text x="865" y="223" text-anchor="middle" class="svg-caption" fill="rgba(13,16,48,0.58)">monitor</text>
+  <line x1="596" y1="240" x2="540" y2="240" stroke="#ff3b6b" stroke-width="2" marker-end="url(#loop-arrow-red)" />
+  <text x="568" y="230" text-anchor="middle" fill="rgba(13,16,48,0.55)" style="font-size: 9px;">observe</text>
+
+  <!-- code lane -->
+  <rect x="596" y="308" width="528" height="142" rx="14" fill="rgba(22,180,226,0.04)" stroke="rgba(12,127,163,0.4)" stroke-width="1.5" />
+  <text x="616" y="334" class="svg-kicker" fill="#0c7fa3">CODE</text>
+  <rect x="616" y="339" width="168" height="4" rx="2" fill="url(#loop-gradient)" />
+  <rect x="616" y="346" width="168" height="62" rx="9" fill="rgba(22,180,226,0.08)" stroke="#0c7fa3" stroke-width="1.6" />
+  <text x="700" y="376" text-anchor="middle" class="svg-label" fill="#0d1030">Specify–Build–Merge</text>
+  <text x="700" y="396" text-anchor="middle" class="svg-caption" fill="rgba(13,16,48,0.58)" style="font-size: 8.5px;">Spec → Plan → Build → Merge → Verify</text>
+  <line x1="784" y1="377" x2="808" y2="377" stroke="rgba(13,16,48,0.45)" stroke-width="1.6" marker-start="url(#loop-arrow)" marker-end="url(#loop-arrow)" />
+  <path d="M812 356 a60 10 0 0 0 120 0 v42 a60 10 0 0 1 -120 0 z" fill="#ffffff" stroke="rgba(13,16,48,0.4)" stroke-width="1.5" />
+  <ellipse cx="872" cy="356" rx="60" ry="10" fill="#ffffff" stroke="rgba(13,16,48,0.4)" stroke-width="1.5" />
+  <text x="872" y="382" text-anchor="middle" class="svg-label" fill="#0d1030">GitHub</text>
+  <text x="872" y="399" text-anchor="middle" fill="rgba(13,16,48,0.55)" style="font-size: 8.5px;">spec.md · design.md</text>
+  <rect x="972" y="346" width="136" height="62" rx="9" fill="rgba(13,16,48,0.05)" stroke="rgba(13,16,48,0.35)" stroke-width="1.5" />
+  <text x="1040" y="374" text-anchor="middle" class="svg-label" fill="#0d1030">GitHub</text>
+  <text x="1040" y="394" text-anchor="middle" class="svg-label" fill="#0d1030">Actions</text>
+  <text x="1040" y="430" text-anchor="middle" fill="rgba(13,16,48,0.55)" style="font-size: 9px;">promote the artifact</text>
+  <line x1="972" y1="377" x2="936" y2="377" stroke="rgba(13,16,48,0.45)" stroke-width="1.6" stroke-dasharray="5 4" marker-end="url(#loop-arrow)" />
+  <line x1="1040" y1="346" x2="1040" y2="268" stroke="rgba(13,16,48,0.5)" stroke-width="2" marker-end="url(#loop-arrow)" />
+  <text x="1052" y="305" class="svg-caption" fill="rgba(13,16,48,0.58)">deploy</text>
+
 </svg>
 </div>
 </div>
 
 <!--
-Compounding delivery:
-- We did not rescue the demonstration with hand edits.
-- Each defect became a reusable check, extraction rule, instruction, or tooling repair.
-- The next build starts with every lesson the previous one paid for.
+The complete system, using vulnerability remediation as the worked example:
+- Security feeds and dependency audits flow into vulnerability monitoring.
+- An incident manager investigates and proposes a fix. It proposes; it does not ship.
+- The fix enters at the production gate and runs the same loop as any change: specify, build, and merge — in a code lane and an infrastructure lane.
+- The result is deployed and updated, and infrastructure monitoring watches it and raises the next signal.
+- Nothing bypasses the path. The safeguards on each pass are the ones the trust radius requires.
 -->
 
 ---
-title: Start with one real change. Make the next one easier.
+title: What’s the first change you’d trust AI to deliver?
 sync: cta
 class: slide-split short-bar
 ---
-
 <div class="split-image-pane">
 <AmbientVideo src="/videos/cta-video.mp4" variant="split" />
 <div class="split-brand-overlay">
@@ -1189,56 +1351,18 @@ class: slide-split short-bar
 </div>
 </div>
 
-<div class="split-content-pane">
+<div class="split-content-pane" style="justify-content: center;">
 <div>
 <Eyebrow text="PROPELLERHEAD · THE FIRST MOVE" />
 
-# Start with one real change.<br>Make the next one easier.
+# What’s the first change<br>you’d trust AI to deliver?
 
-<div class="opportunity-rows" style="margin-top: 8px;">
-<div class="opportunity-row">
-<span class="opportunity-row-num">01</span>
-<div>
-<h4>Choose the first move</h4>
-<p>We work out what is really in the way, set the boundaries and shape a first delivery worth doing.</p>
-</div>
-</div>
-<div class="opportunity-row">
-<span class="opportunity-row-num">02</span>
-<div>
-<h4>Get it live</h4>
-<p>New system or old one: we use AI where it helps, senior people where judgement matters and a production path we already know.</p>
-</div>
-</div>
-<div class="opportunity-row">
-<span class="opportunity-row-num">03</span>
-<div>
-<h4>Keep the gains</h4>
-<p>You keep the specifications, tests, infrastructure and delivery knowledge. The next change starts ahead, not at zero.</p>
-</div>
-</div>
-</div>
-</div>
-
-<div class="cta-card">
-<div>
-<div class="cta-card-label">THE FIRST MOVE</div>
-<div class="cta-card-title">What is really in the way?</div>
-</div>
-<div class="cta-pill">
-<span class="cta-pill-dot">→</span>
-<span>Find the first move</span>
-</div>
+<p class="ed-prose">Start with one change you can name. Place it by its reach, data, dependence, and continuity, set the safeguards to match its stakes, and deliver it through the system.</p>
+<p class="ed-prose"><strong>One change is enough to start.</strong> What it creates—the specification, the evidence, and the delivery knowledge—stays with you for the next one.</p>
 </div>
 </div>
 
 <!--
-Close on the same path as the website:
-- Choose the first move: work out what is really in the way, set the boundaries, and shape a first delivery worth doing.
-- Get it live: use AI where it helps, senior people where judgement matters, and a production path we already know.
-- Keep the gains: retain the specifications, tests, infrastructure, and delivery knowledge so the next change starts ahead.
-- The call to action is direct: find the first move.
-
-Final question:
-- What is really in the way?
+The trust model gives the audience a way to judge how much safeguard a change needs.
+Close by returning to the opening in personal terms: what is the first change they would trust AI to deliver? One change is enough to start; set the safeguards to match its stakes.
 -->

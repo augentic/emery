@@ -29,9 +29,9 @@ class: slide-hero slide-section
 .slidev-layout .foundation-progress {
   position: absolute;
   top: 28px;
-  right: 160px;
+  right: 152px;
   z-index: 2;
-  width: 460px;
+  width: 530px;
   margin: 0;
   display: grid;
   grid-template-columns: repeat(3, 1fr);
@@ -44,8 +44,9 @@ class: slide-hero slide-section
   font-size: 9px;
   line-height: 1.15;
   font-weight: 600;
-  letter-spacing: 0.07em;
+  letter-spacing: 0.06em;
   text-transform: uppercase;
+  white-space: nowrap;
   color: var(--phl-ink-muted);
 }
 
@@ -313,11 +314,18 @@ class: slide-hero slide-section
   margin-top: 20px;
   padding: 17px 24px;
   border-radius: 12px;
-  background: rgba(255, 255, 255, 0.09);
+  border: 1px solid rgba(12, 127, 163, 0.35);
+  background: rgba(22, 180, 226, 0.06);
   text-align: center;
   font-size: 18px;
   font-weight: 500;
   word-spacing: 10px;
+  color: var(--phl-ink);
+}
+
+.slide-sandbox .live-rail {
+  border-color: transparent;
+  background: rgba(255, 255, 255, 0.09);
   color: #ffffff;
 }
 
@@ -404,8 +412,10 @@ class: slide-hero slide-section
 }
 
 .live-sdd-flow {
+  width: min(100%, 1000px);
+  margin-inline: auto;
   display: grid;
-  grid-template-columns: 1.15fr 92px 0.85fr 24px 1fr;
+  grid-template-columns: 1.15fr 92px 0.55fr 24px 1fr;
   gap: 8px;
   align-items: stretch;
 }
@@ -463,6 +473,8 @@ class: slide-hero slide-section
 }
 
 .live-durability {
+  width: min(100%, 1000px);
+  margin-inline: auto;
   display: grid;
   grid-template-columns: 0.72fr 1.28fr;
   gap: 28px;
@@ -668,16 +680,16 @@ class: slide-hero slide-section
 }
 
 .live-runtime-stack {
-  width: 80%;
+  width: 72%;
   margin: 34px auto 0;
   display: flex;
   flex-direction: column;
-  gap: 5px;
-  transform: translateY(22px);
+  gap: 8px;
+  transform: translateY(12px);
 }
 
 .live-wasm-runtime {
-  padding: 14px 18px 13px;
+  padding: 18px 20px 16px;
   border: 2px solid rgba(65, 145, 203, 0.62);
   border-radius: 12px;
   background: rgba(65, 145, 203, 0.08);
@@ -692,7 +704,7 @@ class: slide-hero slide-section
 }
 
 .live-wasi-component {
-  padding: 11px 12px 10px;
+  padding: 15px 12px 14px;
   border: 2px solid rgba(124, 92, 205, 0.64);
   border-radius: 9px;
   background: rgba(124, 92, 205, 0.1);
@@ -758,6 +770,10 @@ class: slide-hero slide-section
   color: var(--phl-ink);
 }
 
+.live-runtime-stack .live-runtime-capability {
+  padding-block: 13px;
+}
+
 .live-capability-icon {
   width: 18px;
   height: 18px;
@@ -772,7 +788,7 @@ class: slide-hero slide-section
 }
 
 .live-infrastructure {
-  padding: 10px 13px 9px;
+  padding: 13px 13px 12px;
   border: 2px solid rgba(13, 16, 48, 0.48);
   border-radius: 9px;
   background: #ffffff;
@@ -903,15 +919,16 @@ class: slide-hero slide-section
 }
 
 .live-trust-model {
+  width: min(92%, 1020px);
+  margin: 42px auto 0;
   display: grid;
   grid-template-columns: repeat(4, 1fr);
-  gap: 12px;
-  margin-top: 18px;
+  gap: 28px;
 }
 
 .live-trust-state {
   display: grid;
-  grid-template-rows: 39px 63px 112px 58px;
+  grid-template-rows: 39px 54px 60px 54px;
   overflow: hidden;
   border: 1.5px solid rgba(13, 16, 48, 0.22);
   border-radius: 12px;
@@ -972,17 +989,6 @@ class: slide-hero slide-section
   border-bottom: 0;
 }
 
-.live-trust-band-label {
-  display: block;
-  margin-bottom: 5px;
-  font-size: 9px;
-  line-height: 1;
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--phl-ink-muted);
-}
-
 .live-trust-band strong {
   display: block;
   font-size: 16px;
@@ -993,8 +999,8 @@ class: slide-hero slide-section
 
 .live-trust-band p {
   margin: 0;
-  font-size: 11.5px;
-  line-height: 1.38;
+  font-size: 13px;
+  line-height: 1.35;
   color: var(--phl-ink-body);
 }
 
@@ -1006,8 +1012,7 @@ class: slide-hero slide-section
   font-size: 13px;
 }
 
-.live-trust-model-note,
-.live-radius-close {
+.live-trust-model-note {
   margin-top: 12px;
   text-align: center;
   font-size: 14px;
@@ -1016,10 +1021,11 @@ class: slide-hero slide-section
 }
 
 .live-radius-grid {
+  width: min(92%, 1020px);
+  margin: 32px auto 0;
   display: grid;
   grid-template-columns: repeat(4, 1fr);
-  gap: 12px;
-  margin-top: 18px;
+  gap: 24px;
 }
 
 .live-radius-card {
@@ -1028,26 +1034,6 @@ class: slide-hero slide-section
   border: 1.5px solid rgba(13, 16, 48, 0.22);
   border-radius: 12px;
   background: #ffffff;
-}
-
-.live-radius-card:nth-child(1) {
-  border-color: rgba(12, 127, 163, 0.52);
-  background: rgba(22, 180, 226, 0.04);
-}
-
-.live-radius-card:nth-child(2) {
-  border-color: rgba(96, 93, 213, 0.5);
-  background: rgba(96, 93, 213, 0.045);
-}
-
-.live-radius-card:nth-child(3) {
-  border-color: rgba(164, 35, 143, 0.46);
-  background: rgba(164, 35, 143, 0.035);
-}
-
-.live-radius-card:nth-child(4) {
-  border-color: rgba(13, 16, 48, 0.34);
-  background: rgba(13, 16, 48, 0.025);
 }
 
 .live-radius-card h3 {
@@ -1065,23 +1051,12 @@ class: slide-hero slide-section
   color: var(--phl-ink-body);
 }
 
-.live-radius-guide {
-  margin: 13px 0 7px;
-  text-align: center;
-  font-size: 10px;
-  line-height: 1;
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--phl-ink-muted);
-}
-
 .live-radius-scale {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
   overflow: hidden;
-  width: 86%;
-  margin: 0 auto;
+  width: min(92%, 1020px);
+  margin: 14px auto 0;
   border: 1px solid rgba(13, 16, 48, 0.18);
   border-radius: 10px;
 }
@@ -1115,13 +1090,52 @@ class: slide-hero slide-section
   font-weight: 700;
 }
 
-.live-radius-result {
-  width: 62%;
-  margin: 9px auto 0;
-  padding: 9px 14px;
-  border-top: 2px solid var(--phl-magenta);
+.live-loop {
+  width: min(100%, 1040px);
+  margin: 32px auto 0;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.live-loop-flow {
+  display: grid;
+  grid-template-columns: 1fr 1.15fr 1.45fr 1fr;
+  gap: 10px;
+  align-items: stretch;
+}
+
+.live-loop-flow .live-card {
+  padding: 16px;
+}
+
+.live-loop-flow .live-card h3 {
+  margin-top: 6px;
+  font-size: 19px;
+}
+
+.live-loop-flow .live-card p {
+  font-size: 13.5px;
+}
+
+.live-loop-lane {
+  margin-top: 8px;
+  padding: 8px 10px;
+  border: 1px solid rgba(13, 16, 48, 0.16);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.65);
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--phl-ink);
+}
+
+.live-loop-feedback {
+  padding: 13px 18px;
+  border: 1.5px dashed rgba(164, 35, 143, 0.5);
+  border-radius: 10px;
+  background: rgba(164, 35, 143, 0.045);
   text-align: center;
-  font-size: 14px;
+  font-size: 14.5px;
   font-weight: 500;
   color: var(--phl-ink);
 }
@@ -1207,6 +1221,28 @@ class: slide-hero slide-section
   line-height: 1.35;
   color: var(--phl-ink-muted);
 }
+
+.section-kicker-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 14px;
+  border-radius: 999px;
+  border: 1px solid rgba(120, 216, 242, 0.45);
+  background: rgba(22, 180, 226, 0.12);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--phl-cyan-soft);
+  margin-bottom: 6px;
+}
+
+.section-kicker-pill.is-magenta {
+  border-color: rgba(245, 158, 245, 0.5);
+  background: rgba(164, 35, 143, 0.2);
+  color: #f59ef5;
+}
 </style>
 
 <AmbientVideo src="/videos/hero-video-3.mp4" variant="hero" />
@@ -1218,38 +1254,38 @@ class: slide-hero slide-section
 
 # Code is cheap.<br>Delivery is hard.
 
-<p class="section-subtitle">Put AI inside a delivery system<br>it cannot redefine.</p>
+<p class="section-subtitle">Use a delivery system that lets AI<br>deliver software—not just code.</p>
 
 </div>
 </div>
 
 <div class="hero-pillars">
-<div class="hero-pillar"><span class="hero-pillar-num">01</span><span>Set rules · Bound how work is created</span></div>
-<div class="hero-pillar"><span class="hero-pillar-num">02</span><span>Record intent · Preserve what must remain true</span></div>
-<div class="hero-pillar"><span class="hero-pillar-num">03</span><span>Constrain code · Grant nothing by default</span></div>
+<div class="hero-pillar"><span class="hero-pillar-num">01</span><span>Standardise delivery · One path from change to production</span></div>
+<div class="hero-pillar"><span class="hero-pillar-num">02</span><span>Specify behaviour · Preserve what must remain true</span></div>
+<div class="hero-pillar"><span class="hero-pillar-num">03</span><span>Sandbox execution · Limit what running code may access</span></div>
 </div>
 
 <!--
 Opening:
-- Code generation is no longer the scarce part of software delivery.
+- Generative AI makes code and test generation abundant. Trusted evidence remains scarce.
 - Accountability has not moved to the model. The organisation still owns the outcome, access, evidence, and consequences.
 - Our answer is a delivery system whose rules, record, and runtime boundary sit outside the model.
 -->
 
 ---
-title: Implementation is changing. Responsibility is not.
+title: Coding is no longer the bottleneck.
 sync: shift
 class: slide-light
 ---
 
-<Eyebrow text="THE SHIFT · IMPLEMENTATION SPEED CHANGES THE SYSTEM" />
+<Eyebrow text="THE SHIFT · ABUNDANT CODE IS NOT A COHERENT SOLUTION" />
 
 <div class="live-split">
 <div class="live-copy">
 
-# Implementation is changing.<br>Responsibility is not.
+# Coding is no longer<br>the bottleneck.
 
-<p class="live-claim">AI compresses the work of turning an idea into plausible code.</p>
+<p class="live-claim">AI generates code faster than developers can understand and integrate it.</p>
 
 <div class="live-compression">
 <span>Weeks</span>
@@ -1259,94 +1295,86 @@ class: slide-light
 </div>
 
 <div class="live-panel">
-<div class="live-panel-title">Responsibility remains</div>
+<div class="live-panel-title">More code ≠ a coherent solution</div>
 <div class="live-word-grid">
-<div class="live-word"><IconBadge tone="light" size="small"><ph:compass /></IconBadge><div class="live-word-copy"><strong>Direction</strong><span>What should change?</span></div></div>
-<div class="live-word"><IconBadge tone="light" size="small"><ph:key /></IconBadge><div class="live-word-copy"><strong>Authority</strong><span>Who decides?</span></div></div>
-<div class="live-word"><IconBadge tone="light" size="small"><ph:seal-check /></IconBadge><div class="live-word-copy"><strong>Evidence</strong><span>Is it safe to accept?</span></div></div>
-<div class="live-word"><IconBadge tone="light" size="small"><ph:user-circle /></IconBadge><div class="live-word-copy"><strong>Ownership</strong><span>Who answers for it?</span></div></div>
+<div class="live-word"><IconBadge tone="light" size="small"><ph:stack /></IconBadge><div class="live-word-copy"><strong>Cognitive load</strong><span>Overwhelms human review</span></div></div>
+<div class="live-word"><IconBadge tone="light" size="small"><ph:puzzle-piece /></IconBadge><div class="live-word-copy"><strong>Incoherence</strong><span>Plausible parts, broken whole</span></div></div>
+<div class="live-word"><IconBadge tone="light" size="small"><ph:eye-slash /></IconBadge><div class="live-word-copy"><strong>Lost comprehension</strong><span>No one understands it all</span></div></div>
+<div class="live-word"><IconBadge tone="light" size="small"><ph:warning /></IconBadge><div class="live-word-copy"><strong>Accumulated slop</strong><span>Unmanageable over time</span></div></div>
 </div>
-<div class="live-panel-result"><span class="live-panel-result-label">The first shift</span>Faster implementation shifts pressure onto the delivery system.</div>
+<div class="live-panel-result"><span class="live-panel-result-label">The risk</span>An unmanageable application and codebase.</div>
 </div>
 </div>
 
 <!--
-AI compresses implementation effort. It does not transfer responsibility to the model.
-Direction, authority, evidence, and ownership remain with the organisation.
-The next slide shows the operational response: automate the path around the code.
+Coding and test generation are no longer the bottlenecks they once were.
+However, a lot of code does not equal a coherent, well-thought-through, useful business solution.
+Generated tests can repeat the implementation's assumptions. Trusted evidence still has to reject plausible but wrong code.
+In fact, it can exacerbate cognitive load and overwhelm.
+It can also lead to, eventually, an unmanageable application and codebase—no longer fully comprehensible and full of slop.
 -->
 
 ---
-title: Automate the path from code to production.
-sync: delivery-automation
+title: Build the right thing. Build it to last.
+sync: pivot
 class: slide-light
 ---
 
-<Eyebrow text="THE DELIVERY SHIFT · AUTOMATE THE MECHANICS" />
+<Eyebrow text="THE RESPONSE · STRATEGY AND DELIVERY" />
 
 <div class="live-stage">
 
-# Automate the path from code to production.
+# Build the right thing.<br>Build it to last.
 
-<p class="live-claim">Faster implementation matters only when evidence and delivery move at the same speed.</p>
+<p class="live-claim">While we can help with both, <strong>our real expertise is the second.</strong></p>
 
-<div class="live-pipeline is-three" style="margin-top: 22px;">
-<div class="live-card is-cyan">
-<div class="live-card-head">
-<IconBadge tone="cyan"><ph:test-tube /></IconBadge>
-<div class="live-kicker">01 · Prove</div>
+<div class="live-grid-2" style="width: 88%; margin: 28px auto 0; gap: 52px;">
+<div class="live-card is-cyan" style="min-height: 214px; padding: 26px 30px; display: flex; flex-direction: column; justify-content: space-between;">
+<div>
+<div class="live-card-head" style="margin-bottom: 14px;">
+<IconBadge tone="cyan"><ph:compass /></IconBadge>
+<div class="live-kicker">01 · Good product strategy</div>
 </div>
-<h3>Test every change</h3>
-<p>Unit · integration · end-to-end</p>
+<h3>Building the right thing</h3>
 </div>
-<div class="live-arrow">→</div>
-<div class="live-card is-dark">
-<div class="live-card-head">
-<IconBadge tone="light"><ph:shield-check /></IconBadge>
-<div class="live-kicker">02 · Assure</div>
+<p style="padding-top: 14px; border-top: 1px solid rgba(12, 127, 163, 0.2);">Customer needs · rapid prototypes · deliberate backlog</p>
 </div>
-<h3>Analyse every change</h3>
-<p>Linting · security · dependencies · automated review</p>
+
+<div class="live-card is-dark" style="min-height: 214px; padding: 26px 30px; display: flex; flex-direction: column; justify-content: space-between;">
+<div>
+<div class="live-card-head" style="margin-bottom: 14px;">
+<IconBadge tone="light"><ph:gear-six /></IconBadge>
+<div class="live-kicker">02 · A reliable delivery system</div>
 </div>
-<div class="live-arrow">→</div>
-<div class="live-card is-magenta">
-<div class="live-card-head">
-<IconBadge tone="magenta"><ph:rocket-launch /></IconBadge>
-<div class="live-kicker">03 · Deliver</div>
+<h3>Delivering maintainable software</h3>
 </div>
-<h3>Deliver every accepted change</h3>
-<p>PR · build · provision · deploy · production</p>
+<p style="padding-top: 14px; border-top: 1px solid rgba(255, 255, 255, 0.16);">Standardise delivery · specify behaviour · sandbox execution</p>
 </div>
 </div>
 
-<div class="live-outcome">Repeatable evidence and automation replace manual hand-offs.</div>
+<div class="live-outcome is-punch" style="width: 88%; margin: 48px auto 0; box-sizing: border-box;">Decide what matters, deliver it safely, and keep it maintainable.</div>
 </div>
 
 <!--
-These changes predate the current AI wave and make AI-assisted implementation operationally useful.
-- Full test automation runs unit, integration, and end-to-end evidence without manual coordination.
-- Pipeline automation carries an accepted pull request through build, provision, deployment, and production.
-- Automated analysis makes linting, dependency, security, and review controls part of every change. Current examples include Cursor Bugbot, GitHub CodeQL, and Snyk.
-- This required testable systems, reliable suites, standard environments, policy as code, and ownership of pipeline health.
-Automation removes mechanical delay. It does not remove the human decision to accept a change.
-
-Client question:
-- Where does a change still wait for a manual hand-off or bespoke decision?
+Two things are increasingly important:
+1) Good product strategy—knowing what is worth building and using rapid prototypes to learn without mistaking them for production systems.
+2) A reliable delivery system—turning intent into coherent, comprehensible, verified software without accumulating slop.
+While we can help with both, our real expertise is in the second.
 -->
 
 ---
-title: The bottleneck becomes the feature throttle.
+title: A prototype is evidence, not a production commitment.
 sync: outcome
 class: slide-light
 ---
 
-<Eyebrow text="THE NEW BOTTLENECK · GOVERN FEATURE DEMAND" />
+<Eyebrow text="THE DELIVERY SYSTEM · FIRST, ADMIT WORK DELIBERATELY" />
 
 <div class="live-stage">
 
-# The bottleneck becomes the feature throttle.
+# A prototype is evidence.<br>Production is a commitment.
 
-<p class="live-claim">Faster delivery should increase learning—not feature volume.</p>
+<p class="live-claim">AI can build a prototype in minutes. Production takes an explicit decision.</p>
 
 <div class="live-feature-flow">
 <div class="live-card is-cyan">
@@ -1354,11 +1382,11 @@ class: slide-light
 <IconBadge tone="cyan"><ph:lightbulb /></IconBadge>
 <div class="live-kicker">Signals and experiments</div>
 </div>
-<h3>Learn cheaply</h3>
+<h3>Test the need</h3>
 <div class="live-feature-list">
-<span>Customer needs</span>
-<span>Operational evidence</span>
-<span>Product strategy</span>
+<span>User need</span>
+<span>Operational problem</span>
+<span>Usage evidence</span>
 <span>Rapid prototypes</span>
 </div>
 </div>
@@ -1366,14 +1394,14 @@ class: slide-light
 <div class="live-card is-dark">
 <div class="live-card-head">
 <IconBadge tone="light"><ph:funnel /></IconBadge>
-<div class="live-kicker">Feature throttle</div>
+<div class="live-kicker">Production gate</div>
 </div>
-<h3>Choose deliberately</h3>
+<h3>Decide explicitly</h3>
 <div class="live-feature-list">
-<span>Value</span>
+<span>Named outcome</span>
 <span>Evidence</span>
-<span>Strategic fit</span>
-<span>Ownership</span>
+<span>Product coherence</span>
+<span>Service owner</span>
 </div>
 </div>
 <div class="live-arrow">→</div>
@@ -1382,99 +1410,98 @@ class: slide-light
 <IconBadge tone="magenta"><ph:list-checks /></IconBadge>
 <div class="live-kicker">Production commitment</div>
 </div>
-<h3>Deliberate production backlog</h3>
-<p>Only work with enough evidence and an owner enters the delivery path.</p>
+<h3>Enter the delivery path</h3>
+<p>Only work with an outcome, evidence, fit, and owner proceeds.</p>
 </div>
 </div>
 
-<div class="live-outcome">Prototypes inform the backlog. They do not bypass it.</div>
+<div class="live-outcome">A prototype informs the decision. It does not make it.</div>
 </div>
 
 <!--
-Once implementation and delivery accelerate, production capacity should not be filled with features by default.
-- Customer signals, operational evidence, strategy, and cheap experiments become inputs.
-- Citizen- and vibe-coded proofs of concept are useful because they test assumptions and expose needs quickly.
-- A prototype gains no production authority merely because it works.
-- The feature throttle asks whether there is value, evidence, strategic fit, and an owner.
-- The result may enter the production backlog, return for another experiment, or stop.
-The throttle is product judgement, not extra ceremony. Faster delivery should produce faster learning and fewer weak commitments.
-
-Client question:
-- Which backlog decisions could be informed by a cheap prototype before becoming production commitments?
+This is the front door of the delivery system: the decision that admits work to it.
+AI can build a prototype in minutes, so the decision to make something production software has to be explicit.
+Cheap experiments test assumptions. They do not grant production authority.
+Before work enters the delivery path, ask:
+- What outcome does it create?
+- What evidence supports it?
+- Does it strengthen or fragment the product?
+- Who owns and supports it?
+For work that earns that commitment, it enters one delivery path, governed by the three pillars on the next slide.
 -->
 
 ---
-title: Set rules. Record intent. Constrain code.
+title: Standardise delivery. Specify behaviour. Sandbox execution.
 sync: system
+layout: default
 class: slide-sandbox
 ---
 
 <AmbientVideo src="/videos/approach-video.mp4" variant="approach" />
 
-<Eyebrow text="THE SYSTEM · THREE FOUNDATIONS, ONE PATH TO PRODUCTION" />
+<Eyebrow text="THE DELIVERY SYSTEM · THREE CONTROLS, ONE PATH" />
 
 <div class="live-stage">
 
-# Set rules. Record intent. Constrain code.
+# Three pillars of reliable delivery.
 
-<p class="live-claim">The model works inside the delivery system. It does not define the system.</p>
+<p class="live-claim">Agents work best inside a delivery system—not in charge of it.</p>
 
 <div class="live-grid-3" style="margin-top: 24px;">
 <div class="live-card is-glass">
 <div class="live-card-head">
 <IconBadge tone="light"><ph:shield-check /></IconBadge>
-<div class="live-num">01 · Toolchain controls</div>
+<div class="live-num">01 · Change path</div>
 </div>
-<h3>Set rules</h3>
-<p>How work may be created.</p>
+<h3>Standardise delivery</h3>
+<p>How work is created, checked, shipped, and operated.</p>
 </div>
 <div class="live-card is-glass">
 <div class="live-card-head">
 <IconBadge tone="light"><ph:file-text /></IconBadge>
-<div class="live-num">02 · Spec-driven delivery</div>
+<div class="live-num">02 · Durable authority</div>
 </div>
-<h3>Record intent</h3>
-<p>What must remain true.</p>
+<h3>Specify behaviour</h3>
+<p>What must remain true and how acceptance is proven.</p>
 </div>
 <div class="live-card is-glass">
 <div class="live-card-head">
 <IconBadge tone="light"><ph:lock-key /></IconBadge>
-<div class="live-num">03 · Sandboxed execution</div>
+<div class="live-num">03 · Runtime boundary</div>
 </div>
-<h3>Constrain code</h3>
-<p>What the result may touch.</p>
+<h3>Sandbox execution</h3>
+<p>What running code may access.</p>
 </div>
 </div>
 
-<div class="live-rail">Build → Test → Provision → Deploy → Release → Observe → Recover</div>
+<div class="live-rail">Specify → Build → Test → Analyse → Deploy → Observe → Recover</div>
 </div>
 
 <!--
-This is the map for the next three sections. Take each control in turn.
-These are different controls over different questions.
-- Toolchain controls govern how people and agents may work.
-- Spec-driven delivery governs what the software must do and what evidence supports accepting it.
-- Sandboxed execution governs what the running application may touch.
-- Reusable delivery assets carry the result into operation.
+This is the map for the next three sections.
+- Standardise delivery controls how a change moves from creation into operation.
+- Specify behaviour controls what must remain true and what evidence accepts the result.
+- Sandbox execution controls what the running application may access.
+- Product judgement, acceptance, and release authority remain with people.
 -->
 
 ---
-title: Isolate. Standardise. Automate.
+title: Isolate. Guide. Enforce.
 sync: authoring
 class: slide-light
 ---
 
-<Eyebrow text="01 · SET RULES · TOOLCHAIN CONTROLS" />
+<Eyebrow text="01 · STANDARDISE DELIVERY · AUTHORING CONTROLS" />
 
 <div class="foundation-progress" aria-label="Delivery foundations">
-<span class="is-active">01 · Set rules</span>
-<span>02 · Record intent</span>
-<span>03 · Constrain code</span>
+<span class="is-active">01 · Standardise delivery</span>
+<span>02 · Specify behaviour</span>
+<span>03 · Sandbox execution</span>
 </div>
 
 <div class="live-stage">
 
-# Isolate. Standardise. Automate.
+# Isolate. Guide. Enforce.
 
 <div class="live-grid-3">
 <div class="live-card is-cyan">
@@ -1489,105 +1516,130 @@ class: slide-light
 <div class="live-card">
 <div class="live-card-head">
 <IconBadge tone="magenta"><ph:book-open /></IconBadge>
-<div class="live-kicker">02 · Standardise</div>
+<div class="live-kicker">02 · Guide</div>
 </div>
 <h3>Shared engineering codex</h3>
-<p>Coding standards, approved patterns, examples, and templates—written for people and agents.</p>
+<p>Versioned standards, approved patterns, examples, and templates for people and agents.</p>
 </div>
 
 <div class="live-card is-dark">
 <div class="live-card-head">
 <IconBadge tone="light"><ph:gear-six /></IconBadge>
-<div class="live-kicker">03 · Automate</div>
+<div class="live-kicker">03 · Enforce</div>
 </div>
 <h3>Compiler-enforced standards</h3>
-<p>Critical coding rules are checked automatically, alongside security, dependency, quality, and test controls.</p>
+<p>Critical rules fail at compile time, before review.</p>
 </div>
 </div>
 
-<div class="live-outcome">Faster experimentation · Consistent controls · Auditable delivery</div>
+<div class="live-outcome">Guidance is shared. Non-negotiable rules are enforced.</div>
 </div>
 
 <!--
-Set rules has three practical parts.
+Authoring controls have three practical parts:
 - Isolate work from production while an idea is still changing.
-- Publish one versioned engineering codex so people and agents work from the same standards, patterns, examples, and templates.
-- Enforce critical coding rules as the code compiles, then apply the same security, dependency, quality, and test controls to every change.
-
-Client question:
-- Where does experimentation currently become inconsistent, risky, or difficult to audit?
+- Guide people and agents with one versioned engineering codex of standards, patterns, examples, and templates.
+- Enforce critical coding rules as the code compiles.
 -->
 
 ---
-title: One safe path from build to trial
-sync: authoring-path
+title: Automate the path from code to production.
+sync: delivery-automation
 class: slide-light
 ---
 
-<Eyebrow text="01 · SET RULES · THE DELIVERY PATH" />
+<Eyebrow text="01 · STANDARDISE DELIVERY · DELIVERY AUTOMATION" />
 
 <div class="foundation-progress" aria-label="Delivery foundations">
-<span class="is-active">01 · Set rules</span>
-<span>02 · Record intent</span>
-<span>03 · Constrain code</span>
+<span class="is-active">01 · Standardise delivery</span>
+<span>02 · Specify behaviour</span>
+<span>03 · Sandbox execution</span>
 </div>
 
 <div class="live-stage">
 
-# One safe path from build to trial.
+# Automate the path from code to production.
 
-<p class="live-claim">A versioned engineering codex, approved tools, policies, and deployment patterns follow every change.</p>
+<p class="live-claim">Faster implementation matters only when evidence and delivery move at the same speed.</p>
 
-<div class="live-pipeline" style="margin-top: 20px;">
+<div class="live-pipeline" style="margin-top: 22px;">
 <div class="live-card is-cyan">
 <div class="live-card-head">
 <IconBadge tone="cyan"><ph:code /></IconBadge>
-<div class="live-kicker">01 · Create</div>
+<div class="live-kicker">01 · Build</div>
 </div>
-<h3>AI-assisted build</h3>
-<p>Governed workspace</p>
+<h3>Build once</h3>
+<p>Reproducible artifact</p>
 </div>
 <div class="live-arrow">→</div>
 <div class="live-card">
 <div class="live-card-head">
-<IconBadge tone="ink"><ph:git-branch /></IconBadge>
-<div class="live-kicker">02 · Record</div>
+<IconBadge tone="ink"><ph:test-tube /></IconBadge>
+<div class="live-kicker">02 · Test</div>
 </div>
-<h3>Enterprise source control</h3>
-<p>Traceable change</p>
+<h3>Test behaviour</h3>
+<p>Unit · integration · replay · end-to-end</p>
 </div>
 <div class="live-arrow">→</div>
 <div class="live-card is-dark">
 <div class="live-card-head">
 <IconBadge tone="light"><ph:shield-check /></IconBadge>
-<div class="live-kicker">03 · Assure</div>
+<div class="live-kicker">03 · Analyse</div>
 </div>
-<h3>Automated gates</h3>
-<p>Compile-time rules · secrets · dependencies · tests</p>
+<h3>Gate every change</h3>
+<p>Compiler · security · dependencies · secrets</p>
 </div>
 <div class="live-arrow">→</div>
 <div class="live-card is-magenta">
 <div class="live-card-head">
-<IconBadge tone="magenta"><ph:flask /></IconBadge>
-<div class="live-kicker">04 · Trial</div>
+<IconBadge tone="magenta"><ph:rocket-launch /></IconBadge>
+<div class="live-kicker">04 · Deploy</div>
 </div>
-<h3>Controlled non-production</h3>
-<p>Access and review</p>
+<h3>Promote the artifact</h3>
+<p>Provision · deploy · release</p>
 </div>
 </div>
 
-<div class="live-outcome">The codex guides people and agents. Gates enforce what cannot be optional.</div>
+<div class="live-outcome">The same accepted artifact moves forward with its evidence.</div>
 </div>
 
 <!--
-This is the operating path, not a prescribed vendor stack.
-- The codex is human-readable and agent-usable: one reviewed source for standards, patterns, examples, and templates.
-- The workspace carries the codex and approved tools into each change.
-- Critical coding standards are enforced as the code compiles; mandatory controls also appear at source control, integration, and deployment boundaries.
-- A change reaches a controlled trial environment before anyone considers production.
+These changes predate the current AI wave and make AI-assisted implementation operationally useful.
+- Build produces one reproducible artifact.
+- Automated tests exercise unit, integration, replay, and end-to-end behaviour.
+- Compiler, dependency, secret, security, and review controls gate every change.
+- The accepted artifact is promoted through provision, deployment, and release.
+-->
 
-Client question:
-- Which step in this path is currently missing, optional, or different for every team?
+---
+title: Specify behaviour
+sync: section-intent
+class: slide-section
+---
+
+<AmbientVideo src="/videos/hero-video-3.mp4" variant="approach" />
+
+<Eyebrow text="DELIVERY SYSTEM · FOUNDATION 02" />
+
+<div class="section-hero-grid">
+<div class="section-hero-left">
+<div class="section-kicker-pill is-magenta">02 · Spec-driven development</div>
+
+# Specify behaviour.
+
+<p class="section-subtitle">People and agents share one source of truth: <strong>durable specifications, not code.</strong></p>
+
+</div>
+</div>
+
+<div class="hero-pillars">
+<div class="hero-pillar"><span class="hero-pillar-num">01</span><span>Governed intent · Move up from ad hoc prompting</span></div>
+<div class="hero-pillar"><span class="hero-pillar-num">02</span><span>In the loop · Specify, review, plan, implement</span></div>
+<div class="hero-pillar"><span class="hero-pillar-num">03</span><span>Durable truth · Code is disposable; specifications remain</span></div>
+</div>
+
+<!--
+Section 02 divider: Specify behaviour (Spec-driven development).
 -->
 
 ---
@@ -1596,12 +1648,12 @@ sync: record-position
 class: slide-light
 ---
 
-<Eyebrow text="02 · RECORD INTENT · SPEC-DRIVEN DELIVERY" />
+<Eyebrow text="02 · SPECIFY BEHAVIOUR · SPEC-DRIVEN DEVELOPMENT" />
 
 <div class="foundation-progress" aria-label="Delivery foundations">
-<span>01 · Set rules</span>
-<span class="is-active is-magenta">02 · Record intent</span>
-<span>03 · Constrain code</span>
+<span>01 · Standardise delivery</span>
+<span class="is-active is-magenta">02 · Specify behaviour</span>
+<span>03 · Sandbox execution</span>
 </div>
 
 <div class="live-stage">
@@ -1619,7 +1671,7 @@ class: slide-light
 <p>Governance around human implementation</p>
 </div>
 <div class="live-quadrant is-target">
-<h3>Spec-driven delivery</h3>
+<h3>Spec-driven development</h3>
 <p>Durable intent around AI implementation</p>
 </div>
 <div class="live-quadrant">
@@ -1627,45 +1679,42 @@ class: slide-light
 <p>Local choices and human memory</p>
 </div>
 <div class="live-quadrant">
-<h3>AI-assisted coding alone</h3>
+<h3>AI-assisted coding</h3>
 <p>Conversation-led generation</p>
 </div>
 </div>
 </div>
 
-<div class="live-outcome">AI coding changes implementation. It does not create governance.</div>
+<div class="live-outcome" style="width: min(724px, calc(100% - 276px)); margin-inline: auto; box-sizing: border-box;">AI coding changes implementation. It does not create governance.</div>
 </div>
 
 <!--
 Most AI adoption begins as a horizontal move: introduce an assistant or agent and produce code faster.
 That does not create authority, an audit trail, or a durable statement of what must remain true.
-Spec-driven delivery is the separate upward move. It puts governed intent around AI-assisted implementation.
-
-Client question:
-- Has AI changed how code is produced without changing what governs its acceptance?
+Spec-driven development is the separate upward move. It puts governed intent around AI-assisted implementation.
 -->
 
 ---
-title: The specification drives development.
+title: Specifications drive development.
 sync: record-development
 class: slide-light
 ---
 
-<Eyebrow text="02 · RECORD INTENT · SPEC-DRIVEN DEVELOPMENT" />
+<Eyebrow text="02 · SPECIFY BEHAVIOUR · SPEC-DRIVEN DEVELOPMENT" />
 
 <div class="foundation-progress" aria-label="Delivery foundations">
-<span>01 · Set rules</span>
-<span class="is-active is-magenta">02 · Record intent</span>
-<span>03 · Constrain code</span>
+<span>01 · Standardise delivery</span>
+<span class="is-active is-magenta">02 · Specify behaviour</span>
+<span>03 · Sandbox execution</span>
 </div>
 
 <div class="live-stage">
 
-# The specification drives development.
+# Specifications drive development.
 
 <p class="live-claim">The specification stays in the development loop—from requirements and design through implementation and verification.</p>
 
-<div class="live-sdd-flow" style="margin-top: 22px;">
+<div class="live-sdd-flow" style="margin-top: 36px;">
 <div class="live-card is-cyan">
 <div class="live-kicker">01 · What + how</div>
 <h3>Specify</h3>
@@ -1678,17 +1727,17 @@ Versioned in repo
 <div class="live-card is-magenta">
 <div class="live-kicker">02 · Derive</div>
 <h3>Plan</h3>
-<p>Ephemeral work and dependencies</p>
+<p>Units of work, ordered by dependency</p>
 </div>
 <div class="live-sdd-arrow">→</div>
 <div class="live-card is-dark">
-<div class="live-kicker">03 · Build + prove</div>
-<h3>Implement</h3>
+<div class="live-kicker">03 · Code + prove</div>
+<h3>Build</h3>
 <p>Build · integrate · verify against the specification</p>
 </div>
 </div>
 
-<div class="live-outcome">The plan is disposable. The reviewed specification is not.</div>
+<div class="live-outcome" style="width: min(100%, 1000px); margin-inline: auto; box-sizing: border-box;">Each change runs the loop. If the specification changes, it is reviewed and sealed again.</div>
 </div>
 
 <!--
@@ -1697,11 +1746,6 @@ This is the recognisable spec-driven development loop.
 - A person reviews and seals that specification in the repository.
 - Plan derives ephemeral work ordered by dependency from the reviewed specification. It can be discarded and generated again.
 - Implement gives each unit of work the exact specification and plan entry it needs, builds and integrates it, and verifies the combined result against the specification.
-- Verification is part of completing implementation, not a separate downstream activity; only a verified wave advances the revision's label.
-- The coding agent and plan are replaceable. The reviewed specification is not.
-
-This leads to the next boundary:
-- The specification governs what must be built. The runtime governs what the resulting code may touch.
 -->
 
 ---
@@ -1710,21 +1754,21 @@ sync: record-truth
 class: slide-light
 ---
 
-<Eyebrow text="02 · RECORD INTENT · DURABLE SPECIFICATION" />
+<Eyebrow text="02 · SPECIFY BEHAVIOUR · DURABLE SPECIFICATION" />
 
 <div class="foundation-progress" aria-label="Delivery foundations">
-<span>01 · Set rules</span>
-<span class="is-active is-magenta">02 · Record intent</span>
-<span>03 · Constrain code</span>
+<span>01 · Standardise delivery</span>
+<span class="is-active is-magenta">02 · Specify behaviour</span>
+<span>03 · Sandbox execution</span>
 </div>
 
 <div class="live-stage">
 
-# Code is disposable.<br><span class="live-title-accent">The specification is durable.</span>
+# Code is disposable.<br><span class="live-title-accent">Specifications are durable.</span>
 
 <p class="live-claim">The implementation can be regenerated. The reviewed specification preserves what the system must do and how it is designed.</p>
 
-<div class="live-durability" style="margin-top: 20px;">
+<div class="live-durability" style="margin-top: 36px;">
 <div class="live-disposable-card">
 <div class="live-kicker">Disposable implementation</div>
 <div class="live-code-word">Code</div>
@@ -1739,19 +1783,44 @@ class: slide-light
 </div>
 </div>
 
-<div class="live-outcome is-punch">Regenerate the plan. Rebuild the code. The specification remains.</div>
+<div class="live-outcome is-punch" style="width: min(100%, 1000px); margin-inline: auto; box-sizing: border-box;">Regenerate the plan. Rebuild the code. The specification remains.</div>
 </div>
 
 <!--
 This is the deliberate provocation at the end of the section.
 - Disposable does not mean unimportant. It means the implementation is a derived output, not the authority over intent.
-- In modernisation, legacy source code is still valuable input to specification recovery. That role belongs on the preceding slide.
-- The plan can be regenerated and the implementation can be rebuilt. The coding model is interchangeable too, but it is tooling rather than an artefact, so it stays out of the diagram.
 - Only the reviewed `spec.md` and `design.md` remain as the durable specification in the repository.
-- Those two files preserve what the system must do and how it is designed.
+-->
 
-Transition:
-- The specification governs what must be built. The runtime governs what the resulting code may touch.
+---
+title: Sandbox execution
+sync: section-constrain
+class: slide-section
+---
+
+<AmbientVideo src="/videos/hero-video-3.mp4" variant="approach" />
+
+<Eyebrow text="DELIVERY SYSTEM · FOUNDATION 03" />
+
+<div class="section-hero-grid">
+<div class="section-hero-left">
+<div class="section-kicker-pill">03 · Sandboxed execution</div>
+
+# Sandbox execution.
+
+<p class="section-subtitle">Grant generated code nothing by default—<strong>it reaches infrastructure only through host-mediated capabilities.</strong></p>
+
+</div>
+</div>
+
+<div class="hero-pillars">
+<div class="hero-pillar"><span class="hero-pillar-num">01</span><span>Wasmtime sandbox · No direct route to infrastructure</span></div>
+<div class="hero-pillar"><span class="hero-pillar-num">02</span><span>Capability contracts · HTTP, Messaging, KeyValue, BlobStore</span></div>
+<div class="hero-pillar"><span class="hero-pillar-num">03</span><span>Runtime recipes · Local, cloud, and on-premise</span></div>
+</div>
+
+<!--
+Section 03 divider: Sandbox execution.
 -->
 
 ---
@@ -1760,19 +1829,19 @@ sync: runtime
 class: slide-light
 ---
 
-<Eyebrow text="03 · CONSTRAIN CODE · SANDBOXED EXECUTION" />
+<Eyebrow text="03 · SANDBOX EXECUTION · SANDBOXED EXECUTION" />
 
 <div class="foundation-progress" aria-label="Delivery foundations">
-<span>01 · Set rules</span>
-<span>02 · Record intent</span>
-<span class="is-active">03 · Constrain code</span>
+<span>01 · Standardise delivery</span>
+<span>02 · Specify behaviour</span>
+<span class="is-active">03 · Sandbox execution</span>
 </div>
 
 <div class="live-stage">
 
 # Generated code has less freedom<br>to surprise.
 
-<p class="live-claim">Code reaches infrastructure only through capabilities supplied by the host.</p>
+<p class="live-claim">Code reaches infrastructure through host-provided capabilities.</p>
 
 <div class="live-runtime-stack">
 <div class="live-wasm-runtime">
@@ -1811,17 +1880,8 @@ class: slide-light
 </div>
 
 <!--
-The headline and payoff use the language on the Propellerhead homepage.
 - Generated application code is packaged as one or more WASI components inside a Wasmtime sandbox.
-- The components have no direct route to infrastructure.
 - They reach HTTP, messaging, key-value storage, and blob storage only through capability interfaces supplied by the host.
-- The host chooses the cloud or on-premise implementation behind each capability and retains its credentials and policy.
-- A generated mistake or poisoned dependency cannot reach a capability the host did not supply.
-- This complements infrastructure security; it does not replace credential scope, network policy, or backend isolation.
-- Put simply: the code gets exactly what the host grants—and nothing else.
-
-Client question:
-- If this code—or one of its dependencies—were compromised, what could it actually reach?
 -->
 
 ---
@@ -1830,17 +1890,17 @@ sync: runtime-portability
 class: slide-light
 ---
 
-<Eyebrow text="03 · CONSTRAIN CODE · PORTABLE INFRASTRUCTURE" />
+<Eyebrow text="03 · SANDBOX EXECUTION · PORTABLE INFRASTRUCTURE" />
 
 <div class="foundation-progress" aria-label="Delivery foundations">
-<span>01 · Set rules</span>
-<span>02 · Record intent</span>
-<span class="is-active">03 · Constrain code</span>
+<span>01 · Standardise delivery</span>
+<span>02 · Specify behaviour</span>
+<span class="is-active">03 · Sandbox execution</span>
 </div>
 
 <div class="live-stage">
 
-# Different infrastructure.<br>The same application.
+# Different infrastructure.<br>Same application.
 
 <p class="live-claim">The component depends on capabilities, not products. A runtime recipe binds them to approved services in each environment.</p>
 
@@ -1859,7 +1919,7 @@ class: slide-light
 <div class="live-runtime-capability"><ph:database class="live-capability-icon" /><span>BlobStore</span></div>
 </div>
 
-<div class="live-portable-link">Host-selected runtime recipe</div>
+<div class="live-portable-link">Same shape for each environment</div>
 
 <div class="live-recipe-grid">
 <div class="live-recipe-card">
@@ -1897,16 +1957,39 @@ class: slide-light
 </div>
 
 <!--
-The website calls this host-selected infrastructure.
 - The application component depends on stable capability contracts rather than directly on infrastructure products.
 - Each environment supplies a reviewed runtime recipe: the runtime, capability bindings, identity and policy, configuration, and observability.
-- A local or trial recipe may use in-memory and local services. Cloud and on-premise recipes bind the same contracts to approved managed or internal services.
-- The recipe can be retained as versioned deployment and infrastructure-as-code assets, so the next application starts with a known operating shape.
-- The infrastructure is not literally identical. Its application-facing contract and deployment grammar are.
-- Where the capability semantics remain the same, change the recipe—not the application.
+-->
 
-Client question:
-- How much application code currently exists only to accommodate a particular environment or infrastructure product?
+---
+title: Right-size the safeguards
+sync: section-trust
+class: slide-section
+---
+
+<AmbientVideo src="/videos/hero-video-3.mp4" variant="approach" />
+
+<Eyebrow text="DELIVERY SYSTEM · TRUST MODEL" />
+
+<div class="section-hero-grid">
+<div class="section-hero-left">
+<div class="section-kicker-pill">Contextual governance</div>
+
+# Match safeguards to the stakes.
+
+<p class="section-subtitle">Give prototypes room to learn—<strong>strengthen safeguards as people come to depend on the system.</strong></p>
+
+</div>
+</div>
+
+<div class="hero-pillars">
+<div class="hero-pillar"><span class="hero-pillar-num">01</span><span>Explore &amp; Govern · Keep discovery cheap and shared work clean</span></div>
+<div class="hero-pillar"><span class="hero-pillar-num">02</span><span>Connect &amp; Support · Enforce runtime and full delivery boundaries</span></div>
+<div class="hero-pillar"><span class="hero-pillar-num">03</span><span>Trust radius · Assess reach, data, dependence, and continuity</span></div>
+</div>
+
+<!--
+Section divider: Trust Model and Trust Radius.
 -->
 
 ---
@@ -1915,33 +1998,30 @@ sync: trust-model
 class: slide-light
 ---
 
-<Eyebrow text="TRUST MODEL · REQUIRED CONTROLS FOLLOW CONSEQUENCE" />
+<Eyebrow text="TRUST MODEL · REQUIRED SAFEGUARDS FOLLOW CONSEQUENCE" />
 
 <div class="foundation-progress" aria-label="Delivery foundations">
-<span class="is-active">01 · Set rules</span>
-<span class="is-active is-magenta">02 · Record intent</span>
-<span class="is-active">03 · Constrain code</span>
+<span class="is-active">01 · Standardise delivery</span>
+<span class="is-active is-magenta">02 · Specify behaviour</span>
+<span class="is-active">03 · Sandbox execution</span>
 </div>
 
 <div class="live-stage">
 
 # Trust is contextual, not a maturity score.
 
-<p class="live-claim">Four operational states determine which controls an application requires. Moving right is not progress; it is more consequence to manage.</p>
+<p class="live-claim">Explore, Govern, Connect, and Support are situations to match—not levels to climb.</p>
 
 <div class="live-trust-model">
 <div class="live-trust-state is-explore">
 <div class="live-trust-state-head">State 0 · Explore</div>
 <div class="live-trust-band">
-<span class="live-trust-band-label">Context</span>
 <strong>Local discovery</strong>
 </div>
 <div class="live-trust-band">
-<span class="live-trust-band-label">Evidence + ownership</span>
-<p>One builder<br>Synthetic or local inputs<br>No shared dependence</p>
+<p>One builder · synthetic inputs</p>
 </div>
 <div class="live-trust-band is-boundary">
-<span class="live-trust-band-label">Required boundary</span>
 <strong>Isolate and keep local</strong>
 </div>
 </div>
@@ -1949,15 +2029,12 @@ class: slide-light
 <div class="live-trust-state is-govern">
 <div class="live-trust-state-head">State 1 · Govern</div>
 <div class="live-trust-band">
-<span class="live-trust-band-label">Context</span>
 <strong>Shared work</strong>
 </div>
 <div class="live-trust-band">
-<span class="live-trust-band-label">Evidence + ownership</span>
-<p>Named owner<br>Approved workspace and tools<br>Protected changes and checks</p>
+<p>Named owner · protected changes</p>
 </div>
 <div class="live-trust-band is-boundary">
-<span class="live-trust-band-label">Required boundary</span>
 <strong>Authoring boundary</strong>
 </div>
 </div>
@@ -1965,15 +2042,12 @@ class: slide-light
 <div class="live-trust-state is-connect">
 <div class="live-trust-state-head">State 2 · Connect</div>
 <div class="live-trust-band">
-<span class="live-trust-band-label">Context</span>
 <strong>Live capability</strong>
 </div>
 <div class="live-trust-band">
-<span class="live-trust-band-label">Evidence + ownership</span>
-<p>Explicit purpose and owner<br>Typed live-system contracts<br>Host policy and observability</p>
+<p>Purpose + owner · live contracts</p>
 </div>
 <div class="live-trust-band is-boundary">
-<span class="live-trust-band-label">Required boundary</span>
 <strong>Runtime boundary</strong>
 </div>
 </div>
@@ -1981,34 +2055,28 @@ class: slide-light
 <div class="live-trust-state is-support">
 <div class="live-trust-state-head">State 3 · Support</div>
 <div class="live-trust-band">
-<span class="live-trust-band-label">Context</span>
 <strong>Business dependence</strong>
 </div>
 <div class="live-trust-band">
-<span class="live-trust-band-label">Evidence + ownership</span>
-<p>Durable reviewed intent<br>Release and service ownership<br>Recovery evidence</p>
+<p>Reviewed intent · recovery evidence</p>
 </div>
 <div class="live-trust-band is-boundary">
-<span class="live-trust-band-label">Required boundary</span>
 <strong>Full delivery system</strong>
 </div>
 </div>
 </div>
 
-<p class="live-trust-model-note">Keep the application in the least costly state consistent with its actual consequence.</p>
+<p class="live-trust-model-note">Choose the least costly state that matches the actual consequence.</p>
 </div>
 
 <!--
 These are operational states, not levels of organisational maturity.
-Explore is local discovery: one builder, local or synthetic inputs, and no shared dependence.
-Govern begins when work is shared. It requires a named owner, an approved authoring environment, and protected changes and checks.
-Connect begins when the application reaches a live capability. Purpose, ownership, typed contracts, host policy, and observability become explicit.
-Support begins when the business depends on the application. Durable intent, release and service ownership, and recovery evidence are then required.
 There is no virtue in moving every application to the right. Keep it in the least costly state consistent with its actual consequence.
-An application can move in either direction as its use, reach, and dependence change.
-
-Client question:
-- Which applications are carrying controls for a state they are not actually in—and which are missing controls for the state they are?
+Read each state as its situation, its minimum evidence and ownership, then its required boundary:
+- Explore: one builder, synthetic or local inputs, no shared dependence; isolate and keep local.
+- Govern: named owner, approved workspace and tools, protected changes and checks; authoring boundary.
+- Connect: explicit purpose and owner, typed live-system contracts, host policy and observability; runtime boundary.
+- Support: durable reviewed intent, release and service ownership, recovery evidence; full delivery system.
 -->
 
 ---
@@ -2020,16 +2088,16 @@ class: slide-light
 <Eyebrow text="TRUST RADIUS · ASSESS FOUR DIMENSIONS" />
 
 <div class="foundation-progress" aria-label="Delivery foundations">
-<span class="is-active">01 · Set rules</span>
-<span class="is-active is-magenta">02 · Record intent</span>
-<span class="is-active">03 · Constrain code</span>
+<span class="is-active">01 · Standardise delivery</span>
+<span class="is-active is-magenta">02 · Specify behaviour</span>
+<span class="is-active">03 · Sandbox execution</span>
 </div>
 
 <div class="live-stage">
 
 # The highest consequence sets the trust radius.
 
-<p class="live-claim">Assess reach, data, dependence, and continuity against the four-state model.</p>
+<p class="live-claim">Place each dimension on the same four-state scale. Take the furthest answer—not the average—and reassess whenever one changes.</p>
 
 <div class="live-radius-grid">
 <div class="live-radius-card">
@@ -2054,7 +2122,6 @@ class: slide-light
 </div>
 </div>
 
-<div class="live-radius-guide">Place every answer on the same operational scale</div>
 <div class="live-radius-scale">
 <div><strong>0</strong> Explore</div>
 <div><strong>1</strong> Govern</div>
@@ -2062,105 +2129,176 @@ class: slide-light
 <div><strong>3</strong> Support</div>
 </div>
 
-<div class="live-radius-result">The furthest answer defines the trust radius—and the controls it requires.</div>
-<p class="live-radius-close">Reassess whenever reach, data, dependence, or continuity changes.</p>
 </div>
 
 <!--
-The Trust Model becomes an assessment method through four dimensions.
-Reach asks what systems, services, and capabilities the application can access.
-Data asks what it can read, retain, produce, or change, including the consequence of disclosure or corruption.
-Dependence asks who or what relies on it and what work stops when it is unavailable or wrong.
-Continuity asks what must survive failure and what recovery obligation exists.
-Place each answer independently in Explore, Govern, Connect, or Support.
-Do not average the answers. The highest-consequence answer sets the application's required state and therefore its controls.
-This is the application's trust radius: the widest consequence it can create or inherit.
-The radius can contract as well as expand. Reassess whenever one of the four dimensions changes.
-
-Client question:
-- Which dimension pushes your application furthest to the right today?
+Do not average the answers. The highest-consequence answer sets the application's required state and therefore its safeguards.
+Reassess whenever reach, data, dependence, or continuity changes. The required state can move in either direction as those answers change.
 -->
 
 ---
-title: Evidence must be able to say no
-sync: proof-result
+title: The path becomes a loop.
+sync: future-system
+class: slide-section
+---
+
+<AmbientVideo src="/videos/hero-video-3.mp4" variant="approach" />
+
+<Eyebrow text="DELIVERY SYSTEM · THE FUTURE" />
+
+<div class="section-hero-grid">
+<div class="section-hero-left">
+<div class="section-kicker-pill is-magenta">The complete system</div>
+
+# Next, the path becomes a loop.
+
+<p class="section-subtitle">In that system, production signals are investigated and fixes proposed—<strong>then specified, built, and merged like any other change.</strong></p>
+
+</div>
+</div>
+
+<div class="hero-pillars">
+<div class="hero-pillar"><span class="hero-pillar-num">01</span><span>Sense · Signals from production</span></div>
+<div class="hero-pillar"><span class="hero-pillar-num">02</span><span>Decide · Investigate and propose</span></div>
+<div class="hero-pillar"><span class="hero-pillar-num">03</span><span>Change · Specify, build, merge — then observe</span></div>
+</div>
+
+<!--
+Section divider: The complete system.
+- So far the argument has been a path: intent enters, delivery carries it to production, safeguards are matched to the stakes.
+- The future is that path running as a loop: what the running system learns becomes the next governed change.
+-->
+
+---
+title: Feedback drives the next change.
+sync: future-loop
 class: slide-light
 ---
 
-<Eyebrow text="EVIDENCE · FIXED REPLAY SUITE, NOT A MODEL DEMO" />
+<Eyebrow text="THE FUTURE · THE COMPLETE SYSTEM" />
 
 <div class="live-stage">
 
-# Evidence must be able to say no.
+# Feedback drives the next change.
 
-<div class="live-stat-grid">
-<div class="live-stat">
-<div class="live-stat-value">0 / 22</div>
-<div class="live-stat-label">Early build</div>
-<div class="live-stat-note">Plausible. Wrong.</div>
-</div>
-<div class="live-stat">
-<div class="live-stat-value">7 / 22</div>
-<div class="live-stat-label">System improved</div>
-<div class="live-stat-note">Checks and guidance changed.</div>
-</div>
-<div class="live-stat is-latest">
-<div class="live-stat-value">21 / 22</div>
-<div class="live-stat-label">Latest build</div>
-<div class="live-stat-note">12 / 12 production messages.</div>
-</div>
-</div>
+<p class="live-claim">Nothing bypasses the path. A signal becomes a change; a change becomes new evidence.</p>
 
-<div class="live-outcome">One case remains open—and reported.</div>
-<div class="live-footnote">Propellerhead internal evaluation, October 2026. Same fixed 22-case suite as the hand-written counterpart.</div>
+<div class="live-loop">
+<svg viewBox="0 0 1140 480" aria-hidden="true" style="width: 100%; height: auto; display: block;">
+  <defs>
+    <marker id="loop-arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0 0L10 5L0 10z" fill="rgba(13,16,48,0.55)" />
+    </marker>
+    <marker id="loop-arrow-magenta" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0 0L10 5L0 10z" fill="#7c5cc9" />
+    </marker>
+    <marker id="loop-arrow-red" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0 0L10 5L0 10z" fill="#ff3b6b" />
+    </marker>
+    <linearGradient id="loop-gradient" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#16b4e2" />
+      <stop offset="100%" stop-color="#d63ad6" />
+    </linearGradient>
+  </defs>
+
+  <!-- sources -->
+  <rect x="10" y="36" width="176" height="54" rx="9" fill="#ffffff" stroke="rgba(13,16,48,0.3)" stroke-width="1.5" />
+  <text x="98" y="69" text-anchor="middle" class="svg-label" fill="#0d1030">Security feeds</text>
+  <rect x="10" y="354" width="176" height="54" rx="9" fill="#ffffff" stroke="rgba(13,16,48,0.3)" stroke-width="1.5" />
+  <text x="98" y="387" text-anchor="middle" class="svg-label" fill="#0d1030">Cargo audit</text>
+
+  <rect x="10" y="195" width="176" height="54" rx="9" fill="rgba(255,59,107,0.06)" stroke="rgba(255,59,107,0.8)" stroke-width="1.6" />
+  <text x="98" y="215" text-anchor="middle" class="svg-label" fill="#0d1030">Vulnerability</text>
+  <text x="98" y="233" text-anchor="middle" class="svg-label" fill="#0d1030">monitoring</text>
+  <text x="98" y="246" text-anchor="middle" fill="rgba(13,16,48,0.55)" style="font-size: 8px;">Analyse · security, dependencies</text>
+
+  <line x1="98" y1="90" x2="98" y2="191" stroke="rgba(13,16,48,0.45)" stroke-width="1.6" marker-end="url(#loop-arrow)" />
+  <line x1="98" y1="354" x2="98" y2="253" stroke="rgba(13,16,48,0.45)" stroke-width="1.6" marker-end="url(#loop-arrow)" />
+  <line x1="186" y1="222" x2="228" y2="222" stroke="#ff3b6b" stroke-width="2" marker-end="url(#loop-arrow-red)" />
+
+  <!-- incident manager -->
+  <rect x="232" y="150" width="304" height="144" rx="14" fill="#ffffff" stroke="rgba(13,16,48,0.3)" stroke-width="1.6" />
+  <text x="252" y="178" class="svg-kicker" fill="rgba(13,16,48,0.58)">INCIDENT MANAGER</text>
+  <rect x="252" y="196" width="122" height="58" rx="9" fill="#ffffff" stroke="rgba(13,16,48,0.3)" stroke-width="1.5" />
+  <text x="313" y="231" text-anchor="middle" class="svg-label" fill="#0d1030">Investigate</text>
+  <line x1="374" y1="225" x2="390" y2="225" stroke="rgba(13,16,48,0.45)" stroke-width="1.6" marker-end="url(#loop-arrow)" />
+  <rect x="394" y="196" width="122" height="58" rx="9" fill="#ffffff" stroke="rgba(13,16,48,0.3)" stroke-width="1.5" />
+  <text x="455" y="231" text-anchor="middle" class="svg-label" fill="#0d1030">Propose Fix</text>
+  <rect x="399" y="262" width="112" height="24" rx="12" fill="#0d1030" />
+  <text x="455" y="278" text-anchor="middle" fill="#ffffff" style="font-size: 10.5px; font-weight: 600;">Review &amp; seal</text>
+
+  <!-- forks to the two lanes -->
+  <path d="M500 150 C 560 110, 560 92, 592 92" fill="none" stroke="rgba(13,16,48,0.45)" stroke-width="1.6" stroke-dasharray="5 4" marker-end="url(#loop-arrow)" />
+  <path d="M500 294 C 560 334, 560 368, 592 368" fill="none" stroke="rgba(13,16,48,0.45)" stroke-width="1.6" stroke-dasharray="5 4" marker-end="url(#loop-arrow)" />
+  <text x="512" y="118" class="svg-caption" fill="rgba(13,16,48,0.58)">investigate/fix</text>
+  <text x="512" y="352" class="svg-caption" fill="rgba(13,16,48,0.58)">investigate/fix</text>
+
+  <!-- infrastructure lane -->
+  <rect x="596" y="28" width="528" height="142" rx="14" fill="rgba(22,180,226,0.04)" stroke="rgba(12,127,163,0.4)" stroke-width="1.5" />
+  <text x="616" y="54" class="svg-kicker" fill="#0c7fa3">INFRASTRUCTURE</text>
+  <rect x="616" y="59" width="168" height="4" rx="2" fill="url(#loop-gradient)" />
+  <rect x="616" y="66" width="168" height="62" rx="9" fill="rgba(22,180,226,0.08)" stroke="#0c7fa3" stroke-width="1.6" />
+  <text x="700" y="96" text-anchor="middle" class="svg-label" fill="#0d1030">Specify–Build–Merge</text>
+  <text x="700" y="116" text-anchor="middle" class="svg-caption" fill="rgba(13,16,48,0.58)" style="font-size: 8.5px;">Spec → Plan → Build → Merge → Verify</text>
+  <line x1="784" y1="97" x2="808" y2="97" stroke="rgba(13,16,48,0.45)" stroke-width="1.6" marker-start="url(#loop-arrow)" marker-end="url(#loop-arrow)" />
+  <path d="M812 76 a60 10 0 0 0 120 0 v42 a60 10 0 0 1 -120 0 z" fill="#ffffff" stroke="rgba(13,16,48,0.4)" stroke-width="1.5" />
+  <ellipse cx="872" cy="76" rx="60" ry="10" fill="#ffffff" stroke="rgba(13,16,48,0.4)" stroke-width="1.5" />
+  <text x="872" y="102" text-anchor="middle" class="svg-label" fill="#0d1030">GitHub</text>
+  <text x="872" y="119" text-anchor="middle" fill="rgba(13,16,48,0.55)" style="font-size: 8.5px;">spec.md · design.md</text>
+  <rect x="972" y="66" width="136" height="62" rx="9" fill="rgba(124,92,205,0.1)" stroke="rgba(124,92,205,0.7)" stroke-width="1.6" />
+  <text x="1040" y="99" text-anchor="middle" class="svg-label" fill="#0d1030">Terraform</text>
+  <text x="1040" y="117" text-anchor="middle" fill="rgba(13,16,48,0.55)" style="font-size: 9px;">runtime recipe</text>
+  <line x1="972" y1="97" x2="936" y2="97" stroke="rgba(124,92,205,0.8)" stroke-width="1.6" stroke-dasharray="5 4" marker-end="url(#loop-arrow-magenta)" />
+  <line x1="1040" y1="128" x2="1040" y2="198" stroke="rgba(124,92,205,0.9)" stroke-width="2" marker-end="url(#loop-arrow-magenta)" />
+  <text x="1052" y="168" class="svg-caption" fill="rgba(13,16,48,0.58)">update</text>
+
+  <!-- shared infrastructure + monitoring -->
+  <rect x="928" y="202" width="196" height="62" rx="10" fill="rgba(22,180,226,0.1)" stroke="#0c7fa3" stroke-width="1.8" />
+  <text x="1026" y="236" text-anchor="middle" class="svg-h3" fill="#0d1030">Infrastructure</text>
+  <text x="1026" y="255" text-anchor="middle" fill="rgba(13,16,48,0.55)" style="font-size: 9px;">Cloud/On-premise</text>
+  <rect x="596" y="202" width="210" height="62" rx="10" fill="rgba(255,59,107,0.06)" stroke="rgba(255,59,107,0.8)" stroke-width="1.6" />
+  <text x="701" y="228" text-anchor="middle" class="svg-label" fill="#0d1030">Infrastructure</text>
+  <text x="701" y="248" text-anchor="middle" class="svg-label" fill="#0d1030">monitoring</text>
+  <line x1="806" y1="233" x2="924" y2="233" stroke="#ff3b6b" stroke-width="2" marker-end="url(#loop-arrow-red)" />
+  <text x="865" y="223" text-anchor="middle" class="svg-caption" fill="rgba(13,16,48,0.58)">monitor</text>
+  <line x1="596" y1="240" x2="540" y2="240" stroke="#ff3b6b" stroke-width="2" marker-end="url(#loop-arrow-red)" />
+  <text x="568" y="230" text-anchor="middle" fill="rgba(13,16,48,0.55)" style="font-size: 9px;">observe</text>
+
+  <!-- code lane -->
+  <rect x="596" y="308" width="528" height="142" rx="14" fill="rgba(22,180,226,0.04)" stroke="rgba(12,127,163,0.4)" stroke-width="1.5" />
+  <text x="616" y="334" class="svg-kicker" fill="#0c7fa3">CODE</text>
+  <rect x="616" y="339" width="168" height="4" rx="2" fill="url(#loop-gradient)" />
+  <rect x="616" y="346" width="168" height="62" rx="9" fill="rgba(22,180,226,0.08)" stroke="#0c7fa3" stroke-width="1.6" />
+  <text x="700" y="376" text-anchor="middle" class="svg-label" fill="#0d1030">Specify–Build–Merge</text>
+  <text x="700" y="396" text-anchor="middle" class="svg-caption" fill="rgba(13,16,48,0.58)" style="font-size: 8.5px;">Spec → Plan → Build → Merge → Verify</text>
+  <line x1="784" y1="377" x2="808" y2="377" stroke="rgba(13,16,48,0.45)" stroke-width="1.6" marker-start="url(#loop-arrow)" marker-end="url(#loop-arrow)" />
+  <path d="M812 356 a60 10 0 0 0 120 0 v42 a60 10 0 0 1 -120 0 z" fill="#ffffff" stroke="rgba(13,16,48,0.4)" stroke-width="1.5" />
+  <ellipse cx="872" cy="356" rx="60" ry="10" fill="#ffffff" stroke="rgba(13,16,48,0.4)" stroke-width="1.5" />
+  <text x="872" y="382" text-anchor="middle" class="svg-label" fill="#0d1030">GitHub</text>
+  <text x="872" y="399" text-anchor="middle" fill="rgba(13,16,48,0.55)" style="font-size: 8.5px;">spec.md · design.md</text>
+  <rect x="972" y="346" width="136" height="62" rx="9" fill="rgba(13,16,48,0.05)" stroke="rgba(13,16,48,0.35)" stroke-width="1.5" />
+  <text x="1040" y="374" text-anchor="middle" class="svg-label" fill="#0d1030">GitHub</text>
+  <text x="1040" y="394" text-anchor="middle" class="svg-label" fill="#0d1030">Actions</text>
+  <text x="1040" y="430" text-anchor="middle" fill="rgba(13,16,48,0.55)" style="font-size: 9px;">promote the artifact</text>
+  <line x1="972" y1="377" x2="936" y2="377" stroke="rgba(13,16,48,0.45)" stroke-width="1.6" stroke-dasharray="5 4" marker-end="url(#loop-arrow)" />
+  <line x1="1040" y1="346" x2="1040" y2="268" stroke="rgba(13,16,48,0.5)" stroke-width="2" marker-end="url(#loop-arrow)" />
+  <text x="1052" y="305" class="svg-caption" fill="rgba(13,16,48,0.58)">deploy</text>
+
+</svg>
+</div>
 </div>
 
 <!--
-We recovered a specification from an anonymised real-time rail service and rebuilt it as a WASI component.
-The early output looked plausible line by line. The recorded cases showed it was not correct.
-The open case remains visible because evidence is useful only when it can still say no.
+The complete system, using vulnerability remediation as the worked example:
+- Security feeds and dependency audits flow into vulnerability monitoring.
+- An incident manager investigates and proposes a fix. It proposes; it does not ship.
+- The fix enters at the production gate and runs the same loop as any change: specify, build, and merge — in a code lane and an infrastructure lane.
+- The result is deployed and updated, and infrastructure monitoring watches it and raises the next signal.
+- Nothing bypasses the path. The safeguards on each pass are the ones the trust radius requires.
 -->
 
 ---
-title: Fix the system, not the output
-sync: proof-learning
-class: slide-light
----
-
-<Eyebrow text="COMPOUNDING DELIVERY · EVERY FAILURE IMPROVES THE NEXT BUILD" />
-
-<div class="live-stage">
-
-# Fix the system, not the output.
-
-<div class="live-repairs">
-<div class="live-repair">
-<span>A consumer never registered</span>
-<span class="live-repair-arrow">→</span>
-<strong>Refuse unreachable publishers</strong>
-</div>
-<div class="live-repair">
-<span>A rejection looked processed</span>
-<span class="live-repair-arrow">→</span>
-<strong>Refuse swallowed errors</strong>
-</div>
-<div class="live-repair">
-<span>A type was laid out empty</span>
-<span class="live-repair-arrow">→</span>
-<strong>Repair the design-type reader</strong>
-</div>
-</div>
-
-<div class="live-outcome">No defect was hand-patched. Every later build inherits the fix.</div>
-</div>
-
-<!--
-Each defect became a reusable capability in the delivery system: a check, better extraction, clearer guidance, or repaired tooling.
-The score is not the product claim. The compounding delivery system is.
--->
-
----
-title: Start with one real change. Make the next one easier.
+title: What’s the first change you’d trust AI to deliver?
 sync: cta
 class: slide-split short-bar
 ---
@@ -2173,56 +2311,18 @@ class: slide-split short-bar
 </div>
 </div>
 
-<div class="split-content-pane">
+<div class="split-content-pane" style="justify-content: center;">
 <div>
 <Eyebrow text="PROPELLERHEAD · THE FIRST MOVE" />
 
-# Start with one real change.<br>Make the next one easier.
+# What’s the first change<br>you’d trust AI to deliver?
 
-<div class="opportunity-rows" style="margin-top: 8px;">
-<div class="opportunity-row">
-<span class="opportunity-row-num">01</span>
-<div>
-<h4>Choose the first move</h4>
-<p>We work out what is really in the way, set the boundaries and shape a first delivery worth doing.</p>
-</div>
-</div>
-<div class="opportunity-row">
-<span class="opportunity-row-num">02</span>
-<div>
-<h4>Get it live</h4>
-<p>New system or old one: we use AI where it helps, senior people where judgement matters and a production path we already know.</p>
-</div>
-</div>
-<div class="opportunity-row">
-<span class="opportunity-row-num">03</span>
-<div>
-<h4>Keep the gains</h4>
-<p>You keep the specifications, tests, infrastructure and delivery knowledge. The next change starts ahead, not at zero.</p>
-</div>
-</div>
-</div>
 </div>
 
-<div class="cta-card">
-<div>
-<div class="cta-card-label">THE FIRST MOVE</div>
-<div class="cta-card-title">What is really in the way?</div>
-</div>
-<div class="cta-pill">
-<span class="cta-pill-dot">→</span>
-<span>Find the first move</span>
-</div>
-</div>
 </div>
 
 <!--
-Close on the same path as the website:
-- Choose the first move: work out what is really in the way, set the boundaries, and shape a first delivery worth doing.
-- Get it live: use AI where it helps, senior people where judgement matters, and a production path we already know.
-- Keep the gains: retain the specifications, tests, infrastructure, and delivery knowledge so the next change starts ahead.
-- The call to action is direct: find the first move.
-
-Final question:
-- What is really in the way?
+The trust model gives the audience a way to judge how much safeguard a change needs.
+Close by returning to the opening in personal terms: what is the first change they would trust AI to deliver? One change is enough to start; set the safeguards to match its stakes.
 -->
+
