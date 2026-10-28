@@ -220,6 +220,18 @@
     ]
   },
   {
+    "id": "use-cases",
+    "title": "One delivery system. Four use cases.",
+    "required": [
+      "One delivery system. Four use cases.",
+      "Whether starting from a prototype, a legacy codebase, or a new service, the same path applies.",
+      "Take vibe-coded apps to production",
+      "Retire technical debt",
+      "Move across environments",
+      "Deliver in regulated environments"
+    ]
+  },
+  {
     "id": "future-system",
     "title": "Narrow the target. Close the loop.",
     "required": [

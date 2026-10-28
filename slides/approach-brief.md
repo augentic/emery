@@ -1134,6 +1134,64 @@ Client question:
 -->
 
 ---
+title: One delivery system. Four use cases.
+sync: use-cases
+class: slide-light
+---
+
+<Eyebrow text="THE DELIVERY SYSTEM · WHERE IT APPLIES" />
+
+<div class="ed-band">
+<div class="ed-band-top">
+<div>
+
+# One delivery system.<br>Four use cases.
+
+</div>
+<p class="ed-band-prose"><strong>Whether starting from a prototype, a legacy codebase, or a new service, the same path applies.</strong> The specification loop, compiler-enforced standards, and capability-based runtime solve four practical problems without bespoke process for each.</p>
+</div>
+<div class="ed-band-canvas">
+<svg viewBox="0 0 1140 350" aria-hidden="true">
+  <rect x="16" y="18" width="542" height="148" rx="14" fill="rgba(22,180,226,0.06)" stroke="#0c7fa3" stroke-width="1.7" />
+  <text x="38" y="48" class="svg-kicker" fill="#0c7fa3">01 · PROTOTYPE TO PRODUCTION</text>
+  <text x="38" y="80" class="svg-h3" fill="#0d1030">Take vibe-coded apps to production</text>
+  <line x1="38" y1="96" x2="534" y2="96" stroke="rgba(12,127,163,0.18)" />
+  <text x="38" y="124" class="svg-label" fill="#0d1030">Extract intent from a rapid prototype and</text>
+  <text x="38" y="146" class="svg-label" fill="#0d1030">rebuild it as a supported service.</text>
+
+  <rect x="582" y="18" width="542" height="148" rx="14" fill="rgba(164,35,143,0.05)" stroke="#a4238f" stroke-width="1.7" />
+  <text x="604" y="48" class="svg-kicker" fill="#a4238f">02 · LEGACY MODERNISATION</text>
+  <text x="604" y="80" class="svg-h3" fill="#0d1030">Retire technical debt</text>
+  <line x1="604" y1="96" x2="1100" y2="96" stroke="rgba(164,35,143,0.18)" />
+  <text x="604" y="124" class="svg-label" fill="#0d1030">Recover durable specifications from legacy code</text>
+  <text x="604" y="146" class="svg-label" fill="#0d1030">and regenerate a clean implementation.</text>
+
+  <rect x="16" y="184" width="542" height="148" rx="14" fill="#ffffff" stroke="rgba(13,16,48,0.28)" stroke-width="1.6" />
+  <text x="38" y="214" class="svg-kicker" fill="rgba(13,16,48,0.62)">03 · CLOUD PORTABILITY</text>
+  <text x="38" y="246" class="svg-h3" fill="#0d1030">Move across environments</text>
+  <line x1="38" y1="262" x2="534" y2="262" stroke="rgba(13,16,48,0.12)" />
+  <text x="38" y="290" class="svg-label" fill="#0d1030">Build once against capability contracts and</text>
+  <text x="38" y="312" class="svg-label" fill="#0d1030">swap the runtime recipe per environment.</text>
+
+  <rect x="582" y="184" width="542" height="148" rx="14" fill="#0d1030" />
+  <text x="604" y="214" class="svg-kicker" fill="#78d8f2">04 · HIGH-TRUST SYSTEMS</text>
+  <text x="604" y="246" class="svg-h3" fill="#ffffff">Deliver in regulated environments</text>
+  <line x1="604" y1="262" x2="1100" y2="262" stroke="rgba(255,255,255,0.14)" />
+  <text x="604" y="290" class="svg-label" fill="#ffffff">Move at AI speed with an auditable specification,</text>
+  <text x="604" y="312" class="svg-label" fill="#ffffff">compile-time rules, and sandboxed execution.</text>
+</svg>
+</div>
+</div>
+
+<!--
+Where the delivery system applies in practice:
+1. Prototype to production: extract the real intent from a vibe-coded or citizen-built prototype and rebuild it through the governed path as a maintainable service.
+2. Legacy modernisation: recover durable specifications (`spec.md` and `design.md`) from existing source code, tests, and docs, then regenerate a clean implementation.
+3. Cloud portability: build once against capability contracts and move across local, cloud, and on-premise environments by changing the runtime recipe.
+4. High-trust and regulated systems: gain AI delivery speed while preserving an auditable specification, compiler-enforced rules, and a zero-trust runtime sandbox.
+-->
+
+---
 title: Narrow the target. Close the loop.
 sync: future-system
 class: slide-light

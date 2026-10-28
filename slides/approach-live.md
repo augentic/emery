@@ -2106,6 +2106,68 @@ Reassess whenever reach, data, dependence, or continuity changes. The required s
 -->
 
 ---
+title: One delivery system. Four use cases.
+sync: use-cases
+class: slide-light
+---
+
+<Eyebrow text="THE DELIVERY SYSTEM · WHERE IT APPLIES" />
+
+<div class="live-stage">
+
+# One delivery system.<br>Four use cases.
+
+<p class="live-claim">Whether starting from a prototype, a legacy codebase, or a new service, the same path applies.</p>
+
+<div class="live-grid-2" style="margin-top: 20px; gap: 18px;">
+<div class="live-card is-cyan">
+<div class="live-card-head">
+<IconBadge tone="cyan"><ph:rocket-launch /></IconBadge>
+<div class="live-kicker">01 · Prototype to production</div>
+</div>
+<h3>Take vibe-coded apps to production</h3>
+<p>Extract intent from a rapid prototype and rebuild it as a supported service.</p>
+</div>
+
+<div class="live-card">
+<div class="live-card-head">
+<IconBadge tone="magenta"><ph:file-text /></IconBadge>
+<div class="live-kicker">02 · Legacy modernisation</div>
+</div>
+<h3>Retire technical debt</h3>
+<p>Recover durable specifications from legacy code and regenerate a clean implementation.</p>
+</div>
+
+<div class="live-card">
+<div class="live-card-head">
+<IconBadge tone="ink"><ph:globe /></IconBadge>
+<div class="live-kicker">03 · Cloud portability</div>
+</div>
+<h3>Move across environments</h3>
+<p>Build once against capability contracts and swap the runtime recipe per environment.</p>
+</div>
+
+<div class="live-card is-dark">
+<div class="live-card-head">
+<IconBadge tone="light"><ph:shield-check /></IconBadge>
+<div class="live-kicker">04 · High-trust systems</div>
+</div>
+<h3>Deliver in regulated environments</h3>
+<p>Move at AI speed with an auditable specification, compile-time rules, and sandboxed execution.</p>
+</div>
+</div>
+
+</div>
+
+<!--
+Where the delivery system applies in practice:
+1. Prototype to production: extract the real intent from a vibe-coded or citizen-built prototype and rebuild it through the governed path as a maintainable service.
+2. Legacy modernisation: recover durable specifications (`spec.md` and `design.md`) from existing source code, tests, and docs, then regenerate a clean implementation.
+3. Cloud portability: build once against capability contracts and move across local, cloud, and on-premise environments by changing the runtime recipe.
+4. High-trust and regulated systems: gain AI delivery speed while preserving an auditable specification, compiler-enforced rules, and a zero-trust runtime sandbox.
+-->
+
+---
 title: Narrow the target. Close the loop.
 sync: future-system
 class: slide-section
