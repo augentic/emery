@@ -10,7 +10,8 @@ use std::os::unix::fs::{PermissionsExt as _, symlink};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-use emery_engine::vcs::{Message, RevisionMessage};
+use emery_engine::amend::{SliceChange, SliceClass};
+use emery_engine::vcs::{Message, RevisionMessage, Summary};
 use omnia::{Backend as _, CompileOptions, Digest, ExitStatus, RuntimeOptions, StoreCtx};
 use omnia_git::{Client, ConnectOptions};
 use omnia_test::host::{Backends, Deployment, Run, Scratch, ScriptedModel, scratch};
@@ -104,6 +105,45 @@ const REPORT_INDEX_GREETING: &str = r#"{"covered": ["REQ-001"], "written": ["bui
 const REPORT_INDEX_FAREWELL: &str = r#"{"covered": ["REQ-002"], "written": ["build/index.md"]}"#;
 const RESOLVED_INDEX: &str = "# Index\n\n- greeting\n- farewell\n";
 const MERGE_INDEX: &str = r##"{"files": [{"path": "build/index.md", "content": "# Index\n\n- greeting\n- farewell\n"}]}"##;
+
+// The amendment journey over the one-slice revision: one brief revising the
+// greeting, adding a farewell under a stem no slice holds, and prescribing
+// the store behind it, so the run puts every turn an amend can put — the
+// extract, the grouping, the spec draft beside the design turn the decision
+// informs, and the slicing turn the new stem opens — in that order.
+const DESCRIPTION_AMEND: &str = "acme:source@0.1.0=GET /greeting returns the static string \
+                                 'hello, world'. GET /farewell returns the static string 'bye'. \
+                                 Keep the farewell's phrasebook in PostgreSQL.";
+const EXTRACT_AMEND: &str = r#"{"claims": [
+    {"kind": "requirement", "id": "greeting.behaviour",
+     "statement": "GET /greeting returns the static string 'hello, world'."},
+    {"kind": "requirement", "id": "farewell.behaviour",
+     "statement": "GET /farewell returns the static string 'bye'."},
+    {"kind": "decision", "decision": "Keep the farewell's phrasebook in PostgreSQL."}]}"#;
+// Indices 0 and 1 are the brief's requirements, 2 the standing greeting,
+// pre-merged with the brief's by id and revised by it.
+const GROUPING_AMEND: &str = r#"{"groups": [
+    {"claims": [0, 2], "classes": [[0], [2]]},
+    {"claims": [1], "classes": [[1]]}]}"#;
+const SPEC_AMEND: &str = r#"{"preamble": [], "requirements": [
+    {"subject": "greeting.behaviour", "scenarios": [{"name": "Greeting requested",
+     "given": ["the greeting surface is bound"], "when": "`/greeting` is requested",
+     "then": "the response is `hello, world`"}]},
+    {"subject": "farewell.behaviour", "scenarios": [{"name": "Farewell requested",
+     "given": ["the farewell surface is bound"], "when": "`/farewell` is requested",
+     "then": "the response is `bye`"}]}]}"#;
+// The overview's one paragraph reworded over both requirements, and the
+// section the decision informs drafted where the base has none.
+const DESIGN_AMEND: &str = r#"{"sections": [
+    {"kind": "overview", "blocks": [{"text": "Two static endpoints: `GET /greeting` returning `'hello, world'` (`REQ-001`) and `GET /farewell` returning `'bye'` (`REQ-002`); no state or configuration is involved."}], "revised": [1]},
+    {"kind": "apis", "blocks": [{"text": "The farewell's phrasebook is kept in a relational store."}], "revised": []}]}"#;
+const SLICING_AMEND: &str = r#"{"slices": [
+    {"name": "farewell", "requirements": ["REQ-002"], "types": [], "depends-on": [],
+     "brief": ["Delivers the farewell beside the greeting."]}], "joins": []}"#;
+// The greeting slice built again under the amended revision writes the
+// revised greeting, so its merge changes the tree this time.
+const WRITE_GREETING_AMEND: &str =
+    r##"{"files": [{"path": "build/greeting.md", "content": "# Greeting\n\nhello, world\n"}]}"##;
 
 // Git under a scratch configuration: a wrapper exporting `GIT_CONFIG_GLOBAL`
 // and `GIT_CONFIG_NOSYSTEM` before handing over to the `git` on `PATH`, so
@@ -507,6 +547,25 @@ fn revision_of(run: &Run) -> String {
         .to_owned()
 }
 
+// The amendment id an `amend` run reports on its first line.
+fn amendment_of(run: &Run) -> String {
+    run.stdout
+        .strip_prefix("staged amendment ")
+        .and_then(|rest| rest.split_whitespace().next())
+        .unwrap_or_else(|| panic!("no amendment line: {}", run.stdout))
+        .to_owned()
+}
+
+// The revision id an `amend --apply` run reports on its indented seal line.
+fn sealed_of(run: &Run) -> String {
+    run.stdout
+        .lines()
+        .find_map(|line| line.trim_start().strip_prefix("sealed revision "))
+        .and_then(|rest| rest.split_whitespace().next())
+        .unwrap_or_else(|| panic!("no seal line: {}", run.stdout))
+        .to_owned()
+}
+
 fn assert_ok(run: &Run) {
     assert_eq!(run.status, ExitStatus::SUCCESS, "stdout: {}\nstderr: {}", run.stdout, run.stderr);
 }
@@ -547,6 +606,20 @@ fn specifying() -> ScriptedModel {
 // across two stems, the spec and design drafts, and the slicing.
 fn specifying_pair() -> ScriptedModel {
     ScriptedModel::answering([EXTRACT_PAIR, GROUPING_PAIR, SPEC_PAIR, DESIGN_ANSWER, SLICING_PAIR])
+}
+
+// The amend script: the mock source's one extract turn over the brief, the
+// grouping against the standing greeting, the spec draft and the design
+// turn the decision informs, which the engine puts together and the host
+// answers in that order, then the slicing turn the new stem opens.
+fn amending() -> ScriptedModel {
+    ScriptedModel::answering([
+        EXTRACT_AMEND,
+        GROUPING_AMEND,
+        SPEC_AMEND,
+        DESIGN_AMEND,
+        SLICING_AMEND,
+    ])
 }
 
 // The build script over the one-slice plan: the mock target's build turn,
@@ -902,6 +975,297 @@ async fn specify_over_built() {
         "design.json\nplan.json\nspec.json"
     );
     assert_eq!(roots.git.head(project), base);
+}
+
+// The staged block an amend over the built revision prints, up to the line
+// that says what became of the amendment.
+fn amend_block(amendment: &str, parent: &str, over: &str) -> String {
+    format!(
+        "staged amendment {amendment}\n  base {parent} at {}\n  1 added, 1 changed, 0 retired, 0 \
+         conflict, 0 unchanged\n  stems: farewell, greeting\n  design: overview, apis\n  slices: \
+         farewell (new)\n",
+        &over[..8]
+    )
+}
+
+// What `apply` prints sealing the amendment as `revision` over `parent`.
+fn amend_seal(indent: &str, revision: &str, parent: &str, commit: &str) -> String {
+    format!(
+        "{indent}sealed revision {revision} as emery/{revision} at {}\n{indent}  amends \
+         {parent}\n",
+        &commit[..8]
+    )
+}
+
+// Holds the repository to the amendment sealed as `revision` over the built
+// `parent`, whose label stands at `over`: the label `emery/<revision>` is
+// one commit over `over`, its tree the three documents of the amended
+// revision over the code the parent's build sealed, its message the
+// parent and the summary trailers, the parent's label standing, the
+// checkout at `base` untouched, and `show spec` reading the amended
+// specification under the parent.
+async fn assert_amended(
+    roots: &Roots, backends: &Bundle, base: &str, parent: &str, over: &str, revision: &str,
+) {
+    let project = roots.project.path();
+    let label = format!("emery/{revision}");
+    let sealed = roots.git.run(project, &["rev-parse", &label]);
+    assert_eq!(
+        roots.git.run(project, &["rev-parse", &format!("{sealed}~1")]),
+        over,
+        "the amendment is sealed over the head of the parent's label"
+    );
+    assert_eq!(
+        roots.git.run(project, &["diff", "--name-only", over, &sealed]),
+        "spec/design.json\nspec/plan.json\nspec/spec.json",
+        "the three documents and nothing else"
+    );
+    assert_eq!(
+        roots.git.run(project, &["show", &format!("{sealed}:build/greeting.md")]),
+        "# Greeting",
+        "the tree holds the code the parent's build sealed"
+    );
+    let message = roots.git.message(project, &sealed);
+    assert_eq!(
+        RevisionMessage::parse(&message),
+        Some(RevisionMessage {
+            revision: revision.to_owned(),
+            parent: Some(parent.to_owned()),
+            base: Some(over.to_owned()),
+            summary: Some(Summary {
+                added: 1,
+                changed: 1,
+                retired: 0,
+                slices: vec![SliceChange {
+                    id: "SLICE-002".parse().expect("a slice id"),
+                    name: "farewell".to_owned(),
+                    class: SliceClass::Added,
+                }],
+            }),
+        }),
+        "{message}"
+    );
+    let parent_trailer = format!("Parent: {parent}");
+    for trailer in [
+        parent_trailer.as_str(),
+        "Added: 1",
+        "Changed: 1",
+        "Retired: 0",
+        "Slices: SLICE-002 farewell added",
+    ] {
+        assert!(message.contains(trailer), "`{trailer}` in: {message}");
+    }
+    assert_eq!(
+        roots.git.run(project, &["rev-parse", &format!("emery/{parent}")]),
+        over,
+        "the parent's label stands"
+    );
+    assert_eq!(roots.git.head(project), base, "the checkout is untouched");
+    assert!(roots.project.read("spec/spec.json").is_none(), "nothing lands in the checkout");
+
+    // the amended specification is the current revision, under its parent;
+    // the Markdown projection carries no parent line
+    let shown = roots.run_idle(&["--format", "json", "show", "spec"], backends).await;
+    assert_ok(&shown);
+    let envelope: Value = serde_json::from_str(&shown.stdout).expect("the show envelope");
+    assert_eq!(envelope["revision"], revision);
+    assert_eq!(envelope["document"]["parent"], parent, "{envelope}");
+    assert_eq!(envelope["document"]["requirements"].as_array().map(Vec::len), Some(2));
+    let shown = roots.run_idle(&["show", "spec"], backends).await;
+    assert_ok(&shown);
+    assert!(shown.stdout.contains(&format!("revision: {revision}\n")), "{}", shown.stdout);
+    assert!(shown.stdout.contains("### Requirement: greeting.behaviour"), "{}", shown.stdout);
+    assert!(shown.stdout.contains("### Requirement: farewell.behaviour"), "{}", shown.stdout);
+    assert!(shown.stdout.contains("the response is `hello, world`"), "{}", shown.stdout);
+    let shown = roots.run_idle(&["show", "design"], backends).await;
+    assert_ok(&shown);
+    assert!(shown.stdout.contains("## APIs and integrations"), "{}", shown.stdout);
+    let run = roots.run_idle(&["--format", "json", "show", "amendment"], backends).await;
+    refused(&run, 2, "nothing-staged");
+}
+
+// Builds the amended `revision` over the parent's built tree: the layout is
+// held, so nothing is initialised and no slice is resumed, since the
+// parent's merges name another revision; both slices are built in one wave
+// over the `Revision` commit and merged, the greeting's merge changing the
+// file the parent's build sealed, and the label moves to the verified wave
+// with the amended documents still in its tree.
+async fn assert_rebuilt(roots: &Roots, backends: &Bundle, base: &str, revision: &str) {
+    let project = roots.project.path();
+    let label = format!("emery/{revision}");
+    let sealed = roots.git.run(project, &["rev-parse", &label]);
+
+    // one build at a time, so the turns arrive in slice order
+    let model = ScriptedModel::answering([REPORT_ANSWER, REPORT_FAREWELL, VERDICT_ANSWER])
+        .calling(0, [("write_files", WRITE_GREETING_AMEND)])
+        .calling(1, [("write_files", WRITE_FAREWELL)]);
+    let run = roots.run(&["build", "--jobs", "1"], backends, &model).await;
+
+    assert_ok(&run);
+    model.assert_exhausted();
+    assert_eq!(revision_of(&run), revision);
+    assert!(run.stdout.contains("\n  plan: 2 slices in 1 wave, widest 2\n"), "{}", run.stdout);
+    assert!(run.stdout.contains(&format!("\n  base {base}\n")), "{}", run.stdout);
+    assert!(!run.stdout.contains("initialised"), "the layout is held: {}", run.stdout);
+    assert!(!run.stdout.contains("resumed:"), "the parent's slices are not this revision's");
+    assert!(!run.stdout.contains("candidate"), "nothing stands staged: {}", run.stdout);
+    assert!(run.stdout.contains("\n  wave 1: 2 slices verified at "), "{}", run.stdout);
+    let head = roots.git.run(project, &["rev-parse", &label]);
+    assert!(run.stdout.ends_with(&format!("  labelled {label} at {head}\n")), "{}", run.stdout);
+    assert_eq!(
+        roots
+            .git
+            .run(project, &["log", "--first-parent", "--format=%s", &format!("{sealed}..{label}")]),
+        "SLICE-002 farewell\nSLICE-001 greeting",
+        "one merge per slice over the amended revision"
+    );
+    assert_eq!(
+        roots.git.run(project, &["show", &format!("{label}:build/greeting.md")]),
+        "# Greeting\n\nhello, world"
+    );
+    assert_eq!(
+        roots.git.run(project, &["show", &format!("{label}:build/farewell.md")]),
+        "# Farewell"
+    );
+    assert_eq!(
+        roots.git.run(project, &["diff", "--name-only", &sealed, &label]),
+        "build/farewell.md\nbuild/greeting.md",
+        "the documents stand as the seal wrote them"
+    );
+    assert_eq!(
+        roots.git.run(project, &["ls-tree", "--name-only", &format!("{label}:spec")]),
+        "design.json\nplan.json\nspec.json"
+    );
+    assert_eq!(roots.git.head(project), base);
+    assert!(!project.join(".emery/vcs/integration").exists(), "the working copy is removed");
+}
+
+// The amendment journey: over a built revision, `amend` extracts the brief
+// through the mock source, matches it against the standing greeting, drafts
+// the revised and added requirements, redrafts the design over the
+// decision, slices the new stem, and stages the amendment, which `show
+// amendment` renders; `apply` seals it as the next revision over the head of
+// the parent's label, carrying the parent and the summary in its message;
+// `show spec` reads it under the parent; and the build that follows builds
+// every slice of it over the parent's code with the layout held.
+#[tokio::test]
+async fn amend_applied_built() {
+    let (roots, backends, parent, base) = built().await;
+    let project = roots.project.path();
+    let over = roots.git.run(project, &["rev-parse", &format!("emery/{parent}")]);
+
+    let model = amending();
+    let run = roots
+        .run(&["amend", "--description", DESCRIPTION_AMEND, "--config"], &backends, &model)
+        .await;
+
+    assert_ok(&run);
+    model.assert_exhausted();
+    assert_eq!(
+        model.lent(),
+        [const { None }; 5],
+        "the extract over an inline brief lends nothing, and the engine's four turns none"
+    );
+    let amendment = amendment_of(&run);
+    assert_eq!(
+        run.stdout,
+        format!(
+            "{}  nothing sealed; `emery show amendment` reviews it\n",
+            amend_block(&amendment, &parent, &over)
+        )
+    );
+    assert_eq!(roots.git.branches(project), [format!("emery/{parent}"), "main".to_owned()]);
+    assert_eq!(roots.git.run(project, &["rev-parse", &format!("emery/{parent}")]), over);
+
+    // the staged amendment is what `show amendment` renders, and what a
+    // specify must not displace
+    let shown = roots.run_idle(&["show", "amendment"], &backends).await;
+    assert_ok(&shown);
+    let base_line = format!("Base: {parent} at {over}\n");
+    for fragment in [
+        "# Amendment\n\n",
+        base_line.as_str(),
+        "1 added, 1 changed, 0 retired, 0 conflict, 0 unchanged",
+        "## Added\n\n### Requirement: farewell.behaviour\n\nID: REQ-002\n",
+        "## Changed\n\n### Requirement: greeting.behaviour\n\nID: REQ-001\n",
+        "Before: GET /greeting returns the static string 'hello'.\n\nAfter: GET /greeting \
+         returns the static string 'hello, world'.",
+        "## Design\n\nChanged: Overview; added: APIs and integrations.\n",
+        "## Plan\n\n### Slice: farewell [added]\n\nID: SLICE-002\n",
+    ] {
+        assert!(shown.stdout.contains(fragment), "`{fragment}` in: {}", shown.stdout);
+    }
+    let run = roots.run_idle(&["--format", "json", "specify", SOURCE, "--config"], &backends).await;
+    let envelope = refused(&run, 1, "amendment-pending");
+    assert_message(&envelope, &format!("amendment `{amendment}` is staged"));
+    assert_hint(&envelope, "emery show amendment");
+
+    // apply seals it over the parent's built head as the next revision
+    let run = roots.run_idle(&["apply"], &backends).await;
+    assert_ok(&run);
+    let revision = revision_of(&run);
+    assert_ne!(revision, parent);
+    let sealed = roots.git.run(project, &["rev-parse", &format!("emery/{revision}")]);
+    assert_eq!(
+        run.stdout,
+        format!(
+            "{}  diff vs {parent}: spec +1 -0 ~1, design +1 -0 ~1, plan +1 -0 ~0\n",
+            amend_seal("", &revision, &parent, &sealed)
+        )
+    );
+    assert_amended(&roots, &backends, &base, &parent, &over, &revision).await;
+    assert_eq!(
+        roots.git.branches(project),
+        [format!("emery/{parent}"), format!("emery/{revision}"), "main".to_owned()]
+    );
+    let run = roots.run_idle(&["--format", "json", "apply"], &backends).await;
+    refused(&run, 2, "nothing-staged");
+
+    assert_rebuilt(&roots, &backends, &base, &revision).await;
+}
+
+// `amend --apply` stages and seals in one run: the staged block is printed
+// over the seal lines with no `diff vs` line, the repository is as `apply`
+// leaves it, nothing stands staged after it, and the build that follows is
+// the same. The scripted suite proves `amendment-stale`; here the parent
+// cannot move between the stage and the seal.
+#[tokio::test]
+async fn amend_apply_runtime() {
+    let (roots, backends, parent, base) = built().await;
+    let project = roots.project.path();
+    let over = roots.git.run(project, &["rev-parse", &format!("emery/{parent}")]);
+
+    let model = amending();
+    let run = roots
+        .run(
+            &["amend", "--description", DESCRIPTION_AMEND, "--config", "--apply"],
+            &backends,
+            &model,
+        )
+        .await;
+
+    assert_ok(&run);
+    model.assert_exhausted();
+    let revision = sealed_of(&run);
+    assert_ne!(revision, parent);
+    let sealed = roots.git.run(project, &["rev-parse", &format!("emery/{revision}")]);
+    let amendment = amendment_of(&run);
+    assert_eq!(
+        run.stdout,
+        format!(
+            "{}{}",
+            amend_block(&amendment, &parent, &over),
+            amend_seal("  ", &revision, &parent, &sealed)
+        )
+    );
+    assert_amended(&roots, &backends, &base, &parent, &over, &revision).await;
+
+    // nothing stands staged after the seal
+    let run = roots.run_idle(&["--format", "json", "apply"], &backends).await;
+    let envelope = refused(&run, 2, "nothing-staged");
+    assert_hint(&envelope, "run `emery specify <adapter>...` to stage a candidate");
+
+    assert_rebuilt(&roots, &backends, &base, &revision).await;
 }
 
 // A document edited by hand at the label is no longer the revision the
