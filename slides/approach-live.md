@@ -2190,53 +2190,33 @@ class: slide-light
 
 # Smaller models on a narrower target.
 
-<p class="live-claim">Frontier models are needed when an agent has to invent architecture. Pre-scaffolding the slice shrinks generation to bounded behavioural markers.</p>
+<p class="live-claim">Frontier models are needed when an agent has to invent architecture—not when structure, contracts, and tests are already fixed.</p>
 
-<div class="live-pipeline is-three" style="margin-top: 22px;">
-<div class="live-card is-cyan">
-<div class="live-card-head">
-<IconBadge tone="cyan"><ph:stack /></IconBadge>
-<div class="live-kicker">01 · Pre-scaffold</div>
+<div class="live-grid-2" style="width: 88%; margin: 28px auto 0; gap: 52px;">
+<div class="live-card" style="min-height: 214px; padding: 26px 30px; display: flex; flex-direction: column; justify-content: space-between;">
+<div>
+<div class="live-card-head" style="margin-bottom: 14px;">
+<IconBadge tone="ink"><ph:stack /></IconBadge>
+<div class="live-kicker">Broad target · Open-ended coding</div>
 </div>
-<h3>Before the model turn</h3>
-<p>Crate layout, typed routes, consumers, and test skeletons.</p>
+<h3>Requires frontier models</h3>
 </div>
-<div class="live-arrow">→</div>
-<div class="live-card is-dark">
-<div class="live-card-head">
+<p style="padding-top: 14px; border-top: 1px solid rgba(13, 16, 48, 0.12);">Invent structure · choose libraries · hold the full codebase in context</p>
+</div>
+
+<div class="live-card is-dark" style="min-height: 214px; padding: 26px 30px; display: flex; flex-direction: column; justify-content: space-between;">
+<div>
+<div class="live-card-head" style="margin-bottom: 14px;">
 <IconBadge tone="light"><ph:code /></IconBadge>
-<div class="live-kicker">02 · Fill behaviour</div>
+<div class="live-kicker">Narrow target · Pre-scaffolded slice</div>
 </div>
-<h3>Bounded model turn</h3>
-<p>Implement behavioural markers against known capabilities.</p>
+<h3>Unlocks smaller, local models</h3>
 </div>
-<div class="live-arrow">→</div>
-<div class="live-card is-magenta">
-<div class="live-card-head">
-<IconBadge tone="magenta"><ph:shield-check /></IconBadge>
-<div class="live-kicker">03 · Verify</div>
-</div>
-<h3>Compiler and test gates</h3>
-<p>Lints, scenario tests, and WASI component checks.</p>
+<p style="padding-top: 14px; border-top: 1px solid rgba(255, 255, 255, 0.16);">Structure and tests pre-built · fill bounded logic · verify at compile time</p>
 </div>
 </div>
 
-<div class="live-recipe-grid" style="margin-top: 16px;">
-<div class="live-recipe-card">
-<div class="live-kicker">Today · Production default</div>
-<h3>Frontier LLMs across current engagements</h3>
-</div>
-<div class="live-recipe-card">
-<div class="live-kicker">Proof of concept · Open-weight</div>
-<h3>Untuned qwen3-coder-next builds WASI slices</h3>
-</div>
-<div class="live-recipe-card">
-<div class="live-kicker">Roadmap · Local SLMs</div>
-<h3>Client-hosted builds with no frontier API</h3>
-</div>
-</div>
-
-<div class="live-outcome">Constraint as leverage: a narrower target makes small, client-hosted models practical.</div>
+<div class="live-outcome" style="width: 88%; margin: 48px auto 0; box-sizing: border-box;">Today: frontier models in production · Next: open-weight and client-hosted models.</div>
 </div>
 
 <!--

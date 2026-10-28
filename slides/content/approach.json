@@ -233,14 +233,12 @@
     "title": "Smaller models on a narrower target.",
     "required": [
       "Smaller models on a narrower target.",
-      "Frontier models are needed when an agent has to invent architecture.",
-      "Pre-scaffold",
-      "Before the model turn",
-      "Bounded model turn",
-      "Compiler and test gates",
-      "Frontier LLMs",
-      "qwen3-coder-next",
-      "Local SLMs"
+      "Frontier models are needed when an agent has to invent architecture—not when structure, contracts, and tests are already fixed.",
+      "Requires frontier models",
+      "Invent structure · choose libraries · hold the full codebase in context",
+      "Unlocks smaller, local models",
+      "Structure and tests pre-built · fill bounded logic · verify at compile time",
+      "Today: frontier models in production · Next: open-weight and client-hosted models."
     ]
   },
   {
