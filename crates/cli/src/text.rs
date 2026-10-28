@@ -11,11 +11,16 @@ use emery_engine::specify::{Diff, SectionKind, SpecifyOutput, Waves};
 
 // Writes a `SpecifyOutput` candidate line, the plan's shape, one line per repository source, a one-line diff summary, and what the run sealed.
 //
-// The first line names the staged candidate. The last says `nothing
-// sealed` and names `emery apply` as the way to seal it, or, under
-// `--apply`, is the `apply` line for the revision the run sealed.
+// The first line names the staged candidate, `(fresh)` after it where the
+// candidate starts the history over. The last says `nothing sealed` and
+// names `emery apply` as the way to seal it, or, under `--apply`, is the
+// `apply` line for the revision the run sealed.
 pub fn specify(output: &SpecifyOutput, w: &mut dyn fmt::Write) -> fmt::Result {
-    writeln!(w, "staged candidate {}", output.revision)?;
+    write!(w, "staged candidate {}", output.revision)?;
+    if output.fresh {
+        w.write_str(" (fresh)")?;
+    }
+    writeln!(w)?;
     waves(&output.waves, w)?;
     for read in &output.repositories {
         writeln!(

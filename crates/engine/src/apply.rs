@@ -23,15 +23,17 @@ use crate::vcs::{BuildRepo, TargetRef};
 /// [`crate::vcs::SPECIFICATION`] in a working copy cut at the commit the current
 /// revision stands at, else at the repository's head, sealed as one commit
 /// whose message is a [`crate::vcs::RevisionMessage`] naming the displaced
-/// revision as parent, and labelled `emery/<id>`. An amendment's three
-/// documents are sealed the same way over the commit its base was read at,
-/// the base its parent and what it changed the message's
-/// [`Summary`](crate::vcs::Summary), and only while that base is still the
-/// current revision at that commit; the base's label stands. A repository
-/// the engine creates ([`BuildRepo::Target`] with no URL) is created on the
-/// first seal, which is its root commit. A revision the repository already
-/// holds seals nothing and stands as it was. The checkout the repository's
-/// head is on is never touched.
+/// revision as parent, and labelled `emery/<id>`; where the current revision
+/// amends an earlier one, only a candidate `specify` staged fresh seals,
+/// with no parent and over the repository's head, every earlier label left
+/// standing. An amendment's three documents are sealed the same way over
+/// the commit its base was read at, the base its parent and what it changed
+/// the message's [`Summary`](crate::vcs::Summary), and only while that base
+/// is still the current revision at that commit; the base's label stands. A
+/// repository the engine creates ([`BuildRepo::Target`] with no URL) is
+/// created on the first seal, which is its root commit. A revision the
+/// repository already holds seals nothing and stands as it was. The checkout
+/// the repository's head is on is never touched.
 ///
 /// # Errors
 ///
@@ -42,6 +44,9 @@ use crate::vcs::{BuildRepo, TargetRef};
 ///     already holds under the target's name was cloned or created under
 ///     another origin.
 /// - Returns [`Error::BadRequest`]:
+///   - with code `lineage-exists`, when the staged candidate was not staged
+///     fresh and the current revision amends an earlier one; the candidate
+///     stays staged;
 ///   - with code `amendment-stale`, when the staged amendment was prepared
 ///     against a revision, or a commit, other than the one the repository
 ///     now holds as current; the amendment stays staged;
@@ -49,8 +54,9 @@ use crate::vcs::{BuildRepo, TargetRef};
 ///   - with code `spec-outdated`, when the candidate or the revision the
 ///     repository holds uses a different grammar;
 ///   - with code `spec-mismatch`, when `spec/` in the repository is not the
-///     three documents of a revision, or does not match the revision its
-///     label names;
+///     three documents of a revision, does not match the revision its
+///     label names, or, at a head no label names, holds documents that
+///     read as no revision, edited or merged by hand;
 ///   - with code `repository-required`, when the target names the project
 ///     checkout ([`crate::vcs::PROJECT`]) and the project is no repository;
 ///   - with code `base-not-sealed`, when the project repository has no
@@ -76,8 +82,11 @@ pub(crate) async fn seal<P: StateStore + BlobStore + Vcs + Files>(
 ) -> Result<ApplyOutput, Error> {
     let (kind, amendment, sealing) =
         match store::staged_item(provider).await?.ok_or_else(store::nothing_staged)? {
+            StagedItem::Revision(staged) if staged.fresh => {
+                (StagedKind::Revision, None, Sealing::fresh(staged.revision, &standing))
+            }
             StagedItem::Revision(staged) => {
-                (StagedKind::Revision, None, Sealing::candidate(staged.revision, &standing))
+                (StagedKind::Revision, None, Sealing::candidate(staged.revision, &standing)?)
             }
             StagedItem::Amendment(staged) => (
                 StagedKind::Amendment,

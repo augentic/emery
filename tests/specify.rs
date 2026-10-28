@@ -3691,15 +3691,21 @@ mod digest {
 mod store {
     use std::sync::Arc;
 
-    use emery_engine::vcs::{REVISION, SPECIFICATION};
+    use emery_engine::vcs::{REVISION, RevisionMessage, SPECIFICATION};
     use emery_engine::{EntryKind, REVISION_KEY, STAGED_CONTAINER, STAGED_KEY};
     use omnia_test::guest::{Memory, Namespaced};
+    use serde_json::Value;
 
+    use super::support::vcs::HEAD;
     use super::{
         DESIGN_ANSWER, PROJECT_CONFIG, Provider, SOURCE, SPEC_ANSWER, SPEC_RENDERED, SPEC_REVISION,
         assert_message, cli_ok, committed, fail, project_staged, projection, reference, seed,
         shown, shown_sealed, staged,
     };
+
+    const SPEC: &[u8] = include_bytes!("build/spec.json");
+    const DESIGN: &[u8] = include_bytes!("build/design.json");
+    const PLAN: &[u8] = include_bytes!("build/plan.json");
 
     const LABELLED: &str = "e1f2a3b4c5d6e7f8091a2b3c4d5e6f708192a3b4";
 
@@ -3882,6 +3888,127 @@ mod store {
         let id = committed(&provider.storage);
         assert_ne!(id, outdated, "the regenerated revision is current");
         cli_ok(&provider, &["emery", "show", "spec", "--config", PROJECT_CONFIG]).await;
+        provider.model.assert_exhausted();
+    }
+
+    // A revision id no repository holds, for a parent the lineage names.
+    const EARLIER: &str = "1111111111111111111111111111111111111111111111111111111111111111";
+
+    // `tests/build/spec.json` as an amendment sealed it, its `parent` naming
+    // `EARLIER`, so a repository holding it holds a lineage.
+    fn lineage() -> Vec<u8> {
+        let spec = std::str::from_utf8(SPEC).expect("spec.json is UTF-8");
+        spec.replace("\"parent\": null", &format!("\"parent\": \"{EARLIER}\"")).into_bytes()
+    }
+
+    // A specify that knows the target reads the current revision before any
+    // load, and one that amends an earlier revision refuses the run there:
+    // nothing loads, nothing is staged, and the hint names `emery amend` and
+    // `--fresh` as the ways out. The parent is read off the specification's
+    // own key, so a lineage under an outdated grammar refuses the same, and
+    // a run naming no target reads no repository and stages regardless.
+    #[tokio::test]
+    async fn specify_lineage_exists() {
+        let provider = Provider::idle();
+        let held = seed(&provider.files, &lineage(), DESIGN, PLAN);
+
+        for argv in [
+            vec!["emery", "specify", SOURCE, "--config", PROJECT_CONFIG],
+            vec!["emery", "specify", SOURCE, "--apply", "--config", PROJECT_CONFIG],
+        ] {
+            let envelope = fail(&provider, &argv, 1, "lineage-exists").await;
+            assert_message(&envelope, &format!("the current revision `{held}` amends `{EARLIER}`"));
+            let hint = envelope["hint"].as_str().expect("a hint");
+            assert!(hint.contains("emery amend"), "{argv:?}: {envelope}");
+            assert!(hint.contains("emery specify --fresh"), "{argv:?}: {envelope}");
+        }
+        assert!(provider.source.metadata.lock().expect("metadata").is_empty(), "nothing loads");
+        assert!(provider.storage.state(STAGED_KEY).is_none(), "nothing is staged");
+
+        // a lineage under an outdated grammar is a lineage still
+        let provider = Provider::idle();
+        seed(
+            &provider.files,
+            format!(r#"{{"emery": 1, "parent": "{EARLIER}", "requirements": []}}"#).as_bytes(),
+            br#"{"emery": 1, "sections": []}"#,
+            br#"{"emery": 1, "slices": []}"#,
+        );
+        fail(
+            &provider,
+            &["emery", "specify", SOURCE, "--config", PROJECT_CONFIG],
+            1,
+            "lineage-exists",
+        )
+        .await;
+
+        // a run with no target reads no repository
+        let provider = Provider::answering([SPEC_ANSWER, DESIGN_ANSWER]);
+        seed(&provider.files, &lineage(), DESIGN, PLAN);
+        cli_ok(&provider, &["emery", "specify", SOURCE]).await;
+        assert!(provider.vcs.calls().is_empty(), "a run with no target reads no repository");
+        provider.model.assert_exhausted();
+    }
+
+    // `--fresh` starts the history over: the run proceeds over the lineage,
+    // the candidate is staged with its record marked fresh, the text and
+    // the envelope say so, and `apply` seals it with no parent over the
+    // head, the diff still reported against the revision it supersedes.
+    #[tokio::test]
+    async fn specify_fresh() {
+        let provider = Provider::answering([SPEC_ANSWER, DESIGN_ANSWER]);
+        let outgoing = seed(&provider.files, &lineage(), DESIGN, PLAN);
+
+        let resp =
+            cli_ok(&provider, &["emery", "specify", SOURCE, "--fresh", "--config", PROJECT_CONFIG])
+                .await;
+
+        let id = staged(&provider.storage);
+        let stdout = String::from_utf8_lossy(&resp.stdout);
+        assert!(stdout.starts_with(&format!("staged candidate {id} (fresh)\n")), "{stdout}");
+        assert!(stdout.contains(&format!("  diff vs {outgoing}: ")), "{stdout}");
+        assert!(stdout.ends_with("  nothing sealed; `emery apply` seals it\n"), "{stdout}");
+        let record: Value =
+            serde_json::from_slice(&provider.storage.state(STAGED_KEY).expect("staged record"))
+                .expect("staged record JSON");
+        assert_eq!(record["fresh"], true, "the record marks the candidate fresh: {record}");
+
+        cli_ok(&provider, &["emery", "apply", "--config", PROJECT_CONFIG]).await;
+        assert_eq!(committed(&provider.storage), id);
+        let message =
+            RevisionMessage::parse(&provider.vcs.messages()[0]).expect("a revision message");
+        assert_eq!(message.parent, None, "a fresh seal records no parent");
+        assert_eq!(message.base.as_deref(), Some(HEAD), "sealed over the head");
+        provider.model.assert_exhausted();
+
+        // the envelope carries the flag
+        let provider = Provider::answering([SPEC_ANSWER, DESIGN_ANSWER]);
+        seed(&provider.files, &lineage(), DESIGN, PLAN);
+        let resp = cli_ok(
+            &provider,
+            &[
+                "emery",
+                "--format",
+                "json",
+                "specify",
+                SOURCE,
+                "--fresh",
+                "--config",
+                PROJECT_CONFIG,
+            ],
+        )
+        .await;
+        let envelope: Value = serde_json::from_slice(&resp.stdout).expect("one JSON envelope");
+        assert_eq!(envelope["revision"], id, "{envelope}");
+        assert_eq!(envelope["fresh"], true, "{envelope}");
+        assert_eq!(envelope["staged"], true, "{envelope}");
+        assert_eq!(envelope["diff"]["from"], outgoing, "{envelope}");
+        provider.model.assert_exhausted();
+
+        // a run over no lineage takes the flag too, staging as any other
+        let provider = Provider::answering([SPEC_ANSWER, DESIGN_ANSWER]);
+        let resp = cli_ok(&provider, &["emery", "specify", SOURCE, "--fresh"]).await;
+        let stdout = String::from_utf8_lossy(&resp.stdout);
+        assert!(stdout.starts_with(&format!("staged candidate {id} (fresh)\n")), "{stdout}");
         provider.model.assert_exhausted();
     }
 

@@ -1,4 +1,4 @@
-//! Verifies `emery apply` and `emery specify --apply` over scripted storage and version control.
+//! Verifies `emery apply` and `emery specify --apply [--fresh]` over scripted storage and version control.
 
 #![cfg(not(target_arch = "wasm32"))]
 
@@ -13,7 +13,9 @@ use omnia_sdk::vcs::{Change, ChangeKind, Error};
 use serde_json::{Value, json};
 use support::provider::{Provider, cli};
 use support::scratch::Scratch;
-use support::store::{carry, document, revision, seed, stage, stage_amendment, staged, written};
+use support::store::{
+    carry, document, revision, seed, stage, stage_amendment, stage_fresh, staged, written,
+};
 use support::vcs::HEAD;
 use support::{cli_ok, fail};
 
@@ -568,6 +570,174 @@ async fn apply_amendment_stale() {
     assert!(provider.vcs.messages().is_empty(), "nothing is sealed");
 }
 
+// The commit a labelled revision stands at when the head has moved on over it.
+const LABELLED: &str = "e1f2a3b4c5d6e7f8091a2b3c4d5e6f708192a3b4";
+// A revision id no repository holds, for a parent the lineage names.
+const EARLIER: &str = "1111111111111111111111111111111111111111111111111111111111111111";
+
+// `SPEC` as an amendment sealed it: its `parent` naming `EARLIER`, so a
+// repository holding it holds a lineage.
+fn lineage() -> Vec<u8> {
+    let spec = std::str::from_utf8(SPEC).expect("spec.json is UTF-8");
+    spec.replace("\"parent\": null", &format!("\"parent\": \"{EARLIER}\"")).into_bytes()
+}
+
+// A candidate drafted from the sources alone does not seal over a revision
+// that amends an earlier one: the seal is refused before anything is
+// written, naming the revision and its parent, the candidate stays staged,
+// and the hint names `--fresh` and `emery amend` as the ways out; the same
+// candidate staged fresh then seals.
+#[tokio::test]
+async fn apply_lineage_exists() {
+    let provider = Provider::idle();
+    let held = seed(&provider.files, &lineage(), DESIGN, PLAN);
+    let candidate = stage(&provider.storage, SPEC, DESIGN, WIDE_PLAN);
+
+    let envelope =
+        fail(&provider, &["emery", "apply", "--config", PROJECT_CONFIG], 1, "lineage-exists").await;
+
+    assert_eq!(
+        envelope["message"],
+        format!(
+            "the current revision `{held}` amends `{EARLIER}`, so the repository holds a lineage \
+             that a revision drafted from the sources alone would start over"
+        ),
+        "{envelope}"
+    );
+    let hint = envelope["hint"].as_str().expect("a hint");
+    assert!(hint.contains("emery specify --fresh"), "{envelope}");
+    assert!(hint.contains("emery amend"), "{envelope}");
+    assert_eq!(
+        provider.vcs.calls(),
+        ["head .".to_owned(), format!("add . {REVISION} {HEAD}"), format!("remove {REVISION}")],
+        "read, and nothing sealed"
+    );
+    assert!(provider.files.writes().is_empty(), "nothing is written");
+    assert!(provider.storage.state(REVISION_KEY).is_none(), "the pointer does not move");
+    assert_eq!(staged(&provider.storage), candidate, "the candidate stays staged");
+
+    // staged fresh, the same documents seal
+    stage_fresh(&provider.storage, SPEC, DESIGN, WIDE_PLAN);
+    cli_ok(&provider, &["emery", "apply", "--config", PROJECT_CONFIG]).await;
+    assert_eq!(current(&provider), candidate);
+    let message = RevisionMessage::parse(&provider.vcs.messages()[0]).expect("a revision message");
+    assert_eq!(message.parent, None, "a fresh seal records no parent");
+}
+
+// A candidate staged fresh starts the history over: it is sealed with no
+// parent in a working copy cut at the repository's head rather than at the
+// commit the current revision stands at, labelled, and pointed at, while
+// the label of the revision it supersedes is left standing; the diff
+// against that revision is still reported.
+#[tokio::test]
+async fn apply_fresh() {
+    let provider = Provider::idle();
+    let outgoing = seed(&provider.files, &lineage(), DESIGN, PLAN);
+    provider.storage.insert_state(REVISION_KEY, outgoing.as_bytes());
+    provider.vcs.labelleds.script(".", Ok(LABELLED.to_owned()));
+    let candidate = stage_fresh(&provider.storage, SPEC, DESIGN, WIDE_PLAN);
+
+    let resp =
+        cli_ok(&provider, &["emery", "--format", "json", "apply", "--config", PROJECT_CONFIG])
+            .await;
+
+    let envelope: Value = serde_json::from_slice(&resp.stdout).expect("one JSON envelope");
+    assert_eq!(envelope["revision"], candidate, "{envelope}");
+    assert!(envelope.get("parent").is_none(), "a fresh seal names no parent: {envelope}");
+    assert_eq!(envelope["commit"], "Revision-commit", "{envelope}");
+    assert_eq!(envelope["label"], format!("emery/{candidate}"), "{envelope}");
+    assert_eq!(envelope["kind"], "revision", "{envelope}");
+    assert_eq!(envelope["diff"]["from"], outgoing, "the diff is against the lineage's head");
+    assert_eq!(
+        provider.vcs.calls(),
+        [
+            "head .".to_owned(),
+            format!("labelled . emery/{outgoing}"),
+            format!("descends . {HEAD} {LABELLED}"),
+            format!("add . {REVISION} {LABELLED}"),
+            format!("remove {REVISION}"),
+            format!("add . {REVISION} {HEAD}"),
+            format!("pending {REVISION}"),
+            format!("commit {REVISION} Revision {candidate}"),
+            format!("label . emery/{candidate} Revision-commit"),
+            format!("remove {REVISION}"),
+        ],
+        "read at the label, then sealed in a working copy cut at the head"
+    );
+    let message = RevisionMessage::parse(&provider.vcs.messages()[0]).expect("a revision message");
+    assert_eq!(
+        message,
+        RevisionMessage {
+            revision: candidate.clone(),
+            parent: None,
+            base: Some(HEAD.to_owned()),
+            summary: None,
+        }
+    );
+    assert_eq!(current(&provider), candidate, "the pointer names the fresh revision");
+    assert!(
+        !provider
+            .vcs
+            .calls()
+            .iter()
+            .any(|call| call.starts_with(&format!("label . emery/{outgoing}"))),
+        "the earlier label stands: {:?}",
+        provider.vcs.calls()
+    );
+    assert!(provider.storage.state(STAGED_KEY).is_none(), "the staged slot is cleared");
+    provider.vcs.assert_exhausted();
+
+    // the text render names no parent
+    let provider = Provider::idle();
+    seed(&provider.files, &lineage(), DESIGN, PLAN);
+    stage_fresh(&provider.storage, SPEC, DESIGN, WIDE_PLAN);
+    let resp = cli_ok(&provider, &["emery", "apply", "--config", PROJECT_CONFIG]).await;
+    assert_eq!(
+        String::from_utf8_lossy(&resp.stdout),
+        format!(
+            "sealed revision {candidate} as emery/{candidate} at Revision\n  diff vs {outgoing}: \
+             spec +0 -0 ~0, design +0 -0 ~0, plan +1 -0 ~2 preamble\n"
+        )
+    );
+}
+
+// A fresh candidate seals the same way whatever the repository holds: over
+// a parentless revision, with no parent and over the head rather than as
+// that revision's child, and in a repository holding none, as the first
+// seal does.
+#[tokio::test]
+async fn apply_fresh_over_baseline() {
+    let provider = Provider::idle();
+    let outgoing = seed(&provider.files, SPEC, DESIGN, PLAN);
+    let candidate = stage_fresh(&provider.storage, SPEC, DESIGN, WIDE_PLAN);
+
+    let resp =
+        cli_ok(&provider, &["emery", "--format", "json", "apply", "--config", PROJECT_CONFIG])
+            .await;
+
+    let envelope: Value = serde_json::from_slice(&resp.stdout).expect("one JSON envelope");
+    assert_eq!(envelope["revision"], candidate, "{envelope}");
+    assert!(envelope.get("parent").is_none(), "{envelope}");
+    assert_eq!(envelope["diff"]["from"], outgoing, "{envelope}");
+    let message = RevisionMessage::parse(&provider.vcs.messages()[0]).expect("a revision message");
+    assert_eq!(message.parent, None, "the parentless revision is not recorded as parent");
+    assert_eq!(message.base.as_deref(), Some(HEAD), "sealed over the head");
+    assert_eq!(current(&provider), candidate);
+
+    // no revision at all
+    let provider = Provider::idle();
+    let candidate = stage_fresh(&provider.storage, SPEC, DESIGN, PLAN);
+    let resp = cli_ok(&provider, &["emery", "apply", "--config", PROJECT_CONFIG]).await;
+    assert_eq!(
+        String::from_utf8_lossy(&resp.stdout),
+        format!("sealed revision {candidate} as emery/{candidate} at Revision\n")
+    );
+    let message = RevisionMessage::parse(&provider.vcs.messages()[0]).expect("a revision message");
+    assert_eq!(message.parent, None);
+    assert_eq!(message.base.as_deref(), Some(HEAD));
+    assert_eq!(current(&provider), candidate);
+}
+
 // A target naming no repository seals into one the engine creates under the
 // target's name: created now, the revision its root commit, the envelope
 // naming the repository. A later seal finds it and lands over its head.
@@ -790,6 +960,42 @@ async fn specify_apply() {
     assert_eq!(envelope["applied"]["kind"], "revision", "{envelope}");
     assert_eq!(envelope["diff"]["from"], id, "the diff is against the revision displaced");
     assert_eq!(current(&provider), id);
+    provider.model.assert_exhausted();
+}
+
+// `specify --apply --fresh` over a lineage goes through the fresh seal: the
+// candidate is staged marked fresh and sealed in the same run with no
+// parent over the head, where `--apply` alone is refused before any load.
+#[tokio::test]
+async fn specify_apply_fresh() {
+    let provider = Provider::idle();
+    seed(&provider.files, &lineage(), DESIGN, PLAN);
+    fail(
+        &provider,
+        &["emery", "specify", SOURCE, "--apply", "--config", PROJECT_CONFIG],
+        1,
+        "lineage-exists",
+    )
+    .await;
+    assert!(provider.source.metadata.lock().expect("metadata").is_empty(), "nothing loads");
+
+    let provider = Provider::answering([SPEC_ANSWER, DESIGN_ANSWER]);
+    let outgoing = seed(&provider.files, &lineage(), DESIGN, PLAN);
+    let resp = cli_ok(
+        &provider,
+        &["emery", "specify", SOURCE, "--apply", "--fresh", "--config", PROJECT_CONFIG],
+    )
+    .await;
+
+    let id = current(&provider);
+    let stdout = String::from_utf8_lossy(&resp.stdout);
+    assert!(stdout.starts_with(&format!("staged candidate {id} (fresh)\n")), "{stdout}");
+    assert!(stdout.contains(&format!("  diff vs {outgoing}: ")), "{stdout}");
+    assert!(stdout.ends_with(&format!("  sealed revision {id} as emery/{id} at Revision\n")));
+    let message = RevisionMessage::parse(&provider.vcs.messages()[0]).expect("a revision message");
+    assert_eq!(message.parent, None, "a fresh seal records no parent");
+    assert_eq!(message.base.as_deref(), Some(HEAD), "sealed over the head");
+    assert!(provider.storage.state(STAGED_KEY).is_none(), "the staged slot is cleared");
     provider.model.assert_exhausted();
 }
 

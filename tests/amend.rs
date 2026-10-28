@@ -3027,6 +3027,42 @@ async fn amend_no_revision() {
     );
 }
 
+// A `spec/` at the head that holds three documents reading as no revision —
+// a merge of two branches that each sealed one, left with its conflict
+// markers — was edited or merged by hand, since a seal writes the documents
+// whole: the amend is refused `spec-mismatch` before any load, naming the
+// commit and what failed to read, and the hint says to keep one side's
+// three files whole and amend again over them.
+#[tokio::test]
+async fn amend_hand_merged() {
+    let provider = Provider::idle();
+    seed(&provider.files, HAND_MERGED, DESIGN, PLAN);
+
+    let envelope =
+        fail(&provider, &["emery", "amend", DOCS, "--config", PROJECT_CONFIG], 1, "spec-mismatch")
+            .await;
+
+    let message = envelope["message"].as_str().expect("a message");
+    assert!(
+        message.starts_with(&format!(
+            "`spec/` at commit `{HEAD}` holds documents that read as no revision (`spec` is not \
+             JSON"
+        )),
+        "{envelope}"
+    );
+    assert!(message.contains("edited or merged by hand"), "{envelope}");
+    let hint = envelope["hint"].as_str().expect("a hint");
+    assert!(hint.contains("git checkout <branch> -- spec/"), "{envelope}");
+    assert!(hint.contains("amendment again"), "{envelope}");
+    assert!(provider.source.calls().is_empty(), "no source is extracted over a hand-merged tree");
+    assert_eq!(provider.vcs.calls(), read_calls(), "read, and nothing written");
+}
+
+// `tests/build/spec.json` as a hand merge of two branches leaves it, the
+// conflict markers committed, so it is no JSON.
+const HAND_MERGED: &[u8] =
+    b"<<<<<<< a\n{\"emery\": 8}\n=======\n{\"emery\": 8, \"parent\": null}\n>>>>>>> b\n";
+
 // An amend reads the current revision from the target's repository, so a run
 // naming no `[target]` is refused typed before anything is read, and one
 // naming no source is refused as a specify is.

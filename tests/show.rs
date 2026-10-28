@@ -1,4 +1,4 @@
-//! Verifies `emery show amendment` and what a staged amendment refuses, over scripted storage.
+//! Verifies `emery show amendment`, what a staged amendment refuses, and a hand-merged `spec/`, over scripted storage.
 
 #![cfg(not(target_arch = "wasm32"))]
 
@@ -7,7 +7,8 @@ mod support;
 use emery_engine::{STAGED_CONTAINER, STAGED_KEY};
 use serde_json::Value;
 use support::provider::Provider;
-use support::store::{stage, stage_amendment};
+use support::store::{seed, stage, stage_amendment, stage_fresh};
+use support::vcs::HEAD;
 use support::{cli_ok, fail};
 
 // The one-source reference `specify` names; the scripted loader lands any
@@ -117,6 +118,41 @@ async fn amendment_pending() {
         "the amendment stays staged"
     );
     provider.model.assert_exhausted();
+}
+
+// A `spec/` at a head no label names whose documents read as no revision —
+// a hand merge of two branches that each sealed one — is refused rather than
+// served: `show` fails `spec-mismatch` naming the commit and what failed to
+// read, hinted to keep one side's three files whole, and `apply` over a
+// fresh candidate is refused the same before anything is written, since the
+// tree is the operator's to restore first.
+#[tokio::test]
+async fn show_hand_merged() {
+    let hand_merged = b"<<<<<<< a\n{\"emery\": 8}\n=======\n{\"emery\": 8}\n>>>>>>> b\n";
+    let provider = Provider::idle();
+    seed(&provider.files, hand_merged, DESIGN, PLAN);
+
+    let envelope =
+        fail(&provider, &["emery", "show", "spec", "--config", PROJECT_CONFIG], 1, "spec-mismatch")
+            .await;
+
+    let message = envelope["message"].as_str().expect("a message");
+    assert!(
+        message.starts_with(&format!("`spec/` at commit `{HEAD}` holds documents")),
+        "{envelope}"
+    );
+    assert!(message.contains("edited or merged by hand"), "{envelope}");
+    assert!(
+        envelope["hint"]
+            .as_str()
+            .is_some_and(|hint| hint.contains("git checkout <branch> -- spec/")),
+        "{envelope}"
+    );
+
+    stage_fresh(&provider.storage, SPEC, DESIGN, PLAN);
+    fail(&provider, &["emery", "apply", "--config", PROJECT_CONFIG], 1, "spec-mismatch").await;
+    assert!(provider.files.writes().is_empty(), "nothing is written");
+    assert!(provider.vcs.messages().is_empty(), "nothing is sealed");
 }
 
 // An amendment whose stored bytes no longer hash to the id its record names

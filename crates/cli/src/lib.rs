@@ -45,7 +45,11 @@ const SPECIFY_DESC: &str = "Stage spec.md, design.md, and plan.md from source ad
     `emery show <artifact> --staged` to review and `emery apply` to seal; `--apply` seals \
     it in the same run. The `[target]` table of the config, named or discovered, says \
     which repository the specification lives in: the diff reported is against the \
-    revision it holds, which a seal displaces, and `--apply` needs one.";
+    revision it holds, which a seal displaces, and `--apply` needs one. A revision that \
+    amends an earlier one, as `emery apply` seals an amendment, is a lineage a specify \
+    would start over, so the run is refused `lineage-exists` before any adapter loads \
+    unless `--fresh` says so: the candidate is then staged fresh and sealed with no parent \
+    over the repository's head, every earlier label left standing.";
 const APPLY_DESC: &str = "Seal the staged candidate or amendment as the current revision.\n\n\
     The candidate `emery specify` staged, or the amendment `emery amend` staged, is sealed \
     in the repository the `[target]` table of `--config [<path>]` (default: `emery.toml`) \
@@ -57,6 +61,9 @@ const APPLY_DESC: &str = "Seal the staged candidate or amendment as the current 
     the commit naming the base as the parent and carrying what changed, and only while \
     that base is still the current revision there; otherwise the verb fails with \
     `amendment-stale` and the amendment stays staged for `emery amend` to prepare again. \
+    Over a revision sealed from an amendment, a candidate seals only when `emery specify \
+    --fresh` staged it, with no parent and over the head, every earlier label left \
+    standing; otherwise the verb fails with `lineage-exists` and the candidate stays staged. \
     The checkout is never touched: merge or rebase the label to carry the specification on \
     the branch. `emery show` and `emery build` read the sealed revision from then on, and \
     the staging slot is cleared. With nothing staged the verb fails with `nothing-staged`.";
@@ -252,6 +259,9 @@ struct SpecifyArgs {
     /// Seal the staged candidate as the current revision in the same run, as `emery apply` would.
     #[arg(long)]
     apply: bool,
+    /// Start the history over: stage the candidate as a fresh revision, sealed with no parent over the repository's head where the current revision amends an earlier one.
+    #[arg(long)]
+    fresh: bool,
 }
 
 impl TryFrom<SpecifyArgs> for SpecifyInput {
@@ -263,6 +273,7 @@ impl TryFrom<SpecifyArgs> for SpecifyInput {
             descriptions,
             config,
             apply,
+            fresh,
         } = args;
         let mut input: Self = config::SourceCarriers {
             adapters: &adapters,
@@ -271,6 +282,7 @@ impl TryFrom<SpecifyArgs> for SpecifyInput {
         }
         .try_into()?;
         input.apply = apply;
+        input.fresh = fresh;
         Ok(input)
     }
 }
@@ -473,25 +485,9 @@ fn hint(error: &Error, invoked: Invoked) -> Option<Cow<'static, str>> {
             "pass one or more adapters to `emery specify`, or add an `emery.toml` at the project root"
         }
         "build-target-required" => target_hint(invoked),
-        "spec-not-generated" if error.description().contains("does not stand over its head") => {
-            "the repository's head moved on without the label: merge or rebase `emery/<revision>` onto the head, or re-run `emery specify --apply` to seal a fresh revision over it"
-        }
-        "spec-not-generated"
-            if invoked == Invoked::Amend && error.description().contains("candidate `") =>
-        {
-            "an amendment is prepared against a sealed revision: run `emery apply` to seal the staged candidate, then re-run `emery amend`"
-        }
-        "spec-not-generated" if error.description().contains("candidate `") => {
-            "run `emery apply` to seal the staged candidate as the current revision, then re-run show or build; `emery show <artifact> --staged` reviews it first"
-        }
-        "spec-not-generated" if error.description().contains("amendment `") => {
-            "review the staged amendment with `emery show amendment`"
-        }
-        "spec-not-generated" if invoked == Invoked::Amend => {
-            "an amendment is prepared against a sealed revision: run `emery specify <adapter>... --apply` to seal one, then re-run `emery amend`"
-        }
-        "spec-not-generated" => {
-            "run `emery specify <adapter>...` to stage a candidate and `emery apply` to seal it (or `emery specify --apply` for both), then re-run show or build"
+        "spec-not-generated" => not_generated_hint(&error.description(), invoked),
+        "spec-mismatch" if error.description().contains("edited or merged by hand") => {
+            "`spec/` at the head holds documents no seal wrote, as a merge of two branches that each sealed a revision leaves them: keep one side's three files whole (`git checkout <branch> -- spec/`), commit, and run the other side's amendment again over it; `emery show` prints the specification, never edit the files"
         }
         "spec-mismatch" => {
             "`spec/` in the target repository is the engine's: restore the labelled commit's documents (`git checkout emery/<revision> -- spec/`), or move the directory aside, and re-run; `emery show` prints the specification, never edit the files"
@@ -504,6 +500,12 @@ fn hint(error: &Error, invoked: Invoked) -> Option<Cow<'static, str>> {
         }
         "amendment-stale" => {
             "the current revision moved since the amendment was prepared, so it no longer applies: re-run `emery amend <adapter>...` against the current revision to prepare it again, then `emery apply`; nothing was sealed and the stale amendment stays staged until then"
+        }
+        "lineage-exists" if invoked == Invoked::Specify => {
+            "the current revision amends an earlier one, so a specify would start the history over: stage a change against it with `emery amend <adapter>...`, or start over deliberately with `emery specify --fresh <adapter>...`, which seals a parentless revision over the head and leaves every earlier label standing; nothing was loaded"
+        }
+        "lineage-exists" => {
+            "the staged candidate was drafted from the sources alone and the current revision amends an earlier one: re-run `emery specify --fresh <adapter>...` to stage it as a fresh start, then `emery apply`, or stage a change against the current revision with `emery amend <adapter>...` instead; nothing was sealed and the candidate stays staged"
         }
         "amendment-pending" if invoked == Invoked::Specify => {
             "an amendment is staged where the candidate would go: review it with `emery show amendment`, or re-run `emery amend` to prepare it again; a specify never displaces it"
@@ -549,6 +551,32 @@ fn hint(error: &Error, invoked: Invoked) -> Option<Cow<'static, str>> {
         _ => return None,
     };
     Some(Cow::Borrowed(hint))
+}
+
+// The description says where the revision stands: a label behind its head, a
+// staged candidate or amendment, or nothing sealed; `amend` is told the way
+// back to a sealed revision ends in re-running it.
+fn not_generated_hint(description: &str, invoked: Invoked) -> &'static str {
+    match invoked {
+        _ if description.contains("does not stand over its head") => {
+            "the repository's head moved on without the label: merge or rebase `emery/<revision>` onto the head, or re-run `emery specify --apply` to seal a fresh revision over it"
+        }
+        Invoked::Amend if description.contains("candidate `") => {
+            "an amendment is prepared against a sealed revision: run `emery apply` to seal the staged candidate, then re-run `emery amend`"
+        }
+        _ if description.contains("candidate `") => {
+            "run `emery apply` to seal the staged candidate as the current revision, then re-run show or build; `emery show <artifact> --staged` reviews it first"
+        }
+        _ if description.contains("amendment `") => {
+            "review the staged amendment with `emery show amendment`"
+        }
+        Invoked::Amend => {
+            "an amendment is prepared against a sealed revision: run `emery specify <adapter>... --apply` to seal one, then re-run `emery amend`"
+        }
+        _ => {
+            "run `emery specify <adapter>...` to stage a candidate and `emery apply` to seal it (or `emery specify --apply` for both), then re-run show or build"
+        }
+    }
 }
 
 // A run naming its sources on the command line reads no file, so `specify` and

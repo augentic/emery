@@ -136,9 +136,6 @@ git merge --ff-only emery/<revision>
 # the history: five revisions, each sealed over the last, the conflicted one left unbuilt
 git log --oneline --first-parent
 git for-each-ref refs/heads/emery/
-
-# done: leave the scratch project and remove it, run and all
-cd - && rm -rf "$project"
 ```
 
 The first amendment reads the docs alone and stages one `changed` requirement; its plan is settled by code, so no slicing turn is put, and a requirement claim informs no design section, so no design turn is put either and the design is the base's — its overview still describes the greeting as the first revision had it, a paragraph that goes stale while nothing it cites is retired. The plan is the base's byte for byte too — the revised requirement keeps its id and its slice, so no slice changes, `show amendment` prints no `## Plan`, and the greeting slice's brief still says what the first revision had it deliver. The second reads the docs beside the inline brief: the docs restate the greeting, which stays `unchanged`, the brief adds the farewell under a stem of its own, and its `decision` opens the design turn, so `show amendment` reports `1 added, 0 changed, 0 retired, 0 conflict, 1 unchanged`, `design: overview, apis`, and `slices: farewell (new)`, and `--apply` seals in the same run, printing the staged block and then the seal lines. A slice the slicing turn finds touched — one that gained, lost, or had redrafted a requirement — has its brief redrafted by that turn; a slice changed by code alone, as one is when a retirement takes a requirement out of it, keeps the base's brief, is marked `(brief kept)` on the `slices:` line, and carries `Note: the brief is the base's; no slicing turn redrafted it.` under its `## Plan` block, so the reviewer knows the brief to read with care. A change that leaves every requirement unchanged and no section or slice different stages nothing. An amendment `specify` would displace is refused `amendment-pending` while one stands staged — review it with `emery show amendment`, seal it with `emery apply`, or run `emery amend` again to replace it — and `apply` over an amendment whose base is no longer the current revision is refused `amendment-stale`; amend again over the revision that is.
@@ -146,6 +143,31 @@ The first amendment reads the docs alone and stages one `changed` requirement; i
 A change whose sources disagree over one requirement — two statements at one rank, as the docs and an inline brief through the same adapter are — is a `conflict`, never a choice the engine makes: `show amendment` lists the requirement under `## Conflict` with each competing statement noted beside its source and `Note: Operator reconciliation required.`, and `apply` seals it as a `specify` seals one, the requirement marked `[conflict]` in `show spec` with no body and the statements among its notes, a revision to resolve rather than build. The conflict is resolved by the next change, not by the engine: once the sources agree, or the contradicting one is dropped, `emery amend` lists the standing requirement to the grouping as one entry whose statement is `[conflict]` followed by the competing statements, and the claim that lands on it is a `changed` requirement — `Before:` the competing statements, `After:` the claim's — stated again under the status the change sources alone settle. A source cannot conflict with itself: a `retire` beside the same source's `requirement` under one id is read as the restatement, and only two sources at one rank conflict.
 
 Two rules of the grammar the amendment steps meet. A run that names a source on the command line — a positional `<adapter>` or a `--description` — reads no `emery.toml` unless `--config` says so, so the `[target]` table reaches it under `--config` alone (bare for the project-root file, `--config <path>` for another); without it the run is refused `build-target-required`. And a positional adapter and a `--description` for one adapter bind one source name, the adapter's package name, so the pair is refused as a source named twice: an inline change over an adapter is `--description` alone, or a named `[[source]]` entry.
+
+## Start over
+
+Carrying on from the amend walk, in the same scratch project, with the current revision an amendment's: the repository holds a lineage, and a `specify` drafted from the sources alone is refused rather than let seal over it unasked. `--fresh` is the deliberate start-over.
+
+```bash
+# a bare specify over a lineage: refused before any source is loaded, nothing staged
+"$emery" specify                     # error lineage-exists: the current revision `<id>` amends `<parent>` ...
+                                     # hint: emery amend <adapter>..., or emery specify --fresh <adapter>...
+
+# start over deliberately: the candidate is staged fresh and sealed with no parent over HEAD
+"$emery" -v specify --fresh --apply  # staged candidate <id> (fresh), then sealed revision <id> as emery/<id>
+git log -1 --format=%B emery/<revision>   # Revision <id> over Base: alone, no Parent: trailer
+git branch --list 'emery/*'               # every earlier label still standing beside the new one
+"$emery" show spec                   # the specification as the sources alone state it, no notes carried over
+
+# build it: the first slice over the lineage's build, nothing initialised since the layout stands
+"$emery" -v build
+git merge --ff-only emery/<revision>
+
+# done: leave the scratch project and remove it, run and all
+cd - && rm -rf "$project"
+```
+
+A revision whose `parent` names an earlier one is a lineage, and a bare `emery specify` over a `[target]` that holds one fails `lineage-exists` before any adapter is loaded, since a seal over it would read as the next amendment while carrying none of the history's reconciliation; the ways out are `emery amend`, a change against the current revision, and `emery specify --fresh`, which stages the candidate marked fresh and `apply` seals with no `Parent:` trailer, cut over the head whatever revision it holds, so every earlier label stays where it was and the fresh revision's own starts a history of its own. A `[target]` whose current revision has no parent is no lineage, so a first revision is sealed over by a bare `specify` as before, and a run naming no `[target]` reads no repository and is held to nothing. One refusal of the hand's: a `spec/` at the head whose three documents read as no revision — the state a `git merge` of two branches that each sealed a revision leaves, the conflict markers committed — is `spec-mismatch` saying the documents were edited or merged by hand, from `show`, `amend`, and `apply` alike; keep one side's three files whole (`git checkout <branch> -- spec/`), commit, and run the other side's amendment again over it, since the documents are the engine's to write and `emery show` prints them.
 
 ## Host-to-guest tool calls
 
