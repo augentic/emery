@@ -472,12 +472,7 @@ fn hint(error: &Error, invoked: Invoked) -> Option<Cow<'static, str>> {
         "specify-source-required" => {
             "pass one or more adapters to `emery specify`, or add an `emery.toml` at the project root"
         }
-        "build-target-required" if invoked == Invoked::Build => {
-            "pass a target adapter to `emery build`, or add a `[target]` table to `emery.toml` at the project root"
-        }
-        "build-target-required" => {
-            "add a `[target]` table to `emery.toml` at the project root, or name one with `--config <path>`: its `repository` is where the specification is sealed, a URL, `.` for the project checkout, or none for a repository kept under `.emery/vcs/repos/<name>`"
-        }
+        "build-target-required" => target_hint(invoked),
         "spec-not-generated" if error.description().contains("does not stand over its head") => {
             "the repository's head moved on without the label: merge or rebase `emery/<revision>` onto the head, or re-run `emery specify --apply` to seal a fresh revision over it"
         }
@@ -554,4 +549,20 @@ fn hint(error: &Error, invoked: Invoked) -> Option<Cow<'static, str>> {
         _ => return None,
     };
     Some(Cow::Borrowed(hint))
+}
+
+// A run naming its sources on the command line reads no file, so `specify` and
+// `amend` are told to pass `--config` rather than to add a table they may hold.
+const fn target_hint(invoked: Invoked) -> &'static str {
+    match invoked {
+        Invoked::Build => {
+            "pass a target adapter to `emery build`, or add a `[target]` table to `emery.toml` at the project root"
+        }
+        Invoked::Specify | Invoked::Amend => {
+            "a run naming its sources on the command line reads no file: pass `--config` to read the `[target]` table of `emery.toml` at the project root, or `--config <path>` for another file; its `repository` is where the specification is sealed, a URL, `.` for the project checkout, or none for a repository kept under `.emery/vcs/repos/<name>`"
+        }
+        Invoked::Apply | Invoked::Show | Invoked::Completions => {
+            "add a `[target]` table to `emery.toml` at the project root, or name one with `--config <path>`: its `repository` is where the specification is sealed, a URL, `.` for the project checkout, or none for a repository kept under `.emery/vcs/repos/<name>`"
+        }
+    }
 }

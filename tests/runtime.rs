@@ -826,10 +826,12 @@ async fn apply_target_required() {
     );
     assert_hint(&envelope, "add a `[target]` table");
 
-    // a run naming its sources on the command line reads no file, so it knows no target
+    // a run naming its sources on the command line reads no file, so it knows
+    // no target, and the hint says to pass `--config`
     let run = roots.run_idle(&["--format", "json", "specify", SOURCE, "--apply"], &backends).await;
     let envelope = refused(&run, 1, "build-target-required");
     assert_message(&envelope, "`emery specify --apply` needs a `[target]` table");
+    assert_hint(&envelope, "reads no file: pass `--config`");
     let run = roots.run_idle(&["--format", "json", "show", "spec", "--staged"], &backends).await;
     refused(&run, 2, "nothing-staged");
 }

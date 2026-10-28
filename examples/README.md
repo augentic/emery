@@ -1,6 +1,6 @@
 # Adapter Examples
 
-Live `specify` and `build` journey via [omnia-cursor](https://github.com/augentic/omnia-backends/tree/main/crates/cursor): the mock source adapter extracts greeting claims from [docs/](docs/) through the host model, the engine synthesises `spec.md` / `design.md` and slices `plan.md` and stages the three as one candidate, `apply` seals them under `spec/` in the project repository as one commit labelled `emery/<revision>`, and the mock target adapter builds the plan wave by wave — each ready slice in a working copy of its own cut from that commit, merged into the integrated tree in id order and verified by the adapter — under the same label.
+Live `specify`, `build`, and `amend` journey via [omnia-cursor](https://github.com/augentic/omnia-backends/tree/main/crates/cursor): the mock source adapter extracts greeting claims from [docs/](docs/) through the host model, the engine synthesises `spec.md` / `design.md` and slices `plan.md` and stages the three as one candidate, `apply` seals them under `spec/` in the project repository as one commit labelled `emery/<revision>`, and the mock target adapter builds the plan wave by wave — each ready slice in a working copy of its own cut from that commit, merged into the integrated tree in id order and verified by the adapter — under the same label; then the docs change, `amend` reads the change against the sealed revision, `apply` seals the amendment as the next revision over it, and `build` builds the plan again ([below](#amend-and-build-again)).
 
 The adapters live at [source/](source/) and [target/](target/) — the same anatomy as a first-party adapter. The shipped `emery` binary hosts them: [emery.toml](emery.toml) names each as an exact package reference of its own, `example:source@0.1.0` and `example:target@0.1.0`, which the binary reads from its store, `~/.emery/adapters`, as `example_source@0.1.0.wasm` and `example_target@0.1.0.wasm` — the names `cp` writes below. The store lies apart from the project, so a component is never loaded from a tree a run can write, and nothing under the `example` namespace is fetched: a reference the store holds is read from it before any registry is asked. The source input is [docs/](docs/); the specification and the build land as commits in the project repository, which the `[target]` table's `repository = "."` selects, and which is why the journey runs from a scratch project of its own rather than this checkout.
 
@@ -51,13 +51,12 @@ git show --stat emery/<revision>
 # read the build; the checkout itself is untouched
 git log --oneline --first-parent HEAD..emery/<revision>
 git diff --stat HEAD emery/<revision>
-git switch emery/<revision>          # or: git merge emery/<revision>
 
 # a second run has nothing left to build: the label records every slice
 "$emery" build
 
-# done: leave the scratch project and remove it, run and all
-cd - && rm -rf "$project"
+# take the revision and its build onto the branch: the label is a descendant of HEAD, so this fast-forwards
+git merge --ff-only emery/<revision>
 ```
 
 Without `.env`:
@@ -79,6 +78,57 @@ The examples above run with the `-v` flag, which sets tracing level to `debug`. 
 *Extract*, *synthesis*, and *build* all run through the Cursor backend. The guest answers reference-tool calls in-process, just like the [omnia-cursor example](https://github.com/augentic/omnia-backends/tree/main/examples/cursor) does.
 
 See [#host-to-guest-tool-calls](#host-to-guest-tool-calls) below for more detail.
+
+## Amend and build again
+
+A sealed revision is amended, never regenerated: `emery amend` reads its sources as a *change* against the current revision, matches each claim to the requirement it revises, withdraws, or adds beside, and stages an `Amendment` — every requirement classed `added`, `changed`, `retired`, `conflict`, or `unchanged`, the specification redrafted for the drafted classes alone, the design and plan derived from the base. `emery apply` seals it as the next revision over the current one, `Parent:` naming the base, and `emery build` builds the plan again under the new label. Continue in the scratch project, on the branch the fast-forward left at the first revision's build.
+
+```bash
+# the docs change
+cat > docs/greeting.md <<'EOF'
+# Greeting
+
+GET /greeting returns the static string 'hello, world'.
+
+Acceptance:
+
+- The response body is exactly `hello, world`.
+EOF
+git commit --quiet --all --message "greeting says hello, world"
+
+# amend over the file's sources (the project-root emery.toml is discovered, as under specify): one requirement changed
+"$emery" -v amend
+"$emery" show amendment              # ## Changed: REQ-001 with Before: and After:
+
+# seal the amendment as the next revision: one commit over HEAD, labelled emery/<revision>, its parent the first
+"$emery" apply                       # prints `amends <parent>` beneath the sealed line
+git log -1 --format=%B emery/<revision>   # Parent:, Base:, Added: 0, Changed: 1, Retired: 0
+"$emery" show spec
+
+# build the amended plan: every slice is built again over the first build, nothing initialised, nothing resumed
+"$emery" -v build
+git merge --ff-only emery/<revision>
+
+# an inline brief beside the docs: a run naming a source on the command line reads no file, so a bare --config
+# reads the project-root emery.toml for its [target] and its [[source]] entries, the brief appended beside `docs`
+"$emery" -v amend --config --description "example:source@0.1.0=GET /farewell returns the static string 'bye'. Keep the farewell's phrasebook in PostgreSQL." --apply
+"$emery" show spec                   # REQ-002 farewell beside the greeting, the greeting unchanged
+"$emery" show design                 # the phrasebook's store under ## APIs and integrations
+"$emery" show plan                   # SLICE-002 farewell beside the greeting's slice
+"$emery" -v build
+git merge --ff-only emery/<revision>
+
+# the history: three revisions, each sealed over the last and built under its own label
+git log --oneline --first-parent
+git for-each-ref refs/heads/emery/
+
+# done: leave the scratch project and remove it, run and all
+cd - && rm -rf "$project"
+```
+
+The first amendment reads the docs alone and stages one `changed` requirement; its plan is settled by code, so no slicing turn is put, and a requirement claim informs no design section, so no design turn is put either and the design is the base's — its overview still describes the greeting as the first revision had it, a paragraph that goes stale while nothing it cites is retired. The second reads the docs beside the inline brief: the docs restate the greeting, which stays `unchanged`, the brief adds the farewell under a stem of its own, and its `decision` opens the design turn, so `show amendment` reports `1 added, 0 changed, 0 retired, 0 conflict, 1 unchanged`, `design: overview, apis`, and `slices: farewell (new)`, and `--apply` seals in the same run, printing the staged block and then the seal lines. A change that leaves every requirement unchanged and no section or slice different stages nothing. An amendment `specify` would displace is refused `amendment-pending` while one stands staged — review it with `emery show amendment`, seal it with `emery apply`, or run `emery amend` again to replace it — and `apply` over an amendment whose base is no longer the current revision is refused `amendment-stale`; amend again over the revision that is.
+
+Two rules of the grammar the amendment steps meet. A run that names a source on the command line — a positional `<adapter>` or a `--description` — reads no `emery.toml` unless `--config` says so, so the `[target]` table reaches it under `--config` alone (bare for the project-root file, `--config <path>` for another); without it the run is refused `build-target-required`. And a positional adapter and a `--description` for one adapter bind one source name, the adapter's package name, so the pair is refused as a source named twice: an inline change over an adapter is `--description` alone, or a named `[[source]]` entry.
 
 ## Host-to-guest tool calls
 
