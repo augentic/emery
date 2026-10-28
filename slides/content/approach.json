@@ -15,9 +15,10 @@
     "title": "Coding is no longer the bottleneck.",
     "required": [
       "Coding is no longer the bottleneck.",
-      "AI generates code faster than developers can understand and integrate it.",
+      "AI writes code in minutes, but it cannot frame a problem, weigh trade-offs, or own the consequences.",
       "More code ≠ a coherent solution",
       "Cognitive load",
+      "Hidden ambiguity",
       "Accumulated slop",
       "An unmanageable application and codebase."
     ]
@@ -27,8 +28,10 @@
     "title": "Build the right thing. Build it to last.",
     "required": [
       "Build the right thing. Build it to last.",
+      "Software design is a human process.",
       "our real expertise is the second",
       "Building the right thing",
+      "Frame the problem · weigh trade-offs · test with prototypes",
       "Delivering maintainable software",
       "Decide what matters, deliver it safely, and keep it maintainable."
     ]
@@ -48,7 +51,7 @@
     "title": "Standardise delivery. Specify behaviour. Sandbox execution.",
     "required": [
       "Three mechanisms for reliable delivery.",
-      "Agents work best inside a delivery system—not in charge of it.",
+      "Human-led engineering: agents work best inside a delivery system—not in charge of it.",
       "Standardise delivery",
       "How work is created, checked, shipped, and operated.",
       "Specify behaviour",
@@ -61,6 +64,7 @@
     "title": "Isolate. Guide. Enforce.",
     "required": [
       "Isolate. Guide. Enforce.",
+      "review focuses on design and trade-offs",
       "Governed workspaces",
       "Shared engineering codex",
       "Compiler-enforced standards",
@@ -86,8 +90,8 @@
     "required": [
       "Specify behaviour.",
       "People and agents share one source of truth: durable specifications, not code.",
-      "Governed intent",
-      "In the loop",
+      "Surface ambiguity",
+      "Human review gate",
       "Durable truth",
       "Code is disposable; specifications remain"
     ]
@@ -108,9 +112,11 @@
     "required": [
       "Specifications drive development.",
       "The specification stays in the development loop",
+      "surfacing ambiguity for human judgement",
       "spec.md",
       "design.md",
       "Review & seal",
+      "Human decision gate",
       "Units of work, ordered by dependency",
       "Each change runs the loop. If the specification changes, it is reviewed and sealed again."
     ]
@@ -143,7 +149,7 @@
     "title": "Generated code has less freedom to surprise.",
     "required": [
       "Generated code has less freedom to surprise.",
-      "Code reaches infrastructure through host-provided capabilities.",
+      "With the platform safe by construction, agents work within known bounds while engineers focus on the product.",
       "WASI Component",
       "Wasmtime sandbox",
       "Host-granted capabilities",
