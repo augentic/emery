@@ -34,7 +34,7 @@ class: slide-hero slide-section
 
 # Code is cheap.<br>Delivery is hard.
 
-<p class="section-subtitle">Use a delivery system that lets AI<br>deliver software—not just code.</p>
+<p class="section-subtitle">Use a delivery system that lets AI<br>deliver software — not just code.</p>
 
 </div>
 </div>
@@ -67,7 +67,7 @@ class: slide-light
 
 # Coding is no longer<br>the bottleneck.
 
-<p class="ed-prose">AI writes code in minutes, but it cannot frame a problem, weigh trade-offs, or own the consequences.</p>
+<p class="ed-prose">AI can write code in minutes, but it cannot frame a problem, weigh trade-offs, or own consequences.</p>
 <p class="ed-prose"><strong>More code ≠ a coherent solution.</strong> Coding agents smooth over ambiguity with plausible code, skipping the design conversations a team needed to have. The scarce work is comprehension, coherence, and evidence.</p>
 
 </div>
@@ -125,7 +125,7 @@ class: slide-light
 # Build the right thing.<br>Build it to last.
 
 </div>
-<p class="ed-band-prose"><strong>Software design is a human process.</strong> Good product strategy decides what is worth building. A reliable delivery system delivers it as maintainable software. While we can help with both, <strong>our real expertise is the second.</strong></p>
+<p class="ed-band-prose"><strong>Designing great software is a human process.</strong> Good product strategy decides what is worth building. A reliable delivery system delivers it as maintainable software. While we can help with product design, <strong>our expertise is in delivering systems that last.</strong></p>
 </div>
 <div class="ed-band-canvas">
 <svg viewBox="0 0 1140 350" aria-hidden="true">
@@ -1159,7 +1159,7 @@ Client question:
 -->
 
 ---
-title: The path becomes a loop.
+title: What comes next.
 sync: future-system
 class: slide-light
 ---
@@ -1170,41 +1170,123 @@ class: slide-light
 <div class="ed-band-top">
 <div>
 
-# The path becomes<br>a loop.
+# What comes<br>next.
 
 </div>
-<p class="ed-band-prose"><strong>Everything the running system learns comes back as a governed change.</strong> Sense the signal, decide what it means, and put the change through the same delivery system—then observe what happens.</p>
+<p class="ed-band-prose"><strong>A constrained delivery system unlocks two next steps on our roadmap.</strong> Because the target is narrow and the path is governed, generation shrinks enough for smaller local models—and production signals can return through the same path as governed changes.</p>
 </div>
 <div class="ed-band-canvas">
 <svg viewBox="0 0 1140 350" aria-hidden="true">
   <rect x="16" y="36" width="330" height="214" rx="14" fill="rgba(22,180,226,0.06)" stroke="#0c7fa3" stroke-width="1.7" />
-  <text x="38" y="68" class="svg-kicker" fill="#0c7fa3">01 · SENSE</text>
-  <text x="38" y="104" class="svg-h2" fill="#0d1030">Sense</text>
+  <text x="38" y="68" class="svg-kicker" fill="#0c7fa3">01 · NARROW THE TARGET</text>
+  <text x="38" y="104" class="svg-h2" fill="#0d1030">Narrow the target</text>
   <line x1="38" y1="122" x2="324" y2="122" stroke="rgba(12,127,163,0.18)" />
-  <text x="38" y="158" class="svg-label" fill="#0d1030">Signals from production</text>
-  <text x="38" y="190" class="svg-caption" fill="rgba(13,16,48,0.62)">Monitoring, audits, and incidents</text>
+  <text x="38" y="158" class="svg-label" fill="#0d1030">Pre-scaffold before the turn</text>
+  <text x="38" y="190" class="svg-caption" fill="rgba(13,16,48,0.62)">Crates, types, routes, and scenario tests</text>
 
   <rect x="398" y="36" width="344" height="214" rx="14" fill="#0d1030" />
-  <text x="420" y="68" class="svg-kicker" fill="#f59ef5">02 · DECIDE</text>
-  <text x="420" y="104" class="svg-h2" fill="#ffffff">Decide</text>
+  <text x="420" y="68" class="svg-kicker" fill="#f59ef5">02 · RUN SMALLER MODELS</text>
+  <text x="420" y="104" class="svg-h2" fill="#ffffff">Run smaller models</text>
   <line x1="420" y1="122" x2="720" y2="122" stroke="rgba(255,255,255,0.14)" />
-  <text x="420" y="158" class="svg-label" fill="#ffffff">Investigate and propose</text>
-  <text x="420" y="190" class="svg-caption" fill="rgba(255,255,255,0.7)">A proposal is not a shipment</text>
+  <text x="420" y="158" class="svg-label" fill="#ffffff">Local and open-weight models</text>
+  <text x="420" y="190" class="svg-caption" fill="rgba(255,255,255,0.7)">Verified inside the same compiler and test gates</text>
 
   <rect x="794" y="36" width="330" height="214" rx="14" fill="rgba(22,180,226,0.06)" stroke="#0c7fa3" stroke-width="1.7" />
-  <text x="816" y="68" class="svg-kicker" fill="#0c7fa3">03 · CHANGE</text>
-  <text x="816" y="104" class="svg-h2" fill="#0d1030">Change</text>
+  <text x="816" y="68" class="svg-kicker" fill="#0c7fa3">03 · CLOSE THE LOOP</text>
+  <text x="816" y="104" class="svg-h2" fill="#0d1030">Close the loop</text>
   <line x1="816" y1="122" x2="1102" y2="122" stroke="rgba(12,127,163,0.18)" />
-  <text x="816" y="158" class="svg-label" fill="#0d1030">Define, build, merge</text>
-  <text x="816" y="190" class="svg-caption" fill="rgba(13,16,48,0.62)">Then observe what the change did</text>
+  <text x="816" y="158" class="svg-label" fill="#0d1030">Sense, decide, and change</text>
+  <text x="816" y="190" class="svg-caption" fill="rgba(13,16,48,0.62)">Production signals return as governed changes</text>
 </svg>
 </div>
 </div>
 
 <!--
-Section divider: The complete system.
-- So far the argument has been a path: intent enters, delivery carries it to production, safeguards are matched to the stakes.
-- The future is that path running as a loop: what the running system learns becomes the next governed change.
+Section divider: What comes next.
+- So far the argument has covered the delivery system as it runs today: standardise delivery, specify behaviour, sandbox execution, and match safeguards to the stakes.
+- That constrained shape unlocks two active directions on the roadmap:
+  1. Smaller, local models on a narrower target—because the build adapter pre-scaffolds structure and tests and the runtime fixes the capability boundary.
+  2. The path becoming a loop—where production signals are investigated and fixes proposed, then specified, built, and merged like any other change.
+-->
+
+---
+title: Smaller models on a narrower target.
+sync: future-models
+class: slide-light
+---
+
+<Eyebrow text="THE FUTURE · SMALLER MODELS ON A NARROWER TARGET" />
+
+<div class="ed-band">
+<div class="ed-band-top">
+<div>
+
+# Smaller models on a<br>narrower target.
+
+</div>
+<p class="ed-band-prose"><strong>Frontier models are needed when an agent has to invent architecture.</strong> Our target build adapter pre-scaffolds crates, types, routes, and scenario test skeletons from the sealed specification, leaving the model to fill bounded behavioural markers and pass deterministic compiler and test gates.</p>
+</div>
+<div class="ed-band-canvas" style="padding-top: 8px;">
+<svg viewBox="0 0 1140 360" aria-hidden="true">
+  <rect x="16" y="14" width="346" height="162" rx="14" fill="rgba(22,180,226,0.06)" stroke="#0c7fa3" stroke-width="1.7" />
+  <text x="38" y="44" class="svg-kicker" fill="#0c7fa3">01 · PRE-SCAFFOLD</text>
+  <text x="38" y="74" class="svg-h3" fill="#0d1030">Before the model turn</text>
+  <line x1="38" y1="90" x2="340" y2="90" stroke="rgba(12,127,163,0.18)" />
+  <text x="38" y="118" class="svg-body" fill="#0d1030">Crate and module layout</text>
+  <text x="38" y="140" class="svg-body" fill="#0d1030">Typed routes and message consumers</text>
+  <text x="38" y="162" class="svg-body" fill="#0d1030">Scenario test skeletons from spec.md</text>
+
+  <line x1="362" y1="95" x2="390" y2="95" stroke="#a4238f" stroke-width="2" />
+  <polygon points="384,90 394,95 384,100" fill="#a4238f" />
+
+  <rect x="396" y="14" width="348" height="162" rx="14" fill="#0d1030" />
+  <text x="418" y="44" class="svg-kicker" fill="#78d8f2">02 · FILL BEHAVIOUR</text>
+  <text x="418" y="74" class="svg-h3" fill="#ffffff">Bounded model turn</text>
+  <line x1="418" y1="90" x2="722" y2="90" stroke="rgba(255,255,255,0.14)" />
+  <text x="418" y="118" class="svg-body" fill="rgba(255,255,255,0.86)">Fill behavioural markers only</text>
+  <text x="418" y="140" class="svg-body" fill="rgba(255,255,255,0.86)">Target known WASI capabilities</text>
+  <text x="418" y="162" class="svg-body" fill="rgba(255,255,255,0.86)">No framework or SDK selection</text>
+
+  <line x1="744" y1="95" x2="772" y2="95" stroke="#a4238f" stroke-width="2" />
+  <polygon points="766,90 776,95 766,100" fill="#a4238f" />
+
+  <rect x="778" y="14" width="346" height="162" rx="14" fill="rgba(164,35,143,0.06)" stroke="#a4238f" stroke-width="1.7" />
+  <text x="800" y="44" class="svg-kicker" fill="#a4238f">03 · VERIFY</text>
+  <text x="800" y="74" class="svg-h3" fill="#0d1030">Compiler and test gates</text>
+  <line x1="800" y1="90" x2="1102" y2="90" stroke="rgba(164,35,143,0.18)" />
+  <text x="800" y="118" class="svg-body" fill="#0d1030">Compiler-enforced lints</text>
+  <text x="800" y="140" class="svg-body" fill="#0d1030">Scenario tests and layout checks</text>
+  <text x="800" y="162" class="svg-body" fill="#0d1030">WASI component compilation</text>
+
+  <text x="570" y="206" text-anchor="middle" class="svg-kicker" fill="rgba(13,16,48,0.56)">MODEL ROADMAP · WHAT RUNS TODAY AND WHAT IS NEXT</text>
+
+  <rect x="16" y="220" width="350" height="92" rx="12" fill="#ffffff" stroke="rgba(13,16,48,0.24)" stroke-width="1.5" />
+  <text x="38" y="246" class="svg-kicker" fill="rgba(13,16,48,0.58)">TODAY · PRODUCTION DEFAULT</text>
+  <text x="38" y="274" class="svg-h3" fill="#0d1030">Frontier LLMs</text>
+  <text x="38" y="296" class="svg-caption" fill="rgba(13,16,48,0.66)">Used across current client engagements</text>
+
+  <rect x="395" y="220" width="350" height="92" rx="12" fill="rgba(22,180,226,0.05)" stroke="rgba(12,127,163,0.5)" stroke-width="1.6" />
+  <text x="417" y="246" class="svg-kicker" fill="#0c7fa3">PROOF OF CONCEPT · OPEN-WEIGHT</text>
+  <text x="417" y="274" class="svg-h3" fill="#0d1030">Untuned qwen3-coder-next</text>
+  <text x="417" y="296" class="svg-caption" fill="rgba(13,16,48,0.66)">Builds and verifies working WASI guest slices</text>
+
+  <rect x="774" y="220" width="350" height="92" rx="12" fill="rgba(164,35,143,0.05)" stroke="rgba(164,35,143,0.48)" stroke-width="1.6" />
+  <text x="796" y="246" class="svg-kicker" fill="#a4238f">ROADMAP · LOCAL SLMs</text>
+  <text x="796" y="274" class="svg-h3" fill="#0d1030">Client-hosted generation</text>
+  <text x="796" y="296" class="svg-caption" fill="rgba(13,16,48,0.66)">Sensitive systems built without a frontier API</text>
+
+  <text x="570" y="342" text-anchor="middle" class="svg-caption" fill="rgba(13,16,48,0.58)">Constraint as leverage: narrowing the target makes smaller, local models practical.</text>
+</svg>
+</div>
+</div>
+
+<!--
+Smaller models on a narrower target:
+- A frontier model is necessary when a coding agent has to choose libraries, invent project structure, and hold an entire codebase in context.
+- Our target build adapter removes that work before the model turn begins: it scaffolds the crate, module layout, typed routes, message consumers, and scenario test skeletons from the sealed specification, then asks the model only to fill the behavioural markers and pass compiler, lint, and test checks.
+- Today, that adapter runs with frontier LLMs in current engagements.
+- In early proof-of-concept runs, the same scaffold-and-verify loop already builds working WebAssembly guest slices using an untuned open-weight model (`qwen3-coder-next`).
+- Active roadmap focus: hardening small language model support so sensitive systems can be built and verified on local or client-hosted hardware without depending on a frontier API.
 -->
 
 ---

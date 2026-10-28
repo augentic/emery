@@ -2144,7 +2144,7 @@ Reassess whenever reach, data, dependence, or continuity changes. The required s
 -->
 
 ---
-title: The path becomes a loop.
+title: What comes next.
 sync: future-system
 class: slide-section
 ---
@@ -2155,25 +2155,97 @@ class: slide-section
 
 <div class="section-hero-grid">
 <div class="section-hero-left">
-<div class="section-kicker-pill is-magenta">The complete system</div>
+<div class="section-kicker-pill is-magenta">Where this goes</div>
 
-# Next, the path becomes a loop.
+# What comes next.
 
-<p class="section-subtitle">In that system, production signals are investigated and fixes proposed—<strong>then specified, built, and merged like any other change.</strong></p>
+<p class="section-subtitle">A constrained delivery system unlocks two next steps: <strong>smaller models on a narrower target, and production signals returning as governed changes.</strong></p>
 
 </div>
 </div>
 
 <div class="hero-mechanisms">
-<div class="hero-pillar"><span class="hero-pillar-num">01</span><span>Sense · Signals from production</span></div>
-<div class="hero-pillar"><span class="hero-pillar-num">02</span><span>Decide · Investigate and propose</span></div>
-<div class="hero-pillar"><span class="hero-pillar-num">03</span><span>Change · Specify, build, merge — then observe</span></div>
+<div class="hero-pillar"><span class="hero-pillar-num">01</span><span>Narrow the target · Pre-scaffold structure, types, routes, and tests</span></div>
+<div class="hero-pillar"><span class="hero-pillar-num">02</span><span>Run smaller models · Local and open-weight models inside the same gates</span></div>
+<div class="hero-pillar"><span class="hero-pillar-num">03</span><span>Close the loop · Production signals return as governed changes</span></div>
 </div>
 
 <!--
-Section divider: The complete system.
-- So far the argument has been a path: intent enters, delivery carries it to production, safeguards are matched to the stakes.
-- The future is that path running as a loop: what the running system learns becomes the next governed change.
+Section divider: What comes next.
+- So far the argument has covered the delivery system as it runs today: standardise delivery, specify behaviour, sandbox execution, and match safeguards to the stakes.
+- That constrained shape unlocks two active directions on the roadmap:
+  1. Smaller, local models on a narrower target—because the build adapter pre-scaffolds structure and tests and the runtime fixes the capability boundary.
+  2. The path becoming a loop—where production signals are investigated and fixes proposed, then specified, built, and merged like any other change.
+-->
+
+---
+title: Smaller models on a narrower target.
+sync: future-models
+class: slide-light
+---
+
+<Eyebrow text="THE FUTURE · SMALLER MODELS ON A NARROWER TARGET" />
+
+<div class="live-stage">
+
+# Smaller models on a narrower target.
+
+<p class="live-claim">Frontier models are needed when an agent has to invent architecture. Pre-scaffolding the slice shrinks generation to bounded behavioural markers.</p>
+
+<div class="live-pipeline is-three" style="margin-top: 22px;">
+<div class="live-card is-cyan">
+<div class="live-card-head">
+<IconBadge tone="cyan"><ph:stack /></IconBadge>
+<div class="live-kicker">01 · Pre-scaffold</div>
+</div>
+<h3>Before the model turn</h3>
+<p>Crate layout, typed routes, consumers, and test skeletons.</p>
+</div>
+<div class="live-arrow">→</div>
+<div class="live-card is-dark">
+<div class="live-card-head">
+<IconBadge tone="light"><ph:code /></IconBadge>
+<div class="live-kicker">02 · Fill behaviour</div>
+</div>
+<h3>Bounded model turn</h3>
+<p>Implement behavioural markers against known capabilities.</p>
+</div>
+<div class="live-arrow">→</div>
+<div class="live-card is-magenta">
+<div class="live-card-head">
+<IconBadge tone="magenta"><ph:shield-check /></IconBadge>
+<div class="live-kicker">03 · Verify</div>
+</div>
+<h3>Compiler and test gates</h3>
+<p>Lints, scenario tests, and WASI component checks.</p>
+</div>
+</div>
+
+<div class="live-recipe-grid" style="margin-top: 16px;">
+<div class="live-recipe-card">
+<div class="live-kicker">Today · Production default</div>
+<h3>Frontier LLMs across current engagements</h3>
+</div>
+<div class="live-recipe-card">
+<div class="live-kicker">Proof of concept · Open-weight</div>
+<h3>Untuned qwen3-coder-next builds WASI slices</h3>
+</div>
+<div class="live-recipe-card">
+<div class="live-kicker">Roadmap · Local SLMs</div>
+<h3>Client-hosted builds with no frontier API</h3>
+</div>
+</div>
+
+<div class="live-outcome">Constraint as leverage: a narrower target makes small, client-hosted models practical.</div>
+</div>
+
+<!--
+Smaller models on a narrower target:
+- A frontier model is necessary when a coding agent has to choose libraries, invent project structure, and hold an entire codebase in context.
+- Our target build adapter removes that work before the model turn begins: it pre-scaffolds the crate, module layout, typed routes, message consumers, and scenario test skeletons from the sealed specification, then asks the model only to fill the behavioural markers and pass compiler, lint, and test checks.
+- Today, that adapter runs with frontier LLMs in production engagements.
+- In early proof-of-concept runs, the same scaffold-and-verify loop already builds working WebAssembly guest slices using an untuned open-weight model (`qwen3-coder-next`).
+- Active roadmap focus: hardening small language model support so sensitive systems can be built and verified on local or client-hosted hardware without depending on a frontier API.
 -->
 
 ---

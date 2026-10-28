@@ -4,7 +4,7 @@
     "title": "Code is cheap. Delivery is hard.",
     "required": [
       "Code is cheap. Delivery is hard.",
-      "Use a delivery system that lets AI deliver software—not just code.",
+      "Use a delivery system that lets AI deliver software — not just code.",
       "Standardise delivery",
       "Specify behaviour",
       "Sandbox execution"
@@ -15,7 +15,7 @@
     "title": "Coding is no longer the bottleneck.",
     "required": [
       "Coding is no longer the bottleneck.",
-      "AI writes code in minutes, but it cannot frame a problem, weigh trade-offs, or own the consequences.",
+      "AI can write code in minutes, but it cannot frame a problem, weigh trade-offs, or own consequences.",
       "More code ≠ a coherent solution",
       "Cognitive load",
       "Hidden ambiguity",
@@ -28,8 +28,8 @@
     "title": "Build the right thing. Build it to last.",
     "required": [
       "Build the right thing. Build it to last.",
-      "Software design is a human process.",
-      "our real expertise is the second",
+      "Designing great software is a human process.",
+      "our expertise is in delivering systems that last.",
       "Building the right thing",
       "Frame the problem · weigh trade-offs · test with prototypes",
       "Delivering maintainable software",
@@ -220,13 +220,27 @@
   },
   {
     "id": "future-system",
-    "title": "The path becomes a loop.",
+    "title": "What comes next.",
     "required": [
-      "Sense",
-      "Signals from production",
-      "Decide",
-      "Investigate and propose",
-      "Change"
+      "What comes next.",
+      "Narrow the target",
+      "Run smaller models",
+      "Close the loop"
+    ]
+  },
+  {
+    "id": "future-models",
+    "title": "Smaller models on a narrower target.",
+    "required": [
+      "Smaller models on a narrower target.",
+      "Frontier models are needed when an agent has to invent architecture.",
+      "Pre-scaffold",
+      "Before the model turn",
+      "Bounded model turn",
+      "Compiler and test gates",
+      "Frontier LLMs",
+      "qwen3-coder-next",
+      "Local SLMs"
     ]
   },
   {
