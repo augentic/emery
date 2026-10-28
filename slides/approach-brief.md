@@ -151,84 +151,13 @@ class: slide-light
 
 <!--
 Two things are increasingly important:
-1) Good product strategy—knowing what is worth building and using rapid prototypes to learn without mistaking them for production systems.
+1) Good product strategy—knowing what is worth building and using rapid prototypes to learn without mistaking them for production systems. A prototype informs the decision; it does not make it.
 2) A reliable delivery system—turning intent into coherent, comprehensible, verified software without accumulating slop.
 While we can help with both, our real expertise is in the second.
 -->
 
 ---
-title: A prototype is evidence, not a production commitment.
-sync: outcome
-class: slide-light
----
-<Eyebrow text="THE DELIVERY SYSTEM · FIRST, ADMIT WORK DELIBERATELY" />
-
-<div class="ed-band">
-<div class="ed-band-top">
-<div>
-
-# A prototype is evidence.<br>Production is a commitment.
-
-</div>
-<p class="ed-band-prose"><strong>A prototype is evidence. Production is a commitment.</strong> AI can build a prototype in minutes. Production takes an explicit decision. It asks for a named outcome, supporting evidence, product coherence, and a service owner. This is the front door of the delivery system: the decision that admits work to it.</p>
-</div>
-<div class="ed-band-canvas">
-<svg viewBox="0 0 1140 350" aria-hidden="true">
-  <rect x="16" y="36" width="330" height="224" rx="14" fill="rgba(22,180,226,0.06)" stroke="#0c7fa3" stroke-width="1.7" />
-  <text x="38" y="68" class="svg-kicker" fill="#0c7fa3">SIGNALS AND EXPERIMENTS</text>
-  <text x="38" y="104" class="svg-h2" fill="#0d1030">Test the need</text>
-  <line x1="38" y1="122" x2="324" y2="122" stroke="rgba(12,127,163,0.18)" />
-  <text x="38" y="154" class="svg-label" fill="#0d1030">Customer needs</text>
-  <text x="190" y="154" class="svg-label" fill="#0d1030">Operational evidence</text>
-  <text x="38" y="190" class="svg-label" fill="#0d1030">Product strategy</text>
-  <text x="190" y="190" class="svg-label" fill="#0d1030">Rapid prototypes</text>
-  <text x="38" y="232" class="svg-caption" fill="rgba(13,16,48,0.62)">Test assumptions before committing</text>
-
-  <line x1="346" y1="148" x2="392" y2="148" stroke="#0d1030" stroke-width="1.8" />
-  <polygon points="386,143 396,148 386,153" fill="#0d1030" />
-
-  <rect x="398" y="36" width="344" height="224" rx="14" fill="#0d1030" />
-  <text x="420" y="68" class="svg-kicker" fill="#f59ef5">PRODUCTION GATE</text>
-  <text x="420" y="104" class="svg-h2" fill="#ffffff">Decide explicitly</text>
-  <line x1="420" y1="122" x2="720" y2="122" stroke="rgba(255,255,255,0.14)" />
-  <text x="420" y="154" class="svg-label" fill="#ffffff">Named outcome</text>
-  <text x="582" y="154" class="svg-label" fill="#ffffff">Evidence</text>
-  <text x="420" y="190" class="svg-label" fill="#ffffff">Product coherence</text>
-  <text x="582" y="190" class="svg-label" fill="#ffffff">Service owner</text>
-  <text x="420" y="232" class="svg-caption" fill="rgba(255,255,255,0.7)">Product judgement—not extra ceremony</text>
-
-  <line x1="742" y1="148" x2="788" y2="148" stroke="#a4238f" stroke-width="1.8" />
-  <polygon points="782,143 792,148 782,153" fill="#a4238f" />
-
-  <rect x="794" y="36" width="330" height="224" rx="14" fill="rgba(164,35,143,0.06)" stroke="#a4238f" stroke-width="1.7" />
-  <text x="816" y="68" class="svg-kicker" fill="#a4238f">PRODUCTION COMMITMENT</text>
-  <text x="816" y="104" class="svg-h2" fill="#0d1030">Enter the delivery</text>
-  <text x="816" y="132" class="svg-h2" fill="#0d1030">path</text>
-  <line x1="816" y1="150" x2="1102" y2="150" stroke="rgba(164,35,143,0.18)" />
-  <text x="816" y="184" class="svg-caption" fill="rgba(13,16,48,0.66)">Only work with an outcome, evidence,</text>
-  <text x="816" y="206" class="svg-caption" fill="rgba(13,16,48,0.66)">fit, and owner proceeds</text>
-
-  <rect x="170" y="286" width="800" height="48" rx="24" fill="#0d1030" stroke="#a4238f" stroke-width="1.6" />
-  <text x="570" y="316" text-anchor="middle" class="svg-label" fill="#ffffff">A prototype informs the decision. It does not make it.</text>
-</svg>
-</div>
-</div>
-
-<!--
-Once implementation and delivery accelerate, production capacity should not be filled with features by default.
-- Customer signals, operational evidence, strategy, and cheap experiments become inputs.
-- Citizen- and vibe-coded proofs of concept are useful because they test assumptions and expose needs quickly.
-- A prototype gains no production authority merely because it works.
-- The production gate asks whether there is a named outcome, evidence, product coherence, and an owner.
-- The result may enter the production backlog, return for another experiment, or stop.
-The gate is product judgement, not extra ceremony. Faster delivery should produce faster learning and fewer weak commitments.
-
-Client question:
-- Which backlog decisions could be informed by a cheap prototype before becoming production commitments?
--->
-
----
-title: Standardise delivery. Specify behaviour. Sandbox execution.
+title: A delivery system for AI-generated code.
 sync: system
 class: slide-sandbox
 ---
@@ -236,9 +165,9 @@ class: slide-sandbox
 
 <Eyebrow text="THE DELIVERY SYSTEM · HUMAN-LED ENGINEERING" />
 
-# Three mechanisms for reliable delivery.
+# A delivery system for AI-generated code.
 
-<p class="slide-lead">Human-led engineering: agents work best inside a delivery system—not in charge of it.</p>
+<p class="slide-lead">Human-led engineering — with agents working inside the system, not in charge of it.</p>
 
 <div class="ed-band-canvas" style="padding-top: 4px;">
 <svg viewBox="0 0 1140 400" aria-hidden="true">
@@ -314,7 +243,53 @@ Boundary:
 -->
 
 ---
-title: Isolate. Guide. Enforce.
+title: Standardise delivery.
+sync: section-standardise
+class: slide-light
+---
+<Eyebrow text="DELIVERY SYSTEM · FOUNDATION 01" />
+
+<div class="ed-band">
+<div class="ed-band-top">
+<div>
+
+# Standardise delivery.
+
+</div>
+<p class="ed-band-prose"><strong>One governed path from change to production—across how code is written and how it ships.</strong> Teams move faster when people and agents work inside governed workspaces, follow one engineering codex, fail critical rules at compile time, and promote one reproducible artifact through automated gates.</p>
+</div>
+<div class="ed-band-canvas">
+<svg viewBox="0 0 1140 350" aria-hidden="true">
+  <rect x="16" y="36" width="330" height="214" rx="14" fill="rgba(22,180,226,0.06)" stroke="#0c7fa3" stroke-width="1.7" />
+  <text x="38" y="68" class="svg-kicker" fill="#0c7fa3">01 · ISOLATE &amp; GUIDE</text>
+  <text x="38" y="104" class="svg-h2" fill="#0d1030">Isolate &amp; guide</text>
+  <line x1="38" y1="122" x2="324" y2="122" stroke="rgba(12,127,163,0.18)" />
+  <text x="38" y="158" class="svg-label" fill="#0d1030">Governed workspaces and</text>
+  <text x="38" y="184" class="svg-label" fill="#0d1030">shared engineering codex</text>
+  <text x="38" y="218" class="svg-caption" fill="rgba(13,16,48,0.62)">One standard for people and agents</text>
+  <rect x="398" y="36" width="344" height="214" rx="14" fill="#0d1030" />
+  <text x="420" y="68" class="svg-kicker" fill="#f59ef5">02 · ENFORCE AT COMPILE TIME</text>
+  <text x="420" y="104" class="svg-h2" fill="#ffffff">Enforce at compile time</text>
+  <line x1="420" y1="122" x2="720" y2="122" stroke="rgba(255,255,255,0.14)" />
+  <text x="420" y="158" class="svg-label" fill="#ffffff">Fail critical rules before review</text>
+  <text x="420" y="190" class="svg-caption" fill="rgba(255,255,255,0.7)">Review focuses on design and trade-offs</text>
+  <rect x="794" y="36" width="330" height="214" rx="14" fill="rgba(22,180,226,0.06)" stroke="#0c7fa3" stroke-width="1.7" />
+  <text x="816" y="68" class="svg-kicker" fill="#0c7fa3">03 · AUTOMATE PROMOTION</text>
+  <text x="816" y="104" class="svg-h2" fill="#0d1030">Automate promotion</text>
+  <line x1="816" y1="122" x2="1102" y2="122" stroke="rgba(12,127,163,0.18)" />
+  <text x="816" y="158" class="svg-label" fill="#0d1030">Build once, test behaviour, and</text>
+  <text x="816" y="184" class="svg-label" fill="#0d1030">gate every change</text>
+  <text x="816" y="218" class="svg-caption" fill="rgba(13,16,48,0.62)">Evidence moves with the artifact</text>
+</svg>
+</div>
+</div>
+
+<!--
+Section 01 divider: Standardise delivery.
+-->
+
+---
+title: Standardise how code is written.
 sync: authoring
 class: slide-light
 ---
@@ -329,9 +304,9 @@ class: slide-light
 <div class="ed-split">
 <div class="ed-prose-col">
 
-# Isolate. Guide. Enforce.
+# Standardise how code is written.
 
-<p class="ed-prose">Teams move faster when experimentation happens in a governed place, through an approved path, under checks that apply to every change.</p>
+<p class="ed-prose">Give people and agents a safe workspace, shared standards, and compile-time guardrails.</p>
 <p class="ed-prose"><strong>Guidance is shared. Non-negotiable rules are enforced.</strong> Critical rules fail at compile time, before review—so review focuses on design and trade-offs.</p>
 
 </div>
@@ -376,7 +351,7 @@ Client question:
 -->
 
 ---
-title: Automate the path from code to production.
+title: Automate the path to production.
 sync: delivery-automation
 class: slide-light
 ---
@@ -386,7 +361,7 @@ class: slide-light
 <div class="ed-band-top">
 <div>
 
-# Automate the path<br>from code to production.
+# Automate the path<br>to production.
 
 </div>
 <p class="ed-band-prose"><strong>Faster implementation matters only when evidence and delivery move at the same speed.</strong> We removed mechanical delay by automating the path around the code.</p>
@@ -442,7 +417,7 @@ Client question:
 -->
 
 ---
-title: Specify behaviour
+title: Specify behaviour.
 sync: section-intent
 class: slide-light
 ---
@@ -556,11 +531,11 @@ Client question:
 -->
 
 ---
-title: Specifications drive development.
+title: Specifications drive the loop.
 sync: record-development
 class: slide-light
 ---
-<Eyebrow text="02 · SPECIFY BEHAVIOUR · SPEC-DRIVEN DEVELOPMENT" />
+<Eyebrow text="02 · SPECIFY BEHAVIOUR · THE DEVELOPMENT LOOP" />
 
 <div class="foundation-progress" aria-label="Delivery foundations">
 <span>01 · Standardise delivery</span>
@@ -572,10 +547,10 @@ class: slide-light
 <div class="ed-band-top">
 <div>
 
-# Specifications drive<br>development.
+# Specifications drive<br>the loop.
 
 </div>
-<p class="ed-band-prose"><strong>The specification stays in the development loop</strong>—surfacing ambiguity for human judgement instead of burying it in generated code. Each change runs the loop. If the specification changes, it is reviewed and sealed again.</p>
+<p class="ed-band-prose"><strong>The specification stays in the development loop</strong>—surface conflicts and gaps for human judgement instead of burying them in generated code. Each change runs the loop. If the specification changes, it is reviewed and sealed again.</p>
 </div>
 <div class="ed-band-canvas">
 <svg viewBox="0 0 1140 360" aria-hidden="true">
@@ -645,7 +620,7 @@ This leads to the next boundary:
 -->
 
 ---
-title: Code is disposable. The specification is durable.
+title: Code is disposable. Specifications are durable.
 sync: record-truth
 class: slide-light
 ---
@@ -707,7 +682,7 @@ Transition:
 -->
 
 ---
-title: Sandbox execution
+title: Sandbox execution.
 sync: section-constrain
 class: slide-light
 ---
@@ -754,11 +729,11 @@ Section 03 divider: Sandboxed execution.
 -->
 
 ---
-title: Generated code has less freedom to surprise.
+title: Generated code cannot reach past its sandbox.
 sync: runtime
 class: slide-light
 ---
-<Eyebrow text="03 · SANDBOX EXECUTION · SANDBOXED EXECUTION" />
+<Eyebrow text="03 · SANDBOX EXECUTION · CAPABILITY BOUNDARY" />
 
 <div class="foundation-progress" aria-label="Delivery foundations">
 <span>01 · Standardise delivery</span>
@@ -770,7 +745,7 @@ class: slide-light
 <div class="ed-band-top">
 <div>
 
-# Generated code has less freedom<br>to surprise.
+# Generated code cannot reach<br>past its sandbox.
 
 </div>
 <p class="ed-band-prose"><strong>With the platform safe by construction, agents work within known bounds while engineers focus on the product.</strong> Code reaches infrastructure through host-provided capabilities; grant generated code nothing by default.</p>
@@ -831,7 +806,7 @@ Client question:
 -->
 
 ---
-title: Different infrastructure. The same application.
+title: Different infrastructure. Same application.
 sync: runtime-portability
 class: slide-light
 ---
@@ -931,7 +906,7 @@ Client question:
 -->
 
 ---
-title: Right-size the safeguards
+title: Match safeguards to the stakes.
 sync: section-trust
 class: slide-light
 ---
@@ -1159,7 +1134,7 @@ Client question:
 -->
 
 ---
-title: What comes next.
+title: Narrow the target. Close the loop.
 sync: future-system
 class: slide-light
 ---
@@ -1170,10 +1145,10 @@ class: slide-light
 <div class="ed-band-top">
 <div>
 
-# What comes<br>next.
+# Narrow the target.<br>Close the loop.
 
 </div>
-<p class="ed-band-prose"><strong>A constrained delivery system unlocks two next steps on our roadmap.</strong> Because the target is narrow and the path is governed, generation shrinks enough for smaller local models—and production signals can return through the same path as governed changes.</p>
+<p class="ed-band-prose"><strong>A constrained delivery system unlocks smaller models on a narrower target, and production signals returning as governed changes.</strong> Because the target is narrow and the path is governed, generation shrinks enough for smaller local models—and production signals can return through the same path as governed changes.</p>
 </div>
 <div class="ed-band-canvas">
 <svg viewBox="0 0 1140 350" aria-hidden="true">
@@ -1210,18 +1185,18 @@ Section divider: What comes next.
 -->
 
 ---
-title: Smaller models on a narrower target.
+title: A narrower target unlocks smaller models.
 sync: future-models
 class: slide-light
 ---
 
-<Eyebrow text="THE FUTURE · SMALLER MODELS ON A NARROWER TARGET" />
+<Eyebrow text="THE FUTURE · PRE-SCAFFOLDED SLICES" />
 
 <div class="ed-band">
 <div class="ed-band-top">
 <div>
 
-# Smaller models on a<br>narrower target.
+# A narrower target<br>unlocks smaller models.
 
 </div>
 <p class="ed-band-prose"><strong>Frontier models are needed when an agent has to invent architecture—not when structure, contracts, and tests are already fixed.</strong> Pre-scaffolding the slice from the sealed specification shrinks generation to filling bounded logic verified by compiler and test gates.</p>
@@ -1296,7 +1271,7 @@ class: slide-light
   <rect x="10" y="36" width="176" height="54" rx="9" fill="#ffffff" stroke="rgba(13,16,48,0.3)" stroke-width="1.5" />
   <text x="98" y="69" text-anchor="middle" class="svg-label" fill="#0d1030">Security feeds</text>
   <rect x="10" y="354" width="176" height="54" rx="9" fill="#ffffff" stroke="rgba(13,16,48,0.3)" stroke-width="1.5" />
-  <text x="98" y="387" text-anchor="middle" class="svg-label" fill="#0d1030">Cargo audit</text>
+  <text x="98" y="387" text-anchor="middle" class="svg-label" fill="#0d1030">Dependency audit</text>
 
   <rect x="10" y="195" width="176" height="54" rx="9" fill="rgba(255,59,107,0.06)" stroke="rgba(255,59,107,0.8)" stroke-width="1.6" />
   <text x="98" y="215" text-anchor="middle" class="svg-label" fill="#0d1030">Vulnerability</text>
@@ -1389,7 +1364,7 @@ The complete system, using vulnerability remediation as the worked example:
 -->
 
 ---
-title: What’s the first change you’d trust AI to deliver?
+title: Thank you.
 sync: cta
 class: slide-split short-bar
 ---
@@ -1403,9 +1378,9 @@ class: slide-split short-bar
 
 <div class="split-content-pane" style="justify-content: center;">
 <div>
-<Eyebrow text="PROPELLERHEAD · THE FIRST MOVE" />
+<Eyebrow text="PROPELLERHEAD · ACCOUNTABLE SOFTWARE DELIVERY" />
 
-# What’s the first change<br>you’d trust AI to deliver?
+# Thank you.
 
 <p class="ed-prose">Start with one change you can name. Place it by its reach, data, dependence, and continuity, set the safeguards to match its stakes, and deliver it through the system.</p>
 <p class="ed-prose"><strong>One change is enough to start.</strong> What it creates—the specification, the evidence, and the delivery knowledge—stays with you for the next one.</p>

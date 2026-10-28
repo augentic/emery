@@ -572,10 +572,10 @@ class: slide-hero slide-section
 
 .live-matrix {
   width: min(100%, 1000px);
-  margin: 14px auto 0;
+  margin: 12px auto 0;
   display: grid;
   grid-template-columns: 138px 1fr 138px;
-  grid-template-rows: 38px 300px 38px;
+  grid-template-rows: 36px 268px 36px;
   align-items: center;
 }
 
@@ -1358,115 +1358,44 @@ class: slide-light
 
 <!--
 Two things are increasingly important:
-1) Good product strategy—framing the problem, weighing trade-offs, and using rapid prototypes to test assumptions without mistaking them for production systems.
+1) Good product strategy—framing the problem, weighing trade-offs, and using rapid prototypes to test assumptions without mistaking them for production systems. A prototype informs the decision; it does not make it.
 2) A reliable delivery system—turning agreed intent into coherent, comprehensible, verified software without accumulating slop.
 While we can help with both, our real expertise is in the second.
 -->
 
 ---
-title: A prototype is evidence, not a production commitment.
-sync: outcome
-class: slide-light
----
-
-<Eyebrow text="THE DELIVERY SYSTEM · FIRST, ADMIT WORK DELIBERATELY" />
-
-<div class="live-stage">
-
-# A prototype is evidence.<br>Production is a commitment.
-
-<p class="live-claim">AI can build a prototype in minutes. Production takes an explicit decision.</p>
-
-<div class="live-feature-flow">
-<div class="live-card is-cyan">
-<div class="live-card-head">
-<IconBadge tone="cyan"><ph:lightbulb /></IconBadge>
-<div class="live-kicker">Signals and experiments</div>
-</div>
-<h3>Test the need</h3>
-<div class="live-feature-list">
-<span>User need</span>
-<span>Operational problem</span>
-<span>Usage evidence</span>
-<span>Rapid prototypes</span>
-</div>
-</div>
-<div class="live-arrow">→</div>
-<div class="live-card is-dark">
-<div class="live-card-head">
-<IconBadge tone="light"><ph:funnel /></IconBadge>
-<div class="live-kicker">Production gate</div>
-</div>
-<h3>Decide explicitly</h3>
-<div class="live-feature-list">
-<span>Named outcome</span>
-<span>Evidence</span>
-<span>Product coherence</span>
-<span>Service owner</span>
-</div>
-</div>
-<div class="live-arrow">→</div>
-<div class="live-card is-magenta">
-<div class="live-card-head">
-<IconBadge tone="magenta"><ph:list-checks /></IconBadge>
-<div class="live-kicker">Production commitment</div>
-</div>
-<h3>Enter the delivery path</h3>
-<p>Only work with an outcome, evidence, fit, and owner proceeds.</p>
-</div>
-</div>
-
-<div class="live-outcome">A prototype informs the decision. It does not make it.</div>
-</div>
-
-<!--
-This is the front door of the delivery system: the decision that admits work to it.
-AI can build a prototype in minutes, so the decision to make something production software has to be explicit.
-Faster coding makes weak assumptions expensive sooner. Alignment on outcome, fit, and ownership is engineering work, not a delay before coding starts.
-Cheap experiments test assumptions. They do not grant production authority.
-Before work enters the delivery path, ask:
-- What outcome does it create?
-- What evidence supports it?
-- Does it strengthen or fragment the product?
-- Who owns and supports it?
-For work that earns that commitment, it enters one delivery path, governed by the three mechanisms on the next slide.
--->
-
----
-title: Standardise delivery. Specify behaviour. Sandbox execution.
+title: A delivery system for AI-generated code.
 sync: system
 layout: default
-class: slide-sandbox
+class: slide-light
 ---
-
-<AmbientVideo src="/videos/approach-video.mp4" variant="approach" />
 
 <Eyebrow text="THE DELIVERY SYSTEM · HUMAN-LED ENGINEERING" />
 
 <div class="live-stage">
 
-# Three mechanisms for reliable delivery.
+# A delivery system for AI-generated code.
 
-<p class="live-claim">Human-led engineering: agents work best inside a delivery system—not in charge of it.</p>
+<p class="live-claim">Human-led engineering — with agents working inside the system, not in charge of it.</p>
 
 <div class="live-grid-3" style="margin-top: 24px;">
-<div class="live-card is-glass">
+<div class="live-card is-cyan">
 <div class="live-card-head">
-<IconBadge tone="light"><ph:shield-check /></IconBadge>
+<IconBadge tone="cyan"><ph:shield-check /></IconBadge>
 <div class="live-num">01 · Change path</div>
 </div>
 <h3>Standardise delivery</h3>
 <p>How work is created, checked, shipped, and operated.</p>
 </div>
-<div class="live-card is-glass">
+<div class="live-card">
 <div class="live-card-head">
-<IconBadge tone="light"><ph:file-text /></IconBadge>
+<IconBadge tone="magenta"><ph:file-text /></IconBadge>
 <div class="live-num">02 · Durable authority</div>
 </div>
 <h3>Specify behaviour</h3>
 <p>What must remain true and how acceptance is proven.</p>
 </div>
-<div class="live-card is-glass">
+<div class="live-card is-dark">
 <div class="live-card-head">
 <IconBadge tone="light"><ph:lock-key /></IconBadge>
 <div class="live-num">03 · Runtime boundary</div>
@@ -1489,7 +1418,38 @@ This is the map for the next three sections.
 -->
 
 ---
-title: Isolate. Guide. Enforce.
+title: Standardise delivery.
+sync: section-standardise
+class: slide-section
+---
+
+<AmbientVideo src="/videos/hero-video-3.mp4" variant="approach" />
+
+<Eyebrow text="DELIVERY SYSTEM · FOUNDATION 01" />
+
+<div class="section-hero-grid">
+<div class="section-hero-left">
+<div class="section-kicker-pill">01 · Toolchain &amp; pipeline</div>
+
+# Standardise delivery.
+
+<p class="section-subtitle">One governed path from change to production—<strong>across how code is written and how it ships.</strong></p>
+
+</div>
+</div>
+
+<div class="hero-mechanisms">
+<div class="hero-pillar"><span class="hero-pillar-num">01</span><span>Isolate &amp; guide · Governed workspaces and shared engineering codex</span></div>
+<div class="hero-pillar"><span class="hero-pillar-num">02</span><span>Enforce at compile time · Fail critical rules before review</span></div>
+<div class="hero-pillar"><span class="hero-pillar-num">03</span><span>Automate promotion · Build once, test behaviour, and gate every change</span></div>
+</div>
+
+<!--
+Section 01 divider: Standardise delivery.
+-->
+
+---
+title: Standardise how code is written.
 sync: authoring
 class: slide-light
 ---
@@ -1504,9 +1464,9 @@ class: slide-light
 
 <div class="live-stage">
 
-# Isolate. Guide. Enforce.
+# Standardise how code is written.
 
-<p class="live-claim">Fail mechanical rules at compile time so review focuses on design and trade-offs.</p>
+<p class="live-claim">Give people and agents a safe workspace, shared standards, and compile-time guardrails.</p>
 
 <div class="live-grid-3" style="margin-top: 22px;">
 <div class="live-card is-cyan">
@@ -1548,7 +1508,7 @@ Authoring controls have three practical parts:
 -->
 
 ---
-title: Automate the path from code to production.
+title: Automate the path to production.
 sync: delivery-automation
 class: slide-light
 ---
@@ -1563,7 +1523,7 @@ class: slide-light
 
 <div class="live-stage">
 
-# Automate the path from code to production.
+# Automate the path to production.
 
 <p class="live-claim">Faster implementation matters only when evidence and delivery move at the same speed.</p>
 
@@ -1617,7 +1577,7 @@ These changes predate the current AI wave and make AI-assisted implementation op
 -->
 
 ---
-title: Specify behaviour
+title: Specify behaviour.
 sync: section-intent
 class: slide-section
 ---
@@ -1665,6 +1625,8 @@ class: slide-light
 
 # AI coding moves right. Governance moves up.
 
+<p class="live-claim">Adopting coding agents speeds up implementation — spec-driven development adds the governance above it.</p>
+
 <div class="live-matrix">
 <div class="live-matrix-axis is-top">Governed</div>
 <div class="live-matrix-axis is-left">Hand-coded</div>
@@ -1700,12 +1662,12 @@ Spec-driven development is the separate upward move. It puts governed intent aro
 -->
 
 ---
-title: Specifications drive development.
+title: Specifications drive the loop.
 sync: record-development
 class: slide-light
 ---
 
-<Eyebrow text="02 · SPECIFY BEHAVIOUR · SPEC-DRIVEN DEVELOPMENT" />
+<Eyebrow text="02 · SPECIFY BEHAVIOUR · THE DEVELOPMENT LOOP" />
 
 <div class="foundation-progress" aria-label="Delivery foundations">
 <span>01 · Standardise delivery</span>
@@ -1715,9 +1677,9 @@ class: slide-light
 
 <div class="live-stage">
 
-# Specifications drive development.
+# Specifications drive the loop.
 
-<p class="live-claim">The specification stays in the development loop — surfacing ambiguity for human judgement instead of burying it in generated code.</p>
+<p class="live-claim">Surface conflicts and gaps for human judgement instead of burying them in generated code.</p>
 
 <div class="live-sdd-flow" style="margin-top: 36px;">
 <div class="live-card is-cyan">
@@ -1755,7 +1717,7 @@ This is the recognisable spec-driven development loop.
 -->
 
 ---
-title: Code is disposable. The specification is durable.
+title: Code is disposable. Specifications are durable.
 sync: record-truth
 class: slide-light
 ---
@@ -1799,7 +1761,7 @@ This is the deliberate provocation at the end of the section.
 -->
 
 ---
-title: Sandbox execution
+title: Sandbox execution.
 sync: section-constrain
 class: slide-section
 ---
@@ -1810,7 +1772,7 @@ class: slide-section
 
 <div class="section-hero-grid">
 <div class="section-hero-left">
-<div class="section-kicker-pill">03 · Sandboxed execution</div>
+<div class="section-kicker-pill">03 · Capability-based runtime</div>
 
 # Sandbox execution.
 
@@ -1830,12 +1792,12 @@ Section 03 divider: Sandbox execution.
 -->
 
 ---
-title: Generated code has less freedom to surprise.
+title: Generated code cannot reach past its sandbox.
 sync: runtime
 class: slide-light
 ---
 
-<Eyebrow text="03 · SANDBOX EXECUTION · SANDBOXED EXECUTION" />
+<Eyebrow text="03 · SANDBOX EXECUTION · CAPABILITY BOUNDARY" />
 
 <div class="foundation-progress" aria-label="Delivery foundations">
 <span>01 · Standardise delivery</span>
@@ -1845,7 +1807,7 @@ class: slide-light
 
 <div class="live-stage">
 
-# Generated code has less freedom<br>to surprise.
+# Generated code cannot reach<br>past its sandbox.
 
 <p class="live-claim">With the platform safe by construction, agents work within known bounds while engineers focus on the product.</p>
 
@@ -1892,7 +1854,7 @@ class: slide-light
 -->
 
 ---
-title: Different infrastructure. The same application.
+title: Different infrastructure. Same application.
 sync: runtime-portability
 class: slide-light
 ---
@@ -1969,7 +1931,7 @@ class: slide-light
 -->
 
 ---
-title: Right-size the safeguards
+title: Match safeguards to the stakes.
 sync: section-trust
 class: slide-section
 ---
@@ -2144,7 +2106,7 @@ Reassess whenever reach, data, dependence, or continuity changes. The required s
 -->
 
 ---
-title: What comes next.
+title: Narrow the target. Close the loop.
 sync: future-system
 class: slide-section
 ---
@@ -2155,11 +2117,11 @@ class: slide-section
 
 <div class="section-hero-grid">
 <div class="section-hero-left">
-<div class="section-kicker-pill is-magenta">Where this goes</div>
+<div class="section-kicker-pill is-magenta">Roadmap</div>
 
-# What comes next.
+# Narrow the target. Close the loop.
 
-<p class="section-subtitle">A constrained delivery system unlocks two next steps: <strong>smaller models on a narrower target, and production signals returning as governed changes.</strong></p>
+<p class="section-subtitle">A constrained delivery system unlocks <strong>smaller models on a narrower target, and production signals returning as governed changes.</strong></p>
 
 </div>
 </div>
@@ -2179,16 +2141,16 @@ Section divider: What comes next.
 -->
 
 ---
-title: Smaller models on a narrower target.
+title: A narrower target unlocks smaller models.
 sync: future-models
 class: slide-light
 ---
 
-<Eyebrow text="THE FUTURE · SMALLER MODELS ON A NARROWER TARGET" />
+<Eyebrow text="THE FUTURE · PRE-SCAFFOLDED SLICES" />
 
 <div class="live-stage">
 
-# Smaller models on a narrower target.
+# A narrower target unlocks smaller models.
 
 <p class="live-claim">Frontier models are needed when an agent has to invent architecture—not when structure, contracts, and tests are already fixed.</p>
 
@@ -2264,7 +2226,7 @@ class: slide-light
   <rect x="10" y="36" width="176" height="54" rx="9" fill="#ffffff" stroke="rgba(13,16,48,0.3)" stroke-width="1.5" />
   <text x="98" y="69" text-anchor="middle" class="svg-label" fill="#0d1030">Security feeds</text>
   <rect x="10" y="354" width="176" height="54" rx="9" fill="#ffffff" stroke="rgba(13,16,48,0.3)" stroke-width="1.5" />
-  <text x="98" y="387" text-anchor="middle" class="svg-label" fill="#0d1030">Cargo audit</text>
+  <text x="98" y="387" text-anchor="middle" class="svg-label" fill="#0d1030">Dependency audit</text>
 
   <rect x="10" y="195" width="176" height="54" rx="9" fill="rgba(255,59,107,0.06)" stroke="rgba(255,59,107,0.8)" stroke-width="1.6" />
   <text x="98" y="215" text-anchor="middle" class="svg-label" fill="#0d1030">Vulnerability</text>
@@ -2357,7 +2319,7 @@ The complete system, using vulnerability remediation as the worked example:
 -->
 
 ---
-title: What’s the first change you’d trust AI to deliver?
+title: Thank you.
 sync: cta
 class: slide-split short-bar
 ---
@@ -2372,9 +2334,9 @@ class: slide-split short-bar
 
 <div class="split-content-pane" style="justify-content: center;">
 <div>
-<Eyebrow text="PROPELLERHEAD · THE FIRST MOVE" />
+<Eyebrow text="PROPELLERHEAD · ACCOUNTABLE SOFTWARE DELIVERY" />
 
-# What’s the first change<br>you’d trust AI to deliver?
+# Thank you.
 
 </div>
 

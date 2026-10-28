@@ -37,21 +37,11 @@
     ]
   },
   {
-    "id": "outcome",
-    "title": "A prototype is evidence, not a production commitment.",
-    "required": [
-      "A prototype is evidence. Production is a commitment.",
-      "AI can build a prototype in minutes. Production takes an explicit decision.",
-      "Enter the delivery path",
-      "A prototype informs the decision. It does not make it."
-    ]
-  },
-  {
     "id": "system",
-    "title": "Standardise delivery. Specify behaviour. Sandbox execution.",
+    "title": "A delivery system for AI-generated code.",
     "required": [
-      "Three mechanisms for reliable delivery.",
-      "Human-led engineering: agents work best inside a delivery system—not in charge of it.",
+      "A delivery system for AI-generated code.",
+      "Human-led engineering — with agents working inside the system, not in charge of it.",
       "Standardise delivery",
       "How work is created, checked, shipped, and operated.",
       "Specify behaviour",
@@ -60,23 +50,35 @@
     ]
   },
   {
-    "id": "authoring",
-    "title": "Isolate. Guide. Enforce.",
+    "id": "section-standardise",
+    "title": "Standardise delivery.",
     "required": [
-      "Isolate. Guide. Enforce.",
-      "review focuses on design and trade-offs",
+      "Standardise delivery.",
+      "One governed path from change to production",
+      "across how code is written and how it ships.",
+      "Isolate & guide",
+      "Enforce at compile time",
+      "Automate promotion"
+    ]
+  },
+  {
+    "id": "authoring",
+    "title": "Standardise how code is written.",
+    "required": [
+      "Standardise how code is written.",
+      "Give people and agents a safe workspace, shared standards, and compile-time guardrails.",
       "Governed workspaces",
       "Shared engineering codex",
       "Compiler-enforced standards",
       "Critical rules fail at compile time, before review.",
-      "Guidance is shared. Non-negotiable rules are enforced."
+      "Guidance is shared"
     ]
   },
   {
     "id": "delivery-automation",
-    "title": "Automate the path from code to production.",
+    "title": "Automate the path to production.",
     "required": [
-      "Automate the path from code to production.",
+      "Automate the path to production.",
       "Faster implementation matters only when evidence and delivery move at the same speed.",
       "Build once",
       "Test behaviour",
@@ -86,7 +88,7 @@
   },
   {
     "id": "section-intent",
-    "title": "Specify behaviour",
+    "title": "Specify behaviour.",
     "required": [
       "Specify behaviour.",
       "People and agents share one source of truth: durable specifications, not code.",
@@ -108,11 +110,10 @@
   },
   {
     "id": "record-development",
-    "title": "Specifications drive development.",
+    "title": "Specifications drive the loop.",
     "required": [
-      "Specifications drive development.",
-      "The specification stays in the development loop",
-      "surfacing ambiguity for human judgement",
+      "Specifications drive the loop.",
+      "Surface conflicts and gaps for human judgement instead of burying them in generated code.",
       "spec.md",
       "design.md",
       "Review & seal",
@@ -123,7 +124,7 @@
   },
   {
     "id": "record-truth",
-    "title": "Code is disposable. The specification is durable.",
+    "title": "Code is disposable. Specifications are durable.",
     "required": [
       "Code is disposable.",
       "Specifications are durable.",
@@ -134,7 +135,7 @@
   },
   {
     "id": "section-constrain",
-    "title": "Sandbox execution",
+    "title": "Sandbox execution.",
     "required": [
       "Sandbox execution.",
       "Grant generated code nothing by default",
@@ -146,9 +147,9 @@
   },
   {
     "id": "runtime",
-    "title": "Generated code has less freedom to surprise.",
+    "title": "Generated code cannot reach past its sandbox.",
     "required": [
-      "Generated code has less freedom to surprise.",
+      "Generated code cannot reach past its sandbox.",
       "With the platform safe by construction, agents work within known bounds while engineers focus on the product.",
       "WASI Component",
       "Wasmtime sandbox",
@@ -159,7 +160,7 @@
   },
   {
     "id": "runtime-portability",
-    "title": "Different infrastructure. The same application.",
+    "title": "Different infrastructure. Same application.",
     "required": [
       "Different infrastructure. Same application.",
       "The component depends on capabilities, not products.",
@@ -175,7 +176,7 @@
   },
   {
     "id": "section-trust",
-    "title": "Right-size the safeguards",
+    "title": "Match safeguards to the stakes.",
     "required": [
       "Match safeguards to the stakes.",
       "Give prototypes room to learn",
@@ -220,9 +221,9 @@
   },
   {
     "id": "future-system",
-    "title": "What comes next.",
+    "title": "Narrow the target. Close the loop.",
     "required": [
-      "What comes next.",
+      "Narrow the target. Close the loop.",
       "Narrow the target",
       "Run smaller models",
       "Close the loop"
@@ -230,9 +231,9 @@
   },
   {
     "id": "future-models",
-    "title": "Smaller models on a narrower target.",
+    "title": "A narrower target unlocks smaller models.",
     "required": [
-      "Smaller models on a narrower target.",
+      "A narrower target unlocks smaller models.",
       "Frontier models are needed when an agent has to invent architecture—not when structure, contracts, and tests are already fixed.",
       "Requires frontier models",
       "Invent structure · choose libraries · hold the full codebase in context",
@@ -255,9 +256,9 @@
   },
   {
     "id": "cta",
-    "title": "What’s the first change you’d trust AI to deliver?",
+    "title": "Thank you.",
     "required": [
-      "What’s the first change you’d trust AI to deliver?",
+      "Thank you.",
       "25 years of critical-software judgement, now applied to accountable delivery at AI speed."
     ]
   }
