@@ -157,13 +157,13 @@ The consumer is the entry, so `shipments-inbound` depends on the two stage slice
 
 ## Amending
 
-A request that opens `Amend the build plan` amends a plan that already stands. `## Current plan` lists its slices by id and name with the requirements each holds, the types it owns, what it depends on, and whether this amendment touched it; those slices are fixed — their ids, names, briefs, and dependencies stand, and what they hold moves only where `## Open` lists it. The engine placed by code what a rule decides: a requirement joined the slice holding another its trigger reaches, or the slice holding its stem, and a type the one slice the change touched. `## Open` lists the rest, and the answer places that and nothing else:
+A request that opens `Amend the build plan` amends a plan that already stands. `## Current plan` lists its slices by id and name with the requirements each holds, the types it owns, what it depends on, and whether this amendment touched it; those slices are fixed — their ids, names, and dependencies stand, and what they hold moves only where `## Open` lists it. The engine placed by code what a rule decides: a requirement joined the slice holding another its trigger reaches, or the slice holding its stem, and a type the one slice the change touched. `## Open` lists the rest, and the answer places that and nothing else:
 
 - The requirements of a stem no current slice holds, each stem one slice at the least, with the triggers that reach them. Draft a new slice for it under `slices`, named for what it builds, with its `depends-on` by name over the current slices and the new ones, and its `brief`; or, where neither can be built and verified apart, join it into a current slice under `joins`.
 - A stem the amendment leaves past the cap, listed by its sub-stems with the slice that held it. Every requirement of the stem is open, the current slice keeps its id, and it is cut again as the Baseline cuts one: join the sub-stems that stay into the slice that held them, at least one, and draft a new slice for each other set of sub-stems, cut at as few sub-stem boundaries as the cap allows. The types that slice owned are open with them, each to the slice whose requirements read or produce it.
 - A type key no current slice owns, to be owned by exactly one slice, a new one's `types` or a join's, by the Contract's rule.
 
-`joins` names a current slice by its id, once, with the open requirements and type keys that join it. An answer that moves a requirement or a type `## Open` does not list, names a slice no current id has, lists a join twice, names a new slice as a current one is named, or leaves a current slice with no requirement is refused, as is one the Baseline refuses over the whole plan. `## Requirements` carries the requirements the change drafted beside this plan, and the standing ones the answer places as the specification holds them. The engine numbers each new slice after the current plan's highest id by its lowest requirement, sorts every list, and keeps the preamble; answer no `preamble`.
+`joins` names a current slice by its id, once, with the open requirements and type keys that join it. `briefs` redrafts the brief of each current slice this amendment touched — one marked so in `## Current plan`, whose requirements the change added to, took from, or redrafted — and of each slice a join names: one entry per such slice, by id, its `brief` the slice's brief whole in its new terms, as the Baseline writes one, since the brief a slice stood under says what it delivered before the change. Every other current slice keeps its brief; list no entry for it. An answer that moves a requirement or a type `## Open` does not list, names a slice no current id has, lists a join twice, names a new slice as a current one is named, leaves a current slice with no requirement, redrafts the brief of a slice the amendment did not touch and no join names, leaves a touched or joined slice without one, lists one twice, or answers an empty brief is refused, as is one the Baseline refuses over the whole plan. `## Requirements` carries the requirements the change drafted beside this plan, and the standing ones the answer places as the specification holds them. The engine numbers each new slice after the current plan's highest id by its lowest requirement, sorts every list, and keeps the preamble; answer no `preamble`.
 
 ### Worked example
 
@@ -190,8 +190,16 @@ open
       ]
     }
   ],
-  "joins": []
+  "joins": [],
+  "briefs": [
+    {
+      "slice": "SLICE-002",
+      "brief": [
+        "Delivers order creation and cancellation for a signed-in caller, the cancellation now reported to the caller as the change states; verified by placing and cancelling an order under a session from `authentication`."
+      ]
+    }
+  ]
 }
 ```
 
-The two requirements fall under a stem no slice holds, so they are a new slice, which the engine numbers `SLICE-003`; it depends on `orders` because it edits the order handler, and `authentication` and `orders` stand as they were. Had the limit been inseparable from placing an order — the route refusing without it — the answer would have been `"slices": [], "joins": [{"slice": "SLICE-002", "requirements": ["REQ-005", "REQ-006"]}]` instead, and `orders` would hold four.
+The two requirements fall under a stem no slice holds, so they are a new slice, which the engine numbers `SLICE-003`; it depends on `orders` because it edits the order handler, and `authentication` stands as it was. `orders` is touched — the change redrafted `REQ-004` — so its brief is redrafted whole under `briefs`, and `authentication`, untouched, keeps its own. Had the limit been inseparable from placing an order — the route refusing without it — the answer would have been `"slices": [], "joins": [{"slice": "SLICE-002", "requirements": ["REQ-005", "REQ-006"]}]` instead, `orders` would hold four, and its entry under `briefs` would say so.

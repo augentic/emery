@@ -52,8 +52,9 @@ pub fn apply(output: &ApplyOutput, w: &mut dyn fmt::Write) -> fmt::Result {
 // source read whole retired. The conflicts, stems, design, and slices lines
 // appear when there are any — `design: domain-model, apis` the section
 // kinds in document order, `preamble` first where it changed; `slices:
-// orders, export (removed), rate-limit (new)` the slices in id order — and
-// the last line names `emery show amendment` as the way to review what was
+// orders (brief kept), export (removed), rate-limit (new)` the slices in id
+// order, a changed slice marked `brief kept` where no slicing turn
+// redrafted its brief — and the last line names `emery show amendment` as the way to review what was
 // staged, or, under `--apply`, is the `apply` line for the revision the
 // run sealed.
 pub fn amend(output: &AmendOutput, w: &mut dyn fmt::Write) -> fmt::Result {
@@ -100,6 +101,9 @@ pub fn amend(output: &AmendOutput, w: &mut dyn fmt::Write) -> fmt::Result {
             .iter()
             .map(|slice| match slice.class {
                 SliceClass::Added => format!("{} (new)", slice.name),
+                SliceClass::Changed if slice.keeps_brief() => {
+                    format!("{} (brief kept)", slice.name)
+                }
                 SliceClass::Changed => slice.name.clone(),
                 SliceClass::Removed => format!("{} (removed)", slice.name),
             })

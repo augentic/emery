@@ -19,6 +19,8 @@ use crate::revision::{
 };
 
 const SLICE: &str = "### Slice:";
+// What follows `Note:` under a changed slice whose brief is the base's.
+const KEPT_BRIEF: &str = "the brief is the base's; no slicing turn redrafted it.";
 
 /// A change against the current revision in its staged form.
 #[derive(Debug, Serialize, Deserialize)]
@@ -188,7 +190,8 @@ impl Display for Amendment {
             }
         }
 
-        // the slices changed, an added or changed one as `plan.md` renders it
+        // the slices changed, an added or changed one as `plan.md` renders it,
+        // a changed one whose brief is the base's noted as such after it
         if !self.slices.is_empty() {
             f.write_str("\n\n## Plan")?;
             for change in &self.slices {
@@ -198,6 +201,9 @@ impl Display for Amendment {
                 {
                     f.write_str("\n")?;
                     slice.write_lists(f)?;
+                    if change.keeps_brief() {
+                        write!(f, "\n\n{NOTE} {KEPT_BRIEF}")?;
+                    }
                 }
             }
         }
@@ -395,27 +401,67 @@ pub struct SliceChange {
     pub name: String,
     /// What the change did to the slice.
     pub class: SliceClass,
+    /// Whether the slice's brief is this amendment's or the base's.
+    pub brief: BriefState,
 }
 
 impl SliceChange {
     /// Returns one entry per slice `diff` lists as added, changed, or removed, in id order.
+    ///
+    /// An added slice's brief is [`BriefState::Redrafted`], a removed one's
+    /// [`BriefState::Kept`], and a changed one's whichever `diff` says: the
+    /// slicing turn redrafts the brief of every slice it is put over whose
+    /// requirements the amendment changed, and a plan settled by code keeps
+    /// the base's.
     #[must_use]
     pub fn of(diff: &PlanDiff) -> Vec<Self> {
-        let entry = |entry: &revision::SliceEntry, class| Self {
+        let entry = |entry: &revision::SliceEntry, class, brief| Self {
             id: entry.id,
             name: entry.name.clone(),
             class,
+            brief,
         };
         let mut changes: Vec<Self> = diff
             .added
             .iter()
-            .map(|added| entry(added, SliceClass::Added))
-            .chain(diff.changed.iter().map(|changed| entry(&changed.entry, SliceClass::Changed)))
-            .chain(diff.removed.iter().map(|removed| entry(removed, SliceClass::Removed)))
+            .map(|added| entry(added, SliceClass::Added, BriefState::Redrafted))
+            .chain(diff.changed.iter().map(|changed| {
+                let brief = if changed.fields.contains(&revision::BRIEF) {
+                    BriefState::Redrafted
+                } else {
+                    BriefState::Kept
+                };
+                entry(&changed.entry, SliceClass::Changed, brief)
+            }))
+            .chain(
+                diff.removed
+                    .iter()
+                    .map(|removed| entry(removed, SliceClass::Removed, BriefState::Kept)),
+            )
             .collect();
         changes.sort_by_key(|change| change.id);
         changes
     }
+
+    /// Returns whether the slice stands changed under the base's brief.
+    ///
+    /// Such a slice gained or lost a requirement, a type, or a dependency
+    /// with no slicing turn redrafting what a builder reads before taking
+    /// it up, which the projection notes and the text output marks.
+    #[must_use]
+    pub fn keeps_brief(&self) -> bool {
+        self.class == SliceClass::Changed && self.brief == BriefState::Kept
+    }
+}
+
+/// Whose brief a slice of an amended plan carries.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum BriefState {
+    /// The brief the slicing turn drafted for the slice in this amendment.
+    Redrafted,
+    /// The base's brief, as the slice held it.
+    Kept,
 }
 
 /// What an [`Amendment`] did to a slice of the plan.

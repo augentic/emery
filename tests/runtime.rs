@@ -10,8 +10,8 @@ use std::os::unix::fs::{PermissionsExt as _, symlink};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-use emery_engine::amend::{SliceChange, SliceClass};
-use emery_engine::vcs::{Message, RevisionMessage, Summary};
+use emery_engine::amend::SliceClass;
+use emery_engine::vcs::{Message, RevisionMessage, SliceSummary, Summary};
 use omnia::{Backend as _, CompileOptions, Digest, ExitStatus, RuntimeOptions, StoreCtx};
 use omnia_git::{Client, ConnectOptions};
 use omnia_test::host::{Backends, Deployment, Run, Scratch, ScriptedModel, scratch};
@@ -139,7 +139,8 @@ const DESIGN_AMEND: &str = r#"{"sections": [
     {"kind": "apis", "blocks": [{"text": "The farewell's phrasebook is kept in a relational store."}], "revised": []}]}"#;
 const SLICING_AMEND: &str = r#"{"slices": [
     {"name": "farewell", "requirements": ["REQ-002"], "types": [], "depends-on": [],
-     "brief": ["Delivers the farewell beside the greeting."]}], "joins": []}"#;
+     "brief": ["Delivers the farewell beside the greeting."]}], "joins": [],
+    "briefs": [{"slice": "SLICE-001", "brief": ["Delivers the revised greeting, `hello, world`."]}]}"#;
 // The greeting slice built again under the amended revision writes the
 // revised greeting, so its merge changes the tree this time.
 const WRITE_GREETING_AMEND: &str =
@@ -985,7 +986,7 @@ fn amend_block(amendment: &str, parent: &str, over: &str) -> String {
     format!(
         "staged amendment {amendment}\n  base {parent} at {}\n  1 added, 1 changed, 0 retired, 0 \
          conflict, 0 unchanged\n  stems: farewell, greeting\n  design: overview, apis\n  slices: \
-         farewell (new)\n",
+         greeting, farewell (new)\n",
         &over[..8]
     )
 }
@@ -1038,11 +1039,18 @@ async fn assert_amended(
                 added: 1,
                 changed: 1,
                 retired: 0,
-                slices: vec![SliceChange {
-                    id: "SLICE-002".parse().expect("a slice id"),
-                    name: "farewell".to_owned(),
-                    class: SliceClass::Added,
-                }],
+                slices: vec![
+                    SliceSummary {
+                        id: "SLICE-001".parse().expect("a slice id"),
+                        name: "greeting".to_owned(),
+                        class: SliceClass::Changed,
+                    },
+                    SliceSummary {
+                        id: "SLICE-002".parse().expect("a slice id"),
+                        name: "farewell".to_owned(),
+                        class: SliceClass::Added,
+                    },
+                ],
             }),
         }),
         "{message}"
@@ -1053,7 +1061,7 @@ async fn assert_amended(
         "Added: 1",
         "Changed: 1",
         "Retired: 0",
-        "Slices: SLICE-002 farewell added",
+        "Slices: SLICE-001 greeting changed, SLICE-002 farewell added",
     ] {
         assert!(message.contains(trailer), "`{trailer}` in: {message}");
     }
@@ -1193,7 +1201,9 @@ async fn amend_applied_built() {
         "Before: GET /greeting returns the static string 'hello'.\n\nAfter: GET /greeting \
          returns the static string 'hello, world'.",
         "## Design\n\nChanged: Overview; added: APIs and integrations.\n",
-        "## Plan\n\n### Slice: farewell [added]\n\nID: SLICE-002\n",
+        "## Plan\n\n### Slice: greeting [changed]\n\nID: SLICE-001\n",
+        "Delivers the revised greeting, `hello, world`.\n\n### Slice: farewell [added]\n\nID: \
+         SLICE-002\n",
     ] {
         assert!(shown.stdout.contains(fragment), "`{fragment}` in: {}", shown.stdout);
     }
@@ -1211,7 +1221,7 @@ async fn amend_applied_built() {
     assert_eq!(
         run.stdout,
         format!(
-            "{}  diff vs {parent}: spec +1 -0 ~1, design +1 -0 ~1, plan +1 -0 ~0\n",
+            "{}  diff vs {parent}: spec +1 -0 ~1, design +1 -0 ~1, plan +1 -0 ~1\n",
             amend_seal("", &revision, &parent, &sealed)
         )
     );

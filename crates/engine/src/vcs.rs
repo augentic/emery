@@ -18,7 +18,7 @@ use omnia_sdk::{Error, Vcs, bad_gateway, bad_request, server_error};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest as _, Sha256};
 
-use crate::revision::{Amendment, ChangeClass, ReqId, SliceChange, SliceId};
+use crate::revision::{Amendment, ChangeClass, ReqId, SliceChange, SliceClass, SliceId};
 
 /// The directory beneath the project root that holds every clone and working copy.
 pub const ROOT: &str = ".emery/vcs";
@@ -300,7 +300,7 @@ pub struct Summary {
     /// Requirements of the parent the change withdraws.
     pub retired: usize,
     /// The slices the plan adds, changes, or removes against the parent's, in id order.
-    pub slices: Vec<SliceChange>,
+    pub slices: Vec<SliceSummary>,
 }
 
 impl Summary {
@@ -313,7 +313,7 @@ impl Summary {
             added: amendment.count(ChangeClass::Added),
             changed: amendment.count(ChangeClass::Changed),
             retired: amendment.count(ChangeClass::Retired),
-            slices: amendment.slices.clone(),
+            slices: amendment.slices.iter().map(SliceSummary::from).collect(),
         }
     }
 
@@ -330,7 +330,7 @@ impl Summary {
                     if words.next().is_some() || !is_kebab(name) {
                         return None;
                     }
-                    Some(SliceChange {
+                    Some(SliceSummary {
                         id: id.parse().ok()?,
                         name: name.to_owned(),
                         class: class.parse().ok()?,
@@ -352,14 +352,40 @@ impl fmt::Display for Summary {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "Added: {}\nChanged: {}\nRetired: {}", self.added, self.changed, self.retired)?;
         if !self.slices.is_empty() {
-            let listed: Vec<String> = self
-                .slices
-                .iter()
-                .map(|slice| format!("{} {} {}", slice.id, slice.name, slice.class))
-                .collect();
+            let listed: Vec<String> = self.slices.iter().map(ToString::to_string).collect();
             write!(f, "\nSlices: {}", listed.join(", "))?;
         }
         Ok(())
+    }
+}
+
+/// One slice of a [`Summary`], as the `Slices:` trailer names it.
+///
+/// A [`SliceChange`] less whose brief the slice carries, which the
+/// amendment's review reads and the history keeps nothing of.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SliceSummary {
+    /// The slice's identifier.
+    pub id: SliceId,
+    /// The slice's name.
+    pub name: String,
+    /// What the amendment did to the slice.
+    pub class: SliceClass,
+}
+
+impl From<&SliceChange> for SliceSummary {
+    fn from(change: &SliceChange) -> Self {
+        Self {
+            id: change.id,
+            name: change.name.clone(),
+            class: change.class,
+        }
+    }
+}
+
+impl fmt::Display for SliceSummary {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{} {} {}", self.id, self.name, self.class)
     }
 }
 
@@ -1081,8 +1107,6 @@ mod tests {
 
     #[test]
     fn revision_message_summary_round_trip() {
-        use crate::revision::SliceClass;
-
         let amended = RevisionMessage {
             revision: "abc123".to_owned(),
             parent: Some("def456".to_owned()),
@@ -1092,12 +1116,12 @@ mod tests {
                 changed: 2,
                 retired: 0,
                 slices: vec![
-                    SliceChange {
+                    SliceSummary {
                         id: "SLICE-002".parse().expect("a slice id"),
                         name: "orders".to_owned(),
                         class: SliceClass::Changed,
                     },
-                    SliceChange {
+                    SliceSummary {
                         id: "SLICE-003".parse().expect("a slice id"),
                         name: "export".to_owned(),
                         class: SliceClass::Removed,

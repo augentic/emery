@@ -6,8 +6,8 @@ mod support;
 
 use std::sync::Arc;
 
-use emery_engine::amend::{SliceChange, SliceClass};
-use emery_engine::vcs::{REVISION, RevisionMessage, Summary};
+use emery_engine::amend::SliceClass;
+use emery_engine::vcs::{REVISION, RevisionMessage, SliceSummary, Summary};
 use emery_engine::{EntryKind, REVISION_KEY, STAGED_CONTAINER, STAGED_KEY};
 use omnia_sdk::vcs::{Change, ChangeKind, Error};
 use serde_json::{Value, json};
@@ -315,7 +315,7 @@ fn amendment_over(base: &str, commit: &str) -> Vec<u8> {
         "design": design,
         "plan": plan,
         "sections": {"preamble": false, "added": [], "removed": [], "changed": []},
-        "slices": [{"id": "SLICE-002", "name": "orders", "class": "changed"}],
+        "slices": [{"id": "SLICE-002", "name": "orders", "class": "changed", "brief": "kept"}],
     });
     serde_json::to_vec_pretty(&amendment).expect("the amendment serialises")
 }
@@ -396,7 +396,7 @@ async fn apply_amendment() {
                 added: 1,
                 changed: 1,
                 retired: 1,
-                slices: vec![SliceChange {
+                slices: vec![SliceSummary {
                     id: "SLICE-002".parse().expect("a slice id"),
                     name: "orders".to_owned(),
                     class: SliceClass::Changed,
@@ -488,7 +488,7 @@ async fn apply_amendment_conflict() {
             added: 1,
             changed: 1,
             retired: 0,
-            slices: vec![SliceChange {
+            slices: vec![SliceSummary {
                 id: "SLICE-002".parse().expect("a slice id"),
                 name: "orders".to_owned(),
                 class: SliceClass::Changed,

@@ -226,7 +226,8 @@
     {
       "id": "SLICE-002",
       "name": "orders",
-      "class": "changed"
+      "class": "changed",
+      "brief": "kept"
     }
   ]
 }

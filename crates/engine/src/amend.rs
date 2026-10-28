@@ -25,7 +25,8 @@ use self::standing::Standing;
 pub use crate::apply::ApplyOutput;
 use crate::brief::Brief as _;
 pub use crate::revision::{
-    Amendment, AmendmentBase, Change, ChangeClass, DesignDiff, PlanDiff, SliceChange, SliceClass,
+    Amendment, AmendmentBase, BriefState, Change, ChangeClass, DesignDiff, PlanDiff, SliceChange,
+    SliceClass,
 };
 use crate::revision::{Design, EMERY};
 use crate::specify::{

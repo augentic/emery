@@ -317,7 +317,8 @@
     {
       "id": "SLICE-003",
       "name": "secrets",
-      "class": "added"
+      "class": "added",
+      "brief": "redrafted"
     }
   ]
 }

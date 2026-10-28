@@ -13,7 +13,7 @@ use serde_json::Value;
 use strum::{AsRefStr, EnumString, VariantArray};
 
 pub use crate::revision::{
-    Amendment, AmendmentBase, Change, ChangeClass, DesignDiff, SliceChange, SliceClass,
+    Amendment, AmendmentBase, BriefState, Change, ChangeClass, DesignDiff, SliceChange, SliceClass,
 };
 use crate::revision::{Document, Revision};
 use crate::vcs::TargetRef;
