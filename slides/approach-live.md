@@ -1254,7 +1254,7 @@ class: slide-hero slide-section
 
 # Code is cheap.<br>Delivery is hard.
 
-<p class="section-subtitle">Use a delivery system that lets AI<br>deliver software—not just code.</p>
+<p class="section-subtitle">Use a delivery system that lets AI<br>deliver software — not just code.</p>
 
 </div>
 </div>
@@ -1285,7 +1285,7 @@ class: slide-light
 
 # Coding is no longer<br>the bottleneck.
 
-<p class="live-claim">AI generates code faster than developers can understand and integrate it.</p>
+<p class="live-claim">AI can write code in minutes, but it cannot frame a problem, weigh trade-offs, or own consequences.</p>
 
 <div class="live-compression">
 <span>Weeks</span>
@@ -1298,7 +1298,7 @@ class: slide-light
 <div class="live-panel-title">More code ≠ a coherent solution</div>
 <div class="live-word-grid">
 <div class="live-word"><IconBadge tone="light" size="small"><ph:stack /></IconBadge><div class="live-word-copy"><strong>Cognitive load</strong><span>Overwhelms human review</span></div></div>
-<div class="live-word"><IconBadge tone="light" size="small"><ph:puzzle-piece /></IconBadge><div class="live-word-copy"><strong>Incoherence</strong><span>Plausible parts, broken whole</span></div></div>
+<div class="live-word"><IconBadge tone="light" size="small"><ph:puzzle-piece /></IconBadge><div class="live-word-copy"><strong>Hidden ambiguity</strong><span>Plausible code skips needed debate</span></div></div>
 <div class="live-word"><IconBadge tone="light" size="small"><ph:eye-slash /></IconBadge><div class="live-word-copy"><strong>Lost comprehension</strong><span>No one understands it all</span></div></div>
 <div class="live-word"><IconBadge tone="light" size="small"><ph:warning /></IconBadge><div class="live-word-copy"><strong>Accumulated slop</strong><span>Unmanageable over time</span></div></div>
 </div>
@@ -1309,9 +1309,10 @@ class: slide-light
 <!--
 Coding and test generation are no longer the bottlenecks they once were.
 However, a lot of code does not equal a coherent, well-thought-through, useful business solution.
+AI can write code in minutes, but it cannot frame a problem, weigh trade-offs, or own consequences.
+Coding agents also smooth over ambiguity with plausible-looking code, skipping the design conversations the team needed to have.
 Generated tests can repeat the implementation's assumptions. Trusted evidence still has to reject plausible but wrong code.
-In fact, it can exacerbate cognitive load and overwhelm.
-It can also lead to, eventually, an unmanageable application and codebase—no longer fully comprehensible and full of slop.
+It can exacerbate cognitive load and overwhelm, and lead to an unmanageable application and codebase—no longer fully comprehensible and full of slop.
 -->
 
 ---
@@ -1326,7 +1327,7 @@ class: slide-light
 
 # Build the right thing.<br>Build it to last.
 
-<p class="live-claim">While we can help with both, <strong>our real expertise is the second.</strong></p>
+<p class="live-claim">Designing great software is a human process. While we can help with product design, <strong>our expertise is in delivering systems that last.</strong></p>
 
 <div class="live-grid-2" style="width: 88%; margin: 28px auto 0; gap: 52px;">
 <div class="live-card is-cyan" style="min-height: 214px; padding: 26px 30px; display: flex; flex-direction: column; justify-content: space-between;">
@@ -1337,7 +1338,7 @@ class: slide-light
 </div>
 <h3>Building the right thing</h3>
 </div>
-<p style="padding-top: 14px; border-top: 1px solid rgba(12, 127, 163, 0.2);">Customer needs · rapid prototypes · deliberate backlog</p>
+<p style="padding-top: 14px; border-top: 1px solid rgba(12, 127, 163, 0.2);">Frame the problem · weigh trade-offs · test with prototypes</p>
 </div>
 
 <div class="live-card is-dark" style="min-height: 214px; padding: 26px 30px; display: flex; flex-direction: column; justify-content: space-between;">
@@ -1357,8 +1358,8 @@ class: slide-light
 
 <!--
 Two things are increasingly important:
-1) Good product strategy—knowing what is worth building and using rapid prototypes to learn without mistaking them for production systems.
-2) A reliable delivery system—turning intent into coherent, comprehensible, verified software without accumulating slop.
+1) Good product strategy—framing the problem, weighing trade-offs, and using rapid prototypes to test assumptions without mistaking them for production systems.
+2) A reliable delivery system—turning agreed intent into coherent, comprehensible, verified software without accumulating slop.
 While we can help with both, our real expertise is in the second.
 -->
 
@@ -1421,6 +1422,7 @@ class: slide-light
 <!--
 This is the front door of the delivery system: the decision that admits work to it.
 AI can build a prototype in minutes, so the decision to make something production software has to be explicit.
+Faster coding makes weak assumptions expensive sooner. Alignment on outcome, fit, and ownership is engineering work, not a delay before coding starts.
 Cheap experiments test assumptions. They do not grant production authority.
 Before work enters the delivery path, ask:
 - What outcome does it create?
@@ -1439,13 +1441,13 @@ class: slide-sandbox
 
 <AmbientVideo src="/videos/approach-video.mp4" variant="approach" />
 
-<Eyebrow text="THE DELIVERY SYSTEM · THREE MECHANISMS, ONE PATH" />
+<Eyebrow text="THE DELIVERY SYSTEM · HUMAN-LED ENGINEERING" />
 
 <div class="live-stage">
 
 # Three mechanisms for reliable delivery.
 
-<p class="live-claim">Agents work best inside a delivery system—not in charge of it.</p>
+<p class="live-claim">Human-led engineering: agents work best inside a delivery system—not in charge of it.</p>
 
 <div class="live-grid-3" style="margin-top: 24px;">
 <div class="live-card is-glass">
@@ -1479,6 +1481,7 @@ class: slide-sandbox
 
 <!--
 This is the map for the next three sections.
+- These three mechanisms keep engineering human-led: the model works inside the delivery path, while the authority to design and govern that path stays with the people outside it.
 - Standardise delivery controls how a change moves from creation into operation.
 - Specify behaviour controls what must remain true and what evidence accepts the result.
 - Sandbox execution controls what the running application may access.
@@ -1503,7 +1506,9 @@ class: slide-light
 
 # Isolate. Guide. Enforce.
 
-<div class="live-grid-3">
+<p class="live-claim">Fail mechanical rules at compile time so review focuses on design and trade-offs.</p>
+
+<div class="live-grid-3" style="margin-top: 22px;">
 <div class="live-card is-cyan">
 <div class="live-card-head">
 <IconBadge tone="cyan"><ph:shield-check /></IconBadge>
@@ -1519,7 +1524,7 @@ class: slide-light
 <div class="live-kicker">02 · Guide</div>
 </div>
 <h3>Shared engineering codex</h3>
-<p>Versioned standards, approved patterns, examples, and templates for people and agents.</p>
+<p>Standards, patterns, examples, and templates for people and agents.</p>
 </div>
 
 <div class="live-card is-dark">
@@ -1539,7 +1544,7 @@ class: slide-light
 Authoring controls have three practical parts:
 - Isolate work from production while an idea is still changing.
 - Guide people and agents with one versioned engineering codex of standards, patterns, examples, and templates.
-- Enforce critical coding rules as the code compiles.
+- Enforce critical coding rules as the code compiles, so people spend review time on design and trade-offs rather than policing mechanical rules.
 -->
 
 ---
@@ -1633,8 +1638,8 @@ class: slide-section
 </div>
 
 <div class="hero-mechanisms">
-<div class="hero-pillar"><span class="hero-pillar-num">01</span><span>Governed intent · Move up from ad hoc prompting</span></div>
-<div class="hero-pillar"><span class="hero-pillar-num">02</span><span>In the loop · Specify, review, plan, implement</span></div>
+<div class="hero-pillar"><span class="hero-pillar-num">01</span><span>Surface ambiguity · Expose conflicts and gaps before coding</span></div>
+<div class="hero-pillar"><span class="hero-pillar-num">02</span><span>Human review gate · Debate trade-offs and seal the spec</span></div>
 <div class="hero-pillar"><span class="hero-pillar-num">03</span><span>Durable truth · Code is disposable; specifications remain</span></div>
 </div>
 
@@ -1712,7 +1717,7 @@ class: slide-light
 
 # Specifications drive development.
 
-<p class="live-claim">The specification stays in the development loop—from requirements and design through implementation and verification.</p>
+<p class="live-claim">The specification stays in the development loop — surfacing ambiguity for human judgement instead of burying it in generated code.</p>
 
 <div class="live-sdd-flow" style="margin-top: 36px;">
 <div class="live-card is-cyan">
@@ -1722,7 +1727,7 @@ class: slide-light
 </div>
 <div class="live-review-gate">
 <strong>Review &amp;<br>seal</strong>
-Versioned in repo
+Human decision gate
 </div>
 <div class="live-card is-magenta">
 <div class="live-kicker">02 · Derive</div>
@@ -1742,8 +1747,9 @@ Versioned in repo
 
 <!--
 This is the recognisable spec-driven development loop.
-- Specify reconciles intent, documentation, tests, and, where it exists, legacy source code into `spec.md` and `design.md`. Together, those files are the specification.
-- A person reviews and seals that specification in the repository.
+- Coding agents tend to smooth over ambiguity with plausible-looking code, short-circuiting the conversations a team needed to have.
+- Specify reconciles intent, documentation, tests, and, where it exists, legacy source code into `spec.md` and `design.md`—surfacing conflicts and gaps explicitly.
+- A person reviews, debates trade-offs, and seals that specification in the repository.
 - Plan derives ephemeral work ordered by dependency from the reviewed specification. It can be discarded and generated again.
 - Implement gives each unit of work the exact specification and plan entry it needs, builds and integrates it, and verifies the combined result against the specification.
 -->
@@ -1841,7 +1847,7 @@ class: slide-light
 
 # Generated code has less freedom<br>to surprise.
 
-<p class="live-claim">Code reaches infrastructure through host-provided capabilities.</p>
+<p class="live-claim">With the platform safe by construction, agents work within known bounds while engineers focus on the product.</p>
 
 <div class="live-runtime-stack">
 <div class="live-wasm-runtime">
@@ -1882,6 +1888,7 @@ class: slide-light
 <!--
 - Generated application code is packaged as one or more WASI components inside a Wasmtime sandbox.
 - They reach HTTP, messaging, key-value storage, and blob storage only through capability interfaces supplied by the host.
+- With the platform settled and safe by construction, agents implement within known bounds while engineers focus on the product.
 -->
 
 ---
@@ -2137,7 +2144,7 @@ Reassess whenever reach, data, dependence, or continuity changes. The required s
 -->
 
 ---
-title: The path becomes a loop.
+title: What comes next.
 sync: future-system
 class: slide-section
 ---
@@ -2148,25 +2155,77 @@ class: slide-section
 
 <div class="section-hero-grid">
 <div class="section-hero-left">
-<div class="section-kicker-pill is-magenta">The complete system</div>
+<div class="section-kicker-pill is-magenta">Where this goes</div>
 
-# Next, the path becomes a loop.
+# What comes next.
 
-<p class="section-subtitle">In that system, production signals are investigated and fixes proposed—<strong>then specified, built, and merged like any other change.</strong></p>
+<p class="section-subtitle">A constrained delivery system unlocks two next steps: <strong>smaller models on a narrower target, and production signals returning as governed changes.</strong></p>
 
 </div>
 </div>
 
 <div class="hero-mechanisms">
-<div class="hero-pillar"><span class="hero-pillar-num">01</span><span>Sense · Signals from production</span></div>
-<div class="hero-pillar"><span class="hero-pillar-num">02</span><span>Decide · Investigate and propose</span></div>
-<div class="hero-pillar"><span class="hero-pillar-num">03</span><span>Change · Specify, build, merge — then observe</span></div>
+<div class="hero-pillar"><span class="hero-pillar-num">01</span><span>Narrow the target · Pre-scaffold structure, types, routes, and tests</span></div>
+<div class="hero-pillar"><span class="hero-pillar-num">02</span><span>Run smaller models · Local and open-weight models inside the same gates</span></div>
+<div class="hero-pillar"><span class="hero-pillar-num">03</span><span>Close the loop · Production signals return as governed changes</span></div>
 </div>
 
 <!--
-Section divider: The complete system.
-- So far the argument has been a path: intent enters, delivery carries it to production, safeguards are matched to the stakes.
-- The future is that path running as a loop: what the running system learns becomes the next governed change.
+Section divider: What comes next.
+- So far the argument has covered the delivery system as it runs today: standardise delivery, specify behaviour, sandbox execution, and match safeguards to the stakes.
+- That constrained shape unlocks two active directions on the roadmap:
+  1. Smaller, local models on a narrower target—because the build adapter pre-scaffolds structure and tests and the runtime fixes the capability boundary.
+  2. The path becoming a loop—where production signals are investigated and fixes proposed, then specified, built, and merged like any other change.
+-->
+
+---
+title: Smaller models on a narrower target.
+sync: future-models
+class: slide-light
+---
+
+<Eyebrow text="THE FUTURE · SMALLER MODELS ON A NARROWER TARGET" />
+
+<div class="live-stage">
+
+# Smaller models on a narrower target.
+
+<p class="live-claim">Frontier models are needed when an agent has to invent architecture—not when structure, contracts, and tests are already fixed.</p>
+
+<div class="live-grid-2" style="width: 88%; margin: 28px auto 0; gap: 52px;">
+<div class="live-card" style="min-height: 214px; padding: 26px 30px; display: flex; flex-direction: column; justify-content: space-between;">
+<div>
+<div class="live-card-head" style="margin-bottom: 14px;">
+<IconBadge tone="ink"><ph:stack /></IconBadge>
+<div class="live-kicker">Broad target · Open-ended coding</div>
+</div>
+<h3>Requires frontier models</h3>
+</div>
+<p style="padding-top: 14px; border-top: 1px solid rgba(13, 16, 48, 0.12);">Invent structure · choose libraries · hold the full codebase in context</p>
+</div>
+
+<div class="live-card is-dark" style="min-height: 214px; padding: 26px 30px; display: flex; flex-direction: column; justify-content: space-between;">
+<div>
+<div class="live-card-head" style="margin-bottom: 14px;">
+<IconBadge tone="light"><ph:code /></IconBadge>
+<div class="live-kicker">Narrow target · Pre-scaffolded slice</div>
+</div>
+<h3>Unlocks smaller, local models</h3>
+</div>
+<p style="padding-top: 14px; border-top: 1px solid rgba(255, 255, 255, 0.16);">Structure and tests pre-built · fill bounded logic · verify at compile time</p>
+</div>
+</div>
+
+<div class="live-outcome" style="width: 88%; margin: 48px auto 0; box-sizing: border-box;">Today: frontier models in production · Next: open-weight and client-hosted models.</div>
+</div>
+
+<!--
+Smaller models on a narrower target:
+- A frontier model is necessary when a coding agent has to choose libraries, invent project structure, and hold an entire codebase in context.
+- Our target build adapter removes that work before the model turn begins: it pre-scaffolds the crate, module layout, typed routes, message consumers, and scenario test skeletons from the sealed specification, then asks the model only to fill the behavioural markers and pass compiler, lint, and test checks.
+- Today, that adapter runs with frontier LLMs in production engagements.
+- In early proof-of-concept runs, the same scaffold-and-verify loop already builds working WebAssembly guest slices using an untuned open-weight model (`qwen3-coder-next`).
+- Active roadmap focus: hardening small language model support so sensitive systems can be built and verified on local or client-hosted hardware without depending on a frontier API.
 -->
 
 ---

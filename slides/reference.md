@@ -921,6 +921,82 @@ One path:
 -->
 
 ---
+title: Smaller models on a narrower target
+class: slide-light
+---
+
+<Eyebrow text="THE FUTURE · SMALLER MODELS ON A NARROWER TARGET" />
+
+<div class="ed-band">
+<div class="ed-band-top">
+<div>
+
+# Smaller models on a<br>narrower target.
+
+</div>
+<p class="ed-band-prose"><strong>A frontier model is needed when an agent has to choose libraries, invent project structure, and hold an entire codebase in context.</strong> Because the Omnia target adapter pre-scaffolds the slice before the turn and the runtime fixes the capability boundary, generation shrinks to filling bounded behavioural markers verified by the compiler.</p>
+</div>
+<div class="ed-band-canvas" style="padding-top: 8px;">
+<svg viewBox="0 0 1140 350" aria-hidden="true">
+  <rect x="18" y="16" width="344" height="162" rx="14" fill="rgba(22,180,226,0.06)" stroke="#0c7fa3" stroke-width="1.6" />
+  <text x="40" y="46" class="svg-kicker" fill="#0c7fa3">01 · PRE-SCAFFOLD · ADAPTER CODE</text>
+  <text x="40" y="76" class="svg-h3" fill="#0d1030">Before the model turn</text>
+  <line x1="40" y1="92" x2="340" y2="92" stroke="rgba(12,127,163,0.18)" />
+  <text x="40" y="120" class="svg-body" fill="#0d1030">Crate, module layout, and design types</text>
+  <text x="40" y="142" class="svg-body" fill="#0d1030">Typed routes and message consumers</text>
+  <text x="40" y="164" class="svg-body" fill="#0d1030">Scenario test skeletons from spec.md</text>
+
+  <line x1="362" y1="97" x2="390" y2="97" stroke="#0d1030" stroke-width="1.8" />
+  <polygon points="384,92 394,97 384,102" fill="#0d1030" />
+
+  <rect x="396" y="16" width="348" height="162" rx="14" fill="#0d1030" />
+  <text x="418" y="46" class="svg-kicker" fill="#78d8f2">02 · FILL BEHAVIOUR · MODEL TURN</text>
+  <text x="418" y="76" class="svg-h3" fill="#ffffff">Bounded generation step</text>
+  <line x1="418" y1="92" x2="722" y2="92" stroke="rgba(255,255,255,0.14)" />
+  <text x="418" y="120" class="svg-body" fill="rgba(255,255,255,0.86)">Fill behavioural markers via edit_files</text>
+  <text x="418" y="142" class="svg-body" fill="rgba(255,255,255,0.86)">Target Omnia WASI capabilities only</text>
+  <text x="418" y="164" class="svg-body" fill="rgba(255,255,255,0.86)">Write guard protects scaffolded items</text>
+
+  <line x1="744" y1="97" x2="772" y2="97" stroke="#a4238f" stroke-width="1.8" />
+  <polygon points="766,92 776,97 766,102" fill="#a4238f" />
+
+  <rect x="778" y="16" width="344" height="162" rx="14" fill="rgba(164,35,143,0.06)" stroke="#a4238f" stroke-width="1.6" />
+  <text x="800" y="46" class="svg-kicker" fill="#a4238f">03 · VERIFY · DETERMINISTIC GATES</text>
+  <text x="800" y="76" class="svg-h3" fill="#0d1030">Compiler and syntax checks</text>
+  <line x1="800" y1="92" x2="1100" y2="92" stroke="rgba(164,35,143,0.18)" />
+  <text x="800" y="120" class="svg-body" fill="#0d1030">cargo clippy · cargo test · wasm32-wasip2</text>
+  <text x="800" y="142" class="svg-body" fill="#0d1030">AST layout, marker, and scenario gates</text>
+  <text x="800" y="164" class="svg-body" fill="#0d1030">Report gate and wave verification</text>
+
+  <rect x="18" y="204" width="344" height="96" rx="12" fill="#ffffff" stroke="rgba(13,16,48,0.24)" stroke-width="1.5" />
+  <text x="40" y="232" class="svg-kicker" fill="#0c7fa3">TODAY · PRODUCTION DEFAULT</text>
+  <text x="40" y="260" class="svg-h3" fill="#0d1030">Frontier LLMs</text>
+  <text x="40" y="284" class="svg-caption" fill="rgba(13,16,48,0.66)">Current client engagements run against frontier models</text>
+
+  <rect x="396" y="204" width="348" height="96" rx="12" fill="rgba(22,180,226,0.06)" stroke="#0c7fa3" stroke-width="1.6" />
+  <text x="418" y="232" class="svg-kicker" fill="#0c7fa3">PROOF OF CONCEPT · DEMONSTRATED</text>
+  <text x="418" y="260" class="svg-h3" fill="#0d1030">Untuned qwen3-coder-next</text>
+  <text x="418" y="284" class="svg-caption" fill="rgba(13,16,48,0.66)">Builds and verifies working Wasm guest slices</text>
+
+  <rect x="778" y="204" width="344" height="96" rx="12" fill="rgba(164,35,143,0.06)" stroke="#a4238f" stroke-width="1.6" stroke-dasharray="6 5" />
+  <text x="800" y="232" class="svg-kicker" fill="#a4238f">NEXT · ACTIVE ROADMAP</text>
+  <text x="800" y="260" class="svg-h3" fill="#0d1030">Local and client-hosted SLMs</text>
+  <text x="800" y="284" class="svg-caption" fill="rgba(13,16,48,0.66)">Sensitive systems built without a frontier API</text>
+
+  <rect x="190" y="314" width="760" height="32" rx="16" fill="rgba(164,35,143,0.06)" stroke="rgba(164,35,143,0.4)" />
+  <text x="570" y="335" text-anchor="middle" class="svg-caption" fill="#a4238f">Claim boundary: frontier LLMs in production today; small open-weight models demonstrated in proof-of-concept runs.</text>
+</svg>
+</div>
+</div>
+
+<!--
+Smaller models on a narrower target:
+- Frontier models are necessary when an agent has to choose libraries, invent project structure, and hold an entire codebase in context.
+- The Omnia target adapter removes that work before the model turn begins: it scaffolds the crate, module layout, typed routes, message consumers, and scenario test skeletons from the sealed specification, then asks the model only to fill the behavioural markers and pass `cargo clippy`, `cargo test`, the `wasm32-wasip2` check, and the adapter's AST gates.
+- Claim discipline: state small-language-model support with its exact boundary. The build adapter runs against frontier LLMs in current engagements; building Wasm guests with untuned `qwen3-coder-next` is demonstrated in early proof-of-concept runs and is active roadmap work, not a general production default today.
+-->
+
+---
 title: The path becomes a loop
 class: slide-light
 ---

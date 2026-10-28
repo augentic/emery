@@ -34,7 +34,7 @@ class: slide-hero slide-section
 
 # Code is cheap.<br>Delivery is hard.
 
-<p class="section-subtitle">Use a delivery system that lets AI<br>deliver software—not just code.</p>
+<p class="section-subtitle">Use a delivery system that lets AI<br>deliver software — not just code.</p>
 
 </div>
 </div>
@@ -67,8 +67,8 @@ class: slide-light
 
 # Coding is no longer<br>the bottleneck.
 
-<p class="ed-prose">AI generates code faster than developers can understand and integrate it.</p>
-<p class="ed-prose"><strong>More code ≠ a coherent solution.</strong> The scarce work is now comprehension, coherence, and evidence—deciding what the code should do, and proving that it does it.</p>
+<p class="ed-prose">AI can write code in minutes, but it cannot frame a problem, weigh trade-offs, or own consequences.</p>
+<p class="ed-prose"><strong>More code ≠ a coherent solution.</strong> Coding agents smooth over ambiguity with plausible code, skipping the design conversations a team needed to have. The scarce work is comprehension, coherence, and evidence.</p>
 
 </div>
 <div class="ed-diagram-pane">
@@ -88,8 +88,8 @@ class: slide-light
   <text x="56" y="226" class="svg-label" fill="#ffffff">Cognitive load</text>
   <text x="56" y="248" class="svg-caption" fill="rgba(255,255,255,0.68)">Overwhelms human review</text>
   <rect x="332" y="200" width="270" height="64" rx="9" fill="rgba(255,255,255,0.08)" />
-  <text x="350" y="226" class="svg-label" fill="#ffffff">Incoherence</text>
-  <text x="350" y="248" class="svg-caption" fill="rgba(255,255,255,0.68)">Plausible parts, broken whole</text>
+  <text x="350" y="226" class="svg-label" fill="#ffffff">Hidden ambiguity</text>
+  <text x="350" y="248" class="svg-caption" fill="rgba(255,255,255,0.68)">Plausible code skips needed debate</text>
 
   <rect x="38" y="282" width="270" height="64" rx="9" fill="rgba(255,255,255,0.08)" />
   <text x="56" y="308" class="svg-label" fill="#ffffff">Lost comprehension</text>
@@ -125,7 +125,7 @@ class: slide-light
 # Build the right thing.<br>Build it to last.
 
 </div>
-<p class="ed-band-prose"><strong>Two things are increasingly important.</strong> Good product strategy decides what is worth building. A reliable delivery system delivers it as maintainable software. While we can help with both, <strong>our real expertise is the second.</strong></p>
+<p class="ed-band-prose"><strong>Designing great software is a human process.</strong> Good product strategy decides what is worth building. A reliable delivery system delivers it as maintainable software. While we can help with product design, <strong>our expertise is in delivering systems that last.</strong></p>
 </div>
 <div class="ed-band-canvas">
 <svg viewBox="0 0 1140 350" aria-hidden="true">
@@ -133,7 +133,7 @@ class: slide-light
   <text x="38" y="68" class="svg-kicker" fill="#0c7fa3">01 · GOOD PRODUCT STRATEGY</text>
   <text x="38" y="104" class="svg-h2" fill="#0d1030">Building the right thing</text>
   <line x1="38" y1="122" x2="544" y2="122" stroke="rgba(12,127,163,0.18)" />
-  <text x="38" y="158" class="svg-label" fill="#0d1030">Customer needs · rapid prototypes · deliberate backlog</text>
+  <text x="38" y="158" class="svg-label" fill="#0d1030">Frame the problem · weigh trade-offs · test with prototypes</text>
   <text x="38" y="204" class="svg-caption" fill="rgba(13,16,48,0.62)">Decide what matters before committing to production</text>
 
   <rect x="574" y="36" width="550" height="214" rx="14" fill="#0d1030" />
@@ -234,11 +234,11 @@ class: slide-sandbox
 ---
 <AmbientVideo src="/videos/approach-video.mp4" variant="approach" />
 
-<Eyebrow text="THE DELIVERY SYSTEM · THREE MECHANISMS, ONE PATH" />
+<Eyebrow text="THE DELIVERY SYSTEM · HUMAN-LED ENGINEERING" />
 
 # Three mechanisms for reliable delivery.
 
-<p class="slide-lead">Agents work best inside a delivery system—not in charge of it.</p>
+<p class="slide-lead">Human-led engineering: agents work best inside a delivery system—not in charge of it.</p>
 
 <div class="ed-band-canvas" style="padding-top: 4px;">
 <svg viewBox="0 0 1140 400" aria-hidden="true">
@@ -332,7 +332,7 @@ class: slide-light
 # Isolate. Guide. Enforce.
 
 <p class="ed-prose">Teams move faster when experimentation happens in a governed place, through an approved path, under checks that apply to every change.</p>
-<p class="ed-prose"><strong>Guidance is shared. Non-negotiable rules are enforced.</strong> Critical rules fail at compile time, before review.</p>
+<p class="ed-prose"><strong>Guidance is shared. Non-negotiable rules are enforced.</strong> Critical rules fail at compile time, before review—so review focuses on design and trade-offs.</p>
 
 </div>
 <div class="ed-diagram-pane">
@@ -455,21 +455,21 @@ class: slide-light
 # Specify behaviour.
 
 </div>
-<p class="ed-band-prose"><strong>People and agents share one source of truth: durable specifications, not code.</strong> The specification—not the codebase—states what must remain true, and people and agents alike work from it. If the code disagrees with it, the code is wrong: repaired or regenerated, not reinterpreted as a competing truth.</p>
+<p class="ed-band-prose"><strong>People and agents share one source of truth: durable specifications, not code.</strong> Coding agents smooth over ambiguity with plausible-looking code. The specification forces that ambiguity into the open so people can resolve it—and if the code disagrees with it, the code is repaired or regenerated.</p>
 </div>
 <div class="ed-band-canvas">
 <svg viewBox="0 0 1140 350" aria-hidden="true">
   <rect x="16" y="36" width="330" height="214" rx="14" fill="rgba(22,180,226,0.06)" stroke="#0c7fa3" stroke-width="1.7" />
-  <text x="38" y="68" class="svg-kicker" fill="#0c7fa3">01 · GOVERNED INTENT</text>
-  <text x="38" y="104" class="svg-h2" fill="#0d1030">Governed intent</text>
+  <text x="38" y="68" class="svg-kicker" fill="#0c7fa3">01 · SURFACE AMBIGUITY</text>
+  <text x="38" y="104" class="svg-h2" fill="#0d1030">Surface ambiguity</text>
   <line x1="38" y1="122" x2="324" y2="122" stroke="rgba(12,127,163,0.18)" />
-  <text x="38" y="158" class="svg-label" fill="#0d1030">Move up from ad hoc prompting</text>
-  <text x="38" y="190" class="svg-caption" fill="rgba(13,16,48,0.62)">Intent reviewed before implementation</text>
+  <text x="38" y="158" class="svg-label" fill="#0d1030">Expose conflicts and gaps before coding</text>
+  <text x="38" y="190" class="svg-caption" fill="rgba(13,16,48,0.62)">Nothing buried in plausible code</text>
   <rect x="398" y="36" width="344" height="214" rx="14" fill="#0d1030" />
-  <text x="420" y="68" class="svg-kicker" fill="#f59ef5">02 · IN THE LOOP</text>
-  <text x="420" y="104" class="svg-h2" fill="#ffffff">In the loop</text>
+  <text x="420" y="68" class="svg-kicker" fill="#f59ef5">02 · HUMAN REVIEW GATE</text>
+  <text x="420" y="104" class="svg-h2" fill="#ffffff">Human review gate</text>
   <line x1="420" y1="122" x2="720" y2="122" stroke="rgba(255,255,255,0.14)" />
-  <text x="420" y="158" class="svg-label" fill="#ffffff">Specify, review, plan, implement</text>
+  <text x="420" y="158" class="svg-label" fill="#ffffff">Debate trade-offs and seal the spec</text>
   <text x="420" y="190" class="svg-caption" fill="rgba(255,255,255,0.7)">The specification stays in the loop</text>
   <rect x="794" y="36" width="330" height="214" rx="14" fill="rgba(22,180,226,0.06)" stroke="#0c7fa3" stroke-width="1.7" />
   <text x="816" y="68" class="svg-kicker" fill="#0c7fa3">03 · DURABLE TRUTH</text>
@@ -575,7 +575,7 @@ class: slide-light
 # Specifications drive<br>development.
 
 </div>
-<p class="ed-band-prose"><strong>The specification stays in the development loop</strong>—from requirements and design through implementation and verification. Each change runs the loop. If the specification changes, it is reviewed and sealed again.</p>
+<p class="ed-band-prose"><strong>The specification stays in the development loop</strong>—surfacing ambiguity for human judgement instead of burying it in generated code. Each change runs the loop. If the specification changes, it is reviewed and sealed again.</p>
 </div>
 <div class="ed-band-canvas">
 <svg viewBox="0 0 1140 360" aria-hidden="true">
@@ -600,8 +600,8 @@ class: slide-light
   <text x="380" y="118" text-anchor="middle" class="svg-h3" fill="#ffffff">Review</text>
   <text x="380" y="144" text-anchor="middle" class="svg-h3" fill="#ffffff">&amp; seal</text>
   <line x1="342" y1="166" x2="418" y2="166" stroke="rgba(255,255,255,0.16)" />
-  <text x="380" y="196" text-anchor="middle" class="svg-caption" fill="rgba(255,255,255,0.68)">Versioned</text>
-  <text x="380" y="216" text-anchor="middle" class="svg-caption" fill="rgba(255,255,255,0.68)">in repo</text>
+  <text x="380" y="196" text-anchor="middle" class="svg-caption" fill="rgba(255,255,255,0.68)">Human</text>
+  <text x="380" y="216" text-anchor="middle" class="svg-caption" fill="rgba(255,255,255,0.68)">decision gate</text>
 
   <line x1="440" y1="155" x2="468" y2="155" stroke="#a4238f" stroke-width="1.7" />
   <polygon points="462,150 472,155 462,160" fill="#a4238f" />
@@ -773,7 +773,7 @@ class: slide-light
 # Generated code has less freedom<br>to surprise.
 
 </div>
-<p class="ed-band-prose"><strong>Code reaches infrastructure through host-provided capabilities.</strong> Grant generated code nothing by default; the host grants only the capabilities it needs.</p>
+<p class="ed-band-prose"><strong>With the platform safe by construction, agents work within known bounds while engineers focus on the product.</strong> Code reaches infrastructure through host-provided capabilities; grant generated code nothing by default.</p>
 </div>
 <div class="ed-band-canvas" style="padding-top: 24px;">
 <svg viewBox="0 0 1140 360" aria-hidden="true">
@@ -1159,7 +1159,7 @@ Client question:
 -->
 
 ---
-title: The path becomes a loop.
+title: What comes next.
 sync: future-system
 class: slide-light
 ---
@@ -1170,41 +1170,91 @@ class: slide-light
 <div class="ed-band-top">
 <div>
 
-# The path becomes<br>a loop.
+# What comes<br>next.
 
 </div>
-<p class="ed-band-prose"><strong>Everything the running system learns comes back as a governed change.</strong> Sense the signal, decide what it means, and put the change through the same delivery system—then observe what happens.</p>
+<p class="ed-band-prose"><strong>A constrained delivery system unlocks two next steps on our roadmap.</strong> Because the target is narrow and the path is governed, generation shrinks enough for smaller local models—and production signals can return through the same path as governed changes.</p>
 </div>
 <div class="ed-band-canvas">
 <svg viewBox="0 0 1140 350" aria-hidden="true">
   <rect x="16" y="36" width="330" height="214" rx="14" fill="rgba(22,180,226,0.06)" stroke="#0c7fa3" stroke-width="1.7" />
-  <text x="38" y="68" class="svg-kicker" fill="#0c7fa3">01 · SENSE</text>
-  <text x="38" y="104" class="svg-h2" fill="#0d1030">Sense</text>
+  <text x="38" y="68" class="svg-kicker" fill="#0c7fa3">01 · NARROW THE TARGET</text>
+  <text x="38" y="104" class="svg-h2" fill="#0d1030">Narrow the target</text>
   <line x1="38" y1="122" x2="324" y2="122" stroke="rgba(12,127,163,0.18)" />
-  <text x="38" y="158" class="svg-label" fill="#0d1030">Signals from production</text>
-  <text x="38" y="190" class="svg-caption" fill="rgba(13,16,48,0.62)">Monitoring, audits, and incidents</text>
+  <text x="38" y="158" class="svg-label" fill="#0d1030">Pre-scaffold before the turn</text>
+  <text x="38" y="190" class="svg-caption" fill="rgba(13,16,48,0.62)">Crates, types, routes, and scenario tests</text>
 
   <rect x="398" y="36" width="344" height="214" rx="14" fill="#0d1030" />
-  <text x="420" y="68" class="svg-kicker" fill="#f59ef5">02 · DECIDE</text>
-  <text x="420" y="104" class="svg-h2" fill="#ffffff">Decide</text>
+  <text x="420" y="68" class="svg-kicker" fill="#f59ef5">02 · RUN SMALLER MODELS</text>
+  <text x="420" y="104" class="svg-h2" fill="#ffffff">Run smaller models</text>
   <line x1="420" y1="122" x2="720" y2="122" stroke="rgba(255,255,255,0.14)" />
-  <text x="420" y="158" class="svg-label" fill="#ffffff">Investigate and propose</text>
-  <text x="420" y="190" class="svg-caption" fill="rgba(255,255,255,0.7)">A proposal is not a shipment</text>
+  <text x="420" y="158" class="svg-label" fill="#ffffff">Local and open-weight models</text>
+  <text x="420" y="190" class="svg-caption" fill="rgba(255,255,255,0.7)">Verified inside the same compiler and test gates</text>
 
   <rect x="794" y="36" width="330" height="214" rx="14" fill="rgba(22,180,226,0.06)" stroke="#0c7fa3" stroke-width="1.7" />
-  <text x="816" y="68" class="svg-kicker" fill="#0c7fa3">03 · CHANGE</text>
-  <text x="816" y="104" class="svg-h2" fill="#0d1030">Change</text>
+  <text x="816" y="68" class="svg-kicker" fill="#0c7fa3">03 · CLOSE THE LOOP</text>
+  <text x="816" y="104" class="svg-h2" fill="#0d1030">Close the loop</text>
   <line x1="816" y1="122" x2="1102" y2="122" stroke="rgba(12,127,163,0.18)" />
-  <text x="816" y="158" class="svg-label" fill="#0d1030">Define, build, merge</text>
-  <text x="816" y="190" class="svg-caption" fill="rgba(13,16,48,0.62)">Then observe what the change did</text>
+  <text x="816" y="158" class="svg-label" fill="#0d1030">Sense, decide, and change</text>
+  <text x="816" y="190" class="svg-caption" fill="rgba(13,16,48,0.62)">Production signals return as governed changes</text>
 </svg>
 </div>
 </div>
 
 <!--
-Section divider: The complete system.
-- So far the argument has been a path: intent enters, delivery carries it to production, safeguards are matched to the stakes.
-- The future is that path running as a loop: what the running system learns becomes the next governed change.
+Section divider: What comes next.
+- So far the argument has covered the delivery system as it runs today: standardise delivery, specify behaviour, sandbox execution, and match safeguards to the stakes.
+- That constrained shape unlocks two active directions on the roadmap:
+  1. Smaller, local models on a narrower target—because the build adapter pre-scaffolds structure and tests and the runtime fixes the capability boundary.
+  2. The path becoming a loop—where production signals are investigated and fixes proposed, then specified, built, and merged like any other change.
+-->
+
+---
+title: Smaller models on a narrower target.
+sync: future-models
+class: slide-light
+---
+
+<Eyebrow text="THE FUTURE · SMALLER MODELS ON A NARROWER TARGET" />
+
+<div class="ed-band">
+<div class="ed-band-top">
+<div>
+
+# Smaller models on a<br>narrower target.
+
+</div>
+<p class="ed-band-prose"><strong>Frontier models are needed when an agent has to invent architecture—not when structure, contracts, and tests are already fixed.</strong> Pre-scaffolding the slice from the sealed specification shrinks generation to filling bounded logic verified by compiler and test gates.</p>
+</div>
+<div class="ed-band-canvas">
+<svg viewBox="0 0 1140 350" aria-hidden="true">
+  <rect x="16" y="36" width="550" height="214" rx="14" fill="#ffffff" stroke="rgba(13,16,48,0.28)" stroke-width="1.6" />
+  <text x="38" y="68" class="svg-kicker" fill="rgba(13,16,48,0.58)">BROAD TARGET · OPEN-ENDED CODING</text>
+  <text x="38" y="104" class="svg-h2" fill="#0d1030">Requires frontier models</text>
+  <line x1="38" y1="122" x2="544" y2="122" stroke="rgba(13,16,48,0.12)" />
+  <text x="38" y="158" class="svg-label" fill="#0d1030">Invent structure · choose libraries · hold the full codebase in context</text>
+  <text x="38" y="204" class="svg-caption" fill="rgba(13,16,48,0.62)">The model carries architecture, conventions, and wiring at once</text>
+
+  <rect x="574" y="36" width="550" height="214" rx="14" fill="#0d1030" />
+  <text x="596" y="68" class="svg-kicker" fill="#78d8f2">NARROW TARGET · PRE-SCAFFOLDED SLICE</text>
+  <text x="596" y="104" class="svg-h2" fill="#ffffff">Unlocks smaller, local models</text>
+  <line x1="596" y1="122" x2="1102" y2="122" stroke="rgba(255,255,255,0.14)" />
+  <text x="596" y="158" class="svg-label" fill="#ffffff">Structure and tests pre-built · fill bounded logic · verify at compile time</text>
+  <text x="596" y="204" class="svg-caption" fill="rgba(255,255,255,0.7)">Constraint as leverage: narrowing the target makes local models practical</text>
+
+  <rect x="170" y="282" width="800" height="48" rx="24" fill="rgba(164,35,143,0.06)" stroke="rgba(164,35,143,0.42)" stroke-width="1.5" />
+  <text x="570" y="312" text-anchor="middle" class="svg-label" fill="#0d1030">Today: frontier models in production · Next: open-weight and client-hosted models.</text>
+</svg>
+</div>
+</div>
+
+<!--
+Smaller models on a narrower target:
+- A frontier model is necessary when a coding agent has to choose libraries, invent project structure, and hold an entire codebase in context.
+- Our target build adapter removes that work before the model turn begins: it scaffolds the crate, module layout, typed routes, message consumers, and scenario test skeletons from the sealed specification, then asks the model only to fill the behavioural markers and pass compiler, lint, and test checks.
+- Today, that adapter runs with frontier LLMs in current engagements.
+- In early proof-of-concept runs, the same scaffold-and-verify loop already builds working WebAssembly guest slices using an untuned open-weight model (`qwen3-coder-next`).
+- Active roadmap focus: hardening small language model support so sensitive systems can be built and verified on local or client-hosted hardware without depending on a frontier API.
 -->
 
 ---
@@ -1222,7 +1272,7 @@ class: slide-light
 # Feedback drives<br>the next change.
 
 </div>
-<p class="ed-band-prose"><strong>Nothing bypasses the path.</strong> A signal becomes a change; a change becomes new evidence. An incident manager investigates and proposes; the fix is specified, built, and merged in code and infrastructure lanes, deployed, and watched by infrastructure monitoring, which raises the next signal.</p>
+<p class="ed-band-prose"><strong>Nothing bypasses the path.</strong> A signal becomes a change; a change becomes new evidence. An incident manager investigates and proposes; people review and seal the change before it is built, merged, and deployed across code and infrastructure lanes.</p>
 </div>
 <div class="ed-band-canvas">
 <svg viewBox="0 0 1140 480" aria-hidden="true" style="max-height: 430px;">
