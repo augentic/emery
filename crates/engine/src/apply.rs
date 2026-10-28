@@ -1,9 +1,11 @@
-//! Seals the staged candidate as the current revision in the target repository.
+//! Seals the staged candidate or amendment as the current revision in the target repository.
 //!
-//! [`apply`] reads the candidate [`specify`](crate::specify::specify)
-//! staged, seals it under `spec/` in the repository the target names as
-//! one commit labelled `emery/<id>`, and clears the staging slot, so `show`
-//! and `build` read it from then on.
+//! [`apply`] reads what stands in the staging slot — the candidate
+//! [`specify`](crate::specify::specify) staged, or the amendment
+//! [`amend`](crate::amend::amend) staged — seals its three documents under
+//! `spec/` in the repository the target names as one commit labelled
+//! `emery/<id>`, and clears the slot, so `show` and `build` read it from
+//! then on.
 
 use omnia_sdk::api::Context;
 use omnia_sdk::{BlobStore, Error, StateStore, Vcs};
@@ -12,31 +14,37 @@ use serde::{Deserialize, Serialize};
 use crate::Files;
 use crate::revision::Diff;
 pub use crate::store::StagedKind;
-use crate::store::{self, Standing};
+use crate::store::{self, Sealing, StagedItem, Standing};
 use crate::vcs::{BuildRepo, TargetRef};
 
-/// Seals the staged candidate as the current revision in the target's repository.
+/// Seals the staged candidate or amendment as the current revision in the target's repository.
 ///
-/// The candidate's three documents are written under
+/// A candidate's three documents are written under
 /// [`crate::vcs::SPECIFICATION`] in a working copy cut at the commit the current
 /// revision stands at, else at the repository's head, sealed as one commit
-/// whose message is a [`crate::vcs::RevisionMessage`], and labelled `emery/<id>`.
-/// A repository the engine creates ([`BuildRepo::Target`] with no URL) is
-/// created on the first seal, which is its root commit. A revision the
-/// repository already holds seals nothing and stands as it was. The
-/// checkout the repository's head is on is never touched.
+/// whose message is a [`crate::vcs::RevisionMessage`] naming the displaced
+/// revision as parent, and labelled `emery/<id>`. An amendment's three
+/// documents are sealed the same way over the commit its base was read at,
+/// the base its parent and what it changed the message's
+/// [`Summary`](crate::vcs::Summary), and only while that base is still the
+/// current revision at that commit; the base's label stands. A repository
+/// the engine creates ([`BuildRepo::Target`] with no URL) is created on the
+/// first seal, which is its root commit. A revision the repository already
+/// holds seals nothing and stands as it was. The checkout the repository's
+/// head is on is never touched.
 ///
 /// # Errors
 ///
 /// - Returns [`Error::NotFound`]:
-///   - with code `nothing-staged`, when no candidate is staged;
+///   - with code `nothing-staged`, when nothing is staged;
 ///   - with code `revision-not-found`, when the repository the target
 ///     names does not exist or has no default branch, or what the run
 ///     already holds under the target's name was cloned or created under
 ///     another origin.
 /// - Returns [`Error::BadRequest`]:
-///   - with code `amendment-pending`, when an amendment is staged in place
-///     of a revision candidate, which this verb does not seal yet;
+///   - with code `amendment-stale`, when the staged amendment was prepared
+///     against a revision, or a commit, other than the one the repository
+///     now holds as current; the amendment stays staged;
 ///   - when the target's name is not kebab-case;
 ///   - with code `spec-outdated`, when the candidate or the revision the
 ///     repository holds uses a different grammar;
@@ -61,20 +69,30 @@ pub async fn apply<P: StateStore + BlobStore + Vcs + Files>(
     seal(provider, &repo, standing).await
 }
 
-// Seals the staged candidate over what `standing` read of `repo`; the one
-// sealing step `apply` and `specify --apply` share.
+// Seals whatever is staged over what `standing` read of `repo`; the one
+// sealing step `apply`, `specify --apply`, and `amend --apply` share.
 pub(crate) async fn seal<P: StateStore + BlobStore + Vcs + Files>(
     provider: &P, repo: &BuildRepo, standing: Standing,
 ) -> Result<ApplyOutput, Error> {
-    let candidate = store::staged(provider).await?.ok_or_else(store::nothing_staged)?;
-    let kind = StagedKind::Revision;
-    let sealed = store::commit(provider, repo, &candidate.revision, standing).await?;
+    let (kind, amendment, sealing) =
+        match store::staged_item(provider).await?.ok_or_else(store::nothing_staged)? {
+            StagedItem::Revision(staged) => {
+                (StagedKind::Revision, None, Sealing::candidate(staged.revision, &standing))
+            }
+            StagedItem::Amendment(staged) => (
+                StagedKind::Amendment,
+                Some(staged.id),
+                Sealing::amendment(staged.amendment, &standing)?,
+            ),
+        };
+    let sealed = store::commit(provider, repo, sealing, standing).await?;
     tracing::info!(
         revision = %sealed.id,
         parent = sealed.parent.as_deref().unwrap_or("none"),
         commit = %sealed.commit,
         label = %sealed.label,
         %kind,
+        amendment = amendment.as_deref().unwrap_or("none"),
         "sealed"
     );
 
@@ -85,11 +103,12 @@ pub(crate) async fn seal<P: StateStore + BlobStore + Vcs + Files>(
         label: sealed.label,
         repository: repo.path(),
         kind,
+        amendment,
         diff: sealed.diff,
     })
 }
 
-/// Where [`apply`] seals the staged candidate: the target whose repository holds the specification.
+/// Where [`apply`] seals what is staged: the target whose repository holds the specification.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub struct ApplyInput {
@@ -104,6 +123,8 @@ pub struct ApplyOutput {
     /// The content identifier of the revision, now current.
     pub revision: String,
     /// The revision it displaced, by id; `None` on the first seal.
+    ///
+    /// For a sealed amendment, the base it was prepared against.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub parent: Option<String>,
     /// The commit the revision stands at in the repository.
@@ -114,8 +135,12 @@ pub struct ApplyOutput {
     /// project root: `.` for the project's own, or [`crate::vcs::target_path`] of
     /// the target's name.
     pub repository: String,
-    /// What kind of candidate was sealed.
+    /// What kind of staged item was sealed.
     pub kind: StagedKind,
+    /// The content identifier of the amendment sealed; absent for a
+    /// revision candidate.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub amendment: Option<String>,
     /// Changes from the displaced revision.
     ///
     /// Absent on the first seal.

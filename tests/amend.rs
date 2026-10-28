@@ -6,14 +6,18 @@ mod support;
 #[path = "support/verbs.rs"]
 mod verbs;
 
+use std::sync::Arc;
+
 use emery_adapter::source::{ClaimKind, SourceKind};
-use emery_engine::vcs::REVISION;
-use emery_engine::{STAGED_CONTAINER, STAGED_KEY};
+use emery_engine::amend::{SliceChange, SliceClass};
+use emery_engine::vcs::{REVISION, RevisionMessage, Summary};
+use emery_engine::{REVISION_KEY, STAGED_CONTAINER, STAGED_KEY};
+use omnia_sdk::vcs::Error;
 use omnia_test::SeenFormat;
 use serde_json::Value;
 use support::provider::{Provider, claim, cli, evidence, requirement, retire};
 use support::scratch::Scratch;
-use support::store::{seed, stage, stage_amendment};
+use support::store::{seed, stage, stage_amendment, written};
 use support::vcs::HEAD;
 use support::{cli_ok, fail};
 use verbs::verbs;
@@ -2307,6 +2311,188 @@ async fn amend_no_change() {
     assert_eq!(envelope["amendment"], Value::Null, "{envelope}");
     assert_eq!(envelope["stems"], Value::Null, "an empty list is elided: {envelope}");
     assert_eq!(envelope["tally"]["unchanged"], 4, "{envelope}");
+    provider.model.assert_exhausted();
+}
+
+// `amend --apply` seals what it stages in the same run: the amendment lands
+// in the slot, then its three documents are sealed as a revision over the
+// base the run read, under the base as parent with the counts and the
+// slices in the message, the slot is cleared, the pointer names the sealed
+// revision, and the output carries the staged block and the seal in place
+// of the `nothing sealed` line, the envelope `applied` as `apply` answers
+// it and `staged` false since nothing stands staged after the seal.
+#[tokio::test]
+async fn amend_apply() {
+    let mut provider = Provider::answering([CLASSES_GROUPING, CLASSES_DRAFT]);
+    bind(&mut provider);
+    let revision = seed(&provider.files, SPEC, DESIGN, PLAN);
+
+    let resp = cli_ok(
+        &provider,
+        &["emery", "--format", "json", "amend", DOCS, WIKI, "--apply", "--config", PROJECT_CONFIG],
+    )
+    .await;
+
+    // the envelope carries what apply answers beside the amendment's report
+    let envelope: Value = serde_json::from_slice(&resp.stdout).expect("one JSON envelope");
+    let amendment = envelope["amendment"].as_str().expect("the amendment's id").to_owned();
+    let sealed = envelope["applied"]["revision"].as_str().expect("the sealed id").to_owned();
+    assert_ne!(sealed, revision);
+    assert_eq!(envelope["staged"], false, "{envelope}");
+    assert_eq!(envelope["tally"]["changed"], 1, "{envelope}");
+    assert_eq!(envelope["applied"]["parent"], revision, "{envelope}");
+    assert_eq!(envelope["applied"]["kind"], "amendment", "{envelope}");
+    assert_eq!(envelope["applied"]["amendment"], amendment, "{envelope}");
+    assert_eq!(envelope["applied"]["label"], format!("emery/{sealed}"), "{envelope}");
+    assert_eq!(envelope["applied"]["commit"], "Revision-commit", "{envelope}");
+    assert_eq!(envelope["applied"]["diff"]["from"], revision, "{envelope}");
+
+    // the sealed documents are the amendment's
+    let expected: Value = serde_json::from_str(&CLASSES.replace("<revision>", &revision))
+        .expect("the fixture is JSON");
+    let spec: Value =
+        serde_json::from_slice(&written(&provider.files, "spec")).expect("the sealed spec is JSON");
+    assert_eq!(spec, expected["spec"]);
+    let pointer = provider.storage.state(REVISION_KEY).expect("the pointer moves");
+    assert_eq!(String::from_utf8_lossy(&pointer), sealed);
+    assert!(provider.storage.state(STAGED_KEY).is_none(), "the slot is cleared");
+    assert!(provider.storage.objects(STAGED_CONTAINER).is_empty(), "the amendment is pruned");
+    let message = RevisionMessage::parse(&provider.vcs.messages()[0]).expect("a revision message");
+    assert_eq!(
+        message,
+        RevisionMessage {
+            revision: sealed.clone(),
+            parent: Some(revision.clone()),
+            base: Some(HEAD.to_owned()),
+            summary: Some(Summary {
+                added: 1,
+                changed: 1,
+                retired: 0,
+                slices: vec![SliceChange {
+                    id: "SLICE-002".parse().expect("a slice id"),
+                    name: "orders".to_owned(),
+                    class: SliceClass::Changed,
+                }],
+            }),
+        }
+    );
+    assert!(
+        provider.vcs.calls().contains(&format!("label . emery/{sealed} Revision-commit")),
+        "{:?}",
+        provider.vcs.calls()
+    );
+    provider.model.assert_exhausted();
+
+    // the text render prints the staged block, then the seal in place of
+    // the `nothing sealed` line
+    let mut provider = Provider::answering([CLASSES_GROUPING, CLASSES_DRAFT]);
+    bind(&mut provider);
+    seed(&provider.files, SPEC, DESIGN, PLAN);
+    let resp =
+        cli_ok(&provider, &["emery", "amend", DOCS, WIKI, "--apply", "--config", PROJECT_CONFIG])
+            .await;
+    let stdout = String::from_utf8_lossy(&resp.stdout);
+    assert_eq!(
+        stdout,
+        format!(
+            "staged amendment {amendment}\n  base {revision} at {}\n  1 added, 1 changed, 0 \
+             retired, 1 conflict, 2 unchanged\n  conflicts: auth.login\n  stems: auth, orders, \
+             session\n  slices: orders\n  sealed revision {sealed} as emery/{sealed} at \
+             Revision\n    amends {revision}\n",
+            &HEAD[..8]
+        )
+    );
+    provider.model.assert_exhausted();
+}
+
+// The stage lands before the seal is attempted: a seal the repository
+// refuses fails the run after the amendment is staged, so `emery apply` can
+// seal it once the repository answers, and nothing of the current revision
+// moves.
+#[tokio::test]
+async fn amend_apply_seal_refused() {
+    let mut provider = Provider::answering([CLASSES_GROUPING, CLASSES_DRAFT]);
+    bind(&mut provider);
+    let revision = seed(&provider.files, SPEC, DESIGN, PLAN);
+    provider.vcs.commits.script(REVISION, Err(Error::Access("index.lock held".to_owned())));
+
+    let resp = cli(
+        &provider,
+        &["emery", "--format", "json", "amend", DOCS, WIKI, "--apply", "--config", PROJECT_CONFIG],
+    )
+    .await;
+
+    assert_eq!(resp.exit, 4, "{}", String::from_utf8_lossy(&resp.stderr));
+    let envelope: Value = serde_json::from_slice(&resp.stderr).expect("one JSON envelope");
+    assert_eq!(envelope["error"], "bad_gateway", "{envelope}");
+    assert!(
+        envelope["message"].as_str().is_some_and(|message| message.contains("index.lock held")),
+        "{envelope}"
+    );
+    let (id, amendment) = staged_amendment(&provider);
+    assert_eq!(amendment["base"]["revision"], revision, "the amendment stands staged");
+    assert!(provider.storage.state(REVISION_KEY).is_none(), "the pointer does not move");
+    assert!(
+        !provider.vcs.calls().iter().any(|call| call.starts_with("label ")),
+        "nothing is labelled"
+    );
+    provider.model.assert_exhausted();
+
+    // once the repository answers, apply seals what the run left staged
+    let provider = Provider::over(Arc::clone(&provider.storage), Vec::<String>::new());
+    seed(&provider.files, SPEC, DESIGN, PLAN);
+    let resp =
+        cli_ok(&provider, &["emery", "--format", "json", "apply", "--config", PROJECT_CONFIG])
+            .await;
+    let envelope: Value = serde_json::from_slice(&resp.stdout).expect("one JSON envelope");
+    assert_eq!(envelope["kind"], "amendment", "{envelope}");
+    assert_eq!(envelope["amendment"], id, "{envelope}");
+    assert_eq!(envelope["parent"], revision, "{envelope}");
+    assert!(provider.storage.state(STAGED_KEY).is_none(), "the slot is cleared");
+}
+
+// A change that stages nothing seals nothing under `--apply`: the run says
+// so and the repository is read and never written.
+#[tokio::test]
+async fn amend_apply_no_change() {
+    let grouping = r#"{"groups": [
+        {"claims": [0, 3], "classes": [[0, 3]]},
+        {"claims": [1], "classes": [[1]]},
+        {"claims": [2], "classes": [[2]]},
+        {"claims": [4], "classes": [[4]]}
+    ]}"#;
+    let mut provider = Provider::answering([grouping, grouping]);
+    provider.source.evidence.insert(
+        "docs".to_owned(),
+        Ok(evidence(vec![requirement("orders.create", "A signed-in user places an order.")])),
+    );
+    let revision = seed(&provider.files, SPEC, DESIGN, PLAN);
+
+    let resp =
+        cli_ok(&provider, &["emery", "amend", DOCS, "--apply", "--config", PROJECT_CONFIG]).await;
+
+    assert_eq!(
+        String::from_utf8_lossy(&resp.stdout),
+        format!(
+            "nothing staged: no change against the current revision\n  base {revision} at {}\n  \
+             0 added, 0 changed, 0 retired, 0 conflict, 4 unchanged\n",
+            &HEAD[..8]
+        )
+    );
+    assert!(provider.storage.state(STAGED_KEY).is_none(), "nothing is staged");
+    assert!(provider.storage.state(REVISION_KEY).is_none(), "nothing is sealed");
+    assert_eq!(provider.vcs.calls(), read_calls());
+    assert!(provider.vcs.messages().is_empty(), "nothing is sealed");
+
+    let resp = cli_ok(
+        &provider,
+        &["emery", "--format", "json", "amend", DOCS, "--apply", "--config", PROJECT_CONFIG],
+    )
+    .await;
+    let envelope: Value = serde_json::from_slice(&resp.stdout).expect("one JSON envelope");
+    assert_eq!(envelope["amendment"], Value::Null, "{envelope}");
+    assert_eq!(envelope["staged"], false, "{envelope}");
+    assert_eq!(envelope["applied"], Value::Null, "{envelope}");
     provider.model.assert_exhausted();
 }
 

@@ -6,13 +6,14 @@ mod support;
 
 use std::sync::Arc;
 
-use emery_engine::vcs::{REVISION, RevisionMessage};
+use emery_engine::amend::{SliceChange, SliceClass};
+use emery_engine::vcs::{REVISION, RevisionMessage, Summary};
 use emery_engine::{EntryKind, REVISION_KEY, STAGED_CONTAINER, STAGED_KEY};
 use omnia_sdk::vcs::{Change, ChangeKind, Error};
-use serde_json::Value;
+use serde_json::{Value, json};
 use support::provider::{Provider, cli};
 use support::scratch::Scratch;
-use support::store::{carry, document, seed, stage, staged};
+use support::store::{carry, document, revision, seed, stage, stage_amendment, staged, written};
 use support::vcs::HEAD;
 use support::{cli_ok, fail};
 
@@ -82,6 +83,7 @@ async fn apply_seals() {
             revision: id.clone(),
             parent: None,
             base: Some(HEAD.to_owned()),
+            summary: None,
         }
     );
     assert!(provider.storage.state(STAGED_KEY).is_none(), "the staged slot is cleared");
@@ -262,6 +264,236 @@ async fn apply_amends() {
         ]),
         "{envelope}"
     );
+}
+
+// An amendment prepared against `base` at `commit`, as `emery amend` stages
+// one over `SPEC`, `DESIGN`, and `PLAN`: the timeout revised under its id,
+// the cancellation retired and leaving its slice, a refund added under the
+// next id into the slice of its stem, the rest as the base holds it.
+fn amendment_over(base: &str, commit: &str) -> Vec<u8> {
+    let mut spec: Value = serde_json::from_slice(SPEC).expect("spec.json is JSON");
+    let mut design: Value = serde_json::from_slice(DESIGN).expect("design.json is JSON");
+    let mut plan: Value = serde_json::from_slice(PLAN).expect("plan.json is JSON");
+    let before = "Sessions expire after an hour of inactivity.";
+    let after = "Sessions expire after 30 minutes of inactivity.";
+    let refund = "A signed-in user requests a refund of a delivered order.";
+
+    spec["parent"] = json!(base);
+    let requirements = spec["requirements"].as_array_mut().expect("requirements");
+    requirements[1]["body"] = json!([after]);
+    let mut added = requirements.remove(3);
+    added["id"] = json!("REQ-005");
+    added["subject"] = json!("orders.refund");
+    added["body"] = json!([refund]);
+    requirements.push(added);
+    design["parent"] = json!(base);
+    plan["parent"] = json!(base);
+    plan["slices"][1]["requirements"] = json!(["REQ-003", "REQ-005"]);
+
+    let change = |id: &str, subject: &str, class: &str, before: Value, after: Value| {
+        json!({
+            "id": id, "subject": subject, "class": class, "before": before, "after": after,
+            "sources": [], "scope": null,
+        })
+    };
+    let amendment = json!({
+        "emery": 8,
+        "base": {"revision": base, "commit": commit},
+        "changes": [
+            change("REQ-001", "auth.login", "unchanged",
+                json!("Users sign in with a credential."), json!("Users sign in with a credential.")),
+            change("REQ-002", "session.timeout", "changed", json!(before), json!(after)),
+            change("REQ-003", "orders.create", "unchanged",
+                json!("A signed-in user places an order."), json!("A signed-in user places an order.")),
+            change("REQ-004", "orders.cancel", "retired",
+                json!("A signed-in user cancels an open order."), Value::Null),
+            change("REQ-005", "orders.refund", "added", Value::Null, json!(refund)),
+        ],
+        "spec": spec,
+        "design": design,
+        "plan": plan,
+        "sections": {"preamble": false, "added": [], "removed": [], "changed": []},
+        "slices": [{"id": "SLICE-002", "name": "orders", "class": "changed"}],
+    });
+    serde_json::to_vec_pretty(&amendment).expect("the amendment serialises")
+}
+
+// A staged amendment seals as a revision over its base: the repository is
+// read for the revision it holds, the amendment's three documents are
+// written under `spec/` in a working copy cut at the commit the base was
+// read at, sealed as one commit whose message names the base as parent and
+// carries the counts and the slices changed, and labelled; the pointer
+// names the sealed revision, the slot is cleared and the amendment pruned,
+// the base's label stands, and the output names the sealed revision, the
+// base it amends, and the diff within one history, the withdrawn
+// cancellation retired rather than removed.
+#[tokio::test]
+async fn apply_amendment() {
+    let provider = Provider::idle();
+    let outgoing = seed(&provider.files, SPEC, DESIGN, PLAN);
+    let amendment = stage_amendment(&provider.storage, &amendment_over(&outgoing, HEAD));
+
+    let resp =
+        cli_ok(&provider, &["emery", "--format", "json", "apply", "--config", PROJECT_CONFIG])
+            .await;
+
+    let sealed = revision(
+        &written(&provider.files, "spec"),
+        &written(&provider.files, "design"),
+        &written(&provider.files, "plan"),
+    );
+    assert_ne!(sealed, outgoing);
+    let envelope: Value = serde_json::from_slice(&resp.stdout).expect("one JSON envelope");
+    assert_eq!(envelope["revision"], sealed, "{envelope}");
+    assert_eq!(envelope["parent"], outgoing, "{envelope}");
+    assert_eq!(envelope["commit"], "Revision-commit", "{envelope}");
+    assert_eq!(envelope["label"], format!("emery/{sealed}"), "{envelope}");
+    assert_eq!(envelope["kind"], "amendment", "{envelope}");
+    assert_eq!(envelope["amendment"], amendment, "{envelope}");
+    assert_eq!(envelope["diff"]["from"], outgoing, "{envelope}");
+    assert_eq!(
+        envelope["diff"]["spec"]["retired"],
+        json!([{
+            "id": "REQ-004",
+            "subject": "orders.cancel",
+            "statement": "A signed-in user cancels an open order.",
+        }]),
+        "one history, so what the amendment leaves out is retired: {envelope}"
+    );
+    assert_eq!(
+        envelope["diff"]["spec"]["added"],
+        json!([{"id": "REQ-005", "subject": "orders.refund"}]),
+        "{envelope}"
+    );
+    assert_eq!(current(&provider), sealed, "the pointer names the sealed revision");
+    assert_eq!(
+        provider.vcs.calls(),
+        [
+            "head .".to_owned(),
+            format!("add . {REVISION} {HEAD}"),
+            format!("remove {REVISION}"),
+            format!("add . {REVISION} {HEAD}"),
+            format!("pending {REVISION}"),
+            format!("commit {REVISION} Revision {sealed}"),
+            format!("label . emery/{sealed} Revision-commit"),
+            format!("remove {REVISION}"),
+        ],
+        "read, then sealed and labelled in a working copy cut at the base's commit"
+    );
+    let spec: Value = serde_json::from_slice(&written(&provider.files, "spec")).expect("JSON");
+    assert_eq!(spec["parent"], outgoing, "the amendment's documents are what is sealed");
+    assert_eq!(spec["requirements"][3]["id"], "REQ-005", "{spec}");
+    let message = RevisionMessage::parse(&provider.vcs.messages()[0]).expect("a revision message");
+    assert_eq!(
+        message,
+        RevisionMessage {
+            revision: sealed.clone(),
+            parent: Some(outgoing.clone()),
+            base: Some(HEAD.to_owned()),
+            summary: Some(Summary {
+                added: 1,
+                changed: 1,
+                retired: 1,
+                slices: vec![SliceChange {
+                    id: "SLICE-002".parse().expect("a slice id"),
+                    name: "orders".to_owned(),
+                    class: SliceClass::Changed,
+                }],
+            }),
+        }
+    );
+    assert!(provider.storage.state(STAGED_KEY).is_none(), "the staged slot is cleared");
+    assert!(provider.storage.objects(STAGED_CONTAINER).is_empty(), "the amendment is pruned");
+    assert!(
+        !provider.vcs.calls().iter().any(|call| call.contains(&format!("emery/{outgoing}"))),
+        "the base's label is left standing: {:?}",
+        provider.vcs.calls()
+    );
+
+    // the sealed revision is what show sees, and nothing is staged now
+    fail(&provider, &["emery", "show", "amendment"], 2, "nothing-staged").await;
+    fail(&provider, &["emery", "apply", "--config", PROJECT_CONFIG], 2, "nothing-staged").await;
+
+    // the text render names the base the revision amends
+    let provider = Provider::idle();
+    seed(&provider.files, SPEC, DESIGN, PLAN);
+    stage_amendment(&provider.storage, &amendment_over(&outgoing, HEAD));
+    let resp = cli_ok(&provider, &["emery", "apply", "--config", PROJECT_CONFIG]).await;
+    assert_eq!(
+        String::from_utf8_lossy(&resp.stdout),
+        format!(
+            "sealed revision {sealed} as emery/{sealed} at Revision\n  amends {outgoing}\n  diff \
+             vs {outgoing}: spec +1 -0 ~1 retired 1, design +0 -0 ~0, plan +0 -0 ~1\n"
+        )
+    );
+}
+
+// An amendment prepared against a revision, or a commit, other than the one
+// the repository now holds as current is stale: the seal is refused before
+// anything is written, naming both, and the amendment stays staged for
+// `emery amend` to prepare it again.
+#[tokio::test]
+async fn apply_amendment_stale() {
+    let other = "0000000000000000000000000000000000000000000000000000000000000000";
+
+    // the base revision is not the current one
+    let provider = Provider::idle();
+    let current = seed(&provider.files, SPEC, DESIGN, PLAN);
+    let amendment = stage_amendment(&provider.storage, &amendment_over(other, HEAD));
+    let envelope =
+        fail(&provider, &["emery", "apply", "--config", PROJECT_CONFIG], 1, "amendment-stale")
+            .await;
+    let message = envelope["message"].as_str().expect("a message");
+    assert!(
+        message.contains(&format!("against revision `{other}` at commit `{HEAD}`")),
+        "{envelope}"
+    );
+    assert!(
+        message.contains(&format!("holds revision `{current}` at commit `{HEAD}`")),
+        "{envelope}"
+    );
+    assert!(
+        envelope["hint"].as_str().is_some_and(|hint| hint.contains("emery amend")),
+        "{envelope}"
+    );
+    assert_eq!(
+        provider.vcs.calls(),
+        ["head .".to_owned(), format!("add . {REVISION} {HEAD}"), format!("remove {REVISION}")],
+        "read, and nothing sealed"
+    );
+    assert!(provider.files.writes().is_empty(), "nothing is written");
+    assert!(provider.storage.state(REVISION_KEY).is_none(), "the pointer does not move");
+    assert!(
+        provider.storage.object(STAGED_CONTAINER, &format!("{amendment}/amendment.json")).is_some(),
+        "the amendment stays staged"
+    );
+
+    // the base commit is not the one the revision now stands at
+    let provider = Provider::idle();
+    let current = seed(&provider.files, SPEC, DESIGN, PLAN);
+    stage_amendment(&provider.storage, &amendment_over(&current, "1234567890abcdef"));
+    let envelope =
+        fail(&provider, &["emery", "apply", "--config", PROJECT_CONFIG], 1, "amendment-stale")
+            .await;
+    let message = envelope["message"].as_str().expect("a message");
+    assert!(message.contains("at commit `1234567890abcdef`"), "{envelope}");
+    assert!(
+        message.contains(&format!("holds revision `{current}` at commit `{HEAD}`")),
+        "{envelope}"
+    );
+    assert!(provider.vcs.messages().is_empty(), "nothing is sealed");
+
+    // no revision stands where the base was read
+    let provider = Provider::idle();
+    stage_amendment(&provider.storage, &amendment_over(other, HEAD));
+    let envelope =
+        fail(&provider, &["emery", "apply", "--config", PROJECT_CONFIG], 1, "amendment-stale")
+            .await;
+    assert!(
+        envelope["message"].as_str().is_some_and(|message| message.ends_with("holds no revision")),
+        "{envelope}"
+    );
+    assert!(provider.vcs.messages().is_empty(), "nothing is sealed");
 }
 
 // A target naming no repository seals into one the engine creates under the

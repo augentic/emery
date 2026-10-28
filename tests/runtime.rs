@@ -724,6 +724,7 @@ async fn specify_staged() {
             revision: second.clone(),
             parent: None,
             base: Some(base.clone()),
+            summary: None,
         }),
         "{message}"
     );
@@ -849,6 +850,7 @@ async fn specify_over_built() {
             revision: second.clone(),
             parent: Some(first.clone()),
             base: Some(built_head.clone()),
+            summary: None,
         }),
         "{message}"
     );

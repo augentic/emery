@@ -4,7 +4,8 @@
 //! review: the base it was prepared against, one [`Change`] per
 //! requirement, classed by what the change did to it, the amended
 //! specification, design, and plan, and what the last two change against
-//! the base's. It is never sealed as it stands.
+//! the base's. A seal writes those three documents as a revision over the
+//! base, never the amendment itself.
 
 use std::fmt::{self, Display, Formatter};
 
@@ -412,7 +413,9 @@ impl SliceChange {
 }
 
 /// What an [`Amendment`] did to a slice of the plan.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, strum::Display)]
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, strum::Display, strum::EnumString,
+)]
 #[serde(rename_all = "kebab-case")]
 #[strum(serialize_all = "kebab-case")]
 pub enum SliceClass {

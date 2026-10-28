@@ -26,29 +26,27 @@ pub fn specify(output: &SpecifyOutput, w: &mut dyn fmt::Write) -> fmt::Result {
     }
     diff(output.diff.as_ref(), w)?;
     match &output.applied {
-        Some(applied) => {
-            write!(w, "  ")?;
-            sealed(applied, w)
-        }
+        Some(applied) => sealed(applied, "  ", w),
         None => writeln!(w, "  nothing sealed; `emery apply` seals it"),
     }
 }
 
-// Writes an `ApplyOutput` revision line, the repository it was sealed in, and a one-line diff summary.
+// Writes an `ApplyOutput` revision line, the revision it amends, the repository it was sealed in, and a one-line diff summary.
 //
 // The first line names the revision, its label, and the commit it stands
-// at. The repository follows when it is not the project's own checkout.
+// at; `amends <parent>` follows for a sealed amendment. The repository
+// follows when it is not the project's own checkout.
 pub fn apply(output: &ApplyOutput, w: &mut dyn fmt::Write) -> fmt::Result {
-    sealed(output, w)?;
+    sealed(output, "", w)?;
     if output.repository != "." {
         writeln!(w, "  repository {}", output.repository)?;
     }
     diff(output.diff.as_ref(), w)
 }
 
-// Writes an `AmendOutput` amendment line, the base, the counts by class, the conflicts, the stems touched, the design sections and slices changed, and one line per repository source.
+// Writes an `AmendOutput` amendment line, the base, the counts by class, the conflicts, the stems touched, the design sections and slices changed, one line per repository source, and what the run sealed.
 //
-// The first line names the staged amendment, or says no change was found
+// The first line names the amendment prepared, or says no change was found
 // against the base and nothing staged. The counts line is the one
 // `amendment.md` opens with, `1 retired (1 by scope)` counting those a
 // source read whole retired. The conflicts, stems, design, and slices lines
@@ -56,7 +54,8 @@ pub fn apply(output: &ApplyOutput, w: &mut dyn fmt::Write) -> fmt::Result {
 // kinds in document order, `preamble` first where it changed; `slices:
 // orders, export (removed), rate-limit (new)` the slices in id order — and
 // the last line names `emery show amendment` as the way to review what was
-// staged.
+// staged, or, under `--apply`, is the `apply` line for the revision the
+// run sealed.
 pub fn amend(output: &AmendOutput, w: &mut dyn fmt::Write) -> fmt::Result {
     match &output.amendment {
         Some(id) => writeln!(w, "staged amendment {id}")?,
@@ -114,20 +113,28 @@ pub fn amend(output: &AmendOutput, w: &mut dyn fmt::Write) -> fmt::Result {
             read.source, read.repository, read.revision, read.commit
         )?;
     }
-    if output.amendment.is_some() {
+    if let Some(applied) = &output.applied {
+        sealed(applied, "  ", w)?;
+    } else if output.staged {
         writeln!(w, "  nothing sealed; `emery show amendment` reviews it")?;
     }
     Ok(())
 }
 
-fn sealed(output: &ApplyOutput, w: &mut dyn fmt::Write) -> fmt::Result {
+// `sealed revision <id> as emery/<id> at <commit8>`, led by `indent`, and
+// `amends <parent>` beneath it, indented once more, for a sealed amendment.
+fn sealed(output: &ApplyOutput, indent: &str, w: &mut dyn fmt::Write) -> fmt::Result {
     writeln!(
         w,
-        "sealed revision {} as {} at {}",
+        "{indent}sealed revision {} as {} at {}",
         output.revision,
         output.label,
         output.commit.get(..8).unwrap_or(&output.commit)
-    )
+    )?;
+    if let (StagedKind::Amendment, Some(parent)) = (output.kind, &output.parent) {
+        writeln!(w, "{indent}  amends {parent}")?;
+    }
+    Ok(())
 }
 
 fn diff(diff: Option<&Diff>, w: &mut dyn fmt::Write) -> fmt::Result {

@@ -18,7 +18,7 @@ use omnia_sdk::{Error, Vcs, bad_gateway, bad_request, server_error};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest as _, Sha256};
 
-use crate::revision::{ReqId, SliceId};
+use crate::revision::{Amendment, ChangeClass, ReqId, SliceChange, SliceId};
 
 /// The directory beneath the project root that holds every clone and working copy.
 pub const ROOT: &str = ".emery/vcs";
@@ -212,8 +212,9 @@ impl fmt::Display for Message {
 /// The message a revision is sealed under in the repository its specification lives in.
 ///
 /// The first line is `Revision <id>`; the trailers tie the commit to the
-/// revision, the revision it amends, and the commit it was sealed over, so
-/// a later run reads back from the history which revision a tree holds.
+/// revision, the revision it amends, the commit it was sealed over, and,
+/// for a sealed amendment, what it changed against its parent, so a later
+/// run reads back from the history which revision a tree holds.
 /// [`Display`](fmt::Display) writes it and [`parse`](RevisionMessage::parse)
 /// reads it back. [`Message::parse`] passes it over, since its first word
 /// is no slice id.
@@ -225,14 +226,18 @@ pub struct RevisionMessage {
     pub parent: Option<String>,
     /// The commit the revision was sealed over; `None` for a repository's root commit.
     pub base: Option<String>,
+    /// What the revision changed against its parent; `None` unless it was
+    /// sealed from an amendment.
+    pub summary: Option<Summary>,
 }
 
 impl RevisionMessage {
     /// Reads a message back from a commit's text; `None` when a seal did not write it.
     ///
     /// The first line and the `Revision:` trailer must agree; `Parent:` and
-    /// `Base:` are read where present, so a commit of any other shape in
-    /// the history is passed over.
+    /// `Base:` are read where present, and the summary trailers where any of
+    /// them is, each then well formed, so a commit of any other shape in the
+    /// history is passed over. A trailer of any other name is.
     #[must_use]
     pub fn parse(text: &str) -> Option<Self> {
         let mut lines = text.lines();
@@ -247,6 +252,11 @@ impl RevisionMessage {
         if *trailers.get("Revision")? != revision {
             return None;
         }
+        let summary = if Summary::KEYS.iter().any(|key| trailers.contains_key(key)) {
+            Some(Summary::parse(&trailers)?)
+        } else {
+            None
+        };
         Some(Self {
             revision: revision.to_owned(),
             parent: trailers
@@ -255,6 +265,7 @@ impl RevisionMessage {
                 .filter(|parent| !parent.is_empty())
                 .map(str::to_owned),
             base: trailers.get("Base").copied().filter(|base| !base.is_empty()).map(str::to_owned),
+            summary,
         })
     }
 }
@@ -267,6 +278,86 @@ impl fmt::Display for RevisionMessage {
         }
         if let Some(base) = &self.base {
             write!(f, "\nBase: {base}")?;
+        }
+        if let Some(summary) = &self.summary {
+            write!(f, "\n{summary}")?;
+        }
+        Ok(())
+    }
+}
+
+/// What a sealed amendment changed against the revision it amends, as its commit's trailers carry it.
+///
+/// `Added:`, `Changed:`, and `Retired:` count the requirements under each
+/// class; `Slices:` lists the slices the plan adds, changes, or removes as
+/// `SLICE-002 orders changed`, and is left out when there are none.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Summary {
+    /// Requirements the parent does not hold, stated by the change.
+    pub added: usize,
+    /// Requirements of the parent restated by the change, their ids kept.
+    pub changed: usize,
+    /// Requirements of the parent the change withdraws.
+    pub retired: usize,
+    /// The slices the plan adds, changes, or removes against the parent's, in id order.
+    pub slices: Vec<SliceChange>,
+}
+
+impl Summary {
+    const KEYS: [&str; 4] = ["Added", "Changed", "Retired", "Slices"];
+
+    /// Summarises what `amendment` changes against its base.
+    #[must_use]
+    pub fn of(amendment: &Amendment) -> Self {
+        Self {
+            added: amendment.count(ChangeClass::Added),
+            changed: amendment.count(ChangeClass::Changed),
+            retired: amendment.count(ChangeClass::Retired),
+            slices: amendment.slices.clone(),
+        }
+    }
+
+    // The summary the trailers carry; `None` when a count is missing or
+    // malformed, or a slice entry is not `<id> <name> <class>`.
+    fn parse(trailers: &BTreeMap<&str, &str>) -> Option<Self> {
+        let count = |key: &str| trailers.get(key)?.parse::<usize>().ok();
+        let slices = match trailers.get("Slices") {
+            Some(listed) => listed
+                .split(", ")
+                .map(|entry| {
+                    let mut words = entry.split_whitespace();
+                    let (id, name, class) = (words.next()?, words.next()?, words.next()?);
+                    if words.next().is_some() || !is_kebab(name) {
+                        return None;
+                    }
+                    Some(SliceChange {
+                        id: id.parse().ok()?,
+                        name: name.to_owned(),
+                        class: class.parse().ok()?,
+                    })
+                })
+                .collect::<Option<Vec<_>>>()?,
+            None => Vec::new(),
+        };
+        Some(Self {
+            added: count("Added")?,
+            changed: count("Changed")?,
+            retired: count("Retired")?,
+            slices,
+        })
+    }
+}
+
+impl fmt::Display for Summary {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "Added: {}\nChanged: {}\nRetired: {}", self.added, self.changed, self.retired)?;
+        if !self.slices.is_empty() {
+            let listed: Vec<String> = self
+                .slices
+                .iter()
+                .map(|slice| format!("{} {} {}", slice.id, slice.name, slice.class))
+                .collect();
+            write!(f, "\nSlices: {}", listed.join(", "))?;
         }
         Ok(())
     }
@@ -970,6 +1061,7 @@ mod tests {
             revision: "abc123".to_owned(),
             parent: Some("def456".to_owned()),
             base: Some("0123abcd".to_owned()),
+            summary: None,
         };
         let text = sealed.to_string();
         assert_eq!(text, "Revision abc123\n\nRevision: abc123\nParent: def456\nBase: 0123abcd");
@@ -980,10 +1072,98 @@ mod tests {
             revision: "abc123".to_owned(),
             parent: None,
             base: None,
+            summary: None,
         };
         let text = root.to_string();
         assert_eq!(text, "Revision abc123\n\nRevision: abc123");
         assert_eq!(RevisionMessage::parse(&text), Some(root));
+    }
+
+    #[test]
+    fn revision_message_summary_round_trip() {
+        use crate::revision::SliceClass;
+
+        let amended = RevisionMessage {
+            revision: "abc123".to_owned(),
+            parent: Some("def456".to_owned()),
+            base: Some("0123abcd".to_owned()),
+            summary: Some(Summary {
+                added: 1,
+                changed: 2,
+                retired: 0,
+                slices: vec![
+                    SliceChange {
+                        id: "SLICE-002".parse().expect("a slice id"),
+                        name: "orders".to_owned(),
+                        class: SliceClass::Changed,
+                    },
+                    SliceChange {
+                        id: "SLICE-003".parse().expect("a slice id"),
+                        name: "export".to_owned(),
+                        class: SliceClass::Removed,
+                    },
+                ],
+            }),
+        };
+        let text = amended.to_string();
+        assert_eq!(
+            text,
+            "Revision abc123\n\nRevision: abc123\nParent: def456\nBase: 0123abcd\nAdded: \
+             1\nChanged: 2\nRetired: 0\nSlices: SLICE-002 orders changed, SLICE-003 export removed"
+        );
+        assert_eq!(RevisionMessage::parse(&text), Some(amended));
+
+        // no slice changed leaves the trailer out, and reads back as none
+        let unsliced = RevisionMessage {
+            summary: Some(Summary {
+                added: 0,
+                changed: 1,
+                retired: 0,
+                slices: Vec::new(),
+            }),
+            ..RevisionMessage::parse(&text).expect("a revision message")
+        };
+        let text = unsliced.to_string();
+        assert!(!text.contains("Slices:"), "{text}");
+        assert_eq!(RevisionMessage::parse(&text), Some(unsliced));
+
+        // a trailer of another name is passed over; a malformed summary is not
+        let message = RevisionMessage::parse(
+            "Revision abc123\n\nRevision: abc123\nSigned-off-by: someone\nBase: 0123abcd",
+        )
+        .expect("a revision message");
+        assert_eq!(message.summary, None);
+        assert_eq!(message.base.as_deref(), Some("0123abcd"));
+        assert!(
+            RevisionMessage::parse("Revision abc123\n\nRevision: abc123\nAdded: 1").is_none(),
+            "a count missing"
+        );
+        assert!(
+            RevisionMessage::parse("Revision abc123\n\nRevision: abc123\nChanged: 1").is_none(),
+            "Added missing when another summary trailer is present"
+        );
+        assert!(
+            RevisionMessage::parse(
+                "Revision abc123\n\nRevision: abc123\nAdded: 1\nChanged: x\nRetired: 0"
+            )
+            .is_none(),
+            "a count malformed"
+        );
+        assert!(
+            RevisionMessage::parse(
+                "Revision abc123\n\nRevision: abc123\nAdded: 1\nChanged: 0\nRetired: 0\nSlices:"
+            )
+            .is_none(),
+            "an empty Slices trailer"
+        );
+        assert!(
+            RevisionMessage::parse(
+                "Revision abc123\n\nRevision: abc123\nAdded: 1\nChanged: 0\nRetired: 0\nSlices: \
+                 orders changed"
+            )
+            .is_none(),
+            "a slice entry malformed"
+        );
     }
 
     #[test]

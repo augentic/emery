@@ -9,9 +9,10 @@
 //! revision lives in the repository the target names, under `spec/` at the
 //! commit labelled `emery/<id>`: `current` reads it from the label the
 //! `current-revision` pointer names, or from the head's tree, and `commit`
-//! seals a revision there, labels it, and points the pointer at it. Content
-//! is checked against its identifier when read, so a document rewritten
-//! beneath the engine is refused rather than served.
+//! seals a `Sealing` there — a candidate revision, or an amendment's three
+//! documents over the base it was prepared against — labels it, and points
+//! the pointer at it. Content is checked against its identifier when read,
+//! so a document rewritten beneath the engine is refused rather than served.
 
 use anyhow::Context;
 use omnia_sdk::{BlobStore, Error, StateStore, Vcs, server_error};
@@ -20,7 +21,7 @@ use serde::{Deserialize, Serialize};
 use crate::revision::{
     Amendment, AmendmentBase, Design, Diff, Document as _, Plan, Revision, Spec,
 };
-use crate::vcs::{BuildRepo, REVISION, RevisionMessage, SPECIFICATION, WorkingCopy};
+use crate::vcs::{BuildRepo, REVISION, RevisionMessage, SPECIFICATION, Summary, WorkingCopy};
 use crate::{EntryKind, Files, secrets};
 
 /// The state-store key containing the current revision identifier.
@@ -136,6 +137,15 @@ impl Slot {
         }
         Ok(())
     }
+
+    async fn item<S: BlobStore>(self, store: &S) -> Result<StagedItem, Error> {
+        match self.kind {
+            StagedKind::Revision => Staged::read(store, self.id).await.map(StagedItem::Revision),
+            StagedKind::Amendment => {
+                StagedAmendment::read(store, self.id).await.map(StagedItem::Amendment)
+            }
+        }
+    }
 }
 
 // The revision candidate `stage` left for `apply`, read back whole.
@@ -144,10 +154,82 @@ pub struct Staged {
     pub revision: Revision,
 }
 
+impl Staged {
+    async fn read<S: BlobStore>(store: &S, id: String) -> Result<Self, Error> {
+        let mut bodies = Vec::with_capacity(Revision::DOCUMENTS.len());
+        for name in Revision::DOCUMENTS {
+            bodies.push(document(store, &id, name).await?);
+        }
+        let revision = Revision::read(&id, &bodies[0], &bodies[1], &bodies[2])?;
+        Ok(Self { id, revision })
+    }
+}
+
 // The amendment `stage_amendment` left for review, read back whole.
 pub struct StagedAmendment {
     pub id: String,
     pub amendment: Amendment,
+}
+
+impl StagedAmendment {
+    async fn read<S: BlobStore>(store: &S, id: String) -> Result<Self, Error> {
+        let body = document(store, &id, Amendment::NAME).await?;
+        let amendment = Amendment::read(&id, &body)?;
+        Ok(Self { id, amendment })
+    }
+}
+
+// Whatever stands in the slot, read back whole.
+pub enum StagedItem {
+    Revision(Staged),
+    Amendment(StagedAmendment),
+}
+
+// What a seal writes: the three documents as a revision, the revision it
+// records as its parent, the commit it lands over, and, for an amendment,
+// what it changed against that parent.
+pub struct Sealing {
+    revision: Revision,
+    parent: Option<String>,
+    over: Option<String>,
+    summary: Option<Summary>,
+}
+
+impl Sealing {
+    // A candidate revision over what `standing` read: the current revision
+    // its parent and the commit holding it, else the head, the one it lands
+    // over.
+    pub fn candidate(revision: Revision, standing: &Standing) -> Self {
+        Self {
+            revision,
+            parent: standing.current.as_ref().map(|current| current.id.clone()),
+            over: standing.over().map(str::to_owned),
+            summary: None,
+        }
+    }
+
+    // An amendment's three documents over the base it was prepared
+    // against, that base its parent and the commit it was read at the one it
+    // lands over, the counts by class and the slices changed its summary.
+    // `amendment-stale` unless `standing` reads that base as the current
+    // revision, at that commit, so a revision sealed since is never
+    // displaced by a change prepared against the one before it.
+    pub fn amendment(amendment: Amendment, standing: &Standing) -> Result<Self, Error> {
+        if !standing.is_at(&amendment.base) {
+            return Err(stale(&amendment.base, standing));
+        }
+        let summary = Summary::of(&amendment);
+        Ok(Self {
+            revision: Revision {
+                spec: amendment.spec,
+                design: amendment.design,
+                plan: amendment.plan,
+            },
+            parent: Some(amendment.base.revision),
+            over: Some(amendment.base.commit),
+            summary: Some(summary),
+        })
+    }
 }
 
 // The revision a repository holds, and the commit it was read from. The
@@ -185,6 +267,15 @@ impl Standing {
     // The commit a seal lands over: the current revision's, else the head.
     pub fn over(&self) -> Option<&str> {
         self.current.as_ref().map(|current| current.commit.as_str()).or(self.head.as_deref())
+    }
+
+    // Whether the current revision stands at `base`, the revision and
+    // commit an amendment was prepared against.
+    fn is_at(&self, base: &AmendmentBase) -> bool {
+        matches!(
+            &self.current,
+            Some(Current { id, commit, .. }) if *id == base.revision && *commit == base.commit
+        )
     }
 }
 
@@ -313,41 +404,55 @@ pub async fn staged_record<S: StateStore>(
     Ok(Slot::read(store).await?.map(|slot| (slot.id, slot.kind)))
 }
 
+// Whatever stands in the slot, whole, or `None` when nothing is staged:
+// fails closed on an item that no longer matches its id, and
+// `spec-outdated` on one under another grammar.
+pub async fn staged_item<S: StateStore + BlobStore>(
+    store: &S,
+) -> Result<Option<StagedItem>, Error> {
+    match Slot::read(store).await? {
+        Some(slot) => slot.item(store).await.map(Some),
+        None => Ok(None),
+    }
+}
+
 // The staged revision candidate whole, or `None` when nothing is staged:
-// `amendment-pending` when an amendment stands in the slot instead, failing
-// closed on a candidate that no longer matches its id, and `spec-outdated`
-// on one under another grammar.
+// `amendment-pending` when an amendment stands in the slot instead, read
+// no further, and what `staged_item` fails with otherwise.
 pub async fn staged<S: StateStore + BlobStore>(store: &S) -> Result<Option<Staged>, Error> {
-    let Some(Slot { id, kind, .. }) = Slot::read(store).await? else {
-        return Ok(None);
-    };
-    if kind == StagedKind::Amendment {
-        return Err(amendment_pending(&id));
+    match Slot::read(store).await? {
+        Some(Slot {
+            id,
+            kind: StagedKind::Revision,
+            ..
+        }) => Staged::read(store, id).await.map(Some),
+        Some(Slot {
+            id,
+            kind: StagedKind::Amendment,
+            ..
+        }) => Err(amendment_pending(&id)),
+        None => Ok(None),
     }
-    let mut bodies = Vec::with_capacity(Revision::DOCUMENTS.len());
-    for name in Revision::DOCUMENTS {
-        bodies.push(document(store, &id, name).await?);
-    }
-    let revision = Revision::read(&id, &bodies[0], &bodies[1], &bodies[2])?;
-    Ok(Some(Staged { id, revision }))
 }
 
 // The staged amendment whole, or `None` when nothing is staged or a
-// revision candidate stands in the slot: fails closed on an amendment that
-// no longer matches its id, and `spec-outdated` on one under another
-// grammar.
+// revision candidate stands in the slot, read no further, and what
+// `staged_item` fails with otherwise.
 pub async fn staged_amendment<S: StateStore + BlobStore>(
     store: &S,
 ) -> Result<Option<StagedAmendment>, Error> {
-    let Some(Slot { id, kind, .. }) = Slot::read(store).await? else {
-        return Ok(None);
-    };
-    if kind == StagedKind::Revision {
-        return Ok(None);
+    match Slot::read(store).await? {
+        Some(Slot {
+            id,
+            kind: StagedKind::Amendment,
+            ..
+        }) => StagedAmendment::read(store, id).await.map(Some),
+        Some(Slot {
+            kind: StagedKind::Revision,
+            ..
+        })
+        | None => Ok(None),
     }
-    let body = document(store, &id, Amendment::NAME).await?;
-    let amendment = Amendment::read(&id, &body)?;
-    Ok(Some(StagedAmendment { id, amendment }))
 }
 
 // Refuses `amendment-pending` when an amendment is staged, so a verb that
@@ -445,28 +550,30 @@ pub async fn current<P: Vcs + Files + StateStore>(
     })
 }
 
-// Seals `revision` in `repo` as the current revision, over what `standing`
+// Seals `sealing` in `repo` as the current revision, over what `standing`
 // read: the three documents written under `spec/` in a working copy cut at
-// the current revision's commit, else at the head, else, for a repository
-// the engine creates, in the repository created now as its root commit; what
-// they changed held to the secret gate and sealed under a `RevisionMessage`;
-// the commit labelled `emery/<id>`; the pointer swapped by compare-and-swap;
-// the staged candidate cleared; the copy removed. A revision the repository
-// already holds seals nothing and stands labelled as it was.
+// the commit the sealing lands over, else, for a repository the engine
+// creates, in the repository created now as its root commit; what they
+// changed held to the secret gate and sealed under a `RevisionMessage`
+// carrying the sealing's parent and summary; the commit labelled
+// `emery/<id>`; the pointer swapped by compare-and-swap; the staged item
+// cleared; the copy removed. A revision the repository already holds seals
+// nothing and stands labelled as it was.
 pub async fn commit<P: Vcs + Files + StateStore + BlobStore>(
-    provider: &P, repo: &BuildRepo, revision: &Revision, standing: Standing,
+    provider: &P, repo: &BuildRepo, sealing: Sealing, standing: Standing,
 ) -> Result<Sealed, Error> {
-    let documents = revision.documents()?;
+    let documents = sealing.revision.documents()?;
     let id = Revision::identify(
         documents[0].1.as_bytes(),
         documents[1].1.as_bytes(),
         documents[2].1.as_bytes(),
     );
-    let diff = standing.diff(revision);
+    let diff = standing.diff(&sealing.revision);
     let message = RevisionMessage {
         revision: id,
-        parent: standing.current.as_ref().map(|current| current.id.clone()),
-        base: standing.over().map(str::to_owned),
+        parent: sealing.parent,
+        base: sealing.over,
+        summary: sealing.summary,
     };
 
     // the tree the seal lands over
@@ -584,6 +691,23 @@ pub fn candidate_pending(id: &str) -> Error {
         code: "amendment-pending".into(),
         description: format!(
             "candidate `{id}` is staged and not sealed, where the amendment would go"
+        ),
+    }
+}
+
+// The `amendment-stale` refusal of a seal of an amendment prepared against
+// `base` where `standing` reads another revision, or none, as current.
+fn stale(base: &AmendmentBase, standing: &Standing) -> Error {
+    let now = standing.current.as_ref().map_or_else(
+        || "holds no revision".to_owned(),
+        |current| format!("holds revision `{}` at commit `{}`", current.id, current.commit),
+    );
+    Error::BadRequest {
+        code: "amendment-stale".into(),
+        description: format!(
+            "the amendment was prepared against revision `{}` at commit `{}`, and the repository \
+             now {now}",
+            base.revision, base.commit
         ),
     }
 }

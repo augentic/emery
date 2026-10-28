@@ -71,9 +71,9 @@ async fn show_amendment_none() {
 }
 
 // A staged amendment holds the slot: `specify` is refused before any
-// adapter loads, `apply` does not seal it, and a revision document asked of
-// the slot names it, each `amendment-pending` naming the amendment and
-// leaving it staged.
+// adapter loads, and a revision document asked of the slot names it, each
+// `amendment-pending` naming the amendment and leaving it staged; `apply`
+// seals it, which `tests/apply.rs` asserts.
 #[tokio::test]
 async fn amendment_pending() {
     let provider = Provider::idle();
@@ -86,14 +86,6 @@ async fn amendment_pending() {
         "{envelope}"
     );
     assert!(provider.source.calls().is_empty(), "no source is extracted over a staged amendment");
-
-    let envelope =
-        fail(&provider, &["emery", "apply", "--config", PROJECT_CONFIG], 1, "amendment-pending")
-            .await;
-    assert!(
-        envelope["hint"].as_str().is_some_and(|hint| hint.contains("emery show amendment")),
-        "{envelope}"
-    );
 
     let envelope =
         fail(&provider, &["emery", "show", "spec", "--staged"], 1, "amendment-pending").await;

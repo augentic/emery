@@ -46,16 +46,20 @@ const SPECIFY_DESC: &str = "Stage spec.md, design.md, and plan.md from source ad
     it in the same run. The `[target]` table of the config, named or discovered, says \
     which repository the specification lives in: the diff reported is against the \
     revision it holds, which a seal displaces, and `--apply` needs one.";
-const APPLY_DESC: &str = "Seal the staged candidate as the current revision.\n\n\
-    The candidate `emery specify` staged is sealed in the repository the `[target]` table \
-    of `--config [<path>]` (default: `emery.toml`) names — a URL, cloned under \
-    `.emery/vcs/repos/<name>`; `.`, the project checkout; or, with none, a repository \
-    created once at `.emery/vcs/repos/<name>` and kept — as one commit over the head, \
-    holding `spec/spec.json`, `spec/design.json`, and `spec/plan.json`, labelled \
-    `emery/<revision>`; `--repository` takes the place of the table's. The checkout is \
-    never touched: merge or rebase the label to carry the specification on the branch. \
-    `emery show` and `emery build` read the sealed revision from then on, and the staging \
-    slot is cleared. With nothing staged the verb fails with `nothing-staged`.";
+const APPLY_DESC: &str = "Seal the staged candidate or amendment as the current revision.\n\n\
+    The candidate `emery specify` staged, or the amendment `emery amend` staged, is sealed \
+    in the repository the `[target]` table of `--config [<path>]` (default: `emery.toml`) \
+    names — a URL, cloned under `.emery/vcs/repos/<name>`; `.`, the project checkout; or, \
+    with none, a repository created once at `.emery/vcs/repos/<name>` and kept — as one \
+    commit over the head, holding `spec/spec.json`, `spec/design.json`, and \
+    `spec/plan.json`, labelled `emery/<revision>`; `--repository` takes the place of the \
+    table's. An amendment seals its three documents over the commit its base was read at, \
+    the commit naming the base as the parent and carrying what changed, and only while \
+    that base is still the current revision there; otherwise the verb fails with \
+    `amendment-stale` and the amendment stays staged for `emery amend` to prepare again. \
+    The checkout is never touched: merge or rebase the label to carry the specification on \
+    the branch. `emery show` and `emery build` read the sealed revision from then on, and \
+    the staging slot is cleared. With nothing staged the verb fails with `nothing-staged`.";
 const BUILD_DESC: &str = "Build the current plan through a target adapter.\n\n\
     Name the adapter, or use `--config [<path>]` (default: `emery.toml`) to read its \
     `[target]` table. With no adapter, Emery looks for `emery.toml` in the project root. \
@@ -100,8 +104,9 @@ const AMEND_DESC: &str = "Stage an amendment against the current revision.\n\n\
     covers is added under a new id, and a requirement no claim touches stands unchanged. \
     No source may be named `baseline`. A change that leaves every requirement as it \
     stands stages nothing. Otherwise the amendment is staged for `emery show amendment` to \
-    review, replacing any amendment staged before it; a staged revision candidate is never \
-    replaced, so seal it with `emery apply` first. Nothing is sealed.";
+    review and `emery apply` to seal, replacing any amendment staged before it; a staged \
+    revision candidate is never replaced, so seal it with `emery apply` first. `--apply` \
+    seals the staged amendment in the same run; without it nothing is sealed.";
 const SHOW_DESC: &str = "Print an artifact from the current revision.\n\n\
     The revision is read from the repository the `[target]` table of `--config [<path>]` \
     (default: `emery.toml`) names, where `emery apply` sealed it. `--staged` prints it \
@@ -210,11 +215,11 @@ enum Verb {
     /// Stage spec.md, design.md, and plan.md from the named sources as a candidate
     #[command(long_about = SPECIFY_DESC)]
     Specify(SpecifyArgs),
-    /// Seal the staged candidate as the current revision
+    /// Seal the staged candidate or amendment as the current revision
     #[command(long_about = APPLY_DESC)]
     Apply(ApplyArgs),
-    // Hidden while the amendment it stages seals nothing: out of `--help`
-    // and the completions until the journey closes.
+    // Hidden until the journey is documented: out of `--help` and the
+    // completions, while it runs and has help of its own.
     /// Stage an amendment against the current revision from the named sources
     #[command(long_about = AMEND_DESC, hide = true)]
     Amend(AmendArgs),
@@ -303,6 +308,9 @@ struct AmendArgs {
     /// The change file whose `[[source]]` tables state the change; the omitted value selects emery.toml.
     #[arg(long, short = 'c', num_args = 0..=1, default_missing_value = config::CONFIG_FILE)]
     config: Option<PathBuf>,
+    /// Seal the staged amendment as the current revision in the same run, as `emery apply` would.
+    #[arg(long)]
+    apply: bool,
 }
 
 impl TryFrom<AmendArgs> for AmendInput {
@@ -313,6 +321,7 @@ impl TryFrom<AmendArgs> for AmendInput {
             adapters,
             descriptions,
             config,
+            apply,
         } = args;
         let SpecifyInput { sources, target, .. } = config::SourceCarriers {
             adapters: &adapters,
@@ -327,7 +336,11 @@ impl TryFrom<AmendArgs> for AmendInput {
             (None, Some(_)) => config::target(None, None)?,
             (None, None) => None,
         };
-        Ok(Self { sources, target })
+        Ok(Self {
+            sources,
+            target,
+            apply,
+        })
     }
 }
 
@@ -494,8 +507,8 @@ fn hint(error: &Error, invoked: Invoked) -> Option<Cow<'static, str>> {
         "nothing-staged" => {
             "run `emery specify <adapter>...` to stage a candidate, then re-run `emery apply` or `emery show <artifact> --staged`"
         }
-        "amendment-pending" if invoked == Invoked::Apply => {
-            "this emery does not seal an amendment yet: `emery show amendment` reviews the one staged, and re-running `emery amend` prepares it again"
+        "amendment-stale" => {
+            "the current revision moved since the amendment was prepared, so it no longer applies: re-run `emery amend <adapter>...` against the current revision to prepare it again, then `emery apply`; nothing was sealed and the stale amendment stays staged until then"
         }
         "amendment-pending" if invoked == Invoked::Specify => {
             "an amendment is staged where the candidate would go: review it with `emery show amendment`, or re-run `emery amend` to prepare it again; a specify never displaces it"
