@@ -118,7 +118,22 @@ git merge --ff-only emery/<revision>
 "$emery" -v build
 git merge --ff-only emery/<revision>
 
-# the history: three revisions, each sealed over the last and built under its own label
+# a brief that contradicts the committed docs: the docs still say hello, world, the brief says howdy, and the two
+# sources are one adapter's, so neither outranks the other and the greeting is a conflict the amendment carries
+"$emery" -v amend --config --description "example:source@0.1.0=GET /greeting returns the static string 'howdy'."
+"$emery" show amendment              # ## Conflict: the greeting [conflict], both statements noted, Operator reconciliation required.
+"$emery" apply                       # seals it marked [conflict]: show spec prints the greeting with no body and both statements as notes
+"$emery" show spec
+
+# the way out is the next change: make the sources agree (edit docs/greeting.md to say howdy, or drop the brief) and amend again
+"$emery" -v amend                    # the docs alone: 0 added, 1 changed — the conflict resolved to the docs' statement
+"$emery" show amendment              # ## Changed: Before: [conflict] ... | ..., After: the docs' statement
+"$emery" apply
+"$emery" show spec                   # the greeting stated again, its notes gone
+"$emery" -v build
+git merge --ff-only emery/<revision>
+
+# the history: five revisions, each sealed over the last, the conflicted one left unbuilt
 git log --oneline --first-parent
 git for-each-ref refs/heads/emery/
 
@@ -127,6 +142,8 @@ cd - && rm -rf "$project"
 ```
 
 The first amendment reads the docs alone and stages one `changed` requirement; its plan is settled by code, so no slicing turn is put, and a requirement claim informs no design section, so no design turn is put either and the design is the base's — its overview still describes the greeting as the first revision had it, a paragraph that goes stale while nothing it cites is retired. The second reads the docs beside the inline brief: the docs restate the greeting, which stays `unchanged`, the brief adds the farewell under a stem of its own, and its `decision` opens the design turn, so `show amendment` reports `1 added, 0 changed, 0 retired, 0 conflict, 1 unchanged`, `design: overview, apis`, and `slices: farewell (new)`, and `--apply` seals in the same run, printing the staged block and then the seal lines. A change that leaves every requirement unchanged and no section or slice different stages nothing. An amendment `specify` would displace is refused `amendment-pending` while one stands staged — review it with `emery show amendment`, seal it with `emery apply`, or run `emery amend` again to replace it — and `apply` over an amendment whose base is no longer the current revision is refused `amendment-stale`; amend again over the revision that is.
+
+A change whose sources disagree over one requirement — two statements at one rank, as the docs and an inline brief through the same adapter are — is a `conflict`, never a choice the engine makes: `show amendment` lists the requirement under `## Conflict` with each competing statement noted beside its source and `Note: Operator reconciliation required.`, and `apply` seals it as a `specify` seals one, the requirement marked `[conflict]` in `show spec` with no body and the statements among its notes, a revision to resolve rather than build. The conflict is resolved by the next change, not by the engine: once the sources agree, or the contradicting one is dropped, `emery amend` lists the standing requirement to the grouping as one entry whose statement is `[conflict]` followed by the competing statements, and the claim that lands on it is a `changed` requirement — `Before:` the competing statements, `After:` the claim's — stated again under the status the change sources alone settle. A source cannot conflict with itself: a `retire` beside the same source's `requirement` under one id is read as the restatement, and only two sources at one rank conflict.
 
 Two rules of the grammar the amendment steps meet. A run that names a source on the command line — a positional `<adapter>` or a `--description` — reads no `emery.toml` unless `--config` says so, so the `[target]` table reaches it under `--config` alone (bare for the project-root file, `--config <path>` for another); without it the run is refused `build-target-required`. And a positional adapter and a `--description` for one adapter bind one source name, the adapter's package name, so the pair is refused as a source named twice: an inline change over an adapter is `--description` alone, or a named `[[source]]` entry.
 

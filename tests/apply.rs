@@ -33,6 +33,8 @@ const SPEC: &[u8] = include_bytes!("build/spec.json");
 const DESIGN: &[u8] = include_bytes!("build/design.json");
 const PLAN: &[u8] = include_bytes!("build/plan.json");
 const WIDE_PLAN: &[u8] = include_bytes!("build/wide-plan.json");
+// `SPEC` with `orders.cancel` held in conflict between `docs` and `wiki`.
+const CONFLICTED_SPEC: &[u8] = include_bytes!("amend/conflicted-spec.json");
 
 // A staged candidate becomes the current revision: the repository the
 // target names is read for the revision it holds, the three documents are
@@ -426,6 +428,76 @@ async fn apply_amendment() {
              vs {outgoing}: spec +1 -0 ~1 retired 1, design +0 -0 ~0, plan +0 -0 ~1\n"
         )
     );
+}
+
+// An amendment whose change sources disagree over a requirement seals as a
+// specify's conflict would: the written specification holds the
+// requirement in conflict with the competing statements among its notes,
+// the message counts it under neither added nor changed, and nothing
+// refuses the seal, since the conflict is the operator's to reconcile in
+// the next change.
+#[tokio::test]
+async fn apply_amendment_conflict() {
+    let provider = Provider::idle();
+    let outgoing = seed(&provider.files, SPEC, DESIGN, PLAN);
+    let mut amendment: Value =
+        serde_json::from_slice(&amendment_over(&outgoing, HEAD)).expect("the amendment is JSON");
+    let contested: Value = serde_json::from_slice(CONFLICTED_SPEC).expect("the spec is JSON");
+    let cancel = &contested["requirements"][3];
+    let open = "A signed-in user cancels an open order.";
+    let within = "A signed-in user cancels an order within an hour of placing it.";
+    amendment["changes"][3] = json!({
+        "id": "REQ-004", "subject": "orders.cancel", "class": "conflict",
+        "before": open, "after": Value::Null,
+        "sources": cancel["sources"], "scope": Value::Null,
+    });
+    amendment["spec"]["requirements"]
+        .as_array_mut()
+        .expect("requirements")
+        .insert(3, cancel.clone());
+    amendment["plan"]["slices"][1]["requirements"] = json!(["REQ-003", "REQ-004", "REQ-005"]);
+    let body = serde_json::to_vec_pretty(&amendment).expect("the amendment serialises");
+    stage_amendment(&provider.storage, &body);
+
+    let resp = cli_ok(&provider, &["emery", "apply", "--config", PROJECT_CONFIG]).await;
+
+    let sealed = revision(
+        &written(&provider.files, "spec"),
+        &written(&provider.files, "design"),
+        &written(&provider.files, "plan"),
+    );
+    assert_eq!(
+        String::from_utf8_lossy(&resp.stdout),
+        format!(
+            "sealed revision {sealed} as emery/{sealed} at Revision\n  amends {outgoing}\n  diff \
+             vs {outgoing}: spec +1 -0 ~2, design +0 -0 ~0, plan +0 -0 ~1\n"
+        )
+    );
+    let spec: Value = serde_json::from_slice(&written(&provider.files, "spec")).expect("JSON");
+    assert_eq!(
+        spec["requirements"][3], *cancel,
+        "the conflict is sealed as the amendment holds it"
+    );
+    assert_eq!(spec["requirements"][3]["status"], "conflict", "{spec}");
+    assert_eq!(spec["requirements"][3]["losers"][0]["statement"], open, "{spec}");
+    assert_eq!(spec["requirements"][3]["losers"][1]["statement"], within, "{spec}");
+    let message = RevisionMessage::parse(&provider.vcs.messages()[0]).expect("a revision message");
+    assert_eq!(
+        message.summary,
+        Some(Summary {
+            added: 1,
+            changed: 1,
+            retired: 0,
+            slices: vec![SliceChange {
+                id: "SLICE-002".parse().expect("a slice id"),
+                name: "orders".to_owned(),
+                class: SliceClass::Changed,
+            }],
+        }),
+        "a conflict is counted under no trailer: {message:?}"
+    );
+    assert_eq!(current(&provider), sealed, "the pointer names the sealed revision");
+    assert!(provider.storage.state(STAGED_KEY).is_none(), "the staged slot is cleared");
 }
 
 // An amendment prepared against a revision, or a commit, other than the one

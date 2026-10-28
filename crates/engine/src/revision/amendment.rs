@@ -146,7 +146,9 @@ impl Display for Amendment {
         f.write_str(".")?;
 
         // one section per class with entries, each in id order, a drafted
-        // entry followed by the scenarios the amended specification drafted
+        // entry followed by the scenarios the amended specification drafted,
+        // a conflict's competing statements noted first as the
+        // specification notes them
         for class in ChangeClass::VARIANTS {
             let mut changes =
                 self.changes.iter().filter(|change| change.class == *class).peekable();
@@ -160,6 +162,9 @@ impl Display for Amendment {
                     continue;
                 }
                 if let Some(requirement) = self.spec.requirement(change.id) {
+                    if *class == ChangeClass::Conflict {
+                        requirement.write_conflict_notes(f)?;
+                    }
                     for scenario in &requirement.scenarios {
                         write!(f, "\n\n{scenario}")?;
                     }
@@ -253,11 +258,14 @@ pub struct Change {
     /// What the change did to the requirement.
     pub class: ChangeClass,
     /// The statement the base revision holds; `None` for a requirement it
-    /// does not, and for one it holds in conflict, which states none.
+    /// does not. For one it holds in conflict, the competing statements
+    /// joined as `[conflict] <a> | <b>`, which a change matched to it
+    /// resolves.
     pub before: Option<String>,
     /// The statement the change states; `None` for a retired requirement,
-    /// and for a conflict, whose competing claims [`sources`](Self::sources)
-    /// lists.
+    /// and for a conflict among the change sources, whose competing claims
+    /// [`sources`](Self::sources) lists. For an unchanged requirement, the
+    /// base's as [`before`](Self::before) holds it.
     pub after: Option<String>,
     /// The claims behind the entry, in descending authority order.
     pub sources: Vec<Cited>,
@@ -300,7 +308,8 @@ impl Display for Change {
         }
         f.write_str("]")?;
 
-        // the statement the class carries
+        // the statement the class carries; a conflict carries none, its
+        // competing statements the amended specification's to note
         match (self.class, &self.before, &self.after) {
             (ChangeClass::Added | ChangeClass::Unchanged, _, Some(after)) => {
                 write!(f, "\n\n{after}")?;
@@ -323,9 +332,6 @@ impl Display for Change {
                         self.stem()
                     )?;
                 }
-            }
-            (ChangeClass::Conflict, _, _) => {
-                write!(f, "\n\n{NOTE} Operator reconciliation required.")?;
             }
             _ => {}
         }
