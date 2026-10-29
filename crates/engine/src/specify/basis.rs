@@ -65,9 +65,12 @@ impl<'a> GroupingBrief<'a> {
     // group. A `retire` claim is a contributor too, marked as withdrawing
     // the behaviour its id names: one at a standing requirement's id is
     // pre-merged with it, and the model places any other with the
-    // standing requirement it withdraws. A claim anchored where a standing
-    // requirement's citation was read, from the same source, is hinted to
-    // revise it under `## Baseline` and pre-merged with nothing.
+    // standing requirement it withdraws. A source that withdraws and
+    // restates one behaviour under one id has restated it: its `retire`
+    // is passed over and its `requirement` stands. A claim anchored where
+    // a standing requirement's citation was read, from the same source,
+    // is hinted to revise it under `## Baseline` and pre-merged with
+    // nothing.
     #[must_use]
     pub fn with_standing(
         extracts: &'a [Extract], standing: Vec<Contributor<'a>>, criteria: Vec<&'a str>,
@@ -82,6 +85,21 @@ impl<'a> GroupingBrief<'a> {
         let mut contributors: Vec<Contributor<'a>> = Vec::new();
         let mut criteria = criteria;
         let mut contracts = Vec::new();
+
+        // the ids each source states a requirement under, so a withdrawal
+        // of one of its own is passed over: a source cannot conflict with
+        // itself, and one that withdraws and restates has restated
+        let restated: BTreeSet<(&str, &str)> = extracts
+            .iter()
+            .flat_map(|extract| {
+                extract
+                    .evidence
+                    .claims
+                    .iter()
+                    .filter(|claim| claim.kind == ClaimKind::Requirement)
+                    .filter_map(move |claim| Some((extract.source.as_str(), claim.id.as_deref()?)))
+            })
+            .collect();
 
         for extract in extracts {
             for claim in &extract.evidence.claims {
@@ -104,7 +122,17 @@ impl<'a> GroupingBrief<'a> {
 
                 let withdraws = match claim.kind {
                     ClaimKind::Requirement => false,
-                    ClaimKind::Retire if withdrawals => true,
+                    ClaimKind::Retire if withdrawals => {
+                        if restated.contains(&(extract.source.as_str(), id)) {
+                            tracing::debug!(
+                                source = %extract.source,
+                                id,
+                                "withdrawal beside its own restatement; the restatement stands"
+                            );
+                            continue;
+                        }
+                        true
+                    }
                     ClaimKind::Criterion => {
                         criteria.push(id);
                         continue;
@@ -548,8 +576,7 @@ struct Hint<'a> {
 impl<'a> Hint<'a> {
     // One hint per claim and standing requirement it anchors within. A claim
     // at a standing requirement's id is pre-merged already, so none is
-    // hinted for it; a conflicted requirement standing as two contributors
-    // is hinted once.
+    // hinted for it.
     fn all(claims: &[Contributor<'a>], standing: &[Contributor<'a>]) -> Vec<Self> {
         if standing.is_empty() {
             return Vec::new();
@@ -561,11 +588,8 @@ impl<'a> Hint<'a> {
                 continue;
             }
             let cited = Cited::from(claim);
-            let mut seen = BTreeSet::new();
             for member in standing {
-                if seen.insert(member.id)
-                    && member.citations.iter().any(|read| cited.overlaps(read))
-                {
+                if member.citations.iter().any(|read| cited.overlaps(read)) {
                     hints.push(Self {
                         claim: claim.index,
                         standing: member.index,

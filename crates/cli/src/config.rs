@@ -78,6 +78,7 @@ impl TryFrom<SourceCarriers<'_>> for SpecifyInput {
         Ok(Self {
             sources,
             apply: false,
+            fresh: false,
             target,
         })
     }

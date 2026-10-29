@@ -1,16 +1,16 @@
 //! Lends the current revision's requirements to an amend run's grouping.
 //!
 //! A [`Standing`] reads the base specification as contributors from the
-//! reserved source [`BASELINE`], one per statement a requirement holds, so
-//! the grouping matches each change claim against the requirement it
-//! restates or revises. The standing rank is one step below the lowest
-//! change source's, so a change always wins over what it revises and the
-//! base decides nothing but which requirement a claim lands on.
+//! reserved source [`BASELINE`], one per requirement, so the grouping
+//! matches each change claim against the requirement it restates or
+//! revises. The standing rank is one step below the lowest change source's,
+//! so a change always wins over what it revises and the base decides
+//! nothing but which requirement a claim lands on.
 
 use emery_adapter::source::SourceKind;
 
 use crate::Rank;
-use crate::revision::{ReqId, Requirement, Spec, Status};
+use crate::revision::{ReqId, Requirement, Spec};
 use crate::specify::{BASELINE, Basis, Contributor, Extract};
 
 // The base specification as the grouping and the change set read it.
@@ -33,32 +33,33 @@ impl<'a> Standing<'a> {
         }
     }
 
-    // One contributor per statement a requirement holds: its body for a
-    // requirement with one, each competing statement for a conflict, so the
-    // model sees every statement the base reads as the requirement's. The
-    // kind is nominal, since no adapter extracted the base; `index` is the
+    // One contributor per requirement, its statement what the requirement
+    // states as it stands (`Requirement::stated`): its body, or the
+    // competing statements of a conflict, so the model sees one standing
+    // requirement however many statements the base reads as its. The kind
+    // is nominal, since no adapter extracted the base; `index` is the
     // position among the standing alone, which the brief re-indexes; the
     // citations are where the requirement was read, for the brief's anchor
     // hints.
     pub fn contributors(&self) -> Vec<Contributor<'a>> {
-        let mut contributors = Vec::with_capacity(self.spec.requirements.len());
-        for requirement in &self.spec.requirements {
-            for statement in statements(requirement) {
-                contributors.push(Contributor {
-                    source: BASELINE,
-                    kind: SourceKind::Documentation,
-                    rank: self.rank,
-                    id: &requirement.subject,
-                    path: None,
-                    statement,
-                    synopsis: None,
-                    withdraws: false,
-                    citations: &requirement.sources,
-                    index: contributors.len(),
-                });
-            }
-        }
-        contributors
+        self.spec
+            .requirements
+            .iter()
+            .filter_map(|requirement| Some((requirement, requirement.stated()?)))
+            .enumerate()
+            .map(|(index, (requirement, statement))| Contributor {
+                source: BASELINE,
+                kind: SourceKind::Documentation,
+                rank: self.rank,
+                id: &requirement.subject,
+                path: None,
+                statement,
+                synopsis: None,
+                withdraws: false,
+                citations: &requirement.sources,
+                index,
+            })
+            .collect()
     }
 
     // The base's requirements, in id order.
@@ -99,16 +100,5 @@ impl<'a> Standing<'a> {
     // included.
     pub fn free_ids(&self) -> impl Iterator<Item = ReqId> {
         ReqId::free_after(self.spec.requirements.iter().map(|requirement| requirement.id))
-    }
-}
-
-fn statements(requirement: &Requirement) -> Vec<String> {
-    match requirement.status {
-        Status::Conflict => {
-            requirement.losers.iter().map(|loser| loser.statement.clone()).collect()
-        }
-        Status::Agreed | Status::Unknown | Status::Divergence => {
-            requirement.statement().into_iter().collect()
-        }
     }
 }

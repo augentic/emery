@@ -36,7 +36,7 @@ ignore = true
 
 [sources]
 allow-git = [
-  "https://github.com/augentic/omnia",
+#  "https://github.com/augentic/omnia",
   "https://github.com/augentic/omnia-backends"
 ]
 

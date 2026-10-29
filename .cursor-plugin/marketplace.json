@@ -6,14 +6,14 @@
   },
   "metadata": {
     "description": "Spec-driven code generation plugins for Augentic.",
-    "version": "0.31.1",
+    "version": "0.32.0",
     "pluginRoot": "plugins"
   },
   "plugins": [
     {
       "name": "emery",
       "source": "emery",
-      "description": "Three skills over the Emery CLI: `/emery:specify` generates the reviewable `spec.md` / `design.md` / `plan.md` set from the named sources and stages it, `/emery:apply` seals it in the target's repository, `/emery:build` builds the plan through a target adapter."
+      "description": "Four skills over the Emery CLI: `/emery:specify` generates the reviewable `spec.md` / `design.md` / `plan.md` set from the named sources and stages it, `/emery:amend` stages a change against the sealed revision, `/emery:apply` seals what is staged in the target's repository, `/emery:build` builds the plan through a target adapter."
     }
   ]
 }

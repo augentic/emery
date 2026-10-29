@@ -49,7 +49,7 @@ impl<'a> ChangeSet<'a> {
         let changes = standing
             .requirements()
             .map(|requirement| {
-                let before = requirement.statement();
+                let before = requirement.stated();
                 Change {
                     id: requirement.id,
                     subject: requirement.subject.clone(),
@@ -136,8 +136,10 @@ impl<'a> ChangeSet<'a> {
                 .collect();
             let matched = standing.matched(&basis);
 
-            let change = if let Some(requirement) = matched {
-                let before = requirement.statement();
+            let (id, subject, class, before, after) = if let Some(requirement) = matched {
+                // the base's statement, or the competing statements of a
+                // conflict, which one claim matched to it resolves
+                let before = requirement.stated();
                 // a requirement no claim touched stands as it is, its own
                 // conflict included; a change silent on the trigger leaves
                 // the base's standing; the subject is the change's, since
@@ -161,33 +163,29 @@ impl<'a> ChangeSet<'a> {
                     };
                     (class, after)
                 };
-                let subject = match class {
-                    ChangeClass::Retired => requirement.subject.as_str(),
-                    _ => basis.subject,
+                let subject = if class == ChangeClass::Retired {
+                    requirement.subject.as_str()
+                } else {
+                    basis.subject
                 };
-                Change {
-                    id: requirement.id,
-                    subject: subject.to_owned(),
-                    class,
-                    before,
-                    after,
-                    sources,
-                    scope: None,
-                }
+                (requirement.id, subject, class, before, after)
             } else {
                 let id = free
                     .next()
                     .ok_or_else(|| server_error!("the requirement ids are exhausted"))?;
                 let after = basis.statement().map(str::to_owned);
-                Change {
-                    id,
-                    subject: basis.subject.to_owned(),
-                    class: if after.is_some() { ChangeClass::Added } else { ChangeClass::Conflict },
-                    before: None,
-                    after,
-                    sources,
-                    scope: None,
-                }
+                let class =
+                    if after.is_some() { ChangeClass::Added } else { ChangeClass::Conflict };
+                (id, basis.subject, class, None, after)
+            };
+            let change = Change {
+                id,
+                subject: subject.to_owned(),
+                class,
+                before,
+                after,
+                sources,
+                scope: None,
             };
 
             if change.class.is_drafted() {

@@ -131,6 +131,38 @@ impl Requirement {
         }
     }
 
+    // Returns what the requirement states as a change reads it: its
+    // statement, or, in conflict, the competing statements joined as
+    // `[conflict] <a> | <b>`, so a conflicted requirement is one statement to
+    // match a claim against and one `Before:` to show.
+    #[must_use]
+    pub fn stated(&self) -> Option<String> {
+        match self.status {
+            Status::Conflict => (!self.losers.is_empty()).then(|| {
+                let competing: Vec<&str> =
+                    self.losers.iter().map(|loser| loser.statement.as_str()).collect();
+                format!("[{}] {}", Status::Conflict, competing.join(" | "))
+            }),
+            Status::Agreed | Status::Unknown | Status::Divergence => self.statement(),
+        }
+    }
+
+    // Writes the requirement's `Loser` notes and, when in conflict, the
+    // reconciliation note. Shared with `Amendment`'s rendering of a
+    // conflicting entry, which notes the competing statements without the
+    // coverage note.
+    pub(crate) fn write_conflict_notes(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        let mut separator = "\n\n";
+        for loser in &self.losers {
+            write!(f, "{separator}{loser}")?;
+            separator = "\n";
+        }
+        if self.status == Status::Conflict {
+            write!(f, "{separator}{NOTE} Operator reconciliation required.")?;
+        }
+        Ok(())
+    }
+
     // Returns how many anchors this requirement and `other` cite in common:
     // the pairs of their citations that overlap.
     #[must_use]
@@ -169,16 +201,13 @@ impl Display for Requirement {
         }
 
         // notes
-        let mut separator = "\n\n";
-        for loser in &self.losers {
-            write!(f, "{separator}{loser}")?;
-            separator = "\n";
-        }
-        if self.status == Status::Conflict {
-            write!(f, "{separator}{NOTE} Operator reconciliation required.")?;
-            separator = "\n";
-        }
+        self.write_conflict_notes(f)?;
         if !self.covered {
+            let separator = if self.losers.is_empty() && self.status != Status::Conflict {
+                "\n\n"
+            } else {
+                "\n"
+            };
             write!(f, "{separator}{NOTE} acceptance criteria not evidenced.")?;
         }
 

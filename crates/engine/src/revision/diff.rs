@@ -386,6 +386,9 @@ fn differences(before: &Requirement, after: &Requirement) -> Vec<&'static str> {
     .collect()
 }
 
+// The field name a changed slice's `fields` carries where its brief differs.
+pub const BRIEF: &str = "brief";
+
 fn slice_differences(before: &Slice, after: &Slice) -> Vec<&'static str> {
     let Slice {
         id: _,
@@ -400,7 +403,7 @@ fn slice_differences(before: &Slice, after: &Slice) -> Vec<&'static str> {
         ("requirements", *requirements != after.requirements),
         ("types", *types != after.types),
         ("depends-on", *depends_on != after.depends_on),
-        ("brief", *brief != after.brief),
+        (BRIEF, *brief != after.brief),
     ]
     .into_iter()
     .filter_map(|(name, differs)| differs.then_some(name))

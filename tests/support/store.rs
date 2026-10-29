@@ -45,6 +45,16 @@ pub fn stage(storage: &Memory, spec: &[u8], design: &[u8], plan: &[u8]) -> Strin
     id
 }
 
+// Stages the three documents as `emery specify --fresh` does: the record
+// marks the candidate `fresh`, so `apply` seals it with no parent over the
+// head. Returns the candidate's id.
+pub fn stage_fresh(storage: &Memory, spec: &[u8], design: &[u8], plan: &[u8]) -> String {
+    let id = stage(storage, spec, design, plan);
+    let record = serde_json::json!({"id": id, "kind": "revision", "fresh": true}).to_string();
+    storage.insert_state(STAGED_KEY, record.as_bytes());
+    id
+}
+
 // Stores the amendment document under its content id and stages it, as `emery amend` does.
 //
 // The staged slot holds the record the engine writes for an amendment: the
