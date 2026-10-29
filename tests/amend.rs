@@ -3088,25 +3088,25 @@ async fn amend_target_required() {
     );
 }
 
-// The verb is hidden while nothing seals what it stages: it runs and has
-// help of its own, and the top-level help and the completions leave it out.
+// The verb is a public one: the top-level help and the completions list it
+// beside the others, and its own help names its flags.
 #[tokio::test]
-async fn amend_hidden() {
+async fn amend_shown() {
     let provider = Provider::idle();
 
     let help = cli_ok(&provider, &["emery", "amend", "--help"]).await;
     let help = String::from_utf8_lossy(&help.stdout);
     assert!(help.contains("--description"), "{help}");
     assert!(help.contains("--config"), "{help}");
+    assert!(help.contains("--apply"), "{help}");
 
-    let top = cli(&provider, &["emery", "--help"]).await;
+    let top = cli_ok(&provider, &["emery", "--help"]).await;
     let top = String::from_utf8_lossy(&top.stdout);
-    assert!(!verbs(&top).contains(&"amend"), "{top}");
+    assert!(verbs(&top).contains(&"amend"), "{top}");
 
     let completions = cli_ok(&provider, &["emery", "completions", "zsh"]).await;
     let completions = String::from_utf8_lossy(&completions.stdout);
-    assert!(completions.contains("'apply:"), "the shown verbs are completed: {completions}");
-    assert!(!completions.contains("'amend:"), "{completions}");
-    assert!(!completions.contains("(amend)"), "{completions}");
+    assert!(completions.contains("'apply:"), "{completions}");
+    assert!(completions.contains("'amend:"), "the verb is completed: {completions}");
     assert!(completions.contains("amendment"), "the artifact the verb stages is: {completions}");
 }

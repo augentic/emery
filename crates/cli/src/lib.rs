@@ -150,7 +150,7 @@ where
         Command::new(&client, &metadata, app.format).hints(move |error| hint(error, invoked));
 
     match app.verb {
-        Verb::Completions { shell } => completions::<Shown>(shell, NAME),
+        Verb::Completions { shell } => completions::<App>(shell, NAME),
         Verb::Specify(arguments) => {
             command.call(specify, || SpecifyInput::try_from(arguments), text::specify).await
         }
@@ -166,29 +166,6 @@ where
         Verb::Show(arguments) => {
             command.call(show, || ShowInput::try_from(arguments), text::show).await
         }
-    }
-}
-
-// The grammar the completions are generated over: `App` less its hidden
-// verbs, since the generator lists every subcommand whatever its `hide`.
-struct Shown;
-
-impl clap::CommandFactory for Shown {
-    fn command() -> clap::Command {
-        let app = App::command();
-        clap::Command::new(NAME)
-            .bin_name(NAME)
-            .version(env!("CARGO_PKG_VERSION"))
-            .about(ABOUT)
-            .disable_help_subcommand(true)
-            .subcommand_required(true)
-            .arg_required_else_help(true)
-            .args(app.get_arguments().cloned())
-            .subcommands(app.get_subcommands().filter(|verb| !verb.is_hide_set()).cloned())
-    }
-
-    fn command_for_update() -> clap::Command {
-        Self::command()
     }
 }
 
@@ -225,10 +202,8 @@ enum Verb {
     /// Seal the staged candidate or amendment as the current revision
     #[command(long_about = APPLY_DESC)]
     Apply(ApplyArgs),
-    // Hidden until the journey is documented: out of `--help` and the
-    // completions, while it runs and has help of its own.
     /// Stage an amendment against the current revision from the named sources
-    #[command(long_about = AMEND_DESC, hide = true)]
+    #[command(long_about = AMEND_DESC)]
     Amend(AmendArgs),
     /// Build every slice of the current plan through a target adapter
     #[command(long_about = BUILD_DESC)]
@@ -342,7 +317,7 @@ impl TryFrom<AmendArgs> for AmendInput {
         }
         .try_into()?;
 
-        // a change file naming no target reads the project's
+        // the target is the change file's, else the project's
         let target = match (target, &config) {
             (Some(target), _) => Some(target),
             (None, Some(_)) => config::target(None, None)?,

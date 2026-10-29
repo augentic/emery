@@ -4,7 +4,7 @@ The lookup table for the shipped `emery` surface. The v1 delivery workflow's ref
 
 ## Sections
 
-- [CLI Reference](cli/index.md) — the shipped verbs: `specify` stages a candidate, `apply` seals it in the target's repository, `build` builds the sealed plan, `show` renders either.
+- [CLI Reference](cli/index.md) — the shipped verbs: `specify` stages a candidate, `amend` stages an amendment against the sealed revision, `apply` seals either in the target's repository, `build` builds the sealed plan, `show` renders the revision, the candidate, or the amendment.
 - [CLI output shapes](cli-output-shapes.md) — the JSON envelopes and exit contract every verb honours.
 - [Adapters](adapters.md) — the package reference a run names an adapter by, the store the binary reads it from, and how a release gets there.
 - [Deployment profiles](deployment-profiles.md) — how the runtime binds engine storage and mounts the project, and how other deployments swap those bindings.

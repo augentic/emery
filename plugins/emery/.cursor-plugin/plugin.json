@@ -1,8 +1,8 @@
 {
   "name": "emery",
   "displayName": "Emery Workflow",
-  "description": "Emery skills: specify, apply, build. Generate spec.md / design.md / plan.md from the named sources, seal them in the target's repository, and build the plan through a target adapter, over the emery CLI.",
-  "version": "0.31.1",
+  "description": "Emery skills: specify, amend, apply, build. Generate spec.md / design.md / plan.md from the named sources, amend the sealed revision from a change, seal what is staged in the target's repository, and build the plan through a target adapter, over the emery CLI.",
+  "version": "0.32.0",
   "author": {
     "name": "Augentic",
     "email": "andrew@augentic.io"

@@ -48,7 +48,7 @@ async fn route_budget() {
     let help = cli(&provider, &["emery", "--help"]).await;
     assert_eq!(help.exit, 0);
     let help = String::from_utf8_lossy(&help.stdout);
-    assert_eq!(verbs(&help), ["apply", "build", "completions", "show", "specify"]);
+    assert_eq!(verbs(&help), ["amend", "apply", "build", "completions", "show", "specify"]);
     for gone in ["init", "plan", "slice", "system", "journal", "debt", "adapter"] {
         assert!(
             !help.lines().any(|line| line.trim_start().starts_with(gone)),
