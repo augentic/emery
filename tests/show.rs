@@ -155,6 +155,47 @@ async fn show_hand_merged() {
     assert!(provider.vcs.messages().is_empty(), "nothing is sealed");
 }
 
+// A hand merge that kept one side's `spec.json` beside the other side's
+// `design.json` and `plan.json` leaves three documents that each read, yet
+// read as no one revision's: the plan places a requirement the
+// specification does not state and leaves one it states unplaced. It is
+// refused the same way, the description naming the breaks, so the hint
+// says to keep one side whole.
+#[tokio::test]
+async fn show_hand_mixed() {
+    let mut plan: Value = serde_json::from_slice(PLAN).expect("the plan fixture");
+    plan["slices"][1]["requirements"] = serde_json::json!(["REQ-003", "REQ-005"]);
+    let provider = Provider::idle();
+    seed(&provider.files, SPEC, DESIGN, plan.to_string().as_bytes());
+
+    let envelope =
+        fail(&provider, &["emery", "show", "spec", "--config", PROJECT_CONFIG], 1, "spec-mismatch")
+            .await;
+
+    let message = envelope["message"].as_str().expect("a message");
+    assert_eq!(
+        message,
+        format!(
+            "`spec/` at commit `{HEAD}` holds documents that read as no one revision's \
+             (`REQ-005` is placed by `SLICE-002` and is no requirement of the specification; \
+             `REQ-004` is placed by no slice), so they were edited or merged by hand; a seal \
+             writes them whole"
+        ),
+        "{envelope}"
+    );
+    assert!(
+        envelope["hint"]
+            .as_str()
+            .is_some_and(|hint| hint.contains("git checkout <branch> -- spec/")),
+        "{envelope}"
+    );
+
+    stage_fresh(&provider.storage, SPEC, DESIGN, PLAN);
+    fail(&provider, &["emery", "apply", "--config", PROJECT_CONFIG], 1, "spec-mismatch").await;
+    assert!(provider.files.writes().is_empty(), "nothing is written");
+    assert!(provider.vcs.messages().is_empty(), "nothing is sealed");
+}
+
 // An amendment whose stored bytes no longer hash to the id its record names
 // is corruption, so `show amendment` fails closed rather than rendering it.
 #[tokio::test]

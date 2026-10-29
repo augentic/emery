@@ -8,7 +8,7 @@
 use std::fs;
 use std::os::unix::fs::{PermissionsExt as _, symlink};
 use std::path::{Path, PathBuf};
-use std::process::Command;
+use std::process::{Command, Output};
 
 use emery_engine::amend::SliceClass;
 use emery_engine::vcs::{Message, RevisionMessage, SliceSummary, Summary};
@@ -146,6 +146,26 @@ const SLICING_AMEND: &str = r#"{"slices": [
 const WRITE_GREETING_AMEND: &str =
     r##"{"files": [{"path": "build/greeting.md", "content": "# Greeting\n\nhello, world\n"}]}"##;
 
+// The other branch's amendment: one brief revising the greeting alone, so
+// the run puts the extract, the grouping, and the spec draft, and no design
+// or slicing turn, since nothing informs a section and no stem moves.
+const DESCRIPTION_BRANCH: &str = "acme:source@0.1.0=GET /greeting returns the static string 'hi \
+                                  there'.";
+const EXTRACT_BRANCH: &str = r#"{"claims": [
+    {"kind": "requirement", "id": "greeting.behaviour",
+     "statement": "GET /greeting returns the static string 'hi there'."}]}"#;
+// Index 0 is the brief's requirement, 1 the standing greeting it revises.
+const GROUPING_BRANCH: &str = r#"{"groups": [{"claims": [0, 1], "classes": [[0], [1]]}]}"#;
+// Over the merged revision a standing farewell is listed after the greeting
+// as index 2, in a group of its own.
+const GROUPING_BRANCH_MERGED: &str = r#"{"groups": [
+    {"claims": [0, 1], "classes": [[0], [1]]},
+    {"claims": [2], "classes": [[2]]}]}"#;
+const SPEC_BRANCH: &str = r#"{"preamble": [], "requirements": [
+    {"subject": "greeting.behaviour", "scenarios": [{"name": "Greeting requested",
+     "given": ["the greeting surface is bound"], "when": "`/greeting` is requested",
+     "then": "the response is `hi there`"}]}]}"#;
+
 // Git under a scratch configuration: a wrapper exporting `GIT_CONFIG_GLOBAL`
 // and `GIT_CONFIG_NOSYSTEM` before handing over to the `git` on `PATH`, so
 // nothing of the developer's identity, signing, hooks, or default branch
@@ -191,12 +211,7 @@ impl Git {
 
     // The oracle: one git over the wrapper, held to success, its stdout trimmed.
     fn run(&self, at: &Path, args: &[&str]) -> String {
-        let output = Command::new(self.root.path().join("git"))
-            .arg("-C")
-            .arg(at)
-            .args(args)
-            .output()
-            .expect("running the oracle git");
+        let output = self.output(at, args);
         assert!(
             output.status.success(),
             "git {args:?} at {}: {}",
@@ -204,6 +219,32 @@ impl Git {
             String::from_utf8_lossy(&output.stderr)
         );
         String::from_utf8_lossy(&output.stdout).trim().to_owned()
+    }
+
+    // One git over the wrapper, whatever its exit.
+    fn output(&self, at: &Path, args: &[&str]) -> Output {
+        Command::new(self.root.path().join("git"))
+            .arg("-C")
+            .arg(at)
+            .args(args)
+            .output()
+            .expect("running the oracle git")
+    }
+
+    // Merges `branch` into the checkout at `at` expecting a conflict, and
+    // returns the paths left unmerged, sorted, for the operator to resolve
+    // and commit.
+    fn merge_conflicted(&self, at: &Path, branch: &str) -> Vec<String> {
+        let output = self.output(at, &["merge", "--quiet", "--no-edit", branch]);
+        assert!(!output.status.success(), "merging `{branch}` conflicts");
+        let mut unmerged: Vec<String> = self
+            .run(at, &["diff", "--name-only", "--diff-filter=U"])
+            .lines()
+            .map(str::to_owned)
+            .collect();
+        unmerged.sort();
+        assert!(!unmerged.is_empty(), "merging `{branch}` leaves paths unmerged");
+        unmerged
     }
 
     // Seals everything under `at` as one commit, initialising the repository first.
@@ -403,6 +444,15 @@ impl Roots {
         let run = self.run(args, backends, &idle).await;
         idle.assert_exhausted();
         run
+    }
+
+    // Asserts `backends` reads `revision` under `parent` as the current one.
+    async fn assert_current(&self, backends: &Bundle, revision: &str, parent: &str) {
+        let shown = self.run_idle(&["--format", "json", "show", "spec"], backends).await;
+        assert_ok(&shown);
+        let envelope: Value = serde_json::from_str(&shown.stdout).expect("the show envelope");
+        assert_eq!(envelope["revision"], revision, "{envelope}");
+        assert_eq!(envelope["document"]["parent"], parent, "{envelope}");
     }
 
     // The `specify --apply` run over the mock source under `model`, the
@@ -1278,6 +1328,319 @@ async fn amend_apply_runtime() {
     assert_hint(&envelope, "run `emery specify <adapter>...` to stage a candidate");
 
     assert_rebuilt(&roots, &backends, &base, &revision).await;
+}
+
+// One operator's checkout and the amendment it sealed under its own label.
+struct Branch {
+    backends: Bundle,
+    revision: String,
+    label: String,
+    commit: String,
+}
+
+// Two operators who each sealed an amendment over the one `first` revision:
+// `farewell` added the farewell beside the greeting, and `greeting` revised
+// the greeting alone in a checkout of its own.
+struct Branched {
+    roots: Roots,
+    first: String,
+    farewell: Branch,
+    greeting: Branch,
+}
+
+impl Branched {
+    // The two-branch journey up to its merge: the project specified and its
+    // revision merged onto `main`, then one operator amends it with the
+    // farewell brief and another, whose checkout knows nothing of the first,
+    // revises the greeting alone; each amendment seals over the one revision
+    // under its own label, so the labels diverge from one commit.
+    async fn new() -> Self {
+        let (roots, farewell_backends, _) = specified().await;
+        let project = roots.project.path();
+        let over = roots.git.labelled(project);
+        let first = roots.git.revision_at(project, &over);
+        roots.git.run(project, &["merge", "--quiet", "--ff-only", &format!("emery/{first}")]);
+        assert_eq!(roots.git.head(project), over, "`main` at the sealed revision");
+
+        // the first operator's amendment, over the label its pointer names
+        let model = amending();
+        let run = roots
+            .run(
+                &["amend", "--description", DESCRIPTION_AMEND, "--config", "--apply"],
+                &farewell_backends,
+                &model,
+            )
+            .await;
+        assert_ok(&run);
+        model.assert_exhausted();
+        let farewell = branch(&roots, farewell_backends, &run, &over);
+        assert_eq!(
+            run.stdout,
+            format!(
+                "{}{}",
+                amend_block(&amendment_of(&run), &first, &over),
+                amend_seal("  ", &farewell.revision, &first, &farewell.commit)
+            )
+        );
+
+        // the second operator's, over the head's tree, since its state names no label
+        let greeting_backends = roots.backends().await;
+        let model = ScriptedModel::answering([EXTRACT_BRANCH, GROUPING_BRANCH, SPEC_BRANCH]);
+        let run = roots
+            .run(
+                &["amend", "--description", DESCRIPTION_BRANCH, "--config", "--apply"],
+                &greeting_backends,
+                &model,
+            )
+            .await;
+        assert_ok(&run);
+        model.assert_exhausted();
+        let greeting = branch(&roots, greeting_backends, &run, &over);
+        assert_eq!(
+            run.stdout,
+            format!(
+                "staged amendment {}\n  base {first} at {}\n  0 added, 1 changed, 0 retired, 0 \
+                 conflict, 0 unchanged\n  stems: greeting\n{}",
+                amendment_of(&run),
+                &over[..8],
+                amend_seal("  ", &greeting.revision, &first, &greeting.commit)
+            )
+        );
+        assert_ne!(farewell.revision, greeting.revision);
+        assert_eq!(roots.git.head(project), over, "the checkout is untouched by the seals");
+
+        Self {
+            roots,
+            first,
+            farewell,
+            greeting,
+        }
+    }
+
+    // Resets `main` to `farewell` and starts the merge of `greeting`,
+    // returning the paths left unmerged for the operator to resolve.
+    fn start_merge(&self) -> Vec<String> {
+        let project = self.roots.project.path();
+        self.roots.git.run(project, &["reset", "--quiet", "--hard", &self.farewell.commit]);
+        self.roots.git.merge_conflicted(project, &self.greeting.label)
+    }
+
+    // Resolves the open merge by keeping `farewell`'s `spec/` whole and
+    // returns the merge commit.
+    fn keep_farewell(&self) -> String {
+        let project = self.roots.project.path();
+        self.roots.git.run(project, &["checkout", &self.farewell.label, "--", "spec/"]);
+        self.roots.git.run(project, &["commit", "--quiet", "--no-edit"]);
+        self.roots.git.head(project)
+    }
+}
+
+fn branch(roots: &Roots, backends: Bundle, run: &Run, over: &str) -> Branch {
+    let project = roots.project.path();
+    let revision = sealed_of(run);
+    let label = format!("emery/{revision}");
+    let commit = roots.git.run(project, &["rev-parse", &label]);
+    assert_eq!(
+        roots.git.run(project, &["rev-parse", &format!("{commit}~1")]),
+        over,
+        "each amendment is sealed over the one revision"
+    );
+    Branch {
+        backends,
+        revision,
+        label,
+        commit,
+    }
+}
+
+// Two branches that each sealed an amendment over one revision are merged
+// by the operator keeping one side's `spec/` whole: the head then holds
+// that side's three documents with both labels behind it, so a checkout
+// whose state names either label reads the kept revision from the head's
+// tree, since the pointer is a cache the repository bears out or not. The
+// other side's change is re-run as an amendment of the kept revision and
+// seals over the merge with it as parent, both labels left standing; a
+// `specify` is then refused for the lineage, and `--fresh` seals a
+// parentless revision over the head — the first revision again, since the
+// sources are unchanged, its label moved onto the seal — with every other
+// label standing.
+#[tokio::test]
+async fn amend_branches_merged() {
+    let journey = Branched::new().await;
+    let Branched {
+        roots,
+        first,
+        farewell,
+        greeting,
+    } = &journey;
+    let project = roots.project.path();
+    let unmerged = journey.start_merge();
+    assert_eq!(
+        unmerged,
+        ["spec/spec.json"],
+        "the design and the plan merge line by line, since each side's parent line is the same"
+    );
+    let merged = journey.keep_farewell();
+    assert_eq!(roots.git.run(project, &["rev-parse", "HEAD^1"]), farewell.commit);
+    assert_eq!(roots.git.run(project, &["rev-parse", "HEAD^2"]), greeting.commit);
+
+    // both operators read the kept side, whichever label their state names
+    roots.assert_current(&farewell.backends, &farewell.revision, first).await;
+    roots.assert_current(&greeting.backends, &farewell.revision, first).await;
+
+    // the other side's change re-run over the kept revision seals over the merge
+    let model = ScriptedModel::answering([EXTRACT_BRANCH, GROUPING_BRANCH_MERGED, SPEC_BRANCH]);
+    let run = roots
+        .run(
+            &["amend", "--description", DESCRIPTION_BRANCH, "--config", "--apply"],
+            &greeting.backends,
+            &model,
+        )
+        .await;
+    assert_ok(&run);
+    model.assert_exhausted();
+    let revision = sealed_of(&run);
+    let amendment = amendment_of(&run);
+    let sealed = roots.git.run(project, &["rev-parse", &format!("emery/{revision}")]);
+    assert_eq!(
+        run.stdout,
+        format!(
+            "staged amendment {amendment}\n  base {} at {}\n  0 added, 1 changed, 0 retired, 0 \
+             conflict, 1 unchanged\n  stems: greeting\n{}",
+            farewell.revision,
+            &merged[..8],
+            amend_seal("  ", &revision, &farewell.revision, &sealed)
+        )
+    );
+    assert_eq!(roots.git.run(project, &["rev-parse", &format!("{sealed}~1")]), merged);
+    let message = roots.git.message(project, &sealed);
+    assert_eq!(
+        RevisionMessage::parse(&message),
+        Some(RevisionMessage {
+            revision: revision.clone(),
+            parent: Some(farewell.revision.clone()),
+            base: Some(merged.clone()),
+            summary: Some(Summary {
+                added: 0,
+                changed: 1,
+                retired: 0,
+                slices: Vec::new(),
+            }),
+        }),
+        "{message}"
+    );
+    roots.assert_current(&greeting.backends, &revision, &farewell.revision).await;
+    let shown = roots.run_idle(&["show", "spec"], &greeting.backends).await;
+    assert_ok(&shown);
+    assert!(shown.stdout.contains("the response is `hi there`"), "{}", shown.stdout);
+    assert!(shown.stdout.contains("### Requirement: farewell.behaviour"), "{}", shown.stdout);
+    assert_eq!(roots.git.run(project, &["rev-parse", &farewell.label]), farewell.commit);
+    assert_eq!(roots.git.run(project, &["rev-parse", &greeting.label]), greeting.commit);
+
+    // the first operator reads the kept revision still: its label stands
+    // over the head's tree no longer, and the seal is another branch's
+    roots.assert_current(&farewell.backends, &farewell.revision, first).await;
+
+    // a specify over the lineage is refused, and `--fresh` starts over with every label standing
+    let run = roots
+        .run_idle(&["--format", "json", "specify", SOURCE, "--config"], &farewell.backends)
+        .await;
+    let envelope = refused(&run, 1, "lineage-exists");
+    assert_hint(&envelope, "emery specify --fresh");
+    let model = specifying();
+    let run = roots
+        .run(&["specify", SOURCE, "--config", "--fresh", "--apply"], &farewell.backends, &model)
+        .await;
+    assert_ok(&run);
+    model.assert_exhausted();
+    let fresh = revision_of(&run);
+    assert_eq!(fresh, *first, "the sources unchanged, the fresh draft is the first revision again");
+    let sealed = roots.git.run(project, &["rev-parse", &format!("emery/{fresh}")]);
+    assert_eq!(roots.git.run(project, &["rev-parse", &format!("{sealed}~1")]), merged);
+    let message = roots.git.message(project, &sealed);
+    assert!(!message.contains("Parent:"), "a fresh seal names no parent: {message}");
+    let mut labels: Vec<String> = [first, &farewell.revision, &greeting.revision, &revision]
+        .into_iter()
+        .map(|revision| format!("emery/{revision}"))
+        .collect();
+    labels.sort();
+    let mut branches = roots.git.branches(project);
+    branches.retain(|branch| branch != "main");
+    branches.sort();
+    assert_eq!(branches, labels, "every label stands");
+    assert_eq!(roots.git.head(project), merged, "the checkout is untouched");
+}
+
+// The same two branches merged by hand, one file at a time: the head's
+// three documents read as no revision where the conflict markers were
+// committed, and as no one revision's where one side's `spec.json` stands
+// beside the other's `design.json` and `plan.json`, since the plan then
+// places a requirement the specification does not state. Either way `show`
+// and `amend` are refused `spec-mismatch` before any turn, hinted to keep
+// one side whole, and the merge redone that way reads.
+#[tokio::test]
+async fn amend_branches_hand_merged() {
+    let journey = Branched::new().await;
+    let Branched {
+        roots,
+        first,
+        farewell,
+        greeting,
+    } = &journey;
+    let project = roots.project.path();
+
+    // the conflict markers committed
+    journey.start_merge();
+    roots.git.run(project, &["add", "spec/"]);
+    roots.git.run(project, &["commit", "--quiet", "--no-edit"]);
+    let marked = roots.git.head(project);
+    for backends in [&farewell.backends, &greeting.backends] {
+        let run = roots.run_idle(&["--format", "json", "show", "spec"], backends).await;
+        let envelope = refused(&run, 1, "spec-mismatch");
+        assert_message(
+            &envelope,
+            &format!("`spec/` at commit `{marked}` holds documents that read as no revision ("),
+        );
+        assert_message(&envelope, "edited or merged by hand");
+        assert_hint(&envelope, "git checkout <branch> -- spec/");
+    }
+
+    // one side's specification beside the other's design and plan
+    journey.start_merge();
+    roots.git.run(project, &["checkout", &greeting.label, "--", "spec/spec.json"]);
+    roots
+        .git
+        .run(project, &["checkout", &farewell.label, "--", "spec/design.json", "spec/plan.json"]);
+    roots.git.run(project, &["commit", "--quiet", "--no-edit"]);
+    let mixed = roots.git.head(project);
+    for backends in [&farewell.backends, &greeting.backends] {
+        let run = roots.run_idle(&["--format", "json", "show", "spec"], backends).await;
+        let envelope = refused(&run, 1, "spec-mismatch");
+        assert_message(
+            &envelope,
+            &format!(
+                "`spec/` at commit `{mixed}` holds documents that read as no one revision's \
+                 (`REQ-002` is placed by `SLICE-002` and is no requirement of the \
+                 specification), so they were edited or merged by hand; a seal writes them whole"
+            ),
+        );
+        assert_hint(&envelope, "git checkout <branch> -- spec/");
+    }
+    let run = roots
+        .run_idle(
+            &["--format", "json", "amend", "--description", DESCRIPTION_BRANCH, "--config"],
+            &greeting.backends,
+        )
+        .await;
+    refused(&run, 1, "spec-mismatch");
+    let branches = roots.git.branches(project);
+    assert_eq!(branches.len(), 4, "nothing is sealed: {branches:?}");
+
+    // the merge redone keeping one side whole reads
+    journey.start_merge();
+    journey.keep_farewell();
+    roots.assert_current(&farewell.backends, &farewell.revision, first).await;
+    roots.assert_current(&greeting.backends, &farewell.revision, first).await;
 }
 
 // A document edited by hand at the label is no longer the revision the

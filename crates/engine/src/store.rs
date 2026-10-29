@@ -536,10 +536,13 @@ pub async fn clear<S: StateStore + BlobStore>(store: &S) -> Result<(), Error> {
 
 // Where `repo` stands for the revision, the repository brought to where it
 // can be read: the revision at the label the pointer names, where that
-// label stands over the head; else the one the head's tree holds; else
+// label stands over the head; else the one the head's tree holds, whatever
+// the pointer names, so two checkouts whose pointers name two labels a
+// merge left behind the head read the one revision the head holds; else
 // none. Fails `spec-mismatch` on a tree whose `spec/` is not the three
-// documents or does not match the id its label names, and `spec-outdated`
-// on one under another grammar.
+// documents, does not match the id its label names, or at an unlabelled
+// head holds documents that read as no revision or as no one revision's,
+// and `spec-outdated` on one under another grammar.
 pub async fn current<P: Vcs + Files + StateStore>(
     provider: &P, repo: &BuildRepo,
 ) -> Result<Standing, Error> {
@@ -828,9 +831,13 @@ impl Current {
     }
 
     // Held to `expect` where a label named the commit; at a head no label
-    // names, three documents that read as no revision of any grammar were
-    // edited or merged by hand, since a seal writes them whole, and are
-    // `spec-mismatch` rather than a revision to seal over.
+    // names, three documents that read as no revision of any grammar, or
+    // that read as no one revision's (`Revision::findings`), were edited or
+    // merged by hand, since a seal writes them whole, and are
+    // `spec-mismatch` rather than a revision to seal over. Documents that
+    // read as one revision are that revision whatever label the repository
+    // holds for them, since a clone reads no remote's label and an operator
+    // may delete a merged one.
     async fn read_tree<F: Files>(
         files: &F, at: &str, commit: &str, expect: Option<&str>,
     ) -> Result<Option<Self>, Error> {
@@ -864,12 +871,14 @@ impl Current {
         }
         let revision = match Revision::read(&id, &spec, &design, &plan) {
             Err(error) if expect.is_none() && !matches!(error, Error::BadRequest { .. }) => {
-                return Err(mismatch(format!(
-                    "`{SPECIFICATION}/` at commit `{commit}` holds documents that read as no \
-                     revision ({}), so they were edited or merged by hand; a seal writes them \
-                     whole",
-                    error.description()
-                )));
+                return Err(hand_merged(commit, "no revision", &error.description()));
+            }
+            Ok(revision) if expect.is_none() => {
+                let findings = revision.findings();
+                if !findings.is_empty() {
+                    return Err(hand_merged(commit, "no one revision's", &findings.join("; ")));
+                }
+                Ok(revision)
             }
             revision => revision,
         };
@@ -889,6 +898,16 @@ impl Current {
 // grammar that `Revision::read` did not deserialise.
 fn spec_parent(spec: &[u8]) -> Option<String> {
     serde_json::from_slice::<Value>(spec).ok()?.get("parent")?.as_str().map(str::to_owned)
+}
+
+// The refusal of a `spec/` at an unlabelled head whose documents were edited
+// or merged by hand; the CLI's hint matches on the `edited or merged by hand`
+// clause.
+fn hand_merged(commit: &str, what: &str, why: &str) -> Error {
+    mismatch(format!(
+        "`{SPECIFICATION}/` at commit `{commit}` holds documents that read as {what} ({why}), so \
+         they were edited or merged by hand; a seal writes them whole"
+    ))
 }
 
 fn mismatch(description: String) -> Error {

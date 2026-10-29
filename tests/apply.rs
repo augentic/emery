@@ -738,6 +738,73 @@ async fn apply_fresh_over_baseline() {
     assert_eq!(current(&provider), candidate);
 }
 
+// The revision the other branch sealed, whose label a checkout's pointer names.
+const OTHER: &str = "2222222222222222222222222222222222222222222222222222222222222222";
+
+// Two branches that each sealed an amendment over one revision, merged with
+// one side's `spec/` kept whole, leave the head holding that side's three
+// documents with both labels behind it: a checkout whose pointer names the
+// other side's label reads the revision the head holds, since the pointer
+// is a cache the repository bears out or not, and an amendment prepared
+// against that revision at the merge seals over it with that revision as
+// its parent, both labels left standing.
+#[tokio::test]
+async fn apply_over_merge() {
+    let provider = Provider::idle();
+    let kept = seed(&provider.files, &lineage(), DESIGN, PLAN);
+    provider.storage.insert_state(REVISION_KEY, OTHER.as_bytes());
+    provider.vcs.labelleds.script(".", Ok(LABELLED.to_owned()));
+    provider.vcs.descends.script(".", Ok(false));
+
+    let resp = cli_ok(
+        &provider,
+        &["emery", "--format", "json", "show", "spec", "--config", PROJECT_CONFIG],
+    )
+    .await;
+
+    let envelope: Value = serde_json::from_slice(&resp.stdout).expect("one JSON envelope");
+    assert_eq!(envelope["revision"], kept, "the head's documents, not the pointer's: {envelope}");
+    assert_eq!(envelope["document"]["parent"], EARLIER, "{envelope}");
+    assert_eq!(
+        provider.vcs.calls(),
+        [
+            "head .".to_owned(),
+            format!("labelled . emery/{OTHER}"),
+            format!("descends . {HEAD} {LABELLED}"),
+            format!("add . {REVISION} {HEAD}"),
+            format!("remove {REVISION}"),
+        ],
+        "the pointer's label found behind the head, then the head's tree read"
+    );
+
+    // the amendment prepared against what the head holds seals over the merge
+    let amendment = stage_amendment(&provider.storage, &amendment_over(&kept, HEAD));
+    provider.vcs.labelleds.script(".", Ok(LABELLED.to_owned()));
+    provider.vcs.descends.script(".", Ok(false));
+    let resp =
+        cli_ok(&provider, &["emery", "--format", "json", "apply", "--config", PROJECT_CONFIG])
+            .await;
+    let envelope: Value = serde_json::from_slice(&resp.stdout).expect("one JSON envelope");
+    assert_eq!(envelope["parent"], kept, "{envelope}");
+    assert_eq!(envelope["kind"], "amendment", "{envelope}");
+    assert_eq!(envelope["amendment"], amendment, "{envelope}");
+    assert_eq!(envelope["commit"], "Revision-commit", "{envelope}");
+    let message = RevisionMessage::parse(&provider.vcs.messages()[0]).expect("a revision message");
+    assert_eq!(message.parent.as_deref(), Some(kept.as_str()), "the kept side is the parent");
+    assert_eq!(message.base.as_deref(), Some(HEAD), "sealed over the merge");
+    assert_eq!(current(&provider), envelope["revision"], "the pointer now names the seal");
+    let calls = provider.vcs.calls();
+    assert!(
+        !calls.iter().any(|call| call.starts_with(&format!("label . emery/{OTHER}"))),
+        "the other side's label stands: {calls:?}"
+    );
+    assert!(
+        !calls.iter().any(|call| call.starts_with(&format!("label . emery/{kept}"))),
+        "the kept side's label stands: {calls:?}"
+    );
+    provider.vcs.assert_exhausted();
+}
+
 // A target naming no repository seals into one the engine creates under the
 // target's name: created now, the revision its root commit, the envelope
 // naming the repository. A later seal finds it and lands over its head.

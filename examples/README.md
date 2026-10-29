@@ -144,9 +144,38 @@ A change whose sources disagree over one requirement — two statements at one r
 
 Two rules of the grammar the amendment steps meet. A run that names a source on the command line — a positional `<adapter>` or a `--description` — reads no `emery.toml` unless `--config` says so, so the `[target]` table reaches it under `--config` alone (bare for the project-root file, `--config <path>` for another); without it the run is refused `build-target-required`. And a positional adapter and a `--description` for one adapter bind one source name, the adapter's package name, so the pair is refused as a source named twice: an inline change over an adapter is `--description` alone, or a named `[[source]]` entry.
 
+## Two branches
+
+Carrying on in the same scratch project: two operators amend the one revision apart, each in a checkout of their own, and their labels diverge from one commit. The merge is git's to make and the operator's to resolve, keeping one side's `spec/` whole; the other side's change is then run again as an amendment of what the merge kept.
+
+```bash
+# a second operator: a clone with no state of its own reads the current revision from the head's tree
+git clone --quiet "$project" "$project-b"
+
+# each amends the current revision with a brief of their own and seals it; neither sees the other's seal
+"$emery" -v amend --config --description "example:source@0.1.0=GET /farewell returns the static string 'so long'." --apply
+( cd "$project-b" && "$emery" -v amend --config --description "example:source@0.1.0=GET /ping returns the static string 'pong'." --apply && git push --quiet origin 'refs/heads/emery/*:refs/heads/emery/*' )
+git for-each-ref refs/heads/emery/   # both labels, each one commit over the revision they amend
+
+# merge the first label onto main, then the second: the specification conflicts, since each side wrote it whole
+git merge --ff-only emery/<farewell>
+git merge emery/<ping>               # CONFLICT (content): spec/spec.json
+git checkout emery/<farewell> -- spec/    # keep one side's three documents whole, whatever merged cleanly
+git commit --quiet --no-edit
+"$emery" show spec                   # the kept side: the farewell says so long, no ping; the clone reads the same once it pulls
+
+# the other side's change, run again as an amendment of the kept revision: sealed over the merge, Parent: the kept
+"$emery" -v amend --config --description "example:source@0.1.0=GET /ping returns the static string 'pong'." --apply
+"$emery" show spec                   # the farewell and the ping, under the kept revision as parent
+git merge --ff-only emery/<revision>
+git for-each-ref refs/heads/emery/   # both branches' labels standing beside the new one
+```
+
+What a verb reads as the current revision is the repository's, and the state under `.emery/` is a cache it bears out or not: the label the last seal in this checkout left is read where it stands over the head, and otherwise the head's own tree is read, as a clone with no state reads it — three documents that read as one revision are that revision, whatever label the repository holds or lacks for them, since a clone sees no remote's label and an operator may delete a merged one. So once two branches are merged with one side's `spec/` kept whole, both checkouts read the kept revision from the head, the other side's label behind it, and an amendment prepared there seals over the merge commit with the kept revision as its parent. A merge of two seals always conflicts in `spec/spec.json`, since each seal writes the specification whole; whether `design.json` and `plan.json` conflict too is the diff's, so the resolution is the same either way: one side's three files whole, never one file from each.
+
 ## Start over
 
-Carrying on from the amend walk, in the same scratch project, with the current revision an amendment's: the repository holds a lineage, and a `specify` drafted from the sources alone is refused rather than let seal over it unasked. `--fresh` is the deliberate start-over.
+Carrying on in the same scratch project, with the current revision an amendment's: the repository holds a lineage, and a `specify` drafted from the sources alone is refused rather than let seal over it unasked. `--fresh` is the deliberate start-over.
 
 ```bash
 # a bare specify over a lineage: refused before any source is loaded, nothing staged
@@ -167,7 +196,7 @@ git merge --ff-only emery/<revision>
 cd - && rm -rf "$project"
 ```
 
-A revision whose `parent` names an earlier one is a lineage, and a bare `emery specify` over a `[target]` that holds one fails `lineage-exists` before any adapter is loaded, since a seal over it would read as the next amendment while carrying none of the history's reconciliation; the ways out are `emery amend`, a change against the current revision, and `emery specify --fresh`, which stages the candidate marked fresh and `apply` seals with no `Parent:` trailer, cut over the head whatever revision it holds, so every earlier label stays where it was and the fresh revision's own starts a history of its own. A `[target]` whose current revision has no parent is no lineage, so a first revision is sealed over by a bare `specify` as before, and a run naming no `[target]` reads no repository and is held to nothing. One refusal of the hand's: a `spec/` at the head whose three documents read as no revision — the state a `git merge` of two branches that each sealed a revision leaves, the conflict markers committed — is `spec-mismatch` saying the documents were edited or merged by hand, from `show`, `amend`, and `apply` alike; keep one side's three files whole (`git checkout <branch> -- spec/`), commit, and run the other side's amendment again over it, since the documents are the engine's to write and `emery show` prints them.
+A revision whose `parent` names an earlier one is a lineage, and a bare `emery specify` over a `[target]` that holds one fails `lineage-exists` before any adapter is loaded, since a seal over it would read as the next amendment while carrying none of the history's reconciliation; the ways out are `emery amend`, a change against the current revision, and `emery specify --fresh`, which stages the candidate marked fresh and `apply` seals with no `Parent:` trailer, cut over the head whatever revision it holds, so every earlier label stays where it was and the fresh revision's own starts a history of its own. A `[target]` whose current revision has no parent is no lineage, so a first revision is sealed over by a bare `specify` as before, and a run naming no `[target]` reads no repository and is held to nothing. One refusal of the hand's: a `spec/` at the head whose three documents read as no revision — the state a `git merge` of two branches that each sealed a revision leaves, the conflict markers committed — or as no one revision's — one side's `spec.json` kept beside the other side's `design.json` and `plan.json`, so the plan places a requirement the specification does not state, or leaves one it states in no slice, or owns a type the design lacks — is `spec-mismatch` saying the documents were edited or merged by hand, from `show`, `amend`, and `apply` alike, the description naming what failed to read or which ids and keys the documents disagree over; keep one side's three files whole (`git checkout <branch> -- spec/`), commit, and run the other side's amendment again over it, as [above](#two-branches), since the documents are the engine's to write and `emery show` prints them.
 
 ## Host-to-guest tool calls
 
