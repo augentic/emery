@@ -65,7 +65,7 @@ When `--format json` is provided, returns:
 - `repository` — the repository the revision was sealed in: `.` for the project checkout, else `./.emery/vcs/repos/<name>`
 - `kind` — what was sealed: `revision` for a candidate `emery specify` staged, `amendment` for an amendment `emery amend` staged
 - `amendment` — the id of the amendment sealed, for that kind; omitted for a revision candidate
-- `diff` — the sealed revision's diff against its parent, in the shape [`emery specify`](specify.md#json-output) reports — within one history for an amendment, so `spec.retired` lists what it withdrew; omitted on the first seal and on a fresh seal (see [CLI output shapes](../cli-output-shapes.md#emery-apply))
+- `diff` — the sealed revision's diff against the revision it amends or displaced, in the shape [`emery specify`](specify.md#json-output) reports — within one history for an amendment, so `spec.retired` lists what it withdrew; omitted on the first seal (see [CLI output shapes](../cli-output-shapes.md#emery-apply))
 
 Text mode prints `sealed revision <id> as emery/<id> at <commit8>`, then `  amends <parent>` for an amendment sealed, then `  repository ./.emery/vcs/repos/<name>` when the seal landed outside the project checkout, then the one-line diff summary when a revision was amended or displaced.
 
