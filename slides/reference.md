@@ -36,15 +36,15 @@ class: slide-hero slide-section
 </div>
 
 <div class="hero-mechanisms">
-<div class="hero-pillar"><span class="hero-pillar-num">01</span><span>Standardise delivery · Codex, compiler-enforced rules, automated gates</span></div>
-<div class="hero-pillar"><span class="hero-pillar-num">02</span><span>Specify behaviour · Typed evidence, sealed specification, verified build</span></div>
-<div class="hero-pillar"><span class="hero-pillar-num">03</span><span>Sandbox execution · WASI components, capability contracts, runtime recipes</span></div>
+<div class="hero-pillar"><span class="hero-pillar-num">01</span><span>Standardising delivery · Codex, compiler-enforced rules, automated gates</span></div>
+<div class="hero-pillar"><span class="hero-pillar-num">02</span><span>Specifying behaviour · Typed evidence, sealed specification, verified build</span></div>
+<div class="hero-pillar"><span class="hero-pillar-num">03</span><span>Sandboxing execution · WASI components, capability contracts, runtime recipes</span></div>
 </div>
 
 <!--
 Use this deck selectively:
 - It is a technical reference for architecture, engineering, security, platform, and governance conversations.
-- The approach deck carries the proposition as three mechanisms: standardise delivery, specify behaviour, sandbox execution. This deck answers how each works, what a reviewer can inspect, and what the system does not claim.
+- The approach deck carries the proposition as three mechanisms: standardising delivery, specifying behaviour, sandboxing execution. This deck answers how each works, what a reviewer can inspect, and what the system does not claim.
 - The trust radius sets the required state from the highest-consequence dimension: reach, data, dependence, or continuity. It is not a maturity score.
 -->
 
@@ -67,7 +67,7 @@ class: slide-sandbox
   <text x="570" y="28" text-anchor="middle" class="svg-kicker" fill="#ffffff">PROTECTED CONTROL PLANE · PEOPLE SET OUTCOME, SOURCE PRECEDENCE, ACCEPTANCE, RELEASE</text>
 
   <rect x="18" y="72" width="348" height="192" rx="15" fill="rgba(10,7,16,0.74)" stroke="#78d8f2" stroke-width="1.8" />
-  <text x="42" y="102" class="svg-kicker" fill="#78d8f2">01 · STANDARDISE DELIVERY</text>
+  <text x="42" y="102" class="svg-kicker" fill="#78d8f2">01 · STANDARDISING DELIVERY</text>
   <text x="42" y="134" class="svg-h3" fill="#ffffff">Toolchain and pipeline</text>
   <line x1="42" y1="150" x2="342" y2="150" stroke="rgba(255,255,255,0.14)" />
   <text x="42" y="178" class="svg-body" fill="rgba(255,255,255,0.82)">Governed workspaces · approved tools and models</text>
@@ -79,7 +79,7 @@ class: slide-sandbox
   <polygon points="384,163 394,168 384,173" fill="#ffffff" />
 
   <rect x="396" y="72" width="348" height="192" rx="15" fill="rgba(10,7,16,0.74)" stroke="#f59ef5" stroke-width="1.8" />
-  <text x="420" y="102" class="svg-kicker" fill="#f59ef5">02 · SPECIFY BEHAVIOUR</text>
+  <text x="420" y="102" class="svg-kicker" fill="#f59ef5">02 · SPECIFYING BEHAVIOUR</text>
   <text x="420" y="134" class="svg-h3" fill="#ffffff">Emery</text>
   <line x1="420" y1="150" x2="720" y2="150" stroke="rgba(255,255,255,0.14)" />
   <text x="420" y="178" class="svg-body" fill="rgba(255,255,255,0.82)">Typed evidence under configured authority</text>
@@ -91,7 +91,7 @@ class: slide-sandbox
   <polygon points="762,163 772,168 762,173" fill="#ffffff" />
 
   <rect x="774" y="72" width="348" height="192" rx="15" fill="rgba(10,7,16,0.74)" stroke="#78d8f2" stroke-width="1.8" />
-  <text x="798" y="102" class="svg-kicker" fill="#78d8f2">03 · SANDBOX EXECUTION</text>
+  <text x="798" y="102" class="svg-kicker" fill="#78d8f2">03 · SANDBOXING EXECUTION</text>
   <text x="798" y="134" class="svg-h3" fill="#ffffff">Omnia</text>
   <line x1="798" y1="150" x2="1098" y2="150" stroke="rgba(255,255,255,0.14)" />
   <text x="798" y="178" class="svg-body" fill="rgba(255,255,255,0.82)">Sandboxed WASI component on Wasmtime</text>
@@ -130,9 +130,9 @@ class: slide-sandbox
 
 <!--
 System view:
-- Standardise delivery governs how work is created, checked, shipped, and operated: the governed workspace, the engineering codex, the compiler-enforced rules, and the automated path from build to production.
-- Specify behaviour governs what must remain true and what evidence accepts the result: Emery keeps typed evidence, configured authority, and the sealed specification outside conversation.
-- Sandbox execution governs what the running application may access: Omnia runs the result as a sandboxed component over typed capabilities the host binds through a runtime recipe.
+- Standardising delivery governs how work is created, checked, shipped, and operated: the governed workspace, the engineering codex, the compiler-enforced rules, and the automated path from build to production.
+- Specifying behaviour governs what must remain true and what evidence accepts the result: Emery keeps typed evidence, configured authority, and the sealed specification outside conversation.
+- Sandboxing execution governs what the running application may access: Omnia runs the result as a sandboxed component over typed capabilities the host binds through a runtime recipe.
 - Operation is the end of the path, not a fourth mechanism. Release is a decision people make on the evidence the path produces.
 - The coding agent's working environment and the application's runtime sandbox are separate trust boundaries; a later slide compares them.
 -->
@@ -425,7 +425,7 @@ title: Guidance shapes; gates decide
 class: slide-light
 ---
 
-<Eyebrow text="STANDARDISE DELIVERY · AUTHORING CONTROLS · ISOLATE, GUIDE, ENFORCE" />
+<Eyebrow text="STANDARDISING DELIVERY · AUTHORING CONTROLS · ISOLATE, GUIDE, ENFORCE" />
 
 <div class="ed-split">
 <div class="ed-prose-col">
@@ -485,7 +485,7 @@ title: Automate the path from code to production
 class: slide-light
 ---
 
-<Eyebrow text="STANDARDISE DELIVERY · DELIVERY AUTOMATION · ONE ARTIFACT, EVERY GATE" />
+<Eyebrow text="STANDARDISING DELIVERY · DELIVERY AUTOMATION · ONE ARTIFACT, EVERY GATE" />
 
 <div class="ed-band">
 <div class="ed-band-top">
@@ -564,7 +564,7 @@ title: Emery keeps the specification outside the chat
 class: slide-light
 ---
 
-<Eyebrow text="SPECIFY BEHAVIOUR · EMERY · EVIDENCE, AUTHORITY, SEALED SPECIFICATION, BOUNDED BUILD" />
+<Eyebrow text="SPECIFYING BEHAVIOUR · EMERY · EVIDENCE, AUTHORITY, SEALED SPECIFICATION, BOUNDED BUILD" />
 
 <div class="ed-band">
 <div class="ed-band-top">
@@ -646,7 +646,7 @@ title: Omnia gives code no ambient authority
 class: slide-sandbox
 ---
 
-<Eyebrow text="SANDBOX EXECUTION · OMNIA · SANDBOXED COMPONENTS AND HOST-MEDIATED CAPABILITIES" />
+<Eyebrow text="SANDBOXING EXECUTION · OMNIA · SANDBOXED COMPONENTS AND HOST-MEDIATED CAPABILITIES" />
 
 <div class="ed-split">
 <div class="ed-prose-col">
@@ -710,7 +710,7 @@ title: Different infrastructure, the same application
 class: slide-light
 ---
 
-<Eyebrow text="SANDBOX EXECUTION · PORTABILITY · THE RUNTIME RECIPE" />
+<Eyebrow text="SANDBOXING EXECUTION · PORTABILITY · THE RUNTIME RECIPE" />
 
 <div class="ed-split">
 <div class="ed-prose-col">
@@ -824,7 +824,7 @@ class: slide-light
 
 </div>
 <div>
-<p class="ed-prose"><strong>The authoring sandbox contains the agent while it changes code</strong>—the Standardise delivery mechanism. The runtime sandbox contains the resulting code while it handles real work—the Sandbox execution mechanism.</p>
+<p class="ed-prose"><strong>The authoring sandbox contains the agent while it changes code</strong>—the Standardising delivery mechanism. The runtime sandbox contains the resulting code while it handles real work—the Sandboxing execution mechanism.</p>
 <p class="ed-prose"><strong>Neither implies the other.</strong> A tightly constrained agent can produce an ambiently privileged application; sandboxed application code can still be authored through an unsafe worker.</p>
 </div>
 </div>
