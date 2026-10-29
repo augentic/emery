@@ -233,9 +233,9 @@
   },
   {
     "id": "future-system",
-    "title": "Narrow the target. Close the loop.",
+    "title": "Roadmap",
     "required": [
-      "Narrow the target. Close the loop.",
+      "Roadmap",
       "Narrow the target",
       "Run smaller models",
       "Close the loop"

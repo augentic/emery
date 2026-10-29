@@ -1449,7 +1449,7 @@ Section 01 divider: Standardise delivery.
 -->
 
 ---
-title: Standardise how code is written.
+title: Govern code authoring.
 sync: authoring
 class: slide-light
 ---
@@ -1464,7 +1464,7 @@ class: slide-light
 
 <div class="live-stage">
 
-# Standardise how code is written.
+# Govern code authoring.
 
 <p class="live-claim">Give people and agents a safe workspace, shared standards, and compile-time guardrails.</p>
 
@@ -1792,7 +1792,7 @@ Section 03 divider: Sandbox execution.
 -->
 
 ---
-title: Generated code cannot reach past its sandbox.
+title: Generated code cannot escape its sandbox.
 sync: runtime
 class: slide-light
 ---
@@ -1807,7 +1807,7 @@ class: slide-light
 
 <div class="live-stage">
 
-# Generated code cannot reach<br>past its sandbox.
+# Generated code cannot escape its sandbox.
 
 <p class="live-claim">With the platform safe by construction, agents work within known bounds while engineers focus on the product.</p>
 
@@ -2168,7 +2168,7 @@ Where the delivery system applies in practice:
 -->
 
 ---
-title: Narrow the target. Close the loop.
+title: Roadmap
 sync: future-system
 class: slide-section
 ---
@@ -2181,7 +2181,7 @@ class: slide-section
 <div class="section-hero-left">
 <div class="section-kicker-pill is-magenta">Roadmap</div>
 
-# Narrow the target. Close the loop.
+# Roadmap
 
 <p class="section-subtitle">A constrained delivery system unlocks <strong>smaller models on a narrower target, and production signals returning as governed changes.</strong></p>
 

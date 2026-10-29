@@ -1192,7 +1192,7 @@ Where the delivery system applies in practice:
 -->
 
 ---
-title: Narrow the target. Close the loop.
+title: Roadmap
 sync: future-system
 class: slide-light
 ---
@@ -1203,7 +1203,7 @@ class: slide-light
 <div class="ed-band-top">
 <div>
 
-# Narrow the target.<br>Close the loop.
+# Roadmap
 
 </div>
 <p class="ed-band-prose"><strong>A constrained delivery system unlocks smaller models on a narrower target, and production signals returning as governed changes.</strong> Because the target is narrow and the path is governed, generation shrinks enough for smaller local models—and production signals can return through the same path as governed changes.</p>
