@@ -81,22 +81,26 @@ class: slide-light
   <text x="602" y="88" text-anchor="end" class="svg-h2" fill="#a4238f">Minutes</text>
   <text x="38" y="114" class="svg-caption" fill="rgba(13,16,48,0.58)">More plausible code, sooner</text>
 
-  <rect x="14" y="148" width="612" height="224" rx="14" fill="#0d1030" />
-  <text x="38" y="180" class="svg-kicker" fill="#78d8f2">MORE CODE ≠ FASTER DELIVERY</text>
+  <rect x="14" y="142" width="612" height="238" rx="14" fill="#0d1030" />
+  <text x="38" y="172" class="svg-kicker" fill="#78d8f2">MORE CODE ≠ FASTER DELIVERY · DORA, FAROS AI, GITCLEAR, VERACODE</text>
 
-  <rect x="38" y="200" width="270" height="64" rx="9" fill="rgba(255,255,255,0.08)" />
-  <text x="56" y="226" class="svg-label" fill="#ffffff">Verification tax</text>
-  <text x="56" y="248" class="svg-caption" fill="rgba(255,255,255,0.68)">Larger PRs overwhelm human review</text>
-  <rect x="332" y="200" width="270" height="64" rx="9" fill="rgba(255,255,255,0.08)" />
-  <text x="350" y="226" class="svg-label" fill="#ffffff">Hidden assumptions</text>
-  <text x="350" y="248" class="svg-caption" fill="rgba(255,255,255,0.68)">Plausible code skips design trade-offs</text>
+  <rect x="38" y="188" width="270" height="78" rx="9" fill="rgba(255,255,255,0.08)" />
+  <text x="56" y="212" class="svg-label" fill="#ffffff">Verification tax</text>
+  <text x="56" y="232" class="svg-caption" fill="rgba(255,255,255,0.68)">Larger PRs overwhelm human review</text>
+  <text x="56" y="253" class="svg-pill" fill="#78d8f2">+51% PR size · +441% review wait</text>
+  <rect x="332" y="188" width="270" height="78" rx="9" fill="rgba(255,255,255,0.08)" />
+  <text x="350" y="212" class="svg-label" fill="#ffffff">Hidden assumptions</text>
+  <text x="350" y="232" class="svg-caption" fill="rgba(255,255,255,0.68)">Plausible code skips design trade-offs</text>
+  <text x="350" y="253" class="svg-pill" fill="#78d8f2">+54% bugs · 45% with security flaws</text>
 
-  <rect x="38" y="282" width="270" height="64" rx="9" fill="rgba(255,255,255,0.08)" />
-  <text x="56" y="308" class="svg-label" fill="#ffffff">Duplication &amp; churn</text>
-  <text x="56" y="330" class="svg-caption" fill="rgba(255,255,255,0.68)">Copy-paste growth replaces refactoring</text>
-  <rect x="332" y="282" width="270" height="64" rx="9" fill="rgba(255,255,255,0.08)" />
-  <text x="350" y="308" class="svg-label" fill="#ffffff">Delivery instability</text>
-  <text x="350" y="330" class="svg-caption" fill="rgba(255,255,255,0.68)">More defects reach production</text>
+  <rect x="38" y="280" width="270" height="78" rx="9" fill="rgba(255,255,255,0.08)" />
+  <text x="56" y="304" class="svg-label" fill="#ffffff">Duplication &amp; churn</text>
+  <text x="56" y="324" class="svg-caption" fill="rgba(255,255,255,0.68)">Copy-paste growth replaces refactoring</text>
+  <text x="56" y="345" class="svg-pill" fill="#78d8f2">+81% duplication · −70% refactoring</text>
+  <rect x="332" y="280" width="270" height="78" rx="9" fill="rgba(255,255,255,0.08)" />
+  <text x="350" y="304" class="svg-label" fill="#ffffff">Delivery instability</text>
+  <text x="350" y="324" class="svg-caption" fill="rgba(255,255,255,0.68)">More defects reach production</text>
+  <text x="350" y="345" class="svg-pill" fill="#78d8f2">−7.2% stability per 25% AI adoption</text>
 
   <rect x="70" y="394" width="500" height="36" rx="18" fill="rgba(164,35,143,0.07)" stroke="rgba(164,35,143,0.42)" />
   <text x="320" y="417" text-anchor="middle" class="svg-caption" fill="#a4238f">The risk: A system no one can safely change.</text>
@@ -315,24 +319,26 @@ class: slide-light
   <rect x="14" y="24" width="612" height="102" rx="14" fill="rgba(22,180,226,0.06)" stroke="#0c7fa3" stroke-width="1.6" />
   <circle cx="62" cy="75" r="22" fill="#0c7fa3" />
   <text x="62" y="80" text-anchor="middle" class="svg-label" fill="#ffffff">01</text>
-  <text x="102" y="58" class="svg-kicker" fill="#0c7fa3">ISOLATE</text>
-  <text x="102" y="84" class="svg-h3" fill="#0d1030">Isolated workspaces</text>
-  <text x="102" y="108" class="svg-caption" fill="rgba(13,16,48,0.62)">Non-production environments with no live access</text>
+  <text x="102" y="54" class="svg-kicker" fill="#0c7fa3">ISOLATE</text>
+  <text x="102" y="78" class="svg-h3" fill="#0d1030">Isolated workspaces</text>
+  <text x="102" y="98" class="svg-caption" fill="rgba(13,16,48,0.62)">Non-production environments with no live access</text>
+  <text x="102" y="116" class="svg-pill" fill="#0c7fa3">No live credentials · Scoped tool grants</text>
 
   <rect x="14" y="144" width="612" height="102" rx="14" fill="rgba(164,35,143,0.05)" stroke="#a4238f" stroke-width="1.6" />
   <circle cx="62" cy="195" r="22" fill="#a4238f" />
   <text x="62" y="200" text-anchor="middle" class="svg-label" fill="#ffffff">02</text>
-  <text x="102" y="178" class="svg-kicker" fill="#a4238f">GUIDE</text>
-  <text x="102" y="204" class="svg-h3" fill="#0d1030">Shared engineering standards</text>
-  <text x="102" y="228" class="svg-caption" fill="rgba(13,16,48,0.62)">One versioned rulebook for people and agents</text>
+  <text x="102" y="174" class="svg-kicker" fill="#a4238f">GUIDE</text>
+  <text x="102" y="198" class="svg-h3" fill="#0d1030">Shared engineering standards</text>
+  <text x="102" y="218" class="svg-caption" fill="rgba(13,16,48,0.62)">One versioned rulebook for people and agents</text>
+  <text x="102" y="236" class="svg-pill" fill="#a4238f">Architecture &amp; layout · Idioms &amp; templates</text>
 
   <rect x="14" y="264" width="612" height="102" rx="14" fill="#0d1030" />
   <circle cx="62" cy="315" r="22" fill="rgba(255,255,255,0.1)" stroke="#78d8f2" stroke-width="1.4" />
   <text x="62" y="320" text-anchor="middle" class="svg-label" fill="#78d8f2">03</text>
-  <text x="102" y="298" class="svg-kicker" fill="#78d8f2">ENFORCE</text>
-  <text x="102" y="324" class="svg-h3" fill="#ffffff">Compiler-enforced standards</text>
-  <text x="102" y="344" class="svg-caption" fill="rgba(255,255,255,0.7)">Architectural and safety rules enforced at compile time.</text>
-  <text x="102" y="360" class="svg-caption" fill="rgba(255,255,255,0.7)"></text>
+  <text x="102" y="294" class="svg-kicker" fill="#78d8f2">ENFORCE</text>
+  <text x="102" y="318" class="svg-h3" fill="#ffffff">Compiler-enforced standards</text>
+  <text x="102" y="338" class="svg-caption" fill="rgba(255,255,255,0.7)">Architectural and safety rules enforced at compile time.</text>
+  <text x="102" y="356" class="svg-pill" fill="#78d8f2">No panics or unwrap · No direct net or FS</text>
 
   <rect x="72" y="390" width="496" height="38" rx="19" fill="rgba(164,35,143,0.07)" stroke="rgba(164,35,143,0.4)" />
   <text x="320" y="414" text-anchor="middle" class="svg-caption" fill="#a4238f">Reviewers focus on design and trade-offs—not policing mechanical rules.</text>
@@ -558,48 +564,53 @@ class: slide-light
   <text x="16" y="24" class="svg-kicker" fill="#a4238f">DURABLE SPECIFICATION</text>
   <text x="472" y="24" class="svg-kicker" fill="#0c7fa3">EPHEMERAL DELIVERY RUN</text>
 
-  <rect x="16" y="54" width="268" height="202" rx="14" fill="rgba(22,180,226,0.06)" stroke="#0c7fa3" stroke-width="1.6" />
-  <text x="38" y="84" class="svg-kicker" fill="#0c7fa3">01 · WHAT + HOW</text>
-  <text x="38" y="116" class="svg-h3" fill="#0d1030">Specify</text>
-  <line x1="38" y1="132" x2="262" y2="132" stroke="rgba(12,127,163,0.18)" />
-  <text x="38" y="158" class="svg-kicker" fill="#0c7fa3">SOURCES</text>
-  <text x="38" y="180" class="svg-label" fill="#0d1030">Intent · docs · tests</text>
-  <text x="38" y="204" class="svg-label" fill="#0d1030">Legacy source code</text>
-  <text x="38" y="228" class="svg-kicker" fill="#a4238f">SPECIFICATION</text>
-  <text x="38" y="246" class="svg-caption" fill="rgba(13,16,48,0.68)">spec.md · design.md</text>
+  <rect x="16" y="48" width="268" height="214" rx="14" fill="rgba(22,180,226,0.06)" stroke="#0c7fa3" stroke-width="1.6" />
+  <text x="38" y="76" class="svg-kicker" fill="#0c7fa3">01 · WHAT + HOW</text>
+  <text x="38" y="106" class="svg-h3" fill="#0d1030">Specify</text>
+  <line x1="38" y1="120" x2="262" y2="120" stroke="rgba(12,127,163,0.18)" />
+  <text x="38" y="144" class="svg-kicker" fill="#0c7fa3">SOURCES</text>
+  <text x="38" y="166" class="svg-label" fill="#0d1030">Intent · docs · tests</text>
+  <text x="38" y="188" class="svg-label" fill="#0d1030">Legacy source code</text>
+  <text x="38" y="212" class="svg-kicker" fill="#a4238f">SPECIFICATION</text>
+  <text x="38" y="230" class="svg-caption" fill="rgba(13,16,48,0.68)">spec.md · design.md</text>
+  <text x="38" y="250" class="svg-pill" fill="#0c7fa3">Exposes conflicts &amp; [unknown] gaps</text>
 
   <line x1="284" y1="155" x2="316" y2="155" stroke="#0d1030" stroke-width="1.7" />
   <polygon points="310,150 320,155 310,160" fill="#0d1030" />
 
   <rect x="320" y="42" width="120" height="226" rx="14" fill="#0d1030" />
-  <text x="380" y="78" text-anchor="middle" class="svg-kicker" fill="#f59ef5">REVIEW GATE</text>
-  <text x="380" y="118" text-anchor="middle" class="svg-h3" fill="#ffffff">Review</text>
-  <text x="380" y="144" text-anchor="middle" class="svg-h3" fill="#ffffff">&amp; seal</text>
-  <line x1="342" y1="166" x2="418" y2="166" stroke="rgba(255,255,255,0.16)" />
-  <text x="380" y="196" text-anchor="middle" class="svg-caption" fill="rgba(255,255,255,0.68)">Human</text>
-  <text x="380" y="216" text-anchor="middle" class="svg-caption" fill="rgba(255,255,255,0.68)">decision gate</text>
+  <text x="380" y="74" text-anchor="middle" class="svg-kicker" fill="#f59ef5">REVIEW GATE</text>
+  <text x="380" y="110" text-anchor="middle" class="svg-h3" fill="#ffffff">Review</text>
+  <text x="380" y="134" text-anchor="middle" class="svg-h3" fill="#ffffff">&amp; seal</text>
+  <line x1="342" y1="154" x2="418" y2="154" stroke="rgba(255,255,255,0.16)" />
+  <text x="380" y="180" text-anchor="middle" class="svg-caption" fill="rgba(255,255,255,0.68)">Human</text>
+  <text x="380" y="198" text-anchor="middle" class="svg-caption" fill="rgba(255,255,255,0.68)">decision gate</text>
+  <text x="380" y="226" text-anchor="middle" class="svg-pill" fill="#f59ef5">Resolve conflicts</text>
+  <text x="380" y="244" text-anchor="middle" class="svg-pill" fill="#f59ef5">Seal in repo</text>
 
   <line x1="440" y1="155" x2="468" y2="155" stroke="#a4238f" stroke-width="1.7" />
   <polygon points="462,150 472,155 462,160" fill="#a4238f" />
 
-  <rect x="472" y="54" width="268" height="202" rx="14" fill="rgba(164,35,143,0.06)" stroke="#a4238f" stroke-width="1.6" />
-  <text x="494" y="84" class="svg-kicker" fill="#a4238f">02 · DERIVE</text>
-  <text x="494" y="116" class="svg-h3" fill="#0d1030">Plan</text>
-  <line x1="494" y1="132" x2="718" y2="132" stroke="rgba(164,35,143,0.18)" />
-  <text x="494" y="164" class="svg-label" fill="#0d1030">Units of work,</text>
-  <text x="494" y="192" class="svg-label" fill="#0d1030">ordered by dependency</text>
-  <text x="494" y="226" class="svg-caption" fill="rgba(13,16,48,0.6)">Discard or regenerate</text>
+  <rect x="472" y="48" width="268" height="214" rx="14" fill="rgba(164,35,143,0.06)" stroke="#a4238f" stroke-width="1.6" />
+  <text x="494" y="76" class="svg-kicker" fill="#a4238f">02 · DERIVE</text>
+  <text x="494" y="106" class="svg-h3" fill="#0d1030">Plan</text>
+  <line x1="494" y1="120" x2="718" y2="120" stroke="rgba(164,35,143,0.18)" />
+  <text x="494" y="158" class="svg-label" fill="#0d1030">Units of work,</text>
+  <text x="494" y="184" class="svg-label" fill="#0d1030">ordered by dependency</text>
+  <text x="494" y="218" class="svg-caption" fill="rgba(13,16,48,0.6)">Discard or regenerate</text>
+  <text x="494" y="244" class="svg-pill" fill="#a4238f">Bounded slices · regenerable</text>
 
   <line x1="740" y1="155" x2="768" y2="155" stroke="#0d1030" stroke-width="1.7" />
   <polygon points="762,150 772,155 762,160" fill="#a4238f" />
 
-  <rect x="772" y="54" width="352" height="202" rx="14" fill="#0d1030" />
-  <text x="794" y="84" class="svg-kicker" fill="#78d8f2">03 · CODE + PROVE</text>
-  <text x="794" y="116" class="svg-h3" fill="#ffffff">Build</text>
-  <line x1="794" y1="132" x2="1102" y2="132" stroke="rgba(255,255,255,0.14)" />
-  <text x="794" y="170" class="svg-label" fill="#ffffff">Implement · integrate · verify</text>
-  <text x="794" y="204" class="svg-label" fill="#ffffff">against the spec</text>
-  <text x="794" y="238" class="svg-caption" fill="rgba(255,255,255,0.68)">Complete only when verified</text>
+  <rect x="772" y="48" width="352" height="214" rx="14" fill="#0d1030" />
+  <text x="794" y="76" class="svg-kicker" fill="#78d8f2">03 · CODE + PROVE</text>
+  <text x="794" y="106" class="svg-h3" fill="#ffffff">Build</text>
+  <line x1="794" y1="120" x2="1102" y2="120" stroke="rgba(255,255,255,0.14)" />
+  <text x="794" y="158" class="svg-label" fill="#ffffff">Implement · integrate · verify</text>
+  <text x="794" y="184" class="svg-label" fill="#ffffff">against the spec</text>
+  <text x="794" y="218" class="svg-caption" fill="rgba(255,255,255,0.68)">Complete only when verified</text>
+  <text x="794" y="244" class="svg-pill" fill="#78d8f2">Isolated worktrees · replay gates</text>
 
   <rect x="148" y="294" width="844" height="48" rx="24" fill="#0d1030" />
   <text x="570" y="324" text-anchor="middle" class="svg-label" fill="#ffffff">Every change runs the loop. Any spec change re-enters the human review gate.</text>

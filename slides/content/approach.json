@@ -18,9 +18,13 @@
       "AI writes code in minutes, but without a delivery system it inflates PRs, shifts the bottleneck to review, and degrades delivery stability.",
       "More code ≠ faster delivery",
       "Verification tax",
+      "+51% PR size · +441% review wait",
       "Hidden assumptions",
+      "+54% bugs · 45% with security flaws",
       "Duplication & churn",
+      "+81% duplication · −70% refactoring",
       "Delivery instability",
+      "−7.2% stability per 25% AI adoption",
       "A system no one can safely change."
     ]
   },
@@ -69,9 +73,15 @@
       "Constrain code authoring.",
       "Isolate the workspace, share one set of engineering standards, and enforce architectural rules at compile time.",
       "Isolated workspaces",
+      "No live credentials",
+      "Scoped tool grants",
       "Shared engineering standards",
+      "Architecture & layout",
+      "Idioms & templates",
       "Compiler-enforced standards",
       "Architectural and safety rules enforced at compile time.",
+      "No panics or unwrap",
+      "No direct net or FS",
       "Reviewers focus on design and trade-offs—not policing mechanical rules."
     ]
   },
@@ -118,9 +128,13 @@
       "Align on intent upfront, break work into bounded slices for agents, and verify code against the spec.",
       "spec.md",
       "design.md",
+      "Exposes conflicts & [unknown] gaps",
       "Review & seal",
       "Human decision gate",
+      "Resolve conflicts",
       "Units of work, ordered by dependency",
+      "Bounded slices · regenerable",
+      "Isolated worktrees · replay gates",
       "Every change runs the loop. Any spec change re-enters the human review gate."
     ]
   },

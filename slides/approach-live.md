@@ -247,6 +247,19 @@ class: slide-hero slide-section
   color: rgba(255, 255, 255, 0.68);
 }
 
+.live-word-stat {
+  display: block;
+  margin-top: 6px;
+  padding-top: 5px;
+  border-top: 1px solid rgba(255, 255, 255, 0.12);
+  font-size: 11px;
+  line-height: 1.2;
+  font-style: normal;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--phl-cyan-soft);
+}
+
 .live-panel-result {
   margin-top: 20px;
   padding-top: 20px;
@@ -412,17 +425,19 @@ class: slide-hero slide-section
 }
 
 .live-sdd-flow {
-  width: min(100%, 1000px);
+  width: min(100%, 1060px);
   margin-inline: auto;
   display: grid;
-  grid-template-columns: 1.15fr 92px 0.55fr 24px 1fr;
+  grid-template-columns: 1.12fr 132px 0.78fr 24px 1fr;
   gap: 8px;
   align-items: stretch;
 }
 
 .live-sdd-flow .live-card {
-  min-height: 176px;
+  min-height: 196px;
   padding: 18px;
+  display: flex;
+  flex-direction: column;
 }
 
 .live-sdd-flow .live-card h3 {
@@ -434,6 +449,33 @@ class: slide-hero slide-section
   font-size: 15px;
 }
 
+.live-sdd-detail {
+  margin-top: auto;
+  padding-top: 10px;
+  border-top: 1px solid rgba(13, 16, 48, 0.12);
+  font-size: 12.5px;
+  line-height: 1.25;
+  font-weight: 600;
+  color: var(--phl-cyan-ink);
+}
+
+.live-card.is-magenta .live-sdd-detail {
+  border-color: rgba(164, 35, 143, 0.2);
+  color: #a4238f;
+}
+
+.live-card.is-dark .live-sdd-detail {
+  border-color: rgba(255, 255, 255, 0.16);
+  color: var(--phl-cyan-soft);
+}
+
+.live-sdd-detail code {
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: rgba(13, 16, 48, 0.08);
+  font-size: 11.5px;
+}
+
 .live-sdd-arrow {
   display: flex;
   align-items: center;
@@ -443,9 +485,10 @@ class: slide-hero slide-section
 }
 
 .live-review-gate {
-  padding: 14px 8px;
+  padding: 14px 10px;
   border-right: 2px solid rgba(164, 35, 143, 0.52);
   border-left: 2px solid rgba(164, 35, 143, 0.52);
+  background: rgba(164, 35, 143, 0.04);
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -466,6 +509,19 @@ class: slide-hero slide-section
   letter-spacing: 0;
   text-transform: none;
   color: var(--phl-ink);
+}
+
+.live-review-gate em {
+  margin-top: 8px;
+  padding-top: 7px;
+  border-top: 1px solid rgba(164, 35, 143, 0.24);
+  font-size: 11px;
+  line-height: 1.25;
+  font-style: normal;
+  font-weight: 500;
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--phl-ink-body);
 }
 
 .live-title-accent {
@@ -1297,12 +1353,12 @@ class: slide-light
 <div class="live-panel">
 <div class="live-panel-title">More code ≠ faster delivery</div>
 <div class="live-word-grid">
-<div class="live-word"><IconBadge tone="light" size="small"><ph:stack /></IconBadge><div class="live-word-copy"><strong>Verification tax</strong><span>Larger PRs overwhelm human review</span></div></div>
-<div class="live-word"><IconBadge tone="light" size="small"><ph:puzzle-piece /></IconBadge><div class="live-word-copy"><strong>Hidden assumptions</strong><span>Plausible code skips design trade-offs</span></div></div>
-<div class="live-word"><IconBadge tone="light" size="small"><ph:copy /></IconBadge><div class="live-word-copy"><strong>Duplication &amp; churn</strong><span>Copy-paste growth replaces refactoring</span></div></div>
-<div class="live-word"><IconBadge tone="light" size="small"><ph:warning /></IconBadge><div class="live-word-copy"><strong>Delivery instability</strong><span>More defects reach production</span></div></div>
+<div class="live-word"><IconBadge tone="light" size="small"><ph:stack /></IconBadge><div class="live-word-copy"><strong>Verification tax</strong><span>Larger PRs overwhelm human review</span><em class="live-word-stat">+51% PR size · +441% review wait</em></div></div>
+<div class="live-word"><IconBadge tone="light" size="small"><ph:puzzle-piece /></IconBadge><div class="live-word-copy"><strong>Hidden assumptions</strong><span>Plausible code skips design trade-offs</span><em class="live-word-stat">+54% bugs · 45% with security flaws</em></div></div>
+<div class="live-word"><IconBadge tone="light" size="small"><ph:copy /></IconBadge><div class="live-word-copy"><strong>Duplication &amp; churn</strong><span>Copy-paste growth replaces refactoring</span><em class="live-word-stat">+81% duplication · −70% refactoring</em></div></div>
+<div class="live-word"><IconBadge tone="light" size="small"><ph:warning /></IconBadge><div class="live-word-copy"><strong>Delivery instability</strong><span>More defects reach production</span><em class="live-word-stat">−7.2% stability per 25% AI adoption</em></div></div>
 </div>
-<div class="live-panel-result"><span class="live-panel-result-label">The risk</span>A system no one can safely change.</div>
+<div class="live-panel-result"><span class="live-panel-result-label">The risk · DORA, Faros AI, GitClear, Veracode</span>A system no one can safely change.</div>
 </div>
 </div>
 
@@ -1473,6 +1529,10 @@ class: slide-light
 </div>
 <h3>Isolated workspaces</h3>
 <p>Non-production environments with no live access.</p>
+<div class="live-feature-list">
+<span>No live credentials</span>
+<span>Scoped tool grants</span>
+</div>
 </div>
 
 <div class="live-card">
@@ -1482,6 +1542,10 @@ class: slide-light
 </div>
 <h3>Shared engineering standards</h3>
 <p>One versioned rulebook for people and agents.</p>
+<div class="live-feature-list">
+<span>Architecture &amp; layout</span>
+<span>Idioms &amp; templates</span>
+</div>
 </div>
 
 <div class="live-card is-dark">
@@ -1491,6 +1555,10 @@ class: slide-light
 </div>
 <h3>Compiler-enforced standards</h3>
 <p>Architectural and safety rules enforced at compile time.</p>
+<div class="live-feature-list">
+<span>No panics or unwrap</span>
+<span>No direct net or FS</span>
+</div>
 </div>
 </div>
 
@@ -1672,25 +1740,29 @@ class: slide-light
 <div class="live-kicker">01 · What + how</div>
 <h3>Specify</h3>
 <p>Intent · docs · tests · legacy source code<br>→ spec.md · design.md</p>
+<div class="live-sdd-detail">Exposes conflicts &amp; <code>[unknown]</code> gaps</div>
 </div>
 <div class="live-review-gate">
 <strong>Review &amp;<br>seal</strong>
 Human decision gate
+<em>Resolve conflicts · seal in repo</em>
 </div>
 <div class="live-card is-magenta">
 <div class="live-kicker">02 · Derive</div>
 <h3>Plan</h3>
 <p>Units of work, ordered by dependency</p>
+<div class="live-sdd-detail">Bounded slices · regenerable</div>
 </div>
 <div class="live-sdd-arrow">→</div>
 <div class="live-card is-dark">
 <div class="live-kicker">03 · Code + prove</div>
 <h3>Build</h3>
 <p>Implement · integrate · verify against the spec</p>
+<div class="live-sdd-detail">Isolated worktrees · replay gates</div>
 </div>
 </div>
 
-<div class="live-outcome" style="width: min(100%, 1000px); margin-inline: auto; box-sizing: border-box;">Every change runs the loop. Any spec change re-enters the human review gate.</div>
+<div class="live-outcome" style="width: min(100%, 1060px); margin-inline: auto; box-sizing: border-box;">Every change runs the loop. Any spec change re-enters the human review gate.</div>
 </div>
 
 <!--
