@@ -247,6 +247,19 @@ class: slide-hero slide-section
   color: rgba(255, 255, 255, 0.68);
 }
 
+.live-word-stat {
+  display: block;
+  margin-top: 6px;
+  padding-top: 5px;
+  border-top: 1px solid rgba(255, 255, 255, 0.12);
+  font-size: 11px;
+  line-height: 1.2;
+  font-style: normal;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--phl-cyan-soft);
+}
+
 .live-panel-result {
   margin-top: 20px;
   padding-top: 20px;
@@ -412,17 +425,19 @@ class: slide-hero slide-section
 }
 
 .live-sdd-flow {
-  width: min(100%, 1000px);
+  width: min(100%, 1060px);
   margin-inline: auto;
   display: grid;
-  grid-template-columns: 1.15fr 92px 0.55fr 24px 1fr;
+  grid-template-columns: 1.12fr 132px 0.78fr 24px 1fr;
   gap: 8px;
   align-items: stretch;
 }
 
 .live-sdd-flow .live-card {
-  min-height: 176px;
+  min-height: 196px;
   padding: 18px;
+  display: flex;
+  flex-direction: column;
 }
 
 .live-sdd-flow .live-card h3 {
@@ -434,6 +449,33 @@ class: slide-hero slide-section
   font-size: 15px;
 }
 
+.live-sdd-detail {
+  margin-top: auto;
+  padding-top: 10px;
+  border-top: 1px solid rgba(13, 16, 48, 0.12);
+  font-size: 12.5px;
+  line-height: 1.25;
+  font-weight: 600;
+  color: var(--phl-cyan-ink);
+}
+
+.live-card.is-magenta .live-sdd-detail {
+  border-color: rgba(164, 35, 143, 0.2);
+  color: #a4238f;
+}
+
+.live-card.is-dark .live-sdd-detail {
+  border-color: rgba(255, 255, 255, 0.16);
+  color: var(--phl-cyan-soft);
+}
+
+.live-sdd-detail code {
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: rgba(13, 16, 48, 0.08);
+  font-size: 11.5px;
+}
+
 .live-sdd-arrow {
   display: flex;
   align-items: center;
@@ -443,9 +485,10 @@ class: slide-hero slide-section
 }
 
 .live-review-gate {
-  padding: 14px 8px;
+  padding: 14px 10px;
   border-right: 2px solid rgba(164, 35, 143, 0.52);
   border-left: 2px solid rgba(164, 35, 143, 0.52);
+  background: rgba(164, 35, 143, 0.04);
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -466,6 +509,19 @@ class: slide-hero slide-section
   letter-spacing: 0;
   text-transform: none;
   color: var(--phl-ink);
+}
+
+.live-review-gate em {
+  margin-top: 8px;
+  padding-top: 7px;
+  border-top: 1px solid rgba(164, 35, 143, 0.24);
+  font-size: 11px;
+  line-height: 1.25;
+  font-style: normal;
+  font-weight: 500;
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--phl-ink-body);
 }
 
 .live-title-accent {
@@ -572,10 +628,10 @@ class: slide-hero slide-section
 
 .live-matrix {
   width: min(100%, 1000px);
-  margin: 14px auto 0;
+  margin: 12px auto 0;
   display: grid;
   grid-template-columns: 138px 1fr 138px;
-  grid-template-rows: 38px 300px 38px;
+  grid-template-rows: 36px 268px 36px;
   align-items: center;
 }
 
@@ -1254,22 +1310,22 @@ class: slide-hero slide-section
 
 # Code is cheap.<br>Delivery is hard.
 
-<p class="section-subtitle">Use a delivery system that lets AI<br>deliver software — not just code.</p>
+<p class="section-subtitle">A system for shipping software with AI —<br>not just generating code.</p>
 
 </div>
 </div>
 
 <div class="hero-mechanisms">
-<div class="hero-pillar"><span class="hero-pillar-num">01</span><span>Standardise delivery · One path from change to production</span></div>
-<div class="hero-pillar"><span class="hero-pillar-num">02</span><span>Specify behaviour · Preserve what must remain true</span></div>
-<div class="hero-pillar"><span class="hero-pillar-num">03</span><span>Sandbox execution · Limit what running code may access</span></div>
+<div class="hero-pillar"><span class="hero-pillar-num">01</span><span>Standardising delivery · One path from change to production</span></div>
+<div class="hero-pillar"><span class="hero-pillar-num">02</span><span>Specifying behaviour · Define requirements and verify code against them</span></div>
+<div class="hero-pillar"><span class="hero-pillar-num">03</span><span>Sandboxing execution · Limit what running code may access</span></div>
 </div>
 
 <!--
 Opening:
 - Generative AI makes code and test generation abundant. Trusted evidence remains scarce.
-- Accountability has not moved to the model. The organisation still owns the outcome, access, evidence, and consequences.
-- Our answer is a delivery system whose rules, record, and runtime boundary sit outside the model.
+- Accountability has not moved to the model. Your organisation still carries the pager, the audit risk, and the production consequences.
+- Our answer is not a better prompt. It is an engineering delivery system whose rules, specification record, and runtime sandbox sit outside the model.
 -->
 
 ---
@@ -1278,14 +1334,14 @@ sync: shift
 class: slide-light
 ---
 
-<Eyebrow text="THE SHIFT · ABUNDANT CODE IS NOT A COHERENT SOLUTION" />
+<Eyebrow text="THE SHIFT · FROM GENERATION TO COMPREHENSION" />
 
 <div class="live-split">
 <div class="live-copy">
 
 # Coding is no longer<br>the bottleneck.
 
-<p class="live-claim">AI can write code in minutes, but it cannot frame a problem, weigh trade-offs, or own consequences.</p>
+<p class="live-claim">AI writes code in minutes, but without a delivery system it inflates PRs, shifts the bottleneck to review, and degrades delivery stability.</p>
 
 <div class="live-compression">
 <span>Weeks</span>
@@ -1295,24 +1351,22 @@ class: slide-light
 </div>
 
 <div class="live-panel">
-<div class="live-panel-title">More code ≠ a coherent solution</div>
+<div class="live-panel-title">More code ≠ faster delivery</div>
 <div class="live-word-grid">
-<div class="live-word"><IconBadge tone="light" size="small"><ph:stack /></IconBadge><div class="live-word-copy"><strong>Cognitive load</strong><span>Overwhelms human review</span></div></div>
-<div class="live-word"><IconBadge tone="light" size="small"><ph:puzzle-piece /></IconBadge><div class="live-word-copy"><strong>Hidden ambiguity</strong><span>Plausible code skips needed debate</span></div></div>
-<div class="live-word"><IconBadge tone="light" size="small"><ph:eye-slash /></IconBadge><div class="live-word-copy"><strong>Lost comprehension</strong><span>No one understands it all</span></div></div>
-<div class="live-word"><IconBadge tone="light" size="small"><ph:warning /></IconBadge><div class="live-word-copy"><strong>Accumulated slop</strong><span>Unmanageable over time</span></div></div>
+<div class="live-word"><IconBadge tone="light" size="small"><ph:stack /></IconBadge><div class="live-word-copy"><strong>Verification tax</strong><span>Larger PRs overwhelm human review</span><em class="live-word-stat">+51% PR size · +441% review wait</em></div></div>
+<div class="live-word"><IconBadge tone="light" size="small"><ph:puzzle-piece /></IconBadge><div class="live-word-copy"><strong>Hidden assumptions</strong><span>Plausible code skips design trade-offs</span><em class="live-word-stat">+54% bugs · 45% with security flaws</em></div></div>
+<div class="live-word"><IconBadge tone="light" size="small"><ph:copy /></IconBadge><div class="live-word-copy"><strong>Duplication &amp; churn</strong><span>Copy-paste growth replaces refactoring</span><em class="live-word-stat">+81% duplication · −70% refactoring</em></div></div>
+<div class="live-word"><IconBadge tone="light" size="small"><ph:warning /></IconBadge><div class="live-word-copy"><strong>Delivery instability</strong><span>More defects reach production</span><em class="live-word-stat">−7.2% stability per 25% AI adoption</em></div></div>
 </div>
-<div class="live-panel-result"><span class="live-panel-result-label">The risk</span>An unmanageable application and codebase.</div>
+<div class="live-panel-result"><span class="live-panel-result-label">The risk · DORA, Faros AI, GitClear, Veracode</span>A system no one can safely change.</div>
 </div>
 </div>
 
 <!--
-Coding and test generation are no longer the bottlenecks they once were.
-However, a lot of code does not equal a coherent, well-thought-through, useful business solution.
-AI can write code in minutes, but it cannot frame a problem, weigh trade-offs, or own consequences.
-Coding agents also smooth over ambiguity with plausible-looking code, skipping the design conversations the team needed to have.
-Generated tests can repeat the implementation's assumptions. Trusted evidence still has to reject plausible but wrong code.
-It can exacerbate cognitive load and overwhelm, and lead to an unmanageable application and codebase—no longer fully comprehensible and full of slop.
+Ground this in industry telemetry (DORA, Faros AI, GitClear):
+- DORA's State of AI-assisted Software Development report calls this "the verification tax": time saved writing code is re-spent auditing larger batches, and every 25% increase in AI adoption without automated safeguards correlates with a 7.2% drop in delivery stability.
+- Faros AI telemetry across high-AI teams shows PRs are 51% larger, bugs per PR are up 54%, and PR review wait times are up 441%.
+- GitClear's analysis of 623M lines of code shows refactoring is down 70% while duplicated code blocks are up 81%.
 -->
 
 ---
@@ -1327,16 +1381,16 @@ class: slide-light
 
 # Build the right thing.<br>Build it to last.
 
-<p class="live-claim">Designing great software is a human process. While we can help with product design, <strong>our expertise is in delivering systems that last.</strong></p>
+<p class="live-claim">Product strategy decides what is worth building. <strong>Our focus is delivering it as software that lasts.</strong></p>
 
 <div class="live-grid-2" style="width: 88%; margin: 28px auto 0; gap: 52px;">
 <div class="live-card is-cyan" style="min-height: 214px; padding: 26px 30px; display: flex; flex-direction: column; justify-content: space-between;">
 <div>
 <div class="live-card-head" style="margin-bottom: 14px;">
 <IconBadge tone="cyan"><ph:compass /></IconBadge>
-<div class="live-kicker">01 · Good product strategy</div>
+<div class="live-kicker">01 · Product strategy</div>
 </div>
-<h3>Building the right thing</h3>
+<h3>Build the right thing</h3>
 </div>
 <p style="padding-top: 14px; border-top: 1px solid rgba(12, 127, 163, 0.2);">Frame the problem · weigh trade-offs · test with prototypes</p>
 </div>
@@ -1345,134 +1399,62 @@ class: slide-light
 <div>
 <div class="live-card-head" style="margin-bottom: 14px;">
 <IconBadge tone="light"><ph:gear-six /></IconBadge>
-<div class="live-kicker">02 · A reliable delivery system</div>
+<div class="live-kicker">02 · Delivery system</div>
 </div>
-<h3>Delivering maintainable software</h3>
+<h3>Build it to last</h3>
 </div>
-<p style="padding-top: 14px; border-top: 1px solid rgba(255, 255, 255, 0.16);">Standardise delivery · specify behaviour · sandbox execution</p>
-</div>
-</div>
-
-<div class="live-outcome is-punch" style="width: 88%; margin: 48px auto 0; box-sizing: border-box;">Decide what matters, deliver it safely, and keep it maintainable.</div>
-</div>
-
-<!--
-Two things are increasingly important:
-1) Good product strategy—framing the problem, weighing trade-offs, and using rapid prototypes to test assumptions without mistaking them for production systems.
-2) A reliable delivery system—turning agreed intent into coherent, comprehensible, verified software without accumulating slop.
-While we can help with both, our real expertise is in the second.
--->
-
----
-title: A prototype is evidence, not a production commitment.
-sync: outcome
-class: slide-light
----
-
-<Eyebrow text="THE DELIVERY SYSTEM · FIRST, ADMIT WORK DELIBERATELY" />
-
-<div class="live-stage">
-
-# A prototype is evidence.<br>Production is a commitment.
-
-<p class="live-claim">AI can build a prototype in minutes. Production takes an explicit decision.</p>
-
-<div class="live-feature-flow">
-<div class="live-card is-cyan">
-<div class="live-card-head">
-<IconBadge tone="cyan"><ph:lightbulb /></IconBadge>
-<div class="live-kicker">Signals and experiments</div>
-</div>
-<h3>Test the need</h3>
-<div class="live-feature-list">
-<span>User need</span>
-<span>Operational problem</span>
-<span>Usage evidence</span>
-<span>Rapid prototypes</span>
-</div>
-</div>
-<div class="live-arrow">→</div>
-<div class="live-card is-dark">
-<div class="live-card-head">
-<IconBadge tone="light"><ph:funnel /></IconBadge>
-<div class="live-kicker">Production gate</div>
-</div>
-<h3>Decide explicitly</h3>
-<div class="live-feature-list">
-<span>Named outcome</span>
-<span>Evidence</span>
-<span>Product coherence</span>
-<span>Service owner</span>
-</div>
-</div>
-<div class="live-arrow">→</div>
-<div class="live-card is-magenta">
-<div class="live-card-head">
-<IconBadge tone="magenta"><ph:list-checks /></IconBadge>
-<div class="live-kicker">Production commitment</div>
-</div>
-<h3>Enter the delivery path</h3>
-<p>Only work with an outcome, evidence, fit, and owner proceeds.</p>
+<p style="padding-top: 14px; border-top: 1px solid rgba(255, 255, 255, 0.16);">Standardising delivery · specifying behaviour · sandboxing execution</p>
 </div>
 </div>
 
-<div class="live-outcome">A prototype informs the decision. It does not make it.</div>
+<div class="live-outcome is-punch" style="width: 88%; margin: 48px auto 0; box-sizing: border-box;">Prototypes test assumptions. A delivery system ships production software.</div>
 </div>
 
 <!--
-This is the front door of the delivery system: the decision that admits work to it.
-AI can build a prototype in minutes, so the decision to make something production software has to be explicit.
-Faster coding makes weak assumptions expensive sooner. Alignment on outcome, fit, and ownership is engineering work, not a delay before coding starts.
-Cheap experiments test assumptions. They do not grant production authority.
-Before work enters the delivery path, ask:
-- What outcome does it create?
-- What evidence supports it?
-- Does it strengthen or fragment the product?
-- Who owns and supports it?
-For work that earns that commitment, it enters one delivery path, governed by the three mechanisms on the next slide.
+Draw a hard line between discovery prototypes and production systems:
+1) Rapid AI prototypes are great for testing product assumptions cheaply—but a prototype informs the decision, it is not the production system.
+2) Turning agreed intent into maintainable, auditable software without accumulating slop requires a disciplined delivery system. That second half is our core engineering focus.
 -->
 
 ---
-title: Standardise delivery. Specify behaviour. Sandbox execution.
+title: Three boundaries around AI code.
 sync: system
 layout: default
-class: slide-sandbox
+class: slide-light
 ---
-
-<AmbientVideo src="/videos/approach-video.mp4" variant="approach" />
 
 <Eyebrow text="THE DELIVERY SYSTEM · HUMAN-LED ENGINEERING" />
 
 <div class="live-stage">
 
-# Three mechanisms for reliable delivery.
+# Three boundaries around AI code.
 
-<p class="live-claim">Human-led engineering: agents work best inside a delivery system—not in charge of it.</p>
+<p class="live-claim">Agents work inside the system. Engineers remain in charge of it.</p>
 
 <div class="live-grid-3" style="margin-top: 24px;">
-<div class="live-card is-glass">
+<div class="live-card is-cyan">
 <div class="live-card-head">
-<IconBadge tone="light"><ph:shield-check /></IconBadge>
+<IconBadge tone="cyan"><ph:shield-check /></IconBadge>
 <div class="live-num">01 · Change path</div>
 </div>
-<h3>Standardise delivery</h3>
-<p>How work is created, checked, shipped, and operated.</p>
+<h3>Standardising delivery</h3>
+<p>How code is written, checked, and shipped.</p>
 </div>
-<div class="live-card is-glass">
+<div class="live-card">
 <div class="live-card-head">
-<IconBadge tone="light"><ph:file-text /></IconBadge>
-<div class="live-num">02 · Durable authority</div>
+<IconBadge tone="magenta"><ph:file-text /></IconBadge>
+<div class="live-num">02 · Behavioural contract</div>
 </div>
-<h3>Specify behaviour</h3>
-<p>What must remain true and how acceptance is proven.</p>
+<h3>Specifying behaviour</h3>
+<p>What the software must do and how it is verified.</p>
 </div>
-<div class="live-card is-glass">
+<div class="live-card is-dark">
 <div class="live-card-head">
 <IconBadge tone="light"><ph:lock-key /></IconBadge>
 <div class="live-num">03 · Runtime boundary</div>
 </div>
-<h3>Sandbox execution</h3>
-<p>What running code may access.</p>
+<h3>Sandboxing execution</h3>
+<p>What running code is permitted to touch.</p>
 </div>
 </div>
 
@@ -1480,33 +1462,64 @@ class: slide-sandbox
 </div>
 
 <!--
-This is the map for the next three sections.
-- These three mechanisms keep engineering human-led: the model works inside the delivery path, while the authority to design and govern that path stays with the people outside it.
-- Standardise delivery controls how a change moves from creation into operation.
-- Specify behaviour controls what must remain true and what evidence accepts the result.
-- Sandbox execution controls what the running application may access.
-- Product judgement, acceptance, and release authority remain with people.
+This is the architectural map for the deck:
+- Instead of trusting the model to behave, we constrain it across three independent boundaries:
+  1. The authoring and pipeline boundary (Standardising delivery).
+  2. The behavioural contract and acceptance boundary (Specifying behaviour).
+  3. The runtime execution boundary (Sandboxing execution).
+- Product judgement, specification sign-off, and release authority stay with engineers.
 -->
 
 ---
-title: Isolate. Guide. Enforce.
+title: Standardising delivery.
+sync: section-standardise
+class: slide-section
+---
+
+<AmbientVideo src="/videos/hero-video-3.mp4" variant="approach" />
+
+<Eyebrow text="DELIVERY SYSTEM · FOUNDATION 01" />
+
+<div class="section-hero-grid">
+<div class="section-hero-left">
+<div class="section-kicker-pill">01 · Toolchain &amp; pipeline</div>
+
+# Standardising delivery.
+
+<p class="section-subtitle">One governed path from change to production—<strong>across how code is written and how it ships.</strong></p>
+
+</div>
+</div>
+
+<div class="hero-mechanisms">
+<div class="hero-pillar"><span class="hero-pillar-num">01</span><span>Isolate &amp; guide · Isolated workspaces and shared engineering standards</span></div>
+<div class="hero-pillar"><span class="hero-pillar-num">02</span><span>Enforce at compile time · Fail critical rules before review</span></div>
+<div class="hero-pillar"><span class="hero-pillar-num">03</span><span>Automate deployment · Replay behaviour, gate the supply chain, and deploy</span></div>
+</div>
+
+<!--
+Section 01 divider: Standardising delivery.
+-->
+
+---
+title: Constrain code authoring.
 sync: authoring
 class: slide-light
 ---
 
-<Eyebrow text="01 · STANDARDISE DELIVERY · AUTHORING CONTROLS" />
+<Eyebrow text="01 · STANDARDISING DELIVERY · AUTHORING CONTROLS" />
 
 <div class="foundation-progress" aria-label="Delivery foundations">
-<span class="is-active">01 · Standardise delivery</span>
-<span>02 · Specify behaviour</span>
-<span>03 · Sandbox execution</span>
+<span class="is-active">01 · Standardising delivery</span>
+<span>02 · Specifying behaviour</span>
+<span>03 · Sandboxing execution</span>
 </div>
 
 <div class="live-stage">
 
-# Isolate. Guide. Enforce.
+# Constrain code authoring.
 
-<p class="live-claim">Fail mechanical rules at compile time so review focuses on design and trade-offs.</p>
+<p class="live-claim">Isolate the workspace, share one set of engineering standards, and enforce architectural rules at compile time.</p>
 
 <div class="live-grid-3" style="margin-top: 22px;">
 <div class="live-card is-cyan">
@@ -1514,8 +1527,12 @@ class: slide-light
 <IconBadge tone="cyan"><ph:shield-check /></IconBadge>
 <div class="live-kicker">01 · Isolate</div>
 </div>
-<h3>Governed workspaces</h3>
-<p>Non-production environments for people and agents.</p>
+<h3>Isolated workspaces</h3>
+<p>Non-production environments with no live access.</p>
+<div class="live-feature-list">
+<span>No live credentials</span>
+<span>Scoped tool grants</span>
+</div>
 </div>
 
 <div class="live-card">
@@ -1523,8 +1540,12 @@ class: slide-light
 <IconBadge tone="magenta"><ph:book-open /></IconBadge>
 <div class="live-kicker">02 · Guide</div>
 </div>
-<h3>Shared engineering codex</h3>
-<p>Standards, patterns, examples, and templates for people and agents.</p>
+<h3>Shared engineering standards</h3>
+<p>One versioned rulebook for people and agents.</p>
+<div class="live-feature-list">
+<span>Architecture &amp; layout</span>
+<span>Idioms &amp; templates</span>
+</div>
 </div>
 
 <div class="live-card is-dark">
@@ -1533,91 +1554,84 @@ class: slide-light
 <div class="live-kicker">03 · Enforce</div>
 </div>
 <h3>Compiler-enforced standards</h3>
-<p>Critical rules fail at compile time, before review.</p>
+<p>Architectural and safety rules enforced at compile time.</p>
+<div class="live-feature-list">
+<span>No panics or unwrap</span>
+<span>No direct net or FS</span>
+</div>
 </div>
 </div>
 
-<div class="live-outcome">Guidance is shared. Non-negotiable rules are enforced.</div>
+<div class="live-outcome">Reviewers focus on design and trade-offs—not policing mechanical rules.</div>
 </div>
 
 <!--
-Authoring controls have three practical parts:
-- Isolate work from production while an idea is still changing.
-- Guide people and agents with one versioned engineering codex of standards, patterns, examples, and templates.
-- Enforce critical coding rules as the code compiles, so people spend review time on design and trade-offs rather than policing mechanical rules.
+Make "compiler-enforced standards" concrete for engineers:
+- We don't just mean a style linter. During the agent's build turn, AST and compiler gates ban panics, ban direct network or filesystem calls, and enforce module layout.
+- If generated code violates an architectural boundary, it fails to compile inside the agent's loop—long before a human engineer opens a pull request.
 -->
 
 ---
-title: Automate the path from code to production.
+title: Automate verification and deployment.
 sync: delivery-automation
 class: slide-light
 ---
 
-<Eyebrow text="01 · STANDARDISE DELIVERY · DELIVERY AUTOMATION" />
+<Eyebrow text="01 · STANDARDISING DELIVERY · DELIVERY AUTOMATION" />
 
 <div class="foundation-progress" aria-label="Delivery foundations">
-<span class="is-active">01 · Standardise delivery</span>
-<span>02 · Specify behaviour</span>
-<span>03 · Sandbox execution</span>
+<span class="is-active">01 · Standardising delivery</span>
+<span>02 · Specifying behaviour</span>
+<span>03 · Sandboxing execution</span>
 </div>
 
 <div class="live-stage">
 
-# Automate the path from code to production.
+# Automate verification and deployment.
 
-<p class="live-claim">Faster implementation matters only when evidence and delivery move at the same speed.</p>
+<p class="live-claim">Agent-written unit tests often repeat the agent's own bugs—pipelines must replay behaviour against the spec, gate the supply chain, and automate deployment.</p>
 
-<div class="live-pipeline" style="margin-top: 22px;">
+<div class="live-pipeline is-three" style="margin-top: 22px;">
 <div class="live-card is-cyan">
 <div class="live-card-head">
-<IconBadge tone="cyan"><ph:code /></IconBadge>
-<div class="live-kicker">01 · Build</div>
+<IconBadge tone="cyan"><ph:test-tube /></IconBadge>
+<div class="live-kicker">01 · Replay</div>
 </div>
-<h3>Build once</h3>
-<p>Reproducible artifact</p>
-</div>
-<div class="live-arrow">→</div>
-<div class="live-card">
-<div class="live-card-head">
-<IconBadge tone="ink"><ph:test-tube /></IconBadge>
-<div class="live-kicker">02 · Test</div>
-</div>
-<h3>Test behaviour</h3>
-<p>Unit · integration · replay · end-to-end</p>
+<h3>Hermetic behavioural replay</h3>
+<p>Scripted doubles · deterministic scenarios · no live network</p>
 </div>
 <div class="live-arrow">→</div>
 <div class="live-card is-dark">
 <div class="live-card-head">
 <IconBadge tone="light"><ph:shield-check /></IconBadge>
-<div class="live-kicker">03 · Analyse</div>
+<div class="live-kicker">02 · Gate</div>
 </div>
-<h3>Gate every change</h3>
-<p>Compiler · security · dependencies · secrets</p>
+<h3>Supply-chain &amp; secret gates</h3>
+<p>Vetted dependencies · vulnerability scans · secret hygiene</p>
 </div>
 <div class="live-arrow">→</div>
 <div class="live-card is-magenta">
 <div class="live-card-head">
 <IconBadge tone="magenta"><ph:rocket-launch /></IconBadge>
-<div class="live-kicker">04 · Deploy</div>
+<div class="live-kicker">03 · Deploy</div>
 </div>
-<h3>Promote the artifact</h3>
-<p>Provision · deploy · release</p>
+<h3>Automated review &amp; deployment</h3>
+<p>AI review agents · immutable artifact · gated release</p>
 </div>
 </div>
 
-<div class="live-outcome">The same accepted artifact moves forward with its evidence.</div>
+<div class="live-outcome">One immutable artifact deployed with its verification evidence.</div>
 </div>
 
 <!--
-These changes predate the current AI wave and make AI-assisted implementation operationally useful.
-- Build produces one reproducible artifact.
-- Automated tests exercise unit, integration, replay, and end-to-end behaviour.
-- Compiler, dependency, secret, security, and review controls gate every change.
-- The accepted artifact is promoted through provision, deployment, and release.
+Contrast traditional CI/CD with AI-era verification:
+- Empirical studies (ACM ICSE 2026) show that when agents are prompted directly to write tests, they mirror their own implementation assumptions rather than testing contract boundaries and edge cases.
+- Veracode's GenAI Code Security Report found that 45% of AI-generated code across 100+ models introduces known security flaws.
+- The pipeline must prove behavioural scenarios against the spec over deterministic doubles, enforce dependency and secret hygiene, and gate deployment automatically.
 -->
 
 ---
-title: Specify behaviour
+title: Specifying behaviour.
 sync: section-intent
 class: slide-section
 ---
@@ -1630,7 +1644,7 @@ class: slide-section
 <div class="section-hero-left">
 <div class="section-kicker-pill is-magenta">02 · Spec-driven development</div>
 
-# Specify behaviour.
+# Specifying behaviour.
 
 <p class="section-subtitle">People and agents share one source of truth: <strong>durable specifications, not code.</strong></p>
 
@@ -1644,26 +1658,28 @@ class: slide-section
 </div>
 
 <!--
-Section 02 divider: Specify behaviour (Spec-driven development).
+Section 02 divider: Specifying behaviour (Spec-driven development).
 -->
 
 ---
-title: AI coding moves right. Governance moves up.
+title: Prompts are not specifications.
 sync: record-position
 class: slide-light
 ---
 
-<Eyebrow text="02 · SPECIFY BEHAVIOUR · SPEC-DRIVEN DEVELOPMENT" />
+<Eyebrow text="02 · SPECIFYING BEHAVIOUR · SPEC-DRIVEN DEVELOPMENT" />
 
 <div class="foundation-progress" aria-label="Delivery foundations">
-<span>01 · Standardise delivery</span>
-<span class="is-active is-magenta">02 · Specify behaviour</span>
-<span>03 · Sandbox execution</span>
+<span>01 · Standardising delivery</span>
+<span class="is-active is-magenta">02 · Specifying behaviour</span>
+<span>03 · Sandboxing execution</span>
 </div>
 
 <div class="live-stage">
 
-# AI coding moves right. Governance moves up.
+# Prompts are not specifications.
+
+<p class="live-claim">Prompts disappear after a turn and leave agents to guess. Specifications persist in the repo as the contract both people and agents build against.</p>
 
 <div class="live-matrix">
 <div class="live-matrix-axis is-top">Governed</div>
@@ -1677,7 +1693,7 @@ class: slide-light
 </div>
 <div class="live-quadrant is-target">
 <h3>Spec-driven development</h3>
-<p>Durable intent around AI implementation</p>
+<p>Versioned specs driving AI implementation</p>
 </div>
 <div class="live-quadrant">
 <h3>Ad hoc development</h3>
@@ -1690,89 +1706,91 @@ class: slide-light
 </div>
 </div>
 
-<div class="live-outcome" style="width: min(724px, calc(100% - 276px)); margin-inline: auto; box-sizing: border-box;">AI coding changes implementation. It does not create governance.</div>
+<div class="live-outcome" style="width: min(724px, calc(100% - 276px)); margin-inline: auto; box-sizing: border-box;">Move right for speed. Move up for durability and auditability.</div>
 </div>
 
 <!--
-Most AI adoption begins as a horizontal move: introduce an assistant or agent and produce code faster.
-That does not create authority, an audit trail, or a durable statement of what must remain true.
-Spec-driven development is the separate upward move. It puts governed intent around AI-assisted implementation.
+Most teams adopt AI by moving horizontally on the bottom row: give developers a coding agent and generate code faster from chat prompts.
+- Chat prompts evaporate after a turn, forcing agents to guess unstated constraints and rediscover context every session.
+- Spec-driven development is the vertical move into the top-right quadrant: a persistent, versioned specification in the repo that raised functional test pass rates (+9.2 pp) and cut security defects by 73% in matched studies.
 -->
 
 ---
-title: Specifications drive development.
+title: The agentic development loop.
 sync: record-development
 class: slide-light
 ---
 
-<Eyebrow text="02 · SPECIFY BEHAVIOUR · SPEC-DRIVEN DEVELOPMENT" />
+<Eyebrow text="02 · SPECIFYING BEHAVIOUR · THE DEVELOPMENT LOOP" />
 
 <div class="foundation-progress" aria-label="Delivery foundations">
-<span>01 · Standardise delivery</span>
-<span class="is-active is-magenta">02 · Specify behaviour</span>
-<span>03 · Sandbox execution</span>
+<span>01 · Standardising delivery</span>
+<span class="is-active is-magenta">02 · Specifying behaviour</span>
+<span>03 · Sandboxing execution</span>
 </div>
 
 <div class="live-stage">
 
-# Specifications drive development.
+# The agentic development loop.
 
-<p class="live-claim">The specification stays in the development loop — surfacing ambiguity for human judgement instead of burying it in generated code.</p>
+<p class="live-claim">Align on intent upfront, break work into bounded slices for agents, and verify code against the spec.</p>
 
 <div class="live-sdd-flow" style="margin-top: 36px;">
 <div class="live-card is-cyan">
 <div class="live-kicker">01 · What + how</div>
 <h3>Specify</h3>
 <p>Intent · docs · tests · legacy source code<br>→ spec.md · design.md</p>
+<div class="live-sdd-detail">Exposes conflicts &amp; <code>[unknown]</code> gaps</div>
 </div>
 <div class="live-review-gate">
 <strong>Review &amp;<br>seal</strong>
 Human decision gate
+<em>Resolve conflicts · seal in repo</em>
 </div>
 <div class="live-card is-magenta">
 <div class="live-kicker">02 · Derive</div>
 <h3>Plan</h3>
 <p>Units of work, ordered by dependency</p>
+<div class="live-sdd-detail">Bounded slices · regenerable</div>
 </div>
 <div class="live-sdd-arrow">→</div>
 <div class="live-card is-dark">
 <div class="live-kicker">03 · Code + prove</div>
 <h3>Build</h3>
-<p>Build · integrate · verify against the specification</p>
+<p>Implement · integrate · verify against the spec</p>
+<div class="live-sdd-detail">Isolated worktrees · replay gates</div>
 </div>
 </div>
 
-<div class="live-outcome" style="width: min(100%, 1000px); margin-inline: auto; box-sizing: border-box;">Each change runs the loop. If the specification changes, it is reviewed and sealed again.</div>
+<div class="live-outcome" style="width: min(100%, 1060px); margin-inline: auto; box-sizing: border-box;">Every change runs the loop. Any spec change re-enters the human review gate.</div>
 </div>
 
 <!--
-This is the recognisable spec-driven development loop.
-- Coding agents tend to smooth over ambiguity with plausible-looking code, short-circuiting the conversations a team needed to have.
-- Specify reconciles intent, documentation, tests, and, where it exists, legacy source code into `spec.md` and `design.md`—surfacing conflicts and gaps explicitly.
-- A person reviews, debates trade-offs, and seals that specification in the repository.
-- Plan derives ephemeral work ordered by dependency from the reviewed specification. It can be discarded and generated again.
-- Implement gives each unit of work the exact specification and plan entry it needs, builds and integrates it, and verifies the combined result against the specification.
+Give a concrete example at the "Review & seal" gate:
+- Suppose legacy code has a 30-second timeout, an architecture doc says 10 seconds, and retry behaviour isn't specified anywhere.
+- A normal coding agent silently picks one and buries that guess inside 400 lines of generated code.
+- Specify extracts claims from your docs, tests, and code, flags the 30s vs 10s conflict, and marks the missing retry rule as `[unknown]`—halting at the Review & seal gate for a human decision before Plan and Build run.
 -->
 
 ---
-title: Code is disposable. The specification is durable.
+title: Code is disposable. Specifications are durable.
 sync: record-truth
 class: slide-light
 ---
 
-<Eyebrow text="02 · SPECIFY BEHAVIOUR · DURABLE SPECIFICATION" />
+<Eyebrow text="02 · SPECIFYING BEHAVIOUR · DURABLE SPECIFICATION" />
 
 <div class="foundation-progress" aria-label="Delivery foundations">
-<span>01 · Standardise delivery</span>
-<span class="is-active is-magenta">02 · Specify behaviour</span>
-<span>03 · Sandbox execution</span>
+<span>01 · Standardising delivery</span>
+<span class="is-active is-magenta">02 · Specifying behaviour</span>
+<span>03 · Sandboxing execution</span>
 </div>
 
 <div class="live-stage">
 
 # Code is disposable.<br><span class="live-title-accent">Specifications are durable.</span>
 
-<p class="live-claim">The implementation can be regenerated. The reviewed specification preserves what the system must do and how it is designed.</p>
+<p class="live-claim">Code is generated from the spec. The sealed specification is what you keep.</p>
 
 <div class="live-durability" style="margin-top: 36px;">
 <div class="live-disposable-card">
@@ -1793,13 +1811,13 @@ class: slide-light
 </div>
 
 <!--
-This is the deliberate provocation at the end of the section.
-- Disposable does not mean unimportant. It means the implementation is a derived output, not the authority over intent.
-- Only the reviewed `spec.md` and `design.md` remain as the durable specification in the repository.
+Land the provocation clearly:
+- Calling code "disposable" does not mean production quality doesn't matter. It means code is a compiled artifact of the specification, not the sole place where business rules live.
+- When models or target stacks improve, you can regenerate the plan and rebuild the implementation from `spec.md` and `design.md` because the behavioural truth is sealed in the repository.
 -->
 
 ---
-title: Sandbox execution
+title: Sandboxing execution.
 sync: section-constrain
 class: slide-section
 ---
@@ -1810,9 +1828,9 @@ class: slide-section
 
 <div class="section-hero-grid">
 <div class="section-hero-left">
-<div class="section-kicker-pill">03 · Sandboxed execution</div>
+<div class="section-kicker-pill">03 · Capability-based runtime</div>
 
-# Sandbox execution.
+# Sandboxing execution.
 
 <p class="section-subtitle">Grant generated code nothing by default—<strong>it reaches infrastructure only through host-mediated capabilities.</strong></p>
 
@@ -1826,28 +1844,28 @@ class: slide-section
 </div>
 
 <!--
-Section 03 divider: Sandbox execution.
+Section 03 divider: Sandboxing execution.
 -->
 
 ---
-title: Generated code has less freedom to surprise.
+title: Zero trust for generated code.
 sync: runtime
 class: slide-light
 ---
 
-<Eyebrow text="03 · SANDBOX EXECUTION · SANDBOXED EXECUTION" />
+<Eyebrow text="03 · SANDBOXING EXECUTION · CAPABILITY BOUNDARY" />
 
 <div class="foundation-progress" aria-label="Delivery foundations">
-<span>01 · Standardise delivery</span>
-<span>02 · Specify behaviour</span>
-<span class="is-active">03 · Sandbox execution</span>
+<span>01 · Standardising delivery</span>
+<span>02 · Specifying behaviour</span>
+<span class="is-active">03 · Sandboxing execution</span>
 </div>
 
 <div class="live-stage">
 
-# Generated code has less freedom<br>to surprise.
+# Zero trust for generated code.
 
-<p class="live-claim">With the platform safe by construction, agents work within known bounds while engineers focus on the product.</p>
+<p class="live-claim">Containers give every dependency ambient access to network, files, and secrets. WASI components start with zero authority and use only the capabilities the host links.</p>
 
 <div class="live-runtime-stack">
 <div class="live-wasm-runtime">
@@ -1886,30 +1904,31 @@ class: slide-light
 </div>
 
 <!--
-- Generated application code is packaged as one or more WASI components inside a Wasmtime sandbox.
-- They reach HTTP, messaging, key-value storage, and blob storage only through capability interfaces supplied by the host.
-- With the platform settled and safe by construction, agents implement within known bounds while engineers focus on the product.
+Contrast the WASI sandbox directly against Docker containers:
+- Every engineer in the room is thinking: "We already run in containers—aren't we sandboxed?"
+- A container isolates the host OS, not your application's dependencies. If an AI agent pulls in a compromised package inside a container, that code shares the container's network socket, filesystem, and `DATABASE_URL` environment variable.
+- Inside a Wasmtime sandbox, a WASI component has no ambient network socket, no filesystem, and no credentials—only the typed capability handles (`HTTP`, `Messaging`, `KeyValue`, `BlobStore`) the host explicitly injects.
 -->
 
 ---
-title: Different infrastructure. The same application.
+title: Infrastructure portability.
 sync: runtime-portability
 class: slide-light
 ---
 
-<Eyebrow text="03 · SANDBOX EXECUTION · PORTABLE INFRASTRUCTURE" />
+<Eyebrow text="03 · SANDBOXING EXECUTION · PORTABLE INFRASTRUCTURE" />
 
 <div class="foundation-progress" aria-label="Delivery foundations">
-<span>01 · Standardise delivery</span>
-<span>02 · Specify behaviour</span>
-<span class="is-active">03 · Sandbox execution</span>
+<span>01 · Standardising delivery</span>
+<span>02 · Specifying behaviour</span>
+<span class="is-active">03 · Sandboxing execution</span>
 </div>
 
 <div class="live-stage">
 
-# Different infrastructure.<br>Same application.
+# Infrastructure portability.
 
-<p class="live-claim">The component depends on capabilities, not products. A runtime recipe binds them to approved services in each environment.</p>
+<p class="live-claim">Write code once against capability contracts. Bind them to local, cloud, or on-premise services at deploy time.</p>
 
 <div class="live-portability">
 <div class="live-portable-app">
@@ -1926,37 +1945,37 @@ class: slide-light
 <div class="live-runtime-capability"><ph:database class="live-capability-icon" /><span>BlobStore</span></div>
 </div>
 
-<div class="live-portable-link">Same shape for each environment</div>
+<div class="live-portable-link">Host-selected runtime recipe · bindings, policy, identity, observability</div>
 
 <div class="live-recipe-grid">
 <div class="live-recipe-card">
 <div class="live-kicker">Local / trial</div>
 <h3>In-memory + local services</h3>
 <div class="live-recipe-template">
-<span>Runtime</span>
-<span>Capability bindings</span>
-<span>Policy + identity</span>
-<span>Config + observability</span>
+<span>Local Wasmtime host</span>
+<span>In-memory KV &amp; blob</span>
+<span>Local mock queues</span>
+<span>Console telemetry</span>
 </div>
 </div>
 <div class="live-recipe-card">
 <div class="live-kicker">Cloud</div>
 <h3>Managed services</h3>
 <div class="live-recipe-template">
-<span>Runtime</span>
-<span>Capability bindings</span>
-<span>Policy + identity</span>
-<span>Config + observability</span>
+<span>Managed runtime</span>
+<span>Cloud queues &amp; storage</span>
+<span>IAM + KMS policy</span>
+<span>Central observability</span>
 </div>
 </div>
 <div class="live-recipe-card">
 <div class="live-kicker">On-premise</div>
 <h3>Approved internal services</h3>
 <div class="live-recipe-template">
-<span>Runtime</span>
-<span>Capability bindings</span>
-<span>Policy + identity</span>
-<span>Config + observability</span>
+<span>Internal host cluster</span>
+<span>Enterprise queues &amp; DB</span>
+<span>Corporate PKI + Vault</span>
+<span>SIEM + audit logs</span>
 </div>
 </div>
 </div>
@@ -1964,202 +1983,90 @@ class: slide-light
 </div>
 
 <!--
-- The application component depends on stable capability contracts rather than directly on infrastructure products.
-- Each environment supplies a reviewed runtime recipe: the runtime, capability bindings, identity and policy, configuration, and observability.
+Why this matters to platform and security teams:
+- Application code never imports an AWS, Azure, or vendor SDK directly—it calls the capability contract.
+- Moving from a developer laptop to cloud or air-gapped on-premise infrastructure means swapping the host's runtime recipe, without rewriting or recompiling the application component.
 -->
 
 ---
-title: Right-size the safeguards
-sync: section-trust
-class: slide-section
----
-
-<AmbientVideo src="/videos/hero-video-3.mp4" variant="approach" />
-
-<Eyebrow text="DELIVERY SYSTEM · TRUST MODEL" />
-
-<div class="section-hero-grid">
-<div class="section-hero-left">
-<div class="section-kicker-pill">Contextual governance</div>
-
-# Match safeguards to the stakes.
-
-<p class="section-subtitle">Give prototypes room to learn—<strong>strengthen safeguards as people come to depend on the system.</strong></p>
-
-</div>
-</div>
-
-<div class="hero-mechanisms">
-<div class="hero-pillar"><span class="hero-pillar-num">01</span><span>Explore &amp; Govern · Keep discovery cheap and shared work clean</span></div>
-<div class="hero-pillar"><span class="hero-pillar-num">02</span><span>Connect &amp; Support · Enforce runtime and full delivery boundaries</span></div>
-<div class="hero-pillar"><span class="hero-pillar-num">03</span><span>Trust radius · Assess reach, data, dependence, and continuity</span></div>
-</div>
-
-<!--
-Section divider: Trust Model and Trust Radius.
--->
-
----
-title: Trust is contextual, not a maturity score.
-sync: trust-model
+title: Use cases.
+sync: use-cases
 class: slide-light
 ---
 
-<Eyebrow text="TRUST MODEL · REQUIRED SAFEGUARDS FOLLOW CONSEQUENCE" />
-
-<div class="foundation-progress" aria-label="Delivery foundations">
-<span class="is-active">01 · Standardise delivery</span>
-<span class="is-active is-magenta">02 · Specify behaviour</span>
-<span class="is-active">03 · Sandbox execution</span>
-</div>
+<Eyebrow text="THE DELIVERY SYSTEM · WHERE IT APPLIES" />
 
 <div class="live-stage">
 
-# Trust is contextual, not a maturity score.
+# Use cases.
 
-<p class="live-claim">Explore, Govern, Connect, and Support are situations to match—not levels to climb.</p>
+<p class="live-claim">Prototype, legacy codebase, or new service—every change runs the same governed path.</p>
 
-<div class="live-trust-model">
-<div class="live-trust-state is-explore">
-<div class="live-trust-state-head">State 0 · Explore</div>
-<div class="live-trust-band">
-<strong>Local discovery</strong>
+<div class="live-grid-2" style="margin-top: 20px; gap: 18px;">
+<div class="live-card is-cyan">
+<div class="live-card-head">
+<IconBadge tone="cyan"><ph:rocket-launch /></IconBadge>
+<div class="live-kicker">01 · Prototype to production</div>
 </div>
-<div class="live-trust-band">
-<p>One builder · synthetic inputs</p>
-</div>
-<div class="live-trust-band is-boundary">
-<strong>Isolate and keep local</strong>
-</div>
+<h3>Take vibe-coded apps to production</h3>
+<p>Extract intent from a prototype and rebuild it as a supported service.</p>
 </div>
 
-<div class="live-trust-state is-govern">
-<div class="live-trust-state-head">State 1 · Govern</div>
-<div class="live-trust-band">
-<strong>Shared work</strong>
+<div class="live-card">
+<div class="live-card-head">
+<IconBadge tone="magenta"><ph:file-text /></IconBadge>
+<div class="live-kicker">02 · Legacy modernisation</div>
 </div>
-<div class="live-trust-band">
-<p>Named owner · protected changes</p>
-</div>
-<div class="live-trust-band is-boundary">
-<strong>Authoring boundary</strong>
-</div>
+<h3>Retire technical debt</h3>
+<p>Recover specifications from legacy code and regenerate a clean implementation.</p>
 </div>
 
-<div class="live-trust-state is-connect">
-<div class="live-trust-state-head">State 2 · Connect</div>
-<div class="live-trust-band">
-<strong>Live capability</strong>
+<div class="live-card">
+<div class="live-card-head">
+<IconBadge tone="ink"><ph:globe /></IconBadge>
+<div class="live-kicker">03 · Cloud portability</div>
 </div>
-<div class="live-trust-band">
-<p>Purpose + owner · live contracts</p>
-</div>
-<div class="live-trust-band is-boundary">
-<strong>Runtime boundary</strong>
-</div>
+<h3>Move across environments</h3>
+<p>Build once against capability contracts and swap the runtime recipe.</p>
 </div>
 
-<div class="live-trust-state is-support">
-<div class="live-trust-state-head">State 3 · Support</div>
-<div class="live-trust-band">
-<strong>Business dependence</strong>
+<div class="live-card is-dark">
+<div class="live-card-head">
+<IconBadge tone="light"><ph:shield-check /></IconBadge>
+<div class="live-kicker">04 · High-trust systems</div>
 </div>
-<div class="live-trust-band">
-<p>Reviewed intent · recovery evidence</p>
+<h3>Deliver in regulated environments</h3>
+<p>Move at AI speed with auditable specs, compile-time rules, and sandboxing.</p>
 </div>
-<div class="live-trust-band is-boundary">
-<strong>Full delivery system</strong>
-</div>
-</div>
-</div>
-
-<p class="live-trust-model-note">Choose the least costly state that matches the actual consequence.</p>
-</div>
-
-<!--
-These are operational states, not levels of organisational maturity.
-There is no virtue in moving every application to the right. Keep it in the least costly state consistent with its actual consequence.
-Read each state as its situation, its minimum evidence and ownership, then its required boundary:
-- Explore: one builder, synthetic or local inputs, no shared dependence; isolate and keep local.
-- Govern: named owner, approved workspace and tools, protected changes and checks; authoring boundary.
-- Connect: explicit purpose and owner, typed live-system contracts, host policy and observability; runtime boundary.
-- Support: durable reviewed intent, release and service ownership, recovery evidence; full delivery system.
--->
-
----
-title: The highest consequence sets the trust radius.
-sync: trust-radius
-class: slide-light
----
-
-<Eyebrow text="TRUST RADIUS · ASSESS FOUR DIMENSIONS" />
-
-<div class="foundation-progress" aria-label="Delivery foundations">
-<span class="is-active">01 · Standardise delivery</span>
-<span class="is-active is-magenta">02 · Specify behaviour</span>
-<span class="is-active">03 · Sandbox execution</span>
-</div>
-
-<div class="live-stage">
-
-# The highest consequence sets the trust radius.
-
-<p class="live-claim">Place each dimension on the same four-state scale. Take the furthest answer—not the average—and reassess whenever one changes.</p>
-
-<div class="live-radius-grid">
-<div class="live-radius-card">
-<div class="live-kicker"><ph:globe class="live-kicker-icon" />01 · Reach</div>
-<h3>What can it access?</h3>
-<p>Local environment · shared systems · live capabilities</p>
-</div>
-<div class="live-radius-card">
-<div class="live-kicker"><ph:database class="live-kicker-icon" />02 · Data</div>
-<h3>What can it read or change?</h3>
-<p>Synthetic data · project data · live or regulated data</p>
-</div>
-<div class="live-radius-card">
-<div class="live-kicker"><ph:users-three class="live-kicker-icon" />03 · Dependence</div>
-<h3>Who relies on it?</h3>
-<p>One builder · a team · customers or operations</p>
-</div>
-<div class="live-radius-card">
-<div class="live-kicker"><ph:lifebuoy class="live-kicker-icon" />04 · Continuity</div>
-<h3>What must survive failure?</h3>
-<p>Discard · restore · recover within an obligation</p>
-</div>
-</div>
-
-<div class="live-radius-scale">
-<div><strong>0</strong> Explore</div>
-<div><strong>1</strong> Govern</div>
-<div><strong>2</strong> Connect</div>
-<div><strong>3</strong> Support</div>
 </div>
 
 </div>
 
 <!--
-Do not average the answers. The highest-consequence answer sets the application's required state and therefore its safeguards.
-Reassess whenever reach, data, dependence, or continuity changes. The required state can move in either direction as those answers change.
+Ask the room which of these four pressures is most acute for them today:
+1. Vibe-coded prototypes that business stakeholders want in production tomorrow.
+2. Legacy systems where the original authors left and the code is the only documentation.
+3. Cloud/on-prem portability where vendor lock-in or data residency slows deployment.
+4. Regulated services where auditability and blast-radius control are non-negotiable.
 -->
 
 ---
-title: What comes next.
+title: Roadmap.
 sync: future-system
 class: slide-section
 ---
 
 <AmbientVideo src="/videos/hero-video-3.mp4" variant="approach" />
 
-<Eyebrow text="DELIVERY SYSTEM · THE FUTURE" />
+<Eyebrow text="DELIVERY SYSTEM · ROADMAP" />
 
 <div class="section-hero-grid">
 <div class="section-hero-left">
-<div class="section-kicker-pill is-magenta">Where this goes</div>
+<div class="section-kicker-pill is-magenta">What comes next</div>
 
-# What comes next.
+# Roadmap.
 
-<p class="section-subtitle">A constrained delivery system unlocks two next steps: <strong>smaller models on a narrower target, and production signals returning as governed changes.</strong></p>
+<p class="section-subtitle">Tighter architectural constraints unlock <strong>smaller local models and automated remediation through the same gates.</strong></p>
 
 </div>
 </div>
@@ -2167,30 +2074,30 @@ class: slide-section
 <div class="hero-mechanisms">
 <div class="hero-pillar"><span class="hero-pillar-num">01</span><span>Narrow the target · Pre-scaffold structure, types, routes, and tests</span></div>
 <div class="hero-pillar"><span class="hero-pillar-num">02</span><span>Run smaller models · Local and open-weight models inside the same gates</span></div>
-<div class="hero-pillar"><span class="hero-pillar-num">03</span><span>Close the loop · Production signals return as governed changes</span></div>
+<div class="hero-pillar"><span class="hero-pillar-num">03</span><span>Close the loop · Route production alerts through specification and review</span></div>
 </div>
 
 <!--
-Section divider: What comes next.
-- So far the argument has covered the delivery system as it runs today: standardise delivery, specify behaviour, sandbox execution, and match safeguards to the stakes.
-- That constrained shape unlocks two active directions on the roadmap:
-  1. Smaller, local models on a narrower target—because the build adapter pre-scaffolds structure and tests and the runtime fixes the capability boundary.
-  2. The path becoming a loop—where production signals are investigated and fixes proposed, then specified, built, and merged like any other change.
+Section divider: What the constraints unlock next.
+- Everything up to here is how the system operates today.
+- Because the target architecture is strictly constrained and verified by compiler and test gates, it unlocks two major engineering advantages next:
+  1. Running smaller, open-weight, client-hosted models instead of relying exclusively on frontier APIs.
+  2. Feeding production security and incident alerts straight back into the same governed specification loop.
 -->
 
 ---
-title: Smaller models on a narrower target.
+title: Run smaller, local models.
 sync: future-models
 class: slide-light
 ---
 
-<Eyebrow text="THE FUTURE · SMALLER MODELS ON A NARROWER TARGET" />
+<Eyebrow text="THE FUTURE · PRE-SCAFFOLDED SLICES" />
 
 <div class="live-stage">
 
-# Smaller models on a narrower target.
+# Run smaller, local models.
 
-<p class="live-claim">Frontier models are needed when an agent has to invent architecture—not when structure, contracts, and tests are already fixed.</p>
+<p class="live-claim">Frontier models are needed to invent architecture—not to fill in pre-scaffolded, compiler-checked slices.</p>
 
 <div class="live-grid-2" style="width: 88%; margin: 28px auto 0; gap: 52px;">
 <div class="live-card" style="min-height: 214px; padding: 26px 30px; display: flex; flex-direction: column; justify-content: space-between;">
@@ -2220,16 +2127,14 @@ class: slide-light
 </div>
 
 <!--
-Smaller models on a narrower target:
-- A frontier model is necessary when a coding agent has to choose libraries, invent project structure, and hold an entire codebase in context.
-- Our target build adapter removes that work before the model turn begins: it pre-scaffolds the crate, module layout, typed routes, message consumers, and scenario test skeletons from the sealed specification, then asks the model only to fill the behavioural markers and pass compiler, lint, and test checks.
-- Today, that adapter runs with frontier LLMs in production engagements.
-- In early proof-of-concept runs, the same scaffold-and-verify loop already builds working WebAssembly guest slices using an untuned open-weight model (`qwen3-coder-next`).
-- Active roadmap focus: hardening small language model support so sensitive systems can be built and verified on local or client-hosted hardware without depending on a frontier API.
+Why this resonates with security-conscious IT leaders:
+- You only need a giant frontier model when the agent has to invent project structure, pick libraries, and hold the whole repo in context.
+- Because our build step deterministically scaffolds the module layout, typed routes, message handlers, and scenario test skeletons from the sealed spec before the model turn starts, the model only fills in bounded business logic.
+- In proof-of-concept runs, that narrower target already compiles and passes verification using untuned open-weight models—opening the path to air-gapped, client-hosted execution.
 -->
 
 ---
-title: Feedback drives the next change.
+title: Close the loop on issues.
 sync: future-loop
 class: slide-light
 ---
@@ -2238,9 +2143,9 @@ class: slide-light
 
 <div class="live-stage">
 
-# Feedback drives the next change.
+# Close the loop on issues.
 
-<p class="live-claim">Nothing bypasses the path. A signal becomes a change; a change becomes new evidence.</p>
+<p class="live-claim">Detect an issue, analyse and propose a fix, approve the spec change, and build and deploy across code and infrastructure.</p>
 
 <div class="live-loop">
 <svg viewBox="0 0 1140 480" aria-hidden="true" style="width: 100%; height: auto; display: block;">
@@ -2264,7 +2169,7 @@ class: slide-light
   <rect x="10" y="36" width="176" height="54" rx="9" fill="#ffffff" stroke="rgba(13,16,48,0.3)" stroke-width="1.5" />
   <text x="98" y="69" text-anchor="middle" class="svg-label" fill="#0d1030">Security feeds</text>
   <rect x="10" y="354" width="176" height="54" rx="9" fill="#ffffff" stroke="rgba(13,16,48,0.3)" stroke-width="1.5" />
-  <text x="98" y="387" text-anchor="middle" class="svg-label" fill="#0d1030">Cargo audit</text>
+  <text x="98" y="387" text-anchor="middle" class="svg-label" fill="#0d1030">Dependency audit</text>
 
   <rect x="10" y="195" width="176" height="54" rx="9" fill="rgba(255,59,107,0.06)" stroke="rgba(255,59,107,0.8)" stroke-width="1.6" />
   <text x="98" y="215" text-anchor="middle" class="svg-label" fill="#0d1030">Vulnerability</text>
@@ -2338,7 +2243,7 @@ class: slide-light
   <rect x="972" y="346" width="136" height="62" rx="9" fill="rgba(13,16,48,0.05)" stroke="rgba(13,16,48,0.35)" stroke-width="1.5" />
   <text x="1040" y="374" text-anchor="middle" class="svg-label" fill="#0d1030">GitHub</text>
   <text x="1040" y="394" text-anchor="middle" class="svg-label" fill="#0d1030">Actions</text>
-  <text x="1040" y="430" text-anchor="middle" fill="rgba(13,16,48,0.55)" style="font-size: 9px;">promote the artifact</text>
+  <text x="1040" y="430" text-anchor="middle" fill="rgba(13,16,48,0.55)" style="font-size: 9px;">deploy the artifact</text>
   <line x1="972" y1="377" x2="936" y2="377" stroke="rgba(13,16,48,0.45)" stroke-width="1.6" stroke-dasharray="5 4" marker-end="url(#loop-arrow)" />
   <line x1="1040" y1="346" x2="1040" y2="268" stroke="rgba(13,16,48,0.5)" stroke-width="2" marker-end="url(#loop-arrow)" />
   <text x="1052" y="305" class="svg-caption" fill="rgba(13,16,48,0.58)">deploy</text>
@@ -2353,11 +2258,11 @@ The complete system, using vulnerability remediation as the worked example:
 - An incident manager investigates and proposes a fix. It proposes; it does not ship.
 - The fix enters at the production gate and runs the same loop as any change: specify, build, and merge — in a code lane and an infrastructure lane.
 - The result is deployed and updated, and infrastructure monitoring watches it and raises the next signal.
-- Nothing bypasses the path. The safeguards on each pass are the ones the trust radius requires.
+- Nothing bypasses the governed path.
 -->
 
 ---
-title: What’s the first change you’d trust AI to deliver?
+title: Thank you.
 sync: cta
 class: slide-split short-bar
 ---
@@ -2372,16 +2277,19 @@ class: slide-split short-bar
 
 <div class="split-content-pane" style="justify-content: center;">
 <div>
-<Eyebrow text="PROPELLERHEAD · THE FIRST MOVE" />
+<Eyebrow text="PROPELLERHEAD · ACCOUNTABLE SOFTWARE DELIVERY" />
 
-# What’s the first change<br>you’d trust AI to deliver?
+# Thank you.
+
+<p class="live-claim" style="margin-top: 18px;">Questions and discussion.</p>
 
 </div>
 
 </div>
 
 <!--
-The trust model gives the audience a way to judge how much safeguard a change needs.
-Close by returning to the opening in personal terms: what is the first change they would trust AI to deliver? One change is enough to start; set the safeguards to match its stakes.
+Close and open the floor for discussion:
+- Ask: "Where in your portfolio is the gap between fast AI coding and accountable delivery most acute right now?"
+- You don't need an enterprise-wide transformation to start—one bounded service or prototype is enough to prove the path.
 -->
 

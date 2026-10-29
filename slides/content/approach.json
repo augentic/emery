@@ -4,10 +4,10 @@
     "title": "Code is cheap. Delivery is hard.",
     "required": [
       "Code is cheap. Delivery is hard.",
-      "Use a delivery system that lets AI deliver software — not just code.",
-      "Standardise delivery",
-      "Specify behaviour",
-      "Sandbox execution"
+      "A system for shipping software with AI — not just generating code.",
+      "Standardising delivery",
+      "Specifying behaviour",
+      "Sandboxing execution"
     ]
   },
   {
@@ -15,12 +15,17 @@
     "title": "Coding is no longer the bottleneck.",
     "required": [
       "Coding is no longer the bottleneck.",
-      "AI can write code in minutes, but it cannot frame a problem, weigh trade-offs, or own consequences.",
-      "More code ≠ a coherent solution",
-      "Cognitive load",
-      "Hidden ambiguity",
-      "Accumulated slop",
-      "An unmanageable application and codebase."
+      "AI writes code in minutes, but without a delivery system it inflates PRs, shifts the bottleneck to review, and degrades delivery stability.",
+      "More code ≠ faster delivery",
+      "Verification tax",
+      "+51% PR size · +441% review wait",
+      "Hidden assumptions",
+      "+54% bugs · 45% with security flaws",
+      "Duplication & churn",
+      "+81% duplication · −70% refactoring",
+      "Delivery instability",
+      "−7.2% stability per 25% AI adoption",
+      "A system no one can safely change."
     ]
   },
   {
@@ -28,67 +33,75 @@
     "title": "Build the right thing. Build it to last.",
     "required": [
       "Build the right thing. Build it to last.",
-      "Designing great software is a human process.",
-      "our expertise is in delivering systems that last.",
-      "Building the right thing",
+      "Product strategy decides what is worth building.",
+      "our focus is delivering it as software that lasts.",
+      "Build the right thing",
       "Frame the problem · weigh trade-offs · test with prototypes",
-      "Delivering maintainable software",
-      "Decide what matters, deliver it safely, and keep it maintainable."
-    ]
-  },
-  {
-    "id": "outcome",
-    "title": "A prototype is evidence, not a production commitment.",
-    "required": [
-      "A prototype is evidence. Production is a commitment.",
-      "AI can build a prototype in minutes. Production takes an explicit decision.",
-      "Enter the delivery path",
-      "A prototype informs the decision. It does not make it."
+      "Build it to last",
+      "Prototypes test assumptions. A delivery system ships production software."
     ]
   },
   {
     "id": "system",
-    "title": "Standardise delivery. Specify behaviour. Sandbox execution.",
+    "title": "Three boundaries around AI code.",
     "required": [
-      "Three mechanisms for reliable delivery.",
-      "Human-led engineering: agents work best inside a delivery system—not in charge of it.",
-      "Standardise delivery",
-      "How work is created, checked, shipped, and operated.",
-      "Specify behaviour",
-      "Sandbox execution",
-      "What running code may access"
+      "Three boundaries around AI code.",
+      "Agents work inside the system. Engineers remain in charge of it.",
+      "Standardising delivery",
+      "How code is written, checked, and shipped.",
+      "Specifying behaviour",
+      "Sandboxing execution",
+      "What running code is permitted to touch"
+    ]
+  },
+  {
+    "id": "section-standardise",
+    "title": "Standardising delivery.",
+    "required": [
+      "Standardising delivery.",
+      "One governed path from change to production",
+      "across how code is written and how it ships.",
+      "Isolate & guide",
+      "Enforce at compile time",
+      "Automate deployment"
     ]
   },
   {
     "id": "authoring",
-    "title": "Isolate. Guide. Enforce.",
+    "title": "Constrain code authoring.",
     "required": [
-      "Isolate. Guide. Enforce.",
-      "review focuses on design and trade-offs",
-      "Governed workspaces",
-      "Shared engineering codex",
+      "Constrain code authoring.",
+      "Isolate the workspace, share one set of engineering standards, and enforce architectural rules at compile time.",
+      "Isolated workspaces",
+      "No live credentials",
+      "Scoped tool grants",
+      "Shared engineering standards",
+      "Architecture & layout",
+      "Idioms & templates",
       "Compiler-enforced standards",
-      "Critical rules fail at compile time, before review.",
-      "Guidance is shared. Non-negotiable rules are enforced."
+      "Architectural and safety rules enforced at compile time.",
+      "No panics or unwrap",
+      "No direct net or FS",
+      "Reviewers focus on design and trade-offs—not policing mechanical rules."
     ]
   },
   {
     "id": "delivery-automation",
-    "title": "Automate the path from code to production.",
+    "title": "Automate verification and deployment.",
     "required": [
-      "Automate the path from code to production.",
-      "Faster implementation matters only when evidence and delivery move at the same speed.",
-      "Build once",
-      "Test behaviour",
-      "Gate every change",
-      "The same accepted artifact moves forward with its evidence."
+      "Automate verification and deployment.",
+      "Agent-written unit tests often repeat the agent's own bugs—pipelines must replay behaviour against the spec, gate the supply chain, and automate deployment.",
+      "Hermetic behavioural replay",
+      "Supply-chain & secret gates",
+      "Automated review & deployment",
+      "One immutable artifact deployed with its verification evidence."
     ]
   },
   {
     "id": "section-intent",
-    "title": "Specify behaviour",
+    "title": "Specifying behaviour.",
     "required": [
-      "Specify behaviour.",
+      "Specifying behaviour.",
       "People and agents share one source of truth: durable specifications, not code.",
       "Surface ambiguity",
       "Human review gate",
@@ -98,35 +111,40 @@
   },
   {
     "id": "record-position",
-    "title": "AI coding moves right. Governance moves up.",
+    "title": "Prompts are not specifications.",
     "required": [
-      "AI coding moves right. Governance moves up.",
+      "Prompts are not specifications.",
+      "Prompts disappear after a turn and leave agents to guess. Specifications persist in the repo as the contract both people and agents build against.",
       "Spec-driven development",
-      "Durable intent around AI implementation",
-      "AI coding changes implementation. It does not create governance."
+      "Versioned specs driving AI implementation",
+      "Move right for speed"
     ]
   },
   {
     "id": "record-development",
-    "title": "Specifications drive development.",
+    "title": "The agentic development loop.",
     "required": [
-      "Specifications drive development.",
-      "The specification stays in the development loop",
-      "surfacing ambiguity for human judgement",
+      "The agentic development loop.",
+      "Align on intent upfront, break work into bounded slices for agents, and verify code against the spec.",
       "spec.md",
       "design.md",
+      "Exposes conflicts & [unknown] gaps",
       "Review & seal",
       "Human decision gate",
+      "Resolve conflicts",
       "Units of work, ordered by dependency",
-      "Each change runs the loop. If the specification changes, it is reviewed and sealed again."
+      "Bounded slices · regenerable",
+      "Isolated worktrees · replay gates",
+      "Every change runs the loop. Any spec change re-enters the human review gate."
     ]
   },
   {
     "id": "record-truth",
-    "title": "Code is disposable. The specification is durable.",
+    "title": "Code is disposable. Specifications are durable.",
     "required": [
       "Code is disposable.",
       "Specifications are durable.",
+      "Code is generated from the spec. The sealed specification is what you keep.",
       "spec.md",
       "design.md",
       "Regenerate the plan. Rebuild the code. The specification remains."
@@ -134,9 +152,9 @@
   },
   {
     "id": "section-constrain",
-    "title": "Sandbox execution",
+    "title": "Sandboxing execution.",
     "required": [
-      "Sandbox execution.",
+      "Sandboxing execution.",
       "Grant generated code nothing by default",
       "it reaches infrastructure only through host-mediated capabilities.",
       "Wasmtime sandbox",
@@ -146,10 +164,10 @@
   },
   {
     "id": "runtime",
-    "title": "Generated code has less freedom to surprise.",
+    "title": "Zero trust for generated code.",
     "required": [
-      "Generated code has less freedom to surprise.",
-      "With the platform safe by construction, agents work within known bounds while engineers focus on the product.",
+      "Zero trust for generated code.",
+      "Containers give every dependency ambient access to network, files, and secrets. WASI components start with zero authority and use only the capabilities the host links.",
       "WASI Component",
       "Wasmtime sandbox",
       "Host-granted capabilities",
@@ -159,70 +177,37 @@
   },
   {
     "id": "runtime-portability",
-    "title": "Different infrastructure. The same application.",
+    "title": "Infrastructure portability.",
     "required": [
-      "Different infrastructure. Same application.",
-      "The component depends on capabilities, not products.",
+      "Infrastructure portability.",
+      "Write code once against capability contracts. Bind them to local, cloud, or on-premise services at deploy time.",
       "WASI Component",
       "Stable capability contract",
       "Local / trial",
       "Cloud",
       "On-premise",
-      "Capability bindings",
-      "Policy + identity",
-      "Config + observability"
+      "Local Wasmtime host",
+      "IAM + KMS policy",
+      "Corporate PKI + Vault"
     ]
   },
   {
-    "id": "section-trust",
-    "title": "Right-size the safeguards",
+    "id": "use-cases",
+    "title": "Use cases.",
     "required": [
-      "Match safeguards to the stakes.",
-      "Give prototypes room to learn",
-      "strengthen safeguards as people come to depend on the system.",
-      "Explore & Govern",
-      "Connect & Support",
-      "Trust radius",
-      "Assess reach, data, dependence, and continuity"
-    ]
-  },
-  {
-    "id": "trust-model",
-    "title": "Trust is contextual, not a maturity score.",
-    "required": [
-      "Trust is contextual, not a maturity score.",
-      "situations to match—not levels to climb",
-      "State 0 · Explore",
-      "Local discovery",
-      "Isolate and keep local",
-      "State 1 · Govern",
-      "Authoring boundary",
-      "State 2 · Connect",
-      "Runtime boundary",
-      "State 3 · Support",
-      "Full delivery system",
-      "Choose the least costly state that matches the actual consequence."
-    ]
-  },
-  {
-    "id": "trust-radius",
-    "title": "The highest consequence sets the trust radius.",
-    "required": [
-      "The highest consequence sets the trust radius.",
-      "Place each dimension on the same four-state scale.",
-      "Take the furthest answer—not the average",
-      "What can it access?",
-      "What can it read or change?",
-      "Who relies on it?",
-      "What must survive failure?",
-      "reassess whenever one changes"
+      "Use cases.",
+      "Prototype, legacy codebase, or new service—every change runs the same governed path.",
+      "Take vibe-coded apps to production",
+      "Retire technical debt",
+      "Move across environments",
+      "Deliver in regulated environments"
     ]
   },
   {
     "id": "future-system",
-    "title": "What comes next.",
+    "title": "Roadmap.",
     "required": [
-      "What comes next.",
+      "Roadmap.",
       "Narrow the target",
       "Run smaller models",
       "Close the loop"
@@ -230,10 +215,10 @@
   },
   {
     "id": "future-models",
-    "title": "Smaller models on a narrower target.",
+    "title": "Run smaller, local models.",
     "required": [
-      "Smaller models on a narrower target.",
-      "Frontier models are needed when an agent has to invent architecture—not when structure, contracts, and tests are already fixed.",
+      "Run smaller, local models.",
+      "Frontier models are needed to invent architecture—not to fill in pre-scaffolded, compiler-checked slices.",
       "Requires frontier models",
       "Invent structure · choose libraries · hold the full codebase in context",
       "Unlocks smaller, local models",
@@ -243,11 +228,10 @@
   },
   {
     "id": "future-loop",
-    "title": "Feedback drives the next change.",
+    "title": "Close the loop on issues.",
     "required": [
-      "Feedback drives the next change.",
-      "Nothing bypasses the path.",
-      "A signal becomes a change; a change becomes new evidence.",
+      "Close the loop on issues.",
+      "Detect an issue, analyse and propose a fix, approve the spec change, and build and deploy across code and infrastructure.",
       "Incident manager",
       "Specify–Build–Merge",
       "Infrastructure monitoring"
@@ -255,9 +239,10 @@
   },
   {
     "id": "cta",
-    "title": "What’s the first change you’d trust AI to deliver?",
+    "title": "Thank you.",
     "required": [
-      "What’s the first change you’d trust AI to deliver?",
+      "Thank you.",
+      "Questions and discussion.",
       "25 years of critical-software judgement, now applied to accountable delivery at AI speed."
     ]
   }
