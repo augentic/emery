@@ -55,7 +55,9 @@ use crate::{Files, Rank, apply, preopen_path, store, vcs};
 /// replaced, and the run is refused before any adapter loads while one
 /// stands. Where [`SpecifyInput::target`] names the
 /// repository the specification lives in, the current revision is read
-/// from it before any adapter loads, to report the diff against it; a run
+/// from it before any adapter loads, to report the diff against it, and a
+/// current revision that amends an earlier one refuses the run there unless
+/// [`SpecifyInput::fresh`] says the candidate starts the history over; a run
 /// naming no target reads no repository and reports no diff. Under
 /// [`SpecifyInput::apply`] the candidate is staged first and sealed in the
 /// same run over what was read, so a seal that fails leaves it staged.
@@ -65,6 +67,8 @@ use crate::{Files, Rank, apply, preopen_path, store, vcs};
 /// - Returns [`Error::BadRequest`] when the run is refused:
 ///   - an empty source list, with code `specify-source-required`;
 ///   - an amendment standing staged, with code `amendment-pending`;
+///   - a current revision that amends an earlier one, without
+///     [`SpecifyInput::fresh`], with code `lineage-exists`;
 ///   - [`SpecifyInput::apply`] with no target, with code
 ///     `build-target-required`;
 ///   - a target whose name is not kebab-case;
@@ -112,6 +116,11 @@ pub async fn specify<P: Model + Source + StateStore + BlobStore + Plugins + Vcs 
         Some(repo) => Some(store::current(provider, repo).await?),
         None => None,
     };
+    if !input.fresh
+        && let Some(standing) = &standing
+    {
+        standing.no_lineage()?;
+    }
 
     let Extracted {
         extracts,
@@ -138,8 +147,13 @@ pub async fn specify<P: Model + Source + StateStore + BlobStore + Plugins + Vcs 
     // seal would displace; sealed in the same run when asked
     let candidate = Revision { spec, design, plan };
     let diff = standing.as_ref().and_then(|standing| standing.diff(&candidate));
-    let revision = store::stage(provider, &candidate).await?;
-    tracing::info!(candidate = %revision, slices = candidate.plan.slices.len(), "staged");
+    let revision = store::stage(provider, &candidate, input.fresh).await?;
+    tracing::info!(
+        candidate = %revision,
+        slices = candidate.plan.slices.len(),
+        fresh = input.fresh,
+        "staged"
+    );
     let applied = match (input.apply, repo, standing) {
         (true, Some(repo), Some(standing)) => Some(apply::seal(provider, &repo, standing).await?),
         _ => None,
@@ -151,6 +165,7 @@ pub async fn specify<P: Model + Source + StateStore + BlobStore + Plugins + Vcs 
         diff,
         repositories,
         staged: applied.is_none(),
+        fresh: input.fresh,
         applied,
     })
 }
@@ -166,6 +181,14 @@ pub struct SpecifyInput {
     /// same run, as [`apply`](crate::apply::apply) would.
     #[serde(default)]
     pub apply: bool,
+    /// Whether the candidate starts the history over.
+    ///
+    /// Where the current revision amends an earlier one, a run without it
+    /// is refused `lineage-exists`; with it the candidate is staged fresh,
+    /// and its seal records no parent and lands over the repository's head,
+    /// every earlier label left standing.
+    #[serde(default)]
+    pub fresh: bool,
     /// The target whose repository the specification lives in.
     ///
     /// Read for the diff where given, and required under
@@ -310,6 +333,8 @@ pub struct SpecifyOutput {
     /// Whether the candidate stands staged for `emery apply`: `false` once
     /// the run sealed it under [`SpecifyInput::apply`].
     pub staged: bool,
+    /// Whether the candidate was staged fresh, under [`SpecifyInput::fresh`].
+    pub fresh: bool,
     /// What the run sealed under [`SpecifyInput::apply`]; absent otherwise.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub applied: Option<ApplyOutput>,

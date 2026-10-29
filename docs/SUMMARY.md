@@ -9,6 +9,7 @@
 - [Overview](reference/index.md)
 - [CLI reference](reference/cli/index.md)
   - [emery specify](reference/cli/specify.md)
+  - [emery amend](reference/cli/amend.md)
   - [emery apply](reference/cli/apply.md)
   - [emery build](reference/cli/build.md)
   - [emery show](reference/cli/show.md)

@@ -61,6 +61,8 @@ GET /farewell returns the static string 'goodbye'.
 ID: REQ-005
 Sources: [brief:greeting.rate-limit, notes:greeting.rate-limit]
 
+Note: brief (documentation, rank 2, greeting.rate-limit): A caller is answered at most ten times a minute.
+Note: notes (documentation, rank 2, greeting.rate-limit): A caller is answered at most a hundred times a minute.
 Note: Operator reconciliation required.
 
 #### Scenario: Caller over the limit

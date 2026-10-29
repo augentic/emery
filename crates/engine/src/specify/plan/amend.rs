@@ -4,7 +4,10 @@
 //! rule decides. What no rule decides — the requirements of a stem no slice
 //! holds, a stem the amendment leaves past the cap, and a design type no
 //! slice owns — is put to one turn over the current slices as fixed context,
-//! and the answer is held to the plan's rules over the whole.
+//! and the answer is held to the plan's rules over the whole. The turn also
+//! redrafts the brief of each current slice the amendment touched, and of
+//! each one its answer joins into, so what a builder reads says what the
+//! slice now delivers.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::{self, Display, Formatter};
@@ -84,6 +87,10 @@ impl<'a> SliceAmend<'a> {
         }
     }
 
+    fn slice(&self, id: SliceId) -> Option<&Slice> {
+        self.slices.iter().find(|slice| slice.id == id)
+    }
+
     // Whether this amendment changed `slice` against the base: its
     // requirements differ, or one of them is drafted anew.
     fn touched(&self, slice: &Slice) -> bool {
@@ -151,10 +158,7 @@ impl<'a> SliceAmend<'a> {
     // left it.
     fn write_current(&self, f: &mut Formatter<'_>) -> fmt::Result {
         let name = |id: &SliceId| {
-            self.slices
-                .iter()
-                .find(|slice| slice.id == *id)
-                .map_or_else(|| id.to_string(), |slice| slice.name.clone())
+            self.slice(*id).map_or_else(|| id.to_string(), |slice| slice.name.clone())
         };
         f.write_str("## Current plan\n\n")?;
         for slice in &self.slices {
@@ -175,7 +179,12 @@ impl<'a> SliceAmend<'a> {
             }
             f.write_str("\n")?;
         }
-        Ok(())
+        f.write_str(
+            "\nA slice marked touched gained, lost, or had redrafted a requirement, so its brief \
+             no longer says what it delivers: redraft it under `briefs`, one entry per touched \
+             slice and per slice a join names, each a brief whole in the slice's new terms. Every \
+             other slice keeps its brief.\n",
+        )
     }
 
     // `## Open`: the new stems, the recut stems by their sub-stems, the
@@ -338,7 +347,17 @@ impl Brief for SliceAmend<'_> {
                     .insert("enum".to_owned(), json!(self.open.keys));
             }
         }
-        Self::at(schema, "/$defs/Join/properties/slice")?.insert("enum".to_owned(), slices);
+        Self::at(schema, "/$defs/Join/properties/slice")?.insert("enum".to_owned(), slices.clone());
+
+        // one brief per touched slice at the least, one per current slice at
+        // the most, since a join's slice is redrafted too
+        let touched = self.slices.iter().filter(|slice| self.touched(slice)).count();
+        let briefs = Self::at(schema, "/properties/briefs")?;
+        briefs.insert("minItems".to_owned(), json!(touched));
+        briefs.insert("maxItems".to_owned(), json!(self.slices.len()));
+        Self::at(schema, "/$defs/Rebrief/properties/slice")?.insert("enum".to_owned(), slices);
+        Self::at(schema, "/$defs/Rebrief/properties/brief")?
+            .insert("minItems".to_owned(), json!(1));
         Ok(())
     }
 
@@ -362,7 +381,7 @@ impl Brief for SliceAmend<'_> {
         let mut joined = BTreeSet::new();
         for join in &answer.joins {
             let label = format!("`joins` `{}`", join.slice);
-            if self.slices.iter().all(|slice| slice.id != join.slice) {
+            if self.slice(join.slice).is_none() {
                 review.note(format_args!("{label} names no slice of the current plan"));
             } else if !joined.insert(join.slice) {
                 review.note(format_args!(
@@ -385,13 +404,49 @@ impl Brief for SliceAmend<'_> {
             }
         }
 
+        // one brief per slice the amendment touched or a join named, each
+        // whole, and none for a slice that stands as it was
+        let mut rebriefed = BTreeSet::new();
+        for rebrief in &answer.briefs {
+            let label = format!("`briefs` `{}`", rebrief.slice);
+            match self.slice(rebrief.slice) {
+                None => review.note(format_args!("{label} names no slice of the current plan")),
+                Some(slice) if !self.touched(slice) && !joined.contains(&slice.id) => {
+                    review.note(format_args!(
+                        "{label}: `{}` stands as it was; it keeps its brief, so list no entry \
+                         for it",
+                        slice.name
+                    ));
+                }
+                Some(_) if !rebriefed.insert(rebrief.slice) => {
+                    review.note(format_args!("{label} is listed more than once; redraft it once"));
+                }
+                Some(slice) if rebrief.brief.is_empty() => review.note(format_args!(
+                    "{label}: the brief is empty; redraft `{}`'s brief whole",
+                    slice.name
+                )),
+                Some(_) => {}
+            }
+            review.paragraphs(&rebrief.brief, format_args!("{label} brief"));
+        }
+        for slice in &self.slices {
+            if (self.touched(slice) || joined.contains(&slice.id)) && !rebriefed.contains(&slice.id)
+            {
+                review.note(format_args!(
+                    "`{}` ({}) is touched by this amendment, or joined by the answer, and its \
+                     brief is not redrafted; list it under `briefs`",
+                    slice.name, slice.id
+                ));
+            }
+        }
+
         // the whole held to the plan's rules
         self.floors.check(self.types, &drafts, review);
     }
 
     // New slices are numbered after the current plan's highest id by their
     // lowest requirement; every list is written in id order, every type
-    // list in the design's.
+    // list in the design's; a redrafted brief stands in its slice's place.
     fn into_output(self, answer: SliceAmendAnswer) -> Result<Plan, Error> {
         let mut slices = self.slices;
         for join in answer.joins {
@@ -405,6 +460,16 @@ impl Brief for SliceAmend<'_> {
             slice.types.extend(join.types);
             slice.types =
                 self.types.iter().filter(|key| slice.types.contains(key)).cloned().collect();
+        }
+        for rebrief in answer.briefs {
+            let slice =
+                slices.iter_mut().find(|slice| slice.id == rebrief.slice).ok_or_else(|| {
+                    server_error!(
+                        "`{}` was accepted rebriefing no slice of the plan",
+                        rebrief.slice
+                    )
+                })?;
+            slice.brief = rebrief.brief;
         }
 
         let mut drafts = answer.slices;
@@ -434,10 +499,11 @@ impl Brief for SliceAmend<'_> {
 impl Display for SliceAmend<'_> {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         f.write_str(
-            "Amend the build plan: the current plan's slices stand under their ids, names, and \
-             briefs, and the answer places what `## Open` lists, and nothing else — each open \
-             requirement and type key into a new slice under `slices`, or into a current slice \
-             under `joins`.\n\n",
+            "Amend the build plan: the current plan's slices stand under their ids and names, and \
+             the answer places what `## Open` lists, and nothing else — each open requirement \
+             and type key into a new slice under `slices`, or into a current slice under \
+             `joins` — and redrafts under `briefs` the brief of each slice this amendment \
+             touched or a join names.\n\n",
         )?;
         self.write_current(f)?;
         self.write_open(f)?;
@@ -459,6 +525,21 @@ pub struct SliceAmendAnswer {
     /// The open requirements and type keys that join a current slice, one
     /// entry per slice joined.
     pub joins: Vec<Join>,
+    /// The briefs redrafted, one entry per current slice the amendment
+    /// touched and per slice a join names, in any order.
+    pub briefs: Vec<Rebrief>,
+}
+
+/// The brief of one slice of the current plan, redrafted whole.
+#[derive(Debug, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct Rebrief {
+    /// The id of the current slice whose brief this is.
+    #[schemars(with = "String")]
+    pub slice: SliceId,
+    /// Markdown paragraphs a builder reads before taking the slice up, in
+    /// place of the ones it held.
+    pub brief: Vec<String>,
 }
 
 /// Open requirements and type keys joining one slice of the current plan.

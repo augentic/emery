@@ -6,8 +6,8 @@
 //! each requirement, drafts the amended specification, redrafts the design
 //! sections the change informs, amends the plan by code and one slicing
 //! turn for what code cannot place, and stages the result as an
-//! [`Amendment`] for review. Nothing is sealed, and
-//! the current revision is read and never moved.
+//! [`Amendment`] for review, or seals it in the same run. The current
+//! revision is read and, short of that seal, never moved.
 
 mod change;
 mod plan;
@@ -22,17 +22,19 @@ use serde::Serialize;
 use self::change::ChangeSet;
 use self::plan::{Assembled, Pruned};
 use self::standing::Standing;
+pub use crate::apply::ApplyOutput;
 use crate::brief::Brief as _;
 pub use crate::revision::{
-    Amendment, AmendmentBase, Change, ChangeClass, DesignDiff, PlanDiff, SliceChange, SliceClass,
+    Amendment, AmendmentBase, BriefState, Change, ChangeClass, DesignDiff, PlanDiff, SliceChange,
+    SliceClass,
 };
 use crate::revision::{Design, EMERY};
 use crate::specify::{
     BASELINE, Bound, DesignAmend, Extracted, GroupingBrief, RepositorySource, SourceConfig,
     SpecBrief,
 };
-use crate::vcs::TargetRef;
-use crate::{Files, store};
+use crate::vcs::{BuildRepo, TargetRef};
+use crate::{Files, apply, store};
 
 /// Prepares and stages an amendment against the current revision from `input`.
 ///
@@ -86,7 +88,10 @@ use crate::{Files, store};
 /// of the design or the plan stages nothing. One that changes anything is
 /// staged as the one amendment, replacing an amendment staged before it; a
 /// staged revision candidate is never replaced, since it awaits `emery
-/// apply`.
+/// apply`. Under [`AmendInput::apply`] the amendment is staged first and
+/// sealed in the same run over the revision that was read, as
+/// [`apply`](crate::apply::apply) seals it, so a seal that fails leaves it
+/// staged; a change that stages nothing seals nothing.
 ///
 /// # Errors
 ///
@@ -107,6 +112,8 @@ use crate::{Files, store};
 /// - Returns [`Error::ServerError`] and [`Error::BadGateway`] as `specify`
 ///   does, and [`Error::ServerError`] where a plan settled by code alone
 ///   breaks the plan's rules.
+/// - Returns what [`apply`](crate::apply::apply) fails with sealing the
+///   amendment under [`AmendInput::apply`], the amendment left staged.
 pub async fn amend<P: Model + Source + StateStore + BlobStore + Plugins + Vcs + Files>(
     input: AmendInput, context: Context<P>,
 ) -> Result<AmendOutput, Error> {
@@ -123,10 +130,10 @@ pub async fn amend<P: Model + Source + StateStore + BlobStore + Plugins + Vcs + 
     }
     let repo = input.target.ok_or_else(|| store::target_required("`emery amend`"))?.repo()?;
     let repository = store::current(provider, &repo).await?;
-    let Some(current) = repository.current else {
+    let Some(current) = &repository.current else {
         return Err(store::not_generated(provider, &repository).await);
     };
-    let revision = current.revision?;
+    let revision = current.revision.as_ref().map_err(Clone::clone)?;
     store::no_candidate(provider).await?;
 
     let Extracted {
@@ -188,8 +195,8 @@ pub async fn amend<P: Model + Source + StateStore + BlobStore + Plugins + Vcs + 
     let amendment = Amendment {
         emery: EMERY,
         base: AmendmentBase {
-            revision: current.id,
-            commit: current.commit,
+            revision: current.id.clone(),
+            commit: current.commit.clone(),
         },
         changes,
         spec,
@@ -202,24 +209,11 @@ pub async fn amend<P: Model + Source + StateStore + BlobStore + Plugins + Vcs + 
     let tally = Tally::of(&amendment);
     let conflicts = amendment.conflicts().map(str::to_owned).collect();
     let stems = amendment.stems().into_iter().map(str::to_owned).collect();
-    let staged = if amendment.is_change() {
-        let id = store::stage_amendment(provider, &amendment).await?;
-        tracing::info!(
-            amendment = %id,
-            base = %amendment.base.revision,
-            ?tally,
-            sections = ?amendment.sections,
-            slices = amendment.slices.len(),
-            "staged"
-        );
-        Some(id)
-    } else {
-        tracing::info!(base = %amendment.base.revision, "no change against the revision");
-        None
-    };
+    let (id, applied) = stage(provider, &repo, repository, &amendment, tally, input.apply).await?;
 
     Ok(AmendOutput {
-        amendment: staged,
+        staged: id.is_some() && applied.is_none(),
+        amendment: id,
         base: amendment.base,
         tally,
         conflicts,
@@ -227,7 +221,35 @@ pub async fn amend<P: Model + Source + StateStore + BlobStore + Plugins + Vcs + 
         sections: amendment.sections,
         slices: amendment.slices,
         repositories,
+        applied,
     })
+}
+
+// Stages `amendment` where it is a change, and seals it under `apply` once
+// the stage has landed, so a refused seal leaves it staged; a run staging
+// nothing seals nothing. Answers the staged id and what was sealed.
+async fn stage<P: StateStore + BlobStore + Vcs + Files>(
+    provider: &P, repo: &BuildRepo, standing: store::Standing, amendment: &Amendment, tally: Tally,
+    apply: bool,
+) -> Result<(Option<String>, Option<ApplyOutput>), Error> {
+    if !amendment.is_change() {
+        tracing::info!(base = %amendment.base.revision, "no change against the revision");
+        if apply {
+            tracing::info!("nothing staged, so nothing sealed");
+        }
+        return Ok((None, None));
+    }
+    let id = store::stage_amendment(provider, amendment).await?;
+    tracing::info!(
+        amendment = %id,
+        base = %amendment.base.revision,
+        ?tally,
+        sections = ?amendment.sections,
+        slices = amendment.slices.len(),
+        "staged"
+    );
+    let applied = if apply { Some(apply::seal(provider, repo, standing).await?) } else { None };
+    Ok((Some(id), applied))
 }
 
 /// The change sources an amendment is prepared from, and the target whose revision it amends.
@@ -240,17 +262,25 @@ pub struct AmendInput {
     /// The target whose repository the current revision lives in.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub target: Option<TargetRef>,
+    /// Whether to seal the staged amendment as the current revision in the
+    /// same run, as [`apply`](crate::apply::apply) would.
+    #[serde(default)]
+    pub apply: bool,
 }
 
-/// What a successful [`amend`] prepared, and whether it staged it.
+/// What a successful [`amend`] prepared, and whether it staged or sealed it.
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "kebab-case")]
 pub struct AmendOutput {
-    /// The content identifier of the staged amendment; absent when the
+    /// The content identifier of the amendment prepared; absent when the
     /// change changed nothing of the specification, the design, or the
     /// plan, so nothing was staged.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub amendment: Option<String>,
+    /// Whether the amendment stands staged for `emery apply`: `false` when
+    /// nothing was staged, and once the run sealed it under
+    /// [`AmendInput::apply`].
+    pub staged: bool,
     /// The revision the amendment was prepared against, at the commit it
     /// was read at.
     pub base: AmendmentBase,
@@ -275,6 +305,10 @@ pub struct AmendOutput {
     /// commit its revision resolved to.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub repositories: Vec<RepositorySource>,
+    /// What the run sealed under [`AmendInput::apply`]; absent otherwise,
+    /// and where nothing was staged to seal.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub applied: Option<ApplyOutput>,
 }
 
 /// How many requirements an [`Amendment`] holds under each class of change.

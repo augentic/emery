@@ -6,14 +6,18 @@ mod support;
 #[path = "support/verbs.rs"]
 mod verbs;
 
+use std::sync::Arc;
+
 use emery_adapter::source::{ClaimKind, SourceKind};
-use emery_engine::vcs::REVISION;
-use emery_engine::{STAGED_CONTAINER, STAGED_KEY};
+use emery_engine::amend::SliceClass;
+use emery_engine::vcs::{REVISION, RevisionMessage, SliceSummary, Summary};
+use emery_engine::{REVISION_KEY, STAGED_CONTAINER, STAGED_KEY};
+use omnia_sdk::vcs::Error;
 use omnia_test::SeenFormat;
 use serde_json::Value;
 use support::provider::{Provider, claim, cli, evidence, requirement, retire};
 use support::scratch::Scratch;
-use support::store::{seed, stage, stage_amendment};
+use support::store::{seed, stage, stage_amendment, written};
 use support::vcs::HEAD;
 use support::{cli_ok, fail};
 use verbs::verbs;
@@ -29,6 +33,8 @@ const CODE: &str = "acme:code@1.0.0";
 const SPEC: &[u8] = include_bytes!("build/spec.json");
 const DESIGN: &[u8] = include_bytes!("build/design.json");
 const PLAN: &[u8] = include_bytes!("build/plan.json");
+// `SPEC` with `orders.cancel` held in conflict between `docs` and `wiki`.
+const CONFLICTED_SPEC: &[u8] = include_bytes!("amend/conflicted-spec.json");
 const CHAIN_PLAN: &[u8] = include_bytes!("amend/chain-plan.json");
 const CLASSES: &str = include_str!("amend/classes.json");
 const RETIRED: &str = include_str!("amend/retired.json");
@@ -140,7 +146,7 @@ async fn amend_classes() {
         format!(
             "staged amendment {id}\n  base {revision} at {}\n  1 added, 1 changed, 0 retired, 1 \
              conflict, 2 unchanged\n  conflicts: auth.login\n  stems: auth, orders, session\n  \
-             slices: orders\n  nothing sealed; `emery show amendment` reviews it\n",
+             slices: orders (brief kept)\n  nothing sealed; `emery show amendment` reviews it\n",
             &HEAD[..8]
         )
     );
@@ -210,16 +216,14 @@ async fn amend_classes() {
     assert_eq!(envelope["conflicts"], serde_json::json!(["auth.login"]));
     assert_eq!(envelope["stems"], serde_json::json!(["auth", "orders", "session"]));
     assert_eq!(envelope["sections"], Value::Null, "an unchanged design is elided: {envelope}");
-    assert_eq!(
-        envelope["slices"],
-        serde_json::json!([{"id": "SLICE-002", "name": "orders", "class": "changed"}]),
-        "{envelope}"
-    );
+    let slices = r#"[{"id": "SLICE-002", "name": "orders", "class": "changed", "brief": "kept"}]"#;
+    assert_eq!(envelope["slices"], serde_json::from_str::<Value>(slices).expect("JSON"));
 
     // what was staged is what show renders: a changed requirement's old and
     // new statement and its redrafted scenarios, an unchanged one's
     // statement alone, no design section, and the slice the added
-    // requirement joined with its types and brief as they stood
+    // requirement joined with its types and brief as they stood, the brief
+    // noted as the base's since no slicing turn was put
     let shown = cli_ok(&provider, &["emery", "show", "amendment"]).await;
     let shown = String::from_utf8_lossy(&shown.stdout);
     assert!(!shown.contains("## Design"), "{shown}");
@@ -229,7 +233,7 @@ async fn amend_classes() {
              REQ-004, REQ-005]\nTypes: [orders.line, orders.order]\nDepends on: \
              [SLICE-001]\n\nDelivers order creation and cancellation for a signed-in caller; \
              verified by placing and cancelling an order under a session from \
-             `authentication`.\n"
+             `authentication`.\n\nNote: the brief is the base's; no slicing turn redrafted it.\n"
         ),
         "{shown}"
     );
@@ -283,8 +287,8 @@ async fn amend_retired() {
         String::from_utf8_lossy(&resp.stdout),
         format!(
             "staged amendment {id}\n  base {revision} at {}\n  0 added, 0 changed, 1 retired, 0 \
-             conflict, 3 unchanged\n  stems: orders\n  slices: orders\n  nothing sealed; `emery \
-             show amendment` reviews it\n",
+             conflict, 3 unchanged\n  stems: orders\n  slices: orders (brief kept)\n  nothing \
+             sealed; `emery show amendment` reviews it\n",
             &HEAD[..8]
         )
     );
@@ -319,7 +323,8 @@ async fn amend_retired() {
             "## Plan\n\n### Slice: orders [changed]\n\nID: SLICE-002\nRequirements: \
              [REQ-003]\nTypes: [orders.line, orders.order]\nDepends on: [SLICE-001]\n\nDelivers \
              order creation and cancellation for a signed-in caller; verified by placing and \
-             cancelling an order under a session from `authentication`.\n"
+             cancelling an order under a session from `authentication`.\n\nNote: the brief is \
+             the base's; no slicing turn redrafted it.\n"
         ),
         "{shown}"
     );
@@ -421,10 +426,13 @@ async fn amend_retired_slice() {
     );
     assert_eq!(
         amendment["slices"],
-        serde_json::json!([{"id": "SLICE-002", "name": "orders", "class": "removed"}]),
+        serde_json::json!([
+            {"id": "SLICE-002", "name": "orders", "class": "removed", "brief": "kept"}
+        ]),
         "{amendment}"
     );
 
+    // a removed slice carries no brief to note
     let shown = cli_ok(&provider, &["emery", "show", "amendment"]).await;
     let shown = String::from_utf8_lossy(&shown.stdout);
     assert!(
@@ -474,8 +482,8 @@ async fn amend_retired_chain() {
         String::from_utf8_lossy(&resp.stdout),
         format!(
             "staged amendment {id}\n  base {revision} at {}\n  0 added, 0 changed, 1 retired, 0 \
-             conflict, 3 unchanged\n  stems: session\n  slices: sessions (removed), orders\n  \
-             nothing sealed; `emery show amendment` reviews it\n",
+             conflict, 3 unchanged\n  stems: session\n  slices: sessions (removed), orders (brief \
+             kept)\n  nothing sealed; `emery show amendment` reviews it\n",
             &HEAD[..8]
         )
     );
@@ -491,8 +499,8 @@ async fn amend_retired_chain() {
     assert_eq!(
         amendment["slices"],
         serde_json::json!([
-            {"id": "SLICE-002", "name": "sessions", "class": "removed"},
-            {"id": "SLICE-003", "name": "orders", "class": "changed"}
+            {"id": "SLICE-002", "name": "sessions", "class": "removed", "brief": "kept"},
+            {"id": "SLICE-003", "name": "orders", "class": "changed", "brief": "kept"}
         ]),
         "{amendment}"
     );
@@ -641,8 +649,8 @@ async fn amend_retired_section() {
         String::from_utf8_lossy(&resp.stdout),
         format!(
             "staged amendment {id}\n  base {revision} at {}\n  0 added, 0 changed, 1 retired, 0 \
-             conflict, 3 unchanged\n  stems: orders\n  design: apis\n  slices: orders\n  nothing \
-             sealed; `emery show amendment` reviews it\n",
+             conflict, 3 unchanged\n  stems: orders\n  design: apis\n  slices: orders (brief \
+             kept)\n  nothing sealed; `emery show amendment` reviews it\n",
             &HEAD[..8]
         )
     );
@@ -832,8 +840,8 @@ async fn amend_scoped() {
         String::from_utf8_lossy(&resp.stdout),
         format!(
             "staged amendment {id}\n  base {revision} at {}\n  0 added, 0 changed, 1 retired (1 \
-             by scope), 0 conflict, 3 unchanged\n  stems: orders\n  slices: orders\n  nothing \
-             sealed; `emery show amendment` reviews it\n",
+             by scope), 0 conflict, 3 unchanged\n  stems: orders\n  slices: orders (brief \
+             kept)\n  nothing sealed; `emery show amendment` reviews it\n",
             &HEAD[..8]
         )
     );
@@ -996,36 +1004,19 @@ async fn amend_anchored() {
 // it leaves the slice of its old stem, which shrinks and keeps its types,
 // for a slice the slicing turn drafts over the current plan, numbered after
 // the base's, with the base's trigger carried. The turn's brief lists the
-// current slices fixed, the open stem with its trigger, and the requirement
-// it places as drafted.
+// current slices fixed, the old one touched and its brief to redraft, the
+// open stem with its trigger, and the requirement it places as drafted; the
+// redrafted brief stands in the shrunk slice, which the amendment lists as
+// changed with its brief redrafted.
 #[tokio::test]
 async fn amend_moved() {
-    // index 0 is `docs`, 1..=4 the standing requirements in id order
-    let grouping = r#"{"groups": [
-        {"claims": [0, 4], "classes": [[0, 4]]},
-        {"claims": [1], "classes": [[1]]},
-        {"claims": [2], "classes": [[2]]},
-        {"claims": [3], "classes": [[3]]}
-    ]}"#;
-    let draft = r#"{"preamble": [], "requirements": [
-        {"subject": "reporting.cancel", "scenarios": [
-            {"name": "Cancel", "when": "a signed-in caller cancels an order", "then": "the cancellation is reported"}
-        ]}
-    ]}"#;
     let slicing = r#"{"slices": [
         {"name": "reporting", "requirements": ["REQ-004"], "types": [], "depends-on": ["orders"],
          "brief": ["Reports a cancellation; edits the cancel handler, so it compiles against `orders`."]}
-    ], "joins": []}"#;
-    let mut provider = Provider::answering([grouping, draft, slicing]);
-    provider.source.evidence.insert(
-        "docs".to_owned(),
-        Ok(evidence(vec![requirement(
-            "reporting.cancel",
-            "A signed-in user cancels an open order.",
-        )])),
-    );
-    let revision = seed(&provider.files, SPEC, DESIGN, PLAN);
-
+    ], "joins": [], "briefs": [
+        {"slice": "SLICE-002", "brief": ["Delivers order creation for a signed-in caller; verified by placing an order under a session from `authentication`."]}
+    ]}"#;
+    let (provider, revision) = moved([slicing]);
     let resp = cli_ok(&provider, &["emery", "amend", DOCS, "--config", PROJECT_CONFIG]).await;
 
     let (id, amendment) = staged_amendment(&provider);
@@ -1042,18 +1033,22 @@ async fn amend_moved() {
     let draft = provider.model.seen()[1].messages.join("\n");
     assert!(draft.contains("- REQ-004 `reporting.cancel`"), "{draft}");
 
-    // the slicing turn: the current slices fixed, the old one touched, the
-    // open stem with the trigger it carries, and the requirement it places
-    let request = provider.model.seen()[2].messages.join("\n");
+    // the slicing turn: the current slices fixed, the old one touched and
+    // its brief asked for, the open stem with the trigger it carries, and
+    // the requirement it places; the schema asks one brief for the touched
+    // slice and at most one per current slice
+    let turn = &provider.model.seen()[2];
+    let request = turn.messages.join("\n");
     assert!(request.starts_with("Amend the build plan"), "{request}");
     assert!(
         request.contains(
             "## Current plan\n\n- `SLICE-001` `authentication` — REQ-001, REQ-002\n- `SLICE-002` \
              `orders` — REQ-003 — types: `orders.line`, `orders.order` — depends on: \
-             `authentication` — touched by this amendment\n\n## Open\n"
+             `authentication` — touched by this amendment\n\nA slice marked touched"
         ),
         "{request}"
     );
+    assert!(request.contains("Every other slice keeps its brief.\n\n## Open\n"), "{request}");
     assert!(
         request.contains("- `reporting` — REQ-004 — triggers: `orders.cancel-requested`\n"),
         "{request}"
@@ -1061,24 +1056,40 @@ async fn amend_moved() {
     assert!(!request.contains("Type keys the design holds"), "{request}");
     assert!(request.contains("## Requirements\n\nThe requirements the change adds"), "{request}");
     assert!(request.contains("- REQ-004 `reporting.cancel` — Status: unknown"), "{request}");
+    let SeenFormat::Schema { schema, .. } = &turn.format else {
+        panic!("the slicing is steered by schema");
+    };
+    let schema: Value = serde_json::from_str(schema).expect("the steering schema is JSON");
+    assert_eq!(schema["properties"]["briefs"]["minItems"], 1, "{schema}");
+    assert_eq!(schema["properties"]["briefs"]["maxItems"], 2, "{schema}");
+    assert_eq!(
+        schema["$defs"]["Rebrief"]["properties"]["slice"]["enum"],
+        serde_json::json!(["SLICE-001", "SLICE-002"])
+    );
+    assert_eq!(schema["$defs"]["Rebrief"]["properties"]["brief"]["minItems"], 1, "{schema}");
 
     // the change keeps the id under the new subject, with the base's trigger
     let moved = &amendment["changes"][3];
-    assert_eq!(moved["id"], "REQ-004", "{amendment}");
-    assert_eq!(moved["subject"], "reporting.cancel", "{amendment}");
-    assert_eq!(moved["class"], "changed", "{amendment}");
+    assert_eq!(
+        (&moved["id"], &moved["subject"], &moved["class"]),
+        (
+            &serde_json::json!("REQ-004"),
+            &serde_json::json!("reporting.cancel"),
+            &serde_json::json!("changed")
+        )
+    );
     let drafted = &amendment["spec"]["requirements"][3];
     assert_eq!(drafted["subject"], "reporting.cancel", "{amendment}");
     assert_eq!(drafted["trigger"], serde_json::json!({"message": "orders.cancel-requested"}));
 
-    // the plan: the old slice shrunk with its types, the new one after it
+    // the plan: the old slice shrunk with its types and its redrafted brief,
+    // the new one after it, and no note on a redrafted brief
     let base: Value = serde_json::from_slice(PLAN).expect("the base plan is JSON");
     let slices = amendment["plan"]["slices"].as_array().expect("slices");
     assert_eq!(slices.len(), 3, "{amendment}");
     assert_eq!(slices[0], base["slices"][0], "{amendment}");
     assert_eq!(slices[1]["requirements"], serde_json::json!(["REQ-003"]), "{amendment}");
     assert_eq!(slices[1]["types"], base["slices"][1]["types"], "{amendment}");
-    assert_eq!(slices[1]["brief"], base["slices"][1]["brief"], "{amendment}");
     assert_eq!(
         slices[2],
         serde_json::json!({
@@ -1091,13 +1102,110 @@ async fn amend_moved() {
     assert_eq!(
         amendment["slices"],
         serde_json::json!([
-            {"id": "SLICE-002", "name": "orders", "class": "changed"},
-            {"id": "SLICE-003", "name": "reporting", "class": "added"}
+            {"id": "SLICE-002", "name": "orders", "class": "changed", "brief": "redrafted"},
+            {"id": "SLICE-003", "name": "reporting", "class": "added", "brief": "redrafted"}
         ]),
         "{amendment}"
     );
     assert!(amendment["sections"]["changed"].as_array().is_some_and(Vec::is_empty), "{amendment}");
+    let shown = cli_ok(&provider, &["emery", "show", "amendment"]).await;
+    let shown = String::from_utf8_lossy(&shown.stdout);
+    assert!(
+        shown.contains(
+            "### Slice: orders [changed]\n\nID: SLICE-002\nRequirements: [REQ-003]\nTypes: \
+             [orders.line, orders.order]\nDepends on: [SLICE-001]\n\nDelivers order creation for \
+             a signed-in caller; verified by placing an order under a session from \
+             `authentication`.\n\n### Slice: reporting [added]"
+        ),
+        "{shown}"
+    );
     provider.model.assert_exhausted();
+}
+
+// The slicing turn's `briefs` are held to the slices this amendment touched
+// or its joins name: a brief for a slice that stands as it was, one for no
+// current slice, one listed twice, an empty one, and a touched slice left
+// without one are each refused and corrected.
+#[tokio::test]
+async fn amend_rebrief_refused() {
+    let placed = r#""slices": [
+        {"name": "reporting", "requirements": ["REQ-004"], "types": [], "depends-on": ["orders"],
+         "brief": ["Reports a cancellation."]}
+    ], "joins": []"#;
+    let refused = format!(
+        r#"{{{placed}, "briefs": [
+            {{"slice": "SLICE-001", "brief": ["Signs a caller in."]}},
+            {{"slice": "SLICE-009", "brief": ["Nothing."]}},
+            {{"slice": "SLICE-002", "brief": []}},
+            {{"slice": "SLICE-002", "brief": ["Delivers order creation."]}}
+        ]}}"#
+    );
+    let missing = format!(r#"{{{placed}, "briefs": []}}"#);
+    let corrected = format!(
+        r#"{{{placed}, "briefs": [{{"slice": "SLICE-002", "brief": ["Delivers order creation."]}}]}}"#
+    );
+    let (provider, _) = moved([refused.as_str(), missing.as_str(), corrected.as_str()]);
+
+    cli_ok(&provider, &["emery", "amend", DOCS, "--config", PROJECT_CONFIG]).await;
+
+    let exchanges = provider.model.exchanges();
+    assert_eq!(exchanges.len(), 5, "the grouping, the draft, and three slicing rounds");
+    let finding = exchanges[2].outcome.as_ref().expect_err("the first answer is refused");
+    for expected in [
+        "`briefs` `SLICE-001`: `authentication` stands as it was; it keeps its brief, so list \
+         no entry for it",
+        "`briefs` `SLICE-009` names no slice of the current plan",
+        "`briefs` `SLICE-002` is listed more than once; redraft it once",
+        "`briefs` `SLICE-002`: the brief is empty; redraft `orders`'s brief whole",
+    ] {
+        assert!(finding.contains(expected), "{expected}: {finding}");
+    }
+    let finding = exchanges[3].outcome.as_ref().expect_err("the second answer is refused");
+    assert!(
+        finding.contains(
+            "`orders` (SLICE-002) is touched by this amendment, or joined by the answer, and its \
+             brief is not redrafted; list it under `briefs`"
+        ),
+        "{finding}"
+    );
+    assert!(exchanges[4].outcome.is_ok(), "{:?}", exchanges[4].outcome);
+    let (_, amendment) = staged_amendment(&provider);
+    assert_eq!(
+        amendment["plan"]["slices"][1]["brief"],
+        serde_json::json!(["Delivers order creation."]),
+        "{amendment}"
+    );
+    provider.model.assert_exhausted();
+}
+
+// A documentation source restating the standing `orders.cancel` under
+// `reporting`, over a scripted grouping and draft, with `slicing` queued for
+// the slicing turn.
+fn moved<const N: usize>(slicing: [&str; N]) -> (Provider, String) {
+    // index 0 is `docs`, 1..=4 the standing requirements in id order
+    let grouping = r#"{"groups": [
+        {"claims": [0, 4], "classes": [[0, 4]]},
+        {"claims": [1], "classes": [[1]]},
+        {"claims": [2], "classes": [[2]]},
+        {"claims": [3], "classes": [[3]]}
+    ]}"#;
+    let draft = r#"{"preamble": [], "requirements": [
+        {"subject": "reporting.cancel", "scenarios": [
+            {"name": "Cancel", "when": "a signed-in caller cancels an order", "then": "the cancellation is reported"}
+        ]}
+    ]}"#;
+    let mut answers = vec![grouping, draft];
+    answers.extend(slicing);
+    let mut provider = Provider::answering(answers);
+    provider.source.evidence.insert(
+        "docs".to_owned(),
+        Ok(evidence(vec![requirement(
+            "reporting.cancel",
+            "A signed-in user cancels an open order.",
+        )])),
+    );
+    let revision = seed(&provider.files, SPEC, DESIGN, PLAN);
+    (provider, revision)
 }
 
 // A change restating every requirement of a slice under another stem empties
@@ -1124,7 +1232,7 @@ async fn amend_moved_slice() {
     let slicing = r#"{"slices": [
         {"name": "reporting", "requirements": ["REQ-003", "REQ-004"],
          "types": ["orders.line", "orders.order"], "depends-on": [], "brief": []}
-    ], "joins": []}"#;
+    ], "joins": [], "briefs": []}"#;
     let mut provider = Provider::answering([grouping, draft, slicing]);
     provider.source.evidence.insert(
         "docs".to_owned(),
@@ -1204,7 +1312,7 @@ async fn amend_sliced() {
     let slicing = r#"{"slices": [
         {"name": "rate-limit", "requirements": ["REQ-005", "REQ-006"], "types": [], "depends-on": ["orders"],
          "brief": ["Delivers the per-caller limit on order placement; edits the order handler, so it compiles against `orders`."]}
-    ], "joins": []}"#;
+    ], "joins": [], "briefs": []}"#;
     let (provider, revision) = limited([slicing]);
 
     let resp = cli_ok(&provider, &["emery", "amend", DOCS, "--config", PROJECT_CONFIG]).await;
@@ -1249,6 +1357,9 @@ async fn amend_sliced() {
         serde_json::json!(["SLICE-001", "SLICE-002"]),
         "{schema}"
     );
+    // no slice is touched, so no brief is required and one per join at most
+    assert_eq!(schema["properties"]["briefs"]["minItems"], 0, "{schema}");
+    assert_eq!(schema["properties"]["briefs"]["maxItems"], 2, "{schema}");
 
     let base: Value = serde_json::from_slice(PLAN).expect("the base plan is JSON");
     let slices = amendment["plan"]["slices"].as_array().expect("slices");
@@ -1267,7 +1378,9 @@ async fn amend_sliced() {
     assert_eq!(amendment["plan"]["preamble"], base["preamble"], "{amendment}");
     assert_eq!(
         amendment["slices"],
-        serde_json::json!([{"id": "SLICE-003", "name": "rate-limit", "class": "added"}]),
+        serde_json::json!([
+            {"id": "SLICE-003", "name": "rate-limit", "class": "added", "brief": "redrafted"}
+        ]),
         "{amendment}"
     );
     assert_eq!(provider.vcs.calls(), read_calls());
@@ -1275,11 +1388,13 @@ async fn amend_sliced() {
 }
 
 // The same change answered by joining the new stem into a current slice:
-// the slice holds the two beside its own, keeps its id, name, types, and
-// brief, and no slice is added.
+// the slice holds the two beside its own, keeps its id, name, and types,
+// takes the brief the answer redrafts for it, since a join names it, and no
+// slice is added.
 #[tokio::test]
 async fn amend_sliced_joined() {
-    let slicing = r#"{"slices": [], "joins": [{"slice": "SLICE-002", "requirements": ["REQ-005", "REQ-006"]}]}"#;
+    let slicing = r#"{"slices": [], "joins": [{"slice": "SLICE-002", "requirements": ["REQ-005", "REQ-006"]}],
+        "briefs": [{"slice": "SLICE-002", "brief": ["Delivers orders and the per-caller limit on placing them."]}]}"#;
     let (provider, _) = limited([slicing]);
 
     let resp = cli_ok(&provider, &["emery", "amend", DOCS, "--config", PROJECT_CONFIG]).await;
@@ -1297,10 +1412,16 @@ async fn amend_sliced_joined() {
         "{amendment}"
     );
     assert_eq!(slices[1]["types"], base["slices"][1]["types"], "{amendment}");
-    assert_eq!(slices[1]["brief"], base["slices"][1]["brief"], "{amendment}");
+    assert_eq!(
+        slices[1]["brief"],
+        serde_json::json!(["Delivers orders and the per-caller limit on placing them."]),
+        "{amendment}"
+    );
     assert_eq!(
         amendment["slices"],
-        serde_json::json!([{"id": "SLICE-002", "name": "orders", "class": "changed"}]),
+        serde_json::json!([
+            {"id": "SLICE-002", "name": "orders", "class": "changed", "brief": "redrafted"}
+        ]),
         "{amendment}"
     );
     provider.model.assert_exhausted();
@@ -1317,8 +1438,12 @@ async fn amend_sliced_refused() {
     ], "joins": [
         {"slice": "SLICE-001", "requirements": ["REQ-003"]},
         {"slice": "SLICE-002", "requirements": ["REQ-005", "REQ-006"]}
+    ], "briefs": [
+        {"slice": "SLICE-001", "brief": ["Signs a caller in and places an order."]},
+        {"slice": "SLICE-002", "brief": ["Delivers orders and their rate limit."]}
     ]}"#;
-    let corrected = r#"{"slices": [], "joins": [{"slice": "SLICE-002", "requirements": ["REQ-005", "REQ-006"]}]}"#;
+    let corrected = r#"{"slices": [], "joins": [{"slice": "SLICE-002", "requirements": ["REQ-005", "REQ-006"]}],
+        "briefs": [{"slice": "SLICE-002", "brief": ["Delivers orders and their rate limit."]}]}"#;
     let (provider, _) = limited([refused, corrected]);
 
     cli_ok(&provider, &["emery", "amend", DOCS, "--config", PROJECT_CONFIG]).await;
@@ -1382,7 +1507,7 @@ async fn amend_sliced_types() {
     let slicing = r#"{"slices": [
         {"name": "rate-limit", "requirements": ["REQ-005"], "types": ["rate-limit.counter"], "depends-on": ["orders"], "brief": []},
         {"name": "audit", "requirements": ["REQ-006"], "types": ["audit.entry"], "depends-on": [], "brief": []}
-    ], "joins": []}"#;
+    ], "joins": [], "briefs": []}"#;
     let mut provider = Provider::answering([grouping, draft, design.as_str(), slicing]);
     provider.source.evidence.insert(
         "docs".to_owned(),
@@ -1498,36 +1623,7 @@ fn limited<const N: usize>(slicing: [&str; N]) -> (Provider, String) {
 // and the correction lands.
 #[tokio::test]
 async fn amend_recut() {
-    let (spec, plan) = wide(12);
-    // index 0 is `docs`, 1..=12 the standing requirements in id order
-    let groups: Vec<Value> = (0..=12)
-        .map(|index| serde_json::json!({"claims": [index], "classes": [[index]]}))
-        .collect();
-    let grouping = serde_json::json!({"groups": groups}).to_string();
-    let draft = r#"{"preamble": [], "requirements": [
-        {"subject": "orders.refund", "scenarios": [
-            {"name": "Refund", "when": "a signed-in caller requests a refund", "then": "the refund is recorded"}
-        ]}
-    ]}"#;
-    let fine = r#"{"slices": [
-        {"name": "orders-mid", "requirements": ["REQ-005", "REQ-006", "REQ-007", "REQ-008"], "types": [], "depends-on": [], "brief": []},
-        {"name": "orders-late", "requirements": ["REQ-009", "REQ-010", "REQ-011", "REQ-012", "REQ-013"], "types": [], "depends-on": [], "brief": []}
-    ], "joins": [
-        {"slice": "SLICE-001", "requirements": ["REQ-001", "REQ-002", "REQ-003", "REQ-004"], "types": ["orders.line", "orders.order"]}
-    ]}"#;
-    let cut = r#"{"slices": [
-        {"name": "orders-late", "requirements": ["REQ-007", "REQ-008", "REQ-009", "REQ-010", "REQ-011", "REQ-012", "REQ-013"],
-         "types": [], "depends-on": ["orders"], "brief": ["Delivers the later items and the refund over the order book `orders` keeps."]}
-    ], "joins": [
-        {"slice": "SLICE-001", "requirements": ["REQ-001", "REQ-002", "REQ-003", "REQ-004", "REQ-005", "REQ-006"], "types": ["orders.line", "orders.order"]}
-    ]}"#;
-    let mut provider = Provider::answering([grouping.as_str(), draft, fine, cut]);
-    provider.source.evidence.insert(
-        "docs".to_owned(),
-        Ok(evidence(vec![requirement("orders.refund", "A signed-in user requests a refund.")])),
-    );
-    let revision = seed(&provider.files, &spec, DESIGN, &plan);
-
+    let (provider, revision) = recut();
     let resp = cli_ok(&provider, &["emery", "amend", DOCS, "--config", PROJECT_CONFIG]).await;
 
     let (id, amendment) = staged_amendment(&provider);
@@ -1548,7 +1644,7 @@ async fn amend_recut() {
     assert!(
         request.contains(
             "## Current plan\n\n- `SLICE-001` `orders` — no requirement; every one it held is \
-             open — touched by this amendment\n\n## Open\n"
+             open — touched by this amendment\n\nA slice marked touched"
         ),
         "{request}"
     );
@@ -1595,6 +1691,11 @@ async fn amend_recut() {
         "{amendment}"
     );
     assert_eq!(
+        slices[0]["brief"],
+        serde_json::json!(["Delivers the first six items of the order book, the types with them."]),
+        "the emptied slice takes the brief the turn redrafts: {amendment}"
+    );
+    assert_eq!(
         slices[1],
         serde_json::json!({
             "id": "SLICE-002", "name": "orders-late",
@@ -1605,6 +1706,46 @@ async fn amend_recut() {
         "{amendment}"
     );
     provider.model.assert_exhausted();
+}
+
+// The provider of `amend_recut`: a thirteenth `orders` requirement over the
+// twelve-wide base, the fine cut the gate refuses and the cut it accepts,
+// each rebriefing the slice the recut emptied.
+fn recut() -> (Provider, String) {
+    let (spec, plan) = wide(12);
+    // index 0 is `docs`, 1..=12 the standing requirements in id order
+    let groups: Vec<Value> = (0..=12)
+        .map(|index| serde_json::json!({"claims": [index], "classes": [[index]]}))
+        .collect();
+    let grouping = serde_json::json!({"groups": groups}).to_string();
+    let draft = r#"{"preamble": [], "requirements": [
+        {"subject": "orders.refund", "scenarios": [
+            {"name": "Refund", "when": "a signed-in caller requests a refund", "then": "the refund is recorded"}
+        ]}
+    ]}"#;
+    let fine = r#"{"slices": [
+        {"name": "orders-mid", "requirements": ["REQ-005", "REQ-006", "REQ-007", "REQ-008"], "types": [], "depends-on": [], "brief": []},
+        {"name": "orders-late", "requirements": ["REQ-009", "REQ-010", "REQ-011", "REQ-012", "REQ-013"], "types": [], "depends-on": [], "brief": []}
+    ], "joins": [
+        {"slice": "SLICE-001", "requirements": ["REQ-001", "REQ-002", "REQ-003", "REQ-004"], "types": ["orders.line", "orders.order"]}
+    ], "briefs": [
+        {"slice": "SLICE-001", "brief": ["Delivers the first items of the order book."]}
+    ]}"#;
+    let cut = r#"{"slices": [
+        {"name": "orders-late", "requirements": ["REQ-007", "REQ-008", "REQ-009", "REQ-010", "REQ-011", "REQ-012", "REQ-013"],
+         "types": [], "depends-on": ["orders"], "brief": ["Delivers the later items and the refund over the order book `orders` keeps."]}
+    ], "joins": [
+        {"slice": "SLICE-001", "requirements": ["REQ-001", "REQ-002", "REQ-003", "REQ-004", "REQ-005", "REQ-006"], "types": ["orders.line", "orders.order"]}
+    ], "briefs": [
+        {"slice": "SLICE-001", "brief": ["Delivers the first six items of the order book, the types with them."]}
+    ]}"#;
+    let mut provider = Provider::answering([grouping.as_str(), draft, fine, cut]);
+    provider.source.evidence.insert(
+        "docs".to_owned(),
+        Ok(evidence(vec![requirement("orders.refund", "A signed-in user requests a refund.")])),
+    );
+    let revision = seed(&provider.files, &spec, DESIGN, &plan);
+    (provider, revision)
 }
 
 // A base of `count` requirements under the one stem `orders`, in one slice
@@ -1782,7 +1923,7 @@ fn designed() -> (Provider, String) {
     let slicing = r#"{"slices": [
         {"name": "secrets", "requirements": ["REQ-005"], "types": [], "depends-on": [],
          "brief": ["Delivers the secret read every handler makes at use; verified against a fake store."]}
-    ], "joins": []}"#;
+    ], "joins": [], "briefs": []}"#;
     let mut provider = Provider::answering([grouping, draft, design.as_str(), slicing]);
     provider.source.evidence.insert(
         "docs".to_owned(),
@@ -2126,11 +2267,11 @@ async fn amend_retire_unmatched() {
     assert_eq!(provider.vcs.calls(), read_calls());
     provider.model.assert_exhausted();
 
-    // a retire beside the added claim it shares an id with, and a second in
-    // another group, are both named at once
+    // another source's retire beside the added claim it shares an id with,
+    // and a second in another group, are both named at once
     let added = r#"{"groups": [
-        {"claims": [0, 1], "classes": [[0], [1]]},
-        {"claims": [2], "classes": [[2]]},
+        {"claims": [0, 2], "classes": [[0], [2]]},
+        {"claims": [1], "classes": [[1]]},
         {"claims": [3], "classes": [[3]]},
         {"claims": [4], "classes": [[4]]},
         {"claims": [5], "classes": [[5]]},
@@ -2141,15 +2282,18 @@ async fn amend_retire_unmatched() {
         "docs".to_owned(),
         Ok(evidence(vec![
             requirement("orders.export", "A signed-in user downloads the order book."),
-            retire("orders.export", "Downloading the order book is withdrawn."),
             retire("orders.import", "Uploading orders from a file is withdrawn."),
         ])),
+    );
+    provider.source.evidence.insert(
+        "wiki".to_owned(),
+        Ok(evidence(vec![retire("orders.export", "Downloading the order book is withdrawn.")])),
     );
     seed(&provider.files, SPEC, DESIGN, PLAN);
 
     let envelope = fail(
         &provider,
-        &["emery", "amend", DOCS, "--config", PROJECT_CONFIG],
+        &["emery", "amend", DOCS, WIKI, "--config", PROJECT_CONFIG],
         1,
         "retire-unmatched",
     )
@@ -2157,7 +2301,7 @@ async fn amend_retire_unmatched() {
     assert!(
         envelope["message"].as_str().is_some_and(|text| {
             text.contains(
-                "retire `orders.export` from `docs`, `orders.import` from `docs` withdraw \
+                "retire `orders.export` from `wiki`, `orders.import` from `docs` withdraw \
                  behaviours",
             )
         }),
@@ -2166,13 +2310,9 @@ async fn amend_retire_unmatched() {
     assert!(provider.storage.state(STAGED_KEY).is_none(), "nothing is staged");
 }
 
-// A withdrawal and a revision of one requirement from two sources of one
-// rank are a conflict, as two statements are: the requirement is listed in
-// conflict with both claims behind it, nothing is retired, and the amended
-// specification holds it as a specify holds a conflict, the withdrawal a
-// competing statement among its notes.
-#[tokio::test]
-async fn amend_retire_contested() {
+// `docs` withdraws `orders.cancel` while `wiki` at the same rank revises
+// it, seeded over `SPEC` with the grouping and draft scripted.
+fn contested_retire() -> (Provider, String) {
     // indices 0 is `docs`, 1 `wiki`, 2..=5 the standing requirements in id order
     let grouping = r#"{"groups": [
         {"claims": [0, 1, 5], "classes": [[0], [1], [5]]},
@@ -2198,6 +2338,17 @@ async fn amend_retire_contested() {
         )])),
     );
     let revision = seed(&provider.files, SPEC, DESIGN, PLAN);
+    (provider, revision)
+}
+
+// A withdrawal and a revision of one requirement from two sources of one
+// rank are a conflict, as two statements are: the requirement is listed in
+// conflict with both claims behind it, nothing is retired, and the amended
+// specification holds it as a specify holds a conflict, the withdrawal a
+// competing statement among its notes.
+#[tokio::test]
+async fn amend_retire_contested() {
+    let (provider, revision) = contested_retire();
 
     let resp = cli_ok(&provider, &["emery", "amend", DOCS, WIKI, "--config", PROJECT_CONFIG]).await;
 
@@ -2233,6 +2384,272 @@ async fn amend_retire_contested() {
     assert_eq!(drafted["losers"][1]["sources"], serde_json::json!(["wiki"]), "{amendment}");
     assert_eq!(drafted["trigger"], serde_json::json!({"message": "orders.cancel-requested"}));
     assert_eq!(drafted["scenarios"][0]["name"], "Cancel", "{amendment}");
+    provider.model.assert_exhausted();
+
+    // the projection notes both statements before the reconciliation note
+    let shown = cli_ok(&provider, &["emery", "show", "amendment"]).await;
+    let shown = String::from_utf8_lossy(&shown.stdout);
+    assert!(
+        shown.contains(&format!(
+            "## Conflict\n\n### Requirement: orders.cancel [conflict]\n\nID: REQ-004\nSources: \
+             [docs:orders.cancel, wiki:orders.cancel]\n\nNote: docs (documentation, rank 2, \
+             orders.cancel): {WITHDRAWN}\nNote: wiki (documentation, rank 2, orders.cancel): A \
+             signed-in user cancels an order within an hour of placing it.\nNote: Operator \
+             reconciliation required.\n\n#### Scenario: Cancel\n"
+        )),
+        "{shown}"
+    );
+}
+
+// The conflict seals as a specify's would: `--apply` writes the
+// specification with the requirement in conflict, its competing statements
+// among its notes, counted under no trailer, and nothing refuses it, since
+// the next change is where the operator reconciles it.
+#[tokio::test]
+async fn amend_retire_contested_applied() {
+    let (provider, revision) = contested_retire();
+
+    let resp =
+        cli_ok(&provider, &["emery", "amend", DOCS, WIKI, "--apply", "--config", PROJECT_CONFIG])
+            .await;
+
+    let pointer = provider.storage.state(REVISION_KEY).expect("the pointer moves");
+    let sealed = String::from_utf8_lossy(&pointer).into_owned();
+    let stdout = String::from_utf8_lossy(&resp.stdout);
+    assert!(stdout.starts_with("staged amendment "), "{stdout}");
+    assert!(
+        stdout.ends_with(&format!(
+            "\n  base {revision} at {}\n  0 added, 0 changed, 0 retired, 1 conflict, 3 \
+             unchanged\n  conflicts: orders.cancel\n  stems: orders\n  sealed revision {sealed} \
+             as emery/{sealed} at Revision\n    amends {revision}\n",
+            &HEAD[..8]
+        )),
+        "{stdout}"
+    );
+    let spec: Value =
+        serde_json::from_slice(&written(&provider.files, "spec")).expect("the sealed spec is JSON");
+    let sealed_cancel = &spec["requirements"][3];
+    assert_eq!(sealed_cancel["id"], "REQ-004", "{spec}");
+    assert_eq!(sealed_cancel["status"], "conflict", "{spec}");
+    assert_eq!(sealed_cancel["body"], serde_json::json!([]), "{spec}");
+    assert_eq!(sealed_cancel["losers"][0]["statement"], WITHDRAWN, "{spec}");
+    assert_eq!(sealed_cancel["losers"][1]["sources"], serde_json::json!(["wiki"]), "{spec}");
+    assert!(provider.storage.state(STAGED_KEY).is_none(), "the slot is cleared");
+    let message = RevisionMessage::parse(&provider.vcs.messages()[0]).expect("a revision message");
+    assert_eq!(message.parent.as_deref(), Some(revision.as_str()), "{message:?}");
+    assert_eq!(
+        message.summary,
+        Some(Summary {
+            added: 0,
+            changed: 0,
+            retired: 0,
+            slices: Vec::new(),
+        }),
+        "{message:?}"
+    );
+    provider.model.assert_exhausted();
+}
+
+// A source cannot conflict with itself: a `retire` beside the same source's
+// `requirement` under one id is passed over before the grouping, so the
+// requirement is changed to the restatement, nothing is retired, and the
+// grouping never sees the withdrawal.
+#[tokio::test]
+async fn amend_retire_own() {
+    let restated = "A signed-in user cancels an order within an hour of placing it.";
+    // index 0 is `docs`' requirement, its retire passed over, and 1..=4 the
+    // standing requirements in id order
+    let grouping = r#"{"groups": [
+        {"claims": [0, 4], "classes": [[0], [4]]},
+        {"claims": [1], "classes": [[1]]},
+        {"claims": [2], "classes": [[2]]},
+        {"claims": [3], "classes": [[3]]}
+    ]}"#;
+    let draft = r#"{"preamble": [], "requirements": [
+        {"subject": "orders.cancel", "scenarios": [
+            {"name": "Cancel", "when": "a signed-in caller cancels an order within an hour", "then": "the order is cancelled"}
+        ]}
+    ]}"#;
+    let mut provider = Provider::answering([grouping, draft]);
+    provider.source.evidence.insert(
+        "docs".to_owned(),
+        Ok(evidence(vec![
+            retire("orders.cancel", WITHDRAWN),
+            requirement("orders.cancel", restated),
+        ])),
+    );
+    let revision = seed(&provider.files, SPEC, DESIGN, PLAN);
+
+    let resp = cli_ok(&provider, &["emery", "amend", DOCS, "--config", PROJECT_CONFIG]).await;
+
+    let (id, amendment) = staged_amendment(&provider);
+    assert_eq!(
+        String::from_utf8_lossy(&resp.stdout),
+        format!(
+            "staged amendment {id}\n  base {revision} at {}\n  0 added, 1 changed, 0 retired, 0 \
+             conflict, 3 unchanged\n  stems: orders\n  nothing sealed; `emery show amendment` \
+             reviews it\n",
+            &HEAD[..8]
+        )
+    );
+    let request = provider.model.seen()[0].messages.join("\n");
+    assert!(request.contains(&format!("- 0 `docs` `orders.cancel` — {restated}")), "{request}");
+    assert!(!request.contains("(retire) —"), "the withdrawal is passed over: {request}");
+    assert!(request.contains("- 4 `orders.cancel`"), "{request}");
+    assert!(!request.contains("- 5 "), "the indices run on from the one claim: {request}");
+    let changed = &amendment["changes"][3];
+    assert_eq!(changed["id"], "REQ-004", "{amendment}");
+    assert_eq!(changed["class"], "changed", "{amendment}");
+    assert_eq!(changed["before"], "A signed-in user cancels an open order.", "{amendment}");
+    assert_eq!(changed["after"], restated, "{amendment}");
+    assert_eq!(
+        changed["sources"],
+        serde_json::json!([{"source": "docs", "claim": "orders.cancel", "path": null}]),
+        "{amendment}"
+    );
+    let drafted = &amendment["spec"]["requirements"][3];
+    assert_eq!(drafted["status"], "unknown", "{amendment}");
+    assert_eq!(drafted["body"], serde_json::json!([restated]), "{amendment}");
+    assert_eq!(drafted["losers"], serde_json::json!([]), "{amendment}");
+    provider.model.assert_exhausted();
+}
+
+// A requirement the base holds in conflict stands as one requirement whose
+// statement lists the competing statements, so a claim matched to it
+// resolves the conflict: the grouping lists one standing entry for it, the
+// change is `changed` with the competing statements as `before` and the
+// claim's statement as `after`, the amended specification holds it under
+// the status the change sources alone settle with its notes gone, and `show
+// amendment` prints the competing statements on its `Before:` line.
+#[tokio::test]
+async fn amend_resolves_conflict() {
+    let competing = "[conflict] A signed-in user cancels an open order. | A signed-in user \
+                     cancels an order within an hour of placing it.";
+    let resolved = "A signed-in user cancels an order within a day of placing it.";
+    // index 0 is `docs`, 1..=4 the standing requirements in id order
+    let grouping = r#"{"groups": [
+        {"claims": [0, 4], "classes": [[0], [4]]},
+        {"claims": [1], "classes": [[1]]},
+        {"claims": [2], "classes": [[2]]},
+        {"claims": [3], "classes": [[3]]}
+    ]}"#;
+    let draft = r#"{"preamble": [], "requirements": [
+        {"subject": "orders.cancel", "scenarios": [
+            {"name": "Cancel", "when": "a signed-in caller cancels an order placed a day ago", "then": "the order is cancelled"}
+        ]}
+    ]}"#;
+    let mut provider = Provider::answering([grouping, draft]);
+    provider
+        .source
+        .evidence
+        .insert("docs".to_owned(), Ok(evidence(vec![requirement("orders.cancel", resolved)])));
+    let revision = seed(&provider.files, CONFLICTED_SPEC, DESIGN, PLAN);
+
+    let resp = cli_ok(&provider, &["emery", "amend", DOCS, "--config", PROJECT_CONFIG]).await;
+
+    let (id, amendment) = staged_amendment(&provider);
+    assert_eq!(
+        String::from_utf8_lossy(&resp.stdout),
+        format!(
+            "staged amendment {id}\n  base {revision} at {}\n  0 added, 1 changed, 0 retired, 0 \
+             conflict, 3 unchanged\n  stems: orders\n  nothing sealed; `emery show amendment` \
+             reviews it\n",
+            &HEAD[..8]
+        )
+    );
+
+    // the conflicted requirement is one standing entry listing both
+    // statements, pre-merged with the claim at its id
+    let request = provider.model.seen()[0].messages.join("\n");
+    assert!(request.contains(&format!("- 4 `orders.cancel` — {competing}")), "{request}");
+    assert!(!request.contains("- 5 "), "one entry per standing requirement: {request}");
+    assert!(request.contains("claims 0, 4 share the id `orders.cancel`"), "{request}");
+    let draft = provider.model.seen()[1].messages.join("\n");
+    assert!(
+        draft.contains(
+            "- REQ-004 `orders.cancel` — Status: unknown — Sources: [docs:orders.cancel]"
+        ),
+        "the status is the change sources' alone: {draft}"
+    );
+
+    let changed = &amendment["changes"][3];
+    assert_eq!(changed["id"], "REQ-004", "{amendment}");
+    assert_eq!(changed["class"], "changed", "{amendment}");
+    assert_eq!(changed["before"], competing, "{amendment}");
+    assert_eq!(changed["after"], resolved, "{amendment}");
+    let drafted = &amendment["spec"]["requirements"][3];
+    assert_eq!(drafted["status"], "unknown", "{amendment}");
+    assert_eq!(drafted["body"], serde_json::json!([resolved]), "{amendment}");
+    assert_eq!(drafted["losers"], serde_json::json!([]), "{amendment}");
+    assert_eq!(
+        drafted["sources"],
+        serde_json::json!([{"source": "docs", "claim": "orders.cancel", "path": null}]),
+        "{amendment}"
+    );
+    assert_eq!(drafted["trigger"], serde_json::json!({"message": "orders.cancel-requested"}));
+
+    let shown = cli_ok(&provider, &["emery", "show", "amendment"]).await;
+    let shown = String::from_utf8_lossy(&shown.stdout);
+    assert!(
+        shown.contains(&format!(
+            "## Changed\n\n### Requirement: orders.cancel\n\nID: REQ-004\nSources: \
+             [docs:orders.cancel]\n\nBefore: {competing}\n\nAfter: {resolved}\n\n#### Scenario: \
+             Cancel\n"
+        )),
+        "{shown}"
+    );
+    assert!(!shown.contains("Operator reconciliation required"), "{shown}");
+    assert_eq!(provider.vcs.calls(), read_calls());
+    provider.model.assert_exhausted();
+}
+
+// A requirement the base holds in conflict that no claim touches stands as
+// it is, its conflict included: the entry is unchanged with the competing
+// statements as its statement before and after, the amended specification
+// holds it as the base does, and `show amendment` lists it so.
+#[tokio::test]
+async fn amend_conflict_unchanged() {
+    let competing = "[conflict] A signed-in user cancels an open order. | A signed-in user \
+                     cancels an order within an hour of placing it.";
+    // index 0 is `docs`, 1..=4 the standing requirements in id order
+    let grouping = r#"{"groups": [
+        {"claims": [0, 3], "classes": [[0], [3]]},
+        {"claims": [1], "classes": [[1]]},
+        {"claims": [2], "classes": [[2]]},
+        {"claims": [4], "classes": [[4]]}
+    ]}"#;
+    let draft = r#"{"preamble": [], "requirements": [
+        {"subject": "orders.create", "scenarios": [
+            {"name": "Create", "when": "a signed-in caller places an order of ten lines", "then": "the order is created"}
+        ]}
+    ]}"#;
+    let mut provider = Provider::answering([grouping, draft]);
+    provider.source.evidence.insert(
+        "docs".to_owned(),
+        Ok(evidence(vec![requirement(
+            "orders.create",
+            "A signed-in user places an order of up to ten lines.",
+        )])),
+    );
+    seed(&provider.files, CONFLICTED_SPEC, DESIGN, PLAN);
+
+    cli_ok(&provider, &["emery", "amend", DOCS, "--config", PROJECT_CONFIG]).await;
+
+    let (_, amendment) = staged_amendment(&provider);
+    let standing = &amendment["changes"][3];
+    assert_eq!(standing["class"], "unchanged", "{amendment}");
+    assert_eq!(standing["before"], competing, "{amendment}");
+    assert_eq!(standing["after"], competing, "{amendment}");
+    let base: Value = serde_json::from_slice(CONFLICTED_SPEC).expect("the base is JSON");
+    assert_eq!(amendment["spec"]["requirements"][3], base["requirements"][3], "{amendment}");
+    let shown = cli_ok(&provider, &["emery", "show", "amendment"]).await;
+    let shown = String::from_utf8_lossy(&shown.stdout);
+    assert!(
+        shown.contains(&format!(
+            "### Requirement: orders.cancel\n\nID: REQ-004\nSources: []\n\n{competing}\n"
+        )),
+        "{shown}"
+    );
     provider.model.assert_exhausted();
 }
 
@@ -2307,6 +2724,188 @@ async fn amend_no_change() {
     assert_eq!(envelope["amendment"], Value::Null, "{envelope}");
     assert_eq!(envelope["stems"], Value::Null, "an empty list is elided: {envelope}");
     assert_eq!(envelope["tally"]["unchanged"], 4, "{envelope}");
+    provider.model.assert_exhausted();
+}
+
+// `amend --apply` seals what it stages in the same run: the amendment lands
+// in the slot, then its three documents are sealed as a revision over the
+// base the run read, under the base as parent with the counts and the
+// slices in the message, the slot is cleared, the pointer names the sealed
+// revision, and the output carries the staged block and the seal in place
+// of the `nothing sealed` line, the envelope `applied` as `apply` answers
+// it and `staged` false since nothing stands staged after the seal.
+#[tokio::test]
+async fn amend_apply() {
+    let mut provider = Provider::answering([CLASSES_GROUPING, CLASSES_DRAFT]);
+    bind(&mut provider);
+    let revision = seed(&provider.files, SPEC, DESIGN, PLAN);
+
+    let resp = cli_ok(
+        &provider,
+        &["emery", "--format", "json", "amend", DOCS, WIKI, "--apply", "--config", PROJECT_CONFIG],
+    )
+    .await;
+
+    // the envelope carries what apply answers beside the amendment's report
+    let envelope: Value = serde_json::from_slice(&resp.stdout).expect("one JSON envelope");
+    let amendment = envelope["amendment"].as_str().expect("the amendment's id").to_owned();
+    let sealed = envelope["applied"]["revision"].as_str().expect("the sealed id").to_owned();
+    assert_ne!(sealed, revision);
+    assert_eq!(envelope["staged"], false, "{envelope}");
+    assert_eq!(envelope["tally"]["changed"], 1, "{envelope}");
+    assert_eq!(envelope["applied"]["parent"], revision, "{envelope}");
+    assert_eq!(envelope["applied"]["kind"], "amendment", "{envelope}");
+    assert_eq!(envelope["applied"]["amendment"], amendment, "{envelope}");
+    assert_eq!(envelope["applied"]["label"], format!("emery/{sealed}"), "{envelope}");
+    assert_eq!(envelope["applied"]["commit"], "Revision-commit", "{envelope}");
+    assert_eq!(envelope["applied"]["diff"]["from"], revision, "{envelope}");
+
+    // the sealed documents are the amendment's
+    let expected: Value = serde_json::from_str(&CLASSES.replace("<revision>", &revision))
+        .expect("the fixture is JSON");
+    let spec: Value =
+        serde_json::from_slice(&written(&provider.files, "spec")).expect("the sealed spec is JSON");
+    assert_eq!(spec, expected["spec"]);
+    let pointer = provider.storage.state(REVISION_KEY).expect("the pointer moves");
+    assert_eq!(String::from_utf8_lossy(&pointer), sealed);
+    assert!(provider.storage.state(STAGED_KEY).is_none(), "the slot is cleared");
+    assert!(provider.storage.objects(STAGED_CONTAINER).is_empty(), "the amendment is pruned");
+    let message = RevisionMessage::parse(&provider.vcs.messages()[0]).expect("a revision message");
+    assert_eq!(
+        message,
+        RevisionMessage {
+            revision: sealed.clone(),
+            parent: Some(revision.clone()),
+            base: Some(HEAD.to_owned()),
+            summary: Some(Summary {
+                added: 1,
+                changed: 1,
+                retired: 0,
+                slices: vec![SliceSummary {
+                    id: "SLICE-002".parse().expect("a slice id"),
+                    name: "orders".to_owned(),
+                    class: SliceClass::Changed,
+                }],
+            }),
+        }
+    );
+    assert!(
+        provider.vcs.calls().contains(&format!("label . emery/{sealed} Revision-commit")),
+        "{:?}",
+        provider.vcs.calls()
+    );
+    provider.model.assert_exhausted();
+
+    // the text render prints the staged block, then the seal in place of
+    // the `nothing sealed` line
+    let mut provider = Provider::answering([CLASSES_GROUPING, CLASSES_DRAFT]);
+    bind(&mut provider);
+    seed(&provider.files, SPEC, DESIGN, PLAN);
+    let resp =
+        cli_ok(&provider, &["emery", "amend", DOCS, WIKI, "--apply", "--config", PROJECT_CONFIG])
+            .await;
+    let stdout = String::from_utf8_lossy(&resp.stdout);
+    assert_eq!(
+        stdout,
+        format!(
+            "staged amendment {amendment}\n  base {revision} at {}\n  1 added, 1 changed, 0 \
+             retired, 1 conflict, 2 unchanged\n  conflicts: auth.login\n  stems: auth, orders, \
+             session\n  slices: orders (brief kept)\n  sealed revision {sealed} as emery/{sealed} \
+             at Revision\n    amends {revision}\n",
+            &HEAD[..8]
+        )
+    );
+    provider.model.assert_exhausted();
+}
+
+// The stage lands before the seal is attempted: a seal the repository
+// refuses fails the run after the amendment is staged, so `emery apply` can
+// seal it once the repository answers, and nothing of the current revision
+// moves.
+#[tokio::test]
+async fn amend_apply_seal_refused() {
+    let mut provider = Provider::answering([CLASSES_GROUPING, CLASSES_DRAFT]);
+    bind(&mut provider);
+    let revision = seed(&provider.files, SPEC, DESIGN, PLAN);
+    provider.vcs.commits.script(REVISION, Err(Error::Access("index.lock held".to_owned())));
+
+    let resp = cli(
+        &provider,
+        &["emery", "--format", "json", "amend", DOCS, WIKI, "--apply", "--config", PROJECT_CONFIG],
+    )
+    .await;
+
+    assert_eq!(resp.exit, 4, "{}", String::from_utf8_lossy(&resp.stderr));
+    let envelope: Value = serde_json::from_slice(&resp.stderr).expect("one JSON envelope");
+    assert_eq!(envelope["error"], "bad_gateway", "{envelope}");
+    assert!(
+        envelope["message"].as_str().is_some_and(|message| message.contains("index.lock held")),
+        "{envelope}"
+    );
+    let (id, amendment) = staged_amendment(&provider);
+    assert_eq!(amendment["base"]["revision"], revision, "the amendment stands staged");
+    assert!(provider.storage.state(REVISION_KEY).is_none(), "the pointer does not move");
+    assert!(
+        !provider.vcs.calls().iter().any(|call| call.starts_with("label ")),
+        "nothing is labelled"
+    );
+    provider.model.assert_exhausted();
+
+    // once the repository answers, apply seals what the run left staged
+    let provider = Provider::over(Arc::clone(&provider.storage), Vec::<String>::new());
+    seed(&provider.files, SPEC, DESIGN, PLAN);
+    let resp =
+        cli_ok(&provider, &["emery", "--format", "json", "apply", "--config", PROJECT_CONFIG])
+            .await;
+    let envelope: Value = serde_json::from_slice(&resp.stdout).expect("one JSON envelope");
+    assert_eq!(envelope["kind"], "amendment", "{envelope}");
+    assert_eq!(envelope["amendment"], id, "{envelope}");
+    assert_eq!(envelope["parent"], revision, "{envelope}");
+    assert!(provider.storage.state(STAGED_KEY).is_none(), "the slot is cleared");
+}
+
+// A change that stages nothing seals nothing under `--apply`: the run says
+// so and the repository is read and never written.
+#[tokio::test]
+async fn amend_apply_no_change() {
+    let grouping = r#"{"groups": [
+        {"claims": [0, 3], "classes": [[0, 3]]},
+        {"claims": [1], "classes": [[1]]},
+        {"claims": [2], "classes": [[2]]},
+        {"claims": [4], "classes": [[4]]}
+    ]}"#;
+    let mut provider = Provider::answering([grouping, grouping]);
+    provider.source.evidence.insert(
+        "docs".to_owned(),
+        Ok(evidence(vec![requirement("orders.create", "A signed-in user places an order.")])),
+    );
+    let revision = seed(&provider.files, SPEC, DESIGN, PLAN);
+
+    let resp =
+        cli_ok(&provider, &["emery", "amend", DOCS, "--apply", "--config", PROJECT_CONFIG]).await;
+
+    assert_eq!(
+        String::from_utf8_lossy(&resp.stdout),
+        format!(
+            "nothing staged: no change against the current revision\n  base {revision} at {}\n  \
+             0 added, 0 changed, 0 retired, 0 conflict, 4 unchanged\n",
+            &HEAD[..8]
+        )
+    );
+    assert!(provider.storage.state(STAGED_KEY).is_none(), "nothing is staged");
+    assert!(provider.storage.state(REVISION_KEY).is_none(), "nothing is sealed");
+    assert_eq!(provider.vcs.calls(), read_calls());
+    assert!(provider.vcs.messages().is_empty(), "nothing is sealed");
+
+    let resp = cli_ok(
+        &provider,
+        &["emery", "--format", "json", "amend", DOCS, "--apply", "--config", PROJECT_CONFIG],
+    )
+    .await;
+    let envelope: Value = serde_json::from_slice(&resp.stdout).expect("one JSON envelope");
+    assert_eq!(envelope["amendment"], Value::Null, "{envelope}");
+    assert_eq!(envelope["staged"], false, "{envelope}");
+    assert_eq!(envelope["applied"], Value::Null, "{envelope}");
     provider.model.assert_exhausted();
 }
 
@@ -2428,6 +3027,42 @@ async fn amend_no_revision() {
     );
 }
 
+// A `spec/` at the head that holds three documents reading as no revision —
+// a merge of two branches that each sealed one, left with its conflict
+// markers — was edited or merged by hand, since a seal writes the documents
+// whole: the amend is refused `spec-mismatch` before any load, naming the
+// commit and what failed to read, and the hint says to keep one side's
+// three files whole and amend again over them.
+#[tokio::test]
+async fn amend_hand_merged() {
+    let provider = Provider::idle();
+    seed(&provider.files, HAND_MERGED, DESIGN, PLAN);
+
+    let envelope =
+        fail(&provider, &["emery", "amend", DOCS, "--config", PROJECT_CONFIG], 1, "spec-mismatch")
+            .await;
+
+    let message = envelope["message"].as_str().expect("a message");
+    assert!(
+        message.starts_with(&format!(
+            "`spec/` at commit `{HEAD}` holds documents that read as no revision (`spec` is not \
+             JSON"
+        )),
+        "{envelope}"
+    );
+    assert!(message.contains("edited or merged by hand"), "{envelope}");
+    let hint = envelope["hint"].as_str().expect("a hint");
+    assert!(hint.contains("git checkout <branch> -- spec/"), "{envelope}");
+    assert!(hint.contains("amendment again"), "{envelope}");
+    assert!(provider.source.calls().is_empty(), "no source is extracted over a hand-merged tree");
+    assert_eq!(provider.vcs.calls(), read_calls(), "read, and nothing written");
+}
+
+// `tests/build/spec.json` as a hand merge of two branches leaves it, the
+// conflict markers committed, so it is no JSON.
+const HAND_MERGED: &[u8] =
+    b"<<<<<<< a\n{\"emery\": 8}\n=======\n{\"emery\": 8, \"parent\": null}\n>>>>>>> b\n";
+
 // An amend reads the current revision from the target's repository, so a run
 // naming no `[target]` is refused typed before anything is read, and one
 // naming no source is refused as a specify is.
@@ -2453,25 +3088,25 @@ async fn amend_target_required() {
     );
 }
 
-// The verb is hidden while nothing seals what it stages: it runs and has
-// help of its own, and the top-level help and the completions leave it out.
+// The verb is a public one: the top-level help and the completions list it
+// beside the others, and its own help names its flags.
 #[tokio::test]
-async fn amend_hidden() {
+async fn amend_shown() {
     let provider = Provider::idle();
 
     let help = cli_ok(&provider, &["emery", "amend", "--help"]).await;
     let help = String::from_utf8_lossy(&help.stdout);
     assert!(help.contains("--description"), "{help}");
     assert!(help.contains("--config"), "{help}");
+    assert!(help.contains("--apply"), "{help}");
 
-    let top = cli(&provider, &["emery", "--help"]).await;
+    let top = cli_ok(&provider, &["emery", "--help"]).await;
     let top = String::from_utf8_lossy(&top.stdout);
-    assert!(!verbs(&top).contains(&"amend"), "{top}");
+    assert!(verbs(&top).contains(&"amend"), "{top}");
 
     let completions = cli_ok(&provider, &["emery", "completions", "zsh"]).await;
     let completions = String::from_utf8_lossy(&completions.stdout);
-    assert!(completions.contains("'apply:"), "the shown verbs are completed: {completions}");
-    assert!(!completions.contains("'amend:"), "{completions}");
-    assert!(!completions.contains("(amend)"), "{completions}");
+    assert!(completions.contains("'apply:"), "{completions}");
+    assert!(completions.contains("'amend:"), "the verb is completed: {completions}");
     assert!(completions.contains("amendment"), "the artifact the verb stages is: {completions}");
 }

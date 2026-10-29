@@ -1,4 +1,4 @@
-//! Verifies `emery apply` and `emery specify --apply` over scripted storage and version control.
+//! Verifies `emery apply` and `emery specify --apply [--fresh]` over scripted storage and version control.
 
 #![cfg(not(target_arch = "wasm32"))]
 
@@ -6,13 +6,16 @@ mod support;
 
 use std::sync::Arc;
 
-use emery_engine::vcs::{REVISION, RevisionMessage};
+use emery_engine::amend::SliceClass;
+use emery_engine::vcs::{REVISION, RevisionMessage, SliceSummary, Summary};
 use emery_engine::{EntryKind, REVISION_KEY, STAGED_CONTAINER, STAGED_KEY};
 use omnia_sdk::vcs::{Change, ChangeKind, Error};
-use serde_json::Value;
+use serde_json::{Value, json};
 use support::provider::{Provider, cli};
 use support::scratch::Scratch;
-use support::store::{carry, document, seed, stage, staged};
+use support::store::{
+    carry, document, revision, seed, stage, stage_amendment, stage_fresh, staged, written,
+};
 use support::vcs::HEAD;
 use support::{cli_ok, fail};
 
@@ -32,6 +35,8 @@ const SPEC: &[u8] = include_bytes!("build/spec.json");
 const DESIGN: &[u8] = include_bytes!("build/design.json");
 const PLAN: &[u8] = include_bytes!("build/plan.json");
 const WIDE_PLAN: &[u8] = include_bytes!("build/wide-plan.json");
+// `SPEC` with `orders.cancel` held in conflict between `docs` and `wiki`.
+const CONFLICTED_SPEC: &[u8] = include_bytes!("amend/conflicted-spec.json");
 
 // A staged candidate becomes the current revision: the repository the
 // target names is read for the revision it holds, the three documents are
@@ -82,6 +87,7 @@ async fn apply_seals() {
             revision: id.clone(),
             parent: None,
             base: Some(HEAD.to_owned()),
+            summary: None,
         }
     );
     assert!(provider.storage.state(STAGED_KEY).is_none(), "the staged slot is cleared");
@@ -262,6 +268,541 @@ async fn apply_amends() {
         ]),
         "{envelope}"
     );
+}
+
+// An amendment prepared against `base` at `commit`, as `emery amend` stages
+// one over `SPEC`, `DESIGN`, and `PLAN`: the timeout revised under its id,
+// the cancellation retired and leaving its slice, a refund added under the
+// next id into the slice of its stem, the rest as the base holds it.
+fn amendment_over(base: &str, commit: &str) -> Vec<u8> {
+    let mut spec: Value = serde_json::from_slice(SPEC).expect("spec.json is JSON");
+    let mut design: Value = serde_json::from_slice(DESIGN).expect("design.json is JSON");
+    let mut plan: Value = serde_json::from_slice(PLAN).expect("plan.json is JSON");
+    let before = "Sessions expire after an hour of inactivity.";
+    let after = "Sessions expire after 30 minutes of inactivity.";
+    let refund = "A signed-in user requests a refund of a delivered order.";
+
+    spec["parent"] = json!(base);
+    let requirements = spec["requirements"].as_array_mut().expect("requirements");
+    requirements[1]["body"] = json!([after]);
+    let mut added = requirements.remove(3);
+    added["id"] = json!("REQ-005");
+    added["subject"] = json!("orders.refund");
+    added["body"] = json!([refund]);
+    requirements.push(added);
+    design["parent"] = json!(base);
+    plan["parent"] = json!(base);
+    plan["slices"][1]["requirements"] = json!(["REQ-003", "REQ-005"]);
+
+    let change = |id: &str, subject: &str, class: &str, before: Value, after: Value| {
+        json!({
+            "id": id, "subject": subject, "class": class, "before": before, "after": after,
+            "sources": [], "scope": null,
+        })
+    };
+    let amendment = json!({
+        "emery": 8,
+        "base": {"revision": base, "commit": commit},
+        "changes": [
+            change("REQ-001", "auth.login", "unchanged",
+                json!("Users sign in with a credential."), json!("Users sign in with a credential.")),
+            change("REQ-002", "session.timeout", "changed", json!(before), json!(after)),
+            change("REQ-003", "orders.create", "unchanged",
+                json!("A signed-in user places an order."), json!("A signed-in user places an order.")),
+            change("REQ-004", "orders.cancel", "retired",
+                json!("A signed-in user cancels an open order."), Value::Null),
+            change("REQ-005", "orders.refund", "added", Value::Null, json!(refund)),
+        ],
+        "spec": spec,
+        "design": design,
+        "plan": plan,
+        "sections": {"preamble": false, "added": [], "removed": [], "changed": []},
+        "slices": [{"id": "SLICE-002", "name": "orders", "class": "changed", "brief": "kept"}],
+    });
+    serde_json::to_vec_pretty(&amendment).expect("the amendment serialises")
+}
+
+// A staged amendment seals as a revision over its base: the repository is
+// read for the revision it holds, the amendment's three documents are
+// written under `spec/` in a working copy cut at the commit the base was
+// read at, sealed as one commit whose message names the base as parent and
+// carries the counts and the slices changed, and labelled; the pointer
+// names the sealed revision, the slot is cleared and the amendment pruned,
+// the base's label stands, and the output names the sealed revision, the
+// base it amends, and the diff within one history, the withdrawn
+// cancellation retired rather than removed.
+#[tokio::test]
+async fn apply_amendment() {
+    let provider = Provider::idle();
+    let outgoing = seed(&provider.files, SPEC, DESIGN, PLAN);
+    let amendment = stage_amendment(&provider.storage, &amendment_over(&outgoing, HEAD));
+
+    let resp =
+        cli_ok(&provider, &["emery", "--format", "json", "apply", "--config", PROJECT_CONFIG])
+            .await;
+
+    let sealed = revision(
+        &written(&provider.files, "spec"),
+        &written(&provider.files, "design"),
+        &written(&provider.files, "plan"),
+    );
+    assert_ne!(sealed, outgoing);
+    let envelope: Value = serde_json::from_slice(&resp.stdout).expect("one JSON envelope");
+    assert_eq!(envelope["revision"], sealed, "{envelope}");
+    assert_eq!(envelope["parent"], outgoing, "{envelope}");
+    assert_eq!(envelope["commit"], "Revision-commit", "{envelope}");
+    assert_eq!(envelope["label"], format!("emery/{sealed}"), "{envelope}");
+    assert_eq!(envelope["kind"], "amendment", "{envelope}");
+    assert_eq!(envelope["amendment"], amendment, "{envelope}");
+    assert_eq!(envelope["diff"]["from"], outgoing, "{envelope}");
+    assert_eq!(
+        envelope["diff"]["spec"]["retired"],
+        json!([{
+            "id": "REQ-004",
+            "subject": "orders.cancel",
+            "statement": "A signed-in user cancels an open order.",
+        }]),
+        "one history, so what the amendment leaves out is retired: {envelope}"
+    );
+    assert_eq!(
+        envelope["diff"]["spec"]["added"],
+        json!([{"id": "REQ-005", "subject": "orders.refund"}]),
+        "{envelope}"
+    );
+    assert_eq!(current(&provider), sealed, "the pointer names the sealed revision");
+    assert_eq!(
+        provider.vcs.calls(),
+        [
+            "head .".to_owned(),
+            format!("add . {REVISION} {HEAD}"),
+            format!("remove {REVISION}"),
+            format!("add . {REVISION} {HEAD}"),
+            format!("pending {REVISION}"),
+            format!("commit {REVISION} Revision {sealed}"),
+            format!("label . emery/{sealed} Revision-commit"),
+            format!("remove {REVISION}"),
+        ],
+        "read, then sealed and labelled in a working copy cut at the base's commit"
+    );
+    let spec: Value = serde_json::from_slice(&written(&provider.files, "spec")).expect("JSON");
+    assert_eq!(spec["parent"], outgoing, "the amendment's documents are what is sealed");
+    assert_eq!(spec["requirements"][3]["id"], "REQ-005", "{spec}");
+    let message = RevisionMessage::parse(&provider.vcs.messages()[0]).expect("a revision message");
+    assert_eq!(
+        message,
+        RevisionMessage {
+            revision: sealed.clone(),
+            parent: Some(outgoing.clone()),
+            base: Some(HEAD.to_owned()),
+            summary: Some(Summary {
+                added: 1,
+                changed: 1,
+                retired: 1,
+                slices: vec![SliceSummary {
+                    id: "SLICE-002".parse().expect("a slice id"),
+                    name: "orders".to_owned(),
+                    class: SliceClass::Changed,
+                }],
+            }),
+        }
+    );
+    assert!(provider.storage.state(STAGED_KEY).is_none(), "the staged slot is cleared");
+    assert!(provider.storage.objects(STAGED_CONTAINER).is_empty(), "the amendment is pruned");
+    assert!(
+        !provider.vcs.calls().iter().any(|call| call.contains(&format!("emery/{outgoing}"))),
+        "the base's label is left standing: {:?}",
+        provider.vcs.calls()
+    );
+
+    // the sealed revision is what show sees, and nothing is staged now
+    fail(&provider, &["emery", "show", "amendment"], 2, "nothing-staged").await;
+    fail(&provider, &["emery", "apply", "--config", PROJECT_CONFIG], 2, "nothing-staged").await;
+
+    // the text render names the base the revision amends
+    let provider = Provider::idle();
+    seed(&provider.files, SPEC, DESIGN, PLAN);
+    stage_amendment(&provider.storage, &amendment_over(&outgoing, HEAD));
+    let resp = cli_ok(&provider, &["emery", "apply", "--config", PROJECT_CONFIG]).await;
+    assert_eq!(
+        String::from_utf8_lossy(&resp.stdout),
+        format!(
+            "sealed revision {sealed} as emery/{sealed} at Revision\n  amends {outgoing}\n  diff \
+             vs {outgoing}: spec +1 -0 ~1 retired 1, design +0 -0 ~0, plan +0 -0 ~1\n"
+        )
+    );
+}
+
+// An amendment whose change sources disagree over a requirement seals as a
+// specify's conflict would: the written specification holds the
+// requirement in conflict with the competing statements among its notes,
+// the message counts it under neither added nor changed, and nothing
+// refuses the seal, since the conflict is the operator's to reconcile in
+// the next change.
+#[tokio::test]
+async fn apply_amendment_conflict() {
+    let provider = Provider::idle();
+    let outgoing = seed(&provider.files, SPEC, DESIGN, PLAN);
+    let mut amendment: Value =
+        serde_json::from_slice(&amendment_over(&outgoing, HEAD)).expect("the amendment is JSON");
+    let contested: Value = serde_json::from_slice(CONFLICTED_SPEC).expect("the spec is JSON");
+    let cancel = &contested["requirements"][3];
+    let open = "A signed-in user cancels an open order.";
+    let within = "A signed-in user cancels an order within an hour of placing it.";
+    amendment["changes"][3] = json!({
+        "id": "REQ-004", "subject": "orders.cancel", "class": "conflict",
+        "before": open, "after": Value::Null,
+        "sources": cancel["sources"], "scope": Value::Null,
+    });
+    amendment["spec"]["requirements"]
+        .as_array_mut()
+        .expect("requirements")
+        .insert(3, cancel.clone());
+    amendment["plan"]["slices"][1]["requirements"] = json!(["REQ-003", "REQ-004", "REQ-005"]);
+    let body = serde_json::to_vec_pretty(&amendment).expect("the amendment serialises");
+    stage_amendment(&provider.storage, &body);
+
+    let resp = cli_ok(&provider, &["emery", "apply", "--config", PROJECT_CONFIG]).await;
+
+    let sealed = revision(
+        &written(&provider.files, "spec"),
+        &written(&provider.files, "design"),
+        &written(&provider.files, "plan"),
+    );
+    assert_eq!(
+        String::from_utf8_lossy(&resp.stdout),
+        format!(
+            "sealed revision {sealed} as emery/{sealed} at Revision\n  amends {outgoing}\n  diff \
+             vs {outgoing}: spec +1 -0 ~2, design +0 -0 ~0, plan +0 -0 ~1\n"
+        )
+    );
+    let spec: Value = serde_json::from_slice(&written(&provider.files, "spec")).expect("JSON");
+    assert_eq!(
+        spec["requirements"][3], *cancel,
+        "the conflict is sealed as the amendment holds it"
+    );
+    assert_eq!(spec["requirements"][3]["status"], "conflict", "{spec}");
+    assert_eq!(spec["requirements"][3]["losers"][0]["statement"], open, "{spec}");
+    assert_eq!(spec["requirements"][3]["losers"][1]["statement"], within, "{spec}");
+    let message = RevisionMessage::parse(&provider.vcs.messages()[0]).expect("a revision message");
+    assert_eq!(
+        message.summary,
+        Some(Summary {
+            added: 1,
+            changed: 1,
+            retired: 0,
+            slices: vec![SliceSummary {
+                id: "SLICE-002".parse().expect("a slice id"),
+                name: "orders".to_owned(),
+                class: SliceClass::Changed,
+            }],
+        }),
+        "a conflict is counted under no trailer: {message:?}"
+    );
+    assert_eq!(current(&provider), sealed, "the pointer names the sealed revision");
+    assert!(provider.storage.state(STAGED_KEY).is_none(), "the staged slot is cleared");
+}
+
+// An amendment prepared against a revision, or a commit, other than the one
+// the repository now holds as current is stale: the seal is refused before
+// anything is written, naming both, and the amendment stays staged for
+// `emery amend` to prepare it again.
+#[tokio::test]
+async fn apply_amendment_stale() {
+    let other = "0000000000000000000000000000000000000000000000000000000000000000";
+
+    // the base revision is not the current one
+    let provider = Provider::idle();
+    let current = seed(&provider.files, SPEC, DESIGN, PLAN);
+    let amendment = stage_amendment(&provider.storage, &amendment_over(other, HEAD));
+    let envelope =
+        fail(&provider, &["emery", "apply", "--config", PROJECT_CONFIG], 1, "amendment-stale")
+            .await;
+    let message = envelope["message"].as_str().expect("a message");
+    assert!(
+        message.contains(&format!("against revision `{other}` at commit `{HEAD}`")),
+        "{envelope}"
+    );
+    assert!(
+        message.contains(&format!("holds revision `{current}` at commit `{HEAD}`")),
+        "{envelope}"
+    );
+    assert!(
+        envelope["hint"].as_str().is_some_and(|hint| hint.contains("emery amend")),
+        "{envelope}"
+    );
+    assert_eq!(
+        provider.vcs.calls(),
+        ["head .".to_owned(), format!("add . {REVISION} {HEAD}"), format!("remove {REVISION}")],
+        "read, and nothing sealed"
+    );
+    assert!(provider.files.writes().is_empty(), "nothing is written");
+    assert!(provider.storage.state(REVISION_KEY).is_none(), "the pointer does not move");
+    assert!(
+        provider.storage.object(STAGED_CONTAINER, &format!("{amendment}/amendment.json")).is_some(),
+        "the amendment stays staged"
+    );
+
+    // the base commit is not the one the revision now stands at
+    let provider = Provider::idle();
+    let current = seed(&provider.files, SPEC, DESIGN, PLAN);
+    stage_amendment(&provider.storage, &amendment_over(&current, "1234567890abcdef"));
+    let envelope =
+        fail(&provider, &["emery", "apply", "--config", PROJECT_CONFIG], 1, "amendment-stale")
+            .await;
+    let message = envelope["message"].as_str().expect("a message");
+    assert!(message.contains("at commit `1234567890abcdef`"), "{envelope}");
+    assert!(
+        message.contains(&format!("holds revision `{current}` at commit `{HEAD}`")),
+        "{envelope}"
+    );
+    assert!(provider.vcs.messages().is_empty(), "nothing is sealed");
+
+    // no revision stands where the base was read
+    let provider = Provider::idle();
+    stage_amendment(&provider.storage, &amendment_over(other, HEAD));
+    let envelope =
+        fail(&provider, &["emery", "apply", "--config", PROJECT_CONFIG], 1, "amendment-stale")
+            .await;
+    assert!(
+        envelope["message"].as_str().is_some_and(|message| message.ends_with("holds no revision")),
+        "{envelope}"
+    );
+    assert!(provider.vcs.messages().is_empty(), "nothing is sealed");
+}
+
+// The commit a labelled revision stands at when the head has moved on over it.
+const LABELLED: &str = "e1f2a3b4c5d6e7f8091a2b3c4d5e6f708192a3b4";
+// A revision id no repository holds, for a parent the lineage names.
+const EARLIER: &str = "1111111111111111111111111111111111111111111111111111111111111111";
+
+// `SPEC` as an amendment sealed it: its `parent` naming `EARLIER`, so a
+// repository holding it holds a lineage.
+fn lineage() -> Vec<u8> {
+    let spec = std::str::from_utf8(SPEC).expect("spec.json is UTF-8");
+    spec.replace("\"parent\": null", &format!("\"parent\": \"{EARLIER}\"")).into_bytes()
+}
+
+// A candidate drafted from the sources alone does not seal over a revision
+// that amends an earlier one: the seal is refused before anything is
+// written, naming the revision and its parent, the candidate stays staged,
+// and the hint names `--fresh` and `emery amend` as the ways out; the same
+// candidate staged fresh then seals.
+#[tokio::test]
+async fn apply_lineage_exists() {
+    let provider = Provider::idle();
+    let held = seed(&provider.files, &lineage(), DESIGN, PLAN);
+    let candidate = stage(&provider.storage, SPEC, DESIGN, WIDE_PLAN);
+
+    let envelope =
+        fail(&provider, &["emery", "apply", "--config", PROJECT_CONFIG], 1, "lineage-exists").await;
+
+    assert_eq!(
+        envelope["message"],
+        format!(
+            "the current revision `{held}` amends `{EARLIER}`, so the repository holds a lineage \
+             that a revision drafted from the sources alone would start over"
+        ),
+        "{envelope}"
+    );
+    let hint = envelope["hint"].as_str().expect("a hint");
+    assert!(hint.contains("emery specify --fresh"), "{envelope}");
+    assert!(hint.contains("emery amend"), "{envelope}");
+    assert_eq!(
+        provider.vcs.calls(),
+        ["head .".to_owned(), format!("add . {REVISION} {HEAD}"), format!("remove {REVISION}")],
+        "read, and nothing sealed"
+    );
+    assert!(provider.files.writes().is_empty(), "nothing is written");
+    assert!(provider.storage.state(REVISION_KEY).is_none(), "the pointer does not move");
+    assert_eq!(staged(&provider.storage), candidate, "the candidate stays staged");
+
+    // staged fresh, the same documents seal
+    stage_fresh(&provider.storage, SPEC, DESIGN, WIDE_PLAN);
+    cli_ok(&provider, &["emery", "apply", "--config", PROJECT_CONFIG]).await;
+    assert_eq!(current(&provider), candidate);
+    let message = RevisionMessage::parse(&provider.vcs.messages()[0]).expect("a revision message");
+    assert_eq!(message.parent, None, "a fresh seal records no parent");
+}
+
+// A candidate staged fresh starts the history over: it is sealed with no
+// parent in a working copy cut at the repository's head rather than at the
+// commit the current revision stands at, labelled, and pointed at, while
+// the label of the revision it supersedes is left standing; the diff
+// against that revision is still reported.
+#[tokio::test]
+async fn apply_fresh() {
+    let provider = Provider::idle();
+    let outgoing = seed(&provider.files, &lineage(), DESIGN, PLAN);
+    provider.storage.insert_state(REVISION_KEY, outgoing.as_bytes());
+    provider.vcs.labelleds.script(".", Ok(LABELLED.to_owned()));
+    let candidate = stage_fresh(&provider.storage, SPEC, DESIGN, WIDE_PLAN);
+
+    let resp =
+        cli_ok(&provider, &["emery", "--format", "json", "apply", "--config", PROJECT_CONFIG])
+            .await;
+
+    let envelope: Value = serde_json::from_slice(&resp.stdout).expect("one JSON envelope");
+    assert_eq!(envelope["revision"], candidate, "{envelope}");
+    assert!(envelope.get("parent").is_none(), "a fresh seal names no parent: {envelope}");
+    assert_eq!(envelope["commit"], "Revision-commit", "{envelope}");
+    assert_eq!(envelope["label"], format!("emery/{candidate}"), "{envelope}");
+    assert_eq!(envelope["kind"], "revision", "{envelope}");
+    assert_eq!(envelope["diff"]["from"], outgoing, "the diff is against the lineage's head");
+    assert_eq!(
+        provider.vcs.calls(),
+        [
+            "head .".to_owned(),
+            format!("labelled . emery/{outgoing}"),
+            format!("descends . {HEAD} {LABELLED}"),
+            format!("add . {REVISION} {LABELLED}"),
+            format!("remove {REVISION}"),
+            format!("add . {REVISION} {HEAD}"),
+            format!("pending {REVISION}"),
+            format!("commit {REVISION} Revision {candidate}"),
+            format!("label . emery/{candidate} Revision-commit"),
+            format!("remove {REVISION}"),
+        ],
+        "read at the label, then sealed in a working copy cut at the head"
+    );
+    let message = RevisionMessage::parse(&provider.vcs.messages()[0]).expect("a revision message");
+    assert_eq!(
+        message,
+        RevisionMessage {
+            revision: candidate.clone(),
+            parent: None,
+            base: Some(HEAD.to_owned()),
+            summary: None,
+        }
+    );
+    assert_eq!(current(&provider), candidate, "the pointer names the fresh revision");
+    assert!(
+        !provider
+            .vcs
+            .calls()
+            .iter()
+            .any(|call| call.starts_with(&format!("label . emery/{outgoing}"))),
+        "the earlier label stands: {:?}",
+        provider.vcs.calls()
+    );
+    assert!(provider.storage.state(STAGED_KEY).is_none(), "the staged slot is cleared");
+    provider.vcs.assert_exhausted();
+
+    // the text render names no parent
+    let provider = Provider::idle();
+    seed(&provider.files, &lineage(), DESIGN, PLAN);
+    stage_fresh(&provider.storage, SPEC, DESIGN, WIDE_PLAN);
+    let resp = cli_ok(&provider, &["emery", "apply", "--config", PROJECT_CONFIG]).await;
+    assert_eq!(
+        String::from_utf8_lossy(&resp.stdout),
+        format!(
+            "sealed revision {candidate} as emery/{candidate} at Revision\n  diff vs {outgoing}: \
+             spec +0 -0 ~0, design +0 -0 ~0, plan +1 -0 ~2 preamble\n"
+        )
+    );
+}
+
+// A fresh candidate seals the same way whatever the repository holds: over
+// a parentless revision, with no parent and over the head rather than as
+// that revision's child, and in a repository holding none, as the first
+// seal does.
+#[tokio::test]
+async fn apply_fresh_over_baseline() {
+    let provider = Provider::idle();
+    let outgoing = seed(&provider.files, SPEC, DESIGN, PLAN);
+    let candidate = stage_fresh(&provider.storage, SPEC, DESIGN, WIDE_PLAN);
+
+    let resp =
+        cli_ok(&provider, &["emery", "--format", "json", "apply", "--config", PROJECT_CONFIG])
+            .await;
+
+    let envelope: Value = serde_json::from_slice(&resp.stdout).expect("one JSON envelope");
+    assert_eq!(envelope["revision"], candidate, "{envelope}");
+    assert!(envelope.get("parent").is_none(), "{envelope}");
+    assert_eq!(envelope["diff"]["from"], outgoing, "{envelope}");
+    let message = RevisionMessage::parse(&provider.vcs.messages()[0]).expect("a revision message");
+    assert_eq!(message.parent, None, "the parentless revision is not recorded as parent");
+    assert_eq!(message.base.as_deref(), Some(HEAD), "sealed over the head");
+    assert_eq!(current(&provider), candidate);
+
+    // no revision at all
+    let provider = Provider::idle();
+    let candidate = stage_fresh(&provider.storage, SPEC, DESIGN, PLAN);
+    let resp = cli_ok(&provider, &["emery", "apply", "--config", PROJECT_CONFIG]).await;
+    assert_eq!(
+        String::from_utf8_lossy(&resp.stdout),
+        format!("sealed revision {candidate} as emery/{candidate} at Revision\n")
+    );
+    let message = RevisionMessage::parse(&provider.vcs.messages()[0]).expect("a revision message");
+    assert_eq!(message.parent, None);
+    assert_eq!(message.base.as_deref(), Some(HEAD));
+    assert_eq!(current(&provider), candidate);
+}
+
+// The revision the other branch sealed, whose label a checkout's pointer names.
+const OTHER: &str = "2222222222222222222222222222222222222222222222222222222222222222";
+
+// Two branches that each sealed an amendment over one revision, merged with
+// one side's `spec/` kept whole, leave the head holding that side's three
+// documents with both labels behind it: a checkout whose pointer names the
+// other side's label reads the revision the head holds, since the pointer
+// is a cache the repository bears out or not, and an amendment prepared
+// against that revision at the merge seals over it with that revision as
+// its parent, both labels left standing.
+#[tokio::test]
+async fn apply_over_merge() {
+    let provider = Provider::idle();
+    let kept = seed(&provider.files, &lineage(), DESIGN, PLAN);
+    provider.storage.insert_state(REVISION_KEY, OTHER.as_bytes());
+    provider.vcs.labelleds.script(".", Ok(LABELLED.to_owned()));
+    provider.vcs.descends.script(".", Ok(false));
+
+    let resp = cli_ok(
+        &provider,
+        &["emery", "--format", "json", "show", "spec", "--config", PROJECT_CONFIG],
+    )
+    .await;
+
+    let envelope: Value = serde_json::from_slice(&resp.stdout).expect("one JSON envelope");
+    assert_eq!(envelope["revision"], kept, "the head's documents, not the pointer's: {envelope}");
+    assert_eq!(envelope["document"]["parent"], EARLIER, "{envelope}");
+    assert_eq!(
+        provider.vcs.calls(),
+        [
+            "head .".to_owned(),
+            format!("labelled . emery/{OTHER}"),
+            format!("descends . {HEAD} {LABELLED}"),
+            format!("add . {REVISION} {HEAD}"),
+            format!("remove {REVISION}"),
+        ],
+        "the pointer's label found behind the head, then the head's tree read"
+    );
+
+    // the amendment prepared against what the head holds seals over the merge
+    let amendment = stage_amendment(&provider.storage, &amendment_over(&kept, HEAD));
+    provider.vcs.labelleds.script(".", Ok(LABELLED.to_owned()));
+    provider.vcs.descends.script(".", Ok(false));
+    let resp =
+        cli_ok(&provider, &["emery", "--format", "json", "apply", "--config", PROJECT_CONFIG])
+            .await;
+    let envelope: Value = serde_json::from_slice(&resp.stdout).expect("one JSON envelope");
+    assert_eq!(envelope["parent"], kept, "{envelope}");
+    assert_eq!(envelope["kind"], "amendment", "{envelope}");
+    assert_eq!(envelope["amendment"], amendment, "{envelope}");
+    assert_eq!(envelope["commit"], "Revision-commit", "{envelope}");
+    let message = RevisionMessage::parse(&provider.vcs.messages()[0]).expect("a revision message");
+    assert_eq!(message.parent.as_deref(), Some(kept.as_str()), "the kept side is the parent");
+    assert_eq!(message.base.as_deref(), Some(HEAD), "sealed over the merge");
+    assert_eq!(current(&provider), envelope["revision"], "the pointer now names the seal");
+    let calls = provider.vcs.calls();
+    assert!(
+        !calls.iter().any(|call| call.starts_with(&format!("label . emery/{OTHER}"))),
+        "the other side's label stands: {calls:?}"
+    );
+    assert!(
+        !calls.iter().any(|call| call.starts_with(&format!("label . emery/{kept}"))),
+        "the kept side's label stands: {calls:?}"
+    );
+    provider.vcs.assert_exhausted();
 }
 
 // A target naming no repository seals into one the engine creates under the
@@ -486,6 +1027,42 @@ async fn specify_apply() {
     assert_eq!(envelope["applied"]["kind"], "revision", "{envelope}");
     assert_eq!(envelope["diff"]["from"], id, "the diff is against the revision displaced");
     assert_eq!(current(&provider), id);
+    provider.model.assert_exhausted();
+}
+
+// `specify --apply --fresh` over a lineage goes through the fresh seal: the
+// candidate is staged marked fresh and sealed in the same run with no
+// parent over the head, where `--apply` alone is refused before any load.
+#[tokio::test]
+async fn specify_apply_fresh() {
+    let provider = Provider::idle();
+    seed(&provider.files, &lineage(), DESIGN, PLAN);
+    fail(
+        &provider,
+        &["emery", "specify", SOURCE, "--apply", "--config", PROJECT_CONFIG],
+        1,
+        "lineage-exists",
+    )
+    .await;
+    assert!(provider.source.metadata.lock().expect("metadata").is_empty(), "nothing loads");
+
+    let provider = Provider::answering([SPEC_ANSWER, DESIGN_ANSWER]);
+    let outgoing = seed(&provider.files, &lineage(), DESIGN, PLAN);
+    let resp = cli_ok(
+        &provider,
+        &["emery", "specify", SOURCE, "--apply", "--fresh", "--config", PROJECT_CONFIG],
+    )
+    .await;
+
+    let id = current(&provider);
+    let stdout = String::from_utf8_lossy(&resp.stdout);
+    assert!(stdout.starts_with(&format!("staged candidate {id} (fresh)\n")), "{stdout}");
+    assert!(stdout.contains(&format!("  diff vs {outgoing}: ")), "{stdout}");
+    assert!(stdout.ends_with(&format!("  sealed revision {id} as emery/{id} at Revision\n")));
+    let message = RevisionMessage::parse(&provider.vcs.messages()[0]).expect("a revision message");
+    assert_eq!(message.parent, None, "a fresh seal records no parent");
+    assert_eq!(message.base.as_deref(), Some(HEAD), "sealed over the head");
+    assert!(provider.storage.state(STAGED_KEY).is_none(), "the staged slot is cleared");
     provider.model.assert_exhausted();
 }
 

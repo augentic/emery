@@ -6,21 +6,23 @@
 
 Emery reconciles intent, documentation, existing code, and captured behaviour into reviewable specifications — durable artifacts, not chat history.
 
-> The v1 delivery workflow (survey/extract, plan/refine/execute/finalize) is archived at git tag `v1`; retrieve it with `git worktree add ../emery-v1 v1`. This tree carries the spec generator and its build step: `emery specify` synthesises the reviewable set from the sources named on the invocation and stages it, `emery apply` seals it in the target's repository under `spec/`, `emery build` hands its plan to a target adapter wave by wave, `emery show` renders it.
+> The v1 delivery workflow (survey/extract, plan/refine/execute/finalize) is archived at git tag `v1`; retrieve it with `git worktree add ../emery-v1 v1`. This tree carries the spec generator and its build step: `emery specify` synthesises the reviewable set from the sources named on the invocation and stages it, `emery apply` seals it in the target's repository under `spec/`, `emery amend` stages a change against the sealed revision for the next seal, `emery build` hands its plan to a target adapter wave by wave, `emery show` renders it.
 
 ## The live surface
 
 ```bash
 emery specify <adapter>...  # extract, group, synthesise the spec + design, slice the plan; stage the candidate
 emery specify --config --apply  # the same, sealed in the [target] repository in one run
-emery apply                 # seal the staged candidate as the current revision: spec/ at one commit labelled emery/<revision>
+emery apply                 # seal the staged candidate or amendment as the current revision: spec/ at one commit labelled emery/<revision>
+emery amend <adapter>... --config  # stage a change against the sealed revision: each requirement added, changed, retired, conflict, or unchanged; --apply seals it
 emery build <adapter>       # build the sealed plan in waves through a target adapter, one merge each under emery/<revision>, verified wave by wave
 emery show spec             # render spec.md from the current revision (--format json: the revision)
 emery show plan --staged    # render plan.md from the staged candidate: the spec sliced into buildable pieces
+emery show amendment        # render the staged amendment: the base, the counts by class, each change
 emery completions <sh>      # shell completions
 ```
 
-In Cursor, `/emery:specify` wraps `emery specify`, `/emery:apply` wraps `emery apply`, and `/emery:build` wraps `emery build`. Everything else was deleted from the grammar, not hidden — see the [CLI reference](docs/reference/cli/index.md).
+In Cursor, `/emery:specify` wraps `emery specify`, `/emery:amend` wraps `emery amend`, `/emery:apply` wraps `emery apply`, and `/emery:build` wraps `emery build`. Everything else was deleted from the grammar, not hidden — see the [CLI reference](docs/reference/cli/index.md).
 
 Install from source:
 

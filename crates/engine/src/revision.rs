@@ -15,6 +15,7 @@ mod id;
 mod plan;
 mod spec;
 
+use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::{self, Display, Formatter};
 
 use anyhow::Context;
@@ -24,8 +25,11 @@ use serde::de::DeserializeOwned;
 use serde_json::Value;
 use sha2::{Digest, Sha256};
 
-pub use self::amendment::{Amendment, AmendmentBase, Change, ChangeClass, SliceChange, SliceClass};
+pub use self::amendment::{
+    Amendment, AmendmentBase, BriefState, Change, ChangeClass, SliceChange, SliceClass,
+};
 pub use self::design::{Block, Design, Role, Section, SectionKind, TYPE, citations};
+use self::diff::BRIEF;
 pub use self::diff::{Changed, DesignDiff, Diff, Entry, PlanDiff, Retired, SliceEntry, SpecDiff};
 pub use self::id::{BadId, ReqId, SliceId, stem, substem};
 use self::plan::{DEPENDS_ON, REQUIREMENTS, TYPES};
@@ -163,6 +167,50 @@ impl Revision {
     #[must_use]
     pub fn identify(spec: &[u8], design: &[u8], plan: &[u8]) -> String {
         digest(&[spec, design, plan])
+    }
+
+    // What tells the three documents apart as one revision's: the plan
+    // places each requirement of the specification in one slice, owns each
+    // data type of the design in one, and names nothing else. Every seal
+    // satisfies it, so a finding names a mix of two revisions' documents,
+    // which a merge resolved one file at a time leaves.
+    #[must_use]
+    pub fn findings(&self) -> Vec<String> {
+        let mut findings = Vec::new();
+        let stated: BTreeSet<ReqId> =
+            self.spec.requirements.iter().map(|requirement| requirement.id).collect();
+        let keys = self.design.data_types();
+        let mut placed: BTreeMap<ReqId, SliceId> = BTreeMap::new();
+        let mut owned: BTreeMap<&str, SliceId> = BTreeMap::new();
+        for slice in &self.plan.slices {
+            for &id in &slice.requirements {
+                if !stated.contains(&id) {
+                    findings.push(format!(
+                        "`{id}` is placed by `{}` and is no requirement of the specification",
+                        slice.id
+                    ));
+                } else if let Some(other) = placed.insert(id, slice.id) {
+                    findings.push(format!("`{id}` is placed by `{other}` and `{}`", slice.id));
+                }
+            }
+            for key in &slice.types {
+                if !keys.contains(key) {
+                    findings.push(format!(
+                        "`{key}` is owned by `{}` and is no data type of the design",
+                        slice.id
+                    ));
+                } else if let Some(other) = owned.insert(key, slice.id) {
+                    findings.push(format!("`{key}` is owned by `{other}` and `{}`", slice.id));
+                }
+            }
+        }
+        for id in stated.iter().filter(|id| !placed.contains_key(id)) {
+            findings.push(format!("`{id}` is placed by no slice"));
+        }
+        for key in keys.iter().filter(|key| !owned.contains_key(key.as_str())) {
+            findings.push(format!("`{key}` is owned by no slice"));
+        }
+        findings
     }
 }
 

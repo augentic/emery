@@ -9,18 +9,21 @@
 //! revision lives in the repository the target names, under `spec/` at the
 //! commit labelled `emery/<id>`: `current` reads it from the label the
 //! `current-revision` pointer names, or from the head's tree, and `commit`
-//! seals a revision there, labels it, and points the pointer at it. Content
-//! is checked against its identifier when read, so a document rewritten
-//! beneath the engine is refused rather than served.
+//! seals a `Sealing` there — a candidate revision over the current one, a
+//! fresh candidate starting the history over, or an amendment's three
+//! documents over the base it was prepared against — labels it, and points
+//! the pointer at it. Content is checked against its identifier when read,
+//! so a document rewritten beneath the engine is refused rather than served.
 
 use anyhow::Context;
 use omnia_sdk::{BlobStore, Error, StateStore, Vcs, server_error};
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 
 use crate::revision::{
     Amendment, AmendmentBase, Design, Diff, Document as _, Plan, Revision, Spec,
 };
-use crate::vcs::{BuildRepo, REVISION, RevisionMessage, SPECIFICATION, WorkingCopy};
+use crate::vcs::{BuildRepo, REVISION, RevisionMessage, SPECIFICATION, Summary, WorkingCopy};
 use crate::{EntryKind, Files, secrets};
 
 /// The state-store key containing the current revision identifier.
@@ -70,14 +73,19 @@ struct Slot {
     kind: StagedKind,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     base: Option<AmendmentBase>,
+    // A revision candidate staged to start the history over: sealed with no
+    // parent over the head where the current revision amends an earlier one.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    fresh: bool,
 }
 
 impl Slot {
-    const fn revision(id: String) -> Self {
+    const fn revision(id: String, fresh: bool) -> Self {
         Self {
             id,
             kind: StagedKind::Revision,
             base: None,
+            fresh,
         }
     }
 
@@ -86,6 +94,7 @@ impl Slot {
             id,
             kind: StagedKind::Amendment,
             base: Some(base),
+            fresh: false,
         }
     }
 
@@ -136,12 +145,36 @@ impl Slot {
         }
         Ok(())
     }
+
+    async fn item<S: BlobStore>(self, store: &S) -> Result<StagedItem, Error> {
+        match self.kind {
+            StagedKind::Revision => {
+                Staged::read(store, self.id, self.fresh).await.map(StagedItem::Revision)
+            }
+            StagedKind::Amendment => {
+                StagedAmendment::read(store, self.id).await.map(StagedItem::Amendment)
+            }
+        }
+    }
 }
 
-// The revision candidate `stage` left for `apply`, read back whole.
+// The revision candidate `stage` left for `apply`, read back whole, and
+// whether it was staged to start the history over.
 pub struct Staged {
     pub id: String,
     pub revision: Revision,
+    pub fresh: bool,
+}
+
+impl Staged {
+    async fn read<S: BlobStore>(store: &S, id: String, fresh: bool) -> Result<Self, Error> {
+        let mut bodies = Vec::with_capacity(Revision::DOCUMENTS.len());
+        for name in Revision::DOCUMENTS {
+            bodies.push(document(store, &id, name).await?);
+        }
+        let revision = Revision::read(&id, &bodies[0], &bodies[1], &bodies[2])?;
+        Ok(Self { id, revision, fresh })
+    }
 }
 
 // The amendment `stage_amendment` left for review, read back whole.
@@ -150,14 +183,93 @@ pub struct StagedAmendment {
     pub amendment: Amendment,
 }
 
+impl StagedAmendment {
+    async fn read<S: BlobStore>(store: &S, id: String) -> Result<Self, Error> {
+        let body = document(store, &id, Amendment::NAME).await?;
+        let amendment = Amendment::read(&id, &body)?;
+        Ok(Self { id, amendment })
+    }
+}
+
+// Whatever stands in the slot, read back whole.
+pub enum StagedItem {
+    Revision(Staged),
+    Amendment(StagedAmendment),
+}
+
+// What a seal writes: the three documents as a revision, the revision it
+// records as its parent, the commit it lands over, and, for an amendment,
+// what it changed against that parent.
+pub struct Sealing {
+    revision: Revision,
+    parent: Option<String>,
+    over: Option<String>,
+    summary: Option<Summary>,
+}
+
+impl Sealing {
+    // A candidate revision over what `standing` read: the current revision
+    // its parent and the commit holding it, else the head, the one it lands
+    // over. `lineage-exists` where the current revision amends an earlier
+    // one, since a candidate drafted from the sources alone would start
+    // that history over; `fresh` is the seal that does so deliberately.
+    pub fn candidate(revision: Revision, standing: &Standing) -> Result<Self, Error> {
+        standing.no_lineage()?;
+        Ok(Self {
+            revision,
+            parent: standing.current.as_ref().map(|current| current.id.clone()),
+            over: standing.over().map(str::to_owned),
+            summary: None,
+        })
+    }
+
+    // A candidate revision starting the history over: no parent, cut over
+    // the repository's head whatever revision it holds, so every earlier
+    // label stands and the new one descends from the head alone.
+    pub fn fresh(revision: Revision, standing: &Standing) -> Self {
+        Self {
+            revision,
+            parent: None,
+            over: standing.head.clone(),
+            summary: None,
+        }
+    }
+
+    // An amendment's three documents over the base it was prepared
+    // against, that base its parent and the commit it was read at the one it
+    // lands over, the counts by class and the slices changed its summary.
+    // `amendment-stale` unless `standing` reads that base as the current
+    // revision, at that commit, so a revision sealed since is never
+    // displaced by a change prepared against the one before it.
+    pub fn amendment(amendment: Amendment, standing: &Standing) -> Result<Self, Error> {
+        if !standing.is_at(&amendment.base) {
+            return Err(stale(&amendment.base, standing));
+        }
+        let summary = Summary::of(&amendment);
+        Ok(Self {
+            revision: Revision {
+                spec: amendment.spec,
+                design: amendment.design,
+                plan: amendment.plan,
+            },
+            parent: Some(amendment.base.revision),
+            over: Some(amendment.base.commit),
+            summary: Some(summary),
+        })
+    }
+}
+
 // The revision a repository holds, and the commit it was read from. The
 // documents may not read as a revision this engine knows, an outdated
 // grammar: the id and the commit still stand, so a seal lands over them,
-// while a verb that needs the revision raises the refusal.
+// while a verb that needs the revision raises the refusal. The parent is
+// read off the specification's own top-level key, so a lineage is seen
+// under an outdated grammar too.
 pub struct Current {
     pub id: String,
     pub revision: Result<Revision, Error>,
     pub commit: String,
+    pub parent: Option<String>,
 }
 
 // Where a target repository stands for the revision: its head, the
@@ -185,6 +297,29 @@ impl Standing {
     // The commit a seal lands over: the current revision's, else the head.
     pub fn over(&self) -> Option<&str> {
         self.current.as_ref().map(|current| current.commit.as_str()).or(self.head.as_deref())
+    }
+
+    // `lineage-exists` where the current revision amends an earlier one, so
+    // a verb that would seal a revision drafted from the sources alone over
+    // it refuses rather than starting the history over unasked.
+    pub fn no_lineage(&self) -> Result<(), Error> {
+        match &self.current {
+            Some(Current {
+                id,
+                parent: Some(parent),
+                ..
+            }) => Err(lineage_exists(id, parent)),
+            Some(_) | None => Ok(()),
+        }
+    }
+
+    // Whether the current revision stands at `base`, the revision and
+    // commit an amendment was prepared against.
+    fn is_at(&self, base: &AmendmentBase) -> bool {
+        matches!(
+            &self.current,
+            Some(Current { id, commit, .. }) if *id == base.revision && *commit == base.commit
+        )
     }
 }
 
@@ -241,11 +376,12 @@ impl Occupancy {
 
 // Stages `revision` as the candidate for `emery apply`, replacing any
 // revision staged before it: every document written under the candidate's
-// id, the staged record swapped by compare-and-swap, and the candidate it
-// displaced pruned. A staged amendment is never displaced: it is
-// `amendment-pending`, read before any document is written.
+// id, the staged record swapped by compare-and-swap with whether the
+// candidate is `fresh`, and the candidate it displaced pruned. A staged
+// amendment is never displaced: it is `amendment-pending`, read before any
+// document is written.
 pub async fn stage<S: StateStore + BlobStore>(
-    store: &S, revision: &Revision,
+    store: &S, revision: &Revision, fresh: bool,
 ) -> Result<String, Error> {
     let token = token(store).await;
     Slot::no_amendment(token.as_deref())?;
@@ -258,7 +394,7 @@ pub async fn stage<S: StateStore + BlobStore>(
     );
     let bodies = documents.each_ref().map(|(name, body)| (*name, body.as_str()));
     put(store, &id, &bodies).await?;
-    Slot::revision(id.clone()).swap(store, token.as_deref()).await?;
+    Slot::revision(id.clone(), fresh).swap(store, token.as_deref()).await?;
     Ok(id)
 }
 
@@ -313,41 +449,56 @@ pub async fn staged_record<S: StateStore>(
     Ok(Slot::read(store).await?.map(|slot| (slot.id, slot.kind)))
 }
 
+// Whatever stands in the slot, whole, or `None` when nothing is staged:
+// fails closed on an item that no longer matches its id, and
+// `spec-outdated` on one under another grammar.
+pub async fn staged_item<S: StateStore + BlobStore>(
+    store: &S,
+) -> Result<Option<StagedItem>, Error> {
+    match Slot::read(store).await? {
+        Some(slot) => slot.item(store).await.map(Some),
+        None => Ok(None),
+    }
+}
+
 // The staged revision candidate whole, or `None` when nothing is staged:
-// `amendment-pending` when an amendment stands in the slot instead, failing
-// closed on a candidate that no longer matches its id, and `spec-outdated`
-// on one under another grammar.
+// `amendment-pending` when an amendment stands in the slot instead, read
+// no further, and what `staged_item` fails with otherwise.
 pub async fn staged<S: StateStore + BlobStore>(store: &S) -> Result<Option<Staged>, Error> {
-    let Some(Slot { id, kind, .. }) = Slot::read(store).await? else {
-        return Ok(None);
-    };
-    if kind == StagedKind::Amendment {
-        return Err(amendment_pending(&id));
+    match Slot::read(store).await? {
+        Some(Slot {
+            id,
+            kind: StagedKind::Revision,
+            fresh,
+            ..
+        }) => Staged::read(store, id, fresh).await.map(Some),
+        Some(Slot {
+            id,
+            kind: StagedKind::Amendment,
+            ..
+        }) => Err(amendment_pending(&id)),
+        None => Ok(None),
     }
-    let mut bodies = Vec::with_capacity(Revision::DOCUMENTS.len());
-    for name in Revision::DOCUMENTS {
-        bodies.push(document(store, &id, name).await?);
-    }
-    let revision = Revision::read(&id, &bodies[0], &bodies[1], &bodies[2])?;
-    Ok(Some(Staged { id, revision }))
 }
 
 // The staged amendment whole, or `None` when nothing is staged or a
-// revision candidate stands in the slot: fails closed on an amendment that
-// no longer matches its id, and `spec-outdated` on one under another
-// grammar.
+// revision candidate stands in the slot, read no further, and what
+// `staged_item` fails with otherwise.
 pub async fn staged_amendment<S: StateStore + BlobStore>(
     store: &S,
 ) -> Result<Option<StagedAmendment>, Error> {
-    let Some(Slot { id, kind, .. }) = Slot::read(store).await? else {
-        return Ok(None);
-    };
-    if kind == StagedKind::Revision {
-        return Ok(None);
+    match Slot::read(store).await? {
+        Some(Slot {
+            id,
+            kind: StagedKind::Amendment,
+            ..
+        }) => StagedAmendment::read(store, id).await.map(Some),
+        Some(Slot {
+            kind: StagedKind::Revision,
+            ..
+        })
+        | None => Ok(None),
     }
-    let body = document(store, &id, Amendment::NAME).await?;
-    let amendment = Amendment::read(&id, &body)?;
-    Ok(Some(StagedAmendment { id, amendment }))
 }
 
 // Refuses `amendment-pending` when an amendment is staged, so a verb that
@@ -385,10 +536,13 @@ pub async fn clear<S: StateStore + BlobStore>(store: &S) -> Result<(), Error> {
 
 // Where `repo` stands for the revision, the repository brought to where it
 // can be read: the revision at the label the pointer names, where that
-// label stands over the head; else the one the head's tree holds; else
+// label stands over the head; else the one the head's tree holds, whatever
+// the pointer names, so two checkouts whose pointers name two labels a
+// merge left behind the head read the one revision the head holds; else
 // none. Fails `spec-mismatch` on a tree whose `spec/` is not the three
-// documents or does not match the id its label names, and `spec-outdated`
-// on one under another grammar.
+// documents, does not match the id its label names, or at an unlabelled
+// head holds documents that read as no revision or as no one revision's,
+// and `spec-outdated` on one under another grammar.
 pub async fn current<P: Vcs + Files + StateStore>(
     provider: &P, repo: &BuildRepo,
 ) -> Result<Standing, Error> {
@@ -415,10 +569,10 @@ pub async fn current<P: Vcs + Files + StateStore>(
         let label = label(id);
         match repo.labelled(provider, &label).await? {
             Some(commit) if repo.descends(provider, &head, &commit).await? => {
-                let revision = read_at(provider, repo, &commit, Some(id)).await?;
+                let current = Current::read_at(provider, repo, &commit, Some(id)).await?;
                 return Ok(Standing {
                     head: Some(head),
-                    current: revision.map(|(id, revision)| Current { id, revision, commit }),
+                    current,
                     behind: None,
                     pointer,
                 });
@@ -432,11 +586,7 @@ pub async fn current<P: Vcs + Files + StateStore>(
     }
 
     // the head's tree
-    let current = read_at(provider, repo, &head, None).await?.map(|(id, revision)| Current {
-        id,
-        revision,
-        commit: head.clone(),
-    });
+    let current = Current::read_at(provider, repo, &head, None).await?;
     Ok(Standing {
         head: Some(head),
         current,
@@ -445,28 +595,30 @@ pub async fn current<P: Vcs + Files + StateStore>(
     })
 }
 
-// Seals `revision` in `repo` as the current revision, over what `standing`
+// Seals `sealing` in `repo` as the current revision, over what `standing`
 // read: the three documents written under `spec/` in a working copy cut at
-// the current revision's commit, else at the head, else, for a repository
-// the engine creates, in the repository created now as its root commit; what
-// they changed held to the secret gate and sealed under a `RevisionMessage`;
-// the commit labelled `emery/<id>`; the pointer swapped by compare-and-swap;
-// the staged candidate cleared; the copy removed. A revision the repository
-// already holds seals nothing and stands labelled as it was.
+// the commit the sealing lands over, else, for a repository the engine
+// creates, in the repository created now as its root commit; what they
+// changed held to the secret gate and sealed under a `RevisionMessage`
+// carrying the sealing's parent and summary; the commit labelled
+// `emery/<id>`; the pointer swapped by compare-and-swap; the staged item
+// cleared; the copy removed. A revision the repository already holds seals
+// nothing and stands labelled as it was.
 pub async fn commit<P: Vcs + Files + StateStore + BlobStore>(
-    provider: &P, repo: &BuildRepo, revision: &Revision, standing: Standing,
+    provider: &P, repo: &BuildRepo, sealing: Sealing, standing: Standing,
 ) -> Result<Sealed, Error> {
-    let documents = revision.documents()?;
+    let documents = sealing.revision.documents()?;
     let id = Revision::identify(
         documents[0].1.as_bytes(),
         documents[1].1.as_bytes(),
         documents[2].1.as_bytes(),
     );
-    let diff = standing.diff(revision);
+    let diff = standing.diff(&sealing.revision);
     let message = RevisionMessage {
         revision: id,
-        parent: standing.current.as_ref().map(|current| current.id.clone()),
-        base: standing.over().map(str::to_owned),
+        parent: sealing.parent,
+        base: sealing.over,
+        summary: sealing.summary,
     };
 
     // the tree the seal lands over
@@ -588,6 +740,35 @@ pub fn candidate_pending(id: &str) -> Error {
     }
 }
 
+// The `lineage-exists` refusal of a verb that would seal a revision drafted
+// from the sources alone over revision `id`, which amends `parent`.
+fn lineage_exists(id: &str, parent: &str) -> Error {
+    Error::BadRequest {
+        code: "lineage-exists".into(),
+        description: format!(
+            "the current revision `{id}` amends `{parent}`, so the repository holds a lineage \
+             that a revision drafted from the sources alone would start over"
+        ),
+    }
+}
+
+// The `amendment-stale` refusal of a seal of an amendment prepared against
+// `base` where `standing` reads another revision, or none, as current.
+fn stale(base: &AmendmentBase, standing: &Standing) -> Error {
+    let now = standing.current.as_ref().map_or_else(
+        || "holds no revision".to_owned(),
+        |current| format!("holds revision `{}` at commit `{}`", current.id, current.commit),
+    );
+    Error::BadRequest {
+        code: "amendment-stale".into(),
+        description: format!(
+            "the amendment was prepared against revision `{}` at commit `{}`, and the repository \
+             now {now}",
+            base.revision, base.commit
+        ),
+    }
+}
+
 // The label a revision stands under in its repository.
 pub fn label(id: &str) -> String {
     format!("emery/{id}")
@@ -636,51 +817,97 @@ async fn seal_copy<P: Vcs + Files>(
     Ok(commit)
 }
 
-// The revision the tree at `commit` holds under `spec/`, with its id; `None`
-// when the tree holds no `spec/`. Held to `expect`, the id the label names,
-// where there is one.
-async fn read_at<P: Vcs + Files>(
-    provider: &P, repo: &BuildRepo, commit: &str, expect: Option<&str>,
-) -> Result<Option<(String, Result<Revision, Error>)>, Error> {
-    let copy = WorkingCopy::cut(provider, &repo.path(), REVISION, commit).await?;
-    let read = read_tree(provider, copy.path(), commit, expect).await;
-    copy.remove(provider).await?;
-    read
-}
+impl Current {
+    // The revision the tree at `commit` holds under `spec/`, with its id;
+    // `None` when the tree holds no `spec/`. Held to `expect`, the id the
+    // label names, where there is one.
+    async fn read_at<P: Vcs + Files>(
+        provider: &P, repo: &BuildRepo, commit: &str, expect: Option<&str>,
+    ) -> Result<Option<Self>, Error> {
+        let copy = WorkingCopy::cut(provider, &repo.path(), REVISION, commit).await?;
+        let current = Self::read_tree(provider, copy.path(), commit, expect).await;
+        copy.remove(provider).await?;
+        current
+    }
 
-async fn read_tree<F: Files>(
-    files: &F, at: &str, commit: &str, expect: Option<&str>,
-) -> Result<Option<(String, Result<Revision, Error>)>, Error> {
-    match Occupancy::of(files, at).await? {
-        Occupancy::Absent => {
-            return expect.map_or(Ok(None), |id| {
-                Err(mismatch(format!(
-                    "commit `{commit}`, labelled `{}`, holds no `{SPECIFICATION}/`",
-                    label(id)
-                )))
-            });
+    // Held to `expect` where a label named the commit; at a head no label
+    // names, three documents that read as no revision of any grammar, or
+    // that read as no one revision's (`Revision::findings`), were edited or
+    // merged by hand, since a seal writes them whole, and are
+    // `spec-mismatch` rather than a revision to seal over. Documents that
+    // read as one revision are that revision whatever label the repository
+    // holds for them, since a clone reads no remote's label and an operator
+    // may delete a merged one.
+    async fn read_tree<F: Files>(
+        files: &F, at: &str, commit: &str, expect: Option<&str>,
+    ) -> Result<Option<Self>, Error> {
+        match Occupancy::of(files, at).await? {
+            Occupancy::Absent => {
+                return expect.map_or(Ok(None), |id| {
+                    Err(mismatch(format!(
+                        "commit `{commit}`, labelled `{}`, holds no `{SPECIFICATION}/`",
+                        label(id)
+                    )))
+                });
+            }
+            Occupancy::Held => {}
+            Occupancy::Other(what) => {
+                return Err(mismatch(format!(
+                    "`{SPECIFICATION}/` at commit `{commit}` holds {what}, where the three \
+                     documents of a revision should stand"
+                )));
+            }
         }
-        Occupancy::Held => {}
-        Occupancy::Other(what) => {
+        let spec = files.read(at, &path(Spec::NAME)).await?;
+        let design = files.read(at, &path(Design::NAME)).await?;
+        let plan = files.read(at, &path(Plan::NAME)).await?;
+        let id = Revision::identify(&spec, &design, &plan);
+        if let Some(expected) = expect.filter(|expected| *expected != id) {
             return Err(mismatch(format!(
-                "`{SPECIFICATION}/` at commit `{commit}` holds {what}, where the three documents \
-                 of a revision should stand"
+                "`{SPECIFICATION}/` at commit `{commit}`, labelled `{}`, does not match revision \
+                 `{expected}`; the documents there are `emery show` output, never sources",
+                label(expected)
             )));
         }
+        let revision = match Revision::read(&id, &spec, &design, &plan) {
+            Err(error) if expect.is_none() && !matches!(error, Error::BadRequest { .. }) => {
+                return Err(hand_merged(commit, "no revision", &error.description()));
+            }
+            Ok(revision) if expect.is_none() => {
+                let findings = revision.findings();
+                if !findings.is_empty() {
+                    return Err(hand_merged(commit, "no one revision's", &findings.join("; ")));
+                }
+                Ok(revision)
+            }
+            revision => revision,
+        };
+        let parent = revision
+            .as_ref()
+            .map_or_else(|_| spec_parent(&spec), |revision| revision.spec.parent.clone());
+        Ok(Some(Self {
+            id,
+            revision,
+            commit: commit.to_owned(),
+            parent,
+        }))
     }
-    let spec = files.read(at, &path(Spec::NAME)).await?;
-    let design = files.read(at, &path(Design::NAME)).await?;
-    let plan = files.read(at, &path(Plan::NAME)).await?;
-    let id = Revision::identify(&spec, &design, &plan);
-    if let Some(expected) = expect.filter(|expected| *expected != id) {
-        return Err(mismatch(format!(
-            "`{SPECIFICATION}/` at commit `{commit}`, labelled `{}`, does not match revision \
-             `{expected}`; the documents there are `emery show` output, never sources",
-            label(expected)
-        )));
-    }
-    let revision = Revision::read(&id, &spec, &design, &plan);
-    Ok(Some((id, revision)))
+}
+
+// The top-level `parent` key of `spec`, for a specification under another
+// grammar that `Revision::read` did not deserialise.
+fn spec_parent(spec: &[u8]) -> Option<String> {
+    serde_json::from_slice::<Value>(spec).ok()?.get("parent")?.as_str().map(str::to_owned)
+}
+
+// The refusal of a `spec/` at an unlabelled head whose documents were edited
+// or merged by hand; the CLI's hint matches on the `edited or merged by hand`
+// clause.
+fn hand_merged(commit: &str, what: &str, why: &str) -> Error {
+    mismatch(format!(
+        "`{SPECIFICATION}/` at commit `{commit}` holds documents that read as {what} ({why}), so \
+         they were edited or merged by hand; a seal writes them whole"
+    ))
 }
 
 fn mismatch(description: String) -> Error {
