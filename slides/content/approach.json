@@ -158,7 +158,7 @@
       "Grant generated code nothing by default",
       "it reaches infrastructure only through host-mediated capabilities.",
       "Wasmtime sandbox",
-      "Capability contracts",
+      "No direct route to infrastructure",
       "Runtime recipes"
     ]
   },
@@ -169,10 +169,25 @@
       "Zero trust for generated code.",
       "Containers give every dependency ambient access to network, files, and secrets. WASI components start with zero authority and use only the capabilities the host links.",
       "WASI Component",
+      "Generated business logic",
       "Wasmtime sandbox",
       "Host-granted capabilities",
       "Infrastructure",
       "Cloud/On-premise"
+    ]
+  },
+  {
+    "id": "runtime-focus",
+    "title": "Business logic in the guest. Plumbing in the host.",
+    "required": [
+      "Business logic in the guest.",
+      "Plumbing in the host.",
+      "Because the runtime bridges infrastructure and external resources, agents generate pure business logic—not plumbing.",
+      "Pure business logic",
+      "Domain rules, state transitions, and typed capability calls.",
+      "Infrastructure plumbing",
+      "Bridges external services, clients, credentials, and connection pools.",
+      "Less code for agents to generate. Far fewer ways to get it wrong."
     ]
   },
   {

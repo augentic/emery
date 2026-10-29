@@ -1838,9 +1838,9 @@ class: slide-section
 </div>
 
 <div class="hero-mechanisms">
-<div class="hero-pillar"><span class="hero-pillar-num">01</span><span>Wasmtime sandbox · No direct route to infrastructure</span></div>
-<div class="hero-pillar"><span class="hero-pillar-num">02</span><span>Capability contracts · HTTP, Messaging, KeyValue, BlobStore</span></div>
-<div class="hero-pillar"><span class="hero-pillar-num">03</span><span>Runtime recipes · Local, cloud, and on-premise</span></div>
+<div class="hero-pillar"><span class="hero-pillar-num">01</span><span>Wasmtime sandbox · Zero ambient authority; no direct route to infrastructure</span></div>
+<div class="hero-pillar"><span class="hero-pillar-num">02</span><span>Business logic, not plumbing · Guests call capability contracts; the host owns SDKs and wiring</span></div>
+<div class="hero-pillar"><span class="hero-pillar-num">03</span><span>Runtime recipes · Bind capability contracts to local, cloud, or on-premise</span></div>
 </div>
 
 <!--
@@ -1872,16 +1872,16 @@ class: slide-light
 <div class="live-wasi-components">
 <div class="live-wasi-component">
 <strong>WASI Component</strong>
-<em>Generated code</em>
+<em>Generated business logic</em>
 </div>
 <div class="live-wasi-component">
 <strong>WASI Component</strong>
-<em>Generated code</em>
+<em>Generated business logic</em>
 </div>
 </div>
 <div class="live-runtime-name">
 <strong>Wasm Runtime</strong>
-<em>Wasmtime sandbox</em>
+<em>Wasmtime sandbox · host infrastructure bridge</em>
 </div>
 </div>
 
@@ -1908,6 +1908,64 @@ Contrast the WASI sandbox directly against Docker containers:
 - Every engineer in the room is thinking: "We already run in containers—aren't we sandboxed?"
 - A container isolates the host OS, not your application's dependencies. If an AI agent pulls in a compromised package inside a container, that code shares the container's network socket, filesystem, and `DATABASE_URL` environment variable.
 - Inside a Wasmtime sandbox, a WASI component has no ambient network socket, no filesystem, and no credentials—only the typed capability handles (`HTTP`, `Messaging`, `KeyValue`, `BlobStore`) the host explicitly injects.
+-->
+
+---
+title: Business logic in the guest. Plumbing in the host.
+sync: runtime-focus
+class: slide-light
+---
+
+<Eyebrow text="03 · SANDBOXING EXECUTION · SMALLER GENERATION TARGET" />
+
+<div class="foundation-progress" aria-label="Delivery foundations">
+<span>01 · Standardising delivery</span>
+<span>02 · Specifying behaviour</span>
+<span class="is-active">03 · Sandboxing execution</span>
+</div>
+
+<div class="live-stage">
+
+# Business logic in the guest.<br><span class="live-title-accent">Plumbing in the host.</span>
+
+<p class="live-claim">Because the runtime bridges infrastructure and external resources, agents generate pure business logic—not plumbing.</p>
+
+<div class="live-grid-2" style="width: 88%; margin: 24px auto 0; gap: 40px;">
+<div class="live-card is-cyan">
+<div class="live-card-head">
+<IconBadge tone="cyan"><ph:code /></IconBadge>
+<div class="live-kicker">01 · WASI guest · What the agent writes</div>
+</div>
+<h3>Pure business logic</h3>
+<p>Domain rules, state transitions, and typed capability calls.</p>
+<div class="live-feature-list">
+<span>No vendor or cloud SDKs</span>
+<span>No auth or retry glue</span>
+</div>
+</div>
+
+<div class="live-card is-dark">
+<div class="live-card-head">
+<IconBadge tone="light"><ph:plugs-connected /></IconBadge>
+<div class="live-kicker">02 · Wasm runtime host · What the platform owns</div>
+</div>
+<h3>Infrastructure plumbing</h3>
+<p>Bridges external services, clients, credentials, and connection pools.</p>
+<div class="live-feature-list">
+<span>SDKs &amp; drivers in the host</span>
+<span>Policy &amp; secrets outside code</span>
+</div>
+</div>
+</div>
+
+<div class="live-outcome is-punch" style="width: 88%; margin: 28px auto 0; box-sizing: border-box;">Less code for agents to generate. Far fewer ways to get it wrong.</div>
+</div>
+
+<!--
+Why the WebAssembly runtime is even more important in the age of coding agents:
+- That zero-trust boundary doesn't just contain code at runtime—it changes what the agent has to write in the first place.
+- In a traditional stack, an agent asked to add a feature also writes infrastructure plumbing: SDK imports, connection pooling, retry loops, serialisation, and auth wiring. That is where agents hallucinate APIs, leak secrets, or introduce subtle bugs.
+- Because our runtime bridges external resources in the host, the WASI guest only expresses domain behaviour against narrow capability contracts—dramatically reducing the complexity and volume of code the agent has to generate.
 -->
 
 ---

@@ -204,9 +204,9 @@ class: slide-sandbox
   <text x="798" y="112" class="svg-kicker" fill="#78d8f2">03 · RUNTIME BOUNDARY</text>
   <text x="798" y="142" class="svg-h2" fill="#ffffff">Sandboxing execution</text>
   <line x1="798" y1="156" x2="1102" y2="156" stroke="rgba(255,255,255,0.12)" />
-  <text x="798" y="184" class="svg-body" fill="rgba(255,255,255,0.84)">Sandboxed WebAssembly components</text>
-  <text x="798" y="208" class="svg-body" fill="rgba(255,255,255,0.84)">Typed capabilities and explicit grants</text>
-  <text x="798" y="232" class="svg-body" fill="rgba(255,255,255,0.84)">Credentials and infrastructure in the host</text>
+  <text x="798" y="184" class="svg-body" fill="rgba(255,255,255,0.84)">Sandboxed WASI guest components</text>
+  <text x="798" y="208" class="svg-body" fill="rgba(255,255,255,0.84)">Business logic only; plumbing in the host</text>
+  <text x="798" y="232" class="svg-body" fill="rgba(255,255,255,0.84)">Typed capabilities and explicit grants</text>
   <text x="798" y="270" class="svg-caption" fill="#78d8f2">What running code is permitted to touch.</text>
 
   <line x1="190" y1="290" x2="190" y2="322" stroke="#78d8f2" stroke-width="1.5" />
@@ -707,7 +707,7 @@ class: slide-light
 # Sandboxing execution.
 
 </div>
-<p class="ed-band-prose"><strong>Grant generated code nothing by default—it reaches infrastructure only through host-mediated capabilities.</strong> The host, not the generated code, decides what can be reached, and grants only the capabilities the work needs.</p>
+<p class="ed-band-prose"><strong>Grant generated code nothing by default—it reaches infrastructure only through host-mediated capabilities.</strong> Because the host bridges external resources through typed capability contracts, guests contain pure business logic rather than infrastructure plumbing.</p>
 </div>
 <div class="ed-band-canvas">
 <svg viewBox="0 0 1140 350" aria-hidden="true">
@@ -716,13 +716,14 @@ class: slide-light
   <text x="38" y="104" class="svg-h2" fill="#0d1030">Wasmtime sandbox</text>
   <line x1="38" y1="122" x2="324" y2="122" stroke="rgba(12,127,163,0.18)" />
   <text x="38" y="158" class="svg-label" fill="#0d1030">No direct route to infrastructure</text>
-  <text x="38" y="190" class="svg-caption" fill="rgba(13,16,48,0.62)">Generated code runs inside the sandbox</text>
+  <text x="38" y="190" class="svg-caption" fill="rgba(13,16,48,0.62)">Zero ambient authority inside the sandbox</text>
   <rect x="398" y="36" width="344" height="214" rx="14" fill="#0d1030" />
-  <text x="420" y="68" class="svg-kicker" fill="#f59ef5">02 · CAPABILITY CONTRACTS</text>
-  <text x="420" y="104" class="svg-h2" fill="#ffffff">Capability contracts</text>
+  <text x="420" y="68" class="svg-kicker" fill="#f59ef5">02 · BUSINESS LOGIC, NOT PLUMBING</text>
+  <text x="420" y="104" class="svg-h2" fill="#ffffff">Business logic only</text>
   <line x1="420" y1="122" x2="720" y2="122" stroke="rgba(255,255,255,0.14)" />
-  <text x="420" y="158" class="svg-label" fill="#ffffff">HTTP, Messaging, KeyValue, BlobStore</text>
-  <text x="420" y="190" class="svg-caption" fill="rgba(255,255,255,0.7)">Access only through typed contracts</text>
+  <text x="420" y="158" class="svg-label" fill="#ffffff">Guests call capability contracts;</text>
+  <text x="420" y="182" class="svg-label" fill="#ffffff">the host owns SDKs and wiring</text>
+  <text x="420" y="216" class="svg-caption" fill="rgba(255,255,255,0.7)">Shrinking what agents must generate</text>
   <rect x="794" y="36" width="330" height="214" rx="14" fill="rgba(22,180,226,0.06)" stroke="#0c7fa3" stroke-width="1.7" />
   <text x="816" y="68" class="svg-kicker" fill="#0c7fa3">03 · RUNTIME RECIPES</text>
   <text x="816" y="104" class="svg-h2" fill="#0d1030">Runtime recipes</text>
@@ -735,8 +736,8 @@ class: slide-light
 
 <!--
 Section 03 divider: Sandboxed execution.
-- Grant generated code nothing by default.
-- It reaches infrastructure only through host-mediated capabilities.
+- Grant generated code nothing by default; it reaches infrastructure only through host-mediated capabilities.
+- Because the host bridges external resources, guests focus on business logic rather than plumbing.
 - Runtime recipes bind the same contracts in each environment.
 -->
 
@@ -769,14 +770,14 @@ class: slide-light
 
   <rect x="100" y="26" width="390" height="70" rx="10" fill="rgba(124,92,205,0.1)" stroke="rgba(124,92,205,0.7)" stroke-width="2.4" />
   <text x="295" y="56" text-anchor="middle" class="svg-h3" fill="#0d1030">WASI Component</text>
-  <text x="295" y="80" text-anchor="middle" class="svg-label" font-style="italic" fill="rgba(13,16,48,0.72)">Generated code</text>
+  <text x="295" y="80" text-anchor="middle" class="svg-label" font-style="italic" fill="rgba(13,16,48,0.72)">Generated business logic</text>
 
   <rect x="650" y="26" width="390" height="70" rx="10" fill="rgba(124,92,205,0.1)" stroke="rgba(124,92,205,0.7)" stroke-width="2.4" />
   <text x="845" y="56" text-anchor="middle" class="svg-h3" fill="#0d1030">WASI Component</text>
-  <text x="845" y="80" text-anchor="middle" class="svg-label" font-style="italic" fill="rgba(13,16,48,0.72)">Generated code</text>
+  <text x="845" y="80" text-anchor="middle" class="svg-label" font-style="italic" fill="rgba(13,16,48,0.72)">Generated business logic</text>
 
   <text x="570" y="134" text-anchor="middle" class="svg-h2" fill="#0d1030">Wasm Runtime</text>
-  <text x="570" y="159" text-anchor="middle" class="svg-label" font-style="italic" fill="rgba(13,16,48,0.72)">Wasmtime sandbox</text>
+  <text x="570" y="159" text-anchor="middle" class="svg-label" font-style="italic" fill="rgba(13,16,48,0.72)">Wasmtime sandbox · host infrastructure bridge</text>
 
   <line x1="16" y1="191" x2="404" y2="191" stroke="rgba(13,16,48,0.18)" />
   <line x1="736" y1="191" x2="1124" y2="191" stroke="rgba(13,16,48,0.18)" />
@@ -815,6 +816,64 @@ The headline and payoff use the language on the Propellerhead homepage.
 
 Client question:
 - If this code—or one of its dependencies—were compromised, what could it actually reach?
+-->
+
+---
+title: Business logic in the guest. Plumbing in the host.
+sync: runtime-focus
+class: slide-light
+---
+<Eyebrow text="03 · SANDBOXING EXECUTION · SMALLER GENERATION TARGET" />
+
+<div class="foundation-progress" aria-label="Delivery foundations">
+<span>01 · Standardising delivery</span>
+<span>02 · Specifying behaviour</span>
+<span class="is-active">03 · Sandboxing execution</span>
+</div>
+
+<div class="ed-band">
+<div class="ed-band-top">
+<div>
+
+# Business logic in the guest.<br><span style="color:#a4238f">Plumbing in the host.</span>
+
+</div>
+<p class="ed-band-prose"><strong>Because the runtime bridges infrastructure and external resources, agents generate pure business logic—not plumbing.</strong> The host owns clients, connection pools, retries, auth, and SDK wiring, sharply reducing the complexity and kind of code an agent has to write.</p>
+</div>
+<div class="ed-band-canvas">
+<svg viewBox="0 0 1140 350" aria-hidden="true">
+  <rect x="16" y="36" width="550" height="214" rx="14" fill="rgba(22,180,226,0.06)" stroke="#0c7fa3" stroke-width="1.7" />
+  <text x="38" y="68" class="svg-kicker" fill="#0c7fa3">01 · WASI GUEST · WHAT THE AGENT WRITES</text>
+  <text x="38" y="104" class="svg-h2" fill="#0d1030">Pure business logic</text>
+  <line x1="38" y1="122" x2="544" y2="122" stroke="rgba(12,127,163,0.18)" />
+  <text x="38" y="156" class="svg-label" fill="#0d1030">Domain rules, state transitions, and typed capability calls.</text>
+  <rect x="38" y="182" width="242" height="36" rx="8" fill="#ffffff" stroke="rgba(12,127,163,0.3)" />
+  <text x="159" y="205" text-anchor="middle" class="svg-pill" fill="#0c7fa3">No vendor or cloud SDKs</text>
+  <rect x="296" y="182" width="248" height="36" rx="8" fill="#ffffff" stroke="rgba(12,127,163,0.3)" />
+  <text x="420" y="205" text-anchor="middle" class="svg-pill" fill="#0c7fa3">No auth or retry glue</text>
+
+  <rect x="574" y="36" width="550" height="214" rx="14" fill="#0d1030" />
+  <text x="596" y="68" class="svg-kicker" fill="#78d8f2">02 · WASM RUNTIME HOST · WHAT THE PLATFORM OWNS</text>
+  <text x="596" y="104" class="svg-h2" fill="#ffffff">Infrastructure plumbing</text>
+  <line x1="596" y1="122" x2="1102" y2="122" stroke="rgba(255,255,255,0.14)" />
+  <text x="596" y="156" class="svg-label" fill="#ffffff">Bridges external services, clients, credentials, and connection pools.</text>
+  <rect x="596" y="182" width="242" height="36" rx="8" fill="rgba(255,255,255,0.08)" stroke="rgba(255,255,255,0.18)" />
+  <text x="717" y="205" text-anchor="middle" class="svg-pill" fill="#78d8f2">SDKs &amp; drivers in the host</text>
+  <rect x="854" y="182" width="248" height="36" rx="8" fill="rgba(255,255,255,0.08)" stroke="rgba(255,255,255,0.18)" />
+  <text x="978" y="205" text-anchor="middle" class="svg-pill" fill="#78d8f2">Policy &amp; secrets outside code</text>
+
+  <rect x="140" y="282" width="860" height="48" rx="24" fill="#0d1030" stroke="#a4238f" stroke-width="1.8" />
+  <text x="570" y="312" text-anchor="middle" class="svg-h3" fill="#ffffff">Less code for agents to generate. Far fewer ways to get it wrong.</text>
+</svg>
+</div>
+</div>
+
+<!--
+Business logic in the guest, plumbing in the host:
+- We built the runtime so engineers could stop repeatedly selecting frameworks, importing provider SDKs, and wiring infrastructure into application code.
+- That separation matters even more when coding agents write the code.
+- Because the runtime handles the bridging to infrastructure and external resources in the host, Wasm guests focus almost exclusively on business logic rather than plumbing.
+- Given a reviewed specification, an agent has a much simpler class of code to generate—and far fewer ways to get it wrong.
 -->
 
 ---
