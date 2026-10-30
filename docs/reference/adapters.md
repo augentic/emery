@@ -1,85 +1,145 @@
 # Adapters
 
-How a run names its source and target adapters, where the `emery` binary finds them, and how an operator puts one there by hand.
+This page is the reference for how Emery names, stores, resolves, and verifies WebAssembly (Wasm) source and target adapters. It is for developers configuring adapters in `emery.toml` or managing the local `~/.emery/adapters` package store.
 
-## A reference
+## Contents
 
-An adapter is an exact package reference, `namespace:name@version`: the wasm-pkg package the adapter is published as and the one release of it a run loads. Every adapter a run names — a positional `<adapter>` or a `--description <adapter>=<text>` on the command line, a `[[source]] adapter` or the `[target] adapter` of `emery.toml` — is spelled that way, and nothing else is accepted: a reference without a version (`emery:typescript`), a name without a namespace (`typescript@0.13.0`), a bare name (`typescript`), a path (`./typescript.wasm`), or a version that is not an exact semver (`emery:typescript@latest`) is `bad_request` (exit `1`) before anything loads, hinted `an adapter is an exact package reference, `namespace:name@version``. There is no default namespace, no latest, and no machine-wide active release: a project names the release it builds against, and two projects on one machine may name two.
+- [Package reference syntax](#package-reference-syntax)
+- [The local adapter store (`~/.emery/adapters`)](#the-local-adapter-store-emeryadapters)
+- [Resolution order and registry routing](#resolution-order-and-registry-routing)
+  - [Installing third-party or offline adapters](#installing-third-party-or-offline-adapters)
+- [Source adapters vs. target adapters](#source-adapters-vs-target-adapters)
+  - [Source adapter contract (`emery:adapter/source`)](#source-adapter-contract-emeryadaptersource)
+  - [Target adapter contract (`emery:adapter/target`)](#target-adapter-contract-emeryadaptertarget)
+- [W^X separation between store and project](#wx-separation-between-store-and-project)
+- [Refusals at a glance](#refusals-at-a-glance)
+- [See also](#see-also)
 
-First-party adapters are packages under the `emery` namespace, published to the train in [`augentic/emery-adapters`](https://github.com/augentic/emery-adapters): `emery:documentation@<version>`, `emery:intent@<version>`, `emery:typescript@<version>`, `emery:python@<version>`. A third-party adapter is a package under a namespace of its own.
+---
 
-A `digest` beside a reference in `emery.toml` is the project's optional pin: the `sha256:` hash the release's bytes must have, checked by the loader on whatever answered the reference — a stored file or a fetched release — before wasmtime sees them, and `refused` (exit `1`) when they hash to anything else.
+## Package reference syntax
 
-## The store
+Every adapter in Emery—whether passed on the command line or declared in [`emery.toml`](config.md)—must be an exact package reference in the form:
 
-The binary keeps its adapters in one directory, the **store**, `~/.emery/adapters`. A release is one file there, flat, named by its reference with the namespace joined to the name by `_`:
+```text
+<namespace>:<name>@<version>
+```
+
+For example:
+
+- First-party source adapters: `emery:intent@0.39.0`, `emery:documentation@0.39.0`, `emery:typescript@0.39.0`, `emery:python@0.39.0`
+- First-party target adapters: `emery:node@0.39.0`, `emery:omnia@0.39.0`
+- Local development or third-party adapters: `emery:typescript@0.40.0-dev`, `acme:ledger@2.1.0`
+
+Emery does not support bare names (`typescript`), unversioned references (`emery:typescript`), floating tags (`@latest`), or file paths (`./adapter.wasm`). Any non-conforming reference is rejected before loading with `adapter-reference` / `bad_request` (exit `1`).
+
+In `emery.toml`, you can optionally pair an `adapter` with `digest = "sha256:<64-hex>"` to pin the exact SHA-256 content hash of the `.wasm` file.
+
+---
+
+## The local adapter store (`~/.emery/adapters`)
+
+Emery stores all adapter releases flat inside a single directory on the host machine: `~/.emery/adapters`.
+
+Each release is stored as a single raw `.wasm` file where the namespace and package name are joined by an underscore (`_`):
 
 ```text
 ~/.emery/adapters/
-  emery_documentation@0.13.0.wasm
-  emery_typescript@0.13.0.wasm
-  emery_typescript@0.14.0-dev.wasm
+  emery_documentation@0.39.0.wasm
+  emery_typescript@0.39.0.wasm
+  emery_typescript@0.40.0-dev.wasm
   acme_ledger@2.1.0.wasm
 ```
 
-That is the one spelling the store reads and the name `wkg get <reference> -o <dir>/` writes, so `ls ~/.emery/adapters` lists the releases on this machine as references, one file per release, and nothing in the store needs an index. The spelling is invertible — a wasm-pkg label holds neither `_` nor `@`, and a version holds no `_` — and nothing else is accepted as an alias: a file named any other way (`typescript.wasm`, a nested `emery/typescript/0.13.0.wasm`) is never read, and a run naming the release it holds reports the store as holding no such file.
+Key store invariants:
 
-A file in the store is that release on this machine, whoever wrote it. The binary's own fetch writes there; so does `cp`, and so does `wkg get`. The store never refreshes a file: a stored release is final until it is removed. A copy at a published version — `cp target.wasm ~/.emery/adapters/emery_typescript@0.13.0.wasm` — stands in for that release on this machine, for every project naming it, which is the operator's trust the store is, as `~/.cargo/bin` is; a developer's build is kept beside the release rather than in its place under a version of its own, by convention a `-dev` pre-release (`emery_typescript@0.14.0-dev.wasm`, named by a project as `emery:typescript@0.14.0-dev`), so removing it is targeted and a project naming the published version still fetches that.
+- **One invertible filename convention:** `<namespace>_<name>@<version>.wasm` is the exact filename `wkg get <reference> -o ~/.emery/adapters/` writes. Files named any other way or placed in subdirectories are ignored.
+- **Immutable once stored:** If `~/.emery/adapters/<namespace>_<name>@<version>.wasm` exists on disk, Emery reads it directly without contacting any network registry. To force a fresh download or update a custom `-dev` build, overwrite or remove the file in `~/.emery/adapters/`.
+- **Raw Wasm only:** The loader accepts only uncompiled `.wasm` WebAssembly components. Precompiled `.cwasm` files are rejected with `refused` (exit `1`), even if a `digest` pin matches.
 
-The store holds raw wasm alone. A pre-compiled artifact (`.cwasm`) copied in is `refused` (exit `1`) however it hashes, since a pin says nothing about who built the bytes. A missing store is an empty one: the binary's first fetch creates it, while `cp` and `wkg get` need it there first (`mkdir -p ~/.emery/adapters`).
+---
 
-## Resolution
+## Resolution order and registry routing
 
-A reference resolves in two steps and no more:
+When a command needs an adapter `namespace:name@version`, the host loader (`omnia:plugins/loader`) resolves it in two steps:
 
-1. **The store.** The file `<namespace>_<name>@<version>.wasm` under `~/.emery/adapters`, read fresh on every run, with no network.
-2. **The registry.** When the store lacks the file, the release is fetched from the registry the binary routes its namespace to, hashed to the digest the registry declares for it, written to the store, and loaded. The next run reads the file.
+1. **Local store check:** Looks for `~/.emery/adapters/<namespace>_<name>@<version>.wasm`. If present, verifies its `digest` (if pinned) and loads the file with zero network traffic.
+2. **Registry fetch (`emery` namespace only):** If the file is not in the store, the loader checks its compiled-in registry routing table:
+   - The `emery` namespace routes to `augentic.io` (compiled into `src/wasm-pkg.toml`; `~/.emery/wasm-pkg.toml` is never read). The loader fetches the release, verifies the registry digest, writes the file to `~/.emery/adapters/`, and loads it.
+   - Any namespace other than `emery` has no compiled-in route and fails immediately with `refused` (exit `1`) if missing from `~/.emery/adapters/`.
 
-The binary routes one namespace: `emery`, to `augentic.io`, compiled in and not redirected by any file on the machine — `~/.emery/wasm-pkg.toml` is not read. Any other namespace the binary routes nowhere: a run naming a release under it that the store lacks is `refused` (exit `1`) before any fetch, the message naming the namespace and the file the store holds no copy of, and the hint the command that fills it:
+### Installing third-party or offline adapters
+
+To use an adapter under a custom namespace (such as `acme:ledger@2.1.0`) or to pre-populate `~/.emery/adapters` for offline/air-gapped environments, fetch or copy the `.wasm` file into `~/.emery/adapters/`:
 
 ```bash
 mkdir -p ~/.emery/adapters
+
+# Fetch from a registry configured in ~/.config/wasm-pkg/config.toml:
 wkg get acme:ledger@2.1.0 -o ~/.emery/adapters/
+
+# Or copy a locally built component directly:
+cp target/wasm32-wasip2/release/emery_typescript.wasm \
+  ~/.emery/adapters/emery_typescript@0.40.0-dev.wasm
 ```
 
-`wkg` routes the namespace under its own global configuration (`wkg config --edit`: `~/.config/wasm-pkg/config.toml`, its `[namespace_registries]` table) and writes `acme_ledger@2.1.0.wasm` where the store reads it; the same command, pointed at the store, is the mirror recipe for a machine that must not fetch — run it for each release a project names, and every run after reads the files. A `cp` of a built component is the same operation without a registry.
+---
 
-A registry that cannot supply the release — the network down, the exact version unpublished — is the loader's `unavailable` (exit `4`), and a copy at `~/.emery/adapters/<namespace>_<name>@<version>.wasm` stands in for it.
+## Source adapters vs. target adapters
 
-## The two axes
+Every adapter is a `wasm32-wasip2` component implementing one of the two worlds in the `emery:adapter` WebAssembly Interface Types (WIT) package (`wit/emery.wit`). Before dispatching any call, Emery verifies that the loaded component exports the interface required by the command (`Axis::require`).
 
-A **source adapter** exports the `emery:adapter/source` interface — `metadata`, and `extract`, which reads one source into a document of typed claims — and is what [`emery specify`](cli/specify.md) runs. Its `requirement` and `criterion` claims state behaviour by role, in the domain's words, and never name the technology the source was built on — a vendor, a product, a protocol, a framework, a host, or a package the source imports — however the source spells it; an adapter written with `emery-sdk` has the SDK return such a claim, or a surface stem naming one, to the model to correct. A `retire` claim is a withdrawal the source itself states: its id names the behaviour withdrawn, its `statement` carries the withdrawal under the same by-role rule, and it carries nothing of another kind's — a `criterion`, `callee`, `signature`, `route`, or `message` extra on it is refused. The technology reaches the design instead: a `call` or `excerpt` claim spells it as the code does, and a `decision` claim carries what a brief or decision record prescribes, so the specification binds a target to what the system does and the design tells it what the source ran against. A **target adapter** exports `emery:adapter/target`: `metadata`, and `run`, which [`emery build`](cli/build.md) calls with one **task** at a time over a tree it lends, each answered by the **outcome** of its kind:
+### Source adapter contract (`emery:adapter/source`)
 
-- `metadata` names the adapter and its **merge rules**. A merge rule is a glob of paths and the strategy a merge applies where both sides changed them — `union` keeps both sides' lines, each once (declaration and import lists); `ours` keeps the integrated side whole, for the adapter's verification to regenerate (lockfiles); `theirs` the slice's. A path no rule covers that both sides changed is a conflict the build resolves with the model, from both sides as the working copies hold them, and merges in the slice's place; one the model cannot be handed or cannot resolve ends the run (`merge-unresolved`). An adapter with no rule declares none. Where the build lands is the operator's `[target] repository` to say, never the adapter's ([`emery build`](cli/build.md)).
-- `init` is run once per repository a build lands in, before any slice, over the tree the build starts from: the adapter scaffolds the files of its **layout** the tree lacks — a root manifest, an entry, the lists slices add their lines to — and leaves a file the tree holds as it stands, with no model turn, and answers `initialised`. The build seals what it scaffolded as the `Initialise` commit every slice builds over, the root commit of a repository the build creates, so no slice scaffolds or reports the layout and a build resumed from its label initialises nothing.
-- `build` is run once per slice, with the slice's plan entry, the specification cut to its requirements, the whole design, the commit its tree sits on, and the slice's working copy, and answers `built` with a report of the requirement ids it covered and the files it wrote. The slice also carries its requirements, the design types it owns, and its brief typed beside those renderings — each requirement's id, subject, statement, and acceptance scenarios, and each owned type's key and signature — so an adapter's own code can scaffold a slice's files from them before its model turn and have the turn fill them. An adapter written with `emery-sdk` puts one model turn per slice under its `build.md`, the tree lent writable through the SDK's `write_files` tool, which writes files whole, and `edit_files`, which changes within one; what the adapter scaffolded before the turn is named in the turn's brief.
-- `verify` is run once per wave, with the integration working copy every slice of the wave merged into, and answers `verified` with a verdict: `passed`, or each check that failed. An SDK adapter puts one turn under its `verify.md`, the tree lent with the shell and the same two tools, so the checks the prompt names — a compiler, a test suite, a linter — run over the integrated tree, what they find is repaired, and a verdict whose `passed` disagrees with its failures is corrected before it answers.
+Used by [`emery specify`](cli/specify.md) and [`emery amend`](cli/amend.md):
 
-An outcome of another kind than the task's is the adapter's defect, `server_error` (exit `3`).
+| Export | Purpose |
+| --- | --- |
+| `metadata() -> SourceMetadata` | Returns the adapter's name, version, `emery-version` compatibility pin, and source `kind` (`intent`, `documentation`, or `behaviour`), which sets its default authority rank (`1`, `2`, or `3`). |
+| `extract(input: SourceInput) -> result<Evidence, Error>` | Inspects the read-only workspace directory or inline description text and returns an `Evidence` document of typed claims (`requirement`, `criterion`, `retire`, `contract`, `decision`, `type`, `call`, `excerpt`). |
 
-A component exporting the wrong interface for the verb is `bad_request` (exit `1`) before any dispatch, naming the interface it lacks.
+### Target adapter contract (`emery:adapter/target`)
 
-## The store and the project tree
+Used by [`emery build`](cli/build.md):
 
-The runtime mounts the invocation directory as `.`, writable: the tree `specify` lends its source adapters to read, and the repository `build` starts from, each slice's working copy cut beneath `.emery/vcs/` and lent to the target adapter to write, the integration working copy lent to it to verify. The store lies apart from it, under `$HOME`, so a component is never loaded from a tree a run can write — a build turn's `write_files` and `edit_files` reach the working copy and nothing above it. The runtime holds the rule at startup: a store beneath the writable mount is refused before any verb runs, so running `emery` from `$HOME` itself is refused — a project is a directory of its own. A project file can say which package and, through `digest`, which bytes; it cannot say where from, so a rewritten `emery.toml` cannot redirect a fetch or reach into the store.
+| Export / Task | Purpose |
+| --- | --- |
+| `metadata() -> TargetMetadata` | Returns the adapter's name, version, `emery-version`, and path-glob `merge_rules` (`union`, `ours`, `theirs`) used when merging slice commits into `.emery/vcs/integration`. |
+| `run(..., Task::Init)` | Runs once per repository before the first slice builds. Deterministically scaffolds missing project layout files with `create_new` (no model turn) and returns `Outcome::Initialised`. |
+| `run(..., Task::Build(Slice))` | Runs once per slice in `.emery/vcs/worktrees/<slice-id>`. Implements the slice's requirements and owned data types and returns `Outcome::Built(Report)` (`covered` requirement IDs and `written` file paths). |
+| `run(..., Task::Verify)` | Runs once per wave in `.emery/vcs/integration`. Runs workspace-wide checks (compiler, linter, tests), repairs issues, and returns `Outcome::Verified(Verdict)` (`passed` and `failures`). |
+
+---
+
+## W^X separation between store and project
+
+Emery enforces a strict Write XOR Execute (W^X) boundary:
+
+- The project directory (`.`) is mounted writable for `.emery/storage/` and `.emery/vcs/` worktrees, and is **never** used to load executable WebAssembly components.
+- The adapter store (`~/.emery/adapters`) is read by the host loader only and is **never** mounted into any guest or model worker.
+- Running `emery` directly from `$HOME` (which would place `~/.emery/adapters` inside the writable `.` mount) is refused at startup.
+
+See [Security, sandboxing, and gates](../explanation/security-and-sandbox.md#1-wx-separation-project-mount-vs-adapter-store).
+
+---
 
 ## Refusals at a glance
 
-| What a run names | Outcome |
-| --- | --- |
-| A reference the store holds | Loaded from the file; no network. |
-| An `emery` release the store lacks | Fetched from `augentic.io`, written to the store, loaded. |
-| A release under another namespace the store lacks | `refused` (exit `1`) before any fetch, hinted `wkg get <reference> -o ~/.emery/adapters/`. |
-| A reference the registry cannot supply | `unavailable` (exit `4`); a copy in the store stands in. |
-| A `digest` the bytes do not hash to | `refused` (exit `1`), naming the digest resolved and the one declared. |
-| A pre-compiled artifact, stored or fetched | `refused` (exit `1`): raw wasm alone. |
-| A component whose export signature differs from the contract | `refused` (exit `1`), naming the function and the parameter or result that differs. |
-| A reference without a version or a namespace, a path, a bare name | `bad_request` (exit `1`) before any load. |
-| Two versions of one package in one run | `bad_request` (exit `1`) before any load: one guest per package per run. |
-| One reference pinned to two digests | `bad_request` (exit `1`) before any load. |
-| A source adapter under `build`, or a target under `specify` | `bad_request` (exit `1`) naming the interface it lacks, before any dispatch. |
-| A release whose `emery-version` outruns the binary | `unsupported-version` (exit `1`), hinted the reinstall. |
+| Condition | Error code | Exit | Recovery |
+| --- | --- | --- | --- |
+| Reference is missing namespace or `@<semver>` (or is a file path / `@latest`) | `adapter-reference` / `bad_request` | `1` | Use `namespace:name@version` syntax. |
+| Two different versions of the same package in one run, or one version pinned to two different digests | `bad_request` | `1` | Align all entries of that package to one version and digest in `emery.toml`. |
+| Component exports the wrong axis (for example, a source adapter passed to `emery build`) | `bad_request` | `1` | Pass a source adapter to `specify`/`amend` and a target adapter to `build`. |
+| Non-`emery` namespace missing from `~/.emery/adapters` | `refused` | `1` | Run `wkg get <reference> -o ~/.emery/adapters/`. |
+| Stored or fetched bytes do not match `digest` in `emery.toml` | `refused` | `1` | Verify the `digest` value or replace the file in `~/.emery/adapters/`. |
+| Stored or fetched file is precompiled (`.cwasm`) or has a mismatched WIT signature | `refused` | `1` | Replace with a raw `.wasm` component built against the current WIT contract. |
+| Adapter's `emery-version` is newer than the installed `emery` binary | `unsupported-version` | `1` | Upgrade `emery` (`brew upgrade emery` or `cargo install`). |
+| Registry (`augentic.io`) is unreachable or version is unpublished | `unavailable` | `4` | Check network and version number, or place the `.wasm` file in `~/.emery/adapters/`. |
+
+---
 
 ## See also
 
-- [`emery specify`](cli/specify.md) and [`emery build`](cli/build.md) name the adapters a run loads; [Deployment profiles](deployment-profiles.md) describes the mounts and the store rule from the runtime's side.
+- [Configuration (`emery.toml`)](config.md) — configuring `[[source]]` and `[target]` adapters and `digest` pins.
+- [Deployment profiles](deployment-profiles.md) — host plugin loader configuration and worker grants.
+- [Security, sandboxing, and gates](../explanation/security-and-sandbox.md) — W^X enforcement and worker confinement.

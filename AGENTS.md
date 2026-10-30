@@ -44,7 +44,7 @@ When authoritative inputs are incomplete, preserve the gap as `[unknown]` rather
 | `examples/` | The mock source and target adapters and the `emery.toml` the live journey runs |
 | `tests/` | Root scenario suites over `tests/support/`'s scripted capabilities, `runtime.rs` under the real runtime, and fixtures under `tests/{specify,build,amend}/` |
 | `wit/` | The WIT package |
-| `docs/` | The mdBook CLI reference deployed to emery.augentic.io: one page per verb under `docs/reference/cli/`, envelopes and recovery codes in `cli-output-shapes.md`. `release.md` is the release runbook |
+| `docs/` | The Diataxis documentation book (mdBook, deployed to emery.augentic.io): `glossary.md`, `tutorials/`, `how-to/`, `explanation/`, and `reference/` with `reference/config.md`, one page per verb under `reference/cli/`, and `cli-output-shapes.md` for the JSON envelopes and recovery codes. `release.md` is the release runbook |
 | `plugins/emery/` | The Cursor plugin: `skills/{specify,amend,apply,build}/SKILL.md` and `rules/emery.mdc`, which `tests/plugin.rs` holds to the clap surface. Its `plugin.json` version moves with the root `.cursor-plugin/marketplace.json`, a minor bump for a new skill and a patch bump when only skill wording changes |
 
 Dependency direction, leaf to root: `prose`, `adapter`, `lexicon` → `sdk`; `prose`, `adapter`, `lexicon` → `engine` → `cli` → root. Never `engine → cli`; nothing in production depends on `sdk`.

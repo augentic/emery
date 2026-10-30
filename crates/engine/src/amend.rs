@@ -9,9 +9,9 @@
 //! [`Amendment`] for review, or seals it in the same run. The current
 //! revision is read and, short of that seal, never moved.
 
+mod baseline;
 mod change;
 mod plan;
-mod standing;
 
 use emery_adapter::source::Source;
 use futures::future;
@@ -19,9 +19,9 @@ use omnia_sdk::api::Context;
 use omnia_sdk::{BlobStore, Error, Model, Plugins, StateStore, Vcs, bad_request};
 use serde::Serialize;
 
+use self::baseline::Baseline;
 use self::change::ChangeSet;
 use self::plan::{Assembled, Pruned};
-use self::standing::Standing;
 pub use crate::apply::ApplyOutput;
 use crate::brief::Brief as _;
 pub use crate::revision::{
@@ -145,16 +145,16 @@ pub async fn amend<P: Model + Source + StateStore + BlobStore + Plugins + Vcs + 
     // requirement; a change stating none leaves every requirement as it is
     // with no grouping spent, and a behaviour source read whole then retires
     // what it falls silent on under the stems it covers
-    let standing = Standing::new(&revision.spec, &extracts);
+    let baseline = Baseline::new(&revision.spec, &extracts);
     let mut change_set = if ChangeSet::states(&extracts) {
         let bases =
-            GroupingBrief::with_standing(&extracts, standing.contributors(), standing.criteria())
+            GroupingBrief::with_standing(&extracts, baseline.contributors(), baseline.criteria())
                 .derive(provider)
                 .await?;
-        ChangeSet::derive(&standing, bases)?
+        ChangeSet::derive(&baseline, bases)?
     } else {
         tracing::info!("the change states no requirement; the specification stands");
-        ChangeSet::unchanged(&standing)
+        ChangeSet::unchanged(&baseline)
     };
     change_set.retire_by_scope(&extracts);
     let ChangeSet { changes, drafted } = change_set;

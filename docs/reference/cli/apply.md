@@ -1,74 +1,141 @@
-# emery apply
+# `emery apply`
 
-Seal the staged candidate or amendment as the current revision in the repository the specification lives in.
+This page is the CLI reference for `emery apply`, which commits the currently staged candidate revision or amendment into your target Git repository under `spec/` on branch `emery/<id>` and clears the staging area. It is for developers and operators sealing reviewed specifications.
+
+## Contents
+
+- [Synopsis](#synopsis)
+- [Description](#description)
+  - [Sealing a candidate](#sealing-a-candidate)
+  - [Sealing an amendment](#sealing-an-amendment)
+  - [`spec/` is the engine's](#spec-is-the-engines)
+  - [Refusals](#refusals)
+- [Options](#options)
+- [JSON output](#json-output)
+- [Text output](#text-output)
+- [See also](#see-also)
+
+---
 
 ## Synopsis
 
 ```bash
-emery apply                          # the [target] of the project-root emery.toml
-emery apply --config [<path>]
-emery apply --repository <url|.>     # in place of the [target] repository
+emery apply                          # uses [target] from project-root emery.toml
+emery apply --config [<path>]        # uses [target] from the specified config file
+emery apply --repository <url|.>     # overrides [target] repository
 ```
+
+---
 
 ## Description
 
-The one seal verb. [`emery specify`](specify.md) drafts a revision and **stages** it as the one candidate, and [`emery amend`](amend.md) prepares a change against the current revision and **stages** it as the one amendment; `apply` takes whichever stands and **seals** it as the current revision, the one [`emery show`](show.md) renders and [`emery build`](build.md) builds. The revision does not live in the project directory: it lives in the **target repository** — the repository the `[target]` table of `emery.toml` names, where a build lands too — as the three documents `spec/spec.json`, `spec/design.json`, and `spec/plan.json` at one commit, `Revision <id>`, labelled `emery/<id>`. `.emery/storage` keeps only the staged item and a pointer to the label, a cache the repository bears out.
+`emery apply` takes the candidate revision staged by [`emery specify`](specify.md) or the amendment staged by [`emery amend`](amend.md) and **seals** it as the current revision in the target Git repository configured under `[target]` in [`emery.toml`](../config.md).
 
-Which repository that is follows from the `[target] repository`, or the `--repository` standing in for it, exactly as for `emery build`:
+When sealing, Emery:
 
-- A URL: the revision is sealed in a clone of it kept under `.emery/vcs/repos/<name>` — `<name>` the table's `name`, or the adapter's package name when the table gives none — cloned when the run has none and fetched when it has one, over the repository's default branch as the origin holds it, `origin/HEAD`. Nothing is pushed. A URL that names no repository, or one with no default branch, is `revision-not-found` (exit `2`); a remote that refuses or cannot be reached is `bad_gateway` (exit `4`).
-- `"."`: the revision is sealed in the project's own repository, over its head. The invocation directory must be a repository (`repository-required`, exit `1`) with a commit (`base-not-sealed`, exit `1`); what the checkout holds pending does not matter to a seal, since the checkout is never touched.
-- None: the revision is sealed in a repository the engine **creates** at `.emery/vcs/repos/<name>` and keeps, the `Revision` commit its root; every later verb finds it there. The project directory is never read as a repository, so it need not be one.
+1. Resolves the target repository (`"."` for the project repository, a clone of a Git URL at `.emery/vcs/repos/<name>`, or an engine-created repository at `.emery/vcs/repos/<name>` when `repository` is omitted).
+2. Creates a temporary Git worktree at `.emery/vcs/revision` starting from the base commit.
+3. Writes `spec/spec.json`, `spec/design.json`, and `spec/plan.json` and scans them with the [secret gate](../../explanation/security-and-sandbox.md#the-secret-gate-secret-detected).
+4. Commits the three files with a structured `Revision <id>` message, sets the local branch `emery/<id>` to that commit, updates the cached pointer in `.emery/storage/`, removes the temporary worktree, and clears the staging area.
 
-The seal is one commit. The engine reads where the repository stands for the revision — the commit the current revision is at, else the head — cuts a working copy of it at `.emery/vcs/revision`, writes the three documents under `spec/`, holds what changed to the secret gate, and seals it under a message whose first line is `Revision <id>` and whose trailers are `Revision:`, `Parent:` (the id of the revision this one amends or displaces, when there was one), and `Base:` (the commit it was sealed over). The commit is labelled `emery/<id>`, a branch in that repository; the pointer in `.emery/storage` is swapped to it; the staged item is cleared; the working copy is removed. The branch the repository is on, and the checkout in the project directory, are never moved or written: to carry the specification on the branch, merge or rebase the label onto it. A revision the repository already holds — a candidate identical to the current revision — seals nothing and stands labelled as it was.
+Sealing never modifies your checked-out working tree or moves your active branch. If the staged revision is byte-for-byte identical to the current revision in the repository, `emery apply` seals no new commit and simply clears the staging area.
+
+For a conceptual walkthrough of target repository modes, commit trailers, and revision resolution, see [Revision lifecycle](../../explanation/revision-lifecycle.md#how-emery-apply-seals-a-revision).
 
 ### Sealing a candidate
 
-A candidate `emery specify` staged is drafted from its sources alone, and seals over the current revision with that revision as its `Parent:`, displacing it — a first revision, or a second drafted over a first, each history one revision deep. A current revision that itself amends an earlier one is a **lineage**, and a candidate sealed over it would read as the next amendment while carrying none of the history: the seal is refused `lineage-exists` (exit `1`), the candidate left staged, the hint naming the two ways on — `emery amend <adapter>...`, a change against the current revision, or `emery specify --fresh <adapter>...`, which stages the candidate marked **fresh**. A fresh candidate seals with no `Parent:` trailer, cut over the repository's **head** whatever revision it holds, so every earlier label stays where it was and the fresh revision starts a history of its own. Unchanged sources re-derive the same content-addressed id, so a fresh seal of documents the repository already holds under an earlier label moves that label onto the new commit, the label write being forced as every seal's is. A current revision with no parent is no lineage, so a first revision is sealed over by a bare candidate as before.
+A candidate staged by `emery specify` is sealed over the current revision's commit (or `HEAD` on the first seal):
+
+- **First or single-step revision:** If the repository holds no revision, or holds a revision whose `parent` is `null`, the candidate seals cleanly (recording `Parent: <previous-id>` if a parentless revision was displaced).
+- **Refusal over a lineage (`lineage-exists`):** If the current revision in the repository has a non-null `parent` (meaning it was sealed from an amendment), sealing a regular `specify` candidate is refused with `lineage-exists` (exit `1`), leaving the candidate staged.
+- **Sealing a fresh candidate (`--fresh`):** A candidate staged with `emery specify --fresh` seals directly over the repository's `HEAD` commit with no `Parent:` trailer (`parent: null`), starting a new lineage while leaving all earlier `emery/<id>` branches intact.
 
 ### Sealing an amendment
 
-An amendment `emery amend` staged carries its three documents — the amended specification, whose `parent` already names the revision it amends, with the amended design and plan — and the base it was prepared against, the revision's id and the commit it was read at. It seals those documents as the next revision over **that commit**, `Parent:` the base revision, and the message carries what changed as trailers after `Base:` — `Added:`, `Changed:`, and `Retired:`, the counts by class, and `Slices:` naming each slice the plan added, changed, or removed as `SLICE-002 orders changed, SLICE-004 export removed`, elided when the plan's slices stand; a conflict is counted under none of them, since it is a requirement to reconcile rather than a change made. The seal is refused `amendment-stale` (exit `1`) before any write where the base is no longer the current revision at that commit — another seal landed, the head moved past the label, or the repository holds no revision — the description naming the pair the amendment was prepared against and the pair, or no revision, the repository now holds; the amendment stays staged until `emery amend` prepares it again. A conflict among the amendment's change sources refuses nothing: the requirement seals marked `[conflict]`, as a `specify` seals one, for the next change to resolve. The base's own label is left standing beside the new one.
+An amendment staged by `emery amend` carries its amended `spec`, `design`, and `plan` (each with `parent` set to `base.revision`) alongside the exact `base` (`{ revision, commit }`) it was prepared against:
+
+- **Base verification (`amendment-stale`):** Before writing anything, Emery verifies that the target repository's current revision is still `base.revision` at `base.commit`. If another revision was sealed or `HEAD` moved past the label in the meantime, `emery apply` fails with `amendment-stale` (exit `1`) and leaves the amendment staged so you can re-run `emery amend`.
+- **Commit trailers:** The sealed commit is created on top of `base.commit` with `Revision:`, `Parent:`, and `Base:` trailers, followed by summary trailers:
+  - `Added: <count>`
+  - `Changed: <count>`
+  - `Retired: <count>`
+  - `Slices: SLICE-002 orders changed, SLICE-004 export removed` *(omitted when no slices changed)*
+- **Conflicts allowed:** Requirements in `[conflict]` do not block `emery apply`; they are sealed into `spec/spec.json` with `[conflict]` status and competing statements recorded as notes so you can reconcile them in a subsequent amendment.
 
 ### `spec/` is the engine's
 
-A `spec/` the head already holds that is not exactly the three documents of a revision — a `spec/notes.md`, a file or a link at that path, an empty directory — is the operator's, and the seal is refused `spec-mismatch` (exit `1`) naming what the directory holds, the staged item left as it was; the hint is to restore the labelled documents (`git checkout emery/<revision> -- spec/`) or move the directory aside and run `apply` again. Three documents at a head no label names that read as **no revision** — not JSON, or not the shape, as a `git merge` of two branches that each sealed one leaves them with the conflict markers committed — or that each read yet read as **no one revision's** — one side's `spec.json` kept beside the other side's `design.json` and `plan.json`, so the plan places a requirement the specification does not state, leaves one it states in no slice, or owns a type the design lacks — were edited or merged by hand, since a seal writes them whole: the refusal says so, and the hint is to keep one side's three files whole (`git checkout <branch> -- spec/`), commit, and run the other side's amendment again over it ([`emery amend`](amend.md#limits) has the two-branch rule). A `src/spec/` deeper in the tree is the project's own and never read. The same reading refuses `emery show`, `emery build`, `emery amend`, and a `specify` that knows the target, since each reads the revision from there first.
+The root-level `spec/` directory in the target repository is reserved exclusively for Emery's `spec.json`, `design.json`, and `plan.json` files (nested directories like `src/spec/` are untouched). `emery apply` fails with `spec-mismatch` (exit `1`) if:
+
+- **Extra files exist in `spec/`:** `spec/` holds any file, symlink, or subdirectory other than the three JSON documents. Restore the labelled files (`git checkout emery/<revision> -- spec/`) or move your files elsewhere.
+- **`spec/` was edited or merged by hand:** At an unlabelled `HEAD` (such as after a `git merge` of two branches that each sealed a revision), the three JSON files fail to parse or fail cross-document consistency (`Revision::findings`, such as a slice referencing a missing requirement ID or data type). Keep one branch's three files whole (`git checkout <branch> -- spec/`), commit the merge, and re-run the other branch's `emery amend`.
 
 ### Refusals
 
-A refused seal leaves the candidate or the amendment staged. `apply` with nothing staged fails typed with `nothing-staged` (exit `2`); run `emery specify` or `emery amend` first, and review what stands with `emery show <artifact> --staged` or `emery show amendment`. `apply` with no `[target]` — no `--config`, and no project-root `emery.toml` carrying the table — fails typed with `build-target-required` (exit `1`): the specification has no repository to live in. A candidate or a current revision under another grammar than this binary's is `spec-outdated` (exit `1`). A document that carries a credential is `secret-detected` (exit `1`), nothing sealed.
+Whenever `emery apply` refuses to seal, the staged candidate or amendment remains untouched in `.emery/storage/`.
 
-`emery specify --apply` and `emery amend --apply` each stage and seal in one run: the stage lands first, so a seal refused for any of the above leaves the candidate or the amendment staged for a later `emery apply`.
+| Error code | Exit | Cause | Recovery |
+| --- | --- | --- | --- |
+| `nothing-staged` | `2` | Nothing is currently staged in `.emery/storage/`. | Run `emery specify` or `emery amend` first, or pass `--apply` to either command. |
+| `build-target-required` | `1` | No `[target]` table found in `--config` or the project-root `emery.toml`. | Add a `[target]` table to `emery.toml` or pass `--config <path>`. |
+| `lineage-exists` | `1` | A non-fresh `specify` candidate is being sealed over a revision that has a `parent`. | Run `emery specify --fresh` then `emery apply`, or use `emery amend`. |
+| `amendment-stale` | `1` | The target repository's current revision or commit no longer matches the staged amendment's `base`. | Re-run `emery amend` against the updated revision, then `emery apply`. |
+| `spec-mismatch` | `1` | Root-level `spec/` contains non-revision files, tampered files, or hand-merged conflict state. | Restore `git checkout emery/<revision> -- spec/` or keep one branch's `spec/` whole (`git checkout <branch> -- spec/`). |
+| `spec-outdated` | `1` | The staged item or current revision uses an older `emery` grammar stamp. | Regenerate with `emery specify`. |
+| `secret-detected` | `1` | One of the staged specification documents contains a credential pattern. | Remove the secret from your source input, re-run `specify` or `amend`, and `apply` again. |
+| `repository-required` | `1` | `[target] repository = "."` is set, but the project directory is not a Git repository. | Initialize a Git repository (`git init`) and create a commit, or change `[target] repository`. |
+| `base-not-sealed` | `1` | `[target] repository = "."` is set, but the repository has no commits yet. | Create an initial commit in the repository and re-run `emery apply`. |
+| `revision-not-found` | `2` | The `[target] repository` URL does not exist, has no default branch, or conflicts with an engine-created repository of the same `name`. | Check the URL or remove `.emery/vcs/repos/<name>`. |
+| `bad_gateway` | `4` | The remote `[target] repository` could not be reached. | Check network and Git credentials and retry. |
 
-This is the CLI command invoked by [`/emery:apply`](../../../plugins/emery/skills/apply/SKILL.md), which relays the label, the commit, and the parent it amends; the CLI itself has no interactive mode.
+This is the CLI command invoked by the [`/emery:apply`](../../../plugins/emery/skills/apply/SKILL.md) Cursor skill.
 
-## The `[target]` table
-
-`emery.toml` is the operator-owned file every verb reads. Its `[target]` table names the repository the specification lives in and the adapter a build runs through; `apply` reads the `name` and `repository` alone and loads nothing. The table is described under [`emery build`](build.md#the-target-table): `name` is the directory a clone or a created repository is kept in, `.emery/vcs/repos/<name>`, which belongs to whatever first cloned or created it; `repository` is one URL, or `"."`, or omitted. A run naming no `--config` discovers the project-root `emery.toml`; `--config` without a value names the project-relative `emery.toml`, and an explicit value names another file.
+---
 
 ## Options
 
-| Option                     | Description                                                                                                                                                              |
-| -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `--repository <url\|.>`    | The repository the revision is sealed in: a URL, cloned under `.emery/vcs/repos/<name>`, or `.` for the project checkout; beside `--config`, it takes the place of the `[target] repository`. |
-| `--config [<path>]`        | Operator-owned config naming the `[target]`; the omitted value selects `emery.toml` (`-c` for short). A run naming no `--config` discovers the project-root file.          |
-| `--format`                 | Global output format: `json` for structured automation output.                                                                                                           |
+| Option | Short | Description |
+| --- | --- | --- |
+| `--repository <url\|.>` | — | Target Git repository where the revision is sealed (`"."` for the project repository, or a Git URL cloned under `.emery/vcs/repos/<name>`). Overrides `[target] repository` in `emery.toml`. |
+| `--config [<path>]` | `-c` | Path to configuration file containing `[target]` (defaults to `emery.toml` when `<path>` is omitted; discovered automatically when `--config` is not passed). |
+| `--format <text\|json>` | — | Output format (`text` or `json`; env `EMERY_FORMAT`). |
+
+---
 
 ## JSON output
 
-When `--format json` is provided, returns:
+When `--format json` is passed, `emery apply` writes a single JSON object to `stdout` (see [CLI output shapes](../cli-output-shapes.md#emery-apply) for a full example):
 
-- `revision` — the id of the revision sealed, now current
-- `parent` — the id of the revision it amends or displaced; omitted on the first seal and on a fresh seal
-- `commit` — the `Revision <id>` commit the three documents stand at
-- `label` — the branch set on that commit, `emery/<revision>`
-- `repository` — the repository the revision was sealed in: `.` for the project checkout, else `./.emery/vcs/repos/<name>`
-- `kind` — what was sealed: `revision` for a candidate `emery specify` staged, `amendment` for an amendment `emery amend` staged
-- `amendment` — the id of the amendment sealed, for that kind; omitted for a revision candidate
-- `diff` — the sealed revision's diff against the revision it amends or displaced, in the shape [`emery specify`](specify.md#json-output) reports — within one history for an amendment, so `spec.retired` lists what it withdrew; omitted on the first seal (see [CLI output shapes](../cli-output-shapes.md#emery-apply))
+| Field | Type | When present | Description |
+| --- | --- | --- | --- |
+| `revision` | `string` | Always | SHA-256 ID of the newly sealed revision. |
+| `parent` | `string` | When sealing an amendment or displacing an initial revision | SHA-256 ID of the parent revision (`null`/omitted on first seal or `--fresh`). |
+| `commit` | `string` | Always | Git commit SHA where `spec/{spec,design,plan}.json` were sealed. |
+| `label` | `string` | Always | Local Git branch name (`emery/<revision>`). |
+| `repository` | `string` | Always | Target repository path (`"."` or `"./.emery/vcs/repos/<name>"`). |
+| `kind` | `"revision"` \| `"amendment"` | Always | Whether a `specify` candidate (`"revision"`) or an `amend` change (`"amendment"`) was sealed. |
+| `amendment` | `string` | When `kind == "amendment"` | SHA-256 ID of the staged amendment that was sealed. |
+| `diff` | `object` | When a previous revision existed | Diff against the parent/displaced revision (`spec.retired` populated for amendments). |
 
-Text mode prints `sealed revision <id> as emery/<id> at <commit8>`, then `  amends <parent>` for an amendment sealed, then `  repository ./.emery/vcs/repos/<name>` when the seal landed outside the project checkout, then the one-line diff summary when a revision was amended or displaced.
+---
+
+## Text output
+
+```text
+sealed revision 9f8e7d6c… as emery/9f8e7d6c… at 4e5f6a7b
+  amends 1a2b3c4d…
+  repository ./.emery/vcs/repos/shop
+  diff vs 1a2b3c4d: spec +0 -0 ~1 retired 1, design +0 -0 ~0, plan +0 -0 ~1
+```
+
+- `  amends <parent>` is printed only when `kind` is `"amendment"`.
+- `  repository <path>` is printed only when `repository` is not `"."`.
+
+---
 
 ## See also
 
-- [`emery specify`](specify.md) stages the candidate and [`emery amend`](amend.md) the amendment this verb seals; [`emery show`](show.md) renders the sealed revision, and [`emery build`](build.md) builds its plan; see the [CLI reference](index.md).
+- [`emery specify`](specify.md) — stage a candidate revision from scratch.
+- [`emery amend`](amend.md) — stage an incremental amendment against the current revision.
+- [`emery show`](show.md) — inspect the sealed revision in Markdown or JSON.
+- [`emery build`](build.md) — build the sealed revision's plan wave by wave.
+- [Revision lifecycle](../../explanation/revision-lifecycle.md) — how staging, sealing, labels, and lineages work.

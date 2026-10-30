@@ -18,7 +18,7 @@ use std::collections::BTreeSet;
 use emery_adapter::source::{ClaimKind, SourceKind};
 use omnia_sdk::{Error, server_error};
 
-use crate::amend::standing::Standing;
+use crate::amend::baseline::Baseline;
 use crate::revision::{self, Change, ChangeClass, Cited};
 use crate::specify::{BASELINE, Basis, Contributor, Extract, Scope};
 
@@ -45,8 +45,8 @@ impl<'a> ChangeSet<'a> {
 
     // The change set of a change that states no requirement: every standing
     // requirement as it is, with no source behind it, and nothing drafted.
-    pub fn unchanged(standing: &Standing<'a>) -> Self {
-        let changes = standing
+    pub fn unchanged(baseline: &Baseline<'a>) -> Self {
+        let changes = baseline
             .requirements()
             .map(|requirement| {
                 let before = requirement.stated();
@@ -115,17 +115,17 @@ impl<'a> ChangeSet<'a> {
     // revises; its absence is a requirement the base lacks. A `retire` is
     // ranked as a statement is, so a withdrawal and a revision at one rank
     // are a conflict and the higher-ranked of the two decides.
-    pub fn derive(standing: &Standing<'a>, bases: Vec<Basis<'a>>) -> Result<Self, Error> {
+    pub fn derive(baseline: &Baseline<'a>, bases: Vec<Basis<'a>>) -> Result<Self, Error> {
         let unmatched: Vec<&Contributor<'_>> = bases
             .iter()
-            .filter(|basis| standing.matched(basis).is_none())
+            .filter(|basis| baseline.matched(basis).is_none())
             .flat_map(Basis::withdrawals)
             .collect();
         if !unmatched.is_empty() {
             return Err(retire_unmatched(&unmatched));
         }
 
-        let mut free = standing.free_ids();
+        let mut free = baseline.free_ids();
         let mut changes = Vec::with_capacity(bases.len());
         let mut drafted = Vec::new();
         for mut basis in bases {
@@ -134,7 +134,7 @@ impl<'a> ChangeSet<'a> {
                 .filter(|member| member.source != BASELINE)
                 .map(Cited::from)
                 .collect();
-            let matched = standing.matched(&basis);
+            let matched = baseline.matched(&basis);
 
             let (id, subject, class, before, after) = if let Some(requirement) = matched {
                 // the base's statement, or the competing statements of a

@@ -1,6 +1,6 @@
-# CLI Reference
+# CLI reference
 
-The `emery` CLI owns all deterministic operations. The grammar is five verbs plus the auto-derived `completions` — deleted verbs are gone from the grammar, not hidden.
+This section documents every command, flag, and global option of the `emery` command-line interface. It is for developers, operators, and automation scripts invoking `emery`.
 
 ## Installation
 
@@ -8,24 +8,36 @@ The `emery` CLI owns all deterministic operations. The grammar is five verbs plu
 brew tap augentic/tap
 brew install emery
 
-# or: cargo install --git https://github.com/augentic/emery --locked
+# Or install from source:
+cargo install --git https://github.com/augentic/emery --locked
 ```
 
-## Conventions
+## Global options
 
-- All commands return structured output on stdout and use exit codes for success/failure; `--format json` selects the JSON envelope (see [CLI output shapes](../cli-output-shapes.md)).
-- An adapter is named by an exact package reference, `namespace:name@version`, read from the store `~/.emery/adapters` and fetched into it on the first run that names it (see [Adapters](../adapters.md)).
-- The specification lives in the target's repository: `specify` stages a candidate in `.emery/storage`, `amend` stages an amendment against the current revision in the same slot, `apply` seals either under `spec/` as one commit labelled `emery/<revision>` — an amendment's naming the revision it amends as its parent — and `build` and a bare `show` read that revision from the repository the `[target]` table names, never what is staged.
-- Commands that modify `.emery/storage` state are idempotent where possible.
-- Skills delegate to the CLI for all structural operations — they never hand-edit `.emery/storage` state or `spec/` directly.
+Every `emery` subcommand accepts these global options:
+
+| Flag | Environment variable | Default | Description |
+| --- | --- | --- | --- |
+| `--format <text\|json>` | `EMERY_FORMAT` | `text` | Output format on `stdout`. Use `json` for structured machine-readable envelopes (see [CLI output shapes](../cli-output-shapes.md)). |
+| `-v`, `-vv`, ... | `RUST_LOG` | `info` | Increase log verbosity on `stderr` (`-v` for `debug`, `-vv` for `trace`). Cannot be combined with `-q`. |
+| `-q`, `-qq`, ... | `RUST_LOG` | `info` | Decrease log verbosity on `stderr` (`-q` for `warn`, `-qq` for `error`). Cannot be combined with `-v`. |
+| `-h`, `--help` | — | — | Print help text and exit `0`. |
+| `-V`, `--version` | — | — | Print the binary version and exit `0`. |
 
 ## Commands
 
-| Verb | Purpose |
-|------|---------|
-| [emery specify](specify.md) | Generate the specification, design, and build plan from the sources named on the invocation and stage them as one candidate; `--apply` seals it in the same run, `--fresh` starts a history over |
-| [emery amend](amend.md) | Read the named sources as a change against the current revision and stage an amendment — every requirement classed added, changed, retired, conflict, or unchanged, the documents redrafted for the change alone; `--apply` seals it in the same run |
-| [emery apply](apply.md) | Seal the staged candidate or amendment as the current revision in the target's repository, under `spec/` at one commit labelled `emery/<revision>`, an amendment's naming its parent |
-| [emery build](build.md) | Build the sealed plan through a target adapter in waves, each slice merged into the label `emery/<revision>` and each wave verified; a re-run resumes from the label |
-| [emery show](show.md) | Print a reviewable artifact of the current revision, of the staged candidate under `--staged`, or the staged amendment (`show amendment`), to stdout; `--format json` carries the typed document |
-| `emery completions <shell>` | Print a shell-completion script; auto-derived from the live clap surface |
+| Command | Summary |
+| --- | --- |
+| [`emery specify`](specify.md) | Extract claims from sources, synthesize `spec`, `design`, and `plan`, and stage a candidate revision (`--apply` seals it; `--fresh` starts a new history). |
+| [`emery amend`](amend.md) | Match change sources against the existing requirements in the current revision and stage an incremental `Amendment` (`--apply` seals it). |
+| [`emery apply`](apply.md) | Seal the currently staged candidate or amendment into the target Git repository under `spec/` on branch `emery/<id>`. |
+| [`emery build`](build.md) | Build the sealed plan in dependency waves through a target adapter, merging and verifying each wave on branch `emery/<id>`. |
+| [`emery show`](show.md) | Render `spec`, `design`, `plan`, or `amendment` from the current revision or staging area as Markdown or JSON. |
+| `emery completions <shell>` | Print a shell-completion script (`bash`, `zsh`, `fish`, `elvish`, `powershell`) to `stdout`. |
+
+## CLI conventions
+
+- **Streams:** Semantic command output (text or JSON) is written to `stdout`. Error envelopes and live tracing logs are written to `stderr`.
+- **Adapter references:** Every adapter is named by an exact package reference `namespace:name@version`, loaded from `~/.emery/adapters` and fetched automatically for the `emery` namespace on first use (see [Adapters](../adapters.md)).
+- **Configuration:** Project sources and target settings live in [`emery.toml`](../config.md).
+- **State integrity:** Never edit `.emery/storage/` or the root-level `spec/` directory in your target repository by hand. Always use `emery specify`, `emery amend`, and `emery apply` (see [Revision lifecycle](../../explanation/revision-lifecycle.md)).
