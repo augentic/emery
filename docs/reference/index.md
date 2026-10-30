@@ -1,10 +1,16 @@
 # Reference
 
-The lookup table for the shipped `emery` surface. The v1 delivery workflow's reference pages (plan, slice, adapters, artifacts, lifecycle) are archived at git tag `v1` alongside the code they described.
+This section provides structured lookup documentation for Emery's configuration file, command-line interface, JSON output envelopes, adapter package store, and runtime deployment profiles. It is for developers and operators who need exact syntax, field tables, and error codes.
 
 ## Sections
 
-- [CLI Reference](cli/index.md) — the shipped verbs: `specify` stages a candidate, `amend` stages an amendment against the sealed revision, `apply` seals either in the target's repository, `build` builds the sealed plan, `show` renders the revision, the candidate, or the amendment.
-- [CLI output shapes](cli-output-shapes.md) — the JSON envelopes and exit contract every verb honours.
-- [Adapters](adapters.md) — the package reference a run names an adapter by, the store the binary reads it from, and how a release gets there.
-- [Deployment profiles](deployment-profiles.md) — how the runtime binds engine storage and mounts the project, and how other deployments swap those bindings.
+| Reference page | What it covers |
+| --- | --- |
+| [Configuration (`emery.toml`)](config.md) | Schema and field tables for `[[source]]` and `[target]`, file discovery rules, and how CLI flags layer over `emery.toml`. |
+| [CLI reference](cli/index.md) | Synopsis, flags, behaviour, and error codes for [`emery specify`](cli/specify.md), [`emery amend`](cli/amend.md), [`emery apply`](cli/apply.md), [`emery build`](cli/build.md), [`emery show`](cli/show.md), and `emery completions`. |
+| [CLI output shapes](cli-output-shapes.md) | Canonical `--format json` output schemas, text-mode conventions, exit codes, and recovery error codes for every CLI verb. |
+| [Adapters](adapters.md) | Adapter package reference syntax (`namespace:name@version`), the `~/.emery/adapters` store layout, registry routing, and loader error codes. |
+| [Deployment profiles](deployment-profiles.md) | Host capability bindings (`wasi:keyvalue`, `wasi:blobstore`, `omnia:vcs`), filesystem mounts, worker grants, and environment variables. |
+
+> [!NOTE]
+> The v1 delivery workflow reference pages are archived at Git tag `v1` alongside the v1 codebase.

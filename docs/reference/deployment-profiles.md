@@ -1,77 +1,151 @@
 # Deployment profiles
 
-How the `emery` runtime binds engine storage and version control and mounts the filesystem, and how deployments other than the shipped local binary swap those bindings without touching engine code. A profile is host policy: one `omnia::runtime!` invocation choosing what backs the `wasi:keyvalue` / `wasi:blobstore` / `omnia:vcs` capability imports and which directories the guests see. The engine ships fixed key, container, mount, and repository-path formulas and never learns which backing or host directory it runs over.
+This page is the reference for how the `emery` runtime binds WebAssembly System Interface (WASI) storage, version control, filesystem mounts, and model worker sandboxes, and how custom host deployments can swap those backings. It is for platform engineers and operators deploying or embedding Emery.
+
+## Contents
+
+- [Host capability bindings](#host-capability-bindings)
+- [The storage boundary](#the-storage-boundary)
+- [The shipped profile: local filesystem and Git](#the-shipped-profile-local-filesystem-and-git)
+  - [Filesystem mounts and W^X policy](#filesystem-mounts-and-wx-policy)
+  - [Directory layout under `.emery/`](#directory-layout-under-emery)
+- [What a build's worker may reach](#what-a-builds-worker-may-reach)
+- [Environment variables](#environment-variables)
+  - [Shipped binary (`emery`)](#shipped-binary-emery)
+  - [Local-model development binary (`emery-dev`, `--features genai`)](#local-model-development-binary-emery-dev---features-genai)
+- [Alternative and remote backings](#alternative-and-remote-backings)
+- [See also](#see-also)
+
+---
+
+## Host capability bindings
+
+A deployment profile is defined by a single `omnia::runtime!` macro invocation (in [`src/main.rs`](../../src/main.rs) for the shipped binary). It binds the engine guest's capability imports (`wasi:keyvalue`, `wasi:blobstore`, `omnia:vcs`, `omnia:plugins/loader`, and `omnia:model`) and declares filesystem mounts without changing any engine crate code.
+
+| Capability | Guest trait (`emery-engine`) | Shipped host implementation (`src/main.rs`) |
+| --- | --- | --- |
+| Key-value store (`wasi:keyvalue`) | `omnia_sdk::StateStore` | `omnia_filesystem::Client` at `.emery/storage/keyvalue/` |
+| Blob store (`wasi:blobstore`) | `omnia_sdk::BlobStore` | `omnia_filesystem::Client` at `.emery/storage/blobstore/` |
+| Version control (`omnia:vcs`) | `omnia_sdk::Vcs` | `omnia_git::Client` (invokes host `git` subprocesses) |
+| Plugin loader (`omnia:plugins/loader`) | `omnia_sdk::Plugins` | Host Wasmtime loader reading `~/.emery/adapters` and routing `emery` -> `augentic.io` |
+| Language model (`omnia:model`) | `omnia_sdk::Model` | `omnia_cursor::Client` (or `omnia_genai::Client` with `--features genai`) |
+| Project filesystem (`wasi:filesystem`) | `emery_engine::Files` | Preopened `.` directory via `std::fs` no-follow helpers |
+
+---
 
 ## The storage boundary
 
-Engine state — the revision store and its current revision id — is reachable only through the storage capabilities (`omnia_sdk::StateStore` / `BlobStore` on the guest side). The names the engine uses are flat, deployment-neutral formulas:
+The engine accesses local staging state and the cached revision pointer exclusively through `StateStore` and `BlobStore` using fixed, deployment-neutral identifiers:
 
-| Surface             | Kind                            | Name                                                    |
-| ------------------- | ------------------------------- | ------------------------------------------------------- |
-| Current revision id | keyvalue key                    | `current-revision`                                      |
-| Revision documents  | blobstore container `revisions` | `<id>/spec.json`, `<id>/design.json`, `<id>/plan.json` |
+| Surface | Capability | Container / Bucket | Key / Object name | Description |
+| --- | --- | --- | --- | --- |
+| Staged item record | `StateStore` | default bucket | `staged` | JSON record (`id`, `kind`, `base`, `fresh`) for the currently staged candidate or amendment. |
+| Cached revision pointer | `StateStore` | default bucket | `current-revision` | Cached `emery/<id>` label name (always verified against the target Git repository). |
+| Staged candidate blobs | `BlobStore` | `staged` | `<id>/spec.json`, `<id>/design.json`, `<id>/plan.json` | Unsealed candidate revision documents. |
+| Staged amendment blob | `BlobStore` | `staged` | `<id>/amendment.json` | Unsealed `Amendment` document. |
 
-The host side of the boundary is a backend type implementing `omnia::Backend` (connection options compiled into the `hosts:` row, or loaded from the environment when the row carries none) plus the host context traits `WasiKeyValueCtx` and `WasiBlobstoreCtx`. Bucket and container identifiers cross the boundary exactly once — on `open_bucket` and the container methods — which is where a profile may rewrite them.
+> [!NOTE]
+> Sealed revisions do **not** live in `.emery/storage/`. Once [`emery apply`](cli/apply.md) runs, the authoritative revision lives in the target Git repository as `spec/{spec,design,plan}.json` on branch `emery/<id>`, and the staging container is cleared.
 
-The `spec.md` / `design.md` / `plan.md` projections a project keeps beside its code are not engine state either: they are `emery show` output the skill writes into the working tree for review, and nothing reads them back. Nor is what `emery build` commits: the labelled history is the repository's, and the engine keeps no record of it. Loaded components are not engine state: every adapter is an exact package reference, loaded through the deployment's `omnia:plugins/loader` capability inside the grant the shipped runtime fixes at compile time — the `plugins:` block of the `runtime!` invocation, a package store and the registries it routes. The store, `~/.emery/adapters`, is the authority for a release on this machine: a reference it holds is read from it, fresh on every run and with no network, and one it lacks is fetched from the registry the deployment routes its namespace to, written to the store once, and read from there after ([Adapters](adapters.md)). The routing is compiled in — `emery` to `augentic.io`, nothing else — and no file on the machine redirects it; a namespace the binary routes nowhere is filled by hand (`wkg get <reference> -o ~/.emery/adapters/`), which is also how an operator who must bound registry egress mirrors the releases a project names. `emery.toml` names which package and, through `digest`, which bytes, and a build that rewrites it cannot redirect a fetch. Earlier trees (`.omnia/`, the engine's root before `.emery/`, with its `cache/wasm-pkg` and `storage/plugins/`; `~/.emery/wasm-pkg.toml`) are orphaned — nothing reads them; delete them freely. Integrity binds the resolved sha256 digest to the exact bytes the host executes — a `[[source]] digest` pins it, checked on the bytes that answered, stored or fetched — never an engine-owned mutable sidecar.
+---
 
-## The shipped profile: local filesystem
+## The shipped profile: local filesystem and Git
 
-The `hosts:` block of the `omnia::runtime!` invocation in [`src/main.rs`](../../src/main.rs) binds both storage hosts to `omnia_filesystem::Client` with the root compiled into the invocation: a durable, network-free store at `.emery/storage` under the invocation directory (`blobstore/` and `keyvalue/`). The root is deployment policy, not an environment tunable — retargeting it means shipping a different profile, never setting `FILESYSTEM_ROOT`. One invocation directory is one project; isolation between projects is the filesystem root itself. Revisions survive restart; what a build commits is the repository's, never the engine's.
+### Filesystem mounts and W^X policy
 
-The same block binds `omnia:vcs` to `omnia_git::Client`, one `git` process per operation over the `git` on the host's `PATH` (`GIT_BINARY` names another; 2.5 is the oldest that runs). The engine names every repository and working copy by a path beneath the project mount — the project itself as `.`, the repositories it clones or creates under `.emery/vcs/repos/`, the working copies it cuts under `.emery/vcs/sources/<name>`, `.emery/vcs/worktrees/<slice>`, and `.emery/vcs/integration` — and the host resolves each against the mount before git sees it; a guest never holds a host path, a credential, or a git process. Credentials are git's own: whatever lets `git clone <url>` run where `emery` runs — an SSH agent, a credential helper — serves a `[[source]] repository` and a `[target] repository`; the engine pushes nothing. A deployment without git on the host refuses at startup, before any verb runs.
+The shipped `src/main.rs` profile configures one writable guest mount and one host-only adapter store under a strict Write XOR Execute (W^X) rule:
 
-### The mount and the store
+| Location | Host path | Access | Purpose |
+| --- | --- | --- | --- |
+| Project mount (`.`) | Current working directory | Writable by engine guest | Reading workspace sources and managing `.emery/storage/` and `.emery/vcs/`. |
+| Adapter store | `~/.emery/adapters` | Host-only (unmounted) | Loading `.wasm` adapter components. Unreachable by guests and model workers. |
 
-The `mounts:` block fixes one directory, and the `plugins:` block one more, after the W^X rule that what a run can write it never loads code from:
+If you invoke `emery` from `$HOME` itself, the runtime refuses to start because `~/.emery/adapters` would sit inside the writable `.` mount.
 
-| Root       | Host directory                      | Access     | Role                                                                                                                                                      |
-| ---------- | ----------------------------------- | ---------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `.`        | the invocation directory            | writable   | The project, mounted: the tree `specify` lends its source adapters to read, and the repository `build` starts from when it builds into the checkout. `.emery/storage` and `.emery/vcs/` sit beneath it. |
-| the store  | `~/.emery/adapters`                 | host-only  | The package store, no mount at all: every adapter a reference names is a file beneath it, read by the host's loader and reachable by no guest.             |
+### Directory layout under `.emery/`
 
-The store is `$HOME`'s, apart from any project, so a release is fetched or copied once for every project on the machine and no run writes where the next one loads from. A missing store is an empty one, created on the first fetch. omnia refuses a store that lies beneath a writable mount — a guest could rewrite what the deployment loads — so running `emery` from `$HOME` itself is refused at startup, before any verb runs: a project is a directory of its own.
+All local state created by Emery inside your project directory sits under `.emery/` (which should be listed in your `.gitignore`):
 
-Beneath the mount, `.emery/vcs/` is the engine's: `repos/<key>` is one clone per repository URL a `[[source]]` names (the key a hash of the URL normalised), cloned on the first run that names it, fetched on every one after, and kept between runs; `repos/<name>` is the target's repository, under the `[target] name` or the adapter's package name — a clone of the `[target] repository` built from its default branch, fetched on every run, or, for a build naming no repository, the one the engine creates once and keeps, its root commit `Initialise` holding one `.gitignore` of `.emery/` — and the one place a build's label stands when it does not land in the checkout; `sources/<name>` is the working copy a repository source is read in, `worktrees/<slice>` the one each slice of a wave is built in, and `integration` the one a build merges its slices into and verifies, each cut for the run and removed at its end — the integration copy, and the slice copies of a wave that failed, left in place when a run fails, for inspection; the next build removes the slice copies, and reads the integration copy's history before it cuts the copy again, so the slices a failed wave merged there are verified rather than built again. Nothing else of the tree is state the engine reads back: delete a source's clone and the next run clones again, and what a build resumes from is the label's history in its repository and the merges the integration copy holds over it, never the files — so the target's repository under `repos/<name>` is the build's output when the engine created it, and deleting it discards every build landed there. Add `.emery/` to the project's `.gitignore`; a build never counts it against the base, but git would list it.
-
-A source adapter's extraction turn lends the project tree, or the working copy a repository source is read in, the same way it always has — the lend's path and the brief's `$SOURCE_DIR` are unchanged — but the mount beneath it is writable, so an extraction turn that wrote would not be stopped by the mount; the SDK's prompts ask for claims alone, the claim gate accepts nothing but them, and no extraction or survey turn declares a write tool. A build turn lends a slice's working copy writable and writes it through the SDK's `write_files` and `edit_files` tools, which the guest serves through this mount, as the adapter's `init` scaffolds its layout through it before any slice: the tools refuse a path under `.emery/` or `.git/` or naming a projection, and one that leads through a symlink anywhere on it — the lexical rule reads the spelling, so a link the repository holds or the shell planted would otherwise carry a write past it to wherever the mount reaches — a call naming either writing nothing, so neither the store nor the repository's own directory is written by a build, while the mount itself would permit it — the revision store still detects a document rewritten beneath it and fails closed on the next read; `write_files` also refuses an entry that would leave a file empty or under half its size unless the entry says so, since such a write is usually a fragment sent in place of the whole file. A build turn runs with the shell too, inside the worker boundary below, so what its install and checks leave in the copy lands in the change set beside what the tools wrote. A verify turn lends the integration working copy with the shell and the same two tools, so it repairs what its checks find; what it writes and what its checks leave behind is sealed as the wave's own commit. Nothing is sealed unread: every path an initialisation, a build, or a verification left changed goes through the secret gate first, read as the commit would store it — a file's bytes, a symbolic link's target rather than what it leads to, so a link the shell planted cannot carry a token past the gate — and a credential among them — a key file or a `.npmrc` by name, a PEM block or a provider's token by content — refuses the slice or the wave with `secret-detected`, the copy left as it was written, while a path the gate cannot read ends the run rather than passing ([build](cli/build.md)). The project checkout is never lent to a build at all: what a build changes reaches the checkout only as the operator merges the label.
-
-### What a build's worker may reach
-
-Every turn's worker — the `cursor-sdk-bridge` the Cursor backend spawns for a completion — runs inside the kernel boundary [omnia-cursor](https://github.com/augentic/omnia-backends/tree/main/crates/cursor) sets up with omnia-confine: Seatbelt on macOS, Landlock and seccomp on Linux, and a refusal at startup where neither runs; nothing in code or the environment turns it off. Inside, the worker reads the system (`/usr`, `/bin`, `/opt/homebrew`, and their kin), the lent tree, and a private scratch that stands in for `HOME` and `TMPDIR`; writes the tree and the scratch alone; and reaches the network through the backend's loopback `CONNECT` proxy, which admits Cursor's own hosts and nothing else until a turn asks for more. The shipped profile compiles one grant into the row beside the store and the registries:
-
-| Grant | Value | Role |
+| Path | Lifecycle | Purpose |
 | --- | --- | --- |
-| shell roots | `.emery/vcs/worktrees`, `.emery/vcs/integration` | A lend beneath one runs with the `shell` tool: a slice's build and a wave's verify run the tree's own install and tests. A source adapter's lend sits elsewhere and reads alone. `CURSOR_SHELL_ROOTS` in the environment is ignored, since the row fixes them. |
+| `.emery/storage/` | Persistent cache | Holds the single staged candidate/amendment and the `current-revision` cache pointer. |
+| `.emery/vcs/repos/<key>` | Persistent cache | Bare/cached Git clones for remote `[[source]] repository` URLs (keyed by normalized URL hash). |
+| `.emery/vcs/repos/<name>` | Persistent repo | Target Git repository when `[target] repository` is a URL clone or omitted (engine-managed repo). When omitted, this directory holds your sealed specifications and built branches—do not delete it unless you want to discard those builds. |
+| `.emery/vcs/revision` | Ephemeral worktree | Temporary Git worktree used by `emery apply` and `store::current` to read or write `spec/`. Removed immediately after use. |
+| `.emery/vcs/sources/<name>` | Ephemeral worktree | Temporary Git worktree checked out at `[[source]] revision` during `specify` and `amend`. Removed as soon as extraction finishes. |
+| `.emery/vcs/worktrees/<slice>` | Ephemeral worktree | Isolated Git worktree for building one slice (`SLICE-NNN`). Removed on merge; kept on disk for inspection if the slice fails. |
+| `.emery/vcs/integration` | Wave worktree | Git worktree where slices in a wave are merged and verified. Removed when all waves pass; kept on disk if a wave fails so the next `emery build` can resume already-merged slices. |
 
-What a build's worker reaches beyond the tree is the target adapter's to spell, not the operator's: the adapter knows the toolchain its prompts run, so it declares the `grants` of its `TargetAdapter::metadata()` once, one grant per program as that program's own documentation states it — the hosts it fetches from (`registry.npmjs.org` for npm; `index.crates.io` and `static.crates.io` for cargo), the `~/` roots it is installed under (`~/.nvm/versions/node`, `~/.volta`, `~/.rustup`, `~/.cargo/bin`), and the variables it reads (`RUSTUP_HOME=~/.rustup`) — and the SDK unites them, each entry once, and carries the union with every build and verify turn as the completion's worker grant, refusing a grant that breaks the shape before any turn. The host holds each entry to its shape and the backend applies what exists on this machine: a root the home lacks is logged and granted nothing, so an adapter naming three Node managers grants the one installed. The adapter is trusted by its digest, so what it spells is what the deployment granted when it pinned it; a machine whose toolchain lies elsewhere runs a `-dev` build of the adapter spelling that, never an environment variable widening every adapter's reach. A grant the backend refuses — one over a lend under no shell root, a root outside the home, a root that overlaps a credential store (`~/.ssh`, `~/.gnupg`, `~/.aws`, `~/.azure`, `~/.kube`, `~/.docker`, `~/.config/gh`, `~/.config/gcloud`, `~/.password-store`, `~/Library/Keychains`, or a tree above one), `CURSOR_API_KEY` as a variable — ends the turn as `invalid-request`, the adapter's defect.
+---
 
-The scratch `HOME` means a worker reads no `~/.npmrc`, `~/.gitconfig`, `~/.ssh`, or `~/.aws`: a credential the install would have found there is not there, which is what the gate above relies on, and a tool that needs one does without. On Linux the posture is looser in ways the operator weighs: Landlock fences TCP by port alone, so egress is cooperative — the proxy variables, which npm, pip, cargo, git, and curl honour — and a client that ignores them and carries its own address reaches the network; `/proc` is readable whole, so other same-uid processes' environments are readable inside; and `.git` and `.emery` beneath the lend are reachable where macOS denies them. omnia-cursor's README states the posture in full; nothing of it is emery's to restate.
+## What a build's worker may reach
 
-## Project-id-keyed shared backings
+Every model completion worker (`cursor-sdk-bridge` under the default `omnia-cursor` backend, or `sh -c` under `--features genai`) runs inside an OS kernel sandbox (`omnia-confine`: Seatbelt on macOS, Landlock + seccomp on Linux).
 
-A multi-project deployment can scope every bucket and container under a project id. This requires a genuinely shared backing: a command-mode process over in-memory defaults creates one fresh store and one project id, so it cannot demonstrate cross-project isolation or persistence.
+1. **Compiled-in shell roots:** `src/main.rs` compiles in `shell_roots: [".emery/vcs/worktrees", ".emery/vcs/integration"]` (`CURSOR_SHELL_ROOTS` in the environment is ignored). Only `Task::Build` and `Task::Verify` turns run inside these directories and receive the `shell` tool; source extraction and survey turns have no shell or file-write tools.
+2. **Writable scope:** A worker can write only to its lent worktree and a private per-turn scratch directory that replaces `HOME` and `TMPDIR`.
+3. **Target adapter worker grants (`TargetAdapter::metadata().grants`):** Each target adapter declares the exact registry hosts, read-only `~/` toolchain paths, and environment variables its toolchain requires:
 
-The `multi_project` scenario in [`tests/specify.rs`](../../tests/specify.rs) exercises the invariant directly: two project-scoped views over one shared scripted store commit and show independent revisions, and no unprefixed key is written. A concrete deployment supplies its shared backend clients and rewrites identifiers at the `WasiKeyValueCtx` and `WasiBlobstoreCtx` boundary; that host-specific configuration does not belong in the engine.
+| Target adapter | Egress hosts (via loopback proxy) | Read-only `~/` roots (granted if present on host) | Environment variables |
+| --- | --- | --- | --- |
+| `emery:node` | `registry.npmjs.org` | `~/.nvm/versions/node`, `~/.volta`, `~/.local/share/fnm` | `VOLTA_HOME=~/.volta` |
+| `emery:omnia` | `index.crates.io`, `static.crates.io` | `~/.rustup`, `~/.cargo/bin` | `RUSTUP_HOME=~/.rustup` |
 
-## Remote backings
+Any grant requesting a path outside `~/`, overlapping a credential directory (`~/.ssh`, `~/.aws`, `~/.gnupg`, `~/.kube`, `~/.docker`, `~/.config/gh`, `~/.config/gcloud`, `~/.password-store`, `~/Library/Keychains`), or setting `CURSOR_API_KEY` is rejected with `invalid-request` before the turn starts. For full security details and macOS vs. Linux differences, see [Security, sandboxing, and gates](../explanation/security-and-sandbox.md#3-kernel-confinement-for-model-workers).
 
-`omnia-backends` ships host clients that drop into the same `hosts:` table:
+---
 
-| Backend            | keyvalue | blobstore | vcs | Environment configuration |
-| ------------------ | -------- | --------- | --- | ------------------------- |
-| `omnia-filesystem` | yes      | yes       | —   | `FILESYSTEM_ROOT`         |
-| `omnia-redis`      | yes      | —         | —   | `REDIS_URL`               |
-| `omnia-nats`       | yes      | yes       | —   | `NATS_ADDR`               |
-| `omnia-mongodb`    | —        | yes       | —   | `MONGODB_URL`             |
-| `omnia-azure-blob` | —        | yes       | —   | `AZURE_BLOB_ENDPOINT`     |
-| `omnia-git`        | —        | —         | yes | `GIT_BINARY`              |
+## Environment variables
 
-The environment variables apply to a bare `hosts:` row; a row carrying compiled-in connect options (`Backend(options)`, as the shipped profile does for its filesystem root) ignores them. Credentials and endpoints live in the host binding's environment, never in engine state or operator files. `omnia-git` is the one `omnia:vcs` backend; a profile that swaps it supplies another `WasiVcsCtx` over the same deployment-local paths.
+### Shipped binary (`emery`)
 
-The model binding reads its own environment the same way, around the grant the row compiles in. The shipped `WasiModel: Cursor` row takes `CURSOR_API_KEY`, `CURSOR_MODEL`, `CURSOR_TIMEOUT_SECS`, `CURSOR_INACTIVITY_SECS`, `CURSOR_MAX_AGENTS`, and `CURSOR_MAX_TOOL_CALLS` (default `128`), the last the guest tool calls one completion may make — a build turn's `write_files`, `edit_files`, and reference reads among them — before the host ends it as `budget-exhausted`; `CURSOR_SHELL_ROOTS` is ignored, since the row fixes the shell roots, and what a worker reaches beyond its lend is the target adapter's grant ([above](#what-a-builds-worker-may-reach)), never a variable. The engine sets none of them.
+| Variable | Default | Description |
+| --- | --- | --- |
+| `CURSOR_API_KEY` | *(required)* | API key for the Cursor model backend (`omnia-cursor`). |
+| `CURSOR_MODEL` | Backend default | Override the model slug used by `omnia-cursor`. |
+| `CURSOR_TIMEOUT_SECS` | Backend default | Wall-clock timeout in seconds for a single model turn. |
+| `CURSOR_INACTIVITY_SECS` | Backend default | Inactivity timeout in seconds for a model turn stream. |
+| `CURSOR_MAX_AGENTS` | `8` | Maximum concurrent model turns (caps wave parallelism alongside `--jobs`). |
+| `CURSOR_MAX_TOOL_CALLS` | `128` | Maximum guest tool calls (`write_files`, `edit_files`, `read_doc`, `list_docs`) per turn before failing with `budget-exhausted`. |
+| `EMERY_JOBS` | Unset (all ready slices) | Maximum concurrent slice builds per wave (equivalent to `emery build --jobs <N>`). |
+| `EMERY_FORMAT` | `text` | Default CLI output format (`text` or `json`; equivalent to `--format`). |
+| `GIT_BINARY` | `git` (on `PATH`) | Path to the host `git` executable used by `omnia-git` (requires Git 2.5+). |
+| `RUST_LOG` | `info` | Tracing filter when neither `-v` nor `-q` is passed. |
 
-> [!WARNING]
-> Identifier grammar is backend policy. The filesystem backend rejects `/` inside a bucket or container name (path-traversal fencing), so a project-id prefix targeting it needs a single-segment delimiter (for example `<project>--revisions`) or per-project roots. The in-memory and remote backends accept `/`-separated identifiers.
+### Local-model development binary (`emery-dev`, `--features genai`)
 
-Remote-binding performance is unmeasured: the numbers stay unconfirmed until a remote backing is deployed and wall-clocked.
+When compiled with `cargo build --release --features genai`, the binary uses `omnia-genai` in place of `omnia-cursor`:
+
+| Variable | Description |
+| --- | --- |
+| `GENAI_MODEL` | Model identifier (bare name for Ollama, or `openai::<name>` for vLLM / OpenAI-compatible servers). |
+| `GENAI_ENDPOINT` | Base URL for the local model server. |
+| `OPENAI_API_KEY` | API key when using an `openai::<name>` model. |
+| `GENAI_MAX_ROUNDS` | Maximum correction rounds per question. |
+| `GENAI_MAX_TOOL_CALLS` | Maximum tool calls per completion turn. |
+| `GENAI_SHELL_TIMEOUT_SECS` | Per-command timeout in seconds for `sh -c` shell calls. |
+
+---
+
+## Alternative and remote backings
+
+Custom deployments can replace `omnia-filesystem` in the `hosts:` block of `omnia::runtime!` with other clients from `omnia-backends`:
+
+| Backend crate | `wasi:keyvalue` | `wasi:blobstore` | `omnia:vcs` | Default environment variable |
+| --- | --- | --- | --- | --- |
+| `omnia-filesystem` | Yes | Yes | — | `FILESYSTEM_ROOT` *(ignored when compiled in, as in `emery`)* |
+| `omnia-redis` | Yes | — | — | `REDIS_URL` |
+| `omnia-nats` | Yes | Yes | — | `NATS_ADDR` |
+| `omnia-mongodb` | — | Yes | — | `MONGODB_URL` |
+| `omnia-azure-blob` | — | Yes | — | `AZURE_BLOB_ENDPOINT` |
+| `omnia-git` | — | — | Yes | `GIT_BINARY` |
+
+Multi-tenant deployments sharing a single backing store can isolate projects by rewriting bucket and container names at the `WasiKeyValueCtx` and `WasiBlobstoreCtx` boundary (verified by the `multi_project` test in `tests/specify.rs`). Note that `omnia-filesystem` forbids `/` inside bucket/container names, so filesystem-backed prefixing must use a single-segment delimiter such as `<project>--staged`.
+
+---
+
+## See also
+
+- [Security, sandboxing, and gates](../explanation/security-and-sandbox.md) — W^X separation, kernel confinement, and pre-commit security gates.
+- [Adapters](adapters.md) — adapter package references and `~/.emery/adapters` resolution.
+- [`emery build`](cli/build.md) — how builds use worktrees, worker grants, and concurrency limits.

@@ -1,131 +1,176 @@
-# emery specify
+# `emery specify`
 
-Generate the specification, design, and build plan from the sources named on the invocation and stage them as one candidate for `emery apply` to seal.
+This page is the CLI reference for `emery specify`, which extracts claims from configured source adapters, synthesizes a specification, design, and build plan from scratch, and stages them as a candidate revision. It is for developers and operators generating an initial specification or starting a fresh revision lineage.
+
+## Contents
+
+- [Synopsis](#synopsis)
+- [Description](#description)
+  - [Every run starts from new](#every-run-starts-from-new)
+  - [A lineage is amended or started over](#a-lineage-is-amended-or-started-over)
+  - [Where the revision lives](#where-the-revision-lives)
+- [The `emery.toml` config](#the-emerytoml-config)
+- [Options](#options)
+- [JSON output](#json-output)
+- [Text output](#text-output)
+- [Errors and recovery](#errors-and-recovery)
+- [See also](#see-also)
+
+---
 
 ## Synopsis
 
 ```bash
 emery specify <adapter>... [--description <adapter>=<text>]
 emery specify --config [<path>]
-emery specify <adapter>... --config  # the command-line sources layered over emery.toml's
-emery specify                       # discovers the project-root emery.toml
-emery specify --config --apply      # stage and seal in one run
-emery specify --config --fresh      # start the history over where the current revision amends an earlier one
+emery specify <adapter>... --config  # CLI sources layered over emery.toml
+emery specify                        # discovers the project-root emery.toml
+emery specify --config --apply       # stage and seal in one run
+emery specify --config --fresh       # start history over when a lineage exists
 ```
+
+---
 
 ## Description
 
-The one generate verb. Each run names its own sources: every positional `<adapter>` names a **workspace-backed** source (the adapter reads a read-only view rooted at the project directory; the source's name is the adapter's), and every `--description <adapter>=<text>` (repeatable, `-d`) names a **description-backed** source (the adapter extracts the inline text; no filesystem view is lent). Nothing about the source list persists between runs — repeat the sources on every invocation (Makefile, skill, CI), or keep them in an operator-owned `emery.toml` selected with `--config [<path>]` (`-c`; the omitted value selects the project-relative `emery.toml`). Command-line sources beside `--config` **layer** over the file's: the `[[source]]` entries are the base, a command-line source named as one of them is — by its adapter's package name — takes that entry's place whole (its `path`, `digest`, `rank`, and repository go with it), and any other is appended after the file's, in command-line order, so `emery specify emery:typescript@1.3.0-dev --config` tries a development build in place of the entry keyed `typescript` and leaves the rest as the file has them. A run naming no sources at all discovers the project-root `emery.toml` as a fallback; one naming sources without `--config` reads no file.
+`emery specify` runs your configured source adapters concurrently, reconciles their claims by authority rank, synthesizes `spec.json`, `design.json`, and `plan.json`, and stages the three documents as a single content-addressed **candidate revision** in `.emery/storage/`.
 
-Each run resolves its adapters before extracting. An adapter is an exact package reference, `namespace:name@version` ([Adapters](../adapters.md)); every reference loads through the deployment's `omnia:plugins/loader` capability, which reads the release from the store, `~/.emery/adapters` — the file `namespace_name@version.wasm` there, read fresh on every run — and, when the store lacks it, fetches it from the registry the binary routes its namespace to (`emery` to `augentic.io`; nothing else is routed), writes it to the store, and loads it, so the next run reads the file. A package loads as its reference without the version (`emery:intent@1.0.0` is `emery:intent`), so two versions of one package in one run are refused by name before either loads. A `[[source]] digest` pins the bytes the release must resolve to: it rides the load, and the loader holds the bytes that answered — stored or fetched — to it before wasmtime sees them. Extract dispatches every source over the `Source` capability at once and waits for all of them, so a run takes as long as its slowest source — unless a source fails, which ends the run as soon as the failure lands; the engine then groups the requirement claims into requirements (byte-equal ids always merge; across two or more sources the model judges the rest, with authority withheld), ranks each requirement's agreeing classes by rank — each source's configured `rank` or its kind's default — into its status, drafts the scenarios and design content through schema-gated model answers checked against those requirements and the claim-derived section plan (each requirement's body is the winning claim's statement, rendered by the engine; the specification states behaviour by the role a thing plays — a message stream, a store, a secret store, an upstream service — and a preamble paragraph or scenario line naming the product, protocol, framework, or host behind it, or a package the source imports, is returned to the model to correct, since the design is where the technology lands: what the `call` claims spell as playing each role, and what a brief or decision record prescribes as a `decision`), places the accepted drafts beside its facts in the typed documents, slices the specification into a build plan (requirements sharing an id's first segment — the stem — are one slice at the least; a stem of more than 12 requirements is floored at its sub-stems, the first two segments, instead; the model may merge stems into one slice and never splits a floor, names each slice, assigns each design type to the one slice that owns it, and orders the slices by build dependency; a specification under one stem is one slice with no model turn), and **stages** the three as one content-addressed candidate, replacing any candidate staged before it. Nothing is sealed: the candidate waits in `.emery/storage` for review with [`emery show <artifact> --staged`](show.md) and for [`emery apply`](apply.md), which seals it as the current revision — the three documents under `spec/` at one commit labelled `emery/<id>` in the repository the `[target]` table names — and clears the slot. `--apply` does both in one run: the stage lands first, so a refused seal leaves the candidate staged for a later `emery apply`. Gaps stay `[unknown]`; disagreement surfaces inline as `[conflict]` / `[divergence]`. Re-running over identical sources is byte-stable and, where a revision is sealed, reports an empty re-mine diff in the success envelope — nothing is persisted for the diff.
+You can provide sources on the command line, in [`emery.toml`](../config.md), or both:
+
+- **Positional `<adapter>`:** Adds a workspace-backed source that reads files from your project directory (read-only). Its source name defaults to the adapter's package name (`typescript` for `emery:typescript@1.2.0`).
+- **`--description <adapter>=<text>` (`-d`):** Adds an inline text source passed directly to the adapter without lending any filesystem directory.
+- **`--config [<path>]` (`-c`):** Reads `[[source]]` and `[target]` entries from `<path>` (or `emery.toml` when `<path>` is omitted). If you also pass positional adapters or `--description` flags alongside `--config`, CLI sources replace matching `[[source]]` entries by name and append any new ones in CLI order (see [CLI flag layering rules](../config.md#cli-flag-layering-rules)).
+- **Automatic discovery:** Running `emery specify` with no sources and no `--config` discovers `emery.toml` in the project root. Passing sources on the command line without `--config` reads no configuration file.
+
+By default, `emery specify` only stages the candidate in `.emery/storage/`. Review it with [`emery show <spec|design|plan> --staged`](show.md) and commit it to your target repository with [`emery apply`](apply.md). Passing `--apply` stages and seals the candidate in a single run (if sealing fails, the candidate remains staged).
+
+For the full synthesis pipeline, authority rank rules, and technology-neutral `Lexicon` gate, see [Synthesis, authority, and the technology boundary](../../explanation/synthesis-and-authority.md).
 
 ### Every run starts from new
 
-Nothing of the sealed revision reaches a run: the requirements are numbered `REQ-001` onward in the order of each group's earliest claim, the slices `SLICE-001` onward by each slice's lowest requirement, every scenario, design section, and slice is drafted again, and the staged candidate is a function of the sources and the drafts alone — each document's `parent` is `null`, since nothing was amended. The current revision is read only to report the re-mine diff, and, under `--apply`, as the commit the seal lands over and the `Parent:` its commit message names; one that is outdated or unreadable yields no diff and is sealed over. Changing a sealed revision — continuing its ids, redrafting only what changed — is [`emery amend`](amend.md)'s: it reads its sources as a change against the current revision and stages an amendment `emery apply` seals as the next revision over it.
+`emery specify` always synthesizes a brand-new revision from its sources alone:
+
+- Requirements are numbered `REQ-001` upward in source order, and slices are numbered `SLICE-001` upward.
+- Each document's `parent` field is `null`.
+- Existing requirements in the sealed revision are not read into synthesis; the current revision is read only to compute the advisory `diff` summary (and as the parent commit when sealing a non-lineage revision under `--apply`).
+
+To update an existing sealed revision while preserving `REQ-NNN` and `SLICE-NNN` identifiers, use [`emery amend`](amend.md) instead.
 
 ### A lineage is amended or started over
 
-A current revision that amends an earlier one — the `parent` of its specification names another revision, as every revision `emery apply` seals from an amendment does — is a **lineage**, and a candidate drafted from the sources alone would seal over it as the next amendment while carrying none of the history's reconciliation. So a run that knows the `[target]` and reads such a revision is refused `lineage-exists` (exit `1`) before any adapter loads, the hint naming the two ways on: `emery amend <adapter>...`, a change against the current revision, or `emery specify --fresh <adapter>...`, the deliberate start-over. `--fresh` stages the candidate marked **fresh** — text mode prints `staged candidate <id> (fresh)`, the envelope `"fresh": true` — and `emery apply` seals a fresh candidate with no `Parent:` trailer, cut over the repository's head whatever revision it holds, so every earlier label stays where it was and the fresh revision starts a history of its own; a fresh candidate is never refused `lineage-exists`, and a bare candidate over a lineage is refused at the seal too, however it reached `apply`. One observation of the seal's: unchanged sources re-derive the same content-addressed id, so a fresh seal of documents the repository already holds under an earlier label moves that label onto the new commit, the label write being forced as every seal's is. A current revision with no parent is no lineage, so a first revision is sealed over by a bare `specify` as before; a run naming no `[target]` reads no repository and is held to nothing. While an amendment is staged, every `specify` is refused `amendment-pending` (exit `1`) before any load, since a specify never displaces one: review it with `emery show amendment`, seal it with `emery apply`, or re-run `emery amend` to replace it.
+When the current revision in your target repository was created by an amendment (meaning its `parent` field names an earlier revision), the repository holds a **lineage**. Running bare `emery specify` over a lineage would discard that amendment history, so Emery refuses with `lineage-exists` (exit `1`) before loading any adapters.
+
+You have two choices:
+
+1. **Evolve the existing revision:** Run [`emery amend`](amend.md) to stage an incremental change against the current revision.
+2. **Start a new lineage intentionally:** Run `emery specify --fresh`. This marks the staged candidate as `fresh` (`staged candidate <id> (fresh)`). When sealed with `emery apply`, a fresh candidate commits over the repository's `HEAD` with `parent: null`, starting a new history while leaving all earlier `emery/<id>` branches untouched.
+
+If an amendment is currently staged in `.emery/storage/`, `emery specify` refuses with `amendment-pending` (exit `1`) so you do not accidentally overwrite it. See [Revision lifecycle](../../explanation/revision-lifecycle.md#revision-lineages-and---fresh).
 
 ### Where the revision lives
 
-The specification lives in the **target repository**, the one the `[target]` table of `emery.toml` names and a build lands in ([`emery apply`](apply.md) has the three kinds: a URL cloned under `.emery/vcs/repos/<name>`, `"."` for the project's own repository, or none for a repository the engine creates there). A run that reads the file — `--config`, or the project-root `emery.toml` a run naming no sources discovers — reads that repository first, before any adapter loads, for the revision the candidate would displace: a URL is cloned, or fetched, on that read, and `repository = "."` needs the project to be a repository (`repository-required`, exit `1`, otherwise), with a commit under `--apply` (`base-not-sealed`, exit `1`). A `spec/` the repository's head holds that is not a sealed revision — the operator's own directory, or three documents edited or merged by hand — refuses the run `spec-mismatch` (exit `1`) at that read, with no turn spent ([`emery apply`](apply.md#spec-is-the-engines) has the rule and both ways out). A run naming its sources on the command line without `--config` reads no file at all, so it knows no target: it stages with no diff, and `--apply` on such a run is `build-target-required` (exit `1`), since the specification has no repository to live in.
+When `emery specify` reads a configuration file that includes a `[target]` table, it inspects the target repository before loading any adapters to check for an existing lineage and to compute the `diff` against the current revision. If you run `emery specify` with CLI sources only (and no `--config`), Emery knows no target repository: it stages the candidate without a `diff`, and passing `--apply` fails with `build-target-required` (exit `1`).
 
-`emery specify` without any source — and with no project-root `emery.toml` to discover — fails typed with `specify-source-required` (exit `1`); there is no interactive prompt mode, so every other input arrives as a flag. Naming the same `name` twice on the command line fails as `bad_request` (exit `1`); a `--description` entry without `<adapter>=` fails as `bad_request` (exit `1`).
+This is the CLI command invoked by the [`/emery:specify`](../../../plugins/emery/skills/specify/SKILL.md) Cursor skill.
 
-A reference that is not an exact package reference — no version, no namespace, a bare name, a path, a URL — is `bad_request` (exit `1`) before anything loads, hinted with the grammar. A release the store lacks under a namespace the binary routes nowhere refuses `refused` (exit `1`) before any fetch, the message naming the namespace and the file the store holds no copy of, the hint the `wkg get <reference> -o ~/.emery/adapters/` that fills it; a registry that cannot supply the release refuses `unavailable` (exit `4`); a pre-compiled artifact, stored or fetched, and a pinned `digest` the bytes do not hash to refuse `refused` (exit `1`); a reference whose component exports no `emery:adapter/source` — a target adapter — is `bad_request` (exit `1`) before any dispatch. [`examples/emery.toml`](../../../examples/emery.toml) runs the built mock components under the shipped binary once each is copied into the store under a reference of its own. The first source to fail ends the run, without waiting for the sources still extracting, and its failure is returned as the adapter put it: a refusal of its input, the operator's to fix, is `bad_request` (exit `1`); an upstream failure is `bad_gateway` (exit `4`). Evidence the claim gate rejects is Emery's own finding and is reported as `server_error` (exit `3`).
-
-This is the CLI command invoked by [`/emery:specify`](../../../plugins/emery/skills/specify/SKILL.md). The skill elicits any missing arguments conversationally and passes them as flags; the CLI itself has no interactive mode.
+---
 
 ## The `emery.toml` config
 
-`emery.toml` is operator-authored and operator-owned: the engine never writes it, and reads it when the `--config` flag names it or when a run naming no sources discovers it at the project root. `--config` without a value names the project-relative `emery.toml`; an explicit value names another project-relative file (a missing explicit file is a read error, exit `3`, never a discovery miss). Each `[[source]]` entry names one source, in declaration order; its `name` is the name the specification cites the source by, so one adapter may name several roots (the shared adapter loads once; each source still extracts over its own root). `name` may be omitted, in which case the entry is named as an argv source is — by the package's name (`documentation` for `emery:documentation@1.2.0`). `adapter` is an exact package reference, `namespace:name@version`, wherever the file sits. Exactly one content key per entry — `path` or `description`; omitted means the workspace lend at `.`. `path` resolves relative to the file containing it, as Cargo resolves `path` dependencies. `digest` pins the adapter's release to a full `sha256:` content hash, checked by the loader before the component is admitted. `rank` is the source's authority rank, an integer with `1` the highest: omitted, the adapter's kind decides it — `intent` `1`, `documentation` `2`, `behaviour` `3` — so one entry's `rank` is enough to place a source above or below a whole kind, and ranking every entry spells the order out. Equal ranks tie: two disagreeing sources at the top rank are a `[conflict]`, a source alone there wins a `[divergence]`, and each loser note records the kind and rank it lost under. `0`, a negative, or a non-integer `rank` is a parse error (`bad_request`, exit `1`). An argv source carries no `rank` and ranks by its kind. Duplicate names fail as `bad_request` (exit `1`), the same typed error argv raises.
+`emery specify` reads `[[source]]` entries (`name`, `adapter`, `path`, `description`, `repository`, `revision`, `digest`, `rank`, `scope`) and the `[target]` table (`name`, `adapter`, `digest`, `repository`) from `emery.toml`. Note that `scope` on a `[[source]]` entry is read only by `emery amend` and ignored by `emery specify`.
 
-A `[[source]]` may read a **repository** instead of the project: `repository` names its URL and `revision` the label, tag, or commit to read it at, and the two go together — one without the other is refused at the file (`bad_request`), as is a `repository` beside a `description`. After the adapters load, the run fetches the clone it keeps under `.emery/vcs/repos/` (or clones it on the first run; two sources naming one repository, however they spell its URL, share one clone and one fetch), resolves the revision, cuts a working copy under `.emery/vcs/sources/<name>`, lends it to the adapter — at the `path` within it when the entry names one, a plain relative path that may not climb out of the copy — and removes the copy once the source answered, whether or not it succeeded. A revision the repository lacks, or a URL that names no repository, is `revision-not-found` (exit `2`) before any source is asked; a remote that refuses or cannot be reached is `bad_gateway` (exit `4`). Credentials are the host's `git`'s. The success envelope names each repository source with the commit its revision resolved to.
-
-The `[target]` table names the adapter [`emery build`](build.md) runs the plan through and, through its `name` and `repository`, the repository the specification lives in ([`emery apply`](apply.md)); `specify` reads the repository for its diff and loads no target adapter. A run naming its sources on the command line without `--config` reads no file at all: the project-root `emery.toml` is a fallback for a run naming none, and layering is `--config`'s alone. The file is read whole, so a table that does not parse — an unknown key, an `adapter` that is not an exact package reference — refuses every run that reads the file; a `[[source]]` path that escapes the project refuses only the run whose source it is.
-
-Every source `path` is normalized within the project preopen `.`: absolute paths and relative paths that escape above the root fail as `bad_request` (exit `1`), and the engine never tries to infer a host path from the guest's ambient working directory. Nothing is reserved: an unknown key — `git`, `url`, a `[[source]] registry`, a `[registries]` table — is a parse error naming the key and its line (`bad_request`). The project names which package and, through `digest`, which bytes; where a release is fetched from is the binary's ([Adapters](../adapters.md)), so a rewritten `emery.toml` cannot redirect a fetch.
+For the complete schema, field tables, and examples, see [Configuration (`emery.toml`)](../config.md).
 
 ```toml
-# Workspace lend of the invocation directory (the default: path = ".").
 [[source]]
 name = "docs"
 adapter = "emery:documentation@1.2.0"
 
-# Local path, resolved relative to this file.
 [[source]]
 name = "api-surface"
 adapter = "emery:typescript@1.2.0"
 path = "packages/api/src"
 
-# Inline description instead of a filesystem view — the file form of
-# `--description`.
 [[source]]
 name = "intent"
 adapter = "emery:intent@1.0.0"
 description = "Ship a location-independent spec generator."
 
-# A wiki ranked beneath the code (behaviour defaults to 3), so where the
-# two disagree the code wins and the wiki's statement is the loser note.
-[[source]]
-name = "wiki"
-adapter = "emery:documentation@1.2.0"
-path = "wiki"
-rank = 4
-
-# A developer's own build, copied into the store as
-# `~/.emery/adapters/emery_typescript@1.3.0-dev.wasm`; without `name`,
-# keyed `typescript`.
-[[source]]
-adapter = "emery:typescript@1.3.0-dev"
-
-# Third-party package, fetched into the store by
-# `wkg get acme:ledger@2.1.0 -o ~/.emery/adapters/`, pinned to its bytes,
-# keyed `ledger`.
-[[source]]
-adapter = "acme:ledger@2.1.0"
-digest = "sha256:0000000000000000000000000000000000000000000000000000000000000000"
-
-# Another repository, read at a tag in a working copy the run cuts and
-# removes; `path` is within the repository.
-[[source]]
-name = "upstream-api"
-adapter = "emery:typescript@1.2.0"
-repository = "https://github.com/acme/api.git"
-revision = "v2.3.0"
-path = "src"
+[target]
+adapter = "emery:omnia@0.39.0"
+repository = "."
 ```
 
-## Where an adapter comes from
-
-Every adapter a run names is read from the store, `~/.emery/adapters`, and a release the store lacks under the `emery` namespace is fetched from `augentic.io` into it on the first run that names it; a release under any other namespace is put there by hand, `wkg get <reference> -o ~/.emery/adapters/` or a `cp` of a built component under the name the store reads. [Adapters](../adapters.md) has the layout, the resolution order, and every refusal.
+---
 
 ## Options
 
-| Option                           | Description                                                                                                                                                                                                     |
-| -------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `<adapter>...` (positional)      | Source adapter references, each an exact package reference `namespace:name@version` ([Adapters](../adapters.md)), named as a workspace-backed source; beside `--config`, one takes the place of the `[[source]]` of its name. |
-| `--description <adapter>=<text>` | Inline description-backed source (repeatable); `-d` for short. Layers over `--config` as a positional adapter does.                                                                                              |
-| `--config [<path>]`              | Operator-owned config; the omitted value selects `emery.toml` (`-c` for short). Its `[[source]]` entries are the base the command-line sources layer over, and its `[target]` names the repository the specification lives in. |
-| `--apply`                        | Seal the staged candidate as the current revision in the same run, as [`emery apply`](apply.md) would; needs a `[target]`, so `--config` or a discovered `emery.toml`.                                         |
-| `--fresh`                        | Start the history over: stage the candidate marked fresh, which `emery apply` seals with no parent over the repository's head where the current revision amends an earlier one, every earlier label left standing. |
-| `--format`                       | Global output format: `json` for structured automation output.                                                                                                                                                  |
+| Option | Short | Description |
+| --- | --- | --- |
+| `<adapter>...` | — | Workspace-backed source adapter references (`namespace:name@version`). Alongside `--config`, replaces the `[[source]]` entry with the same package name or appends a new entry. |
+| `--description <adapter>=<text>` | `-d` | Inline text source (`<adapter>=<text>`). Repeatable. Layers over `--config` by package name just like positional adapters. |
+| `--config [<path>]` | `-c` | Path to configuration file (defaults to `emery.toml` when `<path>` is omitted). |
+| `--apply` | — | Seal the staged candidate as the current revision in the same run (requires a `[target]` table via `--config` or discovered `emery.toml`). |
+| `--fresh` | — | Stage the candidate as a fresh start (`"fresh": true`), allowing `specify` and `apply` to start a new parentless history over an existing lineage. |
+| `--format <text\|json>` | — | Output format (`text` or `json`; env `EMERY_FORMAT`). |
+
+---
 
 ## JSON output
 
-When `--format json` is provided, returns:
+When `--format json` is passed, `emery specify` writes a single JSON object to `stdout` (see [CLI output shapes](../cli-output-shapes.md#emery-specify) for a full example):
 
-- `revision` — the staged candidate's id
-- `fresh` — `true` when the candidate was staged under `--fresh`, to be sealed with no parent over the repository's head; `false` on a bare run
-- `waves` — the candidate plan's slices grouped into the sets ready to build at once, a list of lists of slice ids in build order: the first wave every slice that depends on nothing, each wave after it every slice whose `depends-on` names only slices in the waves before, each wave in id order; their count is the plan's longest dependency chain and the widest is how many slices could build at once
-- `diff` — the re-mine diff against the current revision the candidate would displace, read from the target repository: `from`, then a `{ added, removed, changed }` object each for `spec` (requirements matched by `id` — positional, so a requirement whose place moved reads as a change — as `{ id, subject }`, a `changed` entry naming the differing `fields`, and a `retired` list beside them, empty for a candidate drafted from the sources alone), `design` (section keys), and `plan` (slices matched by `id` as `{ id, name }`, a `changed` entry naming the differing `fields`); absent when no `[target]` is known or no revision is sealed, every list empty on a byte-stable re-run (see [CLI output shapes](../cli-output-shapes.md#emery-specify))
-- `repositories` — every source read from a repository, in declaration order, each `{ source, repository, revision, commit }`: the source's name, the URL as the file spelled it, the revision asked for, and the commit it resolved to; omitted when no source names one
-- `staged` — `true` while the candidate stands staged and nothing is sealed; `false` once `--apply` sealed it
-- `applied` — under `--apply`, what the run sealed, in the shape [`emery apply`](apply.md#json-output) reports (`revision`, `parent`, `commit`, `label`, `repository`, `kind`, `diff`); omitted otherwise
+| Field | Type | When present | Description |
+| --- | --- | --- | --- |
+| `revision` | `string` | Always | Content-addressed SHA-256 ID of the staged candidate revision. |
+| `waves` | `string[][]` | Always | Slice IDs (`SLICE-NNN`) grouped into dependency waves in build order. |
+| `staged` | ` boolean` | Always | `true` when the candidate remains staged; `false` when `--apply` sealed it. |
+| `fresh` | `boolean` | Always | `true` when staged with `--fresh`; `false` otherwise. |
+| `diff` | `object` | When `[target]` has a readable current revision | Advisory diff (`from`, `spec`, `design`, `plan`) comparing the candidate against the current revision. |
+| `repositories` | `object[]` | When at least one source uses `repository` | Resolved Git commits for remote sources (`{ source, repository, revision, commit }`). |
+| `applied` | `object` | When `--apply` succeeded | Full [`emery apply`](apply.md#json-output) output object for the sealed revision. |
 
-Text mode prints `staged candidate <id>` — ` (fresh)` after it under `--fresh` — the plan's shape on one line — `  plan: 3 slices in 2 waves, widest 2` — one line per repository source — `  upstream-api read from https://github.com/acme/api.git at v2.3.0: 9f8e7d6…` — a one-line summary of the diff's counts where a revision is sealed, then `` nothing sealed; `emery apply` seals it `` or, under `--apply`, `  sealed revision <id> as emery/<id> at <commit8>`; the per-requirement and per-slice entries, and the waves themselves, ride the JSON envelope alone.
+---
+
+## Text output
+
+```text
+staged candidate 9f8e7d6c…
+  plan: 3 slices in 2 waves, widest 2
+  upstream-api read from https://github.com/acme/api.git at v2.3.0: 4e5f6a7b…
+  diff vs 1a2b3c4d: spec +1 -0 ~1 preamble, design +0 -0 ~1, plan +1 -0 ~1
+  nothing sealed; `emery apply` seals it
+```
+
+- When `--fresh` is passed, the first line ends with ` (fresh)`.
+- When `--apply` is passed, the final line is replaced by `  sealed revision <id> as emery/<id> at <commit8>`.
+
+---
+
+## Errors and recovery
+
+| Error code | Exit | Cause | Recovery |
+| --- | --- | --- | --- |
+| `specify-source-required` | `1` | No sources passed on the CLI and no `emery.toml` found at the project root. | Pass `<adapter>...` or create `emery.toml`. |
+| `lineage-exists` | `1` | The target repository's current revision amends an earlier revision (`parent` is set) and `--fresh` was not passed. | Run `emery amend <adapter>...` to evolve the revision, or pass `emery specify --fresh` to start a new lineage. |
+| `amendment-pending` | `1` | An unsealed amendment is currently staged in `.emery/storage/`. | Review it with `emery show amendment`, seal it with `emery apply`, or replace it with `emery amend`. |
+| `build-target-required` | `1` | `--apply` was passed without a `[target]` table (for example, CLI sources without `--config`). | Pass `--config` so Emery reads `[target]` from `emery.toml`. |
+| `adapter-reference` | `1` | An adapter argument is not an exact `namespace:name@version` reference. | Specify the full reference (for example, `emery:typescript@1.2.0`). |
+| `refused` | `1` | Adapter missing from `~/.emery/adapters` under an unrouted namespace, digest mismatch, or invalid Wasm component. | Populate the store with `wkg get <reference> -o ~/.emery/adapters/` or fix the `digest` pin (see [Adapters](../adapters.md)). |
+| `unsupported-version` | `1` | The adapter requires a newer `emery` binary version. | Upgrade `emery`. |
+| `spec-mismatch` | `1` | Root-level `spec/` in the target repository contains non-revision files or hand-edited/conflicted JSON. | Restore `git checkout emery/<revision> -- spec/` or resolve the branch merge (see [`emery apply`](apply.md#spec-is-the-engines)). |
+| `repository-required` | `1` | `[target] repository = "."` is set, but the project directory is not a Git repository. | Run `git init` and create an initial commit, or change `[target] repository`. |
+| `base-not-sealed` | `1` | `--apply` was used with `[target] repository = "."`, but the repository has no commits yet. | Create an initial Git commit and re-run `emery apply`. |
+| `revision-not-found` | `2` | A source `repository` / `revision` or target `repository` URL could not be found. | Verify the URL and branch/tag/commit in `emery.toml`. |
+| `server_error` | `3` | A source adapter emitted claims rejected by the SDK/engine claim gate, or a local I/O failure occurred. | Check `-v` logs for the claim gate findings. |
+| `bad_gateway` / `unavailable` | `4` | Upstream model backend error, Git remote failure, or adapter registry unreachable. | Check network connectivity and model credentials, then retry. |
+
+---
 
 ## See also
 
-- [`emery show --staged`](show.md) renders the staged candidate, [`emery apply`](apply.md) seals it, [`emery amend`](amend.md) changes a sealed revision in place of drafting again, and [`emery build`](build.md) builds the sealed plan; see the [CLI reference](index.md).
+- [Configuration (`emery.toml`)](../config.md) — full `[[source]]` and `[target]` configuration reference.
+- [`emery show`](show.md) — review the staged candidate with `emery show <spec|design|plan> --staged`.
+- [`emery apply`](apply.md) — seal the staged candidate into the target Git repository.
+- [`emery amend`](amend.md) — stage an incremental amendment against a sealed revision.
+- [Synthesis, authority, and the technology boundary](../../explanation/synthesis-and-authority.md) — how extraction, grouping, authority ranks, and the `Lexicon` gate work.

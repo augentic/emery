@@ -17,6 +17,7 @@
 # Reference
 
 - [Overview](reference/index.md)
+- [Configuration (`emery.toml`)](reference/config.md)
 - [CLI reference](reference/cli/index.md)
   - [emery specify](reference/cli/specify.md)
   - [emery amend](reference/cli/amend.md)
