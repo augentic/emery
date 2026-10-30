@@ -5,6 +5,15 @@
 
 ---
 
+# Explanation
+
+- [Revision lifecycle](explanation/revision-lifecycle.md)
+- [Synthesis, authority, and the technology boundary](explanation/synthesis-and-authority.md)
+- [Wave-based builds and verification](explanation/wave-builds.md)
+- [Security, sandboxing, and gates](explanation/security-and-sandbox.md)
+
+---
+
 # Reference
 
 - [Overview](reference/index.md)
