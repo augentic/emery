@@ -41,12 +41,23 @@ emery amend --description emery:intent@0.39.0="Add order cancellation" --config
 ## Navigating this documentation
 
 - **[Glossary](glossary.md):** Plain-language definitions of Emery's core concepts, including revisions, staging, sealing, labels, lineage, stems, floors, triggers, slices, waves, and adapters.
+- **Tutorials:** Step-by-step hands-on walkthroughs for new users:
+  - **[Your first specification and build](tutorials/quickstart.md):** Extract a specification from Markdown docs, seal it into Git, and build it with a mock target adapter.
+  - **[Evolving a specification with `emery amend`](tutorials/amending-a-spec.md):** Update requirements, add technology decisions, review staged amendments, and rebuild.
+- **How-To Guides:** Task-focused recipes for common workflows:
+  - **[Configure local, inline, and remote Git sources](how-to/configure-sources.md):** Set up `path`, `description`, and `repository` sources and layer CLI flags with `--config`.
+  - **[Set authority ranks and resolve source conflicts](how-to/resolve-conflicts.md):** Prioritize sources with `rank` and resolve `[conflict]` requirements.
+  - **[Retire requirements explicitly or by scope](how-to/retire-requirements.md):** Withdraw obsolete requirements via `retire` claims or `scope = "whole"`.
+  - **[Merge specifications across Git branches](how-to/merge-branches.md):** Resolve `spec/` conflicts when two branches seal amendments independently.
+  - **[Install, pin, and vendor Wasm adapters](how-to/manage-adapters.md):** Manage `~/.emery/adapters`, pin SHA-256 digests, and run offline.
+  - **[Author a custom source or target adapter](how-to/author-an-adapter.md):** Build a custom Wasm adapter in Rust with `emery-sdk`.
 - **Explanation:** Deep architectural guides covering how Emery works under the hood:
   - **[Revision lifecycle](explanation/revision-lifecycle.md):** How `.emery/storage` stages candidates and amendments, how `emery apply` seals `spec/` onto `emery/<id>`, the three target repository modes, and revision lineages.
   - **[Synthesis, authority, and the technology boundary](explanation/synthesis-and-authority.md):** How source adapters extract claims, how authority ranks resolve `[agreed]`, `[divergence]`, and `[conflict]`, and how the `Lexicon` gate keeps specifications technology-neutral.
   - **[Wave-based builds and verification](explanation/wave-builds.md):** How requirements are sliced by stem and sub-stem floor (`SLICE_CAP = 12`), built in parallel Git worktrees, merged, verified, and resumed.
   - **[Security, sandboxing, and gates](explanation/security-and-sandbox.md):** W^X separation between `.` and `~/.emery/adapters`, kernel worker sandboxing, worker grants, and the `spec-rewritten` and `secret-detected` gates.
 - **[Reference](reference/index.md):** Detailed lookup documentation for the shipped system:
+  - **[Configuration (`emery.toml`)](reference/config.md):** Complete schema and CLI layering rules for `[[source]]` and `[target]`.
   - **[CLI Reference](reference/cli/index.md):** Flags, configuration tables, and behaviour for [`emery specify`](reference/cli/specify.md), [`emery amend`](reference/cli/amend.md), [`emery apply`](reference/cli/apply.md), [`emery build`](reference/cli/build.md), and [`emery show`](reference/cli/show.md).
   - **[CLI Output Shapes](reference/cli-output-shapes.md):** JSON output schemas, exit codes, and recovery error codes for every command.
   - **[Adapters](reference/adapters.md):** Package reference syntax (`namespace:name@version`), local adapter storage (`~/.emery/adapters`), and registry resolution.
