@@ -1,24 +1,34 @@
-# Emery
+# Emery Cursor Plugin
 
-Emery routes specification generation through the `/emery:specify` wrapper over the `emery` CLI, amending the sealed revision through `/emery:amend`, sealing the staged candidate or amendment in the target's repository through `/emery:apply`, and building the sealed plan through `/emery:build`. The v1 delivery workflow (plan / refine / execute / status / finalize and the `system-*` definition loop) is archived at tag `v1`; its skill wrappers are deleted, not hidden.
-
-Every skill is an ultrathin invoke-and-relay wrapper: it elicits any missing arguments, invokes the corresponding `emery` command, and relays the output verbatim. Orchestration and validation live in the CLI.
+This directory contains the `/emery:*` Cursor plugin, providing thin slash-command wrappers around the `emery` CLI for specifying, amending, sealing, and building software inside Cursor.
 
 ## Skills
 
+Every skill is an invoke-and-relay wrapper: it checks for missing arguments, invokes the corresponding `emery` CLI command, and displays the output verbatim. All synthesis, validation, and Git operations live in the `emery` binary.
+
 | Skill | Command | Description |
-|-------|---------|-------------|
-| [specify](skills/specify/SKILL.md) | `/emery:specify` | Generate `spec.md` / `design.md` / `plan.md` from the named sources and stage them as one candidate (`emery specify`) |
-| [amend](skills/amend/SKILL.md) | `/emery:amend` | Stage a change against the sealed revision from the named sources, relay what it classed, and offer `emery show amendment` and the seal (`emery amend`) |
-| [apply](skills/apply/SKILL.md) | `/emery:apply` | Seal the staged candidate or amendment as the current revision in the target's repository, under `spec/` at one commit labelled `emery/<revision>` (`emery apply`) |
-| [build](skills/build/SKILL.md) | `/emery:build` | Build every slice of the sealed plan through a target adapter, one commit per slice under the same label, and relay what it committed (`emery build`) |
+| --- | --- | --- |
+| [specify](skills/specify/SKILL.md) | `/emery:specify` | Extract claims from sources, synthesize `spec`, `design`, and `plan`, stage them as a revision candidate, and preview them with `emery show --staged` (`emery specify`) |
+| [amend](skills/amend/SKILL.md) | `/emery:amend` | Match updated sources against the current revision, stage an amendment, report change counts, and offer `emery show amendment` (`emery amend`) |
+| [apply](skills/apply/SKILL.md) | `/emery:apply` | Seal the staged candidate or amendment into the target repository under `spec/` on branch `emery/<id>` (`emery apply`) |
+| [build](skills/build/SKILL.md) | `/emery:build` | Build and verify every slice of the current plan in waves on branch `emery/<id>` (`emery build`) |
 
-## Previewing a skill
+## Previewing a skill locally
 
-The plugin is read from its directory, so a skill is tried before the marketplace entry moves:
+Launch Cursor Agent against the working-tree plugin directory to test changes before bumping the marketplace version:
 
 ```bash
 cursor-agent --plugin-dir plugins/emery
 ```
 
-In that session, over a project whose `emery.toml` names a `[target]` with a sealed revision, `/emery:amend emery:documentation@<version> --config` after editing the documentation exercises the amend wrapper end to end: it should install or confirm the CLI, invoke `emery --format json amend emery:documentation@<version> --config`, relay the `staged amendment <id>` line, the base, and the counts by class, and offer `emery show amendment` and `/emery:apply` rather than sealing on its own.
+To test `/emery:amend` end to end in a project that has an `emery.toml` `[target]` and a sealed revision:
+
+1. Edit a source file or documentation file in the project.
+2. Run `/emery:amend emery:documentation@<version> --config` in the Cursor session.
+3. Verify that the skill confirms the CLI is installed, runs `emery --format json amend emery:documentation@<version> --config`, prints the staged amendment ID, base revision, and change counts, and offers `emery show amendment` and `/emery:apply` without sealing automatically.
+
+---
+
+## Prior versions
+
+The `v1` delivery workflow (`plan`, `refine`, `execute`, `status`, `finalize`, and the `system-*` loop) is archived at Git tag [`v1`](https://github.com/augentic/emery/tree/v1).

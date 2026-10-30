@@ -1,8 +1,8 @@
 # Contribution Guide
 
-Augentic welcomes contributions to the Emery framework. This document covers the essentials for getting a pull request accepted. The repository map, vocabulary, invariants, and commands are in [`AGENTS.md`](AGENTS.md).
+Augentic welcomes contributions to Emery. This guide covers how to set up your environment, run checks, and submit a pull request; for the full workspace map and architectural invariants, see [`AGENTS.md`](AGENTS.md).
 
-## Table of Contents
+## Contents
 
 - [Getting started](#getting-started)
 - [Code style](#code-style)
@@ -12,35 +12,39 @@ Augentic welcomes contributions to the Emery framework. This document covers the
 
 ## Getting started
 
-Unless you are fixing a known bug, we recommend discussing your change with the core team via a GitHub issue before getting started to ensure alignment with the project roadmap.
+Unless you are fixing a small, well-defined bug, please open a GitHub issue to discuss your proposed change with the maintainers before starting work.
 
-The framework lives in one repository with two surfaces:
+This repository contains two main surfaces:
 
-- **Rust workspace** (`src/`, `crates/`, `examples/`) — the `emery` binary, guest orchestrations, and runtime-generated model answer contracts
-- **Prose and Cursor wrappers** (`plugins/`, `docs/`, `.cursor-plugin/`) — the ultrathin `/emery:*` skill wrapper, the CLI reference, and the marketplace manifest
+- **Rust workspace** (`src/`, `crates/`, `examples/`, `tests/`): The `emery` CLI and runtime binary, the engine guest, the adapter contract and SDK crates, and the mock adapters.
+- **Documentation and Cursor plugin** (`docs/`, `plugins/emery/`, `.cursor-plugin/`): The mdBook documentation suite (tutorials, how-to guides, explanation, and reference) and the `/emery:*` Cursor skill wrappers.
 
-Adapters live in the sibling [`augentic/emery-adapters`](https://github.com/augentic/emery-adapters) repository.
+First-party source and target adapters live in the sibling [`augentic/emery-adapters`](https://github.com/augentic/emery-adapters) repository.
 
-To preview the working-tree `/emery:*` skill against a local CLI: `cargo install --path . --locked`, then `cursor-agent --plugin-dir plugins/emery` from the repository root. When `plugins/` content changes, bump `.cursor-plugin/marketplace.json` `metadata.version` and `plugins/emery/.cursor-plugin/plugin.json` `version` in the same PR; plugin SemVer is independent of the host CLI.
+To preview `/emery:*` skill changes against a local build of the CLI:
+
+1. Install the local binary: `cargo install --path . --locked`
+2. Launch Cursor with the local plugin directory: `cursor-agent --plugin-dir plugins/emery`
+
+When you modify files under `plugins/emery/`, bump the version in both `.cursor-plugin/marketplace.json` (`metadata.version`) and `plugins/emery/.cursor-plugin/plugin.json` (`version`) in the same pull request.
 
 ## Code style
 
-### Rust (the workspace at the repo root)
+### Rust workspace
 
-- Format with `make fmt`
-- Lint with `make lint`
-- Run the full suite with `make ci`
+- Format code with nightly rustfmt: `make fmt`
+- Run host and WebAssembly (`wasm32-wasip2`) clippy passes: `make lint`
+- Run the full CI gate before submitting: `make ci`
 
-### Docs and skill wrappers
+### Documentation and Cursor skills
 
-- Keep `/emery:*` skill bodies ultrathin invoke-and-relay: check `emery --version`, elicit arguments, invoke one CLI verb, relay stdout
-- `mdbook build docs` must pass before submitting a pull request that touches docs
-- Use kebab-case for file names, change names, and adapter identifiers
-- Store behavior belongs in guest orchestrations or adapter prompts, not in skill bodies
+- Verify that the documentation book builds cleanly with no broken links: `mdbook build docs`
+- Keep `/emery:*` skills thin: check `emery --version`, elicit missing arguments, invoke one `emery` command, and relay the output without adding orchestration logic in the skill prompt.
+- Use `kebab-case` for file names and adapter identifiers.
 
 ## Developer's Certificate of Origin
 
-All contributions must include acceptance of the [DCO](https://developercertificate.org/):
+All contributions must include acceptance of the [Developer Certificate of Origin (DCO)](https://developercertificate.org/):
 
 ```text
 Developer Certificate of Origin
@@ -81,37 +85,36 @@ By making a contribution to this project, I certify that:
     this project or the open source license(s) involved.
 ```
 
-To accept the DCO, add this line to each commit message with your name and email address (`git commit -s` will do this for you):
+To sign off on your commit (`git commit -s`), include this line at the end of your commit message with your real name and email address:
 
 ```text
 Signed-off-by: Jane Example <jane@example.com>
 ```
 
-For legal reasons, no anonymous or pseudonymous contributions are accepted; open a GitHub issue if this is a problem for you.
+For legal reasons, anonymous or pseudonymous contributions cannot be accepted. Please open a GitHub issue if you have questions.
 
 ## Pull request procedure
 
-Pull requests should be targeted at the `main` branch. Before creating a pull request, go through this checklist:
+Target all pull requests at the `main` branch:
 
-1. Create a feature branch off of `main`.
-2. [Rebase](https://git-scm.com/book/en/Git-Branching-Rebasing) your local changes against `main`.
-3. Run `make ci` and confirm that it passes: exactly the CI jobs, in order.
-4. Accept the Developer's Certificate of Origin on all commits (see above).
+1. Create a feature branch from `main`.
+2. [Rebase](https://git-scm.com/book/en/Git-Branching-Rebasing) your branch onto the latest `main`.
+3. Run `make ci` (`fmt-check`, `lint`, `test`, `test-docs`, `docs`, `vet`, `deny`) and confirm every check passes.
+4. Sign off all commits with `Signed-off-by:` (DCO).
 
-All contributions are made via pull request. All patches from all contributors get reviewed. At least one review from a maintainer is required for all patches (even patches from maintainers). When CI fails, authors are expected to update the pull request until it passes.
+Every pull request requires at least one maintainer review and passing CI before merge. Include tests at the public boundary for any behavioral change:
 
-Normally, all pull requests must include tests that cover your change. Occasionally, a change will be very difficult to test for; in those cases, include a note in your commit message explaining why.
-
-Tests here cover a change at its public boundary: root product scenarios under `tests/` (argv in; envelope, exit code, and storage out), crate integration tests under `crates/*/tests/` only for independent library contracts, unit tests only for CLI-unreachable branches. A change under `docs/` must pass `mdbook build docs`; a skill-wrapper change is also verified by hand in a target project.
+- **End-to-end CLI scenarios** live in `tests/` (driving `emery_cli::run` over scripted capabilities or `tests/runtime.rs` over the compiled Wasm guest).
+- **Crate integration tests** live in `crates/*/tests/` for standalone library contracts (`emery-sdk`, `emery-prose`).
+- **Documentation changes** under `docs/` must pass `mdbook build docs`.
 
 ## Conduct
 
-Whether you are a regular contributor or a newcomer, we care about making this community a safe place for you and we've got your back.
+We are committed to keeping the Emery community welcoming, respectful, and harassment-free for everyone:
 
-- We are committed to providing a friendly, safe and welcoming environment for all, regardless of gender, sexual orientation, disability, ethnicity, religion, or similar personal characteristic.
-- Be kind and courteous. There is no need to be mean or rude.
-- We will exclude you from interaction if you insult, demean or harass anyone. In particular, we do not tolerate behavior that excludes people in socially marginalized groups.
-- Private harassment is also unacceptable. If you feel you have been or are being harassed or made uncomfortable by a community member, please contact a member of the core team immediately.
-- Likewise any spamming, trolling, flaming, baiting or other attention-stealing behaviour is not welcome.
+- We welcome participants regardless of gender, sexual orientation, disability, ethnicity, religion, or background.
+- Be kind and constructive in code reviews, issues, and discussions.
+- Harassment, insults, demeaning behavior, and trolling are not tolerated in public or private project spaces.
+- If you experience or witness unacceptable behavior, please contact a member of the core team immediately.
 
-We welcome discussion about creating a welcoming, safe, and productive environment for the community. If you have any questions, feedback, or concerns please let us know with a GitHub issue. The [Code of Conduct](CODE_OF_CONDUCT.md) applies throughout.
+The [Code of Conduct](CODE_OF_CONDUCT.md) applies across all project spaces.

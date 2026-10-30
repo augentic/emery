@@ -1,79 +1,116 @@
 # Release process
 
-A Emery release ships four artifacts: the **platform binaries** (the archives the `binaries` job in `publish.yaml` builds as workflow artifacts), the **workspace crates** published to crates.io under `emery-*` package names (the shared `crates.yaml` job), the **engine guest** published as the wasm-pkg package `emery:engine@<version>`, and — when the WIT `package` declaration moved — the **adapter contract** published as `emery:adapter@<wit version>`. Publish builds the platform archives first, then runs the shared Omnia-shaped workflow (tag + Release notes, with those archives attached at release creation) and `cargo publish --workspace`; the two wasm-pkg packages are **published manually** with `wkg publish` (see [Publishing the wasm-pkg packages](#publishing-the-wasm-pkg-packages)). Workspace packages publish as `emery-<crate>` (Rust `use` paths follow the package name); the root `emery` package and the `component` rung package stay `publish = false`. **The first successful crates publish is gated on omnia pin hygiene**: the workspace rides `[patch.crates-io]` git pins for the omnia stack (currently 0.35.0 against a crates.io 0.34.0), and Cargo patches do not propagate to dependents — until omnia 0.35+ (plus `omnia-sdk` / `omnia-cursor` and friends) is on crates.io, the `crates` job fails and the release stands on the other artifacts. Adapter components ship from the adapters repo, not here. This page describes the end-to-end flow so a maintainer can cut a release without reading workflow YAML.
+This runbook describes the end-to-end release process for maintainers cutting, publishing, and patching an Emery release.
+
+## Contents
+
+- [Shipped artifacts](#shipped-artifacts)
+- [Three version axes](#three-version-axes)
+- [Release lines](#release-lines)
+- [Three release shapes](#three-release-shapes)
+- [Jobs that run](#jobs-that-run)
+- [Publishing the wasm-pkg packages](#publishing-the-wasm-pkg-packages)
+- [Adapter components](#adapter-components)
+- [Installing a release](#installing-a-release)
+- [Adding a new target triple](#adding-a-new-target-triple)
+- [Troubleshooting](#troubleshooting)
+
+---
+
+## Shipped artifacts
+
+An Emery release ships four artifacts:
+
+- **Platform binaries:** Prebuilt archives produced by the `binaries` matrix job in `publish.yaml` and attached to the GitHub Release.
+- **Workspace crates:** Rust library crates published to crates.io as `emery-<crate>` by the shared `crates.yaml` job (the root `emery` binary package and `emery-precompile` remain `publish = false`).
+- **Engine guest (`emery:engine@<version>`):** The compiled WebAssembly (Wasm) engine component, published manually with `wkg publish`.
+- **Adapter contract (`emery:adapter@<wit version>`):** The WebAssembly Interface Types (WIT) package, published manually with `wkg publish` whenever the `package` version in `wit/emery.wit` changes.
+
+> **Note on crates.io publishing:** While `Cargo.toml` carries `[patch.crates-io]` git pins for unreleased `omnia` commits, Cargo rejects crates.io publishing because patches do not propagate to downstream consumers. Until the pinned `omnia` release is live on crates.io, the `crates` job will fail on dependency resolution while the binary and Wasm artifacts succeed.
+
+---
 
 ## Three version axes
 
-Three surfaces version independently — never force them to share a number:
+Three surfaces version independently—never force them to share a version number:
 
 | Axis | Identity | Where it lives |
 | ---- | -------- | -------------- |
-| **Host** | `emery` binary / `emery:engine@<version>` | `[workspace.package].version` in `Cargo.toml`, the `v*` tag, `RELEASES.md` |
-| **WIT contract** | `emery:adapter@<wit version>` | the `package` declaration in `wit/emery.wit`; versions independently of the binary |
-| **Adapter train** | `emery:<name>@<semver>` → `ghcr.io/augentic/emery/<name>:<version>` | the adapters repo's shared `[workspace.package]` SemVer |
+| **Host** | `emery` binary / `emery:engine@<version>` | `[workspace.package].version` in `Cargo.toml`, the `v*` Git tag, `RELEASES.md` |
+| **WIT contract** | `emery:adapter@<wit version>` | The `package` declaration in `wit/emery.wit` |
+| **Adapter train** | `emery:<name>@<semver>` → `ghcr.io/augentic/emery/<name>:<version>` | The `augentic/emery-adapters` repository's shared `[workspace.package]` version |
 
-The engine guest imports `emery:adapter/source`; it has no separate WIT package. The wasm-pkg identity `emery:engine@<version>` below is the compiled component, versioned with the binary.
+- **Engine guest:** Imports `emery:adapter/source` and `emery:adapter/target` without defining a separate WIT package. Its published component (`emery:engine@<version>`) always matches the host binary version.
+- **Host–adapter compatibility:** Declared via exact `namespace:name@version` references and each adapter's minimum `emery-version` field, rather than matching version numbers.
+- **Cursor plugin (`plugins/emery/`):** Versions independently in `.cursor-plugin/marketplace.json` and `plugins/emery/.cursor-plugin/plugin.json`. Bump it only when files under `plugins/emery/` change.
+- **Adapter resolution:** The `emery` binary embeds the engine guest and routes the `emery` namespace to `augentic.io`, reading cached `.wasm` components from `~/.emery/adapters` and fetching missing `emery:*` releases on demand ([Adapters](reference/adapters.md)). Adapters from other namespaces are installed manually with `wkg get <reference> -o ~/.emery/adapters/`.
 
-Compatibility between host and adapters is declared — exact pins plus each adapter's `emery-version` (minimum host) — not implied by equal numbers. The Cursor `/emery:*` plugin is an ultrathin CLI wrapper; bump its marketplace / `plugin.json` versions only when `plugins/` content changes, not on every host release.
-
-The host embeds no adapter and one registry route: every adapter is an exact package reference arriving as run input, read from the operator's store, `~/.emery/adapters`, and fetched into it on the first run that names a release the store lacks — from `augentic.io` for the `emery` namespace, compiled in and redirected by no file; any other namespace by the operator's `wkg get <reference> -o ~/.emery/adapters/` ([Adapters](reference/adapters.md)). A project file never names a registry. The shipped runtime embeds the engine only; the built mock components run under it once copied into the store under references of their own ([`examples/emery.toml`](../examples/emery.toml)). `~/.emery/wasm-pkg.toml` is not read.
+---
 
 ## Release lines
 
-Releases live on durable `release-X.Y.Z` branches, the same shape as Omnia's shared `augentic/toolkit` workflows. `main` always carries the *next unreleased* version (Cargo version plus the `Unreleased` heading in `RELEASES.md`). The four verbs:
+Releases live on durable `release-X.Y.Z` branches driven by the shared `augentic/toolkit` workflows. `main` always carries the next unreleased version and an `Unreleased` heading in `RELEASES.md`.
 
-1. **Cut** — dispatch **Create Release** on `main`. It pushes `release-X.Y.Z` at the current tip and opens a PR that bumps `main` to the next unreleased version and resets `RELEASES.md`. Merge that PR; edit release notes on the release branch, not on `main`.
-2. **Stabilize** — on the release branch only: check the omnia pins (`cargo build --locked` must resolve on a clean runner — re-pin any local-path `[patch.crates-io]` entry to a pushed rev) and backport fixes from `main` (fixes land on `main` first when applicable).
-3. **Publish** — dispatch **Publish Release** on the release branch. Omnia shape: shared CI, then the `binaries` matrix builds the platform archives as workflow artifacts, then the shared publish workflow (dates `RELEASES.md`, pushes `vX.Y.Z`, creates the GitHub Release with notes and those archives attached), then the shared `crates.yaml` job publishes the `emery-*` workspace crates to crates.io. Then publish the wasm-pkg packages manually (below).
-4. **Patch** — bugfix and security only, on the same `release-X.Y.Z` branch: land the fix on `main` when applicable, backport, dispatch **Create Patch** on the branch (bumps `X.Y.Z → X.Y.Z+1` and preps `RELEASES.md`), then dispatch **Publish Release** on the same branch. Never invent a new line from a floating tag; never merge to `main` as the publish trigger.
+1. **Cut:** Dispatch **Create Release** on `main`. This pushes `release-X.Y.Z` from the current tip and opens a pull request bumping `main` to the next unreleased version and resetting `RELEASES.md`. Merge that pull request, and edit release notes on the `release-X.Y.Z` branch.
+2. **Stabilize:** On `release-X.Y.Z`, verify that `cargo build --locked` resolves cleanly (ensure any `[patch.crates-io]` git entries point to pushed commits, never local paths) and cherry-pick any fixes from `main`.
+3. **Publish:** Dispatch **Publish Release** on `release-X.Y.Z`. This runs CI, builds the platform archives, dates `RELEASES.md`, pushes tag `vX.Y.Z`, creates the GitHub Release with the archives attached, and runs the crates.io publish job. Afterward, publish the `wasm-pkg` packages manually ([Publishing the wasm-pkg packages](#publishing-the-wasm-pkg-packages)).
+4. **Patch:** For bug fixes or security patches on an existing `release-X.Y.Z` branch, land the fix on `main` first (when applicable), cherry-pick it to `release-X.Y.Z`, dispatch **Create Patch** on `release-X.Y.Z` (which bumps `X.Y.Z` to `X.Y.Z+1` and prepares `RELEASES.md`), and then dispatch **Publish Release** on `release-X.Y.Z`.
 
-Pre-1.0 SemVer follows Omnia's convention: **minor may be breaking**; patches remain compatible within the line. The hard major-cut / re-init product policy is called out in release notes, never smuggled into a patch.
+Pre-1.0 SemVer follows Omnia's convention: **minor versions may contain breaking changes**, while patch versions remain compatible within the release line.
+
+---
 
 ## Three release shapes
 
-Every release chooses exactly one shape; the order prevents adapters shipping against unpublished WIT / contract changes:
+Every release follows one of three ordering shapes so adapters are never published against an unreleased WIT contract or engine:
 
 | Shape | Trigger | Order |
 | ----- | ------- | ----- |
-| **WIT-breaking** | `package emery:adapter@…` moves | 1) engine release branch + publish WIT 2) engine publish 3) adapters bump pin + train release 4) announce hard-cut / re-init when product policy requires it |
-| **Host-only** | CLI / lifecycle / engine guest; `emery:adapter` WIT unchanged | engine cut → publish; adapters unchanged unless their minimum `emery-version` must rise |
-| **Adapter-only** | prompts, rules, target behavior; WIT unchanged | adapters cut → publish; engine unchanged |
+| **WIT-breaking** | `package emery:adapter@…` version changes | 1) Cut engine release branch and publish `emery:adapter` WIT<br>2) Publish engine release<br>3) Bump WIT and engine pins in `emery-adapters` and publish adapter train<br>4) Note `emery specify --fresh` in release notes if schema version `EMERY` changed |
+| **Host-only** | CLI, lifecycle, or engine guest changes; WIT unchanged | Cut and publish engine release; adapters remain unchanged unless their minimum `emery-version` rises |
+| **Adapter-only** | Adapter prompts, surveys, or target checks change; WIT unchanged | Cut and publish in `emery-adapters`; engine remains unchanged |
 
-Never release adapters against an unpublished WIT or an unreleased engine commit that changed the contract.
-
-Each release's notes entry in `RELEASES.md` includes a short compatibility row:
+Include a compatibility line in each `RELEASES.md` entry showing the tested pair:
 
 ```text
 engine 0.28.x  ↔  adapters 0.5.x  (WIT emery:adapter@0.1.0, emery-version ≥ 0.28.0)
 ```
 
-Keep the table short — it is a statement of what was tested together, not a version solver.
+---
 
 ## Jobs that run
 
-Publish composes four jobs (plus the release-branch skip gate):
+The **Publish Release** workflow runs four jobs after the release-branch gate:
 
-1. **`ci`.** Shared `augentic/toolkit` CI over the release branch.
-2. **`binaries`.** Local matrix job in `publish.yaml`: each leg builds and packages its archive, uploading it as a workflow artifact (`archive-<target>`).
-3. **`publish`.** Shared `augentic/toolkit` publish: date `RELEASES.md`, push `vX.Y.Z`, create the GitHub Release with notes and the `archive-*` workflow artifacts attached.
-4. **`crates`.** Shared `augentic/toolkit` `crates.yaml`: `cargo publish --workspace --locked` over the publishable `emery-*` packages (needs the org `CARGO_REGISTRY_TOKEN`). Until the omnia stack the workspace patches is itself on crates.io, this job fails on dependency resolution — expected, and no other artifact depends on it.
+1. **`ci`:** Runs the shared `augentic/toolkit` CI checks on the release branch.
+2. **`binaries`:** Builds and packages each target platform archive in `publish.yaml`, uploading `archive-<target>` workflow artifacts.
+3. **`publish`:** Runs the shared `augentic/toolkit` publish workflow to date `RELEASES.md`, push tag `vX.Y.Z`, and create the GitHub Release with all `archive-*` artifacts attached.
+4. **`crates`:** Runs `cargo publish --workspace --locked` across publishable `emery-*` crates using `CARGO_REGISTRY_TOKEN`.
 
-Each leg runs native `cargo build --release --locked --target <triple> --bin emery`, then `emery --help` from the built binary. `build.rs` embeds the engine via a child `wasm32-wasip2` build and then ahead-of-time compiles it for the leg's target triple through the `emery-precompile` workspace member (`crates/precompile`, built in the dev profile and run with Cargo's `TARGET` as its `--target`) under `omnia_compile::CompileOptions::default()` (same path as `cargo install --git`), so neither the build machine nor the build shell's environment steers the artifact. The runtime's compile-affecting settings (`MAX_FUEL`, `BRANCH_HINTING`, `MEMORY_RESERVATION`, `MEMORY_GUARD_SIZE`, `DEBUG_SYMBOLS`, `GENERATE_ADDRESS_MAP`) default to the same values, so a bare run loads the embedded artifact; an operator override at run time that diverges from those defaults rejects it at startup. The `--help` step is where the precompiled guest is first loaded before a release ships: a compile-option or wasmtime-version mismatch fails the leg there rather than shipping a binary that refuses its own engine. Supported targets (Homebrew + `cargo-binstall`; no `cross`):
+### How `binaries` builds and verifies the embedded engine
+
+Each matrix leg in `binaries` runs `cargo build --release --locked --target <triple> --bin emery` followed by `emery --help`:
+
+- During a `--release` build, `build.rs` compiles the engine guest to `wasm32-wasip2` and then ahead-of-time (AOT) precompiles it for the target architecture using the workspace's `emery-precompile` binary with `omnia_compile::CompileOptions::default()`.
+- At runtime, the host's Wasmtime settings (`MAX_FUEL`, `BRANCH_HINTING`, `MEMORY_RESERVATION`, `MEMORY_GUARD_SIZE`, `DEBUG_SYMBOLS`, `GENERATE_ADDRESS_MAP`) default to those same options.
+- Running `emery --help` in CI loads the precompiled engine guest immediately, catching any Wasmtime version or compile-option mismatch before the archive can ship.
+
+Supported native targets (built without `cross`):
 
 - `x86_64-unknown-linux-gnu` on `ubuntu-latest`
-- `x86_64-apple-darwin` on `macos-15-intel` (last hosted x86_64 macOS runner; retired August 2027)
+- `x86_64-apple-darwin` on `macos-15-intel` (last hosted Intel macOS runner; scheduled for retirement in August 2027)
 - `aarch64-apple-darwin` on `macos-latest`
-- `x86_64-pc-windows-msvc` on `windows-latest` — temporarily out of the matrix until upstream `omnia-wasi-model` compiles on Windows again
+- `x86_64-pc-windows-msvc` on `windows-latest` (temporarily excluded until upstream `omnia-wasi-model` restores Windows support)
 
-Each leg produces `emery-v${VERSION}-${TARGET}.tar.gz` (unix) or `.zip` (Windows) plus a companion `.sha256`; the shared publish workflow attaches both when it creates the GitHub Release. Root `Cargo.toml` carries `[package.metadata.binstall]` pointing at those archive names.
+Each leg outputs `emery-v${VERSION}-${TARGET}.tar.gz` (or `.zip` on Windows) and a `.sha256` checksum file, matching the `[package.metadata.binstall]` template in the root `Cargo.toml`.
 
-The shipped surface is the `emery` binary alone: the binary is one `omnia::runtime!` command-mode invocation (`src/main.rs`; the engine guest is `src/lib.rs`, built for wasm32) embedding the engine guest as static component bytes, with the CWD-rooted mount and the store inline — so there is no second binary or component to package.
+---
 
 ## Publishing the wasm-pkg packages
 
-Both wasm-pkg packages are published manually with `wkg publish` by a maintainer whose wkg config maps the `emery:` namespace to `augentic.io` with a GitHub token carrying `packages: write` (see [`wit/README.md`](../wit/README.md) for the config shape). Registry identities are immutable — never re-publish an existing version; bump the version first.
+Both `wasm-pkg` packages are published manually with `wkg publish`. Configure `~/.config/wasm-pkg/config.toml` to map the `emery` namespace to `augentic.io` with a GitHub token carrying `packages: write` (see [`wit/README.md`](../wit/README.md)). Registry versions are immutable—never overwrite an existing version.
 
-- **Engine guest.** After tagging, publish the release-built engine component as `emery:engine@<version>`, where `<version>` is the workspace package version. The shipped binary does **not** consume the published package — it embeds the identical bytes at build time — but the registry identity remains the canonical distribution for other Omnia hosts composing the engine guest (and keeps the published identity equal to the binary version).
+- **Engine guest (`emery:engine@<version>`):** After tagging the release, build and publish the `wasm32-wasip2` engine component so other Omnia hosts can compose it at the exact binary version:
 
 ```bash
 cargo build --lib -p emery --release --target wasm32-wasip2
@@ -81,47 +118,61 @@ wkg publish target/wasm32-wasip2/release/emery.wasm \
   --package "emery:engine@$(cargo pkgid -p emery | sed 's/.*#//')"
 ```
 
-- **Adapter contract.** When a contract change bumps the `package emery:adapter@<ver>;` declaration in `wit/emery.wit`, publish it as `emery:adapter@<ver>` — the WIT versions independently of the binary. See [`wit/README.md`](../wit/README.md) for the exact commands. `emery-adapters` consumes the published package as its vendored pin. On a WIT-breaking line, publish the WIT before or with the engine publish — never after adapters that need it have already shipped.
+- **Adapter contract (`emery:adapter@<ver>`):** When `package emery:adapter@<ver>;` in `wit/emery.wit` moves, build and publish the WIT package before or alongside the engine release (see [`wit/README.md`](../wit/README.md)).
+
+---
 
 ## Adapter components
 
-First-party adapter components are **not** built or published by this repo. They live in `augentic/emery-adapters`, ride the same release-branch verbs on their own lockstep train SemVer, and ship as Wasm OCI artifacts to GHCR — `ghcr.io/augentic/emery/<name>:<version>`, which is where `augentic.io` resolves `emery:<name>@<version>` to — from that repo's **Publish Release** workflow (same `make publish <name>` path as a local breakout). Before an adapter train publishes, its tree must build against a **published** `emery:adapter` WIT pin, its engine git dependencies must be pinned to a **released** engine tag (`tag = "vX.Y.Z"`, no active sibling `[patch]` block), and each adapter's `emery-version` must name the minimum host that can run the train. A release is pulled on the first run that names it and the store lacks it, then read from the store; so a train must be published before a project can name it, and an engine release that moves the SDK is followed by a train built against it, with the `emery-version` gate refusing an older release at `metadata`.
+First-party adapters live in [`augentic/emery-adapters`](https://github.com/augentic/emery-adapters) and are published from that repository's **Publish Release** workflow to `ghcr.io/augentic/emery/<name>:<version>` (which `augentic.io` resolves `emery:<name>@<version>` to).
+
+Before cutting an adapter release in `augentic/emery-adapters`, verify that:
+
+- Its vendored `wit/emery.wit` matches a published `emery:adapter` version.
+- Its `[patch.crates-io]` git entries for `emery-sdk`, `emery-prose`, and `emery-lexicon` are pinned to a released `emery` Git tag (`tag = "vX.Y.Z"`), with no uncommented local `path` patches.
+- The engine release it depends on is already published so `emery-version` checks succeed when users pull the new adapters.
+
+---
 
 ## Installing a release
 
-Supported install paths:
+Users can install a published `emery` release through four channels:
 
-- **Homebrew** — [`augentic/homebrew-tap`](https://github.com/augentic/homebrew-tap) formula over these Release archives:
+- **Homebrew** (via [`augentic/homebrew-tap`](https://github.com/augentic/homebrew-tap)):
 
 ```bash
 brew tap augentic/tap
 brew install emery
 ```
 
-- **`cargo binstall`** (prebuilt; no local compile). The root package is `publish = false`, so install from git with a package version pin:
+- **`cargo binstall`** (downloads the prebuilt GitHub Release archive without compiling locally):
 
 ```bash
 cargo binstall --git https://github.com/augentic/emery emery@<version>
 ```
 
-- **GitHub Release archives.** Download the archive for your platform from the GitHub Release page, verify it against the companion `.sha256` file, and place the `emery` binary on your `PATH`.
-- **Source builds** — `build.rs` embeds the wasm32 engine:
+- **GitHub Release archives:** Download the archive for your platform from the GitHub Releases page, verify its `.sha256` checksum, and place `emery` on your `PATH`.
+- **Source build** (`build.rs` compiles and embeds the `wasm32-wasip2` engine guest automatically):
 
 ```bash
 cargo install --git https://github.com/augentic/emery --locked
 ```
 
-Bump the Homebrew formula `version` and `sha256` values in `augentic/homebrew-tap` when publishing a new host release. Subsequent updates use the same installation channel. `specify` additionally needs `cursor-sdk-bridge` on `PATH` (or `CURSOR_SDK_BRIDGE_BIN`) and `CURSOR_API_KEY` at run time — the `omnia-cursor` model backend spawns the bridge; verbs that put nothing to the model, such as `show`, run without either. The engine guest ships inside the binary, so replacing the binary replaces the engine with it. Install the bridge from the [sdk-bridge releases](https://github.com/cursor/sdk-bridge/releases).
+After publishing a new host release, update the `version` and `sha256` checksums in [`augentic/homebrew-tap`](https://github.com/augentic/homebrew-tap). Note that model-backed commands (`specify`, `amend`, `build`) also require `cursor-sdk-bridge` on `PATH` (from [cursor/sdk-bridge releases](https://github.com/cursor/sdk-bridge/releases)) and `CURSOR_API_KEY` (or a local `emery-dev` build).
+
+---
 
 ## Adding a new target triple
 
-1. Add a native `matrix.include` entry to the `binaries` job in `.github/workflows/publish.yaml` (`runs-on` must provide that triple without `cross`).
-2. If the target needs system packages (e.g. `musl-tools` for `*-musl`), add an `apt-get install` step gated on `matrix.target == '<new triple>'`.
-3. Update `[package.metadata.binstall]` overrides if the archive format differs from `tgz`.
-4. Document the new target in this file.
+1. Add a native `matrix.include` entry to the `binaries` job in `.github/workflows/publish.yaml` (`runs-on` must build the target natively without `cross`).
+2. If the target requires system packages (such as `musl-tools` for `*-musl`), add a conditional `apt-get install` step gated on `matrix.target`.
+3. Update `[package.metadata.binstall]` in `Cargo.toml` if the archive extension differs from `.tar.gz`.
+4. Add the new target triple to the supported targets list on this page.
+
+---
 
 ## Troubleshooting
 
-- **Archive SHA256 drift.** Never hand-edit a checksum. The `.sha256` companion files are generated in the same `binaries` leg that packages each archive and are authoritative.
-- **`wkg publish` rejects or the identity already exists.** Registry identities are immutable — never re-push different bytes into an existing version. Bump the version (the workspace version for the engine, the WIT `package` declaration for the contract) and publish the new identity instead.
-- **Publish Release refuses the tag.** The tag for the branch's Cargo version already exists — releases are immutable; dispatch **Create Patch** on the line to bump, then publish again.
+- **Archive SHA-256 mismatch:** Never edit a `.sha256` file by hand. The checksum files are generated inside the `binaries` workflow job alongside each archive.
+- **`wkg publish` rejects an existing version:** Registry versions are immutable. Bump the crate version (for `emery:engine`) or the `package` version in `wit/emery.wit` (for `emery:adapter`) and publish the new version.
+- **Publish Release fails because the Git tag already exists:** Releases are immutable. Dispatch **Create Patch** on the `release-X.Y.Z` branch to bump the patch version, then run **Publish Release** again.
