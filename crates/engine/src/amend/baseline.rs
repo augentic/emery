@@ -1,6 +1,6 @@
 //! Lends the current revision's requirements to an amend run's grouping.
 //!
-//! A [`Standing`] reads the base specification as contributors from the
+//! A [`Baseline`] reads the base specification as contributors from the
 //! reserved source [`BASELINE`], one per requirement, so the grouping
 //! matches each change claim against the requirement it restates or
 //! revises. The standing rank is one step below the lowest change source's,
@@ -14,12 +14,12 @@ use crate::revision::{ReqId, Requirement, Spec};
 use crate::specify::{BASELINE, Basis, Contributor, Extract};
 
 // The base specification as the grouping and the change set read it.
-pub struct Standing<'a> {
+pub struct Baseline<'a> {
     spec: &'a Spec,
     rank: Rank,
 }
 
-impl<'a> Standing<'a> {
+impl<'a> Baseline<'a> {
     // The base `spec` ranked beneath every source of `extracts`.
     pub fn new(spec: &'a Spec, extracts: &[Extract]) -> Self {
         let lowest = extracts
