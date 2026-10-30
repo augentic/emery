@@ -11,7 +11,7 @@ This guide shows how to write, compile, and install a custom WebAssembly (Wasm) 
 - [Author a target adapter (`TargetAdapter`)](#author-a-target-adapter-targetadapter)
   - [1. Write `prose/build.md` and `prose/verify.md`](#1-write-prosebuildmd-and-proseverifymd)
   - [2. Implement `TargetAdapter` in `src/lib.rs`](#2-implement-targetadapter-in-srclibrs)
-- [Test your adapter Corpus and logic](#test-your-adapter-corpus-and-logic)
+- [Test your adapter corpus and logic](#test-your-adapter-corpus-and-logic)
 - [Build and install into `~/.emery/adapters`](#build-and-install-into-emeryadapters)
 - [See also](#see-also)
 
