@@ -46,7 +46,7 @@ Template use:
 - Replace every bracketed field before presenting. Preserve a genuine gap as [unknown].
 - Name the engagement precisely: audit, architecture review, delivery review, or consultation.
 - This deck begins with the client's evidence and ends in a decision. It is not a second approach deck.
-- Findings sit under the three mechanisms of the approach: standardise delivery, specify behaviour, sandbox execution. The assessed trust radius sizes every safeguard the recommendation carries.
+- Findings sit under the three mechanisms of the approach: standardising delivery, specifying behaviour, sandboxing execution. The assessed trust radius sizes every safeguard the recommendation carries.
 
 Opening:
 - We will separate what we observed, what we infer, what remains unknown, and what we recommend.
@@ -188,7 +188,7 @@ class: slide-sandbox
 
 <AmbientVideo src="/videos/approach-video.mp4" variant="approach" />
 
-<Eyebrow text="FINDINGS · STANDARDISE DELIVERY, SPECIFY BEHAVIOUR, SANDBOX EXECUTION" />
+<Eyebrow text="FINDINGS · STANDARDISING DELIVERY, SPECIFYING BEHAVIOUR, SANDBOXING EXECUTION" />
 
 # Findings across the delivery system.
 
@@ -197,7 +197,7 @@ class: slide-sandbox
 <div class="ed-band-canvas" style="padding-top: 4px;">
 <svg viewBox="0 0 1140 400" aria-hidden="true">
   <rect x="18" y="42" width="348" height="258" rx="16" fill="rgba(10,7,16,0.72)" stroke="#78d8f2" stroke-width="1.8" />
-  <text x="42" y="72" class="svg-kicker" fill="#78d8f2">01 · STANDARDISE DELIVERY</text>
+  <text x="42" y="72" class="svg-kicker" fill="#78d8f2">01 · STANDARDISING DELIVERY</text>
   <text x="42" y="104" class="svg-h2" fill="#ffffff">Toolchain and pipeline</text>
   <line x1="42" y1="120" x2="342" y2="120" stroke="rgba(255,255,255,0.14)" />
   <text x="42" y="140" class="svg-caption" fill="rgba(255,255,255,0.6)">Workspaces · codex · compiler rules · pipeline</text>
@@ -208,7 +208,7 @@ class: slide-sandbox
   <text x="42" y="280" class="svg-caption" fill="#78d8f2">Intervention: [bounded change]</text>
 
   <rect x="396" y="42" width="348" height="258" rx="16" fill="rgba(10,7,16,0.72)" stroke="#f59ef5" stroke-width="1.8" />
-  <text x="420" y="72" class="svg-kicker" fill="#f59ef5">02 · SPECIFY BEHAVIOUR</text>
+  <text x="420" y="72" class="svg-kicker" fill="#f59ef5">02 · SPECIFYING BEHAVIOUR</text>
   <text x="420" y="104" class="svg-h2" fill="#ffffff">Specification</text>
   <line x1="420" y1="120" x2="720" y2="120" stroke="rgba(255,255,255,0.14)" />
   <text x="420" y="140" class="svg-caption" fill="rgba(255,255,255,0.6)">Evidence · precedence · spec, design, plan · build</text>
@@ -219,7 +219,7 @@ class: slide-sandbox
   <text x="420" y="280" class="svg-caption" fill="#f59ef5">Intervention: [bounded change]</text>
 
   <rect x="774" y="42" width="348" height="258" rx="16" fill="rgba(10,7,16,0.72)" stroke="#78d8f2" stroke-width="1.8" />
-  <text x="798" y="72" class="svg-kicker" fill="#78d8f2">03 · SANDBOX EXECUTION</text>
+  <text x="798" y="72" class="svg-kicker" fill="#78d8f2">03 · SANDBOXING EXECUTION</text>
   <text x="798" y="104" class="svg-h2" fill="#ffffff">Runtime authority</text>
   <line x1="798" y1="120" x2="1098" y2="120" stroke="rgba(255,255,255,0.14)" />
   <text x="798" y="140" class="svg-caption" fill="rgba(255,255,255,0.6)">Component · capabilities · recipe · host policy</text>
@@ -237,7 +237,7 @@ class: slide-sandbox
 <!--
 Customisation:
 - Keep findings in the mechanism where the control belongs.
-- Operation findings—release ownership, observation, recovery—belong to Standardise delivery. Operation is the end of the path, not a fourth mechanism.
+- Operation findings—release ownership, observation, recovery—belong to Standardising delivery. Operation is the end of the path, not a fourth mechanism.
 - A finding may span mechanisms. Name the primary control, then show the dependency later.
 - The trust radius on the next slide is not a finding. It is the consequence the findings are measured against.
 - Replace every bracketed line with client evidence; remove an empty card only when a mechanism was explicitly out of scope.
@@ -395,7 +395,7 @@ class: slide-light
   <line x1="744" y1="50" x2="744" y2="82" stroke="#0c7fa3" stroke-width="1.5" stroke-dasharray="4 4" />
 
   <rect x="18" y="84" width="252" height="150" rx="14" fill="rgba(22,180,226,0.06)" stroke="#0c7fa3" stroke-width="1.6" />
-  <text x="40" y="112" class="svg-kicker" fill="#0c7fa3">STANDARDISE DELIVERY</text>
+  <text x="40" y="112" class="svg-kicker" fill="#0c7fa3">STANDARDISING DELIVERY</text>
   <text x="40" y="140" class="svg-h3" fill="#0d1030">Governed path</text>
   <text x="40" y="168" class="svg-caption" fill="rgba(13,16,48,0.64)">[Workspaces, codex, compiler rules]</text>
   <text x="40" y="190" class="svg-caption" fill="rgba(13,16,48,0.64)">[Pipeline gates and worker grants]</text>
@@ -405,7 +405,7 @@ class: slide-light
   <polygon points="318,154 328,159 318,164" fill="#0d1030" />
 
   <rect x="330" y="84" width="252" height="150" rx="14" fill="rgba(164,35,143,0.06)" stroke="#a4238f" stroke-width="1.6" />
-  <text x="352" y="112" class="svg-kicker" fill="#a4238f">SPECIFY BEHAVIOUR · EMERY</text>
+  <text x="352" y="112" class="svg-kicker" fill="#a4238f">SPECIFYING BEHAVIOUR · EMERY</text>
   <text x="352" y="140" class="svg-h3" fill="#0d1030">Sealed specification</text>
   <text x="352" y="168" class="svg-caption" fill="rgba(13,16,48,0.64)">[Evidence and authority inputs]</text>
   <text x="352" y="190" class="svg-caption" fill="rgba(13,16,48,0.64)">[spec.md, design.md, derived plan]</text>
@@ -415,7 +415,7 @@ class: slide-light
   <polygon points="630,154 640,159 630,164" fill="#0d1030" />
 
   <rect x="642" y="84" width="252" height="150" rx="14" fill="rgba(22,180,226,0.06)" stroke="#0c7fa3" stroke-width="1.6" />
-  <text x="664" y="112" class="svg-kicker" fill="#0c7fa3">SANDBOX EXECUTION · OMNIA</text>
+  <text x="664" y="112" class="svg-kicker" fill="#0c7fa3">SANDBOXING EXECUTION · OMNIA</text>
   <text x="664" y="140" class="svg-h3" fill="#0d1030">Explicit runtime authority</text>
   <text x="664" y="168" class="svg-caption" fill="rgba(13,16,48,0.64)">[Capabilities the change requires]</text>
   <text x="664" y="190" class="svg-caption" fill="rgba(13,16,48,0.64)">[Recipe: bindings, policy, credentials]</text>
@@ -453,7 +453,7 @@ Customisation:
 - Replace the bracketed text with the minimum target state implied by the findings and the assessed trust radius. A Govern-state system needs the authoring boundary, not the full delivery system.
 - Do not draw a future platform the first delivery cannot exercise.
 - Name each finding this state closes. If a component closes none, remove it.
-- Operate is the end of the path. Its controls—release ownership, observation, recovery—are part of Standardise delivery.
+- Operate is the end of the path. Its controls—release ownership, observation, recovery—are part of Standardising delivery.
 - Keep release authority outside Emery and runtime infrastructure outside Omnia's component.
 
 Decision prompt:
