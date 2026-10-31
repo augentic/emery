@@ -1,10 +1,11 @@
 [
   {
     "id": "opening",
-    "title": "Code is cheap. Delivery is hard.",
+    "title": "Code is cheap*. Delivery is hard.",
     "required": [
-      "Code is cheap. Delivery is hard.",
+      "Code is cheap*. Delivery is hard.",
       "A system for shipping software with AI — not just generating code.",
+      "* If your delivery system controls token spend.",
       "Standardising delivery",
       "Specifying behaviour",
       "Sandboxing execution"
@@ -207,6 +208,31 @@
     ]
   },
   {
+    "id": "section-cost",
+    "title": "Controlling token spend.",
+    "required": [
+      "Controlling token spend.",
+      "Reasoning in a formal specification and generating against a narrow Wasm runtime",
+      "cuts token volume and lets smaller, cheaper models do the work.",
+      "Formal specifications",
+      "Narrow Wasm target",
+      "Smaller, cheaper models"
+    ]
+  },
+  {
+    "id": "cost-control",
+    "title": "Fewer tokens. Smaller, cheaper models.",
+    "required": [
+      "Fewer tokens.",
+      "Smaller, cheaper models.",
+      "Reasoning in a formal specification and generating against a narrow Wasm runtime takes a fraction of the tokens of building a full service from scratch.",
+      "Formal specifications & slices",
+      "WASI business logic only",
+      "Smaller, cheaper models",
+      "A fraction of the tokens per change—so smaller, cheaper models do the heavy lifting."
+    ]
+  },
+  {
     "id": "use-cases",
     "title": "Use cases.",
     "required": [
@@ -238,7 +264,7 @@
       "Invent structure · choose libraries · hold the full codebase in context",
       "Unlocks smaller, local models",
       "Structure and tests pre-built · fill bounded logic · verify at compile time",
-      "Today: frontier models in production · Next: open-weight and client-hosted models."
+      "Today: lower token spend & smaller commercial models · Next: local, open-weight models."
     ]
   },
   {

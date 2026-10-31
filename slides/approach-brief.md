@@ -1,6 +1,6 @@
 ---
 theme: default
-title: Code is cheap. Delivery is hard.
+title: Code is cheap*. Delivery is hard.
 sync: opening
 aspectRatio: 16/9
 canvasWidth: 1280
@@ -32,9 +32,10 @@ class: slide-hero slide-section
 <div class="section-hero-grid">
 <div class="section-hero-left">
 
-# Code is cheap.<br>Delivery is hard.
+# Code is cheap*.<br>Delivery is hard.
 
 <p class="section-subtitle">A system for shipping software with AI —<br>not just generating code.</p>
+<p class="section-footnote">* If your delivery system controls token spend.</p>
 
 </div>
 </div>
@@ -47,12 +48,12 @@ class: slide-hero slide-section
 
 <!--
 Opening:
-- Code generation is no longer the scarce part of software delivery.
-- Accountability has not moved to the model. The organisation still owns the outcome, the access, the evidence, and the consequences.
+- Code generation is no longer the scarce part of software delivery—provided your delivery system controls token spend.
+- Accountability has not moved to the model. The organisation still owns the outcome, the token bill, the access, the evidence, and the consequences.
 - Our answer is not a better prompt. It is a delivery system whose rules, record, and runtime boundary sit outside the model.
 
 Client question:
-- Where has implementation become faster while getting a change safely into production has not?
+- Where has implementation become faster while getting a change safely into production—and keeping token spend predictable—has not?
 -->
 
 ---
@@ -557,7 +558,7 @@ class: slide-light
 # The agentic<br>development loop.
 
 </div>
-<p class="ed-band-prose"><strong>Align on intent upfront, break work into bounded slices for agents, and verify code against the spec.</strong> Every change runs the loop. Any spec change re-enters the human review gate.</p>
+<p class="ed-band-prose"><strong>Align on intent upfront, break work into bounded slices for agents, and verify code against the spec.</strong> Because the system is reasoned about in a formal specification and sliced into bounded units, implementation does not need an expensive model holding the whole service in context. Every change runs the loop. Any spec change re-enters the human review gate.</p>
 </div>
 <div class="ed-band-canvas">
 <svg viewBox="0 0 1140 360" aria-hidden="true">
@@ -838,7 +839,7 @@ class: slide-light
 # Business logic in the guest.<br><span style="color:#a4238f">Plumbing in the host.</span>
 
 </div>
-<p class="ed-band-prose"><strong>Because the runtime bridges infrastructure and external resources, agents generate pure business logic—not plumbing.</strong> The host owns clients, connection pools, retries, auth, and SDK wiring, sharply reducing the complexity and kind of code an agent has to write.</p>
+<p class="ed-band-prose"><strong>Because the runtime bridges infrastructure and external resources, agents generate pure business logic—not plumbing.</strong> The host owns clients, connection pools, retries, auth, and SDK wiring—requiring far fewer tokens per change and allowing smaller, less expensive models than building a full service from scratch.</p>
 </div>
 <div class="ed-band-canvas">
 <svg viewBox="0 0 1140 350" aria-hidden="true">
@@ -974,6 +975,116 @@ Different infrastructure, the same application.
 
 Client question:
 - How much application code currently exists only to accommodate a particular environment or infrastructure product?
+-->
+
+---
+title: Controlling token spend.
+sync: section-cost
+class: slide-light
+---
+
+<Eyebrow text="DELIVERY SYSTEM · COST CONTROL" />
+
+<div class="ed-band">
+<div class="ed-band-top">
+<div>
+
+# Controlling<br>token spend.
+
+</div>
+<p class="ed-band-prose"><strong>Reasoning in a formal specification and generating against a narrow Wasm runtime cuts token volume and lets smaller, cheaper models do the work.</strong> AI produces better results—and controls token spend—when it has less technology to invent.</p>
+</div>
+<div class="ed-band-canvas">
+<svg viewBox="0 0 1140 350" aria-hidden="true">
+  <rect x="16" y="36" width="330" height="214" rx="14" fill="rgba(22,180,226,0.06)" stroke="#0c7fa3" stroke-width="1.7" />
+  <text x="38" y="68" class="svg-kicker" fill="#0c7fa3">01 · FORMAL SPECIFICATIONS</text>
+  <text x="38" y="104" class="svg-h2" fill="#0d1030">Formal specifications</text>
+  <line x1="38" y1="122" x2="324" y2="122" stroke="rgba(12,127,163,0.18)" />
+  <text x="38" y="158" class="svg-label" fill="#0d1030">Bounded slices replace</text>
+  <text x="38" y="184" class="svg-label" fill="#0d1030">whole-codebase context</text>
+  <text x="38" y="218" class="svg-caption" fill="rgba(13,16,48,0.62)">No whole-service prompt bloat</text>
+
+  <rect x="398" y="36" width="344" height="214" rx="14" fill="#0d1030" />
+  <text x="420" y="68" class="svg-kicker" fill="#f59ef5">02 · NARROW WASM TARGET</text>
+  <text x="420" y="104" class="svg-h2" fill="#ffffff">Narrow Wasm target</text>
+  <line x1="420" y1="122" x2="720" y2="122" stroke="rgba(255,255,255,0.14)" />
+  <text x="420" y="158" class="svg-label" fill="#ffffff">Guests implement business logic;</text>
+  <text x="420" y="184" class="svg-label" fill="#ffffff">the host owns the plumbing</text>
+  <text x="420" y="218" class="svg-caption" fill="rgba(255,255,255,0.7)">Far fewer tokens generated per change</text>
+
+  <rect x="794" y="36" width="330" height="214" rx="14" fill="rgba(22,180,226,0.06)" stroke="#0c7fa3" stroke-width="1.7" />
+  <text x="816" y="68" class="svg-kicker" fill="#0c7fa3">03 · SMALLER, CHEAPER MODELS</text>
+  <text x="816" y="104" class="svg-h2" fill="#0d1030">Smaller, cheaper models</text>
+  <line x1="816" y1="122" x2="1102" y2="122" stroke="rgba(12,127,163,0.18)" />
+  <text x="816" y="158" class="svg-label" fill="#0d1030">Lower-cost commercial models today;</text>
+  <text x="816" y="184" class="svg-label" fill="#0d1030">local open-weight models next</text>
+  <text x="816" y="218" class="svg-caption" fill="rgba(13,16,48,0.62)">Right-size the model to the slice</text>
+</svg>
+</div>
+</div>
+
+<!--
+Section divider: Controlling token spend.
+- Unconstrained AI coding gets expensive fast when every change feeds the entire codebase to a frontier model and asks it to invent architecture and infrastructure wiring from scratch.
+- Combining formal specifications (Foundation 02) with a sandboxed Wasm runtime (Foundation 03) shrinks both the input context and the generated output—cutting token spend and enabling smaller, cheaper models.
+-->
+
+---
+title: Fewer tokens. Smaller, cheaper models.
+sync: cost-control
+class: slide-light
+---
+
+<Eyebrow text="COST CONTROL · THE ECONOMICS OF CONSTRAINT" />
+
+<div class="ed-band">
+<div class="ed-band-top">
+<div>
+
+# Fewer tokens.<br><span style="color:#a4238f">Smaller, cheaper models.</span>
+
+</div>
+<p class="ed-band-prose"><strong>Reasoning in a formal specification and generating against a narrow Wasm runtime takes a fraction of the tokens of building a full service from scratch.</strong> Because each slice is bounded and the runtime owns the plumbing, smaller, less expensive models can handle the heavy lifting while engineers focus on the product.</p>
+</div>
+<div class="ed-band-canvas">
+<svg viewBox="0 0 1140 350" aria-hidden="true">
+  <rect x="16" y="36" width="344" height="214" rx="14" fill="rgba(22,180,226,0.06)" stroke="#0c7fa3" stroke-width="1.7" />
+  <text x="38" y="68" class="svg-kicker" fill="#0c7fa3">01 · BOUNDED CONTEXT</text>
+  <text x="38" y="102" class="svg-h3" fill="#0d1030">Formal specifications &amp; slices</text>
+  <line x1="38" y1="122" x2="338" y2="122" stroke="rgba(12,127,163,0.18)" />
+  <text x="38" y="156" class="svg-label" fill="#0d1030">Agents read sealed specs and</text>
+  <text x="38" y="180" class="svg-label" fill="#0d1030">bounded slices—never the whole repo.</text>
+  <text x="38" y="220" class="svg-pill" fill="#0c7fa3">No whole-repo prompts · No chat bloat</text>
+
+  <rect x="398" y="36" width="344" height="214" rx="14" fill="rgba(164,35,143,0.05)" stroke="#a4238f" stroke-width="1.7" />
+  <text x="420" y="68" class="svg-kicker" fill="#a4238f">02 · NARROW GENERATION TARGET</text>
+  <text x="420" y="102" class="svg-h3" fill="#0d1030">WASI business logic only</text>
+  <line x1="420" y1="122" x2="720" y2="122" stroke="rgba(164,35,143,0.18)" />
+  <text x="420" y="156" class="svg-label" fill="#0d1030">Agents implement domain rules while</text>
+  <text x="420" y="180" class="svg-label" fill="#0d1030">the host owns infrastructure plumbing.</text>
+  <text x="420" y="220" class="svg-pill" fill="#a4238f">Fraction of the tokens · No SDK churn</text>
+
+  <rect x="780" y="36" width="344" height="214" rx="14" fill="#0d1030" />
+  <text x="802" y="68" class="svg-kicker" fill="#78d8f2">03 · MODEL TIERING</text>
+  <text x="802" y="102" class="svg-h3" fill="#ffffff">Smaller, cheaper models</text>
+  <line x1="802" y1="122" x2="1102" y2="122" stroke="rgba(255,255,255,0.14)" />
+  <text x="802" y="156" class="svg-label" fill="#ffffff">Bounded slices do not need a</text>
+  <text x="802" y="180" class="svg-label" fill="#ffffff">frontier model on every turn.</text>
+  <text x="802" y="220" class="svg-pill" fill="#78d8f2">Cheaper commercial models · Local next</text>
+
+  <rect x="110" y="282" width="920" height="48" rx="24" fill="#0d1030" stroke="#a4238f" stroke-width="1.8" />
+  <text x="570" y="312" text-anchor="middle" class="svg-h3" fill="#ffffff">A fraction of the tokens per change—so smaller, cheaper models do the heavy lifting.</text>
+</svg>
+</div>
+</div>
+
+<!--
+Controlling token spend and model cost:
+- Because the service is reasoned about in a formal specification and sliced into bounded units, implementation does not need an expensive frontier model holding the whole system in context.
+- Generating a Wasm guest against a consistent capability contract takes a fraction of the tokens of building an entire service from scratch—so smaller, cheaper commercial models can handle bounded implementation slices today, while engineers focus on the product.
+
+Client question:
+- How much of your current AI token spend goes to re-reading whole repositories and generating boilerplate infrastructure code?
 -->
 
 ---
@@ -1118,8 +1229,8 @@ class: slide-light
   <text x="596" y="158" class="svg-label" fill="#ffffff">Structure and tests pre-built · fill bounded logic · verify at compile time</text>
   <text x="596" y="204" class="svg-caption" fill="rgba(255,255,255,0.7)">Constraint as leverage: narrowing the target makes local models practical</text>
 
-  <rect x="170" y="282" width="800" height="48" rx="24" fill="rgba(164,35,143,0.06)" stroke="rgba(164,35,143,0.42)" stroke-width="1.5" />
-  <text x="570" y="312" text-anchor="middle" class="svg-label" fill="#0d1030">Today: frontier models in production · Next: open-weight and client-hosted models.</text>
+  <rect x="130" y="282" width="880" height="48" rx="24" fill="rgba(164,35,143,0.06)" stroke="rgba(164,35,143,0.42)" stroke-width="1.5" />
+  <text x="570" y="312" text-anchor="middle" class="svg-label" fill="#0d1030">Today: lower token spend &amp; smaller commercial models · Next: local, open-weight models.</text>
 </svg>
 </div>
 </div>
@@ -1128,9 +1239,9 @@ class: slide-light
 Smaller models on a narrower target:
 - A frontier model is necessary when a coding agent has to choose libraries, invent project structure, and hold an entire codebase in context.
 - Our target build adapter removes that work before the model turn begins: it scaffolds the crate, module layout, typed routes, message consumers, and scenario test skeletons from the sealed specification, then asks the model only to fill the behavioural markers and pass compiler, lint, and test checks.
-- Today, that adapter runs with frontier LLMs in current engagements.
-- In early proof-of-concept runs, the same scaffold-and-verify loop already builds working WebAssembly guest slices using an untuned open-weight model (`qwen3-coder-next`).
-- Active roadmap focus: hardening small language model support so sensitive systems can be built and verified on local or client-hosted hardware without depending on a frontier API.
+- Today, that narrow target already cuts token spend and lets smaller, less expensive commercial models handle implementation slices alongside frontier LLMs.
+- In early proof-of-concept runs, the same scaffold-and-verify loop also builds working WebAssembly guest slices using an untuned open-weight model (`qwen3-coder-next`).
+- Active roadmap focus: hardening local, open-weight small language model support so sensitive systems can be built and verified on client-hosted hardware without depending on a cloud model API.
 -->
 
 ---

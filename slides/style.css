@@ -629,6 +629,14 @@
   font-weight: 500;
 }
 
+.slidev-layout .section-footnote {
+  margin: -4px 0 0 0;
+  font-size: 16px;
+  font-weight: 400;
+  line-height: 1.35;
+  color: rgba(255, 255, 255, 0.68);
+}
+
 /* ==========================================================================
    Layout Variations — High-whitespace editorial + diagram archetypes
    ========================================================================== */

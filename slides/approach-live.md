@@ -1,6 +1,6 @@
 ---
 theme: default
-title: Code is cheap. Delivery is hard.
+title: Code is cheap*. Delivery is hard.
 sync: opening
 aspectRatio: 16/9
 canvasWidth: 1280
@@ -1308,9 +1308,10 @@ class: slide-hero slide-section
 <div class="section-hero-grid">
 <div class="section-hero-left">
 
-# Code is cheap.<br>Delivery is hard.
+# Code is cheap*.<br>Delivery is hard.
 
 <p class="section-subtitle">A system for shipping software with AI —<br>not just generating code.</p>
+<p class="section-footnote">* With a delivery system to control token spend.</p>
 
 </div>
 </div>
@@ -1323,9 +1324,9 @@ class: slide-hero slide-section
 
 <!--
 Opening:
-- Generative AI makes code and test generation abundant. Trusted evidence remains scarce.
-- Accountability has not moved to the model. Your organisation still carries the pager, the audit risk, and the production consequences.
-- Our answer is not a better prompt. It is an engineering delivery system whose rules, specification record, and runtime sandbox sit outside the model.
+- Generative AI makes code and test generation abundant—if your delivery system controls token spend. Trusted evidence remains scarce.
+- Accountability has not moved to the model. Your organisation still carries the pager, the API bill, the audit risk, and the production consequences.
+- Our answer is not a better prompt. It is an engineering delivery system whose rules, specification record, and runtime sandbox sit outside the model—and shrink what the model has to read and generate.
 -->
 
 ---
@@ -1770,6 +1771,7 @@ Give a concrete example at the "Review & seal" gate:
 - Suppose legacy code has a 30-second timeout, an architecture doc says 10 seconds, and retry behaviour isn't specified anywhere.
 - A normal coding agent silently picks one and buries that guess inside 400 lines of generated code.
 - Specify extracts claims from your docs, tests, and code, flags the 30s vs 10s conflict, and marks the missing retry rule as `[unknown]`—halting at the Review & seal gate for a human decision before Plan and Build run.
+- Because the system is reasoned about in a formal specification and sliced into bounded units, implementation turns do not need an expensive frontier model holding the whole service in context.
 -->
 
 ---
@@ -1965,7 +1967,7 @@ class: slide-light
 Why the WebAssembly runtime is even more important in the age of coding agents:
 - That zero-trust boundary doesn't just contain code at runtime—it changes what the agent has to write in the first place.
 - In a traditional stack, an agent asked to add a feature also writes infrastructure plumbing: SDK imports, connection pooling, retry loops, serialisation, and auth wiring. That is where agents hallucinate APIs, leak secrets, or introduce subtle bugs.
-- Because our runtime bridges external resources in the host, the WASI guest only expresses domain behaviour against narrow capability contracts—dramatically reducing the complexity and volume of code the agent has to generate.
+- Because our runtime bridges external resources in the host, the WASI guest only expresses domain behaviour against narrow capability contracts—dramatically reducing the complexity, code volume, and token spend of every change.
 -->
 
 ---
@@ -2044,6 +2046,106 @@ class: slide-light
 Why this matters to platform and security teams:
 - Application code never imports an AWS, Azure, or vendor SDK directly—it calls the capability contract.
 - Moving from a developer laptop to cloud or air-gapped on-premise infrastructure means swapping the host's runtime recipe, without rewriting or recompiling the application component.
+-->
+
+---
+title: Controlling token spend.
+sync: section-cost
+class: slide-section
+---
+
+<AmbientVideo src="/videos/hero-video-3.mp4" variant="approach" />
+
+<Eyebrow text="DELIVERY SYSTEM · COST CONTROL" />
+
+<div class="section-hero-grid">
+<div class="section-hero-left">
+<div class="section-kicker-pill is-magenta">Economics of constraint</div>
+
+# Controlling token spend.
+
+<p class="section-subtitle">Reasoning in a formal specification and generating against a narrow Wasm runtime <strong>cuts token volume and lets smaller, cheaper models do the work.</strong></p>
+
+</div>
+</div>
+
+<div class="hero-mechanisms">
+<div class="hero-pillar"><span class="hero-pillar-num">01</span><span>Formal specifications · Bounded slices replace whole-codebase context windows</span></div>
+<div class="hero-pillar"><span class="hero-pillar-num">02</span><span>Narrow Wasm target · Guests implement business logic; the host owns plumbing</span></div>
+<div class="hero-pillar"><span class="hero-pillar-num">03</span><span>Smaller, cheaper models · Lower-cost commercial models today; local models next</span></div>
+</div>
+
+<!--
+Section divider: Controlling token spend.
+- IT managers and senior executives are discovering that "cheap AI code" gets expensive fast when agents stuff entire repositories into context and burn frontier-model tokens inventing boilerplate.
+- Our delivery system controls token spend by construction: formal specifications and bounded slices shrink what the model reads, and the Wasm runtime shrinks what the model writes.
+-->
+
+---
+title: Fewer tokens. Smaller, cheaper models.
+sync: cost-control
+class: slide-light
+---
+
+<Eyebrow text="COST CONTROL · THE ECONOMICS OF CONSTRAINT" />
+
+<div class="live-stage">
+
+# Fewer tokens.<br><span class="live-title-accent">Smaller, cheaper models.</span>
+
+<p class="live-claim">Reasoning in a formal specification and generating against a narrow Wasm runtime takes a fraction of the tokens of building a full service from scratch.</p>
+
+<div class="live-grid-3" style="margin-top: 22px;">
+<div class="live-card is-cyan">
+<div class="live-card-head">
+<IconBadge tone="cyan"><ph:file-text /></IconBadge>
+<div class="live-kicker">01 · Bounded context</div>
+</div>
+<h3>Formal specifications &amp; slices</h3>
+<p>Agents read sealed specs and bounded slices—never the whole codebase.</p>
+<div class="live-feature-list">
+<span>No whole-repo prompts</span>
+<span>No multi-turn chat bloat</span>
+</div>
+</div>
+
+<div class="live-card">
+<div class="live-card-head">
+<IconBadge tone="magenta"><ph:code /></IconBadge>
+<div class="live-kicker">02 · Narrow generation target</div>
+</div>
+<h3>WASI business logic only</h3>
+<p>Agents implement domain rules while the host owns infrastructure plumbing.</p>
+<div class="live-feature-list">
+<span>Fraction of the tokens</span>
+<span>No SDK or framework churn</span>
+</div>
+</div>
+
+<div class="live-card is-dark">
+<div class="live-card-head">
+<IconBadge tone="light"><ph:cpu /></IconBadge>
+<div class="live-kicker">03 · Model tiering</div>
+</div>
+<h3>Smaller, cheaper models</h3>
+<p>Bounded slices do not need a frontier model on every turn.</p>
+<div class="live-feature-list">
+<span>Cheaper commercial models</span>
+<span>Local open-weight next</span>
+</div>
+</div>
+</div>
+
+<div class="live-outcome is-punch">A fraction of the tokens per change—so smaller, cheaper models do the heavy lifting.</div>
+</div>
+
+<!--
+Why this is top of mind for IT managers and senior executives:
+- Unconstrained coding agents burn tokens in three places: reading the whole repository on every turn, generating sprawling framework and SDK boilerplate, and looping through multi-turn chat retries when tests fail.
+- Our delivery system removes all three drivers:
+  1. Specifying behaviour breaks the service into a formal specification and bounded slices, so the model never needs the whole system in context.
+  2. Sandboxing execution puts SDKs and plumbing in the host, so the WASI guest is a fraction of the code.
+  3. Because the generation problem is deliberately small, smaller and cheaper commercial models can handle implementation slices today—instead of paying frontier-model prices for every line of code.
 -->
 
 ---
@@ -2181,14 +2283,14 @@ class: slide-light
 </div>
 </div>
 
-<div class="live-outcome" style="width: 88%; margin: 48px auto 0; box-sizing: border-box;">Today: frontier models in production · Next: open-weight and client-hosted models.</div>
+<div class="live-outcome" style="width: 88%; margin: 48px auto 0; box-sizing: border-box;">Today: lower token spend &amp; smaller commercial models · Next: local, open-weight models.</div>
 </div>
 
 <!--
 Why this resonates with security-conscious IT leaders:
 - You only need a giant frontier model when the agent has to invent project structure, pick libraries, and hold the whole repo in context.
 - Because our build step deterministically scaffolds the module layout, typed routes, message handlers, and scenario test skeletons from the sealed spec before the model turn starts, the model only fills in bounded business logic.
-- In proof-of-concept runs, that narrower target already compiles and passes verification using untuned open-weight models—opening the path to air-gapped, client-hosted execution.
+- Today, that narrow target already cuts token spend and lets smaller, cheaper commercial models handle implementation slices. In proof-of-concept runs, it also compiles and passes verification using untuned open-weight models—opening the path to air-gapped, client-hosted execution with no cloud API dependency.
 -->
 
 ---
