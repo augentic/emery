@@ -235,6 +235,12 @@ cp target/wasm32-wasip2/release/acme_runbook.wasm \
 
 You can now reference `adapter = "acme:runbook@0.1.0"` in `emery.toml` or on the command line.
 
+When testing a live run, increase verbosity to inspect adapter turns and gate corrections on `stderr`:
+
+- Bare run (`info`): logs `attempts` and timing (`opening_ms`, `tool_ms`, `model_ms`, `check_ms`) on each `completion` line.
+- `-v` (`debug`, or `RUST_LOG=emery_sdk=debug`): logs each claim or report gate finding (such as a `path` outside a seam's anchors or an off-stem ID).
+- `-vv` (`trace`, or `RUST_LOG="omnia_core=off,emery_sdk=trace"`): logs the full correction prompt sent back to the model and the accepted `Evidence` JSON.
+
 ---
 
 ## See also
