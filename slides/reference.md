@@ -969,9 +969,9 @@ class: slide-light
   <text x="800" y="164" class="svg-body" fill="#0d1030">Report gate and wave verification</text>
 
   <rect x="18" y="204" width="344" height="96" rx="12" fill="#ffffff" stroke="rgba(13,16,48,0.24)" stroke-width="1.5" />
-  <text x="40" y="232" class="svg-kicker" fill="#0c7fa3">TODAY · PRODUCTION DEFAULT</text>
-  <text x="40" y="260" class="svg-h3" fill="#0d1030">Frontier LLMs</text>
-  <text x="40" y="284" class="svg-caption" fill="rgba(13,16,48,0.66)">Current client engagements run against frontier models</text>
+  <text x="40" y="232" class="svg-kicker" fill="#0c7fa3">TODAY · PRODUCTION</text>
+  <text x="40" y="260" class="svg-h3" fill="#0d1030">Lower token spend &amp; smaller models</text>
+  <text x="40" y="284" class="svg-caption" fill="rgba(13,16,48,0.66)">Fewer tokens per slice; smaller commercial &amp; frontier LLMs</text>
 
   <rect x="396" y="204" width="348" height="96" rx="12" fill="rgba(22,180,226,0.06)" stroke="#0c7fa3" stroke-width="1.6" />
   <text x="418" y="232" class="svg-kicker" fill="#0c7fa3">PROOF OF CONCEPT · DEMONSTRATED</text>
@@ -981,10 +981,10 @@ class: slide-light
   <rect x="778" y="204" width="344" height="96" rx="12" fill="rgba(164,35,143,0.06)" stroke="#a4238f" stroke-width="1.6" stroke-dasharray="6 5" />
   <text x="800" y="232" class="svg-kicker" fill="#a4238f">NEXT · ACTIVE ROADMAP</text>
   <text x="800" y="260" class="svg-h3" fill="#0d1030">Local and client-hosted SLMs</text>
-  <text x="800" y="284" class="svg-caption" fill="rgba(13,16,48,0.66)">Sensitive systems built without a frontier API</text>
+  <text x="800" y="284" class="svg-caption" fill="rgba(13,16,48,0.66)">Sensitive systems built without a cloud model API</text>
 
-  <rect x="190" y="314" width="760" height="32" rx="16" fill="rgba(164,35,143,0.06)" stroke="rgba(164,35,143,0.4)" />
-  <text x="570" y="335" text-anchor="middle" class="svg-caption" fill="#a4238f">Claim boundary: frontier LLMs in production today; small open-weight models demonstrated in proof-of-concept runs.</text>
+  <rect x="130" y="314" width="880" height="32" rx="16" fill="rgba(164,35,143,0.06)" stroke="rgba(164,35,143,0.4)" />
+  <text x="570" y="335" text-anchor="middle" class="svg-caption" fill="#a4238f">Claim boundary: narrow target cuts token spend and allows smaller commercial models today; local open-weight models in PoC.</text>
 </svg>
 </div>
 </div>
@@ -993,7 +993,7 @@ class: slide-light
 Smaller models on a narrower target:
 - Frontier models are necessary when an agent has to choose libraries, invent project structure, and hold an entire codebase in context.
 - The Omnia target adapter removes that work before the model turn begins: it scaffolds the crate, module layout, typed routes, message consumers, and scenario test skeletons from the sealed specification, then asks the model only to fill the behavioural markers and pass `cargo clippy`, `cargo test`, the `wasm32-wasip2` check, and the adapter's AST gates.
-- Claim discipline: state small-language-model support with its exact boundary. The build adapter runs against frontier LLMs in current engagements; building Wasm guests with untuned `qwen3-coder-next` is demonstrated in early proof-of-concept runs and is active roadmap work, not a general production default today.
+- Claim discipline: state local, open-weight small-language-model support with its exact boundary. While the narrow target already reduces token volume and allows smaller, cheaper commercial models today alongside frontier LLMs, building Wasm guests with untuned `qwen3-coder-next` is demonstrated in early proof-of-concept runs and is active roadmap work, not a general production default today.
 -->
 
 ---

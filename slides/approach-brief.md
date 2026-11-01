@@ -1,6 +1,6 @@
 ---
 theme: default
-title: Code is cheap. Delivery is hard.
+title: Code is cheap*. Delivery is hard.
 sync: opening
 aspectRatio: 16/9
 canvasWidth: 1280
@@ -32,9 +32,10 @@ class: slide-hero slide-section
 <div class="section-hero-grid">
 <div class="section-hero-left">
 
-# Code is cheap.<br>Delivery is hard.
+# Code is cheap*.<br>Delivery is hard.
 
 <p class="section-subtitle">A system for shipping software with AI —<br>not just generating code.</p>
+<p class="section-footnote">* If your delivery system controls token spend.</p>
 
 </div>
 </div>
@@ -47,12 +48,12 @@ class: slide-hero slide-section
 
 <!--
 Opening:
-- Code generation is no longer the scarce part of software delivery.
-- Accountability has not moved to the model. The organisation still owns the outcome, the access, the evidence, and the consequences.
+- Code generation is no longer the scarce part of software delivery—provided your delivery system controls token spend.
+- Accountability has not moved to the model. The organisation still owns the outcome, the token bill, the access, the evidence, and the consequences.
 - Our answer is not a better prompt. It is a delivery system whose rules, record, and runtime boundary sit outside the model.
 
 Client question:
-- Where has implementation become faster while getting a change safely into production has not?
+- Where has implementation become faster while getting a change safely into production—and keeping token spend predictable—has not?
 -->
 
 ---
@@ -60,15 +61,15 @@ title: Coding is no longer the bottleneck.
 sync: shift
 class: slide-light
 ---
-<Eyebrow text="THE SHIFT · FROM GENERATION TO COMPREHENSION" />
+<Eyebrow text="THE SHIFT · UNGOVERNED AI AT SCALE" />
 
 <div class="ed-split">
 <div class="ed-prose-col">
 
 # Coding is no longer<br>the bottleneck.
 
-<p class="ed-prose">AI writes code in minutes, but without a delivery system it inflates PRs, shifts the bottleneck to review, and degrades delivery stability.</p>
-<p class="ed-prose"><strong>More code ≠ faster delivery.</strong> DORA calls this the verification tax: time saved writing code is re-spent auditing larger batches, while unreviewed assumptions, duplicated blocks, and subtle defects accumulate downstream.</p>
+<p class="ed-prose">AI writes code in minutes — but without a delivery system, costs climb, reviews jam, and defects reach production.</p>
+<p class="ed-prose"><strong>More code ≠ faster delivery.</strong> Time saved generating code is re-spent auditing larger batches, while unreviewed assumptions, security vulnerabilities, and copy-paste debt accumulate downstream.</p>
 
 </div>
 <div class="ed-diagram-pane">
@@ -85,25 +86,25 @@ class: slide-light
   <text x="38" y="172" class="svg-kicker" fill="#78d8f2">MORE CODE ≠ FASTER DELIVERY · DORA, FAROS AI, GITCLEAR, VERACODE</text>
 
   <rect x="38" y="188" width="270" height="78" rx="9" fill="rgba(255,255,255,0.08)" />
-  <text x="56" y="212" class="svg-label" fill="#ffffff">Verification tax</text>
-  <text x="56" y="232" class="svg-caption" fill="rgba(255,255,255,0.68)">Larger PRs overwhelm human review</text>
-  <text x="56" y="253" class="svg-pill" fill="#78d8f2">+51% PR size · +441% review wait</text>
+  <text x="56" y="212" class="svg-label" fill="#ffffff">Uncontrolled cost</text>
+  <text x="56" y="232" class="svg-caption" fill="rgba(255,255,255,0.68)">Seat and token bills climb for flat output</text>
+  <text x="56" y="253" class="svg-pill" fill="#78d8f2">Uncapped token spend · 0% net delivery gain</text>
   <rect x="332" y="188" width="270" height="78" rx="9" fill="rgba(255,255,255,0.08)" />
-  <text x="350" y="212" class="svg-label" fill="#ffffff">Hidden assumptions</text>
-  <text x="350" y="232" class="svg-caption" fill="rgba(255,255,255,0.68)">Plausible code skips design trade-offs</text>
-  <text x="350" y="253" class="svg-pill" fill="#78d8f2">+54% bugs · 45% with security flaws</text>
+  <text x="350" y="212" class="svg-label" fill="#ffffff">Review overwhelm</text>
+  <text x="350" y="232" class="svg-caption" fill="rgba(255,255,255,0.68)">Larger PRs jam human review queues</text>
+  <text x="350" y="253" class="svg-pill" fill="#78d8f2">+51% PR size · +441% review wait</text>
 
   <rect x="38" y="280" width="270" height="78" rx="9" fill="rgba(255,255,255,0.08)" />
-  <text x="56" y="304" class="svg-label" fill="#ffffff">Duplication &amp; churn</text>
-  <text x="56" y="324" class="svg-caption" fill="rgba(255,255,255,0.68)">Copy-paste growth replaces refactoring</text>
-  <text x="56" y="345" class="svg-pill" fill="#78d8f2">+81% duplication · −70% refactoring</text>
+  <text x="56" y="304" class="svg-label" fill="#ffffff">Rogue code in production</text>
+  <text x="56" y="324" class="svg-caption" fill="rgba(255,255,255,0.68)">Vulnerable code reaches live systems</text>
+  <text x="56" y="345" class="svg-pill" fill="#78d8f2">45% security flaws · −7.2% stability</text>
   <rect x="332" y="280" width="270" height="78" rx="9" fill="rgba(255,255,255,0.08)" />
-  <text x="350" y="304" class="svg-label" fill="#ffffff">Delivery instability</text>
-  <text x="350" y="324" class="svg-caption" fill="rgba(255,255,255,0.68)">More defects reach production</text>
-  <text x="350" y="345" class="svg-pill" fill="#78d8f2">−7.2% stability per 25% AI adoption</text>
+  <text x="350" y="304" class="svg-label" fill="#ffffff">Instant legacy debt</text>
+  <text x="350" y="324" class="svg-caption" fill="rgba(255,255,255,0.68)">Unexamined guesses and copy-paste churn</text>
+  <text x="350" y="345" class="svg-pill" fill="#78d8f2">+54% bugs · +81% code duplication</text>
 
-  <rect x="70" y="394" width="500" height="36" rx="18" fill="rgba(164,35,143,0.07)" stroke="rgba(164,35,143,0.42)" />
-  <text x="320" y="417" text-anchor="middle" class="svg-caption" fill="#a4238f">The risk: A system no one can safely change.</text>
+  <rect x="44" y="394" width="552" height="36" rx="18" fill="rgba(164,35,143,0.07)" stroke="rgba(164,35,143,0.42)" />
+  <text x="320" y="417" text-anchor="middle" class="svg-caption" fill="#a4238f">The risk: Higher spend, wider exposure, and a system no one can safely change.</text>
 </svg>
 </div>
 </div>
@@ -186,27 +187,27 @@ class: slide-sandbox
   <text x="38" y="112" class="svg-kicker" fill="#78d8f2">01 · CHANGE PATH</text>
   <text x="38" y="142" class="svg-h2" fill="#ffffff">Standardising delivery</text>
   <line x1="38" y1="156" x2="342" y2="156" stroke="rgba(255,255,255,0.12)" />
-  <text x="38" y="184" class="svg-body" fill="rgba(255,255,255,0.84)">Approved tools and models</text>
-  <text x="38" y="208" class="svg-body" fill="rgba(255,255,255,0.84)">Data, source, and worker boundaries</text>
-  <text x="38" y="232" class="svg-body" fill="rgba(255,255,255,0.84)">Agent instructions and pipeline gates</text>
+  <text x="38" y="184" class="svg-body" fill="rgba(255,255,255,0.84)">Isolated workspaces and shared standards</text>
+  <text x="38" y="208" class="svg-body" fill="rgba(255,255,255,0.84)">Cuts review overwhelm at compile time</text>
+  <text x="38" y="232" class="svg-body" fill="rgba(255,255,255,0.84)">Blocks flawed code early in the pipeline</text>
   <text x="38" y="270" class="svg-caption" fill="#78d8f2">How code is written, checked, and shipped.</text>
 
   <rect x="392" y="82" width="356" height="208" rx="16" fill="rgba(10,7,16,0.7)" stroke="#f59ef5" stroke-width="1.8" />
   <text x="418" y="112" class="svg-kicker" fill="#f59ef5">02 · BEHAVIOURAL CONTRACT</text>
   <text x="418" y="142" class="svg-h2" fill="#ffffff">Specifying behaviour</text>
   <line x1="418" y1="156" x2="722" y2="156" stroke="rgba(255,255,255,0.12)" />
-  <text x="418" y="184" class="svg-body" fill="rgba(255,255,255,0.84)">Evidence and explicit source authority</text>
+  <text x="418" y="184" class="svg-body" fill="rgba(255,255,255,0.84)">Exposes hidden guesses before coding</text>
   <text x="418" y="208" class="svg-body" fill="rgba(255,255,255,0.84)">Versioned spec.md and design.md</text>
-  <text x="418" y="232" class="svg-body" fill="rgba(255,255,255,0.84)">Bounded implementation and verification</text>
+  <text x="418" y="232" class="svg-body" fill="rgba(255,255,255,0.84)">Slashes token spend with bounded slices</text>
   <text x="418" y="270" class="svg-caption" fill="#f59ef5">What the software must do and how it is verified.</text>
 
   <rect x="772" y="82" width="356" height="208" rx="16" fill="rgba(10,7,16,0.7)" stroke="#78d8f2" stroke-width="1.8" />
   <text x="798" y="112" class="svg-kicker" fill="#78d8f2">03 · RUNTIME BOUNDARY</text>
   <text x="798" y="142" class="svg-h2" fill="#ffffff">Sandboxing execution</text>
   <line x1="798" y1="156" x2="1102" y2="156" stroke="rgba(255,255,255,0.12)" />
-  <text x="798" y="184" class="svg-body" fill="rgba(255,255,255,0.84)">Sandboxed WebAssembly components</text>
-  <text x="798" y="208" class="svg-body" fill="rgba(255,255,255,0.84)">Typed capabilities and explicit grants</text>
-  <text x="798" y="232" class="svg-body" fill="rgba(255,255,255,0.84)">Credentials and infrastructure in the host</text>
+  <text x="798" y="184" class="svg-body" fill="rgba(255,255,255,0.84)">Zero ambient access inside WASI guests</text>
+  <text x="798" y="208" class="svg-body" fill="rgba(255,255,255,0.84)">Business logic only; plumbing in the host</text>
+  <text x="798" y="232" class="svg-body" fill="rgba(255,255,255,0.84)">Contains rogue code via typed grants</text>
   <text x="798" y="270" class="svg-caption" fill="#78d8f2">What running code is permitted to touch.</text>
 
   <line x1="190" y1="290" x2="190" y2="322" stroke="#78d8f2" stroke-width="1.5" />
@@ -557,7 +558,7 @@ class: slide-light
 # The agentic<br>development loop.
 
 </div>
-<p class="ed-band-prose"><strong>Align on intent upfront, break work into bounded slices for agents, and verify code against the spec.</strong> Every change runs the loop. Any spec change re-enters the human review gate.</p>
+<p class="ed-band-prose"><strong>Align on intent upfront, break work into bounded slices for agents, and verify code against the spec.</strong> Because the system is reasoned about in a formal specification and sliced into bounded units, implementation does not need an expensive model holding the whole service in context. Every change runs the loop. Any spec change re-enters the human review gate.</p>
 </div>
 <div class="ed-band-canvas">
 <svg viewBox="0 0 1140 360" aria-hidden="true">
@@ -707,7 +708,7 @@ class: slide-light
 # Sandboxing execution.
 
 </div>
-<p class="ed-band-prose"><strong>Grant generated code nothing by default—it reaches infrastructure only through host-mediated capabilities.</strong> The host, not the generated code, decides what can be reached, and grants only the capabilities the work needs.</p>
+<p class="ed-band-prose"><strong>Grant generated code nothing by default—it reaches infrastructure only through host-mediated capabilities.</strong> Because the host bridges external resources through typed capability contracts, guests contain pure business logic rather than infrastructure plumbing.</p>
 </div>
 <div class="ed-band-canvas">
 <svg viewBox="0 0 1140 350" aria-hidden="true">
@@ -716,13 +717,14 @@ class: slide-light
   <text x="38" y="104" class="svg-h2" fill="#0d1030">Wasmtime sandbox</text>
   <line x1="38" y1="122" x2="324" y2="122" stroke="rgba(12,127,163,0.18)" />
   <text x="38" y="158" class="svg-label" fill="#0d1030">No direct route to infrastructure</text>
-  <text x="38" y="190" class="svg-caption" fill="rgba(13,16,48,0.62)">Generated code runs inside the sandbox</text>
+  <text x="38" y="190" class="svg-caption" fill="rgba(13,16,48,0.62)">Zero ambient authority inside the sandbox</text>
   <rect x="398" y="36" width="344" height="214" rx="14" fill="#0d1030" />
-  <text x="420" y="68" class="svg-kicker" fill="#f59ef5">02 · CAPABILITY CONTRACTS</text>
-  <text x="420" y="104" class="svg-h2" fill="#ffffff">Capability contracts</text>
+  <text x="420" y="68" class="svg-kicker" fill="#f59ef5">02 · BUSINESS LOGIC, NOT PLUMBING</text>
+  <text x="420" y="104" class="svg-h2" fill="#ffffff">Business logic only</text>
   <line x1="420" y1="122" x2="720" y2="122" stroke="rgba(255,255,255,0.14)" />
-  <text x="420" y="158" class="svg-label" fill="#ffffff">HTTP, Messaging, KeyValue, BlobStore</text>
-  <text x="420" y="190" class="svg-caption" fill="rgba(255,255,255,0.7)">Access only through typed contracts</text>
+  <text x="420" y="158" class="svg-label" fill="#ffffff">Guests call capability contracts;</text>
+  <text x="420" y="182" class="svg-label" fill="#ffffff">the host owns SDKs and wiring</text>
+  <text x="420" y="216" class="svg-caption" fill="rgba(255,255,255,0.7)">Shrinking what agents must generate</text>
   <rect x="794" y="36" width="330" height="214" rx="14" fill="rgba(22,180,226,0.06)" stroke="#0c7fa3" stroke-width="1.7" />
   <text x="816" y="68" class="svg-kicker" fill="#0c7fa3">03 · RUNTIME RECIPES</text>
   <text x="816" y="104" class="svg-h2" fill="#0d1030">Runtime recipes</text>
@@ -735,8 +737,8 @@ class: slide-light
 
 <!--
 Section 03 divider: Sandboxed execution.
-- Grant generated code nothing by default.
-- It reaches infrastructure only through host-mediated capabilities.
+- Grant generated code nothing by default; it reaches infrastructure only through host-mediated capabilities.
+- Because the host bridges external resources, guests focus on business logic rather than plumbing.
 - Runtime recipes bind the same contracts in each environment.
 -->
 
@@ -769,14 +771,14 @@ class: slide-light
 
   <rect x="100" y="26" width="390" height="70" rx="10" fill="rgba(124,92,205,0.1)" stroke="rgba(124,92,205,0.7)" stroke-width="2.4" />
   <text x="295" y="56" text-anchor="middle" class="svg-h3" fill="#0d1030">WASI Component</text>
-  <text x="295" y="80" text-anchor="middle" class="svg-label" font-style="italic" fill="rgba(13,16,48,0.72)">Generated code</text>
+  <text x="295" y="80" text-anchor="middle" class="svg-label" font-style="italic" fill="rgba(13,16,48,0.72)">Generated business logic</text>
 
   <rect x="650" y="26" width="390" height="70" rx="10" fill="rgba(124,92,205,0.1)" stroke="rgba(124,92,205,0.7)" stroke-width="2.4" />
   <text x="845" y="56" text-anchor="middle" class="svg-h3" fill="#0d1030">WASI Component</text>
-  <text x="845" y="80" text-anchor="middle" class="svg-label" font-style="italic" fill="rgba(13,16,48,0.72)">Generated code</text>
+  <text x="845" y="80" text-anchor="middle" class="svg-label" font-style="italic" fill="rgba(13,16,48,0.72)">Generated business logic</text>
 
   <text x="570" y="134" text-anchor="middle" class="svg-h2" fill="#0d1030">Wasm Runtime</text>
-  <text x="570" y="159" text-anchor="middle" class="svg-label" font-style="italic" fill="rgba(13,16,48,0.72)">Wasmtime sandbox</text>
+  <text x="570" y="159" text-anchor="middle" class="svg-label" font-style="italic" fill="rgba(13,16,48,0.72)">Wasmtime sandbox · host infrastructure bridge</text>
 
   <line x1="16" y1="191" x2="404" y2="191" stroke="rgba(13,16,48,0.18)" />
   <line x1="736" y1="191" x2="1124" y2="191" stroke="rgba(13,16,48,0.18)" />
@@ -815,6 +817,64 @@ The headline and payoff use the language on the Propellerhead homepage.
 
 Client question:
 - If this code—or one of its dependencies—were compromised, what could it actually reach?
+-->
+
+---
+title: Business logic in the guest. Plumbing in the host.
+sync: runtime-focus
+class: slide-light
+---
+<Eyebrow text="03 · SANDBOXING EXECUTION · SMALLER GENERATION TARGET" />
+
+<div class="foundation-progress" aria-label="Delivery foundations">
+<span>01 · Standardising delivery</span>
+<span>02 · Specifying behaviour</span>
+<span class="is-active">03 · Sandboxing execution</span>
+</div>
+
+<div class="ed-band">
+<div class="ed-band-top">
+<div>
+
+# Business logic in the guest.<br><span style="color:#a4238f">Plumbing in the host.</span>
+
+</div>
+<p class="ed-band-prose"><strong>Because the runtime bridges infrastructure and external resources, agents generate pure business logic—not plumbing.</strong> The host owns clients, connection pools, retries, auth, and SDK wiring—requiring far fewer tokens per change and allowing smaller, less expensive models than building a full service from scratch.</p>
+</div>
+<div class="ed-band-canvas">
+<svg viewBox="0 0 1140 350" aria-hidden="true">
+  <rect x="16" y="36" width="550" height="214" rx="14" fill="rgba(22,180,226,0.06)" stroke="#0c7fa3" stroke-width="1.7" />
+  <text x="38" y="68" class="svg-kicker" fill="#0c7fa3">01 · WASI GUEST · WHAT THE AGENT WRITES</text>
+  <text x="38" y="104" class="svg-h2" fill="#0d1030">Pure business logic</text>
+  <line x1="38" y1="122" x2="544" y2="122" stroke="rgba(12,127,163,0.18)" />
+  <text x="38" y="156" class="svg-label" fill="#0d1030">Domain rules, state transitions, and typed capability calls.</text>
+  <rect x="38" y="182" width="242" height="36" rx="8" fill="#ffffff" stroke="rgba(12,127,163,0.3)" />
+  <text x="159" y="205" text-anchor="middle" class="svg-pill" fill="#0c7fa3">No vendor or cloud SDKs</text>
+  <rect x="296" y="182" width="248" height="36" rx="8" fill="#ffffff" stroke="rgba(12,127,163,0.3)" />
+  <text x="420" y="205" text-anchor="middle" class="svg-pill" fill="#0c7fa3">No auth or retry glue</text>
+
+  <rect x="574" y="36" width="550" height="214" rx="14" fill="#0d1030" />
+  <text x="596" y="68" class="svg-kicker" fill="#78d8f2">02 · WASM RUNTIME HOST · WHAT THE PLATFORM OWNS</text>
+  <text x="596" y="104" class="svg-h2" fill="#ffffff">Infrastructure plumbing</text>
+  <line x1="596" y1="122" x2="1102" y2="122" stroke="rgba(255,255,255,0.14)" />
+  <text x="596" y="156" class="svg-label" fill="#ffffff">Bridges external services, clients, credentials, and connection pools.</text>
+  <rect x="596" y="182" width="242" height="36" rx="8" fill="rgba(255,255,255,0.08)" stroke="rgba(255,255,255,0.18)" />
+  <text x="717" y="205" text-anchor="middle" class="svg-pill" fill="#78d8f2">SDKs &amp; drivers in the host</text>
+  <rect x="854" y="182" width="248" height="36" rx="8" fill="rgba(255,255,255,0.08)" stroke="rgba(255,255,255,0.18)" />
+  <text x="978" y="205" text-anchor="middle" class="svg-pill" fill="#78d8f2">Policy &amp; secrets outside code</text>
+
+  <rect x="140" y="282" width="860" height="48" rx="24" fill="#0d1030" stroke="#a4238f" stroke-width="1.8" />
+  <text x="570" y="312" text-anchor="middle" class="svg-h3" fill="#ffffff">Less code for agents to generate. Far fewer ways to get it wrong.</text>
+</svg>
+</div>
+</div>
+
+<!--
+Business logic in the guest, plumbing in the host:
+- We built the runtime so engineers could stop repeatedly selecting frameworks, importing provider SDKs, and wiring infrastructure into application code.
+- That separation matters even more when coding agents write the code.
+- Because the runtime handles the bridging to infrastructure and external resources in the host, Wasm guests focus almost exclusively on business logic rather than plumbing.
+- Given a reviewed specification, an agent has a much simpler class of code to generate—and far fewer ways to get it wrong.
 -->
 
 ---
@@ -915,6 +975,64 @@ Different infrastructure, the same application.
 
 Client question:
 - How much application code currently exists only to accommodate a particular environment or infrastructure product?
+-->
+
+---
+title: Fewer tokens. Smaller, cheaper models.
+sync: cost-control
+class: slide-light
+---
+
+<Eyebrow text="THE DELIVERY SYSTEM · ECONOMICS OF CONSTRAINT" />
+
+<div class="ed-band">
+<div class="ed-band-top">
+<div>
+
+# Fewer tokens.<br><span style="color:#a4238f">Smaller, cheaper models.</span>
+
+</div>
+<p class="ed-band-prose"><strong>Reasoning in a formal specification and generating against a narrow Wasm runtime takes a fraction of the tokens of building a full service from scratch.</strong> Because each slice is bounded and the runtime owns the plumbing, smaller, less expensive models can handle the heavy lifting while engineers focus on the product.</p>
+</div>
+<div class="ed-band-canvas">
+<svg viewBox="0 0 1140 350" aria-hidden="true">
+  <rect x="16" y="36" width="344" height="214" rx="14" fill="rgba(22,180,226,0.06)" stroke="#0c7fa3" stroke-width="1.7" />
+  <text x="38" y="68" class="svg-kicker" fill="#0c7fa3">01 · BOUNDED CONTEXT</text>
+  <text x="38" y="102" class="svg-h3" fill="#0d1030">Formal specifications &amp; slices</text>
+  <line x1="38" y1="122" x2="338" y2="122" stroke="rgba(12,127,163,0.18)" />
+  <text x="38" y="156" class="svg-label" fill="#0d1030">Agents read sealed specs and</text>
+  <text x="38" y="180" class="svg-label" fill="#0d1030">bounded slices—never the whole repo.</text>
+  <text x="38" y="220" class="svg-pill" fill="#0c7fa3">No whole-repo prompts · No chat bloat</text>
+
+  <rect x="398" y="36" width="344" height="214" rx="14" fill="rgba(164,35,143,0.05)" stroke="#a4238f" stroke-width="1.7" />
+  <text x="420" y="68" class="svg-kicker" fill="#a4238f">02 · NARROW GENERATION TARGET</text>
+  <text x="420" y="102" class="svg-h3" fill="#0d1030">WASI business logic only</text>
+  <line x1="420" y1="122" x2="720" y2="122" stroke="rgba(164,35,143,0.18)" />
+  <text x="420" y="156" class="svg-label" fill="#0d1030">Agents implement domain rules while</text>
+  <text x="420" y="180" class="svg-label" fill="#0d1030">the host owns infrastructure plumbing.</text>
+  <text x="420" y="220" class="svg-pill" fill="#a4238f">Fraction of the tokens · No SDK churn</text>
+
+  <rect x="780" y="36" width="344" height="214" rx="14" fill="#0d1030" />
+  <text x="802" y="68" class="svg-kicker" fill="#78d8f2">03 · MODEL TIERING</text>
+  <text x="802" y="102" class="svg-h3" fill="#ffffff">Smaller, cheaper models</text>
+  <line x1="802" y1="122" x2="1102" y2="122" stroke="rgba(255,255,255,0.14)" />
+  <text x="802" y="156" class="svg-label" fill="#ffffff">Bounded slices do not need a</text>
+  <text x="802" y="180" class="svg-label" fill="#ffffff">frontier model on every turn.</text>
+  <text x="802" y="220" class="svg-pill" fill="#78d8f2">Cheaper commercial models · Predictable cost</text>
+
+  <rect x="110" y="282" width="920" height="48" rx="24" fill="#0d1030" stroke="#a4238f" stroke-width="1.8" />
+  <text x="570" y="312" text-anchor="middle" class="svg-h3" fill="#ffffff">A fraction of the tokens per change—so smaller, cheaper models do the heavy lifting.</text>
+</svg>
+</div>
+</div>
+
+<!--
+Controlling token spend and model cost:
+- Because the service is reasoned about in a formal specification and sliced into bounded units, implementation does not need an expensive frontier model holding the whole system in context.
+- Generating a Wasm guest against a consistent capability contract takes a fraction of the tokens of building an entire service from scratch—so smaller, cheaper commercial models can handle bounded implementation slices today, while engineers focus on the product.
+
+Client question:
+- How much of your current AI token spend goes to re-reading whole repositories and generating boilerplate infrastructure code?
 -->
 
 ---
@@ -1059,8 +1177,8 @@ class: slide-light
   <text x="596" y="158" class="svg-label" fill="#ffffff">Structure and tests pre-built · fill bounded logic · verify at compile time</text>
   <text x="596" y="204" class="svg-caption" fill="rgba(255,255,255,0.7)">Constraint as leverage: narrowing the target makes local models practical</text>
 
-  <rect x="170" y="282" width="800" height="48" rx="24" fill="rgba(164,35,143,0.06)" stroke="rgba(164,35,143,0.42)" stroke-width="1.5" />
-  <text x="570" y="312" text-anchor="middle" class="svg-label" fill="#0d1030">Today: frontier models in production · Next: open-weight and client-hosted models.</text>
+  <rect x="130" y="282" width="880" height="48" rx="24" fill="rgba(164,35,143,0.06)" stroke="rgba(164,35,143,0.42)" stroke-width="1.5" />
+  <text x="570" y="312" text-anchor="middle" class="svg-label" fill="#0d1030">Today: lower token spend &amp; smaller commercial models · Next: local, open-weight models.</text>
 </svg>
 </div>
 </div>
@@ -1069,9 +1187,9 @@ class: slide-light
 Smaller models on a narrower target:
 - A frontier model is necessary when a coding agent has to choose libraries, invent project structure, and hold an entire codebase in context.
 - Our target build adapter removes that work before the model turn begins: it scaffolds the crate, module layout, typed routes, message consumers, and scenario test skeletons from the sealed specification, then asks the model only to fill the behavioural markers and pass compiler, lint, and test checks.
-- Today, that adapter runs with frontier LLMs in current engagements.
-- In early proof-of-concept runs, the same scaffold-and-verify loop already builds working WebAssembly guest slices using an untuned open-weight model (`qwen3-coder-next`).
-- Active roadmap focus: hardening small language model support so sensitive systems can be built and verified on local or client-hosted hardware without depending on a frontier API.
+- Today, that narrow target already cuts token spend and lets smaller, less expensive commercial models handle implementation slices alongside frontier LLMs.
+- In early proof-of-concept runs, the same scaffold-and-verify loop also builds working WebAssembly guest slices using an untuned open-weight model (`qwen3-coder-next`).
+- Active roadmap focus: hardening local, open-weight small language model support so sensitive systems can be built and verified on client-hosted hardware without depending on a cloud model API.
 -->
 
 ---
