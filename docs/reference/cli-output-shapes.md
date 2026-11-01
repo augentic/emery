@@ -82,7 +82,7 @@ On any error (exit codes `1`–`4`), Emery writes a flat JSON object to `stderr`
   "error": "specify-source-required",
   "message": "no sources",
   "exit-code": 1,
-  "hint": "pass one or more adapters to `emery specify`, or add an `emery.toml` at the project root"
+  "hint": "pass one or more adapters to `emery specify`, or add `emery.toml`"
 }
 ```
 
@@ -97,7 +97,7 @@ In `text` mode, the same failure is rendered on `stderr` as:
 
 ```text
 error[specify-source-required]: no sources
-  hint: pass one or more adapters to `emery specify`, or add an `emery.toml` at the project root
+  hint: pass one or more adapters to `emery specify`, or add `emery.toml`
 ```
 
 ---

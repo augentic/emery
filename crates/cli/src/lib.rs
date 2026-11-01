@@ -445,83 +445,75 @@ fn hint(error: &Error, invoked: Invoked) -> Option<Cow<'static, str>> {
     let code = error.code();
     let hint = match code.as_str() {
         "bad_gateway" if invoked == Invoked::Build => {
-            "the model backend failed twice upstream, or the repository's remote refused; re-run `emery build` once it answers: the label `emery/<revision>` stands at the last verified wave, and `.emery/vcs/integration` holds the slices merged since, so neither is built again"
+            "re-run `emery build` to resume from the last verified wave"
         }
         "bad_request" if invoked == Invoked::Build && is_retryable(error) => {
-            "the model ran out of its time budget on both tries of one turn; re-run `emery build` to put it again: the label `emery/<revision>` stands at the last verified wave, and `.emery/vcs/integration` holds the slices merged since, so neither is built again"
+            "re-run `emery build` to resume from the last verified wave"
         }
         "unsupported-version" => {
             "update emery: `brew upgrade emery`, or `cargo install --git https://github.com/augentic/emery --locked`"
         }
         "specify-source-required" if invoked == Invoked::Amend => {
-            "pass one or more adapters to `emery amend`, or name a change file with `--config <path>`"
+            "pass one or more adapters to `emery amend`, or `--config <path>`"
         }
         "specify-source-required" => {
-            "pass one or more adapters to `emery specify`, or add an `emery.toml` at the project root"
+            "pass one or more adapters to `emery specify`, or add `emery.toml`"
         }
         "build-target-required" => target_hint(invoked),
         "spec-not-generated" => not_generated_hint(&error.description(), invoked),
         "spec-mismatch" if error.description().contains("edited or merged by hand") => {
-            "`spec/` at the head holds documents no seal wrote, as a merge of two branches that each sealed a revision leaves them: keep one side's three files whole (`git checkout <branch> -- spec/`), commit, and run the other side's amendment again over it; `emery show` prints the specification, never edit the files"
+            "keep one side's `spec/` whole (`git checkout <branch> -- spec/`) and re-run `emery amend`"
         }
         "spec-mismatch" => {
-            "`spec/` in the target repository is the engine's: restore the labelled commit's documents (`git checkout emery/<revision> -- spec/`), or move the directory aside, and re-run; `emery show` prints the specification, never edit the files"
+            "restore `spec/` (`git checkout emery/<revision> -- spec/`) or move the directory aside"
         }
         "nothing-staged" if error.description().contains("amendment") => {
-            "run `emery amend --config <path>` to stage an amendment against the current revision, then re-run `emery show amendment`"
+            "run `emery amend <adapter>...` to stage an amendment first"
         }
-        "nothing-staged" => {
-            "run `emery specify <adapter>...` to stage a candidate, then re-run `emery apply` or `emery show <artifact> --staged`"
-        }
-        "amendment-stale" => {
-            "the current revision moved since the amendment was prepared, so it no longer applies: re-run `emery amend <adapter>...` against the current revision to prepare it again, then `emery apply`; nothing was sealed and the stale amendment stays staged until then"
-        }
+        "nothing-staged" => "run `emery specify <adapter>...` to stage a candidate first",
+        "amendment-stale" => "re-run `emery amend <adapter>...` and then `emery apply`",
         "lineage-exists" if invoked == Invoked::Specify => {
-            "the current revision amends an earlier one, so a specify would start the history over: stage a change against it with `emery amend <adapter>...`, or start over deliberately with `emery specify --fresh <adapter>...`, which seals a parentless revision over the head and leaves every earlier label standing; nothing was loaded"
+            "run `emery amend <adapter>...`, or `emery specify --fresh <adapter>...` to start over"
         }
         "lineage-exists" => {
-            "the staged candidate was drafted from the sources alone and the current revision amends an earlier one: re-run `emery specify --fresh <adapter>...` to stage it as a fresh start, then `emery apply`, or stage a change against the current revision with `emery amend <adapter>...` instead; nothing was sealed and the candidate stays staged"
+            "run `emery specify --fresh <adapter>...` then `emery apply`, or use `emery amend <adapter>...`"
         }
         "amendment-pending" if invoked == Invoked::Specify => {
-            "an amendment is staged where the candidate would go: review it with `emery show amendment`, or re-run `emery amend` to prepare it again; a specify never displaces it"
+            "seal the amendment with `emery apply`, or inspect it with `emery show amendment`"
         }
         "amendment-pending" if invoked == Invoked::Amend => {
-            "a revision candidate is staged where the amendment would go: seal it with `emery apply`, or review it with `emery show <artifact> --staged`; an amend never displaces it"
+            "seal the candidate with `emery apply`, or inspect it with `emery show spec --staged`"
         }
-        "amendment-pending" => "review the staged amendment with `emery show amendment`",
+        "amendment-pending" => "inspect the staged amendment with `emery show amendment`",
         "retire-unmatched" => {
-            "the change withdraws a behaviour the current revision does not state: compare the named retire claim's id against the requirements `emery show spec` prints, and reword the source to withdraw one of them, or drop the withdrawal; nothing was staged"
+            "compare the claim's id against `emery show spec` and remove or reword the withdrawal"
         }
-        "spec-outdated" => {
-            "the revision predates this emery's grammar: re-run `emery specify <adapter>...` to regenerate it"
-        }
+        "spec-outdated" => "re-run `emery specify <adapter>...` to regenerate the revision",
         "repository-required" => {
-            "`[target] repository = \".\"` builds into the project checkout, which must be a repository: initialise and seal it, name a repository URL instead, or drop the key so the build creates a repository of its own under `.emery/vcs/repos/<name>`"
+            "run `git init` and commit, set `[target] repository` to a URL, or drop the key"
         }
-        "base-not-sealed" => {
-            "commit or stash the pending changes so the build starts from a sealed commit; `.emery/` is never counted, so add it to `.gitignore`"
-        }
+        "base-not-sealed" => "commit or stash pending changes, and add `.emery/` to `.gitignore`",
         "revision-not-found" => {
-            "check the `repository` or `revision` in `emery.toml` against what the repository holds; a target's clone under `.emery/vcs/repos/<name>` keeps the origin it was first cloned or created with, so remove it, or name the target otherwise, to point the name at another repository"
+            "check `repository` and `revision` in `emery.toml`, or remove `.emery/vcs/repos/<name>` if the URL changed"
         }
         "verify-failed" => {
-            "inspect `.emery/vcs/integration`, which holds the wave's slices merged; re-run `emery build` to verify them again with nothing built again, or `git worktree remove --force` the copy from the repository the label stands in to rebuild the wave from the last verified head; `git bisect` over `emery/<revision>` attributes a failure to a slice"
+            "inspect `.emery/vcs/integration` and re-run `emery build`, or run `git bisect` on `emery/<revision>`"
         }
         "merge-unresolved" => {
-            "two slices rewrite the same files and the model could not combine them: inspect the named paths in `.emery/vcs/worktrees/<slice>` and `.emery/vcs/integration`; re-run `emery build` to build the slice again over the merged head, which holds the slices merged before it; declare a merge rule in the adapter for a list file or a generated one; or re-run `emery specify` for a plan that keeps the two in one slice"
+            "re-run `emery build` to retry the slice, or add a merge rule in the target adapter"
         }
         "secret-detected" => {
-            "inspect the named path in `.emery/vcs/worktrees/<slice>` or `.emery/vcs/integration`, remove the credential from where the build read it (the sources, the environment, a file the model reached), and re-run `emery build`; nothing of the change set was sealed and the label stands at the last verified wave"
+            "remove the credential from `.emery/vcs/worktrees/<slice>` or the sources and re-run"
         }
         "spec-rewritten" => {
-            "`spec/` in the target repository holds the sealed revision and no build writes there: inspect the named paths in `.emery/vcs/worktrees/<slice>` or `.emery/vcs/integration`, stop what wrote them (the adapter's layout, or a command the model ran through its shell), and re-run `emery build`; nothing of the change set was sealed and the label stands at the last verified wave"
+            "remove changes to `spec/` in `.emery/vcs/worktrees/<slice>` and re-run `emery build`"
         }
         "adapter-reference" => "an adapter is an exact package reference, `namespace:name@version`",
         "refused" => {
-            "the loader refused the component; the message above names why: an invalid artifact, a pre-compiled artifact where raw wasm is required, a mismatched digest, an export whose signature does not match this emery's contract (rebuild or update the copy in `~/.emery/adapters/`), or a release the binary routes nowhere, which is fetched with `wkg get <reference> -o ~/.emery/adapters/`"
+            "rebuild or update the adapter in `~/.emery/adapters/`, or fetch it with `wkg get <reference> -o ~/.emery/adapters/`"
         }
         "unavailable" => {
-            "the registry could not supply the release: check the network and that the exact version is published under its namespace; a copy at `~/.emery/adapters/<namespace>_<name>@<version>.wasm` stands in for it"
+            "check the network and version, or place `<namespace>_<name>@<version>.wasm` in `~/.emery/adapters/`"
         }
         _ => return None,
     };
@@ -534,23 +526,19 @@ fn hint(error: &Error, invoked: Invoked) -> Option<Cow<'static, str>> {
 fn not_generated_hint(description: &str, invoked: Invoked) -> &'static str {
     match invoked {
         _ if description.contains("does not stand over its head") => {
-            "the repository's head moved on without the label: merge or rebase `emery/<revision>` onto the head, or re-run `emery specify --apply` to seal a fresh revision over it"
+            "merge or rebase `emery/<revision>` onto `HEAD`, or run `emery specify --apply`"
         }
         Invoked::Amend if description.contains("candidate `") => {
-            "an amendment is prepared against a sealed revision: run `emery apply` to seal the staged candidate, then re-run `emery amend`"
+            "run `emery apply` to seal the staged candidate, then `emery amend`"
         }
         _ if description.contains("candidate `") => {
-            "run `emery apply` to seal the staged candidate as the current revision, then re-run show or build; `emery show <artifact> --staged` reviews it first"
+            "run `emery apply` to seal the staged candidate, or `emery show <artifact> --staged`"
         }
         _ if description.contains("amendment `") => {
-            "review the staged amendment with `emery show amendment`"
+            "inspect the staged amendment with `emery show amendment`"
         }
-        Invoked::Amend => {
-            "an amendment is prepared against a sealed revision: run `emery specify <adapter>... --apply` to seal one, then re-run `emery amend`"
-        }
-        _ => {
-            "run `emery specify <adapter>...` to stage a candidate and `emery apply` to seal it (or `emery specify --apply` for both), then re-run show or build"
-        }
+        Invoked::Amend => "run `emery specify --apply <adapter>...` first, then `emery amend`",
+        _ => "run `emery specify --apply <adapter>...` to seal a revision first",
     }
 }
 
@@ -559,13 +547,13 @@ fn not_generated_hint(description: &str, invoked: Invoked) -> &'static str {
 const fn target_hint(invoked: Invoked) -> &'static str {
     match invoked {
         Invoked::Build => {
-            "pass a target adapter to `emery build`, or add a `[target]` table to `emery.toml` at the project root"
+            "pass `<adapter>` to `emery build`, or add a `[target]` table to `emery.toml`"
         }
         Invoked::Specify | Invoked::Amend => {
-            "a run naming its sources on the command line reads no file: pass `--config` to read the `[target]` table of `emery.toml` at the project root, or `--config <path>` for another file; its `repository` is where the specification is sealed, a URL, `.` for the project checkout, or none for a repository kept under `.emery/vcs/repos/<name>`"
+            "pass `--config` to read `[target]` from `emery.toml`, or add a `[target]` table"
         }
         Invoked::Apply | Invoked::Show | Invoked::Completions => {
-            "add a `[target]` table to `emery.toml` at the project root, or name one with `--config <path>`: its `repository` is where the specification is sealed, a URL, `.` for the project checkout, or none for a repository kept under `.emery/vcs/repos/<name>`"
+            "add a `[target]` table to `emery.toml`, or pass `--config <path>`"
         }
     }
 }

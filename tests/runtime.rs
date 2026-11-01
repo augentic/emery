@@ -882,7 +882,7 @@ async fn apply_target_required() {
     let run = roots.run_idle(&["--format", "json", "specify", SOURCE, "--apply"], &backends).await;
     let envelope = refused(&run, 1, "build-target-required");
     assert_message(&envelope, "`emery specify --apply` needs a `[target]` table");
-    assert_hint(&envelope, "reads no file: pass `--config`");
+    assert_hint(&envelope, "pass `--config`");
     let run = roots.run_idle(&["--format", "json", "show", "spec", "--staged"], &backends).await;
     refused(&run, 2, "nothing-staged");
 }

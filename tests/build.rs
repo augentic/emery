@@ -2246,7 +2246,7 @@ async fn build_no_revision() {
             .await;
     assert_message(&envelope, "no specification revision is sealed in the repository");
     assert!(
-        envelope["hint"].as_str().is_some_and(|hint| hint.contains("build")),
+        envelope["hint"].as_str().is_some_and(|hint| hint.contains("emery specify")),
         "the hint names the way out: {envelope}"
     );
     assert!(provider.target.metadata.lock().expect("metadata").is_empty(), "nothing loads");
@@ -2484,8 +2484,7 @@ async fn build_not_repository() {
     assert_message(&envelope, "the project directory is not a repository");
     assert!(
         envelope["hint"].as_str().is_some_and(|hint| {
-            hint.contains("`[target] repository = \".\"`")
-                && hint.contains("name a repository URL instead, or drop the key")
+            hint.contains("`[target] repository`") && hint.contains("drop the key")
         }),
         "{envelope}"
     );
@@ -2919,9 +2918,7 @@ async fn build_retries_timeout() {
         &format!("slice `SLICE-001` (authentication) failed in wave 1: {TIMED_OUT}"),
     );
     assert!(
-        envelope["hint"].as_str().is_some_and(|hint| hint.contains("time budget")
-            && hint.contains("re-run `emery build`")
-            && hint.contains("`.emery/vcs/integration`")),
+        envelope["hint"].as_str().is_some_and(|hint| hint.contains("re-run `emery build`")),
         "the hint names the resume: {envelope}"
     );
     assert_eq!(provider.target.calls().len(), 6, "put twice, no more");
@@ -2994,7 +2991,7 @@ async fn build_verify_retries_timeout() {
         &format!("wave 1 failed; SLICE-001 merged in it stays committed in `{INTEGRATION}`"),
     );
     assert!(
-        envelope["hint"].as_str().is_some_and(|hint| hint.contains("time budget")),
+        envelope["hint"].as_str().is_some_and(|hint| hint.contains("re-run `emery build`")),
         "{envelope}"
     );
     assert_eq!(provider.target.verifies().len(), 6, "put twice, no more");
