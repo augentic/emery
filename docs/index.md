@@ -62,7 +62,7 @@ emery amend --description emery:intent@0.39.0="Add order cancellation" --config
   - **[CLI Output Shapes](reference/cli-output-shapes.md):** JSON output schemas, exit codes, and recovery error codes for every command.
   - **[Adapters](reference/adapters.md):** Package reference syntax (`namespace:name@version`), local adapter storage (`~/.emery/adapters`), and registry resolution.
   - **[Deployment Profiles](reference/deployment-profiles.md):** Runtime sandboxing, worker grants, storage mounts, and environment variables.
-- **Repository guides:** For a live shell walkthrough over the mock adapters, see [`examples/README.md`](../examples/README.md). For contributor workflows and workspace invariants, see [`CONTRIBUTING.md`](../CONTRIBUTING.md) and [`AGENTS.md`](../AGENTS.md).
+- **Repository guides:** For the mock example adapters and fixture config, see [`examples/README.md`](../examples/README.md). For contributor workflows and workspace invariants, see [`CONTRIBUTING.md`](../CONTRIBUTING.md) and [`AGENTS.md`](../AGENTS.md).
 
 ## Historical archive (v1)
 

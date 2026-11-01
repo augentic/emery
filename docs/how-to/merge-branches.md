@@ -11,6 +11,7 @@ This guide shows how to resolve Git merge conflicts in `spec/` when two develope
   - [3. Keep one branch's `spec/` directory whole](#3-keep-one-branchs-spec-directory-whole)
   - [4. Re-run the second branch's `emery amend` over the merge commit](#4-re-run-the-second-branchs-emery-amend-over-the-merge-commit)
 - [Why hand-merging `spec/*.json` fails (`spec-mismatch`)](#why-hand-merging-specjson-fails-spec-mismatch)
+- [Runnable example with the mock adapters](#runnable-example-with-the-mock-adapters)
 - [See also](#see-also)
 
 ---
@@ -101,7 +102,46 @@ Checking out one branch's `spec/` whole (`git checkout <branch> -- spec/`) and r
 
 ---
 
+## Runnable example with the mock adapters
+
+Using the `$project` repository from [Evolving a specification with `emery amend`](../tutorials/amending-a-spec.md), you can reproduce a two-branch merge across two local clones:
+
+```bash
+# Clone the project to simulate a second operator (reads the current revision from HEAD's tree)
+git clone --quiet "$project" "$project-b"
+
+# Each operator amends the current revision with a different inline description and seals it
+"$emery" -v amend --config \
+  --description "example:source@0.1.0=GET /farewell returns the static string 'so long'." \
+  --apply
+(
+  cd "$project-b" \
+    && "$emery" -v amend --config \
+      --description "example:source@0.1.0=GET /ping returns the static string 'pong'." \
+      --apply \
+    && git push --quiet origin 'refs/heads/emery/*:refs/heads/emery/*'
+)
+git for-each-ref refs/heads/emery/
+
+# Merge the first branch onto main, then merge the second (which conflicts on spec/spec.json)
+git merge --ff-only emery/<farewell-rev>
+git merge emery/<ping-rev>                  # CONFLICT (content): spec/spec.json
+git checkout emery/<farewell-rev> -- spec/  # Keep one side's three documents whole
+git commit --quiet --no-edit
+"$emery" show spec                          # Holds farewell ('so long'), no ping yet
+
+# Re-run the second branch's amendment on top of the merged revision
+"$emery" -v amend --config \
+  --description "example:source@0.1.0=GET /ping returns the static string 'pong'." \
+  --apply
+"$emery" show spec                          # Both farewell and ping, with Parent: <farewell-rev>
+git merge --ff-only emery/<combined-rev>
+rm -rf "$project-b"
+```
+
+---
+
 ## See also
 
 - [Revision lifecycle](../explanation/revision-lifecycle.md#how-emery-resolves-the-current-revision) — how Emery resolves revisions across `emery/<id>` labels and merged `HEAD` commits.
-- [Adapter examples: Two branches](../../examples/README.md#two-branches) — runnable shell reproduction of a two-branch merge.
+- [Evolving a specification with `emery amend`](../tutorials/amending-a-spec.md) — step-by-step amendment tutorial.

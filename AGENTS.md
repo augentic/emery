@@ -105,4 +105,4 @@ make cov # coverage summary
 make sweep # drop target/ artifacts untouched for a week
 ```
 
-If `make ci` cannot run, say exactly why and which checks ran instead. `mdbook build docs` builds the CLI reference and checks its links. The live journey over the mock adapters is in [examples/README.md](examples/README.md); update it when a verb's output or seal changes. Preview the skills with `cursor-agent --plugin-dir plugins/emery` over a `cargo install --path . --locked` binary.
+If `make ci` cannot run, say exactly why and which checks ran instead. `mdbook build docs` builds the CLI reference and checks its links. The live journey over the mock adapters is in [`docs/tutorials/`](docs/tutorials/) (indexed in [examples/README.md](examples/README.md)); update it when a verb's output or seal changes. Preview the skills with `cursor-agent --plugin-dir plugins/emery` over a `cargo install --path . --locked` binary.
