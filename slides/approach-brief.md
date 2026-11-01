@@ -61,15 +61,15 @@ title: Coding is no longer the bottleneck.
 sync: shift
 class: slide-light
 ---
-<Eyebrow text="THE SHIFT · FROM GENERATION TO COMPREHENSION" />
+<Eyebrow text="THE SHIFT · UNGOVERNED AI AT SCALE" />
 
 <div class="ed-split">
 <div class="ed-prose-col">
 
 # Coding is no longer<br>the bottleneck.
 
-<p class="ed-prose">AI writes code in minutes, but without a delivery system it inflates PRs, shifts the bottleneck to review, and degrades delivery stability.</p>
-<p class="ed-prose"><strong>More code ≠ faster delivery.</strong> DORA calls this the verification tax: time saved writing code is re-spent auditing larger batches, while unreviewed assumptions, duplicated blocks, and subtle defects accumulate downstream.</p>
+<p class="ed-prose">AI writes code in minutes — but without a delivery system, costs climb, reviews jam, and defects reach production.</p>
+<p class="ed-prose"><strong>More code ≠ faster delivery.</strong> Time saved generating code is re-spent auditing larger batches, while unreviewed assumptions, security vulnerabilities, and copy-paste debt accumulate downstream.</p>
 
 </div>
 <div class="ed-diagram-pane">
@@ -86,25 +86,25 @@ class: slide-light
   <text x="38" y="172" class="svg-kicker" fill="#78d8f2">MORE CODE ≠ FASTER DELIVERY · DORA, FAROS AI, GITCLEAR, VERACODE</text>
 
   <rect x="38" y="188" width="270" height="78" rx="9" fill="rgba(255,255,255,0.08)" />
-  <text x="56" y="212" class="svg-label" fill="#ffffff">Verification tax</text>
-  <text x="56" y="232" class="svg-caption" fill="rgba(255,255,255,0.68)">Larger PRs overwhelm human review</text>
-  <text x="56" y="253" class="svg-pill" fill="#78d8f2">+51% PR size · +441% review wait</text>
+  <text x="56" y="212" class="svg-label" fill="#ffffff">Uncontrolled cost</text>
+  <text x="56" y="232" class="svg-caption" fill="rgba(255,255,255,0.68)">Seat and token bills climb for flat output</text>
+  <text x="56" y="253" class="svg-pill" fill="#78d8f2">Uncapped token spend · 0% net delivery gain</text>
   <rect x="332" y="188" width="270" height="78" rx="9" fill="rgba(255,255,255,0.08)" />
-  <text x="350" y="212" class="svg-label" fill="#ffffff">Hidden assumptions</text>
-  <text x="350" y="232" class="svg-caption" fill="rgba(255,255,255,0.68)">Plausible code skips design trade-offs</text>
-  <text x="350" y="253" class="svg-pill" fill="#78d8f2">+54% bugs · 45% with security flaws</text>
+  <text x="350" y="212" class="svg-label" fill="#ffffff">Review overwhelm</text>
+  <text x="350" y="232" class="svg-caption" fill="rgba(255,255,255,0.68)">Larger PRs jam human review queues</text>
+  <text x="350" y="253" class="svg-pill" fill="#78d8f2">+51% PR size · +441% review wait</text>
 
   <rect x="38" y="280" width="270" height="78" rx="9" fill="rgba(255,255,255,0.08)" />
-  <text x="56" y="304" class="svg-label" fill="#ffffff">Duplication &amp; churn</text>
-  <text x="56" y="324" class="svg-caption" fill="rgba(255,255,255,0.68)">Copy-paste growth replaces refactoring</text>
-  <text x="56" y="345" class="svg-pill" fill="#78d8f2">+81% duplication · −70% refactoring</text>
+  <text x="56" y="304" class="svg-label" fill="#ffffff">Rogue code in production</text>
+  <text x="56" y="324" class="svg-caption" fill="rgba(255,255,255,0.68)">Vulnerable code reaches live systems</text>
+  <text x="56" y="345" class="svg-pill" fill="#78d8f2">45% security flaws · −7.2% stability</text>
   <rect x="332" y="280" width="270" height="78" rx="9" fill="rgba(255,255,255,0.08)" />
-  <text x="350" y="304" class="svg-label" fill="#ffffff">Delivery instability</text>
-  <text x="350" y="324" class="svg-caption" fill="rgba(255,255,255,0.68)">More defects reach production</text>
-  <text x="350" y="345" class="svg-pill" fill="#78d8f2">−7.2% stability per 25% AI adoption</text>
+  <text x="350" y="304" class="svg-label" fill="#ffffff">Instant legacy debt</text>
+  <text x="350" y="324" class="svg-caption" fill="rgba(255,255,255,0.68)">Unexamined guesses and copy-paste churn</text>
+  <text x="350" y="345" class="svg-pill" fill="#78d8f2">+54% bugs · +81% code duplication</text>
 
-  <rect x="70" y="394" width="500" height="36" rx="18" fill="rgba(164,35,143,0.07)" stroke="rgba(164,35,143,0.42)" />
-  <text x="320" y="417" text-anchor="middle" class="svg-caption" fill="#a4238f">The risk: A system no one can safely change.</text>
+  <rect x="44" y="394" width="552" height="36" rx="18" fill="rgba(164,35,143,0.07)" stroke="rgba(164,35,143,0.42)" />
+  <text x="320" y="417" text-anchor="middle" class="svg-caption" fill="#a4238f">The risk: Higher spend, wider exposure, and a system no one can safely change.</text>
 </svg>
 </div>
 </div>
@@ -187,27 +187,27 @@ class: slide-sandbox
   <text x="38" y="112" class="svg-kicker" fill="#78d8f2">01 · CHANGE PATH</text>
   <text x="38" y="142" class="svg-h2" fill="#ffffff">Standardising delivery</text>
   <line x1="38" y1="156" x2="342" y2="156" stroke="rgba(255,255,255,0.12)" />
-  <text x="38" y="184" class="svg-body" fill="rgba(255,255,255,0.84)">Approved tools and models</text>
-  <text x="38" y="208" class="svg-body" fill="rgba(255,255,255,0.84)">Data, source, and worker boundaries</text>
-  <text x="38" y="232" class="svg-body" fill="rgba(255,255,255,0.84)">Agent instructions and pipeline gates</text>
+  <text x="38" y="184" class="svg-body" fill="rgba(255,255,255,0.84)">Isolated workspaces and shared standards</text>
+  <text x="38" y="208" class="svg-body" fill="rgba(255,255,255,0.84)">Cuts review overwhelm at compile time</text>
+  <text x="38" y="232" class="svg-body" fill="rgba(255,255,255,0.84)">Blocks flawed code early in the pipeline</text>
   <text x="38" y="270" class="svg-caption" fill="#78d8f2">How code is written, checked, and shipped.</text>
 
   <rect x="392" y="82" width="356" height="208" rx="16" fill="rgba(10,7,16,0.7)" stroke="#f59ef5" stroke-width="1.8" />
   <text x="418" y="112" class="svg-kicker" fill="#f59ef5">02 · BEHAVIOURAL CONTRACT</text>
   <text x="418" y="142" class="svg-h2" fill="#ffffff">Specifying behaviour</text>
   <line x1="418" y1="156" x2="722" y2="156" stroke="rgba(255,255,255,0.12)" />
-  <text x="418" y="184" class="svg-body" fill="rgba(255,255,255,0.84)">Evidence and explicit source authority</text>
+  <text x="418" y="184" class="svg-body" fill="rgba(255,255,255,0.84)">Exposes hidden guesses before coding</text>
   <text x="418" y="208" class="svg-body" fill="rgba(255,255,255,0.84)">Versioned spec.md and design.md</text>
-  <text x="418" y="232" class="svg-body" fill="rgba(255,255,255,0.84)">Bounded implementation and verification</text>
+  <text x="418" y="232" class="svg-body" fill="rgba(255,255,255,0.84)">Slashes token spend with bounded slices</text>
   <text x="418" y="270" class="svg-caption" fill="#f59ef5">What the software must do and how it is verified.</text>
 
   <rect x="772" y="82" width="356" height="208" rx="16" fill="rgba(10,7,16,0.7)" stroke="#78d8f2" stroke-width="1.8" />
   <text x="798" y="112" class="svg-kicker" fill="#78d8f2">03 · RUNTIME BOUNDARY</text>
   <text x="798" y="142" class="svg-h2" fill="#ffffff">Sandboxing execution</text>
   <line x1="798" y1="156" x2="1102" y2="156" stroke="rgba(255,255,255,0.12)" />
-  <text x="798" y="184" class="svg-body" fill="rgba(255,255,255,0.84)">Sandboxed WASI guest components</text>
+  <text x="798" y="184" class="svg-body" fill="rgba(255,255,255,0.84)">Zero ambient access inside WASI guests</text>
   <text x="798" y="208" class="svg-body" fill="rgba(255,255,255,0.84)">Business logic only; plumbing in the host</text>
-  <text x="798" y="232" class="svg-body" fill="rgba(255,255,255,0.84)">Typed capabilities and explicit grants</text>
+  <text x="798" y="232" class="svg-body" fill="rgba(255,255,255,0.84)">Contains rogue code via typed grants</text>
   <text x="798" y="270" class="svg-caption" fill="#78d8f2">What running code is permitted to touch.</text>
 
   <line x1="190" y1="290" x2="190" y2="322" stroke="#78d8f2" stroke-width="1.5" />
@@ -978,64 +978,12 @@ Client question:
 -->
 
 ---
-title: Controlling token spend.
-sync: section-cost
-class: slide-light
----
-
-<Eyebrow text="DELIVERY SYSTEM · COST CONTROL" />
-
-<div class="ed-band">
-<div class="ed-band-top">
-<div>
-
-# Controlling<br>token spend.
-
-</div>
-<p class="ed-band-prose"><strong>Reasoning in a formal specification and generating against a narrow Wasm runtime cuts token volume and lets smaller, cheaper models do the work.</strong> AI produces better results—and controls token spend—when it has less technology to invent.</p>
-</div>
-<div class="ed-band-canvas">
-<svg viewBox="0 0 1140 350" aria-hidden="true">
-  <rect x="16" y="36" width="330" height="214" rx="14" fill="rgba(22,180,226,0.06)" stroke="#0c7fa3" stroke-width="1.7" />
-  <text x="38" y="68" class="svg-kicker" fill="#0c7fa3">01 · FORMAL SPECIFICATIONS</text>
-  <text x="38" y="104" class="svg-h2" fill="#0d1030">Formal specifications</text>
-  <line x1="38" y1="122" x2="324" y2="122" stroke="rgba(12,127,163,0.18)" />
-  <text x="38" y="158" class="svg-label" fill="#0d1030">Bounded slices replace</text>
-  <text x="38" y="184" class="svg-label" fill="#0d1030">whole-codebase context</text>
-  <text x="38" y="218" class="svg-caption" fill="rgba(13,16,48,0.62)">No whole-service prompt bloat</text>
-
-  <rect x="398" y="36" width="344" height="214" rx="14" fill="#0d1030" />
-  <text x="420" y="68" class="svg-kicker" fill="#f59ef5">02 · NARROW WASM TARGET</text>
-  <text x="420" y="104" class="svg-h2" fill="#ffffff">Narrow Wasm target</text>
-  <line x1="420" y1="122" x2="720" y2="122" stroke="rgba(255,255,255,0.14)" />
-  <text x="420" y="158" class="svg-label" fill="#ffffff">Guests implement business logic;</text>
-  <text x="420" y="184" class="svg-label" fill="#ffffff">the host owns the plumbing</text>
-  <text x="420" y="218" class="svg-caption" fill="rgba(255,255,255,0.7)">Far fewer tokens generated per change</text>
-
-  <rect x="794" y="36" width="330" height="214" rx="14" fill="rgba(22,180,226,0.06)" stroke="#0c7fa3" stroke-width="1.7" />
-  <text x="816" y="68" class="svg-kicker" fill="#0c7fa3">03 · SMALLER, CHEAPER MODELS</text>
-  <text x="816" y="104" class="svg-h2" fill="#0d1030">Smaller, cheaper models</text>
-  <line x1="816" y1="122" x2="1102" y2="122" stroke="rgba(12,127,163,0.18)" />
-  <text x="816" y="158" class="svg-label" fill="#0d1030">Lower-cost commercial models today;</text>
-  <text x="816" y="184" class="svg-label" fill="#0d1030">local open-weight models next</text>
-  <text x="816" y="218" class="svg-caption" fill="rgba(13,16,48,0.62)">Right-size the model to the slice</text>
-</svg>
-</div>
-</div>
-
-<!--
-Section divider: Controlling token spend.
-- Unconstrained AI coding gets expensive fast when every change feeds the entire codebase to a frontier model and asks it to invent architecture and infrastructure wiring from scratch.
-- Combining formal specifications (Foundation 02) with a sandboxed Wasm runtime (Foundation 03) shrinks both the input context and the generated output—cutting token spend and enabling smaller, cheaper models.
--->
-
----
 title: Fewer tokens. Smaller, cheaper models.
 sync: cost-control
 class: slide-light
 ---
 
-<Eyebrow text="COST CONTROL · THE ECONOMICS OF CONSTRAINT" />
+<Eyebrow text="THE DELIVERY SYSTEM · ECONOMICS OF CONSTRAINT" />
 
 <div class="ed-band">
 <div class="ed-band-top">
@@ -1070,7 +1018,7 @@ class: slide-light
   <line x1="802" y1="122" x2="1102" y2="122" stroke="rgba(255,255,255,0.14)" />
   <text x="802" y="156" class="svg-label" fill="#ffffff">Bounded slices do not need a</text>
   <text x="802" y="180" class="svg-label" fill="#ffffff">frontier model on every turn.</text>
-  <text x="802" y="220" class="svg-pill" fill="#78d8f2">Cheaper commercial models · Local next</text>
+  <text x="802" y="220" class="svg-pill" fill="#78d8f2">Cheaper commercial models · Predictable cost</text>
 
   <rect x="110" y="282" width="920" height="48" rx="24" fill="#0d1030" stroke="#a4238f" stroke-width="1.8" />
   <text x="570" y="312" text-anchor="middle" class="svg-h3" fill="#ffffff">A fraction of the tokens per change—so smaller, cheaper models do the heavy lifting.</text>

@@ -1311,7 +1311,7 @@ class: slide-hero slide-section
 # Code is cheap*.<br>Delivery is hard.
 
 <p class="section-subtitle">A system for shipping software with AI —<br>not just generating code.</p>
-<p class="section-footnote">* With a delivery system to control token spend.</p>
+<p class="section-footnote">* If your delivery system controls token spend.</p>
 
 </div>
 </div>
@@ -1335,14 +1335,14 @@ sync: shift
 class: slide-light
 ---
 
-<Eyebrow text="THE SHIFT · FROM GENERATION TO COMPREHENSION" />
+<Eyebrow text="THE SHIFT · UNGOVERNED AI AT SCALE" />
 
 <div class="live-split">
 <div class="live-copy">
 
 # Coding is no longer<br>the bottleneck.
 
-<p class="live-claim">AI writes code in minutes, but without a delivery system it inflates PRs, shifts the bottleneck to review, and degrades delivery stability.</p>
+<p class="live-claim">AI writes code in minutes — but without a delivery system, costs climb, reviews jam, and defects reach production.</p>
 
 <div class="live-compression">
 <span>Weeks</span>
@@ -1354,20 +1354,21 @@ class: slide-light
 <div class="live-panel">
 <div class="live-panel-title">More code ≠ faster delivery</div>
 <div class="live-word-grid">
-<div class="live-word"><IconBadge tone="light" size="small"><ph:stack /></IconBadge><div class="live-word-copy"><strong>Verification tax</strong><span>Larger PRs overwhelm human review</span><em class="live-word-stat">+51% PR size · +441% review wait</em></div></div>
-<div class="live-word"><IconBadge tone="light" size="small"><ph:puzzle-piece /></IconBadge><div class="live-word-copy"><strong>Hidden assumptions</strong><span>Plausible code skips design trade-offs</span><em class="live-word-stat">+54% bugs · 45% with security flaws</em></div></div>
-<div class="live-word"><IconBadge tone="light" size="small"><ph:copy /></IconBadge><div class="live-word-copy"><strong>Duplication &amp; churn</strong><span>Copy-paste growth replaces refactoring</span><em class="live-word-stat">+81% duplication · −70% refactoring</em></div></div>
-<div class="live-word"><IconBadge tone="light" size="small"><ph:warning /></IconBadge><div class="live-word-copy"><strong>Delivery instability</strong><span>More defects reach production</span><em class="live-word-stat">−7.2% stability per 25% AI adoption</em></div></div>
+<div class="live-word"><IconBadge tone="light" size="small"><ph:cpu /></IconBadge><div class="live-word-copy"><strong>Uncontrolled cost</strong><span>Seat and token bills climb for flat output</span><em class="live-word-stat">Uncapped token spend · 0% net delivery gain</em></div></div>
+<div class="live-word"><IconBadge tone="light" size="small"><ph:stack /></IconBadge><div class="live-word-copy"><strong>Review overwhelm</strong><span>Larger PRs jam human review queues</span><em class="live-word-stat">+51% PR size · +441% review wait</em></div></div>
+<div class="live-word"><IconBadge tone="light" size="small"><ph:warning /></IconBadge><div class="live-word-copy"><strong>Rogue code in production</strong><span>Vulnerable code reaches live systems</span><em class="live-word-stat">45% security flaws · −7.2% stability</em></div></div>
+<div class="live-word"><IconBadge tone="light" size="small"><ph:copy /></IconBadge><div class="live-word-copy"><strong>Instant legacy debt</strong><span>Unexamined guesses and copy-paste churn</span><em class="live-word-stat">+54% bugs · +81% code duplication</em></div></div>
 </div>
-<div class="live-panel-result"><span class="live-panel-result-label">The risk · DORA, Faros AI, GitClear, Veracode</span>A system no one can safely change.</div>
+<div class="live-panel-result"><span class="live-panel-result-label">The risk · DORA, Faros AI, GitClear, Veracode</span>Higher spend, wider exposure, and a system no one can safely change.</div>
 </div>
 </div>
 
 <!--
-Ground this in industry telemetry (DORA, Faros AI, GitClear):
-- DORA's State of AI-assisted Software Development report calls this "the verification tax": time saved writing code is re-spent auditing larger batches, and every 25% increase in AI adoption without automated safeguards correlates with a 7.2% drop in delivery stability.
-- Faros AI telemetry across high-AI teams shows PRs are 51% larger, bugs per PR are up 54%, and PR review wait times are up 441%.
-- GitClear's analysis of 623M lines of code shows refactoring is down 70% while duplicated code blocks are up 81%.
+Name the four executive fears in the room and ground them in industry telemetry (DORA, Faros AI, GitClear, Veracode):
+1. Uncontrolled cost for little throughput gain: teams pay for seats and frontier tokens, only to inflate PRs by 51% and increase review wait times by 441% (Faros AI) — DORA's "verification tax".
+2. Rogue AI code creating production vulnerabilities: 45% of AI-generated code introduces security flaws (Veracode), and every 25% increase in ungoverned AI adoption correlates with a 7.2% drop in delivery stability (DORA).
+3. Unexamined assumptions: chat prompts vanish after a turn, burying unreviewed product guesses inside plausible code (+54% bugs per PR).
+4. Instant legacy debt: refactoring drops 70% while duplicated code jumps 81% (GitClear across 623M lines).
 -->
 
 ---
@@ -1440,6 +1441,10 @@ class: slide-light
 </div>
 <h3>Standardising delivery</h3>
 <p>How code is written, checked, and shipped.</p>
+<div class="live-feature-list">
+<span>Cuts review overwhelm</span>
+<span>Blocks flawed code early</span>
+</div>
 </div>
 <div class="live-card">
 <div class="live-card-head">
@@ -1448,6 +1453,10 @@ class: slide-light
 </div>
 <h3>Specifying behaviour</h3>
 <p>What the software must do and how it is verified.</p>
+<div class="live-feature-list">
+<span>Exposes hidden guesses</span>
+<span>Slashes token spend</span>
+</div>
 </div>
 <div class="live-card is-dark">
 <div class="live-card-head">
@@ -1456,18 +1465,22 @@ class: slide-light
 </div>
 <h3>Sandboxing execution</h3>
 <p>What running code is permitted to touch.</p>
+<div class="live-feature-list">
+<span>Zero ambient access</span>
+<span>Contains rogue code</span>
+</div>
 </div>
 </div>
 
-<div class="live-rail">Specify → Build → Test → Analyse → Deploy → Observe → Recover</div>
+<div class="live-rail">Specify → Build → Deploy → Observe</div>
 </div>
 
 <!--
-This is the architectural map for the deck:
+This is the architectural map for the deck, directly answering the risks from Slide 2:
 - Instead of trusting the model to behave, we constrain it across three independent boundaries:
-  1. The authoring and pipeline boundary (Standardising delivery).
-  2. The behavioural contract and acceptance boundary (Specifying behaviour).
-  3. The runtime execution boundary (Sandboxing execution).
+  1. The authoring and pipeline boundary (Standardising delivery) — eliminates review bottlenecks and catches flawed code and bad dependencies before human review.
+  2. The behavioural contract and acceptance boundary (Specifying behaviour) — surfaces hidden assumptions upfront and replaces whole-repo prompt bloat with bounded slices.
+  3. The runtime execution boundary (Sandboxing execution) — strips ambient authority so rogue code or dependencies cannot reach production infrastructure or secrets.
 - Product judgement, specification sign-off, and release authority stay with engineers.
 -->
 
@@ -2049,45 +2062,12 @@ Why this matters to platform and security teams:
 -->
 
 ---
-title: Controlling token spend.
-sync: section-cost
-class: slide-section
----
-
-<AmbientVideo src="/videos/hero-video-3.mp4" variant="approach" />
-
-<Eyebrow text="DELIVERY SYSTEM · COST CONTROL" />
-
-<div class="section-hero-grid">
-<div class="section-hero-left">
-<div class="section-kicker-pill is-magenta">Economics of constraint</div>
-
-# Controlling token spend.
-
-<p class="section-subtitle">Reasoning in a formal specification and generating against a narrow Wasm runtime <strong>cuts token volume and lets smaller, cheaper models do the work.</strong></p>
-
-</div>
-</div>
-
-<div class="hero-mechanisms">
-<div class="hero-pillar"><span class="hero-pillar-num">01</span><span>Formal specifications · Bounded slices replace whole-codebase context windows</span></div>
-<div class="hero-pillar"><span class="hero-pillar-num">02</span><span>Narrow Wasm target · Guests implement business logic; the host owns plumbing</span></div>
-<div class="hero-pillar"><span class="hero-pillar-num">03</span><span>Smaller, cheaper models · Lower-cost commercial models today; local models next</span></div>
-</div>
-
-<!--
-Section divider: Controlling token spend.
-- IT managers and senior executives are discovering that "cheap AI code" gets expensive fast when agents stuff entire repositories into context and burn frontier-model tokens inventing boilerplate.
-- Our delivery system controls token spend by construction: formal specifications and bounded slices shrink what the model reads, and the Wasm runtime shrinks what the model writes.
--->
-
----
 title: Fewer tokens. Smaller, cheaper models.
 sync: cost-control
 class: slide-light
 ---
 
-<Eyebrow text="COST CONTROL · THE ECONOMICS OF CONSTRAINT" />
+<Eyebrow text="THE DELIVERY SYSTEM · ECONOMICS OF CONSTRAINT" />
 
 <div class="live-stage">
 
@@ -2131,7 +2111,7 @@ class: slide-light
 <p>Bounded slices do not need a frontier model on every turn.</p>
 <div class="live-feature-list">
 <span>Cheaper commercial models</span>
-<span>Local open-weight next</span>
+<span>Predictable cost per change</span>
 </div>
 </div>
 </div>
@@ -2140,7 +2120,7 @@ class: slide-light
 </div>
 
 <!--
-Why this is top of mind for IT managers and senior executives:
+Synthesis of Foundations 02 and 03 — why this directly solves uncontrolled AI cost:
 - Unconstrained coding agents burn tokens in three places: reading the whole repository on every turn, generating sprawling framework and SDK boilerplate, and looping through multi-turn chat retries when tests fail.
 - Our delivery system removes all three drivers:
   1. Specifying behaviour breaks the service into a formal specification and bounded slices, so the model never needs the whole system in context.

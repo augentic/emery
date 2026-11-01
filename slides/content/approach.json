@@ -16,17 +16,17 @@
     "title": "Coding is no longer the bottleneck.",
     "required": [
       "Coding is no longer the bottleneck.",
-      "AI writes code in minutes, but without a delivery system it inflates PRs, shifts the bottleneck to review, and degrades delivery stability.",
+      "AI writes code in minutes — but without a delivery system, costs climb, reviews jam, and defects reach production.",
       "More code ≠ faster delivery",
-      "Verification tax",
+      "Uncontrolled cost",
+      "Uncapped token spend · 0% net delivery gain",
+      "Review overwhelm",
       "+51% PR size · +441% review wait",
-      "Hidden assumptions",
-      "+54% bugs · 45% with security flaws",
-      "Duplication & churn",
-      "+81% duplication · −70% refactoring",
-      "Delivery instability",
-      "−7.2% stability per 25% AI adoption",
-      "A system no one can safely change."
+      "Rogue code in production",
+      "45% security flaws · −7.2% stability",
+      "Instant legacy debt",
+      "+54% bugs · +81% code duplication",
+      "Higher spend, wider exposure, and a system no one can safely change."
     ]
   },
   {
@@ -50,9 +50,15 @@
       "Agents work inside the system. Engineers remain in charge of it.",
       "Standardising delivery",
       "How code is written, checked, and shipped.",
+      "Cuts review overwhelm",
+      "Blocks flawed code early",
       "Specifying behaviour",
+      "Exposes hidden guesses",
+      "Slashes token spend",
       "Sandboxing execution",
-      "What running code is permitted to touch"
+      "What running code is permitted to touch",
+      "Zero ambient access",
+      "Contains rogue code"
     ]
   },
   {
@@ -205,18 +211,6 @@
       "Local Wasmtime host",
       "IAM + KMS policy",
       "Corporate PKI + Vault"
-    ]
-  },
-  {
-    "id": "section-cost",
-    "title": "Controlling token spend.",
-    "required": [
-      "Controlling token spend.",
-      "Reasoning in a formal specification and generating against a narrow Wasm runtime",
-      "cuts token volume and lets smaller, cheaper models do the work.",
-      "Formal specifications",
-      "Narrow Wasm target",
-      "Smaller, cheaper models"
     ]
   },
   {
