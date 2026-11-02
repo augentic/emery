@@ -1,8 +1,8 @@
 //! Implements the WebAssembly interface shared by target adapters and the engine.
 //!
 //! Adapters implement [`export::Guest`], while the engine invokes them
-//! through [`import`]. Contract records and errors are converted at this
-//! boundary.
+//! through [`metadata`] and [`run`]. Contract records and errors are
+//! converted at this boundary.
 
 mod generated {
     #![allow(
@@ -30,7 +30,10 @@ mod generated {
     });
 }
 
+use omnia_sdk::{Error, bad_gateway, bad_request};
+
 use self::generated::emery::adapter::target as wit;
+use crate::source::bindings::types;
 use crate::target::{
     DesignType, MergeRule, MergeStrategy, Outcome, Report, Requirement, Scenario, Slice,
     TargetMetadata, Task, Verdict,
@@ -314,36 +317,19 @@ pub mod export {
     pub use super::generated::*;
 }
 
-/// The WebAssembly client used to invoke a loaded target adapter.
-pub mod import {
-    use omnia_sdk::{Error, bad_gateway, bad_request};
+#[must_use]
+pub fn metadata(id: &str) -> TargetMetadata {
+    wit::metadata(id).into()
+}
 
-    use super::wit as imported;
-    use crate::source::bindings::types;
-    use crate::target::{Outcome, TargetMetadata, Task};
-
-    /// Returns the metadata the adapter registered as `id` declares.
-    #[must_use]
-    pub fn metadata(id: &str) -> TargetMetadata {
-        imported::metadata(id).into()
-    }
-
-    /// Runs `task` in the tree at `workspace` using the adapter registered as `id`.
-    ///
-    /// A failure names the adapter; the caller, which dispatches task by
-    /// task, names the slice or the wave.
-    ///
-    /// # Errors
-    ///
-    /// - Returns [`Error::BadRequest`] when the adapter rejects its input.
-    /// - Returns [`Error::BadGateway`] when the adapter fails internally.
-    pub async fn run(id: &str, workspace: &str, task: &Task) -> Result<Outcome, Error> {
-        let outcome = imported::run(id.to_string(), workspace.to_string(), task.clone().into())
-            .await
-            .map_err(|err| match err {
-                types::Error::InvalidRequest(detail) => bad_request!("adapter `{id}`: {detail}"),
-                types::Error::Internal(detail) => bad_gateway!("adapter `{id}`: {detail}"),
-            })?;
-        Ok(outcome.into())
-    }
+// A failure names the adapter; the caller, which dispatches task by task,
+// names the slice or the wave.
+pub async fn run(id: &str, workspace: &str, task: &Task) -> Result<Outcome, Error> {
+    let outcome = wit::run(id.to_string(), workspace.to_string(), task.clone().into())
+        .await
+        .map_err(|err| match err {
+            types::Error::InvalidRequest(detail) => bad_request!("adapter `{id}`: {detail}"),
+            types::Error::Internal(detail) => bad_gateway!("adapter `{id}`: {detail}"),
+        })?;
+    Ok(outcome.into())
 }

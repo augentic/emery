@@ -76,6 +76,7 @@ pub use trigger::{BadMessage, BadTrigger, Trigger};
 #[must_use]
 pub fn is_kebab(value: &str) -> bool {
     value.split('-').all(|segment| {
-        !segment.is_empty() && segment.bytes().all(|byte| matches!(byte, b'a'..=b'z' | b'0'..=b'9'))
+        !segment.is_empty()
+            && segment.bytes().all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit())
     })
 }

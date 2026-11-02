@@ -20,9 +20,9 @@ use crate::{BadRoute, Route};
 /// # Examples
 ///
 /// ```
-/// use emery_adapter::{Route, Trigger};
+/// use emery_adapter::Trigger;
 ///
-/// let route = Trigger::Http(Route::parse("POST /orders")?);
+/// let route = Trigger::http("post /orders")?;
 /// assert_eq!(route.to_string(), "POST /orders");
 ///
 /// let message = Trigger::message(" orders.cancel-requested ")?;
@@ -40,6 +40,15 @@ pub enum Trigger {
 }
 
 impl Trigger {
+    /// Parses `route` as an HTTP route, `METHOD /path`.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`BadRoute`] describing the first rule the route breaks.
+    pub fn http(route: &str) -> Result<Self, BadRoute> {
+        Route::parse(route).map(Self::Http)
+    }
+
     /// Reads `name` as a message: one word, trimmed, with no whitespace within.
     ///
     /// # Errors
@@ -54,6 +63,12 @@ impl Trigger {
             return Err(BadMessage::Spaced(name.to_owned()));
         }
         Ok(Self::Message(name.to_owned()))
+    }
+}
+
+impl From<Route> for Trigger {
+    fn from(route: Route) -> Self {
+        Self::Http(route)
     }
 }
 
@@ -102,6 +117,18 @@ pub enum BadTrigger {
     Both,
 }
 
+impl From<BadRoute> for BadTrigger {
+    fn from(bad: BadRoute) -> Self {
+        Self::Route(bad)
+    }
+}
+
+impl From<BadMessage> for BadTrigger {
+    fn from(bad: BadMessage) -> Self {
+        Self::Message(bad)
+    }
+}
+
 impl Display for BadTrigger {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         match self {
@@ -114,4 +141,12 @@ impl Display for BadTrigger {
     }
 }
 
-impl std::error::Error for BadTrigger {}
+impl std::error::Error for BadTrigger {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Self::Route(bad) => Some(bad),
+            Self::Message(bad) => Some(bad),
+            Self::Both => None,
+        }
+    }
+}

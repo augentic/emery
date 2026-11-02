@@ -11,7 +11,7 @@ use emery_sdk::survey::code::{
 };
 use emery_sdk::survey::resolve::Target;
 use emery_sdk::survey::tests::Statement;
-use emery_sdk::{Claim, ClaimKind, Evidence, Route, Trigger};
+use emery_sdk::{Claim, ClaimKind, Evidence, Trigger};
 use support::{
     PYTHON, Plain, Stub, TYPESCRIPT, binding, call, callee, class, class_decl, dynamic, export,
     from_module, from_package, function, import, inline, line, literal, member, module, name,
@@ -336,7 +336,7 @@ fn contract_of_a_trigger() {
     );
     let mut surfaces = vec![
         Surface {
-            trigger: Some(Trigger::Http(Route::parse("POST /orders").expect("a route"))),
+            trigger: Trigger::http("POST /orders").ok(),
             ..surface("POST /orders", "src/orders.ts", "orders", None)
         },
         Surface {
@@ -378,7 +378,7 @@ fn contract_of_a_trigger() {
     assert_eq!(
         triggers,
         [
-            Trigger::Http(Route::parse("POST /orders").expect("a route")),
+            Trigger::http("POST /orders").expect("a route"),
             Trigger::Message("orders.cancel-requested".to_owned())
         ]
     );

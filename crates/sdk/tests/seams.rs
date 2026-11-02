@@ -10,7 +10,7 @@ use emery_sdk::survey::code::{
     Tree, Use,
 };
 use emery_sdk::survey::resolve::Target;
-use emery_sdk::{ClaimKind, Context, Doc, Error, Evidence, Lexicon, Route, SourceInput, Trigger};
+use emery_sdk::{ClaimKind, Context, Doc, Error, Evidence, Lexicon, SourceInput, Trigger};
 use omnia_test::guest::Scripted;
 use support::{
     PYTHON, Plain, Stub, TYPESCRIPT, call, callee, class, class_decl, decorated, dynamic, export,
@@ -438,7 +438,7 @@ async fn contracts_routed() {
     );
     assert_eq!(
         survey.contracts[0].trigger().expect("a trigger").expect("in the grammar"),
-        Trigger::Http(Route::parse("GET /orders").expect("in the grammar"))
+        Trigger::http("GET /orders").expect("in the grammar")
     );
 
     let evidence: Evidence = serde_json::from_str(

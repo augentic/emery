@@ -1,8 +1,8 @@
 //! Implements the WebAssembly interface shared by adapters and the engine.
 //!
 //! Adapters implement [`export::Guest`], while the engine invokes them
-//! through [`import`]. Contract records and errors are converted at this
-//! boundary.
+//! through [`metadata`] and [`extract`]. Contract records and errors are
+//! converted at this boundary.
 
 mod generated {
     #![allow(
@@ -27,6 +27,8 @@ mod generated {
 
 // The shared `types` interface, which the target axis binds through this
 // generation rather than its own.
+use omnia_sdk::{Error, bad_gateway, bad_request};
+
 use self::generated::emery::adapter::source as wit;
 pub use self::generated::emery::adapter::types;
 use crate::source::{
@@ -252,40 +254,23 @@ pub mod export {
     pub use super::generated::*;
 }
 
-/// The WebAssembly client used to invoke a loaded source adapter.
-pub mod import {
-    use omnia_sdk::{Error, bad_gateway, bad_request};
+#[must_use]
+pub fn metadata(id: &str) -> SourceMetadata {
+    wit::metadata(id).into()
+}
 
-    use super::{types, wit as imported};
-    use crate::source::{Evidence, SourceInput, SourceMetadata};
+pub async fn extract(id: &str, input: &SourceInput) -> Result<Evidence, Error> {
+    let name = &input.name;
+    let answer =
+        wit::extract(id.to_string(), input.clone().into()).await.map_err(|err| match err {
+            types::Error::InvalidRequest(detail) => {
+                bad_request!("adapter `{id}` for source `{name}`: {detail}")
+            }
+            types::Error::Internal(detail) => {
+                bad_gateway!("adapter `{id}` for source `{name}`: {detail}")
+            }
+        })?;
 
-    /// Returns the metadata the adapter registered as `id` declares.
-    #[must_use]
-    pub fn metadata(id: &str) -> SourceMetadata {
-        imported::metadata(id).into()
-    }
-
-    /// Extracts evidence from `input` using the adapter registered as `id`.
-    ///
-    /// # Errors
-    ///
-    /// - Returns [`Error::BadRequest`] when the adapter rejects the input.
-    /// - Returns [`Error::BadGateway`] when the adapter fails internally or
-    ///   returns an extra that is not canonical JSON.
-    pub async fn extract(id: &str, input: &SourceInput) -> Result<Evidence, Error> {
-        let name = &input.name;
-        let answer = imported::extract(id.to_string(), input.clone().into()).await.map_err(
-            |err| match err {
-                types::Error::InvalidRequest(detail) => {
-                    bad_request!("adapter `{id}` for source `{name}`: {detail}")
-                }
-                types::Error::Internal(detail) => {
-                    bad_gateway!("adapter `{id}` for source `{name}`: {detail}")
-                }
-            },
-        )?;
-
-        Evidence::try_from(answer)
-            .map_err(|detail| bad_gateway!("adapter `{id}` for source `{name}`: {detail}"))
-    }
+    Evidence::try_from(answer)
+        .map_err(|detail| bad_gateway!("adapter `{id}` for source `{name}`: {detail}"))
 }

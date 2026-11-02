@@ -13,7 +13,7 @@ use std::fmt::{self, Display, Formatter};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-use crate::{BadMessage, BadPath, BadRoute, BadTrigger, Route, Trigger, beneath, is_kebab};
+use crate::{BadMessage, BadPath, BadRoute, BadTrigger, Trigger, beneath, is_kebab};
 
 /// The regular expression for dotted, kebab-case claim identifiers.
 ///
@@ -76,40 +76,36 @@ impl<'a> Anchor<'a> {
     /// path [`beneath`] refuses, a fragment outside the grammar, or a range
     /// that ends before it starts.
     pub fn parse(anchor: &'a str) -> Result<Self, BadAnchor> {
-        let (path, fragment) = anchor
-            .split_once('#')
-            .map_or((anchor, None), |(path, fragment)| (path, Some(fragment)));
+        let (path, fragment) = match anchor.split_once('#') {
+            Some((path, fragment)) => (path, Some(fragment)),
+            None => (anchor, None),
+        };
         beneath(path)?;
-
-        let lines = fragment.map(lines).transpose()?;
-        if let Some((start, end)) = lines
-            && end < start
-        {
-            return Err(BadAnchor::Reversed { start, end });
-        }
-
-        Ok(Self { path, lines })
+        Ok(Self {
+            path,
+            lines: fragment.map(lines).transpose()?,
+        })
     }
 }
 
 // The fragment after `#`: `L<n>` or `L<start>-L<end>`, each a positive
-// decimal with no sign, padding, or whitespace.
+// decimal with no sign, padding, or whitespace, the end not before the start.
 fn lines(fragment: &str) -> Result<(u64, u64), BadAnchor> {
     let number = |text: &str| -> Option<u64> {
         let digits = text.strip_prefix('L')?;
-        if digits.is_empty()
-            || digits.starts_with('0')
-            || !digits.bytes().all(|b| b.is_ascii_digit())
-        {
-            return None;
-        }
-        digits.parse().ok()
+        (!digits.starts_with('0') && digits.bytes().all(|b| b.is_ascii_digit()))
+            .then(|| digits.parse().ok())
+            .flatten()
     };
-    let parsed = match fragment.split_once('-') {
+    let (start, end) = match fragment.split_once('-') {
         Some((start, end)) => number(start).zip(number(end)),
         None => number(fragment).map(|line| (line, line)),
-    };
-    parsed.ok_or(BadAnchor::Grammar)
+    }
+    .ok_or(BadAnchor::Grammar)?;
+    if end < start {
+        return Err(BadAnchor::Reversed { start, end });
+    }
+    Ok((start, end))
 }
 
 /// The rule a `path` anchor breaks.
@@ -146,7 +142,14 @@ impl Display for BadAnchor {
     }
 }
 
-impl std::error::Error for BadAnchor {}
+impl std::error::Error for BadAnchor {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Self::Path(bad) => Some(bad),
+            Self::Grammar | Self::Reversed { .. } => None,
+        }
+    }
+}
 
 /// A collection of claims extracted from one source.
 ///
@@ -155,7 +158,7 @@ impl std::error::Error for BadAnchor {}
 /// a document serialises back to the JSON it was answered as, with absent
 /// optional fields omitted and a malformed `synopsis` or `backing` dropped
 /// (see [`Claim`]).
-#[derive(Clone, Debug, Deserialize, Serialize, JsonSchema)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Deserialize, Serialize, JsonSchema)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
 #[schemars(title = "Emery evidence answer")]
 pub struct Evidence {
@@ -205,6 +208,7 @@ impl Evidence {
     Deserialize,
     PartialEq,
     Eq,
+    Hash,
     PartialOrd,
     Ord,
     JsonSchema,
@@ -226,7 +230,7 @@ pub enum SourceKind {
 /// Fields common to every claim are represented directly. Kind-specific
 /// fields are collected in [`Claim::extras`]. A malformed `synopsis` or
 /// `backing` value is treated as absent rather than rejecting the document.
-#[derive(Clone, Debug, Deserialize, Serialize, JsonSchema)]
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize, JsonSchema)]
 #[serde(rename_all = "kebab-case")]
 pub struct Claim {
     /// The taxonomy variant controlling the claim's required fields.
@@ -279,8 +283,9 @@ impl Claim {
     /// Returns a claim of `kind` carrying nothing else.
     ///
     /// The common fields are set through [`with_id`](Self::with_id),
-    /// [`at`](Self::at), and [`with_synopsis`](Self::with_synopsis), and an
-    /// extra through [`with_extra`](Self::with_extra).
+    /// [`at`](Self::at), [`with_synopsis`](Self::with_synopsis), and
+    /// [`with_backing`](Self::with_backing), and an extra through
+    /// [`with_extra`](Self::with_extra).
     ///
     /// # Examples
     ///
@@ -327,10 +332,10 @@ impl Claim {
     /// # Examples
     ///
     /// ```
+    /// use emery_adapter::Trigger;
     /// use emery_adapter::source::Claim;
-    /// use emery_adapter::{Route, Trigger};
     ///
-    /// let trigger = Trigger::Http(Route::parse("post /orders/:id/pay")?);
+    /// let trigger = Trigger::http("post /orders/:id/pay")?;
     /// let claim = Claim::contract(&trigger).with_id("orders");
     ///
     /// assert_eq!(claim.extra(Claim::ROUTE), Some("POST /orders/{id}/pay"));
@@ -367,10 +372,19 @@ impl Claim {
         self
     }
 
+    /// Returns the claim with its `backing` set.
+    #[must_use]
+    pub fn with_backing(mut self, backing: Backing) -> Self {
+        self.backing = Some(backing);
+        self
+    }
+
     /// Returns the claim with the extra `key` set to `value`.
     #[must_use]
-    pub fn with_extra(mut self, key: &str, value: impl Into<serde_json::Value>) -> Self {
-        self.extras.insert(key.to_owned(), value.into());
+    pub fn with_extra(
+        mut self, key: impl Into<String>, value: impl Into<serde_json::Value>,
+    ) -> Self {
+        self.extras.insert(key.into(), value.into());
         self
     }
 
@@ -529,13 +543,13 @@ impl Claim {
             (None, None) => return None,
             (Some(_), Some(_)) => Err(BadTrigger::Both),
             (Some(serde_json::Value::String(text)), None) => {
-                Route::parse(text).map(Trigger::Http).map_err(BadTrigger::Route)
+                Trigger::http(text).map_err(Into::into)
             }
-            (Some(_), None) => Err(BadTrigger::Route(BadRoute::Grammar)),
+            (Some(_), None) => Err(BadRoute::Grammar.into()),
             (None, Some(serde_json::Value::String(text))) => {
-                Trigger::message(text).map_err(BadTrigger::Message)
+                Trigger::message(text).map_err(Into::into)
             }
-            (None, Some(_)) => Err(BadTrigger::Message(BadMessage::Empty)),
+            (None, Some(_)) => Err(BadMessage::Empty.into()),
         })
     }
 }
@@ -551,6 +565,7 @@ impl Claim {
     Serialize,
     PartialEq,
     Eq,
+    Hash,
     PartialOrd,
     Ord,
     JsonSchema,

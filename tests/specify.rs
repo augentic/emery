@@ -1239,9 +1239,7 @@ async fn remine_contended_anchor() {
 
 // A requirement claim anchored at `path`.
 fn anchored(subject: &str, statement: &str, path: &str) -> Claim {
-    let mut claim = requirement(subject, statement);
-    claim.path = Some(path.to_owned());
-    claim
+    requirement(subject, statement).at(path)
 }
 
 fn docs_evidence(requirements: &[(&str, &str)]) -> Evidence {

@@ -94,9 +94,15 @@ fn report(covered: &[&str], written: &[&str]) -> Report {
 }
 
 fn verdict(passed: bool, failures: &[&str]) -> Verdict {
-    Verdict {
-        passed,
-        failures: failures.iter().map(ToString::to_string).collect(),
+    if passed && failures.is_empty() {
+        Verdict::passed()
+    } else if !passed {
+        Verdict::failed(failures.iter().copied())
+    } else {
+        Verdict {
+            passed,
+            failures: failures.iter().map(ToString::to_string).collect(),
+        }
     }
 }
 

@@ -21,6 +21,24 @@ pub struct Verdict {
 }
 
 impl Verdict {
+    /// Returns a passing verdict with no failures.
+    #[must_use]
+    pub const fn passed() -> Self {
+        Self {
+            passed: true,
+            failures: Vec::new(),
+        }
+    }
+
+    /// Returns a failing verdict naming `failures`.
+    #[must_use]
+    pub fn failed(failures: impl IntoIterator<Item = impl Into<String>>) -> Self {
+        Self {
+            passed: false,
+            failures: failures.into_iter().map(Into::into).collect(),
+        }
+    }
+
     /// Returns every rule the verdict breaks, one line each.
     ///
     /// An empty result means the verdict passes the gate: `passed` is
