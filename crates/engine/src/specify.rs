@@ -171,7 +171,7 @@ pub async fn specify<P: Model + Source + StateStore + BlobStore + Plugins + Vcs 
 }
 
 /// The sources used to generate one candidate, and whether to seal it.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub struct SpecifyInput {
     /// Sources in declaration order, which reconciliation preserves for
@@ -198,7 +198,7 @@ pub struct SpecifyInput {
 }
 
 /// Configuration for one source used by [`specify`].
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub struct SourceConfig {
     /// The kebab-case name the specification cites this source by.
@@ -257,7 +257,7 @@ pub enum Scope {
 }
 
 /// A repository a source is read from, at a revision.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub struct SourceRepository {
     /// The URL the repository is cloned from.
@@ -278,12 +278,12 @@ impl SourceConfig {
         // source's working copy itself, or `<root>/<path>`
         let content = match (&self.content, &self.repository) {
             (SourceContent::Workspace(relative), None) => {
-                let relative = preopen_path(Path::new(relative))?.display().to_string();
+                let relative = preopen_path(relative)?.display().to_string();
                 let root = if relative == "." { relative } else { format!("./{relative}") };
                 SourceContent::Workspace(root)
             }
             (SourceContent::Workspace(relative), Some(_)) => {
-                let Ok(within) = preopen_path(Path::new(relative)) else {
+                let Ok(within) = preopen_path(relative) else {
                     return Err(bad_request!(
                         "source `{name}`: path `{relative}` must lie within the repository"
                     ));

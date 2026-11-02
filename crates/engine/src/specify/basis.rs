@@ -46,8 +46,6 @@ pub struct GroupingBrief<'a> {
 }
 
 impl<'a> GroupingBrief<'a> {
-    // Returns a grouping brief for `extracts`.
-    //
     // A `retire` claim is passed over: with no standing requirements there
     // is nothing for it to withdraw.
     #[must_use]
@@ -55,17 +53,9 @@ impl<'a> GroupingBrief<'a> {
         Self::assemble(extracts, Vec::new(), Vec::new(), false)
     }
 
-    // Returns a grouping brief for `extracts` matched against `standing`.
-    //
     // `standing` is the current revision's requirements as contributors
     // from `BASELINE`, each indexed after the claims, and `criteria` the
-    // ids of those the revision holds covered. The model places each claim
-    // in the group of the standing requirement it restates or revises, or
-    // in a group of its own, and never two standing requirements in one
-    // group. A `retire` claim is a contributor too, marked as withdrawing
-    // the behaviour its id names: one at a standing requirement's id is
-    // pre-merged with it, and the model places any other with the
-    // standing requirement it withdraws. A source that withdraws and
+    // ids of those the revision holds covered. A source that withdraws and
     // restates one behaviour under one id has restated it: its `retire`
     // is passed over and its `requirement` stands. A claim anchored where
     // a standing requirement's citation was read, from the same source,
@@ -557,9 +547,7 @@ struct Contract<'a> {
 impl Contract<'_> {
     // Whether `id` is this contract's id or a dotted child of it.
     fn leads(&self, id: &str) -> bool {
-        self.id.is_some_and(|own| {
-            id.strip_prefix(own).is_some_and(|rest| rest.is_empty() || rest.starts_with('.'))
-        })
+        self.id.is_some_and(|own| revision::leads(own, id))
     }
 }
 
@@ -657,12 +645,10 @@ impl<'a> Basis<'a> {
         classes.sort_by_key(|class| (class[0].rank, class[0].index));
 
         // covered by a criterion at the claim id or a dotted child of it
-        let covered = classes.iter().flatten().any(|member| {
-            criteria.iter().any(|id| {
-                id.strip_prefix(member.id)
-                    .is_some_and(|rest| rest.is_empty() || rest.starts_with('.'))
-            })
-        });
+        let covered = classes
+            .iter()
+            .flatten()
+            .any(|member| criteria.iter().any(|id| revision::leads(member.id, id)));
 
         let status = Self::settle(&classes, covered);
         let trigger = Self::trigger_of(&classes, contracts);
@@ -826,33 +812,22 @@ impl<'a> Basis<'a> {
 // A source claim contributing to a requirement.
 #[derive(Debug)]
 pub struct Contributor<'a> {
-    // The name of the source the claim was extracted from.
     pub source: &'a str,
-    // The kind of source the claim was extracted from.
     pub kind: SourceKind,
-    // The authority rank the contributor is ordered by.
     pub rank: Rank,
-    // The claim identifier, which may differ from the requirement subject.
     pub id: &'a str,
-    // Where in the source the claim anchors, when it carries a `path`.
     pub path: Option<&'a str>,
-    // The claim statement with whitespace normalised.
     pub statement: String,
-    // An optional synopsis provided to the grouping model.
     pub synopsis: Option<&'a str>,
-    // Whether the claim is a `retire`, withdrawing the behaviour its id
-    // names rather than stating it.
     pub withdraws: bool,
-    // Where the requirement a standing contributor stands for was read: the
-    // citations of the base requirement, which a change claim anchored at
-    // one of is hinted to revise. Empty for a claim.
+    // Where a standing requirement was read, for the brief's anchor hints;
+    // empty for a claim.
     pub citations: &'a [Cited],
     // Position in source order, used to break authority ties.
     pub index: usize,
 }
 
 impl<'a> Contributor<'a> {
-    // Returns the stem of the claim id: the first segment of its dotted id.
     #[must_use]
     pub fn stem(&self) -> &'a str {
         revision::stem(self.id)

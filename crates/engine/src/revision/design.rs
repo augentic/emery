@@ -14,34 +14,27 @@ use crate::revision;
 
 const CITATION: &str = "(from ";
 
-// The `Type:` key written before a type-signature fence.
 pub const TYPE: &str = "Type:";
 
-// A rebuild design in its stored form.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Design {
-    // The grammar the document was written under.
     pub emery: u32,
     // The revision this one amends, or `None` when drafted from sources alone.
     pub parent: Option<String>,
-    // Markdown paragraphs preceding the first section.
     pub preamble: Vec<String>,
     // The sections, in vocabulary order.
     pub sections: Vec<Section>,
 }
 
 impl Design {
-    // Returns the section of `kind`, if the design has one.
     #[must_use]
     pub fn section(&self, kind: SectionKind) -> Option<&Section> {
         self.sections.iter().find(|section| section.kind == kind)
     }
 
-    // Returns the keys of the `Role::Data` types, in key order.
-    //
-    // These are the types a build plan assigns to slices. A
-    // `Role::Mechanism` type is owned by no slice.
+    // Returns the keys of the `Role::Data` types, in key order: the types a
+    // build plan assigns to slices (`Role::Mechanism` is owned by none).
     #[must_use]
     pub fn data_types(&self) -> Vec<String> {
         let keys: BTreeSet<&str> = self
@@ -60,7 +53,6 @@ impl Design {
         keys.into_iter().map(str::to_owned).collect()
     }
 
-    // Returns the signature and role of the type `key` names, if the design has one.
     #[must_use]
     pub fn type_block(&self, key: &str) -> Option<(&str, Role)> {
         self.sections.iter().flat_map(|section| &section.blocks).find_map(|block| match block {
@@ -73,17 +65,13 @@ impl Design {
         })
     }
 
-    // Returns the signature of the type `key` names, if the design has one.
     #[must_use]
     pub fn signature(&self, key: &str) -> Option<&str> {
         self.type_block(key).map(|(signature, _)| signature)
     }
 
-    // Returns this design less the type blocks `keys` name.
-    //
-    // A section left with no block goes with them, since a design never
-    // holds an empty section. Every text block and the `parent` stand as
-    // they are.
+    // Returns this design less the type blocks `keys` name; a section left
+    // with no block goes with them.
     #[must_use]
     pub fn without_types(&self, keys: &BTreeSet<String>) -> Self {
         let sections = self
@@ -148,21 +136,11 @@ impl Display for Section {
     }
 }
 
-// A paragraph or type signature in a design section.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum Block {
-    // One Markdown paragraph.
     Text(String),
-    // A type claim's verbatim signature.
-    Type {
-        // The source claim's key.
-        key: String,
-        // The claim's signature.
-        signature: String,
-        // What the type stands for.
-        role: Role,
-    },
+    Type { key: String, signature: String, role: Role },
 }
 
 impl Display for Block {

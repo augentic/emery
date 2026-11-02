@@ -224,9 +224,8 @@ fn carried(bytes: &[u8]) -> Option<&'static str> {
 // wherever on its line it stands: a key pasted into a string literal keeps
 // the header and the escaped newline after it on one line.
 fn pem_private_key(bytes: &[u8]) -> bool {
-    occurrences(bytes, PEM_HEAD).any(|start| {
-        let rest = &bytes[start + PEM_HEAD.len()..];
-        occurrences(rest, PEM_DASHES).next().is_some_and(|end| {
+    after(bytes, PEM_HEAD).any(|rest| {
+        rest.windows(PEM_DASHES.len()).position(|window| window == PEM_DASHES).is_some_and(|end| {
             let label = &rest[..end];
             label.ends_with(PEM_PRIVATE) && !label.contains(&b'\n')
         })
@@ -235,16 +234,12 @@ fn pem_private_key(bytes: &[u8]) -> bool {
 
 impl Shape {
     fn matches(&self, bytes: &[u8]) -> bool {
-        occurrences(bytes, self.prefix).any(|start| {
-            let run = bytes[start + self.prefix.len()..]
-                .iter()
-                .take_while(|byte| self.run.admits(**byte))
-                .count();
-            run >= self.least
+        after(bytes, self.prefix).any(|rest| {
+            rest.iter().take_while(|&&byte| self.run.admits(byte)).count() >= self.least
         })
     }
 }
 
-fn occurrences<'a>(bytes: &'a [u8], needle: &'a [u8]) -> impl Iterator<Item = usize> + 'a {
-    (0..bytes.len()).filter(move |start| bytes[*start..].starts_with(needle))
+fn after<'a>(bytes: &'a [u8], prefix: &'a [u8]) -> impl Iterator<Item = &'a [u8]> {
+    (0..bytes.len()).filter_map(move |start| bytes[start..].strip_prefix(prefix))
 }

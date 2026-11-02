@@ -19,7 +19,7 @@ use omnia_sdk::api::Context;
 use omnia_sdk::plugins::Digest;
 use omnia_sdk::vcs::{Change, ChangeKind, Rule, Strategy};
 use omnia_sdk::{BlobStore, Error, Model, Plugins, StateStore, Vcs, server_error};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 use self::merge::UnresolvedMerge;
 use crate::adapter::{self, AdapterRef, Loaded};
@@ -213,7 +213,7 @@ pub async fn build<P: Model + Target + StateStore + BlobStore + Plugins + Vcs + 
 }
 
 /// The target a build runs through, and the repository it builds into.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub struct BuildInput {
     /// The kebab-case name the target's repository is kept under.

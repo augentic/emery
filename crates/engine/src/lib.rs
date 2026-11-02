@@ -68,23 +68,23 @@ pub fn is_retryable(error: &Error) -> bool {
 
 // The error with its description rewritten and its class and code kept, so
 // a failure gains where it happened without losing what it was.
-fn describe(error: Error, describe: impl FnOnce(String) -> String) -> Error {
+fn describe(error: Error, rewrite: impl FnOnce(String) -> String) -> Error {
     match error {
         Error::BadRequest { code, description } => Error::BadRequest {
             code,
-            description: describe(description),
+            description: rewrite(description),
         },
         Error::NotFound { code, description } => Error::NotFound {
             code,
-            description: describe(description),
+            description: rewrite(description),
         },
         Error::ServerError { code, description } => Error::ServerError {
             code,
-            description: describe(description),
+            description: rewrite(description),
         },
         Error::BadGateway { code, description } => Error::BadGateway {
             code,
-            description: describe(description),
+            description: rewrite(description),
         },
     }
 }
@@ -177,9 +177,9 @@ pub enum EntryKind {
 ///
 /// use emery_engine::preopen_path;
 ///
-/// assert_eq!(preopen_path(Path::new("./docs/../src"))?, Path::new("src"));
-/// assert_eq!(preopen_path(Path::new("."))?, Path::new("."));
-/// assert!(preopen_path(Path::new("../outside")).is_err());
+/// assert_eq!(preopen_path("./docs/../src")?, Path::new("src"));
+/// assert_eq!(preopen_path(".")?, Path::new("."));
+/// assert!(preopen_path("../outside").is_err());
 /// # Ok::<(), omnia_sdk::Error>(())
 /// ```
 ///
@@ -187,7 +187,8 @@ pub enum EntryKind {
 ///
 /// Returns [`Error::BadRequest`] for an absolute path, or a relative path that
 /// escapes above the project root.
-pub fn preopen_path(path: &Path) -> Result<PathBuf, Error> {
+pub fn preopen_path(path: impl AsRef<Path>) -> Result<PathBuf, Error> {
+    let path = path.as_ref();
     let mut normalized = PathBuf::new();
     for component in path.components() {
         match component {
@@ -211,8 +212,8 @@ pub fn preopen_path(path: &Path) -> Result<PathBuf, Error> {
 /// # Errors
 ///
 /// Returns [`Error::BadRequest`] when the joined path escapes the project root.
-pub fn preopen_join(base: &Path, relative: &Path) -> Result<PathBuf, Error> {
-    preopen_path(&base.join(relative))
+pub fn preopen_join(base: impl AsRef<Path>, relative: impl AsRef<Path>) -> Result<PathBuf, Error> {
+    preopen_path(base.as_ref().join(relative))
 }
 
 /// A bundle of every capability an engine operation may require.

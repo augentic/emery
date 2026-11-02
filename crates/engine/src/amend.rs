@@ -17,7 +17,7 @@ use emery_adapter::source::Source;
 use futures::future;
 use omnia_sdk::api::Context;
 use omnia_sdk::{BlobStore, Error, Model, Plugins, StateStore, Vcs, bad_request};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 use self::baseline::Baseline;
 use self::change::ChangeSet;
@@ -129,9 +129,9 @@ pub async fn amend<P: Model + Source + StateStore + BlobStore + Plugins + Vcs + 
         ));
     }
     let repo = input.target.ok_or_else(|| store::target_required("`emery amend`"))?.repo()?;
-    let repository = store::current(provider, &repo).await?;
-    let Some(current) = &repository.current else {
-        return Err(store::not_generated(provider, &repository).await);
+    let standing = store::current(provider, &repo).await?;
+    let Some(current) = &standing.current else {
+        return Err(store::not_generated(provider, &standing).await);
     };
     let revision = current.revision.as_ref().map_err(Clone::clone)?;
     store::no_candidate(provider).await?;
@@ -209,7 +209,7 @@ pub async fn amend<P: Model + Source + StateStore + BlobStore + Plugins + Vcs + 
     let tally = Tally::of(&amendment);
     let conflicts = amendment.conflicts().map(str::to_owned).collect();
     let stems = amendment.stems().into_iter().map(str::to_owned).collect();
-    let (id, applied) = stage(provider, &repo, repository, &amendment, tally, input.apply).await?;
+    let (id, applied) = stage(provider, &repo, standing, &amendment, tally, input.apply).await?;
 
     Ok(AmendOutput {
         staged: id.is_some() && applied.is_none(),
@@ -253,7 +253,7 @@ async fn stage<P: StateStore + BlobStore + Vcs + Files>(
 }
 
 /// The change sources an amendment is prepared from, and the target whose revision it amends.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub struct AmendInput {
     /// The change sources in declaration order, bound as `specify` binds

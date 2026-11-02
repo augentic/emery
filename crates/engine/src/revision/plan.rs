@@ -11,31 +11,23 @@ use serde::{Deserialize, Serialize};
 
 use crate::revision::{self, ID, ReqId, Requirement, SliceId, Spec};
 
-// The `Requirements:` key listing a slice's requirement ids.
 pub const REQUIREMENTS: &str = "Requirements:";
-// The `Types:` key listing the design type keys a slice owns.
 pub const TYPES: &str = "Types:";
-// The `Depends on:` key listing the slices built before a slice.
 pub const DEPENDS_ON: &str = "Depends on:";
 
 const HEADING: &str = "## Slice:";
 
-// A build plan in its stored form.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Plan {
-    // The grammar the document was written under.
     pub emery: u32,
     // The revision this one amends, or `None` when drafted from sources alone.
     pub parent: Option<String>,
-    // Markdown paragraphs preceding the first slice.
     pub preamble: Vec<String>,
-    // The slices, in id order.
     pub slices: Vec<Slice>,
 }
 
 impl Plan {
-    // Returns the slice `id` names, if the plan has one.
     #[must_use]
     pub fn slice(&self, id: SliceId) -> Option<&Slice> {
         self.slices.iter().find(|slice| slice.id == id)
@@ -48,57 +40,28 @@ impl Plan {
         SliceId::free_after(self.slices.iter().map(|slice| slice.id))
     }
 
-    // Returns the slices in build order: the `waves` flattened.
-    //
-    // Every slice comes after each slice it depends on; the slices of one
-    // wave come in id order.
-    #[must_use]
-    pub fn order(&self) -> Vec<&Slice> {
-        self.waves().iter().flatten().filter_map(|id| self.slice(*id)).collect()
-    }
-
-    // Returns the slices ready to build once `merged` are built: the unmerged slices whose dependencies are all merged, in id order.
-    //
-    // A dependency naming the slice itself or no slice of the plan holds
-    // nothing back, as `waves` ignores it. An empty result
-    // with slices left unmerged means the rest wait on one another.
+    // Returns the unmerged slices whose in-plan dependencies are all in
+    // `merged`, in id order. An empty result with slices left unmerged
+    // means the rest wait on one another.
     #[must_use]
     pub fn ready(&self, merged: &BTreeSet<SliceId>) -> Vec<&Slice> {
         self.slices
             .iter()
             .filter(|slice| !merged.contains(&slice.id))
-            .filter(|slice| {
-                slice.depends_on.iter().all(|dependency| {
-                    merged.contains(dependency)
-                        || *dependency == slice.id
-                        || self.slice(*dependency).is_none()
-                })
-            })
+            .filter(|slice| self.dependencies(slice).all(|id| merged.contains(&id)))
             .collect()
     }
 
-    // Returns the slices grouped into waves: the sets ready to build at once.
-    //
     // The first wave holds every slice that depends on nothing; each wave
     // after it holds every slice whose dependencies are all in the waves
-    // before, in id order. The engine writes no cycle; were a stored plan
-    // to hold one, its slices are one last wave, in id order.
+    // before, in id order. Were a stored plan to hold a cycle, its slices
+    // are one last wave, in id order.
     #[must_use]
     pub fn waves(&self) -> Waves {
         let pending = self
             .slices
             .iter()
-            .map(|slice| {
-                let dependencies = slice
-                    .depends_on
-                    .iter()
-                    .copied()
-                    .filter(|dependency| {
-                        *dependency != slice.id && self.slice(*dependency).is_some()
-                    })
-                    .collect();
-                (slice.id, dependencies)
-            })
+            .map(|slice| (slice.id, self.dependencies(slice).collect()))
             .collect();
 
         let (mut waves, cyclic) = ranks(pending);
@@ -106,6 +69,16 @@ impl Plan {
             waves.push(cyclic);
         }
         Waves(waves)
+    }
+
+    // The in-plan slices `slice` waits on: a dependency naming `slice`
+    // itself or no slice of the plan holds nothing back.
+    fn dependencies<'a>(&'a self, slice: &'a Slice) -> impl Iterator<Item = SliceId> + 'a {
+        slice
+            .depends_on
+            .iter()
+            .copied()
+            .filter(move |&dependency| dependency != slice.id && self.slice(dependency).is_some())
     }
 }
 
@@ -186,24 +159,17 @@ impl Display for Plan {
     }
 }
 
-// A buildable subset of the specification.
-//
-// Every requirement of the specification is in exactly one slice, and
-// every design type key is owned by exactly one.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
 pub struct Slice {
-    // The stable slice identifier.
     pub id: SliceId,
-    // The drafted kebab-case name, unique within the plan.
+    // Unique within the plan.
     pub name: String,
-    // The requirements this slice builds, in id order.
     pub requirements: Vec<ReqId>,
-    // The design type keys this slice owns, in the design's order.
+    // In the design's order.
     pub types: Vec<String>,
-    // The slices this one is built after, in id order; acyclic.
+    // Acyclic, in id order.
     pub depends_on: Vec<SliceId>,
-    // Drafted paragraphs a builder reads before taking the slice up.
     pub brief: Vec<String>,
 }
 
@@ -218,16 +184,16 @@ impl Slice {
     // no trailing newline, so a projection under another heading renders
     // the slice as `plan.md` does.
     pub fn write_lists(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        list(f, REQUIREMENTS, &self.requirements)?;
+        revision::write_list(f, REQUIREMENTS, &self.requirements)?;
 
         // ownership and order, where there is any
         if !self.types.is_empty() {
             f.write_str("\n")?;
-            list(f, TYPES, &self.types)?;
+            revision::write_list(f, TYPES, &self.types)?;
         }
         if !self.depends_on.is_empty() {
             f.write_str("\n")?;
-            list(f, DEPENDS_ON, &self.depends_on)?;
+            revision::write_list(f, DEPENDS_ON, &self.depends_on)?;
         }
 
         // brief
@@ -243,16 +209,4 @@ impl Display for Slice {
         write!(f, "{HEADING} {}\n\n{ID} {}\n", self.name, self.id)?;
         self.write_lists(f)
     }
-}
-
-// A `Key: [a, b]` line with no trailing newline.
-fn list<T: Display>(f: &mut Formatter<'_>, key: &str, items: &[T]) -> fmt::Result {
-    write!(f, "{key} [")?;
-    for (position, item) in items.iter().enumerate() {
-        if position > 0 {
-            f.write_str(", ")?;
-        }
-        write!(f, "{item}")?;
-    }
-    f.write_str("]")
 }

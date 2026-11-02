@@ -46,25 +46,19 @@ pub async fn show<P: StateStore + BlobStore + Vcs + Files>(
     input: ShowInput, context: Context<P>,
 ) -> Result<ShowOutput, Error> {
     let store = context.provider();
+    if input.artifact == Artifact::Amendment {
+        let staged =
+            store::staged_amendment(store).await?.ok_or_else(store::no_amendment_staged)?;
+        tracing::debug!(amendment = %staged.id, "amendment read");
+        return ShowOutput::new(&staged.amendment, staged.id);
+    }
+
+    let (id, revision) = revision(store, &input).await?;
     match input.artifact {
-        Artifact::Amendment => {
-            let staged =
-                store::staged_amendment(store).await?.ok_or_else(store::no_amendment_staged)?;
-            tracing::debug!(amendment = %staged.id, "amendment read");
-            ShowOutput::new(&staged.amendment, staged.id)
-        }
-        Artifact::Spec => {
-            let (id, revision) = revision(store, input).await?;
-            ShowOutput::new(&revision.spec, id)
-        }
-        Artifact::Design => {
-            let (id, revision) = revision(store, input).await?;
-            ShowOutput::new(&revision.design, id)
-        }
-        Artifact::Plan => {
-            let (id, revision) = revision(store, input).await?;
-            ShowOutput::new(&revision.plan, id)
-        }
+        Artifact::Spec => ShowOutput::new(&revision.spec, id),
+        Artifact::Design => ShowOutput::new(&revision.design, id),
+        Artifact::Plan => ShowOutput::new(&revision.plan, id),
+        Artifact::Amendment => unreachable!("handled above"),
     }
 }
 
@@ -72,13 +66,13 @@ pub async fn show<P: StateStore + BlobStore + Vcs + Files>(
 // the staged candidate, or the current revision of `input.target`'s
 // repository.
 async fn revision<P: StateStore + BlobStore + Vcs + Files>(
-    store: &P, input: ShowInput,
+    store: &P, input: &ShowInput,
 ) -> Result<(String, Revision), Error> {
     let (id, revision) = if input.staged {
         let candidate = store::staged(store).await?.ok_or_else(store::nothing_staged)?;
         (candidate.id, candidate.revision)
     } else {
-        let target = input.target.ok_or_else(|| store::target_required("`emery show`"))?;
+        let target = input.target.as_ref().ok_or_else(|| store::target_required("`emery show`"))?;
         let repo = target.repo()?;
         let standing = store::current(store, &repo).await?;
         let Some(current) = standing.current else {
@@ -96,7 +90,7 @@ async fn revision<P: StateStore + BlobStore + Vcs + Files>(
 }
 
 /// Selects the document returned by [`show`].
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub struct ShowInput {
     /// The artifact projected as Markdown and structured JSON.
@@ -126,13 +120,15 @@ pub struct ShowInput {
 /// use emery_engine::show::Artifact;
 ///
 /// let artifact: Artifact = "spec".parse()?;
-/// assert!(matches!(artifact, Artifact::Spec));
+/// assert_eq!(artifact, Artifact::Spec);
 /// assert_eq!(Artifact::Design.as_ref(), "design");
 /// assert_eq!(Artifact::Plan.as_ref(), "plan");
 /// assert_eq!(Artifact::Amendment.as_ref(), "amendment");
 /// # Ok::<(), strum::ParseError>(())
 /// ```
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, AsRefStr, EnumString, VariantArray)]
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, AsRefStr, EnumString, VariantArray,
+)]
 #[serde(rename_all = "kebab-case")]
 #[strum(serialize_all = "kebab-case")]
 pub enum Artifact {
