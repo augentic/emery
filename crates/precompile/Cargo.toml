@@ -13,7 +13,8 @@ readme = "../../README.md"
 
 [[bin]]
 name = "emery-precompile"
-path = "src/main.rs"
+test = false
+bench = false
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 anyhow.workspace = true

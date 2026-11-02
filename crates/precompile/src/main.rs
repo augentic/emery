@@ -1,13 +1,12 @@
 //! Precompiles a `wasm32-wasip2` component for the release `emery` binary.
 //!
-//! Invoked by the root build script as
-//! `emery-precompile <wasm> <output> --target <triple>` using default runtime
-//! compile options.
+//! The root build script runs this under `--release` as
+//! `emery-precompile <wasm> <output> --target <triple>`. Compile options are
+//! the runtime defaults.
 
 cfg_select! {
     not(target_arch = "wasm32") => {
-        use std::ffi::OsString;
-        use std::path::PathBuf;
+        use std::path::{Path, PathBuf};
 
         use anyhow::{Context as _, Result, bail};
         use omnia_compile::CompileOptions;
@@ -19,23 +18,21 @@ cfg_select! {
                 clippy::disallowed_methods,
                 reason = "a host tool, not a guest: argv is the build script's call"
             )]
-            let args: Vec<OsString> = std::env::args_os().skip(1).collect();
-            let [wasm, output, flag, triple] = args.as_slice() else {
-                bail!("{USAGE}");
+            let args: Vec<_> = std::env::args_os().skip(1).collect();
+            let (wasm, output, target) = match args.as_slice() {
+                [wasm, output, flag, target] if flag == "--target" => {
+                    let target = target.to_str().context("the target is not UTF-8")?;
+                    (Path::new(wasm), PathBuf::from(output), target)
+                }
+                _ => bail!("{USAGE}"),
             };
-            if flag != "--target" {
-                bail!("{USAGE}");
-            }
-            let triple =
-                triple.to_str().with_context(|| format!("{USAGE}: the triple is not UTF-8"))?;
 
-            let wasm = PathBuf::from(wasm);
-            let output = PathBuf::from(output);
-            omnia_compile::compile(&wasm, Some(output), Some(triple), &CompileOptions::default())
-                .with_context(|| format!("compiling {} for `{triple}`", wasm.display()))
+            omnia_compile::compile(wasm, Some(output), Some(target), &CompileOptions::default())
+                .with_context(|| format!("compiling {} for `{target}`", wasm.display()))
         }
     }
     _ => {
+        // host-only; empty so the workspace wasm32 clippy pass can compile this member
         fn main() {}
     }
 }
