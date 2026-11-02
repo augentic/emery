@@ -67,6 +67,7 @@ fn lines_span() {
     assert!(span.contains(span));
     assert!(span.contains(Lines { start: 4, end: 5 }));
     assert!(!span.contains(Lines { start: 2, end: 4 }));
+    assert_eq!(span.first(), Lines::at(3));
     assert!(!Lines::default().holds(1), "the default holds no line");
 }
 

@@ -13,10 +13,12 @@ use std::{fmt, fs};
 use emery_adapter::target::Report;
 use emery_adapter::{Standing, beneath, standing, write_whole};
 use omnia_sdk::model::{Function, Tool, ToolCall, ToolFuture, Tools};
+use serde::Serialize;
 
 use self::place::{Miss, Placed, nearest, place};
-use self::schema::{Edit, EditFiles, EditResponse, WriteFile, WriteFiles, WriteResponse, json_of};
+use self::schema::{Edit, EditFiles, EditResponse, WriteFile, WriteFiles, WriteResponse};
 use super::{Guarded, Marker};
+use crate::quoted;
 
 const WRITE_FILES: &str = "write_files";
 const EDIT_FILES: &str = "edit_files";
@@ -129,7 +131,7 @@ impl Writer {
                     outcome.map(|done| {
                         serde_json::to_string(&WriteResponse {
                             deleted: done.deleted,
-                            written: json_of(&done.wrote),
+                            written: done.wrote,
                         })
                         .expect("write_files response serialises")
                     })
@@ -145,10 +147,8 @@ impl Writer {
                         "responded"
                     );
                     outcome.map(|done| {
-                        serde_json::to_string(&EditResponse {
-                            edited: json_of(&done.wrote),
-                        })
-                        .expect("edit_files response serialises")
+                        serde_json::to_string(&EditResponse { edited: done.wrote })
+                            .expect("edit_files response serialises")
                     })
                 }
                 _ => return rest(call),
@@ -353,15 +353,13 @@ impl Writer {
         if missing.is_empty() {
             return None;
         }
-        let named: Vec<String> =
-            missing.iter().take(NAMED_TOKENS).map(|token| format!("`{token}`")).collect();
         let more = missing.len().saturating_sub(NAMED_TOKENS);
         let more = if more == 0 { String::new() } else { format!(", and {more} more") };
         Some(format!(
             "`{file}` was scaffolded before this turn and this content drops what the skeleton \
              holds: {}{more}; change the file through `{EDIT_FILES}`, or send the whole file \
              with those kept",
-            named.join(", ")
+            quoted(missing.into_iter().take(NAMED_TOKENS))
         ))
     }
 
@@ -413,9 +411,11 @@ struct Edited {
     placed: Vec<Placed>,
 }
 
-struct Wrote {
-    file: String,
-    bytes: usize,
+#[derive(Serialize)]
+pub struct Wrote {
+    pub bytes: usize,
+    #[serde(rename = "path")]
+    pub file: String,
 }
 
 // Logged as `"path"=bytes`, so a reader of the turn's events has each

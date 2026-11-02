@@ -10,6 +10,7 @@ use super::code::{
 };
 use super::resolve::Target;
 use super::{Dialect, Lines, grouped, push_unique, unique};
+use crate::quoted;
 
 // How many sites a callee is listed at before the rest are counted.
 const SITES: usize = 8;
@@ -61,13 +62,8 @@ pub fn data<'m>(modules: impl IntoIterator<Item = &'m Module>) -> Option<String>
     if files.is_empty() {
         return None;
     }
-    let lines: Vec<String> = files
-        .iter()
-        .map(|(path, by)| {
-            let by: Vec<String> = by.iter().map(|module| format!("`{module}`")).collect();
-            format!("- `{path}` — named by {}", by.join(", "))
-        })
-        .collect();
+    let lines: Vec<String> =
+        files.iter().map(|(path, by)| format!("- `{path}` — named by {}", quoted(by))).collect();
     Some(format!(
         "Data files these modules name by path, each with the modules reading it, placed after \
          the first module naming it — a large one after every module:\n\n{}",
@@ -82,12 +78,11 @@ pub fn unfollowed<'m>(
 ) -> Option<String> {
     let mut items: Vec<String> = Vec::new();
     for module in modules {
-        let unresolved: Vec<String> =
-            module.unresolved().into_iter().map(|s| format!("`{s}`")).collect();
+        let unresolved = module.unresolved();
         if !unresolved.is_empty() {
             items.push(format!(
                 "{} from `{}` {} no module of the tree",
-                unresolved.join(", "),
+                quoted(&unresolved),
                 module.path,
                 if unresolved.len() == 1 { "names" } else { "name" }
             ));
@@ -310,10 +305,6 @@ pub fn anchors<'s, R: Recogniser>(
     let dialect = tree.dialect;
     let mut anchors: Vec<String> = Vec::new();
     let mut push = |path: &str, lines: Lines| anchors.push(format!("{path}#{}", lines.anchor()));
-    let head = |lines: Lines| Lines {
-        start: lines.start,
-        end: lines.start,
-    };
     let constants: BTreeSet<String> = tree
         .modules
         .values()
@@ -326,13 +317,7 @@ pub fn anchors<'s, R: Recogniser>(
     }
     for module in files.iter().filter_map(|path| tree.modules.get(path)) {
         for line in module.referencing(|name| constants.contains(name)) {
-            push(
-                &module.path,
-                Lines {
-                    start: line,
-                    end: line,
-                },
-            );
+            push(&module.path, Lines::at(line));
         }
         for call in module.calls.iter().filter(|call| step(tree, module, call)) {
             push(&module.path, call.lines);
@@ -348,14 +333,14 @@ pub fn anchors<'s, R: Recogniser>(
                 BindingKind::Function
                 | BindingKind::Value {
                     init: Init::Function, ..
-                } => push(&module.path, head(binding.lines)),
+                } => push(&module.path, binding.lines.first()),
                 BindingKind::Field { .. } => push(&module.path, binding.lines),
                 _ => {}
             }
         }
         for member in module.classes.iter().flat_map(|class| &class.members) {
             if !matches!(member.kind, MemberKind::Field | MemberKind::Nested) {
-                push(&module.path, head(member.lines));
+                push(&module.path, member.lines.first());
             }
         }
         for decorated in &module.decorated {
@@ -530,8 +515,7 @@ pub fn packages<'m>(modules: impl IntoIterator<Item = &'m Module>) -> Option<Str
     let lines: Vec<String> = packages
         .iter()
         .map(|(specifier, (bound, paths))| {
-            let paths: Vec<String> = paths.iter().map(|path| format!("`{path}`")).collect();
-            format!("- `{specifier}` — {} — in {}", bound.join(", "), paths.join(", "))
+            format!("- `{specifier}` — {} — in {}", bound.join(", "), quoted(paths))
         })
         .collect();
     Some(format!(

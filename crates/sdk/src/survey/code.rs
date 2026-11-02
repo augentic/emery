@@ -492,8 +492,8 @@ impl Call {
 
     /// Returns whether the call's value is dropped.
     #[must_use]
-    pub fn discarded(&self) -> bool {
-        self.value == Use::Discarded
+    pub const fn discarded(&self) -> bool {
+        matches!(self.value, Use::Discarded)
     }
 
     /// Returns the string literal leading the positional arguments.
