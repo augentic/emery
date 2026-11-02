@@ -23,10 +23,9 @@ use crate::Doc;
 /// so it is a finding.
 ///
 /// Symlinked directories are followed. An unreadable path or a symlink cycle
-/// is reported as a finding. A link inside a backtick code fence is ignored,
-/// though an inline code span or a `~~~` fence is not recognised as code. A
-/// URL fragment does not affect the document path. Each finding names the
-/// path and the rule it breaks.
+/// is reported as a finding. A link inside a code fence or an inline code
+/// span is ignored. A URL fragment does not affect the document path. Each
+/// finding names the path and the rule it breaks.
 ///
 /// Use this function in a native test beside a [`prose!`](crate::prose)
 /// invocation.
@@ -46,17 +45,24 @@ use crate::Doc;
 /// assert!(findings.is_empty(), "{}", findings.join("\n"));
 /// ```
 #[must_use]
-pub fn check(docs: &[Doc], root: &Path, prompts: &[&str], imports: &[Doc]) -> Vec<String> {
-    let on_disk = match walk(root, "", &[]) {
+pub fn check(
+    docs: &[Doc], root: impl AsRef<Path>, prompts: &[&str], imports: &[Doc],
+) -> Vec<String> {
+    check_tree(docs, root.as_ref(), prompts, imports)
+}
+
+fn check_tree(docs: &[Doc], root: &Path, prompts: &[&str], imports: &[Doc]) -> Vec<String> {
+    let files = match markdown_files(root) {
         Ok(paths) => paths,
         Err(finding) => return vec![finding],
     };
+    let on_disk: BTreeSet<&str> = files.iter().map(String::as_str).collect();
 
     // hold the table to the tree
     let mut findings = Vec::new();
     let mut listed = BTreeSet::new();
     for doc in docs {
-        if !listed.insert(doc.path.to_owned()) {
+        if !listed.insert(doc.path) {
             findings.push(format!("`{}` is listed twice", doc.path));
         }
     }
@@ -69,15 +75,16 @@ pub fn check(docs: &[Doc], root: &Path, prompts: &[&str], imports: &[Doc]) -> Ve
 
     // hold the table apart from the imports
     let imported: BTreeSet<&str> = imports.iter().map(|doc| doc.path).collect();
-    for path in imported.iter().filter(|path| listed.contains(**path)) {
+    for path in listed.intersection(&imported) {
         findings.push(format!("`{path}` shadows an import"));
     }
 
     // hold every link to the table or the imports
     for doc in docs {
-        for target in links(doc.body) {
-            match resolve(doc.path, target) {
-                Some(linked) if listed.contains(&linked) || imported.contains(linked.as_str()) => {}
+        for target in relative_links(doc.body) {
+            match resolve_link(doc.path, target) {
+                Some(linked)
+                    if listed.contains(linked.as_str()) || imported.contains(linked.as_str()) => {}
                 Some(linked) => findings.push(format!(
                     "`{}` links `{target}`, and the table holds no `{linked}`",
                     doc.path
@@ -91,21 +98,22 @@ pub fn check(docs: &[Doc], root: &Path, prompts: &[&str], imports: &[Doc]) -> Ve
     }
 
     // hold every document to a prompt
-    for prompt in prompts {
-        if !listed.contains(*prompt) {
+    let mut seen_prompts = BTreeSet::new();
+    for &prompt in prompts {
+        if seen_prompts.insert(prompt) && !listed.contains(prompt) {
             findings.push(format!("`{prompt}` is a prompt the table does not hold"));
         }
     }
-    let reached = reach(docs, prompts);
+    let mut reached = reachable(docs, prompts);
     for doc in docs {
-        if !reached.contains(doc.path) {
+        if reached.insert(doc.path) {
             findings.push(format!("`{}` is reached from no prompt", doc.path));
         }
     }
     findings
 }
 
-fn reach(docs: &[Doc], prompts: &[&str]) -> BTreeSet<&'static str> {
+fn reachable(docs: &[Doc], prompts: &[&str]) -> BTreeSet<&'static str> {
     let mut reached = BTreeSet::new();
     let mut frontier: Vec<&Doc> =
         prompts.iter().filter_map(|prompt| crate::find(docs, prompt)).collect();
@@ -113,18 +121,26 @@ fn reach(docs: &[Doc], prompts: &[&str]) -> BTreeSet<&'static str> {
         if !reached.insert(doc.path) {
             continue;
         }
-        for target in links(doc.body) {
-            let linked = resolve(doc.path, target).and_then(|path| crate::find(docs, &path));
+        for target in relative_links(doc.body) {
+            let linked = resolve_link(doc.path, target).and_then(|path| crate::find(docs, &path));
             frontier.extend(linked);
         }
     }
     reached
 }
 
+fn markdown_files(root: &Path) -> Result<BTreeSet<String>, String> {
+    let mut files = BTreeSet::new();
+    let mut ancestors = Vec::new();
+    walk_dir(root, "", &mut ancestors, &mut files)?;
+    Ok(files)
+}
+
 // Symlinks are followed, so the canonical ancestors are the cycle guard.
-fn walk(dir: &Path, prefix: &str, ancestors: &[PathBuf]) -> Result<BTreeSet<String>, String> {
-    let unreadable = |err: io::Error| format!("`{}` cannot be read: {err}", dir.display());
-    let canonical = fs::canonicalize(dir).map_err(unreadable)?;
+fn walk_dir(
+    dir: &Path, prefix: &str, ancestors: &mut Vec<PathBuf>, files: &mut BTreeSet<String>,
+) -> Result<(), String> {
+    let canonical = fs::canonicalize(dir).map_err(|err| unreadable(dir, &err))?;
     if ancestors.contains(&canonical) {
         return Err(format!(
             "`{}` re-enters `{}`: a symlink cycle",
@@ -132,53 +148,87 @@ fn walk(dir: &Path, prefix: &str, ancestors: &[PathBuf]) -> Result<BTreeSet<Stri
             canonical.display()
         ));
     }
-    let lineage = [ancestors, &[canonical]].concat();
+    ancestors.push(canonical);
 
-    let mut found = BTreeSet::new();
-    for entry in fs::read_dir(dir).map_err(unreadable)? {
-        let entry = entry.map_err(unreadable)?;
+    for entry in fs::read_dir(dir).map_err(|err| unreadable(dir, &err))? {
+        let entry = entry.map_err(|err| unreadable(dir, &err))?;
         let file = entry.path();
-        let name = entry.file_name().to_string_lossy().into_owned();
-        let path = if prefix.is_empty() { name } else { format!("{prefix}/{name}") };
+        let name = entry.file_name();
+        let name = name.to_string_lossy();
+        let path = if prefix.is_empty() { name.into_owned() } else { format!("{prefix}/{name}") };
 
-        let metadata = fs::metadata(&file).map_err(unreadable)?;
+        let metadata = fs::metadata(&file).map_err(|err| unreadable(&file, &err))?;
         if metadata.is_dir() {
-            found.extend(walk(&file, &path, &lineage)?);
+            walk_dir(&file, &path, ancestors, files)?;
         } else if metadata.is_file() && file.extension().is_some_and(|ext| ext == "md") {
-            found.insert(path);
+            files.insert(path);
         }
     }
-    Ok(found)
+
+    ancestors.pop();
+    Ok(())
 }
 
-fn links(body: &str) -> Vec<&str> {
+fn unreadable(path: &Path, err: &io::Error) -> String {
+    format!("`{}` cannot be read: {err}", path.display())
+}
+
+fn relative_links(body: &str) -> Vec<&str> {
     let mut targets = Vec::new();
-    let mut fenced = false;
+    let mut fence: Option<&str> = None;
     for line in body.lines() {
-        if line.trim_start().starts_with("```") {
-            fenced = !fenced;
+        let trimmed = line.trim_start();
+        if let Some(marker) = fence {
+            if trimmed.starts_with(marker) {
+                fence = None;
+            }
             continue;
         }
-        if fenced {
+        if let Some(marker) = ["```", "~~~"].into_iter().find(|marker| trimmed.starts_with(marker))
+        {
+            fence = Some(marker);
             continue;
         }
 
         let mut rest = line;
-        while let Some(open) = rest.find("](") {
-            rest = &rest[open + 2..];
-            let Some(close) = rest.find(')') else { break };
-            let target = rest[..close].trim();
-            let (target, _anchor) = target.split_once('#').unwrap_or((target, ""));
-            rest = &rest[close + 1..];
-            if !target.is_empty() && !target.contains("://") && !target.starts_with("mailto:") {
-                targets.push(target);
+        while !rest.is_empty() {
+            let next_code = rest.find('`');
+            let next_link = rest.find("](");
+            match (next_code, next_link) {
+                (Some(tick), Some(open)) if tick < open => {
+                    rest = skip_code_span(&rest[tick..]);
+                }
+                (_, Some(open)) => {
+                    rest = &rest[open + 2..];
+                    let Some(close) = rest.find(')') else { break };
+                    let target = rest[..close].trim();
+                    let (target, _anchor) = target.split_once('#').unwrap_or((target, ""));
+                    rest = &rest[close + 1..];
+                    if !target.is_empty()
+                        && !target.contains("://")
+                        && !target.starts_with("mailto:")
+                    {
+                        targets.push(target);
+                    }
+                }
+                _ => break,
             }
         }
     }
     targets
 }
 
-fn resolve(from: &str, target: &str) -> Option<String> {
+fn skip_code_span(from_tick: &str) -> &str {
+    let ticks_len = from_tick.bytes().take_while(|&b| b == b'`').count();
+    let (ticks, after_open) = from_tick.split_at(ticks_len);
+    after_open.find(ticks).map_or(after_open, |close| &after_open[close + ticks_len..])
+}
+
+fn resolve_link(from: &str, target: &str) -> Option<String> {
+    if target.starts_with('/') {
+        return None;
+    }
+
     // the directory of `from`, as segments
     let mut segments: Vec<&str> = match from.rsplit_once('/') {
         Some((dir, _file)) => dir.split('/').collect(),
@@ -193,5 +243,5 @@ fn resolve(from: &str, target: &str) -> Option<String> {
             name => segments.push(name),
         }
     }
-    Some(segments.join("/"))
+    (!segments.is_empty()).then(|| segments.join("/"))
 }
