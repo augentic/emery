@@ -22,7 +22,8 @@ use serde::{Deserialize, Serialize};
 /// A loaded component is held to its axis before any dispatch: one that does
 /// not export the axis's interface is refused typed rather than trapping at
 /// the first call.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, strum::Display)]
+#[strum(serialize_all = "lowercase")]
 pub enum Axis {
     /// A source adapter, exporting `emery:adapter/source`.
     Source,
@@ -57,64 +58,26 @@ impl Axis {
             return Ok(());
         }
         Err(bad_request!(
-            "adapter `{reference}` is not a {} adapter: it exports no `{interface}`",
-            match self {
-                Self::Source => "source",
-                Self::Target => "target",
-            }
+            "adapter `{reference}` is not a {self} adapter: it exports no `{interface}`"
         ))
     }
 }
 
-// What one adapter loaded as.
+// What one adapter loaded as: the loader's dispatch id and the axis metadata.
 #[derive(Debug, Clone)]
 pub struct Loaded<M> {
-    // The identity the loader registered the adapter under, which every
-    // dispatch names.
     pub id: String,
-    // The metadata the adapter declares for its axis: an
-    // `SourceMetadata`, whose kind of source ranks a source adapter's
-    // claims, or a `TargetMetadata`.
     pub metadata: M,
 }
 
-// Loads each referenced source adapter and returns what it loaded as.
-//
-// Duplicate references are loaded once, under one pin. Every adapter loads
-// at the registry location its reference names (`AdapterRef::location`),
-// under the guest name that location registers (`Location::name`), and
-// all load before any is held to its axis or asked for metadata. The loader
-// holds a pinned adapter to its digest, and a declared minimum Emery version
-// must not exceed the running version.
-//
-// - Returns `Error::BadRequest` when a reference is refused:
-//   - two digests on one adapter;
-//   - two references that name one guest — two versions of one package;
-//   - an adapter that does not export the source interface
-//     (`Axis::Source`);
-//   - malformed version metadata;
-//   - an incompatible adapter, with code `unsupported-version`;
-//   - a release the store lacks whose namespace the deployment routes
-//     nowhere, a pre-compiled artifact, an adapter that resolves to other
-//     bytes than its pin, or an adapter whose export signature does not
-//     match the contract, with the loader's code `refused`.
-// - Returns `Error::BadGateway` when the registry cannot supply a release
-//   the store lacks, with the loader's code `unavailable`.
-//
-// A loader's error keeps its class and code; its description names the
-// adapter that failed.
+// Duplicate references are loaded once, under one pin, and all load before
+// any is held to its axis or asked for metadata.
 pub async fn load<'a, P: Source + Plugins>(
     provider: &P, adapters: impl IntoIterator<Item = (&'a AdapterRef, Option<&'a Digest>)>,
 ) -> Result<BTreeMap<AdapterRef, Loaded<SourceMetadata>>, Error> {
     load_axis(provider, Axis::Source, adapters, |id| Source::metadata(provider, id)).await
 }
 
-// Loads the one target adapter a build names and returns what it loaded as.
-//
-// The reference loads as `load` loads a source adapter, under the same
-// refusals, held to the target interface (`Axis::Target`) instead, and
-// its declared minimum Emery version is gated the same way. Its refusals are
-// `load`'s, over the one reference.
 pub async fn load_target<P: Target + Plugins>(
     provider: &P, adapter: &AdapterRef, digest: Option<&Digest>,
 ) -> Result<Loaded<TargetMetadata>, Error> {
@@ -151,15 +114,14 @@ async fn load_axis<'a, P: Plugins, M: Declared>(
 
     // refuse two references the loader would register as one guest
     let mut names: BTreeMap<String, &AdapterRef> = BTreeMap::new();
-    for adapter in pins.keys() {
+    for &adapter in pins.keys() {
         let guest = adapter.guest();
-        if let Some(first) = names.get(&guest) {
+        if let Some(first) = names.insert(guest.clone(), adapter) {
             return Err(bad_request!(
                 "adapters `{first}` and `{adapter}` would both register as `{guest}`; a run loads \
                  one adapter per guest name"
             ));
         }
-        names.insert(guest, adapter);
     }
 
     // load all adapters in parallel

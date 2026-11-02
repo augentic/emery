@@ -1,7 +1,7 @@
 //! An `Evidence` document parses from JSON and its claim gate names each malformed claim.
 
-use emery_adapter::BadPath;
 use emery_adapter::source::{Anchor, Backing, BadAnchor, ClaimKind, Evidence};
+use emery_adapter::{BadMessage, BadPath, BadRoute, BadTrigger, Route, Trigger};
 
 #[test]
 fn parse_evidence() {
@@ -242,6 +242,49 @@ fn anchored_claims() {
     );
     assert_eq!(anchored.claims[1].anchor(), Some(Err(BadAnchor::Path(BadPath::Escapes))));
     assert_eq!(anchored.claims[4].anchor(), None);
+}
+
+#[test]
+fn contract_triggers() {
+    let id: Route = "GET /items/:id".parse().expect("parameter");
+    let id_json: Route = "GET /items/id.json".parse().expect("literal");
+    assert_ne!(id.path, id_json.path);
+    for text in ["GET /items/:id.json", "GET /users/{user-id}", "GET /orders/:id-pay"] {
+        assert!(Route::parse(text).is_err(), "{text}");
+    }
+
+    let contracts = evidence(
+        r#"{"claims":[
+            {"kind":"contract","id":"orders.create","route":"post /orders/:id"},
+            {"kind":"contract","id":"orders.events","message":" orders.placed "},
+            {"kind":"contract","id":"orders.bad-route","route":"FETCH /orders"},
+            {"kind":"contract","id":"orders.bad-message","message":"two words"},
+            {"kind":"contract","id":"orders.both","route":"GET /orders","message":"orders.placed"}
+        ]}"#,
+    );
+    let findings = contracts.findings();
+    assert_eq!(findings.len(), 3, "{findings:?}");
+    assert!(findings[0].contains("claim 2: route \"FETCH /orders\" names the method `FETCH`"));
+    assert!(findings[1].contains("claim 3: message \"two words\" names the message `two words`"));
+    assert!(findings[2].contains("claim 4: carries both `route` and `message`"));
+
+    assert_eq!(
+        contracts.claims[0].trigger(),
+        Some(Ok(Trigger::from("POST /orders/:id".parse::<Route>().expect("route"))))
+    );
+    assert_eq!(
+        contracts.claims[1].trigger(),
+        Some(Ok(Trigger::Message("orders.placed".to_owned())))
+    );
+    assert_eq!(
+        contracts.claims[2].trigger(),
+        Some(Err(BadTrigger::from(BadRoute::Method("FETCH".to_owned()))))
+    );
+    assert_eq!(
+        contracts.claims[3].trigger(),
+        Some(Err(BadTrigger::from(BadMessage::Spaced("two words".to_owned()))))
+    );
+    assert_eq!(contracts.claims[4].trigger(), Some(Err(BadTrigger::Both)));
 }
 
 fn evidence(json: &str) -> Evidence {

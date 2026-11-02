@@ -3,18 +3,12 @@
 use std::collections::BTreeSet;
 use std::fmt;
 
-use emery_engine::amend::{AmendOutput, SliceClass};
+use emery_engine::amend::{AmendOutput, SliceChange, SliceClass};
 use emery_engine::apply::ApplyOutput;
 use emery_engine::build::{BuildOutput, BuiltSlice, Candidate, StagedKind};
 use emery_engine::show::ShowOutput;
-use emery_engine::specify::{Diff, SectionKind, SpecifyOutput, Waves};
+use emery_engine::specify::{Diff, RepositorySource, SectionKind, SpecifyOutput, Waves};
 
-// Writes a `SpecifyOutput` candidate line, the plan's shape, one line per repository source, a one-line diff summary, and what the run sealed.
-//
-// The first line names the staged candidate, `(fresh)` after it where the
-// candidate starts the history over. The last says `nothing sealed` and
-// names `emery apply` as the way to seal it, or, under `--apply`, is the
-// `apply` line for the revision the run sealed.
 pub fn specify(output: &SpecifyOutput, w: &mut dyn fmt::Write) -> fmt::Result {
     write!(w, "staged candidate {}", output.revision)?;
     if output.fresh {
@@ -22,13 +16,7 @@ pub fn specify(output: &SpecifyOutput, w: &mut dyn fmt::Write) -> fmt::Result {
     }
     writeln!(w)?;
     waves(&output.waves, w)?;
-    for read in &output.repositories {
-        writeln!(
-            w,
-            "  {} read from {} at {}: {}",
-            read.source, read.repository, read.revision, read.commit
-        )?;
-    }
+    repositories(&output.repositories, w)?;
     diff(output.diff.as_ref(), w)?;
     match &output.applied {
         Some(applied) => sealed(applied, "  ", w),
@@ -36,11 +24,6 @@ pub fn specify(output: &SpecifyOutput, w: &mut dyn fmt::Write) -> fmt::Result {
     }
 }
 
-// Writes an `ApplyOutput` revision line, the revision it amends, the repository it was sealed in, and a one-line diff summary.
-//
-// The first line names the revision, its label, and the commit it stands
-// at; `amends <parent>` follows for a sealed amendment. The repository
-// follows when it is not the project's own checkout.
 pub fn apply(output: &ApplyOutput, w: &mut dyn fmt::Write) -> fmt::Result {
     sealed(output, "", w)?;
     if output.repository != "." {
@@ -49,30 +32,12 @@ pub fn apply(output: &ApplyOutput, w: &mut dyn fmt::Write) -> fmt::Result {
     diff(output.diff.as_ref(), w)
 }
 
-// Writes an `AmendOutput` amendment line, the base, the counts by class, the conflicts, the stems touched, the design sections and slices changed, one line per repository source, and what the run sealed.
-//
-// The first line names the amendment prepared, or says no change was found
-// against the base and nothing staged. The counts line is the one
-// `amendment.md` opens with, `1 retired (1 by scope)` counting those a
-// source read whole retired. The conflicts, stems, design, and slices lines
-// appear when there are any — `design: domain-model, apis` the section
-// kinds in document order, `preamble` first where it changed; `slices:
-// orders (brief kept), export (removed), rate-limit (new)` the slices in id
-// order, a changed slice marked `brief kept` where no slicing turn
-// redrafted its brief — and the last line names `emery show amendment` as the way to review what was
-// staged, or, under `--apply`, is the `apply` line for the revision the
-// run sealed.
 pub fn amend(output: &AmendOutput, w: &mut dyn fmt::Write) -> fmt::Result {
     match &output.amendment {
         Some(id) => writeln!(w, "staged amendment {id}")?,
         None => writeln!(w, "nothing staged: no change against the current revision")?,
     }
-    writeln!(
-        w,
-        "  base {} at {}",
-        output.base.revision,
-        output.base.commit.get(..8).unwrap_or(&output.base.commit)
-    )?;
+    writeln!(w, "  base {} at {}", output.base.revision, short_commit(&output.base.commit))?;
     let tally = &output.tally;
     write!(w, "  {} added, {} changed, {} retired", tally.added, tally.changed, tally.retired)?;
     if tally.by_scope > 0 {
@@ -80,10 +45,10 @@ pub fn amend(output: &AmendOutput, w: &mut dyn fmt::Write) -> fmt::Result {
     }
     writeln!(w, ", {} conflict, {} unchanged", tally.conflict, tally.unchanged)?;
     if !output.conflicts.is_empty() {
-        writeln!(w, "  conflicts: {}", output.conflicts.join(", "))?;
+        writeln!(w, "  conflicts: {}", comma_separated(&output.conflicts))?;
     }
     if !output.stems.is_empty() {
-        writeln!(w, "  stems: {}", output.stems.join(", "))?;
+        writeln!(w, "  stems: {}", comma_separated(&output.stems))?;
     }
     if !output.sections.is_empty() {
         let sections = &output.sections;
@@ -92,40 +57,43 @@ pub fn amend(output: &AmendOutput, w: &mut dyn fmt::Write) -> fmt::Result {
             .flatten()
             .copied()
             .collect();
-        let names: Vec<&str> = sections
+        let names = sections
             .preamble
             .then_some("preamble")
             .into_iter()
-            .chain(kinds.iter().map(AsRef::as_ref))
-            .collect();
-        writeln!(w, "  design: {}", names.join(", "))?;
+            .chain(kinds.iter().map(AsRef::as_ref));
+        writeln!(w, "  design: {}", comma_separated(names))?;
     }
     if !output.slices.is_empty() {
-        let slices: Vec<String> = output
-            .slices
-            .iter()
-            .map(|slice| match slice.class {
-                SliceClass::Added => format!("{} (new)", slice.name),
-                SliceClass::Changed if slice.keeps_brief() => {
-                    format!("{} (brief kept)", slice.name)
-                }
-                SliceClass::Changed => slice.name.clone(),
-                SliceClass::Removed => format!("{} (removed)", slice.name),
-            })
-            .collect();
-        writeln!(w, "  slices: {}", slices.join(", "))?;
+        writeln!(w, "  slices: {}", comma_separated(output.slices.iter().map(slice_change)))?;
     }
-    for read in &output.repositories {
+    repositories(&output.repositories, w)?;
+    if let Some(applied) = &output.applied {
+        sealed(applied, "  ", w)?;
+    } else if output.staged {
+        writeln!(w, "  nothing sealed; `emery show amendment` reviews it")?;
+    }
+    Ok(())
+}
+
+fn slice_change(slice: &SliceChange) -> impl fmt::Display {
+    // A changed slice where no slicing turn ran keeps its base brief.
+    let tag = match slice.class {
+        SliceClass::Added => " (new)",
+        SliceClass::Changed if slice.keeps_brief() => " (brief kept)",
+        SliceClass::Changed => "",
+        SliceClass::Removed => " (removed)",
+    };
+    fmt::from_fn(move |f| write!(f, "{}{tag}", slice.name))
+}
+
+fn repositories(reads: &[RepositorySource], w: &mut dyn fmt::Write) -> fmt::Result {
+    for read in reads {
         writeln!(
             w,
             "  {} read from {} at {}: {}",
             read.source, read.repository, read.revision, read.commit
         )?;
-    }
-    if let Some(applied) = &output.applied {
-        sealed(applied, "  ", w)?;
-    } else if output.staged {
-        writeln!(w, "  nothing sealed; `emery show amendment` reviews it")?;
     }
     Ok(())
 }
@@ -138,7 +106,7 @@ fn sealed(output: &ApplyOutput, indent: &str, w: &mut dyn fmt::Write) -> fmt::Re
         "{indent}sealed revision {} as {} at {}",
         output.revision,
         output.label,
-        output.commit.get(..8).unwrap_or(&output.commit)
+        short_commit(&output.commit)
     )?;
     if let (StagedKind::Amendment, Some(parent)) = (output.kind, &output.parent) {
         writeln!(w, "{indent}  amends {parent}")?;
@@ -151,21 +119,11 @@ fn diff(diff: Option<&Diff>, w: &mut dyn fmt::Write) -> fmt::Result {
         return Ok(());
     };
     if diff.is_empty() {
-        writeln!(w, "  diff vs {}: none (byte-stable)", diff.from)
-    } else {
-        write!(w, "  diff vs {}: ", diff.from)?;
-        summary(diff, w)?;
-        writeln!(w)
+        return writeln!(w, "  diff vs {}: none (byte-stable)", diff.from);
     }
-}
-
-// `spec +1 -0 ~1 retired 1 preamble, design +0 -0 ~1, plan +1 -0 ~1`: the
-// counts per document, `retired` after the specification's when any
-// requirement was withdrawn, `preamble` when a document's changed.
-fn summary(diff: &Diff, w: &mut dyn fmt::Write) -> fmt::Result {
     let (spec, design, plan) = (&diff.spec, &diff.design, &diff.plan);
     let documents = [
-        (
+        document_diff(
             "spec",
             spec.added.len(),
             spec.removed.len(),
@@ -173,7 +131,7 @@ fn summary(diff: &Diff, w: &mut dyn fmt::Write) -> fmt::Result {
             spec.retired.len(),
             spec.preamble,
         ),
-        (
+        document_diff(
             "design",
             design.added.len(),
             design.removed.len(),
@@ -181,42 +139,36 @@ fn summary(diff: &Diff, w: &mut dyn fmt::Write) -> fmt::Result {
             0,
             design.preamble,
         ),
-        ("plan", plan.added.len(), plan.removed.len(), plan.changed.len(), 0, plan.preamble),
+        document_diff(
+            "plan",
+            plan.added.len(),
+            plan.removed.len(),
+            plan.changed.len(),
+            0,
+            plan.preamble,
+        ),
     ];
-    for (position, (name, added, removed, changed, retired, preamble)) in
-        documents.into_iter().enumerate()
-    {
-        if position > 0 {
-            w.write_str(", ")?;
-        }
-        write!(w, "{name} +{added} -{removed} ~{changed}")?;
-        if retired > 0 {
-            write!(w, " retired {retired}")?;
-        }
-        if preamble {
-            w.write_str(" preamble")?;
-        }
-    }
-    Ok(())
+    writeln!(w, "  diff vs {}: {}", diff.from, comma_separated(&documents))
 }
 
-// Writes a `BuildOutput` revision line, the plan's shape, the base, the slices resumed, each wave with the slices it merged, and the label.
-//
-// The base line is followed by the repository the label stands in when it
-// is not the project's own checkout, and by the `Initialise` commit the
-// run sealed the adapter's layout as, with its file count, when it sealed
-// one. A wave line names the head it was
-// verified at, and says `repaired` when its verification repaired the
-// tree, `sealed` when what it left was a regenerated path under the
-// adapter's `ours` rules alone, a lockfile. Each slice line beneath it
-// counts the requirements covered of those it holds, names any left
-// uncovered, counts the paths its build changed, names the merge commit
-// that brought them in, and the paths the model resolved its merge at; a
-// slice an earlier run staged in the integration working copy says so
-// instead, since this run verified it and built nothing. A candidate
-// `emery specify` staged and nothing sealed, or an amendment `emery amend`
-// staged, is named after the plan line, since the build read the current
-// revision and not it.
+// `spec +1 -0 ~1 retired 1 preamble`: the counts for one document, `retired`
+// when any requirement was withdrawn, `preamble` when its preamble changed.
+fn document_diff(
+    name: &'static str, added: usize, removed: usize, changed: usize, retired: usize,
+    preamble: bool,
+) -> impl fmt::Display {
+    fmt::from_fn(move |f| {
+        write!(f, "{name} +{added} -{removed} ~{changed}")?;
+        if retired > 0 {
+            write!(f, " retired {retired}")?;
+        }
+        if preamble {
+            f.write_str(" preamble")?;
+        }
+        Ok(())
+    })
+}
+
 pub fn build(output: &BuildOutput, w: &mut dyn fmt::Write) -> fmt::Result {
     writeln!(w, "built revision {}", output.revision)?;
     waves(&output.waves, w)?;
@@ -239,13 +191,12 @@ pub fn build(output: &BuildOutput, w: &mut dyn fmt::Write) -> fmt::Result {
         writeln!(
             w,
             "  initialised {}, {}",
-            initialised.commit.get(..8).unwrap_or(&initialised.commit),
+            short_commit(&initialised.commit),
             counted(initialised.paths.len(), "file")
         )?;
     }
     if !output.resumed.is_empty() {
-        let ids: Vec<String> = output.resumed.iter().map(ToString::to_string).collect();
-        writeln!(w, "  resumed: {}", ids.join(", "))?;
+        writeln!(w, "  resumed: {}", comma_separated(&output.resumed))?;
     }
     for verified in &output.verified {
         let wave = verified.wave;
@@ -253,8 +204,10 @@ pub fn build(output: &BuildOutput, w: &mut dyn fmt::Write) -> fmt::Result {
             w,
             "  wave {wave}: {} verified at {}",
             counted(verified.slices.len(), "slice"),
-            verified.head.get(..8).unwrap_or(&verified.head)
+            short_commit(&verified.head)
         )?;
+        // `repaired` when verification modified files outside `ours` rules;
+        // `sealed` when it left only regenerated `ours` paths (lockfiles).
         if output.repaired.contains(&wave) {
             w.write_str(", repaired")?;
         } else if output.sealed.iter().any(|seal| seal.wave == wave) {
@@ -275,8 +228,7 @@ fn built(slice: &BuiltSlice, w: &mut dyn fmt::Write) -> fmt::Result {
     let total = slice.covered.len() + slice.uncovered.len();
     write!(w, "    {} {}: covered {}/{total}", slice.id, slice.name, slice.covered.len())?;
     if !slice.uncovered.is_empty() {
-        let ids: Vec<String> = slice.uncovered.iter().map(ToString::to_string).collect();
-        write!(w, " (uncovered {})", ids.join(", "))?;
+        write!(w, " (uncovered {})", comma_separated(&slice.uncovered))?;
     }
     write!(w, ", written {}", counted(slice.written.len(), "file"))?;
     match &slice.commit {
@@ -284,7 +236,7 @@ fn built(slice: &BuiltSlice, w: &mut dyn fmt::Write) -> fmt::Result {
         None => write!(w, ", nothing to merge")?,
     }
     if !slice.resolved.is_empty() {
-        write!(w, ", resolved ({})", slice.resolved.join(", "))?;
+        write!(w, ", resolved ({})", comma_separated(&slice.resolved))?;
     }
     writeln!(w)
 }
@@ -301,14 +253,32 @@ fn waves(waves: &Waves, w: &mut dyn fmt::Write) -> fmt::Result {
     )
 }
 
-fn counted(count: usize, noun: &str) -> String {
-    if count == 1 { format!("1 {noun}") } else { format!("{count} {noun}s") }
+fn short_commit(commit: &str) -> &str {
+    commit.get(..8).unwrap_or(commit)
 }
 
-// Writes a `ShowOutput` document body alone.
-//
-// No status line or revision identifier is added, allowing the Markdown to be
-// piped directly to another command.
+fn counted(count: usize, noun: &str) -> impl fmt::Display {
+    let plural = if count == 1 { "" } else { "s" };
+    fmt::from_fn(move |f| write!(f, "{count} {noun}{plural}"))
+}
+
+fn comma_separated<I>(items: I) -> impl fmt::Display
+where
+    I: IntoIterator + Clone,
+    I::Item: fmt::Display,
+{
+    fmt::from_fn(move |f| {
+        for (position, item) in items.clone().into_iter().enumerate() {
+            if position > 0 {
+                f.write_str(", ")?;
+            }
+            write!(f, "{item}")?;
+        }
+        Ok(())
+    })
+}
+
+// Writes the document body alone so the Markdown can be piped directly.
 pub fn show(output: &ShowOutput, w: &mut dyn fmt::Write) -> fmt::Result {
     w.write_str(&output.body)
 }

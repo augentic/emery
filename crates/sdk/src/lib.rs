@@ -85,22 +85,21 @@ pub use emery_adapter::{
 pub use emery_lexicon::{Lexicon, words};
 pub use emery_prose::{Doc, body, check, find, prose};
 pub use omnia_sdk::{Error, Model, bad_gateway, bad_request, not_found, server_error};
-// The JSON crate a `Claim`'s `extras` are built from, for an adapter that
-// joins claims of its own to what the model answered.
 pub use serde_json;
-// The tracing crate, for an adapter's own events beside this crate's.
 pub use tracing;
 
 pub use self::extract::{CONCURRENT, INLINE_BYTES, Seam, extract};
 
 /// The runtime references every source adapter prompt may link.
 ///
-/// `claims.md` defines claims and their gate; `reconciliation.md` explains
-/// where accepted claims land. Prompts link these paths without listing them
-/// in their own table; pass [`RUNTIME`] to [`check`] as imports. A source's
-/// turns offer them through the reference tools beside the adapter's own; a
-/// target's turns, which write code and never claims, offer the adapter's
-/// alone.
+/// `claims.md` defines claims and their gate, and `reconciliation.md`
+/// explains where accepted claims land. Prompts link these paths without
+/// listing them in their own table. Pass [`RUNTIME`] to [`check`] as
+/// imports.
+///
+/// Source turns offer these documents through the reference tools beside the
+/// adapter's own. Target turns write code rather than claims and offer only
+/// the adapter's documents.
 pub static RUNTIME: &[Doc] = prose!["../prose/claims.md", "../prose/reconciliation.md"];
 
 // The documents a turn's system prompt is built from: the adapter's prompt,
@@ -119,13 +118,13 @@ const VERIFY: &str = "verify.md";
 /// The argument is a type implementing [`SourceAdapter`]. The component's
 /// `metadata` answers [`metadata`](fn@metadata) over the type's
 /// [`Metadata::kind`]. Its `extract` builds a [`Context`] from the
-/// imported source input and the host model, puts it to the type's
-/// [`extract`](SourceAdapter::extract), and converts the returned evidence or
-/// error into the WIT records.
+/// imported source input and the host model, passes it to
+/// [`SourceAdapter::extract`], and converts the returned evidence or error
+/// into the WIT records.
 ///
-/// Invoke this macro under `#[cfg(target_arch = "wasm32")]`, since the export
-/// interface exists only on WebAssembly targets; the type and its impl need
-/// no gate, so a native test can call them as the component does. Adapters
+/// Invoke this macro under `#[cfg(target_arch = "wasm32")]`, where the export
+/// interface is defined. Leave the adapter type and its [`SourceAdapter`]
+/// implementation un-gated so native tests can call them directly. Adapters
 /// needing custom guest behaviour may implement `export::Guest` directly.
 #[macro_export]
 macro_rules! export_source {
@@ -156,18 +155,15 @@ macro_rules! export_source {
 /// The argument is a type implementing [`target::TargetAdapter`]. The
 /// component's `metadata` answers [`target::metadata`] over the type's
 /// [`rules`](target::Metadata::rules). Its `run` lifts the imported task
-/// into a [`target::Task`] over the workspace root and the host model — a
-/// [`target::InitContext`], a [`target::BuildContext`], or a
-/// [`target::VerifyContext`], the last two carrying the type's
-/// [`grants`](target::Metadata::grants) — puts it to the type's
-/// [`run`](target::TargetAdapter::run), holds the outcome to the task's
-/// kind, and converts it or the error into the WIT records.
+/// into a [`target::Task`] over the workspace root and the host model,
+/// passes it to [`target::TargetAdapter::run`], verifies that the outcome
+/// matches the task's kind, and converts the result into the WIT records.
 ///
-/// Invoke this macro under `#[cfg(target_arch = "wasm32")]`, since the export
-/// interface exists only on WebAssembly targets; the type and its impl need
-/// no gate, so a native test can call them as the component does. Adapters
-/// needing custom guest behaviour may implement `target::export::Guest`
-/// directly.
+/// Invoke this macro under `#[cfg(target_arch = "wasm32")]`, where the export
+/// interface is defined. Leave the adapter type and its
+/// [`target::TargetAdapter`] implementation un-gated so native tests can call
+/// them directly. Adapters needing custom guest behaviour may implement
+/// `target::export::Guest` directly.
 #[macro_export]
 macro_rules! export_target {
     ($adapter:ty $(,)?) => {
@@ -287,13 +283,10 @@ pub fn unique<T: Ord>(items: impl IntoIterator<Item = T>) -> Vec<T> {
     // first of each run is the earliest occurrence
     let mut order: Vec<usize> = (0..items.len()).collect();
     order.sort_unstable_by(|&a, &b| items[a].cmp(&items[b]).then(a.cmp(&b)));
+    order.dedup_by(|&mut a, &mut b| items[a] == items[b]);
     let mut kept = vec![false; items.len()];
-    let mut previous: Option<usize> = None;
-    for &index in &order {
-        if previous.is_none_or(|previous| items[previous] != items[index]) {
-            kept[index] = true;
-        }
-        previous = Some(index);
+    for index in order {
+        kept[index] = true;
     }
 
     items.into_iter().zip(kept).filter_map(|(item, kept)| kept.then_some(item)).collect()
@@ -312,6 +305,14 @@ pub struct Context<'a, P> {
     /// The [`Model`] used for extraction requests.
     pub model: &'a P,
 }
+
+impl<P> Clone for Context<'_, P> {
+    fn clone(&self) -> Self {
+        *self
+    }
+}
+
+impl<P> Copy for Context<'_, P> {}
 
 /// What a source adapter declares about itself: the kind of source it reads.
 ///
@@ -348,6 +349,15 @@ pub trait SourceAdapter {
     /// Returns [`Error::BadRequest`] when the adapter refuses its input, and
     /// what [`extract`](fn@extract) returns otherwise.
     fn extract<P: Model>(ctx: &Context<'_, P>) -> impl Future<Output = Result<Evidence, Error>>;
+}
+
+// Each item in backticks, comma-separated.
+fn quoted<I, S>(items: I) -> String
+where
+    I: IntoIterator<Item = S>,
+    S: std::fmt::Display,
+{
+    items.into_iter().map(|item| format!("`{item}`")).collect::<Vec<_>>().join(", ")
 }
 
 // A missing document is a build's own defect, the adapter's for its prompt and

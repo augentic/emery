@@ -11,6 +11,7 @@ This guide shows how to write, compile, and install a custom WebAssembly (Wasm) 
 - [Author a target adapter (`TargetAdapter`)](#author-a-target-adapter-targetadapter)
   - [1. Write `prose/build.md` and `prose/verify.md`](#1-write-prosebuildmd-and-proseverifymd)
   - [2. Implement `TargetAdapter` in `src/lib.rs`](#2-implement-targetadapter-in-srclibrs)
+- [Host-to-guest tool calls](#host-to-guest-tool-calls)
 - [Test your adapter corpus and logic](#test-your-adapter-corpus-and-logic)
 - [Build and install into `~/.emery/adapters`](#build-and-install-into-emeryadapters)
 - [See also](#see-also)
@@ -192,6 +193,15 @@ See [`examples/target/lib.rs`](../../examples/target/lib.rs) for the complete mo
 
 ---
 
+## Host-to-guest tool calls
+
+During model turns, `emery-sdk` declares and serves guest tools in-process over `wasi-model` streams (the host writes each `ToolCall` to the session's `calls` stream, and the guest replies with a `ToolResult` carrying the matching correlation ID):
+
+- **Reference tools (`list_docs` and `read_doc`):** Available on extraction, survey, build, and verify turns. Served in-process from the adapter's embedded `PROSE` table (plus `claims.md` and `reconciliation.md` on source turns). Root system prompts (`extract.md`, `survey.md`, `build.md`, `verify.md`) are excluded from `list_docs`.
+- **Workspace write tools (`write_files` and `edit_files`):** Available on `Task::Build` and `Task::Verify` turns only, operating strictly beneath the lent worktree (`.emery/vcs/worktrees/<id>` or `.emery/vcs/integration`) through no-follow path validation (`beneath` and `standing`). See [Security, sandboxing, and gates](../explanation/security-and-sandbox.md#4-safe-file-operations-and-symlink-protection).
+
+---
+
 ## Test your adapter corpus and logic
 
 Use `emery_sdk::check` in a native test to verify that every file in `prose/` is listed in `PROSE`, every relative link resolves, and every document is reachable from your root prompts:
@@ -224,6 +234,12 @@ cp target/wasm32-wasip2/release/acme_runbook.wasm \
 ```
 
 You can now reference `adapter = "acme:runbook@0.1.0"` in `emery.toml` or on the command line.
+
+When testing a live run, increase verbosity to inspect adapter turns and gate corrections on `stderr`:
+
+- Bare run (`info`): logs `attempts` and timing (`opening_ms`, `tool_ms`, `model_ms`, `check_ms`) on each `completion` line.
+- `-v` (`debug`, or `RUST_LOG=emery_sdk=debug`): logs each claim or report gate finding (such as a `path` outside a seam's anchors or an off-stem ID).
+- `-vv` (`trace`, or `RUST_LOG="omnia_core=off,emery_sdk=trace"`): logs the full correction prompt sent back to the model and the accepted `Evidence` JSON.
 
 ---
 

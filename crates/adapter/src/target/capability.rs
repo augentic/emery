@@ -48,18 +48,12 @@ use crate::target::{Report, Verdict};
 ///                     .collect(),
 ///                 written: vec!["src/lib.rs".to_string()],
 ///             }),
-///             Task::Verify => Outcome::Verified(Verdict {
-///                 passed: true,
-///                 failures: Vec::new(),
-///             }),
+///             Task::Verify => Outcome::Verified(Verdict::passed()),
 ///         }))
 ///     }
 ///
 ///     fn metadata(&self, _id: &str) -> TargetMetadata {
-///         TargetMetadata {
-///             emery_version: None,
-///             merge_rules: Vec::new(),
-///         }
+///         TargetMetadata::default()
 ///     }
 /// }
 /// ```
@@ -91,7 +85,7 @@ pub trait Target: Send + Sync {
     fn run(
         &self, id: &str, workspace: &str, task: &Task,
     ) -> impl Future<Output = Result<Outcome, Error>> + Send {
-        crate::target::bindings::import::run(id, workspace, task)
+        crate::target::bindings::run(id, workspace, task)
     }
 
     /// Returns the metadata the adapter registered as `id` declares.
@@ -101,7 +95,7 @@ pub trait Target: Send + Sync {
     /// Returns the metadata the adapter registered as `id` declares.
     #[cfg(target_arch = "wasm32")]
     fn metadata(&self, id: &str) -> TargetMetadata {
-        crate::target::bindings::import::metadata(id)
+        crate::target::bindings::metadata(id)
     }
 }
 
@@ -260,7 +254,7 @@ pub struct DesignType {
 }
 
 /// Metadata declared by a target adapter.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct TargetMetadata {
     /// The minimum compatible Emery version, if the adapter declares one.
     pub emery_version: Option<String>,
@@ -322,7 +316,7 @@ impl MergeRule {
 }
 
 /// How a merge resolves a conflict at a path a [`MergeRule`] matches.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum MergeStrategy {
     /// Both sides' lines kept, each once: declaration and import lists.
     Union,

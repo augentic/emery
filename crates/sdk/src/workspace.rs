@@ -23,6 +23,8 @@ use omnia_sdk::{Error, bad_request};
 /// use emery_sdk::workspace::Entry;
 ///
 /// let entry = Entry::File("src/lib.rs");
+/// assert!(entry.is_file());
+/// assert!(!entry.is_dir());
 /// assert_eq!(entry.path(), "src/lib.rs");
 /// assert_eq!(entry.name(), "lib.rs");
 /// assert_eq!(entry.extension(), Some("rs"));
@@ -37,6 +39,18 @@ pub enum Entry<'a> {
 }
 
 impl<'a> Entry<'a> {
+    /// Returns whether the entry is a directory.
+    #[must_use]
+    pub const fn is_dir(self) -> bool {
+        matches!(self, Self::Dir(_))
+    }
+
+    /// Returns whether the entry is a regular file.
+    #[must_use]
+    pub const fn is_file(self) -> bool {
+        matches!(self, Self::File(_))
+    }
+
     /// Returns the `/`-separated path relative to the root.
     #[must_use]
     pub const fn path(self) -> &'a str {
@@ -73,7 +87,7 @@ impl<'a> Entry<'a> {
     fn excluded(self) -> bool {
         self.path() == SPECIFICATION
             || SKIP_DIRS.contains(&self.name())
-            || matches!(self, Self::File(_)) && SKIP_FILES.contains(&self.name())
+            || self.is_file() && SKIP_FILES.contains(&self.name())
     }
 }
 

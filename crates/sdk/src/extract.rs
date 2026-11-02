@@ -6,13 +6,14 @@
 //! first with a bounded number pending, and a turn that fails upstream is put
 //! once more.
 
+use std::borrow::Cow;
 use std::cmp::Reverse;
 use std::collections::BTreeMap;
 use std::fmt::{self, Display, Formatter};
 use std::path::Path;
 
-use emery_adapter::is_kebab;
 use emery_adapter::source::{Anchor, Claim, ClaimKind, Evidence, SourceContent, SourceInput};
+use emery_adapter::{Standing, is_kebab, standing};
 use emery_lexicon::Lexicon;
 use emery_prose::Doc;
 use futures::stream::{self, StreamExt as _};
@@ -20,24 +21,21 @@ use futures::{FutureExt as _, TryFutureExt as _};
 use omnia_sdk::model::Question;
 use omnia_sdk::{Error, Model, bad_request, server_error};
 
-use crate::{CLAIMS, Context, EXTRACT, RUNTIME, beneath, prompt, reference};
+use crate::{CLAIMS, Context, EXTRACT, RUNTIME, beneath, prompt, push_unique, quoted, reference};
 
 /// The most turns one [`extract`] call holds pending at once.
 ///
-/// The cap is on the turns in flight, not on how finely a survey cuts: a seam
+/// The cap is on the turns in flight, not on how finely a survey cuts. A seam
 /// past this many waits for a slot, and a small seam fills the slot a large
-/// one leaves as soon as it answers, so finer cuts pack the slots better even
-/// though no more than this many are answered at once.
+/// one leaves as soon as it answers.
 pub const CONCURRENT: usize = 4;
 
 /// The most bytes of a seam's files that [`extract`] inlines into its turn whole.
 ///
-/// A [`Seam`]'s `files` are inlined into the brief in order, every line
-/// numbered so the model cites `path` anchors without reading the lend, for
-/// as long as they fit within this together; the first that does not, or that
-/// is not UTF-8 text, and every file after it are listed by path instead. An
-/// adapter that cuts a tree by size reads it as its threshold for one seam,
-/// and one that inlines a closure puts the entry first.
+/// A [`Seam`]'s `files` are inlined into the brief in order, with each line
+/// numbered, for as long as they fit within this budget together. The first
+/// file that exceeds the budget or is not UTF-8 text, and every file after
+/// it, is listed by path instead.
 pub const INLINE_BYTES: u64 = 64 * 1024;
 
 // How many of a seam's anchors in a claim's file a finding names.
@@ -50,26 +48,29 @@ const NEAREST: usize = 16;
 /// carries the id grammar and the gate without a `read_doc` call for them.
 /// The model receives the adapter identifier, source name, the seam's `text`,
 /// its `files` or the whole input, its `stems`, and access to the remaining
-/// embedded references. Responses are checked with [`Evidence::findings`] and
-/// then held to the seam: a `path` names a regular file under the lent root,
-/// within the seam's `files` when it names any, with a line range the file
-/// holds; on an inline value no claim carries a `path`; a `requirement`,
-/// `criterion`, or `retire` id leads with one of the seam's `stems` when it
-/// has them; a `requirement`, `criterion`, or `retire` names no technology of
-/// the seam's `lexicon` in its id or its body; a `requirement`'s `path`
-/// overlaps one of the seam's `anchors` when it has
-/// them. Rejected responses may be corrected until the host's round limit is
+/// embedded references.
+///
+/// Responses are checked with [`Evidence::findings`] and held to the seam:
+///
+/// - A `path` must name a regular file under the lent root, within the seam's
+///   `files` when it names any, with a line range the file holds.
+/// - On an inline value, no claim may carry a `path`.
+/// - A `requirement`, `criterion`, or `retire` id must lead with one of the
+///   seam's `stems` when it has them.
+/// - A `requirement`, `criterion`, or `retire` must name no technology of the
+///   seam's `lexicon` in its id or its body.
+/// - A `requirement`'s `path` must overlap one of the seam's `anchors` when
+///   it has them.
+///
+/// Rejected responses may be corrected until the host's round limit is
 /// reached.
 ///
 /// Up to [`CONCURRENT`] requests run concurrently, largest first. A seam
-/// naming files is sized by their count; one over the whole input has no
-/// known size and goes before them. Ties keep seam order. A request that
-/// fails upstream, in the model or a tool transport, is put once more; a
-/// refusal is not, and neither is a request the backend's time budget ended,
-/// which the backend reports as a budget exhausted — the same request put
-/// again takes as long. All requests are awaited, and claims retain the order
-/// of `seams`. Every workspace seam uses the same source root, so claim paths
-/// share one root-relative namespace.
+/// naming files is sized by their count, while one over the whole input has
+/// no known size and goes before them. Ties keep seam order. A request that
+/// fails upstream in the model or a tool transport is retried once. Refusals
+/// and exhausted time budgets are not retried. All requests are awaited, and
+/// claims retain the order of `seams`.
 ///
 /// When several seams fail, the returned error describes each failure and
 /// carries the class and code of the first failed seam.
@@ -109,10 +110,7 @@ pub async fn extract<P: Model>(
         .await;
 
     // join the accepted claims in seam order
-    let partials = join(source, outcomes)?;
-    let claims: Vec<_> = partials.into_iter().flat_map(|partial| partial.claims).collect();
-
-    Ok(Evidence { claims })
+    join(source, outcomes)
 }
 
 /// A portion of a source assigned to one model request.
@@ -122,32 +120,24 @@ pub async fn extract<P: Model>(
 /// empty one leaves it open, so [`Seam::whole`] is the input as it stands:
 ///
 /// - `text` leads the turn. Its first non-blank line is the seam's `label` on
-///   the events [`extract`] logs for it, so lead with what the seam covers,
-///   such as the surface and its entry, and put the standing instructions
-///   after.
-/// - `files` are the files mined beneath a workspace root, relative to it;
-///   empty mines the whole lend. They keep their order, deduplicated, and the
-///   leading ones are inlined into the turn whole for as long as they fit within
-///   [`INLINE_BYTES`] together, the rest listed, so an entry comes first; a
-///   claim's `path` must name one of them. A path that escapes the root is
-///   rejected; files over an inline value are the adapter's own defect.
+///   the events [`extract`] logs for it, so lead with what the seam covers
+///   and put standing instructions after.
+/// - `files` are the files mined beneath a workspace root, relative to it.
+///   Empty mines the whole lend. They keep their order, deduplicated, and the
+///   leading ones are inlined into the turn whole for as long as they fit
+///   within [`INLINE_BYTES`] together. A claim's `path` must name one of
+///   them.
 /// - `stems` are the first dotted segments the seam's `requirement`,
-///   `criterion`, and `retire` ids lead with, each lowercase kebab-case; a
-///   claim under another stem is refused. Empty leaves the ids to the model.
+///   `criterion`, and `retire` ids must lead with, each lowercase kebab-case.
+///   Empty leaves the ids to the model.
 /// - `anchors` are the lines a `requirement` may anchor at, each in the
-///   `path` grammar (`<path>#L<n>`, `<path>#L<start>-L<end>`, or a bare
-///   `<path>` for the whole file) relative to the workspace root — where an
-///   adapter's survey found a behaviour can start; a `requirement` whose
+///   `path` grammar relative to the workspace root. A `requirement` whose
 ///   `path` overlaps none of them is refused with the nearest anchors in its
-///   file named, so the model re-anchors it or leaves it out. Other kinds
-///   are not held to them. Empty leaves the anchors to the model; anchors
-///   over an inline value are the adapter's own defect.
-/// - `lexicon` is the technology the seam's claims are held against:
-///   [`Lexicon::from_packages`] over the packages the seam's modules
-///   import, or the fixed names alone by default. A `requirement`,
-///   `criterion`, or `retire` whose id or statement names one is refused,
-///   so the behaviour is stated by the role the technology plays and the
-///   technology carried in a `call` or `excerpt`.
+///   file named. Empty leaves the anchors to the model.
+/// - `lexicon` is the technology the seam's claims are held against, either
+///   [`Lexicon::from_packages`] over the packages the seam's modules import
+///   or the fixed names by default. A `requirement`, `criterion`, or `retire`
+///   whose id or statement names one is refused.
 ///
 /// # Examples
 ///
@@ -168,15 +158,15 @@ pub async fn extract<P: Model>(
 /// ```
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct Seam {
-    /// The seam's instructions, leading the turn; empty for none.
+    /// The seam's instructions leading the turn, or empty for none.
     pub text: String,
-    /// The files mined, relative to the workspace root; empty for the whole lend.
+    /// The files mined relative to the workspace root, or empty for the whole lend.
     pub files: Vec<String>,
-    /// The stems the seam's `requirement`, `criterion`, and `retire` ids lead with; empty for any.
+    /// The stems the seam's `requirement`, `criterion`, and `retire` ids lead with, or empty for any.
     pub stems: Vec<String>,
-    /// The lines a `requirement` anchors at, in the `path` grammar; empty for any.
+    /// The lines a `requirement` anchors at in the `path` grammar, or empty for any.
     pub anchors: Vec<String>,
-    /// The technology the seam's claims are held against; the fixed names by default.
+    /// The technology the seam's claims are held against, or the fixed names by default.
     pub lexicon: Lexicon,
 }
 
@@ -188,6 +178,7 @@ impl Seam {
     }
 
     /// Returns the seam over `files` beneath the workspace root, with no text and no stems.
+    #[must_use]
     pub fn files(files: impl IntoIterator<Item = impl Into<String>>) -> Self {
         Self {
             files: files.into_iter().map(Into::into).collect(),
@@ -196,6 +187,7 @@ impl Seam {
     }
 
     /// Returns the seam over the whole input led by `text`.
+    #[must_use]
     pub fn note(text: impl Into<String>) -> Self {
         Self {
             text: text.into(),
@@ -205,6 +197,7 @@ impl Seam {
 
     /// Returns the seam over the whole workspace whose `requirement`s anchor at
     /// `anchors`, each in the `path` grammar.
+    #[must_use]
     pub fn anchors(anchors: impl IntoIterator<Item = impl Into<String>>) -> Self {
         Self {
             anchors: anchors.into_iter().map(Into::into).collect(),
@@ -324,10 +317,9 @@ impl<'a> Plan<'a> {
     fn label(&self) -> String {
         const WIDTH: usize = 72;
         if let Some(line) = self.text.lines().find(|line| !line.trim().is_empty()) {
-            return if line.chars().count() > WIDTH {
-                format!("{}…", line.chars().take(WIDTH).collect::<String>())
-            } else {
-                line.to_owned()
+            return match line.char_indices().nth(WIDTH) {
+                Some((cut, _)) => format!("{}…", &line[..cut]),
+                None => line.to_owned(),
             };
         }
         match &self.lend {
@@ -350,23 +342,20 @@ impl<'a> Plan<'a> {
         let mut findings = Vec::new();
         let mut lines: BTreeMap<String, Option<u64>> = BTreeMap::new();
         for (index, claim) in evidence.claims.iter().enumerate() {
-            // the stem
-            if !self.stems.is_empty()
-                && claim.kind.is_subject()
-                && let Some(id) = claim.id.as_deref()
-            {
-                let stem = id.split('.').next().unwrap_or(id);
-                if !self.stems.contains(&stem) {
-                    findings.push(format!(
-                        "- claim {index}: id `{id}` leads with `{stem}`, not a stem of this seam \
-                         ({})",
-                        quoted(self.stems.iter().copied())
-                    ));
-                }
-            }
-
-            // the technology
+            // the stem and the technology
             if claim.kind.is_subject() {
+                if !self.stems.is_empty()
+                    && let Some(id) = claim.id.as_deref()
+                {
+                    let stem = id.split('.').next().unwrap_or(id);
+                    if !self.stems.contains(&stem) {
+                        findings.push(format!(
+                            "- claim {index}: id `{id}` leads with `{stem}`, not a stem of this \
+                             seam ({})",
+                            quoted(&self.stems)
+                        ));
+                    }
+                }
                 findings.extend(self.technology(index, claim));
             }
 
@@ -449,23 +438,20 @@ impl<'a> Plan<'a> {
                     "- claim {index}: id `{id}` names the technology {}; name the surface and the \
                      behaviour for the role they play, and carry the technology in a `call` or \
                      `excerpt`",
-                    quoted(named.iter().map(String::as_str))
+                    quoted(&named)
                 ));
             }
         }
         for key in claim.kind.required_extras() {
             let Some(value) = claim.extras.get(*key) else { continue };
-            let text = match value {
-                serde_json::Value::String(text) => text.clone(),
-                other => other.to_string(),
-            };
+            let text = value.as_str().map_or_else(|| Cow::Owned(value.to_string()), Cow::Borrowed);
             let named = self.lexicon.names(&text);
             if !named.is_empty() {
                 findings.push(format!(
                     "- claim {index}: `{key}` names the technology {}; state what the system does \
                      by the role the technology plays, and carry the technology in a `call` or \
                      `excerpt`",
-                    quoted(named.iter().map(String::as_str))
+                    quoted(&named)
                 ));
             }
         }
@@ -502,19 +488,14 @@ impl<'a> Plan<'a> {
     }
 }
 
-// Each item in backticks, comma-separated.
-fn quoted<'s>(items: impl IntoIterator<Item = &'s str>) -> String {
-    items.into_iter().map(|item| format!("`{item}`")).collect::<Vec<_>>().join(", ")
-}
-
 // The lines a regular file holds; `None` for anything else at the path. A
 // trailing newline closes the last line rather than opening another.
 pub fn line_count(root: &str, path: &str) -> Option<u64> {
-    let full = Path::new(root).join(path);
-    if !std::fs::metadata(&full).ok()?.is_file() {
+    let root = Path::new(root);
+    if !matches!(standing(root, path), Ok(Standing::File)) {
         return None;
     }
-    let bytes = std::fs::read(full).ok()?;
+    let bytes = std::fs::read(root.join(path)).ok()?;
     let breaks = bytes.split(|&byte| byte == b'\n').count().saturating_sub(1);
     let open = bytes.last().is_some_and(|&byte| byte != b'\n');
     Some(u64::try_from(breaks + usize::from(open)).unwrap_or(u64::MAX))
@@ -534,13 +515,18 @@ impl Scope {
         for path in named {
             let file =
                 beneath(path).map_err(|reason| bad_request!("`{source}`: `{path}` {reason}"))?;
-            if !files.contains(&file) {
-                files.push(file);
-            }
+            push_unique(&mut files, file);
         }
 
         let inlined = inline(root, &files);
         Ok(Self { files, inlined })
+    }
+
+    const fn inlined(&self) -> Inlined<'_> {
+        Inlined {
+            files: self.files.as_slice(),
+            bodies: self.inlined.as_slice(),
+        }
     }
 
     // The files past the inlined ones.
@@ -558,11 +544,11 @@ pub fn inline(root: &str, files: &[String]) -> Vec<String> {
     let mut inlined = Vec::new();
 
     for file in files {
-        let path = root.join(file);
-        let Ok(meta) = std::fs::metadata(&path) else { break };
-        if !meta.is_file() {
+        if !matches!(standing(root, file), Ok(Standing::File)) {
             break;
         }
+        let path = root.join(file);
+        let Ok(meta) = path.symlink_metadata() else { break };
         let Some(sum) = total.checked_add(meta.len()) else { break };
         if sum > INLINE_BYTES {
             break;
@@ -689,7 +675,7 @@ impl Display for Brief<'_> {
                      laid out here whole, every line led by its number, so cite `#L<n>` from the \
                      numbers shown rather than reading it again:\n\n",
                 )?;
-                Inlined(&scope.files, &scope.inlined).fmt(f)?;
+                scope.inlined().fmt(f)?;
             }
             Lend::Files(scope) => {
                 let (inlined, those) = match scope.inlined.len() {
@@ -705,7 +691,7 @@ impl Display for Brief<'_> {
                      are listed after {those}, to read from `$SOURCE_DIR` as the seam reaches \
                      them:\n\n"
                 )?;
-                Inlined(&scope.files, &scope.inlined).fmt(f)?;
+                scope.inlined().fmt(f)?;
                 f.write_str("\n\nThe rest of this seam's files:\n")?;
                 for file in scope.listed() {
                     write!(f, "\n- `{file}`")?;
@@ -735,7 +721,7 @@ impl Display for Brief<'_> {
                     f,
                     "\n\nLead every `requirement`, `criterion`, and `retire` id with one of the \
                      stems {} as its first dotted segment; an id under another stem is refused.",
-                    quoted(stems.iter().copied())
+                    quoted(stems)
                 )?;
             }
         }
@@ -773,11 +759,14 @@ impl Display for Brief<'_> {
 
 // The files of a scope whole: a heading per file, then its lines in a fence
 // no run of backticks inside can close, each led by its number.
-pub struct Inlined<'a>(pub &'a [String], pub &'a [String]);
+pub struct Inlined<'a> {
+    pub files: &'a [String],
+    pub bodies: &'a [String],
+}
 
 impl Display for Inlined<'_> {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        for (position, (file, body)) in self.0.iter().zip(self.1).enumerate() {
+        for (position, (file, body)) in self.files.iter().zip(self.bodies).enumerate() {
             if position > 0 {
                 f.write_str("\n\n")?;
             }
@@ -810,19 +799,19 @@ fn longest_run(body: &str) -> usize {
 
 fn join(
     source: &str, outcomes: BTreeMap<usize, Result<Evidence, Error>>,
-) -> Result<Vec<Evidence>, Error> {
+) -> Result<Evidence, Error> {
     let count = outcomes.len();
-    let mut accepted = Vec::with_capacity(count);
+    let mut claims = Vec::new();
     let mut failed = Vec::new();
     for (index, outcome) in outcomes {
         match outcome {
-            Ok(evidence) => accepted.push(evidence),
+            Ok(evidence) => claims.extend(evidence.claims),
             Err(error) => failed.push((index, error)),
         }
     }
 
     match failed.as_slice() {
-        [] => Ok(accepted),
+        [] => Ok(Evidence { claims }),
         [(_, only)] if count == 1 => Err(only.clone()),
         [(_, first), ..] => {
             let report: Vec<String> = failed

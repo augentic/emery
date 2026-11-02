@@ -305,14 +305,8 @@ impl Display for Change {
         if self.class == ChangeClass::Conflict {
             write!(f, " [{}]", self.class)?;
         }
-        write!(f, "\n\n{ID} {}\n{SOURCES} [", self.id)?;
-        for (position, source) in self.sources.iter().enumerate() {
-            if position > 0 {
-                f.write_str(", ")?;
-            }
-            write!(f, "{source}")?;
-        }
-        f.write_str("]")?;
+        write!(f, "\n\n{ID} {}\n", self.id)?;
+        revision::write_list(f, SOURCES, &self.sources)?;
 
         // the statement the class carries; a conflict carries none, its
         // competing statements the amended specification's to note

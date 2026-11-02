@@ -21,7 +21,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use crate::revision::{
-    Amendment, AmendmentBase, Design, Diff, Document as _, Plan, Revision, Spec,
+    Amendment, AmendmentBase, Design, Diff, Document as _, Documents, Plan, Revision, Spec,
 };
 use crate::vcs::{BuildRepo, REVISION, RevisionMessage, SPECIFICATION, Summary, WorkingCopy};
 use crate::{EntryKind, Files, secrets};
@@ -168,11 +168,10 @@ pub struct Staged {
 
 impl Staged {
     async fn read<S: BlobStore>(store: &S, id: String, fresh: bool) -> Result<Self, Error> {
-        let mut bodies = Vec::with_capacity(Revision::DOCUMENTS.len());
-        for name in Revision::DOCUMENTS {
-            bodies.push(document(store, &id, name).await?);
-        }
-        let revision = Revision::read(&id, &bodies[0], &bodies[1], &bodies[2])?;
+        let spec = document(store, &id, Spec::NAME).await?;
+        let design = document(store, &id, Design::NAME).await?;
+        let plan = document(store, &id, Plan::NAME).await?;
+        let revision = Revision::read(&id, &spec, &design, &plan)?;
         Ok(Self { id, revision, fresh })
     }
 }
@@ -386,12 +385,7 @@ pub async fn stage<S: StateStore + BlobStore>(
     let token = token(store).await;
     Slot::no_amendment(token.as_deref())?;
 
-    let documents = revision.documents()?;
-    let id = Revision::identify(
-        documents[0].1.as_bytes(),
-        documents[1].1.as_bytes(),
-        documents[2].1.as_bytes(),
-    );
+    let (id, documents) = revision.documents()?;
     let bodies = documents.each_ref().map(|(name, body)| (*name, body.as_str()));
     put(store, &id, &bodies).await?;
     Slot::revision(id.clone(), fresh).swap(store, token.as_deref()).await?;
@@ -607,12 +601,7 @@ pub async fn current<P: Vcs + Files + StateStore>(
 pub async fn commit<P: Vcs + Files + StateStore + BlobStore>(
     provider: &P, repo: &BuildRepo, sealing: Sealing, standing: Standing,
 ) -> Result<Sealed, Error> {
-    let documents = sealing.revision.documents()?;
-    let id = Revision::identify(
-        documents[0].1.as_bytes(),
-        documents[1].1.as_bytes(),
-        documents[2].1.as_bytes(),
-    );
+    let (id, documents) = sealing.revision.documents()?;
     let diff = standing.diff(&sealing.revision);
     let message = RevisionMessage {
         revision: id,
@@ -777,7 +766,7 @@ pub fn label(id: &str) -> String {
 // Writes `documents` into `copy`, seals them under `message`, and labels
 // the commit; answers the commit `copy` was cut at when nothing changed.
 async fn seal_copy<P: Vcs + Files>(
-    provider: &P, repo: &BuildRepo, documents: &[(&str, String); 3], message: &RevisionMessage,
+    provider: &P, repo: &BuildRepo, documents: &Documents, message: &RevisionMessage,
     copy: &WorkingCopy,
 ) -> Result<String, Error> {
     let at = copy.path();

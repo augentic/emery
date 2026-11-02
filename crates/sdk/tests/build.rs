@@ -97,9 +97,7 @@ async fn ask_scaffolded(
 ) -> Result<Report, Error> {
     let scaffold = brief.map(|brief| Scaffold {
         brief,
-        passages: "",
-        files: &[],
-        types: &[],
+        ..Scaffold::default()
     });
     ask_guarded(model, slice, workspace, grants, scaffold, check).await
 }
@@ -117,10 +115,7 @@ async fn ask_guarded(
         model,
         scaffold: None,
     };
-    let ctx = match scaffold {
-        Some(scaffold) => ctx.with_scaffold(scaffold),
-        None => ctx,
-    };
+    let ctx = scaffold.map_or(ctx, |scaffold| ctx.with_scaffold(scaffold));
     emery_sdk::target::build(&ctx, PROSE, check).await
 }
 

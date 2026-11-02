@@ -37,14 +37,7 @@ use crate::source::{Evidence, SourceKind};
 ///         &self, _id: &str, _input: &SourceInput,
 ///     ) -> impl Future<Output = Result<Evidence, Error>> + Send {
 ///         ready(Ok(Evidence {
-///             claims: vec![Claim {
-///                 kind: ClaimKind::Decision,
-///                 id: None,
-///                 path: None,
-///                 synopsis: None,
-///                 backing: None,
-///                 extras: serde_json::Map::new(),
-///             }],
+///             claims: vec![Claim::new(ClaimKind::Decision)],
 ///         }))
 ///     }
 ///
@@ -78,7 +71,7 @@ pub trait Source: Send + Sync {
     fn extract(
         &self, id: &str, input: &SourceInput,
     ) -> impl Future<Output = Result<Evidence, Error>> + Send {
-        crate::source::bindings::import::extract(id, input)
+        crate::source::bindings::extract(id, input)
     }
 
     /// Returns the metadata the adapter registered as `id` declares.
@@ -88,7 +81,7 @@ pub trait Source: Send + Sync {
     /// Returns the metadata the adapter registered as `id` declares.
     #[cfg(target_arch = "wasm32")]
     fn metadata(&self, id: &str) -> SourceMetadata {
-        crate::source::bindings::import::metadata(id)
+        crate::source::bindings::metadata(id)
     }
 }
 

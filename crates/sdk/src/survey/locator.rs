@@ -4,18 +4,16 @@ use std::collections::BTreeSet;
 
 use emery_adapter::source::Anchor;
 
-use super::code::{
-    Bootstrap, ClassDecl, Decorated, Export, ExportKind, Receiver, Recogniser, Surface, Tree,
-};
+use super::code::{Bootstrap, Decorated, Export, ExportKind, Receiver, Recogniser, Surface, Tree};
 use super::resolve::Target;
 use super::{Inventory, Lines, push_unique, skeleton, unique};
-use crate::kebab;
+use crate::{kebab, quoted};
 
 // Read once before the model is asked and held through every correction
 // round.
 pub struct SurfaceLocator<'t, R: Recogniser> {
-    pub tree: &'t Tree<R>,
-    pub bootstrap: Option<Bootstrap<'t, R::Module>>,
+    tree: &'t Tree<R>,
+    bootstrap: Option<Bootstrap<'t, R::Module>>,
     entries: Vec<String>,
     roots: Vec<String>,
     handed: BTreeSet<(String, String)>,
@@ -24,60 +22,53 @@ pub struct SurfaceLocator<'t, R: Recogniser> {
 
 impl<'t, R: Recogniser> SurfaceLocator<'t, R> {
     pub fn new(tree: &'t Tree<R>) -> Self {
-        let handed = tree.handed_classes();
-        let locating = tree
-            .modules
-            .values()
-            .filter(|module| Self::locates(tree, &handed, module))
-            .map(|module| module.path.as_str())
-            .collect();
-        Self {
+        let mut locator = Self {
             tree,
             bootstrap: tree.recogniser.bootstrap(tree),
             entries: tree.manifest.entries.clone(),
             roots: tree.roots(),
-            handed,
-            locating,
-        }
+            handed: tree.handed_classes(),
+            locating: BTreeSet::new(),
+        };
+        locator.locating = tree
+            .modules
+            .values()
+            .filter(|module| locator.locates(module))
+            .map(|module| module.path.as_str())
+            .collect();
+        locator
     }
 
     // Whether the facts place a registration or a registering decorator in
     // `module`, so the answer must reach it or list it `unreached`. A method
     // of a class a registration hands is the registration's to locate.
-    fn locates(tree: &Tree<R>, handed: &BTreeSet<(String, String)>, module: &R::Module) -> bool {
+    fn locates(&self, module: &R::Module) -> bool {
+        let tree = self.tree;
         module
             .calls
             .iter()
             .any(|call| tree.handed_to(module, call).is_some() && tree.registers(module, call))
-            || module
-                .decorated
-                .iter()
-                .any(|decorated| Self::listed(tree, handed, module, decorated).is_some())
+            || module.decorated.iter().any(|decorated| self.listed(module, decorated).is_some())
     }
 
     // The package a decorator the facts list comes from: one that registers
     // a function, a method, or a class through a package, and is not a
     // handed class's.
-    fn listed(
-        tree: &Tree<R>, handed: &BTreeSet<(String, String)>, module: &R::Module,
-        decorated: &Decorated,
-    ) -> Option<Receiver> {
+    fn listed(&self, module: &R::Module, decorated: &Decorated) -> Option<Receiver> {
         if (decorated.class.is_none() && decorated.member.is_none())
-            || !decorated.registering(tree.dialect)
-            || Self::of_handed(handed, module, decorated)
+            || !decorated.registering(self.tree.dialect)
+            || self.of_handed(module, decorated)
         {
             return None;
         }
-        tree.receiver_of(module, decorated.name.first()?)
+        self.tree.receiver_of(module, decorated.name.first()?)
     }
 
     // A handed class's decorated method is an id of the registration, not a
     // surface.
-    fn of_handed(
-        handed: &BTreeSet<(String, String)>, module: &R::Module, decorated: &Decorated,
-    ) -> bool {
+    fn of_handed(&self, module: &R::Module, decorated: &Decorated) -> bool {
         match (&decorated.class, &decorated.member) {
-            (Some(class), Some(_)) => handed.contains(&(module.path.clone(), class.clone())),
+            (Some(class), Some(_)) => self.handed.contains(&(module.path.clone(), class.clone())),
             _ => false,
         }
     }
@@ -176,7 +167,7 @@ impl<'t, R: Recogniser> SurfaceLocator<'t, R> {
         let mut lines: Vec<String> = Vec::new();
         for module in tree.modules.values() {
             for decorated in &module.decorated {
-                let Some(receiver) = Self::listed(tree, &self.handed, module, decorated) else {
+                let Some(receiver) = self.listed(module, decorated) else {
                     continue;
                 };
                 let decorator = decorated.name.join(".");
@@ -212,12 +203,9 @@ impl<'t, R: Recogniser> SurfaceLocator<'t, R> {
     fn exports(&self) -> Option<String> {
         let tree = self.tree;
         let entries = unique(self.entries.iter().chain(&self.roots));
-        let declared = |module: &R::Module, exports: &mut dyn Iterator<Item = &Export>| {
-            declared(module, exports, |class| tree.recogniser.declares_data(class))
-        };
         let mut lines: Vec<String> = Vec::new();
         for module in entries.iter().filter_map(|path| tree.modules.get(*path)) {
-            let exported = declared(module, &mut module.exports.iter());
+            let exported = self.declared(module, &module.exports);
             if !exported.is_empty() {
                 lines.push(format!("- `{}` exports {}", module.path, exported.join(", ")));
             }
@@ -227,11 +215,11 @@ impl<'t, R: Recogniser> SurfaceLocator<'t, R> {
                 };
                 let Some(target) = tree.modules.get(path) else { continue };
                 let exported = reexport.names.as_ref().map_or_else(
-                    || declared(target, &mut target.exports.iter()),
+                    || self.declared(target, &target.exports),
                     |names| {
-                        declared(
+                        self.declared(
                             target,
-                            &mut names.iter().filter_map(|(imported, _)| {
+                            names.iter().filter_map(|(imported, _)| {
                                 target.exports.iter().find(|export| {
                                     export.name == *imported
                                         || export.local.as_deref() == Some(imported)
@@ -260,6 +248,33 @@ impl<'t, R: Recogniser> SurfaceLocator<'t, R> {
              framework that routes by file, these are where a caller enters:\n\n{}",
             lines.join("\n")
         ))
+    }
+
+    // A type, or a class declaring data alone, is the caller's to copy, not to
+    // call.
+    fn declared<'e>(
+        &self, module: &super::code::Module, exports: impl IntoIterator<Item = &'e Export>,
+    ) -> Vec<String> {
+        exports
+            .into_iter()
+            .filter_map(|export| {
+                let local = export.local.as_deref().unwrap_or(&export.name);
+                let kind = match export.kind {
+                    ExportKind::Function => "function",
+                    ExportKind::Class
+                        if module
+                            .class(local)
+                            .is_some_and(|class| self.tree.recogniser.declares_data(class)) =>
+                    {
+                        return None;
+                    }
+                    ExportKind::Class => "class",
+                    ExportKind::Value => "value",
+                    ExportKind::Type | ExportKind::Unknown => return None,
+                };
+                Some(format!("`{}` ({kind}) {}", export.name, export.lines))
+            })
+            .collect()
     }
 
     // Ordered so a tree past the budget inlines what locates its surfaces
@@ -316,7 +331,7 @@ impl<'t, R: Recogniser> SurfaceLocator<'t, R> {
             covered.insert(bootstrap.module.path.as_str());
         }
         let unreached: BTreeSet<&str> = answer.unreached.iter().map(String::as_str).collect();
-        let missing: Vec<String> = tree
+        let missing: Vec<&String> = tree
             .modules
             .keys()
             .filter(|path| {
@@ -324,7 +339,6 @@ impl<'t, R: Recogniser> SurfaceLocator<'t, R> {
                     && !unreached.contains(path.as_str())
                     && (self.entries.contains(path) || self.locating.contains(path.as_str()))
             })
-            .map(|path| format!("`{path}`"))
             .collect();
         if !missing.is_empty() {
             let (these, are) = if missing.len() == 1 {
@@ -339,7 +353,7 @@ impl<'t, R: Recogniser> SurfaceLocator<'t, R> {
                  the decorated declaration, so the caller follows its imports to the module; \
                  otherwise list {are} under `unreached` — a plugin, a hook, a signal receiver, a \
                  helper is no surface, and none is invented to cover a module",
-                missing.join(", ")
+                quoted(&missing)
             ));
         }
         findings
@@ -390,27 +404,4 @@ impl<'t, R: Recogniser> SurfaceLocator<'t, R> {
             })
             .collect()
     }
-}
-
-// A type, or a class declaring data alone, is the caller's to copy, not to
-// call.
-fn declared<'e>(
-    module: &super::code::Module, exports: impl Iterator<Item = &'e Export>,
-    declares_data: impl Fn(&ClassDecl) -> bool,
-) -> Vec<String> {
-    exports
-        .filter_map(|export| {
-            let local = export.local.as_deref().unwrap_or(&export.name);
-            let kind = match export.kind {
-                ExportKind::Function => "function",
-                ExportKind::Class if module.class(local).is_some_and(&declares_data) => {
-                    return None;
-                }
-                ExportKind::Class => "class",
-                ExportKind::Value => "value",
-                ExportKind::Type | ExportKind::Unknown => return None,
-            };
-            Some(format!("`{}` ({kind}) {}", export.name, export.lines))
-        })
-        .collect()
 }

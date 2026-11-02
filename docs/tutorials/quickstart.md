@@ -20,9 +20,22 @@ This step-by-step tutorial walks you through setting up a new Emery project, ext
 Before starting, make sure you have the following installed:
 
 - **`emery` binary** (either installed on your `PATH` or built from this repository with `cargo build --release`).
-- **[`cursor-sdk-bridge`](https://github.com/cursor/sdk-bridge)** on your `PATH` (see [Installing `cursor-sdk-bridge`](../../examples/README.md#installing-cursor-sdk-bridge)).
+- **[`cursor-sdk-bridge`](https://github.com/cursor/sdk-bridge)** on your `PATH` (see [Installing `cursor-sdk-bridge`](#installing-cursor-sdk-bridge) below).
 - **`CURSOR_API_KEY`** exported in your shell environment (or loaded from a `.env` file).
-- **`git` 2.5 or newer** on your `PATH`.
+- **`git` 2.5 or newer** on your `PATH` (`GIT_BINARY` names another).
+
+### Installing `cursor-sdk-bridge`
+
+```bash
+curl -fsSL -o /tmp/cursor-sdk-bridge.tar.gz \
+  https://github.com/cursor/sdk-bridge/releases/latest/download/cursor-sdk-bridge-standalone-darwin-arm64.tar.gz \
+  && tar -xzf /tmp/cursor-sdk-bridge.tar.gz -C /tmp \
+  && install /tmp/bin/cursor-sdk-bridge ~/.local/bin/cursor-sdk-bridge
+
+cursor-sdk-bridge --help
+```
+
+See the [Cursor SDK Bridge documentation](https://cursor.com/docs/sdk/bridge) for other platforms.
 
 ---
 
@@ -56,7 +69,7 @@ cd "$project"
 printf '.emery/\n' > .gitignore
 ```
 
-Create a single Markdown documentation file at `docs/greeting.md`:
+Create a single Markdown documentation file at `docs/greeting.md` (or copy [`examples/docs`](../../examples/docs/greeting.md) and [`examples/emery.toml`](../../examples/emery.toml) directly from the repository with `cp -R examples/docs examples/emery.toml "$project"` before `cd "$project"`):
 
 ```bash
 mkdir -p docs

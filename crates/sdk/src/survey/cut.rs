@@ -5,7 +5,7 @@ use emery_lexicon::Lexicon;
 use super::code::{Recogniser, Surface, Tree};
 use super::tests::{Test, stated};
 use super::{skeleton, unique};
-use crate::{Seam, kebab};
+use crate::{INLINE_BYTES, Seam, kebab, quoted};
 
 // A data file within this many bytes is placed directly after the first
 // module naming it, a larger one after every module. Placed after a long
@@ -20,9 +20,23 @@ const NO_SURFACE: &str = "No surface was found in this source: its survey named 
                           a library is read — for what its exports do for a caller — and claim \
                           what the code exhibits.";
 
+// Chooses the cut by size and by whether any surface was named, and builds
+// each seam.
+pub fn seams<R: Recogniser>(tree: &Tree<R>, surfaces: &[Surface]) -> Vec<Seam> {
+    let size: usize = tree.modules.values().map(|module| module.text.len()).sum();
+    let fits = tree.modules.len() == 1 || u64::try_from(size).unwrap_or(u64::MAX) <= INLINE_BYTES;
+    let cuts = match (surfaces.is_empty(), fits) {
+        (false, true) => vec![Cut::whole(tree, surfaces)],
+        (false, false) => Cut::by_stem(tree, surfaces),
+        (true, true) => vec![Cut::unsurfaced(tree)],
+        (true, false) => Cut::by_directory(tree),
+    };
+    cuts.into_iter().map(|cut| cut.seam(tree, surfaces)).collect()
+}
+
 // One seam as the cut decided it, before the anchors, the tests, and the
 // brief are derived for it.
-pub struct Cut {
+struct Cut {
     seam: Seam,
     // The modules placed past the surfaces' closures, in the directories their
     // unfollowed imports lead into. Only the cut by stem fills it.
@@ -43,7 +57,7 @@ impl Cut {
     }
 
     // Every module, the surfaces' closures first.
-    pub fn whole<R: Recogniser>(tree: &Tree<R>, surfaces: &[Surface]) -> Self {
+    fn whole<R: Recogniser>(tree: &Tree<R>, surfaces: &[Surface]) -> Self {
         let files = unique(
             surfaces
                 .iter()
@@ -61,7 +75,7 @@ impl Cut {
         Self::new(text, files, stems)
     }
 
-    pub fn by_stem<R: Recogniser>(tree: &Tree<R>, surfaces: &[Surface]) -> Vec<Self> {
+    fn by_stem<R: Recogniser>(tree: &Tree<R>, surfaces: &[Surface]) -> Vec<Self> {
         unique(surfaces.iter().map(|surface| surface.stem.as_str()))
             .into_iter()
             .map(|stem| {
@@ -90,7 +104,7 @@ impl Cut {
             .collect()
     }
 
-    pub fn unsurfaced<R: Recogniser>(tree: &Tree<R>) -> Self {
+    fn unsurfaced<R: Recogniser>(tree: &Tree<R>) -> Self {
         let files: Vec<String> = tree.modules.keys().cloned().collect();
         let stem = fallback_stem(tree);
         let text = format!(
@@ -101,7 +115,7 @@ impl Cut {
         Self::new(text, files, vec![stem])
     }
 
-    pub fn by_directory<R: Recogniser>(tree: &Tree<R>) -> Vec<Self> {
+    fn by_directory<R: Recogniser>(tree: &Tree<R>) -> Vec<Self> {
         // cut beneath `src/` and beneath a lone top-level package, however
         // many barrels declare it
         let packages = unique(
@@ -168,7 +182,7 @@ impl Cut {
     // A tree with no surface has no anchors, so its exports are read for what
     // they do. Neither a data file nor a test is an anchor. A test importing
     // no module of the tree follows every seam.
-    pub fn seam<R: Recogniser>(self, tree: &Tree<R>, surfaces: &[Surface]) -> Seam {
+    fn seam<R: Recogniser>(self, tree: &Tree<R>, surfaces: &[Surface]) -> Seam {
         let files = &self.seam.files;
         let under: Vec<&Surface> =
             surfaces.iter().filter(|surface| self.seam.stems.contains(&surface.stem)).collect();
@@ -210,13 +224,13 @@ impl Cut {
         sections.extend(skeleton::data(modules()));
         sections.extend(stated(tests.iter().copied(), dialect.described));
         sections.extend(skeleton::unfollowed(modules(), &self.widened));
-        let unparsed: Vec<String> =
-            modules().filter(|m| !m.parsed).map(|m| format!("`{}`", m.path)).collect();
+        let unparsed: Vec<&str> =
+            modules().filter(|m| !m.parsed).map(|m| m.path.as_str()).collect();
         if !unparsed.is_empty() {
             sections.push(format!(
                 "The parser could not read {} whole; what {} declares is not in the lists above \
                  and is read from the text alone.",
-                unparsed.join(", "),
+                quoted(&unparsed),
                 if unparsed.len() == 1 { "it" } else { "each" }
             ));
         }
@@ -271,12 +285,11 @@ fn listed<'s>(surfaces: impl IntoIterator<Item = &'s Surface>) -> String {
     surfaces
         .into_iter()
         .map(|surface| {
-            let ids: Vec<String> = surface.ids.iter().map(|id| format!("`{id}`")).collect();
-            let reached: Vec<String> = surface
+            let reached: Vec<&str> = surface
                 .closure
                 .iter()
-                .filter(|path| **path != surface.entry)
-                .map(|path| format!("`{path}`"))
+                .map(String::as_str)
+                .filter(|&path| path != surface.entry)
                 .collect();
             format!(
                 "- Surface `{}` — entry `{}` — stem `{}`: {}; {} {}; {}.",
@@ -284,12 +297,12 @@ fn listed<'s>(surfaces: impl IntoIterator<Item = &'s Surface>) -> String {
                 surface.entry,
                 surface.stem,
                 surface.detail.join("; "),
-                if ids.len() == 1 { "id" } else { "ids" },
-                ids.join(", "),
+                if surface.ids.len() == 1 { "id" } else { "ids" },
+                quoted(&surface.ids),
                 if reached.is_empty() {
                     "reaches nothing beyond its entry".to_owned()
                 } else {
-                    format!("reaches {}", reached.join(", "))
+                    format!("reaches {}", quoted(reached))
                 }
             )
         })

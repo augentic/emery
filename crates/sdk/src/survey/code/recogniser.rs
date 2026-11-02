@@ -12,18 +12,22 @@ use crate::survey::tests::Statement;
 /// What an adapter recognises of a tree that the shared pipeline cannot.
 ///
 /// The pipeline reads a tree through the [`Module`] its parser fills and
-/// the lookups there; what it asks the adapter is what its language alone
-/// decides: where each import leads, what the manifest declares, what a
-/// test states, which entry runs when the tree loads, what a call hands,
-/// where routes are mounted, and what the code says at an anchor the
-/// survey accepted. An adapter implements this for the value that holds
-/// its resolver and manifest reader, built from the [`Parsed`] tree, and
-/// hands it to [`Parsed::settle`].
+/// the lookups there. The adapter implements this trait to supply
+/// language-specific rules:
 ///
-/// The methods with a default answer are for a language that has no
-/// such thing: one that hands no class to a registration leaves
-/// [`hands_bare_class`](Self::hands_bare_class) and
-/// [`class_run_by`](Self::class_run_by) alone.
+/// - where each import leads and what the manifest declares
+/// - what a test states and which entry runs when the tree loads
+/// - what a call hands and where routes are mounted
+/// - what the code says at an anchor the survey accepted
+///
+/// An adapter implements this on the value holding its resolver and manifest
+/// reader, built from the [`Parsed`] tree, and passes it to
+/// [`Parsed::settle`].
+///
+/// Methods with a default implementation apply to languages without that
+/// construct. For example, a language that hands no class to a registration
+/// leaves [`hands_bare_class`](Self::hands_bare_class) and
+/// [`class_run_by`](Self::class_run_by) at their defaults.
 ///
 /// [`Parsed`]: super::Parsed
 /// [`Parsed::settle`]: super::Parsed::settle

@@ -15,7 +15,7 @@ use emery_sdk::survey::resolve::Target;
 use emery_sdk::survey::route::{self, Spelling};
 use emery_sdk::survey::tests::Statement;
 use emery_sdk::survey::{ClassSyntax, Dialect, Lines};
-use emery_sdk::{Route, Trigger, kebab};
+use emery_sdk::{Trigger, kebab};
 
 pub static TYPESCRIPT: Dialect = Dialect {
     self_name: "this",
@@ -205,9 +205,7 @@ impl Recogniser for Stub {
         let mount = tree.mount(&module.path);
         let trigger = led.as_deref().and_then(|literal| {
             if literal.starts_with('/') {
-                Route::parse(&format!("{} {}", call.method(), route::join(mount, literal)))
-                    .ok()
-                    .map(Trigger::Http)
+                Trigger::http(&format!("{} {}", call.method(), route::join(mount, literal))).ok()
             } else if call.method() == "on" {
                 Trigger::message(literal).ok()
             } else {

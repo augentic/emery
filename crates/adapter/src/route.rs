@@ -5,6 +5,7 @@
 //! and the typed route a slice carries to a target.
 
 use std::fmt::{self, Display, Formatter};
+use std::str::FromStr;
 
 use serde::{Deserialize, Serialize};
 
@@ -61,19 +62,20 @@ impl Route {
         };
         let method = METHODS
             .iter()
+            .copied()
             .find(|known| known.eq_ignore_ascii_case(method))
             .ok_or_else(|| BadRoute::Method(method.to_owned()))?;
         let Some(rest) = path.strip_prefix('/') else {
             return Err(BadRoute::Path(path.to_owned()));
         };
-        let rest = rest.split('?').next().unwrap_or(rest);
+        let rest = rest.split_once('?').map_or(rest, |(path, _)| path);
         let segments = rest
             .split('/')
             .filter(|segment| !segment.is_empty())
-            .map(|segment| parameter(segment).ok_or_else(|| BadRoute::Path(path.to_owned())))
+            .map(|part| segment(part).ok_or_else(|| BadRoute::Path(path.to_owned())))
             .collect::<Result<Vec<_>, _>>()?;
         Ok(Self {
-            method: (*method).to_owned(),
+            method: method.to_owned(),
             path: format!("/{}", segments.join("/")),
         })
     }
@@ -95,40 +97,45 @@ impl Display for Route {
     }
 }
 
+impl FromStr for Route {
+    type Err = BadRoute;
+
+    fn from_str(text: &str) -> Result<Self, Self::Err> {
+        Self::parse(text)
+    }
+}
+
 // One segment as the template spells it: a parameter under any framework's
 // spelling as `{name}`, a wildcard as `{*name}`, a literal as written;
 // `None` for a segment outside the grammar.
-fn parameter(segment: &str) -> Option<String> {
-    if let Some(rest) = segment.strip_prefix(':') {
-        return param_name_whole(rest).map(|name| format!("{{{name}}}"));
+fn segment(part: &str) -> Option<String> {
+    if let Some(rest) = part.strip_prefix(':') {
+        return param_name(rest).map(|name| format!("{{{name}}}"));
     }
-    if let Some(inner) = segment.strip_prefix('<').and_then(|rest| rest.strip_suffix('>')) {
+    if let Some(inner) = part.strip_prefix('<').and_then(|rest| rest.strip_suffix('>')) {
         let last = inner.rsplit(':').next().unwrap_or(inner);
-        return param_name_whole(last).map(|name| format!("{{{name}}}"));
+        return param_name(last).map(|name| format!("{{{name}}}"));
     }
-    if let Some(inner) = segment.strip_prefix('{').and_then(|rest| rest.strip_suffix('}')) {
+    if let Some(inner) = part.strip_prefix('{').and_then(|rest| rest.strip_suffix('}')) {
         let (star, inner) = inner.strip_prefix('*').map_or(("", inner), |rest| ("*", rest));
         let first = inner.split(':').next().unwrap_or(inner);
-        return param_name_whole(first).map(|name| format!("{{{star}{name}}}"));
+        return param_name(first).map(|name| format!("{{{star}{name}}}"));
     }
-    if let Some(rest) = segment.strip_prefix('*') {
-        let name = if rest.is_empty() { "rest".to_owned() } else { param_name_whole(rest)? };
+    if let Some(rest) = part.strip_prefix('*') {
+        let name = if rest.is_empty() { "rest" } else { param_name(rest)? };
         return Some(format!("{{*{name}}}"));
     }
-    segment
-        .chars()
+    part.chars()
         .all(|ch| is_name_char(ch) || matches!(ch, '-' | '.' | '~' | '%' | '@'))
-        .then(|| segment.to_owned())
+        .then(|| part.to_owned())
 }
 
 const fn is_name_char(ch: char) -> bool {
     ch.is_ascii_alphanumeric() || ch == '_'
 }
 
-fn param_name_whole(text: &str) -> Option<String> {
-    let name: String = text.chars().take_while(|ch| is_name_char(*ch)).collect();
-    let rest = text.get(name.len()..)?;
-    rest.is_empty().then_some(name).filter(|name| !name.is_empty())
+fn param_name(text: &str) -> Option<&str> {
+    (!text.is_empty() && text.chars().all(is_name_char)).then_some(text)
 }
 
 /// The rule a route breaks.
@@ -159,22 +166,3 @@ impl Display for BadRoute {
 }
 
 impl std::error::Error for BadRoute {}
-
-#[cfg(test)]
-mod tests {
-    use super::Route;
-
-    #[test]
-    fn parameter_suffix_refused() {
-        for text in ["GET /items/:id.json", "GET /users/{user-id}", "GET /orders/:id-pay"] {
-            assert!(Route::parse(text).is_err(), "{text}");
-        }
-    }
-
-    #[test]
-    fn distinct_parameter_routes() {
-        let id = Route::parse("GET /items/:id").expect("parameter");
-        let id_json = Route::parse("GET /items/id.json").expect("literal");
-        assert_ne!(id.path, id_json.path);
-    }
-}

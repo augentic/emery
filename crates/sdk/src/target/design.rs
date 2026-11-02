@@ -8,6 +8,7 @@ use emery_adapter::target::Slice;
 use emery_lexicon::words;
 
 use super::Scaffold;
+use crate::quoted;
 
 // The engine's rendering of a type claim's signature: this line over a fence.
 const TYPE: &str = "Type: ";
@@ -42,12 +43,11 @@ pub fn cut(slice: &Slice, scaffold: Option<&Scaffold<'_>>) -> String {
     }
     let mut text = kept.join("\n\n");
     if !left_out.is_empty() {
-        let keys: Vec<String> = left_out.iter().map(|key| format!("`{key}`")).collect();
         let _ = write!(
             text,
             "\n\nDesign types left out, owned by other slices and named by none of this \
              slice's text: {}.",
-            keys.join(", ")
+            quoted(left_out)
         );
     }
     text
@@ -78,12 +78,14 @@ fn names(key: &str, spelled: &[Vec<String>]) -> bool {
     !words.is_empty()
         && spelled.iter().any(|text| {
             text.windows(words.len())
-                .any(|run| run.iter().zip(&words).all(|(spelt, word)| same(spelt, word)))
+                .any(|run| run.iter().zip(&words).all(|(spelled, word)| same(spelled, word)))
         })
 }
 
-fn same(spelt: &str, word: &str) -> bool {
-    spelt == word || spelt.strip_suffix('s') == Some(word) || word.strip_suffix('s') == Some(spelt)
+fn same(spelled: &str, word: &str) -> bool {
+    spelled == word
+        || spelled.strip_suffix('s') == Some(word)
+        || word.strip_suffix('s') == Some(spelled)
 }
 
 // The key of a `Type:` block and whether the design labels it a mechanism;

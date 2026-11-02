@@ -112,7 +112,7 @@ use omnia_sdk::model::{Question, WorkerGrant};
 use omnia_sdk::{Error, Model, server_error};
 
 use self::write::{Writer, Written};
-use crate::{BUILD, VERIFY, prompt, reference, unique};
+use crate::{BUILD, VERIFY, prompt, quoted, reference, unique};
 
 /// The engine's side of the contract, for a guest that dispatches to a target adapter.
 ///
@@ -137,7 +137,7 @@ const VERIFY_TURN: &str = "verify";
 /// its shape and the backend applies what exists on its machine. The adapter
 /// is trusted by its digest, so what it spells is what the deployment
 /// granted when it pinned it.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct Grant {
     /// Host names the program's commands may reach through the backend's
     /// egress proxy: a name whole, or `*.suffix` for a domain and every
@@ -265,7 +265,7 @@ fn is_variable_name(name: &str) -> bool {
 /// An init carries no model: it is the adapter's own code scaffolding the
 /// layout's initial files where the tree lacks them, so two inits over one
 /// tree scaffold the same files.
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct InitContext<'a> {
     /// The identifier used to address the adapter.
     pub adapter_id: &'a str,
@@ -300,6 +300,14 @@ pub struct BuildContext<'a, P> {
     pub scaffold: Option<Scaffold<'a>>,
 }
 
+impl<P> Clone for BuildContext<'_, P> {
+    fn clone(&self) -> Self {
+        *self
+    }
+}
+
+impl<P> Copy for BuildContext<'_, P> {}
+
 impl<'a, P> BuildContext<'a, P> {
     /// Returns the context with [`scaffold`](Self::scaffold) set.
     #[must_use]
@@ -314,7 +322,7 @@ impl<'a, P> BuildContext<'a, P> {
 /// Attach a scaffold to [`BuildContext`] with [`BuildContext::with_scaffold`]
 /// when the adapter generates skeleton files from the typed [`Slice`] for the
 /// model to fill in place.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct Scaffold<'a> {
     /// Markdown rendered after the design under `What the adapter scaffolded
     /// for this slice before this turn:`.
@@ -360,6 +368,7 @@ pub struct Guarded {
 
 impl Guarded {
     /// Returns a guard over `path` keeping `keeps`, with no markers.
+    #[must_use]
     pub fn new(
         path: impl Into<String>, keeps: impl IntoIterator<Item = impl Into<String>>,
     ) -> Self {
@@ -395,6 +404,7 @@ pub struct Marker {
 
 impl Marker {
     /// Returns a marker addressed by `key` standing for `block`.
+    #[must_use]
     pub fn new(key: impl Into<String>, block: impl Into<String>) -> Self {
         Self {
             key: key.into(),
@@ -432,12 +442,21 @@ pub struct VerifyContext<'a, P> {
     pub model: &'a P,
 }
 
+impl<P> Clone for VerifyContext<'_, P> {
+    fn clone(&self) -> Self {
+        *self
+    }
+}
+
+impl<P> Copy for VerifyContext<'_, P> {}
+
 /// The task a target adapter is asked, each with the context its turn needs.
 ///
-/// [`TargetAdapter::run`] takes one and answers the [`Outcome`] of its
-/// kind: [`Outcome::Initialised`] to [`Init`](Self::Init),
-/// [`Outcome::Built`] to [`Build`](Self::Build), [`Outcome::Verified`] to
-/// [`Verify`](Self::Verify).
+/// [`TargetAdapter::run`] takes one and answers the matching [`Outcome`]:
+///
+/// - [`Init`](Self::Init) answers [`Outcome::Initialised`].
+/// - [`Build`](Self::Build) answers [`Outcome::Built`].
+/// - [`Verify`](Self::Verify) answers [`Outcome::Verified`].
 #[derive(Debug)]
 pub enum Task<'a, P> {
     /// Scaffold the layout's initial files the tree lacks, a held file left
@@ -453,7 +472,7 @@ pub enum Task<'a, P> {
     Verify(VerifyContext<'a, P>),
 }
 
-/// A target adapter: how it initialises a repository with its layout, builds one slice of the plan into the tree, and verifies the tree.
+/// A target adapter that initialises, builds, and verifies a workspace.
 ///
 /// Implement it on a unit struct and hand that type to
 /// [`export_target!`](crate::export_target), which exports the
@@ -846,11 +865,6 @@ impl Display for Brief<'_> {
         }
 
         // the requirements and the report rules
-        let ids = slice
-            .requirements
-            .iter()
-            .map(|requirement| format!("`{}`", requirement.id))
-            .collect::<Vec<_>>();
         write!(
             f,
             "Implement every requirement the specification above holds — {ids} — and no \
@@ -863,7 +877,7 @@ impl Display for Brief<'_> {
              relative to `$WORKSPACE`, and only a file the tree now holds; a file you wrote and \
              leave out is added for you. Leave a requirement out of `covered` rather than \
              claim what the tree does not hold.",
-            ids = ids.join(", "),
+            ids = quoted(slice.requirements.iter().map(|requirement| &requirement.id)),
         )
     }
 }

@@ -356,34 +356,15 @@ fn text<E: de::Error>(value: serde_json::Value, at: &str) -> Result<String, E> {
 }
 
 #[derive(Serialize)]
-struct PathBytes<'a> {
-    bytes: usize,
-    path: &'a str,
-}
-
-#[derive(Serialize)]
 pub struct WriteResponse {
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub deleted: Vec<String>,
-    pub written: Vec<serde_json::Value>,
+    pub written: Vec<Wrote>,
 }
 
 #[derive(Serialize)]
 pub struct EditResponse {
-    pub edited: Vec<serde_json::Value>,
-}
-
-pub fn json_of(wrote: &[Wrote]) -> Vec<serde_json::Value> {
-    wrote
-        .iter()
-        .map(|wrote| {
-            serde_json::to_value(PathBytes {
-                bytes: wrote.bytes,
-                path: &wrote.file,
-            })
-            .expect("path and byte count serialise")
-        })
-        .collect()
+    pub edited: Vec<Wrote>,
 }
 
 // The schema the tools declare reaches no scripted model, which records

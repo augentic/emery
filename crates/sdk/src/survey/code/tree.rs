@@ -1,6 +1,7 @@
 //! Holds a parsed tree and answers what a survey asks of it as a whole.
 
 use std::collections::{BTreeMap, BTreeSet};
+use std::fmt;
 use std::ops::Deref;
 use std::path::{Path, PathBuf};
 
@@ -10,7 +11,7 @@ use super::{Arg, BindingKind, Call, Imported, Module};
 use crate::survey::resolve::Target;
 use crate::survey::tests::{Test, scenarios};
 use crate::survey::{Dialect, Lines};
-use crate::{kebab, push_unique};
+use crate::{kebab, push_unique, unique};
 
 /// How many bindings a receiver is traced through before it counts as the tree's own.
 pub const TRACE: usize = 4;
@@ -20,6 +21,7 @@ pub const TRACE: usize = 4;
 /// [`Parsed::read`] reads a workspace listing; the adapter builds its
 /// [`Recogniser`] from the root, modules, data files, and tests it holds,
 /// and [`Parsed::settle`] settles the tree through it.
+#[derive(Debug)]
 pub struct Parsed<M> {
     /// The workspace root every path is relative to.
     pub root: PathBuf,
@@ -35,6 +37,7 @@ pub struct Parsed<M> {
     pending: Vec<Pending<M>>,
 }
 
+#[derive(Debug)]
 enum Pending<M> {
     Module(String, M),
     Feature(Test),
@@ -164,7 +167,7 @@ impl<M: Deref<Target = Module>> Parsed<M> {
 /// A parsed tree, every import settled, with the adapter's [`Recogniser`] beside it.
 ///
 /// The lookups here read the tree as a whole: what a module reaches, where
-/// a name was bound, what a call hands and through which package. Each
+/// a name was bound, and what a call hands and through which package. Each
 /// takes a module of the tree and reads it through the adapter's
 /// recogniser where the language decides.
 pub struct Tree<R: Recogniser> {
@@ -184,6 +187,24 @@ pub struct Tree<R: Recogniser> {
     pub mounts: BTreeMap<String, String>,
     /// The adapter's recogniser.
     pub recogniser: R,
+}
+
+impl<R> fmt::Debug for Tree<R>
+where
+    R: Recogniser + fmt::Debug,
+    R::Module: fmt::Debug,
+{
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("Tree")
+            .field("root", &self.root)
+            .field("dialect", &self.dialect)
+            .field("modules", &self.modules)
+            .field("tests", &self.tests)
+            .field("manifest", &self.manifest)
+            .field("mounts", &self.mounts)
+            .field("recogniser", &self.recogniser)
+            .finish()
+    }
 }
 
 impl<R: Recogniser> Tree<R> {
@@ -255,16 +276,16 @@ impl<R: Recogniser> Tree<R> {
     /// holds no module at.
     #[must_use]
     pub fn packages(&self, files: &[String]) -> Vec<&str> {
-        let mut packages: Vec<&str> = Vec::new();
-        for module in files.iter().filter_map(|path| self.modules.get(path)) {
-            for import in &module.imports {
-                if import.type_only || import.target.as_ref().and_then(Target::package).is_none() {
-                    continue;
-                }
-                push_unique(&mut packages, import.specifier.as_str());
-            }
-        }
-        packages
+        unique(
+            files
+                .iter()
+                .filter_map(|path| self.modules.get(path))
+                .flat_map(|module| &module.imports)
+                .filter(|import| {
+                    !import.type_only && import.target.as_ref().and_then(Target::package).is_some()
+                })
+                .map(|import| import.specifier.as_str()),
+        )
     }
 
     /// Returns the modules no other module imports, each in path order.
@@ -640,9 +661,8 @@ impl<R: Recogniser> Tree<R> {
     // `local/files.py` and `s3/files.py` under `files` are told apart by
     // `local` and `s3`.
     fn tells_apart(&self, module: &R::Module, stem: &str, own: &str) -> Option<String> {
-        let dir = module.path.rsplit_once('/').map_or("", |(dir, _)| dir);
         std::iter::once(module.stem(self.dialect))
-            .chain(dir.rsplit('/'))
+            .chain(module.directory().rsplit('/'))
             .filter_map(kebab)
             .find(|segment| segment != stem && !own.ends_with(&format!(".{segment}")))
     }

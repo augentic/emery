@@ -69,7 +69,7 @@ emery --version
 - **Documentation site:** [emery.augentic.io](https://emery.augentic.io/) · [in-tree book root](docs/index.md)
 - **Core concepts:** [Glossary](docs/glossary.md)
 - **CLI & runtime reference:** [CLI Reference](docs/reference/cli/index.md) · [CLI Output Shapes](docs/reference/cli-output-shapes.md) · [Adapters](docs/reference/adapters.md) · [Deployment Profiles](docs/reference/deployment-profiles.md)
-- **Live walkthrough:** [examples/README.md](examples/README.md)
+- **Example adapters:** [examples/README.md](examples/README.md)
 - **First-party adapters:** [augentic/emery-adapters](https://github.com/augentic/emery-adapters)
 
 ## Developing Emery

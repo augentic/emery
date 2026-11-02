@@ -109,12 +109,16 @@ fn keep_filter() {
 #[test]
 fn entry_readers() {
     let file = Entry::File("api/orders.test.ts");
+    assert!(file.is_file());
+    assert!(!file.is_dir());
     assert_eq!(file.path(), "api/orders.test.ts");
     assert_eq!(file.name(), "orders.test.ts");
     assert_eq!(file.extension(), Some("ts"));
     assert!(!file.hidden());
 
     let dir = Entry::Dir(".github");
+    assert!(dir.is_dir());
+    assert!(!dir.is_file());
     assert_eq!(dir.name(), ".github");
     assert_eq!(dir.extension(), None, "a leading dot is not an extension");
     assert!(dir.hidden());

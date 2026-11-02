@@ -9,7 +9,8 @@ This tutorial walks you through updating an existing sealed specification using 
 - [2. Stage and review the amendment](#2-stage-and-review-the-amendment)
 - [3. Seal the amendment and rebuild](#3-seal-the-amendment-and-rebuild)
 - [4. Add a new requirement and technology decision](#4-add-a-new-requirement-and-technology-decision)
-- [5. Understand revision lineages and `--fresh`](#5-understand-revision-lineages-and---fresh)
+- [5. Trigger and resolve a source conflict](#5-trigger-and-resolve-a-source-conflict)
+- [6. Understand revision lineages and `--fresh`](#6-understand-revision-lineages-and---fresh)
 - [Next steps](#next-steps)
 
 ---
@@ -154,9 +155,45 @@ git merge --ff-only emery/<third-revision-id>
 
 ---
 
-## 5. Understand revision lineages and `--fresh`
+## 5. Trigger and resolve a source conflict
 
-Because the current revision in your repository now has a `parent` (`amends <second-revision-id>`), the repository holds a **lineage**. If you try to run bare `emery specify` now, Emery refuses before loading any adapters so you do not accidentally wipe out your amendment history:
+When two sources at the same authority rank make contradicting statements about the same requirement, neither outranks the other and Emery records a `[conflict]`.
+
+Pass an inline `--description` using `example:source@0.1.0` that contradicts `docs/greeting.md` (`'howdy'` vs. `'hello, world'`):
+
+```bash
+"$emery" -v amend --config \
+  --description "example:source@0.1.0=GET /greeting returns the static string 'howdy'."
+"$emery" show amendment
+```
+
+Under `## Conflict`, `REQ-001` is marked `[conflict]` with both competing statements noted and `Note: Operator reconciliation required.`. You can still seal a conflicted amendment so the disagreement is recorded in Git:
+
+```bash
+"$emery" apply
+"$emery" show spec
+```
+
+To resolve the conflict, make the sources agree—either edit `docs/greeting.md` to match or drop the contradicting inline description—and run `emery amend` again:
+
+```bash
+"$emery" -v amend
+"$emery" show amendment
+"$emery" apply
+"$emery" show spec
+"$emery" -v build
+git merge --ff-only emery/<fifth-revision-id>
+
+# Inspect the five revisions sealed along the lineage
+git log --oneline --first-parent
+git for-each-ref refs/heads/emery/
+```
+
+---
+
+## 6. Understand revision lineages and `--fresh`
+
+Because the current revision in your repository now has a `parent`, the repository holds a **lineage**. If you try to run bare `emery specify` now, Emery refuses before loading any adapters so you do not accidentally wipe out your amendment history:
 
 ```bash
 "$emery" specify
@@ -168,6 +205,14 @@ If you ever want to intentionally discard the existing lineage and regenerate th
 
 ```bash
 "$emery" -v specify --fresh --apply
+git log -1 --format=%B emery/<fresh-revision-id>   # Revision <id> over Base: alone, no Parent: trailer
+git branch --list 'emery/*'                        # Every earlier label still stands beside the new one
+"$emery" show spec
+
+# Build the fresh revision over the existing layout and clean up the scratch project
+"$emery" -v build
+git merge --ff-only emery/<fresh-revision-id>
+cd - && rm -rf "$project"
 ```
 
 This starts a new parentless revision (`parent: null`) over `HEAD` while leaving all earlier `emery/<id>` branches intact in Git.

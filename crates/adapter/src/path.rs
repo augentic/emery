@@ -67,18 +67,18 @@ pub fn beneath(path: &str) -> Result<String, BadPath> {
     }
 
     let segments: Vec<&str> =
-        path.split('/').filter(|segment| !segment.is_empty() && *segment != ".").collect();
-    let Some(file) = segments.last() else {
+        path.split('/').filter(|&segment| !segment.is_empty() && segment != ".").collect();
+    let Some(&file) = segments.last() else {
         return Err(BadPath::NoFile);
     };
-    if let Some(dir) = segments.iter().find(|segment| SKIP_DIRS.contains(segment)) {
-        return Err(BadPath::SkipDir((*dir).to_owned()));
+    if let Some(&dir) = segments.iter().find(|&segment| SKIP_DIRS.contains(segment)) {
+        return Err(BadPath::SkipDir(dir.to_owned()));
     }
     if segments[0] == SPECIFICATION {
         return Err(BadPath::Specification);
     }
-    if SKIP_FILES.contains(file) {
-        return Err(BadPath::SkipFile((*file).to_owned()));
+    if SKIP_FILES.contains(&file) {
+        return Err(BadPath::SkipFile(file.to_owned()));
     }
 
     Ok(segments.join("/"))
@@ -246,10 +246,12 @@ pub fn write_whole(root: &Path, file: &str, standing: Standing, bytes: &[u8]) ->
             if let Some((dirs, _)) = file.rsplit_once('/') {
                 make_dirs(root, dirs)?;
             }
-            options.create_new(true)
+            options.create_new(true);
         }
-        Standing::File => options.truncate(true),
-    };
+        Standing::File => {
+            options.truncate(true);
+        }
+    }
     options.open(root.join(file))?.write_all(bytes)
 }
 

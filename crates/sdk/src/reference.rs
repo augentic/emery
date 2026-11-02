@@ -66,22 +66,7 @@ pub fn serve(
                     .collect();
                 Ok(json!({ "paths": paths }).to_string())
             }
-            READ_DOC => call.arguments().map_err(|err| format!("{READ_DOC}: {err}")).and_then(
-                |ReadDoc { path }| {
-                    emery_prose::find(docs, &path)
-                        .or_else(|| emery_prose::find(imports, &path))
-                        .map_or_else(
-                            || Err(format!("no document `{path}`")),
-                            |doc| {
-                                serde_json::to_string(&ReadDocResponse {
-                                    path: &path,
-                                    body: doc.body,
-                                })
-                                .map_err(|err| format!("{READ_DOC}: {err}"))
-                            },
-                        )
-                },
-            ),
+            READ_DOC => read(docs, imports, &call),
             other => Err(format!("unknown tool `{other}`")),
         };
 
@@ -96,6 +81,18 @@ pub fn serve(
 
         Box::pin(ready(response))
     })
+}
+
+fn read(docs: &[Doc], imports: &[Doc], call: &ToolCall) -> Result<String, String> {
+    let ReadDoc { path } = call.arguments().map_err(|err| format!("{READ_DOC}: {err}"))?;
+    let doc = emery_prose::find(docs, &path)
+        .or_else(|| emery_prose::find(imports, &path))
+        .ok_or_else(|| format!("no document `{path}`"))?;
+    serde_json::to_string(&ReadDocResponse {
+        path: &path,
+        body: doc.body,
+    })
+    .map_err(|err| format!("{READ_DOC}: {err}"))
 }
 
 /// The empty argument object accepted by `list_docs`.

@@ -31,7 +31,7 @@ pub use self::amendment::{
 pub use self::design::{Block, Design, Role, Section, SectionKind, TYPE, citations};
 use self::diff::BRIEF;
 pub use self::diff::{Changed, DesignDiff, Diff, Entry, PlanDiff, Retired, SliceEntry, SpecDiff};
-pub use self::id::{BadId, ReqId, SliceId, stem, substem};
+pub use self::id::{BadId, ReqId, SliceId, leads, stem, substem};
 use self::plan::{DEPENDS_ON, REQUIREMENTS, TYPES};
 pub use self::plan::{Plan, Slice, Waves, ranks};
 pub use self::spec::{Cited, Loser, Requirement, Scenario, Spec, Status};
@@ -52,18 +52,10 @@ pub const RESERVED: &[&str] =
 
 // A typed revision document stored as JSON and rendered as Markdown.
 pub trait Document: Serialize + DeserializeOwned + Display {
-    // The storage and projection name of the document.
     const NAME: &'static str;
 
-    // Reads the document from its stored JSON.
-    //
     // The grammar stamp is checked before the shape, so another grammar's
     // document is reported as outdated rather than malformed.
-    //
-    // - Returns `Error::BadRequest` with code `spec-outdated` when the
-    //   `emery` stamp is missing or uses another grammar.
-    // - Returns `Error::ServerError` when the bytes are not valid JSON or
-    //   do not match the document shape for the current grammar.
     fn from_json(bytes: &[u8]) -> Result<Self, Error> {
         let value: Value = serde_json::from_slice(bytes)
             .with_context(|| format!("`{}` is not JSON", Self::NAME))?;
@@ -84,11 +76,7 @@ pub trait Document: Serialize + DeserializeOwned + Display {
             .with_context(|| format!("`{}` is not a revision", Self::NAME))?)
     }
 
-    // Returns the canonical JSON the store hashes and writes.
-    //
     // Pretty-printed, in declaration order, with one trailing newline.
-    //
-    // Returns `Error::ServerError` when the document cannot be serialised.
     fn to_json(&self) -> Result<String, Error> {
         let mut text = serde_json::to_string_pretty(self)
             .with_context(|| format!("`{}` does not serialise", Self::NAME))?;
@@ -96,27 +84,20 @@ pub trait Document: Serialize + DeserializeOwned + Display {
         Ok(text)
     }
 
-    // Returns the Markdown projection for revision `id`.
-    //
-    // The projection begins with front matter containing the grammar and
-    // revision identifier.
     #[must_use]
     fn to_markdown(&self, id: &str) -> String {
         format!("---\nemery: {EMERY}\nrevision: {id}\n---\n\n{self}")
     }
 }
 
+// The three canonical JSON documents of a revision, `(name, body)` in digest order.
+pub type Documents = [(&'static str, String); 3];
+
 // The specification, design, and plan committed as one unit.
-//
-// The identifier depends only on canonical document content. Reading a
-// revision verifies its bytes against that identifier.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Revision {
-    // The behavioural specification.
     pub spec: Spec,
-    // The rebuild design.
     pub design: Design,
-    // The build plan over the specification.
     pub plan: Plan,
 }
 
@@ -124,14 +105,7 @@ impl Revision {
     // The storage names of the three documents, in digest order.
     pub const DOCUMENTS: [&str; 3] = [Spec::NAME, Design::NAME, Plan::NAME];
 
-    // Reads and validates the revision stored under `id`.
-    //
     // The content digest is checked before any document is deserialised.
-    //
-    // - Returns `Error::BadRequest` with code `spec-outdated` when a
-    //   document uses a different grammar.
-    // - Returns `Error::ServerError` when the content does not match `id`,
-    //   is not valid JSON, or does not match the current document shape.
     pub fn read(id: &str, spec: &[u8], design: &[u8], plan: &[u8]) -> Result<Self, Error> {
         if Self::identify(spec, design, plan) != id {
             return Err(server_error!("revision `{id}` does not match its content"));
@@ -144,23 +118,19 @@ impl Revision {
         })
     }
 
-    // Serialises the three documents to canonical JSON, in digest order.
-    //
-    // Returns `Error::ServerError` when a document does not serialise.
-    pub fn documents(&self) -> Result<[(&'static str, String); 3], Error> {
-        Ok([
+    // Serialises the three documents to canonical JSON, in digest order, with their content id.
+    pub fn documents(&self) -> Result<(String, Documents), Error> {
+        let documents = [
             (Spec::NAME, self.spec.to_json()?),
             (Design::NAME, self.design.to_json()?),
             (Plan::NAME, self.plan.to_json()?),
-        ])
-    }
-
-    // Returns the content identifier for this revision.
-    //
-    // Returns `Error::ServerError` when a document does not serialise.
-    pub fn id(&self) -> Result<String, Error> {
-        let [(_, spec), (_, design), (_, plan)] = self.documents()?;
-        Ok(Self::identify(spec.as_bytes(), design.as_bytes(), plan.as_bytes()))
+        ];
+        let id = Self::identify(
+            documents[0].1.as_bytes(),
+            documents[1].1.as_bytes(),
+            documents[2].1.as_bytes(),
+        );
+        Ok((id, documents))
     }
 
     // The content identifier of the three documents as stored.
@@ -236,4 +206,16 @@ fn write<T: Display>(
         write!(f, "\n\n{block}")?;
     }
     f.write_str("\n")
+}
+
+// A `Key: [a, b]` line with no trailing newline.
+fn write_list<T: Display>(f: &mut Formatter<'_>, key: &str, items: &[T]) -> fmt::Result {
+    write!(f, "{key} [")?;
+    for (position, item) in items.iter().enumerate() {
+        if position > 0 {
+            f.write_str(", ")?;
+        }
+        write!(f, "{item}")?;
+    }
+    f.write_str("]")
 }

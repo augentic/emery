@@ -19,10 +19,9 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use self::code::{Recogniser, Tree};
-use self::cut::Cut;
 use self::locator::SurfaceLocator;
-use crate::extract::{INLINE_BYTES, Inlined, Seam, inline, line_count};
-use crate::{Context, RUNTIME, SURVEY, beneath, prompt, push_unique, reference, unique};
+use crate::extract::{Inlined, Seam, inline, line_count};
+use crate::{Context, RUNTIME, SURVEY, beneath, prompt, push_unique, quoted, reference, unique};
 
 pub mod code;
 mod cut;
@@ -63,6 +62,7 @@ fn grouped<K: PartialEq, V>(items: impl IntoIterator<Item = (K, V)>) -> Vec<(K, 
 /// let span = Lines { start: 3, end: 5 };
 /// assert!(span.holds(4));
 /// assert!(span.contains(Lines { start: 4, end: 5 }));
+/// assert_eq!(span.first(), Lines::at(3));
 /// assert_eq!(span.anchor(), "L3-L5");
 /// assert_eq!(span.to_string(), "L3–L5");
 /// assert_eq!(Lines::from((7, 7)).anchor(), "L7");
@@ -76,6 +76,21 @@ pub struct Lines {
 }
 
 impl Lines {
+    /// Returns a one-line span at `line`.
+    #[must_use]
+    pub const fn at(line: u32) -> Self {
+        Self {
+            start: line,
+            end: line,
+        }
+    }
+
+    /// Returns the one-line span at [`start`](Self::start).
+    #[must_use]
+    pub const fn first(self) -> Self {
+        Self::at(self.start)
+    }
+
     /// Returns whether `other` lies wholly within this span.
     #[must_use]
     pub const fn contains(self, other: Self) -> bool {
@@ -124,14 +139,14 @@ impl Display for Lines {
 /// The model is told how to read what code found, never how to find it: the
 /// adapter lists every production module, renders what locates the surfaces
 /// among them as `text`, and names the files worth inlining into the turn whole.
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct Facts<'a> {
     /// Every production module of the tree, root-relative; an anchor names one of these.
     pub modules: &'a [String],
     /// What the adapter's code read: the manifest, the bootstrap, the registration sites.
     pub text: &'a str,
     /// The files inlined into the turn whole, in order, for as long as they
-    /// fit within [`INLINE_BYTES`] together; the rest are left to the lend.
+    /// fit within [`INLINE_BYTES`](crate::INLINE_BYTES) together; the rest are left to the lend.
     pub files: &'a [String],
 }
 
@@ -141,24 +156,25 @@ pub struct Facts<'a> {
 /// carries the adapter's `facts`, lends the tree read-only, and offers the
 /// embedded references through the reference tools.
 ///
-/// Each answered surface is held to the tree before it is returned: its
-/// `anchor` parses under the claim `path` grammar, names one of
-/// `facts.modules`, and cites lines the file holds; its `stem` is lowercase
-/// kebab-case and names no technology of the fixed [`Lexicon`],
-/// since every id under it leads with it; its `name` is non-empty and
-/// unique. Each `unreached` module is
-/// one of `facts.modules` and no surface's entry. `check` then holds the
-/// answer to what the adapter alone can know — which modules the named
-/// entries reach — and returns its own findings, empty for none. Every
-/// finding is returned to the model together for one correction round, until
-/// the host's round limit is reached.
+/// Each answered surface is held to the tree before it is returned:
 ///
-/// Every anchor and `unreached` path is spelled root-relative, as
-/// `facts.modules` spells them, before `check` sees it and in what is
-/// returned: `./src/a.ts#L2-L2` reads `src/a.ts#L2`, so the adapter looks a
-/// path up as the tree spells it and never unpicks the model's spelling. One
-/// outside the grammar, or escaping the root, is left as answered for the
-/// finding that names it.
+/// - Its `anchor` must parse under the claim `path` grammar, name one of
+///   `facts.modules`, and cite lines the file holds.
+/// - Its `stem` must be lowercase kebab-case and name no technology of the
+///   fixed [`Lexicon`], since every id under it leads with it.
+/// - Its `name` must be non-empty and unique.
+/// - Each `unreached` module must be one of `facts.modules` and no surface's
+///   entry.
+///
+/// `check` then holds the answer to what the adapter alone can know and
+/// returns its own findings, empty for none. Every finding is returned to the
+/// model together for one correction round, until the host's round limit is
+/// reached.
+///
+/// Every anchor and `unreached` path is normalised root-relative, as
+/// `facts.modules` spells them, before `check` sees it and in the returned
+/// [`Inventory`]. Paths outside the grammar or escaping the root are left as
+/// answered for the finding that names them.
 ///
 /// # Errors
 ///
@@ -235,7 +251,7 @@ pub async fn surfaces<P: Model>(
 /// [`seams`] returns one for a parsed workspace tree and [`Survey::value`]
 /// for an inline value; [`Survey::join`] puts the `type` and `contract`
 /// claims into the evidence the seams were mined to.
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct Survey {
     /// One seam per cut, each carrying its brief, files, stems, and anchors.
     pub seams: Vec<Seam>,
@@ -292,33 +308,32 @@ impl Survey {
 /// Returns the seams of a parsed workspace tree, its surfaces named by the model.
 ///
 /// One survey turn is put through [`surfaces`] under `docs`'s `survey.md`,
-/// carrying the facts the tree holds: the manifest, the bootstrap, every call
-/// that hands a function to a package, every function, method, and class
-/// under a package's decorator, what the entry modules export, and the
-/// packages imported. The answer is held to the tree — a module the facts
-/// locate a surface in is reached by a named surface or listed `unreached`
-/// — and each accepted anchor is read by the tree's [`Recogniser`] for the
-/// stem, the ids, the methods, and the closure the code spells there.
+/// carrying the facts the tree holds:
+///
+/// - the manifest and the bootstrap
+/// - every call that hands a function to a package
+/// - every function, method, and class under a package's decorator
+/// - what the entry modules export and the packages imported
+///
+/// Every module where the facts locate a surface must be reached by a named
+/// surface or listed in `unreached`. Each accepted anchor is read by the
+/// tree's [`Recogniser`] for the stem, the ids, the methods, and the closure
+/// the code spells there.
 ///
 /// The seams are cut from the surfaces:
 ///
-/// - a tree within [`INLINE_BYTES`], or of one module, is one seam over
-///   every module, held to every stem its surfaces carry
-/// - a larger tree is one seam per stem, over the modules the surfaces
-///   under it reach; where one imports what the resolver cannot follow or
-///   loads a module by a computed name, the modules of the directory the
-///   import leads into follow ([`Tree::widening`](code::Tree::widening))
-/// - a tree the survey names no surface in is cut mechanically: one seam
-///   under the package's or the root directory's name within the budget,
-///   one per top-level directory past it
+/// - A tree within [`INLINE_BYTES`](crate::INLINE_BYTES) or of one module becomes one seam over
+///   every module, held to every stem its surfaces carry.
+/// - A larger tree becomes one seam per stem over the modules its surfaces
+///   reach, widened with [`Tree::widening`](code::Tree::widening) where an
+///   import cannot be followed.
+/// - A tree with no named surface is cut mechanically into one seam within
+///   the budget, or one per top-level directory past it.
 ///
-/// Each seam inlines the data files its modules name among them and the
-/// tree's own tests after them, each test's statements in the brief of
-/// every seam whose modules it imports, and carries as its `lexicon` the
-/// technology of the packages its modules import, through
-/// [`Lexicon::from_packages`]. The `type` claims are those of the modules
-/// the seams reach, and the `contract` claims one per surface whose
-/// registration or decorator spells a trigger: a route, or a message.
+/// Each seam includes the data files its modules name, the workspace tests
+/// importing its modules, and a `lexicon` built with [`Lexicon::from_packages`].
+/// The returned [`Survey`] also holds the [`types`] of the reached modules
+/// and the `contract` claims of surfaces with a trigger.
 ///
 /// # Errors
 ///
@@ -377,17 +392,7 @@ pub async fn seams<P: Model, R: Recogniser>(
     tracing::debug!(%source, ?unplaced, "modules under no surface");
     logged(source, "surveyed", &surfaces);
 
-    // choose the cut by size and by whether any surface was named
-    let size: usize = tree.modules.values().map(|module| module.text.len()).sum();
-    let fits = tree.modules.len() == 1 || u64::try_from(size).unwrap_or(u64::MAX) <= INLINE_BYTES;
-    let cuts = match (surfaces.is_empty(), fits) {
-        (false, true) => vec![Cut::whole(tree, &surfaces)],
-        (false, false) => Cut::by_stem(tree, &surfaces),
-        (true, true) => vec![Cut::unsurfaced(tree)],
-        (true, false) => Cut::by_directory(tree),
-    };
-    let seams: Vec<Seam> = cuts.into_iter().map(|cut| cut.seam(tree, &surfaces)).collect();
-
+    let seams = cut::seams(tree, &surfaces);
     let reached = unique(seams.iter().flat_map(|seam| seam.files.iter().map(String::as_str)));
     let types = types(
         tree.dialect,
@@ -427,14 +432,14 @@ fn logged(source: &str, what: &str, surfaces: &[code::Surface]) {
 /// The surfaces the model names in a source, and the modules none reaches.
 ///
 /// An empty inventory is a valid answer: the tree declares no surface.
-#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[derive(Clone, Debug, Default, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
 #[schemars(title = "Emery survey answer")]
 pub struct Inventory {
     /// The surfaces in the order the model names them.
     pub surfaces: Vec<Surface>,
-    /// The production modules no surface reaches — dead code, or a module the
-    /// model could not place — each root-relative; empty for none.
+    /// The production modules no surface reaches, each root-relative, or
+    /// empty for none.
     #[serde(default)]
     pub unreached: Vec<String>,
 }
@@ -443,15 +448,15 @@ pub struct Inventory {
 #[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct Surface {
-    /// What a caller outside the source does through the surface, as a
-    /// reviewer would name it: `POST /orders`, `import command`, `orders consumer`.
+    /// What a caller outside the source does through the surface, such as
+    /// `POST /orders`, `import command`, or `orders consumer`.
     pub name: String,
-    /// Where the surface is registered or declared, in the claim `path`
-    /// grammar: a production module and the lines of the registration, as
-    /// `src/routes/orders.ts#L12-L40`, or the module alone for the whole file.
+    /// Where the surface is registered or declared in the claim `path`
+    /// grammar, such as `src/routes/orders.ts#L12-L40` or the module path
+    /// alone for the whole file.
     pub anchor: String,
     /// The stem every `requirement` and `criterion` of the surface leads
-    /// with, lowercase kebab-case, under the prompt's convention.
+    /// with, in lowercase kebab-case.
     pub stem: String,
 }
 
@@ -567,12 +572,11 @@ impl Inventory {
             }
             let technology = lexicon.names(&surface.stem);
             if !technology.is_empty() {
-                let quoted: Vec<String> = technology.iter().map(|t| format!("`{t}`")).collect();
                 findings.push(format!(
                     "- {label}: stem `{}` names the technology {}; name it for what the surface \
                      handles or does, since every id under it leads with it",
                     surface.stem,
-                    quoted.join(", ")
+                    quoted(&technology)
                 ));
             }
         }
@@ -636,7 +640,11 @@ impl Display for Brief<'_> {
                 "\n\n{these} laid out here whole, every line led by its number, so cite `#L<n>` \
                  from the numbers shown rather than reading {them} again:\n\n"
             )?;
-            Inlined(&self.facts.files[..self.inlined.len()], self.inlined).fmt(f)?;
+            Inlined {
+                files: self.facts.files,
+                bodies: self.inlined,
+            }
+            .fmt(f)?;
         }
 
         f.write_str(

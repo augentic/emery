@@ -4,7 +4,7 @@ use std::fs;
 use std::os::unix::fs::symlink;
 use std::path::Path;
 
-use emery_prose::{Doc, body, check};
+use emery_prose::{Doc, body, check, find};
 
 static PROSE: &[Doc] = emery_prose::prose!["prose/extract.md", "prose/references/ids.md"];
 
@@ -18,6 +18,10 @@ static CLIMBING: &[Doc] = emery_prose::prose!["../tests/prose/references/ids.md"
 fn fixtures() {
     let paths: Vec<&str> = PROSE.iter().map(|doc| doc.path).collect();
     assert_eq!(paths, ["extract.md", "references/ids.md"]);
+    assert_eq!(
+        find(PROSE, "references/ids.md"),
+        Some(&Doc::new("references/ids.md", include_str!("prose/references/ids.md")))
+    );
     assert_eq!(body(PROSE, "references/ids.md"), Some(include_str!("prose/references/ids.md")));
     assert_eq!(body(PROSE, "extract.md"), Some(include_str!("prose/extract.md")));
     assert_eq!(body(PROSE, "missing.md"), None);
@@ -38,7 +42,7 @@ fn unlisted() {
     write(tmp.path(), "b.md", "# B\n");
     write(tmp.path(), "notes.txt", "not a document\n");
 
-    let table = [doc("a.md", "# A, see [c](c.md)\n"), doc("c.md", "# C\n")];
+    let table = [Doc::new("a.md", "# A, see [c](c.md)\n"), Doc::new("c.md", "# C\n")];
     assert_eq!(
         check(&table, tmp.path(), &["a.md"], &[]),
         [
@@ -54,7 +58,7 @@ fn repeated() {
     let tmp = tempfile::tempdir().expect("tempdir");
     write(tmp.path(), "a.md", "# A\n");
 
-    let table = [doc("a.md", "# A\n"), doc("a.md", "# A\n")];
+    let table = [Doc::new("a.md", "# A\n"), Doc::new("a.md", "# A\n")];
     assert_eq!(check(&table, tmp.path(), &["a.md"], &[]), ["`a.md` is listed twice"]);
 }
 
@@ -69,13 +73,13 @@ fn unlinked() {
     write(tmp.path(), "references/more.md", "# More\n");
 
     let table = [
-        doc("extract.md", "see [ids](references/ids.md)\n"),
-        doc("references/ids.md", "# Ids, see [extract](../extract.md)\n"),
-        doc("references/notes.md", "see [more](more.md)\n"),
-        doc("references/more.md", "# More\n"),
+        Doc::new("extract.md", "see [ids](references/ids.md)\n"),
+        Doc::new("references/ids.md", "# Ids, see [extract](../extract.md)\n"),
+        Doc::new("references/notes.md", "see [more](more.md)\n"),
+        Doc::new("references/more.md", "# More\n"),
     ];
     assert_eq!(
-        check(&table, tmp.path(), &["extract.md", "survey.md"], &[]),
+        check(&table, tmp.path(), &["extract.md", "survey.md", "survey.md"], &[]),
         [
             "`survey.md` is a prompt the table does not hold",
             "`references/notes.md` is reached from no prompt",
@@ -84,8 +88,8 @@ fn unlinked() {
     );
 }
 
-// A symlinked directory is part of the tree, and a `](` inside fenced code is
-// not a link.
+// A symlinked directory is part of the tree, and a `](` inside fenced or inline
+// code is not a link.
 #[test]
 fn symlinked() {
     let tmp = tempfile::tempdir().expect("tempdir");
@@ -93,20 +97,18 @@ fn symlinked() {
     write(&shared, "rule.md", "# Rule\n");
     let tree = tmp.path().join("prose");
     write(&tree, "b.md", "# B\n");
-    write(
-        &tree,
-        "a.md",
-        "see [b](b.md) and [the rule](runtime/rule.md#top)\n\n```swift\n[UInt8](effects)\n```\n",
+    let body_a = concat!(
+        "see [`b`](b.md), `handlers[0](ctx)`, and [the rule](runtime/rule.md#top)\n\n",
+        "```swift\n[UInt8](effects)\n```\n\n",
+        "~~~\n[ignored](missing.md)\n~~~\n",
     );
+    write(&tree, "a.md", body_a);
     symlink(&shared, tree.join("runtime")).expect("symlink");
 
     let table = [
-        doc(
-            "a.md",
-            "see [b](b.md) and [the rule](runtime/rule.md#top)\n\n```swift\n[UInt8](effects)\n```\n",
-        ),
-        doc("b.md", "# B\n"),
-        doc("runtime/rule.md", "# Rule\n"),
+        Doc::new("a.md", body_a),
+        Doc::new("b.md", "# B\n"),
+        Doc::new("runtime/rule.md", "# Rule\n"),
     ];
     let findings = check(&table, &tree, &["a.md"], &[]);
     assert!(findings.is_empty(), "{}", findings.join("\n"));
@@ -118,14 +120,14 @@ fn symlinked() {
 fn imported() {
     let tmp = tempfile::tempdir().expect("tempdir");
     write(tmp.path(), "extract.md", "see [claims](claims.md)\n");
-    let imports = [doc("claims.md", "# Claims\n"), doc("pipeline.md", "# Pipeline\n")];
+    let imports = [Doc::new("claims.md", "# Claims\n"), Doc::new("pipeline.md", "# Pipeline\n")];
 
-    let table = [doc("extract.md", "see [claims](claims.md)\n")];
+    let table = [Doc::new("extract.md", "see [claims](claims.md)\n")];
     let findings = check(&table, tmp.path(), &["extract.md"], &imports);
     assert!(findings.is_empty(), "{}", findings.join("\n"));
 
     write(tmp.path(), "claims.md", "# Mine\n");
-    let shadowing = [table[0], doc("claims.md", "# Mine\n")];
+    let shadowing = [table[0], Doc::new("claims.md", "# Mine\n")];
     assert_eq!(
         check(&shadowing, tmp.path(), &["extract.md"], &imports),
         ["`claims.md` shadows an import"]
@@ -137,17 +139,22 @@ fn imported() {
 #[test]
 fn dangling() {
     let tmp = tempfile::tempdir().expect("tempdir");
-    write(tmp.path(), "extract.md", "see [ids](references/ids.md) and [out](../x.md)\n");
+    write(
+        tmp.path(),
+        "extract.md",
+        "see [ids](references/ids.md), [out](../x.md), and [abs](/x.md)\n",
+    );
     write(tmp.path(), "references/ids.md", "# Ids, see [nope](nope.md)\n");
 
     let table = [
-        doc("extract.md", "see [ids](references/ids.md) and [out](../x.md)\n"),
-        doc("references/ids.md", "# Ids, see [nope](nope.md)\n"),
+        Doc::new("extract.md", "see [ids](references/ids.md), [out](../x.md), and [abs](/x.md)\n"),
+        Doc::new("references/ids.md", "# Ids, see [nope](nope.md)\n"),
     ];
     assert_eq!(
         check(&table, tmp.path(), &["extract.md"], &[]),
         [
             "`extract.md` links `../x.md`, which leaves the tree",
+            "`extract.md` links `/x.md`, which leaves the tree",
             "`references/ids.md` links `nope.md`, and the table holds no `references/nope.md`",
         ]
     );
@@ -158,20 +165,16 @@ fn dangling() {
 fn unwalkable() {
     let tmp = tempfile::tempdir().expect("tempdir");
 
-    let absent = check(&[], &tmp.path().join("absent"), &[], &[]);
+    let absent = check(&[], tmp.path().join("absent"), &[], &[]);
     assert_eq!(absent.len(), 1, "{absent:?}");
     assert!(absent[0].contains("cannot be read"), "{}", absent[0]);
 
     let cycle = tmp.path().join("cycle");
     write(&cycle, "intro.md", "# Intro\n");
     symlink(Path::new("."), cycle.join("loop")).expect("symlink");
-    let looped = check(&[doc("intro.md", "# Intro\n")], &cycle, &["intro.md"], &[]);
+    let looped = check(&[Doc::new("intro.md", "# Intro\n")], &cycle, &["intro.md"], &[]);
     assert_eq!(looped.len(), 1, "{looped:?}");
     assert!(looped[0].contains("symlink cycle"), "{}", looped[0]);
-}
-
-const fn doc(path: &'static str, body: &'static str) -> Doc {
-    Doc { path, body }
 }
 
 fn write(root: &Path, rel: &str, body: &str) {

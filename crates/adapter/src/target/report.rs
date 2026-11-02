@@ -15,7 +15,7 @@ use crate::target::Slice;
 /// What a build reports beyond the tree it wrote.
 ///
 /// Unknown fields are rejected during deserialisation.
-#[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize, JsonSchema)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Deserialize, Serialize, JsonSchema)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
 #[schemars(title = "Emery build report")]
 pub struct Report {

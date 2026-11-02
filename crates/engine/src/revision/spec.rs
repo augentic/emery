@@ -14,49 +14,34 @@ use serde::{Deserialize, Serialize};
 use crate::Rank;
 use crate::revision::{self, ReqId};
 
-// The `ID:` provenance key written below a requirement or slice heading.
 pub const ID: &str = "ID:";
-// The `Sources:` provenance key.
 pub const SOURCES: &str = "Sources:";
-// The `Status:` provenance key.
 pub const STATUS: &str = "Status:";
-// The `Route:` key written below a requirement an HTTP route reaches.
 pub const ROUTE: &str = "Route:";
-// The `Message:` key written below a requirement a message reaches.
 pub const MESSAGE: &str = "Message:";
-// The `Note:` key used for generated requirement notes.
 pub const NOTE: &str = "Note:";
-// The `### Requirement:` heading prefix.
 pub const HEADING: &str = "### Requirement:";
 
 const SCENARIO: &str = "#### Scenario:";
 
-// A behavioural specification in its stored form.
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Spec {
-    // The grammar the document was written under.
     pub emery: u32,
     // The revision this one amends, or `None` when drafted from sources alone.
     pub parent: Option<String>,
-    // Markdown paragraphs preceding the first requirement.
     pub preamble: Vec<String>,
-    // The requirements, in id order.
     pub requirements: Vec<Requirement>,
 }
 
 impl Spec {
-    // Returns the requirement `id` names, if the specification has one.
     #[must_use]
     pub fn requirement(&self, id: ReqId) -> Option<&Requirement> {
         self.requirements.iter().find(|requirement| requirement.id == id)
     }
 
-    // Returns the specification cut to `ids`, as Markdown.
-    //
     // The preamble, then the requirements `ids` name in the specification's
-    // order, rendered as `Display` renders the whole. An id the
-    // specification does not hold is left out.
+    // order, rendered as `Display` renders the whole.
     #[must_use]
     pub fn cut(&self, ids: &[ReqId]) -> String {
         let requirements: Vec<&Requirement> =
@@ -76,31 +61,23 @@ impl Display for Spec {
     }
 }
 
-// A reconciled requirement and its drafted acceptance scenarios.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Requirement {
-    // The stable requirement identifier.
     pub id: ReqId,
     // The heading derived from the highest-authority contributing claim.
     pub subject: String,
-    // The reconciliation outcome for contributing claims.
     pub status: Status,
-    // Whether an acceptance criterion covers the requirement.
     pub covered: bool,
     // What reaches the requirement, where a source's `contract` claim binds
     // it; rendered as its `Route:` or `Message:` line.
     pub trigger: Option<Trigger>,
     // Contributing claims in descending authority order.
     pub sources: Vec<Cited>,
-    // Markdown body paragraphs, empty when the requirement is in conflict.
+    // Empty when the requirement is in conflict.
     pub body: Vec<String>,
-    // Contributor classes rendered as notes.
-    //
-    // This contains losing classes for a divergence and every class for a
-    // conflict.
+    // Losing classes for a divergence, and every class for a conflict.
     pub losers: Vec<Loser>,
-    // The acceptance scenarios.
     pub scenarios: Vec<Scenario>,
 }
 
@@ -181,14 +158,9 @@ impl Display for Requirement {
             write!(f, " [{}]", self.status)?;
         }
 
-        write!(f, "\n\n{ID} {}\n{SOURCES} [", self.id)?;
-        for (position, source) in self.sources.iter().enumerate() {
-            if position > 0 {
-                f.write_str(", ")?;
-            }
-            write!(f, "{source}")?;
-        }
-        write!(f, "]\n{STATUS} {}", self.status)?;
+        write!(f, "\n\n{ID} {}\n", self.id)?;
+        revision::write_list(f, SOURCES, &self.sources)?;
+        write!(f, "\n{STATUS} {}", self.status)?;
         match &self.trigger {
             Some(Trigger::Http(route)) => write!(f, "\n{ROUTE} {route}")?,
             Some(Trigger::Message(name)) => write!(f, "\n{MESSAGE} {name}")?,

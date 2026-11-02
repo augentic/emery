@@ -3053,7 +3053,7 @@ async fn amend_hand_merged() {
     assert!(message.contains("edited or merged by hand"), "{envelope}");
     let hint = envelope["hint"].as_str().expect("a hint");
     assert!(hint.contains("git checkout <branch> -- spec/"), "{envelope}");
-    assert!(hint.contains("amendment again"), "{envelope}");
+    assert!(hint.contains("emery amend"), "{envelope}");
     assert!(provider.source.calls().is_empty(), "no source is extracted over a hand-merged tree");
     assert_eq!(provider.vcs.calls(), read_calls(), "read, and nothing written");
 }

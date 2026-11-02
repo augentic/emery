@@ -20,7 +20,6 @@ use omnia_sdk::{
     model, vcs,
 };
 use omnia_test::guest::{Memory, Scripted};
-use serde_json::Value;
 use tokio::sync::Barrier;
 
 use super::files::FilesScript;
@@ -436,12 +435,7 @@ impl<S: Send + Sync + 'static> Target for Provider<S> {
                     .lock()
                     .expect("verdicts")
                     .pop_front()
-                    .unwrap_or_else(|| {
-                        Ok(Verdict {
-                            passed: true,
-                            failures: Vec::new(),
-                        })
-                    })
+                    .unwrap_or_else(|| Ok(Verdict::passed()))
                     .map(Outcome::Verified)
             }
         };
@@ -585,17 +579,11 @@ pub fn digest(pair: &str) -> Digest {
 }
 
 // Builds a claim of `kind` carrying one required extra.
-pub fn claim(kind: ClaimKind, id: &str, extra: (&str, &str)) -> Claim {
-    let mut extras = serde_json::Map::new();
-    extras.insert(extra.0.to_string(), Value::String(extra.1.to_string()));
-    Claim {
-        kind,
-        id: Some(id.to_string()),
-        path: None,
-        synopsis: None,
-        backing: Some(Backing::Payload(extra.1.to_string())),
-        extras,
-    }
+pub fn claim(kind: ClaimKind, id: &str, (key, value): (&str, &str)) -> Claim {
+    Claim::new(kind)
+        .with_id(id)
+        .with_backing(Backing::Payload(value.to_string()))
+        .with_extra(key, value)
 }
 
 // Builds a requirement claim carrying its required `statement` extra.
