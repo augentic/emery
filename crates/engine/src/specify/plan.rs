@@ -127,15 +127,25 @@ impl<'a> Floors<'a> {
             }
         }
 
-        // the requirements each trigger reaches, in first-occurrence order
-        let mut triggers: Vec<(&'a Trigger, Vec<ReqId>)> = Vec::new();
-        for (id, _, trigger) in &requirements {
+        // the requirements each trigger reaches, in first-occurrence order; a
+        // trigger that reaches more than one non-`start` stem is a relative
+        // route registered per stem, so each stem holds its own handler
+        let mut triggers: Vec<(&'a Trigger, Option<&'a str>, Vec<ReqId>)> = Vec::new();
+        for &(id, subject, trigger) in &requirements {
             let Some(trigger) = trigger else { continue };
-            match triggers.iter_mut().find(|(known, _)| known == trigger) {
-                Some((_, ids)) => ids.push(*id),
-                None => triggers.push((trigger, vec![*id])),
+            let mut domains = requirements
+                .iter()
+                .filter(|(_, _, other)| *other == Some(trigger))
+                .map(|(_, other, _)| revision::stem(other))
+                .filter(|&stem| stem != "start");
+            let single = domains.next().is_none_or(|first| domains.all(|stem| stem == first));
+            let scope = (!single).then(|| revision::stem(subject));
+            match triggers.iter_mut().find(|(known, held, _)| *known == trigger && *held == scope) {
+                Some((_, _, ids)) => ids.push(id),
+                None => triggers.push((trigger, scope, vec![id])),
             }
         }
+        let triggers = triggers.into_iter().map(|(trigger, _, ids)| (trigger, ids)).collect();
 
         Self { stems, triggers }
     }
@@ -145,6 +155,11 @@ impl<'a> Floors<'a> {
         Self::new(spec.requirements.iter().map(|requirement| {
             (requirement.id, requirement.subject.as_str(), requirement.trigger.as_ref())
         }))
+    }
+
+    // Whether `a` and `b` are reached through one trigger handler.
+    pub fn shares_trigger(&self, a: ReqId, b: ReqId) -> bool {
+        self.triggers.iter().any(|(_, reached)| reached.contains(&a) && reached.contains(&b))
     }
 
     // How many floors an answer may cut the specification into at most.
@@ -318,9 +333,10 @@ impl<'a> Floors<'a> {
     }
 
     // A stem past the cap cut finer than the cap asks: two of its slices
-    // that would fit one within the cap are a finding, the smallest pair
-    // named. A pair a third slice stands between in `depends-on` cannot
-    // merge without closing a cycle, so it is no finding.
+    // that would fit one within the cap are a finding, the stem's slices
+    // and the smallest pair named. A pair a third slice stands between in
+    // `depends-on` cannot merge without closing a cycle, so it is no
+    // finding.
     fn verify_cut(&self, drafts: &[Draft], placed: &BTreeMap<ReqId, &str>, review: &mut Review) {
         let sizes: BTreeMap<&str, usize> =
             drafts.iter().map(|draft| (draft.name.as_str(), draft.requirements.len())).collect();
@@ -344,12 +360,17 @@ impl<'a> Floors<'a> {
                 .filter(|((first, a), (second, b))| first + second <= SLICE_CAP && !apart(a, b))
                 .min_by_key(|((first, _), (second, _))| first + second);
             if let Some(((first, a), (second, b))) = pair {
+                let summary = slices
+                    .iter()
+                    .map(|(count, name)| format!("`{name}` {count}"))
+                    .collect::<Vec<_>>()
+                    .join(", ");
                 review.note(format_args!(
-                    "the stem `{}` is cut into {} slices, yet `{a}` ({first} requirements) and \
-                     `{b}` ({second}) fit one slice of {} within the cap of {SLICE_CAP}: merge \
-                     the stem's slices until no two that could merge fit together; two a third \
-                     slice stands between in `depends-on`, an entry and the first stage it \
-                     runs, stay apart",
+                    "the stem `{}` is cut into {} slices ({summary}), yet `{a}` ({first} \
+                     requirements) and `{b}` ({second}) fit one slice of {} within the cap of \
+                     {SLICE_CAP}: merge the stem's slices until no two that could merge fit \
+                     together; two a third slice stands between in `depends-on`, an entry and the \
+                     first stage it runs, stay apart",
                     stem.label,
                     slices.len(),
                     first + second

@@ -1668,8 +1668,9 @@ async fn amend_recut() {
     assert!(
         exchanges[2].outcome.as_ref().is_err_and(|finding| {
             finding.contains(
-                "the stem `orders` is cut into 3 slices, yet `orders` (4 requirements) and \
-                 `orders-mid` (4) fit one slice of 8 within the cap of 12",
+                "the stem `orders` is cut into 3 slices (`orders` 4, `orders-mid` 4, \
+                 `orders-late` 5), yet `orders` (4 requirements) and `orders-mid` (4) fit one \
+                 slice of 8 within the cap of 12",
             )
         }),
         "{exchanges:?}"

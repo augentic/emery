@@ -2467,6 +2467,74 @@ async fn trigger_split_refused() {
     provider.model.assert_exhausted();
 }
 
+// A relative route registered under two non-`start` stems does not merge the
+// stems into one slice, while sub-stems of one stem sharing that route are
+// still one handler and cannot be split across slices.
+#[tokio::test]
+async fn trigger_scoped_to_stem() {
+    let cap = emery_engine::specify::SLICE_CAP;
+    let reads = cap / 2;
+    let lists = 1;
+    let posts = cap / 2 + 1;
+    let mut claims = vec![requirement("customers.get", "GET / lists the customers.")];
+    let parts: Vec<(&str, usize)> = vec![("get", reads), ("list", lists), ("post", posts)];
+    for (part, count) in &parts {
+        for index in 0..*count {
+            let statement = format!("`{part}` does thing {index}.");
+            claims.push(requirement(&format!("orders.{part}.thing-{index}"), &statement));
+        }
+    }
+    let subjects: Vec<String> = claims.iter().filter_map(|claim| claim.id.clone()).collect();
+    let numbered: Vec<String> = (1..=claims.len()).map(|n| format!("REQ-{n:03}")).collect();
+    let ids: Vec<&str> = numbered.iter().map(String::as_str).collect();
+    let (customers, others) = ids.split_at(1);
+    let (get, others) = others.split_at(reads);
+    let (list, post) = others.split_at(lists);
+    let get_and_post: Vec<&str> = get.iter().chain(post).copied().collect();
+    let get_and_list: Vec<&str> = get.iter().chain(list).copied().collect();
+
+    claims.push(claim(ClaimKind::Contract, "customers", ("route", "GET /")));
+    claims.push(claim(ClaimKind::Contract, "orders.get", ("route", "GET /")));
+    claims.push(claim(ClaimKind::Contract, "orders.list", ("route", "GET /")));
+
+    let grouping = separate_grouping(subjects.len());
+    let draft = spec_draft(&subjects, &["Customers and orders mounted at relative roots."]);
+    let design = design_with_apis();
+    let split = separate_slicing(&[
+        ("customers", customers),
+        ("orders-main", &get_and_post),
+        ("orders-list", list),
+    ]);
+    let merged = separate_slicing(&[
+        ("customers", customers),
+        ("orders-reading", &get_and_list),
+        ("orders-posting", post),
+    ]);
+    let mut provider = Provider::answering([
+        grouping.as_str(),
+        draft.as_str(),
+        design.as_str(),
+        split.as_str(),
+        merged.as_str(),
+    ]);
+    provider.source.evidence.insert("docs".to_string(), Ok(evidence(claims)));
+
+    cli_ok(&provider, &["emery", "specify", &reference("docs")]).await;
+
+    let check = &provider.model.exchanges()[3];
+    assert_eq!(check.tool, "check");
+    let correction = check.outcome.as_ref().expect_err("the intra-stem trigger split is rejected");
+    assert!(
+        correction.contains(&format!(
+            "requirements reached through `GET /` ({}) are split across `orders-list`, \
+             `orders-main`: one trigger is one handler, built by one slice",
+            get_and_list.join(", ")
+        )),
+        "{correction}"
+    );
+    provider.model.assert_exhausted();
+}
+
 // --- slicing ---
 
 // Three stems and two types: the model merges two stems, the engine refuses
@@ -2740,9 +2808,10 @@ async fn oversized_stem_cut_fine() {
     let correction = check.outcome.as_ref().expect_err("one slice per sub-stem is rejected");
     assert!(
         correction.contains(&format!(
-            "the stem `orders` is cut into 3 slices, yet `orders-deleting` ({deletes} \
-             requirements) and `orders-reading` ({reads}) fit one slice of {} within the cap of \
-             {cap}: merge the stem's slices until no two that could merge fit together",
+            "the stem `orders` is cut into 3 slices (`orders-deleting` {deletes}, \
+             `orders-reading` {reads}, `orders-posting` {posts}), yet `orders-deleting` \
+             ({deletes} requirements) and `orders-reading` ({reads}) fit one slice of {} within \
+             the cap of {cap}: merge the stem's slices until no two that could merge fit together",
             reads + deletes
         )),
         "{correction}"
@@ -2830,9 +2899,10 @@ async fn oversized_stem_pipeline() {
     let correction = check.outcome.as_ref().expect_err("the unordered cut is rejected");
     assert!(
         correction.contains(&format!(
-            "the stem `shipments` is cut into 3 slices, yet `shipments-validation` ({validation} \
-             requirements) and `shipments-inbound` ({inbound}) fit one slice of {} within the \
-             cap of {cap}",
+            "the stem `shipments` is cut into 3 slices (`shipments-validation` {validation}, \
+             `shipments-inbound` {inbound}, `shipments-pricing` {pricing}), yet \
+             `shipments-validation` ({validation} requirements) and `shipments-inbound` \
+             ({inbound}) fit one slice of {} within the cap of {cap}",
             inbound + validation
         )),
         "{correction}"
