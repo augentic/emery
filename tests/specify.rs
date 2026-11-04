@@ -2808,9 +2808,10 @@ async fn oversized_stem_cut_fine() {
     let correction = check.outcome.as_ref().expect_err("one slice per sub-stem is rejected");
     assert!(
         correction.contains(&format!(
-            "the stem `orders` is cut into 3 slices, yet `orders-deleting` ({deletes} \
-             requirements) and `orders-reading` ({reads}) fit one slice of {} within the cap of \
-             {cap}: merge the stem's slices until no two that could merge fit together",
+            "the stem `orders` is cut into 3 slices (`orders-deleting` {deletes}, \
+             `orders-reading` {reads}, `orders-posting` {posts}), yet `orders-deleting` \
+             ({deletes} requirements) and `orders-reading` ({reads}) fit one slice of {} within \
+             the cap of {cap}: merge the stem's slices until no two that could merge fit together",
             reads + deletes
         )),
         "{correction}"
@@ -2898,9 +2899,10 @@ async fn oversized_stem_pipeline() {
     let correction = check.outcome.as_ref().expect_err("the unordered cut is rejected");
     assert!(
         correction.contains(&format!(
-            "the stem `shipments` is cut into 3 slices, yet `shipments-validation` ({validation} \
-             requirements) and `shipments-inbound` ({inbound}) fit one slice of {} within the \
-             cap of {cap}",
+            "the stem `shipments` is cut into 3 slices (`shipments-validation` {validation}, \
+             `shipments-inbound` {inbound}, `shipments-pricing` {pricing}), yet \
+             `shipments-validation` ({validation} requirements) and `shipments-inbound` \
+             ({inbound}) fit one slice of {} within the cap of {cap}",
             inbound + validation
         )),
         "{correction}"

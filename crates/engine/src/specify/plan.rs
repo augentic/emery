@@ -333,9 +333,10 @@ impl<'a> Floors<'a> {
     }
 
     // A stem past the cap cut finer than the cap asks: two of its slices
-    // that would fit one within the cap are a finding, the smallest pair
-    // named. A pair a third slice stands between in `depends-on` cannot
-    // merge without closing a cycle, so it is no finding.
+    // that would fit one within the cap are a finding, the stem's slices
+    // and the smallest pair named. A pair a third slice stands between in
+    // `depends-on` cannot merge without closing a cycle, so it is no
+    // finding.
     fn verify_cut(&self, drafts: &[Draft], placed: &BTreeMap<ReqId, &str>, review: &mut Review) {
         let sizes: BTreeMap<&str, usize> =
             drafts.iter().map(|draft| (draft.name.as_str(), draft.requirements.len())).collect();
@@ -359,12 +360,17 @@ impl<'a> Floors<'a> {
                 .filter(|((first, a), (second, b))| first + second <= SLICE_CAP && !apart(a, b))
                 .min_by_key(|((first, _), (second, _))| first + second);
             if let Some(((first, a), (second, b))) = pair {
+                let summary = slices
+                    .iter()
+                    .map(|(count, name)| format!("`{name}` {count}"))
+                    .collect::<Vec<_>>()
+                    .join(", ");
                 review.note(format_args!(
-                    "the stem `{}` is cut into {} slices, yet `{a}` ({first} requirements) and \
-                     `{b}` ({second}) fit one slice of {} within the cap of {SLICE_CAP}: merge \
-                     the stem's slices until no two that could merge fit together; two a third \
-                     slice stands between in `depends-on`, an entry and the first stage it \
-                     runs, stay apart",
+                    "the stem `{}` is cut into {} slices ({summary}), yet `{a}` ({first} \
+                     requirements) and `{b}` ({second}) fit one slice of {} within the cap of \
+                     {SLICE_CAP}: merge the stem's slices until no two that could merge fit \
+                     together; two a third slice stands between in `depends-on`, an entry and the \
+                     first stage it runs, stay apart",
                     stem.label,
                     slices.len(),
                     first + second
