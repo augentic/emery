@@ -168,11 +168,11 @@ impl<'a> Pruned<'a> {
         }
 
         // the rest by trigger, then by floor
+        let floors = Floors::from_spec(spec);
         for requirement in placing {
             if open.ids.contains(&requirement.id) {
                 continue;
             }
-            let trigger = requirement.trigger.as_ref();
             let floor = |held: &Requirement| {
                 if past.contains(&requirement.stem()) {
                     held.substem() == requirement.substem()
@@ -184,7 +184,7 @@ impl<'a> Pruned<'a> {
                 .slices
                 .iter()
                 .position(|slice| {
-                    slice.holds(spec, |held| trigger.is_some() && held.trigger.as_ref() == trigger)
+                    slice.holds(spec, |held| floors.shares_trigger(requirement.id, held.id))
                 })
                 .or_else(|| self.slices.iter().position(|slice| slice.holds(spec, floor)));
             match placed {
