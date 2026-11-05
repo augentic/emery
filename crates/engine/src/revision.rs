@@ -26,27 +26,27 @@ use serde_json::Value;
 use sha2::{Digest, Sha256};
 
 pub use self::amendment::{
-    Amendment, AmendmentBase, BriefState, Change, ChangeClass, SliceChange, SliceClass,
+    Amendment, AmendmentBase, BriefState, Change, ChangeClass, PartChange, PartClass,
 };
 pub use self::design::{Block, Design, Role, Section, SectionKind, TYPE, citations};
 use self::diff::BRIEF;
-pub use self::diff::{Changed, DesignDiff, Diff, Entry, PlanDiff, Retired, SliceEntry, SpecDiff};
-pub use self::id::{BadId, ReqId, SliceId, leads, stem};
+pub use self::diff::{Changed, DesignDiff, Diff, Entry, PartEntry, PlanDiff, Retired, SpecDiff};
+pub use self::id::{BadId, PartId, ReqId, SliceId, leads, stem};
 use self::plan::{DEPENDS_ON, REQUIREMENTS, TYPES};
-pub use self::plan::{Plan, Slice, Waves, ranks};
+pub use self::plan::{Part, Plan, Waves, ranks};
 pub use self::spec::{Cited, Loser, Requirement, Scenario, Spec, Status};
 use self::spec::{HEADING, ID, MESSAGE, NOTE, ROUTE, SOURCES, STATUS};
 
 // The revision grammar written and accepted by this engine.
 //
 // A stored revision stamped with another grammar is outdated.
-pub const EMERY: u32 = 8;
+pub const EMERY: u32 = 9;
 
 // Line prefixes reserved for engine-generated Markdown.
 //
 // `#`, so no draft line reads as a heading, and the engine's own line keys,
 // so no draft line passes as provenance, a trigger, a note, a type label,
-// or a slice's lists.
+// or a part's lists.
 pub const RESERVED: &[&str] =
     &["#", ID, SOURCES, STATUS, ROUTE, MESSAGE, NOTE, TYPE, REQUIREMENTS, TYPES, DEPENDS_ON];
 
@@ -140,7 +140,7 @@ impl Revision {
     }
 
     // What tells the three documents apart as one revision's: the plan
-    // places each requirement of the specification in one slice, owns each
+    // places each requirement of the specification in one part, owns each
     // data type of the design in one, and names nothing else. Every seal
     // satisfies it, so a finding names a mix of two revisions' documents,
     // which a merge resolved one file at a time leaves.
@@ -150,35 +150,35 @@ impl Revision {
         let stated: BTreeSet<ReqId> =
             self.spec.requirements.iter().map(|requirement| requirement.id).collect();
         let keys = self.design.data_types();
-        let mut placed: BTreeMap<ReqId, SliceId> = BTreeMap::new();
-        let mut owned: BTreeMap<&str, SliceId> = BTreeMap::new();
-        for slice in &self.plan.slices {
-            for &id in &slice.requirements {
+        let mut placed: BTreeMap<ReqId, PartId> = BTreeMap::new();
+        let mut owned: BTreeMap<&str, PartId> = BTreeMap::new();
+        for part in &self.plan.parts {
+            for &id in &part.requirements {
                 if !stated.contains(&id) {
                     findings.push(format!(
                         "`{id}` is placed by `{}` and is no requirement of the specification",
-                        slice.id
+                        part.id
                     ));
-                } else if let Some(other) = placed.insert(id, slice.id) {
-                    findings.push(format!("`{id}` is placed by `{other}` and `{}`", slice.id));
+                } else if let Some(other) = placed.insert(id, part.id) {
+                    findings.push(format!("`{id}` is placed by `{other}` and `{}`", part.id));
                 }
             }
-            for key in &slice.types {
+            for key in &part.types {
                 if !keys.contains(key) {
                     findings.push(format!(
                         "`{key}` is owned by `{}` and is no data type of the design",
-                        slice.id
+                        part.id
                     ));
-                } else if let Some(other) = owned.insert(key, slice.id) {
-                    findings.push(format!("`{key}` is owned by `{other}` and `{}`", slice.id));
+                } else if let Some(other) = owned.insert(key, part.id) {
+                    findings.push(format!("`{key}` is owned by `{other}` and `{}`", part.id));
                 }
             }
         }
         for id in stated.iter().filter(|id| !placed.contains_key(id)) {
-            findings.push(format!("`{id}` is placed by no slice"));
+            findings.push(format!("`{id}` is placed by no part"));
         }
         for key in keys.iter().filter(|key| !owned.contains_key(key.as_str())) {
-            findings.push(format!("`{key}` is owned by no slice"));
+            findings.push(format!("`{key}` is owned by no part"));
         }
         findings
     }

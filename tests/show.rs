@@ -164,7 +164,7 @@ async fn show_hand_merged() {
 #[tokio::test]
 async fn show_hand_mixed() {
     let mut plan: Value = serde_json::from_slice(PLAN).expect("the plan fixture");
-    plan["slices"][1]["requirements"] = serde_json::json!(["REQ-003", "REQ-005"]);
+    plan["parts"][1]["requirements"] = serde_json::json!(["REQ-003", "REQ-005"]);
     let provider = Provider::idle();
     seed(&provider.files, SPEC, DESIGN, plan.to_string().as_bytes());
 
@@ -177,8 +177,8 @@ async fn show_hand_mixed() {
         message,
         format!(
             "`spec/` at commit `{HEAD}` holds documents that read as no one revision's \
-             (`REQ-005` is placed by `SLICE-002` and is no requirement of the specification; \
-             `REQ-004` is placed by no slice), so they were edited or merged by hand; a seal \
+             (`REQ-005` is placed by `PART-002` and is no requirement of the specification; \
+             `REQ-004` is placed by no part), so they were edited or merged by hand; a seal \
              writes them whole"
         ),
         "{envelope}"

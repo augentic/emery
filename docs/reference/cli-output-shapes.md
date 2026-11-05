@@ -107,7 +107,7 @@ error[specify-source-required]: no sources
 All text-mode formatters (`crates/cli/src/text.rs`) follow a uniform layout:
 
 - **Result line first (lowercase, verb-first, no trailing period):** `staged candidate 9f8e7d6c…`, `sealed revision 9f8e7d6c… as emery/9f8e7d6c… at 4e5f6a7b`.
-- **Two-space indented detail lines:** `  plan: 3 slices in 2 waves, widest 2`.
+- **Two-space indented detail lines:** `  plan: 3 parts in 2 waves, widest 2`.
 - **Explicit empty states:** Every empty state prints a lowercase line rather than silence.
 - **Exception (`emery show`):** `emery show` outputs the raw Markdown projection alone with no status header so `emery show spec > spec.md` writes a clean Markdown file.
 
@@ -120,7 +120,7 @@ All text-mode formatters (`crates/cli/src/text.rs`) follow a uniform layout:
 ```json
 {
   "revision": "9f8e7d6c…",
-  "waves": [["SLICE-001", "SLICE-003"], ["SLICE-002"]],
+  "waves": [["PART-001", "PART-003"], ["PART-002"]],
   "staged": true,
   "fresh": false,
   "diff": {
@@ -138,9 +138,9 @@ All text-mode formatters (`crates/cli/src/text.rs`) follow a uniform layout:
     "design": { "preamble": false, "added": [], "removed": [], "changed": ["domain-model"] },
     "plan": {
       "preamble": false,
-      "added": [{ "id": "SLICE-002", "name": "access" }],
+      "added": [{ "id": "PART-002", "name": "access" }],
       "removed": [],
-      "changed": [{ "id": "SLICE-001", "name": "authentication", "fields": ["requirements", "brief"] }]
+      "changed": [{ "id": "PART-001", "name": "authentication", "fields": ["requirements", "brief"] }]
     }
   },
   "repositories": [
@@ -152,14 +152,14 @@ All text-mode formatters (`crates/cli/src/text.rs`) follow a uniform layout:
 | Field | Type | Presence | Description |
 | --- | --- | --- | --- |
 | `revision` | `string` | Always | Content-addressed SHA-256 ID of the three candidate documents. |
-| `waves` | `string[][]` | Always | Dependency waves of `SLICE-NNN` IDs in build order. |
+| `waves` | `string[][]` | Always | Dependency waves of `PART-NNN` IDs in build order. |
 | `staged` | `boolean` | Always | `true` when staged in `.emery/storage/`; `false` when `--apply` sealed it. |
 | `fresh` | `boolean` | Always | `true` when staged with `--fresh`; `false` otherwise. |
 | `diff` | `Diff` | Optional | Advisory diff against the current revision in `[target]` (omitted when no `[target]` or no current revision exists). |
 | `diff.from` | `string` | In `diff` | SHA-256 ID of the outgoing revision compared against. |
 | `diff.spec` | `object` | In `diff` | `{ preamble, added, removed, retired, changed }`. Across distinct histories (`specify`), requirements are matched by shared stem + overlapping citation anchor first and by `id` second (`was` records a changed ID; `retired` is empty). Within one history (`amend`), requirements are matched by `id` alone (`retired` holds withdrawn `{ id, subject, statement }` entries; `removed` is empty). |
 | `diff.design` | `object` | In `diff` | `{ preamble, added, removed, changed }` over kebab-case section kinds (`overview`, `domain-model`, `apis`, `technical-logic`, `ui-layout`, `observability`). |
-| `diff.plan` | `object` | In `diff` | `{ preamble, added, removed, changed }` over slices (`{ id, name }`, with `fields` on `changed` entries). |
+| `diff.plan` | `object` | In `diff` | `{ preamble, added, removed, changed }` over parts (`{ id, name }`, with `fields` on `changed` entries). |
 | `repositories` | `object[]` | Optional | Remote Git sources read (`{ source, repository, revision, commit }`). Omitted when empty. |
 | `applied` | `ApplyOutput` | Optional | Present only when `--apply` sealed the candidate (see [`emery apply`](#emery-apply)). |
 
@@ -175,9 +175,9 @@ All text-mode formatters (`crates/cli/src/text.rs`) follow a uniform layout:
   "tally": { "added": 1, "changed": 1, "retired": 1, "conflict": 0, "unchanged": 4, "by-scope": 1 },
   "stems": ["access", "orders", "session"],
   "sections": { "preamble": false, "added": ["apis"], "removed": [], "changed": ["overview"] },
-  "slices": [
-    { "id": "SLICE-002", "name": "orders", "class": "changed", "brief": "kept" },
-    { "id": "SLICE-004", "name": "access", "class": "added", "brief": "redrafted" }
+  "parts": [
+    { "id": "PART-002", "name": "orders", "class": "changed", "brief": "kept" },
+    { "id": "PART-004", "name": "access", "class": "added", "brief": "redrafted" }
   ]
 }
 ```
@@ -191,7 +191,7 @@ All text-mode formatters (`crates/cli/src/text.rs`) follow a uniform layout:
 | `conflicts` | `string[]` | Optional | Subject IDs of requirements in `conflict`, in `ReqId` order (omitted when empty). |
 | `stems` | `string[]` | Optional | Sorted unique stems touched by non-`unchanged` requirements (omitted when empty). |
 | `sections` | `DesignDiff` | Optional | `{ preamble, added, removed, changed }` over design section kinds (omitted when design is unchanged). |
-| `slices` | `SliceChange[]` | Optional | `{ id, name, class, brief }` for each `added`, `changed`, or `removed` slice, where `brief` is `"redrafted"` or `"kept"` (omitted when empty). |
+| `parts` | `PartChange[]` | Optional | `{ id, name, class, brief }` for each `added`, `changed`, or `removed` part, where `brief` is `"redrafted"` or `"kept"` (omitted when empty). |
 | `repositories` | `object[]` | Optional | Remote Git sources read (`{ source, repository, revision, commit }`). Omitted when empty. |
 | `applied` | `ApplyOutput` | Optional | Present only when `--apply` sealed the amendment (see [`emery apply`](#emery-apply)). |
 
@@ -222,7 +222,7 @@ All text-mode formatters (`crates/cli/src/text.rs`) follow a uniform layout:
       "preamble": false,
       "added": [],
       "removed": [],
-      "changed": [{ "id": "SLICE-002", "name": "orders", "fields": ["requirements"] }]
+      "changed": [{ "id": "PART-002", "name": "orders", "fields": ["requirements"] }]
     }
   }
 }
@@ -246,7 +246,7 @@ All text-mode formatters (`crates/cli/src/text.rs`) follow a uniform layout:
 ```json
 {
   "revision": "9f8e7d6c…",
-  "waves": [["SLICE-001", "SLICE-003"], ["SLICE-002"]],
+  "waves": [["PART-001", "PART-003"], ["PART-002"]],
   "base": "1a2b3c4d…",
   "repository": "./.emery/vcs/repos/shop",
   "initialised": { "commit": "2b3c4d5e…", "paths": [".gitignore", "Cargo.toml", "src/lib.rs"] },
@@ -306,9 +306,9 @@ All text-mode formatters (`crates/cli/src/text.rs`) follow a uniform layout:
 ```json
 {
   "revision": "9f8e7d6c…",
-  "body": "---\nemery: 8\nrevision: 9f8e7d6c…\n---\n\n# Specification\n…",
+  "body": "---\nemery: 9\nrevision: 9f8e7d6c…\n---\n\n# Specification\n…",
   "document": {
-    "emery": 8,
+    "emery": 9,
     "parent": null,
     "preamble": ["…"],
     "requirements": [
@@ -349,8 +349,8 @@ All text-mode formatters (`crates/cli/src/text.rs`) follow a uniform layout:
 | --- | --- | --- |
 | `spec` | `emery` (`u32`), `parent` (`string \| null`), `preamble` (`string[]`), `requirements` (`Requirement[]`) | Each `Requirement` has `id` (`REQ-NNN`), `subject`, `status` (`"agreed"` \| `"divergence"` \| `"conflict"`), `covered` (`bool`), `trigger` (`{ "http": { "method", "path" } }` \| `{ "message": "<name>" }` \| `null`), `sources` (`{ source, claim, path }[]`), `body` (`string[]`), `losers` (`{ sources, kind, rank, claim, statement }[]`), and `scenarios` (`{ name, given, when, then, and }[]`). |
 | `design` | `emery` (`u32`), `parent` (`string \| null`), `preamble` (`string[]`), `sections` (`Section[]`) | Each `Section` has `kind` (`"overview"` \| `"domain-model"` \| `"apis"` \| `"technical-logic"` \| `"ui-layout"` \| `"observability"`) and `blocks` (`{ "text": "<paragraph>" }` or `{ "type": { "key", "signature", "role": "data" \| "mechanism" } }`). |
-| `plan` | `emery` (`u32`), `parent` (`string \| null`), `preamble` (`string[]`), `slices` (`Slice[]`) | Each `Slice` has `id` (`SLICE-NNN`), `name`, `requirements` (`REQ-NNN[]`), `types` (`string[]` of `data` type keys), `depends-on` (`SLICE-NNN[]`), and `brief` (`string[]`). |
-| `amendment` | `emery` (`u32`), `base` (`{ revision, commit }`), `changes` (`Change[]`), `spec` (`Spec`), `design` (`Design`), `plan` (`Plan`), `sections` (`DesignDiff`), `slices` (`SliceChange[]`) | Each `Change` has `id` (`REQ-NNN`), `subject`, `class` (`"added"` \| `"changed"` \| `"retired"` \| `"conflict"` \| `"unchanged"`), `before` (`string \| null`), `after` (`string \| null`), `sources` (`{ source, claim, path }[]`), and `scope` (`string \| null`, populated when retired via `scope = "whole"`). |
+| `plan` | `emery` (`u32`), `parent` (`string \| null`), `preamble` (`string[]`), `parts` (`Part[]`) | Each `Part` has `id` (`PART-NNN`), `name`, `requirements` (`REQ-NNN[]`), `types` (`string[]` of `data` type keys), `depends-on` (`PART-NNN[]`), and `brief` (`string[]`). |
+| `amendment` | `emery` (`u32`), `base` (`{ revision, commit }`), `changes` (`Change[]`), `spec` (`Spec`), `design` (`Design`), `plan` (`Plan`), `sections` (`DesignDiff`), `parts` (`PartChange[]`) | Each `Change` has `id` (`REQ-NNN`), `subject`, `class` (`"added"` \| `"changed"` \| `"retired"` \| `"conflict"` \| `"unchanged"`), `before` (`string \| null`), `after` (`string \| null`), `sources` (`{ source, claim, path }[]`), and `scope` (`string \| null`, populated when retired via `scope = "whole"`). |
 
 ---
 

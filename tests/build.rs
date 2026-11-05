@@ -58,11 +58,11 @@ const SPEC_001: &str = include_str!("build/spec-001.md");
 const SPEC_002: &str = include_str!("build/spec-002.md");
 const DESIGN_MD: &str = include_str!("build/design.md");
 
-const PLAN_001: &str = "## Slice: authentication\n\nID: SLICE-001\nRequirements: [REQ-001, \
+const PLAN_001: &str = "## Part: authentication\n\nID: PART-001\nRequirements: [REQ-001, \
                         REQ-002]\n\nDelivers sign-in and the session it issues; a session cannot \
                         be verified without a sign-in to issue it, so the two stems are one build.";
-const PLAN_002: &str = "## Slice: orders\n\nID: SLICE-002\nRequirements: [REQ-003, REQ-004]\nTypes: \
-                        [orders.line, orders.order]\nDepends on: [SLICE-001]\n\nDelivers order \
+const PLAN_002: &str = "## Part: orders\n\nID: PART-002\nRequirements: [REQ-003, REQ-004]\nTypes: \
+                        [orders.line, orders.order]\nDepends on: [PART-001]\n\nDelivers order \
                         creation and cancellation for a signed-in caller; verified by placing and \
                         cancelling an order under a session from `authentication`.";
 
@@ -393,7 +393,7 @@ async fn build_plan() {
     assert_eq!(
         stdout,
         format!(
-            "built revision {id}\n  plan: 2 slices in 2 waves, widest 1\n  base {BASE}\n  wave 1: \
+            "built revision {id}\n  plan: 2 parts in 2 waves, widest 1\n  base {BASE}\n  wave 1: \
              1 slice verified at 9f8e7d6c\n    SLICE-001 authentication: covered 2/2, written 1 \
              file, merged m:SLICE-001\n  wave 2: 1 slice verified at 9f8e7d6c\n    SLICE-002 \
              orders: covered 1/2 (uncovered REQ-004), written 3 files, merged m:SLICE-002\n  \
@@ -454,7 +454,7 @@ async fn build_plan() {
             .await;
     let envelope: Value = serde_json::from_slice(&resp.stdout).expect("one JSON envelope");
     assert_eq!(envelope["revision"], id, "{envelope}");
-    assert_eq!(envelope["waves"], json!([["SLICE-001"], ["SLICE-002"]]), "{envelope}");
+    assert_eq!(envelope["waves"], json!([["PART-001"], ["PART-002"]]), "{envelope}");
     assert_eq!(envelope["base"], BASE, "{envelope}");
     assert!(envelope.get("resumed").is_none(), "a fresh build resumes nothing: {envelope}");
     assert!(envelope.get("initialised").is_none(), "an init scaffolding nothing seals nothing");
@@ -500,7 +500,7 @@ async fn build_waves() {
             .await;
 
     let envelope: Value = serde_json::from_slice(&resp.stdout).expect("one JSON envelope");
-    assert_eq!(envelope["waves"], json!([["SLICE-001", "SLICE-003"], ["SLICE-002"]]), "{envelope}");
+    assert_eq!(envelope["waves"], json!([["PART-001", "PART-003"], ["PART-002"]]), "{envelope}");
     assert_eq!(
         dispatched(&provider),
         [
@@ -541,7 +541,7 @@ async fn build_waves() {
     assert_eq!(
         stdout,
         format!(
-            "built revision {id}\n  plan: 3 slices in 2 waves, widest 2\n  base {BASE}\n  wave 1: \
+            "built revision {id}\n  plan: 3 parts in 2 waves, widest 2\n  base {BASE}\n  wave 1: \
              2 slices verified at 9f8e7d6c\n    SLICE-001 authentication: covered 1/1, written 1 \
              file, merged m:SLICE-001\n    SLICE-003 orders: covered 2/2, written 1 file, merged \
              m:SLICE-003\n  wave 2: 1 slice verified at 9f8e7d6c\n    SLICE-002 sessions: covered \
@@ -638,10 +638,10 @@ async fn build_conflict_resolved() {
     let brief = &turn.messages[0];
     assert_eq!(
         brief,
-        "# Slice being merged\n\n## Slice: orders\n\nID: SLICE-003\nRequirements: [REQ-003, \
+        "# Slice being merged\n\n## Part: orders\n\nID: PART-003\nRequirements: [REQ-003, \
          REQ-004]\nTypes: [orders.line, orders.order]\n\nDelivers order creation and \
-         cancellation; it waits on nothing.\n\n# Merged before it in the wave\n\n## Slice: \
-         authentication\n\nID: SLICE-001\nRequirements: [REQ-001]\n\nDelivers sign-in.\n\n# \
+         cancellation; it waits on nothing.\n\n# Merged before it in the wave\n\n## Part: \
+         authentication\n\nID: PART-001\nRequirements: [REQ-001]\n\nDelivers sign-in.\n\n# \
          Conflicts\n\n## `src/lib.rs`\n\n### Integrated tree\n\n```\npub mod \
          authentication;\n```\n\n### Slice\n\n```\npub mod orders;\n```\n\n"
     );
@@ -765,7 +765,7 @@ async fn build_conflict_resolved_staged_higher_id() {
 
     let brief = &provider.model.seen()[0].messages[0];
     assert!(
-        brief.contains("# Merged before it in the wave\n\n## Slice: orders\n\nID: SLICE-003"),
+        brief.contains("# Merged before it in the wave\n\n## Part: orders\n\nID: PART-003"),
         "the staged higher-id sibling is named in the brief: {brief}"
     );
     provider.model.assert_exhausted();
@@ -918,7 +918,7 @@ async fn build_conflict_resolved_as_written() {
     assert_eq!(
         String::from_utf8_lossy(&resp.stdout),
         format!(
-            "built revision {id}\n  plan: 3 slices in 2 waves, widest 2\n  base {BASE}\n  wave 1: \
+            "built revision {id}\n  plan: 3 parts in 2 waves, widest 2\n  base {BASE}\n  wave 1: \
              2 slices verified at 9f8e7d6c\n    SLICE-001 authentication: covered 1/1, written 2 \
              files, merged m:SLICE-001\n    SLICE-003 orders: covered 2/2, written 1 file, merged \
              m:SLICE-003, resolved (src/lib.rs)\n  wave 2: 1 slice verified at 9f8e7d6c\n    \
@@ -1422,7 +1422,7 @@ async fn build_resumed() {
     assert_eq!(
         stdout,
         format!(
-            "built revision {id}\n  plan: 3 slices in 2 waves, widest 2\n  base {HEAD}\n  resumed: \
+            "built revision {id}\n  plan: 3 parts in 2 waves, widest 2\n  base {HEAD}\n  resumed: \
              SLICE-001, SLICE-003\n  wave 1: 1 slice verified at 9f8e7d6c\n    SLICE-002 sessions: \
              covered 1/1, written 1 file, merged m:SLICE-002\n  labelled emery/{id} at {HEAD}\n"
         )
@@ -1454,7 +1454,7 @@ async fn build_resumed_complete() {
     assert_eq!(
         stdout,
         format!(
-            "built revision {id}\n  plan: 2 slices in 2 waves, widest 1\n  base {HEAD}\n  resumed: \
+            "built revision {id}\n  plan: 2 parts in 2 waves, widest 1\n  base {HEAD}\n  resumed: \
              SLICE-001, SLICE-002\n  labelled emery/{id} at {LABELLED}\n"
         )
     );
@@ -1502,7 +1502,7 @@ async fn build_candidate_staged() {
     assert_eq!(
         stdout,
         format!(
-            "built revision {id}\n  plan: 2 slices in 2 waves, widest 1\n  candidate {candidate} \
+            "built revision {id}\n  plan: 2 parts in 2 waves, widest 1\n  candidate {candidate} \
              is staged and not sealed; `emery apply` seals it\n  base {HEAD}\n  resumed: \
              SLICE-001, SLICE-002\n  labelled emery/{id} at {LABELLED}\n"
         ),
@@ -1547,7 +1547,7 @@ async fn build_amendment_staged() {
     assert_eq!(
         String::from_utf8_lossy(&resp.stdout),
         format!(
-            "built revision {id}\n  plan: 2 slices in 2 waves, widest 1\n  amendment {amendment} \
+            "built revision {id}\n  plan: 2 parts in 2 waves, widest 1\n  amendment {amendment} \
              is staged; `emery show amendment` reviews it\n  base {HEAD}\n  resumed: SLICE-001, \
              SLICE-002\n  labelled emery/{id} at {LABELLED}\n"
         )
@@ -1744,7 +1744,7 @@ async fn build_resumed_staged() {
     assert_eq!(
         stdout,
         format!(
-            "built revision {id}\n  plan: 3 slices in 2 waves, widest 2\n  base {HEAD}\n  resumed: \
+            "built revision {id}\n  plan: 3 parts in 2 waves, widest 2\n  base {HEAD}\n  resumed: \
              SLICE-001, SLICE-003\n  wave 1: 2 slices verified at 5a6b7c8d\n    SLICE-001: staged \
              by an earlier run, not built again\n    SLICE-003: staged by an earlier run, not \
              built again\n  wave 2: 1 slice verified at 9f8e7d6c\n    SLICE-002 sessions: covered \
@@ -2737,7 +2737,7 @@ async fn build_repository_missing() {
 #[tokio::test]
 async fn build_cycle() {
     let mut plan: Value = serde_json::from_slice(PLAN).expect("the plan fixture");
-    plan["slices"][0]["depends-on"] = json!(["SLICE-002"]);
+    plan["parts"][0]["depends-on"] = json!(["PART-002"]);
     let provider = Provider::idle();
     seed(&provider.files, SPEC, DESIGN, &serde_json::to_vec(&plan).expect("a plan"));
 

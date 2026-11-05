@@ -1,12 +1,12 @@
 {
-  "emery": 8,
+  "emery": 9,
   "parent": null,
   "preamble": [
     "Two slices: sign-in with its session, and orders over it."
   ],
-  "slices": [
+  "parts": [
     {
-      "id": "SLICE-001",
+      "id": "PART-001",
       "name": "authentication",
       "requirements": [
         "REQ-001",
@@ -19,7 +19,7 @@
       ]
     },
     {
-      "id": "SLICE-002",
+      "id": "PART-002",
       "name": "orders",
       "requirements": [
         "REQ-003",
@@ -30,7 +30,7 @@
         "orders.order"
       ],
       "depends-on": [
-        "SLICE-001"
+        "PART-001"
       ],
       "brief": [
         "Delivers order creation and cancellation for a signed-in caller; verified by placing and cancelling an order under a session from `authentication`."

@@ -1,11 +1,11 @@
 ---
-emery: 8
+emery: 9
 revision: <revision>
 ---
 
 # Plan
 
-## Slice: greeting
+## Part: greeting
 
-ID: SLICE-001
+ID: PART-001
 Requirements: [REQ-001]

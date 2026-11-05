@@ -83,7 +83,7 @@ pub struct Requirement {
 
 impl Requirement {
     // Returns the stem of the subject: the first segment of its dotted id,
-    // the slice floor every requirement under it shares.
+    // the part floor every requirement under it shares.
     #[must_use]
     pub fn stem(&self) -> &str {
         revision::stem(&self.subject)

@@ -18,7 +18,7 @@ use omnia_sdk::{Error, Vcs, bad_gateway, bad_request, server_error};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest as _, Sha256};
 
-use crate::revision::{Amendment, ChangeClass, ReqId, SliceChange, SliceClass, SliceId};
+use crate::revision::{Amendment, ChangeClass, PartChange, PartClass, PartId, ReqId, SliceId};
 
 /// The directory beneath the project root that holds every clone and working copy.
 pub const ROOT: &str = ".emery/vcs";
@@ -289,8 +289,8 @@ impl fmt::Display for RevisionMessage {
 /// What a sealed amendment changed against the revision it amends, as its commit's trailers carry it.
 ///
 /// `Added:`, `Changed:`, and `Retired:` count the requirements under each
-/// class; `Slices:` lists the slices the plan adds, changes, or removes as
-/// `SLICE-002 orders changed`, and is left out when there are none.
+/// class; `Parts:` lists the parts the plan adds, changes, or removes as
+/// `PART-002 orders changed`, and is left out when there are none.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Summary {
     /// Requirements the parent does not hold, stated by the change.
@@ -299,12 +299,12 @@ pub struct Summary {
     pub changed: usize,
     /// Requirements of the parent the change withdraws.
     pub retired: usize,
-    /// The slices the plan adds, changes, or removes against the parent's, in id order.
-    pub slices: Vec<SliceSummary>,
+    /// The parts the plan adds, changes, or removes against the parent's, in id order.
+    pub parts: Vec<PartSummary>,
 }
 
 impl Summary {
-    const KEYS: [&str; 4] = ["Added", "Changed", "Retired", "Slices"];
+    const KEYS: [&str; 4] = ["Added", "Changed", "Retired", "Parts"];
 
     /// Summarises what `amendment` changes against its base.
     #[must_use]
@@ -313,15 +313,15 @@ impl Summary {
             added: amendment.count(ChangeClass::Added),
             changed: amendment.count(ChangeClass::Changed),
             retired: amendment.count(ChangeClass::Retired),
-            slices: amendment.slices.iter().map(SliceSummary::from).collect(),
+            parts: amendment.parts.iter().map(PartSummary::from).collect(),
         }
     }
 
     // The summary the trailers carry; `None` when a count is missing or
-    // malformed, or a slice entry is not `<id> <name> <class>`.
+    // malformed, or a part entry is not `<id> <name> <class>`.
     fn parse(trailers: &BTreeMap<&str, &str>) -> Option<Self> {
         let count = |key: &str| trailers.get(key)?.parse::<usize>().ok();
-        let slices = match trailers.get("Slices") {
+        let parts = match trailers.get("Parts") {
             Some(listed) => listed
                 .split(", ")
                 .map(|entry| {
@@ -330,7 +330,7 @@ impl Summary {
                     if words.next().is_some() || !is_kebab(name) {
                         return None;
                     }
-                    Some(SliceSummary {
+                    Some(PartSummary {
                         id: id.parse().ok()?,
                         name: name.to_owned(),
                         class: class.parse().ok()?,
@@ -343,7 +343,7 @@ impl Summary {
             added: count("Added")?,
             changed: count("Changed")?,
             retired: count("Retired")?,
-            slices,
+            parts,
         })
     }
 }
@@ -351,30 +351,30 @@ impl Summary {
 impl fmt::Display for Summary {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "Added: {}\nChanged: {}\nRetired: {}", self.added, self.changed, self.retired)?;
-        if !self.slices.is_empty() {
-            let listed: Vec<String> = self.slices.iter().map(ToString::to_string).collect();
-            write!(f, "\nSlices: {}", listed.join(", "))?;
+        if !self.parts.is_empty() {
+            let listed: Vec<String> = self.parts.iter().map(ToString::to_string).collect();
+            write!(f, "\nParts: {}", listed.join(", "))?;
         }
         Ok(())
     }
 }
 
-/// One slice of a [`Summary`], as the `Slices:` trailer names it.
+/// One part of a [`Summary`], as the `Parts:` trailer names it.
 ///
-/// A [`SliceChange`] less whose brief the slice carries, which the
+/// A [`PartChange`] less whose brief the part carries, which the
 /// amendment's review reads and the history keeps nothing of.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct SliceSummary {
-    /// The slice's identifier.
-    pub id: SliceId,
-    /// The slice's name.
+pub struct PartSummary {
+    /// The part's identifier.
+    pub id: PartId,
+    /// The part's name.
     pub name: String,
-    /// What the amendment did to the slice.
-    pub class: SliceClass,
+    /// What the amendment did to the part.
+    pub class: PartClass,
 }
 
-impl From<&SliceChange> for SliceSummary {
-    fn from(change: &SliceChange) -> Self {
+impl From<&PartChange> for PartSummary {
+    fn from(change: &PartChange) -> Self {
         Self {
             id: change.id,
             name: change.name.clone(),
@@ -383,7 +383,7 @@ impl From<&SliceChange> for SliceSummary {
     }
 }
 
-impl fmt::Display for SliceSummary {
+impl fmt::Display for PartSummary {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{} {} {}", self.id, self.name, self.class)
     }
@@ -1115,16 +1115,16 @@ mod tests {
                 added: 1,
                 changed: 2,
                 retired: 0,
-                slices: vec![
-                    SliceSummary {
-                        id: "SLICE-002".parse().expect("a slice id"),
+                parts: vec![
+                    PartSummary {
+                        id: "PART-002".parse().expect("a part id"),
                         name: "orders".to_owned(),
-                        class: SliceClass::Changed,
+                        class: PartClass::Changed,
                     },
-                    SliceSummary {
-                        id: "SLICE-003".parse().expect("a slice id"),
+                    PartSummary {
+                        id: "PART-003".parse().expect("a part id"),
                         name: "export".to_owned(),
-                        class: SliceClass::Removed,
+                        class: PartClass::Removed,
                     },
                 ],
             }),
@@ -1133,23 +1133,23 @@ mod tests {
         assert_eq!(
             text,
             "Revision abc123\n\nRevision: abc123\nParent: def456\nBase: 0123abcd\nAdded: \
-             1\nChanged: 2\nRetired: 0\nSlices: SLICE-002 orders changed, SLICE-003 export removed"
+             1\nChanged: 2\nRetired: 0\nParts: PART-002 orders changed, PART-003 export removed"
         );
         assert_eq!(RevisionMessage::parse(&text), Some(amended));
 
-        // no slice changed leaves the trailer out, and reads back as none
-        let unsliced = RevisionMessage {
+        // no part changed leaves the trailer out, and reads back as none
+        let unparted = RevisionMessage {
             summary: Some(Summary {
                 added: 0,
                 changed: 1,
                 retired: 0,
-                slices: Vec::new(),
+                parts: Vec::new(),
             }),
             ..RevisionMessage::parse(&text).expect("a revision message")
         };
-        let text = unsliced.to_string();
-        assert!(!text.contains("Slices:"), "{text}");
-        assert_eq!(RevisionMessage::parse(&text), Some(unsliced));
+        let text = unparted.to_string();
+        assert!(!text.contains("Parts:"), "{text}");
+        assert_eq!(RevisionMessage::parse(&text), Some(unparted));
 
         // a trailer of another name is passed over; a malformed summary is not
         let message = RevisionMessage::parse(
@@ -1175,18 +1175,18 @@ mod tests {
         );
         assert!(
             RevisionMessage::parse(
-                "Revision abc123\n\nRevision: abc123\nAdded: 1\nChanged: 0\nRetired: 0\nSlices:"
+                "Revision abc123\n\nRevision: abc123\nAdded: 1\nChanged: 0\nRetired: 0\nParts:"
             )
             .is_none(),
-            "an empty Slices trailer"
+            "an empty Parts trailer"
         );
         assert!(
             RevisionMessage::parse(
-                "Revision abc123\n\nRevision: abc123\nAdded: 1\nChanged: 0\nRetired: 0\nSlices: \
+                "Revision abc123\n\nRevision: abc123\nAdded: 1\nChanged: 0\nRetired: 0\nParts: \
                  orders changed"
             )
             .is_none(),
-            "a slice entry malformed"
+            "a part entry malformed"
         );
     }
 

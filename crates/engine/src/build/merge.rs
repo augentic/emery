@@ -16,9 +16,9 @@ use schemars::JsonSchema;
 use serde::Deserialize;
 use serde_json::{Value, json};
 
-use super::{Built, Progress, Run, gated, kind_at};
+use super::{Built, Progress, Run, gated, kind_at, slice_id};
 use crate::brief::{Brief, Review};
-use crate::revision::Slice;
+use crate::revision::Part;
 use crate::vcs::WorkingCopy;
 use crate::{EntryKind, Files, is_retryable};
 
@@ -42,10 +42,11 @@ impl UnresolvedMerge<'_> {
     pub async fn resolve<P: Model + Vcs + Files>(
         self, run: &Run<'_>, provider: &P, progress: &Progress,
     ) -> Result<(String, Vec<String>), Error> {
-        let slice = self.built.slice;
+        let part = self.built.part;
+        let id = slice_id(part.id);
         let worktree = &self.built.worktree;
         tracing::info!(
-            slice = %slice.id,
+            slice = %id,
             conflicts = self.paths.join(", "),
             "the rules left conflicts; resolving them with the model"
         );
@@ -68,22 +69,23 @@ impl UnresolvedMerge<'_> {
         // in id order, so the wave comes from the plan rather than this run's
         // wave counter, which restarts on a resume
         let waves = run.plan.waves();
-        let wave_slices = waves.iter().find(|wave| wave.contains(&slice.id)).unwrap_or(&[]);
-        let merged: Vec<&Slice> = wave_slices
+        let wave_parts = waves.iter().find(|wave| wave.contains(&part.id)).unwrap_or(&[]);
+        let merged: Vec<&Part> = wave_parts
             .iter()
-            .filter(|&&id| id != slice.id)
-            .filter(|id| progress.merged.contains(id))
-            .filter_map(|id| {
-                let plan_slice = run.plan.slice(*id)?;
+            .filter(|&&other| other != part.id)
+            .filter(|&&other| progress.merged.contains(&slice_id(other)))
+            .filter_map(|other| {
+                let plan_part = run.plan.part(*other)?;
+                let other_slice = slice_id(*other);
                 let touches =
-                    progress.built.iter().find(|built| built.id == *id).is_none_or(|built| {
-                        built.written.iter().any(|path| self.paths.contains(path))
-                    });
-                touches.then_some(plan_slice)
+                    progress.built.iter().find(|built| built.id == other_slice).is_none_or(
+                        |built| built.written.iter().any(|path| self.paths.contains(path)),
+                    );
+                touches.then_some(plan_part)
             })
             .collect();
         let brief = MergeBrief {
-            slice,
+            part,
             merged,
             conflicts,
         };
@@ -110,7 +112,7 @@ impl UnresolvedMerge<'_> {
         gated(provider, worktree.path(), "the merge's resolution", &pending).await?;
         let mut resolved: Vec<String> = resolutions.into_iter().map(|file| file.path).collect();
         resolved.sort_unstable();
-        let subject = format!("{} {} resolved at {}", slice.id, slice.name, resolved.join(", "));
+        let subject = format!("{id} {} resolved at {}", part.name, resolved.join(", "));
         let commit = worktree.commit(provider, &subject).await?.unwrap_or(self.commit);
 
         // merged again, each resolution taken whole and the rules as before
@@ -211,10 +213,10 @@ const MARKERS: [&str; 2] = ["<<<<<<< ", ">>>>>>> "];
 
 // The brief that resolves the paths a slice's merge left conflicted.
 pub struct MergeBrief<'a> {
-    // The slice being merged.
-    pub slice: &'a Slice,
-    // The slices merged before it in the wave that wrote a conflicted path.
-    pub merged: Vec<&'a Slice>,
+    // The plan entry of the slice being merged.
+    pub part: &'a Part,
+    // The plan entries of the slices merged before it in the wave that wrote a conflicted path.
+    pub merged: Vec<&'a Part>,
     // Each conflicted path with both of its sides.
     pub conflicts: Vec<Conflict>,
 }
@@ -254,7 +256,7 @@ impl Brief for MergeBrief<'_> {
     const PROSE: &'static [&'static str] = &["merge.md"];
 
     fn label(&self) -> Cow<'static, str> {
-        Cow::Owned(format!("merge-{}", self.slice.id))
+        Cow::Owned(format!("merge-{}", slice_id(self.part.id)))
     }
 
     fn tighten(&self, schema: &mut Value) -> Result<(), Error> {
@@ -300,12 +302,12 @@ impl Brief for MergeBrief<'_> {
 
 impl Display for MergeBrief<'_> {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        writeln!(f, "# Slice being merged\n\n{}\n", self.slice)?;
+        writeln!(f, "# Slice being merged\n\n{}\n", self.part)?;
 
         if !self.merged.is_empty() {
             f.write_str("# Merged before it in the wave\n")?;
-            for slice in &self.merged {
-                writeln!(f, "\n{slice}\n")?;
+            for part in &self.merged {
+                writeln!(f, "\n{part}\n")?;
             }
         }
 

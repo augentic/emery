@@ -103,13 +103,13 @@ fn design_with_apis() -> String {
 }
 
 // The slicing a run over several stems expects when every stem stays its own
-// slice, named for it, owning nothing and depending on nothing.
+// part, named for it, owning nothing and depending on nothing.
 fn separate_slicing(stems: &[(&str, &[&str])]) -> String {
-    let slices: Vec<_> = stems
+    let parts: Vec<_> = stems
         .iter()
         .map(|(name, requirements)| serde_json::json!({"name": name, "requirements": requirements}))
         .collect();
-    serde_json::json!({ "preamble": [], "slices": slices }).to_string()
+    serde_json::json!({ "preamble": [], "parts": parts }).to_string()
 }
 
 // --- journey ---
@@ -126,7 +126,7 @@ async fn gen_spec() {
     assert_eq!(
         String::from_utf8_lossy(&resp.stdout),
         format!(
-            "staged candidate {id}\n  plan: 1 slice in 1 wave, widest 1\n  nothing sealed; `emery \
+            "staged candidate {id}\n  plan: 1 part in 1 wave, widest 1\n  nothing sealed; `emery \
              apply` seals it\n"
         ),
         "a first run has no revision to diff against"
@@ -146,7 +146,7 @@ async fn gen_spec() {
     assert!(provider.storage.state("project.yaml").is_none(), "no project record exists");
 
     // the staged documents are canonical JSON of the engine's facts; one
-    // stem is one slice, planned with no turn spent
+    // stem is one part, planned with no turn spent
     let spec = staged_document(&provider.storage, &id, "spec.json");
     let design = staged_document(&provider.storage, &id, "design.json");
     let plan = staged_document(&provider.storage, &id, "plan.json");
@@ -216,10 +216,10 @@ async fn gen_spec() {
     assert_eq!(
         stdout,
         format!(
-            "staged candidate {id}\n  plan: 1 slice in 1 wave, widest 1\n  diff vs {id}: none \
+            "staged candidate {id}\n  plan: 1 part in 1 wave, widest 1\n  diff vs {id}: none \
              (byte-stable)\n  nothing sealed; `emery apply` seals it\n"
         ),
-        "the one-stem plan is one slice in one wave"
+        "the one-stem plan is one part in one wave"
     );
     assert_eq!(staged(&provider.storage), id, "the same revision keeps its id");
     assert_eq!(committed(&provider.storage), id, "the sealed revision stands");
@@ -942,8 +942,8 @@ async fn remine_supersedes() {
          {stdout}"
     );
     assert!(
-        stdout.contains("  plan: 2 slices in 1 wave, widest 2\n"),
-        "two independent slices are one wave: {stdout}"
+        stdout.contains("  plan: 2 parts in 1 wave, widest 2\n"),
+        "two independent parts are one wave: {stdout}"
     );
     assert!(
         stdout.contains(&format!(
@@ -952,7 +952,7 @@ async fn remine_supersedes() {
         "the summary counts the changes: {stdout}"
     );
     assert!(!stdout.contains("REQ-"), "no per-requirement entry rides text mode: {stdout}");
-    assert!(!stdout.contains("SLICE-"), "no per-slice entry rides text mode: {stdout}");
+    assert!(!stdout.contains("PART-"), "no per-part entry rides text mode: {stdout}");
 
     let seen = provider.model.seen();
     let SeenFormat::Schema { name, .. } = &seen[0].format else {
@@ -988,7 +988,7 @@ async fn diff_envelope() {
         {"kind": "domain-model", "blocks": [{"type": {"key": "greeting.type", "role": "data"}}]}
     ]}"#;
     let second_grouping = separate_grouping(2);
-    let second_slicing = r#"{"preamble": [], "slices": [
+    let second_slicing = r#"{"preamble": [], "parts": [
         {"name": "greeting", "requirements": ["REQ-001"], "types": ["greeting.type"]},
         {"name": "access", "requirements": ["REQ-002"]}
     ]}"#;
@@ -1056,14 +1056,14 @@ async fn diff_envelope() {
     assert_eq!(diff["plan"]["preamble"], serde_json::json!(false), "{envelope}");
     assert_eq!(
         diff["plan"]["added"],
-        serde_json::json!([{"id": "SLICE-002", "name": "access"}]),
+        serde_json::json!([{"id": "PART-002", "name": "access"}]),
         "{envelope}"
     );
     assert_eq!(diff["plan"]["removed"], serde_json::json!([]), "{envelope}");
     assert_eq!(
         diff["plan"]["changed"],
-        serde_json::json!([{"id": "SLICE-001", "name": "greeting", "fields": ["types"]}]),
-        "the greeting slice now owns the new type: {envelope}"
+        serde_json::json!([{"id": "PART-001", "name": "greeting", "fields": ["types"]}]),
+        "the greeting part now owns the new type: {envelope}"
     );
     provider.model.assert_exhausted();
 }
@@ -1851,7 +1851,7 @@ async fn dishonest_design() {
 
     let id = staged(&provider.storage);
     let rendered = format!(
-        "---\nemery: 8\nrevision: {id}\n---\n\n# Design\n\n## Overview\n\n\
+        "---\nemery: 9\nrevision: {id}\n---\n\n# Design\n\n## Overview\n\n\
          Requests arrive (from the browser) and (from docs) they route.\n\n\
          ## Domain model\n\nThe greeting payload is one string field.\n\n\
          Type: greeting.type\n```\n{signature}\n```\n"
@@ -2062,7 +2062,7 @@ async fn type_collisions() {
             "Types: [greeting.type, greeting.type (src/greeting.ts#L1), greeting.type \
              (src/greeting.ts#L1, 2)]"
         ),
-        "the one slice owns every key in the design's order: {plan}"
+        "the one part owns every key in the design's order: {plan}"
     );
     provider.model.assert_exhausted();
 }
@@ -2111,7 +2111,7 @@ async fn type_named() {
     provider.model.assert_exhausted();
 }
 
-// A `type` the design labels a mechanism is rendered so, and is no slice's:
+// A `type` the design labels a mechanism is rendered so, and is no part's:
 // the one-stem plan owns the data type alone, and the slicing turn over
 // three stems is offered the data keys alone.
 #[tokio::test]
@@ -2146,7 +2146,7 @@ async fn type_mechanism() {
     assert!(design.contains("Type: Greeting\n```\n"), "{design}");
     assert!(design.contains("Type: GreetingClient (mechanism)\n```\n"), "{design}");
     let plan = shown(&provider, "plan").await;
-    assert!(plan.contains("Types: [Greeting]\n"), "the mechanism is owned by no slice: {plan}");
+    assert!(plan.contains("Types: [Greeting]\n"), "the mechanism is owned by no part: {plan}");
     provider.model.assert_exhausted();
 
     // three stems: the slicing is asked, and offered the data keys alone
@@ -2157,7 +2157,7 @@ async fn type_mechanism() {
             {"type": {"key": "orders.line", "role": "mechanism"}}
         ]}
     ]}"#;
-    let slicing = r#"{"preamble": [], "slices": [
+    let slicing = r#"{"preamble": [], "parts": [
         {"name": "authentication", "requirements": ["REQ-001", "REQ-002"]},
         {"name": "orders", "requirements": ["REQ-003", "REQ-004"], "types": ["orders.order"], "depends-on": ["authentication"]}
     ]}"#;
@@ -2405,17 +2405,17 @@ async fn contract_route_malformed() {
     );
 }
 
-// Requirements under two stems reached through one route are one slice: the
+// Requirements under two stems reached through one route are one part: the
 // one not under the contract's id binds where it anchors within the
 // contract's lines, the baseline lists the trigger under each stem, and a
 // slicing that puts the two apart is refused and corrected.
 #[tokio::test]
 async fn trigger_split_refused() {
-    let split = r#"{"preamble": [], "slices": [
+    let split = r#"{"preamble": [], "parts": [
         {"name": "health", "requirements": ["REQ-001"]},
         {"name": "start", "requirements": ["REQ-002"]}
     ]}"#;
-    let merged = r#"{"preamble": [], "slices": [
+    let merged = r#"{"preamble": [], "parts": [
         {"name": "health", "requirements": ["REQ-001", "REQ-002"]}
     ]}"#;
     let subjects = ["health.ready".to_string(), "start.ready-probe".to_string()];
@@ -2456,7 +2456,7 @@ async fn trigger_split_refused() {
     assert!(
         correction.contains(
             "requirements reached through `GET /health/ready` (REQ-001, REQ-002) are split \
-             across `health`, `start`: one trigger is one handler, built by one slice"
+             across `health`, `start`: one trigger is one handler, built by one part"
         ),
         "{correction}"
     );
@@ -2468,8 +2468,8 @@ async fn trigger_split_refused() {
 }
 
 // A relative route registered under two non-`start` stems does not merge the
-// stems into one slice, while requirements of one stem sharing that route are
-// still one handler and cannot be split across slices.
+// stems into one part, while requirements of one stem sharing that route are
+// still one handler and cannot be split across parts.
 #[tokio::test]
 async fn trigger_scoped_to_stem() {
     let mut claims = vec![
@@ -2512,7 +2512,7 @@ async fn trigger_scoped_to_stem() {
     assert!(
         correction.contains(
             "requirements reached through `GET /` (REQ-002, REQ-003) are split across \
-             `orders-list`, `orders-main`: one trigger is one handler, built by one slice"
+             `orders-list`, `orders-main`: one trigger is one handler, built by one part"
         ),
         "{correction}"
     );
@@ -2522,7 +2522,7 @@ async fn trigger_scoped_to_stem() {
 // --- slicing ---
 
 // Three stems and two types: the model merges two stems, the engine refuses
-// the draft that leaves a requirement out, then numbers the corrected slices by
+// the draft that leaves a requirement out, then numbers the corrected parts by
 // their lowest requirement and writes every list in canonical order — the
 // requirements the answer listed backwards in id order, the types in key
 // order. The slicing follows the design and runs from the bases, so its
@@ -2530,7 +2530,7 @@ async fn trigger_scoped_to_stem() {
 // never a rendered document.
 #[tokio::test]
 async fn sliced() {
-    let refused = r#"{"preamble": [], "slices": [
+    let refused = r#"{"preamble": [], "parts": [
         {"name": "authentication", "requirements": ["REQ-001", "REQ-002"]},
         {"name": "orders", "requirements": ["REQ-003"], "types": ["orders.order", "orders.line"], "depends-on": ["authentication"]}
     ]}"#;
@@ -2551,7 +2551,7 @@ async fn sliced() {
     let committed: Value = serde_json::from_slice(&resp.stdout).expect("one JSON envelope");
     assert_eq!(
         committed["waves"],
-        serde_json::json!([["SLICE-001"], ["SLICE-002"]]),
+        serde_json::json!([["PART-001"], ["PART-002"]]),
         "a chain of two is two waves: {committed}"
     );
 
@@ -2562,8 +2562,8 @@ async fn sliced() {
     };
     assert_eq!(name, "slicing");
     let schema: Value = serde_json::from_str(schema).expect("the steering schema is JSON");
-    assert_eq!(schema["properties"]["slices"]["minItems"], 1);
-    assert_eq!(schema["properties"]["slices"]["maxItems"], 3, "one slice per stem at most");
+    assert_eq!(schema["properties"]["parts"]["minItems"], 1);
+    assert_eq!(schema["properties"]["parts"]["maxItems"], 3, "one part per stem at most");
     let draft = &schema["$defs"]["Draft"]["properties"];
     assert_eq!(draft["requirements"]["minItems"], 1);
     assert_eq!(
@@ -2596,7 +2596,7 @@ async fn sliced() {
     let check = &provider.model.exchanges()[3];
     assert_eq!(check.tool, "check");
     let correction = check.outcome.as_ref().expect_err("the first slicing is rejected");
-    assert!(correction.contains("`REQ-004` is in no slice"), "{correction}");
+    assert!(correction.contains("`REQ-004` is in no part"), "{correction}");
     let id = staged(&provider.storage);
     assert_eq!(
         String::from_utf8_lossy(&staged_document(&provider.storage, &id, "plan.json")),
@@ -2617,7 +2617,7 @@ async fn sliced() {
 }
 
 // A large stem of 20 requirements is one floor: the brief lists the stem
-// whole, the schema admits one slice per stem, a draft that splits the stem
+// whole, the schema admits one part per stem, a draft that splits the stem
 // along its sub-stems is refused, and the draft keeping all 20 together
 // commits with no cap finding.
 #[tokio::test]
@@ -2656,14 +2656,14 @@ async fn large_stem_whole() {
     let resp =
         cli_ok(&provider, &["emery", "--format", "json", "specify", &reference("docs")]).await;
 
-    // the brief lists the 20-requirement stem as one floor and admits one slice per stem
+    // the brief lists the 20-requirement stem as one floor and admits one part per stem
     let slicing = &provider.model.seen()[3];
     let SeenFormat::Schema { name, schema } = &slicing.format else {
         panic!("the slicing is steered by schema");
     };
     assert_eq!(name, "slicing");
     let schema: Value = serde_json::from_str(schema).expect("the steering schema is JSON");
-    assert_eq!(schema["properties"]["slices"]["maxItems"], 2, "two stems, one floor each");
+    assert_eq!(schema["properties"]["parts"]["maxItems"], 2, "two stems, one floor each");
     let request = slicing.messages.join("\n");
     let baseline = format!("- `orders` — {}\n- `auth` — {}\n", orders.join(", "), auth.join(", "));
     assert!(request.contains(&baseline), "{request}");
@@ -2683,27 +2683,27 @@ async fn large_stem_whole() {
     let committed: Value = serde_json::from_slice(&resp.stdout).expect("one JSON envelope");
     assert_eq!(
         committed["waves"],
-        serde_json::json!([["SLICE-001", "SLICE-002"]]),
-        "two slices depending on nothing are one wave: {committed}"
+        serde_json::json!([["PART-001", "PART-002"]]),
+        "two parts depending on nothing are one wave: {committed}"
     );
     let id = staged(&provider.storage);
     let plan: Value = serde_json::from_slice(&staged_document(&provider.storage, &id, "plan.json"))
         .expect("the committed plan is JSON");
-    let slices: Vec<(&str, &str)> = plan["slices"]
+    let parts: Vec<(&str, &str)> = plan["parts"]
         .as_array()
-        .expect("slices")
+        .expect("parts")
         .iter()
-        .map(|slice| (slice["id"].as_str().expect("id"), slice["name"].as_str().expect("name")))
+        .map(|part| (part["id"].as_str().expect("id"), part["name"].as_str().expect("name")))
         .collect();
-    assert_eq!(slices, vec![("SLICE-001", "orders"), ("SLICE-002", "authentication")]);
-    assert_eq!(plan["slices"][0]["requirements"], serde_json::json!(orders));
+    assert_eq!(parts, vec![("PART-001", "orders"), ("PART-002", "authentication")]);
+    assert_eq!(plan["parts"][0]["requirements"], serde_json::json!(orders));
     provider.model.assert_exhausted();
 }
 
 // The slicing leg is gated as the drafts are, one finding per case.
 #[tokio::test]
 async fn invalid_plan() {
-    let plan = |slices: &str| format!(r#"{{"preamble": [], "slices": [{slices}]}}"#);
+    let plan = |parts: &str| format!(r#"{{"preamble": [], "parts": [{parts}]}}"#);
     let all = |extra: &str| {
         plan(&format!(
             r#"{{"name": "all", "requirements": ["REQ-001", "REQ-002", "REQ-003", "REQ-004"], "types": ["orders.order", "orders.line"]{extra}}}"#
@@ -2720,60 +2720,60 @@ async fn invalid_plan() {
             plan(
                 r#"{"name": "authentication", "requirements": ["REQ-001", "REQ-002"]}, {"name": "orders", "requirements": ["REQ-003"], "types": ["orders.order", "orders.line"]}"#,
             ),
-            "`REQ-004` is in no slice",
+            "`REQ-004` is in no part",
         ),
         (
             plan(
                 r#"{"name": "authentication", "requirements": ["REQ-001", "REQ-002", "REQ-003"]}, {"name": "orders", "requirements": ["REQ-003", "REQ-004"], "types": ["orders.order", "orders.line"]}"#,
             ),
-            "`REQ-003` appears in more than one slice",
+            "`REQ-003` appears in more than one part",
         ),
         (
             plan(
                 r#"{"name": "all", "requirements": ["REQ-001", "REQ-002", "REQ-003", "REQ-004", "REQ-009"], "types": ["orders.order", "orders.line"]}"#,
             ),
-            "slice `all`: `REQ-009` is not a requirement",
+            "part `all`: `REQ-009` is not a requirement",
         ),
         (
             plan(
                 r#"{"name": "all", "requirements": ["REQ-001", "REQ-002", "REQ-003", "REQ-004"], "types": ["orders.order", "orders.line"]}, {"name": "empty", "requirements": []}"#,
             ),
-            "slice `empty` has no requirement",
+            "part `empty` has no requirement",
         ),
         (
             plan(
-                r#"{"name": "All Slices", "requirements": ["REQ-001", "REQ-002", "REQ-003", "REQ-004"], "types": ["orders.order", "orders.line"]}"#,
+                r#"{"name": "All Parts", "requirements": ["REQ-001", "REQ-002", "REQ-003", "REQ-004"], "types": ["orders.order", "orders.line"]}"#,
             ),
-            "slice name `All Slices` is not kebab-case",
+            "part name `All Parts` is not kebab-case",
         ),
         (
             plan(
                 r#"{"name": "all", "requirements": ["REQ-001", "REQ-002"]}, {"name": "all", "requirements": ["REQ-003", "REQ-004"], "types": ["orders.order", "orders.line"]}"#,
             ),
-            "slice `all` is drafted more than once",
+            "part `all` is drafted more than once",
         ),
         (
             all(r#", "depends-on": ["nothing"]"#),
-            "slice `all` depends on `nothing`, which is not a slice",
+            "part `all` depends on `nothing`, which is not a part",
         ),
-        (all(r#", "depends-on": ["all"]"#), "slice `all` depends on itself"),
+        (all(r#", "depends-on": ["all"]"#), "part `all` depends on itself"),
         (
             plan(
                 r#"{"name": "authentication", "requirements": ["REQ-001", "REQ-002"], "depends-on": ["orders"]}, {"name": "orders", "requirements": ["REQ-003", "REQ-004"], "types": ["orders.order", "orders.line"], "depends-on": ["authentication"]}"#,
             ),
-            "slices `authentication`, `orders` cannot be ordered",
+            "parts `authentication`, `orders` cannot be ordered",
         ),
         (
             plan(
                 r#"{"name": "authentication", "requirements": ["REQ-001", "REQ-002"], "types": ["orders.order"]}, {"name": "orders", "requirements": ["REQ-003", "REQ-004"], "types": ["orders.order", "orders.line"]}"#,
             ),
-            "type `orders.order` is owned by 2 slices: `authentication`, `orders`",
+            "type `orders.order` is owned by 2 parts: `authentication`, `orders`",
         ),
         (
             plan(
                 r#"{"name": "all", "requirements": ["REQ-001", "REQ-002", "REQ-003", "REQ-004"], "types": ["orders.line"]}"#,
             ),
-            "type `orders.order` is owned by no slice",
+            "type `orders.order` is owned by no part",
         ),
         (
             plan(
@@ -2783,7 +2783,7 @@ async fn invalid_plan() {
         ),
         (
             all(r#", "brief": ["Depends on: nothing"]"#),
-            "slice `all` brief: a paragraph line opens with the reserved marker `Depends on:`",
+            "part `all` brief: a paragraph line opens with the reserved marker `Depends on:`",
         ),
         ("not json".to_string(), "schema and answer type disagree"),
     ];

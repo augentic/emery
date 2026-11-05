@@ -236,7 +236,7 @@ impl Sealing {
 
     // An amendment's three documents over the base it was prepared
     // against, that base its parent and the commit it was read at the one it
-    // lands over, the counts by class and the slices changed its summary.
+    // lands over, the counts by class and the parts changed its summary.
     // `amendment-stale` unless `standing` reads that base as the current
     // revision, at that commit, so a revision sealed since is never
     // displaced by a change prepared against the one before it.

@@ -59,7 +59,7 @@ An amendment staged by `emery amend` carries its amended `spec`, `design`, and `
   - `Added: <count>`
   - `Changed: <count>`
   - `Retired: <count>`
-  - `Slices: SLICE-002 orders changed, SLICE-004 export removed` *(omitted when no slices changed)*
+  - `Parts: PART-002 orders changed, PART-004 export removed` *(omitted when no parts changed)*
 - **Conflicts allowed:** Requirements in `[conflict]` do not block `emery apply`; they are sealed into `spec/spec.json` with `[conflict]` status and competing statements recorded as notes so you can reconcile them in a subsequent amendment.
 
 ### `spec/` is the engine's

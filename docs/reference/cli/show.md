@@ -35,7 +35,7 @@ emery show amendment                 # read the amendment staged by emery amend
 
 - **`spec`:** The technology-neutral behavioural specification (`# Specification`), listing each requirement's ID, subject, status (`agreed`, `divergence`, `conflict`), inbound trigger (`Route:` or `Message:`), source citations, statement body, loser notes, and acceptance scenarios.
 - **`design`:** The architectural design (`# Design`), including `## Overview`, `## Domain model` (`Type: <key>` and `Type: <key> (mechanism)` blocks), `## APIs and integrations` (where concrete technologies from `call` and `decision` claims appear), and other informed sections.
-- **`plan`:** The dependency-ordered build plan (`# Plan`), listing each `## Slice: <name>` block with its `ID:`, `Requirements:`, `Types:`, `Depends on:`, and prose brief.
+- **`plan`:** The dependency-ordered build plan (`# Plan`), listing each `## Part: <name>` block with its `ID:`, `Requirements:`, `Types:`, `Depends on:`, and prose brief.
 - **`amendment`:** The incremental change staged by [`emery amend`](amend.md) (`# Amendment`), grouped by change class (`Added`, `Changed`, `Retired`, `Conflict`, `Unchanged`) followed by `## Design` and `## Plan` diff sections.
 
 ### Reading the current revision vs. `--staged`
@@ -55,7 +55,7 @@ For `spec`, `design`, and `plan`, `emery show` operates in two modes:
   - `Retired` entries show the withdrawn statement, plus ``Note: retired by scope: `<source>` was read whole and states nothing under `<stem>`.`` when retired via `scope = "whole"`.
   - `Conflict` entries list each competing statement as a `Note:` line followed by `Note: Operator reconciliation required.` and the drafted scenarios.
 - **`## Design` (when design sections changed):** Summarizes changed, added, and removed section headings (`Changed: Domain model; added: APIs and integrations.`) and renders the full text of each changed or added section.
-- **`## Plan` (when slices changed):** Renders `### Slice: <name> [added|changed|removed]` blocks. Any `changed` slice whose brief was not redrafted by a slicing turn includes `Note: the brief is the base's; no slicing turn redrafted it.`
+- **`## Plan` (when parts changed):** Renders `### Part: <name> [added|changed|removed]` blocks. Any `changed` part whose brief was not redrafted by a slicing turn includes `Note: the brief is the base's; no slicing turn redrafted it.`
 
 ### Output behaviour and front matter
 
@@ -65,7 +65,7 @@ For `spec`, `design`, and `plan`, the Markdown begins with YAML front matter car
 
 ```markdown
 ---
-emery: 8
+emery: 9
 revision: 9f8e7d6c…
 ---
 ```

@@ -49,7 +49,7 @@ When you run [`emery amend`](../reference/cli/amend.md), Emery updates the exist
 - Retired requirements are removed from their slices; if a slice becomes empty, it is removed and its dependants are re-wired to its dependencies.
 - Added or restemmed requirements are placed automatically if their trigger or stem floor already belongs to an existing slice.
 - Unowned data types are assigned automatically if only one slice was touched and no stems are open.
-- Only when requirements fall under a brand-new stem or leave data types ambiguous does Emery invoke a slicing turn (`SliceAmend`) to place the open items and refresh touched slice briefs.
+- Only when requirements fall under a brand-new stem or leave data types ambiguous does Emery invoke a slicing turn (`PartAmend`) to place the open items and refresh touched part briefs.
 
 ---
 

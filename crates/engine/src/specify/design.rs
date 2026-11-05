@@ -156,7 +156,7 @@ impl Display for DesignBrief<'_> {
                  \"mechanism\"}}` block; the engine inserts its signature verbatim. A `data` \
                  type is a shape the program reads, stores, or produces; a `mechanism` is a \
                  class that is a client, a retriever, a bootstrap, a settings carrier, or an \
-                 error or exception class, which a build declares nothing for and no slice \
+                 error or exception class, which a build declares nothing for and no part \
                  owns.\n\n",
             )?;
             for key in self.outline.keys() {

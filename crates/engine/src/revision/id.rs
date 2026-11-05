@@ -1,9 +1,10 @@
 //! Defines the identifiers a revision's records carry.
 //!
-//! [`ReqId`] numbers requirements and [`SliceId`] slices. Each is assigned
-//! from one in the order the engine fixes, rendered behind its own prefix,
-//! and stored as that rendering. A requirement's subject is a dotted claim
-//! id, and its stem is the first segment.
+//! [`ReqId`] numbers requirements, [`PartId`] plan parts, and [`SliceId`]
+//! build slices. Each is assigned from one in the order the engine fixes,
+//! rendered behind its own prefix, and stored as that rendering. A
+//! requirement's subject is a dotted claim id, and its stem is the first
+//! segment.
 
 use std::error::Error;
 use std::fmt::{self, Display, Formatter};
@@ -12,7 +13,7 @@ use std::str::FromStr;
 
 use serde::{Deserialize, Serialize};
 
-/// The error of parsing a requirement or slice id outside its grammar.
+/// The error of parsing a requirement, part, or slice id outside its grammar.
 ///
 /// An id is well formed exactly when it renders back to itself: the prefix,
 /// then a positive number padded to at least three digits.
@@ -67,15 +68,6 @@ macro_rules! numbered {
             /// Returns the ids in order from [`FIRST`](Self::FIRST), one per record.
             pub fn sequence() -> impl Iterator<Item = Self> {
                 std::iter::successors(Some(Self::FIRST), |&id| id.next())
-            }
-
-            // The ids in order above the highest id `used` holds, or from
-            // `FIRST` when `used` is empty.
-            pub(crate) fn free_after(
-                used: impl IntoIterator<Item = Self>,
-            ) -> impl Iterator<Item = Self> {
-                let first = used.into_iter().max().map_or(Some(Self::FIRST), Self::next);
-                std::iter::successors(first, |&id| id.next())
             }
         }
 
@@ -139,6 +131,26 @@ numbered! {
 }
 
 numbered! {
+    /// A part identifier rendered as `PART-NNN`.
+    ///
+    /// Parsing accepts positive numbers in canonical form, padded to at least
+    /// three digits.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use emery_engine::specify::PartId;
+    ///
+    /// let second = PartId::sequence().nth(1).expect("ids run on");
+    /// assert_eq!(second.to_string(), "PART-002");
+    /// assert_eq!("PART-002".parse::<PartId>()?, second);
+    /// assert!("PART-2".parse::<PartId>().is_err());
+    /// # Ok::<(), emery_engine::specify::BadId>(())
+    /// ```
+    PartId, "PART-"
+}
+
+numbered! {
     /// A slice identifier rendered as `SLICE-NNN`.
     ///
     /// Parsing accepts positive numbers in canonical form, padded to at least
@@ -147,16 +159,35 @@ numbered! {
     /// # Examples
     ///
     /// ```
-    /// use emery_engine::specify::SliceId;
+    /// use emery_engine::build::SliceId;
     ///
     /// let second = SliceId::sequence().nth(1).expect("ids run on");
     /// assert_eq!(second.to_string(), "SLICE-002");
     /// assert_eq!("SLICE-002".parse::<SliceId>()?, second);
     /// assert!("SLICE-2".parse::<SliceId>().is_err());
-    /// # Ok::<(), emery_engine::specify::BadId>(())
+    /// # Ok::<(), emery_engine::build::BadId>(())
     /// ```
     SliceId, "SLICE-"
 }
+
+// The ids in order above the highest id `used` holds, or from `FIRST` when
+// `used` is empty, for an id type whose values an amendment never reuses.
+macro_rules! permanent {
+    ($($name:ident),+ $(,)?) => {
+        $(
+            impl $name {
+                pub(crate) fn free_after(
+                    used: impl IntoIterator<Item = Self>,
+                ) -> impl Iterator<Item = Self> {
+                    let first = used.into_iter().max().map_or(Some(Self::FIRST), Self::next);
+                    std::iter::successors(first, |&id| id.next())
+                }
+            }
+        )+
+    };
+}
+
+permanent!(ReqId, PartId);
 
 pub fn stem(id: &str) -> &str {
     id.split_once('.').map_or(id, |(stem, _)| stem)

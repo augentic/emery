@@ -3,7 +3,7 @@
 use std::collections::BTreeSet;
 use std::fmt;
 
-use emery_engine::amend::{AmendOutput, SliceChange, SliceClass};
+use emery_engine::amend::{AmendOutput, PartChange, PartClass};
 use emery_engine::apply::ApplyOutput;
 use emery_engine::build::{BuildOutput, BuiltSlice, Candidate, StagedKind};
 use emery_engine::show::ShowOutput;
@@ -64,8 +64,8 @@ pub fn amend(output: &AmendOutput, w: &mut dyn fmt::Write) -> fmt::Result {
             .chain(kinds.iter().map(AsRef::as_ref));
         writeln!(w, "  design: {}", comma_separated(names))?;
     }
-    if !output.slices.is_empty() {
-        writeln!(w, "  slices: {}", comma_separated(output.slices.iter().map(slice_change)))?;
+    if !output.parts.is_empty() {
+        writeln!(w, "  parts: {}", comma_separated(output.parts.iter().map(part_change)))?;
     }
     repositories(&output.repositories, w)?;
     if let Some(applied) = &output.applied {
@@ -76,15 +76,15 @@ pub fn amend(output: &AmendOutput, w: &mut dyn fmt::Write) -> fmt::Result {
     Ok(())
 }
 
-fn slice_change(slice: &SliceChange) -> impl fmt::Display {
-    // A changed slice where no slicing turn ran keeps its base brief.
-    let tag = match slice.class {
-        SliceClass::Added => " (new)",
-        SliceClass::Changed if slice.keeps_brief() => " (brief kept)",
-        SliceClass::Changed => "",
-        SliceClass::Removed => " (removed)",
+fn part_change(part: &PartChange) -> impl fmt::Display {
+    // A changed part where no slicing turn ran keeps its base brief.
+    let tag = match part.class {
+        PartClass::Added => " (new)",
+        PartClass::Changed if part.keeps_brief() => " (brief kept)",
+        PartClass::Changed => "",
+        PartClass::Removed => " (removed)",
     };
-    fmt::from_fn(move |f| write!(f, "{}{tag}", slice.name))
+    fmt::from_fn(move |f| write!(f, "{}{tag}", part.name))
 }
 
 fn repositories(reads: &[RepositorySource], w: &mut dyn fmt::Write) -> fmt::Result {
@@ -241,13 +241,13 @@ fn built(slice: &BuiltSlice, w: &mut dyn fmt::Write) -> fmt::Result {
     writeln!(w)
 }
 
-// `  plan: 4 slices in 3 waves, widest 2`: how many slices the plan holds,
+// `  plan: 4 parts in 3 waves, widest 2`: how many parts the plan holds,
 // how many waves they fall into, and the most ready at once.
 fn waves(waves: &Waves, w: &mut dyn fmt::Write) -> fmt::Result {
     writeln!(
         w,
         "  plan: {} in {}, widest {}",
-        counted(waves.slices(), "slice"),
+        counted(waves.parts(), "part"),
         counted(waves.len(), "wave"),
         waves.widest()
     )

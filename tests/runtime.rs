@@ -10,8 +10,8 @@ use std::os::unix::fs::{PermissionsExt as _, symlink};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 
-use emery_engine::amend::SliceClass;
-use emery_engine::vcs::{Message, RevisionMessage, SliceSummary, Summary};
+use emery_engine::amend::PartClass;
+use emery_engine::vcs::{Message, PartSummary, RevisionMessage, Summary};
 use omnia::{CompileOptions, Connect as _, Digest, ExitStatus, RuntimeOptions, StoreCtx};
 use omnia_git::{Client, ConnectOptions};
 use omnia_test::host::{Backends, Deployment, Run, Scratch, ScriptedModel, scratch};
@@ -89,7 +89,7 @@ const SPEC_PAIR: &str = r#"{"preamble": ["Two surfaces: a greeting and a farewel
     {"subject": "farewell.behaviour", "scenarios": [{"name": "Farewell requested",
      "given": ["the farewell surface is bound"], "when": "`/farewell` is requested",
      "then": "the response is `bye`"}]}]}"#;
-const SLICING_PAIR: &str = r#"{"preamble": [], "slices": [
+const SLICING_PAIR: &str = r#"{"preamble": [], "parts": [
     {"name": "greeting", "requirements": ["REQ-001"]},
     {"name": "farewell", "requirements": ["REQ-002"]}]}"#;
 // The farewell slice writes a file of its own beside the greeting's.
@@ -137,10 +137,10 @@ const SPEC_AMEND: &str = r#"{"preamble": [], "requirements": [
 const DESIGN_AMEND: &str = r#"{"sections": [
     {"kind": "overview", "blocks": [{"text": "Two static endpoints: `GET /greeting` returning `'hello, world'` (`REQ-001`) and `GET /farewell` returning `'bye'` (`REQ-002`); no state or configuration is involved."}], "revised": [1]},
     {"kind": "apis", "blocks": [{"text": "The farewell's phrasebook is kept in a relational store."}], "revised": []}]}"#;
-const SLICING_AMEND: &str = r#"{"slices": [
+const SLICING_AMEND: &str = r#"{"parts": [
     {"name": "farewell", "requirements": ["REQ-002"], "types": [], "depends-on": [],
      "brief": ["Delivers the farewell beside the greeting."]}], "joins": [],
-    "briefs": [{"slice": "SLICE-001", "brief": ["Delivers the revised greeting, `hello, world`."]}]}"#;
+    "briefs": [{"part": "PART-001", "brief": ["Delivers the revised greeting, `hello, world`."]}]}"#;
 // The greeting slice built again under the amended revision writes the
 // revised greeting, so its merge changes the tree this time.
 const WRITE_GREETING_AMEND: &str =
@@ -826,11 +826,11 @@ async fn specify_staged() {
     assert_ok(&run);
     model.assert_exhausted();
     let second = revision_of(&run);
-    assert_ne!(second, first, "two slices draft another candidate");
+    assert_ne!(second, first, "two parts draft another candidate");
     let shown = roots.run_idle(&["show", "plan", "--staged"], &backends).await;
     assert_ok(&shown);
     assert!(shown.stdout.contains(&format!("revision: {second}\n")), "{}", shown.stdout);
-    assert!(shown.stdout.contains("## Slice: farewell"), "{}", shown.stdout);
+    assert!(shown.stdout.contains("## Part: farewell"), "{}", shown.stdout);
     assert_eq!(roots.git.branches(project), ["main"], "still nothing is sealed");
     assert_eq!(roots.git.head(project), base);
 
@@ -855,7 +855,7 @@ async fn specify_staged() {
     assert_eq!(roots.git.head(project), base, "the checkout is untouched");
     let shown = roots.run_idle(&["show", "plan"], &backends).await;
     assert_ok(&shown);
-    assert!(shown.stdout.contains("## Slice: farewell"), "{}", shown.stdout);
+    assert!(shown.stdout.contains("## Part: farewell"), "{}", shown.stdout);
 }
 
 // `apply`, and `specify --apply`, need the repository the specification
@@ -986,7 +986,7 @@ async fn specify_over_built() {
     assert_ok(&shown);
     let envelope: Value = serde_json::from_str(&shown.stdout).expect("the show envelope");
     assert_eq!(envelope["revision"], second);
-    assert_eq!(envelope["document"]["emery"], 8);
+    assert_eq!(envelope["document"]["emery"], 9);
     assert!(envelope["document"]["parent"].is_null(), "drafted from the sources: {envelope}");
 
     // one build at a time, so the turns arrive in slice order; the layout
@@ -1035,7 +1035,7 @@ async fn specify_over_built() {
 fn amend_block(amendment: &str, parent: &str, over: &str) -> String {
     format!(
         "staged amendment {amendment}\n  base {parent} at {}\n  1 added, 1 changed, 0 retired, 0 \
-         conflict, 0 unchanged\n  stems: farewell, greeting\n  design: overview, apis\n  slices: \
+         conflict, 0 unchanged\n  stems: farewell, greeting\n  design: overview, apis\n  parts: \
          greeting, farewell (new)\n",
         &over[..8]
     )
@@ -1089,16 +1089,16 @@ async fn assert_amended(
                 added: 1,
                 changed: 1,
                 retired: 0,
-                slices: vec![
-                    SliceSummary {
-                        id: "SLICE-001".parse().expect("a slice id"),
+                parts: vec![
+                    PartSummary {
+                        id: "PART-001".parse().expect("a part id"),
                         name: "greeting".to_owned(),
-                        class: SliceClass::Changed,
+                        class: PartClass::Changed,
                     },
-                    SliceSummary {
-                        id: "SLICE-002".parse().expect("a slice id"),
+                    PartSummary {
+                        id: "PART-002".parse().expect("a part id"),
                         name: "farewell".to_owned(),
-                        class: SliceClass::Added,
+                        class: PartClass::Added,
                     },
                 ],
             }),
@@ -1111,7 +1111,7 @@ async fn assert_amended(
         "Added: 1",
         "Changed: 1",
         "Retired: 0",
-        "Slices: SLICE-001 greeting changed, SLICE-002 farewell added",
+        "Parts: PART-001 greeting changed, PART-002 farewell added",
     ] {
         assert!(message.contains(trailer), "`{trailer}` in: {message}");
     }
@@ -1164,7 +1164,7 @@ async fn assert_rebuilt(roots: &Roots, backends: &Bundle, base: &str, revision: 
     assert_ok(&run);
     model.assert_exhausted();
     assert_eq!(revision_of(&run), revision);
-    assert!(run.stdout.contains("\n  plan: 2 slices in 1 wave, widest 2\n"), "{}", run.stdout);
+    assert!(run.stdout.contains("\n  plan: 2 parts in 1 wave, widest 2\n"), "{}", run.stdout);
     assert!(run.stdout.contains(&format!("\n  base {base}\n")), "{}", run.stdout);
     assert!(!run.stdout.contains("initialised"), "the layout is held: {}", run.stdout);
     assert!(!run.stdout.contains("resumed:"), "the parent's slices are not this revision's");
@@ -1251,9 +1251,9 @@ async fn amend_applied_built() {
         "Before: GET /greeting returns the static string 'hello'.\n\nAfter: GET /greeting \
          returns the static string 'hello, world'.",
         "## Design\n\nChanged: Overview; added: APIs and integrations.\n",
-        "## Plan\n\n### Slice: greeting [changed]\n\nID: SLICE-001\n",
-        "Delivers the revised greeting, `hello, world`.\n\n### Slice: farewell [added]\n\nID: \
-         SLICE-002\n",
+        "## Plan\n\n### Part: greeting [changed]\n\nID: PART-001\n",
+        "Delivers the revised greeting, `hello, world`.\n\n### Part: farewell [added]\n\nID: \
+         PART-002\n",
     ] {
         assert!(shown.stdout.contains(fragment), "`{fragment}` in: {}", shown.stdout);
     }
@@ -1524,7 +1524,7 @@ async fn amend_branches_merged() {
                 added: 0,
                 changed: 1,
                 retired: 0,
-                slices: Vec::new(),
+                parts: Vec::new(),
             }),
         }),
         "{message}"
@@ -1620,7 +1620,7 @@ async fn amend_branches_hand_merged() {
             &envelope,
             &format!(
                 "`spec/` at commit `{mixed}` holds documents that read as no one revision's \
-                 (`REQ-002` is placed by `SLICE-002` and is no requirement of the \
+                 (`REQ-002` is placed by `PART-002` and is no requirement of the \
                  specification), so they were edited or merged by hand; a seal writes them whole"
             ),
         );
@@ -1852,7 +1852,7 @@ async fn build_resumed() {
     assert_eq!(
         run.stdout,
         format!(
-            "built revision {revision}\n  plan: 1 slice in 1 wave, widest 1\n  base {base}\n  \
+            "built revision {revision}\n  plan: 1 part in 1 wave, widest 1\n  base {base}\n  \
              resumed: SLICE-001\n  labelled {label} at {head}\n"
         )
     );
@@ -1915,7 +1915,7 @@ async fn build_resumed_staged() {
     assert_eq!(
         run.stdout,
         format!(
-            "built revision {revision}\n  plan: 1 slice in 1 wave, widest 1\n  base {base}\n  \
+            "built revision {revision}\n  plan: 1 part in 1 wave, widest 1\n  base {base}\n  \
              resumed: SLICE-001\n  wave 1: 1 slice verified at {}\n    SLICE-001: staged by an \
              earlier run, not built again\n  labelled {label} at {staged}\n",
             &staged[..8]
@@ -1979,7 +1979,7 @@ async fn build_conflict_resolved() {
         merge.messages[0]
     );
     assert!(
-        merge.messages[0].contains("# Merged before it in the wave\n\n## Slice: greeting\n"),
+        merge.messages[0].contains("# Merged before it in the wave\n\n## Part: greeting\n"),
         "{}",
         merge.messages[0]
     );
@@ -2419,7 +2419,7 @@ async fn build_laid() {
     assert_eq!(
         run.stdout,
         format!(
-            "built revision {revision}\n  plan: 1 slice in 1 wave, widest 1\n  base {root}\n  \
+            "built revision {revision}\n  plan: 1 part in 1 wave, widest 1\n  base {root}\n  \
              repository ./{TARGET_REPO}\n  resumed: SLICE-001\n  labelled {label} at {head}\n"
         )
     );
