@@ -89,6 +89,13 @@ impl Requirement {
         revision::stem(&self.subject)
     }
 
+    // Returns the sub-stem of the subject: the first two segments of its
+    // dotted id, the unit a part is cut along when it exceeds the build budget.
+    #[must_use]
+    pub fn substem(&self) -> &str {
+        revision::substem(&self.subject)
+    }
+
     // Returns the requirement's statement: its `body` paragraphs
     // joined, or `None` when it is in conflict.
     #[must_use]

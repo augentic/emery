@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 use std::str::FromStr as _;
 
 use anyhow::Context;
-use emery_engine::build::BuildInput;
+use emery_engine::build::{BudgetSource, BuildInput};
 use emery_engine::specify::{Scope, SourceConfig, SourceContent, SourceRepository};
 use emery_engine::vcs::TargetRef;
 use emery_engine::{AdapterRef, Rank, preopen_join, preopen_path};
@@ -120,19 +120,20 @@ pub fn missing_target(verb: &str) -> Error {
 }
 
 // A positional target adapter, a `--repository`, an optional `--config` path,
-// and an optional `--jobs` cap.
+// an optional `--jobs` cap, and an optional `--budget` cap.
 //
 // The file's `[target]` table is the base and the flags layer over it: an
 // argv adapter takes the place of its `adapter`, dropping the `digest` that
 // pinned the file's, under the file's `name` where it states one; a
-// `--repository` takes the place of its `repository`. A run naming an
-// adapter and no file reads none; one naming no adapter discovers the
-// project-root file.
+// `--repository` takes the place of its `repository`, and `--budget` takes
+// the place of its `budget`. A run naming an adapter and no file reads none;
+// one naming no adapter discovers the project-root file.
 pub struct TargetCarriers<'a> {
     pub adapter: Option<&'a str>,
     pub repository: Option<&'a str>,
     pub config: Option<&'a Path>,
     pub jobs: Option<NonZeroUsize>,
+    pub budget: Option<NonZeroUsize>,
 }
 
 impl TargetCarriers<'_> {
@@ -142,6 +143,7 @@ impl TargetCarriers<'_> {
             repository,
             config,
             jobs,
+            budget,
         } = self;
 
         // the file, named or discovered, and the target it states
@@ -163,7 +165,7 @@ impl TargetCarriers<'_> {
             target.repository = Some(repository.to_owned());
         }
 
-        let input = target.into_input(jobs);
+        let input = target.into_input(jobs, budget);
         tracing::debug!(
             carrier = %carrier_label(path.as_deref()),
             adapter = %input.adapter,
@@ -349,6 +351,7 @@ struct TargetEntry {
     adapter: AdapterRef,
     digest: Option<Digest>,
     repository: Option<String>,
+    budget: Option<NonZeroUsize>,
 }
 
 impl TargetEntry {
@@ -358,17 +361,27 @@ impl TargetEntry {
             adapter: AdapterRef::from_str(reference)?,
             digest: None,
             repository: None,
+            budget: None,
         })
     }
 
-    fn into_input(self, jobs: Option<NonZeroUsize>) -> BuildInput {
+    fn into_input(
+        self, jobs: Option<NonZeroUsize>, flag_budget: Option<NonZeroUsize>,
+    ) -> BuildInput {
         let name = self.name.unwrap_or_else(|| self.adapter.name().to_owned());
+        let (budget, budget_source) = match (flag_budget, self.budget) {
+            (Some(budget), _) => (Some(budget), Some(BudgetSource::Flag)),
+            (None, Some(budget)) => (Some(budget), Some(BudgetSource::Config)),
+            (None, None) => (None, None),
+        };
         BuildInput {
             name,
             adapter: self.adapter,
             digest: self.digest,
             repository: self.repository,
             jobs,
+            budget,
+            budget_source,
         }
     }
 

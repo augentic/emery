@@ -70,7 +70,7 @@ impl Plan {
 
     // The in-plan parts `part` waits on: a dependency naming `part`
     // itself or no part of the plan holds nothing back.
-    fn dependencies<'a>(&'a self, part: &'a Part) -> impl Iterator<Item = PartId> + 'a {
+    pub fn dependencies<'a>(&'a self, part: &'a Part) -> impl Iterator<Item = PartId> + 'a {
         part.depends_on
             .iter()
             .copied()
@@ -106,42 +106,52 @@ pub fn ranks<T: Ord + Copy>(mut pending: BTreeMap<T, BTreeSet<T>>) -> (Vec<Vec<T
     (ranks, pending.into_keys().collect())
 }
 
-/// The parts of a plan grouped into the sets ready to build at once.
+/// The parts of a plan, or the slices of a schedule, grouped into the sets ready to build at once.
 ///
-/// Each wave lists its part ids in id order, and the waves come in build
+/// Each wave lists its ids in id order, and the waves come in build
 /// order. The value serialises as a list of lists of ids.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(transparent)]
-pub struct Waves(Vec<Vec<PartId>>);
+pub struct Waves<T = PartId>(pub(crate) Vec<Vec<T>>);
 
-impl Waves {
-    /// Returns how many waves the plan builds in: its longest dependency chain.
+impl<T> Waves<T> {
+    /// Returns how many waves the dependency graph builds in: its longest chain.
     #[must_use]
     pub const fn len(&self) -> usize {
         self.0.len()
     }
 
-    /// Returns whether the plan has no parts.
+    /// Returns whether there are no waves.
     #[must_use]
     pub const fn is_empty(&self) -> bool {
         self.0.is_empty()
     }
 
-    /// Returns how many parts the waves hold between them.
-    #[must_use]
-    pub fn parts(&self) -> usize {
-        self.0.iter().map(Vec::len).sum()
-    }
-
-    /// Returns the width of the widest wave: the most parts ready at once.
+    /// Returns the width of the widest wave: the most items ready at once.
     #[must_use]
     pub fn widest(&self) -> usize {
         self.0.iter().map(Vec::len).max().unwrap_or(0)
     }
 
-    /// Returns the waves in build order, each its part ids in id order.
-    pub fn iter(&self) -> impl Iterator<Item = &[PartId]> {
+    /// Returns the waves in build order, each its ids in id order.
+    pub fn iter(&self) -> impl Iterator<Item = &[T]> {
         self.0.iter().map(Vec::as_slice)
+    }
+}
+
+impl Waves<PartId> {
+    /// Returns how many parts the waves hold between them.
+    #[must_use]
+    pub fn parts(&self) -> usize {
+        self.0.iter().map(Vec::len).sum()
+    }
+}
+
+impl Waves<crate::revision::SliceId> {
+    /// Returns how many slices the waves hold between them.
+    #[must_use]
+    pub fn slices(&self) -> usize {
+        self.0.iter().map(Vec::len).sum()
     }
 }
 

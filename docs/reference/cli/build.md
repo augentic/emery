@@ -27,6 +27,7 @@ emery build <adapter> --config       # CLI adapter replaces [target] adapter
 emery build <adapter> --repository . # build into the project repository
 emery build                          # discovers the project-root emery.toml
 emery build --jobs 2                 # build at most 2 slices concurrently per wave
+emery build --budget 8               # cut parts into slices of at most 8 requirements
 ```
 
 ---
@@ -67,7 +68,7 @@ This is the CLI command invoked by the [`/emery:build`](../../../plugins/emery/s
 
 ## The `[target]` table
 
-`emery build` reads `[target]` (`name`, `adapter`, `digest`, `repository`) from `emery.toml`. Passing a positional `<adapter>` alongside `--config` overrides `adapter` (and drops `digest`), and passing `--repository` overrides `repository`.
+`emery build` reads `[target]` (`name`, `adapter`, `digest`, `repository`, `budget`) from `emery.toml`. Passing a positional `<adapter>` alongside `--config` overrides `adapter` (and drops `digest`), passing `--repository` overrides `repository`, and passing `--budget` overrides `budget`.
 
 For full `[target]` field definitions and layering rules, see [Configuration (`emery.toml`)](../config.md#the-target-table).
 
@@ -77,6 +78,7 @@ name = "shop"                                # optional directory under .emery/v
 adapter = "emery:omnia@0.39.0"
 digest = "sha256:0000000000000000000000000000000000000000000000000000000000000000"
 repository = "git@github.com:acme/shop.git"  # URL clone, "." for project checkout, or omitted
+budget = 12                                  # optional requirement budget per slice
 ```
 
 ---
@@ -89,6 +91,7 @@ repository = "git@github.com:acme/shop.git"  # URL clone, "." for project checko
 | `--repository <url\|.>` | — | Target Git repository (`"."` for project checkout, or a Git URL cloned under `.emery/vcs/repos/<name>`). Overrides `[target] repository`. |
 | `--config [<path>]` | `-c` | Path to configuration file (defaults to `emery.toml` when `<path>` is omitted; discovered automatically when no `<adapter>` is passed). |
 | `--jobs <N>` | `-j` | Maximum number of slices in a wave to build concurrently (positive integer; `0` is exit `64`; env `EMERY_JOBS`). Unset builds all ready slices in a wave concurrently within the backend's agent limit. |
+| `--budget <N>` | `-b` | Maximum number of requirements per build slice (positive integer; `0` is exit `64`; env `EMERY_BUDGET`). Overrides `[target] budget` and the target adapter's metadata default. |
 | `--format <text\|json>` | — | Output format (`text` or `json`; env `EMERY_FORMAT`). |
 
 ---
@@ -100,13 +103,17 @@ When `--format json` is passed, `emery build` writes a single JSON object to `st
 | Field | Type | When present | Description |
 | --- | --- | --- | --- |
 | `revision` | `string` | Always | SHA-256 ID of the sealed revision that was built. |
-| `waves` | `string[][]` | Always | Slice IDs grouped into dependency waves. |
+| `budget` | `number` | Always | Requirement budget per slice the schedule was cut under. |
+| `budget-source` | `"flag"` \| `"config"` \| `"adapter"` \| `"default"` | Always | Where `budget` came from. |
+| `parts` | `string[][]` | Always | Part IDs (`PART-NNN`) grouped into dependency waves. |
+| `schedule` | `object[]` | Always | Scheduled slices in schedule order: `{ id, part, name, index, count, requirements, types, over-budget }`. |
+| `waves` | `string[][]` | Always | Slice IDs (`SLICE-NNN`) grouped into dependency waves. |
 | `candidate` | `{ id, kind }` | When an unsealed candidate or amendment is staged | Identifies the staged item (`kind` is `"revision"` or `"amendment"`) that was not built. |
 | `base` | `string` | Always | Base Git commit SHA the build started from. |
 | `repository` | `string` | Always | Target repository path (`"."` or `"./.emery/vcs/repos/<name>"`). |
 | `initialised` | `{ commit, paths }` | When `Task::Init` created an `Initialise` commit this run | Commit SHA and sorted relative file paths scaffolded during initialization. |
 | `resumed` | `string[]` | When slices were skipped | Slice IDs skipped because they were already merged on `emery/<revision>` or staged in `.emery/vcs/integration`. |
-| `slices` | `object[]` | Always | Built slices in merge order: `{ id, name, wave, covered, uncovered, written, resolved, commit }`. |
+| `slices` | `object[]` | Always | Built slices in merge order: `{ id, part, name, index, count, wave, covered, uncovered, written, resolved, commit }`. |
 | `verified` | `object[]` | When at least one wave was verified this run | Verified waves: `{ wave, slices, head }`. |
 | `sealed` | `object[]` | When wave verification committed changes | Verification commits: `{ wave, commit, paths }`. |
 | `repaired` | `number[]` | When verification modified files outside `ours` merge rules | 1-based wave numbers where verification repaired code beyond `ours`-ruled lockfiles. |
@@ -119,16 +126,18 @@ When `--format json` is passed, `emery build` writes a single JSON object to `st
 
 ```text
 built revision 9f8e7d6c…
-  plan: 3 slices in 2 waves, widest 2
+  plan: 3 parts in 2 waves; budget 12 (adapter): 4 slices in 3 waves, widest 2
   base 1a2b3c4d…
   repository ./.emery/vcs/repos/shop
   initialised 2b3c4d5e, 3 files
   resumed: SLICE-001
   wave 1: 2 slices verified at 5e6f7a8b
     SLICE-001: staged by an earlier run, not built again
-    SLICE-003 catalogue: covered 1/1, written 1 file, merged 5e6f7a8b…
-  wave 2: 1 slice verified at 9c0d1e2f, repaired
-    SLICE-002 orders: covered 1/2 (uncovered REQ-004), written 3 files, merged 9c0d1e2f…, resolved (src/lib.rs)
+    SLICE-004 catalogue: covered 1/1, written 1 file, merged 5e6f7a8b…
+  wave 2: 1 slice verified at 7a8b9c0d
+    SLICE-002 orders (1/2): covered 8/8, written 2 files, merged 7a8b9c0d…
+  wave 3: 1 slice verified at 9c0d1e2f, repaired
+    SLICE-003 orders (2/2): covered 5/6 (uncovered REQ-014), written 3 files, merged 9c0d1e2f…, resolved (src/lib.rs)
   labelled emery/9f8e7d6c… at 9c0d1e2f…
 ```
 

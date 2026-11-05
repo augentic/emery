@@ -278,9 +278,10 @@ fn message(
     id: &str, (slice, name): (&str, &str), requirements: &str, covered: &str, base: &str,
     wave: usize,
 ) -> String {
+    let part = slice.replace("SLICE-", "PART-");
     format!(
-        "{slice} {name}\n\nSlice: {slice}\nRevision: {id}\nRequirements: {requirements}\nCovered: \
-         {covered}\nAdapter: {BUILDER}\nBase: {base}\nWave: {wave}"
+        "{slice} {name}\n\nSlice: {slice}\nPart: {part}\nRevision: {id}\nBudget: 12\nRequirements: \
+         {requirements}\nCovered: {covered}\nAdapter: {BUILDER}\nBase: {base}\nWave: {wave}"
     )
 }
 
@@ -393,11 +394,11 @@ async fn build_plan() {
     assert_eq!(
         stdout,
         format!(
-            "built revision {id}\n  plan: 2 parts in 2 waves, widest 1\n  base {BASE}\n  wave 1: \
-             1 slice verified at 9f8e7d6c\n    SLICE-001 authentication: covered 2/2, written 1 \
-             file, merged m:SLICE-001\n  wave 2: 1 slice verified at 9f8e7d6c\n    SLICE-002 \
-             orders: covered 1/2 (uncovered REQ-004), written 3 files, merged m:SLICE-002\n  \
-             labelled emery/{id} at {HEAD}\n"
+            "built revision {id}\n  plan: 2 parts in 2 waves; budget 12 (default): 2 slices in 2 \
+             waves, widest 1\n  base {BASE}\n  wave 1: 1 slice verified at 9f8e7d6c\n    \
+             SLICE-001 authentication: covered 2/2, written 1 file, merged m:SLICE-001\n  wave 2: \
+             1 slice verified at 9f8e7d6c\n    SLICE-002 orders: covered 1/2 (uncovered REQ-004), \
+             written 3 files, merged m:SLICE-002\n  labelled emery/{id} at {HEAD}\n"
         )
     );
 
@@ -458,15 +459,16 @@ async fn build_plan() {
             .await;
     let envelope: Value = serde_json::from_slice(&resp.stdout).expect("one JSON envelope");
     assert_eq!(envelope["revision"], id, "{envelope}");
-    assert_eq!(envelope["waves"], json!([["PART-001"], ["PART-002"]]), "{envelope}");
+    assert_eq!(envelope["parts"], json!([["PART-001"], ["PART-002"]]), "{envelope}");
+    assert_eq!(envelope["waves"], json!([["SLICE-001"], ["SLICE-002"]]), "{envelope}");
     assert_eq!(envelope["base"], BASE, "{envelope}");
     assert!(envelope.get("resumed").is_none(), "a fresh build resumes nothing: {envelope}");
     assert!(envelope.get("initialised").is_none(), "an init scaffolding nothing seals nothing");
     assert_eq!(
         envelope["slices"],
         json!([
-            {"id": "SLICE-001", "name": "authentication", "wave": 1, "covered": ["REQ-001", "REQ-002"], "uncovered": [], "written": ["src/authentication.rs"], "commit": "m:SLICE-001"},
-            {"id": "SLICE-002", "name": "orders", "wave": 2, "covered": ["REQ-003"], "uncovered": ["REQ-004"], "written": ["Cargo.toml", "src/lib.rs", "src/orders.rs"], "commit": "m:SLICE-002"},
+            {"id": "SLICE-001", "part": "PART-001", "name": "authentication", "index": 1, "count": 1, "wave": 1, "covered": ["REQ-001", "REQ-002"], "uncovered": [], "written": ["src/authentication.rs"], "commit": "m:SLICE-001"},
+            {"id": "SLICE-002", "part": "PART-002", "name": "orders", "index": 1, "count": 1, "wave": 2, "covered": ["REQ-003"], "uncovered": ["REQ-004"], "written": ["Cargo.toml", "src/lib.rs", "src/orders.rs"], "commit": "m:SLICE-002"},
         ]),
         "`written` is the copy's change set, sorted: {envelope}"
     );
@@ -504,7 +506,8 @@ async fn build_waves() {
             .await;
 
     let envelope: Value = serde_json::from_slice(&resp.stdout).expect("one JSON envelope");
-    assert_eq!(envelope["waves"], json!([["PART-001", "PART-003"], ["PART-002"]]), "{envelope}");
+    assert_eq!(envelope["parts"], json!([["PART-001", "PART-003"], ["PART-002"]]), "{envelope}");
+    assert_eq!(envelope["waves"], json!([["SLICE-001", "SLICE-003"], ["SLICE-002"]]), "{envelope}");
     assert_eq!(
         dispatched(&provider),
         [
@@ -524,9 +527,9 @@ async fn build_waves() {
     assert_eq!(
         envelope["slices"],
         json!([
-            {"id": "SLICE-001", "name": "authentication", "wave": 1, "covered": ["REQ-001"], "uncovered": [], "written": ["src/authentication.rs"], "commit": "m:SLICE-001"},
-            {"id": "SLICE-003", "name": "orders", "wave": 1, "covered": ["REQ-003", "REQ-004"], "uncovered": [], "written": ["src/orders.rs"], "commit": "m:SLICE-003"},
-            {"id": "SLICE-002", "name": "sessions", "wave": 2, "covered": ["REQ-002"], "uncovered": [], "written": ["src/sessions.rs"], "commit": "m:SLICE-002"},
+            {"id": "SLICE-001", "part": "PART-001", "name": "authentication", "index": 1, "count": 1, "wave": 1, "covered": ["REQ-001"], "uncovered": [], "written": ["src/authentication.rs"], "commit": "m:SLICE-001"},
+            {"id": "SLICE-003", "part": "PART-003", "name": "orders", "index": 1, "count": 1, "wave": 1, "covered": ["REQ-003", "REQ-004"], "uncovered": [], "written": ["src/orders.rs"], "commit": "m:SLICE-003"},
+            {"id": "SLICE-002", "part": "PART-002", "name": "sessions", "index": 1, "count": 1, "wave": 2, "covered": ["REQ-002"], "uncovered": [], "written": ["src/sessions.rs"], "commit": "m:SLICE-002"},
         ]),
         "{envelope}"
     );
@@ -545,11 +548,12 @@ async fn build_waves() {
     assert_eq!(
         stdout,
         format!(
-            "built revision {id}\n  plan: 3 parts in 2 waves, widest 2\n  base {BASE}\n  wave 1: \
-             2 slices verified at 9f8e7d6c\n    SLICE-001 authentication: covered 1/1, written 1 \
-             file, merged m:SLICE-001\n    SLICE-003 orders: covered 2/2, written 1 file, merged \
-             m:SLICE-003\n  wave 2: 1 slice verified at 9f8e7d6c\n    SLICE-002 sessions: covered \
-             1/1, written 1 file, merged m:SLICE-002\n  labelled emery/{id} at {HEAD}\n"
+            "built revision {id}\n  plan: 3 parts in 2 waves; budget 12 (default): 3 slices in 2 \
+             waves, widest 2\n  base {BASE}\n  wave 1: 2 slices verified at 9f8e7d6c\n    \
+             SLICE-001 authentication: covered 1/1, written 1 file, merged m:SLICE-001\n    \
+             SLICE-003 orders: covered 2/2, written 1 file, merged m:SLICE-003\n  wave 2: 1 slice \
+             verified at 9f8e7d6c\n    SLICE-002 sessions: covered 1/1, written 1 file, merged \
+             m:SLICE-002\n  labelled emery/{id} at {HEAD}\n"
         )
     );
     provider.vcs.assert_exhausted();
@@ -856,9 +860,9 @@ async fn build_conflict_resolved_merged() {
     assert_eq!(
         envelope["slices"],
         json!([
-            {"id": "SLICE-001", "name": "authentication", "wave": 1, "covered": ["REQ-001"], "uncovered": [], "written": ["src/authentication.rs", "src/lib.rs"], "commit": "m:SLICE-001"},
-            {"id": "SLICE-003", "name": "orders", "wave": 1, "covered": ["REQ-003", "REQ-004"], "uncovered": [], "written": ["src/lib.rs"], "resolved": ["src/lib.rs"], "commit": "m:SLICE-003"},
-            {"id": "SLICE-002", "name": "sessions", "wave": 2, "covered": ["REQ-002"], "uncovered": [], "written": ["src/sessions.rs"], "commit": "m:SLICE-002"},
+            {"id": "SLICE-001", "part": "PART-001", "name": "authentication", "index": 1, "count": 1, "wave": 1, "covered": ["REQ-001"], "uncovered": [], "written": ["src/authentication.rs", "src/lib.rs"], "commit": "m:SLICE-001"},
+            {"id": "SLICE-003", "part": "PART-003", "name": "orders", "index": 1, "count": 1, "wave": 1, "covered": ["REQ-003", "REQ-004"], "uncovered": [], "written": ["src/lib.rs"], "resolved": ["src/lib.rs"], "commit": "m:SLICE-003"},
+            {"id": "SLICE-002", "part": "PART-002", "name": "sessions", "index": 1, "count": 1, "wave": 2, "covered": ["REQ-002"], "uncovered": [], "written": ["src/sessions.rs"], "commit": "m:SLICE-002"},
         ]),
         "{envelope}"
     );
@@ -922,12 +926,12 @@ async fn build_conflict_resolved_as_written() {
     assert_eq!(
         String::from_utf8_lossy(&resp.stdout),
         format!(
-            "built revision {id}\n  plan: 3 parts in 2 waves, widest 2\n  base {BASE}\n  wave 1: \
-             2 slices verified at 9f8e7d6c\n    SLICE-001 authentication: covered 1/1, written 2 \
-             files, merged m:SLICE-001\n    SLICE-003 orders: covered 2/2, written 1 file, merged \
-             m:SLICE-003, resolved (src/lib.rs)\n  wave 2: 1 slice verified at 9f8e7d6c\n    \
-             SLICE-002 sessions: covered 1/1, written 1 file, merged m:SLICE-002\n  labelled \
-             emery/{id} at {HEAD}\n"
+            "built revision {id}\n  plan: 3 parts in 2 waves; budget 12 (default): 3 slices in 2 \
+             waves, widest 2\n  base {BASE}\n  wave 1: 2 slices verified at 9f8e7d6c\n    \
+             SLICE-001 authentication: covered 1/1, written 2 files, merged m:SLICE-001\n    \
+             SLICE-003 orders: covered 2/2, written 1 file, merged m:SLICE-003, resolved \
+             (src/lib.rs)\n  wave 2: 1 slice verified at 9f8e7d6c\n    SLICE-002 sessions: \
+             covered 1/1, written 1 file, merged m:SLICE-002\n  labelled emery/{id} at {HEAD}\n"
         )
     );
     provider.model.assert_exhausted();
@@ -1426,9 +1430,10 @@ async fn build_resumed() {
     assert_eq!(
         stdout,
         format!(
-            "built revision {id}\n  plan: 3 parts in 2 waves, widest 2\n  base {HEAD}\n  resumed: \
-             SLICE-001, SLICE-003\n  wave 1: 1 slice verified at 9f8e7d6c\n    SLICE-002 sessions: \
-             covered 1/1, written 1 file, merged m:SLICE-002\n  labelled emery/{id} at {HEAD}\n"
+            "built revision {id}\n  plan: 3 parts in 2 waves; budget 12 (default): 3 slices in 2 \
+             waves, widest 2\n  base {HEAD}\n  resumed: SLICE-001, SLICE-003\n  wave 1: 1 slice \
+             verified at 9f8e7d6c\n    SLICE-002 sessions: covered 1/1, written 1 file, merged \
+             m:SLICE-002\n  labelled emery/{id} at {HEAD}\n"
         )
     );
     provider.vcs.assert_exhausted();
@@ -1458,8 +1463,9 @@ async fn build_resumed_complete() {
     assert_eq!(
         stdout,
         format!(
-            "built revision {id}\n  plan: 2 parts in 2 waves, widest 1\n  base {HEAD}\n  resumed: \
-             SLICE-001, SLICE-002\n  labelled emery/{id} at {LABELLED}\n"
+            "built revision {id}\n  plan: 2 parts in 2 waves; budget 12 (default): 2 slices in 2 \
+             waves, widest 1\n  base {HEAD}\n  resumed: SLICE-001, SLICE-002\n  labelled \
+             emery/{id} at {LABELLED}\n"
         )
     );
     assert!(provider.target.calls().is_empty(), "nothing to build");
@@ -1506,9 +1512,10 @@ async fn build_candidate_staged() {
     assert_eq!(
         stdout,
         format!(
-            "built revision {id}\n  plan: 2 parts in 2 waves, widest 1\n  candidate {candidate} \
-             is staged and not sealed; `emery apply` seals it\n  base {HEAD}\n  resumed: \
-             SLICE-001, SLICE-002\n  labelled emery/{id} at {LABELLED}\n"
+            "built revision {id}\n  plan: 2 parts in 2 waves; budget 12 (default): 2 slices in 2 \
+             waves, widest 1\n  candidate {candidate} is staged and not sealed; `emery apply` \
+             seals it\n  base {HEAD}\n  resumed: SLICE-001, SLICE-002\n  labelled emery/{id} at \
+             {LABELLED}\n"
         ),
         "the two-slice revision is built, not the three-slice candidate"
     );
@@ -1551,9 +1558,10 @@ async fn build_amendment_staged() {
     assert_eq!(
         String::from_utf8_lossy(&resp.stdout),
         format!(
-            "built revision {id}\n  plan: 2 parts in 2 waves, widest 1\n  amendment {amendment} \
-             is staged; `emery show amendment` reviews it\n  base {HEAD}\n  resumed: SLICE-001, \
-             SLICE-002\n  labelled emery/{id} at {LABELLED}\n"
+            "built revision {id}\n  plan: 2 parts in 2 waves; budget 12 (default): 2 slices in 2 \
+             waves, widest 1\n  amendment {amendment} is staged; `emery show amendment` reviews \
+             it\n  base {HEAD}\n  resumed: SLICE-001, SLICE-002\n  labelled emery/{id} at \
+             {LABELLED}\n"
         )
     );
     assert_eq!(provider.storage.snapshot(), before, "a build writes nothing to either slot");
@@ -1728,7 +1736,7 @@ async fn build_resumed_staged() {
     assert_eq!(envelope["resumed"], json!(["SLICE-001", "SLICE-003"]), "{envelope}");
     assert_eq!(
         envelope["slices"],
-        json!([{"id": "SLICE-002", "name": "sessions", "wave": 2, "covered": ["REQ-002"], "uncovered": [], "written": ["src/sessions.rs"], "commit": "m:SLICE-002"}]),
+        json!([{"id": "SLICE-002", "part": "PART-002", "name": "sessions", "index": 1, "count": 1, "wave": 2, "covered": ["REQ-002"], "uncovered": [], "written": ["src/sessions.rs"], "commit": "m:SLICE-002"}]),
         "{envelope}"
     );
     assert_eq!(
@@ -1748,11 +1756,12 @@ async fn build_resumed_staged() {
     assert_eq!(
         stdout,
         format!(
-            "built revision {id}\n  plan: 3 parts in 2 waves, widest 2\n  base {HEAD}\n  resumed: \
-             SLICE-001, SLICE-003\n  wave 1: 2 slices verified at 5a6b7c8d\n    SLICE-001: staged \
-             by an earlier run, not built again\n    SLICE-003: staged by an earlier run, not \
-             built again\n  wave 2: 1 slice verified at 9f8e7d6c\n    SLICE-002 sessions: covered \
-             1/1, written 1 file, merged m:SLICE-002\n  labelled emery/{id} at {HEAD}\n"
+            "built revision {id}\n  plan: 3 parts in 2 waves; budget 12 (default): 3 slices in 2 \
+             waves, widest 2\n  base {HEAD}\n  resumed: SLICE-001, SLICE-003\n  wave 1: 2 slices \
+             verified at 5a6b7c8d\n    SLICE-001: staged by an earlier run, not built again\n    \
+             SLICE-003: staged by an earlier run, not built again\n  wave 2: 1 slice verified at \
+             9f8e7d6c\n    SLICE-002 sessions: covered 1/1, written 1 file, merged m:SLICE-002\n  \
+             labelled emery/{id} at {HEAD}\n"
         )
     );
     provider.vcs.assert_exhausted();
@@ -3470,4 +3479,420 @@ async fn build_conflict_at_spec() {
     assert!(!calls.iter().any(|call| call.starts_with("label ")), "no label: {calls:?}");
     assert!(provider.target.verifies().is_empty(), "a wave that did not integrate is not verified");
     provider.vcs.assert_exhausted();
+}
+
+// --- the schedule and the budget ---
+
+// Builds a revision whose `authentication` part holds one requirement and
+// whose `orders` part holds `subs`, each `(sub, count, trigger)` under
+// `orders.<sub>-*`, owning `orders.line` and `orders.order` and depending
+// on `PART-001`.
+fn budgeted_revision(subs: &[(&str, usize, Option<Trigger>)]) -> (Provider, String) {
+    let mut spec: Value = serde_json::from_slice(SPEC).expect("spec fixture");
+    let mut requirements = vec![spec["requirements"][0].clone()];
+    let mut order_ids = Vec::new();
+    let mut req_num = 1usize;
+    for &(sub, count, ref trigger) in subs {
+        for index in 1..=count {
+            req_num += 1;
+            let id = format!("REQ-{req_num:03}");
+            order_ids.push(id.clone());
+            let subject = if count == 1 {
+                format!("orders.{sub}")
+            } else {
+                format!("orders.{sub}.item-{index}")
+            };
+            let trigger_val = serde_json::to_value(trigger).expect("trigger serialises");
+            requirements.push(json!({
+                "id": id,
+                "subject": subject,
+                "status": "unknown",
+                "covered": false,
+                "trigger": trigger_val,
+                "sources": [{"source": "docs", "claim": subject, "path": null}],
+                "body": [format!("Statement for {id}.")],
+                "losers": [],
+                "scenarios": [{
+                    "name": format!("Scenario {req_num}"),
+                    "given": [],
+                    "when": "invoked",
+                    "then": "succeeds",
+                    "and": []
+                }]
+            }));
+        }
+    }
+    spec["requirements"] = Value::Array(requirements);
+    let mut plan: Value = serde_json::from_slice(WIDE_PLAN).expect("wide-plan fixture");
+    plan["parts"] = json!([
+        {
+            "id": "PART-001",
+            "name": "authentication",
+            "requirements": ["REQ-001"],
+            "types": [],
+            "depends-on": [],
+            "brief": ["Delivers sign-in."]
+        },
+        {
+            "id": "PART-002",
+            "name": "orders",
+            "requirements": order_ids,
+            "types": ["orders.line", "orders.order"],
+            "depends-on": ["PART-001"],
+            "brief": ["Delivers orders over sign-in."]
+        }
+    ]);
+    let provider = Provider::idle();
+    let id = seed(
+        &provider.files,
+        &serde_json::to_vec(&spec).expect("spec"),
+        DESIGN,
+        &serde_json::to_vec(&plan).expect("plan"),
+    );
+    (provider, id)
+}
+
+// A 20-requirement part at `--budget 8` cuts into 3 serial slices in
+// waves 2, 3, and 4 after `authentication`; the part's owned data types
+// travel with its first slice alone, and each slice carries its `index` of
+// `count` and the part's name and brief.
+#[tokio::test]
+async fn build_budget_cut() {
+    let post = Some(Trigger::Http(Route {
+        method: "POST".to_owned(),
+        path: "/orders".to_owned(),
+    }));
+    let get = Some(Trigger::Http(Route {
+        method: "GET".to_owned(),
+        path: "/orders".to_owned(),
+    }));
+    let cancel = Some(Trigger::Message("orders.cancel".to_owned()));
+    let (provider, id) =
+        budgeted_revision(&[("create", 8, post), ("list", 7, get), ("cancel", 5, cancel)]);
+    provider.vcs.heads.script(".", Ok(BASE.to_owned()));
+
+    let resp = cli_ok(
+        &provider,
+        &["emery", "--format", "json", "build", "--config", PROJECT_CONFIG, "--budget", "8"],
+    )
+    .await;
+
+    let envelope: Value = serde_json::from_slice(&resp.stdout).expect("one JSON envelope");
+    assert_eq!(envelope["budget"], 8, "{envelope}");
+    assert_eq!(envelope["budget-source"], "flag", "{envelope}");
+    assert_eq!(envelope["parts"], json!([["PART-001"], ["PART-002"]]), "{envelope}");
+    assert_eq!(
+        envelope["waves"],
+        json!([["SLICE-001"], ["SLICE-002"], ["SLICE-003"], ["SLICE-004"]]),
+        "the three slices of `orders` build in serial waves: {envelope}"
+    );
+    let calls = provider.target.calls();
+    assert_eq!(calls.len(), 4);
+    let [(_, auth, _), (_, first, _), (_, second, _), (_, third, _)] = calls.as_slice() else {
+        panic!("four slices: {calls:?}");
+    };
+    assert_eq!(
+        (&auth.id, &auth.part, auth.index, auth.count),
+        (&"SLICE-001".to_owned(), &"PART-001".to_owned(), 1, 1)
+    );
+    assert_eq!(
+        (&first.id, &first.part, &first.name, first.index, first.count),
+        (&"SLICE-002".to_owned(), &"PART-002".to_owned(), &"orders".to_owned(), 1, 3)
+    );
+    assert_eq!(
+        (&second.id, &second.part, &second.name, second.index, second.count),
+        (&"SLICE-003".to_owned(), &"PART-002".to_owned(), &"orders".to_owned(), 2, 3)
+    );
+    assert_eq!(
+        (&third.id, &third.part, &third.name, third.index, third.count),
+        (&"SLICE-004".to_owned(), &"PART-002".to_owned(), &"orders".to_owned(), 3, 3)
+    );
+    assert_eq!(first.requirements.len(), 8);
+    assert_eq!(second.requirements.len(), 7);
+    assert_eq!(third.requirements.len(), 5);
+    assert_eq!(first.types.len(), 2, "the first slice of the part carries its owned types");
+    assert!(second.types.is_empty(), "later slices of the part carry no types");
+    assert!(third.types.is_empty(), "later slices of the part carry no types");
+    assert_eq!(second.brief, first.brief, "every slice carries the part's brief");
+
+    // text output shows the plan summary, the budget and its source, and `(index/count)` per slice
+    provider.vcs.heads.script(".", Ok(BASE.to_owned()));
+    let resp = cli_ok(&provider, &["emery", "build", "--config", PROJECT_CONFIG, "-b", "8"]).await;
+    let stdout = String::from_utf8_lossy(&resp.stdout);
+    assert!(
+        stdout.contains(
+            "  plan: 2 parts in 2 waves; budget 8 (flag): 4 slices in 4 waves, widest 1\n"
+        ),
+        "{stdout}"
+    );
+    assert!(stdout.contains("    SLICE-002 orders (1/3): covered 8/8"), "{stdout}");
+    assert!(stdout.contains("    SLICE-003 orders (2/3): covered 7/7"), "{stdout}");
+    assert!(stdout.contains("    SLICE-004 orders (3/3): covered 5/5"), "{stdout}");
+    assert!(!stdout.contains("over budget:"), "{stdout}");
+    assert_eq!(
+        provider.vcs.messages()[1],
+        format!(
+            "SLICE-002 orders\n\nSlice: SLICE-002\nPart: PART-002\nRevision: {id}\nBudget: \
+             8\nRequirements: REQ-002, REQ-003, REQ-004, REQ-005, REQ-006, REQ-007, REQ-008, \
+             REQ-009\nCovered: REQ-002, REQ-003, REQ-004, REQ-005, REQ-006, REQ-007, REQ-008, \
+             REQ-009\nAdapter: {BUILDER}\nBase: {HEAD}\nWave: 2"
+        )
+    );
+}
+
+// Requirements sharing one trigger stay in one slice even when they span
+// sub-stems and exceed the budget; the slice is flagged `over-budget` and
+// warned in text output rather than refused.
+#[tokio::test]
+async fn build_budget_trigger_whole() {
+    let route = Some(Trigger::Http(Route {
+        method: "POST".to_owned(),
+        path: "/orders".to_owned(),
+    }));
+    let other = Some(Trigger::Http(Route {
+        method: "GET".to_owned(),
+        path: "/orders".to_owned(),
+    }));
+    let (provider, _) = budgeted_revision(&[
+        ("validate", 6, route.clone()),
+        ("persist", 4, route),
+        ("list", 3, other),
+    ]);
+    provider.vcs.heads.script(".", Ok(BASE.to_owned()));
+
+    let resp = cli_ok(
+        &provider,
+        &["emery", "--format", "json", "build", "--config", PROJECT_CONFIG, "--budget", "6"],
+    )
+    .await;
+
+    let envelope: Value = serde_json::from_slice(&resp.stdout).expect("one JSON envelope");
+    assert_eq!(envelope["schedule"].as_array().map(Vec::len), Some(3), "{envelope}");
+    assert_eq!(envelope["schedule"][1]["id"], "SLICE-002");
+    assert_eq!(envelope["schedule"][1]["requirements"].as_array().map(Vec::len), Some(10));
+    assert_eq!(envelope["schedule"][1]["over-budget"], true, "{envelope}");
+    assert_eq!(envelope["schedule"][2]["id"], "SLICE-003");
+    assert_eq!(envelope["schedule"][2]["requirements"].as_array().map(Vec::len), Some(3));
+    assert_eq!(envelope["schedule"][2]["over-budget"], false, "{envelope}");
+
+    provider.vcs.heads.script(".", Ok(BASE.to_owned()));
+    let resp =
+        cli_ok(&provider, &["emery", "build", "--config", PROJECT_CONFIG, "--budget", "6"]).await;
+    let stdout = String::from_utf8_lossy(&resp.stdout);
+    assert!(stdout.contains("  over budget: SLICE-002 orders (10 requirements)\n"), "{stdout}");
+}
+
+// Untriggered sub-stems (pipeline stages and helpers) pack ahead of
+// triggered sub-stems (routes and consumers), regardless of where their
+// requirement ids sit in the part.
+#[tokio::test]
+async fn build_budget_stages_first() {
+    let route = Some(Trigger::Http(Route {
+        method: "POST".to_owned(),
+        path: "/orders".to_owned(),
+    }));
+    let (provider, _) =
+        budgeted_revision(&[("entry", 4, route), ("stage-one", 3, None), ("stage-two", 3, None)]);
+    provider.vcs.heads.script(".", Ok(BASE.to_owned()));
+
+    let resp = cli_ok(
+        &provider,
+        &["emery", "--format", "json", "build", "--config", PROJECT_CONFIG, "--budget", "6"],
+    )
+    .await;
+
+    let envelope: Value = serde_json::from_slice(&resp.stdout).expect("one JSON envelope");
+    assert_eq!(
+        envelope["schedule"][1]["requirements"],
+        json!(["REQ-006", "REQ-007", "REQ-008", "REQ-009", "REQ-010", "REQ-011"]),
+        "the two untriggered stages pack into the first slice of the part: {envelope}"
+    );
+    assert_eq!(
+        envelope["schedule"][2]["requirements"],
+        json!(["REQ-002", "REQ-003", "REQ-004", "REQ-005"]),
+        "the triggered entry follows in the second slice: {envelope}"
+    );
+}
+
+// When neither `--budget` nor `[target] budget` is given, the target
+// adapter's `metadata.budget` is used and reported as `adapter`.
+#[tokio::test]
+async fn build_budget_from_metadata() {
+    let (mut provider, _) = budgeted_revision(&[("a", 3, None), ("b", 3, None)]);
+    provider.target.budget = Some(4);
+    provider.vcs.heads.script(".", Ok(BASE.to_owned()));
+
+    let resp =
+        cli_ok(&provider, &["emery", "--format", "json", "build", "--config", PROJECT_CONFIG])
+            .await;
+
+    let envelope: Value = serde_json::from_slice(&resp.stdout).expect("one JSON envelope");
+    assert_eq!(envelope["budget"], 4, "{envelope}");
+    assert_eq!(envelope["budget-source"], "adapter", "{envelope}");
+    assert_eq!(envelope["schedule"].as_array().map(Vec::len), Some(3), "{envelope}");
+}
+
+// `[target] budget` in `emery.toml` overrides the adapter's metadata and is
+// reported as `config`.
+#[tokio::test]
+async fn build_budget_from_config() {
+    let scratch = Scratch::new();
+    let config = scratch
+        .config(&format!("[target]\nadapter = \"{BUILDER}\"\nrepository = \".\"\nbudget = 3\n"));
+    let (mut provider, _) = budgeted_revision(&[("a", 3, None), ("b", 3, None)]);
+    provider.target.budget = Some(10);
+    provider.vcs.heads.script(".", Ok(BASE.to_owned()));
+
+    let resp =
+        cli_ok(&provider, &["emery", "--format", "json", "build", "--config", &config]).await;
+
+    let envelope: Value = serde_json::from_slice(&resp.stdout).expect("one JSON envelope");
+    assert_eq!(envelope["budget"], 3, "{envelope}");
+    assert_eq!(envelope["budget-source"], "config", "{envelope}");
+    assert_eq!(envelope["schedule"].as_array().map(Vec::len), Some(3), "{envelope}");
+}
+
+// `--budget` overrides `[target] budget` and the adapter's metadata, and is
+// reported as `flag`; `--budget 0` is refused at the CLI boundary.
+#[tokio::test]
+async fn build_budget_flag_over_config() {
+    let scratch = Scratch::new();
+    let config = scratch
+        .config(&format!("[target]\nadapter = \"{BUILDER}\"\nrepository = \".\"\nbudget = 10\n"));
+    let (mut provider, _) = budgeted_revision(&[("a", 3, None), ("b", 3, None)]);
+    provider.target.budget = Some(12);
+    provider.vcs.heads.script(".", Ok(BASE.to_owned()));
+
+    let resp = cli_ok(
+        &provider,
+        &["emery", "--format", "json", "build", "--config", &config, "--budget", "3"],
+    )
+    .await;
+
+    let envelope: Value = serde_json::from_slice(&resp.stdout).expect("one JSON envelope");
+    assert_eq!(envelope["budget"], 3, "{envelope}");
+    assert_eq!(envelope["budget-source"], "flag", "{envelope}");
+    assert_eq!(envelope["schedule"].as_array().map(Vec::len), Some(3), "{envelope}");
+
+    let zero = cli(&provider, &["emery", "build", "--config", &config, "--budget", "0"]).await;
+    assert_eq!(zero.exit, USAGE_EXIT);
+}
+
+// Resuming a multi-slice part reads the committed `Requirements:` from the
+// label chain: the slices whose requirements are on the label are reported
+// in `resumed`, the remaining slice builds with `types` empty (since the
+// first slice already laid them), and its `index`/`count` stay `3` of `3`.
+#[tokio::test]
+async fn build_resume_by_requirements() {
+    let (provider, id) = budgeted_revision(&[("a", 3, None), ("b", 3, None), ("c", 3, None)]);
+    provider.vcs.labelleds.script(".", Ok(LABELLED.to_owned()));
+    provider.vcs.logs.script(
+        ".",
+        Ok(vec![
+            entry(
+                "m:SLICE-003",
+                &message(
+                    &id,
+                    ("SLICE-003", "orders"),
+                    "REQ-005, REQ-006, REQ-007",
+                    "REQ-005, REQ-006, REQ-007",
+                    HEAD,
+                    2,
+                ),
+            ),
+            entry(
+                "m:SLICE-002",
+                &message(
+                    &id,
+                    ("SLICE-002", "orders"),
+                    "REQ-002, REQ-003, REQ-004",
+                    "REQ-002, REQ-003, REQ-004",
+                    HEAD,
+                    2,
+                ),
+            ),
+            entry("m:SLICE-001", &message(&id, AUTHENTICATION, "REQ-001", "REQ-001", HEAD, 1)),
+        ]),
+    );
+
+    let resp = cli_ok(
+        &provider,
+        &["emery", "--format", "json", "build", "--config", PROJECT_CONFIG, "--budget", "3"],
+    )
+    .await;
+
+    let envelope: Value = serde_json::from_slice(&resp.stdout).expect("one JSON envelope");
+    assert_eq!(envelope["resumed"], json!(["SLICE-001", "SLICE-002", "SLICE-003"]), "{envelope}");
+    let calls = provider.target.calls();
+    let [(_, slice, _)] = calls.as_slice() else {
+        panic!("only the third slice of orders remains: {calls:?}");
+    };
+    assert_eq!(slice.id, "SLICE-004");
+    assert_eq!(slice.part, "PART-002");
+    assert_eq!((slice.index, slice.count), (3, 3));
+    assert!(slice.types.is_empty(), "types were laid in the first slice: {slice:?}");
+    let req_ids: Vec<&str> = slice.requirements.iter().map(|r| r.id.as_str()).collect();
+    assert_eq!(req_ids, ["REQ-008", "REQ-009", "REQ-010"]);
+}
+
+// Changing `--budget` mid-build (from 6 on the first run to 3 on the resume)
+// keeps every requirement committed on the label chain as resumed and re-cuts
+// only the remaining uncovered requirements under the new budget.
+#[tokio::test]
+async fn build_resume_budget_changed() {
+    let (provider, id) = budgeted_revision(&[
+        ("a", 1, None),
+        ("b", 1, None),
+        ("c", 1, None),
+        ("d", 1, None),
+        ("e", 1, None),
+        ("f", 1, None),
+        ("g", 1, None),
+        ("h", 1, None),
+        ("i", 1, None),
+        ("j", 1, None),
+    ]);
+    provider.vcs.labelleds.script(".", Ok(LABELLED.to_owned()));
+    provider.vcs.logs.script(
+        ".",
+        Ok(vec![
+            entry(
+                "m:SLICE-002",
+                &message(
+                    &id,
+                    ("SLICE-002", "orders"),
+                    "REQ-002, REQ-003, REQ-004, REQ-005, REQ-006",
+                    "REQ-002, REQ-003, REQ-004, REQ-005, REQ-006",
+                    HEAD,
+                    2,
+                ),
+            ),
+            entry("m:SLICE-001", &message(&id, AUTHENTICATION, "REQ-001", "REQ-001", HEAD, 1)),
+        ]),
+    );
+
+    let resp = cli_ok(
+        &provider,
+        &["emery", "--format", "json", "build", "--config", PROJECT_CONFIG, "--budget", "3"],
+    )
+    .await;
+
+    let envelope: Value = serde_json::from_slice(&resp.stdout).expect("one JSON envelope");
+    assert_eq!(envelope["budget"], 3, "{envelope}");
+    assert_eq!(envelope["resumed"], json!(["SLICE-001", "SLICE-002"]), "{envelope}");
+    let calls = provider.target.calls();
+    assert_eq!(
+        calls.len(),
+        2,
+        "the remaining 5 requirements cut into slices of 3 and 2: {calls:?}"
+    );
+    assert_eq!(calls[0].1.id, "SLICE-003");
+    assert_eq!((calls[0].1.index, calls[0].1.count), (2, 3));
+    assert_eq!(calls[0].1.types, []);
+    let first_reqs: Vec<&str> = calls[0].1.requirements.iter().map(|r| r.id.as_str()).collect();
+    assert_eq!(first_reqs, ["REQ-007", "REQ-008", "REQ-009"]);
+    assert_eq!(calls[1].1.id, "SLICE-004");
+    assert_eq!((calls[1].1.index, calls[1].1.count), (3, 3));
+    let second_reqs: Vec<&str> = calls[1].1.requirements.iter().map(|r| r.id.as_str()).collect();
+    assert_eq!(second_reqs, ["REQ-010", "REQ-011"]);
 }

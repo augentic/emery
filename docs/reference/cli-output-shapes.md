@@ -246,7 +246,40 @@ All text-mode formatters (`crates/cli/src/text.rs`) follow a uniform layout:
 ```json
 {
   "revision": "9f8e7d6c…",
-  "waves": [["PART-001", "PART-003"], ["PART-002"]],
+  "budget": 12,
+  "budget-source": "adapter",
+  "parts": [["PART-001", "PART-003"], ["PART-002"]],
+  "schedule": [
+    {
+      "id": "SLICE-001",
+      "part": "PART-001",
+      "name": "authentication",
+      "index": 1,
+      "count": 1,
+      "requirements": ["REQ-001", "REQ-002"],
+      "over-budget": false
+    },
+    {
+      "id": "SLICE-002",
+      "part": "PART-002",
+      "name": "orders",
+      "index": 1,
+      "count": 1,
+      "requirements": ["REQ-003", "REQ-004"],
+      "types": ["orders.line", "orders.order"],
+      "over-budget": false
+    },
+    {
+      "id": "SLICE-003",
+      "part": "PART-003",
+      "name": "catalogue",
+      "index": 1,
+      "count": 1,
+      "requirements": ["REQ-005"],
+      "over-budget": false
+    }
+  ],
+  "waves": [["SLICE-001", "SLICE-003"], ["SLICE-002"]],
   "base": "1a2b3c4d…",
   "repository": "./.emery/vcs/repos/shop",
   "initialised": { "commit": "2b3c4d5e…", "paths": [".gitignore", "Cargo.toml", "src/lib.rs"] },
@@ -254,7 +287,10 @@ All text-mode formatters (`crates/cli/src/text.rs`) follow a uniform layout:
   "slices": [
     {
       "id": "SLICE-003",
+      "part": "PART-003",
       "name": "catalogue",
+      "index": 1,
+      "count": 1,
       "wave": 1,
       "covered": ["REQ-005"],
       "uncovered": [],
@@ -263,7 +299,10 @@ All text-mode formatters (`crates/cli/src/text.rs`) follow a uniform layout:
     },
     {
       "id": "SLICE-002",
+      "part": "PART-002",
       "name": "orders",
+      "index": 1,
+      "count": 1,
       "wave": 2,
       "covered": ["REQ-003"],
       "uncovered": ["REQ-004"],
@@ -286,13 +325,17 @@ All text-mode formatters (`crates/cli/src/text.rs`) follow a uniform layout:
 | Field | Type | Presence | Description |
 | --- | --- | --- | --- |
 | `revision` | `string` | Always | SHA-256 ID of the sealed revision that was built. |
+| `budget` | `number` | Always | Requirement budget per slice the schedule was cut under. |
+| `budget-source` | `"flag"` \| `"config"` \| `"adapter"` \| `"default"` | Always | Where `budget` came from (`--budget` / `EMERY_BUDGET`, `[target] budget`, `TargetMetadata.budget`, or engine fallback `12`). |
+| `parts` | `string[][]` | Always | Dependency waves of `PART-NNN` IDs from the sealed plan. |
+| `schedule` | `ScheduledSlice[]` | Always | Slices in schedule order (`{ id, part, name, index, count, requirements, types, over-budget }`; `types` omitted when empty). |
 | `waves` | `string[][]` | Always | Dependency waves of `SLICE-NNN` IDs. |
 | `candidate` | `{ id, kind }` | Optional | Unsealed candidate (`"revision"`) or amendment (`"amendment"`) standing in `.emery/storage/` that was ignored by the build. |
 | `base` | `string` | Always | Base commit SHA the build started from. |
 | `repository` | `string` | Always | Target repository path (`"."` or `"./.emery/vcs/repos/<name>"`). |
 | `initialised` | `{ commit, paths }` | Optional | `Initialise` commit SHA and sorted relative file paths scaffolded during `Task::Init` on this run. |
 | `resumed` | `string[]` | Optional | Slice IDs skipped because they were already merged on `emery/<revision>` or staged in `.emery/vcs/integration`. |
-| `slices` | `BuiltSlice[]` | Always | Slices built during this run, in merge order (`{ id, name, wave, covered, uncovered, written, resolved, commit }`). `commit` is `null` if the slice changed no files; `resolved` is omitted when no AI merge resolution was needed. |
+| `slices` | `BuiltSlice[]` | Always | Slices built during this run, in merge order (`{ id, part, name, index, count, wave, covered, uncovered, written, resolved, commit }`). `commit` is `null` if the slice changed no files; `resolved` is omitted when no AI merge resolution was needed. |
 | `verified` | `object[]` | Optional | Waves verified during this run (`{ wave, slices, head }`). Omitted if all slices were resumed from the label. |
 | `sealed` | `object[]` | Optional | Commits created by `Task::Verify` (`{ wave, commit, paths }`). Omitted when verification left no file changes. |
 | `repaired` | `number[]` | Optional | 1-based wave numbers where verification modified paths not covered by an `ours` merge rule. |

@@ -1173,7 +1173,13 @@ async fn assert_rebuilt(roots: &Roots, backends: &Bundle, base: &str, revision: 
     assert_ok(&run);
     model.assert_exhausted();
     assert_eq!(revision_of(&run), revision);
-    assert!(run.stdout.contains("\n  plan: 2 parts in 1 wave, widest 2\n"), "{}", run.stdout);
+    assert!(
+        run.stdout.contains(
+            "\n  plan: 2 parts in 1 wave; budget 2 (adapter): 2 slices in 1 wave, widest 2\n"
+        ),
+        "{}",
+        run.stdout
+    );
     assert!(run.stdout.contains(&format!("\n  base {base}\n")), "{}", run.stdout);
     assert!(!run.stdout.contains("initialised"), "the layout is held: {}", run.stdout);
     assert!(!run.stdout.contains("resumed:"), "the parent's slices are not this revision's");
@@ -1817,7 +1823,9 @@ async fn build_merged_labelled() {
     assert!(message.starts_with("SLICE-001 greeting\n\n"), "{message}");
     for trailer in [
         "Slice: SLICE-001".to_owned(),
+        "Part: PART-001".to_owned(),
         format!("Revision: {revision}"),
+        "Budget: 2".to_owned(),
         "Requirements: REQ-001".to_owned(),
         "Covered: REQ-001".to_owned(),
         format!("Adapter: {TARGET}"),
@@ -1861,8 +1869,9 @@ async fn build_resumed() {
     assert_eq!(
         run.stdout,
         format!(
-            "built revision {revision}\n  plan: 1 part in 1 wave, widest 1\n  base {base}\n  \
-             resumed: SLICE-001\n  labelled {label} at {head}\n"
+            "built revision {revision}\n  plan: 1 part in 1 wave; budget 2 (adapter): 1 slice in \
+             1 wave, widest 1\n  base {base}\n  resumed: SLICE-001\n  labelled {label} at \
+             {head}\n"
         )
     );
     assert_eq!(roots.git.run(project, &["rev-parse", &label]), head, "the label stands");
@@ -1924,9 +1933,10 @@ async fn build_resumed_staged() {
     assert_eq!(
         run.stdout,
         format!(
-            "built revision {revision}\n  plan: 1 part in 1 wave, widest 1\n  base {base}\n  \
-             resumed: SLICE-001\n  wave 1: 1 slice verified at {}\n    SLICE-001: staged by an \
-             earlier run, not built again\n  labelled {label} at {staged}\n",
+            "built revision {revision}\n  plan: 1 part in 1 wave; budget 2 (adapter): 1 slice in \
+             1 wave, widest 1\n  base {base}\n  resumed: SLICE-001\n  wave 1: 1 slice verified at \
+             {}\n    SLICE-001: staged by an earlier run, not built again\n  labelled {label} at \
+             {staged}\n",
             &staged[..8]
         )
     );
@@ -2428,8 +2438,9 @@ async fn build_laid() {
     assert_eq!(
         run.stdout,
         format!(
-            "built revision {revision}\n  plan: 1 part in 1 wave, widest 1\n  base {root}\n  \
-             repository ./{TARGET_REPO}\n  resumed: SLICE-001\n  labelled {label} at {head}\n"
+            "built revision {revision}\n  plan: 1 part in 1 wave; budget 2 (adapter): 1 slice in \
+             1 wave, widest 1\n  base {root}\n  repository ./{TARGET_REPO}\n  resumed: \
+             SLICE-001\n  labelled {label} at {head}\n"
         )
     );
     assert_eq!(roots.git.run(&repo, &["rev-list", "--max-parents=0", &label]), root);
@@ -2441,8 +2452,10 @@ async fn build_laid() {
 fn forged_message(revision: &str, base: &str) -> String {
     Message {
         slice: "SLICE-001".parse().expect("a slice id"),
+        part: "PART-001".parse().expect("a part id"),
         name: "greeting".to_owned(),
         revision: revision.to_owned(),
+        budget: 2,
         requirements: vec!["REQ-001".parse().expect("a requirement id")],
         covered: vec!["REQ-001".parse().expect("a requirement id")],
         adapter: TARGET.to_owned(),

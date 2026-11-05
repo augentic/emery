@@ -16,7 +16,7 @@ use schemars::JsonSchema;
 use serde::Deserialize;
 use serde_json::{Value, json};
 
-use super::{Built, Progress, Run, gated, kind_at, slice_id};
+use super::{Built, Progress, Run, gated, kind_at};
 use crate::brief::{Brief, Review};
 use crate::revision::Part;
 use crate::vcs::WorkingCopy;
@@ -42,8 +42,9 @@ impl UnresolvedMerge<'_> {
     pub async fn resolve<P: Model + Vcs + Files>(
         self, run: &Run<'_>, provider: &P, progress: &Progress,
     ) -> Result<(String, Vec<String>), Error> {
+        let scheduled = self.built.slice;
         let part = self.built.part;
-        let id = slice_id(part.id);
+        let id = scheduled.id;
         let worktree = &self.built.worktree;
         tracing::info!(
             slice = %id,
@@ -68,23 +69,27 @@ impl UnresolvedMerge<'_> {
         // merged already and sit outside `built`, and may sit after this one
         // in id order, so the wave comes from the plan rather than this run's
         // wave counter, which restarts on a resume
-        let waves = run.plan.waves();
+        let waves = run.schedule.plan().waves();
         let wave_parts = waves.iter().find(|wave| wave.contains(&part.id)).unwrap_or(&[]);
         let merged: Vec<&Part> = wave_parts
             .iter()
             .filter(|&&other| other != part.id)
-            .filter(|&&other| progress.merged.contains(&slice_id(other)))
             .filter_map(|other| {
-                let plan_part = run.plan.part(*other)?;
-                let other_slice = slice_id(*other);
+                let plan_part = run.schedule.part(*other)?;
+                let is_merged =
+                    plan_part.requirements.iter().any(|req| progress.merged.contains(req));
+                if !is_merged {
+                    return None;
+                }
                 let touches =
-                    progress.built.iter().find(|built| built.id == other_slice).is_none_or(
-                        |built| built.written.iter().any(|path| self.paths.contains(path)),
-                    );
+                    progress.built.iter().find(|built| built.part == *other).is_none_or(|built| {
+                        built.written.iter().any(|path| self.paths.contains(path))
+                    });
                 touches.then_some(plan_part)
             })
             .collect();
         let brief = MergeBrief {
+            slice: id,
             part,
             merged,
             conflicts,
@@ -213,6 +218,8 @@ const MARKERS: [&str; 2] = ["<<<<<<< ", ">>>>>>> "];
 
 // The brief that resolves the paths a slice's merge left conflicted.
 pub struct MergeBrief<'a> {
+    // The slice being merged.
+    pub slice: crate::revision::SliceId,
     // The plan entry of the slice being merged.
     pub part: &'a Part,
     // The plan entries of the slices merged before it in the wave that wrote a conflicted path.
@@ -256,7 +263,7 @@ impl Brief for MergeBrief<'_> {
     const PROSE: &'static [&'static str] = &["merge.md"];
 
     fn label(&self) -> Cow<'static, str> {
-        Cow::Owned(format!("merge-{}", slice_id(self.part.id)))
+        Cow::Owned(format!("merge-{}", self.slice))
     }
 
     fn tighten(&self, schema: &mut Value) -> Result<(), Error> {

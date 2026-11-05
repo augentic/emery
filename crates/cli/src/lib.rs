@@ -323,6 +323,9 @@ struct BuildArgs {
     /// How many slices of a wave to build at once; unset builds every slice of a wave at once, within the model backend's own agent cap.
     #[arg(long, short = 'j', env = "EMERY_JOBS", value_name = "N")]
     jobs: Option<NonZeroUsize>,
+    /// The maximum number of requirements per build slice; over `--config`, it replaces the `[target] budget`.
+    #[arg(long, short = 'b', env = "EMERY_BUDGET", value_name = "N")]
+    budget: Option<NonZeroUsize>,
 }
 
 impl TryFrom<BuildArgs> for BuildInput {
@@ -334,6 +337,7 @@ impl TryFrom<BuildArgs> for BuildInput {
             repository: args.repository.as_deref(),
             config: args.config.as_deref(),
             jobs: args.jobs,
+            budget: args.budget,
         }
         .resolve()
     }
