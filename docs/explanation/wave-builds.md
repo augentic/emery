@@ -5,7 +5,7 @@ This page explains how Emery partitions a specification into build slices, execu
 ## Contents
 
 - [From specification to build plan](#from-specification-to-build-plan)
-  - [Stems, sub-stems, and the slice floor (`SLICE_CAP = 12`)](#stems-sub-stems-and-the-slice-floor-slice_cap--12)
+  - [Stems and the slice floor](#stems-and-the-slice-floor)
   - [Trigger grouping and data type ownership](#trigger-grouping-and-data-type-ownership)
   - [How `emery amend` updates a plan](#how-emery-amend-updates-a-plan)
 - [Execution lifecycle of `emery build`](#execution-lifecycle-of-emery-build)
@@ -26,15 +26,12 @@ This page explains how Emery partitions a specification into build slices, execu
 
 Before code can be generated, `emery specify` (or `emery amend`) partitions the specification's requirements and the design's domain data types into a dependency-ordered build plan (`plan.json`).
 
-### Stems, sub-stems, and the slice floor (`SLICE_CAP = 12`)
+### Stems and the slice floor
 
 Every requirement has a dotted subject identifier such as `orders.create` or `orders.items.add`. To prevent the planner from shattering cohesive domain logic into tiny fragments, Emery enforces a deterministic **floor** rule (`Floors::check`):
 
-- **Standard stem floor (12 or fewer requirements):** When a stem (the first segment, such as `orders`) has at most 12 requirements (`SLICE_CAP`), the **entire stem** is the floor. All requirements sharing that stem must be placed in the same slice. The planner may merge multiple small stems into a single slice if they cannot be built and verified independently, but it may never split a stem across slices.
-- **Sub-stem floor (more than 12 requirements):** When a single stem has more than 12 requirements, Emery lowers the floor for that stem to its **sub-stems** (the first two segments, such as `orders.checkout` and `orders.fulfilment`). The planner may split the stem along sub-stem boundaries into slices of up to 12 requirements, but:
-  - It may never split a single sub-stem across slices.
-  - It may not cut a stem finer than necessary: if two slices of the same stem could fit together within the 12-requirement cap without creating a dependency cycle, the slicing gate rejects the plan and asks the model to merge them.
-- **Single-floor shortcut:** If the entire specification has only one floor, Emery creates a single slice (`SLICE-001`) automatically without making a model call.
+- **Stem floor:** The first segment of a requirement's subject (such as `orders`) is its **stem**, and the entire stem is the floor. All requirements sharing a stem must be placed in the same slice. The planner may merge multiple stems into a single slice if they cannot be built and verified independently, but it may never split a stem across slices.
+- **Single-floor shortcut:** If the entire specification has only one stem, Emery creates a single slice (`SLICE-001`) automatically without making a model call.
 
 ### Trigger grouping and data type ownership
 
@@ -42,7 +39,7 @@ In addition to the stem floor, every build plan must satisfy three structural in
 
 1. **Shared triggers stay together:** All requirements reached through the same HTTP `Route:` or `Message:` trigger map to a single handler and must be placed in the same slice, regardless of their stems.
 2. **Exclusive data type ownership:** Every `data` type key in `design.json` must be owned by **exactly one** slice—the slice whose requirements read or produce that shape (`mechanism` types are owned by no slice).
-3. **Acyclic dependencies (`depends-on`):** Slices declare which other slices they depend on. The slicing gate verifies that all dependencies exist and form a directed acyclic graph (DAG). In pipeline architectures where an entry slice orchestrates stage slices, the entry slice depends on the stages and builds last.
+3. **Acyclic dependencies (`depends-on`):** Slices declare which other slices they depend on. The slicing gate verifies that all dependencies exist and form a directed acyclic graph (DAG).
 
 ### How `emery amend` updates a plan
 
@@ -52,7 +49,7 @@ When you run [`emery amend`](../reference/cli/amend.md), Emery updates the exist
 - Retired requirements are removed from their slices; if a slice becomes empty, it is removed and its dependants are re-wired to its dependencies.
 - Added or restemmed requirements are placed automatically if their trigger or stem floor already belongs to an existing slice.
 - Unowned data types are assigned automatically if only one slice was touched and no stems are open.
-- Only when requirements fall under a brand-new stem, push a stem past `SLICE_CAP`, or leave data types ambiguous does Emery invoke a slicing turn (`SliceAmend`) to place the open items and refresh touched slice briefs.
+- Only when requirements fall under a brand-new stem or leave data types ambiguous does Emery invoke a slicing turn (`SliceAmend`) to place the open items and refresh touched slice briefs.
 
 ---
 

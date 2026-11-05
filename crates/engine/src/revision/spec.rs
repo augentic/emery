@@ -89,13 +89,6 @@ impl Requirement {
         revision::stem(&self.subject)
     }
 
-    // Returns the sub-stem of the subject: the first two segments of its
-    // dotted id, the floor in a stem past the slice cap.
-    #[must_use]
-    pub fn substem(&self) -> &str {
-        revision::substem(&self.subject)
-    }
-
     // Returns the requirement's statement: its `body` paragraphs
     // joined, or `None` when it is in conflict.
     #[must_use]

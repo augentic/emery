@@ -81,7 +81,7 @@ Every requirement has a dotted subject identifier such as `orders.cancel` or `or
 
 - **Stem:** The first segment of the subject (for example, `orders`).
 - **Sub-stem:** The first two segments of the subject (for example, `orders.items`).
-- **Floor:** The minimum grouping unit used when partitioning requirements into build slices. Normally, a requirement's floor is its **stem**—all requirements sharing a stem stay together in at least one slice. When a single stem exceeds 12 requirements (`SLICE_CAP`), the planner lowers the floor for that stem to its **sub-stems** so the stem can be split cleanly along sub-stem boundaries.
+- **Floor:** The minimum grouping unit used when partitioning requirements into build slices. A requirement's floor is its **stem**—all requirements sharing a stem stay together in at least one slice, and a stem is never split across slices.
 
 ### Trigger
 

@@ -31,7 +31,7 @@ pub use self::amendment::{
 pub use self::design::{Block, Design, Role, Section, SectionKind, TYPE, citations};
 use self::diff::BRIEF;
 pub use self::diff::{Changed, DesignDiff, Diff, Entry, PlanDiff, Retired, SliceEntry, SpecDiff};
-pub use self::id::{BadId, ReqId, SliceId, leads, stem, substem};
+pub use self::id::{BadId, ReqId, SliceId, leads, stem};
 use self::plan::{DEPENDS_ON, REQUIREMENTS, TYPES};
 pub use self::plan::{Plan, Slice, Waves, ranks};
 pub use self::spec::{Cited, Loser, Requirement, Scenario, Spec, Status};

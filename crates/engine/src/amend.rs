@@ -75,12 +75,10 @@ use crate::{Files, apply, store};
 /// depend on what it depended on, and a data type the design holds that no
 /// slice owns goes to the one slice the change touched. What no rule
 /// decides is put to one slicing turn over the current slices: the
-/// requirements of a stem no slice holds, every requirement of a stem left
-/// past [`SLICE_CAP`](crate::specify::SLICE_CAP) once an addition opens a
-/// sub-stem no slice holds, and a type key no slice owns where no slice or
-/// more than one changed; the turn drafts a new slice or joins a current
-/// one, and the whole is held to the plan's rules. A change adding only
-/// under stems the plan holds spends no slicing turn.
+/// requirements of a stem no slice holds, and a type key no slice owns
+/// where no slice or more than one changed; the turn drafts a new slice or
+/// joins a current one, and the whole is held to the plan's rules. A change
+/// adding only under stems the plan holds spends no slicing turn.
 /// [`Amendment::sections`] and [`Amendment::slices`] say what the two change
 /// against the base's.
 ///

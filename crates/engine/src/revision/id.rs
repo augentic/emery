@@ -162,11 +162,6 @@ pub fn stem(id: &str) -> &str {
     id.split_once('.').map_or(id, |(stem, _)| stem)
 }
 
-// The first two segments of a dotted id; an id of fewer is whole.
-pub fn substem(id: &str) -> &str {
-    id.match_indices('.').nth(1).map_or(id, |(end, _)| &id[..end])
-}
-
 // Whether `id` is `prefix` or a dotted child of it (`<prefix>.*`).
 pub fn leads(prefix: &str, id: &str) -> bool {
     id.strip_prefix(prefix).is_some_and(|rest| rest.is_empty() || rest.starts_with('.'))

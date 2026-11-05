@@ -2,12 +2,11 @@
 //!
 //! An amendment keeps the current plan's slices and places by code what a
 //! rule decides. What no rule decides — the requirements of a stem no slice
-//! holds, a stem the amendment leaves past the cap, and a design type no
-//! slice owns — is put to one turn over the current slices as fixed context,
-//! and the answer is held to the plan's rules over the whole. The turn also
-//! redrafts the brief of each current slice the amendment touched, and of
-//! each one its answer joins into, so what a builder reads says what the
-//! slice now delivers.
+//! holds, and a design type no slice owns — is put to one turn over the
+//! current slices as fixed context, and the answer is held to the plan's
+//! rules over the whole. The turn also redrafts the brief of each current
+//! slice the amendment touched, and of each one its answer joins into, so
+//! what a builder reads says what the slice now delivers.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::{self, Display, Formatter};
@@ -18,11 +17,9 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 
 use crate::brief::{Brief, Review};
-use crate::revision::{EMERY, Plan, ReqId, Slice, SliceId, Spec};
+use crate::revision::{EMERY, Plan, ReqId, Slice, SliceId};
 use crate::specify::basis::Basis;
-use crate::specify::plan::{
-    Draft, Floors, SLICE_CAP, SliceBrief, Stem, drafts, listed, quoted, triggered,
-};
+use crate::specify::plan::{Draft, Floors, SliceBrief, Stem, drafts, listed, quoted};
 use crate::specify::sections::BasesSection;
 
 // What the slicing turn decides of an amended plan: what the code rules
@@ -30,11 +27,8 @@ use crate::specify::sections::BasesSection;
 #[derive(Debug, Default)]
 pub struct Open {
     // The requirements no current slice holds: those under a stem no slice
-    // holds, and every one of a stem cut again.
+    // holds.
     pub ids: BTreeSet<ReqId>,
-    // The stems the amendment leaves past the cap, every requirement of
-    // which is open.
-    pub recut: BTreeSet<String>,
     // The design's data type keys no current slice owns, in the design's
     // order.
     pub keys: Vec<String>,
@@ -58,7 +52,6 @@ pub struct SliceAmend<'a> {
     floors: Floors<'a>,
     // The design's data type keys, in the design's order.
     types: &'a [String],
-    spec: &'a Spec,
     // The requirements the change adds, revises, or leaves in conflict.
     drafted: &'a [Basis<'a>],
 }
@@ -67,12 +60,12 @@ impl<'a> SliceAmend<'a> {
     // Returns the brief over `slices`, the current plan as the code rules
     // left it, with `open` what they left for the turn.
     //
-    // `base` is the plan amended under `parent`, `spec` the amended
-    // specification, `types` the amended design's data type keys, and
-    // `drafted` the requirements the change drafts anew.
+    // `base` is the plan amended under `parent`, `floors` the amended
+    // specification's floors, `types` the amended design's data type keys,
+    // and `drafted` the requirements the change drafts anew.
     #[must_use]
-    pub fn new(
-        base: &'a Plan, parent: String, slices: Vec<Slice>, open: Open, spec: &'a Spec,
+    pub const fn new(
+        base: &'a Plan, parent: String, slices: Vec<Slice>, open: Open, floors: Floors<'a>,
         types: &'a [String], drafted: &'a [Basis<'a>],
     ) -> Self {
         Self {
@@ -80,9 +73,8 @@ impl<'a> SliceAmend<'a> {
             parent,
             slices,
             open,
-            floors: Floors::from_spec(spec),
+            floors,
             types,
-            spec,
             drafted,
         }
     }
@@ -95,23 +87,7 @@ impl<'a> SliceAmend<'a> {
     // requirements differ, or one of them is drafted anew.
     fn touched(&self, slice: &Slice) -> bool {
         self.base.slice(slice.id).is_none_or(|was| was.requirements != slice.requirements)
-            || slice.requirements.iter().copied().any(|id| self.is_drafted(id))
-    }
-
-    fn is_drafted(&self, id: ReqId) -> bool {
-        self.drafted.iter().any(|basis| basis.id == id)
-    }
-
-    // The current slices that held `stem` in the base, by id and name.
-    fn holders(&self, stem: &Stem<'a>) -> Vec<&Slice> {
-        self.slices
-            .iter()
-            .filter(|slice| {
-                self.base.slice(slice.id).is_some_and(|was| {
-                    was.requirements.iter().any(|id| stem.requirements.contains(id))
-                })
-            })
-            .collect()
+            || slice.requirements.iter().any(|id| self.drafted.iter().any(|basis| basis.id == *id))
     }
 
     // The open requirements of `stem`, listed with the triggers that reach
@@ -119,7 +95,7 @@ impl<'a> SliceAmend<'a> {
     fn opened(&self, stem: &Stem<'a>) -> String {
         let ids: Vec<ReqId> =
             stem.requirements.iter().copied().filter(|id| self.open.ids.contains(id)).collect();
-        format!("{}{}", listed(&ids), triggered(&self.floors.triggers_of(&ids)))
+        format!("{}{}", listed(&ids), self.floors.triggered(&ids))
     }
 
     // Notes each of `ids` and `keys` the current plan places, which the
@@ -162,12 +138,7 @@ impl<'a> SliceAmend<'a> {
         };
         f.write_str("## Current plan\n\n")?;
         for slice in &self.slices {
-            write!(f, "- `{}` `{}` — ", slice.id, slice.name)?;
-            if slice.requirements.is_empty() {
-                f.write_str("no requirement; every one it held is open")?;
-            } else {
-                f.write_str(&listed(&slice.requirements))?;
-            }
+            write!(f, "- `{}` `{}` — {}", slice.id, slice.name, listed(&slice.requirements))?;
             if !slice.types.is_empty() {
                 write!(f, " — types: {}", quoted(&slice.types))?;
             }
@@ -187,16 +158,15 @@ impl<'a> SliceAmend<'a> {
         )
     }
 
-    // `## Open`: the new stems, the recut stems by their sub-stems, the
-    // unowned keys, then the standing rules.
+    // `## Open`: the new stems, the unowned keys, then the standing rules.
     fn write_open(&self, f: &mut Formatter<'_>) -> fmt::Result {
         f.write_str("\n## Open\n\n")?;
-        let (recut, new): (Vec<&Stem<'a>>, Vec<&Stem<'a>>) = self
+        let new: Vec<&Stem<'a>> = self
             .floors
             .stems
             .iter()
             .filter(|stem| stem.requirements.iter().any(|id| self.open.ids.contains(id)))
-            .partition(|stem| self.open.recut.contains(stem.label));
+            .collect();
         if !new.is_empty() {
             f.write_str(
                 "Requirements under a stem no current slice holds, each stem one slice at the \
@@ -206,21 +176,6 @@ impl<'a> SliceAmend<'a> {
             )?;
             for stem in &new {
                 writeln!(f, "- `{}` — {}", stem.label, self.opened(stem))?;
-            }
-            f.write_str("\n")?;
-        }
-        if !recut.is_empty() {
-            writeln!(
-                f,
-                "Stems the amendment leaves past the cap of {SLICE_CAP}, every requirement of \
-                 which is open, so the stem is cut again along its sub-stems: join the sub-stems \
-                 that stay into the current slice that held them, which keeps its id and keeps \
-                 at least one, and draft a new slice for each other set of sub-stems, cut at as \
-                 few sub-stem boundaries as the cap allows; the types that slice owned are open \
-                 with them.\n"
-            )?;
-            for stem in &recut {
-                self.write_recut(f, stem)?;
             }
             f.write_str("\n")?;
         }
@@ -236,73 +191,25 @@ impl<'a> SliceAmend<'a> {
             }
             f.write_str("\n")?;
         }
-        self.floors.write_rules(f, !recut.is_empty())
+        self.floors.write_rules(f)
     }
 
-    // One recut stem: its size, the slices that held it, and its sub-stems
-    // with what reaches them.
-    fn write_recut(&self, f: &mut Formatter<'_>, stem: &Stem<'a>) -> fmt::Result {
-        let holders: Vec<String> = self
-            .holders(stem)
-            .into_iter()
-            .map(|slice| format!("`{}` `{}`", slice.id, slice.name))
-            .collect();
-        writeln!(
-            f,
-            "- `{}` — {} requirements, past the cap of {SLICE_CAP}, so its sub-stems are the \
-             floor; held by {}:",
-            stem.label,
-            stem.requirements.len(),
-            if holders.is_empty() { "no current slice".to_owned() } else { holders.join(", ") }
-        )?;
-        for substem in &stem.substems {
-            writeln!(f, "  - `{}` — {}", substem.label, self.opened(substem))?;
-        }
-        Ok(())
-    }
-
-    // `## Requirements`: the drafted bases, then the standing open
-    // requirements with their statements.
+    // `## Requirements`: the drafted bases.
     fn write_requirements(&self, f: &mut Formatter<'_>) -> fmt::Result {
         f.write_str("\n## Requirements\n\n")?;
         if self.drafted.is_empty() {
             f.write_str(
                 "The change adds or revises no requirement; the specification's stand as they \
                  are.\n",
-            )?;
+            )
         } else {
             write!(
                 f,
                 "The requirements the change adds or revises, drafted beside this \
                  plan:\n\n{bases}",
                 bases = BasesSection(self.drafted)
-            )?;
+            )
         }
-        let standing: Vec<_> = self
-            .open
-            .ids
-            .iter()
-            .copied()
-            .filter(|&id| !self.is_drafted(id))
-            .filter_map(|id| self.spec.requirement(id))
-            .collect();
-        if standing.is_empty() {
-            return Ok(());
-        }
-        f.write_str(
-            "\nThe standing requirements the answer places, as the specification holds \
-             them:\n\n",
-        )?;
-        for requirement in standing {
-            writeln!(
-                f,
-                "- {} `{}` — {}",
-                requirement.id,
-                requirement.subject,
-                requirement.statement().as_deref().unwrap_or("[conflict]")
-            )?;
-        }
-        Ok(())
     }
 }
 
@@ -391,19 +298,6 @@ impl Brief for SliceAmend<'_> {
             self.moved(review, &label, &join.requirements, &join.types);
         }
 
-        // a current slice keeps its id, so one whose requirements are all
-        // open takes at least one back
-        let drafts = self.assembled(answer);
-        for (slice, draft) in self.slices.iter().zip(&drafts) {
-            if draft.requirements.is_empty() {
-                review.note(format_args!(
-                    "`{}` ({}) is left with no requirement; a current slice keeps its id, so \
-                     join at least one of its open requirements back into it",
-                    slice.name, slice.id
-                ));
-            }
-        }
-
         // one brief per slice the amendment touched or a join named, each
         // whole, and none for a slice that stands as it was
         let mut rebriefed = BTreeSet::new();
@@ -441,6 +335,7 @@ impl Brief for SliceAmend<'_> {
         }
 
         // the whole held to the plan's rules
+        let drafts = self.assembled(answer);
         self.floors.check(self.types, &drafts, review);
     }
 

@@ -1,7 +1,7 @@
 //! Synthesises the build plan from requirement bases and design data types.
 //!
-//! Partitions requirements into dependency-ordered slices floored by stem (or
-//! sub-stem past [`SLICE_CAP`]) and assigns each [`Role::Data`](crate::revision::Role)
+//! Partitions requirements into dependency-ordered slices floored by stem
+//! and assigns each [`Role::Data`](crate::revision::Role)
 //! type key to one slice. An amendment places what its code rules left
 //! open over the current slices through [`SliceAmend`].
 
@@ -21,14 +21,6 @@ use crate::brief::{Brief, Review};
 use crate::revision::{self, EMERY, Plan, ReqId, Slice, SliceId, Spec, ranks};
 use crate::specify::basis::Basis;
 use crate::specify::sections::BasesSection;
-
-/// The most requirements a stem holds before its sub-stems are the slice floor.
-///
-/// A stem within the cap is one slice at the least. Past it, the floor is the
-/// sub-stem — the first two segments of the subject's dotted id — so the model
-/// may split the stem along its sub-stems and never through one. The cap is
-/// sized to what one build turn implements and verifies within its budget.
-pub const SLICE_CAP: usize = 12;
 
 // A synthesis brief for the build plan.
 //
@@ -55,9 +47,9 @@ impl<'a> SliceBrief<'a> {
 
     // Derives the build plan.
     //
-    // A specification whose requirements span two or more floors — stems, or
-    // the sub-stems of a stem past `SLICE_CAP` — asks the model to slice
-    // it. Otherwise the one stem is the one slice and no call is spent.
+    // A specification whose requirements span two or more stems asks the
+    // model to slice it. Otherwise the one stem is the one slice and no
+    // call is spent.
     //
     // - Returns `Error::BadRequest` when the model cannot produce a valid
     //   plan within the available rounds.
@@ -96,10 +88,10 @@ impl<'a> SliceBrief<'a> {
     }
 }
 
-// The facts the slicing gate holds a plan to: the requirements by stem, with
-// the sub-stems of a stem past `SLICE_CAP`, and the triggers that reach
-// them. Built from a specification's requirements or a grouping's bases
-// alike, so one gate reads a specify's answer and an amended plan.
+// The facts the slicing gate holds a plan to: the requirements by stem, and
+// the triggers that reach them. Built from a specification's requirements or
+// a grouping's bases alike, so one gate reads a specify's answer and an
+// amended plan.
 pub struct Floors<'a> {
     stems: Vec<Stem<'a>>,
     triggers: Vec<(&'a Trigger, Vec<ReqId>)>,
@@ -108,23 +100,12 @@ pub struct Floors<'a> {
 impl<'a> Floors<'a> {
     // The floors of `requirements`, each an id, its subject, and what
     // reaches it, in the order given.
-    pub fn new(
-        requirements: impl IntoIterator<Item = (ReqId, &'a str, Option<&'a Trigger>)>,
-    ) -> Self {
+    fn new(requirements: impl IntoIterator<Item = (ReqId, &'a str, Option<&'a Trigger>)>) -> Self {
         let requirements: Vec<(ReqId, &'a str, Option<&'a Trigger>)> =
             requirements.into_iter().collect();
         let mut stems: Vec<Stem<'a>> = Vec::new();
         for (id, subject, _) in &requirements {
             Stem::file(&mut stems, revision::stem(subject), *id);
-        }
-
-        // a stem past the cap is floored at its sub-stems
-        for stem in stems.iter_mut().filter(|stem| stem.requirements.len() > SLICE_CAP) {
-            for (id, subject, _) in &requirements {
-                if revision::stem(subject) == stem.label {
-                    Stem::file(&mut stem.substems, revision::substem(subject), *id);
-                }
-            }
         }
 
         // the requirements each trigger reaches, in first-occurrence order; a
@@ -163,17 +144,13 @@ impl<'a> Floors<'a> {
     }
 
     // How many floors an answer may cut the specification into at most.
-    fn len(&self) -> usize {
-        self.iter().count()
+    const fn len(&self) -> usize {
+        self.stems.len()
     }
 
-    // The floors an answer may not split, in stem order.
-    fn iter(&self) -> impl Iterator<Item = &Stem<'a>> {
-        self.stems.iter().flat_map(Stem::floors)
-    }
-
-    // The triggers that reach `ids`, each once, in `ids`'s order.
-    fn triggers_of(&self, ids: &[ReqId]) -> Vec<&'a Trigger> {
+    // The triggers that reach `ids`, each once in `ids`'s order, as a
+    // baseline line lists them after its requirements; empty when none does.
+    fn triggered(&self, ids: &[ReqId]) -> String {
         let mut triggers: Vec<&'a Trigger> = Vec::new();
         for id in ids {
             if let Some((trigger, _)) =
@@ -183,14 +160,16 @@ impl<'a> Floors<'a> {
                 triggers.push(trigger);
             }
         }
-        triggers
+        if triggers.is_empty() {
+            return String::new();
+        }
+        format!(" — triggers: {}", quoted(triggers))
     }
 
     // The standing rules an answer is held to, as the brief states them after
-    // its floors: the floor rule, the trigger rule where any trigger reaches
-    // a requirement, and the cap rule where a stem is `cut` along its
-    // sub-stems.
-    fn write_rules(&self, f: &mut Formatter<'_>, cut: bool) -> fmt::Result {
+    // its floors: the floor rule, and the trigger rule where any trigger
+    // reaches a requirement.
+    fn write_rules(&self, f: &mut Formatter<'_>) -> fmt::Result {
         f.write_str(
             "Requirements sharing a stem are one slice at the least; an answer that splits them \
              across slices is refused. Merge two stems into one slice only when neither can be \
@@ -204,29 +183,14 @@ impl<'a> Floors<'a> {
                  refused.\n",
             )?;
         }
-        if cut {
-            writeln!(
-                f,
-                "A stem past the cap is listed by its sub-stems, the first two segments of its \
-                 ids, and each sub-stem is the floor in its place: an answer that splits a \
-                 sub-stem across slices is refused, and the sub-stems of one stem merge into \
-                 slices of up to {SLICE_CAP} requirements by what builds and verifies together. \
-                 Cut the stem at as few sub-stem boundaries as the cap allows, never one slice \
-                 per sub-stem: an answer leaving two of a stem's slices that would fit one \
-                 slice within the cap is refused, unless a third slice stands between them in \
-                 `depends-on`, as the last stage stands between an entry and the first, since \
-                 merging those would close a cycle; such a pair stays apart."
-            )?;
-        }
         Ok(())
     }
 
     // Holds `drafts` to the plan's rules over these floors and the design's
     // data `types`, each break a finding on `review`: every requirement in
-    // exactly one slice, no floor and no trigger split across slices, a
-    // stem past the cap cut no finer than the cap asks, every type key
-    // owned by exactly one slice, and the dependencies naming slices with no
-    // cycle among them.
+    // exactly one slice, no stem and no trigger split across slices, every
+    // type key owned by exactly one slice, and the dependencies naming
+    // slices with no cycle among them.
     pub fn check(&self, types: &[String], drafts: &[Draft], review: &mut Review) {
         // each slice on its own
         let known: BTreeSet<ReqId> =
@@ -264,14 +228,14 @@ impl<'a> Floors<'a> {
             review.note(format_args!("`{id}` is in no slice"));
         }
 
-        // floors split across slices
-        for floor in self.iter() {
+        // stems split across slices
+        for stem in &self.stems {
             let slices: BTreeSet<&str> =
-                floor.requirements.iter().filter_map(|id| placed.get(id).copied()).collect();
+                stem.requirements.iter().filter_map(|id| placed.get(id).copied()).collect();
             if slices.len() > 1 {
                 review.note(format_args!(
                     "requirements sharing the stem `{}` are split across {}",
-                    floor.label,
+                    stem.label,
                     quoted(slices)
                 ));
             }
@@ -290,8 +254,6 @@ impl<'a> Floors<'a> {
                 ));
             }
         }
-
-        self.verify_cut(drafts, &placed, review);
 
         // type ownership
         let keys: BTreeSet<&str> = types.iter().map(String::as_str).collect();
@@ -329,53 +291,6 @@ impl<'a> Floors<'a> {
                 "slices {} cannot be ordered: their `depends-on` edges contain a cycle",
                 quoted(cyclic)
             ));
-        }
-    }
-
-    // A stem past the cap cut finer than the cap asks: two of its slices
-    // that would fit one within the cap are a finding, the stem's slices
-    // and the smallest pair named. A pair a third slice stands between in
-    // `depends-on` cannot merge without closing a cycle, so it is no
-    // finding.
-    fn verify_cut(&self, drafts: &[Draft], placed: &BTreeMap<ReqId, &str>, review: &mut Review) {
-        let sizes: BTreeMap<&str, usize> =
-            drafts.iter().map(|draft| (draft.name.as_str(), draft.requirements.len())).collect();
-        let indirect = indirect(drafts);
-        let apart = |a: &str, b: &str| {
-            indirect.get(a).is_some_and(|reached| reached.contains(b))
-                || indirect.get(b).is_some_and(|reached| reached.contains(a))
-        };
-        for stem in self.stems.iter().filter(|stem| !stem.substems.is_empty()) {
-            let names: BTreeSet<&str> =
-                stem.requirements.iter().filter_map(|id| placed.get(id).copied()).collect();
-            let mut slices: Vec<(usize, &str)> = names
-                .into_iter()
-                .map(|name| (sizes.get(name).copied().unwrap_or(0), name))
-                .collect();
-            slices.sort_unstable();
-            let pair = slices
-                .iter()
-                .enumerate()
-                .flat_map(|(index, x)| slices[index + 1..].iter().map(move |y| (x, y)))
-                .filter(|((first, a), (second, b))| first + second <= SLICE_CAP && !apart(a, b))
-                .min_by_key(|((first, _), (second, _))| first + second);
-            if let Some(((first, a), (second, b))) = pair {
-                let summary = slices
-                    .iter()
-                    .map(|(count, name)| format!("`{name}` {count}"))
-                    .collect::<Vec<_>>()
-                    .join(", ");
-                review.note(format_args!(
-                    "the stem `{}` is cut into {} slices ({summary}), yet `{a}` ({first} \
-                     requirements) and `{b}` ({second}) fit one slice of {} within the cap of \
-                     {SLICE_CAP}: merge the stem's slices until no two that could merge fit \
-                     together; two a third slice stands between in `depends-on`, an entry and the \
-                     first stage it runs, stay apart",
-                    stem.label,
-                    slices.len(),
-                    first + second
-                ));
-            }
         }
     }
 }
@@ -467,52 +382,20 @@ pub fn drafts(slices: &[Slice]) -> Vec<Draft> {
         .collect()
 }
 
-// The triggers that reach a floor, as the baseline lists them after its
-// requirements; nothing for a floor nothing reaches.
-fn triggered(triggers: &[&Trigger]) -> String {
-    if triggers.is_empty() {
-        return String::new();
-    }
-    format!(
-        " — triggers: {}",
-        triggers.iter().map(|trigger| format!("`{trigger}`")).collect::<Vec<_>>().join(", ")
-    )
-}
-
 impl Display for SliceBrief<'_> {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         f.write_str("Slice the specification into a build plan.\n\n## Baseline\n\n")?;
         for stem in &self.floors.stems {
-            if stem.substems.is_empty() {
-                writeln!(
-                    f,
-                    "- `{}` — {}{}",
-                    stem.label,
-                    listed(&stem.requirements),
-                    triggered(&self.floors.triggers_of(&stem.requirements))
-                )?;
-                continue;
-            }
             writeln!(
                 f,
-                "- `{}` — {} requirements, past the cap of {SLICE_CAP}, so its sub-stems are \
-                 the floor:",
+                "- `{}` — {}{}",
                 stem.label,
-                stem.requirements.len()
+                listed(&stem.requirements),
+                self.floors.triggered(&stem.requirements)
             )?;
-            for substem in &stem.substems {
-                writeln!(
-                    f,
-                    "  - `{}` — {}{}",
-                    substem.label,
-                    listed(&substem.requirements),
-                    triggered(&self.floors.triggers_of(&substem.requirements))
-                )?;
-            }
         }
         f.write_str("\n")?;
-        self.floors
-            .write_rules(f, self.floors.stems.iter().any(|stem| !stem.substems.is_empty()))?;
+        self.floors.write_rules(f)?;
 
         if self.types.is_empty() {
             f.write_str(
@@ -576,36 +459,13 @@ fn unorderable(drafts: &[Draft]) -> Vec<&str> {
     cyclic
 }
 
-// The slices each one depends on through another slice: the dependencies
-// of its dependencies, and theirs. Merging a slice with one it reaches so
-// would leave the slice between them depending on itself.
-fn indirect(drafts: &[Draft]) -> BTreeMap<&str, BTreeSet<&str>> {
-    let direct = direct(drafts);
-    let step = |name: &str| direct.get(name).into_iter().flatten().copied();
-
-    direct
-        .keys()
-        .map(|&name| {
-            let mut reached = BTreeSet::new();
-            let mut pending: Vec<&str> = step(name).flat_map(step).collect();
-            while let Some(next) = pending.pop() {
-                if reached.insert(next) {
-                    pending.extend(step(next));
-                }
-            }
-            (name, reached)
-        })
-        .collect()
-}
-
 /// The drafted content of one slice, before the engine numbers and orders it.
 #[derive(Debug, Clone, Deserialize, JsonSchema)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
 pub struct Draft {
     /// A kebab-case name unique within the plan.
     pub name: String,
-    /// The requirement ids this slice builds; every stem whole, or every
-    /// sub-stem of a stem past the cap.
+    /// The requirement ids this slice builds; every stem whole.
     #[schemars(with = "Vec<String>")]
     pub requirements: Vec<ReqId>,
     /// The design type keys this slice owns.
@@ -655,12 +515,10 @@ impl Draft {
     }
 }
 
-// The requirements under one stem, or under one sub-stem of a stem past the
-// cap, whose `substems` are then its floors in place of the stem itself.
+// The requirements under one stem.
 struct Stem<'a> {
     label: &'a str,
     requirements: Vec<ReqId>,
-    substems: Vec<Self>,
 }
 
 impl<'a> Stem<'a> {
@@ -671,15 +529,7 @@ impl<'a> Stem<'a> {
             None => stems.push(Self {
                 label,
                 requirements: vec![id],
-                substems: Vec::new(),
             }),
         }
-    }
-
-    // The floors an answer may not split: the stem whole within the cap, each
-    // of its sub-stems past it.
-    fn floors(&self) -> impl Iterator<Item = &Self> {
-        let whole = self.substems.is_empty().then_some(self);
-        whole.into_iter().chain(&self.substems)
     }
 }
