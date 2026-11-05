@@ -10,7 +10,7 @@ use emery_sdk::target::{
 };
 use emery_sdk::{Doc, Error};
 use omnia_sdk::model::ToolCall;
-use omnia_test::guest::Scripted;
+use omnia_test::guest::ScriptedModel;
 use omnia_test::{Seen, SeenFormat, SeenWorker};
 
 const PROSE: &[Doc] = &[
@@ -74,25 +74,25 @@ fn slice() -> Slice {
     }
 }
 
-async fn ask(model: &Scripted, slice: &Slice, workspace: &str) -> Result<Report, Error> {
+async fn ask(model: &ScriptedModel, slice: &Slice, workspace: &str) -> Result<Report, Error> {
     ask_as(model, slice, workspace, &[]).await
 }
 
 async fn ask_as(
-    model: &Scripted, slice: &Slice, workspace: &str, grants: &[Grant],
+    model: &ScriptedModel, slice: &Slice, workspace: &str, grants: &[Grant],
 ) -> Result<Report, Error> {
     ask_checked(model, slice, workspace, grants, |_| Ok(Vec::new())).await
 }
 
 async fn ask_checked(
-    model: &Scripted, slice: &Slice, workspace: &str, grants: &[Grant],
+    model: &ScriptedModel, slice: &Slice, workspace: &str, grants: &[Grant],
     check: impl FnMut(&Report) -> Result<Vec<String>, Error> + Send,
 ) -> Result<Report, Error> {
     ask_scaffolded(model, slice, workspace, grants, None, check).await
 }
 
 async fn ask_scaffolded(
-    model: &Scripted, slice: &Slice, workspace: &str, grants: &[Grant], brief: Option<&str>,
+    model: &ScriptedModel, slice: &Slice, workspace: &str, grants: &[Grant], brief: Option<&str>,
     check: impl FnMut(&Report) -> Result<Vec<String>, Error> + Send,
 ) -> Result<Report, Error> {
     let scaffold = brief.map(|brief| Scaffold {
@@ -103,7 +103,7 @@ async fn ask_scaffolded(
 }
 
 async fn ask_guarded(
-    model: &Scripted, slice: &Slice, workspace: &str, grants: &[Grant],
+    model: &ScriptedModel, slice: &Slice, workspace: &str, grants: &[Grant],
     scaffold: Option<Scaffold<'_>>,
     check: impl FnMut(&Report) -> Result<Vec<String>, Error> + Send,
 ) -> Result<Report, Error> {
@@ -177,7 +177,7 @@ async fn request_shape() {
     let tmp = tempfile::tempdir().expect("tempdir");
     seed(tmp.path(), ["src/orders.rs", "Cargo.toml"]);
     let root = tmp.path().to_str().expect("a UTF-8 scratch root");
-    let model = Scripted::answering([VALID]);
+    let model = ScriptedModel::answering([VALID]);
     let slice = slice();
 
     let report = ask(&model, &slice, root).await.expect("accepted");
@@ -267,7 +267,7 @@ async fn build_scaffolded() {
     let tmp = tempfile::tempdir().expect("tempdir");
     seed(tmp.path(), ["src/orders.rs", "Cargo.toml"]);
     let root = tmp.path().to_str().expect("a UTF-8 scratch root");
-    let model = Scripted::answering([VALID]);
+    let model = ScriptedModel::answering([VALID]);
     let scaffold = "- `src/orders.rs`: scaffolded; fill `todo!(\"REQ-001 orders.create: the \
                     handler\")`\n- `Cargo.toml`: held\n\n";
 
@@ -324,7 +324,7 @@ async fn build_design_cut() {
     let tmp = tempfile::tempdir().expect("tempdir");
     seed(tmp.path(), ["src/orders.rs", "Cargo.toml"]);
     let root = tmp.path().to_str().expect("a UTF-8 scratch root");
-    let model = Scripted::answering([VALID]);
+    let model = ScriptedModel::answering([VALID]);
     let slice = designed();
 
     ask(&model, &slice, root).await.expect("accepted");
@@ -356,7 +356,7 @@ async fn build_design_cut_scaffolded() {
     let tmp = tempfile::tempdir().expect("tempdir");
     seed(tmp.path(), ["src/orders.rs", "Cargo.toml"]);
     let root = tmp.path().to_str().expect("a UTF-8 scratch root");
-    let model = Scripted::answering([VALID]);
+    let model = ScriptedModel::answering([VALID]);
     let slice = designed();
     let types = ["orders.order".to_owned(), "start.Config".to_owned()];
     let scaffold = Scaffold {
@@ -396,7 +396,7 @@ async fn build_design_cut_passages() {
     let tmp = tempfile::tempdir().expect("tempdir");
     seed(tmp.path(), ["src/orders.rs", "Cargo.toml"]);
     let root = tmp.path().to_str().expect("a UTF-8 scratch root");
-    let model = Scripted::answering([VALID]);
+    let model = ScriptedModel::answering([VALID]);
     let slice = designed();
     let files = [Guarded::new("src/orders.rs", ["REQ-001"])];
     let scaffold = Scaffold {
@@ -447,7 +447,7 @@ async fn build_design_cut_phrase() {
     "## SLICE-001 orders\n\nBuild the orders module, its order lines included.\n"
         .clone_into(&mut together.plan);
 
-    let model = Scripted::answering([VALID]);
+    let model = ScriptedModel::answering([VALID]);
     ask(&model, &apart, root).await.expect("accepted");
     let user = &model.seen()[0].messages[0];
     assert!(
@@ -459,7 +459,7 @@ async fn build_design_cut_phrase() {
     );
     model.assert_exhausted();
 
-    let model = Scripted::answering([VALID]);
+    let model = ScriptedModel::answering([VALID]);
     ask(&model, &together, root).await.expect("accepted");
     let user = &model.seen()[0].messages[0];
     assert!(
@@ -490,29 +490,34 @@ async fn write_scaffolded_refused() {
     let skeleton = "pub fn create() {\n    todo!(\"REQ-001 orders.create: the handler\")\n}\n";
     write(tmp.path(), [("src/orders.rs", skeleton), ("Cargo.toml", "[package]\n")]);
     let root = tmp.path().to_str().expect("a UTF-8 scratch root");
-    let model = Scripted::answering([r#"{"covered":["REQ-001"],"written":["src/orders.rs"]}"#])
-        .calling(
-            0,
-            [
-                write_files(
-                    "1",
-                    &[
-                        ("src/orders.rs", "pub fn create() {}\n"),
-                        ("src/lib.rs", "pub mod orders;\n"),
-                    ],
-                ),
-                ToolCall {
-                    id: "2".to_owned(),
-                    name: "write_files".to_owned(),
-                    arguments: r#"{"delete":["./src/orders.rs"]}"#.to_owned(),
-                },
-                edit_files(
-                    "3",
-                    &[("src/orders.rs", "todo!(\"REQ-001 orders.create: the handler\")", "Ok(())")],
-                ),
-                write_files("4", &[("src/lib.rs", "pub mod orders;\n")]),
-            ],
-        );
+    let model =
+        ScriptedModel::answering([r#"{"covered":["REQ-001"],"written":["src/orders.rs"]}"#])
+            .calling(
+                0,
+                [
+                    write_files(
+                        "1",
+                        &[
+                            ("src/orders.rs", "pub fn create() {}\n"),
+                            ("src/lib.rs", "pub mod orders;\n"),
+                        ],
+                    ),
+                    ToolCall {
+                        id: "2".to_owned(),
+                        name: "write_files".to_owned(),
+                        arguments: r#"{"delete":["./src/orders.rs"]}"#.to_owned(),
+                    },
+                    edit_files(
+                        "3",
+                        &[(
+                            "src/orders.rs",
+                            "todo!(\"REQ-001 orders.create: the handler\")",
+                            "Ok(())",
+                        )],
+                    ),
+                    write_files("4", &[("src/lib.rs", "pub mod orders;\n")]),
+                ],
+            );
     let files = [
         Guarded::new("src/orders.rs", ["pub fn create", "REQ-001 orders.create"]),
         Guarded::new("Cargo.toml", Vec::<String>::new()),
@@ -594,16 +599,17 @@ async fn write_scaffolded_kept() {
     let filled = "//! Orders.\n\npub fn create() -> Result<(), Error> {\n    // REQ-001 \
                   orders.create: the handler\n    Ok(())\n}\n";
     let tokens: Vec<String> = (1..=12).map(|n| format!("token{n}")).collect();
-    let model = Scripted::answering([r#"{"covered":["REQ-001"],"written":["src/orders.rs"]}"#])
-        .calling(
-            0,
-            [
-                write_files("1", &[("src/orders.rs", filled)]),
-                write_files("2", &[("src/orders/mod.rs", "pub struct Order;\n")]),
-                write_files("3", &[("Cargo.toml", "[package]\nname = \"orders\"\n")]),
-                write_files("4", &[("src/lib.rs", "pub mod orders;\npub mod billing;\n")]),
-            ],
-        );
+    let model =
+        ScriptedModel::answering([r#"{"covered":["REQ-001"],"written":["src/orders.rs"]}"#])
+            .calling(
+                0,
+                [
+                    write_files("1", &[("src/orders.rs", filled)]),
+                    write_files("2", &[("src/orders/mod.rs", "pub struct Order;\n")]),
+                    write_files("3", &[("Cargo.toml", "[package]\nname = \"orders\"\n")]),
+                    write_files("4", &[("src/lib.rs", "pub mod orders;\npub mod billing;\n")]),
+                ],
+            );
     let files = [
         Guarded::new("src/orders.rs", ["pub fn create", "REQ-001 orders.create"]),
         Guarded::new("src/orders/mod.rs", ["pub struct Order"]),
@@ -665,8 +671,9 @@ async fn write_scaffolded_replaced() {
     let root = tmp.path().to_str().expect("a UTF-8 scratch root");
     let filled = "//! Orders.\n\npub fn create() -> Result<(), Error> {\n    // REQ-001 \
                   orders.create: the handler\n    Ok(())\n}\n";
-    let model = Scripted::answering([r#"{"covered":["REQ-001"],"written":["src/orders.rs"]}"#])
-        .calling(
+    let model =
+        ScriptedModel::answering([r#"{"covered":["REQ-001"],"written":["src/orders.rs"]}"#])
+            .calling(
             0,
             [
                 ToolCall {
@@ -746,7 +753,7 @@ async fn worker_grant() {
     let tmp = tempfile::tempdir().expect("tempdir");
     seed(tmp.path(), ["src/orders.rs", "Cargo.toml"]);
     let root = tmp.path().to_str().expect("a UTF-8 scratch root");
-    let model = Scripted::answering([VALID]);
+    let model = ScriptedModel::answering([VALID]);
     let slice = slice();
 
     ask_as(&model, &slice, root, GRANTS).await.expect("accepted");
@@ -776,7 +783,7 @@ async fn write_shrink_refused() {
     let whole = "pub struct Order;\npub struct Line;\npub struct Total;\n";
     write(tmp.path(), [("src/orders.rs", whole), ("src/empty.rs", "")]);
     let root = tmp.path().to_str().expect("a UTF-8 scratch root");
-    let model = Scripted::answering([r#"{"covered":["REQ-001"],"written":["src/orders.rs"]}"#])
+    let model = ScriptedModel::answering([r#"{"covered":["REQ-001"],"written":["src/orders.rs"]}"#])
         .calling(
             0,
             [
@@ -842,8 +849,9 @@ async fn write_shrink_allowed() {
     let tmp = tempfile::tempdir().expect("tempdir");
     write(tmp.path(), [("src/orders.rs", "pub struct Order;\npub struct Line;\n")]);
     let root = tmp.path().to_str().expect("a UTF-8 scratch root");
-    let model = Scripted::answering([r#"{"covered":["REQ-001"],"written":["src/orders.rs"]}"#])
-        .calling(0, [write_files("1", &[("src/orders.rs", "pub struct Order;\n")])]);
+    let model =
+        ScriptedModel::answering([r#"{"covered":["REQ-001"],"written":["src/orders.rs"]}"#])
+            .calling(0, [write_files("1", &[("src/orders.rs", "pub struct Order;\n")])]);
 
     let report = ask(&model, &slice(), root).await.expect("accepted");
     assert_eq!(report.written, ["src/orders.rs"]);
@@ -869,7 +877,7 @@ async fn write_shrink_allowed() {
 async fn write_empty_new_file() {
     let tmp = tempfile::tempdir().expect("tempdir");
     let root = tmp.path().to_str().expect("a UTF-8 scratch root");
-    let model = Scripted::answering([r#"{"covered":["REQ-001"],"written":["src/mod.rs"]}"#])
+    let model = ScriptedModel::answering([r#"{"covered":["REQ-001"],"written":["src/mod.rs"]}"#])
         .calling(
             0,
             [write_files(
@@ -912,22 +920,23 @@ async fn edit_tool() {
         ],
     );
     let root = tmp.path().to_str().expect("a UTF-8 scratch root");
-    let model = Scripted::answering([r#"{"covered":["REQ-001"],"written":["src/orders.rs"]}"#])
-        .calling(
-            0,
-            [edit_files(
-                "1",
-                &[
-                    ("./src//orders.rs", "&token", "token"),
-                    (
-                        "src/orders.rs",
-                        "pub fn total(token: &str) {}",
-                        "pub fn total(token: &str) -> u32 { 0 }",
-                    ),
-                    ("Cargo.toml", "name = \"orders\"\n", ""),
-                ],
-            )],
-        );
+    let model =
+        ScriptedModel::answering([r#"{"covered":["REQ-001"],"written":["src/orders.rs"]}"#])
+            .calling(
+                0,
+                [edit_files(
+                    "1",
+                    &[
+                        ("./src//orders.rs", "&token", "token"),
+                        (
+                            "src/orders.rs",
+                            "pub fn total(token: &str) {}",
+                            "pub fn total(token: &str) -> u32 { 0 }",
+                        ),
+                        ("Cargo.toml", "name = \"orders\"\n", ""),
+                    ],
+                )],
+            );
 
     let report = ask(&model, &slice(), root).await.expect("accepted");
     assert_eq!(report.written, ["Cargo.toml", "src/orders.rs"], "an edited file is written");
@@ -956,7 +965,7 @@ async fn edit_ambiguous() {
     let before = "pub struct Order;\npub struct Line;\n";
     write(tmp.path(), [("src/orders.rs", before)]);
     let root = tmp.path().to_str().expect("a UTF-8 scratch root");
-    let model = Scripted::answering([r#"{"covered":["REQ-001"],"written":[]}"#]).calling(
+    let model = ScriptedModel::answering([r#"{"covered":["REQ-001"],"written":[]}"#]).calling(
         0,
         [
             edit_files(
@@ -1022,7 +1031,7 @@ async fn edit_nearest_line() {
         ],
     );
     let root = tmp.path().to_str().expect("a UTF-8 scratch root");
-    let model = Scripted::answering([r#"{"covered":["REQ-001"],"written":[]}"#]).calling(
+    let model = ScriptedModel::answering([r#"{"covered":["REQ-001"],"written":[]}"#]).calling(
         0,
         [edit_files(
             "1",
@@ -1099,7 +1108,7 @@ async fn edit_relaid() {
         ],
     );
     let root = tmp.path().to_str().expect("a UTF-8 scratch root");
-    let model = Scripted::answering([r#"{"covered":["REQ-001"],"written":[]}"#]).calling(
+    let model = ScriptedModel::answering([r#"{"covered":["REQ-001"],"written":[]}"#]).calling(
         0,
         [
             edit_files(
@@ -1184,7 +1193,7 @@ async fn edit_nearest_broken() {
     let indented = "fn c() {\n        let x = 1;\n        let y = 2;\n}\n";
     write(tmp.path(), [("src/orders.rs", module), ("src/indented.rs", indented)]);
     let root = tmp.path().to_str().expect("a UTF-8 scratch root");
-    let model = Scripted::answering([r#"{"covered":["REQ-001"],"written":[]}"#]).calling(
+    let model = ScriptedModel::answering([r#"{"covered":["REQ-001"],"written":[]}"#]).calling(
         0,
         [edit_files(
             "1",
@@ -1229,30 +1238,32 @@ async fn edit_marker_key() {
                  todo!(\"REQ-001 create: arrange, act, assert\")\n}\n";
     write(tmp.path(), [("src/orders.rs", module), ("tests/orders.rs", tests)]);
     let root = tmp.path().to_str().expect("a UTF-8 scratch root");
-    let model = Scripted::answering([r#"{"covered":["REQ-001"],"written":["src/orders.rs"]}"#])
-        .calling(
-            0,
-            [
-                edit_files(
-                    "1",
-                    &[
-                        (
-                            "src/orders.rs",
-                            "REQ-001 orders.create: the handler",
-                            "    let _ = &context;\n    Ok(Output::from(input))",
-                        ),
-                        ("src/orders.rs", " REQ-002 orders.list: the behaviour ", "    Ok(())"),
-                        (
-                            "tests/orders.rs",
-                            "REQ-001 create: unfilled",
-                            "async fn create() {\n    let (status, _) = send(provider()).await;\n    \
+    let model = ScriptedModel::answering([
+        r#"{"covered":["REQ-001"],"written":["src/orders.rs"]}"#,
+    ])
+    .calling(
+        0,
+        [
+            edit_files(
+                "1",
+                &[
+                    (
+                        "src/orders.rs",
+                        "REQ-001 orders.create: the handler",
+                        "    let _ = &context;\n    Ok(Output::from(input))",
+                    ),
+                    ("src/orders.rs", " REQ-002 orders.list: the behaviour ", "    Ok(())"),
+                    (
+                        "tests/orders.rs",
+                        "REQ-001 create: unfilled",
+                        "async fn create() {\n    let (status, _) = send(provider()).await;\n    \
                              assert_eq!(status, 201);\n}",
-                        ),
-                    ],
-                ),
-                edit_files("2", &[("src/orders.rs", "REQ-001 orders.create: the handler", "")]),
-            ],
-        );
+                    ),
+                ],
+            ),
+            edit_files("2", &[("src/orders.rs", "REQ-001 orders.create: the handler", "")]),
+        ],
+    );
     let files = [
         Guarded::new("src/orders.rs", ["REQ-001 orders.create", "REQ-002 orders.list"])
             .with_markers([
@@ -1328,7 +1339,7 @@ async fn edit_marker_scoped() {
         ],
     );
     let root = tmp.path().to_str().expect("a UTF-8 scratch root");
-    let model = Scripted::answering([r#"{"covered":["REQ-001"],"written":[]}"#]).calling(
+    let model = ScriptedModel::answering([r#"{"covered":["REQ-001"],"written":[]}"#]).calling(
         0,
         [edit_files("1", &[("tests/orders.rs", "REQ-002 orders.list: the behaviour", "")])],
     );
@@ -1380,7 +1391,7 @@ async fn edit_unheld() {
     write(tmp.path(), [("src/orders.rs", "pub struct Order;\n")]);
     symlink("orders.rs", tmp.path().join("src/link.rs")).expect("file symlink");
     let root = tmp.path().to_str().expect("a UTF-8 scratch root");
-    let model = Scripted::answering([r#"{"covered":["REQ-001"],"written":[]}"#]).calling(
+    let model = ScriptedModel::answering([r#"{"covered":["REQ-001"],"written":[]}"#]).calling(
         0,
         [edit_files(
             "1",
@@ -1420,7 +1431,7 @@ async fn edit_unheld() {
 async fn write_tool() {
     let tmp = tempfile::tempdir().expect("tempdir");
     let root = tmp.path().to_str().expect("a UTF-8 scratch root");
-    let model = Scripted::answering([
+    let model = ScriptedModel::answering([
         r#"{"covered":["REQ-001"],"written":["src/orders.rs","Cargo.toml"]}"#,
     ])
     .calling(
@@ -1490,7 +1501,7 @@ async fn write_tool() {
 async fn write_map_shape() {
     let tmp = tempfile::tempdir().expect("tempdir");
     let root = tmp.path().to_str().expect("a UTF-8 scratch root");
-    let model = Scripted::answering([
+    let model = ScriptedModel::answering([
         r#"{"covered":["REQ-001"],"written":["src/orders.rs","Cargo.toml"]}"#,
     ])
     .calling(
@@ -1528,7 +1539,7 @@ async fn write_map_shape() {
 async fn write_string_shape() {
     let tmp = tempfile::tempdir().expect("tempdir");
     let root = tmp.path().to_str().expect("a UTF-8 scratch root");
-    let model = Scripted::answering([
+    let model = ScriptedModel::answering([
         r#"{"covered":["REQ-001"],"written":["src/orders.rs","Cargo.toml","src/lib.rs"]}"#,
     ])
     .calling(
@@ -1614,8 +1625,10 @@ async fn write_string_shape() {
 async fn write_object_shape() {
     let tmp = tempfile::tempdir().expect("tempdir");
     let root = tmp.path().to_str().expect("a UTF-8 scratch root");
-    let model = Scripted::answering([r#"{"covered":["REQ-001"],"written":["src/orders.rs"]}"#])
-        .calling(
+    let model = ScriptedModel::answering([
+        r#"{"covered":["REQ-001"],"written":["src/orders.rs"]}"#,
+    ])
+    .calling(
         0,
         [
             ToolCall {
@@ -1688,8 +1701,9 @@ async fn edit_object_shape() {
     let tmp = tempfile::tempdir().expect("tempdir");
     write(tmp.path(), [("src/orders.rs", "pub struct Order;\npub struct Line;\n")]);
     let root = tmp.path().to_str().expect("a UTF-8 scratch root");
-    let model = Scripted::answering([r#"{"covered":["REQ-001"],"written":["src/orders.rs"]}"#])
-        .calling(
+    let model =
+        ScriptedModel::answering([r#"{"covered":["REQ-001"],"written":["src/orders.rs"]}"#])
+            .calling(
             0,
             [
                 ToolCall {
@@ -1763,8 +1777,9 @@ async fn edit_string_shape() {
     let tmp = tempfile::tempdir().expect("tempdir");
     write(tmp.path(), [("src/orders.rs", "pub struct Order;\npub struct Line;\n")]);
     let root = tmp.path().to_str().expect("a UTF-8 scratch root");
-    let model = Scripted::answering([r#"{"covered":["REQ-001"],"written":["src/orders.rs"]}"#])
-        .calling(
+    let model =
+        ScriptedModel::answering([r#"{"covered":["REQ-001"],"written":["src/orders.rs"]}"#])
+            .calling(
             0,
             [
                 ToolCall {
@@ -1838,7 +1853,7 @@ async fn write_through_symlink() {
     symlink("../outside", tree.join("link")).expect("dir symlink");
     symlink("../../outside/config", tree.join("src/config")).expect("file symlink");
     let root = tree.to_str().expect("a UTF-8 scratch root");
-    let model = Scripted::answering([
+    let model = ScriptedModel::answering([
         r#"{"covered":["REQ-001"],"written":["src/config"]}"#,
         r#"{"covered":["REQ-001"],"written":["src/new/mod.rs"]}"#,
     ])
@@ -1912,7 +1927,7 @@ async fn write_delete() {
     let tmp = tempfile::tempdir().expect("tempdir");
     seed(tmp.path(), ["src/old.rs", "src/stale.rs"]);
     let root = tmp.path().to_str().expect("a UTF-8 scratch root");
-    let model = Scripted::answering([r#"{"covered":["REQ-001"],"written":[]}"#]).calling(
+    let model = ScriptedModel::answering([r#"{"covered":["REQ-001"],"written":[]}"#]).calling(
         0,
         [
             ToolCall {
@@ -1969,7 +1984,7 @@ async fn write_path_twice() {
     let tmp = tempfile::tempdir().expect("tempdir");
     seed(tmp.path(), ["src/scratch.rs", "src/stale.rs"]);
     let root = tmp.path().to_str().expect("a UTF-8 scratch root");
-    let model = Scripted::answering([r#"{"covered":["REQ-001"],"written":[]}"#]).calling(
+    let model = ScriptedModel::answering([r#"{"covered":["REQ-001"],"written":[]}"#]).calling(
         0,
         [ToolCall {
             id: "1".to_owned(),
@@ -2013,7 +2028,7 @@ async fn write_path_twice() {
 async fn written_unheld() {
     let tmp = tempfile::tempdir().expect("tempdir");
     let root = tmp.path().to_str().expect("a UTF-8 scratch root");
-    let model = Scripted::answering([
+    let model = ScriptedModel::answering([
         r#"{"covered":["REQ-001"],"written":["src/missing.rs"]}"#,
         r#"{"covered":["REQ-001"],"written":["./Cargo.toml"]}"#,
     ])
@@ -2048,7 +2063,7 @@ async fn doc_refs() {
     let tmp = tempfile::tempdir().expect("tempdir");
     seed(tmp.path(), ["src/orders.rs", "Cargo.toml"]);
     let root = tmp.path().to_str().expect("a UTF-8 scratch root");
-    let model = Scripted::answering([VALID]).calling(
+    let model = ScriptedModel::answering([VALID]).calling(
         0,
         [
             ToolCall {
@@ -2106,7 +2121,7 @@ async fn doc_refs() {
 async fn missing_prompt() {
     let tmp = tempfile::tempdir().expect("tempdir");
     let root = tmp.path().to_str().expect("a UTF-8 scratch root");
-    let model = Scripted::default();
+    let model = ScriptedModel::default();
     let slice = slice();
     let ctx = BuildContext {
         adapter_id: "target:mute",
@@ -2134,7 +2149,7 @@ async fn gate_findings() {
     let tmp = tempfile::tempdir().expect("tempdir");
     seed(tmp.path(), ["src/orders.rs"]);
     let root = tmp.path().to_str().expect("a UTF-8 scratch root");
-    let model = Scripted::answering([
+    let model = ScriptedModel::answering([
         r#"{"covered":["REQ-001","REQ-009","REQ-001"],
             "written":["src/orders.rs","../escape.rs","./","src/orders.rs",".emery/storage/x"]}"#,
         r#"{"covered":["REQ-001"],"written":["src/orders.rs"]}"#,
@@ -2168,7 +2183,7 @@ async fn gate_findings() {
 async fn rounds_exhausted() {
     let tmp = tempfile::tempdir().expect("tempdir");
     let root = tmp.path().to_str().expect("a UTF-8 scratch root");
-    let model = Scripted::answering([r#"{"covered":["REQ-404"],"written":[]}"#]);
+    let model = ScriptedModel::answering([r#"{"covered":["REQ-404"],"written":[]}"#]);
 
     let error = ask(&model, &slice(), root).await.expect_err("never accepted");
     assert_eq!(error.code(), "bad_request", "{error}");
@@ -2183,7 +2198,7 @@ async fn check_findings() {
     let tmp = tempfile::tempdir().expect("tempdir");
     seed(tmp.path(), ["src/orders.rs"]);
     let root = tmp.path().to_str().expect("a UTF-8 scratch root");
-    let model = Scripted::answering([
+    let model = ScriptedModel::answering([
         r#"{"covered":["REQ-001","REQ-009"],"written":["src/orders.rs"]}"#,
         r#"{"covered":["REQ-001"],"written":["src/orders.rs","Cargo.toml"]}"#,
     ])
@@ -2226,7 +2241,8 @@ async fn check_error() {
     let tmp = tempfile::tempdir().expect("tempdir");
     seed(tmp.path(), ["src/orders.rs"]);
     let root = tmp.path().to_str().expect("a UTF-8 scratch root");
-    let model = Scripted::answering([r#"{"covered":["REQ-001"],"written":["src/orders.rs"]}"#]);
+    let model =
+        ScriptedModel::answering([r#"{"covered":["REQ-001"],"written":["src/orders.rs"]}"#]);
 
     let error = ask_checked(&model, &slice(), root, &[], |_| {
         Err(omnia_sdk::server_error!("reading `Cargo.toml`: permission denied"))

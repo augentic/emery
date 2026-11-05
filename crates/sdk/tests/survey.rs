@@ -3,7 +3,7 @@
 use emery_sdk::survey::{Facts, Inventory, Surface};
 use emery_sdk::{Context, Doc, Error, SourceInput};
 use omnia_sdk::model::ToolCall;
-use omnia_test::guest::Scripted;
+use omnia_test::guest::ScriptedModel;
 use omnia_test::{Seen, SeenFormat};
 
 const PROSE: &[Doc] = &[
@@ -53,7 +53,7 @@ fn tree() -> (tempfile::TempDir, SourceInput, Vec<String>) {
 }
 
 async fn ask(
-    model: &Scripted, input: &SourceInput, facts: &Facts<'_>,
+    model: &ScriptedModel, input: &SourceInput, facts: &Facts<'_>,
     check: impl FnMut(&Inventory) -> Vec<String> + Send,
 ) -> Result<Inventory, Error> {
     let ctx = Context {
@@ -69,7 +69,7 @@ async fn ask(
 #[tokio::test]
 async fn request_shape() {
     let (_tmp, input, modules) = tree();
-    let model = Scripted::answering([VALID]);
+    let model = ScriptedModel::answering([VALID]);
     let files = vec!["package.json".to_owned(), "src/cli.ts".to_owned()];
     let facts = Facts {
         modules: &modules,
@@ -125,7 +125,7 @@ async fn request_shape() {
 #[tokio::test]
 async fn bare_facts() {
     let (_tmp, input, modules) = tree();
-    let model = Scripted::answering([r#"{"surfaces":[]}"#]);
+    let model = ScriptedModel::answering([r#"{"surfaces":[]}"#]);
     let facts = Facts {
         modules: &modules,
         text: "",
@@ -147,7 +147,7 @@ async fn bare_facts() {
 // An inline value has no tree to survey: the adapter's own defect.
 #[tokio::test]
 async fn inline_value() {
-    let model = Scripted::default();
+    let model = ScriptedModel::default();
     let input = SourceInput::value("brief", "Ship it.");
     let facts = Facts::default();
 
@@ -164,7 +164,7 @@ async fn inline_value() {
 #[tokio::test]
 async fn doc_refs() {
     let (_tmp, input, modules) = tree();
-    let model = Scripted::answering([VALID]).calling(
+    let model = ScriptedModel::answering([VALID]).calling(
         0,
         [
             ToolCall {
@@ -216,7 +216,7 @@ async fn doc_refs() {
 #[tokio::test]
 async fn missing_prompt() {
     let (_tmp, input, modules) = tree();
-    let model = Scripted::default();
+    let model = ScriptedModel::default();
     let facts = Facts {
         modules: &modules,
         text: "",
@@ -243,7 +243,7 @@ async fn missing_prompt() {
 #[tokio::test]
 async fn gate_findings() {
     let (_tmp, input, modules) = tree();
-    let model = Scripted::answering([
+    let model = ScriptedModel::answering([
         r#"{"surfaces":[
             {"name":"","anchor":"src/cli.ts","stem":"import"},
             {"name":"dup","anchor":"src/cli.ts#L1","stem":"a"},
@@ -316,7 +316,7 @@ async fn gate_findings() {
 #[tokio::test]
 async fn technology_stem() {
     let (_tmp, input, modules) = tree();
-    let model = Scripted::answering([
+    let model = ScriptedModel::answering([
         r#"{"surfaces":[
             {"name":"secret retriever","anchor":"src/cli.ts#L1","stem":"key-vault"},
             {"name":"POST /orders","anchor":"src/routes/orders.ts#L2","stem":"orders"}
@@ -354,7 +354,7 @@ async fn technology_stem() {
 #[tokio::test]
 async fn adapter_check() {
     let (_tmp, input, modules) = tree();
-    let model = Scripted::answering([
+    let model = ScriptedModel::answering([
         r#"{"surfaces":[{"name":"start","anchor":"src/cli.ts","stem":"start"}]}"#,
         VALID,
     ]);
@@ -389,7 +389,7 @@ async fn adapter_check() {
 async fn rounds_exhausted() {
     let (_tmp, input, modules) = tree();
     let model =
-        Scripted::answering([r#"{"surfaces":[{"name":"x","anchor":"nope.ts","stem":"x"}]}"#]);
+        ScriptedModel::answering([r#"{"surfaces":[{"name":"x","anchor":"nope.ts","stem":"x"}]}"#]);
     let facts = Facts {
         modules: &modules,
         text: "",

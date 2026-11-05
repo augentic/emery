@@ -3,7 +3,7 @@
 use emery_sdk::target::{Grant, Verdict, VerifyContext};
 use emery_sdk::{Doc, Error};
 use omnia_sdk::model::ToolCall;
-use omnia_test::guest::Scripted;
+use omnia_test::guest::ScriptedModel;
 use omnia_test::{Seen, SeenFormat, SeenWorker};
 
 const PROSE: &[Doc] = &[
@@ -23,16 +23,18 @@ const PROSE: &[Doc] = &[
 
 const PASSED: &str = r#"{"passed":true,"failures":[]}"#;
 
-async fn ask(model: &Scripted, workspace: &str) -> Result<Verdict, Error> {
+async fn ask(model: &ScriptedModel, workspace: &str) -> Result<Verdict, Error> {
     ask_as(model, workspace, &[]).await
 }
 
-async fn ask_as(model: &Scripted, workspace: &str, grants: &[Grant]) -> Result<Verdict, Error> {
+async fn ask_as(
+    model: &ScriptedModel, workspace: &str, grants: &[Grant],
+) -> Result<Verdict, Error> {
     ask_checked(model, workspace, grants, |_| Ok(Vec::new())).await
 }
 
 async fn ask_checked(
-    model: &Scripted, workspace: &str, grants: &[Grant],
+    model: &ScriptedModel, workspace: &str, grants: &[Grant],
     check: impl FnMut(&Verdict) -> Result<Vec<String>, Error> + Send,
 ) -> Result<Verdict, Error> {
     let ctx = VerifyContext {
@@ -51,7 +53,7 @@ async fn ask_checked(
 async fn request_shape() {
     let tmp = tempfile::tempdir().expect("tempdir");
     let root = tmp.path().to_str().expect("a UTF-8 scratch root");
-    let model = Scripted::answering([PASSED]);
+    let model = ScriptedModel::answering([PASSED]);
 
     let verdict = ask(&model, root).await.expect("accepted");
     assert!(verdict.passed);
@@ -113,7 +115,7 @@ async fn repairs() {
     let root = tmp.path().to_str().expect("a UTF-8 scratch root");
     std::fs::create_dir_all(tmp.path().join("src")).expect("src dir");
     std::fs::write(tmp.path().join("src/orders.rs"), "pub struct Order\n").expect("seed");
-    let model = Scripted::answering([PASSED]).calling(
+    let model = ScriptedModel::answering([PASSED]).calling(
         0,
         [ToolCall {
             id: "1".to_owned(),
@@ -151,7 +153,7 @@ async fn repairs_by_edit() {
     std::fs::create_dir_all(tmp.path().join("src")).expect("src dir");
     let before = "pub struct Order;\npub fn total(&token: &str) {}\npub struct Line;\n";
     std::fs::write(tmp.path().join("src/orders.rs"), before).expect("seed");
-    let model = Scripted::answering([PASSED]).calling(
+    let model = ScriptedModel::answering([PASSED]).calling(
         0,
         [
             ToolCall {
@@ -201,7 +203,8 @@ async fn repairs_by_edit() {
 async fn failed_verdict() {
     let tmp = tempfile::tempdir().expect("tempdir");
     let root = tmp.path().to_str().expect("a UTF-8 scratch root");
-    let model = Scripted::answering([r#"{"passed":false,"failures":["cargo test: 2 failed"]}"#]);
+    let model =
+        ScriptedModel::answering([r#"{"passed":false,"failures":["cargo test: 2 failed"]}"#]);
 
     let verdict = ask(&model, root).await.expect("a failed verdict is an answer");
     assert!(!verdict.passed);
@@ -215,7 +218,7 @@ async fn failed_verdict() {
 async fn gate_findings() {
     let tmp = tempfile::tempdir().expect("tempdir");
     let root = tmp.path().to_str().expect("a UTF-8 scratch root");
-    let model = Scripted::answering([
+    let model = ScriptedModel::answering([
         r#"{"passed":true,"failures":["cargo test: 1 failed"]}"#,
         r#"{"passed":false,"failures":[]}"#,
         r#"{"passed":false,"failures":["cargo test: 1 failed"]}"#,
@@ -242,7 +245,7 @@ async fn gate_findings() {
 async fn doc_refs() {
     let tmp = tempfile::tempdir().expect("tempdir");
     let root = tmp.path().to_str().expect("a UTF-8 scratch root");
-    let model = Scripted::answering([PASSED]).calling(
+    let model = ScriptedModel::answering([PASSED]).calling(
         0,
         [
             ToolCall {
@@ -302,7 +305,7 @@ async fn worker_grant() {
     const GRANTS: &[Grant] = &[NPM, NVM];
     let tmp = tempfile::tempdir().expect("tempdir");
     let root = tmp.path().to_str().expect("a UTF-8 scratch root");
-    let model = Scripted::answering([PASSED]);
+    let model = ScriptedModel::answering([PASSED]);
 
     ask_as(&model, root, GRANTS).await.expect("accepted");
 
@@ -326,7 +329,7 @@ async fn worker_grant() {
 async fn missing_prompt() {
     let tmp = tempfile::tempdir().expect("tempdir");
     let root = tmp.path().to_str().expect("a UTF-8 scratch root");
-    let model = Scripted::default();
+    let model = ScriptedModel::default();
     let ctx = VerifyContext {
         adapter_id: "target:mute",
         workspace: root,
@@ -360,7 +363,7 @@ async fn worker_refused() {
     const GRANTS: &[Grant] = &[BROKEN, OTHER];
     let tmp = tempfile::tempdir().expect("tempdir");
     let root = tmp.path().to_str().expect("a UTF-8 scratch root");
-    let model = Scripted::default();
+    let model = ScriptedModel::default();
 
     let error = ask_as(&model, root, GRANTS).await.expect_err("refused");
 
@@ -392,7 +395,7 @@ async fn worker_reaching_nothing() {
     }];
     let tmp = tempfile::tempdir().expect("tempdir");
     let root = tmp.path().to_str().expect("a UTF-8 scratch root");
-    let model = Scripted::answering([PASSED]);
+    let model = ScriptedModel::answering([PASSED]);
 
     ask_as(&model, root, GRANTS).await.expect("accepted");
 
@@ -410,7 +413,7 @@ async fn check_findings() {
     let tmp = tempfile::tempdir().expect("tempdir");
     let root = tmp.path().to_str().expect("a UTF-8 scratch root");
     std::fs::write(tmp.path().join("Cargo.toml"), "[workspace]\nmembers = []\n").expect("seed");
-    let model = Scripted::answering([PASSED, PASSED]).calling(
+    let model = ScriptedModel::answering([PASSED, PASSED]).calling(
         1,
         [ToolCall {
             id: "1".to_owned(),
@@ -453,7 +456,7 @@ async fn check_findings() {
 async fn check_error() {
     let tmp = tempfile::tempdir().expect("tempdir");
     let root = tmp.path().to_str().expect("a UTF-8 scratch root");
-    let model = Scripted::answering([PASSED]);
+    let model = ScriptedModel::answering([PASSED]);
 
     let error = ask_checked(&model, root, &[], |_| {
         Err(omnia_sdk::bad_request!("a directory stands at `Cargo.toml`"))

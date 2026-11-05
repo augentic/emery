@@ -8,7 +8,7 @@ use emery_sdk::survey::code::{
 };
 use emery_sdk::survey::resolve::Target;
 use emery_sdk::{Context, Doc, SourceInput};
-use omnia_test::guest::Scripted;
+use omnia_test::guest::ScriptedModel;
 use support::{
     PYTHON, Plain, Stub, binding, call, callee, class, class_decl, export, from_package, function,
     line, literal, member, module, name, named_import, path, span, tree, value, write,
@@ -166,7 +166,7 @@ async fn bound_steps() {
     }
     let tree = tree(root, &PYTHON, modules, Stub::default());
     let input = SourceInput::workspace("svc", root.to_str().expect("a UTF-8 scratch root"));
-    let model = Scripted::answering([API]);
+    let model = ScriptedModel::answering([API]);
     let ctx = Context {
         adapter_id: "source:probe",
         input: &input,

@@ -8,7 +8,7 @@ use std::time::Duration;
 
 use emery_sdk::{Backing, Context, Doc, Error, Evidence, Model, Seam, SourceContent, SourceInput};
 use omnia_sdk::model::{Error as ModelError, Reply, Request, ToolCall};
-use omnia_test::guest::Scripted;
+use omnia_test::guest::ScriptedModel;
 use tokio::sync::Notify;
 
 const PROSE: &[Doc] = &[Doc {
@@ -54,7 +54,7 @@ fn down(detail: &str) -> Result<Reply, ModelError> {
 // and peak concurrency, and can hold one seam's answer until another's turn arrives.
 #[derive(Clone, Default)]
 struct ByFile {
-    scripts: BTreeMap<String, Scripted>,
+    scripts: BTreeMap<String, ScriptedModel>,
     arrivals: Arc<Mutex<Vec<String>>>,
     pending: Arc<AtomicUsize>,
     peak: Arc<AtomicUsize>,
@@ -69,7 +69,7 @@ struct Hold {
 }
 
 impl ByFile {
-    fn file(mut self, file: &str, script: Scripted) -> Self {
+    fn file(mut self, file: &str, script: ScriptedModel) -> Self {
         self.scripts.insert(file.to_string(), script);
         self
     }
@@ -83,7 +83,7 @@ impl ByFile {
         self
     }
 
-    fn script(&self, request: &Request) -> (&str, &Scripted) {
+    fn script(&self, request: &Request) -> (&str, &ScriptedModel) {
         let turn = request.messages.first().map(|message| message.content.as_str());
         let turn = turn.unwrap_or_default();
         self.scripts.iter().find(|(file, _)| turn.contains(&format!("`{file}`"))).map_or_else(
@@ -163,9 +163,9 @@ fn paths(evidence: &Evidence) -> Vec<&str> {
 async fn three_seams() {
     let (_tmp, input) = workspace(&["a/x.md", "b/y.md", "c/z.md"]);
     let model = ByFile::default()
-        .file("a/x.md", Scripted::answering([note("a/x.md")]))
-        .file("b/y.md", Scripted::answering([note("b/y.md")]))
-        .file("c/z.md", Scripted::answering([note("c/z.md")]));
+        .file("a/x.md", ScriptedModel::answering([note("a/x.md")]))
+        .file("b/y.md", ScriptedModel::answering([note("b/y.md")]))
+        .file("c/z.md", ScriptedModel::answering([note("c/z.md")]));
     let seams = [Seam::files(["a/x.md"]), Seam::files(["b/y.md"]), Seam::files(["c/z.md"])];
 
     let evidence = extract(&model, &input, &seams).await.expect("three seams join");
@@ -207,7 +207,7 @@ async fn concurrent() {
     let (_tmp, input) = workspace(&named);
     let mut model = ByFile::default();
     for file in &named {
-        model = model.file(file, Scripted::answering([note(file)]));
+        model = model.file(file, ScriptedModel::answering([note(file)]));
     }
     let seams: Vec<_> = named.iter().map(|file| Seam::files([*file])).collect();
 
@@ -228,7 +228,7 @@ async fn head_of_line() {
     let (_tmp, input) = workspace(&named);
     let mut model = ByFile::default().holding("d0/f.md", "d4/f.md");
     for file in &named {
-        model = model.file(file, Scripted::answering([note(file)]));
+        model = model.file(file, ScriptedModel::answering([note(file)]));
     }
     let seams: Vec<_> = named.iter().map(|file| Seam::files([*file])).collect();
 
@@ -248,10 +248,10 @@ async fn largest_first() {
     let (_tmp, input) =
         workspace(&["a/1.md", "n/1.md", "b/1.md", "b/2.md", "b/3.md", "c/1.md", "c/2.md"]);
     let model = ByFile::default()
-        .file("a/1.md", Scripted::answering([note("a/1.md")]))
-        .file("n/1.md", Scripted::answering([note("n/1.md")]))
-        .file("b/1.md", Scripted::answering([note("b/1.md")]))
-        .file("c/1.md", Scripted::answering([note("c/1.md")]));
+        .file("a/1.md", ScriptedModel::answering([note("a/1.md")]))
+        .file("n/1.md", ScriptedModel::answering([note("n/1.md")]))
+        .file("b/1.md", ScriptedModel::answering([note("b/1.md")]))
+        .file("c/1.md", ScriptedModel::answering([note("c/1.md")]));
     let seams = [
         Seam::files(["a/1.md"]),
         Seam::note("Mine the surface entered at `n/1.md`."),
@@ -277,9 +277,9 @@ async fn largest_first() {
 #[tokio::test]
 async fn retried() {
     let (_tmp, input) = workspace(&["a/x.md", "b/y.md"]);
-    let model = ByFile::default().file("a/x.md", Scripted::answering([note("a/x.md")])).file(
+    let model = ByFile::default().file("a/x.md", ScriptedModel::answering([note("a/x.md")])).file(
         "b/y.md",
-        Scripted::new([
+        ScriptedModel::new([
             down("down"),
             Ok(Reply {
                 answer: note("b/y.md"),
@@ -303,8 +303,8 @@ async fn retried() {
 async fn retry_spent() {
     let (_tmp, input) = workspace(&["a/x.md", "b/y.md"]);
     let model = ByFile::default()
-        .file("a/x.md", Scripted::answering([note("a/x.md")]))
-        .file("b/y.md", Scripted::new([down("down"), down("still down")]));
+        .file("a/x.md", ScriptedModel::answering([note("a/x.md")]))
+        .file("b/y.md", ScriptedModel::new([down("down"), down("still down")]));
     let seams = [Seam::files(["a/x.md"]), Seam::files(["b/y.md"])];
 
     let error = extract(&model, &input, &seams).await.expect_err("the retry failed too");
@@ -326,10 +326,13 @@ async fn refusal_not_retried() {
     let model = ByFile::default()
         .file(
             "a/x.md",
-            Scripted::new([Err(ModelError::InvalidRequest("no such model".to_string()))]),
+            ScriptedModel::new([Err(ModelError::InvalidRequest("no such model".to_string()))]),
         )
-        .file("b/y.md", Scripted::answering([note("b/y.md")]))
-        .file("c/z.md", Scripted::answering([r#"{"claims":[{"kind":"requirement","id":"c"}]}"#]));
+        .file("b/y.md", ScriptedModel::answering([note("b/y.md")]))
+        .file(
+            "c/z.md",
+            ScriptedModel::answering([r#"{"claims":[{"kind":"requirement","id":"c"}]}"#]),
+        );
     let seams = [Seam::files(["a/x.md"]), Seam::files(["b/y.md"]), Seam::files(["c/z.md"])];
 
     let error = extract(&model, &input, &seams).await.expect_err("two seams are refused");
@@ -343,7 +346,7 @@ async fn refusal_not_retried() {
 
 #[tokio::test]
 async fn no_seams() {
-    let model = Scripted::default();
+    let model = ScriptedModel::default();
     let input = SourceInput::workspace("docs", "./docs");
 
     let error = extract(&model, &input, &[]).await.expect_err("nothing to extract");
@@ -357,7 +360,7 @@ async fn no_seams() {
 // earlier seam was sound.
 #[tokio::test]
 async fn escaping_path() {
-    let model = Scripted::default();
+    let model = ScriptedModel::default();
     let input = SourceInput::workspace("docs", "./docs");
     let seams = [Seam::files(["a/x.md"]), Seam::files(["../secret.md"])];
 
@@ -370,7 +373,7 @@ async fn escaping_path() {
 
 #[tokio::test]
 async fn dot_path() {
-    let model = Scripted::default();
+    let model = ScriptedModel::default();
     let input = SourceInput::workspace("docs", "./docs");
 
     let error = extract(&model, &input, &[Seam::files(["./"])]).await.expect_err("no file");
@@ -383,7 +386,7 @@ async fn dot_path() {
 // No tree to lend is the adapter's own defect, so the class is the adapter's.
 #[tokio::test]
 async fn files_value() {
-    let model = Scripted::default();
+    let model = ScriptedModel::default();
 
     let error =
         extract(&model, &SourceInput::value("brief", "Ship it."), &[Seam::files(["a/x.md"])])
@@ -401,10 +404,10 @@ async fn two_seams_fail() {
     let model = ByFile::default()
         .file(
             "a/x.md",
-            Scripted::new([Err(ModelError::InvalidRequest("no such model".to_string()))]),
+            ScriptedModel::new([Err(ModelError::InvalidRequest("no such model".to_string()))]),
         )
-        .file("b/y.md", Scripted::answering([note("b/y.md")]))
-        .file("c/z.md", Scripted::new([down("down"), down("down")]));
+        .file("b/y.md", ScriptedModel::answering([note("b/y.md")]))
+        .file("c/z.md", ScriptedModel::new([down("down"), down("down")]));
     let seams = [Seam::files(["a/x.md"]), Seam::files(["b/y.md"]), Seam::files(["c/z.md"])];
 
     let error = extract(&model, &input, &seams).await.expect_err("two seams failed");
@@ -422,7 +425,7 @@ async fn two_seams_fail() {
 // report around it.
 #[tokio::test]
 async fn single_seam_passthrough() {
-    let model = Scripted::new([down("down"), down("still down")]);
+    let model = ScriptedModel::new([down("down"), down("still down")]);
     let input = SourceInput::workspace("docs", "./docs");
 
     let error =
