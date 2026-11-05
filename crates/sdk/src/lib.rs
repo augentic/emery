@@ -195,14 +195,10 @@ macro_rules! export_target {
 /// The host model a turn is put to on WebAssembly.
 ///
 /// [`export_source!`] and [`export_target!`] bind it into every context
-/// they build; the empty [`Model`] impl delegates each request through
-/// Omnia's WASI interface.
+/// they build; [`WasiProvider`](omnia_sdk::WasiProvider) delegates each
+/// request through Omnia's WASI interface.
 #[cfg(target_arch = "wasm32")]
-#[derive(Clone, Copy, Debug, Default)]
-pub struct Provider;
-
-#[cfg(target_arch = "wasm32")]
-impl Model for Provider {}
+pub use omnia_sdk::WasiProvider as Provider;
 
 /// The `extract` arm of [`export_source!`], reached through the macro alone.
 #[cfg(target_arch = "wasm32")]

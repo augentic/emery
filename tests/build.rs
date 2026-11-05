@@ -14,7 +14,7 @@ use omnia_sdk::model::{Error as ModelError, Reply};
 use omnia_sdk::vcs::{Change, ChangeKind, Entry, Error, Merged, Rule, Strategy};
 use omnia_sdk::{bad_gateway, bad_request};
 use omnia_test::SeenFormat;
-use omnia_test::guest::Scripted;
+use omnia_test::guest::ScriptedModel;
 use serde_json::{Value, json};
 use support::provider::{Provider, Rendezvous, cli, digest};
 use support::scratch::Scratch;
@@ -1061,7 +1061,7 @@ async fn build_conflict_retried() {
     changed(&provider, "SLICE-003", &[("src/lib.rs", ChangeKind::Modified)]);
     changed(&provider, "SLICE-003", &[("src/lib.rs", ChangeKind::Modified)]);
     wrote(&provider, WIDE_SESSIONS);
-    provider.model = Scripted::new([
+    provider.model = ScriptedModel::new([
         Err(ModelError::Backend("the bridge went away".to_owned())),
         Ok(Reply {
             answer: RESOLVED_LIB.to_owned(),

@@ -3,7 +3,7 @@
 use emery_sdk::{Context, Doc, Error, Evidence, Lexicon, Seam, SourceInput};
 use omnia_sdk::model::{Error as ModelError, ToolCall};
 use omnia_test::SeenFormat;
-use omnia_test::guest::Scripted;
+use omnia_test::guest::ScriptedModel;
 
 const PROSE: &[Doc] = &[
     Doc {
@@ -28,7 +28,7 @@ fn stemmed<const N: usize>(text: &str, stems: [&str; N]) -> Seam {
     }
 }
 
-async fn ask(model: &Scripted, input: &SourceInput, seam: Seam) -> Result<Evidence, Error> {
+async fn ask(model: &ScriptedModel, input: &SourceInput, seam: Seam) -> Result<Evidence, Error> {
     let ctx = Context {
         adapter_id: "source:probe",
         input,
@@ -39,7 +39,7 @@ async fn ask(model: &Scripted, input: &SourceInput, seam: Seam) -> Result<Eviden
 
 #[tokio::test]
 async fn request_shape() {
-    let model = Scripted::answering([VALID]);
+    let model = ScriptedModel::answering([VALID]);
 
     let accepted = ask(&model, &SourceInput::workspace("docs", "/lend/docs"), Seam::whole())
         .await
@@ -100,7 +100,7 @@ async fn request_shape() {
 // A corpus without `extract.md` is the adapter build's own defect.
 #[tokio::test]
 async fn missing_prompt() {
-    let model = Scripted::default();
+    let model = ScriptedModel::default();
     let input = SourceInput::workspace("docs", ".");
     let ctx = Context {
         adapter_id: "source:mute",
@@ -118,7 +118,7 @@ async fn missing_prompt() {
 
 #[tokio::test]
 async fn inline_value() {
-    let model = Scripted::answering([VALID]);
+    let model = ScriptedModel::answering([VALID]);
 
     ask(&model, &SourceInput::value("brief", "Ship it."), Seam::whole()).await.expect("accepted");
     let request = &model.seen()[0];
@@ -132,7 +132,7 @@ async fn inline_value() {
 // nothing is appended between the input and the closing rule.
 #[tokio::test]
 async fn prepared_turn() {
-    let model = Scripted::answering([VALID]);
+    let model = ScriptedModel::answering([VALID]);
 
     ask(&model, &SourceInput::value("brief", "Ship it."), Seam::note("THE NOTE"))
         .await
@@ -153,7 +153,7 @@ async fn prepared_turn() {
 // the root there is nothing to lay out, so they are listed.
 #[tokio::test]
 async fn files_turn() {
-    let model = Scripted::answering([VALID]);
+    let model = ScriptedModel::answering([VALID]);
     let seam = Seam::files(["guide/setup.md", "./guide/intro.md", "guide/intro.md", "api.md"]);
 
     ask(&model, &SourceInput::workspace("docs", "/lend/docs"), seam).await.expect("accepted");
@@ -178,7 +178,7 @@ async fn files_turn() {
 // from 1, in a fence no run of backticks inside can close.
 #[tokio::test]
 async fn files_laid() {
-    let model = Scripted::answering([VALID]);
+    let model = ScriptedModel::answering([VALID]);
     let tmp = tempfile::tempdir().expect("tempdir");
     write(tmp.path(), "api.md", "# API\n\n```ts\nexport const x = 1;\n```\n");
     write(tmp.path(), "guide/intro.md", "# Intro\nOne line, no trailing newline");
@@ -215,7 +215,7 @@ async fn files_listed() {
     write(tmp.path(), "c.md", "after");
     let root = tmp.path().to_str().expect("a UTF-8 scratch root");
 
-    let model = Scripted::answering([VALID]);
+    let model = ScriptedModel::answering([VALID]);
     ask(&model, &SourceInput::workspace("docs", root), Seam::files(["a.md", "b.md", "c.md"]))
         .await
         .expect("accepted");
@@ -236,7 +236,7 @@ async fn files_listed() {
         "{user}"
     );
 
-    let model = Scripted::answering([VALID]);
+    let model = ScriptedModel::answering([VALID]);
     ask(&model, &SourceInput::workspace("docs", root), Seam::files(["b.md", "a.md", "c.md"]))
         .await
         .expect("accepted");
@@ -249,7 +249,7 @@ async fn files_listed() {
     std::fs::write(binary.path().join("blob.bin"), [0xff, 0xfe, 0x00]).expect("write");
     write(binary.path(), "a.md", "text");
     let root = binary.path().to_str().expect("a UTF-8 scratch root");
-    let model = Scripted::answering([VALID]);
+    let model = ScriptedModel::answering([VALID]);
     ask(&model, &SourceInput::workspace("docs", root), Seam::files(["blob.bin", "a.md"]))
         .await
         .expect("accepted");
@@ -262,7 +262,7 @@ async fn files_listed() {
 // rule after the lend; several are offered as a set, sorted and deduplicated.
 #[tokio::test]
 async fn note_stems() {
-    let model = Scripted::answering([VALID, VALID]);
+    let model = ScriptedModel::answering([VALID, VALID]);
     let one = stemmed(
         "Surface `POST /orders` — entry `src/routes.ts` — stem `orders`.",
         ["password-reset"],
@@ -300,7 +300,7 @@ async fn note_stems() {
 // the anchor rule, so the model reads what to mine before what to call it.
 #[tokio::test]
 async fn files_stems() {
-    let model = Scripted::answering([VALID]);
+    let model = ScriptedModel::answering([VALID]);
     let tmp = tempfile::tempdir().expect("tempdir");
     write(tmp.path(), "src/routes.ts", "export const x = 1;\n");
     let root = tmp.path().to_str().expect("a UTF-8 scratch root");
@@ -337,7 +337,7 @@ async fn files_stems() {
 // turn is spent.
 #[tokio::test]
 async fn note_defects() {
-    let model = Scripted::default();
+    let model = ScriptedModel::default();
     let error = ask(&model, &SourceInput::value("brief", "Ship it."), stemmed("Mine.", ["Orders"]))
         .await
         .expect_err("a stem outside the grammar");
@@ -350,7 +350,7 @@ async fn note_defects() {
 // kinds and the stemless are not held.
 #[tokio::test]
 async fn stem_findings() {
-    let model = Scripted::answering([
+    let model = ScriptedModel::answering([
         r#"{"claims":[
             {"kind":"requirement","id":"orders.create","statement":"Creates."},
             {"kind":"criterion","id":"order.created","criterion":"201."},
@@ -386,7 +386,7 @@ async fn stem_findings() {
 // and a statement by role passes however many packages the seam imports.
 #[tokio::test]
 async fn technology_findings() {
-    let model = Scripted::answering([
+    let model = ScriptedModel::answering([
         r#"{"claims":[
             {"kind":"requirement","id":"start.credentials","statement":"useConfluentKafkaConfig reads the credentials from Key Vault before the Kafka clients are constructed."},
             {"kind":"requirement","id":"key-vault.refuse-empty","statement":"Refuses to start when the secret is empty."},
@@ -436,7 +436,7 @@ async fn technology_findings() {
 // finding, and the brief's stem sentence names the kind.
 #[tokio::test]
 async fn retire_findings() {
-    let model = Scripted::answering([
+    let model = ScriptedModel::answering([
         r#"{"claims":[
             {"kind":"requirement","id":"orders.create","statement":"Creates."},
             {"kind":"retire","id":"exports.csv","statement":"The export is withdrawn."},
@@ -484,7 +484,7 @@ async fn path_findings() {
     write(tmp.path(), "notes/todo.md", "todo");
     std::fs::create_dir_all(tmp.path().join("dir.md")).expect("a directory named like a file");
     let root = tmp.path().to_str().expect("a UTF-8 scratch root");
-    let model = Scripted::answering([
+    let model = ScriptedModel::answering([
         r#"{"claims":[
             {"kind":"requirement","id":"a.one","statement":"x","path":"api.md#L1-L3"},
             {"kind":"requirement","id":"a.two","statement":"x","path":"./api.md#L4"},
@@ -530,7 +530,7 @@ async fn path_whole() {
     let tmp = tempfile::tempdir().expect("tempdir");
     write(tmp.path(), "api.md", "one\n");
     let root = tmp.path().to_str().expect("a UTF-8 scratch root");
-    let model = Scripted::answering([
+    let model = ScriptedModel::answering([
         r#"{"claims":[
             {"kind":"requirement","id":"a.one","statement":"x","path":"api.md#L1"},
             {"kind":"requirement","id":"a.two","statement":"x","path":"nope.md"}
@@ -543,7 +543,7 @@ async fn path_whole() {
     assert!(correction.contains("claim 1: path `nope.md` names no regular file"), "{correction}");
     assert!(!correction.contains("claim 0:"), "{correction}");
 
-    let model = Scripted::answering([
+    let model = ScriptedModel::answering([
         r#"{"claims":[{"kind":"requirement","id":"a.one","statement":"x","path":"brief.md"}]}"#,
         VALID,
     ]);
@@ -573,7 +573,7 @@ async fn anchor_findings() {
     write(tmp.path(), "src/lib/util.ts", "one\ntwo\n");
     write(tmp.path(), "src/long.ts", &"line\n".repeat(60));
     let root = tmp.path().to_str().expect("a UTF-8 scratch root");
-    let model = Scripted::answering([
+    let model = ScriptedModel::answering([
         r#"{"claims":[
             {"kind":"requirement","id":"orders.create","statement":"x","path":"src/orders.ts#L3-L5"},
             {"kind":"requirement","id":"orders.wire","statement":"x","path":"src/orders.ts#L1"},
@@ -643,7 +643,7 @@ async fn anchor_findings() {
 // adapter's own defect, refused before a turn is spent.
 #[tokio::test]
 async fn anchor_defects() {
-    let model = Scripted::default();
+    let model = ScriptedModel::default();
     let seam = Seam {
         anchors: vec!["src/orders.ts#4".to_owned()],
         ..Seam::files(["src/orders.ts"])
@@ -689,7 +689,7 @@ fn write(root: &std::path::Path, rel: &str, body: &str) {
 // answers each.
 #[tokio::test]
 async fn doc_refs() {
-    let model = Scripted::answering([VALID]).calling(
+    let model = ScriptedModel::answering([VALID]).calling(
         0,
         [
             ToolCall {
@@ -747,7 +747,7 @@ async fn doc_refs() {
 // The engine never sees the claim it would otherwise refuse.
 #[tokio::test]
 async fn gate_findings() {
-    let model = Scripted::answering([r#"{"claims":[{"kind":"requirement"}]}"#, VALID]);
+    let model = ScriptedModel::answering([r#"{"claims":[{"kind":"requirement"}]}"#, VALID]);
 
     let accepted = ask(&model, &SourceInput::value("brief", "Ship it."), Seam::whole())
         .await
@@ -769,7 +769,7 @@ async fn gate_findings() {
 // The last findings surface, so the host's own error is never the adapter's answer.
 #[tokio::test]
 async fn rounds_exhausted() {
-    let model = Scripted::answering([
+    let model = ScriptedModel::answering([
         r#"{"claims":[{"kind":"criterion","id":"Not.Valid","criterion":"x"}]}"#,
     ]);
 
@@ -787,7 +787,7 @@ async fn rounds_exhausted() {
 
 #[tokio::test]
 async fn invalid_request() {
-    let model = Scripted::new([Err(ModelError::InvalidRequest("no such model".to_string()))]);
+    let model = ScriptedModel::new([Err(ModelError::InvalidRequest("no such model".to_string()))]);
 
     let error = ask(&model, &SourceInput::value("brief", "Ship it."), Seam::whole())
         .await
@@ -802,7 +802,8 @@ async fn invalid_request() {
 // The kind of source is the adapter's metadata, never the model's to state.
 #[tokio::test]
 async fn stray_kind() {
-    let model = Scripted::answering([r#"{"kind":"intent","claims":[{"kind":"decision"}]}"#, VALID]);
+    let model =
+        ScriptedModel::answering([r#"{"kind":"intent","claims":[{"kind":"decision"}]}"#, VALID]);
 
     let accepted = ask(&model, &SourceInput::value("brief", "Ship it."), Seam::whole())
         .await

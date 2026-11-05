@@ -11,7 +11,7 @@ use emery_sdk::survey::code::{
 };
 use emery_sdk::survey::resolve::Target;
 use emery_sdk::{ClaimKind, Context, Doc, Error, Evidence, Lexicon, SourceInput, Trigger};
-use omnia_test::guest::Scripted;
+use omnia_test::guest::ScriptedModel;
 use support::{
     PYTHON, Plain, Stub, TYPESCRIPT, call, callee, class, class_decl, decorated, dynamic, export,
     from_module, from_package, function, line, literal, member, module, name, named_import,
@@ -206,7 +206,9 @@ fn fill(m: &mut Plain) {
     }
 }
 
-async fn run(model: &Scripted, input: &SourceInput, tree: &Tree<Stub>) -> Result<Survey, Error> {
+async fn run(
+    model: &ScriptedModel, input: &SourceInput, tree: &Tree<Stub>,
+) -> Result<Survey, Error> {
     let ctx = Context {
         adapter_id: "source:probe",
         input,
@@ -226,7 +228,7 @@ fn files(survey: &Survey, index: usize) -> Vec<&str> {
 #[tokio::test]
 async fn facts_laid() {
     let (_tmp, input, tree) = service(false, Some(Runs::Load));
-    let model = Scripted::answering([BOTH]);
+    let model = ScriptedModel::answering([BOTH]);
 
     run(&model, &input, &tree).await.expect("surveyed");
 
@@ -277,7 +279,7 @@ async fn facts_laid() {
 #[tokio::test]
 async fn whole_tree() {
     let (_tmp, input, tree) = service(false, Some(Runs::Load));
-    let model = Scripted::answering([BOTH]);
+    let model = ScriptedModel::answering([BOTH]);
 
     let survey = run(&model, &input, &tree).await.expect("surveyed");
 
@@ -367,7 +369,7 @@ async fn whole_tree() {
 #[tokio::test]
 async fn types_anchored() {
     let (_tmp, input, tree) = service(false, Some(Runs::Load));
-    let model = Scripted::answering([BOTH]);
+    let model = ScriptedModel::answering([BOTH]);
 
     let survey = run(&model, &input, &tree).await.expect("surveyed");
 
@@ -409,7 +411,7 @@ async fn types_anchored() {
 #[tokio::test]
 async fn contracts_routed() {
     let (_tmp, input, tree) = service(false, Some(Runs::Load));
-    let model = Scripted::answering([BOTH]);
+    let model = ScriptedModel::answering([BOTH]);
 
     let survey = run(&model, &input, &tree).await.expect("surveyed");
 
@@ -484,7 +486,7 @@ async fn bootstrap_runs() {
         (Runs::Guard, "it runs under its `__main__` guard", "run under its `__main__` guard"),
     ] {
         let (_tmp, input, tree) = service(false, Some(runs));
-        let model = Scripted::answering([BOTH]);
+        let model = ScriptedModel::answering([BOTH]);
 
         let survey = run(&model, &input, &tree).await.expect("surveyed");
 
@@ -498,7 +500,7 @@ async fn bootstrap_runs() {
     }
 
     let (_tmp, input, tree) = service(false, None);
-    let model = Scripted::answering([
+    let model = ScriptedModel::answering([
         r#"{"surfaces":[],"unreached":["src/main.ts","src/routes/orders.ts","src/ctl.ts"]}"#,
     ]);
 
@@ -555,7 +557,7 @@ async fn bootstrap_runs() {
 #[tokio::test]
 async fn check_round() {
     let (_tmp, input, tree) = service(false, Some(Runs::Load));
-    let model = Scripted::answering([
+    let model = ScriptedModel::answering([
         r#"{"surfaces":[{"name":"orders","anchor":"src/routes/orders.ts#L3","stem":"start"}]}"#,
         BOTH,
     ]);
@@ -588,7 +590,7 @@ async fn check_round() {
 #[tokio::test]
 async fn check_under_bootstrap() {
     let (_tmp, input, tree) = service(false, Some(Runs::Load));
-    let model = Scripted::answering([r#"{"surfaces":[],"unreached":["src/ctl.ts"]}"#, BOTH]);
+    let model = ScriptedModel::answering([r#"{"surfaces":[],"unreached":["src/ctl.ts"]}"#, BOTH]);
 
     let survey = run(&model, &input, &tree).await.expect("corrected");
 
@@ -616,7 +618,7 @@ async fn check_under_bootstrap() {
 async fn bootstrap_unsurfaced() {
     const NONE: &str = r#"{"surfaces":[],"unreached":["src/routes/orders.ts","src/ctl.ts"]}"#;
     let (_tmp, input, tree) = service(false, Some(Runs::Load));
-    let model = Scripted::answering([NONE]);
+    let model = ScriptedModel::answering([NONE]);
 
     let survey = run(&model, &input, &tree).await.expect("surveyed");
 
@@ -627,7 +629,7 @@ async fn bootstrap_unsurfaced() {
     model.assert_exhausted();
 
     let (_tmp, input, tree) = service(true, Some(Runs::Load));
-    let model = Scripted::answering([NONE]);
+    let model = ScriptedModel::answering([NONE]);
 
     let survey = run(&model, &input, &tree).await.expect("surveyed");
 
@@ -669,7 +671,7 @@ async fn check_class_decorator() {
     nightly.0.classes = vec![class_decl("Nightly", "export class Nightly", span(2, 6), Vec::new())];
     let tree = tree(root, &TYPESCRIPT, vec![index, nightly], Stub::default());
     let input = SourceInput::workspace("svc", root.to_str().expect("a UTF-8 scratch root"));
-    let model = Scripted::answering([
+    let model = ScriptedModel::answering([
         r#"{"surfaces":[]}"#,
         r#"{"surfaces":[],"unreached":["src/jobs/nightly.ts"]}"#,
     ]);
@@ -729,7 +731,7 @@ async fn exports_declared() {
     ];
     let tree = tree(root, &TYPESCRIPT, vec![index], Stub::default());
     let input = SourceInput::workspace("svc", root.to_str().expect("a UTF-8 scratch root"));
-    let model = Scripted::answering([r#"{"surfaces":[]}"#]);
+    let model = ScriptedModel::answering([r#"{"surfaces":[]}"#]);
 
     run(&model, &input, &tree).await.expect("surveyed");
 
@@ -749,7 +751,7 @@ async fn exports_declared() {
 #[tokio::test]
 async fn by_stem_widened() {
     let (_tmp, input, tree) = service(true, Some(Runs::Load));
-    let model = Scripted::answering([BOTH]);
+    let model = ScriptedModel::answering([BOTH]);
 
     let survey = run(&model, &input, &tree).await.expect("surveyed");
 
@@ -855,7 +857,7 @@ async fn by_stem_loaded() {
     modules[3].0.dynamic = vec![dynamic(line(2), Some("src/plugins")), dynamic(line(3), None)];
     let tree = tree(root, &TYPESCRIPT, modules, Stub::default());
     let input = SourceInput::workspace("svc", root.to_str().expect("a UTF-8 scratch root"));
-    let model = Scripted::answering([r#"{"surfaces":[
+    let model = ScriptedModel::answering([r#"{"surfaces":[
         {"name":"run","anchor":"main.ts#L1","stem":"main"},
         {"name":"load","anchor":"src/jobs/loader.ts#L2","stem":"jobs"}
     ]}"#]);
@@ -898,7 +900,7 @@ async fn by_stem_loaded() {
 #[tokio::test]
 async fn by_directory() {
     let (_tmp, input, tree) = service(true, None);
-    let model = Scripted::answering([
+    let model = ScriptedModel::answering([
         r#"{"surfaces":[],"unreached":["src/main.ts","src/routes/orders.ts","src/ctl.ts"]}"#,
     ]);
 
@@ -984,7 +986,7 @@ async fn by_directory_package() {
     })
     .settle(Stub::default());
     let input = SourceInput::workspace("shop", root.to_str().expect("a UTF-8 scratch root"));
-    let model = Scripted::answering([r#"{"surfaces":[]}"#]);
+    let model = ScriptedModel::answering([r#"{"surfaces":[]}"#]);
 
     let survey = run(&model, &input, &tree).await.expect("surveyed");
 
@@ -1036,7 +1038,7 @@ async fn one_module_fits() {
     })
     .settle(Stub::default());
     let input = SourceInput::workspace("one", tmp.path().to_str().expect("a UTF-8 scratch root"));
-    let model = Scripted::answering([
+    let model = ScriptedModel::answering([
         r#"{"surfaces":[{"name":"run","anchor":"main.ts#L1","stem":"run"}]}"#,
     ]);
 
@@ -1048,7 +1050,7 @@ async fn one_module_fits() {
     model.assert_exhausted();
 
     let value = SourceInput::value("one", "export function run() {}");
-    let model = Scripted::answering([] as [&str; 0]);
+    let model = ScriptedModel::answering([] as [&str; 0]);
     let error = run(&model, &value, &tree).await.expect_err("no tree to survey");
     assert_eq!(error.code(), "server_error", "{error}");
     model.assert_exhausted();

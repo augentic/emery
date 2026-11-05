@@ -140,7 +140,7 @@ Custom deployments can replace `omnia-filesystem` in the `hosts:` block of `omni
 | `omnia-azure-blob` | — | Yes | — | `AZURE_BLOB_ENDPOINT` |
 | `omnia-git` | — | — | Yes | `GIT_BINARY` |
 
-Multi-tenant deployments sharing a single backing store can isolate projects by rewriting bucket and container names at the `WasiKeyValueCtx` and `WasiBlobstoreCtx` boundary (verified by the `multi_project` test in `tests/specify.rs`). Note that `omnia-filesystem` forbids `/` inside bucket/container names, so filesystem-backed prefixing must use a single-segment delimiter such as `<project>--staged`.
+Multi-tenant deployments sharing a single backing store can isolate projects by rewriting bucket and container names at the `KeyValueClient` and `BlobStoreClient` boundary (verified by the `multi_project` test in `tests/specify.rs`). Note that `omnia-filesystem` forbids `/` inside bucket/container names, so filesystem-backed prefixing must use a single-segment delimiter such as `<project>--staged`.
 
 ---
 

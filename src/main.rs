@@ -10,7 +10,7 @@ cfg_select! {
         use omnia::FromEnv as _;
         use omnia_filesystem::{Client as Filesystem, ConnectOptions};
         use omnia_git::Client as Git;
-        use omnia_wasi_blobstore::WasiBlobstore;
+        use omnia_wasi_blobstore::WasiBlobStore;
         use omnia_wasi_keyvalue::WasiKeyValue;
         use omnia_wasi_model::WasiModel;
         use omnia_wasi_otel::{OtelDefault, WasiOtel};
@@ -41,7 +41,7 @@ cfg_select! {
                     ..ModelOptions::load_env()?
                 }),
                 WasiKeyValue: Filesystem(ConnectOptions { root: ".emery/storage".into() }),
-                WasiBlobstore: Filesystem(ConnectOptions { root: ".emery/storage".into() }),
+                WasiBlobStore: Filesystem(ConnectOptions { root: ".emery/storage".into() }),
                 WasiVcs: Git,
             },
         });

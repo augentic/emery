@@ -13,7 +13,7 @@ use emery_engine::{REVISION_KEY, STAGED_CONTAINER, STAGED_KEY};
 use omnia_sdk::model::{Error as ModelError, Reply};
 use omnia_sdk::{BlobStore, StateStore, bad_gateway, bad_request};
 use omnia_test::SeenFormat;
-use omnia_test::guest::{Memory, Scripted};
+use omnia_test::guest::{Memory, ScriptedModel};
 use serde_json::Value;
 use support::provider::{Provider, Rendezvous, claim, digest, evidence, requirement, retire};
 use support::scratch::Scratch;
@@ -2190,7 +2190,7 @@ async fn type_mechanism() {
 #[tokio::test]
 async fn model_fails() {
     let provider = Provider {
-        model: Scripted::new([
+        model: ScriptedModel::new([
             Err(ModelError::Backend("scripted transport failure".into())),
             Err(ModelError::Backend("scripted transport failure".into())),
         ]),
@@ -2210,7 +2210,7 @@ async fn model_recovers() {
         })
     };
     let provider = Provider {
-        model: Scripted::new([
+        model: ScriptedModel::new([
             Err(ModelError::Backend("scripted transport failure".into())),
             reply(SPEC_ANSWER),
             reply(DESIGN_ANSWER),

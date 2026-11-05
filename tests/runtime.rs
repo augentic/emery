@@ -12,10 +12,10 @@ use std::process::{Command, Output};
 
 use emery_engine::amend::SliceClass;
 use emery_engine::vcs::{Message, RevisionMessage, SliceSummary, Summary};
-use omnia::{Backend as _, CompileOptions, Digest, ExitStatus, RuntimeOptions, StoreCtx};
+use omnia::{CompileOptions, Connect as _, Digest, ExitStatus, RuntimeOptions, StoreCtx};
 use omnia_git::{Client, ConnectOptions};
 use omnia_test::host::{Backends, Deployment, Run, Scratch, ScriptedModel, scratch};
-use omnia_wasi_blobstore::WasiBlobstore;
+use omnia_wasi_blobstore::WasiBlobStore;
 use omnia_wasi_keyvalue::WasiKeyValue;
 use omnia_wasi_model::WasiModel;
 use omnia_wasi_otel::WasiOtel;
@@ -580,7 +580,7 @@ async fn emery(deployment: Deployment, backends: &Bundle, model: &ScriptedModel)
 fn link(deployment: &mut omnia::Deployment<StoreCtx<Bundle>>) -> anyhow::Result<()> {
     deployment.host::<WasiModel, Bundle>()?;
     deployment.host::<WasiKeyValue, Bundle>()?;
-    deployment.host::<WasiBlobstore, Bundle>()?;
+    deployment.host::<WasiBlobStore, Bundle>()?;
     deployment.host::<WasiOtel, Bundle>()?;
     deployment.host::<WasiVcs, Bundle>()?;
     Ok(())
