@@ -713,6 +713,15 @@ async fn built() -> (Roots, Bundle, String, String) {
     let run = emery(roots.deployment(&["build"]), &backends, &model).await;
     assert_ok(&run);
     model.assert_exhausted();
+    let seen = model.seen();
+    assert!(
+        seen[0].messages[0].starts_with(
+            "Build slice 1 of 1 of part `greeting` (PART-001) as SLICE-001, bound to adapter \
+             `acme:target`.\n\n"
+        ),
+        "{}",
+        seen[0].messages[0]
+    );
     let revision = revision_of(&run);
     (roots, backends, revision, base)
 }

@@ -627,7 +627,10 @@ impl Run<'_> {
         let at = vcs::slice_worktree(id);
         let input = SliceInput {
             id: id.to_string(),
+            part: part.id.to_string(),
             name: part.name.clone(),
+            index: 1,
+            count: 1,
             requirements: part
                 .requirements
                 .iter()

@@ -9,7 +9,7 @@
 - [Target adapters (`target::TargetAdapter`)](#target-adapters-targettargetadapter)
   - [Tasks and outcomes](#tasks-and-outcomes)
   - [Scaffolding and guarded markers (`Scaffold`)](#scaffolding-and-guarded-markers-scaffold)
-  - [Merge rules and worker grants (`Metadata` and `Grant`)](#merge-rules-and-worker-grants-metadata-and-grant)
+  - [Merge rules, worker grants, and default budget (`Metadata` and `Grant`)](#merge-rules-worker-grants-and-default-budget-metadata-and-grant)
 - [Prompt corpus verification (`prose!` and `check`)](#prompt-corpus-verification-prose-and-check)
 - [Links](#links)
 
@@ -76,6 +76,7 @@ Implement `target::TargetAdapter` on a unit struct, embed `build.md` and `verify
 ```rust
 use std::fs::OpenOptions;
 use std::io::{ErrorKind, Write as _};
+use std::num::NonZeroU32;
 use std::path::Path;
 
 use emery_sdk::target::{Grant, MergeRule, Metadata, Outcome, TargetAdapter, Task};
@@ -96,6 +97,7 @@ impl TargetAdapter for Adapter {
         Metadata {
             rules: RULES,
             grants: &[CARGO],
+            budget: NonZeroU32::new(12),
         }
     }
 
@@ -144,7 +146,7 @@ Before calling `target::build`, an adapter can generate skeleton files from the 
 - **`files` (`&[Guarded]`):** Protects scaffolded files from accidental deletion or truncation. Each `Guarded` file specifies `keeps` (substrings that any whole-file `write_files` call must preserve) and `markers` (`Marker { key, block }` stubs that `edit_files` can replace by naming `key` alone in `find`).
 - **`types`:** Design type keys already laid into the scaffolded files, allowing the SDK to replace their full definitions in the prompt with a short pointer.
 
-### Merge rules and worker grants (`Metadata` and `Grant`)
+### Merge rules, worker grants, and default budget (`Metadata` and `Grant`)
 
 `TargetAdapter::metadata()` returns static `target::Metadata`:
 
@@ -153,6 +155,7 @@ Before calling `target::build`, an adapter can generate skeleton files from the 
   - `egress`: Allowed outbound hostnames (`"index.crates.io"`, `"*.example.com"`).
   - `read`: Read-only directories under the operator's home directory (`"~/.rustup"`, `"~/.nvm/versions/node"`).
   - `env`: Static environment variables (`("RUSTUP_HOME", "~/.rustup")`).
+- **`budget` (`Option<NonZeroU32>`):** Default requirement budget per slice when neither `--budget` nor `[target] budget` sets one.
 
 ---
 

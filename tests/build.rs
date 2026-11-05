@@ -417,13 +417,17 @@ async fn build_plan() {
     // each slice carries its own documents, typed beside the renderings, and
     // the head it builds over
     assert_eq!(first.id, "SLICE-001");
+    assert_eq!(first.part, "PART-001");
     assert_eq!(first.name, "authentication");
+    assert_eq!((first.index, first.count), (1, 1));
     assert_eq!(first.spec, SPEC_001, "the specification is cut to the slice");
     assert_eq!(first.design, DESIGN_MD, "the design is whole");
     assert_eq!(first.plan, PLAN_001, "the plan entry is the slice's own");
     assert_eq!(first.base, BASE, "the first wave builds over the base");
     assert_eq!(second.id, "SLICE-002");
+    assert_eq!(second.part, "PART-002");
     assert_eq!(second.name, "orders");
+    assert_eq!((second.index, second.count), (1, 1));
     assert_eq!(second.spec, SPEC_002);
     assert_eq!(second.design, DESIGN_MD);
     assert_eq!(second.plan, PLAN_002);

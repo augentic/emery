@@ -140,6 +140,8 @@ pub struct TargetScript {
     pub versions: BTreeMap<String, String>,
     // The merge rules every adapter declares.
     pub rules: Vec<MergeRule>,
+    // The default slice budget every adapter declares.
+    pub budget: Option<u32>,
     // Every init dispatch, recorded in dispatch order: the workspace root.
     pub inits: Arc<Mutex<Vec<String>>>,
     // Every build dispatch, recorded in dispatch order: the adapter id, the
@@ -453,6 +455,7 @@ impl<S: Send + Sync + 'static> Target for Provider<S> {
         TargetMetadata {
             emery_version: self.target.versions.get(id).cloned(),
             merge_rules: self.target.rules.clone(),
+            budget: self.target.budget,
         }
     }
 }
