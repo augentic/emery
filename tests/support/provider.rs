@@ -598,5 +598,8 @@ pub fn retire(id: &str, statement: &str) -> Claim {
 
 // Builds an evidence document over `claims`.
 pub const fn evidence(claims: Vec<Claim>) -> Evidence {
-    Evidence { claims }
+    Evidence {
+        claims,
+        layouts: Vec::new(),
+    }
 }

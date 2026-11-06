@@ -11,6 +11,7 @@
 pub(crate) mod bindings;
 mod capability;
 mod evidence;
+mod layout;
 
 #[cfg(target_arch = "wasm32")]
 pub use bindings::export;
@@ -18,3 +19,4 @@ pub use capability::{Source, SourceContent, SourceInput, SourceMetadata};
 pub use evidence::{
     Anchor, Backing, BadAnchor, CLAIM_ID_REGEX, Claim, ClaimKind, Evidence, SourceKind,
 };
+pub use layout::{Layout, LayoutView};

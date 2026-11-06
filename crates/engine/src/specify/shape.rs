@@ -65,7 +65,7 @@ mod tests {
         let evidence = evidence();
         assert_eq!(kinds(&evidence), "requirement=3 type=2 call=1");
         assert_eq!(stems(&evidence), "start=2 orders=1");
-        assert_eq!(kinds(&Evidence { claims: vec![] }), "");
-        assert_eq!(stems(&Evidence { claims: vec![] }), "");
+        assert_eq!(kinds(&Evidence::default()), "");
+        assert_eq!(stems(&Evidence::default()), "");
     }
 }

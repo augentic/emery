@@ -635,6 +635,7 @@ impl Run<'_> {
             design: self.rendered.to_owned(),
             plan: slice.to_string(),
             base: head.to_owned(),
+            layouts: Vec::new(),
         };
         tracing::info!(requirements = input.requirements.len(), wave, "building slice");
 

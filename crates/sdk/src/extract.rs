@@ -811,7 +811,10 @@ fn join(
     }
 
     match failed.as_slice() {
-        [] => Ok(Evidence { claims }),
+        [] => Ok(Evidence {
+            claims,
+            layouts: Vec::new(),
+        }),
         [(_, only)] if count == 1 => Err(only.clone()),
         [(_, first), ..] => {
             let report: Vec<String> = failed

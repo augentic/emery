@@ -104,8 +104,8 @@ use std::path::Path;
 #[doc(inline)]
 pub use emery_adapter::target::export;
 pub use emery_adapter::target::{
-    DesignType, MergeRule, MergeStrategy, Outcome, Report, Requirement, Scenario, Slice,
-    TargetMetadata, Verdict,
+    AttachedLayout, DesignType, MergeRule, MergeStrategy, Outcome, Report, Requirement, Scenario,
+    Slice, TargetMetadata, Verdict,
 };
 use emery_prose::Doc;
 use omnia_sdk::model::{Question, WorkerGrant};
