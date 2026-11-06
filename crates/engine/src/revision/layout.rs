@@ -1,10 +1,10 @@
 //! Defines the content-addressed layout a `## UI / layout` section names.
 //!
 //! A source may record a layout whole: a body the engine stores by its
-//! [`LayoutDigest`] and never reads. The design holds a [`Layout`] block
+//! [`LayoutDigest`] and never parses. The design holds a [`Layout`] block
 //! naming the body by digest, with images rendered from it for review; the
-//! body itself stands in the engine's storage and is delivered to every
-//! slice a target builds.
+//! body itself is sealed under `spec/layouts/<hex>` and delivered from that
+//! tree to every slice a target builds.
 
 use std::fmt::{self, Display, Formatter};
 use std::str::FromStr;
@@ -18,7 +18,8 @@ pub const LAYOUT: &str = "Layout:";
 
 const SCHEME: &str = "sha256:";
 
-/// The `sha256:<hex>` digest of a layout body, its address in storage.
+/// The `sha256:<hex>` digest of a layout body: its name under `spec/layouts/`
+/// and the key it is stored under until the seal.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[serde(try_from = "String", into = "String")]
 pub struct LayoutDigest(String);

@@ -748,7 +748,14 @@ pub async fn commit<P: Vcs + Files + StateStore + BlobStore>(
         }
     };
 
-    let sealed = seal_copy(provider, repo, &documents, layouts, &message, &copy).await;
+    let gzip = sealing
+        .revision
+        .design
+        .layouts()
+        .filter(|layout| layout.media_type.ends_with("+gzip"))
+        .map(|layout| layout_path(layout.digest.hex()))
+        .collect();
+    let sealed = seal_copy(provider, repo, &documents, layouts, &message, &copy, &gzip).await;
     if cut {
         copy.remove(provider).await?;
     }
@@ -887,6 +894,7 @@ pub fn label(id: &str) -> String {
 async fn seal_copy<P: Vcs + Files>(
     provider: &P, repo: &BuildRepo, documents: &Documents,
     layouts: Vec<(LayoutDigest, Option<Vec<u8>>)>, message: &RevisionMessage, copy: &WorkingCopy,
+    gzip: &BTreeSet<String>,
 ) -> Result<String, Error> {
     let at = copy.path();
     let over = message.base.as_deref();
@@ -907,8 +915,13 @@ async fn seal_copy<P: Vcs + Files>(
             Some(body) => body,
             None if held.contains(digest.hex()) => {
                 let body = provider.read(at, &layout_path(digest.hex())).await?;
-                if LayoutDigest::of(&body) != digest {
-                    return Err(layout_missing(&digest));
+                let actual = LayoutDigest::of(&body);
+                if actual != digest {
+                    return Err(mismatch(format!(
+                        "`{LAYOUTS}/{}` in the tree the seal lands over holds the bytes of \
+                         `{actual}`, not `{digest}`",
+                        digest.hex()
+                    )));
                 }
                 body
             }
@@ -931,7 +944,7 @@ async fn seal_copy<P: Vcs + Files>(
 
     // what changed, held to the secret gate and sealed
     let pending = copy.pending(provider).await?;
-    let leaks = secrets::findings(provider, at, &pending).await?;
+    let leaks = secrets::findings(provider, at, &pending, gzip).await?;
     if !leaks.is_empty() {
         return Err(secrets::refusal("the seal", &leaks));
     }

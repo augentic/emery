@@ -8,16 +8,17 @@ mod verbs;
 
 use std::sync::Arc;
 
-use emery_adapter::source::{ClaimKind, SourceKind};
+use emery_adapter::source::{ClaimKind, Layout as RecordedLayout, LayoutView, SourceKind};
 use emery_engine::amend::SliceClass;
 use emery_engine::vcs::{REVISION, RevisionMessage, SliceSummary, Summary};
 use emery_engine::{REVISION_KEY, STAGED_CONTAINER, STAGED_KEY};
 use omnia_sdk::vcs::Error;
 use omnia_test::SeenFormat;
-use serde_json::Value;
+use serde_json::{Value, json};
+use sha2::{Digest as _, Sha256};
 use support::provider::{Provider, claim, cli, evidence, requirement, retire};
 use support::scratch::Scratch;
-use support::store::{seed, stage, stage_amendment, written};
+use support::store::{seed, seed_layouts, stage, stage_amendment, written};
 use support::vcs::HEAD;
 use support::{cli_ok, fail};
 use verbs::verbs;
@@ -3087,6 +3088,111 @@ async fn amend_target_required() {
         envelope["hint"].as_str().is_some_and(|hint| hint.contains("emery amend")),
         "{envelope}"
     );
+}
+
+fn recorded(body: &[u8]) -> RecordedLayout {
+    RecordedLayout {
+        media_type: "application/json".into(),
+        body: body.to_vec(),
+        views: vec![LayoutView {
+            label: "320px wide".into(),
+            media_type: "image/svg+xml".into(),
+            body: "<svg/>".into(),
+        }],
+    }
+}
+
+fn digest_of(body: &[u8]) -> String {
+    format!("sha256:{}", hex::encode(Sha256::digest(body)))
+}
+
+// `DESIGN` naming one layout per `(source, body)`, and the files `spec/layouts/` holds for them.
+fn design_with(layouts: &[(&str, &[u8])]) -> (Vec<u8>, Vec<(String, Vec<u8>)>) {
+    let mut design: Value = serde_json::from_slice(DESIGN).expect("design JSON");
+    let mut blocks = Vec::new();
+    let mut files = Vec::new();
+    for (source, body) in layouts {
+        let digest = digest_of(body);
+        files.push((digest.trim_start_matches("sha256:").to_owned(), body.to_vec()));
+        blocks.push(json!({"layout": {
+            "digest": digest,
+            "media-type": "application/json",
+            "size": body.len(),
+            "source": source,
+            "views": [{"label": "320px wide", "media-type": "image/svg+xml", "body": "<svg/>"}],
+        }}));
+    }
+    design["sections"].as_array_mut().expect("sections").push(json!({
+        "kind": "ui-layout",
+        "blocks": blocks,
+    }));
+    let mut bytes = serde_json::to_vec_pretty(&design).expect("the design serialises");
+    bytes.push(b'\n');
+    (bytes, files)
+}
+
+fn layout_digests(design: &Value) -> Vec<String> {
+    design["sections"]
+        .as_array()
+        .expect("sections")
+        .iter()
+        .find(|section| section["kind"] == "ui-layout")
+        .expect("ui-layout")["blocks"]
+        .as_array()
+        .expect("blocks")
+        .iter()
+        .filter_map(|block| block["layout"]["digest"].as_str().map(str::to_owned))
+        .collect()
+}
+
+// An amend whose source records a layout again replaces the layouts that
+// source contributed: the new body is named, the old one is not, and a
+// layout another source recorded stays. The same body again is no change,
+// so nothing is staged and the sealed layouts stand.
+#[tokio::test]
+async fn amend_layouts() {
+    let old = br#"{"root":"old"}"#;
+    let kept = br#"{"root":"kept"}"#;
+    let new = br#"{"root":"new"}"#;
+    let (design, files) = design_with(&[("docs", old), ("wiki", kept)]);
+    let mut provider = Provider::idle();
+    let mut recorded_docs = evidence(vec![]);
+    recorded_docs.layouts.push(recorded(new));
+    provider.source.evidence.insert("docs".to_owned(), Ok(recorded_docs));
+    seed(&provider.files, SPEC, &design, PLAN);
+    seed_layouts(&provider.files, &files);
+
+    cli_ok(&provider, &["emery", "amend", DOCS, "--config", PROJECT_CONFIG]).await;
+
+    let (_, amendment) = staged_amendment(&provider);
+    assert_eq!(
+        layout_digests(&amendment["design"]),
+        [digest_of(kept), digest_of(new)],
+        "the docs layout is replaced and the wiki layout stays: {amendment}"
+    );
+    assert!(!layout_digests(&amendment["design"]).contains(&digest_of(old)));
+    assert!(provider.model.seen().is_empty(), "a layout names no requirement, so no turn");
+
+    let (design, files) = design_with(&[("docs", old)]);
+    let mut provider = Provider::idle();
+    let mut same = evidence(vec![]);
+    same.layouts.push(recorded(old));
+    provider.source.evidence.insert("docs".to_owned(), Ok(same));
+    let revision = seed(&provider.files, SPEC, &design, PLAN);
+    seed_layouts(&provider.files, &files);
+
+    let resp = cli_ok(&provider, &["emery", "amend", DOCS, "--config", PROJECT_CONFIG]).await;
+
+    assert_eq!(
+        String::from_utf8_lossy(&resp.stdout),
+        format!(
+            "nothing staged: no change against the current revision\n  base {revision} at {}\n  0 \
+             added, 0 changed, 0 retired, 0 conflict, 4 unchanged\n",
+            &HEAD[..8]
+        )
+    );
+    assert!(provider.storage.state(STAGED_KEY).is_none(), "nothing is staged");
+    assert!(provider.files.writes().is_empty(), "the sealed layouts are not rewritten");
 }
 
 // The verb is a public one: the top-level help and the completions list it

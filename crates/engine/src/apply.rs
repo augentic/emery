@@ -72,8 +72,8 @@ use crate::vcs::{BuildRepo, TargetRef};
 ///   - with code `base-not-sealed`, when the project repository has no
 ///     commit to seal over;
 ///   - with code `secret-detected`, when a document or a layout carries a
-///     credential; a layout is scanned as the bytes it is sealed as, so
-///     one stored compressed is not looked inside.
+///     credential; a layout whose media type ends in `+gzip` is inflated,
+///     up to 16 MiB, and scanned as those bytes.
 /// - Returns [`Error::BadGateway`] when the remote refuses, cannot be
 ///   reached, or wants credentials.
 /// - Returns [`Error::ServerError`] when storage or version control fails,

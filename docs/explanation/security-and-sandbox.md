@@ -124,7 +124,7 @@ Before reading any file contents during a build, Emery checks the list of modifi
 
 ### The secret gate (`secret-detected`)
 
-Next, Emery scans every added or modified path in the worktree (`crates/engine/src/secrets.rs`). Each path is read through `Files::read` exactly as Git would commit it—regular files as their raw bytes, and symbolic links as their link target string (never following the symlink)—so even a broken symlink whose target string contains a token is caught. The same gate runs when [`emery apply`](../reference/cli/apply.md) seals a revision, over the three documents and every layout written under `spec/layouts/`. A layout is scanned as the bytes it is sealed as: a compressed body (such as a gzip rendered layout) is not decompressed, so a token inside it is not seen.
+Next, Emery scans every added or modified path in the worktree (`crates/engine/src/secrets.rs`). Each path is read through `Files::read` exactly as Git would commit it—regular files as their raw bytes, and symbolic links as their link target string (never following the symlink)—so even a broken symlink whose target string contains a token is caught. The same gate runs when [`emery apply`](../reference/cli/apply.md) seals a revision, over the three documents and every layout written under `spec/layouts/`. A layout whose media type ends in `+gzip` is inflated first, up to 16 MiB, and those bytes are scanned; past that cap, or where the member is not gzip, the seal stops rather than commit a layout it has not read.
 
 A change is rejected with `secret-detected` (exit code `1`) if it matches either rule:
 

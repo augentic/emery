@@ -118,7 +118,21 @@ impl Design {
 
     // Appends to `## UI / layout` each of `layouts` it does not already
     // name, opening the section in vocabulary order where the design has none.
+    // A layout recorded again by a source replaces every layout that source
+    // already contributed, so an amendment carries the source's layouts as
+    // they were recorded this time and not also the ones they succeed.
     pub fn attach(&mut self, layouts: Vec<Layout>) {
+        let replacing: BTreeSet<String> =
+            layouts.iter().map(|layout| layout.source.clone()).collect();
+        for section in &mut self.sections {
+            if section.kind != SectionKind::UiLayout {
+                continue;
+            }
+            section.blocks.retain(|block| match block {
+                Block::Layout(held) => !replacing.contains(&held.source),
+                Block::Text(_) | Block::Type { .. } => true,
+            });
+        }
         for layout in layouts {
             if self.layouts().any(|held| held.digest == layout.digest) {
                 continue;

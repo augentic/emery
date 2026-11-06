@@ -946,7 +946,7 @@ async fn gated<P: Files>(
             ),
         });
     }
-    let leaks = secrets::findings(provider, at, pending).await?;
+    let leaks = secrets::findings(provider, at, pending, &BTreeSet::new()).await?;
     if !leaks.is_empty() {
         return Err(secrets::refusal(wrote, &leaks));
     }

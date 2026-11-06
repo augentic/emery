@@ -16,6 +16,7 @@ base64.workspace = true
 emery-adapter.workspace = true
 emery-lexicon.workspace = true
 emery-prose.workspace = true
+flate2.workspace = true
 futures.workspace = true
 hex.workspace = true
 omnia-sdk.workspace = true

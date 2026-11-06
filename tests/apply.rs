@@ -4,11 +4,14 @@
 
 mod support;
 
+use std::io::Write;
 use std::sync::Arc;
 
 use emery_engine::amend::SliceClass;
 use emery_engine::vcs::{REVISION, RevisionMessage, SliceSummary, Summary};
 use emery_engine::{EntryKind, REVISION_KEY, STAGED_CONTAINER, STAGED_KEY};
+use flate2::Compression;
+use flate2::write::GzEncoder;
 use omnia_sdk::BlobStore;
 use omnia_sdk::vcs::{Change, ChangeKind, Error};
 use serde_json::{Value, json};
@@ -232,6 +235,90 @@ async fn apply_layout_missing() {
     stage(&provider.storage, SPEC, &design, WIDE_PLAN);
     fail(&provider, &["emery", "apply", "--config", PROJECT_CONFIG], 1, "spec-mismatch").await;
     assert!(provider.files.writes().is_empty(), "nothing is written");
+}
+
+fn gzip(plain: &[u8]) -> Vec<u8> {
+    let mut encoder = GzEncoder::new(Vec::new(), Compression::default());
+    encoder.write_all(plain).expect("gzip");
+    encoder.finish().expect("gzip")
+}
+
+// A layout whose media type ends in `+gzip` is scanned as its inflated
+// bytes: a token inside the member is `secret-detected` and nothing is
+// sealed, a member that is not gzip is the engine's fault, and a member
+// that carries nothing seals as the stored bytes.
+#[tokio::test]
+async fn apply_layout_gzip_scanned() {
+    let token = b"ghp_abcdefghijklmnopqrstuvwxyz0123456789";
+    let leaked = gzip(token);
+    let (design, digest) = gzip_layout(&leaked);
+    let provider = Provider::idle();
+    let hex = store_layout(&provider, &leaked).await;
+    stage(&provider.storage, SPEC, &design, PLAN);
+    provider.vcs.pending.script(
+        REVISION,
+        Ok(vec![Change {
+            path: layout(&hex),
+            kind: ChangeKind::Added,
+        }]),
+    );
+    let envelope =
+        fail(&provider, &["emery", "apply", "--config", PROJECT_CONFIG], 1, "secret-detected")
+            .await;
+    assert!(
+        envelope["message"]
+            .as_str()
+            .is_some_and(|message| message.contains(&format!("spec/layouts/{hex}"))),
+        "{envelope}"
+    );
+    assert!(provider.vcs.messages().is_empty(), "nothing is sealed");
+    assert_eq!(digest.strip_prefix("sha256:"), Some(hex.as_str()));
+
+    let provider = Provider::idle();
+    let (design, _) = gzip_layout(b"not gzip");
+    let hex = store_layout(&provider, b"not gzip").await;
+    stage(&provider.storage, SPEC, &design, PLAN);
+    provider.vcs.pending.script(
+        REVISION,
+        Ok(vec![Change {
+            path: layout(&hex),
+            kind: ChangeKind::Added,
+        }]),
+    );
+    let envelope =
+        fail(&provider, &["emery", "apply", "--config", PROJECT_CONFIG], 3, "server_error").await;
+    assert!(
+        envelope["message"].as_str().is_some_and(|message| message.contains("compressed layout")),
+        "{envelope}"
+    );
+
+    let plain = br#"{"root":"n0"}"#;
+    let stored = gzip(plain);
+    let (design, digest) = gzip_layout(&stored);
+    let provider = Provider::idle();
+    let hex = store_layout(&provider, &stored).await;
+    stage(&provider.storage, SPEC, &design, PLAN);
+    provider.vcs.pending.script(
+        REVISION,
+        Ok(vec![Change {
+            path: layout(&hex),
+            kind: ChangeKind::Added,
+        }]),
+    );
+    cli_ok(&provider, &["emery", "apply", "--config", PROJECT_CONFIG]).await;
+    assert_eq!(sealed_layouts(&provider.files), [(hex, stored)]);
+    assert_eq!(digest.strip_prefix("sha256:"), Some(sealed_layouts(&provider.files)[0].0.as_str()));
+}
+
+fn gzip_layout(body: &[u8]) -> (Vec<u8>, String) {
+    let (design, digest) = laid_out(DESIGN, body);
+    let mut design: Value = serde_json::from_slice(&design).expect("design JSON");
+    design["sections"].as_array_mut().expect("sections").last_mut().expect("the layout section")
+        ["blocks"][0]["layout"]["media-type"] =
+        json!("application/vnd.emery.web-rendered-layout+gzip");
+    let mut bytes = serde_json::to_vec_pretty(&design).expect("the design serialises");
+    bytes.push(b'\n');
+    (bytes, digest)
 }
 
 // Sealing over a current revision displaces it: the new commit lands over
