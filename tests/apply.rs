@@ -244,7 +244,7 @@ fn gzip(plain: &[u8]) -> Vec<u8> {
 }
 
 // A layout whose media type ends in `+gzip` is scanned as its inflated
-// bytes: a token inside the member is `secret-detected` and nothing is
+// bytes: a token inside any member is `secret-detected` and nothing is
 // sealed, a member that is not gzip is the engine's fault, and a member
 // that carries nothing seals as the stored bytes.
 #[tokio::test]
@@ -273,6 +273,22 @@ async fn apply_layout_gzip_scanned() {
     );
     assert!(provider.vcs.messages().is_empty(), "nothing is sealed");
     assert_eq!(digest.strip_prefix("sha256:"), Some(hex.as_str()));
+
+    let mut multi = gzip(br#"{"root":"n0"}"#);
+    multi.extend(gzip(token));
+    let (design, _) = gzip_layout(&multi);
+    let provider = Provider::idle();
+    let hex = store_layout(&provider, &multi).await;
+    stage(&provider.storage, SPEC, &design, PLAN);
+    provider.vcs.pending.script(
+        REVISION,
+        Ok(vec![Change {
+            path: layout(&hex),
+            kind: ChangeKind::Added,
+        }]),
+    );
+    fail(&provider, &["emery", "apply", "--config", PROJECT_CONFIG], 1, "secret-detected").await;
+    assert!(provider.vcs.messages().is_empty(), "a token past the first member is not sealed");
 
     let provider = Provider::idle();
     let (design, _) = gzip_layout(b"not gzip");

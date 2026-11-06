@@ -9,7 +9,7 @@
 use std::collections::BTreeSet;
 use std::io::Read;
 
-use flate2::read::GzDecoder;
+use flate2::read::MultiGzDecoder;
 use omnia_sdk::vcs::{Change, ChangeKind};
 use omnia_sdk::{Error, server_error};
 
@@ -204,11 +204,11 @@ pub async fn findings<F: Files>(
     Ok(findings)
 }
 
-// The bytes of a gzip member, refused past [`INFLATED_CAP`] so a layout the
-// gate cannot read is not sealed.
+// The bytes of every member of a gzip stream, refused past
+// [`INFLATED_CAP`] so a layout the gate cannot read is not sealed.
 fn inflate(bytes: &[u8]) -> Result<Vec<u8>, Error> {
     let mut inflated = Vec::new();
-    GzDecoder::new(bytes)
+    MultiGzDecoder::new(bytes)
         .take(INFLATED_CAP + 1)
         .read_to_end(&mut inflated)
         .map_err(|error| server_error!("reading a compressed layout: {error}"))?;
