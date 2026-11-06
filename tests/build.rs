@@ -12,13 +12,13 @@ use emery_engine::vcs::REVISION;
 use emery_engine::{EntryKind, REVISION_KEY};
 use omnia_sdk::model::{Error as ModelError, Reply};
 use omnia_sdk::vcs::{Change, ChangeKind, Entry, Error, Merged, Rule, Strategy};
-use omnia_sdk::{bad_gateway, bad_request};
+use omnia_sdk::{BlobStore, bad_gateway, bad_request};
 use omnia_test::SeenFormat;
 use omnia_test::guest::Scripted;
 use serde_json::{Value, json};
 use support::provider::{Provider, Rendezvous, cli, digest};
 use support::scratch::Scratch;
-use support::store::{seed, stage, stage_amendment};
+use support::store::{carry, laid_out, seed, seed_layouts, stage, stage_amendment};
 use support::vcs::HEAD;
 use support::{cli_ok, fail};
 
@@ -479,6 +479,96 @@ async fn build_plan() {
     assert_eq!(provider.storage.snapshot(), before, "a build writes no engine state");
     provider.model.assert_exhausted();
     provider.vcs.assert_exhausted();
+}
+
+// Every slice carries each layout the design names, whole, beside the
+// design rendered less its images. The body is the one sealed under
+// `spec/layouts/`: the revision is sealed with its layout and carried to a
+// repository whose engine storage holds no layout, as a fresh clone's does.
+#[tokio::test]
+async fn build_layout() {
+    let body = br#"{"root":"n0"}"#;
+    let (design, digest) = laid_out(DESIGN, body);
+    let sealed = Provider::idle();
+    stage(&sealed.storage, SPEC, &design, PLAN);
+    BlobStore::create_container(&*sealed.storage, "layouts").await.expect("container");
+    let hex = digest.strip_prefix("sha256:").expect("the scheme");
+    BlobStore::put(&*sealed.storage, "layouts", hex, body).await.expect("stored");
+    cli_ok(&sealed, &["emery", "apply", "--config", PROJECT_CONFIG]).await;
+
+    let provider = Provider::idle();
+    carry(&sealed.files, &provider.files);
+    assert!(provider.storage.objects("layouts").is_empty(), "the storage holds no layout");
+    provider.vcs.heads.script(".", Ok(BASE.to_owned()));
+    wrote(&provider, AUTHENTICATION);
+    wrote(&provider, ORDERS);
+
+    cli_ok(&provider, &["emery", "build", "--config", PROJECT_CONFIG]).await;
+
+    let calls = provider.target.calls();
+    assert_eq!(calls.len(), 2, "{calls:?}");
+    let line =
+        format!("Layout: {digest} (application/json, {} bytes, recorded by `page`)", body.len());
+    for (_, slice, _) in &calls {
+        let [layout] = slice.layouts.as_slice() else {
+            panic!("one layout per slice: {:?}", slice.layouts);
+        };
+        assert_eq!(layout.digest, digest);
+        assert_eq!(layout.media_type, "application/json");
+        assert_eq!(layout.body, body);
+        assert!(
+            slice.design.trim_end().ends_with(&format!("## UI / layout\n\n{line}")),
+            "{}",
+            slice.design
+        );
+        assert!(!slice.design.contains("data:image"), "the images stay out of the slice's design");
+    }
+}
+
+// A sealed tree whose `spec/layouts/` is not exactly the layouts the design
+// names, each under its digest, is `spec-mismatch` before any adapter loads:
+// a body missing, though the engine's storage holds it, one rewritten, one
+// the design names no layout by, and a directory where only files stand.
+#[tokio::test]
+async fn build_layout_refused() {
+    let body = br#"{"root":"n0"}"#;
+    let (design, digest) = laid_out(DESIGN, body);
+    let hex = digest.strip_prefix("sha256:").expect("the scheme").to_owned();
+    let cases = [
+        (Vec::new(), format!("lacks `{hex}`, which layout `{digest}` stands under")),
+        (
+            vec![(hex.clone(), b"other".to_vec())],
+            format!("holds `{hex}` with the bytes of `sha256:"),
+        ),
+        (
+            vec![(hex.clone(), body.to_vec()), ("stray".to_owned(), b"stray".to_vec())],
+            "holds `stray`, which the design names no layout by".to_owned(),
+        ),
+        (vec![(hex.clone(), body.to_vec())], "`layouts/nested/`".to_owned()),
+    ];
+    for (index, (layouts, clause)) in cases.into_iter().enumerate() {
+        let provider = Provider::idle();
+        seed(&provider.files, SPEC, &design, PLAN);
+        seed_layouts(&provider.files, &layouts);
+        if index == 0 {
+            BlobStore::create_container(&*provider.storage, "layouts").await.expect("container");
+            BlobStore::put(&*provider.storage, "layouts", &hex, body).await.expect("stored");
+        }
+        if index == 3 {
+            provider.files.lists(
+                REVISION,
+                "spec/layouts",
+                &[(hex.as_str(), EntryKind::File), ("nested", EntryKind::Directory)],
+            );
+        }
+
+        let envelope =
+            fail(&provider, &["emery", "build", "--config", PROJECT_CONFIG], 1, "spec-mismatch")
+                .await;
+        assert!(envelope["message"].as_str().expect("message").contains(&clause), "{envelope}");
+        assert!(provider.target.metadata.lock().expect("metadata").is_empty(), "no adapter loads");
+        assert!(provider.target.calls().is_empty(), "no slice is built");
+    }
 }
 
 // The slices ready at once are built at once, each over the wave's head in
@@ -2411,6 +2501,21 @@ async fn build_outdated() {
         fail(&provider, &["emery", "build", "--config", PROJECT_CONFIG], 1, "spec-outdated").await;
     assert_message(&envelope, "grammar 1");
     assert!(provider.target.metadata.lock().expect("metadata").is_empty(), "nothing loads");
+
+    // the grammar before layouts were sealed beside the documents
+    let stamped = |document: &[u8]| {
+        std::str::from_utf8(document).expect("UTF-8").replace("\"emery\": 9", "\"emery\": 8")
+    };
+    let provider = Provider::idle();
+    seed(
+        &provider.files,
+        stamped(SPEC).as_bytes(),
+        stamped(DESIGN).as_bytes(),
+        stamped(PLAN).as_bytes(),
+    );
+    let envelope =
+        fail(&provider, &["emery", "build", "--config", PROJECT_CONFIG], 1, "spec-outdated").await;
+    assert_message(&envelope, "grammar 8");
 }
 
 // The target's `emery-version` pin is gated as a source adapter's is, before

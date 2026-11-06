@@ -31,7 +31,7 @@ pub use crate::revision::{
 use crate::revision::{Design, EMERY};
 use crate::specify::{
     BASELINE, Bound, DesignAmend, Extracted, GroupingBrief, RepositorySource, SourceConfig,
-    SpecBrief,
+    SpecBrief, layouts,
 };
 use crate::vcs::{BuildRepo, TargetRef};
 use crate::{Files, apply, store};
@@ -175,10 +175,11 @@ pub async fn amend<P: Model + Source + StateStore + BlobStore + Plugins + Vcs + 
     // and the pruned base itself otherwise
     let chunks = SpecBrief::amending(&extracts, &drafted);
     let drafting = future::try_join_all(chunks.into_iter().map(|chunk| chunk.judge(provider)));
-    let (drafts, design) = match DesignAmend::new(&extracts, &drafted, &changes, &base_design) {
+    let (drafts, mut design) = match DesignAmend::new(&extracts, &drafted, &changes, &base_design) {
         Some(brief) => future::try_join(drafting, brief.judge(provider)).await?,
         None => (drafting.await?, base_design),
     };
+    design.attach(layouts(provider, &extracts).await?);
     let spec = SpecBrief::amend(&revision.spec, current.id.clone(), &changes, drafts);
 
     // the amended plan over the two: what the change adds and moves placed

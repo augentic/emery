@@ -10,7 +10,7 @@ use std::future::Future;
 use std::path::Path;
 use std::{fs, io};
 
-use emery_adapter::{standing, write_whole};
+use emery_adapter::{Standing, standing, write_whole};
 use emery_engine::{Entry, EntryKind, Files};
 use omnia_sdk::api::command::{self, Response};
 use omnia_sdk::{BlobStore, Error, Model, Plugins, StateStore, Vcs, server_error};
@@ -47,6 +47,21 @@ impl Files for Provider {
         let outcome = written(Path::new(at), path, bytes)
             .map_err(|error| server_error!("writing `{path}` under `{at}`: {error}"));
         async move { outcome }
+    }
+
+    fn remove(&self, at: &str, path: &str) -> impl Future<Output = Result<(), Error>> + Send {
+        let outcome = removed(Path::new(at), path)
+            .map_err(|error| server_error!("removing `{path}` under `{at}`: {error}"));
+        async move { outcome }
+    }
+}
+
+// Removes the file at `path` beneath `root` as `written` writes one: a link
+// anywhere on the path is refused rather than followed.
+fn removed(root: &Path, path: &str) -> io::Result<()> {
+    match standing(root, path).map_err(io::Error::other)? {
+        Standing::Absent => Ok(()),
+        Standing::File => fs::remove_file(root.join(path)),
     }
 }
 

@@ -525,7 +525,7 @@ const STORED: &str =
 fn describing(apis: &[&str]) -> String {
     let blocks: Vec<String> = apis.iter().map(|text| format!(r#"{{"text": "{text}"}}"#)).collect();
     format!(
-        r#"{{"emery": 8, "parent": null, "preamble": [], "sections": [
+        r#"{{"emery": 9, "parent": null, "preamble": [], "sections": [
             {{"kind": "overview", "blocks": [{{"text": "{OVERVIEW}"}}]}},
             {DOMAIN_MODEL},
             {{"kind": "apis", "blocks": [{}]}}
@@ -683,7 +683,7 @@ async fn amend_retired_overview() {
     let cited = "Sign-in issues a session; orders are placed (REQ-003) and cancelled (REQ-004) \
                  under it.";
     let base = format!(
-        r#"{{"emery": 8, "parent": null, "preamble": [], "sections": [
+        r#"{{"emery": 9, "parent": null, "preamble": [], "sections": [
             {{"kind": "overview", "blocks": [{{"text": "{cited}"}}]}},
             {DOMAIN_MODEL}
         ]}}"#
@@ -740,7 +740,7 @@ async fn amend_revised_dropped() {
     let cited = "Sign-in issues a session; orders are placed (REQ-003) and cancelled (REQ-004) \
                  under it.";
     let base = format!(
-        r#"{{"emery": 8, "parent": null, "preamble": [], "sections": [
+        r#"{{"emery": 9, "parent": null, "preamble": [], "sections": [
             {{"kind": "overview", "blocks": [{{"text": "{cited}"}}]}},
             {DOMAIN_MODEL},
             {{"kind": "apis", "blocks": [{{"text": "{STORED}"}}]}}
@@ -1767,10 +1767,10 @@ fn wide(count: usize) -> (Vec<u8>, Vec<u8>) {
         })
         .collect();
     let spec = serde_json::json!({
-        "emery": 8, "parent": null, "preamble": [], "requirements": requirements
+        "emery": 9, "parent": null, "preamble": [], "requirements": requirements
     });
     let plan = serde_json::json!({
-        "emery": 8, "parent": null, "preamble": [],
+        "emery": 9, "parent": null, "preamble": [],
         "slices": [{
             "id": "SLICE-001", "name": "orders", "requirements": ids,
             "types": ["orders.line", "orders.order"], "depends-on": [], "brief": []

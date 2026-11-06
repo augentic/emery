@@ -272,7 +272,9 @@ impl Git {
         let work = self.root.path().join("edit");
         let work_path = work.to_str().expect("scratch path is UTF-8");
         self.run(at, &["worktree", "add", "--quiet", "--detach", work_path, label]);
-        fs::write(work.join(path), content).expect("editing the document");
+        let file = work.join(path);
+        fs::create_dir_all(file.parent().expect("a parent")).expect("creating the directory");
+        fs::write(file, content).expect("editing the document");
         let commit = self.seal(&work, "hand edit");
         self.run(at, &["branch", "--force", label, &commit]);
         self.run(at, &["worktree", "remove", "--force", work_path]);
@@ -986,7 +988,7 @@ async fn specify_over_built() {
     assert_ok(&shown);
     let envelope: Value = serde_json::from_str(&shown.stdout).expect("the show envelope");
     assert_eq!(envelope["revision"], second);
-    assert_eq!(envelope["document"]["emery"], 8);
+    assert_eq!(envelope["document"]["emery"], 9);
     assert!(envelope["document"]["parent"].is_null(), "drafted from the sources: {envelope}");
 
     // one build at a time, so the turns arrive in slice order; the layout
@@ -1675,6 +1677,35 @@ async fn show_spec_mismatch() {
     let shown = roots.run_idle(&["show", "spec"], &backends).await;
     assert_ok(&shown);
     assert!(shown.stdout.contains(&format!("revision: {revision}\n")), "{}", shown.stdout);
+}
+
+// A file under `spec/layouts/` the design names no layout by is no seal's:
+// the label's tree is refused naming it, by `show` and `build` alike, and
+// reads again once the label is back at the sealed commit.
+#[tokio::test]
+async fn show_layout_stray() {
+    let (roots, backends, _) = specified().await;
+    let project = roots.project.path();
+    let sealed = roots.git.labelled(project);
+    let revision = roots.git.revision_at(project, &sealed);
+    let label = format!("emery/{revision}");
+    let edited = roots.git.edited(project, &label, "spec/layouts/stray", "stray\n");
+
+    let run = roots.run_idle(&["--format", "json", "show", "spec"], &backends).await;
+
+    let envelope = refused(&run, 1, "spec-mismatch");
+    assert_message(
+        &envelope,
+        &format!(
+            "`spec/layouts/` at commit `{edited}` holds `stray`, which the design names no layout \
+             by"
+        ),
+    );
+    let run = roots.run_idle(&["--format", "json", "build"], &backends).await;
+    refused(&run, 1, "spec-mismatch");
+
+    roots.git.run(project, &["branch", "--force", &label, &sealed]);
+    assert_ok(&roots.run_idle(&["show", "spec"], &backends).await);
 }
 
 // A `spec/` the operator holds at the head is theirs: the seal is refused

@@ -12,6 +12,7 @@ mod amendment;
 mod design;
 mod diff;
 mod id;
+mod layout;
 mod plan;
 mod spec;
 
@@ -32,6 +33,7 @@ pub use self::design::{Block, Design, Role, Section, SectionKind, TYPE, citation
 use self::diff::BRIEF;
 pub use self::diff::{Changed, DesignDiff, Diff, Entry, PlanDiff, Retired, SliceEntry, SpecDiff};
 pub use self::id::{BadId, ReqId, SliceId, leads, stem, substem};
+pub use self::layout::{LAYOUT, Layout, LayoutDigest, LayoutView};
 use self::plan::{DEPENDS_ON, REQUIREMENTS, TYPES};
 pub use self::plan::{Plan, Slice, Waves, ranks};
 pub use self::spec::{Cited, Loser, Requirement, Scenario, Spec, Status};
@@ -40,15 +42,27 @@ use self::spec::{HEADING, ID, MESSAGE, NOTE, ROUTE, SOURCES, STATUS};
 // The revision grammar written and accepted by this engine.
 //
 // A stored revision stamped with another grammar is outdated.
-pub const EMERY: u32 = 8;
+pub const EMERY: u32 = 9;
 
 // Line prefixes reserved for engine-generated Markdown.
 //
 // `#`, so no draft line reads as a heading, and the engine's own line keys,
-// so no draft line passes as provenance, a trigger, a note, a type label,
-// or a slice's lists.
-pub const RESERVED: &[&str] =
-    &["#", ID, SOURCES, STATUS, ROUTE, MESSAGE, NOTE, TYPE, REQUIREMENTS, TYPES, DEPENDS_ON];
+// so no draft line passes as provenance, a trigger, a note, a type or
+// layout label, or a slice's lists.
+pub const RESERVED: &[&str] = &[
+    "#",
+    ID,
+    SOURCES,
+    STATUS,
+    ROUTE,
+    MESSAGE,
+    NOTE,
+    TYPE,
+    LAYOUT,
+    REQUIREMENTS,
+    TYPES,
+    DEPENDS_ON,
+];
 
 // A typed revision document stored as JSON and rendered as Markdown.
 pub trait Document: Serialize + DeserializeOwned + Display {

@@ -4,8 +4,8 @@
 //! [`specify`](crate::specify::specify) staged, or the amendment
 //! [`amend`](crate::amend::amend) staged — seals its three documents under
 //! `spec/` in the repository the target names as one commit labelled
-//! `emery/<id>`, and clears the slot, so `show` and `build` read it from
-//! then on.
+//! `emery/<id>`, with each layout its design names under `spec/layouts/`,
+//! and clears the slot, so `show` and `build` read it from then on.
 
 use omnia_sdk::api::Context;
 use omnia_sdk::{BlobStore, Error, StateStore, Vcs};
@@ -23,7 +23,12 @@ use crate::vcs::{BuildRepo, TargetRef};
 /// [`crate::vcs::SPECIFICATION`] in a working copy cut at the commit the current
 /// revision stands at, else at the repository's head, sealed as one commit
 /// whose message is a [`crate::vcs::RevisionMessage`] naming the displaced
-/// revision as parent, and labelled `emery/<id>`; where the current revision
+/// revision as parent, and labelled `emery/<id>`. In the same commit each
+/// layout the design names is written under `spec/layouts/<hex>`, named for
+/// its digest, from the engine's storage, where `specify` put it, or from
+/// the tree the seal lands over, held to its digest; every other file there
+/// is removed. The revision's id covers the three documents alone, the
+/// layouts bound through the digests the design names. Where the current revision
 /// amends an earlier one, only a candidate `specify` staged fresh seals,
 /// with no parent and over the repository's head, every earlier label left
 /// standing. An amendment's three documents are sealed the same way over
@@ -39,6 +44,9 @@ use crate::vcs::{BuildRepo, TargetRef};
 ///
 /// - Returns [`Error::NotFound`]:
 ///   - with code `nothing-staged`, when nothing is staged;
+///   - with code `layout-missing`, when the design names a layout neither
+///     the engine's storage nor the tree the seal lands over holds; nothing
+///     is written and what is staged stays staged;
 ///   - with code `revision-not-found`, when the repository the target
 ///     names does not exist or has no default branch, or what the run
 ///     already holds under the target's name was cloned or created under
@@ -54,14 +62,18 @@ use crate::vcs::{BuildRepo, TargetRef};
 ///   - with code `spec-outdated`, when the candidate or the revision the
 ///     repository holds uses a different grammar;
 ///   - with code `spec-mismatch`, when `spec/` in the repository is not the
-///     three documents of a revision, does not match the revision its
-///     label names, or, at a head no label names, holds documents that
-///     read as no revision, edited or merged by hand;
+///     three documents of a revision beside its layouts, does not match the
+///     revision its label names, holds under `spec/layouts/` other than
+///     exactly the layouts the design names, each under its digest, or, at
+///     a head no label names, holds documents that read as no revision,
+///     edited or merged by hand;
 ///   - with code `repository-required`, when the target names the project
 ///     checkout ([`crate::vcs::PROJECT`]) and the project is no repository;
 ///   - with code `base-not-sealed`, when the project repository has no
 ///     commit to seal over;
-///   - with code `secret-detected`, when a document carries a credential.
+///   - with code `secret-detected`, when a document or a layout carries a
+///     credential; a layout is scanned as the bytes it is sealed as, so
+///     one stored compressed is not looked inside.
 /// - Returns [`Error::BadGateway`] when the remote refuses, cannot be
 ///   reached, or wants credentials.
 /// - Returns [`Error::ServerError`] when storage or version control fails,

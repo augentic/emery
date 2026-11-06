@@ -8,14 +8,19 @@ use std::fs;
 use std::sync::Arc;
 use std::time::Duration;
 
-use emery_adapter::source::{Claim, ClaimKind, Evidence, SourceContent, SourceKind};
+use emery_adapter::source::{
+    Claim, ClaimKind, Evidence, Layout, LayoutView, SourceContent, SourceKind,
+};
 use emery_engine::{REVISION_KEY, STAGED_CONTAINER, STAGED_KEY};
 use omnia_sdk::model::{Error as ModelError, Reply};
 use omnia_sdk::{BlobStore, StateStore, bad_gateway, bad_request};
 use omnia_test::SeenFormat;
 use omnia_test::guest::{Memory, Scripted};
 use serde_json::Value;
-use support::provider::{Provider, Rendezvous, claim, digest, evidence, requirement, retire};
+use sha2::{Digest as _, Sha256};
+use support::provider::{
+    GREETING, Provider, Rendezvous, claim, digest, evidence, requirement, retire,
+};
 use support::scratch::Scratch;
 use support::store::{carry, seed, staged, staged_at, written};
 use support::{cli_ok, fail};
@@ -1440,6 +1445,76 @@ async fn version_too_new() {
     fail(&provider, &["emery", "specify", &reference("docs")], 1, "unsupported-version").await;
 }
 
+// A layout a source records whole is stored by its digest and named in
+// `## UI / layout`, its images inline in `design.md`; the design turn reads
+// none of it, and the same body stores at the same digest again.
+#[tokio::test]
+async fn layout_source() {
+    let mut provider =
+        Provider::answering([SPEC_ANSWER, DESIGN_ANSWER, SPEC_ANSWER, DESIGN_ANSWER]);
+    let body = br#"{"root":"n0"}"#.to_vec();
+    let digest = format!("sha256:{}", hex::encode(Sha256::digest(&body)));
+    let mut answered = evidence(vec![requirement("greeting.behaviour", GREETING)]);
+    answered.layouts.push(Layout {
+        media_type: "application/json".to_owned(),
+        body: body.clone(),
+        views: vec![LayoutView {
+            label: "320px wide".to_owned(),
+            media_type: "image/svg+xml".to_owned(),
+            body: "<svg/>".to_owned(),
+        }],
+    });
+    provider.source.evidence.insert("source".to_owned(), Ok(answered));
+
+    cli_ok(&provider, &["emery", "specify", SOURCE]).await;
+    let id = staged(&provider.storage);
+
+    // the body stands under its digest, and the design names it
+    let hex = digest.strip_prefix("sha256:").expect("the scheme");
+    assert_eq!(provider.storage.object("layouts", hex), Some(body.clone()));
+    let design: Value =
+        serde_json::from_slice(&staged_document(&provider.storage, &id, "design.json"))
+            .expect("design.json is JSON");
+    let sections = design["sections"].as_array().expect("sections");
+    let layout = sections
+        .iter()
+        .find(|section| section["kind"] == "ui-layout")
+        .map(|section| &section["blocks"][0]["layout"])
+        .expect("a `ui-layout` section opened for the layout");
+    assert_eq!(
+        *layout,
+        serde_json::json!({
+            "digest": digest,
+            "media-type": "application/json",
+            "size": body.len(),
+            "source": "source",
+            "views": [{"label": "320px wide", "media-type": "image/svg+xml", "body": "<svg/>"}],
+        })
+    );
+
+    // design.md shows the digest line and the image inline
+    let shown = shown(&provider, "design").await;
+    assert!(
+        shown.ends_with(&format!(
+            "## UI / layout\n\nLayout: {digest} (application/json, {} bytes, recorded by \
+             `source`)\n\n![320px wide](data:image/svg+xml;base64,PHN2Zy8+)\n",
+            body.len()
+        )),
+        "{shown}"
+    );
+
+    // the design turn was never shown the layout
+    assert!(provider.model.seen().iter().all(|turn| {
+        let request = turn.messages.join("\n");
+        !request.contains("n0") && !request.contains("<svg/>")
+    }));
+
+    // the same sources stage the same candidate
+    cli_ok(&provider, &["emery", "specify", SOURCE]).await;
+    assert_eq!(staged(&provider.storage), id, "the layout block is byte-stable");
+    provider.model.assert_exhausted();
+}
+
 // --- synthesis ---
 
 // Each refusal is one finding once the backend's rounds are spent; nothing
@@ -1851,7 +1926,7 @@ async fn dishonest_design() {
 
     let id = staged(&provider.storage);
     let rendered = format!(
-        "---\nemery: 8\nrevision: {id}\n---\n\n# Design\n\n## Overview\n\n\
+        "---\nemery: 9\nrevision: {id}\n---\n\n# Design\n\n## Overview\n\n\
          Requests arrive (from the browser) and (from docs) they route.\n\n\
          ## Domain model\n\nThe greeting payload is one string field.\n\n\
          Type: greeting.type\n```\n{signature}\n```\n"

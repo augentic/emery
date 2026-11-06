@@ -12,6 +12,7 @@ readme = "../../README.md"
 
 [dependencies]
 anyhow.workspace = true
+base64.workspace = true
 emery-adapter.workspace = true
 emery-lexicon.workspace = true
 emery-prose.workspace = true

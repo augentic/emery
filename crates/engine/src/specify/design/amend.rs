@@ -111,7 +111,7 @@ impl<'a> DesignAmend<'a> {
             && self.base.section(kind).is_some_and(|section| {
                 section.blocks.iter().all(|block| match block {
                     revision::Block::Text(text) => self.withdrawn(text),
-                    revision::Block::Type { .. } => false,
+                    revision::Block::Type { .. } | revision::Block::Layout(_) => false,
                 })
             })
     }
@@ -156,14 +156,26 @@ impl<'a> DesignAmend<'a> {
         for (position, block) in base.blocks.iter().enumerate() {
             let number = position + 1;
             let named = revised.contains(&number);
-            let revision::Block::Text(text) = block else {
-                if named {
-                    review.note(format_args!(
-                        "{label} [{number}] is a type block, kept or dropped by its key under \
-                         `## Type blocks`, not a paragraph to revise"
-                    ));
+            let text = match block {
+                revision::Block::Text(text) => text,
+                revision::Block::Type { .. } => {
+                    if named {
+                        review.note(format_args!(
+                            "{label} [{number}] is a type block, kept or dropped by its key \
+                             under `## Type blocks`, not a paragraph to revise"
+                        ));
+                    }
+                    continue;
                 }
-                continue;
+                revision::Block::Layout(_) => {
+                    if named {
+                        review.note(format_args!(
+                            "{label} [{number}] is a layout the engine keeps as it stands, not \
+                             a paragraph to revise"
+                        ));
+                    }
+                    continue;
+                }
             };
             match (present.contains(&verbatim(text)), named) {
                 (true, true) => review.note(format_args!(
@@ -311,12 +323,15 @@ impl Brief for DesignAmend<'_> {
             }
         }
 
-        Ok(Design {
+        // a redrafted `## UI / layout` keeps the layouts the base names
+        let mut design = Design {
             emery: EMERY,
             parent: self.base.parent.clone(),
             preamble: self.base.preamble.clone(),
             sections,
-        })
+        };
+        design.attach(self.base.layouts().cloned().collect());
+        Ok(design)
     }
 }
 
@@ -366,6 +381,12 @@ impl Display for DesignAmend<'_> {
                     revision::Block::Type { key, role, .. } => {
                         writeln!(f, "[{number}] {} {key} ({role})", revision::TYPE)?;
                     }
+                    revision::Block::Layout(layout) => writeln!(
+                        f,
+                        "[{number}] {} {} (kept by the engine; never answer it)",
+                        revision::LAYOUT,
+                        layout.digest
+                    )?,
                 }
             }
         }
@@ -471,7 +492,7 @@ fn describes(base: &Design, kind: SectionKind, retired: &BTreeMap<ReqId, &str>) 
     base.section(kind).is_some_and(|section| {
         section.blocks.iter().any(|block| match block {
             revision::Block::Text(text) => cited(text).iter().any(|id| retired.contains_key(id)),
-            revision::Block::Type { .. } => false,
+            revision::Block::Type { .. } | revision::Block::Layout(_) => false,
         })
     })
 }

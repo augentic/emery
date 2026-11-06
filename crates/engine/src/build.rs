@@ -12,7 +12,9 @@ pub(crate) mod merge;
 use std::collections::BTreeSet;
 use std::num::NonZeroUsize;
 
-use emery_adapter::target::{DesignType, Outcome, Slice as SliceInput, Target, Task};
+use emery_adapter::target::{
+    AttachedLayout, DesignType, Outcome, Slice as SliceInput, Target, Task,
+};
 use emery_adapter::{BadPath, SPECIFICATION, beneath};
 use futures::{FutureExt as _, StreamExt as _, stream};
 use omnia_sdk::api::Context;
@@ -73,8 +75,9 @@ use crate::{EntryKind, Files, RETRIES, describe, is_retryable, secrets, store, v
 ///   - with code `spec-outdated`, when the stored revision uses another
 ///     grammar;
 ///   - with code `spec-mismatch`, when `spec/` in the repository is not the
-///     three documents of a revision, or does not match the revision its
-///     label names;
+///     three documents of a revision, does not match the revision its
+///     label names, or holds under `spec/layouts/` other than exactly the
+///     layouts the design names, each under its digest;
 ///   - an adapter [`specify`](crate::specify::specify) would refuse: one that
 ///     is not a target adapter ([`Axis::Target`](crate::Axis)), an
 ///     incompatible one (code `unsupported-version`), a release the store
@@ -140,6 +143,20 @@ pub async fn build<P: Model + Target + StateStore + BlobStore + Plugins + Vcs + 
         .filter(|(id, _)| *id != revision_id)
         .map(|(id, kind)| Candidate { id, kind });
 
+    // every layout the design names, as the sealed tree holds it, whole and
+    // held to its digest when the revision was read
+    let mut layouts = Vec::new();
+    for layout in revision.design.layouts() {
+        let body = current.layouts.get(&layout.digest).cloned().ok_or_else(|| {
+            server_error!("the sealed revision carries no body for layout `{}`", layout.digest)
+        })?;
+        layouts.push(AttachedLayout {
+            digest: layout.digest.to_string(),
+            media_type: layout.media_type.clone(),
+            body,
+        });
+    }
+
     let Loaded {
         id: adapter,
         metadata,
@@ -173,9 +190,10 @@ pub async fn build<P: Model + Target + StateStore + BlobStore + Plugins + Vcs + 
         "building"
     );
 
-    // every slice carries the whole design, rendered once, and every merge
-    // the adapter's rules
-    let rendered = revision.design.to_string();
+    // every slice carries the whole design, rendered once less the layouts'
+    // images, and every merge the adapter's rules
+    let rendered = revision.design.without_views().to_string();
+
     let policy = vcs::rules(&metadata.merge_rules);
     let run = Run {
         adapter: &adapter,
@@ -185,6 +203,7 @@ pub async fn build<P: Model + Target + StateStore + BlobStore + Plugins + Vcs + 
         spec: &revision.spec,
         design: &revision.design,
         rendered: &rendered,
+        layouts: &layouts,
         plan: &revision.plan,
         repo: &repo,
         integration: &integration,
@@ -399,6 +418,7 @@ pub(crate) struct Run<'a> {
     design: &'a Design,
     // the design as every slice carries it
     rendered: &'a str,
+    layouts: &'a [AttachedLayout],
     plan: &'a Plan,
     repo: &'a BuildRepo,
     integration: &'a WorkingCopy,
@@ -635,7 +655,7 @@ impl Run<'_> {
             design: self.rendered.to_owned(),
             plan: slice.to_string(),
             base: head.to_owned(),
-            layouts: Vec::new(),
+            layouts: self.layouts.to_vec(),
         };
         tracing::info!(requirements = input.requirements.len(), wave, "building slice");
 

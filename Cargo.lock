@@ -1259,6 +1259,7 @@ name = "emery-engine"
 version = "0.39.0"
 dependencies = [
  "anyhow",
+ "base64 0.22.1",
  "emery-adapter",
  "emery-lexicon",
  "emery-prose",

@@ -9,12 +9,15 @@ use std::sync::Arc;
 use emery_engine::amend::SliceClass;
 use emery_engine::vcs::{REVISION, RevisionMessage, SliceSummary, Summary};
 use emery_engine::{EntryKind, REVISION_KEY, STAGED_CONTAINER, STAGED_KEY};
+use omnia_sdk::BlobStore;
 use omnia_sdk::vcs::{Change, ChangeKind, Error};
 use serde_json::{Value, json};
+use sha2::{Digest as _, Sha256};
 use support::provider::{Provider, cli};
 use support::scratch::Scratch;
 use support::store::{
-    carry, document, revision, seed, stage, stage_amendment, stage_fresh, staged, written,
+    carry, document, laid_out, layout, revision, sealed_layouts, seed, seed_layouts, stage,
+    stage_amendment, stage_fresh, staged, written,
 };
 use support::vcs::HEAD;
 use support::{cli_ok, fail};
@@ -78,8 +81,9 @@ async fn apply_seals() {
             (REVISION.to_owned(), document("design"), DESIGN.to_vec()),
             (REVISION.to_owned(), document("plan"), PLAN.to_vec()),
         ],
-        "the three documents, byte for byte"
+        "the three documents, byte for byte, and no layout where the design names none"
     );
+    assert!(provider.files.removals().is_empty(), "nothing is removed");
     let message = RevisionMessage::parse(&provider.vcs.messages()[0]).expect("a revision message");
     assert_eq!(
         message,
@@ -97,6 +101,133 @@ async fn apply_seals() {
     cli_ok(&provider, &["emery", "show", "plan", "--config", PROJECT_CONFIG]).await;
     fail(&provider, &["emery", "show", "plan", "--staged"], 2, "nothing-staged").await;
     fail(&provider, &["emery", "apply", "--config", PROJECT_CONFIG], 2, "nothing-staged").await;
+}
+
+// Stores `body` in the engine's layout storage, as `specify` does, and
+// answers the hex its file is named by.
+async fn store_layout(provider: &Provider, body: &[u8]) -> String {
+    let hex = hex::encode(Sha256::digest(body));
+    if !BlobStore::container_exists(&*provider.storage, "layouts").await.expect("container") {
+        BlobStore::create_container(&*provider.storage, "layouts").await.expect("container");
+    }
+    BlobStore::put(&*provider.storage, "layouts", &hex, body).await.expect("stored");
+    hex
+}
+
+// The writes under `spec/layouts/`, in order.
+fn layout_writes(provider: &Provider) -> Vec<(String, String, Vec<u8>)> {
+    provider
+        .files
+        .writes()
+        .into_iter()
+        .filter(|(_, path, _)| path.starts_with("spec/layouts/"))
+        .collect()
+}
+
+// Each layout the design names is sealed beside the three documents, in the
+// same commit, under `spec/layouts/<hex>` and byte for byte, from the
+// engine's storage; a candidate over it whose design names another layout
+// writes that one and removes the one the design no longer names, and the
+// revision each seal leaves reads back whole.
+#[tokio::test]
+async fn apply_layouts_sealed() {
+    let body = br#"{"root":"n0"}"#;
+    let (design, _) = laid_out(DESIGN, body);
+    let provider = Provider::idle();
+    let hex = store_layout(&provider, body).await;
+    let id = stage(&provider.storage, SPEC, &design, PLAN);
+
+    cli_ok(&provider, &["emery", "apply", "--config", PROJECT_CONFIG]).await;
+
+    assert_eq!(current(&provider), id, "the id covers the three documents alone");
+    assert_eq!(
+        provider.files.writes(),
+        [
+            (REVISION.to_owned(), document("spec"), SPEC.to_vec()),
+            (REVISION.to_owned(), document("design"), design.clone()),
+            (REVISION.to_owned(), document("plan"), PLAN.to_vec()),
+            (REVISION.to_owned(), layout(&hex), body.to_vec()),
+        ],
+        "the documents, then the layout, in the one working copy"
+    );
+    assert_eq!(
+        provider.vcs.calls().iter().filter(|call| call.starts_with("commit ")).count(),
+        1,
+        "one commit: {:?}",
+        provider.vcs.calls()
+    );
+    assert!(provider.files.removals().is_empty(), "nothing to remove");
+    assert_eq!(sealed_layouts(&provider.files), [(hex.clone(), body.to_vec())]);
+    cli_ok(&provider, &["emery", "show", "design", "--config", PROJECT_CONFIG]).await;
+
+    // another layout in its place
+    let swapped = br#"{"root":"n1"}"#;
+    let (design, _) = laid_out(DESIGN, swapped);
+    let swapped_hex = store_layout(&provider, swapped).await;
+    stage(&provider.storage, SPEC, &design, PLAN);
+
+    cli_ok(&provider, &["emery", "apply", "--config", PROJECT_CONFIG]).await;
+
+    assert_eq!(
+        layout_writes(&provider).last(),
+        Some(&(REVISION.to_owned(), layout(&swapped_hex), swapped.to_vec())),
+    );
+    assert_eq!(provider.files.removals(), [(REVISION.to_owned(), layout(&hex))]);
+    assert_eq!(sealed_layouts(&provider.files), [(swapped_hex, swapped.to_vec())]);
+    cli_ok(&provider, &["emery", "show", "design", "--config", PROJECT_CONFIG]).await;
+}
+
+// A layout the engine's storage lacks is taken from `spec/layouts/` in the
+// tree the seal lands over, held to its digest, as on a clone that never ran
+// the `specify` that recorded it.
+#[tokio::test]
+async fn apply_layout_from_tree() {
+    let body = br#"{"root":"n0"}"#;
+    let (design, digest) = laid_out(DESIGN, body);
+    let hex = digest.strip_prefix("sha256:").expect("the scheme").to_owned();
+    let provider = Provider::idle();
+    seed(&provider.files, SPEC, &design, PLAN);
+    seed_layouts(&provider.files, &[(hex.clone(), body.to_vec())]);
+    let id = stage(&provider.storage, SPEC, &design, WIDE_PLAN);
+
+    cli_ok(&provider, &["emery", "apply", "--config", PROJECT_CONFIG]).await;
+
+    assert_eq!(current(&provider), id);
+    assert_eq!(layout_writes(&provider), [(REVISION.to_owned(), layout(&hex), body.to_vec())]);
+    assert!(provider.files.removals().is_empty(), "the layout stays");
+    assert!(provider.storage.objects("layouts").is_empty(), "the storage is not filled");
+}
+
+// A design naming a layout neither the engine's storage nor the tree the seal
+// lands over holds is `layout-missing` before anything is written: the
+// candidate stays staged, the pointer unmoved. A tree holding other bytes
+// under the layout's name is no revision to seal over.
+#[tokio::test]
+async fn apply_layout_missing() {
+    let body = br#"{"root":"n0"}"#;
+    let (design, digest) = laid_out(DESIGN, body);
+    let hex = digest.strip_prefix("sha256:").expect("the scheme").to_owned();
+
+    // nothing holds it
+    let provider = Provider::idle();
+    let id = stage(&provider.storage, SPEC, &design, PLAN);
+    let envelope =
+        fail(&provider, &["emery", "apply", "--config", PROJECT_CONFIG], 2, "layout-missing").await;
+    assert!(envelope["message"].as_str().expect("message").contains(&digest), "{envelope}");
+    assert!(provider.files.writes().is_empty(), "nothing is written");
+    assert!(
+        !provider.vcs.calls().iter().any(|call| call.starts_with("commit ")),
+        "nothing is sealed"
+    );
+    assert_eq!(staged(&provider.storage), id, "the candidate stays staged");
+
+    // the tree holds other bytes under its name
+    let provider = Provider::idle();
+    seed(&provider.files, SPEC, &design, PLAN);
+    seed_layouts(&provider.files, &[(hex, b"other".to_vec())]);
+    stage(&provider.storage, SPEC, &design, WIDE_PLAN);
+    fail(&provider, &["emery", "apply", "--config", PROJECT_CONFIG], 1, "spec-mismatch").await;
+    assert!(provider.files.writes().is_empty(), "nothing is written");
 }
 
 // Sealing over a current revision displaces it: the new commit lands over
@@ -301,7 +432,7 @@ fn amendment_over(base: &str, commit: &str) -> Vec<u8> {
         })
     };
     let amendment = json!({
-        "emery": 8,
+        "emery": 9,
         "base": {"revision": base, "commit": commit},
         "changes": [
             change("REQ-001", "auth.login", "unchanged",
@@ -320,6 +451,36 @@ fn amendment_over(base: &str, commit: &str) -> Vec<u8> {
         "slices": [{"id": "SLICE-002", "name": "orders", "class": "changed", "brief": "kept"}],
     });
     serde_json::to_vec_pretty(&amendment).expect("the amendment serialises")
+}
+
+// An amendment carries the base's layouts in its design, as `emery amend`
+// attaches them; sealed where the engine's storage holds none, as on a fresh
+// clone, each body is taken from `spec/layouts/` in the base's tree and
+// stands there unchanged.
+#[tokio::test]
+async fn apply_amendment_layouts() {
+    let body = br#"{"root":"n0"}"#;
+    let (design, digest) = laid_out(DESIGN, body);
+    let hex = digest.strip_prefix("sha256:").expect("the scheme").to_owned();
+    let provider = Provider::idle();
+    let outgoing = seed(&provider.files, SPEC, &design, PLAN);
+    seed_layouts(&provider.files, &[(hex.clone(), body.to_vec())]);
+    let mut amendment: Value =
+        serde_json::from_slice(&amendment_over(&outgoing, HEAD)).expect("amendment JSON");
+    let mut amended: Value = serde_json::from_slice(&design).expect("design JSON");
+    amended["parent"] = json!(outgoing);
+    amendment["design"] = amended;
+    stage_amendment(
+        &provider.storage,
+        &serde_json::to_vec_pretty(&amendment).expect("the amendment serialises"),
+    );
+
+    cli_ok(&provider, &["emery", "apply", "--config", PROJECT_CONFIG]).await;
+
+    assert_eq!(layout_writes(&provider), [(REVISION.to_owned(), layout(&hex), body.to_vec())]);
+    assert!(provider.files.removals().is_empty(), "the layout stays");
+    assert_eq!(sealed_layouts(&provider.files), [(hex, body.to_vec())]);
+    cli_ok(&provider, &["emery", "show", "design", "--config", PROJECT_CONFIG]).await;
 }
 
 // A staged amendment seals as a revision over its base: the repository is

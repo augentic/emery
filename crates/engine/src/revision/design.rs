@@ -1,8 +1,9 @@
 //! Defines the typed data and Markdown rendering for `design.md`.
 //!
 //! A [`Design`] contains introductory paragraphs and a fixed vocabulary of
-//! sections. Section blocks contain drafted prose or verbatim type
-//! signatures, each signature labelled with the [`Role`] its type plays.
+//! sections. Section blocks contain drafted prose, verbatim type
+//! signatures, each signature labelled with the [`Role`] its type plays, or
+//! the content-addressed [`Layout`]s a `## UI / layout` section names.
 
 use std::collections::BTreeSet;
 use std::fmt::{self, Display, Formatter};
@@ -11,6 +12,7 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use crate::revision;
+use crate::revision::layout::Layout;
 
 const CITATION: &str = "(from ";
 
@@ -47,7 +49,7 @@ impl Design {
                     role: Role::Data,
                     ..
                 } => Some(key.as_str()),
-                Block::Text(_) | Block::Type { .. } => None,
+                Block::Text(_) | Block::Type { .. } | Block::Layout(_) => None,
             })
             .collect();
         keys.into_iter().map(str::to_owned).collect()
@@ -61,7 +63,7 @@ impl Design {
                 signature,
                 role,
             } if held == key => Some((signature.as_str(), *role)),
-            Block::Text(_) | Block::Type { .. } => None,
+            Block::Text(_) | Block::Type { .. } | Block::Layout(_) => None,
         })
     }
 
@@ -83,7 +85,7 @@ impl Design {
                     .iter()
                     .filter(|block| match block {
                         Block::Type { key, .. } => !keys.contains(key),
-                        Block::Text(_) => true,
+                        Block::Text(_) | Block::Layout(_) => true,
                     })
                     .cloned()
                     .collect();
@@ -99,6 +101,54 @@ impl Design {
             preamble: self.preamble.clone(),
             sections,
         }
+    }
+}
+
+impl Design {
+    // The layouts `## UI / layout` names, in the design's order.
+    pub fn layouts(&self) -> impl Iterator<Item = &Layout> {
+        self.section(SectionKind::UiLayout)
+            .into_iter()
+            .flat_map(|section| &section.blocks)
+            .filter_map(|block| match block {
+                Block::Layout(layout) => Some(layout),
+                Block::Text(_) | Block::Type { .. } => None,
+            })
+    }
+
+    // Appends to `## UI / layout` each of `layouts` it does not already
+    // name, opening the section in vocabulary order where the design has none.
+    pub fn attach(&mut self, layouts: Vec<Layout>) {
+        for layout in layouts {
+            if self.layouts().any(|held| held.digest == layout.digest) {
+                continue;
+            }
+            let at = match self.sections.iter().position(|s| s.kind >= SectionKind::UiLayout) {
+                Some(at) if self.sections[at].kind == SectionKind::UiLayout => at,
+                Some(at) => {
+                    self.sections.insert(at, Section::empty(SectionKind::UiLayout));
+                    at
+                }
+                None => {
+                    self.sections.push(Section::empty(SectionKind::UiLayout));
+                    self.sections.len() - 1
+                }
+            };
+            self.sections[at].blocks.push(Block::Layout(layout));
+        }
+    }
+
+    // Returns this design with each layout's images left out: what a model
+    // reads, which takes the layout whole from the slice instead.
+    #[must_use]
+    pub fn without_views(&self) -> Self {
+        let mut design = self.clone();
+        for block in design.sections.iter_mut().flat_map(|section| &mut section.blocks) {
+            if let Block::Layout(layout) = block {
+                layout.views.clear();
+            }
+        }
+        design
     }
 }
 
@@ -126,6 +176,15 @@ pub struct Section<B = Block> {
     pub blocks: Vec<B>,
 }
 
+impl Section {
+    const fn empty(kind: SectionKind) -> Self {
+        Self {
+            kind,
+            blocks: Vec::new(),
+        }
+    }
+}
+
 impl Display for Section {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         write!(f, "## {}", self.kind)?;
@@ -141,6 +200,7 @@ impl Display for Section {
 pub enum Block {
     Text(String),
     Type { key: String, signature: String, role: Role },
+    Layout(Layout),
 }
 
 impl Display for Block {
@@ -157,6 +217,7 @@ impl Display for Block {
                 signature,
                 role: Role::Mechanism,
             } => write!(f, "{TYPE} {key} (mechanism)\n```\n{signature}\n```"),
+            Self::Layout(layout) => layout.fmt(f),
         }
     }
 }

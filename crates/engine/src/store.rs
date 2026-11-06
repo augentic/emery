@@ -12,8 +12,13 @@
 //! seals a `Sealing` there — a candidate revision over the current one, a
 //! fresh candidate starting the history over, or an amendment's three
 //! documents over the base it was prepared against — labels it, and points
-//! the pointer at it. Content is checked against its identifier when read,
-//! so a document rewritten beneath the engine is refused rather than served.
+//! the pointer at it. Every layout the design names is sealed beside the
+//! three documents under `spec/layouts/<hex>`, taken from the engine's
+//! storage, where `specify` put it, or from the tree the seal lands over.
+//! Content is checked against its identifier when read, so a document or a
+//! layout rewritten beneath the engine is refused rather than served.
+
+use std::collections::{BTreeMap, BTreeSet};
 
 use anyhow::Context;
 use omnia_sdk::{BlobStore, Error, StateStore, Vcs, server_error};
@@ -21,7 +26,8 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use crate::revision::{
-    Amendment, AmendmentBase, Design, Diff, Document as _, Documents, Plan, Revision, Spec,
+    Amendment, AmendmentBase, Design, Diff, Document as _, Documents, LayoutDigest, Plan, Revision,
+    Spec,
 };
 use crate::vcs::{BuildRepo, REVISION, RevisionMessage, SPECIFICATION, Summary, WorkingCopy};
 use crate::{EntryKind, Files, secrets};
@@ -37,6 +43,17 @@ pub const STAGED_KEY: &str = "staged";
 
 /// The blob container containing the staged candidate's documents under `<id>/`.
 pub const STAGED_CONTAINER: &str = "staged";
+
+/// The blob container holding layout bodies, each under its digest's hex,
+/// from the `specify` that recorded them to the seal that carries them.
+pub const LAYOUT_CONTAINER: &str = "layouts";
+
+/// The directory under [`SPECIFICATION`] a sealed revision's layouts stand
+/// in, each body a file named for its digest's hex.
+pub const LAYOUTS: &str = "layouts";
+
+// The layout bodies a sealed tree holds, by digest, each held to it.
+pub type Bodies = BTreeMap<LayoutDigest, Vec<u8>>;
 
 /// What kind of candidate is staged for `emery apply` to seal.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, strum::Display)]
@@ -263,12 +280,15 @@ impl Sealing {
 // grammar: the id and the commit still stand, so a seal lands over them,
 // while a verb that needs the revision raises the refusal. The parent is
 // read off the specification's own top-level key, so a lineage is seen
-// under an outdated grammar too.
+// under an outdated grammar too. The layouts are the bodies the tree holds
+// for the design's layout blocks, each held to its digest; none under an
+// outdated grammar, whose design is not read.
 pub struct Current {
     pub id: String,
     pub revision: Result<Revision, Error>,
     pub commit: String,
     pub parent: Option<String>,
+    pub layouts: Bodies,
 }
 
 // Where a target repository stands for the revision: its head, the
@@ -335,7 +355,8 @@ pub struct Sealed {
 // What the tree at a commit holds at `spec/`.
 enum Occupancy {
     Absent,
-    Held,
+    // The three documents, and the names of the files `spec/layouts/` holds.
+    Held(BTreeSet<String>),
     Other(String),
 }
 
@@ -343,7 +364,9 @@ impl Occupancy {
     const EXPECTED: [&str; 3] = ["design.json", "plan.json", "spec.json"];
 
     // What stands at `spec/` beneath `at`: nothing, exactly the three
-    // documents as files, or something else, named.
+    // documents as files beside, at most, a `layouts/` directory of files,
+    // or something else, named. Which layouts the files must be is the
+    // design's to say, read after.
     async fn of<F: Files>(files: &F, at: &str) -> Result<Self, Error> {
         let root = files.list(at, ".").await?;
         let Some(entry) = root.into_iter().find(|entry| entry.name == SPECIFICATION) else {
@@ -354,22 +377,54 @@ impl Occupancy {
             EntryKind::File => return Ok(Self::Other("a file".to_owned())),
             EntryKind::Link => return Ok(Self::Other("a symbolic link".to_owned())),
         }
-        let mut names: Vec<String> = files
-            .list(at, SPECIFICATION)
-            .await?
-            .into_iter()
-            .map(|entry| match entry.kind {
-                EntryKind::File => entry.name,
-                EntryKind::Directory => format!("{}/", entry.name),
-                EntryKind::Link => format!("{} (a symbolic link)", entry.name),
-            })
-            .collect();
-        names.sort_unstable();
-        if names.iter().map(String::as_str).eq(Self::EXPECTED) {
-            return Ok(Self::Held);
+        let mut layouts = None;
+        let mut names: Vec<String> = Vec::new();
+        for entry in files.list(at, SPECIFICATION).await? {
+            match entry.kind {
+                EntryKind::Directory if entry.name == LAYOUTS => {
+                    layouts = Some(Self::layouts(files, at).await?);
+                }
+                EntryKind::File => names.push(entry.name),
+                EntryKind::Directory => names.push(format!("{}/", entry.name)),
+                EntryKind::Link => names.push(format!("{} (a symbolic link)", entry.name)),
+            }
         }
-        let listed = names.iter().map(|name| format!("`{name}`")).collect::<Vec<_>>().join(", ");
+        names.sort_unstable();
+        let expected = names.iter().map(String::as_str).eq(Self::EXPECTED);
+        let mut listed: Vec<String> = names.iter().map(|name| format!("`{name}`")).collect();
+        match layouts {
+            None if expected => return Ok(Self::Held(BTreeSet::new())),
+            Some(Ok(held)) if expected => return Ok(Self::Held(held)),
+            Some(Ok(_)) => listed.push(format!("`{LAYOUTS}/`")),
+            Some(Err(other)) => listed.push(other),
+            None => {}
+        }
+        let listed = listed.join(", ");
         Ok(Self::Other(if listed.is_empty() { "an empty directory".to_owned() } else { listed }))
+    }
+
+    // The names of the files `spec/layouts/` holds, or what else stands there, named.
+    async fn layouts<F: Files>(
+        files: &F, at: &str,
+    ) -> Result<Result<BTreeSet<String>, String>, Error> {
+        let mut held = BTreeSet::new();
+        let mut other = Vec::new();
+        for entry in files.list(at, &layouts_dir()).await? {
+            match entry.kind {
+                EntryKind::File => {
+                    held.insert(entry.name);
+                }
+                EntryKind::Directory => other.push(format!("`{LAYOUTS}/{}/`", entry.name)),
+                EntryKind::Link => {
+                    other.push(format!("`{LAYOUTS}/{}` (a symbolic link)", entry.name));
+                }
+            }
+        }
+        if other.is_empty() {
+            return Ok(Ok(held));
+        }
+        other.sort_unstable();
+        Ok(Err(other.join(", ")))
     }
 }
 
@@ -434,6 +489,55 @@ async fn put<S: BlobStore>(store: &S, id: &str, documents: &[(&str, &str)]) -> R
             .context("writing staged candidate document")?;
     }
     Ok(())
+}
+
+// Stores a layout `body` under its digest, creating the container on the
+// first layout; a body already stored is written again unchanged.
+pub async fn put_layout<S: BlobStore>(store: &S, body: &[u8]) -> Result<LayoutDigest, Error> {
+    if !BlobStore::container_exists(store, LAYOUT_CONTAINER).await? {
+        BlobStore::create_container(store, LAYOUT_CONTAINER).await?;
+    }
+    let digest = LayoutDigest::of(body);
+    BlobStore::put(store, LAYOUT_CONTAINER, digest.hex(), body)
+        .await
+        .with_context(|| format!("writing layout `{digest}`"))?;
+    Ok(digest)
+}
+
+// The layout body `digest` names as this engine's storage holds it, held to
+// it: `None` where the storage lacks it, and a server error where the stored
+// bytes are another's.
+async fn stored_layout<S: BlobStore>(
+    store: &S, digest: &LayoutDigest,
+) -> Result<Option<Vec<u8>>, Error> {
+    let Some(body) = BlobStore::get(store, LAYOUT_CONTAINER, digest.hex())
+        .await
+        .with_context(|| format!("reading layout `{digest}`"))?
+    else {
+        return Ok(None);
+    };
+    if LayoutDigest::of(&body) != *digest {
+        return Err(server_error!("stored layout `{digest}` does not match its digest"));
+    }
+    Ok(Some(body))
+}
+
+// The `layout-missing` refusal of a seal whose design names layout `digest`,
+// which neither this engine's storage nor the tree the seal lands over holds.
+fn layout_missing(digest: &LayoutDigest) -> Error {
+    Error::NotFound {
+        code: "layout-missing".into(),
+        description: format!(
+            "the design names layout `{digest}`, which neither this engine's storage nor \
+             `{SPECIFICATION}/{LAYOUTS}/` in the tree the seal lands over holds; run `emery \
+             specify` here over the source that recorded it"
+        ),
+    }
+}
+
+// The digests of the layouts `revision`'s design names, each once.
+fn named(revision: &Revision) -> BTreeSet<LayoutDigest> {
+    revision.design.layouts().map(|layout| layout.digest.clone()).collect()
 }
 
 // The staged item's id and kind, whatever stands, or `None` when nothing is staged.
@@ -592,8 +696,11 @@ pub async fn current<P: Vcs + Files + StateStore>(
 // Seals `sealing` in `repo` as the current revision, over what `standing`
 // read: the three documents written under `spec/` in a working copy cut at
 // the commit the sealing lands over, else, for a repository the engine
-// creates, in the repository created now as its root commit; what they
-// changed held to the secret gate and sealed under a `RevisionMessage`
+// creates, in the repository created now as its root commit; each layout
+// the design names written under `spec/layouts/`, from this engine's
+// storage or the tree the seal lands over, and every other one there
+// removed, with `layout-missing` before anything is written where neither
+// holds one; what they changed held to the secret gate and sealed under a `RevisionMessage`
 // carrying the sealing's parent and summary; the commit labelled
 // `emery/<id>`; the pointer swapped by compare-and-swap; the staged item
 // cleared; the copy removed. A revision the repository already holds seals
@@ -609,6 +716,16 @@ pub async fn commit<P: Vcs + Files + StateStore + BlobStore>(
         base: sealing.over,
         summary: sealing.summary,
     };
+
+    // the layouts the design names, as storage holds them
+    let mut layouts = Vec::new();
+    for digest in named(&sealing.revision) {
+        let body = stored_layout(provider, &digest).await?;
+        if body.is_none() && message.base.is_none() {
+            return Err(layout_missing(&digest));
+        }
+        layouts.push((digest, body));
+    }
 
     // the tree the seal lands over
     let (copy, cut) = match message.base.as_deref() {
@@ -631,7 +748,7 @@ pub async fn commit<P: Vcs + Files + StateStore + BlobStore>(
         }
     };
 
-    let sealed = seal_copy(provider, repo, &documents, &message, &copy).await;
+    let sealed = seal_copy(provider, repo, &documents, layouts, &message, &copy).await;
     if cut {
         copy.remove(provider).await?;
     }
@@ -763,23 +880,53 @@ pub fn label(id: &str) -> String {
     format!("emery/{id}")
 }
 
-// Writes `documents` into `copy`, seals them under `message`, and labels
-// the commit; answers the commit `copy` was cut at when nothing changed.
+// Writes `documents` and `layouts` into `copy`, removes every other layout
+// there, seals them under `message`, and labels the commit; answers the
+// commit `copy` was cut at when nothing changed. A layout storage did not
+// hold is read from `copy`, held to its digest, before anything is written.
 async fn seal_copy<P: Vcs + Files>(
-    provider: &P, repo: &BuildRepo, documents: &Documents, message: &RevisionMessage,
-    copy: &WorkingCopy,
+    provider: &P, repo: &BuildRepo, documents: &Documents,
+    layouts: Vec<(LayoutDigest, Option<Vec<u8>>)>, message: &RevisionMessage, copy: &WorkingCopy,
 ) -> Result<String, Error> {
     let at = copy.path();
     let over = message.base.as_deref();
-    if let Occupancy::Other(what) = Occupancy::of(provider, at).await? {
-        return Err(mismatch(format!(
-            "`{SPECIFICATION}/` at {} holds {what}, so the directory is the operator's and the \
-             specification cannot live there",
-            over.map_or_else(|| "the root".to_owned(), |over| format!("commit `{over}`"))
-        )));
+    let held = match Occupancy::of(provider, at).await? {
+        Occupancy::Absent => BTreeSet::new(),
+        Occupancy::Held(held) => held,
+        Occupancy::Other(what) => {
+            return Err(mismatch(format!(
+                "`{SPECIFICATION}/` at {} holds {what}, so the directory is the operator's and \
+                 the specification cannot live there",
+                over.map_or_else(|| "the root".to_owned(), |over| format!("commit `{over}`"))
+            )));
+        }
+    };
+    let mut bodies = Vec::with_capacity(layouts.len());
+    for (digest, body) in layouts {
+        let body = match body {
+            Some(body) => body,
+            None if held.contains(digest.hex()) => {
+                let body = provider.read(at, &layout_path(digest.hex())).await?;
+                if LayoutDigest::of(&body) != digest {
+                    return Err(layout_missing(&digest));
+                }
+                body
+            }
+            None => return Err(layout_missing(&digest)),
+        };
+        bodies.push((digest, body));
     }
+
     for (name, body) in documents {
         provider.write(at, &path(name), body.as_bytes()).await?;
+    }
+    for (digest, body) in &bodies {
+        provider.write(at, &layout_path(digest.hex()), body).await?;
+    }
+    for name in &held {
+        if !bodies.iter().any(|(digest, _)| digest.hex() == name) {
+            Files::remove(provider, at, &layout_path(name)).await?;
+        }
     }
 
     // what changed, held to the secret gate and sealed
@@ -830,7 +977,7 @@ impl Current {
     async fn read_tree<F: Files>(
         files: &F, at: &str, commit: &str, expect: Option<&str>,
     ) -> Result<Option<Self>, Error> {
-        match Occupancy::of(files, at).await? {
+        let held = match Occupancy::of(files, at).await? {
             Occupancy::Absent => {
                 return expect.map_or(Ok(None), |id| {
                     Err(mismatch(format!(
@@ -839,14 +986,14 @@ impl Current {
                     )))
                 });
             }
-            Occupancy::Held => {}
+            Occupancy::Held(held) => held,
             Occupancy::Other(what) => {
                 return Err(mismatch(format!(
                     "`{SPECIFICATION}/` at commit `{commit}` holds {what}, where the three \
                      documents of a revision should stand"
                 )));
             }
-        }
+        };
         let spec = files.read(at, &path(Spec::NAME)).await?;
         let design = files.read(at, &path(Design::NAME)).await?;
         let plan = files.read(at, &path(Plan::NAME)).await?;
@@ -871,6 +1018,10 @@ impl Current {
             }
             revision => revision,
         };
+        let layouts = match &revision {
+            Ok(revision) => layouts_at(files, at, commit, revision, &held).await?,
+            Err(_) => Bodies::new(),
+        };
         let parent = revision
             .as_ref()
             .map_or_else(|_| spec_parent(&spec), |revision| revision.spec.parent.clone());
@@ -879,8 +1030,48 @@ impl Current {
             revision,
             commit: commit.to_owned(),
             parent,
+            layouts,
         }))
     }
+}
+
+// The layout bodies `held`, the files `spec/layouts/` holds at `commit`,
+// carry for `revision`: exactly one file for each layout its design names,
+// named for the digest's hex and holding bytes of that digest, else
+// `spec-mismatch` naming every file out of place, missing, or rewritten.
+async fn layouts_at<F: Files>(
+    files: &F, at: &str, commit: &str, revision: &Revision, held: &BTreeSet<String>,
+) -> Result<Bodies, Error> {
+    let named = named(revision);
+    let mut wrong = Vec::new();
+    for name in held {
+        if !named.iter().any(|digest| digest.hex() == name) {
+            wrong.push(format!("holds `{name}`, which the design names no layout by"));
+        }
+    }
+    let mut bodies = Bodies::new();
+    for digest in named {
+        if !held.contains(digest.hex()) {
+            wrong.push(format!("lacks `{}`, which layout `{digest}` stands under", digest.hex()));
+            continue;
+        }
+        let body = files.read(at, &layout_path(digest.hex())).await?;
+        let actual = LayoutDigest::of(&body);
+        if actual != digest {
+            wrong.push(format!("holds `{}` with the bytes of `{actual}`", digest.hex()));
+            continue;
+        }
+        bodies.insert(digest, body);
+    }
+    if wrong.is_empty() {
+        return Ok(bodies);
+    }
+    Err(mismatch(format!(
+        "`{}/` at commit `{commit}` {}; a seal writes each layout the design names under its \
+         digest and nothing else",
+        layouts_dir(),
+        wrong.join("; ")
+    )))
 }
 
 // The top-level `parent` key of `spec`, for a specification under another
@@ -909,6 +1100,16 @@ fn mismatch(description: String) -> Error {
 // The path a document lives at in the repository.
 fn path(name: &str) -> String {
     format!("{SPECIFICATION}/{name}.json")
+}
+
+// The directory a revision's layouts live in, in the repository.
+fn layouts_dir() -> String {
+    format!("{SPECIFICATION}/{LAYOUTS}")
+}
+
+// The path the layout of digest hex `hex` lives at in the repository.
+fn layout_path(hex: &str) -> String {
+    format!("{SPECIFICATION}/{LAYOUTS}/{hex}")
 }
 
 fn key(id: &str, name: &str) -> String {
