@@ -71,6 +71,8 @@ If an amendment is currently staged in `.emery/storage/`, `emery specify` refuse
 
 When `emery specify` reads a configuration file that includes a `[target]` table, it inspects the target repository before loading any adapters to check for an existing lineage and to compute the `diff` against the current revision. If you run `emery specify` with CLI sources only (and no `--config`), Emery knows no target repository: it stages the candidate without a `diff`, and passing `--apply` fails with `build-target-required` (exit `1`).
 
+A [layout](../../glossary.md#layout) a source records whole is stored under `.emery/storage/` by its digest and named in the design's `## UI / layout` section; sealing (`emery apply` or `--apply`) writes it into the target repository at `spec/layouts/<hex>` beside the three documents, so a clone can build it without this machine's storage. A candidate staged here and sealed elsewhere fails with `layout-missing` unless that tree already holds the layout.
+
 This is the CLI command invoked by the [`/emery:specify`](../../../plugins/emery/skills/specify/SKILL.md) Cursor skill.
 
 ---
@@ -161,6 +163,7 @@ staged candidate 9f8e7d6c…
 | `spec-mismatch` | `1` | Root-level `spec/` in the target repository contains non-revision files or hand-edited/conflicted JSON. | Restore `git checkout emery/<revision> -- spec/` or resolve the branch merge (see [`emery apply`](apply.md#spec-is-the-engines)). |
 | `repository-required` | `1` | `[target] repository = "."` is set, but the project directory is not a Git repository. | Run `git init` and create an initial commit, or change `[target] repository`. |
 | `base-not-sealed` | `1` | `--apply` was used with `[target] repository = "."`, but the repository has no commits yet. | Create an initial Git commit and re-run `emery apply`. |
+| `layout-missing` | `2` | `--apply` sealed a design naming a layout that neither `.emery/storage/` nor `spec/layouts/` in the commit the seal lands over holds. | Re-run `emery specify` here over the source that recorded the layout. |
 | `revision-not-found` | `2` | A source `repository` / `revision` or target `repository` URL could not be found. | Verify the URL and branch/tag/commit in `emery.toml`. |
 | `server_error` | `3` | A source adapter emitted claims rejected by the SDK/engine claim gate, or a local I/O failure occurred. | Check `-v` logs for the claim gate findings. |
 | `bad_gateway` / `unavailable` | `4` | Upstream model backend error, Git remote failure, or adapter registry unreachable. | Check network connectivity and model credentials, then retry. |

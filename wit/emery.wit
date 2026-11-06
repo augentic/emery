@@ -131,7 +131,8 @@ interface source {
   /// A layout the source recorded whole, carried by content rather than by
   /// path. The engine stores `body` content-addressed and never reads it:
   /// the design's `ui-layout` section names it by digest and shows `views`,
-  /// and every slice a target builds carries it.
+  /// the seal writes it beside the revision under `spec/layouts/<hex>`, and
+  /// every slice a target builds carries it from there.
   record layout {
     /// The body's media type, which tells a target how to read it.
     media-type: string,
@@ -320,7 +321,8 @@ interface target {
     /// types it owns, the slices built before it, and its brief.
     plan: string,
     /// Every layout the design's `ui-layout` section names, in the
-    /// design's order, each held to its digest by the engine.
+    /// design's order, read from the sealed revision's `spec/layouts/` and
+    /// each held to its digest by the engine.
     layouts: list<attached-layout>,
   }
 

@@ -214,6 +214,10 @@ async fn apply_layout_missing() {
     let envelope =
         fail(&provider, &["emery", "apply", "--config", PROJECT_CONFIG], 2, "layout-missing").await;
     assert!(envelope["message"].as_str().expect("message").contains(&digest), "{envelope}");
+    assert!(
+        envelope["hint"].as_str().is_some_and(|hint| hint.contains("emery specify")),
+        "{envelope}"
+    );
     assert!(provider.files.writes().is_empty(), "nothing is written");
     assert!(
         !provider.vcs.calls().iter().any(|call| call.starts_with("commit ")),

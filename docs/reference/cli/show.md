@@ -65,7 +65,7 @@ For `spec`, `design`, and `plan`, the Markdown begins with YAML front matter car
 
 ```markdown
 ---
-emery: 8
+emery: 9
 revision: 9f8e7d6c…
 ---
 ```

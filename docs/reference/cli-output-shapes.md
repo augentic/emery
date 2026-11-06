@@ -47,7 +47,7 @@ This page defines the canonical JSON output schemas, exit codes, recovery error 
 
 ## Recovery error codes
 
-When a command fails with exit code `1`–`4`, the `error` field in the failure envelope carries either one of the 19 specific `kebab-case` recovery codes below, a plugin loader code (`refused`, `unavailable`, `internal`), or a generic `snake_case` class (`bad_request`, `not_found`, `server_error`, `bad_gateway`):
+When a command fails with exit code `1`–`4`, the `error` field in the failure envelope carries either one of the 20 specific `kebab-case` recovery codes below, a plugin loader code (`refused`, `unavailable`, `internal`), or a generic `snake_case` class (`bad_request`, `not_found`, `server_error`, `bad_gateway`):
 
 | `error` discriminant | Exit | Raised by | When it occurs |
 | --- | --- | --- | --- |
@@ -60,7 +60,7 @@ When a command fails with exit code `1`–`4`, the `error` field in the failure 
 | `lineage-exists` | `1` | `specify`, `apply` | Current revision has a `parent` (is an amendment lineage) and `--fresh` was not set. |
 | `retire-unmatched` | `1` | `amend` | A `retire` claim failed to match any existing requirement in the current revision. |
 | `spec-outdated` | `1` | All verbs | Stored revision or staged item uses an older `emery` grammar stamp than this binary supports. |
-| `spec-mismatch` | `1` | All verbs | Root-level `spec/` contains extra files, tampered JSON, or hand-merged conflict state. |
+| `spec-mismatch` | `1` | All verbs | Root-level `spec/` contains extra files, tampered JSON, or hand-merged conflict state, or `spec/layouts/` does not hold exactly the design's layouts under their digests. |
 | `repository-required` | `1` | `specify`, `amend`, `apply`, `build`, `show` | `[target] repository = "."` is set, but the project directory is not a Git repository. |
 | `base-not-sealed` | `1` | `specify --apply`, `apply`, `build` | `[target] repository = "."` has no commits yet, or (for `build`) has uncommitted changes outside `.emery/`. |
 | `merge-unresolved` | `1` | `build` | Slice merge conflicted on a deleted/non-text path or AI merge resolution exhausted its rounds. |
@@ -69,6 +69,7 @@ When a command fails with exit code `1`–`4`, the `error` field in the failure 
 | `spec-rewritten` | `1` | `build` | A build or verification step modified files under root-level `spec/`. |
 | `spec-not-generated` | `2` | `amend`, `build`, `show` | No sealed revision exists in the target repository, or `emery/<id>` is behind `HEAD`. |
 | `nothing-staged` | `2` | `apply`, `show --staged`, `show amendment` | No candidate or amendment is currently staged in `.emery/storage/`. |
+| `layout-missing` | `2` | `apply`, `specify --apply`, `amend --apply` | The design names a layout that neither `.emery/storage/` nor `spec/layouts/` in the commit the seal lands over holds. |
 | `revision-not-found` | `2` | `specify`, `amend`, `apply`, `build`, `show` | Remote Git repository URL or `revision` ref could not be found. |
 
 ---
@@ -306,9 +307,9 @@ All text-mode formatters (`crates/cli/src/text.rs`) follow a uniform layout:
 ```json
 {
   "revision": "9f8e7d6c…",
-  "body": "---\nemery: 8\nrevision: 9f8e7d6c…\n---\n\n# Specification\n…",
+  "body": "---\nemery: 9\nrevision: 9f8e7d6c…\n---\n\n# Specification\n…",
   "document": {
-    "emery": 8,
+    "emery": 9,
     "parent": null,
     "preamble": ["…"],
     "requirements": [

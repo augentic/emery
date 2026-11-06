@@ -35,8 +35,8 @@ When sealing, Emery:
 
 1. Resolves the target repository (`"."` for the project repository, a clone of a Git URL at `.emery/vcs/repos/<name>`, or an engine-created repository at `.emery/vcs/repos/<name>` when `repository` is omitted).
 2. Creates a temporary Git worktree at `.emery/vcs/revision` starting from the base commit.
-3. Writes `spec/spec.json`, `spec/design.json`, and `spec/plan.json` and scans them with the [secret gate](../../explanation/security-and-sandbox.md#the-secret-gate-secret-detected).
-4. Commits the three files with a structured `Revision <id>` message, sets the local branch `emery/<id>` to that commit, updates the cached pointer in `.emery/storage/`, removes the temporary worktree, and clears the staging area.
+3. Writes `spec/spec.json`, `spec/design.json`, and `spec/plan.json`, writes `spec/layouts/<hex>` for each [layout](../../glossary.md#layout) the design names and removes any other file there, and scans what changed with the [secret gate](../../explanation/security-and-sandbox.md#the-secret-gate-secret-detected). Each layout body comes from `.emery/storage/`, where `emery specify` stored it, or else from `spec/layouts/` in the commit the seal lands over, held to its digest; when neither holds it, `emery apply` fails with `layout-missing` before anything is written. The secret gate scans a layout as its stored bytes, so it does not look inside a compressed (for example, gzip) body.
+4. Commits the three documents and the layouts with a structured `Revision <id>` message, sets the local branch `emery/<id>` to that commit, updates the cached pointer in `.emery/storage/`, removes the temporary worktree, and clears the staging area.
 
 Sealing never modifies your checked-out working tree or moves your active branch. If the staged revision is byte-for-byte identical to the current revision in the repository, `emery apply` seals no new commit and simply clears the staging area.
 
@@ -64,9 +64,10 @@ An amendment staged by `emery amend` carries its amended `spec`, `design`, and `
 
 ### `spec/` is the engine's
 
-The root-level `spec/` directory in the target repository is reserved exclusively for Emery's `spec.json`, `design.json`, and `plan.json` files (nested directories like `src/spec/` are untouched). `emery apply` fails with `spec-mismatch` (exit `1`) if:
+The root-level `spec/` directory in the target repository is reserved exclusively for Emery's `spec.json`, `design.json`, and `plan.json` files and its `layouts/` directory (nested directories like `src/spec/` are untouched). `emery apply` fails with `spec-mismatch` (exit `1`) if:
 
-- **Extra files exist in `spec/`:** `spec/` holds any file, symlink, or subdirectory other than the three JSON documents. Restore the labelled files (`git checkout emery/<revision> -- spec/`) or move your files elsewhere.
+- **Extra files exist in `spec/`:** `spec/` holds any file, symlink, or subdirectory other than the three JSON documents and `layouts/`, or `spec/layouts/` holds anything but files. Restore the labelled files (`git checkout emery/<revision> -- spec/`) or move your files elsewhere.
+- **`spec/layouts/` does not match the design:** a layout the design names is missing, a file there is named by no layout the design names, or a file's bytes do not hash to the digest it is named for. Restore the labelled files (`git checkout emery/<revision> -- spec/`).
 - **`spec/` was edited or merged by hand:** At an unlabelled `HEAD` (such as after a `git merge` of two branches that each sealed a revision), the three JSON files fail to parse or fail cross-document consistency (`Revision::findings`, such as a slice referencing a missing requirement ID or data type). Keep one branch's three files whole (`git checkout <branch> -- spec/`), commit the merge, and re-run the other branch's `emery amend`.
 
 ### Refusals
@@ -76,12 +77,13 @@ Whenever `emery apply` refuses to seal, the staged candidate or amendment remain
 | Error code | Exit | Cause | Recovery |
 | --- | --- | --- | --- |
 | `nothing-staged` | `2` | Nothing is currently staged in `.emery/storage/`. | Run `emery specify` or `emery amend` first, or pass `--apply` to either command. |
+| `layout-missing` | `2` | The design names a layout that neither `.emery/storage/` nor `spec/layouts/` in the commit the seal lands over holds (for example, a candidate staged on another machine). | Re-run `emery specify` here over the source that recorded the layout, then `emery apply`. |
 | `build-target-required` | `1` | No `[target]` table found in `--config` or the project-root `emery.toml`. | Add a `[target]` table to `emery.toml` or pass `--config <path>`. |
 | `lineage-exists` | `1` | A non-fresh `specify` candidate is being sealed over a revision that has a `parent`. | Run `emery specify --fresh` then `emery apply`, or use `emery amend`. |
 | `amendment-stale` | `1` | The target repository's current revision or commit no longer matches the staged amendment's `base`. | Re-run `emery amend` against the updated revision, then `emery apply`. |
 | `spec-mismatch` | `1` | Root-level `spec/` contains non-revision files, tampered files, or hand-merged conflict state. | Restore `git checkout emery/<revision> -- spec/` or keep one branch's `spec/` whole (`git checkout <branch> -- spec/`). |
 | `spec-outdated` | `1` | The staged item or current revision uses an older `emery` grammar stamp. | Regenerate with `emery specify`. |
-| `secret-detected` | `1` | One of the staged specification documents contains a credential pattern. | Remove the secret from your source input, re-run `specify` or `amend`, and `apply` again. |
+| `secret-detected` | `1` | One of the staged specification documents or layouts contains a credential pattern (a compressed layout is scanned as its stored bytes, not inside). | Remove the secret from your source input, re-run `specify` or `amend`, and `apply` again. |
 | `repository-required` | `1` | `[target] repository = "."` is set, but the project directory is not a Git repository. | Initialize a Git repository (`git init`) and create a commit, or change `[target] repository`. |
 | `base-not-sealed` | `1` | `[target] repository = "."` is set, but the repository has no commits yet. | Create an initial commit in the repository and re-run `emery apply`. |
 | `revision-not-found` | `2` | The `[target] repository` URL does not exist, has no default branch, or conflicts with an engine-created repository of the same `name`. | Check the URL or remove `.emery/vcs/repos/<name>`. |
@@ -109,7 +111,7 @@ When `--format json` is passed, `emery apply` writes a single JSON object to `st
 | --- | --- | --- | --- |
 | `revision` | `string` | Always | SHA-256 ID of the newly sealed revision. |
 | `parent` | `string` | When sealing an amendment or displacing an initial revision | SHA-256 ID of the parent revision (`null`/omitted on first seal or `--fresh`). |
-| `commit` | `string` | Always | Git commit SHA where `spec/{spec,design,plan}.json` were sealed. |
+| `commit` | `string` | Always | Git commit SHA where `spec/{spec,design,plan}.json` and `spec/layouts/` were sealed. |
 | `label` | `string` | Always | Local Git branch name (`emery/<revision>`). |
 | `repository` | `string` | Always | Target repository path (`"."` or `"./.emery/vcs/repos/<name>"`). |
 | `kind` | `"revision"` \| `"amendment"` | Always | Whether a `specify` candidate (`"revision"`) or an `amend` change (`"amendment"`) was sealed. |
