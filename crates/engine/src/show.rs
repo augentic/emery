@@ -5,7 +5,6 @@
 //! revision is read from the target's repository, the staged candidate and
 //! the staged amendment from the engine's own storage.
 
-use std::collections::BTreeSet;
 use std::fmt::{self, Display, Formatter};
 use std::num::NonZeroUsize;
 
@@ -238,19 +237,13 @@ pub struct Schedule {
 
 impl Schedule {
     fn new(revision: &Revision, budget: NonZeroUsize, source: BudgetSource) -> Self {
-        let schedule = crate::build::Schedule::new(
-            &revision.plan,
-            &revision.spec,
-            budget,
-            &BTreeSet::new(),
-            &[],
-        );
+        let schedule = crate::build::Schedule::for_revision(revision, budget);
         let waves = schedule.waves();
         let over_budget = schedule.over_budget().map(|slice| slice.id).collect();
         Self {
             budget: budget.get(),
             source,
-            slices: schedule.slices().to_vec(),
+            slices: schedule.into_slices(),
             waves,
             over_budget,
         }
@@ -276,11 +269,7 @@ impl Display for Schedule {
             if slice.count > 1 {
                 write!(f, " ({}/{})", slice.index, slice.count)?;
             }
-            let wave = self
-                .waves
-                .iter()
-                .position(|wave| wave.contains(&slice.id))
-                .map_or(0, |index| index + 1);
+            let wave = self.waves.wave_of(&slice.id).unwrap_or(0);
             write!(
                 f,
                 "\n\n{ID} {}\n{PART_KEY} {} ({}/{})\n{WAVE_KEY} {wave}\n",

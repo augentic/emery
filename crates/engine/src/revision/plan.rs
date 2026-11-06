@@ -137,6 +137,19 @@ impl<T> Waves<T> {
     pub fn iter(&self) -> impl Iterator<Item = &[T]> {
         self.0.iter().map(Vec::as_slice)
     }
+
+    /// Returns the 1-based wave number holding `id`, or `None` when no wave holds it.
+    #[must_use]
+    pub fn wave_of(&self, id: &T) -> Option<usize>
+    where
+        T: PartialEq,
+    {
+        self.0.iter().position(|wave| wave.contains(id)).map(|index| index + 1)
+    }
+
+    fn total(&self) -> usize {
+        self.0.iter().map(Vec::len).sum()
+    }
 }
 
 impl<T: Display> Display for Waves<T> {
@@ -162,7 +175,7 @@ impl Waves<PartId> {
     /// Returns how many parts the waves hold between them.
     #[must_use]
     pub fn parts(&self) -> usize {
-        self.0.iter().map(Vec::len).sum()
+        self.total()
     }
 }
 
@@ -170,7 +183,7 @@ impl Waves<crate::revision::SliceId> {
     /// Returns how many slices the waves hold between them.
     #[must_use]
     pub fn slices(&self) -> usize {
-        self.0.iter().map(Vec::len).sum()
+        self.total()
     }
 }
 

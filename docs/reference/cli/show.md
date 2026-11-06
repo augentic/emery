@@ -103,7 +103,7 @@ revision: 9f8e7d6c…
 
 ## JSON output
 
-When `--format json` is passed, `emery show` writes a single JSON object to `stdout` (see [CLI output shapes](../cli-output-shapes.md#emery-show-specdesignplanamendment) for complete schemas):
+When `--format json` is passed, `emery show` writes a single JSON object to `stdout` (see [CLI output shapes](../cli-output-shapes.md#emery-show-specdesignplanscheduleamendment) for complete schemas):
 
 | Field | Type | Description |
 | --- | --- | --- |
@@ -133,4 +133,4 @@ When `--format json` is passed, `emery show` writes a single JSON object to `std
 - [`emery specify`](specify.md) — stage a candidate revision for `emery show <artifact> --staged`.
 - [`emery amend`](amend.md) — stage an incremental amendment for `emery show amendment`.
 - [`emery apply`](apply.md) — seal the staged item so bare `emery show` and `emery build` read it.
-- [CLI output shapes](../cli-output-shapes.md#emery-show-specdesignplanamendment) — full JSON schemas for `Spec`, `Design`, `Plan`, `Schedule`, and `Amendment`.
+- [CLI output shapes](../cli-output-shapes.md#emery-show-specdesignplanscheduleamendment) — full JSON schemas for `Spec`, `Design`, `Plan`, `Schedule`, and `Amendment`.

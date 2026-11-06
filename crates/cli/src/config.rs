@@ -412,15 +412,24 @@ impl TargetEntry {
     }
 
     fn into_show(self, artifact: Artifact, flag_budget: Option<NonZeroUsize>) -> ShowInput {
-        let (budget, budget_source) = resolve_budget(flag_budget, self.budget);
-        let adapter = self.adapter.clone();
-        let digest = self.digest.clone();
+        let Self {
+            name,
+            adapter,
+            digest,
+            repository,
+            budget,
+        } = self;
+        let (budget, budget_source) = resolve_budget(flag_budget, budget);
+        let target = TargetRef {
+            name: name.unwrap_or_else(|| adapter.name().to_owned()),
+            repository,
+        };
         ShowInput {
             budget,
             budget_source,
             adapter: Some(adapter),
             digest,
-            ..ShowInput::new(artifact, Some(self.into_ref()))
+            ..ShowInput::new(artifact, Some(target))
         }
     }
 }

@@ -16,7 +16,9 @@ use serde::{Deserialize, Serialize};
 use strum::AsRefStr;
 
 use crate::adapter::{self, AdapterRef};
-use crate::revision::{Part, PartId, Plan, ReqId, Requirement, SliceId, Spec, Waves, ranks};
+use crate::revision::{
+    Part, PartId, Plan, ReqId, Requirement, Revision, SliceId, Spec, Waves, ranks,
+};
 use crate::specify::Floors;
 use crate::vcs::StagedSlice;
 
@@ -144,7 +146,7 @@ impl<'a> Schedule<'a> {
                 if cut.resumed {
                     resumed.insert(id);
                 }
-                let index = u32::try_from(position + 1).unwrap_or(u32::MAX);
+                let index = u32::try_from(position).map_or(u32::MAX, |n| n.saturating_add(1));
                 let types =
                     if position == 0 && untouched { part.types.clone() } else { Vec::new() };
                 slices.push(ScheduledSlice {
@@ -167,9 +169,21 @@ impl<'a> Schedule<'a> {
         }
     }
 
+    // Cuts `revision`'s plan into slices of at most `budget` requirements,
+    // with nothing resumed.
+    #[must_use]
+    pub fn for_revision(revision: &'a Revision, budget: NonZeroUsize) -> Self {
+        Self::new(&revision.plan, &revision.spec, budget, &BTreeSet::new(), &[])
+    }
+
     #[must_use]
     pub fn slices(&self) -> &[ScheduledSlice] {
         &self.slices
+    }
+
+    #[must_use]
+    pub fn into_slices(self) -> Vec<ScheduledSlice> {
+        self.slices
     }
 
     #[must_use]

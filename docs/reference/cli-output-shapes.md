@@ -14,7 +14,7 @@ This page defines the canonical JSON output schemas, exit codes, recovery error 
   - [`emery amend`](#emery-amend)
   - [`emery apply`](#emery-apply)
   - [`emery build`](#emery-build)
-  - [`emery show <spec|design|plan|amendment>`](#emery-show-specdesignplanamendment)
+  - [`emery show <spec|design|plan|schedule|amendment>`](#emery-show-specdesignplanscheduleamendment)
   - [`emery completions <shell>`](#emery-completions-shell)
 
 ---
@@ -344,7 +344,7 @@ All text-mode formatters (`crates/cli/src/text.rs`) follow a uniform layout:
 
 ---
 
-### `emery show <spec|design|plan|amendment>`
+### `emery show <spec|design|plan|schedule|amendment>`
 
 ```json
 {

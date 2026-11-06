@@ -214,7 +214,7 @@ pub async fn build<P: Model + Target + StateStore + BlobStore + Plugins + Vcs + 
         budget: budget.get(),
         budget_source,
         parts,
-        schedule: schedule.slices().to_vec(),
+        schedule: schedule.into_slices(),
         waves,
         base,
         repository: repo.path(),

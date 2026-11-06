@@ -13,9 +13,11 @@ This glossary defines the core concepts and terminology used across the `emery` 
   - [Standing](#standing)
   - [Baseline](#baseline)
 - [Requirements and planning](#requirements-and-planning)
-  - [Stem, sub-stem, and floor](#stem-sub-stem-and-floor)
+  - [Stem and floor](#stem-and-floor)
   - [Trigger](#trigger)
   - [Retire claim and whole-scope retirement](#retire-claim-and-whole-scope-retirement)
+  - [Part](#part)
+  - [Budget, schedule, and over-budget slice](#budget-schedule-and-over-budget-slice)
   - [Slice](#slice)
   - [Wave](#wave)
 - [Adapters, extraction, and execution](#adapters-extraction-and-execution)
@@ -34,7 +36,7 @@ A complete, versioned specification bundle consisting of three JSON documents:
 
 - `spec.json`: Technology-neutral behavioural requirements (`REQ-001`, `REQ-002`, ...) and their verification scenarios.
 - `design.json`: Concrete architectural sections, external integrations, and data type signatures.
-- `plan.json`: Dependency-ordered build slices that partition the requirements and data types for code generation.
+- `plan.json`: Dependency-ordered logical parts (`PART-001`, `PART-002`, ...) that partition the requirements and data types for code generation.
 
 Every revision is identified by a content-addressed SHA-256 hex digest (`<id>`) computed across all three documents. Markdown views (`spec.md`, `design.md`, `plan.md`) are read-only projections rendered on demand by [`emery show`](reference/cli/show.md).
 
@@ -75,13 +77,12 @@ The existing requirements in the currently sealed revision when running [`emery 
 
 ## Requirements and planning
 
-### Stem, sub-stem, and floor
+### Stem and floor
 
 Every requirement has a dotted subject identifier such as `orders.cancel` or `orders.items.add`:
 
 - **Stem:** The first segment of the subject (for example, `orders`).
-- **Sub-stem:** The first two segments of the subject (for example, `orders.items`).
-- **Floor:** The minimum grouping unit used when partitioning requirements into build slices. A requirement's floor is its **stem**—all requirements sharing a stem stay together in at least one slice, and a stem is never split across slices.
+- **Floor:** The minimum grouping unit used when partitioning requirements into logical plan parts. A requirement's floor is its **stem**—all requirements sharing a stem stay together in one part, and a stem is never split across parts during `specify` or `amend`.
 
 ### Trigger
 
@@ -90,7 +91,7 @@ An inbound entry point attached to a requirement by code analysis—never guesse
 - **HTTP route:** Method and normalized path pattern (for example, `POST /orders/{id}/cancel`), rendered in the specification as `Route: POST /orders/{id}/cancel`.
 - **Message:** A subscribed message or topic name (for example, `order.created`), rendered as `Message: order.created`.
 
-Requirements that share a trigger are always placed in the same build slice, regardless of their stems.
+Requirements that share a trigger are always placed in the same part in `plan.json` and kept together in the same build slice when the schedule is cut, regardless of their stems.
 
 ### Retire claim and whole-scope retirement
 
@@ -99,13 +100,23 @@ An amendment can remove ("retire") an existing requirement in two ways:
 1. **Explicit withdrawal (`retire` claim):** A prose source adapter (`intent` or `documentation`) emits a claim of kind `retire` whose subject matches an existing requirement (for example, when an operator note states "Remove legacy CSV export").
 2. **Implicit withdrawal (`scope = "whole"`):** A code source configured with `scope = "whole"` in `emery.toml` is treated as exhaustive for every stem its extracted `requirement` claims mention. Any existing requirement under one of those stems that is left untouched by the change is automatically retired ("retired by scope").
 
+### Part
+
+A logical domain module (`PART-001`, `PART-002`, ...) stored in `plan.json` by [`emery specify`](reference/cli/specify.md) and [`emery amend`](reference/cli/amend.md). Each part has a kebab-case `name`, a list of `requirements` (`REQ-NNN`), zero or more owned `data` type keys (`types`) from `design.json`, a list of other parts it `depends-on`, and a prose `brief`. Parts carry no requirement count cap; during [`emery build`](reference/cli/build.md), each part is cut into one or more budget-sized [slices](#slice).
+
+### Budget, schedule, and over-budget slice
+
+- **Budget:** The maximum number of requirements (`REQ-NNN`) to implement in a single build slice during [`emery build`](reference/cli/build.md). Resolved in priority order from `--budget <N>` / `EMERY_BUDGET` (`flag`), `[target] budget = <N>` in `emery.toml` (`config`), the target adapter's `TargetMetadata.budget` (`adapter`), or the engine fallback of `12` (`default`).
+- **Schedule:** The deterministic sequence of build slices (`SLICE-001`, `SLICE-002`, ...) and dependency waves cut from `plan.json` under the resolved budget, with no language-model turn spent. Inspect it ahead of time with [`emery show schedule [--budget <N>]`](reference/cli/show.md#previewing-the-build-schedule-emery-show-schedule).
+- **Over-budget slice (`over-budget`):** A slice whose requirement count exceeds the budget because a single un-splittable group (such as one HTTP route or message handler) has more requirements than the budget on its own. Emery keeps the group intact as one slice and reports it under `over budget:` (text) and `over-budget` (JSON) as a warning rather than failing the build.
+
 ### Slice
 
-A single unit of work (`SLICE-001`, `SLICE-002`, ...) in `plan.json`. Each slice owns a subset of requirements, zero or more data type definitions from `design.json`, a prose brief, and a list of slices it `depends-on`. During [`emery build`](reference/cli/build.md), each slice is handed to the target adapter in its own isolated temporary Git worktree.
+A single budget-sized unit of build work (`SLICE-001`, `SLICE-002`, ...) cut from a [part](#part) in the build [schedule](#budget-schedule-and-over-budget-slice). Each slice carries its parent `part` ID (`PART-NNN`), the part's logical `name` and `brief`, its 1-based position within the part (`index` of `count`), its slice of `requirements`, and (on the first slice of an unbuilt part) the part's owned data `types`. During [`emery build`](reference/cli/build.md), slices within a part run in serial waves while independent parts run in parallel, each slice building in its own isolated temporary Git worktree (`.emery/vcs/worktrees/<slice-id>`).
 
 ### Wave
 
-A group of build slices whose `depends-on` slices have all been merged. [`emery build`](reference/cli/build.md) executes all ready slices in a wave concurrently (bounded by `--jobs`), merges their commits in slice ID order into `.emery/vcs/integration`, and runs a single verification pass over the integrated tree before moving to the next wave.
+A group of build slices whose dependency parts and earlier intra-part slices have all been merged. [`emery build`](reference/cli/build.md) executes all ready slices in a wave concurrently (bounded by `--jobs`), merges their commits in slice ID order into `.emery/vcs/integration`, and runs a single verification pass over the integrated tree before moving to the next wave.
 
 ---
 
@@ -139,4 +150,4 @@ The Git repository where [`emery apply`](reference/cli/apply.md) seals specifica
 
 ### Turn and brief
 
-A **turn** is a single structured request sent to the language model, including automatic validation and self-correction rounds when a response violates an engine or SDK gate. In the engine, each turn is constructed from a **brief**—a typed prompt paired with a JSON schema and a deterministic verifier. (In `plan.json`, each slice also carries a short prose `brief` describing what the slice builds.)
+A **turn** is a single structured request sent to the language model, including automatic validation and self-correction rounds when a response violates an engine or SDK gate. In the engine, each turn is constructed from a **brief**—a typed prompt paired with a JSON schema and a deterministic verifier. (In `plan.json`, each part also carries a short prose `brief` describing what the part delivers.)
