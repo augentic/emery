@@ -1,12 +1,14 @@
-//! Verifies `emery show amendment`, what a staged amendment refuses, and a hand-merged `spec/`, over scripted storage.
+//! Verifies `emery show` over amendments, schedules, what a staged amendment refuses, and a hand-merged `spec/`, over scripted storage.
 
 #![cfg(not(target_arch = "wasm32"))]
 
 mod support;
 
 use emery_engine::{STAGED_CONTAINER, STAGED_KEY};
-use serde_json::Value;
-use support::provider::Provider;
+use omnia_sdk::api::command::USAGE_EXIT;
+use serde_json::{Value, json};
+use support::provider::{Provider, cli};
+use support::scratch::Scratch;
 use support::store::{seed, stage, stage_amendment, stage_fresh};
 use support::vcs::HEAD;
 use support::{cli_ok, fail};
@@ -221,4 +223,205 @@ async fn corrupt_amendment() {
     .to_string();
     provider.storage.insert_state(STAGED_KEY, record.as_bytes());
     fail(&provider, &["emery", "show", "amendment"], 3, "server_error").await;
+}
+
+// `show schedule` cuts the sealed plan under the target adapter's metadata
+// budget when neither `--budget` nor `[target] budget` sets one, spending no
+// model turn; `[target] budget` overrides the adapter's default without
+// loading the adapter.
+#[tokio::test]
+async fn show_schedule() {
+    let mut provider = Provider::idle();
+    provider.target.budget = Some(4);
+    let id = seed(&provider.files, SPEC, DESIGN, PLAN);
+
+    let resp = cli_ok(&provider, &["emery", "show", "schedule", "--config", PROJECT_CONFIG]).await;
+    let expected = format!(
+        "---\nemery: 9\nrevision: {id}\n---\n\n# Schedule\n\nBudget: 4 (adapter)\nWaves: \
+         [SLICE-001], [SLICE-002]\n\n## Slice: authentication\n\nID: SLICE-001\nPart: PART-001 \
+         (1/1)\nWave: 1\nRequirements: [REQ-001, REQ-002]\n\n## Slice: orders\n\nID: \
+         SLICE-002\nPart: PART-002 (1/1)\nWave: 2\nRequirements: [REQ-003, REQ-004]\nTypes: \
+         [orders.line, orders.order]\n"
+    );
+    assert_eq!(String::from_utf8_lossy(&resp.stdout), expected);
+    assert_eq!(
+        *provider.target.metadata.lock().expect("metadata"),
+        ["acme:builder"],
+        "the target adapter's metadata supplies the budget when neither flag nor config sets one"
+    );
+    provider.model.assert_exhausted();
+
+    let resp = cli_ok(
+        &provider,
+        &["emery", "--format", "json", "show", "schedule", "--config", PROJECT_CONFIG],
+    )
+    .await;
+    let envelope: Value = serde_json::from_slice(&resp.stdout).expect("one JSON envelope");
+    assert_eq!(envelope["revision"], id, "{envelope}");
+    assert_eq!(envelope["body"], expected, "{envelope}");
+    assert_eq!(
+        envelope["document"],
+        json!({
+            "budget": 4,
+            "source": "adapter",
+            "slices": [
+                {
+                    "id": "SLICE-001",
+                    "part": "PART-001",
+                    "name": "authentication",
+                    "index": 1,
+                    "count": 1,
+                    "requirements": ["REQ-001", "REQ-002"],
+                    "over-budget": false,
+                },
+                {
+                    "id": "SLICE-002",
+                    "part": "PART-002",
+                    "name": "orders",
+                    "index": 1,
+                    "count": 1,
+                    "requirements": ["REQ-003", "REQ-004"],
+                    "types": ["orders.line", "orders.order"],
+                    "over-budget": false,
+                },
+            ],
+            "waves": [["SLICE-001"], ["SLICE-002"]],
+            "over-budget": [],
+        }),
+        "{envelope}"
+    );
+
+    // `[target] budget` overrides the adapter's metadata without loading the adapter
+    let scratch = Scratch::new();
+    let config = scratch
+        .config("[target]\nadapter = \"acme:builder@2.1.0\"\nrepository = \".\"\nbudget = 6\n");
+    let mut provider = Provider::idle();
+    provider.target.budget = Some(4);
+    seed(&provider.files, SPEC, DESIGN, PLAN);
+
+    let resp =
+        cli_ok(&provider, &["emery", "--format", "json", "show", "schedule", "--config", &config])
+            .await;
+    let envelope: Value = serde_json::from_slice(&resp.stdout).expect("one JSON envelope");
+    assert_eq!(envelope["document"]["budget"], 6, "{envelope}");
+    assert_eq!(envelope["document"]["source"], "config", "{envelope}");
+    assert!(
+        provider.target.metadata.lock().expect("metadata").is_empty(),
+        "a configured budget needs no adapter metadata load"
+    );
+}
+
+// `--budget` cuts a multi-sub-stem part into serial slices, packs untriggered
+// sub-stems before triggered ones, keeps a shared-trigger group whole as
+// `over-budget`, and skips loading the target adapter.
+#[tokio::test]
+async fn show_schedule_budget_flag() {
+    let mut spec: Value = serde_json::from_slice(SPEC).expect("spec fixture");
+    spec["requirements"][1]["subject"] = json!("orders.validate.schema");
+    spec["requirements"][2]["subject"] = json!("orders.create.route");
+    spec["requirements"][3]["subject"] = json!("orders.create.persist");
+    spec["requirements"][3]["trigger"] = json!({"http": {"method": "POST", "path": "/orders"}});
+
+    let mut plan: Value = serde_json::from_slice(PLAN).expect("plan fixture");
+    plan["parts"][0]["requirements"] = json!(["REQ-001"]);
+    plan["parts"][1]["requirements"] = json!(["REQ-002", "REQ-003", "REQ-004"]);
+
+    let provider = Provider::idle();
+    let id =
+        seed(&provider.files, spec.to_string().as_bytes(), DESIGN, plan.to_string().as_bytes());
+
+    let resp = cli_ok(
+        &provider,
+        &[
+            "emery",
+            "--format",
+            "json",
+            "show",
+            "schedule",
+            "--config",
+            PROJECT_CONFIG,
+            "--budget",
+            "1",
+        ],
+    )
+    .await;
+    let envelope: Value = serde_json::from_slice(&resp.stdout).expect("one JSON envelope");
+    assert_eq!(envelope["revision"], id, "{envelope}");
+    assert_eq!(envelope["document"]["budget"], 1, "{envelope}");
+    assert_eq!(envelope["document"]["source"], "flag", "{envelope}");
+    assert_eq!(
+        envelope["document"]["waves"],
+        json!([["SLICE-001"], ["SLICE-002"], ["SLICE-003"]]),
+        "{envelope}"
+    );
+    assert_eq!(envelope["document"]["over-budget"], json!(["SLICE-003"]), "{envelope}");
+    assert_eq!(
+        envelope["document"]["slices"],
+        json!([
+            {
+                "id": "SLICE-001",
+                "part": "PART-001",
+                "name": "authentication",
+                "index": 1,
+                "count": 1,
+                "requirements": ["REQ-001"],
+                "over-budget": false,
+            },
+            {
+                "id": "SLICE-002",
+                "part": "PART-002",
+                "name": "orders",
+                "index": 1,
+                "count": 2,
+                "requirements": ["REQ-002"],
+                "types": ["orders.line", "orders.order"],
+                "over-budget": false,
+            },
+            {
+                "id": "SLICE-003",
+                "part": "PART-002",
+                "name": "orders",
+                "index": 2,
+                "count": 2,
+                "requirements": ["REQ-003", "REQ-004"],
+                "over-budget": true,
+            },
+        ]),
+        "{envelope}"
+    );
+    assert!(
+        provider.target.metadata.lock().expect("metadata").is_empty(),
+        "`--budget` resolves the budget without loading the target adapter"
+    );
+
+    let text =
+        cli_ok(&provider, &["emery", "show", "schedule", "--config", PROJECT_CONFIG, "-b", "1"])
+            .await;
+    let body = String::from_utf8_lossy(&text.stdout);
+    assert_eq!(envelope["body"], body.as_ref());
+    assert!(body.contains("Budget: 1 (flag)\nWaves: [SLICE-001], [SLICE-002], [SLICE-003]\nOver budget: [SLICE-003]\n"), "{body}");
+    assert!(body.contains("## Slice: orders (1/2)\n\nID: SLICE-002\nPart: PART-002 (1/2)\nWave: 2\nRequirements: [REQ-002]\nTypes: [orders.line, orders.order]\n"), "{body}");
+    assert!(body.contains("## Slice: orders (2/2)\n\nID: SLICE-003\nPart: PART-002 (2/2)\nWave: 3\nRequirements: [REQ-003, REQ-004]\nOver budget: true\n"), "{body}");
+
+    let zero =
+        cli(&provider, &["emery", "show", "schedule", "--config", PROJECT_CONFIG, "--budget", "0"])
+            .await;
+    assert_eq!(zero.exit, USAGE_EXIT);
+}
+
+// `show schedule --staged` is refused: a schedule cuts the sealed plan
+// `emery build` reads, never the staged candidate.
+#[tokio::test]
+async fn show_schedule_staged_refused() {
+    let provider = Provider::idle();
+    stage(&provider.storage, SPEC, DESIGN, PLAN);
+
+    let envelope =
+        fail(&provider, &["emery", "show", "schedule", "--staged"], 1, "bad_request").await;
+    assert!(
+        envelope["message"].as_str().is_some_and(|text| text.contains("emery show plan --staged")),
+        "{envelope}"
+    );
+    assert!(provider.vcs.calls().is_empty(), "refused before touching the repository");
+    assert!(provider.target.metadata.lock().expect("metadata").is_empty());
 }

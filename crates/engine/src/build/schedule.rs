@@ -9,9 +9,13 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::num::NonZeroUsize;
 
+use emery_adapter::target::Target;
+use omnia_sdk::plugins::Digest;
+use omnia_sdk::{Error, Plugins};
 use serde::{Deserialize, Serialize};
 use strum::AsRefStr;
 
+use crate::adapter::{self, AdapterRef};
 use crate::revision::{Part, PartId, Plan, ReqId, Requirement, SliceId, Spec, Waves, ranks};
 use crate::specify::Floors;
 use crate::vcs::StagedSlice;
@@ -49,6 +53,21 @@ impl BudgetSource {
             return (budget, Self::Adapter);
         }
         (DEFAULT_BUDGET, Self::Default)
+    }
+
+    // Resolves the requirement budget, loading `adapter`'s metadata only when
+    // `budget` is `None`.
+    pub(crate) async fn resolve_with<P: Target + Plugins>(
+        provider: &P, budget: Option<NonZeroUsize>, source: Option<Self>,
+        adapter: Option<&AdapterRef>, digest: Option<&Digest>,
+    ) -> Result<(NonZeroUsize, Self), Error> {
+        let metadata = match (budget, adapter) {
+            (None, Some(adapter)) => {
+                adapter::load_target(provider, adapter, digest).await?.metadata.budget
+            }
+            _ => None,
+        };
+        Ok(Self::resolve(budget, source, metadata))
     }
 }
 

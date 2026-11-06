@@ -139,6 +139,25 @@ impl<T> Waves<T> {
     }
 }
 
+impl<T: Display> Display for Waves<T> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        for (position, wave) in self.0.iter().enumerate() {
+            if position > 0 {
+                f.write_str(", ")?;
+            }
+            f.write_str("[")?;
+            for (index, id) in wave.iter().enumerate() {
+                if index > 0 {
+                    f.write_str(", ")?;
+                }
+                write!(f, "{id}")?;
+            }
+            f.write_str("]")?;
+        }
+        Ok(())
+    }
+}
+
 impl Waves<PartId> {
     /// Returns how many parts the waves hold between them.
     #[must_use]

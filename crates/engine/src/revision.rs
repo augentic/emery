@@ -32,10 +32,9 @@ pub use self::design::{Block, Design, Role, Section, SectionKind, TYPE, citation
 use self::diff::BRIEF;
 pub use self::diff::{Changed, DesignDiff, Diff, Entry, PartEntry, PlanDiff, Retired, SpecDiff};
 pub use self::id::{BadId, PartId, ReqId, SliceId, leads, stem, substem};
-use self::plan::{DEPENDS_ON, REQUIREMENTS, TYPES};
-pub use self::plan::{Part, Plan, Waves, ranks};
-pub use self::spec::{Cited, Loser, Requirement, Scenario, Spec, Status};
-use self::spec::{HEADING, ID, MESSAGE, NOTE, ROUTE, SOURCES, STATUS};
+pub use self::plan::{DEPENDS_ON, Part, Plan, REQUIREMENTS, TYPES, Waves, ranks};
+pub use self::spec::{Cited, ID, Loser, Requirement, Scenario, Spec, Status};
+use self::spec::{HEADING, MESSAGE, NOTE, ROUTE, SOURCES, STATUS};
 
 // The revision grammar written and accepted by this engine.
 //
@@ -209,7 +208,7 @@ fn write<T: Display>(
 }
 
 // A `Key: [a, b]` line with no trailing newline.
-fn write_list<T: Display>(f: &mut Formatter<'_>, key: &str, items: &[T]) -> fmt::Result {
+pub fn write_list<T: Display>(f: &mut Formatter<'_>, key: &str, items: &[T]) -> fmt::Result {
     write!(f, "{key} [")?;
     for (position, item) in items.iter().enumerate() {
         if position > 0 {

@@ -7,6 +7,7 @@ use std::str::FromStr as _;
 
 use anyhow::Context;
 use emery_engine::build::{BudgetSource, BuildInput};
+use emery_engine::show::{Artifact, ShowInput};
 use emery_engine::specify::{Scope, SourceConfig, SourceContent, SourceRepository};
 use emery_engine::vcs::TargetRef;
 use emery_engine::{AdapterRef, Rank, preopen_join, preopen_path};
@@ -109,6 +110,28 @@ pub fn target(config: Option<&Path>, repository: Option<&str>) -> Result<Option<
         entry.repository = Some(repository.to_owned());
     }
     Ok(Some(entry.into_ref()))
+}
+
+// Resolves `ShowInput` from the `[target]` table of `config` (or the
+// discovered project-root file) and `--budget`: the staged candidate and
+// the amendment read no file, while a current-revision artifact carries the
+// target's repository, adapter, digest, and budget.
+pub fn show(
+    artifact: Artifact, staged: bool, config: Option<&Path>, flag_budget: Option<NonZeroUsize>,
+) -> Result<ShowInput, Error> {
+    if !staged
+        && !matches!(artifact, Artifact::Amendment)
+        && let Some(entry) = ConfigFile::load(config)?.and_then(|file| file.target)
+    {
+        return Ok(entry.into_show(artifact, flag_budget));
+    }
+    let (budget, budget_source) = resolve_budget(flag_budget, None);
+    Ok(ShowInput {
+        staged,
+        budget,
+        budget_source,
+        ..ShowInput::new(artifact, None)
+    })
 }
 
 // The `build-target-required` refusal of `verb`, which reads or seals the current revision and was handed no `[target]`.
@@ -369,11 +392,7 @@ impl TargetEntry {
         self, jobs: Option<NonZeroUsize>, flag_budget: Option<NonZeroUsize>,
     ) -> BuildInput {
         let name = self.name.unwrap_or_else(|| self.adapter.name().to_owned());
-        let (budget, budget_source) = match (flag_budget, self.budget) {
-            (Some(budget), _) => (Some(budget), Some(BudgetSource::Flag)),
-            (None, Some(budget)) => (Some(budget), Some(BudgetSource::Config)),
-            (None, None) => (None, None),
-        };
+        let (budget, budget_source) = resolve_budget(flag_budget, self.budget);
         BuildInput {
             name,
             adapter: self.adapter,
@@ -390,5 +409,28 @@ impl TargetEntry {
             name: self.name.unwrap_or_else(|| self.adapter.name().to_owned()),
             repository: self.repository,
         }
+    }
+
+    fn into_show(self, artifact: Artifact, flag_budget: Option<NonZeroUsize>) -> ShowInput {
+        let (budget, budget_source) = resolve_budget(flag_budget, self.budget);
+        let adapter = self.adapter.clone();
+        let digest = self.digest.clone();
+        ShowInput {
+            budget,
+            budget_source,
+            adapter: Some(adapter),
+            digest,
+            ..ShowInput::new(artifact, Some(self.into_ref()))
+        }
+    }
+}
+
+const fn resolve_budget(
+    flag: Option<NonZeroUsize>, configured: Option<NonZeroUsize>,
+) -> (Option<NonZeroUsize>, Option<BudgetSource>) {
+    match (flag, configured) {
+        (Some(budget), _) => (Some(budget), Some(BudgetSource::Flag)),
+        (None, Some(budget)) => (Some(budget), Some(BudgetSource::Config)),
+        (None, None) => (None, None),
     }
 }
