@@ -67,7 +67,7 @@ use crate::vcs::{BuildRepo, TargetRef};
 /// - Returns [`Error::ServerError`] when storage or version control fails,
 ///   or the candidate no longer matches its identifier.
 pub async fn apply<P: StateStore + BlobStore + Vcs + Files>(
-    input: ApplyInput, context: Context<P>,
+    context: Context<P>, input: ApplyInput,
 ) -> Result<ApplyOutput, Error> {
     let provider = context.provider();
     let repo = input.target.repo()?;

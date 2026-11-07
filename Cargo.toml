@@ -123,7 +123,7 @@ sha2 = "0.11"
 strum = { version = "0.28", features = ["derive"] }
 tempfile = "3.27.0"
 tokio = { version = "1.54.1", features = ["fs", "io-util", "rt"] }
-toml = "1.1.8"
+toml = "1.2.1"
 tracing = "0.1.44"
 wasip3 = "0.10.0"
 wit-bindgen = { version = "0.63.0", features = ["async-spawn"] }
@@ -165,29 +165,11 @@ omnia-wasi-keyvalue = { git = "https://github.com/augentic/omnia" }
 omnia-wasi-model = { git = "https://github.com/augentic/omnia" }
 omnia-wasi-otel = { git = "https://github.com/augentic/omnia" }
 omnia-wasi-vcs = { git = "https://github.com/augentic/omnia" }
-# omnia = { path = "../omnia/crates/omnia" }
-# omnia-backend = { path = "../omnia/crates/backend" }
-# omnia-compile = { path = "../omnia/crates/compile" }
-# omnia-core = { path = "../omnia/crates/core" }
-# omnia-sdk = { path = "../omnia/crates/sdk" }
-# omnia-guest-macros = { path = "../omnia/crates/guest-macros" }
-# omnia-host-macros = { path = "../omnia/crates/host-macros" }
-# omnia-plugin = { path = "../omnia/crates/plugin" }
-# omnia-test = { path = "../omnia/crates/test" }
-# omnia-wasi-blobstore = { path = "../omnia/crates/wasi-blobstore" }
-# omnia-wasi-keyvalue = { path = "../omnia/crates/wasi-keyvalue" }
-# omnia-wasi-model = { path = "../omnia/crates/wasi-model" }
-# omnia-wasi-otel = { path = "../omnia/crates/wasi-otel" }
-# omnia-wasi-vcs = { path = "../omnia/crates/wasi-vcs" }
 
 omnia-cursor = { git = "https://github.com/augentic/omnia-backends" }
 omnia-filesystem = { git = "https://github.com/augentic/omnia-backends" }
 omnia-genai = { git = "https://github.com/augentic/omnia-backends" }
 omnia-git = { git = "https://github.com/augentic/omnia-backends" }
-# omnia-cursor = { path = "../omnia-backends/crates/cursor" }
-# omnia-filesystem = { path = "../omnia-backends/crates/filesystem" }
-# omnia-genai = { path = "../omnia-backends/crates/genai" }
-# omnia-git = { path = "../omnia-backends/crates/git" }
 
 [profile.release]
 lto = true

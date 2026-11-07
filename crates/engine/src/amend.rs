@@ -115,7 +115,7 @@ use crate::{Files, apply, store};
 /// - Returns what [`apply`](crate::apply::apply) fails with sealing the
 ///   amendment under [`AmendInput::apply`], the amendment left staged.
 pub async fn amend<P: Model + Source + StateStore + BlobStore + Plugins + Vcs + Files>(
-    input: AmendInput, context: Context<P>,
+    context: Context<P>, input: AmendInput,
 ) -> Result<AmendOutput, Error> {
     let provider = context.provider();
 
