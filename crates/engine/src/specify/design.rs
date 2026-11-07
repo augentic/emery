@@ -14,6 +14,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::{self, Display, Formatter};
 
 use emery_adapter::source::{Claim, ClaimKind};
+use emery_lexicon::Lexicon;
 use omnia_sdk::{Error, server_error};
 use schemars::JsonSchema;
 use serde::Deserialize;
@@ -24,7 +25,7 @@ pub use self::amend::DesignAmend;
 use crate::brief::{Brief, Review};
 use crate::revision::{self, Design, EMERY, Role, Section, SectionKind, citations};
 use crate::specify::basis::Basis;
-use crate::specify::sections::{BasesSection, ClaimsSection};
+use crate::specify::sections::{self, BasesSection, ClaimsSection};
 use crate::specify::{Extract, shape};
 
 // A synthesis brief for the drafted portions of `design.md`.
@@ -104,6 +105,7 @@ impl Brief for DesignBrief<'_> {
             review.note(format_args!("`## {kind}` is required but absent"));
         }
         self.outline.references(review, &references);
+        self.outline.packages(review, answer.texts());
     }
 
     fn into_output(self, answer: DesignAnswer) -> Result<Design, Error> {
@@ -185,6 +187,14 @@ pub struct DesignAnswer {
     pub sections: Vec<Section<Block>>,
 }
 
+impl DesignAnswer {
+    // Every paragraph of the draft, the preamble's then each section's.
+    fn texts(&self) -> impl Iterator<Item = &str> {
+        let sections = self.sections.iter().flat_map(|section| &section.blocks);
+        self.preamble.iter().map(String::as_str).chain(sections.filter_map(Block::text))
+    }
+}
+
 /// A drafted paragraph or reference to a type claim.
 ///
 /// The renderer inserts a referenced claim's signature verbatim.
@@ -195,6 +205,15 @@ pub enum Block {
     Text(String),
     /// A `type` claim by its key, with the role its type plays.
     Type(TypeRef),
+}
+
+impl Block {
+    fn text(&self) -> Option<&str> {
+        match self {
+            Self::Text(text) => Some(text),
+            Self::Type(_) => None,
+        }
+    }
 }
 
 /// A design draft's reference to one `type` claim.
@@ -208,14 +227,16 @@ pub struct TypeRef {
 }
 
 // What the evidence lets the design say: the claim kinds present, the source
-// names a citation may name, and the type blocks on offer. `types` maps each
-// `type` claim's key, the name the model references it by, to the signature
-// the engine renders under it. A `type` claim without a string `signature`
-// has nothing to render and is not offered.
+// names a citation may name, the type blocks on offer, and the packages the
+// `call` claims reach through, which the design's text must name. `types`
+// maps each `type` claim's key, the name the model references it by, to the
+// signature the engine renders under it. A `type` claim without a string
+// `signature` has nothing to render and is not offered.
 struct Outline<'a> {
     kinds: BTreeSet<ClaimKind>,
     sources: BTreeSet<&'a str>,
     types: BTreeMap<String, &'a str>,
+    packages: BTreeMap<&'a str, Vec<&'a Claim>>,
 }
 
 impl<'a> Outline<'a> {
@@ -235,6 +256,7 @@ impl<'a> Outline<'a> {
             kinds: claims().map(|claim| claim.kind).collect(),
             sources: extracts.iter().map(|extract| extract.source.as_str()).collect(),
             types,
+            packages: sections::packages(extracts),
         }
     }
 
@@ -333,6 +355,37 @@ impl<'a> Outline<'a> {
         }
     }
 
+    // Checks that `texts`, the design's paragraphs, name each package the
+    // `call` claims reach through: a term the lexicon reads from the package
+    // (`x2js`, `keyvaultsecrets`), or a fixed name a term begins with
+    // (`kafka` for `kafkajs`), since the product is the technology. A
+    // package the lexicon keeps nothing of, a lone plain word (`pg`,
+    // `express`), is not checked: the design names the product behind it
+    // and never the word. One finding per package, wherever in the design
+    // the name would land.
+    fn packages<'b>(&self, review: &mut Review, texts: impl Iterator<Item = &'b str>) {
+        if self.packages.is_empty() {
+            return;
+        }
+        let text = texts.collect::<Vec<_>>().join("\n");
+        for (package, claims) in &self.packages {
+            let lexicon = Lexicon::from_packages([package]);
+            let terms: Vec<&str> = lexicon.terms().collect();
+            if terms.is_empty() {
+                continue;
+            }
+            let named = lexicon.names(&text);
+            if named.iter().any(|name| terms.iter().any(|term| term.starts_with(name.as_str()))) {
+                continue;
+            }
+            review.note(format_args!(
+                "the design names no technology for the `call` claims through `{package}` \
+                 ({calls}); name it beside the role it plays",
+                calls = calls(claims)
+            ));
+        }
+    }
+
     // Lowers accepted `blocks` into stored ones, each type reference taking
     // the signature offered under its key.
     //
@@ -379,6 +432,32 @@ fn type_key(taken: &BTreeMap<String, &str>, name: &str, path: Option<&str>) -> S
         .map(|n| format!("{name} ({anchor}, {n})"))
         .find(|key| !taken.contains_key(key))
         .unwrap_or(anchored)
+}
+
+// The `call` claims through one package as a finding spells them: each
+// distinct callee once, anchored where its first claim is, three at most and
+// the rest counted, so a finding over a package reached from many sites
+// stays one line.
+fn calls(claims: &[&Claim]) -> String {
+    const SHOWN: usize = 3;
+    let mut callees: Vec<(&str, Option<&str>)> = Vec::new();
+    for claim in claims {
+        let Some(callee) = claim.callee() else { continue };
+        if !callees.iter().any(|(known, _)| *known == callee) {
+            callees.push((callee, claim.path.as_deref()));
+        }
+    }
+    let mut spelled: Vec<String> = callees
+        .iter()
+        .take(SHOWN)
+        .map(|(callee, path)| {
+            path.map_or_else(|| format!("`{callee}`"), |path| format!("`{callee}` at `{path}`"))
+        })
+        .collect();
+    if callees.len() > SHOWN {
+        spelled.push(format!("and {} more", callees.len() - SHOWN));
+    }
+    spelled.join(", ")
 }
 
 // The declared name of a `type` claim: its `name` extra — the identifier the

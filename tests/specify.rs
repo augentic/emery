@@ -1897,6 +1897,61 @@ async fn decision_informs_apis() {
     provider.model.assert_exhausted();
 }
 
+// The design names the technology behind each `call` claim: a draft naming
+// no term of the package is a finding the correction rides, and the corrected
+// draft commits. A fixed name the term begins with names it (`Kafka` for
+// `kafkajs`), and a package the lexicon keeps nothing of (`pg`) is not held.
+#[tokio::test]
+async fn call_unnamed_in_design() {
+    let evidence = |callee: &str| {
+        let mut call = claim(ClaimKind::Call, "greeting.post", ("callee", callee));
+        call.path = Some("src/ledger.ts#L12".to_string());
+        Ok(evidence(vec![
+            requirement("greeting.behaviour", "GET /greeting returns the static string 'hello'."),
+            call,
+        ]))
+    };
+    let apis = |text: &str| {
+        design_with_apis()
+            .replace("The system reaches one upstream service, as the claims spell it.", text)
+    };
+    let unnamed = design_with_apis();
+    let named = apis("Postings reach the ledger through the ledger-client (acme-cloud).");
+    let finding = "the design names no technology for the `call` claims through \
+                   `@acme-cloud/ledger-client` (`@acme-cloud/ledger-client:post` at \
+                   `src/ledger.ts#L12`); name it beside the role it plays";
+
+    // three unnamed drafts exhaust the turn
+    let mut provider =
+        Provider::answering([SPEC_ANSWER, unnamed.as_str(), unnamed.as_str(), unnamed.as_str()]);
+    provider.source.evidence.insert("docs".to_string(), evidence("@acme-cloud/ledger-client:post"));
+    let envelope =
+        fail(&provider, &["emery", "specify", &reference("docs")], 1, "bad_request").await;
+    assert_message(&envelope, finding);
+    provider.model.assert_exhausted();
+
+    // the finding rides the correction, and the corrected draft commits
+    let mut provider = Provider::answering([SPEC_ANSWER, unnamed.as_str(), named.as_str()]);
+    provider.source.evidence.insert("docs".to_string(), evidence("@acme-cloud/ledger-client:post"));
+    cli_ok(&provider, &["emery", "specify", &reference("docs")]).await;
+    let check = &provider.model.exchanges()[1];
+    assert_eq!(check.tool, "check");
+    let correction = check.outcome.as_ref().expect_err("the unnamed draft is rejected");
+    assert!(correction.contains(finding), "{correction}");
+    let shown = shown(&provider, "design").await;
+    assert!(shown.contains("through the ledger-client (acme-cloud)"), "{shown}");
+    provider.model.assert_exhausted();
+
+    // the product names the client, and a plain word is not held
+    let kafka = apis("Each delivery is read from the Kafka stream.");
+    for (callee, answer) in [("kafkajs:Kafka.consumer", &kafka), ("pg:Pool.query", &unnamed)] {
+        let mut provider = Provider::answering([SPEC_ANSWER, answer.as_str()]);
+        provider.source.evidence.insert("docs".to_string(), evidence(callee));
+        cli_ok(&provider, &["emery", "specify", &reference("docs")]).await;
+        provider.model.assert_exhausted();
+    }
+}
+
 // The section kinds are an inline enumeration, the type block names its key
 // among the evidence's `type` claims and its role among the two, so the model
 // cannot answer a kind, a key, or a role the gate would refuse.

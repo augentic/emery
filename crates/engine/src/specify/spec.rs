@@ -78,7 +78,7 @@ impl<'a> SpecBrief<'a> {
     }
 
     fn cut(extracts: &'a [Extract], bases: &'a [Basis<'a>], amending: bool) -> Vec<Self> {
-        let lexicon = Lexicon::from_packages(packages(extracts));
+        let lexicon = Lexicon::from_packages(sections::packages(extracts).into_keys());
         let mut stems: Vec<(&str, Vec<&'a Basis<'a>>)> = Vec::new();
         for basis in bases {
             let stem = basis.stem();
@@ -281,19 +281,6 @@ impl Brief for SpecBrief<'_> {
 
         Ok((answer.preamble, requirements))
     }
-}
-
-// The packages the run's `call` claims spell: the part of each `callee`
-// before its first `:`. A bare global (`fetch`) spells none, and a wrapper
-// of the tree (`src/lib/http.ts:HttpClient.post`) spells a path the lexicon
-// reads as a plain word and keeps nothing of.
-fn packages(extracts: &[Extract]) -> impl Iterator<Item = &str> {
-    extracts
-        .iter()
-        .flat_map(|extract| &extract.evidence.claims)
-        .filter(|claim| claim.kind == ClaimKind::Call)
-        .filter_map(Claim::callee)
-        .filter_map(|callee| callee.split_once(':').map(|(package, _)| package))
 }
 
 // Whitespace collapsed, trailing punctuation dropped, lowercased: the shape

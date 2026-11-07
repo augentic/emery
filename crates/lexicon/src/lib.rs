@@ -107,6 +107,25 @@ impl Lexicon {
         Self::with(specifiers.into_iter().flat_map(package_terms))
     }
 
+    /// Returns the terms held beside the fixed names, in the order they were given.
+    ///
+    /// The fixed names are not among them, so the default lexicon yields
+    /// nothing, and so does one built from packages the lexicon keeps
+    /// nothing of.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use emery_lexicon::Lexicon;
+    ///
+    /// let run = Lexicon::from_packages(["@azure/keyvault-secrets", "express"]);
+    /// assert_eq!(run.terms().collect::<Vec<_>>(), ["azure", "keyvaultsecrets"]);
+    /// assert_eq!(Lexicon::default().terms().count(), 0);
+    /// ```
+    pub fn terms(&self) -> impl Iterator<Item = &str> {
+        self.terms.iter().map(String::as_str)
+    }
+
     /// Returns the technology `text` names, once each, in the order the text reaches them.
     ///
     /// `text` is split into [`words`], so `useConfluentKafkaConfig`,
