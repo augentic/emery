@@ -6,8 +6,8 @@ mod support;
 
 use std::sync::Arc;
 
-use emery_engine::amend::SliceClass;
-use emery_engine::vcs::{REVISION, RevisionMessage, SliceSummary, Summary};
+use emery_engine::amend::PartClass;
+use emery_engine::vcs::{PartSummary, REVISION, RevisionMessage, Summary};
 use emery_engine::{EntryKind, REVISION_KEY, STAGED_CONTAINER, STAGED_KEY};
 use omnia_sdk::vcs::{Change, ChangeKind, Error};
 use serde_json::{Value, json};
@@ -124,7 +124,7 @@ async fn apply_displaces() {
     assert_eq!(envelope["diff"]["from"], outgoing, "{envelope}");
     assert_eq!(
         envelope["diff"]["plan"]["added"],
-        serde_json::json!([{"id": "SLICE-003", "name": "orders"}]),
+        serde_json::json!([{"id": "PART-003", "name": "orders"}]),
         "the diff is against the revision displaced: {envelope}"
     );
     assert_eq!(current(&provider), candidate);
@@ -272,8 +272,8 @@ async fn apply_amends() {
 
 // An amendment prepared against `base` at `commit`, as `emery amend` stages
 // one over `SPEC`, `DESIGN`, and `PLAN`: the timeout revised under its id,
-// the cancellation retired and leaving its slice, a refund added under the
-// next id into the slice of its stem, the rest as the base holds it.
+// the cancellation retired and leaving its part, a refund added under the
+// next id into the part of its stem, the rest as the base holds it.
 fn amendment_over(base: &str, commit: &str) -> Vec<u8> {
     let mut spec: Value = serde_json::from_slice(SPEC).expect("spec.json is JSON");
     let mut design: Value = serde_json::from_slice(DESIGN).expect("design.json is JSON");
@@ -292,7 +292,7 @@ fn amendment_over(base: &str, commit: &str) -> Vec<u8> {
     requirements.push(added);
     design["parent"] = json!(base);
     plan["parent"] = json!(base);
-    plan["slices"][1]["requirements"] = json!(["REQ-003", "REQ-005"]);
+    plan["parts"][1]["requirements"] = json!(["REQ-003", "REQ-005"]);
 
     let change = |id: &str, subject: &str, class: &str, before: Value, after: Value| {
         json!({
@@ -301,7 +301,7 @@ fn amendment_over(base: &str, commit: &str) -> Vec<u8> {
         })
     };
     let amendment = json!({
-        "emery": 8,
+        "emery": 9,
         "base": {"revision": base, "commit": commit},
         "changes": [
             change("REQ-001", "auth.login", "unchanged",
@@ -317,7 +317,7 @@ fn amendment_over(base: &str, commit: &str) -> Vec<u8> {
         "design": design,
         "plan": plan,
         "sections": {"preamble": false, "added": [], "removed": [], "changed": []},
-        "slices": [{"id": "SLICE-002", "name": "orders", "class": "changed", "brief": "kept"}],
+        "parts": [{"id": "PART-002", "name": "orders", "class": "changed", "brief": "kept"}],
     });
     serde_json::to_vec_pretty(&amendment).expect("the amendment serialises")
 }
@@ -326,7 +326,7 @@ fn amendment_over(base: &str, commit: &str) -> Vec<u8> {
 // read for the revision it holds, the amendment's three documents are
 // written under `spec/` in a working copy cut at the commit the base was
 // read at, sealed as one commit whose message names the base as parent and
-// carries the counts and the slices changed, and labelled; the pointer
+// carries the counts and the parts changed, and labelled; the pointer
 // names the sealed revision, the slot is cleared and the amendment pruned,
 // the base's label stands, and the output names the sealed revision, the
 // base it amends, and the diff within one history, the withdrawn
@@ -398,10 +398,10 @@ async fn apply_amendment() {
                 added: 1,
                 changed: 1,
                 retired: 1,
-                slices: vec![SliceSummary {
-                    id: "SLICE-002".parse().expect("a slice id"),
+                parts: vec![PartSummary {
+                    id: "PART-002".parse().expect("a part id"),
                     name: "orders".to_owned(),
-                    class: SliceClass::Changed,
+                    class: PartClass::Changed,
                 }],
             }),
         }
@@ -457,7 +457,7 @@ async fn apply_amendment_conflict() {
         .as_array_mut()
         .expect("requirements")
         .insert(3, cancel.clone());
-    amendment["plan"]["slices"][1]["requirements"] = json!(["REQ-003", "REQ-004", "REQ-005"]);
+    amendment["plan"]["parts"][1]["requirements"] = json!(["REQ-003", "REQ-004", "REQ-005"]);
     let body = serde_json::to_vec_pretty(&amendment).expect("the amendment serialises");
     stage_amendment(&provider.storage, &body);
 
@@ -490,10 +490,10 @@ async fn apply_amendment_conflict() {
             added: 1,
             changed: 1,
             retired: 0,
-            slices: vec![SliceSummary {
-                id: "SLICE-002".parse().expect("a slice id"),
+            parts: vec![PartSummary {
+                id: "PART-002".parse().expect("a part id"),
                 name: "orders".to_owned(),
-                class: SliceClass::Changed,
+                class: PartClass::Changed,
             }],
         }),
         "a conflict is counted under no trailer: {message:?}"
@@ -997,7 +997,7 @@ async fn specify_apply() {
     assert_eq!(
         String::from_utf8_lossy(&resp.stdout),
         format!(
-            "staged candidate {id}\n  plan: 1 slice in 1 wave, widest 1\n  sealed revision {id} \
+            "staged candidate {id}\n  plan: 1 part in 1 wave, widest 1\n  sealed revision {id} \
              as emery/{id} at Revision\n"
         )
     );

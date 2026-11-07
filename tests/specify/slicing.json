@@ -1,6 +1,6 @@
 {
   "preamble": ["Two slices: sign-in with its session, and orders over it."],
-  "slices": [
+  "parts": [
     {
       "name": "orders",
       "requirements": ["REQ-004", "REQ-003"],

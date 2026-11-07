@@ -108,6 +108,7 @@ Any grant requesting a path outside `~/`, overlapping a credential directory (`~
 | `CURSOR_MAX_AGENTS` | `8` | Maximum concurrent model turns (caps wave parallelism alongside `--jobs`). |
 | `CURSOR_MAX_TOOL_CALLS` | `128` | Maximum guest tool calls (`write_files`, `edit_files`, `read_doc`, `list_docs`) per turn before failing with `budget-exhausted`. |
 | `EMERY_JOBS` | Unset (all ready slices) | Maximum concurrent slice builds per wave (equivalent to `emery build --jobs <N>`). |
+| `EMERY_BUDGET` | `[target] budget`, adapter default, or `12` | Maximum number of requirements per build slice (equivalent to `emery build --budget <N>` and `emery show schedule --budget <N>`). |
 | `EMERY_FORMAT` | `text` | Default CLI output format (`text` or `json`; equivalent to `--format`). |
 | `GIT_BINARY` | `git` (on `PATH`) | Path to the host `git` executable used by `omnia-git` (requires Git 2.5+). |
 | `RUST_LOG` | `info` | Tracing filter when neither `-v` nor `-q` is passed. |

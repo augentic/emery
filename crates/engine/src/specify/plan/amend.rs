@@ -1,13 +1,12 @@
 //! Places what an amended plan's code rules leave open, in one slicing turn.
 //!
-//! An amendment keeps the current plan's slices and places by code what a
-//! rule decides. What no rule decides — the requirements of a stem no slice
-//! holds, a stem the amendment leaves past the cap, and a design type no
-//! slice owns — is put to one turn over the current slices as fixed context,
-//! and the answer is held to the plan's rules over the whole. The turn also
-//! redrafts the brief of each current slice the amendment touched, and of
-//! each one its answer joins into, so what a builder reads says what the
-//! slice now delivers.
+//! An amendment keeps the current plan's parts and places by code what a
+//! rule decides. What no rule decides — the requirements of a stem no part
+//! holds, and a design type no part owns — is put to one turn over the
+//! current parts as fixed context, and the answer is held to the plan's
+//! rules over the whole. The turn also redrafts the brief of each current
+//! part the amendment touched, and of each one its answer joins into, so
+//! what a builder reads says what the part now delivers.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::{self, Display, Formatter};
@@ -18,24 +17,19 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 
 use crate::brief::{Brief, Review};
-use crate::revision::{EMERY, Plan, ReqId, Slice, SliceId, Spec};
+use crate::revision::{EMERY, Part, PartId, Plan, ReqId};
 use crate::specify::basis::Basis;
-use crate::specify::plan::{
-    Draft, Floors, SLICE_CAP, SliceBrief, Stem, drafts, listed, quoted, triggered,
-};
+use crate::specify::plan::{Draft, Floors, PartBrief, Stem, drafts, listed, quoted};
 use crate::specify::sections::BasesSection;
 
 // What the slicing turn decides of an amended plan: what the code rules
 // left unplaced.
 #[derive(Debug, Default)]
 pub struct Open {
-    // The requirements no current slice holds: those under a stem no slice
-    // holds, and every one of a stem cut again.
+    // The requirements no current part holds: those under a stem no part
+    // holds.
     pub ids: BTreeSet<ReqId>,
-    // The stems the amendment leaves past the cap, every requirement of
-    // which is open.
-    pub recut: BTreeSet<String>,
-    // The design's data type keys no current slice owns, in the design's
+    // The design's data type keys no current part owns, in the design's
     // order.
     pub keys: Vec<String>,
 }
@@ -46,72 +40,54 @@ impl Open {
     }
 }
 
-// The brief of an amendment's slicing turn: the current slices as fixed
+// The brief of an amendment's slicing turn: the current parts as fixed
 // context, and what the answer places.
-pub struct SliceAmend<'a> {
+pub struct PartAmend<'a> {
     base: &'a Plan,
     parent: String,
-    // The current slices as the code rules left them: the base's less what
+    // The current parts as the code rules left them: the base's less what
     // the change retired and moved, with what code placed, in id order.
-    slices: Vec<Slice>,
+    parts: Vec<Part>,
     open: Open,
     floors: Floors<'a>,
     // The design's data type keys, in the design's order.
     types: &'a [String],
-    spec: &'a Spec,
     // The requirements the change adds, revises, or leaves in conflict.
     drafted: &'a [Basis<'a>],
 }
 
-impl<'a> SliceAmend<'a> {
-    // Returns the brief over `slices`, the current plan as the code rules
+impl<'a> PartAmend<'a> {
+    // Returns the brief over `parts`, the current plan as the code rules
     // left it, with `open` what they left for the turn.
     //
-    // `base` is the plan amended under `parent`, `spec` the amended
-    // specification, `types` the amended design's data type keys, and
-    // `drafted` the requirements the change drafts anew.
+    // `base` is the plan amended under `parent`, `floors` the amended
+    // specification's floors, `types` the amended design's data type keys,
+    // and `drafted` the requirements the change drafts anew.
     #[must_use]
-    pub fn new(
-        base: &'a Plan, parent: String, slices: Vec<Slice>, open: Open, spec: &'a Spec,
+    pub const fn new(
+        base: &'a Plan, parent: String, parts: Vec<Part>, open: Open, floors: Floors<'a>,
         types: &'a [String], drafted: &'a [Basis<'a>],
     ) -> Self {
         Self {
             base,
             parent,
-            slices,
+            parts,
             open,
-            floors: Floors::from_spec(spec),
+            floors,
             types,
-            spec,
             drafted,
         }
     }
 
-    fn slice(&self, id: SliceId) -> Option<&Slice> {
-        self.slices.iter().find(|slice| slice.id == id)
+    fn part(&self, id: PartId) -> Option<&Part> {
+        self.parts.iter().find(|part| part.id == id)
     }
 
-    // Whether this amendment changed `slice` against the base: its
+    // Whether this amendment changed `part` against the base: its
     // requirements differ, or one of them is drafted anew.
-    fn touched(&self, slice: &Slice) -> bool {
-        self.base.slice(slice.id).is_none_or(|was| was.requirements != slice.requirements)
-            || slice.requirements.iter().copied().any(|id| self.is_drafted(id))
-    }
-
-    fn is_drafted(&self, id: ReqId) -> bool {
-        self.drafted.iter().any(|basis| basis.id == id)
-    }
-
-    // The current slices that held `stem` in the base, by id and name.
-    fn holders(&self, stem: &Stem<'a>) -> Vec<&Slice> {
-        self.slices
-            .iter()
-            .filter(|slice| {
-                self.base.slice(slice.id).is_some_and(|was| {
-                    was.requirements.iter().any(|id| stem.requirements.contains(id))
-                })
-            })
-            .collect()
+    fn touched(&self, part: &Part) -> bool {
+        self.base.part(part.id).is_none_or(|was| was.requirements != part.requirements)
+            || part.requirements.iter().any(|id| self.drafted.iter().any(|basis| basis.id == *id))
     }
 
     // The open requirements of `stem`, listed with the triggers that reach
@@ -119,7 +95,7 @@ impl<'a> SliceAmend<'a> {
     fn opened(&self, stem: &Stem<'a>) -> String {
         let ids: Vec<ReqId> =
             stem.requirements.iter().copied().filter(|id| self.open.ids.contains(id)).collect();
-        format!("{}{}", listed(&ids), triggered(&self.floors.triggers_of(&ids)))
+        format!("{}{}", listed(&ids), self.floors.triggered(&ids))
     }
 
     // Notes each of `ids` and `keys` the current plan places, which the
@@ -139,69 +115,62 @@ impl<'a> SliceAmend<'a> {
         }
     }
 
-    // The whole plan as the gate reads it: the current slices as `answer`
-    // joins them, then its new slices, every dependency by name.
-    fn assembled(&self, answer: &SliceAmendAnswer) -> Vec<Draft> {
-        let mut drafts = drafts(&self.slices);
+    // The whole plan as the gate reads it: the current parts as `answer`
+    // joins them, then its new parts, every dependency by name.
+    fn assembled(&self, answer: &PartAmendAnswer) -> Vec<Draft> {
+        let mut drafts = drafts(&self.parts);
         for join in &answer.joins {
-            let Some(position) = self.slices.iter().position(|slice| slice.id == join.slice) else {
+            let Some(position) = self.parts.iter().position(|part| part.id == join.part) else {
                 continue;
             };
             drafts[position].requirements.extend(join.requirements.iter().copied());
             drafts[position].types.extend(join.types.iter().cloned());
         }
-        drafts.extend(answer.slices.iter().cloned());
+        drafts.extend(answer.parts.iter().cloned());
         drafts
     }
 
-    // `## Current plan`: each current slice on one line, as the code rules
+    // `## Current plan`: each current part on one line, as the code rules
     // left it.
     fn write_current(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        let name = |id: &SliceId| {
-            self.slice(*id).map_or_else(|| id.to_string(), |slice| slice.name.clone())
-        };
+        let name =
+            |id: &PartId| self.part(*id).map_or_else(|| id.to_string(), |part| part.name.clone());
         f.write_str("## Current plan\n\n")?;
-        for slice in &self.slices {
-            write!(f, "- `{}` `{}` — ", slice.id, slice.name)?;
-            if slice.requirements.is_empty() {
-                f.write_str("no requirement; every one it held is open")?;
-            } else {
-                f.write_str(&listed(&slice.requirements))?;
+        for part in &self.parts {
+            write!(f, "- `{}` `{}` — {}", part.id, part.name, listed(&part.requirements))?;
+            if !part.types.is_empty() {
+                write!(f, " — types: {}", quoted(&part.types))?;
             }
-            if !slice.types.is_empty() {
-                write!(f, " — types: {}", quoted(&slice.types))?;
+            if !part.depends_on.is_empty() {
+                write!(f, " — depends on: {}", quoted(part.depends_on.iter().map(name)))?;
             }
-            if !slice.depends_on.is_empty() {
-                write!(f, " — depends on: {}", quoted(slice.depends_on.iter().map(name)))?;
-            }
-            if self.touched(slice) {
+            if self.touched(part) {
                 f.write_str(" — touched by this amendment")?;
             }
             f.write_str("\n")?;
         }
         f.write_str(
-            "\nA slice marked touched gained, lost, or had redrafted a requirement, so its brief \
+            "\nA part marked touched gained, lost, or had redrafted a requirement, so its brief \
              no longer says what it delivers: redraft it under `briefs`, one entry per touched \
-             slice and per slice a join names, each a brief whole in the slice's new terms. Every \
-             other slice keeps its brief.\n",
+             part and per part a join names, each a brief whole in the part's new terms. Every \
+             other part keeps its brief.\n",
         )
     }
 
-    // `## Open`: the new stems, the recut stems by their sub-stems, the
-    // unowned keys, then the standing rules.
+    // `## Open`: the new stems, the unowned keys, then the standing rules.
     fn write_open(&self, f: &mut Formatter<'_>) -> fmt::Result {
         f.write_str("\n## Open\n\n")?;
-        let (recut, new): (Vec<&Stem<'a>>, Vec<&Stem<'a>>) = self
+        let new: Vec<&Stem<'a>> = self
             .floors
             .stems
             .iter()
             .filter(|stem| stem.requirements.iter().any(|id| self.open.ids.contains(id)))
-            .partition(|stem| self.open.recut.contains(stem.label));
+            .collect();
         if !new.is_empty() {
             f.write_str(
-                "Requirements under a stem no current slice holds, each stem one slice at the \
-                 least: draft a new slice for it, named for what it builds, or join it into a \
-                 current slice only where neither can be built and verified apart from the \
+                "Requirements under a stem no current part holds, each stem one part at the \
+                 least: draft a new part for it, named for what it builds, or join it into a \
+                 current part only where neither can be built and verified apart from the \
                  other.\n\n",
             )?;
             for stem in &new {
@@ -209,25 +178,10 @@ impl<'a> SliceAmend<'a> {
             }
             f.write_str("\n")?;
         }
-        if !recut.is_empty() {
-            writeln!(
-                f,
-                "Stems the amendment leaves past the cap of {SLICE_CAP}, every requirement of \
-                 which is open, so the stem is cut again along its sub-stems: join the sub-stems \
-                 that stay into the current slice that held them, which keeps its id and keeps \
-                 at least one, and draft a new slice for each other set of sub-stems, cut at as \
-                 few sub-stem boundaries as the cap allows; the types that slice owned are open \
-                 with them.\n"
-            )?;
-            for stem in &recut {
-                self.write_recut(f, stem)?;
-            }
-            f.write_str("\n")?;
-        }
         if !self.open.keys.is_empty() {
             f.write_str(
-                "Type keys the design holds that no current slice owns, each to be owned by \
-                 exactly one slice — a new slice's `types`, or a join's — the one that builds \
+                "Type keys the design holds that no current part owns, each to be owned by \
+                 exactly one part — a new part's `types`, or a join's — the one that builds \
                  the requirements reading or producing it, whatever module declared it in the \
                  source:\n\n",
             )?;
@@ -236,93 +190,45 @@ impl<'a> SliceAmend<'a> {
             }
             f.write_str("\n")?;
         }
-        self.floors.write_rules(f, !recut.is_empty())
+        self.floors.write_rules(f)
     }
 
-    // One recut stem: its size, the slices that held it, and its sub-stems
-    // with what reaches them.
-    fn write_recut(&self, f: &mut Formatter<'_>, stem: &Stem<'a>) -> fmt::Result {
-        let holders: Vec<String> = self
-            .holders(stem)
-            .into_iter()
-            .map(|slice| format!("`{}` `{}`", slice.id, slice.name))
-            .collect();
-        writeln!(
-            f,
-            "- `{}` — {} requirements, past the cap of {SLICE_CAP}, so its sub-stems are the \
-             floor; held by {}:",
-            stem.label,
-            stem.requirements.len(),
-            if holders.is_empty() { "no current slice".to_owned() } else { holders.join(", ") }
-        )?;
-        for substem in &stem.substems {
-            writeln!(f, "  - `{}` — {}", substem.label, self.opened(substem))?;
-        }
-        Ok(())
-    }
-
-    // `## Requirements`: the drafted bases, then the standing open
-    // requirements with their statements.
+    // `## Requirements`: the drafted bases.
     fn write_requirements(&self, f: &mut Formatter<'_>) -> fmt::Result {
         f.write_str("\n## Requirements\n\n")?;
         if self.drafted.is_empty() {
             f.write_str(
                 "The change adds or revises no requirement; the specification's stand as they \
                  are.\n",
-            )?;
+            )
         } else {
             write!(
                 f,
                 "The requirements the change adds or revises, drafted beside this \
                  plan:\n\n{bases}",
                 bases = BasesSection(self.drafted)
-            )?;
+            )
         }
-        let standing: Vec<_> = self
-            .open
-            .ids
-            .iter()
-            .copied()
-            .filter(|&id| !self.is_drafted(id))
-            .filter_map(|id| self.spec.requirement(id))
-            .collect();
-        if standing.is_empty() {
-            return Ok(());
-        }
-        f.write_str(
-            "\nThe standing requirements the answer places, as the specification holds \
-             them:\n\n",
-        )?;
-        for requirement in standing {
-            writeln!(
-                f,
-                "- {} `{}` — {}",
-                requirement.id,
-                requirement.subject,
-                requirement.statement().as_deref().unwrap_or("[conflict]")
-            )?;
-        }
-        Ok(())
     }
 }
 
-impl Brief for SliceAmend<'_> {
-    type Answer = SliceAmendAnswer;
+impl Brief for PartAmend<'_> {
+    type Answer = PartAmendAnswer;
     type Output = Plan;
 
-    const NAME: &'static str = SliceBrief::NAME;
-    const PROSE: &'static [&'static str] = SliceBrief::PROSE;
+    const NAME: &'static str = PartBrief::NAME;
+    const PROSE: &'static [&'static str] = PartBrief::PROSE;
 
     fn tighten(&self, schema: &mut Value) -> Result<(), Error> {
         let ids = json!(self.open.ids.iter().collect::<Vec<_>>());
-        let slices = json!(self.slices.iter().map(|slice| slice.id).collect::<Vec<_>>());
+        let parts = json!(self.parts.iter().map(|part| part.id).collect::<Vec<_>>());
 
-        // at most one new slice per open requirement, each over the open
+        // at most one new part per open requirement, each over the open
         // requirements alone
-        Self::at(schema, "/properties/slices")?
+        Self::at(schema, "/properties/parts")?
             .insert("maxItems".to_owned(), json!(self.open.ids.len()));
         Self::at(schema, "/properties/joins")?
-            .insert("maxItems".to_owned(), json!(self.slices.len()));
+            .insert("maxItems".to_owned(), json!(self.parts.len()));
         for pointer in
             ["/$defs/Draft/properties/requirements", "/$defs/Join/properties/requirements"]
         {
@@ -338,7 +244,7 @@ impl Brief for SliceAmend<'_> {
                 .insert("minItems".to_owned(), json!(1));
         }
 
-        // the open type keys alone, and a join names a current slice
+        // the open type keys alone, and a join names a current part
         for pointer in ["/$defs/Draft/properties/types", "/$defs/Join/properties/types"] {
             if self.open.keys.is_empty() {
                 Self::at(schema, pointer)?.insert("maxItems".to_owned(), json!(0));
@@ -347,43 +253,43 @@ impl Brief for SliceAmend<'_> {
                     .insert("enum".to_owned(), json!(self.open.keys));
             }
         }
-        Self::at(schema, "/$defs/Join/properties/slice")?.insert("enum".to_owned(), slices.clone());
+        Self::at(schema, "/$defs/Join/properties/part")?.insert("enum".to_owned(), parts.clone());
 
-        // one brief per touched slice at the least, one per current slice at
-        // the most, since a join's slice is redrafted too
-        let touched = self.slices.iter().filter(|slice| self.touched(slice)).count();
+        // one brief per touched part at the least, one per current part at
+        // the most, since a join's part is redrafted too
+        let touched = self.parts.iter().filter(|part| self.touched(part)).count();
         let briefs = Self::at(schema, "/properties/briefs")?;
         briefs.insert("minItems".to_owned(), json!(touched));
-        briefs.insert("maxItems".to_owned(), json!(self.slices.len()));
-        Self::at(schema, "/$defs/Rebrief/properties/slice")?.insert("enum".to_owned(), slices);
+        briefs.insert("maxItems".to_owned(), json!(self.parts.len()));
+        Self::at(schema, "/$defs/Rebrief/properties/part")?.insert("enum".to_owned(), parts);
         Self::at(schema, "/$defs/Rebrief/properties/brief")?
             .insert("minItems".to_owned(), json!(1));
         Ok(())
     }
 
-    fn verify(&self, answer: &SliceAmendAnswer, review: &mut Review) {
-        // the new slices over the open set alone, named apart from the
+    fn verify(&self, answer: &PartAmendAnswer, review: &mut Review) {
+        // the new parts over the open set alone, named apart from the
         // current ones
-        let names: BTreeSet<&str> = self.slices.iter().map(|slice| slice.name.as_str()).collect();
-        for draft in &answer.slices {
-            let label = format!("slice `{}`", draft.name);
+        let names: BTreeSet<&str> = self.parts.iter().map(|part| part.name.as_str()).collect();
+        for draft in &answer.parts {
+            let label = format!("part `{}`", draft.name);
             if names.contains(draft.name.as_str()) {
                 review.note(format_args!(
-                    "`{}` names a current slice; list what joins it under `joins`, or name the \
-                     new slice otherwise",
+                    "`{}` names a current part; list what joins it under `joins`, or name the \
+                     new part otherwise",
                     draft.name
                 ));
             }
             self.moved(review, &label, &draft.requirements, &draft.types);
         }
 
-        // each join a current slice, once, over the open set alone
+        // each join a current part, once, over the open set alone
         let mut joined = BTreeSet::new();
         for join in &answer.joins {
-            let label = format!("`joins` `{}`", join.slice);
-            if self.slice(join.slice).is_none() {
-                review.note(format_args!("{label} names no slice of the current plan"));
-            } else if !joined.insert(join.slice) {
+            let label = format!("`joins` `{}`", join.part);
+            if self.part(join.part).is_none() {
+                review.note(format_args!("{label} names no part of the current plan"));
+            } else if !joined.insert(join.part) {
                 review.note(format_args!(
                     "{label} is listed more than once; list what joins it once"
                 ));
@@ -391,118 +297,100 @@ impl Brief for SliceAmend<'_> {
             self.moved(review, &label, &join.requirements, &join.types);
         }
 
-        // a current slice keeps its id, so one whose requirements are all
-        // open takes at least one back
-        let drafts = self.assembled(answer);
-        for (slice, draft) in self.slices.iter().zip(&drafts) {
-            if draft.requirements.is_empty() {
-                review.note(format_args!(
-                    "`{}` ({}) is left with no requirement; a current slice keeps its id, so \
-                     join at least one of its open requirements back into it",
-                    slice.name, slice.id
-                ));
-            }
-        }
-
-        // one brief per slice the amendment touched or a join named, each
-        // whole, and none for a slice that stands as it was
+        // one brief per part the amendment touched or a join named, each
+        // whole, and none for a part that stands as it was
         let mut rebriefed = BTreeSet::new();
         for rebrief in &answer.briefs {
-            let label = format!("`briefs` `{}`", rebrief.slice);
-            match self.slice(rebrief.slice) {
-                None => review.note(format_args!("{label} names no slice of the current plan")),
-                Some(slice) if !self.touched(slice) && !joined.contains(&slice.id) => {
+            let label = format!("`briefs` `{}`", rebrief.part);
+            match self.part(rebrief.part) {
+                None => review.note(format_args!("{label} names no part of the current plan")),
+                Some(part) if !self.touched(part) && !joined.contains(&part.id) => {
                     review.note(format_args!(
                         "{label}: `{}` stands as it was; it keeps its brief, so list no entry \
                          for it",
-                        slice.name
+                        part.name
                     ));
                 }
-                Some(_) if !rebriefed.insert(rebrief.slice) => {
+                Some(_) if !rebriefed.insert(rebrief.part) => {
                     review.note(format_args!("{label} is listed more than once; redraft it once"));
                 }
-                Some(slice) if rebrief.brief.is_empty() => review.note(format_args!(
+                Some(part) if rebrief.brief.is_empty() => review.note(format_args!(
                     "{label}: the brief is empty; redraft `{}`'s brief whole",
-                    slice.name
+                    part.name
                 )),
                 Some(_) => {}
             }
             review.paragraphs(&rebrief.brief, format_args!("{label} brief"));
         }
-        for slice in &self.slices {
-            if (self.touched(slice) || joined.contains(&slice.id)) && !rebriefed.contains(&slice.id)
-            {
+        for part in &self.parts {
+            if (self.touched(part) || joined.contains(&part.id)) && !rebriefed.contains(&part.id) {
                 review.note(format_args!(
                     "`{}` ({}) is touched by this amendment, or joined by the answer, and its \
                      brief is not redrafted; list it under `briefs`",
-                    slice.name, slice.id
+                    part.name, part.id
                 ));
             }
         }
 
         // the whole held to the plan's rules
+        let drafts = self.assembled(answer);
         self.floors.check(self.types, &drafts, review);
     }
 
-    // New slices are numbered after the current plan's highest id by their
+    // New parts are numbered after the current plan's highest id by their
     // lowest requirement; every list is written in id order, every type
-    // list in the design's; a redrafted brief stands in its slice's place.
-    fn into_output(self, answer: SliceAmendAnswer) -> Result<Plan, Error> {
-        let mut slices = self.slices;
+    // list in the design's; a redrafted brief stands in its part's place.
+    fn into_output(self, answer: PartAmendAnswer) -> Result<Plan, Error> {
+        let mut parts = self.parts;
         for join in answer.joins {
-            let slice =
-                slices.iter_mut().find(|slice| slice.id == join.slice).ok_or_else(|| {
-                    server_error!("`{}` was accepted joining no slice of the plan", join.slice)
-                })?;
-            slice.requirements.extend(join.requirements);
-            slice.requirements.sort_unstable();
-            slice.requirements.dedup();
-            slice.types.extend(join.types);
-            slice.types =
-                self.types.iter().filter(|key| slice.types.contains(key)).cloned().collect();
+            let part = parts.iter_mut().find(|part| part.id == join.part).ok_or_else(|| {
+                server_error!("`{}` was accepted joining no part of the plan", join.part)
+            })?;
+            part.requirements.extend(join.requirements);
+            part.requirements.sort_unstable();
+            part.requirements.dedup();
+            part.types.extend(join.types);
+            part.types =
+                self.types.iter().filter(|key| part.types.contains(key)).cloned().collect();
         }
         for rebrief in answer.briefs {
-            let slice =
-                slices.iter_mut().find(|slice| slice.id == rebrief.slice).ok_or_else(|| {
-                    server_error!(
-                        "`{}` was accepted rebriefing no slice of the plan",
-                        rebrief.slice
-                    )
-                })?;
-            slice.brief = rebrief.brief;
+            let part = parts.iter_mut().find(|part| part.id == rebrief.part).ok_or_else(|| {
+                server_error!("`{}` was accepted rebriefing no part of the plan", rebrief.part)
+            })?;
+            part.brief = rebrief.brief;
         }
 
-        let mut drafts = answer.slices;
+        let mut drafts = answer.parts;
         drafts.sort_by_key(|draft| draft.requirements.iter().min().copied());
         let mut free_ids = self.base.free_ids();
-        let mut ids: BTreeMap<String, SliceId> =
-            slices.iter().map(|slice| (slice.name.clone(), slice.id)).collect();
+        let mut ids: BTreeMap<String, PartId> =
+            parts.iter().map(|part| (part.name.clone(), part.id)).collect();
         let mut numbered = Vec::with_capacity(drafts.len());
         for draft in drafts {
-            let id = free_ids.next().ok_or_else(|| server_error!("the slice ids are exhausted"))?;
+            let id = free_ids.next().ok_or_else(|| server_error!("the part ids are exhausted"))?;
             ids.insert(draft.name.clone(), id);
             numbered.push((draft, id));
         }
         for (draft, id) in numbered {
-            slices.push(draft.into_slice(id, &ids, self.types)?);
+            parts.push(draft.into_part(id, &ids, self.types)?);
         }
 
         Ok(Plan {
             emery: EMERY,
             parent: Some(self.parent),
             preamble: self.base.preamble.clone(),
-            slices,
+            parts,
         })
     }
 }
 
-impl Display for SliceAmend<'_> {
+impl Display for PartAmend<'_> {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         f.write_str(
-            "Amend the build plan: the current plan's slices stand under their ids and names, and \
+            "Amend the build plan: the current plan's parts stand under their ids and names, and \
              the answer places what `## Open` lists, and nothing else — each open requirement \
-             and type key into a new slice under `slices`, or into a current slice under \
-             `joins` — and redrafts under `briefs` the brief of each slice this amendment \
+             and type key into a new part under `parts`, or into a current part under \
+             `joins` — and redrafts under `briefs` the brief of each part this amendment \
              touched or a join names.\n\n",
         )?;
         self.write_current(f)?;
@@ -513,42 +401,42 @@ impl Display for SliceAmend<'_> {
 
 /// Model-authored content for an amended build plan: what the current plan leaves open, placed.
 ///
-/// The engine keeps the current plan's slices, numbers the new ones, and
+/// The engine keeps the current plan's parts, numbers the new ones, and
 /// orders every list.
 #[derive(Debug, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 #[schemars(title = "Emery slicing amendment")]
-pub struct SliceAmendAnswer {
-    /// The new slices, each over open requirements and type keys alone, in
+pub struct PartAmendAnswer {
+    /// The new parts, each over open requirements and type keys alone, in
     /// any order.
-    pub slices: Vec<Draft>,
-    /// The open requirements and type keys that join a current slice, one
-    /// entry per slice joined.
+    pub parts: Vec<Draft>,
+    /// The open requirements and type keys that join a current part, one
+    /// entry per part joined.
     pub joins: Vec<Join>,
-    /// The briefs redrafted, one entry per current slice the amendment
-    /// touched and per slice a join names, in any order.
+    /// The briefs redrafted, one entry per current part the amendment
+    /// touched and per part a join names, in any order.
     pub briefs: Vec<Rebrief>,
 }
 
-/// The brief of one slice of the current plan, redrafted whole.
+/// The brief of one part of the current plan, redrafted whole.
 #[derive(Debug, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct Rebrief {
-    /// The id of the current slice whose brief this is.
+    /// The id of the current part whose brief this is.
     #[schemars(with = "String")]
-    pub slice: SliceId,
-    /// Markdown paragraphs a builder reads before taking the slice up, in
+    pub part: PartId,
+    /// Markdown paragraphs a builder reads before taking the part up, in
     /// place of the ones it held.
     pub brief: Vec<String>,
 }
 
-/// Open requirements and type keys joining one slice of the current plan.
+/// Open requirements and type keys joining one part of the current plan.
 #[derive(Debug, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct Join {
-    /// The id of the current slice they join.
+    /// The id of the current part they join.
     #[schemars(with = "String")]
-    pub slice: SliceId,
+    pub part: PartId,
     /// The open requirement ids that join it.
     #[serde(default)]
     #[schemars(with = "Vec<String>")]

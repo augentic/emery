@@ -154,10 +154,11 @@ macro_rules! export_source {
 ///
 /// The argument is a type implementing [`target::TargetAdapter`]. The
 /// component's `metadata` answers [`target::metadata`] over the type's
-/// [`rules`](target::Metadata::rules). Its `run` lifts the imported task
-/// into a [`target::Task`] over the workspace root and the host model,
-/// passes it to [`target::TargetAdapter::run`], verifies that the outcome
-/// matches the task's kind, and converts the result into the WIT records.
+/// [`rules`](target::Metadata::rules) and [`budget`](target::Metadata::budget).
+/// Its `run` lifts the imported task into a [`target::Task`] over the
+/// workspace root and the host model, passes it to
+/// [`target::TargetAdapter::run`], verifies that the outcome matches the
+/// task's kind, and converts the result into the WIT records.
 ///
 /// Invoke this macro under `#[cfg(target_arch = "wasm32")]`, where the export
 /// interface is defined. Leave the adapter type and its
@@ -175,8 +176,10 @@ macro_rules! export_target {
                 fn metadata(
                     _id: $crate::target::export::AdapterId,
                 ) -> $crate::target::export::TargetMetadata {
+                    let metadata = <$adapter as $crate::target::TargetAdapter>::metadata();
                     $crate::target::export::TargetMetadata::from($crate::target::metadata(
-                        <$adapter as $crate::target::TargetAdapter>::metadata().rules,
+                        metadata.rules,
+                        metadata.budget,
                     ))
                 }
 

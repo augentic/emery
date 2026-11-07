@@ -1,12 +1,13 @@
 //! Tests `target::build` report gating and file writing over a scripted model.
 
 use std::fs;
+use std::num::NonZeroU32;
 use std::os::unix::fs::symlink;
 use std::path::Path;
 
 use emery_sdk::target::{
-    BuildContext, DesignType, Grant, Guarded, Marker, Report, Requirement, Scaffold, Scenario,
-    Slice,
+    BuildContext, DesignType, Grant, Guarded, Marker, MergeRule, Metadata, Report, Requirement,
+    Scaffold, Scenario, Slice, TargetMetadata, metadata,
 };
 use emery_sdk::{Doc, Error};
 use omnia_sdk::model::ToolCall;
@@ -45,7 +46,10 @@ fn requirement(id: &str, subject: &str, statement: &str, when: &str, then: &str)
 fn slice() -> Slice {
     Slice {
         id: "SLICE-001".to_owned(),
+        part: "PART-001".to_owned(),
         name: "orders".to_owned(),
+        index: 1,
+        count: 1,
         base: "1a2b3c4d5e6f708192a3b4c5d6e7f8091a2b3c4d".to_owned(),
         requirements: vec![
             requirement(
@@ -203,7 +207,7 @@ async fn request_shape() {
     let user = &request.messages[0];
     assert!(
         user.starts_with(
-            "Build the slice `orders` (SLICE-001) of the plan, bound to adapter \
+            "Build slice 1 of 1 of part `orders` (PART-001) as SLICE-001, bound to adapter \
              `target:probe`.\n\n`$WORKSPACE` is the project tree, lent writable"
         ),
         "{user}"
@@ -259,6 +263,24 @@ async fn request_shape() {
     model.assert_exhausted();
 }
 
+// `target::metadata` and `TargetMetadata::from` lower the adapter's merge
+// rules and default slice budget beside the SDK's version pin.
+#[test]
+fn target_metadata() {
+    const RULES: &[MergeRule] = &[MergeRule::ours("Cargo.lock")];
+    let declared = Metadata {
+        rules: RULES,
+        grants: &[],
+        budget: NonZeroU32::new(12),
+    };
+    let lowered = TargetMetadata::from(declared);
+    assert_eq!(lowered, metadata(RULES, NonZeroU32::new(12)));
+    assert_eq!(lowered.emery_version.as_deref(), Some(env!("CARGO_PKG_VERSION")));
+    assert_eq!(lowered.merge_rules, [MergeRule::ours("Cargo.lock")]);
+    assert_eq!(lowered.budget, Some(12));
+    assert_eq!(TargetMetadata::from(Metadata::default()).budget, None);
+}
+
 // What the adapter scaffolded before the turn is carried verbatim, after
 // the design and before the rules, so the model edits the files it names
 // rather than writing them over; the tools and the lend are the same.
@@ -270,8 +292,12 @@ async fn build_scaffolded() {
     let model = ScriptedModel::answering([VALID]);
     let scaffold = "- `src/orders.rs`: scaffolded; fill `todo!(\"REQ-001 orders.create: the \
                     handler\")`\n- `Cargo.toml`: held\n\n";
+    let mut slice = slice();
+    slice.id = "SLICE-002".to_owned();
+    slice.index = 2;
+    slice.count = 3;
 
-    ask_scaffolded(&model, &slice(), root, &[], Some(scaffold), |_| Ok(Vec::new()))
+    ask_scaffolded(&model, &slice, root, &[], Some(scaffold), |_| Ok(Vec::new()))
         .await
         .expect("accepted");
 
@@ -279,6 +305,13 @@ async fn build_scaffolded() {
     assert_eq!(seen.len(), 1);
     assert_eq!(seen[0].tools, ["list_docs", "read_doc", "write_files", "edit_files"]);
     let user = &seen[0].messages[0];
+    assert!(
+        user.starts_with(
+            "Build slice 2 of 3 of part `orders` (PART-001) as SLICE-002, bound to adapter \
+             `target:probe`.\n\n"
+        ),
+        "{user}"
+    );
     assert!(
         user.contains(
             "The design, cut to this slice:\n\n## Types\n\n`Order`\n\nWhat the adapter scaffolded \

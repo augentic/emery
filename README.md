@@ -44,8 +44,8 @@ emery amend --description emery:intent@0.39.0="Add order cancellation" --config
 | `emery specify <adapter>...` | Extracts typed claims from source adapters, reconciles requirements by authority rank, synthesises the specification, design, and build plan, and stages the candidate revision. Pass `--apply` to seal in the same run, or `--fresh` to start a new revision history. |
 | `emery amend <adapter>...` | Matches change sources against the existing requirements in the current revision and stages an incremental `Amendment` (classifying each requirement as `added`, `changed`, `retired`, `conflict`, or `unchanged`). Pass `--apply` to seal in the same run. |
 | `emery apply` | Commits ("seals") the currently staged candidate or amendment to the target Git repository under `spec/` on branch `emery/<id>`, then clears the staging area. |
-| `emery build [<adapter>]` | Builds the sealed plan in dependency waves inside isolated Git worktrees, verifies each integrated wave, and advances the `emery/<id>` branch. |
-| `emery show <spec\|design\|plan\|amendment>` | Renders an artifact from the current revision, the staged candidate (`--staged`), or the staged amendment (`amendment`) as Markdown or JSON (`--format json`). |
+| `emery build [<adapter>]` | Cuts the sealed plan's parts into budget-sized slices (`--budget`), builds them in dependency waves inside isolated Git worktrees, verifies each integrated wave, and advances the `emery/<id>` branch. |
+| `emery show <spec\|design\|plan\|schedule\|amendment>` | Renders an artifact from the current revision, the staged candidate (`--staged`), the build schedule (`schedule`), or the staged amendment (`amendment`) as Markdown or JSON (`--format json`). |
 | `emery completions <shell>` | Prints shell auto-completion scripts for `bash`, `elvish`, `fish`, `powershell`, or `zsh`. |
 
 In Cursor, the [`plugins/emery`](plugins/emery/README.md) plugin wraps the core workflow:

@@ -145,8 +145,8 @@ In the engine, `decision`, `call`, and `contract` claims all inform `## APIs and
 
 In `design.json`, every `type` block under `## Domain model` is classified by the design turn into one of two roles:
 
-- **`data`:** A domain payload or record that the application reads, stores, or returns (for example, `Order`, `LineItem`). Every `data` type is assigned to and owned by exactly one build slice in `plan.json`.
-- **`mechanism`:** Internal machinery of the source codebase (such as an HTTP client wrapper, a configuration loader, or a framework bootstrap class). Rendered as `Type: <key> (mechanism)` in Markdown, mechanism types are owned by **no slice** so target adapters do not scaffold source-platform boilerplate.
+- **`data`:** A domain payload or record that the application reads, stores, or returns (for example, `Order`, `LineItem`). Every `data` type is assigned to and owned by exactly one logical part in `plan.json` (and laid on that part's first slice during `emery build`).
+- **`mechanism`:** Internal machinery of the source codebase (such as an HTTP client wrapper, a configuration loader, or a framework bootstrap class). Rendered as `Type: <key> (mechanism)` in Markdown, mechanism types are owned by **no part** so target adapters do not scaffold source-platform boilerplate.
 
 ---
 

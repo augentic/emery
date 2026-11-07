@@ -1,10 +1,10 @@
 {
-  "emery": 8,
+  "emery": 9,
   "parent": null,
   "preamble": [],
-  "slices": [
+  "parts": [
     {
-      "id": "SLICE-001",
+      "id": "PART-001",
       "name": "greeting",
       "requirements": [
         "REQ-001"

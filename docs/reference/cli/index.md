@@ -32,7 +32,7 @@ Every `emery` subcommand accepts these global options:
 | [`emery amend`](amend.md) | Match change sources against the existing requirements in the current revision and stage an incremental `Amendment` (`--apply` seals it). |
 | [`emery apply`](apply.md) | Seal the currently staged candidate or amendment into the target Git repository under `spec/` on branch `emery/<id>`. |
 | [`emery build`](build.md) | Build the sealed plan in dependency waves through a target adapter, merging and verifying each wave on branch `emery/<id>`. |
-| [`emery show`](show.md) | Render `spec`, `design`, `plan`, or `amendment` from the current revision or staging area as Markdown or JSON. |
+| [`emery show`](show.md) | Render `spec`, `design`, `plan`, `schedule`, or `amendment` from the current revision or staging area as Markdown or JSON. |
 | `emery completions <shell>` | Print a shell-completion script (`bash`, `zsh`, `fish`, `elvish`, `powershell`) to `stdout`. |
 
 ## CLI conventions

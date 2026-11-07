@@ -130,7 +130,7 @@ Emery prints the content-addressed ID of the staged candidate revision:
 
 ```text
 staged candidate <revision-id>
-  plan: 1 slice in 1 wave, widest 1
+  plan: 1 part in 1 wave, widest 1
   nothing sealed; `emery apply` seals it
 ```
 
@@ -168,6 +168,7 @@ Now bare `emery show` reads directly from the sealed revision in Git:
 
 ```bash
 "$emery" show spec
+"$emery" show schedule
 git show --stat emery/<revision-id>
 ```
 
@@ -183,7 +184,7 @@ Now run [`emery build`](../reference/cli/build.md) to execute the sealed build p
 
 ```text
 built revision <revision-id>
-  plan: 1 slice in 1 wave, widest 1
+  plan: 1 part in 1 wave; budget 2 (adapter): 1 slice in 1 wave, widest 1
   base <base-sha>
   initialised <init-sha>, 1 file
   wave 1: 1 slice verified at <head-sha>

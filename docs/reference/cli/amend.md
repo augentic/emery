@@ -33,7 +33,7 @@ emery amend                                           # discovers the project-ro
 
 ## Description
 
-While [`emery specify`](specify.md) generates a revision from scratch and renumbers requirements from `REQ-001`, `emery amend` reads its sources as an incremental **change** against the **current revision** sealed in your target repository. It preserves existing `REQ-NNN` and `SLICE-NNN` identifiers, redrafts only the requirements, design sections, and slices affected by the change, and stages an `Amendment` in `.emery/storage/`.
+While [`emery specify`](specify.md) generates a revision from scratch and renumbers requirements from `REQ-001`, `emery amend` reads its sources as an incremental **change** against the **current revision** sealed in your target repository. It preserves existing `REQ-NNN` and `PART-NNN` identifiers, redrafts only the requirements, design sections, and parts affected by the change, and stages an `Amendment` in `.emery/storage/`.
 
 Before loading any adapters, `emery amend` validates five preconditions:
 
@@ -62,8 +62,8 @@ Before loading any adapters, `emery amend` validates five preconditions:
 ### How `spec`, `design`, and `plan` are updated
 
 - **Specification (`spec`):** Only `added`, `changed`, and `conflict` requirements are sent to `spec-draft` turns. The base preamble and all `unchanged` requirements are copied byte-for-byte, and `retired` requirements are omitted. If the change contains no drafted requirements (for example, only `retire` or `decision` claims), zero `spec-draft` turns run.
-- **Design (`design`):** Type blocks owned by slices that became empty due to retirements are removed first. A `design-draft` (`DesignAmend`) turn runs **only** if the change's claims inform a design section (for example, a `decision`, `call`, `contract`, `type`, or `excerpt` claim) or if a base design paragraph cites a `retired` requirement. When it runs, it redrafts `## Overview` and the informed sections while keeping all other sections verbatim.
-- **Build plan (`plan`):** Updated deterministically by code first: existing slices keep their `SLICE-NNN` IDs and names; retired requirements leave their slices; empty slices are removed and their dependants re-wired to their dependencies; restemmed or added requirements join the slice holding their trigger or stem floor; unowned data types join the single touched slice when nothing else is open. A `slicing` (`SliceAmend`) turn runs only if requirements fall under a new stem, push a stem past `SLICE_CAP` (12), or leave data type ownership ambiguous.
+- **Design (`design`):** Type blocks owned by parts that became empty due to retirements are removed first. A `design-draft` (`DesignAmend`) turn runs **only** if the change's claims inform a design section (for example, a `decision`, `call`, `contract`, `type`, or `excerpt` claim) or if a base design paragraph cites a `retired` requirement. When it runs, it redrafts `## Overview` and the informed sections while keeping all other sections verbatim.
+- **Build plan (`plan`):** Updated deterministically by code first: existing parts keep their `PART-NNN` IDs and names; retired requirements leave their parts; empty parts are removed and their dependants re-wired to their dependencies; restemmed or added requirements join the part holding their trigger or stem floor; unowned data types join the single touched part when nothing else is open. A `slicing` (`PartAmend`) turn runs only if requirements fall under a new stem or leave data type ownership ambiguous.
 - **No-op changes:** If every requirement is `unchanged` and neither the design nor the plan changed, `emery amend` stages nothing and prints `nothing staged: no change against the current revision`.
 
 This is the CLI command invoked by the [`/emery:amend`](../../../plugins/emery/skills/amend/SKILL.md) Cursor skill.
@@ -106,7 +106,7 @@ When `--format json` is passed, `emery amend` writes a single JSON object to `st
 | `conflicts` | `string[]` | When `tally.conflict > 0` | Subject IDs of requirements in `conflict`, in `ReqId` order. |
 | `stems` | `string[]` | When any requirement changed | Sorted unique stems touched by non-`unchanged` requirements. |
 | `sections` | `object` | When `design` changed | `{ preamble, added, removed, changed }` listing modified design section kinds. |
-| `slices` | `object[]` | When `plan` changed | `{ id, name, class, brief }` for each `added`, `changed`, or `removed` slice (`brief` is `"redrafted"` or `"kept"`). |
+| `parts` | `object[]` | When `plan` changed | `{ id, name, class, brief }` for each `added`, `changed`, or `removed` part (`brief` is `"redrafted"` or `"kept"`). |
 | `repositories` | `object[]` | When a source uses `repository` | Resolved Git commits for remote change sources (`{ source, repository, revision, commit }`). |
 | `applied` | `object` | When `--apply` succeeded | Full [`emery apply`](apply.md#json-output) output object with `kind: "amendment"`. |
 
@@ -120,7 +120,7 @@ staged amendment e5378831…
   1 added, 1 changed, 1 retired (1 by scope), 0 conflict, 4 unchanged
   stems: access, orders, session
   design: overview, apis
-  slices: orders (brief kept), access (new)
+  parts: orders (brief kept), access (new)
   nothing sealed; `emery show amendment` reviews it
 ```
 
@@ -148,7 +148,7 @@ When `--apply` is passed, the final line is replaced by `  sealed revision <id> 
 - **Added requirement IDs start after the current base's highest ID (`max_id + 1`).** If the highest-numbered requirement (for example, `REQ-010`) was retired in an earlier amendment so the specification's highest standing ID is now `REQ-009`, the next amendment's added requirement will be assigned `REQ-010`.
 - **`scope = "whole"` covers only stems present in the source's extracted claims.** A whole-scope behaviour source retires untouched requirements under stems where that source emitted at least one `requirement` claim. If an entire stem's files were deleted so the adapter emits zero claims under that stem, use an explicit `retire` claim in an `intent` or `documentation` source to withdraw that stem's requirements.
 - **Uninformed design sections keep their base prose.** The design turn runs only on `## Overview` and sections informed by the change's claims (or citing a `retired` requirement). If a requirement's behaviour changes without a `decision`, `call`, `contract`, `type`, or `excerpt` claim informing a section, paragraphs citing that requirement in uninformed sections remain as they were in the base design.
-- **Slices updated by code alone keep their base brief.** When a slice's requirement list, owned types, or dependencies change deterministically by code without opening a `slicing` turn, its prose brief is not redrafted. Emery flags these slices as `(brief kept)` in terminal output and adds `Note: the brief is the base's; no slicing turn redrafted it.` in `emery show amendment`.
+- **Parts updated by code alone keep their base brief.** When a part's requirement list, owned types, or dependencies change deterministically by code without opening a `slicing` turn, its prose brief is not redrafted. Emery flags these parts as `(brief kept)` in terminal output and adds `Note: the brief is the base's; no slicing turn redrafted it.` in `emery show amendment`.
 - **One default source name per adapter on the CLI.** Passing both a positional `<adapter>` and `--description <adapter>=<text>` for the same adapter package without custom names in `emery.toml` binds the same source name twice and fails with `bad_request`. Use `--description` alone alongside `--config`, or define named `[[source]]` entries in your config file.
 - **Builds after an amendment rebuild all slices.** Because slice merge commits are tied to a specific revision ID, `emery build` after sealing an amendment builds all slices of the new revision over the existing tree rather than skipping unchanged slices.
 - **Merging two branches requires keeping one side's `spec/` whole.** If two branches independently seal amendments and merge in Git, `spec/spec.json` will conflict. Keep one branch's `spec/` directory whole (`git checkout <branch> -- spec/`), commit the merge, and re-run the other branch's `emery amend` on top of the merge commit.
