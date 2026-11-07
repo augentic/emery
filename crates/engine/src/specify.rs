@@ -98,7 +98,7 @@ use crate::{Files, Rank, apply, preopen_path, store, vcs};
 ///
 /// A loader's or a source's error keeps its own class and code.
 pub async fn specify<P: Model + Source + StateStore + BlobStore + Plugins + Vcs + Files>(
-    input: SpecifyInput, context: Context<P>,
+    context: Context<P>, input: SpecifyInput,
 ) -> Result<SpecifyOutput, Error> {
     let provider = context.provider();
 

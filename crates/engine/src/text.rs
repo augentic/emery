@@ -1,15 +1,17 @@
-//! Renders engine results as `--format text` output.
+//! Renders verb outputs as `--format text` stdout.
 
 use std::collections::BTreeSet;
 use std::fmt;
 
-use emery_engine::amend::{AmendOutput, SliceChange, SliceClass};
-use emery_engine::apply::ApplyOutput;
-use emery_engine::build::{BuildOutput, BuiltSlice, Candidate, StagedKind};
-use emery_engine::show::ShowOutput;
-use emery_engine::specify::{Diff, RepositorySource, SectionKind, SpecifyOutput, Waves};
+use omnia_sdk::api::command::Render;
 
-pub fn specify(output: &SpecifyOutput, w: &mut dyn fmt::Write) -> fmt::Result {
+use crate::amend::{AmendOutput, SliceChange, SliceClass};
+use crate::apply::ApplyOutput;
+use crate::build::{BuildOutput, BuiltSlice, Candidate, StagedKind};
+use crate::show::ShowOutput;
+use crate::specify::{Diff, RepositorySource, SectionKind, SpecifyOutput, Waves};
+
+fn specify(output: &SpecifyOutput, w: &mut dyn fmt::Write) -> fmt::Result {
     write!(w, "staged candidate {}", output.revision)?;
     if output.fresh {
         w.write_str(" (fresh)")?;
@@ -24,7 +26,7 @@ pub fn specify(output: &SpecifyOutput, w: &mut dyn fmt::Write) -> fmt::Result {
     }
 }
 
-pub fn apply(output: &ApplyOutput, w: &mut dyn fmt::Write) -> fmt::Result {
+fn apply(output: &ApplyOutput, w: &mut dyn fmt::Write) -> fmt::Result {
     sealed(output, "", w)?;
     if output.repository != "." {
         writeln!(w, "  repository {}", output.repository)?;
@@ -32,7 +34,7 @@ pub fn apply(output: &ApplyOutput, w: &mut dyn fmt::Write) -> fmt::Result {
     diff(output.diff.as_ref(), w)
 }
 
-pub fn amend(output: &AmendOutput, w: &mut dyn fmt::Write) -> fmt::Result {
+fn amend(output: &AmendOutput, w: &mut dyn fmt::Write) -> fmt::Result {
     match &output.amendment {
         Some(id) => writeln!(w, "staged amendment {id}")?,
         None => writeln!(w, "nothing staged: no change against the current revision")?,
@@ -169,7 +171,7 @@ fn document_diff(
     })
 }
 
-pub fn build(output: &BuildOutput, w: &mut dyn fmt::Write) -> fmt::Result {
+fn build(output: &BuildOutput, w: &mut dyn fmt::Write) -> fmt::Result {
     writeln!(w, "built revision {}", output.revision)?;
     waves(&output.waves, w)?;
     match &output.candidate {
@@ -279,6 +281,36 @@ where
 }
 
 // Writes the document body alone so the Markdown can be piped directly.
-pub fn show(output: &ShowOutput, w: &mut dyn fmt::Write) -> fmt::Result {
+fn show(output: &ShowOutput, w: &mut dyn fmt::Write) -> fmt::Result {
     w.write_str(&output.body)
+}
+
+impl Render for SpecifyOutput {
+    fn render(&self, out: &mut dyn fmt::Write) -> fmt::Result {
+        specify(self, out)
+    }
+}
+
+impl Render for ApplyOutput {
+    fn render(&self, out: &mut dyn fmt::Write) -> fmt::Result {
+        apply(self, out)
+    }
+}
+
+impl Render for AmendOutput {
+    fn render(&self, out: &mut dyn fmt::Write) -> fmt::Result {
+        amend(self, out)
+    }
+}
+
+impl Render for BuildOutput {
+    fn render(&self, out: &mut dyn fmt::Write) -> fmt::Result {
+        build(self, out)
+    }
+}
+
+impl Render for ShowOutput {
+    fn render(&self, out: &mut dyn fmt::Write) -> fmt::Result {
+        show(self, out)
+    }
 }

@@ -17,7 +17,7 @@ emery-lexicon.workspace = true
 emery-prose.workspace = true
 futures.workspace = true
 hex.workspace = true
-omnia-sdk.workspace = true
+omnia-sdk = { workspace = true, features = ["command"] }
 schemars.workspace = true
 semver.workspace = true
 serde.workspace = true

@@ -123,7 +123,7 @@ use crate::{EntryKind, Files, RETRIES, describe, is_retryable, secrets, store, v
 /// beside it in its wave included. A failure at a wave's verification names
 /// the wave, the slices merged in it, and where the label stands.
 pub async fn build<P: Model + Target + StateStore + BlobStore + Plugins + Vcs + Files>(
-    input: BuildInput, context: Context<P>,
+    context: Context<P>, input: BuildInput,
 ) -> Result<BuildOutput, Error> {
     let provider = context.provider();
 

@@ -43,7 +43,7 @@ use crate::{Files, store};
 /// - Returns [`Error::ServerError`] when storage, validation, or serialisation
 ///   fails.
 pub async fn show<P: StateStore + BlobStore + Vcs + Files>(
-    input: ShowInput, context: Context<P>,
+    context: Context<P>, input: ShowInput,
 ) -> Result<ShowOutput, Error> {
     let store = context.provider();
     if input.artifact == Artifact::Amendment {
