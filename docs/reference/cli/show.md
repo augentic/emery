@@ -1,12 +1,13 @@
 # `emery show`
 
-This page is the CLI reference for `emery show`, which renders a Markdown projection (or typed JSON envelope) of `spec`, `design`, `plan`, or `amendment` from the current revision or the local staging area. It is for developers and operators reviewing specifications, designs, build plans, and staged amendments.
+This page is the CLI reference for `emery show`, which renders a Markdown projection (or typed JSON envelope) of `spec`, `design`, `plan`, `schedule`, or `amendment` from the current revision or the local staging area. It is for developers and operators reviewing specifications, designs, build plans, build schedules, and staged amendments.
 
 ## Contents
 
 - [Synopsis](#synopsis)
 - [Description](#description)
   - [Reading the current revision vs. `--staged`](#reading-the-current-revision-vs---staged)
+  - [Previewing the build schedule (`emery show schedule`)](#previewing-the-build-schedule-emery-show-schedule)
   - [Reviewing a staged amendment (`emery show amendment`)](#reviewing-a-staged-amendment-emery-show-amendment)
   - [Output behaviour and front matter](#output-behaviour-and-front-matter)
 - [Options](#options)
@@ -22,6 +23,8 @@ This page is the CLI reference for `emery show`, which renders a Markdown projec
 emery show spec
 emery show design
 emery show plan
+emery show schedule                  # preview build slices under adapter/config budget
+emery show schedule --budget 8       # preview build slices under an explicit budget
 emery show spec --staged             # read the candidate staged by emery specify
 emery show spec --config [<path>]    # specify config file for [target] repository
 emery show amendment                 # read the amendment staged by emery amend
@@ -31,11 +34,12 @@ emery show amendment                 # read the amendment staged by emery amend
 
 ## Description
 
-`emery show` renders a read-only Markdown projection of one of four artifacts:
+`emery show` renders a read-only Markdown projection of one of five artifacts:
 
 - **`spec`:** The technology-neutral behavioural specification (`# Specification`), listing each requirement's ID, subject, status (`agreed`, `divergence`, `conflict`), inbound trigger (`Route:` or `Message:`), source citations, statement body, loser notes, and acceptance scenarios.
 - **`design`:** The architectural design (`# Design`), including `## Overview`, `## Domain model` (`Type: <key>` and `Type: <key> (mechanism)` blocks), `## APIs and integrations` (where concrete technologies from `call` and `decision` claims appear), and other informed sections.
-- **`plan`:** The dependency-ordered build plan (`# Plan`), listing each `## Slice: <name>` block with its `ID:`, `Requirements:`, `Types:`, `Depends on:`, and prose brief.
+- **`plan`:** The dependency-ordered build plan (`# Plan`), listing each `## Part: <name>` block with its `ID:`, `Requirements:`, `Types:`, `Depends on:`, and prose brief.
+- **`schedule`:** The deterministic build schedule (`# Schedule`) cut from the current revision's plan under the resolved requirement budget, listing the budget and its source, the build waves, any over-budget slice IDs, and each `## Slice: <name>` block with its `ID:`, `Part:`, `Wave:`, `Requirements:`, and owned `Types:`.
 - **`amendment`:** The incremental change staged by [`emery amend`](amend.md) (`# Amendment`), grouped by change class (`Added`, `Changed`, `Retired`, `Conflict`, `Unchanged`) followed by `## Design` and `## Plan` diff sections.
 
 ### Reading the current revision vs. `--staged`
@@ -44,6 +48,17 @@ For `spec`, `design`, and `plan`, `emery show` operates in two modes:
 
 1. **Current revision (default, without `--staged`):** Reads the sealed revision from the target Git repository configured in `[target]` of [`emery.toml`](../config.md). Emery checks the cached `emery/<id>` branch first (if it descends from `HEAD`), and otherwise inspects `spec/` on the `HEAD` commit directly (so fresh clones and merged branches work without local `.emery/storage/` state).
 2. **Staged candidate (`--staged`):** Reads the unsealed candidate revision staged in `.emery/storage/` by [`emery specify`](specify.md). This mode does not require or read a `[target]` table.
+
+### Previewing the build schedule (`emery show schedule`)
+
+`emery show schedule` previews the exact slices and waves that [`emery build`](build.md) will execute over the current revision, with no model turn spent. It resolves the per-slice requirement budget in the same priority order as `emery build`:
+
+1. `--budget <N>` / `-b <N>` (or `EMERY_BUDGET`) — reported as `flag`.
+2. `[target] budget = <N>` in `emery.toml` — reported as `config`.
+3. `TargetMetadata.budget` from the target adapter (loaded through the plugin loader only when neither flag nor config sets a budget) — reported as `adapter`.
+4. The engine fallback (`12`) — reported as `default`.
+
+Because a schedule cuts the sealed plan that `emery build` reads, `--staged` is refused for `schedule` (use `emery show plan --staged` to inspect staged parts).
 
 ### Reviewing a staged amendment (`emery show amendment`)
 
@@ -55,17 +70,17 @@ For `spec`, `design`, and `plan`, `emery show` operates in two modes:
   - `Retired` entries show the withdrawn statement, plus ``Note: retired by scope: `<source>` was read whole and states nothing under `<stem>`.`` when retired via `scope = "whole"`.
   - `Conflict` entries list each competing statement as a `Note:` line followed by `Note: Operator reconciliation required.` and the drafted scenarios.
 - **`## Design` (when design sections changed):** Summarizes changed, added, and removed section headings (`Changed: Domain model; added: APIs and integrations.`) and renders the full text of each changed or added section.
-- **`## Plan` (when slices changed):** Renders `### Slice: <name> [added|changed|removed]` blocks. Any `changed` slice whose brief was not redrafted by a slicing turn includes `Note: the brief is the base's; no slicing turn redrafted it.`
+- **`## Plan` (when parts changed):** Renders `### Part: <name> [added|changed|removed]` blocks. Any `changed` part whose brief was not redrafted by a slicing turn includes `Note: the brief is the base's; no slicing turn redrafted it.`
 
 ### Output behaviour and front matter
 
 In default `text` mode, `emery show` writes **only** the Markdown document to `stdout` with no status prefix line, so you can redirect it cleanly to a file (`emery show spec > spec.md`).
 
-For `spec`, `design`, and `plan`, the Markdown begins with YAML front matter carrying the schema version and revision digest:
+For `spec`, `design`, `plan`, and `schedule`, the Markdown begins with YAML front matter carrying the schema version and revision digest:
 
 ```markdown
 ---
-emery: 8
+emery: 9
 revision: 9f8e7d6c…
 ---
 ```
@@ -78,22 +93,23 @@ revision: 9f8e7d6c…
 
 | Option | Short | Description |
 | --- | --- | --- |
-| `<spec\|design\|plan\|amendment>` | — | Positional artifact name to render. |
-| `--staged` | — | Read `spec`, `design`, or `plan` from the staged candidate in `.emery/storage/` instead of the target repository (ignored for `amendment`). |
+| `<spec\|design\|plan\|schedule\|amendment>` | — | Positional artifact name to render. |
+| `--staged` | — | Read `spec`, `design`, or `plan` from the staged candidate in `.emery/storage/` instead of the target repository (refused for `schedule`; ignored for `amendment`). |
 | `--config [<path>]` | `-c` | Configuration file containing `[target]` for reading the current revision (defaults to `emery.toml` when `<path>` is omitted; discovered automatically for bare `show`). |
+| `--budget <N>` | `-b` | Maximum number of requirements per build slice for `schedule` (env: `EMERY_BUDGET`); overrides `[target] budget` and the target adapter's default. |
 | `--format <text\|json>` | — | Output format (`text` outputs raw Markdown; `json` wraps the Markdown and typed document in a JSON object). |
 
 ---
 
 ## JSON output
 
-When `--format json` is passed, `emery show` writes a single JSON object to `stdout` (see [CLI output shapes](../cli-output-shapes.md#emery-show-specdesignplanamendment) for complete schemas):
+When `--format json` is passed, `emery show` writes a single JSON object to `stdout` (see [CLI output shapes](../cli-output-shapes.md#emery-show-specdesignplanscheduleamendment) for complete schemas):
 
 | Field | Type | Description |
 | --- | --- | --- |
 | `revision` | `string` | SHA-256 ID of the current revision, staged candidate (`--staged`), or staged amendment (`amendment`). |
 | `body` | `string` | Complete Markdown projection (identical to `text` mode output). |
-| `document` | `object` | The underlying typed JSON document (`Spec`, `Design`, `Plan`, or `Amendment`). |
+| `document` | `object` | The underlying typed JSON document (`Spec`, `Design`, `Plan`, `Schedule`, or `Amendment`). |
 
 ---
 
@@ -101,7 +117,8 @@ When `--format json` is passed, `emery show` writes a single JSON object to `std
 
 | Error code | Exit | Cause | Recovery |
 | --- | --- | --- | --- |
-| `build-target-required` | `1` | Bare `emery show <spec\|design\|plan>` was run with no `[target]` table in `--config` or `emery.toml`. | Pass `--staged` to view a staged candidate, or add `[target]` to `emery.toml`. |
+| `build-target-required` | `1` | Bare `emery show <spec\|design\|plan\|schedule>` was run with no `[target]` table in `--config` or `emery.toml`. | Pass `--staged` to view a staged candidate, or add `[target]` to `emery.toml`. |
+| `bad_request` | `1` | `emery show schedule --staged` was run. | Use `emery show plan --staged` to inspect the staged candidate's parts, or seal first with `emery apply`. |
 | `spec-not-generated` | `2` | No sealed revision exists in the target repository, or `emery/<id>` is behind `HEAD`. | Run `emery apply` if a candidate is staged, `emery specify --apply` to create one, or merge/rebase `emery/<id>` onto `HEAD`. |
 | `nothing-staged` | `2` | `--staged` was passed with no staged candidate, or `emery show amendment` was run with no staged amendment. | Run `emery specify` (for `--staged`) or `emery amend` (for `amendment`) first. |
 | `amendment-pending` | `1` | `emery show <spec\|design\|plan> --staged` was run while an amendment (not a candidate) is staged. | Run `emery show amendment` to inspect the staged amendment. |
@@ -116,4 +133,4 @@ When `--format json` is passed, `emery show` writes a single JSON object to `std
 - [`emery specify`](specify.md) — stage a candidate revision for `emery show <artifact> --staged`.
 - [`emery amend`](amend.md) — stage an incremental amendment for `emery show amendment`.
 - [`emery apply`](apply.md) — seal the staged item so bare `emery show` and `emery build` read it.
-- [CLI output shapes](../cli-output-shapes.md#emery-show-specdesignplanamendment) — full JSON schemas for `Spec`, `Design`, `Plan`, and `Amendment`.
+- [CLI output shapes](../cli-output-shapes.md#emery-show-specdesignplanscheduleamendment) — full JSON schemas for `Spec`, `Design`, `Plan`, `Schedule`, and `Amendment`.

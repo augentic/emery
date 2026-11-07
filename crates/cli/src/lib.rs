@@ -339,6 +339,9 @@ struct BuildArgs {
     /// How many slices of a wave to build at once; unset builds every slice of a wave at once, within the model backend's own agent cap.
     #[arg(long, short = 'j', env = "EMERY_JOBS", value_name = "N")]
     jobs: Option<NonZeroUsize>,
+    /// The maximum number of requirements per build slice; over `--config`, it replaces the `[target] budget`.
+    #[arg(long, short = 'b', env = "EMERY_BUDGET", value_name = "N")]
+    budget: Option<NonZeroUsize>,
 }
 
 impl TryFrom<BuildArgs> for BuildInput {
@@ -350,6 +353,7 @@ impl TryFrom<BuildArgs> for BuildInput {
             repository: args.repository.as_deref(),
             config: args.config.as_deref(),
             jobs: args.jobs,
+            budget: args.budget,
         }
         .resolve()
     }
@@ -357,7 +361,9 @@ impl TryFrom<BuildArgs> for BuildInput {
 
 const SHOW_DESC: &str = "Print an artifact from the current revision.\n\n\
     The revision is read from the repository the `[target]` table of `--config [<path>]` \
-    (default: `emery.toml`) names, where `emery apply` sealed it. `--staged` prints it \
+    (default: `emery.toml`) names, where `emery apply` sealed it. `schedule` cuts the \
+    sealed plan into build slices under `--budget`, the `[target] budget`, or the target \
+    adapter's default, with no model turn. `--staged` prints `spec`, `design`, or `plan` \
     from the candidate `emery specify` staged and `emery apply` has not sealed, and \
     needs no target. `amendment` prints the staged amendment, which stands staged alone \
     until it is sealed, and needs neither. Text output contains only the artifact body. \
@@ -374,22 +380,16 @@ struct ShowArgs {
     /// Operator-owned config naming the repository the revision lives in; the omitted value selects emery.toml.
     #[arg(long, short = 'c', num_args = 0..=1, default_missing_value = config::CONFIG_FILE)]
     config: Option<PathBuf>,
+    /// The maximum number of requirements per build slice for `schedule`; over `--config`, it replaces the `[target] budget`.
+    #[arg(long, short = 'b', env = "EMERY_BUDGET", value_name = "N")]
+    budget: Option<NonZeroUsize>,
 }
 
 impl TryFrom<ShowArgs> for ShowInput {
     type Error = Error;
 
     fn try_from(args: ShowArgs) -> Result<Self, Error> {
-        let target = if args.staged || matches!(args.artifact, Artifact::Amendment) {
-            None
-        } else {
-            config::target(args.config.as_deref(), None)?
-        };
-        Ok(Self {
-            artifact: args.artifact,
-            staged: args.staged,
-            target,
-        })
+        config::show(args.artifact, args.staged, args.config.as_deref(), args.budget)
     }
 }
 
@@ -399,6 +399,7 @@ fn artifacts() -> impl TypedValueParser<Value = Artifact> {
             Artifact::Spec => "The behavioural specification artifact.",
             Artifact::Design => "The rebuild design artifact.",
             Artifact::Plan => "The build plan artifact.",
+            Artifact::Schedule => "The budgeted build schedule cut from the plan.",
             Artifact::Amendment => "The staged amendment, awaiting its seal.",
         };
         PossibleValue::new(artifact.as_ref()).help(help)

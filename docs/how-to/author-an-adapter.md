@@ -131,6 +131,7 @@ Every target adapter embeds `prose/build.md` (with a `## Worked example` JSON fe
 ```rust
 use std::fs::{self, OpenOptions};
 use std::io::{ErrorKind, Write as _};
+use std::num::NonZeroU32;
 use std::path::Path;
 
 use emery_sdk::target::{
@@ -151,6 +152,7 @@ impl TargetAdapter for Adapter {
         Metadata {
             rules: RULES,
             grants: GRANTS,
+            budget: NonZeroU32::new(12),
         }
     }
 

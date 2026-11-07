@@ -378,7 +378,7 @@ impl Display for DesignAmend<'_> {
                  the signature the change redeclares changes what it stands for; a new one is \
                  `data`, a shape the program reads, stores, or produces, or `mechanism`, a class \
                  that is a client, a retriever, a bootstrap, a settings carrier, or an error or \
-                 exception class, which a build declares nothing for and no slice owns.\n\n",
+                 exception class, which a build declares nothing for and no part owns.\n\n",
             )?;
             for (key, &signature) in &self.outline.types {
                 match self.base.type_block(key) {

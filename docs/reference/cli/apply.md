@@ -59,7 +59,7 @@ An amendment staged by `emery amend` carries its amended `spec`, `design`, and `
   - `Added: <count>`
   - `Changed: <count>`
   - `Retired: <count>`
-  - `Slices: SLICE-002 orders changed, SLICE-004 export removed` *(omitted when no slices changed)*
+  - `Parts: PART-002 orders changed, PART-004 export removed` *(omitted when no parts changed)*
 - **Conflicts allowed:** Requirements in `[conflict]` do not block `emery apply`; they are sealed into `spec/spec.json` with `[conflict]` status and competing statements recorded as notes so you can reconcile them in a subsequent amendment.
 
 ### `spec/` is the engine's
@@ -67,7 +67,7 @@ An amendment staged by `emery amend` carries its amended `spec`, `design`, and `
 The root-level `spec/` directory in the target repository is reserved exclusively for Emery's `spec.json`, `design.json`, and `plan.json` files (nested directories like `src/spec/` are untouched). `emery apply` fails with `spec-mismatch` (exit `1`) if:
 
 - **Extra files exist in `spec/`:** `spec/` holds any file, symlink, or subdirectory other than the three JSON documents. Restore the labelled files (`git checkout emery/<revision> -- spec/`) or move your files elsewhere.
-- **`spec/` was edited or merged by hand:** At an unlabelled `HEAD` (such as after a `git merge` of two branches that each sealed a revision), the three JSON files fail to parse or fail cross-document consistency (`Revision::findings`, such as a slice referencing a missing requirement ID or data type). Keep one branch's three files whole (`git checkout <branch> -- spec/`), commit the merge, and re-run the other branch's `emery amend`.
+- **`spec/` was edited or merged by hand:** At an unlabelled `HEAD` (such as after a `git merge` of two branches that each sealed a revision), the three JSON files fail to parse or fail cross-document consistency (`Revision::findings`, such as a part referencing a missing requirement ID or data type). Keep one branch's three files whole (`git checkout <branch> -- spec/`), commit the merge, and re-run the other branch's `emery amend`.
 
 ### Refusals
 

@@ -54,7 +54,7 @@ emery amend --description emery:intent@0.39.0="Add order cancellation" --config
 - **Explanation:** Deep architectural guides covering how Emery works under the hood:
   - **[Revision lifecycle](explanation/revision-lifecycle.md):** How `.emery/storage` stages candidates and amendments, how `emery apply` seals `spec/` onto `emery/<id>`, the three target repository modes, and revision lineages.
   - **[Synthesis, authority, and the technology boundary](explanation/synthesis-and-authority.md):** How source adapters extract claims, how authority ranks resolve `[agreed]`, `[divergence]`, and `[conflict]`, and how the `Lexicon` gate keeps specifications technology-neutral.
-  - **[Wave-based builds and verification](explanation/wave-builds.md):** How requirements are sliced by stem and sub-stem floor (`SLICE_CAP = 12`), built in parallel Git worktrees, merged, verified, and resumed.
+  - **[Wave-based builds and verification](explanation/wave-builds.md):** How requirements are sliced by stem and trigger floor, built in parallel Git worktrees, merged, verified, and resumed.
   - **[Security, sandboxing, and gates](explanation/security-and-sandbox.md):** W^X separation between `.` and `~/.emery/adapters`, kernel worker sandboxing, worker grants, and the `spec-rewritten` and `secret-detected` gates.
 - **[Reference](reference/index.md):** Detailed lookup documentation for the shipped system:
   - **[Configuration (`emery.toml`)](reference/config.md):** Complete schema and CLI layering rules for `[[source]]` and `[target]`.

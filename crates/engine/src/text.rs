@@ -5,9 +5,9 @@ use std::fmt;
 
 use omnia_sdk::api::command::Render;
 
-use crate::amend::{AmendOutput, SliceChange, SliceClass};
+use crate::amend::{AmendOutput, PartChange, PartClass};
 use crate::apply::ApplyOutput;
-use crate::build::{BuildOutput, BuiltSlice, Candidate, StagedKind};
+use crate::build::{BuildOutput, BuiltSlice, Candidate, ScheduledSlice, StagedKind};
 use crate::show::ShowOutput;
 use crate::specify::{Diff, RepositorySource, SectionKind, SpecifyOutput, Waves};
 
@@ -66,8 +66,8 @@ fn amend(output: &AmendOutput, w: &mut dyn fmt::Write) -> fmt::Result {
             .chain(kinds.iter().map(AsRef::as_ref));
         writeln!(w, "  design: {}", comma_separated(names))?;
     }
-    if !output.slices.is_empty() {
-        writeln!(w, "  slices: {}", comma_separated(output.slices.iter().map(slice_change)))?;
+    if !output.parts.is_empty() {
+        writeln!(w, "  parts: {}", comma_separated(output.parts.iter().map(part_change)))?;
     }
     repositories(&output.repositories, w)?;
     if let Some(applied) = &output.applied {
@@ -78,15 +78,15 @@ fn amend(output: &AmendOutput, w: &mut dyn fmt::Write) -> fmt::Result {
     Ok(())
 }
 
-fn slice_change(slice: &SliceChange) -> impl fmt::Display {
-    // A changed slice where no slicing turn ran keeps its base brief.
-    let tag = match slice.class {
-        SliceClass::Added => " (new)",
-        SliceClass::Changed if slice.keeps_brief() => " (brief kept)",
-        SliceClass::Changed => "",
-        SliceClass::Removed => " (removed)",
+fn part_change(part: &PartChange) -> impl fmt::Display {
+    // A changed part where no slicing turn ran keeps its base brief.
+    let tag = match part.class {
+        PartClass::Added => " (new)",
+        PartClass::Changed if part.keeps_brief() => " (brief kept)",
+        PartClass::Changed => "",
+        PartClass::Removed => " (removed)",
     };
-    fmt::from_fn(move |f| write!(f, "{}{tag}", slice.name))
+    fmt::from_fn(move |f| write!(f, "{}{tag}", part.name))
 }
 
 fn repositories(reads: &[RepositorySource], w: &mut dyn fmt::Write) -> fmt::Result {
@@ -173,7 +173,11 @@ fn document_diff(
 
 fn build(output: &BuildOutput, w: &mut dyn fmt::Write) -> fmt::Result {
     writeln!(w, "built revision {}", output.revision)?;
-    waves(&output.waves, w)?;
+    build_plan(output, w)?;
+    let mut over = output.schedule.iter().filter(|slice| slice.over_budget).peekable();
+    if over.peek().is_some() {
+        writeln!(w, "  over budget: {}", comma_separated(over.map(over_slice)))?;
+    }
     match &output.candidate {
         Some(Candidate {
             id,
@@ -226,9 +230,41 @@ fn build(output: &BuildOutput, w: &mut dyn fmt::Write) -> fmt::Result {
     writeln!(w, "  labelled {} at {}", output.label, output.head)
 }
 
+fn build_plan(output: &BuildOutput, w: &mut dyn fmt::Write) -> fmt::Result {
+    let parts = &output.parts;
+    let waves = &output.waves;
+    writeln!(
+        w,
+        "  plan: {} in {}; budget {} ({}): {} in {}, widest {}",
+        counted(parts.parts(), "part"),
+        counted(parts.len(), "wave"),
+        output.budget,
+        output.budget_source.as_ref(),
+        counted(waves.slices(), "slice"),
+        counted(waves.len(), "wave"),
+        waves.widest()
+    )
+}
+
+fn over_slice(slice: &ScheduledSlice) -> impl fmt::Display {
+    fmt::from_fn(move |f| {
+        write!(
+            f,
+            "{} {} ({})",
+            slice.id,
+            slice.name,
+            counted(slice.requirements.len(), "requirement")
+        )
+    })
+}
+
 fn built(slice: &BuiltSlice, w: &mut dyn fmt::Write) -> fmt::Result {
     let total = slice.covered.len() + slice.uncovered.len();
-    write!(w, "    {} {}: covered {}/{total}", slice.id, slice.name, slice.covered.len())?;
+    write!(w, "    {} {}", slice.id, slice.name)?;
+    if slice.count > 1 {
+        write!(w, " ({}/{})", slice.index, slice.count)?;
+    }
+    write!(w, ": covered {}/{total}", slice.covered.len())?;
     if !slice.uncovered.is_empty() {
         write!(w, " (uncovered {})", comma_separated(&slice.uncovered))?;
     }
@@ -243,13 +279,13 @@ fn built(slice: &BuiltSlice, w: &mut dyn fmt::Write) -> fmt::Result {
     writeln!(w)
 }
 
-// `  plan: 4 slices in 3 waves, widest 2`: how many slices the plan holds,
+// `  plan: 4 parts in 3 waves, widest 2`: how many parts the plan holds,
 // how many waves they fall into, and the most ready at once.
 fn waves(waves: &Waves, w: &mut dyn fmt::Write) -> fmt::Result {
     writeln!(
         w,
         "  plan: {} in {}, widest {}",
-        counted(waves.slices(), "slice"),
+        counted(waves.parts(), "part"),
         counted(waves.len(), "wave"),
         waves.widest()
     )

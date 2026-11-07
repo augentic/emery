@@ -1,5 +1,5 @@
 {
-  "emery": 8,
+  "emery": 9,
   "base": {
     "revision": "3f2a9c0e7d1b4a6f8e5c2d9b0a7f4e1c3b6d8a2f5e9c1b4d7a0f3e6c9b2d5a8f",
     "commit": "9e267c3a1b4d7f0a2c5e8b1d4f7a0c3e6b9d2f5a"
@@ -86,7 +86,7 @@
     }
   ],
   "spec": {
-    "emery": 8,
+    "emery": 9,
     "parent": "3f2a9c0e7d1b4a6f8e5c2d9b0a7f4e1c3b6d8a2f5e9c1b4d7a0f3e6c9b2d5a8f",
     "preamble": [
       "One greeting surface, and what it answers."
@@ -244,7 +244,7 @@
     ]
   },
   "design": {
-    "emery": 8,
+    "emery": 9,
     "parent": "3f2a9c0e7d1b4a6f8e5c2d9b0a7f4e1c3b6d8a2f5e9c1b4d7a0f3e6c9b2d5a8f",
     "preamble": [],
     "sections": [
@@ -271,14 +271,14 @@
     ]
   },
   "plan": {
-    "emery": 8,
+    "emery": 9,
     "parent": "3f2a9c0e7d1b4a6f8e5c2d9b0a7f4e1c3b6d8a2f5e9c1b4d7a0f3e6c9b2d5a8f",
     "preamble": [
       "Two slices: the greeting surface, and the farewell beside it."
     ],
-    "slices": [
+    "parts": [
       {
-        "id": "SLICE-001",
+        "id": "PART-001",
         "name": "greeting",
         "requirements": [
           "REQ-001",
@@ -302,9 +302,9 @@
       "domain-model"
     ]
   },
-  "slices": [
+  "parts": [
     {
-      "id": "SLICE-002",
+      "id": "PART-002",
       "name": "farewell",
       "class": "removed",
       "brief": "kept"

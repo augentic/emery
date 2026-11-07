@@ -80,7 +80,7 @@ emery show spec
 git merge --ff-only emery/<combined-rev>
 ```
 
-The new revision `<combined-rev>` cleanly incorporates Branch B's changes on top of `<rev-a>`, assigns non-colliding `REQ-NNN` and `SLICE-NNN` IDs, and records `Parent: <rev-a>`.
+The new revision `<combined-rev>` cleanly incorporates Branch B's changes on top of `<rev-a>`, assigns non-colliding `REQ-NNN` and `PART-NNN` IDs, and records `Parent: <rev-a>`.
 
 ---
 
@@ -88,8 +88,8 @@ The new revision `<combined-rev>` cleanly incorporates Branch B's changes on top
 
 Emery verifies cross-document integrity (`Revision::findings`) every time it reads `spec/` from `HEAD`:
 
-- Every requirement in `spec.json` must be placed in exactly one slice in `plan.json`, and `plan.json` may not reference any requirement ID absent from `spec.json`.
-- Every `data` type key in `design.json` must be owned by exactly one slice in `plan.json`.
+- Every requirement in `spec.json` must be placed in exactly one part in `plan.json`, and `plan.json` may not reference any requirement ID absent from `spec.json`.
+- Every `data` type key in `design.json` must be owned by exactly one part in `plan.json`.
 
 If you commit conflict markers inside `spec/*.json`, hand-edit a JSON file, or take `spec.json` from Branch A alongside `design.json` and `plan.json` from Branch B, `emery show`, `emery amend`, `emery apply`, and `emery build` will all refuse with `spec-mismatch`:
 

@@ -25,8 +25,8 @@ use self::plan::{Assembled, Pruned};
 pub use crate::apply::ApplyOutput;
 use crate::brief::Brief as _;
 pub use crate::revision::{
-    Amendment, AmendmentBase, BriefState, Change, ChangeClass, DesignDiff, PlanDiff, SliceChange,
-    SliceClass,
+    Amendment, AmendmentBase, BriefState, Change, ChangeClass, DesignDiff, PartChange, PartClass,
+    PlanDiff,
 };
 use crate::revision::{Design, EMERY};
 use crate::specify::{
@@ -61,27 +61,25 @@ use crate::{Files, apply, store};
 /// each retired one is left out, and the preamble is the base's.
 ///
 /// The amended design ([`Amendment::design`]) is the base's less the type
-/// blocks owned by the slices the retirements empty, where no claim of the
+/// blocks owned by the parts the retirements empty, where no claim of the
 /// change informs a section and no paragraph describes a requirement the
 /// change retires; where one does, those sections and `## Overview` are
 /// redrafted in one design turn over the current text, each kept paragraph
 /// verbatim or named as revised, every other section and the preamble kept
 /// by code. The amended plan ([`Amendment::plan`])
-/// follows by code where a rule decides: the base's slices keep their ids
-/// and names, each retired requirement leaves its slice, one restated under
-/// another stem leaves it for the slice of its new stem, an added one joins
-/// the slice holding another its trigger reaches or the slice of its stem,
-/// a slice left with none is removed and the slices that depended on it
+/// follows by code where a rule decides: the base's parts keep their ids
+/// and names, each retired requirement leaves its part, one restated under
+/// another stem leaves it for the part of its new stem, an added one joins
+/// the part holding another its trigger reaches or the part of its stem,
+/// a part left with none is removed and the parts that depended on it
 /// depend on what it depended on, and a data type the design holds that no
-/// slice owns goes to the one slice the change touched. What no rule
-/// decides is put to one slicing turn over the current slices: the
-/// requirements of a stem no slice holds, every requirement of a stem left
-/// past [`SLICE_CAP`](crate::specify::SLICE_CAP) once an addition opens a
-/// sub-stem no slice holds, and a type key no slice owns where no slice or
-/// more than one changed; the turn drafts a new slice or joins a current
-/// one, and the whole is held to the plan's rules. A change adding only
-/// under stems the plan holds spends no slicing turn.
-/// [`Amendment::sections`] and [`Amendment::slices`] say what the two change
+/// part owns goes to the one part the change touched. What no rule
+/// decides is put to one slicing turn over the current parts: the
+/// requirements of a stem no part holds, and a type key no part owns
+/// where no part or more than one changed; the turn drafts a new part or
+/// joins a current one, and the whole is held to the plan's rules. A change
+/// adding only under stems the plan holds spends no slicing turn.
+/// [`Amendment::sections`] and [`Amendment::parts`] say what the two change
 /// against the base's.
 ///
 /// A change that leaves every requirement as it stands and changes nothing
@@ -159,10 +157,10 @@ pub async fn amend<P: Model + Source + StateStore + BlobStore + Plugins + Vcs + 
     change_set.retire_by_scope(&extracts);
     let ChangeSet { changes, drafted } = change_set;
 
-    // the retired requirements leave their slices before the design turn,
-    // an emptied slice goes, and the types it owned leave the design with
-    // it; a requirement restated under another stem leaves its slice for
-    // the slice of its new stem
+    // the retired requirements leave their parts before the design turn,
+    // an emptied part goes, and the types it owned leave the design with
+    // it; a requirement restated under another stem leaves its part for
+    // the part of its new stem
     let pruned = Pruned::new(&revision.plan, &revision.spec, &changes, &current.id);
     let base_design = Design {
         parent: Some(current.id.clone()),
@@ -183,14 +181,14 @@ pub async fn amend<P: Model + Source + StateStore + BlobStore + Plugins + Vcs + 
 
     // the amended plan over the two: what the change adds and moves placed
     // by code where a rule decides, and the rest by one slicing turn over
-    // the current slices
+    // the current parts
     let types = design.data_types();
     let plan = match pruned.assemble(&spec, &types, &drafted)? {
         Assembled::Settled(plan) => plan,
         Assembled::Open(brief) => brief.judge(provider).await?,
     };
     let sections = DesignDiff::between(&revision.design, &design);
-    let slices = SliceChange::of(&PlanDiff::between(&revision.plan, &plan));
+    let parts = PartChange::of(&PlanDiff::between(&revision.plan, &plan));
 
     let amendment = Amendment {
         emery: EMERY,
@@ -203,7 +201,7 @@ pub async fn amend<P: Model + Source + StateStore + BlobStore + Plugins + Vcs + 
         design,
         plan,
         sections,
-        slices,
+        parts,
     };
 
     let tally = Tally::of(&amendment);
@@ -219,7 +217,7 @@ pub async fn amend<P: Model + Source + StateStore + BlobStore + Plugins + Vcs + 
         conflicts,
         stems,
         sections: amendment.sections,
-        slices: amendment.slices,
+        parts: amendment.parts,
         repositories,
         applied,
     })
@@ -245,7 +243,7 @@ async fn stage<P: StateStore + BlobStore + Vcs + Files>(
         base = %amendment.base.revision,
         ?tally,
         sections = ?amendment.sections,
-        slices = amendment.slices.len(),
+        parts = amendment.parts.len(),
         "staged"
     );
     let applied = if apply { Some(apply::seal(provider, repo, standing).await?) } else { None };
@@ -297,10 +295,10 @@ pub struct AmendOutput {
     /// absent when it changes nothing.
     #[serde(skip_serializing_if = "DesignDiff::is_empty")]
     pub sections: DesignDiff,
-    /// The slices the amended plan adds, changes, or removes against the
+    /// The parts the amended plan adds, changes, or removes against the
     /// base's, in id order; absent when none.
     #[serde(skip_serializing_if = "Vec::is_empty")]
-    pub slices: Vec<SliceChange>,
+    pub parts: Vec<PartChange>,
     /// The sources read from a repository, in declaration order, each at the
     /// commit its revision resolved to.
     #[serde(skip_serializing_if = "Vec::is_empty")]

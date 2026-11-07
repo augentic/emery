@@ -6,6 +6,7 @@
 
 use std::fs::{self, OpenOptions};
 use std::io::{ErrorKind, Write as _};
+use std::num::NonZeroU32;
 use std::path::Path;
 
 use emery_sdk::target::{InitContext, MergeRule, Metadata, Outcome, TargetAdapter, Task};
@@ -21,6 +22,7 @@ impl TargetAdapter for Adapter {
     fn metadata() -> Metadata {
         Metadata {
             rules: RULES,
+            budget: NonZeroU32::new(2),
             ..Metadata::default()
         }
     }

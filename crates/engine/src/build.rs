@@ -8,6 +8,7 @@
 //! resume from the existing label and integration working copy.
 
 pub(crate) mod merge;
+mod schedule;
 
 use std::collections::BTreeSet;
 use std::num::NonZeroUsize;
@@ -22,11 +23,13 @@ use omnia_sdk::{BlobStore, Error, Model, Plugins, StateStore, Vcs, server_error}
 use serde::{Deserialize, Serialize};
 
 use self::merge::UnresolvedMerge;
+pub(crate) use self::schedule::Schedule;
+pub use self::schedule::{BudgetSource, DEFAULT_BUDGET, ScheduledSlice};
 use crate::adapter::{self, AdapterRef, Loaded};
-use crate::revision::{Design, Plan, Slice, Spec};
-pub use crate::revision::{ReqId, SliceId, Waves};
+pub use crate::revision::{BadId, PartId, ReqId, SliceId, Waves};
+use crate::revision::{Design, Part, Spec};
 pub use crate::store::StagedKind;
-use crate::vcs::{BuildRepo, INTEGRATION, Integration, Message, WorkingCopy};
+use crate::vcs::{BuildRepo, INTEGRATION, Integration, Message, StagedSlice, WorkingCopy};
 use crate::{EntryKind, Files, RETRIES, describe, is_retryable, secrets, store, vcs};
 
 /// Builds every slice of the current plan through the target adapter `input` names.
@@ -150,22 +153,31 @@ pub async fn build<P: Model + Target + StateStore + BlobStore + Plugins + Vcs + 
     let base = repo.base(provider, head).await?;
     let label = store::label(&revision_id);
     let labelled = repo.merged_under(provider, &label, &base, &revision_id).await?;
+    let (budget, budget_source) =
+        BudgetSource::resolve(input.budget, input.budget_source, metadata.budget);
     let mut progress = Progress::start(&base, labelled);
     let Integration {
         copy: integration,
         head,
         staged,
     } = repo.cut_integration(provider, &progress.head, &revision_id).await?;
-    progress.stage(head, staged);
+    let schedule = Schedule::new(&revision.plan, &revision.spec, budget, &progress.merged, &staged);
+    progress.stage(head, staged, schedule.resumed().to_vec());
     let initialised = progress.initialise(provider, &repo, &integration, &adapter).await?;
 
-    let waves = revision.plan.waves();
+    let parts = revision.plan.waves();
+    let waves = schedule.waves();
+    let over_budget = schedule.over_budget().count();
     tracing::info!(
         revision = %revision_id,
         adapter = %adapter,
         %base,
         head = %progress.head,
-        slices = revision.plan.slices.len(),
+        budget = budget.get(),
+        budget_source = budget_source.as_ref(),
+        parts = revision.plan.parts.len(),
+        slices = schedule.slices().len(),
+        over_budget,
         waves = waves.len(),
         widest = waves.widest(),
         resumed = progress.resumed.len(),
@@ -185,7 +197,8 @@ pub async fn build<P: Model + Target + StateStore + BlobStore + Plugins + Vcs + 
         spec: &revision.spec,
         design: &revision.design,
         rendered: &rendered,
-        plan: &revision.plan,
+        schedule: &schedule,
+        budget: budget.get(),
         repo: &repo,
         integration: &integration,
         policy: &policy,
@@ -198,6 +211,10 @@ pub async fn build<P: Model + Target + StateStore + BlobStore + Plugins + Vcs + 
     Ok(BuildOutput {
         revision: revision_id,
         candidate,
+        budget: budget.get(),
+        budget_source,
+        parts,
+        schedule: schedule.into_slices(),
         waves,
         base,
         repository: repo.path(),
@@ -247,6 +264,18 @@ pub struct BuildInput {
     /// whatever it is, so a cap of one yields the same history.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub jobs: Option<NonZeroUsize>,
+    /// The maximum number of requirements per build slice.
+    ///
+    /// `None` falls back to the target adapter's metadata default, or
+    /// [`DEFAULT_BUDGET`].
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub budget: Option<NonZeroUsize>,
+    /// Where [`budget`](Self::budget) was set (`--budget` or `[target] budget`).
+    ///
+    /// Defaults to [`BudgetSource::Flag`] when [`budget`](Self::budget) is set
+    /// and `budget_source` is `None`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub budget_source: Option<BudgetSource>,
 }
 
 /// What a successful [`build`] built.
@@ -262,11 +291,19 @@ pub struct BuildOutput {
     /// or the candidate is the revision built.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub candidate: Option<Candidate>,
-    /// The plan's slices grouped into the sets ready to build at once.
+    /// The requirement budget per slice the schedule was cut under.
+    pub budget: usize,
+    /// Where [`budget`](Self::budget) came from.
+    pub budget_source: BudgetSource,
+    /// The plan's parts grouped into the sets ready to build at once.
+    pub parts: Waves,
+    /// Every slice of the schedule, in schedule order.
+    pub schedule: Vec<ScheduledSlice>,
+    /// The schedule's slices grouped into the sets ready to build at once.
     ///
-    /// The plan's own projection: what the waves would be were every slice
-    /// built from the base.
-    pub waves: Waves,
+    /// The schedule's own projection: what the waves would be were every
+    /// slice built from the base.
+    pub waves: Waves<SliceId>,
     /// The commit the build started from.
     pub base: String,
     /// The repository the label stands in, as a path beneath the project
@@ -335,8 +372,14 @@ pub struct Initialised {
 pub struct BuiltSlice {
     /// The slice identifier.
     pub id: SliceId,
-    /// The slice name.
+    /// The part this slice was cut from.
+    pub part: PartId,
+    /// The slice name (the part's name).
     pub name: String,
+    /// The 1-based position of this slice within its part's cut (`1..=count`).
+    pub index: u32,
+    /// How many slices the part was cut into.
+    pub count: u32,
     /// The wave the slice merged in, from one.
     pub wave: usize,
     /// The slice's requirements the adapter reports implemented, in id order.
@@ -399,7 +442,8 @@ pub(crate) struct Run<'a> {
     design: &'a Design,
     // the design as every slice carries it
     rendered: &'a str,
-    plan: &'a Plan,
+    schedule: &'a Schedule<'a>,
+    budget: usize,
     repo: &'a BuildRepo,
     integration: &'a WorkingCopy,
     // the adapter's merge rules, in the capability's reading
@@ -413,10 +457,10 @@ pub(crate) struct Progress {
     head: String,
     // where the label stands; `None` until a wave of a fresh build verifies
     labelled: Option<String>,
-    merged: BTreeSet<SliceId>,
+    merged: BTreeSet<ReqId>,
     // merged over the head by an earlier run and never verified: each is
     // this run's in the wave it is ready in, with no build
-    staged: BTreeSet<SliceId>,
+    staged: Vec<StagedSlice>,
     resumed: Vec<SliceId>,
     built: Vec<BuiltSlice>,
     verified: Vec<Verified>,
@@ -425,19 +469,19 @@ pub(crate) struct Progress {
 }
 
 impl Progress {
-    // `labelled` is the head the label stands at and the slices its chain names;
+    // `labelled` is the head the label stands at and the requirements its chain names;
     // `None` starts a fresh build from the base.
-    fn start(base: &str, labelled: Option<(String, BTreeSet<SliceId>)>) -> Self {
+    fn start(base: &str, labelled: Option<(String, BTreeSet<ReqId>)>) -> Self {
         let (head, labelled, merged) = match labelled {
             Some((head, merged)) => (head.clone(), Some(head), merged),
             None => (base.to_owned(), None, BTreeSet::new()),
         };
         Self {
-            resumed: merged.iter().copied().collect(),
+            resumed: Vec::new(),
             head,
             labelled,
             merged,
-            staged: BTreeSet::new(),
+            staged: Vec::new(),
             built: Vec::new(),
             verified: Vec::new(),
             sealed: Vec::new(),
@@ -445,17 +489,15 @@ impl Progress {
         }
     }
 
-    // `head` is where the integration copy was cut and `staged` the slices
-    // an earlier run merged over the labelled head beneath it; the build
-    // runs over `head` and verifies them in their wave.
-    fn stage(&mut self, head: String, staged: BTreeSet<SliceId>) {
+    // `head` is where the integration copy was cut, `staged` the slices
+    // an earlier run merged over the labelled head beneath it, and `resumed`
+    // every slice already built on the label or staged in the copy.
+    fn stage(&mut self, head: String, staged: Vec<StagedSlice>, resumed: Vec<SliceId>) {
+        self.resumed = resumed;
         if staged.is_empty() {
             return;
         }
         self.head = head;
-        self.resumed.extend(staged.iter().copied());
-        self.resumed.sort_unstable();
-        self.resumed.dedup();
         self.staged = staged;
     }
 
@@ -503,28 +545,25 @@ impl Progress {
 
 // One slice built in its working copy, not yet merged.
 pub(crate) struct Built<'a> {
-    slice: &'a Slice,
+    slice: &'a ScheduledSlice,
+    part: &'a Part,
     worktree: WorkingCopy,
     covered: Vec<ReqId>,
     uncovered: Vec<ReqId>,
 }
 
-impl Run<'_> {
+impl<'a> Run<'a> {
     // Wave by wave, until every slice is merged.
     async fn waves<P: Model + Target + Vcs + Files>(
         &self, provider: &P, progress: &mut Progress,
     ) -> Result<(), Error> {
-        let plan = self.plan;
+        let schedule = self.schedule;
         let mut wave = 0;
-        while progress.merged.len() < plan.slices.len() {
-            let ready = plan.ready(&progress.merged);
+        while schedule.unbuilt(&progress.merged).next().is_some() {
+            let ready = schedule.ready(&progress.merged);
             if ready.is_empty() {
-                let left: Vec<String> = plan
-                    .slices
-                    .iter()
-                    .filter(|slice| !progress.merged.contains(&slice.id))
-                    .map(|slice| slice.id.to_string())
-                    .collect();
+                let left: Vec<String> =
+                    schedule.unbuilt(&progress.merged).map(|slice| slice.id.to_string()).collect();
                 return Err(server_error!(
                     "the slices left to build wait on one another: {}",
                     left.join(", ")
@@ -538,16 +577,20 @@ impl Run<'_> {
 
     #[tracing::instrument(skip_all, fields(wave))]
     async fn wave<P: Model + Target + Vcs + Files>(
-        &self, provider: &P, progress: &mut Progress, wave: usize, ready: &[&Slice],
+        &self, provider: &P, progress: &mut Progress, wave: usize, ready: &[&'a ScheduledSlice],
     ) -> Result<(), Error> {
         // a slice an earlier run staged is merged already; the rest build
         let mut merged = Vec::with_capacity(ready.len());
         let mut pending = Vec::with_capacity(ready.len());
         for slice in ready.iter().copied() {
-            if progress.staged.remove(&slice.id) {
-                tracing::info!(slice = %slice.id, "slice staged by an earlier run; not built again");
-                progress.merged.insert(slice.id);
-                merged.push(slice.id);
+            if let Some(at) = progress.staged.iter().position(|staged| {
+                staged.id == slice.id || staged.requirements == slice.requirements
+            }) {
+                let staged = progress.staged.remove(at);
+                tracing::info!(slice = %staged.id, "slice staged by an earlier run; not built again");
+                progress.merged.extend(staged.requirements);
+                progress.merged.extend(slice.requirements.iter().copied());
+                merged.push(staged.id);
             } else {
                 pending.push(slice);
             }
@@ -568,7 +611,8 @@ impl Run<'_> {
         for slice in pending.iter().copied() {
             builds.push(self.build(provider, slice, &head, wave).map(move |built| (slice, built)));
         }
-        let mut outcomes: Vec<(&Slice, Result<Built<'_>, Error>)> = if builds.is_empty() {
+        let mut outcomes: Vec<(&'a ScheduledSlice, Result<Built<'a>, Error>)> = if builds.is_empty()
+        {
             Vec::new()
         } else {
             stream::iter(builds).buffer_unordered(jobs).collect().await
@@ -607,13 +651,19 @@ impl Run<'_> {
     }
 
     #[tracing::instrument(skip_all, fields(slice = %slice.id, name = %slice.name))]
-    async fn build<'a, P: Target + Vcs>(
-        &self, provider: &P, slice: &'a Slice, head: &str, wave: usize,
+    async fn build<P: Target + Vcs>(
+        &self, provider: &P, slice: &'a ScheduledSlice, head: &str, wave: usize,
     ) -> Result<Built<'a>, Error> {
+        let part = self.schedule.part(slice.part).ok_or_else(|| {
+            server_error!("slice `{}` names unknown part `{}`", slice.id, slice.part)
+        })?;
         let at = vcs::slice_worktree(slice.id);
         let input = SliceInput {
             id: slice.id.to_string(),
-            name: slice.name.clone(),
+            part: part.id.to_string(),
+            name: part.name.clone(),
+            index: slice.index,
+            count: slice.count,
             requirements: slice
                 .requirements
                 .iter()
@@ -630,10 +680,10 @@ impl Run<'_> {
                     })
                 })
                 .collect(),
-            brief: slice.brief.clone(),
+            brief: part.brief.clone(),
             spec: self.spec.cut(&slice.requirements),
             design: self.rendered.to_owned(),
-            plan: slice.to_string(),
+            plan: part.to_string(),
             base: head.to_owned(),
         };
         tracing::info!(requirements = input.requirements.len(), wave, "building slice");
@@ -685,6 +735,7 @@ impl Run<'_> {
         );
         Ok(Built {
             slice,
+            part,
             worktree,
             covered,
             uncovered,
@@ -698,7 +749,9 @@ impl Run<'_> {
     async fn integrate<P: Model + Vcs + Files>(
         &self, provider: &P, progress: &mut Progress, built: Built<'_>, wave: usize,
     ) -> Result<(), Error> {
-        let slice = built.slice;
+        let scheduled = built.slice;
+        let part = built.part;
+        let slice = scheduled.id;
 
         // the copy still sits where it was cut
         let head = built.worktree.head(provider).await?;
@@ -718,10 +771,12 @@ impl Run<'_> {
         written.sort_unstable();
 
         let message = Message {
-            slice: slice.id,
-            name: slice.name.clone(),
+            slice,
+            part: part.id,
+            name: part.name.clone(),
             revision: self.revision.to_owned(),
-            requirements: slice.requirements.clone(),
+            budget: self.budget,
+            requirements: scheduled.requirements.clone(),
             covered: built.covered.clone(),
             adapter: self.reference.to_string(),
             base: progress.head.clone(),
@@ -754,15 +809,18 @@ impl Run<'_> {
         built.worktree.remove(provider).await?;
 
         tracing::info!(
-            slice = %slice.id,
+            slice = %slice,
             commit = commit.as_deref().unwrap_or("none"),
             resolved = resolved.len(),
             "slice merged"
         );
-        progress.merged.insert(slice.id);
+        progress.merged.extend(scheduled.requirements.iter().copied());
         progress.built.push(BuiltSlice {
-            id: slice.id,
-            name: slice.name.clone(),
+            id: slice,
+            part: part.id,
+            name: part.name.clone(),
+            index: scheduled.index,
+            count: scheduled.count,
             wave,
             covered: built.covered,
             uncovered: built.uncovered,
@@ -935,7 +993,7 @@ async fn gated<P: Files>(
 // A slice's failure keeps its class and code; the description gains the
 // slice it failed at, its wave, and the slices merged before it, which
 // stay committed in the integration working copy.
-fn at_slice(error: Error, slice: &Slice, wave: usize, built: &[BuiltSlice]) -> Error {
+fn at_slice(error: Error, slice: &ScheduledSlice, wave: usize, built: &[BuiltSlice]) -> Error {
     let ids: Vec<String> = built.iter().map(|built| built.id.to_string()).collect();
     let before = match ids.as_slice() {
         [] => String::new(),

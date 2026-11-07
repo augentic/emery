@@ -53,8 +53,9 @@ Every positional `<adapter>` and `--description <adapter>=<text>` flag on the co
 
 ### Target layering (`build` and `apply`)
 
-1. **Positional `<adapter>` (`emery build <adapter> --config`):** Replaces `[target] adapter` and clears `[target] digest`, while preserving `[target] name` and `[target] repository` from the file.
-2. **`--repository <url|.>` (`emery build` and `emery apply`):** Replaces `[target] repository`, while preserving `[target] name`, `[target] adapter`, and `[target] digest`.
+1. **Positional `<adapter>` (`emery build <adapter> --config`):** Replaces `[target] adapter` and clears `[target] digest`, while preserving `[target] name`, `[target] repository`, and `[target] budget` from the file.
+2. **`--repository <url|.>` (`emery build` and `emery apply`):** Replaces `[target] repository`, while preserving `[target] name`, `[target] adapter`, `[target] digest`, and `[target] budget`.
+3. **`--budget <N>` (`emery build`):** Replaces `[target] budget`, while preserving all other `[target]` fields.
 
 ---
 
@@ -106,6 +107,7 @@ The single `[target]` table configures where specifications are sealed ([`emery 
 | `name` | String (kebab-case) | No | Adapter package name | Name of the directory under `.emery/vcs/repos/<name>` when using a cloned or engine-managed target repository. |
 | `digest` | String (`sha256:<64-hex>`) | No | — | Pins the target adapter `.wasm` binary to an exact SHA-256 content hash. |
 | `repository` | String (`"."` or Git URL) | No | Omitted (managed repo) | Target Git repository where `spec/` is sealed and builds are committed. |
+| `budget` | Positive integer (`>= 1`) | No | Adapter metadata default (`12`) | Maximum number of requirements per build slice during `emery build` (overridden by `--budget` / `EMERY_BUDGET`). |
 
 ### Target repository modes
 

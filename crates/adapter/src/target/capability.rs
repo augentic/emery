@@ -173,19 +173,28 @@ impl Display for Outcome {
     }
 }
 
-/// One slice of the build plan, as the engine renders it for a target.
+/// One slice of the build schedule, cut from one part of the plan, as the
+/// engine renders it for a target.
 ///
 /// The documents are the Markdown `emery show` prints, the specification cut
 /// to the slice's requirements. `requirements`, `types`, and `brief` carry
 /// the same typed, so an adapter reads a requirement's scenarios or an owned
 /// type's signature without parsing the Markdown, and a [`Report`]'s
-/// `covered` is held to the requirement ids.
+/// `covered` is held to the requirement ids. [`name`](Self::name) and
+/// [`brief`](Self::brief) are the part's, and [`index`](Self::index) of
+/// [`count`](Self::count) places the slice within its part's cut.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Slice {
     /// The stable slice identifier, `SLICE-001`.
     pub id: String,
-    /// The drafted kebab-case name.
+    /// The stable part identifier, `PART-001`.
+    pub part: String,
+    /// The part's drafted kebab-case name.
     pub name: String,
+    /// The 1-based position of this slice within its part's cut (`1..=count`).
+    pub index: u32,
+    /// How many slices the part was cut into under the build's budget.
+    pub count: u32,
     /// The commit the lent tree sits on: the integrated head the slice
     /// builds over.
     pub base: String,
@@ -193,13 +202,13 @@ pub struct Slice {
     pub requirements: Vec<Requirement>,
     /// The design types the slice owns, in the design's order.
     pub types: Vec<DesignType>,
-    /// The plan's brief for the slice, one paragraph each.
+    /// The part's brief from the plan, one paragraph each.
     pub brief: Vec<String>,
     /// The specification, cut to the slice.
     pub spec: String,
     /// The whole design.
     pub design: String,
-    /// The slice's own plan entry.
+    /// The part's entry in the plan.
     pub plan: String,
 }
 
@@ -261,6 +270,9 @@ pub struct TargetMetadata {
     /// The rules every slice is merged into the integrated tree under; the
     /// first rule matching a conflicting path applies.
     pub merge_rules: Vec<MergeRule>,
+    /// The default requirement budget per slice, when neither `--budget`
+    /// nor `[target] budget` sets one.
+    pub budget: Option<u32>,
 }
 
 /// One rule for merging a slice into the integrated tree.

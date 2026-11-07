@@ -1,5 +1,5 @@
 {
-  "emery": 8,
+  "emery": 9,
   "base": {
     "revision": "<revision>",
     "commit": "9f8e7d6c5b4a39281706f5e4d3c2b1a0f9e8d7c6"
@@ -55,7 +55,7 @@
     }
   ],
   "spec": {
-    "emery": 8,
+    "emery": 9,
     "parent": "<revision>",
     "preamble": [
       "Sign-in, its session, and orders over both."
@@ -150,7 +150,7 @@
     ]
   },
   "design": {
-    "emery": 8,
+    "emery": 9,
     "parent": "<revision>",
     "preamble": [],
     "sections": [
@@ -184,14 +184,14 @@
     ]
   },
   "plan": {
-    "emery": 8,
+    "emery": 9,
     "parent": "<revision>",
     "preamble": [
       "Two slices: sign-in with its session, and orders over it."
     ],
-    "slices": [
+    "parts": [
       {
-        "id": "SLICE-001",
+        "id": "PART-001",
         "name": "authentication",
         "requirements": [
           "REQ-001",
@@ -204,7 +204,7 @@
         ]
       },
       {
-        "id": "SLICE-002",
+        "id": "PART-002",
         "name": "orders",
         "requirements": [
           "REQ-003"
@@ -214,7 +214,7 @@
           "orders.order"
         ],
         "depends-on": [
-          "SLICE-001"
+          "PART-001"
         ],
         "brief": [
           "Delivers order creation and cancellation for a signed-in caller; verified by placing and cancelling an order under a session from `authentication`."
@@ -228,9 +228,9 @@
     "removed": [],
     "changed": []
   },
-  "slices": [
+  "parts": [
     {
-      "id": "SLICE-002",
+      "id": "PART-002",
       "name": "orders",
       "class": "changed",
       "brief": "kept"

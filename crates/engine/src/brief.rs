@@ -183,7 +183,7 @@ mod tests {
     use super::Brief as _;
     use crate::build::merge::MergeBrief;
     use crate::specify::{
-        DesignAmend, DesignBrief, GroupingBrief, SliceAmend, SliceBrief, SpecBrief,
+        DesignAmend, DesignBrief, GroupingBrief, PartAmend, PartBrief, SpecBrief,
     };
 
     #[test]
@@ -194,8 +194,8 @@ mod tests {
             SpecBrief::PROSE,
             DesignBrief::PROSE,
             DesignAmend::PROSE,
-            SliceBrief::PROSE,
-            SliceAmend::PROSE,
+            PartBrief::PROSE,
+            PartAmend::PROSE,
             MergeBrief::PROSE,
         ]
         .concat();

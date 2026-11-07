@@ -34,7 +34,7 @@ impl Design {
     }
 
     // Returns the keys of the `Role::Data` types, in key order: the types a
-    // build plan assigns to slices (`Role::Mechanism` is owned by none).
+    // build plan assigns to parts (`Role::Mechanism` is owned by none).
     #[must_use]
     pub fn data_types(&self) -> Vec<String> {
         let keys: BTreeSet<&str> = self
@@ -166,7 +166,7 @@ impl Display for Block {
 /// A target declares a [`Data`](Role::Data) type as a shape its code reads
 /// or produces. It declares nothing for a [`Mechanism`](Role::Mechanism): the
 /// behaviour its requirements state is built through the target's own
-/// platform, and no slice owns the type.
+/// platform, and no part owns the type.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema, strum::Display)]
 #[serde(rename_all = "kebab-case")]
 #[strum(serialize_all = "kebab-case")]

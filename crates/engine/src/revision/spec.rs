@@ -83,14 +83,14 @@ pub struct Requirement {
 
 impl Requirement {
     // Returns the stem of the subject: the first segment of its dotted id,
-    // the slice floor every requirement under it shares.
+    // the part floor every requirement under it shares.
     #[must_use]
     pub fn stem(&self) -> &str {
         revision::stem(&self.subject)
     }
 
     // Returns the sub-stem of the subject: the first two segments of its
-    // dotted id, the floor in a stem past the slice cap.
+    // dotted id, the unit a part is cut along when it exceeds the build budget.
     #[must_use]
     pub fn substem(&self) -> &str {
         revision::substem(&self.subject)
