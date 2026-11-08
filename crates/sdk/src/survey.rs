@@ -33,7 +33,7 @@ mod skeleton;
 pub mod tests;
 
 pub use self::dialect::{ClassSyntax, Dialect};
-pub use self::skeleton::{TABLE_LINES, types};
+pub use self::skeleton::{TABLE_BYTES, types};
 
 // Each key's values together, the keys in first-occurrence order.
 fn grouped<K: PartialEq, V>(items: impl IntoIterator<Item = (K, V)>) -> Vec<(K, Vec<V>)> {

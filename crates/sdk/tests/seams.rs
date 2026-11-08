@@ -3,6 +3,7 @@
 mod support;
 
 use std::collections::BTreeMap;
+use std::fmt::Write as _;
 
 use emery_sdk::survey::Survey;
 use emery_sdk::survey::code::{
@@ -1095,9 +1096,22 @@ fn types_by_dialect() {
     );
 }
 
+// A table of numbered rows between `head` and `tail`, the first past
+// `TABLE_BYTES`.
+fn long_table(head: &str, tail: &str) -> String {
+    let mut rows = String::new();
+    for n in 0.. {
+        if head.len() + rows.len() + tail.len() > emery_sdk::survey::TABLE_BYTES {
+            break;
+        }
+        let _ = writeln!(rows, "        {n},");
+    }
+    format!("{head}{rows}{tail}")
+}
+
 // A field with a table is spelled with it, its later lines re-indented under
-// the syntax and its blank lines dropped; one past `TABLE_LINES` is spelled
-// by its signature alone.
+// the syntax and its blank lines dropped; one past `TABLE_BYTES` is spelled
+// by its signature alone, however few lines it runs to.
 #[test]
 fn types_with_tables() {
     let mut m = module("src/config.ts", 12);
@@ -1108,13 +1122,8 @@ fn types_with_tables() {
             .to_owned(),
     );
     let mut long = member("LONG", MemberKind::Field, "static LONG: number[]", span(7, 11));
-    long.table = Some(format!(
-        "static LONG: number[] = [\n{}\n    ]",
-        (0..emery_sdk::survey::TABLE_LINES)
-            .map(|n| format!("        {n},"))
-            .collect::<Vec<_>>()
-            .join("\n")
-    ));
+    long.table = Some(long_table("static LONG: number[] = [\n", "    ]"));
+    assert!(long.table.as_deref().is_some_and(|table| table.len() > emery_sdk::survey::TABLE_BYTES));
     m.0.classes = vec![class_decl(
         "Config",
         "export class Config",
@@ -1132,8 +1141,9 @@ fn types_with_tables() {
 }
 
 // An exported module-level value with a table is a `type` claim of its own,
-// the declaration whole less its blank lines; one the module does not
-// export, one bound in a function, and one past `TABLE_LINES` are none.
+// the declaration whole less its blank lines, a table of hundreds of rows
+// among them; one the module does not export, one bound in a function, and
+// one past `TABLE_BYTES` are none.
 #[test]
 fn types_with_constant_tables() {
     let mut m = module("src/rates.ts", 20);
@@ -1141,30 +1151,26 @@ fn types_with_constant_tables() {
     let mut hidden = value("DRAFT", None, None, None, Init::Literal, span(6, 8));
     let mut long = value("LONG", None, None, None, Init::Literal, span(9, 12));
     let mut local = value("LOCAL", None, None, None, Init::Literal, span(13, 15));
+    let mut zones = value("ZONES", None, None, None, Init::Literal, span(16, 20));
     local.scope = Scope::Function(1);
+    let zone_rows: String =
+        (0..321).map(|n| format!("  {{ name: \"zone-{n}\", from: {n}0, to: {n}9 }},\n")).collect();
     for (binding, table) in [
         (&mut rates, "const RATES = {\n  EU: 3,\n\n  US: 1,\n}".to_owned()),
         (&mut hidden, "const DRAFT = [1, 2]".to_owned()),
-        (
-            &mut long,
-            format!(
-                "const LONG = [\n{}\n]",
-                (0..emery_sdk::survey::TABLE_LINES)
-                    .map(|n| format!("  {n},"))
-                    .collect::<Vec<_>>()
-                    .join("\n")
-            ),
-        ),
+        (&mut long, long_table("const LONG = [\n", "]")),
         (&mut local, "const LOCAL = { a: 1 }".to_owned()),
+        (&mut zones, format!("export const ZONES: readonly Zone[] = [\n{zone_rows}]")),
     ] {
         let BindingKind::Value { table: slot, .. } = &mut binding.kind else { unreachable!() };
         *slot = Some(table);
     }
-    m.0.bindings = vec![rates, hidden, long, local];
+    m.0.bindings = vec![rates, hidden, long, local, zones];
     m.0.exports = vec![
         export("RATES", ExportKind::Value, span(1, 5)),
         export("LONG", ExportKind::Value, span(9, 12)),
         export("LOCAL", ExportKind::Value, span(13, 15)),
+        export("ZONES", ExportKind::Value, span(16, 20)),
     ];
 
     let claims = emery_sdk::survey::types(&TYPESCRIPT, [&*m], true);
@@ -1181,11 +1187,20 @@ fn types_with_constant_tables() {
 
     assert_eq!(
         rendered,
-        [(
-            Some("src/rates.ts#L1-L5".to_owned()),
-            Some("exported table".to_owned()),
-            "const RATES = {\n  EU: 3,\n  US: 1,\n}".to_owned()
-        )]
+        [
+            (
+                Some("src/rates.ts#L1-L5".to_owned()),
+                Some("exported table".to_owned()),
+                "const RATES = {\n  EU: 3,\n  US: 1,\n}".to_owned()
+            ),
+            (
+                Some("src/rates.ts#L16-L20".to_owned()),
+                Some("exported table".to_owned()),
+                format!("export const ZONES: readonly Zone[] = [\n{zone_rows}]")
+            ),
+        ]
     );
     assert_eq!(claims[0].extras["name"], "RATES");
+    assert_eq!(claims[1].extras["name"], "ZONES");
+    assert_eq!(rendered[1].2.lines().count(), 323, "every row of the table stands");
 }

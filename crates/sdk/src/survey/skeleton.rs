@@ -134,9 +134,9 @@ fn named(dir: &str) -> String {
 ///
 /// A class is spelled under `dialect`'s [`ClassSyntax`](super::ClassSyntax)
 /// and is an `enum` where its bases say so. A field with a
-/// [`table`](super::code::Member::table) of at most [`TABLE_LINES`] lines is spelled with
+/// [`table`](super::code::Member::table) of at most [`TABLE_BYTES`] bytes is spelled with
 /// it, re-indented under the syntax. An exported module-level value with a
-/// [`table`](BindingKind::Value::table) within the same cap is a claim of its
+/// [`table`](BindingKind::Value::table) within the same budget is a claim of its
 /// own, the declaration whole with its blank lines dropped. `anchored` is
 /// false for an inline value, which has no path to cite.
 pub fn types<'m>(
@@ -168,7 +168,7 @@ pub fn types<'m>(
                 };
                 signature.push('\n');
                 signature.push_str(syntax.indent);
-                match member.table.as_deref().filter(|table| table.lines().count() <= TABLE_LINES) {
+                match member.table.as_deref().filter(|table| table.len() <= TABLE_BYTES) {
                     Some(table) => signature.push_str(&indented(table, syntax.indent)),
                     None => signature.push_str(&member.signature),
                 }
@@ -189,7 +189,7 @@ pub fn types<'m>(
             else {
                 continue;
             };
-            if binding.scope != Scope::Module || table.lines().count() > TABLE_LINES {
+            if binding.scope != Scope::Module || table.len() > TABLE_BYTES {
                 continue;
             }
             claims.push(claim(&export.name, &indented(table, ""), anchor(binding.lines), "table"));
@@ -198,8 +198,11 @@ pub fn types<'m>(
     claims
 }
 
-/// The most lines a table runs to before the `type` claim elides it.
-pub const TABLE_LINES: usize = 120;
+/// The most bytes a table runs to before the `type` claim elides it.
+///
+/// The budget is the 64 KiB a turn inlines files within, so a reference
+/// table a service reads reaches the design whole, row for row.
+pub const TABLE_BYTES: usize = 64 * 1024;
 
 // A declaration over several lines under `indent`: its first line as
 // written, every other less the whitespace they share and behind the
