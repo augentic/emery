@@ -1933,6 +1933,56 @@ async fn amend_design_loss() {
     provider.model.assert_exhausted();
 }
 
+// A `call` claim in the change informs `## APIs and integrations`, and the
+// amended design names the package it reaches through as a draft would: a
+// redraft naming no term of it is a finding, and the next answer, naming it
+// beside the role it plays, stages.
+#[tokio::test]
+async fn amend_design_call() {
+    let unnamed = r#"{"sections": [
+        {"kind": "overview", "blocks": [{"text": "Sign-in issues a session; orders are placed and cancelled under it."}], "revised": []},
+        {"kind": "apis", "blocks": [{"text": "Postings reach the ledger over HTTP, by REQ-003 at use."}], "revised": []}
+    ]}"#;
+    let named = r#"{"sections": [
+        {"kind": "overview", "blocks": [{"text": "Sign-in issues a session; orders are placed and cancelled under it."}], "revised": []},
+        {"kind": "apis", "blocks": [{"text": "Postings reach the ledger through the ledger-client (acme-cloud), by REQ-003 at use."}], "revised": []}
+    ]}"#;
+    let mut provider = Provider::answering([unnamed, named]);
+    let mut call =
+        claim(ClaimKind::Call, "orders.post", ("callee", "@acme-cloud/ledger-client:post"));
+    call.path = Some("src/orders.ts#L40".to_owned());
+    provider.source.evidence.insert("docs".to_owned(), Ok(evidence(vec![call])));
+    seed(&provider.files, SPEC, DESIGN, PLAN);
+
+    cli_ok(&provider, &["emery", "amend", DOCS, "--config", PROJECT_CONFIG]).await;
+
+    let (_, amendment) = staged_amendment(&provider);
+    assert_eq!(provider.model.seen().len(), 2, "the design and its correction; no grouping");
+    let exchanges = provider.model.exchanges();
+    assert!(
+        exchanges[0].outcome.as_ref().is_err_and(|finding| {
+            finding.contains(
+                "the design names no technology for the `call` claims through \
+                 `@acme-cloud/ledger-client` (`@acme-cloud/ledger-client:post` at \
+                 `src/orders.ts#L40`); name it beside the role it plays",
+            )
+        }),
+        "{exchanges:?}"
+    );
+    assert_eq!(
+        amendment["sections"],
+        serde_json::json!({"preamble": false, "added": ["apis"], "removed": [], "changed": []}),
+        "{amendment}"
+    );
+    assert_eq!(
+        amendment["design"]["sections"][2]["blocks"][0]["text"],
+        "Postings reach the ledger through the ledger-client (acme-cloud), by REQ-003 at use.",
+        "{amendment}"
+    );
+    assert_eq!(provider.vcs.calls(), read_calls());
+    provider.model.assert_exhausted();
+}
+
 // A change that adds or revises no requirement carries technology alone,
 // which lands in the paragraphs already describing the behaviour it serves:
 // the turn is told so, a revised paragraph citing unchanged requirements is

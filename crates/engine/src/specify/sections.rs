@@ -1,10 +1,11 @@
 //! Renders the shared requirement basis and claim sections for synthesis briefs.
 
 use std::borrow::Borrow;
+use std::collections::BTreeMap;
 use std::fmt::{self, Display, Formatter};
 
 use emery_adapter::Trigger;
-use emery_adapter::source::Claim;
+use emery_adapter::source::{Claim, ClaimKind};
 use serde_json::Value;
 
 use crate::revision::Status;
@@ -119,4 +120,23 @@ pub fn claims(
     }
 
     Ok(())
+}
+
+// The `call` claims of `extracts` by the package each reaches through: the
+// part of its `callee` before the first `:`. A bare global (`fetch`) reaches
+// through none, and a wrapper of the tree (`src/lib/http.ts:HttpClient.post`)
+// spells a path the lexicon reads as a plain word and keeps nothing of. The
+// specification is held from naming these and the design to naming them.
+pub fn packages(extracts: &[Extract]) -> BTreeMap<&str, Vec<&Claim>> {
+    let mut packages: BTreeMap<&str, Vec<&Claim>> = BTreeMap::new();
+    let calls = extracts
+        .iter()
+        .flat_map(|extract| &extract.evidence.claims)
+        .filter(|claim| claim.kind == ClaimKind::Call);
+    for claim in calls {
+        if let Some((package, _)) = claim.callee().and_then(|callee| callee.split_once(':')) {
+            packages.entry(package).or_default().push(claim);
+        }
+    }
+    packages
 }

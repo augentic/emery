@@ -291,6 +291,27 @@ impl Brief for DesignAmend<'_> {
         if self.redrafts(SectionKind::DomainModel) {
             self.outline.references(review, &references);
         }
+
+        // the change's packages are named by the design as it will stand:
+        // the redrafted sections, the kept ones, and the preamble
+        let kept = self
+            .base
+            .sections
+            .iter()
+            .filter(|section| !self.redrafts(section.kind))
+            .flat_map(|section| &section.blocks)
+            .filter_map(|block| match block {
+                revision::Block::Text(text) => Some(text.as_str()),
+                revision::Block::Type { .. } => None,
+            });
+        let texts = answer
+            .sections
+            .iter()
+            .flat_map(Redraft::texts)
+            .chain(kept)
+            .chain(self.base.preamble.iter().map(String::as_str));
+
+        self.outline.packages(review, texts);
     }
 
     fn into_output(self, answer: DesignAmendAnswer) -> Result<Design, Error> {
