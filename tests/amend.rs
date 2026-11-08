@@ -525,7 +525,7 @@ const STORED: &str =
 fn describing(apis: &[&str]) -> String {
     let blocks: Vec<String> = apis.iter().map(|text| format!(r#"{{"text": "{text}"}}"#)).collect();
     format!(
-        r#"{{"emery": 9, "parent": null, "preamble": [], "sections": [
+        r#"{{"emery": 10, "parent": null, "preamble": [], "sections": [
             {{"kind": "overview", "blocks": [{{"text": "{OVERVIEW}"}}]}},
             {DOMAIN_MODEL},
             {{"kind": "apis", "blocks": [{}]}}
@@ -683,7 +683,7 @@ async fn amend_retired_overview() {
     let cited = "Sign-in issues a session; orders are placed (REQ-003) and cancelled (REQ-004) \
                  under it.";
     let base = format!(
-        r#"{{"emery": 9, "parent": null, "preamble": [], "sections": [
+        r#"{{"emery": 10, "parent": null, "preamble": [], "sections": [
             {{"kind": "overview", "blocks": [{{"text": "{cited}"}}]}},
             {DOMAIN_MODEL}
         ]}}"#
@@ -740,7 +740,7 @@ async fn amend_revised_dropped() {
     let cited = "Sign-in issues a session; orders are placed (REQ-003) and cancelled (REQ-004) \
                  under it.";
     let base = format!(
-        r#"{{"emery": 9, "parent": null, "preamble": [], "sections": [
+        r#"{{"emery": 10, "parent": null, "preamble": [], "sections": [
             {{"kind": "overview", "blocks": [{{"text": "{cited}"}}]}},
             {DOMAIN_MODEL},
             {{"kind": "apis", "blocks": [{{"text": "{STORED}"}}]}}
@@ -1009,7 +1009,7 @@ async fn amend_anchored() {
 #[tokio::test]
 async fn amend_moved() {
     let slicing = r#"{"parts": [
-        {"name": "reporting", "requirements": ["REQ-004"], "types": [], "depends-on": ["orders"],
+        {"name": "reporting", "requirements": ["REQ-004"], "types": [], "uses": ["orders.order"],
          "brief": ["Reports a cancellation; edits the cancel handler, so it compiles against `orders`."]}
     ], "joins": [], "briefs": [
         {"part": "PART-002", "brief": ["Delivers order creation for a signed-in caller; verified by placing an order under a session from `authentication`."]}
@@ -1092,7 +1092,7 @@ async fn amend_moved() {
         parts[2],
         serde_json::json!({
             "id": "PART-003", "name": "reporting", "requirements": ["REQ-004"],
-            "types": [], "depends-on": ["PART-002"],
+            "types": [], "uses": ["orders.order"], "depends-on": ["PART-002"],
             "brief": ["Reports a cancellation; edits the cancel handler, so it compiles against `orders`."]
         }),
         "{amendment}"
@@ -1127,7 +1127,7 @@ async fn amend_moved() {
 #[tokio::test]
 async fn amend_rebrief_refused() {
     let placed = r#""parts": [
-        {"name": "reporting", "requirements": ["REQ-004"], "types": [], "depends-on": ["orders"],
+        {"name": "reporting", "requirements": ["REQ-004"], "types": [], "uses": ["orders.order"],
          "brief": ["Reports a cancellation."]}
     ], "joins": []"#;
     let refused = format!(
@@ -1229,7 +1229,7 @@ async fn amend_moved_part() {
     ]}"#;
     let slicing = r#"{"parts": [
         {"name": "reporting", "requirements": ["REQ-003", "REQ-004"],
-         "types": ["orders.line", "orders.order"], "depends-on": [], "brief": []}
+         "types": ["orders.line", "orders.order"], "uses": [], "brief": []}
     ], "joins": [], "briefs": []}"#;
     let mut provider = Provider::answering([grouping, draft, slicing]);
     provider.source.evidence.insert(
@@ -1276,7 +1276,7 @@ async fn amend_moved_part() {
         parts[1],
         serde_json::json!({
             "id": "PART-003", "name": "reporting", "requirements": ["REQ-003", "REQ-004"],
-            "types": ["orders.line", "orders.order"], "depends-on": [], "brief": []
+            "types": ["orders.line", "orders.order"], "uses": [], "depends-on": [], "brief": []
         }),
         "{amendment}"
     );
@@ -1307,7 +1307,7 @@ async fn amend_moved_part() {
 #[tokio::test]
 async fn amend_sliced() {
     let slicing = r#"{"parts": [
-        {"name": "rate-limit", "requirements": ["REQ-005", "REQ-006"], "types": [], "depends-on": ["orders"],
+        {"name": "rate-limit", "requirements": ["REQ-005", "REQ-006"], "types": [], "uses": ["orders.order"],
          "brief": ["Delivers the per-caller limit on order placement; edits the order handler, so it compiles against `orders`."]}
     ], "joins": [], "briefs": []}"#;
     let (provider, revision) = limited([slicing]);
@@ -1366,7 +1366,7 @@ async fn amend_sliced() {
         parts[2],
         serde_json::json!({
             "id": "PART-003", "name": "rate-limit", "requirements": ["REQ-005", "REQ-006"],
-            "types": [], "depends-on": ["PART-002"],
+            "types": [], "uses": ["orders.order"], "depends-on": ["PART-002"],
             "brief": ["Delivers the per-caller limit on order placement; edits the order handler, so it compiles against `orders`."]
         }),
         "{amendment}"
@@ -1430,7 +1430,7 @@ async fn amend_sliced_joined() {
 #[tokio::test]
 async fn amend_sliced_refused() {
     let refused = r#"{"parts": [
-        {"name": "orders", "requirements": ["REQ-005"], "types": [], "depends-on": [], "brief": []}
+        {"name": "orders", "requirements": ["REQ-005"], "types": [], "uses": [], "brief": []}
     ], "joins": [
         {"part": "PART-001", "requirements": ["REQ-003"]},
         {"part": "PART-002", "requirements": ["REQ-005", "REQ-006"]}
@@ -1501,8 +1501,8 @@ async fn amend_sliced_types() {
         ]}}"#
     );
     let slicing = r#"{"parts": [
-        {"name": "rate-limit", "requirements": ["REQ-005"], "types": ["rate-limit.counter"], "depends-on": ["orders"], "brief": []},
-        {"name": "audit", "requirements": ["REQ-006"], "types": ["audit.entry"], "depends-on": [], "brief": []}
+        {"name": "rate-limit", "requirements": ["REQ-005"], "types": ["rate-limit.counter"], "uses": ["orders.order"], "brief": []},
+        {"name": "audit", "requirements": ["REQ-006"], "types": ["audit.entry"], "uses": [], "brief": []}
     ], "joins": [], "briefs": []}"#;
     let mut provider = Provider::answering([grouping, draft, design.as_str(), slicing]);
     provider.source.evidence.insert(
@@ -1754,7 +1754,7 @@ fn designed() -> (Provider, String) {
         ]}}"#
     );
     let slicing = r#"{"parts": [
-        {"name": "secrets", "requirements": ["REQ-005"], "types": [], "depends-on": [],
+        {"name": "secrets", "requirements": ["REQ-005"], "types": [], "uses": [],
          "brief": ["Delivers the secret read every handler makes at use; verified against a fake store."]}
     ], "joins": [], "briefs": []}"#;
     let mut provider = Provider::answering([grouping, draft, design.as_str(), slicing]);
