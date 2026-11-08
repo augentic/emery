@@ -5,8 +5,8 @@ use std::collections::{BTreeMap, BTreeSet};
 use emery_adapter::source::Claim;
 
 use super::code::{
-    BindingKind, Call, ExportKind, Imported, Init, MemberKind, Module, Recogniser, Scope, Surface,
-    TRACE, Tree, TypeKind, Use,
+    Assigned, AssignedClass, BindingKind, Call, ExportKind, Imported, Init, MemberKind, Module,
+    Recogniser, Scope, Surface, TRACE, Tree, TypeKind, Use,
 };
 use super::resolve::Target;
 use super::{Dialect, Lines, grouped, push_unique, unique};
@@ -129,15 +129,21 @@ fn named(dir: &str) -> String {
 }
 
 /// Returns a `type` claim for every exported class, type alias, functional
-/// type, and table `modules` declare, each its declaration verbatim with
-/// bodies elided.
+/// type, and table `modules` declare, and for every class of a package they
+/// construct and assign members on.
 ///
-/// A class is spelled under `dialect`'s [`ClassSyntax`](super::ClassSyntax)
-/// and is an `enum` where its bases say so. A field with a
+/// A declaration is its text verbatim with bodies elided. A class is spelled
+/// under `dialect`'s [`ClassSyntax`](super::ClassSyntax) and is an `enum`
+/// where its bases say so. A field with a
 /// [`table`](super::code::Member::table) of at most [`TABLE_BYTES`] bytes is spelled with
 /// it, re-indented under the syntax. An exported module-level value with a
 /// [`table`](BindingKind::Value::table) within the same budget is a claim of its
-/// own, the declaration whole with its blank lines dropped. `anchored` is
+/// own, the declaration whole with its blank lines dropped. A class of a
+/// package ([`Module::assigned`]) is spelled as a class of its assigned
+/// members, each annotated under `dialect`'s
+/// [`Annotations`](super::Annotations) from the value assigned — the class
+/// constructed, the literal's kind, else `unknown` — with the synopsis
+/// `imported class, as assigned`, anchored at the assignments. `anchored` is
 /// false for an inline value, which has no path to cite.
 pub fn types<'m>(
     dialect: &Dialect, modules: impl IntoIterator<Item = &'m Module>, anchored: bool,
@@ -194,14 +200,50 @@ pub fn types<'m>(
             }
             claims.push(claim(&export.name, &indented(table, ""), anchor(binding.lines), "table"));
         }
+        for class in module.assigned() {
+            let signature = assigned_signature(dialect, &class);
+            claims.push(Claim {
+                path: anchor(class.lines),
+                ..Claim::type_decl(&class.name, &signature)
+                    .with_synopsis("imported class, as assigned")
+            });
+        }
     }
     claims
 }
 
+// A package's class as a class of its assigned members under the dialect's
+// class syntax, each annotated from the value assigned.
+fn assigned_signature(dialect: &Dialect, class: &AssignedClass) -> String {
+    let syntax = dialect.class_syntax;
+    let mut signature = format!("class {}{}{}", class.name, syntax.header_end, syntax.open);
+    for member in &class.members {
+        let annotation = match &member.value {
+            Assigned::Literal(scalar) => dialect.annotations.scalar(*scalar),
+            Assigned::Construction(path) => {
+                path.last().map_or(dialect.annotations.unknown, String::as_str)
+            }
+            Assigned::Read(_) | Assigned::Other => dialect.annotations.unknown,
+        };
+        signature.push('\n');
+        signature.push_str(syntax.indent);
+        signature.push_str(&member.name);
+        signature.push_str(": ");
+        signature.push_str(annotation);
+        signature.push_str(syntax.field);
+    }
+    if class.members.is_empty() {
+        signature.push_str(syntax.empty);
+    }
+    signature.push_str(syntax.close);
+    signature
+}
+
 /// The most bytes a table runs to before the `type` claim elides it.
 ///
-/// The budget is the 64 KiB a turn inlines files within, so a reference
-/// table a service reads reaches the design whole, row for row.
+/// The budget is [`INLINE_BYTES`](crate::INLINE_BYTES), the files a turn
+/// inlines, so a reference table a service reads reaches the design whole,
+/// row for row.
 pub const TABLE_BYTES: usize = 64 * 1024;
 
 // A declaration over several lines under `indent`: its first line as

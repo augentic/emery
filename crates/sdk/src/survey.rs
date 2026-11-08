@@ -32,7 +32,7 @@ pub mod route;
 mod skeleton;
 pub mod tests;
 
-pub use self::dialect::{ClassSyntax, Dialect};
+pub use self::dialect::{Annotations, ClassSyntax, Dialect};
 pub use self::skeleton::{TABLE_BYTES, types};
 
 // Each key's values together, the keys in first-occurrence order.

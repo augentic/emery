@@ -59,6 +59,8 @@ pub struct Module {
     pub dynamic: Vec<Dynamic>,
     /// Every read of a name, at its line.
     pub references: Vec<Reference>,
+    /// Every assignment onto a member of a bound name, in source order.
+    pub assignments: Vec<Assignment>,
 }
 
 impl Module {
@@ -245,6 +247,73 @@ impl Module {
     #[must_use]
     pub fn unresolved(&self) -> Vec<&str> {
         unique(self.settled(false).filter_map(Target::unresolved))
+    }
+
+    /// Returns each class of a package the module constructs and assigns members on.
+    ///
+    /// A class is one an import leading to a package provides, constructed
+    /// into a binding by `new Class()` or `new pkg.Class()`; its members are
+    /// those assigned on such a binding, once each in first-assignment order,
+    /// the value as assigned, a read of a binding constructed in place
+    /// standing as that construction. A class the tree declares is none of
+    /// these, since its import leads to a module.
+    #[must_use]
+    pub fn assigned(&self) -> Vec<AssignedClass> {
+        let mut classes: Vec<AssignedClass> = Vec::new();
+        for assignment in &self.assignments {
+            let Some(binding) = self.binding(&assignment.object, &assignment.frames) else {
+                continue;
+            };
+            let Some(name) = self.constructed_from_package(binding).and_then(|path| path.last())
+            else {
+                continue;
+            };
+            let value = match &assignment.value {
+                Assigned::Read(path) if path.len() == 1 => self
+                    .binding(&path[0], &assignment.frames)
+                    .and_then(|read| self.constructs_by(read))
+                    .map_or(Assigned::Other, |path| Assigned::Construction(path.clone())),
+                other => other.clone(),
+            };
+            let at = classes.iter().position(|class| class.name == *name).unwrap_or_else(|| {
+                classes.push(AssignedClass {
+                    name: name.clone(),
+                    members: Vec::new(),
+                    lines: assignment.lines,
+                });
+                classes.len() - 1
+            });
+            let class = &mut classes[at];
+            class.lines.start = class.lines.start.min(assignment.lines.start);
+            class.lines.end = class.lines.end.max(assignment.lines.end);
+            if class.members.iter().all(|member| member.name != assignment.member) {
+                class.members.push(AssignedMember {
+                    name: assignment.member.clone(),
+                    value,
+                });
+            }
+        }
+        classes
+    }
+
+    // The path `binding` is constructed by, where its initializer constructs
+    // and the path's head is an import leading to a package.
+    fn constructed_from_package<'b>(&self, binding: &'b Binding) -> Option<&'b Vec<String>> {
+        let path = self.constructs_by(binding)?;
+        self.package(path.first()?).map(|_| path)
+    }
+
+    // The path `binding` is constructed by, where its initializer constructs.
+    fn constructs_by<'b>(&self, binding: &'b Binding) -> Option<&'b Vec<String>> {
+        let BindingKind::Value {
+            root: Some(root),
+            call: Some(call),
+            ..
+        } = &binding.kind
+        else {
+            return None;
+        };
+        self.calls.get(*call).filter(|call| call.constructs).map(|_| root)
     }
 }
 
@@ -843,4 +912,69 @@ pub struct Reference {
     pub name: String,
     /// The line it is read at.
     pub line: u32,
+}
+
+/// One assignment onto a member of a bound name: `location.gpsAccuracy = 0`.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct Assignment {
+    /// The name assigned through.
+    pub object: String,
+    /// The member assigned.
+    pub member: String,
+    /// What is assigned.
+    pub value: Assigned,
+    /// The enclosing function frames, outermost first.
+    pub frames: Vec<u32>,
+    /// The assignment's lines.
+    pub lines: Lines,
+}
+
+/// What an assignment assigns.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum Assigned {
+    /// A literal of the kind named: `0`, `"Location"`, `true`.
+    Literal(Scalar),
+    /// A construction, by the path of what it constructs: `new EventData()`.
+    Construction(Vec<String>),
+    /// A read of a name or a member path: `messageData`, `station.stop_lat`.
+    Read(Vec<String>),
+    /// Anything else: a call's value, an expression over names.
+    Other,
+}
+
+/// The kind of a literal.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Scalar {
+    /// A number with no fractional part: `0`, `-7`.
+    Integer,
+    /// A number with one: `1.5`.
+    Float,
+    /// A string, a template with no substitution among them.
+    String,
+    /// A boolean.
+    Boolean,
+}
+
+/// A class of a package, as the assignments onto its instances spell it.
+///
+/// Built by [`Module::assigned`]; the `type` claim [`types`](super::types)
+/// spells it with, since the class's own declaration is in no module of the
+/// tree.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct AssignedClass {
+    /// The class's name: the last of the path it is constructed by.
+    pub name: String,
+    /// Each member assigned, in first-assignment order.
+    pub members: Vec<AssignedMember>,
+    /// From the first assignment to the last.
+    pub lines: Lines,
+}
+
+/// One member of an [`AssignedClass`].
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct AssignedMember {
+    /// The member's name.
+    pub name: String,
+    /// What it is first assigned.
+    pub value: Assigned,
 }
