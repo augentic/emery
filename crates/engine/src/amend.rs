@@ -31,7 +31,7 @@ pub use crate::revision::{
 use crate::revision::{Design, EMERY};
 use crate::specify::{
     BASELINE, Bound, DesignAmend, Extracted, GroupingBrief, RepositorySource, SourceConfig,
-    SpecBrief,
+    SpecBrief, Types,
 };
 use crate::vcs::{BuildRepo, TargetRef};
 use crate::{Files, apply, store};
@@ -182,7 +182,7 @@ pub async fn amend<P: Model + Source + StateStore + BlobStore + Plugins + Vcs + 
     // the amended plan over the two: what the change adds and moves placed
     // by code where a rule decides, and the rest by one slicing turn over
     // the current parts
-    let types = design.data_types();
+    let types = Types::of(&design);
     let plan = match pruned.assemble(&spec, &types, &drafted)? {
         Assembled::Settled(plan) => plan,
         Assembled::Open(brief) => brief.judge(provider).await?,

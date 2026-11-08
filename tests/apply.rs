@@ -301,7 +301,7 @@ fn amendment_over(base: &str, commit: &str) -> Vec<u8> {
         })
     };
     let amendment = json!({
-        "emery": 9,
+        "emery": 10,
         "base": {"revision": base, "commit": commit},
         "changes": [
             change("REQ-001", "auth.login", "unchanged",

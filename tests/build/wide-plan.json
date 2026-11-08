@@ -1,5 +1,5 @@
 {
-  "emery": 9,
+  "emery": 10,
   "parent": null,
   "preamble": [
     "Three slices: sign-in, the session over it, and orders beside both."
@@ -12,6 +12,7 @@
         "REQ-001"
       ],
       "types": [],
+      "uses": [],
       "depends-on": [],
       "brief": [
         "Delivers sign-in."
@@ -24,6 +25,7 @@
         "REQ-002"
       ],
       "types": [],
+      "uses": [],
       "depends-on": [
         "PART-001"
       ],
@@ -42,6 +44,7 @@
         "orders.line",
         "orders.order"
       ],
+      "uses": [],
       "depends-on": [],
       "brief": [
         "Delivers order creation and cancellation; it waits on nothing."

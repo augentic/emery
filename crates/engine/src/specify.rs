@@ -26,7 +26,7 @@ use serde::{Deserialize, Serialize};
 
 pub(crate) use self::basis::{BASELINE, Basis, Contributor, GroupingBrief};
 pub(crate) use self::design::{DesignAmend, DesignBrief};
-pub(crate) use self::plan::{Floors, Open, PartAmend, PartBrief, drafts};
+pub(crate) use self::plan::{Floors, Open, PartAmend, PartBrief, Types, drafts};
 pub use self::spec::SPEC_CHUNK;
 pub(crate) use self::spec::SpecBrief;
 use crate::adapter::{self, AdapterRef, Loaded};
@@ -134,7 +134,7 @@ pub async fn specify<P: Model + Source + StateStore + BlobStore + Plugins + Vcs 
         future::try_join_all(chunks.into_iter().map(|chunk| chunk.judge(provider))),
         async {
             let design = DesignBrief::new(&extracts, &bases).judge(provider).await?;
-            let plan = PartBrief::new(&bases, design.data_types()).derive(provider).await?;
+            let plan = PartBrief::new(&bases, Types::of(&design)).derive(provider).await?;
             Ok::<_, Error>((design, plan))
         },
     )

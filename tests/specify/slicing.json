@@ -5,7 +5,6 @@
       "name": "orders",
       "requirements": ["REQ-004", "REQ-003"],
       "types": ["orders.line", "orders.order"],
-      "depends-on": ["authentication"],
       "brief": ["Delivers order creation and cancellation for a signed-in caller; verified by placing and cancelling an order under a session from `authentication`."]
     },
     {

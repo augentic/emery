@@ -237,7 +237,7 @@ async fn show_schedule() {
 
     let resp = cli_ok(&provider, &["emery", "show", "schedule", "--config", PROJECT_CONFIG]).await;
     let expected = format!(
-        "---\nemery: 9\nrevision: {id}\n---\n\n# Schedule\n\nBudget: 4 (adapter)\nWaves: \
+        "---\nemery: 10\nrevision: {id}\n---\n\n# Schedule\n\nBudget: 4 (adapter)\nWaves: \
          [SLICE-001], [SLICE-002]\n\n## Slice: authentication\n\nID: SLICE-001\nPart: PART-001 \
          (1/1)\nWave: 1\nRequirements: [REQ-001, REQ-002]\n\n## Slice: orders\n\nID: \
          SLICE-002\nPart: PART-002 (1/1)\nWave: 2\nRequirements: [REQ-003, REQ-004]\nTypes: \

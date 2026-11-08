@@ -19,7 +19,7 @@ use serde_json::{Value, json};
 use crate::brief::{Brief, Review};
 use crate::revision::{EMERY, Part, PartId, Plan, ReqId};
 use crate::specify::basis::Basis;
-use crate::specify::plan::{Draft, Floors, PartBrief, Stem, drafts, listed, quoted};
+use crate::specify::plan::{Draft, Floors, PartBrief, Stem, Types, drafts, listed, quoted};
 use crate::specify::sections::BasesSection;
 
 // What the slicing turn decides of an amended plan: what the code rules
@@ -50,8 +50,8 @@ pub struct PartAmend<'a> {
     parts: Vec<Part>,
     open: Open,
     floors: Floors<'a>,
-    // The design's data type keys, in the design's order.
-    types: &'a [String],
+    // The design's data types.
+    types: &'a Types,
     // The requirements the change adds, revises, or leaves in conflict.
     drafted: &'a [Basis<'a>],
 }
@@ -61,12 +61,12 @@ impl<'a> PartAmend<'a> {
     // left it, with `open` what they left for the turn.
     //
     // `base` is the plan amended under `parent`, `floors` the amended
-    // specification's floors, `types` the amended design's data type keys,
+    // specification's floors, `types` the amended design's data types,
     // and `drafted` the requirements the change drafts anew.
     #[must_use]
     pub const fn new(
         base: &'a Plan, parent: String, parts: Vec<Part>, open: Open, floors: Floors<'a>,
-        types: &'a [String], drafted: &'a [Basis<'a>],
+        types: &'a Types, drafted: &'a [Basis<'a>],
     ) -> Self {
         Self {
             base,
@@ -253,6 +253,13 @@ impl Brief for PartAmend<'_> {
                     .insert("enum".to_owned(), json!(self.open.keys));
             }
         }
+        if self.types.is_empty() {
+            Self::at(schema, "/$defs/Draft/properties/uses")?
+                .insert("maxItems".to_owned(), json!(0));
+        } else {
+            Self::at(schema, "/$defs/Draft/properties/uses/items")?
+                .insert("enum".to_owned(), json!(self.types.keys));
+        }
         Self::at(schema, "/$defs/Join/properties/part")?.insert("enum".to_owned(), parts.clone());
 
         // one brief per touched part at the least, one per current part at
@@ -350,8 +357,7 @@ impl Brief for PartAmend<'_> {
             part.requirements.sort_unstable();
             part.requirements.dedup();
             part.types.extend(join.types);
-            part.types =
-                self.types.iter().filter(|key| part.types.contains(key)).cloned().collect();
+            part.types = self.types.ordered(&part.types);
         }
         for rebrief in answer.briefs {
             let part = parts.iter_mut().find(|part| part.id == rebrief.part).ok_or_else(|| {
@@ -360,8 +366,11 @@ impl Brief for PartAmend<'_> {
             part.brief = rebrief.brief;
         }
 
+        let mut all = drafts(&parts);
         let mut drafts = answer.parts;
         drafts.sort_by_key(|draft| draft.requirements.iter().min().copied());
+        all.extend(drafts.iter().cloned());
+        let edges = self.types.owner_edges(&all);
         let mut free_ids = self.base.free_ids();
         let mut ids: BTreeMap<String, PartId> =
             parts.iter().map(|part| (part.name.clone(), part.id)).collect();
@@ -372,7 +381,7 @@ impl Brief for PartAmend<'_> {
             numbered.push((draft, id));
         }
         for (draft, id) in numbered {
-            parts.push(draft.into_part(id, &ids, self.types)?);
+            parts.push(draft.into_part(id, &ids, self.types, &edges)?);
         }
 
         Ok(Plan {

@@ -6,6 +6,7 @@
 //! open over the current parts through [`PartAmend`].
 
 mod amend;
+mod types;
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::{self, Display, Formatter};
@@ -17,6 +18,8 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 
 pub use self::amend::{Open, PartAmend};
+use self::types::Edge;
+pub use self::types::Types;
 use crate::brief::{Brief, Review};
 use crate::revision::{self, EMERY, Part, PartId, Plan, ReqId, Spec, ranks};
 use crate::specify::basis::Basis;
@@ -25,20 +28,17 @@ use crate::specify::sections::BasesSection;
 // A synthesis brief for the build plan.
 //
 // The brief contains the requirement bases, the floors they fall under,
-// and the design's data type keys.
+// and the design's data types.
 pub struct PartBrief<'a> {
     bases: &'a [Basis<'a>],
-    types: Vec<String>,
+    types: Types,
     floors: Floors<'a>,
 }
 
 impl<'a> PartBrief<'a> {
-    // Returns a slicing brief for `bases` and the design's data `types`, in key order.
-    //
-    // `types` are the keys parts own: the accepted design's
-    // `Design::data_types`.
+    // Returns a slicing brief for `bases` and the design's data `types`.
     #[must_use]
-    pub fn new(bases: &'a [Basis<'a>], types: Vec<String>) -> Self {
+    pub fn new(bases: &'a [Basis<'a>], types: Types) -> Self {
         let floors = Floors::new(
             bases.iter().map(|basis| (basis.id, basis.subject, basis.trigger.as_ref())),
         );
@@ -73,7 +73,8 @@ impl<'a> PartBrief<'a> {
                 id: PartId::FIRST,
                 name: stem.label.to_owned(),
                 requirements: stem.requirements,
-                types: types.clone(),
+                types: types.keys.clone(),
+                uses: vec![],
                 depends_on: vec![],
                 brief: vec![],
             })
@@ -167,8 +168,8 @@ impl<'a> Floors<'a> {
     }
 
     // The standing rules an answer is held to, as the brief states them after
-    // its floors: the floor rule, and the trigger rule where any trigger
-    // reaches a requirement.
+    // its floors: the floor rule, the trigger rule where any trigger reaches a
+    // requirement, and the edge rule.
     fn write_rules(&self, f: &mut Formatter<'_>) -> fmt::Result {
         f.write_str(
             "Requirements sharing a stem are one part at the least; an answer that splits them \
@@ -183,21 +184,23 @@ impl<'a> Floors<'a> {
                  refused.\n",
             )?;
         }
-        Ok(())
+        f.write_str(
+            "The engine orders parts by the types they own and use: name no part, and answer \
+             `uses` for any design type key the part's code compiles against and does not own.\n",
+        )
     }
 
     // Holds `drafts` to the plan's rules over these floors and the design's
     // data `types`, each break a finding on `review`: every requirement in
     // exactly one part, no stem and no trigger split across parts, every
-    // type key owned by exactly one part, and the dependencies naming
-    // parts with no cycle among them.
-    pub fn check(&self, types: &[String], drafts: &[Draft], review: &mut Review) {
+    // type key owned by exactly one part, every `uses` key owned by another
+    // part, and no cycle among the derived edges.
+    pub fn check(&self, types: &Types, drafts: &[Draft], review: &mut Review) {
         // each part on its own
         let known: BTreeSet<ReqId> =
             self.stems.iter().flat_map(|stem| stem.requirements.iter().copied()).collect();
         let mut names = BTreeSet::new();
         let mut placed: BTreeMap<ReqId, &str> = BTreeMap::new();
-        let mut owners: BTreeMap<&str, BTreeSet<&str>> = BTreeMap::new();
         for draft in drafts {
             let name = draft.name.as_str();
             let label = format!("part `{name}`");
@@ -216,9 +219,6 @@ impl<'a> Floors<'a> {
                 } else if placed.insert(id, name).is_some() {
                     review.note(format_args!("`{id}` appears in more than one part"));
                 }
-            }
-            for key in &draft.types {
-                owners.entry(key.as_str()).or_default().insert(name);
             }
             review.paragraphs(&draft.brief, format_args!("{label} brief"));
         }
@@ -255,43 +255,71 @@ impl<'a> Floors<'a> {
             }
         }
 
-        // type ownership
-        let keys: BTreeSet<&str> = types.iter().map(String::as_str).collect();
-        for key in &keys {
-            match owners.get(key) {
-                Some(parts) if parts.len() == 1 => {}
-                None => review.note(format_args!("type `{key}` is owned by no part")),
-                Some(parts) => review.note(format_args!(
-                    "type `{key}` is owned by {} parts: {}",
-                    parts.len(),
-                    quoted(parts)
-                )),
-            }
-        }
-        for key in owners.keys().filter(|key| !keys.contains(*key)) {
-            review.note(format_args!("`{key}` is not a type in the design"));
-        }
+        check_types(types, drafts, review);
+    }
+}
 
-        // dependencies
-        for draft in drafts {
-            let name = draft.name.as_str();
-            for dependency in &draft.depends_on {
-                if dependency == name {
-                    review.note(format_args!("part `{name}` depends on itself"));
-                } else if !names.contains(dependency.as_str()) {
-                    review.note(format_args!(
-                        "part `{name}` depends on `{dependency}`, which is not a part"
-                    ));
-                }
+fn check_types(types: &Types, drafts: &[Draft], review: &mut Review) {
+    let mut owners: BTreeMap<&str, BTreeSet<&str>> = BTreeMap::new();
+    for draft in drafts {
+        for key in &draft.types {
+            owners.entry(key.as_str()).or_default().insert(draft.name.as_str());
+        }
+    }
+
+    // type ownership
+    let keys: BTreeSet<&str> = types.keys.iter().map(String::as_str).collect();
+    for key in &keys {
+        match owners.get(key) {
+            Some(parts) if parts.len() == 1 => {}
+            None => review.note(format_args!("type `{key}` is owned by no part")),
+            Some(parts) => review.note(format_args!(
+                "type `{key}` is owned by {} parts: {}",
+                parts.len(),
+                quoted(parts)
+            )),
+        }
+    }
+    for key in owners.keys().filter(|key| !keys.contains(*key)) {
+        review.note(format_args!("`{key}` is not a type in the design"));
+    }
+
+    // type uses and derived dependencies
+    for draft in drafts {
+        let name = draft.name.as_str();
+        for key in &draft.uses {
+            if !keys.contains(key.as_str()) {
+                review.note(format_args!(
+                    "part `{name}` uses `{key}`, which is not a type in the design"
+                ));
+            } else if draft.types.contains(key) {
+                review.note(format_args!("part `{name}` uses `{key}`, which it owns"));
+            } else if !owners.contains_key(key.as_str()) {
+                review.note(format_args!("part `{name}` uses `{key}`, which is owned by no part"));
             }
         }
-        let cyclic = unorderable(drafts);
-        if !cyclic.is_empty() {
-            review.note(format_args!(
-                "parts {} cannot be ordered: their `depends-on` edges contain a cycle",
-                quoted(cyclic)
-            ));
-        }
+    }
+    let edges = types.owner_edges(drafts);
+    let cyclic = unorderable(drafts, &edges);
+    if !cyclic.is_empty() {
+        let via: Vec<&str> = types
+            .keys
+            .iter()
+            .map(String::as_str)
+            .filter(|key| {
+                edges.iter().any(|edge| {
+                    cyclic.contains(&edge.from.as_str())
+                        && cyclic.contains(&edge.to.as_str())
+                        && edge.via.iter().any(|held| held == key)
+                })
+            })
+            .collect();
+        review.note(format_args!(
+            "parts {} cannot be ordered: the edges derived from {} form a cycle; own types \
+             that name each other in one part",
+            quoted(cyclic),
+            quoted(via)
+        ));
     }
 }
 
@@ -313,12 +341,13 @@ impl Brief for PartBrief<'_> {
             .insert("minItems".to_owned(), json!(1));
         Self::at(schema, "/$defs/Draft/properties/requirements/items")?
             .insert("enum".to_owned(), ids);
-        if self.types.is_empty() {
-            Self::at(schema, "/$defs/Draft/properties/types")?
-                .insert("maxItems".to_owned(), json!(0));
-        } else {
-            Self::at(schema, "/$defs/Draft/properties/types/items")?
-                .insert("enum".to_owned(), json!(self.types));
+        for pointer in ["/$defs/Draft/properties/types", "/$defs/Draft/properties/uses"] {
+            if self.types.is_empty() {
+                Self::at(schema, pointer)?.insert("maxItems".to_owned(), json!(0));
+            } else {
+                Self::at(schema, &format!("{pointer}/items"))?
+                    .insert("enum".to_owned(), json!(self.types.keys));
+            }
         }
         Ok(())
     }
@@ -333,6 +362,7 @@ impl Brief for PartBrief<'_> {
     fn into_output(self, answer: PartAnswer) -> Result<Plan, Error> {
         let mut drafts = answer.parts;
         drafts.sort_by_key(|draft| draft.requirements.iter().min().copied());
+        let edges = self.types.owner_edges(&drafts);
         let ids: BTreeMap<String, PartId> = drafts
             .iter()
             .zip(PartId::sequence())
@@ -341,7 +371,7 @@ impl Brief for PartBrief<'_> {
 
         let mut parts = Vec::with_capacity(drafts.len());
         for (draft, id) in drafts.into_iter().zip(PartId::sequence()) {
-            parts.push(draft.into_part(id, &ids, &self.types)?);
+            parts.push(draft.into_part(id, &ids, &self.types, &edges)?);
         }
 
         Ok(Plan {
@@ -361,22 +391,15 @@ fn listed(ids: &[ReqId]) -> String {
     ids.iter().map(ToString::to_string).collect::<Vec<_>>().join(", ")
 }
 
-// `parts` as the gate reads them, each dependency by the name of the part
-// it names, or its id where no part holds it, so the gate names the break.
+// `parts` as the gate reads them.
 pub fn drafts(parts: &[Part]) -> Vec<Draft> {
-    let name = |id: PartId| {
-        parts
-            .iter()
-            .find(|part| part.id == id)
-            .map_or_else(|| id.to_string(), |part| part.name.clone())
-    };
     parts
         .iter()
         .map(|part| Draft {
             name: part.name.clone(),
             requirements: part.requirements.clone(),
             types: part.types.clone(),
-            depends_on: part.depends_on.iter().map(|id| name(*id)).collect(),
+            uses: part.uses.clone(),
             brief: part.brief.clone(),
         })
         .collect()
@@ -399,8 +422,8 @@ impl Display for PartBrief<'_> {
 
         if self.types.is_empty() {
             f.write_str(
-                "\n## Type keys\n\nThe design has no data type; answer every `types` list \
-                 empty.\n",
+                "\n## Type keys\n\nThe design has no data type; answer every `types` and `uses` \
+                 list empty.\n",
             )?;
         } else {
             f.write_str(
@@ -408,8 +431,11 @@ impl Display for PartBrief<'_> {
                  part, the one that builds the requirements reading or producing it, whatever \
                  module declared it in the source.\n\n",
             )?;
-            for key in &self.types {
-                writeln!(f, "- `{key}`")?;
+            for key in &self.types.keys {
+                match self.types.references(key) {
+                    [] => writeln!(f, "- `{key}`")?,
+                    named => writeln!(f, "- `{key}` — names {}", quoted(named))?,
+                }
             }
         }
 
@@ -430,30 +456,19 @@ pub struct PartAnswer {
     pub parts: Vec<Draft>,
 }
 
-// The dependencies of each draft on the other drafts by name: a dependency
-// on a name that is no part, or on the part itself, is found elsewhere and
-// does not count.
-fn direct(drafts: &[Draft]) -> BTreeMap<&str, Vec<&str>> {
+// The part names a cycle in `edges` leaves unorderable.
+fn unorderable<'a>(drafts: &'a [Draft], edges: &'a [Edge]) -> Vec<&'a str> {
     let names: BTreeSet<&str> = drafts.iter().map(|draft| draft.name.as_str()).collect();
-    drafts
+    let pending = drafts
         .iter()
         .map(|draft| {
-            let dependencies = draft
-                .depends_on
+            let dependencies = edges
                 .iter()
-                .map(String::as_str)
-                .filter(|dependency| names.contains(dependency) && *dependency != draft.name)
+                .filter(|edge| edge.from == draft.name && names.contains(edge.to.as_str()))
+                .map(|edge| edge.to.as_str())
                 .collect();
             (draft.name.as_str(), dependencies)
         })
-        .collect()
-}
-
-// The part names a cycle leaves unorderable.
-fn unorderable(drafts: &[Draft]) -> Vec<&str> {
-    let pending = direct(drafts)
-        .into_iter()
-        .map(|(name, dependencies)| (name, dependencies.into_iter().collect()))
         .collect();
     let (_, cyclic) = ranks(pending);
     cyclic
@@ -471,32 +486,34 @@ pub struct Draft {
     /// The design type keys this part owns.
     #[serde(default)]
     pub types: Vec<String>,
-    /// The names of the parts this one is built after.
+    /// The design type keys this part's code uses without owning.
     #[serde(default)]
-    pub depends_on: Vec<String>,
+    pub uses: Vec<String>,
     /// Markdown paragraphs a builder reads before taking the part up.
     #[serde(default)]
     pub brief: Vec<String>,
 }
 
 impl Draft {
-    // Lowers this draft to a numbered `Part`, its `depends_on` mapped through
-    // `ids` and every list sorted and deduplicated, `types` in the design's
-    // order.
+    // Lowers this draft to a numbered `Part`, its `depends_on` mapped from
+    // `edges` through `ids` and every list sorted and deduplicated, `types`
+    // and `uses` in the design's order.
     fn into_part(
-        mut self, id: PartId, ids: &BTreeMap<String, PartId>, types: &[String],
+        mut self, id: PartId, ids: &BTreeMap<String, PartId>, types: &Types, edges: &[Edge],
     ) -> Result<Part, Error> {
         self.requirements.sort_unstable();
         self.requirements.dedup();
-        let types = types.iter().filter(|key| self.types.contains(key)).cloned().collect();
-        let mut depends_on = self
-            .depends_on
+        let owned = types.ordered(&self.types);
+        let uses = types.ordered(&self.uses);
+        let mut depends_on = edges
             .iter()
-            .map(|name| {
-                ids.get(name).copied().ok_or_else(|| {
+            .filter(|edge| edge.from == self.name)
+            .map(|edge| {
+                ids.get(&edge.to).copied().ok_or_else(|| {
                     server_error!(
-                        "part `{}` depends on `{name}`, which was accepted without a part",
-                        self.name
+                        "part `{}` depends on `{}`, which was accepted without a part",
+                        self.name,
+                        edge.to
                     )
                 })
             })
@@ -508,7 +525,8 @@ impl Draft {
             id,
             name: self.name,
             requirements: self.requirements,
-            types,
+            types: owned,
+            uses,
             depends_on,
             brief: self.brief,
         })

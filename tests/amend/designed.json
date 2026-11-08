@@ -1,5 +1,5 @@
 {
-  "emery": 9,
+  "emery": 10,
   "base": {
     "revision": "<revision>",
     "commit": "9f8e7d6c5b4a39281706f5e4d3c2b1a0f9e8d7c6"
@@ -58,7 +58,7 @@
     }
   ],
   "spec": {
-    "emery": 9,
+    "emery": 10,
     "parent": "<revision>",
     "preamble": [
       "Sign-in, its session, and orders over both."
@@ -209,7 +209,7 @@
     ]
   },
   "design": {
-    "emery": 9,
+    "emery": 10,
     "parent": "<revision>",
     "preamble": [],
     "sections": [
@@ -254,7 +254,7 @@
     ]
   },
   "plan": {
-    "emery": 9,
+    "emery": 10,
     "parent": "<revision>",
     "preamble": [
       "Two slices: sign-in with its session, and orders over it."
@@ -268,6 +268,7 @@
           "REQ-002"
         ],
         "types": [],
+        "uses": [],
         "depends-on": [],
         "brief": [
           "Delivers sign-in and the session it issues; a session cannot be verified without a sign-in to issue it, so the two stems are one build."
@@ -284,6 +285,7 @@
           "orders.line",
           "orders.order"
         ],
+        "uses": [],
         "depends-on": [
           "PART-001"
         ],
@@ -298,6 +300,7 @@
           "REQ-005"
         ],
         "types": [],
+        "uses": [],
         "depends-on": [],
         "brief": ["Delivers the secret read every handler makes at use; verified against a fake store."]
       }

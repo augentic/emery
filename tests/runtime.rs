@@ -184,7 +184,7 @@ const DESIGN_AMEND: &str = r#"{"sections": [
     {"kind": "overview", "blocks": [{"text": "Two static endpoints: `GET /greeting` returning `'hello, world'` (`REQ-001`) and `GET /farewell` returning `'bye'` (`REQ-002`); no state or configuration is involved."}], "revised": [1]},
     {"kind": "apis", "blocks": [{"text": "The farewell's phrasebook is kept in a relational store."}], "revised": []}]}"#;
 const SLICING_AMEND: &str = r#"{"parts": [
-    {"name": "farewell", "requirements": ["REQ-002"], "types": [], "depends-on": [],
+    {"name": "farewell", "requirements": ["REQ-002"], "types": [], "uses": [],
      "brief": ["Delivers the farewell beside the greeting."]}], "joins": [],
     "briefs": [{"part": "PART-001", "brief": ["Delivers the revised greeting, `hello, world`."]}]}"#;
 // The greeting slice built again under the amended revision writes the
@@ -1054,7 +1054,7 @@ async fn specify_over_built() {
     assert_ok(&shown);
     let envelope: Value = serde_json::from_str(&shown.stdout).expect("the show envelope");
     assert_eq!(envelope["revision"], second);
-    assert_eq!(envelope["document"]["emery"], 9);
+    assert_eq!(envelope["document"]["emery"], 10);
     assert!(envelope["document"]["parent"].is_null(), "drafted from the sources: {envelope}");
 
     // one build at a time, so the turns arrive in slice order; the layout
@@ -1374,7 +1374,7 @@ async fn amend_applied_built() {
     assert_amended(&roots, &backends, &base, &parent, &over, &revision).await;
     assert_eq!(
         roots.git.branches(project),
-        [format!("emery/{parent}"), format!("emery/{revision}"), "main".to_owned()]
+        [format!("emery/{revision}"), format!("emery/{parent}"), "main".to_owned()]
     );
     let run = roots.run_idle(&["--format", "json", "apply"], &backends).await;
     refused(&run, 2, "nothing-staged");

@@ -18,7 +18,7 @@ use omnia_sdk::{Error, server_error};
 
 use crate::brief::Review;
 use crate::revision::{Change, ChangeClass, EMERY, Part, PartId, Plan, ReqId, Spec};
-use crate::specify::{Basis, Floors, Open, PartAmend, drafts};
+use crate::specify::{Basis, Floors, Open, PartAmend, Types, drafts};
 
 // The base plan with the requirements that leave their parts taken out and
 // any part they emptied removed, ready to place what the amendment adds
@@ -89,7 +89,7 @@ impl<'a> Pruned<'a> {
     // Returns `Error::ServerError` for a settled plan the rules refuse, since
     // nothing of it is the model's.
     pub fn assemble(
-        mut self, spec: &'a Spec, types: &'a [String], drafted: &'a [Basis<'a>],
+        mut self, spec: &'a Spec, types: &'a Types, drafted: &'a [Basis<'a>],
     ) -> Result<Assembled<'a>, Error> {
         let floors = Floors::from_spec(spec);
         let mut open = self.place(spec, &floors);
@@ -154,14 +154,14 @@ impl<'a> Pruned<'a> {
     // whose requirements differ from `base`'s, in the design's order, where
     // no requirement is open and exactly one part changed; otherwise the
     // unowned keys are `open`.
-    fn own(&mut self, types: &[String], open: &mut Open) {
+    fn own(&mut self, types: &Types, open: &mut Open) {
         for part in &mut self.parts {
-            part.types.retain(|key| types.contains(key));
+            part.types.retain(|key| types.keys.contains(key));
         }
         let owned: BTreeSet<&str> =
             self.parts.iter().flat_map(|part| part.types.iter().map(String::as_str)).collect();
         let unowned: Vec<String> =
-            types.iter().filter(|key| !owned.contains(key.as_str())).cloned().collect();
+            types.keys.iter().filter(|key| !owned.contains(key.as_str())).cloned().collect();
         if unowned.is_empty() {
             return;
         }
@@ -176,7 +176,7 @@ impl<'a> Pruned<'a> {
                 .collect();
             if let [part] = changed.as_mut_slice() {
                 part.types.extend(unowned);
-                part.types = types.iter().filter(|key| part.types.contains(key)).cloned().collect();
+                part.types = types.ordered(&part.types);
                 return;
             }
         }
@@ -192,7 +192,7 @@ pub enum Assembled<'a> {
 
 // Holds `parts` to the plan's rules over `floors` and the design's `types`;
 // a break is the engine's, since nothing of the plan is the model's.
-fn held(parts: &[Part], floors: &Floors<'_>, types: &[String]) -> Result<(), Error> {
+fn held(parts: &[Part], floors: &Floors<'_>, types: &Types) -> Result<(), Error> {
     let mut review = Review::default();
     floors.check(types, &drafts(parts), &mut review);
     review.verdict().map_err(|findings| {
@@ -223,6 +223,7 @@ fn without<'a>(parts: &'a [Part], leaving: &BTreeSet<ReqId>) -> (Vec<Part>, Vec<
                 .filter(|id| !leaving.contains(id))
                 .collect(),
             types: part.types.clone(),
+            uses: part.uses.clone(),
             depends_on: spliced(part, &replaced),
             brief: part.brief.clone(),
         })

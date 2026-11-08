@@ -1,5 +1,5 @@
 {
-  "emery": 9,
+  "emery": 10,
   "parent": null,
   "preamble": [],
   "parts": [
@@ -10,6 +10,7 @@
         "REQ-001"
       ],
       "types": [],
+      "uses": [],
       "depends-on": [],
       "brief": []
     }
