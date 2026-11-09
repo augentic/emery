@@ -146,19 +146,7 @@ pub async fn build<P: Model + Target + StateStore + BlobStore + Plugins + Vcs + 
         .filter(|(id, _)| *id != revision_id)
         .map(|(id, kind)| Candidate { id, kind });
 
-    // every layout the design names, as the sealed tree holds it, whole and
-    // held to its digest when the revision was read
-    let mut layouts = Vec::new();
-    for layout in revision.design.layouts() {
-        let body = current.layouts.get(&layout.digest).cloned().ok_or_else(|| {
-            server_error!("the sealed revision carries no body for layout `{}`", layout.digest)
-        })?;
-        layouts.push(AttachedLayout {
-            digest: layout.digest.to_string(),
-            media_type: layout.media_type.clone(),
-            body,
-        });
-    }
+    let layouts = attached(&revision.design, &current.layouts)?;
 
     let Loaded {
         id: adapter,
@@ -450,6 +438,24 @@ pub struct Seal {
 // own, so that the engine's own directory is ignored wherever the result is
 // checked out.
 const IGNORE: (&str, &[u8]) = (".gitignore", b".emery/\n");
+
+// Every layout `design` names, as the sealed tree holds it in `bodies`,
+// whole and held to its digest when the revision was read.
+fn attached(design: &Design, bodies: &store::Bodies) -> Result<Vec<AttachedLayout>, Error> {
+    design
+        .layouts()
+        .map(|layout| {
+            let body = bodies.get(&layout.digest).cloned().ok_or_else(|| {
+                server_error!("the sealed revision carries no body for layout `{}`", layout.digest)
+            })?;
+            Ok(AttachedLayout {
+                digest: layout.digest.to_string(),
+                media_type: layout.media_type.clone(),
+                body,
+            })
+        })
+        .collect()
+}
 
 // What every wave of one build shares.
 pub(crate) struct Run<'a> {
