@@ -38,7 +38,7 @@ emery show amendment                 # read the amendment staged by emery amend
 
 - **`spec`:** The technology-neutral behavioural specification (`# Specification`), listing each requirement's ID, subject, status (`agreed`, `divergence`, `conflict`), inbound trigger (`Route:` or `Message:`), source citations, statement body, loser notes, and acceptance scenarios.
 - **`design`:** The architectural design (`# Design`), including `## Overview`, `## Domain model` (`Type: <key>` and `Type: <key> (mechanism)` blocks), `## APIs and integrations` (where concrete technologies from `call` and `decision` claims appear), and other informed sections.
-- **`plan`:** The dependency-ordered build plan (`# Plan`), listing each `## Part: <name>` block with its `ID:`, `Requirements:`, `Types:`, `Depends on:`, and prose brief.
+- **`plan`:** The dependency-ordered build plan (`# Plan`), listing each `## Part: <name>` block with its `ID:`, `Requirements:`, `Types:`, `Uses:`, `Depends on:`, and prose brief.
 - **`schedule`:** The deterministic build schedule (`# Schedule`) cut from the current revision's plan under the resolved requirement budget, listing the budget and its source, the build waves, any over-budget slice IDs, and each `## Slice: <name>` block with its `ID:`, `Part:`, `Wave:`, `Requirements:`, and owned `Types:`.
 - **`amendment`:** The incremental change staged by [`emery amend`](amend.md) (`# Amendment`), grouped by change class (`Added`, `Changed`, `Retired`, `Conflict`, `Unchanged`) followed by `## Design` and `## Plan` diff sections.
 
@@ -80,7 +80,7 @@ For `spec`, `design`, `plan`, and `schedule`, the Markdown begins with YAML fron
 
 ```markdown
 ---
-emery: 9
+emery: 10
 revision: 9f8e7d6c…
 ---
 ```

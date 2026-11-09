@@ -102,7 +102,7 @@ An amendment can remove ("retire") an existing requirement in two ways:
 
 ### Part
 
-A logical domain module (`PART-001`, `PART-002`, ...) stored in `plan.json` by [`emery specify`](reference/cli/specify.md) and [`emery amend`](reference/cli/amend.md). Each part has a kebab-case `name`, a list of `requirements` (`REQ-NNN`), zero or more owned `data` type keys (`types`) from `design.json`, a list of other parts it `depends-on`, and a prose `brief`. Parts carry no requirement count cap; during [`emery build`](reference/cli/build.md), each part is cut into one or more budget-sized [slices](#slice).
+A logical domain module (`PART-001`, `PART-002`, ...) stored in `plan.json` by [`emery specify`](reference/cli/specify.md) and [`emery amend`](reference/cli/amend.md). Each part has a kebab-case `name`, a list of `requirements` (`REQ-NNN`), zero or more owned `data` type keys (`types`) from `design.json`, zero or more `data` type keys its code `uses` without owning, an engine-derived list of other parts it `depends-on` (the owners of the types its owned signatures name and the types in `uses`), and a prose `brief`. Parts carry no requirement count cap; during [`emery build`](reference/cli/build.md), each part is cut into one or more budget-sized [slices](#slice).
 
 ### Budget, schedule, and over-budget slice
 

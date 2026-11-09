@@ -32,7 +32,7 @@ const CODE: &str = "acme:code@1.0.0";
 
 const SPEC: &[u8] = include_bytes!("build/spec.json");
 const DESIGN: &[u8] = include_bytes!("build/design.json");
-const PLAN: &[u8] = include_bytes!("build/plan.json");
+const PLAN: &[u8] = include_bytes!("specify/5-sliced.json");
 // `SPEC` with `orders.cancel` held in conflict between `docs` and `wiki`.
 const CONFLICTED_SPEC: &[u8] = include_bytes!("amend/conflicted-spec.json");
 const CHAIN_PLAN: &[u8] = include_bytes!("amend/chain-plan.json");
@@ -230,10 +230,10 @@ async fn amend_classes() {
     assert!(
         shown.ends_with(
             "## Plan\n\n### Part: orders [changed]\n\nID: PART-002\nRequirements: [REQ-003, \
-             REQ-004, REQ-005]\nTypes: [orders.line, orders.order]\nDepends on: \
-             [PART-001]\n\nDelivers order creation and cancellation for a signed-in caller; \
-             verified by placing and cancelling an order under a session from \
-             `authentication`.\n\nNote: the brief is the base's; no slicing turn redrafted it.\n"
+             REQ-004, REQ-005]\nTypes: [orders.line, orders.order]\n\nDelivers order creation \
+             and cancellation for a signed-in caller; verified by placing and cancelling an \
+             order under a session from `authentication`.\n\nNote: the brief is the base's; no \
+             slicing turn redrafted it.\n"
         ),
         "{shown}"
     );
@@ -321,10 +321,10 @@ async fn amend_retired() {
     assert!(
         shown.ends_with(
             "## Plan\n\n### Part: orders [changed]\n\nID: PART-002\nRequirements: \
-             [REQ-003]\nTypes: [orders.line, orders.order]\nDepends on: [PART-001]\n\nDelivers \
-             order creation and cancellation for a signed-in caller; verified by placing and \
-             cancelling an order under a session from `authentication`.\n\nNote: the brief is \
-             the base's; no slicing turn redrafted it.\n"
+             [REQ-003]\nTypes: [orders.line, orders.order]\n\nDelivers order creation and \
+             cancellation for a signed-in caller; verified by placing and cancelling an order \
+             under a session from `authentication`.\n\nNote: the brief is the base's; no \
+             slicing turn redrafted it.\n"
         ),
         "{shown}"
     );
@@ -455,10 +455,10 @@ async fn amend_retired_part() {
     provider.model.assert_exhausted();
 }
 
-// A removed part that stood between two others leaves its dependants
-// depending on what it depended on, so the order it held survives it: the
-// part after it is changed in its dependencies alone, and the design,
-// which the removed part owned nothing of, stands.
+// Removing a part re-derives the dependencies of the parts that stood
+// after it from the types the remaining parts own and use: the part after
+// it is changed in its dependencies alone, and the design, which the
+// removed part owned nothing of, stands.
 #[tokio::test]
 async fn amend_retired_chain() {
     // index 0 is `docs`, 1..=4 the standing requirements in id order
@@ -492,7 +492,7 @@ async fn amend_retired_chain() {
     assert_eq!(parts.len(), 2, "{amendment}");
     assert_eq!(parts[0], base["parts"][0], "{amendment}");
     assert_eq!(parts[1]["id"], "PART-003", "{amendment}");
-    assert_eq!(parts[1]["depends-on"], serde_json::json!(["PART-001"]), "{amendment}");
+    assert_eq!(parts[1]["depends-on"], serde_json::json!([]), "{amendment}");
     assert_eq!(parts[1]["requirements"], base["parts"][2]["requirements"], "{amendment}");
     assert_eq!(parts[1]["types"], base["parts"][2]["types"], "{amendment}");
     assert_eq!(parts[1]["brief"], base["parts"][2]["brief"], "{amendment}");
@@ -514,6 +514,102 @@ async fn amend_retired_chain() {
     provider.model.assert_exhausted();
 }
 
+// Retiring the part that owns a named or used type removes the type from
+// the design, prunes it from other parts' `uses`, and drops the derived
+// edges onto the removed part with no design or slicing turn; when a
+// slicing turn is opened, `## Current plan` renders each current part's
+// `uses` and derived `depends on`, and a join's `uses` merges in design
+// order and re-derives `depends-on` across current and new parts alike.
+#[tokio::test]
+async fn amend_edges_rederived() {
+    let base_design = format!(
+        r#"{{"emery": 10, "parent": null, "preamble": [], "sections": [
+            {{"kind": "overview", "blocks": [{{"text": "{OVERVIEW}"}}]}},
+            {{"kind": "domain-model", "blocks": [
+                {{"type": {{"key": "session.session", "signature": "interface Session {{ token: string }}", "role": "data"}}}},
+                {{"type": {{"key": "orders.order", "signature": "interface Order {{ id: string; session: Session }}", "role": "data"}}}},
+                {{"type": {{"key": "orders.line", "signature": "interface Line {{ sku: string }}", "role": "data"}}}}
+            ]}}
+        ]}}"#
+    );
+    let base_plan = r#"{"emery": 10, "parent": null, "preamble": [], "parts": [
+        {
+            "id": "PART-001", "name": "authentication", "requirements": ["REQ-001"],
+            "types": [], "uses": ["session.session"], "depends-on": ["PART-002"],
+            "brief": ["Delivers sign-in."]
+        },
+        {
+            "id": "PART-002", "name": "sessions", "requirements": ["REQ-002"],
+            "types": ["session.session"], "uses": [], "depends-on": [],
+            "brief": ["Delivers the session a sign-in issues."]
+        },
+        {
+            "id": "PART-003", "name": "orders", "requirements": ["REQ-003", "REQ-004"],
+            "types": ["orders.line", "orders.order"], "uses": [], "depends-on": ["PART-002"],
+            "brief": ["Delivers order creation and cancellation."]
+        }
+    ]}"#;
+    let grouping = r#"{"groups": [
+        {"claims": [0, 2], "classes": [[0], [2]]},
+        {"claims": [1], "classes": [[1]]},
+        {"claims": [3], "classes": [[3]]},
+        {"claims": [4], "classes": [[4]]}
+    ]}"#;
+    let mut provider = Provider::answering([grouping]);
+    provider.source.evidence.insert(
+        "docs".to_owned(),
+        Ok(evidence(vec![retire("session.timeout", "Sessions no longer time out.")])),
+    );
+    seed(&provider.files, SPEC, base_design.as_bytes(), base_plan.as_bytes());
+
+    cli_ok(&provider, &["emery", "amend", DOCS, "--config", PROJECT_CONFIG]).await;
+
+    assert_eq!(provider.model.seen().len(), 1, "the grouping is the one turn");
+    let (_, amendment) = staged_amendment(&provider);
+    let parts = amendment["plan"]["parts"].as_array().expect("parts");
+    assert_eq!(parts.len(), 2, "{amendment}");
+    assert_eq!(parts[0]["id"], "PART-001", "{amendment}");
+    assert_eq!(parts[0]["uses"], serde_json::json!([]), "{amendment}");
+    assert_eq!(parts[0]["depends-on"], serde_json::json!([]), "{amendment}");
+    assert_eq!(parts[1]["id"], "PART-003", "{amendment}");
+    assert_eq!(parts[1]["depends-on"], serde_json::json!([]), "{amendment}");
+    provider.model.assert_exhausted();
+
+    // when a slicing turn opens, current `uses` are shown in `## Current
+    // plan` and a join's `uses` merges in design order and re-derives
+    // `depends-on`
+    let slicing = r#"{"parts": [], "joins": [
+        {"part": "PART-001", "requirements": ["REQ-005", "REQ-006"], "uses": ["orders.line"]}
+    ], "briefs": [
+        {"part": "PART-001", "brief": ["Delivers sign-in, its session, and the per-caller limit."]}
+    ]}"#;
+    let (provider, _) = limited([slicing]);
+    let using_plan = String::from_utf8_lossy(PLAN).replace(
+        "\"types\": [],\n      \"uses\": [],\n      \"depends-on\": []",
+        "\"types\": [],\n      \"uses\": [\"orders.order\"],\n      \"depends-on\": []",
+    );
+    seed(&provider.files, SPEC, DESIGN, using_plan.as_bytes());
+
+    cli_ok(&provider, &["emery", "amend", DOCS, "--config", PROJECT_CONFIG]).await;
+
+    let turn = &provider.model.seen()[2];
+    let request = turn.messages.join("\n");
+    assert!(
+        request.contains(
+            "## Current plan\n\n- `PART-001` `authentication` — REQ-001, REQ-002 — uses: \
+             `orders.order` — depends on: `orders`\n- `PART-002` `orders` — REQ-003, REQ-004 — \
+             types: `orders.line`, `orders.order`\n"
+        ),
+        "{request}"
+    );
+    let (_, amendment) = staged_amendment(&provider);
+    let parts = amendment["plan"]["parts"].as_array().expect("parts");
+    assert_eq!(parts.len(), 2, "{amendment}");
+    assert_eq!(parts[0]["uses"], serde_json::json!(["orders.line", "orders.order"]), "{amendment}");
+    assert_eq!(parts[0]["depends-on"], serde_json::json!(["PART-002"]), "{amendment}");
+    provider.model.assert_exhausted();
+}
+
 // The paragraphs of a base design's `## APIs and integrations` that describe
 // the order requirements.
 const CONSUMED: &str = "Cancellations arrive as a message, which REQ-004 consumes.";
@@ -525,7 +621,7 @@ const STORED: &str =
 fn describing(apis: &[&str]) -> String {
     let blocks: Vec<String> = apis.iter().map(|text| format!(r#"{{"text": "{text}"}}"#)).collect();
     format!(
-        r#"{{"emery": 9, "parent": null, "preamble": [], "sections": [
+        r#"{{"emery": 10, "parent": null, "preamble": [], "sections": [
             {{"kind": "overview", "blocks": [{{"text": "{OVERVIEW}"}}]}},
             {DOMAIN_MODEL},
             {{"kind": "apis", "blocks": [{}]}}
@@ -683,7 +779,7 @@ async fn amend_retired_overview() {
     let cited = "Sign-in issues a session; orders are placed (REQ-003) and cancelled (REQ-004) \
                  under it.";
     let base = format!(
-        r#"{{"emery": 9, "parent": null, "preamble": [], "sections": [
+        r#"{{"emery": 10, "parent": null, "preamble": [], "sections": [
             {{"kind": "overview", "blocks": [{{"text": "{cited}"}}]}},
             {DOMAIN_MODEL}
         ]}}"#
@@ -740,7 +836,7 @@ async fn amend_revised_dropped() {
     let cited = "Sign-in issues a session; orders are placed (REQ-003) and cancelled (REQ-004) \
                  under it.";
     let base = format!(
-        r#"{{"emery": 9, "parent": null, "preamble": [], "sections": [
+        r#"{{"emery": 10, "parent": null, "preamble": [], "sections": [
             {{"kind": "overview", "blocks": [{{"text": "{cited}"}}]}},
             {DOMAIN_MODEL},
             {{"kind": "apis", "blocks": [{{"text": "{STORED}"}}]}}
@@ -1009,7 +1105,7 @@ async fn amend_anchored() {
 #[tokio::test]
 async fn amend_moved() {
     let slicing = r#"{"parts": [
-        {"name": "reporting", "requirements": ["REQ-004"], "types": [], "depends-on": ["orders"],
+        {"name": "reporting", "requirements": ["REQ-004"], "types": [], "uses": ["orders.order"],
          "brief": ["Reports a cancellation; edits the cancel handler, so it compiles against `orders`."]}
     ], "joins": [], "briefs": [
         {"part": "PART-002", "brief": ["Delivers order creation for a signed-in caller; verified by placing an order under a session from `authentication`."]}
@@ -1041,8 +1137,8 @@ async fn amend_moved() {
     assert!(
         request.contains(
             "## Current plan\n\n- `PART-001` `authentication` — REQ-001, REQ-002\n- `PART-002` \
-             `orders` — REQ-003 — types: `orders.line`, `orders.order` — depends on: \
-             `authentication` — touched by this amendment\n\nA part marked touched"
+             `orders` — REQ-003 — types: `orders.line`, `orders.order` — touched by this \
+             amendment\n\nA part marked touched"
         ),
         "{request}"
     );
@@ -1092,7 +1188,7 @@ async fn amend_moved() {
         parts[2],
         serde_json::json!({
             "id": "PART-003", "name": "reporting", "requirements": ["REQ-004"],
-            "types": [], "depends-on": ["PART-002"],
+            "types": [], "uses": ["orders.order"], "depends-on": ["PART-002"],
             "brief": ["Reports a cancellation; edits the cancel handler, so it compiles against `orders`."]
         }),
         "{amendment}"
@@ -1111,9 +1207,9 @@ async fn amend_moved() {
     assert!(
         shown.contains(
             "### Part: orders [changed]\n\nID: PART-002\nRequirements: [REQ-003]\nTypes: \
-             [orders.line, orders.order]\nDepends on: [PART-001]\n\nDelivers order creation for \
-             a signed-in caller; verified by placing an order under a session from \
-             `authentication`.\n\n### Part: reporting [added]"
+             [orders.line, orders.order]\n\nDelivers order creation for a signed-in caller; \
+             verified by placing an order under a session from `authentication`.\n\n### Part: \
+             reporting [added]"
         ),
         "{shown}"
     );
@@ -1127,7 +1223,7 @@ async fn amend_moved() {
 #[tokio::test]
 async fn amend_rebrief_refused() {
     let placed = r#""parts": [
-        {"name": "reporting", "requirements": ["REQ-004"], "types": [], "depends-on": ["orders"],
+        {"name": "reporting", "requirements": ["REQ-004"], "types": [], "uses": ["orders.order"],
          "brief": ["Reports a cancellation."]}
     ], "joins": []"#;
     let refused = format!(
@@ -1229,7 +1325,7 @@ async fn amend_moved_part() {
     ]}"#;
     let slicing = r#"{"parts": [
         {"name": "reporting", "requirements": ["REQ-003", "REQ-004"],
-         "types": ["orders.line", "orders.order"], "depends-on": [], "brief": []}
+         "types": ["orders.line", "orders.order"], "uses": [], "brief": []}
     ], "joins": [], "briefs": []}"#;
     let mut provider = Provider::answering([grouping, draft, slicing]);
     provider.source.evidence.insert(
@@ -1276,7 +1372,7 @@ async fn amend_moved_part() {
         parts[1],
         serde_json::json!({
             "id": "PART-003", "name": "reporting", "requirements": ["REQ-003", "REQ-004"],
-            "types": ["orders.line", "orders.order"], "depends-on": [], "brief": []
+            "types": ["orders.line", "orders.order"], "uses": [], "depends-on": [], "brief": []
         }),
         "{amendment}"
     );
@@ -1307,7 +1403,7 @@ async fn amend_moved_part() {
 #[tokio::test]
 async fn amend_sliced() {
     let slicing = r#"{"parts": [
-        {"name": "rate-limit", "requirements": ["REQ-005", "REQ-006"], "types": [], "depends-on": ["orders"],
+        {"name": "rate-limit", "requirements": ["REQ-005", "REQ-006"], "types": [], "uses": ["orders.order"],
          "brief": ["Delivers the per-caller limit on order placement; edits the order handler, so it compiles against `orders`."]}
     ], "joins": [], "briefs": []}"#;
     let (provider, revision) = limited([slicing]);
@@ -1366,7 +1462,7 @@ async fn amend_sliced() {
         parts[2],
         serde_json::json!({
             "id": "PART-003", "name": "rate-limit", "requirements": ["REQ-005", "REQ-006"],
-            "types": [], "depends-on": ["PART-002"],
+            "types": [], "uses": ["orders.order"], "depends-on": ["PART-002"],
             "brief": ["Delivers the per-caller limit on order placement; edits the order handler, so it compiles against `orders`."]
         }),
         "{amendment}"
@@ -1430,10 +1526,10 @@ async fn amend_sliced_joined() {
 #[tokio::test]
 async fn amend_sliced_refused() {
     let refused = r#"{"parts": [
-        {"name": "orders", "requirements": ["REQ-005"], "types": [], "depends-on": [], "brief": []}
+        {"name": "orders", "requirements": ["REQ-005"], "types": [], "uses": [], "brief": []}
     ], "joins": [
         {"part": "PART-001", "requirements": ["REQ-003"]},
-        {"part": "PART-002", "requirements": ["REQ-005", "REQ-006"]}
+        {"part": "PART-002", "requirements": ["REQ-005", "REQ-006"], "uses": ["orders.order"]}
     ], "briefs": [
         {"part": "PART-001", "brief": ["Signs a caller in and places an order."]},
         {"part": "PART-002", "brief": ["Delivers orders and their rate limit."]}
@@ -1452,6 +1548,7 @@ async fn amend_sliced_refused() {
         "`joins` `PART-001`: `REQ-003` is not open to this amendment; the current plan places \
          it, and it stays",
         "`REQ-005` appears in more than one part",
+        "part `orders` uses `orders.order`, which it owns",
     ] {
         assert!(finding.contains(expected), "{expected}: {finding}");
     }
@@ -1501,8 +1598,8 @@ async fn amend_sliced_types() {
         ]}}"#
     );
     let slicing = r#"{"parts": [
-        {"name": "rate-limit", "requirements": ["REQ-005"], "types": ["rate-limit.counter"], "depends-on": ["orders"], "brief": []},
-        {"name": "audit", "requirements": ["REQ-006"], "types": ["audit.entry"], "depends-on": [], "brief": []}
+        {"name": "rate-limit", "requirements": ["REQ-005"], "types": ["rate-limit.counter"], "uses": ["orders.order"], "brief": []},
+        {"name": "audit", "requirements": ["REQ-006"], "types": ["audit.entry"], "uses": [], "brief": []}
     ], "joins": [], "briefs": []}"#;
     let mut provider = Provider::answering([grouping, draft, design.as_str(), slicing]);
     provider.source.evidence.insert(
@@ -1754,7 +1851,7 @@ fn designed() -> (Provider, String) {
         ]}}"#
     );
     let slicing = r#"{"parts": [
-        {"name": "secrets", "requirements": ["REQ-005"], "types": [], "depends-on": [],
+        {"name": "secrets", "requirements": ["REQ-005"], "types": [], "uses": [],
          "brief": ["Delivers the secret read every handler makes at use; verified against a fake store."]}
     ], "joins": [], "briefs": []}"#;
     let mut provider = Provider::answering([grouping, draft, design.as_str(), slicing]);

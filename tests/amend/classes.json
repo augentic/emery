@@ -1,5 +1,5 @@
 {
-  "emery": 9,
+  "emery": 10,
   "base": {
     "revision": "<revision>",
     "commit": "9f8e7d6c5b4a39281706f5e4d3c2b1a0f9e8d7c6"
@@ -81,7 +81,7 @@
     }
   ],
   "spec": {
-    "emery": 9,
+    "emery": 10,
     "parent": "<revision>",
     "preamble": [
       "Sign-in, its session, and orders over both."
@@ -254,7 +254,7 @@
     ]
   },
   "design": {
-    "emery": 9,
+    "emery": 10,
     "parent": "<revision>",
     "preamble": [],
     "sections": [
@@ -288,7 +288,7 @@
     ]
   },
   "plan": {
-    "emery": 9,
+    "emery": 10,
     "parent": "<revision>",
     "preamble": [
       "Two slices: sign-in with its session, and orders over it."
@@ -302,6 +302,7 @@
           "REQ-002"
         ],
         "types": [],
+        "uses": [],
         "depends-on": [],
         "brief": [
           "Delivers sign-in and the session it issues; a session cannot be verified without a sign-in to issue it, so the two stems are one build."
@@ -319,9 +320,8 @@
           "orders.line",
           "orders.order"
         ],
-        "depends-on": [
-          "PART-001"
-        ],
+        "uses": [],
+        "depends-on": [],
         "brief": [
           "Delivers order creation and cancellation for a signed-in caller; verified by placing and cancelling an order under a session from `authentication`."
         ]

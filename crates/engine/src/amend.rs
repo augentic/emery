@@ -31,7 +31,7 @@ pub use crate::revision::{
 use crate::revision::{Design, EMERY};
 use crate::specify::{
     BASELINE, Bound, DesignAmend, Extracted, GroupingBrief, RepositorySource, SourceConfig,
-    SpecBrief,
+    SpecBrief, Types,
 };
 use crate::vcs::{BuildRepo, TargetRef};
 use crate::{Files, apply, store};
@@ -71,9 +71,10 @@ use crate::{Files, apply, store};
 /// and names, each retired requirement leaves its part, one restated under
 /// another stem leaves it for the part of its new stem, an added one joins
 /// the part holding another its trigger reaches or the part of its stem,
-/// a part left with none is removed and the parts that depended on it
-/// depend on what it depended on, and a data type the design holds that no
-/// part owns goes to the one part the change touched. What no rule
+/// a part left with none is removed, a data type the design holds that no
+/// part owns goes to the one part the change touched, and inter-part
+/// dependencies are re-derived from the types each part owns and uses.
+/// What no rule
 /// decides is put to one slicing turn over the current parts: the
 /// requirements of a stem no part holds, and a type key no part owns
 /// where no part or more than one changed; the turn drafts a new part or
@@ -182,7 +183,7 @@ pub async fn amend<P: Model + Source + StateStore + BlobStore + Plugins + Vcs + 
     // the amended plan over the two: what the change adds and moves placed
     // by code where a rule decides, and the rest by one slicing turn over
     // the current parts
-    let types = design.data_types();
+    let types = Types::of(&design);
     let plan = match pruned.assemble(&spec, &types, &drafted)? {
         Assembled::Settled(plan) => plan,
         Assembled::Open(brief) => brief.judge(provider).await?,

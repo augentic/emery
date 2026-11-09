@@ -395,6 +395,7 @@ fn part_differences(before: &Part, after: &Part) -> Vec<&'static str> {
         name,
         requirements,
         types,
+        uses,
         depends_on,
         brief,
     } = before;
@@ -402,6 +403,7 @@ fn part_differences(before: &Part, after: &Part) -> Vec<&'static str> {
         ("name", *name != after.name),
         ("requirements", *requirements != after.requirements),
         ("types", *types != after.types),
+        ("uses", *uses != after.uses),
         ("depends-on", *depends_on != after.depends_on),
         (BRIEF, *brief != after.brief),
     ]

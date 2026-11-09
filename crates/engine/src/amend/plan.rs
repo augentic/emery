@@ -12,13 +12,13 @@
 //! over the current parts for what no rule placed: a stem no part holds,
 //! a type key no part owns.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeSet;
 
 use omnia_sdk::{Error, server_error};
 
 use crate::brief::Review;
-use crate::revision::{Change, ChangeClass, EMERY, Part, PartId, Plan, ReqId, Spec};
-use crate::specify::{Basis, Floors, Open, PartAmend, drafts};
+use crate::revision::{Change, ChangeClass, EMERY, Part, Plan, ReqId, Spec};
+use crate::specify::{Basis, Draft, Floors, Open, PartAmend, Types};
 
 // The base plan with the requirements that leave their parts taken out and
 // any part they emptied removed, ready to place what the amendment adds
@@ -36,9 +36,7 @@ impl<'a> Pruned<'a> {
     // moves under another stem from `spec`, under `parent` as the revision
     // amended.
     //
-    // A part every requirement of which leaves is removed, and every part
-    // that depended on it depends on what it depended on instead,
-    // transitively, each list deduplicated and sorted. The types a part
+    // A part every requirement of which leaves is removed. The types a part
     // emptied by retirement owned are `orphaned`, so they leave the design
     // before the design turn; the types of a part emptied by a move stay in
     // the design and are owned again by `assemble`.
@@ -70,17 +68,18 @@ impl<'a> Pruned<'a> {
         }
     }
 
-    // Places into the pruned parts what the amendment adds and moves, and
-    // owns the design's data `types`, under the rules of the plan.
+    // Places into the pruned parts what the amendment adds and moves, owns
+    // the design's data `types`, and derives inter-part dependencies from
+    // the types each part owns and uses, under the rules of the plan.
     //
     // Each requirement of `spec` no part holds is placed by code where a
     // rule decides: into the part holding another requirement its trigger
     // reaches, else the part holding its stem. A type key the design no
-    // longer holds leaves its part, and one no part owns is owned by the
-    // one part whose requirements this amendment changed against `base`,
-    // where nothing else is open. What no rule decides is open: the
-    // requirements of a stem no part holds, and a type key where no part
-    // or more than one changed.
+    // longer holds leaves its part's `types` and `uses`, and one no part
+    // owns is owned by the one part whose requirements this amendment
+    // changed against `base`, where nothing else is open. What no rule
+    // decides is open: the requirements of a stem no part holds, and a type
+    // key where no part or more than one changed.
     //
     // Returns the plan `Settled` where nothing is open, held to the plan's
     // rules, and the slicing turn's brief `Open` over the current parts
@@ -89,11 +88,12 @@ impl<'a> Pruned<'a> {
     // Returns `Error::ServerError` for a settled plan the rules refuse, since
     // nothing of it is the model's.
     pub fn assemble(
-        mut self, spec: &'a Spec, types: &'a [String], drafted: &'a [Basis<'a>],
+        mut self, spec: &'a Spec, types: &'a Types, drafted: &'a [Basis<'a>],
     ) -> Result<Assembled<'a>, Error> {
         let floors = Floors::from_spec(spec);
         let mut open = self.place(spec, &floors);
         self.own(types, &mut open);
+        types.depend(&mut self.parts);
         if !open.is_empty() {
             return Ok(Assembled::Open(PartAmend::new(
                 self.base,
@@ -150,18 +150,18 @@ impl<'a> Pruned<'a> {
     }
 
     // Owns the design's data `types` across the parts: a key the design
-    // dropped leaves its part, and one no part owns goes to the one part
-    // whose requirements differ from `base`'s, in the design's order, where
-    // no requirement is open and exactly one part changed; otherwise the
-    // unowned keys are `open`.
-    fn own(&mut self, types: &[String], open: &mut Open) {
+    // dropped leaves its part's `types` and `uses`, and one no part owns
+    // goes to the one part whose requirements differ from `base`'s, in the
+    // design's order, where no requirement is open and exactly one part
+    // changed; otherwise the unowned keys are `open`.
+    fn own(&mut self, types: &Types, open: &mut Open) {
         for part in &mut self.parts {
-            part.types.retain(|key| types.contains(key));
+            types.settle(&mut part.types, &mut part.uses);
         }
         let owned: BTreeSet<&str> =
             self.parts.iter().flat_map(|part| part.types.iter().map(String::as_str)).collect();
         let unowned: Vec<String> =
-            types.iter().filter(|key| !owned.contains(key.as_str())).cloned().collect();
+            types.keys.iter().filter(|key| !owned.contains(key.as_str())).cloned().collect();
         if unowned.is_empty() {
             return;
         }
@@ -176,7 +176,7 @@ impl<'a> Pruned<'a> {
                 .collect();
             if let [part] = changed.as_mut_slice() {
                 part.types.extend(unowned);
-                part.types = types.iter().filter(|key| part.types.contains(key)).cloned().collect();
+                types.settle(&mut part.types, &mut part.uses);
                 return;
             }
         }
@@ -192,24 +192,22 @@ pub enum Assembled<'a> {
 
 // Holds `parts` to the plan's rules over `floors` and the design's `types`;
 // a break is the engine's, since nothing of the plan is the model's.
-fn held(parts: &[Part], floors: &Floors<'_>, types: &[String]) -> Result<(), Error> {
+fn held(parts: &[Part], floors: &Floors<'_>, types: &Types) -> Result<(), Error> {
     let mut review = Review::default();
-    floors.check(types, &drafts(parts), &mut review);
+    floors.check(types, &Draft::all(parts), &mut review);
     review.verdict().map_err(|findings| {
         server_error!("the amended plan breaks the plan's rules:\n{}", findings.join("\n"))
     })
 }
 
 // `parts` less `leaving`: a part every requirement of which leaves is
-// removed, and every part that depended on it depends on what it depended
-// on instead, transitively, each list deduplicated and sorted. The kept
-// parts are answered as adjusted, the removed as they were.
+// removed. The kept parts are answered with `leaving` taken out and
+// `depends_on` cleared for `assemble` to derive; the removed are answered
+// as they were.
 fn without<'a>(parts: &'a [Part], leaving: &BTreeSet<ReqId>) -> (Vec<Part>, Vec<&'a Part>) {
     let (removed, kept): (Vec<&Part>, Vec<&Part>) = parts.iter().partition(|part| {
         !part.requirements.is_empty() && part.requirements.iter().all(|id| leaving.contains(id))
     });
-    let replaced: BTreeMap<PartId, &[PartId]> =
-        removed.iter().map(|part| (part.id, part.depends_on.as_slice())).collect();
 
     let kept = kept
         .into_iter()
@@ -223,30 +221,10 @@ fn without<'a>(parts: &'a [Part], leaving: &BTreeSet<ReqId>) -> (Vec<Part>, Vec<
                 .filter(|id| !leaving.contains(id))
                 .collect(),
             types: part.types.clone(),
-            depends_on: spliced(part, &replaced),
+            uses: part.uses.clone(),
+            depends_on: Vec::new(),
             brief: part.brief.clone(),
         })
         .collect();
     (kept, removed)
-}
-
-// The dependencies of `part` with each removed part replaced by its own,
-// until none remain, deduplicated and sorted.
-fn spliced(part: &Part, replaced: &BTreeMap<PartId, &[PartId]>) -> Vec<PartId> {
-    let mut pending = part.depends_on.clone();
-    let mut visited = BTreeSet::new();
-    let mut dependencies = BTreeSet::new();
-    while let Some(id) = pending.pop() {
-        if !visited.insert(id) {
-            continue;
-        }
-        match replaced.get(&id) {
-            Some(own) => pending.extend(own.iter().copied()),
-            None => {
-                dependencies.insert(id);
-            }
-        }
-    }
-    dependencies.remove(&part.id);
-    dependencies.into_iter().collect()
 }

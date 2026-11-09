@@ -3530,6 +3530,7 @@ fn budgeted_revision(subs: &[(&str, usize, Option<Trigger>)]) -> (Provider, Stri
             "name": "authentication",
             "requirements": ["REQ-001"],
             "types": [],
+            "uses": [],
             "depends-on": [],
             "brief": ["Delivers sign-in."]
         },
@@ -3538,6 +3539,7 @@ fn budgeted_revision(subs: &[(&str, usize, Option<Trigger>)]) -> (Provider, Stri
             "name": "orders",
             "requirements": order_ids,
             "types": ["orders.line", "orders.order"],
+            "uses": [],
             "depends-on": ["PART-001"],
             "brief": ["Delivers orders over sign-in."]
         }

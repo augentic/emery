@@ -2,7 +2,7 @@
 //!
 //! A [`Plan`] contains introductory paragraphs and ordered [`Part`] records.
 //! Each part is a subset of the specification that can be built on its own,
-//! with the design types it owns and the parts built before it.
+//! with the design types it owns and uses and the parts built before it.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::{self, Display, Formatter};
@@ -13,6 +13,7 @@ use crate::revision::{self, ID, PartId, ReqId, Requirement, Spec};
 
 pub const REQUIREMENTS: &str = "Requirements:";
 pub const TYPES: &str = "Types:";
+pub const USES: &str = "Uses:";
 pub const DEPENDS_ON: &str = "Depends on:";
 
 const HEADING: &str = "## Part:";
@@ -206,6 +207,8 @@ pub struct Part {
     pub requirements: Vec<ReqId>,
     // In the design's order.
     pub types: Vec<String>,
+    // In the design's order.
+    pub uses: Vec<String>,
     // Acyclic, in id order.
     pub depends_on: Vec<PartId>,
     pub brief: Vec<String>,
@@ -224,10 +227,14 @@ impl Part {
     pub fn write_lists(&self, f: &mut Formatter<'_>) -> fmt::Result {
         revision::write_list(f, REQUIREMENTS, &self.requirements)?;
 
-        // ownership and order, where there is any
+        // ownership, uses, and order, where there is any
         if !self.types.is_empty() {
             f.write_str("\n")?;
             revision::write_list(f, TYPES, &self.types)?;
+        }
+        if !self.uses.is_empty() {
+            f.write_str("\n")?;
+            revision::write_list(f, USES, &self.uses)?;
         }
         if !self.depends_on.is_empty() {
             f.write_str("\n")?;

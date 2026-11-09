@@ -1851,7 +1851,7 @@ async fn dishonest_design() {
 
     let id = staged(&provider.storage);
     let rendered = format!(
-        "---\nemery: 9\nrevision: {id}\n---\n\n# Design\n\n## Overview\n\n\
+        "---\nemery: 10\nrevision: {id}\n---\n\n# Design\n\n## Overview\n\n\
          Requests arrive (from the browser) and (from docs) they route.\n\n\
          ## Domain model\n\nThe greeting payload is one string field.\n\n\
          Type: greeting.type\n```\n{signature}\n```\n"
@@ -2214,7 +2214,7 @@ async fn type_mechanism() {
     ]}"#;
     let slicing = r#"{"preamble": [], "parts": [
         {"name": "authentication", "requirements": ["REQ-001", "REQ-002"]},
-        {"name": "orders", "requirements": ["REQ-003", "REQ-004"], "types": ["orders.order"], "depends-on": ["authentication"]}
+        {"name": "orders", "requirements": ["REQ-003", "REQ-004"], "types": ["orders.order"], "uses": []}
     ]}"#;
     let grouping = separate_grouping(4);
     let mut provider = Provider::answering([grouping.as_str(), SLICED_SPEC, design, slicing]);
@@ -2232,6 +2232,11 @@ async fn type_mechanism() {
         schema["$defs"]["Draft"]["properties"]["types"]["items"]["enum"],
         serde_json::json!(["orders.order"]),
         "the mechanism key is not offered"
+    );
+    assert_eq!(
+        schema["$defs"]["Draft"]["properties"]["uses"]["items"]["enum"],
+        serde_json::json!(["orders.order"]),
+        "the mechanism key is not offered in `uses`"
     );
     let request = slicing.messages.join("\n");
     assert!(request.contains("- `orders.order`\n"), "{request}");
@@ -2587,7 +2592,7 @@ async fn trigger_scoped_to_stem() {
 async fn sliced() {
     let refused = r#"{"preamble": [], "parts": [
         {"name": "authentication", "requirements": ["REQ-001", "REQ-002"]},
-        {"name": "orders", "requirements": ["REQ-003"], "types": ["orders.order", "orders.line"], "depends-on": ["authentication"]}
+        {"name": "orders", "requirements": ["REQ-003"], "types": ["orders.order", "orders.line"], "uses": []}
     ]}"#;
     let grouping = separate_grouping(4);
     let mut provider = Provider::answering([
@@ -2606,8 +2611,8 @@ async fn sliced() {
     let committed: Value = serde_json::from_slice(&resp.stdout).expect("one JSON envelope");
     assert_eq!(
         committed["waves"],
-        serde_json::json!([["PART-001"], ["PART-002"]]),
-        "a chain of two is two waves: {committed}"
+        serde_json::json!([["PART-001", "PART-002"]]),
+        "two parts sharing no type are one wave: {committed}"
     );
 
     // the slicing request carries the stems, the keys, and the requirement outline
@@ -2630,6 +2635,11 @@ async fn sliced() {
         draft["types"]["items"]["enum"],
         serde_json::json!(["orders.line", "orders.order"]),
         "the design's type keys ride the schema in key order"
+    );
+    assert_eq!(
+        draft["uses"]["items"]["enum"],
+        serde_json::json!(["orders.line", "orders.order"]),
+        "the design's type keys ride `uses` in key order"
     );
     let request = slicing.messages.join("\n");
     assert!(request.contains("- `auth` — REQ-001\n"), "{request}");
@@ -2808,15 +2818,15 @@ async fn invalid_plan() {
             "part `all` is drafted more than once",
         ),
         (
-            all(r#", "depends-on": ["nothing"]"#),
-            "part `all` depends on `nothing`, which is not a part",
+            all(r#", "uses": ["orders.receipt"]"#),
+            "part `all` uses `orders.receipt`, which is not a type in the design",
         ),
-        (all(r#", "depends-on": ["all"]"#), "part `all` depends on itself"),
+        (all(r#", "uses": ["orders.order"]"#), "part `all` uses `orders.order`, which it owns"),
         (
             plan(
-                r#"{"name": "authentication", "requirements": ["REQ-001", "REQ-002"], "depends-on": ["orders"]}, {"name": "orders", "requirements": ["REQ-003", "REQ-004"], "types": ["orders.order", "orders.line"], "depends-on": ["authentication"]}"#,
+                r#"{"name": "authentication", "requirements": ["REQ-001", "REQ-002"], "types": ["orders.line"], "uses": ["orders.order"]}, {"name": "orders", "requirements": ["REQ-003", "REQ-004"], "types": ["orders.order"], "uses": ["orders.line"]}"#,
             ),
-            "parts `authentication`, `orders` cannot be ordered",
+            "parts `authentication`, `orders` cannot be ordered: the edges derived from `orders.line`, `orders.order` form a cycle",
         ),
         (
             plan(
@@ -2858,6 +2868,217 @@ async fn invalid_plan() {
         assert_message(&envelope, fragment);
         provider.model.assert_exhausted();
     }
+}
+
+// A `uses` entry naming a key absent from the design is refused with the key named.
+#[tokio::test]
+async fn uses_not_a_type() {
+    let refused = r#"{"preamble": [], "parts": [
+        {"name": "authentication", "requirements": ["REQ-001", "REQ-002"], "uses": ["orders.receipt"]},
+        {"name": "orders", "requirements": ["REQ-003", "REQ-004"], "types": ["orders.order", "orders.line"]}
+    ]}"#;
+    let grouping = separate_grouping(4);
+    let mut provider = Provider::answering([
+        grouping.as_str(),
+        SLICED_SPEC,
+        SLICED_DESIGN,
+        refused,
+        SLICING_ANSWER,
+    ]);
+    provider.source.evidence.insert("docs".to_string(), Ok(sliced_evidence()));
+
+    cli_ok(&provider, &["emery", "specify", &reference("docs")]).await;
+
+    let check = &provider.model.exchanges()[3];
+    let correction = check.outcome.as_ref().expect_err("unknown `uses` key is rejected");
+    assert!(
+        correction.contains(
+            "part `authentication` uses `orders.receipt`, which is not a type in the design"
+        ),
+        "{correction}"
+    );
+    provider.model.assert_exhausted();
+}
+
+// A `uses` entry naming a key the same part owns, or a key no part owns, is refused.
+#[tokio::test]
+async fn uses_owned() {
+    let self_owned = r#"{"preamble": [], "parts": [
+        {"name": "authentication", "requirements": ["REQ-001", "REQ-002"]},
+        {"name": "orders", "requirements": ["REQ-003", "REQ-004"], "types": ["orders.order", "orders.line"], "uses": ["orders.order"]}
+    ]}"#;
+    let unowned = r#"{"preamble": [], "parts": [
+        {"name": "authentication", "requirements": ["REQ-001", "REQ-002"], "uses": ["orders.order"]},
+        {"name": "orders", "requirements": ["REQ-003", "REQ-004"], "types": ["orders.line"], "brief": ["Uses: nothing"]}
+    ]}"#;
+    let grouping = separate_grouping(4);
+    let mut provider = Provider::answering([
+        grouping.as_str(),
+        SLICED_SPEC,
+        SLICED_DESIGN,
+        self_owned,
+        unowned,
+        SLICING_ANSWER,
+    ]);
+    provider.source.evidence.insert("docs".to_string(), Ok(sliced_evidence()));
+
+    cli_ok(&provider, &["emery", "specify", &reference("docs")]).await;
+
+    let first = &provider.model.exchanges()[3];
+    let correction = first.outcome.as_ref().expect_err("self-owned `uses` key is rejected");
+    assert!(
+        correction.contains("part `orders` uses `orders.order`, which it owns"),
+        "{correction}"
+    );
+    let second = &provider.model.exchanges()[4];
+    let correction = second.outcome.as_ref().expect_err("unowned `uses` key is rejected");
+    assert!(
+        correction.contains("part `authentication` uses `orders.order`, which is owned by no part"),
+        "{correction}"
+    );
+    assert!(
+        correction.contains(
+            "part `orders` brief: a paragraph line opens with the reserved marker `Uses:`"
+        ),
+        "{correction}"
+    );
+    provider.model.assert_exhausted();
+}
+
+// Two parts whose owned types name each other in their signatures form a cycle:
+// the gate quotes both keys and asks that they be owned by one part.
+#[tokio::test]
+async fn edges_cyclic() {
+    let mut claims = sliced_evidence().claims;
+    claims[4] =
+        claim(ClaimKind::Type, "orders.order", ("signature", "interface Order { line: Line }"));
+    claims[5] =
+        claim(ClaimKind::Type, "orders.line", ("signature", "interface Line { order: Order }"));
+    let refused = r#"{"preamble": [], "parts": [
+        {"name": "authentication", "requirements": ["REQ-001", "REQ-002"], "types": ["orders.line"]},
+        {"name": "orders", "requirements": ["REQ-003", "REQ-004"], "types": ["orders.order"]}
+    ]}"#;
+    let grouping = separate_grouping(4);
+    let mut provider = Provider::answering([
+        grouping.as_str(),
+        SLICED_SPEC,
+        SLICED_DESIGN,
+        refused,
+        SLICING_ANSWER,
+    ]);
+    provider.source.evidence.insert("docs".to_string(), Ok(evidence(claims)));
+
+    cli_ok(&provider, &["emery", "specify", &reference("docs")]).await;
+
+    let check = &provider.model.exchanges()[3];
+    let correction = check.outcome.as_ref().expect_err("mutual type references across parts cycle");
+    assert!(
+        correction.contains(
+            "parts `authentication`, `orders` cannot be ordered: the edges derived from \
+             `orders.line`, `orders.order` form a cycle; own types that name each other in one \
+             part"
+        ),
+        "{correction}"
+    );
+    provider.model.assert_exhausted();
+}
+
+// A part owning a type whose signature names another part's declared type
+// derives a dependency onto that owner with no `uses` answered, and the brief
+// lists the cross-type reference under `## Type keys`.
+#[tokio::test]
+async fn edges_derived() {
+    let mut claims = sliced_evidence().claims;
+    claims[4] = claim(
+        ClaimKind::Type,
+        "orders.order",
+        ("signature", "interface Order { id: string; credential: Credential; lines: Line[] }"),
+    );
+    claims.push(claim(
+        ClaimKind::Type,
+        "auth.credential",
+        ("signature", "interface Credential { token: string }"),
+    ));
+    let design = r#"{"preamble": [], "sections": [
+        {"kind": "overview", "blocks": [{"text": "Sign-in issues a session; orders are placed and cancelled under it."}]},
+        {"kind": "domain-model", "blocks": [
+            {"type": {"key": "auth.credential", "role": "data"}},
+            {"type": {"key": "orders.order", "role": "data"}},
+            {"type": {"key": "orders.line", "role": "data"}}
+        ]}
+    ]}"#;
+    let slicing = r#"{"preamble": [], "parts": [
+        {"name": "authentication", "requirements": ["REQ-001", "REQ-002"], "types": ["auth.credential"]},
+        {"name": "orders", "requirements": ["REQ-003", "REQ-004"], "types": ["orders.order", "orders.line"]}
+    ]}"#;
+    let grouping = separate_grouping(4);
+    let mut provider = Provider::answering([grouping.as_str(), SLICED_SPEC, design, slicing]);
+    provider.source.evidence.insert("docs".to_string(), Ok(evidence(claims)));
+
+    let resp =
+        cli_ok(&provider, &["emery", "--format", "json", "specify", &reference("docs")]).await;
+
+    let committed: Value = serde_json::from_slice(&resp.stdout).expect("one JSON envelope");
+    assert_eq!(
+        committed["waves"],
+        serde_json::json!([["PART-001"], ["PART-002"]]),
+        "the derived edge serialises `orders` after `authentication`: {committed}"
+    );
+    let request = provider.model.seen()[3].messages.join("\n");
+    assert!(
+        request.contains("- `orders.order` — names `auth.credential`, `orders.line`\n"),
+        "the brief lists the referenced keys: {request}"
+    );
+    let id = staged(&provider.storage);
+    let plan: Value = serde_json::from_slice(&staged_document(&provider.storage, &id, "plan.json"))
+        .expect("the committed plan is JSON");
+    assert_eq!(plan["parts"][1]["uses"], serde_json::json!([]));
+    assert_eq!(plan["parts"][1]["depends-on"], serde_json::json!(["PART-001"]));
+    let rendered = shown(&provider, "plan").await;
+    assert!(
+        rendered.contains("Types: [orders.line, orders.order]\nDepends on: [PART-001]"),
+        "{rendered}"
+    );
+    provider.model.assert_exhausted();
+}
+
+// A part owning no type that lists another part's keys in `uses` stores `uses`
+// in design order, derives the dependency onto their owner, and renders `Uses:`
+// before `Depends on:`.
+#[tokio::test]
+async fn edges_used() {
+    let slicing = r#"{"preamble": [], "parts": [
+        {"name": "authentication", "requirements": ["REQ-001", "REQ-002"], "types": ["orders.order", "orders.line"]},
+        {"name": "orders", "requirements": ["REQ-003", "REQ-004"], "uses": ["orders.order", "orders.line"]}
+    ]}"#;
+    let grouping = separate_grouping(4);
+    let mut provider =
+        Provider::answering([grouping.as_str(), SLICED_SPEC, SLICED_DESIGN, slicing]);
+    provider.source.evidence.insert("docs".to_string(), Ok(sliced_evidence()));
+
+    let resp =
+        cli_ok(&provider, &["emery", "--format", "json", "specify", &reference("docs")]).await;
+
+    let committed: Value = serde_json::from_slice(&resp.stdout).expect("one JSON envelope");
+    assert_eq!(committed["waves"], serde_json::json!([["PART-001"], ["PART-002"]]), "{committed}");
+    let id = staged(&provider.storage);
+    let plan: Value = serde_json::from_slice(&staged_document(&provider.storage, &id, "plan.json"))
+        .expect("the committed plan is JSON");
+    assert_eq!(
+        plan["parts"][1]["uses"],
+        serde_json::json!(["orders.line", "orders.order"]),
+        "`uses` is stored in design order"
+    );
+    assert_eq!(plan["parts"][1]["depends-on"], serde_json::json!(["PART-001"]));
+    let rendered = shown(&provider, "plan").await;
+    assert!(
+        rendered.contains(
+            "ID: PART-002\nRequirements: [REQ-003, REQ-004]\nUses: [orders.line, \
+             orders.order]\nDepends on: [PART-001]"
+        ),
+        "{rendered}"
+    );
+    provider.model.assert_exhausted();
 }
 
 // Sign-in, its session, and two order behaviours over two `type` claims: three
