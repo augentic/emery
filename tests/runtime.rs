@@ -1372,10 +1372,9 @@ async fn amend_applied_built() {
         )
     );
     assert_amended(&roots, &backends, &base, &parent, &over, &revision).await;
-    assert_eq!(
-        roots.git.branches(project),
-        [format!("emery/{revision}"), format!("emery/{parent}"), "main".to_owned()]
-    );
+    let mut labels = [format!("emery/{parent}"), format!("emery/{revision}"), "main".to_owned()];
+    labels.sort();
+    assert_eq!(roots.git.branches(project), labels);
     let run = roots.run_idle(&["--format", "json", "apply"], &backends).await;
     refused(&run, 2, "nothing-staged");
 
