@@ -12,7 +12,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::{self, Display, Formatter};
 
 use emery_adapter::{Trigger, is_kebab};
-use omnia_sdk::{Error, Model, server_error};
+use omnia_sdk::{Error, Model};
 use schemars::JsonSchema;
 use serde::Deserialize;
 use serde_json::{Value, json};
@@ -362,17 +362,12 @@ impl Brief for PartBrief<'_> {
     fn into_output(self, answer: PartAnswer) -> Result<Plan, Error> {
         let mut drafts = answer.parts;
         drafts.sort_by_key(|draft| draft.requirements.iter().min().copied());
-        let edges = self.types.owner_edges(&drafts);
-        let ids: BTreeMap<String, PartId> = drafts
-            .iter()
+        let mut parts: Vec<Part> = drafts
+            .into_iter()
             .zip(PartId::sequence())
-            .map(|(draft, id)| (draft.name.clone(), id))
+            .map(|(draft, id)| draft.into_part(id, &self.types))
             .collect();
-
-        let mut parts = Vec::with_capacity(drafts.len());
-        for (draft, id) in drafts.into_iter().zip(PartId::sequence()) {
-            parts.push(draft.into_part(id, &ids, &self.types, &edges)?);
-        }
+        self.types.depend(&mut parts);
 
         Ok(Plan {
             emery: EMERY,
@@ -389,20 +384,6 @@ fn quoted(names: impl IntoIterator<Item: Display>) -> String {
 
 fn listed(ids: &[ReqId]) -> String {
     ids.iter().map(ToString::to_string).collect::<Vec<_>>().join(", ")
-}
-
-// `parts` as the gate reads them.
-pub fn drafts(parts: &[Part]) -> Vec<Draft> {
-    parts
-        .iter()
-        .map(|part| Draft {
-            name: part.name.clone(),
-            requirements: part.requirements.clone(),
-            types: part.types.clone(),
-            uses: part.uses.clone(),
-            brief: part.brief.clone(),
-        })
-        .collect()
 }
 
 impl Display for PartBrief<'_> {
@@ -432,10 +413,7 @@ impl Display for PartBrief<'_> {
                  module declared it in the source.\n\n",
             )?;
             for key in &self.types.keys {
-                match self.types.references(key) {
-                    [] => writeln!(f, "- `{key}`")?,
-                    named => writeln!(f, "- `{key}` — names {}", quoted(named))?,
-                }
+                self.types.write_key(f, key)?;
             }
         }
 
@@ -495,41 +473,39 @@ pub struct Draft {
 }
 
 impl Draft {
-    // Lowers this draft to a numbered `Part`, its `depends_on` mapped from
-    // `edges` through `ids` and every list sorted and deduplicated, `types`
-    // and `uses` in the design's order.
-    fn into_part(
-        mut self, id: PartId, ids: &BTreeMap<String, PartId>, types: &Types, edges: &[Edge],
-    ) -> Result<Part, Error> {
+    // `parts` as the gate and edge derivation read them.
+    pub fn all(parts: &[Part]) -> Vec<Self> {
+        parts.iter().map(Self::from).collect()
+    }
+
+    // Lowers this draft to a numbered `Part`, its requirements sorted and
+    // deduplicated and its `types` and `uses` settled in the design's order.
+    fn into_part(mut self, id: PartId, types: &Types) -> Part {
         self.requirements.sort_unstable();
         self.requirements.dedup();
-        let owned = types.ordered(&self.types);
-        let uses = types.ordered(&self.uses);
-        let mut depends_on = edges
-            .iter()
-            .filter(|edge| edge.from == self.name)
-            .map(|edge| {
-                ids.get(&edge.to).copied().ok_or_else(|| {
-                    server_error!(
-                        "part `{}` depends on `{}`, which was accepted without a part",
-                        self.name,
-                        edge.to
-                    )
-                })
-            })
-            .collect::<Result<Vec<_>, _>>()?;
-        depends_on.sort_unstable();
-        depends_on.dedup();
+        types.settle(&mut self.types, &mut self.uses);
 
-        Ok(Part {
+        Part {
             id,
             name: self.name,
             requirements: self.requirements,
-            types: owned,
-            uses,
-            depends_on,
+            types: self.types,
+            uses: self.uses,
+            depends_on: Vec::new(),
             brief: self.brief,
-        })
+        }
+    }
+}
+
+impl From<&Part> for Draft {
+    fn from(part: &Part) -> Self {
+        Self {
+            name: part.name.clone(),
+            requirements: part.requirements.clone(),
+            types: part.types.clone(),
+            uses: part.uses.clone(),
+            brief: part.brief.clone(),
+        }
     }
 }
 

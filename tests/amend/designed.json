@@ -286,9 +286,7 @@
           "orders.order"
         ],
         "uses": [],
-        "depends-on": [
-          "PART-001"
-        ],
+        "depends-on": [],
         "brief": [
           "Delivers order creation and cancellation for a signed-in caller; verified by placing and cancelling an order under a session from `authentication`."
         ]

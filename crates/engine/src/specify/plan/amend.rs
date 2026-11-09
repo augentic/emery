@@ -8,7 +8,7 @@
 //! part the amendment touched, and of each one its answer joins into, so
 //! what a builder reads says what the part now delivers.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeSet;
 use std::fmt::{self, Display, Formatter};
 
 use omnia_sdk::{Error, server_error};
@@ -19,7 +19,7 @@ use serde_json::{Value, json};
 use crate::brief::{Brief, Review};
 use crate::revision::{EMERY, Part, PartId, Plan, ReqId};
 use crate::specify::basis::Basis;
-use crate::specify::plan::{Draft, Floors, PartBrief, Stem, Types, drafts, listed, quoted};
+use crate::specify::plan::{Draft, Floors, PartBrief, Stem, Types, listed, quoted};
 use crate::specify::sections::BasesSection;
 
 // What the slicing turn decides of an amended plan: what the code rules
@@ -116,15 +116,17 @@ impl<'a> PartAmend<'a> {
     }
 
     // The whole plan as the gate reads it: the current parts as `answer`
-    // joins them, then its new parts, every dependency by name.
+    // joins them, then its new parts.
     fn assembled(&self, answer: &PartAmendAnswer) -> Vec<Draft> {
-        let mut drafts = drafts(&self.parts);
+        let mut drafts = Draft::all(&self.parts);
         for join in &answer.joins {
             let Some(position) = self.parts.iter().position(|part| part.id == join.part) else {
                 continue;
             };
             drafts[position].requirements.extend(join.requirements.iter().copied());
             drafts[position].types.extend(join.types.iter().cloned());
+            drafts[position].uses.retain(|key| !join.types.contains(key));
+            drafts[position].uses.extend(join.uses.iter().cloned());
         }
         drafts.extend(answer.parts.iter().cloned());
         drafts
@@ -140,6 +142,9 @@ impl<'a> PartAmend<'a> {
             write!(f, "- `{}` `{}` — {}", part.id, part.name, listed(&part.requirements))?;
             if !part.types.is_empty() {
                 write!(f, " — types: {}", quoted(&part.types))?;
+            }
+            if !part.uses.is_empty() {
+                write!(f, " — uses: {}", quoted(&part.uses))?;
             }
             if !part.depends_on.is_empty() {
                 write!(f, " — depends on: {}", quoted(part.depends_on.iter().map(name)))?;
@@ -186,7 +191,7 @@ impl<'a> PartAmend<'a> {
                  source:\n\n",
             )?;
             for key in &self.open.keys {
-                writeln!(f, "- `{key}`")?;
+                self.types.write_key(f, key)?;
             }
             f.write_str("\n")?;
         }
@@ -253,12 +258,13 @@ impl Brief for PartAmend<'_> {
                     .insert("enum".to_owned(), json!(self.open.keys));
             }
         }
-        if self.types.is_empty() {
-            Self::at(schema, "/$defs/Draft/properties/uses")?
-                .insert("maxItems".to_owned(), json!(0));
-        } else {
-            Self::at(schema, "/$defs/Draft/properties/uses/items")?
-                .insert("enum".to_owned(), json!(self.types.keys));
+        for pointer in ["/$defs/Draft/properties/uses", "/$defs/Join/properties/uses"] {
+            if self.types.is_empty() {
+                Self::at(schema, pointer)?.insert("maxItems".to_owned(), json!(0));
+            } else {
+                Self::at(schema, &format!("{pointer}/items"))?
+                    .insert("enum".to_owned(), json!(self.types.keys));
+            }
         }
         Self::at(schema, "/$defs/Join/properties/part")?.insert("enum".to_owned(), parts.clone());
 
@@ -357,7 +363,8 @@ impl Brief for PartAmend<'_> {
             part.requirements.sort_unstable();
             part.requirements.dedup();
             part.types.extend(join.types);
-            part.types = self.types.ordered(&part.types);
+            part.uses.extend(join.uses);
+            self.types.settle(&mut part.types, &mut part.uses);
         }
         for rebrief in answer.briefs {
             let part = parts.iter_mut().find(|part| part.id == rebrief.part).ok_or_else(|| {
@@ -366,23 +373,14 @@ impl Brief for PartAmend<'_> {
             part.brief = rebrief.brief;
         }
 
-        let mut all = drafts(&parts);
         let mut drafts = answer.parts;
         drafts.sort_by_key(|draft| draft.requirements.iter().min().copied());
-        all.extend(drafts.iter().cloned());
-        let edges = self.types.owner_edges(&all);
         let mut free_ids = self.base.free_ids();
-        let mut ids: BTreeMap<String, PartId> =
-            parts.iter().map(|part| (part.name.clone(), part.id)).collect();
-        let mut numbered = Vec::with_capacity(drafts.len());
         for draft in drafts {
             let id = free_ids.next().ok_or_else(|| server_error!("the part ids are exhausted"))?;
-            ids.insert(draft.name.clone(), id);
-            numbered.push((draft, id));
+            parts.push(draft.into_part(id, self.types));
         }
-        for (draft, id) in numbered {
-            parts.push(draft.into_part(id, &ids, self.types, &edges)?);
-        }
+        self.types.depend(&mut parts);
 
         Ok(Plan {
             emery: EMERY,
@@ -453,4 +451,7 @@ pub struct Join {
     /// The open design type keys it owns.
     #[serde(default)]
     pub types: Vec<String>,
+    /// The design type keys it uses without owning.
+    #[serde(default)]
+    pub uses: Vec<String>,
 }

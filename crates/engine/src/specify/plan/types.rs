@@ -1,9 +1,10 @@
 //! Derives inter-part dependency edges from design data types and their signatures.
 
 use std::collections::{BTreeMap, BTreeSet};
+use std::fmt::{self, Formatter};
 
-use crate::revision::Design;
-use crate::specify::plan::Draft;
+use crate::revision::{Design, Part, PartId};
+use crate::specify::plan::{Draft, quoted};
 
 // Keywords that introduce a type or value's declared identifier in a signature.
 const KEYWORDS: &[&str] = &["interface", "type", "class", "struct", "enum", "const", "def"];
@@ -80,9 +81,25 @@ impl Types {
 
     // Returns the keys of `chosen` that exist in the design, deduplicated in
     // design order.
-    #[must_use]
-    pub fn ordered(&self, chosen: &[String]) -> Vec<String> {
+    fn ordered(&self, chosen: &[String]) -> Vec<String> {
         self.keys.iter().filter(|key| chosen.contains(key)).cloned().collect()
+    }
+
+    // Orders and deduplicates `owned` and `uses` in design order, pruning
+    // keys absent from the design and keys from `uses` that `owned` holds.
+    pub fn settle(&self, owned: &mut Vec<String>, uses: &mut Vec<String>) {
+        *owned = self.ordered(owned);
+        uses.retain(|key| !owned.contains(key));
+        *uses = self.ordered(uses);
+    }
+
+    // Writes one `- `<key>`` bullet line, listing the other keys its
+    // signature names where any exist.
+    pub fn write_key(&self, f: &mut Formatter<'_>, key: &str) -> fmt::Result {
+        match self.references(key) {
+            [] => writeln!(f, "- `{key}`"),
+            named => writeln!(f, "- `{key}` — names {}", quoted(named)),
+        }
     }
 
     // The keys whose declared identifier appears in `key`'s signature, in
@@ -125,6 +142,23 @@ impl Types {
             }
         }
         edges
+    }
+
+    // Sets each part's `depends_on` from the edges derived across `parts`,
+    // sorted and deduplicated in `PartId` order.
+    pub fn depend(&self, parts: &mut [Part]) {
+        let edges = self.owner_edges(&Draft::all(parts));
+        let ids: BTreeMap<String, PartId> =
+            parts.iter().map(|part| (part.name.clone(), part.id)).collect();
+        for part in parts {
+            part.depends_on = edges
+                .iter()
+                .filter(|edge| edge.from == part.name)
+                .filter_map(|edge| ids.get(&edge.to).copied())
+                .collect();
+            part.depends_on.sort_unstable();
+            part.depends_on.dedup();
+        }
     }
 }
 
