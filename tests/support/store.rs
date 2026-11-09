@@ -77,21 +77,39 @@ pub fn sealed_layouts(files: &FilesScript) -> Vec<(String, Vec<u8>)> {
 
 // `design` with a `## UI / layout` section naming `body` as one layout, and
 // the layout's digest; the body's view a placeholder image.
+//
+// The section is spliced in as text in the engine's field order: the engine
+// seals the design as its types write it, and a `Value` would sort the keys,
+// so the staged bytes, and the id they hash to, would not be what is sealed.
 pub fn laid_out(design: &[u8], body: &[u8]) -> (Vec<u8>, String) {
     let digest = format!("sha256:{}", hex::encode(Sha256::digest(body)));
-    let mut design: Value = serde_json::from_slice(design).expect("the design is JSON");
-    design["sections"].as_array_mut().expect("sections").push(serde_json::json!({
-        "kind": "ui-layout",
-        "blocks": [{"layout": {
-            "digest": digest,
+    let design = std::str::from_utf8(design).expect("the design is UTF-8");
+    let end = design.rfind("\n  ]\n}").expect("the design ends with its sections");
+    let section = format!(
+        r#",
+    {{
+      "kind": "ui-layout",
+      "blocks": [
+        {{
+          "layout": {{
+            "digest": "{digest}",
             "media-type": "application/json",
-            "size": body.len(),
+            "size": {},
             "source": "page",
-            "views": [{"label": "320px wide", "media-type": "image/svg+xml", "body": "<svg/>"}],
-        }}],
-    }));
-    let mut bytes = serde_json::to_vec_pretty(&design).expect("the design serialises");
-    bytes.push(b'\n');
+            "views": [
+              {{
+                "label": "320px wide",
+                "media-type": "image/svg+xml",
+                "body": "<svg/>"
+              }}
+            ]
+          }}
+        }}
+      ]
+    }}"#,
+        body.len()
+    );
+    let bytes = format!("{}{section}{}", &design[..end], &design[end..]).into_bytes();
     (bytes, digest)
 }
 
