@@ -1,6 +1,6 @@
 //! Tests single-seam extraction turns, tool calls, and claim validation.
 
-use emery_sdk::{Context, Doc, Error, Evidence, Lexicon, Seam, SourceInput};
+use emery_sdk::{words, Context, Doc, Error, Evidence, Lexicon, Seam, SourceInput};
 use omnia_sdk::model::{Error as ModelError, ToolCall};
 use omnia_test::SeenFormat;
 use omnia_test::guest::ScriptedModel;
@@ -386,6 +386,45 @@ async fn stem_findings() {
 // and a statement by role passes however many packages the seam imports.
 #[tokio::test]
 async fn technology_findings() {
+    assert_eq!(
+        Lexicon::from_packages([
+            "@azure/keyvault-secrets/subpath",
+            "@aws-sdk/client-s3",
+            "@/empty",
+            "@",
+            "socket.io/client",
+            "pymongo",
+            "py",
+            "bullmq",
+            "mq",
+            "sqlalchemy",
+            "requests",
+            "boto3",
+            "boto3",
+        ]),
+        Lexicon::with([
+            "azure",
+            "keyvaultsecrets",
+            "awssdk",
+            "clients3",
+            "socketio",
+            "pymongo",
+            "bullmq",
+            "sqlalchemy",
+            "boto3",
+        ])
+    );
+
+    let lexicon = Lexicon::from_packages(["@azure/keyvault-secrets"]);
+    assert_eq!(
+        lexicon.names("Event Hubs and Key Vault Secrets and Event Hub and Key Vault"),
+        ["eventhubs", "keyvaultsecrets", "eventhub", "keyvault"]
+    );
+    assert_eq!(lexicon.names("ek s"), Vec::<String>::new());
+
+    assert_eq!(words("IORedis2Client"), ["io", "redis2", "client"]);
+    assert_eq!(words("v2Beta"), ["v2", "beta"]);
+
     let model = ScriptedModel::answering([
         r#"{"claims":[
             {"kind":"requirement","id":"start.credentials","statement":"useConfluentKafkaConfig reads the credentials from Key Vault before the Kafka clients are constructed."},

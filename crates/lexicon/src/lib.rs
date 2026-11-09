@@ -514,12 +514,12 @@ const TECHNOLOGY: &[&str] = &[
 mod tests {
     use std::collections::BTreeSet;
 
-    use super::{Lexicon, TECHNOLOGY, words};
+    use super::TECHNOLOGY;
 
     // Every fixed entry is non-empty, lowercase ASCII letters and digits with
     // no separator, and listed once.
     #[test]
-    fn fixed_table_invariants() {
+    fn fixed_table() {
         let mut seen = BTreeSet::new();
         for &entry in TECHNOLOGY {
             assert!(!entry.is_empty(), "empty lexicon entry");
@@ -529,57 +529,5 @@ mod tests {
             );
             assert!(seen.insert(entry), "`{entry}` is listed twice in TECHNOLOGY");
         }
-    }
-
-    #[test]
-    fn package_specifiers() {
-        let lexicon = Lexicon::from_packages([
-            "@azure/keyvault-secrets/subpath",
-            "@aws-sdk/client-s3",
-            "@/empty",
-            "@",
-            "socket.io/client",
-            "pymongo",
-            "py",
-            "bullmq",
-            "mq",
-            "sqlalchemy",
-            "requests",
-            "boto3",
-            "boto3",
-        ]);
-        assert_eq!(
-            lexicon,
-            Lexicon::with([
-                "azure",
-                "keyvaultsecrets",
-                "awssdk",
-                "clients3",
-                "socketio",
-                "pymongo",
-                "bullmq",
-                "sqlalchemy",
-                "boto3",
-            ])
-        );
-    }
-
-    // Longest match wins (`eventhubs` over `eventhub`), a single-character
-    // trailing word (`ek s`) does not complete a multi-word entry, and each
-    // matched name is returned once in first-reached order.
-    #[test]
-    fn longest_and_deduplicated_matches() {
-        let lexicon = Lexicon::from_packages(["@azure/keyvault-secrets"]);
-        assert_eq!(
-            lexicon.names("Event Hubs and Key Vault Secrets and Event Hub and Key Vault"),
-            ["eventhubs", "keyvaultsecrets", "eventhub", "keyvault"]
-        );
-        assert_eq!(lexicon.names("ek s"), Vec::<String>::new());
-    }
-
-    #[test]
-    fn camel_and_acronym_words() {
-        assert_eq!(words("IORedis2Client"), ["io", "redis2", "client"]);
-        assert_eq!(words("v2Beta"), ["v2", "beta"]);
     }
 }
