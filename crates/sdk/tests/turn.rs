@@ -1,6 +1,6 @@
 //! Tests single-seam extraction turns, tool calls, and claim validation.
 
-use emery_sdk::{words, Context, Doc, Error, Evidence, Lexicon, Seam, SourceInput};
+use emery_sdk::{Backing, Context, Doc, Error, Evidence, Lexicon, Seam, SourceInput, words};
 use omnia_sdk::model::{Error as ModelError, ToolCall};
 use omnia_test::SeenFormat;
 use omnia_test::guest::ScriptedModel;
@@ -475,6 +475,27 @@ async fn technology_findings() {
 // finding, and the brief's stem sentence names the kind.
 #[tokio::test]
 async fn retire_findings() {
+    let laden: Evidence = serde_json::from_str(
+        r#"{"claims":[
+            {"kind":"retire","id":"orders.export","statement":"Withdrawn.","criterion":"No export link."},
+            {"kind":"retire","id":"orders.notify","statement":"Withdrawn.","callee":"mailer:send","signature":"fn notify()"},
+            {"kind":"retire","id":"orders.create","statement":"Withdrawn.","route":"POST /orders","message":"orders.created"}
+        ]}"#,
+    )
+    .expect("evidence parses");
+    let findings = laden.findings();
+    assert_eq!(findings.len(), 5, "one finding per refused extra: {findings:?}");
+    for (finding, expected) in findings.iter().zip([
+        "claim 0: `retire` `orders.export` carries extra `criterion`, which belongs to another \
+         kind",
+        "claim 1: `retire` `orders.notify` carries extra `callee`",
+        "claim 1: `retire` `orders.notify` carries extra `signature`",
+        "claim 2: `retire` `orders.create` carries extra `route`",
+        "claim 2: `retire` `orders.create` carries extra `message`",
+    ]) {
+        assert!(finding.contains(expected), "{expected}: {findings:?}");
+    }
+
     let model = ScriptedModel::answering([
         r#"{"claims":[
             {"kind":"requirement","id":"orders.create","statement":"Creates."},
@@ -786,6 +807,20 @@ async fn doc_refs() {
 // The engine never sees the claim it would otherwise refuse.
 #[tokio::test]
 async fn gate_findings() {
+    let open: Evidence = serde_json::from_str(
+        r#"{"claims":[
+            {"kind":"section","synopsis":{"headline":"structured"},"backing":"bare string"},
+            {"kind":"decision","synopsis":"kept","backing":{"payload":"ADR-7"}}
+        ]}"#,
+    )
+    .expect("evidence parses");
+    let odd = &open.claims[0];
+    assert!(odd.synopsis.is_none(), "non-string synopsis is dropped");
+    assert!(odd.backing.is_none(), "non-variant backing is dropped");
+    let clean = &open.claims[1];
+    assert_eq!(clean.synopsis.as_deref(), Some("kept"), "modeled shapes still parse");
+    assert_eq!(clean.backing, Some(Backing::Payload("ADR-7".to_string())));
+
     let model = ScriptedModel::answering([r#"{"claims":[{"kind":"requirement"}]}"#, VALID]);
 
     let accepted = ask(&model, &SourceInput::value("brief", "Ship it."), Seam::whole())
