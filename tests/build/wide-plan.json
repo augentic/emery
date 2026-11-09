@@ -1,38 +1,40 @@
 {
-  "emery": 9,
+  "emery": 11,
   "parent": null,
   "preamble": [
     "Three slices: sign-in, the session over it, and orders beside both."
   ],
-  "slices": [
+  "parts": [
     {
-      "id": "SLICE-001",
+      "id": "PART-001",
       "name": "authentication",
       "requirements": [
         "REQ-001"
       ],
       "types": [],
+      "uses": [],
       "depends-on": [],
       "brief": [
         "Delivers sign-in."
       ]
     },
     {
-      "id": "SLICE-002",
+      "id": "PART-002",
       "name": "sessions",
       "requirements": [
         "REQ-002"
       ],
       "types": [],
+      "uses": [],
       "depends-on": [
-        "SLICE-001"
+        "PART-001"
       ],
       "brief": [
         "Delivers the session a sign-in issues, so it is built after `authentication`."
       ]
     },
     {
-      "id": "SLICE-003",
+      "id": "PART-003",
       "name": "orders",
       "requirements": [
         "REQ-003",
@@ -42,6 +44,7 @@
         "orders.line",
         "orders.order"
       ],
+      "uses": [],
       "depends-on": [],
       "brief": [
         "Delivers order creation and cancellation; it waits on nothing."

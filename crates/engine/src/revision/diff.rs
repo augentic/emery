@@ -5,14 +5,14 @@
 //! - Requirements pair by identifier within one history, and by shared source
 //!   anchors then identifier across histories.
 //! - Design sections pair by kind.
-//! - Plan slices pair by identifier.
+//! - Plan parts pair by identifier.
 
 use std::cmp::Reverse;
 use std::collections::{BTreeMap, BTreeSet};
 
 use serde::{Deserialize, Serialize};
 
-use super::{Design, Plan, ReqId, Requirement, Revision, SectionKind, Slice, SliceId, Spec};
+use super::{Design, Part, PartId, Plan, ReqId, Requirement, Revision, SectionKind, Spec};
 
 /// Changes from a displaced revision to a newly committed revision.
 #[derive(Debug, Clone, Serialize)]
@@ -218,7 +218,7 @@ impl From<&Requirement> for Entry {
 
 /// A record changed between revisions.
 ///
-/// `E` identifies the record: a requirement [`Entry`] or a [`SliceEntry`].
+/// `E` identifies the record: a requirement [`Entry`] or a [`PartEntry`].
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "kebab-case")]
 pub struct Changed<E = Entry> {
@@ -284,12 +284,12 @@ impl DesignDiff {
 pub struct PlanDiff {
     /// Whether the preamble changed.
     pub preamble: bool,
-    /// Slices present only in the new revision.
-    pub added: Vec<SliceEntry>,
-    /// Slices present only in the displaced revision.
-    pub removed: Vec<SliceEntry>,
-    /// Slices present in both revisions with differing content.
-    pub changed: Vec<Changed<SliceEntry>>,
+    /// Parts present only in the new revision.
+    pub added: Vec<PartEntry>,
+    /// Parts present only in the displaced revision.
+    pub removed: Vec<PartEntry>,
+    /// Parts present in both revisions with differing content.
+    pub changed: Vec<Changed<PartEntry>>,
 }
 
 impl PlanDiff {
@@ -302,24 +302,24 @@ impl PlanDiff {
             && self.changed.is_empty()
     }
 
-    /// Returns the changes from `outgoing` to `incoming`, slices paired by identifier.
+    /// Returns the changes from `outgoing` to `incoming`, parts paired by identifier.
     ///
-    /// Slices are numbered by each slice's lowest requirement, so a merge
-    /// that swallows a stem renumbers the slices after it as changes.
+    /// Parts are numbered by each part's lowest requirement, so a merge
+    /// that swallows a stem renumbers the parts after it as changes.
     #[must_use]
     pub fn between(outgoing: &Plan, incoming: &Plan) -> Self {
         let mut diff = Self {
             preamble: outgoing.preamble != incoming.preamble,
             ..Self::default()
         };
-        for slice in &incoming.slices {
-            match outgoing.slice(slice.id) {
-                None => diff.added.push(SliceEntry::from(slice)),
+        for part in &incoming.parts {
+            match outgoing.part(part.id) {
+                None => diff.added.push(PartEntry::from(part)),
                 Some(before) => {
-                    let fields = slice_differences(before, slice);
+                    let fields = part_differences(before, part);
                     if !fields.is_empty() {
                         diff.changed.push(Changed {
-                            entry: SliceEntry::from(slice),
+                            entry: PartEntry::from(part),
                             fields,
                         });
                     }
@@ -328,30 +328,30 @@ impl PlanDiff {
         }
         diff.removed.extend(
             outgoing
-                .slices
+                .parts
                 .iter()
-                .filter(|slice| incoming.slice(slice.id).is_none())
-                .map(SliceEntry::from),
+                .filter(|part| incoming.part(part.id).is_none())
+                .map(PartEntry::from),
         );
         diff
     }
 }
 
-/// A slice identified in a revision diff.
+/// A part identified in a revision diff.
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "kebab-case")]
-pub struct SliceEntry {
-    /// The stable slice identifier.
-    pub id: SliceId,
-    /// The slice name.
+pub struct PartEntry {
+    /// The stable part identifier.
+    pub id: PartId,
+    /// The part name.
     pub name: String,
 }
 
-impl From<&Slice> for SliceEntry {
-    fn from(slice: &Slice) -> Self {
+impl From<&Part> for PartEntry {
+    fn from(part: &Part) -> Self {
         Self {
-            id: slice.id,
-            name: slice.name.clone(),
+            id: part.id,
+            name: part.name.clone(),
         }
     }
 }
@@ -386,15 +386,16 @@ fn differences(before: &Requirement, after: &Requirement) -> Vec<&'static str> {
     .collect()
 }
 
-// The field name a changed slice's `fields` carries where its brief differs.
+// The field name a changed part's `fields` carries where its brief differs.
 pub const BRIEF: &str = "brief";
 
-fn slice_differences(before: &Slice, after: &Slice) -> Vec<&'static str> {
-    let Slice {
+fn part_differences(before: &Part, after: &Part) -> Vec<&'static str> {
+    let Part {
         id: _,
         name,
         requirements,
         types,
+        uses,
         depends_on,
         brief,
     } = before;
@@ -402,6 +403,7 @@ fn slice_differences(before: &Slice, after: &Slice) -> Vec<&'static str> {
         ("name", *name != after.name),
         ("requirements", *requirements != after.requirements),
         ("types", *types != after.types),
+        ("uses", *uses != after.uses),
         ("depends-on", *depends_on != after.depends_on),
         (BRIEF, *brief != after.brief),
     ]

@@ -14,12 +14,12 @@ use serde::{Deserialize, Serialize};
 use strum::VariantArray;
 
 use crate::revision::{
-    self, Cited, Design, DesignDiff, HEADING, ID, NOTE, Plan, PlanDiff, ReqId, SOURCES, SliceId,
+    self, Cited, Design, DesignDiff, HEADING, ID, NOTE, PartId, Plan, PlanDiff, ReqId, SOURCES,
     Spec,
 };
 
-const SLICE: &str = "### Slice:";
-// What follows `Note:` under a changed slice whose brief is the base's.
+const PART: &str = "### Part:";
+// What follows `Note:` under a changed part whose brief is the base's.
 const KEPT_BRIEF: &str = "the brief is the base's; no slicing turn redrafted it.";
 
 /// A change against the current revision in its staged form.
@@ -42,25 +42,25 @@ pub struct Amendment {
     pub spec: Spec,
     /// The amended design.
     ///
-    /// The base's, less the type blocks owned by the slices the change
+    /// The base's, less the type blocks owned by the parts the change
     /// emptied, a section left with no block going with them. Its `parent`
     /// is the base revision.
     pub design: Design,
     /// The amended plan.
     ///
-    /// The base's slices under their ids and names, each retired
+    /// The base's parts under their ids and names, each retired
     /// requirement taken out, each requirement restated under another stem
-    /// moved to the slice of its new stem, each added one in the slice of
-    /// its stem, a stem no slice held in a new slice named for it, a slice
-    /// left with none removed and every slice that depended on it depending
+    /// moved to the part of its new stem, each added one in the part of
+    /// its stem, a stem no part held in a new part named for it, a part
+    /// left with none removed and every part that depended on it depending
     /// on what it depended on instead, and the design's data types owned as
     /// the change leaves them. Its `parent` is the base revision.
     pub plan: Plan,
     /// What the amended design changes against the base's, by section.
     pub sections: DesignDiff,
     /// What the amended plan changes against the base's: one entry per
-    /// slice added, changed, or removed, in id order.
-    pub slices: Vec<SliceChange>,
+    /// part added, changed, or removed, in id order.
+    pub parts: Vec<PartChange>,
 }
 
 impl Amendment {
@@ -96,19 +96,19 @@ impl Amendment {
     /// Returns whether the amendment changes anything of the base.
     ///
     /// An amendment every entry of which is [`ChangeClass::Unchanged`] that
-    /// changes no design section and no slice does not, and is nothing to
+    /// changes no design section and no part does not, and is nothing to
     /// stage.
     #[must_use]
     pub fn is_change(&self) -> bool {
         self.changes.iter().any(|change| change.class != ChangeClass::Unchanged)
             || !self.sections.is_empty()
-            || !self.slices.is_empty()
+            || !self.parts.is_empty()
     }
 
     /// Returns the stems of the requirements the amendment touches, once each, sorted.
     ///
     /// The stem is the first segment of a requirement's dotted subject, the
-    /// floor a slice is cut at, so these are the slices the change reaches.
+    /// floor a part is cut at, so these are the parts the change reaches.
     /// An unchanged requirement counts for nothing.
     #[must_use]
     pub fn stems(&self) -> Vec<&str> {
@@ -190,17 +190,17 @@ impl Display for Amendment {
             }
         }
 
-        // the slices changed, an added or changed one as `plan.md` renders it,
+        // the parts changed, an added or changed one as `plan.md` renders it,
         // a changed one whose brief is the base's noted as such after it
-        if !self.slices.is_empty() {
+        if !self.parts.is_empty() {
             f.write_str("\n\n## Plan")?;
-            for change in &self.slices {
-                write!(f, "\n\n{SLICE} {} [{}]\n\n{ID} {}", change.name, change.class, change.id)?;
-                if change.class != SliceClass::Removed
-                    && let Some(slice) = self.plan.slice(change.id)
+            for change in &self.parts {
+                write!(f, "\n\n{PART} {} [{}]\n\n{ID} {}", change.name, change.class, change.id)?;
+                if change.class != PartClass::Removed
+                    && let Some(part) = self.plan.part(change.id)
                 {
                     f.write_str("\n")?;
-                    slice.write_lists(f)?;
+                    part.write_lists(f)?;
                     if change.keeps_brief() {
                         write!(f, "\n\n{NOTE} {KEPT_BRIEF}")?;
                     }
@@ -385,31 +385,31 @@ impl ChangeClass {
     }
 }
 
-/// What an [`Amendment`] does to one slice of the plan.
+/// What an [`Amendment`] does to one part of the plan.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub struct SliceChange {
-    /// The slice's identifier.
-    pub id: SliceId,
-    /// The slice's name.
+pub struct PartChange {
+    /// The part's identifier.
+    pub id: PartId,
+    /// The part's name.
     pub name: String,
-    /// What the change did to the slice.
-    pub class: SliceClass,
-    /// Whether the slice's brief is this amendment's or the base's.
+    /// What the change did to the part.
+    pub class: PartClass,
+    /// Whether the part's brief is this amendment's or the base's.
     pub brief: BriefState,
 }
 
-impl SliceChange {
-    /// Returns one entry per slice `diff` lists as added, changed, or removed, in id order.
+impl PartChange {
+    /// Returns one entry per part `diff` lists as added, changed, or removed, in id order.
     ///
-    /// An added slice's brief is [`BriefState::Redrafted`], a removed one's
+    /// An added part's brief is [`BriefState::Redrafted`], a removed one's
     /// [`BriefState::Kept`], and a changed one's whichever `diff` says: the
-    /// slicing turn redrafts the brief of every slice it is put over whose
+    /// slicing turn redrafts the brief of every part it is put over whose
     /// requirements the amendment changed, and a plan settled by code keeps
     /// the base's.
     #[must_use]
     pub fn of(diff: &PlanDiff) -> Vec<Self> {
-        let entry = |entry: &revision::SliceEntry, class, brief| Self {
+        let entry = |entry: &revision::PartEntry, class, brief| Self {
             id: entry.id,
             name: entry.name.clone(),
             class,
@@ -418,58 +418,58 @@ impl SliceChange {
         let mut changes: Vec<Self> = diff
             .added
             .iter()
-            .map(|added| entry(added, SliceClass::Added, BriefState::Redrafted))
+            .map(|added| entry(added, PartClass::Added, BriefState::Redrafted))
             .chain(diff.changed.iter().map(|changed| {
                 let brief = if changed.fields.contains(&revision::BRIEF) {
                     BriefState::Redrafted
                 } else {
                     BriefState::Kept
                 };
-                entry(&changed.entry, SliceClass::Changed, brief)
+                entry(&changed.entry, PartClass::Changed, brief)
             }))
             .chain(
                 diff.removed
                     .iter()
-                    .map(|removed| entry(removed, SliceClass::Removed, BriefState::Kept)),
+                    .map(|removed| entry(removed, PartClass::Removed, BriefState::Kept)),
             )
             .collect();
         changes.sort_by_key(|change| change.id);
         changes
     }
 
-    /// Returns whether the slice stands changed under the base's brief.
+    /// Returns whether the part stands changed under the base's brief.
     ///
-    /// Such a slice gained or lost a requirement, a type, or a dependency
+    /// Such a part gained or lost a requirement, a type, or a dependency
     /// with no slicing turn redrafting what a builder reads before taking
     /// it up, which the projection notes and the text output marks.
     #[must_use]
     pub fn keeps_brief(&self) -> bool {
-        self.class == SliceClass::Changed && self.brief == BriefState::Kept
+        self.class == PartClass::Changed && self.brief == BriefState::Kept
     }
 }
 
-/// Whose brief a slice of an amended plan carries.
+/// Whose brief a part of an amended plan carries.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum BriefState {
-    /// The brief the slicing turn drafted for the slice in this amendment.
+    /// The brief the slicing turn drafted for the part in this amendment.
     Redrafted,
-    /// The base's brief, as the slice held it.
+    /// The base's brief, as the part held it.
     Kept,
 }
 
-/// What an [`Amendment`] did to a slice of the plan.
+/// What an [`Amendment`] did to a part of the plan.
 #[derive(
     Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, strum::Display, strum::EnumString,
 )]
 #[serde(rename_all = "kebab-case")]
 #[strum(serialize_all = "kebab-case")]
-pub enum SliceClass {
-    /// A slice the base plan does not hold.
+pub enum PartClass {
+    /// A part the base plan does not hold.
     Added,
-    /// A slice of the base plan whose requirements, types, dependencies, or
+    /// A part of the base plan whose requirements, types, dependencies, or
     /// brief the amendment changes.
     Changed,
-    /// A slice of the base plan the amendment leaves no requirement in.
+    /// A part of the base plan the amendment leaves no requirement in.
     Removed,
 }

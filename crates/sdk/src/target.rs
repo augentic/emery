@@ -98,6 +98,7 @@ mod design;
 mod write;
 
 use std::fmt::{self, Display, Formatter};
+use std::num::NonZeroU32;
 use std::path::Path;
 
 #[cfg(target_arch = "wasm32")]
@@ -224,12 +225,14 @@ impl Grant {
     }
 }
 
-/// Static configuration a target adapter declares for merge rules and worker grants.
+/// Static configuration a target adapter declares for merge rules, worker
+/// grants, and its default slice budget.
 ///
 /// Returned by [`TargetAdapter::metadata`]. [`export_target!`](crate::export_target)
-/// exposes [`rules`](Self::rules) through the component's `metadata` export,
-/// and [`build`] and [`verify`] attach [`grants`](Self::grants) to every turn.
-/// The default declares no rules and no grants.
+/// exposes [`rules`](Self::rules) and [`budget`](Self::budget) through the
+/// component's `metadata` export, and [`build`] and [`verify`] attach
+/// [`grants`](Self::grants) to every turn. The default declares no rules,
+/// no grants, and no budget.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct Metadata {
     /// Merge rules applied when integrating each slice into the tree.
@@ -240,6 +243,9 @@ pub struct Metadata {
     /// Toolchain access granted to the model's worker in [`build`] and
     /// [`verify`] turns, one [`Grant`] per program the prompts run.
     pub grants: &'static [Grant],
+    /// Default requirement budget per slice when neither `--budget` nor
+    /// `[target] budget` sets one.
+    pub budget: Option<NonZeroU32>,
 }
 
 fn is_host_name(host: &str) -> bool {
@@ -472,6 +478,12 @@ pub enum Task<'a, P> {
     Verify(VerifyContext<'a, P>),
 }
 
+impl From<Metadata> for TargetMetadata {
+    fn from(metadata: Metadata) -> Self {
+        self::metadata(metadata.rules, metadata.budget)
+    }
+}
+
 /// A target adapter that initialises, builds, and verifies a workspace.
 ///
 /// Implement it on a unit struct and hand that type to
@@ -479,12 +491,12 @@ pub enum Task<'a, P> {
 /// `target-adapter` world over it.
 pub trait TargetAdapter {
     /// Returns what the adapter declares about itself: the rules it merges
-    /// under and the grants its worker carries.
+    /// under, the grants its worker carries, and its default slice budget.
     ///
     /// Answered from compiled-in constants, with no model call and no
     /// filesystem access. [`Metadata::default`] by default, for an adapter
-    /// that merges under no rule and whose turns run nothing that reaches
-    /// beyond the tree.
+    /// that merges under no rule, whose turns run nothing that reaches
+    /// beyond the tree, and that leaves the slice budget to the engine.
     #[must_use]
     fn metadata() -> Metadata {
         Metadata::default()
@@ -504,20 +516,23 @@ pub trait TargetAdapter {
     fn run<P: Model>(task: Task<'_, P>) -> impl Future<Output = Result<Outcome, Error>>;
 }
 
-/// Returns the `metadata` answer for a target adapter merging under `rules`.
+/// Returns the `metadata` answer for a target adapter merging under `rules`
+/// with a default slice `budget`.
 ///
 /// [`export_target!`](crate::export_target) answers the component's
-/// `metadata` with it over the adapter's [`Metadata::rules`]. The engine
-/// merges every slice under the rules first and resolves what they leave
-/// with the model. The `emery-version` pin is this SDK's own version,
-/// identifying the contract the adapter compiled against. Build a
-/// [`TargetMetadata`] directly only when the adapter must loosen or tighten
-/// that pin.
+/// `metadata` with it over the adapter's [`Metadata::rules`] and
+/// [`Metadata::budget`]. The engine merges every slice under the rules first
+/// and resolves what they leave with the model, and cuts each part of the
+/// plan to `budget` requirements when neither `--budget` nor `[target] budget`
+/// sets one. The `emery-version` pin is this SDK's own version, identifying
+/// the contract the adapter compiled against. Build a [`TargetMetadata`]
+/// directly only when the adapter must loosen or tighten that pin.
 #[must_use]
-pub fn metadata(rules: &[MergeRule]) -> TargetMetadata {
+pub fn metadata(rules: &[MergeRule], budget: Option<NonZeroU32>) -> TargetMetadata {
     TargetMetadata {
         emery_version: Some(env!("CARGO_PKG_VERSION").to_string()),
         merge_rules: rules.to_vec(),
+        budget: budget.map(NonZeroU32::get),
     }
 }
 
@@ -595,7 +610,10 @@ pub async fn build<P: Model>(
 
     tracing::info!(
         slice = %id,
+        part = %slice.part,
         name = %slice.name,
+        index = slice.index,
+        count = slice.count,
         requirements = slice.requirements.len(),
         scaffold = ctx.scaffold.is_some(),
         scaffolded = scaffolded.len(),
@@ -804,7 +822,8 @@ impl Display for Brief<'_> {
         let slice = self.slice;
         write!(
             f,
-            "Build the slice `{name}` ({id}) of the plan, bound to adapter `{adapter}`.\n\n\
+            "Build slice {index} of {count} of part `{name}` ({part}) as {id}, bound to adapter \
+             `{adapter}`.\n\n\
              `$WORKSPACE` is the project tree, lent writable: the root of every file you can \
              read, and the root every `written` path is relative to. The tree sits on commit \
              `{base}`, the integrated head this slice builds over. Write through this call's \
@@ -812,7 +831,10 @@ impl Display for Brief<'_> {
              `write_files` call, and make a change within a file through `edit_files`. Build \
              the slice into the tree as the prompt describes, and change nothing outside \
              it.\n\n",
+            index = slice.index,
+            count = slice.count,
             name = slice.name,
+            part = slice.part,
             id = slice.id,
             adapter = self.adapter_id,
             base = slice.base,

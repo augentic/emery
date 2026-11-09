@@ -18,7 +18,7 @@ use omnia_sdk::{Error, Vcs, bad_gateway, bad_request, server_error};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest as _, Sha256};
 
-use crate::revision::{Amendment, ChangeClass, ReqId, SliceChange, SliceClass, SliceId};
+use crate::revision::{Amendment, ChangeClass, PartChange, PartClass, PartId, ReqId, SliceId};
 
 /// The directory beneath the project root that holds every clone and working copy.
 pub const ROOT: &str = ".emery/vcs";
@@ -130,16 +130,20 @@ fn glob(pattern: &[u8], text: &[u8]) -> bool {
 ///
 /// The first line is `<id> <name>`; the trailers tie the commit to its
 /// revision, so a later run reads back from the labelled history which
-/// slices it holds. [`Display`](fmt::Display) writes it and
+/// slices and requirements it holds. [`Display`](fmt::Display) writes it and
 /// [`parse`](Message::parse) reads it back.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Message {
     /// The slice sealed.
     pub slice: SliceId,
+    /// The part the slice was cut from.
+    pub part: PartId,
     /// The slice's name.
     pub name: String,
     /// The revision whose plan the slice is of.
     pub revision: String,
+    /// The requirement budget the slice was cut under.
+    pub budget: usize,
     /// The slice's requirements.
     pub requirements: Vec<ReqId>,
     /// The requirements the build reported covered.
@@ -178,8 +182,10 @@ impl Message {
         }
         Some(Self {
             slice,
+            part: trailers.get("Part")?.parse().ok()?,
             name: name.trim().to_owned(),
             revision: (*trailers.get("Revision")?).to_owned(),
+            budget: trailers.get("Budget")?.parse().ok()?,
             requirements: ids("Requirements")?,
             covered: ids("Covered")?,
             adapter: (*trailers.get("Adapter")?).to_owned(),
@@ -195,11 +201,14 @@ impl fmt::Display for Message {
             |ids: &[ReqId]| ids.iter().map(ToString::to_string).collect::<Vec<_>>().join(", ");
         write!(
             f,
-            "{slice} {name}\n\nSlice: {slice}\nRevision: {revision}\nRequirements: {requirements}\n\
-             Covered: {covered}\nAdapter: {adapter}\nBase: {base}\nWave: {wave}",
+            "{slice} {name}\n\nSlice: {slice}\nPart: {part}\nRevision: {revision}\nBudget: \
+             {budget}\nRequirements: {requirements}\nCovered: {covered}\nAdapter: {adapter}\nBase: \
+             {base}\nWave: {wave}",
             slice = self.slice,
+            part = self.part,
             name = self.name,
             revision = self.revision,
+            budget = self.budget,
             requirements = list(&self.requirements),
             covered = list(&self.covered),
             adapter = self.adapter,
@@ -289,8 +298,8 @@ impl fmt::Display for RevisionMessage {
 /// What a sealed amendment changed against the revision it amends, as its commit's trailers carry it.
 ///
 /// `Added:`, `Changed:`, and `Retired:` count the requirements under each
-/// class; `Slices:` lists the slices the plan adds, changes, or removes as
-/// `SLICE-002 orders changed`, and is left out when there are none.
+/// class; `Parts:` lists the parts the plan adds, changes, or removes as
+/// `PART-002 orders changed`, and is left out when there are none.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Summary {
     /// Requirements the parent does not hold, stated by the change.
@@ -299,12 +308,12 @@ pub struct Summary {
     pub changed: usize,
     /// Requirements of the parent the change withdraws.
     pub retired: usize,
-    /// The slices the plan adds, changes, or removes against the parent's, in id order.
-    pub slices: Vec<SliceSummary>,
+    /// The parts the plan adds, changes, or removes against the parent's, in id order.
+    pub parts: Vec<PartSummary>,
 }
 
 impl Summary {
-    const KEYS: [&str; 4] = ["Added", "Changed", "Retired", "Slices"];
+    const KEYS: [&str; 4] = ["Added", "Changed", "Retired", "Parts"];
 
     /// Summarises what `amendment` changes against its base.
     #[must_use]
@@ -313,15 +322,15 @@ impl Summary {
             added: amendment.count(ChangeClass::Added),
             changed: amendment.count(ChangeClass::Changed),
             retired: amendment.count(ChangeClass::Retired),
-            slices: amendment.slices.iter().map(SliceSummary::from).collect(),
+            parts: amendment.parts.iter().map(PartSummary::from).collect(),
         }
     }
 
     // The summary the trailers carry; `None` when a count is missing or
-    // malformed, or a slice entry is not `<id> <name> <class>`.
+    // malformed, or a part entry is not `<id> <name> <class>`.
     fn parse(trailers: &BTreeMap<&str, &str>) -> Option<Self> {
         let count = |key: &str| trailers.get(key)?.parse::<usize>().ok();
-        let slices = match trailers.get("Slices") {
+        let parts = match trailers.get("Parts") {
             Some(listed) => listed
                 .split(", ")
                 .map(|entry| {
@@ -330,7 +339,7 @@ impl Summary {
                     if words.next().is_some() || !is_kebab(name) {
                         return None;
                     }
-                    Some(SliceSummary {
+                    Some(PartSummary {
                         id: id.parse().ok()?,
                         name: name.to_owned(),
                         class: class.parse().ok()?,
@@ -343,7 +352,7 @@ impl Summary {
             added: count("Added")?,
             changed: count("Changed")?,
             retired: count("Retired")?,
-            slices,
+            parts,
         })
     }
 }
@@ -351,30 +360,30 @@ impl Summary {
 impl fmt::Display for Summary {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "Added: {}\nChanged: {}\nRetired: {}", self.added, self.changed, self.retired)?;
-        if !self.slices.is_empty() {
-            let listed: Vec<String> = self.slices.iter().map(ToString::to_string).collect();
-            write!(f, "\nSlices: {}", listed.join(", "))?;
+        if !self.parts.is_empty() {
+            let listed: Vec<String> = self.parts.iter().map(ToString::to_string).collect();
+            write!(f, "\nParts: {}", listed.join(", "))?;
         }
         Ok(())
     }
 }
 
-/// One slice of a [`Summary`], as the `Slices:` trailer names it.
+/// One part of a [`Summary`], as the `Parts:` trailer names it.
 ///
-/// A [`SliceChange`] less whose brief the slice carries, which the
+/// A [`PartChange`] less whose brief the part carries, which the
 /// amendment's review reads and the history keeps nothing of.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct SliceSummary {
-    /// The slice's identifier.
-    pub id: SliceId,
-    /// The slice's name.
+pub struct PartSummary {
+    /// The part's identifier.
+    pub id: PartId,
+    /// The part's name.
     pub name: String,
-    /// What the amendment did to the slice.
-    pub class: SliceClass,
+    /// What the amendment did to the part.
+    pub class: PartClass,
 }
 
-impl From<&SliceChange> for SliceSummary {
-    fn from(change: &SliceChange) -> Self {
+impl From<&PartChange> for PartSummary {
+    fn from(change: &PartChange) -> Self {
         Self {
             id: change.id,
             name: change.name.clone(),
@@ -383,7 +392,7 @@ impl From<&SliceChange> for SliceSummary {
     }
 }
 
-impl fmt::Display for SliceSummary {
+impl fmt::Display for PartSummary {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{} {} {}", self.id, self.name, self.class)
     }
@@ -615,15 +624,15 @@ impl BuildRepo {
         }
     }
 
-    /// What `label` already holds over `base` for `revision`: the labelled head and the slices merged beneath it.
+    /// What `label` already holds over `base` for `revision`: the labelled head and the requirements merged beneath it.
     ///
     /// The label is read back as a label alone, never a tag or a remote's
     /// branch of that spelling, and only where it descends from `base`. The
-    /// slices are read from the [`Message`]s a build sealed along the
+    /// requirements are read from the [`Message`]s a build sealed along the
     /// label's first-parent chain; a commit a build did not write, or one
     /// of another revision, is passed over, so a label that descends from
-    /// `base` is resumed from wherever it stands, with no slice beneath it
-    /// when the chain names none. `None` means the repository has no such
+    /// `base` is resumed from wherever it stands, with no requirement beneath
+    /// it when the chain names none. `None` means the repository has no such
     /// label, or the label does not descend from `base`, so a build starts
     /// from `base`.
     ///
@@ -634,7 +643,7 @@ impl BuildRepo {
     /// capability fails otherwise.
     pub async fn merged_under<V: Vcs>(
         &self, vcs: &V, label: &str, base: &str, revision: &str,
-    ) -> Result<Option<(String, BTreeSet<SliceId>)>, Error> {
+    ) -> Result<Option<(String, BTreeSet<ReqId>)>, Error> {
         let repo = self.path();
         let Some(head) = self.labelled(vcs, label).await? else {
             return Ok(None);
@@ -650,11 +659,11 @@ impl BuildRepo {
         }
         let entries =
             vcs.log(&repo, &head, base).await.map_err(|error| self.subject().refusal(error))?;
-        let merged: BTreeSet<SliceId> = entries
+        let merged: BTreeSet<ReqId> = entries
             .iter()
             .filter_map(|entry| Message::parse(&entry.message))
             .filter(|message| message.revision == revision)
-            .map(|message| message.slice)
+            .flat_map(|message| message.requirements)
             .collect();
         if merged.is_empty() {
             tracing::info!(
@@ -694,7 +703,7 @@ impl BuildRepo {
                 return Ok(Integration {
                     copy,
                     head: head.to_owned(),
-                    staged: BTreeSet::new(),
+                    staged: Vec::new(),
                 });
             }
             Err(vcs::Error::Exists(_)) => {}
@@ -712,7 +721,7 @@ impl BuildRepo {
             (at, staged)
         } else {
             tracing::info!(at = INTEGRATION, "removing the working copy an earlier run left");
-            (head.to_owned(), BTreeSet::new())
+            (head.to_owned(), Vec::new())
         };
         vcs.remove(INTEGRATION).await.map_err(|error| copy.subject().refusal(error))?;
         vcs.add(&repo, INTEGRATION, &at).await.map_err(|error| copy.subject().refusal(error))?;
@@ -729,7 +738,7 @@ impl BuildRepo {
     // another repository, which is nothing to resume from either.
     async fn staged<V: Vcs>(
         &self, vcs: &V, head: &str, revision: &str,
-    ) -> Result<Option<(String, BTreeSet<SliceId>)>, Error> {
+    ) -> Result<Option<(String, Vec<StagedSlice>)>, Error> {
         let repo = self.path();
         let subject = Subject::WorkingCopy(INTEGRATION);
         let staged = match vcs.head(INTEGRATION).await {
@@ -758,7 +767,7 @@ impl BuildRepo {
         // every slice sealed over the head is this revision's, or none is
         let entries =
             vcs.log(&repo, &staged, head).await.map_err(|error| self.subject().refusal(error))?;
-        let mut slices = BTreeSet::new();
+        let mut slices = BTreeMap::new();
         for message in entries.iter().filter_map(|entry| Message::parse(&entry.message)) {
             if message.revision != revision {
                 tracing::warn!(
@@ -770,12 +779,14 @@ impl BuildRepo {
                 );
                 return Ok(None);
             }
-            slices.insert(message.slice);
+            slices.insert(message.slice, message.requirements);
         }
         if slices.is_empty() {
             return Ok(None);
         }
-        Ok(Some((staged, slices)))
+        let staged_slices =
+            slices.into_iter().map(|(id, requirements)| StagedSlice { id, requirements }).collect();
+        Ok(Some((staged, staged_slices)))
     }
 
     /// The commit `label` stands at, read back as a label alone; `None` when the repository has no such label.
@@ -845,7 +856,16 @@ pub struct Integration {
     pub head: String,
     /// The slices an earlier run merged over the build's head and never
     /// verified, in id order; empty when the copy was cut at that head.
-    pub staged: BTreeSet<SliceId>,
+    pub staged: Vec<StagedSlice>,
+}
+
+/// One slice an earlier run merged into the integration working copy before its wave was verified.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct StagedSlice {
+    /// The slice identifier from the commit's `Slice:` trailer.
+    pub id: SliceId,
+    /// The requirement identifiers from the commit's `Requirements:` trailer.
+    pub requirements: Vec<ReqId>,
 }
 
 /// A working copy cut from a repository for one run, on no label.
@@ -1115,16 +1135,16 @@ mod tests {
                 added: 1,
                 changed: 2,
                 retired: 0,
-                slices: vec![
-                    SliceSummary {
-                        id: "SLICE-002".parse().expect("a slice id"),
+                parts: vec![
+                    PartSummary {
+                        id: "PART-002".parse().expect("a part id"),
                         name: "orders".to_owned(),
-                        class: SliceClass::Changed,
+                        class: PartClass::Changed,
                     },
-                    SliceSummary {
-                        id: "SLICE-003".parse().expect("a slice id"),
+                    PartSummary {
+                        id: "PART-003".parse().expect("a part id"),
                         name: "export".to_owned(),
-                        class: SliceClass::Removed,
+                        class: PartClass::Removed,
                     },
                 ],
             }),
@@ -1133,23 +1153,23 @@ mod tests {
         assert_eq!(
             text,
             "Revision abc123\n\nRevision: abc123\nParent: def456\nBase: 0123abcd\nAdded: \
-             1\nChanged: 2\nRetired: 0\nSlices: SLICE-002 orders changed, SLICE-003 export removed"
+             1\nChanged: 2\nRetired: 0\nParts: PART-002 orders changed, PART-003 export removed"
         );
         assert_eq!(RevisionMessage::parse(&text), Some(amended));
 
-        // no slice changed leaves the trailer out, and reads back as none
-        let unsliced = RevisionMessage {
+        // no part changed leaves the trailer out, and reads back as none
+        let unparted = RevisionMessage {
             summary: Some(Summary {
                 added: 0,
                 changed: 1,
                 retired: 0,
-                slices: Vec::new(),
+                parts: Vec::new(),
             }),
             ..RevisionMessage::parse(&text).expect("a revision message")
         };
-        let text = unsliced.to_string();
-        assert!(!text.contains("Slices:"), "{text}");
-        assert_eq!(RevisionMessage::parse(&text), Some(unsliced));
+        let text = unparted.to_string();
+        assert!(!text.contains("Parts:"), "{text}");
+        assert_eq!(RevisionMessage::parse(&text), Some(unparted));
 
         // a trailer of another name is passed over; a malformed summary is not
         let message = RevisionMessage::parse(
@@ -1175,18 +1195,18 @@ mod tests {
         );
         assert!(
             RevisionMessage::parse(
-                "Revision abc123\n\nRevision: abc123\nAdded: 1\nChanged: 0\nRetired: 0\nSlices:"
+                "Revision abc123\n\nRevision: abc123\nAdded: 1\nChanged: 0\nRetired: 0\nParts:"
             )
             .is_none(),
-            "an empty Slices trailer"
+            "an empty Parts trailer"
         );
         assert!(
             RevisionMessage::parse(
-                "Revision abc123\n\nRevision: abc123\nAdded: 1\nChanged: 0\nRetired: 0\nSlices: \
+                "Revision abc123\n\nRevision: abc123\nAdded: 1\nChanged: 0\nRetired: 0\nParts: \
                  orders changed"
             )
             .is_none(),
-            "a slice entry malformed"
+            "a part entry malformed"
         );
     }
 
@@ -1194,8 +1214,10 @@ mod tests {
     fn revision_message_passes_over_others() {
         let slice = Message {
             slice: SliceId::FIRST,
+            part: PartId::FIRST,
             name: "authentication".to_owned(),
             revision: "abc123".to_owned(),
+            budget: 12,
             requirements: vec![ReqId::FIRST],
             covered: vec![ReqId::FIRST],
             adapter: "acme:builder@1.0.0".to_owned(),
@@ -1203,6 +1225,7 @@ mod tests {
             wave: 1,
         }
         .to_string();
+        assert_eq!(Message::parse(&slice).as_ref().map(ToString::to_string), Some(slice.clone()));
         assert!(RevisionMessage::parse(&slice).is_none());
         assert!(RevisionMessage::parse("Revision abc123\n\nRevision: other").is_none());
         assert!(RevisionMessage::parse("Revision \n\nRevision: ").is_none());

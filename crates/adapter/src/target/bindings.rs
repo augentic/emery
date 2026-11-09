@@ -45,6 +45,7 @@ impl From<TargetMetadata> for wit::TargetMetadata {
         Self {
             emery_version: metadata.emery_version,
             merge_rules: metadata.merge_rules.into_iter().map(Into::into).collect(),
+            budget: metadata.budget,
         }
     }
 }
@@ -54,6 +55,7 @@ impl From<wit::TargetMetadata> for TargetMetadata {
         Self {
             emery_version: metadata.emery_version,
             merge_rules: metadata.merge_rules.into_iter().map(Into::into).collect(),
+            budget: metadata.budget,
         }
     }
 }
@@ -100,7 +102,10 @@ impl From<Slice> for wit::Slice {
     fn from(slice: Slice) -> Self {
         Self {
             id: slice.id,
+            part: slice.part,
             name: slice.name,
+            index: slice.index,
+            count: slice.count,
             base: slice.base,
             requirements: slice.requirements.into_iter().map(Into::into).collect(),
             types: slice.types.into_iter().map(Into::into).collect(),
@@ -117,7 +122,10 @@ impl From<wit::Slice> for Slice {
     fn from(slice: wit::Slice) -> Self {
         Self {
             id: slice.id,
+            part: slice.part,
             name: slice.name,
+            index: slice.index,
+            count: slice.count,
             base: slice.base,
             requirements: slice.requirements.into_iter().map(Into::into).collect(),
             types: slice.types.into_iter().map(Into::into).collect(),

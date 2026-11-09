@@ -14,7 +14,7 @@ use emery_sdk::survey::code::{
 use emery_sdk::survey::resolve::Target;
 use emery_sdk::survey::route::{self, Spelling};
 use emery_sdk::survey::tests::Statement;
-use emery_sdk::survey::{ClassSyntax, Dialect, Lines};
+use emery_sdk::survey::{Annotations, ClassSyntax, Dialect, Lines};
 use emery_sdk::{Trigger, kebab};
 
 pub static TYPESCRIPT: Dialect = Dialect {
@@ -40,6 +40,13 @@ pub static TYPESCRIPT: Dialect = Dialect {
     env_object: Some("process.env"),
     enum_bases: &[],
     class_syntax: ClassSyntax::BRACED,
+    annotations: Annotations {
+        integer: "number",
+        float: "number",
+        string: "string",
+        boolean: "boolean",
+        unknown: "unknown",
+    },
     described: "a case's title under its suites'",
     route: Spelling {
         pattern: &['*', '{', '(', '['],
@@ -70,6 +77,13 @@ pub static PYTHON: Dialect = Dialect {
     env_object: None,
     enum_bases: &["Enum", "Flag"],
     class_syntax: ClassSyntax::INDENTED,
+    annotations: Annotations {
+        integer: "int",
+        float: "float",
+        string: "str",
+        boolean: "bool",
+        unknown: "object",
+    },
     described: "a test's docstring or name under its class's",
     route: Spelling {
         pattern: &['*', '{', '(', '[', '<'],

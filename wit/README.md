@@ -13,10 +13,10 @@ This directory contains [`emery.wit`](emery.wit), the WebAssembly Interface Type
   - `metadata(id) -> adapter-metadata`: Returns the adapter's minimum `emery-version` and its `source-kind` (`intent`, `documentation`, or `behaviour`).
   - `extract(id, input) -> result<evidence, error>`: Reads a `workspace` path or inline `value` and returns `evidence` (a list of typed `claim` records with optional `backing` and JSON-encoded `extras`).
 - **`target` interface and `target-adapter` world:** The contract for target adapters (`emery build`):
-  - `metadata(id) -> target-metadata`: Returns the adapter's minimum `emery-version` and path-glob `merge-rules` (`union`, `ours`, or `theirs`).
+  - `metadata(id) -> target-metadata`: Returns the adapter's minimum `emery-version`, path-glob `merge-rules` (`union`, `ours`, or `theirs`), and optional default requirement `budget` per slice.
   - `run(id, workspace, task) -> result<outcome, error>`: Executes one `task` in the writable `workspace` directory and returns the matching `outcome`:
     - `init` → `initialised`: Deterministically scaffolds missing project layout files before the first slice builds.
-    - `build(slice)` → `built(report)`: Implements one `slice` (carrying typed `requirements`, `types`, `brief`, and Markdown projections) and reports the `covered` requirement IDs and `written` file paths.
+    - `build(slice)` → `built(report)`: Implements one `slice` (carrying its part's `part` ID, `name`, and `brief`, its 1-based `index` of `count`, typed `requirements` and `types`, and Markdown projections) and reports the `covered` requirement IDs and `written` file paths.
     - `verify` → `verified(verdict)`: Runs checks and repairs across the integrated workspace after a wave merges, returning `passed` and any remaining `failures`.
 
 ### Shared binding generation

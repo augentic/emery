@@ -17,14 +17,14 @@ This tutorial walks you through updating an existing sealed specification using 
 
 ## Why `emery amend` instead of `emery specify`?
 
-Once a specification is sealed and built, requirements (`REQ-001`) and build slices (`SLICE-001`) are referenced across commits, tests, and code. Running `emery specify` again would synthesize a brand-new specification from scratch and renumber requirements from `REQ-001`.
+Once a specification is sealed and built, requirements (`REQ-001`) and plan parts (`PART-001`) are referenced across commits, tests, and code. Running `emery specify` again would synthesize a brand-new specification from scratch and renumber requirements from `REQ-001`.
 
 [`emery amend`](../reference/cli/amend.md) instead treats your inputs as an incremental **change** against the currently sealed revision:
 
 - Existing requirements that match a change claim keep their `REQ-NNN` ID and become `changed`.
 - Untouched requirements are copied byte-for-byte as `unchanged`.
 - Brand-new behaviours receive new `REQ-NNN` IDs starting above the current specification's highest ID.
-- Only affected requirements, design sections, and build slices are redrafted.
+- Only affected requirements, design sections, and plan parts are redrafted.
 
 ---
 
@@ -70,7 +70,7 @@ Inspect the staged amendment with [`emery show amendment`](../reference/cli/show
 "$emery" show amendment
 ```
 
-Under `## Changed`, you will see `REQ-001` (`greeting.behaviour`) showing both `Before:` (the previous `'hello'` statement) and `After:` (the updated `'hello, world'` statement), along with its redrafted acceptance scenario. Because the requirement kept its stem (`greeting`) and no technology decision changed, the design and slice structure needed no extra model turns.
+Under `## Changed`, you will see `REQ-001` (`greeting.behaviour`) showing both `Before:` (the previous `'hello'` statement) and `After:` (the updated `'hello, world'` statement), along with its redrafted acceptance scenario. Because the requirement kept its stem (`greeting`) and no technology decision changed, the design and part structure needed no extra model turns.
 
 ---
 
@@ -128,12 +128,12 @@ staged amendment <amendment-id>
   1 added, 0 changed, 0 retired, 0 conflict, 1 unchanged
   stems: farewell
   design: overview, apis
-  slices: farewell (new)
+  parts: farewell (new)
   sealed revision <third-revision-id> as emery/<third-revision-id> at <commit-sha>
     amends <second-revision-id>
 ```
 
-Inspect the updated specification, design, and build plan:
+Inspect the updated specification, design, build plan, and build schedule:
 
 ```bash
 # REQ-002 appears alongside REQ-001, and names no database technology
@@ -142,8 +142,9 @@ Inspect the updated specification, design, and build plan:
 # PostgreSQL appears in ## APIs and integrations inside the design
 "$emery" show design
 
-# SLICE-002 (farewell) is added alongside SLICE-001 (greeting)
+# PART-002 (farewell) is added alongside PART-001 (greeting)
 "$emery" show plan
+"$emery" show schedule
 ```
 
 Build the updated plan and merge the result:

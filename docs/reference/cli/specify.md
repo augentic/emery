@@ -50,11 +50,11 @@ For the full synthesis pipeline, authority rank rules, and technology-neutral `L
 
 `emery specify` always synthesizes a brand-new revision from its sources alone:
 
-- Requirements are numbered `REQ-001` upward in source order, and slices are numbered `SLICE-001` upward.
+- Requirements are numbered `REQ-001` upward in source order, and parts are numbered `PART-001` upward.
 - Each document's `parent` field is `null`.
 - Existing requirements in the sealed revision are not read into synthesis; the current revision is read only to compute the advisory `diff` summary (and as the parent commit when sealing a non-lineage revision under `--apply`).
 
-To update an existing sealed revision while preserving `REQ-NNN` and `SLICE-NNN` identifiers, use [`emery amend`](amend.md) instead.
+To update an existing sealed revision while preserving `REQ-NNN` and `PART-NNN` identifiers, use [`emery amend`](amend.md) instead.
 
 ### A lineage is amended or started over
 
@@ -125,7 +125,7 @@ When `--format json` is passed, `emery specify` writes a single JSON object to `
 | Field | Type | When present | Description |
 | --- | --- | --- | --- |
 | `revision` | `string` | Always | Content-addressed SHA-256 ID of the staged candidate revision. |
-| `waves` | `string[][]` | Always | Slice IDs (`SLICE-NNN`) grouped into dependency waves in build order. |
+| `waves` | `string[][]` | Always | Part IDs (`PART-NNN`) grouped into dependency waves in build order. |
 | `staged` | ` boolean` | Always | `true` when the candidate remains staged; `false` when `--apply` sealed it. |
 | `fresh` | `boolean` | Always | `true` when staged with `--fresh`; `false` otherwise. |
 | `diff` | `object` | When `[target]` has a readable current revision | Advisory diff (`from`, `spec`, `design`, `plan`) comparing the candidate against the current revision. |
@@ -138,7 +138,7 @@ When `--format json` is passed, `emery specify` writes a single JSON object to `
 
 ```text
 staged candidate 9f8e7d6c…
-  plan: 3 slices in 2 waves, widest 2
+  plan: 3 parts in 2 waves, widest 2
   upstream-api read from https://github.com/acme/api.git at v2.3.0: 4e5f6a7b…
   diff vs 1a2b3c4d: spec +1 -0 ~1 preamble, design +0 -0 ~1, plan +1 -0 ~1
   nothing sealed; `emery apply` seals it

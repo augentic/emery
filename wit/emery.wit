@@ -210,7 +210,8 @@ interface target {
   }
 
   /// What a target adapter declares about itself, as compiled-in
-  /// constants: the host version requirement and its merge rules.
+  /// constants: the host version requirement, its merge rules, and its
+  /// default requirement budget per slice.
   record target-metadata {
     /// The minimum `emery` version this adapter needs, as an exact semver
     /// like Cargo's `rust-version`. The host refuses the adapter when the
@@ -220,6 +221,10 @@ interface target {
     /// alone knows which files its builds regenerate and which they
     /// extend. Empty leaves every conflict unresolved.
     merge-rules: list<merge-rule>,
+    /// The default requirement budget per slice for this adapter's layout,
+    /// when neither `--budget` nor `[target] budget` sets one. Absent uses
+    /// the engine's default.
+    budget: option<u32>,
   }
 
   /// One acceptance scenario of a requirement, as the specification
@@ -293,13 +298,20 @@ interface target {
     body: list<u8>,
   }
 
-  /// One slice of the build plan, as `emery show` renders the revision it
-  /// comes from. A target is value-in; it never reads the revision store.
+  /// One slice of the build schedule, cut from one part of the plan. A
+  /// target is value-in; it never reads the revision store.
   record slice {
     /// The slice's stable identifier, `SLICE-001`.
     id: string,
-    /// The slice's drafted kebab-case name, which labels the build.
+    /// The part's stable identifier, `PART-001`.
+    part: string,
+    /// The part's drafted kebab-case name, which names the logical module
+    /// and labels the build.
     name: string,
+    /// The 1-based position of this slice within its part's cut (`1`..=`count`).
+    index: u32,
+    /// How many slices the part was cut into under the build's budget.
+    count: u32,
     /// The commit the lent tree sits on: the integrated head the slice
     /// builds over, so a worker elsewhere can materialise the same tree.
     base: string,
@@ -309,7 +321,7 @@ interface target {
     requirements: list<requirement>,
     /// The design types the slice owns, each one `design` renders.
     types: list<design-type>,
-    /// The plan's brief for the slice: the paragraphs a builder reads
+    /// The part's brief from the plan: the paragraphs a builder reads
     /// before taking it up.
     brief: list<string>,
     /// The specification cut to the slice: its preamble and the slice's
@@ -317,8 +329,8 @@ interface target {
     spec: string,
     /// The whole design, as `emery show design` renders it.
     design: string,
-    /// The slice's own plan entry: the requirements it builds, the design
-    /// types it owns, the slices built before it, and its brief.
+    /// The part's entry in the plan: the requirements it builds, the design
+    /// types it owns, the parts built before it, and its brief.
     plan: string,
     /// Every layout the design's `ui-layout` section names, in the
     /// design's order, read from the sealed revision's `spec/layouts/` and

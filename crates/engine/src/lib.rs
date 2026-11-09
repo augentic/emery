@@ -24,6 +24,7 @@ mod secrets;
 pub mod show;
 pub mod specify;
 mod store;
+mod text;
 pub mod vcs;
 
 use std::future::Future;

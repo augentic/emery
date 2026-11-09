@@ -1,15 +1,17 @@
-//! Renders engine results as `--format text` output.
+//! Renders verb outputs as `--format text` stdout.
 
 use std::collections::BTreeSet;
 use std::fmt;
 
-use emery_engine::amend::{AmendOutput, SliceChange, SliceClass};
-use emery_engine::apply::ApplyOutput;
-use emery_engine::build::{BuildOutput, BuiltSlice, Candidate, StagedKind};
-use emery_engine::show::ShowOutput;
-use emery_engine::specify::{Diff, RepositorySource, SectionKind, SpecifyOutput, Waves};
+use omnia_sdk::api::command::Render;
 
-pub fn specify(output: &SpecifyOutput, w: &mut dyn fmt::Write) -> fmt::Result {
+use crate::amend::{AmendOutput, PartChange, PartClass};
+use crate::apply::ApplyOutput;
+use crate::build::{BuildOutput, BuiltSlice, Candidate, ScheduledSlice, StagedKind};
+use crate::show::ShowOutput;
+use crate::specify::{Diff, RepositorySource, SectionKind, SpecifyOutput, Waves};
+
+fn specify(output: &SpecifyOutput, w: &mut dyn fmt::Write) -> fmt::Result {
     write!(w, "staged candidate {}", output.revision)?;
     if output.fresh {
         w.write_str(" (fresh)")?;
@@ -24,7 +26,7 @@ pub fn specify(output: &SpecifyOutput, w: &mut dyn fmt::Write) -> fmt::Result {
     }
 }
 
-pub fn apply(output: &ApplyOutput, w: &mut dyn fmt::Write) -> fmt::Result {
+fn apply(output: &ApplyOutput, w: &mut dyn fmt::Write) -> fmt::Result {
     sealed(output, "", w)?;
     if output.repository != "." {
         writeln!(w, "  repository {}", output.repository)?;
@@ -32,7 +34,7 @@ pub fn apply(output: &ApplyOutput, w: &mut dyn fmt::Write) -> fmt::Result {
     diff(output.diff.as_ref(), w)
 }
 
-pub fn amend(output: &AmendOutput, w: &mut dyn fmt::Write) -> fmt::Result {
+fn amend(output: &AmendOutput, w: &mut dyn fmt::Write) -> fmt::Result {
     match &output.amendment {
         Some(id) => writeln!(w, "staged amendment {id}")?,
         None => writeln!(w, "nothing staged: no change against the current revision")?,
@@ -64,8 +66,8 @@ pub fn amend(output: &AmendOutput, w: &mut dyn fmt::Write) -> fmt::Result {
             .chain(kinds.iter().map(AsRef::as_ref));
         writeln!(w, "  design: {}", comma_separated(names))?;
     }
-    if !output.slices.is_empty() {
-        writeln!(w, "  slices: {}", comma_separated(output.slices.iter().map(slice_change)))?;
+    if !output.parts.is_empty() {
+        writeln!(w, "  parts: {}", comma_separated(output.parts.iter().map(part_change)))?;
     }
     repositories(&output.repositories, w)?;
     if let Some(applied) = &output.applied {
@@ -76,15 +78,15 @@ pub fn amend(output: &AmendOutput, w: &mut dyn fmt::Write) -> fmt::Result {
     Ok(())
 }
 
-fn slice_change(slice: &SliceChange) -> impl fmt::Display {
-    // A changed slice where no slicing turn ran keeps its base brief.
-    let tag = match slice.class {
-        SliceClass::Added => " (new)",
-        SliceClass::Changed if slice.keeps_brief() => " (brief kept)",
-        SliceClass::Changed => "",
-        SliceClass::Removed => " (removed)",
+fn part_change(part: &PartChange) -> impl fmt::Display {
+    // A changed part where no slicing turn ran keeps its base brief.
+    let tag = match part.class {
+        PartClass::Added => " (new)",
+        PartClass::Changed if part.keeps_brief() => " (brief kept)",
+        PartClass::Changed => "",
+        PartClass::Removed => " (removed)",
     };
-    fmt::from_fn(move |f| write!(f, "{}{tag}", slice.name))
+    fmt::from_fn(move |f| write!(f, "{}{tag}", part.name))
 }
 
 fn repositories(reads: &[RepositorySource], w: &mut dyn fmt::Write) -> fmt::Result {
@@ -169,9 +171,13 @@ fn document_diff(
     })
 }
 
-pub fn build(output: &BuildOutput, w: &mut dyn fmt::Write) -> fmt::Result {
+fn build(output: &BuildOutput, w: &mut dyn fmt::Write) -> fmt::Result {
     writeln!(w, "built revision {}", output.revision)?;
-    waves(&output.waves, w)?;
+    build_plan(output, w)?;
+    let mut over = output.schedule.iter().filter(|slice| slice.over_budget).peekable();
+    if over.peek().is_some() {
+        writeln!(w, "  over budget: {}", comma_separated(over.map(over_slice)))?;
+    }
     match &output.candidate {
         Some(Candidate {
             id,
@@ -224,9 +230,41 @@ pub fn build(output: &BuildOutput, w: &mut dyn fmt::Write) -> fmt::Result {
     writeln!(w, "  labelled {} at {}", output.label, output.head)
 }
 
+fn build_plan(output: &BuildOutput, w: &mut dyn fmt::Write) -> fmt::Result {
+    let parts = &output.parts;
+    let waves = &output.waves;
+    writeln!(
+        w,
+        "  plan: {} in {}; budget {} ({}): {} in {}, widest {}",
+        counted(parts.parts(), "part"),
+        counted(parts.len(), "wave"),
+        output.budget,
+        output.budget_source.as_ref(),
+        counted(waves.slices(), "slice"),
+        counted(waves.len(), "wave"),
+        waves.widest()
+    )
+}
+
+fn over_slice(slice: &ScheduledSlice) -> impl fmt::Display {
+    fmt::from_fn(move |f| {
+        write!(
+            f,
+            "{} {} ({})",
+            slice.id,
+            slice.name,
+            counted(slice.requirements.len(), "requirement")
+        )
+    })
+}
+
 fn built(slice: &BuiltSlice, w: &mut dyn fmt::Write) -> fmt::Result {
     let total = slice.covered.len() + slice.uncovered.len();
-    write!(w, "    {} {}: covered {}/{total}", slice.id, slice.name, slice.covered.len())?;
+    write!(w, "    {} {}", slice.id, slice.name)?;
+    if slice.count > 1 {
+        write!(w, " ({}/{})", slice.index, slice.count)?;
+    }
+    write!(w, ": covered {}/{total}", slice.covered.len())?;
     if !slice.uncovered.is_empty() {
         write!(w, " (uncovered {})", comma_separated(&slice.uncovered))?;
     }
@@ -241,13 +279,13 @@ fn built(slice: &BuiltSlice, w: &mut dyn fmt::Write) -> fmt::Result {
     writeln!(w)
 }
 
-// `  plan: 4 slices in 3 waves, widest 2`: how many slices the plan holds,
+// `  plan: 4 parts in 3 waves, widest 2`: how many parts the plan holds,
 // how many waves they fall into, and the most ready at once.
 fn waves(waves: &Waves, w: &mut dyn fmt::Write) -> fmt::Result {
     writeln!(
         w,
         "  plan: {} in {}, widest {}",
-        counted(waves.slices(), "slice"),
+        counted(waves.parts(), "part"),
         counted(waves.len(), "wave"),
         waves.widest()
     )
@@ -279,6 +317,36 @@ where
 }
 
 // Writes the document body alone so the Markdown can be piped directly.
-pub fn show(output: &ShowOutput, w: &mut dyn fmt::Write) -> fmt::Result {
+fn show(output: &ShowOutput, w: &mut dyn fmt::Write) -> fmt::Result {
     w.write_str(&output.body)
+}
+
+impl Render for SpecifyOutput {
+    fn render(&self, out: &mut dyn fmt::Write) -> fmt::Result {
+        specify(self, out)
+    }
+}
+
+impl Render for ApplyOutput {
+    fn render(&self, out: &mut dyn fmt::Write) -> fmt::Result {
+        apply(self, out)
+    }
+}
+
+impl Render for AmendOutput {
+    fn render(&self, out: &mut dyn fmt::Write) -> fmt::Result {
+        amend(self, out)
+    }
+}
+
+impl Render for BuildOutput {
+    fn render(&self, out: &mut dyn fmt::Write) -> fmt::Result {
+        build(self, out)
+    }
+}
+
+impl Render for ShowOutput {
+    fn render(&self, out: &mut dyn fmt::Write) -> fmt::Result {
+        show(self, out)
+    }
 }

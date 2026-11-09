@@ -10,12 +10,12 @@ use std::os::unix::fs::{PermissionsExt as _, symlink};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 
-use emery_engine::amend::SliceClass;
-use emery_engine::vcs::{Message, RevisionMessage, SliceSummary, Summary};
-use omnia::{Backend as _, CompileOptions, Digest, ExitStatus, RuntimeOptions, StoreCtx};
+use emery_engine::amend::PartClass;
+use emery_engine::vcs::{Message, PartSummary, RevisionMessage, Summary};
+use omnia::{CompileOptions, Connect as _, Digest, ExitStatus, RuntimeOptions, StoreCtx};
 use omnia_git::{Client, ConnectOptions};
 use omnia_test::host::{Backends, Deployment, Run, Scratch, ScriptedModel, scratch};
-use omnia_wasi_blobstore::WasiBlobstore;
+use omnia_wasi_blobstore::WasiBlobStore;
 use omnia_wasi_keyvalue::WasiKeyValue;
 use omnia_wasi_model::WasiModel;
 use omnia_wasi_otel::WasiOtel;
@@ -89,7 +89,7 @@ const SPEC_PAIR: &str = r#"{"preamble": ["Two surfaces: a greeting and a farewel
     {"subject": "farewell.behaviour", "scenarios": [{"name": "Farewell requested",
      "given": ["the farewell surface is bound"], "when": "`/farewell` is requested",
      "then": "the response is `bye`"}]}]}"#;
-const SLICING_PAIR: &str = r#"{"preamble": [], "slices": [
+const SLICING_PAIR: &str = r#"{"preamble": [], "parts": [
     {"name": "greeting", "requirements": ["REQ-001"]},
     {"name": "farewell", "requirements": ["REQ-002"]}]}"#;
 // The farewell slice writes a file of its own beside the greeting's.
@@ -105,6 +105,52 @@ const REPORT_INDEX_GREETING: &str = r#"{"covered": ["REQ-001"], "written": ["bui
 const REPORT_INDEX_FAREWELL: &str = r#"{"covered": ["REQ-002"], "written": ["build/index.md"]}"#;
 const RESOLVED_INDEX: &str = "# Index\n\n- greeting\n- farewell\n";
 const MERGE_INDEX: &str = r##"{"files": [{"path": "build/index.md", "content": "# Index\n\n- greeting\n- farewell\n"}]}"##;
+
+// A two-part journey where `greeting` holds two sub-stems (`morning` with two
+// requirements and `evening` with one) and `farewell` holds one requirement:
+// at the mock target's budget of 2, `greeting` cuts into two serial slices
+// across two waves while `farewell` builds beside the first.
+const EXTRACT_SERIAL: &str = r#"{"claims": [
+    {"kind": "requirement", "id": "greeting.morning.behaviour", "path": "docs/greeting.md#L3",
+     "statement": "GET /greeting/morning returns the static string 'good morning'."},
+    {"kind": "requirement", "id": "greeting.morning.format", "path": "docs/greeting.md#L4",
+     "statement": "Morning greetings are plain text."},
+    {"kind": "requirement", "id": "greeting.evening.behaviour", "path": "docs/greeting.md#L5",
+     "statement": "GET /greeting/evening returns the static string 'good evening'."},
+    {"kind": "requirement", "id": "farewell.behaviour", "path": "docs/greeting.md#L7",
+     "statement": "GET /farewell returns the static string 'bye'."}]}"#;
+const GROUPING_SERIAL: &str = r#"{"groups": [
+    {"claims": [0], "classes": [[0]]},
+    {"claims": [1], "classes": [[1]]},
+    {"claims": [2], "classes": [[2]]},
+    {"claims": [3], "classes": [[3]]}]}"#;
+const SPEC_SERIAL: &str = r#"{"preamble": ["Morning and evening greetings, and a farewell."],
+    "requirements": [
+    {"subject": "greeting.morning.behaviour", "scenarios": [{"name": "Morning greeting",
+     "given": ["the greeting surface is bound"], "when": "`/greeting/morning` is requested",
+     "then": "the response is `good morning`"}]},
+    {"subject": "greeting.morning.format", "scenarios": [{"name": "Morning format",
+     "given": ["the greeting surface is bound"], "when": "`/greeting/morning` is requested",
+     "then": "the response is plain text"}]},
+    {"subject": "greeting.evening.behaviour", "scenarios": [{"name": "Evening greeting",
+     "given": ["the greeting surface is bound"], "when": "`/greeting/evening` is requested",
+     "then": "the response is `good evening`"}]},
+    {"subject": "farewell.behaviour", "scenarios": [{"name": "Farewell requested",
+     "given": ["the farewell surface is bound"], "when": "`/farewell` is requested",
+     "then": "the response is `bye`"}]}]}"#;
+const SLICING_SERIAL: &str = r#"{"preamble": [], "parts": [
+    {"name": "greeting", "requirements": ["REQ-001", "REQ-002", "REQ-003"]},
+    {"name": "farewell", "requirements": ["REQ-004"]}]}"#;
+const WRITE_GREETING_MORNING: &str =
+    r##"{"files": [{"path": "build/greeting.md", "content": "# Greeting\n\n- morning\n"}]}"##;
+const WRITE_GREETING_EVENING: &str = r##"{"files": [{"path": "build/greeting.md", "content": "# Greeting\n\n- morning\n- evening\n"}]}"##;
+const REPORT_GREETING_MORNING: &str =
+    r#"{"covered": ["REQ-001", "REQ-002"], "written": ["build/greeting.md"]}"#;
+const REPORT_GREETING_EVENING: &str =
+    r#"{"covered": ["REQ-003"], "written": ["build/greeting.md"]}"#;
+const REPORT_FAREWELL_FOUR: &str = r#"{"covered": ["REQ-004"], "written": ["build/farewell.md"]}"#;
+const REPORT_LEAK_EVENING: &str =
+    r#"{"covered": ["REQ-003"], "written": ["build/greeting.md", "build/leak.pem"]}"#;
 
 // The amendment journey over the one-slice revision: one brief revising the
 // greeting, adding a farewell under a stem no slice holds, and prescribing
@@ -137,10 +183,10 @@ const SPEC_AMEND: &str = r#"{"preamble": [], "requirements": [
 const DESIGN_AMEND: &str = r#"{"sections": [
     {"kind": "overview", "blocks": [{"text": "Two static endpoints: `GET /greeting` returning `'hello, world'` (`REQ-001`) and `GET /farewell` returning `'bye'` (`REQ-002`); no state or configuration is involved."}], "revised": [1]},
     {"kind": "apis", "blocks": [{"text": "The farewell's phrasebook is kept in a relational store."}], "revised": []}]}"#;
-const SLICING_AMEND: &str = r#"{"slices": [
-    {"name": "farewell", "requirements": ["REQ-002"], "types": [], "depends-on": [],
+const SLICING_AMEND: &str = r#"{"parts": [
+    {"name": "farewell", "requirements": ["REQ-002"], "types": [], "uses": [],
      "brief": ["Delivers the farewell beside the greeting."]}], "joins": [],
-    "briefs": [{"slice": "SLICE-001", "brief": ["Delivers the revised greeting, `hello, world`."]}]}"#;
+    "briefs": [{"part": "PART-001", "brief": ["Delivers the revised greeting, `hello, world`."]}]}"#;
 // The greeting slice built again under the amended revision writes the
 // revised greeting, so its merge changes the tree this time.
 const WRITE_GREETING_AMEND: &str =
@@ -582,7 +628,7 @@ async fn emery(deployment: Deployment, backends: &Bundle, model: &ScriptedModel)
 fn link(deployment: &mut omnia::Deployment<StoreCtx<Bundle>>) -> anyhow::Result<()> {
     deployment.host::<WasiModel, Bundle>()?;
     deployment.host::<WasiKeyValue, Bundle>()?;
-    deployment.host::<WasiBlobstore, Bundle>()?;
+    deployment.host::<WasiBlobStore, Bundle>()?;
     deployment.host::<WasiOtel, Bundle>()?;
     deployment.host::<WasiVcs, Bundle>()?;
     Ok(())
@@ -661,6 +707,19 @@ fn specifying_pair() -> ScriptedModel {
     ScriptedModel::answering([EXTRACT_PAIR, GROUPING_PAIR, SPEC_PAIR, DESIGN_ANSWER, SLICING_PAIR])
 }
 
+// The two-part specify script whose `greeting` part holds three requirements
+// across two sub-stems, so the mock target's budget of 2 cuts it into two
+// serial slices.
+fn specifying_serial() -> ScriptedModel {
+    ScriptedModel::answering([
+        EXTRACT_SERIAL,
+        GROUPING_SERIAL,
+        SPEC_SERIAL,
+        DESIGN_ANSWER,
+        SLICING_SERIAL,
+    ])
+}
+
 // The amend script: the mock source's one extract turn over the brief, the
 // grouping against the standing greeting, the spec draft and the design
 // turn the decision informs, which the engine puts together and the host
@@ -715,6 +774,15 @@ async fn built() -> (Roots, Bundle, String, String) {
     let run = emery(roots.deployment(&["build"]), &backends, &model).await;
     assert_ok(&run);
     model.assert_exhausted();
+    let seen = model.seen();
+    assert!(
+        seen[0].messages[0].starts_with(
+            "Build slice 1 of 1 of part `greeting` (PART-001) as SLICE-001, bound to adapter \
+             `acme:target`.\n\n"
+        ),
+        "{}",
+        seen[0].messages[0]
+    );
     let revision = revision_of(&run);
     (roots, backends, revision, base)
 }
@@ -828,11 +896,11 @@ async fn specify_staged() {
     assert_ok(&run);
     model.assert_exhausted();
     let second = revision_of(&run);
-    assert_ne!(second, first, "two slices draft another candidate");
+    assert_ne!(second, first, "two parts draft another candidate");
     let shown = roots.run_idle(&["show", "plan", "--staged"], &backends).await;
     assert_ok(&shown);
     assert!(shown.stdout.contains(&format!("revision: {second}\n")), "{}", shown.stdout);
-    assert!(shown.stdout.contains("## Slice: farewell"), "{}", shown.stdout);
+    assert!(shown.stdout.contains("## Part: farewell"), "{}", shown.stdout);
     assert_eq!(roots.git.branches(project), ["main"], "still nothing is sealed");
     assert_eq!(roots.git.head(project), base);
 
@@ -857,7 +925,7 @@ async fn specify_staged() {
     assert_eq!(roots.git.head(project), base, "the checkout is untouched");
     let shown = roots.run_idle(&["show", "plan"], &backends).await;
     assert_ok(&shown);
-    assert!(shown.stdout.contains("## Slice: farewell"), "{}", shown.stdout);
+    assert!(shown.stdout.contains("## Part: farewell"), "{}", shown.stdout);
 }
 
 // `apply`, and `specify --apply`, need the repository the specification
@@ -988,7 +1056,7 @@ async fn specify_over_built() {
     assert_ok(&shown);
     let envelope: Value = serde_json::from_str(&shown.stdout).expect("the show envelope");
     assert_eq!(envelope["revision"], second);
-    assert_eq!(envelope["document"]["emery"], 9);
+    assert_eq!(envelope["document"]["emery"], 11);
     assert!(envelope["document"]["parent"].is_null(), "drafted from the sources: {envelope}");
 
     // one build at a time, so the turns arrive in slice order; the layout
@@ -1037,7 +1105,7 @@ async fn specify_over_built() {
 fn amend_block(amendment: &str, parent: &str, over: &str) -> String {
     format!(
         "staged amendment {amendment}\n  base {parent} at {}\n  1 added, 1 changed, 0 retired, 0 \
-         conflict, 0 unchanged\n  stems: farewell, greeting\n  design: overview, apis\n  slices: \
+         conflict, 0 unchanged\n  stems: farewell, greeting\n  design: overview, apis\n  parts: \
          greeting, farewell (new)\n",
         &over[..8]
     )
@@ -1091,16 +1159,16 @@ async fn assert_amended(
                 added: 1,
                 changed: 1,
                 retired: 0,
-                slices: vec![
-                    SliceSummary {
-                        id: "SLICE-001".parse().expect("a slice id"),
+                parts: vec![
+                    PartSummary {
+                        id: "PART-001".parse().expect("a part id"),
                         name: "greeting".to_owned(),
-                        class: SliceClass::Changed,
+                        class: PartClass::Changed,
                     },
-                    SliceSummary {
-                        id: "SLICE-002".parse().expect("a slice id"),
+                    PartSummary {
+                        id: "PART-002".parse().expect("a part id"),
                         name: "farewell".to_owned(),
-                        class: SliceClass::Added,
+                        class: PartClass::Added,
                     },
                 ],
             }),
@@ -1113,7 +1181,7 @@ async fn assert_amended(
         "Added: 1",
         "Changed: 1",
         "Retired: 0",
-        "Slices: SLICE-001 greeting changed, SLICE-002 farewell added",
+        "Parts: PART-001 greeting changed, PART-002 farewell added",
     ] {
         assert!(message.contains(trailer), "`{trailer}` in: {message}");
     }
@@ -1142,6 +1210,22 @@ async fn assert_amended(
     let shown = roots.run_idle(&["show", "design"], backends).await;
     assert_ok(&shown);
     assert!(shown.stdout.contains("## APIs and integrations"), "{}", shown.stdout);
+    let shown = roots.run_idle(&["show", "plan"], backends).await;
+    assert_ok(&shown);
+    assert!(shown.stdout.contains("## Part: greeting\n\nID: PART-001\n"), "{}", shown.stdout);
+    assert!(shown.stdout.contains("## Part: farewell\n\nID: PART-002\n"), "{}", shown.stdout);
+    let shown = roots.run_idle(&["show", "schedule"], backends).await;
+    assert_ok(&shown);
+    assert!(
+        shown.stdout.contains(
+            "# Schedule\n\nBudget: 2 (adapter)\nWaves: [SLICE-001, SLICE-002]\n\n## Slice: \
+             greeting\n\nID: SLICE-001\nPart: PART-001 (1/1)\nWave: 1\nRequirements: [REQ-001]\n\n\
+             ## Slice: farewell\n\nID: SLICE-002\nPart: PART-002 (1/1)\nWave: 1\nRequirements: \
+             [REQ-002]\n"
+        ),
+        "{}",
+        shown.stdout
+    );
     let run = roots.run_idle(&["--format", "json", "show", "amendment"], backends).await;
     refused(&run, 2, "nothing-staged");
 }
@@ -1166,7 +1250,13 @@ async fn assert_rebuilt(roots: &Roots, backends: &Bundle, base: &str, revision: 
     assert_ok(&run);
     model.assert_exhausted();
     assert_eq!(revision_of(&run), revision);
-    assert!(run.stdout.contains("\n  plan: 2 slices in 1 wave, widest 2\n"), "{}", run.stdout);
+    assert!(
+        run.stdout.contains(
+            "\n  plan: 2 parts in 1 wave; budget 2 (adapter): 2 slices in 1 wave, widest 2\n"
+        ),
+        "{}",
+        run.stdout
+    );
     assert!(run.stdout.contains(&format!("\n  base {base}\n")), "{}", run.stdout);
     assert!(!run.stdout.contains("initialised"), "the layout is held: {}", run.stdout);
     assert!(!run.stdout.contains("resumed:"), "the parent's slices are not this revision's");
@@ -1181,6 +1271,12 @@ async fn assert_rebuilt(roots: &Roots, backends: &Bundle, base: &str, revision: 
         "SLICE-002 farewell\nSLICE-001 greeting",
         "one merge per slice over the amended revision"
     );
+    let first_merge = roots.git.message(project, &format!("{label}~1"));
+    assert!(first_merge.contains("Slice: SLICE-001\nPart: PART-001\n"), "{first_merge}");
+    assert!(first_merge.contains("Budget: 2\nRequirements: REQ-001\n"), "{first_merge}");
+    let second_merge = roots.git.message(project, &label);
+    assert!(second_merge.contains("Slice: SLICE-002\nPart: PART-002\n"), "{second_merge}");
+    assert!(second_merge.contains("Budget: 2\nRequirements: REQ-002\n"), "{second_merge}");
     assert_eq!(
         roots.git.run(project, &["show", &format!("{label}:build/greeting.md")]),
         "# Greeting\n\nhello, world"
@@ -1253,9 +1349,9 @@ async fn amend_applied_built() {
         "Before: GET /greeting returns the static string 'hello'.\n\nAfter: GET /greeting \
          returns the static string 'hello, world'.",
         "## Design\n\nChanged: Overview; added: APIs and integrations.\n",
-        "## Plan\n\n### Slice: greeting [changed]\n\nID: SLICE-001\n",
-        "Delivers the revised greeting, `hello, world`.\n\n### Slice: farewell [added]\n\nID: \
-         SLICE-002\n",
+        "## Plan\n\n### Part: greeting [changed]\n\nID: PART-001\n",
+        "Delivers the revised greeting, `hello, world`.\n\n### Part: farewell [added]\n\nID: \
+         PART-002\n",
     ] {
         assert!(shown.stdout.contains(fragment), "`{fragment}` in: {}", shown.stdout);
     }
@@ -1278,10 +1374,9 @@ async fn amend_applied_built() {
         )
     );
     assert_amended(&roots, &backends, &base, &parent, &over, &revision).await;
-    assert_eq!(
-        roots.git.branches(project),
-        [format!("emery/{parent}"), format!("emery/{revision}"), "main".to_owned()]
-    );
+    let mut labels = [format!("emery/{parent}"), format!("emery/{revision}"), "main".to_owned()];
+    labels.sort();
+    assert_eq!(roots.git.branches(project), labels);
     let run = roots.run_idle(&["--format", "json", "apply"], &backends).await;
     refused(&run, 2, "nothing-staged");
 
@@ -1526,7 +1621,7 @@ async fn amend_branches_merged() {
                 added: 0,
                 changed: 1,
                 retired: 0,
-                slices: Vec::new(),
+                parts: Vec::new(),
             }),
         }),
         "{message}"
@@ -1622,7 +1717,7 @@ async fn amend_branches_hand_merged() {
             &envelope,
             &format!(
                 "`spec/` at commit `{mixed}` holds documents that read as no one revision's \
-                 (`REQ-002` is placed by `SLICE-002` and is no requirement of the \
+                 (`REQ-002` is placed by `PART-002` and is no requirement of the \
                  specification), so they were edited or merged by hand; a seal writes them whole"
             ),
         );
@@ -1839,7 +1934,9 @@ async fn build_merged_labelled() {
     assert!(message.starts_with("SLICE-001 greeting\n\n"), "{message}");
     for trailer in [
         "Slice: SLICE-001".to_owned(),
+        "Part: PART-001".to_owned(),
         format!("Revision: {revision}"),
+        "Budget: 2".to_owned(),
         "Requirements: REQ-001".to_owned(),
         "Covered: REQ-001".to_owned(),
         format!("Adapter: {TARGET}"),
@@ -1883,14 +1980,234 @@ async fn build_resumed() {
     assert_eq!(
         run.stdout,
         format!(
-            "built revision {revision}\n  plan: 1 slice in 1 wave, widest 1\n  base {base}\n  \
-             resumed: SLICE-001\n  labelled {label} at {head}\n"
+            "built revision {revision}\n  plan: 1 part in 1 wave; budget 2 (adapter): 1 slice in \
+             1 wave, widest 1\n  base {base}\n  resumed: SLICE-001\n  labelled {label} at \
+             {head}\n"
         )
     );
     assert_eq!(roots.git.run(project, &["rev-parse", &label]), head, "the label stands");
     assert_eq!(roots.git.run(project, &["rev-parse", "HEAD"]), base);
     assert!(!project.join(".emery/vcs/integration").exists(), "the working copy is removed");
     assert_eq!(roots.git.branches(project), [label, "main".to_owned()]);
+}
+
+fn slice_message(
+    (slice, part, name): (&str, &str, &str), revision: &str, budget: usize, requirements: &[&str],
+    base: &str, wave: usize,
+) -> Message {
+    let ids: Vec<_> = requirements.iter().map(|id| id.parse().expect("req id")).collect();
+    Message {
+        slice: slice.parse().expect("slice id"),
+        part: part.parse().expect("part id"),
+        name: name.to_owned(),
+        revision: revision.to_owned(),
+        budget,
+        covered: ids.clone(),
+        requirements: ids,
+        adapter: TARGET.to_owned(),
+        base: base.to_owned(),
+        wave,
+    }
+}
+
+async fn specified_serial() -> (Roots, Bundle, String, String) {
+    let roots = Roots::new();
+    roots.stored(SOURCE, MOCK_SOURCE);
+    roots.stored(TARGET, MOCK_TARGET);
+    let backends = roots.backends().await;
+    let base = roots.sealed();
+    let applied = roots.applied(&backends, &specifying_serial()).await;
+    let revision = revision_of(&applied);
+    (roots, backends, base, revision)
+}
+
+// Over a multi-part plan where `greeting` holds three requirements across two
+// sub-stems, the mock target's metadata budget of 2 cuts `greeting` into two
+// serial slices (`SLICE-001` in wave 1 beside `farewell`'s `SLICE-003`, then
+// `SLICE-002` in wave 2 over wave 1's verified head), each wave verified and
+// labelled in turn and each slice commit carrying its `Part:`, `Budget:`, and
+// `Requirements:` trailers.
+#[tokio::test]
+async fn build_budget_serial() {
+    let (roots, backends, base, revision) = specified_serial().await;
+
+    let shown = roots.run_idle(&["show", "schedule"], &backends).await;
+    assert_ok(&shown);
+    assert!(
+        shown.stdout.contains(
+            "# Schedule\n\nBudget: 2 (adapter)\nWaves: [SLICE-001, SLICE-003], [SLICE-002]\n"
+        ),
+        "{}",
+        shown.stdout
+    );
+
+    let model = ScriptedModel::answering([
+        REPORT_GREETING_MORNING,
+        REPORT_FAREWELL_FOUR,
+        VERDICT_ANSWER,
+        REPORT_GREETING_EVENING,
+        VERDICT_ANSWER,
+    ])
+    .calling(0, [("write_files", WRITE_GREETING_MORNING)])
+    .calling(1, [("write_files", WRITE_FAREWELL)])
+    .calling(3, [("write_files", WRITE_GREETING_EVENING)]);
+    let run = emery(roots.deployment(&["build", "--jobs", "1"]), &backends, &model).await;
+
+    assert_ok(&run);
+    model.assert_exhausted();
+    let seen = model.seen();
+    for (turn, pos) in [(0, "1 of 2"), (3, "2 of 2")] {
+        let prefix = format!("Build slice {pos} of part `greeting` (PART-001) as SLICE-00");
+        assert!(seen[turn].messages[0].starts_with(&prefix), "{}", seen[turn].messages[0]);
+    }
+
+    let project = roots.project.path();
+    let label = format!("emery/{revision}");
+    let head = roots.git.run(project, &["rev-parse", &label]);
+    let wave1_head = roots.git.run(project, &["rev-parse", &format!("{label}~1")]);
+    let slice1_merge = roots.git.run(project, &["rev-parse", &format!("{label}~2")]);
+    let initialised = roots.git.run(project, &["rev-parse", &format!("{label}~3")]);
+
+    assert!(
+        run.stdout.contains(
+            "\n  plan: 2 parts in 1 wave; budget 2 (adapter): 3 slices in 2 waves, widest 2\n"
+        ),
+        "{}",
+        run.stdout
+    );
+    assert!(
+        run.stdout.contains(&format!(
+            "  wave 1: 2 slices verified at {}\n    SLICE-001 greeting (1/2): covered 2/2, \
+             written 1 file, merged {slice1_merge}\n    SLICE-003 farewell: covered 1/1, written \
+             1 file, merged {wave1_head}\n  wave 2: 1 slice verified at {}\n    SLICE-002 \
+             greeting (2/2): covered 1/1, written 1 file, merged {head}\n",
+            &wave1_head[..8],
+            &head[..8]
+        )),
+        "{}",
+        run.stdout
+    );
+    assert_eq!(
+        roots
+            .git
+            .run(project, &["log", "--first-parent", "--format=%s", &format!("{base}..{label}")]),
+        format!(
+            "SLICE-002 greeting\nSLICE-003 farewell\nSLICE-001 greeting\nInitialise\nRevision \
+             {revision}"
+        )
+    );
+    for (commit, spec, reqs, parent, wave) in [
+        (
+            &slice1_merge,
+            ("SLICE-001", "PART-001", "greeting"),
+            &["REQ-001", "REQ-002"][..],
+            &initialised,
+            1,
+        ),
+        (&wave1_head, ("SLICE-003", "PART-002", "farewell"), &["REQ-004"][..], &initialised, 1),
+        (&head, ("SLICE-002", "PART-001", "greeting"), &["REQ-003"][..], &wave1_head, 2),
+    ] {
+        assert_eq!(
+            Message::parse(&roots.git.message(project, commit)),
+            Some(slice_message(spec, &revision, 2, reqs, parent, wave))
+        );
+    }
+    assert_eq!(
+        roots.git.run(project, &["show", &format!("{wave1_head}:build/greeting.md")]),
+        "# Greeting\n\n- morning"
+    );
+    assert_eq!(
+        roots.git.run(project, &["show", &format!("{label}:build/greeting.md")]),
+        "# Greeting\n\n- morning\n- evening"
+    );
+}
+
+// Interrupting a 3-slice build after the first 2 slices are verified on the
+// label and resuming at `--budget 4` reads the committed `Requirements:`
+// trailers from the label chain: neither `REQ-001`, `REQ-002`, nor `REQ-004`
+// is built again, and only the remaining `REQ-003` builds under the new
+// budget.
+#[tokio::test]
+async fn build_budget_resume_requirements() {
+    let (roots, backends, base, revision) = specified_serial().await;
+    let label = format!("emery/{revision}");
+    let project = roots.project.path();
+
+    // wave 1 builds and verifies SLICE-001 and SLICE-003 (2 of 3 slices);
+    // wave 2 fails at SLICE-002 before sealing, leaving the label at wave 1
+    let first_run = ScriptedModel::answering([
+        REPORT_GREETING_MORNING,
+        REPORT_FAREWELL_FOUR,
+        VERDICT_ANSWER,
+        REPORT_LEAK_EVENING,
+    ])
+    .calling(0, [("write_files", WRITE_GREETING_MORNING)])
+    .calling(1, [("write_files", WRITE_FAREWELL)])
+    .calling(3, [("write_files", WRITE_LEAK)]);
+    let failed = emery(
+        roots.deployment(&["--format", "json", "build", "--jobs", "1"]),
+        &backends,
+        &first_run,
+    )
+    .await;
+    refused(&failed, 1, "secret-detected");
+    first_run.assert_exhausted();
+    let wave1_head = roots.git.run(project, &["rev-parse", &label]);
+
+    // re-run at `--budget 4`: the two slices from wave 1 are resumed by their
+    // committed requirements, and only REQ-003 builds as SLICE-002
+    let resumed_model = ScriptedModel::answering([REPORT_GREETING_EVENING, VERDICT_ANSWER])
+        .calling(0, [("write_files", WRITE_GREETING_EVENING)]);
+    let resumed =
+        emery(roots.deployment(&["build", "--budget", "4"]), &backends, &resumed_model).await;
+
+    assert_ok(&resumed);
+    resumed_model.assert_exhausted();
+    assert_eq!(resumed_model.seen().len(), 2, "one build turn for REQ-003 and one verify turn");
+    let head = roots.git.run(project, &["rev-parse", &label]);
+    assert!(
+        resumed.stdout.contains(
+            "\n  plan: 2 parts in 1 wave; budget 4 (flag): 3 slices in 2 waves, widest 2\n"
+        ),
+        "{}",
+        resumed.stdout
+    );
+    assert!(resumed.stdout.contains("\n  resumed: SLICE-001, SLICE-003\n"), "{}", resumed.stdout);
+    assert!(
+        resumed.stdout.contains(&format!(
+            "    SLICE-002 greeting (2/2): covered 1/1, written 1 file, merged {head}\n"
+        )),
+        "{}",
+        resumed.stdout
+    );
+    assert_eq!(
+        roots
+            .git
+            .run(project, &["log", "--first-parent", "--format=%s", &format!("{base}..{label}")]),
+        format!(
+            "SLICE-002 greeting\nSLICE-003 farewell\nSLICE-001 greeting\nInitialise\nRevision \
+             {revision}"
+        )
+    );
+    assert_eq!(
+        Message::parse(&roots.git.message(project, &head)),
+        Some(slice_message(
+            ("SLICE-002", "PART-001", "greeting"),
+            &revision,
+            4,
+            &["REQ-003"],
+            &wave1_head,
+            1,
+        ))
+    );
+    assert_eq!(
+        roots.git.run(project, &["show", &format!("{label}:build/greeting.md")]),
+        "# Greeting\n\n- morning\n- evening"
+    );
+    assert_eq!(
+        roots.git.run(project, &["show", &format!("{label}:build/farewell.md")]),
+        "# Farewell"
+    );
 }
 
 // A run whose wave the adapter does not verify leaves the slice merged in
@@ -1946,9 +2263,10 @@ async fn build_resumed_staged() {
     assert_eq!(
         run.stdout,
         format!(
-            "built revision {revision}\n  plan: 1 slice in 1 wave, widest 1\n  base {base}\n  \
-             resumed: SLICE-001\n  wave 1: 1 slice verified at {}\n    SLICE-001: staged by an \
-             earlier run, not built again\n  labelled {label} at {staged}\n",
+            "built revision {revision}\n  plan: 1 part in 1 wave; budget 2 (adapter): 1 slice in \
+             1 wave, widest 1\n  base {base}\n  resumed: SLICE-001\n  wave 1: 1 slice verified at \
+             {}\n    SLICE-001: staged by an earlier run, not built again\n  labelled {label} at \
+             {staged}\n",
             &staged[..8]
         )
     );
@@ -2010,7 +2328,7 @@ async fn build_conflict_resolved() {
         merge.messages[0]
     );
     assert!(
-        merge.messages[0].contains("# Merged before it in the wave\n\n## Slice: greeting\n"),
+        merge.messages[0].contains("# Merged before it in the wave\n\n## Part: greeting\n"),
         "{}",
         merge.messages[0]
     );
@@ -2450,8 +2768,9 @@ async fn build_laid() {
     assert_eq!(
         run.stdout,
         format!(
-            "built revision {revision}\n  plan: 1 slice in 1 wave, widest 1\n  base {root}\n  \
-             repository ./{TARGET_REPO}\n  resumed: SLICE-001\n  labelled {label} at {head}\n"
+            "built revision {revision}\n  plan: 1 part in 1 wave; budget 2 (adapter): 1 slice in \
+             1 wave, widest 1\n  base {root}\n  repository ./{TARGET_REPO}\n  resumed: \
+             SLICE-001\n  labelled {label} at {head}\n"
         )
     );
     assert_eq!(roots.git.run(&repo, &["rev-list", "--max-parents=0", &label]), root);
@@ -2463,8 +2782,10 @@ async fn build_laid() {
 fn forged_message(revision: &str, base: &str) -> String {
     Message {
         slice: "SLICE-001".parse().expect("a slice id"),
+        part: "PART-001".parse().expect("a part id"),
         name: "greeting".to_owned(),
         revision: revision.to_owned(),
+        budget: 2,
         requirements: vec!["REQ-001".parse().expect("a requirement id")],
         covered: vec!["REQ-001".parse().expect("a requirement id")],
         adapter: TARGET.to_owned(),

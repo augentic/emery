@@ -103,7 +103,7 @@ When sealing an amendment, the commit message also records summary trailers afte
 - `Added: <count>`
 - `Changed: <count>`
 - `Retired: <count>`
-- `Slices: SLICE-002 orders changed, SLICE-004 export removed` (omitted when slice definitions did not change)
+- `Parts: PART-002 orders changed, PART-004 export removed` (omitted when part definitions did not change)
 
 ### The `emery/<id>` label branch
 
@@ -135,7 +135,7 @@ The root-level `spec/` directory in the target repository belongs exclusively to
 
 - **Non-revision files in `spec/`:** `spec/` contains extra files, subdirectories, or symlinks (such as `spec/notes.md`). Move user files elsewhere or into a nested path like `src/spec/`.
 - **Tampered files under a label:** The files in `spec/` at `emery/<id>` do not hash to `<id>`. Restore them with `git checkout emery/<id> -- spec/`.
-- **Hand-edited or conflicted merge on `HEAD`:** At an unlabelled `HEAD`, the three JSON files contain Git conflict markers, invalid JSON, or mismatched requirements and slices from two different branches. Keep one branch's `spec/` directory whole (`git checkout <branch> -- spec/`), commit the merge, and re-run the other branch's `emery amend`.
+- **Hand-edited or conflicted merge on `HEAD`:** At an unlabelled `HEAD`, the three JSON files contain Git conflict markers, invalid JSON, or mismatched requirements and parts from two different branches. Keep one branch's `spec/` directory whole (`git checkout <branch> -- spec/`), commit the merge, and re-run the other branch's `emery amend`.
 
 ---
 
@@ -147,7 +147,7 @@ Once a repository holds a lineage, running bare `emery specify` (which generates
 
 You have two explicit paths forward:
 
-1. **Continue the lineage:** Run [`emery amend`](../reference/cli/amend.md) to stage an incremental change against the current revision, preserving existing `REQ-NNN` and `SLICE-NNN` identifiers.
+1. **Continue the lineage:** Run [`emery amend`](../reference/cli/amend.md) to stage an incremental change against the current revision, preserving existing `REQ-NNN` and `PART-NNN` identifiers.
 2. **Start a new lineage:** Run `emery specify --fresh` to intentionally stage a candidate marked `fresh`. When `emery apply` seals a fresh candidate, it commits over the repository's `HEAD` with `parent: null`, starting a new history while leaving all earlier `emery/<id>` branches intact.
 
 ---

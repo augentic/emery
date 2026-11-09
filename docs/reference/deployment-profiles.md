@@ -108,6 +108,7 @@ Any grant requesting a path outside `~/`, overlapping a credential directory (`~
 | `CURSOR_MAX_AGENTS` | `8` | Maximum concurrent model turns (caps wave parallelism alongside `--jobs`). |
 | `CURSOR_MAX_TOOL_CALLS` | `128` | Maximum guest tool calls (`write_files`, `edit_files`, `read_doc`, `list_docs`) per turn before failing with `budget-exhausted`. |
 | `EMERY_JOBS` | Unset (all ready slices) | Maximum concurrent slice builds per wave (equivalent to `emery build --jobs <N>`). |
+| `EMERY_BUDGET` | `[target] budget`, adapter default, or `12` | Maximum number of requirements per build slice (equivalent to `emery build --budget <N>` and `emery show schedule --budget <N>`). |
 | `EMERY_FORMAT` | `text` | Default CLI output format (`text` or `json`; equivalent to `--format`). |
 | `GIT_BINARY` | `git` (on `PATH`) | Path to the host `git` executable used by `omnia-git` (requires Git 2.5+). |
 | `RUST_LOG` | `info` | Tracing filter when neither `-v` nor `-q` is passed. |
@@ -140,7 +141,7 @@ Custom deployments can replace `omnia-filesystem` in the `hosts:` block of `omni
 | `omnia-azure-blob` | — | Yes | — | `AZURE_BLOB_ENDPOINT` |
 | `omnia-git` | — | — | Yes | `GIT_BINARY` |
 
-Multi-tenant deployments sharing a single backing store can isolate projects by rewriting bucket and container names at the `WasiKeyValueCtx` and `WasiBlobstoreCtx` boundary (verified by the `multi_project` test in `tests/specify.rs`). Note that `omnia-filesystem` forbids `/` inside bucket/container names, so filesystem-backed prefixing must use a single-segment delimiter such as `<project>--staged`.
+Multi-tenant deployments sharing a single backing store can isolate projects by rewriting bucket and container names at the `KeyValueClient` and `BlobStoreClient` boundary (verified by the `multi_project` test in `tests/specify.rs`). Note that `omnia-filesystem` forbids `/` inside bucket/container names, so filesystem-backed prefixing must use a single-segment delimiter such as `<project>--staged`.
 
 ---
 

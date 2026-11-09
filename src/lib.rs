@@ -13,18 +13,17 @@ use std::{fs, io};
 use emery_adapter::{Standing, standing, write_whole};
 use emery_engine::{Entry, EntryKind, Files};
 use omnia_sdk::api::command::{self, Response};
-use omnia_sdk::{BlobStore, Error, Model, Plugins, StateStore, Vcs, server_error};
+use omnia_sdk::{Error, WasiProvider, server_error};
 use wasip3::cli::environment;
 use wasip3::exports::cli::run::Guest;
 
-// Empty impls retain the WASI defaults selected by the runtime's grants.
-struct Provider;
+// Delegates WASI capabilities to `WasiProvider` and answers `Files` against the `.` preopen.
+#[derive(Default, omnia_sdk::Provider)]
+struct Provider {
+    #[provider(Model, StateStore, BlobStore, Plugins, Vcs)]
+    wasi: WasiProvider,
+}
 
-impl Model for Provider {}
-impl StateStore for Provider {}
-impl BlobStore for Provider {}
-impl Plugins for Provider {}
-impl Vcs for Provider {}
 impl emery_adapter::source::Source for Provider {}
 impl emery_adapter::target::Target for Provider {}
 
@@ -123,5 +122,5 @@ impl Guest for CliGuest {
 }
 
 async fn dispatch() -> Response {
-    emery_cli::run(Provider, environment::get_arguments()).await
+    emery_cli::run(Provider::default(), environment::get_arguments()).await
 }

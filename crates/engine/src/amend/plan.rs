@@ -1,33 +1,33 @@
 //! Derives the amended plan from the base's by code, and opens one slicing
 //! turn for what code cannot decide.
 //!
-//! An amendment keeps the base plan's slices under their ids and names and
+//! An amendment keeps the base plan's parts under their ids and names and
 //! changes their membership only as the change set says. [`Pruned::new`]
-//! takes the retired requirements out of their slices before the design
-//! turn, so the types a slice they emptied owned leave the design with it,
+//! takes the retired requirements out of their parts before the design
+//! turn, so the types a part they emptied owned leave the design with it,
 //! and takes out the requirements the change moved under another stem;
 //! [`Pruned::assemble`] places what the amendment adds and moves after the
 //! turn where a rule decides, owns the design's data types as the amendment
 //! leaves them, and answers the plan settled, or the slicing turn's brief
-//! over the current slices for what no rule placed: a stem no slice holds,
-//! a stem left past the cap, a type key no slice owns.
+//! over the current parts for what no rule placed: a stem no part holds,
+//! a type key no part owns.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeSet;
 
 use omnia_sdk::{Error, server_error};
 
 use crate::brief::Review;
-use crate::revision::{Change, ChangeClass, EMERY, Plan, ReqId, Requirement, Slice, SliceId, Spec};
-use crate::specify::{Basis, Floors, Open, SLICE_CAP, SliceAmend, drafts};
+use crate::revision::{Change, ChangeClass, EMERY, Part, Plan, ReqId, Spec};
+use crate::specify::{Basis, Draft, Floors, Open, PartAmend, Types};
 
-// The base plan with the requirements that leave their slices taken out and
-// any slice they emptied removed, ready to place what the amendment adds
+// The base plan with the requirements that leave their parts taken out and
+// any part they emptied removed, ready to place what the amendment adds
 // and moves once the specification and the design are settled.
 pub struct Pruned<'a> {
     base: &'a Plan,
     parent: String,
-    slices: Vec<Slice>,
-    // The design type keys the slices emptied by retirement owned.
+    parts: Vec<Part>,
+    // The design type keys the parts emptied by retirement owned.
     pub orphaned: BTreeSet<String>,
 }
 
@@ -36,11 +36,9 @@ impl<'a> Pruned<'a> {
     // moves under another stem from `spec`, under `parent` as the revision
     // amended.
     //
-    // A slice every requirement of which leaves is removed, and every slice
-    // that depended on it depends on what it depended on instead,
-    // transitively, each list deduplicated and sorted. The types a slice
+    // A part every requirement of which leaves is removed. The types a part
     // emptied by retirement owned are `orphaned`, so they leave the design
-    // before the design turn; the types of a slice emptied by a move stay in
+    // before the design turn; the types of a part emptied by a move stay in
     // the design and are owned again by `assemble`.
     pub fn new(base: &'a Plan, spec: &Spec, changes: &[Change], parent: &str) -> Self {
         let retired: BTreeSet<ReqId> = changes
@@ -48,8 +46,8 @@ impl<'a> Pruned<'a> {
             .filter(|change| change.class == ChangeClass::Retired)
             .map(|change| change.id)
             .collect();
-        let (slices, removed) = without(&base.slices, &retired);
-        let orphaned = removed.into_iter().flat_map(|slice| slice.types.iter().cloned()).collect();
+        let (parts, removed) = without(&base.parts, &retired);
+        let orphaned = removed.into_iter().flat_map(|part| part.types.iter().cloned()).collect();
 
         let moved: BTreeSet<ReqId> = changes
             .iter()
@@ -60,177 +58,125 @@ impl<'a> Pruned<'a> {
             })
             .map(|change| change.id)
             .collect();
-        let (slices, _) = without(&slices, &moved);
+        let (parts, _) = without(&parts, &moved);
 
         Self {
             base,
             parent: parent.to_owned(),
-            slices,
+            parts,
             orphaned,
         }
     }
 
-    // Places into the pruned slices what the amendment adds and moves, and
-    // owns the design's data `types`, under the rules of the plan.
+    // Places into the pruned parts what the amendment adds and moves, owns
+    // the design's data `types`, and derives inter-part dependencies from
+    // the types each part owns and uses, under the rules of the plan.
     //
-    // Each requirement of `spec` no slice holds is placed by code where a
-    // rule decides: into the slice holding another requirement its trigger
-    // reaches, else the slice holding its floor, the stem, or the sub-stem
-    // of a stem past `SLICE_CAP` whose additions all fall under held
-    // sub-stems. A type key the design no longer holds leaves its slice,
-    // and one no slice owns is owned by the one slice whose requirements
-    // this amendment changed against `base`, where nothing else is open.
-    // What no rule decides is open: the requirements of a stem no slice
-    // holds, every requirement of a stem past the cap an addition reaches
-    // under a sub-stem no slice holds, with the types of a slice that
-    // empties, and a type key where no slice or more than one changed.
+    // Each requirement of `spec` no part holds is placed by code where a
+    // rule decides: into the part holding another requirement its trigger
+    // reaches, else the part holding its stem. A type key the design no
+    // longer holds leaves its part's `types` and `uses`, and one no part
+    // owns is owned by the one part whose requirements this amendment
+    // changed against `base`, where nothing else is open. What no rule
+    // decides is open: the requirements of a stem no part holds, and a type
+    // key where no part or more than one changed.
     //
     // Returns the plan `Settled` where nothing is open, held to the plan's
-    // rules, and the slicing turn's brief `Open` over the current slices
+    // rules, and the slicing turn's brief `Open` over the current parts
     // otherwise, `drafted` the requirements the change drafts anew.
     //
     // Returns `Error::ServerError` for a settled plan the rules refuse, since
     // nothing of it is the model's.
     pub fn assemble(
-        mut self, spec: &'a Spec, types: &'a [String], drafted: &'a [Basis<'a>],
+        mut self, spec: &'a Spec, types: &'a Types, drafted: &'a [Basis<'a>],
     ) -> Result<Assembled<'a>, Error> {
-        let mut open = self.place(spec);
+        let floors = Floors::from_spec(spec);
+        let mut open = self.place(spec, &floors);
         self.own(types, &mut open);
+        types.depend(&mut self.parts);
         if !open.is_empty() {
-            return Ok(Assembled::Open(SliceAmend::new(
+            return Ok(Assembled::Open(PartAmend::new(
                 self.base,
                 self.parent,
-                self.slices,
+                self.parts,
                 open,
-                spec,
+                floors,
                 types,
                 drafted,
             )));
         }
-        held(&self.slices, spec, types)?;
+        held(&self.parts, &floors, types)?;
         Ok(Assembled::Settled(Plan {
             emery: EMERY,
             parent: Some(self.parent),
             preamble: self.base.preamble.clone(),
-            slices: self.slices,
+            parts: self.parts,
         }))
     }
 
-    // Places every requirement of `spec` no slice holds, in id order, and
-    // returns what no rule placed. Every slice's requirements are sorted.
-    fn place(&mut self, spec: &Spec) -> Open {
+    // Places every requirement of `spec` no part holds, in id order, and
+    // returns what no rule placed. Every part's requirements are sorted.
+    fn place(&mut self, spec: &Spec, floors: &Floors<'_>) -> Open {
         let mut open = Open::default();
         let held: BTreeSet<ReqId> =
-            self.slices.iter().flat_map(|slice| slice.requirements.iter().copied()).collect();
-        let placing: Vec<&Requirement> = spec
-            .requirements
-            .iter()
-            .filter(|requirement| !held.contains(&requirement.id))
-            .collect();
+            self.parts.iter().flat_map(|part| part.requirements.iter().copied()).collect();
+        let placing =
+            spec.requirements.iter().filter(|requirement| !held.contains(&requirement.id));
 
-        // a stem past the cap is cut again where an addition falls under a
-        // sub-stem no slice holds: every requirement of it is open, and a
-        // slice it empties gives up its types
-        let past: BTreeSet<&str> = placing
-            .iter()
-            .map(|requirement| requirement.stem())
-            .collect::<BTreeSet<_>>()
-            .into_iter()
-            .filter(|&stem| {
-                spec.requirements.iter().filter(|held| held.stem() == stem).count() > SLICE_CAP
-            })
-            .collect();
-        for &stem in &past {
-            let reopened = placing.iter().filter(|requirement| requirement.stem() == stem).any(
-                |requirement| {
-                    !self.slices.iter().any(|slice| {
-                        slice.holds(spec, |held| held.substem() == requirement.substem())
-                    })
-                },
-            );
-            if !reopened {
-                continue;
-            }
-            let ids: BTreeSet<ReqId> = spec
-                .requirements
-                .iter()
-                .filter(|requirement| requirement.stem() == stem)
-                .map(|requirement| requirement.id)
-                .collect();
-            for slice in &mut self.slices {
-                slice.requirements.retain(|id| !ids.contains(id));
-                if slice.requirements.is_empty() {
-                    slice.types.clear();
-                }
-            }
-            open.ids.extend(ids);
-            open.recut.insert(stem.to_owned());
-        }
-
-        // the rest by trigger, then by floor
-        let floors = Floors::from_spec(spec);
+        // by trigger, then by stem
         for requirement in placing {
-            if open.ids.contains(&requirement.id) {
-                continue;
-            }
-            let floor = |held: &Requirement| {
-                if past.contains(&requirement.stem()) {
-                    held.substem() == requirement.substem()
-                } else {
-                    held.stem() == requirement.stem()
-                }
-            };
             let placed = self
-                .slices
+                .parts
                 .iter()
-                .position(|slice| {
-                    slice.holds(spec, |held| floors.shares_trigger(requirement.id, held.id))
+                .position(|part| {
+                    part.holds(spec, |held| floors.shares_trigger(requirement.id, held.id))
                 })
-                .or_else(|| self.slices.iter().position(|slice| slice.holds(spec, floor)));
+                .or_else(|| {
+                    self.parts
+                        .iter()
+                        .position(|part| part.holds(spec, |held| held.stem() == requirement.stem()))
+                });
             match placed {
-                Some(position) => self.slices[position].requirements.push(requirement.id),
+                Some(position) => self.parts[position].requirements.push(requirement.id),
                 None => {
                     open.ids.insert(requirement.id);
                 }
             }
         }
-        for slice in &mut self.slices {
-            slice.requirements.sort_unstable();
+        for part in &mut self.parts {
+            part.requirements.sort_unstable();
         }
         open
     }
 
-    // Owns the design's data `types` across the slices: a key the design
-    // dropped leaves its slice, and one no slice owns goes to the one slice
-    // whose requirements differ from `base`'s, in the design's order, where
-    // no requirement is open and exactly one slice changed; otherwise the
-    // unowned keys are `open`.
-    fn own(&mut self, types: &[String], open: &mut Open) {
-        for slice in &mut self.slices {
-            slice.types.retain(|key| types.contains(key));
+    // Owns the design's data `types` across the parts: a key the design
+    // dropped leaves its part's `types` and `uses`, and one no part owns
+    // goes to the one part whose requirements differ from `base`'s, in the
+    // design's order, where no requirement is open and exactly one part
+    // changed; otherwise the unowned keys are `open`.
+    fn own(&mut self, types: &Types, open: &mut Open) {
+        for part in &mut self.parts {
+            types.settle(&mut part.types, &mut part.uses);
         }
         let owned: BTreeSet<&str> =
-            self.slices.iter().flat_map(|slice| slice.types.iter().map(String::as_str)).collect();
+            self.parts.iter().flat_map(|part| part.types.iter().map(String::as_str)).collect();
         let unowned: Vec<String> =
-            types.iter().filter(|key| !owned.contains(key.as_str())).cloned().collect();
+            types.keys.iter().filter(|key| !owned.contains(key.as_str())).cloned().collect();
         if unowned.is_empty() {
             return;
         }
 
         if open.ids.is_empty() {
-            let mut changed: Vec<&mut Slice> = self
-                .slices
+            let mut changed: Vec<&mut Part> = self
+                .parts
                 .iter_mut()
-                .filter(|slice| {
-                    self.base
-                        .slice(slice.id)
-                        .is_none_or(|was| was.requirements != slice.requirements)
+                .filter(|part| {
+                    self.base.part(part.id).is_none_or(|was| was.requirements != part.requirements)
                 })
                 .collect();
-            if let [slice] = changed.as_mut_slice() {
-                slice.types.extend(unowned);
-                slice.types =
-                    types.iter().filter(|key| slice.types.contains(key)).cloned().collect();
+            if let [part] = changed.as_mut_slice() {
+                part.types.extend(unowned);
+                types.settle(&mut part.types, &mut part.uses);
                 return;
             }
         }
@@ -241,66 +187,44 @@ impl<'a> Pruned<'a> {
 // What `Pruned::assemble` answers: the amended plan, or the turn that settles it.
 pub enum Assembled<'a> {
     Settled(Plan),
-    Open(SliceAmend<'a>),
+    Open(PartAmend<'a>),
 }
 
-// Holds `slices` to the plan's rules over `spec` and the design's `types`;
+// Holds `parts` to the plan's rules over `floors` and the design's `types`;
 // a break is the engine's, since nothing of the plan is the model's.
-fn held(slices: &[Slice], spec: &Spec, types: &[String]) -> Result<(), Error> {
+fn held(parts: &[Part], floors: &Floors<'_>, types: &Types) -> Result<(), Error> {
     let mut review = Review::default();
-    Floors::from_spec(spec).check(types, &drafts(slices), &mut review);
+    floors.check(types, &Draft::all(parts), &mut review);
     review.verdict().map_err(|findings| {
         server_error!("the amended plan breaks the plan's rules:\n{}", findings.join("\n"))
     })
 }
 
-// `slices` less `leaving`: a slice every requirement of which leaves is
-// removed, and every slice that depended on it depends on what it depended
-// on instead, transitively, each list deduplicated and sorted. The kept
-// slices are answered as adjusted, the removed as they were.
-fn without<'a>(slices: &'a [Slice], leaving: &BTreeSet<ReqId>) -> (Vec<Slice>, Vec<&'a Slice>) {
-    let (removed, kept): (Vec<&Slice>, Vec<&Slice>) = slices.iter().partition(|slice| {
-        !slice.requirements.is_empty() && slice.requirements.iter().all(|id| leaving.contains(id))
+// `parts` less `leaving`: a part every requirement of which leaves is
+// removed. The kept parts are answered with `leaving` taken out and
+// `depends_on` cleared for `assemble` to derive; the removed are answered
+// as they were.
+fn without<'a>(parts: &'a [Part], leaving: &BTreeSet<ReqId>) -> (Vec<Part>, Vec<&'a Part>) {
+    let (removed, kept): (Vec<&Part>, Vec<&Part>) = parts.iter().partition(|part| {
+        !part.requirements.is_empty() && part.requirements.iter().all(|id| leaving.contains(id))
     });
-    let replaced: BTreeMap<SliceId, &[SliceId]> =
-        removed.iter().map(|slice| (slice.id, slice.depends_on.as_slice())).collect();
 
     let kept = kept
         .into_iter()
-        .map(|slice| Slice {
-            id: slice.id,
-            name: slice.name.clone(),
-            requirements: slice
+        .map(|part| Part {
+            id: part.id,
+            name: part.name.clone(),
+            requirements: part
                 .requirements
                 .iter()
                 .copied()
                 .filter(|id| !leaving.contains(id))
                 .collect(),
-            types: slice.types.clone(),
-            depends_on: spliced(slice, &replaced),
-            brief: slice.brief.clone(),
+            types: part.types.clone(),
+            uses: part.uses.clone(),
+            depends_on: Vec::new(),
+            brief: part.brief.clone(),
         })
         .collect();
     (kept, removed)
-}
-
-// The dependencies of `slice` with each removed slice replaced by its own,
-// until none remain, deduplicated and sorted.
-fn spliced(slice: &Slice, replaced: &BTreeMap<SliceId, &[SliceId]>) -> Vec<SliceId> {
-    let mut pending = slice.depends_on.clone();
-    let mut visited = BTreeSet::new();
-    let mut dependencies = BTreeSet::new();
-    while let Some(id) = pending.pop() {
-        if !visited.insert(id) {
-            continue;
-        }
-        match replaced.get(&id) {
-            Some(own) => pending.extend(own.iter().copied()),
-            None => {
-                dependencies.insert(id);
-            }
-        }
-    }
-    dependencies.remove(&slice.id);
-    dependencies.into_iter().collect()
 }

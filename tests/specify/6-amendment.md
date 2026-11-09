@@ -1,5 +1,5 @@
 ---
-emery: 9
+emery: 11
 revision: <revision>
 ---
 
@@ -92,6 +92,6 @@ interface Greeting { word: string }
 
 ## Plan
 
-### Slice: farewell [removed]
+### Part: farewell [removed]
 
-ID: SLICE-002
+ID: PART-002

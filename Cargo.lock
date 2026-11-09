@@ -125,9 +125,9 @@ checksum = "3bc62ac97cc33321f50863d514c3bc38a453947a8f9e781137e47c7401020aed"
 
 [[package]]
 name = "async-compression"
-version = "0.4.51"
+version = "0.4.52"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9d5755640120b24961f8231e05892e4a4f7e0d04e8aeca161508c9c397946970"
+checksum = "6ad47a740fb906fffdd891e8b6d5fde2511600f7bfaebd68939fa08a14999459"
 dependencies = [
  "compression-codecs",
  "compression-core",
@@ -411,9 +411,9 @@ dependencies = [
 
 [[package]]
 name = "cc"
-version = "1.10.0"
+version = "1.11.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "86e055fa6e3e40ad6187ba25b6855eeb635d5271f8e0f0e1e9a5826b8d75bea0"
+checksum = "4ff2a8126fff0f8c839080d619675a585e61720bb12d2baceae45769fd66f155"
 dependencies = [
  "find-msvc-tools",
  "jobserver",
@@ -543,9 +543,9 @@ dependencies = [
 
 [[package]]
 name = "compression-codecs"
-version = "0.4.46"
+version = "0.4.47"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cae36683101b2899f48bd31f8db9839437356188e3b1ff23096e73dab09ba8fe"
+checksum = "84f840cff84d10085260e460023934d0af699e71212b09b2a41452e8bd9cda43"
 dependencies = [
  "compression-core",
  "flate2",
@@ -1427,9 +1427,9 @@ checksum = "b7ac824320a75a52197e8f2d787f6a38b6718bb6897a35142d749af3c0e8f4fe"
 
 [[package]]
 name = "flate2"
-version = "1.1.10"
+version = "1.1.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6e634e2e0ebac1ee034020da1ca582e17ffe4e0f5e985823721e168928136dcb"
+checksum = "626d4928326b646e70f65ed36fc7cf9f206bdb68a0019ee7c6b4709da4e084c4"
 dependencies = [
  "crc32fast",
  "miniz_oxide",
@@ -1612,9 +1612,9 @@ dependencies = [
 
 [[package]]
 name = "genai"
-version = "0.7.2"
+version = "0.7.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "77e968d854950430b67e1829361f9f7ddc67ca50d2ca876e2dda317a2432e579"
+checksum = "0361e6fb702a22e099ff01431b31696001aaac544fc11d98a1e6090bde49bba0"
 dependencies = [
  "base64 0.23.1",
  "bytes",
@@ -2148,9 +2148,9 @@ checksum = "8f42a60cbdf9a97f5d2305f08a87dc4e09308d1276d28c869c684d7777685682"
 
 [[package]]
 name = "jiff"
-version = "0.2.38"
+version = "0.2.39"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b2b005715dcbeb0089a3c0dab99f2ff1cc3b2525323552703d648585d342a383"
+checksum = "3ac703058abac89e5c39b0b879dce2b6b14a4ba36600c7e7e3d0c60a6883ef3c"
 dependencies = [
  "defmt",
  "jiff-core",
@@ -2165,9 +2165,9 @@ dependencies = [
 
 [[package]]
 name = "jiff-core"
-version = "0.1.1"
+version = "0.1.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5e52fe76043ccecc9005d2305ebaadf7d7fc0cc89ca6baa10a94d6bc68c7128c"
+checksum = "aee43309eb53bafb8c36d35d6e444769c8f8e6206a9fbf7546f5db9d7d4a0e93"
 dependencies = [
  "defmt",
  "log",
@@ -2175,9 +2175,9 @@ dependencies = [
 
 [[package]]
 name = "jiff-static"
-version = "0.2.38"
+version = "0.2.39"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2cc9817253cf7c7ee4684451bd327e88d6f3658014e54a29198625590650695c"
+checksum = "6dc32470c67eb7d0e9ccb74303fa925313dc04cecb1aa048beaa6f391e36a93d"
 dependencies = [
  "jiff-core",
  "proc-macro2",
@@ -2272,9 +2272,9 @@ dependencies = [
 
 [[package]]
 name = "jsonschema"
-version = "0.59.0"
+version = "0.60.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1b320ad34c177093d21622edc9215bb608294c2333ff296672c0c8265a5ee60c"
+checksum = "a42a11b47492e6a2cc76e9c7bcc8077776cb31dac444e0795d7f61bcc6441c08"
 dependencies = [
  "ahash",
  "bytecount",
@@ -2300,23 +2300,24 @@ dependencies = [
 
 [[package]]
 name = "jsonschema-regex"
-version = "0.59.0"
+version = "0.60.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1472f7be79026f79e01a9b172263311e829d7c210d57b39cb57037abc0ce0500"
+checksum = "107aeb6ff14b8deb5610096a8ce5c554ec89806b521147eaeb3cae05b07edb7a"
 dependencies = [
  "regex-syntax",
 ]
 
 [[package]]
 name = "jsonschema-value"
-version = "0.59.0"
+version = "0.60.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e5a7550a7a84787e715ead0b47e01fa8c6bb7c3413630f91a8f2094c06c2078a"
+checksum = "e281d6b177bb4834f2ffd6f92aa0443cffe29c996b251c8d94eb6f456186feba"
 dependencies = [
  "ahash",
  "bytecount",
  "fraction",
  "getrandom 0.3.4",
+ "memchr",
  "num-cmp",
  "num-traits",
  "serde_json",
@@ -2391,9 +2392,9 @@ checksum = "b6d2cec3eae94f9f509c767b45932f1ada8350c4bdb85af2fcab4a3c14807981"
 
 [[package]]
 name = "libsqlite3-sys"
-version = "0.38.2"
+version = "0.39.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f1d20bef17f513b9b3004532233187769cd072d790971f4e4da0e346eb6401e8"
+checksum = "14a5f01b87b92705d07b433c06f96cbc764637d81a0bffb5734ce17cf0f9a2b3"
 dependencies = [
  "cc",
  "pkg-config",
@@ -2519,9 +2520,9 @@ checksum = "c2a86d3146ed3995b5913c414f6664344b9617457320782e64f0bb44afd49d74"
 
 [[package]]
 name = "mime"
-version = "0.3.17"
+version = "0.3.18"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6877bb514081ee2a7ff5ef9de3281f14a4dd4bceac4c09388074a6b5df8a139a"
+checksum = "d5848f5a9e8117cf94f2f90faac24a87ff81600ff8628c1e3deaab572e76bfa1"
 
 [[package]]
 name = "mime_guess"
@@ -2788,9 +2789,8 @@ dependencies = [
 
 [[package]]
 name = "omnia"
-version = "0.37.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "61f84f1a83308d34a65cd7b5a1eb2818638736fc18dc3f64d4f717155715c777"
+version = "0.38.0"
+source = "git+https://github.com/augentic/omnia#bcd5b17f62e719e2a58fa8d4649358d72fef2c1c"
 dependencies = [
  "anyhow",
  "futures",
@@ -2808,10 +2808,29 @@ dependencies = [
 ]
 
 [[package]]
+name = "omnia-backend"
+version = "0.38.0"
+source = "git+https://github.com/augentic/omnia#bcd5b17f62e719e2a58fa8d4649358d72fef2c1c"
+dependencies = [
+ "anyhow",
+ "bon",
+ "bytes",
+ "cap-std",
+ "chrono",
+ "futures",
+ "opentelemetry-proto",
+ "schemars 1.2.3",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.21",
+ "tokio",
+ "wasm-pkg-common",
+]
+
+[[package]]
 name = "omnia-cli"
-version = "0.37.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "175f552610c62b18e3514dd6329ae19c80bd5d9b0cefa02e3069f460c0f8b95c"
+version = "0.38.0"
+source = "git+https://github.com/augentic/omnia#bcd5b17f62e719e2a58fa8d4649358d72fef2c1c"
 dependencies = [
  "anyhow",
  "clap",
@@ -2819,9 +2838,8 @@ dependencies = [
 
 [[package]]
 name = "omnia-compile"
-version = "0.37.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5bb9ebd33437b455878da30f1f87bbd122c2f105a8fe84bf5d4cc71590f3e9cf"
+version = "0.38.0"
+source = "git+https://github.com/augentic/omnia#bcd5b17f62e719e2a58fa8d4649358d72fef2c1c"
 dependencies = [
  "anyhow",
  "wasmtime",
@@ -2829,9 +2847,8 @@ dependencies = [
 
 [[package]]
 name = "omnia-core"
-version = "0.37.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "70fe5fd23b5850b7514904bc7df547fbda1a23ba9a50648bd599084d6d934445"
+version = "0.38.0"
+source = "git+https://github.com/augentic/omnia#bcd5b17f62e719e2a58fa8d4649358d72fef2c1c"
 dependencies = [
  "anyhow",
  "cap-fs-ext",
@@ -2839,6 +2856,7 @@ dependencies = [
  "fromenv",
  "futures",
  "http",
+ "omnia-backend",
  "omnia-compile",
  "opentelemetry",
  "opentelemetry-otlp",
@@ -2852,13 +2870,12 @@ dependencies = [
  "tracing-subscriber",
  "wasmtime",
  "wasmtime-wasi",
- "wasmtime-wasi-http",
 ]
 
 [[package]]
 name = "omnia-cursor"
 version = "0.32.0"
-source = "git+https://github.com/augentic/omnia-backends#bc90b9f70b5f75ff5b0d76454ab04bd3d31e188e"
+source = "git+https://github.com/augentic/omnia-backends#db63d19329e024241b50c8f10b1c8edbeaab7343"
 dependencies = [
  "anyhow",
  "bytes",
@@ -2868,9 +2885,8 @@ dependencies = [
  "http-body-util",
  "hyper",
  "hyper-util",
- "omnia",
+ "omnia-backend",
  "omnia-sandbox",
- "omnia-wasi-model",
  "prost",
  "prost-types",
  "reqwest 0.13.5",
@@ -2886,14 +2902,13 @@ dependencies = [
 [[package]]
 name = "omnia-filesystem"
 version = "0.32.0"
-source = "git+https://github.com/augentic/omnia-backends#bc90b9f70b5f75ff5b0d76454ab04bd3d31e188e"
+source = "git+https://github.com/augentic/omnia-backends#db63d19329e024241b50c8f10b1c8edbeaab7343"
 dependencies = [
  "anyhow",
+ "bytes",
  "fromenv",
  "futures",
- "omnia",
- "omnia-wasi-blobstore",
- "omnia-wasi-keyvalue",
+ "omnia-backend",
  "tempfile",
  "tokio",
  "tracing",
@@ -2902,15 +2917,14 @@ dependencies = [
 [[package]]
 name = "omnia-genai"
 version = "0.32.0"
-source = "git+https://github.com/augentic/omnia-backends#bc90b9f70b5f75ff5b0d76454ab04bd3d31e188e"
+source = "git+https://github.com/augentic/omnia-backends#db63d19329e024241b50c8f10b1c8edbeaab7343"
 dependencies = [
  "anyhow",
  "fromenv",
  "genai",
  "jsonschema",
- "omnia",
+ "omnia-backend",
  "omnia-sandbox",
- "omnia-wasi-model",
  "reqwest 0.13.5",
  "schemars 1.2.3",
  "serde",
@@ -2922,14 +2936,13 @@ dependencies = [
 [[package]]
 name = "omnia-git"
 version = "0.32.0"
-source = "git+https://github.com/augentic/omnia-backends#bc90b9f70b5f75ff5b0d76454ab04bd3d31e188e"
+source = "git+https://github.com/augentic/omnia-backends#db63d19329e024241b50c8f10b1c8edbeaab7343"
 dependencies = [
  "anyhow",
  "fromenv",
  "futures",
  "libc",
- "omnia",
- "omnia-wasi-vcs",
+ "omnia-backend",
  "process-wrap",
  "tempfile",
  "tokio",
@@ -2938,9 +2951,8 @@ dependencies = [
 
 [[package]]
 name = "omnia-guest-macros"
-version = "0.37.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9ec85b73d6375855cd4a0e35306c8b191f413e452926944e03bbdc330df6c90a"
+version = "0.38.0"
+source = "git+https://github.com/augentic/omnia#bcd5b17f62e719e2a58fa8d4649358d72fef2c1c"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -2949,9 +2961,8 @@ dependencies = [
 
 [[package]]
 name = "omnia-host-macros"
-version = "0.37.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8ba64620ed7be672b684ec5a91eda9882120461b92e1608eb161d6cde86b0409"
+version = "0.38.0"
+source = "git+https://github.com/augentic/omnia#bcd5b17f62e719e2a58fa8d4649358d72fef2c1c"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -2960,9 +2971,8 @@ dependencies = [
 
 [[package]]
 name = "omnia-link"
-version = "0.37.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2b6c2b980bf99fbd0824ed31c3660a11d2ae5389172e7661214bea35858b0c60"
+version = "0.38.0"
+source = "git+https://github.com/augentic/omnia#bcd5b17f62e719e2a58fa8d4649358d72fef2c1c"
 dependencies = [
  "anyhow",
  "futures",
@@ -2973,13 +2983,13 @@ dependencies = [
 
 [[package]]
 name = "omnia-plugin"
-version = "0.37.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b53cc6e4e5b62199e2d69a178ff49f6b90f4dc354cb672269b640c40daeaa086"
+version = "0.38.0"
+source = "git+https://github.com/augentic/omnia#bcd5b17f62e719e2a58fa8d4649358d72fef2c1c"
 dependencies = [
  "anyhow",
  "cap-std",
  "futures",
+ "omnia-backend",
  "omnia-core",
  "tokio",
  "tracing",
@@ -2990,7 +3000,7 @@ dependencies = [
 [[package]]
 name = "omnia-sandbox"
 version = "0.32.0"
-source = "git+https://github.com/augentic/omnia-backends#bc90b9f70b5f75ff5b0d76454ab04bd3d31e188e"
+source = "git+https://github.com/augentic/omnia-backends#db63d19329e024241b50c8f10b1c8edbeaab7343"
 dependencies = [
  "anyhow",
  "bytes",
@@ -3009,18 +3019,18 @@ dependencies = [
 
 [[package]]
 name = "omnia-sdk"
-version = "0.37.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b05ca71a6c9efc6472085aa142220944942c6f6dd5be2a6cc089789682a17f9c"
+version = "0.38.0"
+source = "git+https://github.com/augentic/omnia#bcd5b17f62e719e2a58fa8d4649358d72fef2c1c"
 dependencies = [
  "anyhow",
- "bon",
  "bytes",
  "clap",
  "clap_complete",
  "futures",
  "http",
  "http-body",
+ "omnia-backend",
+ "omnia-guest-macros",
  "omnia-wasi-blobstore",
  "omnia-wasi-config",
  "omnia-wasi-docstore",
@@ -3031,6 +3041,7 @@ dependencies = [
  "omnia-wasi-model",
  "omnia-wasi-otel",
  "omnia-wasi-sql",
+ "omnia-wasi-vault",
  "omnia-wasi-vcs",
  "omnia-wasi-websocket",
  "schemars 1.2.3",
@@ -3039,14 +3050,13 @@ dependencies = [
  "thiserror 2.0.21",
  "tracing",
  "wasip3",
- "wit-bindgen 0.62.0",
+ "wit-bindgen 0.63.0",
 ]
 
 [[package]]
 name = "omnia-test"
-version = "0.37.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "aad8efa5cd8c562a7b408e7a8bd23c6e0b67e951d9b19584d1c6cc632fa334e1"
+version = "0.38.0"
+source = "git+https://github.com/augentic/omnia#bcd5b17f62e719e2a58fa8d4649358d72fef2c1c"
 dependencies = [
  "anyhow",
  "bytes",
@@ -3055,6 +3065,7 @@ dependencies = [
  "http-body",
  "http-body-util",
  "omnia",
+ "omnia-backend",
  "omnia-sdk",
  "omnia-wasi-blobstore",
  "omnia-wasi-config",
@@ -3070,61 +3081,61 @@ dependencies = [
  "omnia-wasi-vcs",
  "omnia-wasi-websocket",
  "tempfile",
+ "tokio",
+ "tower",
 ]
 
 [[package]]
 name = "omnia-wasi-blobstore"
-version = "0.37.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "00049a3b4e42e1e93ac30015937fe6d7a0c53e8425c276b9598e96dde3a81506"
+version = "0.38.0"
+source = "git+https://github.com/augentic/omnia#bcd5b17f62e719e2a58fa8d4649358d72fef2c1c"
 dependencies = [
  "anyhow",
  "bytes",
  "futures",
+ "omnia-backend",
  "omnia-core",
  "parking_lot 0.13.0",
  "tracing",
  "wasmtime",
  "wasmtime-wasi",
- "wit-bindgen 0.62.0",
+ "wit-bindgen 0.63.0",
 ]
 
 [[package]]
 name = "omnia-wasi-config"
-version = "0.37.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e5a3b069595edcf77bb626124a5b39f1b9a7a209692240524e9c252211a1254c"
+version = "0.38.0"
+source = "git+https://github.com/augentic/omnia#bcd5b17f62e719e2a58fa8d4649358d72fef2c1c"
 dependencies = [
  "anyhow",
+ "futures",
+ "omnia-backend",
  "omnia-core",
  "tracing",
  "wasmtime",
- "wasmtime-wasi-config",
- "wit-bindgen 0.62.0",
+ "wasmtime-wasi",
+ "wit-bindgen 0.63.0",
 ]
 
 [[package]]
 name = "omnia-wasi-docstore"
-version = "0.37.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f4723dd2ce72cc97c58f650c10de473959124045cf1b9f3c261cdf6a7a41ae9a"
+version = "0.38.0"
+source = "git+https://github.com/augentic/omnia#bcd5b17f62e719e2a58fa8d4649358d72fef2c1c"
 dependencies = [
  "anyhow",
- "chrono",
  "futures",
+ "omnia-backend",
  "omnia-core",
- "serde_json",
  "tracing",
  "wasmtime",
  "wasmtime-wasi",
- "wit-bindgen 0.62.0",
+ "wit-bindgen 0.63.0",
 ]
 
 [[package]]
 name = "omnia-wasi-http"
-version = "0.37.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3535055b325beb7d7ee6e4c395ed0b252528b26f393dae0125e25457a0b1de57"
+version = "0.38.0"
+source = "git+https://github.com/augentic/omnia#bcd5b17f62e719e2a58fa8d4649358d72fef2c1c"
 dependencies = [
  "anyhow",
  "axum",
@@ -3136,6 +3147,7 @@ dependencies = [
  "http-body",
  "http-body-util",
  "hyper",
+ "hyper-util",
  "omnia-core",
  "reqwest 0.13.5",
  "rustls",
@@ -3150,67 +3162,63 @@ dependencies = [
 
 [[package]]
 name = "omnia-wasi-identity"
-version = "0.37.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "59143a2e9c5b212778706b4b9000987a03dad2e024fce1620180ebdab9bcd574"
+version = "0.38.0"
+source = "git+https://github.com/augentic/omnia#bcd5b17f62e719e2a58fa8d4649358d72fef2c1c"
 dependencies = [
  "anyhow",
  "fromenv",
  "futures",
  "oauth2",
+ "omnia-backend",
  "omnia-core",
- "serde",
  "tracing",
  "wasmtime",
  "wasmtime-wasi",
- "wit-bindgen 0.62.0",
+ "wit-bindgen 0.63.0",
 ]
 
 [[package]]
 name = "omnia-wasi-keyvalue"
-version = "0.37.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "218a87cb890aa9fe9a3cf76b22efd91ce4d26f99819d29d6d827db90df90ab05"
+version = "0.38.0"
+source = "git+https://github.com/augentic/omnia#bcd5b17f62e719e2a58fa8d4649358d72fef2c1c"
 dependencies = [
  "anyhow",
- "chrono",
  "futures",
  "moka",
+ "omnia-backend",
  "omnia-core",
- "serde",
- "serde_json",
  "tracing",
  "wasmtime",
  "wasmtime-wasi",
- "wit-bindgen 0.62.0",
+ "wit-bindgen 0.63.0",
 ]
 
 [[package]]
 name = "omnia-wasi-messaging"
-version = "0.37.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "253b61cbdc10411d0f48e9f67dfdc4592c98eb0117c1f18673feb8befdb30188"
+version = "0.38.0"
+source = "git+https://github.com/augentic/omnia#bcd5b17f62e719e2a58fa8d4649358d72fef2c1c"
 dependencies = [
  "anyhow",
  "futures",
+ "omnia-backend",
  "omnia-core",
  "tokio",
  "tokio-stream",
  "tracing",
  "wasmtime",
  "wasmtime-wasi",
- "wit-bindgen 0.62.0",
+ "wit-bindgen 0.63.0",
 ]
 
 [[package]]
 name = "omnia-wasi-model"
-version = "0.37.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "795990a482309c0e4d436a48b2616e0e3e11e68905384b125731a68e595e22f1"
+version = "0.38.0"
+source = "git+https://github.com/augentic/omnia#bcd5b17f62e719e2a58fa8d4649358d72fef2c1c"
 dependencies = [
  "anyhow",
  "cap-std",
  "futures",
+ "omnia-backend",
  "omnia-core",
  "serde",
  "serde_json",
@@ -3219,19 +3227,19 @@ dependencies = [
  "wasip3",
  "wasmtime",
  "wasmtime-wasi",
- "wit-bindgen 0.62.0",
+ "wit-bindgen 0.63.0",
 ]
 
 [[package]]
 name = "omnia-wasi-otel"
-version = "0.37.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "63155bb652c825437c6bf0926ea211daa7e73c4dc8ff855b6d2cd9cd7845cc65"
+version = "0.38.0"
+source = "git+https://github.com/augentic/omnia#bcd5b17f62e719e2a58fa8d4649358d72fef2c1c"
 dependencies = [
  "anyhow",
  "futures",
  "getrandom 0.4.3",
  "hex",
+ "omnia-backend",
  "omnia-core",
  "omnia-guest-macros",
  "opentelemetry",
@@ -3242,18 +3250,18 @@ dependencies = [
  "tracing-subscriber",
  "wasmtime",
  "wasmtime-wasi",
- "wit-bindgen 0.62.0",
+ "wit-bindgen 0.63.0",
 ]
 
 [[package]]
 name = "omnia-wasi-sql"
-version = "0.37.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2f45a07e5101758fb67beedcdf56c88494ae04bebcc855a03d47aa331515d6a6"
+version = "0.38.0"
+source = "git+https://github.com/augentic/omnia#bcd5b17f62e719e2a58fa8d4649358d72fef2c1c"
 dependencies = [
  "anyhow",
  "fromenv",
  "futures",
+ "omnia-backend",
  "omnia-core",
  "parking_lot 0.13.0",
  "rusqlite",
@@ -3261,52 +3269,52 @@ dependencies = [
  "tracing",
  "wasmtime",
  "wasmtime-wasi",
- "wit-bindgen 0.62.0",
+ "wit-bindgen 0.63.0",
 ]
 
 [[package]]
 name = "omnia-wasi-vault"
-version = "0.37.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "dd8d4ea9438a275c305c8bc9d9378a9ca4f8749c24b570947e2bc9717f46ef9e"
+version = "0.38.0"
+source = "git+https://github.com/augentic/omnia#bcd5b17f62e719e2a58fa8d4649358d72fef2c1c"
 dependencies = [
  "anyhow",
  "futures",
+ "omnia-backend",
  "omnia-core",
  "parking_lot 0.13.0",
  "tracing",
  "wasmtime",
  "wasmtime-wasi",
- "wit-bindgen 0.62.0",
+ "wit-bindgen 0.63.0",
 ]
 
 [[package]]
 name = "omnia-wasi-vcs"
-version = "0.37.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f301fb0fc3ca8c915ac9857089a32a0aa53d48aff32480455e5acd3429b11e94"
+version = "0.38.0"
+source = "git+https://github.com/augentic/omnia#bcd5b17f62e719e2a58fa8d4649358d72fef2c1c"
 dependencies = [
  "anyhow",
  "cap-std",
+ "omnia-backend",
  "omnia-core",
  "tracing",
  "wasip3",
  "wasmtime",
  "wasmtime-wasi",
- "wit-bindgen 0.62.0",
+ "wit-bindgen 0.63.0",
 ]
 
 [[package]]
 name = "omnia-wasi-websocket"
-version = "0.37.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c997425369b46db4bc50d021744468c110693c482a7cef87239f553b5ee592f5"
+version = "0.38.0"
+source = "git+https://github.com/augentic/omnia#bcd5b17f62e719e2a58fa8d4649358d72fef2c1c"
 dependencies = [
  "anyhow",
  "dashmap",
  "futures",
  "futures-channel",
  "futures-util",
+ "omnia-backend",
  "omnia-core",
  "tokio",
  "tokio-stream",
@@ -3314,7 +3322,7 @@ dependencies = [
  "tracing",
  "wasmtime",
  "wasmtime-wasi",
- "wit-bindgen 0.62.0",
+ "wit-bindgen 0.63.0",
 ]
 
 [[package]]
@@ -3890,9 +3898,9 @@ dependencies = [
 
 [[package]]
 name = "referencing"
-version = "0.59.0"
+version = "0.60.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "473f4dcca28ead7ee0f8e5b5d0bbae2549f4fc4c958fb20af328961b6c174be3"
+checksum = "f42818036d3b37cda6bd4c494543158a36e431cb717015ef7c93acc6ba214d3b"
 dependencies = [
  "ahash",
  "fluent-uri",
@@ -4057,9 +4065,9 @@ dependencies = [
 
 [[package]]
 name = "rusqlite"
-version = "0.40.2"
+version = "0.41.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "23f2a97da3e3873c73cb2a2e71b35c40ff95e0b1eefa8d72d8499a6928c3b5b3"
+checksum = "da9bba6f3506135e120a6586df05be18b48d18896600646a4bec8f993d91a594"
 dependencies = [
  "bitflags 2.13.2",
  "fallible-iterator",
@@ -4395,9 +4403,9 @@ dependencies = [
 
 [[package]]
 name = "serde_spanned"
-version = "1.1.2"
+version = "1.1.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4e7523beb55eece201a2356bee0bbca0d1ab466c14c07703b2e0ee6d42cb0c2c"
+checksum = "9c187e0a369471c550af028cba56d4f4fa2a489ad28151ae95a4d340a2a8b782"
 dependencies = [
  "serde_core",
 ]
@@ -4544,9 +4552,9 @@ checksum = "0c790de23124f9ab44544d7ac05d60440adc586479ce501c1d6d7da3cd8c9cf5"
 
 [[package]]
 name = "smallvec"
-version = "1.16.4"
+version = "1.16.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d0d5d4b1981b8bbbb7aed204cae5726d683d5d6ac7e74ec54122ea28f315e7c8"
+checksum = "149309498a5f7334b12ddae0cad8aba81ce785fe91755068867e017cf98fee46"
 dependencies = [
  "serde",
 ]
@@ -4939,9 +4947,9 @@ dependencies = [
 
 [[package]]
 name = "toml"
-version = "1.1.8+spec-1.1.0"
+version = "1.2.1+spec-1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "20489e00e4d8741d6be680764cc12e270655e375a20d1011e844a9c3379e678d"
+checksum = "d5755c51863cdac711f1956baf8eb9588e060755f7d3c4c979e70ea1e1f32cd7"
 dependencies = [
  "indexmap 2.14.2",
  "serde_core",
@@ -4954,9 +4962,9 @@ dependencies = [
 
 [[package]]
 name = "toml_datetime"
-version = "1.1.2+spec-1.1.0"
+version = "1.1.3+spec-1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2b86d767906c6c42421dcba507eb9d203e779497710a47782a224bb871653053"
+checksum = "173f25c883cd2176a2d8212155638c0a60d484a9d84546d270866f40f56b6e49"
 dependencies = [
  "serde_core",
 ]
@@ -4972,9 +4980,9 @@ dependencies = [
 
 [[package]]
 name = "toml_writer"
-version = "1.1.3+spec-1.1.0"
+version = "1.2.0+spec-1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "06bdbd8cfc056b8d2e2e85f29b56a3bdbecb527cef81eb39e3e7b98af4652770"
+checksum = "009dbb7700f11c55ef83aebbe4c0e9cf1f1ac0844bd8d6f00dc38f302026e13a"
 
 [[package]]
 name = "tonic"
@@ -5278,9 +5286,9 @@ checksum = "3a3b425286980a367278453f3b6d28cdcb134b574e5a35824a6ff5eebad50bb6"
 
 [[package]]
 name = "uuid"
-version = "1.29.0"
+version = "1.29.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4a0e2d11620c50695fe12bbbfde96b3477fe606e7284c22d505c12ce51214514"
+checksum = "4a06f08a856b009bc7bbaf7d3e79808595d032dd19074c0c2ef26e49e03e6bdc"
 dependencies = [
  "getrandom 0.4.3",
  "js-sys",
@@ -5368,15 +5376,15 @@ dependencies = [
 
 [[package]]
 name = "wasip3"
-version = "0.9.0+wasi-0.3.0"
+version = "0.10.0+wasi-0.3.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f1d5749fdf69bb9400562eba50f8f25f5cd800ef4b74300038b6f99ae7409674"
+checksum = "d1657e9f48c63d6c3f143f70d5c6e2be7d463371a7af1ed939a5b83d3ca080d0"
 dependencies = [
  "bytes",
  "http",
  "http-body",
  "thiserror 2.0.21",
- "wit-bindgen 0.62.0",
+ "wit-bindgen 0.63.0",
 ]
 
 [[package]]
@@ -5456,16 +5464,6 @@ dependencies = [
 
 [[package]]
 name = "wasm-encoder"
-version = "0.259.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b1d0246511d901aacf25d2dc9111f0054947de5e093fe662099e709ff7530dc3"
-dependencies = [
- "leb128fmt",
- "wasmparser 0.259.0",
-]
-
-[[package]]
-name = "wasm-encoder"
 version = "0.261.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2608e8bb6d67fd68f5a8d0eb1363d6e7bcbc1f8ded5a0bd3a1e382462b876b22"
@@ -5523,18 +5521,6 @@ dependencies = [
  "url",
  "wasm-encoder 0.254.2",
  "wasmparser 0.254.2",
-]
-
-[[package]]
-name = "wasm-metadata"
-version = "0.259.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4e7bf119eb01f4a246864c10bd87c8f26c566350abb25aa4d5273c415bbab338"
-dependencies = [
- "anyhow",
- "indexmap 2.14.2",
- "wasm-encoder 0.259.0",
- "wasmparser 0.259.0",
 ]
 
 [[package]]
@@ -5648,18 +5634,6 @@ name = "wasmparser"
 version = "0.254.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c5ff8685b587722894b6f25958fc608d315b93b8d23647bfb567664e7006d757"
-dependencies = [
- "bitflags 2.13.2",
- "hashbrown 0.17.1",
- "indexmap 2.14.2",
- "semver",
-]
-
-[[package]]
-name = "wasmparser"
-version = "0.259.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0f7c12eac7bb587801590f6a67ff0bc84d0748513864b71108e4b311cc3df694"
 dependencies = [
  "bitflags 2.13.2",
  "hashbrown 0.17.1",
@@ -5937,15 +5911,6 @@ dependencies = [
  "wasmtime",
  "wasmtime-wasi-io",
  "windows-sys 0.61.2",
-]
-
-[[package]]
-name = "wasmtime-wasi-config"
-version = "50.0.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8b8e2841ed16bd9aa38650827727f3a45eba8759b153b5d33aaef7722286708f"
-dependencies = [
- "wasmtime",
 ]
 
 [[package]]
@@ -6290,9 +6255,9 @@ checksum = "d6bbff5f0aada427a1e5a6da5f1f98158182f26556f345ac9e04d36d0ebed650"
 
 [[package]]
 name = "winnow"
-version = "1.0.4"
+version = "1.0.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "23b97319f7b8343df12cc98938e5c3eb436064524c8d2b4e30a1d3a36eecdf81"
+checksum = "8c3b93199df0ab874cdf0c6a94f0a0dc3423fe41f1cafb62b8bd7b1deb277aef"
 
 [[package]]
 name = "winx"
@@ -6312,35 +6277,13 @@ checksum = "1ebf944e87a7c253233ad6766e082e3cd714b5d03812acc24c318f549614536e"
 
 [[package]]
 name = "wit-bindgen"
-version = "0.62.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "53cb4b5556c3a791e86838ea287782bdafa704d55b0e68b5b81a3a16b9ea5f4b"
-dependencies = [
- "bitflags 2.13.2",
- "futures",
- "wit-bindgen-rust-macro 0.62.0",
-]
-
-[[package]]
-name = "wit-bindgen"
 version = "0.63.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b85a987ab61d365382d25c7d47e26edd48941b3bf6e3fbf76eff918bc71dab06"
 dependencies = [
  "bitflags 2.13.2",
  "futures",
- "wit-bindgen-rust-macro 0.63.0",
-]
-
-[[package]]
-name = "wit-bindgen-core"
-version = "0.62.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "72ad22a37ecbc0e1fdca34d2b670ba41368cb0920735643e00fdf39a16ee5431"
-dependencies = [
- "anyhow",
- "heck",
- "wit-parser 0.259.0",
+ "wit-bindgen-rust-macro",
 ]
 
 [[package]]
@@ -6356,22 +6299,6 @@ dependencies = [
 
 [[package]]
 name = "wit-bindgen-rust"
-version = "0.62.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "84ba5213d4332c260a0d4e69e34b0f7e4b85ddae10b6ebfbac00d9c185ba628a"
-dependencies = [
- "anyhow",
- "heck",
- "indexmap 2.14.2",
- "prettyplease",
- "syn 3.0.9",
- "wasm-metadata 0.259.0",
- "wit-bindgen-core 0.62.0",
- "wit-component 0.259.0",
-]
-
-[[package]]
-name = "wit-bindgen-rust"
 version = "0.63.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "84e26e13b9d972026778d2ffb7985736de116026fdc8d9464f966e12df2eb240"
@@ -6382,24 +6309,8 @@ dependencies = [
  "prettyplease",
  "syn 3.0.9",
  "wasm-metadata 0.262.0",
- "wit-bindgen-core 0.63.0",
+ "wit-bindgen-core",
  "wit-component 0.262.0",
-]
-
-[[package]]
-name = "wit-bindgen-rust-macro"
-version = "0.62.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8f19d63da8e478a370ef8192d90ccb517965b7747d6b46cd2d831dd0ef4d2541"
-dependencies = [
- "anyhow",
- "macro-string",
- "prettyplease",
- "proc-macro2",
- "quote",
- "syn 3.0.9",
- "wit-bindgen-core 0.62.0",
- "wit-bindgen-rust 0.62.0",
 ]
 
 [[package]]
@@ -6414,8 +6325,8 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 3.0.9",
- "wit-bindgen-core 0.63.0",
- "wit-bindgen-rust 0.63.0",
+ "wit-bindgen-core",
+ "wit-bindgen-rust",
 ]
 
 [[package]]
@@ -6455,25 +6366,6 @@ dependencies = [
  "wasmparser 0.254.2",
  "wat",
  "wit-parser 0.254.2",
-]
-
-[[package]]
-name = "wit-component"
-version = "0.259.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "092f783dee3253265fcde131475055f8c275ac0176a9c0396db1dc7b5544bfb4"
-dependencies = [
- "anyhow",
- "bitflags 2.13.2",
- "indexmap 2.14.2",
- "log",
- "serde",
- "serde_derive",
- "serde_json",
- "wasm-encoder 0.259.0",
- "wasm-metadata 0.259.0",
- "wasmparser 0.259.0",
- "wit-parser 0.259.0",
 ]
 
 [[package]]
@@ -6550,25 +6442,6 @@ dependencies = [
  "serde_json",
  "unicode-ident",
  "wasmparser 0.254.2",
-]
-
-[[package]]
-name = "wit-parser"
-version = "0.259.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6390f4f02493ce678d509c859cf1698e38929fb75c8012a6ee2f7d6b6cb66cd7"
-dependencies = [
- "anyhow",
- "hashbrown 0.17.1",
- "id-arena",
- "indexmap 2.14.2",
- "log",
- "semver",
- "serde",
- "serde_derive",
- "serde_json",
- "unicode-ident",
- "wasmparser 0.259.0",
 ]
 
 [[package]]

@@ -19,7 +19,7 @@ use omnia_sdk::{
     BlobStore, CasError, ContainerMetadata, Error, Model, ObjectMetadata, Plugins, StateStore, Vcs,
     model, vcs,
 };
-use omnia_test::guest::{Memory, Scripted};
+use omnia_test::guest::{Memory, ScriptedModel};
 use tokio::sync::Barrier;
 
 use super::files::FilesScript;
@@ -140,6 +140,8 @@ pub struct TargetScript {
     pub versions: BTreeMap<String, String>,
     // The merge rules every adapter declares.
     pub rules: Vec<MergeRule>,
+    // The default slice budget every adapter declares.
+    pub budget: Option<u32>,
     // Every init dispatch, recorded in dispatch order: the workspace root.
     pub inits: Arc<Mutex<Vec<String>>>,
     // Every build dispatch, recorded in dispatch order: the adapter id, the
@@ -187,7 +189,7 @@ impl TargetScript {
 #[derive(Debug)]
 pub struct Provider<S = Memory> {
     // FIFO-scripted model answers.
-    pub model: Scripted,
+    pub model: ScriptedModel,
     // The scripted `Source`.
     pub source: SourceScript,
     // The scripted `Target`.
@@ -216,7 +218,7 @@ impl<S> Provider<S> {
     // Creates a provider answering `answers` over `storage`.
     pub fn over<T: Into<String>>(storage: Arc<S>, answers: impl IntoIterator<Item = T>) -> Self {
         Self {
-            model: Scripted::answering(answers),
+            model: ScriptedModel::answering(answers),
             source: SourceScript::default(),
             target: TargetScript::default(),
             vcs: VcsScript::default(),
@@ -278,7 +280,7 @@ impl<S: StateStore + Send + Sync + 'static> StateStore for Provider<S> {
 
     fn set(
         &self, key: &str, value: &[u8], ttl_secs: Option<u64>,
-    ) -> impl Future<Output = Result<Option<Vec<u8>>>> + Send {
+    ) -> impl Future<Output = Result<()>> + Send {
         StateStore::set(&self.storage, key, value, ttl_secs)
     }
 
@@ -453,6 +455,7 @@ impl<S: Send + Sync + 'static> Target for Provider<S> {
         TargetMetadata {
             emery_version: self.target.versions.get(id).cloned(),
             merge_rules: self.target.rules.clone(),
+            budget: self.target.budget,
         }
     }
 }

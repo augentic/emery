@@ -104,9 +104,9 @@ Used by [`emery build`](cli/build.md):
 
 | Export / Task | Purpose |
 | --- | --- |
-| `metadata() -> TargetMetadata` | Returns the adapter's name, version, `emery-version`, and path-glob `merge_rules` (`union`, `ours`, `theirs`) used when merging slice commits into `.emery/vcs/integration`. |
+| `metadata() -> TargetMetadata` | Returns the adapter's `emery-version`, path-glob `merge_rules` (`union`, `ours`, `theirs`) used when merging slice commits into `.emery/vcs/integration`, and optional default requirement `budget` per slice. |
 | `run(..., Task::Init)` | Runs once per repository before the first slice builds. Deterministically scaffolds missing project layout files with `create_new` (no model turn) and returns `Outcome::Initialised`. |
-| `run(..., Task::Build(Slice))` | Runs once per slice in `.emery/vcs/worktrees/<slice-id>`. Implements the slice's requirements and owned data types and returns `Outcome::Built(Report)` (`covered` requirement IDs and `written` file paths). |
+| `run(..., Task::Build(Slice))` | Runs once per slice in `.emery/vcs/worktrees/<slice-id>`, carrying its part (`part`, `name`, `brief`), position (`index` of `count`), typed requirements, and owned data types. Implements the slice and returns `Outcome::Built(Report)` (`covered` requirement IDs and `written` file paths). |
 | `run(..., Task::Verify)` | Runs once per wave in `.emery/vcs/integration`. Runs workspace-wide checks (compiler, linter, tests), repairs issues, and returns `Outcome::Verified(Verdict)` (`passed` and `failures`). |
 
 ---

@@ -154,10 +154,11 @@ macro_rules! export_source {
 ///
 /// The argument is a type implementing [`target::TargetAdapter`]. The
 /// component's `metadata` answers [`target::metadata`] over the type's
-/// [`rules`](target::Metadata::rules). Its `run` lifts the imported task
-/// into a [`target::Task`] over the workspace root and the host model,
-/// passes it to [`target::TargetAdapter::run`], verifies that the outcome
-/// matches the task's kind, and converts the result into the WIT records.
+/// [`rules`](target::Metadata::rules) and [`budget`](target::Metadata::budget).
+/// Its `run` lifts the imported task into a [`target::Task`] over the
+/// workspace root and the host model, passes it to
+/// [`target::TargetAdapter::run`], verifies that the outcome matches the
+/// task's kind, and converts the result into the WIT records.
 ///
 /// Invoke this macro under `#[cfg(target_arch = "wasm32")]`, where the export
 /// interface is defined. Leave the adapter type and its
@@ -175,8 +176,10 @@ macro_rules! export_target {
                 fn metadata(
                     _id: $crate::target::export::AdapterId,
                 ) -> $crate::target::export::TargetMetadata {
+                    let metadata = <$adapter as $crate::target::TargetAdapter>::metadata();
                     $crate::target::export::TargetMetadata::from($crate::target::metadata(
-                        <$adapter as $crate::target::TargetAdapter>::metadata().rules,
+                        metadata.rules,
+                        metadata.budget,
                     ))
                 }
 
@@ -195,14 +198,10 @@ macro_rules! export_target {
 /// The host model a turn is put to on WebAssembly.
 ///
 /// [`export_source!`] and [`export_target!`] bind it into every context
-/// they build; the empty [`Model`] impl delegates each request through
-/// Omnia's WASI interface.
+/// they build; [`WasiProvider`](omnia_sdk::WasiProvider) delegates each
+/// request through Omnia's WASI interface.
 #[cfg(target_arch = "wasm32")]
-#[derive(Clone, Copy, Debug, Default)]
-pub struct Provider;
-
-#[cfg(target_arch = "wasm32")]
-impl Model for Provider {}
+pub use omnia_sdk::WasiProvider as Provider;
 
 /// The `extract` arm of [`export_source!`], reached through the macro alone.
 #[cfg(target_arch = "wasm32")]

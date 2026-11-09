@@ -99,9 +99,9 @@ When you run `emery amend`:
 When `emery amend` retires a requirement:
 
 - **Specification (`spec.json`):** The requirement is removed completely. Remaining requirements keep their existing `REQ-NNN` IDs without renumbering.
-- **Build plan (`plan.json`):** The retired `REQ-NNN` is removed from its slice.
-  - If the slice still holds other requirements, it stays in the plan (marked `(brief kept)` unless a slicing turn also ran).
-  - If the slice has no requirements left, the slice is removed from `plan.json`, any slices that depended on it are re-wired to its dependencies, and any domain data types owned by that emptied slice are removed from `design.json`.
+- **Build plan (`plan.json`):** The retired `REQ-NNN` is removed from its part.
+  - If the part still holds other requirements, it stays in the plan (marked `(brief kept)` unless a slicing turn also ran).
+  - If the part has no requirements left, the part is removed from `plan.json`, any parts that depended on it are re-wired to its dependencies, and any domain data types owned by that emptied part are removed from `design.json`.
 - **Design (`design.json`):** If any paragraph in `design.json` cited the retired `REQ-NNN`, Emery opens a `design-draft` (`DesignAmend`) turn to update or remove the outdated design prose.
 
 ---

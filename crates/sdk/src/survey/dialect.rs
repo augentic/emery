@@ -1,5 +1,6 @@
 //! Carries what a survey reads of a language, as data.
 
+use super::code::Scalar;
 use super::route::Spelling;
 
 /// The names and spellings a survey's lookups read of one language.
@@ -13,7 +14,7 @@ use super::route::Spelling;
 ///
 /// ```
 /// use emery_sdk::survey::route::Spelling;
-/// use emery_sdk::survey::{ClassSyntax, Dialect};
+/// use emery_sdk::survey::{Annotations, ClassSyntax, Dialect};
 ///
 /// static TYPESCRIPT: Dialect = Dialect {
 ///     self_name: "this",
@@ -38,6 +39,13 @@ use super::route::Spelling;
 ///     env_object: Some("process.env"),
 ///     enum_bases: &[],
 ///     class_syntax: ClassSyntax::BRACED,
+///     annotations: Annotations {
+///         integer: "number",
+///         float: "number",
+///         string: "string",
+///         boolean: "boolean",
+///         unknown: "unknown",
+///     },
 ///     described: "a case's title under its suites'",
 ///     route: Spelling {
 ///         pattern: &['*', '{', '(', '['],
@@ -119,6 +127,9 @@ pub struct Dialect {
     pub enum_bases: &'static [&'static str],
     /// How a class declaration is spelled with its bodies elided.
     pub class_syntax: ClassSyntax,
+    /// How a member of a package's class is annotated from the value
+    /// assigned to it.
+    pub annotations: Annotations,
     /// What a line of stated behaviour is in the language's tests: `a
     /// case's title under its suites'`, `a test's docstring or name under
     /// its class's`.
@@ -166,6 +177,8 @@ impl Dialect {
 /// ```
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct ClassSyntax {
+    /// What ends a header spelled from a class's name alone: nothing, or `:`.
+    pub header_end: &'static str,
     /// What follows the header to open the body: ` {`, or nothing after
     /// a header ending in `:`.
     pub open: &'static str,
@@ -184,6 +197,7 @@ pub struct ClassSyntax {
 impl ClassSyntax {
     /// A braced class body, as C-family languages write one.
     pub const BRACED: Self = Self {
+        header_end: "",
         open: " {",
         indent: "  ",
         field: ";",
@@ -193,6 +207,7 @@ impl ClassSyntax {
     };
     /// An indented class body under a header ending in `:`, as Python writes one.
     pub const INDENTED: Self = Self {
+        header_end: ":",
         open: "",
         indent: "    ",
         field: "",
@@ -200,4 +215,53 @@ impl ClassSyntax {
         close: "",
         empty: "\n    ...",
     };
+}
+
+/// How a member is annotated from the value assigned to it.
+///
+/// A class of a package the code constructs has no declaration in the tree,
+/// so its `type` claim spells each member from what the code assigns it;
+/// these are the language's names for the kinds of value.
+///
+/// # Examples
+///
+/// ```
+/// use emery_sdk::survey::Annotations;
+/// use emery_sdk::survey::code::Scalar;
+///
+/// const TYPESCRIPT: Annotations = Annotations {
+///     integer: "number",
+///     float: "number",
+///     string: "string",
+///     boolean: "boolean",
+///     unknown: "unknown",
+/// };
+///
+/// assert_eq!(TYPESCRIPT.scalar(Scalar::Integer), "number");
+/// ```
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct Annotations {
+    /// A number with no fractional part: `number`, `int`.
+    pub integer: &'static str,
+    /// A number with one: `number`, `float`.
+    pub float: &'static str,
+    /// A string: `string`, `str`.
+    pub string: &'static str,
+    /// A boolean: `boolean`, `bool`.
+    pub boolean: &'static str,
+    /// A value of no kind the code spells: `unknown`, `object`.
+    pub unknown: &'static str,
+}
+
+impl Annotations {
+    /// Returns the annotation of a literal of kind `scalar`.
+    #[must_use]
+    pub const fn scalar(&self, scalar: Scalar) -> &'static str {
+        match scalar {
+            Scalar::Integer => self.integer,
+            Scalar::Float => self.float,
+            Scalar::String => self.string,
+            Scalar::Boolean => self.boolean,
+        }
+    }
 }

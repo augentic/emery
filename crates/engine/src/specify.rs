@@ -26,16 +26,15 @@ use serde::{Deserialize, Serialize};
 
 pub(crate) use self::basis::{BASELINE, Basis, Contributor, GroupingBrief};
 pub(crate) use self::design::{DesignAmend, DesignBrief};
-pub use self::plan::SLICE_CAP;
-pub(crate) use self::plan::{Floors, Open, SliceAmend, SliceBrief, drafts};
+pub(crate) use self::plan::{Draft, Floors, Open, PartAmend, PartBrief, Types};
 pub use self::spec::SPEC_CHUNK;
 pub(crate) use self::spec::SpecBrief;
 use crate::adapter::{self, AdapterRef, Loaded};
 pub use crate::apply::ApplyOutput;
 use crate::brief::Brief as _;
 pub use crate::revision::{
-    BadId, Changed, DesignDiff, Diff, Entry, PlanDiff, ReqId, Retired, Role, SectionKind,
-    SliceEntry, SliceId, SpecDiff, Waves,
+    BadId, Changed, DesignDiff, Diff, Entry, PartEntry, PartId, PlanDiff, ReqId, Retired, Role,
+    SectionKind, SpecDiff, Waves,
 };
 use crate::revision::{Layout, LayoutView, Revision};
 use crate::vcs::{SourceClone, TargetRef, WorkingCopy};
@@ -98,7 +97,7 @@ use crate::{Files, Rank, apply, preopen_path, store, vcs};
 ///
 /// A loader's or a source's error keeps its own class and code.
 pub async fn specify<P: Model + Source + StateStore + BlobStore + Plugins + Vcs + Files>(
-    input: SpecifyInput, context: Context<P>,
+    context: Context<P>, input: SpecifyInput,
 ) -> Result<SpecifyOutput, Error> {
     let provider = context.provider();
 
@@ -135,7 +134,7 @@ pub async fn specify<P: Model + Source + StateStore + BlobStore + Plugins + Vcs 
         future::try_join_all(chunks.into_iter().map(|chunk| chunk.judge(provider))),
         async {
             let design = DesignBrief::new(&extracts, &bases).judge(provider).await?;
-            let plan = SliceBrief::new(&bases, design.data_types()).derive(provider).await?;
+            let plan = PartBrief::new(&bases, Types::of(&design)).derive(provider).await?;
             Ok::<_, Error>((design, plan))
         },
     )
@@ -152,7 +151,7 @@ pub async fn specify<P: Model + Source + StateStore + BlobStore + Plugins + Vcs 
     let revision = store::stage(provider, &candidate, input.fresh).await?;
     tracing::info!(
         candidate = %revision,
-        slices = candidate.plan.slices.len(),
+        parts = candidate.plan.parts.len(),
         fresh = input.fresh,
         "staged"
     );
@@ -320,7 +319,7 @@ impl SourceConfig {
 pub struct SpecifyOutput {
     /// The content identifier of the staged candidate.
     pub revision: String,
-    /// The candidate plan's slices grouped into the sets ready to build at once.
+    /// The candidate plan's parts grouped into the sets ready to build at once.
     pub waves: Waves,
     /// Changes from the current revision, which sealing the candidate would displace.
     ///

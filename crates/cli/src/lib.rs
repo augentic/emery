@@ -6,7 +6,6 @@
 //! declares (`-v`, `-q`) and never reads.
 
 mod config;
-mod text;
 
 use std::borrow::Cow;
 use std::ffi::OsString;
@@ -22,8 +21,10 @@ use emery_engine::show::{Artifact, ShowInput, show};
 use emery_engine::specify::{SpecifyInput, specify};
 use emery_engine::{Provider, is_retryable};
 use omnia_sdk::Error;
-use omnia_sdk::api::command::{Command, Parsed, Response, Shell, Verbosity, completions, parse};
-use omnia_sdk::api::{Client, Format, Metadata};
+use omnia_sdk::api::command::{
+    Command, Failure, Format, Parsed, Response, Shell, Verbosity, completions, parse,
+};
+use omnia_sdk::api::{Client, Metadata};
 use strum::VariantArray as _;
 
 const NAME: &str = "emery";
@@ -46,30 +47,45 @@ where
         Parsed::Usage(error) => return Response::usage(&error),
     };
 
-    let client = Client::new(NAME, provider);
+    let client = Client::new(provider);
     let metadata = Metadata::from_env("EMERY");
     let invoked = Invoked::from(&app.verb);
-    let command =
-        Command::new(&client, &metadata, app.format).hints(move |error| invoked.hint(error));
+    let format = app.format;
+    let command = Command::new(&client, &metadata, format).hints(move |error| invoked.hint(error));
 
     match app.verb {
         Verb::Completions { shell } => completions::<App>(shell, NAME),
-        Verb::Specify(arguments) => {
-            command.call(specify, || SpecifyInput::try_from(arguments), text::specify).await
-        }
-        Verb::Apply(arguments) => {
-            command.call(apply, || ApplyInput::try_from(arguments), text::apply).await
-        }
-        Verb::Amend(arguments) => {
-            command.call(amend, || AmendInput::try_from(arguments), text::amend).await
-        }
-        Verb::Build(arguments) => {
-            command.call(build, || BuildInput::try_from(arguments), text::build).await
-        }
-        Verb::Show(arguments) => {
-            command.call(show, || ShowInput::try_from(arguments), text::show).await
-        }
+        Verb::Specify(arguments) => match SpecifyInput::try_from(arguments) {
+            Ok(input) => command.call(specify, input).await,
+            Err(error) => refuse(format, invoked, error),
+        },
+        Verb::Apply(arguments) => match ApplyInput::try_from(arguments) {
+            Ok(input) => command.call(apply, input).await,
+            Err(error) => refuse(format, invoked, error),
+        },
+        Verb::Amend(arguments) => match AmendInput::try_from(arguments) {
+            Ok(input) => command.call(amend, input).await,
+            Err(error) => refuse(format, invoked, error),
+        },
+        Verb::Build(arguments) => match BuildInput::try_from(arguments) {
+            Ok(input) => command.call(build, input).await,
+            Err(error) => refuse(format, invoked, error),
+        },
+        Verb::Show(arguments) => match ShowInput::try_from(arguments) {
+            Ok(input) => command.call(show, input).await,
+            Err(error) => refuse(format, invoked, error),
+        },
     }
+}
+
+fn refuse(format: Format, invoked: Invoked, error: Error) -> Response {
+    let mut failure = Failure::from(error);
+    if failure.hint().is_none()
+        && let Some(hint) = invoked.hint(failure.error())
+    {
+        failure = failure.with_hint(hint);
+    }
+    Response::failure(format.encode(&failure).bytes, failure.exit_code())
 }
 
 // `bin_name` pins usage text to `emery`: Omnia forwards the engine guest's
@@ -326,6 +342,9 @@ struct BuildArgs {
     /// How many slices of a wave to build at once; unset builds every slice of a wave at once, within the model backend's own agent cap.
     #[arg(long, short = 'j', env = "EMERY_JOBS", value_name = "N")]
     jobs: Option<NonZeroUsize>,
+    /// The maximum number of requirements per build slice; over `--config`, it replaces the `[target] budget`.
+    #[arg(long, short = 'b', env = "EMERY_BUDGET", value_name = "N")]
+    budget: Option<NonZeroUsize>,
 }
 
 impl TryFrom<BuildArgs> for BuildInput {
@@ -337,6 +356,7 @@ impl TryFrom<BuildArgs> for BuildInput {
             repository: args.repository.as_deref(),
             config: args.config.as_deref(),
             jobs: args.jobs,
+            budget: args.budget,
         }
         .resolve()
     }
@@ -344,7 +364,9 @@ impl TryFrom<BuildArgs> for BuildInput {
 
 const SHOW_DESC: &str = "Print an artifact from the current revision.\n\n\
     The revision is read from the repository the `[target]` table of `--config [<path>]` \
-    (default: `emery.toml`) names, where `emery apply` sealed it. `--staged` prints it \
+    (default: `emery.toml`) names, where `emery apply` sealed it. `schedule` cuts the \
+    sealed plan into build slices under `--budget`, the `[target] budget`, or the target \
+    adapter's default, with no model turn. `--staged` prints `spec`, `design`, or `plan` \
     from the candidate `emery specify` staged and `emery apply` has not sealed, and \
     needs no target. `amendment` prints the staged amendment, which stands staged alone \
     until it is sealed, and needs neither. Text output contains only the artifact body. \
@@ -361,22 +383,16 @@ struct ShowArgs {
     /// Operator-owned config naming the repository the revision lives in; the omitted value selects emery.toml.
     #[arg(long, short = 'c', num_args = 0..=1, default_missing_value = config::CONFIG_FILE)]
     config: Option<PathBuf>,
+    /// The maximum number of requirements per build slice for `schedule`; over `--config`, it replaces the `[target] budget`.
+    #[arg(long, short = 'b', env = "EMERY_BUDGET", value_name = "N")]
+    budget: Option<NonZeroUsize>,
 }
 
 impl TryFrom<ShowArgs> for ShowInput {
     type Error = Error;
 
     fn try_from(args: ShowArgs) -> Result<Self, Error> {
-        let target = if args.staged || matches!(args.artifact, Artifact::Amendment) {
-            None
-        } else {
-            config::target(args.config.as_deref(), None)?
-        };
-        Ok(Self {
-            artifact: args.artifact,
-            staged: args.staged,
-            target,
-        })
+        config::show(args.artifact, args.staged, args.config.as_deref(), args.budget)
     }
 }
 
@@ -386,6 +402,7 @@ fn artifacts() -> impl TypedValueParser<Value = Artifact> {
             Artifact::Spec => "The behavioural specification artifact.",
             Artifact::Design => "The rebuild design artifact.",
             Artifact::Plan => "The build plan artifact.",
+            Artifact::Schedule => "The budgeted build schedule cut from the plan.",
             Artifact::Amendment => "The staged amendment, awaiting its seal.",
         };
         PossibleValue::new(artifact.as_ref()).help(help)

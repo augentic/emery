@@ -1,15 +1,16 @@
 {
-  "emery": 9,
+  "emery": 11,
   "parent": null,
   "preamble": [],
-  "slices": [
+  "parts": [
     {
-      "id": "SLICE-001",
+      "id": "PART-001",
       "name": "greeting",
       "requirements": [
         "REQ-001"
       ],
       "types": [],
+      "uses": [],
       "depends-on": [],
       "brief": []
     }

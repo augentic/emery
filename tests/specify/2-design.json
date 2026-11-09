@@ -1,5 +1,5 @@
 {
-  "emery": 9,
+  "emery": 11,
   "parent": null,
   "preamble": [
     "Rebuild design for the greeting surface reconciled in `spec.md`."

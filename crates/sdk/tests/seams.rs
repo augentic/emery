@@ -3,15 +3,16 @@
 mod support;
 
 use std::collections::BTreeMap;
+use std::fmt::Write as _;
 
 use emery_sdk::survey::Survey;
 use emery_sdk::survey::code::{
-    BindingKind, EnvRead, ExportKind, Init, Listing, Manifest, MemberKind, Parsed, Runs, Scope,
-    Tree, Use,
+    Assigned, Assignment, Binding, BindingKind, EnvRead, ExportKind, Init, Listing, Manifest,
+    MemberKind, Parsed, Runs, Scalar, Scope, Tree, Use,
 };
 use emery_sdk::survey::resolve::Target;
 use emery_sdk::{ClaimKind, Context, Doc, Error, Evidence, Lexicon, SourceInput, Trigger};
-use omnia_test::guest::Scripted;
+use omnia_test::guest::ScriptedModel;
 use support::{
     PYTHON, Plain, Stub, TYPESCRIPT, call, callee, class, class_decl, decorated, dynamic, export,
     from_module, from_package, function, line, literal, member, module, name, named_import,
@@ -206,7 +207,9 @@ fn fill(m: &mut Plain) {
     }
 }
 
-async fn run(model: &Scripted, input: &SourceInput, tree: &Tree<Stub>) -> Result<Survey, Error> {
+async fn run(
+    model: &ScriptedModel, input: &SourceInput, tree: &Tree<Stub>,
+) -> Result<Survey, Error> {
     let ctx = Context {
         adapter_id: "source:probe",
         input,
@@ -226,7 +229,7 @@ fn files(survey: &Survey, index: usize) -> Vec<&str> {
 #[tokio::test]
 async fn facts_laid() {
     let (_tmp, input, tree) = service(false, Some(Runs::Load));
-    let model = Scripted::answering([BOTH]);
+    let model = ScriptedModel::answering([BOTH]);
 
     run(&model, &input, &tree).await.expect("surveyed");
 
@@ -277,7 +280,7 @@ async fn facts_laid() {
 #[tokio::test]
 async fn whole_tree() {
     let (_tmp, input, tree) = service(false, Some(Runs::Load));
-    let model = Scripted::answering([BOTH]);
+    let model = ScriptedModel::answering([BOTH]);
 
     let survey = run(&model, &input, &tree).await.expect("surveyed");
 
@@ -367,7 +370,7 @@ async fn whole_tree() {
 #[tokio::test]
 async fn types_anchored() {
     let (_tmp, input, tree) = service(false, Some(Runs::Load));
-    let model = Scripted::answering([BOTH]);
+    let model = ScriptedModel::answering([BOTH]);
 
     let survey = run(&model, &input, &tree).await.expect("surveyed");
 
@@ -409,7 +412,7 @@ async fn types_anchored() {
 #[tokio::test]
 async fn contracts_routed() {
     let (_tmp, input, tree) = service(false, Some(Runs::Load));
-    let model = Scripted::answering([BOTH]);
+    let model = ScriptedModel::answering([BOTH]);
 
     let survey = run(&model, &input, &tree).await.expect("surveyed");
 
@@ -484,7 +487,7 @@ async fn bootstrap_runs() {
         (Runs::Guard, "it runs under its `__main__` guard", "run under its `__main__` guard"),
     ] {
         let (_tmp, input, tree) = service(false, Some(runs));
-        let model = Scripted::answering([BOTH]);
+        let model = ScriptedModel::answering([BOTH]);
 
         let survey = run(&model, &input, &tree).await.expect("surveyed");
 
@@ -498,7 +501,7 @@ async fn bootstrap_runs() {
     }
 
     let (_tmp, input, tree) = service(false, None);
-    let model = Scripted::answering([
+    let model = ScriptedModel::answering([
         r#"{"surfaces":[],"unreached":["src/main.ts","src/routes/orders.ts","src/ctl.ts"]}"#,
     ]);
 
@@ -555,7 +558,7 @@ async fn bootstrap_runs() {
 #[tokio::test]
 async fn check_round() {
     let (_tmp, input, tree) = service(false, Some(Runs::Load));
-    let model = Scripted::answering([
+    let model = ScriptedModel::answering([
         r#"{"surfaces":[{"name":"orders","anchor":"src/routes/orders.ts#L3","stem":"start"}]}"#,
         BOTH,
     ]);
@@ -588,7 +591,7 @@ async fn check_round() {
 #[tokio::test]
 async fn check_under_bootstrap() {
     let (_tmp, input, tree) = service(false, Some(Runs::Load));
-    let model = Scripted::answering([r#"{"surfaces":[],"unreached":["src/ctl.ts"]}"#, BOTH]);
+    let model = ScriptedModel::answering([r#"{"surfaces":[],"unreached":["src/ctl.ts"]}"#, BOTH]);
 
     let survey = run(&model, &input, &tree).await.expect("corrected");
 
@@ -616,7 +619,7 @@ async fn check_under_bootstrap() {
 async fn bootstrap_unsurfaced() {
     const NONE: &str = r#"{"surfaces":[],"unreached":["src/routes/orders.ts","src/ctl.ts"]}"#;
     let (_tmp, input, tree) = service(false, Some(Runs::Load));
-    let model = Scripted::answering([NONE]);
+    let model = ScriptedModel::answering([NONE]);
 
     let survey = run(&model, &input, &tree).await.expect("surveyed");
 
@@ -627,7 +630,7 @@ async fn bootstrap_unsurfaced() {
     model.assert_exhausted();
 
     let (_tmp, input, tree) = service(true, Some(Runs::Load));
-    let model = Scripted::answering([NONE]);
+    let model = ScriptedModel::answering([NONE]);
 
     let survey = run(&model, &input, &tree).await.expect("surveyed");
 
@@ -669,7 +672,7 @@ async fn check_class_decorator() {
     nightly.0.classes = vec![class_decl("Nightly", "export class Nightly", span(2, 6), Vec::new())];
     let tree = tree(root, &TYPESCRIPT, vec![index, nightly], Stub::default());
     let input = SourceInput::workspace("svc", root.to_str().expect("a UTF-8 scratch root"));
-    let model = Scripted::answering([
+    let model = ScriptedModel::answering([
         r#"{"surfaces":[]}"#,
         r#"{"surfaces":[],"unreached":["src/jobs/nightly.ts"]}"#,
     ]);
@@ -729,7 +732,7 @@ async fn exports_declared() {
     ];
     let tree = tree(root, &TYPESCRIPT, vec![index], Stub::default());
     let input = SourceInput::workspace("svc", root.to_str().expect("a UTF-8 scratch root"));
-    let model = Scripted::answering([r#"{"surfaces":[]}"#]);
+    let model = ScriptedModel::answering([r#"{"surfaces":[]}"#]);
 
     run(&model, &input, &tree).await.expect("surveyed");
 
@@ -749,7 +752,7 @@ async fn exports_declared() {
 #[tokio::test]
 async fn by_stem_widened() {
     let (_tmp, input, tree) = service(true, Some(Runs::Load));
-    let model = Scripted::answering([BOTH]);
+    let model = ScriptedModel::answering([BOTH]);
 
     let survey = run(&model, &input, &tree).await.expect("surveyed");
 
@@ -855,7 +858,7 @@ async fn by_stem_loaded() {
     modules[3].0.dynamic = vec![dynamic(line(2), Some("src/plugins")), dynamic(line(3), None)];
     let tree = tree(root, &TYPESCRIPT, modules, Stub::default());
     let input = SourceInput::workspace("svc", root.to_str().expect("a UTF-8 scratch root"));
-    let model = Scripted::answering([r#"{"surfaces":[
+    let model = ScriptedModel::answering([r#"{"surfaces":[
         {"name":"run","anchor":"main.ts#L1","stem":"main"},
         {"name":"load","anchor":"src/jobs/loader.ts#L2","stem":"jobs"}
     ]}"#]);
@@ -898,7 +901,7 @@ async fn by_stem_loaded() {
 #[tokio::test]
 async fn by_directory() {
     let (_tmp, input, tree) = service(true, None);
-    let model = Scripted::answering([
+    let model = ScriptedModel::answering([
         r#"{"surfaces":[],"unreached":["src/main.ts","src/routes/orders.ts","src/ctl.ts"]}"#,
     ]);
 
@@ -984,7 +987,7 @@ async fn by_directory_package() {
     })
     .settle(Stub::default());
     let input = SourceInput::workspace("shop", root.to_str().expect("a UTF-8 scratch root"));
-    let model = Scripted::answering([r#"{"surfaces":[]}"#]);
+    let model = ScriptedModel::answering([r#"{"surfaces":[]}"#]);
 
     let survey = run(&model, &input, &tree).await.expect("surveyed");
 
@@ -1036,7 +1039,7 @@ async fn one_module_fits() {
     })
     .settle(Stub::default());
     let input = SourceInput::workspace("one", tmp.path().to_str().expect("a UTF-8 scratch root"));
-    let model = Scripted::answering([
+    let model = ScriptedModel::answering([
         r#"{"surfaces":[{"name":"run","anchor":"main.ts#L1","stem":"run"}]}"#,
     ]);
 
@@ -1048,7 +1051,7 @@ async fn one_module_fits() {
     model.assert_exhausted();
 
     let value = SourceInput::value("one", "export function run() {}");
-    let model = Scripted::answering([] as [&str; 0]);
+    let model = ScriptedModel::answering([] as [&str; 0]);
     let error = run(&model, &value, &tree).await.expect_err("no tree to survey");
     assert_eq!(error.code(), "server_error", "{error}");
     model.assert_exhausted();
@@ -1093,9 +1096,22 @@ fn types_by_dialect() {
     );
 }
 
+// A table of numbered rows between `head` and `tail`, the first past
+// `TABLE_BYTES`.
+fn long_table(head: &str, tail: &str) -> String {
+    let mut rows = String::new();
+    for n in 0.. {
+        if head.len() + rows.len() + tail.len() > emery_sdk::survey::TABLE_BYTES {
+            break;
+        }
+        let _ = writeln!(rows, "        {n},");
+    }
+    format!("{head}{rows}{tail}")
+}
+
 // A field with a table is spelled with it, its later lines re-indented under
-// the syntax and its blank lines dropped; one past `TABLE_LINES` is spelled
-// by its signature alone.
+// the syntax and its blank lines dropped; one past `TABLE_BYTES` is spelled
+// by its signature alone, however few lines it runs to.
 #[test]
 fn types_with_tables() {
     let mut m = module("src/config.ts", 12);
@@ -1106,13 +1122,7 @@ fn types_with_tables() {
             .to_owned(),
     );
     let mut long = member("LONG", MemberKind::Field, "static LONG: number[]", span(7, 11));
-    long.table = Some(format!(
-        "static LONG: number[] = [\n{}\n    ]",
-        (0..emery_sdk::survey::TABLE_LINES)
-            .map(|n| format!("        {n},"))
-            .collect::<Vec<_>>()
-            .join("\n")
-    ));
+    long.table = Some(long_table("static LONG: number[] = [\n", "    ]"));
     m.0.classes = vec![class_decl(
         "Config",
         "export class Config",
@@ -1130,8 +1140,9 @@ fn types_with_tables() {
 }
 
 // An exported module-level value with a table is a `type` claim of its own,
-// the declaration whole less its blank lines; one the module does not
-// export, one bound in a function, and one past `TABLE_LINES` are none.
+// the declaration whole less its blank lines, a table of hundreds of rows
+// among them; one the module does not export, one bound in a function, and
+// one past `TABLE_BYTES` are none.
 #[test]
 fn types_with_constant_tables() {
     let mut m = module("src/rates.ts", 20);
@@ -1139,30 +1150,28 @@ fn types_with_constant_tables() {
     let mut hidden = value("DRAFT", None, None, None, Init::Literal, span(6, 8));
     let mut long = value("LONG", None, None, None, Init::Literal, span(9, 12));
     let mut local = value("LOCAL", None, None, None, Init::Literal, span(13, 15));
+    let mut zones = value("ZONES", None, None, None, Init::Literal, span(16, 20));
     local.scope = Scope::Function(1);
+    let zone_rows = (0..321).fold(String::new(), |mut rows, n| {
+        let _ = writeln!(rows, "  {{ name: \"zone-{n}\", from: {n}0, to: {n}9 }},");
+        rows
+    });
     for (binding, table) in [
         (&mut rates, "const RATES = {\n  EU: 3,\n\n  US: 1,\n}".to_owned()),
         (&mut hidden, "const DRAFT = [1, 2]".to_owned()),
-        (
-            &mut long,
-            format!(
-                "const LONG = [\n{}\n]",
-                (0..emery_sdk::survey::TABLE_LINES)
-                    .map(|n| format!("  {n},"))
-                    .collect::<Vec<_>>()
-                    .join("\n")
-            ),
-        ),
+        (&mut long, long_table("const LONG = [\n", "]")),
         (&mut local, "const LOCAL = { a: 1 }".to_owned()),
+        (&mut zones, format!("export const ZONES: readonly Zone[] = [\n{zone_rows}]")),
     ] {
         let BindingKind::Value { table: slot, .. } = &mut binding.kind else { unreachable!() };
         *slot = Some(table);
     }
-    m.0.bindings = vec![rates, hidden, long, local];
+    m.0.bindings = vec![rates, hidden, long, local, zones];
     m.0.exports = vec![
         export("RATES", ExportKind::Value, span(1, 5)),
         export("LONG", ExportKind::Value, span(9, 12)),
         export("LOCAL", ExportKind::Value, span(13, 15)),
+        export("ZONES", ExportKind::Value, span(16, 20)),
     ];
 
     let claims = emery_sdk::survey::types(&TYPESCRIPT, [&*m], true);
@@ -1179,11 +1188,151 @@ fn types_with_constant_tables() {
 
     assert_eq!(
         rendered,
-        [(
-            Some("src/rates.ts#L1-L5".to_owned()),
-            Some("exported table".to_owned()),
-            "const RATES = {\n  EU: 3,\n  US: 1,\n}".to_owned()
-        )]
+        [
+            (
+                Some("src/rates.ts#L1-L5".to_owned()),
+                Some("exported table".to_owned()),
+                "const RATES = {\n  EU: 3,\n  US: 1,\n}".to_owned()
+            ),
+            (
+                Some("src/rates.ts#L16-L20".to_owned()),
+                Some("exported table".to_owned()),
+                format!("export const ZONES: readonly Zone[] = [\n{zone_rows}]")
+            ),
+        ]
     );
     assert_eq!(claims[0].extras["name"], "RATES");
+    assert_eq!(claims[1].extras["name"], "ZONES");
+    assert_eq!(rendered[1].2.lines().count(), 323, "every row of the table stands");
+}
+
+// An assignment onto a member of a constructed name, in the frame that binds it.
+fn assignment(object: &str, member: &str, value: Assigned, frame: u32, at: u32) -> Assignment {
+    Assignment {
+        object: object.to_owned(),
+        member: member.to_owned(),
+        value,
+        frames: vec![frame],
+        lines: line(at),
+    }
+}
+
+// A binding constructed in `frame` by the call at `call`: `const <name> = new <class>()`.
+fn constructed(name: &str, class: &[&str], frame: u32, call: usize, at: u32) -> Binding {
+    let mut binding = value(name, Some(class), Some(call), None, Init::Construction, line(at));
+    binding.scope = Scope::Function(frame);
+    binding
+}
+
+// A class a package provides, constructed and assigned members on, is a
+// `type` claim spelling the class as assigned: each member annotated from
+// its first value — the literal's kind under the dialect, the class a
+// construction or a constructed binding names, `unknown` for the rest —
+// anchored from the first assignment to the last, two frames constructing
+// one class joined into one claim; a class the tree declares, a name no
+// construction binds, and a member assigned through a path of two names are
+// none of it.
+#[test]
+fn types_assigned() {
+    let mut m = module("src/converter.ts", 30);
+    m.0.imports = vec![
+        from_package("VehicleEvent", "connector-common"),
+        from_package("LocationData", "connector-common"),
+        from_package("EventData", "connector-common"),
+        from_module("TrainUpdate", "src/train-update.ts"),
+    ];
+    let constructing = |class: &str, at: u32| {
+        let mut call = call(callee(class, &[]), Vec::new(), Use::Bound, line(at));
+        call.constructs = true;
+        call.frames = vec![1];
+        call
+    };
+    m.0.calls = vec![
+        constructing("VehicleEvent", 10),
+        constructing("LocationData", 14),
+        constructing("TrainUpdate", 20),
+        constructing("VehicleEvent", 25),
+    ];
+    m.0.bindings = vec![
+        function("convert", span(9, 23)),
+        constructed("event", &["VehicleEvent"], 1, 0, 10),
+        constructed("location", &["LocationData"], 1, 1, 14),
+        constructed("update", &["TrainUpdate"], 1, 2, 20),
+        function("replay", span(24, 30)),
+        constructed("event", &["VehicleEvent"], 2, 3, 25),
+    ];
+    m.0.assignments = vec![
+        assignment("event", "eventType", Assigned::Literal(Scalar::String), 1, 11),
+        assignment("event", "receivedAt", Assigned::Other, 1, 12),
+        assignment(
+            "event",
+            "eventData",
+            Assigned::Construction(vec!["EventData".to_owned()]),
+            1,
+            13,
+        ),
+        assignment("location", "gpsAccuracy", Assigned::Literal(Scalar::Integer), 1, 15),
+        assignment(
+            "location",
+            "latitude",
+            Assigned::Read(vec!["station".to_owned(), "stop_lat".to_owned()]),
+            1,
+            16,
+        ),
+        assignment("location", "speed", Assigned::Literal(Scalar::Float), 1, 17),
+        assignment("location", "gpsAccuracy", Assigned::Literal(Scalar::Float), 1, 18),
+        assignment("event", "locationData", Assigned::Read(vec!["location".to_owned()]), 1, 19),
+        assignment("update", "label", Assigned::Literal(Scalar::String), 1, 21),
+        assignment("config", "debug", Assigned::Literal(Scalar::Boolean), 1, 22),
+        assignment("event", "replayed", Assigned::Literal(Scalar::Boolean), 2, 26),
+    ];
+
+    let claims = emery_sdk::survey::types(&TYPESCRIPT, [&*m], true);
+    let rendered: Vec<(Option<String>, Option<String>, String)> = claims
+        .iter()
+        .map(|claim| {
+            (
+                claim.path.clone(),
+                claim.synopsis.clone(),
+                claim.extras["signature"].as_str().expect("signature").to_owned(),
+            )
+        })
+        .collect();
+
+    assert_eq!(
+        rendered,
+        [
+            (
+                Some("src/converter.ts#L11-L26".to_owned()),
+                Some("imported class, as assigned".to_owned()),
+                "class VehicleEvent {\n  eventType: string;\n  receivedAt: unknown;\n  eventData: \
+                 EventData;\n  locationData: LocationData;\n  replayed: boolean;\n}"
+                    .to_owned()
+            ),
+            (
+                Some("src/converter.ts#L15-L18".to_owned()),
+                Some("imported class, as assigned".to_owned()),
+                "class LocationData {\n  gpsAccuracy: number;\n  latitude: unknown;\n  speed: \
+                 number;\n}"
+                    .to_owned()
+            ),
+        ]
+    );
+    assert_eq!(claims[0].extras["name"], "VehicleEvent");
+    assert_eq!(claims[1].extras["name"], "LocationData");
+
+    let mut python = module("shop/convert.py", 5);
+    python.0.imports = vec![from_package("Event", "connector")];
+    python.0.calls = vec![constructing("Event", 2)];
+    python.0.bindings =
+        vec![function("convert", span(1, 5)), constructed("event", &["Event"], 1, 0, 2)];
+    python.0.assignments =
+        vec![assignment("event", "speed", Assigned::Literal(Scalar::Integer), 1, 3)];
+    let claims = emery_sdk::survey::types(&PYTHON, [&*python], false);
+    assert_eq!(
+        claims[0].extras["signature"].as_str().expect("signature"),
+        "class Event:\n    speed: int",
+        "spelled under the dialect's class syntax and annotations"
+    );
+    assert_eq!(claims[0].path, None);
 }
