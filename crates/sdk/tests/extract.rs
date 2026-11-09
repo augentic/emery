@@ -61,13 +61,6 @@ struct ByFile {
     hold: Option<Hold>,
 }
 
-#[derive(Clone)]
-struct Hold {
-    held: String,
-    until: String,
-    gate: Arc<Notify>,
-}
-
 impl ByFile {
     fn file(mut self, file: &str, script: ScriptedModel) -> Self {
         self.scripts.insert(file.to_string(), script);
@@ -142,6 +135,13 @@ impl Model for ByFile {
         self.pending.fetch_sub(1, Ordering::SeqCst);
         outcome
     }
+}
+
+#[derive(Clone)]
+struct Hold {
+    held: String,
+    until: String,
+    gate: Arc<Notify>,
 }
 
 async fn extract<M: Model>(

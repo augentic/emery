@@ -174,6 +174,18 @@ pub struct Edit {
     pub replace: String,
 }
 
+#[derive(Serialize)]
+pub struct WriteResponse {
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub deleted: Vec<String>,
+    pub written: Vec<Wrote>,
+}
+
+#[derive(Serialize)]
+pub struct EditResponse {
+    pub edited: Vec<Wrote>,
+}
+
 // The schema asks for a sequence of `{path, content}`; a map from path to
 // content, which a model reaches for as readily, is read all the same, in
 // the order the call spells it; one entry spelled bare — a map with a
@@ -353,18 +365,6 @@ fn text<E: de::Error>(value: serde_json::Value, at: &str) -> Result<String, E> {
         serde_json::Value::Array(_) => Err(E::custom(format!("`{at}` holds a list, not a string"))),
         serde_json::Value::Object(_) => Err(E::custom(format!("`{at}` holds a map, not a string"))),
     }
-}
-
-#[derive(Serialize)]
-pub struct WriteResponse {
-    #[serde(skip_serializing_if = "Vec::is_empty")]
-    pub deleted: Vec<String>,
-    pub written: Vec<Wrote>,
-}
-
-#[derive(Serialize)]
-pub struct EditResponse {
-    pub edited: Vec<Wrote>,
 }
 
 // The schema the tools declare reaches no scripted model, which records

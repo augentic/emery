@@ -35,18 +35,6 @@ pub mod tests;
 pub use self::dialect::{Annotations, ClassSyntax, Dialect};
 pub use self::skeleton::{TABLE_BYTES, types};
 
-// Each key's values together, the keys in first-occurrence order.
-fn grouped<K: PartialEq, V>(items: impl IntoIterator<Item = (K, V)>) -> Vec<(K, Vec<V>)> {
-    let mut groups: Vec<(K, Vec<V>)> = Vec::new();
-    for (key, value) in items {
-        match groups.iter_mut().find(|(known, _)| *known == key) {
-            Some((_, values)) => values.push(value),
-            None => groups.push((key, vec![value])),
-        }
-    }
-    groups
-}
-
 /// A span of lines within one file, 1-based and inclusive.
 ///
 /// The default holds no line. [`Display`] renders the span as prose, with an
@@ -244,6 +232,77 @@ pub async fn surfaces<P: Model>(
     }
 
     Ok(inventory)
+}
+
+// The user turn of the survey. The lend carries the root, so the brief never
+// names it.
+struct Brief<'a> {
+    adapter_id: &'a str,
+    source: &'a str,
+    facts: &'a Facts<'a>,
+    inlined: &'a [String],
+}
+
+impl Display for Brief<'_> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "Survey the source `{source}` bound to adapter `{id}` before it is mined.\n\n",
+            id = self.adapter_id,
+            source = self.source,
+        )?;
+
+        // the adapter's facts
+        if !self.facts.text.trim().is_empty() {
+            f.write_str(self.facts.text.trim_end())?;
+            f.write_str("\n\n")?;
+        }
+
+        // the modules
+        f.write_str(
+            "`$SOURCE_DIR` is the bound source tree, lent read-only: the root every `anchor` is \
+             relative to. The production modules this adapter mines are these, and no other \
+             file is a module:\n",
+        )?;
+        for module in self.facts.modules {
+            write!(f, "\n- `{module}`")?;
+        }
+
+        // the inlined files
+        if !self.inlined.is_empty() {
+            let (these, them) = match self.inlined.len() {
+                1 => ("This file is", "it"),
+                _ => ("These files are", "them"),
+            };
+            write!(
+                f,
+                "\n\n{these} laid out here whole, every line led by its number, so cite `#L<n>` \
+                 from the numbers shown rather than reading {them} again:\n\n"
+            )?;
+            Inlined {
+                files: self.facts.files,
+                bodies: self.inlined,
+            }
+            .fmt(f)?;
+        }
+
+        f.write_str(
+            "\n\nName each surface the source exposes as the prompt describes: what a caller \
+             outside the source does through it; its `anchor` — the module of the list above \
+             where it is registered or declared, and the lines of that registration or \
+             declaration, as `<path>#L<n>-L<n>`; and the `stem` its `requirement` and \
+             `criterion` ids lead with, lowercase kebab-case, under the prompt's convention. \
+             Several surfaces may anchor in one module. List under `unreached` each module of \
+             the list no surface reaches — dead code, or a module you cannot place — rather than \
+             inventing a surface for it. When the tree declares no surface, answer none.\n\n\
+             Nothing outside `$SOURCE_DIR` is reachable. The caller derives what each surface \
+             reaches from the anchor you name — follow nothing, group nothing, and extract \
+             nothing yourself.\n\n\
+             The prompt's references are available through this call's `read_doc` tool \
+             (`list_docs` enumerates them); load referenced bodies on demand.\n\n\
+             Answer with one JSON object matching the survey schema.",
+        )
+    }
 }
 
 /// The seams of a surveyed source, and the claims its code states by itself.
@@ -444,34 +503,6 @@ pub struct Inventory {
     pub unreached: Vec<String>,
 }
 
-/// One surface the model names: what a caller does, where, and under which stem.
-#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
-pub struct Surface {
-    /// What a caller outside the source does through the surface, such as
-    /// `POST /orders`, `import command`, or `orders consumer`.
-    pub name: String,
-    /// Where the surface is registered or declared in the claim `path`
-    /// grammar, such as `src/routes/orders.ts#L12-L40` or the module path
-    /// alone for the whole file.
-    pub anchor: String,
-    /// The stem every `requirement` and `criterion` of the surface leads
-    /// with, in lowercase kebab-case.
-    pub stem: String,
-}
-
-impl Surface {
-    /// Parses the surface's `anchor` under the claim `path` grammar.
-    ///
-    /// # Errors
-    ///
-    /// Returns [`BadAnchor`] when the anchor is outside the grammar, which an
-    /// accepted inventory's never is.
-    pub fn anchor(&self) -> Result<Anchor<'_>, BadAnchor> {
-        Anchor::parse(&self.anchor)
-    }
-}
-
 impl Inventory {
     // Every anchor and unreached path spelled root-relative, as the tree
     // spells its modules; one outside the grammar or escaping the root is
@@ -595,73 +626,42 @@ impl Inventory {
     }
 }
 
-// The user turn of the survey. The lend carries the root, so the brief never
-// names it.
-struct Brief<'a> {
-    adapter_id: &'a str,
-    source: &'a str,
-    facts: &'a Facts<'a>,
-    inlined: &'a [String],
+/// One surface the model names: what a caller does, where, and under which stem.
+#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct Surface {
+    /// What a caller outside the source does through the surface, such as
+    /// `POST /orders`, `import command`, or `orders consumer`.
+    pub name: String,
+    /// Where the surface is registered or declared in the claim `path`
+    /// grammar, such as `src/routes/orders.ts#L12-L40` or the module path
+    /// alone for the whole file.
+    pub anchor: String,
+    /// The stem every `requirement` and `criterion` of the surface leads
+    /// with, in lowercase kebab-case.
+    pub stem: String,
 }
 
-impl Display for Brief<'_> {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        write!(
-            f,
-            "Survey the source `{source}` bound to adapter `{id}` before it is mined.\n\n",
-            id = self.adapter_id,
-            source = self.source,
-        )?;
-
-        // the adapter's facts
-        if !self.facts.text.trim().is_empty() {
-            f.write_str(self.facts.text.trim_end())?;
-            f.write_str("\n\n")?;
-        }
-
-        // the modules
-        f.write_str(
-            "`$SOURCE_DIR` is the bound source tree, lent read-only: the root every `anchor` is \
-             relative to. The production modules this adapter mines are these, and no other \
-             file is a module:\n",
-        )?;
-        for module in self.facts.modules {
-            write!(f, "\n- `{module}`")?;
-        }
-
-        // the inlined files
-        if !self.inlined.is_empty() {
-            let (these, them) = match self.inlined.len() {
-                1 => ("This file is", "it"),
-                _ => ("These files are", "them"),
-            };
-            write!(
-                f,
-                "\n\n{these} laid out here whole, every line led by its number, so cite `#L<n>` \
-                 from the numbers shown rather than reading {them} again:\n\n"
-            )?;
-            Inlined {
-                files: self.facts.files,
-                bodies: self.inlined,
-            }
-            .fmt(f)?;
-        }
-
-        f.write_str(
-            "\n\nName each surface the source exposes as the prompt describes: what a caller \
-             outside the source does through it; its `anchor` — the module of the list above \
-             where it is registered or declared, and the lines of that registration or \
-             declaration, as `<path>#L<n>-L<n>`; and the `stem` its `requirement` and \
-             `criterion` ids lead with, lowercase kebab-case, under the prompt's convention. \
-             Several surfaces may anchor in one module. List under `unreached` each module of \
-             the list no surface reaches — dead code, or a module you cannot place — rather than \
-             inventing a surface for it. When the tree declares no surface, answer none.\n\n\
-             Nothing outside `$SOURCE_DIR` is reachable. The caller derives what each surface \
-             reaches from the anchor you name — follow nothing, group nothing, and extract \
-             nothing yourself.\n\n\
-             The prompt's references are available through this call's `read_doc` tool \
-             (`list_docs` enumerates them); load referenced bodies on demand.\n\n\
-             Answer with one JSON object matching the survey schema.",
-        )
+impl Surface {
+    /// Parses the surface's `anchor` under the claim `path` grammar.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`BadAnchor`] when the anchor is outside the grammar, which an
+    /// accepted inventory's never is.
+    pub fn anchor(&self) -> Result<Anchor<'_>, BadAnchor> {
+        Anchor::parse(&self.anchor)
     }
+}
+
+// Each key's values together, the keys in first-occurrence order.
+fn grouped<K: PartialEq, V>(items: impl IntoIterator<Item = (K, V)>) -> Vec<(K, Vec<V>)> {
+    let mut groups: Vec<(K, Vec<V>)> = Vec::new();
+    for (key, value) in items {
+        match groups.iter_mut().find(|(known, _)| *known == key) {
+            Some((_, values)) => values.push(value),
+            None => groups.push((key, vec![value])),
+        }
+    }
+    groups
 }

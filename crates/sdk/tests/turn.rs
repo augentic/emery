@@ -203,6 +203,14 @@ async fn files_laid() {
     model.assert_exhausted();
 }
 
+fn write(root: &std::path::Path, rel: &str, body: &str) {
+    let path = root.join(rel);
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent).expect("mkdir");
+    }
+    std::fs::write(path, body).expect("write");
+}
+
 // The leading files are inlined for as long as they fit within INLINE_BYTES
 // together; the first past it, or one that is not text, and every file after
 // it are listed. A first file that does not fit leaves every file listed.
@@ -733,14 +741,6 @@ async fn anchor_defects() {
         "{error}"
     );
     assert!(model.seen().is_empty(), "no turn was spent");
-}
-
-fn write(root: &std::path::Path, rel: &str, body: &str) {
-    let path = root.join(rel);
-    if let Some(parent) = path.parent() {
-        std::fs::create_dir_all(parent).expect("mkdir");
-    }
-    std::fs::write(path, body).expect("write");
 }
 
 // Answered from the adapter's corpus, then from the SDK's runtime references,

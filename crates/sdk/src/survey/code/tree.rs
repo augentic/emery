@@ -37,12 +37,6 @@ pub struct Parsed<M> {
     pending: Vec<Pending<M>>,
 }
 
-#[derive(Debug)]
-enum Pending<M> {
-    Module(String, M),
-    Feature(Test),
-}
-
 impl<M: Deref<Target = Module>> Parsed<M> {
     /// Reads every module and test of `listing` beneath `root`, each parsed by `parse`.
     ///
@@ -164,6 +158,12 @@ impl<M: Deref<Target = Module>> Parsed<M> {
     }
 }
 
+#[derive(Debug)]
+enum Pending<M> {
+    Module(String, M),
+    Feature(Test),
+}
+
 /// A parsed tree, every import settled, with the adapter's [`Recogniser`] beside it.
 ///
 /// The lookups here read the tree as a whole: what a module reaches, where
@@ -187,24 +187,6 @@ pub struct Tree<R: Recogniser> {
     pub mounts: BTreeMap<String, String>,
     /// The adapter's recogniser.
     pub recogniser: R,
-}
-
-impl<R> fmt::Debug for Tree<R>
-where
-    R: Recogniser + fmt::Debug,
-    R::Module: fmt::Debug,
-{
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("Tree")
-            .field("root", &self.root)
-            .field("dialect", &self.dialect)
-            .field("modules", &self.modules)
-            .field("tests", &self.tests)
-            .field("manifest", &self.manifest)
-            .field("mounts", &self.mounts)
-            .field("recogniser", &self.recogniser)
-            .finish()
-    }
 }
 
 impl<R: Recogniser> Tree<R> {
@@ -665,6 +647,24 @@ impl<R: Recogniser> Tree<R> {
             .chain(module.directory().rsplit('/'))
             .filter_map(kebab)
             .find(|segment| segment != stem && !own.ends_with(&format!(".{segment}")))
+    }
+}
+
+impl<R> fmt::Debug for Tree<R>
+where
+    R: Recogniser + fmt::Debug,
+    R::Module: fmt::Debug,
+{
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("Tree")
+            .field("root", &self.root)
+            .field("dialect", &self.dialect)
+            .field("modules", &self.modules)
+            .field("tests", &self.tests)
+            .field("manifest", &self.manifest)
+            .field("mounts", &self.mounts)
+            .field("recogniser", &self.recogniser)
+            .finish()
     }
 }
 
