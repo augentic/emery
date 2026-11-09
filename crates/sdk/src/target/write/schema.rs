@@ -380,7 +380,7 @@ mod tests {
     // A provider holding a call to the schema refuses `{}` before it is
     // sent, since the one argument is required and its shape is the list.
     #[test]
-    fn edit_files_schema_requires_edits() {
+    fn edit_files_schema() {
         let function = Function::of::<EditFiles>(EDIT_FILES, "");
         let schema: Value = serde_json::from_str(&function.parameters).expect("the schema is JSON");
         assert_eq!(schema["required"], json!(["edits"]), "{schema}");
