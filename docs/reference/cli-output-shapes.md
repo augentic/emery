@@ -349,9 +349,9 @@ All text-mode formatters (`crates/cli/src/text.rs`) follow a uniform layout:
 ```json
 {
   "revision": "9f8e7d6c…",
-  "body": "---\nemery: 9\nrevision: 9f8e7d6c…\n---\n\n# Specification\n…",
+  "body": "---\nemery: 10\nrevision: 9f8e7d6c…\n---\n\n# Specification\n…",
   "document": {
-    "emery": 9,
+    "emery": 10,
     "parent": null,
     "preamble": ["…"],
     "requirements": [
@@ -392,7 +392,7 @@ All text-mode formatters (`crates/cli/src/text.rs`) follow a uniform layout:
 | --- | --- | --- |
 | `spec` | `emery` (`u32`), `parent` (`string \| null`), `preamble` (`string[]`), `requirements` (`Requirement[]`) | Each `Requirement` has `id` (`REQ-NNN`), `subject`, `status` (`"agreed"` \| `"divergence"` \| `"conflict"`), `covered` (`bool`), `trigger` (`{ "http": { "method", "path" } }` \| `{ "message": "<name>" }` \| `null`), `sources` (`{ source, claim, path }[]`), `body` (`string[]`), `losers` (`{ sources, kind, rank, claim, statement }[]`), and `scenarios` (`{ name, given, when, then, and }[]`). |
 | `design` | `emery` (`u32`), `parent` (`string \| null`), `preamble` (`string[]`), `sections` (`Section[]`) | Each `Section` has `kind` (`"overview"` \| `"domain-model"` \| `"apis"` \| `"technical-logic"` \| `"ui-layout"` \| `"observability"`) and `blocks` (`{ "text": "<paragraph>" }` or `{ "type": { "key", "signature", "role": "data" \| "mechanism" } }`). |
-| `plan` | `emery` (`u32`), `parent` (`string \| null`), `preamble` (`string[]`), `parts` (`Part[]`) | Each `Part` has `id` (`PART-NNN`), `name`, `requirements` (`REQ-NNN[]`), `types` (`string[]` of `data` type keys), `depends-on` (`PART-NNN[]`), and `brief` (`string[]`). |
+| `plan` | `emery` (`u32`), `parent` (`string \| null`), `preamble` (`string[]`), `parts` (`Part[]`) | Each `Part` has `id` (`PART-NNN`), `name`, `requirements` (`REQ-NNN[]`), `types` (`string[]` of owned `data` type keys), `uses` (`string[]` of `data` type keys used without owning), `depends-on` (`PART-NNN[]`, engine-derived), and `brief` (`string[]`). |
 | `schedule` | `budget` (`usize`), `source` (`"flag"` \| `"config"` \| `"adapter"` \| `"default"`), `slices` (`ScheduledSlice[]`), `waves` (`SLICE-NNN[][]`), `over-budget` (`SLICE-NNN[]`) | Each `ScheduledSlice` has `id` (`SLICE-NNN`), `part` (`PART-NNN`), `name`, `index` (`u32`), `count` (`u32`), `requirements` (`REQ-NNN[]`), `types` (`string[]`, omitted when empty), and `over-budget` (`bool`). |
 | `amendment` | `emery` (`u32`), `base` (`{ revision, commit }`), `changes` (`Change[]`), `spec` (`Spec`), `design` (`Design`), `plan` (`Plan`), `sections` (`DesignDiff`), `parts` (`PartChange[]`) | Each `Change` has `id` (`REQ-NNN`), `subject`, `class` (`"added"` \| `"changed"` \| `"retired"` \| `"conflict"` \| `"unchanged"`), `before` (`string \| null`), `after` (`string \| null`), `sources` (`{ source, claim, path }[]`), and `scope` (`string \| null`, populated when retired via `scope = "whole"`). |
 

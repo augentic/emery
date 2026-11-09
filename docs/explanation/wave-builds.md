@@ -48,16 +48,16 @@ In addition to the stem floor, every build plan must satisfy three structural in
 
 1. **Shared triggers stay together:** All requirements reached through the same HTTP `Route:` or `Message:` trigger map to a single handler and must be placed in the same part, even when one of them carries a `start.*` subject (such as `start.health-ready-http` on `GET /health/ready`).
 2. **Exclusive data type ownership:** Every `data` type key in `design.json` must be owned by **exactly one** part—the part whose requirements create, read, or return that shape (`mechanism` types are owned by no part).
-3. **Acyclic inter-part dependencies (`depends-on`):** Parts declare which other parts they depend on when they use another part's owned data types or files (runtime assumptions belong in the part's prose `brief`). The slicing gate verifies that all dependencies exist and form a directed acyclic graph (DAG).
+3. **Engine-derived inter-part dependencies (`uses` and `depends-on`):** Parts never declare part-to-part dependencies directly. Instead, each part declares the `data` type keys it owns (`types`) and any `data` type keys its code compiles against without owning (`uses`), while runtime assumptions belong in the part's prose `brief`. The engine derives `depends-on` (`Types::depend`) from the owners of the types referenced in each owned type's signature and the owners of the keys in `uses`, and the slicing gate verifies that every `uses` key is owned by another part and that the derived edges form a directed acyclic graph (DAG).
 
 ### How `emery amend` updates a plan
 
 When you run [`emery amend`](../reference/cli/amend.md), Emery updates the existing plan deterministically by code wherever possible:
 
 - Existing parts keep their `PART-NNN` IDs and names.
-- Retired requirements are removed from their parts; if a part becomes empty, it is removed and its dependants are re-wired to its dependencies.
+- Retired requirements are removed from their parts; if a part becomes empty, it is removed and its owned types leave the design.
 - Added or restemmed requirements are placed automatically if their trigger or stem floor already belongs to an existing part. Because parts have no size cap, growing an existing stem never forces the planner to re-slice a domain.
-- Unowned data types are assigned automatically if only one part was touched and no stems are open.
+- Unowned data types are assigned automatically if only one part was touched and no stems are open, and `depends-on` edges are re-derived across all parts from `types` and `uses`.
 - Only when requirements fall under a brand-new stem or leave data type ownership ambiguous does Emery invoke a slicing turn (`PartAmend`) to place the open items and refresh touched part briefs.
 
 ---
