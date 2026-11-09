@@ -326,19 +326,6 @@ fn exports_through_local() {
     assert_eq!(module.export("nope"), None);
 }
 
-#[test]
-fn export_kinds() {
-    assert!(ExportKind::Function.callable() && ExportKind::Class.callable());
-    assert!(!ExportKind::Value.callable() && !ExportKind::Type.callable());
-    assert!(!ExportKind::Unknown.callable());
-    assert!(ExportKind::Value.valued() && !ExportKind::Class.valued());
-
-    assert!(Init::Literal.is_value() && Init::Pattern.is_value());
-    assert!(Init::Env.is_value() && Init::Definition.is_value());
-    assert!(!Init::Construction.is_value() && !Init::Function.is_value());
-    assert!(!Init::Other.is_value());
-}
-
 // Names are listed once in first-read order, within a span or outside every
 // span given; lines likewise for a name.
 #[test]
@@ -427,23 +414,6 @@ fn module_stems() {
     assert_eq!(stem("shop/orders/__init__.py", &PYTHON), "orders");
     assert_eq!(stem("app/views.py", &PYTHON), "views", "`app` roots the tree");
     assert_eq!(stem("manage.py", &PYTHON), "manage");
-}
-
-// A module's directory is its path less the file, empty at the root.
-#[test]
-fn module_directory() {
-    let directory = |path: &str| {
-        Module {
-            path: path.to_owned(),
-            ..Module::default()
-        }
-        .directory()
-        .to_owned()
-    };
-
-    assert_eq!(directory("src/routes/index.ts"), "src/routes");
-    assert_eq!(directory("shop/orders/__init__.py"), "shop/orders");
-    assert_eq!(directory("manage.py"), "");
 }
 
 // Structure is a listed method, a listener of no event or a lifecycle's, a

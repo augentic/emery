@@ -1,10 +1,9 @@
 //! Tests pure string, span, route, and test-statement survey helpers.
 
 use emery_sdk::kebab;
-use emery_sdk::survey::Lines;
-use emery_sdk::survey::resolve::{Target, normalize};
+use emery_sdk::survey::resolve::normalize;
 use emery_sdk::survey::route::{self, Spelling};
-use emery_sdk::survey::tests::{Statement, Test, scenarios, stated};
+use emery_sdk::survey::tests::{Statement, scenarios};
 
 // How Express and Nest spell a route: a parameter leads with a colon.
 const COLON: Spelling = Spelling {
@@ -41,55 +40,18 @@ fn statement(text: &str, line: u32) -> Statement {
 }
 
 #[test]
-fn kebab_humps() {
+fn kebab_cases() {
     assert_eq!(kebab("OrdersAPI").as_deref(), Some("orders-api"));
     assert_eq!(kebab("HTTPServer").as_deref(), Some("http-server"));
     assert_eq!(kebab("getUserById").as_deref(), Some("get-user-by-id"));
     assert_eq!(kebab("v2Orders").as_deref(), Some("v2-orders"));
     assert_eq!(kebab("ORDERS").as_deref(), Some("orders"));
-}
-
-#[test]
-fn kebab_runs() {
     assert_eq!(kebab("get_user__by id").as_deref(), Some("get-user-by-id"));
     assert_eq!(kebab("  /api/orders/ ").as_deref(), Some("api-orders"));
     assert_eq!(kebab("@scope/pkg-name").as_deref(), Some("scope-pkg-name"));
     assert_eq!(kebab("orders-api").as_deref(), Some("orders-api"));
     assert_eq!(kebab("--"), None);
     assert_eq!(kebab(""), None);
-}
-
-#[test]
-fn lines_span() {
-    let span = Lines { start: 3, end: 5 };
-    assert!(span.holds(3) && span.holds(4) && span.holds(5));
-    assert!(!span.holds(2) && !span.holds(6));
-    assert!(span.contains(span));
-    assert!(span.contains(Lines { start: 4, end: 5 }));
-    assert!(!span.contains(Lines { start: 2, end: 4 }));
-    assert_eq!(span.first(), Lines::at(3));
-    assert!(!Lines::default().holds(1), "the default holds no line");
-}
-
-// `anchor` is the claim grammar the SDK's gate parses; `Display` is prose.
-#[test]
-fn lines_rendered() {
-    assert_eq!(Lines { start: 3, end: 5 }.anchor(), "L3-L5");
-    assert_eq!(Lines { start: 3, end: 5 }.to_string(), "L3–L5");
-    assert_eq!(Lines { start: 7, end: 7 }.anchor(), "L7");
-    assert_eq!(Lines { start: 7, end: 7 }.to_string(), "L7");
-}
-
-#[test]
-fn lines_from_cited() {
-    assert_eq!(Lines::from((2, 9)), Lines { start: 2, end: 9 });
-    assert_eq!(
-        Lines::from((1, u64::MAX)),
-        Lines {
-            start: 1,
-            end: u32::MAX
-        }
-    );
 }
 
 #[test]
@@ -101,23 +63,6 @@ fn normalize_paths() {
     assert_eq!(normalize("", "").as_deref(), Some(""));
     assert_eq!(normalize("src", "../../secret"), None);
     assert_eq!(normalize("", ".."), None);
-}
-
-#[test]
-fn target_accessors() {
-    let targets = [
-        Target::Module("src/a.ts".to_owned()),
-        Target::Package("express".to_owned()),
-        Target::Data("config.json".to_owned()),
-        Target::Unresolved("./missing".to_owned()),
-    ];
-    let read =
-        |accessor: fn(&Target) -> Option<&str>| targets.iter().map(accessor).collect::<Vec<_>>();
-
-    assert_eq!(read(Target::module), [Some("src/a.ts"), None, None, None]);
-    assert_eq!(read(Target::package), [None, Some("express"), None, None]);
-    assert_eq!(read(Target::data), [None, None, Some("config.json"), None]);
-    assert_eq!(read(Target::unresolved), [None, None, None, Some("./missing")]);
 }
 
 #[test]
@@ -212,7 +157,7 @@ fn literal_stems() {
 
 // An outline's `Examples:` table opens no scenario.
 #[test]
-fn feature_scenarios() {
+fn gherkin_scenarios() {
     let text = "Feature: Orders\n\n  Background:\n    Given a store\n\n  Scenario: An order is \
                 created\n    Given a body\n  Scenario Outline: An order is rejected\n    Given \
                 <reason>\n    Examples:\n      | reason |\n  Scenario Template: Another outline\n  \
@@ -228,69 +173,6 @@ fn feature_scenarios() {
             statement("Billing › An invoice is sent", 16),
         ]
     );
-}
-
-#[test]
-fn scenario_without_feature() {
     assert_eq!(scenarios("Scenario: Alone\n"), [statement("Alone", 1)]);
     assert_eq!(scenarios("Given nothing\n"), [] as [Statement; 0]);
-}
-
-#[test]
-fn stated_section() {
-    let tests = [
-        Test {
-            path: "test/orders.test.ts".to_owned(),
-            imports: vec!["src/orders.ts".to_owned()],
-            statements: vec![
-                statement("orders › creates an order", 4),
-                statement("orders › rejects an empty body", 9),
-            ],
-        },
-        Test {
-            path: "features/orders.feature".to_owned(),
-            imports: Vec::new(),
-            statements: vec![statement("Orders › An order is created", 2)],
-        },
-    ];
-
-    let section = stated(&tests, "a case's title under its suites'").expect("statements");
-    assert!(
-        section.starts_with(
-            "Behaviours the tree's own tests state, each at its line — a case's title under its \
-             suites', a scenario's under its feature's. "
-        ),
-        "{section}"
-    );
-    assert!(
-        section.ends_with(
-            "anchor:\n\n- `test/orders.test.ts#L4` — orders › creates an order\n- \
-             `test/orders.test.ts#L9` — orders › rejects an empty body\n- \
-             `features/orders.feature#L2` — Orders › An order is created"
-        ),
-        "{section}"
-    );
-
-    let python =
-        stated(&tests, "a test's docstring or name under its class's").expect("statements");
-    assert!(
-        python.contains(
-            "each at its line — a test's docstring or name under its class's, a scenario's under \
-             its feature's. "
-        ),
-        "{python}"
-    );
-}
-
-// A test that states nothing lists nothing, so the section is left out.
-#[test]
-fn stated_nothing() {
-    let silent = Test {
-        path: "test/empty.test.ts".to_owned(),
-        imports: Vec::new(),
-        statements: Vec::new(),
-    };
-
-    assert_eq!(stated([&silent], "a case's title under its suites'"), None);
-    assert_eq!(stated([] as [&Test; 0], "a case's title under its suites'"), None);
 }

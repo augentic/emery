@@ -69,17 +69,14 @@ fn closure_order() {
         "a stopped module is reached and not followed"
     );
     assert_eq!(tree.roots(), ["e.ts"], "the one module nothing imports");
-}
 
-#[test]
-fn roots_of_a_cycle() {
-    let tree = tree(
+    let cycle = support::tree(
         Path::new("/svc"),
         &TYPESCRIPT,
         vec![linked("a.ts", &["b.ts"]), linked("b.ts", &["a.ts"])],
         Stub::default(),
     );
-    assert_eq!(tree.roots(), ["a.ts", "b.ts"], "every module, where each is imported");
+    assert_eq!(cycle.roots(), ["a.ts", "b.ts"], "every module, where each is imported");
 }
 
 // Each shape of import answers the module and the name it exports: a named
@@ -653,10 +650,7 @@ fn parsed_read() {
     );
     assert_eq!(tree.tests[3].statements[0].text, "B › counts");
     assert_eq!(tree.closure(&["src/a.py".to_owned()], &[]), ["src/a.py", "src/b.py"]);
-}
 
-#[test]
-fn lines_of_a_module() {
-    let m = module("x.ts", 0);
-    assert_eq!(m.span, Lines { start: 1, end: 1 }, "one line at the least");
+    let one_line = module("x.ts", 0);
+    assert_eq!(one_line.span, Lines { start: 1, end: 1 }, "one line at the least");
 }
