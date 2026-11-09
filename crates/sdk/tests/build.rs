@@ -353,7 +353,7 @@ fn designed() -> Slice {
 // whole, the type the owned signature names whole, and the mechanism, and
 // leaves out the type nothing of the slice spells, listing it by key.
 #[tokio::test]
-async fn build_design_cut() {
+async fn design_cut() {
     let tmp = tempfile::tempdir().expect("tempdir");
     seed(tmp.path(), ["src/orders.rs", "Cargo.toml"]);
     let root = tmp.path().to_str().expect("a UTF-8 scratch root");
@@ -385,7 +385,7 @@ async fn build_design_cut() {
 // the design holds it; the scaffold's brief is text of the slice, so a type
 // it names stays whole.
 #[tokio::test]
-async fn build_design_cut_scaffolded() {
+async fn design_cut_scaffolded() {
     let tmp = tempfile::tempdir().expect("tempdir");
     seed(tmp.path(), ["src/orders.rs", "Cargo.toml"]);
     let root = tmp.path().to_str().expect("a UTF-8 scratch root");
@@ -425,7 +425,7 @@ async fn build_design_cut_scaffolded() {
 // sentence, verbatim, and are no text of the slice: a type a passage alone
 // names is left out of the design's cut as if nothing named it.
 #[tokio::test]
-async fn build_design_cut_passages() {
+async fn design_cut_passages() {
     let tmp = tempfile::tempdir().expect("tempdir");
     seed(tmp.path(), ["src/orders.rs", "Cargo.toml"]);
     let root = tmp.path().to_str().expect("a UTF-8 scratch root");
@@ -468,7 +468,7 @@ async fn build_design_cut_passages() {
 // them together: `order` in one sentence and `line` in another name no
 // `order-line`, while `order lines` does.
 #[tokio::test]
-async fn build_design_cut_phrase() {
+async fn design_cut_phrase() {
     let tmp = tempfile::tempdir().expect("tempdir");
     seed(tmp.path(), ["src/orders.rs", "Cargo.toml"]);
     let root = tmp.path().to_str().expect("a UTF-8 scratch root");
@@ -518,7 +518,7 @@ async fn build_design_cut_phrase() {
 // beside it, land as they would. The brief says so after the scaffold
 // section.
 #[tokio::test]
-async fn write_scaffolded_refused() {
+async fn write_scaffolded_drop() {
     let tmp = tempfile::tempdir().expect("tempdir");
     let skeleton = "pub fn create() {\n    todo!(\"REQ-001 orders.create: the handler\")\n}\n";
     write(tmp.path(), [("src/orders.rs", skeleton), ("Cargo.toml", "[package]\n")]);
@@ -697,7 +697,7 @@ async fn write_scaffolded_kept() {
 // removal never asked, since a model spells a whole write that way; one
 // whose entry drops a token is refused for the content alone.
 #[tokio::test]
-async fn write_scaffolded_replaced() {
+async fn write_scaffolded_edit() {
     let tmp = tempfile::tempdir().expect("tempdir");
     let skeleton = "pub fn create() {\n    todo!(\"REQ-001 orders.create: the handler\")\n}\n";
     write(tmp.path(), [("src/orders.rs", skeleton)]);
@@ -811,7 +811,7 @@ async fn worker_grant() {
 // the file stands as it was, and the same write with `shrink` set, or an
 // entry at or above half, lands.
 #[tokio::test]
-async fn write_shrink_refused() {
+async fn write_halved_file() {
     let tmp = tempfile::tempdir().expect("tempdir");
     let whole = "pub struct Order;\npub struct Line;\npub struct Total;\n";
     write(tmp.path(), [("src/orders.rs", whole), ("src/empty.rs", "")]);
@@ -878,7 +878,7 @@ async fn write_shrink_refused() {
 // A write at or above half the held size is no shrink, so an edit that
 // trims a file lands without `shrink`.
 #[tokio::test]
-async fn write_shrink_allowed() {
+async fn write_minor_shrink() {
     let tmp = tempfile::tempdir().expect("tempdir");
     write(tmp.path(), [("src/orders.rs", "pub struct Order;\npub struct Line;\n")]);
     let root = tmp.path().to_str().expect("a UTF-8 scratch root");

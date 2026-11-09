@@ -1144,7 +1144,7 @@ fn types_with_tables() {
 // among them; one the module does not export, one bound in a function, and
 // one past `TABLE_BYTES` are none.
 #[test]
-fn types_with_constant_tables() {
+fn types_constant_tables() {
     let mut m = module("src/rates.ts", 20);
     let mut rates = value("RATES", None, None, None, Init::Literal, span(1, 5));
     let mut hidden = value("DRAFT", None, None, None, Init::Literal, span(6, 8));

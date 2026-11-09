@@ -210,7 +210,7 @@ Use `emery_sdk::check` in a native test to verify that every file in `prose/` is
 
 ```rust
 #[test]
-fn prose_corpus_is_sound() {
+fn prose_corpus() {
     let tree = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("prose");
     emery_sdk::check(
         acme_runbook::PROSE,

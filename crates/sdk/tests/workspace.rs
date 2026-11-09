@@ -130,7 +130,7 @@ fn entry_readers() {
 
 // Even a link to a real file beside it is not listed.
 #[test]
-fn skips_symlinks() {
+fn symlink_file() {
     let tmp = tempfile::tempdir().expect("tempdir");
     let root = tree(tmp.path(), &["real.md"]);
     symlink(tmp.path().join("real.md"), tmp.path().join("link.md")).expect("symlink");
@@ -141,7 +141,7 @@ fn skips_symlinks() {
 }
 
 #[test]
-fn skips_symlink_dirs() {
+fn symlink_dir() {
     let tmp = tempfile::tempdir().expect("tempdir");
     let root = tree(tmp.path(), &["real/nested/file.md"]);
     symlink(tmp.path().join("real"), tmp.path().join("link")).expect("symlink");

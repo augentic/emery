@@ -321,7 +321,7 @@ async fn retry_spent() {
 // A refused request and spent rounds are the seam's answer as it stands; more
 // turns would not change it.
 #[tokio::test]
-async fn refusal_not_retried() {
+async fn bad_request_seam() {
     let (_tmp, input) = workspace(&["a/x.md", "b/y.md", "c/z.md"]);
     let model = ByFile::default()
         .file(
@@ -424,7 +424,7 @@ async fn two_seams_fail() {
 // A lone seam's failure is the source's as the model reported it, with no seam
 // report around it.
 #[tokio::test]
-async fn single_seam_passthrough() {
+async fn single_seam_error() {
     let model = ScriptedModel::new([down("down"), down("still down")]);
     let input = SourceInput::workspace("docs", "./docs");
 

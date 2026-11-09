@@ -46,7 +46,7 @@ const CONFLICTED_SPEC: &[u8] = include_bytes!("amend/conflicted-spec.json");
 // output names the sealed revision alone, since a first seal displaces
 // nothing.
 #[tokio::test]
-async fn apply_seals() {
+async fn staged_candidate() {
     let provider = Provider::idle();
     let id = stage(&provider.storage, SPEC, DESIGN, PLAN);
 
@@ -104,7 +104,7 @@ async fn apply_seals() {
 // output carries the diff against it, and the envelope names the parent,
 // the commit, the label, and the kind of candidate sealed.
 #[tokio::test]
-async fn apply_displaces() {
+async fn existing_revision() {
     let provider = Provider::idle();
     let outgoing = seed(&provider.files, SPEC, DESIGN, PLAN);
     let candidate = stage(&provider.storage, SPEC, DESIGN, WIDE_PLAN);
@@ -183,7 +183,7 @@ async fn apply_same_revision() {
 // retired with the statement withdrawn rather than removed. The same two
 // specifications drafted apart, the parent unset, pair by anchor as before.
 #[tokio::test]
-async fn apply_amends() {
+async fn amended_candidate() {
     let spec = std::str::from_utf8(SPEC).expect("spec.json is UTF-8");
     let base = spec.replace(
         "\"claim\": \"orders.cancel\",\n          \"path\": null",
@@ -706,7 +706,7 @@ async fn apply_fresh() {
 // that revision's child, and in a repository holding none, as the first
 // seal does.
 #[tokio::test]
-async fn apply_fresh_over_baseline() {
+async fn fresh_over_baseline() {
     let provider = Provider::idle();
     let outgoing = seed(&provider.files, SPEC, DESIGN, PLAN);
     let candidate = stage_fresh(&provider.storage, SPEC, DESIGN, WIDE_PLAN);
@@ -809,7 +809,7 @@ async fn apply_over_merge() {
 // target's name: created now, the revision its root commit, the envelope
 // naming the repository. A later seal finds it and lands over its head.
 #[tokio::test]
-async fn apply_creates_repository() {
+async fn created_repository() {
     let scratch = Scratch::new();
     let config = scratch.config(&format!("[target]\nadapter = \"{BUILDER}\"\n"));
     let provider = Provider::idle();
@@ -878,7 +878,7 @@ async fn apply_creates_repository() {
 // project checkout that is no repository or has no commit, and a credential
 // among what the seal would commit.
 #[tokio::test]
-async fn apply_refused() {
+async fn nothing_staged() {
     // the operator's own `spec/`
     let provider = Provider::idle();
     stage(&provider.storage, SPEC, DESIGN, PLAN);
@@ -1071,7 +1071,7 @@ async fn specify_apply_fresh() {
 // seal it once the repository answers, and nothing of the current revision
 // moves.
 #[tokio::test]
-async fn specify_apply_seal_refused() {
+async fn specify_apply_dirty() {
     let provider = Provider::answering([SPEC_ANSWER, DESIGN_ANSWER]);
     let outgoing = seed(&provider.files, SPEC, DESIGN, PLAN);
     provider.vcs.commits.script(REVISION, Err(Error::Access("index.lock held".to_owned())));
