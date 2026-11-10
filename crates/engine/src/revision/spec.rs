@@ -22,8 +22,6 @@ pub const MESSAGE: &str = "Message:";
 pub const NOTE: &str = "Note:";
 pub const HEADING: &str = "### Requirement:";
 
-const SCENARIO: &str = "#### Scenario:";
-
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Spec {
@@ -278,6 +276,8 @@ impl Display for Loser {
     }
 }
 
+const SCENARIO: &str = "#### Scenario:";
+
 /// An acceptance scenario attached to a requirement.
 ///
 /// `given` and `and` are lines; a draft that writes one line as a bare string
@@ -298,23 +298,6 @@ pub struct Scenario {
     /// Additional `AND` outcomes, one line each.
     #[serde(default, deserialize_with = "lines")]
     pub and: Vec<String>,
-}
-
-// A sequence of lines, or one line as a bare string.
-fn lines<'de, D: serde::Deserializer<'de>>(deserializer: D) -> Result<Vec<String>, D::Error> {
-    #[derive(Deserialize)]
-    #[serde(untagged)]
-    enum Lines {
-        One(String),
-        Many(Vec<String>),
-    }
-    Ok(match Lines::deserialize(deserializer)? {
-        Lines::One(line) => {
-            tracing::debug!("a scenario's lines arrived as one bare string; read as one line");
-            vec![line]
-        }
-        Lines::Many(lines) => lines,
-    })
 }
 
 impl Scenario {
@@ -367,6 +350,23 @@ impl From<&Scenario> for emery_adapter::target::Scenario {
             and: scenario.and.clone(),
         }
     }
+}
+
+// A sequence of lines, or one line as a bare string.
+fn lines<'de, D: serde::Deserializer<'de>>(deserializer: D) -> Result<Vec<String>, D::Error> {
+    #[derive(Deserialize)]
+    #[serde(untagged)]
+    enum Lines {
+        One(String),
+        Many(Vec<String>),
+    }
+    Ok(match Lines::deserialize(deserializer)? {
+        Lines::One(line) => {
+            tracing::debug!("a scenario's lines arrived as one bare string; read as one line");
+            vec![line]
+        }
+        Lines::Many(lines) => lines,
+    })
 }
 
 // The reconciliation status of a requirement.

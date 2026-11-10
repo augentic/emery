@@ -190,16 +190,6 @@ pub enum Assembled<'a> {
     Open(PartAmend<'a>),
 }
 
-// Holds `parts` to the plan's rules over `floors` and the design's `types`;
-// a break is the engine's, since nothing of the plan is the model's.
-fn held(parts: &[Part], floors: &Floors<'_>, types: &Types) -> Result<(), Error> {
-    let mut review = Review::default();
-    floors.check(types, &Draft::all(parts), &mut review);
-    review.verdict().map_err(|findings| {
-        server_error!("the amended plan breaks the plan's rules:\n{}", findings.join("\n"))
-    })
-}
-
 // `parts` less `leaving`: a part every requirement of which leaves is
 // removed. The kept parts are answered with `leaving` taken out and
 // `depends_on` cleared for `assemble` to derive; the removed are answered
@@ -227,4 +217,14 @@ fn without<'a>(parts: &'a [Part], leaving: &BTreeSet<ReqId>) -> (Vec<Part>, Vec<
         })
         .collect();
     (kept, removed)
+}
+
+// Holds `parts` to the plan's rules over `floors` and the design's `types`;
+// a break is the engine's, since nothing of the plan is the model's.
+fn held(parts: &[Part], floors: &Floors<'_>, types: &Types) -> Result<(), Error> {
+    let mut review = Review::default();
+    floors.check(types, &Draft::all(parts), &mut review);
+    review.verdict().map_err(|findings| {
+        server_error!("the amended plan breaks the plan's rules:\n{}", findings.join("\n"))
+    })
 }

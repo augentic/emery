@@ -20,17 +20,6 @@ pub struct Types {
     references: BTreeMap<String, Vec<String>>,
 }
 
-// A directed dependency from one drafted part to another, with the target's
-// owned type keys that caused it.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Edge {
-    pub from: String,
-    pub to: String,
-    // The keys owned by `to` that `from`'s owned types name or `from` lists
-    // in `uses`, in design order.
-    pub via: Vec<String>,
-}
-
 impl Types {
     // Reads the `Role::Data` type keys, declared names, and cross-type
     // references from `design`.
@@ -200,4 +189,15 @@ fn declared_name<'a>(signature: &'a str, key: &'a str) -> &'a str {
 
 fn tokens(text: &str) -> impl Iterator<Item = &str> {
     text.split(|ch: char| !(ch.is_alphanumeric() || ch == '_')).filter(|token| !token.is_empty())
+}
+
+// A directed dependency from one drafted part to another, with the target's
+// owned type keys that caused it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Edge {
+    pub from: String,
+    pub to: String,
+    // The keys owned by `to` that `from`'s owned types name or `from` lists
+    // in `uses`, in design order.
+    pub via: Vec<String>,
 }

@@ -22,9 +22,6 @@ use crate::specify::basis::{Basis, Contributor};
 use crate::specify::sections::{self, BasesSection, ClaimsSection};
 use crate::specify::{Extract, shape};
 
-// The outcome a scenario states where no criterion evidences one.
-const UNKNOWN: &str = "[unknown]";
-
 // What a chunk opens with: a specify's first chunk drafts the preamble and
 // lists every claim, a later chunk drafts no preamble, and an amendment's
 // chunk drafts none either, since the base's stands.
@@ -283,16 +280,6 @@ impl Brief for SpecBrief<'_> {
     }
 }
 
-// Whitespace collapsed, trailing punctuation dropped, lowercased: the shape
-// two lines are compared in.
-fn normalised(text: &str) -> String {
-    text.split_whitespace()
-        .collect::<Vec<_>>()
-        .join(" ")
-        .trim_end_matches(['.', '!', '?', ';', ':', ','])
-        .to_lowercase()
-}
-
 // The claims one chunk past the first is drafted from: every claim whose id
 // leads with one of the chunk's stems — its requirements, the criteria and
 // examples under them — and every unidentified claim anchored in a file one
@@ -385,6 +372,19 @@ pub struct SpecAnswer {
     pub preamble: Vec<String>,
     /// One draft per requirement subject, in any order.
     pub requirements: Vec<Draft>,
+}
+
+// The outcome a scenario states where no criterion evidences one.
+const UNKNOWN: &str = "[unknown]";
+
+// Whitespace collapsed, trailing punctuation dropped, lowercased: the shape
+// two lines are compared in.
+fn normalised(text: &str) -> String {
+    text.split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+        .trim_end_matches(['.', '!', '?', ';', ':', ','])
+        .to_lowercase()
 }
 
 /// Drafted acceptance scenarios for one requirement.

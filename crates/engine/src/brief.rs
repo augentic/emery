@@ -96,6 +96,19 @@ pub trait Brief: Display + Sync + Sized {
     }
 }
 
+static PROSE: &[emery_prose::Doc] = emery_prose::prose![
+    "../prose/authority.md",
+    "../prose/claim-landing.md",
+    "../prose/design-format.md",
+    "../prose/grouping.md",
+    "../prose/merge.md",
+    "../prose/requirement-block.md",
+    "../prose/slicing.md",
+    "../prose/spec-format.md",
+    "../prose/synthesise.md",
+    "../prose/tags.md",
+];
+
 // The findings a brief records against one candidate.
 #[derive(Default)]
 pub struct Review(Findings);
@@ -162,19 +175,6 @@ impl Review {
         ));
     }
 }
-
-static PROSE: &[emery_prose::Doc] = emery_prose::prose![
-    "../prose/authority.md",
-    "../prose/claim-landing.md",
-    "../prose/design-format.md",
-    "../prose/grouping.md",
-    "../prose/merge.md",
-    "../prose/requirement-block.md",
-    "../prose/slicing.md",
-    "../prose/spec-format.md",
-    "../prose/synthesise.md",
-    "../prose/tags.md",
-];
 
 #[cfg(test)]
 mod tests {

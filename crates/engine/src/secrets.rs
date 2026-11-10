@@ -9,6 +9,80 @@ use omnia_sdk::vcs::{Change, ChangeKind};
 
 use crate::Files;
 
+// Names every change under `at` that carries a credential, `<path>: <what>`,
+// reading only the paths the name rule passes.
+pub async fn findings<F: Files>(
+    files: &F, at: &str, changes: &[Change],
+) -> Result<Vec<String>, Error> {
+    let mut findings = Vec::new();
+    for change in changes {
+        if change.kind == ChangeKind::Deleted {
+            continue;
+        }
+        let what = match named(&change.path) {
+            Some(what) => Some(what),
+            None => carried(&files.read(at, &change.path).await?),
+        };
+        if let Some(what) = what {
+            findings.push(format!("{}: {what}", change.path));
+        }
+    }
+    Ok(findings)
+}
+
+// The gate's refusal: what `wrote` left changed carries the credentials
+// listed, and none of it is sealed.
+pub fn refusal(wrote: &str, leaks: &[String]) -> Error {
+    let listed: Vec<String> = leaks.iter().map(|leak| format!("- {leak}")).collect();
+    Error::BadRequest {
+        code: "secret-detected".into(),
+        description: format!(
+            "what {wrote} wrote carries a credential, so none of it is sealed:\n{}",
+            listed.join("\n")
+        ),
+    }
+}
+
+fn named(path: &str) -> Option<&'static str> {
+    let mut segments = path.rsplit('/');
+    let name = segments.next()?;
+    if CARRIERS.contains(&name) || (name == "credentials" && segments.next() == Some(".aws")) {
+        return Some("a file that carries a credential by name");
+    }
+    None
+}
+
+fn carried(bytes: &[u8]) -> Option<&'static str> {
+    if pem_private_key(bytes) {
+        return Some("a PEM private key block");
+    }
+    SHAPES.iter().chain([&AUTH_TOKEN]).find(|shape| shape.matches(bytes)).map(|shape| shape.what)
+}
+
+// A `-----BEGIN <label>-----` header whose label ends in `PRIVATE KEY`,
+// wherever on its line it stands: a key pasted into a string literal keeps
+// the header and the escaped newline after it on one line.
+fn pem_private_key(bytes: &[u8]) -> bool {
+    after(bytes, PEM_HEAD).any(|rest| {
+        rest.windows(PEM_DASHES.len()).position(|window| window == PEM_DASHES).is_some_and(|end| {
+            let label = &rest[..end];
+            label.ends_with(PEM_PRIVATE) && !label.contains(&b'\n')
+        })
+    })
+}
+
+impl Shape {
+    fn matches(&self, bytes: &[u8]) -> bool {
+        after(bytes, self.prefix).any(|rest| {
+            rest.iter().take_while(|&&byte| self.run.admits(byte)).count() >= self.least
+        })
+    }
+}
+
+fn after<'a>(bytes: &'a [u8], prefix: &'a [u8]) -> impl Iterator<Item = &'a [u8]> {
+    (0..bytes.len()).filter_map(move |start| bytes[start..].strip_prefix(prefix))
+}
+
 // Files that carry a credential by name, matched on the final path segment.
 const CARRIERS: [&str; 10] = [
     "id_rsa",
@@ -169,77 +243,3 @@ const AUTH_TOKEN: Shape = Shape {
     least: 20,
     what: "an npm `_authToken` line",
 };
-
-// Names every change under `at` that carries a credential, `<path>: <what>`,
-// reading only the paths the name rule passes.
-pub async fn findings<F: Files>(
-    files: &F, at: &str, changes: &[Change],
-) -> Result<Vec<String>, Error> {
-    let mut findings = Vec::new();
-    for change in changes {
-        if change.kind == ChangeKind::Deleted {
-            continue;
-        }
-        let what = match named(&change.path) {
-            Some(what) => Some(what),
-            None => carried(&files.read(at, &change.path).await?),
-        };
-        if let Some(what) = what {
-            findings.push(format!("{}: {what}", change.path));
-        }
-    }
-    Ok(findings)
-}
-
-// The gate's refusal: what `wrote` left changed carries the credentials
-// listed, and none of it is sealed.
-pub fn refusal(wrote: &str, leaks: &[String]) -> Error {
-    let listed: Vec<String> = leaks.iter().map(|leak| format!("- {leak}")).collect();
-    Error::BadRequest {
-        code: "secret-detected".into(),
-        description: format!(
-            "what {wrote} wrote carries a credential, so none of it is sealed:\n{}",
-            listed.join("\n")
-        ),
-    }
-}
-
-fn named(path: &str) -> Option<&'static str> {
-    let mut segments = path.rsplit('/');
-    let name = segments.next()?;
-    if CARRIERS.contains(&name) || (name == "credentials" && segments.next() == Some(".aws")) {
-        return Some("a file that carries a credential by name");
-    }
-    None
-}
-
-fn carried(bytes: &[u8]) -> Option<&'static str> {
-    if pem_private_key(bytes) {
-        return Some("a PEM private key block");
-    }
-    SHAPES.iter().chain([&AUTH_TOKEN]).find(|shape| shape.matches(bytes)).map(|shape| shape.what)
-}
-
-// A `-----BEGIN <label>-----` header whose label ends in `PRIVATE KEY`,
-// wherever on its line it stands: a key pasted into a string literal keeps
-// the header and the escaped newline after it on one line.
-fn pem_private_key(bytes: &[u8]) -> bool {
-    after(bytes, PEM_HEAD).any(|rest| {
-        rest.windows(PEM_DASHES.len()).position(|window| window == PEM_DASHES).is_some_and(|end| {
-            let label = &rest[..end];
-            label.ends_with(PEM_PRIVATE) && !label.contains(&b'\n')
-        })
-    })
-}
-
-impl Shape {
-    fn matches(&self, bytes: &[u8]) -> bool {
-        after(bytes, self.prefix).any(|rest| {
-            rest.iter().take_while(|&&byte| self.run.admits(byte)).count() >= self.least
-        })
-    }
-}
-
-fn after<'a>(bytes: &'a [u8], prefix: &'a [u8]) -> impl Iterator<Item = &'a [u8]> {
-    (0..bytes.len()).filter_map(move |start| bytes[start..].strip_prefix(prefix))
-}

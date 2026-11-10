@@ -12,8 +12,6 @@ use serde::{Deserialize, Serialize};
 
 use crate::revision;
 
-const CITATION: &str = "(from ";
-
 pub const TYPE: &str = "Type:";
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -236,6 +234,8 @@ impl Display for SectionKind {
         })
     }
 }
+
+const CITATION: &str = "(from ";
 
 // Returns every source name cited as `(from <source>)` in `text`.
 //

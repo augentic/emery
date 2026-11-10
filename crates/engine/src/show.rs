@@ -27,11 +27,6 @@ pub use crate::revision::{
 use crate::vcs::TargetRef;
 use crate::{Files, store};
 
-const SLICE_HEADING: &str = "## Slice:";
-const PART_KEY: &str = "Part:";
-const WAVE_KEY: &str = "Wave:";
-const OVER_BUDGET_KEY: &str = "Over budget:";
-
 /// Returns one document from the current revision, the staged candidate, or the staged amendment.
 ///
 /// The current revision is read from the repository [`ShowInput::target`]
@@ -218,6 +213,11 @@ pub enum Artifact {
     /// Read from the staging slot alone: an amendment is never current.
     Amendment,
 }
+
+const SLICE_HEADING: &str = "## Slice:";
+const PART_KEY: &str = "Part:";
+const WAVE_KEY: &str = "Wave:";
+const OVER_BUDGET_KEY: &str = "Over budget:";
 
 /// The build schedule projected by [`show`] for [`Artifact::Schedule`].
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

@@ -271,6 +271,99 @@ pub struct Current {
     pub parent: Option<String>,
 }
 
+impl Current {
+    // The revision the tree at `commit` holds under `spec/`, with its id;
+    // `None` when the tree holds no `spec/`. Held to `expect`, the id the
+    // label names, where there is one.
+    async fn read_at<P: Vcs + Files>(
+        provider: &P, repo: &BuildRepo, commit: &str, expect: Option<&str>,
+    ) -> Result<Option<Self>, Error> {
+        let copy = WorkingCopy::cut(provider, &repo.path(), REVISION, commit).await?;
+        let current = Self::read_tree(provider, copy.path(), commit, expect).await;
+        copy.remove(provider).await?;
+        current
+    }
+
+    // Held to `expect` where a label named the commit; at a head no label
+    // names, three documents that read as no revision of any grammar, or
+    // that read as no one revision's (`Revision::findings`), were edited or
+    // merged by hand, since a seal writes them whole, and are
+    // `spec-mismatch` rather than a revision to seal over. Documents that
+    // read as one revision are that revision whatever label the repository
+    // holds for them, since a clone reads no remote's label and an operator
+    // may delete a merged one.
+    async fn read_tree<F: Files>(
+        files: &F, at: &str, commit: &str, expect: Option<&str>,
+    ) -> Result<Option<Self>, Error> {
+        match Occupancy::of(files, at).await? {
+            Occupancy::Absent => {
+                return expect.map_or(Ok(None), |id| {
+                    Err(mismatch(format!(
+                        "commit `{commit}`, labelled `{}`, holds no `{SPECIFICATION}/`",
+                        label(id)
+                    )))
+                });
+            }
+            Occupancy::Held => {}
+            Occupancy::Other(what) => {
+                return Err(mismatch(format!(
+                    "`{SPECIFICATION}/` at commit `{commit}` holds {what}, where the three \
+                     documents of a revision should stand"
+                )));
+            }
+        }
+        let spec = files.read(at, &path(Spec::NAME)).await?;
+        let design = files.read(at, &path(Design::NAME)).await?;
+        let plan = files.read(at, &path(Plan::NAME)).await?;
+        let id = Revision::identify(&spec, &design, &plan);
+        if let Some(expected) = expect.filter(|expected| *expected != id) {
+            return Err(mismatch(format!(
+                "`{SPECIFICATION}/` at commit `{commit}`, labelled `{}`, does not match revision \
+                 `{expected}`; the documents there are `emery show` output, never sources",
+                label(expected)
+            )));
+        }
+        let revision = match Revision::read(&id, &spec, &design, &plan) {
+            Err(error) if expect.is_none() && !matches!(error, Error::BadRequest { .. }) => {
+                return Err(hand_merged(commit, "no revision", &error.description()));
+            }
+            Ok(revision) if expect.is_none() => {
+                let findings = revision.findings();
+                if !findings.is_empty() {
+                    return Err(hand_merged(commit, "no one revision's", &findings.join("; ")));
+                }
+                Ok(revision)
+            }
+            revision => revision,
+        };
+        let parent = revision
+            .as_ref()
+            .map_or_else(|_| spec_parent(&spec), |revision| revision.spec.parent.clone());
+        Ok(Some(Self {
+            id,
+            revision,
+            commit: commit.to_owned(),
+            parent,
+        }))
+    }
+}
+
+// The top-level `parent` key of `spec`, for a specification under another
+// grammar that `Revision::read` did not deserialise.
+fn spec_parent(spec: &[u8]) -> Option<String> {
+    serde_json::from_slice::<Value>(spec).ok()?.get("parent")?.as_str().map(str::to_owned)
+}
+
+// The refusal of a `spec/` at an unlabelled head whose documents were edited
+// or merged by hand; the CLI's hint matches on the `edited or merged by hand`
+// clause.
+fn hand_merged(commit: &str, what: &str, why: &str) -> Error {
+    mismatch(format!(
+        "`{SPECIFICATION}/` at commit `{commit}` holds documents that read as {what} ({why}), so \
+         they were edited or merged by hand; a seal writes them whole"
+    ))
+}
+
 // Where a target repository stands for the revision: its head, the
 // revision it holds, and the label the pointer names when that label does
 // not stand over the head. Read once by `current`, and handed to `commit`
@@ -804,99 +897,6 @@ async fn seal_copy<P: Vcs + Files>(
     };
     repo.label(provider, &label(&message.revision), &commit).await?;
     Ok(commit)
-}
-
-impl Current {
-    // The revision the tree at `commit` holds under `spec/`, with its id;
-    // `None` when the tree holds no `spec/`. Held to `expect`, the id the
-    // label names, where there is one.
-    async fn read_at<P: Vcs + Files>(
-        provider: &P, repo: &BuildRepo, commit: &str, expect: Option<&str>,
-    ) -> Result<Option<Self>, Error> {
-        let copy = WorkingCopy::cut(provider, &repo.path(), REVISION, commit).await?;
-        let current = Self::read_tree(provider, copy.path(), commit, expect).await;
-        copy.remove(provider).await?;
-        current
-    }
-
-    // Held to `expect` where a label named the commit; at a head no label
-    // names, three documents that read as no revision of any grammar, or
-    // that read as no one revision's (`Revision::findings`), were edited or
-    // merged by hand, since a seal writes them whole, and are
-    // `spec-mismatch` rather than a revision to seal over. Documents that
-    // read as one revision are that revision whatever label the repository
-    // holds for them, since a clone reads no remote's label and an operator
-    // may delete a merged one.
-    async fn read_tree<F: Files>(
-        files: &F, at: &str, commit: &str, expect: Option<&str>,
-    ) -> Result<Option<Self>, Error> {
-        match Occupancy::of(files, at).await? {
-            Occupancy::Absent => {
-                return expect.map_or(Ok(None), |id| {
-                    Err(mismatch(format!(
-                        "commit `{commit}`, labelled `{}`, holds no `{SPECIFICATION}/`",
-                        label(id)
-                    )))
-                });
-            }
-            Occupancy::Held => {}
-            Occupancy::Other(what) => {
-                return Err(mismatch(format!(
-                    "`{SPECIFICATION}/` at commit `{commit}` holds {what}, where the three \
-                     documents of a revision should stand"
-                )));
-            }
-        }
-        let spec = files.read(at, &path(Spec::NAME)).await?;
-        let design = files.read(at, &path(Design::NAME)).await?;
-        let plan = files.read(at, &path(Plan::NAME)).await?;
-        let id = Revision::identify(&spec, &design, &plan);
-        if let Some(expected) = expect.filter(|expected| *expected != id) {
-            return Err(mismatch(format!(
-                "`{SPECIFICATION}/` at commit `{commit}`, labelled `{}`, does not match revision \
-                 `{expected}`; the documents there are `emery show` output, never sources",
-                label(expected)
-            )));
-        }
-        let revision = match Revision::read(&id, &spec, &design, &plan) {
-            Err(error) if expect.is_none() && !matches!(error, Error::BadRequest { .. }) => {
-                return Err(hand_merged(commit, "no revision", &error.description()));
-            }
-            Ok(revision) if expect.is_none() => {
-                let findings = revision.findings();
-                if !findings.is_empty() {
-                    return Err(hand_merged(commit, "no one revision's", &findings.join("; ")));
-                }
-                Ok(revision)
-            }
-            revision => revision,
-        };
-        let parent = revision
-            .as_ref()
-            .map_or_else(|_| spec_parent(&spec), |revision| revision.spec.parent.clone());
-        Ok(Some(Self {
-            id,
-            revision,
-            commit: commit.to_owned(),
-            parent,
-        }))
-    }
-}
-
-// The top-level `parent` key of `spec`, for a specification under another
-// grammar that `Revision::read` did not deserialise.
-fn spec_parent(spec: &[u8]) -> Option<String> {
-    serde_json::from_slice::<Value>(spec).ok()?.get("parent")?.as_str().map(str::to_owned)
-}
-
-// The refusal of a `spec/` at an unlabelled head whose documents were edited
-// or merged by hand; the CLI's hint matches on the `edited or merged by hand`
-// clause.
-fn hand_merged(commit: &str, what: &str, why: &str) -> Error {
-    mismatch(format!(
-        "`{SPECIFICATION}/` at commit `{commit}` holds documents that read as {what} ({why}), so \
-         they were edited or merged by hand; a seal writes them whole"
-    ))
 }
 
 fn mismatch(description: String) -> Error {

@@ -462,6 +462,38 @@ impl SourceClone {
     }
 }
 
+// One spelling for every URL that names one repository: trimmed, the
+// `git@host:path` form as `ssh://git@host/path`, scheme and host lowercased,
+// a trailing `/` and `.git` dropped.
+fn normalise(url: &str) -> String {
+    let url = url.trim();
+    let url = match scp_like(url) {
+        Some((authority, path)) => format!("ssh://{authority}/{path}"),
+        None => url.to_owned(),
+    };
+    let (scheme, rest) = url.split_once("://").unwrap_or(("", url.as_str()));
+    let (authority, path) =
+        if scheme.is_empty() { ("", rest) } else { rest.split_once('/').unwrap_or((rest, "")) };
+    let path = path.trim_end_matches('/');
+    let path = path.strip_suffix(".git").unwrap_or(path).trim_end_matches('/');
+    if scheme.is_empty() {
+        path.to_owned()
+    } else {
+        format!("{}://{}/{path}", scheme.to_ascii_lowercase(), authority.to_ascii_lowercase())
+    }
+}
+
+// `user@host:path` and `host:path`, which git reads as SSH: a colon before
+// any slash, and no scheme.
+fn scp_like(url: &str) -> Option<(&str, &str)> {
+    if url.contains("://") {
+        return None;
+    }
+    let (authority, path) = url.split_once(':')?;
+    (!authority.is_empty() && !authority.contains('/') && !path.starts_with("//"))
+        .then_some((authority, path))
+}
+
 /// The target as a run names it: the name its repository is kept under and where that repository is.
 ///
 /// A run's `[target]` table, or its command line, carries one; a verb
@@ -841,6 +873,27 @@ impl BuildRepo {
     }
 }
 
+// Holds the project checkout to nothing pending outside the engine's own
+// directories, so a build starts from a sealed tree.
+async fn project_clean<V: Vcs>(vcs: &V) -> Result<(), Error> {
+    let pending = vcs.pending(PROJECT).await.map_err(|error| Subject::Project.refusal(error))?;
+    let unsealed: Vec<String> = pending
+        .into_iter()
+        .map(|change| change.path)
+        .filter(|path| !path.split('/').next().is_some_and(|first| SKIP_DIRS.contains(&first)))
+        .collect();
+    if !unsealed.is_empty() {
+        return Err(Error::BadRequest {
+            code: "base-not-sealed".into(),
+            description: format!(
+                "the project checkout holds pending changes: {}",
+                unsealed.join(", ")
+            ),
+        });
+    }
+    Ok(())
+}
+
 /// The integration working copy a build runs over, and what it was found holding.
 ///
 /// Cut by [`BuildRepo::cut_integration`]: at the head the build starts from,
@@ -995,27 +1048,6 @@ async fn ensure<V: Vcs>(vcs: &V, url: &str, at: &str) -> Result<(), vcs::Error> 
     }
 }
 
-// Holds the project checkout to nothing pending outside the engine's own
-// directories, so a build starts from a sealed tree.
-async fn project_clean<V: Vcs>(vcs: &V) -> Result<(), Error> {
-    let pending = vcs.pending(PROJECT).await.map_err(|error| Subject::Project.refusal(error))?;
-    let unsealed: Vec<String> = pending
-        .into_iter()
-        .map(|change| change.path)
-        .filter(|path| !path.split('/').next().is_some_and(|first| SKIP_DIRS.contains(&first)))
-        .collect();
-    if !unsealed.is_empty() {
-        return Err(Error::BadRequest {
-            code: "base-not-sealed".into(),
-            description: format!(
-                "the project checkout holds pending changes: {}",
-                unsealed.join(", ")
-            ),
-        });
-    }
-    Ok(())
-}
-
 // What a run addressed when the capability refused, which decides the
 // class and code the refusal reaches the operator as.
 #[derive(Clone, Copy)]
@@ -1063,36 +1095,4 @@ impl fmt::Display for Subject<'_> {
             Self::WorkingCopy(at) => write!(f, "working copy `{at}`"),
         }
     }
-}
-
-// One spelling for every URL that names one repository: trimmed, the
-// `git@host:path` form as `ssh://git@host/path`, scheme and host lowercased,
-// a trailing `/` and `.git` dropped.
-fn normalise(url: &str) -> String {
-    let url = url.trim();
-    let url = match scp_like(url) {
-        Some((authority, path)) => format!("ssh://{authority}/{path}"),
-        None => url.to_owned(),
-    };
-    let (scheme, rest) = url.split_once("://").unwrap_or(("", url.as_str()));
-    let (authority, path) =
-        if scheme.is_empty() { ("", rest) } else { rest.split_once('/').unwrap_or((rest, "")) };
-    let path = path.trim_end_matches('/');
-    let path = path.strip_suffix(".git").unwrap_or(path).trim_end_matches('/');
-    if scheme.is_empty() {
-        path.to_owned()
-    } else {
-        format!("{}://{}/{path}", scheme.to_ascii_lowercase(), authority.to_ascii_lowercase())
-    }
-}
-
-// `user@host:path` and `host:path`, which git reads as SSH: a colon before
-// any slash, and no scheme.
-fn scp_like(url: &str) -> Option<(&str, &str)> {
-    if url.contains("://") {
-        return None;
-    }
-    let (authority, path) = url.split_once(':')?;
-    (!authority.is_empty() && !authority.contains('/') && !path.starts_with("//"))
-        .then_some((authority, path))
 }

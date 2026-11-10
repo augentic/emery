@@ -408,6 +408,73 @@ impl Display for GroupingBrief<'_> {
     }
 }
 
+// A `contract` claim carrying a trigger: what binds it to a requirement is
+// its id, which the requirement's subject leads with, or its anchor, which a
+// contributor's citation meets.
+#[derive(Debug)]
+struct Contract<'a> {
+    cited: Cited,
+    id: Option<&'a str>,
+    trigger: Trigger,
+}
+
+impl Contract<'_> {
+    // Whether `id` is this contract's id or a dotted child of it.
+    fn leads(&self, id: &str) -> bool {
+        self.id.is_some_and(|own| revision::leads(own, id))
+    }
+}
+
+// A change claim anchored where a standing requirement was read: the same
+// source and file, lines that meet. A hint to the grouping, never a
+// pre-merge, since line numbers drift as code changes.
+#[derive(Debug)]
+struct Hint<'a> {
+    claim: usize,
+    standing: usize,
+    path: &'a str,
+}
+
+impl<'a> Hint<'a> {
+    // One hint per claim and standing requirement it anchors within. A claim
+    // at a standing requirement's id is pre-merged already, so none is
+    // hinted for it.
+    fn all(claims: &[Contributor<'a>], standing: &[Contributor<'a>]) -> Vec<Self> {
+        if standing.is_empty() {
+            return Vec::new();
+        }
+        let mut hints = Vec::new();
+        for claim in claims {
+            let Some(path) = claim.path else { continue };
+            if standing.iter().any(|member| member.id == claim.id) {
+                continue;
+            }
+            let cited = Cited::from(claim);
+            for member in standing {
+                if member.citations.iter().any(|read| cited.overlaps(read)) {
+                    hints.push(Self {
+                        claim: claim.index,
+                        standing: member.index,
+                        path,
+                    });
+                }
+            }
+        }
+        hints
+    }
+}
+
+impl Display for Hint<'_> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "- claim {} anchors at `{}`, where standing requirement {} was read; they are one \
+             requirement unless the code moved.",
+            self.claim, self.path, self.standing
+        )
+    }
+}
+
 /// A partition of requirement claims into requirements and agreement classes.
 #[derive(Debug, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
@@ -531,73 +598,6 @@ impl Grouping {
             .zip(ReqId::sequence())
             .map(|((_, classes), id)| Basis::of(id, classes, criteria, contracts))
             .collect()
-    }
-}
-
-// A `contract` claim carrying a trigger: what binds it to a requirement is
-// its id, which the requirement's subject leads with, or its anchor, which a
-// contributor's citation meets.
-#[derive(Debug)]
-struct Contract<'a> {
-    cited: Cited,
-    id: Option<&'a str>,
-    trigger: Trigger,
-}
-
-impl Contract<'_> {
-    // Whether `id` is this contract's id or a dotted child of it.
-    fn leads(&self, id: &str) -> bool {
-        self.id.is_some_and(|own| revision::leads(own, id))
-    }
-}
-
-// A change claim anchored where a standing requirement was read: the same
-// source and file, lines that meet. A hint to the grouping, never a
-// pre-merge, since line numbers drift as code changes.
-#[derive(Debug)]
-struct Hint<'a> {
-    claim: usize,
-    standing: usize,
-    path: &'a str,
-}
-
-impl<'a> Hint<'a> {
-    // One hint per claim and standing requirement it anchors within. A claim
-    // at a standing requirement's id is pre-merged already, so none is
-    // hinted for it.
-    fn all(claims: &[Contributor<'a>], standing: &[Contributor<'a>]) -> Vec<Self> {
-        if standing.is_empty() {
-            return Vec::new();
-        }
-        let mut hints = Vec::new();
-        for claim in claims {
-            let Some(path) = claim.path else { continue };
-            if standing.iter().any(|member| member.id == claim.id) {
-                continue;
-            }
-            let cited = Cited::from(claim);
-            for member in standing {
-                if member.citations.iter().any(|read| cited.overlaps(read)) {
-                    hints.push(Self {
-                        claim: claim.index,
-                        standing: member.index,
-                        path,
-                    });
-                }
-            }
-        }
-        hints
-    }
-}
-
-impl Display for Hint<'_> {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        write!(
-            f,
-            "- claim {} anchors at `{}`, where standing requirement {} was read; they are one \
-             requirement unless the code moved.",
-            self.claim, self.path, self.standing
-        )
     }
 }
 
