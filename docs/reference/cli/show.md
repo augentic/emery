@@ -80,7 +80,7 @@ For `spec`, `design`, `plan`, and `schedule`, the Markdown begins with YAML fron
 
 ```markdown
 ---
-emery: 10
+emery: 11
 revision: 9f8e7d6c…
 ---
 ```

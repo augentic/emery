@@ -1,7 +1,7 @@
 //! Seeds the scripted capabilities with a sealed revision or a staged candidate, as the engine writes one.
 
 use emery_engine::vcs::{REVISION, SPECIFICATION};
-use emery_engine::{EntryKind, STAGED_CONTAINER, STAGED_KEY};
+use emery_engine::{EntryKind, LAYOUTS, STAGED_CONTAINER, STAGED_KEY};
 use omnia_test::guest::Memory;
 use serde_json::Value;
 use sha2::{Digest as _, Sha256};
@@ -29,6 +29,97 @@ pub fn seed(files: &FilesScript, spec: &[u8], design: &[u8], plan: &[u8]) -> Str
         files.holds_bytes(REVISION, &document(name), body);
     }
     revision(spec, design, plan)
+}
+
+// Scripts `layouts`, each a file name and its bytes, under `spec/layouts/` in
+// the tree every revision working copy reads, beside the seeded documents.
+pub fn seed_layouts(files: &FilesScript, layouts: &[(String, Vec<u8>)]) {
+    files.lists(
+        REVISION,
+        SPECIFICATION,
+        &[
+            ("spec.json", EntryKind::File),
+            ("design.json", EntryKind::File),
+            ("plan.json", EntryKind::File),
+            (LAYOUTS, EntryKind::Directory),
+        ],
+    );
+    let names: Vec<(&str, EntryKind)> =
+        layouts.iter().map(|(name, _)| (name.as_str(), EntryKind::File)).collect();
+    files.lists(REVISION, &layouts_dir(), &names);
+    for (name, body) in layouts {
+        files.holds_bytes(REVISION, &layout(name), body);
+    }
+}
+
+// The files `spec/layouts/` holds in the revision working copy, each name and its bytes.
+pub fn sealed_layouts(files: &FilesScript) -> Vec<(String, Vec<u8>)> {
+    let listing = files
+        .listings
+        .lock()
+        .expect("listings")
+        .get(&(REVISION.to_owned(), layouts_dir()))
+        .cloned()
+        .unwrap_or_default();
+    let contents = files.contents.lock().expect("contents");
+    listing
+        .into_iter()
+        .map(|entry| {
+            let body = contents
+                .get(&(REVISION.to_owned(), layout(&entry.name)))
+                .cloned()
+                .flatten()
+                .unwrap_or_default();
+            (entry.name, body)
+        })
+        .collect()
+}
+
+// `design` with a `## UI / layout` section naming `body` as one layout, and
+// the layout's digest; the body's view a placeholder image.
+//
+// The section is spliced in as text in the engine's field order: the engine
+// seals the design as its types write it, and a `Value` would sort the keys,
+// so the staged bytes, and the id they hash to, would not be what is sealed.
+pub fn laid_out(design: &[u8], body: &[u8]) -> (Vec<u8>, String) {
+    let digest = format!("sha256:{}", hex::encode(Sha256::digest(body)));
+    let design = std::str::from_utf8(design).expect("the design is UTF-8");
+    let end = design.rfind("\n  ]\n}").expect("the design ends with its sections");
+    let section = format!(
+        r#",
+    {{
+      "kind": "ui-layout",
+      "blocks": [
+        {{
+          "layout": {{
+            "digest": "{digest}",
+            "media-type": "application/json",
+            "size": {},
+            "source": "page",
+            "views": [
+              {{
+                "label": "320px wide",
+                "media-type": "image/svg+xml",
+                "body": "<svg/>"
+              }}
+            ]
+          }}
+        }}
+      ]
+    }}"#,
+        body.len()
+    );
+    let bytes = format!("{}{section}{}", &design[..end], &design[end..]).into_bytes();
+    (bytes, digest)
+}
+
+// The path a layout of digest hex `hex` lives at in the repository, `spec/layouts/<hex>`.
+pub fn layout(hex: &str) -> String {
+    format!("{}/{hex}", layouts_dir())
+}
+
+fn layouts_dir() -> String {
+    format!("{SPECIFICATION}/{LAYOUTS}")
 }
 
 // Stores the three documents under their content id and stages it as the candidate.
@@ -91,12 +182,18 @@ pub fn staged_at(storage: &Memory, key: &str) -> String {
 
 // Scripts the revision `from` sealed last into the tree `to` reads, as a repository holding it does.
 //
-// Returns the revision id, which is the digest of the written bytes.
+// The layouts `from` holds under `spec/layouts/` are carried beside the
+// documents. Returns the revision id, which is the digest of the written bytes.
 pub fn carry(from: &FilesScript, to: &FilesScript) -> String {
     let spec = written(from, "spec");
     let design = written(from, "design");
     let plan = written(from, "plan");
-    seed(to, &spec, &design, &plan)
+    let id = seed(to, &spec, &design, &plan);
+    let layouts = sealed_layouts(from);
+    if !layouts.is_empty() {
+        seed_layouts(to, &layouts);
+    }
+    id
 }
 
 // The bytes last written to `spec/<name>.json` in the revision working copy.

@@ -8,6 +8,7 @@ This glossary defines the core concepts and terminology used across the `emery` 
   - [Revision](#revision)
   - [Staging slot (Candidate and Amendment)](#staging-slot-candidate-and-amendment)
   - [Sealing](#sealing)
+  - [Layout](#layout)
   - [Label](#label)
   - [Lineage](#lineage)
   - [Standing](#standing)
@@ -38,7 +39,7 @@ A complete, versioned specification bundle consisting of three JSON documents:
 - `design.json`: Concrete architectural sections, external integrations, and data type signatures.
 - `plan.json`: Dependency-ordered logical parts (`PART-001`, `PART-002`, ...) that partition the requirements and data types for code generation.
 
-Every revision is identified by a content-addressed SHA-256 hex digest (`<id>`) computed across all three documents. Markdown views (`spec.md`, `design.md`, `plan.md`) are read-only projections rendered on demand by [`emery show`](reference/cli/show.md).
+Every revision is identified by a content-addressed SHA-256 hex digest (`<id>`) computed across all three documents. A sealed revision also carries the body of every [layout](#layout) its design names under `spec/layouts/<hex>`; the bodies are not part of `<id>`, but each is bound to it through the `sha256:<hex>` digest the design names it by. Markdown views (`spec.md`, `design.md`, `plan.md`) are read-only projections rendered on demand by [`emery show`](reference/cli/show.md).
 
 ### Staging slot (Candidate and Amendment)
 
@@ -51,7 +52,11 @@ To prevent accidental data loss, `emery specify` will not overwrite a staged ame
 
 ### Sealing
 
-The act of committing the currently staged candidate or amendment to the target Git repository via [`emery apply`](reference/cli/apply.md) (or `--apply` on `specify` and `amend`). Sealing writes `spec/spec.json`, `spec/design.json`, and `spec/plan.json` in a single Git commit (`Revision <id>`), creates or advances the Git branch `emery/<id>`, updates the cached revision pointer in `.emery/storage`, and clears the staging area.
+The act of committing the currently staged candidate or amendment to the target Git repository via [`emery apply`](reference/cli/apply.md) (or `--apply` on `specify` and `amend`). Sealing writes `spec/spec.json`, `spec/design.json`, and `spec/plan.json`, plus `spec/layouts/<hex>` for every [layout](#layout) the design names (removing any the design no longer names), in a single Git commit (`Revision <id>`), creates or advances the Git branch `emery/<id>`, updates the cached revision pointer in `.emery/storage`, and clears the staging area. Each layout body is taken from `.emery/storage`, where `emery specify` or `emery amend` stored it, or else from `spec/layouts/` in the commit the seal lands over (so an amendment seals on a fresh clone); when neither holds it, sealing fails with `layout-missing` before anything is written and the staged item stays staged. An amend that records a layout for a source replaces the layouts that source already contributed, rather than keeping both.
+
+### Layout
+
+A UI layout a source adapter recorded whole (for example, the rendered layout of a web page), carried by content rather than by path. The design's `## UI / layout` section names each layout by its `sha256:<hex>` digest, media type, and size, and shows review images rendered from it; the body itself is opaque to the engine. [`emery specify`](reference/cli/specify.md) stores each body under `.emery/storage`, sealing writes it to `spec/layouts/<hex>` (no file extension, since the body may be compressed), and [`emery build`](reference/cli/build.md) reads it from the sealed commit, held to its digest, and hands it whole to every slice. A sealed `spec/layouts/` must hold exactly the layouts the design names; a missing, extra, or rewritten file is `spec-mismatch`.
 
 ### Label
 

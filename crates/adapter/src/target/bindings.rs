@@ -35,8 +35,8 @@ use omnia_sdk::{Error, bad_gateway, bad_request};
 use self::generated::emery::adapter::target as wit;
 use crate::source::bindings::types;
 use crate::target::{
-    DesignType, MergeRule, MergeStrategy, Outcome, Report, Requirement, Scenario, Slice,
-    TargetMetadata, Task, Verdict,
+    AttachedLayout, DesignType, MergeRule, MergeStrategy, Outcome, Report, Requirement, Scenario,
+    Slice, TargetMetadata, Task, Verdict,
 };
 use crate::{Route, Trigger};
 
@@ -141,6 +141,7 @@ impl From<Slice> for wit::Slice {
             spec: slice.spec,
             design: slice.design,
             plan: slice.plan,
+            layouts: slice.layouts.into_iter().map(Into::into).collect(),
         }
     }
 }
@@ -160,6 +161,27 @@ impl From<wit::Slice> for Slice {
             spec: slice.spec,
             design: slice.design,
             plan: slice.plan,
+            layouts: slice.layouts.into_iter().map(Into::into).collect(),
+        }
+    }
+}
+
+impl From<AttachedLayout> for wit::AttachedLayout {
+    fn from(layout: AttachedLayout) -> Self {
+        Self {
+            digest: layout.digest,
+            media_type: layout.media_type,
+            body: layout.body,
+        }
+    }
+}
+
+impl From<wit::AttachedLayout> for AttachedLayout {
+    fn from(layout: wit::AttachedLayout) -> Self {
+        Self {
+            digest: layout.digest,
+            media_type: layout.media_type,
+            body: layout.body,
         }
     }
 }

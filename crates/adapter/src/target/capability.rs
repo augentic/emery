@@ -210,6 +210,23 @@ pub struct Slice {
     pub design: String,
     /// The part's entry in the plan.
     pub plan: String,
+    /// Every layout the design's `ui-layout` section names, in the design's
+    /// order, each held to its digest by the engine.
+    pub layouts: Vec<AttachedLayout>,
+}
+
+/// A layout the design names, delivered whole with every slice.
+///
+/// The engine stored the body when the source answered it and holds it to
+/// [`digest`](Self::digest) before delivery; it never reads the body.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct AttachedLayout {
+    /// The `sha256:<hex>` digest of [`body`](Self::body), as the design names it.
+    pub digest: String,
+    /// The body's media type, as the source declared it.
+    pub media_type: String,
+    /// The recorded layout, byte for byte as the source answered it.
+    pub body: Vec<u8>,
 }
 
 /// One requirement a slice builds, typed beside its rendering in the

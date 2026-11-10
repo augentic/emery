@@ -35,7 +35,7 @@ pub use authority::Rank;
 use emery_adapter::source::Source;
 use emery_adapter::target::Target;
 use omnia_sdk::{BlobStore, Error, Model, Plugins, StateStore, Vcs, bad_request};
-pub use store::{REVISION_KEY, STAGED_CONTAINER, STAGED_KEY};
+pub use store::{LAYOUTS, REVISION_KEY, STAGED_CONTAINER, STAGED_KEY};
 
 // How many times a question to the model, a slice's build, or a wave's
 // verification is put when it fails upstream or runs out of the backend's
@@ -115,6 +115,18 @@ pub trait Files: Send + Sync {
     fn write(
         &self, at: &str, path: &str, bytes: &[u8],
     ) -> impl Future<Output = Result<(), Error>> + Send;
+
+    /// Removes the file at `path` beneath `at`; a path holding nothing is already removed.
+    ///
+    /// No symbolic link is followed: one standing at the path or on the way
+    /// to it refuses the removal, so nothing outside the copy is reached.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::ServerError`] when a link stands at the path or on
+    /// the way to it, a directory stands at the path, or the file cannot be
+    /// removed.
+    fn remove(&self, at: &str, path: &str) -> impl Future<Output = Result<(), Error>> + Send;
 }
 
 /// One entry of a directory a build reads through [`Files::list`].

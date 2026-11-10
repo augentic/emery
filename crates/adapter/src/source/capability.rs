@@ -38,6 +38,7 @@ use crate::source::{Evidence, SourceKind};
 ///     ) -> impl Future<Output = Result<Evidence, Error>> + Send {
 ///         ready(Ok(Evidence {
 ///             claims: vec![Claim::new(ClaimKind::Decision)],
+///             layouts: Vec::new(),
 ///         }))
 ///     }
 ///

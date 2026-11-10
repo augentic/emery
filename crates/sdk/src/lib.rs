@@ -75,8 +75,8 @@ pub mod workspace;
 #[doc(inline)]
 pub use emery_adapter::source::export;
 pub use emery_adapter::source::{
-    Anchor, Backing, BadAnchor, Claim, ClaimKind, Evidence, Source, SourceContent, SourceInput,
-    SourceKind, SourceMetadata,
+    Anchor, Backing, BadAnchor, Claim, ClaimKind, Evidence, Layout, LayoutView, Source,
+    SourceContent, SourceInput, SourceKind, SourceMetadata,
 };
 pub use emery_adapter::{
     BadMessage, BadPath, BadRoute, BadTrigger, METHODS, NoFollow, Route, Standing, Trigger,

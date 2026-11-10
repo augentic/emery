@@ -44,6 +44,8 @@ Before loading the target adapter, `emery build` resolves the target repository 
 - **`repository = "<url>"` (remote clone):** Clones `<url>` into `.emery/vcs/repos/<name>` on first use and fetches `origin/HEAD` on subsequent runs.
 - **Omitted (engine-managed repository):** Uses the repository created by `emery apply` at `.emery/vcs/repos/<name>`. `emery build` never creates a repository itself (`spec-not-generated` if none exists).
 
+Every [layout](../../glossary.md#layout) the design names is read from `spec/layouts/<hex>` in the sealed commit, held to its digest, and handed whole to every slice; `.emery/storage/` is not consulted, so a fresh clone builds the same layouts. A `spec/layouts/` that does not hold exactly the design's layouts is `spec-mismatch`, before any adapter loads.
+
 If a candidate or amendment is currently staged in `.emery/storage/` and differs from the sealed revision being built, `emery build` proceeds with the sealed revision and reports the unsealed item in `candidate` (and prints a reminder line in text mode).
 
 ### Waves, worktrees, and resume behaviour
@@ -153,7 +155,7 @@ Whenever a slice build, merge, or wave verification fails, Emery integrates all 
 | `spec-not-generated` | `2` | No revision is sealed in the target repository, or `emery/<revision>` is behind `HEAD`. | Run `emery apply` to seal a staged candidate, or merge/rebase `emery/<revision>` onto `HEAD`. |
 | `base-not-sealed` | `1` | Under `repository = "."`, the project working tree has uncommitted changes outside `.emery/`, or has no commits. | Commit or stash pending changes (and add `.emery/` to `.gitignore`), then re-run `emery build`. |
 | `repository-required` | `1` | Under `repository = "."`, the project directory is not a Git repository. | Initialize Git (`git init`) and commit, or remove `repository = "."`. |
-| `spec-mismatch` | `1` | Root-level `spec/` was modified or contains non-revision files. | Restore `git checkout emery/<revision> -- spec/`. |
+| `spec-mismatch` | `1` | Root-level `spec/` was modified or contains non-revision files, or `spec/layouts/` does not hold exactly the layouts the design names, each under its digest. | Restore `git checkout emery/<revision> -- spec/`. |
 | `spec-outdated` | `1` | The sealed revision uses an older `emery` grammar stamp. | Regenerate with `emery specify` and `emery apply`. |
 | `merge-unresolved` | `1` | Two slices in a wave conflicted on a deleted/non-text file, or AI merge resolution could not resolve the conflict. | Inspect `.emery/vcs/worktrees/<slice>` and `.emery/vcs/integration`, then re-run `emery build` (which rebuilds over the already-merged slices) or add a merge rule to the adapter. |
 | `verify-failed` | `1` | `Task::Verify` reported failing checks after repair attempts. | Inspect `.emery/vcs/integration`; re-run `emery build` to re-verify without rebuilding the wave's slices, or remove `.emery/vcs/integration` (`git worktree remove --force`) to rebuild the wave from scratch. |

@@ -2,32 +2,61 @@
 //!
 //! Flags known credential filenames (such as private keys, `.env`, and
 //! `.npmrc`) and scans remaining file contents or symlink targets for private
-//! key blocks and token prefixes.
+//! key blocks and token prefixes. A layout whose media type ends in `+gzip`
+//! is inflated first, up to [`INFLATED_CAP`], and the inflated bytes are
+//! scanned the same way.
 
-use omnia_sdk::Error;
+use std::collections::BTreeSet;
+use std::io::Read;
+
+use flate2::read::MultiGzDecoder;
 use omnia_sdk::vcs::{Change, ChangeKind};
+use omnia_sdk::{Error, server_error};
 
 use crate::Files;
+
+// How far a `+gzip` layout may inflate before the seal stops rather than
+// commit bytes it has not scanned.
+const INFLATED_CAP: u64 = 16 * 1024 * 1024;
 
 // Names every change under `at` that carries a credential, `<path>: <what>`,
 // reading only the paths the name rule passes.
 pub async fn findings<F: Files>(
-    files: &F, at: &str, changes: &[Change],
+    files: &F, at: &str, changes: &[Change], gzip: &BTreeSet<String>,
 ) -> Result<Vec<String>, Error> {
     let mut findings = Vec::new();
     for change in changes {
         if change.kind == ChangeKind::Deleted {
             continue;
         }
-        let what = match named(&change.path) {
-            Some(what) => Some(what),
-            None => carried(&files.read(at, &change.path).await?),
+        let what = if let Some(what) = named(&change.path) {
+            Some(what)
+        } else {
+            let bytes = files.read(at, &change.path).await?;
+            let bytes = if gzip.contains(&change.path) { inflate(&bytes)? } else { bytes };
+            carried(&bytes)
         };
         if let Some(what) = what {
             findings.push(format!("{}: {what}", change.path));
         }
     }
     Ok(findings)
+}
+
+// The bytes of every member of a gzip stream, refused past
+// [`INFLATED_CAP`] so a layout the gate cannot read is not sealed.
+fn inflate(bytes: &[u8]) -> Result<Vec<u8>, Error> {
+    let mut inflated = Vec::new();
+    MultiGzDecoder::new(bytes)
+        .take(INFLATED_CAP + 1)
+        .read_to_end(&mut inflated)
+        .map_err(|error| server_error!("reading a compressed layout: {error}"))?;
+    if inflated.len() as u64 > INFLATED_CAP {
+        return Err(server_error!(
+            "a compressed layout inflates past {INFLATED_CAP} bytes, so it is not sealed"
+        ));
+    }
+    Ok(inflated)
 }
 
 // The gate's refusal: what `wrote` left changed carries the credentials

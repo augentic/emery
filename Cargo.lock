@@ -1206,6 +1206,7 @@ dependencies = [
  "emery-cli",
  "emery-engine",
  "emery-sdk",
+ "flate2",
  "hex",
  "omnia",
  "omnia-cursor",
@@ -1259,9 +1260,11 @@ name = "emery-engine"
 version = "0.39.0"
 dependencies = [
  "anyhow",
+ "base64 0.22.1",
  "emery-adapter",
  "emery-lexicon",
  "emery-prose",
+ "flate2",
  "futures",
  "hex",
  "omnia-sdk",

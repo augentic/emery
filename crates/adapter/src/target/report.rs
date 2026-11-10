@@ -57,6 +57,7 @@ impl Report {
     ///     spec: String::new(),
     ///     design: String::new(),
     ///     plan: String::new(),
+    ///     layouts: Vec::new(),
     /// };
     /// let report: Report = serde_json::from_str(
     ///     r#"{ "covered": ["REQ-001", "REQ-002"], "written": ["src/orders.rs", "../x"] }"#,

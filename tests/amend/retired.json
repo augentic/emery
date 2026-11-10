@@ -1,5 +1,5 @@
 {
-  "emery": 10,
+  "emery": 11,
   "base": {
     "revision": "<revision>",
     "commit": "9f8e7d6c5b4a39281706f5e4d3c2b1a0f9e8d7c6"
@@ -55,7 +55,7 @@
     }
   ],
   "spec": {
-    "emery": 10,
+    "emery": 11,
     "parent": "<revision>",
     "preamble": [
       "Sign-in, its session, and orders over both."
@@ -150,7 +150,7 @@
     ]
   },
   "design": {
-    "emery": 10,
+    "emery": 11,
     "parent": "<revision>",
     "preamble": [],
     "sections": [
@@ -184,7 +184,7 @@
     ]
   },
   "plan": {
-    "emery": 10,
+    "emery": 11,
     "parent": "<revision>",
     "preamble": [
       "Two slices: sign-in with its session, and orders over it."

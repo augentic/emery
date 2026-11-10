@@ -379,7 +379,10 @@ fn contract_of_a_trigger() {
             Trigger::Message("orders.cancel-requested".to_owned())
         ]
     );
-    let evidence = Evidence { claims: contracts };
+    let evidence = Evidence {
+        claims: contracts,
+        ..Evidence::default()
+    };
     assert!(evidence.findings().is_empty(), "{:?}", evidence.findings());
 }
 

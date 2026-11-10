@@ -13,6 +13,7 @@ use std::fmt::{self, Display, Formatter};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
+use crate::source::Layout;
 use crate::{BadMessage, BadPath, BadRoute, BadTrigger, Trigger, beneath, is_kebab};
 
 /// The regular expression for dotted, kebab-case claim identifiers.
@@ -158,6 +159,13 @@ impl std::error::Error for BadAnchor {
 pub struct Evidence {
     /// The claims in source extraction order.
     pub claims: Vec<Claim>,
+    /// The layouts the source recorded whole, in source order.
+    ///
+    /// They cross the contract alone: a model's answer never carries one,
+    /// so the field is neither in the answer's schema nor in its JSON.
+    #[serde(skip)]
+    #[schemars(skip)]
+    pub layouts: Vec<Layout>,
 }
 
 impl Evidence {
@@ -185,7 +193,11 @@ impl Evidence {
     /// ```
     #[must_use]
     pub fn findings(&self) -> Vec<String> {
-        self.claims.iter().enumerate().flat_map(|(index, claim)| claim.findings(index)).collect()
+        let claims =
+            self.claims.iter().enumerate().flat_map(|(index, claim)| claim.findings(index));
+        let layouts =
+            self.layouts.iter().enumerate().flat_map(|(index, layout)| layout.findings(index));
+        claims.chain(layouts).collect()
     }
 }
 

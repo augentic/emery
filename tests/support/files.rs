@@ -25,6 +25,8 @@ pub struct FilesScript {
     pub listed: Arc<Mutex<Vec<(String, String)>>>,
     // Every write, in order: the working copy, the path, and the bytes.
     pub writes: Arc<Mutex<Vec<Write>>>,
+    // Every removal, in order: the working copy and the path.
+    pub removals: Arc<Mutex<Vec<(String, String)>>>,
 }
 
 impl FilesScript {
@@ -70,6 +72,11 @@ impl FilesScript {
         self.writes.lock().expect("writes").clone()
     }
 
+    // Returns every removal so far, in order.
+    pub fn removals(&self) -> Vec<(String, String)> {
+        self.removals.lock().expect("removals").clone()
+    }
+
     fn script(&self, at: &str, path: &str, content: Option<Vec<u8>>) {
         self.contents.lock().expect("contents").insert((at.to_owned(), path.to_owned()), content);
     }
@@ -106,6 +113,18 @@ impl Files for FilesScript {
         self.writes.lock().expect("writes").push((at.to_owned(), path.to_owned(), bytes.to_vec()));
         self.script(at, path, Some(bytes.to_vec()));
         self.place(at, path);
+        async move { Ok(()) }
+    }
+
+    fn remove(&self, at: &str, path: &str) -> impl Future<Output = Result<(), Error>> + Send {
+        self.removals.lock().expect("removals").push((at.to_owned(), path.to_owned()));
+        self.contents.lock().expect("contents").remove(&(at.to_owned(), path.to_owned()));
+        let (directory, name) = path.rsplit_once('/').unwrap_or((".", path));
+        if let Some(entries) =
+            self.listings.lock().expect("listings").get_mut(&(at.to_owned(), directory.to_owned()))
+        {
+            entries.retain(|entry| entry.name != name);
+        }
         async move { Ok(()) }
     }
 }

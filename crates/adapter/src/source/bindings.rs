@@ -32,7 +32,8 @@ use omnia_sdk::{Error, bad_gateway, bad_request};
 use self::generated::emery::adapter::source as wit;
 pub use self::generated::emery::adapter::types;
 use crate::source::{
-    Backing, Claim, ClaimKind, Evidence, SourceContent, SourceInput, SourceKind, SourceMetadata,
+    Backing, Claim, ClaimKind, Evidence, Layout, LayoutView, SourceContent, SourceInput,
+    SourceKind, SourceMetadata,
 };
 
 /// The WebAssembly guest interface implemented by a source adapter.
@@ -245,6 +246,7 @@ impl From<Evidence> for wit::Evidence {
     fn from(evidence: Evidence) -> Self {
         Self {
             claims: evidence.claims.into_iter().map(Into::into).collect(),
+            layouts: evidence.layouts.into_iter().map(Into::into).collect(),
         }
     }
 }
@@ -255,7 +257,48 @@ impl TryFrom<wit::Evidence> for Evidence {
     fn try_from(evidence: wit::Evidence) -> Result<Self, String> {
         Ok(Self {
             claims: evidence.claims.into_iter().map(TryInto::try_into).collect::<Result<_, _>>()?,
+            layouts: evidence.layouts.into_iter().map(Into::into).collect(),
         })
+    }
+}
+
+impl From<Layout> for wit::Layout {
+    fn from(layout: Layout) -> Self {
+        Self {
+            media_type: layout.media_type,
+            body: layout.body,
+            views: layout.views.into_iter().map(Into::into).collect(),
+        }
+    }
+}
+
+impl From<wit::Layout> for Layout {
+    fn from(layout: wit::Layout) -> Self {
+        Self {
+            media_type: layout.media_type,
+            body: layout.body,
+            views: layout.views.into_iter().map(Into::into).collect(),
+        }
+    }
+}
+
+impl From<LayoutView> for wit::LayoutView {
+    fn from(view: LayoutView) -> Self {
+        Self {
+            label: view.label,
+            media_type: view.media_type,
+            body: view.body,
+        }
+    }
+}
+
+impl From<wit::LayoutView> for LayoutView {
+    fn from(view: wit::LayoutView) -> Self {
+        Self {
+            label: view.label,
+            media_type: view.media_type,
+            body: view.body,
+        }
     }
 }
 

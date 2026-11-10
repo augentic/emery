@@ -274,6 +274,7 @@ impl<'a> Outline<'a> {
                 revision::Block::Type { key, signature, .. } => {
                     outline.types.entry(key.clone()).or_insert(signature.as_str());
                 }
+                revision::Block::Layout(_) => {}
             }
         }
         outline

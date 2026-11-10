@@ -32,11 +32,11 @@ pub(crate) use self::spec::SpecBrief;
 use crate::adapter::{self, AdapterRef, Loaded};
 pub use crate::apply::ApplyOutput;
 use crate::brief::Brief as _;
-use crate::revision::Revision;
 pub use crate::revision::{
     BadId, Changed, DesignDiff, Diff, Entry, PartEntry, PartId, PlanDiff, ReqId, Retired, Role,
     SectionKind, SpecDiff, Waves,
 };
+use crate::revision::{Layout, LayoutView, Revision};
 use crate::vcs::{SourceClone, TargetRef, WorkingCopy};
 use crate::{Files, Rank, apply, preopen_path, store, vcs};
 
@@ -140,6 +140,8 @@ pub async fn specify<P: Model + Source + StateStore + BlobStore + Plugins + Vcs 
     )
     .await?;
     let spec = SpecBrief::assemble(drafts);
+    let mut design = design;
+    design.attach(layouts(provider, &extracts).await?);
     let waves = plan.waves();
 
     // the candidate staged for review, with the diff against the revision a
@@ -456,6 +458,36 @@ impl<'a> Bound<'a> {
             evidence,
         })
     }
+}
+
+// Every layout `extracts` recorded, each body stored by its digest, as the
+// blocks `## UI / layout` names them by, in source order.
+pub(crate) async fn layouts<S: BlobStore>(
+    store: &S, extracts: &[Extract],
+) -> Result<Vec<Layout>, Error> {
+    let mut layouts = Vec::new();
+    for extract in extracts {
+        for layout in &extract.evidence.layouts {
+            let digest = store::put_layout(store, &layout.body).await?;
+            tracing::info!(source = %extract.source, %digest, bytes = layout.body.len(), "stored layout");
+            layouts.push(Layout {
+                digest,
+                media_type: layout.media_type.clone(),
+                size: layout.body.len() as u64,
+                source: extract.source.clone(),
+                views: layout
+                    .views
+                    .iter()
+                    .map(|view| LayoutView {
+                        label: view.label.clone(),
+                        media_type: view.media_type.clone(),
+                        body: view.body.clone(),
+                    })
+                    .collect(),
+            });
+        }
+    }
+    Ok(layouts)
 }
 
 // What the run extracted from `bound`: every source's evidence in

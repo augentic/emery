@@ -146,8 +146,11 @@ const APPLY_DESC: &str = "Seal the staged candidate or amendment as the current 
     names — a URL, cloned under `.emery/vcs/repos/<name>`; `.`, the project checkout; or, \
     with none, a repository created once at `.emery/vcs/repos/<name>` and kept — as one \
     commit over the head, holding `spec/spec.json`, `spec/design.json`, and \
-    `spec/plan.json`, labelled `emery/<revision>`; `--repository` takes the place of the \
-    table's. An amendment seals its three documents over the commit its base was read at, \
+    `spec/plan.json`, with each layout the design names under `spec/layouts/<hex>`, \
+    labelled `emery/<revision>`; `--repository` takes the place of the table's. A layout \
+    is taken from the engine's storage, where `emery specify` put it, or from the tree the \
+    seal lands over; with neither the verb fails with `layout-missing` and the candidate \
+    stays staged. An amendment seals its three documents over the commit its base was read at, \
     the commit naming the base as the parent and carrying what changed, and only while \
     that base is still the current revision there; otherwise the verb fails with \
     `amendment-stale` and the amendment stays staged for `emery amend` to prepare again. \
@@ -466,6 +469,9 @@ impl Invoked {
                 "compare the claim's id against `emery show spec` and remove or reword the withdrawal"
             }
             "spec-outdated" => "re-run `emery specify <adapter>...` to regenerate the revision",
+            "layout-missing" => {
+                "re-run `emery specify <adapter>...` here to store the layout, then `emery apply`"
+            }
             "repository-required" => {
                 "run `git init` and commit, set `[target] repository` to a URL, or drop the key"
             }

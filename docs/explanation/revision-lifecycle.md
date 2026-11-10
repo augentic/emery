@@ -26,7 +26,7 @@ This page explains how Emery stages, seals, and resolves specification revisions
 Emery separates unreviewed specification drafts from committed specifications across two distinct locations:
 
 1. **Local staging area (`.emery/storage/`):** Holds at most one unsealed draft (either a candidate revision or an incremental amendment) for local review.
-2. **Target Git repository (`spec/` on branch `emery/<id>`):** Holds the sealed, authoritative revision as three JSON files (`spec/spec.json`, `spec/design.json`, and `spec/plan.json`).
+2. **Target Git repository (`spec/` on branch `emery/<id>`):** Holds the sealed, authoritative revision as three JSON files (`spec/spec.json`, `spec/design.json`, and `spec/plan.json`), plus the body of every [layout](../glossary.md#layout) the design names under `spec/layouts/<hex>`.
 
 Commands that author specifications ([`emery specify`](../reference/cli/specify.md) and [`emery amend`](../reference/cli/amend.md)) write to the staging area first. Commands that consume sealed specifications ([`emery build`](../reference/cli/build.md) and bare [`emery show`](../reference/cli/show.md)) read exclusively from the target Git repository.
 
@@ -80,8 +80,8 @@ Running [`emery apply`](../reference/cli/apply.md) (or passing `--apply` to `spe
    - For a **candidate**, Emery starts from the currently sealed revision's commit (or `HEAD` if no revision is sealed yet).
    - For an **amendment**, Emery verifies that the target repository still stands at the exact base revision and commit the amendment was prepared against (`amendment-stale` if it moved), and starts from that commit.
    - For a **fresh candidate** (`specify --fresh`), Emery starts directly from the repository's `HEAD` commit.
-2. **Writes `spec/` in a temporary worktree:** Emery creates a temporary Git worktree at `.emery/vcs/revision`, verifies that `spec/` does not contain unrelated user files, and writes `spec/spec.json`, `spec/design.json`, and `spec/plan.json`.
-3. **Runs the secret gate:** Emery scans the three JSON documents for accidentally embedded credentials ([Security and sandboxing](security-and-sandbox.md#the-secret-gate-secret-detected)) before creating a commit.
+2. **Writes `spec/` in a temporary worktree:** Emery creates a temporary Git worktree at `.emery/vcs/revision`, verifies that `spec/` does not contain unrelated user files, and writes `spec/spec.json`, `spec/design.json`, and `spec/plan.json`. It also writes `spec/layouts/<hex>` for every layout the design names and removes any layout the design no longer names. Each layout body comes from `.emery/storage/` (where `specify` or `amend` stored it) or, failing that, from `spec/layouts/` in the base commit, held to its digest; with neither, sealing stops with `layout-missing` before writing anything. The revision `<id>` still covers the three documents alone; the design binds each layout by digest.
+3. **Runs the secret gate:** Emery scans what changed — the three JSON documents and any layout written — for accidentally embedded credentials ([Security and sandboxing](security-and-sandbox.md#the-secret-gate-secret-detected)) before creating a commit. A layout whose media type ends in `+gzip` is inflated, up to 16 MiB, and scanned as those bytes.
 4. **Commits and labels:** Emery creates a single commit, sets the local branch `emery/<id>` to point to that commit, updates the `current-revision` cache pointer in `.emery/storage/`, removes the temporary worktree, and clears the staging area.
 
 Sealing never modifies your project's checked-out working tree or moves your active Git branch.

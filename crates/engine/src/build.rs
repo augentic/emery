@@ -13,7 +13,9 @@ mod schedule;
 use std::collections::BTreeSet;
 use std::num::NonZeroUsize;
 
-use emery_adapter::target::{DesignType, Outcome, Slice as SliceInput, Target, Task};
+use emery_adapter::target::{
+    AttachedLayout, DesignType, Outcome, Slice as SliceInput, Target, Task,
+};
 use emery_adapter::{BadPath, SPECIFICATION, beneath};
 use futures::{FutureExt as _, StreamExt as _, stream};
 use omnia_sdk::api::Context;
@@ -76,8 +78,9 @@ use crate::{EntryKind, Files, RETRIES, describe, is_retryable, secrets, store, v
 ///   - with code `spec-outdated`, when the stored revision uses another
 ///     grammar;
 ///   - with code `spec-mismatch`, when `spec/` in the repository is not the
-///     three documents of a revision, or does not match the revision its
-///     label names;
+///     three documents of a revision, does not match the revision its
+///     label names, or holds under `spec/layouts/` other than exactly the
+///     layouts the design names, each under its digest;
 ///   - an adapter [`specify`](crate::specify::specify) would refuse: one that
 ///     is not a target adapter ([`Axis::Target`](crate::Axis)), an
 ///     incompatible one (code `unsupported-version`), a release the store
@@ -143,6 +146,8 @@ pub async fn build<P: Model + Target + StateStore + BlobStore + Plugins + Vcs + 
         .filter(|(id, _)| *id != revision_id)
         .map(|(id, kind)| Candidate { id, kind });
 
+    let layouts = attached(&revision.design, &current.layouts)?;
+
     let Loaded {
         id: adapter,
         metadata,
@@ -185,9 +190,10 @@ pub async fn build<P: Model + Target + StateStore + BlobStore + Plugins + Vcs + 
         "building"
     );
 
-    // every slice carries the whole design, rendered once, and every merge
-    // the adapter's rules
-    let rendered = revision.design.to_string();
+    // every slice carries the whole design, rendered once less the layouts'
+    // images, and every merge the adapter's rules
+    let rendered = revision.design.without_views().to_string();
+
     let policy = vcs::rules(&metadata.merge_rules);
     let run = Run {
         adapter: &adapter,
@@ -197,6 +203,7 @@ pub async fn build<P: Model + Target + StateStore + BlobStore + Plugins + Vcs + 
         spec: &revision.spec,
         design: &revision.design,
         rendered: &rendered,
+        layouts: &layouts,
         schedule: &schedule,
         budget: budget.get(),
         repo: &repo,
@@ -436,6 +443,7 @@ pub(crate) struct Run<'a> {
     design: &'a Design,
     // the design as every slice carries it
     rendered: &'a str,
+    layouts: &'a [AttachedLayout],
     schedule: &'a Schedule<'a>,
     budget: usize,
     repo: &'a BuildRepo,
@@ -578,6 +586,7 @@ impl<'a> Run<'a> {
             design: self.rendered.to_owned(),
             plan: part.to_string(),
             base: head.to_owned(),
+            layouts: self.layouts.to_vec(),
         };
         tracing::info!(requirements = input.requirements.len(), wave, "building slice");
 
@@ -876,11 +885,29 @@ async fn gated<P: Files>(
             ),
         });
     }
-    let leaks = secrets::findings(provider, at, pending).await?;
+    let leaks = secrets::findings(provider, at, pending, &BTreeSet::new()).await?;
     if !leaks.is_empty() {
         return Err(secrets::refusal(wrote, &leaks));
     }
     Ok(())
+}
+
+// Every layout `design` names, as the sealed tree holds it in `bodies`,
+// whole and held to its digest when the revision was read.
+fn attached(design: &Design, bodies: &store::Bodies) -> Result<Vec<AttachedLayout>, Error> {
+    design
+        .layouts()
+        .map(|layout| {
+            let body = bodies.get(&layout.digest).cloned().ok_or_else(|| {
+                server_error!("the sealed revision carries no body for layout `{}`", layout.digest)
+            })?;
+            Ok(AttachedLayout {
+                digest: layout.digest.to_string(),
+                media_type: layout.media_type.clone(),
+                body,
+            })
+        })
+        .collect()
 }
 
 // The file a created repository's `Initialise` commit holds beside what the

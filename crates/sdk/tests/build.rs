@@ -75,6 +75,7 @@ fn slice() -> Slice {
         spec: "## REQ-001\n\nOrders are created.\n\n## REQ-002\n\nOrders are listed.\n".to_owned(),
         design: "## Types\n\n`Order`\n".to_owned(),
         plan: "## SLICE-001 orders\n\nBuild the orders module.\n".to_owned(),
+        layouts: vec![],
     }
 }
 

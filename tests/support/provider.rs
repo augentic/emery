@@ -25,7 +25,7 @@ use tokio::sync::Barrier;
 use super::files::FilesScript;
 use super::vcs::VcsScript;
 
-const GREETING: &str = "GET /greeting returns the static string 'hello'.";
+pub const GREETING: &str = "GET /greeting returns the static string 'hello'.";
 
 // Long enough for an in-process run, short enough that a serialising engine
 // fails the scenario instead of hanging it.
@@ -566,6 +566,10 @@ impl<S: Send + Sync + 'static> Files for Provider<S> {
     ) -> impl Future<Output = Result<(), Error>> + Send {
         Files::write(&self.files, at, path, bytes)
     }
+
+    fn remove(&self, at: &str, path: &str) -> impl Future<Output = Result<(), Error>> + Send {
+        Files::remove(&self.files, at, path)
+    }
 }
 
 // Runs one CLI invocation in-process, returning the raw response.
@@ -601,5 +605,8 @@ pub fn retire(id: &str, statement: &str) -> Claim {
 
 // Builds an evidence document over `claims`.
 pub const fn evidence(claims: Vec<Claim>) -> Evidence {
-    Evidence { claims }
+    Evidence {
+        claims,
+        layouts: Vec::new(),
+    }
 }

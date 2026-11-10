@@ -117,11 +117,38 @@ interface source {
     extras: list<tuple<string, string>>,
   }
 
+  /// An image rendered from a layout for review, shown in the design beside
+  /// the layout's digest.
+  record layout-view {
+    /// What the image shows, such as `1280px wide`.
+    label: string,
+    /// The image's media type, such as `image/svg+xml`.
+    media-type: string,
+    /// The image as text, such as an SVG document.
+    body: string,
+  }
+
+  /// A layout the source recorded whole, carried by content rather than by
+  /// path. The engine stores `body` content-addressed and never reads it:
+  /// the design's `ui-layout` section names it by digest and shows `views`,
+  /// the seal writes it beside the revision under `spec/layouts/<hex>`, and
+  /// every slice a target builds carries it from there.
+  record layout {
+    /// The body's media type, which tells a target how to read it.
+    media-type: string,
+    /// The recorded layout, opaque to the engine.
+    body: list<u8>,
+    /// Images rendered from `body`, in the order the design shows them.
+    views: list<layout-view>,
+  }
+
   /// The claim set an extraction returns. The kind of source it was read
   /// from is the adapter's, reported by `metadata`, never carried here.
   record evidence {
     /// The claims extracted from the source.
     claims: list<claim>,
+    /// The layouts the source recorded whole, in source order.
+    layouts: list<layout>,
   }
 
   /// What a source adapter declares about itself, as compiled-in
@@ -261,6 +288,16 @@ interface target {
     signature: string,
   }
 
+  /// A layout the design's `ui-layout` section names, delivered whole.
+  record attached-layout {
+    /// The `sha256:<hex>` digest of `body`, as the design names it.
+    digest: string,
+    /// The body's media type, as the source declared it.
+    media-type: string,
+    /// The recorded layout, byte for byte as the source answered it.
+    body: list<u8>,
+  }
+
   /// One slice of the build schedule, cut from one part of the plan. A
   /// target is value-in; it never reads the revision store.
   record slice {
@@ -295,6 +332,10 @@ interface target {
     /// The part's entry in the plan: the requirements it builds, the design
     /// types it owns, the parts built before it, and its brief.
     plan: string,
+    /// Every layout the design's `ui-layout` section names, in the
+    /// design's order, read from the sealed revision's `spec/layouts/` and
+    /// each held to its digest by the engine.
+    layouts: list<attached-layout>,
   }
 
   /// What a build reports beyond the tree it wrote.
