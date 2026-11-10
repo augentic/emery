@@ -878,7 +878,7 @@ async fn created_repository() {
 // project checkout that is no repository or has no commit, and a credential
 // among what the seal would commit.
 #[tokio::test]
-async fn nothing_staged() {
+async fn unsealable_project() {
     // the operator's own `spec/`
     let provider = Provider::idle();
     stage(&provider.storage, SPEC, DESIGN, PLAN);
