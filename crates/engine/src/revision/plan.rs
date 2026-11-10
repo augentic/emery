@@ -16,8 +16,6 @@ pub const TYPES: &str = "Types:";
 pub const USES: &str = "Uses:";
 pub const DEPENDS_ON: &str = "Depends on:";
 
-const HEADING: &str = "## Part:";
-
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Plan {
@@ -76,6 +74,16 @@ impl Plan {
             .iter()
             .copied()
             .filter(move |&dependency| dependency != part.id && self.part(dependency).is_some())
+    }
+}
+
+impl revision::Document for Plan {
+    const NAME: &'static str = "plan";
+}
+
+impl Display for Plan {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        revision::write(f, "Plan", &self.preamble, &self.parts)
     }
 }
 
@@ -153,6 +161,22 @@ impl<T> Waves<T> {
     }
 }
 
+impl Waves<PartId> {
+    /// Returns how many parts the waves hold between them.
+    #[must_use]
+    pub fn parts(&self) -> usize {
+        self.total()
+    }
+}
+
+impl Waves<crate::revision::SliceId> {
+    /// Returns how many slices the waves hold between them.
+    #[must_use]
+    pub fn slices(&self) -> usize {
+        self.total()
+    }
+}
+
 impl<T: Display> Display for Waves<T> {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         for (position, wave) in self.0.iter().enumerate() {
@@ -172,31 +196,7 @@ impl<T: Display> Display for Waves<T> {
     }
 }
 
-impl Waves<PartId> {
-    /// Returns how many parts the waves hold between them.
-    #[must_use]
-    pub fn parts(&self) -> usize {
-        self.total()
-    }
-}
-
-impl Waves<crate::revision::SliceId> {
-    /// Returns how many slices the waves hold between them.
-    #[must_use]
-    pub fn slices(&self) -> usize {
-        self.total()
-    }
-}
-
-impl revision::Document for Plan {
-    const NAME: &'static str = "plan";
-}
-
-impl Display for Plan {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        revision::write(f, "Plan", &self.preamble, &self.parts)
-    }
-}
+const HEADING: &str = "## Part:";
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]

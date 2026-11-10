@@ -209,6 +209,18 @@ fn digest(bodies: &[&[u8]]) -> String {
     hex::encode(hasher.finalize())
 }
 
+// A `Key: [a, b]` line with no trailing newline.
+pub fn write_list<T: Display>(f: &mut Formatter<'_>, key: &str, items: &[T]) -> fmt::Result {
+    write!(f, "{key} [")?;
+    for (position, item) in items.iter().enumerate() {
+        if position > 0 {
+            f.write_str(", ")?;
+        }
+        write!(f, "{item}")?;
+    }
+    f.write_str("]")
+}
+
 fn write<T: Display>(
     f: &mut Formatter<'_>, title: &str, preamble: &[String], blocks: &[T],
 ) -> fmt::Result {
@@ -220,16 +232,4 @@ fn write<T: Display>(
         write!(f, "\n\n{block}")?;
     }
     f.write_str("\n")
-}
-
-// A `Key: [a, b]` line with no trailing newline.
-pub fn write_list<T: Display>(f: &mut Formatter<'_>, key: &str, items: &[T]) -> fmt::Result {
-    write!(f, "{key} [")?;
-    for (position, item) in items.iter().enumerate() {
-        if position > 0 {
-            f.write_str(", ")?;
-        }
-        write!(f, "{item}")?;
-    }
-    f.write_str("]")
 }

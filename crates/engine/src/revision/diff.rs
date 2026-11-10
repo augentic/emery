@@ -109,6 +109,36 @@ impl SpecDiff {
     }
 }
 
+// Destructured whole, so a field added to the record is compared here or
+// fails to compile.
+fn differences(before: &Requirement, after: &Requirement) -> Vec<&'static str> {
+    let Requirement {
+        id,
+        subject,
+        status,
+        covered,
+        trigger,
+        sources,
+        body,
+        losers,
+        scenarios,
+    } = before;
+    [
+        ("id", *id != after.id),
+        ("subject", *subject != after.subject),
+        ("status", *status != after.status),
+        ("covered", *covered != after.covered),
+        ("trigger", *trigger != after.trigger),
+        ("sources", *sources != after.sources),
+        ("body", *body != after.body),
+        ("losers", *losers != after.losers),
+        ("scenarios", *scenarios != after.scenarios),
+    ]
+    .into_iter()
+    .filter_map(|(name, differs)| differs.then_some(name))
+    .collect()
+}
+
 struct Pairing<'a> {
     paired: Vec<(&'a Requirement, &'a Requirement)>,
     added: Vec<&'a Requirement>,
@@ -337,55 +367,6 @@ impl PlanDiff {
     }
 }
 
-/// A part identified in a revision diff.
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "kebab-case")]
-pub struct PartEntry {
-    /// The stable part identifier.
-    pub id: PartId,
-    /// The part name.
-    pub name: String,
-}
-
-impl From<&Part> for PartEntry {
-    fn from(part: &Part) -> Self {
-        Self {
-            id: part.id,
-            name: part.name.clone(),
-        }
-    }
-}
-
-// Destructured whole, so a field added to the record is compared here or
-// fails to compile.
-fn differences(before: &Requirement, after: &Requirement) -> Vec<&'static str> {
-    let Requirement {
-        id,
-        subject,
-        status,
-        covered,
-        trigger,
-        sources,
-        body,
-        losers,
-        scenarios,
-    } = before;
-    [
-        ("id", *id != after.id),
-        ("subject", *subject != after.subject),
-        ("status", *status != after.status),
-        ("covered", *covered != after.covered),
-        ("trigger", *trigger != after.trigger),
-        ("sources", *sources != after.sources),
-        ("body", *body != after.body),
-        ("losers", *losers != after.losers),
-        ("scenarios", *scenarios != after.scenarios),
-    ]
-    .into_iter()
-    .filter_map(|(name, differs)| differs.then_some(name))
-    .collect()
-}
-
 // The field name a changed part's `fields` carries where its brief differs.
 pub const BRIEF: &str = "brief";
 
@@ -410,4 +391,23 @@ fn part_differences(before: &Part, after: &Part) -> Vec<&'static str> {
     .into_iter()
     .filter_map(|(name, differs)| differs.then_some(name))
     .collect()
+}
+
+/// A part identified in a revision diff.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub struct PartEntry {
+    /// The stable part identifier.
+    pub id: PartId,
+    /// The part name.
+    pub name: String,
+}
+
+impl From<&Part> for PartEntry {
+    fn from(part: &Part) -> Self {
+        Self {
+            id: part.id,
+            name: part.name.clone(),
+        }
+    }
 }

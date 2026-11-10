@@ -130,12 +130,12 @@ fn segment(part: &str) -> Option<String> {
         .then(|| part.to_owned())
 }
 
-const fn is_name_char(ch: char) -> bool {
-    ch.is_ascii_alphanumeric() || ch == '_'
-}
-
 fn param_name(text: &str) -> Option<&str> {
     (!text.is_empty() && text.chars().all(is_name_char)).then_some(text)
+}
+
+const fn is_name_char(ch: char) -> bool {
+    ch.is_ascii_alphanumeric() || ch == '_'
 }
 
 /// The rule a route breaks.

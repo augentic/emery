@@ -239,34 +239,6 @@ pub struct SourceConfig {
     pub scope: Scope,
 }
 
-/// How much of its subject a [`SourceConfig`] states.
-///
-/// Read by [`amend`](crate::amend::amend) alone: a `specify` drafts from
-/// what its sources state whatever their scope.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "kebab-case")]
-pub enum Scope {
-    /// The source states only what changes, and behaviour it is silent on stands.
-    #[default]
-    Delta,
-    /// The source states its subject's behaviour whole.
-    ///
-    /// A behaviour source read whole retires every standing requirement
-    /// under a stem its requirement claims cover that no claim of the change
-    /// touches. A prose source's scope is ignored.
-    Whole,
-}
-
-/// A repository a source is read from, at a revision.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "kebab-case")]
-pub struct SourceRepository {
-    /// The URL the repository is cloned from.
-    pub url: String,
-    /// The label, tag, or commit the source is read at, resolved each run.
-    pub revision: String,
-}
-
 impl SourceConfig {
     // The one place an operator root meets the guest preopen.
     fn prepare(&self) -> Result<SourceInput, Error> {
@@ -311,6 +283,34 @@ impl SourceConfig {
             content,
         })
     }
+}
+
+/// How much of its subject a [`SourceConfig`] states.
+///
+/// Read by [`amend`](crate::amend::amend) alone: a `specify` drafts from
+/// what its sources state whatever their scope.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum Scope {
+    /// The source states only what changes, and behaviour it is silent on stands.
+    #[default]
+    Delta,
+    /// The source states its subject's behaviour whole.
+    ///
+    /// A behaviour source read whole retires every standing requirement
+    /// under a stem its requirement claims cover that no claim of the change
+    /// touches. A prose source's scope is ignored.
+    Whole,
+}
+
+/// A repository a source is read from, at a revision.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub struct SourceRepository {
+    /// The URL the repository is cloned from.
+    pub url: String,
+    /// The label, tag, or commit the source is read at, resolved each run.
+    pub revision: String,
 }
 
 /// The candidate staged by a successful [`specify`] operation.

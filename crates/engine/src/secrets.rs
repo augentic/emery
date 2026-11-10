@@ -19,6 +19,59 @@ use crate::Files;
 // commit bytes it has not scanned.
 const INFLATED_CAP: u64 = 16 * 1024 * 1024;
 
+// Names every change under `at` that carries a credential, `<path>: <what>`,
+// reading only the paths the name rule passes.
+pub async fn findings<F: Files>(
+    files: &F, at: &str, changes: &[Change], gzip: &BTreeSet<String>,
+) -> Result<Vec<String>, Error> {
+    let mut findings = Vec::new();
+    for change in changes {
+        if change.kind == ChangeKind::Deleted {
+            continue;
+        }
+        let what = if let Some(what) = named(&change.path) {
+            Some(what)
+        } else {
+            let bytes = files.read(at, &change.path).await?;
+            let bytes = if gzip.contains(&change.path) { inflate(&bytes)? } else { bytes };
+            carried(&bytes)
+        };
+        if let Some(what) = what {
+            findings.push(format!("{}: {what}", change.path));
+        }
+    }
+    Ok(findings)
+}
+
+// The bytes of every member of a gzip stream, refused past
+// [`INFLATED_CAP`] so a layout the gate cannot read is not sealed.
+fn inflate(bytes: &[u8]) -> Result<Vec<u8>, Error> {
+    let mut inflated = Vec::new();
+    MultiGzDecoder::new(bytes)
+        .take(INFLATED_CAP + 1)
+        .read_to_end(&mut inflated)
+        .map_err(|error| server_error!("reading a compressed layout: {error}"))?;
+    if inflated.len() as u64 > INFLATED_CAP {
+        return Err(server_error!(
+            "a compressed layout inflates past {INFLATED_CAP} bytes, so it is not sealed"
+        ));
+    }
+    Ok(inflated)
+}
+
+// The gate's refusal: what `wrote` left changed carries the credentials
+// listed, and none of it is sealed.
+pub fn refusal(wrote: &str, leaks: &[String]) -> Error {
+    let listed: Vec<String> = leaks.iter().map(|leak| format!("- {leak}")).collect();
+    Error::BadRequest {
+        code: "secret-detected".into(),
+        description: format!(
+            "what {wrote} wrote carries a credential, so none of it is sealed:\n{}",
+            listed.join("\n")
+        ),
+    }
+}
+
 // Files that carry a credential by name, matched on the final path segment.
 const CARRIERS: [&str; 10] = [
     "id_rsa",
@@ -33,37 +86,36 @@ const CARRIERS: [&str; 10] = [
     ".env",
 ];
 
+fn named(path: &str) -> Option<&'static str> {
+    let mut segments = path.rsplit('/');
+    let name = segments.next()?;
+    if CARRIERS.contains(&name) || (name == "credentials" && segments.next() == Some(".aws")) {
+        return Some("a file that carries a credential by name");
+    }
+    None
+}
+
+fn carried(bytes: &[u8]) -> Option<&'static str> {
+    if pem_private_key(bytes) {
+        return Some("a PEM private key block");
+    }
+    SHAPES.iter().chain([&AUTH_TOKEN]).find(|shape| shape.matches(bytes)).map(|shape| shape.what)
+}
+
 const PEM_HEAD: &[u8] = b"-----BEGIN ";
 const PEM_DASHES: &[u8] = b"-----";
 const PEM_PRIVATE: &[u8] = b"PRIVATE KEY";
 
-// The bytes a token's run may hold after its prefix.
-#[derive(Clone, Copy)]
-enum Run {
-    // `[A-Z0-9]`
-    Upper,
-    // `[A-Za-z0-9]`
-    Alnum,
-    // `[A-Za-z0-9_-]`
-    Token,
-}
-
-impl Run {
-    const fn admits(self, byte: u8) -> bool {
-        match self {
-            Self::Upper => byte.is_ascii_uppercase() || byte.is_ascii_digit(),
-            Self::Alnum => byte.is_ascii_alphanumeric(),
-            Self::Token => byte.is_ascii_alphanumeric() || byte == b'_' || byte == b'-',
-        }
-    }
-}
-
-// One credential shape: a fixed prefix, then at least `least` bytes of `run`.
-struct Shape {
-    prefix: &'static [u8],
-    run: Run,
-    least: usize,
-    what: &'static str,
+// A `-----BEGIN <label>-----` header whose label ends in `PRIVATE KEY`,
+// wherever on its line it stands: a key pasted into a string literal keeps
+// the header and the escaped newline after it on one line.
+fn pem_private_key(bytes: &[u8]) -> bool {
+    after(bytes, PEM_HEAD).any(|rest| {
+        rest.windows(PEM_DASHES.len()).position(|window| window == PEM_DASHES).is_some_and(|end| {
+            let label = &rest[..end];
+            label.ends_with(PEM_PRIVATE) && !label.contains(&b'\n')
+        })
+    })
 }
 
 const SHAPES: [Shape; 17] = [
@@ -180,85 +232,12 @@ const AUTH_TOKEN: Shape = Shape {
     what: "an npm `_authToken` line",
 };
 
-// Names every change under `at` that carries a credential, `<path>: <what>`,
-// reading only the paths the name rule passes.
-pub async fn findings<F: Files>(
-    files: &F, at: &str, changes: &[Change], gzip: &BTreeSet<String>,
-) -> Result<Vec<String>, Error> {
-    let mut findings = Vec::new();
-    for change in changes {
-        if change.kind == ChangeKind::Deleted {
-            continue;
-        }
-        let what = if let Some(what) = named(&change.path) {
-            Some(what)
-        } else {
-            let bytes = files.read(at, &change.path).await?;
-            let bytes = if gzip.contains(&change.path) { inflate(&bytes)? } else { bytes };
-            carried(&bytes)
-        };
-        if let Some(what) = what {
-            findings.push(format!("{}: {what}", change.path));
-        }
-    }
-    Ok(findings)
-}
-
-// The bytes of every member of a gzip stream, refused past
-// [`INFLATED_CAP`] so a layout the gate cannot read is not sealed.
-fn inflate(bytes: &[u8]) -> Result<Vec<u8>, Error> {
-    let mut inflated = Vec::new();
-    MultiGzDecoder::new(bytes)
-        .take(INFLATED_CAP + 1)
-        .read_to_end(&mut inflated)
-        .map_err(|error| server_error!("reading a compressed layout: {error}"))?;
-    if inflated.len() as u64 > INFLATED_CAP {
-        return Err(server_error!(
-            "a compressed layout inflates past {INFLATED_CAP} bytes, so it is not sealed"
-        ));
-    }
-    Ok(inflated)
-}
-
-// The gate's refusal: what `wrote` left changed carries the credentials
-// listed, and none of it is sealed.
-pub fn refusal(wrote: &str, leaks: &[String]) -> Error {
-    let listed: Vec<String> = leaks.iter().map(|leak| format!("- {leak}")).collect();
-    Error::BadRequest {
-        code: "secret-detected".into(),
-        description: format!(
-            "what {wrote} wrote carries a credential, so none of it is sealed:\n{}",
-            listed.join("\n")
-        ),
-    }
-}
-
-fn named(path: &str) -> Option<&'static str> {
-    let mut segments = path.rsplit('/');
-    let name = segments.next()?;
-    if CARRIERS.contains(&name) || (name == "credentials" && segments.next() == Some(".aws")) {
-        return Some("a file that carries a credential by name");
-    }
-    None
-}
-
-fn carried(bytes: &[u8]) -> Option<&'static str> {
-    if pem_private_key(bytes) {
-        return Some("a PEM private key block");
-    }
-    SHAPES.iter().chain([&AUTH_TOKEN]).find(|shape| shape.matches(bytes)).map(|shape| shape.what)
-}
-
-// A `-----BEGIN <label>-----` header whose label ends in `PRIVATE KEY`,
-// wherever on its line it stands: a key pasted into a string literal keeps
-// the header and the escaped newline after it on one line.
-fn pem_private_key(bytes: &[u8]) -> bool {
-    after(bytes, PEM_HEAD).any(|rest| {
-        rest.windows(PEM_DASHES.len()).position(|window| window == PEM_DASHES).is_some_and(|end| {
-            let label = &rest[..end];
-            label.ends_with(PEM_PRIVATE) && !label.contains(&b'\n')
-        })
-    })
+// One credential shape: a fixed prefix, then at least `least` bytes of `run`.
+struct Shape {
+    prefix: &'static [u8],
+    run: Run,
+    least: usize,
+    what: &'static str,
 }
 
 impl Shape {
@@ -266,6 +245,27 @@ impl Shape {
         after(bytes, self.prefix).any(|rest| {
             rest.iter().take_while(|&&byte| self.run.admits(byte)).count() >= self.least
         })
+    }
+}
+
+// The bytes a token's run may hold after its prefix.
+#[derive(Clone, Copy)]
+enum Run {
+    // `[A-Z0-9]`
+    Upper,
+    // `[A-Za-z0-9]`
+    Alnum,
+    // `[A-Za-z0-9_-]`
+    Token,
+}
+
+impl Run {
+    const fn admits(self, byte: u8) -> bool {
+        match self {
+            Self::Upper => byte.is_ascii_uppercase() || byte.is_ascii_digit(),
+            Self::Alnum => byte.is_ascii_alphanumeric(),
+            Self::Token => byte.is_ascii_alphanumeric() || byte == b'_' || byte == b'-',
+        }
     }
 }
 

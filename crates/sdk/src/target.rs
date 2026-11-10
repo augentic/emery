@@ -126,8 +126,6 @@ pub mod capability {
     pub use emery_adapter::target::{Target, Task};
 }
 
-const VERIFY_TURN: &str = "verify";
-
 /// What one program of the worker's toolchain is granted beyond the lent tree.
 ///
 /// A target adapter spells one per program its prompts run, as that
@@ -225,6 +223,24 @@ impl Grant {
     }
 }
 
+fn is_host_name(host: &str) -> bool {
+    !host.is_empty() && !host.contains(['/', ':']) && !host.chars().any(char::is_whitespace)
+}
+
+fn is_home_root(root: &str) -> bool {
+    root.strip_prefix("~/").is_some_and(|path| {
+        !path.is_empty()
+            && !path.contains('\\')
+            && path.split('/').all(|segment| !matches!(segment, "" | "." | ".."))
+    })
+}
+
+fn is_variable_name(name: &str) -> bool {
+    let mut chars = name.chars();
+    chars.next().is_some_and(|first| first.is_ascii_alphabetic() || first == '_')
+        && chars.all(|c| c.is_ascii_alphanumeric() || c == '_')
+}
+
 /// Static configuration a target adapter declares for merge rules, worker
 /// grants, and its default slice budget.
 ///
@@ -248,22 +264,10 @@ pub struct Metadata {
     pub budget: Option<NonZeroU32>,
 }
 
-fn is_host_name(host: &str) -> bool {
-    !host.is_empty() && !host.contains(['/', ':']) && !host.chars().any(char::is_whitespace)
-}
-
-fn is_home_root(root: &str) -> bool {
-    root.strip_prefix("~/").is_some_and(|path| {
-        !path.is_empty()
-            && !path.contains('\\')
-            && path.split('/').all(|segment| !matches!(segment, "" | "." | ".."))
-    })
-}
-
-fn is_variable_name(name: &str) -> bool {
-    let mut chars = name.chars();
-    chars.next().is_some_and(|first| first.is_ascii_alphabetic() || first == '_')
-        && chars.all(|c| c.is_ascii_alphanumeric() || c == '_')
+impl From<Metadata> for TargetMetadata {
+    fn from(metadata: Metadata) -> Self {
+        self::metadata(metadata.rules, metadata.budget)
+    }
 }
 
 /// The adapter addressed and the tree it initialises.
@@ -306,14 +310,6 @@ pub struct BuildContext<'a, P> {
     pub scaffold: Option<Scaffold<'a>>,
 }
 
-impl<P> Clone for BuildContext<'_, P> {
-    fn clone(&self) -> Self {
-        *self
-    }
-}
-
-impl<P> Copy for BuildContext<'_, P> {}
-
 impl<'a, P> BuildContext<'a, P> {
     /// Returns the context with [`scaffold`](Self::scaffold) set.
     #[must_use]
@@ -322,6 +318,14 @@ impl<'a, P> BuildContext<'a, P> {
         self
     }
 }
+
+impl<P> Clone for BuildContext<'_, P> {
+    fn clone(&self) -> Self {
+        *self
+    }
+}
+
+impl<P> Copy for BuildContext<'_, P> {}
 
 /// Files and prompt context an adapter scaffolds into the workspace before a [`build`] turn.
 ///
@@ -349,6 +353,16 @@ pub struct Scaffold<'a> {
     /// [`build`] replaces each matching data-type block in the brief's design
     /// with a pointer to the scaffold section.
     pub types: &'a [String],
+}
+
+impl Scaffold<'_> {
+    fn section(&self) -> Option<&str> {
+        Some(self.brief.trim_end()).filter(|brief| !brief.is_empty())
+    }
+
+    fn quoted(&self) -> Option<&str> {
+        Some(self.passages.trim_end()).filter(|passages| !passages.is_empty())
+    }
 }
 
 /// A scaffolded file protected against accidental overwrite or deletion during [`build`].
@@ -419,16 +433,6 @@ impl Marker {
     }
 }
 
-impl Scaffold<'_> {
-    fn section(&self) -> Option<&str> {
-        Some(self.brief.trim_end()).filter(|brief| !brief.is_empty())
-    }
-
-    fn quoted(&self) -> Option<&str> {
-        Some(self.passages.trim_end()).filter(|passages| !passages.is_empty())
-    }
-}
-
 /// The adapter addressed, the integrated tree it verifies, and the model.
 ///
 /// [`verify`] takes it, so the one turn of a call is put to the one model
@@ -476,12 +480,6 @@ pub enum Task<'a, P> {
     /// Run the checks over the integrated tree, repair what they find, and
     /// answer a verdict, through [`verify`](fn@verify).
     Verify(VerifyContext<'a, P>),
-}
-
-impl From<Metadata> for TargetMetadata {
-    fn from(metadata: Metadata) -> Self {
-        self::metadata(metadata.rules, metadata.budget)
-    }
 }
 
 /// A target adapter that initialises, builds, and verifies a workspace.
@@ -658,6 +656,8 @@ pub async fn build<P: Model>(
 
     Ok(report)
 }
+
+const VERIFY_TURN: &str = "verify";
 
 /// Verifies the integrated tree of `ctx` through one gated model turn.
 ///

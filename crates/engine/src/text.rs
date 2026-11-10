@@ -11,6 +11,36 @@ use crate::build::{BuildOutput, BuiltSlice, Candidate, ScheduledSlice, StagedKin
 use crate::show::ShowOutput;
 use crate::specify::{Diff, RepositorySource, SectionKind, SpecifyOutput, Waves};
 
+impl Render for SpecifyOutput {
+    fn render(&self, out: &mut dyn fmt::Write) -> fmt::Result {
+        specify(self, out)
+    }
+}
+
+impl Render for ApplyOutput {
+    fn render(&self, out: &mut dyn fmt::Write) -> fmt::Result {
+        apply(self, out)
+    }
+}
+
+impl Render for AmendOutput {
+    fn render(&self, out: &mut dyn fmt::Write) -> fmt::Result {
+        amend(self, out)
+    }
+}
+
+impl Render for BuildOutput {
+    fn render(&self, out: &mut dyn fmt::Write) -> fmt::Result {
+        build(self, out)
+    }
+}
+
+impl Render for ShowOutput {
+    fn render(&self, out: &mut dyn fmt::Write) -> fmt::Result {
+        show(self, out)
+    }
+}
+
 fn specify(output: &SpecifyOutput, w: &mut dyn fmt::Write) -> fmt::Result {
     write!(w, "staged candidate {}", output.revision)?;
     if output.fresh {
@@ -319,34 +349,4 @@ where
 // Writes the document body alone so the Markdown can be piped directly.
 fn show(output: &ShowOutput, w: &mut dyn fmt::Write) -> fmt::Result {
     w.write_str(&output.body)
-}
-
-impl Render for SpecifyOutput {
-    fn render(&self, out: &mut dyn fmt::Write) -> fmt::Result {
-        specify(self, out)
-    }
-}
-
-impl Render for ApplyOutput {
-    fn render(&self, out: &mut dyn fmt::Write) -> fmt::Result {
-        apply(self, out)
-    }
-}
-
-impl Render for AmendOutput {
-    fn render(&self, out: &mut dyn fmt::Write) -> fmt::Result {
-        amend(self, out)
-    }
-}
-
-impl Render for BuildOutput {
-    fn render(&self, out: &mut dyn fmt::Write) -> fmt::Result {
-        build(self, out)
-    }
-}
-
-impl Render for ShowOutput {
-    fn render(&self, out: &mut dyn fmt::Write) -> fmt::Result {
-        show(self, out)
-    }
 }

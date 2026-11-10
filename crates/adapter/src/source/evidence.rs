@@ -22,12 +22,6 @@ use crate::{BadMessage, BadPath, BadRoute, BadTrigger, Trigger, beneath, is_keba
 /// claim gate enforces it again in code.
 pub const CLAIM_ID_REGEX: &str = "^[a-z0-9]+(-[a-z0-9]+)*(\\.[a-z0-9]+(-[a-z0-9]+)*)*$";
 
-// `is_kebab` refuses the empty segment an empty value or a doubled dot
-// leaves, so the split needs no further check.
-fn is_claim_id(value: &str) -> bool {
-    value.split('.').all(is_kebab)
-}
-
 /// A parsed `path` anchor: the file a claim cites and the lines within it.
 ///
 /// The grammar is `<path>`, `<path>#L<n>`, or `<path>#L<start>-L<end>`,
@@ -55,19 +49,6 @@ pub struct Anchor<'a> {
     pub lines: Option<(u64, u64)>,
 }
 
-// The anchor in the grammar `parse` reads: one line as `#L<n>`, never as a
-// range of one.
-impl Display for Anchor<'_> {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        f.write_str(self.path)?;
-        match self.lines {
-            None => Ok(()),
-            Some((start, end)) if start == end => write!(f, "#L{start}"),
-            Some((start, end)) => write!(f, "#L{start}-L{end}"),
-        }
-    }
-}
-
 impl<'a> Anchor<'a> {
     /// Parses `anchor` under the grammar of the claim rules.
     ///
@@ -86,6 +67,19 @@ impl<'a> Anchor<'a> {
             path,
             lines: fragment.map(lines).transpose()?,
         })
+    }
+}
+
+// The anchor in the grammar `parse` reads: one line as `#L<n>`, never as a
+// range of one.
+impl Display for Anchor<'_> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        f.write_str(self.path)?;
+        match self.lines {
+            None => Ok(()),
+            Some((start, end)) if start == end => write!(f, "#L{start}"),
+            Some((start, end)) => write!(f, "#L{start}-L{end}"),
+        }
     }
 }
 
@@ -566,6 +560,21 @@ impl Claim {
     }
 }
 
+// `is_kebab` refuses the empty segment an empty value or a doubled dot
+// leaves, so the split needs no further check.
+fn is_claim_id(value: &str) -> bool {
+    value.split('.').all(is_kebab)
+}
+
+fn lenient<'de, D, T>(deserializer: D) -> Result<Option<T>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+    T: serde::de::DeserializeOwned,
+{
+    let value = serde_json::Value::deserialize(deserializer)?;
+    Ok(T::deserialize(value).ok())
+}
+
 /// The supported kinds of extracted claims.
 ///
 /// The taxonomy is closed. Unknown kinds are rejected during deserialisation.
@@ -679,13 +688,4 @@ pub enum Backing {
     Payload(String),
     /// A path to supporting material within the source.
     Path(String),
-}
-
-fn lenient<'de, D, T>(deserializer: D) -> Result<Option<T>, D::Error>
-where
-    D: serde::Deserializer<'de>,
-    T: serde::de::DeserializeOwned,
-{
-    let value = serde_json::Value::deserialize(deserializer)?;
-    Ok(T::deserialize(value).ok())
 }

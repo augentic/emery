@@ -36,6 +36,38 @@ use crate::source::{
     SourceKind, SourceMetadata,
 };
 
+/// The WebAssembly guest interface implemented by a source adapter.
+///
+/// This module exposes the generated `Guest` trait, its records, and the
+/// `export!` macro.
+pub mod export {
+    // The root glob carries the bindgen support items the `export!` macro
+    // expands against; the second names the world's records and `Guest`.
+    pub use super::generated::exports::emery::adapter::source::*;
+    pub use super::generated::*;
+}
+
+#[must_use]
+pub fn metadata(id: &str) -> SourceMetadata {
+    wit::metadata(id).into()
+}
+
+pub async fn extract(id: &str, input: &SourceInput) -> Result<Evidence, Error> {
+    let name = &input.name;
+    let answer =
+        wit::extract(id.to_string(), input.clone().into()).await.map_err(|err| match err {
+            types::Error::InvalidRequest(detail) => {
+                bad_request!("adapter `{id}` for source `{name}`: {detail}")
+            }
+            types::Error::Internal(detail) => {
+                bad_gateway!("adapter `{id}` for source `{name}`: {detail}")
+            }
+        })?;
+
+    Evidence::try_from(answer)
+        .map_err(|detail| bad_gateway!("adapter `{id}` for source `{name}`: {detail}"))
+}
+
 impl From<SourceMetadata> for wit::AdapterMetadata {
     fn from(metadata: SourceMetadata) -> Self {
         Self {
@@ -284,36 +316,4 @@ impl From<omnia_sdk::Error> for types::Error {
             }
         }
     }
-}
-
-/// The WebAssembly guest interface implemented by a source adapter.
-///
-/// This module exposes the generated `Guest` trait, its records, and the
-/// `export!` macro.
-pub mod export {
-    // The root glob carries the bindgen support items the `export!` macro
-    // expands against; the second names the world's records and `Guest`.
-    pub use super::generated::exports::emery::adapter::source::*;
-    pub use super::generated::*;
-}
-
-#[must_use]
-pub fn metadata(id: &str) -> SourceMetadata {
-    wit::metadata(id).into()
-}
-
-pub async fn extract(id: &str, input: &SourceInput) -> Result<Evidence, Error> {
-    let name = &input.name;
-    let answer =
-        wit::extract(id.to_string(), input.clone().into()).await.map_err(|err| match err {
-            types::Error::InvalidRequest(detail) => {
-                bad_request!("adapter `{id}` for source `{name}`: {detail}")
-            }
-            types::Error::Internal(detail) => {
-                bad_gateway!("adapter `{id}` for source `{name}`: {detail}")
-            }
-        })?;
-
-    Evidence::try_from(answer)
-        .map_err(|detail| bad_gateway!("adapter `{id}` for source `{name}`: {detail}"))
 }

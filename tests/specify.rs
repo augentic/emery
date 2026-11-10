@@ -629,7 +629,7 @@ async fn configured_rank() {
 // A refused grouping is the next candidate's correction; a backend out of rounds
 // fails typed and commits nothing.
 #[tokio::test]
-async fn grouping_refused() {
+async fn invalid_grouping() {
     let bind = |provider: &mut Provider| {
         provider.source.kinds.insert(guest("code"), SourceKind::Behaviour);
         provider.source.evidence.insert(
@@ -750,7 +750,7 @@ async fn one_claims_source() {
 // drafts from the requirements alone, so the staged candidate is the one the
 // run without them stages.
 #[tokio::test]
-async fn retire_ignored() {
+async fn retire_claim() {
     let mut provider = Provider::answering([SPEC_ANSWER, DESIGN_ANSWER]);
     provider.source.evidence.insert(
         "source".to_string(),
@@ -886,7 +886,7 @@ async fn same_stem_split() {
 // Every subject is drafted again and nothing of the outgoing revision reaches
 // the model; text reports a one-line diff summary while JSON carries the entries.
 #[tokio::test]
-async fn remine_supersedes() {
+async fn remine_candidate() {
     // first run: a greeting, a session timeout, and a legacy export
     let first_grouping = separate_grouping(3);
     let first_slicing = separate_slicing(&[
@@ -1340,7 +1340,7 @@ async fn extras_missing() {
 // The failure reaches the boundary as the adapter put it, alone or beside a
 // source that succeeded.
 #[tokio::test]
-async fn extract_fails() {
+async fn extract_gateway_error() {
     let mut provider = Provider::idle();
     provider
         .source
@@ -1391,7 +1391,7 @@ async fn two_failures() {
 
 // A refusal is the operator's to fix, so it keeps the adapter's class.
 #[tokio::test]
-async fn extract_refuses() {
+async fn extract_bad_request() {
     let mut provider = Provider::idle();
     provider
         .source
@@ -1942,7 +1942,7 @@ async fn dishonest_design() {
 // A `decision` alone requires `## APIs and integrations`: the technology a
 // prose source prescribes lands there, since no requirement carries it.
 #[tokio::test]
-async fn decision_informs_apis() {
+async fn decision_claim() {
     let evidence = || {
         Ok(evidence(vec![
             requirement("greeting.behaviour", "GET /greeting returns the static string 'hello'."),
@@ -2323,7 +2323,7 @@ async fn type_mechanism() {
 
 // A failing model is asked once more; a second failure is the run's.
 #[tokio::test]
-async fn model_fails() {
+async fn model_gateway_error() {
     let provider = Provider {
         model: ScriptedModel::new([
             Err(ModelError::Backend("scripted transport failure".into())),
@@ -2337,7 +2337,7 @@ async fn model_fails() {
 
 // One transport failure on the spec draft is retried and the run completes.
 #[tokio::test]
-async fn model_recovers() {
+async fn model_transient_error() {
     let reply = |answer: &str| {
         Ok(Reply {
             answer: answer.to_owned(),
@@ -2545,7 +2545,7 @@ async fn contract_route_malformed() {
 // contract's lines, the baseline lists the trigger under each stem, and a
 // slicing that puts the two apart is refused and corrected.
 #[tokio::test]
-async fn trigger_split_refused() {
+async fn split_trigger() {
     let split = r#"{"preamble": [], "parts": [
         {"name": "health", "requirements": ["REQ-001"]},
         {"name": "start", "requirements": ["REQ-002"]}
@@ -3543,7 +3543,7 @@ mod repository {
     // Two sources naming one repository, however they spell its URL, share
     // one clone made once and are read in working copies of their own.
     #[tokio::test]
-    async fn repository_shared_clone() {
+    async fn repo_shared_clone() {
         let scratch = Scratch::new();
         let config = scratch.config(
             "[[source]]\nname = \"docs\"\nadapter = \"emery:documentation@1.2.0\"\n\
@@ -3583,7 +3583,7 @@ mod repository {
     // The working copy goes whether or not the source answered; a stale one
     // from a failed run is removed before the copy is cut again.
     #[tokio::test]
-    async fn repository_removed_on_failure() {
+    async fn repo_extract_error() {
         let scratch = Scratch::new();
         let config = upstream(&scratch, "revision = \"main\"\n");
         let mut provider = Provider::idle();
@@ -3615,7 +3615,7 @@ mod repository {
     // `revision-not-found` before any source is asked; a remote that cannot be
     // reached is the gateway's.
     #[tokio::test]
-    async fn repository_revision_missing() {
+    async fn repo_missing_revision() {
         let scratch = Scratch::new();
         let config = upstream(&scratch, "revision = \"v9\"\n");
         let provider = Provider::idle();
@@ -3803,7 +3803,7 @@ mod reference {
     // alone. The CWD move is hermetic under nextest's process-per-test
     // isolation.
     #[tokio::test]
-    async fn argv_beside_project_file() {
+    async fn argv_with_bad_config() {
         let project = tempfile::TempDir::new().expect("project dir");
         std::env::set_current_dir(project.path()).expect("enter project");
         let argv = ["emery", "specify", "acme:ledger@2.1.0"];
@@ -4086,7 +4086,7 @@ mod store {
     // own key, so a lineage under an outdated grammar refuses the same, and
     // a run naming no target reads no repository and stages regardless.
     #[tokio::test]
-    async fn specify_lineage_exists() {
+    async fn existing_lineage() {
         let provider = Provider::idle();
         let held = seed(&provider.files, &lineage(), DESIGN, PLAN);
 

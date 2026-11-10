@@ -709,7 +709,7 @@ async fn build_merge_rules() {
 // of the wave's slices that wrote them, steered to the conflicted paths; a
 // resolution the gate refuses comes back for correction.
 #[tokio::test]
-async fn build_conflict_resolved() {
+async fn conflict_two_slices() {
     let (provider, _) = conflicted_at_lib(&[
         r#"{"files": [{"path": "src/lib.rs", "content": "<<<<<<< HEAD\npub mod authentication;\n=======\npub mod orders;\n>>>>>>> SLICE-003\n"}]}"#,
         RESOLVED_LIB,
@@ -774,7 +774,7 @@ async fn build_conflict_resolved() {
 // second names no slice from the plan's first wave in the brief: the wave
 // counter restarted at one, not the plan wave being merged.
 #[tokio::test]
-async fn build_conflict_resolved_resumed_plan_wave() {
+async fn conflict_resumed_wave() {
     let provider = Provider::answering([RESOLVED_LIB]);
     let id = seed(&provider.files, SPEC, DESIGN, WIDE_PLAN);
     let copy = worktree("SLICE-002");
@@ -823,7 +823,7 @@ async fn build_conflict_resolved_resumed_plan_wave() {
 // merge brief when a lower-id sibling of the same plan wave conflicts with
 // it, even though id order would place it after the slice being merged.
 #[tokio::test]
-async fn build_conflict_resolved_staged_higher_id() {
+async fn conflict_staged_higher() {
     let provider = Provider::answering([RESOLVED_LIB]);
     let id = seed(&provider.files, SPEC, DESIGN, WIDE_PLAN);
     let copy = worktree("SLICE-001");
@@ -874,7 +874,7 @@ async fn build_conflict_resolved_staged_higher_id() {
 // each resolved path taken whole ahead of the adapter's rules, so the slice
 // lands as one merge commit in its wave and the paths are reported.
 #[tokio::test]
-async fn build_conflict_resolved_merged() {
+async fn conflict_prior_merged() {
     let (mut provider, id) = conflicted_at_lib(&[RESOLVED_LIB]);
     provider.target.rules = vec![MergeRule::ours("Cargo.lock")];
     let copy = worktree("SLICE-003");
@@ -970,7 +970,7 @@ async fn build_conflict_resolved_merged() {
 // is merged again with the path taken whole; the text names the paths
 // resolved beside the merge.
 #[tokio::test]
-async fn build_conflict_resolved_as_written() {
+async fn conflict_as_written() {
     let (provider, id) = conflicted_at_lib(&[
         r#"{"files": [{"path": "src/lib.rs", "content": "pub mod orders;\n"}]}"#,
     ]);
@@ -1033,7 +1033,7 @@ async fn build_conflict_resolved_as_written() {
 // nothing written, both working copies left for inspection, and the wave
 // neither verified nor labelled.
 #[tokio::test]
-async fn build_conflict_unresolved() {
+async fn conflict_unmerged() {
     let (provider, _) = conflicted_at_lib(&[r#"{"files": []}"#, r#"{"files": []}"#]);
     changed(&provider, "SLICE-003", &[("src/lib.rs", ChangeKind::Modified)]);
 
@@ -1067,7 +1067,7 @@ async fn build_conflict_unresolved() {
 // A conflicted path the slice removed is nothing the model can combine, so
 // the slice is refused as `merge-unresolved` before any turn is spent.
 #[tokio::test]
-async fn build_conflict_deleted_slice() {
+async fn conflict_deleted_slice() {
     let (provider, _) = conflicted_at_lib(&[]);
     changed(&provider, "SLICE-003", &[("src/lib.rs", ChangeKind::Deleted)]);
 
@@ -1087,7 +1087,7 @@ async fn build_conflict_deleted_slice() {
 // A conflicted path the integrated tree no longer holds as a regular file,
 // one a slice merged before it removed, is refused the same way.
 #[tokio::test]
-async fn build_conflict_deleted_integrated() {
+async fn conflict_deleted_base() {
     let (provider, _) = conflicted_at_lib(&[]);
     changed(&provider, "SLICE-003", &[("src/lib.rs", ChangeKind::Modified)]);
     provider.files.lists(INTEGRATION, "src", &[("orders.rs", EntryKind::File)]);
@@ -1154,7 +1154,7 @@ async fn build_conflict_binary() {
 // A resolution turn that fails upstream is put once more before the failure
 // is the run's, as a slice's build is.
 #[tokio::test]
-async fn build_conflict_retried() {
+async fn conflict_retry() {
     let (mut provider, _) = conflicted_at_lib(&[]);
     changed(&provider, "SLICE-003", &[("src/lib.rs", ChangeKind::Modified)]);
     changed(&provider, "SLICE-003", &[("src/lib.rs", ChangeKind::Modified)]);
@@ -1269,7 +1269,7 @@ fn left_for_inspection(provider: &Provider) {
 // failure and stays at the last verified head after a later one, and the
 // integration working copy stays for inspection.
 #[tokio::test]
-async fn build_verify_failed() {
+async fn verify_verdict_fail() {
     let (provider, id) = planned();
     provider.target.verdict(Ok(verdict(false, &["cargo test: 1 failed", "clippy: 2 warnings"])));
 
@@ -1313,7 +1313,7 @@ async fn build_verify_failed() {
 // repaired when one of them lies outside the adapter's `ours` rules, since
 // a lockfile a check regenerated under one is no repair.
 #[tokio::test]
-async fn build_verify_repairs() {
+async fn verify_repair_turn() {
     let (mut provider, id) = planned();
     provider.target.rules = vec![MergeRule::ours("Cargo.lock")];
     let repaired = || {
@@ -1406,7 +1406,7 @@ async fn build_verify_repairs() {
 // A verify that fails upstream is put once more over the same integration
 // copy, since nothing of it is sealed until the verdict; the run lands.
 #[tokio::test]
-async fn build_verify_retries_bad_gateway() {
+async fn verify_bad_gateway() {
     let (provider, id) = planned();
     provider.target.verdict(Err(bad_gateway!("the model timed out")));
 
@@ -1863,7 +1863,7 @@ async fn build_resumed_staged() {
 // builds the failed slice alone over the staged head, and verifies the wave
 // whole.
 #[tokio::test]
-async fn build_resumed_staged_sibling() {
+async fn resume_staged_sibling() {
     let (provider, id) = wide();
     provider.target.fails("SLICE-003", bad_gateway!("the model timed out"));
     provider.target.fails("SLICE-003", bad_gateway!("the model timed out again"));
@@ -1936,7 +1936,7 @@ async fn build_resumed_staged_sibling() {
 // holds another base's work: its chain is never read, and it is cut again
 // at the head with nothing resumed.
 #[tokio::test]
-async fn build_stale_integration_off_head() {
+async fn stale_off_head() {
     let (provider, id) = planned();
     provider.vcs.adds.script(INTEGRATION, Err(Error::Exists(INTEGRATION.to_owned())));
     provider.vcs.heads.script(INTEGRATION, Ok(STAGED.to_owned()));
@@ -1974,7 +1974,7 @@ async fn build_stale_integration_off_head() {
 // head is another plan's work, and one whose chain names no slice holds
 // nothing to resume: each is cut again at the head with nothing resumed.
 #[tokio::test]
-async fn build_stale_integration_other_revision() {
+async fn stale_other_revision() {
     let (provider, id) = planned();
     staged(
         &provider,
@@ -2321,7 +2321,7 @@ async fn build_no_target() {
 // A reference the grammar refuses never reaches the loader: no version, no
 // namespace, a path, a bare name.
 #[tokio::test]
-async fn build_malformed_reference() {
+async fn malformed_reference() {
     let (provider, _) = planned();
 
     for (reference, fragment) in [
@@ -2535,7 +2535,7 @@ async fn build_outdated() {
 // any slice is dispatched and before the base is settled: the revision is
 // read, and nothing else is asked of version control.
 #[tokio::test]
-async fn build_unsupported_version() {
+async fn unsupported_version() {
     let (mut provider, _) = planned();
     provider.target.versions.insert(BUILDER_ID.to_string(), "99.0.0".to_string());
 
@@ -2871,7 +2871,7 @@ async fn build_cycle() {
 // slice and its wave; the slices after it are never dispatched, no label is
 // set, and the working copies stay for inspection.
 #[tokio::test]
-async fn build_refused() {
+async fn target_error() {
     let (mut provider, _) = planned();
     provider
         .target
@@ -2925,7 +2925,7 @@ async fn build_bad_report() {
 // the slice is refused before anything of it is sealed or merged, both
 // commits named, and its working copy stays for inspection.
 #[tokio::test]
-async fn build_worktree_head_moved() {
+async fn worktree_head_moved() {
     let (provider, _) = planned();
     let moved = "feedface0123456789abcdef0123456789abcdef";
     provider.vcs.heads.script(&worktree("SLICE-001"), Ok(moved.to_owned()));
@@ -2954,7 +2954,7 @@ async fn build_worktree_head_moved() {
 // the first removed; the second build is the one sealed, under the same
 // head, and nothing of the first reaches the history.
 #[tokio::test]
-async fn build_retries_bad_gateway() {
+async fn slice_bad_gateway() {
     let (provider, id) = planned();
     provider.target.fails("SLICE-001", bad_gateway!("the model timed out"));
     provider.vcs.heads.script(".", Ok(BASE.to_owned()));
@@ -2994,7 +2994,7 @@ const SPENT: &str = "adapter `acme:builder`: budget exhausted: the correction ro
 // class that is no timeout is the run's at once, and the hint names the
 // resume for the second timeout alone.
 #[tokio::test]
-async fn build_retries_timeout() {
+async fn slice_timeout() {
     let (provider, id) = planned();
     provider.target.fails("SLICE-001", bad_request!("{TIMED_OUT}"));
     provider.vcs.heads.script(".", Ok(BASE.to_owned()));
@@ -3065,7 +3065,7 @@ async fn build_retries_timeout() {
 // attempt built under `target/` and repaired stands; a refusal of the same
 // class that is no timeout is the wave's at once.
 #[tokio::test]
-async fn build_verify_retries_timeout() {
+async fn verify_timeout() {
     let (provider, id) = planned();
     provider.target.verdict(Err(bad_request!("{TIMED_OUT}")));
 
@@ -3126,7 +3126,7 @@ async fn build_verify_retries_timeout() {
 // the label stays where that wave left it. A second upstream failure of
 // one slice is the run's.
 #[tokio::test]
-async fn build_stops_at_failure() {
+async fn wave_slice_error() {
     let (mut provider, id) = planned();
     provider
         .target
@@ -3420,7 +3420,7 @@ async fn build_change_unreadable() {
 // named, no file is read for a credential, nothing is merged or labelled,
 // and the copy stays for inspection.
 #[tokio::test]
-async fn build_spec_rewritten_in_slice() {
+async fn slice_rewrites_spec() {
     let (provider, _) = planned();
     let copy = worktree("SLICE-001");
     changed(
@@ -3463,7 +3463,7 @@ async fn build_spec_rewritten_in_slice() {
 // build before anything is sealed or any slice dispatched, naming the
 // initialisation.
 #[tokio::test]
-async fn build_init_spec_rewritten() {
+async fn init_rewrites_spec() {
     let (provider, _) = planned();
     initialised(&provider, &["spec/design.json", "package.json"]);
 
@@ -3489,7 +3489,7 @@ async fn build_init_spec_rewritten() {
 // slice's copy is refused before it is sealed, as a build's or a
 // verification's change set is.
 #[tokio::test]
-async fn build_conflict_spec_rewritten() {
+async fn conflict_rewrites_spec() {
     let (provider, _) = conflicted_at_lib(&[RESOLVED_LIB]);
     let copy = worktree("SLICE-003");
     changed(&provider, "SLICE-003", &[("src/lib.rs", ChangeKind::Modified)]);
@@ -3524,7 +3524,7 @@ async fn build_conflict_spec_rewritten() {
 // committed, the wave's commit is never made, and the label stands where
 // the last verified wave left it.
 #[tokio::test]
-async fn build_spec_rewritten_in_repair() {
+async fn repair_rewrites_spec() {
     let (provider, id) = planned();
     initialised(&provider, &[]);
     provider.vcs.pending.script(
@@ -3751,7 +3751,7 @@ async fn build_budget_cut() {
 // sub-stems and exceed the budget; the slice is flagged `over-budget` and
 // warned in text output rather than refused.
 #[tokio::test]
-async fn build_budget_trigger_whole() {
+async fn budget_trigger_group() {
     let route = Some(Trigger::Http(Route {
         method: "POST".to_owned(),
         path: "/orders".to_owned(),
@@ -3793,7 +3793,7 @@ async fn build_budget_trigger_whole() {
 // triggered sub-stems (routes and consumers), regardless of where their
 // requirement ids sit in the part.
 #[tokio::test]
-async fn build_budget_stages_first() {
+async fn budget_first_slice() {
     let route = Some(Trigger::Http(Route {
         method: "POST".to_owned(),
         path: "/orders".to_owned(),
@@ -3824,7 +3824,7 @@ async fn build_budget_stages_first() {
 // When neither `--budget` nor `[target] budget` is given, the target
 // adapter's `metadata.budget` is used and reported as `adapter`.
 #[tokio::test]
-async fn build_budget_from_metadata() {
+async fn budget_from_metadata() {
     let (mut provider, _) = budgeted_revision(&[("a", 3, None), ("b", 3, None)]);
     provider.target.budget = Some(4);
     provider.vcs.heads.script(".", Ok(BASE.to_owned()));
@@ -3862,7 +3862,7 @@ async fn build_budget_from_config() {
 // `--budget` overrides `[target] budget` and the adapter's metadata, and is
 // reported as `flag`; `--budget 0` is refused at the CLI boundary.
 #[tokio::test]
-async fn build_budget_flag_over_config() {
+async fn budget_flag_precedence() {
     let scratch = Scratch::new();
     let config = scratch
         .config(&format!("[target]\nadapter = \"{BUILDER}\"\nrepository = \".\"\nbudget = 10\n"));
@@ -3890,7 +3890,7 @@ async fn build_budget_flag_over_config() {
 // in `resumed`, the remaining slice builds with `types` empty (since the
 // first slice already laid them), and its `index`/`count` stay `3` of `3`.
 #[tokio::test]
-async fn build_resume_by_requirements() {
+async fn resume_requirements() {
     let (provider, id) = budgeted_revision(&[("a", 3, None), ("b", 3, None), ("c", 3, None)]);
     provider.vcs.labelleds.script(".", Ok(LABELLED.to_owned()));
     provider.vcs.logs.script(
@@ -3946,7 +3946,7 @@ async fn build_resume_by_requirements() {
 // keeps every requirement committed on the label chain as resumed and re-cuts
 // only the remaining uncovered requirements under the new budget.
 #[tokio::test]
-async fn build_resume_budget_changed() {
+async fn resume_budget_change() {
     let (provider, id) = budgeted_revision(&[
         ("a", 1, None),
         ("b", 1, None),

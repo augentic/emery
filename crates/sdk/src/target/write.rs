@@ -37,13 +37,6 @@ pub struct Writer {
     guarded: BTreeMap<String, Guard>,
 }
 
-// What one guarded file holds for the tools: the tokens a whole write
-// keeps and the markers an edit fills by key.
-struct Guard {
-    keeps: Vec<String>,
-    markers: Vec<Marker>,
-}
-
 impl Writer {
     pub fn new(root: &str, turn: &str) -> Self {
         Self {
@@ -394,8 +387,11 @@ impl Writer {
     }
 }
 
-fn holds_file(root: &Path, file: &str) -> bool {
-    matches!(standing(root, file), Ok(Standing::File))
+// What one guarded file holds for the tools: the tokens a whole write
+// keeps and the markers an edit fills by key.
+struct Guard {
+    keeps: Vec<String>,
+    markers: Vec<Marker>,
 }
 
 // What one `write_files` call did: the files written and the files removed.
@@ -471,4 +467,8 @@ impl Written {
     fn lock(&self) -> MutexGuard<'_, BTreeSet<String>> {
         self.0.lock().unwrap_or_else(PoisonError::into_inner)
     }
+}
+
+fn holds_file(root: &Path, file: &str) -> bool {
+    matches!(standing(root, file), Ok(Standing::File))
 }

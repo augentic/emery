@@ -433,30 +433,6 @@ pub struct Seal {
     pub paths: Vec<String>,
 }
 
-// The file a created repository's `Initialise` commit holds beside what the
-// adapter's init scaffolded, when the layout holds no ignore file of its
-// own, so that the engine's own directory is ignored wherever the result is
-// checked out.
-const IGNORE: (&str, &[u8]) = (".gitignore", b".emery/\n");
-
-// Every layout `design` names, as the sealed tree holds it in `bodies`,
-// whole and held to its digest when the revision was read.
-fn attached(design: &Design, bodies: &store::Bodies) -> Result<Vec<AttachedLayout>, Error> {
-    design
-        .layouts()
-        .map(|layout| {
-            let body = bodies.get(&layout.digest).cloned().ok_or_else(|| {
-                server_error!("the sealed revision carries no body for layout `{}`", layout.digest)
-            })?;
-            Ok(AttachedLayout {
-                digest: layout.digest.to_string(),
-                media_type: layout.media_type.clone(),
-                body,
-            })
-        })
-        .collect()
-}
-
 // What every wave of one build shares.
 pub(crate) struct Run<'a> {
     adapter: &'a str,
@@ -475,107 +451,6 @@ pub(crate) struct Run<'a> {
     // the adapter's merge rules, in the capability's reading
     policy: &'a [Rule],
     jobs: Option<NonZeroUsize>,
-}
-
-// Where a build stands between waves.
-pub(crate) struct Progress {
-    // the integrated head the next wave builds over
-    head: String,
-    // where the label stands; `None` until a wave of a fresh build verifies
-    labelled: Option<String>,
-    merged: BTreeSet<ReqId>,
-    // merged over the head by an earlier run and never verified: each is
-    // this run's in the wave it is ready in, with no build
-    staged: Vec<StagedSlice>,
-    resumed: Vec<SliceId>,
-    built: Vec<BuiltSlice>,
-    verified: Vec<Verified>,
-    sealed: Vec<Seal>,
-    repaired: Vec<usize>,
-}
-
-impl Progress {
-    // `labelled` is the head the label stands at and the requirements its chain names;
-    // `None` starts a fresh build from the base.
-    fn start(base: &str, labelled: Option<(String, BTreeSet<ReqId>)>) -> Self {
-        let (head, labelled, merged) = match labelled {
-            Some((head, merged)) => (head.clone(), Some(head), merged),
-            None => (base.to_owned(), None, BTreeSet::new()),
-        };
-        Self {
-            resumed: Vec::new(),
-            head,
-            labelled,
-            merged,
-            staged: Vec::new(),
-            built: Vec::new(),
-            verified: Vec::new(),
-            sealed: Vec::new(),
-            repaired: Vec::new(),
-        }
-    }
-
-    // `head` is where the integration copy was cut, `staged` the slices
-    // an earlier run merged over the labelled head beneath it, and `resumed`
-    // every slice already built on the label or staged in the copy.
-    fn stage(&mut self, head: String, staged: Vec<StagedSlice>, resumed: Vec<SliceId>) {
-        self.resumed = resumed;
-        if staged.is_empty() {
-            return;
-        }
-        self.head = head;
-        self.staged = staged;
-    }
-
-    // A build no slice of the revision stands merged in, by the label's
-    // chain or staged in the copy, is initialised with the adapter's layout,
-    // what it scaffolded sealed in the integration copy as the commit the
-    // slices build over; a repository the engine created is given a
-    // `.gitignore` of the engine's own directory beside it where the layout
-    // holds none, so a checkout of the result ignores `.emery/`. One
-    // resumed from a slice was initialised by the run that merged it.
-    async fn initialise<P: Target + Vcs + Files>(
-        &mut self, provider: &P, repo: &BuildRepo, integration: &WorkingCopy, adapter: &str,
-    ) -> Result<Option<Initialised>, Error> {
-        if !self.merged.is_empty() || !self.staged.is_empty() {
-            return Ok(None);
-        }
-        let mut changes = initialise(provider, adapter, integration.path()).await?;
-        let (path, content) = IGNORE;
-        if repo.is_created()
-            && !changes.iter().any(|change| change.path == path)
-            && kind_at(provider, integration.path(), path).await?.is_none()
-        {
-            provider.write(integration.path(), path, content).await?;
-            changes.push(Change {
-                path: path.to_owned(),
-                kind: ChangeKind::Added,
-            });
-        }
-        if changes.is_empty() {
-            return Ok(None);
-        }
-        let Some(commit) = integration.commit(provider, vcs::INITIALISE).await? else {
-            return Err(server_error!(
-                "the initialisation left {} paths pending, yet sealing them made no commit",
-                changes.len()
-            ));
-        };
-        let mut paths: Vec<String> = changes.into_iter().map(|change| change.path).collect();
-        paths.sort_unstable();
-        tracing::info!(scaffolded = paths.len(), %commit, "initialisation sealed");
-        self.head.clone_from(&commit);
-        Ok(Some(Initialised { commit, paths }))
-    }
-}
-
-// One slice built in its working copy, not yet merged.
-pub(crate) struct Built<'a> {
-    slice: &'a ScheduledSlice,
-    part: &'a Part,
-    worktree: WorkingCopy,
-    covered: Vec<ReqId>,
-    uncovered: Vec<ReqId>,
 }
 
 impl<'a> Run<'a> {
@@ -1015,6 +890,131 @@ async fn gated<P: Files>(
         return Err(secrets::refusal(wrote, &leaks));
     }
     Ok(())
+}
+
+// Every layout `design` names, as the sealed tree holds it in `bodies`,
+// whole and held to its digest when the revision was read.
+fn attached(design: &Design, bodies: &store::Bodies) -> Result<Vec<AttachedLayout>, Error> {
+    design
+        .layouts()
+        .map(|layout| {
+            let body = bodies.get(&layout.digest).cloned().ok_or_else(|| {
+                server_error!("the sealed revision carries no body for layout `{}`", layout.digest)
+            })?;
+            Ok(AttachedLayout {
+                digest: layout.digest.to_string(),
+                media_type: layout.media_type.clone(),
+                body,
+            })
+        })
+        .collect()
+}
+
+// The file a created repository's `Initialise` commit holds beside what the
+// adapter's init scaffolded, when the layout holds no ignore file of its
+// own, so that the engine's own directory is ignored wherever the result is
+// checked out.
+const IGNORE: (&str, &[u8]) = (".gitignore", b".emery/\n");
+
+// Where a build stands between waves.
+pub(crate) struct Progress {
+    // the integrated head the next wave builds over
+    head: String,
+    // where the label stands; `None` until a wave of a fresh build verifies
+    labelled: Option<String>,
+    merged: BTreeSet<ReqId>,
+    // merged over the head by an earlier run and never verified: each is
+    // this run's in the wave it is ready in, with no build
+    staged: Vec<StagedSlice>,
+    resumed: Vec<SliceId>,
+    built: Vec<BuiltSlice>,
+    verified: Vec<Verified>,
+    sealed: Vec<Seal>,
+    repaired: Vec<usize>,
+}
+
+impl Progress {
+    // `labelled` is the head the label stands at and the requirements its chain names;
+    // `None` starts a fresh build from the base.
+    fn start(base: &str, labelled: Option<(String, BTreeSet<ReqId>)>) -> Self {
+        let (head, labelled, merged) = match labelled {
+            Some((head, merged)) => (head.clone(), Some(head), merged),
+            None => (base.to_owned(), None, BTreeSet::new()),
+        };
+        Self {
+            resumed: Vec::new(),
+            head,
+            labelled,
+            merged,
+            staged: Vec::new(),
+            built: Vec::new(),
+            verified: Vec::new(),
+            sealed: Vec::new(),
+            repaired: Vec::new(),
+        }
+    }
+
+    // `head` is where the integration copy was cut, `staged` the slices
+    // an earlier run merged over the labelled head beneath it, and `resumed`
+    // every slice already built on the label or staged in the copy.
+    fn stage(&mut self, head: String, staged: Vec<StagedSlice>, resumed: Vec<SliceId>) {
+        self.resumed = resumed;
+        if staged.is_empty() {
+            return;
+        }
+        self.head = head;
+        self.staged = staged;
+    }
+
+    // A build no slice of the revision stands merged in, by the label's
+    // chain or staged in the copy, is initialised with the adapter's layout,
+    // what it scaffolded sealed in the integration copy as the commit the
+    // slices build over; a repository the engine created is given a
+    // `.gitignore` of the engine's own directory beside it where the layout
+    // holds none, so a checkout of the result ignores `.emery/`. One
+    // resumed from a slice was initialised by the run that merged it.
+    async fn initialise<P: Target + Vcs + Files>(
+        &mut self, provider: &P, repo: &BuildRepo, integration: &WorkingCopy, adapter: &str,
+    ) -> Result<Option<Initialised>, Error> {
+        if !self.merged.is_empty() || !self.staged.is_empty() {
+            return Ok(None);
+        }
+        let mut changes = initialise(provider, adapter, integration.path()).await?;
+        let (path, content) = IGNORE;
+        if repo.is_created()
+            && !changes.iter().any(|change| change.path == path)
+            && kind_at(provider, integration.path(), path).await?.is_none()
+        {
+            provider.write(integration.path(), path, content).await?;
+            changes.push(Change {
+                path: path.to_owned(),
+                kind: ChangeKind::Added,
+            });
+        }
+        if changes.is_empty() {
+            return Ok(None);
+        }
+        let Some(commit) = integration.commit(provider, vcs::INITIALISE).await? else {
+            return Err(server_error!(
+                "the initialisation left {} paths pending, yet sealing them made no commit",
+                changes.len()
+            ));
+        };
+        let mut paths: Vec<String> = changes.into_iter().map(|change| change.path).collect();
+        paths.sort_unstable();
+        tracing::info!(scaffolded = paths.len(), %commit, "initialisation sealed");
+        self.head.clone_from(&commit);
+        Ok(Some(Initialised { commit, paths }))
+    }
+}
+
+// One slice built in its working copy, not yet merged.
+pub(crate) struct Built<'a> {
+    slice: &'a ScheduledSlice,
+    part: &'a Part,
+    worktree: WorkingCopy,
+    covered: Vec<ReqId>,
+    uncovered: Vec<ReqId>,
 }
 
 // A slice's failure keeps its class and code; the description gains the

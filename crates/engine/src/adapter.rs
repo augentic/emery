@@ -63,6 +63,137 @@ impl Axis {
     }
 }
 
+/// An adapter reference: an exact package, `namespace:name@version`.
+///
+/// Parsing accepts that one form and nothing else — no default namespace, no
+/// latest, no path, no bare name. [`Display`] is the reference as spelled,
+/// which config serialises and a run dedupes loads by; [`name`] is the
+/// package name, which a run binds a source under when the operator gives
+/// none; [`guest`] is the name the adapter loads and dispatches as, the
+/// reference without its version. A malformed reference parses as
+/// [`Error::BadRequest`] with code `adapter-reference`.
+///
+/// [`name`]: Self::name
+/// [`guest`]: Self::guest
+///
+/// # Examples
+///
+/// ```
+/// use emery_engine::AdapterRef;
+///
+/// let adapter: AdapterRef = "emery:intent@1.0.0".parse()?;
+/// assert_eq!(adapter.to_string(), "emery:intent@1.0.0");
+/// assert_eq!(adapter.name(), "intent");
+/// assert_eq!(adapter.guest(), "emery:intent");
+///
+/// assert!("intent@1.0.0".parse::<AdapterRef>().is_err());
+/// assert!("emery:intent".parse::<AdapterRef>().is_err());
+/// assert!("./intent.wasm".parse::<AdapterRef>().is_err());
+/// # Ok::<(), omnia_sdk::Error>(())
+/// ```
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[serde(try_from = "String", into = "String")]
+pub struct AdapterRef {
+    /// The namespace the deployment routes to a registry, `emery` for a
+    /// first-party adapter.
+    pub namespace: String,
+    /// The package name, the [`name`](Self::name) a run binds a source under.
+    pub name: String,
+    /// The exact version the store holds or the registry serves.
+    pub version: semver::Version,
+}
+
+impl AdapterRef {
+    /// Returns the package name, which a run binds a source under when the
+    /// operator gives no `name` of their own.
+    #[must_use]
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+
+    /// Returns the guest name this adapter loads and dispatches as: the
+    /// reference without its version.
+    #[must_use]
+    pub fn guest(&self) -> String {
+        format!("{}:{}", self.namespace, self.name)
+    }
+
+    /// Returns the loader location this reference loads at.
+    ///
+    /// The location names no registry: the deployment's store answers a
+    /// release it holds, its routing of the namespace one it lacks, or the
+    /// load is refused.
+    #[must_use]
+    pub fn location(&self) -> Location {
+        Location::Registry {
+            package: self.to_string(),
+            endpoint: None,
+        }
+    }
+}
+
+impl Display for AdapterRef {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        write!(f, "{}:{}@{}", self.namespace, self.name, self.version)
+    }
+}
+
+impl FromStr for AdapterRef {
+    type Err = Error;
+
+    fn from_str(value: &str) -> Result<Self, Error> {
+        let value = value.trim();
+        if value.is_empty() {
+            return Err(malformed("adapter reference is empty".to_owned()));
+        }
+        if value.starts_with("https://github.com/") {
+            return Err(malformed(format!("adapter `{value}`: GitHub URLs are not supported")));
+        }
+        let Some((package, version)) = value.rsplit_once('@') else {
+            return Err(malformed(format!("adapter `{value}` names no version")));
+        };
+        let Some((namespace, name)) = package.split_once(':') else {
+            return Err(malformed(format!("adapter `{value}` names no namespace")));
+        };
+        if !is_kebab(namespace) || !is_kebab(name) {
+            return Err(malformed(format!("adapter `{value}` is not `namespace:name@version`")));
+        }
+        let version = semver::Version::parse(version).map_err(|err| {
+            malformed(format!("adapter `{value}` has an invalid version `{version}`: {err}"))
+        })?;
+
+        Ok(Self {
+            namespace: namespace.to_owned(),
+            name: name.to_owned(),
+            version,
+        })
+    }
+}
+
+// Every malformed reference shares one recovery: spell an exact package.
+fn malformed(description: String) -> Error {
+    Error::BadRequest {
+        code: "adapter-reference".into(),
+        description,
+    }
+}
+
+// A decoder reports the refusal at the offending field, where the error's
+// class and code would be noise.
+impl TryFrom<String> for AdapterRef {
+    type Error = String;
+
+    fn try_from(value: String) -> Result<Self, String> {
+        value.parse().map_err(|err: Error| err.description())
+    }
+}
+
+impl From<AdapterRef> for String {
+    fn from(adapter: AdapterRef) -> Self {
+        adapter.to_string()
+    }
+}
+
 // What one adapter loaded as: the loader's dispatch id and the axis metadata.
 #[derive(Debug, Clone)]
 pub struct Loaded<M> {
@@ -201,135 +332,4 @@ fn require_version(id: &str, declared: &str, running: &semver::Version) -> Resul
     }
 
     Ok(())
-}
-
-/// An adapter reference: an exact package, `namespace:name@version`.
-///
-/// Parsing accepts that one form and nothing else — no default namespace, no
-/// latest, no path, no bare name. [`Display`] is the reference as spelled,
-/// which config serialises and a run dedupes loads by; [`name`] is the
-/// package name, which a run binds a source under when the operator gives
-/// none; [`guest`] is the name the adapter loads and dispatches as, the
-/// reference without its version. A malformed reference parses as
-/// [`Error::BadRequest`] with code `adapter-reference`.
-///
-/// [`name`]: Self::name
-/// [`guest`]: Self::guest
-///
-/// # Examples
-///
-/// ```
-/// use emery_engine::AdapterRef;
-///
-/// let adapter: AdapterRef = "emery:intent@1.0.0".parse()?;
-/// assert_eq!(adapter.to_string(), "emery:intent@1.0.0");
-/// assert_eq!(adapter.name(), "intent");
-/// assert_eq!(adapter.guest(), "emery:intent");
-///
-/// assert!("intent@1.0.0".parse::<AdapterRef>().is_err());
-/// assert!("emery:intent".parse::<AdapterRef>().is_err());
-/// assert!("./intent.wasm".parse::<AdapterRef>().is_err());
-/// # Ok::<(), omnia_sdk::Error>(())
-/// ```
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
-#[serde(try_from = "String", into = "String")]
-pub struct AdapterRef {
-    /// The namespace the deployment routes to a registry, `emery` for a
-    /// first-party adapter.
-    pub namespace: String,
-    /// The package name, the [`name`](Self::name) a run binds a source under.
-    pub name: String,
-    /// The exact version the store holds or the registry serves.
-    pub version: semver::Version,
-}
-
-impl AdapterRef {
-    /// Returns the package name, which a run binds a source under when the
-    /// operator gives no `name` of their own.
-    #[must_use]
-    pub fn name(&self) -> &str {
-        &self.name
-    }
-
-    /// Returns the guest name this adapter loads and dispatches as: the
-    /// reference without its version.
-    #[must_use]
-    pub fn guest(&self) -> String {
-        format!("{}:{}", self.namespace, self.name)
-    }
-
-    /// Returns the loader location this reference loads at.
-    ///
-    /// The location names no registry: the deployment's store answers a
-    /// release it holds, its routing of the namespace one it lacks, or the
-    /// load is refused.
-    #[must_use]
-    pub fn location(&self) -> Location {
-        Location::Registry {
-            package: self.to_string(),
-            endpoint: None,
-        }
-    }
-}
-
-impl Display for AdapterRef {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        write!(f, "{}:{}@{}", self.namespace, self.name, self.version)
-    }
-}
-
-impl FromStr for AdapterRef {
-    type Err = Error;
-
-    fn from_str(value: &str) -> Result<Self, Error> {
-        let value = value.trim();
-        if value.is_empty() {
-            return Err(malformed("adapter reference is empty".to_owned()));
-        }
-        if value.starts_with("https://github.com/") {
-            return Err(malformed(format!("adapter `{value}`: GitHub URLs are not supported")));
-        }
-        let Some((package, version)) = value.rsplit_once('@') else {
-            return Err(malformed(format!("adapter `{value}` names no version")));
-        };
-        let Some((namespace, name)) = package.split_once(':') else {
-            return Err(malformed(format!("adapter `{value}` names no namespace")));
-        };
-        if !is_kebab(namespace) || !is_kebab(name) {
-            return Err(malformed(format!("adapter `{value}` is not `namespace:name@version`")));
-        }
-        let version = semver::Version::parse(version).map_err(|err| {
-            malformed(format!("adapter `{value}` has an invalid version `{version}`: {err}"))
-        })?;
-
-        Ok(Self {
-            namespace: namespace.to_owned(),
-            name: name.to_owned(),
-            version,
-        })
-    }
-}
-
-// Every malformed reference shares one recovery: spell an exact package.
-fn malformed(description: String) -> Error {
-    Error::BadRequest {
-        code: "adapter-reference".into(),
-        description,
-    }
-}
-
-// A decoder reports the refusal at the offending field, where the error's
-// class and code would be noise.
-impl TryFrom<String> for AdapterRef {
-    type Error = String;
-
-    fn try_from(value: String) -> Result<Self, String> {
-        value.parse().map_err(|err: Error| err.description())
-    }
-}
-
-impl From<AdapterRef> for String {
-    fn from(adapter: AdapterRef) -> Self {
-        adapter.to_string()
-    }
 }

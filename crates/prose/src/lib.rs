@@ -57,22 +57,6 @@ pub fn body(docs: &[Doc], path: &str) -> Option<&'static str> {
     find(docs, path).map(|doc| doc.body)
 }
 
-#[doc(hidden)]
-#[must_use]
-pub const fn within(path: &'static str) -> &'static str {
-    let bytes = path.as_bytes();
-    let mut i = 0;
-    while i < bytes.len() {
-        if (i == 0 || bytes[i - 1] == b'/')
-            && matches!(bytes.split_at(i).1, [b'p', b'r', b'o', b's', b'e', b'/', b, ..] if *b != b'/')
-        {
-            return path.split_at(i + "prose/".len()).1;
-        }
-        i += 1;
-    }
-    panic!("a listed document must sit beneath a `prose/` directory");
-}
-
 /// Embeds the listed Markdown files as a static table of [`Doc`] values.
 ///
 /// Each path names a file relative to the invoking source file, the way
@@ -109,4 +93,20 @@ macro_rules! prose {
             ::core::include_str!($path),
         )),+]
     };
+}
+
+#[doc(hidden)]
+#[must_use]
+pub const fn within(path: &'static str) -> &'static str {
+    let bytes = path.as_bytes();
+    let mut i = 0;
+    while i < bytes.len() {
+        if (i == 0 || bytes[i - 1] == b'/')
+            && matches!(bytes.split_at(i).1, [b'p', b'r', b'o', b's', b'e', b'/', b, ..] if *b != b'/')
+        {
+            return path.split_at(i + "prose/".len()).1;
+        }
+        i += 1;
+    }
+    panic!("a listed document must sit beneath a `prose/` directory");
 }

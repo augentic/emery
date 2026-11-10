@@ -175,6 +175,20 @@ impl Slot {
     }
 }
 
+// A document that will not delete stays as an inert orphan, so the failure
+// is logged rather than raised.
+async fn prune<S: BlobStore>(store: &S, id: &str, kind: StagedKind) {
+    for name in kind.documents() {
+        if let Err(error) = BlobStore::delete(store, STAGED_CONTAINER, &key(id, name)).await {
+            tracing::warn!(%id, name, %error, "a displaced candidate document could not be pruned");
+        }
+    }
+}
+
+fn key(id: &str, name: &str) -> String {
+    format!("{id}/{name}.json")
+}
+
 // The revision candidate `stage` left for `apply`, read back whole, and
 // whether it was staged to start the history over.
 pub struct Staged {
@@ -191,6 +205,13 @@ impl Staged {
         let revision = Revision::read(&id, &spec, &design, &plan)?;
         Ok(Self { id, revision, fresh })
     }
+}
+
+async fn document<S: BlobStore>(store: &S, id: &str, name: &str) -> Result<Vec<u8>, Error> {
+    BlobStore::get(store, STAGED_CONTAINER, &key(id, name))
+        .await
+        .context("reading staged candidate document")?
+        .ok_or_else(|| server_error!("staged candidate `{id}` does not contain `{name}`"))
 }
 
 // The amendment `stage_amendment` left for review, read back whole.
@@ -275,6 +296,23 @@ impl Sealing {
     }
 }
 
+// The `amendment-stale` refusal of a seal of an amendment prepared against
+// `base` where `standing` reads another revision, or none, as current.
+fn stale(base: &AmendmentBase, standing: &Standing) -> Error {
+    let now = standing.current.as_ref().map_or_else(
+        || "holds no revision".to_owned(),
+        |current| format!("holds revision `{}` at commit `{}`", current.id, current.commit),
+    );
+    Error::BadRequest {
+        code: "amendment-stale".into(),
+        description: format!(
+            "the amendment was prepared against revision `{}` at commit `{}`, and the repository \
+             now {now}",
+            base.revision, base.commit
+        ),
+    }
+}
+
 // The revision a repository holds, and the commit it was read from. The
 // documents may not read as a revision this engine knows, an outdated
 // grammar: the id and the commit still stand, so a seal lands over them,
@@ -291,65 +329,125 @@ pub struct Current {
     pub layouts: Bodies,
 }
 
-// Where a target repository stands for the revision: its head, the
-// revision it holds, and the label the pointer names when that label does
-// not stand over the head. Read once by `current`, and handed to `commit`
-// so the seal lands over what was read.
-pub struct Standing {
-    pub head: Option<String>,
-    pub current: Option<Current>,
-    pub behind: Option<String>,
-    // The pointer as read, for the compare-and-swap; absent when storage
-    // could not be read too, so the swap fails closed against a present key.
-    pointer: Option<Vec<u8>>,
+impl Current {
+    // The revision the tree at `commit` holds under `spec/`, with its id;
+    // `None` when the tree holds no `spec/`. Held to `expect`, the id the
+    // label names, where there is one.
+    async fn read_at<P: Vcs + Files>(
+        provider: &P, repo: &BuildRepo, commit: &str, expect: Option<&str>,
+    ) -> Result<Option<Self>, Error> {
+        let copy = WorkingCopy::cut(provider, &repo.path(), REVISION, commit).await?;
+        let current = Self::read_tree(provider, copy.path(), commit, expect).await;
+        copy.remove(provider).await?;
+        current
+    }
+
+    // Held to `expect` where a label named the commit; at a head no label
+    // names, three documents that read as no revision of any grammar, or
+    // that read as no one revision's (`Revision::findings`), were edited or
+    // merged by hand, since a seal writes them whole, and are
+    // `spec-mismatch` rather than a revision to seal over. Documents that
+    // read as one revision are that revision whatever label the repository
+    // holds for them, since a clone reads no remote's label and an operator
+    // may delete a merged one.
+    async fn read_tree<F: Files>(
+        files: &F, at: &str, commit: &str, expect: Option<&str>,
+    ) -> Result<Option<Self>, Error> {
+        let held = match Occupancy::of(files, at).await? {
+            Occupancy::Absent => {
+                return expect.map_or(Ok(None), |id| {
+                    Err(mismatch(format!(
+                        "commit `{commit}`, labelled `{}`, holds no `{SPECIFICATION}/`",
+                        label(id)
+                    )))
+                });
+            }
+            Occupancy::Held(held) => held,
+            Occupancy::Other(what) => {
+                return Err(mismatch(format!(
+                    "`{SPECIFICATION}/` at commit `{commit}` holds {what}, where the three \
+                     documents of a revision should stand"
+                )));
+            }
+        };
+        let spec = files.read(at, &path(Spec::NAME)).await?;
+        let design = files.read(at, &path(Design::NAME)).await?;
+        let plan = files.read(at, &path(Plan::NAME)).await?;
+        let id = Revision::identify(&spec, &design, &plan);
+        if let Some(expected) = expect.filter(|expected| *expected != id) {
+            return Err(mismatch(format!(
+                "`{SPECIFICATION}/` at commit `{commit}`, labelled `{}`, does not match revision \
+                 `{expected}`; the documents there are `emery show` output, never sources",
+                label(expected)
+            )));
+        }
+        let revision = match Revision::read(&id, &spec, &design, &plan) {
+            Err(error) if expect.is_none() && !matches!(error, Error::BadRequest { .. }) => {
+                return Err(hand_merged(commit, "no revision", &error.description()));
+            }
+            Ok(revision) if expect.is_none() => {
+                let findings = revision.findings();
+                if !findings.is_empty() {
+                    return Err(hand_merged(commit, "no one revision's", &findings.join("; ")));
+                }
+                Ok(revision)
+            }
+            revision => revision,
+        };
+        let layouts = match &revision {
+            Ok(revision) => layouts_at(files, at, commit, revision, &held).await?,
+            Err(_) => Bodies::new(),
+        };
+        let parent = revision
+            .as_ref()
+            .map_or_else(|_| spec_parent(&spec), |revision| revision.spec.parent.clone());
+        Ok(Some(Self {
+            id,
+            revision,
+            commit: commit.to_owned(),
+            parent,
+            layouts,
+        }))
+    }
 }
 
-impl Standing {
-    // The current revision's diff against `incoming`, where the repository
-    // holds one this engine reads.
-    pub fn diff(&self, incoming: &Revision) -> Option<Diff> {
-        let current = self.current.as_ref()?;
-        let revision = current.revision.as_ref().ok()?;
-        Some(Diff::between(&current.id, revision, incoming))
-    }
-
-    // The commit a seal lands over: the current revision's, else the head.
-    pub fn over(&self) -> Option<&str> {
-        self.current.as_ref().map(|current| current.commit.as_str()).or(self.head.as_deref())
-    }
-
-    // `lineage-exists` where the current revision amends an earlier one, so
-    // a verb that would seal a revision drafted from the sources alone over
-    // it refuses rather than starting the history over unasked.
-    pub fn no_lineage(&self) -> Result<(), Error> {
-        match &self.current {
-            Some(Current {
-                id,
-                parent: Some(parent),
-                ..
-            }) => Err(lineage_exists(id, parent)),
-            Some(_) | None => Ok(()),
+// The layout bodies `held`, the files `spec/layouts/` holds at `commit`,
+// carry for `revision`: exactly one file for each layout its design names,
+// named for the digest's hex and holding bytes of that digest, else
+// `spec-mismatch` naming every file out of place, missing, or rewritten.
+async fn layouts_at<F: Files>(
+    files: &F, at: &str, commit: &str, revision: &Revision, held: &BTreeSet<String>,
+) -> Result<Bodies, Error> {
+    let named = named(revision);
+    let mut wrong = Vec::new();
+    for name in held {
+        if !named.iter().any(|digest| digest.hex() == name) {
+            wrong.push(format!("holds `{name}`, which the design names no layout by"));
         }
     }
-
-    // Whether the current revision stands at `base`, the revision and
-    // commit an amendment was prepared against.
-    fn is_at(&self, base: &AmendmentBase) -> bool {
-        matches!(
-            &self.current,
-            Some(Current { id, commit, .. }) if *id == base.revision && *commit == base.commit
-        )
+    let mut bodies = Bodies::new();
+    for digest in named {
+        if !held.contains(digest.hex()) {
+            wrong.push(format!("lacks `{}`, which layout `{digest}` stands under", digest.hex()));
+            continue;
+        }
+        let body = files.read(at, &layout_path(digest.hex())).await?;
+        let actual = LayoutDigest::of(&body);
+        if actual != digest {
+            wrong.push(format!("holds `{}` with the bytes of `{actual}`", digest.hex()));
+            continue;
+        }
+        bodies.insert(digest, body);
     }
-}
-
-// What `commit` sealed: the revision's id, the id it displaced, the commit
-// and label it stands at, and the diff against the displaced revision.
-pub struct Sealed {
-    pub id: String,
-    pub parent: Option<String>,
-    pub commit: String,
-    pub label: String,
-    pub diff: Option<Diff>,
+    if wrong.is_empty() {
+        return Ok(bodies);
+    }
+    Err(mismatch(format!(
+        "`{}/` at commit `{commit}` {}; a seal writes each layout the design names under its \
+         digest and nothing else",
+        layouts_dir(),
+        wrong.join("; ")
+    )))
 }
 
 // What the tree at a commit holds at `spec/`.
@@ -426,6 +524,117 @@ impl Occupancy {
         other.sort_unstable();
         Ok(Err(other.join(", ")))
     }
+}
+
+// The refusal of a `spec/` at an unlabelled head whose documents were edited
+// or merged by hand; the CLI's hint matches on the `edited or merged by hand`
+// clause.
+fn hand_merged(commit: &str, what: &str, why: &str) -> Error {
+    mismatch(format!(
+        "`{SPECIFICATION}/` at commit `{commit}` holds documents that read as {what} ({why}), so \
+         they were edited or merged by hand; a seal writes them whole"
+    ))
+}
+
+// The top-level `parent` key of `spec`, for a specification under another
+// grammar that `Revision::read` did not deserialise.
+fn spec_parent(spec: &[u8]) -> Option<String> {
+    serde_json::from_slice::<Value>(spec).ok()?.get("parent")?.as_str().map(str::to_owned)
+}
+
+fn mismatch(description: String) -> Error {
+    Error::BadRequest {
+        code: "spec-mismatch".into(),
+        description,
+    }
+}
+
+// The path a document lives at in the repository.
+fn path(name: &str) -> String {
+    format!("{SPECIFICATION}/{name}.json")
+}
+
+// The directory a revision's layouts live in, in the repository.
+fn layouts_dir() -> String {
+    format!("{SPECIFICATION}/{LAYOUTS}")
+}
+
+// The path the layout of digest hex `hex` lives at in the repository.
+fn layout_path(hex: &str) -> String {
+    format!("{SPECIFICATION}/{LAYOUTS}/{hex}")
+}
+
+// Where a target repository stands for the revision: its head, the
+// revision it holds, and the label the pointer names when that label does
+// not stand over the head. Read once by `current`, and handed to `commit`
+// so the seal lands over what was read.
+pub struct Standing {
+    pub head: Option<String>,
+    pub current: Option<Current>,
+    pub behind: Option<String>,
+    // The pointer as read, for the compare-and-swap; absent when storage
+    // could not be read too, so the swap fails closed against a present key.
+    pointer: Option<Vec<u8>>,
+}
+
+impl Standing {
+    // The current revision's diff against `incoming`, where the repository
+    // holds one this engine reads.
+    pub fn diff(&self, incoming: &Revision) -> Option<Diff> {
+        let current = self.current.as_ref()?;
+        let revision = current.revision.as_ref().ok()?;
+        Some(Diff::between(&current.id, revision, incoming))
+    }
+
+    // The commit a seal lands over: the current revision's, else the head.
+    pub fn over(&self) -> Option<&str> {
+        self.current.as_ref().map(|current| current.commit.as_str()).or(self.head.as_deref())
+    }
+
+    // `lineage-exists` where the current revision amends an earlier one, so
+    // a verb that would seal a revision drafted from the sources alone over
+    // it refuses rather than starting the history over unasked.
+    pub fn no_lineage(&self) -> Result<(), Error> {
+        match &self.current {
+            Some(Current {
+                id,
+                parent: Some(parent),
+                ..
+            }) => Err(lineage_exists(id, parent)),
+            Some(_) | None => Ok(()),
+        }
+    }
+
+    // Whether the current revision stands at `base`, the revision and
+    // commit an amendment was prepared against.
+    fn is_at(&self, base: &AmendmentBase) -> bool {
+        matches!(
+            &self.current,
+            Some(Current { id, commit, .. }) if *id == base.revision && *commit == base.commit
+        )
+    }
+}
+
+// The `lineage-exists` refusal of a verb that would seal a revision drafted
+// from the sources alone over revision `id`, which amends `parent`.
+fn lineage_exists(id: &str, parent: &str) -> Error {
+    Error::BadRequest {
+        code: "lineage-exists".into(),
+        description: format!(
+            "the current revision `{id}` amends `{parent}`, so the repository holds a lineage \
+             that a revision drafted from the sources alone would start over"
+        ),
+    }
+}
+
+// What `commit` sealed: the revision's id, the id it displaced, the commit
+// and label it stands at, and the diff against the displaced revision.
+pub struct Sealed {
+    pub id: String,
+    pub parent: Option<String>,
+    pub commit: String,
+    pub label: String,
+    pub diff: Option<Diff>,
 }
 
 // Stages `revision` as the candidate for `emery apply`, replacing any
@@ -614,13 +823,6 @@ pub async fn no_candidate<S: StateStore>(store: &S) -> Result<(), Error> {
     Slot::no_candidate(token(store).await.as_deref())
 }
 
-async fn document<S: BlobStore>(store: &S, id: &str, name: &str) -> Result<Vec<u8>, Error> {
-    BlobStore::get(store, STAGED_CONTAINER, &key(id, name))
-        .await
-        .context("reading staged candidate document")?
-        .ok_or_else(|| server_error!("staged candidate `{id}` does not contain `{name}`"))
-}
-
 // Removes the staged candidate, documents and record, whatever its kind;
 // nothing staged is nothing to remove.
 pub async fn clear<S: StateStore + BlobStore>(store: &S) -> Result<(), Error> {
@@ -780,113 +982,6 @@ pub async fn commit<P: Vcs + Files + StateStore + BlobStore>(
     })
 }
 
-// The `spec-not-generated` refusal of a verb that reads the current
-// revision, naming the label the pointer names where it fell behind the
-// head, and the staged candidate where one stands and is not sealed.
-pub async fn not_generated<S: StateStore>(store: &S, standing: &Standing) -> Error {
-    let mut clauses = vec!["no specification revision is sealed in the repository".to_owned()];
-    if standing.head.is_none() {
-        clauses[0].push_str(", which has no commit");
-    }
-    if let Some(label) = &standing.behind {
-        clauses.push(format!("label `{label}` does not stand over its head"));
-    }
-    match Slot::read(store).await {
-        Ok(Some(Slot { id, kind, .. })) => {
-            clauses.push(format!("{} `{id}` is staged and not sealed", kind.noun()));
-        }
-        Ok(None) => {}
-        Err(error) => tracing::warn!(%error, "the staged record is unreadable"),
-    }
-    Error::NotFound {
-        code: "spec-not-generated".into(),
-        description: clauses.join("; "),
-    }
-}
-
-// The `build-target-required` refusal of `verb`, which reads or seals the
-// current revision and was given no target naming the repository it lives in.
-pub fn target_required(verb: &str) -> Error {
-    Error::BadRequest {
-        code: "build-target-required".into(),
-        description: format!(
-            "the specification has no repository to live in: {verb} needs a `[target]` table \
-             naming one"
-        ),
-    }
-}
-
-// The `nothing-staged` refusal of a verb that reads the staged candidate.
-pub fn nothing_staged() -> Error {
-    Error::NotFound {
-        code: "nothing-staged".into(),
-        description: "no candidate is staged".into(),
-    }
-}
-
-// The `nothing-staged` refusal of a verb that reads the staged amendment,
-// which a staged revision candidate does not satisfy.
-pub fn no_amendment_staged() -> Error {
-    Error::NotFound {
-        code: "nothing-staged".into(),
-        description: "no amendment is staged".into(),
-    }
-}
-
-// The `amendment-pending` refusal of a verb that reads or stages a revision
-// candidate while an amendment stands in the slot.
-pub fn amendment_pending(id: &str) -> Error {
-    Error::BadRequest {
-        code: "amendment-pending".into(),
-        description: format!("amendment `{id}` is staged in place of a revision candidate"),
-    }
-}
-
-// The `amendment-pending` refusal of a verb that stages an amendment while a
-// revision candidate stands in the slot, awaiting its seal.
-pub fn candidate_pending(id: &str) -> Error {
-    Error::BadRequest {
-        code: "amendment-pending".into(),
-        description: format!(
-            "candidate `{id}` is staged and not sealed, where the amendment would go"
-        ),
-    }
-}
-
-// The `lineage-exists` refusal of a verb that would seal a revision drafted
-// from the sources alone over revision `id`, which amends `parent`.
-fn lineage_exists(id: &str, parent: &str) -> Error {
-    Error::BadRequest {
-        code: "lineage-exists".into(),
-        description: format!(
-            "the current revision `{id}` amends `{parent}`, so the repository holds a lineage \
-             that a revision drafted from the sources alone would start over"
-        ),
-    }
-}
-
-// The `amendment-stale` refusal of a seal of an amendment prepared against
-// `base` where `standing` reads another revision, or none, as current.
-fn stale(base: &AmendmentBase, standing: &Standing) -> Error {
-    let now = standing.current.as_ref().map_or_else(
-        || "holds no revision".to_owned(),
-        |current| format!("holds revision `{}` at commit `{}`", current.id, current.commit),
-    );
-    Error::BadRequest {
-        code: "amendment-stale".into(),
-        description: format!(
-            "the amendment was prepared against revision `{}` at commit `{}`, and the repository \
-             now {now}",
-            base.revision, base.commit
-        ),
-    }
-}
-
-// The label a revision stands under in its repository.
-pub fn label(id: &str) -> String {
-    format!("emery/{id}")
-}
-
 // Writes `documents` and `layouts` into `copy`, removes every other layout
 // there, seals them under `message`, and labels the commit; answers the
 // commit `copy` was cut at when nothing changed. A layout storage did not
@@ -966,175 +1061,80 @@ async fn seal_copy<P: Vcs + Files>(
     Ok(commit)
 }
 
-impl Current {
-    // The revision the tree at `commit` holds under `spec/`, with its id;
-    // `None` when the tree holds no `spec/`. Held to `expect`, the id the
-    // label names, where there is one.
-    async fn read_at<P: Vcs + Files>(
-        provider: &P, repo: &BuildRepo, commit: &str, expect: Option<&str>,
-    ) -> Result<Option<Self>, Error> {
-        let copy = WorkingCopy::cut(provider, &repo.path(), REVISION, commit).await?;
-        let current = Self::read_tree(provider, copy.path(), commit, expect).await;
-        copy.remove(provider).await?;
-        current
+// The `spec-not-generated` refusal of a verb that reads the current
+// revision, naming the label the pointer names where it fell behind the
+// head, and the staged candidate where one stands and is not sealed.
+pub async fn not_generated<S: StateStore>(store: &S, standing: &Standing) -> Error {
+    let mut clauses = vec!["no specification revision is sealed in the repository".to_owned()];
+    if standing.head.is_none() {
+        clauses[0].push_str(", which has no commit");
     }
-
-    // Held to `expect` where a label named the commit; at a head no label
-    // names, three documents that read as no revision of any grammar, or
-    // that read as no one revision's (`Revision::findings`), were edited or
-    // merged by hand, since a seal writes them whole, and are
-    // `spec-mismatch` rather than a revision to seal over. Documents that
-    // read as one revision are that revision whatever label the repository
-    // holds for them, since a clone reads no remote's label and an operator
-    // may delete a merged one.
-    async fn read_tree<F: Files>(
-        files: &F, at: &str, commit: &str, expect: Option<&str>,
-    ) -> Result<Option<Self>, Error> {
-        let held = match Occupancy::of(files, at).await? {
-            Occupancy::Absent => {
-                return expect.map_or(Ok(None), |id| {
-                    Err(mismatch(format!(
-                        "commit `{commit}`, labelled `{}`, holds no `{SPECIFICATION}/`",
-                        label(id)
-                    )))
-                });
-            }
-            Occupancy::Held(held) => held,
-            Occupancy::Other(what) => {
-                return Err(mismatch(format!(
-                    "`{SPECIFICATION}/` at commit `{commit}` holds {what}, where the three \
-                     documents of a revision should stand"
-                )));
-            }
-        };
-        let spec = files.read(at, &path(Spec::NAME)).await?;
-        let design = files.read(at, &path(Design::NAME)).await?;
-        let plan = files.read(at, &path(Plan::NAME)).await?;
-        let id = Revision::identify(&spec, &design, &plan);
-        if let Some(expected) = expect.filter(|expected| *expected != id) {
-            return Err(mismatch(format!(
-                "`{SPECIFICATION}/` at commit `{commit}`, labelled `{}`, does not match revision \
-                 `{expected}`; the documents there are `emery show` output, never sources",
-                label(expected)
-            )));
+    if let Some(label) = &standing.behind {
+        clauses.push(format!("label `{label}` does not stand over its head"));
+    }
+    match Slot::read(store).await {
+        Ok(Some(Slot { id, kind, .. })) => {
+            clauses.push(format!("{} `{id}` is staged and not sealed", kind.noun()));
         }
-        let revision = match Revision::read(&id, &spec, &design, &plan) {
-            Err(error) if expect.is_none() && !matches!(error, Error::BadRequest { .. }) => {
-                return Err(hand_merged(commit, "no revision", &error.description()));
-            }
-            Ok(revision) if expect.is_none() => {
-                let findings = revision.findings();
-                if !findings.is_empty() {
-                    return Err(hand_merged(commit, "no one revision's", &findings.join("; ")));
-                }
-                Ok(revision)
-            }
-            revision => revision,
-        };
-        let layouts = match &revision {
-            Ok(revision) => layouts_at(files, at, commit, revision, &held).await?,
-            Err(_) => Bodies::new(),
-        };
-        let parent = revision
-            .as_ref()
-            .map_or_else(|_| spec_parent(&spec), |revision| revision.spec.parent.clone());
-        Ok(Some(Self {
-            id,
-            revision,
-            commit: commit.to_owned(),
-            parent,
-            layouts,
-        }))
+        Ok(None) => {}
+        Err(error) => tracing::warn!(%error, "the staged record is unreadable"),
+    }
+    Error::NotFound {
+        code: "spec-not-generated".into(),
+        description: clauses.join("; "),
     }
 }
 
-// The layout bodies `held`, the files `spec/layouts/` holds at `commit`,
-// carry for `revision`: exactly one file for each layout its design names,
-// named for the digest's hex and holding bytes of that digest, else
-// `spec-mismatch` naming every file out of place, missing, or rewritten.
-async fn layouts_at<F: Files>(
-    files: &F, at: &str, commit: &str, revision: &Revision, held: &BTreeSet<String>,
-) -> Result<Bodies, Error> {
-    let named = named(revision);
-    let mut wrong = Vec::new();
-    for name in held {
-        if !named.iter().any(|digest| digest.hex() == name) {
-            wrong.push(format!("holds `{name}`, which the design names no layout by"));
-        }
-    }
-    let mut bodies = Bodies::new();
-    for digest in named {
-        if !held.contains(digest.hex()) {
-            wrong.push(format!("lacks `{}`, which layout `{digest}` stands under", digest.hex()));
-            continue;
-        }
-        let body = files.read(at, &layout_path(digest.hex())).await?;
-        let actual = LayoutDigest::of(&body);
-        if actual != digest {
-            wrong.push(format!("holds `{}` with the bytes of `{actual}`", digest.hex()));
-            continue;
-        }
-        bodies.insert(digest, body);
-    }
-    if wrong.is_empty() {
-        return Ok(bodies);
-    }
-    Err(mismatch(format!(
-        "`{}/` at commit `{commit}` {}; a seal writes each layout the design names under its \
-         digest and nothing else",
-        layouts_dir(),
-        wrong.join("; ")
-    )))
-}
-
-// The top-level `parent` key of `spec`, for a specification under another
-// grammar that `Revision::read` did not deserialise.
-fn spec_parent(spec: &[u8]) -> Option<String> {
-    serde_json::from_slice::<Value>(spec).ok()?.get("parent")?.as_str().map(str::to_owned)
-}
-
-// The refusal of a `spec/` at an unlabelled head whose documents were edited
-// or merged by hand; the CLI's hint matches on the `edited or merged by hand`
-// clause.
-fn hand_merged(commit: &str, what: &str, why: &str) -> Error {
-    mismatch(format!(
-        "`{SPECIFICATION}/` at commit `{commit}` holds documents that read as {what} ({why}), so \
-         they were edited or merged by hand; a seal writes them whole"
-    ))
-}
-
-fn mismatch(description: String) -> Error {
+// The `build-target-required` refusal of `verb`, which reads or seals the
+// current revision and was given no target naming the repository it lives in.
+pub fn target_required(verb: &str) -> Error {
     Error::BadRequest {
-        code: "spec-mismatch".into(),
-        description,
+        code: "build-target-required".into(),
+        description: format!(
+            "the specification has no repository to live in: {verb} needs a `[target]` table \
+             naming one"
+        ),
     }
 }
 
-// The path a document lives at in the repository.
-fn path(name: &str) -> String {
-    format!("{SPECIFICATION}/{name}.json")
-}
-
-// The directory a revision's layouts live in, in the repository.
-fn layouts_dir() -> String {
-    format!("{SPECIFICATION}/{LAYOUTS}")
-}
-
-// The path the layout of digest hex `hex` lives at in the repository.
-fn layout_path(hex: &str) -> String {
-    format!("{SPECIFICATION}/{LAYOUTS}/{hex}")
-}
-
-fn key(id: &str, name: &str) -> String {
-    format!("{id}/{name}.json")
-}
-
-// A document that will not delete stays as an inert orphan, so the failure
-// is logged rather than raised.
-async fn prune<S: BlobStore>(store: &S, id: &str, kind: StagedKind) {
-    for name in kind.documents() {
-        if let Err(error) = BlobStore::delete(store, STAGED_CONTAINER, &key(id, name)).await {
-            tracing::warn!(%id, name, %error, "a displaced candidate document could not be pruned");
-        }
+// The `nothing-staged` refusal of a verb that reads the staged candidate.
+pub fn nothing_staged() -> Error {
+    Error::NotFound {
+        code: "nothing-staged".into(),
+        description: "no candidate is staged".into(),
     }
+}
+
+// The `nothing-staged` refusal of a verb that reads the staged amendment,
+// which a staged revision candidate does not satisfy.
+pub fn no_amendment_staged() -> Error {
+    Error::NotFound {
+        code: "nothing-staged".into(),
+        description: "no amendment is staged".into(),
+    }
+}
+
+// The `amendment-pending` refusal of a verb that reads or stages a revision
+// candidate while an amendment stands in the slot.
+pub fn amendment_pending(id: &str) -> Error {
+    Error::BadRequest {
+        code: "amendment-pending".into(),
+        description: format!("amendment `{id}` is staged in place of a revision candidate"),
+    }
+}
+
+// The `amendment-pending` refusal of a verb that stages an amendment while a
+// revision candidate stands in the slot, awaiting its seal.
+pub fn candidate_pending(id: &str) -> Error {
+    Error::BadRequest {
+        code: "amendment-pending".into(),
+        description: format!(
+            "candidate `{id}` is staged and not sealed, where the amendment would go"
+        ),
+    }
+}
+
+// The label a revision stands under in its repository.
+pub fn label(id: &str) -> String {
+    format!("emery/{id}")
 }

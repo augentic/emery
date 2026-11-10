@@ -37,6 +37,25 @@ pub fn tools() -> Vec<Tool> {
     ]
 }
 
+/// The empty argument object accepted by `list_docs`.
+// The `///` is the `JsonSchema` description the model reads. A braced struct
+// derives the empty `object` schema a tool's parameters must be; a unit struct
+// would derive `null`.
+#[derive(Debug, Deserialize, JsonSchema)]
+#[expect(
+    clippy::empty_structs_with_brackets,
+    reason = "the schema derive needs the braced form for an object"
+)]
+struct ListDocs {}
+
+/// The document selector accepted by `read_doc`.
+// The `///` lines are the `JsonSchema` descriptions the model reads.
+#[derive(Debug, Deserialize, JsonSchema)]
+struct ReadDoc {
+    /// The document path as `list_docs` lists it.
+    path: String,
+}
+
 // Returns the handler that serves the reference tools from `docs` and then `imports`.
 //
 // `imports` are the documents a turn offers beyond the adapter's own:
@@ -93,25 +112,6 @@ fn read(docs: &[Doc], imports: &[Doc], call: &ToolCall) -> Result<String, String
         body: doc.body,
     })
     .map_err(|err| format!("{READ_DOC}: {err}"))
-}
-
-/// The empty argument object accepted by `list_docs`.
-// The `///` is the `JsonSchema` description the model reads. A braced struct
-// derives the empty `object` schema a tool's parameters must be; a unit struct
-// would derive `null`.
-#[derive(Debug, Deserialize, JsonSchema)]
-#[expect(
-    clippy::empty_structs_with_brackets,
-    reason = "the schema derive needs the braced form for an object"
-)]
-struct ListDocs {}
-
-/// The document selector accepted by `read_doc`.
-// The `///` lines are the `JsonSchema` descriptions the model reads.
-#[derive(Debug, Deserialize, JsonSchema)]
-struct ReadDoc {
-    /// The document path as `list_docs` lists it.
-    path: String,
 }
 
 #[derive(Serialize)]

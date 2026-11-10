@@ -22,19 +22,6 @@ use crate::specify::basis::{Basis, Contributor};
 use crate::specify::sections::{self, BasesSection, ClaimsSection};
 use crate::specify::{Extract, shape};
 
-// The outcome a scenario states where no criterion evidences one.
-const UNKNOWN: &str = "[unknown]";
-
-// What a chunk opens with: a specify's first chunk drafts the preamble and
-// lists every claim, a later chunk drafts no preamble, and an amendment's
-// chunk drafts none either, since the base's stands.
-#[derive(Clone, Copy, PartialEq, Eq)]
-enum Lead {
-    Preamble,
-    Chunk,
-    Amendment,
-}
-
 /// How many requirements one `spec-draft` turn drafts at most.
 ///
 /// A larger run is drafted in chunks, each stem kept whole where it fits
@@ -283,14 +270,54 @@ impl Brief for SpecBrief<'_> {
     }
 }
 
-// Whitespace collapsed, trailing punctuation dropped, lowercased: the shape
-// two lines are compared in.
-fn normalised(text: &str) -> String {
-    text.split_whitespace()
-        .collect::<Vec<_>>()
-        .join(" ")
-        .trim_end_matches(['.', '!', '?', ';', ':', ','])
-        .to_lowercase()
+impl Display for SpecBrief<'_> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        match self.lead {
+            Lead::Preamble => {
+                write!(f, "Draft `spec.md`.\n\n{claims}", claims = ClaimsSection(self.extracts))?;
+            }
+            Lead::Chunk => {
+                f.write_str(
+                    "Draft `spec.md`: the requirements below, one chunk of the specification's. \
+                     The preamble is drafted with the first chunk, so leave it empty. The claims \
+                     listed are the ones under this chunk's stems and the detail anchored beside \
+                     them; the source's other claims are other chunks' to draft from.\n\n",
+                )?;
+                let scope = Scope::of(self.extracts, &self.bases);
+                sections::claims(f, self.extracts, |claim| scope.keeps(claim))?;
+            }
+            Lead::Amendment => {
+                f.write_str(
+                    "Draft `spec.md`: the requirements below, which amend the current \
+                     specification. Each is one the change sources add to it or revise in it, \
+                     drafted whole, scenarios included; the specification's other requirements \
+                     stand as they are and are not listed. The preamble is the current \
+                     specification's and is kept, so leave it empty. The claims listed are the \
+                     ones under this chunk's stems and the detail anchored beside them; the \
+                     sources' other claims are other chunks' to draft from, or restate \
+                     requirements that stand.\n\n",
+                )?;
+                let scope = Scope::of(self.extracts, &self.bases);
+                sections::claims(f, self.extracts, |claim| scope.keeps(claim))?;
+            }
+        }
+
+        write!(
+            f,
+            "\n## Requirements (draft one entry per subject)\n\n{bases}",
+            bases = BasesSection(&self.bases)
+        )
+    }
+}
+
+// What a chunk opens with: a specify's first chunk drafts the preamble and
+// lists every claim, a later chunk drafts no preamble, and an amendment's
+// chunk drafts none either, since the base's stands.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Lead {
+    Preamble,
+    Chunk,
+    Amendment,
 }
 
 // The claims one chunk past the first is drafted from: every claim whose id
@@ -334,46 +361,6 @@ impl<'a> Scope<'a> {
     }
 }
 
-impl Display for SpecBrief<'_> {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        match self.lead {
-            Lead::Preamble => {
-                write!(f, "Draft `spec.md`.\n\n{claims}", claims = ClaimsSection(self.extracts))?;
-            }
-            Lead::Chunk => {
-                f.write_str(
-                    "Draft `spec.md`: the requirements below, one chunk of the specification's. \
-                     The preamble is drafted with the first chunk, so leave it empty. The claims \
-                     listed are the ones under this chunk's stems and the detail anchored beside \
-                     them; the source's other claims are other chunks' to draft from.\n\n",
-                )?;
-                let scope = Scope::of(self.extracts, &self.bases);
-                sections::claims(f, self.extracts, |claim| scope.keeps(claim))?;
-            }
-            Lead::Amendment => {
-                f.write_str(
-                    "Draft `spec.md`: the requirements below, which amend the current \
-                     specification. Each is one the change sources add to it or revise in it, \
-                     drafted whole, scenarios included; the specification's other requirements \
-                     stand as they are and are not listed. The preamble is the current \
-                     specification's and is kept, so leave it empty. The claims listed are the \
-                     ones under this chunk's stems and the detail anchored beside them; the \
-                     sources' other claims are other chunks' to draft from, or restate \
-                     requirements that stand.\n\n",
-                )?;
-                let scope = Scope::of(self.extracts, &self.bases);
-                sections::claims(f, self.extracts, |claim| scope.keeps(claim))?;
-            }
-        }
-
-        write!(
-            f,
-            "\n## Requirements (draft one entry per subject)\n\n{bases}",
-            bases = BasesSection(&self.bases)
-        )
-    }
-}
-
 /// Model-authored content for a specification.
 ///
 /// The engine supplies headings, provenance, requirement bodies, and notes.
@@ -385,6 +372,19 @@ pub struct SpecAnswer {
     pub preamble: Vec<String>,
     /// One draft per requirement subject, in any order.
     pub requirements: Vec<Draft>,
+}
+
+// The outcome a scenario states where no criterion evidences one.
+const UNKNOWN: &str = "[unknown]";
+
+// Whitespace collapsed, trailing punctuation dropped, lowercased: the shape
+// two lines are compared in.
+fn normalised(text: &str) -> String {
+    text.split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+        .trim_end_matches(['.', '!', '?', ';', ':', ','])
+        .to_lowercase()
 }
 
 /// Drafted acceptance scenarios for one requirement.
