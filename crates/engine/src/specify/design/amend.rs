@@ -443,16 +443,6 @@ impl Display for DesignAmend<'_> {
     }
 }
 
-// Whitespace collapsed: the shape a kept paragraph is compared in.
-fn verbatim(text: &str) -> String {
-    text.split_whitespace().collect::<Vec<_>>().join(" ")
-}
-
-// The items spelled in order, comma-separated, as a finding names them.
-fn listed(items: impl IntoIterator<Item: Display>) -> String {
-    items.into_iter().map(|item| item.to_string()).collect::<Vec<_>>().join(", ")
-}
-
 // Whether a paragraph of `base`'s `kind` section cites one of `retired`.
 fn describes(base: &Design, kind: SectionKind, retired: &BTreeMap<ReqId, &str>) -> bool {
     base.section(kind).is_some_and(|section| {
@@ -472,6 +462,16 @@ fn cited(text: &str) -> BTreeSet<ReqId> {
             text[at..at + prefix.len() + end].parse().ok()
         })
         .collect()
+}
+
+// Whitespace collapsed: the shape a kept paragraph is compared in.
+fn verbatim(text: &str) -> String {
+    text.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
+// The items spelled in order, comma-separated, as a finding names them.
+fn listed(items: impl IntoIterator<Item: Display>) -> String {
+    items.into_iter().map(|item| item.to_string()).collect::<Vec<_>>().join(", ")
 }
 
 /// Model-authored content for an amended design: the sections the change informs, redrafted.

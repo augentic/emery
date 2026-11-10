@@ -43,6 +43,20 @@ pub fn refusal(wrote: &str, leaks: &[String]) -> Error {
     }
 }
 
+// Files that carry a credential by name, matched on the final path segment.
+const CARRIERS: [&str; 10] = [
+    "id_rsa",
+    "id_dsa",
+    "id_ecdsa",
+    "id_ed25519",
+    ".npmrc",
+    ".netrc",
+    ".git-credentials",
+    ".pgpass",
+    ".pypirc",
+    ".env",
+];
+
 fn named(path: &str) -> Option<&'static str> {
     let mut segments = path.rsplit('/');
     let name = segments.next()?;
@@ -59,6 +73,10 @@ fn carried(bytes: &[u8]) -> Option<&'static str> {
     SHAPES.iter().chain([&AUTH_TOKEN]).find(|shape| shape.matches(bytes)).map(|shape| shape.what)
 }
 
+const PEM_HEAD: &[u8] = b"-----BEGIN ";
+const PEM_DASHES: &[u8] = b"-----";
+const PEM_PRIVATE: &[u8] = b"PRIVATE KEY";
+
 // A `-----BEGIN <label>-----` header whose label ends in `PRIVATE KEY`,
 // wherever on its line it stands: a key pasted into a string literal keeps
 // the header and the escaped newline after it on one line.
@@ -69,65 +87,6 @@ fn pem_private_key(bytes: &[u8]) -> bool {
             label.ends_with(PEM_PRIVATE) && !label.contains(&b'\n')
         })
     })
-}
-
-impl Shape {
-    fn matches(&self, bytes: &[u8]) -> bool {
-        after(bytes, self.prefix).any(|rest| {
-            rest.iter().take_while(|&&byte| self.run.admits(byte)).count() >= self.least
-        })
-    }
-}
-
-fn after<'a>(bytes: &'a [u8], prefix: &'a [u8]) -> impl Iterator<Item = &'a [u8]> {
-    (0..bytes.len()).filter_map(move |start| bytes[start..].strip_prefix(prefix))
-}
-
-// Files that carry a credential by name, matched on the final path segment.
-const CARRIERS: [&str; 10] = [
-    "id_rsa",
-    "id_dsa",
-    "id_ecdsa",
-    "id_ed25519",
-    ".npmrc",
-    ".netrc",
-    ".git-credentials",
-    ".pgpass",
-    ".pypirc",
-    ".env",
-];
-
-const PEM_HEAD: &[u8] = b"-----BEGIN ";
-const PEM_DASHES: &[u8] = b"-----";
-const PEM_PRIVATE: &[u8] = b"PRIVATE KEY";
-
-// The bytes a token's run may hold after its prefix.
-#[derive(Clone, Copy)]
-enum Run {
-    // `[A-Z0-9]`
-    Upper,
-    // `[A-Za-z0-9]`
-    Alnum,
-    // `[A-Za-z0-9_-]`
-    Token,
-}
-
-impl Run {
-    const fn admits(self, byte: u8) -> bool {
-        match self {
-            Self::Upper => byte.is_ascii_uppercase() || byte.is_ascii_digit(),
-            Self::Alnum => byte.is_ascii_alphanumeric(),
-            Self::Token => byte.is_ascii_alphanumeric() || byte == b'_' || byte == b'-',
-        }
-    }
-}
-
-// One credential shape: a fixed prefix, then at least `least` bytes of `run`.
-struct Shape {
-    prefix: &'static [u8],
-    run: Run,
-    least: usize,
-    what: &'static str,
 }
 
 const SHAPES: [Shape; 17] = [
@@ -243,3 +202,44 @@ const AUTH_TOKEN: Shape = Shape {
     least: 20,
     what: "an npm `_authToken` line",
 };
+
+// One credential shape: a fixed prefix, then at least `least` bytes of `run`.
+struct Shape {
+    prefix: &'static [u8],
+    run: Run,
+    least: usize,
+    what: &'static str,
+}
+
+impl Shape {
+    fn matches(&self, bytes: &[u8]) -> bool {
+        after(bytes, self.prefix).any(|rest| {
+            rest.iter().take_while(|&&byte| self.run.admits(byte)).count() >= self.least
+        })
+    }
+}
+
+// The bytes a token's run may hold after its prefix.
+#[derive(Clone, Copy)]
+enum Run {
+    // `[A-Z0-9]`
+    Upper,
+    // `[A-Za-z0-9]`
+    Alnum,
+    // `[A-Za-z0-9_-]`
+    Token,
+}
+
+impl Run {
+    const fn admits(self, byte: u8) -> bool {
+        match self {
+            Self::Upper => byte.is_ascii_uppercase() || byte.is_ascii_digit(),
+            Self::Alnum => byte.is_ascii_alphanumeric(),
+            Self::Token => byte.is_ascii_alphanumeric() || byte == b'_' || byte == b'-',
+        }
+    }
+}
+
+fn after<'a>(bytes: &'a [u8], prefix: &'a [u8]) -> impl Iterator<Item = &'a [u8]> {
+    (0..bytes.len()).filter_map(move |start| bytes[start..].strip_prefix(prefix))
+}

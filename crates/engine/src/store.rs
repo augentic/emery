@@ -158,6 +158,20 @@ impl Slot {
     }
 }
 
+// A document that will not delete stays as an inert orphan, so the failure
+// is logged rather than raised.
+async fn prune<S: BlobStore>(store: &S, id: &str, kind: StagedKind) {
+    for name in kind.documents() {
+        if let Err(error) = BlobStore::delete(store, STAGED_CONTAINER, &key(id, name)).await {
+            tracing::warn!(%id, name, %error, "a displaced candidate document could not be pruned");
+        }
+    }
+}
+
+fn key(id: &str, name: &str) -> String {
+    format!("{id}/{name}.json")
+}
+
 // The revision candidate `stage` left for `apply`, read back whole, and
 // whether it was staged to start the history over.
 pub struct Staged {
@@ -174,6 +188,13 @@ impl Staged {
         let revision = Revision::read(&id, &spec, &design, &plan)?;
         Ok(Self { id, revision, fresh })
     }
+}
+
+async fn document<S: BlobStore>(store: &S, id: &str, name: &str) -> Result<Vec<u8>, Error> {
+    BlobStore::get(store, STAGED_CONTAINER, &key(id, name))
+        .await
+        .context("reading staged candidate document")?
+        .ok_or_else(|| server_error!("staged candidate `{id}` does not contain `{name}`"))
 }
 
 // The amendment `stage_amendment` left for review, read back whole.
@@ -255,6 +276,23 @@ impl Sealing {
             over: Some(amendment.base.commit),
             summary: Some(summary),
         })
+    }
+}
+
+// The `amendment-stale` refusal of a seal of an amendment prepared against
+// `base` where `standing` reads another revision, or none, as current.
+fn stale(base: &AmendmentBase, standing: &Standing) -> Error {
+    let now = standing.current.as_ref().map_or_else(
+        || "holds no revision".to_owned(),
+        |current| format!("holds revision `{}` at commit `{}`", current.id, current.commit),
+    );
+    Error::BadRequest {
+        code: "amendment-stale".into(),
+        description: format!(
+            "the amendment was prepared against revision `{}` at commit `{}`, and the repository \
+             now {now}",
+            base.revision, base.commit
+        ),
     }
 }
 
@@ -348,10 +386,45 @@ impl Current {
     }
 }
 
-// The top-level `parent` key of `spec`, for a specification under another
-// grammar that `Revision::read` did not deserialise.
-fn spec_parent(spec: &[u8]) -> Option<String> {
-    serde_json::from_slice::<Value>(spec).ok()?.get("parent")?.as_str().map(str::to_owned)
+// What the tree at a commit holds at `spec/`.
+enum Occupancy {
+    Absent,
+    Held,
+    Other(String),
+}
+
+impl Occupancy {
+    const EXPECTED: [&str; 3] = ["design.json", "plan.json", "spec.json"];
+
+    // What stands at `spec/` beneath `at`: nothing, exactly the three
+    // documents as files, or something else, named.
+    async fn of<F: Files>(files: &F, at: &str) -> Result<Self, Error> {
+        let root = files.list(at, ".").await?;
+        let Some(entry) = root.into_iter().find(|entry| entry.name == SPECIFICATION) else {
+            return Ok(Self::Absent);
+        };
+        match entry.kind {
+            EntryKind::Directory => {}
+            EntryKind::File => return Ok(Self::Other("a file".to_owned())),
+            EntryKind::Link => return Ok(Self::Other("a symbolic link".to_owned())),
+        }
+        let mut names: Vec<String> = files
+            .list(at, SPECIFICATION)
+            .await?
+            .into_iter()
+            .map(|entry| match entry.kind {
+                EntryKind::File => entry.name,
+                EntryKind::Directory => format!("{}/", entry.name),
+                EntryKind::Link => format!("{} (a symbolic link)", entry.name),
+            })
+            .collect();
+        names.sort_unstable();
+        if names.iter().map(String::as_str).eq(Self::EXPECTED) {
+            return Ok(Self::Held);
+        }
+        let listed = names.iter().map(|name| format!("`{name}`")).collect::<Vec<_>>().join(", ");
+        Ok(Self::Other(if listed.is_empty() { "an empty directory".to_owned() } else { listed }))
+    }
 }
 
 // The refusal of a `spec/` at an unlabelled head whose documents were edited
@@ -362,6 +435,24 @@ fn hand_merged(commit: &str, what: &str, why: &str) -> Error {
         "`{SPECIFICATION}/` at commit `{commit}` holds documents that read as {what} ({why}), so \
          they were edited or merged by hand; a seal writes them whole"
     ))
+}
+
+// The top-level `parent` key of `spec`, for a specification under another
+// grammar that `Revision::read` did not deserialise.
+fn spec_parent(spec: &[u8]) -> Option<String> {
+    serde_json::from_slice::<Value>(spec).ok()?.get("parent")?.as_str().map(str::to_owned)
+}
+
+fn mismatch(description: String) -> Error {
+    Error::BadRequest {
+        code: "spec-mismatch".into(),
+        description,
+    }
+}
+
+// The path a document lives at in the repository.
+fn path(name: &str) -> String {
+    format!("{SPECIFICATION}/{name}.json")
 }
 
 // Where a target repository stands for the revision: its head, the
@@ -415,6 +506,18 @@ impl Standing {
     }
 }
 
+// The `lineage-exists` refusal of a verb that would seal a revision drafted
+// from the sources alone over revision `id`, which amends `parent`.
+fn lineage_exists(id: &str, parent: &str) -> Error {
+    Error::BadRequest {
+        code: "lineage-exists".into(),
+        description: format!(
+            "the current revision `{id}` amends `{parent}`, so the repository holds a lineage \
+             that a revision drafted from the sources alone would start over"
+        ),
+    }
+}
+
 // What `commit` sealed: the revision's id, the id it displaced, the commit
 // and label it stands at, and the diff against the displaced revision.
 pub struct Sealed {
@@ -423,47 +526,6 @@ pub struct Sealed {
     pub commit: String,
     pub label: String,
     pub diff: Option<Diff>,
-}
-
-// What the tree at a commit holds at `spec/`.
-enum Occupancy {
-    Absent,
-    Held,
-    Other(String),
-}
-
-impl Occupancy {
-    const EXPECTED: [&str; 3] = ["design.json", "plan.json", "spec.json"];
-
-    // What stands at `spec/` beneath `at`: nothing, exactly the three
-    // documents as files, or something else, named.
-    async fn of<F: Files>(files: &F, at: &str) -> Result<Self, Error> {
-        let root = files.list(at, ".").await?;
-        let Some(entry) = root.into_iter().find(|entry| entry.name == SPECIFICATION) else {
-            return Ok(Self::Absent);
-        };
-        match entry.kind {
-            EntryKind::Directory => {}
-            EntryKind::File => return Ok(Self::Other("a file".to_owned())),
-            EntryKind::Link => return Ok(Self::Other("a symbolic link".to_owned())),
-        }
-        let mut names: Vec<String> = files
-            .list(at, SPECIFICATION)
-            .await?
-            .into_iter()
-            .map(|entry| match entry.kind {
-                EntryKind::File => entry.name,
-                EntryKind::Directory => format!("{}/", entry.name),
-                EntryKind::Link => format!("{} (a symbolic link)", entry.name),
-            })
-            .collect();
-        names.sort_unstable();
-        if names.iter().map(String::as_str).eq(Self::EXPECTED) {
-            return Ok(Self::Held);
-        }
-        let listed = names.iter().map(|name| format!("`{name}`")).collect::<Vec<_>>().join(", ");
-        Ok(Self::Other(if listed.is_empty() { "an empty directory".to_owned() } else { listed }))
-    }
 }
 
 // Stages `revision` as the candidate for `emery apply`, replacing any
@@ -601,13 +663,6 @@ pub async fn no_amendment<S: StateStore>(store: &S) -> Result<(), Error> {
 // is read as `no_amendment` reads it.
 pub async fn no_candidate<S: StateStore>(store: &S) -> Result<(), Error> {
     Slot::no_candidate(token(store).await.as_deref())
-}
-
-async fn document<S: BlobStore>(store: &S, id: &str, name: &str) -> Result<Vec<u8>, Error> {
-    BlobStore::get(store, STAGED_CONTAINER, &key(id, name))
-        .await
-        .context("reading staged candidate document")?
-        .ok_or_else(|| server_error!("staged candidate `{id}` does not contain `{name}`"))
 }
 
 // Removes the staged candidate, documents and record, whatever its kind;
@@ -749,6 +804,49 @@ pub async fn commit<P: Vcs + Files + StateStore + BlobStore>(
     })
 }
 
+// Writes `documents` into `copy`, seals them under `message`, and labels
+// the commit; answers the commit `copy` was cut at when nothing changed.
+async fn seal_copy<P: Vcs + Files>(
+    provider: &P, repo: &BuildRepo, documents: &Documents, message: &RevisionMessage,
+    copy: &WorkingCopy,
+) -> Result<String, Error> {
+    let at = copy.path();
+    let over = message.base.as_deref();
+    if let Occupancy::Other(what) = Occupancy::of(provider, at).await? {
+        return Err(mismatch(format!(
+            "`{SPECIFICATION}/` at {} holds {what}, so the directory is the operator's and the \
+             specification cannot live there",
+            over.map_or_else(|| "the root".to_owned(), |over| format!("commit `{over}`"))
+        )));
+    }
+    for (name, body) in documents {
+        provider.write(at, &path(name), body.as_bytes()).await?;
+    }
+
+    // what changed, held to the secret gate and sealed
+    let pending = copy.pending(provider).await?;
+    let leaks = secrets::findings(provider, at, &pending).await?;
+    if !leaks.is_empty() {
+        return Err(secrets::refusal("the seal", &leaks));
+    }
+    let commit = match (copy.commit(provider, &message.to_string()).await?, over) {
+        (Some(commit), _) => commit,
+        (None, Some(over)) => {
+            tracing::info!(
+                revision = %message.revision,
+                commit = over,
+                "the repository already holds the revision"
+            );
+            over.to_owned()
+        }
+        (None, None) => {
+            return Err(server_error!("sealing the specification made no root commit"));
+        }
+    };
+    repo.label(provider, &label(&message.revision), &commit).await?;
+    Ok(commit)
+}
+
 // The `spec-not-generated` refusal of a verb that reads the current
 // revision, naming the label the pointer names where it fell behind the
 // head, and the staged candidate where one stands and is not sealed.
@@ -822,105 +920,7 @@ pub fn candidate_pending(id: &str) -> Error {
     }
 }
 
-// The `lineage-exists` refusal of a verb that would seal a revision drafted
-// from the sources alone over revision `id`, which amends `parent`.
-fn lineage_exists(id: &str, parent: &str) -> Error {
-    Error::BadRequest {
-        code: "lineage-exists".into(),
-        description: format!(
-            "the current revision `{id}` amends `{parent}`, so the repository holds a lineage \
-             that a revision drafted from the sources alone would start over"
-        ),
-    }
-}
-
-// The `amendment-stale` refusal of a seal of an amendment prepared against
-// `base` where `standing` reads another revision, or none, as current.
-fn stale(base: &AmendmentBase, standing: &Standing) -> Error {
-    let now = standing.current.as_ref().map_or_else(
-        || "holds no revision".to_owned(),
-        |current| format!("holds revision `{}` at commit `{}`", current.id, current.commit),
-    );
-    Error::BadRequest {
-        code: "amendment-stale".into(),
-        description: format!(
-            "the amendment was prepared against revision `{}` at commit `{}`, and the repository \
-             now {now}",
-            base.revision, base.commit
-        ),
-    }
-}
-
 // The label a revision stands under in its repository.
 pub fn label(id: &str) -> String {
     format!("emery/{id}")
-}
-
-// Writes `documents` into `copy`, seals them under `message`, and labels
-// the commit; answers the commit `copy` was cut at when nothing changed.
-async fn seal_copy<P: Vcs + Files>(
-    provider: &P, repo: &BuildRepo, documents: &Documents, message: &RevisionMessage,
-    copy: &WorkingCopy,
-) -> Result<String, Error> {
-    let at = copy.path();
-    let over = message.base.as_deref();
-    if let Occupancy::Other(what) = Occupancy::of(provider, at).await? {
-        return Err(mismatch(format!(
-            "`{SPECIFICATION}/` at {} holds {what}, so the directory is the operator's and the \
-             specification cannot live there",
-            over.map_or_else(|| "the root".to_owned(), |over| format!("commit `{over}`"))
-        )));
-    }
-    for (name, body) in documents {
-        provider.write(at, &path(name), body.as_bytes()).await?;
-    }
-
-    // what changed, held to the secret gate and sealed
-    let pending = copy.pending(provider).await?;
-    let leaks = secrets::findings(provider, at, &pending).await?;
-    if !leaks.is_empty() {
-        return Err(secrets::refusal("the seal", &leaks));
-    }
-    let commit = match (copy.commit(provider, &message.to_string()).await?, over) {
-        (Some(commit), _) => commit,
-        (None, Some(over)) => {
-            tracing::info!(
-                revision = %message.revision,
-                commit = over,
-                "the repository already holds the revision"
-            );
-            over.to_owned()
-        }
-        (None, None) => {
-            return Err(server_error!("sealing the specification made no root commit"));
-        }
-    };
-    repo.label(provider, &label(&message.revision), &commit).await?;
-    Ok(commit)
-}
-
-fn mismatch(description: String) -> Error {
-    Error::BadRequest {
-        code: "spec-mismatch".into(),
-        description,
-    }
-}
-
-// The path a document lives at in the repository.
-fn path(name: &str) -> String {
-    format!("{SPECIFICATION}/{name}.json")
-}
-
-fn key(id: &str, name: &str) -> String {
-    format!("{id}/{name}.json")
-}
-
-// A document that will not delete stays as an inert orphan, so the failure
-// is logged rather than raised.
-async fn prune<S: BlobStore>(store: &S, id: &str, kind: StagedKind) {
-    for name in kind.documents() {
-        if let Err(error) = BlobStore::delete(store, STAGED_CONTAINER, &key(id, name)).await {
-            tracing::warn!(%id, name, %error, "a displaced candidate document could not be pruned");
-        }
-    }
 }

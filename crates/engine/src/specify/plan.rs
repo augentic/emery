@@ -144,14 +144,6 @@ impl Brief for PartBrief<'_> {
     }
 }
 
-fn quoted(names: impl IntoIterator<Item: Display>) -> String {
-    names.into_iter().map(|name| format!("`{name}`")).collect::<Vec<_>>().join(", ")
-}
-
-fn listed(ids: &[ReqId]) -> String {
-    ids.iter().map(ToString::to_string).collect::<Vec<_>>().join(", ")
-}
-
 impl Display for PartBrief<'_> {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         f.write_str("Slice the specification into a build plan.\n\n## Baseline\n\n")?;
@@ -185,19 +177,6 @@ impl Display for PartBrief<'_> {
 
         write!(f, "\n## Requirements\n\n{bases}", bases = BasesSection(self.bases))
     }
-}
-
-/// Model-authored content for a build plan.
-///
-/// The engine supplies part identifiers and the order of every list.
-#[derive(Debug, Deserialize, JsonSchema)]
-#[serde(deny_unknown_fields)]
-#[schemars(title = "Emery slicing answer")]
-pub struct PartAnswer {
-    /// Markdown paragraphs before the first part.
-    pub preamble: Vec<String>,
-    /// One draft per part, in any order.
-    pub parts: Vec<Draft>,
 }
 
 // The facts the slicing gate holds a plan to: the requirements by stem, and
@@ -370,6 +349,25 @@ impl<'a> Floors<'a> {
     }
 }
 
+// The requirements under one stem.
+struct Stem<'a> {
+    label: &'a str,
+    requirements: Vec<ReqId>,
+}
+
+impl<'a> Stem<'a> {
+    // Files `id` under `label`, in first-occurrence order.
+    fn file(stems: &mut Vec<Self>, label: &'a str, id: ReqId) {
+        match stems.iter_mut().find(|entry| entry.label == label) {
+            Some(entry) => entry.requirements.push(id),
+            None => stems.push(Self {
+                label,
+                requirements: vec![id],
+            }),
+        }
+    }
+}
+
 fn check_types(types: &Types, drafts: &[Draft], review: &mut Review) {
     let mut owners: BTreeMap<&str, BTreeSet<&str>> = BTreeMap::new();
     for draft in drafts {
@@ -452,6 +450,27 @@ fn unorderable<'a>(drafts: &'a [Draft], edges: &'a [Edge]) -> Vec<&'a str> {
     cyclic
 }
 
+fn quoted(names: impl IntoIterator<Item: Display>) -> String {
+    names.into_iter().map(|name| format!("`{name}`")).collect::<Vec<_>>().join(", ")
+}
+
+fn listed(ids: &[ReqId]) -> String {
+    ids.iter().map(ToString::to_string).collect::<Vec<_>>().join(", ")
+}
+
+/// Model-authored content for a build plan.
+///
+/// The engine supplies part identifiers and the order of every list.
+#[derive(Debug, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+#[schemars(title = "Emery slicing answer")]
+pub struct PartAnswer {
+    /// Markdown paragraphs before the first part.
+    pub preamble: Vec<String>,
+    /// One draft per part, in any order.
+    pub parts: Vec<Draft>,
+}
+
 /// The drafted content of one part, before the engine numbers and orders it.
 #[derive(Debug, Clone, Deserialize, JsonSchema)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
@@ -505,25 +524,6 @@ impl From<&Part> for Draft {
             types: part.types.clone(),
             uses: part.uses.clone(),
             brief: part.brief.clone(),
-        }
-    }
-}
-
-// The requirements under one stem.
-struct Stem<'a> {
-    label: &'a str,
-    requirements: Vec<ReqId>,
-}
-
-impl<'a> Stem<'a> {
-    // Files `id` under `label`, in first-occurrence order.
-    fn file(stems: &mut Vec<Self>, label: &'a str, id: ReqId) {
-        match stems.iter_mut().find(|entry| entry.label == label) {
-            Some(entry) => entry.requirements.push(id),
-            None => stems.push(Self {
-                label,
-                requirements: vec![id],
-            }),
         }
     }
 }

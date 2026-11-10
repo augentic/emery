@@ -494,6 +494,72 @@ fn scp_like(url: &str) -> Option<(&str, &str)> {
         .then_some((authority, path))
 }
 
+// Clones `url` at `at`, or fetches its origin when a run already cloned it:
+// the clone is the one operation that creates its location, so a read or a
+// fetch at a path the run does not hold yet is refused there.
+async fn ensure<V: Vcs>(vcs: &V, url: &str, at: &str) -> Result<(), vcs::Error> {
+    match vcs.clone_repo(url, at, CloneOptions { depth: None }).await {
+        Ok(()) => {
+            tracing::info!(repository = url, clone = at, "cloned");
+            Ok(())
+        }
+        Err(vcs::Error::Exists(_)) => {
+            tracing::info!(repository = url, clone = at, "fetching");
+            vcs.fetch(at, ORIGIN).await
+        }
+        Err(error) => Err(error),
+    }
+}
+
+// What a run addressed when the capability refused, which decides the
+// class and code the refusal reaches the operator as.
+#[derive(Clone, Copy)]
+enum Subject<'a> {
+    Project,
+    Repository(&'a str),
+    Target(&'a str),
+    WorkingCopy(&'a str),
+}
+
+impl Subject<'_> {
+    fn refusal(self, error: vcs::Error) -> Error {
+        match error {
+            vcs::Error::NotFound(what) => Error::NotFound {
+                code: "revision-not-found".into(),
+                description: format!("{self} has no `{what}`"),
+            },
+            vcs::Error::NotARepository => match self {
+                Self::Project => Error::BadRequest {
+                    code: "repository-required".into(),
+                    description: "the project directory is not a repository".into(),
+                },
+                Self::Repository(_) | Self::Target(_) | Self::WorkingCopy(_) => {
+                    server_error!("{self} is not a repository")
+                }
+            },
+            vcs::Error::Pending(paths) => Error::BadRequest {
+                code: "base-not-sealed".into(),
+                description: format!("{self} holds pending changes: {}", paths.join(", ")),
+            },
+            vcs::Error::Access(detail) => bad_gateway!("{self}: {detail}"),
+            vcs::Error::Diverged(what) => server_error!("{self}: `{what}` diverged"),
+            vcs::Error::Exists(what) => server_error!("{self}: `{what}` already exists"),
+            vcs::Error::Other(detail) => server_error!("{self}: {detail}"),
+        }
+    }
+}
+
+impl fmt::Display for Subject<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Project => f.write_str("the project repository"),
+            Self::Repository(url) => write!(f, "repository `{url}`"),
+            Self::Target(name) => write!(f, "the target repository `{}`", target_path(name)),
+            Self::WorkingCopy(at) => write!(f, "working copy `{at}`"),
+        }
+    }
+}
+
 /// The target as a run names it: the name its repository is kept under and where that repository is.
 ///
 /// A run's `[target]` table, or its command line, carries one; a verb
@@ -1029,70 +1095,4 @@ impl WorkingCopy {
 /// Returns [`Error::ServerError`] when the capability fails.
 pub async fn pending<V: Vcs>(vcs: &V, at: &str) -> Result<Vec<Change>, Error> {
     vcs.pending(at).await.map_err(|error| Subject::WorkingCopy(at).refusal(error))
-}
-
-// Clones `url` at `at`, or fetches its origin when a run already cloned it:
-// the clone is the one operation that creates its location, so a read or a
-// fetch at a path the run does not hold yet is refused there.
-async fn ensure<V: Vcs>(vcs: &V, url: &str, at: &str) -> Result<(), vcs::Error> {
-    match vcs.clone_repo(url, at, CloneOptions { depth: None }).await {
-        Ok(()) => {
-            tracing::info!(repository = url, clone = at, "cloned");
-            Ok(())
-        }
-        Err(vcs::Error::Exists(_)) => {
-            tracing::info!(repository = url, clone = at, "fetching");
-            vcs.fetch(at, ORIGIN).await
-        }
-        Err(error) => Err(error),
-    }
-}
-
-// What a run addressed when the capability refused, which decides the
-// class and code the refusal reaches the operator as.
-#[derive(Clone, Copy)]
-enum Subject<'a> {
-    Project,
-    Repository(&'a str),
-    Target(&'a str),
-    WorkingCopy(&'a str),
-}
-
-impl Subject<'_> {
-    fn refusal(self, error: vcs::Error) -> Error {
-        match error {
-            vcs::Error::NotFound(what) => Error::NotFound {
-                code: "revision-not-found".into(),
-                description: format!("{self} has no `{what}`"),
-            },
-            vcs::Error::NotARepository => match self {
-                Self::Project => Error::BadRequest {
-                    code: "repository-required".into(),
-                    description: "the project directory is not a repository".into(),
-                },
-                Self::Repository(_) | Self::Target(_) | Self::WorkingCopy(_) => {
-                    server_error!("{self} is not a repository")
-                }
-            },
-            vcs::Error::Pending(paths) => Error::BadRequest {
-                code: "base-not-sealed".into(),
-                description: format!("{self} holds pending changes: {}", paths.join(", ")),
-            },
-            vcs::Error::Access(detail) => bad_gateway!("{self}: {detail}"),
-            vcs::Error::Diverged(what) => server_error!("{self}: `{what}` diverged"),
-            vcs::Error::Exists(what) => server_error!("{self}: `{what}` already exists"),
-            vcs::Error::Other(detail) => server_error!("{self}: {detail}"),
-        }
-    }
-}
-
-impl fmt::Display for Subject<'_> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Project => f.write_str("the project repository"),
-            Self::Repository(url) => write!(f, "repository `{url}`"),
-            Self::Target(name) => write!(f, "the target repository `{}`", target_path(name)),
-            Self::WorkingCopy(at) => write!(f, "working copy `{at}`"),
-        }
-    }
 }

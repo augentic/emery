@@ -132,61 +132,6 @@ fn named(dir: &str) -> String {
 /// row for row.
 pub const TABLE_BYTES: usize = 64 * 1024;
 
-// A declaration over several lines under `indent`: its first line as
-// written, every other less the whitespace they share and behind the
-// indent, blank lines dropped.
-fn indented(text: &str, indent: &str) -> String {
-    let mut lines = text.lines().filter(|line| !line.trim().is_empty());
-    let Some(first) = lines.next() else { return String::new() };
-    let rest: Vec<&str> = lines.collect();
-    let shared = rest
-        .iter()
-        .map(|line| line.chars().take_while(|ch| ch.is_whitespace()).count())
-        .min()
-        .unwrap_or_default();
-    let mut out = first.to_owned();
-    for line in rest {
-        out.push('\n');
-        out.push_str(indent);
-        out.push_str(line.char_indices().nth(shared).map_or("", |(at, _)| &line[at..]));
-    }
-    out
-}
-
-fn claim(name: &str, signature: &str, path: Option<String>, what: &str) -> Claim {
-    Claim {
-        path,
-        ..Claim::type_decl(name, signature).with_synopsis(format!("exported {what}"))
-    }
-}
-
-// A package's class as a class of its assigned members under the dialect's
-// class syntax, each annotated from the value assigned.
-fn assigned_signature(dialect: &Dialect, class: &AssignedClass) -> String {
-    let syntax = dialect.class_syntax;
-    let mut signature = format!("class {}{}{}", class.name, syntax.header_end, syntax.open);
-    for member in &class.members {
-        let annotation = match &member.value {
-            Assigned::Literal(scalar) => dialect.annotations.scalar(*scalar),
-            Assigned::Construction(path) => {
-                path.last().map_or(dialect.annotations.unknown, String::as_str)
-            }
-            Assigned::Read(_) | Assigned::Other => dialect.annotations.unknown,
-        };
-        signature.push('\n');
-        signature.push_str(syntax.indent);
-        signature.push_str(&member.name);
-        signature.push_str(": ");
-        signature.push_str(annotation);
-        signature.push_str(syntax.field);
-    }
-    if class.members.is_empty() {
-        signature.push_str(syntax.empty);
-    }
-    signature.push_str(syntax.close);
-    signature
-}
-
 /// Returns a `type` claim for every exported class, type alias, functional
 /// type, and table `modules` declare, and for every class of a package they
 /// construct and assign members on.
@@ -271,6 +216,61 @@ pub fn types<'m>(
     claims
 }
 
+fn claim(name: &str, signature: &str, path: Option<String>, what: &str) -> Claim {
+    Claim {
+        path,
+        ..Claim::type_decl(name, signature).with_synopsis(format!("exported {what}"))
+    }
+}
+
+// A declaration over several lines under `indent`: its first line as
+// written, every other less the whitespace they share and behind the
+// indent, blank lines dropped.
+fn indented(text: &str, indent: &str) -> String {
+    let mut lines = text.lines().filter(|line| !line.trim().is_empty());
+    let Some(first) = lines.next() else { return String::new() };
+    let rest: Vec<&str> = lines.collect();
+    let shared = rest
+        .iter()
+        .map(|line| line.chars().take_while(|ch| ch.is_whitespace()).count())
+        .min()
+        .unwrap_or_default();
+    let mut out = first.to_owned();
+    for line in rest {
+        out.push('\n');
+        out.push_str(indent);
+        out.push_str(line.char_indices().nth(shared).map_or("", |(at, _)| &line[at..]));
+    }
+    out
+}
+
+// A package's class as a class of its assigned members under the dialect's
+// class syntax, each annotated from the value assigned.
+fn assigned_signature(dialect: &Dialect, class: &AssignedClass) -> String {
+    let syntax = dialect.class_syntax;
+    let mut signature = format!("class {}{}{}", class.name, syntax.header_end, syntax.open);
+    for member in &class.members {
+        let annotation = match &member.value {
+            Assigned::Literal(scalar) => dialect.annotations.scalar(*scalar),
+            Assigned::Construction(path) => {
+                path.last().map_or(dialect.annotations.unknown, String::as_str)
+            }
+            Assigned::Read(_) | Assigned::Other => dialect.annotations.unknown,
+        };
+        signature.push('\n');
+        signature.push_str(syntax.indent);
+        signature.push_str(&member.name);
+        signature.push_str(": ");
+        signature.push_str(annotation);
+        signature.push_str(syntax.field);
+    }
+    if class.members.is_empty() {
+        signature.push_str(syntax.empty);
+    }
+    signature.push_str(syntax.close);
+    signature
+}
+
 // Every anchor in the claim `path` grammar, once. A function's or method's
 // head is its opening line, or the first decorator through the declaration
 // line. A class field is declared policy, whatever initialises it. A line
@@ -339,14 +339,6 @@ pub fn anchors<'s, R: Recogniser>(
     unique(anchors)
 }
 
-// `FIVE_SEC_DELAY`, never `count` or `i`: a function's working variables
-// stay out of the list.
-fn constant_name(name: &str) -> bool {
-    name.len() > 1
-        && name.chars().all(|c| c.is_ascii_uppercase() || c.is_ascii_digit() || c == '_')
-        && name.chars().any(|c| c.is_ascii_uppercase())
-}
-
 // The bindings whose initializer spells a value of its own. A function local
 // counts only where it is constant-named or an enumeration written out in
 // place. A class field is named `Class.field`.
@@ -387,6 +379,14 @@ fn spelled<'m>(
         };
         init.is_value().then_some((name, head.as_str(), binding.lines))
     })
+}
+
+// `FIVE_SEC_DELAY`, never `count` or `i`: a function's working variables
+// stay out of the list.
+fn constant_name(name: &str) -> bool {
+    name.len() > 1
+        && name.chars().all(|c| c.is_ascii_uppercase() || c.is_ascii_digit() || c == '_')
+        && name.chars().any(|c| c.is_ascii_uppercase())
 }
 
 // The `default` keyword of a call declaring a command-line option.
@@ -452,6 +452,43 @@ fn of_tree(dialect: &Dialect, module: &Module, name: &str, frames: &[u32], budge
         BindingKind::Param { type_path } => heads(type_path, &None),
         BindingKind::Field { .. } => false,
     }
+}
+
+// The `callee` a `call` claim spells:
+// - `<package>:<members>` for a head imported from the package
+// - `<package>:<Head>.<members>` where the head is itself called first
+// - `<package>:<type or bound name>.<members>` for a head bound in the tree
+// - a global as itself
+fn callee<R: Recogniser>(tree: &Tree<R>, module: &R::Module, call: &Call) -> Option<String> {
+    let dialect = tree.dialect;
+    let head = call.callee.head.as_str();
+    let links: Vec<&str> = call.callee.links.iter().map(|link| link.name.as_str()).collect();
+    let (bound, members) = if head == dialect.self_name {
+        let [field, members @ ..] = links.as_slice() else { return None };
+        (*field, members)
+    } else {
+        (head, links.as_slice())
+    };
+    let Some(receiver) = tree.receiver(module, call) else {
+        let global = dialect.globals.contains(&head)
+            && module.binding(head, &call.frames).is_none()
+            && module.import(head).is_none();
+        return global.then(|| {
+            std::iter::once(head).chain(members.iter().copied()).collect::<Vec<_>>().join(".")
+        });
+    };
+    let direct = head != dialect.self_name && module.package(head).is_some();
+    let mut path: Vec<&str> = Vec::new();
+    match &receiver.type_name {
+        Some(type_name) => path.push(type_name),
+        None if direct && call.callee.head_call.is_none() => {}
+        None => path.push(bound),
+    }
+    path.extend_from_slice(members);
+    if path.is_empty() {
+        path.push(head);
+    }
+    Some(format!("{}:{}", receiver.package, path.join(".")))
 }
 
 pub fn boundaries<'m>(
@@ -567,15 +604,15 @@ pub fn packages<'m>(modules: impl IntoIterator<Item = &'m Module>) -> Option<Str
     ))
 }
 
+// How many sites a callee is listed at before the rest are counted.
+const SITES: usize = 8;
+
 // Left out as structure rather than a call:
 // - a construction or a structural call
 // - a call another in its chain is made on
 // - a call handed nothing whose value is used in place
 // - a registration or hook handed a handler
 // - a call in a module-level declaration or a class body outside any function
-// How many sites a callee is listed at before the rest are counted.
-const SITES: usize = 8;
-
 pub fn calls<R: Recogniser>(tree: &Tree<R>, files: &[String]) -> Option<String> {
     let mut lines: Vec<String> = Vec::new();
     for module in files.iter().filter_map(|path| tree.modules.get(path)) {
@@ -623,41 +660,4 @@ pub fn calls<R: Recogniser>(tree: &Tree<R>, files: &[String]) -> Option<String> 
          `requirement` beside it where what the caller observes depends on it:\n\n{}",
         lines.join("\n")
     ))
-}
-
-// The `callee` a `call` claim spells:
-// - `<package>:<members>` for a head imported from the package
-// - `<package>:<Head>.<members>` where the head is itself called first
-// - `<package>:<type or bound name>.<members>` for a head bound in the tree
-// - a global as itself
-fn callee<R: Recogniser>(tree: &Tree<R>, module: &R::Module, call: &Call) -> Option<String> {
-    let dialect = tree.dialect;
-    let head = call.callee.head.as_str();
-    let links: Vec<&str> = call.callee.links.iter().map(|link| link.name.as_str()).collect();
-    let (bound, members) = if head == dialect.self_name {
-        let [field, members @ ..] = links.as_slice() else { return None };
-        (*field, members)
-    } else {
-        (head, links.as_slice())
-    };
-    let Some(receiver) = tree.receiver(module, call) else {
-        let global = dialect.globals.contains(&head)
-            && module.binding(head, &call.frames).is_none()
-            && module.import(head).is_none();
-        return global.then(|| {
-            std::iter::once(head).chain(members.iter().copied()).collect::<Vec<_>>().join(".")
-        });
-    };
-    let direct = head != dialect.self_name && module.package(head).is_some();
-    let mut path: Vec<&str> = Vec::new();
-    match &receiver.type_name {
-        Some(type_name) => path.push(type_name),
-        None if direct && call.callee.head_call.is_none() => {}
-        None => path.push(bound),
-    }
-    path.extend_from_slice(members);
-    if path.is_empty() {
-        path.push(head);
-    }
-    Some(format!("{}:{}", receiver.package, path.join(".")))
 }

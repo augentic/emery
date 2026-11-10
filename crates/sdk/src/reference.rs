@@ -102,12 +102,6 @@ pub fn serve(
     })
 }
 
-#[derive(Serialize)]
-struct ReadDocResponse<'a> {
-    path: &'a str,
-    body: &'a str,
-}
-
 fn read(docs: &[Doc], imports: &[Doc], call: &ToolCall) -> Result<String, String> {
     let ReadDoc { path } = call.arguments().map_err(|err| format!("{READ_DOC}: {err}"))?;
     let doc = emery_prose::find(docs, &path)
@@ -118,4 +112,10 @@ fn read(docs: &[Doc], imports: &[Doc], call: &ToolCall) -> Result<String, String
         body: doc.body,
     })
     .map_err(|err| format!("{READ_DOC}: {err}"))
+}
+
+#[derive(Serialize)]
+struct ReadDocResponse<'a> {
+    path: &'a str,
+    body: &'a str,
 }
